@@ -462,6 +462,7 @@ impl XmlDataIsADomTreePolicy {
                 );
                 engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(
                     XmlDataIsADomTreeEvent::ErrorExecution,
+                    ::sce_rust_runtime::ErrorReason::ParamUnfit,
                     "<data id='doc'> could not hold the value its invoke handed it",
                 ));
             }
@@ -469,7 +470,7 @@ impl XmlDataIsADomTreePolicy {
             // W3C SCXML B.2: XML inline content for 'doc' (global)
             if let Err(e) = se.set_variable_as_dom(&sid, "doc", "<books xmlns=\"\" count=\"2\">\n        <book title=\"t1\">first</book>\n        <book title=\"t2\"></book>\n      </books>") {
             ::sce_rust_runtime::sce_log_error!("Failed to set DOM variable 'doc' in global: {}", e);
-            engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(XmlDataIsADomTreeEvent::ErrorExecution, "<data id='doc'> XML content could not be parsed"));
+            engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(XmlDataIsADomTreeEvent::ErrorExecution, ::sce_rust_runtime::ErrorReason::DataInitFailed, "<data id='doc'> XML content could not be parsed"));
         }
         }
 
@@ -516,6 +517,7 @@ impl XmlDataIsADomTreePolicy {
                 ::sce_rust_runtime::sce_log_error!("Guard evaluation failed for '{}': {}", cond, e);
                 engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(
                     XmlDataIsADomTreeEvent::ErrorExecution,
+                    ::sce_rust_runtime::ErrorReason::ExpressionFailed,
                     reason,
                 ));
                 None

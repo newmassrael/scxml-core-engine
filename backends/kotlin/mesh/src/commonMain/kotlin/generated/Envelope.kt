@@ -1,5 +1,5 @@
 // SCE-GENERATED — DO NOT EDIT
-// source-hash: f2f8682669670c7aaedbccb3102dd71d7b187eac29a32d3d20509a5bc070c12e
+// source-hash: 52868da22c06561e2c560050fc709417107e0518328e8ceb0790994e53be08ca
 // SCE-MAP: envelope.scxml:22 :: _forge_body
 
 // SCE Forge: Auto-generated from Extended SCXML (sce:kind="codec" sce:encoding="cbor")
@@ -10,6 +10,7 @@ package com.sce.generated.envelope
 
 import com.sce.forge.runtime.Cbor
 import com.sce.forge.runtime.CodecError
+import com.sce.forge.runtime.Decoded
 import com.sce.forge.runtime.MutableListSink
 import com.sce.forge.runtime.SceCursor
 import com.sce.forge.runtime.SceSink
@@ -205,17 +206,19 @@ data class Envelope(
     companion object {
         /**
          * Decode one map from [cursor]. On success the cursor advances past
-         * it; `null` on any refusal, with the cursor left where it was.
+         * it; a refusal answers the [CodecError] that refused the map
+         * (docs/adr/0099, amendment of 2026-11-16), with the cursor left where
+         * it was.
          */
-        fun decode(cursor: SceCursor): Envelope? {
+        fun decode(cursor: SceCursor): Decoded<Envelope> {
             val mark = cursor.mark()
             val value = decodeAt(cursor)
-            if (value == null) cursor.reset(mark)
+            if (value is Decoded.Refused) cursor.reset(mark)
             return value
         }
 
-        private fun decodeAt(c: SceCursor): Envelope? {
-            val count = Cbor.readMapLen(c) ?: return null
+        private fun decodeAt(c: SceCursor): Decoded<Envelope> {
+            val count = Cbor.readMapLen(c).valueOr { _refused -> return _refused }
             var id: ByteArray? = null
             var source: String? = null
             var event_type: String? = null
@@ -239,143 +242,145 @@ data class Envelope(
             var i = 0UL
             while (i < count) {
                 i++
-                when (Cbor.readUint(c) ?: return null) {
+                when (Cbor.readUint(c).valueOr { _refused -> return _refused }) {
                     0UL -> {
                         // A key given twice is not one map entry.
-                        if (id != null) return null
-                        id = Cbor.readBytesExact(c, 16) ?: return null
+                        if (id != null) return Decoded.Refused(CodecError.CborMalformed)
+                        id = Cbor.readBytesExact(c, 16).valueOr { _refused -> return _refused }
                     }
                     1UL -> {
                         // A key given twice is not one map entry.
-                        if (source != null) return null
-                        source = Cbor.readText(c, 262144) ?: return null
+                        if (source != null) return Decoded.Refused(CodecError.CborMalformed)
+                        source = Cbor.readText(c, 262144).valueOr { _refused -> return _refused }
                     }
                     2UL -> {
                         // A key given twice is not one map entry.
-                        if (event_type != null) return null
-                        event_type = Cbor.readText(c, 262144) ?: return null
+                        if (event_type != null) return Decoded.Refused(CodecError.CborMalformed)
+                        event_type = Cbor.readText(c, 262144).valueOr { _refused -> return _refused }
                     }
                     3UL -> {
                         // A key given twice is not one map entry.
-                        if (pattern != null) return null
-                        pattern = PatternKind.fromUnderlying((Cbor.readUintUpto(c, UShort.MAX_VALUE.toULong()) ?: return null).toUShort()) ?: return null
+                        if (pattern != null) return Decoded.Refused(CodecError.CborMalformed)
+                        pattern = PatternKind.fromUnderlying((Cbor.readUintUpto(c, UShort.MAX_VALUE.toULong()).valueOr { _refused -> return _refused }).toUShort()) ?: return Decoded.Refused(CodecError.UndeclaredEnumValue)
                     }
                     4UL -> {
                         // A key given twice is not one map entry.
-                        if (datacontenttype != null) return null
-                        datacontenttype = PayloadCodec.fromUnderlying((Cbor.readUintUpto(c, UByte.MAX_VALUE.toULong()) ?: return null).toUByte()) ?: return null
+                        if (datacontenttype != null) return Decoded.Refused(CodecError.CborMalformed)
+                        datacontenttype = PayloadCodec.fromUnderlying((Cbor.readUintUpto(c, UByte.MAX_VALUE.toULong()).valueOr { _refused -> return _refused }).toUByte()) ?: return Decoded.Refused(CodecError.UndeclaredEnumValue)
                     }
                     5UL -> {
                         // A key given twice is not one map entry.
-                        if (data != null) return null
-                        data = Cbor.readBytes(c, 16777216) ?: return null
+                        if (data != null) return Decoded.Refused(CodecError.CborMalformed)
+                        data = Cbor.readBytes(c, 16777216).valueOr { _refused -> return _refused }
                     }
                     6UL -> {
                         // A key given twice is not one map entry.
-                        if (subject != null) return null
-                        subject = Cbor.readText(c, 262144) ?: return null
+                        if (subject != null) return Decoded.Refused(CodecError.CborMalformed)
+                        subject = Cbor.readText(c, 262144).valueOr { _refused -> return _refused }
                     }
                     7UL -> {
                         // A key given twice is not one map entry.
-                        if (correlation_id != null) return null
-                        correlation_id = Cbor.readBytesExact(c, 16) ?: return null
+                        if (correlation_id != null) return Decoded.Refused(CodecError.CborMalformed)
+                        correlation_id = Cbor.readBytesExact(c, 16).valueOr { _refused -> return _refused }
                     }
                     8UL -> {
                         // A key given twice is not one map entry.
-                        if (reply_to != null) return null
-                        reply_to = Cbor.readText(c, 262144) ?: return null
+                        if (reply_to != null) return Decoded.Refused(CodecError.CborMalformed)
+                        reply_to = Cbor.readText(c, 262144).valueOr { _refused -> return _refused }
                     }
                     9UL -> {
                         // A key given twice is not one map entry.
-                        if (invoke_id != null) return null
-                        invoke_id = Cbor.readBytesExact(c, 16) ?: return null
+                        if (invoke_id != null) return Decoded.Refused(CodecError.CborMalformed)
+                        invoke_id = Cbor.readBytesExact(c, 16).valueOr { _refused -> return _refused }
                     }
                     10UL -> {
                         // A key given twice is not one map entry.
-                        if (rpc_status != null) return null
-                        rpc_status = RpcStatus.fromUnderlying((Cbor.readUintUpto(c, UByte.MAX_VALUE.toULong()) ?: return null).toUByte()) ?: return null
+                        if (rpc_status != null) return Decoded.Refused(CodecError.CborMalformed)
+                        rpc_status = RpcStatus.fromUnderlying((Cbor.readUintUpto(c, UByte.MAX_VALUE.toULong()).valueOr { _refused -> return _refused }).toUByte()) ?: return Decoded.Refused(CodecError.UndeclaredEnumValue)
                     }
                     11UL -> {
                         // A key given twice is not one map entry.
-                        if (rpc_error_message != null) return null
-                        rpc_error_message = Cbor.readText(c, 262144) ?: return null
+                        if (rpc_error_message != null) return Decoded.Refused(CodecError.CborMalformed)
+                        rpc_error_message = Cbor.readText(c, 262144).valueOr { _refused -> return _refused }
                     }
                     12UL -> {
                         // A key given twice is not one map entry.
-                        if (deadline_unix_ms != null) return null
-                        deadline_unix_ms = Cbor.readUint(c) ?: return null
+                        if (deadline_unix_ms != null) return Decoded.Refused(CodecError.CborMalformed)
+                        deadline_unix_ms = Cbor.readUint(c).valueOr { _refused -> return _refused }
                     }
                     14UL -> {
                         // A key given twice is not one map entry.
-                        if (sequence_no != null) return null
-                        sequence_no = Cbor.readUint(c) ?: return null
+                        if (sequence_no != null) return Decoded.Refused(CodecError.CborMalformed)
+                        sequence_no = Cbor.readUint(c).valueOr { _refused -> return _refused }
                     }
                     15UL -> {
                         // A key given twice is not one map entry.
-                        if (routing_id != null) return null
-                        routing_id = Cbor.readBytesExact(c, 16) ?: return null
+                        if (routing_id != null) return Decoded.Refused(CodecError.CborMalformed)
+                        routing_id = Cbor.readBytesExact(c, 16).valueOr { _refused -> return _refused }
                     }
                     16UL -> {
                         // A key given twice is not one map entry.
-                        if (parallel_id != null) return null
-                        parallel_id = Cbor.readText(c, 262144) ?: return null
+                        if (parallel_id != null) return Decoded.Refused(CodecError.CborMalformed)
+                        parallel_id = Cbor.readText(c, 262144).valueOr { _refused -> return _refused }
                     }
                     17UL -> {
                         // A key given twice is not one map entry.
-                        if (region_id != null) return null
-                        region_id = Cbor.readText(c, 262144) ?: return null
+                        if (region_id != null) return Decoded.Refused(CodecError.CborMalformed)
+                        region_id = Cbor.readText(c, 262144).valueOr { _refused -> return _refused }
                     }
                     18UL -> {
                         // A key given twice is not one map entry.
-                        if (child_session_id != null) return null
-                        child_session_id = Cbor.readText(c, 262144) ?: return null
+                        if (child_session_id != null) return Decoded.Refused(CodecError.CborMalformed)
+                        child_session_id = Cbor.readText(c, 262144).valueOr { _refused -> return _refused }
                     }
                     19UL -> {
                         // A key given twice is not one map entry.
-                        if (causal_epoch != null) return null
-                        causal_epoch = Cbor.readUint(c) ?: return null
+                        if (causal_epoch != null) return Decoded.Refused(CodecError.CborMalformed)
+                        causal_epoch = Cbor.readUint(c).valueOr { _refused -> return _refused }
                     }
                     20UL -> {
                         // A key given twice is not one map entry.
-                        if (causal_vector != null) return null
+                        if (causal_vector != null) return Decoded.Refused(CodecError.CborMalformed)
                         causal_vector = run {
                             // A definite-length array within the list's counts,
                             // each item one record's map.
-                            val len = Cbor.readArrayLen(c) ?: return null
-                            if (len > 64UL) return null
+                            val len = Cbor.readArrayLen(c).valueOr { _refused -> return _refused }
+                            if (len > 64UL) return Decoded.Refused(CodecError.CborOutOfRange)
                             val list = ArrayList<CausalEntryPayload>(len.toInt())
                             var n = 0UL
                             while (n < len) {
                                 n++
-                                list.add(decodeRecordCausalEntry(c) ?: return null)
+                                list.add(decodeRecordCausalEntry(c).valueOr { _refused -> return _refused })
                             }
                             list
                         }
                     }
-                    else -> if (!Cbor.skip(c)) return null
+                    else -> Cbor.skip(c).valueOr { _refused -> return _refused }
                 }
             }
-            return Envelope(
-                id = id ?: return null,
-                source = source ?: return null,
-                event_type = event_type ?: return null,
-                pattern = pattern ?: return null,
-                datacontenttype = datacontenttype ?: return null,
-                data = data ?: return null,
-                subject = subject,
-                correlation_id = correlation_id,
-                reply_to = reply_to,
-                invoke_id = invoke_id,
-                rpc_status = rpc_status,
-                rpc_error_message = rpc_error_message,
-                deadline_unix_ms = deadline_unix_ms,
-                sequence_no = sequence_no,
-                routing_id = routing_id,
-                parallel_id = parallel_id,
-                region_id = region_id,
-                child_session_id = child_session_id,
-                causal_epoch = causal_epoch,
-                causal_vector = causal_vector,
+            return Decoded.Ok(
+                Envelope(
+                    id = id ?: return Decoded.Refused(CodecError.CborRequiredKeyMissing),
+                    source = source ?: return Decoded.Refused(CodecError.CborRequiredKeyMissing),
+                    event_type = event_type ?: return Decoded.Refused(CodecError.CborRequiredKeyMissing),
+                    pattern = pattern ?: return Decoded.Refused(CodecError.CborRequiredKeyMissing),
+                    datacontenttype = datacontenttype ?: return Decoded.Refused(CodecError.CborRequiredKeyMissing),
+                    data = data ?: return Decoded.Refused(CodecError.CborRequiredKeyMissing),
+                    subject = subject,
+                    correlation_id = correlation_id,
+                    reply_to = reply_to,
+                    invoke_id = invoke_id,
+                    rpc_status = rpc_status,
+                    rpc_error_message = rpc_error_message,
+                    deadline_unix_ms = deadline_unix_ms,
+                    sequence_no = sequence_no,
+                    routing_id = routing_id,
+                    parallel_id = parallel_id,
+                    region_id = region_id,
+                    child_session_id = child_session_id,
+                    causal_epoch = causal_epoch,
+                    causal_vector = causal_vector,
+                ),
             )
         }
 
@@ -386,39 +391,41 @@ data class Envelope(
          * CBOR map of every field, each under its id as text (docs/adr/0086,
          * section 9.2). Its keys in any order, a key the schema does not declare
          * skipped whole; a key given twice, a field missing and a text or byte
-         * string past its bound are `null`.
+         * string past its bound are refused, each by its kind.
          */
-        private fun decodeRecordCausalEntry(c: SceCursor): CausalEntryPayload? {
-            val count = Cbor.readMapLen(c) ?: return null
+        private fun decodeRecordCausalEntry(c: SceCursor): Decoded<CausalEntryPayload> {
+            val count = Cbor.readMapLen(c).valueOr { _refused -> return _refused }
             var held_hi: ULong? = null
             var held_lo: ULong? = null
             var held_seq: ULong? = null
             var i = 0UL
             while (i < count) {
                 i++
-                when (Cbor.readText(c, null) ?: return null) {
+                when (Cbor.readText(c, null).valueOr { _refused -> return _refused }) {
                     "hi" -> {
                         // A key given twice is not one map entry.
-                        if (held_hi != null) return null
-                        held_hi = Cbor.readUint(c) ?: return null
+                        if (held_hi != null) return Decoded.Refused(CodecError.CborMalformed)
+                        held_hi = Cbor.readUint(c).valueOr { _refused -> return _refused }
                     }
                     "lo" -> {
                         // A key given twice is not one map entry.
-                        if (held_lo != null) return null
-                        held_lo = Cbor.readUint(c) ?: return null
+                        if (held_lo != null) return Decoded.Refused(CodecError.CborMalformed)
+                        held_lo = Cbor.readUint(c).valueOr { _refused -> return _refused }
                     }
                     "seq" -> {
                         // A key given twice is not one map entry.
-                        if (held_seq != null) return null
-                        held_seq = Cbor.readUint(c) ?: return null
+                        if (held_seq != null) return Decoded.Refused(CodecError.CborMalformed)
+                        held_seq = Cbor.readUint(c).valueOr { _refused -> return _refused }
                     }
-                    else -> if (!Cbor.skip(c)) return null
+                    else -> Cbor.skip(c).valueOr { _refused -> return _refused }
                 }
             }
-            return CausalEntryPayload(
-                hi = held_hi ?: return null,
-                lo = held_lo ?: return null,
-                seq = held_seq ?: return null,
+            return Decoded.Ok(
+                CausalEntryPayload(
+                    hi = held_hi ?: return Decoded.Refused(CodecError.CborRequiredKeyMissing),
+                    lo = held_lo ?: return Decoded.Refused(CodecError.CborRequiredKeyMissing),
+                    seq = held_seq ?: return Decoded.Refused(CodecError.CborRequiredKeyMissing),
+                ),
             )
         }
 

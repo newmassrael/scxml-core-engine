@@ -59,36 +59,32 @@ class CodecLengthRef:
         object.__setattr__(self, name, value)
 
     @classmethod
-    def decode(cls, cursor: SceCursor) -> Optional[CodecLengthRef]:
-        """Decode the next frame from ``cursor``. Returns ``None`` when
-        the cursor's tail is shorter than the declared minimum frame
-        (RFC §synth-5-B L494-519); on success the cursor advances past the
-        consumed bytes. VLE codecs also return ``None`` on
-        ``VleWidthOverflow``, and every codec on a field's refusal: a length
-        or a count past its bound (``LengthOutOfRange``, ``TooManyElements``,
-        docs/adr/0077), an undeclared enum value."""
-        try:
-            _frame_len = cursor.remaining()
-            if _frame_len < 2:
-                return None
-            raw = cursor.peek_slice(_frame_len)
-            f_msg_id = raw[0]
-            f_len = raw[1]
-            if f_len > 32:
-                raise LengthOutOfRange()
-            if _frame_len < 2 + f_len:
-                return None
-            f_payload = raw[2:2 + f_len]
-        except CodecError:
-            return None
+    def decode(cls, cursor: SceCursor) -> CodecLengthRef:
+        """Decode the next frame from ``cursor``; on success the cursor
+        advances past the consumed bytes. A frame the codec refuses raises
+        the ``CodecError`` subclass that names the refusal (docs/adr/0099,
+        amendment of 2026-11-16): ``NeedMoreBytes`` when the cursor's tail
+        is shorter than the frame (RFC §synth-5-B L494-519), which the
+        caller resumes after appending bytes, and for a frame no more bytes
+        make whole ``VleWidthOverflow``, ``InvalidUtf8``,
+        ``UndeclaredEnumValue``, or a length or a count past its bound
+        (``LengthOutOfRange``, ``TooManyElements``, docs/adr/0077)."""
+        _frame_len = cursor.remaining()
+        if _frame_len < 2:
+            raise NeedMoreBytes()
+        raw = cursor.peek_slice(_frame_len)
+        f_msg_id = raw[0]
+        f_len = raw[1]
+        if f_len > 32:
+            raise LengthOutOfRange()
+        if _frame_len < 2 + f_len:
+            raise NeedMoreBytes()
+        f_payload = raw[2:2 + f_len]
         value = cls(
             msg_id=f_msg_id,
             payload=f_payload,
         )
-        try:
-            cursor.advance(_frame_len)
-        except NeedMoreBytes:
-            return None
+        cursor.advance(_frame_len)
         return value
 
     def encode(self, w: SceSink) -> None:

@@ -539,7 +539,7 @@ impl Test242Policy {
                     self.active_invokes.remove("_invoke_0");
                     engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(
                         Test242Event::ErrorExecution,
-                        &format!("<invoke id='{}'> did not start: its child's script session failed at step '{}'", "_invoke_0", failure.stage)));
+                        ::sce_rust_runtime::ErrorReason::InvokeChildInitFailed, &format!("<invoke id='{}'> did not start: its child's script session failed at step '{}'", "_invoke_0", failure.stage)));
                     continue;
                 }
 
@@ -628,7 +628,7 @@ impl Test242Policy {
                     self.active_invokes.remove("_invoke_1");
                     engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(
                         Test242Event::ErrorExecution,
-                        &format!("<invoke id='{}'> did not start: its child's script session failed at step '{}'", "_invoke_1", failure.stage)));
+                        ::sce_rust_runtime::ErrorReason::InvokeChildInitFailed, &format!("<invoke id='{}'> did not start: its child's script session failed at step '{}'", "_invoke_1", failure.stage)));
                     continue;
                 }
 
@@ -717,7 +717,7 @@ impl Test242Policy {
                     self.active_invokes.remove("_invoke_2");
                     engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(
                         Test242Event::ErrorExecution,
-                        &format!("<invoke id='{}'> did not start: its child's script session failed at step '{}'", "_invoke_2", failure.stage)));
+                        ::sce_rust_runtime::ErrorReason::InvokeChildInitFailed, &format!("<invoke id='{}'> did not start: its child's script session failed at step '{}'", "_invoke_2", failure.stage)));
                     continue;
                 }
 

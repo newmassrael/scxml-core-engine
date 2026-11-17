@@ -114,12 +114,13 @@ struct CodecPresentIfTail {
     [[nodiscard]] std::optional<::SCE::Forge::Bytes<64>> payload() const noexcept { if (!payload_) { return std::nullopt; } return ::SCE::Forge::Bytes<64>(*payload_); }
 
     /// Decode the next frame from `cursor`. On success the cursor
-    /// advances past the consumed bytes; on `NeedMoreBytes` the cursor
-    /// is left untouched so the caller can resume after appending more
-    /// bytes (RFC §synth-5-B L494-519). Returns `std::nullopt` on the
-    /// `NeedMoreBytes` boundary; later phases attach a typed error via
-    /// `cursor.last_error()`.
-    static std::optional<CodecPresentIfTail> decode(::SCE::Forge::SceCursor& cursor) {
+    /// advances past the consumed bytes and the value is answered; a
+    /// refused frame answers the `CodecError` that refused it
+    /// (docs/adr/0099, amendment of 2026-11-16): `NeedMoreBytes` when
+    /// the cursor's tail is shorter than the frame (RFC §synth-5-B
+    /// L494-519), which the caller resumes after appending bytes, and
+    /// another kind for a frame no more bytes make whole.
+    static ::SCE::Forge::Decoded<CodecPresentIfTail> decode(::SCE::Forge::SceCursor& cursor) {
         // Streaming cursor decode (SSOT selection: `needs_streaming`).
         // The positional `raw[byte_off]` path is valid only when every
         // field's absolute offset is fixed at codegen time; this branch
@@ -134,27 +135,26 @@ struct CodecPresentIfTail {
         uint8_t flags;
         {
             const std::uint8_t* raw = cursor.peek_slice(1);
-            if (raw == nullptr) return std::nullopt;
+            if (raw == nullptr) return ::SCE::Forge::CodecError::NeedMoreBytes;
             flags = static_cast<uint8_t>(raw[0]);
-            if (!cursor.advance(1)) return std::nullopt;
+            if (!cursor.advance(1)) return ::SCE::Forge::CodecError::NeedMoreBytes;
         }
         std::optional<std::vector<uint8_t>> payload;
         if ((flags & 0x01) != 0) {
             std::size_t _n = cursor.remaining();
             if (_n > 64) {
-                cursor.refuse(::SCE::Forge::CodecError::LengthOutOfRange); return std::nullopt;
+                return ::SCE::Forge::CodecError::LengthOutOfRange;
             }
             const std::uint8_t* raw = cursor.peek_slice(_n);
-            if (raw == nullptr) return std::nullopt;
+            if (raw == nullptr) return ::SCE::Forge::CodecError::NeedMoreBytes;
             payload.emplace(raw, raw + _n);
-            if (!cursor.advance(_n)) return std::nullopt;
+            if (!cursor.advance(_n)) return ::SCE::Forge::CodecError::NeedMoreBytes;
         }
         std::optional<::SCE::Forge::Bytes<64>> _b_payload;
         if (payload) {
             _b_payload = ::SCE::Forge::Bytes<64>::make(*payload);
             if (!_b_payload) {
-                cursor.refuse(::SCE::Forge::CodecError::LengthOutOfRange);
-                return std::nullopt;
+                return ::SCE::Forge::CodecError::LengthOutOfRange;
             }
         }
         CodecPresentIfTail _decoded{

@@ -477,6 +477,7 @@ impl Test338Policy {
                 );
                 engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(
                     Test338Event::ErrorExecution,
+                    ::sce_rust_runtime::ErrorReason::ParamUnfit,
                     "<data id='Var1'> could not hold the value its invoke handed it",
                 ));
             }
@@ -494,6 +495,7 @@ impl Test338Policy {
                 );
                 engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(
                     Test338Event::ErrorExecution,
+                    ::sce_rust_runtime::ErrorReason::ParamUnfit,
                     "<data id='Var2'> could not hold the value its invoke handed it",
                 ));
             }
@@ -545,6 +547,7 @@ impl Test338Policy {
                 ::sce_rust_runtime::sce_log_error!("Guard evaluation failed for '{}': {}", cond, e);
                 engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(
                     Test338Event::ErrorExecution,
+                    ::sce_rust_runtime::ErrorReason::ExpressionFailed,
                     reason,
                 ));
                 None
@@ -647,6 +650,7 @@ impl Test338Policy {
             if !id_stored {
                 engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(
                     Test338Event::ErrorExecution,
+                    ::sce_rust_runtime::ErrorReason::LocationInvalid,
                     "<invoke idlocation='Var1'> could not take the invoke id",
                 ));
             }
@@ -757,7 +761,7 @@ impl Test338Policy {
                     self.active_invokes.remove("_invoke_0");
                     engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(
                         Test338Event::ErrorExecution,
-                        &format!("<invoke id='{}'> did not start: its child's script session failed at step '{}'", pending.invoke_id, failure.stage)));
+                        ::sce_rust_runtime::ErrorReason::InvokeChildInitFailed, &format!("<invoke id='{}'> did not start: its child's script session failed at step '{}'", pending.invoke_id, failure.stage)));
                     continue;
                 }
 
@@ -1300,6 +1304,7 @@ impl StatePolicy for Test338Policy {
                             ::sce_rust_runtime::sce_log_error!("Assign failed for 'Var2': {}", e);
                             engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(
                                 Test338Event::ErrorExecution,
+                                ::sce_rust_runtime::ErrorReason::AssignmentFailed,
                                 "<assign> to 'Var2' failed",
                             ));
                             // W3C SCXML 4.9: the error ends the block, from however deep a <foreach> it came.

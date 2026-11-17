@@ -108,6 +108,19 @@ struct Wire {
     }
 };
 
+/// The `schema_len` the frame of a source of `CodecZenohEncoding` carries, which its encode
+/// derives from what it measures and no value holds (docs/adr/0081 §3), and none where the content it is gated beside is absent.
+template <class S>
+[[nodiscard]] std::optional<uint64_t> wire_schema_len(const S& src) noexcept(is_nothrow_source<S>::value) {
+    static_assert(is_source<S>::value, "S presents every element of CodecZenohEncoding");
+    const auto& _r_schema = source::schema(src);
+    const std::optional<::SCE::Forge::Text<255>> _e_schema = _r_schema;
+    if (!(_e_schema.has_value())) {
+        return std::nullopt;
+    }
+    return static_cast<uint64_t>(_e_schema->size());
+}
+
 struct CodecZenohEncoding {
     CodecZenohEncoding() = default;
     /// The value of each element it presents, in declaration order (ADR 0059 §5).
@@ -119,12 +132,13 @@ struct CodecZenohEncoding {
     [[nodiscard]] std::optional<::SCE::Forge::Text<255>> schema() const noexcept { if (!schema_) { return std::nullopt; } return ::SCE::Forge::Text<255>(*schema_); }
 
     /// Decode the next frame from `cursor`. On success the cursor
-    /// advances past the consumed bytes; on `NeedMoreBytes` the cursor
-    /// is left untouched so the caller can resume after appending more
-    /// bytes (RFC §synth-5-B L494-519). Returns `std::nullopt` on the
-    /// `NeedMoreBytes` boundary; later phases attach a typed error via
-    /// `cursor.last_error()`.
-    static std::optional<CodecZenohEncoding> decode(::SCE::Forge::SceCursor& cursor) {
+    /// advances past the consumed bytes and the value is answered; a
+    /// refused frame answers the `CodecError` that refused it
+    /// (docs/adr/0099, amendment of 2026-11-16): `NeedMoreBytes` when
+    /// the cursor's tail is shorter than the frame (RFC §synth-5-B
+    /// L494-519), which the caller resumes after appending bytes, and
+    /// another kind for a frame no more bytes make whole.
+    static ::SCE::Forge::Decoded<CodecZenohEncoding> decode(::SCE::Forge::SceCursor& cursor) {
         // Streaming cursor decode (SSOT selection: `needs_streaming`).
         // The positional `raw[byte_off]` path is valid only when every
         // field's absolute offset is fixed at codegen time; this branch
@@ -136,35 +150,34 @@ struct CodecZenohEncoding {
         // advances past exactly what it consumed. Per-field `is_repeat` /
         // `is_tlv_chain` / `is_embed` route to their dedicated helpers;
         // every other field flows through `present_if_decode_stmt`.
-        auto packed_id_opt = cursor.read_vle_u32();
-        if (!packed_id_opt.has_value()) return std::nullopt;
-        auto packed_id = static_cast<std::uint32_t>(*packed_id_opt);
+        auto packed_id_read = cursor.read_vle_u32();
+        if (!packed_id_read.has_value()) return packed_id_read.error();
+        auto packed_id = static_cast<std::uint32_t>(*packed_id_read);
         std::optional<uint64_t> schema_len;
         if ((packed_id & 0x00000001) != 0) {
-            auto _v_opt = cursor.read_vle_u64();
-        if (!_v_opt.has_value()) return std::nullopt;
-        auto _v = static_cast<std::uint64_t>(*_v_opt);
+            auto _v_read = cursor.read_vle_u64();
+        if (!_v_read.has_value()) return _v_read.error();
+        auto _v = static_cast<std::uint64_t>(*_v_read);
             schema_len = _v;
         }
         std::optional<std::string> schema;
         if ((packed_id & 0x00000001) != 0) {
             const auto _len = schema_len.value();
             if (_len > 255) {
-                cursor.refuse(::SCE::Forge::CodecError::LengthOutOfRange); return std::nullopt;
+                return ::SCE::Forge::CodecError::LengthOutOfRange;
             }
             std::size_t _n = static_cast<std::size_t>(_len);
             const std::uint8_t* raw = cursor.peek_slice(_n);
-            if (raw == nullptr) return std::nullopt;
-            if (!::SCE::Forge::is_valid_utf8(raw, _n)) return std::nullopt;
+            if (raw == nullptr) return ::SCE::Forge::CodecError::NeedMoreBytes;
+            if (!::SCE::Forge::is_valid_utf8(raw, _n)) return ::SCE::Forge::CodecError::InvalidUtf8;
             schema.emplace(reinterpret_cast<const char*>(raw), _n);
-            if (!cursor.advance(_n)) return std::nullopt;
+            if (!cursor.advance(_n)) return ::SCE::Forge::CodecError::NeedMoreBytes;
         }
         std::optional<::SCE::Forge::Text<255>> _b_schema;
         if (schema) {
             _b_schema = ::SCE::Forge::Text<255>::make(*schema);
             if (!_b_schema) {
-                cursor.refuse(::SCE::Forge::CodecError::LengthOutOfRange);
-                return std::nullopt;
+                return ::SCE::Forge::CodecError::LengthOutOfRange;
             }
         }
         (void)schema_len;

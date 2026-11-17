@@ -120,6 +120,17 @@ struct Wire {
     }
 };
 
+/// The `total_length` the frame of a source of `CodecZenohDeclExtKeyexpr` carries, which its encode
+/// derives from what it measures and no value holds (docs/adr/0081 §3).
+template <class S>
+[[nodiscard]] uint64_t wire_total_length(const S& src) noexcept(is_nothrow_source<S>::value) {
+    static_assert(is_source<S>::value, "S presents every element of CodecZenohDeclExtKeyexpr");
+    const auto& _r_inner = source::inner(src);
+    ::SCE::Forge::CountingSink _k_inner;
+    (void)::SCE::Generated::CodecZenohDeclExtKeyexprInner::Wire::encode_source(_r_inner, _k_inner);
+    return static_cast<uint64_t>(_k_inner.position());
+}
+
 struct CodecZenohDeclExtKeyexpr {
     CodecZenohDeclExtKeyexpr() = default;
     /// The value of each element it presents, in declaration order (ADR 0059 §5).
@@ -131,12 +142,13 @@ struct CodecZenohDeclExtKeyexpr {
     [[nodiscard]] const ::SCE::Generated::CodecZenohDeclExtKeyexprInner::CodecZenohDeclExtKeyexprInner& inner() const noexcept { return inner_; }
 
     /// Decode the next frame from `cursor`. On success the cursor
-    /// advances past the consumed bytes; on `NeedMoreBytes` the cursor
-    /// is left untouched so the caller can resume after appending more
-    /// bytes (RFC §synth-5-B L494-519). Returns `std::nullopt` on the
-    /// `NeedMoreBytes` boundary; later phases attach a typed error via
-    /// `cursor.last_error()`.
-    static std::optional<CodecZenohDeclExtKeyexpr> decode(::SCE::Forge::SceCursor& cursor) {
+    /// advances past the consumed bytes and the value is answered; a
+    /// refused frame answers the `CodecError` that refused it
+    /// (docs/adr/0099, amendment of 2026-11-16): `NeedMoreBytes` when
+    /// the cursor's tail is shorter than the frame (RFC §synth-5-B
+    /// L494-519), which the caller resumes after appending bytes, and
+    /// another kind for a frame no more bytes make whole.
+    static ::SCE::Forge::Decoded<CodecZenohDeclExtKeyexpr> decode(::SCE::Forge::SceCursor& cursor) {
         // Streaming cursor decode (SSOT selection: `needs_streaming`).
         // The positional `raw[byte_off]` path is valid only when every
         // field's absolute offset is fixed at codegen time; this branch
@@ -151,22 +163,22 @@ struct CodecZenohDeclExtKeyexpr {
         uint8_t outer_header;
         {
             const std::uint8_t* raw = cursor.peek_slice(1);
-            if (raw == nullptr) return std::nullopt;
+            if (raw == nullptr) return ::SCE::Forge::CodecError::NeedMoreBytes;
             outer_header = static_cast<uint8_t>(raw[0]);
-            if (!cursor.advance(1)) return std::nullopt;
+            if (!cursor.advance(1)) return ::SCE::Forge::CodecError::NeedMoreBytes;
         }
-        auto total_length_opt = cursor.read_vle_u64();
-        if (!total_length_opt.has_value()) return std::nullopt;
-        auto total_length = static_cast<std::uint64_t>(*total_length_opt);
+        auto total_length_read = cursor.read_vle_u64();
+        if (!total_length_read.has_value()) return total_length_read.error();
+        auto total_length = static_cast<std::uint64_t>(*total_length_read);
         ::SCE::Generated::CodecZenohDeclExtKeyexprInner::CodecZenohDeclExtKeyexprInner inner;
         {
             std::size_t _len = static_cast<std::size_t>(total_length);
             const std::uint8_t* _raw = cursor.peek_slice(_len);
-            if (_raw == nullptr) return std::nullopt;
+            if (_raw == nullptr) return ::SCE::Forge::CodecError::NeedMoreBytes;
             ::SCE::Forge::SceCursor _inner(_raw, _len);
             auto _emb = ::SCE::Generated::CodecZenohDeclExtKeyexprInner::CodecZenohDeclExtKeyexprInner::decode(_inner);
-            if (!_emb.has_value()) return std::nullopt;
-            if (!cursor.advance(_len)) return std::nullopt;
+            if (!_emb.has_value()) return _emb.error();
+            if (!cursor.advance(_len)) return ::SCE::Forge::CodecError::NeedMoreBytes;
             inner = std::move(*_emb);
         }
         (void)total_length;

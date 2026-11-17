@@ -480,6 +480,7 @@ impl Test198Policy {
                 ::sce_rust_runtime::sce_log_error!("Guard evaluation failed for '{}': {}", cond, e);
                 engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(
                     Test198Event::ErrorExecution,
+                    ::sce_rust_runtime::ErrorReason::ExpressionFailed,
                     reason,
                 ));
                 None

@@ -1,5 +1,5 @@
 // SCE-GENERATED — DO NOT EDIT
-// source-hash: 65fb42bdd588f958b0fbb29ac261cf039d02606d7afaae0720c045624bd679ba
+// source-hash: 2073d8a55462e1ce61d8a77293fdd2c141aceda8ad173303c5b84813ca22eeee
 
 // SPDX-License-Identifier: AGPL-3.0-only WITH AdditionRef-SCE-Linking-Exception OR LicenseRef-SCE-Commercial
 // SPDX-FileCopyrightText: Copyright (c) 2025-2026 [Author of input SCXML file] (content derived from the input document)
@@ -2640,7 +2640,7 @@ impl StatePolicy for SheetPeerPolicy {
                         })() {
                             Ok(()) => false,
                             Err(_) => {
-                                engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(SheetPeerEvent::ErrorExecution, "<assign location='clock'>: an integer operation overflowed or failed"));
+                                engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(SheetPeerEvent::ErrorExecution, ::sce_rust_runtime::ErrorReason::ExpressionFailed, "<assign location='clock'>: an integer operation overflowed or failed"));
                                 true
                             }
                         };
@@ -2879,7 +2879,7 @@ impl StatePolicy for SheetPeerPolicy {
                             // support — the act it asked for was performed by nobody. Same
                             // event, so a wiring mistake cannot read as success.
                             if __sce_served.is_none() && !engine.has_event_processor("sce:mesh") {
-                                let mut err_meta = sce_rust_runtime::EventWithMetadata::platform_error(SheetPeerEvent::ErrorExecution, "<send type='sce:mesh'> names a processor the host declared but never registered");
+                                let mut err_meta = sce_rust_runtime::EventWithMetadata::platform_error(SheetPeerEvent::ErrorExecution, ::sce_rust_runtime::ErrorReason::ProcessorUnregistered, "<send type='sce:mesh'> names a processor the host declared but never registered");
                                 engine.raise(err_meta);
                             }
                         }
@@ -2907,7 +2907,7 @@ impl StatePolicy for SheetPeerPolicy {
                         })() {
                             Ok(()) => false,
                             Err(_) => {
-                                engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(SheetPeerEvent::ErrorExecution, "<assign location='clock'>: an integer operation overflowed or failed"));
+                                engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(SheetPeerEvent::ErrorExecution, ::sce_rust_runtime::ErrorReason::ExpressionFailed, "<assign location='clock'>: an integer operation overflowed or failed"));
                                 true
                             }
                         };
@@ -3139,7 +3139,7 @@ impl StatePolicy for SheetPeerPolicy {
                             // support — the act it asked for was performed by nobody. Same
                             // event, so a wiring mistake cannot read as success.
                             if __sce_served.is_none() && !engine.has_event_processor("sce:mesh") {
-                                let mut err_meta = sce_rust_runtime::EventWithMetadata::platform_error(SheetPeerEvent::ErrorExecution, "<send type='sce:mesh'> names a processor the host declared but never registered");
+                                let mut err_meta = sce_rust_runtime::EventWithMetadata::platform_error(SheetPeerEvent::ErrorExecution, ::sce_rust_runtime::ErrorReason::ProcessorUnregistered, "<send type='sce:mesh'> names a processor the host declared but never registered");
                                 engine.raise(err_meta);
                             }
                         }
@@ -3177,7 +3177,7 @@ impl StatePolicy for SheetPeerPolicy {
 })() {
     Ok(()) => false,
     Err(_) => {
-        engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(SheetPeerEvent::ErrorExecution, "<assign location='clock'>: an integer operation overflowed or failed"));
+        engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(SheetPeerEvent::ErrorExecution, ::sce_rust_runtime::ErrorReason::ExpressionFailed, "<assign location='clock'>: an integer operation overflowed or failed"));
         true
     }
 };
@@ -3241,7 +3241,7 @@ impl StatePolicy for SheetPeerPolicy {
                         })() {
                             Ok(()) => false,
                             Err(_) => {
-                                engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(SheetPeerEvent::ErrorExecution, "<assign location='cells'>: an integer operation overflowed or failed"));
+                                engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(SheetPeerEvent::ErrorExecution, ::sce_rust_runtime::ErrorReason::ExpressionFailed, "<assign location='cells'>: an integer operation overflowed or failed"));
                                 true
                             }
                         };
@@ -3389,7 +3389,7 @@ impl StatePolicy for SheetPeerPolicy {
                                 // event, so a wiring mistake cannot read as success.
                                 if __sce_served.is_none() && !engine.has_event_processor("sce:mesh")
                                 {
-                                    let mut err_meta = sce_rust_runtime::EventWithMetadata::platform_error(SheetPeerEvent::ErrorExecution, "<send type='sce:mesh'> names a processor the host declared but never registered");
+                                    let mut err_meta = sce_rust_runtime::EventWithMetadata::platform_error(SheetPeerEvent::ErrorExecution, ::sce_rust_runtime::ErrorReason::ProcessorUnregistered, "<send type='sce:mesh'> names a processor the host declared but never registered");
                                     engine.raise(err_meta);
                                 }
                             }
@@ -3520,7 +3520,7 @@ impl StatePolicy for SheetPeerPolicy {
                                 // event, so a wiring mistake cannot read as success.
                                 if __sce_served.is_none() && !engine.has_event_processor("sce:mesh")
                                 {
-                                    let mut err_meta = sce_rust_runtime::EventWithMetadata::platform_error(SheetPeerEvent::ErrorExecution, "<send type='sce:mesh'> names a processor the host declared but never registered");
+                                    let mut err_meta = sce_rust_runtime::EventWithMetadata::platform_error(SheetPeerEvent::ErrorExecution, ::sce_rust_runtime::ErrorReason::ProcessorUnregistered, "<send type='sce:mesh'> names a processor the host declared but never registered");
                                     engine.raise(err_meta);
                                 }
                             }
@@ -3554,7 +3554,7 @@ impl StatePolicy for SheetPeerPolicy {
                         })() {
                             Ok(()) => false,
                             Err(_) => {
-                                engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(SheetPeerEvent::ErrorExecution, "<assign location='trail'>: an integer operation overflowed or failed"));
+                                engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(SheetPeerEvent::ErrorExecution, ::sce_rust_runtime::ErrorReason::ExpressionFailed, "<assign location='trail'>: an integer operation overflowed or failed"));
                                 true
                             }
                         };
@@ -3572,7 +3572,7 @@ impl StatePolicy for SheetPeerPolicy {
                         })() {
                             Ok(()) => false,
                             Err(_) => {
-                                engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(SheetPeerEvent::ErrorExecution, "<assign location='shown'>: an integer operation overflowed or failed"));
+                                engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(SheetPeerEvent::ErrorExecution, ::sce_rust_runtime::ErrorReason::ExpressionFailed, "<assign location='shown'>: an integer operation overflowed or failed"));
                                 true
                             }
                         };
@@ -3600,7 +3600,7 @@ impl StatePolicy for SheetPeerPolicy {
                         })() {
                             Ok(()) => false,
                             Err(_) => {
-                                engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(SheetPeerEvent::ErrorExecution, "<assign location='lamport'>: an integer operation overflowed or failed"));
+                                engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(SheetPeerEvent::ErrorExecution, ::sce_rust_runtime::ErrorReason::ExpressionFailed, "<assign location='lamport'>: an integer operation overflowed or failed"));
                                 true
                             }
                         };
@@ -3619,7 +3619,7 @@ impl StatePolicy for SheetPeerPolicy {
                         })() {
                             Ok(()) => false,
                             Err(_) => {
-                                engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(SheetPeerEvent::ErrorExecution, "<assign location='newKey'>: an integer operation overflowed or failed"));
+                                engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(SheetPeerEvent::ErrorExecution, ::sce_rust_runtime::ErrorReason::ExpressionFailed, "<assign location='newKey'>: an integer operation overflowed or failed"));
                                 true
                             }
                         };
@@ -3734,7 +3734,7 @@ impl StatePolicy for SheetPeerPolicy {
                             // support — the act it asked for was performed by nobody. Same
                             // event, so a wiring mistake cannot read as success.
                             if __sce_served.is_none() && !engine.has_event_processor("sce:mesh") {
-                                let mut err_meta = sce_rust_runtime::EventWithMetadata::platform_error(SheetPeerEvent::ErrorExecution, "<send type='sce:mesh'> names a processor the host declared but never registered");
+                                let mut err_meta = sce_rust_runtime::EventWithMetadata::platform_error(SheetPeerEvent::ErrorExecution, ::sce_rust_runtime::ErrorReason::ProcessorUnregistered, "<send type='sce:mesh'> names a processor the host declared but never registered");
                                 engine.raise(err_meta);
                             }
                         }
@@ -3762,7 +3762,7 @@ impl StatePolicy for SheetPeerPolicy {
 })() {
     Ok(sce_value) => sce_value,
     Err(_) => {
-        engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(SheetPeerEvent::ErrorExecution, "<if cond='_event.data.key / 256 > lamport'>: an integer operation overflowed or failed"));
+        engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(SheetPeerEvent::ErrorExecution, ::sce_rust_runtime::ErrorReason::ExpressionFailed, "<if cond='_event.data.key / 256 > lamport'>: an integer operation overflowed or failed"));
         if_cond_failed = true;
         false
     }
@@ -3775,7 +3775,7 @@ let sce_failed = match (|| -> Result<(), sce_forge_runtime::algorithm::Algorithm
 })() {
     Ok(()) => false,
     Err(_) => {
-        engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(SheetPeerEvent::ErrorExecution, "<assign location='lamport'>: an integer operation overflowed or failed"));
+        engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(SheetPeerEvent::ErrorExecution, ::sce_rust_runtime::ErrorReason::ExpressionFailed, "<assign location='lamport'>: an integer operation overflowed or failed"));
         true
     }
 };
@@ -3807,7 +3807,7 @@ if sce_failed {
 })() {
     Ok(()) => false,
     Err(_) => {
-        engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(SheetPeerEvent::ErrorExecution, "<assign location='orphans'>: an integer operation overflowed or failed"));
+        engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(SheetPeerEvent::ErrorExecution, ::sce_rust_runtime::ErrorReason::ExpressionFailed, "<assign location='orphans'>: an integer operation overflowed or failed"));
         true
     }
 };
@@ -3826,7 +3826,7 @@ if sce_failed {
                         })() {
                             Ok(()) => false,
                             Err(_) => {
-                                engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(SheetPeerEvent::ErrorExecution, "<assign location='rows'>: an integer operation overflowed or failed"));
+                                engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(SheetPeerEvent::ErrorExecution, ::sce_rust_runtime::ErrorReason::ExpressionFailed, "<assign location='rows'>: an integer operation overflowed or failed"));
                                 true
                             }
                         };
@@ -3861,7 +3861,7 @@ if sce_failed {
 })() {
     Ok(sce_value) => sce_value,
     Err(_) => {
-        engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(SheetPeerEvent::ErrorExecution, "<if cond='hub && _event.data.key % 256 !== 1'>: an integer operation overflowed or failed"));
+        engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(SheetPeerEvent::ErrorExecution, ::sce_rust_runtime::ErrorReason::ExpressionFailed, "<if cond='hub && _event.data.key % 256 !== 1'>: an integer operation overflowed or failed"));
         if_cond_failed = true;
         false
     }
@@ -3922,7 +3922,7 @@ if sce_failed {
         // support — the act it asked for was performed by nobody. Same
         // event, so a wiring mistake cannot read as success.
         if __sce_served.is_none() && !engine.has_event_processor("sce:mesh") {
-            let mut err_meta = sce_rust_runtime::EventWithMetadata::platform_error(SheetPeerEvent::ErrorExecution, "<send type='sce:mesh'> names a processor the host declared but never registered");
+            let mut err_meta = sce_rust_runtime::EventWithMetadata::platform_error(SheetPeerEvent::ErrorExecution, ::sce_rust_runtime::ErrorReason::ProcessorUnregistered, "<send type='sce:mesh'> names a processor the host declared but never registered");
             engine.raise(err_meta);
         }
     }
@@ -3944,7 +3944,7 @@ if sce_failed {
 })() {
     Ok(sce_value) => sce_value,
     Err(_) => {
-        engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(SheetPeerEvent::ErrorExecution, "<if cond='hub && _event.data.key % 256 !== 2'>: an integer operation overflowed or failed"));
+        engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(SheetPeerEvent::ErrorExecution, ::sce_rust_runtime::ErrorReason::ExpressionFailed, "<if cond='hub && _event.data.key % 256 !== 2'>: an integer operation overflowed or failed"));
         if_cond_failed = true;
         false
     }
@@ -4005,7 +4005,7 @@ if sce_failed {
         // support — the act it asked for was performed by nobody. Same
         // event, so a wiring mistake cannot read as success.
         if __sce_served.is_none() && !engine.has_event_processor("sce:mesh") {
-            let mut err_meta = sce_rust_runtime::EventWithMetadata::platform_error(SheetPeerEvent::ErrorExecution, "<send type='sce:mesh'> names a processor the host declared but never registered");
+            let mut err_meta = sce_rust_runtime::EventWithMetadata::platform_error(SheetPeerEvent::ErrorExecution, ::sce_rust_runtime::ErrorReason::ProcessorUnregistered, "<send type='sce:mesh'> names a processor the host declared but never registered");
             engine.raise(err_meta);
         }
     }
@@ -4137,7 +4137,7 @@ if sce_failed {
                             // support — the act it asked for was performed by nobody. Same
                             // event, so a wiring mistake cannot read as success.
                             if __sce_served.is_none() && !engine.has_event_processor("sce:mesh") {
-                                let mut err_meta = sce_rust_runtime::EventWithMetadata::platform_error(SheetPeerEvent::ErrorExecution, "<send type='sce:mesh'> names a processor the host declared but never registered");
+                                let mut err_meta = sce_rust_runtime::EventWithMetadata::platform_error(SheetPeerEvent::ErrorExecution, ::sce_rust_runtime::ErrorReason::ProcessorUnregistered, "<send type='sce:mesh'> names a processor the host declared but never registered");
                                 engine.raise(err_meta);
                             }
                         }
@@ -4173,7 +4173,7 @@ if sce_failed {
                         })() {
                             Ok(()) => false,
                             Err(_) => {
-                                engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(SheetPeerEvent::ErrorExecution, "<assign location='gone'>: an integer operation overflowed or failed"));
+                                engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(SheetPeerEvent::ErrorExecution, ::sce_rust_runtime::ErrorReason::ExpressionFailed, "<assign location='gone'>: an integer operation overflowed or failed"));
                                 true
                             }
                         };
@@ -4262,7 +4262,7 @@ if sce_failed {
                                 // event, so a wiring mistake cannot read as success.
                                 if __sce_served.is_none() && !engine.has_event_processor("sce:mesh")
                                 {
-                                    let mut err_meta = sce_rust_runtime::EventWithMetadata::platform_error(SheetPeerEvent::ErrorExecution, "<send type='sce:mesh'> names a processor the host declared but never registered");
+                                    let mut err_meta = sce_rust_runtime::EventWithMetadata::platform_error(SheetPeerEvent::ErrorExecution, ::sce_rust_runtime::ErrorReason::ProcessorUnregistered, "<send type='sce:mesh'> names a processor the host declared but never registered");
                                     engine.raise(err_meta);
                                 }
                             }
@@ -4334,7 +4334,7 @@ if sce_failed {
                                 // event, so a wiring mistake cannot read as success.
                                 if __sce_served.is_none() && !engine.has_event_processor("sce:mesh")
                                 {
-                                    let mut err_meta = sce_rust_runtime::EventWithMetadata::platform_error(SheetPeerEvent::ErrorExecution, "<send type='sce:mesh'> names a processor the host declared but never registered");
+                                    let mut err_meta = sce_rust_runtime::EventWithMetadata::platform_error(SheetPeerEvent::ErrorExecution, ::sce_rust_runtime::ErrorReason::ProcessorUnregistered, "<send type='sce:mesh'> names a processor the host declared but never registered");
                                     engine.raise(err_meta);
                                 }
                             }
@@ -4364,7 +4364,7 @@ if sce_failed {
                         })() {
                             Ok(()) => false,
                             Err(_) => {
-                                engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(SheetPeerEvent::ErrorExecution, "<assign location='lamport'>: an integer operation overflowed or failed"));
+                                engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(SheetPeerEvent::ErrorExecution, ::sce_rust_runtime::ErrorReason::ExpressionFailed, "<assign location='lamport'>: an integer operation overflowed or failed"));
                                 true
                             }
                         };
@@ -4383,7 +4383,7 @@ if sce_failed {
                         })() {
                             Ok(()) => false,
                             Err(_) => {
-                                engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(SheetPeerEvent::ErrorExecution, "<assign location='newKey'>: an integer operation overflowed or failed"));
+                                engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(SheetPeerEvent::ErrorExecution, ::sce_rust_runtime::ErrorReason::ExpressionFailed, "<assign location='newKey'>: an integer operation overflowed or failed"));
                                 true
                             }
                         };
@@ -4498,7 +4498,7 @@ if sce_failed {
                             // support — the act it asked for was performed by nobody. Same
                             // event, so a wiring mistake cannot read as success.
                             if __sce_served.is_none() && !engine.has_event_processor("sce:mesh") {
-                                let mut err_meta = sce_rust_runtime::EventWithMetadata::platform_error(SheetPeerEvent::ErrorExecution, "<send type='sce:mesh'> names a processor the host declared but never registered");
+                                let mut err_meta = sce_rust_runtime::EventWithMetadata::platform_error(SheetPeerEvent::ErrorExecution, ::sce_rust_runtime::ErrorReason::ProcessorUnregistered, "<send type='sce:mesh'> names a processor the host declared but never registered");
                                 engine.raise(err_meta);
                             }
                         }
@@ -4526,7 +4526,7 @@ if sce_failed {
 })() {
     Ok(sce_value) => sce_value,
     Err(_) => {
-        engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(SheetPeerEvent::ErrorExecution, "<if cond='_event.data.key / 256 > lamport'>: an integer operation overflowed or failed"));
+        engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(SheetPeerEvent::ErrorExecution, ::sce_rust_runtime::ErrorReason::ExpressionFailed, "<if cond='_event.data.key / 256 > lamport'>: an integer operation overflowed or failed"));
         if_cond_failed = true;
         false
     }
@@ -4539,7 +4539,7 @@ let sce_failed = match (|| -> Result<(), sce_forge_runtime::algorithm::Algorithm
 })() {
     Ok(()) => false,
     Err(_) => {
-        engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(SheetPeerEvent::ErrorExecution, "<assign location='lamport'>: an integer operation overflowed or failed"));
+        engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(SheetPeerEvent::ErrorExecution, ::sce_rust_runtime::ErrorReason::ExpressionFailed, "<assign location='lamport'>: an integer operation overflowed or failed"));
         true
     }
 };
@@ -4571,7 +4571,7 @@ if sce_failed {
 })() {
     Ok(()) => false,
     Err(_) => {
-        engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(SheetPeerEvent::ErrorExecution, "<assign location='orphans'>: an integer operation overflowed or failed"));
+        engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(SheetPeerEvent::ErrorExecution, ::sce_rust_runtime::ErrorReason::ExpressionFailed, "<assign location='orphans'>: an integer operation overflowed or failed"));
         true
     }
 };
@@ -4590,7 +4590,7 @@ if sce_failed {
                         })() {
                             Ok(()) => false,
                             Err(_) => {
-                                engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(SheetPeerEvent::ErrorExecution, "<assign location='cols'>: an integer operation overflowed or failed"));
+                                engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(SheetPeerEvent::ErrorExecution, ::sce_rust_runtime::ErrorReason::ExpressionFailed, "<assign location='cols'>: an integer operation overflowed or failed"));
                                 true
                             }
                         };
@@ -4625,7 +4625,7 @@ if sce_failed {
 })() {
     Ok(sce_value) => sce_value,
     Err(_) => {
-        engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(SheetPeerEvent::ErrorExecution, "<if cond='hub && _event.data.key % 256 !== 1'>: an integer operation overflowed or failed"));
+        engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(SheetPeerEvent::ErrorExecution, ::sce_rust_runtime::ErrorReason::ExpressionFailed, "<if cond='hub && _event.data.key % 256 !== 1'>: an integer operation overflowed or failed"));
         if_cond_failed = true;
         false
     }
@@ -4686,7 +4686,7 @@ if sce_failed {
         // support — the act it asked for was performed by nobody. Same
         // event, so a wiring mistake cannot read as success.
         if __sce_served.is_none() && !engine.has_event_processor("sce:mesh") {
-            let mut err_meta = sce_rust_runtime::EventWithMetadata::platform_error(SheetPeerEvent::ErrorExecution, "<send type='sce:mesh'> names a processor the host declared but never registered");
+            let mut err_meta = sce_rust_runtime::EventWithMetadata::platform_error(SheetPeerEvent::ErrorExecution, ::sce_rust_runtime::ErrorReason::ProcessorUnregistered, "<send type='sce:mesh'> names a processor the host declared but never registered");
             engine.raise(err_meta);
         }
     }
@@ -4708,7 +4708,7 @@ if sce_failed {
 })() {
     Ok(sce_value) => sce_value,
     Err(_) => {
-        engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(SheetPeerEvent::ErrorExecution, "<if cond='hub && _event.data.key % 256 !== 2'>: an integer operation overflowed or failed"));
+        engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(SheetPeerEvent::ErrorExecution, ::sce_rust_runtime::ErrorReason::ExpressionFailed, "<if cond='hub && _event.data.key % 256 !== 2'>: an integer operation overflowed or failed"));
         if_cond_failed = true;
         false
     }
@@ -4769,7 +4769,7 @@ if sce_failed {
         // support — the act it asked for was performed by nobody. Same
         // event, so a wiring mistake cannot read as success.
         if __sce_served.is_none() && !engine.has_event_processor("sce:mesh") {
-            let mut err_meta = sce_rust_runtime::EventWithMetadata::platform_error(SheetPeerEvent::ErrorExecution, "<send type='sce:mesh'> names a processor the host declared but never registered");
+            let mut err_meta = sce_rust_runtime::EventWithMetadata::platform_error(SheetPeerEvent::ErrorExecution, ::sce_rust_runtime::ErrorReason::ProcessorUnregistered, "<send type='sce:mesh'> names a processor the host declared but never registered");
             engine.raise(err_meta);
         }
     }
@@ -4902,7 +4902,7 @@ if sce_failed {
                             // support — the act it asked for was performed by nobody. Same
                             // event, so a wiring mistake cannot read as success.
                             if __sce_served.is_none() && !engine.has_event_processor("sce:mesh") {
-                                let mut err_meta = sce_rust_runtime::EventWithMetadata::platform_error(SheetPeerEvent::ErrorExecution, "<send type='sce:mesh'> names a processor the host declared but never registered");
+                                let mut err_meta = sce_rust_runtime::EventWithMetadata::platform_error(SheetPeerEvent::ErrorExecution, ::sce_rust_runtime::ErrorReason::ProcessorUnregistered, "<send type='sce:mesh'> names a processor the host declared but never registered");
                                 engine.raise(err_meta);
                             }
                         }
@@ -4938,7 +4938,7 @@ if sce_failed {
                         })() {
                             Ok(()) => false,
                             Err(_) => {
-                                engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(SheetPeerEvent::ErrorExecution, "<assign location='goneCols'>: an integer operation overflowed or failed"));
+                                engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(SheetPeerEvent::ErrorExecution, ::sce_rust_runtime::ErrorReason::ExpressionFailed, "<assign location='goneCols'>: an integer operation overflowed or failed"));
                                 true
                             }
                         };
@@ -5027,7 +5027,7 @@ if sce_failed {
                                 // event, so a wiring mistake cannot read as success.
                                 if __sce_served.is_none() && !engine.has_event_processor("sce:mesh")
                                 {
-                                    let mut err_meta = sce_rust_runtime::EventWithMetadata::platform_error(SheetPeerEvent::ErrorExecution, "<send type='sce:mesh'> names a processor the host declared but never registered");
+                                    let mut err_meta = sce_rust_runtime::EventWithMetadata::platform_error(SheetPeerEvent::ErrorExecution, ::sce_rust_runtime::ErrorReason::ProcessorUnregistered, "<send type='sce:mesh'> names a processor the host declared but never registered");
                                     engine.raise(err_meta);
                                 }
                             }
@@ -5099,7 +5099,7 @@ if sce_failed {
                                 // event, so a wiring mistake cannot read as success.
                                 if __sce_served.is_none() && !engine.has_event_processor("sce:mesh")
                                 {
-                                    let mut err_meta = sce_rust_runtime::EventWithMetadata::platform_error(SheetPeerEvent::ErrorExecution, "<send type='sce:mesh'> names a processor the host declared but never registered");
+                                    let mut err_meta = sce_rust_runtime::EventWithMetadata::platform_error(SheetPeerEvent::ErrorExecution, ::sce_rust_runtime::ErrorReason::ProcessorUnregistered, "<send type='sce:mesh'> names a processor the host declared but never registered");
                                     engine.raise(err_meta);
                                 }
                             }
@@ -5125,7 +5125,7 @@ if sce_failed {
                         })() {
                             Ok(()) => false,
                             Err(_) => {
-                                engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(SheetPeerEvent::ErrorExecution, "<assign location='refusals'>: an integer operation overflowed or failed"));
+                                engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(SheetPeerEvent::ErrorExecution, ::sce_rust_runtime::ErrorReason::ExpressionFailed, "<assign location='refusals'>: an integer operation overflowed or failed"));
                                 true
                             }
                         };

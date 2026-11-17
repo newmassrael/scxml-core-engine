@@ -482,6 +482,7 @@ impl Test250SceSynthInvokeInvoke0Policy {
                 ::sce_rust_runtime::sce_log_error!("Guard evaluation failed for '{}': {}", cond, e);
                 engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(
                     Test250SceSynthInvokeInvoke0Event::ErrorExecution,
+                    ::sce_rust_runtime::ErrorReason::ExpressionFailed,
                     reason,
                 ));
                 None
@@ -833,6 +834,7 @@ impl StatePolicy for Test250SceSynthInvokeInvoke0Policy {
                                 );
                                 engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(
                                     Test250SceSynthInvokeInvoke0Event::ErrorExecution,
+                                    ::sce_rust_runtime::ErrorReason::ExpressionFailed,
                                     "<log> expr failed to evaluate",
                                 ));
                                 break 'action_block;
@@ -887,6 +889,7 @@ impl StatePolicy for Test250SceSynthInvokeInvoke0Policy {
                                 );
                                 engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(
                                     Test250SceSynthInvokeInvoke0Event::ErrorExecution,
+                                    ::sce_rust_runtime::ErrorReason::ExpressionFailed,
                                     "<log> expr failed to evaluate",
                                 ));
                                 break 'action_block;
@@ -917,6 +920,7 @@ impl StatePolicy for Test250SceSynthInvokeInvoke0Policy {
                                 );
                                 engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(
                                     Test250SceSynthInvokeInvoke0Event::ErrorExecution,
+                                    ::sce_rust_runtime::ErrorReason::ExpressionFailed,
                                     "<log> expr failed to evaluate",
                                 ));
                                 break 'action_block;

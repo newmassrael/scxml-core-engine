@@ -481,6 +481,7 @@ impl AnInvokeLeftBeforeItStartsRaisesNothingPolicy {
                 );
                 engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(
                     AnInvokeLeftBeforeItStartsRaisesNothingEvent::ErrorExecution,
+                    ::sce_rust_runtime::ErrorReason::ParamUnfit,
                     "<data id='errors'> could not hold the value its invoke handed it",
                 ));
             }
@@ -492,6 +493,7 @@ impl AnInvokeLeftBeforeItStartsRaisesNothingPolicy {
                 ::sce_rust_runtime::sce_log_error!("global: {}", e);
                 engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(
                     AnInvokeLeftBeforeItStartsRaisesNothingEvent::ErrorExecution,
+                    ::sce_rust_runtime::ErrorReason::ExpressionFailed,
                     "<data id='errors'> expr failed to evaluate",
                 ));
             }
@@ -540,6 +542,7 @@ impl AnInvokeLeftBeforeItStartsRaisesNothingPolicy {
                 ::sce_rust_runtime::sce_log_error!("Guard evaluation failed for '{}': {}", cond, e);
                 engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(
                     AnInvokeLeftBeforeItStartsRaisesNothingEvent::ErrorExecution,
+                    ::sce_rust_runtime::ErrorReason::ExpressionFailed,
                     reason,
                 ));
                 None
@@ -639,7 +642,7 @@ impl AnInvokeLeftBeforeItStartsRaisesNothingPolicy {
                 // W3C SCXML 6.4.1: unsupported `type` — place error.execution
                 // on the internal queue and start nothing. No child session,
                 // so no done.invoke follows and nothing is left to cancel.
-                engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(AnInvokeLeftBeforeItStartsRaisesNothingEvent::ErrorExecution, "<invoke type='http://example.invalid/unsupported'> names an external service this platform does not support"));
+                engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(AnInvokeLeftBeforeItStartsRaisesNothingEvent::ErrorExecution, ::sce_rust_runtime::ErrorReason::InvokeTypeUnsupported, "<invoke type='http://example.invalid/unsupported'> names an external service this platform does not support"));
                 continue;
             }
         }
@@ -1077,6 +1080,7 @@ impl StatePolicy for AnInvokeLeftBeforeItStartsRaisesNothingPolicy {
                             ::sce_rust_runtime::sce_log_error!("Assign failed for 'errors': {}", e);
                             engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(
                                 AnInvokeLeftBeforeItStartsRaisesNothingEvent::ErrorExecution,
+                                ::sce_rust_runtime::ErrorReason::AssignmentFailed,
                                 "<assign> to 'errors' failed",
                             ));
                             // W3C SCXML 4.9: the error ends the block, from however deep a <foreach> it came.

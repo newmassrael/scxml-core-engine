@@ -1,5 +1,5 @@
 // SCE-GENERATED — DO NOT EDIT
-// source-hash: 65fb42bdd588f958b0fbb29ac261cf039d02606d7afaae0720c045624bd679ba
+// source-hash: 2073d8a55462e1ce61d8a77293fdd2c141aceda8ad173303c5b84813ca22eeee
 
 // SPDX-License-Identifier: AGPL-3.0-only WITH AdditionRef-SCE-Linking-Exception OR LicenseRef-SCE-Commercial
 // SPDX-FileCopyrightText: Copyright (c) 2025-2026 [Author of input SCXML file] (content derived from the input document)
@@ -1739,7 +1739,7 @@ impl StatePolicy for StaticComposedSendPolicy {
                 // docs/adr/0086, section 15.6: the list is short of its field's
                 // lower count, so the event is refused whole: one error, nothing
                 // delivered, and the error ends the block (W3C SCXML 6.2.3, 4.9).
-                let mut err_meta = sce_rust_runtime::EventWithMetadata::platform_error(StaticComposedSendEvent::ErrorExecution, "<send> <param name='kept'> holds fewer elements than the 1 its field's type declares, so the event is not sent");
+                let mut err_meta = sce_rust_runtime::EventWithMetadata::platform_error(StaticComposedSendEvent::ErrorExecution, ::sce_rust_runtime::ErrorReason::ParamUnfit, "<send> <param name='kept'> holds fewer elements than the 1 its field's type declares, so the event is not sent");
                 err_meta.metadata.send_id = ::sce_rust_runtime::sce_string_from_str(send_id);
                 engine.raise(err_meta);
                 break 'action_block;
@@ -1790,7 +1790,7 @@ impl StatePolicy for StaticComposedSendPolicy {
                         })() {
                             Ok(()) => false,
                             Err(_) => {
-                                engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(StaticComposedSendEvent::ErrorExecution, "<assign location='deliveries'>: an integer operation overflowed or failed"));
+                                engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(StaticComposedSendEvent::ErrorExecution, ::sce_rust_runtime::ErrorReason::ExpressionFailed, "<assign location='deliveries'>: an integer operation overflowed or failed"));
                                 true
                             }
                         };
@@ -1815,7 +1815,7 @@ impl StatePolicy for StaticComposedSendPolicy {
 })() {
     Ok(()) => false,
     Err(_) => {
-        engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(StaticComposedSendEvent::ErrorExecution, "<assign location='tag_count'>: an integer operation overflowed or failed"));
+        engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(StaticComposedSendEvent::ErrorExecution, ::sce_rust_runtime::ErrorReason::ExpressionFailed, "<assign location='tag_count'>: an integer operation overflowed or failed"));
         true
     }
 };
@@ -1830,7 +1830,7 @@ impl StatePolicy for StaticComposedSendPolicy {
 })() {
     Ok(()) => false,
     Err(_) => {
-        engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(StaticComposedSendEvent::ErrorExecution, "<assign location='id_sum'>: an integer operation overflowed or failed"));
+        engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(StaticComposedSendEvent::ErrorExecution, ::sce_rust_runtime::ErrorReason::ExpressionFailed, "<assign location='id_sum'>: an integer operation overflowed or failed"));
         true
     }
 };
@@ -1852,7 +1852,7 @@ impl StatePolicy for StaticComposedSendPolicy {
 })() {
     Ok(()) => false,
     Err(_) => {
-        engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(StaticComposedSendEvent::ErrorExecution, "<assign location='cell_sum'>: an integer operation overflowed or failed"));
+        engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(StaticComposedSendEvent::ErrorExecution, ::sce_rust_runtime::ErrorReason::ExpressionFailed, "<assign location='cell_sum'>: an integer operation overflowed or failed"));
         true
     }
 };
@@ -1872,7 +1872,7 @@ impl StatePolicy for StaticComposedSendPolicy {
 })() {
     Ok(()) => false,
     Err(_) => {
-        engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(StaticComposedSendEvent::ErrorExecution, "<assign location='late_sum'>: an integer operation overflowed or failed"));
+        engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(StaticComposedSendEvent::ErrorExecution, ::sce_rust_runtime::ErrorReason::ExpressionFailed, "<assign location='late_sum'>: an integer operation overflowed or failed"));
         true
     }
 };
@@ -1890,7 +1890,7 @@ impl StatePolicy for StaticComposedSendPolicy {
 })() {
     Ok(()) => false,
     Err(_) => {
-        engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(StaticComposedSendEvent::ErrorExecution, "<assign location='first_maybe'>: an integer operation overflowed or failed"));
+        engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(StaticComposedSendEvent::ErrorExecution, ::sce_rust_runtime::ErrorReason::ExpressionFailed, "<assign location='first_maybe'>: an integer operation overflowed or failed"));
         true
     }
 };
@@ -1905,6 +1905,7 @@ impl StatePolicy for StaticComposedSendPolicy {
                     } else {
                         engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(
                             StaticComposedSendEvent::ErrorExecution,
+                            ::sce_rust_runtime::ErrorReason::AssignmentFailed,
                             "<sce:append target='held'>: the list already holds its capacity of 2",
                         ));
                         true
@@ -1945,7 +1946,7 @@ impl StatePolicy for StaticComposedSendPolicy {
                 // docs/adr/0086, section 15.6: the list is short of its field's
                 // lower count, so the event is refused whole: one error, nothing
                 // delivered, and the error ends the block (W3C SCXML 6.2.3, 4.9).
-                let mut err_meta = sce_rust_runtime::EventWithMetadata::platform_error(StaticComposedSendEvent::ErrorExecution, "<send> <param name='kept'> holds fewer elements than the 1 its field's type declares, so the event is not sent");
+                let mut err_meta = sce_rust_runtime::EventWithMetadata::platform_error(StaticComposedSendEvent::ErrorExecution, ::sce_rust_runtime::ErrorReason::ParamUnfit, "<send> <param name='kept'> holds fewer elements than the 1 its field's type declares, so the event is not sent");
                 err_meta.metadata.send_id = ::sce_rust_runtime::sce_string_from_str(send_id);
                 engine.raise(err_meta);
                 break 'action_block;
@@ -2067,7 +2068,7 @@ impl StatePolicy for StaticComposedSendPolicy {
                         })() {
                             Ok(()) => false,
                             Err(_) => {
-                                engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(StaticComposedSendEvent::ErrorExecution, "<assign location='counted_deliveries'>: an integer operation overflowed or failed"));
+                                engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(StaticComposedSendEvent::ErrorExecution, ::sce_rust_runtime::ErrorReason::ExpressionFailed, "<assign location='counted_deliveries'>: an integer operation overflowed or failed"));
                                 true
                             }
                         };
@@ -2088,7 +2089,7 @@ impl StatePolicy for StaticComposedSendPolicy {
 })() {
     Ok(()) => false,
     Err(_) => {
-        engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(StaticComposedSendEvent::ErrorExecution, "<assign location='counted_sum'>: an integer operation overflowed or failed"));
+        engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(StaticComposedSendEvent::ErrorExecution, ::sce_rust_runtime::ErrorReason::ExpressionFailed, "<assign location='counted_sum'>: an integer operation overflowed or failed"));
         true
     }
 };
@@ -2113,7 +2114,7 @@ impl StatePolicy for StaticComposedSendPolicy {
                         })() {
                             Ok(()) => false,
                             Err(_) => {
-                                engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(StaticComposedSendEvent::ErrorExecution, "<assign location='refusals'>: an integer operation overflowed or failed"));
+                                engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(StaticComposedSendEvent::ErrorExecution, ::sce_rust_runtime::ErrorReason::ExpressionFailed, "<assign location='refusals'>: an integer operation overflowed or failed"));
                                 true
                             }
                         };

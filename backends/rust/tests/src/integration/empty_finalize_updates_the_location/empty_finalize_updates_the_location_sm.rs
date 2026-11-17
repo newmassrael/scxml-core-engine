@@ -578,6 +578,7 @@ impl EmptyFinalizeUpdatesTheLocationPolicy {
                 );
                 engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(
                     EmptyFinalizeUpdatesTheLocationEvent::ErrorExecution,
+                    ::sce_rust_runtime::ErrorReason::ParamUnfit,
                     "<data id='tally'> could not hold the value its invoke handed it",
                 ));
             }
@@ -589,6 +590,7 @@ impl EmptyFinalizeUpdatesTheLocationPolicy {
                 ::sce_rust_runtime::sce_log_error!("global: {}", e);
                 engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(
                     EmptyFinalizeUpdatesTheLocationEvent::ErrorExecution,
+                    ::sce_rust_runtime::ErrorReason::ExpressionFailed,
                     "<data id='tally'> expr failed to evaluate",
                 ));
             }
@@ -603,6 +605,7 @@ impl EmptyFinalizeUpdatesTheLocationPolicy {
                 );
                 engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(
                     EmptyFinalizeUpdatesTheLocationEvent::ErrorExecution,
+                    ::sce_rust_runtime::ErrorReason::ParamUnfit,
                     "<data id='guard'> could not hold the value its invoke handed it",
                 ));
             }
@@ -614,6 +617,7 @@ impl EmptyFinalizeUpdatesTheLocationPolicy {
                 ::sce_rust_runtime::sce_log_error!("global: {}", e);
                 engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(
                     EmptyFinalizeUpdatesTheLocationEvent::ErrorExecution,
+                    ::sce_rust_runtime::ErrorReason::ExpressionFailed,
                     "<data id='guard'> expr failed to evaluate",
                 ));
             }
@@ -628,6 +632,7 @@ impl EmptyFinalizeUpdatesTheLocationPolicy {
                 );
                 engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(
                     EmptyFinalizeUpdatesTheLocationEvent::ErrorExecution,
+                    ::sce_rust_runtime::ErrorReason::ParamUnfit,
                     "<data id='keeper'> could not hold the value its invoke handed it",
                 ));
             }
@@ -639,6 +644,7 @@ impl EmptyFinalizeUpdatesTheLocationPolicy {
                 ::sce_rust_runtime::sce_log_error!("global: {}", e);
                 engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(
                     EmptyFinalizeUpdatesTheLocationEvent::ErrorExecution,
+                    ::sce_rust_runtime::ErrorReason::ExpressionFailed,
                     "<data id='keeper'> expr failed to evaluate",
                 ));
             }
@@ -687,6 +693,7 @@ impl EmptyFinalizeUpdatesTheLocationPolicy {
                 ::sce_rust_runtime::sce_log_error!("Guard evaluation failed for '{}': {}", cond, e);
                 engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(
                     EmptyFinalizeUpdatesTheLocationEvent::ErrorExecution,
+                    ::sce_rust_runtime::ErrorReason::ExpressionFailed,
                     reason,
                 ));
                 None
@@ -877,6 +884,7 @@ impl EmptyFinalizeUpdatesTheLocationPolicy {
                         );
                         engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(
                             EmptyFinalizeUpdatesTheLocationEvent::ErrorExecution,
+                            ::sce_rust_runtime::ErrorReason::LocationInvalid,
                             "<invoke> namelist names a location that cannot be read",
                         ));
                         continue; // W3C SCXML 6.4: the element is terminated; no child
@@ -973,7 +981,7 @@ impl EmptyFinalizeUpdatesTheLocationPolicy {
                     self.active_invokes.remove("inv_absent");
                     engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(
                         EmptyFinalizeUpdatesTheLocationEvent::ErrorExecution,
-                        &format!("<invoke id='{}'> did not start: its child's script session failed at step '{}'", "inv_absent", failure.stage)));
+                        ::sce_rust_runtime::ErrorReason::InvokeChildInitFailed, &format!("<invoke id='{}'> did not start: its child's script session failed at step '{}'", "inv_absent", failure.stage)));
                     continue;
                 }
 
@@ -1002,6 +1010,7 @@ impl EmptyFinalizeUpdatesTheLocationPolicy {
                         );
                         engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(
                             EmptyFinalizeUpdatesTheLocationEvent::ErrorExecution,
+                            ::sce_rust_runtime::ErrorReason::LocationInvalid,
                             "<invoke> namelist names a location that cannot be read",
                         ));
                         continue; // W3C SCXML 6.4: the element is terminated; no child
@@ -1097,7 +1106,7 @@ impl EmptyFinalizeUpdatesTheLocationPolicy {
                     self.active_invokes.remove("inv_empty");
                     engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(
                         EmptyFinalizeUpdatesTheLocationEvent::ErrorExecution,
-                        &format!("<invoke id='{}'> did not start: its child's script session failed at step '{}'", "inv_empty", failure.stage)));
+                        ::sce_rust_runtime::ErrorReason::InvokeChildInitFailed, &format!("<invoke id='{}'> did not start: its child's script session failed at step '{}'", "inv_empty", failure.stage)));
                     continue;
                 }
 
@@ -1126,6 +1135,7 @@ impl EmptyFinalizeUpdatesTheLocationPolicy {
                         );
                         engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(
                             EmptyFinalizeUpdatesTheLocationEvent::ErrorExecution,
+                            ::sce_rust_runtime::ErrorReason::LocationInvalid,
                             "<invoke> namelist names a location that cannot be read",
                         ));
                         continue; // W3C SCXML 6.4: the element is terminated; no child
@@ -1221,7 +1231,7 @@ impl EmptyFinalizeUpdatesTheLocationPolicy {
                     self.active_invokes.remove("inv_unmatched");
                     engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(
                         EmptyFinalizeUpdatesTheLocationEvent::ErrorExecution,
-                        &format!("<invoke id='{}'> did not start: its child's script session failed at step '{}'", "inv_unmatched", failure.stage)));
+                        ::sce_rust_runtime::ErrorReason::InvokeChildInitFailed, &format!("<invoke id='{}'> did not start: its child's script session failed at step '{}'", "inv_unmatched", failure.stage)));
                     continue;
                 }
 

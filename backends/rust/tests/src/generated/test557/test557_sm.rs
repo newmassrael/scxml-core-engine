@@ -448,6 +448,7 @@ impl Test557Policy {
                 );
                 engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(
                     Test557Event::ErrorExecution,
+                    ::sce_rust_runtime::ErrorReason::ParamUnfit,
                     "<data id='var1'> could not hold the value its invoke handed it",
                 ));
             }
@@ -455,7 +456,7 @@ impl Test557Policy {
             // W3C SCXML B.2: XML inline content for 'var1' (global)
             if let Err(e) = se.set_variable_as_dom(&sid, "var1", "<books xmlns=\"\">\n     <book title=\"title1\"></book>\n     <book title=\"title2\"></book>\n   </books>") {
             ::sce_rust_runtime::sce_log_error!("Failed to set DOM variable 'var1' in global: {}", e);
-            engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(Test557Event::ErrorExecution, "<data id='var1'> XML content could not be parsed"));
+            engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(Test557Event::ErrorExecution, ::sce_rust_runtime::ErrorReason::DataInitFailed, "<data id='var1'> XML content could not be parsed"));
         }
         }
 
@@ -468,6 +469,7 @@ impl Test557Policy {
                 );
                 engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(
                     Test557Event::ErrorExecution,
+                    ::sce_rust_runtime::ErrorReason::ParamUnfit,
                     "<data id='var2'> could not hold the value its invoke handed it",
                 ));
             }
@@ -490,6 +492,7 @@ impl Test557Policy {
                     );
                     engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(
                         Test557Event::ErrorExecution,
+                        ::sce_rust_runtime::ErrorReason::DataInitFailed,
                         "<data id='var2' src='file:test557.txt'> could not be loaded",
                     ));
                 }
@@ -539,6 +542,7 @@ impl Test557Policy {
                 ::sce_rust_runtime::sce_log_error!("Guard evaluation failed for '{}': {}", cond, e);
                 engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(
                     Test557Event::ErrorExecution,
+                    ::sce_rust_runtime::ErrorReason::ExpressionFailed,
                     reason,
                 ));
                 None

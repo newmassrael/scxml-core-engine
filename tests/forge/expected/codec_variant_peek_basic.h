@@ -12,6 +12,7 @@
 #include <cstring>
 #include <optional>
 #include <vector>
+#include <cstdlib>
 #include <variant>
 #include <type_traits>
 #include <utility>
@@ -112,12 +113,13 @@ struct CodecVariantPeekBasic {
     [[nodiscard]] const CodecVariantPeekBasicVariant& body() const noexcept { return body_; }
 
     /// Decode the next frame from `cursor`. On success the cursor
-    /// advances past the consumed bytes; on `NeedMoreBytes` the cursor
-    /// is left untouched so the caller can resume after appending more
-    /// bytes (RFC §synth-5-B L494-519). Returns `std::nullopt` on the
-    /// `NeedMoreBytes` boundary; later phases attach a typed error via
-    /// `cursor.last_error()`.
-    static std::optional<CodecVariantPeekBasic> decode(::SCE::Forge::SceCursor& cursor) {
+    /// advances past the consumed bytes and the value is answered; a
+    /// refused frame answers the `CodecError` that refused it
+    /// (docs/adr/0099, amendment of 2026-11-16): `NeedMoreBytes` when
+    /// the cursor's tail is shorter than the frame (RFC §synth-5-B
+    /// L494-519), which the caller resumes after appending bytes, and
+    /// another kind for a frame no more bytes make whole.
+    static ::SCE::Forge::Decoded<CodecVariantPeekBasic> decode(::SCE::Forge::SceCursor& cursor) {
         // RFC §synth-5-B peek-byte / streaming-prefix:
         // streaming prefix decode (variable-length fields supported via
         // per-field present_if/tlv-chain/embed/repeat helpers). Peek-byte
@@ -125,26 +127,27 @@ struct CodecVariantPeekBasic {
         // without advancing — arm body decoder reads it as its own
         // header byte.
         const std::uint8_t* _peek_raw = cursor.peek_slice(1);
-        if (_peek_raw == nullptr) return std::nullopt;
+        if (_peek_raw == nullptr) return ::SCE::Forge::CodecError::NeedMoreBytes;
         const std::uint8_t _peek = _peek_raw[0];
         // Dispatch on tag value into the matching arm body.
         CodecVariantPeekBasicVariant body;
         switch (static_cast<uint8_t>((_peek >> 0) & static_cast<uint8_t>(0x01))) {
             case 0: {
                 auto _arm = ::SCE::Generated::CodecPeekArmA::CodecPeekArmA::decode(cursor);
-                if (!_arm.has_value()) return std::nullopt;
+                if (!_arm.has_value()) return _arm.error();
                 body = *_arm;
                 break;
             }
             case 1: {
                 auto _arm = ::SCE::Generated::CodecPeekArmB::CodecPeekArmB::decode(cursor);
-                if (!_arm.has_value()) return std::nullopt;
+                if (!_arm.has_value()) return _arm.error();
                 body = *_arm;
                 break;
             }
             default: {
-                // codec/variant-arm-unreachable rejected this case at parse time.
-                return std::nullopt;
+                // codec/variant-arm-unreachable proves every tag names an arm,
+                // so no frame reaches here: no kind of rejection names it.
+                std::abort();
             }
         }
         CodecVariantPeekBasic _decoded{

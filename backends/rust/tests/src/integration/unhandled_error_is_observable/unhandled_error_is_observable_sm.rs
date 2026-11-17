@@ -538,6 +538,7 @@ impl UnhandledErrorIsObservablePolicy {
                 );
                 engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(
                     UnhandledErrorIsObservableEvent::ErrorExecution,
+                    ::sce_rust_runtime::ErrorReason::ParamUnfit,
                     "<data id='pokes'> could not hold the value its invoke handed it",
                 ));
             }
@@ -549,6 +550,7 @@ impl UnhandledErrorIsObservablePolicy {
                 ::sce_rust_runtime::sce_log_error!("global: {}", e);
                 engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(
                     UnhandledErrorIsObservableEvent::ErrorExecution,
+                    ::sce_rust_runtime::ErrorReason::ExpressionFailed,
                     "<data id='pokes'> expr failed to evaluate",
                 ));
             }
@@ -563,6 +565,7 @@ impl UnhandledErrorIsObservablePolicy {
                 );
                 engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(
                     UnhandledErrorIsObservableEvent::ErrorExecution,
+                    ::sce_rust_runtime::ErrorReason::ParamUnfit,
                     "<data id='booms'> could not hold the value its invoke handed it",
                 ));
             }
@@ -574,6 +577,7 @@ impl UnhandledErrorIsObservablePolicy {
                 ::sce_rust_runtime::sce_log_error!("global: {}", e);
                 engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(
                     UnhandledErrorIsObservableEvent::ErrorExecution,
+                    ::sce_rust_runtime::ErrorReason::ExpressionFailed,
                     "<data id='booms'> expr failed to evaluate",
                 ));
             }
@@ -588,6 +592,7 @@ impl UnhandledErrorIsObservablePolicy {
                 );
                 engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(
                     UnhandledErrorIsObservableEvent::ErrorExecution,
+                    ::sce_rust_runtime::ErrorReason::ParamUnfit,
                     "<data id='caught'> could not hold the value its invoke handed it",
                 ));
             }
@@ -599,6 +604,7 @@ impl UnhandledErrorIsObservablePolicy {
                 ::sce_rust_runtime::sce_log_error!("global: {}", e);
                 engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(
                     UnhandledErrorIsObservableEvent::ErrorExecution,
+                    ::sce_rust_runtime::ErrorReason::ExpressionFailed,
                     "<data id='caught'> expr failed to evaluate",
                 ));
             }
@@ -613,6 +619,7 @@ impl UnhandledErrorIsObservablePolicy {
                 );
                 engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(
                     UnhandledErrorIsObservableEvent::ErrorExecution,
+                    ::sce_rust_runtime::ErrorReason::ParamUnfit,
                     "<data id='detail'> could not hold the value its invoke handed it",
                 ));
             }
@@ -624,6 +631,7 @@ impl UnhandledErrorIsObservablePolicy {
                 ::sce_rust_runtime::sce_log_error!("global: {}", e);
                 engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(
                     UnhandledErrorIsObservableEvent::ErrorExecution,
+                    ::sce_rust_runtime::ErrorReason::ExpressionFailed,
                     "<data id='detail'> expr failed to evaluate",
                 ));
             }
@@ -638,6 +646,7 @@ impl UnhandledErrorIsObservablePolicy {
                 );
                 engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(
                     UnhandledErrorIsObservableEvent::ErrorExecution,
+                    ::sce_rust_runtime::ErrorReason::ParamUnfit,
                     "<data id='heards'> could not hold the value its invoke handed it",
                 ));
             }
@@ -649,6 +658,7 @@ impl UnhandledErrorIsObservablePolicy {
                 ::sce_rust_runtime::sce_log_error!("global: {}", e);
                 engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(
                     UnhandledErrorIsObservableEvent::ErrorExecution,
+                    ::sce_rust_runtime::ErrorReason::ExpressionFailed,
                     "<data id='heards'> expr failed to evaluate",
                 ));
             }
@@ -697,6 +707,7 @@ impl UnhandledErrorIsObservablePolicy {
                 ::sce_rust_runtime::sce_log_error!("Guard evaluation failed for '{}': {}", cond, e);
                 engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(
                     UnhandledErrorIsObservableEvent::ErrorExecution,
+                    ::sce_rust_runtime::ErrorReason::ExpressionFailed,
                     reason,
                 ));
                 None
@@ -1188,6 +1199,7 @@ impl StatePolicy for UnhandledErrorIsObservablePolicy {
                             ::sce_rust_runtime::sce_log_error!("Assign failed for 'booms': {}", e);
                             engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(
                                 UnhandledErrorIsObservableEvent::ErrorExecution,
+                                ::sce_rust_runtime::ErrorReason::AssignmentFailed,
                                 "<assign> to 'booms' failed",
                             ));
                             // W3C SCXML 4.9: the error ends the block, from however deep a <foreach> it came.
@@ -1203,6 +1215,7 @@ impl StatePolicy for UnhandledErrorIsObservablePolicy {
                         );
                         engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(
                             UnhandledErrorIsObservableEvent::ErrorExecution,
+                            ::sce_rust_runtime::ErrorReason::LocationInvalid,
                             "<assign> has an invalid or read-only location ''",
                         ));
                         // W3C SCXML 4.9: the error ends the block, from however deep a <foreach> it came.
@@ -1232,6 +1245,7 @@ impl StatePolicy for UnhandledErrorIsObservablePolicy {
                             ::sce_rust_runtime::sce_log_error!("Assign failed for 'caught': {}", e);
                             engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(
                                 UnhandledErrorIsObservableEvent::ErrorExecution,
+                                ::sce_rust_runtime::ErrorReason::AssignmentFailed,
                                 "<assign> to 'caught' failed",
                             ));
                             // W3C SCXML 4.9: the error ends the block, from however deep a <foreach> it came.
@@ -1255,6 +1269,7 @@ impl StatePolicy for UnhandledErrorIsObservablePolicy {
                             ::sce_rust_runtime::sce_log_error!("Assign failed for 'detail': {}", e);
                             engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(
                                 UnhandledErrorIsObservableEvent::ErrorExecution,
+                                ::sce_rust_runtime::ErrorReason::AssignmentFailed,
                                 "<assign> to 'detail' failed",
                             ));
                             // W3C SCXML 4.9: the error ends the block, from however deep a <foreach> it came.
@@ -1285,6 +1300,7 @@ impl StatePolicy for UnhandledErrorIsObservablePolicy {
                             ::sce_rust_runtime::sce_log_error!("Assign failed for 'pokes': {}", e);
                             engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(
                                 UnhandledErrorIsObservableEvent::ErrorExecution,
+                                ::sce_rust_runtime::ErrorReason::AssignmentFailed,
                                 "<assign> to 'pokes' failed",
                             ));
                             // W3C SCXML 4.9: the error ends the block, from however deep a <foreach> it came.
@@ -1337,6 +1353,7 @@ impl StatePolicy for UnhandledErrorIsObservablePolicy {
                             ::sce_rust_runtime::sce_log_error!("Assign failed for 'heards': {}", e);
                             engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(
                                 UnhandledErrorIsObservableEvent::ErrorExecution,
+                                ::sce_rust_runtime::ErrorReason::AssignmentFailed,
                                 "<assign> to 'heards' failed",
                             ));
                             // W3C SCXML 4.9: the error ends the block, from however deep a <foreach> it came.
@@ -1367,6 +1384,7 @@ impl StatePolicy for UnhandledErrorIsObservablePolicy {
                             ::sce_rust_runtime::sce_log_error!("Assign failed for 'booms': {}", e);
                             engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(
                                 UnhandledErrorIsObservableEvent::ErrorExecution,
+                                ::sce_rust_runtime::ErrorReason::AssignmentFailed,
                                 "<assign> to 'booms' failed",
                             ));
                             // W3C SCXML 4.9: the error ends the block, from however deep a <foreach> it came.
@@ -1382,6 +1400,7 @@ impl StatePolicy for UnhandledErrorIsObservablePolicy {
                         );
                         engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(
                             UnhandledErrorIsObservableEvent::ErrorExecution,
+                            ::sce_rust_runtime::ErrorReason::LocationInvalid,
                             "<assign> has an invalid or read-only location ''",
                         ));
                         // W3C SCXML 4.9: the error ends the block, from however deep a <foreach> it came.

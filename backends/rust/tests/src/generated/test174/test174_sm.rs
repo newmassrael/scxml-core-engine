@@ -443,6 +443,7 @@ impl Test174Policy {
                 );
                 engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(
                     Test174Event::ErrorExecution,
+                    ::sce_rust_runtime::ErrorReason::ParamUnfit,
                     "<data id='Var1'> could not hold the value its invoke handed it",
                 ));
             }
@@ -494,6 +495,7 @@ impl Test174Policy {
                 ::sce_rust_runtime::sce_log_error!("Guard evaluation failed for '{}': {}", cond, e);
                 engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(
                     Test174Event::ErrorExecution,
+                    ::sce_rust_runtime::ErrorReason::ExpressionFailed,
                     reason,
                 ));
                 None
@@ -817,6 +819,7 @@ impl StatePolicy for Test174Policy {
                             ::sce_rust_runtime::sce_log_error!("Assign failed for 'Var1': {}", e);
                             engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(
                                 Test174Event::ErrorExecution,
+                                ::sce_rust_runtime::ErrorReason::AssignmentFailed,
                                 "<assign> to 'Var1' failed",
                             ));
                             // W3C SCXML 4.9: the error ends the block, from however deep a <foreach> it came.
@@ -831,7 +834,12 @@ impl StatePolicy for Test174Policy {
                         let __sce_arg_sid = self.session_id.as_ref().unwrap().clone();
                         let __sce_arg_se = self.script_engine.clone();
                         let __sce_arg_se: &dyn sce_rust_runtime::IScriptEngine = &*__sce_arg_se;
-                        let mut _send_arg_error: Option<&'static str> = None;
+                        // The code and the sentence of the first argument that failed
+                        // (docs/adr/0106 #111).
+                        let mut _send_arg_error: Option<(
+                            ::sce_rust_runtime::ErrorReason,
+                            &'static str,
+                        )> = None;
                         if _send_arg_error.is_none() {
                             // W3C SCXML 6.2: a type the platform does not support is the same
                             // error as one that cannot be evaluated.
@@ -840,19 +848,20 @@ impl StatePolicy for Test174Policy {
                 if !sce_rust_runtime::helpers::send::is_supported_send_type(
                     &::sce_rust_runtime::helpers::event_data::script_value_to_wire_string(&val),
                 ) {
-                    _send_arg_error = Some("<send> typeexpr names a processor this platform does not support");
+                    _send_arg_error = Some((::sce_rust_runtime::ErrorReason::SendTypeUnsupported, "<send> typeexpr names a processor this platform does not support"));
                 }
             }
             Err(e) => {
                 ::sce_rust_runtime::sce_log_error!("typeexpr eval failed: {}", e);
-                _send_arg_error = Some("<send> typeexpr could not be evaluated");
+                _send_arg_error = Some((::sce_rust_runtime::ErrorReason::ExpressionFailed, "<send> typeexpr could not be evaluated"));
             }
         }
                         }
-                        if let Some(__sce_why) = _send_arg_error {
+                        if let Some((__sce_reason, __sce_why)) = _send_arg_error {
                             ::sce_rust_runtime::sce_log_error!("{}", __sce_why);
                             let mut err_meta = sce_rust_runtime::EventWithMetadata::platform_error(
                                 Test174Event::ErrorExecution,
+                                __sce_reason,
                                 __sce_why,
                             );
                             err_meta.metadata.send_id =

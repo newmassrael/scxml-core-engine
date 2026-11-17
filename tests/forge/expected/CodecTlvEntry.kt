@@ -7,6 +7,7 @@
 package com.sce.generated.codec_tlv_entry
 
 import com.sce.forge.runtime.CodecError
+import com.sce.forge.runtime.Decoded
 import com.sce.forge.runtime.MutableListSink
 import com.sce.forge.runtime.SceCursor
 import com.sce.forge.runtime.SceSink
@@ -53,27 +54,32 @@ data class CodecTlvEntry(
 
     companion object {
         /// Decode the next frame from `cursor`. On success the cursor
-        /// advances past the consumed bytes; returns `null` when the
-        /// cursor's tail is shorter than the declared minimum frame
-        /// (RFC §synth-5-B L494-519).
-        fun decode(cursor: SceCursor): CodecTlvEntry? {
+        /// advances past the consumed bytes and the value is `Decoded.Ok`;
+        /// a refused frame is `Decoded.Refused` with the kind that refused
+        /// it (docs/adr/0099, amendment of 2026-11-16): `NeedMoreBytes` when
+        /// the cursor's tail is shorter than the frame (RFC §synth-5-B
+        /// L494-519), which the caller resumes after appending bytes, and
+        /// another kind for a frame no more bytes make whole.
+        fun decode(cursor: SceCursor): Decoded<CodecTlvEntry> {
             val frameLen = cursor.remaining()
-            if (frameLen < 2) return null
-            val raw = cursor.peekSlice(frameLen) ?: return null
+            if (frameLen < 2) return Decoded.Refused(CodecError.NeedMoreBytes)
+            val raw = cursor.peekSlice(frameLen) ?: return Decoded.Refused(CodecError.NeedMoreBytes)
             val entry_type = raw[0].toUByte()
             val entry_len = raw[1].toUByte()
             if (entry_len > 32u) {
-                cursor.refuse(CodecError.LengthOutOfRange); return null
+                return Decoded.Refused(CodecError.LengthOutOfRange)
             }
-            if (frameLen < 2 + entry_len.toInt()) return null
+            if (frameLen < 2 + entry_len.toInt()) return Decoded.Refused(CodecError.NeedMoreBytes)
             val entry_body = raw.copyOfRange(2, 2 + entry_len.toInt())
-            if (!cursor.advance(frameLen)) return null
+            if (!cursor.advance(frameLen)) return Decoded.Refused(CodecError.NeedMoreBytes)
             // Construct in the `return` (no intermediate local) so a field
             // literally named `value` cannot shadow a result-struct local.
-            return CodecTlvEntry(
-                entry_type = entry_type,
-                entry_len = entry_len,
-                entry_body = entry_body
+            return Decoded.Ok(
+                CodecTlvEntry(
+                    entry_type = entry_type,
+                    entry_len = entry_len,
+                    entry_body = entry_body
+                )
             )
         }
     }

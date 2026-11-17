@@ -1,5 +1,5 @@
 // SCE-GENERATED — DO NOT EDIT
-// source-hash: af10d15aaffa376a1a15664356882e42e5b503eba98fc12c0cc82c0c2fdb6b5b
+// source-hash: ad1361e94d67f726f5c91c69814d48fdfcdb6d67d776abb066def82fa6e8186b
 
 // SPDX-License-Identifier: AGPL-3.0-only WITH AdditionRef-SCE-Linking-Exception OR LicenseRef-SCE-Commercial
 // SPDX-FileCopyrightText: Copyright (c) 2025-2026 [Author of input SCXML file] (content derived from the input document)
@@ -517,6 +517,7 @@ impl TypedReaderNamesPolicy {
                 );
                 engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(
                     TypedReaderNamesEvent::ErrorExecution,
+                    ::sce_rust_runtime::ErrorReason::ParamUnfit,
                     "<data id='box'> could not hold the value its invoke handed it",
                 ));
             }
@@ -528,6 +529,7 @@ impl TypedReaderNamesPolicy {
                 ::sce_rust_runtime::sce_log_error!("global: {}", e);
                 engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(
                     TypedReaderNamesEvent::ErrorExecution,
+                    ::sce_rust_runtime::ErrorReason::ExpressionFailed,
                     "<data id='box'> expr failed to evaluate",
                 ));
             }
@@ -542,6 +544,7 @@ impl TypedReaderNamesPolicy {
                 );
                 engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(
                     TypedReaderNamesEvent::ErrorExecution,
+                    ::sce_rust_runtime::ErrorReason::ParamUnfit,
                     "<data id='object'> could not hold the value its invoke handed it",
                 ));
             }
@@ -553,6 +556,7 @@ impl TypedReaderNamesPolicy {
                 ::sce_rust_runtime::sce_log_error!("global: {}", e);
                 engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(
                     TypedReaderNamesEvent::ErrorExecution,
+                    ::sce_rust_runtime::ErrorReason::ExpressionFailed,
                     "<data id='object'> expr failed to evaluate",
                 ));
             }
@@ -567,6 +571,7 @@ impl TypedReaderNamesPolicy {
                 );
                 engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(
                     TypedReaderNamesEvent::ErrorExecution,
+                    ::sce_rust_runtime::ErrorReason::ParamUnfit,
                     "<data id='pass'> could not hold the value its invoke handed it",
                 ));
             }
@@ -578,6 +583,7 @@ impl TypedReaderNamesPolicy {
                 ::sce_rust_runtime::sce_log_error!("global: {}", e);
                 engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(
                     TypedReaderNamesEvent::ErrorExecution,
+                    ::sce_rust_runtime::ErrorReason::ExpressionFailed,
                     "<data id='pass'> expr failed to evaluate",
                 ));
             }
@@ -592,6 +598,7 @@ impl TypedReaderNamesPolicy {
                 );
                 engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(
                     TypedReaderNamesEvent::ErrorExecution,
+                    ::sce_rust_runtime::ErrorReason::ParamUnfit,
                     "<data id='screen-rules'> could not hold the value its invoke handed it",
                 ));
             }
@@ -606,6 +613,7 @@ impl TypedReaderNamesPolicy {
                 ::sce_rust_runtime::sce_log_error!("global: {}", e);
                 engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(
                     TypedReaderNamesEvent::ErrorExecution,
+                    ::sce_rust_runtime::ErrorReason::ExpressionFailed,
                     "<data id='screen-rules'> expr failed to evaluate",
                 ));
             }
@@ -620,6 +628,7 @@ impl TypedReaderNamesPolicy {
                 );
                 engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(
                     TypedReaderNamesEvent::ErrorExecution,
+                    ::sce_rust_runtime::ErrorReason::ParamUnfit,
                     "<data id='auto'> could not hold the value its invoke handed it",
                 ));
             }
@@ -631,6 +640,7 @@ impl TypedReaderNamesPolicy {
                 ::sce_rust_runtime::sce_log_error!("global: {}", e);
                 engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(
                     TypedReaderNamesEvent::ErrorExecution,
+                    ::sce_rust_runtime::ErrorReason::ExpressionFailed,
                     "<data id='auto'> expr failed to evaluate",
                 ));
             }
@@ -645,6 +655,7 @@ impl TypedReaderNamesPolicy {
                 );
                 engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(
                     TypedReaderNamesEvent::ErrorExecution,
+                    ::sce_rust_runtime::ErrorReason::ParamUnfit,
                     "<data id='self'> could not hold the value its invoke handed it",
                 ));
             }
@@ -656,6 +667,7 @@ impl TypedReaderNamesPolicy {
                 ::sce_rust_runtime::sce_log_error!("global: {}", e);
                 engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(
                     TypedReaderNamesEvent::ErrorExecution,
+                    ::sce_rust_runtime::ErrorReason::ExpressionFailed,
                     "<data id='self'> expr failed to evaluate",
                 ));
             }
@@ -670,6 +682,7 @@ impl TypedReaderNamesPolicy {
                 );
                 engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(
                     TypedReaderNamesEvent::ErrorExecution,
+                    ::sce_rust_runtime::ErrorReason::ParamUnfit,
                     "<data id='new'> could not hold the value its invoke handed it",
                 ));
             }
@@ -681,6 +694,7 @@ impl TypedReaderNamesPolicy {
                 ::sce_rust_runtime::sce_log_error!("global: {}", e);
                 engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(
                     TypedReaderNamesEvent::ErrorExecution,
+                    ::sce_rust_runtime::ErrorReason::ExpressionFailed,
                     "<data id='new'> expr failed to evaluate",
                 ));
             }
@@ -695,6 +709,7 @@ impl TypedReaderNamesPolicy {
                 );
                 engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(
                     TypedReaderNamesEvent::ErrorExecution,
+                    ::sce_rust_runtime::ErrorReason::ParamUnfit,
                     "<data id='start'> could not hold the value its invoke handed it",
                 ));
             }
@@ -706,6 +721,7 @@ impl TypedReaderNamesPolicy {
                 ::sce_rust_runtime::sce_log_error!("global: {}", e);
                 engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(
                     TypedReaderNamesEvent::ErrorExecution,
+                    ::sce_rust_runtime::ErrorReason::ExpressionFailed,
                     "<data id='start'> expr failed to evaluate",
                 ));
             }
@@ -720,6 +736,7 @@ impl TypedReaderNamesPolicy {
                 );
                 engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(
                     TypedReaderNamesEvent::ErrorExecution,
+                    ::sce_rust_runtime::ErrorReason::ParamUnfit,
                     "<data id='t'> could not hold the value its invoke handed it",
                 ));
             }
@@ -731,6 +748,7 @@ impl TypedReaderNamesPolicy {
                 ::sce_rust_runtime::sce_log_error!("global: {}", e);
                 engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(
                     TypedReaderNamesEvent::ErrorExecution,
+                    ::sce_rust_runtime::ErrorReason::ExpressionFailed,
                     "<data id='t'> expr failed to evaluate",
                 ));
             }
@@ -745,6 +763,7 @@ impl TypedReaderNamesPolicy {
                 );
                 engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(
                     TypedReaderNamesEvent::ErrorExecution,
+                    ::sce_rust_runtime::ErrorReason::ParamUnfit,
                     "<data id='a_b'> could not hold the value its invoke handed it",
                 ));
             }
@@ -756,6 +775,7 @@ impl TypedReaderNamesPolicy {
                 ::sce_rust_runtime::sce_log_error!("global: {}", e);
                 engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(
                     TypedReaderNamesEvent::ErrorExecution,
+                    ::sce_rust_runtime::ErrorReason::ExpressionFailed,
                     "<data id='a_b'> expr failed to evaluate",
                 ));
             }
@@ -770,6 +790,7 @@ impl TypedReaderNamesPolicy {
                 );
                 engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(
                     TypedReaderNamesEvent::ErrorExecution,
+                    ::sce_rust_runtime::ErrorReason::ParamUnfit,
                     "<data id='a-b'> could not hold the value its invoke handed it",
                 ));
             }
@@ -781,6 +802,7 @@ impl TypedReaderNamesPolicy {
                 ::sce_rust_runtime::sce_log_error!("global: {}", e);
                 engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(
                     TypedReaderNamesEvent::ErrorExecution,
+                    ::sce_rust_runtime::ErrorReason::ExpressionFailed,
                     "<data id='a-b'> expr failed to evaluate",
                 ));
             }
@@ -829,6 +851,7 @@ impl TypedReaderNamesPolicy {
                 ::sce_rust_runtime::sce_log_error!("Guard evaluation failed for '{}': {}", cond, e);
                 engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(
                     TypedReaderNamesEvent::ErrorExecution,
+                    ::sce_rust_runtime::ErrorReason::ExpressionFailed,
                     reason,
                 ));
                 None
@@ -1269,6 +1292,7 @@ impl StatePolicy for TypedReaderNamesPolicy {
                             ::sce_rust_runtime::sce_log_error!("Assign failed for 'box': {}", e);
                             engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(
                                 TypedReaderNamesEvent::ErrorExecution,
+                                ::sce_rust_runtime::ErrorReason::AssignmentFailed,
                                 "<assign> to 'box' failed",
                             ));
                             // W3C SCXML 4.9: the error ends the block, from however deep a <foreach> it came.
@@ -1292,6 +1316,7 @@ impl StatePolicy for TypedReaderNamesPolicy {
                             ::sce_rust_runtime::sce_log_error!("Assign failed for 'object': {}", e);
                             engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(
                                 TypedReaderNamesEvent::ErrorExecution,
+                                ::sce_rust_runtime::ErrorReason::AssignmentFailed,
                                 "<assign> to 'object' failed",
                             ));
                             // W3C SCXML 4.9: the error ends the block, from however deep a <foreach> it came.
@@ -1315,6 +1340,7 @@ impl StatePolicy for TypedReaderNamesPolicy {
                             ::sce_rust_runtime::sce_log_error!("Assign failed for 'pass': {}", e);
                             engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(
                                 TypedReaderNamesEvent::ErrorExecution,
+                                ::sce_rust_runtime::ErrorReason::AssignmentFailed,
                                 "<assign> to 'pass' failed",
                             ));
                             // W3C SCXML 4.9: the error ends the block, from however deep a <foreach> it came.
@@ -1338,6 +1364,7 @@ impl StatePolicy for TypedReaderNamesPolicy {
                             ::sce_rust_runtime::sce_log_error!("Assign failed for 'a_b': {}", e);
                             engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(
                                 TypedReaderNamesEvent::ErrorExecution,
+                                ::sce_rust_runtime::ErrorReason::AssignmentFailed,
                                 "<assign> to 'a_b' failed",
                             ));
                             // W3C SCXML 4.9: the error ends the block, from however deep a <foreach> it came.

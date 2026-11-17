@@ -195,6 +195,25 @@ struct Wire {
     }
 };
 
+/// The `note_len` the frame of a source of `CodecOriginEnvelope` carries, which its encode
+/// derives from what it measures and no value holds (docs/adr/0081 §3).
+template <class S>
+[[nodiscard]] uint8_t wire_note_len(const S& src) noexcept(is_nothrow_source<S>::value) {
+    static_assert(is_source<S>::value, "S presents every element of CodecOriginEnvelope");
+    const auto& _r_note = source::note(src);
+    const ::SCE::Forge::Text<16> _e_note = _r_note;
+    return static_cast<uint8_t>(_e_note.size());
+}
+
+/// The `m` the frame of a source of `CodecOriginEnvelope` carries, which its encode
+/// derives from what it measures and no value holds (docs/adr/0081 §3).
+template <class S>
+[[nodiscard]] uint8_t wire_m(const S& src) noexcept(is_nothrow_source<S>::value) {
+    static_assert(is_source<S>::value, "S presents every element of CodecOriginEnvelope");
+    const auto& _r_items = source::items(src);
+    return static_cast<uint8_t>(_r_items.size());
+}
+
 struct CodecOriginEnvelope {
     CodecOriginEnvelope() = default;
     /// The value of each element it presents, in declaration order (ADR 0059 §5).
@@ -212,12 +231,13 @@ struct CodecOriginEnvelope {
     [[nodiscard]] ::SCE::Forge::List<::SCE::Generated::CodecOriginLeaf::CodecOriginLeaf, 3> items() const noexcept { return items_; }
 
     /// Decode the next frame from `cursor`. On success the cursor
-    /// advances past the consumed bytes; on `NeedMoreBytes` the cursor
-    /// is left untouched so the caller can resume after appending more
-    /// bytes (RFC §synth-5-B L494-519). Returns `std::nullopt` on the
-    /// `NeedMoreBytes` boundary; later phases attach a typed error via
-    /// `cursor.last_error()`.
-    static std::optional<CodecOriginEnvelope> decode(::SCE::Forge::SceCursor& cursor) {
+    /// advances past the consumed bytes and the value is answered; a
+    /// refused frame answers the `CodecError` that refused it
+    /// (docs/adr/0099, amendment of 2026-11-16): `NeedMoreBytes` when
+    /// the cursor's tail is shorter than the frame (RFC §synth-5-B
+    /// L494-519), which the caller resumes after appending bytes, and
+    /// another kind for a frame no more bytes make whole.
+    static ::SCE::Forge::Decoded<CodecOriginEnvelope> decode(::SCE::Forge::SceCursor& cursor) {
         // Streaming cursor decode (SSOT selection: `needs_streaming`).
         // The positional `raw[byte_off]` path is valid only when every
         // field's absolute offset is fixed at codegen time; this branch
@@ -232,65 +252,63 @@ struct CodecOriginEnvelope {
         uint8_t hdr;
         {
             const std::uint8_t* raw = cursor.peek_slice(1);
-            if (raw == nullptr) return std::nullopt;
+            if (raw == nullptr) return ::SCE::Forge::CodecError::NeedMoreBytes;
             hdr = static_cast<uint8_t>(raw[0]);
-            if (!cursor.advance(1)) return std::nullopt;
+            if (!cursor.advance(1)) return ::SCE::Forge::CodecError::NeedMoreBytes;
         }
         uint8_t note_len;
         {
             const std::uint8_t* raw = cursor.peek_slice(1);
-            if (raw == nullptr) return std::nullopt;
+            if (raw == nullptr) return ::SCE::Forge::CodecError::NeedMoreBytes;
             note_len = static_cast<uint8_t>(raw[0]);
-            if (!cursor.advance(1)) return std::nullopt;
+            if (!cursor.advance(1)) return ::SCE::Forge::CodecError::NeedMoreBytes;
         }
         std::string note;
         {
             const auto _len = note_len;
             if (_len > 16) {
-                cursor.refuse(::SCE::Forge::CodecError::LengthOutOfRange); return std::nullopt;
+                return ::SCE::Forge::CodecError::LengthOutOfRange;
             }
             std::size_t _n = static_cast<std::size_t>(_len);
             const std::uint8_t* raw = cursor.peek_slice(_n);
-            if (raw == nullptr) return std::nullopt;
-            if (!::SCE::Forge::is_valid_utf8(raw, _n)) return std::nullopt;
+            if (raw == nullptr) return ::SCE::Forge::CodecError::NeedMoreBytes;
+            if (!::SCE::Forge::is_valid_utf8(raw, _n)) return ::SCE::Forge::CodecError::InvalidUtf8;
             note.assign(reinterpret_cast<const char*>(raw), _n);
-            if (!cursor.advance(_n)) return std::nullopt;
+            if (!cursor.advance(_n)) return ::SCE::Forge::CodecError::NeedMoreBytes;
         }
         uint8_t m;
         {
             const std::uint8_t* raw = cursor.peek_slice(1);
-            if (raw == nullptr) return std::nullopt;
+            if (raw == nullptr) return ::SCE::Forge::CodecError::NeedMoreBytes;
             m = static_cast<uint8_t>(raw[0]);
-            if (!cursor.advance(1)) return std::nullopt;
+            if (!cursor.advance(1)) return ::SCE::Forge::CodecError::NeedMoreBytes;
         }
         auto _emb_required = ::SCE::Generated::CodecOriginLeaf::CodecOriginLeaf::decode(cursor);
-        if (!_emb_required.has_value()) return std::nullopt;
+        if (!_emb_required.has_value()) return _emb_required.error();
         auto required = std::move(*_emb_required);
         std::optional<::SCE::Generated::CodecOriginLeaf::CodecOriginLeaf> optional;
         if ((hdr & 0x01) != 0) {
             auto _emb = ::SCE::Generated::CodecOriginLeaf::CodecOriginLeaf::decode(cursor);
-            if (!_emb.has_value()) return std::nullopt;
+            if (!_emb.has_value()) return _emb.error();
             optional = std::move(*_emb);
         }
         std::vector<::SCE::Generated::CodecOriginLeaf::CodecOriginLeaf> items;
         if (m > 3) {
-            cursor.refuse(::SCE::Forge::CodecError::TooManyElements); return std::nullopt;
+            return ::SCE::Forge::CodecError::TooManyElements;
         }
         items.reserve(cursor.entries_backed(m));
         for (auto _i = decltype(m){0}; _i < m; ++_i) {
             auto _elem = ::SCE::Generated::CodecOriginLeaf::CodecOriginLeaf::decode(cursor);
-            if (!_elem.has_value()) return std::nullopt;
+            if (!_elem.has_value()) return _elem.error();
             items.push_back(*_elem);
         }
         const auto _b_items = ::SCE::Forge::List<::SCE::Generated::CodecOriginLeaf::CodecOriginLeaf, 3>::make(items);
         if (!_b_items) {
-            cursor.refuse(::SCE::Forge::CodecError::TooManyElements);
-            return std::nullopt;
+            return ::SCE::Forge::CodecError::TooManyElements;
         }
         const auto _b_note = ::SCE::Forge::Text<16>::make(note);
         if (!_b_note) {
-            cursor.refuse(::SCE::Forge::CodecError::LengthOutOfRange);
-            return std::nullopt;
+            return ::SCE::Forge::CodecError::LengthOutOfRange;
         }
         (void)note_len;
         (void)m;

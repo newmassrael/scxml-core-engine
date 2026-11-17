@@ -611,6 +611,7 @@ impl InternalChainIsBoundedPolicy {
                 );
                 engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(
                     InternalChainIsBoundedEvent::ErrorExecution,
+                    ::sce_rust_runtime::ErrorReason::ParamUnfit,
                     "<data id='pokes'> could not hold the value its invoke handed it",
                 ));
             }
@@ -622,6 +623,7 @@ impl InternalChainIsBoundedPolicy {
                 ::sce_rust_runtime::sce_log_error!("global: {}", e);
                 engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(
                     InternalChainIsBoundedEvent::ErrorExecution,
+                    ::sce_rust_runtime::ErrorReason::ExpressionFailed,
                     "<data id='pokes'> expr failed to evaluate",
                 ));
             }
@@ -636,6 +638,7 @@ impl InternalChainIsBoundedPolicy {
                 );
                 engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(
                     InternalChainIsBoundedEvent::ErrorExecution,
+                    ::sce_rust_runtime::ErrorReason::ParamUnfit,
                     "<data id='laps'> could not hold the value its invoke handed it",
                 ));
             }
@@ -647,6 +650,7 @@ impl InternalChainIsBoundedPolicy {
                 ::sce_rust_runtime::sce_log_error!("global: {}", e);
                 engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(
                     InternalChainIsBoundedEvent::ErrorExecution,
+                    ::sce_rust_runtime::ErrorReason::ExpressionFailed,
                     "<data id='laps'> expr failed to evaluate",
                 ));
             }
@@ -661,6 +665,7 @@ impl InternalChainIsBoundedPolicy {
                 );
                 engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(
                     InternalChainIsBoundedEvent::ErrorExecution,
+                    ::sce_rust_runtime::ErrorReason::ParamUnfit,
                     "<data id='links'> could not hold the value its invoke handed it",
                 ));
             }
@@ -672,6 +677,7 @@ impl InternalChainIsBoundedPolicy {
                 ::sce_rust_runtime::sce_log_error!("global: {}", e);
                 engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(
                     InternalChainIsBoundedEvent::ErrorExecution,
+                    ::sce_rust_runtime::ErrorReason::ExpressionFailed,
                     "<data id='links'> expr failed to evaluate",
                 ));
             }
@@ -686,6 +692,7 @@ impl InternalChainIsBoundedPolicy {
                 );
                 engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(
                     InternalChainIsBoundedEvent::ErrorExecution,
+                    ::sce_rust_runtime::ErrorReason::ParamUnfit,
                     "<data id='beats'> could not hold the value its invoke handed it",
                 ));
             }
@@ -697,6 +704,7 @@ impl InternalChainIsBoundedPolicy {
                 ::sce_rust_runtime::sce_log_error!("global: {}", e);
                 engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(
                     InternalChainIsBoundedEvent::ErrorExecution,
+                    ::sce_rust_runtime::ErrorReason::ExpressionFailed,
                     "<data id='beats'> expr failed to evaluate",
                 ));
             }
@@ -711,6 +719,7 @@ impl InternalChainIsBoundedPolicy {
                 );
                 engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(
                     InternalChainIsBoundedEvent::ErrorExecution,
+                    ::sce_rust_runtime::ErrorReason::ParamUnfit,
                     "<data id='alts'> could not hold the value its invoke handed it",
                 ));
             }
@@ -722,6 +731,7 @@ impl InternalChainIsBoundedPolicy {
                 ::sce_rust_runtime::sce_log_error!("global: {}", e);
                 engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(
                     InternalChainIsBoundedEvent::ErrorExecution,
+                    ::sce_rust_runtime::ErrorReason::ExpressionFailed,
                     "<data id='alts'> expr failed to evaluate",
                 ));
             }
@@ -736,6 +746,7 @@ impl InternalChainIsBoundedPolicy {
                 );
                 engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(
                     InternalChainIsBoundedEvent::ErrorExecution,
+                    ::sce_rust_runtime::ErrorReason::ParamUnfit,
                     "<data id='ignores'> could not hold the value its invoke handed it",
                 ));
             }
@@ -747,6 +758,7 @@ impl InternalChainIsBoundedPolicy {
                 ::sce_rust_runtime::sce_log_error!("global: {}", e);
                 engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(
                     InternalChainIsBoundedEvent::ErrorExecution,
+                    ::sce_rust_runtime::ErrorReason::ExpressionFailed,
                     "<data id='ignores'> expr failed to evaluate",
                 ));
             }
@@ -761,6 +773,7 @@ impl InternalChainIsBoundedPolicy {
                 );
                 engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(
                     InternalChainIsBoundedEvent::ErrorExecution,
+                    ::sce_rust_runtime::ErrorReason::ParamUnfit,
                     "<data id='pending'> could not hold the value its invoke handed it",
                 ));
             }
@@ -772,6 +785,7 @@ impl InternalChainIsBoundedPolicy {
                 ::sce_rust_runtime::sce_log_error!("global: {}", e);
                 engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(
                     InternalChainIsBoundedEvent::ErrorExecution,
+                    ::sce_rust_runtime::ErrorReason::ExpressionFailed,
                     "<data id='pending'> expr failed to evaluate",
                 ));
             }
@@ -820,6 +834,7 @@ impl InternalChainIsBoundedPolicy {
                 ::sce_rust_runtime::sce_log_error!("Guard evaluation failed for '{}': {}", cond, e);
                 engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(
                     InternalChainIsBoundedEvent::ErrorExecution,
+                    ::sce_rust_runtime::ErrorReason::ExpressionFailed,
                     reason,
                 ));
                 None
@@ -1425,6 +1440,7 @@ impl StatePolicy for InternalChainIsBoundedPolicy {
                             ::sce_rust_runtime::sce_log_error!("Assign failed for 'alts': {}", e);
                             engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(
                                 InternalChainIsBoundedEvent::ErrorExecution,
+                                ::sce_rust_runtime::ErrorReason::AssignmentFailed,
                                 "<assign> to 'alts' failed",
                             ));
                             // W3C SCXML 4.9: the error ends the block, from however deep a <foreach> it came.
@@ -1451,6 +1467,7 @@ impl StatePolicy for InternalChainIsBoundedPolicy {
                             );
                             engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(
                                 InternalChainIsBoundedEvent::ErrorExecution,
+                                ::sce_rust_runtime::ErrorReason::AssignmentFailed,
                                 "<assign> to 'pending' failed",
                             ));
                             // W3C SCXML 4.9: the error ends the block, from however deep a <foreach> it came.
@@ -1484,6 +1501,7 @@ impl StatePolicy for InternalChainIsBoundedPolicy {
                             );
                             engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(
                                 InternalChainIsBoundedEvent::ErrorExecution,
+                                ::sce_rust_runtime::ErrorReason::AssignmentFailed,
                                 "<assign> to 'pending' failed",
                             ));
                             // W3C SCXML 4.9: the error ends the block, from however deep a <foreach> it came.
@@ -1519,6 +1537,7 @@ impl StatePolicy for InternalChainIsBoundedPolicy {
                             ::sce_rust_runtime::sce_log_error!("Assign failed for 'pokes': {}", e);
                             engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(
                                 InternalChainIsBoundedEvent::ErrorExecution,
+                                ::sce_rust_runtime::ErrorReason::AssignmentFailed,
                                 "<assign> to 'pokes' failed",
                             ));
                             // W3C SCXML 4.9: the error ends the block, from however deep a <foreach> it came.
@@ -1549,6 +1568,7 @@ impl StatePolicy for InternalChainIsBoundedPolicy {
                             ::sce_rust_runtime::sce_log_error!("Assign failed for 'laps': {}", e);
                             engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(
                                 InternalChainIsBoundedEvent::ErrorExecution,
+                                ::sce_rust_runtime::ErrorReason::AssignmentFailed,
                                 "<assign> to 'laps' failed",
                             ));
                             // W3C SCXML 4.9: the error ends the block, from however deep a <foreach> it came.
@@ -1584,6 +1604,7 @@ impl StatePolicy for InternalChainIsBoundedPolicy {
                             ::sce_rust_runtime::sce_log_error!("Assign failed for 'laps': {}", e);
                             engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(
                                 InternalChainIsBoundedEvent::ErrorExecution,
+                                ::sce_rust_runtime::ErrorReason::AssignmentFailed,
                                 "<assign> to 'laps' failed",
                             ));
                             // W3C SCXML 4.9: the error ends the block, from however deep a <foreach> it came.
@@ -1614,6 +1635,7 @@ impl StatePolicy for InternalChainIsBoundedPolicy {
                             ::sce_rust_runtime::sce_log_error!("Assign failed for 'pokes': {}", e);
                             engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(
                                 InternalChainIsBoundedEvent::ErrorExecution,
+                                ::sce_rust_runtime::ErrorReason::AssignmentFailed,
                                 "<assign> to 'pokes' failed",
                             ));
                             // W3C SCXML 4.9: the error ends the block, from however deep a <foreach> it came.
@@ -1644,6 +1666,7 @@ impl StatePolicy for InternalChainIsBoundedPolicy {
                             ::sce_rust_runtime::sce_log_error!("Assign failed for 'pokes': {}", e);
                             engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(
                                 InternalChainIsBoundedEvent::ErrorExecution,
+                                ::sce_rust_runtime::ErrorReason::AssignmentFailed,
                                 "<assign> to 'pokes' failed",
                             ));
                             // W3C SCXML 4.9: the error ends the block, from however deep a <foreach> it came.
@@ -1737,6 +1760,7 @@ impl StatePolicy for InternalChainIsBoundedPolicy {
                             );
                             engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(
                                 InternalChainIsBoundedEvent::ErrorExecution,
+                                ::sce_rust_runtime::ErrorReason::AssignmentFailed,
                                 "<assign> to 'ignores' failed",
                             ));
                             // W3C SCXML 4.9: the error ends the block, from however deep a <foreach> it came.
@@ -1780,6 +1804,7 @@ impl StatePolicy for InternalChainIsBoundedPolicy {
                             );
                             engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(
                                 InternalChainIsBoundedEvent::ErrorExecution,
+                                ::sce_rust_runtime::ErrorReason::AssignmentFailed,
                                 "<assign> to 'ignores' failed",
                             ));
                             // W3C SCXML 4.9: the error ends the block, from however deep a <foreach> it came.
@@ -1810,6 +1835,7 @@ impl StatePolicy for InternalChainIsBoundedPolicy {
                             ::sce_rust_runtime::sce_log_error!("Assign failed for 'pokes': {}", e);
                             engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(
                                 InternalChainIsBoundedEvent::ErrorExecution,
+                                ::sce_rust_runtime::ErrorReason::AssignmentFailed,
                                 "<assign> to 'pokes' failed",
                             ));
                             // W3C SCXML 4.9: the error ends the block, from however deep a <foreach> it came.
@@ -1840,6 +1866,7 @@ impl StatePolicy for InternalChainIsBoundedPolicy {
                             ::sce_rust_runtime::sce_log_error!("Assign failed for 'beats': {}", e);
                             engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(
                                 InternalChainIsBoundedEvent::ErrorExecution,
+                                ::sce_rust_runtime::ErrorReason::AssignmentFailed,
                                 "<assign> to 'beats' failed",
                             ));
                             // W3C SCXML 4.9: the error ends the block, from however deep a <foreach> it came.
@@ -1875,6 +1902,7 @@ impl StatePolicy for InternalChainIsBoundedPolicy {
                             ::sce_rust_runtime::sce_log_error!("Assign failed for 'beats': {}", e);
                             engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(
                                 InternalChainIsBoundedEvent::ErrorExecution,
+                                ::sce_rust_runtime::ErrorReason::AssignmentFailed,
                                 "<assign> to 'beats' failed",
                             ));
                             // W3C SCXML 4.9: the error ends the block, from however deep a <foreach> it came.
@@ -1905,6 +1933,7 @@ impl StatePolicy for InternalChainIsBoundedPolicy {
                             ::sce_rust_runtime::sce_log_error!("Assign failed for 'pokes': {}", e);
                             engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(
                                 InternalChainIsBoundedEvent::ErrorExecution,
+                                ::sce_rust_runtime::ErrorReason::AssignmentFailed,
                                 "<assign> to 'pokes' failed",
                             ));
                             // W3C SCXML 4.9: the error ends the block, from however deep a <foreach> it came.
@@ -1935,6 +1964,7 @@ impl StatePolicy for InternalChainIsBoundedPolicy {
                             ::sce_rust_runtime::sce_log_error!("Assign failed for 'links': {}", e);
                             engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(
                                 InternalChainIsBoundedEvent::ErrorExecution,
+                                ::sce_rust_runtime::ErrorReason::AssignmentFailed,
                                 "<assign> to 'links' failed",
                             ));
                             // W3C SCXML 4.9: the error ends the block, from however deep a <foreach> it came.
@@ -1970,6 +2000,7 @@ impl StatePolicy for InternalChainIsBoundedPolicy {
                             ::sce_rust_runtime::sce_log_error!("Assign failed for 'pokes': {}", e);
                             engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(
                                 InternalChainIsBoundedEvent::ErrorExecution,
+                                ::sce_rust_runtime::ErrorReason::AssignmentFailed,
                                 "<assign> to 'pokes' failed",
                             ));
                             // W3C SCXML 4.9: the error ends the block, from however deep a <foreach> it came.

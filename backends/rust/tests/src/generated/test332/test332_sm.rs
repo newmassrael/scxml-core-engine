@@ -451,6 +451,7 @@ impl Test332Policy {
                 );
                 engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(
                     Test332Event::ErrorExecution,
+                    ::sce_rust_runtime::ErrorReason::ParamUnfit,
                     "<data id='Var1'> could not hold the value its invoke handed it",
                 ));
             }
@@ -468,6 +469,7 @@ impl Test332Policy {
                 );
                 engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(
                     Test332Event::ErrorExecution,
+                    ::sce_rust_runtime::ErrorReason::ParamUnfit,
                     "<data id='Var2'> could not hold the value its invoke handed it",
                 ));
             }
@@ -519,6 +521,7 @@ impl Test332Policy {
                 ::sce_rust_runtime::sce_log_error!("Guard evaluation failed for '{}': {}", cond, e);
                 engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(
                     Test332Event::ErrorExecution,
+                    ::sce_rust_runtime::ErrorReason::ExpressionFailed,
                     reason,
                 ));
                 None
@@ -847,7 +850,12 @@ impl StatePolicy for Test332Policy {
                         let __sce_arg_sid = self.session_id.as_ref().unwrap().clone();
                         let __sce_arg_se = self.script_engine.clone();
                         let __sce_arg_se: &dyn sce_rust_runtime::IScriptEngine = &*__sce_arg_se;
-                        let mut _send_arg_error: Option<&'static str> = None;
+                        // The code and the sentence of the first argument that failed
+                        // (docs/adr/0106 #111).
+                        let mut _send_arg_error: Option<(
+                            ::sce_rust_runtime::ErrorReason,
+                            &'static str,
+                        )> = None;
                         // W3C SCXML 6.2.4: the send id goes to `idlocation` first, so it is there
                         // even when a later argument fails. W3C SCXML B.2: a write target is
                         // lowered by the frontend, so the id lands where a read of the same text
@@ -859,13 +867,16 @@ impl StatePolicy for Test332Policy {
                             "Var1",
                             send_id,
                         ) {
-                            _send_arg_error =
-                                Some("<send idlocation='Var1'> could not take the send id");
+                            _send_arg_error = Some((
+                                ::sce_rust_runtime::ErrorReason::LocationInvalid,
+                                "<send idlocation='Var1'> could not take the send id",
+                            ));
                         }
-                        if let Some(__sce_why) = _send_arg_error {
+                        if let Some((__sce_reason, __sce_why)) = _send_arg_error {
                             ::sce_rust_runtime::sce_log_error!("{}", __sce_why);
                             let mut err_meta = sce_rust_runtime::EventWithMetadata::platform_error(
                                 Test332Event::ErrorExecution,
+                                __sce_reason,
                                 __sce_why,
                             );
                             err_meta.metadata.send_id =
@@ -877,7 +888,7 @@ impl StatePolicy for Test332Policy {
                             // address — `Action::target_unsupported`, decided once at build time.
                             {
                                 // W3C SCXML 6.2.4/5.10: test 332 — the error event MUST carry the sendid
-                                let mut err_meta = sce_rust_runtime::EventWithMetadata::platform_error(Test332Event::ErrorExecution, "<send target='!invalid'> is not a target this processor can address");
+                                let mut err_meta = sce_rust_runtime::EventWithMetadata::platform_error(Test332Event::ErrorExecution, ::sce_rust_runtime::ErrorReason::SendTargetInvalid, "<send target='!invalid'> is not a target this processor can address");
                                 err_meta.metadata.send_id =
                                     ::sce_rust_runtime::sce_string_from_str(send_id);
                                 engine.raise(err_meta);
@@ -1051,6 +1062,7 @@ impl StatePolicy for Test332Policy {
                             ::sce_rust_runtime::sce_log_error!("Assign failed for 'Var2': {}", e);
                             engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(
                                 Test332Event::ErrorExecution,
+                                ::sce_rust_runtime::ErrorReason::AssignmentFailed,
                                 "<assign> to 'Var2' failed",
                             ));
                             // W3C SCXML 4.9: the error ends the block, from however deep a <foreach> it came.

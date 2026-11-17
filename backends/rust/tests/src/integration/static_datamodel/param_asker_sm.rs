@@ -955,7 +955,7 @@ impl StatePolicy for ParamAskerPolicy {
                             if __sce_served.is_none()
                                 && !engine.has_event_processor("http://sce.dev/ext/test-port")
                             {
-                                let mut err_meta = sce_rust_runtime::EventWithMetadata::platform_error(ParamAskerEvent::ErrorExecution, "<send type='http://sce.dev/ext/test-port'> names a processor the host declared but never registered");
+                                let mut err_meta = sce_rust_runtime::EventWithMetadata::platform_error(ParamAskerEvent::ErrorExecution, ::sce_rust_runtime::ErrorReason::ProcessorUnregistered, "<send type='http://sce.dev/ext/test-port'> names a processor the host declared but never registered");
                                 engine.raise(err_meta);
                             }
                         }

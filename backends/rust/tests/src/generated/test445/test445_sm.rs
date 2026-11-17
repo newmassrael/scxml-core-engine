@@ -441,6 +441,7 @@ impl Test445Policy {
                 );
                 engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(
                     Test445Event::ErrorExecution,
+                    ::sce_rust_runtime::ErrorReason::ParamUnfit,
                     "<data id='var1'> could not hold the value its invoke handed it",
                 ));
             }
@@ -492,6 +493,7 @@ impl Test445Policy {
                 ::sce_rust_runtime::sce_log_error!("Guard evaluation failed for '{}': {}", cond, e);
                 engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(
                     Test445Event::ErrorExecution,
+                    ::sce_rust_runtime::ErrorReason::ExpressionFailed,
                     reason,
                 ));
                 None

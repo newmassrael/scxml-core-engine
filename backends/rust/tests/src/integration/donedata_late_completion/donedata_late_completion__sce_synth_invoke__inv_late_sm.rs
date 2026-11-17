@@ -491,6 +491,7 @@ impl DonedataLateCompletionSceSynthInvokeInvLatePolicy {
                 ::sce_rust_runtime::sce_log_error!("Guard evaluation failed for '{}': {}", cond, e);
                 engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(
                     DonedataLateCompletionSceSynthInvokeInvLateEvent::ErrorExecution,
+                    ::sce_rust_runtime::ErrorReason::ExpressionFailed,
                     reason,
                 ));
                 None
@@ -834,6 +835,7 @@ impl StatePolicy for DonedataLateCompletionSceSynthInvokeInvLatePolicy {
                             );
                             engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(
                                 DonedataLateCompletionSceSynthInvokeInvLateEvent::ErrorExecution,
+                                ::sce_rust_runtime::ErrorReason::ExpressionFailed,
                                 "<donedata> <param name='result'> failed to evaluate",
                             ));
                         }
@@ -871,7 +873,8 @@ impl StatePolicy for DonedataLateCompletionSceSynthInvokeInvLatePolicy {
                             // nothing delivered, and the block ends (4.9).
                             engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(
             DonedataLateCompletionSceSynthInvokeInvLateEvent::ErrorCommunication,
-            "<send target='#_parent'> has no parent session to reach"));
+            ::sce_rust_runtime::ErrorReason::TargetUnreachable,
+        "<send target='#_parent'> has no parent session to reach"));
                             break 'action_block;
                         }
 

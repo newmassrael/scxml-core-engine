@@ -7,6 +7,7 @@
 package com.sce.generated.codec_length_ref
 
 import com.sce.forge.runtime.CodecError
+import com.sce.forge.runtime.Decoded
 import com.sce.forge.runtime.MutableListSink
 import com.sce.forge.runtime.SceCursor
 import com.sce.forge.runtime.SceSink
@@ -53,27 +54,32 @@ data class CodecLengthRef(
 
     companion object {
         /// Decode the next frame from `cursor`. On success the cursor
-        /// advances past the consumed bytes; returns `null` when the
-        /// cursor's tail is shorter than the declared minimum frame
-        /// (RFC §synth-5-B L494-519).
-        fun decode(cursor: SceCursor): CodecLengthRef? {
+        /// advances past the consumed bytes and the value is `Decoded.Ok`;
+        /// a refused frame is `Decoded.Refused` with the kind that refused
+        /// it (docs/adr/0099, amendment of 2026-11-16): `NeedMoreBytes` when
+        /// the cursor's tail is shorter than the frame (RFC §synth-5-B
+        /// L494-519), which the caller resumes after appending bytes, and
+        /// another kind for a frame no more bytes make whole.
+        fun decode(cursor: SceCursor): Decoded<CodecLengthRef> {
             val frameLen = cursor.remaining()
-            if (frameLen < 2) return null
-            val raw = cursor.peekSlice(frameLen) ?: return null
+            if (frameLen < 2) return Decoded.Refused(CodecError.NeedMoreBytes)
+            val raw = cursor.peekSlice(frameLen) ?: return Decoded.Refused(CodecError.NeedMoreBytes)
             val msgId = raw[0].toUByte()
             val len = raw[1].toUByte()
             if (len > 32u) {
-                cursor.refuse(CodecError.LengthOutOfRange); return null
+                return Decoded.Refused(CodecError.LengthOutOfRange)
             }
-            if (frameLen < 2 + len.toInt()) return null
+            if (frameLen < 2 + len.toInt()) return Decoded.Refused(CodecError.NeedMoreBytes)
             val payload = raw.copyOfRange(2, 2 + len.toInt())
-            if (!cursor.advance(frameLen)) return null
+            if (!cursor.advance(frameLen)) return Decoded.Refused(CodecError.NeedMoreBytes)
             // Construct in the `return` (no intermediate local) so a field
             // literally named `value` cannot shadow a result-struct local.
-            return CodecLengthRef(
-                msgId = msgId,
-                len = len,
-                payload = payload
+            return Decoded.Ok(
+                CodecLengthRef(
+                    msgId = msgId,
+                    len = len,
+                    payload = payload
+                )
             )
         }
     }

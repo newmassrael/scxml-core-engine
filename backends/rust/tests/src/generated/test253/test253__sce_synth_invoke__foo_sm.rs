@@ -457,6 +457,7 @@ impl Test253SceSynthInvokeFooPolicy {
                 );
                 engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(
                     Test253SceSynthInvokeFooEvent::ErrorExecution,
+                    ::sce_rust_runtime::ErrorReason::ParamUnfit,
                     "<data id='Var2'> could not hold the value its invoke handed it",
                 ));
             }
@@ -508,6 +509,7 @@ impl Test253SceSynthInvokeFooPolicy {
                 ::sce_rust_runtime::sce_log_error!("Guard evaluation failed for '{}': {}", cond, e);
                 engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(
                     Test253SceSynthInvokeFooEvent::ErrorExecution,
+                    ::sce_rust_runtime::ErrorReason::ExpressionFailed,
                     reason,
                 ));
                 None
@@ -844,6 +846,7 @@ impl StatePolicy for Test253SceSynthInvokeFooPolicy {
                             // nothing delivered, and the block ends (4.9).
                             engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(
                                 Test253SceSynthInvokeFooEvent::ErrorCommunication,
+                                ::sce_rust_runtime::ErrorReason::TargetUnreachable,
                                 "<send target='#_parent'> has no parent session to reach",
                             ));
                             break 'action_block;
@@ -1015,6 +1018,7 @@ impl StatePolicy for Test253SceSynthInvokeFooPolicy {
                             ::sce_rust_runtime::sce_log_error!("Assign failed for 'Var2': {}", e);
                             engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(
                                 Test253SceSynthInvokeFooEvent::ErrorExecution,
+                                ::sce_rust_runtime::ErrorReason::AssignmentFailed,
                                 "<assign> to 'Var2' failed",
                             ));
                             // W3C SCXML 4.9: the error ends the block, from however deep a <foreach> it came.
@@ -1045,6 +1049,7 @@ impl StatePolicy for Test253SceSynthInvokeFooPolicy {
                             // nothing delivered, and the block ends (4.9).
                             engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(
                                 Test253SceSynthInvokeFooEvent::ErrorCommunication,
+                                ::sce_rust_runtime::ErrorReason::TargetUnreachable,
                                 "<send target='#_parent'> has no parent session to reach",
                             ));
                             break 'action_block;
@@ -1077,6 +1082,7 @@ impl StatePolicy for Test253SceSynthInvokeFooPolicy {
                             // nothing delivered, and the block ends (4.9).
                             engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(
                                 Test253SceSynthInvokeFooEvent::ErrorCommunication,
+                                ::sce_rust_runtime::ErrorReason::TargetUnreachable,
                                 "<send target='#_parent'> has no parent session to reach",
                             ));
                             break 'action_block;
@@ -1109,6 +1115,7 @@ impl StatePolicy for Test253SceSynthInvokeFooPolicy {
                             // nothing delivered, and the block ends (4.9).
                             engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(
                                 Test253SceSynthInvokeFooEvent::ErrorCommunication,
+                                ::sce_rust_runtime::ErrorReason::TargetUnreachable,
                                 "<send target='#_parent'> has no parent session to reach",
                             ));
                             break 'action_block;

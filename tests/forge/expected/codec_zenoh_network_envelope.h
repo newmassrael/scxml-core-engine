@@ -154,12 +154,13 @@ struct CodecZenohNetworkEnvelope {
     [[nodiscard]] const CodecZenohNetworkEnvelopeVariant& body() const noexcept { return body_; }
 
     /// Decode the next frame from `cursor`. On success the cursor
-    /// advances past the consumed bytes; on `NeedMoreBytes` the cursor
-    /// is left untouched so the caller can resume after appending more
-    /// bytes (RFC §synth-5-B L494-519). Returns `std::nullopt` on the
-    /// `NeedMoreBytes` boundary; later phases attach a typed error via
-    /// `cursor.last_error()`.
-    static std::optional<CodecZenohNetworkEnvelope> decode(::SCE::Forge::SceCursor& cursor) {
+    /// advances past the consumed bytes and the value is answered; a
+    /// refused frame answers the `CodecError` that refused it
+    /// (docs/adr/0099, amendment of 2026-11-16): `NeedMoreBytes` when
+    /// the cursor's tail is shorter than the frame (RFC §synth-5-B
+    /// L494-519), which the caller resumes after appending bytes, and
+    /// another kind for a frame no more bytes make whole.
+    static ::SCE::Forge::Decoded<CodecZenohNetworkEnvelope> decode(::SCE::Forge::SceCursor& cursor) {
         // RFC §synth-5-B peek-byte / streaming-prefix:
         // streaming prefix decode (variable-length fields supported via
         // per-field present_if/tlv-chain/embed/repeat helpers). Peek-byte
@@ -167,56 +168,56 @@ struct CodecZenohNetworkEnvelope {
         // without advancing — arm body decoder reads it as its own
         // header byte.
         const std::uint8_t* _peek_raw = cursor.peek_slice(1);
-        if (_peek_raw == nullptr) return std::nullopt;
+        if (_peek_raw == nullptr) return ::SCE::Forge::CodecError::NeedMoreBytes;
         const std::uint8_t _peek = _peek_raw[0];
         // Dispatch on tag value into the matching arm body.
         CodecZenohNetworkEnvelopeVariant body;
         switch (static_cast<uint8_t>((_peek >> 0) & static_cast<uint8_t>(0x1F))) {
             case 25: {
                 auto _arm = ::SCE::Generated::CodecZenohInterest::CodecZenohInterest::decode(cursor);
-                if (!_arm.has_value()) return std::nullopt;
+                if (!_arm.has_value()) return _arm.error();
                 body = *_arm;
                 break;
             }
             case 26: {
                 auto _arm = ::SCE::Generated::CodecZenohResponseFinal::CodecZenohResponseFinal::decode(cursor);
-                if (!_arm.has_value()) return std::nullopt;
+                if (!_arm.has_value()) return _arm.error();
                 body = *_arm;
                 break;
             }
             case 27: {
                 auto _arm = ::SCE::Generated::CodecZenohResponse::CodecZenohResponse::decode(cursor);
-                if (!_arm.has_value()) return std::nullopt;
+                if (!_arm.has_value()) return _arm.error();
                 body = *_arm;
                 break;
             }
             case 28: {
                 auto _arm = ::SCE::Generated::CodecZenohRequest::CodecZenohRequest::decode(cursor);
-                if (!_arm.has_value()) return std::nullopt;
+                if (!_arm.has_value()) return _arm.error();
                 body = *_arm;
                 break;
             }
             case 29: {
                 auto _arm = ::SCE::Generated::CodecZenohPush::CodecZenohPush::decode(cursor);
-                if (!_arm.has_value()) return std::nullopt;
+                if (!_arm.has_value()) return _arm.error();
                 body = *_arm;
                 break;
             }
             case 30: {
                 auto _arm = ::SCE::Generated::CodecZenohDeclare::CodecZenohDeclare::decode(cursor);
-                if (!_arm.has_value()) return std::nullopt;
+                if (!_arm.has_value()) return _arm.error();
                 body = *_arm;
                 break;
             }
             case 31: {
                 auto _arm = ::SCE::Generated::CodecZenohOam::CodecZenohOam::decode(cursor);
-                if (!_arm.has_value()) return std::nullopt;
+                if (!_arm.has_value()) return _arm.error();
                 body = *_arm;
                 break;
             }
             default: {
                 auto _arm = ::SCE::Generated::CodecZenohOam::CodecZenohOam::decode(cursor);
-                if (!_arm.has_value()) return std::nullopt;
+                if (!_arm.has_value()) return _arm.error();
                 body = CodecZenohNetworkEnvelopeDefault{
                     /*tag=*/static_cast<uint8_t>((_peek >> 0) & static_cast<uint8_t>(0x1F)),
                     /*body=*/*_arm,

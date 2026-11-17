@@ -7,6 +7,7 @@
 package com.sce.generated.codec_length_ref_dotted_basic
 
 import com.sce.forge.runtime.CodecError
+import com.sce.forge.runtime.Decoded
 import com.sce.forge.runtime.MutableListSink
 import com.sce.forge.runtime.SceCursor
 import com.sce.forge.runtime.SceSink
@@ -81,22 +82,27 @@ data class CodecLengthRefDottedBasic(
 
     companion object {
         /// Decode the next frame from `cursor`. On success the cursor
-        /// advances past the consumed bytes; returns `null` when the
-        /// cursor's tail is shorter than the declared minimum frame
-        /// (RFC §synth-5-B L494-519).
-        fun decode(cursor: SceCursor): CodecLengthRefDottedBasic? {
+        /// advances past the consumed bytes and the value is `Decoded.Ok`;
+        /// a refused frame is `Decoded.Refused` with the kind that refused
+        /// it (docs/adr/0099, amendment of 2026-11-16): `NeedMoreBytes` when
+        /// the cursor's tail is shorter than the frame (RFC §synth-5-B
+        /// L494-519), which the caller resumes after appending bytes, and
+        /// another kind for a frame no more bytes make whole.
+        fun decode(cursor: SceCursor): Decoded<CodecLengthRefDottedBasic> {
             val frameLen = cursor.remaining()
-            if (frameLen < 1) return null
-            val raw = cursor.peekSlice(frameLen) ?: return null
+            if (frameLen < 1) return Decoded.Refused(CodecError.NeedMoreBytes)
+            val raw = cursor.peekSlice(frameLen) ?: return Decoded.Refused(CodecError.NeedMoreBytes)
             val carrier = raw[0].toUByte()
-            if (frameLen < 1 + ((carrier.toInt() ushr 4) and 0xF)) return null
+            if (frameLen < 1 + ((carrier.toInt() ushr 4) and 0xF)) return Decoded.Refused(CodecError.NeedMoreBytes)
             val payload = raw.copyOfRange(1, 1 + ((carrier.toInt() ushr 4) and 0xF))
-            if (!cursor.advance(frameLen)) return null
+            if (!cursor.advance(frameLen)) return Decoded.Refused(CodecError.NeedMoreBytes)
             // Construct in the `return` (no intermediate local) so a field
             // literally named `value` cannot shadow a result-struct local.
-            return CodecLengthRefDottedBasic(
-                carrier = carrier,
-                payload = payload
+            return Decoded.Ok(
+                CodecLengthRefDottedBasic(
+                    carrier = carrier,
+                    payload = payload
+                )
             )
         }
     }

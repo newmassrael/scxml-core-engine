@@ -1,5 +1,5 @@
 // SCE-GENERATED — DO NOT EDIT
-// source-hash: 65fb42bdd588f958b0fbb29ac261cf039d02606d7afaae0720c045624bd679ba
+// source-hash: 2073d8a55462e1ce61d8a77293fdd2c141aceda8ad173303c5b84813ca22eeee
 
 // SPDX-License-Identifier: AGPL-3.0-only WITH AdditionRef-SCE-Linking-Exception OR LicenseRef-SCE-Commercial
 // SPDX-FileCopyrightText: Copyright (c) 2025-2026 [Author of input SCXML file] (content derived from the input document)
@@ -891,7 +891,7 @@ impl StatePolicy for StaticBlockEndsListPolicy {
                     let sce_failed = if self.picked.len() < 2 && self.picked.push(7).is_ok() {
                         false
                     } else {
-                        engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(StaticBlockEndsListEvent::ErrorExecution, "<sce:append target='picked'>: the list already holds its capacity of 2"));
+                        engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(StaticBlockEndsListEvent::ErrorExecution, ::sce_rust_runtime::ErrorReason::AssignmentFailed, "<sce:append target='picked'>: the list already holds its capacity of 2"));
                         true
                     };
                     if sce_failed {
@@ -907,7 +907,7 @@ impl StatePolicy for StaticBlockEndsListPolicy {
                         })() {
                             Ok(()) => false,
                             Err(_) => {
-                                engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(StaticBlockEndsListEvent::ErrorExecution, "<assign location='afterAppend'>: an integer operation overflowed or failed"));
+                                engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(StaticBlockEndsListEvent::ErrorExecution, ::sce_rust_runtime::ErrorReason::ExpressionFailed, "<assign location='afterAppend'>: an integer operation overflowed or failed"));
                                 true
                             }
                         };
@@ -930,7 +930,7 @@ impl StatePolicy for StaticBlockEndsListPolicy {
                         })() {
                             Ok(()) => false,
                             Err(_) => {
-                                engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(StaticBlockEndsListEvent::ErrorExecution, "<assign location='errors'>: an integer operation overflowed or failed"));
+                                engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(StaticBlockEndsListEvent::ErrorExecution, ::sce_rust_runtime::ErrorReason::ExpressionFailed, "<assign location='errors'>: an integer operation overflowed or failed"));
                                 true
                             }
                         };

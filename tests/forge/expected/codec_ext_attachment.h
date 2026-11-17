@@ -78,6 +78,16 @@ struct Wire {
     }
 };
 
+/// The `length` the frame of a source of `CodecExtAttachment` carries, which its encode
+/// derives from what it measures and no value holds (docs/adr/0081 §3).
+template <class S>
+[[nodiscard]] uint8_t wire_length(const S& src) noexcept(is_nothrow_source<S>::value) {
+    static_assert(is_source<S>::value, "S presents every element of CodecExtAttachment");
+    const auto& _r_body = source::body(src);
+    const ::SCE::Forge::Bytes<64> _e_body = _r_body;
+    return static_cast<uint8_t>(_e_body.size());
+}
+
 struct CodecExtAttachment {
     CodecExtAttachment() = default;
     /// The value of each element it presents, in declaration order (ADR 0059 §5).
@@ -87,26 +97,26 @@ struct CodecExtAttachment {
     [[nodiscard]] ::SCE::Forge::Bytes<64> body() const noexcept { return body_; }
 
     /// Decode the next frame from `cursor`. On success the cursor
-    /// advances past the consumed bytes; on `NeedMoreBytes` the cursor
-    /// is left untouched so the caller can resume after appending more
-    /// bytes (RFC §synth-5-B L494-519). Returns `std::nullopt` on the
-    /// `NeedMoreBytes` boundary; later phases attach a typed error via
-    /// `cursor.last_error()`.
-    static std::optional<CodecExtAttachment> decode(::SCE::Forge::SceCursor& cursor) {
+    /// advances past the consumed bytes and the value is answered; a
+    /// refused frame answers the `CodecError` that refused it
+    /// (docs/adr/0099, amendment of 2026-11-16): `NeedMoreBytes` when
+    /// the cursor's tail is shorter than the frame (RFC §synth-5-B
+    /// L494-519), which the caller resumes after appending bytes, and
+    /// another kind for a frame no more bytes make whole.
+    static ::SCE::Forge::Decoded<CodecExtAttachment> decode(::SCE::Forge::SceCursor& cursor) {
         std::size_t _frame_len = cursor.remaining();
-        if (_frame_len < 1) return std::nullopt;
+        if (_frame_len < 1) return ::SCE::Forge::CodecError::NeedMoreBytes;
         const std::uint8_t* raw = cursor.peek_slice(_frame_len);
-        if (raw == nullptr) return std::nullopt;
+        if (raw == nullptr) return ::SCE::Forge::CodecError::NeedMoreBytes;
         uint8_t length = raw[0];
         if (length > 64) {
-            cursor.refuse(::SCE::Forge::CodecError::LengthOutOfRange); return std::nullopt;
+            return ::SCE::Forge::CodecError::LengthOutOfRange;
         }
-        if (_frame_len < static_cast<std::size_t>(1 + length)) return std::nullopt;
+        if (_frame_len < static_cast<std::size_t>(1 + length)) return ::SCE::Forge::CodecError::NeedMoreBytes;
         std::vector<uint8_t> body = std::vector<uint8_t>(raw + 1, raw + 1 + length);
         const auto _b_body = ::SCE::Forge::Bytes<64>::make(body);
         if (!_b_body) {
-            cursor.refuse(::SCE::Forge::CodecError::LengthOutOfRange);
-            return std::nullopt;
+            return ::SCE::Forge::CodecError::LengthOutOfRange;
         }
         (void)length;
         CodecExtAttachment _decoded{
@@ -119,7 +129,7 @@ struct CodecExtAttachment {
         if (static_cast<std::size_t>(1 + length) > _consumed) {
             _consumed = static_cast<std::size_t>(1 + length);
         }
-        if (!cursor.advance(_consumed)) return std::nullopt;
+        if (!cursor.advance(_consumed)) return ::SCE::Forge::CodecError::NeedMoreBytes;
         return _decoded;
     }
 

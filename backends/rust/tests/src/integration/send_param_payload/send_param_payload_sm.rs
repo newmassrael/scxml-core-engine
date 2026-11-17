@@ -597,6 +597,7 @@ impl SendParamPayloadPolicy {
                 );
                 engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(
                     SendParamPayloadEvent::ErrorExecution,
+                    ::sce_rust_runtime::ErrorReason::ParamUnfit,
                     "<data id='nothing'> could not hold the value its invoke handed it",
                 ));
             }
@@ -608,6 +609,7 @@ impl SendParamPayloadPolicy {
                 ::sce_rust_runtime::sce_log_error!("global: {}", e);
                 engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(
                     SendParamPayloadEvent::ErrorExecution,
+                    ::sce_rust_runtime::ErrorReason::ExpressionFailed,
                     "<data id='nothing'> expr failed to evaluate",
                 ));
             }
@@ -622,6 +624,7 @@ impl SendParamPayloadPolicy {
                 );
                 engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(
                     SendParamPayloadEvent::ErrorExecution,
+                    ::sce_rust_runtime::ErrorReason::ParamUnfit,
                     "<data id='sawParamError'> could not hold the value its invoke handed it",
                 ));
             }
@@ -636,6 +639,7 @@ impl SendParamPayloadPolicy {
                 ::sce_rust_runtime::sce_log_error!("global: {}", e);
                 engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(
                     SendParamPayloadEvent::ErrorExecution,
+                    ::sce_rust_runtime::ErrorReason::ExpressionFailed,
                     "<data id='sawParamError'> expr failed to evaluate",
                 ));
             }
@@ -652,6 +656,7 @@ impl SendParamPayloadPolicy {
             ::sce_rust_runtime::sce_log_error!("escapePhase: {}", e);
             engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(
                 SendParamPayloadEvent::ErrorExecution,
+                ::sce_rust_runtime::ErrorReason::ExpressionFailed,
                 "<data id='lines'> expr failed to evaluate",
             ));
         }
@@ -666,6 +671,7 @@ impl SendParamPayloadPolicy {
             ::sce_rust_runtime::sce_log_error!("escapePhase: {}", e);
             engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(
                 SendParamPayloadEvent::ErrorExecution,
+                ::sce_rust_runtime::ErrorReason::ExpressionFailed,
                 "<data id='keyed'> expr failed to evaluate",
             ));
         }
@@ -678,6 +684,7 @@ impl SendParamPayloadPolicy {
             ::sce_rust_runtime::sce_log_error!("typedPhase: {}", e);
             engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(
                 SendParamPayloadEvent::ErrorExecution,
+                ::sce_rust_runtime::ErrorReason::ExpressionFailed,
                 "<data id='tag'> expr failed to evaluate",
             ));
         }
@@ -725,6 +732,7 @@ impl SendParamPayloadPolicy {
                 ::sce_rust_runtime::sce_log_error!("Guard evaluation failed for '{}': {}", cond, e);
                 engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(
                     SendParamPayloadEvent::ErrorExecution,
+                    ::sce_rust_runtime::ErrorReason::ExpressionFailed,
                     reason,
                 ));
                 None
@@ -923,7 +931,7 @@ impl SendParamPayloadPolicy {
                     self.active_invokes.remove("inv_emitter");
                     engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(
                         SendParamPayloadEvent::ErrorExecution,
-                        &format!("<invoke id='{}'> did not start: its child's script session failed at step '{}'", "inv_emitter", failure.stage)));
+                        ::sce_rust_runtime::ErrorReason::InvokeChildInitFailed, &format!("<invoke id='{}'> did not start: its child's script session failed at step '{}'", "inv_emitter", failure.stage)));
                     continue;
                 }
 
@@ -1330,6 +1338,7 @@ impl StatePolicy for SendParamPayloadPolicy {
                                     engine.raise(
                                         sce_rust_runtime::EventWithMetadata::platform_error(
                                             SendParamPayloadEvent::ErrorExecution,
+                                            ::sce_rust_runtime::ErrorReason::LocationInvalid,
                                             "<send> <param name='text'> could not be read",
                                         ),
                                     );
@@ -1349,6 +1358,7 @@ impl StatePolicy for SendParamPayloadPolicy {
                                     engine.raise(
                                         sce_rust_runtime::EventWithMetadata::platform_error(
                                             SendParamPayloadEvent::ErrorExecution,
+                                            ::sce_rust_runtime::ErrorReason::LocationInvalid,
                                             "<send> <param name='obj'> could not be read",
                                         ),
                                     );
@@ -1465,6 +1475,7 @@ impl StatePolicy for SendParamPayloadPolicy {
                                     engine.raise(
                                         sce_rust_runtime::EventWithMetadata::platform_error(
                                             SendParamPayloadEvent::ErrorExecution,
+                                            ::sce_rust_runtime::ErrorReason::LocationInvalid,
                                             "<send> <param name='broken'> could not be read",
                                         ),
                                     );
@@ -1541,6 +1552,7 @@ impl StatePolicy for SendParamPayloadPolicy {
                                     engine.raise(
                                         sce_rust_runtime::EventWithMetadata::platform_error(
                                             SendParamPayloadEvent::ErrorExecution,
+                                            ::sce_rust_runtime::ErrorReason::LocationInvalid,
                                             "<send> <param name='n'> could not be read",
                                         ),
                                     );
@@ -1560,6 +1572,7 @@ impl StatePolicy for SendParamPayloadPolicy {
                                     engine.raise(
                                         sce_rust_runtime::EventWithMetadata::platform_error(
                                             SendParamPayloadEvent::ErrorExecution,
+                                            ::sce_rust_runtime::ErrorReason::LocationInvalid,
                                             "<send> <param name='s'> could not be read",
                                         ),
                                     );
@@ -1579,6 +1592,7 @@ impl StatePolicy for SendParamPayloadPolicy {
                                     engine.raise(
                                         sce_rust_runtime::EventWithMetadata::platform_error(
                                             SendParamPayloadEvent::ErrorExecution,
+                                            ::sce_rust_runtime::ErrorReason::LocationInvalid,
                                             "<send> <param name='d'> could not be read",
                                         ),
                                     );
@@ -1598,6 +1612,7 @@ impl StatePolicy for SendParamPayloadPolicy {
                                     engine.raise(
                                         sce_rust_runtime::EventWithMetadata::platform_error(
                                             SendParamPayloadEvent::ErrorExecution,
+                                            ::sce_rust_runtime::ErrorReason::LocationInvalid,
                                             "<send> <param name='d'> could not be read",
                                         ),
                                     );
@@ -1922,6 +1937,7 @@ impl StatePolicy for SendParamPayloadPolicy {
                             );
                             engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(
                                 SendParamPayloadEvent::ErrorExecution,
+                                ::sce_rust_runtime::ErrorReason::AssignmentFailed,
                                 "<assign> to 'sawParamError' failed",
                             ));
                             // W3C SCXML 4.9: the error ends the block, from however deep a <foreach> it came.

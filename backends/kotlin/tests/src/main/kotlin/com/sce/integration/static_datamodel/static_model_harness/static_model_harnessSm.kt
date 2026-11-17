@@ -1,5 +1,5 @@
 // SCE-GENERATED — DO NOT EDIT
-// source-hash: 65fb42bdd588f958b0fbb29ac261cf039d02606d7afaae0720c045624bd679ba
+// source-hash: 2073d8a55462e1ce61d8a77293fdd2c141aceda8ad173303c5b84813ca22eeee
 
 // GENERATED CODE — DO NOT EDIT
 // Source: sce-build/tests/fixtures/static_datamodel/static_model_harness.scxml
@@ -102,7 +102,7 @@ data class StaticModelHarnessTransition(
 
 object StaticModelHarnessTransitions {
     /** The digest of the source set this machine was generated from: the `source-hash` of the file's own header, as a value. */
-    const val SOURCE_HASH: String = "65fb42bdd588f958b0fbb29ac261cf039d02606d7afaae0720c045624bd679ba"
+    const val SOURCE_HASH: String = "2073d8a55462e1ce61d8a77293fdd2c141aceda8ad173303c5b84813ca22eeee"
 
     /** Every transition of the machine. */
     val all: List<StaticModelHarnessTransition> = listOf(

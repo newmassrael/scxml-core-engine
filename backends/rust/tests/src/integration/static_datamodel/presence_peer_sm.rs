@@ -1,5 +1,5 @@
 // SCE-GENERATED — DO NOT EDIT
-// source-hash: 65fb42bdd588f958b0fbb29ac261cf039d02606d7afaae0720c045624bd679ba
+// source-hash: 2073d8a55462e1ce61d8a77293fdd2c141aceda8ad173303c5b84813ca22eeee
 
 // SPDX-License-Identifier: AGPL-3.0-only WITH AdditionRef-SCE-Linking-Exception OR LicenseRef-SCE-Commercial
 // SPDX-FileCopyrightText: Copyright (c) 2025-2026 [Author of input SCXML file] (content derived from the input document)
@@ -1525,7 +1525,7 @@ impl StatePolicy for PresencePeerPolicy {
 })() {
     Ok(()) => false,
     Err(_) => {
-        engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(PresencePeerEvent::ErrorExecution, "<assign location='lease'>: an integer operation overflowed or failed"));
+        engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(PresencePeerEvent::ErrorExecution, ::sce_rust_runtime::ErrorReason::ExpressionFailed, "<assign location='lease'>: an integer operation overflowed or failed"));
         true
     }
 };
@@ -1607,7 +1607,7 @@ impl StatePolicy for PresencePeerPolicy {
                             // support — the act it asked for was performed by nobody. Same
                             // event, so a wiring mistake cannot read as success.
                             if __sce_served.is_none() && !engine.has_event_processor("sce:mesh") {
-                                let mut err_meta = sce_rust_runtime::EventWithMetadata::platform_error(PresencePeerEvent::ErrorExecution, "<send type='sce:mesh'> names a processor the host declared but never registered");
+                                let mut err_meta = sce_rust_runtime::EventWithMetadata::platform_error(PresencePeerEvent::ErrorExecution, ::sce_rust_runtime::ErrorReason::ProcessorUnregistered, "<send type='sce:mesh'> names a processor the host declared but never registered");
                                 engine.raise(err_meta);
                             }
                         }
@@ -1749,7 +1749,7 @@ impl StatePolicy for PresencePeerPolicy {
                             // support — the act it asked for was performed by nobody. Same
                             // event, so a wiring mistake cannot read as success.
                             if __sce_served.is_none() && !engine.has_event_processor("sce:mesh") {
-                                let mut err_meta = sce_rust_runtime::EventWithMetadata::platform_error(PresencePeerEvent::ErrorExecution, "<send type='sce:mesh'> names a processor the host declared but never registered");
+                                let mut err_meta = sce_rust_runtime::EventWithMetadata::platform_error(PresencePeerEvent::ErrorExecution, ::sce_rust_runtime::ErrorReason::ProcessorUnregistered, "<send type='sce:mesh'> names a processor the host declared but never registered");
                                 engine.raise(err_meta);
                             }
                         }
@@ -1792,7 +1792,7 @@ impl StatePolicy for PresencePeerPolicy {
                             {
                                 false
                             } else {
-                                engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(PresencePeerEvent::ErrorExecution, "<sce:append target='rebuilt'>: the list already holds its capacity of 128"));
+                                engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(PresencePeerEvent::ErrorExecution, ::sce_rust_runtime::ErrorReason::AssignmentFailed, "<sce:append target='rebuilt'>: the list already holds its capacity of 128"));
                                 true
                             };
                             if sce_failed {
@@ -1816,7 +1816,7 @@ impl StatePolicy for PresencePeerPolicy {
 })() {
     Ok(()) => false,
     Err(_) => {
-        engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(PresencePeerEvent::ErrorExecution, "<assign location='entry.gen'>: an integer operation overflowed or failed"));
+        engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(PresencePeerEvent::ErrorExecution, ::sce_rust_runtime::ErrorReason::ExpressionFailed, "<assign location='entry.gen'>: an integer operation overflowed or failed"));
         true
     }
 };
@@ -1830,7 +1830,7 @@ impl StatePolicy for PresencePeerPolicy {
                         {
                             false
                         } else {
-                            engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(PresencePeerEvent::ErrorExecution, "<sce:append target='rebuilt'>: the list already holds its capacity of 128"));
+                            engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(PresencePeerEvent::ErrorExecution, ::sce_rust_runtime::ErrorReason::AssignmentFailed, "<sce:append target='rebuilt'>: the list already holds its capacity of 128"));
                             true
                         };
                         if sce_failed {
@@ -1848,7 +1848,7 @@ impl StatePolicy for PresencePeerPolicy {
                             {
                                 false
                             } else {
-                                engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(PresencePeerEvent::ErrorExecution, "<sce:append target='online'>: the list already holds its capacity of 128"));
+                                engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(PresencePeerEvent::ErrorExecution, ::sce_rust_runtime::ErrorReason::AssignmentFailed, "<sce:append target='online'>: the list already holds its capacity of 128"));
                                 true
                             };
                             if sce_failed {
@@ -1863,7 +1863,7 @@ impl StatePolicy for PresencePeerPolicy {
 })() {
     Ok(()) => false,
     Err(_) => {
-        engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(PresencePeerEvent::ErrorExecution, "<assign location='serial'>: an integer operation overflowed or failed"));
+        engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(PresencePeerEvent::ErrorExecution, ::sce_rust_runtime::ErrorReason::ExpressionFailed, "<assign location='serial'>: an integer operation overflowed or failed"));
         true
     }
 };
@@ -1874,7 +1874,12 @@ impl StatePolicy for PresencePeerPolicy {
                         {
                             let send_id: &str = "__send_3";
 
-                            let mut _send_arg_error: Option<&'static str> = None;
+                            // The code and the sentence of the first argument that failed
+                            // (docs/adr/0106 #111).
+                            let mut _send_arg_error: Option<(
+                                ::sce_rust_runtime::ErrorReason,
+                                &'static str,
+                            )> = None;
                             // The delay is a string computed from the machine's fields now, and read as
                             // the CSS2 time it must be (ARCHITECTURE.md, "Durations"): an operation that
                             // fails, or a value that is no time, is the argument error, and the message
@@ -1883,18 +1888,21 @@ impl StatePolicy for PresencePeerPolicy {
                                 let s: String = (format!("{}{}", self.lease, "ms")).to_string();
                                 sce_rust_runtime::helpers::send::parse_delay_to_ms(&s)
                                     .unwrap_or_else(|| {
-                                        _send_arg_error =
-                                            Some("<send> delayexpr is not a CSS2 time");
+                                        _send_arg_error = Some((
+                                            ::sce_rust_runtime::ErrorReason::SendDelayInvalid,
+                                            "<send> delayexpr is not a CSS2 time",
+                                        ));
                                         0
                                     })
                             } else {
                                 0
                             };
-                            if let Some(__sce_why) = _send_arg_error {
+                            if let Some((__sce_reason, __sce_why)) = _send_arg_error {
                                 ::sce_rust_runtime::sce_log_error!("{}", __sce_why);
                                 let mut err_meta =
                                     sce_rust_runtime::EventWithMetadata::platform_error(
                                         PresencePeerEvent::ErrorExecution,
+                                        __sce_reason,
                                         __sce_why,
                                     );
                                 err_meta.metadata.send_id =
@@ -1984,7 +1992,7 @@ impl StatePolicy for PresencePeerPolicy {
                             {
                                 false
                             } else {
-                                engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(PresencePeerEvent::ErrorExecution, "<sce:append target='rebuilt'>: the list already holds its capacity of 128"));
+                                engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(PresencePeerEvent::ErrorExecution, ::sce_rust_runtime::ErrorReason::AssignmentFailed, "<sce:append target='rebuilt'>: the list already holds its capacity of 128"));
                                 true
                             };
                             if sce_failed {
@@ -2006,7 +2014,7 @@ impl StatePolicy for PresencePeerPolicy {
                             {
                                 false
                             } else {
-                                engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(PresencePeerEvent::ErrorExecution, "<sce:append target='online'>: the list already holds its capacity of 128"));
+                                engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(PresencePeerEvent::ErrorExecution, ::sce_rust_runtime::ErrorReason::AssignmentFailed, "<sce:append target='online'>: the list already holds its capacity of 128"));
                                 true
                             };
                             if sce_failed {
@@ -2081,7 +2089,7 @@ impl StatePolicy for PresencePeerPolicy {
                                     if __sce_served.is_none()
                                         && !engine.has_event_processor("sce:mesh")
                                     {
-                                        let mut err_meta = sce_rust_runtime::EventWithMetadata::platform_error(PresencePeerEvent::ErrorExecution, "<send type='sce:mesh'> names a processor the host declared but never registered");
+                                        let mut err_meta = sce_rust_runtime::EventWithMetadata::platform_error(PresencePeerEvent::ErrorExecution, ::sce_rust_runtime::ErrorReason::ProcessorUnregistered, "<send type='sce:mesh'> names a processor the host declared but never registered");
                                         engine.raise(err_meta);
                                     }
                                 }
@@ -2117,7 +2125,7 @@ impl StatePolicy for PresencePeerPolicy {
                             {
                                 false
                             } else {
-                                engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(PresencePeerEvent::ErrorExecution, "<sce:append target='rebuilt'>: the list already holds its capacity of 128"));
+                                engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(PresencePeerEvent::ErrorExecution, ::sce_rust_runtime::ErrorReason::AssignmentFailed, "<sce:append target='rebuilt'>: the list already holds its capacity of 128"));
                                 true
                             };
                             if sce_failed {
@@ -2136,7 +2144,7 @@ impl StatePolicy for PresencePeerPolicy {
                         let sce_failed = if self.online.len() < 128 && self.online.push(r).is_ok() {
                             false
                         } else {
-                            engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(PresencePeerEvent::ErrorExecution, "<sce:append target='online'>: the list already holds its capacity of 128"));
+                            engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(PresencePeerEvent::ErrorExecution, ::sce_rust_runtime::ErrorReason::AssignmentFailed, "<sce:append target='online'>: the list already holds its capacity of 128"));
                             true
                         };
                         if sce_failed {
@@ -2159,7 +2167,7 @@ impl StatePolicy for PresencePeerPolicy {
                         })() {
                             Ok(()) => false,
                             Err(_) => {
-                                engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(PresencePeerEvent::ErrorExecution, "<assign location='lost'>: an integer operation overflowed or failed"));
+                                engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(PresencePeerEvent::ErrorExecution, ::sce_rust_runtime::ErrorReason::ExpressionFailed, "<assign location='lost'>: an integer operation overflowed or failed"));
                                 true
                             }
                         };
@@ -2183,7 +2191,7 @@ impl StatePolicy for PresencePeerPolicy {
                         })() {
                             Ok(()) => false,
                             Err(_) => {
-                                engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(PresencePeerEvent::ErrorExecution, "<assign location='refusals'>: an integer operation overflowed or failed"));
+                                engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(PresencePeerEvent::ErrorExecution, ::sce_rust_runtime::ErrorReason::ExpressionFailed, "<assign location='refusals'>: an integer operation overflowed or failed"));
                                 true
                             }
                         };

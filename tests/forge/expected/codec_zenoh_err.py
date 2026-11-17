@@ -23,14 +23,16 @@ class CodecZenohErr:
     payload: bytes = b""
 
     @classmethod
-    def decode(cls, cursor: SceCursor) -> Optional[CodecZenohErr]:
-        """Decode the next frame from ``cursor``. Returns ``None`` when
-        the cursor's tail is shorter than the declared minimum frame
-        (RFC §synth-5-B L494-519); on success the cursor advances past the
-        consumed bytes. VLE codecs also return ``None`` on
-        ``VleWidthOverflow``, and every codec on a field's refusal: a length
-        or a count past its bound (``LengthOutOfRange``, ``TooManyElements``,
-        docs/adr/0077), an undeclared enum value."""
+    def decode(cls, cursor: SceCursor) -> CodecZenohErr:
+        """Decode the next frame from ``cursor``; on success the cursor
+        advances past the consumed bytes. A frame the codec refuses raises
+        the ``CodecError`` subclass that names the refusal (docs/adr/0099,
+        amendment of 2026-11-16): ``NeedMoreBytes`` when the cursor's tail
+        is shorter than the frame (RFC §synth-5-B L494-519), which the
+        caller resumes after appending bytes, and for a frame no more bytes
+        make whole ``VleWidthOverflow``, ``InvalidUtf8``,
+        ``UndeclaredEnumValue``, or a length or a count past its bound
+        (``LengthOutOfRange``, ``TooManyElements``, docs/adr/0077)."""
         # Streaming cursor decode (SSOT selection: `needs_streaming`).
         # The positional `raw[byte_off]` path is valid only when every
         # field's absolute offset is fixed at codegen time; this branch
@@ -39,46 +41,35 @@ class CodecZenohErr:
         # (runtime width), string fields (UTF-8 decode), and a fixed field
         # after a variable-length payload (offset depends on the payload
         # length). Each field reads its own bytes and advances past what it
-        # consumed, all inside one outer `try:`. The `except` catches the
-        # base `CodecError` so a peek/advance `NeedMoreBytes` and a VLE
-        # field's `VleWidthOverflow` both unwind to a single `return None`
-        # (non-VLE codecs only ever raise `NeedMoreBytes`, a `CodecError`
-        # subclass, so this is behaviour-identical for them).
-        try:
-            raw = cursor.peek_slice(1)
-            f_header = raw[0]
-            cursor.advance(1)
-            if (f_header & 0x40) != 0:
-                f_encoding = CodecZenohEncoding.decode(cursor)
-                if f_encoding is None:
-                    return None
-            else:
-                f_encoding = None
-            if (f_header & 0x80) != 0:
-                f_extensions = []
-                _more = False
-                while True:
-                    _elem = CodecZenohExtEntry.decode(cursor)
-                    if _elem is None:
-                        return None
-                    _more = _elem.z()
-                    f_extensions.append(_elem)
-                    if not _more:
-                        break
-                if _more and cursor.remaining() == 0:
-                    raise NeedMoreBytes()
-            else:
-                f_extensions = None
-            f_payload_len = cursor.read_vle_u64()
-            _len = f_payload_len
-            if _len > 4294967295:
-                raise LengthOutOfRange()
-            _n = _len
-            raw = cursor.peek_slice(_n)
-            f_payload = bytes(raw)
-            cursor.advance(_n)
-        except CodecError:
-            return None
+        # consumed; a refusal raises the `CodecError` that names it.
+        raw = cursor.peek_slice(1)
+        f_header = raw[0]
+        cursor.advance(1)
+        if (f_header & 0x40) != 0:
+            f_encoding = CodecZenohEncoding.decode(cursor)
+        else:
+            f_encoding = None
+        if (f_header & 0x80) != 0:
+            f_extensions = []
+            _more = False
+            while True:
+                _elem = CodecZenohExtEntry.decode(cursor)
+                _more = _elem.z()
+                f_extensions.append(_elem)
+                if not _more:
+                    break
+            if _more and cursor.remaining() == 0:
+                raise NeedMoreBytes()
+        else:
+            f_extensions = None
+        f_payload_len = cursor.read_vle_u64()
+        _len = f_payload_len
+        if _len > 4294967295:
+            raise LengthOutOfRange()
+        _n = _len
+        raw = cursor.peek_slice(_n)
+        f_payload = bytes(raw)
+        cursor.advance(_n)
         return cls(
             header=f_header,
             encoding=f_encoding,

@@ -448,7 +448,7 @@ impl AutoforwardInternalQueuePolicy {
                     self.active_invokes.remove("inv_watch");
                     engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(
                         AutoforwardInternalQueueEvent::ErrorExecution,
-                        &format!("<invoke id='{}'> did not start: its child's script session failed at step '{}'", "inv_watch", failure.stage)));
+                        ::sce_rust_runtime::ErrorReason::InvokeChildInitFailed, &format!("<invoke id='{}'> did not start: its child's script session failed at step '{}'", "inv_watch", failure.stage)));
                     continue;
                 }
 
@@ -919,7 +919,7 @@ impl StatePolicy for AutoforwardInternalQueuePolicy {
 
                         // W3C SCXML 6.2: Unsupported send type "urn:x-sce-unsupported-processor" raises error.execution
                         {
-                            let mut err_meta = sce_rust_runtime::EventWithMetadata::platform_error(AutoforwardInternalQueueEvent::ErrorExecution, "<send type='urn:x-sce-unsupported-processor'> names a processor this platform does not support");
+                            let mut err_meta = sce_rust_runtime::EventWithMetadata::platform_error(AutoforwardInternalQueueEvent::ErrorExecution, ::sce_rust_runtime::ErrorReason::SendTypeUnsupported, "<send type='urn:x-sce-unsupported-processor'> names a processor this platform does not support");
                             engine.raise(err_meta);
                         }
                         let _ = send_id; // the refusal may carry no error event to name it

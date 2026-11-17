@@ -492,6 +492,7 @@ impl EventTypeNamesItsQueuePolicy {
                 );
                 engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(
                     EventTypeNamesItsQueueEvent::ErrorExecution,
+                    ::sce_rust_runtime::ErrorReason::ParamUnfit,
                     "<data id='intCode'> could not hold the value its invoke handed it",
                 ));
             }
@@ -503,6 +504,7 @@ impl EventTypeNamesItsQueuePolicy {
                 ::sce_rust_runtime::sce_log_error!("global: {}", e);
                 engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(
                     EventTypeNamesItsQueueEvent::ErrorExecution,
+                    ::sce_rust_runtime::ErrorReason::ExpressionFailed,
                     "<data id='intCode'> expr failed to evaluate",
                 ));
             }
@@ -517,6 +519,7 @@ impl EventTypeNamesItsQueuePolicy {
                 );
                 engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(
                     EventTypeNamesItsQueueEvent::ErrorExecution,
+                    ::sce_rust_runtime::ErrorReason::ParamUnfit,
                     "<data id='sendCode'> could not hold the value its invoke handed it",
                 ));
             }
@@ -528,6 +531,7 @@ impl EventTypeNamesItsQueuePolicy {
                 ::sce_rust_runtime::sce_log_error!("global: {}", e);
                 engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(
                     EventTypeNamesItsQueueEvent::ErrorExecution,
+                    ::sce_rust_runtime::ErrorReason::ExpressionFailed,
                     "<data id='sendCode'> expr failed to evaluate",
                 ));
             }
@@ -542,6 +546,7 @@ impl EventTypeNamesItsQueuePolicy {
                 );
                 engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(
                     EventTypeNamesItsQueueEvent::ErrorExecution,
+                    ::sce_rust_runtime::ErrorReason::ParamUnfit,
                     "<data id='extCode'> could not hold the value its invoke handed it",
                 ));
             }
@@ -553,6 +558,7 @@ impl EventTypeNamesItsQueuePolicy {
                 ::sce_rust_runtime::sce_log_error!("global: {}", e);
                 engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(
                     EventTypeNamesItsQueueEvent::ErrorExecution,
+                    ::sce_rust_runtime::ErrorReason::ExpressionFailed,
                     "<data id='extCode'> expr failed to evaluate",
                 ));
             }
@@ -601,6 +607,7 @@ impl EventTypeNamesItsQueuePolicy {
                 ::sce_rust_runtime::sce_log_error!("Guard evaluation failed for '{}': {}", cond, e);
                 engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(
                     EventTypeNamesItsQueueEvent::ErrorExecution,
+                    ::sce_rust_runtime::ErrorReason::ExpressionFailed,
                     reason,
                 ));
                 None
@@ -978,6 +985,7 @@ impl StatePolicy for EventTypeNamesItsQueuePolicy {
                                     engine.raise(
                                         sce_rust_runtime::EventWithMetadata::platform_error(
                                             EventTypeNamesItsQueueEvent::ErrorExecution,
+                                            ::sce_rust_runtime::ErrorReason::LocationInvalid,
                                             "<send> <param name='a'> could not be read",
                                         ),
                                     );
@@ -1173,6 +1181,7 @@ impl StatePolicy for EventTypeNamesItsQueuePolicy {
                                     engine.raise(
                                         sce_rust_runtime::EventWithMetadata::platform_error(
                                             EventTypeNamesItsQueueEvent::ErrorExecution,
+                                            ::sce_rust_runtime::ErrorReason::AssignmentFailed,
                                             "<assign> to 'intCode' failed",
                                         ),
                                     );
@@ -1205,6 +1214,7 @@ impl StatePolicy for EventTypeNamesItsQueuePolicy {
                                     engine.raise(
                                         sce_rust_runtime::EventWithMetadata::platform_error(
                                             EventTypeNamesItsQueueEvent::ErrorExecution,
+                                            ::sce_rust_runtime::ErrorReason::AssignmentFailed,
                                             "<assign> to 'intCode' failed",
                                         ),
                                     );
@@ -1233,6 +1243,7 @@ impl StatePolicy for EventTypeNamesItsQueuePolicy {
                                     engine.raise(
                                         sce_rust_runtime::EventWithMetadata::platform_error(
                                             EventTypeNamesItsQueueEvent::ErrorExecution,
+                                            ::sce_rust_runtime::ErrorReason::AssignmentFailed,
                                             "<assign> to 'intCode' failed",
                                         ),
                                     );
@@ -1281,6 +1292,7 @@ impl StatePolicy for EventTypeNamesItsQueuePolicy {
                                     engine.raise(
                                         sce_rust_runtime::EventWithMetadata::platform_error(
                                             EventTypeNamesItsQueueEvent::ErrorExecution,
+                                            ::sce_rust_runtime::ErrorReason::AssignmentFailed,
                                             "<assign> to 'sendCode' failed",
                                         ),
                                     );
@@ -1313,6 +1325,7 @@ impl StatePolicy for EventTypeNamesItsQueuePolicy {
                                     engine.raise(
                                         sce_rust_runtime::EventWithMetadata::platform_error(
                                             EventTypeNamesItsQueueEvent::ErrorExecution,
+                                            ::sce_rust_runtime::ErrorReason::AssignmentFailed,
                                             "<assign> to 'sendCode' failed",
                                         ),
                                     );
@@ -1341,6 +1354,7 @@ impl StatePolicy for EventTypeNamesItsQueuePolicy {
                                     engine.raise(
                                         sce_rust_runtime::EventWithMetadata::platform_error(
                                             EventTypeNamesItsQueueEvent::ErrorExecution,
+                                            ::sce_rust_runtime::ErrorReason::AssignmentFailed,
                                             "<assign> to 'sendCode' failed",
                                         ),
                                     );
@@ -1389,6 +1403,7 @@ impl StatePolicy for EventTypeNamesItsQueuePolicy {
                                     engine.raise(
                                         sce_rust_runtime::EventWithMetadata::platform_error(
                                             EventTypeNamesItsQueueEvent::ErrorExecution,
+                                            ::sce_rust_runtime::ErrorReason::AssignmentFailed,
                                             "<assign> to 'extCode' failed",
                                         ),
                                     );
@@ -1421,6 +1436,7 @@ impl StatePolicy for EventTypeNamesItsQueuePolicy {
                                     engine.raise(
                                         sce_rust_runtime::EventWithMetadata::platform_error(
                                             EventTypeNamesItsQueueEvent::ErrorExecution,
+                                            ::sce_rust_runtime::ErrorReason::AssignmentFailed,
                                             "<assign> to 'extCode' failed",
                                         ),
                                     );
@@ -1449,6 +1465,7 @@ impl StatePolicy for EventTypeNamesItsQueuePolicy {
                                     engine.raise(
                                         sce_rust_runtime::EventWithMetadata::platform_error(
                                             EventTypeNamesItsQueueEvent::ErrorExecution,
+                                            ::sce_rust_runtime::ErrorReason::AssignmentFailed,
                                             "<assign> to 'extCode' failed",
                                         ),
                                     );

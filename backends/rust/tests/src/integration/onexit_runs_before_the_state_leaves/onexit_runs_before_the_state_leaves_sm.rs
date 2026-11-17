@@ -578,6 +578,7 @@ impl OnexitRunsBeforeTheStateLeavesPolicy {
                 );
                 engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(
                     OnexitRunsBeforeTheStateLeavesEvent::ErrorExecution,
+                    ::sce_rust_runtime::ErrorReason::ParamUnfit,
                     "<data id='selfInInner'> could not hold the value its invoke handed it",
                 ));
             }
@@ -592,6 +593,7 @@ impl OnexitRunsBeforeTheStateLeavesPolicy {
                 ::sce_rust_runtime::sce_log_error!("global: {}", e);
                 engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(
                     OnexitRunsBeforeTheStateLeavesEvent::ErrorExecution,
+                    ::sce_rust_runtime::ErrorReason::ExpressionFailed,
                     "<data id='selfInInner'> expr failed to evaluate",
                 ));
             }
@@ -606,6 +608,7 @@ impl OnexitRunsBeforeTheStateLeavesPolicy {
                 );
                 engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(
                     OnexitRunsBeforeTheStateLeavesEvent::ErrorExecution,
+                    ::sce_rust_runtime::ErrorReason::ParamUnfit,
                     "<data id='parentInInner'> could not hold the value its invoke handed it",
                 ));
             }
@@ -620,6 +623,7 @@ impl OnexitRunsBeforeTheStateLeavesPolicy {
                 ::sce_rust_runtime::sce_log_error!("global: {}", e);
                 engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(
                     OnexitRunsBeforeTheStateLeavesEvent::ErrorExecution,
+                    ::sce_rust_runtime::ErrorReason::ExpressionFailed,
                     "<data id='parentInInner'> expr failed to evaluate",
                 ));
             }
@@ -634,6 +638,7 @@ impl OnexitRunsBeforeTheStateLeavesPolicy {
                 );
                 engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(
                     OnexitRunsBeforeTheStateLeavesEvent::ErrorExecution,
+                    ::sce_rust_runtime::ErrorReason::ParamUnfit,
                     "<data id='selfInOuter'> could not hold the value its invoke handed it",
                 ));
             }
@@ -648,6 +653,7 @@ impl OnexitRunsBeforeTheStateLeavesPolicy {
                 ::sce_rust_runtime::sce_log_error!("global: {}", e);
                 engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(
                     OnexitRunsBeforeTheStateLeavesEvent::ErrorExecution,
+                    ::sce_rust_runtime::ErrorReason::ExpressionFailed,
                     "<data id='selfInOuter'> expr failed to evaluate",
                 ));
             }
@@ -662,6 +668,7 @@ impl OnexitRunsBeforeTheStateLeavesPolicy {
                 );
                 engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(
                     OnexitRunsBeforeTheStateLeavesEvent::ErrorExecution,
+                    ::sce_rust_runtime::ErrorReason::ParamUnfit,
                     "<data id='childInOuter'> could not hold the value its invoke handed it",
                 ));
             }
@@ -676,6 +683,7 @@ impl OnexitRunsBeforeTheStateLeavesPolicy {
                 ::sce_rust_runtime::sce_log_error!("global: {}", e);
                 engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(
                     OnexitRunsBeforeTheStateLeavesEvent::ErrorExecution,
+                    ::sce_rust_runtime::ErrorReason::ExpressionFailed,
                     "<data id='childInOuter'> expr failed to evaluate",
                 ));
             }
@@ -690,6 +698,7 @@ impl OnexitRunsBeforeTheStateLeavesPolicy {
                 );
                 engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(
                     OnexitRunsBeforeTheStateLeavesEvent::ErrorExecution,
+                    ::sce_rust_runtime::ErrorReason::ParamUnfit,
                     "<data id='exits'> could not hold the value its invoke handed it",
                 ));
             }
@@ -701,6 +710,7 @@ impl OnexitRunsBeforeTheStateLeavesPolicy {
                 ::sce_rust_runtime::sce_log_error!("global: {}", e);
                 engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(
                     OnexitRunsBeforeTheStateLeavesEvent::ErrorExecution,
+                    ::sce_rust_runtime::ErrorReason::ExpressionFailed,
                     "<data id='exits'> expr failed to evaluate",
                 ));
             }
@@ -767,6 +777,7 @@ impl OnexitRunsBeforeTheStateLeavesPolicy {
                 ::sce_rust_runtime::sce_log_error!("Guard evaluation failed for '{}': {}", cond, e);
                 engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(
                     OnexitRunsBeforeTheStateLeavesEvent::ErrorExecution,
+                    ::sce_rust_runtime::ErrorReason::ExpressionFailed,
                     reason,
                 ));
                 None
@@ -1139,6 +1150,7 @@ impl StatePolicy for OnexitRunsBeforeTheStateLeavesPolicy {
                             ::sce_rust_runtime::sce_log_error!("Assign failed for 'exits': {}", e);
                             engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(
                                 OnexitRunsBeforeTheStateLeavesEvent::ErrorExecution,
+                                ::sce_rust_runtime::ErrorReason::AssignmentFailed,
                                 "<assign> to 'exits' failed",
                             ));
                             // W3C SCXML 4.9: the error ends the block, from however deep a <foreach> it came.
@@ -1167,6 +1179,7 @@ impl StatePolicy for OnexitRunsBeforeTheStateLeavesPolicy {
                                 );
                                 engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(
                                     OnexitRunsBeforeTheStateLeavesEvent::ErrorExecution,
+                                    ::sce_rust_runtime::ErrorReason::AssignmentFailed,
                                     "<assign> to 'selfInInner' failed",
                                 ));
                                 // W3C SCXML 4.9: the error ends the block, from however deep a <foreach> it came.
@@ -1196,6 +1209,7 @@ impl StatePolicy for OnexitRunsBeforeTheStateLeavesPolicy {
                                 );
                                 engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(
                                     OnexitRunsBeforeTheStateLeavesEvent::ErrorExecution,
+                                    ::sce_rust_runtime::ErrorReason::AssignmentFailed,
                                     "<assign> to 'parentInInner' failed",
                                 ));
                                 // W3C SCXML 4.9: the error ends the block, from however deep a <foreach> it came.
@@ -1226,6 +1240,7 @@ impl StatePolicy for OnexitRunsBeforeTheStateLeavesPolicy {
                             ::sce_rust_runtime::sce_log_error!("Assign failed for 'exits': {}", e);
                             engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(
                                 OnexitRunsBeforeTheStateLeavesEvent::ErrorExecution,
+                                ::sce_rust_runtime::ErrorReason::AssignmentFailed,
                                 "<assign> to 'exits' failed",
                             ));
                             // W3C SCXML 4.9: the error ends the block, from however deep a <foreach> it came.
@@ -1254,6 +1269,7 @@ impl StatePolicy for OnexitRunsBeforeTheStateLeavesPolicy {
                                 );
                                 engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(
                                     OnexitRunsBeforeTheStateLeavesEvent::ErrorExecution,
+                                    ::sce_rust_runtime::ErrorReason::AssignmentFailed,
                                     "<assign> to 'selfInOuter' failed",
                                 ));
                                 // W3C SCXML 4.9: the error ends the block, from however deep a <foreach> it came.
@@ -1283,6 +1299,7 @@ impl StatePolicy for OnexitRunsBeforeTheStateLeavesPolicy {
                                 );
                                 engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(
                                     OnexitRunsBeforeTheStateLeavesEvent::ErrorExecution,
+                                    ::sce_rust_runtime::ErrorReason::AssignmentFailed,
                                     "<assign> to 'childInOuter' failed",
                                 ));
                                 // W3C SCXML 4.9: the error ends the block, from however deep a <foreach> it came.

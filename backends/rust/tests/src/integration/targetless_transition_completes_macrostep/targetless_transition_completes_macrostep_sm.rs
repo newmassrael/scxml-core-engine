@@ -566,6 +566,7 @@ impl TargetlessTransitionCompletesMacrostepPolicy {
                 );
                 engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(
                     TargetlessTransitionCompletesMacrostepEvent::ErrorExecution,
+                    ::sce_rust_runtime::ErrorReason::ParamUnfit,
                     "<data id='quiet'> could not hold the value its invoke handed it",
                 ));
             }
@@ -577,6 +578,7 @@ impl TargetlessTransitionCompletesMacrostepPolicy {
                 ::sce_rust_runtime::sce_log_error!("global: {}", e);
                 engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(
                     TargetlessTransitionCompletesMacrostepEvent::ErrorExecution,
+                    ::sce_rust_runtime::ErrorReason::ExpressionFailed,
                     "<data id='quiet'> expr failed to evaluate",
                 ));
             }
@@ -591,6 +593,7 @@ impl TargetlessTransitionCompletesMacrostepPolicy {
                 );
                 engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(
                     TargetlessTransitionCompletesMacrostepEvent::ErrorExecution,
+                    ::sce_rust_runtime::ErrorReason::ParamUnfit,
                     "<data id='armed'> could not hold the value its invoke handed it",
                 ));
             }
@@ -602,6 +605,7 @@ impl TargetlessTransitionCompletesMacrostepPolicy {
                 ::sce_rust_runtime::sce_log_error!("global: {}", e);
                 engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(
                     TargetlessTransitionCompletesMacrostepEvent::ErrorExecution,
+                    ::sce_rust_runtime::ErrorReason::ExpressionFailed,
                     "<data id='armed'> expr failed to evaluate",
                 ));
             }
@@ -616,6 +620,7 @@ impl TargetlessTransitionCompletesMacrostepPolicy {
                 );
                 engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(
                     TargetlessTransitionCompletesMacrostepEvent::ErrorExecution,
+                    ::sce_rust_runtime::ErrorReason::ParamUnfit,
                     "<data id='chained'> could not hold the value its invoke handed it",
                 ));
             }
@@ -627,6 +632,7 @@ impl TargetlessTransitionCompletesMacrostepPolicy {
                 ::sce_rust_runtime::sce_log_error!("global: {}", e);
                 engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(
                     TargetlessTransitionCompletesMacrostepEvent::ErrorExecution,
+                    ::sce_rust_runtime::ErrorReason::ExpressionFailed,
                     "<data id='chained'> expr failed to evaluate",
                 ));
             }
@@ -641,6 +647,7 @@ impl TargetlessTransitionCompletesMacrostepPolicy {
                 );
                 engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(
                     TargetlessTransitionCompletesMacrostepEvent::ErrorExecution,
+                    ::sce_rust_runtime::ErrorReason::ParamUnfit,
                     "<data id='polished'> could not hold the value its invoke handed it",
                 ));
             }
@@ -652,6 +659,7 @@ impl TargetlessTransitionCompletesMacrostepPolicy {
                 ::sce_rust_runtime::sce_log_error!("global: {}", e);
                 engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(
                     TargetlessTransitionCompletesMacrostepEvent::ErrorExecution,
+                    ::sce_rust_runtime::ErrorReason::ExpressionFailed,
                     "<data id='polished'> expr failed to evaluate",
                 ));
             }
@@ -666,6 +674,7 @@ impl TargetlessTransitionCompletesMacrostepPolicy {
                 );
                 engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(
                     TargetlessTransitionCompletesMacrostepEvent::ErrorExecution,
+                    ::sce_rust_runtime::ErrorReason::ParamUnfit,
                     "<data id='answered'> could not hold the value its invoke handed it",
                 ));
             }
@@ -677,6 +686,7 @@ impl TargetlessTransitionCompletesMacrostepPolicy {
                 ::sce_rust_runtime::sce_log_error!("global: {}", e);
                 engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(
                     TargetlessTransitionCompletesMacrostepEvent::ErrorExecution,
+                    ::sce_rust_runtime::ErrorReason::ExpressionFailed,
                     "<data id='answered'> expr failed to evaluate",
                 ));
             }
@@ -691,6 +701,7 @@ impl TargetlessTransitionCompletesMacrostepPolicy {
                 );
                 engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(
                     TargetlessTransitionCompletesMacrostepEvent::ErrorExecution,
+                    ::sce_rust_runtime::ErrorReason::ParamUnfit,
                     "<data id='entries'> could not hold the value its invoke handed it",
                 ));
             }
@@ -702,6 +713,7 @@ impl TargetlessTransitionCompletesMacrostepPolicy {
                 ::sce_rust_runtime::sce_log_error!("global: {}", e);
                 engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(
                     TargetlessTransitionCompletesMacrostepEvent::ErrorExecution,
+                    ::sce_rust_runtime::ErrorReason::ExpressionFailed,
                     "<data id='entries'> expr failed to evaluate",
                 ));
             }
@@ -750,6 +762,7 @@ impl TargetlessTransitionCompletesMacrostepPolicy {
                 ::sce_rust_runtime::sce_log_error!("Guard evaluation failed for '{}': {}", cond, e);
                 engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(
                     TargetlessTransitionCompletesMacrostepEvent::ErrorExecution,
+                    ::sce_rust_runtime::ErrorReason::ExpressionFailed,
                     reason,
                 ));
                 None
@@ -1089,6 +1102,7 @@ impl StatePolicy for TargetlessTransitionCompletesMacrostepPolicy {
                             );
                             engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(
                                 TargetlessTransitionCompletesMacrostepEvent::ErrorExecution,
+                                ::sce_rust_runtime::ErrorReason::AssignmentFailed,
                                 "<assign> to 'entries' failed",
                             ));
                             // W3C SCXML 4.9: the error ends the block, from however deep a <foreach> it came.
@@ -1285,6 +1299,7 @@ impl StatePolicy for TargetlessTransitionCompletesMacrostepPolicy {
                             );
                             engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(
                                 TargetlessTransitionCompletesMacrostepEvent::ErrorExecution,
+                                ::sce_rust_runtime::ErrorReason::AssignmentFailed,
                                 "<assign> to 'chained' failed",
                             ));
                             // W3C SCXML 4.9: the error ends the block, from however deep a <foreach> it came.
@@ -1315,6 +1330,7 @@ impl StatePolicy for TargetlessTransitionCompletesMacrostepPolicy {
                             ::sce_rust_runtime::sce_log_error!("Assign failed for 'quiet': {}", e);
                             engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(
                                 TargetlessTransitionCompletesMacrostepEvent::ErrorExecution,
+                                ::sce_rust_runtime::ErrorReason::AssignmentFailed,
                                 "<assign> to 'quiet' failed",
                             ));
                             // W3C SCXML 4.9: the error ends the block, from however deep a <foreach> it came.
@@ -1345,6 +1361,7 @@ impl StatePolicy for TargetlessTransitionCompletesMacrostepPolicy {
                             ::sce_rust_runtime::sce_log_error!("Assign failed for 'armed': {}", e);
                             engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(
                                 TargetlessTransitionCompletesMacrostepEvent::ErrorExecution,
+                                ::sce_rust_runtime::ErrorReason::AssignmentFailed,
                                 "<assign> to 'armed' failed",
                             ));
                             // W3C SCXML 4.9: the error ends the block, from however deep a <foreach> it came.
@@ -1390,6 +1407,7 @@ impl StatePolicy for TargetlessTransitionCompletesMacrostepPolicy {
                             );
                             engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(
                                 TargetlessTransitionCompletesMacrostepEvent::ErrorExecution,
+                                ::sce_rust_runtime::ErrorReason::AssignmentFailed,
                                 "<assign> to 'answered' failed",
                             ));
                             // W3C SCXML 4.9: the error ends the block, from however deep a <foreach> it came.
@@ -1423,6 +1441,7 @@ impl StatePolicy for TargetlessTransitionCompletesMacrostepPolicy {
                             );
                             engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(
                                 TargetlessTransitionCompletesMacrostepEvent::ErrorExecution,
+                                ::sce_rust_runtime::ErrorReason::AssignmentFailed,
                                 "<assign> to 'polished' failed",
                             ));
                             // W3C SCXML 4.9: the error ends the block, from however deep a <foreach> it came.

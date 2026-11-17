@@ -463,7 +463,7 @@ impl Test347Policy {
                     self.active_invokes.remove("child");
                     engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(
                         Test347Event::ErrorExecution,
-                        &format!("<invoke id='{}'> did not start: its child's script session failed at step '{}'", "child", failure.stage)));
+                        ::sce_rust_runtime::ErrorReason::InvokeChildInitFailed, &format!("<invoke id='{}'> did not start: its child's script session failed at step '{}'", "child", failure.stage)));
                     continue;
                 }
 
@@ -832,6 +832,7 @@ impl StatePolicy for Test347Policy {
                             // target names is not there to reach.
                             let mut err_meta = sce_rust_runtime::EventWithMetadata::platform_error(
                                 Test347Event::ErrorCommunication,
+                                ::sce_rust_runtime::ErrorReason::TargetUnreachable,
                                 "<send target='#_child'> names an invocation that is not running",
                             );
                             engine.raise(err_meta);

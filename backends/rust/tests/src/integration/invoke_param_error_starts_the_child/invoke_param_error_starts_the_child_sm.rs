@@ -502,6 +502,7 @@ impl InvokeParamErrorStartsTheChildPolicy {
                 );
                 engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(
                     InvokeParamErrorStartsTheChildEvent::ErrorExecution,
+                    ::sce_rust_runtime::ErrorReason::ParamUnfit,
                     "<data id='nothing'> could not hold the value its invoke handed it",
                 ));
             }
@@ -513,6 +514,7 @@ impl InvokeParamErrorStartsTheChildPolicy {
                 ::sce_rust_runtime::sce_log_error!("global: {}", e);
                 engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(
                     InvokeParamErrorStartsTheChildEvent::ErrorExecution,
+                    ::sce_rust_runtime::ErrorReason::ExpressionFailed,
                     "<data id='nothing'> expr failed to evaluate",
                 ));
             }
@@ -527,6 +529,7 @@ impl InvokeParamErrorStartsTheChildPolicy {
                 );
                 engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(
                     InvokeParamErrorStartsTheChildEvent::ErrorExecution,
+                    ::sce_rust_runtime::ErrorReason::ParamUnfit,
                     "<data id='sawParamError'> could not hold the value its invoke handed it",
                 ));
             }
@@ -541,6 +544,7 @@ impl InvokeParamErrorStartsTheChildPolicy {
                 ::sce_rust_runtime::sce_log_error!("global: {}", e);
                 engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(
                     InvokeParamErrorStartsTheChildEvent::ErrorExecution,
+                    ::sce_rust_runtime::ErrorReason::ExpressionFailed,
                     "<data id='sawParamError'> expr failed to evaluate",
                 ));
             }
@@ -589,6 +593,7 @@ impl InvokeParamErrorStartsTheChildPolicy {
                 ::sce_rust_runtime::sce_log_error!("Guard evaluation failed for '{}': {}", cond, e);
                 engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(
                     InvokeParamErrorStartsTheChildEvent::ErrorExecution,
+                    ::sce_rust_runtime::ErrorReason::ExpressionFailed,
                     reason,
                 ));
                 None
@@ -769,6 +774,7 @@ impl InvokeParamErrorStartsTheChildPolicy {
                             );
                             engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(
                                 InvokeParamErrorStartsTheChildEvent::ErrorExecution,
+                                ::sce_rust_runtime::ErrorReason::LocationInvalid,
                                 "<invoke> <param name='kept'> could not be read",
                             ));
                         }
@@ -796,6 +802,7 @@ impl InvokeParamErrorStartsTheChildPolicy {
                             );
                             engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(
                                 InvokeParamErrorStartsTheChildEvent::ErrorExecution,
+                                ::sce_rust_runtime::ErrorReason::LocationInvalid,
                                 "<invoke> <param name='broken'> could not be read",
                             ));
                         }
@@ -849,7 +856,7 @@ impl InvokeParamErrorStartsTheChildPolicy {
                     self.active_invokes.remove("inv_probe");
                     engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(
                         InvokeParamErrorStartsTheChildEvent::ErrorExecution,
-                        &format!("<invoke id='{}'> did not start: its child's script session failed at step '{}'", "inv_probe", failure.stage)));
+                        ::sce_rust_runtime::ErrorReason::InvokeChildInitFailed, &format!("<invoke id='{}'> did not start: its child's script session failed at step '{}'", "inv_probe", failure.stage)));
                     continue;
                 }
 
@@ -1412,6 +1419,7 @@ impl StatePolicy for InvokeParamErrorStartsTheChildPolicy {
                             );
                             engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(
                                 InvokeParamErrorStartsTheChildEvent::ErrorExecution,
+                                ::sce_rust_runtime::ErrorReason::AssignmentFailed,
                                 "<assign> to 'sawParamError' failed",
                             ));
                             // W3C SCXML 4.9: the error ends the block, from however deep a <foreach> it came.

@@ -206,6 +206,23 @@ struct Wire {
     }
 };
 
+/// The `payload_size` the frame of a source of `CodecPresentIfLengthRef` carries, which its encode
+/// derives from what it measures and no value holds (docs/adr/0081 §3), and what the value holds of the field where nothing it measures is there.
+template <class S>
+[[nodiscard]] uint8_t wire_payload_size(const S& src) noexcept(is_nothrow_source<S>::value) {
+    static_assert(is_source<S>::value, "S presents every element of CodecPresentIfLengthRef");
+    const auto& _r_flags_has_payload = source::flags_has_payload(src);
+    std::optional<uint8_t> _e_payload_size;
+    std::optional<::SCE::Forge::Bytes<32>> _e_payload;
+    if (const auto* _a = std::get_if<0>(&_r_flags_has_payload)) {
+        _e_payload = static_cast<::SCE::Forge::Bytes<32>>(source::payload(*_a));
+    }
+    if (const auto* _a = std::get_if<1>(&_r_flags_has_payload)) {
+        _e_payload_size = static_cast<uint8_t>(source::payload_size(*_a));
+    }
+    return (_e_payload.has_value()) ? static_cast<uint8_t>(_e_payload->size()) : _e_payload_size.value_or(uint8_t{0});
+}
+
 struct CodecPresentIfLengthRef {
     CodecPresentIfLengthRef() = default;
     /// The value of each element it presents, in declaration order (ADR 0059 §5).
@@ -217,12 +234,13 @@ struct CodecPresentIfLengthRef {
     [[nodiscard]] const CodecPresentIfLengthRefFlagsHasPayload& flags_has_payload() const noexcept { return flags_has_payload_; }
 
     /// Decode the next frame from `cursor`. On success the cursor
-    /// advances past the consumed bytes; on `NeedMoreBytes` the cursor
-    /// is left untouched so the caller can resume after appending more
-    /// bytes (RFC §synth-5-B L494-519). Returns `std::nullopt` on the
-    /// `NeedMoreBytes` boundary; later phases attach a typed error via
-    /// `cursor.last_error()`.
-    static std::optional<CodecPresentIfLengthRef> decode(::SCE::Forge::SceCursor& cursor) {
+    /// advances past the consumed bytes and the value is answered; a
+    /// refused frame answers the `CodecError` that refused it
+    /// (docs/adr/0099, amendment of 2026-11-16): `NeedMoreBytes` when
+    /// the cursor's tail is shorter than the frame (RFC §synth-5-B
+    /// L494-519), which the caller resumes after appending bytes, and
+    /// another kind for a frame no more bytes make whole.
+    static ::SCE::Forge::Decoded<CodecPresentIfLengthRef> decode(::SCE::Forge::SceCursor& cursor) {
         // Streaming cursor decode (SSOT selection: `needs_streaming`).
         // The positional `raw[byte_off]` path is valid only when every
         // field's absolute offset is fixed at codegen time; this branch
@@ -237,35 +255,34 @@ struct CodecPresentIfLengthRef {
         uint8_t flags;
         {
             const std::uint8_t* raw = cursor.peek_slice(1);
-            if (raw == nullptr) return std::nullopt;
+            if (raw == nullptr) return ::SCE::Forge::CodecError::NeedMoreBytes;
             flags = static_cast<uint8_t>(raw[0]);
-            if (!cursor.advance(1)) return std::nullopt;
+            if (!cursor.advance(1)) return ::SCE::Forge::CodecError::NeedMoreBytes;
         }
         uint8_t payload_size;
         {
             const std::uint8_t* raw = cursor.peek_slice(1);
-            if (raw == nullptr) return std::nullopt;
+            if (raw == nullptr) return ::SCE::Forge::CodecError::NeedMoreBytes;
             payload_size = static_cast<uint8_t>(raw[0]);
-            if (!cursor.advance(1)) return std::nullopt;
+            if (!cursor.advance(1)) return ::SCE::Forge::CodecError::NeedMoreBytes;
         }
         std::optional<std::vector<uint8_t>> payload;
         if ((flags & 0x01) != 0) {
             const auto _len = payload_size;
             if (_len > 32) {
-                cursor.refuse(::SCE::Forge::CodecError::LengthOutOfRange); return std::nullopt;
+                return ::SCE::Forge::CodecError::LengthOutOfRange;
             }
             std::size_t _n = static_cast<std::size_t>(_len);
             const std::uint8_t* raw = cursor.peek_slice(_n);
-            if (raw == nullptr) return std::nullopt;
+            if (raw == nullptr) return ::SCE::Forge::CodecError::NeedMoreBytes;
             payload.emplace(raw, raw + _n);
-            if (!cursor.advance(_n)) return std::nullopt;
+            if (!cursor.advance(_n)) return ::SCE::Forge::CodecError::NeedMoreBytes;
         }
         std::optional<::SCE::Forge::Bytes<32>> _b_payload;
         if (payload) {
             _b_payload = ::SCE::Forge::Bytes<32>::make(*payload);
             if (!_b_payload) {
-                cursor.refuse(::SCE::Forge::CodecError::LengthOutOfRange);
-                return std::nullopt;
+                return ::SCE::Forge::CodecError::LengthOutOfRange;
             }
         }
         (void)payload_size;

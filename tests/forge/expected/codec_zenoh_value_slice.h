@@ -100,6 +100,16 @@ struct Wire {
     }
 };
 
+/// The `len` the frame of a source of `CodecZenohValueSlice` carries, which its encode
+/// derives from what it measures and no value holds (docs/adr/0081 §3).
+template <class S>
+[[nodiscard]] uint64_t wire_len(const S& src) noexcept(is_nothrow_source<S>::value) {
+    static_assert(is_source<S>::value, "S presents every element of CodecZenohValueSlice");
+    const auto& _r_data = source::data(src);
+    const ::SCE::Forge::Bytes<4294967295> _e_data = _r_data;
+    return static_cast<uint64_t>(_e_data.size());
+}
+
 struct CodecZenohValueSlice {
     CodecZenohValueSlice() = default;
     /// The value of each element it presents, in declaration order (ADR 0059 §5).
@@ -111,12 +121,13 @@ struct CodecZenohValueSlice {
     [[nodiscard]] ::SCE::Forge::Bytes<4294967295> data() const noexcept { return data_; }
 
     /// Decode the next frame from `cursor`. On success the cursor
-    /// advances past the consumed bytes; on `NeedMoreBytes` the cursor
-    /// is left untouched so the caller can resume after appending more
-    /// bytes (RFC §synth-5-B L494-519). Returns `std::nullopt` on the
-    /// `NeedMoreBytes` boundary; later phases attach a typed error via
-    /// `cursor.last_error()`.
-    static std::optional<CodecZenohValueSlice> decode(::SCE::Forge::SceCursor& cursor) {
+    /// advances past the consumed bytes and the value is answered; a
+    /// refused frame answers the `CodecError` that refused it
+    /// (docs/adr/0099, amendment of 2026-11-16): `NeedMoreBytes` when
+    /// the cursor's tail is shorter than the frame (RFC §synth-5-B
+    /// L494-519), which the caller resumes after appending bytes, and
+    /// another kind for a frame no more bytes make whole.
+    static ::SCE::Forge::Decoded<CodecZenohValueSlice> decode(::SCE::Forge::SceCursor& cursor) {
         // Streaming cursor decode (SSOT selection: `needs_streaming`).
         // The positional `raw[byte_off]` path is valid only when every
         // field's absolute offset is fixed at codegen time; this branch
@@ -131,30 +142,29 @@ struct CodecZenohValueSlice {
         uint8_t kind;
         {
             const std::uint8_t* raw = cursor.peek_slice(1);
-            if (raw == nullptr) return std::nullopt;
+            if (raw == nullptr) return ::SCE::Forge::CodecError::NeedMoreBytes;
             kind = static_cast<uint8_t>(raw[0]);
-            if (!cursor.advance(1)) return std::nullopt;
+            if (!cursor.advance(1)) return ::SCE::Forge::CodecError::NeedMoreBytes;
         }
-        auto len_opt = cursor.read_vle_u64();
-        if (!len_opt.has_value()) return std::nullopt;
-        auto len = static_cast<std::uint64_t>(*len_opt);
+        auto len_read = cursor.read_vle_u64();
+        if (!len_read.has_value()) return len_read.error();
+        auto len = static_cast<std::uint64_t>(*len_read);
         std::vector<uint8_t> data;
         {
             const auto _len = len;
             if (_len > 4294967295ULL) {
-                cursor.refuse(::SCE::Forge::CodecError::LengthOutOfRange); return std::nullopt;
+                return ::SCE::Forge::CodecError::LengthOutOfRange;
             }
-            if (static_cast<std::uint64_t>(_len) > static_cast<std::uint64_t>(SIZE_MAX) - 0u) return std::nullopt;
+            if (static_cast<std::uint64_t>(_len) > static_cast<std::uint64_t>(SIZE_MAX) - 0u) return ::SCE::Forge::CodecError::NeedMoreBytes;
             std::size_t _n = static_cast<std::size_t>(_len);
             const std::uint8_t* raw = cursor.peek_slice(_n);
-            if (raw == nullptr) return std::nullopt;
+            if (raw == nullptr) return ::SCE::Forge::CodecError::NeedMoreBytes;
             data.assign(raw, raw + _n);
-            if (!cursor.advance(_n)) return std::nullopt;
+            if (!cursor.advance(_n)) return ::SCE::Forge::CodecError::NeedMoreBytes;
         }
         const auto _b_data = ::SCE::Forge::Bytes<4294967295>::make(data);
         if (!_b_data) {
-            cursor.refuse(::SCE::Forge::CodecError::LengthOutOfRange);
-            return std::nullopt;
+            return ::SCE::Forge::CodecError::LengthOutOfRange;
         }
         (void)len;
         CodecZenohValueSlice _decoded{

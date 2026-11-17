@@ -1,5 +1,5 @@
 // SCE-GENERATED — DO NOT EDIT
-// source-hash: 5d7de648199e914cbb8c5a25528d967c7a1eb5cde909f9d931236278a06e8d44
+// source-hash: 380120774f6558f75c02b77dfa951d04c7e39cb42d4bf17b1ff1c0ded2b8b8d1
 
 // SPDX-License-Identifier: AGPL-3.0-only WITH AdditionRef-SCE-Linking-Exception OR LicenseRef-SCE-Commercial
 // SPDX-FileCopyrightText: Copyright (c) 2026 newmassrael
@@ -5194,6 +5194,35 @@ private func expectClose(_ actual: Double, _ expected: Double, _ label: String) 
         #expect(returned == expected, "resolve_date")
     }}
 
+// MARK: - algorithm: resolve_date_at
+
+@Test func resolveDateAtMatchesReference() throws {
+
+    for testCase in try oracleCases("pure_functions", "resolve_date_at") {
+        let args = try oracleArray(testCase.member("args"))
+        let arg0 = try oracleInteger(args[0], as: Int64.self)
+        let arg1: [DateExpression] = try oracleArray(args[1]).map { element in try { () throws -> DateExpression in switch try oracleText(element.member("kind")) { case "none": return DateExpression.none; case "absolute": return DateExpression.absolute(CivilDatePayload(year: try oracleInteger(element.member("year"), as: Int32.self), month: try oracleInteger(element.member("month"), as: UInt8.self), day: try oracleInteger(element.member("day"), as: UInt8.self))); case "monthDay": return DateExpression.monthDay(MonthDayPayload(month: try oracleInteger(element.member("month"), as: UInt8.self), day: try oracleInteger(element.member("day"), as: UInt8.self))); case "relativeDays": return DateExpression.relativeDays(DateShiftPayload(count: try oracleInteger(element.member("count"), as: Int32.self))); case "relativeWeeks": return DateExpression.relativeWeeks(DateShiftPayload(count: try oracleInteger(element.member("count"), as: Int32.self))); case "relativeMonths": return DateExpression.relativeMonths(DateShiftPayload(count: try oracleInteger(element.member("count"), as: Int32.self))); case "relativeYears": return DateExpression.relativeYears(DateShiftPayload(count: try oracleInteger(element.member("count"), as: Int32.self))); case "comingWeekday": return DateExpression.comingWeekday(DateWeekdayPayload(weekday: try oracleInteger(element.member("weekday"), as: UInt8.self))); case "previousWeekday": return DateExpression.previousWeekday(DateWeekdayPayload(weekday: try oracleInteger(element.member("weekday"), as: UInt8.self))); case "weekdayOfWeek": return DateExpression.weekdayOfWeek(WeekWeekdayPayload(weekday: try oracleInteger(element.member("weekday"), as: UInt8.self), count: try oracleInteger(element.member("count"), as: Int32.self))); case "dayOfMonthOffset": return DateExpression.dayOfMonthOffset(MonthOffsetDayPayload(day: try oracleInteger(element.member("day"), as: UInt8.self), count: try oracleInteger(element.member("count"), as: Int32.self))); default: throw OracleError(description: "resolve_date_at arg1: no case is the variant the value's tag names") } }() }
+        let arg2 = try oracleInteger(args[2], as: UInt32.self)
+        let outcome = Result { try ResolveDateAt.resolveDateAt(arg0, arg1, arg2) }
+        if case .text(let fails)? = testCase.member("fails") {
+            switch outcome {
+            case .failure(let error as AlgorithmError):
+                #expect(error.contractName == fails, "resolve_date_at")
+            case .failure(let error):
+                Issue.record("resolve_date_at: the case expects the failure \(fails), got \(error)")
+            case .success(let value):
+                Issue.record("resolve_date_at: the case expects a failure, got \(value)")
+            }
+            continue
+        }
+        guard case .success(let returned) = outcome else {
+            Issue.record("resolve_date_at: the case expects a value, got \(outcome)")
+            continue
+        }
+        let expected = try oracleOptional(testCase.member("expected")) { try oracleInteger($0, as: Int64.self) }
+        #expect(returned == expected, "resolve_date_at")
+    }}
+
 // MARK: - codec: codec_declared_bounds
 
 @Test func codecDeclaredBoundsMatchesReference() throws {
@@ -5596,46 +5625,53 @@ private func expectClose(_ actual: Double, _ expected: Double, _ label: String) 
     }
 
     do {
-        var rejectCursor = SceCursor([164, 0, 80, 0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 1, 102, 110, 111, 100, 101, 45, 97, 5, 66, 222, 173, 7, 245])
-        #expect(throws: CodecError.cborRequiredKeyMissing, "codec_cbor_map reject 0: the required pattern entry (key 3) is absent from a four-entry map") {
+        var rejectCursor = SceCursor([161, 2, 129, 129, 129, 129, 129, 129, 129, 129, 129, 129, 129, 129, 129, 129, 129, 129, 0])
+        #expect(throws: CodecError.cborTooDeep, "codec_cbor_map reject 0: the value of the undeclared key 2 is sixteen nested arrays, one level past the skip's bound") {
             try CodecCborMap.decode(&rejectCursor)
         }
-        #expect(rejectCursor.remaining == 33, "codec_cbor_map reject 0: the refused decode moved the cursor")
+        #expect(rejectCursor.remaining == 19, "codec_cbor_map reject 0: the refused decode moved the cursor")
+    }
+    do {
+        var rejectCursor = SceCursor([164, 0, 80, 0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 1, 102, 110, 111, 100, 101, 45, 97, 5, 66, 222, 173, 7, 245])
+        #expect(throws: CodecError.cborRequiredKeyMissing, "codec_cbor_map reject 1: the required pattern entry (key 3) is absent from a four-entry map") {
+            try CodecCborMap.decode(&rejectCursor)
+        }
+        #expect(rejectCursor.remaining == 33, "codec_cbor_map reject 1: the refused decode moved the cursor")
     }
     do {
         var rejectCursor = SceCursor([165, 0, 79, 0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 1, 102, 110, 111, 100, 101, 45, 97, 3, 3, 5, 66, 222, 173, 7, 245])
-        #expect(throws: CodecError.cborWrongLength, "codec_cbor_map reject 1: the id is fifteen bytes where its declared length is sixteen") {
+        #expect(throws: CodecError.cborWrongLength, "codec_cbor_map reject 2: the id is fifteen bytes where its declared length is sixteen") {
             try CodecCborMap.decode(&rejectCursor)
         }
-        #expect(rejectCursor.remaining == 34, "codec_cbor_map reject 1: the refused decode moved the cursor")
+        #expect(rejectCursor.remaining == 34, "codec_cbor_map reject 2: the refused decode moved the cursor")
     }
     do {
         var rejectCursor = SceCursor([166, 0, 80, 0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 1, 102, 110, 111, 100, 101, 45, 97, 3, 3, 5, 66, 222, 173, 7, 245, 7, 244])
-        #expect(throws: CodecError.cborMalformed, "codec_cbor_map reject 2: key 7 is given twice") {
-            try CodecCborMap.decode(&rejectCursor)
-        }
-        #expect(rejectCursor.remaining == 37, "codec_cbor_map reject 2: the refused decode moved the cursor")
-    }
-    do {
-        var rejectCursor = SceCursor([165, 0, 80, 0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 1, 102, 110, 111, 100, 101, 45, 97, 3, 25, 1, 44, 5, 66, 222, 173, 7, 245])
-        #expect(throws: CodecError.cborOutOfRange, "codec_cbor_map reject 3: pattern holds 300, past a uint8") {
+        #expect(throws: CodecError.cborMalformed, "codec_cbor_map reject 3: key 7 is given twice") {
             try CodecCborMap.decode(&rejectCursor)
         }
         #expect(rejectCursor.remaining == 37, "codec_cbor_map reject 3: the refused decode moved the cursor")
     }
     do {
-        var rejectCursor = SceCursor([165, 0, 80, 0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 1, 102, 110, 111, 100, 101, 45, 97, 3, 3, 5, 66, 222, 173, 7, 97, 120])
-        #expect(throws: CodecError.cborMalformed, "codec_cbor_map reject 4: a text string where the urgent entry expects a truth value") {
+        var rejectCursor = SceCursor([165, 0, 80, 0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 1, 102, 110, 111, 100, 101, 45, 97, 3, 25, 1, 44, 5, 66, 222, 173, 7, 245])
+        #expect(throws: CodecError.cborOutOfRange, "codec_cbor_map reject 4: pattern holds 300, past a uint8") {
             try CodecCborMap.decode(&rejectCursor)
         }
-        #expect(rejectCursor.remaining == 36, "codec_cbor_map reject 4: the refused decode moved the cursor")
+        #expect(rejectCursor.remaining == 37, "codec_cbor_map reject 4: the refused decode moved the cursor")
+    }
+    do {
+        var rejectCursor = SceCursor([165, 0, 80, 0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 1, 102, 110, 111, 100, 101, 45, 97, 3, 3, 5, 66, 222, 173, 7, 97, 120])
+        #expect(throws: CodecError.cborMalformed, "codec_cbor_map reject 5: a text string where the urgent entry expects a truth value") {
+            try CodecCborMap.decode(&rejectCursor)
+        }
+        #expect(rejectCursor.remaining == 36, "codec_cbor_map reject 5: the refused decode moved the cursor")
     }
     do {
         var rejectCursor = SceCursor([191, 255])
-        #expect(throws: CodecError.cborMalformed, "codec_cbor_map reject 5: an indefinite-length map, which the codec never reads") {
+        #expect(throws: CodecError.cborMalformed, "codec_cbor_map reject 6: an indefinite-length map, which the codec never reads") {
             try CodecCborMap.decode(&rejectCursor)
         }
-        #expect(rejectCursor.remaining == 2, "codec_cbor_map reject 5: the refused decode moved the cursor")
+        #expect(rejectCursor.remaining == 2, "codec_cbor_map reject 6: the refused decode moved the cursor")
     }
 }
 
@@ -7747,6 +7783,13 @@ private func expectClose(_ actual: Double, _ expected: Double, _ label: String) 
     // Compile-only probe: the oracle holds no case this fixture's field shape can express.
     _ = CodecGroupEnum.frameLength
 
+    do {
+        var rejectCursor = SceCursor([1, 4, 0])
+        #expect(throws: CodecError.undeclaredEnumValue, "codec_group_enum reject 0: the state carries 4, which no variant of the closed enum declares") {
+            try CodecGroupEnum.decode(&rejectCursor)
+        }
+        #expect(rejectCursor.remaining == 3, "codec_group_enum reject 0: the refused decode moved the cursor")
+    }
 }
 
 // MARK: - codec: codec_chain_has_input
@@ -7909,6 +7952,13 @@ private func expectClose(_ actual: Double, _ expected: Double, _ label: String) 
     // Compile-only probe: the oracle holds no case this fixture's field shape can express.
     _ = CodecPresentIfString.frameLength
 
+    do {
+        var rejectCursor = SceCursor([1, 2, 195, 40])
+        #expect(throws: CodecError.invalidUtf8, "codec_present_if_string reject 0: the two text bytes C3 28 are a lead byte with no continuation, which is not UTF-8") {
+            try CodecPresentIfString.decode(&rejectCursor)
+        }
+        #expect(rejectCursor.remaining == 4, "codec_present_if_string reject 0: the refused decode moved the cursor")
+    }
 }
 
 // MARK: - codec: codec_present_if_tail

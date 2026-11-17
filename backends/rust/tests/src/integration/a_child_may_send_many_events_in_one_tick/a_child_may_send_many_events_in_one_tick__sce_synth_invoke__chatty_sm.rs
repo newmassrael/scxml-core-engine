@@ -481,6 +481,7 @@ impl AChildMaySendManyEventsInOneTickSceSynthInvokeChattyPolicy {
                 );
                 engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(
                     AChildMaySendManyEventsInOneTickSceSynthInvokeChattyEvent::ErrorExecution,
+                    ::sce_rust_runtime::ErrorReason::ParamUnfit,
                     "<data id='items'> could not hold the value its invoke handed it",
                 ));
             }
@@ -489,7 +490,7 @@ impl AChildMaySendManyEventsInOneTickSceSynthInvokeChattyPolicy {
             if let Err(e) = sce_rust_runtime::helpers::datamodel_init::initialize_variable_from_expr(
             se, &sid, "items", "{1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1}") {
             ::sce_rust_runtime::sce_log_error!("global: {}", e);
-            engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(AChildMaySendManyEventsInOneTickSceSynthInvokeChattyEvent::ErrorExecution, "<data id='items'> expr failed to evaluate"));
+            engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(AChildMaySendManyEventsInOneTickSceSynthInvokeChattyEvent::ErrorExecution, ::sce_rust_runtime::ErrorReason::ExpressionFailed, "<data id='items'> expr failed to evaluate"));
         }
         }
 
@@ -502,6 +503,7 @@ impl AChildMaySendManyEventsInOneTickSceSynthInvokeChattyPolicy {
                 );
                 engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(
                     AChildMaySendManyEventsInOneTickSceSynthInvokeChattyEvent::ErrorExecution,
+                    ::sce_rust_runtime::ErrorReason::ParamUnfit,
                     "<data id='item'> could not hold the value its invoke handed it",
                 ));
             }
@@ -513,6 +515,7 @@ impl AChildMaySendManyEventsInOneTickSceSynthInvokeChattyPolicy {
                 ::sce_rust_runtime::sce_log_error!("global: {}", e);
                 engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(
                     AChildMaySendManyEventsInOneTickSceSynthInvokeChattyEvent::ErrorExecution,
+                    ::sce_rust_runtime::ErrorReason::ExpressionFailed,
                     "<data id='item'> expr failed to evaluate",
                 ));
             }
@@ -561,6 +564,7 @@ impl AChildMaySendManyEventsInOneTickSceSynthInvokeChattyPolicy {
                 ::sce_rust_runtime::sce_log_error!("Guard evaluation failed for '{}': {}", cond, e);
                 engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(
                     AChildMaySendManyEventsInOneTickSceSynthInvokeChattyEvent::ErrorExecution,
+                    ::sce_rust_runtime::ErrorReason::ExpressionFailed,
                     reason,
                 ));
                 None
@@ -891,7 +895,7 @@ impl StatePolicy for AChildMaySendManyEventsInOneTickSceSynthInvokeChattyPolicy 
                                 "Foreach validation failed: '{}' is not a legal variable name",
                                 item_name
                             );
-                            engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(AChildMaySendManyEventsInOneTickSceSynthInvokeChattyEvent::ErrorExecution, "<foreach item='item'> is not a legal variable name"));
+                            engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(AChildMaySendManyEventsInOneTickSceSynthInvokeChattyEvent::ErrorExecution, ::sce_rust_runtime::ErrorReason::ForeachInvalid, "<foreach item='item'> is not a legal variable name"));
                             break 'action_block;
                         } else {
                             // Evaluate array expression
@@ -934,7 +938,8 @@ impl StatePolicy for AChildMaySendManyEventsInOneTickSceSynthInvokeChattyPolicy 
                                                 // nothing delivered, and the block ends (4.9).
                                                 engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(
             AChildMaySendManyEventsInOneTickSceSynthInvokeChattyEvent::ErrorCommunication,
-            "<send target='#_parent'> has no parent session to reach"));
+            ::sce_rust_runtime::ErrorReason::TargetUnreachable,
+        "<send target='#_parent'> has no parent session to reach"));
                                                 break 'action_block;
                                             }
 
@@ -943,7 +948,7 @@ impl StatePolicy for AChildMaySendManyEventsInOneTickSceSynthInvokeChattyPolicy 
                                         }
                                     }
                                     if !foreach_success {
-                                        engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(AChildMaySendManyEventsInOneTickSceSynthInvokeChattyEvent::ErrorExecution, "<foreach> could not set its loop variable"));
+                                        engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(AChildMaySendManyEventsInOneTickSceSynthInvokeChattyEvent::ErrorExecution, ::sce_rust_runtime::ErrorReason::ForeachInvalid, "<foreach> could not set its loop variable"));
                                         break 'action_block;
                                     }
                                 }
@@ -952,7 +957,7 @@ impl StatePolicy for AChildMaySendManyEventsInOneTickSceSynthInvokeChattyPolicy 
                                     ::sce_rust_runtime::sce_log_error!(
                                         "Foreach: 'items' is not an array"
                                     );
-                                    engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(AChildMaySendManyEventsInOneTickSceSynthInvokeChattyEvent::ErrorExecution, "<foreach array='items'> is not an array"));
+                                    engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(AChildMaySendManyEventsInOneTickSceSynthInvokeChattyEvent::ErrorExecution, ::sce_rust_runtime::ErrorReason::ForeachInvalid, "<foreach array='items'> is not an array"));
                                     break 'action_block;
                                 }
                                 Err(e) => {
@@ -960,7 +965,7 @@ impl StatePolicy for AChildMaySendManyEventsInOneTickSceSynthInvokeChattyPolicy 
                                         "Foreach: failed to evaluate array 'items': {}",
                                         e
                                     );
-                                    engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(AChildMaySendManyEventsInOneTickSceSynthInvokeChattyEvent::ErrorExecution, "<foreach array='items'> failed to evaluate"));
+                                    engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(AChildMaySendManyEventsInOneTickSceSynthInvokeChattyEvent::ErrorExecution, ::sce_rust_runtime::ErrorReason::ExpressionFailed, "<foreach array='items'> failed to evaluate"));
                                     break 'action_block;
                                 }
                             }

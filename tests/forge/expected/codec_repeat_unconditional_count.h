@@ -272,6 +272,26 @@ struct Wire {
     }
 };
 
+/// The `links_len` the frame of a source of `CodecRepeatUnconditionalCount` carries, which its encode
+/// derives from what it measures and no value holds (docs/adr/0081 §3), zero where nothing it measures is there.
+template <class S>
+[[nodiscard]] uint8_t wire_links_len(const S& src) noexcept(is_nothrow_source<S>::value) {
+    static_assert(is_source<S>::value, "S presents every element of CodecRepeatUnconditionalCount");
+    const auto& _r_options_h = source::options_h(src);
+    ::SCE::Forge::Detail::Kept<decltype(source::links(std::declval<const std::variant_alternative_t<1, std::decay_t<decltype(_r_options_h)>>&>()))> _r_links;
+    ::SCE::Forge::Detail::Kept<decltype(std::declval<const std::decay_t<decltype(source::links_weights(std::declval<const std::variant_alternative_t<0, std::decay_t<decltype(_r_options_h)>>&>()))>&>().second())> _r_weights;
+    ::SCE::Forge::Detail::Kept<decltype(source::links_weights(std::declval<const std::variant_alternative_t<0, std::decay_t<decltype(_r_options_h)>>&>()))> _r_links_weights;
+    if (const auto* _a = std::get_if<0>(&_r_options_h)) {
+        _r_links_weights.keep(source::links_weights(*_a));
+        _r_links.keep(_r_links_weights->first());
+        _r_weights.keep(_r_links_weights->second());
+    }
+    if (const auto* _a = std::get_if<1>(&_r_options_h)) {
+        _r_links.keep(source::links(*_a));
+    }
+    return (_r_links.has_value()) ? static_cast<uint8_t>((*_r_links).size()) : uint8_t{0};
+}
+
 struct CodecRepeatUnconditionalCount {
     CodecRepeatUnconditionalCount() = default;
     /// The value of each element it presents, in declaration order (ADR 0059 §5).
@@ -283,12 +303,13 @@ struct CodecRepeatUnconditionalCount {
     [[nodiscard]] const CodecRepeatUnconditionalCountOptionsH& options_h() const noexcept { return options_h_; }
 
     /// Decode the next frame from `cursor`. On success the cursor
-    /// advances past the consumed bytes; on `NeedMoreBytes` the cursor
-    /// is left untouched so the caller can resume after appending more
-    /// bytes (RFC §synth-5-B L494-519). Returns `std::nullopt` on the
-    /// `NeedMoreBytes` boundary; later phases attach a typed error via
-    /// `cursor.last_error()`.
-    static std::optional<CodecRepeatUnconditionalCount> decode(::SCE::Forge::SceCursor& cursor) {
+    /// advances past the consumed bytes and the value is answered; a
+    /// refused frame answers the `CodecError` that refused it
+    /// (docs/adr/0099, amendment of 2026-11-16): `NeedMoreBytes` when
+    /// the cursor's tail is shorter than the frame (RFC §synth-5-B
+    /// L494-519), which the caller resumes after appending bytes, and
+    /// another kind for a frame no more bytes make whole.
+    static ::SCE::Forge::Decoded<CodecRepeatUnconditionalCount> decode(::SCE::Forge::SceCursor& cursor) {
         // Streaming cursor decode (SSOT selection: `needs_streaming`).
         // The positional `raw[byte_off]` path is valid only when every
         // field's absolute offset is fixed at codegen time; this branch
@@ -303,53 +324,51 @@ struct CodecRepeatUnconditionalCount {
         uint8_t options;
         {
             const std::uint8_t* raw = cursor.peek_slice(1);
-            if (raw == nullptr) return std::nullopt;
+            if (raw == nullptr) return ::SCE::Forge::CodecError::NeedMoreBytes;
             options = static_cast<uint8_t>(raw[0]);
-            if (!cursor.advance(1)) return std::nullopt;
+            if (!cursor.advance(1)) return ::SCE::Forge::CodecError::NeedMoreBytes;
         }
         uint8_t links_len;
         {
             const std::uint8_t* raw = cursor.peek_slice(1);
-            if (raw == nullptr) return std::nullopt;
+            if (raw == nullptr) return ::SCE::Forge::CodecError::NeedMoreBytes;
             links_len = static_cast<uint8_t>(raw[0]);
-            if (!cursor.advance(1)) return std::nullopt;
+            if (!cursor.advance(1)) return ::SCE::Forge::CodecError::NeedMoreBytes;
         }
         std::vector<::SCE::Generated::CodecRepeatElem::CodecRepeatElem> links;
         if (links_len > 64) {
-            cursor.refuse(::SCE::Forge::CodecError::TooManyElements); return std::nullopt;
+            return ::SCE::Forge::CodecError::TooManyElements;
         }
         links.reserve(cursor.entries_backed(links_len));
         for (auto _i = decltype(links_len){0}; _i < links_len; ++_i) {
             auto _elem = ::SCE::Generated::CodecRepeatElem::CodecRepeatElem::decode(cursor);
-            if (!_elem.has_value()) return std::nullopt;
+            if (!_elem.has_value()) return _elem.error();
             links.push_back(*_elem);
         }
         std::optional<std::vector<::SCE::Generated::CodecRepeatElem::CodecRepeatElem>> weights;
         if ((options & 0x01) != 0) {
             auto _n = links_len;
             if (_n > 64) {
-                cursor.refuse(::SCE::Forge::CodecError::TooManyElements); return std::nullopt;
+                return ::SCE::Forge::CodecError::TooManyElements;
             }
             std::vector<::SCE::Generated::CodecRepeatElem::CodecRepeatElem> _list;
             _list.reserve(cursor.entries_backed(_n));
             for (auto _i = decltype(_n){0}; _i < _n; ++_i) {
                 auto _elem = ::SCE::Generated::CodecRepeatElem::CodecRepeatElem::decode(cursor);
-                if (!_elem.has_value()) return std::nullopt;
+                if (!_elem.has_value()) return _elem.error();
                 _list.push_back(*_elem);
             }
             weights = std::move(_list);
         }
         const auto _b_links = ::SCE::Forge::List<::SCE::Generated::CodecRepeatElem::CodecRepeatElem, 64>::make(links);
         if (!_b_links) {
-            cursor.refuse(::SCE::Forge::CodecError::TooManyElements);
-            return std::nullopt;
+            return ::SCE::Forge::CodecError::TooManyElements;
         }
         std::optional<::SCE::Forge::List<::SCE::Generated::CodecRepeatElem::CodecRepeatElem, 64>> _b_weights;
         if (weights) {
             _b_weights = ::SCE::Forge::List<::SCE::Generated::CodecRepeatElem::CodecRepeatElem, 64>::make(*weights);
             if (!_b_weights) {
-                cursor.refuse(::SCE::Forge::CodecError::TooManyElements);
-                return std::nullopt;
+                return ::SCE::Forge::CodecError::TooManyElements;
             }
         }
         (void)links_len;
@@ -357,8 +376,7 @@ struct CodecRepeatUnconditionalCount {
         if ((((options >> 0) & 0x1) != 0)) {
             const auto _al_links_weights = ::SCE::Forge::Aligned<::SCE::Forge::List<::SCE::Generated::CodecRepeatElem::CodecRepeatElem, 64>, ::SCE::Forge::List<::SCE::Generated::CodecRepeatElem::CodecRepeatElem, 64>>::make(*_b_links, *_b_weights);
             if (!_al_links_weights) {
-                cursor.refuse(::SCE::Forge::CodecError::TooManyElements);
-                return std::nullopt;
+                return ::SCE::Forge::CodecError::TooManyElements;
             }
             _g_options_h.emplace<0>(*_al_links_weights);
         } else if ((((options >> 0) & 0x1) == 0)) {

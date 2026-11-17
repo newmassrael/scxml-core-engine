@@ -1,5 +1,5 @@
 // SCE-GENERATED — DO NOT EDIT
-// source-hash: 4b8a823bdcf1a180eb4e80b1d700a62b8e56e4feb419ba4853f2dd996d3e97e0
+// source-hash: 9bcde893aca9b8bd0b4481ded56da43b529733ffefb711be8f993d5a07ed257a
 
 // SPDX-License-Identifier: AGPL-3.0-only WITH AdditionRef-SCE-Linking-Exception OR LicenseRef-SCE-Commercial
 // SPDX-FileCopyrightText: Copyright (c) 2025-2026 [Author of input SCXML file] (content derived from the input document)
@@ -623,6 +623,7 @@ impl ExternalChainIsBoundedPolicy {
                 );
                 engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(
                     ExternalChainIsBoundedEvent::ErrorExecution,
+                    ::sce_rust_runtime::ErrorReason::ParamUnfit,
                     "<data id='pokes'> could not hold the value its invoke handed it",
                 ));
             }
@@ -634,6 +635,7 @@ impl ExternalChainIsBoundedPolicy {
                 ::sce_rust_runtime::sce_log_error!("global: {}", e);
                 engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(
                     ExternalChainIsBoundedEvent::ErrorExecution,
+                    ::sce_rust_runtime::ErrorReason::ExpressionFailed,
                     "<data id='pokes'> expr failed to evaluate",
                 ));
             }
@@ -648,6 +650,7 @@ impl ExternalChainIsBoundedPolicy {
                 );
                 engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(
                     ExternalChainIsBoundedEvent::ErrorExecution,
+                    ::sce_rust_runtime::ErrorReason::ParamUnfit,
                     "<data id='links'> could not hold the value its invoke handed it",
                 ));
             }
@@ -659,6 +662,7 @@ impl ExternalChainIsBoundedPolicy {
                 ::sce_rust_runtime::sce_log_error!("global: {}", e);
                 engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(
                     ExternalChainIsBoundedEvent::ErrorExecution,
+                    ::sce_rust_runtime::ErrorReason::ExpressionFailed,
                     "<data id='links'> expr failed to evaluate",
                 ));
             }
@@ -673,6 +677,7 @@ impl ExternalChainIsBoundedPolicy {
                 );
                 engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(
                     ExternalChainIsBoundedEvent::ErrorExecution,
+                    ::sce_rust_runtime::ErrorReason::ParamUnfit,
                     "<data id='laps'> could not hold the value its invoke handed it",
                 ));
             }
@@ -684,6 +689,7 @@ impl ExternalChainIsBoundedPolicy {
                 ::sce_rust_runtime::sce_log_error!("global: {}", e);
                 engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(
                     ExternalChainIsBoundedEvent::ErrorExecution,
+                    ::sce_rust_runtime::ErrorReason::ExpressionFailed,
                     "<data id='laps'> expr failed to evaluate",
                 ));
             }
@@ -698,6 +704,7 @@ impl ExternalChainIsBoundedPolicy {
                 );
                 engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(
                     ExternalChainIsBoundedEvent::ErrorExecution,
+                    ::sce_rust_runtime::ErrorReason::ParamUnfit,
                     "<data id='beats'> could not hold the value its invoke handed it",
                 ));
             }
@@ -709,6 +716,7 @@ impl ExternalChainIsBoundedPolicy {
                 ::sce_rust_runtime::sce_log_error!("global: {}", e);
                 engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(
                     ExternalChainIsBoundedEvent::ErrorExecution,
+                    ::sce_rust_runtime::ErrorReason::ExpressionFailed,
                     "<data id='beats'> expr failed to evaluate",
                 ));
             }
@@ -723,6 +731,7 @@ impl ExternalChainIsBoundedPolicy {
                 );
                 engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(
                     ExternalChainIsBoundedEvent::ErrorExecution,
+                    ::sce_rust_runtime::ErrorReason::ParamUnfit,
                     "<data id='blinks'> could not hold the value its invoke handed it",
                 ));
             }
@@ -734,6 +743,7 @@ impl ExternalChainIsBoundedPolicy {
                 ::sce_rust_runtime::sce_log_error!("global: {}", e);
                 engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(
                     ExternalChainIsBoundedEvent::ErrorExecution,
+                    ::sce_rust_runtime::ErrorReason::ExpressionFailed,
                     "<data id='blinks'> expr failed to evaluate",
                 ));
             }
@@ -748,6 +758,7 @@ impl ExternalChainIsBoundedPolicy {
                 );
                 engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(
                     ExternalChainIsBoundedEvent::ErrorExecution,
+                    ::sce_rust_runtime::ErrorReason::ParamUnfit,
                     "<data id='exprs'> could not hold the value its invoke handed it",
                 ));
             }
@@ -759,6 +770,7 @@ impl ExternalChainIsBoundedPolicy {
                 ::sce_rust_runtime::sce_log_error!("global: {}", e);
                 engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(
                     ExternalChainIsBoundedEvent::ErrorExecution,
+                    ::sce_rust_runtime::ErrorReason::ExpressionFailed,
                     "<data id='exprs'> expr failed to evaluate",
                 ));
             }
@@ -773,6 +785,7 @@ impl ExternalChainIsBoundedPolicy {
                 );
                 engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(
                     ExternalChainIsBoundedEvent::ErrorExecution,
+                    ::sce_rust_runtime::ErrorReason::ParamUnfit,
                     "<data id='pulses'> could not hold the value its invoke handed it",
                 ));
             }
@@ -784,6 +797,7 @@ impl ExternalChainIsBoundedPolicy {
                 ::sce_rust_runtime::sce_log_error!("global: {}", e);
                 engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(
                     ExternalChainIsBoundedEvent::ErrorExecution,
+                    ::sce_rust_runtime::ErrorReason::ExpressionFailed,
                     "<data id='pulses'> expr failed to evaluate",
                 ));
             }
@@ -832,6 +846,7 @@ impl ExternalChainIsBoundedPolicy {
                 ::sce_rust_runtime::sce_log_error!("Guard evaluation failed for '{}': {}", cond, e);
                 engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(
                     ExternalChainIsBoundedEvent::ErrorExecution,
+                    ::sce_rust_runtime::ErrorReason::ExpressionFailed,
                     reason,
                 ));
                 None
@@ -1489,7 +1504,12 @@ impl StatePolicy for ExternalChainIsBoundedPolicy {
                         let __sce_arg_sid = self.session_id.as_ref().unwrap().clone();
                         let __sce_arg_se = self.script_engine.clone();
                         let __sce_arg_se: &dyn sce_rust_runtime::IScriptEngine = &*__sce_arg_se;
-                        let mut _send_arg_error: Option<&'static str> = None;
+                        // The code and the sentence of the first argument that failed
+                        // (docs/adr/0106 #111).
+                        let mut _send_arg_error: Option<(
+                            ::sce_rust_runtime::ErrorReason,
+                            &'static str,
+                        )> = None;
                         // The expression failing is the argument error, and so is a value that is
                         // not the CSS2 time the clause names (ARCHITECTURE.md, "Durations"): the
                         // message is not scheduled under some default wait.
@@ -1499,8 +1519,10 @@ impl StatePolicy for ExternalChainIsBoundedPolicy {
                                     let s = ::sce_rust_runtime::helpers::event_data::script_value_to_wire_string(&val);
                                     sce_rust_runtime::helpers::send::parse_delay_to_ms(&s)
                                         .unwrap_or_else(|| {
-                                            _send_arg_error =
-                                                Some("<send> delayexpr is not a CSS2 time");
+                                            _send_arg_error = Some((
+                                                ::sce_rust_runtime::ErrorReason::SendDelayInvalid,
+                                                "<send> delayexpr is not a CSS2 time",
+                                            ));
                                             0
                                         })
                                 }
@@ -1509,18 +1531,21 @@ impl StatePolicy for ExternalChainIsBoundedPolicy {
                                         "delayexpr eval failed: {}",
                                         e
                                     );
-                                    _send_arg_error =
-                                        Some("<send> delayexpr could not be evaluated");
+                                    _send_arg_error = Some((
+                                        ::sce_rust_runtime::ErrorReason::ExpressionFailed,
+                                        "<send> delayexpr could not be evaluated",
+                                    ));
                                     0
                                 }
                             }
                         } else {
                             0
                         };
-                        if let Some(__sce_why) = _send_arg_error {
+                        if let Some((__sce_reason, __sce_why)) = _send_arg_error {
                             ::sce_rust_runtime::sce_log_error!("{}", __sce_why);
                             let mut err_meta = sce_rust_runtime::EventWithMetadata::platform_error(
                                 ExternalChainIsBoundedEvent::ErrorExecution,
+                                __sce_reason,
                                 __sce_why,
                             );
                             err_meta.metadata.send_id =
@@ -1824,6 +1849,7 @@ impl StatePolicy for ExternalChainIsBoundedPolicy {
                             ::sce_rust_runtime::sce_log_error!("Assign failed for 'laps': {}", e);
                             engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(
                                 ExternalChainIsBoundedEvent::ErrorExecution,
+                                ::sce_rust_runtime::ErrorReason::AssignmentFailed,
                                 "<assign> to 'laps' failed",
                             ));
                             // W3C SCXML 4.9: the error ends the block, from however deep a <foreach> it came.
@@ -1878,6 +1904,7 @@ impl StatePolicy for ExternalChainIsBoundedPolicy {
                             ::sce_rust_runtime::sce_log_error!("Assign failed for 'laps': {}", e);
                             engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(
                                 ExternalChainIsBoundedEvent::ErrorExecution,
+                                ::sce_rust_runtime::ErrorReason::AssignmentFailed,
                                 "<assign> to 'laps' failed",
                             ));
                             // W3C SCXML 4.9: the error ends the block, from however deep a <foreach> it came.
@@ -1908,6 +1935,7 @@ impl StatePolicy for ExternalChainIsBoundedPolicy {
                             ::sce_rust_runtime::sce_log_error!("Assign failed for 'pokes': {}", e);
                             engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(
                                 ExternalChainIsBoundedEvent::ErrorExecution,
+                                ::sce_rust_runtime::ErrorReason::AssignmentFailed,
                                 "<assign> to 'pokes' failed",
                             ));
                             // W3C SCXML 4.9: the error ends the block, from however deep a <foreach> it came.
@@ -1938,6 +1966,7 @@ impl StatePolicy for ExternalChainIsBoundedPolicy {
                             ::sce_rust_runtime::sce_log_error!("Assign failed for 'pokes': {}", e);
                             engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(
                                 ExternalChainIsBoundedEvent::ErrorExecution,
+                                ::sce_rust_runtime::ErrorReason::AssignmentFailed,
                                 "<assign> to 'pokes' failed",
                             ));
                             // W3C SCXML 4.9: the error ends the block, from however deep a <foreach> it came.
@@ -1968,6 +1997,7 @@ impl StatePolicy for ExternalChainIsBoundedPolicy {
                             ::sce_rust_runtime::sce_log_error!("Assign failed for 'beats': {}", e);
                             engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(
                                 ExternalChainIsBoundedEvent::ErrorExecution,
+                                ::sce_rust_runtime::ErrorReason::AssignmentFailed,
                                 "<assign> to 'beats' failed",
                             ));
                             // W3C SCXML 4.9: the error ends the block, from however deep a <foreach> it came.
@@ -2022,6 +2052,7 @@ impl StatePolicy for ExternalChainIsBoundedPolicy {
                             ::sce_rust_runtime::sce_log_error!("Assign failed for 'beats': {}", e);
                             engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(
                                 ExternalChainIsBoundedEvent::ErrorExecution,
+                                ::sce_rust_runtime::ErrorReason::AssignmentFailed,
                                 "<assign> to 'beats' failed",
                             ));
                             // W3C SCXML 4.9: the error ends the block, from however deep a <foreach> it came.
@@ -2052,6 +2083,7 @@ impl StatePolicy for ExternalChainIsBoundedPolicy {
                             ::sce_rust_runtime::sce_log_error!("Assign failed for 'pokes': {}", e);
                             engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(
                                 ExternalChainIsBoundedEvent::ErrorExecution,
+                                ::sce_rust_runtime::ErrorReason::AssignmentFailed,
                                 "<assign> to 'pokes' failed",
                             ));
                             // W3C SCXML 4.9: the error ends the block, from however deep a <foreach> it came.
@@ -2082,6 +2114,7 @@ impl StatePolicy for ExternalChainIsBoundedPolicy {
                             ::sce_rust_runtime::sce_log_error!("Assign failed for 'links': {}", e);
                             engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(
                                 ExternalChainIsBoundedEvent::ErrorExecution,
+                                ::sce_rust_runtime::ErrorReason::AssignmentFailed,
                                 "<assign> to 'links' failed",
                             ));
                             // W3C SCXML 4.9: the error ends the block, from however deep a <foreach> it came.
@@ -2136,6 +2169,7 @@ impl StatePolicy for ExternalChainIsBoundedPolicy {
                             ::sce_rust_runtime::sce_log_error!("Assign failed for 'pokes': {}", e);
                             engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(
                                 ExternalChainIsBoundedEvent::ErrorExecution,
+                                ::sce_rust_runtime::ErrorReason::AssignmentFailed,
                                 "<assign> to 'pokes' failed",
                             ));
                             // W3C SCXML 4.9: the error ends the block, from however deep a <foreach> it came.
@@ -2166,6 +2200,7 @@ impl StatePolicy for ExternalChainIsBoundedPolicy {
                             ::sce_rust_runtime::sce_log_error!("Assign failed for 'pulses': {}", e);
                             engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(
                                 ExternalChainIsBoundedEvent::ErrorExecution,
+                                ::sce_rust_runtime::ErrorReason::AssignmentFailed,
                                 "<assign> to 'pulses' failed",
                             ));
                             // W3C SCXML 4.9: the error ends the block, from however deep a <foreach> it came.
@@ -2196,6 +2231,7 @@ impl StatePolicy for ExternalChainIsBoundedPolicy {
                             ::sce_rust_runtime::sce_log_error!("Assign failed for 'pokes': {}", e);
                             engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(
                                 ExternalChainIsBoundedEvent::ErrorExecution,
+                                ::sce_rust_runtime::ErrorReason::AssignmentFailed,
                                 "<assign> to 'pokes' failed",
                             ));
                             // W3C SCXML 4.9: the error ends the block, from however deep a <foreach> it came.
@@ -2226,6 +2262,7 @@ impl StatePolicy for ExternalChainIsBoundedPolicy {
                             ::sce_rust_runtime::sce_log_error!("Assign failed for 'blinks': {}", e);
                             engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(
                                 ExternalChainIsBoundedEvent::ErrorExecution,
+                                ::sce_rust_runtime::ErrorReason::AssignmentFailed,
                                 "<assign> to 'blinks' failed",
                             ));
                             // W3C SCXML 4.9: the error ends the block, from however deep a <foreach> it came.
@@ -2280,6 +2317,7 @@ impl StatePolicy for ExternalChainIsBoundedPolicy {
                             ::sce_rust_runtime::sce_log_error!("Assign failed for 'pokes': {}", e);
                             engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(
                                 ExternalChainIsBoundedEvent::ErrorExecution,
+                                ::sce_rust_runtime::ErrorReason::AssignmentFailed,
                                 "<assign> to 'pokes' failed",
                             ));
                             // W3C SCXML 4.9: the error ends the block, from however deep a <foreach> it came.
@@ -2310,6 +2348,7 @@ impl StatePolicy for ExternalChainIsBoundedPolicy {
                             ::sce_rust_runtime::sce_log_error!("Assign failed for 'exprs': {}", e);
                             engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(
                                 ExternalChainIsBoundedEvent::ErrorExecution,
+                                ::sce_rust_runtime::ErrorReason::AssignmentFailed,
                                 "<assign> to 'exprs' failed",
                             ));
                             // W3C SCXML 4.9: the error ends the block, from however deep a <foreach> it came.
@@ -2324,7 +2363,12 @@ impl StatePolicy for ExternalChainIsBoundedPolicy {
                         let __sce_arg_sid = self.session_id.as_ref().unwrap().clone();
                         let __sce_arg_se = self.script_engine.clone();
                         let __sce_arg_se: &dyn sce_rust_runtime::IScriptEngine = &*__sce_arg_se;
-                        let mut _send_arg_error: Option<&'static str> = None;
+                        // The code and the sentence of the first argument that failed
+                        // (docs/adr/0106 #111).
+                        let mut _send_arg_error: Option<(
+                            ::sce_rust_runtime::ErrorReason,
+                            &'static str,
+                        )> = None;
                         // The expression failing is the argument error, and so is a value that is
                         // not the CSS2 time the clause names (ARCHITECTURE.md, "Durations"): the
                         // message is not scheduled under some default wait.
@@ -2334,8 +2378,10 @@ impl StatePolicy for ExternalChainIsBoundedPolicy {
                                     let s = ::sce_rust_runtime::helpers::event_data::script_value_to_wire_string(&val);
                                     sce_rust_runtime::helpers::send::parse_delay_to_ms(&s)
                                         .unwrap_or_else(|| {
-                                            _send_arg_error =
-                                                Some("<send> delayexpr is not a CSS2 time");
+                                            _send_arg_error = Some((
+                                                ::sce_rust_runtime::ErrorReason::SendDelayInvalid,
+                                                "<send> delayexpr is not a CSS2 time",
+                                            ));
                                             0
                                         })
                                 }
@@ -2344,18 +2390,21 @@ impl StatePolicy for ExternalChainIsBoundedPolicy {
                                         "delayexpr eval failed: {}",
                                         e
                                     );
-                                    _send_arg_error =
-                                        Some("<send> delayexpr could not be evaluated");
+                                    _send_arg_error = Some((
+                                        ::sce_rust_runtime::ErrorReason::ExpressionFailed,
+                                        "<send> delayexpr could not be evaluated",
+                                    ));
                                     0
                                 }
                             }
                         } else {
                             0
                         };
-                        if let Some(__sce_why) = _send_arg_error {
+                        if let Some((__sce_reason, __sce_why)) = _send_arg_error {
                             ::sce_rust_runtime::sce_log_error!("{}", __sce_why);
                             let mut err_meta = sce_rust_runtime::EventWithMetadata::platform_error(
                                 ExternalChainIsBoundedEvent::ErrorExecution,
+                                __sce_reason,
                                 __sce_why,
                             );
                             err_meta.metadata.send_id =
@@ -2406,6 +2455,7 @@ impl StatePolicy for ExternalChainIsBoundedPolicy {
                             ::sce_rust_runtime::sce_log_error!("Assign failed for 'pokes': {}", e);
                             engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(
                                 ExternalChainIsBoundedEvent::ErrorExecution,
+                                ::sce_rust_runtime::ErrorReason::AssignmentFailed,
                                 "<assign> to 'pokes' failed",
                             ));
                             // W3C SCXML 4.9: the error ends the block, from however deep a <foreach> it came.

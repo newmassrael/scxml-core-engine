@@ -489,6 +489,7 @@ impl ASendReachesOnlyWhatItsTargetNamesSceSynthInvokeKidPolicy {
                 ::sce_rust_runtime::sce_log_error!("Guard evaluation failed for '{}': {}", cond, e);
                 engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(
                     ASendReachesOnlyWhatItsTargetNamesSceSynthInvokeKidEvent::ErrorExecution,
+                    ::sce_rust_runtime::ErrorReason::ExpressionFailed,
                     reason,
                 ));
                 None
@@ -823,7 +824,8 @@ impl StatePolicy for ASendReachesOnlyWhatItsTargetNamesSceSynthInvokeKidPolicy {
                             // nothing delivered, and the block ends (4.9).
                             engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(
             ASendReachesOnlyWhatItsTargetNamesSceSynthInvokeKidEvent::ErrorCommunication,
-            "<send target='#_parent'> has no parent session to reach"));
+            ::sce_rust_runtime::ErrorReason::TargetUnreachable,
+        "<send target='#_parent'> has no parent session to reach"));
                             break 'action_block;
                         }
 
@@ -979,7 +981,7 @@ impl StatePolicy for ASendReachesOnlyWhatItsTargetNamesSceSynthInvokeKidPolicy {
                                         "send contentexpr eval failed: {}",
                                         e
                                     );
-                                    engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(ASendReachesOnlyWhatItsTargetNamesSceSynthInvokeKidEvent::ErrorExecution, "<send> contentexpr failed to evaluate"));
+                                    engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(ASendReachesOnlyWhatItsTargetNamesSceSynthInvokeKidEvent::ErrorExecution, ::sce_rust_runtime::ErrorReason::ExpressionFailed, "<send> contentexpr failed to evaluate"));
                                     _param_failed = true;
                                     ::sce_rust_runtime::helpers::event_data::script_value_to_json(
                                         &sce_rust_runtime::ScriptValue::String(String::new()),
@@ -1000,7 +1002,8 @@ impl StatePolicy for ASendReachesOnlyWhatItsTargetNamesSceSynthInvokeKidPolicy {
                             // nothing delivered, and the block ends (4.9).
                             engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(
             ASendReachesOnlyWhatItsTargetNamesSceSynthInvokeKidEvent::ErrorCommunication,
-            "<send target='#_parent'> has no parent session to reach"));
+            ::sce_rust_runtime::ErrorReason::TargetUnreachable,
+        "<send target='#_parent'> has no parent session to reach"));
                             break 'action_block;
                         }
 

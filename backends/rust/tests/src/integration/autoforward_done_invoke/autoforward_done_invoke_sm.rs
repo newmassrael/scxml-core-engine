@@ -480,7 +480,7 @@ impl AutoforwardDoneInvokePolicy {
                     self.active_invokes.remove("inv_watch");
                     engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(
                         AutoforwardDoneInvokeEvent::ErrorExecution,
-                        &format!("<invoke id='{}'> did not start: its child's script session failed at step '{}'", "inv_watch", failure.stage)));
+                        ::sce_rust_runtime::ErrorReason::InvokeChildInitFailed, &format!("<invoke id='{}'> did not start: its child's script session failed at step '{}'", "inv_watch", failure.stage)));
                     continue;
                 }
 
@@ -569,7 +569,7 @@ impl AutoforwardDoneInvokePolicy {
                     self.active_invokes.remove("inv_short");
                     engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(
                         AutoforwardDoneInvokeEvent::ErrorExecution,
-                        &format!("<invoke id='{}'> did not start: its child's script session failed at step '{}'", "inv_short", failure.stage)));
+                        ::sce_rust_runtime::ErrorReason::InvokeChildInitFailed, &format!("<invoke id='{}'> did not start: its child's script session failed at step '{}'", "inv_short", failure.stage)));
                     continue;
                 }
 

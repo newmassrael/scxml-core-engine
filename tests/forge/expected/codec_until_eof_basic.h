@@ -95,12 +95,13 @@ struct CodecUntilEofBasic {
     [[nodiscard]] ::SCE::Forge::List<::SCE::Generated::CodecRepeatElem::CodecRepeatElem, 64> msgs() const noexcept { return msgs_; }
 
     /// Decode the next frame from `cursor`. On success the cursor
-    /// advances past the consumed bytes; on `NeedMoreBytes` the cursor
-    /// is left untouched so the caller can resume after appending more
-    /// bytes (RFC §synth-5-B L494-519). Returns `std::nullopt` on the
-    /// `NeedMoreBytes` boundary; later phases attach a typed error via
-    /// `cursor.last_error()`.
-    static std::optional<CodecUntilEofBasic> decode(::SCE::Forge::SceCursor& cursor) {
+    /// advances past the consumed bytes and the value is answered; a
+    /// refused frame answers the `CodecError` that refused it
+    /// (docs/adr/0099, amendment of 2026-11-16): `NeedMoreBytes` when
+    /// the cursor's tail is shorter than the frame (RFC §synth-5-B
+    /// L494-519), which the caller resumes after appending bytes, and
+    /// another kind for a frame no more bytes make whole.
+    static ::SCE::Forge::Decoded<CodecUntilEofBasic> decode(::SCE::Forge::SceCursor& cursor) {
         // Streaming cursor decode (SSOT selection: `needs_streaming`).
         // The positional `raw[byte_off]` path is valid only when every
         // field's absolute offset is fixed at codegen time; this branch
@@ -115,16 +116,15 @@ struct CodecUntilEofBasic {
         std::vector<::SCE::Generated::CodecRepeatElem::CodecRepeatElem> msgs;
         while (cursor.remaining() > 0) {
             if (msgs.size() > 63) {
-                cursor.refuse(::SCE::Forge::CodecError::TooManyElements); return std::nullopt;
+                return ::SCE::Forge::CodecError::TooManyElements;
             }
             auto _elem = ::SCE::Generated::CodecRepeatElem::CodecRepeatElem::decode(cursor);
-            if (!_elem.has_value()) return std::nullopt;
+            if (!_elem.has_value()) return _elem.error();
             msgs.push_back(*_elem);
         }
         const auto _b_msgs = ::SCE::Forge::List<::SCE::Generated::CodecRepeatElem::CodecRepeatElem, 64>::make(msgs);
         if (!_b_msgs) {
-            cursor.refuse(::SCE::Forge::CodecError::TooManyElements);
-            return std::nullopt;
+            return ::SCE::Forge::CodecError::TooManyElements;
         }
         CodecUntilEofBasic _decoded{
             /*msgs=*/*_b_msgs,

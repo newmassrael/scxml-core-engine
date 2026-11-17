@@ -454,7 +454,7 @@ impl AutoforwardDequeuePointPolicy {
                     self.active_invokes.remove("inv_probe");
                     engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(
                         AutoforwardDequeuePointEvent::ErrorExecution,
-                        &format!("<invoke id='{}'> did not start: its child's script session failed at step '{}'", "inv_probe", failure.stage)));
+                        ::sce_rust_runtime::ErrorReason::InvokeChildInitFailed, &format!("<invoke id='{}'> did not start: its child's script session failed at step '{}'", "inv_probe", failure.stage)));
                     continue;
                 }
 
@@ -1009,7 +1009,7 @@ impl StatePolicy for AutoforwardDequeuePointPolicy {
                         } else {
                             // W3C SCXML C.1: the invocation is not running, so the session the
                             // target names is not there to reach.
-                            let mut err_meta = sce_rust_runtime::EventWithMetadata::platform_error(AutoforwardDequeuePointEvent::ErrorCommunication, "<send target='#_inv_probe'> names an invocation that is not running");
+                            let mut err_meta = sce_rust_runtime::EventWithMetadata::platform_error(AutoforwardDequeuePointEvent::ErrorCommunication, ::sce_rust_runtime::ErrorReason::TargetUnreachable, "<send target='#_inv_probe'> names an invocation that is not running");
                             engine.raise(err_meta);
                             break 'action_block;
                         }

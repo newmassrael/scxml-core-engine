@@ -530,6 +530,7 @@ impl StatePolicy for Test422SceSynthInvokeInvoke1Policy {
                             // nothing delivered, and the block ends (4.9).
                             engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(
                                 Test422SceSynthInvokeInvoke1Event::ErrorCommunication,
+                                ::sce_rust_runtime::ErrorReason::TargetUnreachable,
                                 "<send target='#_parent'> has no parent session to reach",
                             ));
                             break 'action_block;

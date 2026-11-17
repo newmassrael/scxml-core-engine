@@ -147,6 +147,18 @@ struct Wire {
     }
 };
 
+/// The `count` the frame of a source of `CodecRepeatFlagGated` carries, which its encode
+/// derives from what it measures and no value holds (docs/adr/0081 §3), and none where the content it is gated beside is absent.
+template <class S>
+[[nodiscard]] std::optional<uint8_t> wire_count(const S& src) noexcept(is_nothrow_source<S>::value) {
+    static_assert(is_source<S>::value, "S presents every element of CodecRepeatFlagGated");
+    const auto& _r_entries = source::entries(src);
+    if (!(_r_entries.has_value())) {
+        return std::nullopt;
+    }
+    return static_cast<uint8_t>((*_r_entries).size());
+}
+
 struct CodecRepeatFlagGated {
     CodecRepeatFlagGated() = default;
     /// The value of each element it presents, in declaration order (ADR 0059 §5).
@@ -158,12 +170,13 @@ struct CodecRepeatFlagGated {
     [[nodiscard]] std::optional<::SCE::Forge::Lawful<::SCE::Forge::List<::SCE::Generated::CodecChainFlagEntry::CodecChainFlagEntry, 4>, CodecRepeatFlagGatedEntriesLaw>> entries() const noexcept { if (!entries_) { return std::nullopt; } return ::SCE::Forge::Lawful<::SCE::Forge::List<::SCE::Generated::CodecChainFlagEntry::CodecChainFlagEntry, 4>, CodecRepeatFlagGatedEntriesLaw>(*entries_); }
 
     /// Decode the next frame from `cursor`. On success the cursor
-    /// advances past the consumed bytes; on `NeedMoreBytes` the cursor
-    /// is left untouched so the caller can resume after appending more
-    /// bytes (RFC §synth-5-B L494-519). Returns `std::nullopt` on the
-    /// `NeedMoreBytes` boundary; later phases attach a typed error via
-    /// `cursor.last_error()`.
-    static std::optional<CodecRepeatFlagGated> decode(::SCE::Forge::SceCursor& cursor) {
+    /// advances past the consumed bytes and the value is answered; a
+    /// refused frame answers the `CodecError` that refused it
+    /// (docs/adr/0099, amendment of 2026-11-16): `NeedMoreBytes` when
+    /// the cursor's tail is shorter than the frame (RFC §synth-5-B
+    /// L494-519), which the caller resumes after appending bytes, and
+    /// another kind for a frame no more bytes make whole.
+    static ::SCE::Forge::Decoded<CodecRepeatFlagGated> decode(::SCE::Forge::SceCursor& cursor) {
         // Streaming cursor decode (SSOT selection: `needs_streaming`).
         // The positional `raw[byte_off]` path is valid only when every
         // field's absolute offset is fixed at codegen time; this branch
@@ -178,28 +191,28 @@ struct CodecRepeatFlagGated {
         uint8_t head;
         {
             const std::uint8_t* raw = cursor.peek_slice(1);
-            if (raw == nullptr) return std::nullopt;
+            if (raw == nullptr) return ::SCE::Forge::CodecError::NeedMoreBytes;
             head = static_cast<uint8_t>(raw[0]);
-            if (!cursor.advance(1)) return std::nullopt;
+            if (!cursor.advance(1)) return ::SCE::Forge::CodecError::NeedMoreBytes;
         }
         std::optional<uint8_t> count;
         if ((head & 0x02) != 0) {
             const std::uint8_t* raw = cursor.peek_slice(1);
-            if (raw == nullptr) return std::nullopt;
+            if (raw == nullptr) return ::SCE::Forge::CodecError::NeedMoreBytes;
             count = static_cast<uint8_t>(raw[0]);
-            if (!cursor.advance(1)) return std::nullopt;
+            if (!cursor.advance(1)) return ::SCE::Forge::CodecError::NeedMoreBytes;
         }
         std::optional<std::vector<::SCE::Generated::CodecChainFlagEntry::CodecChainFlagEntry>> entries;
         if ((head & 0x02) != 0) {
             auto _n = count.value();
             if (_n > 4) {
-                cursor.refuse(::SCE::Forge::CodecError::TooManyElements); return std::nullopt;
+                return ::SCE::Forge::CodecError::TooManyElements;
             }
             std::vector<::SCE::Generated::CodecChainFlagEntry::CodecChainFlagEntry> _list;
             _list.reserve(cursor.entries_backed(_n));
             for (auto _i = decltype(_n){0}; _i < _n; ++_i) {
                 auto _elem = ::SCE::Generated::CodecChainFlagEntry::CodecChainFlagEntry::decode(cursor, static_cast<std::uint8_t>((head >> 0) & 0x1));
-                if (!_elem.has_value()) return std::nullopt;
+                if (!_elem.has_value()) return _elem.error();
                 _list.push_back(*_elem);
             }
             entries = std::move(_list);
@@ -208,13 +221,11 @@ struct CodecRepeatFlagGated {
         if (entries) {
             const auto _l_entries = ::SCE::Forge::Lawful<::SCE::Forge::List<::SCE::Generated::CodecChainFlagEntry::CodecChainFlagEntry, 4>, CodecRepeatFlagGatedEntriesLaw>::list_type::make(*entries);
             if (!_l_entries) {
-                cursor.refuse(::SCE::Forge::CodecError::TooManyElements);
-                return std::nullopt;
+                return ::SCE::Forge::CodecError::TooManyElements;
             }
             _b_entries = ::SCE::Forge::Lawful<::SCE::Forge::List<::SCE::Generated::CodecChainFlagEntry::CodecChainFlagEntry, 4>, CodecRepeatFlagGatedEntriesLaw>::make((((head >> 0) & 0x1) != 0), *_l_entries);
             if (!_b_entries) {
-                cursor.refuse(::SCE::Forge::CodecError::PresentIfMismatch);
-                return std::nullopt;
+                return ::SCE::Forge::CodecError::PresentIfMismatch;
             }
         }
         (void)count;

@@ -522,6 +522,7 @@ impl EventlessMacrostepIsBoundedPolicy {
                 );
                 engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(
                     EventlessMacrostepIsBoundedEvent::ErrorExecution,
+                    ::sce_rust_runtime::ErrorReason::ParamUnfit,
                     "<data id='pokes'> could not hold the value its invoke handed it",
                 ));
             }
@@ -533,6 +534,7 @@ impl EventlessMacrostepIsBoundedPolicy {
                 ::sce_rust_runtime::sce_log_error!("global: {}", e);
                 engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(
                     EventlessMacrostepIsBoundedEvent::ErrorExecution,
+                    ::sce_rust_runtime::ErrorReason::ExpressionFailed,
                     "<data id='pokes'> expr failed to evaluate",
                 ));
             }
@@ -547,6 +549,7 @@ impl EventlessMacrostepIsBoundedPolicy {
                 );
                 engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(
                     EventlessMacrostepIsBoundedEvent::ErrorExecution,
+                    ::sce_rust_runtime::ErrorReason::ParamUnfit,
                     "<data id='laps'> could not hold the value its invoke handed it",
                 ));
             }
@@ -558,6 +561,7 @@ impl EventlessMacrostepIsBoundedPolicy {
                 ::sce_rust_runtime::sce_log_error!("global: {}", e);
                 engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(
                     EventlessMacrostepIsBoundedEvent::ErrorExecution,
+                    ::sce_rust_runtime::ErrorReason::ExpressionFailed,
                     "<data id='laps'> expr failed to evaluate",
                 ));
             }
@@ -572,6 +576,7 @@ impl EventlessMacrostepIsBoundedPolicy {
                 );
                 engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(
                     EventlessMacrostepIsBoundedEvent::ErrorExecution,
+                    ::sce_rust_runtime::ErrorReason::ParamUnfit,
                     "<data id='spins'> could not hold the value its invoke handed it",
                 ));
             }
@@ -583,6 +588,7 @@ impl EventlessMacrostepIsBoundedPolicy {
                 ::sce_rust_runtime::sce_log_error!("global: {}", e);
                 engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(
                     EventlessMacrostepIsBoundedEvent::ErrorExecution,
+                    ::sce_rust_runtime::ErrorReason::ExpressionFailed,
                     "<data id='spins'> expr failed to evaluate",
                 ));
             }
@@ -631,6 +637,7 @@ impl EventlessMacrostepIsBoundedPolicy {
                 ::sce_rust_runtime::sce_log_error!("Guard evaluation failed for '{}': {}", cond, e);
                 engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(
                     EventlessMacrostepIsBoundedEvent::ErrorExecution,
+                    ::sce_rust_runtime::ErrorReason::ExpressionFailed,
                     reason,
                 ));
                 None
@@ -1155,6 +1162,7 @@ impl StatePolicy for EventlessMacrostepIsBoundedPolicy {
                             ::sce_rust_runtime::sce_log_error!("Assign failed for 'laps': {}", e);
                             engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(
                                 EventlessMacrostepIsBoundedEvent::ErrorExecution,
+                                ::sce_rust_runtime::ErrorReason::AssignmentFailed,
                                 "<assign> to 'laps' failed",
                             ));
                             // W3C SCXML 4.9: the error ends the block, from however deep a <foreach> it came.
@@ -1185,6 +1193,7 @@ impl StatePolicy for EventlessMacrostepIsBoundedPolicy {
                             ::sce_rust_runtime::sce_log_error!("Assign failed for 'pokes': {}", e);
                             engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(
                                 EventlessMacrostepIsBoundedEvent::ErrorExecution,
+                                ::sce_rust_runtime::ErrorReason::AssignmentFailed,
                                 "<assign> to 'pokes' failed",
                             ));
                             // W3C SCXML 4.9: the error ends the block, from however deep a <foreach> it came.
@@ -1215,6 +1224,7 @@ impl StatePolicy for EventlessMacrostepIsBoundedPolicy {
                             ::sce_rust_runtime::sce_log_error!("Assign failed for 'pokes': {}", e);
                             engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(
                                 EventlessMacrostepIsBoundedEvent::ErrorExecution,
+                                ::sce_rust_runtime::ErrorReason::AssignmentFailed,
                                 "<assign> to 'pokes' failed",
                             ));
                             // W3C SCXML 4.9: the error ends the block, from however deep a <foreach> it came.
@@ -1245,6 +1255,7 @@ impl StatePolicy for EventlessMacrostepIsBoundedPolicy {
                             ::sce_rust_runtime::sce_log_error!("Assign failed for 'spins': {}", e);
                             engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(
                                 EventlessMacrostepIsBoundedEvent::ErrorExecution,
+                                ::sce_rust_runtime::ErrorReason::AssignmentFailed,
                                 "<assign> to 'spins' failed",
                             ));
                             // W3C SCXML 4.9: the error ends the block, from however deep a <foreach> it came.
@@ -1275,6 +1286,7 @@ impl StatePolicy for EventlessMacrostepIsBoundedPolicy {
                             ::sce_rust_runtime::sce_log_error!("Assign failed for 'pokes': {}", e);
                             engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(
                                 EventlessMacrostepIsBoundedEvent::ErrorExecution,
+                                ::sce_rust_runtime::ErrorReason::AssignmentFailed,
                                 "<assign> to 'pokes' failed",
                             ));
                             // W3C SCXML 4.9: the error ends the block, from however deep a <foreach> it came.

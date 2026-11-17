@@ -502,12 +502,13 @@ struct CodecChainHasTagged {
     [[nodiscard]] const CodecChainHasTaggedEntriesHas0x7Has0x9HeaderWide& entries_has_0x7_has_0x9_header_wide() const noexcept { return entries_has_0x7_has_0x9_header_wide_; }
 
     /// Decode the next frame from `cursor`. On success the cursor
-    /// advances past the consumed bytes; on `NeedMoreBytes` the cursor
-    /// is left untouched so the caller can resume after appending more
-    /// bytes (RFC §synth-5-B L494-519). Returns `std::nullopt` on the
-    /// `NeedMoreBytes` boundary; later phases attach a typed error via
-    /// `cursor.last_error()`.
-    static std::optional<CodecChainHasTagged> decode(::SCE::Forge::SceCursor& cursor) {
+    /// advances past the consumed bytes and the value is answered; a
+    /// refused frame answers the `CodecError` that refused it
+    /// (docs/adr/0099, amendment of 2026-11-16): `NeedMoreBytes` when
+    /// the cursor's tail is shorter than the frame (RFC §synth-5-B
+    /// L494-519), which the caller resumes after appending bytes, and
+    /// another kind for a frame no more bytes make whole.
+    static ::SCE::Forge::Decoded<CodecChainHasTagged> decode(::SCE::Forge::SceCursor& cursor) {
         // Streaming cursor decode (SSOT selection: `needs_streaming`).
         // The positional `raw[byte_off]` path is valid only when every
         // field's absolute offset is fixed at codegen time; this branch
@@ -522,22 +523,22 @@ struct CodecChainHasTagged {
         uint8_t header;
         {
             const std::uint8_t* raw = cursor.peek_slice(1);
-            if (raw == nullptr) return std::nullopt;
+            if (raw == nullptr) return ::SCE::Forge::CodecError::NeedMoreBytes;
             header = static_cast<uint8_t>(raw[0]);
-            if (!cursor.advance(1)) return std::nullopt;
+            if (!cursor.advance(1)) return ::SCE::Forge::CodecError::NeedMoreBytes;
         }
         std::vector<::SCE::Generated::CodecChainHasTaggedEntry::CodecChainHasTaggedEntry> entries;
         entries.reserve(3);
         bool _more = false;
         for (std::size_t _i = 0; _i < 3; ++_i) {
             auto _elem = ::SCE::Generated::CodecChainHasTaggedEntry::CodecChainHasTaggedEntry::decode(cursor);
-            if (!_elem.has_value()) return std::nullopt;
+            if (!_elem.has_value()) return _elem.error();
             _more = _elem->more();
             entries.push_back(*_elem);
             if (!_more) break;
         }
-        if (_more && cursor.remaining() == 0) { return std::nullopt; }
-        if (_more) { cursor.refuse(::SCE::Forge::CodecError::TooManyElements); return std::nullopt; }
+        if (_more && cursor.remaining() == 0) { return ::SCE::Forge::CodecError::NeedMoreBytes; }
+        if (_more) { return ::SCE::Forge::CodecError::TooManyElements; }
         bool _has_entries_7 = false;
         for (const auto& _e : entries) {
             if (static_cast<std::uint64_t>(_e.entry_type()) == 7ULL) {
@@ -555,77 +556,68 @@ struct CodecChainHasTagged {
         std::optional<uint8_t> priority;
         if (_has_entries_7 || (header & 0x01) != 0) {
             const std::uint8_t* raw = cursor.peek_slice(1);
-            if (raw == nullptr) return std::nullopt;
+            if (raw == nullptr) return ::SCE::Forge::CodecError::NeedMoreBytes;
             priority = static_cast<uint8_t>(raw[0]);
-            if (!cursor.advance(1)) return std::nullopt;
+            if (!cursor.advance(1)) return ::SCE::Forge::CodecError::NeedMoreBytes;
         }
         std::optional<uint16_t> checksum;
         if (!_has_entries_9) {
             const std::uint8_t* raw = cursor.peek_slice(2);
-            if (raw == nullptr) return std::nullopt;
+            if (raw == nullptr) return ::SCE::Forge::CodecError::NeedMoreBytes;
             checksum = static_cast<uint16_t>(static_cast<uint16_t>((static_cast<uint16_t>(raw[0]) << 8) | raw[1]));
-            if (!cursor.advance(2)) return std::nullopt;
+            if (!cursor.advance(2)) return ::SCE::Forge::CodecError::NeedMoreBytes;
         }
         const auto _b_entries = ::SCE::Forge::List<::SCE::Generated::CodecChainHasTaggedEntry::CodecChainHasTaggedEntry, 3, 1>::make(entries);
         if (!_b_entries) {
-            cursor.refuse(::SCE::Forge::CodecError::TooManyElements);
-            return std::nullopt;
+            return ::SCE::Forge::CodecError::TooManyElements;
         }
         CodecChainHasTaggedEntriesHas0x7Has0x9HeaderWide _g_entries_has_0x7_has_0x9_header_wide{std::in_place_index_t<7>{}};
         if (::SCE::Forge::Detail::first_of_kind<CodecChainHasTaggedEntriesHas0x7Key>(entries).has_value() && ::SCE::Forge::Detail::first_of_kind<CodecChainHasTaggedEntriesHas0x9Key>(entries).has_value() && (((header >> 0) & 0x1) != 0)) {
             const auto _ch_entries = ::SCE::Forge::Chain<::SCE::Forge::Span<const ::SCE::Generated::CodecChainHasTaggedEntry::CodecChainHasTaggedEntry>, ::SCE::Forge::Kinds<CodecChainHasTaggedEntriesHas0x7Key, CodecChainHasTaggedEntriesHas0x9Key>, ::SCE::Forge::Kinds<>, 3, 1>::make(_b_entries->inner());
             if (!_ch_entries) {
-                cursor.refuse(::SCE::Forge::CodecError::PresentIfMismatch);
-                return std::nullopt;
+                return ::SCE::Forge::CodecError::PresentIfMismatch;
             }
             _g_entries_has_0x7_has_0x9_header_wide.emplace<0>(*_ch_entries, *priority);
         } else if (::SCE::Forge::Detail::first_of_kind<CodecChainHasTaggedEntriesHas0x7Key>(entries).has_value() && ::SCE::Forge::Detail::first_of_kind<CodecChainHasTaggedEntriesHas0x9Key>(entries).has_value() && (((header >> 0) & 0x1) == 0)) {
             const auto _ch_entries = ::SCE::Forge::Chain<::SCE::Forge::Span<const ::SCE::Generated::CodecChainHasTaggedEntry::CodecChainHasTaggedEntry>, ::SCE::Forge::Kinds<CodecChainHasTaggedEntriesHas0x7Key, CodecChainHasTaggedEntriesHas0x9Key>, ::SCE::Forge::Kinds<>, 3, 1>::make(_b_entries->inner());
             if (!_ch_entries) {
-                cursor.refuse(::SCE::Forge::CodecError::PresentIfMismatch);
-                return std::nullopt;
+                return ::SCE::Forge::CodecError::PresentIfMismatch;
             }
             _g_entries_has_0x7_has_0x9_header_wide.emplace<1>(*_ch_entries, *priority);
         } else if (::SCE::Forge::Detail::first_of_kind<CodecChainHasTaggedEntriesHas0x7Key>(entries).has_value() && !::SCE::Forge::Detail::first_of_kind<CodecChainHasTaggedEntriesHas0x9Key>(entries).has_value() && (((header >> 0) & 0x1) != 0)) {
             const auto _ch_entries = ::SCE::Forge::Chain<::SCE::Forge::Span<const ::SCE::Generated::CodecChainHasTaggedEntry::CodecChainHasTaggedEntry>, ::SCE::Forge::Kinds<CodecChainHasTaggedEntriesHas0x7Key>, ::SCE::Forge::Kinds<CodecChainHasTaggedEntriesHas0x9Key>, 3, 1>::make(_b_entries->inner());
             if (!_ch_entries) {
-                cursor.refuse(::SCE::Forge::CodecError::PresentIfMismatch);
-                return std::nullopt;
+                return ::SCE::Forge::CodecError::PresentIfMismatch;
             }
             _g_entries_has_0x7_has_0x9_header_wide.emplace<2>(*_ch_entries, *priority, *checksum);
         } else if (!::SCE::Forge::Detail::first_of_kind<CodecChainHasTaggedEntriesHas0x7Key>(entries).has_value() && ::SCE::Forge::Detail::first_of_kind<CodecChainHasTaggedEntriesHas0x9Key>(entries).has_value() && (((header >> 0) & 0x1) != 0)) {
             const auto _ch_entries = ::SCE::Forge::Chain<::SCE::Forge::Span<const ::SCE::Generated::CodecChainHasTaggedEntry::CodecChainHasTaggedEntry>, ::SCE::Forge::Kinds<CodecChainHasTaggedEntriesHas0x9Key>, ::SCE::Forge::Kinds<CodecChainHasTaggedEntriesHas0x7Key>, 3, 1>::make(_b_entries->inner());
             if (!_ch_entries) {
-                cursor.refuse(::SCE::Forge::CodecError::PresentIfMismatch);
-                return std::nullopt;
+                return ::SCE::Forge::CodecError::PresentIfMismatch;
             }
             _g_entries_has_0x7_has_0x9_header_wide.emplace<3>(*_ch_entries, *priority);
         } else if (::SCE::Forge::Detail::first_of_kind<CodecChainHasTaggedEntriesHas0x7Key>(entries).has_value() && !::SCE::Forge::Detail::first_of_kind<CodecChainHasTaggedEntriesHas0x9Key>(entries).has_value() && (((header >> 0) & 0x1) == 0)) {
             const auto _ch_entries = ::SCE::Forge::Chain<::SCE::Forge::Span<const ::SCE::Generated::CodecChainHasTaggedEntry::CodecChainHasTaggedEntry>, ::SCE::Forge::Kinds<CodecChainHasTaggedEntriesHas0x7Key>, ::SCE::Forge::Kinds<CodecChainHasTaggedEntriesHas0x9Key>, 3, 1>::make(_b_entries->inner());
             if (!_ch_entries) {
-                cursor.refuse(::SCE::Forge::CodecError::PresentIfMismatch);
-                return std::nullopt;
+                return ::SCE::Forge::CodecError::PresentIfMismatch;
             }
             _g_entries_has_0x7_has_0x9_header_wide.emplace<4>(*_ch_entries, *priority, *checksum);
         } else if (!::SCE::Forge::Detail::first_of_kind<CodecChainHasTaggedEntriesHas0x7Key>(entries).has_value() && ::SCE::Forge::Detail::first_of_kind<CodecChainHasTaggedEntriesHas0x9Key>(entries).has_value() && (((header >> 0) & 0x1) == 0)) {
             const auto _ch_entries = ::SCE::Forge::Chain<::SCE::Forge::Span<const ::SCE::Generated::CodecChainHasTaggedEntry::CodecChainHasTaggedEntry>, ::SCE::Forge::Kinds<CodecChainHasTaggedEntriesHas0x9Key>, ::SCE::Forge::Kinds<CodecChainHasTaggedEntriesHas0x7Key>, 3, 1>::make(_b_entries->inner());
             if (!_ch_entries) {
-                cursor.refuse(::SCE::Forge::CodecError::PresentIfMismatch);
-                return std::nullopt;
+                return ::SCE::Forge::CodecError::PresentIfMismatch;
             }
             _g_entries_has_0x7_has_0x9_header_wide.emplace<5>(*_ch_entries);
         } else if (!::SCE::Forge::Detail::first_of_kind<CodecChainHasTaggedEntriesHas0x7Key>(entries).has_value() && !::SCE::Forge::Detail::first_of_kind<CodecChainHasTaggedEntriesHas0x9Key>(entries).has_value() && (((header >> 0) & 0x1) != 0)) {
             const auto _ch_entries = ::SCE::Forge::Chain<::SCE::Forge::Span<const ::SCE::Generated::CodecChainHasTaggedEntry::CodecChainHasTaggedEntry>, ::SCE::Forge::Kinds<>, ::SCE::Forge::Kinds<CodecChainHasTaggedEntriesHas0x7Key, CodecChainHasTaggedEntriesHas0x9Key>, 3, 1>::make(_b_entries->inner());
             if (!_ch_entries) {
-                cursor.refuse(::SCE::Forge::CodecError::PresentIfMismatch);
-                return std::nullopt;
+                return ::SCE::Forge::CodecError::PresentIfMismatch;
             }
             _g_entries_has_0x7_has_0x9_header_wide.emplace<6>(*_ch_entries, *priority, *checksum);
         } else if (!::SCE::Forge::Detail::first_of_kind<CodecChainHasTaggedEntriesHas0x7Key>(entries).has_value() && !::SCE::Forge::Detail::first_of_kind<CodecChainHasTaggedEntriesHas0x9Key>(entries).has_value() && (((header >> 0) & 0x1) == 0)) {
             const auto _ch_entries = ::SCE::Forge::Chain<::SCE::Forge::Span<const ::SCE::Generated::CodecChainHasTaggedEntry::CodecChainHasTaggedEntry>, ::SCE::Forge::Kinds<>, ::SCE::Forge::Kinds<CodecChainHasTaggedEntriesHas0x7Key, CodecChainHasTaggedEntriesHas0x9Key>, 3, 1>::make(_b_entries->inner());
             if (!_ch_entries) {
-                cursor.refuse(::SCE::Forge::CodecError::PresentIfMismatch);
-                return std::nullopt;
+                return ::SCE::Forge::CodecError::PresentIfMismatch;
             }
             _g_entries_has_0x7_has_0x9_header_wide.emplace<7>(*_ch_entries, *checksum);
         }

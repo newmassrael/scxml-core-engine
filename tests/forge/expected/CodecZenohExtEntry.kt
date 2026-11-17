@@ -7,6 +7,7 @@
 package com.sce.generated.codec_zenoh_ext_entry
 
 import com.sce.forge.runtime.CodecError
+import com.sce.forge.runtime.Decoded
 import com.sce.forge.runtime.MutableListSink
 import com.sce.forge.runtime.SceCursor
 import com.sce.forge.runtime.SceSink
@@ -126,39 +127,44 @@ data class CodecZenohExtEntry(
 
     companion object {
         /// Decode the next frame from `cursor`. On success the cursor
-        /// advances past the consumed bytes; returns `null` when the
-        /// cursor's tail is shorter than the declared minimum frame
-        /// (RFC §synth-5-B L494-519).
-        fun decode(cursor: SceCursor): CodecZenohExtEntry? {
+        /// advances past the consumed bytes and the value is `Decoded.Ok`;
+        /// a refused frame is `Decoded.Refused` with the kind that refused
+        /// it (docs/adr/0099, amendment of 2026-11-16): `NeedMoreBytes` when
+        /// the cursor's tail is shorter than the frame (RFC §synth-5-B
+        /// L494-519), which the caller resumes after appending bytes, and
+        /// another kind for a frame no more bytes make whole.
+        fun decode(cursor: SceCursor): Decoded<CodecZenohExtEntry> {
             // Decode fixed prefix (RFC §synth-5-B variant: fields before tag suffix).
-            val raw = cursor.peekSlice(1) ?: return null
+            val raw = cursor.peekSlice(1) ?: return Decoded.Refused(CodecError.NeedMoreBytes)
             val header = raw[0].toUByte()
-            if (!cursor.advance(1)) return null
+            if (!cursor.advance(1)) return Decoded.Refused(CodecError.NeedMoreBytes)
             // Dispatch on the tag field; each arm decodes its body codec
             // from the cursor. The default arm (when declared) carries
             // the runtime tag value so encode can round-trip it back
             // onto the wire.
             val body: CodecZenohExtEntryVariant = when (((header.toInt() shr 5) and 0x03)) {
                 0 -> {
-                    val _arm = com.sce.generated.codec_zenoh_ext_unit.CodecZenohExtUnit.decode(cursor) ?: return null
+                    val _arm = com.sce.generated.codec_zenoh_ext_unit.CodecZenohExtUnit.decode(cursor).valueOr { _refused -> return _refused }
                     CodecZenohExtEntryVariant.CodecZenohExtUnit(_arm)
                 }
                 1 -> {
-                    val _arm = com.sce.generated.codec_zenoh_ext_zint.CodecZenohExtZint.decode(cursor) ?: return null
+                    val _arm = com.sce.generated.codec_zenoh_ext_zint.CodecZenohExtZint.decode(cursor).valueOr { _refused -> return _refused }
                     CodecZenohExtEntryVariant.CodecZenohExtZint(_arm)
                 }
                 2 -> {
-                    val _arm = com.sce.generated.codec_zenoh_ext_zbuf.CodecZenohExtZbuf.decode(cursor) ?: return null
+                    val _arm = com.sce.generated.codec_zenoh_ext_zbuf.CodecZenohExtZbuf.decode(cursor).valueOr { _refused -> return _refused }
                     CodecZenohExtEntryVariant.CodecZenohExtZbuf(_arm)
                 }
                 else -> {
-                    val _arm = com.sce.generated.codec_zenoh_ext_unit.CodecZenohExtUnit.decode(cursor) ?: return null
+                    val _arm = com.sce.generated.codec_zenoh_ext_unit.CodecZenohExtUnit.decode(cursor).valueOr { _refused -> return _refused }
                     CodecZenohExtEntryVariant.Default(tag = ((header.toInt() shr 5) and 0x03).toUByte(), body = _arm)
                 }
             }
-            return CodecZenohExtEntry(
-                header = header,
-                body = body
+            return Decoded.Ok(
+                CodecZenohExtEntry(
+                    header = header,
+                    body = body
+                )
             )
         }
     }

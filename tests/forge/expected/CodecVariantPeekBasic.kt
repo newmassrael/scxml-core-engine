@@ -7,6 +7,7 @@
 package com.sce.generated.codec_variant_peek_basic
 
 import com.sce.forge.runtime.CodecError
+import com.sce.forge.runtime.Decoded
 import com.sce.forge.runtime.MutableListSink
 import com.sce.forge.runtime.SceCursor
 import com.sce.forge.runtime.SceSink
@@ -71,17 +72,20 @@ data class CodecVariantPeekBasic(
 
     companion object {
         /// Decode the next frame from `cursor`. On success the cursor
-        /// advances past the consumed bytes; returns `null` when the
-        /// cursor's tail is shorter than the declared minimum frame
-        /// (RFC §synth-5-B L494-519).
-        fun decode(cursor: SceCursor): CodecVariantPeekBasic? {
+        /// advances past the consumed bytes and the value is `Decoded.Ok`;
+        /// a refused frame is `Decoded.Refused` with the kind that refused
+        /// it (docs/adr/0099, amendment of 2026-11-16): `NeedMoreBytes` when
+        /// the cursor's tail is shorter than the frame (RFC §synth-5-B
+        /// L494-519), which the caller resumes after appending bytes, and
+        /// another kind for a frame no more bytes make whole.
+        fun decode(cursor: SceCursor): Decoded<CodecVariantPeekBasic> {
             // RFC §synth-5-B peek-byte / streaming-
             // prefix: streaming prefix decode (variable-length fields
             // supported via per-field present_if/tlv-chain/embed/repeat
             // helpers). Peek-byte mode additionally peeks the cursor's
             // next byte for variant tag without advancing — arm body
             // decoder reads it as own header.
-            val _peekRaw = cursor.peekSlice(1) ?: return null
+            val _peekRaw = cursor.peekSlice(1) ?: return Decoded.Refused(CodecError.NeedMoreBytes)
         val _peek: UByte = _peekRaw[0].toUByte()
             // Dispatch on the tag field; each arm decodes its body codec
             // from the cursor. The default arm (when declared) carries
@@ -89,20 +93,23 @@ data class CodecVariantPeekBasic(
             // onto the wire.
             val body: CodecVariantPeekBasicVariant = when (((_peek.toInt() shr 0) and 0x01)) {
                 0 -> {
-                    val _arm = com.sce.generated.codec_peek_arm_a.CodecPeekArmA.decode(cursor) ?: return null
+                    val _arm = com.sce.generated.codec_peek_arm_a.CodecPeekArmA.decode(cursor).valueOr { _refused -> return _refused }
                     CodecVariantPeekBasicVariant.CodecPeekArmA(_arm)
                 }
                 1 -> {
-                    val _arm = com.sce.generated.codec_peek_arm_b.CodecPeekArmB.decode(cursor) ?: return null
+                    val _arm = com.sce.generated.codec_peek_arm_b.CodecPeekArmB.decode(cursor).valueOr { _refused -> return _refused }
                     CodecVariantPeekBasicVariant.CodecPeekArmB(_arm)
                 }
                 else -> {
-                    // codec/variant-arm-unreachable rejected this case at parse time.
-                    return null
+                    // codec/variant-arm-unreachable proves every tag names an
+                    // arm, so no frame reaches here.
+                    error("codec/variant-arm-unreachable admitted a tag no arm names")
                 }
             }
-            return CodecVariantPeekBasic(
-                body = body
+            return Decoded.Ok(
+                CodecVariantPeekBasic(
+                    body = body
+                )
             )
         }
     }

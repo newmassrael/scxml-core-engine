@@ -540,6 +540,7 @@ impl ADelayIsACss2TimePolicy {
                 );
                 engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(
                     ADelayIsACss2TimeEvent::ErrorExecution,
+                    ::sce_rust_runtime::ErrorReason::ParamUnfit,
                     "<data id='errors'> could not hold the value its invoke handed it",
                 ));
             }
@@ -551,6 +552,7 @@ impl ADelayIsACss2TimePolicy {
                 ::sce_rust_runtime::sce_log_error!("global: {}", e);
                 engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(
                     ADelayIsACss2TimeEvent::ErrorExecution,
+                    ::sce_rust_runtime::ErrorReason::ExpressionFailed,
                     "<data id='errors'> expr failed to evaluate",
                 ));
             }
@@ -565,6 +567,7 @@ impl ADelayIsACss2TimePolicy {
                 );
                 engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(
                     ADelayIsACss2TimeEvent::ErrorExecution,
+                    ::sce_rust_runtime::ErrorReason::ParamUnfit,
                     "<data id='after'> could not hold the value its invoke handed it",
                 ));
             }
@@ -576,6 +579,7 @@ impl ADelayIsACss2TimePolicy {
                 ::sce_rust_runtime::sce_log_error!("global: {}", e);
                 engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(
                     ADelayIsACss2TimeEvent::ErrorExecution,
+                    ::sce_rust_runtime::ErrorReason::ExpressionFailed,
                     "<data id='after'> expr failed to evaluate",
                 ));
             }
@@ -590,6 +594,7 @@ impl ADelayIsACss2TimePolicy {
                 );
                 engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(
                     ADelayIsACss2TimeEvent::ErrorExecution,
+                    ::sce_rust_runtime::ErrorReason::ParamUnfit,
                     "<data id='bad'> could not hold the value its invoke handed it",
                 ));
             }
@@ -601,6 +606,7 @@ impl ADelayIsACss2TimePolicy {
                 ::sce_rust_runtime::sce_log_error!("global: {}", e);
                 engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(
                     ADelayIsACss2TimeEvent::ErrorExecution,
+                    ::sce_rust_runtime::ErrorReason::ExpressionFailed,
                     "<data id='bad'> expr failed to evaluate",
                 ));
             }
@@ -615,6 +621,7 @@ impl ADelayIsACss2TimePolicy {
                 );
                 engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(
                     ADelayIsACss2TimeEvent::ErrorExecution,
+                    ::sce_rust_runtime::ErrorReason::ParamUnfit,
                     "<data id='bSeen'> could not hold the value its invoke handed it",
                 ));
             }
@@ -626,6 +633,7 @@ impl ADelayIsACss2TimePolicy {
                 ::sce_rust_runtime::sce_log_error!("global: {}", e);
                 engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(
                     ADelayIsACss2TimeEvent::ErrorExecution,
+                    ::sce_rust_runtime::ErrorReason::ExpressionFailed,
                     "<data id='bSeen'> expr failed to evaluate",
                 ));
             }
@@ -640,6 +648,7 @@ impl ADelayIsACss2TimePolicy {
                 );
                 engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(
                     ADelayIsACss2TimeEvent::ErrorExecution,
+                    ::sce_rust_runtime::ErrorReason::ParamUnfit,
                     "<data id='aAfterB'> could not hold the value its invoke handed it",
                 ));
             }
@@ -651,6 +660,7 @@ impl ADelayIsACss2TimePolicy {
                 ::sce_rust_runtime::sce_log_error!("global: {}", e);
                 engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(
                     ADelayIsACss2TimeEvent::ErrorExecution,
+                    ::sce_rust_runtime::ErrorReason::ExpressionFailed,
                     "<data id='aAfterB'> expr failed to evaluate",
                 ));
             }
@@ -665,6 +675,7 @@ impl ADelayIsACss2TimePolicy {
                 );
                 engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(
                     ADelayIsACss2TimeEvent::ErrorExecution,
+                    ::sce_rust_runtime::ErrorReason::ParamUnfit,
                     "<data id='bare'> could not hold the value its invoke handed it",
                 ));
             }
@@ -676,6 +687,7 @@ impl ADelayIsACss2TimePolicy {
                 ::sce_rust_runtime::sce_log_error!("global: {}", e);
                 engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(
                     ADelayIsACss2TimeEvent::ErrorExecution,
+                    ::sce_rust_runtime::ErrorReason::ExpressionFailed,
                     "<data id='bare'> expr failed to evaluate",
                 ));
             }
@@ -724,6 +736,7 @@ impl ADelayIsACss2TimePolicy {
                 ::sce_rust_runtime::sce_log_error!("Guard evaluation failed for '{}': {}", cond, e);
                 engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(
                     ADelayIsACss2TimeEvent::ErrorExecution,
+                    ::sce_rust_runtime::ErrorReason::ExpressionFailed,
                     reason,
                 ));
                 None
@@ -1037,6 +1050,7 @@ impl StatePolicy for ADelayIsACss2TimePolicy {
                         {
                             let mut err_meta = sce_rust_runtime::EventWithMetadata::platform_error(
                                 ADelayIsACss2TimeEvent::ErrorExecution,
+                                ::sce_rust_runtime::ErrorReason::SendDelayInvalid,
                                 "<send> delay is not a CSS2 time",
                             );
                             err_meta.metadata.send_id =
@@ -1057,7 +1071,12 @@ impl StatePolicy for ADelayIsACss2TimePolicy {
                         let __sce_arg_sid = self.session_id.as_ref().unwrap().clone();
                         let __sce_arg_se = self.script_engine.clone();
                         let __sce_arg_se: &dyn sce_rust_runtime::IScriptEngine = &*__sce_arg_se;
-                        let mut _send_arg_error: Option<&'static str> = None;
+                        // The code and the sentence of the first argument that failed
+                        // (docs/adr/0106 #111).
+                        let mut _send_arg_error: Option<(
+                            ::sce_rust_runtime::ErrorReason,
+                            &'static str,
+                        )> = None;
                         // The expression failing is the argument error, and so is a value that is
                         // not the CSS2 time the clause names (ARCHITECTURE.md, "Durations"): the
                         // message is not scheduled under some default wait.
@@ -1067,8 +1086,10 @@ impl StatePolicy for ADelayIsACss2TimePolicy {
                                     let s = ::sce_rust_runtime::helpers::event_data::script_value_to_wire_string(&val);
                                     sce_rust_runtime::helpers::send::parse_delay_to_ms(&s)
                                         .unwrap_or_else(|| {
-                                            _send_arg_error =
-                                                Some("<send> delayexpr is not a CSS2 time");
+                                            _send_arg_error = Some((
+                                                ::sce_rust_runtime::ErrorReason::SendDelayInvalid,
+                                                "<send> delayexpr is not a CSS2 time",
+                                            ));
                                             0
                                         })
                                 }
@@ -1077,18 +1098,21 @@ impl StatePolicy for ADelayIsACss2TimePolicy {
                                         "delayexpr eval failed: {}",
                                         e
                                     );
-                                    _send_arg_error =
-                                        Some("<send> delayexpr could not be evaluated");
+                                    _send_arg_error = Some((
+                                        ::sce_rust_runtime::ErrorReason::ExpressionFailed,
+                                        "<send> delayexpr could not be evaluated",
+                                    ));
                                     0
                                 }
                             }
                         } else {
                             0
                         };
-                        if let Some(__sce_why) = _send_arg_error {
+                        if let Some((__sce_reason, __sce_why)) = _send_arg_error {
                             ::sce_rust_runtime::sce_log_error!("{}", __sce_why);
                             let mut err_meta = sce_rust_runtime::EventWithMetadata::platform_error(
                                 ADelayIsACss2TimeEvent::ErrorExecution,
+                                __sce_reason,
                                 __sce_why,
                             );
                             err_meta.metadata.send_id =
@@ -1132,6 +1156,7 @@ impl StatePolicy for ADelayIsACss2TimePolicy {
                             ::sce_rust_runtime::sce_log_error!("Assign failed for 'after': {}", e);
                             engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(
                                 ADelayIsACss2TimeEvent::ErrorExecution,
+                                ::sce_rust_runtime::ErrorReason::AssignmentFailed,
                                 "<assign> to 'after' failed",
                             ));
                             // W3C SCXML 4.9: the error ends the block, from however deep a <foreach> it came.
@@ -1149,7 +1174,12 @@ impl StatePolicy for ADelayIsACss2TimePolicy {
                         let __sce_arg_sid = self.session_id.as_ref().unwrap().clone();
                         let __sce_arg_se = self.script_engine.clone();
                         let __sce_arg_se: &dyn sce_rust_runtime::IScriptEngine = &*__sce_arg_se;
-                        let mut _send_arg_error: Option<&'static str> = None;
+                        // The code and the sentence of the first argument that failed
+                        // (docs/adr/0106 #111).
+                        let mut _send_arg_error: Option<(
+                            ::sce_rust_runtime::ErrorReason,
+                            &'static str,
+                        )> = None;
                         // The expression failing is the argument error, and so is a value that is
                         // not the CSS2 time the clause names (ARCHITECTURE.md, "Durations"): the
                         // message is not scheduled under some default wait.
@@ -1159,8 +1189,10 @@ impl StatePolicy for ADelayIsACss2TimePolicy {
                                     let s = ::sce_rust_runtime::helpers::event_data::script_value_to_wire_string(&val);
                                     sce_rust_runtime::helpers::send::parse_delay_to_ms(&s)
                                         .unwrap_or_else(|| {
-                                            _send_arg_error =
-                                                Some("<send> delayexpr is not a CSS2 time");
+                                            _send_arg_error = Some((
+                                                ::sce_rust_runtime::ErrorReason::SendDelayInvalid,
+                                                "<send> delayexpr is not a CSS2 time",
+                                            ));
                                             0
                                         })
                                 }
@@ -1169,18 +1201,21 @@ impl StatePolicy for ADelayIsACss2TimePolicy {
                                         "delayexpr eval failed: {}",
                                         e
                                     );
-                                    _send_arg_error =
-                                        Some("<send> delayexpr could not be evaluated");
+                                    _send_arg_error = Some((
+                                        ::sce_rust_runtime::ErrorReason::ExpressionFailed,
+                                        "<send> delayexpr could not be evaluated",
+                                    ));
                                     0
                                 }
                             }
                         } else {
                             0
                         };
-                        if let Some(__sce_why) = _send_arg_error {
+                        if let Some((__sce_reason, __sce_why)) = _send_arg_error {
                             ::sce_rust_runtime::sce_log_error!("{}", __sce_why);
                             let mut err_meta = sce_rust_runtime::EventWithMetadata::platform_error(
                                 ADelayIsACss2TimeEvent::ErrorExecution,
+                                __sce_reason,
                                 __sce_why,
                             );
                             err_meta.metadata.send_id =
@@ -1386,6 +1421,7 @@ impl StatePolicy for ADelayIsACss2TimePolicy {
                             ::sce_rust_runtime::sce_log_error!("Assign failed for 'errors': {}", e);
                             engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(
                                 ADelayIsACss2TimeEvent::ErrorExecution,
+                                ::sce_rust_runtime::ErrorReason::AssignmentFailed,
                                 "<assign> to 'errors' failed",
                             ));
                             // W3C SCXML 4.9: the error ends the block, from however deep a <foreach> it came.
@@ -1416,6 +1452,7 @@ impl StatePolicy for ADelayIsACss2TimePolicy {
                             ::sce_rust_runtime::sce_log_error!("Assign failed for 'bad': {}", e);
                             engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(
                                 ADelayIsACss2TimeEvent::ErrorExecution,
+                                ::sce_rust_runtime::ErrorReason::AssignmentFailed,
                                 "<assign> to 'bad' failed",
                             ));
                             // W3C SCXML 4.9: the error ends the block, from however deep a <foreach> it came.
@@ -1446,6 +1483,7 @@ impl StatePolicy for ADelayIsACss2TimePolicy {
                             ::sce_rust_runtime::sce_log_error!("Assign failed for 'bSeen': {}", e);
                             engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(
                                 ADelayIsACss2TimeEvent::ErrorExecution,
+                                ::sce_rust_runtime::ErrorReason::AssignmentFailed,
                                 "<assign> to 'bSeen' failed",
                             ));
                             // W3C SCXML 4.9: the error ends the block, from however deep a <foreach> it came.
@@ -1479,6 +1517,7 @@ impl StatePolicy for ADelayIsACss2TimePolicy {
                             );
                             engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(
                                 ADelayIsACss2TimeEvent::ErrorExecution,
+                                ::sce_rust_runtime::ErrorReason::AssignmentFailed,
                                 "<assign> to 'aAfterB' failed",
                             ));
                             // W3C SCXML 4.9: the error ends the block, from however deep a <foreach> it came.

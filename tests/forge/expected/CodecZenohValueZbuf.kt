@@ -7,6 +7,7 @@
 package com.sce.generated.codec_zenoh_value_zbuf
 
 import com.sce.forge.runtime.CodecError
+import com.sce.forge.runtime.Decoded
 import com.sce.forge.runtime.MutableListSink
 import com.sce.forge.runtime.SceCursor
 import com.sce.forge.runtime.SceSink
@@ -85,11 +86,14 @@ data class CodecZenohValueZbuf(
 
     companion object {
         /// Decode the next frame from `cursor`. On success the cursor
-        /// advances past the consumed bytes; returns `null` when the
-        /// cursor's tail is shorter than the declared minimum frame
-        /// (RFC §synth-5-B L494-519).
+        /// advances past the consumed bytes and the value is `Decoded.Ok`;
+        /// a refused frame is `Decoded.Refused` with the kind that refused
+        /// it (docs/adr/0099, amendment of 2026-11-16): `NeedMoreBytes` when
+        /// the cursor's tail is shorter than the frame (RFC §synth-5-B
+        /// L494-519), which the caller resumes after appending bytes, and
+        /// another kind for a frame no more bytes make whole.
         @Suppress("UNUSED_PARAMETER")
-        fun decode(cursor: SceCursor, afterShm: UByte): CodecZenohValueZbuf? {
+        fun decode(cursor: SceCursor, afterShm: UByte): Decoded<CodecZenohValueZbuf> {
             // Streaming cursor decode (SSOT selection: `needs_streaming`).
             // The positional `raw[byte_off]` path is valid only when every
             // field's absolute offset is fixed at codegen time; this branch
@@ -102,29 +106,29 @@ data class CodecZenohValueZbuf(
             // `is_repeat` / `is_tlv_chain` / `is_embed` route to their
             // dedicated helpers; every other field flows through
             // `present_if_decode_stmt`.
-            val value_len = cursor.readVleU64() ?: return null
+            val value_len = cursor.readVleU64().valueOr { _refused -> return _refused }
             val value = if ((afterShm.toInt() and 0x01) == 0) {
                 val _len = value_len
                 if (_len > 4294967295uL) {
-                    cursor.refuse(CodecError.LengthOutOfRange); return null
+                    return Decoded.Refused(CodecError.LengthOutOfRange)
                 }
-                if (_len > (Int.MAX_VALUE - 0).toULong()) return null
+                if (_len > (Int.MAX_VALUE - 0).toULong()) return Decoded.Refused(CodecError.NeedMoreBytes)
                 val _n = _len.toInt()
-                val raw = cursor.peekSlice(_n) ?: return null
+                val raw = cursor.peekSlice(_n) ?: return Decoded.Refused(CodecError.NeedMoreBytes)
                 val _v = raw.copyOf()
-                if (!cursor.advance(_n)) return null
+                if (!cursor.advance(_n)) return Decoded.Refused(CodecError.NeedMoreBytes)
                 _v
             } else {
                 null
             }
             val encoding: ULong? = if ((afterShm.toInt() and 0x01) != 0) {
-                val _v = cursor.readVleU64() ?: return null
+                val _v = cursor.readVleU64().valueOr { _refused -> return _refused }
                 _v
             } else {
                 null
             }
             val slice_count: ULong? = if ((afterShm.toInt() and 0x01) != 0) {
-                val _v = cursor.readVleU64() ?: return null
+                val _v = cursor.readVleU64().valueOr { _refused -> return _refused }
                 _v
             } else {
                 null
@@ -133,16 +137,18 @@ data class CodecZenohValueZbuf(
                 val _n = slice_count!!
                 mutableListOf<CodecZenohValueSlice>().apply {
                     repeat(_n.toInt()) {
-                        add(CodecZenohValueSlice.decode(cursor) ?: return null)
+                        add(CodecZenohValueSlice.decode(cursor).valueOr { _refused -> return _refused })
                     }
                 }
             } else null
-            return CodecZenohValueZbuf(
-                value_len = value_len,
-                value = value,
-                encoding = encoding,
-                slice_count = slice_count,
-                slices = slices
+            return Decoded.Ok(
+                CodecZenohValueZbuf(
+                    value_len = value_len,
+                    value = value,
+                    encoding = encoding,
+                    slice_count = slice_count,
+                    slices = slices
+                )
             )
         }
     }

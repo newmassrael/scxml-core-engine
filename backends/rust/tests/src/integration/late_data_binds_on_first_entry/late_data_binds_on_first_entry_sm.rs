@@ -510,6 +510,7 @@ impl LateDataBindsOnFirstEntryPolicy {
                 );
                 engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(
                     LateDataBindsOnFirstEntryEvent::ErrorExecution,
+                    ::sce_rust_runtime::ErrorReason::ParamUnfit,
                     "<data id='entries'> could not hold the value its invoke handed it",
                 ));
             }
@@ -521,6 +522,7 @@ impl LateDataBindsOnFirstEntryPolicy {
                 ::sce_rust_runtime::sce_log_error!("global: {}", e);
                 engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(
                     LateDataBindsOnFirstEntryEvent::ErrorExecution,
+                    ::sce_rust_runtime::ErrorReason::ExpressionFailed,
                     "<data id='entries'> expr failed to evaluate",
                 ));
             }
@@ -535,6 +537,7 @@ impl LateDataBindsOnFirstEntryPolicy {
                 );
                 engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(
                     LateDataBindsOnFirstEntryEvent::ErrorExecution,
+                    ::sce_rust_runtime::ErrorReason::ParamUnfit,
                     "<data id='seen'> could not hold the value its invoke handed it",
                 ));
             }
@@ -546,6 +549,7 @@ impl LateDataBindsOnFirstEntryPolicy {
                 ::sce_rust_runtime::sce_log_error!("global: {}", e);
                 engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(
                     LateDataBindsOnFirstEntryEvent::ErrorExecution,
+                    ::sce_rust_runtime::ErrorReason::ExpressionFailed,
                     "<data id='seen'> expr failed to evaluate",
                 ));
             }
@@ -560,6 +564,7 @@ impl LateDataBindsOnFirstEntryPolicy {
                 );
                 engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(
                     LateDataBindsOnFirstEntryEvent::ErrorExecution,
+                    ::sce_rust_runtime::ErrorReason::ParamUnfit,
                     "<data id='contentSeen'> could not hold the value its invoke handed it",
                 ));
             }
@@ -574,6 +579,7 @@ impl LateDataBindsOnFirstEntryPolicy {
                 ::sce_rust_runtime::sce_log_error!("global: {}", e);
                 engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(
                     LateDataBindsOnFirstEntryEvent::ErrorExecution,
+                    ::sce_rust_runtime::ErrorReason::ExpressionFailed,
                     "<data id='contentSeen'> expr failed to evaluate",
                 ));
             }
@@ -622,6 +628,7 @@ impl LateDataBindsOnFirstEntryPolicy {
                 ::sce_rust_runtime::sce_log_error!("Guard evaluation failed for '{}': {}", cond, e);
                 engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(
                     LateDataBindsOnFirstEntryEvent::ErrorExecution,
+                    ::sce_rust_runtime::ErrorReason::ExpressionFailed,
                     reason,
                 ));
                 None
@@ -948,6 +955,7 @@ impl StatePolicy for LateDataBindsOnFirstEntryPolicy {
                         ::sce_rust_runtime::sce_log_error!("s: {}", e);
                         engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(
                             LateDataBindsOnFirstEntryEvent::ErrorExecution,
+                            ::sce_rust_runtime::ErrorReason::ExpressionFailed,
                             "<data id='v'> expr failed to evaluate",
                         ));
                     }
@@ -959,6 +967,7 @@ impl StatePolicy for LateDataBindsOnFirstEntryPolicy {
                         ::sce_rust_runtime::sce_log_error!("Failed to init 'c' in s: {}", e);
                         engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(
                             LateDataBindsOnFirstEntryEvent::ErrorExecution,
+                            ::sce_rust_runtime::ErrorReason::DataInitFailed,
                             "<data id='c'> content failed to initialise",
                         ));
                     }
@@ -985,6 +994,7 @@ impl StatePolicy for LateDataBindsOnFirstEntryPolicy {
                             );
                             engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(
                                 LateDataBindsOnFirstEntryEvent::ErrorExecution,
+                                ::sce_rust_runtime::ErrorReason::AssignmentFailed,
                                 "<assign> to 'entries' failed",
                             ));
                             // W3C SCXML 4.9: the error ends the block, from however deep a <foreach> it came.
@@ -1008,6 +1018,7 @@ impl StatePolicy for LateDataBindsOnFirstEntryPolicy {
                             ::sce_rust_runtime::sce_log_error!("Assign failed for 'seen': {}", e);
                             engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(
                                 LateDataBindsOnFirstEntryEvent::ErrorExecution,
+                                ::sce_rust_runtime::ErrorReason::AssignmentFailed,
                                 "<assign> to 'seen' failed",
                             ));
                             // W3C SCXML 4.9: the error ends the block, from however deep a <foreach> it came.
@@ -1034,6 +1045,7 @@ impl StatePolicy for LateDataBindsOnFirstEntryPolicy {
                             );
                             engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(
                                 LateDataBindsOnFirstEntryEvent::ErrorExecution,
+                                ::sce_rust_runtime::ErrorReason::AssignmentFailed,
                                 "<assign> to 'contentSeen' failed",
                             ));
                             // W3C SCXML 4.9: the error ends the block, from however deep a <foreach> it came.
@@ -1194,6 +1206,7 @@ impl StatePolicy for LateDataBindsOnFirstEntryPolicy {
                             ::sce_rust_runtime::sce_log_error!("Assign failed for 'v': {}", e);
                             engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(
                                 LateDataBindsOnFirstEntryEvent::ErrorExecution,
+                                ::sce_rust_runtime::ErrorReason::AssignmentFailed,
                                 "<assign> to 'v' failed",
                             ));
                             // W3C SCXML 4.9: the error ends the block, from however deep a <foreach> it came.

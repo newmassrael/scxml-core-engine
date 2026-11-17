@@ -1,5 +1,5 @@
 // SCE-GENERATED — DO NOT EDIT
-// source-hash: 65fb42bdd588f958b0fbb29ac261cf039d02606d7afaae0720c045624bd679ba
+// source-hash: 2073d8a55462e1ce61d8a77293fdd2c141aceda8ad173303c5b84813ca22eeee
 
 // SPDX-License-Identifier: AGPL-3.0-only WITH AdditionRef-SCE-Linking-Exception OR LicenseRef-SCE-Commercial
 // SPDX-FileCopyrightText: Copyright (c) 2025-2026 [Author of input SCXML file] (content derived from the input document)
@@ -1417,6 +1417,7 @@ impl StaticHostNotifyPolicy {
                     // same event, rather than a silence that reads as started.
                     engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(
                         StaticHostNotifyEvent::ErrorExecution,
+                        ::sce_rust_runtime::ErrorReason::ProcessorUnregistered,
                         "<invoke> names an invoker the host declared but never registered",
                     ));
                 }
@@ -1463,7 +1464,7 @@ impl StaticHostNotifyPolicy {
                 }
                 Err(_) => {
                     ::sce_rust_runtime::sce_log_error!("invoke typed param 'id' overflowed or failed");
-                    engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(StaticHostNotifyEvent::ErrorExecution, "<invoke> <param name='id'> cannot be its request field: it failed to evaluate"));
+                    engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(StaticHostNotifyEvent::ErrorExecution, ::sce_rust_runtime::ErrorReason::ExpressionFailed, "<invoke> <param name='id'> cannot be its request field: it failed to evaluate"));
                     request_refused = true;
                 }
             }
@@ -1500,6 +1501,7 @@ impl StaticHostNotifyPolicy {
                     // same event, rather than a silence that reads as started.
                     engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(
                         StaticHostNotifyEvent::ErrorExecution,
+                        ::sce_rust_runtime::ErrorReason::ProcessorUnregistered,
                         "<invoke> names an invoker the host declared but never registered",
                     ));
                 }
@@ -1546,7 +1548,7 @@ impl StaticHostNotifyPolicy {
                 }
                 Err(_) => {
                     ::sce_rust_runtime::sce_log_error!("invoke typed param 'id' overflowed or failed");
-                    engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(StaticHostNotifyEvent::ErrorExecution, "<invoke> <param name='id'> cannot be its request field: it failed to evaluate"));
+                    engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(StaticHostNotifyEvent::ErrorExecution, ::sce_rust_runtime::ErrorReason::ExpressionFailed, "<invoke> <param name='id'> cannot be its request field: it failed to evaluate"));
                     request_refused = true;
                 }
             }
@@ -1563,7 +1565,7 @@ impl StaticHostNotifyPolicy {
                 }
                 Err(_) => {
                     ::sce_rust_runtime::sce_log_error!("invoke typed param 'title' overflowed or failed");
-                    engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(StaticHostNotifyEvent::ErrorExecution, "<invoke> <param name='title'> cannot be its request field: it failed to evaluate"));
+                    engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(StaticHostNotifyEvent::ErrorExecution, ::sce_rust_runtime::ErrorReason::ExpressionFailed, "<invoke> <param name='title'> cannot be its request field: it failed to evaluate"));
                     request_refused = true;
                 }
             }
@@ -1580,7 +1582,7 @@ impl StaticHostNotifyPolicy {
                 }
                 Err(_) => {
                     ::sce_rust_runtime::sce_log_error!("invoke typed param 'body' overflowed or failed");
-                    engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(StaticHostNotifyEvent::ErrorExecution, "<invoke> <param name='body'> cannot be its request field: it failed to evaluate"));
+                    engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(StaticHostNotifyEvent::ErrorExecution, ::sce_rust_runtime::ErrorReason::ExpressionFailed, "<invoke> <param name='body'> cannot be its request field: it failed to evaluate"));
                     request_refused = true;
                 }
             }
@@ -1597,7 +1599,7 @@ impl StaticHostNotifyPolicy {
                 }
                 Err(_) => {
                     ::sce_rust_runtime::sce_log_error!("invoke typed param 'at_ms' overflowed or failed");
-                    engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(StaticHostNotifyEvent::ErrorExecution, "<invoke> <param name='at_ms'> cannot be its request field: it failed to evaluate"));
+                    engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(StaticHostNotifyEvent::ErrorExecution, ::sce_rust_runtime::ErrorReason::ExpressionFailed, "<invoke> <param name='at_ms'> cannot be its request field: it failed to evaluate"));
                     request_refused = true;
                 }
             }
@@ -1634,6 +1636,7 @@ impl StaticHostNotifyPolicy {
                     // same event, rather than a silence that reads as started.
                     engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(
                         StaticHostNotifyEvent::ErrorExecution,
+                        ::sce_rust_runtime::ErrorReason::ProcessorUnregistered,
                         "<invoke> names an invoker the host declared but never registered",
                     ));
                 }
@@ -1689,7 +1692,7 @@ impl StaticHostNotifyPolicy {
                 }
                 Err(_) => {
                     ::sce_rust_runtime::sce_log_error!("invoke typed param 'title' overflowed or failed");
-                    engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(StaticHostNotifyEvent::ErrorExecution, "<invoke> <param name='title'> cannot be its request field: it failed to evaluate"));
+                    engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(StaticHostNotifyEvent::ErrorExecution, ::sce_rust_runtime::ErrorReason::ExpressionFailed, "<invoke> <param name='title'> cannot be its request field: it failed to evaluate"));
                     request_refused = true;
                 }
             }
@@ -1706,7 +1709,7 @@ impl StaticHostNotifyPolicy {
                 }
                 Err(_) => {
                     ::sce_rust_runtime::sce_log_error!("invoke typed param 'body' overflowed or failed");
-                    engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(StaticHostNotifyEvent::ErrorExecution, "<invoke> <param name='body'> cannot be its request field: it failed to evaluate"));
+                    engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(StaticHostNotifyEvent::ErrorExecution, ::sce_rust_runtime::ErrorReason::ExpressionFailed, "<invoke> <param name='body'> cannot be its request field: it failed to evaluate"));
                     request_refused = true;
                 }
             }
@@ -1723,7 +1726,7 @@ impl StaticHostNotifyPolicy {
                 }
                 Err(_) => {
                     ::sce_rust_runtime::sce_log_error!("invoke typed param 'at_ms' overflowed or failed");
-                    engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(StaticHostNotifyEvent::ErrorExecution, "<invoke> <param name='at_ms'> cannot be its request field: it failed to evaluate"));
+                    engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(StaticHostNotifyEvent::ErrorExecution, ::sce_rust_runtime::ErrorReason::ExpressionFailed, "<invoke> <param name='at_ms'> cannot be its request field: it failed to evaluate"));
                     request_refused = true;
                 }
             }
@@ -1760,6 +1763,7 @@ impl StaticHostNotifyPolicy {
                     // same event, rather than a silence that reads as started.
                     engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(
                         StaticHostNotifyEvent::ErrorExecution,
+                        ::sce_rust_runtime::ErrorReason::ProcessorUnregistered,
                         "<invoke> names an invoker the host declared but never registered",
                     ));
                 }
@@ -1819,6 +1823,7 @@ impl StaticHostNotifyPolicy {
                     // same event, rather than a silence that reads as started.
                     engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(
                         StaticHostNotifyEvent::ErrorExecution,
+                        ::sce_rust_runtime::ErrorReason::ProcessorUnregistered,
                         "<invoke> names an invoker the host declared but never registered",
                     ));
                 }
@@ -2629,7 +2634,7 @@ impl StatePolicy for StaticHostNotifyPolicy {
                         })() {
                             Ok(()) => false,
                             Err(_) => {
-                                engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(StaticHostNotifyEvent::ErrorExecution, "<assign location='permission'>: an integer operation overflowed or failed"));
+                                engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(StaticHostNotifyEvent::ErrorExecution, ::sce_rust_runtime::ErrorReason::ExpressionFailed, "<assign location='permission'>: an integer operation overflowed or failed"));
                                 true
                             }
                         };
@@ -2646,7 +2651,7 @@ impl StatePolicy for StaticHostNotifyPolicy {
                         })() {
                             Ok(()) => false,
                             Err(_) => {
-                                engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(StaticHostNotifyEvent::ErrorExecution, "<assign location='outcome'>: an integer operation overflowed or failed"));
+                                engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(StaticHostNotifyEvent::ErrorExecution, ::sce_rust_runtime::ErrorReason::ExpressionFailed, "<assign location='outcome'>: an integer operation overflowed or failed"));
                                 true
                             }
                         };
@@ -2676,7 +2681,7 @@ impl StatePolicy for StaticHostNotifyPolicy {
                         })() {
                             Ok(()) => false,
                             Err(_) => {
-                                engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(StaticHostNotifyEvent::ErrorExecution, "<assign location='outcome'>: an integer operation overflowed or failed"));
+                                engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(StaticHostNotifyEvent::ErrorExecution, ::sce_rust_runtime::ErrorReason::ExpressionFailed, "<assign location='outcome'>: an integer operation overflowed or failed"));
                                 true
                             }
                         };
@@ -2702,7 +2707,7 @@ impl StatePolicy for StaticHostNotifyPolicy {
                         })() {
                             Ok(()) => false,
                             Err(_) => {
-                                engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(StaticHostNotifyEvent::ErrorExecution, "<assign location='outcome'>: an integer operation overflowed or failed"));
+                                engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(StaticHostNotifyEvent::ErrorExecution, ::sce_rust_runtime::ErrorReason::ExpressionFailed, "<assign location='outcome'>: an integer operation overflowed or failed"));
                                 true
                             }
                         };
@@ -2728,7 +2733,7 @@ impl StatePolicy for StaticHostNotifyPolicy {
                         })() {
                             Ok(()) => false,
                             Err(_) => {
-                                engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(StaticHostNotifyEvent::ErrorExecution, "<assign location='outcome'>: an integer operation overflowed or failed"));
+                                engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(StaticHostNotifyEvent::ErrorExecution, ::sce_rust_runtime::ErrorReason::ExpressionFailed, "<assign location='outcome'>: an integer operation overflowed or failed"));
                                 true
                             }
                         };
@@ -2759,7 +2764,7 @@ impl StatePolicy for StaticHostNotifyPolicy {
                         })() {
                             Ok(()) => false,
                             Err(_) => {
-                                engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(StaticHostNotifyEvent::ErrorExecution, "<assign location='outcome'>: an integer operation overflowed or failed"));
+                                engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(StaticHostNotifyEvent::ErrorExecution, ::sce_rust_runtime::ErrorReason::ExpressionFailed, "<assign location='outcome'>: an integer operation overflowed or failed"));
                                 true
                             }
                         };
@@ -2789,7 +2794,7 @@ impl StatePolicy for StaticHostNotifyPolicy {
                         })() {
                             Ok(()) => false,
                             Err(_) => {
-                                engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(StaticHostNotifyEvent::ErrorExecution, "<assign location='outcome'>: an integer operation overflowed or failed"));
+                                engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(StaticHostNotifyEvent::ErrorExecution, ::sce_rust_runtime::ErrorReason::ExpressionFailed, "<assign location='outcome'>: an integer operation overflowed or failed"));
                                 true
                             }
                         };
@@ -2815,7 +2820,7 @@ impl StatePolicy for StaticHostNotifyPolicy {
                         })() {
                             Ok(()) => false,
                             Err(_) => {
-                                engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(StaticHostNotifyEvent::ErrorExecution, "<assign location='outcome'>: an integer operation overflowed or failed"));
+                                engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(StaticHostNotifyEvent::ErrorExecution, ::sce_rust_runtime::ErrorReason::ExpressionFailed, "<assign location='outcome'>: an integer operation overflowed or failed"));
                                 true
                             }
                         };
@@ -2841,7 +2846,7 @@ impl StatePolicy for StaticHostNotifyPolicy {
                         })() {
                             Ok(()) => false,
                             Err(_) => {
-                                engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(StaticHostNotifyEvent::ErrorExecution, "<assign location='outcome'>: an integer operation overflowed or failed"));
+                                engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(StaticHostNotifyEvent::ErrorExecution, ::sce_rust_runtime::ErrorReason::ExpressionFailed, "<assign location='outcome'>: an integer operation overflowed or failed"));
                                 true
                             }
                         };
@@ -2870,7 +2875,7 @@ impl StatePolicy for StaticHostNotifyPolicy {
                         })() {
                             Ok(()) => false,
                             Err(_) => {
-                                engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(StaticHostNotifyEvent::ErrorExecution, "<assign location='id'>: an integer operation overflowed or failed"));
+                                engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(StaticHostNotifyEvent::ErrorExecution, ::sce_rust_runtime::ErrorReason::ExpressionFailed, "<assign location='id'>: an integer operation overflowed or failed"));
                                 true
                             }
                         };
@@ -2888,7 +2893,7 @@ impl StatePolicy for StaticHostNotifyPolicy {
                         })() {
                             Ok(()) => false,
                             Err(_) => {
-                                engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(StaticHostNotifyEvent::ErrorExecution, "<assign location='title'>: an integer operation overflowed or failed"));
+                                engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(StaticHostNotifyEvent::ErrorExecution, ::sce_rust_runtime::ErrorReason::ExpressionFailed, "<assign location='title'>: an integer operation overflowed or failed"));
                                 true
                             }
                         };
@@ -2906,7 +2911,7 @@ impl StatePolicy for StaticHostNotifyPolicy {
                         })() {
                             Ok(()) => false,
                             Err(_) => {
-                                engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(StaticHostNotifyEvent::ErrorExecution, "<assign location='body'>: an integer operation overflowed or failed"));
+                                engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(StaticHostNotifyEvent::ErrorExecution, ::sce_rust_runtime::ErrorReason::ExpressionFailed, "<assign location='body'>: an integer operation overflowed or failed"));
                                 true
                             }
                         };
@@ -2938,7 +2943,7 @@ impl StatePolicy for StaticHostNotifyPolicy {
                         })() {
                             Ok(()) => false,
                             Err(_) => {
-                                engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(StaticHostNotifyEvent::ErrorExecution, "<assign location='id'>: an integer operation overflowed or failed"));
+                                engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(StaticHostNotifyEvent::ErrorExecution, ::sce_rust_runtime::ErrorReason::ExpressionFailed, "<assign location='id'>: an integer operation overflowed or failed"));
                                 true
                             }
                         };
@@ -2977,7 +2982,7 @@ impl StatePolicy for StaticHostNotifyPolicy {
                         })() {
                             Ok(()) => false,
                             Err(_) => {
-                                engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(StaticHostNotifyEvent::ErrorExecution, "<assign location='status'>: an integer operation overflowed or failed"));
+                                engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(StaticHostNotifyEvent::ErrorExecution, ::sce_rust_runtime::ErrorReason::ExpressionFailed, "<assign location='status'>: an integer operation overflowed or failed"));
                                 true
                             }
                         };
@@ -2994,7 +2999,7 @@ impl StatePolicy for StaticHostNotifyPolicy {
                         })() {
                             Ok(()) => false,
                             Err(_) => {
-                                engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(StaticHostNotifyEvent::ErrorExecution, "<assign location='outcome'>: an integer operation overflowed or failed"));
+                                engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(StaticHostNotifyEvent::ErrorExecution, ::sce_rust_runtime::ErrorReason::ExpressionFailed, "<assign location='outcome'>: an integer operation overflowed or failed"));
                                 true
                             }
                         };
@@ -3024,7 +3029,7 @@ impl StatePolicy for StaticHostNotifyPolicy {
                         })() {
                             Ok(()) => false,
                             Err(_) => {
-                                engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(StaticHostNotifyEvent::ErrorExecution, "<assign location='outcome'>: an integer operation overflowed or failed"));
+                                engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(StaticHostNotifyEvent::ErrorExecution, ::sce_rust_runtime::ErrorReason::ExpressionFailed, "<assign location='outcome'>: an integer operation overflowed or failed"));
                                 true
                             }
                         };
@@ -3050,7 +3055,7 @@ impl StatePolicy for StaticHostNotifyPolicy {
                         })() {
                             Ok(()) => false,
                             Err(_) => {
-                                engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(StaticHostNotifyEvent::ErrorExecution, "<assign location='outcome'>: an integer operation overflowed or failed"));
+                                engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(StaticHostNotifyEvent::ErrorExecution, ::sce_rust_runtime::ErrorReason::ExpressionFailed, "<assign location='outcome'>: an integer operation overflowed or failed"));
                                 true
                             }
                         };
@@ -3076,7 +3081,7 @@ impl StatePolicy for StaticHostNotifyPolicy {
                         })() {
                             Ok(()) => false,
                             Err(_) => {
-                                engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(StaticHostNotifyEvent::ErrorExecution, "<assign location='outcome'>: an integer operation overflowed or failed"));
+                                engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(StaticHostNotifyEvent::ErrorExecution, ::sce_rust_runtime::ErrorReason::ExpressionFailed, "<assign location='outcome'>: an integer operation overflowed or failed"));
                                 true
                             }
                         };
@@ -3105,7 +3110,7 @@ impl StatePolicy for StaticHostNotifyPolicy {
                         })() {
                             Ok(()) => false,
                             Err(_) => {
-                                engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(StaticHostNotifyEvent::ErrorExecution, "<assign location='status'>: an integer operation overflowed or failed"));
+                                engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(StaticHostNotifyEvent::ErrorExecution, ::sce_rust_runtime::ErrorReason::ExpressionFailed, "<assign location='status'>: an integer operation overflowed or failed"));
                                 true
                             }
                         };
@@ -3122,7 +3127,7 @@ impl StatePolicy for StaticHostNotifyPolicy {
                         })() {
                             Ok(()) => false,
                             Err(_) => {
-                                engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(StaticHostNotifyEvent::ErrorExecution, "<assign location='outcome'>: an integer operation overflowed or failed"));
+                                engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(StaticHostNotifyEvent::ErrorExecution, ::sce_rust_runtime::ErrorReason::ExpressionFailed, "<assign location='outcome'>: an integer operation overflowed or failed"));
                                 true
                             }
                         };
@@ -3152,7 +3157,7 @@ impl StatePolicy for StaticHostNotifyPolicy {
                         })() {
                             Ok(()) => false,
                             Err(_) => {
-                                engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(StaticHostNotifyEvent::ErrorExecution, "<assign location='outcome'>: an integer operation overflowed or failed"));
+                                engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(StaticHostNotifyEvent::ErrorExecution, ::sce_rust_runtime::ErrorReason::ExpressionFailed, "<assign location='outcome'>: an integer operation overflowed or failed"));
                                 true
                             }
                         };
@@ -3178,7 +3183,7 @@ impl StatePolicy for StaticHostNotifyPolicy {
                         })() {
                             Ok(()) => false,
                             Err(_) => {
-                                engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(StaticHostNotifyEvent::ErrorExecution, "<assign location='outcome'>: an integer operation overflowed or failed"));
+                                engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(StaticHostNotifyEvent::ErrorExecution, ::sce_rust_runtime::ErrorReason::ExpressionFailed, "<assign location='outcome'>: an integer operation overflowed or failed"));
                                 true
                             }
                         };
@@ -3208,7 +3213,7 @@ impl StatePolicy for StaticHostNotifyPolicy {
                         })() {
                             Ok(()) => false,
                             Err(_) => {
-                                engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(StaticHostNotifyEvent::ErrorExecution, "<assign location='permission'>: an integer operation overflowed or failed"));
+                                engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(StaticHostNotifyEvent::ErrorExecution, ::sce_rust_runtime::ErrorReason::ExpressionFailed, "<assign location='permission'>: an integer operation overflowed or failed"));
                                 true
                             }
                         };
@@ -3225,7 +3230,7 @@ impl StatePolicy for StaticHostNotifyPolicy {
                         })() {
                             Ok(()) => false,
                             Err(_) => {
-                                engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(StaticHostNotifyEvent::ErrorExecution, "<assign location='outcome'>: an integer operation overflowed or failed"));
+                                engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(StaticHostNotifyEvent::ErrorExecution, ::sce_rust_runtime::ErrorReason::ExpressionFailed, "<assign location='outcome'>: an integer operation overflowed or failed"));
                                 true
                             }
                         };
@@ -3255,7 +3260,7 @@ impl StatePolicy for StaticHostNotifyPolicy {
                         })() {
                             Ok(()) => false,
                             Err(_) => {
-                                engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(StaticHostNotifyEvent::ErrorExecution, "<assign location='outcome'>: an integer operation overflowed or failed"));
+                                engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(StaticHostNotifyEvent::ErrorExecution, ::sce_rust_runtime::ErrorReason::ExpressionFailed, "<assign location='outcome'>: an integer operation overflowed or failed"));
                                 true
                             }
                         };
@@ -3281,7 +3286,7 @@ impl StatePolicy for StaticHostNotifyPolicy {
                         })() {
                             Ok(()) => false,
                             Err(_) => {
-                                engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(StaticHostNotifyEvent::ErrorExecution, "<assign location='outcome'>: an integer operation overflowed or failed"));
+                                engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(StaticHostNotifyEvent::ErrorExecution, ::sce_rust_runtime::ErrorReason::ExpressionFailed, "<assign location='outcome'>: an integer operation overflowed or failed"));
                                 true
                             }
                         };
@@ -3307,7 +3312,7 @@ impl StatePolicy for StaticHostNotifyPolicy {
                         })() {
                             Ok(()) => false,
                             Err(_) => {
-                                engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(StaticHostNotifyEvent::ErrorExecution, "<assign location='outcome'>: an integer operation overflowed or failed"));
+                                engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(StaticHostNotifyEvent::ErrorExecution, ::sce_rust_runtime::ErrorReason::ExpressionFailed, "<assign location='outcome'>: an integer operation overflowed or failed"));
                                 true
                             }
                         };

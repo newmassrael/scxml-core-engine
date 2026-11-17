@@ -547,7 +547,7 @@ impl AChildTakesAHandedValueInPlaceOfItsDataSceSynthInvokeByParamPolicy {
                     "<data id='effects'> could not hold the value its invoke handed it: {}",
                     e
                 );
-                engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(AChildTakesAHandedValueInPlaceOfItsDataSceSynthInvokeByParamEvent::ErrorExecution, "<data id='effects'> could not hold the value its invoke handed it"));
+                engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(AChildTakesAHandedValueInPlaceOfItsDataSceSynthInvokeByParamEvent::ErrorExecution, ::sce_rust_runtime::ErrorReason::ParamUnfit, "<data id='effects'> could not hold the value its invoke handed it"));
             }
         } else {
             // W3C SCXML 5.2/5.3: Initialize 'effects' from expr (global)
@@ -555,7 +555,7 @@ impl AChildTakesAHandedValueInPlaceOfItsDataSceSynthInvokeByParamPolicy {
                 se, &sid, "effects", "{}",
             ) {
                 ::sce_rust_runtime::sce_log_error!("global: {}", e);
-                engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(AChildTakesAHandedValueInPlaceOfItsDataSceSynthInvokeByParamEvent::ErrorExecution, "<data id='effects'> expr failed to evaluate"));
+                engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(AChildTakesAHandedValueInPlaceOfItsDataSceSynthInvokeByParamEvent::ErrorExecution, ::sce_rust_runtime::ErrorReason::ExpressionFailed, "<data id='effects'> expr failed to evaluate"));
             }
         }
 
@@ -566,7 +566,7 @@ impl AChildTakesAHandedValueInPlaceOfItsDataSceSynthInvokeByParamPolicy {
                     "<data id='raising'> could not hold the value its invoke handed it: {}",
                     e
                 );
-                engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(AChildTakesAHandedValueInPlaceOfItsDataSceSynthInvokeByParamEvent::ErrorExecution, "<data id='raising'> could not hold the value its invoke handed it"));
+                engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(AChildTakesAHandedValueInPlaceOfItsDataSceSynthInvokeByParamEvent::ErrorExecution, ::sce_rust_runtime::ErrorReason::ParamUnfit, "<data id='raising'> could not hold the value its invoke handed it"));
             }
         } else {
             // W3C SCXML 5.2/5.3: Initialize 'raising' from expr (global)
@@ -577,7 +577,7 @@ impl AChildTakesAHandedValueInPlaceOfItsDataSceSynthInvokeByParamPolicy {
                 "nil.invalidProperty",
             ) {
                 ::sce_rust_runtime::sce_log_error!("global: {}", e);
-                engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(AChildTakesAHandedValueInPlaceOfItsDataSceSynthInvokeByParamEvent::ErrorExecution, "<data id='raising'> expr failed to evaluate"));
+                engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(AChildTakesAHandedValueInPlaceOfItsDataSceSynthInvokeByParamEvent::ErrorExecution, ::sce_rust_runtime::ErrorReason::ExpressionFailed, "<data id='raising'> expr failed to evaluate"));
             }
         }
 
@@ -588,14 +588,14 @@ impl AChildTakesAHandedValueInPlaceOfItsDataSceSynthInvokeByParamPolicy {
                     "<data id='effectful'> could not hold the value its invoke handed it: {}",
                     e
                 );
-                engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(AChildTakesAHandedValueInPlaceOfItsDataSceSynthInvokeByParamEvent::ErrorExecution, "<data id='effectful'> could not hold the value its invoke handed it"));
+                engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(AChildTakesAHandedValueInPlaceOfItsDataSceSynthInvokeByParamEvent::ErrorExecution, ::sce_rust_runtime::ErrorReason::ParamUnfit, "<data id='effectful'> could not hold the value its invoke handed it"));
             }
         } else {
             // W3C SCXML 5.2/5.3: Initialize 'effectful' from expr (global)
             if let Err(e) = sce_rust_runtime::helpers::datamodel_init::initialize_variable_from_expr(
             se, &sid, "effectful", "(function() local __t = effects table.insert(__t, \"own effectful ran\") return #__t end)()") {
             ::sce_rust_runtime::sce_log_error!("global: {}", e);
-            engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(AChildTakesAHandedValueInPlaceOfItsDataSceSynthInvokeByParamEvent::ErrorExecution, "<data id='effectful'> expr failed to evaluate"));
+            engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(AChildTakesAHandedValueInPlaceOfItsDataSceSynthInvokeByParamEvent::ErrorExecution, ::sce_rust_runtime::ErrorReason::ExpressionFailed, "<data id='effectful'> expr failed to evaluate"));
         }
         }
 
@@ -606,7 +606,7 @@ impl AChildTakesAHandedValueInPlaceOfItsDataSceSynthInvokeByParamPolicy {
                     "<data id='refusable'> could not hold the value its invoke handed it: {}",
                     e
                 );
-                engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(AChildTakesAHandedValueInPlaceOfItsDataSceSynthInvokeByParamEvent::ErrorExecution, "<data id='refusable'> could not hold the value its invoke handed it"));
+                engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(AChildTakesAHandedValueInPlaceOfItsDataSceSynthInvokeByParamEvent::ErrorExecution, ::sce_rust_runtime::ErrorReason::ParamUnfit, "<data id='refusable'> could not hold the value its invoke handed it"));
             }
         } else {
             // W3C SCXML 5.2/5.3: Initialize 'refusable' from expr (global)
@@ -617,7 +617,7 @@ impl AChildTakesAHandedValueInPlaceOfItsDataSceSynthInvokeByParamPolicy {
                 "\"own refusable\"",
             ) {
                 ::sce_rust_runtime::sce_log_error!("global: {}", e);
-                engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(AChildTakesAHandedValueInPlaceOfItsDataSceSynthInvokeByParamEvent::ErrorExecution, "<data id='refusable'> expr failed to evaluate"));
+                engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(AChildTakesAHandedValueInPlaceOfItsDataSceSynthInvokeByParamEvent::ErrorExecution, ::sce_rust_runtime::ErrorReason::ExpressionFailed, "<data id='refusable'> expr failed to evaluate"));
             }
         }
 
@@ -628,7 +628,7 @@ impl AChildTakesAHandedValueInPlaceOfItsDataSceSynthInvokeByParamPolicy {
                     "<data id='payload'> could not hold the value its invoke handed it: {}",
                     e
                 );
-                engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(AChildTakesAHandedValueInPlaceOfItsDataSceSynthInvokeByParamEvent::ErrorExecution, "<data id='payload'> could not hold the value its invoke handed it"));
+                engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(AChildTakesAHandedValueInPlaceOfItsDataSceSynthInvokeByParamEvent::ErrorExecution, ::sce_rust_runtime::ErrorReason::ParamUnfit, "<data id='payload'> could not hold the value its invoke handed it"));
             }
         } else {
             // W3C SCXML 5.2/5.3: Initialize 'payload' from expr (global)
@@ -636,7 +636,7 @@ impl AChildTakesAHandedValueInPlaceOfItsDataSceSynthInvokeByParamPolicy {
                 se, &sid, "payload", "nil",
             ) {
                 ::sce_rust_runtime::sce_log_error!("global: {}", e);
-                engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(AChildTakesAHandedValueInPlaceOfItsDataSceSynthInvokeByParamEvent::ErrorExecution, "<data id='payload'> expr failed to evaluate"));
+                engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(AChildTakesAHandedValueInPlaceOfItsDataSceSynthInvokeByParamEvent::ErrorExecution, ::sce_rust_runtime::ErrorReason::ExpressionFailed, "<data id='payload'> expr failed to evaluate"));
             }
         }
 
@@ -647,7 +647,7 @@ impl AChildTakesAHandedValueInPlaceOfItsDataSceSynthInvokeByParamPolicy {
                     "<data id='script_saw'> could not hold the value its invoke handed it: {}",
                     e
                 );
-                engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(AChildTakesAHandedValueInPlaceOfItsDataSceSynthInvokeByParamEvent::ErrorExecution, "<data id='script_saw'> could not hold the value its invoke handed it"));
+                engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(AChildTakesAHandedValueInPlaceOfItsDataSceSynthInvokeByParamEvent::ErrorExecution, ::sce_rust_runtime::ErrorReason::ParamUnfit, "<data id='script_saw'> could not hold the value its invoke handed it"));
             }
         } else {
             // W3C SCXML 5.2/5.3: Initialize 'script_saw' from expr (global)
@@ -658,7 +658,7 @@ impl AChildTakesAHandedValueInPlaceOfItsDataSceSynthInvokeByParamPolicy {
                 "\"\"",
             ) {
                 ::sce_rust_runtime::sce_log_error!("global: {}", e);
-                engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(AChildTakesAHandedValueInPlaceOfItsDataSceSynthInvokeByParamEvent::ErrorExecution, "<data id='script_saw'> expr failed to evaluate"));
+                engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(AChildTakesAHandedValueInPlaceOfItsDataSceSynthInvokeByParamEvent::ErrorExecution, ::sce_rust_runtime::ErrorReason::ExpressionFailed, "<data id='script_saw'> expr failed to evaluate"));
             }
         }
 
@@ -669,7 +669,7 @@ impl AChildTakesAHandedValueInPlaceOfItsDataSceSynthInvokeByParamPolicy {
                     "<data id='entry_saw'> could not hold the value its invoke handed it: {}",
                     e
                 );
-                engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(AChildTakesAHandedValueInPlaceOfItsDataSceSynthInvokeByParamEvent::ErrorExecution, "<data id='entry_saw'> could not hold the value its invoke handed it"));
+                engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(AChildTakesAHandedValueInPlaceOfItsDataSceSynthInvokeByParamEvent::ErrorExecution, ::sce_rust_runtime::ErrorReason::ParamUnfit, "<data id='entry_saw'> could not hold the value its invoke handed it"));
             }
         } else {
             // W3C SCXML 5.2/5.3: Initialize 'entry_saw' from expr (global)
@@ -680,7 +680,7 @@ impl AChildTakesAHandedValueInPlaceOfItsDataSceSynthInvokeByParamPolicy {
                 "\"\"",
             ) {
                 ::sce_rust_runtime::sce_log_error!("global: {}", e);
-                engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(AChildTakesAHandedValueInPlaceOfItsDataSceSynthInvokeByParamEvent::ErrorExecution, "<data id='entry_saw'> expr failed to evaluate"));
+                engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(AChildTakesAHandedValueInPlaceOfItsDataSceSynthInvokeByParamEvent::ErrorExecution, ::sce_rust_runtime::ErrorReason::ExpressionFailed, "<data id='entry_saw'> expr failed to evaluate"));
             }
         }
 
@@ -691,7 +691,7 @@ impl AChildTakesAHandedValueInPlaceOfItsDataSceSynthInvokeByParamPolicy {
                     "<data id='errors'> could not hold the value its invoke handed it: {}",
                     e
                 );
-                engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(AChildTakesAHandedValueInPlaceOfItsDataSceSynthInvokeByParamEvent::ErrorExecution, "<data id='errors'> could not hold the value its invoke handed it"));
+                engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(AChildTakesAHandedValueInPlaceOfItsDataSceSynthInvokeByParamEvent::ErrorExecution, ::sce_rust_runtime::ErrorReason::ParamUnfit, "<data id='errors'> could not hold the value its invoke handed it"));
             }
         } else {
             // W3C SCXML 5.2/5.3: Initialize 'errors' from expr (global)
@@ -699,7 +699,7 @@ impl AChildTakesAHandedValueInPlaceOfItsDataSceSynthInvokeByParamPolicy {
                 se, &sid, "errors", "0",
             ) {
                 ::sce_rust_runtime::sce_log_error!("global: {}", e);
-                engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(AChildTakesAHandedValueInPlaceOfItsDataSceSynthInvokeByParamEvent::ErrorExecution, "<data id='errors'> expr failed to evaluate"));
+                engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(AChildTakesAHandedValueInPlaceOfItsDataSceSynthInvokeByParamEvent::ErrorExecution, ::sce_rust_runtime::ErrorReason::ExpressionFailed, "<data id='errors'> expr failed to evaluate"));
             }
         }
 
@@ -714,6 +714,7 @@ impl AChildTakesAHandedValueInPlaceOfItsDataSceSynthInvokeByParamPolicy {
             ::sce_rust_runtime::sce_log_error!("collect: {}", e);
             engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(
                 AChildTakesAHandedValueInPlaceOfItsDataSceSynthInvokeByParamEvent::ErrorExecution,
+                ::sce_rust_runtime::ErrorReason::ExpressionFailed,
                 "<data id='kept'> expr failed to evaluate",
             ));
         }
@@ -721,7 +722,7 @@ impl AChildTakesAHandedValueInPlaceOfItsDataSceSynthInvokeByParamPolicy {
         // W3C SCXML 5.8: Execute global scripts at document load time
         if let Err(e) = se.execute_script(&sid, "script_saw = _scxml_add((_scxml_tostring(_scxml_add((_scxml_tostring(raising) .. \"|\"), effectful)) .. \"|\"), payload.name)") {
             ::sce_rust_runtime::sce_log_error!("Global script execution failed: {}", e);
-            engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(AChildTakesAHandedValueInPlaceOfItsDataSceSynthInvokeByParamEvent::ErrorExecution, "a top-level <script> failed to execute"));
+            engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(AChildTakesAHandedValueInPlaceOfItsDataSceSynthInvokeByParamEvent::ErrorExecution, ::sce_rust_runtime::ErrorReason::ScriptFailed, "a top-level <script> failed to execute"));
         }
 
         Ok(())
@@ -765,7 +766,7 @@ impl AChildTakesAHandedValueInPlaceOfItsDataSceSynthInvokeByParamPolicy {
             Ok(val) => Some(val.to_bool()),
             Err(e) => {
                 ::sce_rust_runtime::sce_log_error!("Guard evaluation failed for '{}': {}", cond, e);
-                engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(AChildTakesAHandedValueInPlaceOfItsDataSceSynthInvokeByParamEvent::ErrorExecution, reason));
+                engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(AChildTakesAHandedValueInPlaceOfItsDataSceSynthInvokeByParamEvent::ErrorExecution, ::sce_rust_runtime::ErrorReason::ExpressionFailed, reason));
                 None
             }
         }
@@ -1098,7 +1099,7 @@ impl StatePolicy for AChildTakesAHandedValueInPlaceOfItsDataSceSynthInvokeByPara
                                 "Assign failed for 'entry_saw': {}",
                                 e
                             );
-                            engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(AChildTakesAHandedValueInPlaceOfItsDataSceSynthInvokeByParamEvent::ErrorExecution, "<assign> to 'entry_saw' failed"));
+                            engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(AChildTakesAHandedValueInPlaceOfItsDataSceSynthInvokeByParamEvent::ErrorExecution, ::sce_rust_runtime::ErrorReason::AssignmentFailed, "<assign> to 'entry_saw' failed"));
                             // W3C SCXML 4.9: the error ends the block, from however deep a <foreach> it came.
                             break 'action_block;
                         }
@@ -1253,7 +1254,7 @@ impl StatePolicy for AChildTakesAHandedValueInPlaceOfItsDataSceSynthInvokeByPara
                         let assign_script = format!("{} = {}", "errors", expr);
                         if let Err(e) = se.execute_script(&sid, &assign_script) {
                             ::sce_rust_runtime::sce_log_error!("Assign failed for 'errors': {}", e);
-                            engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(AChildTakesAHandedValueInPlaceOfItsDataSceSynthInvokeByParamEvent::ErrorExecution, "<assign> to 'errors' failed"));
+                            engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(AChildTakesAHandedValueInPlaceOfItsDataSceSynthInvokeByParamEvent::ErrorExecution, ::sce_rust_runtime::ErrorReason::AssignmentFailed, "<assign> to 'errors' failed"));
                             // W3C SCXML 4.9: the error ends the block, from however deep a <foreach> it came.
                             break 'action_block;
                         }
@@ -1303,7 +1304,7 @@ impl StatePolicy for AChildTakesAHandedValueInPlaceOfItsDataSceSynthInvokeByPara
                                         "send param 'raising' eval failed: {}",
                                         e
                                     );
-                                    engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(AChildTakesAHandedValueInPlaceOfItsDataSceSynthInvokeByParamEvent::ErrorExecution, "<send> <param name='raising'> could not be read"));
+                                    engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(AChildTakesAHandedValueInPlaceOfItsDataSceSynthInvokeByParamEvent::ErrorExecution, ::sce_rust_runtime::ErrorReason::LocationInvalid, "<send> <param name='raising'> could not be read"));
                                     // W3C SCXML 5.7.1: the pair is left out; 4.9: the block stops after the send.
                                     _param_failed = true;
                                 }
@@ -1320,7 +1321,7 @@ impl StatePolicy for AChildTakesAHandedValueInPlaceOfItsDataSceSynthInvokeByPara
                                         "send param 'effectful' eval failed: {}",
                                         e
                                     );
-                                    engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(AChildTakesAHandedValueInPlaceOfItsDataSceSynthInvokeByParamEvent::ErrorExecution, "<send> <param name='effectful'> could not be read"));
+                                    engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(AChildTakesAHandedValueInPlaceOfItsDataSceSynthInvokeByParamEvent::ErrorExecution, ::sce_rust_runtime::ErrorReason::LocationInvalid, "<send> <param name='effectful'> could not be read"));
                                     // W3C SCXML 5.7.1: the pair is left out; 4.9: the block stops after the send.
                                     _param_failed = true;
                                 }
@@ -1337,7 +1338,7 @@ impl StatePolicy for AChildTakesAHandedValueInPlaceOfItsDataSceSynthInvokeByPara
                                         "send param 'effects' eval failed: {}",
                                         e
                                     );
-                                    engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(AChildTakesAHandedValueInPlaceOfItsDataSceSynthInvokeByParamEvent::ErrorExecution, "<send> <param name='effects'> could not be read"));
+                                    engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(AChildTakesAHandedValueInPlaceOfItsDataSceSynthInvokeByParamEvent::ErrorExecution, ::sce_rust_runtime::ErrorReason::LocationInvalid, "<send> <param name='effects'> could not be read"));
                                     // W3C SCXML 5.7.1: the pair is left out; 4.9: the block stops after the send.
                                     _param_failed = true;
                                 }
@@ -1348,7 +1349,7 @@ impl StatePolicy for AChildTakesAHandedValueInPlaceOfItsDataSceSynthInvokeByPara
             }
             Err(e) => {
                 ::sce_rust_runtime::sce_log_error!("send param 'refusable' eval failed: {}", e);
-                engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(AChildTakesAHandedValueInPlaceOfItsDataSceSynthInvokeByParamEvent::ErrorExecution, "<send> <param name='refusable'> could not be read"));
+                engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(AChildTakesAHandedValueInPlaceOfItsDataSceSynthInvokeByParamEvent::ErrorExecution, ::sce_rust_runtime::ErrorReason::LocationInvalid, "<send> <param name='refusable'> could not be read"));
                 // W3C SCXML 5.7.1: the pair is left out; 4.9: the block stops after the send.
                 _param_failed = true;
             }
@@ -1362,7 +1363,7 @@ impl StatePolicy for AChildTakesAHandedValueInPlaceOfItsDataSceSynthInvokeByPara
                                         "send param 'kept' eval failed: {}",
                                         e
                                     );
-                                    engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(AChildTakesAHandedValueInPlaceOfItsDataSceSynthInvokeByParamEvent::ErrorExecution, "<send> <param name='kept'> could not be read"));
+                                    engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(AChildTakesAHandedValueInPlaceOfItsDataSceSynthInvokeByParamEvent::ErrorExecution, ::sce_rust_runtime::ErrorReason::LocationInvalid, "<send> <param name='kept'> could not be read"));
                                     // W3C SCXML 5.7.1: the pair is left out; 4.9: the block stops after the send.
                                     _param_failed = true;
                                 }
@@ -1379,7 +1380,7 @@ impl StatePolicy for AChildTakesAHandedValueInPlaceOfItsDataSceSynthInvokeByPara
                                         "send param 'stranger' eval failed: {}",
                                         e
                                     );
-                                    engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(AChildTakesAHandedValueInPlaceOfItsDataSceSynthInvokeByParamEvent::ErrorExecution, "<send> <param name='stranger'> could not be read"));
+                                    engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(AChildTakesAHandedValueInPlaceOfItsDataSceSynthInvokeByParamEvent::ErrorExecution, ::sce_rust_runtime::ErrorReason::LocationInvalid, "<send> <param name='stranger'> could not be read"));
                                     // W3C SCXML 5.7.1: the pair is left out; 4.9: the block stops after the send.
                                     _param_failed = true;
                                 }
@@ -1390,7 +1391,7 @@ impl StatePolicy for AChildTakesAHandedValueInPlaceOfItsDataSceSynthInvokeByPara
             }
             Err(e) => {
                 ::sce_rust_runtime::sce_log_error!("send param 'payload' eval failed: {}", e);
-                engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(AChildTakesAHandedValueInPlaceOfItsDataSceSynthInvokeByParamEvent::ErrorExecution, "<send> <param name='payload'> could not be read"));
+                engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(AChildTakesAHandedValueInPlaceOfItsDataSceSynthInvokeByParamEvent::ErrorExecution, ::sce_rust_runtime::ErrorReason::LocationInvalid, "<send> <param name='payload'> could not be read"));
                 // W3C SCXML 5.7.1: the pair is left out; 4.9: the block stops after the send.
                 _param_failed = true;
             }
@@ -1407,7 +1408,7 @@ impl StatePolicy for AChildTakesAHandedValueInPlaceOfItsDataSceSynthInvokeByPara
                                         "send param 'script' eval failed: {}",
                                         e
                                     );
-                                    engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(AChildTakesAHandedValueInPlaceOfItsDataSceSynthInvokeByParamEvent::ErrorExecution, "<send> <param name='script'> could not be read"));
+                                    engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(AChildTakesAHandedValueInPlaceOfItsDataSceSynthInvokeByParamEvent::ErrorExecution, ::sce_rust_runtime::ErrorReason::LocationInvalid, "<send> <param name='script'> could not be read"));
                                     // W3C SCXML 5.7.1: the pair is left out; 4.9: the block stops after the send.
                                     _param_failed = true;
                                 }
@@ -1424,7 +1425,7 @@ impl StatePolicy for AChildTakesAHandedValueInPlaceOfItsDataSceSynthInvokeByPara
                                         "send param 'entry' eval failed: {}",
                                         e
                                     );
-                                    engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(AChildTakesAHandedValueInPlaceOfItsDataSceSynthInvokeByParamEvent::ErrorExecution, "<send> <param name='entry'> could not be read"));
+                                    engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(AChildTakesAHandedValueInPlaceOfItsDataSceSynthInvokeByParamEvent::ErrorExecution, ::sce_rust_runtime::ErrorReason::LocationInvalid, "<send> <param name='entry'> could not be read"));
                                     // W3C SCXML 5.7.1: the pair is left out; 4.9: the block stops after the send.
                                     _param_failed = true;
                                 }
@@ -1441,7 +1442,7 @@ impl StatePolicy for AChildTakesAHandedValueInPlaceOfItsDataSceSynthInvokeByPara
                                         "send param 'errors' eval failed: {}",
                                         e
                                     );
-                                    engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(AChildTakesAHandedValueInPlaceOfItsDataSceSynthInvokeByParamEvent::ErrorExecution, "<send> <param name='errors'> could not be read"));
+                                    engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(AChildTakesAHandedValueInPlaceOfItsDataSceSynthInvokeByParamEvent::ErrorExecution, ::sce_rust_runtime::ErrorReason::LocationInvalid, "<send> <param name='errors'> could not be read"));
                                     // W3C SCXML 5.7.1: the pair is left out; 4.9: the block stops after the send.
                                     _param_failed = true;
                                 }
@@ -1463,7 +1464,8 @@ impl StatePolicy for AChildTakesAHandedValueInPlaceOfItsDataSceSynthInvokeByPara
                             // nothing delivered, and the block ends (4.9).
                             engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(
             AChildTakesAHandedValueInPlaceOfItsDataSceSynthInvokeByParamEvent::ErrorCommunication,
-            "<send target='#_parent'> has no parent session to reach"));
+            ::sce_rust_runtime::ErrorReason::TargetUnreachable,
+        "<send target='#_parent'> has no parent session to reach"));
                             break 'action_block;
                         }
 
@@ -1494,7 +1496,7 @@ impl StatePolicy for AChildTakesAHandedValueInPlaceOfItsDataSceSynthInvokeByPara
                                 "Assign failed for 'payload.name': {}",
                                 e
                             );
-                            engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(AChildTakesAHandedValueInPlaceOfItsDataSceSynthInvokeByParamEvent::ErrorExecution, "<assign> to 'payload.name' failed"));
+                            engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(AChildTakesAHandedValueInPlaceOfItsDataSceSynthInvokeByParamEvent::ErrorExecution, ::sce_rust_runtime::ErrorReason::AssignmentFailed, "<assign> to 'payload.name' failed"));
                             // W3C SCXML 4.9: the error ends the block, from however deep a <foreach> it came.
                             break 'action_block;
                         }

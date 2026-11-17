@@ -22,14 +22,16 @@ class CodecZenohHello:
     locators: Optional[List[CodecZenohLocator]] = None
 
     @classmethod
-    def decode(cls, cursor: SceCursor, l: int) -> Optional[CodecZenohHello]:
-        """Decode the next frame from ``cursor``. Returns ``None`` when
-        the cursor's tail is shorter than the declared minimum frame
-        (RFC §synth-5-B L494-519); on success the cursor advances past the
-        consumed bytes. VLE codecs also return ``None`` on
-        ``VleWidthOverflow``, and every codec on a field's refusal: a length
-        or a count past its bound (``LengthOutOfRange``, ``TooManyElements``,
-        docs/adr/0077), an undeclared enum value."""
+    def decode(cls, cursor: SceCursor, l: int) -> CodecZenohHello:
+        """Decode the next frame from ``cursor``; on success the cursor
+        advances past the consumed bytes. A frame the codec refuses raises
+        the ``CodecError`` subclass that names the refusal (docs/adr/0099,
+        amendment of 2026-11-16): ``NeedMoreBytes`` when the cursor's tail
+        is shorter than the frame (RFC §synth-5-B L494-519), which the
+        caller resumes after appending bytes, and for a frame no more bytes
+        make whole ``VleWidthOverflow``, ``InvalidUtf8``,
+        ``UndeclaredEnumValue``, or a length or a count past its bound
+        (``LengthOutOfRange``, ``TooManyElements``, docs/adr/0077)."""
         # Streaming cursor decode (SSOT selection: `needs_streaming`).
         # The positional `raw[byte_off]` path is valid only when every
         # field's absolute offset is fixed at codegen time; this branch
@@ -38,39 +40,29 @@ class CodecZenohHello:
         # (runtime width), string fields (UTF-8 decode), and a fixed field
         # after a variable-length payload (offset depends on the payload
         # length). Each field reads its own bytes and advances past what it
-        # consumed, all inside one outer `try:`. The `except` catches the
-        # base `CodecError` so a peek/advance `NeedMoreBytes` and a VLE
-        # field's `VleWidthOverflow` both unwind to a single `return None`
-        # (non-VLE codecs only ever raise `NeedMoreBytes`, a `CodecError`
-        # subclass, so this is behaviour-identical for them).
-        try:
-            raw = cursor.peek_slice(1)
-            f_version = raw[0]
-            cursor.advance(1)
-            raw = cursor.peek_slice(1)
-            f_cbyte = raw[0]
-            cursor.advance(1)
-            _len = ((f_cbyte >> 4) & 0xF)
-            _n = _len + 1
-            raw = cursor.peek_slice(_n)
-            f_zid = bytes(raw)
-            cursor.advance(_n)
-            if (l & 0x01) != 0:
-                _v = cursor.read_vle_u64()
-                f_num_locators = _v
-            else:
-                f_num_locators = None
-            if (l & 0x01) != 0:
-                f_locators = []
-                for _ in range(f_num_locators):
-                    _elem = CodecZenohLocator.decode(cursor)
-                    if _elem is None:
-                        return None
-                    f_locators.append(_elem)
-            else:
-                f_locators = None
-        except CodecError:
-            return None
+        # consumed; a refusal raises the `CodecError` that names it.
+        raw = cursor.peek_slice(1)
+        f_version = raw[0]
+        cursor.advance(1)
+        raw = cursor.peek_slice(1)
+        f_cbyte = raw[0]
+        cursor.advance(1)
+        _len = ((f_cbyte >> 4) & 0xF)
+        _n = _len + 1
+        raw = cursor.peek_slice(_n)
+        f_zid = bytes(raw)
+        cursor.advance(_n)
+        if (l & 0x01) != 0:
+            _v = cursor.read_vle_u64()
+            f_num_locators = _v
+        else:
+            f_num_locators = None
+        if (l & 0x01) != 0:
+            f_locators = []
+            for _ in range(f_num_locators):
+                f_locators.append(CodecZenohLocator.decode(cursor))
+        else:
+            f_locators = None
         return cls(
             version=f_version,
             cbyte=f_cbyte,

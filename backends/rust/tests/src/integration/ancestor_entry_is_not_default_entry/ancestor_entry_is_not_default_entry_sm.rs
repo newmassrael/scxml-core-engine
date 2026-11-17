@@ -606,6 +606,7 @@ impl AncestorEntryIsNotDefaultEntryPolicy {
                 );
                 engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(
                     AncestorEntryIsNotDefaultEntryEvent::ErrorExecution,
+                    ::sce_rust_runtime::ErrorReason::ParamUnfit,
                     "<data id='defaulted'> could not hold the value its invoke handed it",
                 ));
             }
@@ -620,6 +621,7 @@ impl AncestorEntryIsNotDefaultEntryPolicy {
                 ::sce_rust_runtime::sce_log_error!("global: {}", e);
                 engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(
                     AncestorEntryIsNotDefaultEntryEvent::ErrorExecution,
+                    ::sce_rust_runtime::ErrorReason::ExpressionFailed,
                     "<data id='defaulted'> expr failed to evaluate",
                 ));
             }
@@ -634,6 +636,7 @@ impl AncestorEntryIsNotDefaultEntryPolicy {
                 );
                 engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(
                     AncestorEntryIsNotDefaultEntryEvent::ErrorExecution,
+                    ::sce_rust_runtime::ErrorReason::ParamUnfit,
                     "<data id='lobbied'> could not hold the value its invoke handed it",
                 ));
             }
@@ -645,6 +648,7 @@ impl AncestorEntryIsNotDefaultEntryPolicy {
                 ::sce_rust_runtime::sce_log_error!("global: {}", e);
                 engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(
                     AncestorEntryIsNotDefaultEntryEvent::ErrorExecution,
+                    ::sce_rust_runtime::ErrorReason::ExpressionFailed,
                     "<data id='lobbied'> expr failed to evaluate",
                 ));
             }
@@ -659,6 +663,7 @@ impl AncestorEntryIsNotDefaultEntryPolicy {
                 );
                 engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(
                     AncestorEntryIsNotDefaultEntryEvent::ErrorExecution,
+                    ::sce_rust_runtime::ErrorReason::ParamUnfit,
                     "<data id='idled'> could not hold the value its invoke handed it",
                 ));
             }
@@ -670,6 +675,7 @@ impl AncestorEntryIsNotDefaultEntryPolicy {
                 ::sce_rust_runtime::sce_log_error!("global: {}", e);
                 engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(
                     AncestorEntryIsNotDefaultEntryEvent::ErrorExecution,
+                    ::sce_rust_runtime::ErrorReason::ExpressionFailed,
                     "<data id='idled'> expr failed to evaluate",
                 ));
             }
@@ -684,6 +690,7 @@ impl AncestorEntryIsNotDefaultEntryPolicy {
                 );
                 engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(
                     AncestorEntryIsNotDefaultEntryEvent::ErrorExecution,
+                    ::sce_rust_runtime::ErrorReason::ParamUnfit,
                     "<data id='targeted'> could not hold the value its invoke handed it",
                 ));
             }
@@ -695,6 +702,7 @@ impl AncestorEntryIsNotDefaultEntryPolicy {
                 ::sce_rust_runtime::sce_log_error!("global: {}", e);
                 engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(
                     AncestorEntryIsNotDefaultEntryEvent::ErrorExecution,
+                    ::sce_rust_runtime::ErrorReason::ExpressionFailed,
                     "<data id='targeted'> expr failed to evaluate",
                 ));
             }
@@ -761,6 +769,7 @@ impl AncestorEntryIsNotDefaultEntryPolicy {
                 ::sce_rust_runtime::sce_log_error!("Guard evaluation failed for '{}': {}", cond, e);
                 engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(
                     AncestorEntryIsNotDefaultEntryEvent::ErrorExecution,
+                    ::sce_rust_runtime::ErrorReason::ExpressionFailed,
                     reason,
                 ));
                 None
@@ -1138,6 +1147,7 @@ impl StatePolicy for AncestorEntryIsNotDefaultEntryPolicy {
                             );
                             engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(
                                 AncestorEntryIsNotDefaultEntryEvent::ErrorExecution,
+                                ::sce_rust_runtime::ErrorReason::AssignmentFailed,
                                 "<assign> to 'defaulted' failed",
                             ));
                             // W3C SCXML 4.9: the error ends the block, from however deep a <foreach> it came.
@@ -1170,6 +1180,7 @@ impl StatePolicy for AncestorEntryIsNotDefaultEntryPolicy {
                             );
                             engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(
                                 AncestorEntryIsNotDefaultEntryEvent::ErrorExecution,
+                                ::sce_rust_runtime::ErrorReason::AssignmentFailed,
                                 "<assign> to 'targeted' failed",
                             ));
                             // W3C SCXML 4.9: the error ends the block, from however deep a <foreach> it came.
@@ -1199,6 +1210,7 @@ impl StatePolicy for AncestorEntryIsNotDefaultEntryPolicy {
                             ::sce_rust_runtime::sce_log_error!("Assign failed for 'idled': {}", e);
                             engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(
                                 AncestorEntryIsNotDefaultEntryEvent::ErrorExecution,
+                                ::sce_rust_runtime::ErrorReason::AssignmentFailed,
                                 "<assign> to 'idled' failed",
                             ));
                             // W3C SCXML 4.9: the error ends the block, from however deep a <foreach> it came.
@@ -1231,6 +1243,7 @@ impl StatePolicy for AncestorEntryIsNotDefaultEntryPolicy {
                             );
                             engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(
                                 AncestorEntryIsNotDefaultEntryEvent::ErrorExecution,
+                                ::sce_rust_runtime::ErrorReason::AssignmentFailed,
                                 "<assign> to 'lobbied' failed",
                             ));
                             // W3C SCXML 4.9: the error ends the block, from however deep a <foreach> it came.

@@ -455,6 +455,7 @@ impl Test322Policy {
                 );
                 engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(
                     Test322Event::ErrorExecution,
+                    ::sce_rust_runtime::ErrorReason::ParamUnfit,
                     "<data id='Var1'> could not hold the value its invoke handed it",
                 ));
             }
@@ -469,6 +470,7 @@ impl Test322Policy {
                 ::sce_rust_runtime::sce_log_error!("global: {}", e);
                 engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(
                     Test322Event::ErrorExecution,
+                    ::sce_rust_runtime::ErrorReason::ExpressionFailed,
                     "<data id='Var1'> expr failed to evaluate",
                 ));
             }
@@ -483,6 +485,7 @@ impl Test322Policy {
                 );
                 engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(
                     Test322Event::ErrorExecution,
+                    ::sce_rust_runtime::ErrorReason::ParamUnfit,
                     "<data id='Var2'> could not hold the value its invoke handed it",
                 ));
             }
@@ -534,6 +537,7 @@ impl Test322Policy {
                 ::sce_rust_runtime::sce_log_error!("Guard evaluation failed for '{}': {}", cond, e);
                 engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(
                     Test322Event::ErrorExecution,
+                    ::sce_rust_runtime::ErrorReason::ExpressionFailed,
                     reason,
                 ));
                 None
@@ -858,6 +862,7 @@ impl StatePolicy for Test322Policy {
                         );
                         engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(
                             Test322Event::ErrorExecution,
+                            ::sce_rust_runtime::ErrorReason::LocationInvalid,
                             "<assign> has an invalid or read-only location '_sessionid'",
                         ));
                         // W3C SCXML 4.9: the error ends the block, from however deep a <foreach> it came.

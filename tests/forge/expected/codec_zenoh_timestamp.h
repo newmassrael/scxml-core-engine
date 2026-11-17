@@ -100,6 +100,16 @@ struct Wire {
     }
 };
 
+/// The `zid_len` the frame of a source of `CodecZenohTimestamp` carries, which its encode
+/// derives from what it measures and no value holds (docs/adr/0081 §3).
+template <class S>
+[[nodiscard]] uint64_t wire_zid_len(const S& src) noexcept(is_nothrow_source<S>::value) {
+    static_assert(is_source<S>::value, "S presents every element of CodecZenohTimestamp");
+    const auto& _r_zid = source::zid(src);
+    const ::SCE::Forge::Bytes<16> _e_zid = _r_zid;
+    return static_cast<uint64_t>(_e_zid.size());
+}
+
 struct CodecZenohTimestamp {
     CodecZenohTimestamp() = default;
     /// The value of each element it presents, in declaration order (ADR 0059 §5).
@@ -111,12 +121,13 @@ struct CodecZenohTimestamp {
     [[nodiscard]] ::SCE::Forge::Bytes<16> zid() const noexcept { return zid_; }
 
     /// Decode the next frame from `cursor`. On success the cursor
-    /// advances past the consumed bytes; on `NeedMoreBytes` the cursor
-    /// is left untouched so the caller can resume after appending more
-    /// bytes (RFC §synth-5-B L494-519). Returns `std::nullopt` on the
-    /// `NeedMoreBytes` boundary; later phases attach a typed error via
-    /// `cursor.last_error()`.
-    static std::optional<CodecZenohTimestamp> decode(::SCE::Forge::SceCursor& cursor) {
+    /// advances past the consumed bytes and the value is answered; a
+    /// refused frame answers the `CodecError` that refused it
+    /// (docs/adr/0099, amendment of 2026-11-16): `NeedMoreBytes` when
+    /// the cursor's tail is shorter than the frame (RFC §synth-5-B
+    /// L494-519), which the caller resumes after appending bytes, and
+    /// another kind for a frame no more bytes make whole.
+    static ::SCE::Forge::Decoded<CodecZenohTimestamp> decode(::SCE::Forge::SceCursor& cursor) {
         // Streaming cursor decode (SSOT selection: `needs_streaming`).
         // The positional `raw[byte_off]` path is valid only when every
         // field's absolute offset is fixed at codegen time; this branch
@@ -128,28 +139,27 @@ struct CodecZenohTimestamp {
         // advances past exactly what it consumed. Per-field `is_repeat` /
         // `is_tlv_chain` / `is_embed` route to their dedicated helpers;
         // every other field flows through `present_if_decode_stmt`.
-        auto time_opt = cursor.read_vle_u64();
-        if (!time_opt.has_value()) return std::nullopt;
-        auto time = static_cast<std::uint64_t>(*time_opt);
-        auto zid_len_opt = cursor.read_vle_u64();
-        if (!zid_len_opt.has_value()) return std::nullopt;
-        auto zid_len = static_cast<std::uint64_t>(*zid_len_opt);
+        auto time_read = cursor.read_vle_u64();
+        if (!time_read.has_value()) return time_read.error();
+        auto time = static_cast<std::uint64_t>(*time_read);
+        auto zid_len_read = cursor.read_vle_u64();
+        if (!zid_len_read.has_value()) return zid_len_read.error();
+        auto zid_len = static_cast<std::uint64_t>(*zid_len_read);
         std::vector<uint8_t> zid;
         {
             const auto _len = zid_len;
             if (_len > 16) {
-                cursor.refuse(::SCE::Forge::CodecError::LengthOutOfRange); return std::nullopt;
+                return ::SCE::Forge::CodecError::LengthOutOfRange;
             }
             std::size_t _n = static_cast<std::size_t>(_len);
             const std::uint8_t* raw = cursor.peek_slice(_n);
-            if (raw == nullptr) return std::nullopt;
+            if (raw == nullptr) return ::SCE::Forge::CodecError::NeedMoreBytes;
             zid.assign(raw, raw + _n);
-            if (!cursor.advance(_n)) return std::nullopt;
+            if (!cursor.advance(_n)) return ::SCE::Forge::CodecError::NeedMoreBytes;
         }
         const auto _b_zid = ::SCE::Forge::Bytes<16>::make(zid);
         if (!_b_zid) {
-            cursor.refuse(::SCE::Forge::CodecError::LengthOutOfRange);
-            return std::nullopt;
+            return ::SCE::Forge::CodecError::LengthOutOfRange;
         }
         (void)zid_len;
         CodecZenohTimestamp _decoded{

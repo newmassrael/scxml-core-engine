@@ -510,6 +510,7 @@ impl DonedataLateCompletionPolicy {
                 ::sce_rust_runtime::sce_log_error!("Guard evaluation failed for '{}': {}", cond, e);
                 engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(
                     DonedataLateCompletionEvent::ErrorExecution,
+                    ::sce_rust_runtime::ErrorReason::ExpressionFailed,
                     reason,
                 ));
                 None
@@ -706,7 +707,7 @@ impl DonedataLateCompletionPolicy {
                     self.active_invokes.remove("inv_late");
                     engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(
                         DonedataLateCompletionEvent::ErrorExecution,
-                        &format!("<invoke id='{}'> did not start: its child's script session failed at step '{}'", "inv_late", failure.stage)));
+                        ::sce_rust_runtime::ErrorReason::InvokeChildInitFailed, &format!("<invoke id='{}'> did not start: its child's script session failed at step '{}'", "inv_late", failure.stage)));
                     continue;
                 }
 
@@ -1240,7 +1241,7 @@ impl StatePolicy for DonedataLateCompletionPolicy {
                         } else {
                             // W3C SCXML C.1: the invocation is not running, so the session the
                             // target names is not there to reach.
-                            let mut err_meta = sce_rust_runtime::EventWithMetadata::platform_error(DonedataLateCompletionEvent::ErrorCommunication, "<send target='#_inv_late'> names an invocation that is not running");
+                            let mut err_meta = sce_rust_runtime::EventWithMetadata::platform_error(DonedataLateCompletionEvent::ErrorCommunication, ::sce_rust_runtime::ErrorReason::TargetUnreachable, "<send target='#_inv_late'> names an invocation that is not running");
                             err_meta.metadata.send_id =
                                 ::sce_rust_runtime::sce_string_from_str(send_id);
                             engine.raise(err_meta);

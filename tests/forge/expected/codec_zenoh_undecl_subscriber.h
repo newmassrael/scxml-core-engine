@@ -126,12 +126,13 @@ struct CodecZenohUndeclSubscriber {
     [[nodiscard]] const std::optional<::SCE::Generated::CodecZenohDeclExtKeyexpr::CodecZenohDeclExtKeyexpr>& ext_keyexpr() const noexcept { return ext_keyexpr_; }
 
     /// Decode the next frame from `cursor`. On success the cursor
-    /// advances past the consumed bytes; on `NeedMoreBytes` the cursor
-    /// is left untouched so the caller can resume after appending more
-    /// bytes (RFC §synth-5-B L494-519). Returns `std::nullopt` on the
-    /// `NeedMoreBytes` boundary; later phases attach a typed error via
-    /// `cursor.last_error()`.
-    static std::optional<CodecZenohUndeclSubscriber> decode(::SCE::Forge::SceCursor& cursor, std::uint8_t z) {
+    /// advances past the consumed bytes and the value is answered; a
+    /// refused frame answers the `CodecError` that refused it
+    /// (docs/adr/0099, amendment of 2026-11-16): `NeedMoreBytes` when
+    /// the cursor's tail is shorter than the frame (RFC §synth-5-B
+    /// L494-519), which the caller resumes after appending bytes, and
+    /// another kind for a frame no more bytes make whole.
+    static ::SCE::Forge::Decoded<CodecZenohUndeclSubscriber> decode(::SCE::Forge::SceCursor& cursor, std::uint8_t z) {
         // Declared-but-unconsumed flag inputs: defensive (void) suppress per declared
         // `<sce:flag-input>` so codecs that haven't (yet) consumed an
         // input via `present-if` compile cleanly under -Wunused.
@@ -147,13 +148,13 @@ struct CodecZenohUndeclSubscriber {
         // advances past exactly what it consumed. Per-field `is_repeat` /
         // `is_tlv_chain` / `is_embed` route to their dedicated helpers;
         // every other field flows through `present_if_decode_stmt`.
-        auto id_opt = cursor.read_vle_u32();
-        if (!id_opt.has_value()) return std::nullopt;
-        auto id = static_cast<std::uint32_t>(*id_opt);
+        auto id_read = cursor.read_vle_u32();
+        if (!id_read.has_value()) return id_read.error();
+        auto id = static_cast<std::uint32_t>(*id_read);
         std::optional<::SCE::Generated::CodecZenohDeclExtKeyexpr::CodecZenohDeclExtKeyexpr> ext_keyexpr;
         if ((z & 0x01) != 0) {
             auto _emb = ::SCE::Generated::CodecZenohDeclExtKeyexpr::CodecZenohDeclExtKeyexpr::decode(cursor);
-            if (!_emb.has_value()) return std::nullopt;
+            if (!_emb.has_value()) return _emb.error();
             ext_keyexpr = std::move(*_emb);
         }
         CodecZenohUndeclSubscriber _decoded{

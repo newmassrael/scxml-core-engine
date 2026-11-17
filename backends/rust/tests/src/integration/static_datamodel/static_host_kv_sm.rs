@@ -1,5 +1,5 @@
 // SCE-GENERATED — DO NOT EDIT
-// source-hash: 65fb42bdd588f958b0fbb29ac261cf039d02606d7afaae0720c045624bd679ba
+// source-hash: 2073d8a55462e1ce61d8a77293fdd2c141aceda8ad173303c5b84813ca22eeee
 
 // SPDX-License-Identifier: AGPL-3.0-only WITH AdditionRef-SCE-Linking-Exception OR LicenseRef-SCE-Commercial
 // SPDX-FileCopyrightText: Copyright (c) 2025-2026 [Author of input SCXML file] (content derived from the input document)
@@ -1460,7 +1460,7 @@ impl StaticHostKvPolicy {
                 }
                 Err(_) => {
                     ::sce_rust_runtime::sce_log_error!("invoke typed param 'key' overflowed or failed");
-                    engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(StaticHostKvEvent::ErrorExecution, "<invoke> <param name='key'> cannot be its request field: it failed to evaluate"));
+                    engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(StaticHostKvEvent::ErrorExecution, ::sce_rust_runtime::ErrorReason::ExpressionFailed, "<invoke> <param name='key'> cannot be its request field: it failed to evaluate"));
                     request_refused = true;
                 }
             }
@@ -1497,6 +1497,7 @@ impl StaticHostKvPolicy {
                     // same event, rather than a silence that reads as started.
                     engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(
                         StaticHostKvEvent::ErrorExecution,
+                        ::sce_rust_runtime::ErrorReason::ProcessorUnregistered,
                         "<invoke> names an invoker the host declared but never registered",
                     ));
                 }
@@ -1543,7 +1544,7 @@ impl StaticHostKvPolicy {
                 }
                 Err(_) => {
                     ::sce_rust_runtime::sce_log_error!("invoke typed param 'key' overflowed or failed");
-                    engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(StaticHostKvEvent::ErrorExecution, "<invoke> <param name='key'> cannot be its request field: it failed to evaluate"));
+                    engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(StaticHostKvEvent::ErrorExecution, ::sce_rust_runtime::ErrorReason::ExpressionFailed, "<invoke> <param name='key'> cannot be its request field: it failed to evaluate"));
                     request_refused = true;
                 }
             }
@@ -1580,6 +1581,7 @@ impl StaticHostKvPolicy {
                     // same event, rather than a silence that reads as started.
                     engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(
                         StaticHostKvEvent::ErrorExecution,
+                        ::sce_rust_runtime::ErrorReason::ProcessorUnregistered,
                         "<invoke> names an invoker the host declared but never registered",
                     ));
                 }
@@ -1626,7 +1628,7 @@ impl StaticHostKvPolicy {
                 }
                 Err(_) => {
                     ::sce_rust_runtime::sce_log_error!("invoke typed param 'key' overflowed or failed");
-                    engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(StaticHostKvEvent::ErrorExecution, "<invoke> <param name='key'> cannot be its request field: it failed to evaluate"));
+                    engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(StaticHostKvEvent::ErrorExecution, ::sce_rust_runtime::ErrorReason::ExpressionFailed, "<invoke> <param name='key'> cannot be its request field: it failed to evaluate"));
                     request_refused = true;
                 }
             }
@@ -1643,7 +1645,7 @@ impl StaticHostKvPolicy {
                 }
                 Err(_) => {
                     ::sce_rust_runtime::sce_log_error!("invoke typed param 'value' overflowed or failed");
-                    engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(StaticHostKvEvent::ErrorExecution, "<invoke> <param name='value'> cannot be its request field: it failed to evaluate"));
+                    engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(StaticHostKvEvent::ErrorExecution, ::sce_rust_runtime::ErrorReason::ExpressionFailed, "<invoke> <param name='value'> cannot be its request field: it failed to evaluate"));
                     request_refused = true;
                 }
             }
@@ -1680,6 +1682,7 @@ impl StaticHostKvPolicy {
                     // same event, rather than a silence that reads as started.
                     engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(
                         StaticHostKvEvent::ErrorExecution,
+                        ::sce_rust_runtime::ErrorReason::ProcessorUnregistered,
                         "<invoke> names an invoker the host declared but never registered",
                     ));
                 }
@@ -1726,7 +1729,7 @@ impl StaticHostKvPolicy {
                 }
                 Err(_) => {
                     ::sce_rust_runtime::sce_log_error!("invoke typed param 'after' overflowed or failed");
-                    engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(StaticHostKvEvent::ErrorExecution, "<invoke> <param name='after'> cannot be its request field: it failed to evaluate"));
+                    engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(StaticHostKvEvent::ErrorExecution, ::sce_rust_runtime::ErrorReason::ExpressionFailed, "<invoke> <param name='after'> cannot be its request field: it failed to evaluate"));
                     request_refused = true;
                 }
             }
@@ -1743,7 +1746,7 @@ impl StaticHostKvPolicy {
                 }
                 Err(_) => {
                     ::sce_rust_runtime::sce_log_error!("invoke typed param 'prefix' overflowed or failed");
-                    engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(StaticHostKvEvent::ErrorExecution, "<invoke> <param name='prefix'> cannot be its request field: it failed to evaluate"));
+                    engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(StaticHostKvEvent::ErrorExecution, ::sce_rust_runtime::ErrorReason::ExpressionFailed, "<invoke> <param name='prefix'> cannot be its request field: it failed to evaluate"));
                     request_refused = true;
                 }
             }
@@ -1780,6 +1783,7 @@ impl StaticHostKvPolicy {
                     // same event, rather than a silence that reads as started.
                     engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(
                         StaticHostKvEvent::ErrorExecution,
+                        ::sce_rust_runtime::ErrorReason::ProcessorUnregistered,
                         "<invoke> names an invoker the host declared but never registered",
                     ));
                 }
@@ -2517,7 +2521,7 @@ impl StatePolicy for StaticHostKvPolicy {
                         })() {
                             Ok(()) => false,
                             Err(_) => {
-                                engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(StaticHostKvEvent::ErrorExecution, "<assign location='outcome'>: an integer operation overflowed or failed"));
+                                engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(StaticHostKvEvent::ErrorExecution, ::sce_rust_runtime::ErrorReason::ExpressionFailed, "<assign location='outcome'>: an integer operation overflowed or failed"));
                                 true
                             }
                         };
@@ -2547,7 +2551,7 @@ impl StatePolicy for StaticHostKvPolicy {
                         })() {
                             Ok(()) => false,
                             Err(_) => {
-                                engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(StaticHostKvEvent::ErrorExecution, "<assign location='outcome'>: an integer operation overflowed or failed"));
+                                engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(StaticHostKvEvent::ErrorExecution, ::sce_rust_runtime::ErrorReason::ExpressionFailed, "<assign location='outcome'>: an integer operation overflowed or failed"));
                                 true
                             }
                         };
@@ -2573,7 +2577,7 @@ impl StatePolicy for StaticHostKvPolicy {
                         })() {
                             Ok(()) => false,
                             Err(_) => {
-                                engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(StaticHostKvEvent::ErrorExecution, "<assign location='outcome'>: an integer operation overflowed or failed"));
+                                engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(StaticHostKvEvent::ErrorExecution, ::sce_rust_runtime::ErrorReason::ExpressionFailed, "<assign location='outcome'>: an integer operation overflowed or failed"));
                                 true
                             }
                         };
@@ -2599,7 +2603,7 @@ impl StatePolicy for StaticHostKvPolicy {
                         })() {
                             Ok(()) => false,
                             Err(_) => {
-                                engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(StaticHostKvEvent::ErrorExecution, "<assign location='outcome'>: an integer operation overflowed or failed"));
+                                engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(StaticHostKvEvent::ErrorExecution, ::sce_rust_runtime::ErrorReason::ExpressionFailed, "<assign location='outcome'>: an integer operation overflowed or failed"));
                                 true
                             }
                         };
@@ -2631,7 +2635,7 @@ impl StatePolicy for StaticHostKvPolicy {
                         })() {
                             Ok(()) => false,
                             Err(_) => {
-                                engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(StaticHostKvEvent::ErrorExecution, "<assign location='got'>: an integer operation overflowed or failed"));
+                                engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(StaticHostKvEvent::ErrorExecution, ::sce_rust_runtime::ErrorReason::ExpressionFailed, "<assign location='got'>: an integer operation overflowed or failed"));
                                 true
                             }
                         };
@@ -2648,7 +2652,7 @@ impl StatePolicy for StaticHostKvPolicy {
                         })() {
                             Ok(()) => false,
                             Err(_) => {
-                                engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(StaticHostKvEvent::ErrorExecution, "<assign location='outcome'>: an integer operation overflowed or failed"));
+                                engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(StaticHostKvEvent::ErrorExecution, ::sce_rust_runtime::ErrorReason::ExpressionFailed, "<assign location='outcome'>: an integer operation overflowed or failed"));
                                 true
                             }
                         };
@@ -2678,7 +2682,7 @@ impl StatePolicy for StaticHostKvPolicy {
                         })() {
                             Ok(()) => false,
                             Err(_) => {
-                                engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(StaticHostKvEvent::ErrorExecution, "<assign location='outcome'>: an integer operation overflowed or failed"));
+                                engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(StaticHostKvEvent::ErrorExecution, ::sce_rust_runtime::ErrorReason::ExpressionFailed, "<assign location='outcome'>: an integer operation overflowed or failed"));
                                 true
                             }
                         };
@@ -2704,7 +2708,7 @@ impl StatePolicy for StaticHostKvPolicy {
                         })() {
                             Ok(()) => false,
                             Err(_) => {
-                                engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(StaticHostKvEvent::ErrorExecution, "<assign location='outcome'>: an integer operation overflowed or failed"));
+                                engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(StaticHostKvEvent::ErrorExecution, ::sce_rust_runtime::ErrorReason::ExpressionFailed, "<assign location='outcome'>: an integer operation overflowed or failed"));
                                 true
                             }
                         };
@@ -2730,7 +2734,7 @@ impl StatePolicy for StaticHostKvPolicy {
                         })() {
                             Ok(()) => false,
                             Err(_) => {
-                                engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(StaticHostKvEvent::ErrorExecution, "<assign location='outcome'>: an integer operation overflowed or failed"));
+                                engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(StaticHostKvEvent::ErrorExecution, ::sce_rust_runtime::ErrorReason::ExpressionFailed, "<assign location='outcome'>: an integer operation overflowed or failed"));
                                 true
                             }
                         };
@@ -2759,7 +2763,7 @@ impl StatePolicy for StaticHostKvPolicy {
                         })() {
                             Ok(()) => false,
                             Err(_) => {
-                                engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(StaticHostKvEvent::ErrorExecution, "<assign location='key'>: an integer operation overflowed or failed"));
+                                engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(StaticHostKvEvent::ErrorExecution, ::sce_rust_runtime::ErrorReason::ExpressionFailed, "<assign location='key'>: an integer operation overflowed or failed"));
                                 true
                             }
                         };
@@ -2788,7 +2792,7 @@ impl StatePolicy for StaticHostKvPolicy {
                         })() {
                             Ok(()) => false,
                             Err(_) => {
-                                engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(StaticHostKvEvent::ErrorExecution, "<assign location='key'>: an integer operation overflowed or failed"));
+                                engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(StaticHostKvEvent::ErrorExecution, ::sce_rust_runtime::ErrorReason::ExpressionFailed, "<assign location='key'>: an integer operation overflowed or failed"));
                                 true
                             }
                         };
@@ -2807,7 +2811,7 @@ impl StatePolicy for StaticHostKvPolicy {
                         })() {
                             Ok(()) => false,
                             Err(_) => {
-                                engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(StaticHostKvEvent::ErrorExecution, "<assign location='value'>: an integer operation overflowed or failed"));
+                                engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(StaticHostKvEvent::ErrorExecution, ::sce_rust_runtime::ErrorReason::ExpressionFailed, "<assign location='value'>: an integer operation overflowed or failed"));
                                 true
                             }
                         };
@@ -2836,7 +2840,7 @@ impl StatePolicy for StaticHostKvPolicy {
                         })() {
                             Ok(()) => false,
                             Err(_) => {
-                                engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(StaticHostKvEvent::ErrorExecution, "<assign location='key'>: an integer operation overflowed or failed"));
+                                engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(StaticHostKvEvent::ErrorExecution, ::sce_rust_runtime::ErrorReason::ExpressionFailed, "<assign location='key'>: an integer operation overflowed or failed"));
                                 true
                             }
                         };
@@ -2865,7 +2869,7 @@ impl StatePolicy for StaticHostKvPolicy {
                         })() {
                             Ok(()) => false,
                             Err(_) => {
-                                engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(StaticHostKvEvent::ErrorExecution, "<assign location='after'>: an integer operation overflowed or failed"));
+                                engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(StaticHostKvEvent::ErrorExecution, ::sce_rust_runtime::ErrorReason::ExpressionFailed, "<assign location='after'>: an integer operation overflowed or failed"));
                                 true
                             }
                         };
@@ -2884,7 +2888,7 @@ impl StatePolicy for StaticHostKvPolicy {
                         })() {
                             Ok(()) => false,
                             Err(_) => {
-                                engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(StaticHostKvEvent::ErrorExecution, "<assign location='prefix'>: an integer operation overflowed or failed"));
+                                engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(StaticHostKvEvent::ErrorExecution, ::sce_rust_runtime::ErrorReason::ExpressionFailed, "<assign location='prefix'>: an integer operation overflowed or failed"));
                                 true
                             }
                         };
@@ -2915,7 +2919,7 @@ impl StatePolicy for StaticHostKvPolicy {
                         })() {
                             Ok(()) => false,
                             Err(_) => {
-                                engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(StaticHostKvEvent::ErrorExecution, "<assign location='outcome'>: an integer operation overflowed or failed"));
+                                engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(StaticHostKvEvent::ErrorExecution, ::sce_rust_runtime::ErrorReason::ExpressionFailed, "<assign location='outcome'>: an integer operation overflowed or failed"));
                                 true
                             }
                         };
@@ -2945,7 +2949,7 @@ impl StatePolicy for StaticHostKvPolicy {
                         })() {
                             Ok(()) => false,
                             Err(_) => {
-                                engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(StaticHostKvEvent::ErrorExecution, "<assign location='outcome'>: an integer operation overflowed or failed"));
+                                engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(StaticHostKvEvent::ErrorExecution, ::sce_rust_runtime::ErrorReason::ExpressionFailed, "<assign location='outcome'>: an integer operation overflowed or failed"));
                                 true
                             }
                         };
@@ -2971,7 +2975,7 @@ impl StatePolicy for StaticHostKvPolicy {
                         })() {
                             Ok(()) => false,
                             Err(_) => {
-                                engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(StaticHostKvEvent::ErrorExecution, "<assign location='outcome'>: an integer operation overflowed or failed"));
+                                engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(StaticHostKvEvent::ErrorExecution, ::sce_rust_runtime::ErrorReason::ExpressionFailed, "<assign location='outcome'>: an integer operation overflowed or failed"));
                                 true
                             }
                         };
@@ -2997,7 +3001,7 @@ impl StatePolicy for StaticHostKvPolicy {
                         })() {
                             Ok(()) => false,
                             Err(_) => {
-                                engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(StaticHostKvEvent::ErrorExecution, "<assign location='outcome'>: an integer operation overflowed or failed"));
+                                engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(StaticHostKvEvent::ErrorExecution, ::sce_rust_runtime::ErrorReason::ExpressionFailed, "<assign location='outcome'>: an integer operation overflowed or failed"));
                                 true
                             }
                         };
@@ -3029,7 +3033,7 @@ impl StatePolicy for StaticHostKvPolicy {
                         })() {
                             Ok(()) => false,
                             Err(_) => {
-                                engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(StaticHostKvEvent::ErrorExecution, "<assign location='next'>: an integer operation overflowed or failed"));
+                                engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(StaticHostKvEvent::ErrorExecution, ::sce_rust_runtime::ErrorReason::ExpressionFailed, "<assign location='next'>: an integer operation overflowed or failed"));
                                 true
                             }
                         };
@@ -3046,7 +3050,7 @@ impl StatePolicy for StaticHostKvPolicy {
                         })() {
                             Ok(()) => false,
                             Err(_) => {
-                                engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(StaticHostKvEvent::ErrorExecution, "<assign location='outcome'>: an integer operation overflowed or failed"));
+                                engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(StaticHostKvEvent::ErrorExecution, ::sce_rust_runtime::ErrorReason::ExpressionFailed, "<assign location='outcome'>: an integer operation overflowed or failed"));
                                 true
                             }
                         };
@@ -3076,7 +3080,7 @@ impl StatePolicy for StaticHostKvPolicy {
                         })() {
                             Ok(()) => false,
                             Err(_) => {
-                                engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(StaticHostKvEvent::ErrorExecution, "<assign location='outcome'>: an integer operation overflowed or failed"));
+                                engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(StaticHostKvEvent::ErrorExecution, ::sce_rust_runtime::ErrorReason::ExpressionFailed, "<assign location='outcome'>: an integer operation overflowed or failed"));
                                 true
                             }
                         };
@@ -3102,7 +3106,7 @@ impl StatePolicy for StaticHostKvPolicy {
                         })() {
                             Ok(()) => false,
                             Err(_) => {
-                                engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(StaticHostKvEvent::ErrorExecution, "<assign location='outcome'>: an integer operation overflowed or failed"));
+                                engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(StaticHostKvEvent::ErrorExecution, ::sce_rust_runtime::ErrorReason::ExpressionFailed, "<assign location='outcome'>: an integer operation overflowed or failed"));
                                 true
                             }
                         };
@@ -3128,7 +3132,7 @@ impl StatePolicy for StaticHostKvPolicy {
                         })() {
                             Ok(()) => false,
                             Err(_) => {
-                                engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(StaticHostKvEvent::ErrorExecution, "<assign location='outcome'>: an integer operation overflowed or failed"));
+                                engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(StaticHostKvEvent::ErrorExecution, ::sce_rust_runtime::ErrorReason::ExpressionFailed, "<assign location='outcome'>: an integer operation overflowed or failed"));
                                 true
                             }
                         };

@@ -100,6 +100,16 @@ struct Wire {
     }
 };
 
+/// The `len` the frame of a source of `CodecChainHasSlice` carries, which its encode
+/// derives from what it measures and no value holds (docs/adr/0081 §3).
+template <class S>
+[[nodiscard]] uint64_t wire_len(const S& src) noexcept(is_nothrow_source<S>::value) {
+    static_assert(is_source<S>::value, "S presents every element of CodecChainHasSlice");
+    const auto& _r_bytes = source::bytes(src);
+    const ::SCE::Forge::Bytes<256> _e_bytes = _r_bytes;
+    return static_cast<uint64_t>(_e_bytes.size());
+}
+
 struct CodecChainHasSlice {
     CodecChainHasSlice() = default;
     /// The value of each element it presents, in declaration order (ADR 0059 §5).
@@ -111,12 +121,13 @@ struct CodecChainHasSlice {
     [[nodiscard]] ::SCE::Forge::Bytes<256> bytes() const noexcept { return bytes_; }
 
     /// Decode the next frame from `cursor`. On success the cursor
-    /// advances past the consumed bytes; on `NeedMoreBytes` the cursor
-    /// is left untouched so the caller can resume after appending more
-    /// bytes (RFC §synth-5-B L494-519). Returns `std::nullopt` on the
-    /// `NeedMoreBytes` boundary; later phases attach a typed error via
-    /// `cursor.last_error()`.
-    static std::optional<CodecChainHasSlice> decode(::SCE::Forge::SceCursor& cursor) {
+    /// advances past the consumed bytes and the value is answered; a
+    /// refused frame answers the `CodecError` that refused it
+    /// (docs/adr/0099, amendment of 2026-11-16): `NeedMoreBytes` when
+    /// the cursor's tail is shorter than the frame (RFC §synth-5-B
+    /// L494-519), which the caller resumes after appending bytes, and
+    /// another kind for a frame no more bytes make whole.
+    static ::SCE::Forge::Decoded<CodecChainHasSlice> decode(::SCE::Forge::SceCursor& cursor) {
         // Streaming cursor decode (SSOT selection: `needs_streaming`).
         // The positional `raw[byte_off]` path is valid only when every
         // field's absolute offset is fixed at codegen time; this branch
@@ -128,28 +139,27 @@ struct CodecChainHasSlice {
         // advances past exactly what it consumed. Per-field `is_repeat` /
         // `is_tlv_chain` / `is_embed` route to their dedicated helpers;
         // every other field flows through `present_if_decode_stmt`.
-        auto kind_opt = cursor.read_vle_u16();
-        if (!kind_opt.has_value()) return std::nullopt;
-        auto kind = static_cast<std::uint16_t>(*kind_opt);
-        auto len_opt = cursor.read_vle_u64();
-        if (!len_opt.has_value()) return std::nullopt;
-        auto len = static_cast<std::uint64_t>(*len_opt);
+        auto kind_read = cursor.read_vle_u16();
+        if (!kind_read.has_value()) return kind_read.error();
+        auto kind = static_cast<std::uint16_t>(*kind_read);
+        auto len_read = cursor.read_vle_u64();
+        if (!len_read.has_value()) return len_read.error();
+        auto len = static_cast<std::uint64_t>(*len_read);
         std::vector<uint8_t> bytes;
         {
             const auto _len = len;
             if (_len > 256) {
-                cursor.refuse(::SCE::Forge::CodecError::LengthOutOfRange); return std::nullopt;
+                return ::SCE::Forge::CodecError::LengthOutOfRange;
             }
             std::size_t _n = static_cast<std::size_t>(_len);
             const std::uint8_t* raw = cursor.peek_slice(_n);
-            if (raw == nullptr) return std::nullopt;
+            if (raw == nullptr) return ::SCE::Forge::CodecError::NeedMoreBytes;
             bytes.assign(raw, raw + _n);
-            if (!cursor.advance(_n)) return std::nullopt;
+            if (!cursor.advance(_n)) return ::SCE::Forge::CodecError::NeedMoreBytes;
         }
         const auto _b_bytes = ::SCE::Forge::Bytes<256>::make(bytes);
         if (!_b_bytes) {
-            cursor.refuse(::SCE::Forge::CodecError::LengthOutOfRange);
-            return std::nullopt;
+            return ::SCE::Forge::CodecError::LengthOutOfRange;
         }
         (void)len;
         CodecChainHasSlice _decoded{

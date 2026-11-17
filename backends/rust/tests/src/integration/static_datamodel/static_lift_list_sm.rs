@@ -1,5 +1,5 @@
 // SCE-GENERATED — DO NOT EDIT
-// source-hash: 65fb42bdd588f958b0fbb29ac261cf039d02606d7afaae0720c045624bd679ba
+// source-hash: 2073d8a55462e1ce61d8a77293fdd2c141aceda8ad173303c5b84813ca22eeee
 
 // SPDX-License-Identifier: AGPL-3.0-only WITH AdditionRef-SCE-Linking-Exception OR LicenseRef-SCE-Commercial
 // SPDX-FileCopyrightText: Copyright (c) 2025-2026 [Author of input SCXML file] (content derived from the input document)
@@ -78,8 +78,8 @@
 // closure; this one suspicious-category lint reads the `match` of a constant
 // default as a hand-written `unwrap_or_default`.
 #![allow(clippy::manual_unwrap_or_default)]
-#![doc = "SCE-MAP: static_lift_list.scxml:21 :: _machine"]
-// SCE-MAP: static_lift_list.scxml:21 :: _machine
+#![doc = "SCE-MAP: static_lift_list.scxml:27 :: _machine"]
+// SCE-MAP: static_lift_list.scxml:27 :: _machine
 
 use core::time::Duration;
 use sce_rust_runtime::{Engine, StatePolicy};
@@ -110,10 +110,11 @@ pub enum StaticLiftListState {
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 #[repr(u16)]
 pub enum StaticLiftListEvent {
-    ErrorExecution = 0,
-    TextGiven = 1,
+    AnswerRead = 0,
+    ErrorExecution = 1,
+    TextGiven = 2,
     /// W3C SCXML 3.13: Sentinel for eventless transition dispatch
-    Null = 2,
+    Null = 3,
 }
 
 // ======================================================================
@@ -171,14 +172,18 @@ pub const STATIC_LIFT_LIST_TABLES: ::sce_rust_runtime::DocumentTables<'static> =
             TransitionRow::new(Some(StateId(0)), Target::NONE, true, true),
             // 1: lifting, transition 1
             TransitionRow::new(Some(StateId(0)), Target::NONE, true, true),
-            // 2: the document's initial transition
+            // 2: lifting, transition 2
+            TransitionRow::new(Some(StateId(0)), Target::NONE, true, true),
+            // 3: lifting, transition 3
+            TransitionRow::new(Some(StateId(0)), Target::NONE, true, true),
+            // 4: the document's initial transition
             TransitionRow::new(None, Target::state(StateId(0)), false, false),
         ],
         targets: &[],
-        initial: TransitionId(2),
+        initial: TransitionId(4),
         default_state: ::sce_rust_runtime::StateId(StaticLiftListState::Lifting as u16),
-        null_event: ::sce_rust_runtime::EventId(2),
-        error_events: &[::sce_rust_runtime::EventId(0)],
+        null_event: ::sce_rust_runtime::EventId(3),
+        error_events: &[::sce_rust_runtime::EventId(1)],
         history: None,
         parallel: None,
     }
@@ -200,8 +205,10 @@ impl StaticLiftListEvent {
     /// agnostic; inert when unused. Associated (not a free `const`) so
     /// several machines glob-re-exported into one module never collide
     /// on the name.
-    pub const EXTERNALLY_DRIVABLE_EVENTS: &'static [StaticLiftListEvent] =
-        &[StaticLiftListEvent::TextGiven];
+    pub const EXTERNALLY_DRIVABLE_EVENTS: &'static [StaticLiftListEvent] = &[
+        StaticLiftListEvent::AnswerRead,
+        StaticLiftListEvent::TextGiven,
+    ];
 }
 
 // ── NL→IR Item C1 Path A: EventSchema typed `_event.data` payload ──
@@ -376,6 +383,10 @@ pub struct StaticLiftListData {
     pub why: Option<StaticLiftListLiftRefusalRecord>,
     pub lifts: u32,
     pub errors: u32,
+    pub priority: u8,
+    pub held_items: u32,
+    pub weeks: u32,
+    pub other_reads: u32,
 }
 
 /// What a host observes: the full active configuration — every active state,
@@ -409,6 +420,10 @@ impl StaticLiftListObserve for Engine<StaticLiftListPolicy> {
                 why: policy.why.clone(),
                 lifts: policy.lifts,
                 errors: policy.errors,
+                priority: policy.priority,
+                held_items: policy.held_items,
+                weeks: policy.weeks,
+                other_reads: policy.other_reads,
             },
             truncated: self.last_macrostep_truncated(),
         }
@@ -663,10 +678,10 @@ impl StaticLiftListPersist for Engine<StaticLiftListPolicy> {
 
     const SHAPE: ::sce_rust_runtime::saved_state::SavedShape =
         ::sce_rust_runtime::saved_state::SavedShape {
-            first: "278e253fe85156670b7b4f447d0185c5e8c8d979b1ec705f860e0ee004f52a5a",
-            revised: "b1902fc18d4de773fb70cb2f5b49e3f401597bfe11a18a3007e4491081f79c57",
-            format2_first: "f3fa049a25f94721181b3af6944e982e3f185467a30439495bcd514aa60ff730",
-            format2_revised: "7fc625a9db3df62e3a393adfec6e2ae2caefffd13e14b692078c07971b1ddc82",
+            first: "1badb4b2ea4309b9fe4d2047edb7ee38bbf70284e0a5c161f4c36f65ce8e5007",
+            revised: "2bda32d52e03119ef6769780bb6f8a23892e7d4b9f2dd15da0e8255d4b74d8cb",
+            format2_first: "faf8c7daee60057fdde6766390a6d6359101f01bd1dc0ea21592ae102e644ef8",
+            format2_revised: "072c13694c3eff7feee42b34c9812ee7a849c165765afc3e99f61d3cf5cea42e",
             records: &[::sce_rust_runtime::saved_state::RecordLineage {
                 event: "lift.refusal",
                 revision: 1,
@@ -724,6 +739,22 @@ impl StaticLiftListPersist for Engine<StaticLiftListPolicy> {
                     "errors".to_string(),
                     ::sce_rust_runtime::saved_state::SavedValue::to_saved(&policy.errors),
                 ),
+                (
+                    "priority".to_string(),
+                    ::sce_rust_runtime::saved_state::SavedValue::to_saved(&policy.priority),
+                ),
+                (
+                    "held_items".to_string(),
+                    ::sce_rust_runtime::saved_state::SavedValue::to_saved(&policy.held_items),
+                ),
+                (
+                    "weeks".to_string(),
+                    ::sce_rust_runtime::saved_state::SavedValue::to_saved(&policy.weeks),
+                ),
+                (
+                    "other_reads".to_string(),
+                    ::sce_rust_runtime::saved_state::SavedValue::to_saved(&policy.other_reads),
+                ),
             ],
             // What each history recorded is the engine's (docs/adr/0064).
             ::sce_rust_runtime::saved_state::save_history(self, Self::HISTORIES),
@@ -757,6 +788,22 @@ impl StaticLiftListPersist for Engine<StaticLiftListPolicy> {
         let _: u32 = ::sce_rust_runtime::saved_state::SavedValue::from_saved(
             saved.variable("errors")?,
             "errors",
+        )?;
+        let _: u8 = ::sce_rust_runtime::saved_state::SavedValue::from_saved(
+            saved.variable("priority")?,
+            "priority",
+        )?;
+        let _: u32 = ::sce_rust_runtime::saved_state::SavedValue::from_saved(
+            saved.variable("held_items")?,
+            "held_items",
+        )?;
+        let _: u32 = ::sce_rust_runtime::saved_state::SavedValue::from_saved(
+            saved.variable("weeks")?,
+            "weeks",
+        )?;
+        let _: u32 = ::sce_rust_runtime::saved_state::SavedValue::from_saved(
+            saved.variable("other_reads")?,
+            "other_reads",
         )?;
         ::sce_rust_runtime::saved_state::judge::<StaticLiftListPolicy>(saved)
     }
@@ -792,6 +839,22 @@ impl StaticLiftListPersist for Engine<StaticLiftListPolicy> {
             saved.variable("errors")?,
             "errors",
         )?;
+        policy.priority = ::sce_rust_runtime::saved_state::SavedValue::from_saved(
+            saved.variable("priority")?,
+            "priority",
+        )?;
+        policy.held_items = ::sce_rust_runtime::saved_state::SavedValue::from_saved(
+            saved.variable("held_items")?,
+            "held_items",
+        )?;
+        policy.weeks = ::sce_rust_runtime::saved_state::SavedValue::from_saved(
+            saved.variable("weeks")?,
+            "weeks",
+        )?;
+        policy.other_reads = ::sce_rust_runtime::saved_state::SavedValue::from_saved(
+            saved.variable("other_reads")?,
+            "other_reads",
+        )?;
         ::sce_rust_runtime::saved_state::enter(policy, saved, clock, wall_now_ms)
     }
 }
@@ -803,6 +866,10 @@ impl StaticLiftListPersist for Engine<StaticLiftListPolicy> {
 pub struct StaticLiftListInvokeParams {
     pub lifts: Option<u32>,
     pub errors: Option<u32>,
+    pub priority: Option<u8>,
+    pub held_items: Option<u32>,
+    pub weeks: Option<u32>,
+    pub other_reads: Option<u32>,
 }
 
 // ======================================================================
@@ -822,6 +889,14 @@ pub struct StaticLiftListPolicy {
     lifts: u32,
     /// W3C SCXML 5.2: the `errors` datamodel variable, published (`sce:direction="out"`).
     errors: u32,
+    /// W3C SCXML 5.2: the `priority` datamodel variable, published (`sce:direction="out"`).
+    priority: u8,
+    /// W3C SCXML 5.2: the `held_items` datamodel variable, published (`sce:direction="out"`).
+    held_items: u32,
+    /// W3C SCXML 5.2: the `weeks` datamodel variable, published (`sce:direction="out"`).
+    weeks: u32,
+    /// W3C SCXML 5.2: the `other_reads` datamodel variable, published (`sce:direction="out"`).
+    other_reads: u32,
     // W3C SCXML 5.10: the session's id (script engine, invoke tracking, the
     // saved state), bound when the machine is built and never empty
     // (docs/adr/0045): drawn, given by the host, or given by the parent.
@@ -851,6 +926,10 @@ impl StaticLiftListPolicy {
         let why: Option<StaticLiftListLiftRefusalRecord> = None;
         let lifts: u32 = 0;
         let errors: u32 = 0;
+        let priority: u8 = 0;
+        let held_items: u32 = 0;
+        let weeks: u32 = 0;
+        let other_reads: u32 = 0;
 
         Self {
             pending_payload: StaticLiftListPayload::default(),
@@ -858,6 +937,10 @@ impl StaticLiftListPolicy {
             why,
             lifts,
             errors,
+            priority,
+            held_items,
+            weeks,
+            other_reads,
             session_id: Some(session_id),
             parent_external_queue: None,
             invoke_id: String::new(),
@@ -932,11 +1015,31 @@ impl StaticLiftListPolicy {
             Some(value) => value,
             None => 0,
         };
+        let priority: u8 = match handed.priority {
+            Some(value) => value,
+            None => 0,
+        };
+        let held_items: u32 = match handed.held_items {
+            Some(value) => value,
+            None => 0,
+        };
+        let weeks: u32 = match handed.weeks {
+            Some(value) => value,
+            None => 0,
+        };
+        let other_reads: u32 = match handed.other_reads {
+            Some(value) => value,
+            None => 0,
+        };
 
         self.answer = answer;
         self.why = why;
         self.lifts = lifts;
         self.errors = errors;
+        self.priority = priority;
+        self.held_items = held_items;
+        self.weeks = weeks;
+        self.other_reads = other_reads;
     }
 
     /// W3C SCXML 5.2: what the published `answer` datamodel variable
@@ -961,6 +1064,30 @@ impl StaticLiftListPolicy {
     /// holds now. Only the machine writes it.
     pub fn errors(&self) -> u32 {
         self.errors
+    }
+
+    /// W3C SCXML 5.2: what the published `priority` datamodel variable
+    /// holds now. Only the machine writes it.
+    pub fn priority(&self) -> u8 {
+        self.priority
+    }
+
+    /// W3C SCXML 5.2: what the published `held_items` datamodel variable
+    /// holds now. Only the machine writes it.
+    pub fn held_items(&self) -> u32 {
+        self.held_items
+    }
+
+    /// W3C SCXML 5.2: what the published `weeks` datamodel variable
+    /// holds now. Only the machine writes it.
+    pub fn weeks(&self) -> u32 {
+        self.weeks
+    }
+
+    /// W3C SCXML 5.2: what the published `other_reads` datamodel variable
+    /// holds now. Only the machine writes it.
+    pub fn other_reads(&self) -> u32 {
+        self.other_reads
     }
 }
 
@@ -1041,6 +1168,7 @@ impl StatePolicy for StaticLiftListPolicy {
     const STATES: &'static [Self::State] = &[StaticLiftListState::Lifting];
     const HISTORIES: &'static [Self::History] = &[];
     const EVENTS: &'static [Self::Event] = &[
+        StaticLiftListEvent::AnswerRead,
         StaticLiftListEvent::ErrorExecution,
         StaticLiftListEvent::TextGiven,
         StaticLiftListEvent::Null,
@@ -1116,6 +1244,7 @@ impl StatePolicy for StaticLiftListPolicy {
 
     fn get_event_name(event: Self::Event) -> &'static str {
         match event {
+            StaticLiftListEvent::AnswerRead => "answer.read",
             StaticLiftListEvent::ErrorExecution => "error.execution",
             StaticLiftListEvent::TextGiven => "text.given",
             StaticLiftListEvent::Null => "",
@@ -1124,6 +1253,7 @@ impl StatePolicy for StaticLiftListPolicy {
 
     fn get_event_from_name(name: &str) -> Option<Self::Event> {
         match name {
+            "answer.read" => Some(StaticLiftListEvent::AnswerRead),
             "error.execution" => Some(StaticLiftListEvent::ErrorExecution),
             "text.given" => Some(StaticLiftListEvent::TextGiven),
             _ => None,
@@ -1193,8 +1323,8 @@ impl StatePolicy for StaticLiftListPolicy {
     // ======================================================================
 
     // W3C SCXML 3.7: Execute <onentry> actions for a state
-    #[doc = "SCE-MAP: static_lift_list.scxml:21 :: _machine"]
-    // SCE-MAP: static_lift_list.scxml:21 :: _machine
+    #[doc = "SCE-MAP: static_lift_list.scxml:27 :: _machine"]
+    // SCE-MAP: static_lift_list.scxml:27 :: _machine
     fn execute_entry_actions(
         &mut self,
         state: Self::State,
@@ -1210,8 +1340,8 @@ impl StatePolicy for StaticLiftListPolicy {
     // recorded runs nothing.
 
     // W3C SCXML 3.8: Execute <onexit> actions for a state
-    #[doc = "SCE-MAP: static_lift_list.scxml:21 :: _machine"]
-    // SCE-MAP: static_lift_list.scxml:21 :: _machine
+    #[doc = "SCE-MAP: static_lift_list.scxml:27 :: _machine"]
+    // SCE-MAP: static_lift_list.scxml:27 :: _machine
     fn execute_exit_actions(
         &mut self,
         state: Self::State,
@@ -1229,8 +1359,8 @@ impl StatePolicy for StaticLiftListPolicy {
     // enables, as its row of the tables, which holds its targets and its
     // type. The engine walks the atomic states and their ancestors and keeps
     // the ordered set. `Event::Null` asks for eventless transitions.
-    #[doc = "SCE-MAP: static_lift_list.scxml:21 :: _machine"]
-    // SCE-MAP: static_lift_list.scxml:21 :: _machine
+    #[doc = "SCE-MAP: static_lift_list.scxml:27 :: _machine"]
+    // SCE-MAP: static_lift_list.scxml:27 :: _machine
     fn first_enabled_transition(
         &mut self,
         state: Self::State,
@@ -1245,10 +1375,25 @@ impl StatePolicy for StaticLiftListPolicy {
                         return Some(::sce_rust_runtime::TransitionId(0));
                     }
                 }
-                if event == StaticLiftListEvent::ErrorExecution {
+                if event == StaticLiftListEvent::AnswerRead {
+                    if self.answer.is_some()
+                        && sce_forge_runtime::optional::proven_ref(&self.answer).title == "Week"
+                        && sce_forge_runtime::optional::proven_ref(&self.answer).priority == 1
                     {
                         // lifting, transition 1
                         return Some(::sce_rust_runtime::TransitionId(1));
+                    }
+                }
+                if event == StaticLiftListEvent::AnswerRead {
+                    {
+                        // lifting, transition 2
+                        return Some(::sce_rust_runtime::TransitionId(2));
+                    }
+                }
+                if event == StaticLiftListEvent::ErrorExecution {
+                    {
+                        // lifting, transition 3
+                        return Some(::sce_rust_runtime::TransitionId(3));
                     }
                 }
                 None
@@ -1260,8 +1405,8 @@ impl StatePolicy for StaticLiftListPolicy {
     // W3C SCXML 3.13: a transition's executable content, run by the engine
     // between the microstep's exits and its entries. `transition` is a
     // written transition's row, one whose row says it has content.
-    #[doc = "SCE-MAP: static_lift_list.scxml:21 :: _machine"]
-    // SCE-MAP: static_lift_list.scxml:21 :: _machine
+    #[doc = "SCE-MAP: static_lift_list.scxml:27 :: _machine"]
+    // SCE-MAP: static_lift_list.scxml:27 :: _machine
     fn execute_transition_content(
         &mut self,
         transition: ::sce_rust_runtime::TransitionId,
@@ -1270,7 +1415,7 @@ impl StatePolicy for StaticLiftListPolicy {
         match transition.0 {
             // lifting, transition 0
             0 => {
-                // SCE-MAP: static_lift_list.scxml:34 :: lifting :: _transition_0
+                // SCE-MAP: static_lift_list.scxml:44 :: lifting :: _transition_0
                 // W3C SCXML 3.13: Transition 0 actions
                 let ev = match &self.pending_payload {
                     StaticLiftListPayload::TextGiven(ev) => ev.clone(),
@@ -1326,7 +1471,42 @@ impl StatePolicy for StaticLiftListPolicy {
                         })() {
                             Ok(()) => false,
                             Err(_) => {
-                                engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(StaticLiftListEvent::ErrorExecution, "<assign location='lifts'>: an integer operation overflowed or failed"));
+                                engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(StaticLiftListEvent::ErrorExecution, ::sce_rust_runtime::ErrorReason::ExpressionFailed, "<assign location='lifts'>: an integer operation overflowed or failed"));
+                                true
+                            }
+                        };
+                    if sce_failed {
+                        break 'action_block; // W3C SCXML 4.9: the error ends the block
+                    }
+
+                    // W3C SCXML 5.9: cond="answer !== null"
+                    if self.answer.is_some() {
+                        // W3C SCXML 5.3: <assign location="priority">
+                        self.priority =
+                            sce_forge_runtime::optional::proven_ref(&self.answer).priority;
+
+                        // W3C SCXML 5.3: <assign location="held_items">
+                        self.held_items = (sce_forge_runtime::optional::proven_ref(&self.answer)
+                            .items)
+                            .len() as u32;
+                    }
+                }
+            }
+            // lifting, transition 1
+            1 => {
+                // SCE-MAP: static_lift_list.scxml:52 :: lifting :: _transition_1
+                // W3C SCXML 3.13: Transition 1 actions
+                // W3C SCXML 4.9: a transition's content is one block; an error ends it.
+                'action_block: {
+                    // W3C SCXML 5.3: <assign location="weeks">
+                    let sce_failed =
+                        match (|| -> Result<(), sce_forge_runtime::algorithm::AlgorithmError> {
+                            self.weeks = sce_forge_runtime::algorithm::add::<u32>(self.weeks, 1)?;
+                            Ok(())
+                        })() {
+                            Ok(()) => false,
+                            Err(_) => {
+                                engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(StaticLiftListEvent::ErrorExecution, ::sce_rust_runtime::ErrorReason::ExpressionFailed, "<assign location='weeks'>: an integer operation overflowed or failed"));
                                 true
                             }
                         };
@@ -1335,10 +1515,34 @@ impl StatePolicy for StaticLiftListPolicy {
                     }
                 }
             }
-            // lifting, transition 1
-            1 => {
-                // SCE-MAP: static_lift_list.scxml:38 :: lifting :: _transition_1
-                // W3C SCXML 3.13: Transition 1 actions
+            // lifting, transition 2
+            2 => {
+                // SCE-MAP: static_lift_list.scxml:56 :: lifting :: _transition_2
+                // W3C SCXML 3.13: Transition 2 actions
+                // W3C SCXML 4.9: a transition's content is one block; an error ends it.
+                'action_block: {
+                    // W3C SCXML 5.3: <assign location="other_reads">
+                    let sce_failed =
+                        match (|| -> Result<(), sce_forge_runtime::algorithm::AlgorithmError> {
+                            self.other_reads =
+                                sce_forge_runtime::algorithm::add::<u32>(self.other_reads, 1)?;
+                            Ok(())
+                        })() {
+                            Ok(()) => false,
+                            Err(_) => {
+                                engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(StaticLiftListEvent::ErrorExecution, ::sce_rust_runtime::ErrorReason::ExpressionFailed, "<assign location='other_reads'>: an integer operation overflowed or failed"));
+                                true
+                            }
+                        };
+                    if sce_failed {
+                        break 'action_block; // W3C SCXML 4.9: the error ends the block
+                    }
+                }
+            }
+            // lifting, transition 3
+            3 => {
+                // SCE-MAP: static_lift_list.scxml:59 :: lifting :: _transition_3
+                // W3C SCXML 3.13: Transition 3 actions
                 // W3C SCXML 4.9: a transition's content is one block; an error ends it.
                 'action_block: {
                     // W3C SCXML 5.3: <assign location="errors">
@@ -1349,7 +1553,7 @@ impl StatePolicy for StaticLiftListPolicy {
                         })() {
                             Ok(()) => false,
                             Err(_) => {
-                                engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(StaticLiftListEvent::ErrorExecution, "<assign location='errors'>: an integer operation overflowed or failed"));
+                                engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(StaticLiftListEvent::ErrorExecution, ::sce_rust_runtime::ErrorReason::ExpressionFailed, "<assign location='errors'>: an integer operation overflowed or failed"));
                                 true
                             }
                         };

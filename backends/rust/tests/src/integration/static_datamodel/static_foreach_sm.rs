@@ -1,5 +1,5 @@
 // SCE-GENERATED — DO NOT EDIT
-// source-hash: 65fb42bdd588f958b0fbb29ac261cf039d02606d7afaae0720c045624bd679ba
+// source-hash: 2073d8a55462e1ce61d8a77293fdd2c141aceda8ad173303c5b84813ca22eeee
 
 // SPDX-License-Identifier: AGPL-3.0-only WITH AdditionRef-SCE-Linking-Exception OR LicenseRef-SCE-Commercial
 // SPDX-FileCopyrightText: Copyright (c) 2025-2026 [Author of input SCXML file] (content derived from the input document)
@@ -1158,7 +1158,7 @@ impl StatePolicy for StaticForeachPolicy {
                     let sce_failed = if self.picked.len() < 4 && self.picked.push(100).is_ok() {
                         false
                     } else {
-                        engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(StaticForeachEvent::ErrorExecution, "<sce:append target='picked'>: the list already holds its capacity of 4"));
+                        engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(StaticForeachEvent::ErrorExecution, ::sce_rust_runtime::ErrorReason::AssignmentFailed, "<sce:append target='picked'>: the list already holds its capacity of 4"));
                         true
                     };
                     if sce_failed {
@@ -1176,7 +1176,7 @@ impl StatePolicy for StaticForeachPolicy {
                     let sce_failed = if self.picked.len() < 4 && self.picked.push(200).is_ok() {
                         false
                     } else {
-                        engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(StaticForeachEvent::ErrorExecution, "<sce:append target='picked'>: the list already holds its capacity of 4"));
+                        engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(StaticForeachEvent::ErrorExecution, ::sce_rust_runtime::ErrorReason::AssignmentFailed, "<sce:append target='picked'>: the list already holds its capacity of 4"));
                         true
                     };
                     if sce_failed {
@@ -1194,7 +1194,7 @@ impl StatePolicy for StaticForeachPolicy {
                     let sce_failed = if self.picked.len() < 4 && self.picked.push(5).is_ok() {
                         false
                     } else {
-                        engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(StaticForeachEvent::ErrorExecution, "<sce:append target='picked'>: the list already holds its capacity of 4"));
+                        engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(StaticForeachEvent::ErrorExecution, ::sce_rust_runtime::ErrorReason::AssignmentFailed, "<sce:append target='picked'>: the list already holds its capacity of 4"));
                         true
                     };
                     if sce_failed {
@@ -1231,7 +1231,7 @@ impl StatePolicy for StaticForeachPolicy {
 })() {
     Ok(()) => false,
     Err(_) => {
-        engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(StaticForeachEvent::ErrorExecution, "<assign location='total'>: an integer operation overflowed or failed"));
+        engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(StaticForeachEvent::ErrorExecution, ::sce_rust_runtime::ErrorReason::ExpressionFailed, "<assign location='total'>: an integer operation overflowed or failed"));
         true
     }
 };
@@ -1249,7 +1249,7 @@ impl StatePolicy for StaticForeachPolicy {
                         })() {
                             Ok(()) => false,
                             Err(_) => {
-                                engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(StaticForeachEvent::ErrorExecution, "<assign location='finished'>: an integer operation overflowed or failed"));
+                                engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(StaticForeachEvent::ErrorExecution, ::sce_rust_runtime::ErrorReason::ExpressionFailed, "<assign location='finished'>: an integer operation overflowed or failed"));
                                 true
                             }
                         };
@@ -1278,7 +1278,7 @@ impl StatePolicy for StaticForeachPolicy {
 })() {
     Ok(()) => false,
     Err(_) => {
-        engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(StaticForeachEvent::ErrorExecution, "<assign location='weighted'>: an integer operation overflowed or failed"));
+        engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(StaticForeachEvent::ErrorExecution, ::sce_rust_runtime::ErrorReason::ExpressionFailed, "<assign location='weighted'>: an integer operation overflowed or failed"));
         true
     }
 };
@@ -1296,7 +1296,7 @@ impl StatePolicy for StaticForeachPolicy {
                         })() {
                             Ok(()) => false,
                             Err(_) => {
-                                engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(StaticForeachEvent::ErrorExecution, "<assign location='finished'>: an integer operation overflowed or failed"));
+                                engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(StaticForeachEvent::ErrorExecution, ::sce_rust_runtime::ErrorReason::ExpressionFailed, "<assign location='finished'>: an integer operation overflowed or failed"));
                                 true
                             }
                         };
@@ -1324,7 +1324,7 @@ impl StatePolicy for StaticForeachPolicy {
 })() {
     Ok(()) => false,
     Err(_) => {
-        engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(StaticForeachEvent::ErrorExecution, "<assign location='small'>: an integer operation overflowed or failed"));
+        engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(StaticForeachEvent::ErrorExecution, ::sce_rust_runtime::ErrorReason::ExpressionFailed, "<assign location='small'>: an integer operation overflowed or failed"));
         true
     }
 };
@@ -1342,7 +1342,7 @@ impl StatePolicy for StaticForeachPolicy {
                         })() {
                             Ok(()) => false,
                             Err(_) => {
-                                engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(StaticForeachEvent::ErrorExecution, "<assign location='finished'>: an integer operation overflowed or failed"));
+                                engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(StaticForeachEvent::ErrorExecution, ::sce_rust_runtime::ErrorReason::ExpressionFailed, "<assign location='finished'>: an integer operation overflowed or failed"));
                                 true
                             }
                         };
@@ -1364,7 +1364,7 @@ impl StatePolicy for StaticForeachPolicy {
                         let sce_failed = if self.picked.len() < 4 && self.picked.push(v).is_ok() {
                             false
                         } else {
-                            engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(StaticForeachEvent::ErrorExecution, "<sce:append target='picked'>: the list already holds its capacity of 4"));
+                            engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(StaticForeachEvent::ErrorExecution, ::sce_rust_runtime::ErrorReason::AssignmentFailed, "<sce:append target='picked'>: the list already holds its capacity of 4"));
                             true
                         };
                         if sce_failed {
@@ -1381,7 +1381,7 @@ impl StatePolicy for StaticForeachPolicy {
                         })() {
                             Ok(()) => false,
                             Err(_) => {
-                                engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(StaticForeachEvent::ErrorExecution, "<assign location='finished'>: an integer operation overflowed or failed"));
+                                engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(StaticForeachEvent::ErrorExecution, ::sce_rust_runtime::ErrorReason::ExpressionFailed, "<assign location='finished'>: an integer operation overflowed or failed"));
                                 true
                             }
                         };
@@ -1413,7 +1413,7 @@ impl StatePolicy for StaticForeachPolicy {
 })() {
     Ok(()) => false,
     Err(_) => {
-        engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(StaticForeachEvent::ErrorExecution, "<assign location='crossings'>: an integer operation overflowed or failed"));
+        engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(StaticForeachEvent::ErrorExecution, ::sce_rust_runtime::ErrorReason::ExpressionFailed, "<assign location='crossings'>: an integer operation overflowed or failed"));
         true
     }
 };
@@ -1444,7 +1444,7 @@ impl StatePolicy for StaticForeachPolicy {
 })() {
     Ok(()) => false,
     Err(_) => {
-        engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(StaticForeachEvent::ErrorExecution, "<assign location='visited'>: an integer operation overflowed or failed"));
+        engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(StaticForeachEvent::ErrorExecution, ::sce_rust_runtime::ErrorReason::ExpressionFailed, "<assign location='visited'>: an integer operation overflowed or failed"));
         true
     }
 };
@@ -1468,7 +1468,7 @@ impl StatePolicy for StaticForeachPolicy {
                         })() {
                             Ok(()) => false,
                             Err(_) => {
-                                engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(StaticForeachEvent::ErrorExecution, "<assign location='errors'>: an integer operation overflowed or failed"));
+                                engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(StaticForeachEvent::ErrorExecution, ::sce_rust_runtime::ErrorReason::ExpressionFailed, "<assign location='errors'>: an integer operation overflowed or failed"));
                                 true
                             }
                         };

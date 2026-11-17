@@ -533,6 +533,7 @@ impl ErrorCascadeIsBoundedPolicy {
                 );
                 engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(
                     ErrorCascadeIsBoundedEvent::ErrorExecution,
+                    ::sce_rust_runtime::ErrorReason::ParamUnfit,
                     "<data id='pokes'> could not hold the value its invoke handed it",
                 ));
             }
@@ -544,6 +545,7 @@ impl ErrorCascadeIsBoundedPolicy {
                 ::sce_rust_runtime::sce_log_error!("global: {}", e);
                 engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(
                     ErrorCascadeIsBoundedEvent::ErrorExecution,
+                    ::sce_rust_runtime::ErrorReason::ExpressionFailed,
                     "<data id='pokes'> expr failed to evaluate",
                 ));
             }
@@ -558,6 +560,7 @@ impl ErrorCascadeIsBoundedPolicy {
                 );
                 engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(
                     ErrorCascadeIsBoundedEvent::ErrorExecution,
+                    ::sce_rust_runtime::ErrorReason::ParamUnfit,
                     "<data id='repairs'> could not hold the value its invoke handed it",
                 ));
             }
@@ -569,6 +572,7 @@ impl ErrorCascadeIsBoundedPolicy {
                 ::sce_rust_runtime::sce_log_error!("global: {}", e);
                 engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(
                     ErrorCascadeIsBoundedEvent::ErrorExecution,
+                    ::sce_rust_runtime::ErrorReason::ExpressionFailed,
                     "<data id='repairs'> expr failed to evaluate",
                 ));
             }
@@ -583,6 +587,7 @@ impl ErrorCascadeIsBoundedPolicy {
                 );
                 engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(
                     ErrorCascadeIsBoundedEvent::ErrorExecution,
+                    ::sce_rust_runtime::ErrorReason::ParamUnfit,
                     "<data id='runs'> could not hold the value its invoke handed it",
                 ));
             }
@@ -594,6 +599,7 @@ impl ErrorCascadeIsBoundedPolicy {
                 ::sce_rust_runtime::sce_log_error!("global: {}", e);
                 engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(
                     ErrorCascadeIsBoundedEvent::ErrorExecution,
+                    ::sce_rust_runtime::ErrorReason::ExpressionFailed,
                     "<data id='runs'> expr failed to evaluate",
                 ));
             }
@@ -608,6 +614,7 @@ impl ErrorCascadeIsBoundedPolicy {
                 );
                 engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(
                     ErrorCascadeIsBoundedEvent::ErrorExecution,
+                    ::sce_rust_runtime::ErrorReason::ParamUnfit,
                     "<data id='ticks'> could not hold the value its invoke handed it",
                 ));
             }
@@ -619,6 +626,7 @@ impl ErrorCascadeIsBoundedPolicy {
                 ::sce_rust_runtime::sce_log_error!("global: {}", e);
                 engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(
                     ErrorCascadeIsBoundedEvent::ErrorExecution,
+                    ::sce_rust_runtime::ErrorReason::ExpressionFailed,
                     "<data id='ticks'> expr failed to evaluate",
                 ));
             }
@@ -667,6 +675,7 @@ impl ErrorCascadeIsBoundedPolicy {
                 ::sce_rust_runtime::sce_log_error!("Guard evaluation failed for '{}': {}", cond, e);
                 engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(
                     ErrorCascadeIsBoundedEvent::ErrorExecution,
+                    ::sce_rust_runtime::ErrorReason::ExpressionFailed,
                     reason,
                 ));
                 None
@@ -998,6 +1007,7 @@ impl StatePolicy for ErrorCascadeIsBoundedPolicy {
                         );
                         engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(
                             ErrorCascadeIsBoundedEvent::ErrorExecution,
+                            ::sce_rust_runtime::ErrorReason::LocationInvalid,
                             "<assign> has an invalid or read-only location ''",
                         ));
                         // W3C SCXML 4.9: the error ends the block, from however deep a <foreach> it came.
@@ -1018,6 +1028,7 @@ impl StatePolicy for ErrorCascadeIsBoundedPolicy {
                         );
                         engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(
                             ErrorCascadeIsBoundedEvent::ErrorExecution,
+                            ::sce_rust_runtime::ErrorReason::LocationInvalid,
                             "<assign> has an invalid or read-only location ''",
                         ));
                         // W3C SCXML 4.9: the error ends the block, from however deep a <foreach> it came.
@@ -1228,6 +1239,7 @@ impl StatePolicy for ErrorCascadeIsBoundedPolicy {
                             ::sce_rust_runtime::sce_log_error!("Assign failed for 'pokes': {}", e);
                             engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(
                                 ErrorCascadeIsBoundedEvent::ErrorExecution,
+                                ::sce_rust_runtime::ErrorReason::AssignmentFailed,
                                 "<assign> to 'pokes' failed",
                             ));
                             // W3C SCXML 4.9: the error ends the block, from however deep a <foreach> it came.
@@ -1250,6 +1262,7 @@ impl StatePolicy for ErrorCascadeIsBoundedPolicy {
                         );
                         engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(
                             ErrorCascadeIsBoundedEvent::ErrorExecution,
+                            ::sce_rust_runtime::ErrorReason::LocationInvalid,
                             "<assign> has an invalid or read-only location ''",
                         ));
                         // W3C SCXML 4.9: the error ends the block, from however deep a <foreach> it came.
@@ -1279,6 +1292,7 @@ impl StatePolicy for ErrorCascadeIsBoundedPolicy {
                             ::sce_rust_runtime::sce_log_error!("Assign failed for 'runs': {}", e);
                             engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(
                                 ErrorCascadeIsBoundedEvent::ErrorExecution,
+                                ::sce_rust_runtime::ErrorReason::AssignmentFailed,
                                 "<assign> to 'runs' failed",
                             ));
                             // W3C SCXML 4.9: the error ends the block, from however deep a <foreach> it came.
@@ -1299,6 +1313,7 @@ impl StatePolicy for ErrorCascadeIsBoundedPolicy {
                         );
                         engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(
                             ErrorCascadeIsBoundedEvent::ErrorExecution,
+                            ::sce_rust_runtime::ErrorReason::LocationInvalid,
                             "<assign> has an invalid or read-only location ''",
                         ));
                         // W3C SCXML 4.9: the error ends the block, from however deep a <foreach> it came.
@@ -1328,6 +1343,7 @@ impl StatePolicy for ErrorCascadeIsBoundedPolicy {
                             ::sce_rust_runtime::sce_log_error!("Assign failed for 'ticks': {}", e);
                             engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(
                                 ErrorCascadeIsBoundedEvent::ErrorExecution,
+                                ::sce_rust_runtime::ErrorReason::AssignmentFailed,
                                 "<assign> to 'ticks' failed",
                             ));
                             // W3C SCXML 4.9: the error ends the block, from however deep a <foreach> it came.
@@ -1358,6 +1374,7 @@ impl StatePolicy for ErrorCascadeIsBoundedPolicy {
                             ::sce_rust_runtime::sce_log_error!("Assign failed for 'pokes': {}", e);
                             engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(
                                 ErrorCascadeIsBoundedEvent::ErrorExecution,
+                                ::sce_rust_runtime::ErrorReason::AssignmentFailed,
                                 "<assign> to 'pokes' failed",
                             ));
                             // W3C SCXML 4.9: the error ends the block, from however deep a <foreach> it came.
@@ -1391,6 +1408,7 @@ impl StatePolicy for ErrorCascadeIsBoundedPolicy {
                             );
                             engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(
                                 ErrorCascadeIsBoundedEvent::ErrorExecution,
+                                ::sce_rust_runtime::ErrorReason::AssignmentFailed,
                                 "<assign> to 'repairs' failed",
                             ));
                             // W3C SCXML 4.9: the error ends the block, from however deep a <foreach> it came.
@@ -1406,6 +1424,7 @@ impl StatePolicy for ErrorCascadeIsBoundedPolicy {
                         );
                         engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(
                             ErrorCascadeIsBoundedEvent::ErrorExecution,
+                            ::sce_rust_runtime::ErrorReason::LocationInvalid,
                             "<assign> has an invalid or read-only location ''",
                         ));
                         // W3C SCXML 4.9: the error ends the block, from however deep a <foreach> it came.
@@ -1435,6 +1454,7 @@ impl StatePolicy for ErrorCascadeIsBoundedPolicy {
                             ::sce_rust_runtime::sce_log_error!("Assign failed for 'pokes': {}", e);
                             engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(
                                 ErrorCascadeIsBoundedEvent::ErrorExecution,
+                                ::sce_rust_runtime::ErrorReason::AssignmentFailed,
                                 "<assign> to 'pokes' failed",
                             ));
                             // W3C SCXML 4.9: the error ends the block, from however deep a <foreach> it came.

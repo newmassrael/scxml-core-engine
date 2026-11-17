@@ -574,6 +574,7 @@ impl WildcardInDocumentOrderPolicy {
                 );
                 engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(
                     WildcardInDocumentOrderEvent::ErrorExecution,
+                    ::sce_rust_runtime::ErrorReason::ParamUnfit,
                     "<data id='armed'> could not hold the value its invoke handed it",
                 ));
             }
@@ -585,6 +586,7 @@ impl WildcardInDocumentOrderPolicy {
                 ::sce_rust_runtime::sce_log_error!("global: {}", e);
                 engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(
                     WildcardInDocumentOrderEvent::ErrorExecution,
+                    ::sce_rust_runtime::ErrorReason::ExpressionFailed,
                     "<data id='armed'> expr failed to evaluate",
                 ));
             }
@@ -599,6 +601,7 @@ impl WildcardInDocumentOrderPolicy {
                 );
                 engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(
                     WildcardInDocumentOrderEvent::ErrorExecution,
+                    ::sce_rust_runtime::ErrorReason::ParamUnfit,
                     "<data id='guardedEntries'> could not hold the value its invoke handed it",
                 ));
             }
@@ -613,6 +616,7 @@ impl WildcardInDocumentOrderPolicy {
                 ::sce_rust_runtime::sce_log_error!("global: {}", e);
                 engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(
                     WildcardInDocumentOrderEvent::ErrorExecution,
+                    ::sce_rust_runtime::ErrorReason::ExpressionFailed,
                     "<data id='guardedEntries'> expr failed to evaluate",
                 ));
             }
@@ -627,6 +631,7 @@ impl WildcardInDocumentOrderPolicy {
                 );
                 engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(
                     WildcardInDocumentOrderEvent::ErrorExecution,
+                    ::sce_rust_runtime::ErrorReason::ParamUnfit,
                     "<data id='sealedEntries'> could not hold the value its invoke handed it",
                 ));
             }
@@ -641,6 +646,7 @@ impl WildcardInDocumentOrderPolicy {
                 ::sce_rust_runtime::sce_log_error!("global: {}", e);
                 engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(
                     WildcardInDocumentOrderEvent::ErrorExecution,
+                    ::sce_rust_runtime::ErrorReason::ExpressionFailed,
                     "<data id='sealedEntries'> expr failed to evaluate",
                 ));
             }
@@ -689,6 +695,7 @@ impl WildcardInDocumentOrderPolicy {
                 ::sce_rust_runtime::sce_log_error!("Guard evaluation failed for '{}': {}", cond, e);
                 engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(
                     WildcardInDocumentOrderEvent::ErrorExecution,
+                    ::sce_rust_runtime::ErrorReason::ExpressionFailed,
                     reason,
                 ));
                 None
@@ -1077,6 +1084,7 @@ impl StatePolicy for WildcardInDocumentOrderPolicy {
                             );
                             engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(
                                 WildcardInDocumentOrderEvent::ErrorExecution,
+                                ::sce_rust_runtime::ErrorReason::AssignmentFailed,
                                 "<assign> to 'guardedEntries' failed",
                             ));
                             // W3C SCXML 4.9: the error ends the block, from however deep a <foreach> it came.
@@ -1111,6 +1119,7 @@ impl StatePolicy for WildcardInDocumentOrderPolicy {
                             ::sce_rust_runtime::sce_log_error!("Assign failed for 'armed': {}", e);
                             engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(
                                 WildcardInDocumentOrderEvent::ErrorExecution,
+                                ::sce_rust_runtime::ErrorReason::AssignmentFailed,
                                 "<assign> to 'armed' failed",
                             ));
                             // W3C SCXML 4.9: the error ends the block, from however deep a <foreach> it came.
@@ -1148,6 +1157,7 @@ impl StatePolicy for WildcardInDocumentOrderPolicy {
                             );
                             engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(
                                 WildcardInDocumentOrderEvent::ErrorExecution,
+                                ::sce_rust_runtime::ErrorReason::AssignmentFailed,
                                 "<assign> to 'sealedEntries' failed",
                             ));
                             // W3C SCXML 4.9: the error ends the block, from however deep a <foreach> it came.

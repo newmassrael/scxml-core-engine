@@ -7,6 +7,7 @@
 package com.sce.generated.codec_transport_envelope
 
 import com.sce.forge.runtime.CodecError
+import com.sce.forge.runtime.Decoded
 import com.sce.forge.runtime.MutableListSink
 import com.sce.forge.runtime.SceCursor
 import com.sce.forge.runtime.SceSink
@@ -136,55 +137,60 @@ data class CodecTransportEnvelope(
 
     companion object {
         /// Decode the next frame from `cursor`. On success the cursor
-        /// advances past the consumed bytes; returns `null` when the
-        /// cursor's tail is shorter than the declared minimum frame
-        /// (RFC §synth-5-B L494-519).
-        fun decode(cursor: SceCursor): CodecTransportEnvelope? {
+        /// advances past the consumed bytes and the value is `Decoded.Ok`;
+        /// a refused frame is `Decoded.Refused` with the kind that refused
+        /// it (docs/adr/0099, amendment of 2026-11-16): `NeedMoreBytes` when
+        /// the cursor's tail is shorter than the frame (RFC §synth-5-B
+        /// L494-519), which the caller resumes after appending bytes, and
+        /// another kind for a frame no more bytes make whole.
+        fun decode(cursor: SceCursor): Decoded<CodecTransportEnvelope> {
             // Decode fixed prefix (RFC §synth-5-B variant: fields before tag suffix).
-            val raw = cursor.peekSlice(1) ?: return null
+            val raw = cursor.peekSlice(1) ?: return Decoded.Refused(CodecError.NeedMoreBytes)
             val header = raw[0].toUByte()
-            if (!cursor.advance(1)) return null
+            if (!cursor.advance(1)) return Decoded.Refused(CodecError.NeedMoreBytes)
             // Dispatch on the tag field; each arm decodes its body codec
             // from the cursor. The default arm (when declared) carries
             // the runtime tag value so encode can round-trip it back
             // onto the wire.
             val body: CodecTransportEnvelopeVariant = when (((header.toInt() shr 0) and 0x1F)) {
                 1 -> {
-                    val _arm = com.sce.generated.codec_zenoh_init_body.CodecZenohInitBody.decode(cursor, (((header.toInt() shr 6) and 0x1).toUByte()), (((header.toInt() shr 5) and 0x1).toUByte())) ?: return null
+                    val _arm = com.sce.generated.codec_zenoh_init_body.CodecZenohInitBody.decode(cursor, (((header.toInt() shr 6) and 0x1).toUByte()), (((header.toInt() shr 5) and 0x1).toUByte())).valueOr { _refused -> return _refused }
                     CodecTransportEnvelopeVariant.CodecZenohInitBody(_arm)
                 }
                 2 -> {
-                    val _arm = com.sce.generated.codec_zenoh_open_body.CodecZenohOpenBody.decode(cursor, (((header.toInt() shr 5) and 0x1).toUByte())) ?: return null
+                    val _arm = com.sce.generated.codec_zenoh_open_body.CodecZenohOpenBody.decode(cursor, (((header.toInt() shr 5) and 0x1).toUByte())).valueOr { _refused -> return _refused }
                     CodecTransportEnvelopeVariant.CodecZenohOpenBody(_arm)
                 }
                 3 -> {
-                    val _arm = com.sce.generated.codec_zenoh_close.CodecZenohClose.decode(cursor) ?: return null
+                    val _arm = com.sce.generated.codec_zenoh_close.CodecZenohClose.decode(cursor).valueOr { _refused -> return _refused }
                     CodecTransportEnvelopeVariant.CodecZenohClose(_arm)
                 }
                 4 -> {
-                    val _arm = com.sce.generated.codec_zenoh_keep_alive.CodecZenohKeepAlive.decode(cursor) ?: return null
+                    val _arm = com.sce.generated.codec_zenoh_keep_alive.CodecZenohKeepAlive.decode(cursor).valueOr { _refused -> return _refused }
                     CodecTransportEnvelopeVariant.CodecZenohKeepAlive(_arm)
                 }
                 5 -> {
-                    val _arm = com.sce.generated.codec_zenoh_frame.CodecZenohFrame.decode(cursor) ?: return null
+                    val _arm = com.sce.generated.codec_zenoh_frame.CodecZenohFrame.decode(cursor).valueOr { _refused -> return _refused }
                     CodecTransportEnvelopeVariant.CodecZenohFrame(_arm)
                 }
                 6 -> {
-                    val _arm = com.sce.generated.codec_zenoh_fragment.CodecZenohFragment.decode(cursor) ?: return null
+                    val _arm = com.sce.generated.codec_zenoh_fragment.CodecZenohFragment.decode(cursor).valueOr { _refused -> return _refused }
                     CodecTransportEnvelopeVariant.CodecZenohFragment(_arm)
                 }
                 7 -> {
-                    val _arm = com.sce.generated.codec_zenoh_join.CodecZenohJoin.decode(cursor, (((header.toInt() shr 6) and 0x1).toUByte())) ?: return null
+                    val _arm = com.sce.generated.codec_zenoh_join.CodecZenohJoin.decode(cursor, (((header.toInt() shr 6) and 0x1).toUByte())).valueOr { _refused -> return _refused }
                     CodecTransportEnvelopeVariant.CodecZenohJoin(_arm)
                 }
                 else -> {
-                    val _arm = com.sce.generated.codec_zenoh_close.CodecZenohClose.decode(cursor) ?: return null
+                    val _arm = com.sce.generated.codec_zenoh_close.CodecZenohClose.decode(cursor).valueOr { _refused -> return _refused }
                     CodecTransportEnvelopeVariant.Default(tag = ((header.toInt() shr 0) and 0x1F).toUByte(), body = _arm)
                 }
             }
-            return CodecTransportEnvelope(
-                header = header,
-                body = body
+            return Decoded.Ok(
+                CodecTransportEnvelope(
+                    header = header,
+                    body = body
+                )
             )
         }
     }

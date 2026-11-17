@@ -494,6 +494,7 @@ impl AutoforwardEventFieldsSceSynthInvokeInvEchoPolicy {
                 ::sce_rust_runtime::sce_log_error!("Guard evaluation failed for '{}': {}", cond, e);
                 engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(
                     AutoforwardEventFieldsSceSynthInvokeInvEchoEvent::ErrorExecution,
+                    ::sce_rust_runtime::ErrorReason::ExpressionFailed,
                     reason,
                 ));
                 None
@@ -857,7 +858,7 @@ impl StatePolicy for AutoforwardEventFieldsSceSynthInvokeInvEchoPolicy {
                                         "send param 'value' eval failed: {}",
                                         e
                                     );
-                                    engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(AutoforwardEventFieldsSceSynthInvokeInvEchoEvent::ErrorExecution, "<send> <param name='value'> could not be read"));
+                                    engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(AutoforwardEventFieldsSceSynthInvokeInvEchoEvent::ErrorExecution, ::sce_rust_runtime::ErrorReason::LocationInvalid, "<send> <param name='value'> could not be read"));
                                     // W3C SCXML 5.7.1: the pair is left out; 4.9: the block stops after the send.
                                     _param_failed = true;
                                 }
@@ -879,7 +880,8 @@ impl StatePolicy for AutoforwardEventFieldsSceSynthInvokeInvEchoPolicy {
                             // nothing delivered, and the block ends (4.9).
                             engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(
             AutoforwardEventFieldsSceSynthInvokeInvEchoEvent::ErrorCommunication,
-            "<send target='#_parent'> has no parent session to reach"));
+            ::sce_rust_runtime::ErrorReason::TargetUnreachable,
+        "<send target='#_parent'> has no parent session to reach"));
                             break 'action_block;
                         }
 
@@ -1037,7 +1039,8 @@ impl StatePolicy for AutoforwardEventFieldsSceSynthInvokeInvEchoPolicy {
                             // nothing delivered, and the block ends (4.9).
                             engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(
             AutoforwardEventFieldsSceSynthInvokeInvEchoEvent::ErrorCommunication,
-            "<send target='#_parent'> has no parent session to reach"));
+            ::sce_rust_runtime::ErrorReason::TargetUnreachable,
+        "<send target='#_parent'> has no parent session to reach"));
                             break 'action_block;
                         }
 
@@ -1068,7 +1071,8 @@ impl StatePolicy for AutoforwardEventFieldsSceSynthInvokeInvEchoPolicy {
                             // nothing delivered, and the block ends (4.9).
                             engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(
             AutoforwardEventFieldsSceSynthInvokeInvEchoEvent::ErrorCommunication,
-            "<send target='#_parent'> has no parent session to reach"));
+            ::sce_rust_runtime::ErrorReason::TargetUnreachable,
+        "<send target='#_parent'> has no parent session to reach"));
                             break 'action_block;
                         }
 

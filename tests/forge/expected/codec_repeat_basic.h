@@ -88,6 +88,15 @@ struct Wire {
     }
 };
 
+/// The `num_frags` the frame of a source of `CodecRepeatBasic` carries, which its encode
+/// derives from what it measures and no value holds (docs/adr/0081 §3).
+template <class S>
+[[nodiscard]] uint8_t wire_num_frags(const S& src) noexcept(is_nothrow_source<S>::value) {
+    static_assert(is_source<S>::value, "S presents every element of CodecRepeatBasic");
+    const auto& _r_frags = source::frags(src);
+    return static_cast<uint8_t>(_r_frags.size());
+}
+
 struct CodecRepeatBasic {
     CodecRepeatBasic() = default;
     /// The value of each element it presents, in declaration order (ADR 0059 §5).
@@ -97,12 +106,13 @@ struct CodecRepeatBasic {
     [[nodiscard]] ::SCE::Forge::List<::SCE::Generated::CodecRepeatElem::CodecRepeatElem, 32> frags() const noexcept { return frags_; }
 
     /// Decode the next frame from `cursor`. On success the cursor
-    /// advances past the consumed bytes; on `NeedMoreBytes` the cursor
-    /// is left untouched so the caller can resume after appending more
-    /// bytes (RFC §synth-5-B L494-519). Returns `std::nullopt` on the
-    /// `NeedMoreBytes` boundary; later phases attach a typed error via
-    /// `cursor.last_error()`.
-    static std::optional<CodecRepeatBasic> decode(::SCE::Forge::SceCursor& cursor) {
+    /// advances past the consumed bytes and the value is answered; a
+    /// refused frame answers the `CodecError` that refused it
+    /// (docs/adr/0099, amendment of 2026-11-16): `NeedMoreBytes` when
+    /// the cursor's tail is shorter than the frame (RFC §synth-5-B
+    /// L494-519), which the caller resumes after appending bytes, and
+    /// another kind for a frame no more bytes make whole.
+    static ::SCE::Forge::Decoded<CodecRepeatBasic> decode(::SCE::Forge::SceCursor& cursor) {
         // Streaming cursor decode (SSOT selection: `needs_streaming`).
         // The positional `raw[byte_off]` path is valid only when every
         // field's absolute offset is fixed at codegen time; this branch
@@ -117,24 +127,23 @@ struct CodecRepeatBasic {
         uint8_t num_frags;
         {
             const std::uint8_t* raw = cursor.peek_slice(1);
-            if (raw == nullptr) return std::nullopt;
+            if (raw == nullptr) return ::SCE::Forge::CodecError::NeedMoreBytes;
             num_frags = static_cast<uint8_t>(raw[0]);
-            if (!cursor.advance(1)) return std::nullopt;
+            if (!cursor.advance(1)) return ::SCE::Forge::CodecError::NeedMoreBytes;
         }
         std::vector<::SCE::Generated::CodecRepeatElem::CodecRepeatElem> frags;
         if (num_frags > 32) {
-            cursor.refuse(::SCE::Forge::CodecError::TooManyElements); return std::nullopt;
+            return ::SCE::Forge::CodecError::TooManyElements;
         }
         frags.reserve(cursor.entries_backed(num_frags));
         for (auto _i = decltype(num_frags){0}; _i < num_frags; ++_i) {
             auto _elem = ::SCE::Generated::CodecRepeatElem::CodecRepeatElem::decode(cursor);
-            if (!_elem.has_value()) return std::nullopt;
+            if (!_elem.has_value()) return _elem.error();
             frags.push_back(*_elem);
         }
         const auto _b_frags = ::SCE::Forge::List<::SCE::Generated::CodecRepeatElem::CodecRepeatElem, 32>::make(frags);
         if (!_b_frags) {
-            cursor.refuse(::SCE::Forge::CodecError::TooManyElements);
-            return std::nullopt;
+            return ::SCE::Forge::CodecError::TooManyElements;
         }
         (void)num_frags;
         CodecRepeatBasic _decoded{

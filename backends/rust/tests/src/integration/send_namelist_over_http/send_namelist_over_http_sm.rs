@@ -527,6 +527,7 @@ impl SendNamelistOverHttpPolicy {
                 );
                 engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(
                     SendNamelistOverHttpEvent::ErrorExecution,
+                    ::sce_rust_runtime::ErrorReason::ParamUnfit,
                     "<data id='Var1'> could not hold the value its invoke handed it",
                 ));
             }
@@ -538,6 +539,7 @@ impl SendNamelistOverHttpPolicy {
                 ::sce_rust_runtime::sce_log_error!("global: {}", e);
                 engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(
                     SendNamelistOverHttpEvent::ErrorExecution,
+                    ::sce_rust_runtime::ErrorReason::ExpressionFailed,
                     "<data id='Var1'> expr failed to evaluate",
                 ));
             }
@@ -552,6 +554,7 @@ impl SendNamelistOverHttpPolicy {
                 );
                 engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(
                     SendNamelistOverHttpEvent::ErrorExecution,
+                    ::sce_rust_runtime::ErrorReason::ParamUnfit,
                     "<data id='echoed'> could not hold the value its invoke handed it",
                 ));
             }
@@ -563,6 +566,7 @@ impl SendNamelistOverHttpPolicy {
                 ::sce_rust_runtime::sce_log_error!("global: {}", e);
                 engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(
                     SendNamelistOverHttpEvent::ErrorExecution,
+                    ::sce_rust_runtime::ErrorReason::ExpressionFailed,
                     "<data id='echoed'> expr failed to evaluate",
                 ));
             }
@@ -574,6 +578,7 @@ impl SendNamelistOverHttpPolicy {
                 ::sce_rust_runtime::sce_log_error!("<data id='sawNamelistError'> could not hold the value its invoke handed it: {}", e);
                 engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(
                     SendNamelistOverHttpEvent::ErrorExecution,
+                    ::sce_rust_runtime::ErrorReason::ParamUnfit,
                     "<data id='sawNamelistError'> could not hold the value its invoke handed it",
                 ));
             }
@@ -588,6 +593,7 @@ impl SendNamelistOverHttpPolicy {
                 ::sce_rust_runtime::sce_log_error!("global: {}", e);
                 engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(
                     SendNamelistOverHttpEvent::ErrorExecution,
+                    ::sce_rust_runtime::ErrorReason::ExpressionFailed,
                     "<data id='sawNamelistError'> expr failed to evaluate",
                 ));
             }
@@ -636,6 +642,7 @@ impl SendNamelistOverHttpPolicy {
                 ::sce_rust_runtime::sce_log_error!("Guard evaluation failed for '{}': {}", cond, e);
                 engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(
                     SendNamelistOverHttpEvent::ErrorExecution,
+                    ::sce_rust_runtime::ErrorReason::ExpressionFailed,
                     reason,
                 ));
                 None
@@ -995,7 +1002,12 @@ impl StatePolicy for SendNamelistOverHttpPolicy {
                         let __sce_arg_sid = self.session_id.as_ref().unwrap().clone();
                         let __sce_arg_se = self.script_engine.clone();
                         let __sce_arg_se: &dyn sce_rust_runtime::IScriptEngine = &*__sce_arg_se;
-                        let mut _send_arg_error: Option<&'static str> = None;
+                        // The code and the sentence of the first argument that failed
+                        // (docs/adr/0106 #111).
+                        let mut _send_arg_error: Option<(
+                            ::sce_rust_runtime::ErrorReason,
+                            &'static str,
+                        )> = None;
                         // A target that evaluates to nothing is not an evaluation error: it is an
                         // address nobody answers at, which the resolution below reports as
                         // error.communication (W3C SCXML C.1).
@@ -1011,8 +1023,10 @@ impl StatePolicy for SendNamelistOverHttpPolicy {
                                             "targetexpr eval failed: {}",
                                             e
                                         );
-                                        _send_arg_error =
-                                            Some("<send> targetexpr could not be evaluated");
+                                        _send_arg_error = Some((
+                                            ::sce_rust_runtime::ErrorReason::ExpressionFailed,
+                                            "<send> targetexpr could not be evaluated",
+                                        ));
                                         None
                                     }
                                 }
@@ -1023,7 +1037,7 @@ impl StatePolicy for SendNamelistOverHttpPolicy {
                             // W3C SCXML 6.2: a target this processor cannot address is refused as
                             // a static one is, before anything is delivered.
                             if sce_rust_runtime::helpers::send::is_invalid_target(&::sce_rust_runtime::helpers::event_data::script_value_to_wire_string(val)) {
-            _send_arg_error = Some("<send> targetexpr produced a target this processor cannot address");
+            _send_arg_error = Some((::sce_rust_runtime::ErrorReason::SendTargetInvalid, "<send> targetexpr produced a target this processor cannot address"));
         }
                         }
                         // W3C SCXML 6.2 + B.2 (test 553): a namelist names locations, and one that
@@ -1033,7 +1047,7 @@ impl StatePolicy for SendNamelistOverHttpPolicy {
                             Vec::new();
                         if _send_arg_error.is_none() {
                             if !__sce_arg_se.has_variable(&__sce_arg_sid, "__sce_not_declared__") {
-                                _send_arg_error = Some("<send> namelist names '__sce_not_declared__', which is not declared");
+                                _send_arg_error = Some((::sce_rust_runtime::ErrorReason::LocationInvalid, "<send> namelist names '__sce_not_declared__', which is not declared"));
                             } else {
                                 match __sce_arg_se
                                     .evaluate_expression(&__sce_arg_sid, "__sce_not_declared__")
@@ -1044,15 +1058,16 @@ impl StatePolicy for SendNamelistOverHttpPolicy {
                                             "send namelist '__sce_not_declared__' eval failed: {}",
                                             e
                                         );
-                                        _send_arg_error = Some("<send> namelist entry '__sce_not_declared__' could not be read");
+                                        _send_arg_error = Some((::sce_rust_runtime::ErrorReason::LocationInvalid, "<send> namelist entry '__sce_not_declared__' could not be read"));
                                     }
                                 }
                             }
                         }
-                        if let Some(__sce_why) = _send_arg_error {
+                        if let Some((__sce_reason, __sce_why)) = _send_arg_error {
                             ::sce_rust_runtime::sce_log_error!("{}", __sce_why);
                             let mut err_meta = sce_rust_runtime::EventWithMetadata::platform_error(
                                 SendNamelistOverHttpEvent::ErrorExecution,
+                                __sce_reason,
                                 __sce_why,
                             );
                             err_meta.metadata.send_id =
@@ -1074,7 +1089,7 @@ impl StatePolicy for SendNamelistOverHttpPolicy {
                             if _resolved_target.is_none() {
                                 // W3C SCXML C.1 (test 496, 521): a target that names nothing raises
                                 // error.communication.
-                                let mut err_meta = sce_rust_runtime::EventWithMetadata::platform_error(SendNamelistOverHttpEvent::ErrorCommunication, "<send> targetexpr evaluated to nothing, so there is no target to reach");
+                                let mut err_meta = sce_rust_runtime::EventWithMetadata::platform_error(SendNamelistOverHttpEvent::ErrorCommunication, ::sce_rust_runtime::ErrorReason::TargetUnreachable, "<send> targetexpr evaluated to nothing, so there is no target to reach");
                                 err_meta.metadata.send_id =
                                     ::sce_rust_runtime::sce_string_from_str(send_id);
                                 engine.raise(err_meta);
@@ -1087,7 +1102,7 @@ impl StatePolicy for SendNamelistOverHttpPolicy {
                                 // id, the payload never read, nothing posted, the block ended.
                                 if !sce_rust_runtime::helpers::send::is_supported_send_type(sce_rust_runtime::helpers::scxml_constants::BASIC_HTTP_EVENT_PROCESSOR_TYPE) {
         ::sce_rust_runtime::sce_log_error!("<send type='http://www.w3.org/TR/scxml/#BasicHTTPEventProcessor'>: this build has no BasicHTTP processor (sce-rust-runtime's `http-send` feature)");
-        let mut err_meta = sce_rust_runtime::EventWithMetadata::platform_error(SendNamelistOverHttpEvent::ErrorExecution, "<send type='http://www.w3.org/TR/scxml/#BasicHTTPEventProcessor'> names a processor this platform does not support");
+        let mut err_meta = sce_rust_runtime::EventWithMetadata::platform_error(SendNamelistOverHttpEvent::ErrorExecution, ::sce_rust_runtime::ErrorReason::SendTypeUnsupported, "<send type='http://www.w3.org/TR/scxml/#BasicHTTPEventProcessor'> names a processor this platform does not support");
         err_meta.metadata.send_id = ::sce_rust_runtime::sce_string_from_str(send_id);
         engine.raise(err_meta);
         break 'action_block;  // W3C SCXML 4.9: the error ends the block
@@ -1120,7 +1135,7 @@ impl StatePolicy for SendNamelistOverHttpPolicy {
     {
         // W3C SCXML C.2: Validate dynamic target is HTTP URL
         if !_rt.starts_with("http://") && !_rt.starts_with("https://") {
-            let mut err_meta = sce_rust_runtime::EventWithMetadata::platform_error(SendNamelistOverHttpEvent::ErrorCommunication, "<send> over BasicHTTPEventProcessor resolved a target that is not an http(s) URL");
+            let mut err_meta = sce_rust_runtime::EventWithMetadata::platform_error(SendNamelistOverHttpEvent::ErrorCommunication, ::sce_rust_runtime::ErrorReason::HttpTargetInvalid, "<send> over BasicHTTPEventProcessor resolved a target that is not an http(s) URL");
             err_meta.metadata.send_id = ::sce_rust_runtime::sce_string_from_str(send_id);
             engine.raise(err_meta);
             break 'action_block;  // W3C SCXML 4.9: the error ends the block
@@ -1183,7 +1198,12 @@ impl StatePolicy for SendNamelistOverHttpPolicy {
                         let __sce_arg_sid = self.session_id.as_ref().unwrap().clone();
                         let __sce_arg_se = self.script_engine.clone();
                         let __sce_arg_se: &dyn sce_rust_runtime::IScriptEngine = &*__sce_arg_se;
-                        let mut _send_arg_error: Option<&'static str> = None;
+                        // The code and the sentence of the first argument that failed
+                        // (docs/adr/0106 #111).
+                        let mut _send_arg_error: Option<(
+                            ::sce_rust_runtime::ErrorReason,
+                            &'static str,
+                        )> = None;
                         // A target that evaluates to nothing is not an evaluation error: it is an
                         // address nobody answers at, which the resolution below reports as
                         // error.communication (W3C SCXML C.1).
@@ -1199,8 +1219,10 @@ impl StatePolicy for SendNamelistOverHttpPolicy {
                                             "targetexpr eval failed: {}",
                                             e
                                         );
-                                        _send_arg_error =
-                                            Some("<send> targetexpr could not be evaluated");
+                                        _send_arg_error = Some((
+                                            ::sce_rust_runtime::ErrorReason::ExpressionFailed,
+                                            "<send> targetexpr could not be evaluated",
+                                        ));
                                         None
                                     }
                                 }
@@ -1211,7 +1233,7 @@ impl StatePolicy for SendNamelistOverHttpPolicy {
                             // W3C SCXML 6.2: a target this processor cannot address is refused as
                             // a static one is, before anything is delivered.
                             if sce_rust_runtime::helpers::send::is_invalid_target(&::sce_rust_runtime::helpers::event_data::script_value_to_wire_string(val)) {
-            _send_arg_error = Some("<send> targetexpr produced a target this processor cannot address");
+            _send_arg_error = Some((::sce_rust_runtime::ErrorReason::SendTargetInvalid, "<send> targetexpr produced a target this processor cannot address"));
         }
                         }
                         // W3C SCXML 6.2 + B.2 (test 553): a namelist names locations, and one that
@@ -1221,8 +1243,10 @@ impl StatePolicy for SendNamelistOverHttpPolicy {
                             Vec::new();
                         if _send_arg_error.is_none() {
                             if !__sce_arg_se.has_variable(&__sce_arg_sid, "Var1") {
-                                _send_arg_error =
-                                    Some("<send> namelist names 'Var1', which is not declared");
+                                _send_arg_error = Some((
+                                    ::sce_rust_runtime::ErrorReason::LocationInvalid,
+                                    "<send> namelist names 'Var1', which is not declared",
+                                ));
                             } else {
                                 match __sce_arg_se.evaluate_expression(&__sce_arg_sid, "Var1") {
                                     Ok(val) => _send_namelist.push(("Var1", val)),
@@ -1231,16 +1255,19 @@ impl StatePolicy for SendNamelistOverHttpPolicy {
                                             "send namelist 'Var1' eval failed: {}",
                                             e
                                         );
-                                        _send_arg_error =
-                                            Some("<send> namelist entry 'Var1' could not be read");
+                                        _send_arg_error = Some((
+                                            ::sce_rust_runtime::ErrorReason::LocationInvalid,
+                                            "<send> namelist entry 'Var1' could not be read",
+                                        ));
                                     }
                                 }
                             }
                         }
-                        if let Some(__sce_why) = _send_arg_error {
+                        if let Some((__sce_reason, __sce_why)) = _send_arg_error {
                             ::sce_rust_runtime::sce_log_error!("{}", __sce_why);
                             let mut err_meta = sce_rust_runtime::EventWithMetadata::platform_error(
                                 SendNamelistOverHttpEvent::ErrorExecution,
+                                __sce_reason,
                                 __sce_why,
                             );
                             err_meta.metadata.send_id =
@@ -1262,7 +1289,7 @@ impl StatePolicy for SendNamelistOverHttpPolicy {
                             if _resolved_target.is_none() {
                                 // W3C SCXML C.1 (test 496, 521): a target that names nothing raises
                                 // error.communication.
-                                let mut err_meta = sce_rust_runtime::EventWithMetadata::platform_error(SendNamelistOverHttpEvent::ErrorCommunication, "<send> targetexpr evaluated to nothing, so there is no target to reach");
+                                let mut err_meta = sce_rust_runtime::EventWithMetadata::platform_error(SendNamelistOverHttpEvent::ErrorCommunication, ::sce_rust_runtime::ErrorReason::TargetUnreachable, "<send> targetexpr evaluated to nothing, so there is no target to reach");
                                 err_meta.metadata.send_id =
                                     ::sce_rust_runtime::sce_string_from_str(send_id);
                                 engine.raise(err_meta);
@@ -1275,7 +1302,7 @@ impl StatePolicy for SendNamelistOverHttpPolicy {
                                 // id, the payload never read, nothing posted, the block ended.
                                 if !sce_rust_runtime::helpers::send::is_supported_send_type(sce_rust_runtime::helpers::scxml_constants::BASIC_HTTP_EVENT_PROCESSOR_TYPE) {
         ::sce_rust_runtime::sce_log_error!("<send type='http://www.w3.org/TR/scxml/#BasicHTTPEventProcessor'>: this build has no BasicHTTP processor (sce-rust-runtime's `http-send` feature)");
-        let mut err_meta = sce_rust_runtime::EventWithMetadata::platform_error(SendNamelistOverHttpEvent::ErrorExecution, "<send type='http://www.w3.org/TR/scxml/#BasicHTTPEventProcessor'> names a processor this platform does not support");
+        let mut err_meta = sce_rust_runtime::EventWithMetadata::platform_error(SendNamelistOverHttpEvent::ErrorExecution, ::sce_rust_runtime::ErrorReason::SendTypeUnsupported, "<send type='http://www.w3.org/TR/scxml/#BasicHTTPEventProcessor'> names a processor this platform does not support");
         err_meta.metadata.send_id = ::sce_rust_runtime::sce_string_from_str(send_id);
         engine.raise(err_meta);
         break 'action_block;  // W3C SCXML 4.9: the error ends the block
@@ -1308,7 +1335,7 @@ impl StatePolicy for SendNamelistOverHttpPolicy {
     {
         // W3C SCXML C.2: Validate dynamic target is HTTP URL
         if !_rt.starts_with("http://") && !_rt.starts_with("https://") {
-            let mut err_meta = sce_rust_runtime::EventWithMetadata::platform_error(SendNamelistOverHttpEvent::ErrorCommunication, "<send> over BasicHTTPEventProcessor resolved a target that is not an http(s) URL");
+            let mut err_meta = sce_rust_runtime::EventWithMetadata::platform_error(SendNamelistOverHttpEvent::ErrorCommunication, ::sce_rust_runtime::ErrorReason::HttpTargetInvalid, "<send> over BasicHTTPEventProcessor resolved a target that is not an http(s) URL");
             err_meta.metadata.send_id = ::sce_rust_runtime::sce_string_from_str(send_id);
             engine.raise(err_meta);
             break 'action_block;  // W3C SCXML 4.9: the error ends the block
@@ -1525,6 +1552,7 @@ impl StatePolicy for SendNamelistOverHttpPolicy {
                             );
                             engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(
                                 SendNamelistOverHttpEvent::ErrorExecution,
+                                ::sce_rust_runtime::ErrorReason::AssignmentFailed,
                                 "<assign> to 'sawNamelistError' failed",
                             ));
                             // W3C SCXML 4.9: the error ends the block, from however deep a <foreach> it came.
@@ -1555,6 +1583,7 @@ impl StatePolicy for SendNamelistOverHttpPolicy {
                             ::sce_rust_runtime::sce_log_error!("Assign failed for 'echoed': {}", e);
                             engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(
                                 SendNamelistOverHttpEvent::ErrorExecution,
+                                ::sce_rust_runtime::ErrorReason::AssignmentFailed,
                                 "<assign> to 'echoed' failed",
                             ));
                             // W3C SCXML 4.9: the error ends the block, from however deep a <foreach> it came.

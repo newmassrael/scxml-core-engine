@@ -112,23 +112,23 @@ struct CodecLengthRefDottedBasic {
     [[nodiscard]] ::SCE::Forge::Bytes<15> payload() const noexcept { return payload_; }
 
     /// Decode the next frame from `cursor`. On success the cursor
-    /// advances past the consumed bytes; on `NeedMoreBytes` the cursor
-    /// is left untouched so the caller can resume after appending more
-    /// bytes (RFC §synth-5-B L494-519). Returns `std::nullopt` on the
-    /// `NeedMoreBytes` boundary; later phases attach a typed error via
-    /// `cursor.last_error()`.
-    static std::optional<CodecLengthRefDottedBasic> decode(::SCE::Forge::SceCursor& cursor) {
+    /// advances past the consumed bytes and the value is answered; a
+    /// refused frame answers the `CodecError` that refused it
+    /// (docs/adr/0099, amendment of 2026-11-16): `NeedMoreBytes` when
+    /// the cursor's tail is shorter than the frame (RFC §synth-5-B
+    /// L494-519), which the caller resumes after appending bytes, and
+    /// another kind for a frame no more bytes make whole.
+    static ::SCE::Forge::Decoded<CodecLengthRefDottedBasic> decode(::SCE::Forge::SceCursor& cursor) {
         std::size_t _frame_len = cursor.remaining();
-        if (_frame_len < 1) return std::nullopt;
+        if (_frame_len < 1) return ::SCE::Forge::CodecError::NeedMoreBytes;
         const std::uint8_t* raw = cursor.peek_slice(_frame_len);
-        if (raw == nullptr) return std::nullopt;
+        if (raw == nullptr) return ::SCE::Forge::CodecError::NeedMoreBytes;
         uint8_t carrier = raw[0];
-        if (_frame_len < static_cast<std::size_t>(1 + ((carrier >> 4) & 0xF))) return std::nullopt;
+        if (_frame_len < static_cast<std::size_t>(1 + ((carrier >> 4) & 0xF))) return ::SCE::Forge::CodecError::NeedMoreBytes;
         std::vector<uint8_t> payload = std::vector<uint8_t>(raw + 1, raw + 1 + ((carrier >> 4) & 0xF));
         const auto _b_payload = ::SCE::Forge::Bytes<15>::make(payload);
         if (!_b_payload) {
-            cursor.refuse(::SCE::Forge::CodecError::LengthOutOfRange);
-            return std::nullopt;
+            return ::SCE::Forge::CodecError::LengthOutOfRange;
         }
         CodecLengthRefDottedBasic _decoded{
             /*carrier=*/carrier,
@@ -141,7 +141,7 @@ struct CodecLengthRefDottedBasic {
         if (static_cast<std::size_t>(1 + ((carrier >> 4) & 0xF)) > _consumed) {
             _consumed = static_cast<std::size_t>(1 + ((carrier >> 4) & 0xF));
         }
-        if (!cursor.advance(_consumed)) return std::nullopt;
+        if (!cursor.advance(_consumed)) return ::SCE::Forge::CodecError::NeedMoreBytes;
         return _decoded;
     }
 

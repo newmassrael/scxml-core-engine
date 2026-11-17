@@ -1,5 +1,5 @@
 // SCE-GENERATED — DO NOT EDIT
-// source-hash: 65fb42bdd588f958b0fbb29ac261cf039d02606d7afaae0720c045624bd679ba
+// source-hash: 2073d8a55462e1ce61d8a77293fdd2c141aceda8ad173303c5b84813ca22eeee
 
 // SPDX-License-Identifier: AGPL-3.0-only WITH AdditionRef-SCE-Linking-Exception OR LicenseRef-SCE-Commercial
 // SPDX-FileCopyrightText: Copyright (c) 2025-2026 [Author of input SCXML file] (content derived from the input document)
@@ -823,7 +823,7 @@ impl StatePolicy for StaticMeshRelaySceSynthInvokeInnerPolicy {
                             // support — the act it asked for was performed by nobody. Same
                             // event, so a wiring mistake cannot read as success.
                             if __sce_served.is_none() && !engine.has_event_processor("sce:mesh") {
-                                let mut err_meta = sce_rust_runtime::EventWithMetadata::platform_error(StaticMeshRelaySceSynthInvokeInnerEvent::ErrorExecution, "<send type='sce:mesh'> names a processor the host declared but never registered");
+                                let mut err_meta = sce_rust_runtime::EventWithMetadata::platform_error(StaticMeshRelaySceSynthInvokeInnerEvent::ErrorExecution, ::sce_rust_runtime::ErrorReason::ProcessorUnregistered, "<send type='sce:mesh'> names a processor the host declared but never registered");
                                 engine.raise(err_meta);
                             }
                         }

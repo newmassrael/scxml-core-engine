@@ -583,6 +583,7 @@ impl ASendContentExprIsThePayloadPolicy {
                 );
                 engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(
                     ASendContentExprIsThePayloadEvent::ErrorExecution,
+                    ::sce_rust_runtime::ErrorReason::ParamUnfit,
                     "<data id='obj'> could not hold the value its invoke handed it",
                 ));
             }
@@ -594,6 +595,7 @@ impl ASendContentExprIsThePayloadPolicy {
                 ::sce_rust_runtime::sce_log_error!("global: {}", e);
                 engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(
                     ASendContentExprIsThePayloadEvent::ErrorExecution,
+                    ::sce_rust_runtime::ErrorReason::ExpressionFailed,
                     "<data id='obj'> expr failed to evaluate",
                 ));
             }
@@ -608,6 +610,7 @@ impl ASendContentExprIsThePayloadPolicy {
                 );
                 engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(
                     ASendContentExprIsThePayloadEvent::ErrorExecution,
+                    ::sce_rust_runtime::ErrorReason::ParamUnfit,
                     "<data id='numberOk'> could not hold the value its invoke handed it",
                 ));
             }
@@ -619,6 +622,7 @@ impl ASendContentExprIsThePayloadPolicy {
                 ::sce_rust_runtime::sce_log_error!("global: {}", e);
                 engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(
                     ASendContentExprIsThePayloadEvent::ErrorExecution,
+                    ::sce_rust_runtime::ErrorReason::ExpressionFailed,
                     "<data id='numberOk'> expr failed to evaluate",
                 ));
             }
@@ -633,6 +637,7 @@ impl ASendContentExprIsThePayloadPolicy {
                 );
                 engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(
                     ASendContentExprIsThePayloadEvent::ErrorExecution,
+                    ::sce_rust_runtime::ErrorReason::ParamUnfit,
                     "<data id='objectOk'> could not hold the value its invoke handed it",
                 ));
             }
@@ -644,6 +649,7 @@ impl ASendContentExprIsThePayloadPolicy {
                 ::sce_rust_runtime::sce_log_error!("global: {}", e);
                 engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(
                     ASendContentExprIsThePayloadEvent::ErrorExecution,
+                    ::sce_rust_runtime::ErrorReason::ExpressionFailed,
                     "<data id='objectOk'> expr failed to evaluate",
                 ));
             }
@@ -658,6 +664,7 @@ impl ASendContentExprIsThePayloadPolicy {
                 );
                 engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(
                     ASendContentExprIsThePayloadEvent::ErrorExecution,
+                    ::sce_rust_runtime::ErrorReason::ParamUnfit,
                     "<data id='textOk'> could not hold the value its invoke handed it",
                 ));
             }
@@ -669,6 +676,7 @@ impl ASendContentExprIsThePayloadPolicy {
                 ::sce_rust_runtime::sce_log_error!("global: {}", e);
                 engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(
                     ASendContentExprIsThePayloadEvent::ErrorExecution,
+                    ::sce_rust_runtime::ErrorReason::ExpressionFailed,
                     "<data id='textOk'> expr failed to evaluate",
                 ));
             }
@@ -683,6 +691,7 @@ impl ASendContentExprIsThePayloadPolicy {
                 );
                 engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(
                     ASendContentExprIsThePayloadEvent::ErrorExecution,
+                    ::sce_rust_runtime::ErrorReason::ParamUnfit,
                     "<data id='errors'> could not hold the value its invoke handed it",
                 ));
             }
@@ -694,6 +703,7 @@ impl ASendContentExprIsThePayloadPolicy {
                 ::sce_rust_runtime::sce_log_error!("global: {}", e);
                 engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(
                     ASendContentExprIsThePayloadEvent::ErrorExecution,
+                    ::sce_rust_runtime::ErrorReason::ExpressionFailed,
                     "<data id='errors'> expr failed to evaluate",
                 ));
             }
@@ -708,6 +718,7 @@ impl ASendContentExprIsThePayloadPolicy {
                 );
                 engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(
                     ASendContentExprIsThePayloadEvent::ErrorExecution,
+                    ::sce_rust_runtime::ErrorReason::ParamUnfit,
                     "<data id='badArrived'> could not hold the value its invoke handed it",
                 ));
             }
@@ -722,6 +733,7 @@ impl ASendContentExprIsThePayloadPolicy {
                 ::sce_rust_runtime::sce_log_error!("global: {}", e);
                 engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(
                     ASendContentExprIsThePayloadEvent::ErrorExecution,
+                    ::sce_rust_runtime::ErrorReason::ExpressionFailed,
                     "<data id='badArrived'> expr failed to evaluate",
                 ));
             }
@@ -736,6 +748,7 @@ impl ASendContentExprIsThePayloadPolicy {
                 );
                 engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(
                     ASendContentExprIsThePayloadEvent::ErrorExecution,
+                    ::sce_rust_runtime::ErrorReason::ParamUnfit,
                     "<data id='badEmpty'> could not hold the value its invoke handed it",
                 ));
             }
@@ -747,6 +760,7 @@ impl ASendContentExprIsThePayloadPolicy {
                 ::sce_rust_runtime::sce_log_error!("global: {}", e);
                 engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(
                     ASendContentExprIsThePayloadEvent::ErrorExecution,
+                    ::sce_rust_runtime::ErrorReason::ExpressionFailed,
                     "<data id='badEmpty'> expr failed to evaluate",
                 ));
             }
@@ -761,6 +775,7 @@ impl ASendContentExprIsThePayloadPolicy {
                 );
                 engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(
                     ASendContentExprIsThePayloadEvent::ErrorExecution,
+                    ::sce_rust_runtime::ErrorReason::ParamUnfit,
                     "<data id='afterBad'> could not hold the value its invoke handed it",
                 ));
             }
@@ -772,6 +787,7 @@ impl ASendContentExprIsThePayloadPolicy {
                 ::sce_rust_runtime::sce_log_error!("global: {}", e);
                 engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(
                     ASendContentExprIsThePayloadEvent::ErrorExecution,
+                    ::sce_rust_runtime::ErrorReason::ExpressionFailed,
                     "<data id='afterBad'> expr failed to evaluate",
                 ));
             }
@@ -820,6 +836,7 @@ impl ASendContentExprIsThePayloadPolicy {
                 ::sce_rust_runtime::sce_log_error!("Guard evaluation failed for '{}': {}", cond, e);
                 engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(
                     ASendContentExprIsThePayloadEvent::ErrorExecution,
+                    ::sce_rust_runtime::ErrorReason::ExpressionFailed,
                     reason,
                 ));
                 None
@@ -1166,6 +1183,7 @@ impl StatePolicy for ASendContentExprIsThePayloadPolicy {
                                     engine.raise(
                                         sce_rust_runtime::EventWithMetadata::platform_error(
                                             ASendContentExprIsThePayloadEvent::ErrorExecution,
+                                            ::sce_rust_runtime::ErrorReason::ExpressionFailed,
                                             "<send> contentexpr failed to evaluate",
                                         ),
                                     );
@@ -1232,6 +1250,7 @@ impl StatePolicy for ASendContentExprIsThePayloadPolicy {
                                     engine.raise(
                                         sce_rust_runtime::EventWithMetadata::platform_error(
                                             ASendContentExprIsThePayloadEvent::ErrorExecution,
+                                            ::sce_rust_runtime::ErrorReason::ExpressionFailed,
                                             "<send> contentexpr failed to evaluate",
                                         ),
                                     );
@@ -1298,6 +1317,7 @@ impl StatePolicy for ASendContentExprIsThePayloadPolicy {
                                     engine.raise(
                                         sce_rust_runtime::EventWithMetadata::platform_error(
                                             ASendContentExprIsThePayloadEvent::ErrorExecution,
+                                            ::sce_rust_runtime::ErrorReason::ExpressionFailed,
                                             "<send> contentexpr failed to evaluate",
                                         ),
                                     );
@@ -1367,6 +1387,7 @@ impl StatePolicy for ASendContentExprIsThePayloadPolicy {
                                     engine.raise(
                                         sce_rust_runtime::EventWithMetadata::platform_error(
                                             ASendContentExprIsThePayloadEvent::ErrorExecution,
+                                            ::sce_rust_runtime::ErrorReason::ExpressionFailed,
                                             "<send> contentexpr failed to evaluate",
                                         ),
                                     );
@@ -1423,6 +1444,7 @@ impl StatePolicy for ASendContentExprIsThePayloadPolicy {
                             );
                             engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(
                                 ASendContentExprIsThePayloadEvent::ErrorExecution,
+                                ::sce_rust_runtime::ErrorReason::AssignmentFailed,
                                 "<assign> to 'afterBad' failed",
                             ));
                             // W3C SCXML 4.9: the error ends the block, from however deep a <foreach> it came.
@@ -1625,6 +1647,7 @@ impl StatePolicy for ASendContentExprIsThePayloadPolicy {
                             ::sce_rust_runtime::sce_log_error!("Assign failed for 'errors': {}", e);
                             engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(
                                 ASendContentExprIsThePayloadEvent::ErrorExecution,
+                                ::sce_rust_runtime::ErrorReason::AssignmentFailed,
                                 "<assign> to 'errors' failed",
                             ));
                             // W3C SCXML 4.9: the error ends the block, from however deep a <foreach> it came.
@@ -1658,6 +1681,7 @@ impl StatePolicy for ASendContentExprIsThePayloadPolicy {
                             );
                             engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(
                                 ASendContentExprIsThePayloadEvent::ErrorExecution,
+                                ::sce_rust_runtime::ErrorReason::AssignmentFailed,
                                 "<assign> to 'numberOk' failed",
                             ));
                             // W3C SCXML 4.9: the error ends the block, from however deep a <foreach> it came.
@@ -1691,6 +1715,7 @@ impl StatePolicy for ASendContentExprIsThePayloadPolicy {
                             );
                             engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(
                                 ASendContentExprIsThePayloadEvent::ErrorExecution,
+                                ::sce_rust_runtime::ErrorReason::AssignmentFailed,
                                 "<assign> to 'objectOk' failed",
                             ));
                             // W3C SCXML 4.9: the error ends the block, from however deep a <foreach> it came.
@@ -1721,6 +1746,7 @@ impl StatePolicy for ASendContentExprIsThePayloadPolicy {
                             ::sce_rust_runtime::sce_log_error!("Assign failed for 'textOk': {}", e);
                             engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(
                                 ASendContentExprIsThePayloadEvent::ErrorExecution,
+                                ::sce_rust_runtime::ErrorReason::AssignmentFailed,
                                 "<assign> to 'textOk' failed",
                             ));
                             // W3C SCXML 4.9: the error ends the block, from however deep a <foreach> it came.
@@ -1754,6 +1780,7 @@ impl StatePolicy for ASendContentExprIsThePayloadPolicy {
                             );
                             engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(
                                 ASendContentExprIsThePayloadEvent::ErrorExecution,
+                                ::sce_rust_runtime::ErrorReason::AssignmentFailed,
                                 "<assign> to 'badArrived' failed",
                             ));
                             // W3C SCXML 4.9: the error ends the block, from however deep a <foreach> it came.
@@ -1789,6 +1816,7 @@ impl StatePolicy for ASendContentExprIsThePayloadPolicy {
                                     engine.raise(
                                         sce_rust_runtime::EventWithMetadata::platform_error(
                                             ASendContentExprIsThePayloadEvent::ErrorExecution,
+                                            ::sce_rust_runtime::ErrorReason::AssignmentFailed,
                                             "<assign> to 'badEmpty' failed",
                                         ),
                                     );

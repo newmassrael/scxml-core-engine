@@ -7,6 +7,7 @@
 package com.sce.generated.codec_tlv_chain_basic
 
 import com.sce.forge.runtime.CodecError
+import com.sce.forge.runtime.Decoded
 import com.sce.forge.runtime.MutableListSink
 import com.sce.forge.runtime.SceCursor
 import com.sce.forge.runtime.SceSink
@@ -62,10 +63,13 @@ data class CodecTlvChainBasic(
 
     companion object {
         /// Decode the next frame from `cursor`. On success the cursor
-        /// advances past the consumed bytes; returns `null` when the
-        /// cursor's tail is shorter than the declared minimum frame
-        /// (RFC §synth-5-B L494-519).
-        fun decode(cursor: SceCursor): CodecTlvChainBasic? {
+        /// advances past the consumed bytes and the value is `Decoded.Ok`;
+        /// a refused frame is `Decoded.Refused` with the kind that refused
+        /// it (docs/adr/0099, amendment of 2026-11-16): `NeedMoreBytes` when
+        /// the cursor's tail is shorter than the frame (RFC §synth-5-B
+        /// L494-519), which the caller resumes after appending bytes, and
+        /// another kind for a frame no more bytes make whole.
+        fun decode(cursor: SceCursor): Decoded<CodecTlvChainBasic> {
             // Streaming cursor decode (SSOT selection: `needs_streaming`).
             // The positional `raw[byte_off]` path is valid only when every
             // field's absolute offset is fixed at codegen time; this branch
@@ -79,21 +83,23 @@ data class CodecTlvChainBasic(
             // dedicated helpers; every other field flows through
             // `present_if_decode_stmt`.
             val header_flags = run {
-                val raw = cursor.peekSlice(1) ?: return null
+                val raw = cursor.peekSlice(1) ?: return Decoded.Refused(CodecError.NeedMoreBytes)
                 val _v = raw[0].toUByte()
-                if (!cursor.advance(1)) return null
+                if (!cursor.advance(1)) return Decoded.Refused(CodecError.NeedMoreBytes)
                 _v
             }
             val extensions: MutableList<CodecTlvEntry> = mutableListOf<CodecTlvEntry>().also {
                 for (_i in 0 until 8) {
                     if (cursor.remaining() == 0) break
-                    it.add(CodecTlvEntry.decode(cursor) ?: return null)
+                    it.add(CodecTlvEntry.decode(cursor).valueOr { _refused -> return _refused })
                 }
-                if (cursor.remaining() > 0) { cursor.refuse(CodecError.TooManyElements); return null }
+                if (cursor.remaining() > 0) { return Decoded.Refused(CodecError.TooManyElements) }
             }
-            return CodecTlvChainBasic(
-                header_flags = header_flags,
-                extensions = extensions
+            return Decoded.Ok(
+                CodecTlvChainBasic(
+                    header_flags = header_flags,
+                    extensions = extensions
+                )
             )
         }
     }

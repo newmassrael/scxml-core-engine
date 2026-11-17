@@ -220,6 +220,16 @@ struct Wire {
     }
 };
 
+/// The `payload_len` the frame of a source of `CodecZenohMsgPut` carries, which its encode
+/// derives from what it measures and no value holds (docs/adr/0081 §3).
+template <class S>
+[[nodiscard]] uint64_t wire_payload_len(const S& src) noexcept(is_nothrow_source<S>::value) {
+    static_assert(is_source<S>::value, "S presents every element of CodecZenohMsgPut");
+    const auto& _r_payload = source::payload(src);
+    const ::SCE::Forge::Bytes<4294967295> _e_payload = _r_payload;
+    return static_cast<uint64_t>(_e_payload.size());
+}
+
 struct CodecZenohMsgPut {
     CodecZenohMsgPut() = default;
     /// The value of each element it presents, in declaration order (ADR 0059 §5).
@@ -237,12 +247,13 @@ struct CodecZenohMsgPut {
     [[nodiscard]] ::SCE::Forge::Bytes<4294967295> payload() const noexcept { return payload_; }
 
     /// Decode the next frame from `cursor`. On success the cursor
-    /// advances past the consumed bytes; on `NeedMoreBytes` the cursor
-    /// is left untouched so the caller can resume after appending more
-    /// bytes (RFC §synth-5-B L494-519). Returns `std::nullopt` on the
-    /// `NeedMoreBytes` boundary; later phases attach a typed error via
-    /// `cursor.last_error()`.
-    static std::optional<CodecZenohMsgPut> decode(::SCE::Forge::SceCursor& cursor) {
+    /// advances past the consumed bytes and the value is answered; a
+    /// refused frame answers the `CodecError` that refused it
+    /// (docs/adr/0099, amendment of 2026-11-16): `NeedMoreBytes` when
+    /// the cursor's tail is shorter than the frame (RFC §synth-5-B
+    /// L494-519), which the caller resumes after appending bytes, and
+    /// another kind for a frame no more bytes make whole.
+    static ::SCE::Forge::Decoded<CodecZenohMsgPut> decode(::SCE::Forge::SceCursor& cursor) {
         // Streaming cursor decode (SSOT selection: `needs_streaming`).
         // The positional `raw[byte_off]` path is valid only when every
         // field's absolute offset is fixed at codegen time; this branch
@@ -257,20 +268,20 @@ struct CodecZenohMsgPut {
         uint8_t header;
         {
             const std::uint8_t* raw = cursor.peek_slice(1);
-            if (raw == nullptr) return std::nullopt;
+            if (raw == nullptr) return ::SCE::Forge::CodecError::NeedMoreBytes;
             header = static_cast<uint8_t>(raw[0]);
-            if (!cursor.advance(1)) return std::nullopt;
+            if (!cursor.advance(1)) return ::SCE::Forge::CodecError::NeedMoreBytes;
         }
         std::optional<::SCE::Generated::CodecZenohTimestamp::CodecZenohTimestamp> timestamp;
         if ((header & 0x20) != 0) {
             auto _emb = ::SCE::Generated::CodecZenohTimestamp::CodecZenohTimestamp::decode(cursor);
-            if (!_emb.has_value()) return std::nullopt;
+            if (!_emb.has_value()) return _emb.error();
             timestamp = std::move(*_emb);
         }
         std::optional<::SCE::Generated::CodecZenohEncoding::CodecZenohEncoding> encoding;
         if ((header & 0x40) != 0) {
             auto _emb = ::SCE::Generated::CodecZenohEncoding::CodecZenohEncoding::decode(cursor);
-            if (!_emb.has_value()) return std::nullopt;
+            if (!_emb.has_value()) return _emb.error();
             encoding = std::move(*_emb);
         }
         std::optional<std::vector<::SCE::Generated::CodecZenohExtEntry::CodecZenohExtEntry>> extensions;
@@ -279,42 +290,40 @@ struct CodecZenohMsgPut {
             bool _more = false;
             for (;;) {
                 auto _elem = ::SCE::Generated::CodecZenohExtEntry::CodecZenohExtEntry::decode(cursor);
-                if (!_elem.has_value()) return std::nullopt;
+                if (!_elem.has_value()) return _elem.error();
                 _more = _elem->z();
                 _list.push_back(*_elem);
                 if (!_more) break;
             }
-            if (_more && cursor.remaining() == 0) { return std::nullopt; }
+            if (_more && cursor.remaining() == 0) { return ::SCE::Forge::CodecError::NeedMoreBytes; }
             extensions = std::move(_list);
         }
-        auto payload_len_opt = cursor.read_vle_u64();
-        if (!payload_len_opt.has_value()) return std::nullopt;
-        auto payload_len = static_cast<std::uint64_t>(*payload_len_opt);
+        auto payload_len_read = cursor.read_vle_u64();
+        if (!payload_len_read.has_value()) return payload_len_read.error();
+        auto payload_len = static_cast<std::uint64_t>(*payload_len_read);
         std::vector<uint8_t> payload;
         {
             const auto _len = payload_len;
             if (_len > 4294967295ULL) {
-                cursor.refuse(::SCE::Forge::CodecError::LengthOutOfRange); return std::nullopt;
+                return ::SCE::Forge::CodecError::LengthOutOfRange;
             }
-            if (static_cast<std::uint64_t>(_len) > static_cast<std::uint64_t>(SIZE_MAX) - 0u) return std::nullopt;
+            if (static_cast<std::uint64_t>(_len) > static_cast<std::uint64_t>(SIZE_MAX) - 0u) return ::SCE::Forge::CodecError::NeedMoreBytes;
             std::size_t _n = static_cast<std::size_t>(_len);
             const std::uint8_t* raw = cursor.peek_slice(_n);
-            if (raw == nullptr) return std::nullopt;
+            if (raw == nullptr) return ::SCE::Forge::CodecError::NeedMoreBytes;
             payload.assign(raw, raw + _n);
-            if (!cursor.advance(_n)) return std::nullopt;
+            if (!cursor.advance(_n)) return ::SCE::Forge::CodecError::NeedMoreBytes;
         }
         std::optional<::SCE::Forge::List<::SCE::Generated::CodecZenohExtEntry::CodecZenohExtEntry, ::SCE::Forge::kUnbounded, 1>> _b_extensions;
         if (extensions) {
             _b_extensions = ::SCE::Forge::List<::SCE::Generated::CodecZenohExtEntry::CodecZenohExtEntry, ::SCE::Forge::kUnbounded, 1>::make(*extensions);
             if (!_b_extensions) {
-                cursor.refuse(::SCE::Forge::CodecError::TooManyElements);
-                return std::nullopt;
+                return ::SCE::Forge::CodecError::TooManyElements;
             }
         }
         const auto _b_payload = ::SCE::Forge::Bytes<4294967295>::make(payload);
         if (!_b_payload) {
-            cursor.refuse(::SCE::Forge::CodecError::LengthOutOfRange);
-            return std::nullopt;
+            return ::SCE::Forge::CodecError::LengthOutOfRange;
         }
         (void)payload_len;
         CodecZenohMsgPut _decoded{

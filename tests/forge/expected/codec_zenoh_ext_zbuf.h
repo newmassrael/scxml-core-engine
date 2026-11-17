@@ -78,6 +78,16 @@ struct Wire {
     }
 };
 
+/// The `value_len` the frame of a source of `CodecZenohExtZbuf` carries, which its encode
+/// derives from what it measures and no value holds (docs/adr/0081 §3).
+template <class S>
+[[nodiscard]] uint64_t wire_value_len(const S& src) noexcept(is_nothrow_source<S>::value) {
+    static_assert(is_source<S>::value, "S presents every element of CodecZenohExtZbuf");
+    const auto& _r_value = source::value(src);
+    const ::SCE::Forge::Bytes<4294967295> _e_value = _r_value;
+    return static_cast<uint64_t>(_e_value.size());
+}
+
 struct CodecZenohExtZbuf {
     CodecZenohExtZbuf() = default;
     /// The value of each element it presents, in declaration order (ADR 0059 §5).
@@ -87,12 +97,13 @@ struct CodecZenohExtZbuf {
     [[nodiscard]] ::SCE::Forge::Bytes<4294967295> value() const noexcept { return value_; }
 
     /// Decode the next frame from `cursor`. On success the cursor
-    /// advances past the consumed bytes; on `NeedMoreBytes` the cursor
-    /// is left untouched so the caller can resume after appending more
-    /// bytes (RFC §synth-5-B L494-519). Returns `std::nullopt` on the
-    /// `NeedMoreBytes` boundary; later phases attach a typed error via
-    /// `cursor.last_error()`.
-    static std::optional<CodecZenohExtZbuf> decode(::SCE::Forge::SceCursor& cursor) {
+    /// advances past the consumed bytes and the value is answered; a
+    /// refused frame answers the `CodecError` that refused it
+    /// (docs/adr/0099, amendment of 2026-11-16): `NeedMoreBytes` when
+    /// the cursor's tail is shorter than the frame (RFC §synth-5-B
+    /// L494-519), which the caller resumes after appending bytes, and
+    /// another kind for a frame no more bytes make whole.
+    static ::SCE::Forge::Decoded<CodecZenohExtZbuf> decode(::SCE::Forge::SceCursor& cursor) {
         // Streaming cursor decode (SSOT selection: `needs_streaming`).
         // The positional `raw[byte_off]` path is valid only when every
         // field's absolute offset is fixed at codegen time; this branch
@@ -104,26 +115,25 @@ struct CodecZenohExtZbuf {
         // advances past exactly what it consumed. Per-field `is_repeat` /
         // `is_tlv_chain` / `is_embed` route to their dedicated helpers;
         // every other field flows through `present_if_decode_stmt`.
-        auto value_len_opt = cursor.read_vle_u64();
-        if (!value_len_opt.has_value()) return std::nullopt;
-        auto value_len = static_cast<std::uint64_t>(*value_len_opt);
+        auto value_len_read = cursor.read_vle_u64();
+        if (!value_len_read.has_value()) return value_len_read.error();
+        auto value_len = static_cast<std::uint64_t>(*value_len_read);
         std::vector<uint8_t> value;
         {
             const auto _len = value_len;
             if (_len > 4294967295ULL) {
-                cursor.refuse(::SCE::Forge::CodecError::LengthOutOfRange); return std::nullopt;
+                return ::SCE::Forge::CodecError::LengthOutOfRange;
             }
-            if (static_cast<std::uint64_t>(_len) > static_cast<std::uint64_t>(SIZE_MAX) - 0u) return std::nullopt;
+            if (static_cast<std::uint64_t>(_len) > static_cast<std::uint64_t>(SIZE_MAX) - 0u) return ::SCE::Forge::CodecError::NeedMoreBytes;
             std::size_t _n = static_cast<std::size_t>(_len);
             const std::uint8_t* raw = cursor.peek_slice(_n);
-            if (raw == nullptr) return std::nullopt;
+            if (raw == nullptr) return ::SCE::Forge::CodecError::NeedMoreBytes;
             value.assign(raw, raw + _n);
-            if (!cursor.advance(_n)) return std::nullopt;
+            if (!cursor.advance(_n)) return ::SCE::Forge::CodecError::NeedMoreBytes;
         }
         const auto _b_value = ::SCE::Forge::Bytes<4294967295>::make(value);
         if (!_b_value) {
-            cursor.refuse(::SCE::Forge::CodecError::LengthOutOfRange);
-            return std::nullopt;
+            return ::SCE::Forge::CodecError::LengthOutOfRange;
         }
         (void)value_len;
         CodecZenohExtZbuf _decoded{

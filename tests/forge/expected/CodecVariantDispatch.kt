@@ -7,6 +7,7 @@
 package com.sce.generated.codec_variant_dispatch
 
 import com.sce.forge.runtime.CodecError
+import com.sce.forge.runtime.Decoded
 import com.sce.forge.runtime.MutableListSink
 import com.sce.forge.runtime.SceCursor
 import com.sce.forge.runtime.SceSink
@@ -73,35 +74,40 @@ data class CodecVariantDispatch(
 
     companion object {
         /// Decode the next frame from `cursor`. On success the cursor
-        /// advances past the consumed bytes; returns `null` when the
-        /// cursor's tail is shorter than the declared minimum frame
-        /// (RFC §synth-5-B L494-519).
-        fun decode(cursor: SceCursor): CodecVariantDispatch? {
+        /// advances past the consumed bytes and the value is `Decoded.Ok`;
+        /// a refused frame is `Decoded.Refused` with the kind that refused
+        /// it (docs/adr/0099, amendment of 2026-11-16): `NeedMoreBytes` when
+        /// the cursor's tail is shorter than the frame (RFC §synth-5-B
+        /// L494-519), which the caller resumes after appending bytes, and
+        /// another kind for a frame no more bytes make whole.
+        fun decode(cursor: SceCursor): Decoded<CodecVariantDispatch> {
             // Decode fixed prefix (RFC §synth-5-B variant: fields before tag suffix).
-            val raw = cursor.peekSlice(1) ?: return null
+            val raw = cursor.peekSlice(1) ?: return Decoded.Refused(CodecError.NeedMoreBytes)
             val msg_id = raw[0].toUByte()
-            if (!cursor.advance(1)) return null
+            if (!cursor.advance(1)) return Decoded.Refused(CodecError.NeedMoreBytes)
             // Dispatch on the tag field; each arm decodes its body codec
             // from the cursor. The default arm (when declared) carries
             // the runtime tag value so encode can round-trip it back
             // onto the wire.
             val body: CodecVariantDispatchVariant = when (msg_id.toInt()) {
                 1 -> {
-                    val _arm = com.sce.generated.codec_variant_session_open.CodecVariantSessionOpen.decode(cursor) ?: return null
+                    val _arm = com.sce.generated.codec_variant_session_open.CodecVariantSessionOpen.decode(cursor).valueOr { _refused -> return _refused }
                     CodecVariantDispatchVariant.CodecVariantSessionOpen(_arm)
                 }
                 2 -> {
-                    val _arm = com.sce.generated.codec_variant_session_close.CodecVariantSessionClose.decode(cursor) ?: return null
+                    val _arm = com.sce.generated.codec_variant_session_close.CodecVariantSessionClose.decode(cursor).valueOr { _refused -> return _refused }
                     CodecVariantDispatchVariant.CodecVariantSessionClose(_arm)
                 }
                 else -> {
-                    val _arm = com.sce.generated.codec_variant_session_close.CodecVariantSessionClose.decode(cursor) ?: return null
+                    val _arm = com.sce.generated.codec_variant_session_close.CodecVariantSessionClose.decode(cursor).valueOr { _refused -> return _refused }
                     CodecVariantDispatchVariant.Default(tag = msg_id, body = _arm)
                 }
             }
-            return CodecVariantDispatch(
-                msg_id = msg_id,
-                body = body
+            return Decoded.Ok(
+                CodecVariantDispatch(
+                    msg_id = msg_id,
+                    body = body
+                )
             )
         }
     }

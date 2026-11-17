@@ -1,5 +1,5 @@
 // SCE-GENERATED — DO NOT EDIT
-// source-hash: 7e9246f9bdadc8c18a240b365b4cc726cf6b8bab9981f448fd674ebdd45b3460
+// source-hash: e3e91f36cc7b8591c060b277b157f8471b6940f92608c548338f70603c760055
 
 // SPDX-License-Identifier: AGPL-3.0-only WITH AdditionRef-SCE-Linking-Exception OR LicenseRef-SCE-Commercial
 // SPDX-FileCopyrightText: Copyright (c) 2025-2026 [Author of input SCXML file] (content derived from the input document)
@@ -1100,6 +1100,7 @@ impl StatechartHostInvokerPolicy {
                 );
                 engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(
                     StatechartHostInvokerEvent::ErrorExecution,
+                    ::sce_rust_runtime::ErrorReason::ParamUnfit,
                     "<data id='started'> could not hold the value its invoke handed it",
                 ));
             }
@@ -1111,6 +1112,7 @@ impl StatechartHostInvokerPolicy {
                 ::sce_rust_runtime::sce_log_error!("global: {}", e);
                 engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(
                     StatechartHostInvokerEvent::ErrorExecution,
+                    ::sce_rust_runtime::ErrorReason::ExpressionFailed,
                     "<data id='started'> expr failed to evaluate",
                 ));
             }
@@ -1125,6 +1127,7 @@ impl StatechartHostInvokerPolicy {
                 );
                 engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(
                     StatechartHostInvokerEvent::ErrorExecution,
+                    ::sce_rust_runtime::ErrorReason::ParamUnfit,
                     "<data id='started2'> could not hold the value its invoke handed it",
                 ));
             }
@@ -1136,6 +1139,7 @@ impl StatechartHostInvokerPolicy {
                 ::sce_rust_runtime::sce_log_error!("global: {}", e);
                 engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(
                     StatechartHostInvokerEvent::ErrorExecution,
+                    ::sce_rust_runtime::ErrorReason::ExpressionFailed,
                     "<data id='started2'> expr failed to evaluate",
                 ));
             }
@@ -1150,6 +1154,7 @@ impl StatechartHostInvokerPolicy {
                 );
                 engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(
                     StatechartHostInvokerEvent::ErrorExecution,
+                    ::sce_rust_runtime::ErrorReason::ParamUnfit,
                     "<data id='refused'> could not hold the value its invoke handed it",
                 ));
             }
@@ -1161,6 +1166,7 @@ impl StatechartHostInvokerPolicy {
                 ::sce_rust_runtime::sce_log_error!("global: {}", e);
                 engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(
                     StatechartHostInvokerEvent::ErrorExecution,
+                    ::sce_rust_runtime::ErrorReason::ExpressionFailed,
                     "<data id='refused'> expr failed to evaluate",
                 ));
             }
@@ -1175,6 +1181,7 @@ impl StatechartHostInvokerPolicy {
                 );
                 engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(
                     StatechartHostInvokerEvent::ErrorExecution,
+                    ::sce_rust_runtime::ErrorReason::ParamUnfit,
                     "<data id='ended'> could not hold the value its invoke handed it",
                 ));
             }
@@ -1186,6 +1193,7 @@ impl StatechartHostInvokerPolicy {
                 ::sce_rust_runtime::sce_log_error!("global: {}", e);
                 engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(
                     StatechartHostInvokerEvent::ErrorExecution,
+                    ::sce_rust_runtime::ErrorReason::ExpressionFailed,
                     "<data id='ended'> expr failed to evaluate",
                 ));
             }
@@ -1200,6 +1208,7 @@ impl StatechartHostInvokerPolicy {
                 );
                 engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(
                     StatechartHostInvokerEvent::ErrorExecution,
+                    ::sce_rust_runtime::ErrorReason::ParamUnfit,
                     "<data id='entered'> could not hold the value its invoke handed it",
                 ));
             }
@@ -1211,6 +1220,7 @@ impl StatechartHostInvokerPolicy {
                 ::sce_rust_runtime::sce_log_error!("global: {}", e);
                 engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(
                     StatechartHostInvokerEvent::ErrorExecution,
+                    ::sce_rust_runtime::ErrorReason::ExpressionFailed,
                     "<data id='entered'> expr failed to evaluate",
                 ));
             }
@@ -1225,6 +1235,7 @@ impl StatechartHostInvokerPolicy {
                 );
                 engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(
                     StatechartHostInvokerEvent::ErrorExecution,
+                    ::sce_rust_runtime::ErrorReason::ParamUnfit,
                     "<data id='destination'> could not hold the value its invoke handed it",
                 ));
             }
@@ -1239,6 +1250,7 @@ impl StatechartHostInvokerPolicy {
                 ::sce_rust_runtime::sce_log_error!("global: {}", e);
                 engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(
                     StatechartHostInvokerEvent::ErrorExecution,
+                    ::sce_rust_runtime::ErrorReason::ExpressionFailed,
                     "<data id='destination'> expr failed to evaluate",
                 ));
             }
@@ -1253,6 +1265,7 @@ impl StatechartHostInvokerPolicy {
                 );
                 engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(
                     StatechartHostInvokerEvent::ErrorExecution,
+                    ::sce_rust_runtime::ErrorReason::ParamUnfit,
                     "<data id='n'> could not hold the value its invoke handed it",
                 ));
             }
@@ -1264,6 +1277,7 @@ impl StatechartHostInvokerPolicy {
                 ::sce_rust_runtime::sce_log_error!("global: {}", e);
                 engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(
                     StatechartHostInvokerEvent::ErrorExecution,
+                    ::sce_rust_runtime::ErrorReason::ExpressionFailed,
                     "<data id='n'> expr failed to evaluate",
                 ));
             }
@@ -1278,6 +1292,7 @@ impl StatechartHostInvokerPolicy {
                 );
                 engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(
                     StatechartHostInvokerEvent::ErrorExecution,
+                    ::sce_rust_runtime::ErrorReason::ParamUnfit,
                     "<data id='dropped'> could not hold the value its invoke handed it",
                 ));
             }
@@ -1289,6 +1304,7 @@ impl StatechartHostInvokerPolicy {
                 ::sce_rust_runtime::sce_log_error!("global: {}", e);
                 engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(
                     StatechartHostInvokerEvent::ErrorExecution,
+                    ::sce_rust_runtime::ErrorReason::ExpressionFailed,
                     "<data id='dropped'> expr failed to evaluate",
                 ));
             }
@@ -1303,6 +1319,7 @@ impl StatechartHostInvokerPolicy {
                 );
                 engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(
                     StatechartHostInvokerEvent::ErrorExecution,
+                    ::sce_rust_runtime::ErrorReason::ParamUnfit,
                     "<data id='doneId'> could not hold the value its invoke handed it",
                 ));
             }
@@ -1314,6 +1331,7 @@ impl StatechartHostInvokerPolicy {
                 ::sce_rust_runtime::sce_log_error!("global: {}", e);
                 engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(
                     StatechartHostInvokerEvent::ErrorExecution,
+                    ::sce_rust_runtime::ErrorReason::ExpressionFailed,
                     "<data id='doneId'> expr failed to evaluate",
                 ));
             }
@@ -1328,6 +1346,7 @@ impl StatechartHostInvokerPolicy {
                 );
                 engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(
                     StatechartHostInvokerEvent::ErrorExecution,
+                    ::sce_rust_runtime::ErrorReason::ParamUnfit,
                     "<data id='matched'> could not hold the value its invoke handed it",
                 ));
             }
@@ -1339,6 +1358,7 @@ impl StatechartHostInvokerPolicy {
                 ::sce_rust_runtime::sce_log_error!("global: {}", e);
                 engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(
                     StatechartHostInvokerEvent::ErrorExecution,
+                    ::sce_rust_runtime::ErrorReason::ExpressionFailed,
                     "<data id='matched'> expr failed to evaluate",
                 ));
             }
@@ -1353,6 +1373,7 @@ impl StatechartHostInvokerPolicy {
                 );
                 engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(
                     StatechartHostInvokerEvent::ErrorExecution,
+                    ::sce_rust_runtime::ErrorReason::ParamUnfit,
                     "<data id='slot'> could not hold the value its invoke handed it",
                 ));
             }
@@ -1367,6 +1388,7 @@ impl StatechartHostInvokerPolicy {
                 ::sce_rust_runtime::sce_log_error!("global: {}", e);
                 engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(
                     StatechartHostInvokerEvent::ErrorExecution,
+                    ::sce_rust_runtime::ErrorReason::ExpressionFailed,
                     "<data id='slot'> expr failed to evaluate",
                 ));
             }
@@ -1381,6 +1403,7 @@ impl StatechartHostInvokerPolicy {
                 );
                 engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(
                     StatechartHostInvokerEvent::ErrorExecution,
+                    ::sce_rust_runtime::ErrorReason::ParamUnfit,
                     "<data id='slotted'> could not hold the value its invoke handed it",
                 ));
             }
@@ -1392,6 +1415,7 @@ impl StatechartHostInvokerPolicy {
                 ::sce_rust_runtime::sce_log_error!("global: {}", e);
                 engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(
                     StatechartHostInvokerEvent::ErrorExecution,
+                    ::sce_rust_runtime::ErrorReason::ExpressionFailed,
                     "<data id='slotted'> expr failed to evaluate",
                 ));
             }
@@ -1406,6 +1430,7 @@ impl StatechartHostInvokerPolicy {
                 );
                 engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(
                     StatechartHostInvokerEvent::ErrorExecution,
+                    ::sce_rust_runtime::ErrorReason::ParamUnfit,
                     "<data id='pinged'> could not hold the value its invoke handed it",
                 ));
             }
@@ -1417,6 +1442,7 @@ impl StatechartHostInvokerPolicy {
                 ::sce_rust_runtime::sce_log_error!("global: {}", e);
                 engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(
                     StatechartHostInvokerEvent::ErrorExecution,
+                    ::sce_rust_runtime::ErrorReason::ExpressionFailed,
                     "<data id='pinged'> expr failed to evaluate",
                 ));
             }
@@ -1431,6 +1457,7 @@ impl StatechartHostInvokerPolicy {
                 );
                 engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(
                     StatechartHostInvokerEvent::ErrorExecution,
+                    ::sce_rust_runtime::ErrorReason::ParamUnfit,
                     "<data id='leaked'> could not hold the value its invoke handed it",
                 ));
             }
@@ -1442,6 +1469,7 @@ impl StatechartHostInvokerPolicy {
                 ::sce_rust_runtime::sce_log_error!("global: {}", e);
                 engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(
                     StatechartHostInvokerEvent::ErrorExecution,
+                    ::sce_rust_runtime::ErrorReason::ExpressionFailed,
                     "<data id='leaked'> expr failed to evaluate",
                 ));
             }
@@ -1456,6 +1484,7 @@ impl StatechartHostInvokerPolicy {
                 );
                 engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(
                     StatechartHostInvokerEvent::ErrorExecution,
+                    ::sce_rust_runtime::ErrorReason::ParamUnfit,
                     "<data id='lost'> could not hold the value its invoke handed it",
                 ));
             }
@@ -1467,6 +1496,7 @@ impl StatechartHostInvokerPolicy {
                 ::sce_rust_runtime::sce_log_error!("global: {}", e);
                 engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(
                     StatechartHostInvokerEvent::ErrorExecution,
+                    ::sce_rust_runtime::ErrorReason::ExpressionFailed,
                     "<data id='lost'> expr failed to evaluate",
                 ));
             }
@@ -1481,6 +1511,7 @@ impl StatechartHostInvokerPolicy {
                 );
                 engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(
                     StatechartHostInvokerEvent::ErrorExecution,
+                    ::sce_rust_runtime::ErrorReason::ParamUnfit,
                     "<data id='expired'> could not hold the value its invoke handed it",
                 ));
             }
@@ -1492,6 +1523,7 @@ impl StatechartHostInvokerPolicy {
                 ::sce_rust_runtime::sce_log_error!("global: {}", e);
                 engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(
                     StatechartHostInvokerEvent::ErrorExecution,
+                    ::sce_rust_runtime::ErrorReason::ExpressionFailed,
                     "<data id='expired'> expr failed to evaluate",
                 ));
             }
@@ -1506,6 +1538,7 @@ impl StatechartHostInvokerPolicy {
                 );
                 engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(
                     StatechartHostInvokerEvent::ErrorExecution,
+                    ::sce_rust_runtime::ErrorReason::ParamUnfit,
                     "<data id='finished'> could not hold the value its invoke handed it",
                 ));
             }
@@ -1517,6 +1550,7 @@ impl StatechartHostInvokerPolicy {
                 ::sce_rust_runtime::sce_log_error!("global: {}", e);
                 engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(
                     StatechartHostInvokerEvent::ErrorExecution,
+                    ::sce_rust_runtime::ErrorReason::ExpressionFailed,
                     "<data id='finished'> expr failed to evaluate",
                 ));
             }
@@ -1531,6 +1565,7 @@ impl StatechartHostInvokerPolicy {
                 );
                 engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(
                     StatechartHostInvokerEvent::ErrorExecution,
+                    ::sce_rust_runtime::ErrorReason::ParamUnfit,
                     "<data id='misdated'> could not hold the value its invoke handed it",
                 ));
             }
@@ -1542,6 +1577,7 @@ impl StatechartHostInvokerPolicy {
                 ::sce_rust_runtime::sce_log_error!("global: {}", e);
                 engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(
                     StatechartHostInvokerEvent::ErrorExecution,
+                    ::sce_rust_runtime::ErrorReason::ExpressionFailed,
                     "<data id='misdated'> expr failed to evaluate",
                 ));
             }
@@ -1556,6 +1592,7 @@ impl StatechartHostInvokerPolicy {
                 );
                 engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(
                     StatechartHostInvokerEvent::ErrorExecution,
+                    ::sce_rust_runtime::ErrorReason::ParamUnfit,
                     "<data id='granted'> could not hold the value its invoke handed it",
                 ));
             }
@@ -1567,6 +1604,7 @@ impl StatechartHostInvokerPolicy {
                 ::sce_rust_runtime::sce_log_error!("global: {}", e);
                 engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(
                     StatechartHostInvokerEvent::ErrorExecution,
+                    ::sce_rust_runtime::ErrorReason::ExpressionFailed,
                     "<data id='granted'> expr failed to evaluate",
                 ));
             }
@@ -1581,6 +1619,7 @@ impl StatechartHostInvokerPolicy {
                 );
                 engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(
                     StatechartHostInvokerEvent::ErrorExecution,
+                    ::sce_rust_runtime::ErrorReason::ParamUnfit,
                     "<data id='denied'> could not hold the value its invoke handed it",
                 ));
             }
@@ -1592,6 +1631,7 @@ impl StatechartHostInvokerPolicy {
                 ::sce_rust_runtime::sce_log_error!("global: {}", e);
                 engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(
                     StatechartHostInvokerEvent::ErrorExecution,
+                    ::sce_rust_runtime::ErrorReason::ExpressionFailed,
                     "<data id='denied'> expr failed to evaluate",
                 ));
             }
@@ -1606,6 +1646,7 @@ impl StatechartHostInvokerPolicy {
                 );
                 engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(
                     StatechartHostInvokerEvent::ErrorExecution,
+                    ::sce_rust_runtime::ErrorReason::ParamUnfit,
                     "<data id='unreadable'> could not hold the value its invoke handed it",
                 ));
             }
@@ -1620,6 +1661,7 @@ impl StatechartHostInvokerPolicy {
                 ::sce_rust_runtime::sce_log_error!("global: {}", e);
                 engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(
                     StatechartHostInvokerEvent::ErrorExecution,
+                    ::sce_rust_runtime::ErrorReason::ExpressionFailed,
                     "<data id='unreadable'> expr failed to evaluate",
                 ));
             }
@@ -1634,6 +1676,7 @@ impl StatechartHostInvokerPolicy {
                 );
                 engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(
                     StatechartHostInvokerEvent::ErrorExecution,
+                    ::sce_rust_runtime::ErrorReason::ParamUnfit,
                     "<data id='scope'> could not hold the value its invoke handed it",
                 ));
             }
@@ -1648,6 +1691,7 @@ impl StatechartHostInvokerPolicy {
                 ::sce_rust_runtime::sce_log_error!("global: {}", e);
                 engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(
                     StatechartHostInvokerEvent::ErrorExecution,
+                    ::sce_rust_runtime::ErrorReason::ExpressionFailed,
                     "<data id='scope'> expr failed to evaluate",
                 ));
             }
@@ -1662,6 +1706,7 @@ impl StatechartHostInvokerPolicy {
                 );
                 engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(
                     StatechartHostInvokerEvent::ErrorExecution,
+                    ::sce_rust_runtime::ErrorReason::ParamUnfit,
                     "<data id='level'> could not hold the value its invoke handed it",
                 ));
             }
@@ -1673,6 +1718,7 @@ impl StatechartHostInvokerPolicy {
                 ::sce_rust_runtime::sce_log_error!("global: {}", e);
                 engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(
                     StatechartHostInvokerEvent::ErrorExecution,
+                    ::sce_rust_runtime::ErrorReason::ExpressionFailed,
                     "<data id='level'> expr failed to evaluate",
                 ));
             }
@@ -1687,6 +1733,7 @@ impl StatechartHostInvokerPolicy {
                 );
                 engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(
                     StatechartHostInvokerEvent::ErrorExecution,
+                    ::sce_rust_runtime::ErrorReason::ParamUnfit,
                     "<data id='failed'> could not hold the value its invoke handed it",
                 ));
             }
@@ -1698,6 +1745,7 @@ impl StatechartHostInvokerPolicy {
                 ::sce_rust_runtime::sce_log_error!("global: {}", e);
                 engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(
                     StatechartHostInvokerEvent::ErrorExecution,
+                    ::sce_rust_runtime::ErrorReason::ExpressionFailed,
                     "<data id='failed'> expr failed to evaluate",
                 ));
             }
@@ -1712,6 +1760,7 @@ impl StatechartHostInvokerPolicy {
                 );
                 engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(
                     StatechartHostInvokerEvent::ErrorExecution,
+                    ::sce_rust_runtime::ErrorReason::ParamUnfit,
                     "<data id='overturned'> could not hold the value its invoke handed it",
                 ));
             }
@@ -1726,6 +1775,7 @@ impl StatechartHostInvokerPolicy {
                 ::sce_rust_runtime::sce_log_error!("global: {}", e);
                 engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(
                     StatechartHostInvokerEvent::ErrorExecution,
+                    ::sce_rust_runtime::ErrorReason::ExpressionFailed,
                     "<data id='overturned'> expr failed to evaluate",
                 ));
             }
@@ -1740,6 +1790,7 @@ impl StatechartHostInvokerPolicy {
                 );
                 engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(
                     StatechartHostInvokerEvent::ErrorExecution,
+                    ::sce_rust_runtime::ErrorReason::ParamUnfit,
                     "<data id='unstarted'> could not hold the value its invoke handed it",
                 ));
             }
@@ -1754,6 +1805,7 @@ impl StatechartHostInvokerPolicy {
                 ::sce_rust_runtime::sce_log_error!("global: {}", e);
                 engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(
                     StatechartHostInvokerEvent::ErrorExecution,
+                    ::sce_rust_runtime::ErrorReason::ExpressionFailed,
                     "<data id='unstarted'> expr failed to evaluate",
                 ));
             }
@@ -1768,6 +1820,7 @@ impl StatechartHostInvokerPolicy {
                 );
                 engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(
                     StatechartHostInvokerEvent::ErrorExecution,
+                    ::sce_rust_runtime::ErrorReason::ParamUnfit,
                     "<data id='revived'> could not hold the value its invoke handed it",
                 ));
             }
@@ -1779,6 +1832,7 @@ impl StatechartHostInvokerPolicy {
                 ::sce_rust_runtime::sce_log_error!("global: {}", e);
                 engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(
                     StatechartHostInvokerEvent::ErrorExecution,
+                    ::sce_rust_runtime::ErrorReason::ExpressionFailed,
                     "<data id='revived'> expr failed to evaluate",
                 ));
             }
@@ -1827,6 +1881,7 @@ impl StatechartHostInvokerPolicy {
                 ::sce_rust_runtime::sce_log_error!("Guard evaluation failed for '{}': {}", cond, e);
                 engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(
                     StatechartHostInvokerEvent::ErrorExecution,
+                    ::sce_rust_runtime::ErrorReason::ExpressionFailed,
                     reason,
                 ));
                 None
@@ -1953,6 +2008,7 @@ impl StatechartHostInvokerPolicy {
                     ) {
                         engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(
                             StatechartHostInvokerEvent::ErrorExecution,
+                            ::sce_rust_runtime::ErrorReason::LocationInvalid,
                             "<invoke idlocation='doneId'> could not take the invoke id",
                         ));
                         continue;
@@ -2001,6 +2057,7 @@ impl StatechartHostInvokerPolicy {
                     // same event, rather than a silence that reads as started.
                     engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(
                         StatechartHostInvokerEvent::ErrorExecution,
+                        ::sce_rust_runtime::ErrorReason::ProcessorUnregistered,
                         "<invoke> names an invoker the host declared but never registered",
                     ));
                 }
@@ -2036,6 +2093,7 @@ impl StatechartHostInvokerPolicy {
                         Err(_) => {
                             engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(
                                 StatechartHostInvokerEvent::ErrorExecution,
+                                ::sce_rust_runtime::ErrorReason::ExpressionFailed,
                                 "<invoke srcexpr='destination'> could not be evaluated",
                             ));
                             continue;
@@ -2076,6 +2134,7 @@ impl StatechartHostInvokerPolicy {
                             _ => {
                                 engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(
                                     StatechartHostInvokerEvent::ErrorExecution,
+                                    ::sce_rust_runtime::ErrorReason::LocationInvalid,
                                     "<invoke> namelist names 'n', which could not be read",
                                 ));
                                 namelist_failed = true;
@@ -2122,6 +2181,7 @@ impl StatechartHostInvokerPolicy {
                             );
                             engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(
                                 StatechartHostInvokerEvent::ErrorExecution,
+                                ::sce_rust_runtime::ErrorReason::ExpressionFailed,
                                 "<invoke> <param name='twice'> expr failed to evaluate",
                             ));
                         }
@@ -2155,6 +2215,7 @@ impl StatechartHostInvokerPolicy {
                             );
                             engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(
                                 StatechartHostInvokerEvent::ErrorExecution,
+                                ::sce_rust_runtime::ErrorReason::ExpressionFailed,
                                 "<invoke> <param name='bad'> expr failed to evaluate",
                             ));
                         }
@@ -2189,6 +2250,7 @@ impl StatechartHostInvokerPolicy {
                     // same event, rather than a silence that reads as started.
                     engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(
                         StatechartHostInvokerEvent::ErrorExecution,
+                        ::sce_rust_runtime::ErrorReason::ProcessorUnregistered,
                         "<invoke> names an invoker the host declared but never registered",
                     ));
                 }
@@ -2224,6 +2286,7 @@ impl StatechartHostInvokerPolicy {
                         Err(_) => {
                             engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(
                                 StatechartHostInvokerEvent::ErrorExecution,
+                                ::sce_rust_runtime::ErrorReason::ExpressionFailed,
                                 "<invoke contentexpr=''body:' + n'> could not be evaluated",
                             ));
                             continue;
@@ -2269,6 +2332,7 @@ impl StatechartHostInvokerPolicy {
                     // same event, rather than a silence that reads as started.
                     engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(
                         StatechartHostInvokerEvent::ErrorExecution,
+                        ::sce_rust_runtime::ErrorReason::ProcessorUnregistered,
                         "<invoke> names an invoker the host declared but never registered",
                     ));
                 }
@@ -2304,6 +2368,7 @@ impl StatechartHostInvokerPolicy {
                         Err(_) => {
                             engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(
                                 StatechartHostInvokerEvent::ErrorExecution,
+                                ::sce_rust_runtime::ErrorReason::ExpressionFailed,
                                 "<invoke srcexpr='n.nope.deeper'> could not be evaluated",
                             ));
                             continue;
@@ -2349,6 +2414,7 @@ impl StatechartHostInvokerPolicy {
                     // same event, rather than a silence that reads as started.
                     engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(
                         StatechartHostInvokerEvent::ErrorExecution,
+                        ::sce_rust_runtime::ErrorReason::ProcessorUnregistered,
                         "<invoke> names an invoker the host declared but never registered",
                     ));
                 }
@@ -2408,6 +2474,7 @@ impl StatechartHostInvokerPolicy {
                     // same event, rather than a silence that reads as started.
                     engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(
                         StatechartHostInvokerEvent::ErrorExecution,
+                        ::sce_rust_runtime::ErrorReason::ProcessorUnregistered,
                         "<invoke> names an invoker the host declared but never registered",
                     ));
                 }
@@ -2475,6 +2542,7 @@ impl StatechartHostInvokerPolicy {
                     // same event, rather than a silence that reads as started.
                     engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(
                         StatechartHostInvokerEvent::ErrorExecution,
+                        ::sce_rust_runtime::ErrorReason::ProcessorUnregistered,
                         "<invoke> names an invoker the host declared but never registered",
                     ));
                 }
@@ -2534,6 +2602,7 @@ impl StatechartHostInvokerPolicy {
                     // same event, rather than a silence that reads as started.
                     engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(
                         StatechartHostInvokerEvent::ErrorExecution,
+                        ::sce_rust_runtime::ErrorReason::ProcessorUnregistered,
                         "<invoke> names an invoker the host declared but never registered",
                     ));
                 }
@@ -2570,6 +2639,7 @@ impl StatechartHostInvokerPolicy {
                     ) {
                         engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(
                             StatechartHostInvokerEvent::ErrorExecution,
+                            ::sce_rust_runtime::ErrorReason::LocationInvalid,
                             "<invoke idlocation='slot.id'> could not take the invoke id",
                         ));
                         continue;
@@ -2618,6 +2688,7 @@ impl StatechartHostInvokerPolicy {
                     // same event, rather than a silence that reads as started.
                     engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(
                         StatechartHostInvokerEvent::ErrorExecution,
+                        ::sce_rust_runtime::ErrorReason::ProcessorUnregistered,
                         "<invoke> names an invoker the host declared but never registered",
                     ));
                 }
@@ -2654,6 +2725,7 @@ impl StatechartHostInvokerPolicy {
                     ) {
                         engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(
                             StatechartHostInvokerEvent::ErrorExecution,
+                            ::sce_rust_runtime::ErrorReason::LocationInvalid,
                             "<invoke idlocation='n.nope.deeper'> could not take the invoke id",
                         ));
                         continue;
@@ -2702,6 +2774,7 @@ impl StatechartHostInvokerPolicy {
                     // same event, rather than a silence that reads as started.
                     engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(
                         StatechartHostInvokerEvent::ErrorExecution,
+                        ::sce_rust_runtime::ErrorReason::ProcessorUnregistered,
                         "<invoke> names an invoker the host declared but never registered",
                     ));
                 }
@@ -2761,6 +2834,7 @@ impl StatechartHostInvokerPolicy {
                     // same event, rather than a silence that reads as started.
                     engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(
                         StatechartHostInvokerEvent::ErrorExecution,
+                        ::sce_rust_runtime::ErrorReason::ProcessorUnregistered,
                         "<invoke> names an invoker the host declared but never registered",
                     ));
                 }
@@ -2820,6 +2894,7 @@ impl StatechartHostInvokerPolicy {
                     // same event, rather than a silence that reads as started.
                     engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(
                         StatechartHostInvokerEvent::ErrorExecution,
+                        ::sce_rust_runtime::ErrorReason::ProcessorUnregistered,
                         "<invoke> names an invoker the host declared but never registered",
                     ));
                 }
@@ -2878,6 +2953,7 @@ impl StatechartHostInvokerPolicy {
                             );
                             engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(
                                 StatechartHostInvokerEvent::ErrorExecution,
+                                ::sce_rust_runtime::ErrorReason::ExpressionFailed,
                                 "<invoke> <param name='_sce_deadline_ms'> expr failed to evaluate",
                             ));
                         }
@@ -2912,6 +2988,7 @@ impl StatechartHostInvokerPolicy {
                     // same event, rather than a silence that reads as started.
                     engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(
                         StatechartHostInvokerEvent::ErrorExecution,
+                        ::sce_rust_runtime::ErrorReason::ProcessorUnregistered,
                         "<invoke> names an invoker the host declared but never registered",
                     ));
                 }
@@ -2979,6 +3056,7 @@ impl StatechartHostInvokerPolicy {
                     // same event, rather than a silence that reads as started.
                     engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(
                         StatechartHostInvokerEvent::ErrorExecution,
+                        ::sce_rust_runtime::ErrorReason::ProcessorUnregistered,
                         "<invoke> names an invoker the host declared but never registered",
                     ));
                 }
@@ -3044,7 +3122,7 @@ impl StatechartHostInvokerPolicy {
                                 "invoke typed param 'scope' refused: {}",
                                 why
                             );
-                            engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(StatechartHostInvokerEvent::ErrorExecution, &format!("<invoke> <param name='scope'> cannot be its request field: {why}")));
+                            engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(StatechartHostInvokerEvent::ErrorExecution, ::sce_rust_runtime::ErrorReason::ParamUnfit, &format!("<invoke> <param name='scope'> cannot be its request field: {why}")));
                             request_refused = true;
                         }
                     }
@@ -3080,7 +3158,7 @@ impl StatechartHostInvokerPolicy {
                                 "invoke typed param 'level' refused: {}",
                                 why
                             );
-                            engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(StatechartHostInvokerEvent::ErrorExecution, &format!("<invoke> <param name='level'> cannot be its request field: {why}")));
+                            engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(StatechartHostInvokerEvent::ErrorExecution, ::sce_rust_runtime::ErrorReason::ParamUnfit, &format!("<invoke> <param name='level'> cannot be its request field: {why}")));
                             request_refused = true;
                         }
                     }
@@ -3117,6 +3195,7 @@ impl StatechartHostInvokerPolicy {
                     // same event, rather than a silence that reads as started.
                     engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(
                         StatechartHostInvokerEvent::ErrorExecution,
+                        ::sce_rust_runtime::ErrorReason::ProcessorUnregistered,
                         "<invoke> names an invoker the host declared but never registered",
                     ));
                 }
@@ -3527,6 +3606,7 @@ impl StatePolicy for StatechartHostInvokerPolicy {
                             ::sce_rust_runtime::sce_log_error!("Assign failed for 'ended': {}", e);
                             engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(
                                 StatechartHostInvokerEvent::ErrorExecution,
+                                ::sce_rust_runtime::ErrorReason::AssignmentFailed,
                                 "<assign> to 'ended' failed",
                             ));
                             // W3C SCXML 4.9: the error ends the block, from however deep a <foreach> it came.
@@ -3643,6 +3723,7 @@ impl StatePolicy for StatechartHostInvokerPolicy {
                             );
                             engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(
                                 StatechartHostInvokerEvent::ErrorExecution,
+                                ::sce_rust_runtime::ErrorReason::AssignmentFailed,
                                 "<assign> to 'entered' failed",
                             ));
                             // W3C SCXML 4.9: the error ends the block, from however deep a <foreach> it came.
@@ -3698,7 +3779,12 @@ impl StatePolicy for StatechartHostInvokerPolicy {
                         let __sce_arg_sid = self.session_id.as_ref().unwrap().clone();
                         let __sce_arg_se = self.script_engine.clone();
                         let __sce_arg_se: &dyn sce_rust_runtime::IScriptEngine = &*__sce_arg_se;
-                        let mut _send_arg_error: Option<&'static str> = None;
+                        // The code and the sentence of the first argument that failed
+                        // (docs/adr/0106 #111).
+                        let mut _send_arg_error: Option<(
+                            ::sce_rust_runtime::ErrorReason,
+                            &'static str,
+                        )> = None;
                         // W3C SCXML 6.2.4: the send id goes to `idlocation` first, so it is there
                         // even when a later argument fails. W3C SCXML B.2: a write target is
                         // lowered by the frontend, so the id lands where a read of the same text
@@ -3710,13 +3796,16 @@ impl StatePolicy for StatechartHostInvokerPolicy {
                             "slot.sid",
                             send_id,
                         ) {
-                            _send_arg_error =
-                                Some("<send idlocation='slot.sid'> could not take the send id");
+                            _send_arg_error = Some((
+                                ::sce_rust_runtime::ErrorReason::LocationInvalid,
+                                "<send idlocation='slot.sid'> could not take the send id",
+                            ));
                         }
-                        if let Some(__sce_why) = _send_arg_error {
+                        if let Some((__sce_reason, __sce_why)) = _send_arg_error {
                             ::sce_rust_runtime::sce_log_error!("{}", __sce_why);
                             let mut err_meta = sce_rust_runtime::EventWithMetadata::platform_error(
                                 StatechartHostInvokerEvent::ErrorExecution,
+                                __sce_reason,
                                 __sce_why,
                             );
                             err_meta.metadata.send_id =
@@ -3758,7 +3847,12 @@ impl StatePolicy for StatechartHostInvokerPolicy {
                         let __sce_arg_sid = self.session_id.as_ref().unwrap().clone();
                         let __sce_arg_se = self.script_engine.clone();
                         let __sce_arg_se: &dyn sce_rust_runtime::IScriptEngine = &*__sce_arg_se;
-                        let mut _send_arg_error: Option<&'static str> = None;
+                        // The code and the sentence of the first argument that failed
+                        // (docs/adr/0106 #111).
+                        let mut _send_arg_error: Option<(
+                            ::sce_rust_runtime::ErrorReason,
+                            &'static str,
+                        )> = None;
                         // W3C SCXML 6.2.4: the send id goes to `idlocation` first, so it is there
                         // even when a later argument fails. W3C SCXML B.2: a write target is
                         // lowered by the frontend, so the id lands where a read of the same text
@@ -3770,14 +3864,16 @@ impl StatePolicy for StatechartHostInvokerPolicy {
                             "n.nope.deeper",
                             send_id,
                         ) {
-                            _send_arg_error = Some(
+                            _send_arg_error = Some((
+                                ::sce_rust_runtime::ErrorReason::LocationInvalid,
                                 "<send idlocation='n.nope.deeper'> could not take the send id",
-                            );
+                            ));
                         }
-                        if let Some(__sce_why) = _send_arg_error {
+                        if let Some((__sce_reason, __sce_why)) = _send_arg_error {
                             ::sce_rust_runtime::sce_log_error!("{}", __sce_why);
                             let mut err_meta = sce_rust_runtime::EventWithMetadata::platform_error(
                                 StatechartHostInvokerEvent::ErrorExecution,
+                                __sce_reason,
                                 __sce_why,
                             );
                             err_meta.metadata.send_id =
@@ -4466,6 +4562,7 @@ impl StatePolicy for StatechartHostInvokerPolicy {
                             );
                             engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(
                                 StatechartHostInvokerEvent::ErrorExecution,
+                                ::sce_rust_runtime::ErrorReason::AssignmentFailed,
                                 "<assign> to 'matched' failed",
                             ));
                             // W3C SCXML 4.9: the error ends the block, from however deep a <foreach> it came.
@@ -4499,6 +4596,7 @@ impl StatePolicy for StatechartHostInvokerPolicy {
                             );
                             engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(
                                 StatechartHostInvokerEvent::ErrorExecution,
+                                ::sce_rust_runtime::ErrorReason::AssignmentFailed,
                                 "<assign> to 'dropped' failed",
                             ));
                             // W3C SCXML 4.9: the error ends the block, from however deep a <foreach> it came.
@@ -4529,6 +4627,7 @@ impl StatePolicy for StatechartHostInvokerPolicy {
                             ::sce_rust_runtime::sce_log_error!("Assign failed for 'failed': {}", e);
                             engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(
                                 StatechartHostInvokerEvent::ErrorExecution,
+                                ::sce_rust_runtime::ErrorReason::AssignmentFailed,
                                 "<assign> to 'failed' failed",
                             ));
                             // W3C SCXML 4.9: the error ends the block, from however deep a <foreach> it came.
@@ -4562,6 +4661,7 @@ impl StatePolicy for StatechartHostInvokerPolicy {
                             );
                             engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(
                                 StatechartHostInvokerEvent::ErrorExecution,
+                                ::sce_rust_runtime::ErrorReason::AssignmentFailed,
                                 "<assign> to 'overturned' failed",
                             ));
                             // W3C SCXML 4.9: the error ends the block, from however deep a <foreach> it came.
@@ -4595,6 +4695,7 @@ impl StatePolicy for StatechartHostInvokerPolicy {
                             );
                             engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(
                                 StatechartHostInvokerEvent::ErrorExecution,
+                                ::sce_rust_runtime::ErrorReason::AssignmentFailed,
                                 "<assign> to 'started' failed",
                             ));
                             // W3C SCXML 4.9: the error ends the block, from however deep a <foreach> it came.
@@ -4628,6 +4729,7 @@ impl StatePolicy for StatechartHostInvokerPolicy {
                             );
                             engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(
                                 StatechartHostInvokerEvent::ErrorExecution,
+                                ::sce_rust_runtime::ErrorReason::AssignmentFailed,
                                 "<assign> to 'started2' failed",
                             ));
                             // W3C SCXML 4.9: the error ends the block, from however deep a <foreach> it came.
@@ -4661,6 +4763,7 @@ impl StatePolicy for StatechartHostInvokerPolicy {
                             );
                             engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(
                                 StatechartHostInvokerEvent::ErrorExecution,
+                                ::sce_rust_runtime::ErrorReason::AssignmentFailed,
                                 "<assign> to 'refused' failed",
                             ));
                             // W3C SCXML 4.9: the error ends the block, from however deep a <foreach> it came.
@@ -4694,6 +4797,7 @@ impl StatePolicy for StatechartHostInvokerPolicy {
                             );
                             engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(
                                 StatechartHostInvokerEvent::ErrorExecution,
+                                ::sce_rust_runtime::ErrorReason::AssignmentFailed,
                                 "<assign> to 'slotted' failed",
                             ));
                             // W3C SCXML 4.9: the error ends the block, from however deep a <foreach> it came.
@@ -4724,6 +4828,7 @@ impl StatePolicy for StatechartHostInvokerPolicy {
                             ::sce_rust_runtime::sce_log_error!("Assign failed for 'pinged': {}", e);
                             engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(
                                 StatechartHostInvokerEvent::ErrorExecution,
+                                ::sce_rust_runtime::ErrorReason::AssignmentFailed,
                                 "<assign> to 'pinged' failed",
                             ));
                             // W3C SCXML 4.9: the error ends the block, from however deep a <foreach> it came.
@@ -4754,6 +4859,7 @@ impl StatePolicy for StatechartHostInvokerPolicy {
                             ::sce_rust_runtime::sce_log_error!("Assign failed for 'leaked': {}", e);
                             engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(
                                 StatechartHostInvokerEvent::ErrorExecution,
+                                ::sce_rust_runtime::ErrorReason::AssignmentFailed,
                                 "<assign> to 'leaked' failed",
                             ));
                             // W3C SCXML 4.9: the error ends the block, from however deep a <foreach> it came.
@@ -4784,6 +4890,7 @@ impl StatePolicy for StatechartHostInvokerPolicy {
                             ::sce_rust_runtime::sce_log_error!("Assign failed for 'lost': {}", e);
                             engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(
                                 StatechartHostInvokerEvent::ErrorExecution,
+                                ::sce_rust_runtime::ErrorReason::AssignmentFailed,
                                 "<assign> to 'lost' failed",
                             ));
                             // W3C SCXML 4.9: the error ends the block, from however deep a <foreach> it came.
@@ -4817,6 +4924,7 @@ impl StatePolicy for StatechartHostInvokerPolicy {
                             );
                             engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(
                                 StatechartHostInvokerEvent::ErrorExecution,
+                                ::sce_rust_runtime::ErrorReason::AssignmentFailed,
                                 "<assign> to 'unstarted' failed",
                             ));
                             // W3C SCXML 4.9: the error ends the block, from however deep a <foreach> it came.
@@ -4850,6 +4958,7 @@ impl StatePolicy for StatechartHostInvokerPolicy {
                             );
                             engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(
                                 StatechartHostInvokerEvent::ErrorExecution,
+                                ::sce_rust_runtime::ErrorReason::AssignmentFailed,
                                 "<assign> to 'revived' failed",
                             ));
                             // W3C SCXML 4.9: the error ends the block, from however deep a <foreach> it came.
@@ -4883,6 +4992,7 @@ impl StatePolicy for StatechartHostInvokerPolicy {
                             );
                             engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(
                                 StatechartHostInvokerEvent::ErrorExecution,
+                                ::sce_rust_runtime::ErrorReason::AssignmentFailed,
                                 "<assign> to 'misdated' failed",
                             ));
                             // W3C SCXML 4.9: the error ends the block, from however deep a <foreach> it came.
@@ -4919,6 +5029,7 @@ impl StatePolicy for StatechartHostInvokerPolicy {
                                 );
                                 engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(
                                     StatechartHostInvokerEvent::ErrorExecution,
+                                    ::sce_rust_runtime::ErrorReason::ExpressionFailed,
                                     "<cancel> sendidexpr failed to evaluate",
                                 ));
                                 break 'action_block;
@@ -4952,6 +5063,7 @@ impl StatePolicy for StatechartHostInvokerPolicy {
                             );
                             engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(
                                 StatechartHostInvokerEvent::ErrorExecution,
+                                ::sce_rust_runtime::ErrorReason::AssignmentFailed,
                                 "<assign> to 'expired' failed",
                             ));
                             // W3C SCXML 4.9: the error ends the block, from however deep a <foreach> it came.
@@ -4985,6 +5097,7 @@ impl StatePolicy for StatechartHostInvokerPolicy {
                             );
                             engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(
                                 StatechartHostInvokerEvent::ErrorExecution,
+                                ::sce_rust_runtime::ErrorReason::AssignmentFailed,
                                 "<assign> to 'finished' failed",
                             ));
                             // W3C SCXML 4.9: the error ends the block, from however deep a <foreach> it came.
@@ -5018,6 +5131,7 @@ impl StatePolicy for StatechartHostInvokerPolicy {
                             );
                             engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(
                                 StatechartHostInvokerEvent::ErrorExecution,
+                                ::sce_rust_runtime::ErrorReason::AssignmentFailed,
                                 "<assign> to 'granted' failed",
                             ));
                             // W3C SCXML 4.9: the error ends the block, from however deep a <foreach> it came.
@@ -5048,6 +5162,7 @@ impl StatePolicy for StatechartHostInvokerPolicy {
                             ::sce_rust_runtime::sce_log_error!("Assign failed for 'denied': {}", e);
                             engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(
                                 StatechartHostInvokerEvent::ErrorExecution,
+                                ::sce_rust_runtime::ErrorReason::AssignmentFailed,
                                 "<assign> to 'denied' failed",
                             ));
                             // W3C SCXML 4.9: the error ends the block, from however deep a <foreach> it came.
@@ -5081,6 +5196,7 @@ impl StatePolicy for StatechartHostInvokerPolicy {
                             );
                             engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(
                                 StatechartHostInvokerEvent::ErrorExecution,
+                                ::sce_rust_runtime::ErrorReason::AssignmentFailed,
                                 "<assign> to 'unreadable' failed",
                             ));
                             // W3C SCXML 4.9: the error ends the block, from however deep a <foreach> it came.
@@ -5111,6 +5227,7 @@ impl StatePolicy for StatechartHostInvokerPolicy {
                             ::sce_rust_runtime::sce_log_error!("Assign failed for 'level': {}", e);
                             engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(
                                 StatechartHostInvokerEvent::ErrorExecution,
+                                ::sce_rust_runtime::ErrorReason::AssignmentFailed,
                                 "<assign> to 'level' failed",
                             ));
                             // W3C SCXML 4.9: the error ends the block, from however deep a <foreach> it came.

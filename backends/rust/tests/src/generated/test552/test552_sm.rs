@@ -441,6 +441,7 @@ impl Test552Policy {
                 );
                 engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(
                     Test552Event::ErrorExecution,
+                    ::sce_rust_runtime::ErrorReason::ParamUnfit,
                     "<data id='Var1'> could not hold the value its invoke handed it",
                 ));
             }
@@ -463,6 +464,7 @@ impl Test552Policy {
                     );
                     engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(
                         Test552Event::ErrorExecution,
+                        ::sce_rust_runtime::ErrorReason::DataInitFailed,
                         "<data id='Var1' src='file:test552.txt'> could not be loaded",
                     ));
                 }
@@ -512,6 +514,7 @@ impl Test552Policy {
                 ::sce_rust_runtime::sce_log_error!("Guard evaluation failed for '{}': {}", cond, e);
                 engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(
                     Test552Event::ErrorExecution,
+                    ::sce_rust_runtime::ErrorReason::ExpressionFailed,
                     reason,
                 ));
                 None

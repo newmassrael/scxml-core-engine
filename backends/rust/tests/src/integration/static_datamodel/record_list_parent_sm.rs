@@ -1,5 +1,5 @@
 // SCE-GENERATED — DO NOT EDIT
-// source-hash: 65fb42bdd588f958b0fbb29ac261cf039d02606d7afaae0720c045624bd679ba
+// source-hash: 2073d8a55462e1ce61d8a77293fdd2c141aceda8ad173303c5b84813ca22eeee
 
 // SPDX-License-Identifier: AGPL-3.0-only WITH AdditionRef-SCE-Linking-Exception OR LicenseRef-SCE-Commercial
 // SPDX-FileCopyrightText: Copyright (c) 2025-2026 [Author of input SCXML file] (content derived from the input document)
@@ -1996,7 +1996,7 @@ impl RecordListParentPolicy {
                     self.active_invokes.remove("list");
                     engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(
                         RecordListParentEvent::ErrorExecution,
-                        &format!("<invoke id='{}'> did not start: its child's script session failed at step '{}'", "list", failure.stage)));
+                        ::sce_rust_runtime::ErrorReason::InvokeChildInitFailed, &format!("<invoke id='{}'> did not start: its child's script session failed at step '{}'", "list", failure.stage)));
                     continue;
                 }
 
@@ -2987,6 +2987,7 @@ impl StatePolicy for RecordListParentPolicy {
                             // target names is not there to reach.
                             let mut err_meta = sce_rust_runtime::EventWithMetadata::platform_error(
                                 RecordListParentEvent::ErrorCommunication,
+                                ::sce_rust_runtime::ErrorReason::TargetUnreachable,
                                 "<send target='#_list'> names an invocation that is not running",
                             );
                             engine.raise(err_meta);
@@ -3090,6 +3091,7 @@ impl StatePolicy for RecordListParentPolicy {
                             // target names is not there to reach.
                             let mut err_meta = sce_rust_runtime::EventWithMetadata::platform_error(
                                 RecordListParentEvent::ErrorCommunication,
+                                ::sce_rust_runtime::ErrorReason::TargetUnreachable,
                                 "<send target='#_list'> names an invocation that is not running",
                             );
                             engine.raise(err_meta);
@@ -3184,6 +3186,7 @@ impl StatePolicy for RecordListParentPolicy {
                             // target names is not there to reach.
                             let mut err_meta = sce_rust_runtime::EventWithMetadata::platform_error(
                                 RecordListParentEvent::ErrorCommunication,
+                                ::sce_rust_runtime::ErrorReason::TargetUnreachable,
                                 "<send target='#_list'> names an invocation that is not running",
                             );
                             engine.raise(err_meta);
@@ -3273,6 +3276,7 @@ impl StatePolicy for RecordListParentPolicy {
                             // target names is not there to reach.
                             let mut err_meta = sce_rust_runtime::EventWithMetadata::platform_error(
                                 RecordListParentEvent::ErrorCommunication,
+                                ::sce_rust_runtime::ErrorReason::TargetUnreachable,
                                 "<send target='#_list'> names an invocation that is not running",
                             );
                             engine.raise(err_meta);
@@ -3368,6 +3372,7 @@ impl StatePolicy for RecordListParentPolicy {
                             // target names is not there to reach.
                             let mut err_meta = sce_rust_runtime::EventWithMetadata::platform_error(
                                 RecordListParentEvent::ErrorCommunication,
+                                ::sce_rust_runtime::ErrorReason::TargetUnreachable,
                                 "<send target='#_list'> names an invocation that is not running",
                             );
                             engine.raise(err_meta);
@@ -3452,6 +3457,7 @@ impl StatePolicy for RecordListParentPolicy {
                             // target names is not there to reach.
                             let mut err_meta = sce_rust_runtime::EventWithMetadata::platform_error(
                                 RecordListParentEvent::ErrorCommunication,
+                                ::sce_rust_runtime::ErrorReason::TargetUnreachable,
                                 "<send target='#_list'> names an invocation that is not running",
                             );
                             engine.raise(err_meta);
@@ -3536,6 +3542,7 @@ impl StatePolicy for RecordListParentPolicy {
                             // target names is not there to reach.
                             let mut err_meta = sce_rust_runtime::EventWithMetadata::platform_error(
                                 RecordListParentEvent::ErrorCommunication,
+                                ::sce_rust_runtime::ErrorReason::TargetUnreachable,
                                 "<send target='#_list'> names an invocation that is not running",
                             );
                             engine.raise(err_meta);
@@ -3616,6 +3623,7 @@ impl StatePolicy for RecordListParentPolicy {
                             // target names is not there to reach.
                             let mut err_meta = sce_rust_runtime::EventWithMetadata::platform_error(
                                 RecordListParentEvent::ErrorCommunication,
+                                ::sce_rust_runtime::ErrorReason::TargetUnreachable,
                                 "<send target='#_list'> names an invocation that is not running",
                             );
                             engine.raise(err_meta);
@@ -3702,6 +3710,7 @@ impl StatePolicy for RecordListParentPolicy {
                             // target names is not there to reach.
                             let mut err_meta = sce_rust_runtime::EventWithMetadata::platform_error(
                                 RecordListParentEvent::ErrorCommunication,
+                                ::sce_rust_runtime::ErrorReason::TargetUnreachable,
                                 "<send target='#_list'> names an invocation that is not running",
                             );
                             engine.raise(err_meta);
@@ -3851,6 +3860,7 @@ impl StatePolicy for RecordListParentPolicy {
                             // target names is not there to reach.
                             let mut err_meta = sce_rust_runtime::EventWithMetadata::platform_error(
                                 RecordListParentEvent::ErrorCommunication,
+                                ::sce_rust_runtime::ErrorReason::TargetUnreachable,
                                 "<send target='#_list'> names an invocation that is not running",
                             );
                             engine.raise(err_meta);
@@ -3895,7 +3905,7 @@ impl StatePolicy for RecordListParentPolicy {
                         })() {
                             Ok(()) => false,
                             Err(_) => {
-                                engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(RecordListParentEvent::ErrorExecution, "<assign location='shown.text'>: an integer operation overflowed or failed"));
+                                engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(RecordListParentEvent::ErrorExecution, ::sce_rust_runtime::ErrorReason::ExpressionFailed, "<assign location='shown.text'>: an integer operation overflowed or failed"));
                                 true
                             }
                         };
@@ -3923,7 +3933,7 @@ impl StatePolicy for RecordListParentPolicy {
                         })() {
                             Ok(()) => false,
                             Err(_) => {
-                                engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(RecordListParentEvent::ErrorExecution, "<assign location='told'>: an integer operation overflowed or failed"));
+                                engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(RecordListParentEvent::ErrorExecution, ::sce_rust_runtime::ErrorReason::ExpressionFailed, "<assign location='told'>: an integer operation overflowed or failed"));
                                 true
                             }
                         };
@@ -3965,7 +3975,7 @@ impl StatePolicy for RecordListParentPolicy {
                         })() {
                             Ok(()) => false,
                             Err(_) => {
-                                engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(RecordListParentEvent::ErrorExecution, "<assign location='other.text'>: an integer operation overflowed or failed"));
+                                engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(RecordListParentEvent::ErrorExecution, ::sce_rust_runtime::ErrorReason::ExpressionFailed, "<assign location='other.text'>: an integer operation overflowed or failed"));
                                 true
                             }
                         };
@@ -3988,7 +3998,7 @@ impl StatePolicy for RecordListParentPolicy {
                     {
                         false
                     } else {
-                        engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(RecordListParentEvent::ErrorExecution, "<sce:append target='others'>: the list already holds its capacity of 8"));
+                        engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(RecordListParentEvent::ErrorExecution, ::sce_rust_runtime::ErrorReason::AssignmentFailed, "<sce:append target='others'>: the list already holds its capacity of 8"));
                         true
                     };
                     if sce_failed {
@@ -4003,7 +4013,7 @@ impl StatePolicy for RecordListParentPolicy {
                         })() {
                             Ok(()) => false,
                             Err(_) => {
-                                engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(RecordListParentEvent::ErrorExecution, "<assign location='told'>: an integer operation overflowed or failed"));
+                                engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(RecordListParentEvent::ErrorExecution, ::sce_rust_runtime::ErrorReason::ExpressionFailed, "<assign location='told'>: an integer operation overflowed or failed"));
                                 true
                             }
                         };
@@ -4041,7 +4051,7 @@ impl StatePolicy for RecordListParentPolicy {
                         })() {
                             Ok(()) => false,
                             Err(_) => {
-                                engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(RecordListParentEvent::ErrorExecution, "<assign location='refusedCount'>: an integer operation overflowed or failed"));
+                                engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(RecordListParentEvent::ErrorExecution, ::sce_rust_runtime::ErrorReason::ExpressionFailed, "<assign location='refusedCount'>: an integer operation overflowed or failed"));
                                 true
                             }
                         };
@@ -4065,7 +4075,7 @@ impl StatePolicy for RecordListParentPolicy {
                         })() {
                             Ok(()) => false,
                             Err(_) => {
-                                engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(RecordListParentEvent::ErrorExecution, "<assign location='pendingCount'>: an integer operation overflowed or failed"));
+                                engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(RecordListParentEvent::ErrorExecution, ::sce_rust_runtime::ErrorReason::ExpressionFailed, "<assign location='pendingCount'>: an integer operation overflowed or failed"));
                                 true
                             }
                         };
@@ -4089,7 +4099,7 @@ impl StatePolicy for RecordListParentPolicy {
                         })() {
                             Ok(()) => false,
                             Err(_) => {
-                                engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(RecordListParentEvent::ErrorExecution, "<assign location='confirmedCount'>: an integer operation overflowed or failed"));
+                                engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(RecordListParentEvent::ErrorExecution, ::sce_rust_runtime::ErrorReason::ExpressionFailed, "<assign location='confirmedCount'>: an integer operation overflowed or failed"));
                                 true
                             }
                         };

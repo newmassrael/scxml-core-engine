@@ -472,6 +472,7 @@ impl ADelayedHttpSendIsPostedWhenDuePolicy {
                 );
                 engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(
                     ADelayedHttpSendIsPostedWhenDueEvent::ErrorExecution,
+                    ::sce_rust_runtime::ErrorReason::ParamUnfit,
                     "<data id='dynamicUrl'> could not hold the value its invoke handed it",
                 ));
             }
@@ -486,6 +487,7 @@ impl ADelayedHttpSendIsPostedWhenDuePolicy {
                 ::sce_rust_runtime::sce_log_error!("global: {}", e);
                 engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(
                     ADelayedHttpSendIsPostedWhenDueEvent::ErrorExecution,
+                    ::sce_rust_runtime::ErrorReason::ExpressionFailed,
                     "<data id='dynamicUrl'> expr failed to evaluate",
                 ));
             }
@@ -534,6 +536,7 @@ impl ADelayedHttpSendIsPostedWhenDuePolicy {
                 ::sce_rust_runtime::sce_log_error!("Guard evaluation failed for '{}': {}", cond, e);
                 engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(
                     ADelayedHttpSendIsPostedWhenDueEvent::ErrorExecution,
+                    ::sce_rust_runtime::ErrorReason::ExpressionFailed,
                     reason,
                 ));
                 None
@@ -868,7 +871,7 @@ impl StatePolicy for ADelayedHttpSendIsPostedWhenDuePolicy {
                         // id, the payload never read, nothing posted, the block ended.
                         if !sce_rust_runtime::helpers::send::is_supported_send_type(sce_rust_runtime::helpers::scxml_constants::BASIC_HTTP_EVENT_PROCESSOR_TYPE) {
         ::sce_rust_runtime::sce_log_error!("<send type='http://www.w3.org/TR/scxml/#BasicHTTPEventProcessor'>: this build has no BasicHTTP processor (sce-rust-runtime's `http-send` feature)");
-        let mut err_meta = sce_rust_runtime::EventWithMetadata::platform_error(ADelayedHttpSendIsPostedWhenDueEvent::ErrorExecution, "<send type='http://www.w3.org/TR/scxml/#BasicHTTPEventProcessor'> names a processor this platform does not support");
+        let mut err_meta = sce_rust_runtime::EventWithMetadata::platform_error(ADelayedHttpSendIsPostedWhenDueEvent::ErrorExecution, ::sce_rust_runtime::ErrorReason::SendTypeUnsupported, "<send type='http://www.w3.org/TR/scxml/#BasicHTTPEventProcessor'> names a processor this platform does not support");
         err_meta.metadata.send_id = ::sce_rust_runtime::sce_string_from_str(send_id);
         engine.raise(err_meta);
         break 'action_block;  // W3C SCXML 4.9: the error ends the block
@@ -903,7 +906,7 @@ impl StatePolicy for ADelayedHttpSendIsPostedWhenDuePolicy {
                         // id, the payload never read, nothing posted, the block ended.
                         if !sce_rust_runtime::helpers::send::is_supported_send_type(sce_rust_runtime::helpers::scxml_constants::BASIC_HTTP_EVENT_PROCESSOR_TYPE) {
         ::sce_rust_runtime::sce_log_error!("<send type='http://www.w3.org/TR/scxml/#BasicHTTPEventProcessor'>: this build has no BasicHTTP processor (sce-rust-runtime's `http-send` feature)");
-        let mut err_meta = sce_rust_runtime::EventWithMetadata::platform_error(ADelayedHttpSendIsPostedWhenDueEvent::ErrorExecution, "<send type='http://www.w3.org/TR/scxml/#BasicHTTPEventProcessor'> names a processor this platform does not support");
+        let mut err_meta = sce_rust_runtime::EventWithMetadata::platform_error(ADelayedHttpSendIsPostedWhenDueEvent::ErrorExecution, ::sce_rust_runtime::ErrorReason::SendTypeUnsupported, "<send type='http://www.w3.org/TR/scxml/#BasicHTTPEventProcessor'> names a processor this platform does not support");
         err_meta.metadata.send_id = ::sce_rust_runtime::sce_string_from_str(send_id);
         engine.raise(err_meta);
         break 'action_block;  // W3C SCXML 4.9: the error ends the block
@@ -936,7 +939,12 @@ impl StatePolicy for ADelayedHttpSendIsPostedWhenDuePolicy {
                         let __sce_arg_sid = self.session_id.as_ref().unwrap().clone();
                         let __sce_arg_se = self.script_engine.clone();
                         let __sce_arg_se: &dyn sce_rust_runtime::IScriptEngine = &*__sce_arg_se;
-                        let mut _send_arg_error: Option<&'static str> = None;
+                        // The code and the sentence of the first argument that failed
+                        // (docs/adr/0106 #111).
+                        let mut _send_arg_error: Option<(
+                            ::sce_rust_runtime::ErrorReason,
+                            &'static str,
+                        )> = None;
                         // The expression failing is the argument error, and so is a value that is
                         // not the CSS2 time the clause names (ARCHITECTURE.md, "Durations"): the
                         // message is not scheduled under some default wait.
@@ -946,8 +954,10 @@ impl StatePolicy for ADelayedHttpSendIsPostedWhenDuePolicy {
                                     let s = ::sce_rust_runtime::helpers::event_data::script_value_to_wire_string(&val);
                                     sce_rust_runtime::helpers::send::parse_delay_to_ms(&s)
                                         .unwrap_or_else(|| {
-                                            _send_arg_error =
-                                                Some("<send> delayexpr is not a CSS2 time");
+                                            _send_arg_error = Some((
+                                                ::sce_rust_runtime::ErrorReason::SendDelayInvalid,
+                                                "<send> delayexpr is not a CSS2 time",
+                                            ));
                                             0
                                         })
                                 }
@@ -956,18 +966,21 @@ impl StatePolicy for ADelayedHttpSendIsPostedWhenDuePolicy {
                                         "delayexpr eval failed: {}",
                                         e
                                     );
-                                    _send_arg_error =
-                                        Some("<send> delayexpr could not be evaluated");
+                                    _send_arg_error = Some((
+                                        ::sce_rust_runtime::ErrorReason::ExpressionFailed,
+                                        "<send> delayexpr could not be evaluated",
+                                    ));
                                     0
                                 }
                             }
                         } else {
                             0
                         };
-                        if let Some(__sce_why) = _send_arg_error {
+                        if let Some((__sce_reason, __sce_why)) = _send_arg_error {
                             ::sce_rust_runtime::sce_log_error!("{}", __sce_why);
                             let mut err_meta = sce_rust_runtime::EventWithMetadata::platform_error(
                                 ADelayedHttpSendIsPostedWhenDueEvent::ErrorExecution,
+                                __sce_reason,
                                 __sce_why,
                             );
                             err_meta.metadata.send_id =
@@ -981,7 +994,7 @@ impl StatePolicy for ADelayedHttpSendIsPostedWhenDuePolicy {
                             // id, the payload never read, nothing posted, the block ended.
                             if !sce_rust_runtime::helpers::send::is_supported_send_type(sce_rust_runtime::helpers::scxml_constants::BASIC_HTTP_EVENT_PROCESSOR_TYPE) {
         ::sce_rust_runtime::sce_log_error!("<send type='http://www.w3.org/TR/scxml/#BasicHTTPEventProcessor'>: this build has no BasicHTTP processor (sce-rust-runtime's `http-send` feature)");
-        let mut err_meta = sce_rust_runtime::EventWithMetadata::platform_error(ADelayedHttpSendIsPostedWhenDueEvent::ErrorExecution, "<send type='http://www.w3.org/TR/scxml/#BasicHTTPEventProcessor'> names a processor this platform does not support");
+        let mut err_meta = sce_rust_runtime::EventWithMetadata::platform_error(ADelayedHttpSendIsPostedWhenDueEvent::ErrorExecution, ::sce_rust_runtime::ErrorReason::SendTypeUnsupported, "<send type='http://www.w3.org/TR/scxml/#BasicHTTPEventProcessor'> names a processor this platform does not support");
         err_meta.metadata.send_id = ::sce_rust_runtime::sce_string_from_str(send_id);
         engine.raise(err_meta);
         break 'action_block;  // W3C SCXML 4.9: the error ends the block
@@ -1025,7 +1038,7 @@ impl StatePolicy for ADelayedHttpSendIsPostedWhenDuePolicy {
                         // id, the payload never read, nothing posted, the block ended.
                         if !sce_rust_runtime::helpers::send::is_supported_send_type(sce_rust_runtime::helpers::scxml_constants::BASIC_HTTP_EVENT_PROCESSOR_TYPE) {
         ::sce_rust_runtime::sce_log_error!("<send type='http://www.w3.org/TR/scxml/#BasicHTTPEventProcessor'>: this build has no BasicHTTP processor (sce-rust-runtime's `http-send` feature)");
-        let mut err_meta = sce_rust_runtime::EventWithMetadata::platform_error(ADelayedHttpSendIsPostedWhenDueEvent::ErrorExecution, "<send type='http://www.w3.org/TR/scxml/#BasicHTTPEventProcessor'> names a processor this platform does not support");
+        let mut err_meta = sce_rust_runtime::EventWithMetadata::platform_error(ADelayedHttpSendIsPostedWhenDueEvent::ErrorExecution, ::sce_rust_runtime::ErrorReason::SendTypeUnsupported, "<send type='http://www.w3.org/TR/scxml/#BasicHTTPEventProcessor'> names a processor this platform does not support");
         err_meta.metadata.send_id = ::sce_rust_runtime::sce_string_from_str(send_id);
         engine.raise(err_meta);
         break 'action_block;  // W3C SCXML 4.9: the error ends the block
@@ -1068,7 +1081,7 @@ impl StatePolicy for ADelayedHttpSendIsPostedWhenDuePolicy {
                         // id, the payload never read, nothing posted, the block ended.
                         if !sce_rust_runtime::helpers::send::is_supported_send_type(sce_rust_runtime::helpers::scxml_constants::BASIC_HTTP_EVENT_PROCESSOR_TYPE) {
         ::sce_rust_runtime::sce_log_error!("<send type='http://www.w3.org/TR/scxml/#BasicHTTPEventProcessor'>: this build has no BasicHTTP processor (sce-rust-runtime's `http-send` feature)");
-        let mut err_meta = sce_rust_runtime::EventWithMetadata::platform_error(ADelayedHttpSendIsPostedWhenDueEvent::ErrorExecution, "<send type='http://www.w3.org/TR/scxml/#BasicHTTPEventProcessor'> names a processor this platform does not support");
+        let mut err_meta = sce_rust_runtime::EventWithMetadata::platform_error(ADelayedHttpSendIsPostedWhenDueEvent::ErrorExecution, ::sce_rust_runtime::ErrorReason::SendTypeUnsupported, "<send type='http://www.w3.org/TR/scxml/#BasicHTTPEventProcessor'> names a processor this platform does not support");
         err_meta.metadata.send_id = ::sce_rust_runtime::sce_string_from_str(send_id);
         engine.raise(err_meta);
         break 'action_block;  // W3C SCXML 4.9: the error ends the block
@@ -1112,7 +1125,12 @@ impl StatePolicy for ADelayedHttpSendIsPostedWhenDuePolicy {
                         let __sce_arg_sid = self.session_id.as_ref().unwrap().clone();
                         let __sce_arg_se = self.script_engine.clone();
                         let __sce_arg_se: &dyn sce_rust_runtime::IScriptEngine = &*__sce_arg_se;
-                        let mut _send_arg_error: Option<&'static str> = None;
+                        // The code and the sentence of the first argument that failed
+                        // (docs/adr/0106 #111).
+                        let mut _send_arg_error: Option<(
+                            ::sce_rust_runtime::ErrorReason,
+                            &'static str,
+                        )> = None;
                         // A target that evaluates to nothing is not an evaluation error: it is an
                         // address nobody answers at, which the resolution below reports as
                         // error.communication (W3C SCXML C.1).
@@ -1126,8 +1144,10 @@ impl StatePolicy for ADelayedHttpSendIsPostedWhenDuePolicy {
                                             "targetexpr eval failed: {}",
                                             e
                                         );
-                                        _send_arg_error =
-                                            Some("<send> targetexpr could not be evaluated");
+                                        _send_arg_error = Some((
+                                            ::sce_rust_runtime::ErrorReason::ExpressionFailed,
+                                            "<send> targetexpr could not be evaluated",
+                                        ));
                                         None
                                     }
                                 }
@@ -1138,13 +1158,14 @@ impl StatePolicy for ADelayedHttpSendIsPostedWhenDuePolicy {
                             // W3C SCXML 6.2: a target this processor cannot address is refused as
                             // a static one is, before anything is delivered.
                             if sce_rust_runtime::helpers::send::is_invalid_target(&::sce_rust_runtime::helpers::event_data::script_value_to_wire_string(val)) {
-            _send_arg_error = Some("<send> targetexpr produced a target this processor cannot address");
+            _send_arg_error = Some((::sce_rust_runtime::ErrorReason::SendTargetInvalid, "<send> targetexpr produced a target this processor cannot address"));
         }
                         }
-                        if let Some(__sce_why) = _send_arg_error {
+                        if let Some((__sce_reason, __sce_why)) = _send_arg_error {
                             ::sce_rust_runtime::sce_log_error!("{}", __sce_why);
                             let mut err_meta = sce_rust_runtime::EventWithMetadata::platform_error(
                                 ADelayedHttpSendIsPostedWhenDueEvent::ErrorExecution,
+                                __sce_reason,
                                 __sce_why,
                             );
                             err_meta.metadata.send_id =
@@ -1166,7 +1187,7 @@ impl StatePolicy for ADelayedHttpSendIsPostedWhenDuePolicy {
                             if _resolved_target.is_none() {
                                 // W3C SCXML C.1 (test 496, 521): a target that names nothing raises
                                 // error.communication.
-                                let mut err_meta = sce_rust_runtime::EventWithMetadata::platform_error(ADelayedHttpSendIsPostedWhenDueEvent::ErrorCommunication, "<send> targetexpr evaluated to nothing, so there is no target to reach");
+                                let mut err_meta = sce_rust_runtime::EventWithMetadata::platform_error(ADelayedHttpSendIsPostedWhenDueEvent::ErrorCommunication, ::sce_rust_runtime::ErrorReason::TargetUnreachable, "<send> targetexpr evaluated to nothing, so there is no target to reach");
                                 err_meta.metadata.send_id =
                                     ::sce_rust_runtime::sce_string_from_str(send_id);
                                 engine.raise(err_meta);
@@ -1179,7 +1200,7 @@ impl StatePolicy for ADelayedHttpSendIsPostedWhenDuePolicy {
                                 // id, the payload never read, nothing posted, the block ended.
                                 if !sce_rust_runtime::helpers::send::is_supported_send_type(sce_rust_runtime::helpers::scxml_constants::BASIC_HTTP_EVENT_PROCESSOR_TYPE) {
         ::sce_rust_runtime::sce_log_error!("<send type='http://www.w3.org/TR/scxml/#BasicHTTPEventProcessor'>: this build has no BasicHTTP processor (sce-rust-runtime's `http-send` feature)");
-        let mut err_meta = sce_rust_runtime::EventWithMetadata::platform_error(ADelayedHttpSendIsPostedWhenDueEvent::ErrorExecution, "<send type='http://www.w3.org/TR/scxml/#BasicHTTPEventProcessor'> names a processor this platform does not support");
+        let mut err_meta = sce_rust_runtime::EventWithMetadata::platform_error(ADelayedHttpSendIsPostedWhenDueEvent::ErrorExecution, ::sce_rust_runtime::ErrorReason::SendTypeUnsupported, "<send type='http://www.w3.org/TR/scxml/#BasicHTTPEventProcessor'> names a processor this platform does not support");
         err_meta.metadata.send_id = ::sce_rust_runtime::sce_string_from_str(send_id);
         engine.raise(err_meta);
         break 'action_block;  // W3C SCXML 4.9: the error ends the block
@@ -1199,7 +1220,7 @@ impl StatePolicy for ADelayedHttpSendIsPostedWhenDuePolicy {
     {
         // W3C SCXML C.2: Validate dynamic target is HTTP URL
         if !_rt.starts_with("http://") && !_rt.starts_with("https://") {
-            let mut err_meta = sce_rust_runtime::EventWithMetadata::platform_error(ADelayedHttpSendIsPostedWhenDueEvent::ErrorCommunication, "<send> over BasicHTTPEventProcessor resolved a target that is not an http(s) URL");
+            let mut err_meta = sce_rust_runtime::EventWithMetadata::platform_error(ADelayedHttpSendIsPostedWhenDueEvent::ErrorCommunication, ::sce_rust_runtime::ErrorReason::HttpTargetInvalid, "<send> over BasicHTTPEventProcessor resolved a target that is not an http(s) URL");
             err_meta.metadata.send_id = ::sce_rust_runtime::sce_string_from_str(send_id);
             engine.raise(err_meta);
             break 'action_block;  // W3C SCXML 4.9: the error ends the block

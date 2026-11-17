@@ -520,6 +520,7 @@ impl Test448Policy {
             ::sce_rust_runtime::sce_log_error!("s01: {}", e);
             engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(
                 Test448Event::ErrorExecution,
+                ::sce_rust_runtime::ErrorReason::ExpressionFailed,
                 "<data id='var1'> expr failed to evaluate",
             ));
         }
@@ -532,6 +533,7 @@ impl Test448Policy {
             ::sce_rust_runtime::sce_log_error!("s01p2: {}", e);
             engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(
                 Test448Event::ErrorExecution,
+                ::sce_rust_runtime::ErrorReason::ExpressionFailed,
                 "<data id='var2'> expr failed to evaluate",
             ));
         }
@@ -597,6 +599,7 @@ impl Test448Policy {
                 ::sce_rust_runtime::sce_log_error!("Guard evaluation failed for '{}': {}", cond, e);
                 engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(
                     Test448Event::ErrorExecution,
+                    ::sce_rust_runtime::ErrorReason::ExpressionFailed,
                     reason,
                 ));
                 None

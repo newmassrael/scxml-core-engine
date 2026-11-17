@@ -459,6 +459,7 @@ impl Test150Policy {
                 );
                 engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(
                     Test150Event::ErrorExecution,
+                    ::sce_rust_runtime::ErrorReason::ParamUnfit,
                     "<data id='Var1'> could not hold the value its invoke handed it",
                 ));
             }
@@ -476,6 +477,7 @@ impl Test150Policy {
                 );
                 engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(
                     Test150Event::ErrorExecution,
+                    ::sce_rust_runtime::ErrorReason::ParamUnfit,
                     "<data id='Var2'> could not hold the value its invoke handed it",
                 ));
             }
@@ -493,6 +495,7 @@ impl Test150Policy {
                 );
                 engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(
                     Test150Event::ErrorExecution,
+                    ::sce_rust_runtime::ErrorReason::ParamUnfit,
                     "<data id='Var3'> could not hold the value its invoke handed it",
                 ));
             }
@@ -508,6 +511,7 @@ impl Test150Policy {
                 ::sce_rust_runtime::sce_log_error!("Failed to init 'Var3' in global: {}", e);
                 engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(
                     Test150Event::ErrorExecution,
+                    ::sce_rust_runtime::ErrorReason::DataInitFailed,
                     "<data id='Var3'> content failed to initialise",
                 ));
             }
@@ -556,6 +560,7 @@ impl Test150Policy {
                 ::sce_rust_runtime::sce_log_error!("Guard evaluation failed for '{}': {}", cond, e);
                 engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(
                     Test150Event::ErrorExecution,
+                    ::sce_rust_runtime::ErrorReason::ExpressionFailed,
                     reason,
                 ));
                 None
@@ -898,6 +903,7 @@ impl StatePolicy for Test150Policy {
                             );
                             engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(
                                 Test150Event::ErrorExecution,
+                                ::sce_rust_runtime::ErrorReason::ForeachInvalid,
                                 "<foreach item='Var1'> is not a legal variable name",
                             ));
                             break 'action_block;
@@ -936,6 +942,7 @@ impl StatePolicy for Test150Policy {
                                         engine.raise(
                                             sce_rust_runtime::EventWithMetadata::platform_error(
                                                 Test150Event::ErrorExecution,
+                                                ::sce_rust_runtime::ErrorReason::ForeachInvalid,
                                                 "<foreach> could not set its loop variable",
                                             ),
                                         );
@@ -950,6 +957,7 @@ impl StatePolicy for Test150Policy {
                                     engine.raise(
                                         sce_rust_runtime::EventWithMetadata::platform_error(
                                             Test150Event::ErrorExecution,
+                                            ::sce_rust_runtime::ErrorReason::ForeachInvalid,
                                             "<foreach array='Var3'> is not an array",
                                         ),
                                     );
@@ -963,6 +971,7 @@ impl StatePolicy for Test150Policy {
                                     engine.raise(
                                         sce_rust_runtime::EventWithMetadata::platform_error(
                                             Test150Event::ErrorExecution,
+                                            ::sce_rust_runtime::ErrorReason::ExpressionFailed,
                                             "<foreach array='Var3'> failed to evaluate",
                                         ),
                                     );
@@ -1001,6 +1010,7 @@ impl StatePolicy for Test150Policy {
                             );
                             engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(
                                 Test150Event::ErrorExecution,
+                                ::sce_rust_runtime::ErrorReason::ForeachInvalid,
                                 "<foreach item='Var4'> is not a legal variable name",
                             ));
                             break 'action_block;
@@ -1039,6 +1049,7 @@ impl StatePolicy for Test150Policy {
                                         engine.raise(
                                             sce_rust_runtime::EventWithMetadata::platform_error(
                                                 Test150Event::ErrorExecution,
+                                                ::sce_rust_runtime::ErrorReason::ForeachInvalid,
                                                 "<foreach> could not set its loop variable",
                                             ),
                                         );
@@ -1053,6 +1064,7 @@ impl StatePolicy for Test150Policy {
                                     engine.raise(
                                         sce_rust_runtime::EventWithMetadata::platform_error(
                                             Test150Event::ErrorExecution,
+                                            ::sce_rust_runtime::ErrorReason::ForeachInvalid,
                                             "<foreach array='Var3'> is not an array",
                                         ),
                                     );
@@ -1066,6 +1078,7 @@ impl StatePolicy for Test150Policy {
                                     engine.raise(
                                         sce_rust_runtime::EventWithMetadata::platform_error(
                                             Test150Event::ErrorExecution,
+                                            ::sce_rust_runtime::ErrorReason::ExpressionFailed,
                                             "<foreach array='Var3'> failed to evaluate",
                                         ),
                                     );

@@ -1,10 +1,10 @@
 // SCE-GENERATED — DO NOT EDIT
-// source-hash: 65fb42bdd588f958b0fbb29ac261cf039d02606d7afaae0720c045624bd679ba
+// source-hash: 2073d8a55462e1ce61d8a77293fdd2c141aceda8ad173303c5b84813ca22eeee
 
 // GENERATED CODE — DO NOT EDIT
 // Source: sce-build/tests/fixtures/static_datamodel/static_lift_list.scxml
 // Generator: SCE Kotlin Code Generator v1.0
-// SCE-MAP: static_lift_list.scxml:21 :: _machine
+// SCE-MAP: static_lift_list.scxml:27 :: _machine
 
 package com.sce.integration.static_datamodel.static_lift_list
 
@@ -20,6 +20,9 @@ sealed interface StaticLiftListState : State {
 // --- Events (W3C SCXML 3.12.1) ---
 
 sealed interface StaticLiftListEvent : Event {
+    sealed interface Answer : StaticLiftListEvent {
+        data object Read : Answer
+    }
     sealed interface Error : StaticLiftListEvent {
         data object Execution : Error
     }
@@ -169,6 +172,26 @@ class StaticLiftListStateMachine(
 
     /** What the published `errors` holds. */
     val errors: UInt get() = vErrors
+    /** W3C SCXML 5.2: the `priority` datamodel variable, published (`sce:direction="out"`). */
+    private var vPriority: UByte = 0.toUByte()
+
+    /** What the published `priority` holds. */
+    val priority: UByte get() = vPriority
+    /** W3C SCXML 5.2: the `held_items` datamodel variable, published (`sce:direction="out"`). */
+    private var vHeldItems: UInt = 0.toUInt()
+
+    /** What the published `held_items` holds. */
+    val heldItems: UInt get() = vHeldItems
+    /** W3C SCXML 5.2: the `weeks` datamodel variable, published (`sce:direction="out"`). */
+    private var vWeeks: UInt = 0.toUInt()
+
+    /** What the published `weeks` holds. */
+    val weeks: UInt get() = vWeeks
+    /** W3C SCXML 5.2: the `other_reads` datamodel variable, published (`sce:direction="out"`). */
+    private var vOtherReads: UInt = 0.toUInt()
+
+    /** What the published `other_reads` holds. */
+    val otherReads: UInt get() = vOtherReads
 
     /**
      * §scxml-6.4.1: the values a parent's `<param>` and `namelist` give this
@@ -178,6 +201,10 @@ class StaticLiftListStateMachine(
     class InvokeParams {
         var lifts: UInt? = null
         var errors: UInt? = null
+        var priority: UByte? = null
+        var heldItems: UInt? = null
+        var weeks: UInt? = null
+        var otherReads: UInt? = null
     }
 
     /**
@@ -196,6 +223,10 @@ class StaticLiftListStateMachine(
         vWhy = null
         vLifts = params.lifts ?: (0.toUInt())
         vErrors = params.errors ?: (0.toUInt())
+        vPriority = params.priority ?: (0.toUByte())
+        vHeldItems = params.heldItems ?: (0.toUInt())
+        vWeeks = params.weeks ?: (0.toUInt())
+        vOtherReads = params.otherReads ?: (0.toUInt())
     }
 
     /** The published variables as one immutable value, in declaration order. */
@@ -204,6 +235,10 @@ class StaticLiftListStateMachine(
         val why: StaticLiftListLiftRefusalRecord?,
         val lifts: UInt,
         val errors: UInt,
+        val priority: UByte,
+        val heldItems: UInt,
+        val weeks: UInt,
+        val otherReads: UInt,
     )
 
     /**
@@ -224,6 +259,10 @@ class StaticLiftListStateMachine(
         why = vWhy,
         lifts = vLifts,
         errors = vErrors,
+        priority = vPriority,
+        heldItems = vHeldItems,
+        weeks = vWeeks,
+        otherReads = vOtherReads,
     )
 
     private val _snapshot = kotlinx.coroutines.flow.MutableStateFlow(
@@ -253,10 +292,10 @@ class StaticLiftListStateMachine(
      * later revision added at its default.
      */
     val savedShape: SavedShape = SavedShape(
-        first = "278e253fe85156670b7b4f447d0185c5e8c8d979b1ec705f860e0ee004f52a5a",
-        revised = "b1902fc18d4de773fb70cb2f5b49e3f401597bfe11a18a3007e4491081f79c57",
-        format2First = "f3fa049a25f94721181b3af6944e982e3f185467a30439495bcd514aa60ff730",
-        format2Revised = "7fc625a9db3df62e3a393adfec6e2ae2caefffd13e14b692078c07971b1ddc82",
+        first = "1badb4b2ea4309b9fe4d2047edb7ee38bbf70284e0a5c161f4c36f65ce8e5007",
+        revised = "2bda32d52e03119ef6769780bb6f8a23892e7d4b9f2dd15da0e8255d4b74d8cb",
+        format2First = "faf8c7daee60057fdde6766390a6d6359101f01bd1dc0ea21592ae102e644ef8",
+        format2Revised = "072c13694c3eff7feee42b34c9812ee7a849c165765afc3e99f61d3cf5cea42e",
         records = listOf(
             RecordLineage(
                 event = "lift.refusal",
@@ -307,6 +346,10 @@ class StaticLiftListStateMachine(
         variables += "why" to SavedValues.optional(vWhy) { it.toSaved() }
         variables += "lifts" to SavedValues.of(vLifts)
         variables += "errors" to SavedValues.of(vErrors)
+        variables += "priority" to SavedValues.of(vPriority)
+        variables += "held_items" to SavedValues.of(vHeldItems)
+        variables += "weeks" to SavedValues.of(vWeeks)
+        variables += "other_reads" to SavedValues.of(vOtherReads)
     }
 
     /** [save] at the host's wall clock now. */
@@ -351,6 +394,10 @@ class StaticLiftListStateMachine(
         vWhy = SavedValues.optional(savedGrown.variable("why"), "why") { e, w -> StaticLiftListLiftRefusalRecord.fromSaved(e, w) }
         vLifts = SavedValues.uint32(savedGrown.variable("lifts"), "lifts")
         vErrors = SavedValues.uint32(savedGrown.variable("errors"), "errors")
+        vPriority = SavedValues.uint8(savedGrown.variable("priority"), "priority")
+        vHeldItems = SavedValues.uint32(savedGrown.variable("held_items"), "held_items")
+        vWeeks = SavedValues.uint32(savedGrown.variable("weeks"), "weeks")
+        vOtherReads = SavedValues.uint32(savedGrown.variable("other_reads"), "other_reads")
     }
 
     /** [restore] at the host's wall clock now. */
@@ -371,6 +418,10 @@ class StaticLiftListStateMachine(
         SavedValues.optional(savedGrown.variable("why"), "why") { e, w -> StaticLiftListLiftRefusalRecord.fromSaved(e, w) }
         SavedValues.uint32(savedGrown.variable("lifts"), "lifts")
         SavedValues.uint32(savedGrown.variable("errors"), "errors")
+        SavedValues.uint8(savedGrown.variable("priority"), "priority")
+        SavedValues.uint32(savedGrown.variable("held_items"), "held_items")
+        SavedValues.uint32(savedGrown.variable("weeks"), "weeks")
+        SavedValues.uint32(savedGrown.variable("other_reads"), "other_reads")
     }
 
     override fun restoreAsSession(saved: SavedState, wallNowMs: Long) = restore(saved, wallNowMs)
@@ -469,6 +520,24 @@ class StaticLiftListStateMachine(
             hasActions = true,
             isInternal = true,
         )
+
+        // W3C SCXML 3.13: lifting's transition 2, as the microstep reads it.
+        val transitionLiftingAt2 = EnabledTransition<StaticLiftListState, HistoryId>(
+            StaticLiftListState.Lifting,
+            emptyList(),
+            2,
+            hasActions = true,
+            isInternal = true,
+        )
+
+        // W3C SCXML 3.13: lifting's transition 3, as the microstep reads it.
+        val transitionLiftingAt3 = EnabledTransition<StaticLiftListState, HistoryId>(
+            StaticLiftListState.Lifting,
+            emptyList(),
+            3,
+            hasActions = true,
+            isInternal = true,
+        )
     }
 
 
@@ -493,6 +562,7 @@ class StaticLiftListStateMachine(
 
     // W3C SCXML 6.4: Resolve event name to Event object (cross-SM routing)
     override fun resolveEventByName(name: String): StaticLiftListEvent? = when (name) {
+        "answer.read" -> StaticLiftListEvent.Answer.Read
         "error.execution" -> StaticLiftListEvent.Error.Execution
         "text.given" -> StaticLiftListEvent.Text.Given
         else -> null
@@ -501,6 +571,7 @@ class StaticLiftListStateMachine(
 
     // W3C SCXML 6.4: Resolve Event object to event name string
     override fun eventNameOf(event: StaticLiftListEvent): String? = when (event) {
+        is StaticLiftListEvent.Answer.Read -> "answer.read"
         is StaticLiftListEvent.Error.Execution -> "error.execution"
         is StaticLiftListEvent.Text.Given -> "text.given"
     }
@@ -523,7 +594,9 @@ class StaticLiftListStateMachine(
     // lifting's own transitions, in document order.
     @Suppress("UNUSED_PARAMETER") private fun firstEnabledTransitionOfLifting(state: StaticLiftListState, event: StaticLiftListEvent?): EnabledTransition<StaticLiftListState, HistoryId>? = when {
         event is StaticLiftListEvent.Text.Given -> TransitionsPart0.transitionLiftingAt0
-        event is StaticLiftListEvent.Error.Execution -> TransitionsPart0.transitionLiftingAt1
+        event is StaticLiftListEvent.Answer.Read && vAnswer != null && com.sce.forge.runtime.SceOptional.proven(vAnswer).title == "Week" && com.sce.forge.runtime.SceOptional.proven(vAnswer).priority == 1.toUByte() -> TransitionsPart0.transitionLiftingAt1
+        event is StaticLiftListEvent.Answer.Read -> TransitionsPart0.transitionLiftingAt2
+        event is StaticLiftListEvent.Error.Execution -> TransitionsPart0.transitionLiftingAt3
         else -> null
     }
 
@@ -532,7 +605,7 @@ class StaticLiftListStateMachine(
 
 
     // Entry Actions (W3C SCXML 3.8)
-    // SCE-MAP: static_lift_list.scxml:21 :: _machine
+    // SCE-MAP: static_lift_list.scxml:27 :: _machine
     override fun onEntry(state: StaticLiftListState, isDefaultEntry: Boolean) {
         when (state) {
             is StaticLiftListState.Lifting -> onEntryOfLifting()
@@ -541,11 +614,11 @@ class StaticLiftListStateMachine(
 
 
     private fun onEntryOfLifting() {
-                // SCE-MAP: static_lift_list.scxml:33 :: lifting :: _state_body
+                // SCE-MAP: static_lift_list.scxml:43 :: lifting :: _state_body
     }
 
     // Exit Actions (W3C SCXML 3.9)
-    // SCE-MAP: static_lift_list.scxml:21 :: _machine
+    // SCE-MAP: static_lift_list.scxml:27 :: _machine
     override fun onExit(state: StaticLiftListState) {
         when (state) {
             is StaticLiftListState.Lifting -> onExitOfLifting()
@@ -554,13 +627,13 @@ class StaticLiftListStateMachine(
 
 
     private fun onExitOfLifting() {
-                // SCE-MAP: static_lift_list.scxml:33 :: lifting :: _state_body
+                // SCE-MAP: static_lift_list.scxml:43 :: lifting :: _state_body
     }
 
 
 
     // Transition Content (W3C SCXML 3.13)
-    // SCE-MAP: static_lift_list.scxml:21 :: _machine
+    // SCE-MAP: static_lift_list.scxml:27 :: _machine
     override fun executeTransitionContent(source: StaticLiftListState, transitionIndex: Int) {
         when (source) {
             is StaticLiftListState.Lifting -> transitionContentOfLifting(transitionIndex)
@@ -577,13 +650,15 @@ class StaticLiftListStateMachine(
         when (transitionIndex) {
             0 -> transitionContentOfLiftingAt0()
             1 -> transitionContentOfLiftingAt1()
+            2 -> transitionContentOfLiftingAt2()
+            3 -> transitionContentOfLiftingAt3()
             else -> {}
         }
     }
 
 
     private fun transitionContentOfLiftingAt0() {
-                // SCE-MAP: static_lift_list.scxml:34 :: lifting :: _transition_0
+                // SCE-MAP: static_lift_list.scxml:44 :: lifting :: _transition_0
                 if (pendingTextGivenPayload == null) {
                     return
                 }
@@ -593,10 +668,34 @@ class StaticLiftListStateMachine(
             if (try { vLifts = com.sce.forge.runtime.SceChecked.add(vLifts, 1.toUInt()); false } catch (_: com.sce.forge.runtime.AlgorithmFailure) { raisePlatformError(StaticLiftListEvent.Error.Execution, "<assign location='lifts'>: an integer operation overflowed or failed"); true }) {
                 return
             }
+
+
+            if (vAnswer != null) {
+
+            vPriority = com.sce.forge.runtime.SceOptional.proven(vAnswer).priority
+
+            vHeldItems = (com.sce.forge.runtime.SceOptional.proven(vAnswer).items).size.toUInt()
+            }
     }
 
     private fun transitionContentOfLiftingAt1() {
-                // SCE-MAP: static_lift_list.scxml:38 :: lifting :: _transition_1
+                // SCE-MAP: static_lift_list.scxml:52 :: lifting :: _transition_1
+
+            if (try { vWeeks = com.sce.forge.runtime.SceChecked.add(vWeeks, 1.toUInt()); false } catch (_: com.sce.forge.runtime.AlgorithmFailure) { raisePlatformError(StaticLiftListEvent.Error.Execution, "<assign location='weeks'>: an integer operation overflowed or failed"); true }) {
+                return
+            }
+    }
+
+    private fun transitionContentOfLiftingAt2() {
+                // SCE-MAP: static_lift_list.scxml:56 :: lifting :: _transition_2
+
+            if (try { vOtherReads = com.sce.forge.runtime.SceChecked.add(vOtherReads, 1.toUInt()); false } catch (_: com.sce.forge.runtime.AlgorithmFailure) { raisePlatformError(StaticLiftListEvent.Error.Execution, "<assign location='other_reads'>: an integer operation overflowed or failed"); true }) {
+                return
+            }
+    }
+
+    private fun transitionContentOfLiftingAt3() {
+                // SCE-MAP: static_lift_list.scxml:59 :: lifting :: _transition_3
 
             if (try { vErrors = com.sce.forge.runtime.SceChecked.add(vErrors, 1.toUInt()); false } catch (_: com.sce.forge.runtime.AlgorithmFailure) { raisePlatformError(StaticLiftListEvent.Error.Execution, "<assign location='errors'>: an integer operation overflowed or failed"); true }) {
                 return

@@ -7,6 +7,7 @@
 package com.sce.generated.codec_zenoh_undecl_subscriber
 
 import com.sce.forge.runtime.CodecError
+import com.sce.forge.runtime.Decoded
 import com.sce.forge.runtime.MutableListSink
 import com.sce.forge.runtime.SceCursor
 import com.sce.forge.runtime.SceSink
@@ -65,11 +66,14 @@ data class CodecZenohUndeclSubscriber(
 
     companion object {
         /// Decode the next frame from `cursor`. On success the cursor
-        /// advances past the consumed bytes; returns `null` when the
-        /// cursor's tail is shorter than the declared minimum frame
-        /// (RFC §synth-5-B L494-519).
+        /// advances past the consumed bytes and the value is `Decoded.Ok`;
+        /// a refused frame is `Decoded.Refused` with the kind that refused
+        /// it (docs/adr/0099, amendment of 2026-11-16): `NeedMoreBytes` when
+        /// the cursor's tail is shorter than the frame (RFC §synth-5-B
+        /// L494-519), which the caller resumes after appending bytes, and
+        /// another kind for a frame no more bytes make whole.
         @Suppress("UNUSED_PARAMETER")
-        fun decode(cursor: SceCursor, Z: UByte): CodecZenohUndeclSubscriber? {
+        fun decode(cursor: SceCursor, Z: UByte): Decoded<CodecZenohUndeclSubscriber> {
             // Streaming cursor decode (SSOT selection: `needs_streaming`).
             // The positional `raw[byte_off]` path is valid only when every
             // field's absolute offset is fixed at codegen time; this branch
@@ -82,15 +86,17 @@ data class CodecZenohUndeclSubscriber(
             // `is_repeat` / `is_tlv_chain` / `is_embed` route to their
             // dedicated helpers; every other field flows through
             // `present_if_decode_stmt`.
-            val id = cursor.readVleU32() ?: return null
+            val id = cursor.readVleU32().valueOr { _refused -> return _refused }
             val ext_keyexpr: CodecZenohDeclExtKeyexpr? = if ((Z.toInt() and 0x01) != 0) {
-                CodecZenohDeclExtKeyexpr.decode(cursor) ?: return null
+                CodecZenohDeclExtKeyexpr.decode(cursor).valueOr { _refused -> return _refused }
             } else {
                 null
             }
-            return CodecZenohUndeclSubscriber(
-                id = id,
-                ext_keyexpr = ext_keyexpr
+            return Decoded.Ok(
+                CodecZenohUndeclSubscriber(
+                    id = id,
+                    ext_keyexpr = ext_keyexpr
+                )
             )
         }
     }

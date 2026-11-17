@@ -1,5 +1,5 @@
 // SCE-GENERATED — DO NOT EDIT
-// source-hash: 65fb42bdd588f958b0fbb29ac261cf039d02606d7afaae0720c045624bd679ba
+// source-hash: 2073d8a55462e1ce61d8a77293fdd2c141aceda8ad173303c5b84813ca22eeee
 
 // SPDX-License-Identifier: AGPL-3.0-only WITH AdditionRef-SCE-Linking-Exception OR LicenseRef-SCE-Commercial
 // SPDX-FileCopyrightText: Copyright (c) 2025-2026 [Author of input SCXML file] (content derived from the input document)
@@ -78,8 +78,8 @@
 // closure; this one suspicious-category lint reads the `match` of a constant
 // default as a hand-written `unwrap_or_default`.
 #![allow(clippy::manual_unwrap_or_default)]
-#![doc = "SCE-MAP: static_union.scxml:24 :: _machine"]
-// SCE-MAP: static_union.scxml:24 :: _machine
+#![doc = "SCE-MAP: static_union.scxml:32 :: _machine"]
+// SCE-MAP: static_union.scxml:32 :: _machine
 
 use core::time::Duration;
 use sce_rust_runtime::{Engine, StatePolicy};
@@ -110,12 +110,17 @@ pub enum StaticUnionState {
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 #[repr(u16)]
 pub enum StaticUnionEvent {
-    ErrorExecution = 0,
-    ShapeSaid = 1,
-    ShapesPicked = 2,
-    ShapesSent = 3,
+    BoardRead = 0,
+    ErrorExecution = 1,
+    ShapeBoarded = 2,
+    ShapeHeld = 3,
+    ShapeSaid = 4,
+    ShapesGrouped = 5,
+    ShapesPicked = 6,
+    ShapesRowed = 7,
+    ShapesSent = 8,
     /// W3C SCXML 3.13: Sentinel for eventless transition dispatch
-    Null = 4,
+    Null = 9,
 }
 
 // ======================================================================
@@ -177,14 +182,24 @@ pub const STATIC_UNION_TABLES: ::sce_rust_runtime::DocumentTables<'static> = {
             TransitionRow::new(Some(StateId(0)), Target::NONE, true, true),
             // 3: idle, transition 3
             TransitionRow::new(Some(StateId(0)), Target::NONE, true, true),
-            // 4: the document's initial transition
+            // 4: idle, transition 4
+            TransitionRow::new(Some(StateId(0)), Target::NONE, true, true),
+            // 5: idle, transition 5
+            TransitionRow::new(Some(StateId(0)), Target::NONE, true, true),
+            // 6: idle, transition 6
+            TransitionRow::new(Some(StateId(0)), Target::NONE, true, true),
+            // 7: idle, transition 7
+            TransitionRow::new(Some(StateId(0)), Target::NONE, true, true),
+            // 8: idle, transition 8
+            TransitionRow::new(Some(StateId(0)), Target::NONE, true, true),
+            // 9: the document's initial transition
             TransitionRow::new(None, Target::state(StateId(0)), false, false),
         ],
         targets: &[],
-        initial: TransitionId(4),
+        initial: TransitionId(9),
         default_state: ::sce_rust_runtime::StateId(StaticUnionState::Idle as u16),
-        null_event: ::sce_rust_runtime::EventId(4),
-        error_events: &[::sce_rust_runtime::EventId(0)],
+        null_event: ::sce_rust_runtime::EventId(9),
+        error_events: &[::sce_rust_runtime::EventId(1)],
         history: None,
         parallel: None,
     }
@@ -207,22 +222,54 @@ impl StaticUnionEvent {
     /// several machines glob-re-exported into one module never collide
     /// on the name.
     pub const EXTERNALLY_DRIVABLE_EVENTS: &'static [StaticUnionEvent] = &[
+        StaticUnionEvent::BoardRead,
+        StaticUnionEvent::ShapeBoarded,
+        StaticUnionEvent::ShapeHeld,
         StaticUnionEvent::ShapeSaid,
+        StaticUnionEvent::ShapesGrouped,
         StaticUnionEvent::ShapesPicked,
+        StaticUnionEvent::ShapesRowed,
         StaticUnionEvent::ShapesSent,
     ];
 }
 
 // ── NL→IR Item C1 Path A: EventSchema typed `_event.data` payload ──
 #[derive(Clone, Debug, Default, PartialEq)]
+pub struct StaticUnionShapeBoardedPayload {
+    pub text: ::sce_rust_runtime::SceString,
+}
+
+#[derive(Clone, Debug, Default, PartialEq)]
+pub struct StaticUnionShapeHeldPayload {
+    pub text: ::sce_rust_runtime::SceString,
+}
+
+#[derive(Clone, Debug, Default, PartialEq)]
 pub struct StaticUnionShapeSaidPayload {
     pub text: ::sce_rust_runtime::SceString,
+}
+
+#[derive(Clone, Debug, PartialEq)]
+pub struct StaticUnionShapesGroupedPayload {
+    pub groups: ::sce_rust_runtime::portable::BoundedList<StaticUnionGroupRecord, 2>,
+    pub at: u8,
+    pub inner: u8,
 }
 
 #[derive(Clone, Debug, PartialEq)]
 pub struct StaticUnionShapesPickedPayload {
     pub many: ::sce_rust_runtime::portable::BoundedList<StaticUnionUnionShapeUnion, 3>,
     pub at: u8,
+}
+
+#[derive(Clone, Debug, PartialEq)]
+pub struct StaticUnionShapesRowedPayload {
+    pub rows: ::sce_rust_runtime::portable::BoundedList<
+        ::sce_rust_runtime::portable::BoundedList<StaticUnionUnionShapeUnion, 3>,
+        2,
+    >,
+    pub at: u8,
+    pub inner: u8,
 }
 
 #[derive(Clone, Debug, PartialEq)]
@@ -238,8 +285,12 @@ pub enum StaticUnionPayload {
     /// Schemaless / not-yet-populated default (W3C §5.10 empty `_event.data`).
     #[default]
     None,
+    ShapeBoarded(StaticUnionShapeBoardedPayload),
+    ShapeHeld(StaticUnionShapeHeldPayload),
     ShapeSaid(StaticUnionShapeSaidPayload),
+    ShapesGrouped(StaticUnionShapesGroupedPayload),
     ShapesPicked(StaticUnionShapesPickedPayload),
+    ShapesRowed(StaticUnionShapesRowedPayload),
     ShapesSent(StaticUnionShapesSentPayload),
 }
 
@@ -247,14 +298,30 @@ pub enum StaticUnionPayload {
 /// Bring into scope with `use …::StaticUnionInject;` to call the
 /// `raise_<event>` methods on the engine.
 pub trait StaticUnionInject {
+    /// Typed `_event.data` inject for `shape.boarded`.
+    /// Binds the event name and payload variant in one call (name↔type
+    /// pairing cannot be constructed inconsistently).
+    fn raise_shape_boarded(&mut self, payload: StaticUnionShapeBoardedPayload);
+    /// Typed `_event.data` inject for `shape.held`.
+    /// Binds the event name and payload variant in one call (name↔type
+    /// pairing cannot be constructed inconsistently).
+    fn raise_shape_held(&mut self, payload: StaticUnionShapeHeldPayload);
     /// Typed `_event.data` inject for `shape.said`.
     /// Binds the event name and payload variant in one call (name↔type
     /// pairing cannot be constructed inconsistently).
     fn raise_shape_said(&mut self, payload: StaticUnionShapeSaidPayload);
+    /// Typed `_event.data` inject for `shapes.grouped`.
+    /// Binds the event name and payload variant in one call (name↔type
+    /// pairing cannot be constructed inconsistently).
+    fn raise_shapes_grouped(&mut self, payload: StaticUnionShapesGroupedPayload);
     /// Typed `_event.data` inject for `shapes.picked`.
     /// Binds the event name and payload variant in one call (name↔type
     /// pairing cannot be constructed inconsistently).
     fn raise_shapes_picked(&mut self, payload: StaticUnionShapesPickedPayload);
+    /// Typed `_event.data` inject for `shapes.rowed`.
+    /// Binds the event name and payload variant in one call (name↔type
+    /// pairing cannot be constructed inconsistently).
+    fn raise_shapes_rowed(&mut self, payload: StaticUnionShapesRowedPayload);
     /// Typed `_event.data` inject for `shapes.sent`.
     /// Binds the event name and payload variant in one call (name↔type
     /// pairing cannot be constructed inconsistently).
@@ -262,6 +329,28 @@ pub trait StaticUnionInject {
 }
 
 impl StaticUnionInject for ::sce_rust_runtime::Engine<StaticUnionPolicy> {
+    fn raise_shape_boarded(&mut self, payload: StaticUnionShapeBoardedPayload) {
+        let data = ::sce_rust_runtime::payload_wire(format_args!(
+            "{{\"text\":{}}}",
+            ::sce_rust_runtime::event_payload::quote(&payload.text)
+        ));
+        self.raise_external_typed_with_data(
+            StaticUnionEvent::ShapeBoarded,
+            StaticUnionPayload::ShapeBoarded(payload),
+            &data,
+        );
+    }
+    fn raise_shape_held(&mut self, payload: StaticUnionShapeHeldPayload) {
+        let data = ::sce_rust_runtime::payload_wire(format_args!(
+            "{{\"text\":{}}}",
+            ::sce_rust_runtime::event_payload::quote(&payload.text)
+        ));
+        self.raise_external_typed_with_data(
+            StaticUnionEvent::ShapeHeld,
+            StaticUnionPayload::ShapeHeld(payload),
+            &data,
+        );
+    }
     fn raise_shape_said(&mut self, payload: StaticUnionShapeSaidPayload) {
         let data = ::sce_rust_runtime::payload_wire(format_args!(
             "{{\"text\":{}}}",
@@ -270,6 +359,87 @@ impl StaticUnionInject for ::sce_rust_runtime::Engine<StaticUnionPolicy> {
         self.raise_external_typed_with_data(
             StaticUnionEvent::ShapeSaid,
             StaticUnionPayload::ShapeSaid(payload),
+            &data,
+        );
+    }
+    fn raise_shapes_grouped(&mut self, payload: StaticUnionShapesGroupedPayload) {
+        let data = ::sce_rust_runtime::event_payload::record_json(vec![
+            (
+                "groups",
+                ::sce_rust_runtime::event_payload::list_json(&payload.groups, |h| {
+                    ::sce_rust_runtime::event_payload::record_json(vec![(
+                        "shapes",
+                        ::sce_rust_runtime::event_payload::list_json(&h.shapes, |h| match h {
+                            StaticUnionUnionShapeUnion::Dot => {
+                                ::sce_rust_runtime::event_payload::union_json(
+                                    "kind",
+                                    "dot",
+                                    Vec::new(),
+                                )
+                            }
+                            StaticUnionUnionShapeUnion::Circle(h) => {
+                                ::sce_rust_runtime::event_payload::union_json(
+                                    "kind",
+                                    "circle",
+                                    vec![("radius", h.radius.to_string())],
+                                )
+                            }
+                            StaticUnionUnionShapeUnion::Disc(h) => {
+                                ::sce_rust_runtime::event_payload::union_json(
+                                    "kind",
+                                    "disc",
+                                    vec![("radius", h.radius.to_string())],
+                                )
+                            }
+                            StaticUnionUnionShapeUnion::Rect(h) => {
+                                ::sce_rust_runtime::event_payload::union_json(
+                                    "kind",
+                                    "rect",
+                                    vec![
+                                        ("width", h.width.to_string()),
+                                        ("height", h.height.to_string()),
+                                    ],
+                                )
+                            }
+                            StaticUnionUnionShapeUnion::Label(h) => {
+                                ::sce_rust_runtime::event_payload::union_json(
+                                    "kind",
+                                    "label",
+                                    vec![
+                                        ("text", ::sce_rust_runtime::event_payload::quote(&h.text)),
+                                        (
+                                            "note",
+                                            ::sce_rust_runtime::event_payload::optional_json(
+                                                h.note.as_ref(),
+                                                |h| ::sce_rust_runtime::event_payload::quote(h),
+                                            ),
+                                        ),
+                                    ],
+                                )
+                            }
+                            StaticUnionUnionShapeUnion::Path(h) => {
+                                ::sce_rust_runtime::event_payload::union_json(
+                                    "kind",
+                                    "path",
+                                    vec![(
+                                        "points",
+                                        ::sce_rust_runtime::event_payload::list_json(
+                                            &h.points,
+                                            |h| h.to_string(),
+                                        ),
+                                    )],
+                                )
+                            }
+                        }),
+                    )])
+                }),
+            ),
+            ("at", payload.at.to_string()),
+            ("inner", payload.inner.to_string()),
+        ]);
+        self.raise_external_typed_with_data(
+            StaticUnionEvent::ShapesGrouped,
+            StaticUnionPayload::ShapesGrouped(payload),
             &data,
         );
     }
@@ -340,6 +510,79 @@ impl StaticUnionInject for ::sce_rust_runtime::Engine<StaticUnionPolicy> {
         self.raise_external_typed_with_data(
             StaticUnionEvent::ShapesPicked,
             StaticUnionPayload::ShapesPicked(payload),
+            &data,
+        );
+    }
+    fn raise_shapes_rowed(&mut self, payload: StaticUnionShapesRowedPayload) {
+        let data = ::sce_rust_runtime::event_payload::record_json(vec![
+            (
+                "rows",
+                ::sce_rust_runtime::event_payload::list_json(&payload.rows, |h| {
+                    ::sce_rust_runtime::event_payload::list_json(h, |h| match h {
+                        StaticUnionUnionShapeUnion::Dot => {
+                            ::sce_rust_runtime::event_payload::union_json("kind", "dot", Vec::new())
+                        }
+                        StaticUnionUnionShapeUnion::Circle(h) => {
+                            ::sce_rust_runtime::event_payload::union_json(
+                                "kind",
+                                "circle",
+                                vec![("radius", h.radius.to_string())],
+                            )
+                        }
+                        StaticUnionUnionShapeUnion::Disc(h) => {
+                            ::sce_rust_runtime::event_payload::union_json(
+                                "kind",
+                                "disc",
+                                vec![("radius", h.radius.to_string())],
+                            )
+                        }
+                        StaticUnionUnionShapeUnion::Rect(h) => {
+                            ::sce_rust_runtime::event_payload::union_json(
+                                "kind",
+                                "rect",
+                                vec![
+                                    ("width", h.width.to_string()),
+                                    ("height", h.height.to_string()),
+                                ],
+                            )
+                        }
+                        StaticUnionUnionShapeUnion::Label(h) => {
+                            ::sce_rust_runtime::event_payload::union_json(
+                                "kind",
+                                "label",
+                                vec![
+                                    ("text", ::sce_rust_runtime::event_payload::quote(&h.text)),
+                                    (
+                                        "note",
+                                        ::sce_rust_runtime::event_payload::optional_json(
+                                            h.note.as_ref(),
+                                            |h| ::sce_rust_runtime::event_payload::quote(h),
+                                        ),
+                                    ),
+                                ],
+                            )
+                        }
+                        StaticUnionUnionShapeUnion::Path(h) => {
+                            ::sce_rust_runtime::event_payload::union_json(
+                                "kind",
+                                "path",
+                                vec![(
+                                    "points",
+                                    ::sce_rust_runtime::event_payload::list_json(&h.points, |h| {
+                                        h.to_string()
+                                    }),
+                                )],
+                            )
+                        }
+                    })
+                }),
+            ),
+            ("at", payload.at.to_string()),
+            ("inner", payload.inner.to_string()),
+        ]);
+        self.raise_external_typed_with_data(
+            StaticUnionEvent::ShapesRowed,
+            StaticUnionPayload::ShapesRowed(payload),
             &data,
         );
     }
@@ -862,6 +1105,32 @@ pub struct StaticUnionLiftRefusalRecord {
     pub bound: Option<u32>,
 }
 
+/// SCE Accepted Subset §2.15: a `record:Held` value that holds a composed value (docs/adr/0086).
+#[derive(Clone, Debug, PartialEq)]
+#[allow(non_snake_case)]
+pub struct StaticUnionHeldRecord {
+    pub title: ::sce_rust_runtime::portable::SceString<8>,
+    pub shape: StaticUnionUnionShapeUnion,
+}
+
+/// SCE Accepted Subset §2.15: a `record:Board` value that holds a composed value (docs/adr/0086).
+#[derive(Clone, Debug, PartialEq)]
+#[allow(non_snake_case)]
+pub struct StaticUnionBoardRecord {
+    pub title: ::sce_rust_runtime::portable::SceString<8>,
+    pub count: u8,
+    pub note: Option<::sce_rust_runtime::portable::SceString<8>>,
+    pub shapes: ::sce_rust_runtime::portable::BoundedList<StaticUnionUnionShapeUnion, 3>,
+    pub pinned: Option<StaticUnionUnionShapeUnion>,
+}
+
+/// SCE Accepted Subset §2.15: a `record:Group` value that holds a composed value (docs/adr/0086).
+#[derive(Clone, Debug, PartialEq)]
+#[allow(non_snake_case)]
+pub struct StaticUnionGroupRecord {
+    pub shapes: ::sce_rust_runtime::portable::BoundedList<StaticUnionUnionShapeUnion, 3>,
+}
+
 /// The bounds this machine is built with, each by the name `sce:limit` gives it (docs/adr/0050).
 #[allow(dead_code)]
 pub struct StaticUnionLimits;
@@ -899,6 +1168,13 @@ pub struct StaticUnionData {
     pub picked_maybe: Option<StaticUnionUnionShapeUnion>,
     pub picks: u32,
     pub picked_width: u16,
+    pub held: Option<StaticUnionHeldRecord>,
+    pub held_why: Option<StaticUnionLiftRefusalRecord>,
+    pub held_width: u16,
+    pub board: StaticUnionBoardRecord,
+    pub board_why: Option<StaticUnionLiftRefusalRecord>,
+    pub board_shapes: u32,
+    pub boards: u32,
 }
 
 /// What a host observes: the full active configuration — every active state,
@@ -948,6 +1224,13 @@ impl StaticUnionObserve for Engine<StaticUnionPolicy> {
                 picked_maybe: policy.picked_maybe.clone(),
                 picks: policy.picks,
                 picked_width: policy.picked_width,
+                held: policy.held.clone(),
+                held_why: policy.held_why.clone(),
+                held_width: policy.held_width,
+                board: policy.board.clone(),
+                board_why: policy.board_why.clone(),
+                board_shapes: policy.board_shapes,
+                boards: policy.boards,
             },
             truncated: self.last_macrostep_truncated(),
         }
@@ -1164,6 +1447,71 @@ impl ::sce_rust_runtime::saved_state::SavedValue for StaticUnionLiftRefusalRecor
     }
 }
 
+impl ::sce_rust_runtime::saved_state::SavedValue for StaticUnionHeldRecord {
+    fn to_saved(&self) -> ::sce_rust_runtime::json::Value {
+        ::sce_rust_runtime::json::Value::Object(vec![
+            (
+                "title".to_string(),
+                ::sce_rust_runtime::saved_state::SavedValue::to_saved(&self.title),
+            ),
+            (
+                "shape".to_string(),
+                ::sce_rust_runtime::saved_state::SavedValue::to_saved(&self.shape),
+            ),
+        ])
+    }
+
+    fn from_saved(
+        value: &::sce_rust_runtime::json::Value,
+        what: &str,
+    ) -> Result<Self, ::sce_rust_runtime::saved_state::StateRefusal> {
+        Ok(Self {
+            title: ::sce_rust_runtime::saved_state::record_field(value, what, "title")?,
+            shape: ::sce_rust_runtime::saved_state::record_field(value, what, "shape")?,
+        })
+    }
+}
+
+impl ::sce_rust_runtime::saved_state::SavedValue for StaticUnionBoardRecord {
+    fn to_saved(&self) -> ::sce_rust_runtime::json::Value {
+        ::sce_rust_runtime::json::Value::Object(vec![
+            (
+                "title".to_string(),
+                ::sce_rust_runtime::saved_state::SavedValue::to_saved(&self.title),
+            ),
+            (
+                "count".to_string(),
+                ::sce_rust_runtime::saved_state::SavedValue::to_saved(&self.count),
+            ),
+            (
+                "note".to_string(),
+                ::sce_rust_runtime::saved_state::SavedValue::to_saved(&self.note),
+            ),
+            (
+                "shapes".to_string(),
+                ::sce_rust_runtime::saved_state::SavedValue::to_saved(&self.shapes),
+            ),
+            (
+                "pinned".to_string(),
+                ::sce_rust_runtime::saved_state::SavedValue::to_saved(&self.pinned),
+            ),
+        ])
+    }
+
+    fn from_saved(
+        value: &::sce_rust_runtime::json::Value,
+        what: &str,
+    ) -> Result<Self, ::sce_rust_runtime::saved_state::StateRefusal> {
+        Ok(Self {
+            title: ::sce_rust_runtime::saved_state::record_field(value, what, "title")?,
+            count: ::sce_rust_runtime::saved_state::record_field(value, what, "count")?,
+            note: ::sce_rust_runtime::saved_state::record_field(value, what, "note")?,
+            shapes: ::sce_rust_runtime::saved_state::record_field(value, what, "shapes")?,
+            pinned: ::sce_rust_runtime::saved_state::record_field(value, what, "pinned")?,
+        })
+    }
+}
+
 impl ::sce_rust_runtime::saved_state::SavedValue for StaticUnionUnionShapeUnion {
     fn to_saved(&self) -> ::sce_rust_runtime::json::Value {
         match self {
@@ -1336,20 +1684,30 @@ impl StaticUnionPersist for Engine<StaticUnionPolicy> {
 
     const SHAPE: ::sce_rust_runtime::saved_state::SavedShape =
         ::sce_rust_runtime::saved_state::SavedShape {
-            first: "1da766c3b8af8cb1b2045a4bd0e5bb0ae84cae454bbdd471de86b18127df36a7",
-            revised: "037e99836580deea8a44692c7db79b495e4489f81f593bf5ae0731092f71d91d",
-            format2_first: "387d1beb8808c971338d137975e3406cfc6bd43de951ab9ad5f755a0bb1f6dba",
-            format2_revised: "de193059202d3f2f610fc05c5aa085dda9d96dec11cee0a6265d01355796e4a2",
+            first: "7982c5580d559185d63827afe854e85487260b61645982f72fa5ac5aae320867",
+            revised: "663f2be149abf12c16c9c25df9f95ddce34b70d2db9767bb3f429d8e9ee0ba44",
+            format2_first: "4ba6f2eb8ee6d6095789d84c49a4b78f77fb1602d93c4f9fd1a0240163e39e91",
+            format2_revised: "63101a60e01aed30699cc5ebb968e01892e176b577db6041b3309cf0fba9a263",
             records: &[::sce_rust_runtime::saved_state::RecordLineage {
                 event: "lift.refusal",
                 revision: 1,
                 revisions: &[],
                 added: &[],
                 widened: &[],
-                holders: &[::sce_rust_runtime::saved_state::RecordHolder {
-                    variable: "lift_why",
-                    list: false,
-                }],
+                holders: &[
+                    ::sce_rust_runtime::saved_state::RecordHolder {
+                        variable: "lift_why",
+                        list: false,
+                    },
+                    ::sce_rust_runtime::saved_state::RecordHolder {
+                        variable: "held_why",
+                        list: false,
+                    },
+                    ::sce_rust_runtime::saved_state::RecordHolder {
+                        variable: "board_why",
+                        list: false,
+                    },
+                ],
             }],
             enums: &[
                 ::sce_rust_runtime::saved_state::EnumLineage {
@@ -1368,11 +1726,23 @@ impl StaticUnionPersist for Engine<StaticUnionPolicy> {
                     revision: 1,
                     revisions: &[],
                     added: &[],
-                    holders: &[::sce_rust_runtime::saved_state::EnumHolder {
-                        variable: "lift_why",
-                        field: Some("code"),
-                        list: false,
-                    }],
+                    holders: &[
+                        ::sce_rust_runtime::saved_state::EnumHolder {
+                            variable: "lift_why",
+                            field: Some("code"),
+                            list: false,
+                        },
+                        ::sce_rust_runtime::saved_state::EnumHolder {
+                            variable: "held_why",
+                            field: Some("code"),
+                            list: false,
+                        },
+                        ::sce_rust_runtime::saved_state::EnumHolder {
+                            variable: "board_why",
+                            field: Some("code"),
+                            list: false,
+                        },
+                    ],
                 },
             ],
             features: None,
@@ -1473,6 +1843,34 @@ impl StaticUnionPersist for Engine<StaticUnionPolicy> {
                 (
                     "picked_width".to_string(),
                     ::sce_rust_runtime::saved_state::SavedValue::to_saved(&policy.picked_width),
+                ),
+                (
+                    "held".to_string(),
+                    ::sce_rust_runtime::saved_state::SavedValue::to_saved(&policy.held),
+                ),
+                (
+                    "held_why".to_string(),
+                    ::sce_rust_runtime::saved_state::SavedValue::to_saved(&policy.held_why),
+                ),
+                (
+                    "held_width".to_string(),
+                    ::sce_rust_runtime::saved_state::SavedValue::to_saved(&policy.held_width),
+                ),
+                (
+                    "board".to_string(),
+                    ::sce_rust_runtime::saved_state::SavedValue::to_saved(&policy.board),
+                ),
+                (
+                    "board_why".to_string(),
+                    ::sce_rust_runtime::saved_state::SavedValue::to_saved(&policy.board_why),
+                ),
+                (
+                    "board_shapes".to_string(),
+                    ::sce_rust_runtime::saved_state::SavedValue::to_saved(&policy.board_shapes),
+                ),
+                (
+                    "boards".to_string(),
+                    ::sce_rust_runtime::saved_state::SavedValue::to_saved(&policy.boards),
                 ),
             ],
             // What each history recorded is the engine's (docs/adr/0064).
@@ -1579,6 +1977,37 @@ impl StaticUnionPersist for Engine<StaticUnionPolicy> {
             saved.variable("picked_width")?,
             "picked_width",
         )?;
+        let _: Option<StaticUnionHeldRecord> =
+            ::sce_rust_runtime::saved_state::SavedValue::from_saved(
+                saved.variable("held")?,
+                "held",
+            )?;
+        let _: Option<StaticUnionLiftRefusalRecord> =
+            ::sce_rust_runtime::saved_state::SavedValue::from_saved(
+                saved.variable("held_why")?,
+                "held_why",
+            )?;
+        let _: u16 = ::sce_rust_runtime::saved_state::SavedValue::from_saved(
+            saved.variable("held_width")?,
+            "held_width",
+        )?;
+        let _: StaticUnionBoardRecord = ::sce_rust_runtime::saved_state::SavedValue::from_saved(
+            saved.variable("board")?,
+            "board",
+        )?;
+        let _: Option<StaticUnionLiftRefusalRecord> =
+            ::sce_rust_runtime::saved_state::SavedValue::from_saved(
+                saved.variable("board_why")?,
+                "board_why",
+            )?;
+        let _: u32 = ::sce_rust_runtime::saved_state::SavedValue::from_saved(
+            saved.variable("board_shapes")?,
+            "board_shapes",
+        )?;
+        let _: u32 = ::sce_rust_runtime::saved_state::SavedValue::from_saved(
+            saved.variable("boards")?,
+            "boards",
+        )?;
         ::sce_rust_runtime::saved_state::judge::<StaticUnionPolicy>(saved)
     }
 
@@ -1679,6 +2108,34 @@ impl StaticUnionPersist for Engine<StaticUnionPolicy> {
             saved.variable("picked_width")?,
             "picked_width",
         )?;
+        policy.held = ::sce_rust_runtime::saved_state::SavedValue::from_saved(
+            saved.variable("held")?,
+            "held",
+        )?;
+        policy.held_why = ::sce_rust_runtime::saved_state::SavedValue::from_saved(
+            saved.variable("held_why")?,
+            "held_why",
+        )?;
+        policy.held_width = ::sce_rust_runtime::saved_state::SavedValue::from_saved(
+            saved.variable("held_width")?,
+            "held_width",
+        )?;
+        policy.board = ::sce_rust_runtime::saved_state::SavedValue::from_saved(
+            saved.variable("board")?,
+            "board",
+        )?;
+        policy.board_why = ::sce_rust_runtime::saved_state::SavedValue::from_saved(
+            saved.variable("board_why")?,
+            "board_why",
+        )?;
+        policy.board_shapes = ::sce_rust_runtime::saved_state::SavedValue::from_saved(
+            saved.variable("board_shapes")?,
+            "board_shapes",
+        )?;
+        policy.boards = ::sce_rust_runtime::saved_state::SavedValue::from_saved(
+            saved.variable("boards")?,
+            "boards",
+        )?;
         ::sce_rust_runtime::saved_state::enter(policy, saved, clock, wall_now_ms)
     }
 }
@@ -1701,6 +2158,9 @@ pub struct StaticUnionInvokeParams {
     pub refusals: Option<u32>,
     pub picks: Option<u32>,
     pub picked_width: Option<u16>,
+    pub held_width: Option<u16>,
+    pub board_shapes: Option<u32>,
+    pub boards: Option<u32>,
 }
 
 // ======================================================================
@@ -1752,6 +2212,20 @@ pub struct StaticUnionPolicy {
     picks: u32,
     /// W3C SCXML 5.2: the `picked_width` datamodel variable, published (`sce:direction="out"`).
     picked_width: u16,
+    /// W3C SCXML 5.2: the `held` datamodel variable, published (`sce:direction="out"`).
+    held: Option<StaticUnionHeldRecord>,
+    /// W3C SCXML 5.2: the `held_why` datamodel variable, published (`sce:direction="out"`).
+    held_why: Option<StaticUnionLiftRefusalRecord>,
+    /// W3C SCXML 5.2: the `held_width` datamodel variable, published (`sce:direction="out"`).
+    held_width: u16,
+    /// W3C SCXML 5.2: the `board` datamodel variable, published (`sce:direction="out"`).
+    board: StaticUnionBoardRecord,
+    /// W3C SCXML 5.2: the `board_why` datamodel variable, published (`sce:direction="out"`).
+    board_why: Option<StaticUnionLiftRefusalRecord>,
+    /// W3C SCXML 5.2: the `board_shapes` datamodel variable, published (`sce:direction="out"`).
+    board_shapes: u32,
+    /// W3C SCXML 5.2: the `boards` datamodel variable, published (`sce:direction="out"`).
+    boards: u32,
     // W3C SCXML 5.10: the session's id (script engine, invoke tracking, the
     // saved state), bound when the machine is built and never empty
     // (docs/adr/0045): drawn, given by the host, or given by the parent.
@@ -1801,6 +2275,19 @@ impl StaticUnionPolicy {
         let picked_maybe: Option<StaticUnionUnionShapeUnion> = None;
         let picks: u32 = 0;
         let picked_width: u16 = 0;
+        let held: Option<StaticUnionHeldRecord> = None;
+        let held_why: Option<StaticUnionLiftRefusalRecord> = None;
+        let held_width: u16 = 0;
+        let board: StaticUnionBoardRecord = StaticUnionBoardRecord {
+            title: ::sce_rust_runtime::portable::sce_text!(8, "desk"),
+            count: 2,
+            note: None,
+            shapes: ::sce_rust_runtime::portable::BoundedList::new(),
+            pinned: None,
+        };
+        let board_why: Option<StaticUnionLiftRefusalRecord> = None;
+        let board_shapes: u32 = 0;
+        let boards: u32 = 0;
 
         Self {
             pending_payload: StaticUnionPayload::default(),
@@ -1824,6 +2311,13 @@ impl StaticUnionPolicy {
             picked_maybe,
             picks,
             picked_width,
+            held,
+            held_why,
+            held_width,
+            board,
+            board_why,
+            board_shapes,
+            boards,
             session_id: Some(session_id),
             parent_external_queue: None,
             invoke_id: String::new(),
@@ -1951,6 +2445,28 @@ impl StaticUnionPolicy {
             Some(value) => value,
             None => 0,
         };
+        let held: Option<StaticUnionHeldRecord> = None;
+        let held_why: Option<StaticUnionLiftRefusalRecord> = None;
+        let held_width: u16 = match handed.held_width {
+            Some(value) => value,
+            None => 0,
+        };
+        let board: StaticUnionBoardRecord = StaticUnionBoardRecord {
+            title: ::sce_rust_runtime::portable::sce_text!(8, "desk"),
+            count: 2,
+            note: None,
+            shapes: ::sce_rust_runtime::portable::BoundedList::new(),
+            pinned: None,
+        };
+        let board_why: Option<StaticUnionLiftRefusalRecord> = None;
+        let board_shapes: u32 = match handed.board_shapes {
+            Some(value) => value,
+            None => 0,
+        };
+        let boards: u32 = match handed.boards {
+            Some(value) => value,
+            None => 0,
+        };
 
         self.built = built;
         self.kept = kept;
@@ -1972,6 +2488,13 @@ impl StaticUnionPolicy {
         self.picked_maybe = picked_maybe;
         self.picks = picks;
         self.picked_width = picked_width;
+        self.held = held;
+        self.held_why = held_why;
+        self.held_width = held_width;
+        self.board = board;
+        self.board_why = board_why;
+        self.board_shapes = board_shapes;
+        self.boards = boards;
     }
 
     /// W3C SCXML 5.2: what the published `built` datamodel variable
@@ -2093,6 +2616,48 @@ impl StaticUnionPolicy {
     pub fn picked_width(&self) -> u16 {
         self.picked_width
     }
+
+    /// W3C SCXML 5.2: what the published `held` datamodel variable
+    /// holds now. Only the machine writes it.
+    pub fn held(&self) -> &Option<StaticUnionHeldRecord> {
+        &self.held
+    }
+
+    /// W3C SCXML 5.2: what the published `held_why` datamodel variable
+    /// holds now. Only the machine writes it.
+    pub fn held_why(&self) -> &Option<StaticUnionLiftRefusalRecord> {
+        &self.held_why
+    }
+
+    /// W3C SCXML 5.2: what the published `held_width` datamodel variable
+    /// holds now. Only the machine writes it.
+    pub fn held_width(&self) -> u16 {
+        self.held_width
+    }
+
+    /// W3C SCXML 5.2: what the published `board` datamodel variable
+    /// holds now. Only the machine writes it.
+    pub fn board(&self) -> &StaticUnionBoardRecord {
+        &self.board
+    }
+
+    /// W3C SCXML 5.2: what the published `board_why` datamodel variable
+    /// holds now. Only the machine writes it.
+    pub fn board_why(&self) -> &Option<StaticUnionLiftRefusalRecord> {
+        &self.board_why
+    }
+
+    /// W3C SCXML 5.2: what the published `board_shapes` datamodel variable
+    /// holds now. Only the machine writes it.
+    pub fn board_shapes(&self) -> u32 {
+        self.board_shapes
+    }
+
+    /// W3C SCXML 5.2: what the published `boards` datamodel variable
+    /// holds now. Only the machine writes it.
+    pub fn boards(&self) -> u32 {
+        self.boards
+    }
 }
 
 // docs/adr/0045: a machine built with no arguments draws its session id, so it
@@ -2172,9 +2737,14 @@ impl StatePolicy for StaticUnionPolicy {
     const STATES: &'static [Self::State] = &[StaticUnionState::Idle];
     const HISTORIES: &'static [Self::History] = &[];
     const EVENTS: &'static [Self::Event] = &[
+        StaticUnionEvent::BoardRead,
         StaticUnionEvent::ErrorExecution,
+        StaticUnionEvent::ShapeBoarded,
+        StaticUnionEvent::ShapeHeld,
         StaticUnionEvent::ShapeSaid,
+        StaticUnionEvent::ShapesGrouped,
         StaticUnionEvent::ShapesPicked,
+        StaticUnionEvent::ShapesRowed,
         StaticUnionEvent::ShapesSent,
         StaticUnionEvent::Null,
     ];
@@ -2249,9 +2819,14 @@ impl StatePolicy for StaticUnionPolicy {
 
     fn get_event_name(event: Self::Event) -> &'static str {
         match event {
+            StaticUnionEvent::BoardRead => "board.read",
             StaticUnionEvent::ErrorExecution => "error.execution",
+            StaticUnionEvent::ShapeBoarded => "shape.boarded",
+            StaticUnionEvent::ShapeHeld => "shape.held",
             StaticUnionEvent::ShapeSaid => "shape.said",
+            StaticUnionEvent::ShapesGrouped => "shapes.grouped",
             StaticUnionEvent::ShapesPicked => "shapes.picked",
+            StaticUnionEvent::ShapesRowed => "shapes.rowed",
             StaticUnionEvent::ShapesSent => "shapes.sent",
             StaticUnionEvent::Null => "",
         }
@@ -2259,9 +2834,14 @@ impl StatePolicy for StaticUnionPolicy {
 
     fn get_event_from_name(name: &str) -> Option<Self::Event> {
         match name {
+            "board.read" => Some(StaticUnionEvent::BoardRead),
             "error.execution" => Some(StaticUnionEvent::ErrorExecution),
+            "shape.boarded" => Some(StaticUnionEvent::ShapeBoarded),
+            "shape.held" => Some(StaticUnionEvent::ShapeHeld),
             "shape.said" => Some(StaticUnionEvent::ShapeSaid),
+            "shapes.grouped" => Some(StaticUnionEvent::ShapesGrouped),
             "shapes.picked" => Some(StaticUnionEvent::ShapesPicked),
+            "shapes.rowed" => Some(StaticUnionEvent::ShapesRowed),
             "shapes.sent" => Some(StaticUnionEvent::ShapesSent),
             _ => None,
         }
@@ -2313,11 +2893,140 @@ impl StatePolicy for StaticUnionPolicy {
             return Ok(());
         }
         match event {
+            StaticUnionEvent::ShapeBoarded => {
+                let fields = ::sce_rust_runtime::event_payload::PayloadFields::decode(data)?;
+                self.pending_payload =
+                    StaticUnionPayload::ShapeBoarded(StaticUnionShapeBoardedPayload {
+                        text: fields.text("text", 256)?,
+                    });
+            }
+            StaticUnionEvent::ShapeHeld => {
+                let fields = ::sce_rust_runtime::event_payload::PayloadFields::decode(data)?;
+                self.pending_payload = StaticUnionPayload::ShapeHeld(StaticUnionShapeHeldPayload {
+                    text: fields.text("text", 128)?,
+                });
+            }
             StaticUnionEvent::ShapeSaid => {
                 let fields = ::sce_rust_runtime::event_payload::PayloadFields::decode(data)?;
                 self.pending_payload = StaticUnionPayload::ShapeSaid(StaticUnionShapeSaidPayload {
                     text: fields.text("text", 96)?,
                 });
+            }
+            StaticUnionEvent::ShapesGrouped => {
+                let fields = ::sce_rust_runtime::event_payload::PayloadFields::decode(data)?;
+                self.pending_payload =
+                    StaticUnionPayload::ShapesGrouped(StaticUnionShapesGroupedPayload {
+                        groups: fields.field("groups").and_then(|v| {
+                            v.list::<_, 2>(|v| {
+                                v.record(None, |r| {
+                                    Ok(StaticUnionGroupRecord {
+                                        shapes: r.field("shapes").and_then(|v| {
+                                            v.list::<_, 3>(|v| {
+                                                v.union(
+                                                    "kind",
+                                                    |v| {
+                                                        v.name().and_then(|name| match name {
+                                                            "dot" => Ok(StaticUnionKindEnum::Dot),
+                                                            "circle" => {
+                                                                Ok(StaticUnionKindEnum::Circle)
+                                                            }
+                                                            "disc" => Ok(StaticUnionKindEnum::Disc),
+                                                            "rect" => Ok(StaticUnionKindEnum::Rect),
+                                                            "label" => {
+                                                                Ok(StaticUnionKindEnum::Label)
+                                                            }
+                                                            "path" => Ok(StaticUnionKindEnum::Path),
+                                                            other => {
+                                                                Err(v
+                                                                    .unknown_variant(other, "Kind"))
+                                                            }
+                                                        })
+                                                    },
+                                                    |sce_case, v| match sce_case {
+                                                        StaticUnionKindEnum::Dot => {
+                                                            Ok(StaticUnionUnionShapeUnion::Dot)
+                                                        }
+                                                        StaticUnionKindEnum::Circle => {
+                                                            v.record(None, |r| {
+                                                                Ok(StaticUnionRadiusRecord {
+                                                                    radius: r
+                                                                        .field("radius")
+                                                                        .and_then(|v| {
+                                                                            v.unsigned::<u16>()
+                                                                        })?,
+                                                                })
+                                                            })
+                                                            .map(StaticUnionUnionShapeUnion::Circle)
+                                                        }
+                                                        StaticUnionKindEnum::Disc => v
+                                                            .record(None, |r| {
+                                                                Ok(StaticUnionRadiusRecord {
+                                                                    radius: r
+                                                                        .field("radius")
+                                                                        .and_then(|v| {
+                                                                            v.unsigned::<u16>()
+                                                                        })?,
+                                                                })
+                                                            })
+                                                            .map(StaticUnionUnionShapeUnion::Disc),
+                                                        StaticUnionKindEnum::Rect => v
+                                                            .record(None, |r| {
+                                                                Ok(StaticUnionRectRecord {
+                                                                    width: r
+                                                                        .field("width")
+                                                                        .and_then(|v| {
+                                                                            v.unsigned::<u16>()
+                                                                        })?,
+                                                                    height: r
+                                                                        .field("height")
+                                                                        .and_then(|v| {
+                                                                            v.unsigned::<u16>()
+                                                                        })?,
+                                                                })
+                                                            })
+                                                            .map(StaticUnionUnionShapeUnion::Rect),
+                                                        StaticUnionKindEnum::Label => v
+                                                            .record(None, |r| {
+                                                                Ok(StaticUnionLabelRecord {
+                                                                    text: r
+                                                                        .field("text")
+                                                                        .and_then(|v| {
+                                                                            v.text::<8>()
+                                                                        })?,
+                                                                    note: r
+                                                                        .field("note")
+                                                                        .and_then(|v| {
+                                                                            v.optional(|v| {
+                                                                                v.text::<4>()
+                                                                            })
+                                                                        })?,
+                                                                })
+                                                            })
+                                                            .map(StaticUnionUnionShapeUnion::Label),
+                                                        StaticUnionKindEnum::Path => v
+                                                            .record(None, |r| {
+                                                                Ok(StaticUnionPathRecord {
+                                                                    points: r
+                                                                        .field("points")
+                                                                        .and_then(|v| {
+                                                                            v.list::<_, 3>(|v| {
+                                                                                v.unsigned::<u8>()
+                                                                            })
+                                                                        })?,
+                                                                })
+                                                            })
+                                                            .map(StaticUnionUnionShapeUnion::Path),
+                                                    },
+                                                )
+                                            })
+                                        })?,
+                                    })
+                                })
+                            })
+                        })?,
+                        at: fields.field("at").and_then(|v| v.unsigned::<u8>())?,
+                        inner: fields.field("inner").and_then(|v| v.unsigned::<u8>())?,
+                    });
             }
             StaticUnionEvent::ShapesPicked => {
                 let fields = ::sce_rust_runtime::event_payload::PayloadFields::decode(data)?;
@@ -2398,6 +3107,94 @@ impl StatePolicy for StaticUnionPolicy {
                             })
                         })?,
                         at: fields.field("at").and_then(|v| v.unsigned::<u8>())?,
+                    });
+            }
+            StaticUnionEvent::ShapesRowed => {
+                let fields = ::sce_rust_runtime::event_payload::PayloadFields::decode(data)?;
+                self.pending_payload =
+                    StaticUnionPayload::ShapesRowed(StaticUnionShapesRowedPayload {
+                        rows: fields.field("rows").and_then(|v| {
+                            v.list::<_, 2>(|v| {
+                                v.list::<_, 3>(|v| {
+                                    v.union(
+                                        "kind",
+                                        |v| {
+                                            v.name().and_then(|name| match name {
+                                                "dot" => Ok(StaticUnionKindEnum::Dot),
+                                                "circle" => Ok(StaticUnionKindEnum::Circle),
+                                                "disc" => Ok(StaticUnionKindEnum::Disc),
+                                                "rect" => Ok(StaticUnionKindEnum::Rect),
+                                                "label" => Ok(StaticUnionKindEnum::Label),
+                                                "path" => Ok(StaticUnionKindEnum::Path),
+                                                other => Err(v.unknown_variant(other, "Kind")),
+                                            })
+                                        },
+                                        |sce_case, v| match sce_case {
+                                            StaticUnionKindEnum::Dot => {
+                                                Ok(StaticUnionUnionShapeUnion::Dot)
+                                            }
+                                            StaticUnionKindEnum::Circle => v
+                                                .record(None, |r| {
+                                                    Ok(StaticUnionRadiusRecord {
+                                                        radius: r
+                                                            .field("radius")
+                                                            .and_then(|v| v.unsigned::<u16>())?,
+                                                    })
+                                                })
+                                                .map(StaticUnionUnionShapeUnion::Circle),
+                                            StaticUnionKindEnum::Disc => v
+                                                .record(None, |r| {
+                                                    Ok(StaticUnionRadiusRecord {
+                                                        radius: r
+                                                            .field("radius")
+                                                            .and_then(|v| v.unsigned::<u16>())?,
+                                                    })
+                                                })
+                                                .map(StaticUnionUnionShapeUnion::Disc),
+                                            StaticUnionKindEnum::Rect => v
+                                                .record(None, |r| {
+                                                    Ok(StaticUnionRectRecord {
+                                                        width: r
+                                                            .field("width")
+                                                            .and_then(|v| v.unsigned::<u16>())?,
+                                                        height: r
+                                                            .field("height")
+                                                            .and_then(|v| v.unsigned::<u16>())?,
+                                                    })
+                                                })
+                                                .map(StaticUnionUnionShapeUnion::Rect),
+                                            StaticUnionKindEnum::Label => v
+                                                .record(None, |r| {
+                                                    Ok(StaticUnionLabelRecord {
+                                                        text: r
+                                                            .field("text")
+                                                            .and_then(|v| v.text::<8>())?,
+                                                        note: r.field("note").and_then(|v| {
+                                                            v.optional(|v| v.text::<4>())
+                                                        })?,
+                                                    })
+                                                })
+                                                .map(StaticUnionUnionShapeUnion::Label),
+                                            StaticUnionKindEnum::Path => v
+                                                .record(None, |r| {
+                                                    Ok(StaticUnionPathRecord {
+                                                        points: r.field("points").and_then(
+                                                            |v| {
+                                                                v.list::<_, 3>(|v| {
+                                                                    v.unsigned::<u8>()
+                                                                })
+                                                            },
+                                                        )?,
+                                                    })
+                                                })
+                                                .map(StaticUnionUnionShapeUnion::Path),
+                                        },
+                                    )
+                                })
+                            })
+                        })?,
+                        at: fields.field("at").and_then(|v| v.unsigned::<u8>())?,
+                        inner: fields.field("inner").and_then(|v| v.unsigned::<u8>())?,
                     });
             }
             StaticUnionEvent::ShapesSent => {
@@ -2634,8 +3431,8 @@ impl StatePolicy for StaticUnionPolicy {
     // ======================================================================
 
     // W3C SCXML 3.7: Execute <onentry> actions for a state
-    #[doc = "SCE-MAP: static_union.scxml:24 :: _machine"]
-    // SCE-MAP: static_union.scxml:24 :: _machine
+    #[doc = "SCE-MAP: static_union.scxml:32 :: _machine"]
+    // SCE-MAP: static_union.scxml:32 :: _machine
     fn execute_entry_actions(
         &mut self,
         state: Self::State,
@@ -2651,8 +3448,8 @@ impl StatePolicy for StaticUnionPolicy {
     // recorded runs nothing.
 
     // W3C SCXML 3.8: Execute <onexit> actions for a state
-    #[doc = "SCE-MAP: static_union.scxml:24 :: _machine"]
-    // SCE-MAP: static_union.scxml:24 :: _machine
+    #[doc = "SCE-MAP: static_union.scxml:32 :: _machine"]
+    // SCE-MAP: static_union.scxml:32 :: _machine
     fn execute_exit_actions(
         &mut self,
         state: Self::State,
@@ -2670,8 +3467,8 @@ impl StatePolicy for StaticUnionPolicy {
     // enables, as its row of the tables, which holds its targets and its
     // type. The engine walks the atomic states and their ancestors and keeps
     // the ordered set. `Event::Null` asks for eventless transitions.
-    #[doc = "SCE-MAP: static_union.scxml:24 :: _machine"]
-    // SCE-MAP: static_union.scxml:24 :: _machine
+    #[doc = "SCE-MAP: static_union.scxml:32 :: _machine"]
+    // SCE-MAP: static_union.scxml:32 :: _machine
     fn first_enabled_transition(
         &mut self,
         state: Self::State,
@@ -2692,16 +3489,46 @@ impl StatePolicy for StaticUnionPolicy {
                         return Some(::sce_rust_runtime::TransitionId(1));
                     }
                 }
-                if event == StaticUnionEvent::ShapesPicked {
+                if event == StaticUnionEvent::ShapeHeld {
                     {
                         // idle, transition 2
                         return Some(::sce_rust_runtime::TransitionId(2));
                     }
                 }
-                if event == StaticUnionEvent::ErrorExecution {
+                if event == StaticUnionEvent::ShapeBoarded {
                     {
                         // idle, transition 3
                         return Some(::sce_rust_runtime::TransitionId(3));
+                    }
+                }
+                if event == StaticUnionEvent::BoardRead {
+                    if self.board.title == "desk" && self.board.count == 2 {
+                        // idle, transition 4
+                        return Some(::sce_rust_runtime::TransitionId(4));
+                    }
+                }
+                if event == StaticUnionEvent::ShapesPicked {
+                    {
+                        // idle, transition 5
+                        return Some(::sce_rust_runtime::TransitionId(5));
+                    }
+                }
+                if event == StaticUnionEvent::ShapesGrouped {
+                    {
+                        // idle, transition 6
+                        return Some(::sce_rust_runtime::TransitionId(6));
+                    }
+                }
+                if event == StaticUnionEvent::ShapesRowed {
+                    {
+                        // idle, transition 7
+                        return Some(::sce_rust_runtime::TransitionId(7));
+                    }
+                }
+                if event == StaticUnionEvent::ErrorExecution {
+                    {
+                        // idle, transition 8
+                        return Some(::sce_rust_runtime::TransitionId(8));
                     }
                 }
                 None
@@ -2713,8 +3540,8 @@ impl StatePolicy for StaticUnionPolicy {
     // W3C SCXML 3.13: a transition's executable content, run by the engine
     // between the microstep's exits and its entries. `transition` is a
     // written transition's row, one whose row says it has content.
-    #[doc = "SCE-MAP: static_union.scxml:24 :: _machine"]
-    // SCE-MAP: static_union.scxml:24 :: _machine
+    #[doc = "SCE-MAP: static_union.scxml:32 :: _machine"]
+    // SCE-MAP: static_union.scxml:32 :: _machine
     fn execute_transition_content(
         &mut self,
         transition: ::sce_rust_runtime::TransitionId,
@@ -2723,7 +3550,7 @@ impl StatePolicy for StaticUnionPolicy {
         match transition.0 {
             // idle, transition 0
             0 => {
-                // SCE-MAP: static_union.scxml:77 :: idle :: _transition_0
+                // SCE-MAP: static_union.scxml:112 :: idle :: _transition_0
                 // W3C SCXML 3.13: Transition 0 actions
                 let ev = match &self.pending_payload {
                     StaticUnionPayload::ShapesSent(ev) => ev.clone(),
@@ -2743,7 +3570,7 @@ impl StatePolicy for StaticUnionPolicy {
 })() {
     Ok(()) => false,
     Err(_) => {
-        engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(StaticUnionEvent::ErrorExecution, "<assign location='dots'>: an integer operation overflowed or failed"));
+        engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(StaticUnionEvent::ErrorExecution, ::sce_rust_runtime::ErrorReason::ExpressionFailed, "<assign location='dots'>: an integer operation overflowed or failed"));
         true
     }
 };
@@ -2772,7 +3599,7 @@ impl StatePolicy for StaticUnionPolicy {
 })() {
     Ok(()) => false,
     Err(_) => {
-        engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(StaticUnionEvent::ErrorExecution, "<assign location='points'>: an integer operation overflowed or failed"));
+        engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(StaticUnionEvent::ErrorExecution, ::sce_rust_runtime::ErrorReason::ExpressionFailed, "<assign location='points'>: an integer operation overflowed or failed"));
         true
     }
 };
@@ -2788,7 +3615,7 @@ impl StatePolicy for StaticUnionPolicy {
 })() {
     Ok(()) => false,
     Err(_) => {
-        engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(StaticUnionEvent::ErrorExecution, "<assign location='labels'>: an integer operation overflowed or failed"));
+        engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(StaticUnionEvent::ErrorExecution, ::sce_rust_runtime::ErrorReason::ExpressionFailed, "<assign location='labels'>: an integer operation overflowed or failed"));
         true
     }
 };
@@ -2807,7 +3634,7 @@ impl StatePolicy for StaticUnionPolicy {
 })() {
     Ok(()) => false,
     Err(_) => {
-        engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(StaticUnionEvent::ErrorExecution, "<assign location='many_shapes'>: an integer operation overflowed or failed"));
+        engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(StaticUnionEvent::ErrorExecution, ::sce_rust_runtime::ErrorReason::ExpressionFailed, "<assign location='many_shapes'>: an integer operation overflowed or failed"));
         true
     }
 };
@@ -2847,7 +3674,7 @@ impl StatePolicy for StaticUnionPolicy {
 })() {
     Ok(()) => false,
     Err(_) => {
-        engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(StaticUnionEvent::ErrorExecution, "<assign location='built.width'>: an integer operation overflowed or failed"));
+        engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(StaticUnionEvent::ErrorExecution, ::sce_rust_runtime::ErrorReason::ExpressionFailed, "<assign location='built.width'>: an integer operation overflowed or failed"));
         true
     }
 };
@@ -2862,7 +3689,7 @@ impl StatePolicy for StaticUnionPolicy {
             }
             // idle, transition 1
             1 => {
-                // SCE-MAP: static_union.scxml:111 :: idle :: _transition_1
+                // SCE-MAP: static_union.scxml:146 :: idle :: _transition_1
                 // W3C SCXML 3.13: Transition 1 actions
                 let ev = match &self.pending_payload {
                     StaticUnionPayload::ShapeSaid(ev) => ev.clone(),
@@ -2959,8 +3786,376 @@ impl StatePolicy for StaticUnionPolicy {
             }
             // idle, transition 2
             2 => {
-                // SCE-MAP: static_union.scxml:120 :: idle :: _transition_2
+                // SCE-MAP: static_union.scxml:152 :: idle :: _transition_2
                 // W3C SCXML 3.13: Transition 2 actions
+                let ev = match &self.pending_payload {
+                    StaticUnionPayload::ShapeHeld(ev) => ev.clone(),
+                    _ => return,
+                };
+                // W3C SCXML 4.9: a transition's content is one block; an error ends it.
+                'action_block: {
+                    // docs/adr/0087: <sce:lift text="_event.data.text" schema="Held">
+                    match ::sce_rust_runtime::event_payload::lift_value(
+                        &&ev.text[..],
+                        "Held",
+                        3,
+                        256,
+                        |v| {
+                            v.record(None, |r| {
+                                Ok(StaticUnionHeldRecord {
+                                    title: r.field("title").and_then(|v| v.text::<8>())?,
+                                    shape: r.field("shape").and_then(|v| {
+                                        v.union(
+                                            "kind",
+                                            |v| {
+                                                v.name().and_then(|name| match name {
+                                                    "dot" => Ok(StaticUnionKindEnum::Dot),
+                                                    "circle" => Ok(StaticUnionKindEnum::Circle),
+                                                    "disc" => Ok(StaticUnionKindEnum::Disc),
+                                                    "rect" => Ok(StaticUnionKindEnum::Rect),
+                                                    "label" => Ok(StaticUnionKindEnum::Label),
+                                                    "path" => Ok(StaticUnionKindEnum::Path),
+                                                    other => Err(v.unknown_variant(other, "Kind")),
+                                                })
+                                            },
+                                            |sce_case, v| match sce_case {
+                                                StaticUnionKindEnum::Dot => {
+                                                    Ok(StaticUnionUnionShapeUnion::Dot)
+                                                }
+                                                StaticUnionKindEnum::Circle => v
+                                                    .record(None, |r| {
+                                                        Ok(StaticUnionRadiusRecord {
+                                                            radius: r.field("radius").and_then(
+                                                                |v| v.unsigned::<u16>(),
+                                                            )?,
+                                                        })
+                                                    })
+                                                    .map(StaticUnionUnionShapeUnion::Circle),
+                                                StaticUnionKindEnum::Disc => v
+                                                    .record(None, |r| {
+                                                        Ok(StaticUnionRadiusRecord {
+                                                            radius: r.field("radius").and_then(
+                                                                |v| v.unsigned::<u16>(),
+                                                            )?,
+                                                        })
+                                                    })
+                                                    .map(StaticUnionUnionShapeUnion::Disc),
+                                                StaticUnionKindEnum::Rect => v
+                                                    .record(None, |r| {
+                                                        Ok(StaticUnionRectRecord {
+                                                            width: r.field("width").and_then(
+                                                                |v| v.unsigned::<u16>(),
+                                                            )?,
+                                                            height: r.field("height").and_then(
+                                                                |v| v.unsigned::<u16>(),
+                                                            )?,
+                                                        })
+                                                    })
+                                                    .map(StaticUnionUnionShapeUnion::Rect),
+                                                StaticUnionKindEnum::Label => v
+                                                    .record(None, |r| {
+                                                        Ok(StaticUnionLabelRecord {
+                                                            text: r
+                                                                .field("text")
+                                                                .and_then(|v| v.text::<8>())?,
+                                                            note: r.field("note").and_then(
+                                                                |v| v.optional(|v| v.text::<4>()),
+                                                            )?,
+                                                        })
+                                                    })
+                                                    .map(StaticUnionUnionShapeUnion::Label),
+                                                StaticUnionKindEnum::Path => v
+                                                    .record(None, |r| {
+                                                        Ok(StaticUnionPathRecord {
+                                                            points: r.field("points").and_then(
+                                                                |v| {
+                                                                    v.list::<_, 3>(|v| {
+                                                                        v.unsigned::<u8>()
+                                                                    })
+                                                                },
+                                                            )?,
+                                                        })
+                                                    })
+                                                    .map(StaticUnionUnionShapeUnion::Path),
+                                            },
+                                        )
+                                    })?,
+                                })
+                            })
+                        },
+                    ) {
+                        Ok(sce_lifted) => {
+                            self.held = Some(sce_lifted);
+                            self.held_why = None;
+                        }
+                        Err(sce_refusal) => {
+                            self.held_why = Some(StaticUnionLiftRefusalRecord { code: match sce_refusal.code() { ::sce_rust_runtime::event_payload::RefusalCode::NotJson => StaticUnionRefusalCodeEnum::NotJson, ::sce_rust_runtime::event_payload::RefusalCode::NotObject => StaticUnionRefusalCodeEnum::NotObject, ::sce_rust_runtime::event_payload::RefusalCode::TooDeep => StaticUnionRefusalCodeEnum::TooDeep, ::sce_rust_runtime::event_payload::RefusalCode::Missing => StaticUnionRefusalCodeEnum::Missing, ::sce_rust_runtime::event_payload::RefusalCode::NullNotOptional => StaticUnionRefusalCodeEnum::NullNotOptional, ::sce_rust_runtime::event_payload::RefusalCode::WrongKind => StaticUnionRefusalCodeEnum::WrongKind, ::sce_rust_runtime::event_payload::RefusalCode::BadNumber => StaticUnionRefusalCodeEnum::BadNumber, ::sce_rust_runtime::event_payload::RefusalCode::OutOfRange => StaticUnionRefusalCodeEnum::OutOfRange, ::sce_rust_runtime::event_payload::RefusalCode::TooLong => StaticUnionRefusalCodeEnum::TooLong, ::sce_rust_runtime::event_payload::RefusalCode::TooMany => StaticUnionRefusalCodeEnum::TooMany, ::sce_rust_runtime::event_payload::RefusalCode::UnknownVariant => StaticUnionRefusalCodeEnum::UnknownVariant, ::sce_rust_runtime::event_payload::RefusalCode::NotByteText => StaticUnionRefusalCodeEnum::NotByteText, ::sce_rust_runtime::event_payload::RefusalCode::NulInText => StaticUnionRefusalCodeEnum::NulInText, ::sce_rust_runtime::event_payload::RefusalCode::TooFew => StaticUnionRefusalCodeEnum::TooFew, }, path: ::sce_rust_runtime::portable::SceString::<256>::from_text(sce_refusal.pointer()).unwrap_or_default(), bound: sce_refusal.bound() });
+                        }
+                    }
+
+                    // W3C SCXML 5.9: cond="held !== null && held.value.shape.kind === Kind.rect"
+                    if self.held.is_some()
+                        && sce_forge_runtime::optional::proven_ref(&self.held)
+                            .shape
+                            .kind()
+                            == StaticUnionKindEnum::Rect
+                    {
+                        // W3C SCXML 5.3: <assign location="held_width">
+                        self.held_width = sce_forge_runtime::optional::proven_ref(&self.held)
+                            .shape
+                            .proven_rect()
+                            .width;
+                    }
+                }
+            }
+            // idle, transition 3
+            3 => {
+                // SCE-MAP: static_union.scxml:160 :: idle :: _transition_3
+                // W3C SCXML 3.13: Transition 3 actions
+                let ev = match &self.pending_payload {
+                    StaticUnionPayload::ShapeBoarded(ev) => ev.clone(),
+                    _ => return,
+                };
+                // W3C SCXML 4.9: a transition's content is one block; an error ends it.
+                'action_block: {
+                    // docs/adr/0087: <sce:lift text="_event.data.text" schema="Board">
+                    match ::sce_rust_runtime::event_payload::lift_value(
+                        &&ev.text[..],
+                        "Board",
+                        4,
+                        256,
+                        |v| {
+                            v.record(None, |r| {
+                                Ok(StaticUnionBoardRecord {
+                                    title: r.field("title").and_then(|v| v.text::<8>())?,
+                                    count: r.field("count").and_then(|v| v.unsigned::<u8>())?,
+                                    note: r
+                                        .field("note")
+                                        .and_then(|v| v.optional(|v| v.text::<8>()))?,
+                                    shapes: r.field("shapes").and_then(|v| {
+                                        v.list::<_, 3>(|v| {
+                                            v.union(
+                                                "kind",
+                                                |v| {
+                                                    v.name().and_then(|name| match name {
+                                                        "dot" => Ok(StaticUnionKindEnum::Dot),
+                                                        "circle" => Ok(StaticUnionKindEnum::Circle),
+                                                        "disc" => Ok(StaticUnionKindEnum::Disc),
+                                                        "rect" => Ok(StaticUnionKindEnum::Rect),
+                                                        "label" => Ok(StaticUnionKindEnum::Label),
+                                                        "path" => Ok(StaticUnionKindEnum::Path),
+                                                        other => {
+                                                            Err(v.unknown_variant(other, "Kind"))
+                                                        }
+                                                    })
+                                                },
+                                                |sce_case, v| match sce_case {
+                                                    StaticUnionKindEnum::Dot => {
+                                                        Ok(StaticUnionUnionShapeUnion::Dot)
+                                                    }
+                                                    StaticUnionKindEnum::Circle => v
+                                                        .record(None, |r| {
+                                                            Ok(StaticUnionRadiusRecord {
+                                                                radius: r
+                                                                    .field("radius")
+                                                                    .and_then(|v| {
+                                                                        v.unsigned::<u16>()
+                                                                    })?,
+                                                            })
+                                                        })
+                                                        .map(StaticUnionUnionShapeUnion::Circle),
+                                                    StaticUnionKindEnum::Disc => v
+                                                        .record(None, |r| {
+                                                            Ok(StaticUnionRadiusRecord {
+                                                                radius: r
+                                                                    .field("radius")
+                                                                    .and_then(|v| {
+                                                                        v.unsigned::<u16>()
+                                                                    })?,
+                                                            })
+                                                        })
+                                                        .map(StaticUnionUnionShapeUnion::Disc),
+                                                    StaticUnionKindEnum::Rect => v
+                                                        .record(None, |r| {
+                                                            Ok(StaticUnionRectRecord {
+                                                                width: r.field("width").and_then(
+                                                                    |v| v.unsigned::<u16>(),
+                                                                )?,
+                                                                height: r
+                                                                    .field("height")
+                                                                    .and_then(|v| {
+                                                                        v.unsigned::<u16>()
+                                                                    })?,
+                                                            })
+                                                        })
+                                                        .map(StaticUnionUnionShapeUnion::Rect),
+                                                    StaticUnionKindEnum::Label => v
+                                                        .record(None, |r| {
+                                                            Ok(StaticUnionLabelRecord {
+                                                                text: r
+                                                                    .field("text")
+                                                                    .and_then(|v| v.text::<8>())?,
+                                                                note: r.field("note").and_then(
+                                                                    |v| {
+                                                                        v.optional(|v| {
+                                                                            v.text::<4>()
+                                                                        })
+                                                                    },
+                                                                )?,
+                                                            })
+                                                        })
+                                                        .map(StaticUnionUnionShapeUnion::Label),
+                                                    StaticUnionKindEnum::Path => v
+                                                        .record(None, |r| {
+                                                            Ok(StaticUnionPathRecord {
+                                                                points: r
+                                                                    .field("points")
+                                                                    .and_then(|v| {
+                                                                        v.list::<_, 3>(|v| {
+                                                                            v.unsigned::<u8>()
+                                                                        })
+                                                                    })?,
+                                                            })
+                                                        })
+                                                        .map(StaticUnionUnionShapeUnion::Path),
+                                                },
+                                            )
+                                        })
+                                    })?,
+                                    pinned: r.field("pinned").and_then(|v| {
+                                        v.optional(|v| {
+                                            v.union(
+                                                "kind",
+                                                |v| {
+                                                    v.name().and_then(|name| match name {
+                                                        "dot" => Ok(StaticUnionKindEnum::Dot),
+                                                        "circle" => Ok(StaticUnionKindEnum::Circle),
+                                                        "disc" => Ok(StaticUnionKindEnum::Disc),
+                                                        "rect" => Ok(StaticUnionKindEnum::Rect),
+                                                        "label" => Ok(StaticUnionKindEnum::Label),
+                                                        "path" => Ok(StaticUnionKindEnum::Path),
+                                                        other => {
+                                                            Err(v.unknown_variant(other, "Kind"))
+                                                        }
+                                                    })
+                                                },
+                                                |sce_case, v| match sce_case {
+                                                    StaticUnionKindEnum::Dot => {
+                                                        Ok(StaticUnionUnionShapeUnion::Dot)
+                                                    }
+                                                    StaticUnionKindEnum::Circle => v
+                                                        .record(None, |r| {
+                                                            Ok(StaticUnionRadiusRecord {
+                                                                radius: r
+                                                                    .field("radius")
+                                                                    .and_then(|v| {
+                                                                        v.unsigned::<u16>()
+                                                                    })?,
+                                                            })
+                                                        })
+                                                        .map(StaticUnionUnionShapeUnion::Circle),
+                                                    StaticUnionKindEnum::Disc => v
+                                                        .record(None, |r| {
+                                                            Ok(StaticUnionRadiusRecord {
+                                                                radius: r
+                                                                    .field("radius")
+                                                                    .and_then(|v| {
+                                                                        v.unsigned::<u16>()
+                                                                    })?,
+                                                            })
+                                                        })
+                                                        .map(StaticUnionUnionShapeUnion::Disc),
+                                                    StaticUnionKindEnum::Rect => v
+                                                        .record(None, |r| {
+                                                            Ok(StaticUnionRectRecord {
+                                                                width: r.field("width").and_then(
+                                                                    |v| v.unsigned::<u16>(),
+                                                                )?,
+                                                                height: r
+                                                                    .field("height")
+                                                                    .and_then(|v| {
+                                                                        v.unsigned::<u16>()
+                                                                    })?,
+                                                            })
+                                                        })
+                                                        .map(StaticUnionUnionShapeUnion::Rect),
+                                                    StaticUnionKindEnum::Label => v
+                                                        .record(None, |r| {
+                                                            Ok(StaticUnionLabelRecord {
+                                                                text: r
+                                                                    .field("text")
+                                                                    .and_then(|v| v.text::<8>())?,
+                                                                note: r.field("note").and_then(
+                                                                    |v| {
+                                                                        v.optional(|v| {
+                                                                            v.text::<4>()
+                                                                        })
+                                                                    },
+                                                                )?,
+                                                            })
+                                                        })
+                                                        .map(StaticUnionUnionShapeUnion::Label),
+                                                    StaticUnionKindEnum::Path => v
+                                                        .record(None, |r| {
+                                                            Ok(StaticUnionPathRecord {
+                                                                points: r
+                                                                    .field("points")
+                                                                    .and_then(|v| {
+                                                                        v.list::<_, 3>(|v| {
+                                                                            v.unsigned::<u8>()
+                                                                        })
+                                                                    })?,
+                                                            })
+                                                        })
+                                                        .map(StaticUnionUnionShapeUnion::Path),
+                                                },
+                                            )
+                                        })
+                                    })?,
+                                })
+                            })
+                        },
+                    ) {
+                        Ok(sce_lifted) => {
+                            self.board = sce_lifted;
+                            self.board_why = None;
+                        }
+                        Err(sce_refusal) => {
+                            self.board_why = Some(StaticUnionLiftRefusalRecord { code: match sce_refusal.code() { ::sce_rust_runtime::event_payload::RefusalCode::NotJson => StaticUnionRefusalCodeEnum::NotJson, ::sce_rust_runtime::event_payload::RefusalCode::NotObject => StaticUnionRefusalCodeEnum::NotObject, ::sce_rust_runtime::event_payload::RefusalCode::TooDeep => StaticUnionRefusalCodeEnum::TooDeep, ::sce_rust_runtime::event_payload::RefusalCode::Missing => StaticUnionRefusalCodeEnum::Missing, ::sce_rust_runtime::event_payload::RefusalCode::NullNotOptional => StaticUnionRefusalCodeEnum::NullNotOptional, ::sce_rust_runtime::event_payload::RefusalCode::WrongKind => StaticUnionRefusalCodeEnum::WrongKind, ::sce_rust_runtime::event_payload::RefusalCode::BadNumber => StaticUnionRefusalCodeEnum::BadNumber, ::sce_rust_runtime::event_payload::RefusalCode::OutOfRange => StaticUnionRefusalCodeEnum::OutOfRange, ::sce_rust_runtime::event_payload::RefusalCode::TooLong => StaticUnionRefusalCodeEnum::TooLong, ::sce_rust_runtime::event_payload::RefusalCode::TooMany => StaticUnionRefusalCodeEnum::TooMany, ::sce_rust_runtime::event_payload::RefusalCode::UnknownVariant => StaticUnionRefusalCodeEnum::UnknownVariant, ::sce_rust_runtime::event_payload::RefusalCode::NotByteText => StaticUnionRefusalCodeEnum::NotByteText, ::sce_rust_runtime::event_payload::RefusalCode::NulInText => StaticUnionRefusalCodeEnum::NulInText, ::sce_rust_runtime::event_payload::RefusalCode::TooFew => StaticUnionRefusalCodeEnum::TooFew, }, path: ::sce_rust_runtime::portable::SceString::<256>::from_text(sce_refusal.pointer()).unwrap_or_default(), bound: sce_refusal.bound() });
+                        }
+                    }
+
+                    // W3C SCXML 5.3: <assign location="board_shapes">
+                    self.board_shapes = (self.board.shapes).len() as u32;
+                }
+            }
+            // idle, transition 4
+            4 => {
+                // SCE-MAP: static_union.scxml:164 :: idle :: _transition_4
+                // W3C SCXML 3.13: Transition 4 actions
+                // W3C SCXML 4.9: a transition's content is one block; an error ends it.
+                'action_block: {
+                    // W3C SCXML 5.3: <assign location="boards">
+                    let sce_failed =
+                        match (|| -> Result<(), sce_forge_runtime::algorithm::AlgorithmError> {
+                            self.boards = sce_forge_runtime::algorithm::add::<u32>(self.boards, 1)?;
+                            Ok(())
+                        })() {
+                            Ok(()) => false,
+                            Err(_) => {
+                                engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(StaticUnionEvent::ErrorExecution, ::sce_rust_runtime::ErrorReason::ExpressionFailed, "<assign location='boards'>: an integer operation overflowed or failed"));
+                                true
+                            }
+                        };
+                    if sce_failed {
+                        break 'action_block; // W3C SCXML 4.9: the error ends the block
+                    }
+                }
+            }
+            // idle, transition 5
+            5 => {
+                // SCE-MAP: static_union.scxml:174 :: idle :: _transition_5
+                // W3C SCXML 3.13: Transition 5 actions
                 let ev = match &self.pending_payload {
                     StaticUnionPayload::ShapesPicked(ev) => ev.clone(),
                     _ => return,
@@ -2976,7 +4171,7 @@ impl StatePolicy for StaticUnionPolicy {
                         })() {
                             Ok(()) => false,
                             Err(_) => {
-                                engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(StaticUnionEvent::ErrorExecution, "<assign location='picked'>: an integer operation overflowed or failed"));
+                                engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(StaticUnionEvent::ErrorExecution, ::sce_rust_runtime::ErrorReason::ExpressionFailed, "<assign location='picked'>: an integer operation overflowed or failed"));
                                 true
                             }
                         };
@@ -2994,7 +4189,7 @@ impl StatePolicy for StaticUnionPolicy {
                         })() {
                             Ok(()) => false,
                             Err(_) => {
-                                engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(StaticUnionEvent::ErrorExecution, "<assign location='picked_maybe'>: an integer operation overflowed or failed"));
+                                engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(StaticUnionEvent::ErrorExecution, ::sce_rust_runtime::ErrorReason::ExpressionFailed, "<assign location='picked_maybe'>: an integer operation overflowed or failed"));
                                 true
                             }
                         };
@@ -3010,7 +4205,7 @@ impl StatePolicy for StaticUnionPolicy {
                         })() {
                             Ok(()) => false,
                             Err(_) => {
-                                engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(StaticUnionEvent::ErrorExecution, "<assign location='picks'>: an integer operation overflowed or failed"));
+                                engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(StaticUnionEvent::ErrorExecution, ::sce_rust_runtime::ErrorReason::ExpressionFailed, "<assign location='picks'>: an integer operation overflowed or failed"));
                                 true
                             }
                         };
@@ -3025,10 +4220,116 @@ impl StatePolicy for StaticUnionPolicy {
                     }
                 }
             }
-            // idle, transition 3
-            3 => {
-                // SCE-MAP: static_union.scxml:130 :: idle :: _transition_3
-                // W3C SCXML 3.13: Transition 3 actions
+            // idle, transition 6
+            6 => {
+                // SCE-MAP: static_union.scxml:187 :: idle :: _transition_6
+                // W3C SCXML 3.13: Transition 6 actions
+                let ev = match &self.pending_payload {
+                    StaticUnionPayload::ShapesGrouped(ev) => ev.clone(),
+                    _ => return,
+                };
+                // W3C SCXML 4.9: a transition's content is one block; an error ends it.
+                'action_block: {
+                    // W3C SCXML 5.3: <assign location="picked">
+                    let sce_failed =
+                        match (|| -> Result<(), sce_forge_runtime::algorithm::AlgorithmError> {
+                            self.picked = sce_forge_runtime::algorithm::at_ref(
+                                &sce_forge_runtime::algorithm::at_ref(&ev.groups, ev.at)?.shapes,
+                                ev.inner,
+                            )?
+                            .clone();
+                            Ok(())
+                        })() {
+                            Ok(()) => false,
+                            Err(_) => {
+                                engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(StaticUnionEvent::ErrorExecution, ::sce_rust_runtime::ErrorReason::ExpressionFailed, "<assign location='picked'>: an integer operation overflowed or failed"));
+                                true
+                            }
+                        };
+                    if sce_failed {
+                        break 'action_block; // W3C SCXML 4.9: the error ends the block
+                    }
+
+                    // W3C SCXML 5.3: <assign location="picks">
+                    let sce_failed =
+                        match (|| -> Result<(), sce_forge_runtime::algorithm::AlgorithmError> {
+                            self.picks = sce_forge_runtime::algorithm::add::<u32>(self.picks, 1)?;
+                            Ok(())
+                        })() {
+                            Ok(()) => false,
+                            Err(_) => {
+                                engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(StaticUnionEvent::ErrorExecution, ::sce_rust_runtime::ErrorReason::ExpressionFailed, "<assign location='picks'>: an integer operation overflowed or failed"));
+                                true
+                            }
+                        };
+                    if sce_failed {
+                        break 'action_block; // W3C SCXML 4.9: the error ends the block
+                    }
+
+                    // W3C SCXML 5.9: cond="picked.kind === Kind.rect"
+                    if self.picked.kind() == StaticUnionKindEnum::Rect {
+                        // W3C SCXML 5.3: <assign location="picked_width">
+                        self.picked_width = self.picked.proven_rect().width;
+                    }
+                }
+            }
+            // idle, transition 7
+            7 => {
+                // SCE-MAP: static_union.scxml:194 :: idle :: _transition_7
+                // W3C SCXML 3.13: Transition 7 actions
+                let ev = match &self.pending_payload {
+                    StaticUnionPayload::ShapesRowed(ev) => ev.clone(),
+                    _ => return,
+                };
+                // W3C SCXML 4.9: a transition's content is one block; an error ends it.
+                'action_block: {
+                    // W3C SCXML 5.3: <assign location="picked">
+                    let sce_failed =
+                        match (|| -> Result<(), sce_forge_runtime::algorithm::AlgorithmError> {
+                            self.picked = sce_forge_runtime::algorithm::at_ref(
+                                sce_forge_runtime::algorithm::at_ref(&ev.rows, ev.at)?,
+                                ev.inner,
+                            )?
+                            .clone();
+                            Ok(())
+                        })() {
+                            Ok(()) => false,
+                            Err(_) => {
+                                engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(StaticUnionEvent::ErrorExecution, ::sce_rust_runtime::ErrorReason::ExpressionFailed, "<assign location='picked'>: an integer operation overflowed or failed"));
+                                true
+                            }
+                        };
+                    if sce_failed {
+                        break 'action_block; // W3C SCXML 4.9: the error ends the block
+                    }
+
+                    // W3C SCXML 5.3: <assign location="picks">
+                    let sce_failed =
+                        match (|| -> Result<(), sce_forge_runtime::algorithm::AlgorithmError> {
+                            self.picks = sce_forge_runtime::algorithm::add::<u32>(self.picks, 1)?;
+                            Ok(())
+                        })() {
+                            Ok(()) => false,
+                            Err(_) => {
+                                engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(StaticUnionEvent::ErrorExecution, ::sce_rust_runtime::ErrorReason::ExpressionFailed, "<assign location='picks'>: an integer operation overflowed or failed"));
+                                true
+                            }
+                        };
+                    if sce_failed {
+                        break 'action_block; // W3C SCXML 4.9: the error ends the block
+                    }
+
+                    // W3C SCXML 5.9: cond="picked.kind === Kind.rect"
+                    if self.picked.kind() == StaticUnionKindEnum::Rect {
+                        // W3C SCXML 5.3: <assign location="picked_width">
+                        self.picked_width = self.picked.proven_rect().width;
+                    }
+                }
+            }
+            // idle, transition 8
+            8 => {
+                // SCE-MAP: static_union.scxml:203 :: idle :: _transition_8
+                // W3C SCXML 3.13: Transition 8 actions
                 // W3C SCXML 4.9: a transition's content is one block; an error ends it.
                 'action_block: {
                     // W3C SCXML 5.3: <assign location="refusals">
@@ -3040,7 +4341,7 @@ impl StatePolicy for StaticUnionPolicy {
                         })() {
                             Ok(()) => false,
                             Err(_) => {
-                                engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(StaticUnionEvent::ErrorExecution, "<assign location='refusals'>: an integer operation overflowed or failed"));
+                                engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(StaticUnionEvent::ErrorExecution, ::sce_rust_runtime::ErrorReason::ExpressionFailed, "<assign location='refusals'>: an integer operation overflowed or failed"));
                                 true
                             }
                         };

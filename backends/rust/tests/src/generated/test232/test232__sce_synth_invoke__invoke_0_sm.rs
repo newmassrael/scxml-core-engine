@@ -526,6 +526,7 @@ impl StatePolicy for Test232SceSynthInvokeInvoke0Policy {
                             // nothing delivered, and the block ends (4.9).
                             engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(
                                 Test232SceSynthInvokeInvoke0Event::ErrorCommunication,
+                                ::sce_rust_runtime::ErrorReason::TargetUnreachable,
                                 "<send target='#_parent'> has no parent session to reach",
                             ));
                             break 'action_block;
@@ -551,6 +552,7 @@ impl StatePolicy for Test232SceSynthInvokeInvoke0Policy {
                             // nothing delivered, and the block ends (4.9).
                             engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(
                                 Test232SceSynthInvokeInvoke0Event::ErrorCommunication,
+                                ::sce_rust_runtime::ErrorReason::TargetUnreachable,
                                 "<send target='#_parent'> has no parent session to reach",
                             ));
                             break 'action_block;

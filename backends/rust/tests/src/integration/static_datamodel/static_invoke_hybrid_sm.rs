@@ -1,5 +1,5 @@
 // SCE-GENERATED — DO NOT EDIT
-// source-hash: 65fb42bdd588f958b0fbb29ac261cf039d02606d7afaae0720c045624bd679ba
+// source-hash: 2073d8a55462e1ce61d8a77293fdd2c141aceda8ad173303c5b84813ca22eeee
 
 // SPDX-License-Identifier: AGPL-3.0-only WITH AdditionRef-SCE-Linking-Exception OR LicenseRef-SCE-Commercial
 // SPDX-FileCopyrightText: Copyright (c) 2025-2026 [Author of input SCXML file] (content derived from the input document)
@@ -902,6 +902,7 @@ impl StaticInvokeHybridPolicy {
                     );
                     engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(
                         StaticInvokeHybridEvent::ErrorExecution,
+                        ::sce_rust_runtime::ErrorReason::InvokeSrcNotFound,
                         "<invoke srcexpr> evaluated to a document it did not declare",
                     ));
                     continue;
@@ -967,6 +968,7 @@ impl StaticInvokeHybridPolicy {
                         );
                         engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(
                             StaticInvokeHybridEvent::ErrorExecution,
+                            ::sce_rust_runtime::ErrorReason::ExpressionFailed,
                             "<invoke> <param name='extra'> expr failed to evaluate",
                         ));
                     }
@@ -1016,7 +1018,7 @@ impl StaticInvokeHybridPolicy {
                         self.active_invokes.remove("first_run");
                         engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(
                         StaticInvokeHybridEvent::ErrorExecution,
-                        &format!("<invoke id='{}'> did not start: its child's script session failed at step '{}'", "first_run", failure.stage)));
+                        ::sce_rust_runtime::ErrorReason::InvokeChildInitFailed, &format!("<invoke id='{}'> did not start: its child's script session failed at step '{}'", "first_run", failure.stage)));
                         continue;
                     }
 
@@ -1079,6 +1081,7 @@ impl StaticInvokeHybridPolicy {
                                 );
                                 engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(
                                     StaticInvokeHybridEvent::ErrorExecution,
+                                    ::sce_rust_runtime::ErrorReason::ExpressionFailed,
                                     "<invoke> <param name='extra'> expr failed to evaluate",
                                 ));
                             }
@@ -1131,7 +1134,7 @@ impl StaticInvokeHybridPolicy {
                         self.active_invokes.remove("first_run");
                         engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(
                         StaticInvokeHybridEvent::ErrorExecution,
-                        &format!("<invoke id='{}'> did not start: its child's script session failed at step '{}'", "first_run", failure.stage)));
+                        ::sce_rust_runtime::ErrorReason::InvokeChildInitFailed, &format!("<invoke id='{}'> did not start: its child's script session failed at step '{}'", "first_run", failure.stage)));
                         continue;
                     }
 
@@ -1168,6 +1171,7 @@ impl StaticInvokeHybridPolicy {
                     );
                     engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(
                         StaticInvokeHybridEvent::ErrorExecution,
+                        ::sce_rust_runtime::ErrorReason::InvokeSrcNotFound,
                         "<invoke srcexpr> evaluated to a document it did not declare",
                     ));
                     continue;
@@ -1233,6 +1237,7 @@ impl StaticInvokeHybridPolicy {
                         );
                         engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(
                             StaticInvokeHybridEvent::ErrorExecution,
+                            ::sce_rust_runtime::ErrorReason::ExpressionFailed,
                             "<invoke> <param name='extra'> expr failed to evaluate",
                         ));
                     }
@@ -1282,7 +1287,7 @@ impl StaticInvokeHybridPolicy {
                         self.active_invokes.remove("lossy_run");
                         engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(
                         StaticInvokeHybridEvent::ErrorExecution,
-                        &format!("<invoke id='{}'> did not start: its child's script session failed at step '{}'", "lossy_run", failure.stage)));
+                        ::sce_rust_runtime::ErrorReason::InvokeChildInitFailed, &format!("<invoke id='{}'> did not start: its child's script session failed at step '{}'", "lossy_run", failure.stage)));
                         continue;
                     }
 
@@ -1347,6 +1352,7 @@ impl StaticInvokeHybridPolicy {
                                 );
                                 engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(
                                     StaticInvokeHybridEvent::ErrorExecution,
+                                    ::sce_rust_runtime::ErrorReason::ExpressionFailed,
                                     "<invoke> <param name='extra'> expr failed to evaluate",
                                 ));
                             }
@@ -1399,7 +1405,7 @@ impl StaticInvokeHybridPolicy {
                         self.active_invokes.remove("lossy_run");
                         engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(
                         StaticInvokeHybridEvent::ErrorExecution,
-                        &format!("<invoke id='{}'> did not start: its child's script session failed at step '{}'", "lossy_run", failure.stage)));
+                        ::sce_rust_runtime::ErrorReason::InvokeChildInitFailed, &format!("<invoke id='{}'> did not start: its child's script session failed at step '{}'", "lossy_run", failure.stage)));
                         continue;
                     }
 
@@ -1436,6 +1442,7 @@ impl StaticInvokeHybridPolicy {
                     );
                     engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(
                         StaticInvokeHybridEvent::ErrorExecution,
+                        ::sce_rust_runtime::ErrorReason::InvokeSrcNotFound,
                         "<invoke srcexpr> evaluated to a document it did not declare",
                     ));
                     continue;
@@ -1535,7 +1542,7 @@ impl StaticInvokeHybridPolicy {
                         self.active_invokes.remove("missing_run");
                         engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(
                         StaticInvokeHybridEvent::ErrorExecution,
-                        &format!("<invoke id='{}'> did not start: its child's script session failed at step '{}'", "missing_run", failure.stage)));
+                        ::sce_rust_runtime::ErrorReason::InvokeChildInitFailed, &format!("<invoke id='{}'> did not start: its child's script session failed at step '{}'", "missing_run", failure.stage)));
                         continue;
                     }
 
@@ -1639,7 +1646,7 @@ impl StaticInvokeHybridPolicy {
                         self.active_invokes.remove("missing_run");
                         engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(
                         StaticInvokeHybridEvent::ErrorExecution,
-                        &format!("<invoke id='{}'> did not start: its child's script session failed at step '{}'", "missing_run", failure.stage)));
+                        ::sce_rust_runtime::ErrorReason::InvokeChildInitFailed, &format!("<invoke id='{}'> did not start: its child's script session failed at step '{}'", "missing_run", failure.stage)));
                         continue;
                     }
 
@@ -1676,6 +1683,7 @@ impl StaticInvokeHybridPolicy {
                     );
                     engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(
                         StaticInvokeHybridEvent::ErrorExecution,
+                        ::sce_rust_runtime::ErrorReason::InvokeSrcNotFound,
                         "<invoke srcexpr> evaluated to a document it did not declare",
                     ));
                     continue;
@@ -1741,6 +1749,7 @@ impl StaticInvokeHybridPolicy {
                         );
                         engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(
                             StaticInvokeHybridEvent::ErrorExecution,
+                            ::sce_rust_runtime::ErrorReason::ExpressionFailed,
                             "<invoke> <param name='extra'> expr failed to evaluate",
                         ));
                     }
@@ -1790,7 +1799,7 @@ impl StaticInvokeHybridPolicy {
                         self.active_invokes.remove("second_run");
                         engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(
                         StaticInvokeHybridEvent::ErrorExecution,
-                        &format!("<invoke id='{}'> did not start: its child's script session failed at step '{}'", "second_run", failure.stage)));
+                        ::sce_rust_runtime::ErrorReason::InvokeChildInitFailed, &format!("<invoke id='{}'> did not start: its child's script session failed at step '{}'", "second_run", failure.stage)));
                         continue;
                     }
 
@@ -1853,6 +1862,7 @@ impl StaticInvokeHybridPolicy {
                                 );
                                 engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(
                                     StaticInvokeHybridEvent::ErrorExecution,
+                                    ::sce_rust_runtime::ErrorReason::ExpressionFailed,
                                     "<invoke> <param name='extra'> expr failed to evaluate",
                                 ));
                             }
@@ -1909,7 +1919,7 @@ impl StaticInvokeHybridPolicy {
                         self.active_invokes.remove("second_run");
                         engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(
                         StaticInvokeHybridEvent::ErrorExecution,
-                        &format!("<invoke id='{}'> did not start: its child's script session failed at step '{}'", "second_run", failure.stage)));
+                        ::sce_rust_runtime::ErrorReason::InvokeChildInitFailed, &format!("<invoke id='{}'> did not start: its child's script session failed at step '{}'", "second_run", failure.stage)));
                         continue;
                     }
 
@@ -3324,7 +3334,7 @@ impl StatePolicy for StaticInvokeHybridPolicy {
                         })() {
                             Ok(()) => false,
                             Err(_) => {
-                                engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(StaticInvokeHybridEvent::ErrorExecution, "<assign location='base'>: an integer operation overflowed or failed"));
+                                engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(StaticInvokeHybridEvent::ErrorExecution, ::sce_rust_runtime::ErrorReason::ExpressionFailed, "<assign location='base'>: an integer operation overflowed or failed"));
                                 true
                             }
                         };
@@ -3353,7 +3363,7 @@ impl StatePolicy for StaticInvokeHybridPolicy {
                         })() {
                             Ok(()) => false,
                             Err(_) => {
-                                engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(StaticInvokeHybridEvent::ErrorExecution, "<assign location='pick'>: an integer operation overflowed or failed"));
+                                engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(StaticInvokeHybridEvent::ErrorExecution, ::sce_rust_runtime::ErrorReason::ExpressionFailed, "<assign location='pick'>: an integer operation overflowed or failed"));
                                 true
                             }
                         };
@@ -3382,7 +3392,7 @@ impl StatePolicy for StaticInvokeHybridPolicy {
                         })() {
                             Ok(()) => false,
                             Err(_) => {
-                                engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(StaticInvokeHybridEvent::ErrorExecution, "<assign location='pick'>: an integer operation overflowed or failed"));
+                                engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(StaticInvokeHybridEvent::ErrorExecution, ::sce_rust_runtime::ErrorReason::ExpressionFailed, "<assign location='pick'>: an integer operation overflowed or failed"));
                                 true
                             }
                         };
@@ -3411,7 +3421,7 @@ impl StatePolicy for StaticInvokeHybridPolicy {
                         })() {
                             Ok(()) => false,
                             Err(_) => {
-                                engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(StaticInvokeHybridEvent::ErrorExecution, "<assign location='pick'>: an integer operation overflowed or failed"));
+                                engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(StaticInvokeHybridEvent::ErrorExecution, ::sce_rust_runtime::ErrorReason::ExpressionFailed, "<assign location='pick'>: an integer operation overflowed or failed"));
                                 true
                             }
                         };
@@ -3641,7 +3651,7 @@ impl StatePolicy for StaticInvokeHybridPolicy {
                         })() {
                             Ok(()) => false,
                             Err(_) => {
-                                engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(StaticInvokeHybridEvent::ErrorExecution, "<assign location='completed'>: an integer operation overflowed or failed"));
+                                engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(StaticInvokeHybridEvent::ErrorExecution, ::sce_rust_runtime::ErrorReason::ExpressionFailed, "<assign location='completed'>: an integer operation overflowed or failed"));
                                 true
                             }
                         };
@@ -3665,7 +3675,7 @@ impl StatePolicy for StaticInvokeHybridPolicy {
                         })() {
                             Ok(()) => false,
                             Err(_) => {
-                                engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(StaticInvokeHybridEvent::ErrorExecution, "<assign location='completed'>: an integer operation overflowed or failed"));
+                                engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(StaticInvokeHybridEvent::ErrorExecution, ::sce_rust_runtime::ErrorReason::ExpressionFailed, "<assign location='completed'>: an integer operation overflowed or failed"));
                                 true
                             }
                         };
@@ -3689,7 +3699,7 @@ impl StatePolicy for StaticInvokeHybridPolicy {
                         })() {
                             Ok(()) => false,
                             Err(_) => {
-                                engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(StaticInvokeHybridEvent::ErrorExecution, "<assign location='completed'>: an integer operation overflowed or failed"));
+                                engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(StaticInvokeHybridEvent::ErrorExecution, ::sce_rust_runtime::ErrorReason::ExpressionFailed, "<assign location='completed'>: an integer operation overflowed or failed"));
                                 true
                             }
                         };
@@ -3712,7 +3722,7 @@ impl StatePolicy for StaticInvokeHybridPolicy {
                         })() {
                             Ok(()) => false,
                             Err(_) => {
-                                engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(StaticInvokeHybridEvent::ErrorExecution, "<assign location='errors'>: an integer operation overflowed or failed"));
+                                engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(StaticInvokeHybridEvent::ErrorExecution, ::sce_rust_runtime::ErrorReason::ExpressionFailed, "<assign location='errors'>: an integer operation overflowed or failed"));
                                 true
                             }
                         };
@@ -3735,7 +3745,7 @@ impl StatePolicy for StaticInvokeHybridPolicy {
                         })() {
                             Ok(()) => false,
                             Err(_) => {
-                                engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(StaticInvokeHybridEvent::ErrorExecution, "<assign location='errors'>: an integer operation overflowed or failed"));
+                                engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(StaticInvokeHybridEvent::ErrorExecution, ::sce_rust_runtime::ErrorReason::ExpressionFailed, "<assign location='errors'>: an integer operation overflowed or failed"));
                                 true
                             }
                         };
@@ -3759,7 +3769,7 @@ impl StatePolicy for StaticInvokeHybridPolicy {
                         })() {
                             Ok(()) => false,
                             Err(_) => {
-                                engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(StaticInvokeHybridEvent::ErrorExecution, "<assign location='completed'>: an integer operation overflowed or failed"));
+                                engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(StaticInvokeHybridEvent::ErrorExecution, ::sce_rust_runtime::ErrorReason::ExpressionFailed, "<assign location='completed'>: an integer operation overflowed or failed"));
                                 true
                             }
                         };

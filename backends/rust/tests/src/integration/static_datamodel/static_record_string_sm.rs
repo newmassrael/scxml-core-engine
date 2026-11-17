@@ -1,5 +1,5 @@
 // SCE-GENERATED — DO NOT EDIT
-// source-hash: 65fb42bdd588f958b0fbb29ac261cf039d02606d7afaae0720c045624bd679ba
+// source-hash: 2073d8a55462e1ce61d8a77293fdd2c141aceda8ad173303c5b84813ca22eeee
 
 // SPDX-License-Identifier: AGPL-3.0-only WITH AdditionRef-SCE-Linking-Exception OR LicenseRef-SCE-Commercial
 // SPDX-FileCopyrightText: Copyright (c) 2025-2026 [Author of input SCXML file] (content derived from the input document)
@@ -1225,7 +1225,7 @@ impl StatePolicy for StaticRecordStringPolicy {
                     })() {
                         Ok(sce_value) => sce_value,
                         Err(_) => {
-                            engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(StaticRecordStringEvent::ErrorExecution, "<transition cond='labels[0].label === 'whole''>: an integer operation overflowed or failed"));
+                            engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(StaticRecordStringEvent::ErrorExecution, ::sce_rust_runtime::ErrorReason::ExpressionFailed, "<transition cond='labels[0].label === 'whole''>: an integer operation overflowed or failed"));
                             false
                         }
                     } {
@@ -1291,7 +1291,7 @@ impl StatePolicy for StaticRecordStringPolicy {
                         })() {
                             Ok(()) => false,
                             Err(_) => {
-                                engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(StaticRecordStringEvent::ErrorExecution, "<assign location='last.label'>: an integer operation overflowed or failed"));
+                                engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(StaticRecordStringEvent::ErrorExecution, ::sce_rust_runtime::ErrorReason::ExpressionFailed, "<assign location='last.label'>: an integer operation overflowed or failed"));
                                 true
                             }
                         };
@@ -1315,7 +1315,7 @@ impl StatePolicy for StaticRecordStringPolicy {
                         })() {
                             Ok(()) => false,
                             Err(_) => {
-                                engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(StaticRecordStringEvent::ErrorExecution, "<assign location='last.label'>: an integer operation overflowed or failed"));
+                                engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(StaticRecordStringEvent::ErrorExecution, ::sce_rust_runtime::ErrorReason::ExpressionFailed, "<assign location='last.label'>: an integer operation overflowed or failed"));
                                 true
                             }
                         };
@@ -1339,7 +1339,7 @@ impl StatePolicy for StaticRecordStringPolicy {
                         })() {
                             Ok(()) => false,
                             Err(_) => {
-                                engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(StaticRecordStringEvent::ErrorExecution, "<assign location='last.label'>: an integer operation overflowed or failed"));
+                                engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(StaticRecordStringEvent::ErrorExecution, ::sce_rust_runtime::ErrorReason::ExpressionFailed, "<assign location='last.label'>: an integer operation overflowed or failed"));
                                 true
                             }
                         };
@@ -1363,7 +1363,7 @@ impl StatePolicy for StaticRecordStringPolicy {
                         })() {
                             Ok(()) => false,
                             Err(_) => {
-                                engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(StaticRecordStringEvent::ErrorExecution, "<assign location='last.label'>: an integer operation overflowed or failed"));
+                                engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(StaticRecordStringEvent::ErrorExecution, ::sce_rust_runtime::ErrorReason::ExpressionFailed, "<assign location='last.label'>: an integer operation overflowed or failed"));
                                 true
                             }
                         };
@@ -1388,7 +1388,7 @@ impl StatePolicy for StaticRecordStringPolicy {
                         })() {
                             Ok(()) => false,
                             Err(_) => {
-                                engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(StaticRecordStringEvent::ErrorExecution, "<assign location='note'>: an integer operation overflowed or failed"));
+                                engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(StaticRecordStringEvent::ErrorExecution, ::sce_rust_runtime::ErrorReason::ExpressionFailed, "<assign location='note'>: an integer operation overflowed or failed"));
                                 true
                             }
                         };
@@ -1414,7 +1414,7 @@ impl StatePolicy for StaticRecordStringPolicy {
                         })() {
                             Ok(()) => false,
                             Err(_) => {
-                                engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(StaticRecordStringEvent::ErrorExecution, "<assign location='last.label'>: an integer operation overflowed or failed"));
+                                engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(StaticRecordStringEvent::ErrorExecution, ::sce_rust_runtime::ErrorReason::ExpressionFailed, "<assign location='last.label'>: an integer operation overflowed or failed"));
                                 true
                             }
                         };
@@ -1439,7 +1439,7 @@ impl StatePolicy for StaticRecordStringPolicy {
                         })() {
                             Ok(()) => false,
                             Err(_) => {
-                                engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(StaticRecordStringEvent::ErrorExecution, "<assign location='note'>: an integer operation overflowed or failed"));
+                                engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(StaticRecordStringEvent::ErrorExecution, ::sce_rust_runtime::ErrorReason::ExpressionFailed, "<assign location='note'>: an integer operation overflowed or failed"));
                                 true
                             }
                         };
@@ -1471,7 +1471,7 @@ impl StatePolicy for StaticRecordStringPolicy {
                         })() {
                             Ok(()) => false,
                             Err(_) => {
-                                engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(StaticRecordStringEvent::ErrorExecution, "<assign location='last'>: an integer operation overflowed or failed"));
+                                engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(StaticRecordStringEvent::ErrorExecution, ::sce_rust_runtime::ErrorReason::ExpressionFailed, "<assign location='last'>: an integer operation overflowed or failed"));
                                 true
                             }
                         };
@@ -1499,11 +1499,11 @@ impl StatePolicy for StaticRecordStringPolicy {
                         })() {
                             Ok(false) => false,
                             Ok(true) => {
-                                engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(StaticRecordStringEvent::ErrorExecution, "<sce:append target='labels'>: the list already holds its capacity of 3"));
+                                engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(StaticRecordStringEvent::ErrorExecution, ::sce_rust_runtime::ErrorReason::AssignmentFailed, "<sce:append target='labels'>: the list already holds its capacity of 3"));
                                 true
                             }
                             Err(_) => {
-                                engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(StaticRecordStringEvent::ErrorExecution, "<sce:append target='labels'>: an integer operation overflowed or failed"));
+                                engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(StaticRecordStringEvent::ErrorExecution, ::sce_rust_runtime::ErrorReason::ExpressionFailed, "<sce:append target='labels'>: an integer operation overflowed or failed"));
                                 true
                             }
                         };
@@ -1532,7 +1532,7 @@ impl StatePolicy for StaticRecordStringPolicy {
                         })() {
                             Ok(()) => false,
                             Err(_) => {
-                                engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(StaticRecordStringEvent::ErrorExecution, "<assign location='note'>: an integer operation overflowed or failed"));
+                                engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(StaticRecordStringEvent::ErrorExecution, ::sce_rust_runtime::ErrorReason::ExpressionFailed, "<assign location='note'>: an integer operation overflowed or failed"));
                                 true
                             }
                         };
@@ -1562,7 +1562,7 @@ impl StatePolicy for StaticRecordStringPolicy {
                         })() {
                             Ok(()) => false,
                             Err(_) => {
-                                engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(StaticRecordStringEvent::ErrorExecution, "<assign location='last.label'>: an integer operation overflowed or failed"));
+                                engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(StaticRecordStringEvent::ErrorExecution, ::sce_rust_runtime::ErrorReason::ExpressionFailed, "<assign location='last.label'>: an integer operation overflowed or failed"));
                                 true
                             }
                         };
@@ -1586,7 +1586,7 @@ impl StatePolicy for StaticRecordStringPolicy {
                     {
                         false
                     } else {
-                        engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(StaticRecordStringEvent::ErrorExecution, "<sce:append target='labels'>: the list already holds its capacity of 3"));
+                        engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(StaticRecordStringEvent::ErrorExecution, ::sce_rust_runtime::ErrorReason::AssignmentFailed, "<sce:append target='labels'>: the list already holds its capacity of 3"));
                         true
                     };
                     if sce_failed {
@@ -1610,7 +1610,7 @@ impl StatePolicy for StaticRecordStringPolicy {
 })() {
     Ok(()) => false,
     Err(_) => {
-        engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(StaticRecordStringEvent::ErrorExecution, "<assign location='note'>: an integer operation overflowed or failed"));
+        engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(StaticRecordStringEvent::ErrorExecution, ::sce_rust_runtime::ErrorReason::ExpressionFailed, "<assign location='note'>: an integer operation overflowed or failed"));
         true
     }
 };
@@ -1636,7 +1636,7 @@ impl StatePolicy for StaticRecordStringPolicy {
                         })() {
                             Ok(()) => false,
                             Err(_) => {
-                                engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(StaticRecordStringEvent::ErrorExecution, "<assign location='note'>: an integer operation overflowed or failed"));
+                                engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(StaticRecordStringEvent::ErrorExecution, ::sce_rust_runtime::ErrorReason::ExpressionFailed, "<assign location='note'>: an integer operation overflowed or failed"));
                                 true
                             }
                         };
@@ -1668,7 +1668,7 @@ impl StatePolicy for StaticRecordStringPolicy {
                         })() {
                             Ok(()) => false,
                             Err(_) => {
-                                engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(StaticRecordStringEvent::ErrorExecution, "<assign location='note'>: an integer operation overflowed or failed"));
+                                engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(StaticRecordStringEvent::ErrorExecution, ::sce_rust_runtime::ErrorReason::ExpressionFailed, "<assign location='note'>: an integer operation overflowed or failed"));
                                 true
                             }
                         };
@@ -1692,7 +1692,7 @@ impl StatePolicy for StaticRecordStringPolicy {
                         })() {
                             Ok(()) => false,
                             Err(_) => {
-                                engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(StaticRecordStringEvent::ErrorExecution, "<assign location='note'>: an integer operation overflowed or failed"));
+                                engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(StaticRecordStringEvent::ErrorExecution, ::sce_rust_runtime::ErrorReason::ExpressionFailed, "<assign location='note'>: an integer operation overflowed or failed"));
                                 true
                             }
                         };
@@ -1714,7 +1714,7 @@ impl StatePolicy for StaticRecordStringPolicy {
 })() {
     Ok(()) => false,
     Err(_) => {
-        engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(StaticRecordStringEvent::ErrorExecution, "<assign location='last.sensor'>: an integer operation overflowed or failed"));
+        engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(StaticRecordStringEvent::ErrorExecution, ::sce_rust_runtime::ErrorReason::ExpressionFailed, "<assign location='last.sensor'>: an integer operation overflowed or failed"));
         true
     }
 }) || (match (|| -> Result<(), sce_forge_runtime::algorithm::AlgorithmError> {
@@ -1723,7 +1723,7 @@ impl StatePolicy for StaticRecordStringPolicy {
 })() {
     Ok(()) => false,
     Err(_) => {
-        engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(StaticRecordStringEvent::ErrorExecution, "<assign location='last.label'>: an integer operation overflowed or failed"));
+        engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(StaticRecordStringEvent::ErrorExecution, ::sce_rust_runtime::ErrorReason::ExpressionFailed, "<assign location='last.label'>: an integer operation overflowed or failed"));
         true
     }
 });
@@ -1745,7 +1745,7 @@ impl StatePolicy for StaticRecordStringPolicy {
 })() {
     Ok(()) => false,
     Err(_) => {
-        engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(StaticRecordStringEvent::ErrorExecution, "<assign location='last.sensor'>: an integer operation overflowed or failed"));
+        engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(StaticRecordStringEvent::ErrorExecution, ::sce_rust_runtime::ErrorReason::ExpressionFailed, "<assign location='last.sensor'>: an integer operation overflowed or failed"));
         true
     }
 }) || (match (|| -> Result<(), sce_forge_runtime::algorithm::AlgorithmError> {
@@ -1754,7 +1754,7 @@ impl StatePolicy for StaticRecordStringPolicy {
 })() {
     Ok(()) => false,
     Err(_) => {
-        engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(StaticRecordStringEvent::ErrorExecution, "<assign location='last.label'>: an integer operation overflowed or failed"));
+        engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(StaticRecordStringEvent::ErrorExecution, ::sce_rust_runtime::ErrorReason::ExpressionFailed, "<assign location='last.label'>: an integer operation overflowed or failed"));
         true
     }
 });
@@ -1787,7 +1787,7 @@ impl StatePolicy for StaticRecordStringPolicy {
                         })() {
                             Ok(()) => false,
                             Err(_) => {
-                                engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(StaticRecordStringEvent::ErrorExecution, "<assign location='errors'>: an integer operation overflowed or failed"));
+                                engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(StaticRecordStringEvent::ErrorExecution, ::sce_rust_runtime::ErrorReason::ExpressionFailed, "<assign location='errors'>: an integer operation overflowed or failed"));
                                 true
                             }
                         };

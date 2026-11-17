@@ -1,5 +1,5 @@
 // SCE-GENERATED — DO NOT EDIT
-// source-hash: 65fb42bdd588f958b0fbb29ac261cf039d02606d7afaae0720c045624bd679ba
+// source-hash: 2073d8a55462e1ce61d8a77293fdd2c141aceda8ad173303c5b84813ca22eeee
 
 // SPDX-License-Identifier: AGPL-3.0-only WITH AdditionRef-SCE-Linking-Exception OR LicenseRef-SCE-Commercial
 // SPDX-FileCopyrightText: Copyright (c) 2025-2026 [Author of input SCXML file] (content derived from the input document)
@@ -1225,7 +1225,7 @@ impl StatePolicy for StaticListIndexPolicy {
                     })() {
                         Ok(sce_value) => sce_value,
                         Err(_) => {
-                            engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(StaticListIndexEvent::ErrorExecution, "<transition cond='picked[0] < picked[1]'>: an integer operation overflowed or failed"));
+                            engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(StaticListIndexEvent::ErrorExecution, ::sce_rust_runtime::ErrorReason::ExpressionFailed, "<transition cond='picked[0] < picked[1]'>: an integer operation overflowed or failed"));
                             false
                         }
                     } {
@@ -1284,7 +1284,7 @@ impl StatePolicy for StaticListIndexPolicy {
                     {
                         false
                     } else {
-                        engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(StaticListIndexEvent::ErrorExecution, "<sce:append target='picked'>: the list already holds its capacity of 3"));
+                        engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(StaticListIndexEvent::ErrorExecution, ::sce_rust_runtime::ErrorReason::AssignmentFailed, "<sce:append target='picked'>: the list already holds its capacity of 3"));
                         true
                     };
                     if sce_failed {
@@ -1306,7 +1306,7 @@ impl StatePolicy for StaticListIndexPolicy {
                         })() {
                             Ok(()) => false,
                             Err(_) => {
-                                engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(StaticListIndexEvent::ErrorExecution, "<assign location='first'>: an integer operation overflowed or failed"));
+                                engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(StaticListIndexEvent::ErrorExecution, ::sce_rust_runtime::ErrorReason::ExpressionFailed, "<assign location='first'>: an integer operation overflowed or failed"));
                                 true
                             }
                         };
@@ -1335,7 +1335,7 @@ impl StatePolicy for StaticListIndexPolicy {
                         })() {
                             Ok(()) => false,
                             Err(_) => {
-                                engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(StaticListIndexEvent::ErrorExecution, "<assign location='last'>: an integer operation overflowed or failed"));
+                                engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(StaticListIndexEvent::ErrorExecution, ::sce_rust_runtime::ErrorReason::ExpressionFailed, "<assign location='last'>: an integer operation overflowed or failed"));
                                 true
                             }
                         };
@@ -1361,7 +1361,7 @@ impl StatePolicy for StaticListIndexPolicy {
                         })() {
                             Ok(()) => false,
                             Err(_) => {
-                                engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(StaticListIndexEvent::ErrorExecution, "<assign location='count'>: an integer operation overflowed or failed"));
+                                engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(StaticListIndexEvent::ErrorExecution, ::sce_rust_runtime::ErrorReason::ExpressionFailed, "<assign location='count'>: an integer operation overflowed or failed"));
                                 true
                             }
                         };
@@ -1395,7 +1395,7 @@ impl StatePolicy for StaticListIndexPolicy {
                         })() {
                             Ok(()) => false,
                             Err(_) => {
-                                engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(StaticListIndexEvent::ErrorExecution, "<assign location='under'>: an integer operation overflowed or failed"));
+                                engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(StaticListIndexEvent::ErrorExecution, ::sce_rust_runtime::ErrorReason::ExpressionFailed, "<assign location='under'>: an integer operation overflowed or failed"));
                                 true
                             }
                         };
@@ -1411,7 +1411,7 @@ impl StatePolicy for StaticListIndexPolicy {
                         })() {
                             Ok(()) => false,
                             Err(_) => {
-                                engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(StaticListIndexEvent::ErrorExecution, "<assign location='cursor'>: an integer operation overflowed or failed"));
+                                engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(StaticListIndexEvent::ErrorExecution, ::sce_rust_runtime::ErrorReason::ExpressionFailed, "<assign location='cursor'>: an integer operation overflowed or failed"));
                                 true
                             }
                         };
@@ -1437,7 +1437,7 @@ impl StatePolicy for StaticListIndexPolicy {
                         })() {
                             Ok(()) => false,
                             Err(_) => {
-                                engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(StaticListIndexEvent::ErrorExecution, "<assign location='under'>: an integer operation overflowed or failed"));
+                                engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(StaticListIndexEvent::ErrorExecution, ::sce_rust_runtime::ErrorReason::ExpressionFailed, "<assign location='under'>: an integer operation overflowed or failed"));
                                 true
                             }
                         };
@@ -1453,7 +1453,7 @@ impl StatePolicy for StaticListIndexPolicy {
                         })() {
                             Ok(()) => false,
                             Err(_) => {
-                                engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(StaticListIndexEvent::ErrorExecution, "<assign location='cursor'>: an integer operation overflowed or failed"));
+                                engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(StaticListIndexEvent::ErrorExecution, ::sce_rust_runtime::ErrorReason::ExpressionFailed, "<assign location='cursor'>: an integer operation overflowed or failed"));
                                 true
                             }
                         };
@@ -1507,7 +1507,7 @@ impl StatePolicy for StaticListIndexPolicy {
                         })() {
                             Ok(()) => false,
                             Err(_) => {
-                                engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(StaticListIndexEvent::ErrorExecution, "<assign location='refusals'>: an integer operation overflowed or failed"));
+                                engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(StaticListIndexEvent::ErrorExecution, ::sce_rust_runtime::ErrorReason::ExpressionFailed, "<assign location='refusals'>: an integer operation overflowed or failed"));
                                 true
                             }
                         };

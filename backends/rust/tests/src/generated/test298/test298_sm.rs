@@ -469,6 +469,7 @@ impl Test298Policy {
                 );
                 engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(
                     Test298Event::ErrorExecution,
+                    ::sce_rust_runtime::ErrorReason::ParamUnfit,
                     "<data id='Var1'> could not hold the value its invoke handed it",
                 ));
             }
@@ -480,6 +481,7 @@ impl Test298Policy {
                 ::sce_rust_runtime::sce_log_error!("global: {}", e);
                 engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(
                     Test298Event::ErrorExecution,
+                    ::sce_rust_runtime::ErrorReason::ExpressionFailed,
                     "<data id='Var1'> expr failed to evaluate",
                 ));
             }
@@ -528,6 +530,7 @@ impl Test298Policy {
                 ::sce_rust_runtime::sce_log_error!("Guard evaluation failed for '{}': {}", cond, e);
                 engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(
                     Test298Event::ErrorExecution,
+                    ::sce_rust_runtime::ErrorReason::ExpressionFailed,
                     reason,
                 ));
                 None
@@ -880,6 +883,7 @@ impl StatePolicy for Test298Policy {
                     ::sce_rust_runtime::sce_log_error!("Donedata param 'Var3': empty location");
                     engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(
                         Test298Event::ErrorExecution,
+                        ::sce_rust_runtime::ErrorReason::LocationInvalid,
                         "<donedata> <param name='Var3'> has an empty location",
                     ));
                     // §scxml-5.5: the pairs that survived, `{}` when none did.

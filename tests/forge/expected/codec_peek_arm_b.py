@@ -40,28 +40,24 @@ class CodecPeekArmB:
     payload: int = 0
 
     @classmethod
-    def decode(cls, cursor: SceCursor) -> Optional[CodecPeekArmB]:
-        """Decode the next frame from ``cursor``. Returns ``None`` when
-        the cursor's tail is shorter than the declared minimum frame
-        (RFC §synth-5-B L494-519); on success the cursor advances past the
-        consumed bytes. VLE codecs also return ``None`` on
-        ``VleWidthOverflow``, and every codec on a field's refusal: a length
-        or a count past its bound (``LengthOutOfRange``, ``TooManyElements``,
-        docs/adr/0077), an undeclared enum value."""
-        try:
-            raw = cursor.peek_slice(3)
-            f_header = raw[0]
-            f_payload = (raw[1] << 8) | raw[2]
-        except CodecError:
-            return None
+    def decode(cls, cursor: SceCursor) -> CodecPeekArmB:
+        """Decode the next frame from ``cursor``; on success the cursor
+        advances past the consumed bytes. A frame the codec refuses raises
+        the ``CodecError`` subclass that names the refusal (docs/adr/0099,
+        amendment of 2026-11-16): ``NeedMoreBytes`` when the cursor's tail
+        is shorter than the frame (RFC §synth-5-B L494-519), which the
+        caller resumes after appending bytes, and for a frame no more bytes
+        make whole ``VleWidthOverflow``, ``InvalidUtf8``,
+        ``UndeclaredEnumValue``, or a length or a count past its bound
+        (``LengthOutOfRange``, ``TooManyElements``, docs/adr/0077)."""
+        raw = cursor.peek_slice(3)
+        f_header = raw[0]
+        f_payload = (raw[1] << 8) | raw[2]
         value = cls(
             header=f_header,
             payload=f_payload,
         )
-        try:
-            cursor.advance(3)
-        except NeedMoreBytes:
-            return None
+        cursor.advance(3)
         return value
 
     # RFC §synth-5-B flags primitive: per-bit-range accessors over

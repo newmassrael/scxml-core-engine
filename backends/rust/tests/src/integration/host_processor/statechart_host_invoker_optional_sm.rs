@@ -1,5 +1,5 @@
 // SCE-GENERATED — DO NOT EDIT
-// source-hash: 7e9246f9bdadc8c18a240b365b4cc726cf6b8bab9981f448fd674ebdd45b3460
+// source-hash: e3e91f36cc7b8591c060b277b157f8471b6940f92608c548338f70603c760055
 
 // SPDX-License-Identifier: AGPL-3.0-only WITH AdditionRef-SCE-Linking-Exception OR LicenseRef-SCE-Commercial
 // SPDX-FileCopyrightText: Copyright (c) 2025-2026 [Author of input SCXML file] (content derived from the input document)
@@ -1064,6 +1064,7 @@ impl StatechartHostInvokerOptionalPolicy {
                     // same event, rather than a silence that reads as started.
                     engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(
                         StatechartHostInvokerOptionalEvent::ErrorExecution,
+                        ::sce_rust_runtime::ErrorReason::ProcessorUnregistered,
                         "<invoke> names an invoker the host declared but never registered",
                     ));
                 }
@@ -1489,7 +1490,7 @@ impl StatePolicy for StatechartHostInvokerOptionalPolicy {
                         })() {
                             Ok(()) => false,
                             Err(_) => {
-                                engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(StatechartHostInvokerOptionalEvent::ErrorExecution, "<assign location='label'>: an integer operation overflowed or failed"));
+                                engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(StatechartHostInvokerOptionalEvent::ErrorExecution, ::sce_rust_runtime::ErrorReason::ExpressionFailed, "<assign location='label'>: an integer operation overflowed or failed"));
                                 true
                             }
                         };
@@ -1528,7 +1529,7 @@ impl StatePolicy for StatechartHostInvokerOptionalPolicy {
 })() {
     Ok(()) => false,
     Err(_) => {
-        engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(StatechartHostInvokerOptionalEvent::ErrorExecution, "<assign location='label_value'>: an integer operation overflowed or failed"));
+        engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(StatechartHostInvokerOptionalEvent::ErrorExecution, ::sce_rust_runtime::ErrorReason::ExpressionFailed, "<assign location='label_value'>: an integer operation overflowed or failed"));
         true
     }
 };
@@ -1543,7 +1544,7 @@ impl StatePolicy for StatechartHostInvokerOptionalPolicy {
 })() {
     Ok(()) => false,
     Err(_) => {
-        engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(StatechartHostInvokerOptionalEvent::ErrorExecution, "<assign location='label_value'>: an integer operation overflowed or failed"));
+        engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(StatechartHostInvokerOptionalEvent::ErrorExecution, ::sce_rust_runtime::ErrorReason::ExpressionFailed, "<assign location='label_value'>: an integer operation overflowed or failed"));
         true
     }
 };
@@ -1567,7 +1568,7 @@ impl StatePolicy for StatechartHostInvokerOptionalPolicy {
                         })() {
                             Ok(()) => false,
                             Err(_) => {
-                                engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(StatechartHostInvokerOptionalEvent::ErrorExecution, "<assign location='answered'>: an integer operation overflowed or failed"));
+                                engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(StatechartHostInvokerOptionalEvent::ErrorExecution, ::sce_rust_runtime::ErrorReason::ExpressionFailed, "<assign location='answered'>: an integer operation overflowed or failed"));
                                 true
                             }
                         };

@@ -322,7 +322,7 @@ impl InvokeUnsupportedTypePolicy {
                 // W3C SCXML 6.4.1: unsupported `type` — place error.execution
                 // on the internal queue and start nothing. No child session,
                 // so no done.invoke follows and nothing is left to cancel.
-                engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(InvokeUnsupportedTypeEvent::ErrorExecution, "<invoke type='urn:example:no-such-processor'> names an external service this platform does not support"));
+                engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(InvokeUnsupportedTypeEvent::ErrorExecution, ::sce_rust_runtime::ErrorReason::InvokeTypeUnsupported, "<invoke type='urn:example:no-such-processor'> names an external service this platform does not support"));
                 continue;
             }
         }

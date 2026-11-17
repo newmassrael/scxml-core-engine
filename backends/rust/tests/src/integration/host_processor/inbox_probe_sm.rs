@@ -1,5 +1,5 @@
 // SCE-GENERATED — DO NOT EDIT
-// source-hash: 4b8a823bdcf1a180eb4e80b1d700a62b8e56e4feb419ba4853f2dd996d3e97e0
+// source-hash: 9bcde893aca9b8bd0b4481ded56da43b529733ffefb711be8f993d5a07ed257a
 
 // SPDX-License-Identifier: AGPL-3.0-only WITH AdditionRef-SCE-Linking-Exception OR LicenseRef-SCE-Commercial
 // SPDX-FileCopyrightText: Copyright (c) 2025-2026 [Author of input SCXML file] (content derived from the input document)
@@ -486,6 +486,7 @@ impl InboxProbePolicy {
                 );
                 engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(
                     InboxProbeEvent::ErrorExecution,
+                    ::sce_rust_runtime::ErrorReason::ParamUnfit,
                     "<data id='taken'> could not hold the value its invoke handed it",
                 ));
             }
@@ -497,6 +498,7 @@ impl InboxProbePolicy {
                 ::sce_rust_runtime::sce_log_error!("global: {}", e);
                 engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(
                     InboxProbeEvent::ErrorExecution,
+                    ::sce_rust_runtime::ErrorReason::ExpressionFailed,
                     "<data id='taken'> expr failed to evaluate",
                 ));
             }
@@ -545,6 +547,7 @@ impl InboxProbePolicy {
                 ::sce_rust_runtime::sce_log_error!("Guard evaluation failed for '{}': {}", cond, e);
                 engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(
                     InboxProbeEvent::ErrorExecution,
+                    ::sce_rust_runtime::ErrorReason::ExpressionFailed,
                     reason,
                 ));
                 None
@@ -694,6 +697,7 @@ impl InboxProbePolicy {
                     // same event, rather than a silence that reads as started.
                     engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(
                         InboxProbeEvent::ErrorExecution,
+                        ::sce_rust_runtime::ErrorReason::ProcessorUnregistered,
                         "<invoke> names an invoker the host declared but never registered",
                     ));
                 }
@@ -1170,6 +1174,7 @@ impl StatePolicy for InboxProbePolicy {
                             ::sce_rust_runtime::sce_log_error!("Assign failed for 'taken': {}", e);
                             engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(
                                 InboxProbeEvent::ErrorExecution,
+                                ::sce_rust_runtime::ErrorReason::AssignmentFailed,
                                 "<assign> to 'taken' failed",
                             ));
                             // W3C SCXML 4.9: the error ends the block, from however deep a <foreach> it came.
@@ -1200,6 +1205,7 @@ impl StatePolicy for InboxProbePolicy {
                             ::sce_rust_runtime::sce_log_error!("Assign failed for 'taken': {}", e);
                             engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(
                                 InboxProbeEvent::ErrorExecution,
+                                ::sce_rust_runtime::ErrorReason::AssignmentFailed,
                                 "<assign> to 'taken' failed",
                             ));
                             // W3C SCXML 4.9: the error ends the block, from however deep a <foreach> it came.
@@ -1230,6 +1236,7 @@ impl StatePolicy for InboxProbePolicy {
                             ::sce_rust_runtime::sce_log_error!("Assign failed for 'taken': {}", e);
                             engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(
                                 InboxProbeEvent::ErrorExecution,
+                                ::sce_rust_runtime::ErrorReason::AssignmentFailed,
                                 "<assign> to 'taken' failed",
                             ));
                             // W3C SCXML 4.9: the error ends the block, from however deep a <foreach> it came.

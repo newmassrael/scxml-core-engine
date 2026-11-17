@@ -820,7 +820,7 @@ impl<A: StatechartNativeActionActions + 'static> StatePolicy for StatechartNativ
                             self.actions.append_fragment_payload(&ev.payload, ev.offset);
                         }
                         _ => {
-                            engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(StatechartNativeActionEvent::ErrorExecution, "<sce:action name='append_fragment_payload'> needs the typed payload of 'fragment.received', which this delivery did not carry"));
+                            engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(StatechartNativeActionEvent::ErrorExecution, ::sce_rust_runtime::ErrorReason::PayloadRefused, "<sce:action name='append_fragment_payload'> needs the typed payload of 'fragment.received', which this delivery did not carry"));
                         }
                     }
                 }

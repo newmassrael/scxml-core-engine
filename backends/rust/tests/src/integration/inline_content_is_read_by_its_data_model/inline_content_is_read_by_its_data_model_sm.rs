@@ -558,6 +558,7 @@ impl InlineContentIsReadByItsDataModelPolicy {
                 ::sce_rust_runtime::sce_log_error!("Guard evaluation failed for '{}': {}", cond, e);
                 engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(
                     InlineContentIsReadByItsDataModelEvent::ErrorExecution,
+                    ::sce_rust_runtime::ErrorReason::ExpressionFailed,
                     reason,
                 ));
                 None
@@ -779,7 +780,7 @@ impl InlineContentIsReadByItsDataModelPolicy {
                     self.active_invokes.remove("reporter");
                     engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(
                         InlineContentIsReadByItsDataModelEvent::ErrorExecution,
-                        &format!("<invoke id='{}'> did not start: its child's script session failed at step '{}'", "reporter", failure.stage)));
+                        ::sce_rust_runtime::ErrorReason::InvokeChildInitFailed, &format!("<invoke id='{}'> did not start: its child's script session failed at step '{}'", "reporter", failure.stage)));
                     continue;
                 }
 
@@ -868,7 +869,7 @@ impl InlineContentIsReadByItsDataModelPolicy {
                     self.active_invokes.remove("emitter");
                     engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(
                         InlineContentIsReadByItsDataModelEvent::ErrorExecution,
-                        &format!("<invoke id='{}'> did not start: its child's script session failed at step '{}'", "emitter", failure.stage)));
+                        ::sce_rust_runtime::ErrorReason::InvokeChildInitFailed, &format!("<invoke id='{}'> did not start: its child's script session failed at step '{}'", "emitter", failure.stage)));
                     continue;
                 }
 

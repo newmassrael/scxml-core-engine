@@ -442,7 +442,7 @@ impl Test235Policy {
                     self.active_invokes.remove("foo");
                     engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(
                         Test235Event::ErrorExecution,
-                        &format!("<invoke id='{}'> did not start: its child's script session failed at step '{}'", "foo", failure.stage)));
+                        ::sce_rust_runtime::ErrorReason::InvokeChildInitFailed, &format!("<invoke id='{}'> did not start: its child's script session failed at step '{}'", "foo", failure.stage)));
                     continue;
                 }
 

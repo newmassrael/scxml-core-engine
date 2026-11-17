@@ -7,6 +7,7 @@
 package com.sce.generated.codec_chain_flag_forward
 
 import com.sce.forge.runtime.CodecError
+import com.sce.forge.runtime.Decoded
 import com.sce.forge.runtime.MutableListSink
 import com.sce.forge.runtime.SceCursor
 import com.sce.forge.runtime.SceSink
@@ -81,11 +82,14 @@ data class CodecChainFlagForward(
 
     companion object {
         /// Decode the next frame from `cursor`. On success the cursor
-        /// advances past the consumed bytes; returns `null` when the
-        /// cursor's tail is shorter than the declared minimum frame
-        /// (RFC §synth-5-B L494-519).
+        /// advances past the consumed bytes and the value is `Decoded.Ok`;
+        /// a refused frame is `Decoded.Refused` with the kind that refused
+        /// it (docs/adr/0099, amendment of 2026-11-16): `NeedMoreBytes` when
+        /// the cursor's tail is shorter than the frame (RFC §synth-5-B
+        /// L494-519), which the caller resumes after appending bytes, and
+        /// another kind for a frame no more bytes make whole.
         @Suppress("UNUSED_PARAMETER")
-        fun decode(cursor: SceCursor, wide: UByte): CodecChainFlagForward? {
+        fun decode(cursor: SceCursor, wide: UByte): Decoded<CodecChainFlagForward> {
             // Streaming cursor decode (SSOT selection: `needs_streaming`).
             // The positional `raw[byte_off]` path is valid only when every
             // field's absolute offset is fixed at codegen time; this branch
@@ -99,29 +103,31 @@ data class CodecChainFlagForward(
             // dedicated helpers; every other field flows through
             // `present_if_decode_stmt`.
             val head = run {
-                val raw = cursor.peekSlice(1) ?: return null
+                val raw = cursor.peekSlice(1) ?: return Decoded.Refused(CodecError.NeedMoreBytes)
                 val _v = raw[0].toUByte()
-                if (!cursor.advance(1)) return null
+                if (!cursor.advance(1)) return Decoded.Refused(CodecError.NeedMoreBytes)
                 _v
             }
             val entries: MutableList<CodecChainFlagEntry>? = if ((head.toInt() and 0x01) != 0) {
             mutableListOf<CodecChainFlagEntry>().also {
                 var _more = false
                 for (_i in 0 until 4) {
-                    val _entry = CodecChainFlagEntry.decode(cursor, wide) ?: return null
+                    val _entry = CodecChainFlagEntry.decode(cursor, wide).valueOr { _refused -> return _refused }
                     _more = _entry.Z()
                     it.add(_entry)
                     if (!_more) break
                 }
-                if (_more && cursor.remaining() == 0) { return null }
-                if (_more) { cursor.refuse(CodecError.TooManyElements); return null }
+                if (_more && cursor.remaining() == 0) { return Decoded.Refused(CodecError.NeedMoreBytes) }
+                if (_more) { return Decoded.Refused(CodecError.TooManyElements) }
             }
         } else {
             null
         }
-            return CodecChainFlagForward(
-                head = head,
-                entries = entries
+            return Decoded.Ok(
+                CodecChainFlagForward(
+                    head = head,
+                    entries = entries
+                )
             )
         }
     }

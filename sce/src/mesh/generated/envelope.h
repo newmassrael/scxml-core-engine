@@ -1,5 +1,5 @@
 // SCE-GENERATED — DO NOT EDIT
-// source-hash: f2f8682669670c7aaedbccb3102dd71d7b187eac29a32d3d20509a5bc070c12e
+// source-hash: 52868da22c06561e2c560050fc709417107e0518328e8ceb0790994e53be08ca
 // SCE-MAP: envelope.scxml:22 :: _forge_body
 
 // SCE Forge: Auto-generated from Extended SCXML (sce:kind="codec" sce:encoding="cbor")
@@ -699,14 +699,14 @@ struct Records {
     }
 
     /// Read one record of `causal_entry` from `c`: its keys in any order, a key the
-    /// schema does not declare skipped whole; a key given twice or a field
-    /// missing is `std::nullopt`.
-    static std::optional<SCE::Generated::CausalEntry::CausalEntryPayload>
+    /// schema does not declare skipped whole; a key given twice is
+    /// `CborMalformed` and a field missing `CborRequiredKeyMissing`.
+    static ::SCE::Forge::Decoded<SCE::Generated::CausalEntry::CausalEntryPayload>
     decode_record_causal_entry(::SCE::Forge::SceCursor &c) {
         namespace cbor = ::SCE::Forge::Cbor;
         const auto count = cbor::read_map_len(c);
         if (!count) {
-            return std::nullopt;
+            return count.error();
         }
         std::optional<uint64_t> held_hi;
         std::optional<uint64_t> held_lo;
@@ -714,47 +714,50 @@ struct Records {
         for (std::uint64_t i = 0; i < *count; ++i) {
             const auto key = cbor::read_text(c, std::nullopt);
             if (!key) {
-                return std::nullopt;
+                return key.error();
             }
             if (*key == "hi") {
                 // A key given twice is not one map entry.
                 if (held_hi.has_value()) {
-                    return std::nullopt;
+                    return ::SCE::Forge::CodecError::CborMalformed;
                 }
-                held_hi = cbor::read_uint(c);
-                if (!held_hi) {
-                    return std::nullopt;
+                auto read = cbor::read_uint(c);
+                if (!read) {
+                    return read.error();
                 }
+                held_hi = *read;
             } else if (*key == "lo") {
                 // A key given twice is not one map entry.
                 if (held_lo.has_value()) {
-                    return std::nullopt;
+                    return ::SCE::Forge::CodecError::CborMalformed;
                 }
-                held_lo = cbor::read_uint(c);
-                if (!held_lo) {
-                    return std::nullopt;
+                auto read = cbor::read_uint(c);
+                if (!read) {
+                    return read.error();
                 }
+                held_lo = *read;
             } else if (*key == "seq") {
                 // A key given twice is not one map entry.
                 if (held_seq.has_value()) {
-                    return std::nullopt;
+                    return ::SCE::Forge::CodecError::CborMalformed;
                 }
-                held_seq = cbor::read_uint(c);
-                if (!held_seq) {
-                    return std::nullopt;
+                auto read = cbor::read_uint(c);
+                if (!read) {
+                    return read.error();
                 }
-            } else if (!cbor::skip(c)) {
-                return std::nullopt;
+                held_seq = *read;
+            } else if (const auto skipped = cbor::skip(c); !skipped) {
+                return skipped.error();
             }
         }
         if (!held_hi.has_value()) {
-            return std::nullopt;
+            return ::SCE::Forge::CodecError::CborRequiredKeyMissing;
         }
         if (!held_lo.has_value()) {
-            return std::nullopt;
+            return ::SCE::Forge::CodecError::CborRequiredKeyMissing;
         }
         if (!held_seq.has_value()) {
-            return std::nullopt;
+            return ::SCE::Forge::CodecError::CborRequiredKeyMissing;
         }
         SCE::Generated::CausalEntry::CausalEntryPayload record;
         record.hi = *held_hi;
@@ -1217,8 +1220,9 @@ struct Envelope {
     }
 
     /// Decode one map from `cursor`. On success the cursor advances past it;
-    /// `std::nullopt` on any refusal, with the cursor left where it was.
-    static std::optional<Envelope> decode(::SCE::Forge::SceCursor &cursor) {
+    /// a refusal answers the `CodecError` that refused the map
+    /// (docs/adr/0099, amendment of 2026-11-16), with the cursor left where it was.
+    static ::SCE::Forge::Decoded<Envelope> decode(::SCE::Forge::SceCursor &cursor) {
         ::SCE::Forge::SceCursor c = cursor;
         auto value = decode_at(c);
         if (value) {
@@ -1242,11 +1246,11 @@ struct Envelope {
     }
 
 private:
-    static std::optional<Envelope> decode_at(::SCE::Forge::SceCursor &c) {
+    static ::SCE::Forge::Decoded<Envelope> decode_at(::SCE::Forge::SceCursor &c) {
         namespace cbor = ::SCE::Forge::Cbor;
         const auto count = cbor::read_map_len(c);
         if (!count) {
-            return std::nullopt;
+            return count.error();
         }
         std::optional<std::vector<uint8_t>> id;
         std::optional<std::string> source;
@@ -1271,17 +1275,17 @@ private:
         for (std::uint64_t i = 0; i < *count; ++i) {
             const auto key = cbor::read_uint(c);
             if (!key) {
-                return std::nullopt;
+                return key.error();
             }
             switch (*key) {
             case 0: {
                 // A key given twice is not one map entry.
                 if (id.has_value()) {
-                    return std::nullopt;
+                    return ::SCE::Forge::CodecError::CborMalformed;
                 }
                 auto v = cbor::read_bytes_exact(c, 16);
                 if (!v) {
-                    return std::nullopt;
+                    return v.error();
                 }
                 id = std::move(*v);
                 break;
@@ -1289,11 +1293,11 @@ private:
             case 1: {
                 // A key given twice is not one map entry.
                 if (source.has_value()) {
-                    return std::nullopt;
+                    return ::SCE::Forge::CodecError::CborMalformed;
                 }
                 auto v = cbor::read_text(c, 262144);
                 if (!v) {
-                    return std::nullopt;
+                    return v.error();
                 }
                 source = std::move(*v);
                 break;
@@ -1301,11 +1305,11 @@ private:
             case 2: {
                 // A key given twice is not one map entry.
                 if (event_type.has_value()) {
-                    return std::nullopt;
+                    return ::SCE::Forge::CodecError::CborMalformed;
                 }
                 auto v = cbor::read_text(c, 262144);
                 if (!v) {
-                    return std::nullopt;
+                    return v.error();
                 }
                 event_type = std::move(*v);
                 break;
@@ -1313,16 +1317,16 @@ private:
             case 3: {
                 // A key given twice is not one map entry.
                 if (pattern.has_value()) {
-                    return std::nullopt;
+                    return ::SCE::Forge::CodecError::CborMalformed;
                 }
                 const auto raw =
                     cbor::read_uint_upto(c, static_cast<std::uint64_t>(std::numeric_limits<uint16_t>::max()));
                 if (!raw) {
-                    return std::nullopt;
+                    return raw.error();
                 }
                 auto v = SCE::Generated::PatternKind::from_underlying(static_cast<uint16_t>(*raw));
                 if (!v) {
-                    return std::nullopt;
+                    return ::SCE::Forge::CodecError::UndeclaredEnumValue;
                 }
                 pattern = std::move(*v);
                 break;
@@ -1330,16 +1334,16 @@ private:
             case 4: {
                 // A key given twice is not one map entry.
                 if (datacontenttype.has_value()) {
-                    return std::nullopt;
+                    return ::SCE::Forge::CodecError::CborMalformed;
                 }
                 const auto raw =
                     cbor::read_uint_upto(c, static_cast<std::uint64_t>(std::numeric_limits<uint8_t>::max()));
                 if (!raw) {
-                    return std::nullopt;
+                    return raw.error();
                 }
                 auto v = SCE::Generated::PayloadCodec::from_underlying(static_cast<uint8_t>(*raw));
                 if (!v) {
-                    return std::nullopt;
+                    return ::SCE::Forge::CodecError::UndeclaredEnumValue;
                 }
                 datacontenttype = std::move(*v);
                 break;
@@ -1347,11 +1351,11 @@ private:
             case 5: {
                 // A key given twice is not one map entry.
                 if (data.has_value()) {
-                    return std::nullopt;
+                    return ::SCE::Forge::CodecError::CborMalformed;
                 }
                 auto v = cbor::read_bytes(c, 16777216);
                 if (!v) {
-                    return std::nullopt;
+                    return v.error();
                 }
                 data = std::move(*v);
                 break;
@@ -1359,11 +1363,11 @@ private:
             case 6: {
                 // A key given twice is not one map entry.
                 if (subject.has_value()) {
-                    return std::nullopt;
+                    return ::SCE::Forge::CodecError::CborMalformed;
                 }
                 auto v = cbor::read_text(c, 262144);
                 if (!v) {
-                    return std::nullopt;
+                    return v.error();
                 }
                 subject = std::move(*v);
                 break;
@@ -1371,11 +1375,11 @@ private:
             case 7: {
                 // A key given twice is not one map entry.
                 if (correlation_id.has_value()) {
-                    return std::nullopt;
+                    return ::SCE::Forge::CodecError::CborMalformed;
                 }
                 auto v = cbor::read_bytes_exact(c, 16);
                 if (!v) {
-                    return std::nullopt;
+                    return v.error();
                 }
                 correlation_id = std::move(*v);
                 break;
@@ -1383,11 +1387,11 @@ private:
             case 8: {
                 // A key given twice is not one map entry.
                 if (reply_to.has_value()) {
-                    return std::nullopt;
+                    return ::SCE::Forge::CodecError::CborMalformed;
                 }
                 auto v = cbor::read_text(c, 262144);
                 if (!v) {
-                    return std::nullopt;
+                    return v.error();
                 }
                 reply_to = std::move(*v);
                 break;
@@ -1395,11 +1399,11 @@ private:
             case 9: {
                 // A key given twice is not one map entry.
                 if (invoke_id.has_value()) {
-                    return std::nullopt;
+                    return ::SCE::Forge::CodecError::CborMalformed;
                 }
                 auto v = cbor::read_bytes_exact(c, 16);
                 if (!v) {
-                    return std::nullopt;
+                    return v.error();
                 }
                 invoke_id = std::move(*v);
                 break;
@@ -1407,16 +1411,16 @@ private:
             case 10: {
                 // A key given twice is not one map entry.
                 if (rpc_status.has_value()) {
-                    return std::nullopt;
+                    return ::SCE::Forge::CodecError::CborMalformed;
                 }
                 const auto raw =
                     cbor::read_uint_upto(c, static_cast<std::uint64_t>(std::numeric_limits<uint8_t>::max()));
                 if (!raw) {
-                    return std::nullopt;
+                    return raw.error();
                 }
                 auto v = SCE::Generated::RpcStatus::from_underlying(static_cast<uint8_t>(*raw));
                 if (!v) {
-                    return std::nullopt;
+                    return ::SCE::Forge::CodecError::UndeclaredEnumValue;
                 }
                 rpc_status = std::move(*v);
                 break;
@@ -1424,11 +1428,11 @@ private:
             case 11: {
                 // A key given twice is not one map entry.
                 if (rpc_error_message.has_value()) {
-                    return std::nullopt;
+                    return ::SCE::Forge::CodecError::CborMalformed;
                 }
                 auto v = cbor::read_text(c, 262144);
                 if (!v) {
-                    return std::nullopt;
+                    return v.error();
                 }
                 rpc_error_message = std::move(*v);
                 break;
@@ -1436,11 +1440,11 @@ private:
             case 12: {
                 // A key given twice is not one map entry.
                 if (deadline_unix_ms.has_value()) {
-                    return std::nullopt;
+                    return ::SCE::Forge::CodecError::CborMalformed;
                 }
                 auto v = cbor::read_uint(c);
                 if (!v) {
-                    return std::nullopt;
+                    return v.error();
                 }
                 deadline_unix_ms = std::move(*v);
                 break;
@@ -1448,11 +1452,11 @@ private:
             case 14: {
                 // A key given twice is not one map entry.
                 if (sequence_no.has_value()) {
-                    return std::nullopt;
+                    return ::SCE::Forge::CodecError::CborMalformed;
                 }
                 auto v = cbor::read_uint(c);
                 if (!v) {
-                    return std::nullopt;
+                    return v.error();
                 }
                 sequence_no = std::move(*v);
                 break;
@@ -1460,11 +1464,11 @@ private:
             case 15: {
                 // A key given twice is not one map entry.
                 if (routing_id.has_value()) {
-                    return std::nullopt;
+                    return ::SCE::Forge::CodecError::CborMalformed;
                 }
                 auto v = cbor::read_bytes_exact(c, 16);
                 if (!v) {
-                    return std::nullopt;
+                    return v.error();
                 }
                 routing_id = std::move(*v);
                 break;
@@ -1472,11 +1476,11 @@ private:
             case 16: {
                 // A key given twice is not one map entry.
                 if (parallel_id.has_value()) {
-                    return std::nullopt;
+                    return ::SCE::Forge::CodecError::CborMalformed;
                 }
                 auto v = cbor::read_text(c, 262144);
                 if (!v) {
-                    return std::nullopt;
+                    return v.error();
                 }
                 parallel_id = std::move(*v);
                 break;
@@ -1484,11 +1488,11 @@ private:
             case 17: {
                 // A key given twice is not one map entry.
                 if (region_id.has_value()) {
-                    return std::nullopt;
+                    return ::SCE::Forge::CodecError::CborMalformed;
                 }
                 auto v = cbor::read_text(c, 262144);
                 if (!v) {
-                    return std::nullopt;
+                    return v.error();
                 }
                 region_id = std::move(*v);
                 break;
@@ -1496,11 +1500,11 @@ private:
             case 18: {
                 // A key given twice is not one map entry.
                 if (child_session_id.has_value()) {
-                    return std::nullopt;
+                    return ::SCE::Forge::CodecError::CborMalformed;
                 }
                 auto v = cbor::read_text(c, 262144);
                 if (!v) {
-                    return std::nullopt;
+                    return v.error();
                 }
                 child_session_id = std::move(*v);
                 break;
@@ -1508,11 +1512,11 @@ private:
             case 19: {
                 // A key given twice is not one map entry.
                 if (causal_epoch.has_value()) {
-                    return std::nullopt;
+                    return ::SCE::Forge::CodecError::CborMalformed;
                 }
                 auto v = cbor::read_uint(c);
                 if (!v) {
-                    return std::nullopt;
+                    return v.error();
                 }
                 causal_epoch = std::move(*v);
                 break;
@@ -1520,128 +1524,130 @@ private:
             case 20: {
                 // A key given twice is not one map entry.
                 if (causal_vector.has_value()) {
-                    return std::nullopt;
+                    return ::SCE::Forge::CodecError::CborMalformed;
                 }
                 const auto _len = cbor::read_array_len(c);
-                if (!_len || *_len > 64) {
-                    return std::nullopt;
+                if (!_len) {
+                    return _len.error();
+                }
+                if (*_len > 64) {
+                    return ::SCE::Forge::CodecError::CborOutOfRange;
                 }
                 std::optional<std::vector<SCE::Generated::CausalEntry::CausalEntryPayload>> v{std::in_place};
                 for (std::uint64_t _n = 0; _n < *_len; ++_n) {
                     auto _record = Records::decode_record_causal_entry(c);
                     if (!_record) {
-                        return std::nullopt;
+                        return _record.error();
                     }
                     v->push_back(std::move(*_record));
-                }
-                if (!v) {
-                    return std::nullopt;
                 }
                 causal_vector = std::move(*v);
                 break;
             }
-            default:
-                if (!cbor::skip(c)) {
-                    return std::nullopt;
+            default: {
+                const auto skipped = cbor::skip(c);
+                if (!skipped) {
+                    return skipped.error();
                 }
                 break;
             }
+            }
         }
         if (!id.has_value()) {
-            return std::nullopt;
+            return ::SCE::Forge::CodecError::CborRequiredKeyMissing;
         }
         if (!source.has_value()) {
-            return std::nullopt;
+            return ::SCE::Forge::CodecError::CborRequiredKeyMissing;
         }
         if (!event_type.has_value()) {
-            return std::nullopt;
+            return ::SCE::Forge::CodecError::CborRequiredKeyMissing;
         }
         if (!pattern.has_value()) {
-            return std::nullopt;
+            return ::SCE::Forge::CodecError::CborRequiredKeyMissing;
         }
         if (!datacontenttype.has_value()) {
-            return std::nullopt;
+            return ::SCE::Forge::CodecError::CborRequiredKeyMissing;
         }
         if (!data.has_value()) {
-            return std::nullopt;
+            return ::SCE::Forge::CodecError::CborRequiredKeyMissing;
         }
         const auto _b_id = ::SCE::Forge::Bytes<16, 16>::make(*id);
         if (!_b_id) {
-            return std::nullopt;
+            return ::SCE::Forge::CodecError::CborOutOfRange;
         }
         const auto _b_source = ::SCE::Forge::Text<262144>::make(*source);
         if (!_b_source) {
-            return std::nullopt;
+            return ::SCE::Forge::CodecError::CborOutOfRange;
         }
         const auto _b_event_type = ::SCE::Forge::Text<262144>::make(*event_type);
         if (!_b_event_type) {
-            return std::nullopt;
+            return ::SCE::Forge::CodecError::CborOutOfRange;
         }
         const auto _b_data = ::SCE::Forge::Bytes<16777216>::make(*data);
         if (!_b_data) {
-            return std::nullopt;
+            return ::SCE::Forge::CodecError::CborOutOfRange;
         }
         std::optional<::SCE::Forge::Text<262144>> _b_subject;
         if (subject) {
             _b_subject = ::SCE::Forge::Text<262144>::make(*subject);
             if (!_b_subject) {
-                return std::nullopt;
+                return ::SCE::Forge::CodecError::CborOutOfRange;
             }
         }
         std::optional<::SCE::Forge::Bytes<16, 16>> _b_correlation_id;
         if (correlation_id) {
             _b_correlation_id = ::SCE::Forge::Bytes<16, 16>::make(*correlation_id);
             if (!_b_correlation_id) {
-                return std::nullopt;
+                return ::SCE::Forge::CodecError::CborOutOfRange;
             }
         }
         std::optional<::SCE::Forge::Text<262144>> _b_reply_to;
         if (reply_to) {
             _b_reply_to = ::SCE::Forge::Text<262144>::make(*reply_to);
             if (!_b_reply_to) {
-                return std::nullopt;
+                return ::SCE::Forge::CodecError::CborOutOfRange;
             }
         }
         std::optional<::SCE::Forge::Bytes<16, 16>> _b_invoke_id;
         if (invoke_id) {
             _b_invoke_id = ::SCE::Forge::Bytes<16, 16>::make(*invoke_id);
             if (!_b_invoke_id) {
-                return std::nullopt;
+                return ::SCE::Forge::CodecError::CborOutOfRange;
             }
         }
         std::optional<::SCE::Forge::Text<262144>> _b_rpc_error_message;
         if (rpc_error_message) {
             _b_rpc_error_message = ::SCE::Forge::Text<262144>::make(*rpc_error_message);
             if (!_b_rpc_error_message) {
-                return std::nullopt;
+                return ::SCE::Forge::CodecError::CborOutOfRange;
             }
         }
         std::optional<::SCE::Forge::Bytes<16, 16>> _b_routing_id;
         if (routing_id) {
             _b_routing_id = ::SCE::Forge::Bytes<16, 16>::make(*routing_id);
             if (!_b_routing_id) {
-                return std::nullopt;
+                return ::SCE::Forge::CodecError::CborOutOfRange;
             }
         }
         std::optional<::SCE::Forge::Text<262144>> _b_parallel_id;
         if (parallel_id) {
             _b_parallel_id = ::SCE::Forge::Text<262144>::make(*parallel_id);
             if (!_b_parallel_id) {
-                return std::nullopt;
+                return ::SCE::Forge::CodecError::CborOutOfRange;
             }
         }
         std::optional<::SCE::Forge::Text<262144>> _b_region_id;
         if (region_id) {
             _b_region_id = ::SCE::Forge::Text<262144>::make(*region_id);
             if (!_b_region_id) {
-                return std::nullopt;
+                return ::SCE::Forge::CodecError::CborOutOfRange;
             }
         }
         std::optional<::SCE::Forge::Text<262144>> _b_child_session_id;
         if (child_session_id) {
             _b_child_session_id = ::SCE::Forge::Text<262144>::make(*child_session_id);
             if (!_b_child_session_id) {
-                return std::nullopt;
+                return ::SCE::Forge::CodecError::CborOutOfRange;
             }
         }
         std::optional<::SCE::Forge::List<SCE::Generated::CausalEntry::CausalEntryPayload, 64>> _b_causal_vector;
@@ -1649,7 +1655,7 @@ private:
             _b_causal_vector =
                 ::SCE::Forge::List<SCE::Generated::CausalEntry::CausalEntryPayload, 64>::make(*causal_vector);
             if (!_b_causal_vector) {
-                return std::nullopt;
+                return ::SCE::Forge::CodecError::CborOutOfRange;
             }
         }
         return Envelope{

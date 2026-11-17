@@ -525,6 +525,7 @@ impl APayloadRidesOnItsOwnEventPolicy {
                 );
                 engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(
                     APayloadRidesOnItsOwnEventEvent::ErrorExecution,
+                    ::sce_rust_runtime::ErrorReason::ParamUnfit,
                     "<data id='got'> could not hold the value its invoke handed it",
                 ));
             }
@@ -536,6 +537,7 @@ impl APayloadRidesOnItsOwnEventPolicy {
                 ::sce_rust_runtime::sce_log_error!("global: {}", e);
                 engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(
                     APayloadRidesOnItsOwnEventEvent::ErrorExecution,
+                    ::sce_rust_runtime::ErrorReason::ExpressionFailed,
                     "<data id='got'> expr failed to evaluate",
                 ));
             }
@@ -550,6 +552,7 @@ impl APayloadRidesOnItsOwnEventPolicy {
                 );
                 engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(
                     APayloadRidesOnItsOwnEventEvent::ErrorExecution,
+                    ::sce_rust_runtime::ErrorReason::ParamUnfit,
                     "<data id='stolen'> could not hold the value its invoke handed it",
                 ));
             }
@@ -561,6 +564,7 @@ impl APayloadRidesOnItsOwnEventPolicy {
                 ::sce_rust_runtime::sce_log_error!("global: {}", e);
                 engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(
                     APayloadRidesOnItsOwnEventEvent::ErrorExecution,
+                    ::sce_rust_runtime::ErrorReason::ExpressionFailed,
                     "<data id='stolen'> expr failed to evaluate",
                 ));
             }
@@ -575,6 +579,7 @@ impl APayloadRidesOnItsOwnEventPolicy {
                 );
                 engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(
                     APayloadRidesOnItsOwnEventEvent::ErrorExecution,
+                    ::sce_rust_runtime::ErrorReason::ParamUnfit,
                     "<data id='plains'> could not hold the value its invoke handed it",
                 ));
             }
@@ -586,6 +591,7 @@ impl APayloadRidesOnItsOwnEventPolicy {
                 ::sce_rust_runtime::sce_log_error!("global: {}", e);
                 engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(
                     APayloadRidesOnItsOwnEventEvent::ErrorExecution,
+                    ::sce_rust_runtime::ErrorReason::ExpressionFailed,
                     "<data id='plains'> expr failed to evaluate",
                 ));
             }
@@ -600,6 +606,7 @@ impl APayloadRidesOnItsOwnEventPolicy {
                 );
                 engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(
                     APayloadRidesOnItsOwnEventEvent::ErrorExecution,
+                    ::sce_rust_runtime::ErrorReason::ParamUnfit,
                     "<data id='v9'> could not hold the value its invoke handed it",
                 ));
             }
@@ -611,6 +618,7 @@ impl APayloadRidesOnItsOwnEventPolicy {
                 ::sce_rust_runtime::sce_log_error!("global: {}", e);
                 engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(
                     APayloadRidesOnItsOwnEventEvent::ErrorExecution,
+                    ::sce_rust_runtime::ErrorReason::ExpressionFailed,
                     "<data id='v9'> expr failed to evaluate",
                 ));
             }
@@ -659,6 +667,7 @@ impl APayloadRidesOnItsOwnEventPolicy {
                 ::sce_rust_runtime::sce_log_error!("Guard evaluation failed for '{}': {}", cond, e);
                 engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(
                     APayloadRidesOnItsOwnEventEvent::ErrorExecution,
+                    ::sce_rust_runtime::ErrorReason::ExpressionFailed,
                     reason,
                 ));
                 None
@@ -1030,6 +1039,7 @@ impl StatePolicy for APayloadRidesOnItsOwnEventPolicy {
                                     engine.raise(
                                         sce_rust_runtime::EventWithMetadata::platform_error(
                                             APayloadRidesOnItsOwnEventEvent::ErrorExecution,
+                                            ::sce_rust_runtime::ErrorReason::LocationInvalid,
                                             "<send> <param name='v'> could not be read",
                                         ),
                                     );
@@ -1103,6 +1113,7 @@ impl StatePolicy for APayloadRidesOnItsOwnEventPolicy {
                                     engine.raise(
                                         sce_rust_runtime::EventWithMetadata::platform_error(
                                             APayloadRidesOnItsOwnEventEvent::ErrorExecution,
+                                            ::sce_rust_runtime::ErrorReason::LocationInvalid,
                                             "<send> <param name='v'> could not be read",
                                         ),
                                     );
@@ -1156,7 +1167,12 @@ impl StatePolicy for APayloadRidesOnItsOwnEventPolicy {
                         let __sce_arg_sid = self.session_id.as_ref().unwrap().clone();
                         let __sce_arg_se = self.script_engine.clone();
                         let __sce_arg_se: &dyn sce_rust_runtime::IScriptEngine = &*__sce_arg_se;
-                        let mut _send_arg_error: Option<&'static str> = None;
+                        // The code and the sentence of the first argument that failed
+                        // (docs/adr/0106 #111).
+                        let mut _send_arg_error: Option<(
+                            ::sce_rust_runtime::ErrorReason,
+                            &'static str,
+                        )> = None;
                         // W3C SCXML 6.2 + B.2 (test 553): a namelist names locations, and one that
                         // is not declared is an argument that cannot be evaluated — one error
                         // however many of its names are bad.
@@ -1164,8 +1180,10 @@ impl StatePolicy for APayloadRidesOnItsOwnEventPolicy {
                             Vec::new();
                         if _send_arg_error.is_none() {
                             if !__sce_arg_se.has_variable(&__sce_arg_sid, "v9") {
-                                _send_arg_error =
-                                    Some("<send> namelist names 'v9', which is not declared");
+                                _send_arg_error = Some((
+                                    ::sce_rust_runtime::ErrorReason::LocationInvalid,
+                                    "<send> namelist names 'v9', which is not declared",
+                                ));
                             } else {
                                 match __sce_arg_se.evaluate_expression(&__sce_arg_sid, "v9") {
                                     Ok(val) => _send_namelist.push(("v9", val)),
@@ -1174,16 +1192,19 @@ impl StatePolicy for APayloadRidesOnItsOwnEventPolicy {
                                             "send namelist 'v9' eval failed: {}",
                                             e
                                         );
-                                        _send_arg_error =
-                                            Some("<send> namelist entry 'v9' could not be read");
+                                        _send_arg_error = Some((
+                                            ::sce_rust_runtime::ErrorReason::LocationInvalid,
+                                            "<send> namelist entry 'v9' could not be read",
+                                        ));
                                     }
                                 }
                             }
                         }
-                        if let Some(__sce_why) = _send_arg_error {
+                        if let Some((__sce_reason, __sce_why)) = _send_arg_error {
                             ::sce_rust_runtime::sce_log_error!("{}", __sce_why);
                             let mut err_meta = sce_rust_runtime::EventWithMetadata::platform_error(
                                 APayloadRidesOnItsOwnEventEvent::ErrorExecution,
+                                __sce_reason,
                                 __sce_why,
                             );
                             err_meta.metadata.send_id =
@@ -1471,6 +1492,7 @@ impl StatePolicy for APayloadRidesOnItsOwnEventPolicy {
                             ::sce_rust_runtime::sce_log_error!("Assign failed for 'stolen': {}", e);
                             engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(
                                 APayloadRidesOnItsOwnEventEvent::ErrorExecution,
+                                ::sce_rust_runtime::ErrorReason::AssignmentFailed,
                                 "<assign> to 'stolen' failed",
                             ));
                             // W3C SCXML 4.9: the error ends the block, from however deep a <foreach> it came.
@@ -1501,6 +1523,7 @@ impl StatePolicy for APayloadRidesOnItsOwnEventPolicy {
                             ::sce_rust_runtime::sce_log_error!("Assign failed for 'plains': {}", e);
                             engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(
                                 APayloadRidesOnItsOwnEventEvent::ErrorExecution,
+                                ::sce_rust_runtime::ErrorReason::AssignmentFailed,
                                 "<assign> to 'plains' failed",
                             ));
                             // W3C SCXML 4.9: the error ends the block, from however deep a <foreach> it came.
@@ -1531,6 +1554,7 @@ impl StatePolicy for APayloadRidesOnItsOwnEventPolicy {
                             ::sce_rust_runtime::sce_log_error!("Assign failed for 'got': {}", e);
                             engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(
                                 APayloadRidesOnItsOwnEventEvent::ErrorExecution,
+                                ::sce_rust_runtime::ErrorReason::AssignmentFailed,
                                 "<assign> to 'got' failed",
                             ));
                             // W3C SCXML 4.9: the error ends the block, from however deep a <foreach> it came.
@@ -1561,6 +1585,7 @@ impl StatePolicy for APayloadRidesOnItsOwnEventPolicy {
                             ::sce_rust_runtime::sce_log_error!("Assign failed for 'got': {}", e);
                             engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(
                                 APayloadRidesOnItsOwnEventEvent::ErrorExecution,
+                                ::sce_rust_runtime::ErrorReason::AssignmentFailed,
                                 "<assign> to 'got' failed",
                             ));
                             // W3C SCXML 4.9: the error ends the block, from however deep a <foreach> it came.
@@ -1591,6 +1616,7 @@ impl StatePolicy for APayloadRidesOnItsOwnEventPolicy {
                             ::sce_rust_runtime::sce_log_error!("Assign failed for 'got': {}", e);
                             engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(
                                 APayloadRidesOnItsOwnEventEvent::ErrorExecution,
+                                ::sce_rust_runtime::ErrorReason::AssignmentFailed,
                                 "<assign> to 'got' failed",
                             ));
                             // W3C SCXML 4.9: the error ends the block, from however deep a <foreach> it came.
@@ -1621,6 +1647,7 @@ impl StatePolicy for APayloadRidesOnItsOwnEventPolicy {
                             ::sce_rust_runtime::sce_log_error!("Assign failed for 'got': {}", e);
                             engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(
                                 APayloadRidesOnItsOwnEventEvent::ErrorExecution,
+                                ::sce_rust_runtime::ErrorReason::AssignmentFailed,
                                 "<assign> to 'got' failed",
                             ));
                             // W3C SCXML 4.9: the error ends the block, from however deep a <foreach> it came.

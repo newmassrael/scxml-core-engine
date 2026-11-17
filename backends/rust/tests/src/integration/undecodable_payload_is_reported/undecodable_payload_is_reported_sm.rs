@@ -480,6 +480,7 @@ impl UndecodablePayloadIsReportedPolicy {
                 );
                 engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(
                     UndecodablePayloadIsReportedEvent::ErrorExecution,
+                    ::sce_rust_runtime::ErrorReason::ParamUnfit,
                     "<data id='answers'> could not hold the value its invoke handed it",
                 ));
             }
@@ -491,6 +492,7 @@ impl UndecodablePayloadIsReportedPolicy {
                 ::sce_rust_runtime::sce_log_error!("global: {}", e);
                 engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(
                     UndecodablePayloadIsReportedEvent::ErrorExecution,
+                    ::sce_rust_runtime::ErrorReason::ExpressionFailed,
                     "<data id='answers'> expr failed to evaluate",
                 ));
             }
@@ -505,6 +507,7 @@ impl UndecodablePayloadIsReportedPolicy {
                 );
                 engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(
                     UndecodablePayloadIsReportedEvent::ErrorExecution,
+                    ::sce_rust_runtime::ErrorReason::ParamUnfit,
                     "<data id='notes'> could not hold the value its invoke handed it",
                 ));
             }
@@ -516,6 +519,7 @@ impl UndecodablePayloadIsReportedPolicy {
                 ::sce_rust_runtime::sce_log_error!("global: {}", e);
                 engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(
                     UndecodablePayloadIsReportedEvent::ErrorExecution,
+                    ::sce_rust_runtime::ErrorReason::ExpressionFailed,
                     "<data id='notes'> expr failed to evaluate",
                 ));
             }
@@ -564,6 +568,7 @@ impl UndecodablePayloadIsReportedPolicy {
                 ::sce_rust_runtime::sce_log_error!("Guard evaluation failed for '{}': {}", cond, e);
                 engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(
                     UndecodablePayloadIsReportedEvent::ErrorExecution,
+                    ::sce_rust_runtime::ErrorReason::ExpressionFailed,
                     reason,
                 ));
                 None
@@ -1016,6 +1021,7 @@ impl StatePolicy for UndecodablePayloadIsReportedPolicy {
                             );
                             engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(
                                 UndecodablePayloadIsReportedEvent::ErrorExecution,
+                                ::sce_rust_runtime::ErrorReason::AssignmentFailed,
                                 "<assign> to 'answers' failed",
                             ));
                             // W3C SCXML 4.9: the error ends the block, from however deep a <foreach> it came.
@@ -1046,6 +1052,7 @@ impl StatePolicy for UndecodablePayloadIsReportedPolicy {
                             ::sce_rust_runtime::sce_log_error!("Assign failed for 'notes': {}", e);
                             engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(
                                 UndecodablePayloadIsReportedEvent::ErrorExecution,
+                                ::sce_rust_runtime::ErrorReason::AssignmentFailed,
                                 "<assign> to 'notes' failed",
                             ));
                             // W3C SCXML 4.9: the error ends the block, from however deep a <foreach> it came.

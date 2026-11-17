@@ -7,6 +7,7 @@
 package com.sce.generated.codec_peek_arm_b
 
 import com.sce.forge.runtime.CodecError
+import com.sce.forge.runtime.Decoded
 import com.sce.forge.runtime.MutableListSink
 import com.sce.forge.runtime.SceCursor
 import com.sce.forge.runtime.SceSink
@@ -62,19 +63,24 @@ data class CodecPeekArmB(
 
     companion object {
         /// Decode the next frame from `cursor`. On success the cursor
-        /// advances past the consumed bytes; returns `null` when the
-        /// cursor's tail is shorter than the declared minimum frame
-        /// (RFC §synth-5-B L494-519).
-        fun decode(cursor: SceCursor): CodecPeekArmB? {
-            val raw = cursor.peekSlice(3) ?: return null
+        /// advances past the consumed bytes and the value is `Decoded.Ok`;
+        /// a refused frame is `Decoded.Refused` with the kind that refused
+        /// it (docs/adr/0099, amendment of 2026-11-16): `NeedMoreBytes` when
+        /// the cursor's tail is shorter than the frame (RFC §synth-5-B
+        /// L494-519), which the caller resumes after appending bytes, and
+        /// another kind for a frame no more bytes make whole.
+        fun decode(cursor: SceCursor): Decoded<CodecPeekArmB> {
+            val raw = cursor.peekSlice(3) ?: return Decoded.Refused(CodecError.NeedMoreBytes)
             val header = raw[0].toUByte()
             val payload = (((raw[1].toInt() and 0xFF) shl 8) or (raw[2].toInt() and 0xFF)).toUShort()
-            if (!cursor.advance(3)) return null
+            if (!cursor.advance(3)) return Decoded.Refused(CodecError.NeedMoreBytes)
             // Construct in the `return` (no intermediate local) so a field
             // literally named `value` cannot shadow a result-struct local.
-            return CodecPeekArmB(
-                header = header,
-                payload = payload
+            return Decoded.Ok(
+                CodecPeekArmB(
+                    header = header,
+                    payload = payload
+                )
             )
         }
     }

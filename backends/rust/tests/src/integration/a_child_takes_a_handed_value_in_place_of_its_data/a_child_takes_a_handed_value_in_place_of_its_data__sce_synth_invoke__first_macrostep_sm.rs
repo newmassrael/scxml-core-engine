@@ -464,7 +464,7 @@ impl AChildTakesAHandedValueInPlaceOfItsDataSceSynthInvokeFirstMacrostepPolicy {
                     "<data id='handed'> could not hold the value its invoke handed it: {}",
                     e
                 );
-                engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(AChildTakesAHandedValueInPlaceOfItsDataSceSynthInvokeFirstMacrostepEvent::ErrorExecution, "<data id='handed'> could not hold the value its invoke handed it"));
+                engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(AChildTakesAHandedValueInPlaceOfItsDataSceSynthInvokeFirstMacrostepEvent::ErrorExecution, ::sce_rust_runtime::ErrorReason::ParamUnfit, "<data id='handed'> could not hold the value its invoke handed it"));
             }
         } else {
             // W3C SCXML 5.2/5.3: Initialize 'handed' from expr (global)
@@ -475,7 +475,7 @@ impl AChildTakesAHandedValueInPlaceOfItsDataSceSynthInvokeFirstMacrostepPolicy {
                 "\"own first\"",
             ) {
                 ::sce_rust_runtime::sce_log_error!("global: {}", e);
-                engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(AChildTakesAHandedValueInPlaceOfItsDataSceSynthInvokeFirstMacrostepEvent::ErrorExecution, "<data id='handed'> expr failed to evaluate"));
+                engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(AChildTakesAHandedValueInPlaceOfItsDataSceSynthInvokeFirstMacrostepEvent::ErrorExecution, ::sce_rust_runtime::ErrorReason::ExpressionFailed, "<data id='handed'> expr failed to evaluate"));
             }
         }
 
@@ -520,7 +520,7 @@ impl AChildTakesAHandedValueInPlaceOfItsDataSceSynthInvokeFirstMacrostepPolicy {
             Ok(val) => Some(val.to_bool()),
             Err(e) => {
                 ::sce_rust_runtime::sce_log_error!("Guard evaluation failed for '{}': {}", cond, e);
-                engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(AChildTakesAHandedValueInPlaceOfItsDataSceSynthInvokeFirstMacrostepEvent::ErrorExecution, reason));
+                engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(AChildTakesAHandedValueInPlaceOfItsDataSceSynthInvokeFirstMacrostepEvent::ErrorExecution, ::sce_rust_runtime::ErrorReason::ExpressionFailed, reason));
                 None
             }
         }

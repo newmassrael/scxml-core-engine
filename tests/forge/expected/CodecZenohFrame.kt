@@ -7,6 +7,7 @@
 package com.sce.generated.codec_zenoh_frame
 
 import com.sce.forge.runtime.CodecError
+import com.sce.forge.runtime.Decoded
 import com.sce.forge.runtime.MutableListSink
 import com.sce.forge.runtime.SceCursor
 import com.sce.forge.runtime.SceSink
@@ -59,10 +60,13 @@ data class CodecZenohFrame(
 
     companion object {
         /// Decode the next frame from `cursor`. On success the cursor
-        /// advances past the consumed bytes; returns `null` when the
-        /// cursor's tail is shorter than the declared minimum frame
-        /// (RFC §synth-5-B L494-519).
-        fun decode(cursor: SceCursor): CodecZenohFrame? {
+        /// advances past the consumed bytes and the value is `Decoded.Ok`;
+        /// a refused frame is `Decoded.Refused` with the kind that refused
+        /// it (docs/adr/0099, amendment of 2026-11-16): `NeedMoreBytes` when
+        /// the cursor's tail is shorter than the frame (RFC §synth-5-B
+        /// L494-519), which the caller resumes after appending bytes, and
+        /// another kind for a frame no more bytes make whole.
+        fun decode(cursor: SceCursor): Decoded<CodecZenohFrame> {
             // Streaming cursor decode (SSOT selection: `needs_streaming`).
             // The positional `raw[byte_off]` path is valid only when every
             // field's absolute offset is fixed at codegen time; this branch
@@ -75,20 +79,22 @@ data class CodecZenohFrame(
             // `is_repeat` / `is_tlv_chain` / `is_embed` route to their
             // dedicated helpers; every other field flows through
             // `present_if_decode_stmt`.
-            val sn = cursor.readVleU64() ?: return null
+            val sn = cursor.readVleU64().valueOr { _refused -> return _refused }
             val payload = run {
                 val _n = cursor.remaining()
                 if (_n > 65536) {
-                    cursor.refuse(CodecError.LengthOutOfRange); return null
+                    return Decoded.Refused(CodecError.LengthOutOfRange)
                 }
-                val raw = cursor.peekSlice(_n) ?: return null
+                val raw = cursor.peekSlice(_n) ?: return Decoded.Refused(CodecError.NeedMoreBytes)
                 val _v = raw.copyOf()
-                if (!cursor.advance(_n)) return null
+                if (!cursor.advance(_n)) return Decoded.Refused(CodecError.NeedMoreBytes)
                 _v
             }
-            return CodecZenohFrame(
-                sn = sn,
-                payload = payload
+            return Decoded.Ok(
+                CodecZenohFrame(
+                    sn = sn,
+                    payload = payload
+                )
             )
         }
     }

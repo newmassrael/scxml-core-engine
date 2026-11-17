@@ -562,6 +562,7 @@ impl ABadSendParamEndsItsBlockPolicy {
                 );
                 engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(
                     ABadSendParamEndsItsBlockEvent::ErrorExecution,
+                    ::sce_rust_runtime::ErrorReason::ParamUnfit,
                     "<data id='errors'> could not hold the value its invoke handed it",
                 ));
             }
@@ -573,6 +574,7 @@ impl ABadSendParamEndsItsBlockPolicy {
                 ::sce_rust_runtime::sce_log_error!("global: {}", e);
                 engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(
                     ABadSendParamEndsItsBlockEvent::ErrorExecution,
+                    ::sce_rust_runtime::ErrorReason::ExpressionFailed,
                     "<data id='errors'> expr failed to evaluate",
                 ));
             }
@@ -587,6 +589,7 @@ impl ABadSendParamEndsItsBlockPolicy {
                 );
                 engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(
                     ABadSendParamEndsItsBlockEvent::ErrorExecution,
+                    ::sce_rust_runtime::ErrorReason::ParamUnfit,
                     "<data id='partials'> could not hold the value its invoke handed it",
                 ));
             }
@@ -598,6 +601,7 @@ impl ABadSendParamEndsItsBlockPolicy {
                 ::sce_rust_runtime::sce_log_error!("global: {}", e);
                 engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(
                     ABadSendParamEndsItsBlockEvent::ErrorExecution,
+                    ::sce_rust_runtime::ErrorReason::ExpressionFailed,
                     "<data id='partials'> expr failed to evaluate",
                 ));
             }
@@ -612,6 +616,7 @@ impl ABadSendParamEndsItsBlockPolicy {
                 );
                 engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(
                     ABadSendParamEndsItsBlockEvent::ErrorExecution,
+                    ::sce_rust_runtime::ErrorReason::ParamUnfit,
                     "<data id='bares'> could not hold the value its invoke handed it",
                 ));
             }
@@ -623,6 +628,7 @@ impl ABadSendParamEndsItsBlockPolicy {
                 ::sce_rust_runtime::sce_log_error!("global: {}", e);
                 engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(
                     ABadSendParamEndsItsBlockEvent::ErrorExecution,
+                    ::sce_rust_runtime::ErrorReason::ExpressionFailed,
                     "<data id='bares'> expr failed to evaluate",
                 ));
             }
@@ -637,6 +643,7 @@ impl ABadSendParamEndsItsBlockPolicy {
                 );
                 engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(
                     ABadSendParamEndsItsBlockEvent::ErrorExecution,
+                    ::sce_rust_runtime::ErrorReason::ParamUnfit,
                     "<data id='after'> could not hold the value its invoke handed it",
                 ));
             }
@@ -648,6 +655,7 @@ impl ABadSendParamEndsItsBlockPolicy {
                 ::sce_rust_runtime::sce_log_error!("global: {}", e);
                 engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(
                     ABadSendParamEndsItsBlockEvent::ErrorExecution,
+                    ::sce_rust_runtime::ErrorReason::ExpressionFailed,
                     "<data id='after'> expr failed to evaluate",
                 ));
             }
@@ -662,6 +670,7 @@ impl ABadSendParamEndsItsBlockPolicy {
                 );
                 engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(
                     ABadSendParamEndsItsBlockEvent::ErrorExecution,
+                    ::sce_rust_runtime::ErrorReason::ParamUnfit,
                     "<data id='carried'> could not hold the value its invoke handed it",
                 ));
             }
@@ -673,6 +682,7 @@ impl ABadSendParamEndsItsBlockPolicy {
                 ::sce_rust_runtime::sce_log_error!("global: {}", e);
                 engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(
                     ABadSendParamEndsItsBlockEvent::ErrorExecution,
+                    ::sce_rust_runtime::ErrorReason::ExpressionFailed,
                     "<data id='carried'> expr failed to evaluate",
                 ));
             }
@@ -687,6 +697,7 @@ impl ABadSendParamEndsItsBlockPolicy {
                 );
                 engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(
                     ABadSendParamEndsItsBlockEvent::ErrorExecution,
+                    ::sce_rust_runtime::ErrorReason::ParamUnfit,
                     "<data id='v'> could not hold the value its invoke handed it",
                 ));
             }
@@ -698,6 +709,7 @@ impl ABadSendParamEndsItsBlockPolicy {
                 ::sce_rust_runtime::sce_log_error!("global: {}", e);
                 engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(
                     ABadSendParamEndsItsBlockEvent::ErrorExecution,
+                    ::sce_rust_runtime::ErrorReason::ExpressionFailed,
                     "<data id='v'> expr failed to evaluate",
                 ));
             }
@@ -712,6 +724,7 @@ impl ABadSendParamEndsItsBlockPolicy {
                 );
                 engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(
                     ABadSendParamEndsItsBlockEvent::ErrorExecution,
+                    ::sce_rust_runtime::ErrorReason::ParamUnfit,
                     "<data id='obj'> could not hold the value its invoke handed it",
                 ));
             }
@@ -723,6 +736,7 @@ impl ABadSendParamEndsItsBlockPolicy {
                 ::sce_rust_runtime::sce_log_error!("global: {}", e);
                 engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(
                     ABadSendParamEndsItsBlockEvent::ErrorExecution,
+                    ::sce_rust_runtime::ErrorReason::ExpressionFailed,
                     "<data id='obj'> expr failed to evaluate",
                 ));
             }
@@ -771,6 +785,7 @@ impl ABadSendParamEndsItsBlockPolicy {
                 ::sce_rust_runtime::sce_log_error!("Guard evaluation failed for '{}': {}", cond, e);
                 engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(
                     ABadSendParamEndsItsBlockEvent::ErrorExecution,
+                    ::sce_rust_runtime::ErrorReason::ExpressionFailed,
                     reason,
                 ));
                 None
@@ -1122,6 +1137,7 @@ impl StatePolicy for ABadSendParamEndsItsBlockPolicy {
                                     engine.raise(
                                         sce_rust_runtime::EventWithMetadata::platform_error(
                                             ABadSendParamEndsItsBlockEvent::ErrorExecution,
+                                            ::sce_rust_runtime::ErrorReason::LocationInvalid,
                                             "<send> <param name='bad'> could not be read",
                                         ),
                                     );
@@ -1141,6 +1157,7 @@ impl StatePolicy for ABadSendParamEndsItsBlockPolicy {
                                     engine.raise(
                                         sce_rust_runtime::EventWithMetadata::platform_error(
                                             ABadSendParamEndsItsBlockEvent::ErrorExecution,
+                                            ::sce_rust_runtime::ErrorReason::LocationInvalid,
                                             "<send> <param name='good'> could not be read",
                                         ),
                                     );
@@ -1190,6 +1207,7 @@ impl StatePolicy for ABadSendParamEndsItsBlockPolicy {
                             ::sce_rust_runtime::sce_log_error!("Assign failed for 'after': {}", e);
                             engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(
                                 ABadSendParamEndsItsBlockEvent::ErrorExecution,
+                                ::sce_rust_runtime::ErrorReason::AssignmentFailed,
                                 "<assign> to 'after' failed",
                             ));
                             // W3C SCXML 4.9: the error ends the block, from however deep a <foreach> it came.
@@ -1237,6 +1255,7 @@ impl StatePolicy for ABadSendParamEndsItsBlockPolicy {
                                     engine.raise(
                                         sce_rust_runtime::EventWithMetadata::platform_error(
                                             ABadSendParamEndsItsBlockEvent::ErrorExecution,
+                                            ::sce_rust_runtime::ErrorReason::LocationInvalid,
                                             "<send> <param name='good'> could not be read",
                                         ),
                                     );
@@ -1256,6 +1275,7 @@ impl StatePolicy for ABadSendParamEndsItsBlockPolicy {
                                     engine.raise(
                                         sce_rust_runtime::EventWithMetadata::platform_error(
                                             ABadSendParamEndsItsBlockEvent::ErrorExecution,
+                                            ::sce_rust_runtime::ErrorReason::LocationInvalid,
                                             "<send> <param name='bad'> could not be read",
                                         ),
                                     );
@@ -1305,6 +1325,7 @@ impl StatePolicy for ABadSendParamEndsItsBlockPolicy {
                             ::sce_rust_runtime::sce_log_error!("Assign failed for 'after': {}", e);
                             engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(
                                 ABadSendParamEndsItsBlockEvent::ErrorExecution,
+                                ::sce_rust_runtime::ErrorReason::AssignmentFailed,
                                 "<assign> to 'after' failed",
                             ));
                             // W3C SCXML 4.9: the error ends the block, from however deep a <foreach> it came.
@@ -1345,6 +1366,7 @@ impl StatePolicy for ABadSendParamEndsItsBlockPolicy {
                             ::sce_rust_runtime::sce_log_error!("send param 'p' names no location");
                             engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(
                                 ABadSendParamEndsItsBlockEvent::ErrorExecution,
+                                ::sce_rust_runtime::ErrorReason::LocationInvalid,
                                 "<send> <param name='p'> could not be read",
                             ));
                             _param_failed = true;
@@ -1395,6 +1417,7 @@ impl StatePolicy for ABadSendParamEndsItsBlockPolicy {
                             ::sce_rust_runtime::sce_log_error!("Assign failed for 'after': {}", e);
                             engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(
                                 ABadSendParamEndsItsBlockEvent::ErrorExecution,
+                                ::sce_rust_runtime::ErrorReason::AssignmentFailed,
                                 "<assign> to 'after' failed",
                             ));
                             // W3C SCXML 4.9: the error ends the block, from however deep a <foreach> it came.
@@ -1442,6 +1465,7 @@ impl StatePolicy for ABadSendParamEndsItsBlockPolicy {
                                     engine.raise(
                                         sce_rust_runtime::EventWithMetadata::platform_error(
                                             ABadSendParamEndsItsBlockEvent::ErrorExecution,
+                                            ::sce_rust_runtime::ErrorReason::LocationInvalid,
                                             "<send> <param name='p'> could not be read",
                                         ),
                                     );
@@ -1637,6 +1661,7 @@ impl StatePolicy for ABadSendParamEndsItsBlockPolicy {
                             ::sce_rust_runtime::sce_log_error!("Assign failed for 'errors': {}", e);
                             engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(
                                 ABadSendParamEndsItsBlockEvent::ErrorExecution,
+                                ::sce_rust_runtime::ErrorReason::AssignmentFailed,
                                 "<assign> to 'errors' failed",
                             ));
                             // W3C SCXML 4.9: the error ends the block, from however deep a <foreach> it came.
@@ -1670,6 +1695,7 @@ impl StatePolicy for ABadSendParamEndsItsBlockPolicy {
                             );
                             engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(
                                 ABadSendParamEndsItsBlockEvent::ErrorExecution,
+                                ::sce_rust_runtime::ErrorReason::AssignmentFailed,
                                 "<assign> to 'partials' failed",
                             ));
                             // W3C SCXML 4.9: the error ends the block, from however deep a <foreach> it came.
@@ -1700,6 +1726,7 @@ impl StatePolicy for ABadSendParamEndsItsBlockPolicy {
                             ::sce_rust_runtime::sce_log_error!("Assign failed for 'bares': {}", e);
                             engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(
                                 ABadSendParamEndsItsBlockEvent::ErrorExecution,
+                                ::sce_rust_runtime::ErrorReason::AssignmentFailed,
                                 "<assign> to 'bares' failed",
                             ));
                             // W3C SCXML 4.9: the error ends the block, from however deep a <foreach> it came.
@@ -1733,6 +1760,7 @@ impl StatePolicy for ABadSendParamEndsItsBlockPolicy {
                             );
                             engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(
                                 ABadSendParamEndsItsBlockEvent::ErrorExecution,
+                                ::sce_rust_runtime::ErrorReason::AssignmentFailed,
                                 "<assign> to 'carried' failed",
                             ));
                             // W3C SCXML 4.9: the error ends the block, from however deep a <foreach> it came.

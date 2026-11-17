@@ -484,6 +484,7 @@ impl SessionIdsAreDistinctSceSynthInvokeInvAPolicy {
                 ::sce_rust_runtime::sce_log_error!("Guard evaluation failed for '{}': {}", cond, e);
                 engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(
                     SessionIdsAreDistinctSceSynthInvokeInvAEvent::ErrorExecution,
+                    ::sce_rust_runtime::ErrorReason::ExpressionFailed,
                     reason,
                 ));
                 None
@@ -825,7 +826,7 @@ impl StatePolicy for SessionIdsAreDistinctSceSynthInvokeInvAPolicy {
                                         "send param 'sid' eval failed: {}",
                                         e
                                     );
-                                    engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(SessionIdsAreDistinctSceSynthInvokeInvAEvent::ErrorExecution, "<send> <param name='sid'> could not be read"));
+                                    engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(SessionIdsAreDistinctSceSynthInvokeInvAEvent::ErrorExecution, ::sce_rust_runtime::ErrorReason::LocationInvalid, "<send> <param name='sid'> could not be read"));
                                     // W3C SCXML 5.7.1: the pair is left out; 4.9: the block stops after the send.
                                     _param_failed = true;
                                 }
@@ -847,6 +848,7 @@ impl StatePolicy for SessionIdsAreDistinctSceSynthInvokeInvAPolicy {
                             // nothing delivered, and the block ends (4.9).
                             engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(
                                 SessionIdsAreDistinctSceSynthInvokeInvAEvent::ErrorCommunication,
+                                ::sce_rust_runtime::ErrorReason::TargetUnreachable,
                                 "<send target='#_parent'> has no parent session to reach",
                             ));
                             break 'action_block;

@@ -7,6 +7,7 @@
 package com.sce.generated.codec_length_ref_uint32_le
 
 import com.sce.forge.runtime.CodecError
+import com.sce.forge.runtime.Decoded
 import com.sce.forge.runtime.MutableListSink
 import com.sce.forge.runtime.SceCursor
 import com.sce.forge.runtime.SceSink
@@ -54,25 +55,30 @@ data class CodecLengthRefUint32Le(
 
     companion object {
         /// Decode the next frame from `cursor`. On success the cursor
-        /// advances past the consumed bytes; returns `null` when the
-        /// cursor's tail is shorter than the declared minimum frame
-        /// (RFC §synth-5-B L494-519).
-        fun decode(cursor: SceCursor): CodecLengthRefUint32Le? {
+        /// advances past the consumed bytes and the value is `Decoded.Ok`;
+        /// a refused frame is `Decoded.Refused` with the kind that refused
+        /// it (docs/adr/0099, amendment of 2026-11-16): `NeedMoreBytes` when
+        /// the cursor's tail is shorter than the frame (RFC §synth-5-B
+        /// L494-519), which the caller resumes after appending bytes, and
+        /// another kind for a frame no more bytes make whole.
+        fun decode(cursor: SceCursor): Decoded<CodecLengthRefUint32Le> {
             val frameLen = cursor.remaining()
-            if (frameLen < 4) return null
-            val raw = cursor.peekSlice(frameLen) ?: return null
+            if (frameLen < 4) return Decoded.Refused(CodecError.NeedMoreBytes)
+            val raw = cursor.peekSlice(frameLen) ?: return Decoded.Refused(CodecError.NeedMoreBytes)
             val payload_len = ((raw[0].toInt() and 0xFF) or ((raw[1].toInt() and 0xFF) shl 8) or ((raw[2].toInt() and 0xFF) shl 16) or ((raw[3].toInt() and 0xFF) shl 24)).toUInt()
             if (payload_len > 1024u) {
-                cursor.refuse(CodecError.LengthOutOfRange); return null
+                return Decoded.Refused(CodecError.LengthOutOfRange)
             }
-            if (frameLen < 4 + payload_len.toInt()) return null
+            if (frameLen < 4 + payload_len.toInt()) return Decoded.Refused(CodecError.NeedMoreBytes)
             val payload = raw.copyOfRange(4, 4 + payload_len.toInt())
-            if (!cursor.advance(frameLen)) return null
+            if (!cursor.advance(frameLen)) return Decoded.Refused(CodecError.NeedMoreBytes)
             // Construct in the `return` (no intermediate local) so a field
             // literally named `value` cannot shadow a result-struct local.
-            return CodecLengthRefUint32Le(
-                payload_len = payload_len,
-                payload = payload
+            return Decoded.Ok(
+                CodecLengthRefUint32Le(
+                    payload_len = payload_len,
+                    payload = payload
+                )
             )
         }
     }

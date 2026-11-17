@@ -1,5 +1,5 @@
 // SCE-GENERATED — DO NOT EDIT
-// source-hash: 84fb9ab720a733e5ae584f0097d5e6a562408447dcdd1ab7923585e9289913d3
+// source-hash: 3862752ac9ccab5eefa2c5b6f8d90f0288b61c11fb1e80be71091ff4f67fcf6d
 // SCE-MAP: refusal_code.scxml:34 :: _forge_body
 
 // SCE Forge: Auto-generated from Extended SCXML (sce:kind="enum")

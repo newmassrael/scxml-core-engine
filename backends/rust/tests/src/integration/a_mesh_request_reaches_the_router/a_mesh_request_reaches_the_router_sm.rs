@@ -507,6 +507,7 @@ impl AMeshRequestReachesTheRouterPolicy {
                 );
                 engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(
                     AMeshRequestReachesTheRouterEvent::ErrorExecution,
+                    ::sce_rust_runtime::ErrorReason::ParamUnfit,
                     "<data id='answered'> could not hold the value its invoke handed it",
                 ));
             }
@@ -518,6 +519,7 @@ impl AMeshRequestReachesTheRouterPolicy {
                 ::sce_rust_runtime::sce_log_error!("global: {}", e);
                 engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(
                     AMeshRequestReachesTheRouterEvent::ErrorExecution,
+                    ::sce_rust_runtime::ErrorReason::ExpressionFailed,
                     "<data id='answered'> expr failed to evaluate",
                 ));
             }
@@ -532,6 +534,7 @@ impl AMeshRequestReachesTheRouterPolicy {
                 );
                 engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(
                     AMeshRequestReachesTheRouterEvent::ErrorExecution,
+                    ::sce_rust_runtime::ErrorReason::ParamUnfit,
                     "<data id='failed'> could not hold the value its invoke handed it",
                 ));
             }
@@ -543,6 +546,7 @@ impl AMeshRequestReachesTheRouterPolicy {
                 ::sce_rust_runtime::sce_log_error!("global: {}", e);
                 engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(
                     AMeshRequestReachesTheRouterEvent::ErrorExecution,
+                    ::sce_rust_runtime::ErrorReason::ExpressionFailed,
                     "<data id='failed'> expr failed to evaluate",
                 ));
             }
@@ -557,6 +561,7 @@ impl AMeshRequestReachesTheRouterPolicy {
                 );
                 engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(
                     AMeshRequestReachesTheRouterEvent::ErrorExecution,
+                    ::sce_rust_runtime::ErrorReason::ParamUnfit,
                     "<data id='refused'> could not hold the value its invoke handed it",
                 ));
             }
@@ -568,6 +573,7 @@ impl AMeshRequestReachesTheRouterPolicy {
                 ::sce_rust_runtime::sce_log_error!("global: {}", e);
                 engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(
                     AMeshRequestReachesTheRouterEvent::ErrorExecution,
+                    ::sce_rust_runtime::ErrorReason::ExpressionFailed,
                     "<data id='refused'> expr failed to evaluate",
                 ));
             }
@@ -616,6 +622,7 @@ impl AMeshRequestReachesTheRouterPolicy {
                 ::sce_rust_runtime::sce_log_error!("Guard evaluation failed for '{}': {}", cond, e);
                 engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(
                     AMeshRequestReachesTheRouterEvent::ErrorExecution,
+                    ::sce_rust_runtime::ErrorReason::ExpressionFailed,
                     reason,
                 ));
                 None
@@ -772,6 +779,7 @@ impl AMeshRequestReachesTheRouterPolicy {
                             );
                             engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(
                                 AMeshRequestReachesTheRouterEvent::ErrorExecution,
+                                ::sce_rust_runtime::ErrorReason::ExpressionFailed,
                                 "<invoke> <param name='force'> expr failed to evaluate",
                             ));
                         }
@@ -814,6 +822,7 @@ impl AMeshRequestReachesTheRouterPolicy {
                     // same event, rather than a silence that reads as started.
                     engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(
                         AMeshRequestReachesTheRouterEvent::ErrorExecution,
+                        ::sce_rust_runtime::ErrorReason::ProcessorUnregistered,
                         "<invoke> names an invoker the host declared but never registered",
                     ));
                 }
@@ -1270,6 +1279,7 @@ impl StatePolicy for AMeshRequestReachesTheRouterPolicy {
                             );
                             engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(
                                 AMeshRequestReachesTheRouterEvent::ErrorExecution,
+                                ::sce_rust_runtime::ErrorReason::AssignmentFailed,
                                 "<assign> to 'answered' failed",
                             ));
                             // W3C SCXML 4.9: the error ends the block, from however deep a <foreach> it came.
@@ -1300,6 +1310,7 @@ impl StatePolicy for AMeshRequestReachesTheRouterPolicy {
                             ::sce_rust_runtime::sce_log_error!("Assign failed for 'failed': {}", e);
                             engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(
                                 AMeshRequestReachesTheRouterEvent::ErrorExecution,
+                                ::sce_rust_runtime::ErrorReason::AssignmentFailed,
                                 "<assign> to 'failed' failed",
                             ));
                             // W3C SCXML 4.9: the error ends the block, from however deep a <foreach> it came.
@@ -1333,6 +1344,7 @@ impl StatePolicy for AMeshRequestReachesTheRouterPolicy {
                             );
                             engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(
                                 AMeshRequestReachesTheRouterEvent::ErrorExecution,
+                                ::sce_rust_runtime::ErrorReason::AssignmentFailed,
                                 "<assign> to 'refused' failed",
                             ));
                             // W3C SCXML 4.9: the error ends the block, from however deep a <foreach> it came.

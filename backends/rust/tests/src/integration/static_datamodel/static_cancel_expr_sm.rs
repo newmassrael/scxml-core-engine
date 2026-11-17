@@ -1,5 +1,5 @@
 // SCE-GENERATED — DO NOT EDIT
-// source-hash: 65fb42bdd588f958b0fbb29ac261cf039d02606d7afaae0720c045624bd679ba
+// source-hash: 2073d8a55462e1ce61d8a77293fdd2c141aceda8ad173303c5b84813ca22eeee
 
 // SPDX-License-Identifier: AGPL-3.0-only WITH AdditionRef-SCE-Linking-Exception OR LicenseRef-SCE-Commercial
 // SPDX-FileCopyrightText: Copyright (c) 2025-2026 [Author of input SCXML file] (content derived from the input document)
@@ -1091,7 +1091,7 @@ impl StatePolicy for StaticCancelExprPolicy {
         }
         Err(_) => {
             ::sce_rust_runtime::sce_log_error!("Cancel: failed to evaluate sendidexpr '{}'", "(scale * 2000000000) > 1 ? 'a' : 'b'");
-            engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(StaticCancelExprEvent::ErrorExecution, "<cancel> sendidexpr failed to evaluate"));
+            engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(StaticCancelExprEvent::ErrorExecution, ::sce_rust_runtime::ErrorReason::ExpressionFailed, "<cancel> sendidexpr failed to evaluate"));
             break 'action_block;
         }
     }
@@ -1113,7 +1113,7 @@ impl StatePolicy for StaticCancelExprPolicy {
                         })() {
                             Ok(()) => false,
                             Err(_) => {
-                                engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(StaticCancelExprEvent::ErrorExecution, "<assign location='which'>: an integer operation overflowed or failed"));
+                                engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(StaticCancelExprEvent::ErrorExecution, ::sce_rust_runtime::ErrorReason::ExpressionFailed, "<assign location='which'>: an integer operation overflowed or failed"));
                                 true
                             }
                         };
@@ -1137,7 +1137,7 @@ impl StatePolicy for StaticCancelExprPolicy {
                         })() {
                             Ok(()) => false,
                             Err(_) => {
-                                engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(StaticCancelExprEvent::ErrorExecution, "<assign location='which'>: an integer operation overflowed or failed"));
+                                engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(StaticCancelExprEvent::ErrorExecution, ::sce_rust_runtime::ErrorReason::ExpressionFailed, "<assign location='which'>: an integer operation overflowed or failed"));
                                 true
                             }
                         };
@@ -1161,7 +1161,7 @@ impl StatePolicy for StaticCancelExprPolicy {
                         })() {
                             Ok(()) => false,
                             Err(_) => {
-                                engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(StaticCancelExprEvent::ErrorExecution, "<assign location='a_fired'>: an integer operation overflowed or failed"));
+                                engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(StaticCancelExprEvent::ErrorExecution, ::sce_rust_runtime::ErrorReason::ExpressionFailed, "<assign location='a_fired'>: an integer operation overflowed or failed"));
                                 true
                             }
                         };
@@ -1185,7 +1185,7 @@ impl StatePolicy for StaticCancelExprPolicy {
                         })() {
                             Ok(()) => false,
                             Err(_) => {
-                                engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(StaticCancelExprEvent::ErrorExecution, "<assign location='b_fired'>: an integer operation overflowed or failed"));
+                                engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(StaticCancelExprEvent::ErrorExecution, ::sce_rust_runtime::ErrorReason::ExpressionFailed, "<assign location='b_fired'>: an integer operation overflowed or failed"));
                                 true
                             }
                         };
@@ -1209,7 +1209,7 @@ impl StatePolicy for StaticCancelExprPolicy {
                         })() {
                             Ok(()) => false,
                             Err(_) => {
-                                engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(StaticCancelExprEvent::ErrorExecution, "<assign location='refusals'>: an integer operation overflowed or failed"));
+                                engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(StaticCancelExprEvent::ErrorExecution, ::sce_rust_runtime::ErrorReason::ExpressionFailed, "<assign location='refusals'>: an integer operation overflowed or failed"));
                                 true
                             }
                         };

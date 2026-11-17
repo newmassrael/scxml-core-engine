@@ -480,6 +480,7 @@ impl Test553Policy {
                 ::sce_rust_runtime::sce_log_error!("Guard evaluation failed for '{}': {}", cond, e);
                 engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(
                     Test553Event::ErrorExecution,
+                    ::sce_rust_runtime::ErrorReason::ExpressionFailed,
                     reason,
                 ));
                 None
@@ -811,7 +812,12 @@ impl StatePolicy for Test553Policy {
                         let __sce_arg_sid = self.session_id.as_ref().unwrap().clone();
                         let __sce_arg_se = self.script_engine.clone();
                         let __sce_arg_se: &dyn sce_rust_runtime::IScriptEngine = &*__sce_arg_se;
-                        let mut _send_arg_error: Option<&'static str> = None;
+                        // The code and the sentence of the first argument that failed
+                        // (docs/adr/0106 #111).
+                        let mut _send_arg_error: Option<(
+                            ::sce_rust_runtime::ErrorReason,
+                            &'static str,
+                        )> = None;
                         // W3C SCXML 6.2 + B.2 (test 553): a namelist names locations, and one that
                         // is not declared is an argument that cannot be evaluated — one error
                         // however many of its names are bad.
@@ -821,7 +827,7 @@ impl StatePolicy for Test553Policy {
                             if !__sce_arg_se
                                 .has_variable(&__sce_arg_sid, "__undefined_variable_for_error__")
                             {
-                                _send_arg_error = Some("<send> namelist names '__undefined_variable_for_error__', which is not declared");
+                                _send_arg_error = Some((::sce_rust_runtime::ErrorReason::LocationInvalid, "<send> namelist names '__undefined_variable_for_error__', which is not declared"));
                             } else {
                                 match __sce_arg_se.evaluate_expression(
                                     &__sce_arg_sid,
@@ -831,15 +837,16 @@ impl StatePolicy for Test553Policy {
                                         .push(("__undefined_variable_for_error__", val)),
                                     Err(e) => {
                                         ::sce_rust_runtime::sce_log_error!("send namelist '__undefined_variable_for_error__' eval failed: {}", e);
-                                        _send_arg_error = Some("<send> namelist entry '__undefined_variable_for_error__' could not be read");
+                                        _send_arg_error = Some((::sce_rust_runtime::ErrorReason::LocationInvalid, "<send> namelist entry '__undefined_variable_for_error__' could not be read"));
                                     }
                                 }
                             }
                         }
-                        if let Some(__sce_why) = _send_arg_error {
+                        if let Some((__sce_reason, __sce_why)) = _send_arg_error {
                             ::sce_rust_runtime::sce_log_error!("{}", __sce_why);
                             let mut err_meta = sce_rust_runtime::EventWithMetadata::platform_error(
                                 Test553Event::ErrorExecution,
+                                __sce_reason,
                                 __sce_why,
                             );
                             err_meta.metadata.send_id =

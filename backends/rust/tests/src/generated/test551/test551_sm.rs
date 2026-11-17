@@ -449,6 +449,7 @@ impl Test551Policy {
             ::sce_rust_runtime::sce_log_error!("Failed to init 'Var1' in s1: {}", e);
             engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(
                 Test551Event::ErrorExecution,
+                ::sce_rust_runtime::ErrorReason::DataInitFailed,
                 "<data id='Var1'> content failed to initialise",
             ));
         }
@@ -496,6 +497,7 @@ impl Test551Policy {
                 ::sce_rust_runtime::sce_log_error!("Guard evaluation failed for '{}': {}", cond, e);
                 engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(
                     Test551Event::ErrorExecution,
+                    ::sce_rust_runtime::ErrorReason::ExpressionFailed,
                     reason,
                 ));
                 None

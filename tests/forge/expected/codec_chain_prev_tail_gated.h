@@ -172,12 +172,13 @@ struct CodecChainPrevTailGated {
     [[nodiscard]] std::optional<::SCE::Forge::Lawful<::SCE::Forge::List<::SCE::Generated::CodecChainPrevEntry::CodecChainPrevEntry, 4>, CodecChainPrevTailGatedEntriesLaw>> entries() const noexcept { if (!entries_) { return std::nullopt; } return ::SCE::Forge::Lawful<::SCE::Forge::List<::SCE::Generated::CodecChainPrevEntry::CodecChainPrevEntry, 4>, CodecChainPrevTailGatedEntriesLaw>(*entries_); }
 
     /// Decode the next frame from `cursor`. On success the cursor
-    /// advances past the consumed bytes; on `NeedMoreBytes` the cursor
-    /// is left untouched so the caller can resume after appending more
-    /// bytes (RFC §synth-5-B L494-519). Returns `std::nullopt` on the
-    /// `NeedMoreBytes` boundary; later phases attach a typed error via
-    /// `cursor.last_error()`.
-    static std::optional<CodecChainPrevTailGated> decode(::SCE::Forge::SceCursor& cursor) {
+    /// advances past the consumed bytes and the value is answered; a
+    /// refused frame answers the `CodecError` that refused it
+    /// (docs/adr/0099, amendment of 2026-11-16): `NeedMoreBytes` when
+    /// the cursor's tail is shorter than the frame (RFC §synth-5-B
+    /// L494-519), which the caller resumes after appending bytes, and
+    /// another kind for a frame no more bytes make whole.
+    static ::SCE::Forge::Decoded<CodecChainPrevTailGated> decode(::SCE::Forge::SceCursor& cursor) {
         // Streaming cursor decode (SSOT selection: `needs_streaming`).
         // The positional `raw[byte_off]` path is valid only when every
         // field's absolute offset is fixed at codegen time; this branch
@@ -192,9 +193,9 @@ struct CodecChainPrevTailGated {
         uint8_t head;
         {
             const std::uint8_t* raw = cursor.peek_slice(1);
-            if (raw == nullptr) return std::nullopt;
+            if (raw == nullptr) return ::SCE::Forge::CodecError::NeedMoreBytes;
             head = static_cast<uint8_t>(raw[0]);
-            if (!cursor.advance(1)) return std::nullopt;
+            if (!cursor.advance(1)) return ::SCE::Forge::CodecError::NeedMoreBytes;
         }
         std::optional<std::vector<::SCE::Generated::CodecChainPrevEntry::CodecChainPrevEntry>> entries;
         if ((head & 0x02) != 0) {
@@ -204,24 +205,22 @@ struct CodecChainPrevTailGated {
             for (std::size_t _i = 0; _i < 4; ++_i) {
                 if (cursor.remaining() == 0) break;
                 auto _elem = ::SCE::Generated::CodecChainPrevEntry::CodecChainPrevEntry::decode(cursor, _prev_entries_after_marker, static_cast<std::uint8_t>((head >> 0) & 0x1));
-                if (!_elem.has_value()) return std::nullopt;
+                if (!_elem.has_value()) return _elem.error();
                 _prev_entries_after_marker = static_cast<std::uint8_t>((static_cast<std::uint64_t>((*_elem).header()) & 127ULL) == 4ULL);
                 _list.push_back(*_elem);
             }
-            if (cursor.remaining() > 0) { cursor.refuse(::SCE::Forge::CodecError::TooManyElements); return std::nullopt; }
+            if (cursor.remaining() > 0) { return ::SCE::Forge::CodecError::TooManyElements; }
             entries = std::move(_list);
         }
         std::optional<::SCE::Forge::Lawful<::SCE::Forge::List<::SCE::Generated::CodecChainPrevEntry::CodecChainPrevEntry, 4>, CodecChainPrevTailGatedEntriesLaw>> _b_entries;
         if (entries) {
             const auto _l_entries = ::SCE::Forge::Lawful<::SCE::Forge::List<::SCE::Generated::CodecChainPrevEntry::CodecChainPrevEntry, 4>, CodecChainPrevTailGatedEntriesLaw>::list_type::make(*entries);
             if (!_l_entries) {
-                cursor.refuse(::SCE::Forge::CodecError::TooManyElements);
-                return std::nullopt;
+                return ::SCE::Forge::CodecError::TooManyElements;
             }
             _b_entries = ::SCE::Forge::Lawful<::SCE::Forge::List<::SCE::Generated::CodecChainPrevEntry::CodecChainPrevEntry, 4>, CodecChainPrevTailGatedEntriesLaw>::make(::SCE::Forge::Lawful<::SCE::Forge::List<::SCE::Generated::CodecChainPrevEntry::CodecChainPrevEntry, 4>, CodecChainPrevTailGatedEntriesLaw>::start_type{(((head >> 0) & 0x1) != 0), ::SCE::Forge::FixedStart{}}, *_l_entries);
             if (!_b_entries) {
-                cursor.refuse(::SCE::Forge::CodecError::PresentIfMismatch);
-                return std::nullopt;
+                return ::SCE::Forge::CodecError::PresentIfMismatch;
             }
         }
         CodecChainPrevTailGated _decoded{

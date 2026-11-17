@@ -471,6 +471,7 @@ impl InvokeParamSeedsDeclaredChildDataSceSynthInvokeInvNamelistPolicy {
                 );
                 engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(
                     InvokeParamSeedsDeclaredChildDataSceSynthInvokeInvNamelistEvent::ErrorExecution,
+                    ::sce_rust_runtime::ErrorReason::ParamUnfit,
                     "<data id='token'> could not hold the value its invoke handed it",
                 ));
             }
@@ -485,6 +486,7 @@ impl InvokeParamSeedsDeclaredChildDataSceSynthInvokeInvNamelistPolicy {
                 ::sce_rust_runtime::sce_log_error!("global: {}", e);
                 engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(
                     InvokeParamSeedsDeclaredChildDataSceSynthInvokeInvNamelistEvent::ErrorExecution,
+                    ::sce_rust_runtime::ErrorReason::ExpressionFailed,
                     "<data id='token'> expr failed to evaluate",
                 ));
             }
@@ -533,6 +535,7 @@ impl InvokeParamSeedsDeclaredChildDataSceSynthInvokeInvNamelistPolicy {
                 ::sce_rust_runtime::sce_log_error!("Guard evaluation failed for '{}': {}", cond, e);
                 engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(
                     InvokeParamSeedsDeclaredChildDataSceSynthInvokeInvNamelistEvent::ErrorExecution,
+                    ::sce_rust_runtime::ErrorReason::ExpressionFailed,
                     reason,
                 ));
                 None
@@ -995,7 +998,8 @@ impl StatePolicy for InvokeParamSeedsDeclaredChildDataSceSynthInvokeInvNamelistP
                             // nothing delivered, and the block ends (4.9).
                             engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(
             InvokeParamSeedsDeclaredChildDataSceSynthInvokeInvNamelistEvent::ErrorCommunication,
-            "<send target='#_parent'> has no parent session to reach"));
+            ::sce_rust_runtime::ErrorReason::TargetUnreachable,
+        "<send target='#_parent'> has no parent session to reach"));
                             break 'action_block;
                         }
 
@@ -1026,7 +1030,8 @@ impl StatePolicy for InvokeParamSeedsDeclaredChildDataSceSynthInvokeInvNamelistP
                             // nothing delivered, and the block ends (4.9).
                             engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(
             InvokeParamSeedsDeclaredChildDataSceSynthInvokeInvNamelistEvent::ErrorCommunication,
-            "<send target='#_parent'> has no parent session to reach"));
+            ::sce_rust_runtime::ErrorReason::TargetUnreachable,
+        "<send target='#_parent'> has no parent session to reach"));
                             break 'action_block;
                         }
 

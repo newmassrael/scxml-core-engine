@@ -457,6 +457,7 @@ impl Test376Policy {
                 );
                 engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(
                     Test376Event::ErrorExecution,
+                    ::sce_rust_runtime::ErrorReason::ParamUnfit,
                     "<data id='Var1'> could not hold the value its invoke handed it",
                 ));
             }
@@ -468,6 +469,7 @@ impl Test376Policy {
                 ::sce_rust_runtime::sce_log_error!("global: {}", e);
                 engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(
                     Test376Event::ErrorExecution,
+                    ::sce_rust_runtime::ErrorReason::ExpressionFailed,
                     "<data id='Var1'> expr failed to evaluate",
                 ));
             }
@@ -516,6 +518,7 @@ impl Test376Policy {
                 ::sce_rust_runtime::sce_log_error!("Guard evaluation failed for '{}': {}", cond, e);
                 engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(
                     Test376Event::ErrorExecution,
+                    ::sce_rust_runtime::ErrorReason::ExpressionFailed,
                     reason,
                 ));
                 None
@@ -827,7 +830,7 @@ impl StatePolicy for Test376Policy {
                         // address — `Action::target_unsupported`, decided once at build time.
                         {
                             // W3C SCXML 6.2.4/5.10: test 332 — the error event MUST carry the sendid
-                            let mut err_meta = sce_rust_runtime::EventWithMetadata::platform_error(Test376Event::ErrorExecution, "<send target='!invalid'> is not a target this processor can address");
+                            let mut err_meta = sce_rust_runtime::EventWithMetadata::platform_error(Test376Event::ErrorExecution, ::sce_rust_runtime::ErrorReason::SendTargetInvalid, "<send target='!invalid'> is not a target this processor can address");
                             err_meta.metadata.send_id =
                                 ::sce_rust_runtime::sce_string_from_str(send_id);
                             engine.raise(err_meta);
@@ -855,6 +858,7 @@ impl StatePolicy for Test376Policy {
                             ::sce_rust_runtime::sce_log_error!("Assign failed for 'Var1': {}", e);
                             engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(
                                 Test376Event::ErrorExecution,
+                                ::sce_rust_runtime::ErrorReason::AssignmentFailed,
                                 "<assign> to 'Var1' failed",
                             ));
                             // W3C SCXML 4.9: the error ends the block, from however deep a <foreach> it came.

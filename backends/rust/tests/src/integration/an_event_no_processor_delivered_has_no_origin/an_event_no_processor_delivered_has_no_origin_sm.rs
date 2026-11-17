@@ -490,6 +490,7 @@ impl AnEventNoProcessorDeliveredHasNoOriginPolicy {
                 );
                 engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(
                     AnEventNoProcessorDeliveredHasNoOriginEvent::ErrorExecution,
+                    ::sce_rust_runtime::ErrorReason::ParamUnfit,
                     "<data id='postedBlank'> could not hold the value its invoke handed it",
                 ));
             }
@@ -504,6 +505,7 @@ impl AnEventNoProcessorDeliveredHasNoOriginPolicy {
                 ::sce_rust_runtime::sce_log_error!("global: {}", e);
                 engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(
                     AnEventNoProcessorDeliveredHasNoOriginEvent::ErrorExecution,
+                    ::sce_rust_runtime::ErrorReason::ExpressionFailed,
                     "<data id='postedBlank'> expr failed to evaluate",
                 ));
             }
@@ -518,6 +520,7 @@ impl AnEventNoProcessorDeliveredHasNoOriginPolicy {
                 );
                 engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(
                     AnEventNoProcessorDeliveredHasNoOriginEvent::ErrorExecution,
+                    ::sce_rust_runtime::ErrorReason::ParamUnfit,
                     "<data id='replyBlank'> could not hold the value its invoke handed it",
                 ));
             }
@@ -532,6 +535,7 @@ impl AnEventNoProcessorDeliveredHasNoOriginPolicy {
                 ::sce_rust_runtime::sce_log_error!("global: {}", e);
                 engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(
                     AnEventNoProcessorDeliveredHasNoOriginEvent::ErrorExecution,
+                    ::sce_rust_runtime::ErrorReason::ExpressionFailed,
                     "<data id='replyBlank'> expr failed to evaluate",
                 ));
             }
@@ -580,6 +584,7 @@ impl AnEventNoProcessorDeliveredHasNoOriginPolicy {
                 ::sce_rust_runtime::sce_log_error!("Guard evaluation failed for '{}': {}", cond, e);
                 engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(
                     AnEventNoProcessorDeliveredHasNoOriginEvent::ErrorExecution,
+                    ::sce_rust_runtime::ErrorReason::ExpressionFailed,
                     reason,
                 ));
                 None
@@ -928,7 +933,7 @@ impl StatePolicy for AnEventNoProcessorDeliveredHasNoOriginPolicy {
                             // support — the act it asked for was performed by nobody. Same
                             // event, so a wiring mistake cannot read as success.
                             if __sce_served.is_none() && !engine.has_event_processor("x-sce-host") {
-                                let mut err_meta = sce_rust_runtime::EventWithMetadata::platform_error(AnEventNoProcessorDeliveredHasNoOriginEvent::ErrorExecution, "<send type='x-sce-host'> names a processor the host declared but never registered");
+                                let mut err_meta = sce_rust_runtime::EventWithMetadata::platform_error(AnEventNoProcessorDeliveredHasNoOriginEvent::ErrorExecution, ::sce_rust_runtime::ErrorReason::ProcessorUnregistered, "<send type='x-sce-host'> names a processor the host declared but never registered");
                                 err_meta.metadata.send_id =
                                     ::sce_rust_runtime::sce_string_from_str(send_id);
                                 engine.raise(err_meta);
@@ -1098,6 +1103,7 @@ impl StatePolicy for AnEventNoProcessorDeliveredHasNoOriginPolicy {
                                     engine
                                         .raise(sce_rust_runtime::EventWithMetadata::platform_error(
                                         AnEventNoProcessorDeliveredHasNoOriginEvent::ErrorExecution,
+                                        ::sce_rust_runtime::ErrorReason::AssignmentFailed,
                                         "<assign> to 'replyBlank' failed",
                                     ));
                                     // W3C SCXML 4.9: the error ends the block, from however deep a <foreach> it came.
@@ -1145,6 +1151,7 @@ impl StatePolicy for AnEventNoProcessorDeliveredHasNoOriginPolicy {
                                     engine
                                         .raise(sce_rust_runtime::EventWithMetadata::platform_error(
                                         AnEventNoProcessorDeliveredHasNoOriginEvent::ErrorExecution,
+                                        ::sce_rust_runtime::ErrorReason::AssignmentFailed,
                                         "<assign> to 'postedBlank' failed",
                                     ));
                                     // W3C SCXML 4.9: the error ends the block, from however deep a <foreach> it came.

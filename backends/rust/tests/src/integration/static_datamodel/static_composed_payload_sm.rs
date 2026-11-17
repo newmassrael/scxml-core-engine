@@ -1,5 +1,5 @@
 // SCE-GENERATED — DO NOT EDIT
-// source-hash: 65fb42bdd588f958b0fbb29ac261cf039d02606d7afaae0720c045624bd679ba
+// source-hash: 2073d8a55462e1ce61d8a77293fdd2c141aceda8ad173303c5b84813ca22eeee
 
 // SPDX-License-Identifier: AGPL-3.0-only WITH AdditionRef-SCE-Linking-Exception OR LicenseRef-SCE-Commercial
 // SPDX-FileCopyrightText: Copyright (c) 2025-2026 [Author of input SCXML file] (content derived from the input document)
@@ -1427,7 +1427,7 @@ impl StatePolicy for StaticComposedPayloadPolicy {
 })() {
     Ok(()) => false,
     Err(_) => {
-        engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(StaticComposedPayloadEvent::ErrorExecution, "<assign location='tag_count'>: an integer operation overflowed or failed"));
+        engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(StaticComposedPayloadEvent::ErrorExecution, ::sce_rust_runtime::ErrorReason::ExpressionFailed, "<assign location='tag_count'>: an integer operation overflowed or failed"));
         true
     }
 };
@@ -1442,7 +1442,7 @@ impl StatePolicy for StaticComposedPayloadPolicy {
 })() {
     Ok(()) => false,
     Err(_) => {
-        engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(StaticComposedPayloadEvent::ErrorExecution, "<assign location='id_sum'>: an integer operation overflowed or failed"));
+        engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(StaticComposedPayloadEvent::ErrorExecution, ::sce_rust_runtime::ErrorReason::ExpressionFailed, "<assign location='id_sum'>: an integer operation overflowed or failed"));
         true
     }
 };
@@ -1460,7 +1460,7 @@ impl StatePolicy for StaticComposedPayloadPolicy {
 })() {
     Ok(()) => false,
     Err(_) => {
-        engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(StaticComposedPayloadEvent::ErrorExecution, "<assign location='word_count'>: an integer operation overflowed or failed"));
+        engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(StaticComposedPayloadEvent::ErrorExecution, ::sce_rust_runtime::ErrorReason::ExpressionFailed, "<assign location='word_count'>: an integer operation overflowed or failed"));
         true
     }
 };
@@ -1483,7 +1483,7 @@ impl StatePolicy for StaticComposedPayloadPolicy {
 })() {
     Ok(()) => false,
     Err(_) => {
-        engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(StaticComposedPayloadEvent::ErrorExecution, "<assign location='cell_sum'>: an integer operation overflowed or failed"));
+        engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(StaticComposedPayloadEvent::ErrorExecution, ::sce_rust_runtime::ErrorReason::ExpressionFailed, "<assign location='cell_sum'>: an integer operation overflowed or failed"));
         true
     }
 };
@@ -1501,7 +1501,7 @@ impl StatePolicy for StaticComposedPayloadPolicy {
 })() {
     Ok(sce_value) => sce_value,
     Err(_) => {
-        engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(StaticComposedPayloadEvent::ErrorExecution, "<if cond='len(_event.data.grid) > 1 && len(_event.data.grid[1]) > 0'>: an integer operation overflowed or failed"));
+        engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(StaticComposedPayloadEvent::ErrorExecution, ::sce_rust_runtime::ErrorReason::ExpressionFailed, "<if cond='len(_event.data.grid) > 1 && len(_event.data.grid[1]) > 0'>: an integer operation overflowed or failed"));
         if_cond_failed = true;
         false
     }
@@ -1514,7 +1514,7 @@ let sce_failed = match (|| -> Result<(), sce_forge_runtime::algorithm::Algorithm
 })() {
     Ok(()) => false,
     Err(_) => {
-        engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(StaticComposedPayloadEvent::ErrorExecution, "<assign location='cell'>: an integer operation overflowed or failed"));
+        engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(StaticComposedPayloadEvent::ErrorExecution, ::sce_rust_runtime::ErrorReason::ExpressionFailed, "<assign location='cell'>: an integer operation overflowed or failed"));
         true
     }
 };
@@ -1537,7 +1537,7 @@ if sce_failed {
 })() {
     Ok(()) => false,
     Err(_) => {
-        engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(StaticComposedPayloadEvent::ErrorExecution, "<assign location='first_tags'>: an integer operation overflowed or failed"));
+        engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(StaticComposedPayloadEvent::ErrorExecution, ::sce_rust_runtime::ErrorReason::ExpressionFailed, "<assign location='first_tags'>: an integer operation overflowed or failed"));
         true
     }
 };
@@ -1555,7 +1555,7 @@ if sce_failed {
 })() {
     Ok(()) => false,
     Err(_) => {
-        engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(StaticComposedPayloadEvent::ErrorExecution, "<assign location='first_maybe'>: an integer operation overflowed or failed"));
+        engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(StaticComposedPayloadEvent::ErrorExecution, ::sce_rust_runtime::ErrorReason::ExpressionFailed, "<assign location='first_maybe'>: an integer operation overflowed or failed"));
         true
     }
 };
@@ -1580,7 +1580,7 @@ if sce_failed {
                         })() {
                             Ok(()) => false,
                             Err(_) => {
-                                engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(StaticComposedPayloadEvent::ErrorExecution, "<assign location='refusals'>: an integer operation overflowed or failed"));
+                                engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(StaticComposedPayloadEvent::ErrorExecution, ::sce_rust_runtime::ErrorReason::ExpressionFailed, "<assign location='refusals'>: an integer operation overflowed or failed"));
                                 true
                             }
                         };

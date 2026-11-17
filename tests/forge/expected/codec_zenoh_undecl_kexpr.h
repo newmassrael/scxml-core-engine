@@ -83,12 +83,13 @@ struct CodecZenohUndeclKexpr {
     [[nodiscard]] constexpr uint16_t id() const noexcept { return id_; }
 
     /// Decode the next frame from `cursor`. On success the cursor
-    /// advances past the consumed bytes; on `NeedMoreBytes` the cursor
-    /// is left untouched so the caller can resume after appending more
-    /// bytes (RFC §synth-5-B L494-519). Returns `std::nullopt` on the
-    /// `NeedMoreBytes` boundary; later phases attach a typed error via
-    /// `cursor.last_error()`.
-    static std::optional<CodecZenohUndeclKexpr> decode(::SCE::Forge::SceCursor& cursor) {
+    /// advances past the consumed bytes and the value is answered; a
+    /// refused frame answers the `CodecError` that refused it
+    /// (docs/adr/0099, amendment of 2026-11-16): `NeedMoreBytes` when
+    /// the cursor's tail is shorter than the frame (RFC §synth-5-B
+    /// L494-519), which the caller resumes after appending bytes, and
+    /// another kind for a frame no more bytes make whole.
+    static ::SCE::Forge::Decoded<CodecZenohUndeclKexpr> decode(::SCE::Forge::SceCursor& cursor) {
         // Streaming cursor decode (SSOT selection: `needs_streaming`).
         // The positional `raw[byte_off]` path is valid only when every
         // field's absolute offset is fixed at codegen time; this branch
@@ -100,9 +101,9 @@ struct CodecZenohUndeclKexpr {
         // advances past exactly what it consumed. Per-field `is_repeat` /
         // `is_tlv_chain` / `is_embed` route to their dedicated helpers;
         // every other field flows through `present_if_decode_stmt`.
-        auto id_opt = cursor.read_vle_u16();
-        if (!id_opt.has_value()) return std::nullopt;
-        auto id = static_cast<std::uint16_t>(*id_opt);
+        auto id_read = cursor.read_vle_u16();
+        if (!id_read.has_value()) return id_read.error();
+        auto id = static_cast<std::uint16_t>(*id_read);
         CodecZenohUndeclKexpr _decoded{
             /*id=*/id,
         };

@@ -479,6 +479,7 @@ impl Test178Policy {
                 ::sce_rust_runtime::sce_log_error!("Guard evaluation failed for '{}': {}", cond, e);
                 engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(
                     Test178Event::ErrorExecution,
+                    ::sce_rust_runtime::ErrorReason::ExpressionFailed,
                     reason,
                 ));
                 None
@@ -823,6 +824,7 @@ impl StatePolicy for Test178Policy {
                                     engine.raise(
                                         sce_rust_runtime::EventWithMetadata::platform_error(
                                             Test178Event::ErrorExecution,
+                                            ::sce_rust_runtime::ErrorReason::LocationInvalid,
                                             "<send> <param name='Var1'> could not be read",
                                         ),
                                     );
@@ -842,6 +844,7 @@ impl StatePolicy for Test178Policy {
                                     engine.raise(
                                         sce_rust_runtime::EventWithMetadata::platform_error(
                                             Test178Event::ErrorExecution,
+                                            ::sce_rust_runtime::ErrorReason::LocationInvalid,
                                             "<send> <param name='Var1'> could not be read",
                                         ),
                                     );
@@ -1031,6 +1034,7 @@ impl StatePolicy for Test178Policy {
                                 );
                                 engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(
                                     Test178Event::ErrorExecution,
+                                    ::sce_rust_runtime::ErrorReason::ExpressionFailed,
                                     "<log> expr failed to evaluate",
                                 ));
                                 break 'action_block;

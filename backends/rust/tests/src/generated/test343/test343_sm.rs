@@ -498,6 +498,7 @@ impl Test343Policy {
                 ::sce_rust_runtime::sce_log_error!("Guard evaluation failed for '{}': {}", cond, e);
                 engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(
                     Test343Event::ErrorExecution,
+                    ::sce_rust_runtime::ErrorReason::ExpressionFailed,
                     reason,
                 ));
                 None
@@ -833,7 +834,7 @@ impl StatePolicy for Test343Policy {
                         }
                         Err(e) => {
                             ::sce_rust_runtime::sce_log_error!("Donedata param 'someParam' eval failed: {}", e);
-                            engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(Test343Event::ErrorExecution, "<donedata> <param name='someParam'> failed to evaluate"));
+                            engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(Test343Event::ErrorExecution, ::sce_rust_runtime::ErrorReason::ExpressionFailed, "<donedata> <param name='someParam'> failed to evaluate"));
                         }
                     }
                     // §scxml-5.5: the pairs that survived, `{}` when none did.

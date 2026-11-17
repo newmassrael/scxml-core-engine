@@ -22,14 +22,16 @@ class CodecZenohValueZbuf:
     slices: Optional[List[CodecZenohValueSlice]] = None
 
     @classmethod
-    def decode(cls, cursor: SceCursor, after_shm: int) -> Optional[CodecZenohValueZbuf]:
-        """Decode the next frame from ``cursor``. Returns ``None`` when
-        the cursor's tail is shorter than the declared minimum frame
-        (RFC §synth-5-B L494-519); on success the cursor advances past the
-        consumed bytes. VLE codecs also return ``None`` on
-        ``VleWidthOverflow``, and every codec on a field's refusal: a length
-        or a count past its bound (``LengthOutOfRange``, ``TooManyElements``,
-        docs/adr/0077), an undeclared enum value."""
+    def decode(cls, cursor: SceCursor, after_shm: int) -> CodecZenohValueZbuf:
+        """Decode the next frame from ``cursor``; on success the cursor
+        advances past the consumed bytes. A frame the codec refuses raises
+        the ``CodecError`` subclass that names the refusal (docs/adr/0099,
+        amendment of 2026-11-16): ``NeedMoreBytes`` when the cursor's tail
+        is shorter than the frame (RFC §synth-5-B L494-519), which the
+        caller resumes after appending bytes, and for a frame no more bytes
+        make whole ``VleWidthOverflow``, ``InvalidUtf8``,
+        ``UndeclaredEnumValue``, or a length or a count past its bound
+        (``LengthOutOfRange``, ``TooManyElements``, docs/adr/0077)."""
         # Streaming cursor decode (SSOT selection: `needs_streaming`).
         # The positional `raw[byte_off]` path is valid only when every
         # field's absolute offset is fixed at codegen time; this branch
@@ -38,45 +40,35 @@ class CodecZenohValueZbuf:
         # (runtime width), string fields (UTF-8 decode), and a fixed field
         # after a variable-length payload (offset depends on the payload
         # length). Each field reads its own bytes and advances past what it
-        # consumed, all inside one outer `try:`. The `except` catches the
-        # base `CodecError` so a peek/advance `NeedMoreBytes` and a VLE
-        # field's `VleWidthOverflow` both unwind to a single `return None`
-        # (non-VLE codecs only ever raise `NeedMoreBytes`, a `CodecError`
-        # subclass, so this is behaviour-identical for them).
-        try:
-            f_value_len = cursor.read_vle_u64()
-            if (after_shm & 0x01) == 0:
-                _len = f_value_len
-                if _len > 4294967295:
-                    raise LengthOutOfRange()
-                _n = _len
-                raw = cursor.peek_slice(_n)
-                _v = bytes(raw)
-                cursor.advance(_n)
-                f_value = _v
-            else:
-                f_value = None
-            if (after_shm & 0x01) != 0:
-                _v = cursor.read_vle_u64()
-                f_encoding = _v
-            else:
-                f_encoding = None
-            if (after_shm & 0x01) != 0:
-                _v = cursor.read_vle_u64()
-                f_slice_count = _v
-            else:
-                f_slice_count = None
-            if (after_shm & 0x01) != 0:
-                f_slices = []
-                for _ in range(f_slice_count):
-                    _elem = CodecZenohValueSlice.decode(cursor)
-                    if _elem is None:
-                        return None
-                    f_slices.append(_elem)
-            else:
-                f_slices = None
-        except CodecError:
-            return None
+        # consumed; a refusal raises the `CodecError` that names it.
+        f_value_len = cursor.read_vle_u64()
+        if (after_shm & 0x01) == 0:
+            _len = f_value_len
+            if _len > 4294967295:
+                raise LengthOutOfRange()
+            _n = _len
+            raw = cursor.peek_slice(_n)
+            _v = bytes(raw)
+            cursor.advance(_n)
+            f_value = _v
+        else:
+            f_value = None
+        if (after_shm & 0x01) != 0:
+            _v = cursor.read_vle_u64()
+            f_encoding = _v
+        else:
+            f_encoding = None
+        if (after_shm & 0x01) != 0:
+            _v = cursor.read_vle_u64()
+            f_slice_count = _v
+        else:
+            f_slice_count = None
+        if (after_shm & 0x01) != 0:
+            f_slices = []
+            for _ in range(f_slice_count):
+                f_slices.append(CodecZenohValueSlice.decode(cursor))
+        else:
+            f_slices = None
         return cls(
             value_len=f_value_len,
             value=f_value,

@@ -180,6 +180,18 @@ template <class S>
     return static_cast<std::uint8_t>(static_cast<std::optional<::SCE::Forge::List<::SCE::Generated::CodecZenohLocator::CodecZenohLocator, ::SCE::Forge::kUnbounded>>>(source::locators(src)).has_value() ? 1 : 0);
 }
 
+/// The `num_locators` the frame of a source of `CodecZenohHello` carries, which its encode
+/// derives from what it measures and no value holds (docs/adr/0081 §3), and none where the content it is gated beside is absent.
+template <class S>
+[[nodiscard]] std::optional<uint64_t> wire_num_locators(const S& src) noexcept(is_nothrow_source<S>::value) {
+    static_assert(is_source<S>::value, "S presents every element of CodecZenohHello");
+    const auto& _r_locators = source::locators(src);
+    if (!(_r_locators.has_value())) {
+        return std::nullopt;
+    }
+    return static_cast<uint64_t>((*_r_locators).size());
+}
+
 struct CodecZenohHello {
     CodecZenohHello() = default;
     /// The value of each element it presents, in declaration order (ADR 0059 §5).
@@ -195,12 +207,13 @@ struct CodecZenohHello {
     [[nodiscard]] std::optional<::SCE::Forge::List<::SCE::Generated::CodecZenohLocator::CodecZenohLocator, ::SCE::Forge::kUnbounded>> locators() const noexcept { if (!locators_) { return std::nullopt; } return ::SCE::Forge::List<::SCE::Generated::CodecZenohLocator::CodecZenohLocator, ::SCE::Forge::kUnbounded>(*locators_); }
 
     /// Decode the next frame from `cursor`. On success the cursor
-    /// advances past the consumed bytes; on `NeedMoreBytes` the cursor
-    /// is left untouched so the caller can resume after appending more
-    /// bytes (RFC §synth-5-B L494-519). Returns `std::nullopt` on the
-    /// `NeedMoreBytes` boundary; later phases attach a typed error via
-    /// `cursor.last_error()`.
-    static std::optional<CodecZenohHello> decode(::SCE::Forge::SceCursor& cursor, std::uint8_t l) {
+    /// advances past the consumed bytes and the value is answered; a
+    /// refused frame answers the `CodecError` that refused it
+    /// (docs/adr/0099, amendment of 2026-11-16): `NeedMoreBytes` when
+    /// the cursor's tail is shorter than the frame (RFC §synth-5-B
+    /// L494-519), which the caller resumes after appending bytes, and
+    /// another kind for a frame no more bytes make whole.
+    static ::SCE::Forge::Decoded<CodecZenohHello> decode(::SCE::Forge::SceCursor& cursor, std::uint8_t l) {
         // Declared-but-unconsumed flag inputs: defensive (void) suppress per declared
         // `<sce:flag-input>` so codecs that haven't (yet) consumed an
         // input via `present-if` compile cleanly under -Wunused.
@@ -219,31 +232,31 @@ struct CodecZenohHello {
         uint8_t version;
         {
             const std::uint8_t* raw = cursor.peek_slice(1);
-            if (raw == nullptr) return std::nullopt;
+            if (raw == nullptr) return ::SCE::Forge::CodecError::NeedMoreBytes;
             version = static_cast<uint8_t>(raw[0]);
-            if (!cursor.advance(1)) return std::nullopt;
+            if (!cursor.advance(1)) return ::SCE::Forge::CodecError::NeedMoreBytes;
         }
         uint8_t cbyte;
         {
             const std::uint8_t* raw = cursor.peek_slice(1);
-            if (raw == nullptr) return std::nullopt;
+            if (raw == nullptr) return ::SCE::Forge::CodecError::NeedMoreBytes;
             cbyte = static_cast<uint8_t>(raw[0]);
-            if (!cursor.advance(1)) return std::nullopt;
+            if (!cursor.advance(1)) return ::SCE::Forge::CodecError::NeedMoreBytes;
         }
         std::vector<uint8_t> zid;
         {
             const auto _len = ((cbyte >> 4) & 0xF);
             std::size_t _n = static_cast<std::size_t>(_len) + 1;
             const std::uint8_t* raw = cursor.peek_slice(_n);
-            if (raw == nullptr) return std::nullopt;
+            if (raw == nullptr) return ::SCE::Forge::CodecError::NeedMoreBytes;
             zid.assign(raw, raw + _n);
-            if (!cursor.advance(_n)) return std::nullopt;
+            if (!cursor.advance(_n)) return ::SCE::Forge::CodecError::NeedMoreBytes;
         }
         std::optional<uint64_t> num_locators;
         if ((l & 0x01) != 0) {
-            auto _v_opt = cursor.read_vle_u64();
-        if (!_v_opt.has_value()) return std::nullopt;
-        auto _v = static_cast<std::uint64_t>(*_v_opt);
+            auto _v_read = cursor.read_vle_u64();
+        if (!_v_read.has_value()) return _v_read.error();
+        auto _v = static_cast<std::uint64_t>(*_v_read);
             num_locators = _v;
         }
         std::optional<std::vector<::SCE::Generated::CodecZenohLocator::CodecZenohLocator>> locators;
@@ -253,7 +266,7 @@ struct CodecZenohHello {
             _list.reserve(cursor.entries_backed(_n));
             for (auto _i = decltype(_n){0}; _i < _n; ++_i) {
                 auto _elem = ::SCE::Generated::CodecZenohLocator::CodecZenohLocator::decode(cursor);
-                if (!_elem.has_value()) return std::nullopt;
+                if (!_elem.has_value()) return _elem.error();
                 _list.push_back(*_elem);
             }
             locators = std::move(_list);
@@ -262,14 +275,12 @@ struct CodecZenohHello {
         if (locators) {
             _b_locators = ::SCE::Forge::List<::SCE::Generated::CodecZenohLocator::CodecZenohLocator, ::SCE::Forge::kUnbounded>::make(*locators);
             if (!_b_locators) {
-                cursor.refuse(::SCE::Forge::CodecError::TooManyElements);
-                return std::nullopt;
+                return ::SCE::Forge::CodecError::TooManyElements;
             }
         }
         const auto _b_zid = ::SCE::Forge::Bytes<16, 1>::make(zid);
         if (!_b_zid) {
-            cursor.refuse(::SCE::Forge::CodecError::LengthOutOfRange);
-            return std::nullopt;
+            return ::SCE::Forge::CodecError::LengthOutOfRange;
         }
         (void)num_locators;
         CodecZenohHello _decoded{

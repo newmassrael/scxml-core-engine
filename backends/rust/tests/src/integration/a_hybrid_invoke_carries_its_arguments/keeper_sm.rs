@@ -486,6 +486,7 @@ impl KeeperPolicy {
                 );
                 engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(
                     KeeperEvent::ErrorExecution,
+                    ::sce_rust_runtime::ErrorReason::ParamUnfit,
                     "<data id='seed'> could not hold the value its invoke handed it",
                 ));
             }
@@ -500,6 +501,7 @@ impl KeeperPolicy {
                 ::sce_rust_runtime::sce_log_error!("global: {}", e);
                 engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(
                     KeeperEvent::ErrorExecution,
+                    ::sce_rust_runtime::ErrorReason::ExpressionFailed,
                     "<data id='seed'> expr failed to evaluate",
                 ));
             }
@@ -514,6 +516,7 @@ impl KeeperPolicy {
                 );
                 engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(
                     KeeperEvent::ErrorExecution,
+                    ::sce_rust_runtime::ErrorReason::ParamUnfit,
                     "<data id='fromLoc'> could not hold the value its invoke handed it",
                 ));
             }
@@ -528,6 +531,7 @@ impl KeeperPolicy {
                 ::sce_rust_runtime::sce_log_error!("global: {}", e);
                 engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(
                     KeeperEvent::ErrorExecution,
+                    ::sce_rust_runtime::ErrorReason::ExpressionFailed,
                     "<data id='fromLoc'> expr failed to evaluate",
                 ));
             }
@@ -542,6 +546,7 @@ impl KeeperPolicy {
                 );
                 engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(
                     KeeperEvent::ErrorExecution,
+                    ::sce_rust_runtime::ErrorReason::ParamUnfit,
                     "<data id='emptyLoc'> could not hold the value its invoke handed it",
                 ));
             }
@@ -556,6 +561,7 @@ impl KeeperPolicy {
                 ::sce_rust_runtime::sce_log_error!("global: {}", e);
                 engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(
                     KeeperEvent::ErrorExecution,
+                    ::sce_rust_runtime::ErrorReason::ExpressionFailed,
                     "<data id='emptyLoc'> expr failed to evaluate",
                 ));
             }
@@ -604,6 +610,7 @@ impl KeeperPolicy {
                 ::sce_rust_runtime::sce_log_error!("Guard evaluation failed for '{}': {}", cond, e);
                 engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(
                     KeeperEvent::ErrorExecution,
+                    ::sce_rust_runtime::ErrorReason::ExpressionFailed,
                     reason,
                 ));
                 None
@@ -1058,6 +1065,7 @@ impl StatePolicy for KeeperPolicy {
                                     engine.raise(
                                         sce_rust_runtime::EventWithMetadata::platform_error(
                                             KeeperEvent::ErrorExecution,
+                                            ::sce_rust_runtime::ErrorReason::LocationInvalid,
                                             "<send> <param name='seed'> could not be read",
                                         ),
                                     );
@@ -1080,6 +1088,7 @@ impl StatePolicy for KeeperPolicy {
                                     engine.raise(
                                         sce_rust_runtime::EventWithMetadata::platform_error(
                                             KeeperEvent::ErrorExecution,
+                                            ::sce_rust_runtime::ErrorReason::LocationInvalid,
                                             "<send> <param name='fromLoc'> could not be read",
                                         ),
                                     );
@@ -1102,6 +1111,7 @@ impl StatePolicy for KeeperPolicy {
                                     engine.raise(
                                         sce_rust_runtime::EventWithMetadata::platform_error(
                                             KeeperEvent::ErrorExecution,
+                                            ::sce_rust_runtime::ErrorReason::LocationInvalid,
                                             "<send> <param name='emptyLoc'> could not be read",
                                         ),
                                     );
@@ -1121,6 +1131,7 @@ impl StatePolicy for KeeperPolicy {
                                     engine.raise(
                                         sce_rust_runtime::EventWithMetadata::platform_error(
                                             KeeperEvent::ErrorExecution,
+                                            ::sce_rust_runtime::ErrorReason::LocationInvalid,
                                             "<send> <param name='leak'> could not be read",
                                         ),
                                     );
@@ -1145,6 +1156,7 @@ impl StatePolicy for KeeperPolicy {
                             // nothing delivered, and the block ends (4.9).
                             engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(
                                 KeeperEvent::ErrorCommunication,
+                                ::sce_rust_runtime::ErrorReason::TargetUnreachable,
                                 "<send target='#_parent'> has no parent session to reach",
                             ));
                             break 'action_block;

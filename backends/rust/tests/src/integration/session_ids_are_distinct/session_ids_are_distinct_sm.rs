@@ -517,6 +517,7 @@ impl SessionIdsAreDistinctPolicy {
                 );
                 engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(
                     SessionIdsAreDistinctEvent::ErrorExecution,
+                    ::sce_rust_runtime::ErrorReason::ParamUnfit,
                     "<data id='firstSid'> could not hold the value its invoke handed it",
                 ));
             }
@@ -528,6 +529,7 @@ impl SessionIdsAreDistinctPolicy {
                 ::sce_rust_runtime::sce_log_error!("global: {}", e);
                 engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(
                     SessionIdsAreDistinctEvent::ErrorExecution,
+                    ::sce_rust_runtime::ErrorReason::ExpressionFailed,
                     "<data id='firstSid'> expr failed to evaluate",
                 ));
             }
@@ -542,6 +544,7 @@ impl SessionIdsAreDistinctPolicy {
                 );
                 engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(
                     SessionIdsAreDistinctEvent::ErrorExecution,
+                    ::sce_rust_runtime::ErrorReason::ParamUnfit,
                     "<data id='readBackProbe'> could not hold the value its invoke handed it",
                 ));
             }
@@ -556,6 +559,7 @@ impl SessionIdsAreDistinctPolicy {
                 ::sce_rust_runtime::sce_log_error!("global: {}", e);
                 engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(
                     SessionIdsAreDistinctEvent::ErrorExecution,
+                    ::sce_rust_runtime::ErrorReason::ExpressionFailed,
                     "<data id='readBackProbe'> expr failed to evaluate",
                 ));
             }
@@ -604,6 +608,7 @@ impl SessionIdsAreDistinctPolicy {
                 ::sce_rust_runtime::sce_log_error!("Guard evaluation failed for '{}': {}", cond, e);
                 engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(
                     SessionIdsAreDistinctEvent::ErrorExecution,
+                    ::sce_rust_runtime::ErrorReason::ExpressionFailed,
                     reason,
                 ));
                 None
@@ -822,7 +827,7 @@ impl SessionIdsAreDistinctPolicy {
                     self.active_invokes.remove("inv_a");
                     engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(
                         SessionIdsAreDistinctEvent::ErrorExecution,
-                        &format!("<invoke id='{}'> did not start: its child's script session failed at step '{}'", "inv_a", failure.stage)));
+                        ::sce_rust_runtime::ErrorReason::InvokeChildInitFailed, &format!("<invoke id='{}'> did not start: its child's script session failed at step '{}'", "inv_a", failure.stage)));
                     continue;
                 }
 
@@ -911,7 +916,7 @@ impl SessionIdsAreDistinctPolicy {
                     self.active_invokes.remove("inv_b");
                     engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(
                         SessionIdsAreDistinctEvent::ErrorExecution,
-                        &format!("<invoke id='{}'> did not start: its child's script session failed at step '{}'", "inv_b", failure.stage)));
+                        ::sce_rust_runtime::ErrorReason::InvokeChildInitFailed, &format!("<invoke id='{}'> did not start: its child's script session failed at step '{}'", "inv_b", failure.stage)));
                     continue;
                 }
 
@@ -1503,6 +1508,7 @@ impl StatePolicy for SessionIdsAreDistinctPolicy {
                             );
                             engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(
                                 SessionIdsAreDistinctEvent::ErrorExecution,
+                                ::sce_rust_runtime::ErrorReason::AssignmentFailed,
                                 "<assign> to 'firstSid' failed",
                             ));
                             // W3C SCXML 4.9: the error ends the block, from however deep a <foreach> it came.

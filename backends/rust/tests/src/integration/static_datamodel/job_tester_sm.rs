@@ -1,5 +1,5 @@
 // SCE-GENERATED — DO NOT EDIT
-// source-hash: 3597e3f72da4de581fec75005e4626784f4597e82167ed4f92cb88e065a0deca
+// source-hash: 4154e2a94e5761146caffd9e99419e570b7123aab1b11fb20a04685ab39515fd
 
 // SPDX-License-Identifier: AGPL-3.0-only WITH AdditionRef-SCE-Linking-Exception OR LicenseRef-SCE-Commercial
 // SPDX-FileCopyrightText: Copyright (c) 2025-2026 [Author of input SCXML file] (content derived from the input document)
@@ -757,6 +757,7 @@ impl JobTesterPolicy {
                     // same event, rather than a silence that reads as started.
                     engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(
                         JobTesterEvent::ErrorExecution,
+                        ::sce_rust_runtime::ErrorReason::ProcessorUnregistered,
                         "<invoke> names an invoker the host declared but never registered",
                     ));
                 }
@@ -1115,7 +1116,7 @@ impl StatePolicy for JobTesterPolicy {
                             if __sce_served.is_none()
                                 && !engine.has_event_processor("http://sce.dev/ext/test-port")
                             {
-                                let mut err_meta = sce_rust_runtime::EventWithMetadata::platform_error(JobTesterEvent::ErrorExecution, "<send type='http://sce.dev/ext/test-port'> names a processor the host declared but never registered");
+                                let mut err_meta = sce_rust_runtime::EventWithMetadata::platform_error(JobTesterEvent::ErrorExecution, ::sce_rust_runtime::ErrorReason::ProcessorUnregistered, "<send type='http://sce.dev/ext/test-port'> names a processor the host declared but never registered");
                                 engine.raise(err_meta);
                             }
                         }
@@ -1363,7 +1364,7 @@ impl StatePolicy for JobTesterPolicy {
                             if __sce_served.is_none()
                                 && !engine.has_event_processor("http://sce.dev/ext/test-port")
                             {
-                                let mut err_meta = sce_rust_runtime::EventWithMetadata::platform_error(JobTesterEvent::ErrorExecution, "<send type='http://sce.dev/ext/test-port'> names a processor the host declared but never registered");
+                                let mut err_meta = sce_rust_runtime::EventWithMetadata::platform_error(JobTesterEvent::ErrorExecution, ::sce_rust_runtime::ErrorReason::ProcessorUnregistered, "<send type='http://sce.dev/ext/test-port'> names a processor the host declared but never registered");
                                 engine.raise(err_meta);
                             }
                         }

@@ -7,6 +7,7 @@
 package com.sce.generated.codec_zenoh_response
 
 import com.sce.forge.runtime.CodecError
+import com.sce.forge.runtime.Decoded
 import com.sce.forge.runtime.MutableListSink
 import com.sce.forge.runtime.SceCursor
 import com.sce.forge.runtime.SceSink
@@ -149,10 +150,13 @@ data class CodecZenohResponse(
 
     companion object {
         /// Decode the next frame from `cursor`. On success the cursor
-        /// advances past the consumed bytes; returns `null` when the
-        /// cursor's tail is shorter than the declared minimum frame
-        /// (RFC §synth-5-B L494-519).
-        fun decode(cursor: SceCursor): CodecZenohResponse? {
+        /// advances past the consumed bytes and the value is `Decoded.Ok`;
+        /// a refused frame is `Decoded.Refused` with the kind that refused
+        /// it (docs/adr/0099, amendment of 2026-11-16): `NeedMoreBytes` when
+        /// the cursor's tail is shorter than the frame (RFC §synth-5-B
+        /// L494-519), which the caller resumes after appending bytes, and
+        /// another kind for a frame no more bytes make whole.
+        fun decode(cursor: SceCursor): Decoded<CodecZenohResponse> {
             // RFC §synth-5-B peek-byte / streaming-
             // prefix: streaming prefix decode (variable-length fields
             // supported via per-field present_if/tlv-chain/embed/repeat
@@ -160,15 +164,15 @@ data class CodecZenohResponse(
             // next byte for variant tag without advancing — arm body
             // decoder reads it as own header.
             val header = run {
-                val raw = cursor.peekSlice(1) ?: return null
+                val raw = cursor.peekSlice(1) ?: return Decoded.Refused(CodecError.NeedMoreBytes)
                 val _v = raw[0].toUByte()
-                if (!cursor.advance(1)) return null
+                if (!cursor.advance(1)) return Decoded.Refused(CodecError.NeedMoreBytes)
                 _v
             }
-            val request_id = cursor.readVleU64() ?: return null
-            val key_id = cursor.readVleU32() ?: return null
+            val request_id = cursor.readVleU64().valueOr { _refused -> return _refused }
+            val key_id = cursor.readVleU32().valueOr { _refused -> return _refused }
             val suffix_len: ULong? = if ((header.toInt() and 0x20) != 0) {
-                val _v = cursor.readVleU64() ?: return null
+                val _v = cursor.readVleU64().valueOr { _refused -> return _refused }
                 _v
             } else {
                 null
@@ -176,15 +180,15 @@ data class CodecZenohResponse(
             val suffix = if ((header.toInt() and 0x20) != 0) {
                 val _len = suffix_len!!
                 if (_len > 65535uL) {
-                    cursor.refuse(CodecError.LengthOutOfRange); return null
+                    return Decoded.Refused(CodecError.LengthOutOfRange)
                 }
                 val _n = _len.toInt()
-                val raw = cursor.peekSlice(_n) ?: return null
+                val raw = cursor.peekSlice(_n) ?: return Decoded.Refused(CodecError.NeedMoreBytes)
                 val _v = try {
                     java.nio.charset.StandardCharsets.UTF_8.newDecoder()
                         .decode(java.nio.ByteBuffer.wrap(raw)).toString()
-                } catch (_: java.nio.charset.CharacterCodingException) { return null }
-                if (!cursor.advance(_n)) return null
+                } catch (_: java.nio.charset.CharacterCodingException) { return Decoded.Refused(CodecError.InvalidUtf8) }
+                if (!cursor.advance(_n)) return Decoded.Refused(CodecError.NeedMoreBytes)
                 _v
             } else {
                 null
@@ -193,17 +197,17 @@ data class CodecZenohResponse(
             mutableListOf<CodecZenohExtEntry>().also {
                 var _more = false
                 while (true) {
-                    val _entry = CodecZenohExtEntry.decode(cursor) ?: return null
+                    val _entry = CodecZenohExtEntry.decode(cursor).valueOr { _refused -> return _refused }
                     _more = _entry.Z()
                     it.add(_entry)
                     if (!_more) break
                 }
-                if (_more && cursor.remaining() == 0) { return null }
+                if (_more && cursor.remaining() == 0) { return Decoded.Refused(CodecError.NeedMoreBytes) }
             }
         } else {
             null
         }
-            val _peekRaw = cursor.peekSlice(1) ?: return null
+            val _peekRaw = cursor.peekSlice(1) ?: return Decoded.Refused(CodecError.NeedMoreBytes)
         val _peek: UByte = _peekRaw[0].toUByte()
             // Dispatch on the tag field; each arm decodes its body codec
             // from the cursor. The default arm (when declared) carries
@@ -211,26 +215,28 @@ data class CodecZenohResponse(
             // onto the wire.
             val body: CodecZenohResponseVariant = when (((_peek.toInt() shr 0) and 0x1F)) {
                 4 -> {
-                    val _arm = com.sce.generated.codec_zenoh_reply.CodecZenohReply.decode(cursor) ?: return null
+                    val _arm = com.sce.generated.codec_zenoh_reply.CodecZenohReply.decode(cursor).valueOr { _refused -> return _refused }
                     CodecZenohResponseVariant.CodecZenohReply(_arm)
                 }
                 5 -> {
-                    val _arm = com.sce.generated.codec_zenoh_err.CodecZenohErr.decode(cursor) ?: return null
+                    val _arm = com.sce.generated.codec_zenoh_err.CodecZenohErr.decode(cursor).valueOr { _refused -> return _refused }
                     CodecZenohResponseVariant.CodecZenohErr(_arm)
                 }
                 else -> {
-                    val _arm = com.sce.generated.codec_zenoh_reply.CodecZenohReply.decode(cursor) ?: return null
+                    val _arm = com.sce.generated.codec_zenoh_reply.CodecZenohReply.decode(cursor).valueOr { _refused -> return _refused }
                     CodecZenohResponseVariant.Default(tag = ((_peek.toInt() shr 0) and 0x1F).toUByte(), body = _arm)
                 }
             }
-            return CodecZenohResponse(
-                header = header,
-                request_id = request_id,
-                key_id = key_id,
-                suffix_len = suffix_len,
-                suffix = suffix,
-                extensions = extensions,
-                body = body
+            return Decoded.Ok(
+                CodecZenohResponse(
+                    header = header,
+                    request_id = request_id,
+                    key_id = key_id,
+                    suffix_len = suffix_len,
+                    suffix = suffix,
+                    extensions = extensions,
+                    body = body
+                )
             )
         }
     }

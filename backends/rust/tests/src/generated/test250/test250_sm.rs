@@ -498,6 +498,7 @@ impl Test250Policy {
                 ::sce_rust_runtime::sce_log_error!("Guard evaluation failed for '{}': {}", cond, e);
                 engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(
                     Test250Event::ErrorExecution,
+                    ::sce_rust_runtime::ErrorReason::ExpressionFailed,
                     reason,
                 ));
                 None
@@ -693,7 +694,7 @@ impl Test250Policy {
                     self.active_invokes.remove("_invoke_0");
                     engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(
                         Test250Event::ErrorExecution,
-                        &format!("<invoke id='{}'> did not start: its child's script session failed at step '{}'", "_invoke_0", failure.stage)));
+                        ::sce_rust_runtime::ErrorReason::InvokeChildInitFailed, &format!("<invoke id='{}'> did not start: its child's script session failed at step '{}'", "_invoke_0", failure.stage)));
                     continue;
                 }
 

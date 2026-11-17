@@ -1,5 +1,5 @@
 // SCE-GENERATED — DO NOT EDIT
-// source-hash: 81cc59c6b8f46736a80b4b69ee489274d9b0ae32efae821805ba44c3bac3af2c
+// source-hash: 79bd488e080bbb06d64d257e2fbd5255070d9d17deefefd2dca818e62be7e33d
 
 // SPDX-License-Identifier: AGPL-3.0-only WITH AdditionRef-SCE-Linking-Exception OR LicenseRef-SCE-Commercial
 // SPDX-FileCopyrightText: Copyright (c) 2025-2026 [Author of input SCXML file] (content derived from the input document)
@@ -4672,7 +4672,7 @@ impl StatePolicy for RecordListPolicy {
                         })() {
                             Ok(()) => false,
                             Err(_) => {
-                                engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(RecordListEvent::ErrorExecution, "<assign location='roster'>: an integer operation overflowed or failed"));
+                                engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(RecordListEvent::ErrorExecution, ::sce_rust_runtime::ErrorReason::ExpressionFailed, "<assign location='roster'>: an integer operation overflowed or failed"));
                                 true
                             }
                         };
@@ -4696,7 +4696,7 @@ impl StatePolicy for RecordListPolicy {
                         })() {
                             Ok(()) => false,
                             Err(_) => {
-                                engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(RecordListEvent::ErrorExecution, "<assign location='refusals'>: an integer operation overflowed or failed"));
+                                engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(RecordListEvent::ErrorExecution, ::sce_rust_runtime::ErrorReason::ExpressionFailed, "<assign location='refusals'>: an integer operation overflowed or failed"));
                                 true
                             }
                         };
@@ -4720,7 +4720,7 @@ impl StatePolicy for RecordListPolicy {
                         })() {
                             Ok(()) => false,
                             Err(_) => {
-                                engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(RecordListEvent::ErrorExecution, "<assign location='refusals'>: an integer operation overflowed or failed"));
+                                engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(RecordListEvent::ErrorExecution, ::sce_rust_runtime::ErrorReason::ExpressionFailed, "<assign location='refusals'>: an integer operation overflowed or failed"));
                                 true
                             }
                         };
@@ -4744,7 +4744,7 @@ impl StatePolicy for RecordListPolicy {
                         })() {
                             Ok(()) => false,
                             Err(_) => {
-                                engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(RecordListEvent::ErrorExecution, "<assign location='refusals'>: an integer operation overflowed or failed"));
+                                engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(RecordListEvent::ErrorExecution, ::sce_rust_runtime::ErrorReason::ExpressionFailed, "<assign location='refusals'>: an integer operation overflowed or failed"));
                                 true
                             }
                         };
@@ -4802,7 +4802,7 @@ impl StatePolicy for RecordListPolicy {
 })() {
     Ok(()) => false,
     Err(_) => {
-        engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(RecordListEvent::ErrorExecution, "<assign location='staging.text'>: an integer operation overflowed or failed"));
+        engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(RecordListEvent::ErrorExecution, ::sce_rust_runtime::ErrorReason::ExpressionFailed, "<assign location='staging.text'>: an integer operation overflowed or failed"));
         true
     }
 };
@@ -4819,7 +4819,7 @@ impl StatePolicy for RecordListPolicy {
                         {
                             false
                         } else {
-                            engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(RecordListEvent::ErrorExecution, "<sce:append target='staged'>: the list already holds its capacity of 32"));
+                            engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(RecordListEvent::ErrorExecution, ::sce_rust_runtime::ErrorReason::AssignmentFailed, "<sce:append target='staged'>: the list already holds its capacity of 32"));
                             true
                         };
                         if sce_failed {
@@ -4908,7 +4908,7 @@ impl StatePolicy for RecordListPolicy {
 })() {
     Ok(()) => false,
     Err(_) => {
-        engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(RecordListEvent::ErrorExecution, "<assign location='staging.text'>: an integer operation overflowed or failed"));
+        engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(RecordListEvent::ErrorExecution, ::sce_rust_runtime::ErrorReason::ExpressionFailed, "<assign location='staging.text'>: an integer operation overflowed or failed"));
         true
     }
 };
@@ -4922,7 +4922,7 @@ impl StatePolicy for RecordListPolicy {
                         {
                             false
                         } else {
-                            engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(RecordListEvent::ErrorExecution, "<sce:append target='staged'>: the list already holds its capacity of 32"));
+                            engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(RecordListEvent::ErrorExecution, ::sce_rust_runtime::ErrorReason::AssignmentFailed, "<sce:append target='staged'>: the list already holds its capacity of 32"));
                             true
                         };
                         if sce_failed {
@@ -5011,7 +5011,7 @@ impl StatePolicy for RecordListPolicy {
 })() {
     Ok(()) => false,
     Err(_) => {
-        engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(RecordListEvent::ErrorExecution, "<assign location='staging.text'>: an integer operation overflowed or failed"));
+        engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(RecordListEvent::ErrorExecution, ::sce_rust_runtime::ErrorReason::ExpressionFailed, "<assign location='staging.text'>: an integer operation overflowed or failed"));
         true
     }
 };
@@ -5025,7 +5025,7 @@ impl StatePolicy for RecordListPolicy {
                         {
                             false
                         } else {
-                            engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(RecordListEvent::ErrorExecution, "<sce:append target='staged'>: the list already holds its capacity of 32"));
+                            engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(RecordListEvent::ErrorExecution, ::sce_rust_runtime::ErrorReason::AssignmentFailed, "<sce:append target='staged'>: the list already holds its capacity of 32"));
                             true
                         };
                         if sce_failed {
@@ -5092,7 +5092,7 @@ impl StatePolicy for RecordListPolicy {
 })() {
     Ok(()) => false,
     Err(_) => {
-        engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(RecordListEvent::ErrorExecution, "<assign location='denied'>: an integer operation overflowed or failed"));
+        engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(RecordListEvent::ErrorExecution, ::sce_rust_runtime::ErrorReason::ExpressionFailed, "<assign location='denied'>: an integer operation overflowed or failed"));
         true
     }
 };
@@ -5180,7 +5180,7 @@ impl StatePolicy for RecordListPolicy {
 })() {
     Ok(sce_value) => sce_value,
     Err(_) => {
-        engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(RecordListEvent::ErrorExecution, "<if cond='a.element / 65536 === s.id && (s.kind === 2 || a.element % 65536 === s.field)'>: an integer operation overflowed or failed"));
+        engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(RecordListEvent::ErrorExecution, ::sce_rust_runtime::ErrorReason::ExpressionFailed, "<if cond='a.element / 65536 === s.id && (s.kind === 2 || a.element % 65536 === s.field)'>: an integer operation overflowed or failed"));
         if_cond_failed = true;
         false
     }
@@ -5205,7 +5205,7 @@ self.covered = true;
 })() {
     Ok(()) => false,
     Err(_) => {
-        engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(RecordListEvent::ErrorExecution, "<assign location='gone'>: an integer operation overflowed or failed"));
+        engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(RecordListEvent::ErrorExecution, ::sce_rust_runtime::ErrorReason::ExpressionFailed, "<assign location='gone'>: an integer operation overflowed or failed"));
         true
     }
 };
@@ -5227,7 +5227,7 @@ self.covered = true;
 })() {
     Ok(()) => false,
     Err(_) => {
-        engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(RecordListEvent::ErrorExecution, "<assign location='writes'>: an integer operation overflowed or failed"));
+        engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(RecordListEvent::ErrorExecution, ::sce_rust_runtime::ErrorReason::ExpressionFailed, "<assign location='writes'>: an integer operation overflowed or failed"));
         true
     }
 };
@@ -5246,7 +5246,7 @@ self.covered = true;
 })() {
     Ok(sce_value) => sce_value,
     Err(_) => {
-        engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(RecordListEvent::ErrorExecution, "<if cond='!spoiled && gone + writes > 0 && roomValues > 0 && writes > gone && len(values) + writes > roomValues + gone'>: an integer operation overflowed or failed"));
+        engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(RecordListEvent::ErrorExecution, ::sce_rust_runtime::ErrorReason::ExpressionFailed, "<if cond='!spoiled && gone + writes > 0 && roomValues > 0 && writes > gone && len(values) + writes > roomValues + gone'>: an integer operation overflowed or failed"));
         if_cond_failed = true;
         false
     }
@@ -5259,7 +5259,7 @@ let sce_failed = match (|| -> Result<(), sce_forge_runtime::algorithm::Algorithm
 })() {
     Ok(()) => false,
     Err(_) => {
-        engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(RecordListEvent::ErrorExecution, "<assign location='full'>: an integer operation overflowed or failed"));
+        engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(RecordListEvent::ErrorExecution, ::sce_rust_runtime::ErrorReason::ExpressionFailed, "<assign location='full'>: an integer operation overflowed or failed"));
         true
     }
 };
@@ -5289,7 +5289,7 @@ self.spoiled_for = RecordListRefusalEnum::NoRoomForValue;
 })() {
     Ok(sce_value) => sce_value,
     Err(_) => {
-        engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(RecordListEvent::ErrorExecution, "<if cond='!spoiled && journal && gone + writes > 0 && len(provisional) >= _x.limits.shared_provisional'>: an integer operation overflowed or failed"));
+        engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(RecordListEvent::ErrorExecution, ::sce_rust_runtime::ErrorReason::ExpressionFailed, "<if cond='!spoiled && journal && gone + writes > 0 && len(provisional) >= _x.limits.shared_provisional'>: an integer operation overflowed or failed"));
         if_cond_failed = true;
         false
     }
@@ -5316,7 +5316,7 @@ self.spoiled_for = RecordListRefusalEnum::NoRoomForHistory;
 })() {
     Ok(sce_value) => sce_value,
     Err(_) => {
-        engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(RecordListEvent::ErrorExecution, "<if cond='!spoiled && gone + writes > 0'>: an integer operation overflowed or failed"));
+        engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(RecordListEvent::ErrorExecution, ::sce_rust_runtime::ErrorReason::ExpressionFailed, "<if cond='!spoiled && gone + writes > 0'>: an integer operation overflowed or failed"));
         if_cond_failed = true;
         false
     }
@@ -5337,7 +5337,7 @@ let sce_failed = match (|| -> Result<(), sce_forge_runtime::algorithm::Algorithm
 })() {
     Ok(()) => false,
     Err(_) => {
-        engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(RecordListEvent::ErrorExecution, "<assign location='stamp'>: an integer operation overflowed or failed"));
+        engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(RecordListEvent::ErrorExecution, ::sce_rust_runtime::ErrorReason::ExpressionFailed, "<assign location='stamp'>: an integer operation overflowed or failed"));
         true
     }
 };
@@ -5374,7 +5374,7 @@ if match (|| -> Result<bool, sce_forge_runtime::algorithm::AlgorithmError> {
 })() {
     Ok(sce_value) => sce_value,
     Err(_) => {
-        engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(RecordListEvent::ErrorExecution, "<if cond='a.element / 65536 === s.id && (s.kind === 2 || a.element % 65536 === s.field)'>: an integer operation overflowed or failed"));
+        engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(RecordListEvent::ErrorExecution, ::sce_rust_runtime::ErrorReason::ExpressionFailed, "<if cond='a.element / 65536 === s.id && (s.kind === 2 || a.element % 65536 === s.field)'>: an integer operation overflowed or failed"));
         if_cond_failed = true;
         false
     }
@@ -5404,7 +5404,7 @@ let sce_failed = match (|| -> Result<(), sce_forge_runtime::algorithm::Algorithm
 })() {
     Ok(()) => false,
     Err(_) => {
-        engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(RecordListEvent::ErrorExecution, "<assign location='op.id'>: an integer operation overflowed or failed"));
+        engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(RecordListEvent::ErrorExecution, ::sce_rust_runtime::ErrorReason::ExpressionFailed, "<assign location='op.id'>: an integer operation overflowed or failed"));
         true
     }
 };
@@ -5420,7 +5420,7 @@ let sce_failed = match (|| -> Result<(), sce_forge_runtime::algorithm::Algorithm
 })() {
     Ok(()) => false,
     Err(_) => {
-        engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(RecordListEvent::ErrorExecution, "<assign location='op.field'>: an integer operation overflowed or failed"));
+        engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(RecordListEvent::ErrorExecution, ::sce_rust_runtime::ErrorReason::ExpressionFailed, "<assign location='op.field'>: an integer operation overflowed or failed"));
         true
     }
 };
@@ -5440,7 +5440,7 @@ let sce_failed = match (|| -> Result<(), sce_forge_runtime::algorithm::Algorithm
 })() {
     Ok(()) => false,
     Err(_) => {
-        engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(RecordListEvent::ErrorExecution, "<assign location='op.text'>: an integer operation overflowed or failed"));
+        engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(RecordListEvent::ErrorExecution, ::sce_rust_runtime::ErrorReason::ExpressionFailed, "<assign location='op.text'>: an integer operation overflowed or failed"));
         true
     }
 };
@@ -5465,7 +5465,7 @@ self.op.nodeId = a.nodeId;
 let sce_failed = if self.taking.len() < 64 && self.taking.push(self.op.clone()).is_ok() {
     false
 } else {
-    engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(RecordListEvent::ErrorExecution, "<sce:append target='taking'>: the list already holds its capacity of 64"));
+    engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(RecordListEvent::ErrorExecution, ::sce_rust_runtime::ErrorReason::AssignmentFailed, "<sce:append target='taking'>: the list already holds its capacity of 64"));
     true
 };
 if sce_failed {
@@ -5503,7 +5503,7 @@ let sce_failed = match (|| -> Result<(), sce_forge_runtime::algorithm::Algorithm
 })() {
     Ok(()) => false,
     Err(_) => {
-        engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(RecordListEvent::ErrorExecution, "<assign location='op.text'>: an integer operation overflowed or failed"));
+        engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(RecordListEvent::ErrorExecution, ::sce_rust_runtime::ErrorReason::ExpressionFailed, "<assign location='op.text'>: an integer operation overflowed or failed"));
         true
     }
 };
@@ -5528,7 +5528,7 @@ self.op.nodeId = 0;
 let sce_failed = if self.taking.len() < 64 && self.taking.push(self.op.clone()).is_ok() {
     false
 } else {
-    engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(RecordListEvent::ErrorExecution, "<sce:append target='taking'>: the list already holds its capacity of 64"));
+    engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(RecordListEvent::ErrorExecution, ::sce_rust_runtime::ErrorReason::AssignmentFailed, "<sce:append target='taking'>: the list already holds its capacity of 64"));
     true
 };
 if sce_failed {
@@ -5617,7 +5617,7 @@ for t in self.taking.clone() {
 let sce_failed = if self.offered.len() < 64 && self.offered.push(t.clone()).is_ok() {
     false
 } else {
-    engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(RecordListEvent::ErrorExecution, "<sce:append target='offered'>: the list already holds its capacity of 64"));
+    engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(RecordListEvent::ErrorExecution, ::sce_rust_runtime::ErrorReason::AssignmentFailed, "<sce:append target='offered'>: the list already holds its capacity of 64"));
     true
 };
 if sce_failed {
@@ -5662,7 +5662,7 @@ self.offered_at = self.stamp;
 })() {
     Ok(sce_value) => sce_value,
     Err(_) => {
-        engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(RecordListEvent::ErrorExecution, "<if cond='!spoiled && gone + writes === 0'>: an integer operation overflowed or failed"));
+        engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(RecordListEvent::ErrorExecution, ::sce_rust_runtime::ErrorReason::ExpressionFailed, "<if cond='!spoiled && gone + writes === 0'>: an integer operation overflowed or failed"));
         if_cond_failed = true;
         false
     }
@@ -5767,7 +5767,12 @@ self.closed_at.nodeId = 0;
                             {
                                 let send_id: &str = "__send_8";
 
-                                let mut _send_arg_error: Option<&'static str> = None;
+                                // The code and the sentence of the first argument that failed
+                                // (docs/adr/0106 #111).
+                                let mut _send_arg_error: Option<(
+                                    ::sce_rust_runtime::ErrorReason,
+                                    &'static str,
+                                )> = None;
                                 // docs/adr/0005, decision 3: the target is a string computed from the machine's
                                 // fields now, and the send goes only by a route the document declared as
                                 // `sce:targets`. A value in none of them names no route this send may take —
@@ -5781,11 +5786,12 @@ self.closed_at.nodeId = 0;
                                         None
                                     }
                                     .filter(|route| matches!(route.as_str(), "#_parent"));
-                                if let Some(__sce_why) = _send_arg_error {
+                                if let Some((__sce_reason, __sce_why)) = _send_arg_error {
                                     ::sce_rust_runtime::sce_log_error!("{}", __sce_why);
                                     let mut err_meta =
                                         sce_rust_runtime::EventWithMetadata::platform_error(
                                             RecordListEvent::ErrorExecution,
+                                            __sce_reason,
                                             __sce_why,
                                         );
                                     err_meta.metadata.send_id =
@@ -5801,7 +5807,7 @@ self.closed_at.nodeId = 0;
                                     if _resolved_target.is_none() {
                                         // W3C SCXML C.1 (test 496, 521): a target that names nothing raises
                                         // error.communication.
-                                        let mut err_meta = sce_rust_runtime::EventWithMetadata::platform_error(RecordListEvent::ErrorCommunication, "<send> targetexpr evaluated to nothing, or to a route the send does not declare, so there is no target to reach");
+                                        let mut err_meta = sce_rust_runtime::EventWithMetadata::platform_error(RecordListEvent::ErrorCommunication, ::sce_rust_runtime::ErrorReason::TargetUnreachable, "<send> targetexpr evaluated to nothing, or to a route the send does not declare, so there is no target to reach");
                                         err_meta.metadata.send_id =
                                             ::sce_rust_runtime::sce_string_from_str(send_id);
                                         engine.raise(err_meta);
@@ -5892,7 +5898,7 @@ self.closed_at.nodeId = 0;
                                             if __sce_routed
                                                 == sce_rust_runtime::TargetSendOutcome::Unsupported
                                             {
-                                                let mut err_meta = sce_rust_runtime::EventWithMetadata::platform_error(RecordListEvent::ErrorExecution, "<send> targetexpr produced a value that is not a target");
+                                                let mut err_meta = sce_rust_runtime::EventWithMetadata::platform_error(RecordListEvent::ErrorExecution, ::sce_rust_runtime::ErrorReason::SendTargetInvalid, "<send> targetexpr produced a value that is not a target");
                                                 err_meta.metadata.send_id =
                                                     ::sce_rust_runtime::sce_string_from_str(
                                                         send_id,
@@ -5903,7 +5909,7 @@ self.closed_at.nodeId = 0;
                                             if __sce_routed
                                                 == sce_rust_runtime::TargetSendOutcome::Unreachable
                                             {
-                                                let mut err_meta = sce_rust_runtime::EventWithMetadata::platform_error(RecordListEvent::ErrorCommunication, "<send> targetexpr names a session this processor cannot reach");
+                                                let mut err_meta = sce_rust_runtime::EventWithMetadata::platform_error(RecordListEvent::ErrorCommunication, ::sce_rust_runtime::ErrorReason::TargetUnreachable, "<send> targetexpr names a session this processor cannot reach");
                                                 err_meta.metadata.send_id =
                                                     ::sce_rust_runtime::sce_string_from_str(
                                                         send_id,
@@ -5978,7 +5984,7 @@ self.closed_at.nodeId = 0;
                 // docs/adr/0086, section 15.6: the list is short of its field's
                 // lower count, so the event is refused whole: one error, nothing
                 // delivered, and the error ends the block (W3C SCXML 6.2.3, 4.9).
-                let mut err_meta = sce_rust_runtime::EventWithMetadata::platform_error(RecordListEvent::ErrorExecution, "<send> <param name='ops'> holds fewer elements than the 1 its field's type declares, so the event is not sent");
+                let mut err_meta = sce_rust_runtime::EventWithMetadata::platform_error(RecordListEvent::ErrorExecution, ::sce_rust_runtime::ErrorReason::ParamUnfit, "<send> <param name='ops'> holds fewer elements than the 1 its field's type declares, so the event is not sent");
                 err_meta.metadata.send_id = ::sce_rust_runtime::sce_string_from_str(send_id);
                 engine.raise(err_meta);
                 break 'action_block;
@@ -6024,7 +6030,7 @@ self.closed_at.nodeId = 0;
                             // support — the act it asked for was performed by nobody. Same
                             // event, so a wiring mistake cannot read as success.
                             if __sce_served.is_none() && !engine.has_event_processor("sce:mesh") {
-                                let mut err_meta = sce_rust_runtime::EventWithMetadata::platform_error(RecordListEvent::ErrorExecution, "<send type='sce:mesh'> names a processor the host declared but never registered");
+                                let mut err_meta = sce_rust_runtime::EventWithMetadata::platform_error(RecordListEvent::ErrorExecution, ::sce_rust_runtime::ErrorReason::ProcessorUnregistered, "<send type='sce:mesh'> names a processor the host declared but never registered");
                                 engine.raise(err_meta);
                             }
                         }
@@ -6062,7 +6068,7 @@ self.closed_at.nodeId = 0;
                         })() {
                             Ok(()) => false,
                             Err(_) => {
-                                engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(RecordListEvent::ErrorExecution, "<assign location='standing.id'>: an integer operation overflowed or failed"));
+                                engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(RecordListEvent::ErrorExecution, ::sce_rust_runtime::ErrorReason::ExpressionFailed, "<assign location='standing.id'>: an integer operation overflowed or failed"));
                                 true
                             }
                         };
@@ -6079,7 +6085,7 @@ self.closed_at.nodeId = 0;
                         })() {
                             Ok(()) => false,
                             Err(_) => {
-                                engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(RecordListEvent::ErrorExecution, "<assign location='standing.field'>: an integer operation overflowed or failed"));
+                                engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(RecordListEvent::ErrorExecution, ::sce_rust_runtime::ErrorReason::ExpressionFailed, "<assign location='standing.field'>: an integer operation overflowed or failed"));
                                 true
                             }
                         };
@@ -6095,7 +6101,7 @@ self.closed_at.nodeId = 0;
 })() {
     Ok(sce_value) => sce_value,
     Err(_) => {
-        engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(RecordListEvent::ErrorExecution, "<if cond='offered[0].kind === 0'>: an integer operation overflowed or failed"));
+        engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(RecordListEvent::ErrorExecution, ::sce_rust_runtime::ErrorReason::ExpressionFailed, "<if cond='offered[0].kind === 0'>: an integer operation overflowed or failed"));
         if_cond_failed = true;
         false
     }
@@ -6161,7 +6167,12 @@ self.standing.kind = RecordListCommandEnum::Clear;
                             {
                                 let send_id: &str = "__send_11";
 
-                                let mut _send_arg_error: Option<&'static str> = None;
+                                // The code and the sentence of the first argument that failed
+                                // (docs/adr/0106 #111).
+                                let mut _send_arg_error: Option<(
+                                    ::sce_rust_runtime::ErrorReason,
+                                    &'static str,
+                                )> = None;
                                 // docs/adr/0005, decision 3: the target is a string computed from the machine's
                                 // fields now, and the send goes only by a route the document declared as
                                 // `sce:targets`. A value in none of them names no route this send may take —
@@ -6175,11 +6186,12 @@ self.standing.kind = RecordListCommandEnum::Clear;
                                         None
                                     }
                                     .filter(|route| matches!(route.as_str(), "#_parent"));
-                                if let Some(__sce_why) = _send_arg_error {
+                                if let Some((__sce_reason, __sce_why)) = _send_arg_error {
                                     ::sce_rust_runtime::sce_log_error!("{}", __sce_why);
                                     let mut err_meta =
                                         sce_rust_runtime::EventWithMetadata::platform_error(
                                             RecordListEvent::ErrorExecution,
+                                            __sce_reason,
                                             __sce_why,
                                         );
                                     err_meta.metadata.send_id =
@@ -6195,7 +6207,7 @@ self.standing.kind = RecordListCommandEnum::Clear;
                                     if _resolved_target.is_none() {
                                         // W3C SCXML C.1 (test 496, 521): a target that names nothing raises
                                         // error.communication.
-                                        let mut err_meta = sce_rust_runtime::EventWithMetadata::platform_error(RecordListEvent::ErrorCommunication, "<send> targetexpr evaluated to nothing, or to a route the send does not declare, so there is no target to reach");
+                                        let mut err_meta = sce_rust_runtime::EventWithMetadata::platform_error(RecordListEvent::ErrorCommunication, ::sce_rust_runtime::ErrorReason::TargetUnreachable, "<send> targetexpr evaluated to nothing, or to a route the send does not declare, so there is no target to reach");
                                         err_meta.metadata.send_id =
                                             ::sce_rust_runtime::sce_string_from_str(send_id);
                                         engine.raise(err_meta);
@@ -6286,7 +6298,7 @@ self.standing.kind = RecordListCommandEnum::Clear;
                                             if __sce_routed
                                                 == sce_rust_runtime::TargetSendOutcome::Unsupported
                                             {
-                                                let mut err_meta = sce_rust_runtime::EventWithMetadata::platform_error(RecordListEvent::ErrorExecution, "<send> targetexpr produced a value that is not a target");
+                                                let mut err_meta = sce_rust_runtime::EventWithMetadata::platform_error(RecordListEvent::ErrorExecution, ::sce_rust_runtime::ErrorReason::SendTargetInvalid, "<send> targetexpr produced a value that is not a target");
                                                 err_meta.metadata.send_id =
                                                     ::sce_rust_runtime::sce_string_from_str(
                                                         send_id,
@@ -6297,7 +6309,7 @@ self.standing.kind = RecordListCommandEnum::Clear;
                                             if __sce_routed
                                                 == sce_rust_runtime::TargetSendOutcome::Unreachable
                                             {
-                                                let mut err_meta = sce_rust_runtime::EventWithMetadata::platform_error(RecordListEvent::ErrorCommunication, "<send> targetexpr names a session this processor cannot reach");
+                                                let mut err_meta = sce_rust_runtime::EventWithMetadata::platform_error(RecordListEvent::ErrorCommunication, ::sce_rust_runtime::ErrorReason::TargetUnreachable, "<send> targetexpr names a session this processor cannot reach");
                                                 err_meta.metadata.send_id =
                                                     ::sce_rust_runtime::sce_string_from_str(
                                                         send_id,
@@ -6334,7 +6346,7 @@ self.standing.kind = RecordListCommandEnum::Clear;
                             {
                                 false
                             } else {
-                                engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(RecordListEvent::ErrorExecution, "<sce:append target='taking'>: the list already holds its capacity of 64"));
+                                engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(RecordListEvent::ErrorExecution, ::sce_rust_runtime::ErrorReason::AssignmentFailed, "<sce:append target='taking'>: the list already holds its capacity of 64"));
                                 true
                             };
                             if sce_failed {
@@ -6362,7 +6374,7 @@ self.standing.kind = RecordListCommandEnum::Clear;
                             {
                                 false
                             } else {
-                                engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(RecordListEvent::ErrorExecution, "<sce:append target='provisional'>: the list already holds its capacity of 8"));
+                                engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(RecordListEvent::ErrorExecution, ::sce_rust_runtime::ErrorReason::AssignmentFailed, "<sce:append target='provisional'>: the list already holds its capacity of 8"));
                                 true
                             };
                             if sce_failed {
@@ -6418,7 +6430,12 @@ self.standing.kind = RecordListCommandEnum::Clear;
                             {
                                 let send_id: &str = "__send_14";
 
-                                let mut _send_arg_error: Option<&'static str> = None;
+                                // The code and the sentence of the first argument that failed
+                                // (docs/adr/0106 #111).
+                                let mut _send_arg_error: Option<(
+                                    ::sce_rust_runtime::ErrorReason,
+                                    &'static str,
+                                )> = None;
                                 // docs/adr/0005, decision 3: the target is a string computed from the machine's
                                 // fields now, and the send goes only by a route the document declared as
                                 // `sce:targets`. A value in none of them names no route this send may take —
@@ -6432,11 +6449,12 @@ self.standing.kind = RecordListCommandEnum::Clear;
                                         None
                                     }
                                     .filter(|route| matches!(route.as_str(), "#_parent"));
-                                if let Some(__sce_why) = _send_arg_error {
+                                if let Some((__sce_reason, __sce_why)) = _send_arg_error {
                                     ::sce_rust_runtime::sce_log_error!("{}", __sce_why);
                                     let mut err_meta =
                                         sce_rust_runtime::EventWithMetadata::platform_error(
                                             RecordListEvent::ErrorExecution,
+                                            __sce_reason,
                                             __sce_why,
                                         );
                                     err_meta.metadata.send_id =
@@ -6452,7 +6470,7 @@ self.standing.kind = RecordListCommandEnum::Clear;
                                     if _resolved_target.is_none() {
                                         // W3C SCXML C.1 (test 496, 521): a target that names nothing raises
                                         // error.communication.
-                                        let mut err_meta = sce_rust_runtime::EventWithMetadata::platform_error(RecordListEvent::ErrorCommunication, "<send> targetexpr evaluated to nothing, or to a route the send does not declare, so there is no target to reach");
+                                        let mut err_meta = sce_rust_runtime::EventWithMetadata::platform_error(RecordListEvent::ErrorCommunication, ::sce_rust_runtime::ErrorReason::TargetUnreachable, "<send> targetexpr evaluated to nothing, or to a route the send does not declare, so there is no target to reach");
                                         err_meta.metadata.send_id =
                                             ::sce_rust_runtime::sce_string_from_str(send_id);
                                         engine.raise(err_meta);
@@ -6525,7 +6543,7 @@ self.standing.kind = RecordListCommandEnum::Clear;
                                             if __sce_routed
                                                 == sce_rust_runtime::TargetSendOutcome::Unsupported
                                             {
-                                                let mut err_meta = sce_rust_runtime::EventWithMetadata::platform_error(RecordListEvent::ErrorExecution, "<send> targetexpr produced a value that is not a target");
+                                                let mut err_meta = sce_rust_runtime::EventWithMetadata::platform_error(RecordListEvent::ErrorExecution, ::sce_rust_runtime::ErrorReason::SendTargetInvalid, "<send> targetexpr produced a value that is not a target");
                                                 err_meta.metadata.send_id =
                                                     ::sce_rust_runtime::sce_string_from_str(
                                                         send_id,
@@ -6536,7 +6554,7 @@ self.standing.kind = RecordListCommandEnum::Clear;
                                             if __sce_routed
                                                 == sce_rust_runtime::TargetSendOutcome::Unreachable
                                             {
-                                                let mut err_meta = sce_rust_runtime::EventWithMetadata::platform_error(RecordListEvent::ErrorCommunication, "<send> targetexpr names a session this processor cannot reach");
+                                                let mut err_meta = sce_rust_runtime::EventWithMetadata::platform_error(RecordListEvent::ErrorCommunication, ::sce_rust_runtime::ErrorReason::TargetUnreachable, "<send> targetexpr names a session this processor cannot reach");
                                                 err_meta.metadata.send_id =
                                                     ::sce_rust_runtime::sce_string_from_str(
                                                         send_id,
@@ -6570,7 +6588,7 @@ self.standing.kind = RecordListCommandEnum::Clear;
                         })() {
                             Ok(()) => false,
                             Err(_) => {
-                                engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(RecordListEvent::ErrorExecution, "<assign location='refusals'>: an integer operation overflowed or failed"));
+                                engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(RecordListEvent::ErrorExecution, ::sce_rust_runtime::ErrorReason::ExpressionFailed, "<assign location='refusals'>: an integer operation overflowed or failed"));
                                 true
                             }
                         };
@@ -6672,7 +6690,7 @@ self.standing.kind = RecordListCommandEnum::Clear;
                             // support — the act it asked for was performed by nobody. Same
                             // event, so a wiring mistake cannot read as success.
                             if __sce_served.is_none() && !engine.has_event_processor("sce:mesh") {
-                                let mut err_meta = sce_rust_runtime::EventWithMetadata::platform_error(RecordListEvent::ErrorExecution, "<send type='sce:mesh'> names a processor the host declared but never registered");
+                                let mut err_meta = sce_rust_runtime::EventWithMetadata::platform_error(RecordListEvent::ErrorExecution, ::sce_rust_runtime::ErrorReason::ProcessorUnregistered, "<send type='sce:mesh'> names a processor the host declared but never registered");
                                 engine.raise(err_meta);
                             }
                         }
@@ -6720,7 +6738,7 @@ self.standing.kind = RecordListCommandEnum::Clear;
 })() {
     Ok(()) => false,
     Err(_) => {
-        engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(RecordListEvent::ErrorExecution, "<assign location='denied'>: an integer operation overflowed or failed"));
+        engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(RecordListEvent::ErrorExecution, ::sce_rust_runtime::ErrorReason::ExpressionFailed, "<assign location='denied'>: an integer operation overflowed or failed"));
         true
     }
 };
@@ -6822,7 +6840,7 @@ self.standing.kind = RecordListCommandEnum::Clear;
 })() {
     Ok(()) => false,
     Err(_) => {
-        engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(RecordListEvent::ErrorExecution, "<assign location='standing.id'>: an integer operation overflowed or failed"));
+        engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(RecordListEvent::ErrorExecution, ::sce_rust_runtime::ErrorReason::ExpressionFailed, "<assign location='standing.id'>: an integer operation overflowed or failed"));
         true
     }
 };
@@ -6837,7 +6855,7 @@ self.standing.kind = RecordListCommandEnum::Clear;
 })() {
     Ok(()) => false,
     Err(_) => {
-        engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(RecordListEvent::ErrorExecution, "<assign location='standing.field'>: an integer operation overflowed or failed"));
+        engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(RecordListEvent::ErrorExecution, ::sce_rust_runtime::ErrorReason::ExpressionFailed, "<assign location='standing.field'>: an integer operation overflowed or failed"));
         true
     }
 };
@@ -6853,7 +6871,7 @@ self.standing.kind = RecordListCommandEnum::Clear;
 })() {
     Ok(sce_value) => sce_value,
     Err(_) => {
-        engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(RecordListEvent::ErrorExecution, "<if cond='taking[0].kind === 0'>: an integer operation overflowed or failed"));
+        engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(RecordListEvent::ErrorExecution, ::sce_rust_runtime::ErrorReason::ExpressionFailed, "<if cond='taking[0].kind === 0'>: an integer operation overflowed or failed"));
         if_cond_failed = true;
         false
     }
@@ -6879,7 +6897,7 @@ self.standing.kind = RecordListCommandEnum::Clear;
                         {
                             false
                         } else {
-                            engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(RecordListEvent::ErrorExecution, "<sce:append target='provisional'>: the list already holds its capacity of 8"));
+                            engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(RecordListEvent::ErrorExecution, ::sce_rust_runtime::ErrorReason::AssignmentFailed, "<sce:append target='provisional'>: the list already holds its capacity of 8"));
                             true
                         };
                         if sce_failed {
@@ -6958,7 +6976,7 @@ self.standing.kind = RecordListCommandEnum::Clear;
 })() {
     Ok(()) => false,
     Err(_) => {
-        engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(RecordListEvent::ErrorExecution, "<assign location='clock'>: an integer operation overflowed or failed"));
+        engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(RecordListEvent::ErrorExecution, ::sce_rust_runtime::ErrorReason::ExpressionFailed, "<assign location='clock'>: an integer operation overflowed or failed"));
         true
     }
 };
@@ -7060,7 +7078,7 @@ self.standing.kind = RecordListCommandEnum::Clear;
 })() {
     Ok(()) => false,
     Err(_) => {
-        engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(RecordListEvent::ErrorExecution, "<assign location='op.kind'>: an integer operation overflowed or failed"));
+        engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(RecordListEvent::ErrorExecution, ::sce_rust_runtime::ErrorReason::ExpressionFailed, "<assign location='op.kind'>: an integer operation overflowed or failed"));
         true
     }
 }) || (match (|| -> Result<(), sce_forge_runtime::algorithm::AlgorithmError> {
@@ -7069,7 +7087,7 @@ self.standing.kind = RecordListCommandEnum::Clear;
 })() {
     Ok(()) => false,
     Err(_) => {
-        engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(RecordListEvent::ErrorExecution, "<assign location='op.id'>: an integer operation overflowed or failed"));
+        engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(RecordListEvent::ErrorExecution, ::sce_rust_runtime::ErrorReason::ExpressionFailed, "<assign location='op.id'>: an integer operation overflowed or failed"));
         true
     }
 }) || (match (|| -> Result<(), sce_forge_runtime::algorithm::AlgorithmError> {
@@ -7078,7 +7096,7 @@ self.standing.kind = RecordListCommandEnum::Clear;
 })() {
     Ok(()) => false,
     Err(_) => {
-        engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(RecordListEvent::ErrorExecution, "<assign location='op.field'>: an integer operation overflowed or failed"));
+        engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(RecordListEvent::ErrorExecution, ::sce_rust_runtime::ErrorReason::ExpressionFailed, "<assign location='op.field'>: an integer operation overflowed or failed"));
         true
     }
 }) || (match (|| -> Result<(), sce_forge_runtime::algorithm::AlgorithmError> {
@@ -7087,7 +7105,7 @@ self.standing.kind = RecordListCommandEnum::Clear;
 })() {
     Ok(()) => false,
     Err(_) => {
-        engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(RecordListEvent::ErrorExecution, "<assign location='op.value'>: an integer operation overflowed or failed"));
+        engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(RecordListEvent::ErrorExecution, ::sce_rust_runtime::ErrorReason::ExpressionFailed, "<assign location='op.value'>: an integer operation overflowed or failed"));
         true
     }
 }) || (match (|| -> Result<(), sce_forge_runtime::algorithm::AlgorithmError> {
@@ -7096,7 +7114,7 @@ self.standing.kind = RecordListCommandEnum::Clear;
 })() {
     Ok(()) => false,
     Err(_) => {
-        engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(RecordListEvent::ErrorExecution, "<assign location='op.text'>: an integer operation overflowed or failed"));
+        engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(RecordListEvent::ErrorExecution, ::sce_rust_runtime::ErrorReason::ExpressionFailed, "<assign location='op.text'>: an integer operation overflowed or failed"));
         true
     }
 }) || (match (|| -> Result<(), sce_forge_runtime::algorithm::AlgorithmError> {
@@ -7105,7 +7123,7 @@ self.standing.kind = RecordListCommandEnum::Clear;
 })() {
     Ok(()) => false,
     Err(_) => {
-        engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(RecordListEvent::ErrorExecution, "<assign location='op.wallTime'>: an integer operation overflowed or failed"));
+        engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(RecordListEvent::ErrorExecution, ::sce_rust_runtime::ErrorReason::ExpressionFailed, "<assign location='op.wallTime'>: an integer operation overflowed or failed"));
         true
     }
 }) || (match (|| -> Result<(), sce_forge_runtime::algorithm::AlgorithmError> {
@@ -7114,7 +7132,7 @@ self.standing.kind = RecordListCommandEnum::Clear;
 })() {
     Ok(()) => false,
     Err(_) => {
-        engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(RecordListEvent::ErrorExecution, "<assign location='op.counter'>: an integer operation overflowed or failed"));
+        engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(RecordListEvent::ErrorExecution, ::sce_rust_runtime::ErrorReason::ExpressionFailed, "<assign location='op.counter'>: an integer operation overflowed or failed"));
         true
     }
 }) || (match (|| -> Result<(), sce_forge_runtime::algorithm::AlgorithmError> {
@@ -7123,7 +7141,7 @@ self.standing.kind = RecordListCommandEnum::Clear;
 })() {
     Ok(()) => false,
     Err(_) => {
-        engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(RecordListEvent::ErrorExecution, "<assign location='op.nodeId'>: an integer operation overflowed or failed"));
+        engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(RecordListEvent::ErrorExecution, ::sce_rust_runtime::ErrorReason::ExpressionFailed, "<assign location='op.nodeId'>: an integer operation overflowed or failed"));
         true
     }
 });
@@ -7139,7 +7157,7 @@ self.standing.kind = RecordListCommandEnum::Clear;
                         })() {
                             Ok(()) => false,
                             Err(_) => {
-                                engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(RecordListEvent::ErrorExecution, "<assign location='took'>: an integer operation overflowed or failed"));
+                                engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(RecordListEvent::ErrorExecution, ::sce_rust_runtime::ErrorReason::ExpressionFailed, "<assign location='took'>: an integer operation overflowed or failed"));
                                 true
                             }
                         };
@@ -7164,7 +7182,7 @@ self.standing.kind = RecordListCommandEnum::Clear;
                         })() {
                             Ok(()) => false,
                             Err(_) => {
-                                engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(RecordListEvent::ErrorExecution, "<assign location='entry.element'>: an integer operation overflowed or failed"));
+                                engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(RecordListEvent::ErrorExecution, ::sce_rust_runtime::ErrorReason::ExpressionFailed, "<assign location='entry.element'>: an integer operation overflowed or failed"));
                                 true
                             }
                         };
@@ -7181,7 +7199,7 @@ self.standing.kind = RecordListCommandEnum::Clear;
 })() {
     Ok(()) => false,
     Err(_) => {
-        engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(RecordListEvent::ErrorExecution, "<assign location='held.text'>: an integer operation overflowed or failed"));
+        engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(RecordListEvent::ErrorExecution, ::sce_rust_runtime::ErrorReason::ExpressionFailed, "<assign location='held.text'>: an integer operation overflowed or failed"));
         true
     }
 };
@@ -7241,7 +7259,7 @@ self.standing.kind = RecordListCommandEnum::Clear;
                             {
                                 false
                             } else {
-                                engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(RecordListEvent::ErrorExecution, "<sce:append target='one'>: the list already holds its capacity of 1024"));
+                                engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(RecordListEvent::ErrorExecution, ::sce_rust_runtime::ErrorReason::AssignmentFailed, "<sce:append target='one'>: the list already holds its capacity of 1024"));
                                 true
                             };
                             if sce_failed {
@@ -7255,7 +7273,7 @@ self.standing.kind = RecordListCommandEnum::Clear;
 })() {
     Ok(()) => false,
     Err(_) => {
-        engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(RecordListEvent::ErrorExecution, "<assign location='adds'>: an integer operation overflowed or failed"));
+        engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(RecordListEvent::ErrorExecution, ::sce_rust_runtime::ErrorReason::ExpressionFailed, "<assign location='adds'>: an integer operation overflowed or failed"));
         true
     }
 };
@@ -7270,7 +7288,7 @@ self.standing.kind = RecordListCommandEnum::Clear;
 })() {
     Ok(()) => false,
     Err(_) => {
-        engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(RecordListEvent::ErrorExecution, "<assign location='values'>: an integer operation overflowed or failed"));
+        engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(RecordListEvent::ErrorExecution, ::sce_rust_runtime::ErrorReason::ExpressionFailed, "<assign location='values'>: an integer operation overflowed or failed"));
         true
     }
 };
@@ -7387,7 +7405,7 @@ self.standing.kind = RecordListCommandEnum::Clear;
 })() {
     Ok(()) => false,
     Err(_) => {
-        engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(RecordListEvent::ErrorExecution, "<assign location='undoing.text'>: an integer operation overflowed or failed"));
+        engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(RecordListEvent::ErrorExecution, ::sce_rust_runtime::ErrorReason::ExpressionFailed, "<assign location='undoing.text'>: an integer operation overflowed or failed"));
         true
     }
 };
@@ -7418,7 +7436,7 @@ self.standing.kind = RecordListCommandEnum::Clear;
                             {
                                 false
                             } else {
-                                engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(RecordListEvent::ErrorExecution, "<sce:append target='undo'>: the list already holds its capacity of 512"));
+                                engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(RecordListEvent::ErrorExecution, ::sce_rust_runtime::ErrorReason::AssignmentFailed, "<sce:append target='undo'>: the list already holds its capacity of 512"));
                                 true
                             };
                             if sce_failed {
@@ -7446,7 +7464,7 @@ self.standing.kind = RecordListCommandEnum::Clear;
                                     {
                                         false
                                     } else {
-                                        engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(RecordListEvent::ErrorExecution, "<sce:append target='undoKept'>: the list already holds its capacity of 512"));
+                                        engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(RecordListEvent::ErrorExecution, ::sce_rust_runtime::ErrorReason::AssignmentFailed, "<sce:append target='undoKept'>: the list already holds its capacity of 512"));
                                         true
                                     };
                                     if sce_failed {
@@ -7466,7 +7484,7 @@ self.standing.kind = RecordListCommandEnum::Clear;
                                 {
                                     false
                                 } else {
-                                    engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(RecordListEvent::ErrorExecution, "<sce:append target='undo'>: the list already holds its capacity of 512"));
+                                    engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(RecordListEvent::ErrorExecution, ::sce_rust_runtime::ErrorReason::AssignmentFailed, "<sce:append target='undo'>: the list already holds its capacity of 512"));
                                     true
                                 };
                                 if sce_failed {
@@ -7483,7 +7501,7 @@ self.standing.kind = RecordListCommandEnum::Clear;
                         {
                             false
                         } else {
-                            engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(RecordListEvent::ErrorExecution, "<sce:append target='one'>: the list already holds its capacity of 1024"));
+                            engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(RecordListEvent::ErrorExecution, ::sce_rust_runtime::ErrorReason::AssignmentFailed, "<sce:append target='one'>: the list already holds its capacity of 1024"));
                             true
                         };
                         if sce_failed {
@@ -7497,7 +7515,7 @@ self.standing.kind = RecordListCommandEnum::Clear;
 })() {
     Ok(()) => false,
     Err(_) => {
-        engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(RecordListEvent::ErrorExecution, "<assign location='adds'>: an integer operation overflowed or failed"));
+        engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(RecordListEvent::ErrorExecution, ::sce_rust_runtime::ErrorReason::ExpressionFailed, "<assign location='adds'>: an integer operation overflowed or failed"));
         true
     }
 };
@@ -7512,7 +7530,7 @@ self.standing.kind = RecordListCommandEnum::Clear;
 })() {
     Ok(()) => false,
     Err(_) => {
-        engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(RecordListEvent::ErrorExecution, "<assign location='values'>: an integer operation overflowed or failed"));
+        engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(RecordListEvent::ErrorExecution, ::sce_rust_runtime::ErrorReason::ExpressionFailed, "<assign location='values'>: an integer operation overflowed or failed"));
         true
     }
 };
@@ -7626,7 +7644,7 @@ self.standing.kind = RecordListCommandEnum::Clear;
                 // docs/adr/0086, section 15.6: the list is short of its field's
                 // lower count, so the event is refused whole: one error, nothing
                 // delivered, and the error ends the block (W3C SCXML 6.2.3, 4.9).
-                let mut err_meta = sce_rust_runtime::EventWithMetadata::platform_error(RecordListEvent::ErrorExecution, "<send> <param name='ops'> holds fewer elements than the 1 its field's type declares, so the event is not sent");
+                let mut err_meta = sce_rust_runtime::EventWithMetadata::platform_error(RecordListEvent::ErrorExecution, ::sce_rust_runtime::ErrorReason::ParamUnfit, "<send> <param name='ops'> holds fewer elements than the 1 its field's type declares, so the event is not sent");
                 err_meta.metadata.send_id = ::sce_rust_runtime::sce_string_from_str(send_id);
                 engine.raise(err_meta);
                 break 'action_block;
@@ -7666,7 +7684,7 @@ self.standing.kind = RecordListCommandEnum::Clear;
                             // support — the act it asked for was performed by nobody. Same
                             // event, so a wiring mistake cannot read as success.
                             if __sce_served.is_none() && !engine.has_event_processor("sce:mesh") {
-                                let mut err_meta = sce_rust_runtime::EventWithMetadata::platform_error(RecordListEvent::ErrorExecution, "<send type='sce:mesh'> names a processor the host declared but never registered");
+                                let mut err_meta = sce_rust_runtime::EventWithMetadata::platform_error(RecordListEvent::ErrorExecution, ::sce_rust_runtime::ErrorReason::ProcessorUnregistered, "<send type='sce:mesh'> names a processor the host declared but never registered");
                                 engine.raise(err_meta);
                             }
                         }
@@ -7711,7 +7729,7 @@ self.standing.kind = RecordListCommandEnum::Clear;
 })() {
     Ok(()) => false,
     Err(_) => {
-        engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(RecordListEvent::ErrorExecution, "<assign location='refusals'>: an integer operation overflowed or failed"));
+        engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(RecordListEvent::ErrorExecution, ::sce_rust_runtime::ErrorReason::ExpressionFailed, "<assign location='refusals'>: an integer operation overflowed or failed"));
         true
     }
 };
@@ -7737,7 +7755,7 @@ self.standing.kind = RecordListCommandEnum::Clear;
                                 {
                                     false
                                 } else {
-                                    engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(RecordListEvent::ErrorExecution, "<sce:append target='provisionalKept'>: the list already holds its capacity of 8"));
+                                    engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(RecordListEvent::ErrorExecution, ::sce_rust_runtime::ErrorReason::AssignmentFailed, "<sce:append target='provisionalKept'>: the list already holds its capacity of 8"));
                                     true
                                 };
                                 if sce_failed {
@@ -7757,7 +7775,7 @@ self.standing.kind = RecordListCommandEnum::Clear;
                             {
                                 false
                             } else {
-                                engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(RecordListEvent::ErrorExecution, "<sce:append target='provisional'>: the list already holds its capacity of 8"));
+                                engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(RecordListEvent::ErrorExecution, ::sce_rust_runtime::ErrorReason::AssignmentFailed, "<sce:append target='provisional'>: the list already holds its capacity of 8"));
                                 true
                             };
                             if sce_failed {
@@ -7780,7 +7798,7 @@ self.standing.kind = RecordListCommandEnum::Clear;
                                 {
                                     false
                                 } else {
-                                    engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(RecordListEvent::ErrorExecution, "<sce:append target='undoKept'>: the list already holds its capacity of 512"));
+                                    engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(RecordListEvent::ErrorExecution, ::sce_rust_runtime::ErrorReason::AssignmentFailed, "<sce:append target='undoKept'>: the list already holds its capacity of 512"));
                                     true
                                 };
                                 if sce_failed {
@@ -7800,7 +7818,7 @@ self.standing.kind = RecordListCommandEnum::Clear;
                             {
                                 false
                             } else {
-                                engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(RecordListEvent::ErrorExecution, "<sce:append target='undo'>: the list already holds its capacity of 512"));
+                                engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(RecordListEvent::ErrorExecution, ::sce_rust_runtime::ErrorReason::AssignmentFailed, "<sce:append target='undo'>: the list already holds its capacity of 512"));
                                 true
                             };
                             if sce_failed {
@@ -7813,7 +7831,12 @@ self.standing.kind = RecordListCommandEnum::Clear;
                             {
                                 let send_id: &str = "__send_23";
 
-                                let mut _send_arg_error: Option<&'static str> = None;
+                                // The code and the sentence of the first argument that failed
+                                // (docs/adr/0106 #111).
+                                let mut _send_arg_error: Option<(
+                                    ::sce_rust_runtime::ErrorReason,
+                                    &'static str,
+                                )> = None;
                                 // docs/adr/0005, decision 3: the target is a string computed from the machine's
                                 // fields now, and the send goes only by a route the document declared as
                                 // `sce:targets`. A value in none of them names no route this send may take —
@@ -7827,11 +7850,12 @@ self.standing.kind = RecordListCommandEnum::Clear;
                                         None
                                     }
                                     .filter(|route| matches!(route.as_str(), "#_parent"));
-                                if let Some(__sce_why) = _send_arg_error {
+                                if let Some((__sce_reason, __sce_why)) = _send_arg_error {
                                     ::sce_rust_runtime::sce_log_error!("{}", __sce_why);
                                     let mut err_meta =
                                         sce_rust_runtime::EventWithMetadata::platform_error(
                                             RecordListEvent::ErrorExecution,
+                                            __sce_reason,
                                             __sce_why,
                                         );
                                     err_meta.metadata.send_id =
@@ -7847,7 +7871,7 @@ self.standing.kind = RecordListCommandEnum::Clear;
                                     if _resolved_target.is_none() {
                                         // W3C SCXML C.1 (test 496, 521): a target that names nothing raises
                                         // error.communication.
-                                        let mut err_meta = sce_rust_runtime::EventWithMetadata::platform_error(RecordListEvent::ErrorCommunication, "<send> targetexpr evaluated to nothing, or to a route the send does not declare, so there is no target to reach");
+                                        let mut err_meta = sce_rust_runtime::EventWithMetadata::platform_error(RecordListEvent::ErrorCommunication, ::sce_rust_runtime::ErrorReason::TargetUnreachable, "<send> targetexpr evaluated to nothing, or to a route the send does not declare, so there is no target to reach");
                                         err_meta.metadata.send_id =
                                             ::sce_rust_runtime::sce_string_from_str(send_id);
                                         engine.raise(err_meta);
@@ -7920,7 +7944,7 @@ self.standing.kind = RecordListCommandEnum::Clear;
                                             if __sce_routed
                                                 == sce_rust_runtime::TargetSendOutcome::Unsupported
                                             {
-                                                let mut err_meta = sce_rust_runtime::EventWithMetadata::platform_error(RecordListEvent::ErrorExecution, "<send> targetexpr produced a value that is not a target");
+                                                let mut err_meta = sce_rust_runtime::EventWithMetadata::platform_error(RecordListEvent::ErrorExecution, ::sce_rust_runtime::ErrorReason::SendTargetInvalid, "<send> targetexpr produced a value that is not a target");
                                                 err_meta.metadata.send_id =
                                                     ::sce_rust_runtime::sce_string_from_str(
                                                         send_id,
@@ -7931,7 +7955,7 @@ self.standing.kind = RecordListCommandEnum::Clear;
                                             if __sce_routed
                                                 == sce_rust_runtime::TargetSendOutcome::Unreachable
                                             {
-                                                let mut err_meta = sce_rust_runtime::EventWithMetadata::platform_error(RecordListEvent::ErrorCommunication, "<send> targetexpr names a session this processor cannot reach");
+                                                let mut err_meta = sce_rust_runtime::EventWithMetadata::platform_error(RecordListEvent::ErrorCommunication, ::sce_rust_runtime::ErrorReason::TargetUnreachable, "<send> targetexpr names a session this processor cannot reach");
                                                 err_meta.metadata.send_id =
                                                     ::sce_rust_runtime::sce_string_from_str(
                                                         send_id,
@@ -7990,7 +8014,7 @@ self.standing.kind = RecordListCommandEnum::Clear;
 })() {
     Ok(()) => false,
     Err(_) => {
-        engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(RecordListEvent::ErrorExecution, "<assign location='refusals'>: an integer operation overflowed or failed"));
+        engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(RecordListEvent::ErrorExecution, ::sce_rust_runtime::ErrorReason::ExpressionFailed, "<assign location='refusals'>: an integer operation overflowed or failed"));
         true
     }
 };
@@ -8045,7 +8069,7 @@ self.standing.kind = RecordListCommandEnum::Clear;
 })() {
     Ok(()) => false,
     Err(_) => {
-        engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(RecordListEvent::ErrorExecution, "<assign location='standing.wallTime'>: an integer operation overflowed or failed"));
+        engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(RecordListEvent::ErrorExecution, ::sce_rust_runtime::ErrorReason::ExpressionFailed, "<assign location='standing.wallTime'>: an integer operation overflowed or failed"));
         true
     }
 }) || (match (|| -> Result<(), sce_forge_runtime::algorithm::AlgorithmError> {
@@ -8054,7 +8078,7 @@ self.standing.kind = RecordListCommandEnum::Clear;
 })() {
     Ok(()) => false,
     Err(_) => {
-        engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(RecordListEvent::ErrorExecution, "<assign location='standing.counter'>: an integer operation overflowed or failed"));
+        engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(RecordListEvent::ErrorExecution, ::sce_rust_runtime::ErrorReason::ExpressionFailed, "<assign location='standing.counter'>: an integer operation overflowed or failed"));
         true
     }
 }) || (match (|| -> Result<(), sce_forge_runtime::algorithm::AlgorithmError> {
@@ -8063,7 +8087,7 @@ self.standing.kind = RecordListCommandEnum::Clear;
 })() {
     Ok(()) => false,
     Err(_) => {
-        engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(RecordListEvent::ErrorExecution, "<assign location='standing.command'>: an integer operation overflowed or failed"));
+        engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(RecordListEvent::ErrorExecution, ::sce_rust_runtime::ErrorReason::ExpressionFailed, "<assign location='standing.command'>: an integer operation overflowed or failed"));
         true
     }
 }) || (match (|| -> Result<(), sce_forge_runtime::algorithm::AlgorithmError> {
@@ -8072,7 +8096,7 @@ self.standing.kind = RecordListCommandEnum::Clear;
 })() {
     Ok(()) => false,
     Err(_) => {
-        engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(RecordListEvent::ErrorExecution, "<assign location='standing.id'>: an integer operation overflowed or failed"));
+        engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(RecordListEvent::ErrorExecution, ::sce_rust_runtime::ErrorReason::ExpressionFailed, "<assign location='standing.id'>: an integer operation overflowed or failed"));
         true
     }
 }) || (match (|| -> Result<(), sce_forge_runtime::algorithm::AlgorithmError> {
@@ -8081,7 +8105,7 @@ self.standing.kind = RecordListCommandEnum::Clear;
 })() {
     Ok(()) => false,
     Err(_) => {
-        engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(RecordListEvent::ErrorExecution, "<assign location='standing.field'>: an integer operation overflowed or failed"));
+        engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(RecordListEvent::ErrorExecution, ::sce_rust_runtime::ErrorReason::ExpressionFailed, "<assign location='standing.field'>: an integer operation overflowed or failed"));
         true
     }
 }) || (match (|| -> Result<(), sce_forge_runtime::algorithm::AlgorithmError> {
@@ -8090,7 +8114,7 @@ self.standing.kind = RecordListCommandEnum::Clear;
 })() {
     Ok(()) => false,
     Err(_) => {
-        engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(RecordListEvent::ErrorExecution, "<assign location='standing.kind'>: an integer operation overflowed or failed"));
+        engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(RecordListEvent::ErrorExecution, ::sce_rust_runtime::ErrorReason::ExpressionFailed, "<assign location='standing.kind'>: an integer operation overflowed or failed"));
         true
     }
 });
@@ -8113,7 +8137,7 @@ self.standing.kind = RecordListCommandEnum::Clear;
                             let sce_failed = if self.one.len() < 1024 && self.one.push(a).is_ok() {
                                 false
                             } else {
-                                engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(RecordListEvent::ErrorExecution, "<sce:append target='one'>: the list already holds its capacity of 1024"));
+                                engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(RecordListEvent::ErrorExecution, ::sce_rust_runtime::ErrorReason::AssignmentFailed, "<sce:append target='one'>: the list already holds its capacity of 1024"));
                                 true
                             };
                             if sce_failed {
@@ -8132,7 +8156,7 @@ self.standing.kind = RecordListCommandEnum::Clear;
                         })() {
                             Ok(()) => false,
                             Err(_) => {
-                                engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(RecordListEvent::ErrorExecution, "<assign location='adds'>: an integer operation overflowed or failed"));
+                                engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(RecordListEvent::ErrorExecution, ::sce_rust_runtime::ErrorReason::ExpressionFailed, "<assign location='adds'>: an integer operation overflowed or failed"));
                                 true
                             }
                         };
@@ -8150,7 +8174,7 @@ self.standing.kind = RecordListCommandEnum::Clear;
 })() {
     Ok(()) => false,
     Err(_) => {
-        engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(RecordListEvent::ErrorExecution, "<assign location='held.id'>: an integer operation overflowed or failed"));
+        engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(RecordListEvent::ErrorExecution, ::sce_rust_runtime::ErrorReason::ExpressionFailed, "<assign location='held.id'>: an integer operation overflowed or failed"));
         true
     }
 };
@@ -8165,7 +8189,7 @@ self.standing.kind = RecordListCommandEnum::Clear;
 })() {
     Ok(()) => false,
     Err(_) => {
-        engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(RecordListEvent::ErrorExecution, "<assign location='held.field'>: an integer operation overflowed or failed"));
+        engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(RecordListEvent::ErrorExecution, ::sce_rust_runtime::ErrorReason::ExpressionFailed, "<assign location='held.field'>: an integer operation overflowed or failed"));
         true
     }
 };
@@ -8189,7 +8213,7 @@ self.standing.kind = RecordListCommandEnum::Clear;
 })() {
     Ok(()) => false,
     Err(_) => {
-        engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(RecordListEvent::ErrorExecution, "<assign location='values'>: an integer operation overflowed or failed"));
+        engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(RecordListEvent::ErrorExecution, ::sce_rust_runtime::ErrorReason::ExpressionFailed, "<assign location='values'>: an integer operation overflowed or failed"));
         true
     }
 };
@@ -8206,7 +8230,7 @@ self.standing.kind = RecordListCommandEnum::Clear;
 })() {
     Ok(()) => false,
     Err(_) => {
-        engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(RecordListEvent::ErrorExecution, "<assign location='shareId'>: an integer operation overflowed or failed"));
+        engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(RecordListEvent::ErrorExecution, ::sce_rust_runtime::ErrorReason::ExpressionFailed, "<assign location='shareId'>: an integer operation overflowed or failed"));
         true
     }
 };
@@ -8221,7 +8245,7 @@ self.standing.kind = RecordListCommandEnum::Clear;
 })() {
     Ok(()) => false,
     Err(_) => {
-        engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(RecordListEvent::ErrorExecution, "<assign location='shareField'>: an integer operation overflowed or failed"));
+        engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(RecordListEvent::ErrorExecution, ::sce_rust_runtime::ErrorReason::ExpressionFailed, "<assign location='shareField'>: an integer operation overflowed or failed"));
         true
     }
 };
@@ -8297,7 +8321,7 @@ self.standing.kind = RecordListCommandEnum::Clear;
 })() {
     Ok(()) => false,
     Err(_) => {
-        engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(RecordListEvent::ErrorExecution, "<assign location='entry.element'>: an integer operation overflowed or failed"));
+        engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(RecordListEvent::ErrorExecution, ::sce_rust_runtime::ErrorReason::ExpressionFailed, "<assign location='entry.element'>: an integer operation overflowed or failed"));
         true
     }
 };
@@ -8322,7 +8346,7 @@ self.standing.kind = RecordListCommandEnum::Clear;
                             {
                                 false
                             } else {
-                                engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(RecordListEvent::ErrorExecution, "<sce:append target='one'>: the list already holds its capacity of 1024"));
+                                engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(RecordListEvent::ErrorExecution, ::sce_rust_runtime::ErrorReason::AssignmentFailed, "<sce:append target='one'>: the list already holds its capacity of 1024"));
                                 true
                             };
                             if sce_failed {
@@ -8336,7 +8360,7 @@ self.standing.kind = RecordListCommandEnum::Clear;
 })() {
     Ok(()) => false,
     Err(_) => {
-        engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(RecordListEvent::ErrorExecution, "<assign location='adds'>: an integer operation overflowed or failed"));
+        engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(RecordListEvent::ErrorExecution, ::sce_rust_runtime::ErrorReason::ExpressionFailed, "<assign location='adds'>: an integer operation overflowed or failed"));
         true
     }
 };
@@ -8360,7 +8384,7 @@ self.standing.kind = RecordListCommandEnum::Clear;
 })() {
     Ok(()) => false,
     Err(_) => {
-        engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(RecordListEvent::ErrorExecution, "<assign location='held.text'>: an integer operation overflowed or failed"));
+        engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(RecordListEvent::ErrorExecution, ::sce_rust_runtime::ErrorReason::ExpressionFailed, "<assign location='held.text'>: an integer operation overflowed or failed"));
         true
     }
 };
@@ -8384,7 +8408,7 @@ self.standing.kind = RecordListCommandEnum::Clear;
 })() {
     Ok(()) => false,
     Err(_) => {
-        engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(RecordListEvent::ErrorExecution, "<assign location='values'>: an integer operation overflowed or failed"));
+        engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(RecordListEvent::ErrorExecution, ::sce_rust_runtime::ErrorReason::ExpressionFailed, "<assign location='values'>: an integer operation overflowed or failed"));
         true
     }
 };
@@ -8401,7 +8425,7 @@ self.standing.kind = RecordListCommandEnum::Clear;
 })() {
     Ok(()) => false,
     Err(_) => {
-        engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(RecordListEvent::ErrorExecution, "<assign location='shareId'>: an integer operation overflowed or failed"));
+        engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(RecordListEvent::ErrorExecution, ::sce_rust_runtime::ErrorReason::ExpressionFailed, "<assign location='shareId'>: an integer operation overflowed or failed"));
         true
     }
 };
@@ -8416,7 +8440,7 @@ self.standing.kind = RecordListCommandEnum::Clear;
 })() {
     Ok(()) => false,
     Err(_) => {
-        engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(RecordListEvent::ErrorExecution, "<assign location='shareField'>: an integer operation overflowed or failed"));
+        engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(RecordListEvent::ErrorExecution, ::sce_rust_runtime::ErrorReason::ExpressionFailed, "<assign location='shareField'>: an integer operation overflowed or failed"));
         true
     }
 };
@@ -8492,7 +8516,7 @@ self.standing.kind = RecordListCommandEnum::Clear;
                             {
                                 false
                             } else {
-                                engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(RecordListEvent::ErrorExecution, "<sce:append target='undoKept'>: the list already holds its capacity of 512"));
+                                engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(RecordListEvent::ErrorExecution, ::sce_rust_runtime::ErrorReason::AssignmentFailed, "<sce:append target='undoKept'>: the list already holds its capacity of 512"));
                                 true
                             };
                             if sce_failed {
@@ -8513,7 +8537,7 @@ self.standing.kind = RecordListCommandEnum::Clear;
                         {
                             false
                         } else {
-                            engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(RecordListEvent::ErrorExecution, "<sce:append target='undo'>: the list already holds its capacity of 512"));
+                            engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(RecordListEvent::ErrorExecution, ::sce_rust_runtime::ErrorReason::AssignmentFailed, "<sce:append target='undo'>: the list already holds its capacity of 512"));
                             true
                         };
                         if sce_failed {
@@ -8537,7 +8561,7 @@ self.standing.kind = RecordListCommandEnum::Clear;
 })() {
     Ok(sce_value) => sce_value,
     Err(_) => {
-        engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(RecordListEvent::ErrorExecution, "<if cond='at + 1 < len(provisional)'>: an integer operation overflowed or failed"));
+        engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(RecordListEvent::ErrorExecution, ::sce_rust_runtime::ErrorReason::ExpressionFailed, "<if cond='at + 1 < len(provisional)'>: an integer operation overflowed or failed"));
         if_cond_failed = true;
         false
     }
@@ -8547,7 +8571,7 @@ self.standing.kind = RecordListCommandEnum::Clear;
 let sce_failed = if self.provisional_kept.len() < 8 && self.provisional_kept.push(p).is_ok() {
     false
 } else {
-    engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(RecordListEvent::ErrorExecution, "<sce:append target='provisionalKept'>: the list already holds its capacity of 8"));
+    engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(RecordListEvent::ErrorExecution, ::sce_rust_runtime::ErrorReason::AssignmentFailed, "<sce:append target='provisionalKept'>: the list already holds its capacity of 8"));
     true
 };
 if sce_failed {
@@ -8572,7 +8596,7 @@ if sce_failed {
                         {
                             false
                         } else {
-                            engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(RecordListEvent::ErrorExecution, "<sce:append target='provisional'>: the list already holds its capacity of 8"));
+                            engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(RecordListEvent::ErrorExecution, ::sce_rust_runtime::ErrorReason::AssignmentFailed, "<sce:append target='provisional'>: the list already holds its capacity of 8"));
                             true
                         };
                         if sce_failed {
@@ -8585,7 +8609,12 @@ if sce_failed {
                         {
                             let send_id: &str = "__send_27";
 
-                            let mut _send_arg_error: Option<&'static str> = None;
+                            // The code and the sentence of the first argument that failed
+                            // (docs/adr/0106 #111).
+                            let mut _send_arg_error: Option<(
+                                ::sce_rust_runtime::ErrorReason,
+                                &'static str,
+                            )> = None;
                             // docs/adr/0005, decision 3: the target is a string computed from the machine's
                             // fields now, and the send goes only by a route the document declared as
                             // `sce:targets`. A value in none of them names no route this send may take —
@@ -8598,11 +8627,12 @@ if sce_failed {
                                 None
                             }
                             .filter(|route| matches!(route.as_str(), "#_parent"));
-                            if let Some(__sce_why) = _send_arg_error {
+                            if let Some((__sce_reason, __sce_why)) = _send_arg_error {
                                 ::sce_rust_runtime::sce_log_error!("{}", __sce_why);
                                 let mut err_meta =
                                     sce_rust_runtime::EventWithMetadata::platform_error(
                                         RecordListEvent::ErrorExecution,
+                                        __sce_reason,
                                         __sce_why,
                                     );
                                 err_meta.metadata.send_id =
@@ -8620,7 +8650,7 @@ if sce_failed {
                                 if _resolved_target.is_none() {
                                     // W3C SCXML C.1 (test 496, 521): a target that names nothing raises
                                     // error.communication.
-                                    let mut err_meta = sce_rust_runtime::EventWithMetadata::platform_error(RecordListEvent::ErrorCommunication, "<send> targetexpr evaluated to nothing, or to a route the send does not declare, so there is no target to reach");
+                                    let mut err_meta = sce_rust_runtime::EventWithMetadata::platform_error(RecordListEvent::ErrorCommunication, ::sce_rust_runtime::ErrorReason::TargetUnreachable, "<send> targetexpr evaluated to nothing, or to a route the send does not declare, so there is no target to reach");
                                     err_meta.metadata.send_id =
                                         ::sce_rust_runtime::sce_string_from_str(send_id);
                                     engine.raise(err_meta);
@@ -8708,7 +8738,7 @@ if sce_failed {
                                         if __sce_routed
                                             == sce_rust_runtime::TargetSendOutcome::Unsupported
                                         {
-                                            let mut err_meta = sce_rust_runtime::EventWithMetadata::platform_error(RecordListEvent::ErrorExecution, "<send> targetexpr produced a value that is not a target");
+                                            let mut err_meta = sce_rust_runtime::EventWithMetadata::platform_error(RecordListEvent::ErrorExecution, ::sce_rust_runtime::ErrorReason::SendTargetInvalid, "<send> targetexpr produced a value that is not a target");
                                             err_meta.metadata.send_id =
                                                 ::sce_rust_runtime::sce_string_from_str(send_id);
                                             engine.raise(err_meta);
@@ -8717,7 +8747,7 @@ if sce_failed {
                                         if __sce_routed
                                             == sce_rust_runtime::TargetSendOutcome::Unreachable
                                         {
-                                            let mut err_meta = sce_rust_runtime::EventWithMetadata::platform_error(RecordListEvent::ErrorCommunication, "<send> targetexpr names a session this processor cannot reach");
+                                            let mut err_meta = sce_rust_runtime::EventWithMetadata::platform_error(RecordListEvent::ErrorCommunication, ::sce_rust_runtime::ErrorReason::TargetUnreachable, "<send> targetexpr names a session this processor cannot reach");
                                             err_meta.metadata.send_id =
                                                 ::sce_rust_runtime::sce_string_from_str(send_id);
                                             engine.raise(err_meta);
@@ -8760,7 +8790,7 @@ if sce_failed {
                         })() {
                             Ok(()) => false,
                             Err(_) => {
-                                engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(RecordListEvent::ErrorExecution, "<assign location='entry.element'>: an integer operation overflowed or failed"));
+                                engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(RecordListEvent::ErrorExecution, ::sce_rust_runtime::ErrorReason::ExpressionFailed, "<assign location='entry.element'>: an integer operation overflowed or failed"));
                                 true
                             }
                         };
@@ -8811,7 +8841,7 @@ if sce_failed {
                         {
                             false
                         } else {
-                            engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(RecordListEvent::ErrorExecution, "<sce:append target='moved'>: the list already holds its capacity of 64"));
+                            engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(RecordListEvent::ErrorExecution, ::sce_rust_runtime::ErrorReason::AssignmentFailed, "<sce:append target='moved'>: the list already holds its capacity of 64"));
                             true
                         };
                         if sce_failed {
@@ -8836,7 +8866,7 @@ if sce_failed {
 })() {
     Ok(()) => false,
     Err(_) => {
-        engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(RecordListEvent::ErrorExecution, "<assign location='shareId'>: an integer operation overflowed or failed"));
+        engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(RecordListEvent::ErrorExecution, ::sce_rust_runtime::ErrorReason::ExpressionFailed, "<assign location='shareId'>: an integer operation overflowed or failed"));
         true
     }
 };
@@ -8851,7 +8881,7 @@ if sce_failed {
 })() {
     Ok(()) => false,
     Err(_) => {
-        engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(RecordListEvent::ErrorExecution, "<assign location='shareField'>: an integer operation overflowed or failed"));
+        engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(RecordListEvent::ErrorExecution, ::sce_rust_runtime::ErrorReason::ExpressionFailed, "<assign location='shareField'>: an integer operation overflowed or failed"));
         true
     }
 };
@@ -8866,7 +8896,7 @@ if sce_failed {
 })() {
     Ok(()) => false,
     Err(_) => {
-        engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(RecordListEvent::ErrorExecution, "<assign location='live'>: an integer operation overflowed or failed"));
+        engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(RecordListEvent::ErrorExecution, ::sce_rust_runtime::ErrorReason::ExpressionFailed, "<assign location='live'>: an integer operation overflowed or failed"));
         true
     }
 };
@@ -8879,7 +8909,12 @@ if sce_failed {
                             {
                                 let send_id: &str = "__send_29";
 
-                                let mut _send_arg_error: Option<&'static str> = None;
+                                // The code and the sentence of the first argument that failed
+                                // (docs/adr/0106 #111).
+                                let mut _send_arg_error: Option<(
+                                    ::sce_rust_runtime::ErrorReason,
+                                    &'static str,
+                                )> = None;
                                 // docs/adr/0005, decision 3: the target is a string computed from the machine's
                                 // fields now, and the send goes only by a route the document declared as
                                 // `sce:targets`. A value in none of them names no route this send may take —
@@ -8893,11 +8928,12 @@ if sce_failed {
                                         None
                                     }
                                     .filter(|route| matches!(route.as_str(), "#_parent"));
-                                if let Some(__sce_why) = _send_arg_error {
+                                if let Some((__sce_reason, __sce_why)) = _send_arg_error {
                                     ::sce_rust_runtime::sce_log_error!("{}", __sce_why);
                                     let mut err_meta =
                                         sce_rust_runtime::EventWithMetadata::platform_error(
                                             RecordListEvent::ErrorExecution,
+                                            __sce_reason,
                                             __sce_why,
                                         );
                                     err_meta.metadata.send_id =
@@ -8913,7 +8949,7 @@ if sce_failed {
                                     if _resolved_target.is_none() {
                                         // W3C SCXML C.1 (test 496, 521): a target that names nothing raises
                                         // error.communication.
-                                        let mut err_meta = sce_rust_runtime::EventWithMetadata::platform_error(RecordListEvent::ErrorCommunication, "<send> targetexpr evaluated to nothing, or to a route the send does not declare, so there is no target to reach");
+                                        let mut err_meta = sce_rust_runtime::EventWithMetadata::platform_error(RecordListEvent::ErrorCommunication, ::sce_rust_runtime::ErrorReason::TargetUnreachable, "<send> targetexpr evaluated to nothing, or to a route the send does not declare, so there is no target to reach");
                                         err_meta.metadata.send_id =
                                             ::sce_rust_runtime::sce_string_from_str(send_id);
                                         engine.raise(err_meta);
@@ -9020,7 +9056,7 @@ if sce_failed {
                                             if __sce_routed
                                                 == sce_rust_runtime::TargetSendOutcome::Unsupported
                                             {
-                                                let mut err_meta = sce_rust_runtime::EventWithMetadata::platform_error(RecordListEvent::ErrorExecution, "<send> targetexpr produced a value that is not a target");
+                                                let mut err_meta = sce_rust_runtime::EventWithMetadata::platform_error(RecordListEvent::ErrorExecution, ::sce_rust_runtime::ErrorReason::SendTargetInvalid, "<send> targetexpr produced a value that is not a target");
                                                 err_meta.metadata.send_id =
                                                     ::sce_rust_runtime::sce_string_from_str(
                                                         send_id,
@@ -9031,7 +9067,7 @@ if sce_failed {
                                             if __sce_routed
                                                 == sce_rust_runtime::TargetSendOutcome::Unreachable
                                             {
-                                                let mut err_meta = sce_rust_runtime::EventWithMetadata::platform_error(RecordListEvent::ErrorCommunication, "<send> targetexpr names a session this processor cannot reach");
+                                                let mut err_meta = sce_rust_runtime::EventWithMetadata::platform_error(RecordListEvent::ErrorCommunication, ::sce_rust_runtime::ErrorReason::TargetUnreachable, "<send> targetexpr names a session this processor cannot reach");
                                                 err_meta.metadata.send_id =
                                                     ::sce_rust_runtime::sce_string_from_str(
                                                         send_id,
@@ -9053,7 +9089,7 @@ if sce_failed {
 })() {
     Ok(()) => false,
     Err(_) => {
-        engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(RecordListEvent::ErrorExecution, "<assign location='announced'>: an integer operation overflowed or failed"));
+        engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(RecordListEvent::ErrorExecution, ::sce_rust_runtime::ErrorReason::ExpressionFailed, "<assign location='announced'>: an integer operation overflowed or failed"));
         true
     }
 };
@@ -9073,7 +9109,12 @@ if sce_failed {
                                 {
                                     let send_id: &str = "__send_30";
 
-                                    let mut _send_arg_error: Option<&'static str> = None;
+                                    // The code and the sentence of the first argument that failed
+                                    // (docs/adr/0106 #111).
+                                    let mut _send_arg_error: Option<(
+                                        ::sce_rust_runtime::ErrorReason,
+                                        &'static str,
+                                    )> = None;
                                     // docs/adr/0005, decision 3: the target is a string computed from the machine's
                                     // fields now, and the send goes only by a route the document declared as
                                     // `sce:targets`. A value in none of them names no route this send may take —
@@ -9087,11 +9128,12 @@ if sce_failed {
                                             None
                                         }
                                         .filter(|route| matches!(route.as_str(), "#_parent"));
-                                    if let Some(__sce_why) = _send_arg_error {
+                                    if let Some((__sce_reason, __sce_why)) = _send_arg_error {
                                         ::sce_rust_runtime::sce_log_error!("{}", __sce_why);
                                         let mut err_meta =
                                             sce_rust_runtime::EventWithMetadata::platform_error(
                                                 RecordListEvent::ErrorExecution,
+                                                __sce_reason,
                                                 __sce_why,
                                             );
                                         err_meta.metadata.send_id =
@@ -9107,7 +9149,7 @@ if sce_failed {
                                         if _resolved_target.is_none() {
                                             // W3C SCXML C.1 (test 496, 521): a target that names nothing raises
                                             // error.communication.
-                                            let mut err_meta = sce_rust_runtime::EventWithMetadata::platform_error(RecordListEvent::ErrorCommunication, "<send> targetexpr evaluated to nothing, or to a route the send does not declare, so there is no target to reach");
+                                            let mut err_meta = sce_rust_runtime::EventWithMetadata::platform_error(RecordListEvent::ErrorCommunication, ::sce_rust_runtime::ErrorReason::TargetUnreachable, "<send> targetexpr evaluated to nothing, or to a route the send does not declare, so there is no target to reach");
                                             err_meta.metadata.send_id =
                                                 ::sce_rust_runtime::sce_string_from_str(send_id);
                                             engine.raise(err_meta);
@@ -9215,13 +9257,13 @@ if sce_failed {
                                                         ),
                                                     );
                                                 if __sce_routed == sce_rust_runtime::TargetSendOutcome::Unsupported {
-            let mut err_meta = sce_rust_runtime::EventWithMetadata::platform_error(RecordListEvent::ErrorExecution, "<send> targetexpr produced a value that is not a target");
+            let mut err_meta = sce_rust_runtime::EventWithMetadata::platform_error(RecordListEvent::ErrorExecution, ::sce_rust_runtime::ErrorReason::SendTargetInvalid, "<send> targetexpr produced a value that is not a target");
             err_meta.metadata.send_id = ::sce_rust_runtime::sce_string_from_str(send_id);
             engine.raise(err_meta);
             break 'action_block;  // W3C SCXML 4.9: the error ends the block
         }
                                                 if __sce_routed == sce_rust_runtime::TargetSendOutcome::Unreachable {
-            let mut err_meta = sce_rust_runtime::EventWithMetadata::platform_error(RecordListEvent::ErrorCommunication, "<send> targetexpr names a session this processor cannot reach");
+            let mut err_meta = sce_rust_runtime::EventWithMetadata::platform_error(RecordListEvent::ErrorCommunication, ::sce_rust_runtime::ErrorReason::TargetUnreachable, "<send> targetexpr names a session this processor cannot reach");
             err_meta.metadata.send_id = ::sce_rust_runtime::sce_string_from_str(send_id);
             engine.raise(err_meta);
             break 'action_block;  // W3C SCXML 4.9: the error ends the block
@@ -9240,7 +9282,12 @@ if sce_failed {
                                 {
                                     let send_id: &str = "__send_31";
 
-                                    let mut _send_arg_error: Option<&'static str> = None;
+                                    // The code and the sentence of the first argument that failed
+                                    // (docs/adr/0106 #111).
+                                    let mut _send_arg_error: Option<(
+                                        ::sce_rust_runtime::ErrorReason,
+                                        &'static str,
+                                    )> = None;
                                     // docs/adr/0005, decision 3: the target is a string computed from the machine's
                                     // fields now, and the send goes only by a route the document declared as
                                     // `sce:targets`. A value in none of them names no route this send may take —
@@ -9254,11 +9301,12 @@ if sce_failed {
                                             None
                                         }
                                         .filter(|route| matches!(route.as_str(), "#_parent"));
-                                    if let Some(__sce_why) = _send_arg_error {
+                                    if let Some((__sce_reason, __sce_why)) = _send_arg_error {
                                         ::sce_rust_runtime::sce_log_error!("{}", __sce_why);
                                         let mut err_meta =
                                             sce_rust_runtime::EventWithMetadata::platform_error(
                                                 RecordListEvent::ErrorExecution,
+                                                __sce_reason,
                                                 __sce_why,
                                             );
                                         err_meta.metadata.send_id =
@@ -9274,7 +9322,7 @@ if sce_failed {
                                         if _resolved_target.is_none() {
                                             // W3C SCXML C.1 (test 496, 521): a target that names nothing raises
                                             // error.communication.
-                                            let mut err_meta = sce_rust_runtime::EventWithMetadata::platform_error(RecordListEvent::ErrorCommunication, "<send> targetexpr evaluated to nothing, or to a route the send does not declare, so there is no target to reach");
+                                            let mut err_meta = sce_rust_runtime::EventWithMetadata::platform_error(RecordListEvent::ErrorCommunication, ::sce_rust_runtime::ErrorReason::TargetUnreachable, "<send> targetexpr evaluated to nothing, or to a route the send does not declare, so there is no target to reach");
                                             err_meta.metadata.send_id =
                                                 ::sce_rust_runtime::sce_string_from_str(send_id);
                                             engine.raise(err_meta);
@@ -9382,13 +9430,13 @@ if sce_failed {
                                                         ),
                                                     );
                                                 if __sce_routed == sce_rust_runtime::TargetSendOutcome::Unsupported {
-            let mut err_meta = sce_rust_runtime::EventWithMetadata::platform_error(RecordListEvent::ErrorExecution, "<send> targetexpr produced a value that is not a target");
+            let mut err_meta = sce_rust_runtime::EventWithMetadata::platform_error(RecordListEvent::ErrorExecution, ::sce_rust_runtime::ErrorReason::SendTargetInvalid, "<send> targetexpr produced a value that is not a target");
             err_meta.metadata.send_id = ::sce_rust_runtime::sce_string_from_str(send_id);
             engine.raise(err_meta);
             break 'action_block;  // W3C SCXML 4.9: the error ends the block
         }
                                                 if __sce_routed == sce_rust_runtime::TargetSendOutcome::Unreachable {
-            let mut err_meta = sce_rust_runtime::EventWithMetadata::platform_error(RecordListEvent::ErrorCommunication, "<send> targetexpr names a session this processor cannot reach");
+            let mut err_meta = sce_rust_runtime::EventWithMetadata::platform_error(RecordListEvent::ErrorCommunication, ::sce_rust_runtime::ErrorReason::TargetUnreachable, "<send> targetexpr names a session this processor cannot reach");
             err_meta.metadata.send_id = ::sce_rust_runtime::sce_string_from_str(send_id);
             engine.raise(err_meta);
             break 'action_block;  // W3C SCXML 4.9: the error ends the block
@@ -9409,7 +9457,7 @@ if sce_failed {
 })() {
     Ok(()) => false,
     Err(_) => {
-        engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(RecordListEvent::ErrorExecution, "<assign location='announced'>: an integer operation overflowed or failed"));
+        engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(RecordListEvent::ErrorExecution, ::sce_rust_runtime::ErrorReason::ExpressionFailed, "<assign location='announced'>: an integer operation overflowed or failed"));
         true
     }
 };
@@ -9424,7 +9472,7 @@ if sce_failed {
 })() {
     Ok(()) => false,
     Err(_) => {
-        engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(RecordListEvent::ErrorExecution, "<assign location='ordinal'>: an integer operation overflowed or failed"));
+        engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(RecordListEvent::ErrorExecution, ::sce_rust_runtime::ErrorReason::ExpressionFailed, "<assign location='ordinal'>: an integer operation overflowed or failed"));
         true
     }
 };
@@ -9453,7 +9501,7 @@ if sce_failed {
                         })() {
                             Ok(()) => false,
                             Err(_) => {
-                                engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(RecordListEvent::ErrorExecution, "<assign location='refusals'>: an integer operation overflowed or failed"));
+                                engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(RecordListEvent::ErrorExecution, ::sce_rust_runtime::ErrorReason::ExpressionFailed, "<assign location='refusals'>: an integer operation overflowed or failed"));
                                 true
                             }
                         };

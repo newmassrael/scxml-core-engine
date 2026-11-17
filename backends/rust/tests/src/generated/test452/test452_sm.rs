@@ -458,6 +458,7 @@ impl Test452Policy {
                 );
                 engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(
                     Test452Event::ErrorExecution,
+                    ::sce_rust_runtime::ErrorReason::ParamUnfit,
                     "<data id='foo'> could not hold the value its invoke handed it",
                 ));
             }
@@ -469,6 +470,7 @@ impl Test452Policy {
                 ::sce_rust_runtime::sce_log_error!("global: {}", e);
                 engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(
                     Test452Event::ErrorExecution,
+                    ::sce_rust_runtime::ErrorReason::ExpressionFailed,
                     "<data id='foo'> expr failed to evaluate",
                 ));
             }
@@ -482,6 +484,7 @@ impl Test452Policy {
             ::sce_rust_runtime::sce_log_error!("Global script execution failed: {}", e);
             engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(
                 Test452Event::ErrorExecution,
+                ::sce_rust_runtime::ErrorReason::ScriptFailed,
                 "a top-level <script> failed to execute",
             ));
         }
@@ -529,6 +532,7 @@ impl Test452Policy {
                 ::sce_rust_runtime::sce_log_error!("Guard evaluation failed for '{}': {}", cond, e);
                 engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(
                     Test452Event::ErrorExecution,
+                    ::sce_rust_runtime::ErrorReason::ExpressionFailed,
                     reason,
                 ));
                 None
@@ -852,6 +856,7 @@ impl StatePolicy for Test452Policy {
                             ::sce_rust_runtime::sce_log_error!("Assign failed for 'foo': {}", e);
                             engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(
                                 Test452Event::ErrorExecution,
+                                ::sce_rust_runtime::ErrorReason::AssignmentFailed,
                                 "<assign> to 'foo' failed",
                             ));
                             // W3C SCXML 4.9: the error ends the block, from however deep a <foreach> it came.
@@ -878,6 +883,7 @@ impl StatePolicy for Test452Policy {
                             );
                             engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(
                                 Test452Event::ErrorExecution,
+                                ::sce_rust_runtime::ErrorReason::AssignmentFailed,
                                 "<assign> to 'foo.bar' failed",
                             ));
                             // W3C SCXML 4.9: the error ends the block, from however deep a <foreach> it came.

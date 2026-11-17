@@ -460,6 +460,7 @@ impl Test278Policy {
             ::sce_rust_runtime::sce_log_error!("s1: {}", e);
             engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(
                 Test278Event::ErrorExecution,
+                ::sce_rust_runtime::ErrorReason::ExpressionFailed,
                 "<data id='Var1'> expr failed to evaluate",
             ));
         }
@@ -507,6 +508,7 @@ impl Test278Policy {
                 ::sce_rust_runtime::sce_log_error!("Guard evaluation failed for '{}': {}", cond, e);
                 engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(
                     Test278Event::ErrorExecution,
+                    ::sce_rust_runtime::ErrorReason::ExpressionFailed,
                     reason,
                 ));
                 None

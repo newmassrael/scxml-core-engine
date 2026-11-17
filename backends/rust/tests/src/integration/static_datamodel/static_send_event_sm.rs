@@ -1,5 +1,5 @@
 // SCE-GENERATED — DO NOT EDIT
-// source-hash: 65fb42bdd588f958b0fbb29ac261cf039d02606d7afaae0720c045624bd679ba
+// source-hash: 2073d8a55462e1ce61d8a77293fdd2c141aceda8ad173303c5b84813ca22eeee
 
 // SPDX-License-Identifier: AGPL-3.0-only WITH AdditionRef-SCE-Linking-Exception OR LicenseRef-SCE-Commercial
 // SPDX-FileCopyrightText: Copyright (c) 2025-2026 [Author of input SCXML file] (content derived from the input document)
@@ -1015,7 +1015,12 @@ impl StatePolicy for StaticSendEventPolicy {
                     {
                         let send_id: &str = "__send_0";
 
-                        let mut _send_arg_error: Option<&'static str> = None;
+                        // The code and the sentence of the first argument that failed
+                        // (docs/adr/0106 #111).
+                        let mut _send_arg_error: Option<(
+                            ::sce_rust_runtime::ErrorReason,
+                            &'static str,
+                        )> = None;
                         // The event's name is a string computed from the machine's fields now. A name
                         // that evaluates to nothing names no event, and an operation that fails
                         // cannot be evaluated: either is the argument error.
@@ -1025,13 +1030,16 @@ impl StatePolicy for StaticSendEventPolicy {
                             String::new()
                         };
                         if _send_arg_error.is_none() && _send_event_name.is_empty() {
-                            _send_arg_error =
-                                Some("<send> eventexpr could not be evaluated to an event name");
+                            _send_arg_error = Some((
+                                ::sce_rust_runtime::ErrorReason::ExpressionFailed,
+                                "<send> eventexpr could not be evaluated to an event name",
+                            ));
                         }
-                        if let Some(__sce_why) = _send_arg_error {
+                        if let Some((__sce_reason, __sce_why)) = _send_arg_error {
                             ::sce_rust_runtime::sce_log_error!("{}", __sce_why);
                             let mut err_meta = sce_rust_runtime::EventWithMetadata::platform_error(
                                 StaticSendEventEvent::ErrorExecution,
+                                __sce_reason,
                                 __sce_why,
                             );
                             err_meta.metadata.send_id =
@@ -1065,7 +1073,12 @@ impl StatePolicy for StaticSendEventPolicy {
                     {
                         let send_id: &str = "__send_1";
 
-                        let mut _send_arg_error: Option<&'static str> = None;
+                        // The code and the sentence of the first argument that failed
+                        // (docs/adr/0106 #111).
+                        let mut _send_arg_error: Option<(
+                            ::sce_rust_runtime::ErrorReason,
+                            &'static str,
+                        )> = None;
                         // The event's name is a string computed from the machine's fields now. A name
                         // that evaluates to nothing names no event, and an operation that fails
                         // cannot be evaluated: either is the argument error.
@@ -1087,13 +1100,16 @@ impl StatePolicy for StaticSendEventPolicy {
                             String::new()
                         };
                         if _send_arg_error.is_none() && _send_event_name.is_empty() {
-                            _send_arg_error =
-                                Some("<send> eventexpr could not be evaluated to an event name");
+                            _send_arg_error = Some((
+                                ::sce_rust_runtime::ErrorReason::ExpressionFailed,
+                                "<send> eventexpr could not be evaluated to an event name",
+                            ));
                         }
-                        if let Some(__sce_why) = _send_arg_error {
+                        if let Some((__sce_reason, __sce_why)) = _send_arg_error {
                             ::sce_rust_runtime::sce_log_error!("{}", __sce_why);
                             let mut err_meta = sce_rust_runtime::EventWithMetadata::platform_error(
                                 StaticSendEventEvent::ErrorExecution,
+                                __sce_reason,
                                 __sce_why,
                             );
                             err_meta.metadata.send_id =
@@ -1133,7 +1149,7 @@ impl StatePolicy for StaticSendEventPolicy {
                         })() {
                             Ok(()) => false,
                             Err(_) => {
-                                engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(StaticSendEventEvent::ErrorExecution, "<assign location='name'>: an integer operation overflowed or failed"));
+                                engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(StaticSendEventEvent::ErrorExecution, ::sce_rust_runtime::ErrorReason::ExpressionFailed, "<assign location='name'>: an integer operation overflowed or failed"));
                                 true
                             }
                         };
@@ -1157,7 +1173,7 @@ impl StatePolicy for StaticSendEventPolicy {
                         })() {
                             Ok(()) => false,
                             Err(_) => {
-                                engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(StaticSendEventEvent::ErrorExecution, "<assign location='name'>: an integer operation overflowed or failed"));
+                                engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(StaticSendEventEvent::ErrorExecution, ::sce_rust_runtime::ErrorReason::ExpressionFailed, "<assign location='name'>: an integer operation overflowed or failed"));
                                 true
                             }
                         };
@@ -1181,7 +1197,7 @@ impl StatePolicy for StaticSendEventPolicy {
                         })() {
                             Ok(()) => false,
                             Err(_) => {
-                                engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(StaticSendEventEvent::ErrorExecution, "<assign location='name'>: an integer operation overflowed or failed"));
+                                engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(StaticSendEventEvent::ErrorExecution, ::sce_rust_runtime::ErrorReason::ExpressionFailed, "<assign location='name'>: an integer operation overflowed or failed"));
                                 true
                             }
                         };
@@ -1204,7 +1220,7 @@ impl StatePolicy for StaticSendEventPolicy {
                         })() {
                             Ok(()) => false,
                             Err(_) => {
-                                engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(StaticSendEventEvent::ErrorExecution, "<assign location='pings'>: an integer operation overflowed or failed"));
+                                engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(StaticSendEventEvent::ErrorExecution, ::sce_rust_runtime::ErrorReason::ExpressionFailed, "<assign location='pings'>: an integer operation overflowed or failed"));
                                 true
                             }
                         };
@@ -1227,7 +1243,7 @@ impl StatePolicy for StaticSendEventPolicy {
                         })() {
                             Ok(()) => false,
                             Err(_) => {
-                                engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(StaticSendEventEvent::ErrorExecution, "<assign location='pongs'>: an integer operation overflowed or failed"));
+                                engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(StaticSendEventEvent::ErrorExecution, ::sce_rust_runtime::ErrorReason::ExpressionFailed, "<assign location='pongs'>: an integer operation overflowed or failed"));
                                 true
                             }
                         };
@@ -1251,7 +1267,7 @@ impl StatePolicy for StaticSendEventPolicy {
                         })() {
                             Ok(()) => false,
                             Err(_) => {
-                                engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(StaticSendEventEvent::ErrorExecution, "<assign location='refusals'>: an integer operation overflowed or failed"));
+                                engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(StaticSendEventEvent::ErrorExecution, ::sce_rust_runtime::ErrorReason::ExpressionFailed, "<assign location='refusals'>: an integer operation overflowed or failed"));
                                 true
                             }
                         };

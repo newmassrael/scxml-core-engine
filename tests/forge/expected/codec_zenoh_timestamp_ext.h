@@ -80,6 +80,17 @@ struct Wire {
     }
 };
 
+/// The `ext_size` the frame of a source of `CodecZenohTimestampExt` carries, which its encode
+/// derives from what it measures and no value holds (docs/adr/0081 §3).
+template <class S>
+[[nodiscard]] uint64_t wire_ext_size(const S& src) noexcept(is_nothrow_source<S>::value) {
+    static_assert(is_source<S>::value, "S presents every element of CodecZenohTimestampExt");
+    const auto& _r_ts = source::ts(src);
+    ::SCE::Forge::CountingSink _k_ts;
+    (void)::SCE::Generated::CodecZenohTimestamp::Wire::encode_source(_r_ts, _k_ts);
+    return static_cast<uint64_t>(_k_ts.position());
+}
+
 struct CodecZenohTimestampExt {
     CodecZenohTimestampExt() = default;
     /// The value of each element it presents, in declaration order (ADR 0059 §5).
@@ -89,12 +100,13 @@ struct CodecZenohTimestampExt {
     [[nodiscard]] const ::SCE::Generated::CodecZenohTimestamp::CodecZenohTimestamp& ts() const noexcept { return ts_; }
 
     /// Decode the next frame from `cursor`. On success the cursor
-    /// advances past the consumed bytes; on `NeedMoreBytes` the cursor
-    /// is left untouched so the caller can resume after appending more
-    /// bytes (RFC §synth-5-B L494-519). Returns `std::nullopt` on the
-    /// `NeedMoreBytes` boundary; later phases attach a typed error via
-    /// `cursor.last_error()`.
-    static std::optional<CodecZenohTimestampExt> decode(::SCE::Forge::SceCursor& cursor) {
+    /// advances past the consumed bytes and the value is answered; a
+    /// refused frame answers the `CodecError` that refused it
+    /// (docs/adr/0099, amendment of 2026-11-16): `NeedMoreBytes` when
+    /// the cursor's tail is shorter than the frame (RFC §synth-5-B
+    /// L494-519), which the caller resumes after appending bytes, and
+    /// another kind for a frame no more bytes make whole.
+    static ::SCE::Forge::Decoded<CodecZenohTimestampExt> decode(::SCE::Forge::SceCursor& cursor) {
         // Streaming cursor decode (SSOT selection: `needs_streaming`).
         // The positional `raw[byte_off]` path is valid only when every
         // field's absolute offset is fixed at codegen time; this branch
@@ -106,18 +118,18 @@ struct CodecZenohTimestampExt {
         // advances past exactly what it consumed. Per-field `is_repeat` /
         // `is_tlv_chain` / `is_embed` route to their dedicated helpers;
         // every other field flows through `present_if_decode_stmt`.
-        auto ext_size_opt = cursor.read_vle_u64();
-        if (!ext_size_opt.has_value()) return std::nullopt;
-        auto ext_size = static_cast<std::uint64_t>(*ext_size_opt);
+        auto ext_size_read = cursor.read_vle_u64();
+        if (!ext_size_read.has_value()) return ext_size_read.error();
+        auto ext_size = static_cast<std::uint64_t>(*ext_size_read);
         ::SCE::Generated::CodecZenohTimestamp::CodecZenohTimestamp ts;
         {
             std::size_t _len = static_cast<std::size_t>(ext_size);
             const std::uint8_t* _raw = cursor.peek_slice(_len);
-            if (_raw == nullptr) return std::nullopt;
+            if (_raw == nullptr) return ::SCE::Forge::CodecError::NeedMoreBytes;
             ::SCE::Forge::SceCursor _inner(_raw, _len);
             auto _emb = ::SCE::Generated::CodecZenohTimestamp::CodecZenohTimestamp::decode(_inner);
-            if (!_emb.has_value()) return std::nullopt;
-            if (!cursor.advance(_len)) return std::nullopt;
+            if (!_emb.has_value()) return _emb.error();
+            if (!cursor.advance(_len)) return ::SCE::Forge::CodecError::NeedMoreBytes;
             ts = std::move(*_emb);
         }
         (void)ext_size;

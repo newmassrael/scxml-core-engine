@@ -41,27 +41,20 @@ class CodecOriginChoice:
     body: CodecOriginChoiceVariant = field(default_factory=CodecOriginChoiceVariant)
 
     @classmethod
-    def decode(cls, cursor: SceCursor) -> Optional[CodecOriginChoice]:
-        """Decode the next frame from ``cursor``. Returns ``None`` when
-        the cursor's tail is shorter than the declared minimum frame
-        (RFC §synth-5-B L494-519); on success the cursor advances past the
-        consumed bytes. VLE codecs also return ``None`` on
-        ``VleWidthOverflow``, and every codec on a field's refusal: a length
-        or a count past its bound (``LengthOutOfRange``, ``TooManyElements``,
-        docs/adr/0077), an undeclared enum value."""
+    def decode(cls, cursor: SceCursor) -> CodecOriginChoice:
+        """Decode the next frame from ``cursor``; on success the cursor
+        advances past the consumed bytes. A frame the codec refuses raises
+        the ``CodecError`` subclass that names the refusal (docs/adr/0099,
+        amendment of 2026-11-16): ``NeedMoreBytes`` when the cursor's tail
+        is shorter than the frame (RFC §synth-5-B L494-519), which the
+        caller resumes after appending bytes, and for a frame no more bytes
+        make whole ``VleWidthOverflow``, ``InvalidUtf8``,
+        ``UndeclaredEnumValue``, or a length or a count past its bound
+        (``LengthOutOfRange``, ``TooManyElements``, docs/adr/0077)."""
         # Decode fixed prefix (RFC §synth-5-B variant: fields before tag suffix).
-        # A field's refusal (a bound, an undeclared enum value) is a
-        # `CodecError`, which `decode` answers with `None` as the streaming
-        # path does.
-        try:
-            raw = cursor.peek_slice(1)
-            f_tag = raw[0]
-        except CodecError:
-            return None
-        try:
-            cursor.advance(1)
-        except NeedMoreBytes:
-            return None
+        raw = cursor.peek_slice(1)
+        f_tag = raw[0]
+        cursor.advance(1)
         # Dispatch on the tag field; each arm decodes its body codec
         # from the cursor. The default arm (when declared) carries the
         # runtime tag value so encode can round-trip it back onto the
@@ -69,23 +62,14 @@ class CodecOriginChoice:
         body = CodecOriginChoiceVariant()
         if f_tag == 1:
             body.kind = "CodecOriginLeaf"
-            _arm = CodecOriginLeaf.decode(cursor)
-            if _arm is None:
-                return None
-            body.codec_origin_leaf = _arm
+            body.codec_origin_leaf = CodecOriginLeaf.decode(cursor)
         elif f_tag == 2:
             body.kind = "CodecOriginScalar"
-            _arm = CodecOriginScalar.decode(cursor)
-            if _arm is None:
-                return None
-            body.codec_origin_scalar = _arm
+            body.codec_origin_scalar = CodecOriginScalar.decode(cursor)
         else:
             body.kind = "Default"
             body.default_tag = f_tag
-            _arm = CodecOriginScalar.decode(cursor)
-            if _arm is None:
-                return None
-            body.default_body = _arm
+            body.default_body = CodecOriginScalar.decode(cursor)
         return cls(
             tag=f_tag,
             body=body,

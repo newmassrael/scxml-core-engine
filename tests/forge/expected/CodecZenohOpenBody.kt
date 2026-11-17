@@ -7,6 +7,7 @@
 package com.sce.generated.codec_zenoh_open_body
 
 import com.sce.forge.runtime.CodecError
+import com.sce.forge.runtime.Decoded
 import com.sce.forge.runtime.MutableListSink
 import com.sce.forge.runtime.SceCursor
 import com.sce.forge.runtime.SceSink
@@ -70,11 +71,14 @@ data class CodecZenohOpenBody(
 
     companion object {
         /// Decode the next frame from `cursor`. On success the cursor
-        /// advances past the consumed bytes; returns `null` when the
-        /// cursor's tail is shorter than the declared minimum frame
-        /// (RFC §synth-5-B L494-519).
+        /// advances past the consumed bytes and the value is `Decoded.Ok`;
+        /// a refused frame is `Decoded.Refused` with the kind that refused
+        /// it (docs/adr/0099, amendment of 2026-11-16): `NeedMoreBytes` when
+        /// the cursor's tail is shorter than the frame (RFC §synth-5-B
+        /// L494-519), which the caller resumes after appending bytes, and
+        /// another kind for a frame no more bytes make whole.
         @Suppress("UNUSED_PARAMETER")
-        fun decode(cursor: SceCursor, A: UByte): CodecZenohOpenBody? {
+        fun decode(cursor: SceCursor, A: UByte): Decoded<CodecZenohOpenBody> {
             // Streaming cursor decode (SSOT selection: `needs_streaming`).
             // The positional `raw[byte_off]` path is valid only when every
             // field's absolute offset is fixed at codegen time; this branch
@@ -87,30 +91,32 @@ data class CodecZenohOpenBody(
             // `is_repeat` / `is_tlv_chain` / `is_embed` route to their
             // dedicated helpers; every other field flows through
             // `present_if_decode_stmt`.
-            val lease = cursor.readVleU64() ?: return null
-            val initial_sn = cursor.readVleU64() ?: return null
+            val lease = cursor.readVleU64().valueOr { _refused -> return _refused }
+            val initial_sn = cursor.readVleU64().valueOr { _refused -> return _refused }
             val cookie_len: ULong? = if ((A.toInt() and 0x01) == 0) {
-                val _v = cursor.readVleU64() ?: return null
+                val _v = cursor.readVleU64().valueOr { _refused -> return _refused }
                 _v
             } else {
                 null
             }
             val cookie = if ((A.toInt() and 0x01) == 0) {
                 val _len = cookie_len!!
-                if (_len > (Int.MAX_VALUE - 0).toULong()) return null
+                if (_len > (Int.MAX_VALUE - 0).toULong()) return Decoded.Refused(CodecError.NeedMoreBytes)
                 val _n = _len.toInt()
-                val raw = cursor.peekSlice(_n) ?: return null
+                val raw = cursor.peekSlice(_n) ?: return Decoded.Refused(CodecError.NeedMoreBytes)
                 val _v = raw.copyOf()
-                if (!cursor.advance(_n)) return null
+                if (!cursor.advance(_n)) return Decoded.Refused(CodecError.NeedMoreBytes)
                 _v
             } else {
                 null
             }
-            return CodecZenohOpenBody(
-                lease = lease,
-                initial_sn = initial_sn,
-                cookie_len = cookie_len,
-                cookie = cookie
+            return Decoded.Ok(
+                CodecZenohOpenBody(
+                    lease = lease,
+                    initial_sn = initial_sn,
+                    cookie_len = cookie_len,
+                    cookie = cookie
+                )
             )
         }
     }

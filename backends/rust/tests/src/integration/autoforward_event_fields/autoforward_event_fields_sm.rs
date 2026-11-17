@@ -509,6 +509,7 @@ impl AutoforwardEventFieldsPolicy {
                 ::sce_rust_runtime::sce_log_error!("Guard evaluation failed for '{}': {}", cond, e);
                 engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(
                     AutoforwardEventFieldsEvent::ErrorExecution,
+                    ::sce_rust_runtime::ErrorReason::ExpressionFailed,
                     reason,
                 ));
                 None
@@ -705,7 +706,7 @@ impl AutoforwardEventFieldsPolicy {
                     self.active_invokes.remove("inv_echo");
                     engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(
                         AutoforwardEventFieldsEvent::ErrorExecution,
-                        &format!("<invoke id='{}'> did not start: its child's script session failed at step '{}'", "inv_echo", failure.stage)));
+                        ::sce_rust_runtime::ErrorReason::InvokeChildInitFailed, &format!("<invoke id='{}'> did not start: its child's script session failed at step '{}'", "inv_echo", failure.stage)));
                     continue;
                 }
 

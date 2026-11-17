@@ -133,26 +133,26 @@ struct CodecTail {
     [[nodiscard]] ::SCE::Forge::Bytes<32> payload() const noexcept { return payload_; }
 
     /// Decode the next frame from `cursor`. On success the cursor
-    /// advances past the consumed bytes; on `NeedMoreBytes` the cursor
-    /// is left untouched so the caller can resume after appending more
-    /// bytes (RFC §synth-5-B L494-519). Returns `std::nullopt` on the
-    /// `NeedMoreBytes` boundary; later phases attach a typed error via
-    /// `cursor.last_error()`.
-    static std::optional<CodecTail> decode(::SCE::Forge::SceCursor& cursor) {
+    /// advances past the consumed bytes and the value is answered; a
+    /// refused frame answers the `CodecError` that refused it
+    /// (docs/adr/0099, amendment of 2026-11-16): `NeedMoreBytes` when
+    /// the cursor's tail is shorter than the frame (RFC §synth-5-B
+    /// L494-519), which the caller resumes after appending bytes, and
+    /// another kind for a frame no more bytes make whole.
+    static ::SCE::Forge::Decoded<CodecTail> decode(::SCE::Forge::SceCursor& cursor) {
         std::size_t _frame_len = cursor.remaining();
-        if (_frame_len < 2) return std::nullopt;
+        if (_frame_len < 2) return ::SCE::Forge::CodecError::NeedMoreBytes;
         const std::uint8_t* raw = cursor.peek_slice(_frame_len);
-        if (raw == nullptr) return std::nullopt;
+        if (raw == nullptr) return ::SCE::Forge::CodecError::NeedMoreBytes;
         uint8_t msgId = raw[0];
         uint8_t status = raw[1];
         if ((_frame_len - 2) > 32) {
-            cursor.refuse(::SCE::Forge::CodecError::LengthOutOfRange); return std::nullopt;
+            return ::SCE::Forge::CodecError::LengthOutOfRange;
         }
         std::vector<uint8_t> payload = std::vector<uint8_t>(raw + 2, raw + _frame_len);
         const auto _b_payload = ::SCE::Forge::Bytes<32>::make(payload);
         if (!_b_payload) {
-            cursor.refuse(::SCE::Forge::CodecError::LengthOutOfRange);
-            return std::nullopt;
+            return ::SCE::Forge::CodecError::LengthOutOfRange;
         }
         CodecTail _decoded{
             /*msgId=*/msgId,
@@ -160,7 +160,7 @@ struct CodecTail {
             /*payload=*/*_b_payload,
         };
         // A tail field runs to the end of the frame, so the frame is consumed whole.
-        if (!cursor.advance(_frame_len)) return std::nullopt;
+        if (!cursor.advance(_frame_len)) return ::SCE::Forge::CodecError::NeedMoreBytes;
         return _decoded;
     }
 

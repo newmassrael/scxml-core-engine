@@ -513,6 +513,7 @@ impl Test457Policy {
                 );
                 engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(
                     Test457Event::ErrorExecution,
+                    ::sce_rust_runtime::ErrorReason::ParamUnfit,
                     "<data id='Var1'> could not hold the value its invoke handed it",
                 ));
             }
@@ -524,6 +525,7 @@ impl Test457Policy {
                 ::sce_rust_runtime::sce_log_error!("global: {}", e);
                 engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(
                     Test457Event::ErrorExecution,
+                    ::sce_rust_runtime::ErrorReason::ExpressionFailed,
                     "<data id='Var1'> expr failed to evaluate",
                 ));
             }
@@ -538,6 +540,7 @@ impl Test457Policy {
                 );
                 engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(
                     Test457Event::ErrorExecution,
+                    ::sce_rust_runtime::ErrorReason::ParamUnfit,
                     "<data id='Var2'> could not hold the value its invoke handed it",
                 ));
             }
@@ -555,6 +558,7 @@ impl Test457Policy {
                 );
                 engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(
                     Test457Event::ErrorExecution,
+                    ::sce_rust_runtime::ErrorReason::ParamUnfit,
                     "<data id='Var3'> could not hold the value its invoke handed it",
                 ));
             }
@@ -572,6 +576,7 @@ impl Test457Policy {
                 );
                 engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(
                     Test457Event::ErrorExecution,
+                    ::sce_rust_runtime::ErrorReason::ParamUnfit,
                     "<data id='Var4'> could not hold the value its invoke handed it",
                 ));
             }
@@ -583,6 +588,7 @@ impl Test457Policy {
                 ::sce_rust_runtime::sce_log_error!("global: {}", e);
                 engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(
                     Test457Event::ErrorExecution,
+                    ::sce_rust_runtime::ErrorReason::ExpressionFailed,
                     "<data id='Var4'> expr failed to evaluate",
                 ));
             }
@@ -597,6 +603,7 @@ impl Test457Policy {
                 );
                 engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(
                     Test457Event::ErrorExecution,
+                    ::sce_rust_runtime::ErrorReason::ParamUnfit,
                     "<data id='Var5'> could not hold the value its invoke handed it",
                 ));
             }
@@ -611,6 +618,7 @@ impl Test457Policy {
                 ::sce_rust_runtime::sce_log_error!("global: {}", e);
                 engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(
                     Test457Event::ErrorExecution,
+                    ::sce_rust_runtime::ErrorReason::ExpressionFailed,
                     "<data id='Var5'> expr failed to evaluate",
                 ));
             }
@@ -625,6 +633,7 @@ impl Test457Policy {
                 );
                 engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(
                     Test457Event::ErrorExecution,
+                    ::sce_rust_runtime::ErrorReason::ParamUnfit,
                     "<data id='Var6'> could not hold the value its invoke handed it",
                 ));
             }
@@ -676,6 +685,7 @@ impl Test457Policy {
                 ::sce_rust_runtime::sce_log_error!("Guard evaluation failed for '{}': {}", cond, e);
                 engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(
                     Test457Event::ErrorExecution,
+                    ::sce_rust_runtime::ErrorReason::ExpressionFailed,
                     reason,
                 ));
                 None
@@ -1017,6 +1027,7 @@ impl StatePolicy for Test457Policy {
                                 );
                                 engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(
                                     Test457Event::ErrorExecution,
+                                    ::sce_rust_runtime::ErrorReason::ExpressionFailed,
                                     "<log> expr failed to evaluate",
                                 ));
                                 break 'action_block;
@@ -1049,6 +1060,7 @@ impl StatePolicy for Test457Policy {
                                 );
                                 engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(
                                     Test457Event::ErrorExecution,
+                                    ::sce_rust_runtime::ErrorReason::ExpressionFailed,
                                     "<log> expr failed to evaluate",
                                 ));
                                 break 'action_block;
@@ -1082,6 +1094,7 @@ impl StatePolicy for Test457Policy {
                             );
                             engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(
                                 Test457Event::ErrorExecution,
+                                ::sce_rust_runtime::ErrorReason::ForeachInvalid,
                                 "<foreach item='Var2'> is not a legal variable name",
                             ));
                             break 'action_block;
@@ -1136,7 +1149,7 @@ impl StatePolicy for Test457Policy {
                                                     "Assign failed for 'Var1': {}",
                                                     e
                                                 );
-                                                engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(Test457Event::ErrorExecution, "<assign> to 'Var1' failed"));
+                                                engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(Test457Event::ErrorExecution, ::sce_rust_runtime::ErrorReason::AssignmentFailed, "<assign> to 'Var1' failed"));
                                                 // W3C SCXML 4.9: the error ends the block, from however deep a <foreach> it came.
                                                 break 'action_block;
                                             }
@@ -1146,6 +1159,7 @@ impl StatePolicy for Test457Policy {
                                         engine.raise(
                                             sce_rust_runtime::EventWithMetadata::platform_error(
                                                 Test457Event::ErrorExecution,
+                                                ::sce_rust_runtime::ErrorReason::ForeachInvalid,
                                                 "<foreach> could not set its loop variable",
                                             ),
                                         );
@@ -1160,6 +1174,7 @@ impl StatePolicy for Test457Policy {
                                     engine.raise(
                                         sce_rust_runtime::EventWithMetadata::platform_error(
                                             Test457Event::ErrorExecution,
+                                            ::sce_rust_runtime::ErrorReason::ForeachInvalid,
                                             "<foreach array='Var4'> is not an array",
                                         ),
                                     );
@@ -1173,6 +1188,7 @@ impl StatePolicy for Test457Policy {
                                     engine.raise(
                                         sce_rust_runtime::EventWithMetadata::platform_error(
                                             Test457Event::ErrorExecution,
+                                            ::sce_rust_runtime::ErrorReason::ExpressionFailed,
                                             "<foreach array='Var4'> failed to evaluate",
                                         ),
                                     );
@@ -1211,6 +1227,7 @@ impl StatePolicy for Test457Policy {
                             );
                             engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(
                                 Test457Event::ErrorExecution,
+                                ::sce_rust_runtime::ErrorReason::ForeachInvalid,
                                 "<foreach item=''continue''> is not a legal variable name",
                             ));
                             break 'action_block;
@@ -1265,7 +1282,7 @@ impl StatePolicy for Test457Policy {
                                                     "Assign failed for 'Var1': {}",
                                                     e
                                                 );
-                                                engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(Test457Event::ErrorExecution, "<assign> to 'Var1' failed"));
+                                                engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(Test457Event::ErrorExecution, ::sce_rust_runtime::ErrorReason::AssignmentFailed, "<assign> to 'Var1' failed"));
                                                 // W3C SCXML 4.9: the error ends the block, from however deep a <foreach> it came.
                                                 break 'action_block;
                                             }
@@ -1275,6 +1292,7 @@ impl StatePolicy for Test457Policy {
                                         engine.raise(
                                             sce_rust_runtime::EventWithMetadata::platform_error(
                                                 Test457Event::ErrorExecution,
+                                                ::sce_rust_runtime::ErrorReason::ForeachInvalid,
                                                 "<foreach> could not set its loop variable",
                                             ),
                                         );
@@ -1289,6 +1307,7 @@ impl StatePolicy for Test457Policy {
                                     engine.raise(
                                         sce_rust_runtime::EventWithMetadata::platform_error(
                                             Test457Event::ErrorExecution,
+                                            ::sce_rust_runtime::ErrorReason::ForeachInvalid,
                                             "<foreach array='Var5'> is not an array",
                                         ),
                                     );
@@ -1302,6 +1321,7 @@ impl StatePolicy for Test457Policy {
                                     engine.raise(
                                         sce_rust_runtime::EventWithMetadata::platform_error(
                                             Test457Event::ErrorExecution,
+                                            ::sce_rust_runtime::ErrorReason::ExpressionFailed,
                                             "<foreach array='Var5'> failed to evaluate",
                                         ),
                                     );
@@ -1336,6 +1356,7 @@ impl StatePolicy for Test457Policy {
                             ::sce_rust_runtime::sce_log_error!("Assign failed for 'Var6': {}", e);
                             engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(
                                 Test457Event::ErrorExecution,
+                                ::sce_rust_runtime::ErrorReason::AssignmentFailed,
                                 "<assign> to 'Var6' failed",
                             ));
                             // W3C SCXML 4.9: the error ends the block, from however deep a <foreach> it came.
@@ -1363,6 +1384,7 @@ impl StatePolicy for Test457Policy {
                             );
                             engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(
                                 Test457Event::ErrorExecution,
+                                ::sce_rust_runtime::ErrorReason::ForeachInvalid,
                                 "<foreach item='Var2'> is not a legal variable name",
                             ));
                             break 'action_block;
@@ -1404,7 +1426,7 @@ impl StatePolicy for Test457Policy {
                                                     "Assign failed for 'Var6': {}",
                                                     e
                                                 );
-                                                engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(Test457Event::ErrorExecution, "<assign> to 'Var6' failed"));
+                                                engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(Test457Event::ErrorExecution, ::sce_rust_runtime::ErrorReason::AssignmentFailed, "<assign> to 'Var6' failed"));
                                                 // W3C SCXML 4.9: the error ends the block, from however deep a <foreach> it came.
                                                 break 'action_block;
                                             }
@@ -1414,6 +1436,7 @@ impl StatePolicy for Test457Policy {
                                         engine.raise(
                                             sce_rust_runtime::EventWithMetadata::platform_error(
                                                 Test457Event::ErrorExecution,
+                                                ::sce_rust_runtime::ErrorReason::ForeachInvalid,
                                                 "<foreach> could not set its loop variable",
                                             ),
                                         );
@@ -1428,6 +1451,7 @@ impl StatePolicy for Test457Policy {
                                     engine.raise(
                                         sce_rust_runtime::EventWithMetadata::platform_error(
                                             Test457Event::ErrorExecution,
+                                            ::sce_rust_runtime::ErrorReason::ForeachInvalid,
                                             "<foreach array='Var5'> is not an array",
                                         ),
                                     );
@@ -1441,6 +1465,7 @@ impl StatePolicy for Test457Policy {
                                     engine.raise(
                                         sce_rust_runtime::EventWithMetadata::platform_error(
                                             Test457Event::ErrorExecution,
+                                            ::sce_rust_runtime::ErrorReason::ExpressionFailed,
                                             "<foreach array='Var5'> failed to evaluate",
                                         ),
                                     );

@@ -499,6 +499,7 @@ impl DonedataLocalInvokePolicy {
                 );
                 engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(
                     DonedataLocalInvokeEvent::ErrorExecution,
+                    ::sce_rust_runtime::ErrorReason::ParamUnfit,
                     "<data id='param_ok'> could not hold the value its invoke handed it",
                 ));
             }
@@ -510,6 +511,7 @@ impl DonedataLocalInvokePolicy {
                 ::sce_rust_runtime::sce_log_error!("global: {}", e);
                 engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(
                     DonedataLocalInvokeEvent::ErrorExecution,
+                    ::sce_rust_runtime::ErrorReason::ExpressionFailed,
                     "<data id='param_ok'> expr failed to evaluate",
                 ));
             }
@@ -558,6 +560,7 @@ impl DonedataLocalInvokePolicy {
                 ::sce_rust_runtime::sce_log_error!("Guard evaluation failed for '{}': {}", cond, e);
                 engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(
                     DonedataLocalInvokeEvent::ErrorExecution,
+                    ::sce_rust_runtime::ErrorReason::ExpressionFailed,
                     reason,
                 ));
                 None
@@ -782,7 +785,7 @@ impl DonedataLocalInvokePolicy {
                     self.active_invokes.remove("inv_content");
                     engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(
                         DonedataLocalInvokeEvent::ErrorExecution,
-                        &format!("<invoke id='{}'> did not start: its child's script session failed at step '{}'", "inv_content", failure.stage)));
+                        ::sce_rust_runtime::ErrorReason::InvokeChildInitFailed, &format!("<invoke id='{}'> did not start: its child's script session failed at step '{}'", "inv_content", failure.stage)));
                     continue;
                 }
 
@@ -871,7 +874,7 @@ impl DonedataLocalInvokePolicy {
                     self.active_invokes.remove("inv_param");
                     engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(
                         DonedataLocalInvokeEvent::ErrorExecution,
-                        &format!("<invoke id='{}'> did not start: its child's script session failed at step '{}'", "inv_param", failure.stage)));
+                        ::sce_rust_runtime::ErrorReason::InvokeChildInitFailed, &format!("<invoke id='{}'> did not start: its child's script session failed at step '{}'", "inv_param", failure.stage)));
                     continue;
                 }
 
@@ -1502,6 +1505,7 @@ impl StatePolicy for DonedataLocalInvokePolicy {
                             );
                             engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(
                                 DonedataLocalInvokeEvent::ErrorExecution,
+                                ::sce_rust_runtime::ErrorReason::AssignmentFailed,
                                 "<assign> to 'param_ok' failed",
                             ));
                             // W3C SCXML 4.9: the error ends the block, from however deep a <foreach> it came.

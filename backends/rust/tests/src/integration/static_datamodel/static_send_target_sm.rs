@@ -1,5 +1,5 @@
 // SCE-GENERATED — DO NOT EDIT
-// source-hash: 65fb42bdd588f958b0fbb29ac261cf039d02606d7afaae0720c045624bd679ba
+// source-hash: 2073d8a55462e1ce61d8a77293fdd2c141aceda8ad173303c5b84813ca22eeee
 
 // SPDX-License-Identifier: AGPL-3.0-only WITH AdditionRef-SCE-Linking-Exception OR LicenseRef-SCE-Commercial
 // SPDX-FileCopyrightText: Copyright (c) 2025-2026 [Author of input SCXML file] (content derived from the input document)
@@ -971,7 +971,12 @@ impl StatePolicy for StaticSendTargetPolicy {
                     {
                         let send_id: &str = "__send_0";
 
-                        let mut _send_arg_error: Option<&'static str> = None;
+                        // The code and the sentence of the first argument that failed
+                        // (docs/adr/0106 #111).
+                        let mut _send_arg_error: Option<(
+                            ::sce_rust_runtime::ErrorReason,
+                            &'static str,
+                        )> = None;
                         // docs/adr/0005, decision 3: the target is a string computed from the machine's
                         // fields now, and the send goes only by a route the document declared as
                         // `sce:targets`. A value in none of them names no route this send may take —
@@ -984,10 +989,11 @@ impl StatePolicy for StaticSendTargetPolicy {
                             None
                         }
                         .filter(|route| matches!(route.as_str(), "#_internal" | "#_parent"));
-                        if let Some(__sce_why) = _send_arg_error {
+                        if let Some((__sce_reason, __sce_why)) = _send_arg_error {
                             ::sce_rust_runtime::sce_log_error!("{}", __sce_why);
                             let mut err_meta = sce_rust_runtime::EventWithMetadata::platform_error(
                                 StaticSendTargetEvent::ErrorExecution,
+                                __sce_reason,
                                 __sce_why,
                             );
                             err_meta.metadata.send_id =
@@ -1004,7 +1010,7 @@ impl StatePolicy for StaticSendTargetPolicy {
                             if _resolved_target.is_none() {
                                 // W3C SCXML C.1 (test 496, 521): a target that names nothing raises
                                 // error.communication.
-                                let mut err_meta = sce_rust_runtime::EventWithMetadata::platform_error(StaticSendTargetEvent::ErrorCommunication, "<send> targetexpr evaluated to nothing, or to a route the send does not declare, so there is no target to reach");
+                                let mut err_meta = sce_rust_runtime::EventWithMetadata::platform_error(StaticSendTargetEvent::ErrorCommunication, ::sce_rust_runtime::ErrorReason::TargetUnreachable, "<send> targetexpr evaluated to nothing, or to a route the send does not declare, so there is no target to reach");
                                 err_meta.metadata.send_id =
                                     ::sce_rust_runtime::sce_string_from_str(send_id);
                                 engine.raise(err_meta);
@@ -1037,7 +1043,7 @@ impl StatePolicy for StaticSendTargetPolicy {
                                     if __sce_routed
                                         == sce_rust_runtime::TargetSendOutcome::Unsupported
                                     {
-                                        let mut err_meta = sce_rust_runtime::EventWithMetadata::platform_error(StaticSendTargetEvent::ErrorExecution, "<send> targetexpr produced a value that is not a target");
+                                        let mut err_meta = sce_rust_runtime::EventWithMetadata::platform_error(StaticSendTargetEvent::ErrorExecution, ::sce_rust_runtime::ErrorReason::SendTargetInvalid, "<send> targetexpr produced a value that is not a target");
                                         err_meta.metadata.send_id =
                                             ::sce_rust_runtime::sce_string_from_str(send_id);
                                         engine.raise(err_meta);
@@ -1046,7 +1052,7 @@ impl StatePolicy for StaticSendTargetPolicy {
                                     if __sce_routed
                                         == sce_rust_runtime::TargetSendOutcome::Unreachable
                                     {
-                                        let mut err_meta = sce_rust_runtime::EventWithMetadata::platform_error(StaticSendTargetEvent::ErrorCommunication, "<send> targetexpr names a session this processor cannot reach");
+                                        let mut err_meta = sce_rust_runtime::EventWithMetadata::platform_error(StaticSendTargetEvent::ErrorCommunication, ::sce_rust_runtime::ErrorReason::TargetUnreachable, "<send> targetexpr names a session this processor cannot reach");
                                         err_meta.metadata.send_id =
                                             ::sce_rust_runtime::sce_string_from_str(send_id);
                                         engine.raise(err_meta);
@@ -1070,7 +1076,12 @@ impl StatePolicy for StaticSendTargetPolicy {
                     {
                         let send_id: &str = "__send_1";
 
-                        let mut _send_arg_error: Option<&'static str> = None;
+                        // The code and the sentence of the first argument that failed
+                        // (docs/adr/0106 #111).
+                        let mut _send_arg_error: Option<(
+                            ::sce_rust_runtime::ErrorReason,
+                            &'static str,
+                        )> = None;
                         // docs/adr/0005, decision 3: the target is a string computed from the machine's
                         // fields now, and the send goes only by a route the document declared as
                         // `sce:targets`. A value in none of them names no route this send may take —
@@ -1083,10 +1094,11 @@ impl StatePolicy for StaticSendTargetPolicy {
                             None
                         }
                         .filter(|route| matches!(route.as_str(), "#_parent"));
-                        if let Some(__sce_why) = _send_arg_error {
+                        if let Some((__sce_reason, __sce_why)) = _send_arg_error {
                             ::sce_rust_runtime::sce_log_error!("{}", __sce_why);
                             let mut err_meta = sce_rust_runtime::EventWithMetadata::platform_error(
                                 StaticSendTargetEvent::ErrorExecution,
+                                __sce_reason,
                                 __sce_why,
                             );
                             err_meta.metadata.send_id =
@@ -1103,7 +1115,7 @@ impl StatePolicy for StaticSendTargetPolicy {
                             if _resolved_target.is_none() {
                                 // W3C SCXML C.1 (test 496, 521): a target that names nothing raises
                                 // error.communication.
-                                let mut err_meta = sce_rust_runtime::EventWithMetadata::platform_error(StaticSendTargetEvent::ErrorCommunication, "<send> targetexpr evaluated to nothing, or to a route the send does not declare, so there is no target to reach");
+                                let mut err_meta = sce_rust_runtime::EventWithMetadata::platform_error(StaticSendTargetEvent::ErrorCommunication, ::sce_rust_runtime::ErrorReason::TargetUnreachable, "<send> targetexpr evaluated to nothing, or to a route the send does not declare, so there is no target to reach");
                                 err_meta.metadata.send_id =
                                     ::sce_rust_runtime::sce_string_from_str(send_id);
                                 engine.raise(err_meta);
@@ -1136,7 +1148,7 @@ impl StatePolicy for StaticSendTargetPolicy {
                                     if __sce_routed
                                         == sce_rust_runtime::TargetSendOutcome::Unsupported
                                     {
-                                        let mut err_meta = sce_rust_runtime::EventWithMetadata::platform_error(StaticSendTargetEvent::ErrorExecution, "<send> targetexpr produced a value that is not a target");
+                                        let mut err_meta = sce_rust_runtime::EventWithMetadata::platform_error(StaticSendTargetEvent::ErrorExecution, ::sce_rust_runtime::ErrorReason::SendTargetInvalid, "<send> targetexpr produced a value that is not a target");
                                         err_meta.metadata.send_id =
                                             ::sce_rust_runtime::sce_string_from_str(send_id);
                                         engine.raise(err_meta);
@@ -1145,7 +1157,7 @@ impl StatePolicy for StaticSendTargetPolicy {
                                     if __sce_routed
                                         == sce_rust_runtime::TargetSendOutcome::Unreachable
                                     {
-                                        let mut err_meta = sce_rust_runtime::EventWithMetadata::platform_error(StaticSendTargetEvent::ErrorCommunication, "<send> targetexpr names a session this processor cannot reach");
+                                        let mut err_meta = sce_rust_runtime::EventWithMetadata::platform_error(StaticSendTargetEvent::ErrorCommunication, ::sce_rust_runtime::ErrorReason::TargetUnreachable, "<send> targetexpr names a session this processor cannot reach");
                                         err_meta.metadata.send_id =
                                             ::sce_rust_runtime::sce_string_from_str(send_id);
                                         engine.raise(err_meta);
@@ -1176,7 +1188,7 @@ impl StatePolicy for StaticSendTargetPolicy {
                         })() {
                             Ok(()) => false,
                             Err(_) => {
-                                engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(StaticSendTargetEvent::ErrorExecution, "<assign location='route'>: an integer operation overflowed or failed"));
+                                engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(StaticSendTargetEvent::ErrorExecution, ::sce_rust_runtime::ErrorReason::ExpressionFailed, "<assign location='route'>: an integer operation overflowed or failed"));
                                 true
                             }
                         };
@@ -1201,7 +1213,7 @@ impl StatePolicy for StaticSendTargetPolicy {
                         })() {
                             Ok(()) => false,
                             Err(_) => {
-                                engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(StaticSendTargetEvent::ErrorExecution, "<assign location='route'>: an integer operation overflowed or failed"));
+                                engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(StaticSendTargetEvent::ErrorExecution, ::sce_rust_runtime::ErrorReason::ExpressionFailed, "<assign location='route'>: an integer operation overflowed or failed"));
                                 true
                             }
                         };
@@ -1226,7 +1238,7 @@ impl StatePolicy for StaticSendTargetPolicy {
                         })() {
                             Ok(()) => false,
                             Err(_) => {
-                                engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(StaticSendTargetEvent::ErrorExecution, "<assign location='route'>: an integer operation overflowed or failed"));
+                                engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(StaticSendTargetEvent::ErrorExecution, ::sce_rust_runtime::ErrorReason::ExpressionFailed, "<assign location='route'>: an integer operation overflowed or failed"));
                                 true
                             }
                         };
@@ -1249,7 +1261,7 @@ impl StatePolicy for StaticSendTargetPolicy {
                         })() {
                             Ok(()) => false,
                             Err(_) => {
-                                engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(StaticSendTargetEvent::ErrorExecution, "<assign location='landed'>: an integer operation overflowed or failed"));
+                                engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(StaticSendTargetEvent::ErrorExecution, ::sce_rust_runtime::ErrorReason::ExpressionFailed, "<assign location='landed'>: an integer operation overflowed or failed"));
                                 true
                             }
                         };
@@ -1273,7 +1285,7 @@ impl StatePolicy for StaticSendTargetPolicy {
                         })() {
                             Ok(()) => false,
                             Err(_) => {
-                                engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(StaticSendTargetEvent::ErrorExecution, "<assign location='refused'>: an integer operation overflowed or failed"));
+                                engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(StaticSendTargetEvent::ErrorExecution, ::sce_rust_runtime::ErrorReason::ExpressionFailed, "<assign location='refused'>: an integer operation overflowed or failed"));
                                 true
                             }
                         };

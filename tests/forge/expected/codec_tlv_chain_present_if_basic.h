@@ -131,12 +131,13 @@ struct CodecTlvChainPresentIfBasic {
     [[nodiscard]] std::optional<::SCE::Forge::List<::SCE::Generated::CodecTlvEntry::CodecTlvEntry, 4>> entries() const noexcept { if (!entries_) { return std::nullopt; } return ::SCE::Forge::List<::SCE::Generated::CodecTlvEntry::CodecTlvEntry, 4>(*entries_); }
 
     /// Decode the next frame from `cursor`. On success the cursor
-    /// advances past the consumed bytes; on `NeedMoreBytes` the cursor
-    /// is left untouched so the caller can resume after appending more
-    /// bytes (RFC §synth-5-B L494-519). Returns `std::nullopt` on the
-    /// `NeedMoreBytes` boundary; later phases attach a typed error via
-    /// `cursor.last_error()`.
-    static std::optional<CodecTlvChainPresentIfBasic> decode(::SCE::Forge::SceCursor& cursor) {
+    /// advances past the consumed bytes and the value is answered; a
+    /// refused frame answers the `CodecError` that refused it
+    /// (docs/adr/0099, amendment of 2026-11-16): `NeedMoreBytes` when
+    /// the cursor's tail is shorter than the frame (RFC §synth-5-B
+    /// L494-519), which the caller resumes after appending bytes, and
+    /// another kind for a frame no more bytes make whole.
+    static ::SCE::Forge::Decoded<CodecTlvChainPresentIfBasic> decode(::SCE::Forge::SceCursor& cursor) {
         // Streaming cursor decode (SSOT selection: `needs_streaming`).
         // The positional `raw[byte_off]` path is valid only when every
         // field's absolute offset is fixed at codegen time; this branch
@@ -151,9 +152,9 @@ struct CodecTlvChainPresentIfBasic {
         uint8_t carrier;
         {
             const std::uint8_t* raw = cursor.peek_slice(1);
-            if (raw == nullptr) return std::nullopt;
+            if (raw == nullptr) return ::SCE::Forge::CodecError::NeedMoreBytes;
             carrier = static_cast<uint8_t>(raw[0]);
-            if (!cursor.advance(1)) return std::nullopt;
+            if (!cursor.advance(1)) return ::SCE::Forge::CodecError::NeedMoreBytes;
         }
         std::optional<std::vector<::SCE::Generated::CodecTlvEntry::CodecTlvEntry>> entries;
         if ((carrier & 0x01) != 0) {
@@ -162,18 +163,17 @@ struct CodecTlvChainPresentIfBasic {
             for (std::size_t _i = 0; _i < 4; ++_i) {
                 if (cursor.remaining() == 0) break;
                 auto _elem = ::SCE::Generated::CodecTlvEntry::CodecTlvEntry::decode(cursor);
-                if (!_elem.has_value()) return std::nullopt;
+                if (!_elem.has_value()) return _elem.error();
                 _list.push_back(*_elem);
             }
-            if (cursor.remaining() > 0) { cursor.refuse(::SCE::Forge::CodecError::TooManyElements); return std::nullopt; }
+            if (cursor.remaining() > 0) { return ::SCE::Forge::CodecError::TooManyElements; }
             entries = std::move(_list);
         }
         std::optional<::SCE::Forge::List<::SCE::Generated::CodecTlvEntry::CodecTlvEntry, 4>> _b_entries;
         if (entries) {
             _b_entries = ::SCE::Forge::List<::SCE::Generated::CodecTlvEntry::CodecTlvEntry, 4>::make(*entries);
             if (!_b_entries) {
-                cursor.refuse(::SCE::Forge::CodecError::TooManyElements);
-                return std::nullopt;
+                return ::SCE::Forge::CodecError::TooManyElements;
             }
         }
         CodecTlvChainPresentIfBasic _decoded{

@@ -610,6 +610,7 @@ impl AComputedEventNameIsMatchedLikeAnyOtherPolicy {
                 ::sce_rust_runtime::sce_log_error!("Guard evaluation failed for '{}': {}", cond, e);
                 engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(
                     AComputedEventNameIsMatchedLikeAnyOtherEvent::ErrorExecution,
+                    ::sce_rust_runtime::ErrorReason::ExpressionFailed,
                     reason,
                 ));
                 None
@@ -942,7 +943,12 @@ impl StatePolicy for AComputedEventNameIsMatchedLikeAnyOtherPolicy {
                         let __sce_arg_sid = self.session_id.as_ref().unwrap().clone();
                         let __sce_arg_se = self.script_engine.clone();
                         let __sce_arg_se: &dyn sce_rust_runtime::IScriptEngine = &*__sce_arg_se;
-                        let mut _send_arg_error: Option<&'static str> = None;
+                        // The code and the sentence of the first argument that failed
+                        // (docs/adr/0106 #111).
+                        let mut _send_arg_error: Option<(
+                            ::sce_rust_runtime::ErrorReason,
+                            &'static str,
+                        )> = None;
                         // An event name that evaluates to nothing names no event: the same
                         // failure as one that does not evaluate.
                         let _send_event_name: String = if _send_arg_error.is_none() {
@@ -957,13 +963,16 @@ impl StatePolicy for AComputedEventNameIsMatchedLikeAnyOtherPolicy {
                             String::new()
                         };
                         if _send_arg_error.is_none() && _send_event_name.is_empty() {
-                            _send_arg_error =
-                                Some("<send> eventexpr could not be evaluated to an event name");
+                            _send_arg_error = Some((
+                                ::sce_rust_runtime::ErrorReason::ExpressionFailed,
+                                "<send> eventexpr could not be evaluated to an event name",
+                            ));
                         }
-                        if let Some(__sce_why) = _send_arg_error {
+                        if let Some((__sce_reason, __sce_why)) = _send_arg_error {
                             ::sce_rust_runtime::sce_log_error!("{}", __sce_why);
                             let mut err_meta = sce_rust_runtime::EventWithMetadata::platform_error(
                                 AComputedEventNameIsMatchedLikeAnyOtherEvent::ErrorExecution,
+                                __sce_reason,
                                 __sce_why,
                             );
                             err_meta.metadata.send_id =
@@ -1000,7 +1009,12 @@ impl StatePolicy for AComputedEventNameIsMatchedLikeAnyOtherPolicy {
                         let __sce_arg_sid = self.session_id.as_ref().unwrap().clone();
                         let __sce_arg_se = self.script_engine.clone();
                         let __sce_arg_se: &dyn sce_rust_runtime::IScriptEngine = &*__sce_arg_se;
-                        let mut _send_arg_error: Option<&'static str> = None;
+                        // The code and the sentence of the first argument that failed
+                        // (docs/adr/0106 #111).
+                        let mut _send_arg_error: Option<(
+                            ::sce_rust_runtime::ErrorReason,
+                            &'static str,
+                        )> = None;
                         // An event name that evaluates to nothing names no event: the same
                         // failure as one that does not evaluate.
                         let _send_event_name: String = if _send_arg_error.is_none() {
@@ -1015,13 +1029,16 @@ impl StatePolicy for AComputedEventNameIsMatchedLikeAnyOtherPolicy {
                             String::new()
                         };
                         if _send_arg_error.is_none() && _send_event_name.is_empty() {
-                            _send_arg_error =
-                                Some("<send> eventexpr could not be evaluated to an event name");
+                            _send_arg_error = Some((
+                                ::sce_rust_runtime::ErrorReason::ExpressionFailed,
+                                "<send> eventexpr could not be evaluated to an event name",
+                            ));
                         }
-                        if let Some(__sce_why) = _send_arg_error {
+                        if let Some((__sce_reason, __sce_why)) = _send_arg_error {
                             ::sce_rust_runtime::sce_log_error!("{}", __sce_why);
                             let mut err_meta = sce_rust_runtime::EventWithMetadata::platform_error(
                                 AComputedEventNameIsMatchedLikeAnyOtherEvent::ErrorExecution,
+                                __sce_reason,
                                 __sce_why,
                             );
                             err_meta.metadata.send_id =
@@ -1062,7 +1079,12 @@ impl StatePolicy for AComputedEventNameIsMatchedLikeAnyOtherPolicy {
                         let __sce_arg_sid = self.session_id.as_ref().unwrap().clone();
                         let __sce_arg_se = self.script_engine.clone();
                         let __sce_arg_se: &dyn sce_rust_runtime::IScriptEngine = &*__sce_arg_se;
-                        let mut _send_arg_error: Option<&'static str> = None;
+                        // The code and the sentence of the first argument that failed
+                        // (docs/adr/0106 #111).
+                        let mut _send_arg_error: Option<(
+                            ::sce_rust_runtime::ErrorReason,
+                            &'static str,
+                        )> = None;
                         // An event name that evaluates to nothing names no event: the same
                         // failure as one that does not evaluate.
                         let _send_event_name: String = if _send_arg_error.is_none() {
@@ -1077,13 +1099,16 @@ impl StatePolicy for AComputedEventNameIsMatchedLikeAnyOtherPolicy {
                             String::new()
                         };
                         if _send_arg_error.is_none() && _send_event_name.is_empty() {
-                            _send_arg_error =
-                                Some("<send> eventexpr could not be evaluated to an event name");
+                            _send_arg_error = Some((
+                                ::sce_rust_runtime::ErrorReason::ExpressionFailed,
+                                "<send> eventexpr could not be evaluated to an event name",
+                            ));
                         }
-                        if let Some(__sce_why) = _send_arg_error {
+                        if let Some((__sce_reason, __sce_why)) = _send_arg_error {
                             ::sce_rust_runtime::sce_log_error!("{}", __sce_why);
                             let mut err_meta = sce_rust_runtime::EventWithMetadata::platform_error(
                                 AComputedEventNameIsMatchedLikeAnyOtherEvent::ErrorExecution,
+                                __sce_reason,
                                 __sce_why,
                             );
                             err_meta.metadata.send_id =
@@ -1121,7 +1146,12 @@ impl StatePolicy for AComputedEventNameIsMatchedLikeAnyOtherPolicy {
                         let __sce_arg_sid = self.session_id.as_ref().unwrap().clone();
                         let __sce_arg_se = self.script_engine.clone();
                         let __sce_arg_se: &dyn sce_rust_runtime::IScriptEngine = &*__sce_arg_se;
-                        let mut _send_arg_error: Option<&'static str> = None;
+                        // The code and the sentence of the first argument that failed
+                        // (docs/adr/0106 #111).
+                        let mut _send_arg_error: Option<(
+                            ::sce_rust_runtime::ErrorReason,
+                            &'static str,
+                        )> = None;
                         // An event name that evaluates to nothing names no event: the same
                         // failure as one that does not evaluate.
                         let _send_event_name: String = if _send_arg_error.is_none() {
@@ -1136,13 +1166,16 @@ impl StatePolicy for AComputedEventNameIsMatchedLikeAnyOtherPolicy {
                             String::new()
                         };
                         if _send_arg_error.is_none() && _send_event_name.is_empty() {
-                            _send_arg_error =
-                                Some("<send> eventexpr could not be evaluated to an event name");
+                            _send_arg_error = Some((
+                                ::sce_rust_runtime::ErrorReason::ExpressionFailed,
+                                "<send> eventexpr could not be evaluated to an event name",
+                            ));
                         }
-                        if let Some(__sce_why) = _send_arg_error {
+                        if let Some((__sce_reason, __sce_why)) = _send_arg_error {
                             ::sce_rust_runtime::sce_log_error!("{}", __sce_why);
                             let mut err_meta = sce_rust_runtime::EventWithMetadata::platform_error(
                                 AComputedEventNameIsMatchedLikeAnyOtherEvent::ErrorExecution,
+                                __sce_reason,
                                 __sce_why,
                             );
                             err_meta.metadata.send_id =
@@ -1182,7 +1215,12 @@ impl StatePolicy for AComputedEventNameIsMatchedLikeAnyOtherPolicy {
                         let __sce_arg_sid = self.session_id.as_ref().unwrap().clone();
                         let __sce_arg_se = self.script_engine.clone();
                         let __sce_arg_se: &dyn sce_rust_runtime::IScriptEngine = &*__sce_arg_se;
-                        let mut _send_arg_error: Option<&'static str> = None;
+                        // The code and the sentence of the first argument that failed
+                        // (docs/adr/0106 #111).
+                        let mut _send_arg_error: Option<(
+                            ::sce_rust_runtime::ErrorReason,
+                            &'static str,
+                        )> = None;
                         // An event name that evaluates to nothing names no event: the same
                         // failure as one that does not evaluate.
                         let _send_event_name: String = if _send_arg_error.is_none() {
@@ -1197,8 +1235,10 @@ impl StatePolicy for AComputedEventNameIsMatchedLikeAnyOtherPolicy {
                             String::new()
                         };
                         if _send_arg_error.is_none() && _send_event_name.is_empty() {
-                            _send_arg_error =
-                                Some("<send> eventexpr could not be evaluated to an event name");
+                            _send_arg_error = Some((
+                                ::sce_rust_runtime::ErrorReason::ExpressionFailed,
+                                "<send> eventexpr could not be evaluated to an event name",
+                            ));
                         }
                         // A target that evaluates to nothing is not an evaluation error: it is an
                         // address nobody answers at, which the resolution below reports as
@@ -1214,8 +1254,10 @@ impl StatePolicy for AComputedEventNameIsMatchedLikeAnyOtherPolicy {
                                             "targetexpr eval failed: {}",
                                             e
                                         );
-                                        _send_arg_error =
-                                            Some("<send> targetexpr could not be evaluated");
+                                        _send_arg_error = Some((
+                                            ::sce_rust_runtime::ErrorReason::ExpressionFailed,
+                                            "<send> targetexpr could not be evaluated",
+                                        ));
                                         None
                                     }
                                 }
@@ -1226,13 +1268,14 @@ impl StatePolicy for AComputedEventNameIsMatchedLikeAnyOtherPolicy {
                             // W3C SCXML 6.2: a target this processor cannot address is refused as
                             // a static one is, before anything is delivered.
                             if sce_rust_runtime::helpers::send::is_invalid_target(&::sce_rust_runtime::helpers::event_data::script_value_to_wire_string(val)) {
-            _send_arg_error = Some("<send> targetexpr produced a target this processor cannot address");
+            _send_arg_error = Some((::sce_rust_runtime::ErrorReason::SendTargetInvalid, "<send> targetexpr produced a target this processor cannot address"));
         }
                         }
-                        if let Some(__sce_why) = _send_arg_error {
+                        if let Some((__sce_reason, __sce_why)) = _send_arg_error {
                             ::sce_rust_runtime::sce_log_error!("{}", __sce_why);
                             let mut err_meta = sce_rust_runtime::EventWithMetadata::platform_error(
                                 AComputedEventNameIsMatchedLikeAnyOtherEvent::ErrorExecution,
+                                __sce_reason,
                                 __sce_why,
                             );
                             err_meta.metadata.send_id =
@@ -1254,7 +1297,7 @@ impl StatePolicy for AComputedEventNameIsMatchedLikeAnyOtherPolicy {
                             if _resolved_target.is_none() {
                                 // W3C SCXML C.1 (test 496, 521): a target that names nothing raises
                                 // error.communication.
-                                let mut err_meta = sce_rust_runtime::EventWithMetadata::platform_error(AComputedEventNameIsMatchedLikeAnyOtherEvent::ErrorCommunication, "<send> targetexpr evaluated to nothing, so there is no target to reach");
+                                let mut err_meta = sce_rust_runtime::EventWithMetadata::platform_error(AComputedEventNameIsMatchedLikeAnyOtherEvent::ErrorCommunication, ::sce_rust_runtime::ErrorReason::TargetUnreachable, "<send> targetexpr evaluated to nothing, so there is no target to reach");
                                 err_meta.metadata.send_id =
                                     ::sce_rust_runtime::sce_string_from_str(send_id);
                                 engine.raise(err_meta);
@@ -1295,7 +1338,7 @@ impl StatePolicy for AComputedEventNameIsMatchedLikeAnyOtherPolicy {
                                         if __sce_served.is_none()
                                             && !engine.has_event_processor("sce:mesh")
                                         {
-                                            let mut err_meta = sce_rust_runtime::EventWithMetadata::platform_error(AComputedEventNameIsMatchedLikeAnyOtherEvent::ErrorExecution, "<send type='sce:mesh'> names a processor the host declared but never registered");
+                                            let mut err_meta = sce_rust_runtime::EventWithMetadata::platform_error(AComputedEventNameIsMatchedLikeAnyOtherEvent::ErrorExecution, ::sce_rust_runtime::ErrorReason::ProcessorUnregistered, "<send type='sce:mesh'> names a processor the host declared but never registered");
                                             err_meta.metadata.send_id =
                                                 ::sce_rust_runtime::sce_string_from_str(send_id);
                                             engine.raise(err_meta);
@@ -1326,7 +1369,7 @@ impl StatePolicy for AComputedEventNameIsMatchedLikeAnyOtherPolicy {
                                         if __sce_routed
                                             == sce_rust_runtime::TargetSendOutcome::Unsupported
                                         {
-                                            let mut err_meta = sce_rust_runtime::EventWithMetadata::platform_error(AComputedEventNameIsMatchedLikeAnyOtherEvent::ErrorExecution, "<send> targetexpr produced a value that is not a target");
+                                            let mut err_meta = sce_rust_runtime::EventWithMetadata::platform_error(AComputedEventNameIsMatchedLikeAnyOtherEvent::ErrorExecution, ::sce_rust_runtime::ErrorReason::SendTargetInvalid, "<send> targetexpr produced a value that is not a target");
                                             err_meta.metadata.send_id =
                                                 ::sce_rust_runtime::sce_string_from_str(send_id);
                                             engine.raise(err_meta);
@@ -1335,7 +1378,7 @@ impl StatePolicy for AComputedEventNameIsMatchedLikeAnyOtherPolicy {
                                         if __sce_routed
                                             == sce_rust_runtime::TargetSendOutcome::Unreachable
                                         {
-                                            let mut err_meta = sce_rust_runtime::EventWithMetadata::platform_error(AComputedEventNameIsMatchedLikeAnyOtherEvent::ErrorCommunication, "<send> targetexpr names a session this processor cannot reach");
+                                            let mut err_meta = sce_rust_runtime::EventWithMetadata::platform_error(AComputedEventNameIsMatchedLikeAnyOtherEvent::ErrorCommunication, ::sce_rust_runtime::ErrorReason::TargetUnreachable, "<send> targetexpr names a session this processor cannot reach");
                                             err_meta.metadata.send_id =
                                                 ::sce_rust_runtime::sce_string_from_str(send_id);
                                             engine.raise(err_meta);
@@ -1363,7 +1406,12 @@ impl StatePolicy for AComputedEventNameIsMatchedLikeAnyOtherPolicy {
                         let __sce_arg_sid = self.session_id.as_ref().unwrap().clone();
                         let __sce_arg_se = self.script_engine.clone();
                         let __sce_arg_se: &dyn sce_rust_runtime::IScriptEngine = &*__sce_arg_se;
-                        let mut _send_arg_error: Option<&'static str> = None;
+                        // The code and the sentence of the first argument that failed
+                        // (docs/adr/0106 #111).
+                        let mut _send_arg_error: Option<(
+                            ::sce_rust_runtime::ErrorReason,
+                            &'static str,
+                        )> = None;
                         // An event name that evaluates to nothing names no event: the same
                         // failure as one that does not evaluate.
                         let _send_event_name: String = if _send_arg_error.is_none() {
@@ -1378,8 +1426,10 @@ impl StatePolicy for AComputedEventNameIsMatchedLikeAnyOtherPolicy {
                             String::new()
                         };
                         if _send_arg_error.is_none() && _send_event_name.is_empty() {
-                            _send_arg_error =
-                                Some("<send> eventexpr could not be evaluated to an event name");
+                            _send_arg_error = Some((
+                                ::sce_rust_runtime::ErrorReason::ExpressionFailed,
+                                "<send> eventexpr could not be evaluated to an event name",
+                            ));
                         }
                         // A target that evaluates to nothing is not an evaluation error: it is an
                         // address nobody answers at, which the resolution below reports as
@@ -1396,8 +1446,10 @@ impl StatePolicy for AComputedEventNameIsMatchedLikeAnyOtherPolicy {
                                             "targetexpr eval failed: {}",
                                             e
                                         );
-                                        _send_arg_error =
-                                            Some("<send> targetexpr could not be evaluated");
+                                        _send_arg_error = Some((
+                                            ::sce_rust_runtime::ErrorReason::ExpressionFailed,
+                                            "<send> targetexpr could not be evaluated",
+                                        ));
                                         None
                                     }
                                 }
@@ -1408,13 +1460,14 @@ impl StatePolicy for AComputedEventNameIsMatchedLikeAnyOtherPolicy {
                             // W3C SCXML 6.2: a target this processor cannot address is refused as
                             // a static one is, before anything is delivered.
                             if sce_rust_runtime::helpers::send::is_invalid_target(&::sce_rust_runtime::helpers::event_data::script_value_to_wire_string(val)) {
-            _send_arg_error = Some("<send> targetexpr produced a target this processor cannot address");
+            _send_arg_error = Some((::sce_rust_runtime::ErrorReason::SendTargetInvalid, "<send> targetexpr produced a target this processor cannot address"));
         }
                         }
-                        if let Some(__sce_why) = _send_arg_error {
+                        if let Some((__sce_reason, __sce_why)) = _send_arg_error {
                             ::sce_rust_runtime::sce_log_error!("{}", __sce_why);
                             let mut err_meta = sce_rust_runtime::EventWithMetadata::platform_error(
                                 AComputedEventNameIsMatchedLikeAnyOtherEvent::ErrorExecution,
+                                __sce_reason,
                                 __sce_why,
                             );
                             err_meta.metadata.send_id =
@@ -1436,7 +1489,7 @@ impl StatePolicy for AComputedEventNameIsMatchedLikeAnyOtherPolicy {
                             if _resolved_target.is_none() {
                                 // W3C SCXML C.1 (test 496, 521): a target that names nothing raises
                                 // error.communication.
-                                let mut err_meta = sce_rust_runtime::EventWithMetadata::platform_error(AComputedEventNameIsMatchedLikeAnyOtherEvent::ErrorCommunication, "<send> targetexpr evaluated to nothing, so there is no target to reach");
+                                let mut err_meta = sce_rust_runtime::EventWithMetadata::platform_error(AComputedEventNameIsMatchedLikeAnyOtherEvent::ErrorCommunication, ::sce_rust_runtime::ErrorReason::TargetUnreachable, "<send> targetexpr evaluated to nothing, so there is no target to reach");
                                 err_meta.metadata.send_id =
                                     ::sce_rust_runtime::sce_string_from_str(send_id);
                                 engine.raise(err_meta);
@@ -1507,7 +1560,7 @@ impl StatePolicy for AComputedEventNameIsMatchedLikeAnyOtherPolicy {
                                         if __sce_routed
                                             == sce_rust_runtime::TargetSendOutcome::Unsupported
                                         {
-                                            let mut err_meta = sce_rust_runtime::EventWithMetadata::platform_error(AComputedEventNameIsMatchedLikeAnyOtherEvent::ErrorExecution, "<send> targetexpr produced a value that is not a target");
+                                            let mut err_meta = sce_rust_runtime::EventWithMetadata::platform_error(AComputedEventNameIsMatchedLikeAnyOtherEvent::ErrorExecution, ::sce_rust_runtime::ErrorReason::SendTargetInvalid, "<send> targetexpr produced a value that is not a target");
                                             err_meta.metadata.send_id =
                                                 ::sce_rust_runtime::sce_string_from_str(send_id);
                                             engine.raise(err_meta);
@@ -1516,7 +1569,7 @@ impl StatePolicy for AComputedEventNameIsMatchedLikeAnyOtherPolicy {
                                         if __sce_routed
                                             == sce_rust_runtime::TargetSendOutcome::Unreachable
                                         {
-                                            let mut err_meta = sce_rust_runtime::EventWithMetadata::platform_error(AComputedEventNameIsMatchedLikeAnyOtherEvent::ErrorCommunication, "<send> targetexpr names a session this processor cannot reach");
+                                            let mut err_meta = sce_rust_runtime::EventWithMetadata::platform_error(AComputedEventNameIsMatchedLikeAnyOtherEvent::ErrorCommunication, ::sce_rust_runtime::ErrorReason::TargetUnreachable, "<send> targetexpr names a session this processor cannot reach");
                                             err_meta.metadata.send_id =
                                                 ::sce_rust_runtime::sce_string_from_str(send_id);
                                             engine.raise(err_meta);

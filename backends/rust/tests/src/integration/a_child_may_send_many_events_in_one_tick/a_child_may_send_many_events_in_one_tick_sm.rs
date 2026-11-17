@@ -486,6 +486,7 @@ impl AChildMaySendManyEventsInOneTickPolicy {
                 );
                 engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(
                     AChildMaySendManyEventsInOneTickEvent::ErrorExecution,
+                    ::sce_rust_runtime::ErrorReason::ParamUnfit,
                     "<data id='ticks'> could not hold the value its invoke handed it",
                 ));
             }
@@ -497,6 +498,7 @@ impl AChildMaySendManyEventsInOneTickPolicy {
                 ::sce_rust_runtime::sce_log_error!("global: {}", e);
                 engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(
                     AChildMaySendManyEventsInOneTickEvent::ErrorExecution,
+                    ::sce_rust_runtime::ErrorReason::ExpressionFailed,
                     "<data id='ticks'> expr failed to evaluate",
                 ));
             }
@@ -545,6 +547,7 @@ impl AChildMaySendManyEventsInOneTickPolicy {
                 ::sce_rust_runtime::sce_log_error!("Guard evaluation failed for '{}': {}", cond, e);
                 engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(
                     AChildMaySendManyEventsInOneTickEvent::ErrorExecution,
+                    ::sce_rust_runtime::ErrorReason::ExpressionFailed,
                     reason,
                 ));
                 None
@@ -740,7 +743,7 @@ impl AChildMaySendManyEventsInOneTickPolicy {
                     self.active_invokes.remove("chatty");
                     engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(
                         AChildMaySendManyEventsInOneTickEvent::ErrorExecution,
-                        &format!("<invoke id='{}'> did not start: its child's script session failed at step '{}'", "chatty", failure.stage)));
+                        ::sce_rust_runtime::ErrorReason::InvokeChildInitFailed, &format!("<invoke id='{}'> did not start: its child's script session failed at step '{}'", "chatty", failure.stage)));
                     continue;
                 }
 
@@ -1238,6 +1241,7 @@ impl StatePolicy for AChildMaySendManyEventsInOneTickPolicy {
                             ::sce_rust_runtime::sce_log_error!("Assign failed for 'ticks': {}", e);
                             engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(
                                 AChildMaySendManyEventsInOneTickEvent::ErrorExecution,
+                                ::sce_rust_runtime::ErrorReason::AssignmentFailed,
                                 "<assign> to 'ticks' failed",
                             ));
                             // W3C SCXML 4.9: the error ends the block, from however deep a <foreach> it came.

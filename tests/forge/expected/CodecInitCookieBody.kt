@@ -7,6 +7,7 @@
 package com.sce.generated.codec_init_cookie_body
 
 import com.sce.forge.runtime.CodecError
+import com.sce.forge.runtime.Decoded
 import com.sce.forge.runtime.MutableListSink
 import com.sce.forge.runtime.SceCursor
 import com.sce.forge.runtime.SceSink
@@ -69,11 +70,14 @@ data class CodecInitCookieBody(
 
     companion object {
         /// Decode the next frame from `cursor`. On success the cursor
-        /// advances past the consumed bytes; returns `null` when the
-        /// cursor's tail is shorter than the declared minimum frame
-        /// (RFC §synth-5-B L494-519).
+        /// advances past the consumed bytes and the value is `Decoded.Ok`;
+        /// a refused frame is `Decoded.Refused` with the kind that refused
+        /// it (docs/adr/0099, amendment of 2026-11-16): `NeedMoreBytes` when
+        /// the cursor's tail is shorter than the frame (RFC §synth-5-B
+        /// L494-519), which the caller resumes after appending bytes, and
+        /// another kind for a frame no more bytes make whole.
         @Suppress("UNUSED_PARAMETER")
-        fun decode(cursor: SceCursor, A: UByte): CodecInitCookieBody? {
+        fun decode(cursor: SceCursor, A: UByte): Decoded<CodecInitCookieBody> {
             // Streaming cursor decode (SSOT selection: `needs_streaming`).
             // The positional `raw[byte_off]` path is valid only when every
             // field's absolute offset is fixed at codegen time; this branch
@@ -87,13 +91,13 @@ data class CodecInitCookieBody(
             // dedicated helpers; every other field flows through
             // `present_if_decode_stmt`.
             val version = run {
-                val raw = cursor.peekSlice(1) ?: return null
+                val raw = cursor.peekSlice(1) ?: return Decoded.Refused(CodecError.NeedMoreBytes)
                 val _v = raw[0].toUByte()
-                if (!cursor.advance(1)) return null
+                if (!cursor.advance(1)) return Decoded.Refused(CodecError.NeedMoreBytes)
                 _v
             }
             val cookie_size: UShort? = if ((A.toInt() and 0x01) != 0) {
-                val _v = cursor.readVleU16() ?: return null
+                val _v = cursor.readVleU16().valueOr { _refused -> return _refused }
                 _v
             } else {
                 null
@@ -101,20 +105,22 @@ data class CodecInitCookieBody(
             val cookie = if ((A.toInt() and 0x01) != 0) {
                 val _len = cookie_size!!
                 if (_len > 64u) {
-                    cursor.refuse(CodecError.LengthOutOfRange); return null
+                    return Decoded.Refused(CodecError.LengthOutOfRange)
                 }
                 val _n = _len.toInt()
-                val raw = cursor.peekSlice(_n) ?: return null
+                val raw = cursor.peekSlice(_n) ?: return Decoded.Refused(CodecError.NeedMoreBytes)
                 val _v = raw.copyOf()
-                if (!cursor.advance(_n)) return null
+                if (!cursor.advance(_n)) return Decoded.Refused(CodecError.NeedMoreBytes)
                 _v
             } else {
                 null
             }
-            return CodecInitCookieBody(
-                version = version,
-                cookie_size = cookie_size,
-                cookie = cookie
+            return Decoded.Ok(
+                CodecInitCookieBody(
+                    version = version,
+                    cookie_size = cookie_size,
+                    cookie = cookie
+                )
             )
         }
     }

@@ -468,6 +468,7 @@ impl ABadInvokeArgumentIsReportedOnceSceSynthInvokeInv3Policy {
                 );
                 engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(
                     ABadInvokeArgumentIsReportedOnceSceSynthInvokeInv3Event::ErrorExecution,
+                    ::sce_rust_runtime::ErrorReason::ParamUnfit,
                     "<data id='alsoBroken'> could not hold the value its invoke handed it",
                 ));
             }
@@ -482,6 +483,7 @@ impl ABadInvokeArgumentIsReportedOnceSceSynthInvokeInv3Policy {
                 ::sce_rust_runtime::sce_log_error!("global: {}", e);
                 engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(
                     ABadInvokeArgumentIsReportedOnceSceSynthInvokeInv3Event::ErrorExecution,
+                    ::sce_rust_runtime::ErrorReason::ExpressionFailed,
                     "<data id='alsoBroken'> expr failed to evaluate",
                 ));
             }
@@ -530,6 +532,7 @@ impl ABadInvokeArgumentIsReportedOnceSceSynthInvokeInv3Policy {
                 ::sce_rust_runtime::sce_log_error!("Guard evaluation failed for '{}': {}", cond, e);
                 engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(
                     ABadInvokeArgumentIsReportedOnceSceSynthInvokeInv3Event::ErrorExecution,
+                    ::sce_rust_runtime::ErrorReason::ExpressionFailed,
                     reason,
                 ));
                 None
@@ -975,7 +978,8 @@ impl StatePolicy for ABadInvokeArgumentIsReportedOnceSceSynthInvokeInv3Policy {
                             // nothing delivered, and the block ends (4.9).
                             engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(
             ABadInvokeArgumentIsReportedOnceSceSynthInvokeInv3Event::ErrorCommunication,
-            "<send target='#_parent'> has no parent session to reach"));
+            ::sce_rust_runtime::ErrorReason::TargetUnreachable,
+        "<send target='#_parent'> has no parent session to reach"));
                             break 'action_block;
                         }
 

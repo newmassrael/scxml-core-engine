@@ -518,6 +518,7 @@ impl TheRunEndsByExitingEveryStatePolicy {
                 );
                 engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(
                     TheRunEndsByExitingEveryStateEvent::ErrorExecution,
+                    ::sce_rust_runtime::ErrorReason::ParamUnfit,
                     "<data id='order'> could not hold the value its invoke handed it",
                 ));
             }
@@ -529,6 +530,7 @@ impl TheRunEndsByExitingEveryStatePolicy {
                 ::sce_rust_runtime::sce_log_error!("global: {}", e);
                 engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(
                     TheRunEndsByExitingEveryStateEvent::ErrorExecution,
+                    ::sce_rust_runtime::ErrorReason::ExpressionFailed,
                     "<data id='order'> expr failed to evaluate",
                 ));
             }
@@ -543,6 +545,7 @@ impl TheRunEndsByExitingEveryStatePolicy {
                 );
                 engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(
                     TheRunEndsByExitingEveryStateEvent::ErrorExecution,
+                    ::sce_rust_runtime::ErrorReason::ParamUnfit,
                     "<data id='finalExits'> could not hold the value its invoke handed it",
                 ));
             }
@@ -557,6 +560,7 @@ impl TheRunEndsByExitingEveryStatePolicy {
                 ::sce_rust_runtime::sce_log_error!("global: {}", e);
                 engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(
                     TheRunEndsByExitingEveryStateEvent::ErrorExecution,
+                    ::sce_rust_runtime::ErrorReason::ExpressionFailed,
                     "<data id='finalExits'> expr failed to evaluate",
                 ));
             }
@@ -571,6 +575,7 @@ impl TheRunEndsByExitingEveryStatePolicy {
                 );
                 engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(
                     TheRunEndsByExitingEveryStateEvent::ErrorExecution,
+                    ::sce_rust_runtime::ErrorReason::ParamUnfit,
                     "<data id='selfInFinal'> could not hold the value its invoke handed it",
                 ));
             }
@@ -585,6 +590,7 @@ impl TheRunEndsByExitingEveryStatePolicy {
                 ::sce_rust_runtime::sce_log_error!("global: {}", e);
                 engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(
                     TheRunEndsByExitingEveryStateEvent::ErrorExecution,
+                    ::sce_rust_runtime::ErrorReason::ExpressionFailed,
                     "<data id='selfInFinal'> expr failed to evaluate",
                 ));
             }
@@ -651,6 +657,7 @@ impl TheRunEndsByExitingEveryStatePolicy {
                 ::sce_rust_runtime::sce_log_error!("Guard evaluation failed for '{}': {}", cond, e);
                 engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(
                     TheRunEndsByExitingEveryStateEvent::ErrorExecution,
+                    ::sce_rust_runtime::ErrorReason::ExpressionFailed,
                     reason,
                 ));
                 None
@@ -1008,6 +1015,7 @@ impl StatePolicy for TheRunEndsByExitingEveryStatePolicy {
                             );
                             engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(
                                 TheRunEndsByExitingEveryStateEvent::ErrorExecution,
+                                ::sce_rust_runtime::ErrorReason::AssignmentFailed,
                                 "<assign> to 'finalExits' failed",
                             ));
                             // W3C SCXML 4.9: the error ends the block, from however deep a <foreach> it came.
@@ -1036,6 +1044,7 @@ impl StatePolicy for TheRunEndsByExitingEveryStatePolicy {
                                 );
                                 engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(
                                     TheRunEndsByExitingEveryStateEvent::ErrorExecution,
+                                    ::sce_rust_runtime::ErrorReason::AssignmentFailed,
                                     "<assign> to 'selfInFinal' failed",
                                 ));
                                 // W3C SCXML 4.9: the error ends the block, from however deep a <foreach> it came.
@@ -1066,6 +1075,7 @@ impl StatePolicy for TheRunEndsByExitingEveryStatePolicy {
                             ::sce_rust_runtime::sce_log_error!("Assign failed for 'order': {}", e);
                             engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(
                                 TheRunEndsByExitingEveryStateEvent::ErrorExecution,
+                                ::sce_rust_runtime::ErrorReason::AssignmentFailed,
                                 "<assign> to 'order' failed",
                             ));
                             // W3C SCXML 4.9: the error ends the block, from however deep a <foreach> it came.
@@ -1095,6 +1105,7 @@ impl StatePolicy for TheRunEndsByExitingEveryStatePolicy {
                             ::sce_rust_runtime::sce_log_error!("Assign failed for 'order': {}", e);
                             engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(
                                 TheRunEndsByExitingEveryStateEvent::ErrorExecution,
+                                ::sce_rust_runtime::ErrorReason::AssignmentFailed,
                                 "<assign> to 'order' failed",
                             ));
                             // W3C SCXML 4.9: the error ends the block, from however deep a <foreach> it came.

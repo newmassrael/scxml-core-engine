@@ -323,6 +323,56 @@ struct Wire {
     }
 };
 
+/// The `payload_len` the frame of a source of `CodecChainHasEnvelope` carries, which its encode
+/// derives from what it measures and no value holds (docs/adr/0081 §3), and none where the content it is gated beside is absent.
+template <class S>
+[[nodiscard]] std::optional<uint64_t> wire_payload_len(const S& src) noexcept(is_nothrow_source<S>::value) {
+    static_assert(is_source<S>::value, "S presents every element of CodecChainHasEnvelope");
+    const auto& _r_extensions_has_0x2 = source::extensions_has_0x2(src);
+    ::SCE::Forge::Detail::Kept<::SCE::Forge::Detail::InnerRead<decltype(source::extensions(std::declval<const std::variant_alternative_t<0, std::decay_t<decltype(_r_extensions_has_0x2)>>&>()))>> _r_extensions;
+    std::optional<::SCE::Forge::Bytes<256>> _e_payload;
+    ::SCE::Forge::Detail::Kept<decltype(source::slices(std::declval<const std::variant_alternative_t<0, std::decay_t<decltype(_r_extensions_has_0x2)>>&>()))> _r_slices;
+    if (const auto* _a = std::get_if<0>(&_r_extensions_has_0x2)) {
+        _r_extensions.keep(source::extensions(*_a).inner());
+        _r_slices.keep(source::slices(*_a));
+    }
+    if (const auto* _a = std::get_if<1>(&_r_extensions_has_0x2)) {
+        if (const auto& _c_extensions = source::extensions(*_a)) {
+            _r_extensions.keep(_c_extensions->inner());
+        }
+        _e_payload = static_cast<::SCE::Forge::Bytes<256>>(source::payload(*_a));
+    }
+    if (!(_e_payload.has_value())) {
+        return std::nullopt;
+    }
+    return static_cast<uint64_t>(_e_payload->size());
+}
+
+/// The `slice_count` the frame of a source of `CodecChainHasEnvelope` carries, which its encode
+/// derives from what it measures and no value holds (docs/adr/0081 §3), and none where the content it is gated beside is absent.
+template <class S>
+[[nodiscard]] std::optional<uint32_t> wire_slice_count(const S& src) noexcept(is_nothrow_source<S>::value) {
+    static_assert(is_source<S>::value, "S presents every element of CodecChainHasEnvelope");
+    const auto& _r_extensions_has_0x2 = source::extensions_has_0x2(src);
+    ::SCE::Forge::Detail::Kept<::SCE::Forge::Detail::InnerRead<decltype(source::extensions(std::declval<const std::variant_alternative_t<0, std::decay_t<decltype(_r_extensions_has_0x2)>>&>()))>> _r_extensions;
+    std::optional<::SCE::Forge::Bytes<256>> _e_payload;
+    ::SCE::Forge::Detail::Kept<decltype(source::slices(std::declval<const std::variant_alternative_t<0, std::decay_t<decltype(_r_extensions_has_0x2)>>&>()))> _r_slices;
+    if (const auto* _a = std::get_if<0>(&_r_extensions_has_0x2)) {
+        _r_extensions.keep(source::extensions(*_a).inner());
+        _r_slices.keep(source::slices(*_a));
+    }
+    if (const auto* _a = std::get_if<1>(&_r_extensions_has_0x2)) {
+        if (const auto& _c_extensions = source::extensions(*_a)) {
+            _r_extensions.keep(_c_extensions->inner());
+        }
+        _e_payload = static_cast<::SCE::Forge::Bytes<256>>(source::payload(*_a));
+    }
+    if (!(_r_slices.has_value())) {
+        return std::nullopt;
+    }
+    return static_cast<uint32_t>((*_r_slices).size());
+}
+
 struct CodecChainHasEnvelope {
     CodecChainHasEnvelope() = default;
     /// The value of each element it presents, in declaration order (ADR 0059 §5).
@@ -334,12 +384,13 @@ struct CodecChainHasEnvelope {
     [[nodiscard]] const CodecChainHasEnvelopeExtensionsHas0x2& extensions_has_0x2() const noexcept { return extensions_has_0x2_; }
 
     /// Decode the next frame from `cursor`. On success the cursor
-    /// advances past the consumed bytes; on `NeedMoreBytes` the cursor
-    /// is left untouched so the caller can resume after appending more
-    /// bytes (RFC §synth-5-B L494-519). Returns `std::nullopt` on the
-    /// `NeedMoreBytes` boundary; later phases attach a typed error via
-    /// `cursor.last_error()`.
-    static std::optional<CodecChainHasEnvelope> decode(::SCE::Forge::SceCursor& cursor) {
+    /// advances past the consumed bytes and the value is answered; a
+    /// refused frame answers the `CodecError` that refused it
+    /// (docs/adr/0099, amendment of 2026-11-16): `NeedMoreBytes` when
+    /// the cursor's tail is shorter than the frame (RFC §synth-5-B
+    /// L494-519), which the caller resumes after appending bytes, and
+    /// another kind for a frame no more bytes make whole.
+    static ::SCE::Forge::Decoded<CodecChainHasEnvelope> decode(::SCE::Forge::SceCursor& cursor) {
         // Streaming cursor decode (SSOT selection: `needs_streaming`).
         // The positional `raw[byte_off]` path is valid only when every
         // field's absolute offset is fixed at codegen time; this branch
@@ -354,9 +405,9 @@ struct CodecChainHasEnvelope {
         uint8_t header;
         {
             const std::uint8_t* raw = cursor.peek_slice(1);
-            if (raw == nullptr) return std::nullopt;
+            if (raw == nullptr) return ::SCE::Forge::CodecError::NeedMoreBytes;
             header = static_cast<uint8_t>(raw[0]);
-            if (!cursor.advance(1)) return std::nullopt;
+            if (!cursor.advance(1)) return ::SCE::Forge::CodecError::NeedMoreBytes;
         }
         std::optional<std::vector<::SCE::Generated::CodecZenohExtEntry::CodecZenohExtEntry>> extensions;
         if ((header & 0x80) != 0) {
@@ -365,13 +416,13 @@ struct CodecChainHasEnvelope {
             bool _more = false;
             for (std::size_t _i = 0; _i < 4; ++_i) {
                 auto _elem = ::SCE::Generated::CodecZenohExtEntry::CodecZenohExtEntry::decode(cursor);
-                if (!_elem.has_value()) return std::nullopt;
+                if (!_elem.has_value()) return _elem.error();
                 _more = _elem->z();
                 _list.push_back(*_elem);
                 if (!_more) break;
             }
-            if (_more && cursor.remaining() == 0) { return std::nullopt; }
-            if (_more) { cursor.refuse(::SCE::Forge::CodecError::TooManyElements); return std::nullopt; }
+            if (_more && cursor.remaining() == 0) { return ::SCE::Forge::CodecError::NeedMoreBytes; }
+            if (_more) { return ::SCE::Forge::CodecError::TooManyElements; }
             extensions = std::move(_list);
         }
         bool _has_extensions_2 = false;
@@ -385,41 +436,41 @@ struct CodecChainHasEnvelope {
         }
         std::optional<uint64_t> payload_len;
         if (!_has_extensions_2) {
-            auto _v_opt = cursor.read_vle_u64();
-        if (!_v_opt.has_value()) return std::nullopt;
-        auto _v = static_cast<std::uint64_t>(*_v_opt);
+            auto _v_read = cursor.read_vle_u64();
+        if (!_v_read.has_value()) return _v_read.error();
+        auto _v = static_cast<std::uint64_t>(*_v_read);
             payload_len = _v;
         }
         std::optional<std::vector<uint8_t>> payload;
         if (!_has_extensions_2) {
             const auto _len = payload_len.value();
             if (_len > 256) {
-                cursor.refuse(::SCE::Forge::CodecError::LengthOutOfRange); return std::nullopt;
+                return ::SCE::Forge::CodecError::LengthOutOfRange;
             }
             std::size_t _n = static_cast<std::size_t>(_len);
             const std::uint8_t* raw = cursor.peek_slice(_n);
-            if (raw == nullptr) return std::nullopt;
+            if (raw == nullptr) return ::SCE::Forge::CodecError::NeedMoreBytes;
             payload.emplace(raw, raw + _n);
-            if (!cursor.advance(_n)) return std::nullopt;
+            if (!cursor.advance(_n)) return ::SCE::Forge::CodecError::NeedMoreBytes;
         }
         std::optional<uint32_t> slice_count;
         if (_has_extensions_2) {
-            auto _v_opt = cursor.read_vle_u32();
-        if (!_v_opt.has_value()) return std::nullopt;
-        auto _v = static_cast<std::uint32_t>(*_v_opt);
+            auto _v_read = cursor.read_vle_u32();
+        if (!_v_read.has_value()) return _v_read.error();
+        auto _v = static_cast<std::uint32_t>(*_v_read);
             slice_count = _v;
         }
         std::optional<std::vector<::SCE::Generated::CodecChainHasSlice::CodecChainHasSlice>> slices;
         if (_has_extensions_2) {
             auto _n = slice_count.value();
             if (_n > 4) {
-                cursor.refuse(::SCE::Forge::CodecError::TooManyElements); return std::nullopt;
+                return ::SCE::Forge::CodecError::TooManyElements;
             }
             std::vector<::SCE::Generated::CodecChainHasSlice::CodecChainHasSlice> _list;
             _list.reserve(cursor.entries_backed(_n));
             for (auto _i = decltype(_n){0}; _i < _n; ++_i) {
                 auto _elem = ::SCE::Generated::CodecChainHasSlice::CodecChainHasSlice::decode(cursor);
-                if (!_elem.has_value()) return std::nullopt;
+                if (!_elem.has_value()) return _elem.error();
                 _list.push_back(*_elem);
             }
             slices = std::move(_list);
@@ -428,24 +479,21 @@ struct CodecChainHasEnvelope {
         if (extensions) {
             _b_extensions = ::SCE::Forge::List<::SCE::Generated::CodecZenohExtEntry::CodecZenohExtEntry, 4, 1>::make(*extensions);
             if (!_b_extensions) {
-                cursor.refuse(::SCE::Forge::CodecError::TooManyElements);
-                return std::nullopt;
+                return ::SCE::Forge::CodecError::TooManyElements;
             }
         }
         std::optional<::SCE::Forge::List<::SCE::Generated::CodecChainHasSlice::CodecChainHasSlice, 4>> _b_slices;
         if (slices) {
             _b_slices = ::SCE::Forge::List<::SCE::Generated::CodecChainHasSlice::CodecChainHasSlice, 4>::make(*slices);
             if (!_b_slices) {
-                cursor.refuse(::SCE::Forge::CodecError::TooManyElements);
-                return std::nullopt;
+                return ::SCE::Forge::CodecError::TooManyElements;
             }
         }
         std::optional<::SCE::Forge::Bytes<256>> _b_payload;
         if (payload) {
             _b_payload = ::SCE::Forge::Bytes<256>::make(*payload);
             if (!_b_payload) {
-                cursor.refuse(::SCE::Forge::CodecError::LengthOutOfRange);
-                return std::nullopt;
+                return ::SCE::Forge::CodecError::LengthOutOfRange;
             }
         }
         (void)payload_len;
@@ -454,8 +502,7 @@ struct CodecChainHasEnvelope {
         if (::SCE::Forge::Detail::first_of_kind<CodecChainHasEnvelopeExtensionsHas0x2Key>(extensions).has_value()) {
             const auto _ch_extensions = ::SCE::Forge::Chain<::SCE::Forge::Span<const ::SCE::Generated::CodecZenohExtEntry::CodecZenohExtEntry>, ::SCE::Forge::Kinds<CodecChainHasEnvelopeExtensionsHas0x2Key>, ::SCE::Forge::Kinds<>, 4, 1>::make(_b_extensions->inner());
             if (!_ch_extensions) {
-                cursor.refuse(::SCE::Forge::CodecError::PresentIfMismatch);
-                return std::nullopt;
+                return ::SCE::Forge::CodecError::PresentIfMismatch;
             }
             _g_extensions_has_0x2.emplace<0>(*_ch_extensions, *_b_slices);
         } else if (!::SCE::Forge::Detail::first_of_kind<CodecChainHasEnvelopeExtensionsHas0x2Key>(extensions).has_value()) {
@@ -463,8 +510,7 @@ struct CodecChainHasEnvelope {
             if (_b_extensions) {
                 _ch_extensions = ::SCE::Forge::Chain<::SCE::Forge::Span<const ::SCE::Generated::CodecZenohExtEntry::CodecZenohExtEntry>, ::SCE::Forge::Kinds<>, ::SCE::Forge::Kinds<CodecChainHasEnvelopeExtensionsHas0x2Key>, 4, 1>::make(_b_extensions->inner());
                 if (!_ch_extensions) {
-                    cursor.refuse(::SCE::Forge::CodecError::PresentIfMismatch);
-                    return std::nullopt;
+                    return ::SCE::Forge::CodecError::PresentIfMismatch;
                 }
             }
             _g_extensions_has_0x2.emplace<1>(_ch_extensions, *_b_payload);

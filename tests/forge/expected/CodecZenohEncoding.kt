@@ -7,6 +7,7 @@
 package com.sce.generated.codec_zenoh_encoding
 
 import com.sce.forge.runtime.CodecError
+import com.sce.forge.runtime.Decoded
 import com.sce.forge.runtime.MutableListSink
 import com.sce.forge.runtime.SceCursor
 import com.sce.forge.runtime.SceSink
@@ -81,10 +82,13 @@ data class CodecZenohEncoding(
 
     companion object {
         /// Decode the next frame from `cursor`. On success the cursor
-        /// advances past the consumed bytes; returns `null` when the
-        /// cursor's tail is shorter than the declared minimum frame
-        /// (RFC §synth-5-B L494-519).
-        fun decode(cursor: SceCursor): CodecZenohEncoding? {
+        /// advances past the consumed bytes and the value is `Decoded.Ok`;
+        /// a refused frame is `Decoded.Refused` with the kind that refused
+        /// it (docs/adr/0099, amendment of 2026-11-16): `NeedMoreBytes` when
+        /// the cursor's tail is shorter than the frame (RFC §synth-5-B
+        /// L494-519), which the caller resumes after appending bytes, and
+        /// another kind for a frame no more bytes make whole.
+        fun decode(cursor: SceCursor): Decoded<CodecZenohEncoding> {
             // Streaming cursor decode (SSOT selection: `needs_streaming`).
             // The positional `raw[byte_off]` path is valid only when every
             // field's absolute offset is fixed at codegen time; this branch
@@ -97,9 +101,9 @@ data class CodecZenohEncoding(
             // `is_repeat` / `is_tlv_chain` / `is_embed` route to their
             // dedicated helpers; every other field flows through
             // `present_if_decode_stmt`.
-            val packed_id = cursor.readVleU32() ?: return null
+            val packed_id = cursor.readVleU32().valueOr { _refused -> return _refused }
             val schema_len: ULong? = if ((packed_id.toLong() and 0x00000001L) != 0L) {
-                val _v = cursor.readVleU64() ?: return null
+                val _v = cursor.readVleU64().valueOr { _refused -> return _refused }
                 _v
             } else {
                 null
@@ -107,23 +111,25 @@ data class CodecZenohEncoding(
             val schema = if ((packed_id.toLong() and 0x00000001L) != 0L) {
                 val _len = schema_len!!
                 if (_len > 255uL) {
-                    cursor.refuse(CodecError.LengthOutOfRange); return null
+                    return Decoded.Refused(CodecError.LengthOutOfRange)
                 }
                 val _n = _len.toInt()
-                val raw = cursor.peekSlice(_n) ?: return null
+                val raw = cursor.peekSlice(_n) ?: return Decoded.Refused(CodecError.NeedMoreBytes)
                 val _v = try {
                     java.nio.charset.StandardCharsets.UTF_8.newDecoder()
                         .decode(java.nio.ByteBuffer.wrap(raw)).toString()
-                } catch (_: java.nio.charset.CharacterCodingException) { return null }
-                if (!cursor.advance(_n)) return null
+                } catch (_: java.nio.charset.CharacterCodingException) { return Decoded.Refused(CodecError.InvalidUtf8) }
+                if (!cursor.advance(_n)) return Decoded.Refused(CodecError.NeedMoreBytes)
                 _v
             } else {
                 null
             }
-            return CodecZenohEncoding(
-                packed_id = packed_id,
-                schema_len = schema_len,
-                schema = schema
+            return Decoded.Ok(
+                CodecZenohEncoding(
+                    packed_id = packed_id,
+                    schema_len = schema_len,
+                    schema = schema
+                )
             )
         }
     }

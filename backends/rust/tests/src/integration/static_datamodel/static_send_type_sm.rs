@@ -1,5 +1,5 @@
 // SCE-GENERATED — DO NOT EDIT
-// source-hash: 65fb42bdd588f958b0fbb29ac261cf039d02606d7afaae0720c045624bd679ba
+// source-hash: 2073d8a55462e1ce61d8a77293fdd2c141aceda8ad173303c5b84813ca22eeee
 
 // SPDX-License-Identifier: AGPL-3.0-only WITH AdditionRef-SCE-Linking-Exception OR LicenseRef-SCE-Commercial
 // SPDX-FileCopyrightText: Copyright (c) 2025-2026 [Author of input SCXML file] (content derived from the input document)
@@ -970,7 +970,7 @@ impl StatePolicy for StaticSendTypePolicy {
 
                             // W3C SCXML 6.2: Unsupported send type "sce:undeclared-type" raises error.execution
                             {
-                                let mut err_meta = sce_rust_runtime::EventWithMetadata::platform_error(StaticSendTypeEvent::ErrorExecution, "<send type='sce:undeclared-type'> names a processor this platform does not support");
+                                let mut err_meta = sce_rust_runtime::EventWithMetadata::platform_error(StaticSendTypeEvent::ErrorExecution, ::sce_rust_runtime::ErrorReason::SendTypeUnsupported, "<send type='sce:undeclared-type'> names a processor this platform does not support");
                                 engine.raise(err_meta);
                             }
                             let _ = send_id; // the refusal may carry no error event to name it
@@ -995,7 +995,7 @@ impl StatePolicy for StaticSendTypePolicy {
                         })() {
                             Ok(()) => false,
                             Err(_) => {
-                                engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(StaticSendTypeEvent::ErrorExecution, "<assign location='kind'>: an integer operation overflowed or failed"));
+                                engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(StaticSendTypeEvent::ErrorExecution, ::sce_rust_runtime::ErrorReason::ExpressionFailed, "<assign location='kind'>: an integer operation overflowed or failed"));
                                 true
                             }
                         };
@@ -1020,7 +1020,7 @@ impl StatePolicy for StaticSendTypePolicy {
                         })() {
                             Ok(()) => false,
                             Err(_) => {
-                                engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(StaticSendTypeEvent::ErrorExecution, "<assign location='kind'>: an integer operation overflowed or failed"));
+                                engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(StaticSendTypeEvent::ErrorExecution, ::sce_rust_runtime::ErrorReason::ExpressionFailed, "<assign location='kind'>: an integer operation overflowed or failed"));
                                 true
                             }
                         };
@@ -1045,7 +1045,7 @@ impl StatePolicy for StaticSendTypePolicy {
                         })() {
                             Ok(()) => false,
                             Err(_) => {
-                                engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(StaticSendTypeEvent::ErrorExecution, "<assign location='kind'>: an integer operation overflowed or failed"));
+                                engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(StaticSendTypeEvent::ErrorExecution, ::sce_rust_runtime::ErrorReason::ExpressionFailed, "<assign location='kind'>: an integer operation overflowed or failed"));
                                 true
                             }
                         };
@@ -1068,7 +1068,7 @@ impl StatePolicy for StaticSendTypePolicy {
                         })() {
                             Ok(()) => false,
                             Err(_) => {
-                                engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(StaticSendTypeEvent::ErrorExecution, "<assign location='landed'>: an integer operation overflowed or failed"));
+                                engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(StaticSendTypeEvent::ErrorExecution, ::sce_rust_runtime::ErrorReason::ExpressionFailed, "<assign location='landed'>: an integer operation overflowed or failed"));
                                 true
                             }
                         };
@@ -1092,7 +1092,7 @@ impl StatePolicy for StaticSendTypePolicy {
                         })() {
                             Ok(()) => false,
                             Err(_) => {
-                                engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(StaticSendTypeEvent::ErrorExecution, "<assign location='refused'>: an integer operation overflowed or failed"));
+                                engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(StaticSendTypeEvent::ErrorExecution, ::sce_rust_runtime::ErrorReason::ExpressionFailed, "<assign location='refused'>: an integer operation overflowed or failed"));
                                 true
                             }
                         };

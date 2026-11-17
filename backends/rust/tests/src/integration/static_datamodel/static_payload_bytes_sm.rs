@@ -1,5 +1,5 @@
 // SCE-GENERATED — DO NOT EDIT
-// source-hash: 65fb42bdd588f958b0fbb29ac261cf039d02606d7afaae0720c045624bd679ba
+// source-hash: 2073d8a55462e1ce61d8a77293fdd2c141aceda8ad173303c5b84813ca22eeee
 
 // SPDX-License-Identifier: AGPL-3.0-only WITH AdditionRef-SCE-Linking-Exception OR LicenseRef-SCE-Commercial
 // SPDX-FileCopyrightText: Copyright (c) 2025-2026 [Author of input SCXML file] (content derived from the input document)
@@ -1204,7 +1204,7 @@ impl StatePolicy for StaticPayloadBytesPolicy {
                         })() {
                             Ok(()) => false,
                             Err(_) => {
-                                engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(StaticPayloadBytesEvent::ErrorExecution, "<assign location='matches'>: an integer operation overflowed or failed"));
+                                engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(StaticPayloadBytesEvent::ErrorExecution, ::sce_rust_runtime::ErrorReason::ExpressionFailed, "<assign location='matches'>: an integer operation overflowed or failed"));
                                 true
                             }
                         };
@@ -1227,7 +1227,7 @@ impl StatePolicy for StaticPayloadBytesPolicy {
                         })() {
                             Ok(()) => false,
                             Err(_) => {
-                                engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(StaticPayloadBytesEvent::ErrorExecution, "<assign location='misses'>: an integer operation overflowed or failed"));
+                                engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(StaticPayloadBytesEvent::ErrorExecution, ::sce_rust_runtime::ErrorReason::ExpressionFailed, "<assign location='misses'>: an integer operation overflowed or failed"));
                                 true
                             }
                         };
@@ -1259,7 +1259,7 @@ impl StatePolicy for StaticPayloadBytesPolicy {
                         })() {
                             Ok(()) => false,
                             Err(_) => {
-                                engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(StaticPayloadBytesEvent::ErrorExecution, "<assign location='last'>: an integer operation overflowed or failed"));
+                                engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(StaticPayloadBytesEvent::ErrorExecution, ::sce_rust_runtime::ErrorReason::ExpressionFailed, "<assign location='last'>: an integer operation overflowed or failed"));
                                 true
                             }
                         };
@@ -1287,11 +1287,11 @@ impl StatePolicy for StaticPayloadBytesPolicy {
                         })() {
                             Ok(false) => false,
                             Ok(true) => {
-                                engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(StaticPayloadBytesEvent::ErrorExecution, "<sce:append target='frames'>: the list already holds its capacity of 3"));
+                                engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(StaticPayloadBytesEvent::ErrorExecution, ::sce_rust_runtime::ErrorReason::AssignmentFailed, "<sce:append target='frames'>: the list already holds its capacity of 3"));
                                 true
                             }
                             Err(_) => {
-                                engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(StaticPayloadBytesEvent::ErrorExecution, "<sce:append target='frames'>: an integer operation overflowed or failed"));
+                                engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(StaticPayloadBytesEvent::ErrorExecution, ::sce_rust_runtime::ErrorReason::ExpressionFailed, "<sce:append target='frames'>: an integer operation overflowed or failed"));
                                 true
                             }
                         };
@@ -1320,7 +1320,7 @@ impl StatePolicy for StaticPayloadBytesPolicy {
                         })() {
                             Ok(()) => false,
                             Err(_) => {
-                                engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(StaticPayloadBytesEvent::ErrorExecution, "<assign location='held'>: an integer operation overflowed or failed"));
+                                engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(StaticPayloadBytesEvent::ErrorExecution, ::sce_rust_runtime::ErrorReason::ExpressionFailed, "<assign location='held'>: an integer operation overflowed or failed"));
                                 true
                             }
                         };
@@ -1360,7 +1360,7 @@ impl StatePolicy for StaticPayloadBytesPolicy {
                         })() {
                             Ok(()) => false,
                             Err(_) => {
-                                engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(StaticPayloadBytesEvent::ErrorExecution, "<assign location='misses'>: an integer operation overflowed or failed"));
+                                engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(StaticPayloadBytesEvent::ErrorExecution, ::sce_rust_runtime::ErrorReason::ExpressionFailed, "<assign location='misses'>: an integer operation overflowed or failed"));
                                 true
                             }
                         };
@@ -1390,7 +1390,7 @@ impl StatePolicy for StaticPayloadBytesPolicy {
                         })() {
                             Ok(()) => false,
                             Err(_) => {
-                                engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(StaticPayloadBytesEvent::ErrorExecution, "<assign location='last.frame'>: an integer operation overflowed or failed"));
+                                engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(StaticPayloadBytesEvent::ErrorExecution, ::sce_rust_runtime::ErrorReason::ExpressionFailed, "<assign location='last.frame'>: an integer operation overflowed or failed"));
                                 true
                             }
                         };
@@ -1416,7 +1416,7 @@ impl StatePolicy for StaticPayloadBytesPolicy {
                         })() {
                             Ok(()) => false,
                             Err(_) => {
-                                engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(StaticPayloadBytesEvent::ErrorExecution, "<assign location='errors'>: an integer operation overflowed or failed"));
+                                engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(StaticPayloadBytesEvent::ErrorExecution, ::sce_rust_runtime::ErrorReason::ExpressionFailed, "<assign location='errors'>: an integer operation overflowed or failed"));
                                 true
                             }
                         };

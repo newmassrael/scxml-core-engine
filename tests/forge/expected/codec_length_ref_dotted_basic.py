@@ -18,33 +18,29 @@ class CodecLengthRefDottedBasic:
     payload: bytes = b""
 
     @classmethod
-    def decode(cls, cursor: SceCursor) -> Optional[CodecLengthRefDottedBasic]:
-        """Decode the next frame from ``cursor``. Returns ``None`` when
-        the cursor's tail is shorter than the declared minimum frame
-        (RFC §synth-5-B L494-519); on success the cursor advances past the
-        consumed bytes. VLE codecs also return ``None`` on
-        ``VleWidthOverflow``, and every codec on a field's refusal: a length
-        or a count past its bound (``LengthOutOfRange``, ``TooManyElements``,
-        docs/adr/0077), an undeclared enum value."""
-        try:
-            _frame_len = cursor.remaining()
-            if _frame_len < 1:
-                return None
-            raw = cursor.peek_slice(_frame_len)
-            f_carrier = raw[0]
-            if _frame_len < 1 + ((f_carrier >> 4) & 0xF):
-                return None
-            f_payload = raw[1:1 + ((f_carrier >> 4) & 0xF)]
-        except CodecError:
-            return None
+    def decode(cls, cursor: SceCursor) -> CodecLengthRefDottedBasic:
+        """Decode the next frame from ``cursor``; on success the cursor
+        advances past the consumed bytes. A frame the codec refuses raises
+        the ``CodecError`` subclass that names the refusal (docs/adr/0099,
+        amendment of 2026-11-16): ``NeedMoreBytes`` when the cursor's tail
+        is shorter than the frame (RFC §synth-5-B L494-519), which the
+        caller resumes after appending bytes, and for a frame no more bytes
+        make whole ``VleWidthOverflow``, ``InvalidUtf8``,
+        ``UndeclaredEnumValue``, or a length or a count past its bound
+        (``LengthOutOfRange``, ``TooManyElements``, docs/adr/0077)."""
+        _frame_len = cursor.remaining()
+        if _frame_len < 1:
+            raise NeedMoreBytes()
+        raw = cursor.peek_slice(_frame_len)
+        f_carrier = raw[0]
+        if _frame_len < 1 + ((f_carrier >> 4) & 0xF):
+            raise NeedMoreBytes()
+        f_payload = raw[1:1 + ((f_carrier >> 4) & 0xF)]
         value = cls(
             carrier=f_carrier,
             payload=f_payload,
         )
-        try:
-            cursor.advance(_frame_len)
-        except NeedMoreBytes:
-            return None
+        cursor.advance(_frame_len)
         return value
 
     # RFC §synth-5-B flags primitive: per-bit-range accessors over

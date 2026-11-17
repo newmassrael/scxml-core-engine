@@ -615,6 +615,7 @@ impl InvokeParamSeedsDeclaredChildDataPolicy {
                 );
                 engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(
                     InvokeParamSeedsDeclaredChildDataEvent::ErrorExecution,
+                    ::sce_rust_runtime::ErrorReason::ParamUnfit,
                     "<data id='token'> could not hold the value its invoke handed it",
                 ));
             }
@@ -629,6 +630,7 @@ impl InvokeParamSeedsDeclaredChildDataPolicy {
                 ::sce_rust_runtime::sce_log_error!("global: {}", e);
                 engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(
                     InvokeParamSeedsDeclaredChildDataEvent::ErrorExecution,
+                    ::sce_rust_runtime::ErrorReason::ExpressionFailed,
                     "<data id='token'> expr failed to evaluate",
                 ));
             }
@@ -643,6 +645,7 @@ impl InvokeParamSeedsDeclaredChildDataPolicy {
                 );
                 engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(
                     InvokeParamSeedsDeclaredChildDataEvent::ErrorExecution,
+                    ::sce_rust_runtime::ErrorReason::ParamUnfit,
                     "<data id='only_here'> could not hold the value its invoke handed it",
                 ));
             }
@@ -657,6 +660,7 @@ impl InvokeParamSeedsDeclaredChildDataPolicy {
                 ::sce_rust_runtime::sce_log_error!("global: {}", e);
                 engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(
                     InvokeParamSeedsDeclaredChildDataEvent::ErrorExecution,
+                    ::sce_rust_runtime::ErrorReason::ExpressionFailed,
                     "<data id='only_here'> expr failed to evaluate",
                 ));
             }
@@ -705,6 +709,7 @@ impl InvokeParamSeedsDeclaredChildDataPolicy {
                 ::sce_rust_runtime::sce_log_error!("Guard evaluation failed for '{}': {}", cond, e);
                 engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(
                     InvokeParamSeedsDeclaredChildDataEvent::ErrorExecution,
+                    ::sce_rust_runtime::ErrorReason::ExpressionFailed,
                     reason,
                 ));
                 None
@@ -987,6 +992,7 @@ impl InvokeParamSeedsDeclaredChildDataPolicy {
                             );
                             engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(
                                 InvokeParamSeedsDeclaredChildDataEvent::ErrorExecution,
+                                ::sce_rust_runtime::ErrorReason::LocationInvalid,
                                 "<invoke> <param name='seen'> could not be read",
                             ));
                         }
@@ -1040,7 +1046,7 @@ impl InvokeParamSeedsDeclaredChildDataPolicy {
                     self.active_invokes.remove("inv_infinite");
                     engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(
                         InvokeParamSeedsDeclaredChildDataEvent::ErrorExecution,
-                        &format!("<invoke id='{}'> did not start: its child's script session failed at step '{}'", "inv_infinite", failure.stage)));
+                        ::sce_rust_runtime::ErrorReason::InvokeChildInitFailed, &format!("<invoke id='{}'> did not start: its child's script session failed at step '{}'", "inv_infinite", failure.stage)));
                     continue;
                 }
 
@@ -1069,6 +1075,7 @@ impl InvokeParamSeedsDeclaredChildDataPolicy {
                         );
                         engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(
                             InvokeParamSeedsDeclaredChildDataEvent::ErrorExecution,
+                            ::sce_rust_runtime::ErrorReason::LocationInvalid,
                             "<invoke> namelist names a location that cannot be read",
                         ));
                         continue; // W3C SCXML 6.4: the element is terminated; no child
@@ -1165,7 +1172,7 @@ impl InvokeParamSeedsDeclaredChildDataPolicy {
                     self.active_invokes.remove("inv_namelist");
                     engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(
                         InvokeParamSeedsDeclaredChildDataEvent::ErrorExecution,
-                        &format!("<invoke id='{}'> did not start: its child's script session failed at step '{}'", "inv_namelist", failure.stage)));
+                        ::sce_rust_runtime::ErrorReason::InvokeChildInitFailed, &format!("<invoke id='{}'> did not start: its child's script session failed at step '{}'", "inv_namelist", failure.stage)));
                     continue;
                 }
 
@@ -1236,6 +1243,7 @@ impl InvokeParamSeedsDeclaredChildDataPolicy {
                             );
                             engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(
                                 InvokeParamSeedsDeclaredChildDataEvent::ErrorExecution,
+                                ::sce_rust_runtime::ErrorReason::LocationInvalid,
                                 "<invoke> <param name='seen'> could not be read",
                             ));
                         }
@@ -1289,7 +1297,7 @@ impl InvokeParamSeedsDeclaredChildDataPolicy {
                     self.active_invokes.remove("inv_shadow");
                     engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(
                         InvokeParamSeedsDeclaredChildDataEvent::ErrorExecution,
-                        &format!("<invoke id='{}'> did not start: its child's script session failed at step '{}'", "inv_shadow", failure.stage)));
+                        ::sce_rust_runtime::ErrorReason::InvokeChildInitFailed, &format!("<invoke id='{}'> did not start: its child's script session failed at step '{}'", "inv_shadow", failure.stage)));
                     continue;
                 }
 
@@ -1360,6 +1368,7 @@ impl InvokeParamSeedsDeclaredChildDataPolicy {
                             );
                             engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(
                                 InvokeParamSeedsDeclaredChildDataEvent::ErrorExecution,
+                                ::sce_rust_runtime::ErrorReason::LocationInvalid,
                                 "<invoke> <param name='seen'> could not be read",
                             ));
                         }
@@ -1413,7 +1422,7 @@ impl InvokeParamSeedsDeclaredChildDataPolicy {
                     self.active_invokes.remove("inv_sole");
                     engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(
                         InvokeParamSeedsDeclaredChildDataEvent::ErrorExecution,
-                        &format!("<invoke id='{}'> did not start: its child's script session failed at step '{}'", "inv_sole", failure.stage)));
+                        ::sce_rust_runtime::ErrorReason::InvokeChildInitFailed, &format!("<invoke id='{}'> did not start: its child's script session failed at step '{}'", "inv_sole", failure.stage)));
                     continue;
                 }
 
@@ -1484,6 +1493,7 @@ impl InvokeParamSeedsDeclaredChildDataPolicy {
                             );
                             engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(
                                 InvokeParamSeedsDeclaredChildDataEvent::ErrorExecution,
+                                ::sce_rust_runtime::ErrorReason::LocationInvalid,
                                 "<invoke> <param name='declared'> could not be read",
                             ));
                         }
@@ -1511,6 +1521,7 @@ impl InvokeParamSeedsDeclaredChildDataPolicy {
                             );
                             engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(
                                 InvokeParamSeedsDeclaredChildDataEvent::ErrorExecution,
+                                ::sce_rust_runtime::ErrorReason::LocationInvalid,
                                 "<invoke> <param name='nowhere'> could not be read",
                             ));
                         }
@@ -1564,7 +1575,7 @@ impl InvokeParamSeedsDeclaredChildDataPolicy {
                     self.active_invokes.remove("inv_unmatched");
                     engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(
                         InvokeParamSeedsDeclaredChildDataEvent::ErrorExecution,
-                        &format!("<invoke id='{}'> did not start: its child's script session failed at step '{}'", "inv_unmatched", failure.stage)));
+                        ::sce_rust_runtime::ErrorReason::InvokeChildInitFailed, &format!("<invoke id='{}'> did not start: its child's script session failed at step '{}'", "inv_unmatched", failure.stage)));
                     continue;
                 }
 

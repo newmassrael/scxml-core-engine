@@ -120,21 +120,22 @@ struct CodecPeekArmA {
     [[nodiscard]] constexpr uint8_t payload() const noexcept { return payload_; }
 
     /// Decode the next frame from `cursor`. On success the cursor
-    /// advances past the consumed bytes; on `NeedMoreBytes` the cursor
-    /// is left untouched so the caller can resume after appending more
-    /// bytes (RFC §synth-5-B L494-519). Returns `std::nullopt` on the
-    /// `NeedMoreBytes` boundary; later phases attach a typed error via
-    /// `cursor.last_error()`.
-    static std::optional<CodecPeekArmA> decode(::SCE::Forge::SceCursor& cursor) {
+    /// advances past the consumed bytes and the value is answered; a
+    /// refused frame answers the `CodecError` that refused it
+    /// (docs/adr/0099, amendment of 2026-11-16): `NeedMoreBytes` when
+    /// the cursor's tail is shorter than the frame (RFC §synth-5-B
+    /// L494-519), which the caller resumes after appending bytes, and
+    /// another kind for a frame no more bytes make whole.
+    static ::SCE::Forge::Decoded<CodecPeekArmA> decode(::SCE::Forge::SceCursor& cursor) {
         const std::uint8_t* raw = cursor.peek_slice(2);
-        if (raw == nullptr) return std::nullopt;
+        if (raw == nullptr) return ::SCE::Forge::CodecError::NeedMoreBytes;
         uint8_t header = raw[0];
         uint8_t payload = raw[1];
         CodecPeekArmA _decoded{
             /*header=*/header,
             /*payload=*/payload,
         };
-        if (!cursor.advance(2)) return std::nullopt;
+        if (!cursor.advance(2)) return ::SCE::Forge::CodecError::NeedMoreBytes;
         return _decoded;
     }
 

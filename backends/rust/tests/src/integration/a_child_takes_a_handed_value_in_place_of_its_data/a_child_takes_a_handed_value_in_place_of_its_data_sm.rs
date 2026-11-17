@@ -874,6 +874,7 @@ impl AChildTakesAHandedValueInPlaceOfItsDataPolicy {
                 );
                 engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(
                     AChildTakesAHandedValueInPlaceOfItsDataEvent::ErrorExecution,
+                    ::sce_rust_runtime::ErrorReason::ParamUnfit,
                     "<data id='record'> could not hold the value its invoke handed it",
                 ));
             }
@@ -882,7 +883,7 @@ impl AChildTakesAHandedValueInPlaceOfItsDataPolicy {
             if let Err(e) = sce_rust_runtime::helpers::datamodel_init::initialize_variable_from_expr(
             se, &sid, "record", "{[\"name\"] = \"whole\", [\"inner\"] = {[\"label\"] = \"inner\", [\"depth\"] = 2}, [\"list\"] = {1, 2, 3}}") {
             ::sce_rust_runtime::sce_log_error!("global: {}", e);
-            engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(AChildTakesAHandedValueInPlaceOfItsDataEvent::ErrorExecution, "<data id='record'> expr failed to evaluate"));
+            engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(AChildTakesAHandedValueInPlaceOfItsDataEvent::ErrorExecution, ::sce_rust_runtime::ErrorReason::ExpressionFailed, "<data id='record'> expr failed to evaluate"));
         }
         }
 
@@ -895,6 +896,7 @@ impl AChildTakesAHandedValueInPlaceOfItsDataPolicy {
                 );
                 engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(
                     AChildTakesAHandedValueInPlaceOfItsDataEvent::ErrorExecution,
+                    ::sce_rust_runtime::ErrorReason::ParamUnfit,
                     "<data id='listed'> could not hold the value its invoke handed it",
                 ));
             }
@@ -909,6 +911,7 @@ impl AChildTakesAHandedValueInPlaceOfItsDataPolicy {
                 ::sce_rust_runtime::sce_log_error!("global: {}", e);
                 engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(
                     AChildTakesAHandedValueInPlaceOfItsDataEvent::ErrorExecution,
+                    ::sce_rust_runtime::ErrorReason::ExpressionFailed,
                     "<data id='listed'> expr failed to evaluate",
                 ));
             }
@@ -923,6 +926,7 @@ impl AChildTakesAHandedValueInPlaceOfItsDataPolicy {
                 );
                 engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(
                     AChildTakesAHandedValueInPlaceOfItsDataEvent::ErrorExecution,
+                    ::sce_rust_runtime::ErrorReason::ParamUnfit,
                     "<data id='stray'> could not hold the value its invoke handed it",
                 ));
             }
@@ -937,6 +941,7 @@ impl AChildTakesAHandedValueInPlaceOfItsDataPolicy {
                 ::sce_rust_runtime::sce_log_error!("global: {}", e);
                 engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(
                     AChildTakesAHandedValueInPlaceOfItsDataEvent::ErrorExecution,
+                    ::sce_rust_runtime::ErrorReason::ExpressionFailed,
                     "<data id='stray'> expr failed to evaluate",
                 ));
             }
@@ -951,6 +956,7 @@ impl AChildTakesAHandedValueInPlaceOfItsDataPolicy {
                 );
                 engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(
                     AChildTakesAHandedValueInPlaceOfItsDataEvent::ErrorExecution,
+                    ::sce_rust_runtime::ErrorReason::ParamUnfit,
                     "<data id='raising_seen'> could not hold the value its invoke handed it",
                 ));
             }
@@ -965,6 +971,7 @@ impl AChildTakesAHandedValueInPlaceOfItsDataPolicy {
                 ::sce_rust_runtime::sce_log_error!("global: {}", e);
                 engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(
                     AChildTakesAHandedValueInPlaceOfItsDataEvent::ErrorExecution,
+                    ::sce_rust_runtime::ErrorReason::ExpressionFailed,
                     "<data id='raising_seen'> expr failed to evaluate",
                 ));
             }
@@ -979,6 +986,7 @@ impl AChildTakesAHandedValueInPlaceOfItsDataPolicy {
                 );
                 engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(
                     AChildTakesAHandedValueInPlaceOfItsDataEvent::ErrorExecution,
+                    ::sce_rust_runtime::ErrorReason::ParamUnfit,
                     "<data id='effectful_seen'> could not hold the value its invoke handed it",
                 ));
             }
@@ -993,6 +1001,7 @@ impl AChildTakesAHandedValueInPlaceOfItsDataPolicy {
                 ::sce_rust_runtime::sce_log_error!("global: {}", e);
                 engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(
                     AChildTakesAHandedValueInPlaceOfItsDataEvent::ErrorExecution,
+                    ::sce_rust_runtime::ErrorReason::ExpressionFailed,
                     "<data id='effectful_seen'> expr failed to evaluate",
                 ));
             }
@@ -1007,6 +1016,7 @@ impl AChildTakesAHandedValueInPlaceOfItsDataPolicy {
                 );
                 engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(
                     AChildTakesAHandedValueInPlaceOfItsDataEvent::ErrorExecution,
+                    ::sce_rust_runtime::ErrorReason::ParamUnfit,
                     "<data id='effects_seen'> could not hold the value its invoke handed it",
                 ));
             }
@@ -1021,6 +1031,7 @@ impl AChildTakesAHandedValueInPlaceOfItsDataPolicy {
                 ::sce_rust_runtime::sce_log_error!("global: {}", e);
                 engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(
                     AChildTakesAHandedValueInPlaceOfItsDataEvent::ErrorExecution,
+                    ::sce_rust_runtime::ErrorReason::ExpressionFailed,
                     "<data id='effects_seen'> expr failed to evaluate",
                 ));
             }
@@ -1035,6 +1046,7 @@ impl AChildTakesAHandedValueInPlaceOfItsDataPolicy {
                 );
                 engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(
                     AChildTakesAHandedValueInPlaceOfItsDataEvent::ErrorExecution,
+                    ::sce_rust_runtime::ErrorReason::ParamUnfit,
                     "<data id='refusable_seen'> could not hold the value its invoke handed it",
                 ));
             }
@@ -1049,6 +1061,7 @@ impl AChildTakesAHandedValueInPlaceOfItsDataPolicy {
                 ::sce_rust_runtime::sce_log_error!("global: {}", e);
                 engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(
                     AChildTakesAHandedValueInPlaceOfItsDataEvent::ErrorExecution,
+                    ::sce_rust_runtime::ErrorReason::ExpressionFailed,
                     "<data id='refusable_seen'> expr failed to evaluate",
                 ));
             }
@@ -1063,6 +1076,7 @@ impl AChildTakesAHandedValueInPlaceOfItsDataPolicy {
                 );
                 engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(
                     AChildTakesAHandedValueInPlaceOfItsDataEvent::ErrorExecution,
+                    ::sce_rust_runtime::ErrorReason::ParamUnfit,
                     "<data id='kept_seen'> could not hold the value its invoke handed it",
                 ));
             }
@@ -1077,6 +1091,7 @@ impl AChildTakesAHandedValueInPlaceOfItsDataPolicy {
                 ::sce_rust_runtime::sce_log_error!("global: {}", e);
                 engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(
                     AChildTakesAHandedValueInPlaceOfItsDataEvent::ErrorExecution,
+                    ::sce_rust_runtime::ErrorReason::ExpressionFailed,
                     "<data id='kept_seen'> expr failed to evaluate",
                 ));
             }
@@ -1091,6 +1106,7 @@ impl AChildTakesAHandedValueInPlaceOfItsDataPolicy {
                 );
                 engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(
                     AChildTakesAHandedValueInPlaceOfItsDataEvent::ErrorExecution,
+                    ::sce_rust_runtime::ErrorReason::ParamUnfit,
                     "<data id='stranger_seen'> could not hold the value its invoke handed it",
                 ));
             }
@@ -1105,6 +1121,7 @@ impl AChildTakesAHandedValueInPlaceOfItsDataPolicy {
                 ::sce_rust_runtime::sce_log_error!("global: {}", e);
                 engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(
                     AChildTakesAHandedValueInPlaceOfItsDataEvent::ErrorExecution,
+                    ::sce_rust_runtime::ErrorReason::ExpressionFailed,
                     "<data id='stranger_seen'> expr failed to evaluate",
                 ));
             }
@@ -1119,6 +1136,7 @@ impl AChildTakesAHandedValueInPlaceOfItsDataPolicy {
                 );
                 engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(
                     AChildTakesAHandedValueInPlaceOfItsDataEvent::ErrorExecution,
+                    ::sce_rust_runtime::ErrorReason::ParamUnfit,
                     "<data id='payload_seen'> could not hold the value its invoke handed it",
                 ));
             }
@@ -1133,6 +1151,7 @@ impl AChildTakesAHandedValueInPlaceOfItsDataPolicy {
                 ::sce_rust_runtime::sce_log_error!("global: {}", e);
                 engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(
                     AChildTakesAHandedValueInPlaceOfItsDataEvent::ErrorExecution,
+                    ::sce_rust_runtime::ErrorReason::ExpressionFailed,
                     "<data id='payload_seen'> expr failed to evaluate",
                 ));
             }
@@ -1147,6 +1166,7 @@ impl AChildTakesAHandedValueInPlaceOfItsDataPolicy {
                 );
                 engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(
                     AChildTakesAHandedValueInPlaceOfItsDataEvent::ErrorExecution,
+                    ::sce_rust_runtime::ErrorReason::ParamUnfit,
                     "<data id='script_seen'> could not hold the value its invoke handed it",
                 ));
             }
@@ -1161,6 +1181,7 @@ impl AChildTakesAHandedValueInPlaceOfItsDataPolicy {
                 ::sce_rust_runtime::sce_log_error!("global: {}", e);
                 engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(
                     AChildTakesAHandedValueInPlaceOfItsDataEvent::ErrorExecution,
+                    ::sce_rust_runtime::ErrorReason::ExpressionFailed,
                     "<data id='script_seen'> expr failed to evaluate",
                 ));
             }
@@ -1175,6 +1196,7 @@ impl AChildTakesAHandedValueInPlaceOfItsDataPolicy {
                 );
                 engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(
                     AChildTakesAHandedValueInPlaceOfItsDataEvent::ErrorExecution,
+                    ::sce_rust_runtime::ErrorReason::ParamUnfit,
                     "<data id='entry_seen'> could not hold the value its invoke handed it",
                 ));
             }
@@ -1189,6 +1211,7 @@ impl AChildTakesAHandedValueInPlaceOfItsDataPolicy {
                 ::sce_rust_runtime::sce_log_error!("global: {}", e);
                 engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(
                     AChildTakesAHandedValueInPlaceOfItsDataEvent::ErrorExecution,
+                    ::sce_rust_runtime::ErrorReason::ExpressionFailed,
                     "<data id='entry_seen'> expr failed to evaluate",
                 ));
             }
@@ -1203,6 +1226,7 @@ impl AChildTakesAHandedValueInPlaceOfItsDataPolicy {
                 );
                 engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(
                     AChildTakesAHandedValueInPlaceOfItsDataEvent::ErrorExecution,
+                    ::sce_rust_runtime::ErrorReason::ParamUnfit,
                     "<data id='errors_seen'> could not hold the value its invoke handed it",
                 ));
             }
@@ -1217,6 +1241,7 @@ impl AChildTakesAHandedValueInPlaceOfItsDataPolicy {
                 ::sce_rust_runtime::sce_log_error!("global: {}", e);
                 engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(
                     AChildTakesAHandedValueInPlaceOfItsDataEvent::ErrorExecution,
+                    ::sce_rust_runtime::ErrorReason::ExpressionFailed,
                     "<data id='errors_seen'> expr failed to evaluate",
                 ));
             }
@@ -1231,6 +1256,7 @@ impl AChildTakesAHandedValueInPlaceOfItsDataPolicy {
                 );
                 engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(
                     AChildTakesAHandedValueInPlaceOfItsDataEvent::ErrorExecution,
+                    ::sce_rust_runtime::ErrorReason::ParamUnfit,
                     "<data id='listed_seen'> could not hold the value its invoke handed it",
                 ));
             }
@@ -1245,6 +1271,7 @@ impl AChildTakesAHandedValueInPlaceOfItsDataPolicy {
                 ::sce_rust_runtime::sce_log_error!("global: {}", e);
                 engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(
                     AChildTakesAHandedValueInPlaceOfItsDataEvent::ErrorExecution,
+                    ::sce_rust_runtime::ErrorReason::ExpressionFailed,
                     "<data id='listed_seen'> expr failed to evaluate",
                 ));
             }
@@ -1259,6 +1286,7 @@ impl AChildTakesAHandedValueInPlaceOfItsDataPolicy {
                 );
                 engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(
                     AChildTakesAHandedValueInPlaceOfItsDataEvent::ErrorExecution,
+                    ::sce_rust_runtime::ErrorReason::ParamUnfit,
                     "<data id='stray_seen'> could not hold the value its invoke handed it",
                 ));
             }
@@ -1273,6 +1301,7 @@ impl AChildTakesAHandedValueInPlaceOfItsDataPolicy {
                 ::sce_rust_runtime::sce_log_error!("global: {}", e);
                 engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(
                     AChildTakesAHandedValueInPlaceOfItsDataEvent::ErrorExecution,
+                    ::sce_rust_runtime::ErrorReason::ExpressionFailed,
                     "<data id='stray_seen'> expr failed to evaluate",
                 ));
             }
@@ -1287,6 +1316,7 @@ impl AChildTakesAHandedValueInPlaceOfItsDataPolicy {
                 );
                 engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(
                     AChildTakesAHandedValueInPlaceOfItsDataEvent::ErrorExecution,
+                    ::sce_rust_runtime::ErrorReason::ParamUnfit,
                     "<data id='record_seen'> could not hold the value its invoke handed it",
                 ));
             }
@@ -1301,6 +1331,7 @@ impl AChildTakesAHandedValueInPlaceOfItsDataPolicy {
                 ::sce_rust_runtime::sce_log_error!("global: {}", e);
                 engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(
                     AChildTakesAHandedValueInPlaceOfItsDataEvent::ErrorExecution,
+                    ::sce_rust_runtime::ErrorReason::ExpressionFailed,
                     "<data id='record_seen'> expr failed to evaluate",
                 ));
             }
@@ -1312,6 +1343,7 @@ impl AChildTakesAHandedValueInPlaceOfItsDataPolicy {
                 ::sce_rust_runtime::sce_log_error!("<data id='list_errors_seen'> could not hold the value its invoke handed it: {}", e);
                 engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(
                     AChildTakesAHandedValueInPlaceOfItsDataEvent::ErrorExecution,
+                    ::sce_rust_runtime::ErrorReason::ParamUnfit,
                     "<data id='list_errors_seen'> could not hold the value its invoke handed it",
                 ));
             }
@@ -1326,6 +1358,7 @@ impl AChildTakesAHandedValueInPlaceOfItsDataPolicy {
                 ::sce_rust_runtime::sce_log_error!("global: {}", e);
                 engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(
                     AChildTakesAHandedValueInPlaceOfItsDataEvent::ErrorExecution,
+                    ::sce_rust_runtime::ErrorReason::ExpressionFailed,
                     "<data id='list_errors_seen'> expr failed to evaluate",
                 ));
             }
@@ -1374,6 +1407,7 @@ impl AChildTakesAHandedValueInPlaceOfItsDataPolicy {
                 ::sce_rust_runtime::sce_log_error!("Guard evaluation failed for '{}': {}", cond, e);
                 engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(
                     AChildTakesAHandedValueInPlaceOfItsDataEvent::ErrorExecution,
+                    ::sce_rust_runtime::ErrorReason::ExpressionFailed,
                     reason,
                 ));
                 None
@@ -1594,6 +1628,7 @@ impl AChildTakesAHandedValueInPlaceOfItsDataPolicy {
                         );
                         engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(
                             AChildTakesAHandedValueInPlaceOfItsDataEvent::ErrorExecution,
+                            ::sce_rust_runtime::ErrorReason::LocationInvalid,
                             "<invoke> namelist names a location that cannot be read",
                         ));
                         continue; // W3C SCXML 6.4: the element is terminated; no child
@@ -1702,7 +1737,7 @@ impl AChildTakesAHandedValueInPlaceOfItsDataPolicy {
                     self.active_invokes.remove("by_namelist");
                     engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(
                         AChildTakesAHandedValueInPlaceOfItsDataEvent::ErrorExecution,
-                        &format!("<invoke id='{}'> did not start: its child's script session failed at step '{}'", "by_namelist", failure.stage)));
+                        ::sce_rust_runtime::ErrorReason::InvokeChildInitFailed, &format!("<invoke id='{}'> did not start: its child's script session failed at step '{}'", "by_namelist", failure.stage)));
                     continue;
                 }
 
@@ -1773,6 +1808,7 @@ impl AChildTakesAHandedValueInPlaceOfItsDataPolicy {
                             );
                             engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(
                                 AChildTakesAHandedValueInPlaceOfItsDataEvent::ErrorExecution,
+                                ::sce_rust_runtime::ErrorReason::LocationInvalid,
                                 "<invoke> <param name='raising'> could not be read",
                             ));
                         }
@@ -1800,6 +1836,7 @@ impl AChildTakesAHandedValueInPlaceOfItsDataPolicy {
                             );
                             engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(
                                 AChildTakesAHandedValueInPlaceOfItsDataEvent::ErrorExecution,
+                                ::sce_rust_runtime::ErrorReason::LocationInvalid,
                                 "<invoke> <param name='effectful'> could not be read",
                             ));
                         }
@@ -1827,6 +1864,7 @@ impl AChildTakesAHandedValueInPlaceOfItsDataPolicy {
                             );
                             engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(
                                 AChildTakesAHandedValueInPlaceOfItsDataEvent::ErrorExecution,
+                                ::sce_rust_runtime::ErrorReason::LocationInvalid,
                                 "<invoke> <param name='refusable'> could not be read",
                             ));
                         }
@@ -1854,6 +1892,7 @@ impl AChildTakesAHandedValueInPlaceOfItsDataPolicy {
                             );
                             engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(
                                 AChildTakesAHandedValueInPlaceOfItsDataEvent::ErrorExecution,
+                                ::sce_rust_runtime::ErrorReason::LocationInvalid,
                                 "<invoke> <param name='kept'> could not be read",
                             ));
                         }
@@ -1881,6 +1920,7 @@ impl AChildTakesAHandedValueInPlaceOfItsDataPolicy {
                             );
                             engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(
                                 AChildTakesAHandedValueInPlaceOfItsDataEvent::ErrorExecution,
+                                ::sce_rust_runtime::ErrorReason::LocationInvalid,
                                 "<invoke> <param name='stranger'> could not be read",
                             ));
                         }
@@ -1908,6 +1948,7 @@ impl AChildTakesAHandedValueInPlaceOfItsDataPolicy {
                             );
                             engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(
                                 AChildTakesAHandedValueInPlaceOfItsDataEvent::ErrorExecution,
+                                ::sce_rust_runtime::ErrorReason::LocationInvalid,
                                 "<invoke> <param name='payload'> could not be read",
                             ));
                         }
@@ -1961,7 +2002,7 @@ impl AChildTakesAHandedValueInPlaceOfItsDataPolicy {
                     self.active_invokes.remove("by_param");
                     engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(
                         AChildTakesAHandedValueInPlaceOfItsDataEvent::ErrorExecution,
-                        &format!("<invoke id='{}'> did not start: its child's script session failed at step '{}'", "by_param", failure.stage)));
+                        ::sce_rust_runtime::ErrorReason::InvokeChildInitFailed, &format!("<invoke id='{}'> did not start: its child's script session failed at step '{}'", "by_param", failure.stage)));
                     continue;
                 }
 
@@ -2032,6 +2073,7 @@ impl AChildTakesAHandedValueInPlaceOfItsDataPolicy {
                             );
                             engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(
                                 AChildTakesAHandedValueInPlaceOfItsDataEvent::ErrorExecution,
+                                ::sce_rust_runtime::ErrorReason::LocationInvalid,
                                 "<invoke> <param name='handed'> could not be read",
                             ));
                         }
@@ -2085,7 +2127,7 @@ impl AChildTakesAHandedValueInPlaceOfItsDataPolicy {
                     self.active_invokes.remove("first_macrostep");
                     engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(
                         AChildTakesAHandedValueInPlaceOfItsDataEvent::ErrorExecution,
-                        &format!("<invoke id='{}'> did not start: its child's script session failed at step '{}'", "first_macrostep", failure.stage)));
+                        ::sce_rust_runtime::ErrorReason::InvokeChildInitFailed, &format!("<invoke id='{}'> did not start: its child's script session failed at step '{}'", "first_macrostep", failure.stage)));
                     continue;
                 }
 
@@ -2156,6 +2198,7 @@ impl AChildTakesAHandedValueInPlaceOfItsDataPolicy {
                             );
                             engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(
                                 AChildTakesAHandedValueInPlaceOfItsDataEvent::ErrorExecution,
+                                ::sce_rust_runtime::ErrorReason::LocationInvalid,
                                 "<invoke> <param name='handed'> could not be read",
                             ));
                         }
@@ -2183,6 +2226,7 @@ impl AChildTakesAHandedValueInPlaceOfItsDataPolicy {
                             );
                             engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(
                                 AChildTakesAHandedValueInPlaceOfItsDataEvent::ErrorExecution,
+                                ::sce_rust_runtime::ErrorReason::LocationInvalid,
                                 "<invoke> <param name='kept'> could not be read",
                             ));
                         }
@@ -2236,7 +2280,7 @@ impl AChildTakesAHandedValueInPlaceOfItsDataPolicy {
                     self.active_invokes.remove("late_bound");
                     engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(
                         AChildTakesAHandedValueInPlaceOfItsDataEvent::ErrorExecution,
-                        &format!("<invoke id='{}'> did not start: its child's script session failed at step '{}'", "late_bound", failure.stage)));
+                        ::sce_rust_runtime::ErrorReason::InvokeChildInitFailed, &format!("<invoke id='{}'> did not start: its child's script session failed at step '{}'", "late_bound", failure.stage)));
                     continue;
                 }
 
@@ -3293,6 +3337,7 @@ impl StatePolicy for AChildTakesAHandedValueInPlaceOfItsDataPolicy {
                             );
                             engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(
                                 AChildTakesAHandedValueInPlaceOfItsDataEvent::ErrorExecution,
+                                ::sce_rust_runtime::ErrorReason::AssignmentFailed,
                                 "<assign> to 'listed_seen' failed",
                             ));
                             // W3C SCXML 4.9: the error ends the block, from however deep a <foreach> it came.
@@ -3319,6 +3364,7 @@ impl StatePolicy for AChildTakesAHandedValueInPlaceOfItsDataPolicy {
                             );
                             engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(
                                 AChildTakesAHandedValueInPlaceOfItsDataEvent::ErrorExecution,
+                                ::sce_rust_runtime::ErrorReason::AssignmentFailed,
                                 "<assign> to 'stray_seen' failed",
                             ));
                             // W3C SCXML 4.9: the error ends the block, from however deep a <foreach> it came.
@@ -3345,6 +3391,7 @@ impl StatePolicy for AChildTakesAHandedValueInPlaceOfItsDataPolicy {
                             );
                             engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(
                                 AChildTakesAHandedValueInPlaceOfItsDataEvent::ErrorExecution,
+                                ::sce_rust_runtime::ErrorReason::AssignmentFailed,
                                 "<assign> to 'record_seen' failed",
                             ));
                             // W3C SCXML 4.9: the error ends the block, from however deep a <foreach> it came.
@@ -3371,6 +3418,7 @@ impl StatePolicy for AChildTakesAHandedValueInPlaceOfItsDataPolicy {
                             );
                             engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(
                                 AChildTakesAHandedValueInPlaceOfItsDataEvent::ErrorExecution,
+                                ::sce_rust_runtime::ErrorReason::AssignmentFailed,
                                 "<assign> to 'list_errors_seen' failed",
                             ));
                             // W3C SCXML 4.9: the error ends the block, from however deep a <foreach> it came.
@@ -3404,6 +3452,7 @@ impl StatePolicy for AChildTakesAHandedValueInPlaceOfItsDataPolicy {
                             );
                             engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(
                                 AChildTakesAHandedValueInPlaceOfItsDataEvent::ErrorExecution,
+                                ::sce_rust_runtime::ErrorReason::AssignmentFailed,
                                 "<assign> to 'raising_seen' failed",
                             ));
                             // W3C SCXML 4.9: the error ends the block, from however deep a <foreach> it came.
@@ -3430,6 +3479,7 @@ impl StatePolicy for AChildTakesAHandedValueInPlaceOfItsDataPolicy {
                             );
                             engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(
                                 AChildTakesAHandedValueInPlaceOfItsDataEvent::ErrorExecution,
+                                ::sce_rust_runtime::ErrorReason::AssignmentFailed,
                                 "<assign> to 'effectful_seen' failed",
                             ));
                             // W3C SCXML 4.9: the error ends the block, from however deep a <foreach> it came.
@@ -3456,6 +3506,7 @@ impl StatePolicy for AChildTakesAHandedValueInPlaceOfItsDataPolicy {
                             );
                             engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(
                                 AChildTakesAHandedValueInPlaceOfItsDataEvent::ErrorExecution,
+                                ::sce_rust_runtime::ErrorReason::AssignmentFailed,
                                 "<assign> to 'effects_seen' failed",
                             ));
                             // W3C SCXML 4.9: the error ends the block, from however deep a <foreach> it came.
@@ -3482,6 +3533,7 @@ impl StatePolicy for AChildTakesAHandedValueInPlaceOfItsDataPolicy {
                             );
                             engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(
                                 AChildTakesAHandedValueInPlaceOfItsDataEvent::ErrorExecution,
+                                ::sce_rust_runtime::ErrorReason::AssignmentFailed,
                                 "<assign> to 'refusable_seen' failed",
                             ));
                             // W3C SCXML 4.9: the error ends the block, from however deep a <foreach> it came.
@@ -3508,6 +3560,7 @@ impl StatePolicy for AChildTakesAHandedValueInPlaceOfItsDataPolicy {
                             );
                             engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(
                                 AChildTakesAHandedValueInPlaceOfItsDataEvent::ErrorExecution,
+                                ::sce_rust_runtime::ErrorReason::AssignmentFailed,
                                 "<assign> to 'kept_seen' failed",
                             ));
                             // W3C SCXML 4.9: the error ends the block, from however deep a <foreach> it came.
@@ -3534,6 +3587,7 @@ impl StatePolicy for AChildTakesAHandedValueInPlaceOfItsDataPolicy {
                             );
                             engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(
                                 AChildTakesAHandedValueInPlaceOfItsDataEvent::ErrorExecution,
+                                ::sce_rust_runtime::ErrorReason::AssignmentFailed,
                                 "<assign> to 'stranger_seen' failed",
                             ));
                             // W3C SCXML 4.9: the error ends the block, from however deep a <foreach> it came.
@@ -3560,6 +3614,7 @@ impl StatePolicy for AChildTakesAHandedValueInPlaceOfItsDataPolicy {
                             );
                             engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(
                                 AChildTakesAHandedValueInPlaceOfItsDataEvent::ErrorExecution,
+                                ::sce_rust_runtime::ErrorReason::AssignmentFailed,
                                 "<assign> to 'payload_seen' failed",
                             ));
                             // W3C SCXML 4.9: the error ends the block, from however deep a <foreach> it came.
@@ -3586,6 +3641,7 @@ impl StatePolicy for AChildTakesAHandedValueInPlaceOfItsDataPolicy {
                             );
                             engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(
                                 AChildTakesAHandedValueInPlaceOfItsDataEvent::ErrorExecution,
+                                ::sce_rust_runtime::ErrorReason::AssignmentFailed,
                                 "<assign> to 'script_seen' failed",
                             ));
                             // W3C SCXML 4.9: the error ends the block, from however deep a <foreach> it came.
@@ -3612,6 +3668,7 @@ impl StatePolicy for AChildTakesAHandedValueInPlaceOfItsDataPolicy {
                             );
                             engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(
                                 AChildTakesAHandedValueInPlaceOfItsDataEvent::ErrorExecution,
+                                ::sce_rust_runtime::ErrorReason::AssignmentFailed,
                                 "<assign> to 'entry_seen' failed",
                             ));
                             // W3C SCXML 4.9: the error ends the block, from however deep a <foreach> it came.
@@ -3638,6 +3695,7 @@ impl StatePolicy for AChildTakesAHandedValueInPlaceOfItsDataPolicy {
                             );
                             engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(
                                 AChildTakesAHandedValueInPlaceOfItsDataEvent::ErrorExecution,
+                                ::sce_rust_runtime::ErrorReason::AssignmentFailed,
                                 "<assign> to 'errors_seen' failed",
                             ));
                             // W3C SCXML 4.9: the error ends the block, from however deep a <foreach> it came.

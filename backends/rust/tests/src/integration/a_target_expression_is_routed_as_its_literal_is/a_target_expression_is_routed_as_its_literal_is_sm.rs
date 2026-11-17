@@ -811,6 +811,7 @@ impl ATargetExpressionIsRoutedAsItsLiteralIsPolicy {
                 );
                 engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(
                     ATargetExpressionIsRoutedAsItsLiteralIsEvent::ErrorExecution,
+                    ::sce_rust_runtime::ErrorReason::ParamUnfit,
                     "<data id='tInternal'> could not hold the value its invoke handed it",
                 ));
             }
@@ -825,6 +826,7 @@ impl ATargetExpressionIsRoutedAsItsLiteralIsPolicy {
                 ::sce_rust_runtime::sce_log_error!("global: {}", e);
                 engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(
                     ATargetExpressionIsRoutedAsItsLiteralIsEvent::ErrorExecution,
+                    ::sce_rust_runtime::ErrorReason::ExpressionFailed,
                     "<data id='tInternal'> expr failed to evaluate",
                 ));
             }
@@ -839,6 +841,7 @@ impl ATargetExpressionIsRoutedAsItsLiteralIsPolicy {
                 );
                 engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(
                     ATargetExpressionIsRoutedAsItsLiteralIsEvent::ErrorExecution,
+                    ::sce_rust_runtime::ErrorReason::ParamUnfit,
                     "<data id='tKid'> could not hold the value its invoke handed it",
                 ));
             }
@@ -853,6 +856,7 @@ impl ATargetExpressionIsRoutedAsItsLiteralIsPolicy {
                 ::sce_rust_runtime::sce_log_error!("global: {}", e);
                 engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(
                     ATargetExpressionIsRoutedAsItsLiteralIsEvent::ErrorExecution,
+                    ::sce_rust_runtime::ErrorReason::ExpressionFailed,
                     "<data id='tKid'> expr failed to evaluate",
                 ));
             }
@@ -867,6 +871,7 @@ impl ATargetExpressionIsRoutedAsItsLiteralIsPolicy {
                 );
                 engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(
                     ATargetExpressionIsRoutedAsItsLiteralIsEvent::ErrorExecution,
+                    ::sce_rust_runtime::ErrorReason::ParamUnfit,
                     "<data id='tStranger'> could not hold the value its invoke handed it",
                 ));
             }
@@ -881,6 +886,7 @@ impl ATargetExpressionIsRoutedAsItsLiteralIsPolicy {
                 ::sce_rust_runtime::sce_log_error!("global: {}", e);
                 engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(
                     ATargetExpressionIsRoutedAsItsLiteralIsEvent::ErrorExecution,
+                    ::sce_rust_runtime::ErrorReason::ExpressionFailed,
                     "<data id='tStranger'> expr failed to evaluate",
                 ));
             }
@@ -895,6 +901,7 @@ impl ATargetExpressionIsRoutedAsItsLiteralIsPolicy {
                 );
                 engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(
                     ATargetExpressionIsRoutedAsItsLiteralIsEvent::ErrorExecution,
+                    ::sce_rust_runtime::ErrorReason::ParamUnfit,
                     "<data id='tParent'> could not hold the value its invoke handed it",
                 ));
             }
@@ -909,6 +916,7 @@ impl ATargetExpressionIsRoutedAsItsLiteralIsPolicy {
                 ::sce_rust_runtime::sce_log_error!("global: {}", e);
                 engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(
                     ATargetExpressionIsRoutedAsItsLiteralIsEvent::ErrorExecution,
+                    ::sce_rust_runtime::ErrorReason::ExpressionFailed,
                     "<data id='tParent'> expr failed to evaluate",
                 ));
             }
@@ -923,6 +931,7 @@ impl ATargetExpressionIsRoutedAsItsLiteralIsPolicy {
                 );
                 engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(
                     ATargetExpressionIsRoutedAsItsLiteralIsEvent::ErrorExecution,
+                    ::sce_rust_runtime::ErrorReason::ParamUnfit,
                     "<data id='tBogus'> could not hold the value its invoke handed it",
                 ));
             }
@@ -937,6 +946,7 @@ impl ATargetExpressionIsRoutedAsItsLiteralIsPolicy {
                 ::sce_rust_runtime::sce_log_error!("global: {}", e);
                 engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(
                     ATargetExpressionIsRoutedAsItsLiteralIsEvent::ErrorExecution,
+                    ::sce_rust_runtime::ErrorReason::ExpressionFailed,
                     "<data id='tBogus'> expr failed to evaluate",
                 ));
             }
@@ -951,6 +961,7 @@ impl ATargetExpressionIsRoutedAsItsLiteralIsPolicy {
                 );
                 engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(
                     ATargetExpressionIsRoutedAsItsLiteralIsEvent::ErrorExecution,
+                    ::sce_rust_runtime::ErrorReason::ParamUnfit,
                     "<data id='kidLoc'> could not hold the value its invoke handed it",
                 ));
             }
@@ -962,6 +973,7 @@ impl ATargetExpressionIsRoutedAsItsLiteralIsPolicy {
                 ::sce_rust_runtime::sce_log_error!("global: {}", e);
                 engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(
                     ATargetExpressionIsRoutedAsItsLiteralIsEvent::ErrorExecution,
+                    ::sce_rust_runtime::ErrorReason::ExpressionFailed,
                     "<data id='kidLoc'> expr failed to evaluate",
                 ));
             }
@@ -976,6 +988,7 @@ impl ATargetExpressionIsRoutedAsItsLiteralIsPolicy {
                 );
                 engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(
                     ATargetExpressionIsRoutedAsItsLiteralIsEvent::ErrorExecution,
+                    ::sce_rust_runtime::ErrorReason::ParamUnfit,
                     "<data id='internalNow'> could not hold the value its invoke handed it",
                 ));
             }
@@ -990,6 +1003,7 @@ impl ATargetExpressionIsRoutedAsItsLiteralIsPolicy {
                 ::sce_rust_runtime::sce_log_error!("global: {}", e);
                 engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(
                     ATargetExpressionIsRoutedAsItsLiteralIsEvent::ErrorExecution,
+                    ::sce_rust_runtime::ErrorReason::ExpressionFailed,
                     "<data id='internalNow'> expr failed to evaluate",
                 ));
             }
@@ -1004,6 +1018,7 @@ impl ATargetExpressionIsRoutedAsItsLiteralIsPolicy {
                 );
                 engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(
                     ATargetExpressionIsRoutedAsItsLiteralIsEvent::ErrorExecution,
+                    ::sce_rust_runtime::ErrorReason::ParamUnfit,
                     "<data id='internalLater'> could not hold the value its invoke handed it",
                 ));
             }
@@ -1018,6 +1033,7 @@ impl ATargetExpressionIsRoutedAsItsLiteralIsPolicy {
                 ::sce_rust_runtime::sce_log_error!("global: {}", e);
                 engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(
                     ATargetExpressionIsRoutedAsItsLiteralIsEvent::ErrorExecution,
+                    ::sce_rust_runtime::ErrorReason::ExpressionFailed,
                     "<data id='internalLater'> expr failed to evaluate",
                 ));
             }
@@ -1032,6 +1048,7 @@ impl ATargetExpressionIsRoutedAsItsLiteralIsPolicy {
                 );
                 engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(
                     ATargetExpressionIsRoutedAsItsLiteralIsEvent::ErrorExecution,
+                    ::sce_rust_runtime::ErrorReason::ParamUnfit,
                     "<data id='kidNow'> could not hold the value its invoke handed it",
                 ));
             }
@@ -1043,6 +1060,7 @@ impl ATargetExpressionIsRoutedAsItsLiteralIsPolicy {
                 ::sce_rust_runtime::sce_log_error!("global: {}", e);
                 engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(
                     ATargetExpressionIsRoutedAsItsLiteralIsEvent::ErrorExecution,
+                    ::sce_rust_runtime::ErrorReason::ExpressionFailed,
                     "<data id='kidNow'> expr failed to evaluate",
                 ));
             }
@@ -1057,6 +1075,7 @@ impl ATargetExpressionIsRoutedAsItsLiteralIsPolicy {
                 );
                 engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(
                     ATargetExpressionIsRoutedAsItsLiteralIsEvent::ErrorExecution,
+                    ::sce_rust_runtime::ErrorReason::ParamUnfit,
                     "<data id='kidLater'> could not hold the value its invoke handed it",
                 ));
             }
@@ -1068,6 +1087,7 @@ impl ATargetExpressionIsRoutedAsItsLiteralIsPolicy {
                 ::sce_rust_runtime::sce_log_error!("global: {}", e);
                 engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(
                     ATargetExpressionIsRoutedAsItsLiteralIsEvent::ErrorExecution,
+                    ::sce_rust_runtime::ErrorReason::ExpressionFailed,
                     "<data id='kidLater'> expr failed to evaluate",
                 ));
             }
@@ -1082,6 +1102,7 @@ impl ATargetExpressionIsRoutedAsItsLiteralIsPolicy {
                 );
                 engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(
                     ATargetExpressionIsRoutedAsItsLiteralIsEvent::ErrorExecution,
+                    ::sce_rust_runtime::ErrorReason::ParamUnfit,
                     "<data id='sessNow'> could not hold the value its invoke handed it",
                 ));
             }
@@ -1093,6 +1114,7 @@ impl ATargetExpressionIsRoutedAsItsLiteralIsPolicy {
                 ::sce_rust_runtime::sce_log_error!("global: {}", e);
                 engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(
                     ATargetExpressionIsRoutedAsItsLiteralIsEvent::ErrorExecution,
+                    ::sce_rust_runtime::ErrorReason::ExpressionFailed,
                     "<data id='sessNow'> expr failed to evaluate",
                 ));
             }
@@ -1107,6 +1129,7 @@ impl ATargetExpressionIsRoutedAsItsLiteralIsPolicy {
                 );
                 engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(
                     ATargetExpressionIsRoutedAsItsLiteralIsEvent::ErrorExecution,
+                    ::sce_rust_runtime::ErrorReason::ParamUnfit,
                     "<data id='sessLater'> could not hold the value its invoke handed it",
                 ));
             }
@@ -1121,6 +1144,7 @@ impl ATargetExpressionIsRoutedAsItsLiteralIsPolicy {
                 ::sce_rust_runtime::sce_log_error!("global: {}", e);
                 engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(
                     ATargetExpressionIsRoutedAsItsLiteralIsEvent::ErrorExecution,
+                    ::sce_rust_runtime::ErrorReason::ExpressionFailed,
                     "<data id='sessLater'> expr failed to evaluate",
                 ));
             }
@@ -1135,6 +1159,7 @@ impl ATargetExpressionIsRoutedAsItsLiteralIsPolicy {
                 );
                 engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(
                     ATargetExpressionIsRoutedAsItsLiteralIsEvent::ErrorExecution,
+                    ::sce_rust_runtime::ErrorReason::ParamUnfit,
                     "<data id='commErrors'> could not hold the value its invoke handed it",
                 ));
             }
@@ -1149,6 +1174,7 @@ impl ATargetExpressionIsRoutedAsItsLiteralIsPolicy {
                 ::sce_rust_runtime::sce_log_error!("global: {}", e);
                 engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(
                     ATargetExpressionIsRoutedAsItsLiteralIsEvent::ErrorExecution,
+                    ::sce_rust_runtime::ErrorReason::ExpressionFailed,
                     "<data id='commErrors'> expr failed to evaluate",
                 ));
             }
@@ -1163,6 +1189,7 @@ impl ATargetExpressionIsRoutedAsItsLiteralIsPolicy {
                 );
                 engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(
                     ATargetExpressionIsRoutedAsItsLiteralIsEvent::ErrorExecution,
+                    ::sce_rust_runtime::ErrorReason::ParamUnfit,
                     "<data id='execErrors'> could not hold the value its invoke handed it",
                 ));
             }
@@ -1177,6 +1204,7 @@ impl ATargetExpressionIsRoutedAsItsLiteralIsPolicy {
                 ::sce_rust_runtime::sce_log_error!("global: {}", e);
                 engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(
                     ATargetExpressionIsRoutedAsItsLiteralIsEvent::ErrorExecution,
+                    ::sce_rust_runtime::ErrorReason::ExpressionFailed,
                     "<data id='execErrors'> expr failed to evaluate",
                 ));
             }
@@ -1191,6 +1219,7 @@ impl ATargetExpressionIsRoutedAsItsLiteralIsPolicy {
                 );
                 engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(
                     ATargetExpressionIsRoutedAsItsLiteralIsEvent::ErrorExecution,
+                    ::sce_rust_runtime::ErrorReason::ParamUnfit,
                     "<data id='afterStranger'> could not hold the value its invoke handed it",
                 ));
             }
@@ -1205,6 +1234,7 @@ impl ATargetExpressionIsRoutedAsItsLiteralIsPolicy {
                 ::sce_rust_runtime::sce_log_error!("global: {}", e);
                 engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(
                     ATargetExpressionIsRoutedAsItsLiteralIsEvent::ErrorExecution,
+                    ::sce_rust_runtime::ErrorReason::ExpressionFailed,
                     "<data id='afterStranger'> expr failed to evaluate",
                 ));
             }
@@ -1216,6 +1246,7 @@ impl ATargetExpressionIsRoutedAsItsLiteralIsPolicy {
                 ::sce_rust_runtime::sce_log_error!("<data id='afterStrangerLater'> could not hold the value its invoke handed it: {}", e);
                 engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(
                     ATargetExpressionIsRoutedAsItsLiteralIsEvent::ErrorExecution,
+                    ::sce_rust_runtime::ErrorReason::ParamUnfit,
                     "<data id='afterStrangerLater'> could not hold the value its invoke handed it",
                 ));
             }
@@ -1230,6 +1261,7 @@ impl ATargetExpressionIsRoutedAsItsLiteralIsPolicy {
                 ::sce_rust_runtime::sce_log_error!("global: {}", e);
                 engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(
                     ATargetExpressionIsRoutedAsItsLiteralIsEvent::ErrorExecution,
+                    ::sce_rust_runtime::ErrorReason::ExpressionFailed,
                     "<data id='afterStrangerLater'> expr failed to evaluate",
                 ));
             }
@@ -1244,6 +1276,7 @@ impl ATargetExpressionIsRoutedAsItsLiteralIsPolicy {
                 );
                 engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(
                     ATargetExpressionIsRoutedAsItsLiteralIsEvent::ErrorExecution,
+                    ::sce_rust_runtime::ErrorReason::ParamUnfit,
                     "<data id='afterOrphan'> could not hold the value its invoke handed it",
                 ));
             }
@@ -1258,6 +1291,7 @@ impl ATargetExpressionIsRoutedAsItsLiteralIsPolicy {
                 ::sce_rust_runtime::sce_log_error!("global: {}", e);
                 engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(
                     ATargetExpressionIsRoutedAsItsLiteralIsEvent::ErrorExecution,
+                    ::sce_rust_runtime::ErrorReason::ExpressionFailed,
                     "<data id='afterOrphan'> expr failed to evaluate",
                 ));
             }
@@ -1269,6 +1303,7 @@ impl ATargetExpressionIsRoutedAsItsLiteralIsPolicy {
                 ::sce_rust_runtime::sce_log_error!("<data id='afterOrphanLater'> could not hold the value its invoke handed it: {}", e);
                 engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(
                     ATargetExpressionIsRoutedAsItsLiteralIsEvent::ErrorExecution,
+                    ::sce_rust_runtime::ErrorReason::ParamUnfit,
                     "<data id='afterOrphanLater'> could not hold the value its invoke handed it",
                 ));
             }
@@ -1283,6 +1318,7 @@ impl ATargetExpressionIsRoutedAsItsLiteralIsPolicy {
                 ::sce_rust_runtime::sce_log_error!("global: {}", e);
                 engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(
                     ATargetExpressionIsRoutedAsItsLiteralIsEvent::ErrorExecution,
+                    ::sce_rust_runtime::ErrorReason::ExpressionFailed,
                     "<data id='afterOrphanLater'> expr failed to evaluate",
                 ));
             }
@@ -1297,6 +1333,7 @@ impl ATargetExpressionIsRoutedAsItsLiteralIsPolicy {
                 );
                 engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(
                     ATargetExpressionIsRoutedAsItsLiteralIsEvent::ErrorExecution,
+                    ::sce_rust_runtime::ErrorReason::ParamUnfit,
                     "<data id='afterBogus'> could not hold the value its invoke handed it",
                 ));
             }
@@ -1311,6 +1348,7 @@ impl ATargetExpressionIsRoutedAsItsLiteralIsPolicy {
                 ::sce_rust_runtime::sce_log_error!("global: {}", e);
                 engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(
                     ATargetExpressionIsRoutedAsItsLiteralIsEvent::ErrorExecution,
+                    ::sce_rust_runtime::ErrorReason::ExpressionFailed,
                     "<data id='afterBogus'> expr failed to evaluate",
                 ));
             }
@@ -1325,6 +1363,7 @@ impl ATargetExpressionIsRoutedAsItsLiteralIsPolicy {
                 );
                 engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(
                     ATargetExpressionIsRoutedAsItsLiteralIsEvent::ErrorExecution,
+                    ::sce_rust_runtime::ErrorReason::ParamUnfit,
                     "<data id='afterBogusLater'> could not hold the value its invoke handed it",
                 ));
             }
@@ -1339,6 +1378,7 @@ impl ATargetExpressionIsRoutedAsItsLiteralIsPolicy {
                 ::sce_rust_runtime::sce_log_error!("global: {}", e);
                 engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(
                     ATargetExpressionIsRoutedAsItsLiteralIsEvent::ErrorExecution,
+                    ::sce_rust_runtime::ErrorReason::ExpressionFailed,
                     "<data id='afterBogusLater'> expr failed to evaluate",
                 ));
             }
@@ -1387,6 +1427,7 @@ impl ATargetExpressionIsRoutedAsItsLiteralIsPolicy {
                 ::sce_rust_runtime::sce_log_error!("Guard evaluation failed for '{}': {}", cond, e);
                 engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(
                     ATargetExpressionIsRoutedAsItsLiteralIsEvent::ErrorExecution,
+                    ::sce_rust_runtime::ErrorReason::ExpressionFailed,
                     reason,
                 ));
                 None
@@ -1582,7 +1623,7 @@ impl ATargetExpressionIsRoutedAsItsLiteralIsPolicy {
                     self.active_invokes.remove("kid");
                     engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(
                         ATargetExpressionIsRoutedAsItsLiteralIsEvent::ErrorExecution,
-                        &format!("<invoke id='{}'> did not start: its child's script session failed at step '{}'", "kid", failure.stage)));
+                        ::sce_rust_runtime::ErrorReason::InvokeChildInitFailed, &format!("<invoke id='{}'> did not start: its child's script session failed at step '{}'", "kid", failure.stage)));
                     continue;
                 }
 
@@ -1935,7 +1976,12 @@ impl StatePolicy for ATargetExpressionIsRoutedAsItsLiteralIsPolicy {
                         let __sce_arg_sid = self.session_id.as_ref().unwrap().clone();
                         let __sce_arg_se = self.script_engine.clone();
                         let __sce_arg_se: &dyn sce_rust_runtime::IScriptEngine = &*__sce_arg_se;
-                        let mut _send_arg_error: Option<&'static str> = None;
+                        // The code and the sentence of the first argument that failed
+                        // (docs/adr/0106 #111).
+                        let mut _send_arg_error: Option<(
+                            ::sce_rust_runtime::ErrorReason,
+                            &'static str,
+                        )> = None;
                         // A target that evaluates to nothing is not an evaluation error: it is an
                         // address nobody answers at, which the resolution below reports as
                         // error.communication (W3C SCXML C.1).
@@ -1949,8 +1995,10 @@ impl StatePolicy for ATargetExpressionIsRoutedAsItsLiteralIsPolicy {
                                             "targetexpr eval failed: {}",
                                             e
                                         );
-                                        _send_arg_error =
-                                            Some("<send> targetexpr could not be evaluated");
+                                        _send_arg_error = Some((
+                                            ::sce_rust_runtime::ErrorReason::ExpressionFailed,
+                                            "<send> targetexpr could not be evaluated",
+                                        ));
                                         None
                                     }
                                 }
@@ -1961,13 +2009,14 @@ impl StatePolicy for ATargetExpressionIsRoutedAsItsLiteralIsPolicy {
                             // W3C SCXML 6.2: a target this processor cannot address is refused as
                             // a static one is, before anything is delivered.
                             if sce_rust_runtime::helpers::send::is_invalid_target(&::sce_rust_runtime::helpers::event_data::script_value_to_wire_string(val)) {
-            _send_arg_error = Some("<send> targetexpr produced a target this processor cannot address");
+            _send_arg_error = Some((::sce_rust_runtime::ErrorReason::SendTargetInvalid, "<send> targetexpr produced a target this processor cannot address"));
         }
                         }
-                        if let Some(__sce_why) = _send_arg_error {
+                        if let Some((__sce_reason, __sce_why)) = _send_arg_error {
                             ::sce_rust_runtime::sce_log_error!("{}", __sce_why);
                             let mut err_meta = sce_rust_runtime::EventWithMetadata::platform_error(
                                 ATargetExpressionIsRoutedAsItsLiteralIsEvent::ErrorExecution,
+                                __sce_reason,
                                 __sce_why,
                             );
                             err_meta.metadata.send_id =
@@ -1989,7 +2038,7 @@ impl StatePolicy for ATargetExpressionIsRoutedAsItsLiteralIsPolicy {
                             if _resolved_target.is_none() {
                                 // W3C SCXML C.1 (test 496, 521): a target that names nothing raises
                                 // error.communication.
-                                let mut err_meta = sce_rust_runtime::EventWithMetadata::platform_error(ATargetExpressionIsRoutedAsItsLiteralIsEvent::ErrorCommunication, "<send> targetexpr evaluated to nothing, so there is no target to reach");
+                                let mut err_meta = sce_rust_runtime::EventWithMetadata::platform_error(ATargetExpressionIsRoutedAsItsLiteralIsEvent::ErrorCommunication, ::sce_rust_runtime::ErrorReason::TargetUnreachable, "<send> targetexpr evaluated to nothing, so there is no target to reach");
                                 err_meta.metadata.send_id =
                                     ::sce_rust_runtime::sce_string_from_str(send_id);
                                 engine.raise(err_meta);
@@ -2030,7 +2079,7 @@ impl StatePolicy for ATargetExpressionIsRoutedAsItsLiteralIsPolicy {
                                         if __sce_served.is_none()
                                             && !engine.has_event_processor("sce:mesh")
                                         {
-                                            let mut err_meta = sce_rust_runtime::EventWithMetadata::platform_error(ATargetExpressionIsRoutedAsItsLiteralIsEvent::ErrorExecution, "<send type='sce:mesh'> names a processor the host declared but never registered");
+                                            let mut err_meta = sce_rust_runtime::EventWithMetadata::platform_error(ATargetExpressionIsRoutedAsItsLiteralIsEvent::ErrorExecution, ::sce_rust_runtime::ErrorReason::ProcessorUnregistered, "<send type='sce:mesh'> names a processor the host declared but never registered");
                                             err_meta.metadata.send_id =
                                                 ::sce_rust_runtime::sce_string_from_str(send_id);
                                             engine.raise(err_meta);
@@ -2063,7 +2112,7 @@ impl StatePolicy for ATargetExpressionIsRoutedAsItsLiteralIsPolicy {
                                         if __sce_routed
                                             == sce_rust_runtime::TargetSendOutcome::Unsupported
                                         {
-                                            let mut err_meta = sce_rust_runtime::EventWithMetadata::platform_error(ATargetExpressionIsRoutedAsItsLiteralIsEvent::ErrorExecution, "<send> targetexpr produced a value that is not a target");
+                                            let mut err_meta = sce_rust_runtime::EventWithMetadata::platform_error(ATargetExpressionIsRoutedAsItsLiteralIsEvent::ErrorExecution, ::sce_rust_runtime::ErrorReason::SendTargetInvalid, "<send> targetexpr produced a value that is not a target");
                                             err_meta.metadata.send_id =
                                                 ::sce_rust_runtime::sce_string_from_str(send_id);
                                             engine.raise(err_meta);
@@ -2072,7 +2121,7 @@ impl StatePolicy for ATargetExpressionIsRoutedAsItsLiteralIsPolicy {
                                         if __sce_routed
                                             == sce_rust_runtime::TargetSendOutcome::Unreachable
                                         {
-                                            let mut err_meta = sce_rust_runtime::EventWithMetadata::platform_error(ATargetExpressionIsRoutedAsItsLiteralIsEvent::ErrorCommunication, "<send> targetexpr names a session this processor cannot reach");
+                                            let mut err_meta = sce_rust_runtime::EventWithMetadata::platform_error(ATargetExpressionIsRoutedAsItsLiteralIsEvent::ErrorCommunication, ::sce_rust_runtime::ErrorReason::TargetUnreachable, "<send> targetexpr names a session this processor cannot reach");
                                             err_meta.metadata.send_id =
                                                 ::sce_rust_runtime::sce_string_from_str(send_id);
                                             engine.raise(err_meta);
@@ -2106,6 +2155,7 @@ impl StatePolicy for ATargetExpressionIsRoutedAsItsLiteralIsPolicy {
                             );
                             engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(
                                 ATargetExpressionIsRoutedAsItsLiteralIsEvent::ErrorExecution,
+                                ::sce_rust_runtime::ErrorReason::AssignmentFailed,
                                 "<assign> to 'afterStranger' failed",
                             ));
                             // W3C SCXML 4.9: the error ends the block, from however deep a <foreach> it came.
@@ -2123,7 +2173,12 @@ impl StatePolicy for ATargetExpressionIsRoutedAsItsLiteralIsPolicy {
                         let __sce_arg_sid = self.session_id.as_ref().unwrap().clone();
                         let __sce_arg_se = self.script_engine.clone();
                         let __sce_arg_se: &dyn sce_rust_runtime::IScriptEngine = &*__sce_arg_se;
-                        let mut _send_arg_error: Option<&'static str> = None;
+                        // The code and the sentence of the first argument that failed
+                        // (docs/adr/0106 #111).
+                        let mut _send_arg_error: Option<(
+                            ::sce_rust_runtime::ErrorReason,
+                            &'static str,
+                        )> = None;
                         // A target that evaluates to nothing is not an evaluation error: it is an
                         // address nobody answers at, which the resolution below reports as
                         // error.communication (W3C SCXML C.1).
@@ -2137,8 +2192,10 @@ impl StatePolicy for ATargetExpressionIsRoutedAsItsLiteralIsPolicy {
                                             "targetexpr eval failed: {}",
                                             e
                                         );
-                                        _send_arg_error =
-                                            Some("<send> targetexpr could not be evaluated");
+                                        _send_arg_error = Some((
+                                            ::sce_rust_runtime::ErrorReason::ExpressionFailed,
+                                            "<send> targetexpr could not be evaluated",
+                                        ));
                                         None
                                     }
                                 }
@@ -2149,13 +2206,14 @@ impl StatePolicy for ATargetExpressionIsRoutedAsItsLiteralIsPolicy {
                             // W3C SCXML 6.2: a target this processor cannot address is refused as
                             // a static one is, before anything is delivered.
                             if sce_rust_runtime::helpers::send::is_invalid_target(&::sce_rust_runtime::helpers::event_data::script_value_to_wire_string(val)) {
-            _send_arg_error = Some("<send> targetexpr produced a target this processor cannot address");
+            _send_arg_error = Some((::sce_rust_runtime::ErrorReason::SendTargetInvalid, "<send> targetexpr produced a target this processor cannot address"));
         }
                         }
-                        if let Some(__sce_why) = _send_arg_error {
+                        if let Some((__sce_reason, __sce_why)) = _send_arg_error {
                             ::sce_rust_runtime::sce_log_error!("{}", __sce_why);
                             let mut err_meta = sce_rust_runtime::EventWithMetadata::platform_error(
                                 ATargetExpressionIsRoutedAsItsLiteralIsEvent::ErrorExecution,
+                                __sce_reason,
                                 __sce_why,
                             );
                             err_meta.metadata.send_id =
@@ -2177,7 +2235,7 @@ impl StatePolicy for ATargetExpressionIsRoutedAsItsLiteralIsPolicy {
                             if _resolved_target.is_none() {
                                 // W3C SCXML C.1 (test 496, 521): a target that names nothing raises
                                 // error.communication.
-                                let mut err_meta = sce_rust_runtime::EventWithMetadata::platform_error(ATargetExpressionIsRoutedAsItsLiteralIsEvent::ErrorCommunication, "<send> targetexpr evaluated to nothing, so there is no target to reach");
+                                let mut err_meta = sce_rust_runtime::EventWithMetadata::platform_error(ATargetExpressionIsRoutedAsItsLiteralIsEvent::ErrorCommunication, ::sce_rust_runtime::ErrorReason::TargetUnreachable, "<send> targetexpr evaluated to nothing, so there is no target to reach");
                                 err_meta.metadata.send_id =
                                     ::sce_rust_runtime::sce_string_from_str(send_id);
                                 engine.raise(err_meta);
@@ -2250,7 +2308,7 @@ impl StatePolicy for ATargetExpressionIsRoutedAsItsLiteralIsPolicy {
                                         if __sce_routed
                                             == sce_rust_runtime::TargetSendOutcome::Unsupported
                                         {
-                                            let mut err_meta = sce_rust_runtime::EventWithMetadata::platform_error(ATargetExpressionIsRoutedAsItsLiteralIsEvent::ErrorExecution, "<send> targetexpr produced a value that is not a target");
+                                            let mut err_meta = sce_rust_runtime::EventWithMetadata::platform_error(ATargetExpressionIsRoutedAsItsLiteralIsEvent::ErrorExecution, ::sce_rust_runtime::ErrorReason::SendTargetInvalid, "<send> targetexpr produced a value that is not a target");
                                             err_meta.metadata.send_id =
                                                 ::sce_rust_runtime::sce_string_from_str(send_id);
                                             engine.raise(err_meta);
@@ -2259,7 +2317,7 @@ impl StatePolicy for ATargetExpressionIsRoutedAsItsLiteralIsPolicy {
                                         if __sce_routed
                                             == sce_rust_runtime::TargetSendOutcome::Unreachable
                                         {
-                                            let mut err_meta = sce_rust_runtime::EventWithMetadata::platform_error(ATargetExpressionIsRoutedAsItsLiteralIsEvent::ErrorCommunication, "<send> targetexpr names a session this processor cannot reach");
+                                            let mut err_meta = sce_rust_runtime::EventWithMetadata::platform_error(ATargetExpressionIsRoutedAsItsLiteralIsEvent::ErrorCommunication, ::sce_rust_runtime::ErrorReason::TargetUnreachable, "<send> targetexpr names a session this processor cannot reach");
                                             err_meta.metadata.send_id =
                                                 ::sce_rust_runtime::sce_string_from_str(send_id);
                                             engine.raise(err_meta);
@@ -2293,6 +2351,7 @@ impl StatePolicy for ATargetExpressionIsRoutedAsItsLiteralIsPolicy {
                             );
                             engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(
                                 ATargetExpressionIsRoutedAsItsLiteralIsEvent::ErrorExecution,
+                                ::sce_rust_runtime::ErrorReason::AssignmentFailed,
                                 "<assign> to 'afterStrangerLater' failed",
                             ));
                             // W3C SCXML 4.9: the error ends the block, from however deep a <foreach> it came.
@@ -2310,7 +2369,12 @@ impl StatePolicy for ATargetExpressionIsRoutedAsItsLiteralIsPolicy {
                         let __sce_arg_sid = self.session_id.as_ref().unwrap().clone();
                         let __sce_arg_se = self.script_engine.clone();
                         let __sce_arg_se: &dyn sce_rust_runtime::IScriptEngine = &*__sce_arg_se;
-                        let mut _send_arg_error: Option<&'static str> = None;
+                        // The code and the sentence of the first argument that failed
+                        // (docs/adr/0106 #111).
+                        let mut _send_arg_error: Option<(
+                            ::sce_rust_runtime::ErrorReason,
+                            &'static str,
+                        )> = None;
                         // A target that evaluates to nothing is not an evaluation error: it is an
                         // address nobody answers at, which the resolution below reports as
                         // error.communication (W3C SCXML C.1).
@@ -2323,8 +2387,10 @@ impl StatePolicy for ATargetExpressionIsRoutedAsItsLiteralIsPolicy {
                                             "targetexpr eval failed: {}",
                                             e
                                         );
-                                        _send_arg_error =
-                                            Some("<send> targetexpr could not be evaluated");
+                                        _send_arg_error = Some((
+                                            ::sce_rust_runtime::ErrorReason::ExpressionFailed,
+                                            "<send> targetexpr could not be evaluated",
+                                        ));
                                         None
                                     }
                                 }
@@ -2335,13 +2401,14 @@ impl StatePolicy for ATargetExpressionIsRoutedAsItsLiteralIsPolicy {
                             // W3C SCXML 6.2: a target this processor cannot address is refused as
                             // a static one is, before anything is delivered.
                             if sce_rust_runtime::helpers::send::is_invalid_target(&::sce_rust_runtime::helpers::event_data::script_value_to_wire_string(val)) {
-            _send_arg_error = Some("<send> targetexpr produced a target this processor cannot address");
+            _send_arg_error = Some((::sce_rust_runtime::ErrorReason::SendTargetInvalid, "<send> targetexpr produced a target this processor cannot address"));
         }
                         }
-                        if let Some(__sce_why) = _send_arg_error {
+                        if let Some((__sce_reason, __sce_why)) = _send_arg_error {
                             ::sce_rust_runtime::sce_log_error!("{}", __sce_why);
                             let mut err_meta = sce_rust_runtime::EventWithMetadata::platform_error(
                                 ATargetExpressionIsRoutedAsItsLiteralIsEvent::ErrorExecution,
+                                __sce_reason,
                                 __sce_why,
                             );
                             err_meta.metadata.send_id =
@@ -2363,7 +2430,7 @@ impl StatePolicy for ATargetExpressionIsRoutedAsItsLiteralIsPolicy {
                             if _resolved_target.is_none() {
                                 // W3C SCXML C.1 (test 496, 521): a target that names nothing raises
                                 // error.communication.
-                                let mut err_meta = sce_rust_runtime::EventWithMetadata::platform_error(ATargetExpressionIsRoutedAsItsLiteralIsEvent::ErrorCommunication, "<send> targetexpr evaluated to nothing, so there is no target to reach");
+                                let mut err_meta = sce_rust_runtime::EventWithMetadata::platform_error(ATargetExpressionIsRoutedAsItsLiteralIsEvent::ErrorCommunication, ::sce_rust_runtime::ErrorReason::TargetUnreachable, "<send> targetexpr evaluated to nothing, so there is no target to reach");
                                 err_meta.metadata.send_id =
                                     ::sce_rust_runtime::sce_string_from_str(send_id);
                                 engine.raise(err_meta);
@@ -2404,7 +2471,7 @@ impl StatePolicy for ATargetExpressionIsRoutedAsItsLiteralIsPolicy {
                                         if __sce_served.is_none()
                                             && !engine.has_event_processor("sce:mesh")
                                         {
-                                            let mut err_meta = sce_rust_runtime::EventWithMetadata::platform_error(ATargetExpressionIsRoutedAsItsLiteralIsEvent::ErrorExecution, "<send type='sce:mesh'> names a processor the host declared but never registered");
+                                            let mut err_meta = sce_rust_runtime::EventWithMetadata::platform_error(ATargetExpressionIsRoutedAsItsLiteralIsEvent::ErrorExecution, ::sce_rust_runtime::ErrorReason::ProcessorUnregistered, "<send type='sce:mesh'> names a processor the host declared but never registered");
                                             err_meta.metadata.send_id =
                                                 ::sce_rust_runtime::sce_string_from_str(send_id);
                                             engine.raise(err_meta);
@@ -2437,7 +2504,7 @@ impl StatePolicy for ATargetExpressionIsRoutedAsItsLiteralIsPolicy {
                                         if __sce_routed
                                             == sce_rust_runtime::TargetSendOutcome::Unsupported
                                         {
-                                            let mut err_meta = sce_rust_runtime::EventWithMetadata::platform_error(ATargetExpressionIsRoutedAsItsLiteralIsEvent::ErrorExecution, "<send> targetexpr produced a value that is not a target");
+                                            let mut err_meta = sce_rust_runtime::EventWithMetadata::platform_error(ATargetExpressionIsRoutedAsItsLiteralIsEvent::ErrorExecution, ::sce_rust_runtime::ErrorReason::SendTargetInvalid, "<send> targetexpr produced a value that is not a target");
                                             err_meta.metadata.send_id =
                                                 ::sce_rust_runtime::sce_string_from_str(send_id);
                                             engine.raise(err_meta);
@@ -2446,7 +2513,7 @@ impl StatePolicy for ATargetExpressionIsRoutedAsItsLiteralIsPolicy {
                                         if __sce_routed
                                             == sce_rust_runtime::TargetSendOutcome::Unreachable
                                         {
-                                            let mut err_meta = sce_rust_runtime::EventWithMetadata::platform_error(ATargetExpressionIsRoutedAsItsLiteralIsEvent::ErrorCommunication, "<send> targetexpr names a session this processor cannot reach");
+                                            let mut err_meta = sce_rust_runtime::EventWithMetadata::platform_error(ATargetExpressionIsRoutedAsItsLiteralIsEvent::ErrorCommunication, ::sce_rust_runtime::ErrorReason::TargetUnreachable, "<send> targetexpr names a session this processor cannot reach");
                                             err_meta.metadata.send_id =
                                                 ::sce_rust_runtime::sce_string_from_str(send_id);
                                             engine.raise(err_meta);
@@ -2480,6 +2547,7 @@ impl StatePolicy for ATargetExpressionIsRoutedAsItsLiteralIsPolicy {
                             );
                             engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(
                                 ATargetExpressionIsRoutedAsItsLiteralIsEvent::ErrorExecution,
+                                ::sce_rust_runtime::ErrorReason::AssignmentFailed,
                                 "<assign> to 'afterOrphan' failed",
                             ));
                             // W3C SCXML 4.9: the error ends the block, from however deep a <foreach> it came.
@@ -2497,7 +2565,12 @@ impl StatePolicy for ATargetExpressionIsRoutedAsItsLiteralIsPolicy {
                         let __sce_arg_sid = self.session_id.as_ref().unwrap().clone();
                         let __sce_arg_se = self.script_engine.clone();
                         let __sce_arg_se: &dyn sce_rust_runtime::IScriptEngine = &*__sce_arg_se;
-                        let mut _send_arg_error: Option<&'static str> = None;
+                        // The code and the sentence of the first argument that failed
+                        // (docs/adr/0106 #111).
+                        let mut _send_arg_error: Option<(
+                            ::sce_rust_runtime::ErrorReason,
+                            &'static str,
+                        )> = None;
                         // A target that evaluates to nothing is not an evaluation error: it is an
                         // address nobody answers at, which the resolution below reports as
                         // error.communication (W3C SCXML C.1).
@@ -2510,8 +2583,10 @@ impl StatePolicy for ATargetExpressionIsRoutedAsItsLiteralIsPolicy {
                                             "targetexpr eval failed: {}",
                                             e
                                         );
-                                        _send_arg_error =
-                                            Some("<send> targetexpr could not be evaluated");
+                                        _send_arg_error = Some((
+                                            ::sce_rust_runtime::ErrorReason::ExpressionFailed,
+                                            "<send> targetexpr could not be evaluated",
+                                        ));
                                         None
                                     }
                                 }
@@ -2522,13 +2597,14 @@ impl StatePolicy for ATargetExpressionIsRoutedAsItsLiteralIsPolicy {
                             // W3C SCXML 6.2: a target this processor cannot address is refused as
                             // a static one is, before anything is delivered.
                             if sce_rust_runtime::helpers::send::is_invalid_target(&::sce_rust_runtime::helpers::event_data::script_value_to_wire_string(val)) {
-            _send_arg_error = Some("<send> targetexpr produced a target this processor cannot address");
+            _send_arg_error = Some((::sce_rust_runtime::ErrorReason::SendTargetInvalid, "<send> targetexpr produced a target this processor cannot address"));
         }
                         }
-                        if let Some(__sce_why) = _send_arg_error {
+                        if let Some((__sce_reason, __sce_why)) = _send_arg_error {
                             ::sce_rust_runtime::sce_log_error!("{}", __sce_why);
                             let mut err_meta = sce_rust_runtime::EventWithMetadata::platform_error(
                                 ATargetExpressionIsRoutedAsItsLiteralIsEvent::ErrorExecution,
+                                __sce_reason,
                                 __sce_why,
                             );
                             err_meta.metadata.send_id =
@@ -2550,7 +2626,7 @@ impl StatePolicy for ATargetExpressionIsRoutedAsItsLiteralIsPolicy {
                             if _resolved_target.is_none() {
                                 // W3C SCXML C.1 (test 496, 521): a target that names nothing raises
                                 // error.communication.
-                                let mut err_meta = sce_rust_runtime::EventWithMetadata::platform_error(ATargetExpressionIsRoutedAsItsLiteralIsEvent::ErrorCommunication, "<send> targetexpr evaluated to nothing, so there is no target to reach");
+                                let mut err_meta = sce_rust_runtime::EventWithMetadata::platform_error(ATargetExpressionIsRoutedAsItsLiteralIsEvent::ErrorCommunication, ::sce_rust_runtime::ErrorReason::TargetUnreachable, "<send> targetexpr evaluated to nothing, so there is no target to reach");
                                 err_meta.metadata.send_id =
                                     ::sce_rust_runtime::sce_string_from_str(send_id);
                                 engine.raise(err_meta);
@@ -2623,7 +2699,7 @@ impl StatePolicy for ATargetExpressionIsRoutedAsItsLiteralIsPolicy {
                                         if __sce_routed
                                             == sce_rust_runtime::TargetSendOutcome::Unsupported
                                         {
-                                            let mut err_meta = sce_rust_runtime::EventWithMetadata::platform_error(ATargetExpressionIsRoutedAsItsLiteralIsEvent::ErrorExecution, "<send> targetexpr produced a value that is not a target");
+                                            let mut err_meta = sce_rust_runtime::EventWithMetadata::platform_error(ATargetExpressionIsRoutedAsItsLiteralIsEvent::ErrorExecution, ::sce_rust_runtime::ErrorReason::SendTargetInvalid, "<send> targetexpr produced a value that is not a target");
                                             err_meta.metadata.send_id =
                                                 ::sce_rust_runtime::sce_string_from_str(send_id);
                                             engine.raise(err_meta);
@@ -2632,7 +2708,7 @@ impl StatePolicy for ATargetExpressionIsRoutedAsItsLiteralIsPolicy {
                                         if __sce_routed
                                             == sce_rust_runtime::TargetSendOutcome::Unreachable
                                         {
-                                            let mut err_meta = sce_rust_runtime::EventWithMetadata::platform_error(ATargetExpressionIsRoutedAsItsLiteralIsEvent::ErrorCommunication, "<send> targetexpr names a session this processor cannot reach");
+                                            let mut err_meta = sce_rust_runtime::EventWithMetadata::platform_error(ATargetExpressionIsRoutedAsItsLiteralIsEvent::ErrorCommunication, ::sce_rust_runtime::ErrorReason::TargetUnreachable, "<send> targetexpr names a session this processor cannot reach");
                                             err_meta.metadata.send_id =
                                                 ::sce_rust_runtime::sce_string_from_str(send_id);
                                             engine.raise(err_meta);
@@ -2666,6 +2742,7 @@ impl StatePolicy for ATargetExpressionIsRoutedAsItsLiteralIsPolicy {
                             );
                             engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(
                                 ATargetExpressionIsRoutedAsItsLiteralIsEvent::ErrorExecution,
+                                ::sce_rust_runtime::ErrorReason::AssignmentFailed,
                                 "<assign> to 'afterOrphanLater' failed",
                             ));
                             // W3C SCXML 4.9: the error ends the block, from however deep a <foreach> it came.
@@ -2683,7 +2760,12 @@ impl StatePolicy for ATargetExpressionIsRoutedAsItsLiteralIsPolicy {
                         let __sce_arg_sid = self.session_id.as_ref().unwrap().clone();
                         let __sce_arg_se = self.script_engine.clone();
                         let __sce_arg_se: &dyn sce_rust_runtime::IScriptEngine = &*__sce_arg_se;
-                        let mut _send_arg_error: Option<&'static str> = None;
+                        // The code and the sentence of the first argument that failed
+                        // (docs/adr/0106 #111).
+                        let mut _send_arg_error: Option<(
+                            ::sce_rust_runtime::ErrorReason,
+                            &'static str,
+                        )> = None;
                         // A target that evaluates to nothing is not an evaluation error: it is an
                         // address nobody answers at, which the resolution below reports as
                         // error.communication (W3C SCXML C.1).
@@ -2696,8 +2778,10 @@ impl StatePolicy for ATargetExpressionIsRoutedAsItsLiteralIsPolicy {
                                             "targetexpr eval failed: {}",
                                             e
                                         );
-                                        _send_arg_error =
-                                            Some("<send> targetexpr could not be evaluated");
+                                        _send_arg_error = Some((
+                                            ::sce_rust_runtime::ErrorReason::ExpressionFailed,
+                                            "<send> targetexpr could not be evaluated",
+                                        ));
                                         None
                                     }
                                 }
@@ -2708,13 +2792,14 @@ impl StatePolicy for ATargetExpressionIsRoutedAsItsLiteralIsPolicy {
                             // W3C SCXML 6.2: a target this processor cannot address is refused as
                             // a static one is, before anything is delivered.
                             if sce_rust_runtime::helpers::send::is_invalid_target(&::sce_rust_runtime::helpers::event_data::script_value_to_wire_string(val)) {
-            _send_arg_error = Some("<send> targetexpr produced a target this processor cannot address");
+            _send_arg_error = Some((::sce_rust_runtime::ErrorReason::SendTargetInvalid, "<send> targetexpr produced a target this processor cannot address"));
         }
                         }
-                        if let Some(__sce_why) = _send_arg_error {
+                        if let Some((__sce_reason, __sce_why)) = _send_arg_error {
                             ::sce_rust_runtime::sce_log_error!("{}", __sce_why);
                             let mut err_meta = sce_rust_runtime::EventWithMetadata::platform_error(
                                 ATargetExpressionIsRoutedAsItsLiteralIsEvent::ErrorExecution,
+                                __sce_reason,
                                 __sce_why,
                             );
                             err_meta.metadata.send_id =
@@ -2736,7 +2821,7 @@ impl StatePolicy for ATargetExpressionIsRoutedAsItsLiteralIsPolicy {
                             if _resolved_target.is_none() {
                                 // W3C SCXML C.1 (test 496, 521): a target that names nothing raises
                                 // error.communication.
-                                let mut err_meta = sce_rust_runtime::EventWithMetadata::platform_error(ATargetExpressionIsRoutedAsItsLiteralIsEvent::ErrorCommunication, "<send> targetexpr evaluated to nothing, so there is no target to reach");
+                                let mut err_meta = sce_rust_runtime::EventWithMetadata::platform_error(ATargetExpressionIsRoutedAsItsLiteralIsEvent::ErrorCommunication, ::sce_rust_runtime::ErrorReason::TargetUnreachable, "<send> targetexpr evaluated to nothing, so there is no target to reach");
                                 err_meta.metadata.send_id =
                                     ::sce_rust_runtime::sce_string_from_str(send_id);
                                 engine.raise(err_meta);
@@ -2777,7 +2862,7 @@ impl StatePolicy for ATargetExpressionIsRoutedAsItsLiteralIsPolicy {
                                         if __sce_served.is_none()
                                             && !engine.has_event_processor("sce:mesh")
                                         {
-                                            let mut err_meta = sce_rust_runtime::EventWithMetadata::platform_error(ATargetExpressionIsRoutedAsItsLiteralIsEvent::ErrorExecution, "<send type='sce:mesh'> names a processor the host declared but never registered");
+                                            let mut err_meta = sce_rust_runtime::EventWithMetadata::platform_error(ATargetExpressionIsRoutedAsItsLiteralIsEvent::ErrorExecution, ::sce_rust_runtime::ErrorReason::ProcessorUnregistered, "<send type='sce:mesh'> names a processor the host declared but never registered");
                                             err_meta.metadata.send_id =
                                                 ::sce_rust_runtime::sce_string_from_str(send_id);
                                             engine.raise(err_meta);
@@ -2810,7 +2895,7 @@ impl StatePolicy for ATargetExpressionIsRoutedAsItsLiteralIsPolicy {
                                         if __sce_routed
                                             == sce_rust_runtime::TargetSendOutcome::Unsupported
                                         {
-                                            let mut err_meta = sce_rust_runtime::EventWithMetadata::platform_error(ATargetExpressionIsRoutedAsItsLiteralIsEvent::ErrorExecution, "<send> targetexpr produced a value that is not a target");
+                                            let mut err_meta = sce_rust_runtime::EventWithMetadata::platform_error(ATargetExpressionIsRoutedAsItsLiteralIsEvent::ErrorExecution, ::sce_rust_runtime::ErrorReason::SendTargetInvalid, "<send> targetexpr produced a value that is not a target");
                                             err_meta.metadata.send_id =
                                                 ::sce_rust_runtime::sce_string_from_str(send_id);
                                             engine.raise(err_meta);
@@ -2819,7 +2904,7 @@ impl StatePolicy for ATargetExpressionIsRoutedAsItsLiteralIsPolicy {
                                         if __sce_routed
                                             == sce_rust_runtime::TargetSendOutcome::Unreachable
                                         {
-                                            let mut err_meta = sce_rust_runtime::EventWithMetadata::platform_error(ATargetExpressionIsRoutedAsItsLiteralIsEvent::ErrorCommunication, "<send> targetexpr names a session this processor cannot reach");
+                                            let mut err_meta = sce_rust_runtime::EventWithMetadata::platform_error(ATargetExpressionIsRoutedAsItsLiteralIsEvent::ErrorCommunication, ::sce_rust_runtime::ErrorReason::TargetUnreachable, "<send> targetexpr names a session this processor cannot reach");
                                             err_meta.metadata.send_id =
                                                 ::sce_rust_runtime::sce_string_from_str(send_id);
                                             engine.raise(err_meta);
@@ -2853,6 +2938,7 @@ impl StatePolicy for ATargetExpressionIsRoutedAsItsLiteralIsPolicy {
                             );
                             engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(
                                 ATargetExpressionIsRoutedAsItsLiteralIsEvent::ErrorExecution,
+                                ::sce_rust_runtime::ErrorReason::AssignmentFailed,
                                 "<assign> to 'afterBogus' failed",
                             ));
                             // W3C SCXML 4.9: the error ends the block, from however deep a <foreach> it came.
@@ -2870,7 +2956,12 @@ impl StatePolicy for ATargetExpressionIsRoutedAsItsLiteralIsPolicy {
                         let __sce_arg_sid = self.session_id.as_ref().unwrap().clone();
                         let __sce_arg_se = self.script_engine.clone();
                         let __sce_arg_se: &dyn sce_rust_runtime::IScriptEngine = &*__sce_arg_se;
-                        let mut _send_arg_error: Option<&'static str> = None;
+                        // The code and the sentence of the first argument that failed
+                        // (docs/adr/0106 #111).
+                        let mut _send_arg_error: Option<(
+                            ::sce_rust_runtime::ErrorReason,
+                            &'static str,
+                        )> = None;
                         // A target that evaluates to nothing is not an evaluation error: it is an
                         // address nobody answers at, which the resolution below reports as
                         // error.communication (W3C SCXML C.1).
@@ -2883,8 +2974,10 @@ impl StatePolicy for ATargetExpressionIsRoutedAsItsLiteralIsPolicy {
                                             "targetexpr eval failed: {}",
                                             e
                                         );
-                                        _send_arg_error =
-                                            Some("<send> targetexpr could not be evaluated");
+                                        _send_arg_error = Some((
+                                            ::sce_rust_runtime::ErrorReason::ExpressionFailed,
+                                            "<send> targetexpr could not be evaluated",
+                                        ));
                                         None
                                     }
                                 }
@@ -2895,13 +2988,14 @@ impl StatePolicy for ATargetExpressionIsRoutedAsItsLiteralIsPolicy {
                             // W3C SCXML 6.2: a target this processor cannot address is refused as
                             // a static one is, before anything is delivered.
                             if sce_rust_runtime::helpers::send::is_invalid_target(&::sce_rust_runtime::helpers::event_data::script_value_to_wire_string(val)) {
-            _send_arg_error = Some("<send> targetexpr produced a target this processor cannot address");
+            _send_arg_error = Some((::sce_rust_runtime::ErrorReason::SendTargetInvalid, "<send> targetexpr produced a target this processor cannot address"));
         }
                         }
-                        if let Some(__sce_why) = _send_arg_error {
+                        if let Some((__sce_reason, __sce_why)) = _send_arg_error {
                             ::sce_rust_runtime::sce_log_error!("{}", __sce_why);
                             let mut err_meta = sce_rust_runtime::EventWithMetadata::platform_error(
                                 ATargetExpressionIsRoutedAsItsLiteralIsEvent::ErrorExecution,
+                                __sce_reason,
                                 __sce_why,
                             );
                             err_meta.metadata.send_id =
@@ -2923,7 +3017,7 @@ impl StatePolicy for ATargetExpressionIsRoutedAsItsLiteralIsPolicy {
                             if _resolved_target.is_none() {
                                 // W3C SCXML C.1 (test 496, 521): a target that names nothing raises
                                 // error.communication.
-                                let mut err_meta = sce_rust_runtime::EventWithMetadata::platform_error(ATargetExpressionIsRoutedAsItsLiteralIsEvent::ErrorCommunication, "<send> targetexpr evaluated to nothing, so there is no target to reach");
+                                let mut err_meta = sce_rust_runtime::EventWithMetadata::platform_error(ATargetExpressionIsRoutedAsItsLiteralIsEvent::ErrorCommunication, ::sce_rust_runtime::ErrorReason::TargetUnreachable, "<send> targetexpr evaluated to nothing, so there is no target to reach");
                                 err_meta.metadata.send_id =
                                     ::sce_rust_runtime::sce_string_from_str(send_id);
                                 engine.raise(err_meta);
@@ -2996,7 +3090,7 @@ impl StatePolicy for ATargetExpressionIsRoutedAsItsLiteralIsPolicy {
                                         if __sce_routed
                                             == sce_rust_runtime::TargetSendOutcome::Unsupported
                                         {
-                                            let mut err_meta = sce_rust_runtime::EventWithMetadata::platform_error(ATargetExpressionIsRoutedAsItsLiteralIsEvent::ErrorExecution, "<send> targetexpr produced a value that is not a target");
+                                            let mut err_meta = sce_rust_runtime::EventWithMetadata::platform_error(ATargetExpressionIsRoutedAsItsLiteralIsEvent::ErrorExecution, ::sce_rust_runtime::ErrorReason::SendTargetInvalid, "<send> targetexpr produced a value that is not a target");
                                             err_meta.metadata.send_id =
                                                 ::sce_rust_runtime::sce_string_from_str(send_id);
                                             engine.raise(err_meta);
@@ -3005,7 +3099,7 @@ impl StatePolicy for ATargetExpressionIsRoutedAsItsLiteralIsPolicy {
                                         if __sce_routed
                                             == sce_rust_runtime::TargetSendOutcome::Unreachable
                                         {
-                                            let mut err_meta = sce_rust_runtime::EventWithMetadata::platform_error(ATargetExpressionIsRoutedAsItsLiteralIsEvent::ErrorCommunication, "<send> targetexpr names a session this processor cannot reach");
+                                            let mut err_meta = sce_rust_runtime::EventWithMetadata::platform_error(ATargetExpressionIsRoutedAsItsLiteralIsEvent::ErrorCommunication, ::sce_rust_runtime::ErrorReason::TargetUnreachable, "<send> targetexpr names a session this processor cannot reach");
                                             err_meta.metadata.send_id =
                                                 ::sce_rust_runtime::sce_string_from_str(send_id);
                                             engine.raise(err_meta);
@@ -3039,6 +3133,7 @@ impl StatePolicy for ATargetExpressionIsRoutedAsItsLiteralIsPolicy {
                             );
                             engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(
                                 ATargetExpressionIsRoutedAsItsLiteralIsEvent::ErrorExecution,
+                                ::sce_rust_runtime::ErrorReason::AssignmentFailed,
                                 "<assign> to 'afterBogusLater' failed",
                             ));
                             // W3C SCXML 4.9: the error ends the block, from however deep a <foreach> it came.
@@ -3287,6 +3382,7 @@ impl StatePolicy for ATargetExpressionIsRoutedAsItsLiteralIsPolicy {
                             );
                             engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(
                                 ATargetExpressionIsRoutedAsItsLiteralIsEvent::ErrorExecution,
+                                ::sce_rust_runtime::ErrorReason::AssignmentFailed,
                                 "<assign> to 'commErrors' failed",
                             ));
                             // W3C SCXML 4.9: the error ends the block, from however deep a <foreach> it came.
@@ -3320,6 +3416,7 @@ impl StatePolicy for ATargetExpressionIsRoutedAsItsLiteralIsPolicy {
                             );
                             engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(
                                 ATargetExpressionIsRoutedAsItsLiteralIsEvent::ErrorExecution,
+                                ::sce_rust_runtime::ErrorReason::AssignmentFailed,
                                 "<assign> to 'execErrors' failed",
                             ));
                             // W3C SCXML 4.9: the error ends the block, from however deep a <foreach> it came.
@@ -3350,6 +3447,7 @@ impl StatePolicy for ATargetExpressionIsRoutedAsItsLiteralIsPolicy {
                             ::sce_rust_runtime::sce_log_error!("Assign failed for 'kidLoc': {}", e);
                             engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(
                                 ATargetExpressionIsRoutedAsItsLiteralIsEvent::ErrorExecution,
+                                ::sce_rust_runtime::ErrorReason::AssignmentFailed,
                                 "<assign> to 'kidLoc' failed",
                             ));
                             // W3C SCXML 4.9: the error ends the block, from however deep a <foreach> it came.
@@ -3364,7 +3462,12 @@ impl StatePolicy for ATargetExpressionIsRoutedAsItsLiteralIsPolicy {
                         let __sce_arg_sid = self.session_id.as_ref().unwrap().clone();
                         let __sce_arg_se = self.script_engine.clone();
                         let __sce_arg_se: &dyn sce_rust_runtime::IScriptEngine = &*__sce_arg_se;
-                        let mut _send_arg_error: Option<&'static str> = None;
+                        // The code and the sentence of the first argument that failed
+                        // (docs/adr/0106 #111).
+                        let mut _send_arg_error: Option<(
+                            ::sce_rust_runtime::ErrorReason,
+                            &'static str,
+                        )> = None;
                         // A target that evaluates to nothing is not an evaluation error: it is an
                         // address nobody answers at, which the resolution below reports as
                         // error.communication (W3C SCXML C.1).
@@ -3378,8 +3481,10 @@ impl StatePolicy for ATargetExpressionIsRoutedAsItsLiteralIsPolicy {
                                             "targetexpr eval failed: {}",
                                             e
                                         );
-                                        _send_arg_error =
-                                            Some("<send> targetexpr could not be evaluated");
+                                        _send_arg_error = Some((
+                                            ::sce_rust_runtime::ErrorReason::ExpressionFailed,
+                                            "<send> targetexpr could not be evaluated",
+                                        ));
                                         None
                                     }
                                 }
@@ -3390,13 +3495,14 @@ impl StatePolicy for ATargetExpressionIsRoutedAsItsLiteralIsPolicy {
                             // W3C SCXML 6.2: a target this processor cannot address is refused as
                             // a static one is, before anything is delivered.
                             if sce_rust_runtime::helpers::send::is_invalid_target(&::sce_rust_runtime::helpers::event_data::script_value_to_wire_string(val)) {
-            _send_arg_error = Some("<send> targetexpr produced a target this processor cannot address");
+            _send_arg_error = Some((::sce_rust_runtime::ErrorReason::SendTargetInvalid, "<send> targetexpr produced a target this processor cannot address"));
         }
                         }
-                        if let Some(__sce_why) = _send_arg_error {
+                        if let Some((__sce_reason, __sce_why)) = _send_arg_error {
                             ::sce_rust_runtime::sce_log_error!("{}", __sce_why);
                             let mut err_meta = sce_rust_runtime::EventWithMetadata::platform_error(
                                 ATargetExpressionIsRoutedAsItsLiteralIsEvent::ErrorExecution,
+                                __sce_reason,
                                 __sce_why,
                             );
                             err_meta.metadata.send_id =
@@ -3418,7 +3524,7 @@ impl StatePolicy for ATargetExpressionIsRoutedAsItsLiteralIsPolicy {
                             if _resolved_target.is_none() {
                                 // W3C SCXML C.1 (test 496, 521): a target that names nothing raises
                                 // error.communication.
-                                let mut err_meta = sce_rust_runtime::EventWithMetadata::platform_error(ATargetExpressionIsRoutedAsItsLiteralIsEvent::ErrorCommunication, "<send> targetexpr evaluated to nothing, so there is no target to reach");
+                                let mut err_meta = sce_rust_runtime::EventWithMetadata::platform_error(ATargetExpressionIsRoutedAsItsLiteralIsEvent::ErrorCommunication, ::sce_rust_runtime::ErrorReason::TargetUnreachable, "<send> targetexpr evaluated to nothing, so there is no target to reach");
                                 err_meta.metadata.send_id =
                                     ::sce_rust_runtime::sce_string_from_str(send_id);
                                 engine.raise(err_meta);
@@ -3459,7 +3565,7 @@ impl StatePolicy for ATargetExpressionIsRoutedAsItsLiteralIsPolicy {
                                         if __sce_served.is_none()
                                             && !engine.has_event_processor("sce:mesh")
                                         {
-                                            let mut err_meta = sce_rust_runtime::EventWithMetadata::platform_error(ATargetExpressionIsRoutedAsItsLiteralIsEvent::ErrorExecution, "<send type='sce:mesh'> names a processor the host declared but never registered");
+                                            let mut err_meta = sce_rust_runtime::EventWithMetadata::platform_error(ATargetExpressionIsRoutedAsItsLiteralIsEvent::ErrorExecution, ::sce_rust_runtime::ErrorReason::ProcessorUnregistered, "<send type='sce:mesh'> names a processor the host declared but never registered");
                                             err_meta.metadata.send_id =
                                                 ::sce_rust_runtime::sce_string_from_str(send_id);
                                             engine.raise(err_meta);
@@ -3492,7 +3598,7 @@ impl StatePolicy for ATargetExpressionIsRoutedAsItsLiteralIsPolicy {
                                         if __sce_routed
                                             == sce_rust_runtime::TargetSendOutcome::Unsupported
                                         {
-                                            let mut err_meta = sce_rust_runtime::EventWithMetadata::platform_error(ATargetExpressionIsRoutedAsItsLiteralIsEvent::ErrorExecution, "<send> targetexpr produced a value that is not a target");
+                                            let mut err_meta = sce_rust_runtime::EventWithMetadata::platform_error(ATargetExpressionIsRoutedAsItsLiteralIsEvent::ErrorExecution, ::sce_rust_runtime::ErrorReason::SendTargetInvalid, "<send> targetexpr produced a value that is not a target");
                                             err_meta.metadata.send_id =
                                                 ::sce_rust_runtime::sce_string_from_str(send_id);
                                             engine.raise(err_meta);
@@ -3501,7 +3607,7 @@ impl StatePolicy for ATargetExpressionIsRoutedAsItsLiteralIsPolicy {
                                         if __sce_routed
                                             == sce_rust_runtime::TargetSendOutcome::Unreachable
                                         {
-                                            let mut err_meta = sce_rust_runtime::EventWithMetadata::platform_error(ATargetExpressionIsRoutedAsItsLiteralIsEvent::ErrorCommunication, "<send> targetexpr names a session this processor cannot reach");
+                                            let mut err_meta = sce_rust_runtime::EventWithMetadata::platform_error(ATargetExpressionIsRoutedAsItsLiteralIsEvent::ErrorCommunication, ::sce_rust_runtime::ErrorReason::TargetUnreachable, "<send> targetexpr names a session this processor cannot reach");
                                             err_meta.metadata.send_id =
                                                 ::sce_rust_runtime::sce_string_from_str(send_id);
                                             engine.raise(err_meta);
@@ -3523,7 +3629,12 @@ impl StatePolicy for ATargetExpressionIsRoutedAsItsLiteralIsPolicy {
                         let __sce_arg_sid = self.session_id.as_ref().unwrap().clone();
                         let __sce_arg_se = self.script_engine.clone();
                         let __sce_arg_se: &dyn sce_rust_runtime::IScriptEngine = &*__sce_arg_se;
-                        let mut _send_arg_error: Option<&'static str> = None;
+                        // The code and the sentence of the first argument that failed
+                        // (docs/adr/0106 #111).
+                        let mut _send_arg_error: Option<(
+                            ::sce_rust_runtime::ErrorReason,
+                            &'static str,
+                        )> = None;
                         // A target that evaluates to nothing is not an evaluation error: it is an
                         // address nobody answers at, which the resolution below reports as
                         // error.communication (W3C SCXML C.1).
@@ -3537,8 +3648,10 @@ impl StatePolicy for ATargetExpressionIsRoutedAsItsLiteralIsPolicy {
                                             "targetexpr eval failed: {}",
                                             e
                                         );
-                                        _send_arg_error =
-                                            Some("<send> targetexpr could not be evaluated");
+                                        _send_arg_error = Some((
+                                            ::sce_rust_runtime::ErrorReason::ExpressionFailed,
+                                            "<send> targetexpr could not be evaluated",
+                                        ));
                                         None
                                     }
                                 }
@@ -3549,13 +3662,14 @@ impl StatePolicy for ATargetExpressionIsRoutedAsItsLiteralIsPolicy {
                             // W3C SCXML 6.2: a target this processor cannot address is refused as
                             // a static one is, before anything is delivered.
                             if sce_rust_runtime::helpers::send::is_invalid_target(&::sce_rust_runtime::helpers::event_data::script_value_to_wire_string(val)) {
-            _send_arg_error = Some("<send> targetexpr produced a target this processor cannot address");
+            _send_arg_error = Some((::sce_rust_runtime::ErrorReason::SendTargetInvalid, "<send> targetexpr produced a target this processor cannot address"));
         }
                         }
-                        if let Some(__sce_why) = _send_arg_error {
+                        if let Some((__sce_reason, __sce_why)) = _send_arg_error {
                             ::sce_rust_runtime::sce_log_error!("{}", __sce_why);
                             let mut err_meta = sce_rust_runtime::EventWithMetadata::platform_error(
                                 ATargetExpressionIsRoutedAsItsLiteralIsEvent::ErrorExecution,
+                                __sce_reason,
                                 __sce_why,
                             );
                             err_meta.metadata.send_id =
@@ -3577,7 +3691,7 @@ impl StatePolicy for ATargetExpressionIsRoutedAsItsLiteralIsPolicy {
                             if _resolved_target.is_none() {
                                 // W3C SCXML C.1 (test 496, 521): a target that names nothing raises
                                 // error.communication.
-                                let mut err_meta = sce_rust_runtime::EventWithMetadata::platform_error(ATargetExpressionIsRoutedAsItsLiteralIsEvent::ErrorCommunication, "<send> targetexpr evaluated to nothing, so there is no target to reach");
+                                let mut err_meta = sce_rust_runtime::EventWithMetadata::platform_error(ATargetExpressionIsRoutedAsItsLiteralIsEvent::ErrorCommunication, ::sce_rust_runtime::ErrorReason::TargetUnreachable, "<send> targetexpr evaluated to nothing, so there is no target to reach");
                                 err_meta.metadata.send_id =
                                     ::sce_rust_runtime::sce_string_from_str(send_id);
                                 engine.raise(err_meta);
@@ -3644,7 +3758,7 @@ Some(core::time::Duration::from_millis(10_u64)),
                                         if __sce_routed
                                             == sce_rust_runtime::TargetSendOutcome::Unsupported
                                         {
-                                            let mut err_meta = sce_rust_runtime::EventWithMetadata::platform_error(ATargetExpressionIsRoutedAsItsLiteralIsEvent::ErrorExecution, "<send> targetexpr produced a value that is not a target");
+                                            let mut err_meta = sce_rust_runtime::EventWithMetadata::platform_error(ATargetExpressionIsRoutedAsItsLiteralIsEvent::ErrorExecution, ::sce_rust_runtime::ErrorReason::SendTargetInvalid, "<send> targetexpr produced a value that is not a target");
                                             err_meta.metadata.send_id =
                                                 ::sce_rust_runtime::sce_string_from_str(send_id);
                                             engine.raise(err_meta);
@@ -3653,7 +3767,7 @@ Some(core::time::Duration::from_millis(10_u64)),
                                         if __sce_routed
                                             == sce_rust_runtime::TargetSendOutcome::Unreachable
                                         {
-                                            let mut err_meta = sce_rust_runtime::EventWithMetadata::platform_error(ATargetExpressionIsRoutedAsItsLiteralIsEvent::ErrorCommunication, "<send> targetexpr names a session this processor cannot reach");
+                                            let mut err_meta = sce_rust_runtime::EventWithMetadata::platform_error(ATargetExpressionIsRoutedAsItsLiteralIsEvent::ErrorCommunication, ::sce_rust_runtime::ErrorReason::TargetUnreachable, "<send> targetexpr names a session this processor cannot reach");
                                             err_meta.metadata.send_id =
                                                 ::sce_rust_runtime::sce_string_from_str(send_id);
                                             engine.raise(err_meta);
@@ -3675,7 +3789,12 @@ Some(core::time::Duration::from_millis(10_u64)),
                         let __sce_arg_sid = self.session_id.as_ref().unwrap().clone();
                         let __sce_arg_se = self.script_engine.clone();
                         let __sce_arg_se: &dyn sce_rust_runtime::IScriptEngine = &*__sce_arg_se;
-                        let mut _send_arg_error: Option<&'static str> = None;
+                        // The code and the sentence of the first argument that failed
+                        // (docs/adr/0106 #111).
+                        let mut _send_arg_error: Option<(
+                            ::sce_rust_runtime::ErrorReason,
+                            &'static str,
+                        )> = None;
                         // A target that evaluates to nothing is not an evaluation error: it is an
                         // address nobody answers at, which the resolution below reports as
                         // error.communication (W3C SCXML C.1).
@@ -3688,8 +3807,10 @@ Some(core::time::Duration::from_millis(10_u64)),
                                             "targetexpr eval failed: {}",
                                             e
                                         );
-                                        _send_arg_error =
-                                            Some("<send> targetexpr could not be evaluated");
+                                        _send_arg_error = Some((
+                                            ::sce_rust_runtime::ErrorReason::ExpressionFailed,
+                                            "<send> targetexpr could not be evaluated",
+                                        ));
                                         None
                                     }
                                 }
@@ -3700,13 +3821,14 @@ Some(core::time::Duration::from_millis(10_u64)),
                             // W3C SCXML 6.2: a target this processor cannot address is refused as
                             // a static one is, before anything is delivered.
                             if sce_rust_runtime::helpers::send::is_invalid_target(&::sce_rust_runtime::helpers::event_data::script_value_to_wire_string(val)) {
-            _send_arg_error = Some("<send> targetexpr produced a target this processor cannot address");
+            _send_arg_error = Some((::sce_rust_runtime::ErrorReason::SendTargetInvalid, "<send> targetexpr produced a target this processor cannot address"));
         }
                         }
-                        if let Some(__sce_why) = _send_arg_error {
+                        if let Some((__sce_reason, __sce_why)) = _send_arg_error {
                             ::sce_rust_runtime::sce_log_error!("{}", __sce_why);
                             let mut err_meta = sce_rust_runtime::EventWithMetadata::platform_error(
                                 ATargetExpressionIsRoutedAsItsLiteralIsEvent::ErrorExecution,
+                                __sce_reason,
                                 __sce_why,
                             );
                             err_meta.metadata.send_id =
@@ -3728,7 +3850,7 @@ Some(core::time::Duration::from_millis(10_u64)),
                             if _resolved_target.is_none() {
                                 // W3C SCXML C.1 (test 496, 521): a target that names nothing raises
                                 // error.communication.
-                                let mut err_meta = sce_rust_runtime::EventWithMetadata::platform_error(ATargetExpressionIsRoutedAsItsLiteralIsEvent::ErrorCommunication, "<send> targetexpr evaluated to nothing, so there is no target to reach");
+                                let mut err_meta = sce_rust_runtime::EventWithMetadata::platform_error(ATargetExpressionIsRoutedAsItsLiteralIsEvent::ErrorCommunication, ::sce_rust_runtime::ErrorReason::TargetUnreachable, "<send> targetexpr evaluated to nothing, so there is no target to reach");
                                 err_meta.metadata.send_id =
                                     ::sce_rust_runtime::sce_string_from_str(send_id);
                                 engine.raise(err_meta);
@@ -3769,7 +3891,7 @@ Some(core::time::Duration::from_millis(10_u64)),
                                         if __sce_served.is_none()
                                             && !engine.has_event_processor("sce:mesh")
                                         {
-                                            let mut err_meta = sce_rust_runtime::EventWithMetadata::platform_error(ATargetExpressionIsRoutedAsItsLiteralIsEvent::ErrorExecution, "<send type='sce:mesh'> names a processor the host declared but never registered");
+                                            let mut err_meta = sce_rust_runtime::EventWithMetadata::platform_error(ATargetExpressionIsRoutedAsItsLiteralIsEvent::ErrorExecution, ::sce_rust_runtime::ErrorReason::ProcessorUnregistered, "<send type='sce:mesh'> names a processor the host declared but never registered");
                                             err_meta.metadata.send_id =
                                                 ::sce_rust_runtime::sce_string_from_str(send_id);
                                             engine.raise(err_meta);
@@ -3802,7 +3924,7 @@ Some(core::time::Duration::from_millis(10_u64)),
                                         if __sce_routed
                                             == sce_rust_runtime::TargetSendOutcome::Unsupported
                                         {
-                                            let mut err_meta = sce_rust_runtime::EventWithMetadata::platform_error(ATargetExpressionIsRoutedAsItsLiteralIsEvent::ErrorExecution, "<send> targetexpr produced a value that is not a target");
+                                            let mut err_meta = sce_rust_runtime::EventWithMetadata::platform_error(ATargetExpressionIsRoutedAsItsLiteralIsEvent::ErrorExecution, ::sce_rust_runtime::ErrorReason::SendTargetInvalid, "<send> targetexpr produced a value that is not a target");
                                             err_meta.metadata.send_id =
                                                 ::sce_rust_runtime::sce_string_from_str(send_id);
                                             engine.raise(err_meta);
@@ -3811,7 +3933,7 @@ Some(core::time::Duration::from_millis(10_u64)),
                                         if __sce_routed
                                             == sce_rust_runtime::TargetSendOutcome::Unreachable
                                         {
-                                            let mut err_meta = sce_rust_runtime::EventWithMetadata::platform_error(ATargetExpressionIsRoutedAsItsLiteralIsEvent::ErrorCommunication, "<send> targetexpr names a session this processor cannot reach");
+                                            let mut err_meta = sce_rust_runtime::EventWithMetadata::platform_error(ATargetExpressionIsRoutedAsItsLiteralIsEvent::ErrorCommunication, ::sce_rust_runtime::ErrorReason::TargetUnreachable, "<send> targetexpr names a session this processor cannot reach");
                                             err_meta.metadata.send_id =
                                                 ::sce_rust_runtime::sce_string_from_str(send_id);
                                             engine.raise(err_meta);
@@ -3833,7 +3955,12 @@ Some(core::time::Duration::from_millis(10_u64)),
                         let __sce_arg_sid = self.session_id.as_ref().unwrap().clone();
                         let __sce_arg_se = self.script_engine.clone();
                         let __sce_arg_se: &dyn sce_rust_runtime::IScriptEngine = &*__sce_arg_se;
-                        let mut _send_arg_error: Option<&'static str> = None;
+                        // The code and the sentence of the first argument that failed
+                        // (docs/adr/0106 #111).
+                        let mut _send_arg_error: Option<(
+                            ::sce_rust_runtime::ErrorReason,
+                            &'static str,
+                        )> = None;
                         // A target that evaluates to nothing is not an evaluation error: it is an
                         // address nobody answers at, which the resolution below reports as
                         // error.communication (W3C SCXML C.1).
@@ -3846,8 +3973,10 @@ Some(core::time::Duration::from_millis(10_u64)),
                                             "targetexpr eval failed: {}",
                                             e
                                         );
-                                        _send_arg_error =
-                                            Some("<send> targetexpr could not be evaluated");
+                                        _send_arg_error = Some((
+                                            ::sce_rust_runtime::ErrorReason::ExpressionFailed,
+                                            "<send> targetexpr could not be evaluated",
+                                        ));
                                         None
                                     }
                                 }
@@ -3858,13 +3987,14 @@ Some(core::time::Duration::from_millis(10_u64)),
                             // W3C SCXML 6.2: a target this processor cannot address is refused as
                             // a static one is, before anything is delivered.
                             if sce_rust_runtime::helpers::send::is_invalid_target(&::sce_rust_runtime::helpers::event_data::script_value_to_wire_string(val)) {
-            _send_arg_error = Some("<send> targetexpr produced a target this processor cannot address");
+            _send_arg_error = Some((::sce_rust_runtime::ErrorReason::SendTargetInvalid, "<send> targetexpr produced a target this processor cannot address"));
         }
                         }
-                        if let Some(__sce_why) = _send_arg_error {
+                        if let Some((__sce_reason, __sce_why)) = _send_arg_error {
                             ::sce_rust_runtime::sce_log_error!("{}", __sce_why);
                             let mut err_meta = sce_rust_runtime::EventWithMetadata::platform_error(
                                 ATargetExpressionIsRoutedAsItsLiteralIsEvent::ErrorExecution,
+                                __sce_reason,
                                 __sce_why,
                             );
                             err_meta.metadata.send_id =
@@ -3886,7 +4016,7 @@ Some(core::time::Duration::from_millis(10_u64)),
                             if _resolved_target.is_none() {
                                 // W3C SCXML C.1 (test 496, 521): a target that names nothing raises
                                 // error.communication.
-                                let mut err_meta = sce_rust_runtime::EventWithMetadata::platform_error(ATargetExpressionIsRoutedAsItsLiteralIsEvent::ErrorCommunication, "<send> targetexpr evaluated to nothing, so there is no target to reach");
+                                let mut err_meta = sce_rust_runtime::EventWithMetadata::platform_error(ATargetExpressionIsRoutedAsItsLiteralIsEvent::ErrorCommunication, ::sce_rust_runtime::ErrorReason::TargetUnreachable, "<send> targetexpr evaluated to nothing, so there is no target to reach");
                                 err_meta.metadata.send_id =
                                     ::sce_rust_runtime::sce_string_from_str(send_id);
                                 engine.raise(err_meta);
@@ -3953,7 +4083,7 @@ Some(core::time::Duration::from_millis(10_u64)),
                                         if __sce_routed
                                             == sce_rust_runtime::TargetSendOutcome::Unsupported
                                         {
-                                            let mut err_meta = sce_rust_runtime::EventWithMetadata::platform_error(ATargetExpressionIsRoutedAsItsLiteralIsEvent::ErrorExecution, "<send> targetexpr produced a value that is not a target");
+                                            let mut err_meta = sce_rust_runtime::EventWithMetadata::platform_error(ATargetExpressionIsRoutedAsItsLiteralIsEvent::ErrorExecution, ::sce_rust_runtime::ErrorReason::SendTargetInvalid, "<send> targetexpr produced a value that is not a target");
                                             err_meta.metadata.send_id =
                                                 ::sce_rust_runtime::sce_string_from_str(send_id);
                                             engine.raise(err_meta);
@@ -3962,7 +4092,7 @@ Some(core::time::Duration::from_millis(10_u64)),
                                         if __sce_routed
                                             == sce_rust_runtime::TargetSendOutcome::Unreachable
                                         {
-                                            let mut err_meta = sce_rust_runtime::EventWithMetadata::platform_error(ATargetExpressionIsRoutedAsItsLiteralIsEvent::ErrorCommunication, "<send> targetexpr names a session this processor cannot reach");
+                                            let mut err_meta = sce_rust_runtime::EventWithMetadata::platform_error(ATargetExpressionIsRoutedAsItsLiteralIsEvent::ErrorCommunication, ::sce_rust_runtime::ErrorReason::TargetUnreachable, "<send> targetexpr names a session this processor cannot reach");
                                             err_meta.metadata.send_id =
                                                 ::sce_rust_runtime::sce_string_from_str(send_id);
                                             engine.raise(err_meta);
@@ -3984,7 +4114,12 @@ Some(core::time::Duration::from_millis(10_u64)),
                         let __sce_arg_sid = self.session_id.as_ref().unwrap().clone();
                         let __sce_arg_se = self.script_engine.clone();
                         let __sce_arg_se: &dyn sce_rust_runtime::IScriptEngine = &*__sce_arg_se;
-                        let mut _send_arg_error: Option<&'static str> = None;
+                        // The code and the sentence of the first argument that failed
+                        // (docs/adr/0106 #111).
+                        let mut _send_arg_error: Option<(
+                            ::sce_rust_runtime::ErrorReason,
+                            &'static str,
+                        )> = None;
                         // A target that evaluates to nothing is not an evaluation error: it is an
                         // address nobody answers at, which the resolution below reports as
                         // error.communication (W3C SCXML C.1).
@@ -3997,8 +4132,10 @@ Some(core::time::Duration::from_millis(10_u64)),
                                             "targetexpr eval failed: {}",
                                             e
                                         );
-                                        _send_arg_error =
-                                            Some("<send> targetexpr could not be evaluated");
+                                        _send_arg_error = Some((
+                                            ::sce_rust_runtime::ErrorReason::ExpressionFailed,
+                                            "<send> targetexpr could not be evaluated",
+                                        ));
                                         None
                                     }
                                 }
@@ -4009,13 +4146,14 @@ Some(core::time::Duration::from_millis(10_u64)),
                             // W3C SCXML 6.2: a target this processor cannot address is refused as
                             // a static one is, before anything is delivered.
                             if sce_rust_runtime::helpers::send::is_invalid_target(&::sce_rust_runtime::helpers::event_data::script_value_to_wire_string(val)) {
-            _send_arg_error = Some("<send> targetexpr produced a target this processor cannot address");
+            _send_arg_error = Some((::sce_rust_runtime::ErrorReason::SendTargetInvalid, "<send> targetexpr produced a target this processor cannot address"));
         }
                         }
-                        if let Some(__sce_why) = _send_arg_error {
+                        if let Some((__sce_reason, __sce_why)) = _send_arg_error {
                             ::sce_rust_runtime::sce_log_error!("{}", __sce_why);
                             let mut err_meta = sce_rust_runtime::EventWithMetadata::platform_error(
                                 ATargetExpressionIsRoutedAsItsLiteralIsEvent::ErrorExecution,
+                                __sce_reason,
                                 __sce_why,
                             );
                             err_meta.metadata.send_id =
@@ -4037,7 +4175,7 @@ Some(core::time::Duration::from_millis(10_u64)),
                             if _resolved_target.is_none() {
                                 // W3C SCXML C.1 (test 496, 521): a target that names nothing raises
                                 // error.communication.
-                                let mut err_meta = sce_rust_runtime::EventWithMetadata::platform_error(ATargetExpressionIsRoutedAsItsLiteralIsEvent::ErrorCommunication, "<send> targetexpr evaluated to nothing, so there is no target to reach");
+                                let mut err_meta = sce_rust_runtime::EventWithMetadata::platform_error(ATargetExpressionIsRoutedAsItsLiteralIsEvent::ErrorCommunication, ::sce_rust_runtime::ErrorReason::TargetUnreachable, "<send> targetexpr evaluated to nothing, so there is no target to reach");
                                 err_meta.metadata.send_id =
                                     ::sce_rust_runtime::sce_string_from_str(send_id);
                                 engine.raise(err_meta);
@@ -4078,7 +4216,7 @@ Some(core::time::Duration::from_millis(10_u64)),
                                         if __sce_served.is_none()
                                             && !engine.has_event_processor("sce:mesh")
                                         {
-                                            let mut err_meta = sce_rust_runtime::EventWithMetadata::platform_error(ATargetExpressionIsRoutedAsItsLiteralIsEvent::ErrorExecution, "<send type='sce:mesh'> names a processor the host declared but never registered");
+                                            let mut err_meta = sce_rust_runtime::EventWithMetadata::platform_error(ATargetExpressionIsRoutedAsItsLiteralIsEvent::ErrorExecution, ::sce_rust_runtime::ErrorReason::ProcessorUnregistered, "<send type='sce:mesh'> names a processor the host declared but never registered");
                                             err_meta.metadata.send_id =
                                                 ::sce_rust_runtime::sce_string_from_str(send_id);
                                             engine.raise(err_meta);
@@ -4111,7 +4249,7 @@ Some(core::time::Duration::from_millis(10_u64)),
                                         if __sce_routed
                                             == sce_rust_runtime::TargetSendOutcome::Unsupported
                                         {
-                                            let mut err_meta = sce_rust_runtime::EventWithMetadata::platform_error(ATargetExpressionIsRoutedAsItsLiteralIsEvent::ErrorExecution, "<send> targetexpr produced a value that is not a target");
+                                            let mut err_meta = sce_rust_runtime::EventWithMetadata::platform_error(ATargetExpressionIsRoutedAsItsLiteralIsEvent::ErrorExecution, ::sce_rust_runtime::ErrorReason::SendTargetInvalid, "<send> targetexpr produced a value that is not a target");
                                             err_meta.metadata.send_id =
                                                 ::sce_rust_runtime::sce_string_from_str(send_id);
                                             engine.raise(err_meta);
@@ -4120,7 +4258,7 @@ Some(core::time::Duration::from_millis(10_u64)),
                                         if __sce_routed
                                             == sce_rust_runtime::TargetSendOutcome::Unreachable
                                         {
-                                            let mut err_meta = sce_rust_runtime::EventWithMetadata::platform_error(ATargetExpressionIsRoutedAsItsLiteralIsEvent::ErrorCommunication, "<send> targetexpr names a session this processor cannot reach");
+                                            let mut err_meta = sce_rust_runtime::EventWithMetadata::platform_error(ATargetExpressionIsRoutedAsItsLiteralIsEvent::ErrorCommunication, ::sce_rust_runtime::ErrorReason::TargetUnreachable, "<send> targetexpr names a session this processor cannot reach");
                                             err_meta.metadata.send_id =
                                                 ::sce_rust_runtime::sce_string_from_str(send_id);
                                             engine.raise(err_meta);
@@ -4142,7 +4280,12 @@ Some(core::time::Duration::from_millis(10_u64)),
                         let __sce_arg_sid = self.session_id.as_ref().unwrap().clone();
                         let __sce_arg_se = self.script_engine.clone();
                         let __sce_arg_se: &dyn sce_rust_runtime::IScriptEngine = &*__sce_arg_se;
-                        let mut _send_arg_error: Option<&'static str> = None;
+                        // The code and the sentence of the first argument that failed
+                        // (docs/adr/0106 #111).
+                        let mut _send_arg_error: Option<(
+                            ::sce_rust_runtime::ErrorReason,
+                            &'static str,
+                        )> = None;
                         // A target that evaluates to nothing is not an evaluation error: it is an
                         // address nobody answers at, which the resolution below reports as
                         // error.communication (W3C SCXML C.1).
@@ -4155,8 +4298,10 @@ Some(core::time::Duration::from_millis(10_u64)),
                                             "targetexpr eval failed: {}",
                                             e
                                         );
-                                        _send_arg_error =
-                                            Some("<send> targetexpr could not be evaluated");
+                                        _send_arg_error = Some((
+                                            ::sce_rust_runtime::ErrorReason::ExpressionFailed,
+                                            "<send> targetexpr could not be evaluated",
+                                        ));
                                         None
                                     }
                                 }
@@ -4167,13 +4312,14 @@ Some(core::time::Duration::from_millis(10_u64)),
                             // W3C SCXML 6.2: a target this processor cannot address is refused as
                             // a static one is, before anything is delivered.
                             if sce_rust_runtime::helpers::send::is_invalid_target(&::sce_rust_runtime::helpers::event_data::script_value_to_wire_string(val)) {
-            _send_arg_error = Some("<send> targetexpr produced a target this processor cannot address");
+            _send_arg_error = Some((::sce_rust_runtime::ErrorReason::SendTargetInvalid, "<send> targetexpr produced a target this processor cannot address"));
         }
                         }
-                        if let Some(__sce_why) = _send_arg_error {
+                        if let Some((__sce_reason, __sce_why)) = _send_arg_error {
                             ::sce_rust_runtime::sce_log_error!("{}", __sce_why);
                             let mut err_meta = sce_rust_runtime::EventWithMetadata::platform_error(
                                 ATargetExpressionIsRoutedAsItsLiteralIsEvent::ErrorExecution,
+                                __sce_reason,
                                 __sce_why,
                             );
                             err_meta.metadata.send_id =
@@ -4195,7 +4341,7 @@ Some(core::time::Duration::from_millis(10_u64)),
                             if _resolved_target.is_none() {
                                 // W3C SCXML C.1 (test 496, 521): a target that names nothing raises
                                 // error.communication.
-                                let mut err_meta = sce_rust_runtime::EventWithMetadata::platform_error(ATargetExpressionIsRoutedAsItsLiteralIsEvent::ErrorCommunication, "<send> targetexpr evaluated to nothing, so there is no target to reach");
+                                let mut err_meta = sce_rust_runtime::EventWithMetadata::platform_error(ATargetExpressionIsRoutedAsItsLiteralIsEvent::ErrorCommunication, ::sce_rust_runtime::ErrorReason::TargetUnreachable, "<send> targetexpr evaluated to nothing, so there is no target to reach");
                                 err_meta.metadata.send_id =
                                     ::sce_rust_runtime::sce_string_from_str(send_id);
                                 engine.raise(err_meta);
@@ -4262,7 +4408,7 @@ Some(core::time::Duration::from_millis(10_u64)),
                                         if __sce_routed
                                             == sce_rust_runtime::TargetSendOutcome::Unsupported
                                         {
-                                            let mut err_meta = sce_rust_runtime::EventWithMetadata::platform_error(ATargetExpressionIsRoutedAsItsLiteralIsEvent::ErrorExecution, "<send> targetexpr produced a value that is not a target");
+                                            let mut err_meta = sce_rust_runtime::EventWithMetadata::platform_error(ATargetExpressionIsRoutedAsItsLiteralIsEvent::ErrorExecution, ::sce_rust_runtime::ErrorReason::SendTargetInvalid, "<send> targetexpr produced a value that is not a target");
                                             err_meta.metadata.send_id =
                                                 ::sce_rust_runtime::sce_string_from_str(send_id);
                                             engine.raise(err_meta);
@@ -4271,7 +4417,7 @@ Some(core::time::Duration::from_millis(10_u64)),
                                         if __sce_routed
                                             == sce_rust_runtime::TargetSendOutcome::Unreachable
                                         {
-                                            let mut err_meta = sce_rust_runtime::EventWithMetadata::platform_error(ATargetExpressionIsRoutedAsItsLiteralIsEvent::ErrorCommunication, "<send> targetexpr names a session this processor cannot reach");
+                                            let mut err_meta = sce_rust_runtime::EventWithMetadata::platform_error(ATargetExpressionIsRoutedAsItsLiteralIsEvent::ErrorCommunication, ::sce_rust_runtime::ErrorReason::TargetUnreachable, "<send> targetexpr names a session this processor cannot reach");
                                             err_meta.metadata.send_id =
                                                 ::sce_rust_runtime::sce_string_from_str(send_id);
                                             engine.raise(err_meta);
@@ -4334,6 +4480,7 @@ Some(core::time::Duration::from_millis(10_u64)),
                             );
                             engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(
                                 ATargetExpressionIsRoutedAsItsLiteralIsEvent::ErrorExecution,
+                                ::sce_rust_runtime::ErrorReason::AssignmentFailed,
                                 "<assign> to 'internalNow' failed",
                             ));
                             // W3C SCXML 4.9: the error ends the block, from however deep a <foreach> it came.
@@ -4367,6 +4514,7 @@ Some(core::time::Duration::from_millis(10_u64)),
                             );
                             engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(
                                 ATargetExpressionIsRoutedAsItsLiteralIsEvent::ErrorExecution,
+                                ::sce_rust_runtime::ErrorReason::AssignmentFailed,
                                 "<assign> to 'internalLater' failed",
                             ));
                             // W3C SCXML 4.9: the error ends the block, from however deep a <foreach> it came.
@@ -4397,6 +4545,7 @@ Some(core::time::Duration::from_millis(10_u64)),
                             ::sce_rust_runtime::sce_log_error!("Assign failed for 'kidNow': {}", e);
                             engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(
                                 ATargetExpressionIsRoutedAsItsLiteralIsEvent::ErrorExecution,
+                                ::sce_rust_runtime::ErrorReason::AssignmentFailed,
                                 "<assign> to 'kidNow' failed",
                             ));
                             // W3C SCXML 4.9: the error ends the block, from however deep a <foreach> it came.
@@ -4430,6 +4579,7 @@ Some(core::time::Duration::from_millis(10_u64)),
                             );
                             engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(
                                 ATargetExpressionIsRoutedAsItsLiteralIsEvent::ErrorExecution,
+                                ::sce_rust_runtime::ErrorReason::AssignmentFailed,
                                 "<assign> to 'kidLater' failed",
                             ));
                             // W3C SCXML 4.9: the error ends the block, from however deep a <foreach> it came.
@@ -4463,6 +4613,7 @@ Some(core::time::Duration::from_millis(10_u64)),
                             );
                             engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(
                                 ATargetExpressionIsRoutedAsItsLiteralIsEvent::ErrorExecution,
+                                ::sce_rust_runtime::ErrorReason::AssignmentFailed,
                                 "<assign> to 'sessNow' failed",
                             ));
                             // W3C SCXML 4.9: the error ends the block, from however deep a <foreach> it came.
@@ -4496,6 +4647,7 @@ Some(core::time::Duration::from_millis(10_u64)),
                             );
                             engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(
                                 ATargetExpressionIsRoutedAsItsLiteralIsEvent::ErrorExecution,
+                                ::sce_rust_runtime::ErrorReason::AssignmentFailed,
                                 "<assign> to 'sessLater' failed",
                             ));
                             // W3C SCXML 4.9: the error ends the block, from however deep a <foreach> it came.

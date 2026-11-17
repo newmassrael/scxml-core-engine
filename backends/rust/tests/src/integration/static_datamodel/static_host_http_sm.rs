@@ -1,5 +1,5 @@
 // SCE-GENERATED — DO NOT EDIT
-// source-hash: 65fb42bdd588f958b0fbb29ac261cf039d02606d7afaae0720c045624bd679ba
+// source-hash: 2073d8a55462e1ce61d8a77293fdd2c141aceda8ad173303c5b84813ca22eeee
 
 // SPDX-License-Identifier: AGPL-3.0-only WITH AdditionRef-SCE-Linking-Exception OR LicenseRef-SCE-Commercial
 // SPDX-FileCopyrightText: Copyright (c) 2025-2026 [Author of input SCXML file] (content derived from the input document)
@@ -994,7 +994,7 @@ impl StaticHostHttpPolicy {
                 }
                 Err(_) => {
                     ::sce_rust_runtime::sce_log_error!("invoke typed param 'method' overflowed or failed");
-                    engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(StaticHostHttpEvent::ErrorExecution, "<invoke> <param name='method'> cannot be its request field: it failed to evaluate"));
+                    engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(StaticHostHttpEvent::ErrorExecution, ::sce_rust_runtime::ErrorReason::ExpressionFailed, "<invoke> <param name='method'> cannot be its request field: it failed to evaluate"));
                     request_refused = true;
                 }
             }
@@ -1011,7 +1011,7 @@ impl StaticHostHttpPolicy {
                 }
                 Err(_) => {
                     ::sce_rust_runtime::sce_log_error!("invoke typed param 'url' overflowed or failed");
-                    engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(StaticHostHttpEvent::ErrorExecution, "<invoke> <param name='url'> cannot be its request field: it failed to evaluate"));
+                    engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(StaticHostHttpEvent::ErrorExecution, ::sce_rust_runtime::ErrorReason::ExpressionFailed, "<invoke> <param name='url'> cannot be its request field: it failed to evaluate"));
                     request_refused = true;
                 }
             }
@@ -1028,7 +1028,7 @@ impl StaticHostHttpPolicy {
                 }
                 Err(_) => {
                     ::sce_rust_runtime::sce_log_error!("invoke typed param 'headers' overflowed or failed");
-                    engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(StaticHostHttpEvent::ErrorExecution, "<invoke> <param name='headers'> cannot be its request field: it failed to evaluate"));
+                    engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(StaticHostHttpEvent::ErrorExecution, ::sce_rust_runtime::ErrorReason::ExpressionFailed, "<invoke> <param name='headers'> cannot be its request field: it failed to evaluate"));
                     request_refused = true;
                 }
             }
@@ -1045,7 +1045,7 @@ impl StaticHostHttpPolicy {
                 }
                 Err(_) => {
                     ::sce_rust_runtime::sce_log_error!("invoke typed param 'body' overflowed or failed");
-                    engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(StaticHostHttpEvent::ErrorExecution, "<invoke> <param name='body'> cannot be its request field: it failed to evaluate"));
+                    engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(StaticHostHttpEvent::ErrorExecution, ::sce_rust_runtime::ErrorReason::ExpressionFailed, "<invoke> <param name='body'> cannot be its request field: it failed to evaluate"));
                     request_refused = true;
                 }
             }
@@ -1096,6 +1096,7 @@ impl StaticHostHttpPolicy {
                     // same event, rather than a silence that reads as started.
                     engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(
                         StaticHostHttpEvent::ErrorExecution,
+                        ::sce_rust_runtime::ErrorReason::ProcessorUnregistered,
                         "<invoke> names an invoker the host declared but never registered",
                     ));
                 }
@@ -1543,7 +1544,7 @@ impl StatePolicy for StaticHostHttpPolicy {
                         })() {
                             Ok(()) => false,
                             Err(_) => {
-                                engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(StaticHostHttpEvent::ErrorExecution, "<assign location='response_headers'>: an integer operation overflowed or failed"));
+                                engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(StaticHostHttpEvent::ErrorExecution, ::sce_rust_runtime::ErrorReason::ExpressionFailed, "<assign location='response_headers'>: an integer operation overflowed or failed"));
                                 true
                             }
                         };
@@ -1562,7 +1563,7 @@ impl StatePolicy for StaticHostHttpPolicy {
                         })() {
                             Ok(()) => false,
                             Err(_) => {
-                                engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(StaticHostHttpEvent::ErrorExecution, "<assign location='response_body'>: an integer operation overflowed or failed"));
+                                engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(StaticHostHttpEvent::ErrorExecution, ::sce_rust_runtime::ErrorReason::ExpressionFailed, "<assign location='response_body'>: an integer operation overflowed or failed"));
                                 true
                             }
                         };
@@ -1579,7 +1580,7 @@ impl StatePolicy for StaticHostHttpPolicy {
                         })() {
                             Ok(()) => false,
                             Err(_) => {
-                                engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(StaticHostHttpEvent::ErrorExecution, "<assign location='outcome'>: an integer operation overflowed or failed"));
+                                engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(StaticHostHttpEvent::ErrorExecution, ::sce_rust_runtime::ErrorReason::ExpressionFailed, "<assign location='outcome'>: an integer operation overflowed or failed"));
                                 true
                             }
                         };
@@ -1609,7 +1610,7 @@ impl StatePolicy for StaticHostHttpPolicy {
                         })() {
                             Ok(()) => false,
                             Err(_) => {
-                                engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(StaticHostHttpEvent::ErrorExecution, "<assign location='outcome'>: an integer operation overflowed or failed"));
+                                engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(StaticHostHttpEvent::ErrorExecution, ::sce_rust_runtime::ErrorReason::ExpressionFailed, "<assign location='outcome'>: an integer operation overflowed or failed"));
                                 true
                             }
                         };
@@ -1635,7 +1636,7 @@ impl StatePolicy for StaticHostHttpPolicy {
                         })() {
                             Ok(()) => false,
                             Err(_) => {
-                                engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(StaticHostHttpEvent::ErrorExecution, "<assign location='outcome'>: an integer operation overflowed or failed"));
+                                engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(StaticHostHttpEvent::ErrorExecution, ::sce_rust_runtime::ErrorReason::ExpressionFailed, "<assign location='outcome'>: an integer operation overflowed or failed"));
                                 true
                             }
                         };
@@ -1661,7 +1662,7 @@ impl StatePolicy for StaticHostHttpPolicy {
                         })() {
                             Ok(()) => false,
                             Err(_) => {
-                                engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(StaticHostHttpEvent::ErrorExecution, "<assign location='outcome'>: an integer operation overflowed or failed"));
+                                engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(StaticHostHttpEvent::ErrorExecution, ::sce_rust_runtime::ErrorReason::ExpressionFailed, "<assign location='outcome'>: an integer operation overflowed or failed"));
                                 true
                             }
                         };
@@ -1690,7 +1691,7 @@ impl StatePolicy for StaticHostHttpPolicy {
                         })() {
                             Ok(()) => false,
                             Err(_) => {
-                                engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(StaticHostHttpEvent::ErrorExecution, "<assign location='method'>: an integer operation overflowed or failed"));
+                                engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(StaticHostHttpEvent::ErrorExecution, ::sce_rust_runtime::ErrorReason::ExpressionFailed, "<assign location='method'>: an integer operation overflowed or failed"));
                                 true
                             }
                         };
@@ -1708,7 +1709,7 @@ impl StatePolicy for StaticHostHttpPolicy {
                         })() {
                             Ok(()) => false,
                             Err(_) => {
-                                engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(StaticHostHttpEvent::ErrorExecution, "<assign location='url'>: an integer operation overflowed or failed"));
+                                engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(StaticHostHttpEvent::ErrorExecution, ::sce_rust_runtime::ErrorReason::ExpressionFailed, "<assign location='url'>: an integer operation overflowed or failed"));
                                 true
                             }
                         };
@@ -1727,7 +1728,7 @@ impl StatePolicy for StaticHostHttpPolicy {
                         })() {
                             Ok(()) => false,
                             Err(_) => {
-                                engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(StaticHostHttpEvent::ErrorExecution, "<assign location='request_headers'>: an integer operation overflowed or failed"));
+                                engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(StaticHostHttpEvent::ErrorExecution, ::sce_rust_runtime::ErrorReason::ExpressionFailed, "<assign location='request_headers'>: an integer operation overflowed or failed"));
                                 true
                             }
                         };
@@ -1746,7 +1747,7 @@ impl StatePolicy for StaticHostHttpPolicy {
                         })() {
                             Ok(()) => false,
                             Err(_) => {
-                                engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(StaticHostHttpEvent::ErrorExecution, "<assign location='request_body'>: an integer operation overflowed or failed"));
+                                engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(StaticHostHttpEvent::ErrorExecution, ::sce_rust_runtime::ErrorReason::ExpressionFailed, "<assign location='request_body'>: an integer operation overflowed or failed"));
                                 true
                             }
                         };

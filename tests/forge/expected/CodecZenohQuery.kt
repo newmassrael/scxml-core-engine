@@ -7,6 +7,7 @@
 package com.sce.generated.codec_zenoh_query
 
 import com.sce.forge.runtime.CodecError
+import com.sce.forge.runtime.Decoded
 import com.sce.forge.runtime.MutableListSink
 import com.sce.forge.runtime.SceCursor
 import com.sce.forge.runtime.SceSink
@@ -118,10 +119,13 @@ data class CodecZenohQuery(
 
     companion object {
         /// Decode the next frame from `cursor`. On success the cursor
-        /// advances past the consumed bytes; returns `null` when the
-        /// cursor's tail is shorter than the declared minimum frame
-        /// (RFC §synth-5-B L494-519).
-        fun decode(cursor: SceCursor): CodecZenohQuery? {
+        /// advances past the consumed bytes and the value is `Decoded.Ok`;
+        /// a refused frame is `Decoded.Refused` with the kind that refused
+        /// it (docs/adr/0099, amendment of 2026-11-16): `NeedMoreBytes` when
+        /// the cursor's tail is shorter than the frame (RFC §synth-5-B
+        /// L494-519), which the caller resumes after appending bytes, and
+        /// another kind for a frame no more bytes make whole.
+        fun decode(cursor: SceCursor): Decoded<CodecZenohQuery> {
             // Streaming cursor decode (SSOT selection: `needs_streaming`).
             // The positional `raw[byte_off]` path is valid only when every
             // field's absolute offset is fixed at codegen time; this branch
@@ -135,32 +139,32 @@ data class CodecZenohQuery(
             // dedicated helpers; every other field flows through
             // `present_if_decode_stmt`.
             val header = run {
-                val raw = cursor.peekSlice(1) ?: return null
+                val raw = cursor.peekSlice(1) ?: return Decoded.Refused(CodecError.NeedMoreBytes)
                 val _v = raw[0].toUByte()
-                if (!cursor.advance(1)) return null
+                if (!cursor.advance(1)) return Decoded.Refused(CodecError.NeedMoreBytes)
                 _v
             }
             val consolidation = if ((header.toInt() and 0x20) != 0) {
-                val raw = cursor.peekSlice(1) ?: return null
+                val raw = cursor.peekSlice(1) ?: return Decoded.Refused(CodecError.NeedMoreBytes)
                 val _v = raw[0].toUByte()
-                if (!cursor.advance(1)) return null
+                if (!cursor.advance(1)) return Decoded.Refused(CodecError.NeedMoreBytes)
                 _v
             } else {
                 null
             }
             val parameters_len: ULong? = if ((header.toInt() and 0x40) != 0) {
-                val _v = cursor.readVleU64() ?: return null
+                val _v = cursor.readVleU64().valueOr { _refused -> return _refused }
                 _v
             } else {
                 null
             }
             val parameters = if ((header.toInt() and 0x40) != 0) {
                 val _len = parameters_len!!
-                if (_len > (Int.MAX_VALUE - 0).toULong()) return null
+                if (_len > (Int.MAX_VALUE - 0).toULong()) return Decoded.Refused(CodecError.NeedMoreBytes)
                 val _n = _len.toInt()
-                val raw = cursor.peekSlice(_n) ?: return null
+                val raw = cursor.peekSlice(_n) ?: return Decoded.Refused(CodecError.NeedMoreBytes)
                 val _v = raw.copyOf()
-                if (!cursor.advance(_n)) return null
+                if (!cursor.advance(_n)) return Decoded.Refused(CodecError.NeedMoreBytes)
                 _v
             } else {
                 null
@@ -169,18 +173,20 @@ data class CodecZenohQuery(
             mutableListOf<CodecZenohExtEntry>().also {
                 while (true) {
                     if (cursor.remaining() == 0) break
-                    it.add(CodecZenohExtEntry.decode(cursor) ?: return null)
+                    it.add(CodecZenohExtEntry.decode(cursor).valueOr { _refused -> return _refused })
                 }
             }
         } else {
             null
         }
-            return CodecZenohQuery(
-                header = header,
-                consolidation = consolidation,
-                parameters_len = parameters_len,
-                parameters = parameters,
-                extensions = extensions
+            return Decoded.Ok(
+                CodecZenohQuery(
+                    header = header,
+                    consolidation = consolidation,
+                    parameters_len = parameters_len,
+                    parameters = parameters,
+                    extensions = extensions
+                )
             )
         }
     }

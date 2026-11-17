@@ -7,6 +7,7 @@
 package com.sce.generated.codec_nested_parent
 
 import com.sce.forge.runtime.CodecError
+import com.sce.forge.runtime.Decoded
 import com.sce.forge.runtime.MutableListSink
 import com.sce.forge.runtime.SceCursor
 import com.sce.forge.runtime.SceSink
@@ -86,10 +87,13 @@ data class CodecNestedParent(
 
     companion object {
         /// Decode the next frame from `cursor`. On success the cursor
-        /// advances past the consumed bytes; returns `null` when the
-        /// cursor's tail is shorter than the declared minimum frame
-        /// (RFC §synth-5-B L494-519).
-        fun decode(cursor: SceCursor): CodecNestedParent? {
+        /// advances past the consumed bytes and the value is `Decoded.Ok`;
+        /// a refused frame is `Decoded.Refused` with the kind that refused
+        /// it (docs/adr/0099, amendment of 2026-11-16): `NeedMoreBytes` when
+        /// the cursor's tail is shorter than the frame (RFC §synth-5-B
+        /// L494-519), which the caller resumes after appending bytes, and
+        /// another kind for a frame no more bytes make whole.
+        fun decode(cursor: SceCursor): Decoded<CodecNestedParent> {
             // Streaming cursor decode (SSOT selection: `needs_streaming`).
             // The positional `raw[byte_off]` path is valid only when every
             // field's absolute offset is fixed at codegen time; this branch
@@ -103,37 +107,39 @@ data class CodecNestedParent(
             // dedicated helpers; every other field flows through
             // `present_if_decode_stmt`.
             val hdr = run {
-                val raw = cursor.peekSlice(1) ?: return null
+                val raw = cursor.peekSlice(1) ?: return Decoded.Refused(CodecError.NeedMoreBytes)
                 val _v = raw[0].toUByte()
-                if (!cursor.advance(1)) return null
+                if (!cursor.advance(1)) return Decoded.Refused(CodecError.NeedMoreBytes)
                 _v
             }
             val m = run {
-                val raw = cursor.peekSlice(1) ?: return null
+                val raw = cursor.peekSlice(1) ?: return Decoded.Refused(CodecError.NeedMoreBytes)
                 val _v = raw[0].toUByte()
-                if (!cursor.advance(1)) return null
+                if (!cursor.advance(1)) return Decoded.Refused(CodecError.NeedMoreBytes)
                 _v
             }
-            val required_body = CodecNestedBody.decode(cursor) ?: return null
+            val required_body = CodecNestedBody.decode(cursor).valueOr { _refused -> return _refused }
             val optional_body: CodecNestedBody? = if ((hdr.toInt() and 0x01) != 0) {
-                CodecNestedBody.decode(cursor) ?: return null
+                CodecNestedBody.decode(cursor).valueOr { _refused -> return _refused }
             } else {
                 null
             }
             if (m > 4u) {
-                cursor.refuse(CodecError.TooManyElements); return null
+                return Decoded.Refused(CodecError.TooManyElements)
             }
             val body_list: MutableList<CodecNestedBody> = mutableListOf<CodecNestedBody>().apply {
                 repeat(m.toInt()) {
-                    add(CodecNestedBody.decode(cursor) ?: return null)
+                    add(CodecNestedBody.decode(cursor).valueOr { _refused -> return _refused })
                 }
             }
-            return CodecNestedParent(
-                hdr = hdr,
-                m = m,
-                required_body = required_body,
-                optional_body = optional_body,
-                body_list = body_list
+            return Decoded.Ok(
+                CodecNestedParent(
+                    hdr = hdr,
+                    m = m,
+                    required_body = required_body,
+                    optional_body = optional_body,
+                    body_list = body_list
+                )
             )
         }
     }

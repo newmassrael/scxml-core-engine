@@ -245,12 +245,13 @@ struct CodecZenohOam {
     [[nodiscard]] const CodecZenohOamVariant& body() const noexcept { return body_; }
 
     /// Decode the next frame from `cursor`. On success the cursor
-    /// advances past the consumed bytes; on `NeedMoreBytes` the cursor
-    /// is left untouched so the caller can resume after appending more
-    /// bytes (RFC §synth-5-B L494-519). Returns `std::nullopt` on the
-    /// `NeedMoreBytes` boundary; later phases attach a typed error via
-    /// `cursor.last_error()`.
-    static std::optional<CodecZenohOam> decode(::SCE::Forge::SceCursor& cursor) {
+    /// advances past the consumed bytes and the value is answered; a
+    /// refused frame answers the `CodecError` that refused it
+    /// (docs/adr/0099, amendment of 2026-11-16): `NeedMoreBytes` when
+    /// the cursor's tail is shorter than the frame (RFC §synth-5-B
+    /// L494-519), which the caller resumes after appending bytes, and
+    /// another kind for a frame no more bytes make whole.
+    static ::SCE::Forge::Decoded<CodecZenohOam> decode(::SCE::Forge::SceCursor& cursor) {
         // RFC §synth-5-B peek-byte / streaming-prefix:
         // streaming prefix decode (variable-length fields supported via
         // per-field present_if/tlv-chain/embed/repeat helpers). Peek-byte
@@ -260,25 +261,25 @@ struct CodecZenohOam {
         uint8_t header;
         {
             const std::uint8_t* raw = cursor.peek_slice(1);
-            if (raw == nullptr) return std::nullopt;
+            if (raw == nullptr) return ::SCE::Forge::CodecError::NeedMoreBytes;
             header = static_cast<uint8_t>(raw[0]);
-            if (!cursor.advance(1)) return std::nullopt;
+            if (!cursor.advance(1)) return ::SCE::Forge::CodecError::NeedMoreBytes;
         }
-        auto id_opt = cursor.read_vle_u16();
-        if (!id_opt.has_value()) return std::nullopt;
-        auto id = static_cast<std::uint16_t>(*id_opt);
+        auto id_read = cursor.read_vle_u16();
+        if (!id_read.has_value()) return id_read.error();
+        auto id = static_cast<std::uint16_t>(*id_read);
         std::optional<std::vector<::SCE::Generated::CodecZenohExtEntry::CodecZenohExtEntry>> extensions;
         if ((header & 0x80) != 0) {
             std::vector<::SCE::Generated::CodecZenohExtEntry::CodecZenohExtEntry> _list;
             bool _more = false;
             for (;;) {
                 auto _elem = ::SCE::Generated::CodecZenohExtEntry::CodecZenohExtEntry::decode(cursor);
-                if (!_elem.has_value()) return std::nullopt;
+                if (!_elem.has_value()) return _elem.error();
                 _more = _elem->z();
                 _list.push_back(*_elem);
                 if (!_more) break;
             }
-            if (_more && cursor.remaining() == 0) { return std::nullopt; }
+            if (_more && cursor.remaining() == 0) { return ::SCE::Forge::CodecError::NeedMoreBytes; }
             extensions = std::move(_list);
         }
         // Dispatch on tag value into the matching arm body.
@@ -286,25 +287,25 @@ struct CodecZenohOam {
         switch (static_cast<uint8_t>((header >> 5) & static_cast<uint8_t>(0x03))) {
             case 0: {
                 auto _arm = ::SCE::Generated::CodecZenohExtUnit::CodecZenohExtUnit::decode(cursor);
-                if (!_arm.has_value()) return std::nullopt;
+                if (!_arm.has_value()) return _arm.error();
                 body = *_arm;
                 break;
             }
             case 1: {
                 auto _arm = ::SCE::Generated::CodecZenohExtZint::CodecZenohExtZint::decode(cursor);
-                if (!_arm.has_value()) return std::nullopt;
+                if (!_arm.has_value()) return _arm.error();
                 body = *_arm;
                 break;
             }
             case 2: {
                 auto _arm = ::SCE::Generated::CodecZenohExtZbuf::CodecZenohExtZbuf::decode(cursor);
-                if (!_arm.has_value()) return std::nullopt;
+                if (!_arm.has_value()) return _arm.error();
                 body = *_arm;
                 break;
             }
             default: {
                 auto _arm = ::SCE::Generated::CodecZenohExtUnit::CodecZenohExtUnit::decode(cursor);
-                if (!_arm.has_value()) return std::nullopt;
+                if (!_arm.has_value()) return _arm.error();
                 body = CodecZenohOamDefault{
                     /*tag=*/static_cast<uint8_t>((header >> 5) & static_cast<uint8_t>(0x03)),
                     /*body=*/*_arm,
@@ -316,8 +317,7 @@ struct CodecZenohOam {
         if (extensions) {
             _b_extensions = ::SCE::Forge::List<::SCE::Generated::CodecZenohExtEntry::CodecZenohExtEntry, ::SCE::Forge::kUnbounded, 1>::make(*extensions);
             if (!_b_extensions) {
-                cursor.refuse(::SCE::Forge::CodecError::TooManyElements);
-                return std::nullopt;
+                return ::SCE::Forge::CodecError::TooManyElements;
             }
         }
         CodecZenohOam _decoded{

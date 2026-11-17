@@ -548,6 +548,7 @@ impl ParallelRegionsTakeOwnTransitionsPolicy {
                 );
                 engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(
                     ParallelRegionsTakeOwnTransitionsEvent::ErrorExecution,
+                    ::sce_rust_runtime::ErrorReason::ParamUnfit,
                     "<data id='n'> could not hold the value its invoke handed it",
                 ));
             }
@@ -559,6 +560,7 @@ impl ParallelRegionsTakeOwnTransitionsPolicy {
                 ::sce_rust_runtime::sce_log_error!("global: {}", e);
                 engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(
                     ParallelRegionsTakeOwnTransitionsEvent::ErrorExecution,
+                    ::sce_rust_runtime::ErrorReason::ExpressionFailed,
                     "<data id='n'> expr failed to evaluate",
                 ));
             }
@@ -573,6 +575,7 @@ impl ParallelRegionsTakeOwnTransitionsPolicy {
                 );
                 engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(
                     ParallelRegionsTakeOwnTransitionsEvent::ErrorExecution,
+                    ::sce_rust_runtime::ErrorReason::ParamUnfit,
                     "<data id='m'> could not hold the value its invoke handed it",
                 ));
             }
@@ -584,6 +587,7 @@ impl ParallelRegionsTakeOwnTransitionsPolicy {
                 ::sce_rust_runtime::sce_log_error!("global: {}", e);
                 engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(
                     ParallelRegionsTakeOwnTransitionsEvent::ErrorExecution,
+                    ::sce_rust_runtime::ErrorReason::ExpressionFailed,
                     "<data id='m'> expr failed to evaluate",
                 ));
             }
@@ -650,6 +654,7 @@ impl ParallelRegionsTakeOwnTransitionsPolicy {
                 ::sce_rust_runtime::sce_log_error!("Guard evaluation failed for '{}': {}", cond, e);
                 engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(
                     ParallelRegionsTakeOwnTransitionsEvent::ErrorExecution,
+                    ::sce_rust_runtime::ErrorReason::ExpressionFailed,
                     reason,
                 ));
                 None
@@ -1136,6 +1141,7 @@ impl StatePolicy for ParallelRegionsTakeOwnTransitionsPolicy {
                             ::sce_rust_runtime::sce_log_error!("Assign failed for 'm': {}", e);
                             engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(
                                 ParallelRegionsTakeOwnTransitionsEvent::ErrorExecution,
+                                ::sce_rust_runtime::ErrorReason::AssignmentFailed,
                                 "<assign> to 'm' failed",
                             ));
                             // W3C SCXML 4.9: the error ends the block, from however deep a <foreach> it came.
@@ -1166,6 +1172,7 @@ impl StatePolicy for ParallelRegionsTakeOwnTransitionsPolicy {
                             ::sce_rust_runtime::sce_log_error!("Assign failed for 'n': {}", e);
                             engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(
                                 ParallelRegionsTakeOwnTransitionsEvent::ErrorExecution,
+                                ::sce_rust_runtime::ErrorReason::AssignmentFailed,
                                 "<assign> to 'n' failed",
                             ));
                             // W3C SCXML 4.9: the error ends the block, from however deep a <foreach> it came.

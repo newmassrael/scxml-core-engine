@@ -1,5 +1,5 @@
 // SCE-GENERATED — DO NOT EDIT
-// source-hash: 65fb42bdd588f958b0fbb29ac261cf039d02606d7afaae0720c045624bd679ba
+// source-hash: 2073d8a55462e1ce61d8a77293fdd2c141aceda8ad173303c5b84813ca22eeee
 
 // SPDX-License-Identifier: AGPL-3.0-only WITH AdditionRef-SCE-Linking-Exception OR LicenseRef-SCE-Commercial
 // SPDX-FileCopyrightText: Copyright (c) 2025-2026 [Author of input SCXML file] (content derived from the input document)
@@ -979,6 +979,7 @@ impl StaticInvokeTreeSceSynthInvokeWorkerPolicy {
             if !id_stored {
                 engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(
                     StaticInvokeTreeSceSynthInvokeWorkerEvent::ErrorExecution,
+                    ::sce_rust_runtime::ErrorReason::LocationInvalid,
                     "<invoke idlocation='helper_id'> could not take the invoke id",
                 ));
             }
@@ -1035,6 +1036,7 @@ impl StaticInvokeTreeSceSynthInvokeWorkerPolicy {
                     );
                     engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(
                         StaticInvokeTreeSceSynthInvokeWorkerEvent::ErrorExecution,
+                        ::sce_rust_runtime::ErrorReason::InvokeSrcNotFound,
                         "<invoke srcexpr> evaluated to a document it did not declare",
                     ));
                     continue;
@@ -1132,7 +1134,7 @@ impl StaticInvokeTreeSceSynthInvokeWorkerPolicy {
                         self.active_invokes.remove("_invoke_0");
                         engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(
                         StaticInvokeTreeSceSynthInvokeWorkerEvent::ErrorExecution,
-                        &format!("<invoke id='{}'> did not start: its child's script session failed at step '{}'", "_invoke_0", failure.stage)));
+                        ::sce_rust_runtime::ErrorReason::InvokeChildInitFailed, &format!("<invoke id='{}'> did not start: its child's script session failed at step '{}'", "_invoke_0", failure.stage)));
                         continue;
                     }
 
@@ -1232,7 +1234,7 @@ impl StaticInvokeTreeSceSynthInvokeWorkerPolicy {
                         self.active_invokes.remove("_invoke_0");
                         engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(
                         StaticInvokeTreeSceSynthInvokeWorkerEvent::ErrorExecution,
-                        &format!("<invoke id='{}'> did not start: its child's script session failed at step '{}'", "_invoke_0", failure.stage)));
+                        ::sce_rust_runtime::ErrorReason::InvokeChildInitFailed, &format!("<invoke id='{}'> did not start: its child's script session failed at step '{}'", "_invoke_0", failure.stage)));
                         continue;
                     }
 
@@ -1300,6 +1302,7 @@ impl StaticInvokeTreeSceSynthInvokeWorkerPolicy {
                     // same event, rather than a silence that reads as started.
                     engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(
                         StaticInvokeTreeSceSynthInvokeWorkerEvent::ErrorExecution,
+                        ::sce_rust_runtime::ErrorReason::ProcessorUnregistered,
                         "<invoke> names an invoker the host declared but never registered",
                     ));
                 }
@@ -2037,7 +2040,7 @@ impl StatePolicy for StaticInvokeTreeSceSynthInvokeWorkerPolicy {
                         })() {
                             Ok(()) => false,
                             Err(_) => {
-                                engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(StaticInvokeTreeSceSynthInvokeWorkerEvent::ErrorExecution, "<assign location='steps'>: an integer operation overflowed or failed"));
+                                engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(StaticInvokeTreeSceSynthInvokeWorkerEvent::ErrorExecution, ::sce_rust_runtime::ErrorReason::ExpressionFailed, "<assign location='steps'>: an integer operation overflowed or failed"));
                                 true
                             }
                         };
@@ -2095,6 +2098,7 @@ impl StatePolicy for StaticInvokeTreeSceSynthInvokeWorkerPolicy {
                             // nothing delivered, and the block ends (4.9).
                             engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(
                                 StaticInvokeTreeSceSynthInvokeWorkerEvent::ErrorCommunication,
+                                ::sce_rust_runtime::ErrorReason::TargetUnreachable,
                                 "<send target='#_parent'> has no parent session to reach",
                             ));
                             break 'action_block;
@@ -2127,6 +2131,7 @@ impl StatePolicy for StaticInvokeTreeSceSynthInvokeWorkerPolicy {
                             // nothing delivered, and the block ends (4.9).
                             engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(
                                 StaticInvokeTreeSceSynthInvokeWorkerEvent::ErrorCommunication,
+                                ::sce_rust_runtime::ErrorReason::TargetUnreachable,
                                 "<send target='#_parent'> has no parent session to reach",
                             ));
                             break 'action_block;
@@ -2153,7 +2158,7 @@ impl StatePolicy for StaticInvokeTreeSceSynthInvokeWorkerPolicy {
                         })() {
                             Ok(()) => false,
                             Err(_) => {
-                                engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(StaticInvokeTreeSceSynthInvokeWorkerEvent::ErrorExecution, "<assign location='pick'>: an integer operation overflowed or failed"));
+                                engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(StaticInvokeTreeSceSynthInvokeWorkerEvent::ErrorExecution, ::sce_rust_runtime::ErrorReason::ExpressionFailed, "<assign location='pick'>: an integer operation overflowed or failed"));
                                 true
                             }
                         };
@@ -2176,7 +2181,7 @@ impl StatePolicy for StaticInvokeTreeSceSynthInvokeWorkerPolicy {
                         })() {
                             Ok(()) => false,
                             Err(_) => {
-                                engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(StaticInvokeTreeSceSynthInvokeWorkerEvent::ErrorExecution, "<assign location='steps'>: an integer operation overflowed or failed"));
+                                engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(StaticInvokeTreeSceSynthInvokeWorkerEvent::ErrorExecution, ::sce_rust_runtime::ErrorReason::ExpressionFailed, "<assign location='steps'>: an integer operation overflowed or failed"));
                                 true
                             }
                         };
@@ -2207,6 +2212,7 @@ impl StatePolicy for StaticInvokeTreeSceSynthInvokeWorkerPolicy {
                             // nothing delivered, and the block ends (4.9).
                             engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(
                                 StaticInvokeTreeSceSynthInvokeWorkerEvent::ErrorCommunication,
+                                ::sce_rust_runtime::ErrorReason::TargetUnreachable,
                                 "<send target='#_parent'> has no parent session to reach",
                             ));
                             break 'action_block;

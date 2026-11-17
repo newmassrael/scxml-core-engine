@@ -115,6 +115,19 @@ template <class S>
     return static_cast<std::uint8_t>(static_cast<std::optional<::SCE::Forge::Text<65535>>>(source::suffix(src)).has_value() ? 1 : 0);
 }
 
+/// The `suffix_len` the frame of a source of `CodecZenohWireexpr` carries, which its encode
+/// derives from what it measures and no value holds (docs/adr/0081 §3), and none where the content it is gated beside is absent.
+template <class S>
+[[nodiscard]] std::optional<uint64_t> wire_suffix_len(const S& src) noexcept(is_nothrow_source<S>::value) {
+    static_assert(is_source<S>::value, "S presents every element of CodecZenohWireexpr");
+    const auto& _r_suffix = source::suffix(src);
+    const std::optional<::SCE::Forge::Text<65535>> _e_suffix = _r_suffix;
+    if (!(_e_suffix.has_value())) {
+        return std::nullopt;
+    }
+    return static_cast<uint64_t>(_e_suffix->size());
+}
+
 struct CodecZenohWireexpr {
     CodecZenohWireexpr() = default;
     /// The value of each element it presents, in declaration order (ADR 0059 §5).
@@ -126,12 +139,13 @@ struct CodecZenohWireexpr {
     [[nodiscard]] std::optional<::SCE::Forge::Text<65535>> suffix() const noexcept { if (!suffix_) { return std::nullopt; } return ::SCE::Forge::Text<65535>(*suffix_); }
 
     /// Decode the next frame from `cursor`. On success the cursor
-    /// advances past the consumed bytes; on `NeedMoreBytes` the cursor
-    /// is left untouched so the caller can resume after appending more
-    /// bytes (RFC §synth-5-B L494-519). Returns `std::nullopt` on the
-    /// `NeedMoreBytes` boundary; later phases attach a typed error via
-    /// `cursor.last_error()`.
-    static std::optional<CodecZenohWireexpr> decode(::SCE::Forge::SceCursor& cursor, std::uint8_t n) {
+    /// advances past the consumed bytes and the value is answered; a
+    /// refused frame answers the `CodecError` that refused it
+    /// (docs/adr/0099, amendment of 2026-11-16): `NeedMoreBytes` when
+    /// the cursor's tail is shorter than the frame (RFC §synth-5-B
+    /// L494-519), which the caller resumes after appending bytes, and
+    /// another kind for a frame no more bytes make whole.
+    static ::SCE::Forge::Decoded<CodecZenohWireexpr> decode(::SCE::Forge::SceCursor& cursor, std::uint8_t n) {
         // Declared-but-unconsumed flag inputs: defensive (void) suppress per declared
         // `<sce:flag-input>` so codecs that haven't (yet) consumed an
         // input via `present-if` compile cleanly under -Wunused.
@@ -147,35 +161,34 @@ struct CodecZenohWireexpr {
         // advances past exactly what it consumed. Per-field `is_repeat` /
         // `is_tlv_chain` / `is_embed` route to their dedicated helpers;
         // every other field flows through `present_if_decode_stmt`.
-        auto id_opt = cursor.read_vle_u64();
-        if (!id_opt.has_value()) return std::nullopt;
-        auto id = static_cast<std::uint64_t>(*id_opt);
+        auto id_read = cursor.read_vle_u64();
+        if (!id_read.has_value()) return id_read.error();
+        auto id = static_cast<std::uint64_t>(*id_read);
         std::optional<uint64_t> suffix_len;
         if ((n & 0x01) != 0) {
-            auto _v_opt = cursor.read_vle_u64();
-        if (!_v_opt.has_value()) return std::nullopt;
-        auto _v = static_cast<std::uint64_t>(*_v_opt);
+            auto _v_read = cursor.read_vle_u64();
+        if (!_v_read.has_value()) return _v_read.error();
+        auto _v = static_cast<std::uint64_t>(*_v_read);
             suffix_len = _v;
         }
         std::optional<std::string> suffix;
         if ((n & 0x01) != 0) {
             const auto _len = suffix_len.value();
             if (_len > 65535) {
-                cursor.refuse(::SCE::Forge::CodecError::LengthOutOfRange); return std::nullopt;
+                return ::SCE::Forge::CodecError::LengthOutOfRange;
             }
             std::size_t _n = static_cast<std::size_t>(_len);
             const std::uint8_t* raw = cursor.peek_slice(_n);
-            if (raw == nullptr) return std::nullopt;
-            if (!::SCE::Forge::is_valid_utf8(raw, _n)) return std::nullopt;
+            if (raw == nullptr) return ::SCE::Forge::CodecError::NeedMoreBytes;
+            if (!::SCE::Forge::is_valid_utf8(raw, _n)) return ::SCE::Forge::CodecError::InvalidUtf8;
             suffix.emplace(reinterpret_cast<const char*>(raw), _n);
-            if (!cursor.advance(_n)) return std::nullopt;
+            if (!cursor.advance(_n)) return ::SCE::Forge::CodecError::NeedMoreBytes;
         }
         std::optional<::SCE::Forge::Text<65535>> _b_suffix;
         if (suffix) {
             _b_suffix = ::SCE::Forge::Text<65535>::make(*suffix);
             if (!_b_suffix) {
-                cursor.refuse(::SCE::Forge::CodecError::LengthOutOfRange);
-                return std::nullopt;
+                return ::SCE::Forge::CodecError::LengthOutOfRange;
             }
         }
         (void)suffix_len;

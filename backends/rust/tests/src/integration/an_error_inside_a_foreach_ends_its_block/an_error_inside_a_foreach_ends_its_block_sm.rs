@@ -640,6 +640,7 @@ impl AnErrorInsideAForeachEndsItsBlockPolicy {
                 );
                 engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(
                     AnErrorInsideAForeachEndsItsBlockEvent::ErrorExecution,
+                    ::sce_rust_runtime::ErrorReason::ParamUnfit,
                     "<data id='errors'> could not hold the value its invoke handed it",
                 ));
             }
@@ -651,6 +652,7 @@ impl AnErrorInsideAForeachEndsItsBlockPolicy {
                 ::sce_rust_runtime::sce_log_error!("global: {}", e);
                 engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(
                     AnErrorInsideAForeachEndsItsBlockEvent::ErrorExecution,
+                    ::sce_rust_runtime::ErrorReason::ExpressionFailed,
                     "<data id='errors'> expr failed to evaluate",
                 ));
             }
@@ -665,6 +667,7 @@ impl AnErrorInsideAForeachEndsItsBlockPolicy {
                 );
                 engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(
                     AnErrorInsideAForeachEndsItsBlockEvent::ErrorExecution,
+                    ::sce_rust_runtime::ErrorReason::ParamUnfit,
                     "<data id='sent'> could not hold the value its invoke handed it",
                 ));
             }
@@ -676,6 +679,7 @@ impl AnErrorInsideAForeachEndsItsBlockPolicy {
                 ::sce_rust_runtime::sce_log_error!("global: {}", e);
                 engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(
                     AnErrorInsideAForeachEndsItsBlockEvent::ErrorExecution,
+                    ::sce_rust_runtime::ErrorReason::ExpressionFailed,
                     "<data id='sent'> expr failed to evaluate",
                 ));
             }
@@ -690,6 +694,7 @@ impl AnErrorInsideAForeachEndsItsBlockPolicy {
                 );
                 engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(
                     AnErrorInsideAForeachEndsItsBlockEvent::ErrorExecution,
+                    ::sce_rust_runtime::ErrorReason::ParamUnfit,
                     "<data id='iters1'> could not hold the value its invoke handed it",
                 ));
             }
@@ -701,6 +706,7 @@ impl AnErrorInsideAForeachEndsItsBlockPolicy {
                 ::sce_rust_runtime::sce_log_error!("global: {}", e);
                 engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(
                     AnErrorInsideAForeachEndsItsBlockEvent::ErrorExecution,
+                    ::sce_rust_runtime::ErrorReason::ExpressionFailed,
                     "<data id='iters1'> expr failed to evaluate",
                 ));
             }
@@ -715,6 +721,7 @@ impl AnErrorInsideAForeachEndsItsBlockPolicy {
                 );
                 engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(
                     AnErrorInsideAForeachEndsItsBlockEvent::ErrorExecution,
+                    ::sce_rust_runtime::ErrorReason::ParamUnfit,
                     "<data id='after1'> could not hold the value its invoke handed it",
                 ));
             }
@@ -726,6 +733,7 @@ impl AnErrorInsideAForeachEndsItsBlockPolicy {
                 ::sce_rust_runtime::sce_log_error!("global: {}", e);
                 engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(
                     AnErrorInsideAForeachEndsItsBlockEvent::ErrorExecution,
+                    ::sce_rust_runtime::ErrorReason::ExpressionFailed,
                     "<data id='after1'> expr failed to evaluate",
                 ));
             }
@@ -740,6 +748,7 @@ impl AnErrorInsideAForeachEndsItsBlockPolicy {
                 );
                 engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(
                     AnErrorInsideAForeachEndsItsBlockEvent::ErrorExecution,
+                    ::sce_rust_runtime::ErrorReason::ParamUnfit,
                     "<data id='iters2'> could not hold the value its invoke handed it",
                 ));
             }
@@ -751,6 +760,7 @@ impl AnErrorInsideAForeachEndsItsBlockPolicy {
                 ::sce_rust_runtime::sce_log_error!("global: {}", e);
                 engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(
                     AnErrorInsideAForeachEndsItsBlockEvent::ErrorExecution,
+                    ::sce_rust_runtime::ErrorReason::ExpressionFailed,
                     "<data id='iters2'> expr failed to evaluate",
                 ));
             }
@@ -765,6 +775,7 @@ impl AnErrorInsideAForeachEndsItsBlockPolicy {
                 );
                 engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(
                     AnErrorInsideAForeachEndsItsBlockEvent::ErrorExecution,
+                    ::sce_rust_runtime::ErrorReason::ParamUnfit,
                     "<data id='after2'> could not hold the value its invoke handed it",
                 ));
             }
@@ -776,6 +787,7 @@ impl AnErrorInsideAForeachEndsItsBlockPolicy {
                 ::sce_rust_runtime::sce_log_error!("global: {}", e);
                 engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(
                     AnErrorInsideAForeachEndsItsBlockEvent::ErrorExecution,
+                    ::sce_rust_runtime::ErrorReason::ExpressionFailed,
                     "<data id='after2'> expr failed to evaluate",
                 ));
             }
@@ -790,6 +802,7 @@ impl AnErrorInsideAForeachEndsItsBlockPolicy {
                 );
                 engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(
                     AnErrorInsideAForeachEndsItsBlockEvent::ErrorExecution,
+                    ::sce_rust_runtime::ErrorReason::ParamUnfit,
                     "<data id='iters3'> could not hold the value its invoke handed it",
                 ));
             }
@@ -801,6 +814,7 @@ impl AnErrorInsideAForeachEndsItsBlockPolicy {
                 ::sce_rust_runtime::sce_log_error!("global: {}", e);
                 engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(
                     AnErrorInsideAForeachEndsItsBlockEvent::ErrorExecution,
+                    ::sce_rust_runtime::ErrorReason::ExpressionFailed,
                     "<data id='iters3'> expr failed to evaluate",
                 ));
             }
@@ -815,6 +829,7 @@ impl AnErrorInsideAForeachEndsItsBlockPolicy {
                 );
                 engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(
                     AnErrorInsideAForeachEndsItsBlockEvent::ErrorExecution,
+                    ::sce_rust_runtime::ErrorReason::ParamUnfit,
                     "<data id='after3'> could not hold the value its invoke handed it",
                 ));
             }
@@ -826,6 +841,7 @@ impl AnErrorInsideAForeachEndsItsBlockPolicy {
                 ::sce_rust_runtime::sce_log_error!("global: {}", e);
                 engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(
                     AnErrorInsideAForeachEndsItsBlockEvent::ErrorExecution,
+                    ::sce_rust_runtime::ErrorReason::ExpressionFailed,
                     "<data id='after3'> expr failed to evaluate",
                 ));
             }
@@ -840,6 +856,7 @@ impl AnErrorInsideAForeachEndsItsBlockPolicy {
                 );
                 engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(
                     AnErrorInsideAForeachEndsItsBlockEvent::ErrorExecution,
+                    ::sce_rust_runtime::ErrorReason::ParamUnfit,
                     "<data id='items'> could not hold the value its invoke handed it",
                 ));
             }
@@ -854,6 +871,7 @@ impl AnErrorInsideAForeachEndsItsBlockPolicy {
                 ::sce_rust_runtime::sce_log_error!("global: {}", e);
                 engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(
                     AnErrorInsideAForeachEndsItsBlockEvent::ErrorExecution,
+                    ::sce_rust_runtime::ErrorReason::ExpressionFailed,
                     "<data id='items'> expr failed to evaluate",
                 ));
             }
@@ -868,6 +886,7 @@ impl AnErrorInsideAForeachEndsItsBlockPolicy {
                 );
                 engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(
                     AnErrorInsideAForeachEndsItsBlockEvent::ErrorExecution,
+                    ::sce_rust_runtime::ErrorReason::ParamUnfit,
                     "<data id='item'> could not hold the value its invoke handed it",
                 ));
             }
@@ -879,6 +898,7 @@ impl AnErrorInsideAForeachEndsItsBlockPolicy {
                 ::sce_rust_runtime::sce_log_error!("global: {}", e);
                 engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(
                     AnErrorInsideAForeachEndsItsBlockEvent::ErrorExecution,
+                    ::sce_rust_runtime::ErrorReason::ExpressionFailed,
                     "<data id='item'> expr failed to evaluate",
                 ));
             }
@@ -893,6 +913,7 @@ impl AnErrorInsideAForeachEndsItsBlockPolicy {
                 );
                 engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(
                     AnErrorInsideAForeachEndsItsBlockEvent::ErrorExecution,
+                    ::sce_rust_runtime::ErrorReason::ParamUnfit,
                     "<data id='obj'> could not hold the value its invoke handed it",
                 ));
             }
@@ -904,6 +925,7 @@ impl AnErrorInsideAForeachEndsItsBlockPolicy {
                 ::sce_rust_runtime::sce_log_error!("global: {}", e);
                 engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(
                     AnErrorInsideAForeachEndsItsBlockEvent::ErrorExecution,
+                    ::sce_rust_runtime::ErrorReason::ExpressionFailed,
                     "<data id='obj'> expr failed to evaluate",
                 ));
             }
@@ -952,6 +974,7 @@ impl AnErrorInsideAForeachEndsItsBlockPolicy {
                 ::sce_rust_runtime::sce_log_error!("Guard evaluation failed for '{}': {}", cond, e);
                 engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(
                     AnErrorInsideAForeachEndsItsBlockEvent::ErrorExecution,
+                    ::sce_rust_runtime::ErrorReason::ExpressionFailed,
                     reason,
                 ));
                 None
@@ -1292,6 +1315,7 @@ impl StatePolicy for AnErrorInsideAForeachEndsItsBlockPolicy {
                             );
                             engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(
                                 AnErrorInsideAForeachEndsItsBlockEvent::ErrorExecution,
+                                ::sce_rust_runtime::ErrorReason::ForeachInvalid,
                                 "<foreach item='item'> is not a legal variable name",
                             ));
                             break 'action_block;
@@ -1333,7 +1357,7 @@ impl StatePolicy for AnErrorInsideAForeachEndsItsBlockPolicy {
                                                     "Assign failed for 'iters1': {}",
                                                     e
                                                 );
-                                                engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(AnErrorInsideAForeachEndsItsBlockEvent::ErrorExecution, "<assign> to 'iters1' failed"));
+                                                engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(AnErrorInsideAForeachEndsItsBlockEvent::ErrorExecution, ::sce_rust_runtime::ErrorReason::AssignmentFailed, "<assign> to 'iters1' failed"));
                                                 // W3C SCXML 4.9: the error ends the block, from however deep a <foreach> it came.
                                                 break 'action_block;
                                             }
@@ -1376,7 +1400,7 @@ impl StatePolicy for AnErrorInsideAForeachEndsItsBlockPolicy {
                                                             "send param 'bad' eval failed: {}",
                                                             e
                                                         );
-                                                        engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(AnErrorInsideAForeachEndsItsBlockEvent::ErrorExecution, "<send> <param name='bad'> could not be read"));
+                                                        engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(AnErrorInsideAForeachEndsItsBlockEvent::ErrorExecution, ::sce_rust_runtime::ErrorReason::LocationInvalid, "<send> <param name='bad'> could not be read"));
                                                         // W3C SCXML 5.7.1: the pair is left out; 4.9: the block stops after the send.
                                                         _param_failed = true;
                                                     }
@@ -1404,7 +1428,7 @@ impl StatePolicy for AnErrorInsideAForeachEndsItsBlockPolicy {
                                         }
                                     }
                                     if !foreach_success {
-                                        engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(AnErrorInsideAForeachEndsItsBlockEvent::ErrorExecution, "<foreach> could not set its loop variable"));
+                                        engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(AnErrorInsideAForeachEndsItsBlockEvent::ErrorExecution, ::sce_rust_runtime::ErrorReason::ForeachInvalid, "<foreach> could not set its loop variable"));
                                         break 'action_block;
                                     }
                                 }
@@ -1416,6 +1440,7 @@ impl StatePolicy for AnErrorInsideAForeachEndsItsBlockPolicy {
                                     engine.raise(
                                         sce_rust_runtime::EventWithMetadata::platform_error(
                                             AnErrorInsideAForeachEndsItsBlockEvent::ErrorExecution,
+                                            ::sce_rust_runtime::ErrorReason::ForeachInvalid,
                                             "<foreach array='items'> is not an array",
                                         ),
                                     );
@@ -1429,6 +1454,7 @@ impl StatePolicy for AnErrorInsideAForeachEndsItsBlockPolicy {
                                     engine.raise(
                                         sce_rust_runtime::EventWithMetadata::platform_error(
                                             AnErrorInsideAForeachEndsItsBlockEvent::ErrorExecution,
+                                            ::sce_rust_runtime::ErrorReason::ExpressionFailed,
                                             "<foreach array='items'> failed to evaluate",
                                         ),
                                     );
@@ -1454,6 +1480,7 @@ impl StatePolicy for AnErrorInsideAForeachEndsItsBlockPolicy {
                             ::sce_rust_runtime::sce_log_error!("Assign failed for 'after1': {}", e);
                             engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(
                                 AnErrorInsideAForeachEndsItsBlockEvent::ErrorExecution,
+                                ::sce_rust_runtime::ErrorReason::AssignmentFailed,
                                 "<assign> to 'after1' failed",
                             ));
                             // W3C SCXML 4.9: the error ends the block, from however deep a <foreach> it came.
@@ -1487,6 +1514,7 @@ impl StatePolicy for AnErrorInsideAForeachEndsItsBlockPolicy {
                             );
                             engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(
                                 AnErrorInsideAForeachEndsItsBlockEvent::ErrorExecution,
+                                ::sce_rust_runtime::ErrorReason::ForeachInvalid,
                                 "<foreach item='item'> is not a legal variable name",
                             ));
                             break 'action_block;
@@ -1528,7 +1556,7 @@ impl StatePolicy for AnErrorInsideAForeachEndsItsBlockPolicy {
                                                     "Assign failed for 'iters2': {}",
                                                     e
                                                 );
-                                                engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(AnErrorInsideAForeachEndsItsBlockEvent::ErrorExecution, "<assign> to 'iters2' failed"));
+                                                engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(AnErrorInsideAForeachEndsItsBlockEvent::ErrorExecution, ::sce_rust_runtime::ErrorReason::AssignmentFailed, "<assign> to 'iters2' failed"));
                                                 // W3C SCXML 4.9: the error ends the block, from however deep a <foreach> it came.
                                                 break 'action_block;
                                             }
@@ -1553,14 +1581,14 @@ impl StatePolicy for AnErrorInsideAForeachEndsItsBlockPolicy {
                                                     "Assign failed for 'obj.missing.deep': {}",
                                                     e
                                                 );
-                                                engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(AnErrorInsideAForeachEndsItsBlockEvent::ErrorExecution, "<assign> to 'obj.missing.deep' failed"));
+                                                engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(AnErrorInsideAForeachEndsItsBlockEvent::ErrorExecution, ::sce_rust_runtime::ErrorReason::AssignmentFailed, "<assign> to 'obj.missing.deep' failed"));
                                                 // W3C SCXML 4.9: the error ends the block, from however deep a <foreach> it came.
                                                 break 'action_block;
                                             }
                                         }
                                     }
                                     if !foreach_success {
-                                        engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(AnErrorInsideAForeachEndsItsBlockEvent::ErrorExecution, "<foreach> could not set its loop variable"));
+                                        engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(AnErrorInsideAForeachEndsItsBlockEvent::ErrorExecution, ::sce_rust_runtime::ErrorReason::ForeachInvalid, "<foreach> could not set its loop variable"));
                                         break 'action_block;
                                     }
                                 }
@@ -1572,6 +1600,7 @@ impl StatePolicy for AnErrorInsideAForeachEndsItsBlockPolicy {
                                     engine.raise(
                                         sce_rust_runtime::EventWithMetadata::platform_error(
                                             AnErrorInsideAForeachEndsItsBlockEvent::ErrorExecution,
+                                            ::sce_rust_runtime::ErrorReason::ForeachInvalid,
                                             "<foreach array='items'> is not an array",
                                         ),
                                     );
@@ -1585,6 +1614,7 @@ impl StatePolicy for AnErrorInsideAForeachEndsItsBlockPolicy {
                                     engine.raise(
                                         sce_rust_runtime::EventWithMetadata::platform_error(
                                             AnErrorInsideAForeachEndsItsBlockEvent::ErrorExecution,
+                                            ::sce_rust_runtime::ErrorReason::ExpressionFailed,
                                             "<foreach array='items'> failed to evaluate",
                                         ),
                                     );
@@ -1610,6 +1640,7 @@ impl StatePolicy for AnErrorInsideAForeachEndsItsBlockPolicy {
                             ::sce_rust_runtime::sce_log_error!("Assign failed for 'after2': {}", e);
                             engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(
                                 AnErrorInsideAForeachEndsItsBlockEvent::ErrorExecution,
+                                ::sce_rust_runtime::ErrorReason::AssignmentFailed,
                                 "<assign> to 'after2' failed",
                             ));
                             // W3C SCXML 4.9: the error ends the block, from however deep a <foreach> it came.
@@ -1782,6 +1813,7 @@ impl StatePolicy for AnErrorInsideAForeachEndsItsBlockPolicy {
                             ::sce_rust_runtime::sce_log_error!("Assign failed for 'errors': {}", e);
                             engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(
                                 AnErrorInsideAForeachEndsItsBlockEvent::ErrorExecution,
+                                ::sce_rust_runtime::ErrorReason::AssignmentFailed,
                                 "<assign> to 'errors' failed",
                             ));
                             // W3C SCXML 4.9: the error ends the block, from however deep a <foreach> it came.
@@ -1812,6 +1844,7 @@ impl StatePolicy for AnErrorInsideAForeachEndsItsBlockPolicy {
                             ::sce_rust_runtime::sce_log_error!("Assign failed for 'sent': {}", e);
                             engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(
                                 AnErrorInsideAForeachEndsItsBlockEvent::ErrorExecution,
+                                ::sce_rust_runtime::ErrorReason::AssignmentFailed,
                                 "<assign> to 'sent' failed",
                             ));
                             // W3C SCXML 4.9: the error ends the block, from however deep a <foreach> it came.
@@ -1846,6 +1879,7 @@ impl StatePolicy for AnErrorInsideAForeachEndsItsBlockPolicy {
                             );
                             engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(
                                 AnErrorInsideAForeachEndsItsBlockEvent::ErrorExecution,
+                                ::sce_rust_runtime::ErrorReason::ForeachInvalid,
                                 "<foreach item='item'> is not a legal variable name",
                             ));
                             break 'action_block;
@@ -1887,7 +1921,7 @@ impl StatePolicy for AnErrorInsideAForeachEndsItsBlockPolicy {
                                                     "Assign failed for 'iters3': {}",
                                                     e
                                                 );
-                                                engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(AnErrorInsideAForeachEndsItsBlockEvent::ErrorExecution, "<assign> to 'iters3' failed"));
+                                                engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(AnErrorInsideAForeachEndsItsBlockEvent::ErrorExecution, ::sce_rust_runtime::ErrorReason::AssignmentFailed, "<assign> to 'iters3' failed"));
                                                 // W3C SCXML 4.9: the error ends the block, from however deep a <foreach> it came.
                                                 break 'action_block;
                                             }
@@ -1930,7 +1964,7 @@ impl StatePolicy for AnErrorInsideAForeachEndsItsBlockPolicy {
                                                             "send param 'bad' eval failed: {}",
                                                             e
                                                         );
-                                                        engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(AnErrorInsideAForeachEndsItsBlockEvent::ErrorExecution, "<send> <param name='bad'> could not be read"));
+                                                        engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(AnErrorInsideAForeachEndsItsBlockEvent::ErrorExecution, ::sce_rust_runtime::ErrorReason::LocationInvalid, "<send> <param name='bad'> could not be read"));
                                                         // W3C SCXML 5.7.1: the pair is left out; 4.9: the block stops after the send.
                                                         _param_failed = true;
                                                     }
@@ -1958,7 +1992,7 @@ impl StatePolicy for AnErrorInsideAForeachEndsItsBlockPolicy {
                                         }
                                     }
                                     if !foreach_success {
-                                        engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(AnErrorInsideAForeachEndsItsBlockEvent::ErrorExecution, "<foreach> could not set its loop variable"));
+                                        engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(AnErrorInsideAForeachEndsItsBlockEvent::ErrorExecution, ::sce_rust_runtime::ErrorReason::ForeachInvalid, "<foreach> could not set its loop variable"));
                                         break 'action_block;
                                     }
                                 }
@@ -1970,6 +2004,7 @@ impl StatePolicy for AnErrorInsideAForeachEndsItsBlockPolicy {
                                     engine.raise(
                                         sce_rust_runtime::EventWithMetadata::platform_error(
                                             AnErrorInsideAForeachEndsItsBlockEvent::ErrorExecution,
+                                            ::sce_rust_runtime::ErrorReason::ForeachInvalid,
                                             "<foreach array='items'> is not an array",
                                         ),
                                     );
@@ -1983,6 +2018,7 @@ impl StatePolicy for AnErrorInsideAForeachEndsItsBlockPolicy {
                                     engine.raise(
                                         sce_rust_runtime::EventWithMetadata::platform_error(
                                             AnErrorInsideAForeachEndsItsBlockEvent::ErrorExecution,
+                                            ::sce_rust_runtime::ErrorReason::ExpressionFailed,
                                             "<foreach array='items'> failed to evaluate",
                                         ),
                                     );
@@ -2008,6 +2044,7 @@ impl StatePolicy for AnErrorInsideAForeachEndsItsBlockPolicy {
                             ::sce_rust_runtime::sce_log_error!("Assign failed for 'after3': {}", e);
                             engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(
                                 AnErrorInsideAForeachEndsItsBlockEvent::ErrorExecution,
+                                ::sce_rust_runtime::ErrorReason::AssignmentFailed,
                                 "<assign> to 'after3' failed",
                             ));
                             // W3C SCXML 4.9: the error ends the block, from however deep a <foreach> it came.

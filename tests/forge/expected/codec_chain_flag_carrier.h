@@ -148,12 +148,13 @@ struct CodecChainFlagCarrier {
     [[nodiscard]] ::SCE::Forge::Lawful<::SCE::Forge::List<::SCE::Generated::CodecChainFlagEntry::CodecChainFlagEntry, 4, 1>, CodecChainFlagCarrierEntriesLaw> entries() const noexcept { return entries_; }
 
     /// Decode the next frame from `cursor`. On success the cursor
-    /// advances past the consumed bytes; on `NeedMoreBytes` the cursor
-    /// is left untouched so the caller can resume after appending more
-    /// bytes (RFC §synth-5-B L494-519). Returns `std::nullopt` on the
-    /// `NeedMoreBytes` boundary; later phases attach a typed error via
-    /// `cursor.last_error()`.
-    static std::optional<CodecChainFlagCarrier> decode(::SCE::Forge::SceCursor& cursor) {
+    /// advances past the consumed bytes and the value is answered; a
+    /// refused frame answers the `CodecError` that refused it
+    /// (docs/adr/0099, amendment of 2026-11-16): `NeedMoreBytes` when
+    /// the cursor's tail is shorter than the frame (RFC §synth-5-B
+    /// L494-519), which the caller resumes after appending bytes, and
+    /// another kind for a frame no more bytes make whole.
+    static ::SCE::Forge::Decoded<CodecChainFlagCarrier> decode(::SCE::Forge::SceCursor& cursor) {
         // Streaming cursor decode (SSOT selection: `needs_streaming`).
         // The positional `raw[byte_off]` path is valid only when every
         // field's absolute offset is fixed at codegen time; this branch
@@ -168,31 +169,29 @@ struct CodecChainFlagCarrier {
         uint8_t head;
         {
             const std::uint8_t* raw = cursor.peek_slice(1);
-            if (raw == nullptr) return std::nullopt;
+            if (raw == nullptr) return ::SCE::Forge::CodecError::NeedMoreBytes;
             head = static_cast<uint8_t>(raw[0]);
-            if (!cursor.advance(1)) return std::nullopt;
+            if (!cursor.advance(1)) return ::SCE::Forge::CodecError::NeedMoreBytes;
         }
         std::vector<::SCE::Generated::CodecChainFlagEntry::CodecChainFlagEntry> entries;
         entries.reserve(4);
         bool _more = false;
         for (std::size_t _i = 0; _i < 4; ++_i) {
             auto _elem = ::SCE::Generated::CodecChainFlagEntry::CodecChainFlagEntry::decode(cursor, static_cast<std::uint8_t>((head >> 0) & 0x1));
-            if (!_elem.has_value()) return std::nullopt;
+            if (!_elem.has_value()) return _elem.error();
             _more = _elem->z();
             entries.push_back(*_elem);
             if (!_more) break;
         }
-        if (_more && cursor.remaining() == 0) { return std::nullopt; }
-        if (_more) { cursor.refuse(::SCE::Forge::CodecError::TooManyElements); return std::nullopt; }
+        if (_more && cursor.remaining() == 0) { return ::SCE::Forge::CodecError::NeedMoreBytes; }
+        if (_more) { return ::SCE::Forge::CodecError::TooManyElements; }
         const auto _l_entries = ::SCE::Forge::Lawful<::SCE::Forge::List<::SCE::Generated::CodecChainFlagEntry::CodecChainFlagEntry, 4, 1>, CodecChainFlagCarrierEntriesLaw>::list_type::make(entries);
         if (!_l_entries) {
-            cursor.refuse(::SCE::Forge::CodecError::TooManyElements);
-            return std::nullopt;
+            return ::SCE::Forge::CodecError::TooManyElements;
         }
         const auto _b_entries = ::SCE::Forge::Lawful<::SCE::Forge::List<::SCE::Generated::CodecChainFlagEntry::CodecChainFlagEntry, 4, 1>, CodecChainFlagCarrierEntriesLaw>::make((((head >> 0) & 0x1) != 0), *_l_entries);
         if (!_b_entries) {
-            cursor.refuse(::SCE::Forge::CodecError::PresentIfMismatch);
-            return std::nullopt;
+            return ::SCE::Forge::CodecError::PresentIfMismatch;
         }
         CodecChainFlagCarrier _decoded{
             /*head=*/head,

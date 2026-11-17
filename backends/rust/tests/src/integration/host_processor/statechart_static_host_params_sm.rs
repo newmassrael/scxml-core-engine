@@ -1,5 +1,5 @@
 // SCE-GENERATED — DO NOT EDIT
-// source-hash: 7e9246f9bdadc8c18a240b365b4cc726cf6b8bab9981f448fd674ebdd45b3460
+// source-hash: e3e91f36cc7b8591c060b277b157f8471b6940f92608c548338f70603c760055
 
 // SPDX-License-Identifier: AGPL-3.0-only WITH AdditionRef-SCE-Linking-Exception OR LicenseRef-SCE-Commercial
 // SPDX-FileCopyrightText: Copyright (c) 2025-2026 [Author of input SCXML file] (content derived from the input document)
@@ -791,6 +791,7 @@ impl StatechartStaticHostParamsPolicy {
                     Err(_) => {
                         engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(
                             StatechartStaticHostParamsEvent::ErrorExecution,
+                            ::sce_rust_runtime::ErrorReason::ExpressionFailed,
                             "<invoke srcexpr> could not be evaluated",
                         ));
                         continue;
@@ -809,6 +810,7 @@ impl StatechartStaticHostParamsPolicy {
                     Err(_) => {
                         engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(
                             StatechartStaticHostParamsEvent::ErrorExecution,
+                            ::sce_rust_runtime::ErrorReason::ExpressionFailed,
                             "<invoke> content expr could not be evaluated",
                         ));
                         continue;
@@ -874,7 +876,7 @@ impl StatechartStaticHostParamsPolicy {
             Err(_) => {
                 // W3C SCXML 5.7.1: report the failure and omit the pair.
                 ::sce_rust_runtime::sce_log_error!("invoke param 'twice' overflowed or failed");
-                engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(StatechartStaticHostParamsEvent::ErrorExecution, "<invoke> <param name='twice'> expr failed to evaluate"));
+                engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(StatechartStaticHostParamsEvent::ErrorExecution, ::sce_rust_runtime::ErrorReason::ExpressionFailed, "<invoke> <param name='twice'> expr failed to evaluate"));
             }
         }
                 match (|| -> Result<::sce_rust_runtime::ScriptValue, sce_forge_runtime::algorithm::AlgorithmError> {
@@ -888,7 +890,7 @@ impl StatechartStaticHostParamsPolicy {
             Err(_) => {
                 // W3C SCXML 5.7.1: report the failure and omit the pair.
                 ::sce_rust_runtime::sce_log_error!("invoke param 'boom' overflowed or failed");
-                engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(StatechartStaticHostParamsEvent::ErrorExecution, "<invoke> <param name='boom'> expr failed to evaluate"));
+                engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(StatechartStaticHostParamsEvent::ErrorExecution, ::sce_rust_runtime::ErrorReason::ExpressionFailed, "<invoke> <param name='boom'> expr failed to evaluate"));
             }
         }
                 {
@@ -946,6 +948,7 @@ impl StatechartStaticHostParamsPolicy {
                     // same event, rather than a silence that reads as started.
                     engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(
                         StatechartStaticHostParamsEvent::ErrorExecution,
+                        ::sce_rust_runtime::ErrorReason::ProcessorUnregistered,
                         "<invoke> names an invoker the host declared but never registered",
                     ));
                 }
@@ -1274,7 +1277,7 @@ impl StatePolicy for StatechartStaticHostParamsPolicy {
             }
             Err(_) => {
                 ::sce_rust_runtime::sce_log_error!("send param 'twice' overflowed or failed");
-                engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(StatechartStaticHostParamsEvent::ErrorExecution, "<send> <param name='twice'> could not be read"));
+                engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(StatechartStaticHostParamsEvent::ErrorExecution, ::sce_rust_runtime::ErrorReason::LocationInvalid, "<send> <param name='twice'> could not be read"));
                 // W3C SCXML 5.7.1: the pair is left out; 4.9: the block stops after the send.
                 _param_failed = true;
             }
@@ -1299,7 +1302,7 @@ impl StatePolicy for StatechartStaticHostParamsPolicy {
             }
             Err(_) => {
                 ::sce_rust_runtime::sce_log_error!("send param 'boom' overflowed or failed");
-                engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(StatechartStaticHostParamsEvent::ErrorExecution, "<send> <param name='boom'> could not be read"));
+                engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(StatechartStaticHostParamsEvent::ErrorExecution, ::sce_rust_runtime::ErrorReason::LocationInvalid, "<send> <param name='boom'> could not be read"));
                 // W3C SCXML 5.7.1: the pair is left out; 4.9: the block stops after the send.
                 _param_failed = true;
             }
@@ -1338,7 +1341,7 @@ impl StatePolicy for StatechartStaticHostParamsPolicy {
                             // support — the act it asked for was performed by nobody. Same
                             // event, so a wiring mistake cannot read as success.
                             if __sce_served.is_none() && !engine.has_event_processor("x-sce-host") {
-                                let mut err_meta = sce_rust_runtime::EventWithMetadata::platform_error(StatechartStaticHostParamsEvent::ErrorExecution, "<send type='x-sce-host'> names a processor the host declared but never registered");
+                                let mut err_meta = sce_rust_runtime::EventWithMetadata::platform_error(StatechartStaticHostParamsEvent::ErrorExecution, ::sce_rust_runtime::ErrorReason::ProcessorUnregistered, "<send type='x-sce-host'> names a processor the host declared but never registered");
                                 engine.raise(err_meta);
                             }
                         }
@@ -1375,7 +1378,7 @@ impl StatePolicy for StatechartStaticHostParamsPolicy {
         Ok(val) => val,
         Err(_) => {
             ::sce_rust_runtime::sce_log_error!("send contentexpr overflowed or failed");
-            engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(StatechartStaticHostParamsEvent::ErrorExecution, "<send> contentexpr failed to evaluate"));
+            engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(StatechartStaticHostParamsEvent::ErrorExecution, ::sce_rust_runtime::ErrorReason::ExpressionFailed, "<send> contentexpr failed to evaluate"));
             _param_failed = true;
             ::sce_rust_runtime::ScriptValue::String(String::new())
         }
@@ -1415,7 +1418,7 @@ impl StatePolicy for StatechartStaticHostParamsPolicy {
                             // support — the act it asked for was performed by nobody. Same
                             // event, so a wiring mistake cannot read as success.
                             if __sce_served.is_none() && !engine.has_event_processor("x-sce-host") {
-                                let mut err_meta = sce_rust_runtime::EventWithMetadata::platform_error(StatechartStaticHostParamsEvent::ErrorExecution, "<send type='x-sce-host'> names a processor the host declared but never registered");
+                                let mut err_meta = sce_rust_runtime::EventWithMetadata::platform_error(StatechartStaticHostParamsEvent::ErrorExecution, ::sce_rust_runtime::ErrorReason::ProcessorUnregistered, "<send type='x-sce-host'> names a processor the host declared but never registered");
                                 engine.raise(err_meta);
                             }
                         }
@@ -1478,7 +1481,7 @@ impl StatePolicy for StatechartStaticHostParamsPolicy {
                             // support — the act it asked for was performed by nobody. Same
                             // event, so a wiring mistake cannot read as success.
                             if __sce_served.is_none() && !engine.has_event_processor("x-sce-host") {
-                                let mut err_meta = sce_rust_runtime::EventWithMetadata::platform_error(StatechartStaticHostParamsEvent::ErrorExecution, "<send type='x-sce-host'> names a processor the host declared but never registered");
+                                let mut err_meta = sce_rust_runtime::EventWithMetadata::platform_error(StatechartStaticHostParamsEvent::ErrorExecution, ::sce_rust_runtime::ErrorReason::ProcessorUnregistered, "<send type='x-sce-host'> names a processor the host declared but never registered");
                                 engine.raise(err_meta);
                             }
                         }
@@ -1509,7 +1512,7 @@ impl StatePolicy for StatechartStaticHostParamsPolicy {
         Ok(val) => val,
         Err(_) => {
             ::sce_rust_runtime::sce_log_error!("send contentexpr overflowed or failed");
-            engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(StatechartStaticHostParamsEvent::ErrorExecution, "<send> contentexpr failed to evaluate"));
+            engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(StatechartStaticHostParamsEvent::ErrorExecution, ::sce_rust_runtime::ErrorReason::ExpressionFailed, "<send> contentexpr failed to evaluate"));
             _param_failed = true;
             ::sce_rust_runtime::ScriptValue::String(String::new())
         }
@@ -1549,7 +1552,7 @@ impl StatePolicy for StatechartStaticHostParamsPolicy {
                             // support — the act it asked for was performed by nobody. Same
                             // event, so a wiring mistake cannot read as success.
                             if __sce_served.is_none() && !engine.has_event_processor("x-sce-host") {
-                                let mut err_meta = sce_rust_runtime::EventWithMetadata::platform_error(StatechartStaticHostParamsEvent::ErrorExecution, "<send type='x-sce-host'> names a processor the host declared but never registered");
+                                let mut err_meta = sce_rust_runtime::EventWithMetadata::platform_error(StatechartStaticHostParamsEvent::ErrorExecution, ::sce_rust_runtime::ErrorReason::ProcessorUnregistered, "<send type='x-sce-host'> names a processor the host declared but never registered");
                                 engine.raise(err_meta);
                             }
                         }
@@ -1612,7 +1615,7 @@ impl StatePolicy for StatechartStaticHostParamsPolicy {
                             // support — the act it asked for was performed by nobody. Same
                             // event, so a wiring mistake cannot read as success.
                             if __sce_served.is_none() && !engine.has_event_processor("x-sce-host") {
-                                let mut err_meta = sce_rust_runtime::EventWithMetadata::platform_error(StatechartStaticHostParamsEvent::ErrorExecution, "<send type='x-sce-host'> names a processor the host declared but never registered");
+                                let mut err_meta = sce_rust_runtime::EventWithMetadata::platform_error(StatechartStaticHostParamsEvent::ErrorExecution, ::sce_rust_runtime::ErrorReason::ProcessorUnregistered, "<send type='x-sce-host'> names a processor the host declared but never registered");
                                 engine.raise(err_meta);
                             }
                         }
@@ -1772,7 +1775,7 @@ impl StatePolicy for StatechartStaticHostParamsPolicy {
                         })() {
                             Ok(()) => false,
                             Err(_) => {
-                                engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(StatechartStaticHostParamsEvent::ErrorExecution, "<assign location='count'>: an integer operation overflowed or failed"));
+                                engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(StatechartStaticHostParamsEvent::ErrorExecution, ::sce_rust_runtime::ErrorReason::ExpressionFailed, "<assign location='count'>: an integer operation overflowed or failed"));
                                 true
                             }
                         };
@@ -1792,7 +1795,7 @@ impl StatePolicy for StatechartStaticHostParamsPolicy {
                         })() {
                             Ok(()) => false,
                             Err(_) => {
-                                engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(StatechartStaticHostParamsEvent::ErrorExecution, "<assign location='label'>: an integer operation overflowed or failed"));
+                                engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(StatechartStaticHostParamsEvent::ErrorExecution, ::sce_rust_runtime::ErrorReason::ExpressionFailed, "<assign location='label'>: an integer operation overflowed or failed"));
                                 true
                             }
                         };
@@ -1835,7 +1838,7 @@ impl StatePolicy for StatechartStaticHostParamsPolicy {
                         })() {
                             Ok(()) => false,
                             Err(_) => {
-                                engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(StatechartStaticHostParamsEvent::ErrorExecution, "<assign location='errors'>: an integer operation overflowed or failed"));
+                                engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(StatechartStaticHostParamsEvent::ErrorExecution, ::sce_rust_runtime::ErrorReason::ExpressionFailed, "<assign location='errors'>: an integer operation overflowed or failed"));
                                 true
                             }
                         };

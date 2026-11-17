@@ -524,7 +524,7 @@ impl StatePolicy for Test194Policy {
                         // address — `Action::target_unsupported`, decided once at build time.
                         {
                             // W3C SCXML 6.2.4/5.10: test 332 — the error event MUST carry the sendid
-                            let mut err_meta = sce_rust_runtime::EventWithMetadata::platform_error(Test194Event::ErrorExecution, "<send target='!invalid'> is not a target this processor can address");
+                            let mut err_meta = sce_rust_runtime::EventWithMetadata::platform_error(Test194Event::ErrorExecution, ::sce_rust_runtime::ErrorReason::SendTargetInvalid, "<send target='!invalid'> is not a target this processor can address");
                             engine.raise(err_meta);
                         }
                         let _ = send_id; // the refusal may carry no error event to name it

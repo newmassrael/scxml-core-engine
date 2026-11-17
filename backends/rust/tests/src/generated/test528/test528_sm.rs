@@ -496,6 +496,7 @@ impl Test528Policy {
                 ::sce_rust_runtime::sce_log_error!("Guard evaluation failed for '{}': {}", cond, e);
                 engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(
                     Test528Event::ErrorExecution,
+                    ::sce_rust_runtime::ErrorReason::ExpressionFailed,
                     reason,
                 ));
                 None
@@ -834,6 +835,7 @@ impl StatePolicy for Test528Policy {
                             );
                             engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(
                                 Test528Event::ErrorExecution,
+                                ::sce_rust_runtime::ErrorReason::ExpressionFailed,
                                 "<donedata> <content expr> failed to evaluate",
                             ));
                         }

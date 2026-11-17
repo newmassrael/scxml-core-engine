@@ -1,5 +1,5 @@
 // SCE-GENERATED — DO NOT EDIT
-// source-hash: 65fb42bdd588f958b0fbb29ac261cf039d02606d7afaae0720c045624bd679ba
+// source-hash: 2073d8a55462e1ce61d8a77293fdd2c141aceda8ad173303c5b84813ca22eeee
 
 // SPDX-License-Identifier: AGPL-3.0-only WITH AdditionRef-SCE-Linking-Exception OR LicenseRef-SCE-Commercial
 // SPDX-FileCopyrightText: Copyright (c) 2025-2026 [Author of input SCXML file] (content derived from the input document)
@@ -1044,15 +1044,23 @@ impl StatePolicy for StaticSendIdlocationPolicy {
                         let send_id_text: String = self.first.to_string();
                         let send_id: &str = &send_id_text;
 
-                        let mut _send_arg_error: Option<&'static str> = None;
+                        // The code and the sentence of the first argument that failed
+                        // (docs/adr/0106 #111).
+                        let mut _send_arg_error: Option<(
+                            ::sce_rust_runtime::ErrorReason,
+                            &'static str,
+                        )> = None;
                         if _send_id_refused {
-                            _send_arg_error =
-                                Some("<send idlocation='first'> could not take the send id");
+                            _send_arg_error = Some((
+                                ::sce_rust_runtime::ErrorReason::LocationInvalid,
+                                "<send idlocation='first'> could not take the send id",
+                            ));
                         }
-                        if let Some(__sce_why) = _send_arg_error {
+                        if let Some((__sce_reason, __sce_why)) = _send_arg_error {
                             ::sce_rust_runtime::sce_log_error!("{}", __sce_why);
                             let mut err_meta = sce_rust_runtime::EventWithMetadata::platform_error(
                                 StaticSendIdlocationEvent::ErrorExecution,
+                                __sce_reason,
                                 __sce_why,
                             );
                             err_meta.metadata.send_id =
@@ -1101,15 +1109,23 @@ impl StatePolicy for StaticSendIdlocationPolicy {
                         let send_id_text: String = self.second.to_string();
                         let send_id: &str = &send_id_text;
 
-                        let mut _send_arg_error: Option<&'static str> = None;
+                        // The code and the sentence of the first argument that failed
+                        // (docs/adr/0106 #111).
+                        let mut _send_arg_error: Option<(
+                            ::sce_rust_runtime::ErrorReason,
+                            &'static str,
+                        )> = None;
                         if _send_id_refused {
-                            _send_arg_error =
-                                Some("<send idlocation='second'> could not take the send id");
+                            _send_arg_error = Some((
+                                ::sce_rust_runtime::ErrorReason::LocationInvalid,
+                                "<send idlocation='second'> could not take the send id",
+                            ));
                         }
-                        if let Some(__sce_why) = _send_arg_error {
+                        if let Some((__sce_reason, __sce_why)) = _send_arg_error {
                             ::sce_rust_runtime::sce_log_error!("{}", __sce_why);
                             let mut err_meta = sce_rust_runtime::EventWithMetadata::platform_error(
                                 StaticSendIdlocationEvent::ErrorExecution,
+                                __sce_reason,
                                 __sce_why,
                             );
                             err_meta.metadata.send_id =
@@ -1165,10 +1181,17 @@ impl StatePolicy for StaticSendIdlocationPolicy {
                         let send_id_text: String = self.first.to_string();
                         let send_id: &str = &send_id_text;
 
-                        let mut _send_arg_error: Option<&'static str> = None;
+                        // The code and the sentence of the first argument that failed
+                        // (docs/adr/0106 #111).
+                        let mut _send_arg_error: Option<(
+                            ::sce_rust_runtime::ErrorReason,
+                            &'static str,
+                        )> = None;
                         if _send_id_refused {
-                            _send_arg_error =
-                                Some("<send idlocation='first'> could not take the send id");
+                            _send_arg_error = Some((
+                                ::sce_rust_runtime::ErrorReason::LocationInvalid,
+                                "<send idlocation='first'> could not take the send id",
+                            ));
                         }
                         // The delay is a string computed from the machine's fields now, and read as
                         // the CSS2 time it must be (ARCHITECTURE.md, "Durations"): an operation that
@@ -1179,21 +1202,22 @@ impl StatePolicy for StaticSendIdlocationPolicy {
             Ok(if sce_forge_runtime::algorithm::mul::<u32>(self.scale, 2000000000)? > 1 { "200ms".to_string() } else { "300ms".to_string() })
         })() {
             Ok(s) => sce_rust_runtime::helpers::send::parse_delay_to_ms(&s).unwrap_or_else(|| {
-                _send_arg_error = Some("<send> delayexpr is not a CSS2 time");
+                _send_arg_error = Some((::sce_rust_runtime::ErrorReason::SendDelayInvalid, "<send> delayexpr is not a CSS2 time"));
                 0
             }),
             Err(_) => {
-                _send_arg_error = Some("<send> delayexpr could not be evaluated");
+                _send_arg_error = Some((::sce_rust_runtime::ErrorReason::ExpressionFailed, "<send> delayexpr could not be evaluated"));
                 0
             }
         }
                         } else {
                             0
                         };
-                        if let Some(__sce_why) = _send_arg_error {
+                        if let Some((__sce_reason, __sce_why)) = _send_arg_error {
                             ::sce_rust_runtime::sce_log_error!("{}", __sce_why);
                             let mut err_meta = sce_rust_runtime::EventWithMetadata::platform_error(
                                 StaticSendIdlocationEvent::ErrorExecution,
+                                __sce_reason,
                                 __sce_why,
                             );
                             err_meta.metadata.send_id =
@@ -1263,7 +1287,7 @@ impl StatePolicy for StaticSendIdlocationPolicy {
                         })() {
                             Ok(()) => false,
                             Err(_) => {
-                                engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(StaticSendIdlocationEvent::ErrorExecution, "<assign location='first_fired'>: an integer operation overflowed or failed"));
+                                engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(StaticSendIdlocationEvent::ErrorExecution, ::sce_rust_runtime::ErrorReason::ExpressionFailed, "<assign location='first_fired'>: an integer operation overflowed or failed"));
                                 true
                             }
                         };
@@ -1287,7 +1311,7 @@ impl StatePolicy for StaticSendIdlocationPolicy {
                         })() {
                             Ok(()) => false,
                             Err(_) => {
-                                engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(StaticSendIdlocationEvent::ErrorExecution, "<assign location='second_fired'>: an integer operation overflowed or failed"));
+                                engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(StaticSendIdlocationEvent::ErrorExecution, ::sce_rust_runtime::ErrorReason::ExpressionFailed, "<assign location='second_fired'>: an integer operation overflowed or failed"));
                                 true
                             }
                         };
@@ -1311,7 +1335,7 @@ impl StatePolicy for StaticSendIdlocationPolicy {
                         })() {
                             Ok(()) => false,
                             Err(_) => {
-                                engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(StaticSendIdlocationEvent::ErrorExecution, "<assign location='refusals'>: an integer operation overflowed or failed"));
+                                engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(StaticSendIdlocationEvent::ErrorExecution, ::sce_rust_runtime::ErrorReason::ExpressionFailed, "<assign location='refusals'>: an integer operation overflowed or failed"));
                                 true
                             }
                         };

@@ -469,6 +469,7 @@ impl InvokeExpressionFailureIsReportedPolicy {
                 );
                 engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(
                     InvokeExpressionFailureIsReportedEvent::ErrorExecution,
+                    ::sce_rust_runtime::ErrorReason::ParamUnfit,
                     "<data id='target'> could not hold the value its invoke handed it",
                 ));
             }
@@ -480,6 +481,7 @@ impl InvokeExpressionFailureIsReportedPolicy {
                 ::sce_rust_runtime::sce_log_error!("global: {}", e);
                 engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(
                     InvokeExpressionFailureIsReportedEvent::ErrorExecution,
+                    ::sce_rust_runtime::ErrorReason::ExpressionFailed,
                     "<data id='target'> expr failed to evaluate",
                 ));
             }
@@ -528,6 +530,7 @@ impl InvokeExpressionFailureIsReportedPolicy {
                 ::sce_rust_runtime::sce_log_error!("Guard evaluation failed for '{}': {}", cond, e);
                 engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(
                     InvokeExpressionFailureIsReportedEvent::ErrorExecution,
+                    ::sce_rust_runtime::ErrorReason::ExpressionFailed,
                     reason,
                 ));
                 None
@@ -662,6 +665,7 @@ impl InvokeExpressionFailureIsReportedPolicy {
                         );
                         engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(
                             InvokeExpressionFailureIsReportedEvent::ErrorExecution,
+                            ::sce_rust_runtime::ErrorReason::ExpressionFailed,
                             "<invoke srcexpr='target.path'> could not be evaluated",
                         ));
                         continue;
@@ -749,7 +753,7 @@ impl InvokeExpressionFailureIsReportedPolicy {
                     self.active_invokes.remove("_invoke_0");
                     engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(
                         InvokeExpressionFailureIsReportedEvent::ErrorExecution,
-                        &format!("<invoke id='{}'> did not start: its child's script session failed at step '{}'", "_invoke_0", failure.stage)));
+                        ::sce_rust_runtime::ErrorReason::InvokeChildInitFailed, &format!("<invoke id='{}'> did not start: its child's script session failed at step '{}'", "_invoke_0", failure.stage)));
                     continue;
                 }
 

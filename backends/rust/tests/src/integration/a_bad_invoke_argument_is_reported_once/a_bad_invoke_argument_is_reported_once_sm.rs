@@ -615,6 +615,7 @@ impl ABadInvokeArgumentIsReportedOncePolicy {
                 );
                 engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(
                     ABadInvokeArgumentIsReportedOnceEvent::ErrorExecution,
+                    ::sce_rust_runtime::ErrorReason::ParamUnfit,
                     "<data id='v'> could not hold the value its invoke handed it",
                 ));
             }
@@ -626,6 +627,7 @@ impl ABadInvokeArgumentIsReportedOncePolicy {
                 ::sce_rust_runtime::sce_log_error!("global: {}", e);
                 engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(
                     ABadInvokeArgumentIsReportedOnceEvent::ErrorExecution,
+                    ::sce_rust_runtime::ErrorReason::ExpressionFailed,
                     "<data id='v'> expr failed to evaluate",
                 ));
             }
@@ -640,6 +642,7 @@ impl ABadInvokeArgumentIsReportedOncePolicy {
                 );
                 engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(
                     ABadInvokeArgumentIsReportedOnceEvent::ErrorExecution,
+                    ::sce_rust_runtime::ErrorReason::ParamUnfit,
                     "<data id='obj'> could not hold the value its invoke handed it",
                 ));
             }
@@ -651,6 +654,7 @@ impl ABadInvokeArgumentIsReportedOncePolicy {
                 ::sce_rust_runtime::sce_log_error!("global: {}", e);
                 engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(
                     ABadInvokeArgumentIsReportedOnceEvent::ErrorExecution,
+                    ::sce_rust_runtime::ErrorReason::ExpressionFailed,
                     "<data id='obj'> expr failed to evaluate",
                 ));
             }
@@ -665,6 +669,7 @@ impl ABadInvokeArgumentIsReportedOncePolicy {
                 );
                 engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(
                     ABadInvokeArgumentIsReportedOnceEvent::ErrorExecution,
+                    ::sce_rust_runtime::ErrorReason::ParamUnfit,
                     "<data id='errors'> could not hold the value its invoke handed it",
                 ));
             }
@@ -676,6 +681,7 @@ impl ABadInvokeArgumentIsReportedOncePolicy {
                 ::sce_rust_runtime::sce_log_error!("global: {}", e);
                 engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(
                     ABadInvokeArgumentIsReportedOnceEvent::ErrorExecution,
+                    ::sce_rust_runtime::ErrorReason::ExpressionFailed,
                     "<data id='errors'> expr failed to evaluate",
                 ));
             }
@@ -690,6 +696,7 @@ impl ABadInvokeArgumentIsReportedOncePolicy {
                 );
                 engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(
                     ABadInvokeArgumentIsReportedOnceEvent::ErrorExecution,
+                    ::sce_rust_runtime::ErrorReason::ParamUnfit,
                     "<data id='started'> could not hold the value its invoke handed it",
                 ));
             }
@@ -701,6 +708,7 @@ impl ABadInvokeArgumentIsReportedOncePolicy {
                 ::sce_rust_runtime::sce_log_error!("global: {}", e);
                 engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(
                     ABadInvokeArgumentIsReportedOnceEvent::ErrorExecution,
+                    ::sce_rust_runtime::ErrorReason::ExpressionFailed,
                     "<data id='started'> expr failed to evaluate",
                 ));
             }
@@ -715,6 +723,7 @@ impl ABadInvokeArgumentIsReportedOncePolicy {
                 );
                 engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(
                     ABadInvokeArgumentIsReportedOnceEvent::ErrorExecution,
+                    ::sce_rust_runtime::ErrorReason::ParamUnfit,
                     "<data id='fromLocOk'> could not hold the value its invoke handed it",
                 ));
             }
@@ -729,6 +738,7 @@ impl ABadInvokeArgumentIsReportedOncePolicy {
                 ::sce_rust_runtime::sce_log_error!("global: {}", e);
                 engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(
                     ABadInvokeArgumentIsReportedOnceEvent::ErrorExecution,
+                    ::sce_rust_runtime::ErrorReason::ExpressionFailed,
                     "<data id='fromLocOk'> expr failed to evaluate",
                 ));
             }
@@ -743,6 +753,7 @@ impl ABadInvokeArgumentIsReportedOncePolicy {
                 );
                 engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(
                     ABadInvokeArgumentIsReportedOnceEvent::ErrorExecution,
+                    ::sce_rust_runtime::ErrorReason::ParamUnfit,
                     "<data id='emptyLocLeftOut'> could not hold the value its invoke handed it",
                 ));
             }
@@ -757,6 +768,7 @@ impl ABadInvokeArgumentIsReportedOncePolicy {
                 ::sce_rust_runtime::sce_log_error!("global: {}", e);
                 engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(
                     ABadInvokeArgumentIsReportedOnceEvent::ErrorExecution,
+                    ::sce_rust_runtime::ErrorReason::ExpressionFailed,
                     "<data id='emptyLocLeftOut'> expr failed to evaluate",
                 ));
             }
@@ -771,6 +783,7 @@ impl ABadInvokeArgumentIsReportedOncePolicy {
                 );
                 engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(
                     ABadInvokeArgumentIsReportedOnceEvent::ErrorExecution,
+                    ::sce_rust_runtime::ErrorReason::ParamUnfit,
                     "<data id='brokenLeftOut'> could not hold the value its invoke handed it",
                 ));
             }
@@ -785,6 +798,7 @@ impl ABadInvokeArgumentIsReportedOncePolicy {
                 ::sce_rust_runtime::sce_log_error!("global: {}", e);
                 engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(
                     ABadInvokeArgumentIsReportedOnceEvent::ErrorExecution,
+                    ::sce_rust_runtime::ErrorReason::ExpressionFailed,
                     "<data id='brokenLeftOut'> expr failed to evaluate",
                 ));
             }
@@ -833,6 +847,7 @@ impl ABadInvokeArgumentIsReportedOncePolicy {
                 ::sce_rust_runtime::sce_log_error!("Guard evaluation failed for '{}': {}", cond, e);
                 engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(
                     ABadInvokeArgumentIsReportedOnceEvent::ErrorExecution,
+                    ::sce_rust_runtime::ErrorReason::ExpressionFailed,
                     reason,
                 ));
                 None
@@ -1056,12 +1071,14 @@ impl ABadInvokeArgumentIsReportedOncePolicy {
                             );
                             engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(
                                 ABadInvokeArgumentIsReportedOnceEvent::ErrorExecution,
+                                ::sce_rust_runtime::ErrorReason::LocationInvalid,
                                 "<invoke> <param name='fromLoc'> could not be read",
                             ));
                         }
                     }
                     engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(
                         ABadInvokeArgumentIsReportedOnceEvent::ErrorExecution,
+                        ::sce_rust_runtime::ErrorReason::LocationInvalid,
                         "<invoke> <param name='emptyLoc'> names no location",
                     ));
                     match se.evaluate_expression(&sid, "obj.missing.deep") {
@@ -1087,6 +1104,7 @@ impl ABadInvokeArgumentIsReportedOncePolicy {
                             );
                             engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(
                                 ABadInvokeArgumentIsReportedOnceEvent::ErrorExecution,
+                                ::sce_rust_runtime::ErrorReason::LocationInvalid,
                                 "<invoke> <param name='broken'> could not be read",
                             ));
                         }
@@ -1114,6 +1132,7 @@ impl ABadInvokeArgumentIsReportedOncePolicy {
                             );
                             engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(
                                 ABadInvokeArgumentIsReportedOnceEvent::ErrorExecution,
+                                ::sce_rust_runtime::ErrorReason::LocationInvalid,
                                 "<invoke> <param name='notInChild'> could not be read",
                             ));
                         }
@@ -1167,7 +1186,7 @@ impl ABadInvokeArgumentIsReportedOncePolicy {
                     self.active_invokes.remove("inv1");
                     engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(
                         ABadInvokeArgumentIsReportedOnceEvent::ErrorExecution,
-                        &format!("<invoke id='{}'> did not start: its child's script session failed at step '{}'", "inv1", failure.stage)));
+                        ::sce_rust_runtime::ErrorReason::InvokeChildInitFailed, &format!("<invoke id='{}'> did not start: its child's script session failed at step '{}'", "inv1", failure.stage)));
                     continue;
                 }
 
@@ -1199,6 +1218,7 @@ impl ABadInvokeArgumentIsReportedOncePolicy {
                         );
                         engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(
                             ABadInvokeArgumentIsReportedOnceEvent::ErrorExecution,
+                            ::sce_rust_runtime::ErrorReason::LocationInvalid,
                             "<invoke> namelist names a location that cannot be read",
                         ));
                         continue; // W3C SCXML 6.4: the element is terminated; no child
@@ -1281,7 +1301,7 @@ impl ABadInvokeArgumentIsReportedOncePolicy {
                     self.active_invokes.remove("inv2");
                     engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(
                         ABadInvokeArgumentIsReportedOnceEvent::ErrorExecution,
-                        &format!("<invoke id='{}'> did not start: its child's script session failed at step '{}'", "inv2", failure.stage)));
+                        ::sce_rust_runtime::ErrorReason::InvokeChildInitFailed, &format!("<invoke id='{}'> did not start: its child's script session failed at step '{}'", "inv2", failure.stage)));
                     continue;
                 }
 
@@ -1310,6 +1330,7 @@ impl ABadInvokeArgumentIsReportedOncePolicy {
                         );
                         engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(
                             ABadInvokeArgumentIsReportedOnceEvent::ErrorExecution,
+                            ::sce_rust_runtime::ErrorReason::LocationInvalid,
                             "<invoke> namelist names a location that cannot be read",
                         ));
                         continue; // W3C SCXML 6.4: the element is terminated; no child
@@ -1387,6 +1408,7 @@ impl ABadInvokeArgumentIsReportedOncePolicy {
                             );
                             engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(
                                 ABadInvokeArgumentIsReportedOnceEvent::ErrorExecution,
+                                ::sce_rust_runtime::ErrorReason::LocationInvalid,
                                 "<invoke> <param name='alsoBroken'> could not be read",
                             ));
                         }
@@ -1440,7 +1462,7 @@ impl ABadInvokeArgumentIsReportedOncePolicy {
                     self.active_invokes.remove("inv3");
                     engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(
                         ABadInvokeArgumentIsReportedOnceEvent::ErrorExecution,
-                        &format!("<invoke id='{}'> did not start: its child's script session failed at step '{}'", "inv3", failure.stage)));
+                        ::sce_rust_runtime::ErrorReason::InvokeChildInitFailed, &format!("<invoke id='{}'> did not start: its child's script session failed at step '{}'", "inv3", failure.stage)));
                     continue;
                 }
 
@@ -2129,6 +2151,7 @@ impl StatePolicy for ABadInvokeArgumentIsReportedOncePolicy {
                             ::sce_rust_runtime::sce_log_error!("Assign failed for 'errors': {}", e);
                             engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(
                                 ABadInvokeArgumentIsReportedOnceEvent::ErrorExecution,
+                                ::sce_rust_runtime::ErrorReason::AssignmentFailed,
                                 "<assign> to 'errors' failed",
                             ));
                             // W3C SCXML 4.9: the error ends the block, from however deep a <foreach> it came.
@@ -2162,6 +2185,7 @@ impl StatePolicy for ABadInvokeArgumentIsReportedOncePolicy {
                             );
                             engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(
                                 ABadInvokeArgumentIsReportedOnceEvent::ErrorExecution,
+                                ::sce_rust_runtime::ErrorReason::AssignmentFailed,
                                 "<assign> to 'started' failed",
                             ));
                             // W3C SCXML 4.9: the error ends the block, from however deep a <foreach> it came.
@@ -2195,6 +2219,7 @@ impl StatePolicy for ABadInvokeArgumentIsReportedOncePolicy {
                             );
                             engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(
                                 ABadInvokeArgumentIsReportedOnceEvent::ErrorExecution,
+                                ::sce_rust_runtime::ErrorReason::AssignmentFailed,
                                 "<assign> to 'fromLocOk' failed",
                             ));
                             // W3C SCXML 4.9: the error ends the block, from however deep a <foreach> it came.
@@ -2221,6 +2246,7 @@ impl StatePolicy for ABadInvokeArgumentIsReportedOncePolicy {
                             );
                             engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(
                                 ABadInvokeArgumentIsReportedOnceEvent::ErrorExecution,
+                                ::sce_rust_runtime::ErrorReason::AssignmentFailed,
                                 "<assign> to 'started' failed",
                             ));
                             // W3C SCXML 4.9: the error ends the block, from however deep a <foreach> it came.
@@ -2256,6 +2282,7 @@ impl StatePolicy for ABadInvokeArgumentIsReportedOncePolicy {
                                     engine.raise(
                                         sce_rust_runtime::EventWithMetadata::platform_error(
                                             ABadInvokeArgumentIsReportedOnceEvent::ErrorExecution,
+                                            ::sce_rust_runtime::ErrorReason::AssignmentFailed,
                                             "<assign> to 'emptyLocLeftOut' failed",
                                         ),
                                     );
@@ -2297,6 +2324,7 @@ impl StatePolicy for ABadInvokeArgumentIsReportedOncePolicy {
                                     engine.raise(
                                         sce_rust_runtime::EventWithMetadata::platform_error(
                                             ABadInvokeArgumentIsReportedOnceEvent::ErrorExecution,
+                                            ::sce_rust_runtime::ErrorReason::AssignmentFailed,
                                             "<assign> to 'brokenLeftOut' failed",
                                         ),
                                     );

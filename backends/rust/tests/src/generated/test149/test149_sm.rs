@@ -460,6 +460,7 @@ impl Test149Policy {
                 );
                 engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(
                     Test149Event::ErrorExecution,
+                    ::sce_rust_runtime::ErrorReason::ParamUnfit,
                     "<data id='Var1'> could not hold the value its invoke handed it",
                 ));
             }
@@ -471,6 +472,7 @@ impl Test149Policy {
                 ::sce_rust_runtime::sce_log_error!("global: {}", e);
                 engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(
                     Test149Event::ErrorExecution,
+                    ::sce_rust_runtime::ErrorReason::ExpressionFailed,
                     "<data id='Var1'> expr failed to evaluate",
                 ));
             }
@@ -519,6 +521,7 @@ impl Test149Policy {
                 ::sce_rust_runtime::sce_log_error!("Guard evaluation failed for '{}': {}", cond, e);
                 engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(
                     Test149Event::ErrorExecution,
+                    ::sce_rust_runtime::ErrorReason::ExpressionFailed,
                     reason,
                 ));
                 None
@@ -859,6 +862,7 @@ impl StatePolicy for Test149Policy {
                                     engine.raise(
                                         sce_rust_runtime::EventWithMetadata::platform_error(
                                             Test149Event::ErrorExecution,
+                                            ::sce_rust_runtime::ErrorReason::AssignmentFailed,
                                             "<assign> to 'Var1' failed",
                                         ),
                                     );
@@ -890,6 +894,7 @@ impl StatePolicy for Test149Policy {
                                     engine.raise(
                                         sce_rust_runtime::EventWithMetadata::platform_error(
                                             Test149Event::ErrorExecution,
+                                            ::sce_rust_runtime::ErrorReason::AssignmentFailed,
                                             "<assign> to 'Var1' failed",
                                         ),
                                     );

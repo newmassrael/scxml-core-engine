@@ -554,6 +554,7 @@ impl StatePolicy for Test577Policy {
                         {
                             let mut err_meta = sce_rust_runtime::EventWithMetadata::platform_error(
                                 Test577Event::ErrorCommunication,
+                                ::sce_rust_runtime::ErrorReason::HttpTargetInvalid,
                                 "<send> over BasicHTTPEventProcessor has no target to post to",
                             );
                             engine.raise(err_meta);

@@ -206,6 +206,23 @@ struct Wire {
     }
 };
 
+/// The `schema_size` the frame of a source of `CodecExtEncodingInfo` carries, which its encode
+/// derives from what it measures and no value holds (docs/adr/0081 §3), and what the value holds of the field where nothing it measures is there.
+template <class S>
+[[nodiscard]] uint8_t wire_schema_size(const S& src) noexcept(is_nothrow_source<S>::value) {
+    static_assert(is_source<S>::value, "S presents every element of CodecExtEncodingInfo");
+    const auto& _r_combined_id_has_schema = source::combined_id_has_schema(src);
+    std::optional<uint8_t> _e_schema_size;
+    std::optional<::SCE::Forge::Bytes<64>> _e_schema;
+    if (const auto* _a = std::get_if<0>(&_r_combined_id_has_schema)) {
+        _e_schema = static_cast<::SCE::Forge::Bytes<64>>(source::schema(*_a));
+    }
+    if (const auto* _a = std::get_if<1>(&_r_combined_id_has_schema)) {
+        _e_schema_size = static_cast<uint8_t>(source::schema_size(*_a));
+    }
+    return (_e_schema.has_value()) ? static_cast<uint8_t>(_e_schema->size()) : _e_schema_size.value_or(uint8_t{0});
+}
+
 struct CodecExtEncodingInfo {
     CodecExtEncodingInfo() = default;
     /// The value of each element it presents, in declaration order (ADR 0059 §5).
@@ -217,12 +234,13 @@ struct CodecExtEncodingInfo {
     [[nodiscard]] const CodecExtEncodingInfoCombinedIdHasSchema& combined_id_has_schema() const noexcept { return combined_id_has_schema_; }
 
     /// Decode the next frame from `cursor`. On success the cursor
-    /// advances past the consumed bytes; on `NeedMoreBytes` the cursor
-    /// is left untouched so the caller can resume after appending more
-    /// bytes (RFC §synth-5-B L494-519). Returns `std::nullopt` on the
-    /// `NeedMoreBytes` boundary; later phases attach a typed error via
-    /// `cursor.last_error()`.
-    static std::optional<CodecExtEncodingInfo> decode(::SCE::Forge::SceCursor& cursor) {
+    /// advances past the consumed bytes and the value is answered; a
+    /// refused frame answers the `CodecError` that refused it
+    /// (docs/adr/0099, amendment of 2026-11-16): `NeedMoreBytes` when
+    /// the cursor's tail is shorter than the frame (RFC §synth-5-B
+    /// L494-519), which the caller resumes after appending bytes, and
+    /// another kind for a frame no more bytes make whole.
+    static ::SCE::Forge::Decoded<CodecExtEncodingInfo> decode(::SCE::Forge::SceCursor& cursor) {
         // Streaming cursor decode (SSOT selection: `needs_streaming`).
         // The positional `raw[byte_off]` path is valid only when every
         // field's absolute offset is fixed at codegen time; this branch
@@ -234,34 +252,33 @@ struct CodecExtEncodingInfo {
         // advances past exactly what it consumed. Per-field `is_repeat` /
         // `is_tlv_chain` / `is_embed` route to their dedicated helpers;
         // every other field flows through `present_if_decode_stmt`.
-        auto combined_id_opt = cursor.read_vle_u32();
-        if (!combined_id_opt.has_value()) return std::nullopt;
-        auto combined_id = static_cast<std::uint32_t>(*combined_id_opt);
+        auto combined_id_read = cursor.read_vle_u32();
+        if (!combined_id_read.has_value()) return combined_id_read.error();
+        auto combined_id = static_cast<std::uint32_t>(*combined_id_read);
         uint8_t schema_size;
         {
             const std::uint8_t* raw = cursor.peek_slice(1);
-            if (raw == nullptr) return std::nullopt;
+            if (raw == nullptr) return ::SCE::Forge::CodecError::NeedMoreBytes;
             schema_size = static_cast<uint8_t>(raw[0]);
-            if (!cursor.advance(1)) return std::nullopt;
+            if (!cursor.advance(1)) return ::SCE::Forge::CodecError::NeedMoreBytes;
         }
         std::optional<std::vector<uint8_t>> schema;
         if ((combined_id & 0x00000001) != 0) {
             const auto _len = schema_size;
             if (_len > 64) {
-                cursor.refuse(::SCE::Forge::CodecError::LengthOutOfRange); return std::nullopt;
+                return ::SCE::Forge::CodecError::LengthOutOfRange;
             }
             std::size_t _n = static_cast<std::size_t>(_len);
             const std::uint8_t* raw = cursor.peek_slice(_n);
-            if (raw == nullptr) return std::nullopt;
+            if (raw == nullptr) return ::SCE::Forge::CodecError::NeedMoreBytes;
             schema.emplace(raw, raw + _n);
-            if (!cursor.advance(_n)) return std::nullopt;
+            if (!cursor.advance(_n)) return ::SCE::Forge::CodecError::NeedMoreBytes;
         }
         std::optional<::SCE::Forge::Bytes<64>> _b_schema;
         if (schema) {
             _b_schema = ::SCE::Forge::Bytes<64>::make(*schema);
             if (!_b_schema) {
-                cursor.refuse(::SCE::Forge::CodecError::LengthOutOfRange);
-                return std::nullopt;
+                return ::SCE::Forge::CodecError::LengthOutOfRange;
             }
         }
         (void)schema_size;

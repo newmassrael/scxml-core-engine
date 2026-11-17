@@ -628,6 +628,7 @@ impl AHybridInvokeCarriesItsArgumentsPolicy {
                 );
                 engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(
                     AHybridInvokeCarriesItsArgumentsEvent::ErrorExecution,
+                    ::sce_rust_runtime::ErrorReason::ParamUnfit,
                     "<data id='pick'> could not hold the value its invoke handed it",
                 ));
             }
@@ -642,6 +643,7 @@ impl AHybridInvokeCarriesItsArgumentsPolicy {
                 ::sce_rust_runtime::sce_log_error!("global: {}", e);
                 engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(
                     AHybridInvokeCarriesItsArgumentsEvent::ErrorExecution,
+                    ::sce_rust_runtime::ErrorReason::ExpressionFailed,
                     "<data id='pick'> expr failed to evaluate",
                 ));
             }
@@ -656,6 +658,7 @@ impl AHybridInvokeCarriesItsArgumentsPolicy {
                 );
                 engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(
                     AHybridInvokeCarriesItsArgumentsEvent::ErrorExecution,
+                    ::sce_rust_runtime::ErrorReason::ParamUnfit,
                     "<data id='v'> could not hold the value its invoke handed it",
                 ));
             }
@@ -667,6 +670,7 @@ impl AHybridInvokeCarriesItsArgumentsPolicy {
                 ::sce_rust_runtime::sce_log_error!("global: {}", e);
                 engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(
                     AHybridInvokeCarriesItsArgumentsEvent::ErrorExecution,
+                    ::sce_rust_runtime::ErrorReason::ExpressionFailed,
                     "<data id='v'> expr failed to evaluate",
                 ));
             }
@@ -681,6 +685,7 @@ impl AHybridInvokeCarriesItsArgumentsPolicy {
                 );
                 engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(
                     AHybridInvokeCarriesItsArgumentsEvent::ErrorExecution,
+                    ::sce_rust_runtime::ErrorReason::ParamUnfit,
                     "<data id='seed'> could not hold the value its invoke handed it",
                 ));
             }
@@ -692,6 +697,7 @@ impl AHybridInvokeCarriesItsArgumentsPolicy {
                 ::sce_rust_runtime::sce_log_error!("global: {}", e);
                 engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(
                     AHybridInvokeCarriesItsArgumentsEvent::ErrorExecution,
+                    ::sce_rust_runtime::ErrorReason::ExpressionFailed,
                     "<data id='seed'> expr failed to evaluate",
                 ));
             }
@@ -706,6 +712,7 @@ impl AHybridInvokeCarriesItsArgumentsPolicy {
                 );
                 engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(
                     AHybridInvokeCarriesItsArgumentsEvent::ErrorExecution,
+                    ::sce_rust_runtime::ErrorReason::ParamUnfit,
                     "<data id='errors'> could not hold the value its invoke handed it",
                 ));
             }
@@ -717,6 +724,7 @@ impl AHybridInvokeCarriesItsArgumentsPolicy {
                 ::sce_rust_runtime::sce_log_error!("global: {}", e);
                 engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(
                     AHybridInvokeCarriesItsArgumentsEvent::ErrorExecution,
+                    ::sce_rust_runtime::ErrorReason::ExpressionFailed,
                     "<data id='errors'> expr failed to evaluate",
                 ));
             }
@@ -731,6 +739,7 @@ impl AHybridInvokeCarriesItsArgumentsPolicy {
                 );
                 engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(
                     AHybridInvokeCarriesItsArgumentsEvent::ErrorExecution,
+                    ::sce_rust_runtime::ErrorReason::ParamUnfit,
                     "<data id='started'> could not hold the value its invoke handed it",
                 ));
             }
@@ -742,6 +751,7 @@ impl AHybridInvokeCarriesItsArgumentsPolicy {
                 ::sce_rust_runtime::sce_log_error!("global: {}", e);
                 engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(
                     AHybridInvokeCarriesItsArgumentsEvent::ErrorExecution,
+                    ::sce_rust_runtime::ErrorReason::ExpressionFailed,
                     "<data id='started'> expr failed to evaluate",
                 ));
             }
@@ -756,6 +766,7 @@ impl AHybridInvokeCarriesItsArgumentsPolicy {
                 );
                 engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(
                     AHybridInvokeCarriesItsArgumentsEvent::ErrorExecution,
+                    ::sce_rust_runtime::ErrorReason::ParamUnfit,
                     "<data id='paramsOk'> could not hold the value its invoke handed it",
                 ));
             }
@@ -767,6 +778,7 @@ impl AHybridInvokeCarriesItsArgumentsPolicy {
                 ::sce_rust_runtime::sce_log_error!("global: {}", e);
                 engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(
                     AHybridInvokeCarriesItsArgumentsEvent::ErrorExecution,
+                    ::sce_rust_runtime::ErrorReason::ExpressionFailed,
                     "<data id='paramsOk'> expr failed to evaluate",
                 ));
             }
@@ -781,6 +793,7 @@ impl AHybridInvokeCarriesItsArgumentsPolicy {
                 );
                 engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(
                     AHybridInvokeCarriesItsArgumentsEvent::ErrorExecution,
+                    ::sce_rust_runtime::ErrorReason::ParamUnfit,
                     "<data id='namelistOk'> could not hold the value its invoke handed it",
                 ));
             }
@@ -795,6 +808,7 @@ impl AHybridInvokeCarriesItsArgumentsPolicy {
                 ::sce_rust_runtime::sce_log_error!("global: {}", e);
                 engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(
                     AHybridInvokeCarriesItsArgumentsEvent::ErrorExecution,
+                    ::sce_rust_runtime::ErrorReason::ExpressionFailed,
                     "<data id='namelistOk'> expr failed to evaluate",
                 ));
             }
@@ -843,6 +857,7 @@ impl AHybridInvokeCarriesItsArgumentsPolicy {
                 ::sce_rust_runtime::sce_log_error!("Guard evaluation failed for '{}': {}", cond, e);
                 engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(
                     AHybridInvokeCarriesItsArgumentsEvent::ErrorExecution,
+                    ::sce_rust_runtime::ErrorReason::ExpressionFailed,
                     reason,
                 ));
                 None
@@ -1034,6 +1049,7 @@ impl AHybridInvokeCarriesItsArgumentsPolicy {
                         );
                         engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(
                             AHybridInvokeCarriesItsArgumentsEvent::ErrorExecution,
+                            ::sce_rust_runtime::ErrorReason::ExpressionFailed,
                             "<invoke srcexpr='pick'> could not be evaluated",
                         ));
                         continue;
@@ -1067,6 +1083,7 @@ impl AHybridInvokeCarriesItsArgumentsPolicy {
                     );
                     engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(
                         AHybridInvokeCarriesItsArgumentsEvent::ErrorExecution,
+                        ::sce_rust_runtime::ErrorReason::InvokeSrcNotFound,
                         "<invoke srcexpr='pick'> evaluated to a document it did not declare",
                     ));
                     continue;
@@ -1087,6 +1104,7 @@ impl AHybridInvokeCarriesItsArgumentsPolicy {
                         );
                         engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(
                             AHybridInvokeCarriesItsArgumentsEvent::ErrorExecution,
+                            ::sce_rust_runtime::ErrorReason::LocationInvalid,
                             "<invoke> namelist names a location that cannot be read",
                         ));
                         continue; // W3C SCXML 6.4: the element is terminated; no child
@@ -1188,7 +1206,7 @@ impl AHybridInvokeCarriesItsArgumentsPolicy {
                         self.active_invokes.remove("_invoke_1");
                         engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(
                         AHybridInvokeCarriesItsArgumentsEvent::ErrorExecution,
-                        &format!("<invoke id='{}'> did not start: its child's script session failed at step '{}'", "_invoke_1", failure.stage)));
+                        ::sce_rust_runtime::ErrorReason::InvokeChildInitFailed, &format!("<invoke id='{}'> did not start: its child's script session failed at step '{}'", "_invoke_1", failure.stage)));
                         continue;
                     }
 
@@ -1293,7 +1311,7 @@ impl AHybridInvokeCarriesItsArgumentsPolicy {
                         self.active_invokes.remove("_invoke_1");
                         engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(
                         AHybridInvokeCarriesItsArgumentsEvent::ErrorExecution,
-                        &format!("<invoke id='{}'> did not start: its child's script session failed at step '{}'", "_invoke_1", failure.stage)));
+                        ::sce_rust_runtime::ErrorReason::InvokeChildInitFailed, &format!("<invoke id='{}'> did not start: its child's script session failed at step '{}'", "_invoke_1", failure.stage)));
                         continue;
                     }
 
@@ -1325,6 +1343,7 @@ impl AHybridInvokeCarriesItsArgumentsPolicy {
                         );
                         engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(
                             AHybridInvokeCarriesItsArgumentsEvent::ErrorExecution,
+                            ::sce_rust_runtime::ErrorReason::ExpressionFailed,
                             "<invoke srcexpr='pick'> could not be evaluated",
                         ));
                         continue;
@@ -1358,6 +1377,7 @@ impl AHybridInvokeCarriesItsArgumentsPolicy {
                     );
                     engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(
                         AHybridInvokeCarriesItsArgumentsEvent::ErrorExecution,
+                        ::sce_rust_runtime::ErrorReason::InvokeSrcNotFound,
                         "<invoke srcexpr='pick'> evaluated to a document it did not declare",
                     ));
                     continue;
@@ -1428,6 +1448,7 @@ impl AHybridInvokeCarriesItsArgumentsPolicy {
                                 );
                                 engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(
                                     AHybridInvokeCarriesItsArgumentsEvent::ErrorExecution,
+                                    ::sce_rust_runtime::ErrorReason::LocationInvalid,
                                     "<invoke> <param name='seed'> could not be read",
                                 ));
                             }
@@ -1455,12 +1476,14 @@ impl AHybridInvokeCarriesItsArgumentsPolicy {
                                 );
                                 engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(
                                     AHybridInvokeCarriesItsArgumentsEvent::ErrorExecution,
+                                    ::sce_rust_runtime::ErrorReason::LocationInvalid,
                                     "<invoke> <param name='fromLoc'> could not be read",
                                 ));
                             }
                         }
                         engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(
                             AHybridInvokeCarriesItsArgumentsEvent::ErrorExecution,
+                            ::sce_rust_runtime::ErrorReason::LocationInvalid,
                             "<invoke> <param name='emptyLoc'> names no location",
                         ));
                         match se.evaluate_expression(&sid, "\"leaked\"") {
@@ -1486,6 +1509,7 @@ impl AHybridInvokeCarriesItsArgumentsPolicy {
                                 );
                                 engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(
                                     AHybridInvokeCarriesItsArgumentsEvent::ErrorExecution,
+                                    ::sce_rust_runtime::ErrorReason::LocationInvalid,
                                     "<invoke> <param name='nowhere'> could not be read",
                                 ));
                             }
@@ -1537,7 +1561,7 @@ impl AHybridInvokeCarriesItsArgumentsPolicy {
                         self.active_invokes.remove("_invoke_0");
                         engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(
                         AHybridInvokeCarriesItsArgumentsEvent::ErrorExecution,
-                        &format!("<invoke id='{}'> did not start: its child's script session failed at step '{}'", "_invoke_0", failure.stage)));
+                        ::sce_rust_runtime::ErrorReason::InvokeChildInitFailed, &format!("<invoke id='{}'> did not start: its child's script session failed at step '{}'", "_invoke_0", failure.stage)));
                         continue;
                     }
 
@@ -1612,6 +1636,7 @@ impl AHybridInvokeCarriesItsArgumentsPolicy {
                                 );
                                 engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(
                                     AHybridInvokeCarriesItsArgumentsEvent::ErrorExecution,
+                                    ::sce_rust_runtime::ErrorReason::LocationInvalid,
                                     "<invoke> <param name='seed'> could not be read",
                                 ));
                             }
@@ -1639,12 +1664,14 @@ impl AHybridInvokeCarriesItsArgumentsPolicy {
                                 );
                                 engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(
                                     AHybridInvokeCarriesItsArgumentsEvent::ErrorExecution,
+                                    ::sce_rust_runtime::ErrorReason::LocationInvalid,
                                     "<invoke> <param name='fromLoc'> could not be read",
                                 ));
                             }
                         }
                         engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(
                             AHybridInvokeCarriesItsArgumentsEvent::ErrorExecution,
+                            ::sce_rust_runtime::ErrorReason::LocationInvalid,
                             "<invoke> <param name='emptyLoc'> names no location",
                         ));
                         match se.evaluate_expression(&sid, "\"leaked\"") {
@@ -1670,6 +1697,7 @@ impl AHybridInvokeCarriesItsArgumentsPolicy {
                                 );
                                 engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(
                                     AHybridInvokeCarriesItsArgumentsEvent::ErrorExecution,
+                                    ::sce_rust_runtime::ErrorReason::LocationInvalid,
                                     "<invoke> <param name='nowhere'> could not be read",
                                 ));
                             }
@@ -1721,7 +1749,7 @@ impl AHybridInvokeCarriesItsArgumentsPolicy {
                         self.active_invokes.remove("_invoke_0");
                         engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(
                         AHybridInvokeCarriesItsArgumentsEvent::ErrorExecution,
-                        &format!("<invoke id='{}'> did not start: its child's script session failed at step '{}'", "_invoke_0", failure.stage)));
+                        ::sce_rust_runtime::ErrorReason::InvokeChildInitFailed, &format!("<invoke id='{}'> did not start: its child's script session failed at step '{}'", "_invoke_0", failure.stage)));
                         continue;
                     }
 
@@ -1753,6 +1781,7 @@ impl AHybridInvokeCarriesItsArgumentsPolicy {
                         );
                         engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(
                             AHybridInvokeCarriesItsArgumentsEvent::ErrorExecution,
+                            ::sce_rust_runtime::ErrorReason::ExpressionFailed,
                             "<invoke srcexpr='pick'> could not be evaluated",
                         ));
                         continue;
@@ -1786,6 +1815,7 @@ impl AHybridInvokeCarriesItsArgumentsPolicy {
                     );
                     engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(
                         AHybridInvokeCarriesItsArgumentsEvent::ErrorExecution,
+                        ::sce_rust_runtime::ErrorReason::InvokeSrcNotFound,
                         "<invoke srcexpr='pick'> evaluated to a document it did not declare",
                     ));
                     continue;
@@ -1806,6 +1836,7 @@ impl AHybridInvokeCarriesItsArgumentsPolicy {
                         );
                         engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(
                             AHybridInvokeCarriesItsArgumentsEvent::ErrorExecution,
+                            ::sce_rust_runtime::ErrorReason::LocationInvalid,
                             "<invoke> namelist names a location that cannot be read",
                         ));
                         continue; // W3C SCXML 6.4: the element is terminated; no child
@@ -1890,6 +1921,7 @@ impl AHybridInvokeCarriesItsArgumentsPolicy {
                                 );
                                 engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(
                                     AHybridInvokeCarriesItsArgumentsEvent::ErrorExecution,
+                                    ::sce_rust_runtime::ErrorReason::LocationInvalid,
                                     "<invoke> <param name='seed'> could not be read",
                                 ));
                             }
@@ -1941,7 +1973,7 @@ impl AHybridInvokeCarriesItsArgumentsPolicy {
                         self.active_invokes.remove("_invoke_2");
                         engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(
                         AHybridInvokeCarriesItsArgumentsEvent::ErrorExecution,
-                        &format!("<invoke id='{}'> did not start: its child's script session failed at step '{}'", "_invoke_2", failure.stage)));
+                        ::sce_rust_runtime::ErrorReason::InvokeChildInitFailed, &format!("<invoke id='{}'> did not start: its child's script session failed at step '{}'", "_invoke_2", failure.stage)));
                         continue;
                     }
 
@@ -2029,6 +2061,7 @@ impl AHybridInvokeCarriesItsArgumentsPolicy {
                                 );
                                 engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(
                                     AHybridInvokeCarriesItsArgumentsEvent::ErrorExecution,
+                                    ::sce_rust_runtime::ErrorReason::LocationInvalid,
                                     "<invoke> <param name='seed'> could not be read",
                                 ));
                             }
@@ -2080,7 +2113,7 @@ impl AHybridInvokeCarriesItsArgumentsPolicy {
                         self.active_invokes.remove("_invoke_2");
                         engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(
                         AHybridInvokeCarriesItsArgumentsEvent::ErrorExecution,
-                        &format!("<invoke id='{}'> did not start: its child's script session failed at step '{}'", "_invoke_2", failure.stage)));
+                        ::sce_rust_runtime::ErrorReason::InvokeChildInitFailed, &format!("<invoke id='{}'> did not start: its child's script session failed at step '{}'", "_invoke_2", failure.stage)));
                         continue;
                     }
 
@@ -2923,6 +2956,7 @@ impl StatePolicy for AHybridInvokeCarriesItsArgumentsPolicy {
                             );
                             engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(
                                 AHybridInvokeCarriesItsArgumentsEvent::ErrorExecution,
+                                ::sce_rust_runtime::ErrorReason::AssignmentFailed,
                                 "<assign> to 'started' failed",
                             ));
                             // W3C SCXML 4.9: the error ends the block, from however deep a <foreach> it came.
@@ -2949,7 +2983,7 @@ impl StatePolicy for AHybridInvokeCarriesItsArgumentsPolicy {
     let assign_script = format!("{} = {}", "namelistOk", expr);
     if let Err(e) = se.execute_script(&sid, &assign_script) {
         ::sce_rust_runtime::sce_log_error!("Assign failed for 'namelistOk': {}", e);
-        engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(AHybridInvokeCarriesItsArgumentsEvent::ErrorExecution, "<assign> to 'namelistOk' failed"));
+        engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(AHybridInvokeCarriesItsArgumentsEvent::ErrorExecution, ::sce_rust_runtime::ErrorReason::AssignmentFailed, "<assign> to 'namelistOk' failed"));
         // W3C SCXML 4.9: the error ends the block, from however deep a <foreach> it came.
         break 'action_block;
     }
@@ -2986,6 +3020,7 @@ impl StatePolicy for AHybridInvokeCarriesItsArgumentsPolicy {
                             );
                             engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(
                                 AHybridInvokeCarriesItsArgumentsEvent::ErrorExecution,
+                                ::sce_rust_runtime::ErrorReason::AssignmentFailed,
                                 "<assign> to 'started' failed",
                             ));
                             // W3C SCXML 4.9: the error ends the block, from however deep a <foreach> it came.
@@ -3012,7 +3047,7 @@ impl StatePolicy for AHybridInvokeCarriesItsArgumentsPolicy {
     let assign_script = format!("{} = {}", "paramsOk", expr);
     if let Err(e) = se.execute_script(&sid, &assign_script) {
         ::sce_rust_runtime::sce_log_error!("Assign failed for 'paramsOk': {}", e);
-        engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(AHybridInvokeCarriesItsArgumentsEvent::ErrorExecution, "<assign> to 'paramsOk' failed"));
+        engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(AHybridInvokeCarriesItsArgumentsEvent::ErrorExecution, ::sce_rust_runtime::ErrorReason::AssignmentFailed, "<assign> to 'paramsOk' failed"));
         // W3C SCXML 4.9: the error ends the block, from however deep a <foreach> it came.
         break 'action_block;
     }
@@ -3046,6 +3081,7 @@ impl StatePolicy for AHybridInvokeCarriesItsArgumentsPolicy {
                             ::sce_rust_runtime::sce_log_error!("Assign failed for 'errors': {}", e);
                             engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(
                                 AHybridInvokeCarriesItsArgumentsEvent::ErrorExecution,
+                                ::sce_rust_runtime::ErrorReason::AssignmentFailed,
                                 "<assign> to 'errors' failed",
                             ));
                             // W3C SCXML 4.9: the error ends the block, from however deep a <foreach> it came.
@@ -3076,6 +3112,7 @@ impl StatePolicy for AHybridInvokeCarriesItsArgumentsPolicy {
                             ::sce_rust_runtime::sce_log_error!("Assign failed for 'errors': {}", e);
                             engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(
                                 AHybridInvokeCarriesItsArgumentsEvent::ErrorExecution,
+                                ::sce_rust_runtime::ErrorReason::AssignmentFailed,
                                 "<assign> to 'errors' failed",
                             ));
                             // W3C SCXML 4.9: the error ends the block, from however deep a <foreach> it came.

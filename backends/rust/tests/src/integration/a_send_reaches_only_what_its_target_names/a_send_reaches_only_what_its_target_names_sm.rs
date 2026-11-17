@@ -676,6 +676,7 @@ impl ASendReachesOnlyWhatItsTargetNamesPolicy {
                 );
                 engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(
                     ASendReachesOnlyWhatItsTargetNamesEvent::ErrorExecution,
+                    ::sce_rust_runtime::ErrorReason::ParamUnfit,
                     "<data id='obj'> could not hold the value its invoke handed it",
                 ));
             }
@@ -687,6 +688,7 @@ impl ASendReachesOnlyWhatItsTargetNamesPolicy {
                 ::sce_rust_runtime::sce_log_error!("global: {}", e);
                 engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(
                     ASendReachesOnlyWhatItsTargetNamesEvent::ErrorExecution,
+                    ::sce_rust_runtime::ErrorReason::ExpressionFailed,
                     "<data id='obj'> expr failed to evaluate",
                 ));
             }
@@ -701,6 +703,7 @@ impl ASendReachesOnlyWhatItsTargetNamesPolicy {
                 );
                 engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(
                     ASendReachesOnlyWhatItsTargetNamesEvent::ErrorExecution,
+                    ::sce_rust_runtime::ErrorReason::ParamUnfit,
                     "<data id='execErrors'> could not hold the value its invoke handed it",
                 ));
             }
@@ -715,6 +718,7 @@ impl ASendReachesOnlyWhatItsTargetNamesPolicy {
                 ::sce_rust_runtime::sce_log_error!("global: {}", e);
                 engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(
                     ASendReachesOnlyWhatItsTargetNamesEvent::ErrorExecution,
+                    ::sce_rust_runtime::ErrorReason::ExpressionFailed,
                     "<data id='execErrors'> expr failed to evaluate",
                 ));
             }
@@ -729,6 +733,7 @@ impl ASendReachesOnlyWhatItsTargetNamesPolicy {
                 );
                 engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(
                     ASendReachesOnlyWhatItsTargetNamesEvent::ErrorExecution,
+                    ::sce_rust_runtime::ErrorReason::ParamUnfit,
                     "<data id='commErrors'> could not hold the value its invoke handed it",
                 ));
             }
@@ -743,6 +748,7 @@ impl ASendReachesOnlyWhatItsTargetNamesPolicy {
                 ::sce_rust_runtime::sce_log_error!("global: {}", e);
                 engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(
                     ASendReachesOnlyWhatItsTargetNamesEvent::ErrorExecution,
+                    ::sce_rust_runtime::ErrorReason::ExpressionFailed,
                     "<data id='commErrors'> expr failed to evaluate",
                 ));
             }
@@ -757,6 +763,7 @@ impl ASendReachesOnlyWhatItsTargetNamesPolicy {
                 );
                 engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(
                     ASendReachesOnlyWhatItsTargetNamesEvent::ErrorExecution,
+                    ::sce_rust_runtime::ErrorReason::ParamUnfit,
                     "<data id='afterRefused'> could not hold the value its invoke handed it",
                 ));
             }
@@ -771,6 +778,7 @@ impl ASendReachesOnlyWhatItsTargetNamesPolicy {
                 ::sce_rust_runtime::sce_log_error!("global: {}", e);
                 engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(
                     ASendReachesOnlyWhatItsTargetNamesEvent::ErrorExecution,
+                    ::sce_rust_runtime::ErrorReason::ExpressionFailed,
                     "<data id='afterRefused'> expr failed to evaluate",
                 ));
             }
@@ -785,6 +793,7 @@ impl ASendReachesOnlyWhatItsTargetNamesPolicy {
                 );
                 engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(
                     ASendReachesOnlyWhatItsTargetNamesEvent::ErrorExecution,
+                    ::sce_rust_runtime::ErrorReason::ParamUnfit,
                     "<data id='afterNobody'> could not hold the value its invoke handed it",
                 ));
             }
@@ -799,6 +808,7 @@ impl ASendReachesOnlyWhatItsTargetNamesPolicy {
                 ::sce_rust_runtime::sce_log_error!("global: {}", e);
                 engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(
                     ASendReachesOnlyWhatItsTargetNamesEvent::ErrorExecution,
+                    ::sce_rust_runtime::ErrorReason::ExpressionFailed,
                     "<data id='afterNobody'> expr failed to evaluate",
                 ));
             }
@@ -813,6 +823,7 @@ impl ASendReachesOnlyWhatItsTargetNamesPolicy {
                 );
                 engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(
                     ASendReachesOnlyWhatItsTargetNamesEvent::ErrorExecution,
+                    ::sce_rust_runtime::ErrorReason::ParamUnfit,
                     "<data id='afterStranger'> could not hold the value its invoke handed it",
                 ));
             }
@@ -827,6 +838,7 @@ impl ASendReachesOnlyWhatItsTargetNamesPolicy {
                 ::sce_rust_runtime::sce_log_error!("global: {}", e);
                 engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(
                     ASendReachesOnlyWhatItsTargetNamesEvent::ErrorExecution,
+                    ::sce_rust_runtime::ErrorReason::ExpressionFailed,
                     "<data id='afterStranger'> expr failed to evaluate",
                 ));
             }
@@ -841,6 +853,7 @@ impl ASendReachesOnlyWhatItsTargetNamesPolicy {
                 );
                 engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(
                     ASendReachesOnlyWhatItsTargetNamesEvent::ErrorExecution,
+                    ::sce_rust_runtime::ErrorReason::ParamUnfit,
                     "<data id='afterOrphan'> could not hold the value its invoke handed it",
                 ));
             }
@@ -855,6 +868,7 @@ impl ASendReachesOnlyWhatItsTargetNamesPolicy {
                 ::sce_rust_runtime::sce_log_error!("global: {}", e);
                 engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(
                     ASendReachesOnlyWhatItsTargetNamesEvent::ErrorExecution,
+                    ::sce_rust_runtime::ErrorReason::ExpressionFailed,
                     "<data id='afterOrphan'> expr failed to evaluate",
                 ));
             }
@@ -869,6 +883,7 @@ impl ASendReachesOnlyWhatItsTargetNamesPolicy {
                 );
                 engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(
                     ASendReachesOnlyWhatItsTargetNamesEvent::ErrorExecution,
+                    ::sce_rust_runtime::ErrorReason::ParamUnfit,
                     "<data id='tParent'> could not hold the value its invoke handed it",
                 ));
             }
@@ -883,6 +898,7 @@ impl ASendReachesOnlyWhatItsTargetNamesPolicy {
                 ::sce_rust_runtime::sce_log_error!("global: {}", e);
                 engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(
                     ASendReachesOnlyWhatItsTargetNamesEvent::ErrorExecution,
+                    ::sce_rust_runtime::ErrorReason::ExpressionFailed,
                     "<data id='tParent'> expr failed to evaluate",
                 ));
             }
@@ -897,6 +913,7 @@ impl ASendReachesOnlyWhatItsTargetNamesPolicy {
                 );
                 engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(
                     ASendReachesOnlyWhatItsTargetNamesEvent::ErrorExecution,
+                    ::sce_rust_runtime::ErrorReason::ParamUnfit,
                     "<data id='afterOrphanExpr'> could not hold the value its invoke handed it",
                 ));
             }
@@ -911,6 +928,7 @@ impl ASendReachesOnlyWhatItsTargetNamesPolicy {
                 ::sce_rust_runtime::sce_log_error!("global: {}", e);
                 engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(
                     ASendReachesOnlyWhatItsTargetNamesEvent::ErrorExecution,
+                    ::sce_rust_runtime::ErrorReason::ExpressionFailed,
                     "<data id='afterOrphanExpr'> expr failed to evaluate",
                 ));
             }
@@ -920,7 +938,7 @@ impl ASendReachesOnlyWhatItsTargetNamesPolicy {
         if let Some(value) = handed.take("afterOrphanExprLater") {
             if let Err(e) = se.set_variable(&sid, "afterOrphanExprLater", value) {
                 ::sce_rust_runtime::sce_log_error!("<data id='afterOrphanExprLater'> could not hold the value its invoke handed it: {}", e);
-                engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(ASendReachesOnlyWhatItsTargetNamesEvent::ErrorExecution, "<data id='afterOrphanExprLater'> could not hold the value its invoke handed it"));
+                engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(ASendReachesOnlyWhatItsTargetNamesEvent::ErrorExecution, ::sce_rust_runtime::ErrorReason::ParamUnfit, "<data id='afterOrphanExprLater'> could not hold the value its invoke handed it"));
             }
         } else {
             // W3C SCXML 5.2/5.3: Initialize 'afterOrphanExprLater' from expr (global)
@@ -933,6 +951,7 @@ impl ASendReachesOnlyWhatItsTargetNamesPolicy {
                 ::sce_rust_runtime::sce_log_error!("global: {}", e);
                 engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(
                     ASendReachesOnlyWhatItsTargetNamesEvent::ErrorExecution,
+                    ::sce_rust_runtime::ErrorReason::ExpressionFailed,
                     "<data id='afterOrphanExprLater'> expr failed to evaluate",
                 ));
             }
@@ -947,6 +966,7 @@ impl ASendReachesOnlyWhatItsTargetNamesPolicy {
                 );
                 engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(
                     ASendReachesOnlyWhatItsTargetNamesEvent::ErrorExecution,
+                    ::sce_rust_runtime::ErrorReason::ParamUnfit,
                     "<data id='bareArrived'> could not hold the value its invoke handed it",
                 ));
             }
@@ -961,6 +981,7 @@ impl ASendReachesOnlyWhatItsTargetNamesPolicy {
                 ::sce_rust_runtime::sce_log_error!("global: {}", e);
                 engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(
                     ASendReachesOnlyWhatItsTargetNamesEvent::ErrorExecution,
+                    ::sce_rust_runtime::ErrorReason::ExpressionFailed,
                     "<data id='bareArrived'> expr failed to evaluate",
                 ));
             }
@@ -975,6 +996,7 @@ impl ASendReachesOnlyWhatItsTargetNamesPolicy {
                 );
                 engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(
                     ASendReachesOnlyWhatItsTargetNamesEvent::ErrorExecution,
+                    ::sce_rust_runtime::ErrorReason::ParamUnfit,
                     "<data id='pongOk'> could not hold the value its invoke handed it",
                 ));
             }
@@ -986,6 +1008,7 @@ impl ASendReachesOnlyWhatItsTargetNamesPolicy {
                 ::sce_rust_runtime::sce_log_error!("global: {}", e);
                 engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(
                     ASendReachesOnlyWhatItsTargetNamesEvent::ErrorExecution,
+                    ::sce_rust_runtime::ErrorReason::ExpressionFailed,
                     "<data id='pongOk'> expr failed to evaluate",
                 ));
             }
@@ -1034,6 +1057,7 @@ impl ASendReachesOnlyWhatItsTargetNamesPolicy {
                 ::sce_rust_runtime::sce_log_error!("Guard evaluation failed for '{}': {}", cond, e);
                 engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(
                     ASendReachesOnlyWhatItsTargetNamesEvent::ErrorExecution,
+                    ::sce_rust_runtime::ErrorReason::ExpressionFailed,
                     reason,
                 ));
                 None
@@ -1229,7 +1253,7 @@ impl ASendReachesOnlyWhatItsTargetNamesPolicy {
                     self.active_invokes.remove("kid");
                     engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(
                         ASendReachesOnlyWhatItsTargetNamesEvent::ErrorExecution,
-                        &format!("<invoke id='{}'> did not start: its child's script session failed at step '{}'", "kid", failure.stage)));
+                        ::sce_rust_runtime::ErrorReason::InvokeChildInitFailed, &format!("<invoke id='{}'> did not start: its child's script session failed at step '{}'", "kid", failure.stage)));
                     continue;
                 }
 
@@ -1560,7 +1584,7 @@ impl StatePolicy for ASendReachesOnlyWhatItsTargetNamesPolicy {
 
                         // W3C SCXML 6.2: Unsupported send type "http://example.invalid/no-such-processor" raises error.execution
                         {
-                            let mut err_meta = sce_rust_runtime::EventWithMetadata::platform_error(ASendReachesOnlyWhatItsTargetNamesEvent::ErrorExecution, "<send type='http://example.invalid/no-such-processor'> names a processor this platform does not support");
+                            let mut err_meta = sce_rust_runtime::EventWithMetadata::platform_error(ASendReachesOnlyWhatItsTargetNamesEvent::ErrorExecution, ::sce_rust_runtime::ErrorReason::SendTypeUnsupported, "<send type='http://example.invalid/no-such-processor'> names a processor this platform does not support");
                             err_meta.metadata.send_id =
                                 ::sce_rust_runtime::sce_string_from_str(send_id);
                             engine.raise(err_meta);
@@ -1581,6 +1605,7 @@ impl StatePolicy for ASendReachesOnlyWhatItsTargetNamesPolicy {
                         {
                             let mut err_meta = sce_rust_runtime::EventWithMetadata::platform_error(
                                 ASendReachesOnlyWhatItsTargetNamesEvent::ErrorCommunication,
+                                ::sce_rust_runtime::ErrorReason::TargetUnreachable,
                                 "<send target='#_nobody'> names no invocation of this session",
                             );
                             err_meta.metadata.send_id =
@@ -1604,7 +1629,7 @@ impl StatePolicy for ASendReachesOnlyWhatItsTargetNamesPolicy {
                         // it too (test 190). Any other is not reachable: error.communication,
                         // nothing delivered, the block ended (W3C SCXML 4.9).
                         if self.session_id.as_deref() != Some("stranger") {
-                            let mut err_meta = sce_rust_runtime::EventWithMetadata::platform_error(ASendReachesOnlyWhatItsTargetNamesEvent::ErrorCommunication, "<send target='#_scxml_stranger'> names a session this processor cannot reach");
+                            let mut err_meta = sce_rust_runtime::EventWithMetadata::platform_error(ASendReachesOnlyWhatItsTargetNamesEvent::ErrorCommunication, ::sce_rust_runtime::ErrorReason::TargetUnreachable, "<send target='#_scxml_stranger'> names a session this processor cannot reach");
                             err_meta.metadata.send_id =
                                 ::sce_rust_runtime::sce_string_from_str(send_id);
                             engine.raise(err_meta);
@@ -1648,6 +1673,7 @@ impl StatePolicy for ASendReachesOnlyWhatItsTargetNamesPolicy {
                             );
                             engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(
                                 ASendReachesOnlyWhatItsTargetNamesEvent::ErrorExecution,
+                                ::sce_rust_runtime::ErrorReason::AssignmentFailed,
                                 "<assign> to 'afterStranger' failed",
                             ));
                             // W3C SCXML 4.9: the error ends the block, from however deep a <foreach> it came.
@@ -1674,6 +1700,7 @@ impl StatePolicy for ASendReachesOnlyWhatItsTargetNamesPolicy {
                             // nothing delivered, and the block ends (4.9).
                             engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(
                                 ASendReachesOnlyWhatItsTargetNamesEvent::ErrorCommunication,
+                                ::sce_rust_runtime::ErrorReason::TargetUnreachable,
                                 "<send target='#_parent'> has no parent session to reach",
                             ));
                             break 'action_block;
@@ -1702,6 +1729,7 @@ impl StatePolicy for ASendReachesOnlyWhatItsTargetNamesPolicy {
                             );
                             engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(
                                 ASendReachesOnlyWhatItsTargetNamesEvent::ErrorExecution,
+                                ::sce_rust_runtime::ErrorReason::AssignmentFailed,
                                 "<assign> to 'afterOrphan' failed",
                             ));
                             // W3C SCXML 4.9: the error ends the block, from however deep a <foreach> it came.
@@ -1719,7 +1747,12 @@ impl StatePolicy for ASendReachesOnlyWhatItsTargetNamesPolicy {
                         let __sce_arg_sid = self.session_id.as_ref().unwrap().clone();
                         let __sce_arg_se = self.script_engine.clone();
                         let __sce_arg_se: &dyn sce_rust_runtime::IScriptEngine = &*__sce_arg_se;
-                        let mut _send_arg_error: Option<&'static str> = None;
+                        // The code and the sentence of the first argument that failed
+                        // (docs/adr/0106 #111).
+                        let mut _send_arg_error: Option<(
+                            ::sce_rust_runtime::ErrorReason,
+                            &'static str,
+                        )> = None;
                         // A target that evaluates to nothing is not an evaluation error: it is an
                         // address nobody answers at, which the resolution below reports as
                         // error.communication (W3C SCXML C.1).
@@ -1732,8 +1765,10 @@ impl StatePolicy for ASendReachesOnlyWhatItsTargetNamesPolicy {
                                             "targetexpr eval failed: {}",
                                             e
                                         );
-                                        _send_arg_error =
-                                            Some("<send> targetexpr could not be evaluated");
+                                        _send_arg_error = Some((
+                                            ::sce_rust_runtime::ErrorReason::ExpressionFailed,
+                                            "<send> targetexpr could not be evaluated",
+                                        ));
                                         None
                                     }
                                 }
@@ -1744,13 +1779,14 @@ impl StatePolicy for ASendReachesOnlyWhatItsTargetNamesPolicy {
                             // W3C SCXML 6.2: a target this processor cannot address is refused as
                             // a static one is, before anything is delivered.
                             if sce_rust_runtime::helpers::send::is_invalid_target(&::sce_rust_runtime::helpers::event_data::script_value_to_wire_string(val)) {
-            _send_arg_error = Some("<send> targetexpr produced a target this processor cannot address");
+            _send_arg_error = Some((::sce_rust_runtime::ErrorReason::SendTargetInvalid, "<send> targetexpr produced a target this processor cannot address"));
         }
                         }
-                        if let Some(__sce_why) = _send_arg_error {
+                        if let Some((__sce_reason, __sce_why)) = _send_arg_error {
                             ::sce_rust_runtime::sce_log_error!("{}", __sce_why);
                             let mut err_meta = sce_rust_runtime::EventWithMetadata::platform_error(
                                 ASendReachesOnlyWhatItsTargetNamesEvent::ErrorExecution,
+                                __sce_reason,
                                 __sce_why,
                             );
                             err_meta.metadata.send_id =
@@ -1772,7 +1808,7 @@ impl StatePolicy for ASendReachesOnlyWhatItsTargetNamesPolicy {
                             if _resolved_target.is_none() {
                                 // W3C SCXML C.1 (test 496, 521): a target that names nothing raises
                                 // error.communication.
-                                let mut err_meta = sce_rust_runtime::EventWithMetadata::platform_error(ASendReachesOnlyWhatItsTargetNamesEvent::ErrorCommunication, "<send> targetexpr evaluated to nothing, so there is no target to reach");
+                                let mut err_meta = sce_rust_runtime::EventWithMetadata::platform_error(ASendReachesOnlyWhatItsTargetNamesEvent::ErrorCommunication, ::sce_rust_runtime::ErrorReason::TargetUnreachable, "<send> targetexpr evaluated to nothing, so there is no target to reach");
                                 err_meta.metadata.send_id =
                                     ::sce_rust_runtime::sce_string_from_str(send_id);
                                 engine.raise(err_meta);
@@ -1813,7 +1849,7 @@ impl StatePolicy for ASendReachesOnlyWhatItsTargetNamesPolicy {
                                         if __sce_served.is_none()
                                             && !engine.has_event_processor("sce:mesh")
                                         {
-                                            let mut err_meta = sce_rust_runtime::EventWithMetadata::platform_error(ASendReachesOnlyWhatItsTargetNamesEvent::ErrorExecution, "<send type='sce:mesh'> names a processor the host declared but never registered");
+                                            let mut err_meta = sce_rust_runtime::EventWithMetadata::platform_error(ASendReachesOnlyWhatItsTargetNamesEvent::ErrorExecution, ::sce_rust_runtime::ErrorReason::ProcessorUnregistered, "<send type='sce:mesh'> names a processor the host declared but never registered");
                                             err_meta.metadata.send_id =
                                                 ::sce_rust_runtime::sce_string_from_str(send_id);
                                             engine.raise(err_meta);
@@ -1844,7 +1880,7 @@ impl StatePolicy for ASendReachesOnlyWhatItsTargetNamesPolicy {
                                         if __sce_routed
                                             == sce_rust_runtime::TargetSendOutcome::Unsupported
                                         {
-                                            let mut err_meta = sce_rust_runtime::EventWithMetadata::platform_error(ASendReachesOnlyWhatItsTargetNamesEvent::ErrorExecution, "<send> targetexpr produced a value that is not a target");
+                                            let mut err_meta = sce_rust_runtime::EventWithMetadata::platform_error(ASendReachesOnlyWhatItsTargetNamesEvent::ErrorExecution, ::sce_rust_runtime::ErrorReason::SendTargetInvalid, "<send> targetexpr produced a value that is not a target");
                                             err_meta.metadata.send_id =
                                                 ::sce_rust_runtime::sce_string_from_str(send_id);
                                             engine.raise(err_meta);
@@ -1853,7 +1889,7 @@ impl StatePolicy for ASendReachesOnlyWhatItsTargetNamesPolicy {
                                         if __sce_routed
                                             == sce_rust_runtime::TargetSendOutcome::Unreachable
                                         {
-                                            let mut err_meta = sce_rust_runtime::EventWithMetadata::platform_error(ASendReachesOnlyWhatItsTargetNamesEvent::ErrorCommunication, "<send> targetexpr names a session this processor cannot reach");
+                                            let mut err_meta = sce_rust_runtime::EventWithMetadata::platform_error(ASendReachesOnlyWhatItsTargetNamesEvent::ErrorCommunication, ::sce_rust_runtime::ErrorReason::TargetUnreachable, "<send> targetexpr names a session this processor cannot reach");
                                             err_meta.metadata.send_id =
                                                 ::sce_rust_runtime::sce_string_from_str(send_id);
                                             engine.raise(err_meta);
@@ -1887,6 +1923,7 @@ impl StatePolicy for ASendReachesOnlyWhatItsTargetNamesPolicy {
                             );
                             engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(
                                 ASendReachesOnlyWhatItsTargetNamesEvent::ErrorExecution,
+                                ::sce_rust_runtime::ErrorReason::AssignmentFailed,
                                 "<assign> to 'afterOrphanExpr' failed",
                             ));
                             // W3C SCXML 4.9: the error ends the block, from however deep a <foreach> it came.
@@ -1904,7 +1941,12 @@ impl StatePolicy for ASendReachesOnlyWhatItsTargetNamesPolicy {
                         let __sce_arg_sid = self.session_id.as_ref().unwrap().clone();
                         let __sce_arg_se = self.script_engine.clone();
                         let __sce_arg_se: &dyn sce_rust_runtime::IScriptEngine = &*__sce_arg_se;
-                        let mut _send_arg_error: Option<&'static str> = None;
+                        // The code and the sentence of the first argument that failed
+                        // (docs/adr/0106 #111).
+                        let mut _send_arg_error: Option<(
+                            ::sce_rust_runtime::ErrorReason,
+                            &'static str,
+                        )> = None;
                         // A target that evaluates to nothing is not an evaluation error: it is an
                         // address nobody answers at, which the resolution below reports as
                         // error.communication (W3C SCXML C.1).
@@ -1917,8 +1959,10 @@ impl StatePolicy for ASendReachesOnlyWhatItsTargetNamesPolicy {
                                             "targetexpr eval failed: {}",
                                             e
                                         );
-                                        _send_arg_error =
-                                            Some("<send> targetexpr could not be evaluated");
+                                        _send_arg_error = Some((
+                                            ::sce_rust_runtime::ErrorReason::ExpressionFailed,
+                                            "<send> targetexpr could not be evaluated",
+                                        ));
                                         None
                                     }
                                 }
@@ -1929,13 +1973,14 @@ impl StatePolicy for ASendReachesOnlyWhatItsTargetNamesPolicy {
                             // W3C SCXML 6.2: a target this processor cannot address is refused as
                             // a static one is, before anything is delivered.
                             if sce_rust_runtime::helpers::send::is_invalid_target(&::sce_rust_runtime::helpers::event_data::script_value_to_wire_string(val)) {
-            _send_arg_error = Some("<send> targetexpr produced a target this processor cannot address");
+            _send_arg_error = Some((::sce_rust_runtime::ErrorReason::SendTargetInvalid, "<send> targetexpr produced a target this processor cannot address"));
         }
                         }
-                        if let Some(__sce_why) = _send_arg_error {
+                        if let Some((__sce_reason, __sce_why)) = _send_arg_error {
                             ::sce_rust_runtime::sce_log_error!("{}", __sce_why);
                             let mut err_meta = sce_rust_runtime::EventWithMetadata::platform_error(
                                 ASendReachesOnlyWhatItsTargetNamesEvent::ErrorExecution,
+                                __sce_reason,
                                 __sce_why,
                             );
                             err_meta.metadata.send_id =
@@ -1957,7 +2002,7 @@ impl StatePolicy for ASendReachesOnlyWhatItsTargetNamesPolicy {
                             if _resolved_target.is_none() {
                                 // W3C SCXML C.1 (test 496, 521): a target that names nothing raises
                                 // error.communication.
-                                let mut err_meta = sce_rust_runtime::EventWithMetadata::platform_error(ASendReachesOnlyWhatItsTargetNamesEvent::ErrorCommunication, "<send> targetexpr evaluated to nothing, so there is no target to reach");
+                                let mut err_meta = sce_rust_runtime::EventWithMetadata::platform_error(ASendReachesOnlyWhatItsTargetNamesEvent::ErrorCommunication, ::sce_rust_runtime::ErrorReason::TargetUnreachable, "<send> targetexpr evaluated to nothing, so there is no target to reach");
                                 err_meta.metadata.send_id =
                                     ::sce_rust_runtime::sce_string_from_str(send_id);
                                 engine.raise(err_meta);
@@ -2028,7 +2073,7 @@ impl StatePolicy for ASendReachesOnlyWhatItsTargetNamesPolicy {
                                         if __sce_routed
                                             == sce_rust_runtime::TargetSendOutcome::Unsupported
                                         {
-                                            let mut err_meta = sce_rust_runtime::EventWithMetadata::platform_error(ASendReachesOnlyWhatItsTargetNamesEvent::ErrorExecution, "<send> targetexpr produced a value that is not a target");
+                                            let mut err_meta = sce_rust_runtime::EventWithMetadata::platform_error(ASendReachesOnlyWhatItsTargetNamesEvent::ErrorExecution, ::sce_rust_runtime::ErrorReason::SendTargetInvalid, "<send> targetexpr produced a value that is not a target");
                                             err_meta.metadata.send_id =
                                                 ::sce_rust_runtime::sce_string_from_str(send_id);
                                             engine.raise(err_meta);
@@ -2037,7 +2082,7 @@ impl StatePolicy for ASendReachesOnlyWhatItsTargetNamesPolicy {
                                         if __sce_routed
                                             == sce_rust_runtime::TargetSendOutcome::Unreachable
                                         {
-                                            let mut err_meta = sce_rust_runtime::EventWithMetadata::platform_error(ASendReachesOnlyWhatItsTargetNamesEvent::ErrorCommunication, "<send> targetexpr names a session this processor cannot reach");
+                                            let mut err_meta = sce_rust_runtime::EventWithMetadata::platform_error(ASendReachesOnlyWhatItsTargetNamesEvent::ErrorCommunication, ::sce_rust_runtime::ErrorReason::TargetUnreachable, "<send> targetexpr names a session this processor cannot reach");
                                             err_meta.metadata.send_id =
                                                 ::sce_rust_runtime::sce_string_from_str(send_id);
                                             engine.raise(err_meta);
@@ -2071,6 +2116,7 @@ impl StatePolicy for ASendReachesOnlyWhatItsTargetNamesPolicy {
                             );
                             engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(
                                 ASendReachesOnlyWhatItsTargetNamesEvent::ErrorExecution,
+                                ::sce_rust_runtime::ErrorReason::AssignmentFailed,
                                 "<assign> to 'afterOrphanExprLater' failed",
                             ));
                             // W3C SCXML 4.9: the error ends the block, from however deep a <foreach> it came.
@@ -2331,6 +2377,7 @@ impl StatePolicy for ASendReachesOnlyWhatItsTargetNamesPolicy {
                             );
                             engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(
                                 ASendReachesOnlyWhatItsTargetNamesEvent::ErrorExecution,
+                                ::sce_rust_runtime::ErrorReason::AssignmentFailed,
                                 "<assign> to 'execErrors' failed",
                             ));
                             // W3C SCXML 4.9: the error ends the block, from however deep a <foreach> it came.
@@ -2364,6 +2411,7 @@ impl StatePolicy for ASendReachesOnlyWhatItsTargetNamesPolicy {
                             );
                             engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(
                                 ASendReachesOnlyWhatItsTargetNamesEvent::ErrorExecution,
+                                ::sce_rust_runtime::ErrorReason::AssignmentFailed,
                                 "<assign> to 'commErrors' failed",
                             ));
                             // W3C SCXML 4.9: the error ends the block, from however deep a <foreach> it came.
@@ -2397,6 +2445,7 @@ impl StatePolicy for ASendReachesOnlyWhatItsTargetNamesPolicy {
                             );
                             engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(
                                 ASendReachesOnlyWhatItsTargetNamesEvent::ErrorExecution,
+                                ::sce_rust_runtime::ErrorReason::AssignmentFailed,
                                 "<assign> to 'bareArrived' failed",
                             ));
                             // W3C SCXML 4.9: the error ends the block, from however deep a <foreach> it came.
@@ -2430,6 +2479,7 @@ impl StatePolicy for ASendReachesOnlyWhatItsTargetNamesPolicy {
                             );
                             engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(
                                 ASendReachesOnlyWhatItsTargetNamesEvent::ErrorExecution,
+                                ::sce_rust_runtime::ErrorReason::AssignmentFailed,
                                 "<assign> to 'afterNobody' failed",
                             ));
                             // W3C SCXML 4.9: the error ends the block, from however deep a <foreach> it came.
@@ -2473,6 +2523,7 @@ impl StatePolicy for ASendReachesOnlyWhatItsTargetNamesPolicy {
                                     engine.raise(
                                         sce_rust_runtime::EventWithMetadata::platform_error(
                                             ASendReachesOnlyWhatItsTargetNamesEvent::ErrorExecution,
+                                            ::sce_rust_runtime::ErrorReason::ExpressionFailed,
                                             "<send> contentexpr failed to evaluate",
                                         ),
                                     );
@@ -2510,6 +2561,7 @@ impl StatePolicy for ASendReachesOnlyWhatItsTargetNamesPolicy {
                             // target names is not there to reach.
                             let mut err_meta = sce_rust_runtime::EventWithMetadata::platform_error(
                                 ASendReachesOnlyWhatItsTargetNamesEvent::ErrorCommunication,
+                                ::sce_rust_runtime::ErrorReason::TargetUnreachable,
                                 "<send target='#_kid'> names an invocation that is not running",
                             );
                             err_meta.metadata.send_id =
@@ -2560,6 +2612,7 @@ impl StatePolicy for ASendReachesOnlyWhatItsTargetNamesPolicy {
                                     engine.raise(
                                         sce_rust_runtime::EventWithMetadata::platform_error(
                                             ASendReachesOnlyWhatItsTargetNamesEvent::ErrorExecution,
+                                            ::sce_rust_runtime::ErrorReason::AssignmentFailed,
                                             "<assign> to 'pongOk' failed",
                                         ),
                                     );

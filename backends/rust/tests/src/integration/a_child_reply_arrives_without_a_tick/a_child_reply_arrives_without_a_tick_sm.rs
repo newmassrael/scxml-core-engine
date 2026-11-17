@@ -480,6 +480,7 @@ impl AChildReplyArrivesWithoutATickPolicy {
                 );
                 engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(
                     AChildReplyArrivesWithoutATickEvent::ErrorExecution,
+                    ::sce_rust_runtime::ErrorReason::ParamUnfit,
                     "<data id='hellos'> could not hold the value its invoke handed it",
                 ));
             }
@@ -491,6 +492,7 @@ impl AChildReplyArrivesWithoutATickPolicy {
                 ::sce_rust_runtime::sce_log_error!("global: {}", e);
                 engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(
                     AChildReplyArrivesWithoutATickEvent::ErrorExecution,
+                    ::sce_rust_runtime::ErrorReason::ExpressionFailed,
                     "<data id='hellos'> expr failed to evaluate",
                 ));
             }
@@ -539,6 +541,7 @@ impl AChildReplyArrivesWithoutATickPolicy {
                 ::sce_rust_runtime::sce_log_error!("Guard evaluation failed for '{}': {}", cond, e);
                 engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(
                     AChildReplyArrivesWithoutATickEvent::ErrorExecution,
+                    ::sce_rust_runtime::ErrorReason::ExpressionFailed,
                     reason,
                 ));
                 None
@@ -734,7 +737,7 @@ impl AChildReplyArrivesWithoutATickPolicy {
                     self.active_invokes.remove("kid");
                     engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(
                         AChildReplyArrivesWithoutATickEvent::ErrorExecution,
-                        &format!("<invoke id='{}'> did not start: its child's script session failed at step '{}'", "kid", failure.stage)));
+                        ::sce_rust_runtime::ErrorReason::InvokeChildInitFailed, &format!("<invoke id='{}'> did not start: its child's script session failed at step '{}'", "kid", failure.stage)));
                     continue;
                 }
 
@@ -1232,6 +1235,7 @@ impl StatePolicy for AChildReplyArrivesWithoutATickPolicy {
                             ::sce_rust_runtime::sce_log_error!("Assign failed for 'hellos': {}", e);
                             engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(
                                 AChildReplyArrivesWithoutATickEvent::ErrorExecution,
+                                ::sce_rust_runtime::ErrorReason::AssignmentFailed,
                                 "<assign> to 'hellos' failed",
                             ));
                             // W3C SCXML 4.9: the error ends the block, from however deep a <foreach> it came.

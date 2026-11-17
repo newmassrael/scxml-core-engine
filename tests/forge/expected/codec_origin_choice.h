@@ -129,6 +129,22 @@ struct Wire {
     }
 };
 
+/// The `tag` the frame of a source of `CodecOriginChoice` carries, which its encode
+/// derives from what it measures and no value holds (docs/adr/0081 §3).
+template <class S>
+[[nodiscard]] uint8_t wire_tag(const S& src) noexcept(is_nothrow_source<S>::value) {
+    static_assert(is_source<S>::value, "S presents every element of CodecOriginChoice");
+    const auto& _r_body = source::body(src);
+    std::uint64_t _t_body = 0;
+    switch (_r_body.index()) {
+        case 0: _t_body = 1ull; break;
+        case 1: _t_body = 2ull; break;
+        case 2: _t_body = static_cast<std::uint64_t>(std::get_if<2>(&_r_body)->tag); break;
+        default: break;
+    }
+    return static_cast<uint8_t>(_t_body);
+}
+
 struct CodecOriginChoice {
     CodecOriginChoice() = default;
     /// The value of each element it presents, in declaration order (ADR 0059 §5).
@@ -138,35 +154,36 @@ struct CodecOriginChoice {
     [[nodiscard]] const CodecOriginChoiceVariant& body() const noexcept { return body_; }
 
     /// Decode the next frame from `cursor`. On success the cursor
-    /// advances past the consumed bytes; on `NeedMoreBytes` the cursor
-    /// is left untouched so the caller can resume after appending more
-    /// bytes (RFC §synth-5-B L494-519). Returns `std::nullopt` on the
-    /// `NeedMoreBytes` boundary; later phases attach a typed error via
-    /// `cursor.last_error()`.
-    static std::optional<CodecOriginChoice> decode(::SCE::Forge::SceCursor& cursor) {
+    /// advances past the consumed bytes and the value is answered; a
+    /// refused frame answers the `CodecError` that refused it
+    /// (docs/adr/0099, amendment of 2026-11-16): `NeedMoreBytes` when
+    /// the cursor's tail is shorter than the frame (RFC §synth-5-B
+    /// L494-519), which the caller resumes after appending bytes, and
+    /// another kind for a frame no more bytes make whole.
+    static ::SCE::Forge::Decoded<CodecOriginChoice> decode(::SCE::Forge::SceCursor& cursor) {
         // Decode fixed prefix (RFC §synth-5-B variant: fields before tag suffix).
         const std::uint8_t* raw = cursor.peek_slice(1);
-        if (raw == nullptr) return std::nullopt;
+        if (raw == nullptr) return ::SCE::Forge::CodecError::NeedMoreBytes;
         uint8_t tag = raw[0];
-        if (!cursor.advance(1)) return std::nullopt;
+        if (!cursor.advance(1)) return ::SCE::Forge::CodecError::NeedMoreBytes;
         // Dispatch on tag value into the matching arm body.
         CodecOriginChoiceVariant body;
         switch (tag) {
             case 1: {
                 auto _arm = ::SCE::Generated::CodecOriginLeaf::CodecOriginLeaf::decode(cursor);
-                if (!_arm.has_value()) return std::nullopt;
+                if (!_arm.has_value()) return _arm.error();
                 body = *_arm;
                 break;
             }
             case 2: {
                 auto _arm = ::SCE::Generated::CodecOriginScalar::CodecOriginScalar::decode(cursor);
-                if (!_arm.has_value()) return std::nullopt;
+                if (!_arm.has_value()) return _arm.error();
                 body = *_arm;
                 break;
             }
             default: {
                 auto _arm = ::SCE::Generated::CodecOriginScalar::CodecOriginScalar::decode(cursor);
-                if (!_arm.has_value()) return std::nullopt;
+                if (!_arm.has_value()) return _arm.error();
                 body = CodecOriginChoiceDefault{
                     /*tag=*/tag,
                     /*body=*/*_arm,

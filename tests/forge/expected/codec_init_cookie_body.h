@@ -114,6 +114,19 @@ template <class S>
     return static_cast<std::uint8_t>(static_cast<std::optional<::SCE::Forge::Bytes<64>>>(source::cookie(src)).has_value() ? 1 : 0);
 }
 
+/// The `cookie_size` the frame of a source of `CodecInitCookieBody` carries, which its encode
+/// derives from what it measures and no value holds (docs/adr/0081 §3), and none where the content it is gated beside is absent.
+template <class S>
+[[nodiscard]] std::optional<uint16_t> wire_cookie_size(const S& src) noexcept(is_nothrow_source<S>::value) {
+    static_assert(is_source<S>::value, "S presents every element of CodecInitCookieBody");
+    const auto& _r_cookie = source::cookie(src);
+    const std::optional<::SCE::Forge::Bytes<64>> _e_cookie = _r_cookie;
+    if (!(_e_cookie.has_value())) {
+        return std::nullopt;
+    }
+    return static_cast<uint16_t>(_e_cookie->size());
+}
+
 struct CodecInitCookieBody {
     CodecInitCookieBody() = default;
     /// The value of each element it presents, in declaration order (ADR 0059 §5).
@@ -125,12 +138,13 @@ struct CodecInitCookieBody {
     [[nodiscard]] std::optional<::SCE::Forge::Bytes<64>> cookie() const noexcept { if (!cookie_) { return std::nullopt; } return ::SCE::Forge::Bytes<64>(*cookie_); }
 
     /// Decode the next frame from `cursor`. On success the cursor
-    /// advances past the consumed bytes; on `NeedMoreBytes` the cursor
-    /// is left untouched so the caller can resume after appending more
-    /// bytes (RFC §synth-5-B L494-519). Returns `std::nullopt` on the
-    /// `NeedMoreBytes` boundary; later phases attach a typed error via
-    /// `cursor.last_error()`.
-    static std::optional<CodecInitCookieBody> decode(::SCE::Forge::SceCursor& cursor, std::uint8_t a) {
+    /// advances past the consumed bytes and the value is answered; a
+    /// refused frame answers the `CodecError` that refused it
+    /// (docs/adr/0099, amendment of 2026-11-16): `NeedMoreBytes` when
+    /// the cursor's tail is shorter than the frame (RFC §synth-5-B
+    /// L494-519), which the caller resumes after appending bytes, and
+    /// another kind for a frame no more bytes make whole.
+    static ::SCE::Forge::Decoded<CodecInitCookieBody> decode(::SCE::Forge::SceCursor& cursor, std::uint8_t a) {
         // Declared-but-unconsumed flag inputs: defensive (void) suppress per declared
         // `<sce:flag-input>` so codecs that haven't (yet) consumed an
         // input via `present-if` compile cleanly under -Wunused.
@@ -149,35 +163,34 @@ struct CodecInitCookieBody {
         uint8_t version;
         {
             const std::uint8_t* raw = cursor.peek_slice(1);
-            if (raw == nullptr) return std::nullopt;
+            if (raw == nullptr) return ::SCE::Forge::CodecError::NeedMoreBytes;
             version = static_cast<uint8_t>(raw[0]);
-            if (!cursor.advance(1)) return std::nullopt;
+            if (!cursor.advance(1)) return ::SCE::Forge::CodecError::NeedMoreBytes;
         }
         std::optional<uint16_t> cookie_size;
         if ((a & 0x01) != 0) {
-            auto _v_opt = cursor.read_vle_u16();
-        if (!_v_opt.has_value()) return std::nullopt;
-        auto _v = static_cast<std::uint16_t>(*_v_opt);
+            auto _v_read = cursor.read_vle_u16();
+        if (!_v_read.has_value()) return _v_read.error();
+        auto _v = static_cast<std::uint16_t>(*_v_read);
             cookie_size = _v;
         }
         std::optional<std::vector<uint8_t>> cookie;
         if ((a & 0x01) != 0) {
             const auto _len = cookie_size.value();
             if (_len > 64) {
-                cursor.refuse(::SCE::Forge::CodecError::LengthOutOfRange); return std::nullopt;
+                return ::SCE::Forge::CodecError::LengthOutOfRange;
             }
             std::size_t _n = static_cast<std::size_t>(_len);
             const std::uint8_t* raw = cursor.peek_slice(_n);
-            if (raw == nullptr) return std::nullopt;
+            if (raw == nullptr) return ::SCE::Forge::CodecError::NeedMoreBytes;
             cookie.emplace(raw, raw + _n);
-            if (!cursor.advance(_n)) return std::nullopt;
+            if (!cursor.advance(_n)) return ::SCE::Forge::CodecError::NeedMoreBytes;
         }
         std::optional<::SCE::Forge::Bytes<64>> _b_cookie;
         if (cookie) {
             _b_cookie = ::SCE::Forge::Bytes<64>::make(*cookie);
             if (!_b_cookie) {
-                cursor.refuse(::SCE::Forge::CodecError::LengthOutOfRange);
-                return std::nullopt;
+                return ::SCE::Forge::CodecError::LengthOutOfRange;
             }
         }
         (void)cookie_size;

@@ -488,7 +488,7 @@ impl AChildTakesAHandedValueInPlaceOfItsDataSceSynthInvokeLateBoundPolicy {
                     "<data id='handed'> could not hold the value its invoke handed it: {}",
                     e
                 );
-                engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(AChildTakesAHandedValueInPlaceOfItsDataSceSynthInvokeLateBoundEvent::ErrorExecution, "<data id='handed'> could not hold the value its invoke handed it"));
+                engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(AChildTakesAHandedValueInPlaceOfItsDataSceSynthInvokeLateBoundEvent::ErrorExecution, ::sce_rust_runtime::ErrorReason::ParamUnfit, "<data id='handed'> could not hold the value its invoke handed it"));
             }
         } else {
             // W3C SCXML 5.2/5.3: Initialize 'handed' from expr (global)
@@ -499,7 +499,7 @@ impl AChildTakesAHandedValueInPlaceOfItsDataSceSynthInvokeLateBoundPolicy {
                 "\"own late\"",
             ) {
                 ::sce_rust_runtime::sce_log_error!("global: {}", e);
-                engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(AChildTakesAHandedValueInPlaceOfItsDataSceSynthInvokeLateBoundEvent::ErrorExecution, "<data id='handed'> expr failed to evaluate"));
+                engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(AChildTakesAHandedValueInPlaceOfItsDataSceSynthInvokeLateBoundEvent::ErrorExecution, ::sce_rust_runtime::ErrorReason::ExpressionFailed, "<data id='handed'> expr failed to evaluate"));
             }
         }
 
@@ -544,7 +544,7 @@ impl AChildTakesAHandedValueInPlaceOfItsDataSceSynthInvokeLateBoundPolicy {
             Ok(val) => Some(val.to_bool()),
             Err(e) => {
                 ::sce_rust_runtime::sce_log_error!("Guard evaluation failed for '{}': {}", cond, e);
-                engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(AChildTakesAHandedValueInPlaceOfItsDataSceSynthInvokeLateBoundEvent::ErrorExecution, reason));
+                engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(AChildTakesAHandedValueInPlaceOfItsDataSceSynthInvokeLateBoundEvent::ErrorExecution, ::sce_rust_runtime::ErrorReason::ExpressionFailed, reason));
                 None
             }
         }
@@ -887,7 +887,7 @@ impl StatePolicy for AChildTakesAHandedValueInPlaceOfItsDataSceSynthInvokeLateBo
                         )
                     {
                         ::sce_rust_runtime::sce_log_error!("collect: {}", e);
-                        engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(AChildTakesAHandedValueInPlaceOfItsDataSceSynthInvokeLateBoundEvent::ErrorExecution, "<data id='kept'> expr failed to evaluate"));
+                        engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(AChildTakesAHandedValueInPlaceOfItsDataSceSynthInvokeLateBoundEvent::ErrorExecution, ::sce_rust_runtime::ErrorReason::ExpressionFailed, "<data id='kept'> expr failed to evaluate"));
                     }
                 }
                 // W3C SCXML 3.8: onentry block 1/1
@@ -1054,7 +1054,8 @@ impl StatePolicy for AChildTakesAHandedValueInPlaceOfItsDataSceSynthInvokeLateBo
                             // nothing delivered, and the block ends (4.9).
                             engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(
             AChildTakesAHandedValueInPlaceOfItsDataSceSynthInvokeLateBoundEvent::ErrorCommunication,
-            "<send target='#_parent'> has no parent session to reach"));
+            ::sce_rust_runtime::ErrorReason::TargetUnreachable,
+        "<send target='#_parent'> has no parent session to reach"));
                             break 'action_block;
                         }
 
@@ -1085,7 +1086,8 @@ impl StatePolicy for AChildTakesAHandedValueInPlaceOfItsDataSceSynthInvokeLateBo
                             // nothing delivered, and the block ends (4.9).
                             engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(
             AChildTakesAHandedValueInPlaceOfItsDataSceSynthInvokeLateBoundEvent::ErrorCommunication,
-            "<send target='#_parent'> has no parent session to reach"));
+            ::sce_rust_runtime::ErrorReason::TargetUnreachable,
+        "<send target='#_parent'> has no parent session to reach"));
                             break 'action_block;
                         }
 
@@ -1116,7 +1118,8 @@ impl StatePolicy for AChildTakesAHandedValueInPlaceOfItsDataSceSynthInvokeLateBo
                             // nothing delivered, and the block ends (4.9).
                             engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(
             AChildTakesAHandedValueInPlaceOfItsDataSceSynthInvokeLateBoundEvent::ErrorCommunication,
-            "<send target='#_parent'> has no parent session to reach"));
+            ::sce_rust_runtime::ErrorReason::TargetUnreachable,
+        "<send target='#_parent'> has no parent session to reach"));
                             break 'action_block;
                         }
 

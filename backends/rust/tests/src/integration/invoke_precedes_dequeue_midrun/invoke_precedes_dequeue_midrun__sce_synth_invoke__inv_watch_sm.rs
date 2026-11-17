@@ -580,7 +580,8 @@ impl StatePolicy for InvokePrecedesDequeueMidrunSceSynthInvokeInvWatchPolicy {
                             // nothing delivered, and the block ends (4.9).
                             engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(
             InvokePrecedesDequeueMidrunSceSynthInvokeInvWatchEvent::ErrorCommunication,
-            "<send target='#_parent'> has no parent session to reach"));
+            ::sce_rust_runtime::ErrorReason::TargetUnreachable,
+        "<send target='#_parent'> has no parent session to reach"));
                             break 'action_block;
                         }
 
@@ -689,7 +690,8 @@ impl StatePolicy for InvokePrecedesDequeueMidrunSceSynthInvokeInvWatchPolicy {
                             // nothing delivered, and the block ends (4.9).
                             engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(
             InvokePrecedesDequeueMidrunSceSynthInvokeInvWatchEvent::ErrorCommunication,
-            "<send target='#_parent'> has no parent session to reach"));
+            ::sce_rust_runtime::ErrorReason::TargetUnreachable,
+        "<send target='#_parent'> has no parent session to reach"));
                             break 'action_block;
                         }
 
@@ -720,7 +722,8 @@ impl StatePolicy for InvokePrecedesDequeueMidrunSceSynthInvokeInvWatchPolicy {
                             // nothing delivered, and the block ends (4.9).
                             engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(
             InvokePrecedesDequeueMidrunSceSynthInvokeInvWatchEvent::ErrorCommunication,
-            "<send target='#_parent'> has no parent session to reach"));
+            ::sce_rust_runtime::ErrorReason::TargetUnreachable,
+        "<send target='#_parent'> has no parent session to reach"));
                             break 'action_block;
                         }
 

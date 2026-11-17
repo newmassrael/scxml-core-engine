@@ -1,5 +1,5 @@
 // SCE-GENERATED — DO NOT EDIT
-// source-hash: 65fb42bdd588f958b0fbb29ac261cf039d02606d7afaae0720c045624bd679ba
+// source-hash: 2073d8a55462e1ce61d8a77293fdd2c141aceda8ad173303c5b84813ca22eeee
 
 // SPDX-License-Identifier: AGPL-3.0-only WITH AdditionRef-SCE-Linking-Exception OR LicenseRef-SCE-Commercial
 // SPDX-FileCopyrightText: Copyright (c) 2025-2026 [Author of input SCXML file] (content derived from the input document)
@@ -985,7 +985,7 @@ impl StatePolicy for StaticSendHttpPolicy {
                         })() {
                             Ok(()) => false,
                             Err(_) => {
-                                engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(StaticSendHttpEvent::ErrorExecution, "<assign location='label'>: an integer operation overflowed or failed"));
+                                engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(StaticSendHttpEvent::ErrorExecution, ::sce_rust_runtime::ErrorReason::ExpressionFailed, "<assign location='label'>: an integer operation overflowed or failed"));
                                 true
                             }
                         };
@@ -1009,7 +1009,7 @@ impl StatePolicy for StaticSendHttpPolicy {
                         // id, the payload never read, nothing posted, the block ended.
                         if !sce_rust_runtime::helpers::send::is_supported_send_type(sce_rust_runtime::helpers::scxml_constants::BASIC_HTTP_EVENT_PROCESSOR_TYPE) {
         ::sce_rust_runtime::sce_log_error!("<send type='http://www.w3.org/TR/scxml/#BasicHTTPEventProcessor'>: this build has no BasicHTTP processor (sce-rust-runtime's `http-send` feature)");
-        let mut err_meta = sce_rust_runtime::EventWithMetadata::platform_error(StaticSendHttpEvent::ErrorExecution, "<send type='http://www.w3.org/TR/scxml/#BasicHTTPEventProcessor'> names a processor this platform does not support");
+        let mut err_meta = sce_rust_runtime::EventWithMetadata::platform_error(StaticSendHttpEvent::ErrorExecution, ::sce_rust_runtime::ErrorReason::SendTypeUnsupported, "<send type='http://www.w3.org/TR/scxml/#BasicHTTPEventProcessor'> names a processor this platform does not support");
         err_meta.metadata.send_id = ::sce_rust_runtime::sce_string_from_str(send_id);
         engine.raise(err_meta);
         break 'action_block;  // W3C SCXML 4.9: the error ends the block
@@ -1046,7 +1046,7 @@ impl StatePolicy for StaticSendHttpPolicy {
             }
             Err(_) => {
                 ::sce_rust_runtime::sce_log_error!("send param 'twice' overflowed or failed");
-                engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(StaticSendHttpEvent::ErrorExecution, "<send> <param name='twice'> could not be read"));
+                engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(StaticSendHttpEvent::ErrorExecution, ::sce_rust_runtime::ErrorReason::LocationInvalid, "<send> <param name='twice'> could not be read"));
                 // W3C SCXML 5.7.1: the pair is left out; 4.9: the block stops after the send.
                 _param_failed = true;
             }
@@ -1103,7 +1103,7 @@ impl StatePolicy for StaticSendHttpPolicy {
                         // id, the payload never read, nothing posted, the block ended.
                         if !sce_rust_runtime::helpers::send::is_supported_send_type(sce_rust_runtime::helpers::scxml_constants::BASIC_HTTP_EVENT_PROCESSOR_TYPE) {
         ::sce_rust_runtime::sce_log_error!("<send type='http://www.w3.org/TR/scxml/#BasicHTTPEventProcessor'>: this build has no BasicHTTP processor (sce-rust-runtime's `http-send` feature)");
-        let mut err_meta = sce_rust_runtime::EventWithMetadata::platform_error(StaticSendHttpEvent::ErrorExecution, "<send type='http://www.w3.org/TR/scxml/#BasicHTTPEventProcessor'> names a processor this platform does not support");
+        let mut err_meta = sce_rust_runtime::EventWithMetadata::platform_error(StaticSendHttpEvent::ErrorExecution, ::sce_rust_runtime::ErrorReason::SendTypeUnsupported, "<send type='http://www.w3.org/TR/scxml/#BasicHTTPEventProcessor'> names a processor this platform does not support");
         err_meta.metadata.send_id = ::sce_rust_runtime::sce_string_from_str(send_id);
         engine.raise(err_meta);
         break 'action_block;  // W3C SCXML 4.9: the error ends the block
@@ -1136,7 +1136,7 @@ impl StatePolicy for StaticSendHttpPolicy {
             }
             Err(_) => {
                 ::sce_rust_runtime::sce_log_error!("send param 'big' overflowed or failed");
-                engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(StaticSendHttpEvent::ErrorExecution, "<send> <param name='big'> could not be read"));
+                engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(StaticSendHttpEvent::ErrorExecution, ::sce_rust_runtime::ErrorReason::LocationInvalid, "<send> <param name='big'> could not be read"));
                 // W3C SCXML 5.7.1: the pair is left out; 4.9: the block stops after the send.
                 _param_failed = true;
             }
@@ -1188,7 +1188,7 @@ impl StatePolicy for StaticSendHttpPolicy {
                         })() {
                             Ok(()) => false,
                             Err(_) => {
-                                engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(StaticSendHttpEvent::ErrorExecution, "<assign location='errors'>: an integer operation overflowed or failed"));
+                                engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(StaticSendHttpEvent::ErrorExecution, ::sce_rust_runtime::ErrorReason::ExpressionFailed, "<assign location='errors'>: an integer operation overflowed or failed"));
                                 true
                             }
                         };

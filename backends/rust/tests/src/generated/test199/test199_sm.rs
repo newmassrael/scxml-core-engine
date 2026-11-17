@@ -522,7 +522,7 @@ impl StatePolicy for Test199Policy {
 
                         // W3C SCXML 6.2: Unsupported send type "unsupported_type" raises error.execution
                         {
-                            let mut err_meta = sce_rust_runtime::EventWithMetadata::platform_error(Test199Event::ErrorExecution, "<send type='unsupported_type'> names a processor this platform does not support");
+                            let mut err_meta = sce_rust_runtime::EventWithMetadata::platform_error(Test199Event::ErrorExecution, ::sce_rust_runtime::ErrorReason::SendTypeUnsupported, "<send type='unsupported_type'> names a processor this platform does not support");
                             engine.raise(err_meta);
                         }
                         let _ = send_id; // the refusal may carry no error event to name it

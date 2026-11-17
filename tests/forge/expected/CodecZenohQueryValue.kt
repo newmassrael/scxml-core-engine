@@ -7,6 +7,7 @@
 package com.sce.generated.codec_zenoh_query_value
 
 import com.sce.forge.runtime.CodecError
+import com.sce.forge.runtime.Decoded
 import com.sce.forge.runtime.MutableListSink
 import com.sce.forge.runtime.SceCursor
 import com.sce.forge.runtime.SceSink
@@ -62,10 +63,13 @@ data class CodecZenohQueryValue(
 
     companion object {
         /// Decode the next frame from `cursor`. On success the cursor
-        /// advances past the consumed bytes; returns `null` when the
-        /// cursor's tail is shorter than the declared minimum frame
-        /// (RFC §synth-5-B L494-519).
-        fun decode(cursor: SceCursor): CodecZenohQueryValue? {
+        /// advances past the consumed bytes and the value is `Decoded.Ok`;
+        /// a refused frame is `Decoded.Refused` with the kind that refused
+        /// it (docs/adr/0099, amendment of 2026-11-16): `NeedMoreBytes` when
+        /// the cursor's tail is shorter than the frame (RFC §synth-5-B
+        /// L494-519), which the caller resumes after appending bytes, and
+        /// another kind for a frame no more bytes make whole.
+        fun decode(cursor: SceCursor): Decoded<CodecZenohQueryValue> {
             // Streaming cursor decode (SSOT selection: `needs_streaming`).
             // The positional `raw[byte_off]` path is valid only when every
             // field's absolute offset is fixed at codegen time; this branch
@@ -82,16 +86,18 @@ data class CodecZenohQueryValue(
                 var _prev_exts_after_shm: UByte = 0.toUByte()
                 var _more = false
                 while (true) {
-                    val _entry = CodecZenohValueEntry.decode(cursor, _prev_exts_after_shm) ?: return null
+                    val _entry = CodecZenohValueEntry.decode(cursor, _prev_exts_after_shm).valueOr { _refused -> return _refused }
                     _more = _entry.Z()
                     _prev_exts_after_shm = if ((_entry.extId()).toULong() == 4UL) 1.toUByte() else 0.toUByte()
                     it.add(_entry)
                     if (!_more) break
                 }
-                if (_more && cursor.remaining() == 0) { return null }
+                if (_more && cursor.remaining() == 0) { return Decoded.Refused(CodecError.NeedMoreBytes) }
             }
-            return CodecZenohQueryValue(
-                exts = exts
+            return Decoded.Ok(
+                CodecZenohQueryValue(
+                    exts = exts
+                )
             )
         }
     }

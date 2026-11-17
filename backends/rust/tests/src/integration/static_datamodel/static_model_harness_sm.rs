@@ -1,5 +1,5 @@
 // SCE-GENERATED — DO NOT EDIT
-// source-hash: 65fb42bdd588f958b0fbb29ac261cf039d02606d7afaae0720c045624bd679ba
+// source-hash: 2073d8a55462e1ce61d8a77293fdd2c141aceda8ad173303c5b84813ca22eeee
 
 // SPDX-License-Identifier: AGPL-3.0-only WITH AdditionRef-SCE-Linking-Exception OR LicenseRef-SCE-Commercial
 // SPDX-FileCopyrightText: Copyright (c) 2025-2026 [Author of input SCXML file] (content derived from the input document)
@@ -309,7 +309,7 @@ impl StaticModelHarnessTransition {
     /// The digest of the source set this machine was generated from: the
     /// `source-hash` of the file's own header, as a value.
     pub const SOURCE_HASH: &'static str =
-        "65fb42bdd588f958b0fbb29ac261cf039d02606d7afaae0720c045624bd679ba";
+        "2073d8a55462e1ce61d8a77293fdd2c141aceda8ad173303c5b84813ca22eeee";
 
     /// Every transition of the machine.
     pub const ALL: [StaticModelHarnessTransition; 15] = [
@@ -1922,7 +1922,7 @@ impl StaticModelHarnessPolicy {
                 }
                 Err(_) => {
                     ::sce_rust_runtime::sce_log_error!("invoke typed param 'prompt' overflowed or failed");
-                    engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(StaticModelHarnessEvent::ErrorExecution, "<invoke> <param name='prompt'> cannot be its request field: it failed to evaluate"));
+                    engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(StaticModelHarnessEvent::ErrorExecution, ::sce_rust_runtime::ErrorReason::ExpressionFailed, "<invoke> <param name='prompt'> cannot be its request field: it failed to evaluate"));
                     request_refused = true;
                 }
             }
@@ -1939,7 +1939,7 @@ impl StaticModelHarnessPolicy {
                 }
                 Err(_) => {
                     ::sce_rust_runtime::sce_log_error!("invoke typed param 'max_tokens' overflowed or failed");
-                    engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(StaticModelHarnessEvent::ErrorExecution, "<invoke> <param name='max_tokens'> cannot be its request field: it failed to evaluate"));
+                    engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(StaticModelHarnessEvent::ErrorExecution, ::sce_rust_runtime::ErrorReason::ExpressionFailed, "<invoke> <param name='max_tokens'> cannot be its request field: it failed to evaluate"));
                     request_refused = true;
                 }
             }
@@ -1956,7 +1956,7 @@ impl StaticModelHarnessPolicy {
                 }
                 Err(_) => {
                     ::sce_rust_runtime::sce_log_error!("invoke typed param 'temperature_milli' overflowed or failed");
-                    engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(StaticModelHarnessEvent::ErrorExecution, "<invoke> <param name='temperature_milli'> cannot be its request field: it failed to evaluate"));
+                    engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(StaticModelHarnessEvent::ErrorExecution, ::sce_rust_runtime::ErrorReason::ExpressionFailed, "<invoke> <param name='temperature_milli'> cannot be its request field: it failed to evaluate"));
                     request_refused = true;
                 }
             }
@@ -2018,6 +2018,7 @@ impl StaticModelHarnessPolicy {
                     // same event, rather than a silence that reads as started.
                     engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(
                         StaticModelHarnessEvent::ErrorExecution,
+                        ::sce_rust_runtime::ErrorReason::ProcessorUnregistered,
                         "<invoke> names an invoker the host declared but never registered",
                     ));
                 }
@@ -2402,7 +2403,7 @@ impl StatePolicy for StaticModelHarnessPolicy {
                         })() {
                             Ok(()) => false,
                             Err(_) => {
-                                engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(StaticModelHarnessEvent::ErrorExecution, "<sce:render template='Ask'>: an integer operation overflowed or failed"));
+                                engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(StaticModelHarnessEvent::ErrorExecution, ::sce_rust_runtime::ErrorReason::ExpressionFailed, "<sce:render template='Ask'>: an integer operation overflowed or failed"));
                                 true
                             }
                         };
@@ -2453,7 +2454,7 @@ impl StatePolicy for StaticModelHarnessPolicy {
                         })() {
                             Ok(()) => false,
                             Err(_) => {
-                                engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(StaticModelHarnessEvent::ErrorExecution, "<assign location='attempts'>: an integer operation overflowed or failed"));
+                                engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(StaticModelHarnessEvent::ErrorExecution, ::sce_rust_runtime::ErrorReason::ExpressionFailed, "<assign location='attempts'>: an integer operation overflowed or failed"));
                                 true
                             }
                         };
@@ -2467,7 +2468,7 @@ impl StatePolicy for StaticModelHarnessPolicy {
                     {
                         false
                     } else {
-                        engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(StaticModelHarnessEvent::ErrorExecution, "<sce:append target='refusals'>: the list already holds its capacity of 3"));
+                        engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(StaticModelHarnessEvent::ErrorExecution, ::sce_rust_runtime::ErrorReason::AssignmentFailed, "<sce:append target='refusals'>: the list already holds its capacity of 3"));
                         true
                     };
                     if sce_failed {
@@ -2490,7 +2491,7 @@ impl StatePolicy for StaticModelHarnessPolicy {
                         })() {
                             Ok(()) => false,
                             Err(_) => {
-                                engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(StaticModelHarnessEvent::ErrorExecution, "<sce:render template='Repair'>: an integer operation overflowed or failed"));
+                                engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(StaticModelHarnessEvent::ErrorExecution, ::sce_rust_runtime::ErrorReason::ExpressionFailed, "<sce:render template='Repair'>: an integer operation overflowed or failed"));
                                 true
                             }
                         };
@@ -2513,7 +2514,7 @@ impl StatePolicy for StaticModelHarnessPolicy {
                         })() {
                             Ok(()) => false,
                             Err(_) => {
-                                engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(StaticModelHarnessEvent::ErrorExecution, "<assign location='attempts'>: an integer operation overflowed or failed"));
+                                engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(StaticModelHarnessEvent::ErrorExecution, ::sce_rust_runtime::ErrorReason::ExpressionFailed, "<assign location='attempts'>: an integer operation overflowed or failed"));
                                 true
                             }
                         };
@@ -2765,7 +2766,7 @@ impl StatePolicy for StaticModelHarnessPolicy {
 })() {
     Ok(()) => false,
     Err(_) => {
-        engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(StaticModelHarnessEvent::ErrorExecution, "<assign location='refused.code'>: an integer operation overflowed or failed"));
+        engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(StaticModelHarnessEvent::ErrorExecution, ::sce_rust_runtime::ErrorReason::ExpressionFailed, "<assign location='refused.code'>: an integer operation overflowed or failed"));
         true
     }
 };
@@ -2780,7 +2781,7 @@ impl StatePolicy for StaticModelHarnessPolicy {
 })() {
     Ok(()) => false,
     Err(_) => {
-        engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(StaticModelHarnessEvent::ErrorExecution, "<assign location='refused.path'>: an integer operation overflowed or failed"));
+        engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(StaticModelHarnessEvent::ErrorExecution, ::sce_rust_runtime::ErrorReason::ExpressionFailed, "<assign location='refused.path'>: an integer operation overflowed or failed"));
         true
     }
 };
@@ -2808,7 +2809,7 @@ impl StatePolicy for StaticModelHarnessPolicy {
                         })() {
                             Ok(()) => false,
                             Err(_) => {
-                                engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(StaticModelHarnessEvent::ErrorExecution, "<assign location='refused.path'>: an integer operation overflowed or failed"));
+                                engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(StaticModelHarnessEvent::ErrorExecution, ::sce_rust_runtime::ErrorReason::ExpressionFailed, "<assign location='refused.path'>: an integer operation overflowed or failed"));
                                 true
                             }
                         };
@@ -2834,7 +2835,7 @@ impl StatePolicy for StaticModelHarnessPolicy {
                         })() {
                             Ok(()) => false,
                             Err(_) => {
-                                engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(StaticModelHarnessEvent::ErrorExecution, "<assign location='outcome'>: an integer operation overflowed or failed"));
+                                engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(StaticModelHarnessEvent::ErrorExecution, ::sce_rust_runtime::ErrorReason::ExpressionFailed, "<assign location='outcome'>: an integer operation overflowed or failed"));
                                 true
                             }
                         };
@@ -2863,7 +2864,7 @@ impl StatePolicy for StaticModelHarnessPolicy {
                         })() {
                             Ok(()) => false,
                             Err(_) => {
-                                engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(StaticModelHarnessEvent::ErrorExecution, "<assign location='said'>: an integer operation overflowed or failed"));
+                                engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(StaticModelHarnessEvent::ErrorExecution, ::sce_rust_runtime::ErrorReason::ExpressionFailed, "<assign location='said'>: an integer operation overflowed or failed"));
                                 true
                             }
                         };
@@ -2931,7 +2932,7 @@ impl StatePolicy for StaticModelHarnessPolicy {
                         })() {
                             Ok(()) => false,
                             Err(_) => {
-                                engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(StaticModelHarnessEvent::ErrorExecution, "<assign location='outcome'>: an integer operation overflowed or failed"));
+                                engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(StaticModelHarnessEvent::ErrorExecution, ::sce_rust_runtime::ErrorReason::ExpressionFailed, "<assign location='outcome'>: an integer operation overflowed or failed"));
                                 true
                             }
                         };
@@ -2957,7 +2958,7 @@ impl StatePolicy for StaticModelHarnessPolicy {
                         })() {
                             Ok(()) => false,
                             Err(_) => {
-                                engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(StaticModelHarnessEvent::ErrorExecution, "<assign location='outcome'>: an integer operation overflowed or failed"));
+                                engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(StaticModelHarnessEvent::ErrorExecution, ::sce_rust_runtime::ErrorReason::ExpressionFailed, "<assign location='outcome'>: an integer operation overflowed or failed"));
                                 true
                             }
                         };
@@ -2983,7 +2984,7 @@ impl StatePolicy for StaticModelHarnessPolicy {
                         })() {
                             Ok(()) => false,
                             Err(_) => {
-                                engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(StaticModelHarnessEvent::ErrorExecution, "<assign location='outcome'>: an integer operation overflowed or failed"));
+                                engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(StaticModelHarnessEvent::ErrorExecution, ::sce_rust_runtime::ErrorReason::ExpressionFailed, "<assign location='outcome'>: an integer operation overflowed or failed"));
                                 true
                             }
                         };
@@ -3009,7 +3010,7 @@ impl StatePolicy for StaticModelHarnessPolicy {
                         })() {
                             Ok(()) => false,
                             Err(_) => {
-                                engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(StaticModelHarnessEvent::ErrorExecution, "<assign location='outcome'>: an integer operation overflowed or failed"));
+                                engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(StaticModelHarnessEvent::ErrorExecution, ::sce_rust_runtime::ErrorReason::ExpressionFailed, "<assign location='outcome'>: an integer operation overflowed or failed"));
                                 true
                             }
                         };
@@ -3032,7 +3033,7 @@ impl StatePolicy for StaticModelHarnessPolicy {
                     let sce_failed = if self.offered.len() < 8 && self.offered.push(ev.id).is_ok() {
                         false
                     } else {
-                        engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(StaticModelHarnessEvent::ErrorExecution, "<sce:append target='offered'>: the list already holds its capacity of 8"));
+                        engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(StaticModelHarnessEvent::ErrorExecution, ::sce_rust_runtime::ErrorReason::AssignmentFailed, "<sce:append target='offered'>: the list already holds its capacity of 8"));
                         true
                     };
                     if sce_failed {
@@ -3061,7 +3062,7 @@ impl StatePolicy for StaticModelHarnessPolicy {
                         })() {
                             Ok(()) => false,
                             Err(_) => {
-                                engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(StaticModelHarnessEvent::ErrorExecution, "<assign location='request'>: an integer operation overflowed or failed"));
+                                engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(StaticModelHarnessEvent::ErrorExecution, ::sce_rust_runtime::ErrorReason::ExpressionFailed, "<assign location='request'>: an integer operation overflowed or failed"));
                                 true
                             }
                         };
@@ -3087,7 +3088,7 @@ impl StatePolicy for StaticModelHarnessPolicy {
                         })() {
                             Ok(()) => false,
                             Err(_) => {
-                                engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(StaticModelHarnessEvent::ErrorExecution, "<assign location='outcome'>: an integer operation overflowed or failed"));
+                                engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(StaticModelHarnessEvent::ErrorExecution, ::sce_rust_runtime::ErrorReason::ExpressionFailed, "<assign location='outcome'>: an integer operation overflowed or failed"));
                                 true
                             }
                         };

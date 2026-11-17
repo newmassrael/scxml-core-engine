@@ -160,12 +160,13 @@ struct CodecZenohSourceInfo {
     [[nodiscard]] constexpr uint32_t sn() const noexcept { return sn_; }
 
     /// Decode the next frame from `cursor`. On success the cursor
-    /// advances past the consumed bytes; on `NeedMoreBytes` the cursor
-    /// is left untouched so the caller can resume after appending more
-    /// bytes (RFC §synth-5-B L494-519). Returns `std::nullopt` on the
-    /// `NeedMoreBytes` boundary; later phases attach a typed error via
-    /// `cursor.last_error()`.
-    static std::optional<CodecZenohSourceInfo> decode(::SCE::Forge::SceCursor& cursor) {
+    /// advances past the consumed bytes and the value is answered; a
+    /// refused frame answers the `CodecError` that refused it
+    /// (docs/adr/0099, amendment of 2026-11-16): `NeedMoreBytes` when
+    /// the cursor's tail is shorter than the frame (RFC §synth-5-B
+    /// L494-519), which the caller resumes after appending bytes, and
+    /// another kind for a frame no more bytes make whole.
+    static ::SCE::Forge::Decoded<CodecZenohSourceInfo> decode(::SCE::Forge::SceCursor& cursor) {
         // Streaming cursor decode (SSOT selection: `needs_streaming`).
         // The positional `raw[byte_off]` path is valid only when every
         // field's absolute offset is fixed at codegen time; this branch
@@ -180,29 +181,28 @@ struct CodecZenohSourceInfo {
         uint8_t header;
         {
             const std::uint8_t* raw = cursor.peek_slice(1);
-            if (raw == nullptr) return std::nullopt;
+            if (raw == nullptr) return ::SCE::Forge::CodecError::NeedMoreBytes;
             header = static_cast<uint8_t>(raw[0]);
-            if (!cursor.advance(1)) return std::nullopt;
+            if (!cursor.advance(1)) return ::SCE::Forge::CodecError::NeedMoreBytes;
         }
         std::vector<uint8_t> zid;
         {
             const auto _len = ((header >> 4) & 0xF);
             std::size_t _n = static_cast<std::size_t>(_len) + 1;
             const std::uint8_t* raw = cursor.peek_slice(_n);
-            if (raw == nullptr) return std::nullopt;
+            if (raw == nullptr) return ::SCE::Forge::CodecError::NeedMoreBytes;
             zid.assign(raw, raw + _n);
-            if (!cursor.advance(_n)) return std::nullopt;
+            if (!cursor.advance(_n)) return ::SCE::Forge::CodecError::NeedMoreBytes;
         }
-        auto eid_opt = cursor.read_vle_u32();
-        if (!eid_opt.has_value()) return std::nullopt;
-        auto eid = static_cast<std::uint32_t>(*eid_opt);
-        auto sn_opt = cursor.read_vle_u32();
-        if (!sn_opt.has_value()) return std::nullopt;
-        auto sn = static_cast<std::uint32_t>(*sn_opt);
+        auto eid_read = cursor.read_vle_u32();
+        if (!eid_read.has_value()) return eid_read.error();
+        auto eid = static_cast<std::uint32_t>(*eid_read);
+        auto sn_read = cursor.read_vle_u32();
+        if (!sn_read.has_value()) return sn_read.error();
+        auto sn = static_cast<std::uint32_t>(*sn_read);
         const auto _b_zid = ::SCE::Forge::Bytes<16, 1>::make(zid);
         if (!_b_zid) {
-            cursor.refuse(::SCE::Forge::CodecError::LengthOutOfRange);
-            return std::nullopt;
+            return ::SCE::Forge::CodecError::LengthOutOfRange;
         }
         CodecZenohSourceInfo _decoded{
             /*header=*/header,

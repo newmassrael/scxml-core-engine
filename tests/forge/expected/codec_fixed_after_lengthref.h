@@ -122,6 +122,16 @@ struct Wire {
     }
 };
 
+/// The `payload_len` the frame of a source of `CodecFixedAfterLengthref` carries, which its encode
+/// derives from what it measures and no value holds (docs/adr/0081 §3).
+template <class S>
+[[nodiscard]] uint16_t wire_payload_len(const S& src) noexcept(is_nothrow_source<S>::value) {
+    static_assert(is_source<S>::value, "S presents every element of CodecFixedAfterLengthref");
+    const auto& _r_payload = source::payload(src);
+    const ::SCE::Forge::Bytes<1500> _e_payload = _r_payload;
+    return static_cast<uint16_t>(_e_payload.size());
+}
+
 struct CodecFixedAfterLengthref {
     CodecFixedAfterLengthref() = default;
     /// The value of each element it presents, in declaration order (ADR 0059 §5).
@@ -135,12 +145,13 @@ struct CodecFixedAfterLengthref {
     [[nodiscard]] constexpr uint32_t crc32() const noexcept { return crc32_; }
 
     /// Decode the next frame from `cursor`. On success the cursor
-    /// advances past the consumed bytes; on `NeedMoreBytes` the cursor
-    /// is left untouched so the caller can resume after appending more
-    /// bytes (RFC §synth-5-B L494-519). Returns `std::nullopt` on the
-    /// `NeedMoreBytes` boundary; later phases attach a typed error via
-    /// `cursor.last_error()`.
-    static std::optional<CodecFixedAfterLengthref> decode(::SCE::Forge::SceCursor& cursor) {
+    /// advances past the consumed bytes and the value is answered; a
+    /// refused frame answers the `CodecError` that refused it
+    /// (docs/adr/0099, amendment of 2026-11-16): `NeedMoreBytes` when
+    /// the cursor's tail is shorter than the frame (RFC §synth-5-B
+    /// L494-519), which the caller resumes after appending bytes, and
+    /// another kind for a frame no more bytes make whole.
+    static ::SCE::Forge::Decoded<CodecFixedAfterLengthref> decode(::SCE::Forge::SceCursor& cursor) {
         // Streaming cursor decode (SSOT selection: `needs_streaming`).
         // The positional `raw[byte_off]` path is valid only when every
         // field's absolute offset is fixed at codegen time; this branch
@@ -155,40 +166,39 @@ struct CodecFixedAfterLengthref {
         uint8_t header;
         {
             const std::uint8_t* raw = cursor.peek_slice(1);
-            if (raw == nullptr) return std::nullopt;
+            if (raw == nullptr) return ::SCE::Forge::CodecError::NeedMoreBytes;
             header = static_cast<uint8_t>(raw[0]);
-            if (!cursor.advance(1)) return std::nullopt;
+            if (!cursor.advance(1)) return ::SCE::Forge::CodecError::NeedMoreBytes;
         }
         uint16_t payload_len;
         {
             const std::uint8_t* raw = cursor.peek_slice(2);
-            if (raw == nullptr) return std::nullopt;
+            if (raw == nullptr) return ::SCE::Forge::CodecError::NeedMoreBytes;
             payload_len = static_cast<uint16_t>(static_cast<uint16_t>(raw[0] | (static_cast<uint16_t>(raw[1]) << 8)));
-            if (!cursor.advance(2)) return std::nullopt;
+            if (!cursor.advance(2)) return ::SCE::Forge::CodecError::NeedMoreBytes;
         }
         std::vector<uint8_t> payload;
         {
             const auto _len = payload_len;
             if (_len > 1500) {
-                cursor.refuse(::SCE::Forge::CodecError::LengthOutOfRange); return std::nullopt;
+                return ::SCE::Forge::CodecError::LengthOutOfRange;
             }
             std::size_t _n = static_cast<std::size_t>(_len);
             const std::uint8_t* raw = cursor.peek_slice(_n);
-            if (raw == nullptr) return std::nullopt;
+            if (raw == nullptr) return ::SCE::Forge::CodecError::NeedMoreBytes;
             payload.assign(raw, raw + _n);
-            if (!cursor.advance(_n)) return std::nullopt;
+            if (!cursor.advance(_n)) return ::SCE::Forge::CodecError::NeedMoreBytes;
         }
         uint32_t crc32;
         {
             const std::uint8_t* raw = cursor.peek_slice(4);
-            if (raw == nullptr) return std::nullopt;
+            if (raw == nullptr) return ::SCE::Forge::CodecError::NeedMoreBytes;
             crc32 = static_cast<uint32_t>(static_cast<uint32_t>(raw[0] | (static_cast<uint32_t>(raw[1]) << 8) | (static_cast<uint32_t>(raw[2]) << 16) | (static_cast<uint32_t>(raw[3]) << 24)));
-            if (!cursor.advance(4)) return std::nullopt;
+            if (!cursor.advance(4)) return ::SCE::Forge::CodecError::NeedMoreBytes;
         }
         const auto _b_payload = ::SCE::Forge::Bytes<1500>::make(payload);
         if (!_b_payload) {
-            cursor.refuse(::SCE::Forge::CodecError::LengthOutOfRange);
-            return std::nullopt;
+            return ::SCE::Forge::CodecError::LengthOutOfRange;
         }
         (void)payload_len;
         CodecFixedAfterLengthref _decoded{

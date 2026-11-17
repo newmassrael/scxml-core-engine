@@ -326,12 +326,13 @@ struct CodecZenohJoin {
     [[nodiscard]] constexpr uint64_t next_sn_best_effort() const noexcept { return next_sn_best_effort_; }
 
     /// Decode the next frame from `cursor`. On success the cursor
-    /// advances past the consumed bytes; on `NeedMoreBytes` the cursor
-    /// is left untouched so the caller can resume after appending more
-    /// bytes (RFC §synth-5-B L494-519). Returns `std::nullopt` on the
-    /// `NeedMoreBytes` boundary; later phases attach a typed error via
-    /// `cursor.last_error()`.
-    static std::optional<CodecZenohJoin> decode(::SCE::Forge::SceCursor& cursor, std::uint8_t s) {
+    /// advances past the consumed bytes and the value is answered; a
+    /// refused frame answers the `CodecError` that refused it
+    /// (docs/adr/0099, amendment of 2026-11-16): `NeedMoreBytes` when
+    /// the cursor's tail is shorter than the frame (RFC §synth-5-B
+    /// L494-519), which the caller resumes after appending bytes, and
+    /// another kind for a frame no more bytes make whole.
+    static ::SCE::Forge::Decoded<CodecZenohJoin> decode(::SCE::Forge::SceCursor& cursor, std::uint8_t s) {
         // Declared-but-unconsumed flag inputs: defensive (void) suppress per declared
         // `<sce:flag-input>` so codecs that haven't (yet) consumed an
         // input via `present-if` compile cleanly under -Wunused.
@@ -350,53 +351,52 @@ struct CodecZenohJoin {
         uint8_t version;
         {
             const std::uint8_t* raw = cursor.peek_slice(1);
-            if (raw == nullptr) return std::nullopt;
+            if (raw == nullptr) return ::SCE::Forge::CodecError::NeedMoreBytes;
             version = static_cast<uint8_t>(raw[0]);
-            if (!cursor.advance(1)) return std::nullopt;
+            if (!cursor.advance(1)) return ::SCE::Forge::CodecError::NeedMoreBytes;
         }
         uint8_t cbyte;
         {
             const std::uint8_t* raw = cursor.peek_slice(1);
-            if (raw == nullptr) return std::nullopt;
+            if (raw == nullptr) return ::SCE::Forge::CodecError::NeedMoreBytes;
             cbyte = static_cast<uint8_t>(raw[0]);
-            if (!cursor.advance(1)) return std::nullopt;
+            if (!cursor.advance(1)) return ::SCE::Forge::CodecError::NeedMoreBytes;
         }
         std::vector<uint8_t> zid;
         {
             const auto _len = ((cbyte >> 4) & 0xF);
             std::size_t _n = static_cast<std::size_t>(_len) + 1;
             const std::uint8_t* raw = cursor.peek_slice(_n);
-            if (raw == nullptr) return std::nullopt;
+            if (raw == nullptr) return ::SCE::Forge::CodecError::NeedMoreBytes;
             zid.assign(raw, raw + _n);
-            if (!cursor.advance(_n)) return std::nullopt;
+            if (!cursor.advance(_n)) return ::SCE::Forge::CodecError::NeedMoreBytes;
         }
         std::optional<uint8_t> sn_res;
         if ((s & 0x01) != 0) {
             const std::uint8_t* raw = cursor.peek_slice(1);
-            if (raw == nullptr) return std::nullopt;
+            if (raw == nullptr) return ::SCE::Forge::CodecError::NeedMoreBytes;
             sn_res = static_cast<uint8_t>(raw[0]);
-            if (!cursor.advance(1)) return std::nullopt;
+            if (!cursor.advance(1)) return ::SCE::Forge::CodecError::NeedMoreBytes;
         }
         std::optional<uint16_t> batch_size;
         if ((s & 0x01) != 0) {
             const std::uint8_t* raw = cursor.peek_slice(2);
-            if (raw == nullptr) return std::nullopt;
+            if (raw == nullptr) return ::SCE::Forge::CodecError::NeedMoreBytes;
             batch_size = static_cast<uint16_t>(static_cast<uint16_t>(raw[0] | (static_cast<uint16_t>(raw[1]) << 8)));
-            if (!cursor.advance(2)) return std::nullopt;
+            if (!cursor.advance(2)) return ::SCE::Forge::CodecError::NeedMoreBytes;
         }
-        auto lease_opt = cursor.read_vle_u64();
-        if (!lease_opt.has_value()) return std::nullopt;
-        auto lease = static_cast<std::uint64_t>(*lease_opt);
-        auto next_sn_reliable_opt = cursor.read_vle_u64();
-        if (!next_sn_reliable_opt.has_value()) return std::nullopt;
-        auto next_sn_reliable = static_cast<std::uint64_t>(*next_sn_reliable_opt);
-        auto next_sn_best_effort_opt = cursor.read_vle_u64();
-        if (!next_sn_best_effort_opt.has_value()) return std::nullopt;
-        auto next_sn_best_effort = static_cast<std::uint64_t>(*next_sn_best_effort_opt);
+        auto lease_read = cursor.read_vle_u64();
+        if (!lease_read.has_value()) return lease_read.error();
+        auto lease = static_cast<std::uint64_t>(*lease_read);
+        auto next_sn_reliable_read = cursor.read_vle_u64();
+        if (!next_sn_reliable_read.has_value()) return next_sn_reliable_read.error();
+        auto next_sn_reliable = static_cast<std::uint64_t>(*next_sn_reliable_read);
+        auto next_sn_best_effort_read = cursor.read_vle_u64();
+        if (!next_sn_best_effort_read.has_value()) return next_sn_best_effort_read.error();
+        auto next_sn_best_effort = static_cast<std::uint64_t>(*next_sn_best_effort_read);
         const auto _b_zid = ::SCE::Forge::Bytes<16, 1>::make(zid);
         if (!_b_zid) {
-            cursor.refuse(::SCE::Forge::CodecError::LengthOutOfRange);
-            return std::nullopt;
+            return ::SCE::Forge::CodecError::LengthOutOfRange;
         }
         std::optional<CodecZenohJoinS> _g_s;
         if (sn_res.has_value() && batch_size.has_value()) {

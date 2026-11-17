@@ -479,6 +479,7 @@ impl Test286Policy {
                 ::sce_rust_runtime::sce_log_error!("Guard evaluation failed for '{}': {}", cond, e);
                 engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(
                     Test286Event::ErrorExecution,
+                    ::sce_rust_runtime::ErrorReason::ExpressionFailed,
                     reason,
                 ));
                 None
@@ -794,6 +795,7 @@ impl StatePolicy for Test286Policy {
                         );
                         engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(
                             Test286Event::ErrorExecution,
+                            ::sce_rust_runtime::ErrorReason::LocationInvalid,
                             "<assign> has an invalid or read-only location ''",
                         ));
                         // W3C SCXML 4.9: the error ends the block, from however deep a <foreach> it came.

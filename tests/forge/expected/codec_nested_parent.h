@@ -168,6 +168,15 @@ struct Wire {
     }
 };
 
+/// The `m` the frame of a source of `CodecNestedParent` carries, which its encode
+/// derives from what it measures and no value holds (docs/adr/0081 §3).
+template <class S>
+[[nodiscard]] uint8_t wire_m(const S& src) noexcept(is_nothrow_source<S>::value) {
+    static_assert(is_source<S>::value, "S presents every element of CodecNestedParent");
+    const auto& _r_body_list = source::body_list(src);
+    return static_cast<uint8_t>(_r_body_list.size());
+}
+
 struct CodecNestedParent {
     CodecNestedParent() = default;
     /// The value of each element it presents, in declaration order (ADR 0059 §5).
@@ -183,12 +192,13 @@ struct CodecNestedParent {
     [[nodiscard]] ::SCE::Forge::List<::SCE::Generated::CodecNestedBody::CodecNestedBody, 4> body_list() const noexcept { return body_list_; }
 
     /// Decode the next frame from `cursor`. On success the cursor
-    /// advances past the consumed bytes; on `NeedMoreBytes` the cursor
-    /// is left untouched so the caller can resume after appending more
-    /// bytes (RFC §synth-5-B L494-519). Returns `std::nullopt` on the
-    /// `NeedMoreBytes` boundary; later phases attach a typed error via
-    /// `cursor.last_error()`.
-    static std::optional<CodecNestedParent> decode(::SCE::Forge::SceCursor& cursor) {
+    /// advances past the consumed bytes and the value is answered; a
+    /// refused frame answers the `CodecError` that refused it
+    /// (docs/adr/0099, amendment of 2026-11-16): `NeedMoreBytes` when
+    /// the cursor's tail is shorter than the frame (RFC §synth-5-B
+    /// L494-519), which the caller resumes after appending bytes, and
+    /// another kind for a frame no more bytes make whole.
+    static ::SCE::Forge::Decoded<CodecNestedParent> decode(::SCE::Forge::SceCursor& cursor) {
         // Streaming cursor decode (SSOT selection: `needs_streaming`).
         // The positional `raw[byte_off]` path is valid only when every
         // field's absolute offset is fixed at codegen time; this branch
@@ -203,40 +213,39 @@ struct CodecNestedParent {
         uint8_t hdr;
         {
             const std::uint8_t* raw = cursor.peek_slice(1);
-            if (raw == nullptr) return std::nullopt;
+            if (raw == nullptr) return ::SCE::Forge::CodecError::NeedMoreBytes;
             hdr = static_cast<uint8_t>(raw[0]);
-            if (!cursor.advance(1)) return std::nullopt;
+            if (!cursor.advance(1)) return ::SCE::Forge::CodecError::NeedMoreBytes;
         }
         uint8_t m;
         {
             const std::uint8_t* raw = cursor.peek_slice(1);
-            if (raw == nullptr) return std::nullopt;
+            if (raw == nullptr) return ::SCE::Forge::CodecError::NeedMoreBytes;
             m = static_cast<uint8_t>(raw[0]);
-            if (!cursor.advance(1)) return std::nullopt;
+            if (!cursor.advance(1)) return ::SCE::Forge::CodecError::NeedMoreBytes;
         }
         auto _emb_required_body = ::SCE::Generated::CodecNestedBody::CodecNestedBody::decode(cursor);
-        if (!_emb_required_body.has_value()) return std::nullopt;
+        if (!_emb_required_body.has_value()) return _emb_required_body.error();
         auto required_body = std::move(*_emb_required_body);
         std::optional<::SCE::Generated::CodecNestedBody::CodecNestedBody> optional_body;
         if ((hdr & 0x01) != 0) {
             auto _emb = ::SCE::Generated::CodecNestedBody::CodecNestedBody::decode(cursor);
-            if (!_emb.has_value()) return std::nullopt;
+            if (!_emb.has_value()) return _emb.error();
             optional_body = std::move(*_emb);
         }
         std::vector<::SCE::Generated::CodecNestedBody::CodecNestedBody> body_list;
         if (m > 4) {
-            cursor.refuse(::SCE::Forge::CodecError::TooManyElements); return std::nullopt;
+            return ::SCE::Forge::CodecError::TooManyElements;
         }
         body_list.reserve(cursor.entries_backed(m));
         for (auto _i = decltype(m){0}; _i < m; ++_i) {
             auto _elem = ::SCE::Generated::CodecNestedBody::CodecNestedBody::decode(cursor);
-            if (!_elem.has_value()) return std::nullopt;
+            if (!_elem.has_value()) return _elem.error();
             body_list.push_back(*_elem);
         }
         const auto _b_body_list = ::SCE::Forge::List<::SCE::Generated::CodecNestedBody::CodecNestedBody, 4>::make(body_list);
         if (!_b_body_list) {
-            cursor.refuse(::SCE::Forge::CodecError::TooManyElements);
-            return std::nullopt;
+            return ::SCE::Forge::CodecError::TooManyElements;
         }
         (void)m;
         CodecNestedParent _decoded{

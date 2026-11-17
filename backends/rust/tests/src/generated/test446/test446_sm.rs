@@ -448,6 +448,7 @@ impl Test446Policy {
                 );
                 engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(
                     Test446Event::ErrorExecution,
+                    ::sce_rust_runtime::ErrorReason::ParamUnfit,
                     "<data id='var1'> could not hold the value its invoke handed it",
                 ));
             }
@@ -463,6 +464,7 @@ impl Test446Policy {
                 ::sce_rust_runtime::sce_log_error!("Failed to init 'var1' in global: {}", e);
                 engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(
                     Test446Event::ErrorExecution,
+                    ::sce_rust_runtime::ErrorReason::DataInitFailed,
                     "<data id='var1'> content failed to initialise",
                 ));
             }
@@ -477,6 +479,7 @@ impl Test446Policy {
                 );
                 engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(
                     Test446Event::ErrorExecution,
+                    ::sce_rust_runtime::ErrorReason::ParamUnfit,
                     "<data id='var2'> could not hold the value its invoke handed it",
                 ));
             }
@@ -499,6 +502,7 @@ impl Test446Policy {
                     );
                     engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(
                         Test446Event::ErrorExecution,
+                        ::sce_rust_runtime::ErrorReason::DataInitFailed,
                         "<data id='var2' src='file:test446.txt'> could not be loaded",
                     ));
                 }
@@ -548,6 +552,7 @@ impl Test446Policy {
                 ::sce_rust_runtime::sce_log_error!("Guard evaluation failed for '{}': {}", cond, e);
                 engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(
                     Test446Event::ErrorExecution,
+                    ::sce_rust_runtime::ErrorReason::ExpressionFailed,
                     reason,
                 ));
                 None

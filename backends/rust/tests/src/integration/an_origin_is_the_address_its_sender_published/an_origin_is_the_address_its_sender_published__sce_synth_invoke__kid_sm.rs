@@ -483,6 +483,7 @@ impl AnOriginIsTheAddressItsSenderPublishedSceSynthInvokeKidPolicy {
                 );
                 engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(
                     AnOriginIsTheAddressItsSenderPublishedSceSynthInvokeKidEvent::ErrorExecution,
+                    ::sce_rust_runtime::ErrorReason::ParamUnfit,
                     "<data id='processor'> could not hold the value its invoke handed it",
                 ));
             }
@@ -497,6 +498,7 @@ impl AnOriginIsTheAddressItsSenderPublishedSceSynthInvokeKidPolicy {
                 ::sce_rust_runtime::sce_log_error!("global: {}", e);
                 engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(
                     AnOriginIsTheAddressItsSenderPublishedSceSynthInvokeKidEvent::ErrorExecution,
+                    ::sce_rust_runtime::ErrorReason::ExpressionFailed,
                     "<data id='processor'> expr failed to evaluate",
                 ));
             }
@@ -545,6 +547,7 @@ impl AnOriginIsTheAddressItsSenderPublishedSceSynthInvokeKidPolicy {
                 ::sce_rust_runtime::sce_log_error!("Guard evaluation failed for '{}': {}", cond, e);
                 engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(
                     AnOriginIsTheAddressItsSenderPublishedSceSynthInvokeKidEvent::ErrorExecution,
+                    ::sce_rust_runtime::ErrorReason::ExpressionFailed,
                     reason,
                 ));
                 None
@@ -928,7 +931,7 @@ impl StatePolicy for AnOriginIsTheAddressItsSenderPublishedSceSynthInvokeKidPoli
                                         "send param 'location' eval failed: {}",
                                         e
                                     );
-                                    engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(AnOriginIsTheAddressItsSenderPublishedSceSynthInvokeKidEvent::ErrorExecution, "<send> <param name='location'> could not be read"));
+                                    engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(AnOriginIsTheAddressItsSenderPublishedSceSynthInvokeKidEvent::ErrorExecution, ::sce_rust_runtime::ErrorReason::LocationInvalid, "<send> <param name='location'> could not be read"));
                                     // W3C SCXML 5.7.1: the pair is left out; 4.9: the block stops after the send.
                                     _param_failed = true;
                                 }
@@ -950,7 +953,8 @@ impl StatePolicy for AnOriginIsTheAddressItsSenderPublishedSceSynthInvokeKidPoli
                             // nothing delivered, and the block ends (4.9).
                             engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(
             AnOriginIsTheAddressItsSenderPublishedSceSynthInvokeKidEvent::ErrorCommunication,
-            "<send target='#_parent'> has no parent session to reach"));
+            ::sce_rust_runtime::ErrorReason::TargetUnreachable,
+        "<send target='#_parent'> has no parent session to reach"));
                             break 'action_block;
                         }
 
@@ -1117,7 +1121,8 @@ impl StatePolicy for AnOriginIsTheAddressItsSenderPublishedSceSynthInvokeKidPoli
                             // nothing delivered, and the block ends (4.9).
                             engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(
             AnOriginIsTheAddressItsSenderPublishedSceSynthInvokeKidEvent::ErrorCommunication,
-            "<send target='#_parent'> has no parent session to reach"));
+            ::sce_rust_runtime::ErrorReason::TargetUnreachable,
+        "<send target='#_parent'> has no parent session to reach"));
                             break 'action_block;
                         }
 
@@ -1139,7 +1144,12 @@ impl StatePolicy for AnOriginIsTheAddressItsSenderPublishedSceSynthInvokeKidPoli
                         let __sce_arg_sid = self.session_id.as_ref().unwrap().clone();
                         let __sce_arg_se = self.script_engine.clone();
                         let __sce_arg_se: &dyn sce_rust_runtime::IScriptEngine = &*__sce_arg_se;
-                        let mut _send_arg_error: Option<&'static str> = None;
+                        // The code and the sentence of the first argument that failed
+                        // (docs/adr/0106 #111).
+                        let mut _send_arg_error: Option<(
+                            ::sce_rust_runtime::ErrorReason,
+                            &'static str,
+                        )> = None;
                         // A target that evaluates to nothing is not an evaluation error: it is an
                         // address nobody answers at, which the resolution below reports as
                         // error.communication (W3C SCXML C.1).
@@ -1154,8 +1164,10 @@ impl StatePolicy for AnOriginIsTheAddressItsSenderPublishedSceSynthInvokeKidPoli
                                             "targetexpr eval failed: {}",
                                             e
                                         );
-                                        _send_arg_error =
-                                            Some("<send> targetexpr could not be evaluated");
+                                        _send_arg_error = Some((
+                                            ::sce_rust_runtime::ErrorReason::ExpressionFailed,
+                                            "<send> targetexpr could not be evaluated",
+                                        ));
                                         None
                                     }
                                 }
@@ -1166,7 +1178,7 @@ impl StatePolicy for AnOriginIsTheAddressItsSenderPublishedSceSynthInvokeKidPoli
                             // W3C SCXML 6.2: a target this processor cannot address is refused as
                             // a static one is, before anything is delivered.
                             if sce_rust_runtime::helpers::send::is_invalid_target(&::sce_rust_runtime::helpers::event_data::script_value_to_wire_string(val)) {
-            _send_arg_error = Some("<send> targetexpr produced a target this processor cannot address");
+            _send_arg_error = Some((::sce_rust_runtime::ErrorReason::SendTargetInvalid, "<send> targetexpr produced a target this processor cannot address"));
         }
                         }
                         if _send_arg_error.is_none() {
@@ -1177,18 +1189,18 @@ impl StatePolicy for AnOriginIsTheAddressItsSenderPublishedSceSynthInvokeKidPoli
                 if !sce_rust_runtime::helpers::send::is_supported_send_type(
                     &::sce_rust_runtime::helpers::event_data::script_value_to_wire_string(&val),
                 ) {
-                    _send_arg_error = Some("<send> typeexpr names a processor this platform does not support");
+                    _send_arg_error = Some((::sce_rust_runtime::ErrorReason::SendTypeUnsupported, "<send> typeexpr names a processor this platform does not support"));
                 }
             }
             Err(e) => {
                 ::sce_rust_runtime::sce_log_error!("typeexpr eval failed: {}", e);
-                _send_arg_error = Some("<send> typeexpr could not be evaluated");
+                _send_arg_error = Some((::sce_rust_runtime::ErrorReason::ExpressionFailed, "<send> typeexpr could not be evaluated"));
             }
         }
                         }
-                        if let Some(__sce_why) = _send_arg_error {
+                        if let Some((__sce_reason, __sce_why)) = _send_arg_error {
                             ::sce_rust_runtime::sce_log_error!("{}", __sce_why);
-                            let mut err_meta = sce_rust_runtime::EventWithMetadata::platform_error(AnOriginIsTheAddressItsSenderPublishedSceSynthInvokeKidEvent::ErrorExecution, __sce_why);
+                            let mut err_meta = sce_rust_runtime::EventWithMetadata::platform_error(AnOriginIsTheAddressItsSenderPublishedSceSynthInvokeKidEvent::ErrorExecution, __sce_reason, __sce_why);
                             err_meta.metadata.send_id =
                                 ::sce_rust_runtime::sce_string_from_str(send_id);
                             engine.raise(err_meta);
@@ -1208,7 +1220,7 @@ impl StatePolicy for AnOriginIsTheAddressItsSenderPublishedSceSynthInvokeKidPoli
                             if _resolved_target.is_none() {
                                 // W3C SCXML C.1 (test 496, 521): a target that names nothing raises
                                 // error.communication.
-                                let mut err_meta = sce_rust_runtime::EventWithMetadata::platform_error(AnOriginIsTheAddressItsSenderPublishedSceSynthInvokeKidEvent::ErrorCommunication, "<send> targetexpr evaluated to nothing, so there is no target to reach");
+                                let mut err_meta = sce_rust_runtime::EventWithMetadata::platform_error(AnOriginIsTheAddressItsSenderPublishedSceSynthInvokeKidEvent::ErrorCommunication, ::sce_rust_runtime::ErrorReason::TargetUnreachable, "<send> targetexpr evaluated to nothing, so there is no target to reach");
                                 err_meta.metadata.send_id =
                                     ::sce_rust_runtime::sce_string_from_str(send_id);
                                 engine.raise(err_meta);
@@ -1237,7 +1249,7 @@ None,
                                     if __sce_routed
                                         == sce_rust_runtime::TargetSendOutcome::Unsupported
                                     {
-                                        let mut err_meta = sce_rust_runtime::EventWithMetadata::platform_error(AnOriginIsTheAddressItsSenderPublishedSceSynthInvokeKidEvent::ErrorExecution, "<send> targetexpr produced a value that is not a target");
+                                        let mut err_meta = sce_rust_runtime::EventWithMetadata::platform_error(AnOriginIsTheAddressItsSenderPublishedSceSynthInvokeKidEvent::ErrorExecution, ::sce_rust_runtime::ErrorReason::SendTargetInvalid, "<send> targetexpr produced a value that is not a target");
                                         err_meta.metadata.send_id =
                                             ::sce_rust_runtime::sce_string_from_str(send_id);
                                         engine.raise(err_meta);
@@ -1246,7 +1258,7 @@ None,
                                     if __sce_routed
                                         == sce_rust_runtime::TargetSendOutcome::Unreachable
                                     {
-                                        let mut err_meta = sce_rust_runtime::EventWithMetadata::platform_error(AnOriginIsTheAddressItsSenderPublishedSceSynthInvokeKidEvent::ErrorCommunication, "<send> targetexpr names a session this processor cannot reach");
+                                        let mut err_meta = sce_rust_runtime::EventWithMetadata::platform_error(AnOriginIsTheAddressItsSenderPublishedSceSynthInvokeKidEvent::ErrorCommunication, ::sce_rust_runtime::ErrorReason::TargetUnreachable, "<send> targetexpr names a session this processor cannot reach");
                                         err_meta.metadata.send_id =
                                             ::sce_rust_runtime::sce_string_from_str(send_id);
                                         engine.raise(err_meta);
@@ -1283,7 +1295,8 @@ None,
                             // nothing delivered, and the block ends (4.9).
                             engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(
             AnOriginIsTheAddressItsSenderPublishedSceSynthInvokeKidEvent::ErrorCommunication,
-            "<send target='#_parent'> has no parent session to reach"));
+            ::sce_rust_runtime::ErrorReason::TargetUnreachable,
+        "<send target='#_parent'> has no parent session to reach"));
                             break 'action_block;
                         }
 

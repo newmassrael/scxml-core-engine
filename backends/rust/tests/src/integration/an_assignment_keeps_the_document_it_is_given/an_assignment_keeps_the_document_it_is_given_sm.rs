@@ -470,6 +470,7 @@ impl AnAssignmentKeepsTheDocumentItIsGivenPolicy {
                 );
                 engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(
                     AnAssignmentKeepsTheDocumentItIsGivenEvent::ErrorExecution,
+                    ::sce_rust_runtime::ErrorReason::ParamUnfit,
                     "<data id='v'> could not hold the value its invoke handed it",
                 ));
             }
@@ -487,6 +488,7 @@ impl AnAssignmentKeepsTheDocumentItIsGivenPolicy {
                 );
                 engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(
                     AnAssignmentKeepsTheDocumentItIsGivenEvent::ErrorExecution,
+                    ::sce_rust_runtime::ErrorReason::ParamUnfit,
                     "<data id='holder'> could not hold the value its invoke handed it",
                 ));
             }
@@ -498,6 +500,7 @@ impl AnAssignmentKeepsTheDocumentItIsGivenPolicy {
                 ::sce_rust_runtime::sce_log_error!("global: {}", e);
                 engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(
                     AnAssignmentKeepsTheDocumentItIsGivenEvent::ErrorExecution,
+                    ::sce_rust_runtime::ErrorReason::ExpressionFailed,
                     "<data id='holder'> expr failed to evaluate",
                 ));
             }
@@ -546,6 +549,7 @@ impl AnAssignmentKeepsTheDocumentItIsGivenPolicy {
                 ::sce_rust_runtime::sce_log_error!("Guard evaluation failed for '{}': {}", cond, e);
                 engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(
                     AnAssignmentKeepsTheDocumentItIsGivenEvent::ErrorExecution,
+                    ::sce_rust_runtime::ErrorReason::ExpressionFailed,
                     reason,
                 ));
                 None
@@ -1072,6 +1076,7 @@ impl StatePolicy for AnAssignmentKeepsTheDocumentItIsGivenPolicy {
                             ::sce_rust_runtime::sce_log_error!("Assign failed for 'v': {}", e);
                             engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(
                                 AnAssignmentKeepsTheDocumentItIsGivenEvent::ErrorExecution,
+                                ::sce_rust_runtime::ErrorReason::AssignmentFailed,
                                 "<assign> to 'v' failed",
                             ));
                             // W3C SCXML 4.9: the error ends the block, from however deep a <foreach> it came.
@@ -1098,6 +1103,7 @@ impl StatePolicy for AnAssignmentKeepsTheDocumentItIsGivenPolicy {
                             );
                             engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(
                                 AnAssignmentKeepsTheDocumentItIsGivenEvent::ErrorExecution,
+                                ::sce_rust_runtime::ErrorReason::AssignmentFailed,
                                 "<assign> to 'holder.doc' failed",
                             ));
                             // W3C SCXML 4.9: the error ends the block, from however deep a <foreach> it came.

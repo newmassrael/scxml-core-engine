@@ -264,6 +264,51 @@ template <class S>
     return static_cast<std::uint8_t>((source::after_shm(src).index() == 0u) ? 1 : 0);
 }
 
+/// The `value_len` the frame of a source of `CodecZenohValueZbuf` carries, which its encode
+/// derives from what it measures and no value holds (docs/adr/0081 §3), and what the value holds of the field where nothing it measures is there.
+template <class S>
+[[nodiscard]] uint64_t wire_value_len(const S& src) noexcept(is_nothrow_source<S>::value) {
+    static_assert(is_source<S>::value, "S presents every element of CodecZenohValueZbuf");
+    const auto& _r_after_shm = source::after_shm(src);
+    std::optional<uint64_t> _e_value_len;
+    std::optional<::SCE::Forge::Bytes<4294967295>> _e_value;
+    std::optional<uint64_t> _e_encoding;
+    ::SCE::Forge::Detail::Kept<decltype(source::slices(std::declval<const std::variant_alternative_t<0, std::decay_t<decltype(_r_after_shm)>>&>()))> _r_slices;
+    if (const auto* _a = std::get_if<0>(&_r_after_shm)) {
+        _e_encoding = static_cast<uint64_t>(source::encoding(*_a));
+        _r_slices.keep(source::slices(*_a));
+        _e_value_len = static_cast<uint64_t>(source::value_len(*_a));
+    }
+    if (const auto* _a = std::get_if<1>(&_r_after_shm)) {
+        _e_value = static_cast<::SCE::Forge::Bytes<4294967295>>(source::value(*_a));
+    }
+    return (_e_value.has_value()) ? static_cast<uint64_t>(_e_value->size()) : _e_value_len.value_or(uint64_t{0});
+}
+
+/// The `slice_count` the frame of a source of `CodecZenohValueZbuf` carries, which its encode
+/// derives from what it measures and no value holds (docs/adr/0081 §3), and none where the content it is gated beside is absent.
+template <class S>
+[[nodiscard]] std::optional<uint64_t> wire_slice_count(const S& src) noexcept(is_nothrow_source<S>::value) {
+    static_assert(is_source<S>::value, "S presents every element of CodecZenohValueZbuf");
+    const auto& _r_after_shm = source::after_shm(src);
+    std::optional<uint64_t> _e_value_len;
+    std::optional<::SCE::Forge::Bytes<4294967295>> _e_value;
+    std::optional<uint64_t> _e_encoding;
+    ::SCE::Forge::Detail::Kept<decltype(source::slices(std::declval<const std::variant_alternative_t<0, std::decay_t<decltype(_r_after_shm)>>&>()))> _r_slices;
+    if (const auto* _a = std::get_if<0>(&_r_after_shm)) {
+        _e_encoding = static_cast<uint64_t>(source::encoding(*_a));
+        _r_slices.keep(source::slices(*_a));
+        _e_value_len = static_cast<uint64_t>(source::value_len(*_a));
+    }
+    if (const auto* _a = std::get_if<1>(&_r_after_shm)) {
+        _e_value = static_cast<::SCE::Forge::Bytes<4294967295>>(source::value(*_a));
+    }
+    if (!(_r_slices.has_value())) {
+        return std::nullopt;
+    }
+    return static_cast<uint64_t>((*_r_slices).size());
+}
+
 struct CodecZenohValueZbuf {
     CodecZenohValueZbuf() = default;
     /// The value of each element it presents, in declaration order (ADR 0059 §5).
@@ -273,12 +318,13 @@ struct CodecZenohValueZbuf {
     [[nodiscard]] const CodecZenohValueZbufAfterShm& after_shm() const noexcept { return after_shm_; }
 
     /// Decode the next frame from `cursor`. On success the cursor
-    /// advances past the consumed bytes; on `NeedMoreBytes` the cursor
-    /// is left untouched so the caller can resume after appending more
-    /// bytes (RFC §synth-5-B L494-519). Returns `std::nullopt` on the
-    /// `NeedMoreBytes` boundary; later phases attach a typed error via
-    /// `cursor.last_error()`.
-    static std::optional<CodecZenohValueZbuf> decode(::SCE::Forge::SceCursor& cursor, std::uint8_t after_shm) {
+    /// advances past the consumed bytes and the value is answered; a
+    /// refused frame answers the `CodecError` that refused it
+    /// (docs/adr/0099, amendment of 2026-11-16): `NeedMoreBytes` when
+    /// the cursor's tail is shorter than the frame (RFC §synth-5-B
+    /// L494-519), which the caller resumes after appending bytes, and
+    /// another kind for a frame no more bytes make whole.
+    static ::SCE::Forge::Decoded<CodecZenohValueZbuf> decode(::SCE::Forge::SceCursor& cursor, std::uint8_t after_shm) {
         // Declared-but-unconsumed flag inputs: defensive (void) suppress per declared
         // `<sce:flag-input>` so codecs that haven't (yet) consumed an
         // input via `present-if` compile cleanly under -Wunused.
@@ -294,34 +340,34 @@ struct CodecZenohValueZbuf {
         // advances past exactly what it consumed. Per-field `is_repeat` /
         // `is_tlv_chain` / `is_embed` route to their dedicated helpers;
         // every other field flows through `present_if_decode_stmt`.
-        auto value_len_opt = cursor.read_vle_u64();
-        if (!value_len_opt.has_value()) return std::nullopt;
-        auto value_len = static_cast<std::uint64_t>(*value_len_opt);
+        auto value_len_read = cursor.read_vle_u64();
+        if (!value_len_read.has_value()) return value_len_read.error();
+        auto value_len = static_cast<std::uint64_t>(*value_len_read);
         std::optional<std::vector<uint8_t>> value;
         if ((after_shm & 0x01) == 0) {
             const auto _len = value_len;
             if (_len > 4294967295ULL) {
-                cursor.refuse(::SCE::Forge::CodecError::LengthOutOfRange); return std::nullopt;
+                return ::SCE::Forge::CodecError::LengthOutOfRange;
             }
-            if (static_cast<std::uint64_t>(_len) > static_cast<std::uint64_t>(SIZE_MAX) - 0u) return std::nullopt;
+            if (static_cast<std::uint64_t>(_len) > static_cast<std::uint64_t>(SIZE_MAX) - 0u) return ::SCE::Forge::CodecError::NeedMoreBytes;
             std::size_t _n = static_cast<std::size_t>(_len);
             const std::uint8_t* raw = cursor.peek_slice(_n);
-            if (raw == nullptr) return std::nullopt;
+            if (raw == nullptr) return ::SCE::Forge::CodecError::NeedMoreBytes;
             value.emplace(raw, raw + _n);
-            if (!cursor.advance(_n)) return std::nullopt;
+            if (!cursor.advance(_n)) return ::SCE::Forge::CodecError::NeedMoreBytes;
         }
         std::optional<uint64_t> encoding;
         if ((after_shm & 0x01) != 0) {
-            auto _v_opt = cursor.read_vle_u64();
-        if (!_v_opt.has_value()) return std::nullopt;
-        auto _v = static_cast<std::uint64_t>(*_v_opt);
+            auto _v_read = cursor.read_vle_u64();
+        if (!_v_read.has_value()) return _v_read.error();
+        auto _v = static_cast<std::uint64_t>(*_v_read);
             encoding = _v;
         }
         std::optional<uint64_t> slice_count;
         if ((after_shm & 0x01) != 0) {
-            auto _v_opt = cursor.read_vle_u64();
-        if (!_v_opt.has_value()) return std::nullopt;
-        auto _v = static_cast<std::uint64_t>(*_v_opt);
+            auto _v_read = cursor.read_vle_u64();
+        if (!_v_read.has_value()) return _v_read.error();
+        auto _v = static_cast<std::uint64_t>(*_v_read);
             slice_count = _v;
         }
         std::optional<std::vector<::SCE::Generated::CodecZenohValueSlice::CodecZenohValueSlice>> slices;
@@ -331,7 +377,7 @@ struct CodecZenohValueZbuf {
             _list.reserve(cursor.entries_backed(_n));
             for (auto _i = decltype(_n){0}; _i < _n; ++_i) {
                 auto _elem = ::SCE::Generated::CodecZenohValueSlice::CodecZenohValueSlice::decode(cursor);
-                if (!_elem.has_value()) return std::nullopt;
+                if (!_elem.has_value()) return _elem.error();
                 _list.push_back(*_elem);
             }
             slices = std::move(_list);
@@ -340,16 +386,14 @@ struct CodecZenohValueZbuf {
         if (slices) {
             _b_slices = ::SCE::Forge::List<::SCE::Generated::CodecZenohValueSlice::CodecZenohValueSlice, ::SCE::Forge::kUnbounded>::make(*slices);
             if (!_b_slices) {
-                cursor.refuse(::SCE::Forge::CodecError::TooManyElements);
-                return std::nullopt;
+                return ::SCE::Forge::CodecError::TooManyElements;
             }
         }
         std::optional<::SCE::Forge::Bytes<4294967295>> _b_value;
         if (value) {
             _b_value = ::SCE::Forge::Bytes<4294967295>::make(*value);
             if (!_b_value) {
-                cursor.refuse(::SCE::Forge::CodecError::LengthOutOfRange);
-                return std::nullopt;
+                return ::SCE::Forge::CodecError::LengthOutOfRange;
             }
         }
         (void)value_len;

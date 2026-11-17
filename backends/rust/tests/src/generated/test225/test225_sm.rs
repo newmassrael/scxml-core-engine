@@ -489,6 +489,7 @@ impl Test225Policy {
                 );
                 engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(
                     Test225Event::ErrorExecution,
+                    ::sce_rust_runtime::ErrorReason::ParamUnfit,
                     "<data id='Var1'> could not hold the value its invoke handed it",
                 ));
             }
@@ -506,6 +507,7 @@ impl Test225Policy {
                 );
                 engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(
                     Test225Event::ErrorExecution,
+                    ::sce_rust_runtime::ErrorReason::ParamUnfit,
                     "<data id='Var2'> could not hold the value its invoke handed it",
                 ));
             }
@@ -557,6 +559,7 @@ impl Test225Policy {
                 ::sce_rust_runtime::sce_log_error!("Guard evaluation failed for '{}': {}", cond, e);
                 engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(
                     Test225Event::ErrorExecution,
+                    ::sce_rust_runtime::ErrorReason::ExpressionFailed,
                     reason,
                 ));
                 None
@@ -659,6 +662,7 @@ impl Test225Policy {
             if !id_stored {
                 engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(
                     Test225Event::ErrorExecution,
+                    ::sce_rust_runtime::ErrorReason::LocationInvalid,
                     "<invoke idlocation='Var1'> could not take the invoke id",
                 ));
             }
@@ -699,6 +703,7 @@ impl Test225Policy {
             if !id_stored {
                 engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(
                     Test225Event::ErrorExecution,
+                    ::sce_rust_runtime::ErrorReason::LocationInvalid,
                     "<invoke idlocation='Var2'> could not take the invoke id",
                 ));
             }
@@ -809,7 +814,7 @@ impl Test225Policy {
                     self.active_invokes.remove("_invoke_0");
                     engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(
                         Test225Event::ErrorExecution,
-                        &format!("<invoke id='{}'> did not start: its child's script session failed at step '{}'", pending.invoke_id, failure.stage)));
+                        ::sce_rust_runtime::ErrorReason::InvokeChildInitFailed, &format!("<invoke id='{}'> did not start: its child's script session failed at step '{}'", pending.invoke_id, failure.stage)));
                     continue;
                 }
 
@@ -898,7 +903,7 @@ impl Test225Policy {
                     self.active_invokes.remove("_invoke_1");
                     engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(
                         Test225Event::ErrorExecution,
-                        &format!("<invoke id='{}'> did not start: its child's script session failed at step '{}'", pending.invoke_id, failure.stage)));
+                        ::sce_rust_runtime::ErrorReason::InvokeChildInitFailed, &format!("<invoke id='{}'> did not start: its child's script session failed at step '{}'", pending.invoke_id, failure.stage)));
                     continue;
                 }
 

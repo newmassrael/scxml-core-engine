@@ -38,23 +38,22 @@ class CodecVariantPeekBasic:
     body: CodecVariantPeekBasicVariant = field(default_factory=CodecVariantPeekBasicVariant)
 
     @classmethod
-    def decode(cls, cursor: SceCursor) -> Optional[CodecVariantPeekBasic]:
-        """Decode the next frame from ``cursor``. Returns ``None`` when
-        the cursor's tail is shorter than the declared minimum frame
-        (RFC §synth-5-B L494-519); on success the cursor advances past the
-        consumed bytes. VLE codecs also return ``None`` on
-        ``VleWidthOverflow``, and every codec on a field's refusal: a length
-        or a count past its bound (``LengthOutOfRange``, ``TooManyElements``,
-        docs/adr/0077), an undeclared enum value."""
+    def decode(cls, cursor: SceCursor) -> CodecVariantPeekBasic:
+        """Decode the next frame from ``cursor``; on success the cursor
+        advances past the consumed bytes. A frame the codec refuses raises
+        the ``CodecError`` subclass that names the refusal (docs/adr/0099,
+        amendment of 2026-11-16): ``NeedMoreBytes`` when the cursor's tail
+        is shorter than the frame (RFC §synth-5-B L494-519), which the
+        caller resumes after appending bytes, and for a frame no more bytes
+        make whole ``VleWidthOverflow``, ``InvalidUtf8``,
+        ``UndeclaredEnumValue``, or a length or a count past its bound
+        (``LengthOutOfRange``, ``TooManyElements``, docs/adr/0077)."""
         # RFC §synth-5-B peek-byte / streaming-prefix:
         # streaming prefix decode (variable-length fields supported via
         # per-field present_if/tlv-chain/embed/repeat helpers). Peek-byte
         # mode additionally peeks the cursor's next byte for variant tag
         # without advancing — arm body decoder reads it as own header.
-        try:
-            _peek = cursor.peek_slice(1)[0]
-        except NeedMoreBytes:
-            return None
+        _peek = cursor.peek_slice(1)[0]
         # Dispatch on the tag field; each arm decodes its body codec
         # from the cursor. The default arm (when declared) carries the
         # runtime tag value so encode can round-trip it back onto the
@@ -62,19 +61,14 @@ class CodecVariantPeekBasic:
         body = CodecVariantPeekBasicVariant()
         if ((_peek >> 0) & 0x01) == 0:
             body.kind = "CodecPeekArmA"
-            _arm = CodecPeekArmA.decode(cursor)
-            if _arm is None:
-                return None
-            body.codec_peek_arm_a = _arm
+            body.codec_peek_arm_a = CodecPeekArmA.decode(cursor)
         elif ((_peek >> 0) & 0x01) == 1:
             body.kind = "CodecPeekArmB"
-            _arm = CodecPeekArmB.decode(cursor)
-            if _arm is None:
-                return None
-            body.codec_peek_arm_b = _arm
+            body.codec_peek_arm_b = CodecPeekArmB.decode(cursor)
         else:
-            # codec/variant-arm-unreachable rejected this case at parse time.
-            return None
+            # codec/variant-arm-unreachable proves every tag names an arm, so
+            # no frame reaches here.
+            raise AssertionError("codec/variant-arm-unreachable admitted a tag no arm names")
         return cls(
             body=body,
         )

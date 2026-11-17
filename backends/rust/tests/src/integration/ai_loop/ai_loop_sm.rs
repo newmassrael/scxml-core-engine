@@ -931,6 +931,7 @@ impl AiLoopPolicy {
                 );
                 engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(
                     AiLoopEvent::ErrorExecution,
+                    ::sce_rust_runtime::ErrorReason::ParamUnfit,
                     "<data id='north_star'> could not hold the value its invoke handed it",
                 ));
             }
@@ -945,6 +946,7 @@ impl AiLoopPolicy {
                 ::sce_rust_runtime::sce_log_error!("global: {}", e);
                 engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(
                     AiLoopEvent::ErrorExecution,
+                    ::sce_rust_runtime::ErrorReason::ExpressionFailed,
                     "<data id='north_star'> expr failed to evaluate",
                 ));
             }
@@ -959,6 +961,7 @@ impl AiLoopPolicy {
                 );
                 engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(
                     AiLoopEvent::ErrorExecution,
+                    ::sce_rust_runtime::ErrorReason::ParamUnfit,
                     "<data id='milestone'> could not hold the value its invoke handed it",
                 ));
             }
@@ -973,6 +976,7 @@ impl AiLoopPolicy {
                 ::sce_rust_runtime::sce_log_error!("global: {}", e);
                 engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(
                     AiLoopEvent::ErrorExecution,
+                    ::sce_rust_runtime::ErrorReason::ExpressionFailed,
                     "<data id='milestone'> expr failed to evaluate",
                 ));
             }
@@ -987,6 +991,7 @@ impl AiLoopPolicy {
                 );
                 engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(
                     AiLoopEvent::ErrorExecution,
+                    ::sce_rust_runtime::ErrorReason::ParamUnfit,
                     "<data id='reference'> could not hold the value its invoke handed it",
                 ));
             }
@@ -1001,6 +1006,7 @@ impl AiLoopPolicy {
                 ::sce_rust_runtime::sce_log_error!("global: {}", e);
                 engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(
                     AiLoopEvent::ErrorExecution,
+                    ::sce_rust_runtime::ErrorReason::ExpressionFailed,
                     "<data id='reference'> expr failed to evaluate",
                 ));
             }
@@ -1015,6 +1021,7 @@ impl AiLoopPolicy {
                 );
                 engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(
                     AiLoopEvent::ErrorExecution,
+                    ::sce_rust_runtime::ErrorReason::ParamUnfit,
                     "<data id='start_prompt'> could not hold the value its invoke handed it",
                 ));
             }
@@ -1023,7 +1030,7 @@ impl AiLoopPolicy {
             if let Err(e) = sce_rust_runtime::helpers::datamodel_init::initialize_variable_from_expr(
             se, &sid, "start_prompt", "(_scxml_tostring((_scxml_tostring(_scxml_add((_scxml_tostring((_scxml_tostring(_scxml_add((_scxml_tostring((_scxml_tostring((\"North star: \" .. _scxml_tostring(north_star))) .. \"\\n\")) .. \"Milestone: \"), milestone)) .. \"\\n\")) .. \"Reference: \"), reference)) .. \"\\n\")) .. \"Report what you did and what is left.\")") {
             ::sce_rust_runtime::sce_log_error!("global: {}", e);
-            engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(AiLoopEvent::ErrorExecution, "<data id='start_prompt'> expr failed to evaluate"));
+            engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(AiLoopEvent::ErrorExecution, ::sce_rust_runtime::ErrorReason::ExpressionFailed, "<data id='start_prompt'> expr failed to evaluate"));
         }
         }
 
@@ -1036,6 +1043,7 @@ impl AiLoopPolicy {
                 );
                 engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(
                     AiLoopEvent::ErrorExecution,
+                    ::sce_rust_runtime::ErrorReason::ParamUnfit,
                     "<data id='turn_prompt'> could not hold the value its invoke handed it",
                 ));
             }
@@ -1044,7 +1052,7 @@ impl AiLoopPolicy {
             if let Err(e) = sce_rust_runtime::helpers::datamodel_init::initialize_variable_from_expr(
             se, &sid, "turn_prompt", "(_scxml_tostring((_scxml_tostring((\"Continue toward: \" .. _scxml_tostring(milestone))) .. \"\\n\")) .. \"Do the next smallest thing that is verifiable, then report.\")") {
             ::sce_rust_runtime::sce_log_error!("global: {}", e);
-            engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(AiLoopEvent::ErrorExecution, "<data id='turn_prompt'> expr failed to evaluate"));
+            engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(AiLoopEvent::ErrorExecution, ::sce_rust_runtime::ErrorReason::ExpressionFailed, "<data id='turn_prompt'> expr failed to evaluate"));
         }
         }
 
@@ -1057,6 +1065,7 @@ impl AiLoopPolicy {
                 );
                 engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(
                     AiLoopEvent::ErrorExecution,
+                    ::sce_rust_runtime::ErrorReason::ParamUnfit,
                     "<data id='end_prompt'> could not hold the value its invoke handed it",
                 ));
             }
@@ -1071,6 +1080,7 @@ impl AiLoopPolicy {
                 ::sce_rust_runtime::sce_log_error!("global: {}", e);
                 engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(
                     AiLoopEvent::ErrorExecution,
+                    ::sce_rust_runtime::ErrorReason::ExpressionFailed,
                     "<data id='end_prompt'> expr failed to evaluate",
                 ));
             }
@@ -1085,6 +1095,7 @@ impl AiLoopPolicy {
                 );
                 engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(
                     AiLoopEvent::ErrorExecution,
+                    ::sce_rust_runtime::ErrorReason::ParamUnfit,
                     "<data id='done_marker'> could not hold the value its invoke handed it",
                 ));
             }
@@ -1099,6 +1110,7 @@ impl AiLoopPolicy {
                 ::sce_rust_runtime::sce_log_error!("global: {}", e);
                 engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(
                     AiLoopEvent::ErrorExecution,
+                    ::sce_rust_runtime::ErrorReason::ExpressionFailed,
                     "<data id='done_marker'> expr failed to evaluate",
                 ));
             }
@@ -1113,6 +1125,7 @@ impl AiLoopPolicy {
                 );
                 engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(
                     AiLoopEvent::ErrorExecution,
+                    ::sce_rust_runtime::ErrorReason::ParamUnfit,
                     "<data id='screen_rules'> could not hold the value its invoke handed it",
                 ));
             }
@@ -1121,7 +1134,7 @@ impl AiLoopPolicy {
             if let Err(e) = sce_rust_runtime::helpers::datamodel_init::initialize_variable_from_expr(
             se, &sid, "screen_rules", "{{[\"when\"] = \"design-decision\", [\"keys\"] = \"Escape\", [\"text\"] = \"Ignore cost. Rethink for the most durable answer, then proceed.\"}, {[\"when\"] = \"design-proposal\", [\"keys\"] = \"Escape\", [\"text\"] = \"Ignore cost. Rethink for the most durable answer, then proceed.\"}, {[\"when\"] = \"multiple-choice\", [\"keys\"] = \"Escape\", [\"text\"] = \"Ignore cost. Rethink for the most durable answer, then proceed.\"}}") {
             ::sce_rust_runtime::sce_log_error!("global: {}", e);
-            engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(AiLoopEvent::ErrorExecution, "<data id='screen_rules'> expr failed to evaluate"));
+            engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(AiLoopEvent::ErrorExecution, ::sce_rust_runtime::ErrorReason::ExpressionFailed, "<data id='screen_rules'> expr failed to evaluate"));
         }
         }
 
@@ -1131,6 +1144,7 @@ impl AiLoopPolicy {
                 ::sce_rust_runtime::sce_log_error!("<data id='screen_permissions'> could not hold the value its invoke handed it: {}", e);
                 engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(
                     AiLoopEvent::ErrorExecution,
+                    ::sce_rust_runtime::ErrorReason::ParamUnfit,
                     "<data id='screen_permissions'> could not hold the value its invoke handed it",
                 ));
             }
@@ -1145,6 +1159,7 @@ impl AiLoopPolicy {
                 ::sce_rust_runtime::sce_log_error!("global: {}", e);
                 engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(
                     AiLoopEvent::ErrorExecution,
+                    ::sce_rust_runtime::ErrorReason::ExpressionFailed,
                     "<data id='screen_permissions'> expr failed to evaluate",
                 ));
             }
@@ -1159,6 +1174,7 @@ impl AiLoopPolicy {
                 );
                 engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(
                     AiLoopEvent::ErrorExecution,
+                    ::sce_rust_runtime::ErrorReason::ParamUnfit,
                     "<data id='max_turns'> could not hold the value its invoke handed it",
                 ));
             }
@@ -1173,6 +1189,7 @@ impl AiLoopPolicy {
                 ::sce_rust_runtime::sce_log_error!("global: {}", e);
                 engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(
                     AiLoopEvent::ErrorExecution,
+                    ::sce_rust_runtime::ErrorReason::ExpressionFailed,
                     "<data id='max_turns'> expr failed to evaluate",
                 ));
             }
@@ -1187,6 +1204,7 @@ impl AiLoopPolicy {
                 );
                 engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(
                     AiLoopEvent::ErrorExecution,
+                    ::sce_rust_runtime::ErrorReason::ParamUnfit,
                     "<data id='reflect_every'> could not hold the value its invoke handed it",
                 ));
             }
@@ -1201,6 +1219,7 @@ impl AiLoopPolicy {
                 ::sce_rust_runtime::sce_log_error!("global: {}", e);
                 engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(
                     AiLoopEvent::ErrorExecution,
+                    ::sce_rust_runtime::ErrorReason::ExpressionFailed,
                     "<data id='reflect_every'> expr failed to evaluate",
                 ));
             }
@@ -1215,6 +1234,7 @@ impl AiLoopPolicy {
                 );
                 engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(
                     AiLoopEvent::ErrorExecution,
+                    ::sce_rust_runtime::ErrorReason::ParamUnfit,
                     "<data id='max_restarts'> could not hold the value its invoke handed it",
                 ));
             }
@@ -1229,6 +1249,7 @@ impl AiLoopPolicy {
                 ::sce_rust_runtime::sce_log_error!("global: {}", e);
                 engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(
                     AiLoopEvent::ErrorExecution,
+                    ::sce_rust_runtime::ErrorReason::ExpressionFailed,
                     "<data id='max_restarts'> expr failed to evaluate",
                 ));
             }
@@ -1243,6 +1264,7 @@ impl AiLoopPolicy {
                 );
                 engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(
                     AiLoopEvent::ErrorExecution,
+                    ::sce_rust_runtime::ErrorReason::ParamUnfit,
                     "<data id='turns'> could not hold the value its invoke handed it",
                 ));
             }
@@ -1254,6 +1276,7 @@ impl AiLoopPolicy {
                 ::sce_rust_runtime::sce_log_error!("global: {}", e);
                 engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(
                     AiLoopEvent::ErrorExecution,
+                    ::sce_rust_runtime::ErrorReason::ExpressionFailed,
                     "<data id='turns'> expr failed to evaluate",
                 ));
             }
@@ -1265,6 +1288,7 @@ impl AiLoopPolicy {
                 ::sce_rust_runtime::sce_log_error!("<data id='turns_since_reflect'> could not hold the value its invoke handed it: {}", e);
                 engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(
                     AiLoopEvent::ErrorExecution,
+                    ::sce_rust_runtime::ErrorReason::ParamUnfit,
                     "<data id='turns_since_reflect'> could not hold the value its invoke handed it",
                 ));
             }
@@ -1279,6 +1303,7 @@ impl AiLoopPolicy {
                 ::sce_rust_runtime::sce_log_error!("global: {}", e);
                 engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(
                     AiLoopEvent::ErrorExecution,
+                    ::sce_rust_runtime::ErrorReason::ExpressionFailed,
                     "<data id='turns_since_reflect'> expr failed to evaluate",
                 ));
             }
@@ -1293,6 +1318,7 @@ impl AiLoopPolicy {
                 );
                 engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(
                     AiLoopEvent::ErrorExecution,
+                    ::sce_rust_runtime::ErrorReason::ParamUnfit,
                     "<data id='screened'> could not hold the value its invoke handed it",
                 ));
             }
@@ -1304,6 +1330,7 @@ impl AiLoopPolicy {
                 ::sce_rust_runtime::sce_log_error!("global: {}", e);
                 engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(
                     AiLoopEvent::ErrorExecution,
+                    ::sce_rust_runtime::ErrorReason::ExpressionFailed,
                     "<data id='screened'> expr failed to evaluate",
                 ));
             }
@@ -1318,6 +1345,7 @@ impl AiLoopPolicy {
                 );
                 engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(
                     AiLoopEvent::ErrorExecution,
+                    ::sce_rust_runtime::ErrorReason::ParamUnfit,
                     "<data id='restarts'> could not hold the value its invoke handed it",
                 ));
             }
@@ -1329,6 +1357,7 @@ impl AiLoopPolicy {
                 ::sce_rust_runtime::sce_log_error!("global: {}", e);
                 engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(
                     AiLoopEvent::ErrorExecution,
+                    ::sce_rust_runtime::ErrorReason::ExpressionFailed,
                     "<data id='restarts'> expr failed to evaluate",
                 ));
             }
@@ -1395,6 +1424,7 @@ impl AiLoopPolicy {
                 ::sce_rust_runtime::sce_log_error!("Guard evaluation failed for '{}': {}", cond, e);
                 engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(
                     AiLoopEvent::ErrorExecution,
+                    ::sce_rust_runtime::ErrorReason::ExpressionFailed,
                     reason,
                 ));
                 None
@@ -1924,6 +1954,7 @@ impl StatePolicy for AiLoopPolicy {
                                     engine.raise(
                                         sce_rust_runtime::EventWithMetadata::platform_error(
                                             AiLoopEvent::ErrorExecution,
+                                            ::sce_rust_runtime::ErrorReason::LocationInvalid,
                                             "<send> <param name='text'> could not be read",
                                         ),
                                     );
@@ -1965,7 +1996,7 @@ impl StatePolicy for AiLoopPolicy {
                             // support — the act it asked for was performed by nobody. Same
                             // event, so a wiring mistake cannot read as success.
                             if __sce_served.is_none() && !engine.has_event_processor("x-sce-host") {
-                                let mut err_meta = sce_rust_runtime::EventWithMetadata::platform_error(AiLoopEvent::ErrorExecution, "<send type='x-sce-host'> names a processor the host declared but never registered");
+                                let mut err_meta = sce_rust_runtime::EventWithMetadata::platform_error(AiLoopEvent::ErrorExecution, ::sce_rust_runtime::ErrorReason::ProcessorUnregistered, "<send type='x-sce-host'> names a processor the host declared but never registered");
                                 err_meta.metadata.send_id =
                                     ::sce_rust_runtime::sce_string_from_str(send_id);
                                 engine.raise(err_meta);
@@ -2028,6 +2059,7 @@ impl StatePolicy for AiLoopPolicy {
                                     engine.raise(
                                         sce_rust_runtime::EventWithMetadata::platform_error(
                                             AiLoopEvent::ErrorExecution,
+                                            ::sce_rust_runtime::ErrorReason::LocationInvalid,
                                             "<send> <param name='marker'> could not be read",
                                         ),
                                     );
@@ -2069,7 +2101,7 @@ impl StatePolicy for AiLoopPolicy {
                             // support — the act it asked for was performed by nobody. Same
                             // event, so a wiring mistake cannot read as success.
                             if __sce_served.is_none() && !engine.has_event_processor("x-sce-host") {
-                                let mut err_meta = sce_rust_runtime::EventWithMetadata::platform_error(AiLoopEvent::ErrorExecution, "<send type='x-sce-host'> names a processor the host declared but never registered");
+                                let mut err_meta = sce_rust_runtime::EventWithMetadata::platform_error(AiLoopEvent::ErrorExecution, ::sce_rust_runtime::ErrorReason::ProcessorUnregistered, "<send type='x-sce-host'> names a processor the host declared but never registered");
                                 err_meta.metadata.send_id =
                                     ::sce_rust_runtime::sce_string_from_str(send_id);
                                 engine.raise(err_meta);
@@ -2126,7 +2158,7 @@ impl StatePolicy for AiLoopPolicy {
                             // support — the act it asked for was performed by nobody. Same
                             // event, so a wiring mistake cannot read as success.
                             if __sce_served.is_none() && !engine.has_event_processor("x-sce-host") {
-                                let mut err_meta = sce_rust_runtime::EventWithMetadata::platform_error(AiLoopEvent::ErrorExecution, "<send type='x-sce-host'> names a processor the host declared but never registered");
+                                let mut err_meta = sce_rust_runtime::EventWithMetadata::platform_error(AiLoopEvent::ErrorExecution, ::sce_rust_runtime::ErrorReason::ProcessorUnregistered, "<send type='x-sce-host'> names a processor the host declared but never registered");
                                 err_meta.metadata.send_id =
                                     ::sce_rust_runtime::sce_string_from_str(send_id);
                                 engine.raise(err_meta);
@@ -2180,6 +2212,7 @@ impl StatePolicy for AiLoopPolicy {
                                     engine.raise(
                                         sce_rust_runtime::EventWithMetadata::platform_error(
                                             AiLoopEvent::ErrorExecution,
+                                            ::sce_rust_runtime::ErrorReason::LocationInvalid,
                                             "<send> <param name='text'> could not be read",
                                         ),
                                     );
@@ -2221,7 +2254,7 @@ impl StatePolicy for AiLoopPolicy {
                             // support — the act it asked for was performed by nobody. Same
                             // event, so a wiring mistake cannot read as success.
                             if __sce_served.is_none() && !engine.has_event_processor("x-sce-host") {
-                                let mut err_meta = sce_rust_runtime::EventWithMetadata::platform_error(AiLoopEvent::ErrorExecution, "<send type='x-sce-host'> names a processor the host declared but never registered");
+                                let mut err_meta = sce_rust_runtime::EventWithMetadata::platform_error(AiLoopEvent::ErrorExecution, ::sce_rust_runtime::ErrorReason::ProcessorUnregistered, "<send type='x-sce-host'> names a processor the host declared but never registered");
                                 err_meta.metadata.send_id =
                                     ::sce_rust_runtime::sce_string_from_str(send_id);
                                 engine.raise(err_meta);
@@ -2263,6 +2296,7 @@ impl StatePolicy for AiLoopPolicy {
                             );
                             engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(
                                 AiLoopEvent::ErrorExecution,
+                                ::sce_rust_runtime::ErrorReason::AssignmentFailed,
                                 "<assign> to 'turns_since_reflect' failed",
                             ));
                             // W3C SCXML 4.9: the error ends the block, from however deep a <foreach> it came.
@@ -2304,7 +2338,7 @@ impl StatePolicy for AiLoopPolicy {
                             // support — the act it asked for was performed by nobody. Same
                             // event, so a wiring mistake cannot read as success.
                             if __sce_served.is_none() && !engine.has_event_processor("x-sce-host") {
-                                let mut err_meta = sce_rust_runtime::EventWithMetadata::platform_error(AiLoopEvent::ErrorExecution, "<send type='x-sce-host'> names a processor the host declared but never registered");
+                                let mut err_meta = sce_rust_runtime::EventWithMetadata::platform_error(AiLoopEvent::ErrorExecution, ::sce_rust_runtime::ErrorReason::ProcessorUnregistered, "<send type='x-sce-host'> names a processor the host declared but never registered");
                                 err_meta.metadata.send_id =
                                     ::sce_rust_runtime::sce_string_from_str(send_id);
                                 engine.raise(err_meta);
@@ -2355,6 +2389,7 @@ impl StatePolicy for AiLoopPolicy {
                             );
                             engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(
                                 AiLoopEvent::ErrorExecution,
+                                ::sce_rust_runtime::ErrorReason::AssignmentFailed,
                                 "<assign> to 'restarts' failed",
                             ));
                             // W3C SCXML 4.9: the error ends the block, from however deep a <foreach> it came.
@@ -2396,7 +2431,7 @@ impl StatePolicy for AiLoopPolicy {
                             // support — the act it asked for was performed by nobody. Same
                             // event, so a wiring mistake cannot read as success.
                             if __sce_served.is_none() && !engine.has_event_processor("x-sce-host") {
-                                let mut err_meta = sce_rust_runtime::EventWithMetadata::platform_error(AiLoopEvent::ErrorExecution, "<send type='x-sce-host'> names a processor the host declared but never registered");
+                                let mut err_meta = sce_rust_runtime::EventWithMetadata::platform_error(AiLoopEvent::ErrorExecution, ::sce_rust_runtime::ErrorReason::ProcessorUnregistered, "<send type='x-sce-host'> names a processor the host declared but never registered");
                                 err_meta.metadata.send_id =
                                     ::sce_rust_runtime::sce_string_from_str(send_id);
                                 engine.raise(err_meta);
@@ -2432,6 +2467,7 @@ impl StatePolicy for AiLoopPolicy {
                             );
                             engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(
                                 AiLoopEvent::ErrorExecution,
+                                ::sce_rust_runtime::ErrorReason::AssignmentFailed,
                                 "<assign> to 'screened' failed",
                             ));
                             // W3C SCXML 4.9: the error ends the block, from however deep a <foreach> it came.
@@ -2473,7 +2509,7 @@ impl StatePolicy for AiLoopPolicy {
                             // support — the act it asked for was performed by nobody. Same
                             // event, so a wiring mistake cannot read as success.
                             if __sce_served.is_none() && !engine.has_event_processor("x-sce-host") {
-                                let mut err_meta = sce_rust_runtime::EventWithMetadata::platform_error(AiLoopEvent::ErrorExecution, "<send type='x-sce-host'> names a processor the host declared but never registered");
+                                let mut err_meta = sce_rust_runtime::EventWithMetadata::platform_error(AiLoopEvent::ErrorExecution, ::sce_rust_runtime::ErrorReason::ProcessorUnregistered, "<send type='x-sce-host'> names a processor the host declared but never registered");
                                 err_meta.metadata.send_id =
                                     ::sce_rust_runtime::sce_string_from_str(send_id);
                                 engine.raise(err_meta);
@@ -2884,6 +2920,7 @@ impl StatePolicy for AiLoopPolicy {
                                     engine.raise(
                                         sce_rust_runtime::EventWithMetadata::platform_error(
                                             AiLoopEvent::ErrorExecution,
+                                            ::sce_rust_runtime::ErrorReason::LocationInvalid,
                                             "<send> <param name='text'> could not be read",
                                         ),
                                     );
@@ -2925,7 +2962,7 @@ impl StatePolicy for AiLoopPolicy {
                             // support — the act it asked for was performed by nobody. Same
                             // event, so a wiring mistake cannot read as success.
                             if __sce_served.is_none() && !engine.has_event_processor("x-sce-host") {
-                                let mut err_meta = sce_rust_runtime::EventWithMetadata::platform_error(AiLoopEvent::ErrorExecution, "<send type='x-sce-host'> names a processor the host declared but never registered");
+                                let mut err_meta = sce_rust_runtime::EventWithMetadata::platform_error(AiLoopEvent::ErrorExecution, ::sce_rust_runtime::ErrorReason::ProcessorUnregistered, "<send type='x-sce-host'> names a processor the host declared but never registered");
                                 err_meta.metadata.send_id =
                                     ::sce_rust_runtime::sce_string_from_str(send_id);
                                 engine.raise(err_meta);
@@ -2968,6 +3005,7 @@ impl StatePolicy for AiLoopPolicy {
                             );
                             engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(
                                 AiLoopEvent::ErrorExecution,
+                                ::sce_rust_runtime::ErrorReason::AssignmentFailed,
                                 "<assign> to 'turns_since_reflect' failed",
                             ));
                             // W3C SCXML 4.9: the error ends the block, from however deep a <foreach> it came.
@@ -3001,6 +3039,7 @@ impl StatePolicy for AiLoopPolicy {
                             );
                             engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(
                                 AiLoopEvent::ErrorExecution,
+                                ::sce_rust_runtime::ErrorReason::AssignmentFailed,
                                 "<assign> to 'start_prompt' failed",
                             ));
                             // W3C SCXML 4.9: the error ends the block, from however deep a <foreach> it came.
@@ -3027,6 +3066,7 @@ impl StatePolicy for AiLoopPolicy {
                             );
                             engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(
                                 AiLoopEvent::ErrorExecution,
+                                ::sce_rust_runtime::ErrorReason::AssignmentFailed,
                                 "<assign> to 'turn_prompt' failed",
                             ));
                             // W3C SCXML 4.9: the error ends the block, from however deep a <foreach> it came.
@@ -3053,6 +3093,7 @@ impl StatePolicy for AiLoopPolicy {
                             );
                             engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(
                                 AiLoopEvent::ErrorExecution,
+                                ::sce_rust_runtime::ErrorReason::AssignmentFailed,
                                 "<assign> to 'milestone' failed",
                             ));
                             // W3C SCXML 4.9: the error ends the block, from however deep a <foreach> it came.
@@ -3104,6 +3145,7 @@ impl StatePolicy for AiLoopPolicy {
                                     engine.raise(
                                         sce_rust_runtime::EventWithMetadata::platform_error(
                                             AiLoopEvent::ErrorExecution,
+                                            ::sce_rust_runtime::ErrorReason::LocationInvalid,
                                             "<send> <param name='text'> could not be read",
                                         ),
                                     );
@@ -3145,7 +3187,7 @@ impl StatePolicy for AiLoopPolicy {
                             // support — the act it asked for was performed by nobody. Same
                             // event, so a wiring mistake cannot read as success.
                             if __sce_served.is_none() && !engine.has_event_processor("x-sce-host") {
-                                let mut err_meta = sce_rust_runtime::EventWithMetadata::platform_error(AiLoopEvent::ErrorExecution, "<send type='x-sce-host'> names a processor the host declared but never registered");
+                                let mut err_meta = sce_rust_runtime::EventWithMetadata::platform_error(AiLoopEvent::ErrorExecution, ::sce_rust_runtime::ErrorReason::ProcessorUnregistered, "<send type='x-sce-host'> names a processor the host declared but never registered");
                                 err_meta.metadata.send_id =
                                     ::sce_rust_runtime::sce_string_from_str(send_id);
                                 engine.raise(err_meta);
@@ -3185,6 +3227,7 @@ impl StatePolicy for AiLoopPolicy {
                             ::sce_rust_runtime::sce_log_error!("Assign failed for 'turns': {}", e);
                             engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(
                                 AiLoopEvent::ErrorExecution,
+                                ::sce_rust_runtime::ErrorReason::AssignmentFailed,
                                 "<assign> to 'turns' failed",
                             ));
                             // W3C SCXML 4.9: the error ends the block, from however deep a <foreach> it came.
@@ -3215,6 +3258,7 @@ impl StatePolicy for AiLoopPolicy {
                             ::sce_rust_runtime::sce_log_error!("Assign failed for 'turns': {}", e);
                             engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(
                                 AiLoopEvent::ErrorExecution,
+                                ::sce_rust_runtime::ErrorReason::AssignmentFailed,
                                 "<assign> to 'turns' failed",
                             ));
                             // W3C SCXML 4.9: the error ends the block, from however deep a <foreach> it came.
@@ -3248,6 +3292,7 @@ impl StatePolicy for AiLoopPolicy {
                             );
                             engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(
                                 AiLoopEvent::ErrorExecution,
+                                ::sce_rust_runtime::ErrorReason::AssignmentFailed,
                                 "<assign> to 'turns_since_reflect' failed",
                             ));
                             // W3C SCXML 4.9: the error ends the block, from however deep a <foreach> it came.

@@ -453,6 +453,7 @@ impl EmptyFinalizeUpdatesTheLocationSceSynthInvokeInvEmptyPolicy {
                 );
                 engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(
                     EmptyFinalizeUpdatesTheLocationSceSynthInvokeInvEmptyEvent::ErrorExecution,
+                    ::sce_rust_runtime::ErrorReason::ParamUnfit,
                     "<data id='tally'> could not hold the value its invoke handed it",
                 ));
             }
@@ -504,6 +505,7 @@ impl EmptyFinalizeUpdatesTheLocationSceSynthInvokeInvEmptyPolicy {
                 ::sce_rust_runtime::sce_log_error!("Guard evaluation failed for '{}': {}", cond, e);
                 engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(
                     EmptyFinalizeUpdatesTheLocationSceSynthInvokeInvEmptyEvent::ErrorExecution,
+                    ::sce_rust_runtime::ErrorReason::ExpressionFailed,
                     reason,
                 ));
                 None
@@ -974,7 +976,7 @@ impl StatePolicy for EmptyFinalizeUpdatesTheLocationSceSynthInvokeInvEmptyPolicy
                                         "send param 'tally' eval failed: {}",
                                         e
                                     );
-                                    engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(EmptyFinalizeUpdatesTheLocationSceSynthInvokeInvEmptyEvent::ErrorExecution, "<send> <param name='tally'> could not be read"));
+                                    engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(EmptyFinalizeUpdatesTheLocationSceSynthInvokeInvEmptyEvent::ErrorExecution, ::sce_rust_runtime::ErrorReason::LocationInvalid, "<send> <param name='tally'> could not be read"));
                                     // W3C SCXML 5.7.1: the pair is left out; 4.9: the block stops after the send.
                                     _param_failed = true;
                                 }
@@ -996,7 +998,8 @@ impl StatePolicy for EmptyFinalizeUpdatesTheLocationSceSynthInvokeInvEmptyPolicy
                             // nothing delivered, and the block ends (4.9).
                             engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(
             EmptyFinalizeUpdatesTheLocationSceSynthInvokeInvEmptyEvent::ErrorCommunication,
-            "<send target='#_parent'> has no parent session to reach"));
+            ::sce_rust_runtime::ErrorReason::TargetUnreachable,
+        "<send target='#_parent'> has no parent session to reach"));
                             break 'action_block;
                         }
 

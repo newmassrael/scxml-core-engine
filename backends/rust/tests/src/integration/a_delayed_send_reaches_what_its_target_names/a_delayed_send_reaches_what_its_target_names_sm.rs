@@ -649,6 +649,7 @@ impl ADelayedSendReachesWhatItsTargetNamesPolicy {
                 );
                 engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(
                     ADelayedSendReachesWhatItsTargetNamesEvent::ErrorExecution,
+                    ::sce_rust_runtime::ErrorReason::ParamUnfit,
                     "<data id='order'> could not hold the value its invoke handed it",
                 ));
             }
@@ -660,6 +661,7 @@ impl ADelayedSendReachesWhatItsTargetNamesPolicy {
                 ::sce_rust_runtime::sce_log_error!("global: {}", e);
                 engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(
                     ADelayedSendReachesWhatItsTargetNamesEvent::ErrorExecution,
+                    ::sce_rust_runtime::ErrorReason::ExpressionFailed,
                     "<data id='order'> expr failed to evaluate",
                 ));
             }
@@ -674,6 +676,7 @@ impl ADelayedSendReachesWhatItsTargetNamesPolicy {
                 );
                 engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(
                     ADelayedSendReachesWhatItsTargetNamesEvent::ErrorExecution,
+                    ::sce_rust_runtime::ErrorReason::ParamUnfit,
                     "<data id='innerInternal'> could not hold the value its invoke handed it",
                 ));
             }
@@ -688,6 +691,7 @@ impl ADelayedSendReachesWhatItsTargetNamesPolicy {
                 ::sce_rust_runtime::sce_log_error!("global: {}", e);
                 engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(
                     ADelayedSendReachesWhatItsTargetNamesEvent::ErrorExecution,
+                    ::sce_rust_runtime::ErrorReason::ExpressionFailed,
                     "<data id='innerInternal'> expr failed to evaluate",
                 ));
             }
@@ -702,6 +706,7 @@ impl ADelayedSendReachesWhatItsTargetNamesPolicy {
                 );
                 engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(
                     ADelayedSendReachesWhatItsTargetNamesEvent::ErrorExecution,
+                    ::sce_rust_runtime::ErrorReason::ParamUnfit,
                     "<data id='lateOk'> could not hold the value its invoke handed it",
                 ));
             }
@@ -713,6 +718,7 @@ impl ADelayedSendReachesWhatItsTargetNamesPolicy {
                 ::sce_rust_runtime::sce_log_error!("global: {}", e);
                 engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(
                     ADelayedSendReachesWhatItsTargetNamesEvent::ErrorExecution,
+                    ::sce_rust_runtime::ErrorReason::ExpressionFailed,
                     "<data id='lateOk'> expr failed to evaluate",
                 ));
             }
@@ -727,6 +733,7 @@ impl ADelayedSendReachesWhatItsTargetNamesPolicy {
                 );
                 engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(
                     ADelayedSendReachesWhatItsTargetNamesEvent::ErrorExecution,
+                    ::sce_rust_runtime::ErrorReason::ParamUnfit,
                     "<data id='lateCount'> could not hold the value its invoke handed it",
                 ));
             }
@@ -741,6 +748,7 @@ impl ADelayedSendReachesWhatItsTargetNamesPolicy {
                 ::sce_rust_runtime::sce_log_error!("global: {}", e);
                 engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(
                     ADelayedSendReachesWhatItsTargetNamesEvent::ErrorExecution,
+                    ::sce_rust_runtime::ErrorReason::ExpressionFailed,
                     "<data id='lateCount'> expr failed to evaluate",
                 ));
             }
@@ -755,6 +763,7 @@ impl ADelayedSendReachesWhatItsTargetNamesPolicy {
                 );
                 engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(
                     ADelayedSendReachesWhatItsTargetNamesEvent::ErrorExecution,
+                    ::sce_rust_runtime::ErrorReason::ParamUnfit,
                     "<data id='pongOk'> could not hold the value its invoke handed it",
                 ));
             }
@@ -766,6 +775,7 @@ impl ADelayedSendReachesWhatItsTargetNamesPolicy {
                 ::sce_rust_runtime::sce_log_error!("global: {}", e);
                 engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(
                     ADelayedSendReachesWhatItsTargetNamesEvent::ErrorExecution,
+                    ::sce_rust_runtime::ErrorReason::ExpressionFailed,
                     "<data id='pongOk'> expr failed to evaluate",
                 ));
             }
@@ -780,6 +790,7 @@ impl ADelayedSendReachesWhatItsTargetNamesPolicy {
                 );
                 engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(
                     ADelayedSendReachesWhatItsTargetNamesEvent::ErrorExecution,
+                    ::sce_rust_runtime::ErrorReason::ParamUnfit,
                     "<data id='commErrors'> could not hold the value its invoke handed it",
                 ));
             }
@@ -794,6 +805,7 @@ impl ADelayedSendReachesWhatItsTargetNamesPolicy {
                 ::sce_rust_runtime::sce_log_error!("global: {}", e);
                 engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(
                     ADelayedSendReachesWhatItsTargetNamesEvent::ErrorExecution,
+                    ::sce_rust_runtime::ErrorReason::ExpressionFailed,
                     "<data id='commErrors'> expr failed to evaluate",
                 ));
             }
@@ -808,6 +820,7 @@ impl ADelayedSendReachesWhatItsTargetNamesPolicy {
                 );
                 engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(
                     ADelayedSendReachesWhatItsTargetNamesEvent::ErrorExecution,
+                    ::sce_rust_runtime::ErrorReason::ParamUnfit,
                     "<data id='lostArrived'> could not hold the value its invoke handed it",
                 ));
             }
@@ -822,6 +835,7 @@ impl ADelayedSendReachesWhatItsTargetNamesPolicy {
                 ::sce_rust_runtime::sce_log_error!("global: {}", e);
                 engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(
                     ADelayedSendReachesWhatItsTargetNamesEvent::ErrorExecution,
+                    ::sce_rust_runtime::ErrorReason::ExpressionFailed,
                     "<data id='lostArrived'> expr failed to evaluate",
                 ));
             }
@@ -836,6 +850,7 @@ impl ADelayedSendReachesWhatItsTargetNamesPolicy {
                 );
                 engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(
                     ADelayedSendReachesWhatItsTargetNamesEvent::ErrorExecution,
+                    ::sce_rust_runtime::ErrorReason::ParamUnfit,
                     "<data id='afterStranger'> could not hold the value its invoke handed it",
                 ));
             }
@@ -850,6 +865,7 @@ impl ADelayedSendReachesWhatItsTargetNamesPolicy {
                 ::sce_rust_runtime::sce_log_error!("global: {}", e);
                 engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(
                     ADelayedSendReachesWhatItsTargetNamesEvent::ErrorExecution,
+                    ::sce_rust_runtime::ErrorReason::ExpressionFailed,
                     "<data id='afterStranger'> expr failed to evaluate",
                 ));
             }
@@ -864,6 +880,7 @@ impl ADelayedSendReachesWhatItsTargetNamesPolicy {
                 );
                 engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(
                     ADelayedSendReachesWhatItsTargetNamesEvent::ErrorExecution,
+                    ::sce_rust_runtime::ErrorReason::ParamUnfit,
                     "<data id='hellos'> could not hold the value its invoke handed it",
                 ));
             }
@@ -875,6 +892,7 @@ impl ADelayedSendReachesWhatItsTargetNamesPolicy {
                 ::sce_rust_runtime::sce_log_error!("global: {}", e);
                 engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(
                     ADelayedSendReachesWhatItsTargetNamesEvent::ErrorExecution,
+                    ::sce_rust_runtime::ErrorReason::ExpressionFailed,
                     "<data id='hellos'> expr failed to evaluate",
                 ));
             }
@@ -923,6 +941,7 @@ impl ADelayedSendReachesWhatItsTargetNamesPolicy {
                 ::sce_rust_runtime::sce_log_error!("Guard evaluation failed for '{}': {}", cond, e);
                 engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(
                     ADelayedSendReachesWhatItsTargetNamesEvent::ErrorExecution,
+                    ::sce_rust_runtime::ErrorReason::ExpressionFailed,
                     reason,
                 ));
                 None
@@ -1141,7 +1160,7 @@ impl ADelayedSendReachesWhatItsTargetNamesPolicy {
                     self.active_invokes.remove("kid");
                     engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(
                         ADelayedSendReachesWhatItsTargetNamesEvent::ErrorExecution,
-                        &format!("<invoke id='{}'> did not start: its child's script session failed at step '{}'", "kid", failure.stage)));
+                        ::sce_rust_runtime::ErrorReason::InvokeChildInitFailed, &format!("<invoke id='{}'> did not start: its child's script session failed at step '{}'", "kid", failure.stage)));
                     continue;
                 }
 
@@ -1230,7 +1249,7 @@ impl ADelayedSendReachesWhatItsTargetNamesPolicy {
                     self.active_invokes.remove("gone");
                     engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(
                         ADelayedSendReachesWhatItsTargetNamesEvent::ErrorExecution,
-                        &format!("<invoke id='{}'> did not start: its child's script session failed at step '{}'", "gone", failure.stage)));
+                        ::sce_rust_runtime::ErrorReason::InvokeChildInitFailed, &format!("<invoke id='{}'> did not start: its child's script session failed at step '{}'", "gone", failure.stage)));
                     continue;
                 }
 
@@ -1666,7 +1685,7 @@ impl StatePolicy for ADelayedSendReachesWhatItsTargetNamesPolicy {
                         // it too (test 190). Any other is not reachable: error.communication,
                         // nothing delivered, the block ended (W3C SCXML 4.9).
                         if self.session_id.as_deref() != Some("stranger") {
-                            let mut err_meta = sce_rust_runtime::EventWithMetadata::platform_error(ADelayedSendReachesWhatItsTargetNamesEvent::ErrorCommunication, "<send target='#_scxml_stranger'> names a session this processor cannot reach");
+                            let mut err_meta = sce_rust_runtime::EventWithMetadata::platform_error(ADelayedSendReachesWhatItsTargetNamesEvent::ErrorCommunication, ::sce_rust_runtime::ErrorReason::TargetUnreachable, "<send target='#_scxml_stranger'> names a session this processor cannot reach");
                             err_meta.metadata.send_id =
                                 ::sce_rust_runtime::sce_string_from_str(send_id);
                             engine.raise(err_meta);
@@ -1708,6 +1727,7 @@ impl StatePolicy for ADelayedSendReachesWhatItsTargetNamesPolicy {
                             );
                             engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(
                                 ADelayedSendReachesWhatItsTargetNamesEvent::ErrorExecution,
+                                ::sce_rust_runtime::ErrorReason::AssignmentFailed,
                                 "<assign> to 'afterStranger' failed",
                             ));
                             // W3C SCXML 4.9: the error ends the block, from however deep a <foreach> it came.
@@ -1978,6 +1998,7 @@ impl StatePolicy for ADelayedSendReachesWhatItsTargetNamesPolicy {
                             );
                             engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(
                                 ADelayedSendReachesWhatItsTargetNamesEvent::ErrorExecution,
+                                ::sce_rust_runtime::ErrorReason::AssignmentFailed,
                                 "<assign> to 'commErrors' failed",
                             ));
                             // W3C SCXML 4.9: the error ends the block, from however deep a <foreach> it came.
@@ -2008,6 +2029,7 @@ impl StatePolicy for ADelayedSendReachesWhatItsTargetNamesPolicy {
                             ::sce_rust_runtime::sce_log_error!("Assign failed for 'order': {}", e);
                             engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(
                                 ADelayedSendReachesWhatItsTargetNamesEvent::ErrorExecution,
+                                ::sce_rust_runtime::ErrorReason::AssignmentFailed,
                                 "<assign> to 'order' failed",
                             ));
                             // W3C SCXML 4.9: the error ends the block, from however deep a <foreach> it came.
@@ -2043,6 +2065,7 @@ impl StatePolicy for ADelayedSendReachesWhatItsTargetNamesPolicy {
                                     engine
                                         .raise(sce_rust_runtime::EventWithMetadata::platform_error(
                                         ADelayedSendReachesWhatItsTargetNamesEvent::ErrorExecution,
+                                        ::sce_rust_runtime::ErrorReason::AssignmentFailed,
                                         "<assign> to 'innerInternal' failed",
                                     ));
                                     // W3C SCXML 4.9: the error ends the block, from however deep a <foreach> it came.
@@ -2078,6 +2101,7 @@ impl StatePolicy for ADelayedSendReachesWhatItsTargetNamesPolicy {
                             ::sce_rust_runtime::sce_log_error!("Assign failed for 'order': {}", e);
                             engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(
                                 ADelayedSendReachesWhatItsTargetNamesEvent::ErrorExecution,
+                                ::sce_rust_runtime::ErrorReason::AssignmentFailed,
                                 "<assign> to 'order' failed",
                             ));
                             // W3C SCXML 4.9: the error ends the block, from however deep a <foreach> it came.
@@ -2111,6 +2135,7 @@ impl StatePolicy for ADelayedSendReachesWhatItsTargetNamesPolicy {
                             );
                             engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(
                                 ADelayedSendReachesWhatItsTargetNamesEvent::ErrorExecution,
+                                ::sce_rust_runtime::ErrorReason::AssignmentFailed,
                                 "<assign> to 'lateCount' failed",
                             ));
                             // W3C SCXML 4.9: the error ends the block, from however deep a <foreach> it came.
@@ -2143,6 +2168,7 @@ impl StatePolicy for ADelayedSendReachesWhatItsTargetNamesPolicy {
                                     engine
                                         .raise(sce_rust_runtime::EventWithMetadata::platform_error(
                                         ADelayedSendReachesWhatItsTargetNamesEvent::ErrorExecution,
+                                        ::sce_rust_runtime::ErrorReason::AssignmentFailed,
                                         "<assign> to 'lateOk' failed",
                                     ));
                                     // W3C SCXML 4.9: the error ends the block, from however deep a <foreach> it came.
@@ -2178,6 +2204,7 @@ impl StatePolicy for ADelayedSendReachesWhatItsTargetNamesPolicy {
                             ::sce_rust_runtime::sce_log_error!("Assign failed for 'hellos': {}", e);
                             engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(
                                 ADelayedSendReachesWhatItsTargetNamesEvent::ErrorExecution,
+                                ::sce_rust_runtime::ErrorReason::AssignmentFailed,
                                 "<assign> to 'hellos' failed",
                             ));
                             // W3C SCXML 4.9: the error ends the block, from however deep a <foreach> it came.
@@ -2214,6 +2241,7 @@ impl StatePolicy for ADelayedSendReachesWhatItsTargetNamesPolicy {
                                     engine
                                         .raise(sce_rust_runtime::EventWithMetadata::platform_error(
                                         ADelayedSendReachesWhatItsTargetNamesEvent::ErrorExecution,
+                                        ::sce_rust_runtime::ErrorReason::ExpressionFailed,
                                         "<send> contentexpr failed to evaluate",
                                     ));
                                     _param_failed = true;
@@ -2251,6 +2279,7 @@ impl StatePolicy for ADelayedSendReachesWhatItsTargetNamesPolicy {
                             // target names is not there to reach.
                             let mut err_meta = sce_rust_runtime::EventWithMetadata::platform_error(
                                 ADelayedSendReachesWhatItsTargetNamesEvent::ErrorCommunication,
+                                ::sce_rust_runtime::ErrorReason::TargetUnreachable,
                                 "<send target='#_kid'> names an invocation that is not running",
                             );
                             err_meta.metadata.send_id =
@@ -2300,6 +2329,7 @@ impl StatePolicy for ADelayedSendReachesWhatItsTargetNamesPolicy {
                             // target names is not there to reach.
                             let mut err_meta = sce_rust_runtime::EventWithMetadata::platform_error(
                                 ADelayedSendReachesWhatItsTargetNamesEvent::ErrorCommunication,
+                                ::sce_rust_runtime::ErrorReason::TargetUnreachable,
                                 "<send target='#_gone'> names an invocation that is not running",
                             );
                             err_meta.metadata.send_id =
@@ -2342,6 +2372,7 @@ impl StatePolicy for ADelayedSendReachesWhatItsTargetNamesPolicy {
                             // target names is not there to reach.
                             let mut err_meta = sce_rust_runtime::EventWithMetadata::platform_error(
                                 ADelayedSendReachesWhatItsTargetNamesEvent::ErrorCommunication,
+                                ::sce_rust_runtime::ErrorReason::TargetUnreachable,
                                 "<send target='#_gone'> names an invocation that is not running",
                             );
                             err_meta.metadata.send_id =
@@ -2377,6 +2408,7 @@ impl StatePolicy for ADelayedSendReachesWhatItsTargetNamesPolicy {
                             ::sce_rust_runtime::sce_log_error!("Assign failed for 'hellos': {}", e);
                             engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(
                                 ADelayedSendReachesWhatItsTargetNamesEvent::ErrorExecution,
+                                ::sce_rust_runtime::ErrorReason::AssignmentFailed,
                                 "<assign> to 'hellos' failed",
                             ));
                             // W3C SCXML 4.9: the error ends the block, from however deep a <foreach> it came.
@@ -2410,6 +2442,7 @@ impl StatePolicy for ADelayedSendReachesWhatItsTargetNamesPolicy {
                             );
                             engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(
                                 ADelayedSendReachesWhatItsTargetNamesEvent::ErrorExecution,
+                                ::sce_rust_runtime::ErrorReason::AssignmentFailed,
                                 "<assign> to 'lostArrived' failed",
                             ));
                             // W3C SCXML 4.9: the error ends the block, from however deep a <foreach> it came.
@@ -2449,6 +2482,7 @@ impl StatePolicy for ADelayedSendReachesWhatItsTargetNamesPolicy {
                                     engine
                                         .raise(sce_rust_runtime::EventWithMetadata::platform_error(
                                         ADelayedSendReachesWhatItsTargetNamesEvent::ErrorExecution,
+                                        ::sce_rust_runtime::ErrorReason::AssignmentFailed,
                                         "<assign> to 'pongOk' failed",
                                     ));
                                     // W3C SCXML 4.9: the error ends the block, from however deep a <foreach> it came.

@@ -7,6 +7,7 @@
 package com.sce.generated.codec_zenoh_join
 
 import com.sce.forge.runtime.CodecError
+import com.sce.forge.runtime.Decoded
 import com.sce.forge.runtime.MutableListSink
 import com.sce.forge.runtime.SceCursor
 import com.sce.forge.runtime.SceSink
@@ -113,11 +114,14 @@ data class CodecZenohJoin(
 
     companion object {
         /// Decode the next frame from `cursor`. On success the cursor
-        /// advances past the consumed bytes; returns `null` when the
-        /// cursor's tail is shorter than the declared minimum frame
-        /// (RFC §synth-5-B L494-519).
+        /// advances past the consumed bytes and the value is `Decoded.Ok`;
+        /// a refused frame is `Decoded.Refused` with the kind that refused
+        /// it (docs/adr/0099, amendment of 2026-11-16): `NeedMoreBytes` when
+        /// the cursor's tail is shorter than the frame (RFC §synth-5-B
+        /// L494-519), which the caller resumes after appending bytes, and
+        /// another kind for a frame no more bytes make whole.
         @Suppress("UNUSED_PARAMETER")
-        fun decode(cursor: SceCursor, S: UByte): CodecZenohJoin? {
+        fun decode(cursor: SceCursor, S: UByte): Decoded<CodecZenohJoin> {
             // Streaming cursor decode (SSOT selection: `needs_streaming`).
             // The positional `raw[byte_off]` path is valid only when every
             // field's absolute offset is fixed at codegen time; this branch
@@ -131,53 +135,55 @@ data class CodecZenohJoin(
             // dedicated helpers; every other field flows through
             // `present_if_decode_stmt`.
             val version = run {
-                val raw = cursor.peekSlice(1) ?: return null
+                val raw = cursor.peekSlice(1) ?: return Decoded.Refused(CodecError.NeedMoreBytes)
                 val _v = raw[0].toUByte()
-                if (!cursor.advance(1)) return null
+                if (!cursor.advance(1)) return Decoded.Refused(CodecError.NeedMoreBytes)
                 _v
             }
             val cbyte = run {
-                val raw = cursor.peekSlice(1) ?: return null
+                val raw = cursor.peekSlice(1) ?: return Decoded.Refused(CodecError.NeedMoreBytes)
                 val _v = raw[0].toUByte()
-                if (!cursor.advance(1)) return null
+                if (!cursor.advance(1)) return Decoded.Refused(CodecError.NeedMoreBytes)
                 _v
             }
             val zid = run {
                 val _len = ((cbyte.toInt() shr 4) and 0xF)
                 val _n = _len + 1
-                val raw = cursor.peekSlice(_n) ?: return null
+                val raw = cursor.peekSlice(_n) ?: return Decoded.Refused(CodecError.NeedMoreBytes)
                 val _v = raw.copyOf()
-                if (!cursor.advance(_n)) return null
+                if (!cursor.advance(_n)) return Decoded.Refused(CodecError.NeedMoreBytes)
                 _v
             }
             val sn_res = if ((S.toInt() and 0x01) != 0) {
-                val raw = cursor.peekSlice(1) ?: return null
+                val raw = cursor.peekSlice(1) ?: return Decoded.Refused(CodecError.NeedMoreBytes)
                 val _v = raw[0].toUByte()
-                if (!cursor.advance(1)) return null
+                if (!cursor.advance(1)) return Decoded.Refused(CodecError.NeedMoreBytes)
                 _v
             } else {
                 null
             }
             val batch_size = if ((S.toInt() and 0x01) != 0) {
-                val raw = cursor.peekSlice(2) ?: return null
+                val raw = cursor.peekSlice(2) ?: return Decoded.Refused(CodecError.NeedMoreBytes)
                 val _v = ((raw[0].toInt() and 0xFF) or ((raw[1].toInt() and 0xFF) shl 8)).toUShort()
-                if (!cursor.advance(2)) return null
+                if (!cursor.advance(2)) return Decoded.Refused(CodecError.NeedMoreBytes)
                 _v
             } else {
                 null
             }
-            val lease = cursor.readVleU64() ?: return null
-            val next_sn_reliable = cursor.readVleU64() ?: return null
-            val next_sn_best_effort = cursor.readVleU64() ?: return null
-            return CodecZenohJoin(
-                version = version,
-                cbyte = cbyte,
-                zid = zid,
-                sn_res = sn_res,
-                batch_size = batch_size,
-                lease = lease,
-                next_sn_reliable = next_sn_reliable,
-                next_sn_best_effort = next_sn_best_effort
+            val lease = cursor.readVleU64().valueOr { _refused -> return _refused }
+            val next_sn_reliable = cursor.readVleU64().valueOr { _refused -> return _refused }
+            val next_sn_best_effort = cursor.readVleU64().valueOr { _refused -> return _refused }
+            return Decoded.Ok(
+                CodecZenohJoin(
+                    version = version,
+                    cbyte = cbyte,
+                    zid = zid,
+                    sn_res = sn_res,
+                    batch_size = batch_size,
+                    lease = lease,
+                    next_sn_reliable = next_sn_reliable,
+                    next_sn_best_effort = next_sn_best_effort
+                )
             )
         }
     }

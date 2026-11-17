@@ -471,6 +471,7 @@ impl AHostNamesItsOriginInItsOwnTermsPolicy {
                 );
                 engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(
                     AHostNamesItsOriginInItsOwnTermsEvent::ErrorExecution,
+                    ::sce_rust_runtime::ErrorReason::ParamUnfit,
                     "<data id='hostNamed'> could not hold the value its invoke handed it",
                 ));
             }
@@ -485,6 +486,7 @@ impl AHostNamesItsOriginInItsOwnTermsPolicy {
                 ::sce_rust_runtime::sce_log_error!("global: {}", e);
                 engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(
                     AHostNamesItsOriginInItsOwnTermsEvent::ErrorExecution,
+                    ::sce_rust_runtime::ErrorReason::ExpressionFailed,
                     "<data id='hostNamed'> expr failed to evaluate",
                 ));
             }
@@ -533,6 +535,7 @@ impl AHostNamesItsOriginInItsOwnTermsPolicy {
                 ::sce_rust_runtime::sce_log_error!("Guard evaluation failed for '{}': {}", cond, e);
                 engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(
                     AHostNamesItsOriginInItsOwnTermsEvent::ErrorExecution,
+                    ::sce_rust_runtime::ErrorReason::ExpressionFailed,
                     reason,
                 ));
                 None
@@ -682,6 +685,7 @@ impl AHostNamesItsOriginInItsOwnTermsPolicy {
                     // same event, rather than a silence that reads as started.
                     engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(
                         AHostNamesItsOriginInItsOwnTermsEvent::ErrorExecution,
+                        ::sce_rust_runtime::ErrorReason::ProcessorUnregistered,
                         "<invoke> names an invoker the host declared but never registered",
                     ));
                 }
@@ -1117,7 +1121,7 @@ impl StatePolicy for AHostNamesItsOriginInItsOwnTermsPolicy {
     let assign_script = format!("{} = {}", "hostNamed", expr);
     if let Err(e) = se.execute_script(&sid, &assign_script) {
         ::sce_rust_runtime::sce_log_error!("Assign failed for 'hostNamed': {}", e);
-        engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(AHostNamesItsOriginInItsOwnTermsEvent::ErrorExecution, "<assign> to 'hostNamed' failed"));
+        engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(AHostNamesItsOriginInItsOwnTermsEvent::ErrorExecution, ::sce_rust_runtime::ErrorReason::AssignmentFailed, "<assign> to 'hostNamed' failed"));
         // W3C SCXML 4.9: the error ends the block, from however deep a <foreach> it came.
         break 'action_block;
     }

@@ -131,12 +131,13 @@ struct CodecZenohQueryValue {
     [[nodiscard]] ::SCE::Forge::Lawful<::SCE::Forge::List<::SCE::Generated::CodecZenohValueEntry::CodecZenohValueEntry, ::SCE::Forge::kUnbounded, 1>, CodecZenohQueryValueExtsLaw> exts() const noexcept { return exts_; }
 
     /// Decode the next frame from `cursor`. On success the cursor
-    /// advances past the consumed bytes; on `NeedMoreBytes` the cursor
-    /// is left untouched so the caller can resume after appending more
-    /// bytes (RFC §synth-5-B L494-519). Returns `std::nullopt` on the
-    /// `NeedMoreBytes` boundary; later phases attach a typed error via
-    /// `cursor.last_error()`.
-    static std::optional<CodecZenohQueryValue> decode(::SCE::Forge::SceCursor& cursor) {
+    /// advances past the consumed bytes and the value is answered; a
+    /// refused frame answers the `CodecError` that refused it
+    /// (docs/adr/0099, amendment of 2026-11-16): `NeedMoreBytes` when
+    /// the cursor's tail is shorter than the frame (RFC §synth-5-B
+    /// L494-519), which the caller resumes after appending bytes, and
+    /// another kind for a frame no more bytes make whole.
+    static ::SCE::Forge::Decoded<CodecZenohQueryValue> decode(::SCE::Forge::SceCursor& cursor) {
         // Streaming cursor decode (SSOT selection: `needs_streaming`).
         // The positional `raw[byte_off]` path is valid only when every
         // field's absolute offset is fixed at codegen time; this branch
@@ -153,22 +154,20 @@ struct CodecZenohQueryValue {
         bool _more = false;
         for (;;) {
             auto _elem = ::SCE::Generated::CodecZenohValueEntry::CodecZenohValueEntry::decode(cursor, _prev_exts_after_shm);
-            if (!_elem.has_value()) return std::nullopt;
+            if (!_elem.has_value()) return _elem.error();
             _more = _elem->z();
             _prev_exts_after_shm = static_cast<std::uint8_t>(static_cast<std::uint64_t>((*_elem).ext_id()) == 4ULL);
             exts.push_back(*_elem);
             if (!_more) break;
         }
-        if (_more && cursor.remaining() == 0) { return std::nullopt; }
+        if (_more && cursor.remaining() == 0) { return ::SCE::Forge::CodecError::NeedMoreBytes; }
         const auto _l_exts = ::SCE::Forge::Lawful<::SCE::Forge::List<::SCE::Generated::CodecZenohValueEntry::CodecZenohValueEntry, ::SCE::Forge::kUnbounded, 1>, CodecZenohQueryValueExtsLaw>::list_type::make(exts);
         if (!_l_exts) {
-            cursor.refuse(::SCE::Forge::CodecError::TooManyElements);
-            return std::nullopt;
+            return ::SCE::Forge::CodecError::TooManyElements;
         }
         const auto _b_exts = ::SCE::Forge::Lawful<::SCE::Forge::List<::SCE::Generated::CodecZenohValueEntry::CodecZenohValueEntry, ::SCE::Forge::kUnbounded, 1>, CodecZenohQueryValueExtsLaw>::make(::SCE::Forge::FixedStart{}, *_l_exts);
         if (!_b_exts) {
-            cursor.refuse(::SCE::Forge::CodecError::PresentIfMismatch);
-            return std::nullopt;
+            return ::SCE::Forge::CodecError::PresentIfMismatch;
         }
         CodecZenohQueryValue _decoded{
             /*exts=*/*_b_exts,
