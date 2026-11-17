@@ -3021,3 +3021,37 @@ a body they embed (`codec_source_parent_tag`).
 - `{codec}_input_<name>` of an input the arms say answers what the arm the source holds says, a
   `sce_optional_uint8_t` where some arm does not read it.
 
+## A printed C11 codec holds the fields one gate decides together as one group (ADR 0081 step 4)
+
+Landing: the commit that adds this section; every C11 tree is regenerated after it. The printed set grows by the
+codecs that hold a group a gate of a flag or of a flag input decides (`codec_group_enum`, `codec_init_syn_body`,
+`codec_init_syn_envelope` among the resources).
+
+- The fields a group holds (docs/adr/0065 §6 R4: two or more fields one flag decides, or one disjunction of the
+  codec's own flags) are no members of a printed codec's struct. The struct holds the group as one member named after
+  its gates (`flags_has_session`), of `{codec}_{group}_t`: where the group has several arms, `kind`, one constant of
+  `{codec}_{group}_kind_t`, and the arm's members in `arm.<arm>`; where it has one, the members themselves. Where the
+  gates allow no arm the member is the optional value of it, `{ present, value }`. Delete each assignment to a field
+  the group holds, and set the arm and its members instead; the flags the gates read are derived from the arm.
+- `{codec}_source_t` gains a function for each group after the elements, answering the group as the struct holds it.
+  A table of a consumer's own presents each group this way.
+- `{codec}_input_<name>` of an input a group decides answers whether the arm the source holds sets it.
+
+## A printed C11 codec holds a group's byte strings, bodies and lists in the arm (ADR 0081 step 4)
+
+Landing: the commit that adds this section; every C11 tree is regenerated after it. The printed set grows by the
+codecs whose groups hold a byte string, a text, a body or a list, or the length of one on the side where
+it is absent (`codec_present_if_length_ref`, `codec_present_if_length_from` among the resources).
+
+- An arm holds a byte string or a text in `sce_static_bytes_<N>_t` (`.data`, `.len`), the buffer a gated one is held
+  in, a body as its codec's struct, and a list as `{entry}_list_<N>_t` (`.data`, `.len`). A length or a count the value
+  states on the side where its content is absent is a member of that side's arm, and leaves the struct as every other
+  member of the group does. Set the member in the arm as the struct holds it.
+- A group with such a member is presented by `{codec}_source_t` as `{codec}_{group}_ref_t` (its optional value,
+  `{codec}_{group}_ref_optional_t`, where the gates allow no arm): the same `kind` and arms, each member as an
+  element of its type is presented, a view made by `{codec}_{member}_bytes_make` or `_text_make`, the pair of a
+  body's source, or a list made by `{codec}_{member}_list_make`. A table of a consumer's own presents such a group
+  this way, each member viewed where the consumer holds it.
+- The decode writes each such member into the arm of the group the gates it read select, and the struct holds it
+  nowhere else.
+
