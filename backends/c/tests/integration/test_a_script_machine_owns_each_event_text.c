@@ -189,7 +189,10 @@ static int an_event_the_allocator_cannot_hold_is_refused_and_raised(void) {
         bad = 1;
     }
     a_script_machine_owns_each_event_text_step(&sm);
-    bad |= expect_taken("the refusal was raised as error.execution and the event never ran", &sm, "refused;");
+    /* docs/adr/0106 #111: the error's data is the record of the code it
+       carries, written where the engine is handed it. */
+    bad |= expect_taken("the refusal was raised as error.execution and the event never ran", &sm,
+                        "execution:capacityExceeded;");
     bad |= expect_owned("nothing is held for the refused event", &sm, 0u);
     a_script_machine_owns_each_event_text_destroy(&sm);
     return bad;
@@ -325,7 +328,7 @@ static int a_host_send_the_allocator_cannot_hold_is_refused_whole(void) {
                       (unsigned)a_script_machine_owns_each_event_text_refused_event_data(&sm));
         bad = 1;
     }
-    bad |= expect_taken("the refusal was raised as error.execution", &sm, "refused;");
+    bad |= expect_taken("the refusal was raised as error.execution", &sm, "execution:capacityExceeded;");
     bad |= expect_owned("nothing is held for the refused host send", &sm, 0u);
     a_script_machine_owns_each_event_text_advance_time_ms(&sm, 2000u);
     if (seen.calls != 0) {

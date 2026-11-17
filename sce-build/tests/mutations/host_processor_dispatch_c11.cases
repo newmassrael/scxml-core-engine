@@ -62,7 +62,7 @@ edit("tools/codegen/templates/c/state_machine.c.jinja2",
      """    if (_entry == NULL) {
 {% if 'error.execution' in model.events %}
         {{ csym_prefix }}{{ model.name }}_raise_platform_error(
-            sm, {{ csym_prefix | upper }}{{ model.name | upper }}_EVENT_ERROR_EXECUTION,
+            sm, {{ csym_prefix | upper }}{{ model.name | upper }}_EVENT_ERROR_EXECUTION, ERROR_REASON_PROCESSOR_UNREGISTERED,
             {{ reason("send_processor_unregistered") }});
 {% endif %}
         return;
@@ -136,7 +136,7 @@ mutation_case "an overflowing report is not reported" <<'PY'
 edit("tools/codegen/templates/c/state_machine.c.jinja2",
      """    if (_replies.overflowed) {
         {{ csym_prefix }}{{ model.name }}_raise_platform_error(
-            sm, {{ csym_prefix | upper }}{{ model.name | upper }}_EVENT_ERROR_EXECUTION,
+            sm, {{ csym_prefix | upper }}{{ model.name | upper }}_EVENT_ERROR_EXECUTION, ERROR_REASON_CAPACITY_EXCEEDED,
             {{ reason("send_replies_past_room") }});
     }""",
      "")

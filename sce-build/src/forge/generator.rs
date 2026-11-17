@@ -7188,11 +7188,14 @@ typedef struct {name}_payload {{\n    {tag_type} tag;\n    union {{\n{union_line
     // The event is a view (docs/adr/0086, section 8.5 (d)), so the rewritten
     // one's data is the machine's `message` scratch the refusal was written
     // in: the pop loop reads it into the engine's current event before any
-    // other activity writes the scratch, and nothing reads it after.
+    // other activity writes the scratch, and nothing reads it after. Its code
+    // is the door's refusal (docs/adr/0106 #111), the one every engine's door
+    // raises, and its data the sentence the reader refused with.
     let report = if raises_error {
         format!(
             "    memset(evt, 0, sizeof(*evt));\n    \
 evt->event = {sm_upper}_EVENT_ERROR_EXECUTION;\n    \
+evt->error_reason = error_reason_to_underlying(ERROR_REASON_PAYLOAD_REFUSED);\n    \
 evt->data = _message;\n    \
 sce_copy_bounded_n(evt->type, \"platform\", (size_t)SCE_MAX_EVENT_TYPE_LEN);\n    \
 return {sm_upper}_DOOR_IN_PLACE;\n"

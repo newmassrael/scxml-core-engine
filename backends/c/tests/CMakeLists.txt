@@ -5411,6 +5411,21 @@ set_tests_properties(c11_unit_event_origin PROPERTIES
     TIMEOUT 10
     LABELS "unit;c11"
 )
+# The `_event.data` of an `error.*` event a machine raises for itself (docs/adr/0106
+# #111): the record of its code and its sentence, in the bytes every engine writes,
+# and the event each code is raised as. Header-only and allocation-free.
+add_executable(sce_c_error_data_unit_test unit/error_data_test.c)
+target_link_libraries(sce_c_error_data_unit_test PRIVATE sce_c_runtime m)
+set_target_properties(sce_c_error_data_unit_test PROPERTIES
+    C_STANDARD 11
+    C_STANDARD_REQUIRED ON
+    C_EXTENSIONS OFF
+)
+add_test(NAME c11_unit_error_data COMMAND sce_c_error_data_unit_test)
+set_tests_properties(c11_unit_error_data PROPERTIES
+    TIMEOUT 10
+    LABELS "unit;c11"
+)
 # docs/adr/0086, section 8.6 (d): a host's replies and a host-run invocation's
 # answer grow in a heap behind the calls a handler makes into fixed storage,
 # each text freed exactly once, asked of the tests' counting allocator.

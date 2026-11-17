@@ -16851,11 +16851,18 @@ impl StaticTarget for CTarget {
     // `machine` is the symbol every name of the machine starts with, prefix
     // included, which the generator hands the walk for it.
     // docs/adr/0086, section 8.6 (b): the sentence reaches the machine through
-    // the table of its reasons, which measures it for the slot.
-    fn raise_execution_error(&self, machine: &str, _reason: &str, message: &str) -> String {
+    // the table of its reasons, which measures it for the slot. The code is a
+    // member of the enum generated into the runtime's sce/generated
+    // (tools/codegen/trees/runtime-c.toml), which sce/error_data.h includes.
+    fn raise_execution_error(&self, machine: &str, reason: &str, message: &str) -> String {
         format!(
-            "{machine}_raise_platform_error(sm, {}_EVENT_ERROR_EXECUTION, {});",
+            "{machine}_raise_platform_error(sm, {}_EVENT_ERROR_EXECUTION, {}, {});",
             machine.to_uppercase(),
+            crate::forge::enum_naming::variant_ident(
+                crate::generator::Language::C11,
+                ERROR_REASON_ENUM,
+                reason
+            ),
             crate::forge::c11_reasons::LOWERING
                 .literal(&[message])
                 .expect("a lowering emits its reasons before the machine's slot is computed")

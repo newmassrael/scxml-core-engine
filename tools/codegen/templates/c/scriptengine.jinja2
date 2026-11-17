@@ -50,7 +50,7 @@
 {% macro lua_set_document_global_top(name) %}
             if (!set_document_global(sm->L, "{{ name | escape_c }}")) {
                 {{ csym_prefix }}{{ model.name }}_raise_platform_error(
-                    sm, {{ csym_prefix | upper }}{{ model.name | upper }}_EVENT_ERROR_EXECUTION,
+                    sm, {{ csym_prefix | upper }}{{ model.name | upper }}_EVENT_ERROR_EXECUTION, ERROR_REASON_DATA_INIT_FAILED,
                     {{ reason("data_unstored", name) }});
             }
 {% endmacro %}
@@ -76,7 +76,7 @@
 {{ lua_set_document_global_top(name) }}
 {% else %}
             {{ csym_prefix }}{{ model.name }}_raise_platform_error(
-                sm, {{ csym_prefix | upper }}{{ model.name | upper }}_EVENT_ERROR_EXECUTION,
+                sm, {{ csym_prefix | upper }}{{ model.name | upper }}_EVENT_ERROR_EXECUTION, ERROR_REASON_EXPRESSION_FAILED,
                 {{ reason("data_expr_failed", name) }});
 {% endif %}
         } else {
@@ -520,7 +520,7 @@
             {{ script.content | to_lua_script | c_text_expr }}) != 0) {
             lua_pop(sm->L, 1);
             {{ csym_prefix }}{{ model.name }}_raise_platform_error(
-                sm, {{ csym_prefix | upper }}{{ model.name | upper }}_EVENT_ERROR_EXECUTION,
+                sm, {{ csym_prefix | upper }}{{ model.name | upper }}_EVENT_ERROR_EXECUTION, ERROR_REASON_SCRIPT_FAILED,
                 {{ reason("top_script_failed") }});
         }
         {% endfor %}
@@ -611,7 +611,7 @@
         "{{ loc | to_lua_location | escape_c }} = ({{ expr | to_lua_expr | escape_c }})") != 0) {
         lua_pop(sm->L, 1);
         {{ csym_prefix }}{{ model.name }}_raise_platform_error(
-            sm, {{ csym_prefix | upper }}{{ model.name | upper }}_EVENT_ERROR_EXECUTION,
+            sm, {{ csym_prefix | upper }}{{ model.name | upper }}_EVENT_ERROR_EXECUTION, ERROR_REASON_ASSIGNMENT_FAILED,
             {{ reason("assign_failed", loc) }});
         return;
     }
@@ -659,7 +659,7 @@
         {{ failed_var }} = true;
 {% endif %}
         {{ csym_prefix }}{{ model.name }}_raise_platform_error(
-            sm, {{ csym_prefix | upper }}{{ model.name | upper }}_EVENT_ERROR_EXECUTION,
+            sm, {{ csym_prefix | upper }}{{ model.name | upper }}_EVENT_ERROR_EXECUTION, ERROR_REASON_EXPRESSION_FAILED,
             {{ reason("cond_failed", element) }});
     }
 {% endmacro %}
@@ -743,7 +743,7 @@
         if (luaL_dostring(sm->L, _sce_buf) != 0) {
             lua_pop(sm->L, 1);
             {{ csym_prefix }}{{ model.name }}_raise_platform_error(
-                sm, {{ csym_prefix | upper }}{{ model.name | upper }}_EVENT_ERROR_EXECUTION,
+                sm, {{ csym_prefix | upper }}{{ model.name | upper }}_EVENT_ERROR_EXECUTION, ERROR_REASON_EXPRESSION_FAILED,
                 {{ reason("built_expression_failed") }});
             return;  /* W3C SCXML 4.6: ends the <foreach> and its block */
         }
@@ -787,7 +787,7 @@
         lua_pop(sm->L, 1);
         (void)luaL_dostring(sm->L, "_sce_donedata = nil");
         {{ csym_prefix }}{{ model.name }}_raise_platform_error(
-            sm, {{ csym_prefix | upper }}{{ model.name | upper }}_EVENT_ERROR_EXECUTION,
+            sm, {{ csym_prefix | upper }}{{ model.name | upper }}_EVENT_ERROR_EXECUTION, ERROR_REASON_EXPRESSION_FAILED,
             {{ reason("donedata_failed") }});
     }
 {% endmacro %}
@@ -829,7 +829,7 @@
         "end") != 0) {
         lua_pop(sm->L, 1);
         {{ csym_prefix }}{{ model.name }}_raise_platform_error(
-            sm, {{ csym_prefix | upper }}{{ model.name | upper }}_EVENT_ERROR_EXECUTION,
+            sm, {{ csym_prefix | upper }}{{ model.name | upper }}_EVENT_ERROR_EXECUTION, ERROR_REASON_EXPRESSION_FAILED,
             {{ reason("donedata_param_failed") }});
     }
 {% endmacro %}

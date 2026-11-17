@@ -258,6 +258,23 @@ const SPELLINGS: &[Spelling] = &[
         ],
         suffixes: &[".jinja2", ".h", ".cpp"],
     },
+    Spelling {
+        language: Language::C11,
+        // A member is a global constant that carries its type's name, so it is
+        // read wherever it is written: a raise site's third argument, the
+        // two arms of a `<param>`'s or a delay's choice, the door's rewrite of
+        // a refused delivery and the native action's guard.
+        member: r"\b(ERROR_REASON_[A-Z0-9_]+)\b",
+        communication: &["_EVENT_ERROR_COMMUNICATION"],
+        execution: &["_EVENT_ERROR_EXECUTION"],
+        dirs: &[
+            "tools/codegen/templates/c",
+            "backends/c/runtime/include/sce/error_data.h",
+            "sce-build/src/forge/native_action.rs",
+            "sce-build/src/forge/generator.rs",
+        ],
+        suffixes: &[".jinja2", ".h", ".rs"],
+    },
 ];
 
 #[test]

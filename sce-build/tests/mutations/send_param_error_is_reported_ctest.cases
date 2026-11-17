@@ -123,7 +123,7 @@ PY
 mutation_case "the c11 template drops the failed param without reporting it" <<'PY'
 edit("tools/codegen/templates/c/state_machine.c.jinja2",
      """                    {{ csym_prefix }}{{ machine }}_raise_platform_error(
-                        sm, {{ csym_prefix | upper }}{{ machine | upper }}_EVENT_ERROR_EXECUTION,
+                        sm, {{ csym_prefix | upper }}{{ machine | upper }}_EVENT_ERROR_EXECUTION, ERROR_REASON_EXPRESSION_FAILED,
                         {{ reason("param_expr_failed", "<send>", param.name) }});""",
      """                    (void)sm;""")
 PY

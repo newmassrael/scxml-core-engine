@@ -112,7 +112,7 @@ const BACKENDS: &[Backend] = &[
     Backend {
         dir: "c",
         bypass: &["_err_evt.event = "],
-        entry_point: "<machine>_raise_platform_error(sm, event, message)",
+        entry_point: "<machine>_raise_platform_error(sm, event, reason, detail)",
     },
     Backend {
         // The C++ tree is the top level plus `actions/`. The constructor

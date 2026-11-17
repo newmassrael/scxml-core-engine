@@ -50,7 +50,7 @@
                parent var `{{ _ns_name }}` — abort spawn and raise
                error.execution per cpp `InvokeExecutor`. */
             {{ csym_prefix }}{{ model.name }}_raise_platform_error(
-                sm, {{ csym_prefix | upper }}{{ model.name | upper }}_EVENT_ERROR_EXECUTION,
+                sm, {{ csym_prefix | upper }}{{ model.name | upper }}_EVENT_ERROR_EXECUTION, ERROR_REASON_LOCATION_INVALID,
                 {{ reason("invoke_namelist_undeclared", _ns_name) }});
             continue;
             {% endif %}
@@ -112,22 +112,22 @@
                 switch (_child_failure != NULL ? _child_failure->stage : SCE_SCRIPT_SESSION_STAGE_NONE) {
                 case SCE_SCRIPT_SESSION_STAGE_CREATE:
                     {{ csym_prefix }}{{ model.name }}_raise_platform_error(
-                        sm, {{ csym_prefix | upper }}{{ model.name | upper }}_EVENT_ERROR_EXECUTION,
+                        sm, {{ csym_prefix | upper }}{{ model.name | upper }}_EVENT_ERROR_EXECUTION, ERROR_REASON_INVOKE_CHILD_INIT_FAILED,
                         {{ reason("invoke_child_script_session_failed", invoke_info.invoke_id, "create") }});
                     break;
                 case SCE_SCRIPT_SESSION_STAGE_LIBRARY:
                     {{ csym_prefix }}{{ model.name }}_raise_platform_error(
-                        sm, {{ csym_prefix | upper }}{{ model.name | upper }}_EVENT_ERROR_EXECUTION,
+                        sm, {{ csym_prefix | upper }}{{ model.name | upper }}_EVENT_ERROR_EXECUTION, ERROR_REASON_INVOKE_CHILD_INIT_FAILED,
                         {{ reason("invoke_child_script_session_failed", invoke_info.invoke_id, "library") }});
                     break;
                 case SCE_SCRIPT_SESSION_STAGE_SYSTEM_VARIABLES:
                     {{ csym_prefix }}{{ model.name }}_raise_platform_error(
-                        sm, {{ csym_prefix | upper }}{{ model.name | upper }}_EVENT_ERROR_EXECUTION,
+                        sm, {{ csym_prefix | upper }}{{ model.name | upper }}_EVENT_ERROR_EXECUTION, ERROR_REASON_INVOKE_CHILD_INIT_FAILED,
                         {{ reason("invoke_child_script_session_failed", invoke_info.invoke_id, "system-variables") }});
                     break;
                 default:
                     {{ csym_prefix }}{{ model.name }}_raise_platform_error(
-                        sm, {{ csym_prefix | upper }}{{ model.name | upper }}_EVENT_ERROR_EXECUTION,
+                        sm, {{ csym_prefix | upper }}{{ model.name | upper }}_EVENT_ERROR_EXECUTION, ERROR_REASON_INVOKE_CHILD_INIT_FAILED,
                         {{ reason("invoke_child_start_refused", invoke_info.invoke_id) }});
                     break;
                 }
@@ -194,7 +194,7 @@
             {% if not param_source %}
             /* `<param name="{{ param.name }}" location=""/>` names no location. */
             {{ csym_prefix }}{{ model.name }}_raise_platform_error(
-                sm, {{ csym_prefix | upper }}{{ model.name | upper }}_EVENT_ERROR_EXECUTION,
+                sm, {{ csym_prefix | upper }}{{ model.name | upper }}_EVENT_ERROR_EXECUTION, ERROR_REASON_LOCATION_INVALID,
                 {{ reason("param_names_no_location", "<invoke>", param.name) }});
             {% else %}
             /* `<param name="{{ param.name }}"/>` */
@@ -222,7 +222,7 @@
                    starts, one pair short. */
                 lua_pop(sm->L, 1);
                 {{ csym_prefix }}{{ model.name }}_raise_platform_error(
-                    sm, {{ csym_prefix | upper }}{{ model.name | upper }}_EVENT_ERROR_EXECUTION,
+                    sm, {{ csym_prefix | upper }}{{ model.name | upper }}_EVENT_ERROR_EXECUTION, {{ 'ERROR_REASON_EXPRESSION_FAILED' if param.expr else 'ERROR_REASON_LOCATION_INVALID' }},
                     {{ reason("param_unreadable", "<invoke>", param.name) }});
             }
             {% endif %}
@@ -297,7 +297,7 @@
                 if (sce_failure_.failed) {
                     {% if 'error.execution' in model.events %}
                     {{ csym_prefix }}{{ model.name }}_raise_platform_error(
-                        sm, {{ csym_prefix | upper }}{{ model.name | upper }}_EVENT_ERROR_EXECUTION,
+                        sm, {{ csym_prefix | upper }}{{ model.name | upper }}_EVENT_ERROR_EXECUTION, ERROR_REASON_EXPRESSION_FAILED,
                         {{ reason("param_unreadable", "<invoke>", param.name) }});
                     {% endif %}
                 } else {
@@ -319,7 +319,7 @@
                 if (sce_failure_.failed) {
                     {% if 'error.execution' in model.events %}
                     {{ csym_prefix }}{{ model.name }}_raise_platform_error(
-                        sm, {{ csym_prefix | upper }}{{ model.name | upper }}_EVENT_ERROR_EXECUTION,
+                        sm, {{ csym_prefix | upper }}{{ model.name | upper }}_EVENT_ERROR_EXECUTION, ERROR_REASON_EXPRESSION_FAILED,
                         {{ reason("param_unreadable", "<invoke>", param.name) }});
                     {% endif %}
                 }
@@ -488,7 +488,7 @@ static void {{ csym_prefix }}{{ model.name }}_execute_pending_invokes({{ csym_pr
                 if (!_idloc_ok) {
 {% if 'error.execution' in model.events %}
                     {{ csym_prefix }}{{ model.name }}_raise_platform_error(
-                        sm, {{ csym_prefix | upper }}{{ model.name | upper }}_EVENT_ERROR_EXECUTION,
+                        sm, {{ csym_prefix | upper }}{{ model.name | upper }}_EVENT_ERROR_EXECUTION, ERROR_REASON_LOCATION_INVALID,
                         {{ reason("invoke_idlocation_failed", invoke_info.idlocation) }});
 {% endif %}
                     continue;
@@ -512,7 +512,7 @@ static void {{ csym_prefix }}{{ model.name }}_execute_pending_invokes({{ csym_pr
                 if (sce_failure_.failed) {
 {% if 'error.execution' in model.events %}
                     {{ csym_prefix }}{{ model.name }}_raise_platform_error(
-                        sm, {{ csym_prefix | upper }}{{ model.name | upper }}_EVENT_ERROR_EXECUTION,
+                        sm, {{ csym_prefix | upper }}{{ model.name | upper }}_EVENT_ERROR_EXECUTION, ERROR_REASON_EXPRESSION_FAILED,
                         {{ reason("invoke_srcexpr_failed") }});
 {% endif %}
                     continue;
@@ -532,7 +532,7 @@ static void {{ csym_prefix }}{{ model.name }}_execute_pending_invokes({{ csym_pr
                 if (sce_failure_.failed) {
 {% if 'error.execution' in model.events %}
                     {{ csym_prefix }}{{ model.name }}_raise_platform_error(
-                        sm, {{ csym_prefix | upper }}{{ model.name | upper }}_EVENT_ERROR_EXECUTION,
+                        sm, {{ csym_prefix | upper }}{{ model.name | upper }}_EVENT_ERROR_EXECUTION, ERROR_REASON_EXPRESSION_FAILED,
                         {{ reason("invoke_content_expr_failed") }});
 {% endif %}
                     continue;
@@ -556,12 +556,12 @@ static void {{ csym_prefix }}{{ model.name }}_execute_pending_invokes({{ csym_pr
 {% if role %}
                 if ({{ buf }}_held) {
                     {{ csym_prefix }}{{ model.name }}_raise_platform_error(
-                        sm, {{ csym_prefix | upper }}{{ model.name | upper }}_EVENT_ERROR_EXECUTION,
+                        sm, {{ csym_prefix | upper }}{{ model.name | upper }}_EVENT_ERROR_EXECUTION, ERROR_REASON_EXPRESSION_FAILED,
                         {{ reason("invoke_attribute_expr_failed", attr) }});
                 }
 {% else %}
                 {{ csym_prefix }}{{ model.name }}_raise_platform_error(
-                    sm, {{ csym_prefix | upper }}{{ model.name | upper }}_EVENT_ERROR_EXECUTION,
+                    sm, {{ csym_prefix | upper }}{{ model.name | upper }}_EVENT_ERROR_EXECUTION, ERROR_REASON_EXPRESSION_FAILED,
                     {{ reason("invoke_attribute_expr_failed", attr) }});
 {% endif %}
 {% elif role %}
@@ -599,7 +599,7 @@ static void {{ csym_prefix }}{{ model.name }}_execute_pending_invokes({{ csym_pr
 {% if 'error.execution' in model.events %}
                 if (_host_inv_nl_held_{{ loop.index0 }}) {
                     {{ csym_prefix }}{{ model.name }}_raise_platform_error(
-                        sm, {{ csym_prefix | upper }}{{ model.name | upper }}_EVENT_ERROR_EXECUTION,
+                        sm, {{ csym_prefix | upper }}{{ model.name | upper }}_EVENT_ERROR_EXECUTION, ERROR_REASON_LOCATION_INVALID,
                         {{ reason("invoke_namelist_unreadable", var_name) }});
                 }
 {% else %}
@@ -666,14 +666,14 @@ static void {{ csym_prefix }}{{ model.name }}_execute_pending_invokes({{ csym_pr
                        request and starts nothing. */
 {% if 'error.execution' in model.events %}
                     {{ csym_prefix }}{{ model.name }}_raise_platform_error(
-                        sm, {{ csym_prefix | upper }}{{ model.name | upper }}_EVENT_ERROR_EXECUTION,
+                        sm, {{ csym_prefix | upper }}{{ model.name | upper }}_EVENT_ERROR_EXECUTION, ERROR_REASON_EXPRESSION_FAILED,
                         {{ reason("invoke_param_not_request_field", param.name) }});
 {% endif %}
                     continue;
 {% else %}
 {% if 'error.execution' in model.events %}
                     {{ csym_prefix }}{{ model.name }}_raise_platform_error(
-                        sm, {{ csym_prefix | upper }}{{ model.name | upper }}_EVENT_ERROR_EXECUTION,
+                        sm, {{ csym_prefix | upper }}{{ model.name | upper }}_EVENT_ERROR_EXECUTION, ERROR_REASON_EXPRESSION_FAILED,
                         {{ reason("param_failed", "<invoke>", param.name) }});
 {% endif %}
 {% endif %}
@@ -682,7 +682,7 @@ static void {{ csym_prefix }}{{ model.name }}_execute_pending_invokes({{ csym_pr
 {% else %}
 {% if 'error.execution' in model.events %}
             {{ csym_prefix }}{{ model.name }}_raise_platform_error(
-                sm, {{ csym_prefix | upper }}{{ model.name | upper }}_EVENT_ERROR_EXECUTION,
+                sm, {{ csym_prefix | upper }}{{ model.name | upper }}_EVENT_ERROR_EXECUTION, ERROR_REASON_LOCATION_INVALID,
                 {{ reason("param_names_no_location", "<invoke>", param.name) }});
 {% endif %}
 {% endif %}
@@ -691,7 +691,7 @@ static void {{ csym_prefix }}{{ model.name }}_execute_pending_invokes({{ csym_pr
             if (!sce_forge_wire_end(&_host_inv_wire)) {
 {% if 'error.execution' in model.events %}
                 {{ csym_prefix }}{{ model.name }}_raise_platform_error(
-                    sm, {{ csym_prefix | upper }}{{ model.name | upper }}_EVENT_ERROR_EXECUTION,
+                    sm, {{ csym_prefix | upper }}{{ model.name | upper }}_EVENT_ERROR_EXECUTION, ERROR_REASON_CAPACITY_EXCEEDED,
                     {{ reason("invoke_request_past_slot") }});
 {% endif %}
                 continue;
@@ -728,7 +728,7 @@ static void {{ csym_prefix }}{{ model.name }}_execute_pending_invokes({{ csym_pr
                              {{ reason_format("invoke_param_request_field_refused", ["request_refusal"], param.name) }},
                              _host_inv_refusal_{{ loop.index0 }});
                     {{ csym_prefix }}{{ model.name }}_raise_platform_error(
-                        sm, {{ csym_prefix | upper }}{{ model.name | upper }}_EVENT_ERROR_EXECUTION, SCE_SCRATCH_BUF(message));
+                        sm, {{ csym_prefix | upper }}{{ model.name | upper }}_EVENT_ERROR_EXECUTION, ERROR_REASON_PARAM_UNFIT, SCE_SCRATCH_BUF(message));
                 } else {
                     SCE_SCRATCH_REFUSE({{ reason("event_data_past_slot") }});
                 }
@@ -764,7 +764,7 @@ static void {{ csym_prefix }}{{ model.name }}_execute_pending_invokes({{ csym_pr
                     lua_pop(sm->L, 1);
 {% if 'error.execution' in model.events %}
                     {{ csym_prefix }}{{ model.name }}_raise_platform_error(
-                        sm, {{ csym_prefix | upper }}{{ model.name | upper }}_EVENT_ERROR_EXECUTION,
+                        sm, {{ csym_prefix | upper }}{{ model.name | upper }}_EVENT_ERROR_EXECUTION, ERROR_REASON_CAPACITY_EXCEEDED,
                         {{ reason("invoke_request_past_slot") }});
 {% endif %}
                     continue;
@@ -810,7 +810,7 @@ static void {{ csym_prefix }}{{ model.name }}_execute_pending_invokes({{ csym_pr
                        started. */
 {% if 'error.execution' in model.events %}
                     {{ csym_prefix }}{{ model.name }}_raise_platform_error(
-                        sm, {{ csym_prefix | upper }}{{ model.name | upper }}_EVENT_ERROR_EXECUTION,
+                        sm, {{ csym_prefix | upper }}{{ model.name | upper }}_EVENT_ERROR_EXECUTION, ERROR_REASON_PROCESSOR_UNREGISTERED,
                         {{ reason("invoke_invoker_unregistered") }});
 {% endif %}
                 }
@@ -819,7 +819,7 @@ static void {{ csym_prefix }}{{ model.name }}_execute_pending_invokes({{ csym_pr
             /* W3C SCXML 6.4.1: unsupported `type` — place error.execution on
                the internal queue and start nothing. */
             {{ csym_prefix }}{{ model.name }}_raise_platform_error(
-                sm, {{ csym_prefix | upper }}{{ model.name | upper }}_EVENT_ERROR_EXECUTION,
+                sm, {{ csym_prefix | upper }}{{ model.name | upper }}_EVENT_ERROR_EXECUTION, ERROR_REASON_INVOKE_TYPE_UNSUPPORTED,
                 {{ reason("invoke_type_unsupported", invoke_info.invoke_type) }});
 {% endif %}
             continue;
@@ -844,7 +844,7 @@ static void {{ csym_prefix }}{{ model.name }}_execute_pending_invokes({{ csym_pr
             {% call child_begin.begin_static_child(csym_prefix, model.name, 'sm->child_' ~ invoke_info.field_suffix, invoke_info.child_name, invoke_info.child_host_call, invoke_info.child_declares_host_duties, invoke_info.child_has_send_to_parent, 'p->invoke_id', child_clock_c) %}
 {% if 'error.execution' in model.events %}
                 {{ csym_prefix }}{{ model.name }}_raise_platform_error(
-                    sm, {{ csym_prefix | upper }}{{ model.name | upper }}_EVENT_ERROR_EXECUTION,
+                    sm, {{ csym_prefix | upper }}{{ model.name | upper }}_EVENT_ERROR_EXECUTION, ERROR_REASON_INVOKE_CHILD_INIT_FAILED,
                     {{ reason("invoke_child_host_incomplete", invoke_info.invoke_id) }});
 {% endif %}
                 continue;
@@ -859,7 +859,7 @@ static void {{ csym_prefix }}{{ model.name }}_execute_pending_invokes({{ csym_pr
             if (!{{ csym_prefix }}{{ invoke_info.child_name }}_bind_session_id(&sm->child_{{ invoke_info.field_suffix }}, sm->session_id, p->runtime_id)) {
 {% if 'error.execution' in model.events %}
                 {{ csym_prefix }}{{ model.name }}_raise_platform_error(
-                    sm, {{ csym_prefix | upper }}{{ model.name | upper }}_EVENT_ERROR_EXECUTION,
+                    sm, {{ csym_prefix | upper }}{{ model.name | upper }}_EVENT_ERROR_EXECUTION, ERROR_REASON_CAPACITY_EXCEEDED,
                     {{ reason("invoke_session_id_past_room", invoke_info.invoke_id) }});
 {% endif %}
                 continue;
@@ -1023,7 +1023,7 @@ sce_copy_bounded_id(_done_evt.name, "done.invoke.{{ invoke_info.invoke_id | esca
                 if (sce_failure_.failed) {
 {% if 'error.execution' in model.events %}
                     {{ csym_prefix }}{{ model.name }}_raise_platform_error(
-                        sm, {{ csym_prefix | upper }}{{ model.name | upper }}_EVENT_ERROR_EXECUTION,
+                        sm, {{ csym_prefix | upper }}{{ model.name | upper }}_EVENT_ERROR_EXECUTION, ERROR_REASON_EXPRESSION_FAILED,
                         {{ reason("invoke_srcexpr_unevaluated") }});
 {% endif %}
                     continue;
@@ -1041,7 +1041,7 @@ sce_copy_bounded_id(_done_evt.name, "done.invoke.{{ invoke_info.invoke_id | esca
                 lua_pop(sm->L, 1);
 {% if 'error.execution' in model.events %}
                 {{ csym_prefix }}{{ model.name }}_raise_platform_error(
-                    sm, {{ csym_prefix | upper }}{{ model.name | upper }}_EVENT_ERROR_EXECUTION,
+                    sm, {{ csym_prefix | upper }}{{ model.name | upper }}_EVENT_ERROR_EXECUTION, ERROR_REASON_EXPRESSION_FAILED,
                     {{ reason("invoke_srcexpr_unevaluated_named", invoke_info.srcexpr) }});
 {% endif %}
                 continue;
@@ -1060,7 +1060,7 @@ sce_copy_bounded_id(_done_evt.name, "done.invoke.{{ invoke_info.invoke_id | esca
                 lua_pop(sm->L, 1);
 {% if 'error.execution' in model.events %}
                 {{ csym_prefix }}{{ model.name }}_raise_platform_error(
-                    sm, {{ csym_prefix | upper }}{{ model.name | upper }}_EVENT_ERROR_EXECUTION,
+                    sm, {{ csym_prefix | upper }}{{ model.name | upper }}_EVENT_ERROR_EXECUTION, ERROR_REASON_EXPRESSION_FAILED,
                     {{ reason("invoke_contentexpr_unevaluated", invoke_info.contentexpr) }});
 {% endif %}
                 continue;
@@ -1077,7 +1077,7 @@ sce_copy_bounded_id(_done_evt.name, "done.invoke.{{ invoke_info.invoke_id | esca
             if ({% for candidate in invoke_info.candidates %}strcmp(__sce_selected_{{ invoke_info.field_suffix }}, "{{ candidate.stem | escape_c }}") != 0{{ " && " if not loop.last }}{% endfor %}) {
 {% if 'error.execution' in model.events %}
                 {{ csym_prefix }}{{ model.name }}_raise_platform_error(
-                    sm, {{ csym_prefix | upper }}{{ model.name | upper }}_EVENT_ERROR_EXECUTION,
+                    sm, {{ csym_prefix | upper }}{{ model.name | upper }}_EVENT_ERROR_EXECUTION, ERROR_REASON_INVOKE_SRC_NOT_FOUND,
                     {% if invoke_info.srcexpr %}{{ reason("invoke_document_undeclared_named", invoke_info.srcexpr) }}{% else %}{{ reason("invoke_document_undeclared") }}{% endif %});
 {% endif %}
                 continue;
@@ -1103,7 +1103,7 @@ sce_copy_bounded_id(_done_evt.name, "done.invoke.{{ invoke_info.invoke_id | esca
 {% call child_begin.begin_static_child(csym_prefix, model.name, 'sm->child_' ~ (invoke_info.field_suffix | candidate_identifier(candidate.stem)), candidate.stem, candidate.child_host_call, candidate.child_declares_host_duties, candidate.child_has_send_to_parent, 'p->invoke_id', child_clock_c) %}
 {% if 'error.execution' in model.events %}
                     {{ csym_prefix }}{{ model.name }}_raise_platform_error(
-                        sm, {{ csym_prefix | upper }}{{ model.name | upper }}_EVENT_ERROR_EXECUTION,
+                        sm, {{ csym_prefix | upper }}{{ model.name | upper }}_EVENT_ERROR_EXECUTION, ERROR_REASON_INVOKE_CHILD_INIT_FAILED,
                         {{ reason("invoke_child_host_incomplete", invoke_info.invoke_id) }});
 {% endif %}
                     continue;
@@ -1115,7 +1115,7 @@ sce_copy_bounded_id(_done_evt.name, "done.invoke.{{ invoke_info.invoke_id | esca
                 if (!{{ csym_prefix }}{{ candidate.stem }}_bind_session_id(&sm->child_{{ invoke_info.field_suffix | candidate_identifier(candidate.stem) }}, sm->session_id, p->runtime_id)) {
 {% if 'error.execution' in model.events %}
                     {{ csym_prefix }}{{ model.name }}_raise_platform_error(
-                        sm, {{ csym_prefix | upper }}{{ model.name | upper }}_EVENT_ERROR_EXECUTION,
+                        sm, {{ csym_prefix | upper }}{{ model.name | upper }}_EVENT_ERROR_EXECUTION, ERROR_REASON_CAPACITY_EXCEEDED,
                         {{ reason("invoke_session_id_past_room", invoke_info.invoke_id) }});
 {% endif %}
                     continue;

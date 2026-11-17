@@ -11,7 +11,8 @@
   carries a JSON text a host hands it; `arm` schedules two sends with data,
   `later` long after `soon`; `drop` cancels `later`; `echo` sends `inner` with
   data to the internal queue. An event refused for its data raises
-  error.execution, recorded as `refused;`.
+  error.execution, recorded by the record its data is (docs/adr/0106 #111),
+  `execution:capacityExceeded;`: the event and the code it carries.
 
   `post` schedules a send the host serves (the type `x-sce-host`, declared
   where the C test's build generates this document) with one pair, so its
@@ -55,7 +56,7 @@
       <assign location="taken" expr="taken + _event.data.text + ';'"/>
     </transition>
     <transition event="error.execution">
-      <assign location="taken" expr="taken + 'refused;'"/>
+      <assign location="taken" expr="taken + _event.data.errorName + ':' + _event.data.reason + ';'"/>
     </transition>
   </state>
 </scxml>

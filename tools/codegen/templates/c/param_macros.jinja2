@@ -52,7 +52,7 @@
 {{ indent }}   model — reported, and the pair left out. */
 {% if 'error.execution' in model.events %}
 {{ indent }}{{ csym_prefix }}{{ model.name }}_raise_platform_error(
-{{ indent }}    sm, {{ csym_prefix | upper }}{{ model.name | upper }}_EVENT_ERROR_EXECUTION,
+{{ indent }}    sm, {{ csym_prefix | upper }}{{ model.name | upper }}_EVENT_ERROR_EXECUTION, ERROR_REASON_LOCATION_INVALID,
 {{ indent }}    {{ reason("param_names_no_location", element, param.name) }});
 {% endif %}
 {{ indent }}{{ failed_flag }} = true;
@@ -75,7 +75,7 @@
 {% if 'error.execution' in model.events %}
 {{ indent }}    if ({{ prefix }}_held_{{ loop.index0 }}) {
 {{ indent }}        {{ csym_prefix }}{{ model.name }}_raise_platform_error(
-{{ indent }}            sm, {{ csym_prefix | upper }}{{ model.name | upper }}_EVENT_ERROR_EXECUTION,
+{{ indent }}            sm, {{ csym_prefix | upper }}{{ model.name | upper }}_EVENT_ERROR_EXECUTION, {{ 'ERROR_REASON_EXPRESSION_FAILED' if param.expr else 'ERROR_REASON_LOCATION_INVALID' }},
 {{ indent }}            {{ reason("param_expr_failed" if param.expr else "param_location_unreadable", element, param.name) }});
 {{ indent }}    }
 {% else %}

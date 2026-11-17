@@ -159,8 +159,8 @@ PY
 
 mutation_case "the c11 event path loses its xml rung" <<'PY'
 edit("tools/codegen/templates/c/state_machine.c.jinja2",
-     """        if (*_scan == '<' && sce_lua_dom_push_object(L, evt->data) == 1) {""",
-     """        if (0 && *_scan == '<' && sce_lua_dom_push_object(L, evt->data) == 1) {""")
+     """        if (*_scan == '<' && sce_lua_dom_push_object(L, data) == 1) {""",
+     """        if (0 && *_scan == '<' && sce_lua_dom_push_object(L, data) == 1) {""")
 PY
 
 # ── The C11 guess ──────────────────────────────────────────────────
@@ -170,9 +170,9 @@ PY
 
 mutation_case "the c11 rung stops looking past leading whitespace" <<'PY'
 edit("tools/codegen/templates/c/state_machine.c.jinja2",
-     """        const char *_scan = evt->data;
+     """        const char *_scan = data;
         while (*_scan == ' ' || *_scan == '\\t' || *_scan == '\\r' || *_scan == '\\n') {
             _scan++;
         }""",
-     """        const char *_scan = evt->data;""")
+     """        const char *_scan = data;""")
 PY

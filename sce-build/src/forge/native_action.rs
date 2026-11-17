@@ -2002,7 +2002,8 @@ fn guard_payload(
                     .expect("an action emits its reason before the machine's slot is computed");
                 format!(
                     " else {{\n    {symbol_prefix}{machine_name}_raise_platform_error(\
-                     sm, {symbol_upper}{upper}_EVENT_ERROR_EXECUTION, {literal});\n}}"
+                     sm, {symbol_upper}{upper}_EVENT_ERROR_EXECUTION, \
+                     ERROR_REASON_PAYLOAD_REFUSED, {literal});\n}}"
                 )
             } else {
                 String::new()
