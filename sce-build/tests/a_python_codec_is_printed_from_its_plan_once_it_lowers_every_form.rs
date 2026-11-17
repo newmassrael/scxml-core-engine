@@ -984,21 +984,109 @@ fn a_cbor_map_is_printed_from_its_plan_in_ascending_key_order() {
     );
 }
 
-/// A codec whose plan uses a form the Python printer does not lower keeps the
-/// template's encode whole: a content-line component names its form.
+/// A content-line component is printed from its plan: every property and
+/// parameter is presented by the `Protocol`, an integer held alone in the
+/// class of its width, and the encode writes each property's lines in
+/// declaration order into a buffer first, raising each refusal the plan names
+/// before a byte reaches the caller's sink.
 ///
-/// Turns red where `python_source::unlowered_forms` stops naming a
-/// content-line component.
+/// Turns red where `python_source::unlowered_forms` names a content-line
+/// component again, where `content_line::render` stops staging the component,
+/// drops the judgement of a repeated property's count or of a parameter given
+/// without its property, reads a parameter off the value rather than off the
+/// line record, or holds an integer alone in a bare `int`.
+#[test]
+fn a_content_line_component_is_printed_from_its_plan() {
+    let name = "codec_content_line_event";
+    assert!(unlowered(name).is_empty());
+    let text = resource_module(name);
+    holds(
+        name,
+        &text,
+        &[
+            "from sce_forge_runtime.bounded import BoundedInt\n",
+            "from typing import List, Optional, Protocol, Sequence\n",
+            "class CodecContentLineEventSequenceInt(BoundedInt):\n",
+            "    BITS = 16\n    SIGNED = False\n",
+            "class CodecContentLineEventPriorityInt(BoundedInt):\n",
+            "    BITS = 32\n    SIGNED = True\n",
+            "class CodecContentLineEventSource(Protocol):\n",
+            "    @property\n    def exdate(self) -> Sequence[str]: ...\n",
+            "    @property\n    def sequence(self) -> Optional[CodecContentLineEventSequenceInt]: ...\n",
+            "    sequence: Optional[CodecContentLineEventSequenceInt] = None\n",
+            "        if name == \"sequence\":\n            \
+             value = None if value is None else CodecContentLineEventSequenceInt(value)\n",
+            "    _w = w\n    _frame = bytearray()\n    w = BytearraySink(_frame)\n",
+            "    v = src.dtstart\n    out.property(\"DTSTART\")\n    \
+             out.param(\"TZID\", src.dtstart_tzid, 24)\n    out.string(v, False, 20)\n",
+            "    v = src.summary\n    if v is not None:\n        out.property(\"SUMMARY\")\n        \
+             out.string(v, True, 24)\n",
+            "    v = src.organizer\n    if v is not None:\n        out.property(\"ORGANIZER\")\n        \
+             _pv = src.organizer_cn\n        if _pv is not None:\n            \
+             out.param(\"CN\", _pv, 24)\n        out.string(v, False, 40)\n    \
+             elif src.organizer_cn is not None:\n        \
+             raise content_line.LineRequiredMissing(\"organizer\")\n",
+            "    v = src.exdate\n    if len(v) > 3:\n        raise content_line.LineTooMany(\"exdate\")\n    \
+             for _v in v:\n        out.property(\"EXDATE\")\n        out.string(_v, False, 20)\n",
+            "    v = src.priority\n    if v is not None:\n        out.property(\"PRIORITY\")\n        \
+             out.integer(v)\n",
+            "    out.finish()\n    _w.write_bytes(_frame)\n",
+            "        encode_source(self, w)\n",
+        ],
+    );
+    holds_none(
+        name,
+        &text,
+        &["raise content_line.LineBadValue()", "if not -2147483648 <="],
+    );
+
+    let name = "codec_content_line_enums";
+    assert!(unlowered(name).is_empty());
+    let text = resource_module(name);
+    holds(
+        name,
+        &text,
+        &[
+            "class CodecContentLineEnumsAttendeeLineSource(Protocol):\n",
+            "    @property\n    def attendee(self) -> \
+             Sequence[CodecContentLineEnumsAttendeeLineSource]: ...\n",
+            "    v = src.attendee\n    if len(v) > 3:\n        \
+             raise content_line.LineTooMany(\"attendee\")\n    for _line in v:\n        \
+             out.property(\"ATTENDEE\")\n        \
+             out.enum_param(\"ROLE\", _TEXTS_role, _line.attendee_role.to_underlying())\n",
+        ],
+    );
+}
+
+/// A codec whose plan uses a form the Python printer does not lower keeps the
+/// template's encode whole and names its form: a field of a `float32`.
+///
+/// Turns red where `python_source::value_forms` stops naming a float field.
 #[test]
 fn a_codec_of_a_form_the_printer_does_not_lower_keeps_the_template_encode() {
-    let name = "codec_content_line_event";
-    let forms = unlowered(name);
-    assert!(
-        forms.iter().any(|f| f.contains("a content-line component")),
-        "{name}: the printer names a content-line component among {forms:?}"
+    let dir = tempfile::tempdir().expect("tempdir");
+    let path = dir.path().join("measure.scxml");
+    std::fs::write(
+        &path,
+        r#"<scxml xmlns="http://www.w3.org/2005/07/scxml" xmlns:sce="http://sce.dev/ext"
+       sce:kind="codec" sce:default-endian="big" name="measure">
+  <datamodel>
+    <sce:field id="tag" sce:type="uint8" sce:byte="0" sce:bit-size="8"/>
+    <sce:field id="reading" sce:type="float32" sce:byte="1" sce:bit-size="32"/>
+  </datamodel>
+</scxml>"#,
+    )
+    .expect("write the measure codec");
+    let forms = python_codec_unlowered_file(&path, &[], &ForgeCompileOptions::default())
+        .expect("the document reads")
+        .expect("the document is a codec");
+    assert_eq!(
+        forms,
+        vec!["field 'reading': a `float32` field".to_string()],
+        "measure: the printer names the float field"
     );
-    let text = resource_module(name);
-    holds_none(name, &text, &["def encode_source(", "(Protocol):"]);
+    let text = module_of(&path).expect("measure generates on Python");
+    holds_none("measure", &text, &["def encode_source(", "(Protocol):"]);
 }
 
 /// Every codec of the resources is printed exactly where the printer lowers

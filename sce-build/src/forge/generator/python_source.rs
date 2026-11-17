@@ -33,6 +33,7 @@ use crate::forge::encode_plan::{
 use std::collections::{BTreeMap, BTreeSet};
 
 pub(super) mod cbor;
+pub(super) mod content_line;
 pub(super) mod source_case;
 
 /// The first form of `plan` the Python printer does not print, as the clause
@@ -59,15 +60,14 @@ pub(super) fn unlowered(plan: &CodecPlan<'_>, imports: &[ImportContext]) -> Opti
 /// it raises itself, before the first
 /// byte: a gate it cannot derive, an input a body or the entries of a list say
 /// otherwise than they are handed, measures that disagree, a number past its
-/// field, or what a codec it holds refuses. Every CBOR map is printed
-/// ([`cbor`]); a content-line component keeps its template's
-/// encode. `imports` are the codec's own, which say whether a codec it holds
-/// is printed ([`ImportContext::python_printed`]).
+/// field, or what a codec it holds refuses. Every CBOR map ([`cbor`]) and
+/// every content-line component ([`content_line`]) is printed. `imports` are
+/// the codec's own, which say whether a codec it holds is printed
+/// ([`ImportContext::python_printed`]).
 pub(super) fn unlowered_forms(plan: &CodecPlan<'_>, imports: &[ImportContext]) -> Vec<String> {
     match plan {
         CodecPlan::Positional(plan) => positional_forms(plan, imports),
-        CodecPlan::Cbor(_) => Vec::new(),
-        CodecPlan::ContentLine(_) => vec!["a content-line component".to_string()],
+        CodecPlan::Cbor(_) | CodecPlan::ContentLine(_) => Vec::new(),
     }
 }
 

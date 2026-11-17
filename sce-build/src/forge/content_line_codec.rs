@@ -481,21 +481,43 @@ fn render_python(
     let l = LangCtx::new(Language::Python, imports);
     let mut ctx = l.base_context(&m.name);
     l.insert_imports(&mut ctx, imports);
-    // Owned values, as every Python codec holds them: a `str`, a `List[str]`
-    // that each instance starts empty, and an optional entry or parameter
-    // `None`. A required entry starts at its type's own default. A Python `int`
-    // has no width, so an integer entry carries its bounds for the template to
-    // hold.
     let mut entries = entries_context(&l, m, |_| "str".to_string(), |ty| Some(l.default_expr(ty)));
-    shape_fields(
-        &mut entries,
-        &FieldShapes {
-            list_of: &|t| format!("List[{t}]"),
-            list_default: Some("field(default_factory=list)"),
-            optional_type: &|t| l.codec_optional_of(t),
-            optional_default: Some("None"),
-        },
-    );
+    // docs/adr/0081 step 4: the component is printed from its plan, every
+    // entry presented over a `Protocol` and encoded over any source of it. The
+    // printer says what type and default each field of the value and of each
+    // line record is declared with: an integer held alone in the class of its
+    // width, a text a `str`, a list a `List` each instance starts empty, an
+    // optional entry or parameter `None`.
+    let (printed, declared, records) =
+        crate::forge::generator::python_content_line_printed(m, imports);
+    let model = m
+        .content_line
+        .as_ref()
+        .expect("a content-line codec carries its entries");
+    for (entry, e) in entries
+        .iter_mut()
+        .zip(model.entries.iter().filter(|e| e.param.is_none()))
+    {
+        let (ty, default) = &declared[&e.id];
+        entry["field_type"] = ty.clone().into();
+        entry["default"] = default.clone().into();
+        if let Some((value_type, value_default, hold)) = records.get(&e.id) {
+            entry["value_field_type"] = value_type.clone().into();
+            entry["value_field_default"] = value_default.clone().into();
+            entry["record_hold"] = hold.clone().into();
+        }
+        for (param, p) in entry["params"]
+            .as_array_mut()
+            .into_iter()
+            .flatten()
+            .zip(model.parameters_of(e))
+        {
+            let (ty, default) = &declared[&p.id];
+            param["field_type"] = ty.clone().into();
+            param["default"] = default.clone().into();
+        }
+    }
+    ctx.insert("python_source".into(), printed);
     insert_component(&mut ctx, m);
     insert_enum_tables(&mut ctx, &l, m);
     ctx.insert("entries".into(), entries.into());

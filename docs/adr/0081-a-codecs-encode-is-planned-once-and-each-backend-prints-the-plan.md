@@ -1179,6 +1179,21 @@ old encode, the old encode and its templates are removed in the same landing.
    entry present in ascending key order (`by_key`), a list of records as an array of one map per record, each
    written by the module's `_encode_record_<alias>`. The template's encode of a map, its checks and the record writes
    of its class are gone: every CBOR plan is printed.
+
+   *The seventeenth Python landing, 2026-11-17:* a content-line component, printed from its own plan
+   (`python_source::content_line`), as the C++ printer prints it. Every entry is presented, a member of
+   `{Codec}Source` each: a property's value and each parameter declared for it, `Optional` for one that may be
+   absent, a `Sequence` for a repeated property and for the values of one line, and a `Sequence` of line records
+   for a repeated property that declares a parameter or whose line holds a list of values, each record a source of
+   its own `{Codec}{Entry}LineSource`. A line refuses a text by its content as well as its size, so no bound refines
+   a text or a list, as in C++: the plan's checks stay checks. An integer held alone, a property's value or a line
+   record's, is refined by the class of its width (`BoundedInt`), as the amendment of 2026-11-17 has every printed
+   integer; one in a list is held to its width as its line is written (`LineBadValue`), since a value appends to
+   its list after it is made and no class sees the append. The encode writes each property's lines in declaration
+   order, the judgements of the plan before a line (a required list empty, a list past its `sce:max-count`, a
+   parameter given without its property), into a buffer first where a line can refuse the value, so a refusal
+   leaves the caller's sink untouched, as the positional encode stages a frame (§1). The template's encode is
+   gone: every content-line plan is printed.
 5. Swift, when its codec lowers what the plan holds.
    *Swift lowers what the plan holds, 2026-11-16:* its codec writes every codec of the repository Rust writes,
    but the one only an MCU-class backend writes (`a_swift_codec_is_written_wherever_rust_writes_one.rs`): an

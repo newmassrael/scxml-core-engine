@@ -10713,6 +10713,26 @@ pub(crate) fn python_cbor_printed(
     (printed.context(), printed.declared)
 }
 
+/// For each property of a printed Python content-line component whose lines
+/// are records, by its id, the type of the record's field `value` or `values`,
+/// its default, and the record's `__setattr__`, empty where it has none.
+pub(crate) type PythonRecords = std::collections::BTreeMap<String, (String, String, String)>;
+
+/// What the Python backend prints the content-line codec `m` as from its plan
+/// (docs/adr/0081 step 4): the template's `python_source`, for each property
+/// and parameter, by its id, the type and the default its field is declared
+/// with, and how each line record holds its value. Every content-line
+/// component is printed.
+pub(crate) fn python_content_line_printed(
+    m: &CodecModel,
+    imports: &[ImportContext],
+) -> (serde_json::Value, PythonDeclared, PythonRecords) {
+    let l = LangCtx::new(crate::generator::Language::Python, imports);
+    let printed =
+        python_source::content_line::render(m, &l, &filters::to_pascal_case(m.name.clone()));
+    (printed.context(), printed.declared, printed.records)
+}
+
 /// The text the C++ backend prints the content-line codec `m` as from its plan,
 /// inside its namespace (docs/adr/0081 step 4). Every content-line codec is
 /// printed: its plan uses no form the C++ printer does not lower.

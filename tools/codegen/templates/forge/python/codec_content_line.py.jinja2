@@ -24,43 +24,6 @@ line.read_uint({{ e.max }})
 line.read_int({{ e.min }}, {{ e.max }})
 {%- endif -%}
 {%- endmacro %}
-{#- The write of one property's value `v`, its name and parameters already
-    written, at indent `i`. #}
-{% macro write_value(e, i) %}
-{% if e.separator %}
-{{ i }}out.strings(v, "{{ e.separator }}", {{ "True" if e.text else "False" }}, {{ e.max_size_lit }}, {{ e.max_values_lit }})
-{% elif e.kind == "string" %}
-{{ i }}out.string(v, {{ "True" if e.text else "False" }}, {{ e.max_size_lit }})
-{% elif e.kind == "bool" %}
-{{ i }}out.boolean(v)
-{% elif e.kind == "enum" %}
-{{ i }}out.enum_value(_TEXTS_{{ e.enum_alias }}, {{ e.enum_to }})
-{% else %}
-{#- A Python int is unbounded, so the declared width is held here rather than
-    by the type. #}
-{{ i }}if not {{ e.min }} <= v <= {{ e.max }}:
-{{ i }}    raise content_line.LineBadValue()
-{{ i }}out.{{ "uint" if e.kind == "uint" else "integer" }}(v)
-{% endif %}
-{% endmacro %}
-{#- The parameters of a property, each written when present, at indent `i`, read
-    from `holder`: the codec itself, or the record of one line. #}
-{% macro write_params(e, i, holder) %}
-{% for p in e.params %}
-{% if p.kind == "enum" %}
-{#- A parameter that is an enum is written as the text of its variant; `pv`
-    is the local its carrier is taken from. #}
-{{ i }}pv = {{ holder }}.{{ p.name }}
-{{ i }}if pv is not None:
-{{ i }}    out.enum_param("{{ p.param }}", _TEXTS_{{ p.enum_alias }}, {{ p.enum_to }})
-{% elif p.required %}
-{{ i }}out.param("{{ p.param }}", {{ holder }}.{{ p.name }}, {{ p.max_size_lit }})
-{% else %}
-{{ i }}if {{ holder }}.{{ p.name }} is not None:
-{{ i }}    out.param("{{ p.param }}", {{ holder }}.{{ p.name }}, {{ p.max_size_lit }})
-{% endif %}
-{% endfor %}
-{% endmacro %}
 {#- The read of one parameter's value, as the expression bound to it. #}
 {% macro read_param(p) -%}
 {%- if p.kind == "enum" -%}
@@ -79,6 +42,9 @@ from __future__ import annotations
 
 from sce_forge_runtime import content_line
 from sce_forge_runtime.codec import BytearraySink, CodecError, SceCursor, SceSink
+{% if python_source.runtime %}
+{{ python_source.runtime }}
+{% endif %}
 {% for imp in all_imports %}
 {% if imp.include_stmt %}
 {{ imp.include_stmt }}
@@ -86,7 +52,7 @@ from sce_forge_runtime.codec import BytearraySink, CodecError, SceCursor, SceSin
 {% endfor %}
 
 from dataclasses import dataclass, field
-from typing import List, Optional
+from typing import List, Optional, Protocol, Sequence
 
 {#- What an entry that is an enum is written and read by (docs/adr/0015): each
     variant's text and the carrier it stands for, held as data here because the
@@ -99,6 +65,13 @@ _TEXTS_{{ t.alias }}: content_line.EnumTexts = (
 {% endfor %}
 )
 {% endfor %}
+
+
+{# docs/adr/0081 step 4: the component is printed from its plan. The printer
+   names the class of each integer's width, the Protocol a source of each line
+   record and of the value satisfies, and the encode over any source, before
+   the classes of the value. #}
+{{ python_source.before }}
 
 
 {% for e in entries if e.is_records %}
@@ -114,10 +87,13 @@ class {{ e.record_type }}:
 {% endfor %}
 {% if e.separator %}
     #: The values of the line, {% if e.max_values is not none %}at most {{ e.max_values }}{% else %}any number of them{% endif %}.
-    values: List[str] = field(default_factory=list)
 {% else %}
     #: The value of the line.
-    value: {{ e.value_type }} = {{ e.value_default }}
+{% endif %}
+    {{ e.value_member }}: {{ e.value_field_type }} = {{ e.value_field_default }}
+{% if e.record_hold %}
+
+{{ e.record_hold }}
 {% endif %}
 
 
@@ -143,6 +119,10 @@ class {{ struct_name }}:
 {% endfor %}
 {% endif %}
 {% endfor %}
+{% if python_source.hold %}
+
+{{ python_source.hold }}
+{% endif %}
 
     @classmethod
     def decode(cls, cursor: SceCursor) -> {{ struct_name }}:
@@ -260,48 +240,11 @@ class {{ struct_name }}:
         )
 
     def encode(self, w: SceSink) -> None:
-        """Encode this component into ``w``. A value past its declared bound,
-        or one a line could not carry, raises the typed error of the rule
-        (SCE_FORGE.md §4.6.4) rather than being written."""
-        out = content_line.ContentLineWriter(w, "{{ component }}")
-        out.begin()
-{% for e in entries %}
-{% if e.is_records %}
-{% if e.max_count is not none %}
-        if len(self.{{ e.name }}) > {{ e.max_count }}:
-            raise content_line.LineTooMany()
-{% endif %}
-{% if e.required %}
-        if not self.{{ e.name }}:
-            raise content_line.LineRequiredMissing()
-{% endif %}
-        for record in self.{{ e.name }}:
-            out.property("{{ e.property }}")
-{{ write_params(e, "            ", "record") }}            v = record.{{ e.value_member }}
-{{ write_value(e, "            ") }}{% elif e.is_list %}
-{% if e.max_count is not none %}
-        if len(self.{{ e.name }}) > {{ e.max_count }}:
-            raise content_line.LineTooMany()
-{% endif %}
-{% if e.required %}
-        if not self.{{ e.name }}:
-            raise content_line.LineRequiredMissing()
-{% endif %}
-        for v in self.{{ e.name }}:
-            out.property("{{ e.property }}")
-{{ write_value(e, "            ") }}{% elif e.required %}
-        v = self.{{ e.name }}
-        out.property("{{ e.property }}")
-{{ write_params(e, "        ", "self") }}{{ write_value(e, "        ") }}{% else %}
-        v = self.{{ e.name }}
-        if {{ "v" if e.is_values else "v is not None" }}:
-            out.property("{{ e.property }}")
-{{ write_params(e, "            ", "self") }}{{ write_value(e, "            ") }}{% if e.optional_params %}        elif {% for p in e.optional_params %}{% if not loop.first %} or {% endif %}self.{{ p.name }} is not None{% endfor %}:
-            # A parameter with no value of its property has no line to stand on.
-            raise content_line.LineRequiredMissing()
-{% endif %}{% endif %}
-{% endfor %}
-        out.finish()
+        """Encode this component into ``w`` by the module's
+        :func:`encode_source`, which raises the typed error of the rule
+        (SCE_FORGE.md §4.6.4) for a value a line cannot carry before a byte
+        reaches ``w``."""
+        encode_source(self, w)
 
     def encode_to_bytes(self) -> bytes:
         """:meth:`encode` into a new ``bytes``; raises as :meth:`encode`

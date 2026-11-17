@@ -2122,3 +2122,18 @@ Landing: the commit that adds this section; every Python tree is regenerated aft
   byte for a negative value of a signed enum, a list short of its lower count, and a record whose text, byte string
   or integer is past its bound. The class's `_encode_record_<alias>` staticmethods are now module functions.
 
+## A printed Python content-line component is encoded over any source (ADR 0081 step 4)
+
+Landing: the commit that adds this section; every Python tree is regenerated after it. Every content-line component
+is printed.
+
+- The encode is the module's `encode_source(src, w)`, over any object the module's `{Codec}Source` `Protocol`
+  describes, a line record over `{Codec}{Entry}LineSource`; `encode` calls it. A repeated property and a line of
+  values are read as a `Sequence`, so a source may present a tuple as well as a list.
+- An integer property, and a line record's integer value, is held in `{Codec}{Entry}Int` (`BoundedInt`), made where
+  it is set, so `Event(sequence=3)` is unchanged; a number past the width raises `OverflowError` there. Before, the
+  encode raised `LineBadValue` for it. An integer in a repeated property's list is still refused by the encode
+  with `LineBadValue`.
+- A refused value leaves the sink untouched: the component is written into a buffer first. Before, the lines before
+  the refused one had reached the sink. The refusal now carries the entry's id as its message.
+
