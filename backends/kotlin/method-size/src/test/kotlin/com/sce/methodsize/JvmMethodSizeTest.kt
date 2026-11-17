@@ -193,9 +193,11 @@ class JvmMethodSizeTest {
 
     // A restore once read each part of 256 variables into one closure, whose
     // captures are the arguments of a JVM method: at most 255 slots, a `Long`
-    // taking two. The document's `int64` variables passed that, and the class
-    // failed to load (`ClassFormatError`); that this test runs at all is half of
-    // the evidence, and the state a restored machine saves again is the other.
+    // taking two. The document's `int64` variables passed that, and so did the
+    // constructor of the published `Data`, which took every variable; each
+    // class failed to load (`ClassFormatError`). That this test runs at all is
+    // half of the evidence, and the state a restored machine saves again is the
+    // other.
     @Test
     fun aSavedStateOfMoreLongsThanOneMethodTakesIsRestored() {
         val document = File(fixture).readText()

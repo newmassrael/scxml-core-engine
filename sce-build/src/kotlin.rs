@@ -59,6 +59,41 @@ pub const ITEM_CODE_BYTES: usize = 128;
 // prologue and the code kotlinc adds around a `when` fit in the rest.
 const _: () = assert!(METHOD_ITEMS * ITEM_CODE_BYTES * 2 <= JVM_METHOD_CODE_BYTES + 1);
 
+/// The argument slots of one JVM method: the parameters of its descriptor,
+/// `this` included for an instance method or a constructor, take at most 255,
+/// a `long` or a `double` taking two (JVM Specification, section 4.3.3). A
+/// class with a method past it does not load
+/// (`ClassFormatError: Too many arguments in method signature`).
+pub const JVM_ARGUMENT_SLOTS: usize = 255;
+
+/// The most slots one value takes as an argument: a `long` or a `double`, or a
+/// Kotlin value class over one of them, which is passed unboxed.
+pub const VALUE_ARGUMENT_SLOTS: usize = 2;
+
+/// The most values a data class the generator writes takes in its primary
+/// constructor.
+///
+/// The widest method kotlinc writes for a data class is its synthetic
+/// `copy$default`: a static method taking the instance, every value, one `int`
+/// mask for each 32 values and a marker. At this many values of
+/// [`VALUE_ARGUMENT_SLOTS`] each it takes 254 slots, and at one more 256; the
+/// constructor, `this` and every value, takes fewer. A class of more values is
+/// written as a class of parts of at most this many
+/// (`tools/codegen/templates/kotlin/state_machine.kt.jinja2`, `Data`).
+///
+/// Measured 2026-11-17: a `sce-static` machine publishing 314 variables, 300
+/// of them `int64`, did not load, its `Data` constructor taking every one.
+pub const DATA_CLASS_VALUES: usize = 124;
+
+/// The slots of the `copy$default` kotlinc writes for a data class of
+/// `values` values of [`VALUE_ARGUMENT_SLOTS`] each.
+pub const fn copy_default_slots(values: usize) -> usize {
+    1 + values * VALUE_ARGUMENT_SLOTS + values.div_ceil(32) + 1
+}
+
+const _: () = assert!(copy_default_slots(DATA_CLASS_VALUES) <= JVM_ARGUMENT_SLOTS);
+const _: () = assert!(copy_default_slots(DATA_CLASS_VALUES + 1) > JVM_ARGUMENT_SLOTS);
+
 /// Items of the given weights, in order, packed into consecutive parts whose
 /// weights sum to at most `budget`: each part is the positions of its items.
 ///

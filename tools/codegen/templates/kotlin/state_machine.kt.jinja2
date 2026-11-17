@@ -470,6 +470,15 @@ SavedValues.{{ type }}({{ value }}, {{ what }})
 {% endfor %}
 {% endif %}
 {% if static_published %}
+{# A primary constructor takes every value as an argument of one JVM method,
+   and so does the `copy$default` kotlinc writes beside it: at most 255 slots,
+   a `Long` or a `Double` taking two. A machine that publishes more values than
+   one data class holds (`kotlin_data_class_values`, sce-build/src/kotlin.rs
+   `DATA_CLASS_VALUES`) holds them in parts, each a data class of its own.
+   `part_<n>` and `Part_<n>` hold an underscore, which no variable's name in
+   camel case does. #}
+{% set data_parts = static_published | batch(kotlin_data_class_values) | list %}
+{% if data_parts | length == 1 %}
 
     /** The published variables as one immutable value, in declaration order. */
     data class Data(
@@ -477,6 +486,35 @@ SavedValues.{{ type }}({{ value }}, {{ what }})
         val {{ field.id | to_camel_case }}: {{ field.ty }},
 {% endfor %}
     )
+{% else %}
+
+    /**
+     * The published variables as one immutable value, in declaration order,
+     * each read by its own name. They are held in parts of at most
+     * {{ kotlin_data_class_values }}, each a data class of its own: one
+     * constructor of them all would take more argument slots than one JVM
+     * method takes, and the class would not load.
+     */
+    data class Data(
+{% for part in data_parts %}
+        val part_{{ loop.index0 }}: Part_{{ loop.index0 }},
+{% endfor %}
+    ) {
+{% for part in data_parts %}
+        data class Part_{{ loop.index0 }}(
+{% for field in part %}
+            val {{ field.id | to_camel_case }}: {{ field.ty }},
+{% endfor %}
+        )
+{% endfor %}
+{% for part in data_parts %}
+{% set at = loop.index0 %}
+{% for field in part %}
+        val {{ field.id | to_camel_case }}: {{ field.ty }} get() = part_{{ at }}.{{ field.id | to_camel_case }}
+{% endfor %}
+{% endfor %}
+    }
+{% endif %}
 {% endif %}
 
     /**
@@ -494,12 +532,29 @@ SavedValues.{{ type }}({{ value }}, {{ what }})
         val truncated: Boolean,
     )
 {% if static_published %}
+{% if data_parts | length == 1 %}
 
     private fun currentData(): Data = Data(
 {% for field in static_published %}
         {{ field.id | to_camel_case }} = {{ handed_out(field) }},
 {% endfor %}
     )
+{% else %}
+
+    private fun currentData(): Data = Data(
+{% for part in data_parts %}
+        currentDataPart{{ loop.index0 }}(),
+{% endfor %}
+    )
+{% for part in data_parts %}
+
+    private fun currentDataPart{{ loop.index0 }}(): Data.Part_{{ loop.index0 }} = Data.Part_{{ loop.index0 }}(
+{% for field in part %}
+        {{ field.id | to_camel_case }} = {{ handed_out(field) }},
+{% endfor %}
+    )
+{% endfor %}
+{% endif %}
 {% endif %}
 
     private val _snapshot = kotlinx.coroutines.flow.MutableStateFlow(

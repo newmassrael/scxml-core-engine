@@ -4486,6 +4486,12 @@ fn render_kotlin(
         "kotlin_method_items",
         minijinja::Value::from(kotlin::METHOD_ITEMS),
     );
+    // The most values one data class takes in its primary constructor, below
+    // the 255 argument slots of one JVM method (`kotlin::DATA_CLASS_VALUES`).
+    env.add_global(
+        "kotlin_data_class_values",
+        minijinja::Value::from(kotlin::DATA_CLASS_VALUES),
+    );
     env.add_function("kotlin_parts", |weights: Vec<usize>| {
         kotlin::pack_parts(&weights, kotlin::METHOD_ITEMS)
     });
