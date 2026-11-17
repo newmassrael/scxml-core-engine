@@ -4114,16 +4114,16 @@ impl From<crate::forge::generator::SwiftSourceCase> for PrintedCase {
 
 impl From<crate::forge::generator::C11SourceCase> for PrintedCase {
     /// The C11 harness zeroes the value and sets each member by a statement,
-    /// so the value has no expression of its own; the C11 printer prints no
-    /// codec that takes a flag input or a caller's tag, so a decode and an
-    /// encode are handed nothing after the cursor or the sink.
+    /// so the value has no expression of its own; a decode is handed every
+    /// flag input after the value it writes, and the encode those the value
+    /// does not say after the sink.
     fn from(case: crate::forge::generator::C11SourceCase) -> Self {
         PrintedCase {
             bindings: case.statements,
             literal: String::new(),
             checks: case.checks,
-            inputs: Vec::new(),
-            encode_inputs: Vec::new(),
+            inputs: case.inputs,
+            encode_inputs: case.encode_inputs,
             note: String::new(),
         }
     }
