@@ -1793,6 +1793,29 @@ old encode, the old encode and its templates are removed in the same landing.
    first; the walk is one function, so a list whose entries' encode can refuse is counted before the first byte
    handed exactly what it is written with. A chain that holds a bare entry's place (R6b) waits for the groups, and
    a list held to a law (R8) for its refinement.
+
+   *The seventh Go landing, 2026-11-17:* a variant whose arms are codecs the Go backend prints, in each of its
+   shapes: a tag of its own in a field or a flag of a carrier (`Derive::VariantTag`), a peek byte, which the arm's
+   own header writes, a tag the caller hands, which the caller writes, and an arm a build feature decides, which
+   every Go build keeps as the template does; and a parent whose carrier's bits the arm of an embedded body's
+   variant fills (`Derive::ParentTag`). The decision was how Go holds a sum. The template's struct of one pointer
+   per arm holds no arm or several as readily as one, so it is no refinement; a Go sum is an interface with an
+   unexported method that only the package's own types implement, read by a type switch, which is how Go's own
+   generated code holds one (the protocol buffers' `oneof`). The value presents the arm as `Body()`, a
+   `{Codec}Variant`; each arm is a struct `{Codec}Variant{Arm}` that holds a source of its codec behind `Body()`,
+   made by its constructor, as a body is presented as its codec's source (the fourth landing); the catch-all holds
+   its tag in `{Codec}UnknownTag`, the refinement of R3 as §2 gives it Go: a struct with unexported fields made by
+   a constructor that answers `false` for a tag an arm names or the bits do not hold, whose zero value holds the
+   least tag no arm names. The decode, which reaches the catch-all only under such a tag, makes it in the package.
+   A value made by default, as the zero value, presents the arm marked `default="true"`, which the plan now says
+   (`Arm::by_default`: the marked arm, else the first named, else the catch-all), its codec's value made by its
+   constructor where the codec declares one, so a peek-byte arm's header holds its tag. The encode reads the arm
+   once, derives the tag by a type switch into the tag field or folds it into its carrier, counts an arm whose
+   encode can refuse before the first byte, and writes the arm by its codec's `EncodeSource`, handed what its
+   import binds; a parent folds each embedded body's arm's tag, masked, into its carrier, and a parent the template
+   still writes switches on a printed body's arm type the same way. A tag the encode derives into a field is
+   answered by `Wire{Field}()`, and a variant whose caller hands its tag answers `Tag()` from the arm type. An
+   input the arms say (R4d, R4e), and a check of an input at an arm, stay unlowered.
 5. Swift, when its codec lowers what the plan holds.
    *Swift lowers what the plan holds, 2026-11-16:* its codec writes every codec of the repository Rust writes,
    but the one only an MCU-class backend writes (`a_swift_codec_is_written_wherever_rust_writes_one.rs`): an

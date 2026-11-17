@@ -2721,3 +2721,29 @@ list held to a law, and a codec with a group, a variant or an input its value sa
 - A chain that hands each entry what the one before it was computes it from the entries' identifiers; a caller
   hands the entry codec nothing for that input.
 
+## A printed Go codec holds the arm of its variant as one arm type, and derives its tag (ADR 0081 step 4)
+
+Landing: the commits that add this section; every Go tree, the Go goldens and the Go round-trip tree are
+regenerated after them. They move the positional codecs that also hold a variant whose arms are codecs the Go
+backend prints, in any of its shapes (a tag of its own in a field or a flag, a peek byte, a tag the caller hands,
+an arm under a build feature), and a parent whose carrier holds the tag of an embedded body's variant
+(`codec_variant_dispatch`, `codec_source_leaf`, `codec_source_parent_tag`, the broadcast-log choice among them). A
+variant whose arms say a flag input, or are held to an input the parent checks, is unchanged.
+
+- The variant is no struct of one pointer per arm: `frame.Body` is `frame.Body()`, a value of the interface
+  `{Codec}Variant`, which only the codec's arm types satisfy. Each arm is `{Codec}Variant{Arm}`, made by
+  `Make{Codec}Variant{Arm}(body)` of any source of its codec and read by `arm.Body()`; the catch-all is
+  `{Codec}VariantDefault`, made by `Make{Codec}VariantDefault(tag, body)`. Read the arm with a type switch:
+  `switch arm := frame.Body().(type) { case pkg.FrameVariantPing: ... }` where `frame.Body.Ping != nil` was read.
+- `Make{Codec}` takes the arm last: `pkg.Frame{Body: pkg.FrameVariant{Ping: &ping}}` is
+  `pkg.MakeFrame(pkg.MakeFrameVariantPing(&ping))`. A value that holds no arm, as the zero value, presents the
+  arm marked `default="true"`, its codec's value made by default.
+- The catch-all's tag is a `{Codec}UnknownTag`, made by `Make{Codec}UnknownTag(tag)`, which answers `false` for a
+  tag an arm names or the tag's bits do not hold (docs/adr/0065 §6 R3); read it by `arm.Tag().Value()`. The
+  `Default.Tag` a value stated is no longer a number any arm could name.
+- A tag of the codec's own is no element: the encode derives it from the arm, and the frame carries
+  `frame.WireTag()` (named by the tag field). A variant whose caller hands the decode its tag still answers
+  `frame.Tag()`, now from the arm type it holds.
+- A parent's flag that holds the tag of an embedded body's arm is derived from the body, in place of the bits the
+  value presents, as before.
+
