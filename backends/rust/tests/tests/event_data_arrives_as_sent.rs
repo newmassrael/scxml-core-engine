@@ -19,8 +19,8 @@
 // Fixture: integration_resources/event_data_arrives_as_sent/event_data_arrives_as_sent.scxml
 // (canonical, shared with the C++ / C11 / Go / Kotlin / Python channels).
 //
-// Regeneration (after fixture or template edit):
-//   scripts/materialize.sh rust-integration
+// Regeneration: none by hand. The crate's build script (build.rs) writes the
+//   `rust-integration` tree into OUT_DIR again when a fixture or template changes.
 
 use sce_rust_tests::integration::event_data_arrives_as_sent::{
     EventDataArrivesAsSentEvent as Event, EventDataArrivesAsSentPolicy as Policy,

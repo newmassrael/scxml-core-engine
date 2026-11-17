@@ -12,8 +12,8 @@
 // Fixture: integration_resources/cancelling_an_invoke_raises_nothing/cancelling_an_invoke_raises_nothing.scxml
 // (canonical, shared with the C++ / C11 / Go / Kotlin / Python channels).
 //
-// Regeneration (after fixture or template edit):
-//   scripts/materialize.sh rust-integration
+// Regeneration: none by hand. The crate's build script (build.rs) writes the
+//   `rust-integration` tree into OUT_DIR again when a fixture or template changes.
 
 use sce_rust_tests::integration::cancelling_an_invoke_raises_nothing::{
     CancellingAnInvokeRaisesNothingEvent as Event, CancellingAnInvokeRaisesNothingPolicy as Policy,
