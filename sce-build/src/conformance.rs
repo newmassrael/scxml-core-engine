@@ -5491,13 +5491,13 @@ mod tests {
     #[test]
     fn a_source_case_of_a_cbor_map_is_the_map_each_printer_makes() {
         let mut encoded: Vec<u64> = vec![165, 0, 80];
-        encoded.extend(0..16);
+        encoded.extend(0u64..16);
         encoded.extend([
-            1, 102, 110, 111, 100, 101, 45, 97, 3, 3, 5, 66, 222, 173, 7, 245,
+            1u64, 102, 110, 111, 100, 101, 45, 97, 3, 3, 5, 66, 222, 173, 7, 245,
         ]);
         let case = serde_json::json!({
             "source": {
-                "source": "node-a", "id": (0..16).collect::<Vec<u8>>(), "pattern": 3,
+                "source": "node-a", "id": (0u8..16).collect::<Vec<u8>>(), "pattern": 3,
                 "payload": [222, 173], "deadline": null, "urgent": true
             },
             "encoded": encoded,
@@ -5672,7 +5672,7 @@ mod tests {
         };
         let base = || {
             serde_json::json!({
-                "source": "node-a", "id": (0..16).collect::<Vec<u8>>(), "pattern": 3,
+                "source": "node-a", "id": (0u8..16).collect::<Vec<u8>>(), "pattern": 3,
                 "payload": [], "deadline": null, "urgent": null
             })
         };
