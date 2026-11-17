@@ -330,6 +330,13 @@ reads a field of a composed record variable in a guard, and the non-optional rec
    assignment it rests on (ADR 0087 "Landing order" item 8, its last bullet). What is left of item 1 is the
    non-optional record variable of decision 1 of that item.
 
+   The non-optional record variable landed 2026-11-17, by ADR 0087 "Decided while landing item 8" decision 10: a
+   `record:R` variable of a record that holds a composition is built where it is declared by definite assignment,
+   each composed field starting at the one value its type has without a writer (absent, or an empty list of no
+   lower count) and a field with none (a union, a record, a list of a lower count above 0) refused by name with
+   the repair `optional<record:R>`, so no type is given a zero. `static_union`'s `board` holds it on the seven lanes
+   and the Interpreter. Item 1 is closed.
+
    Superseded by the paragraph above, kept as it was written: what was left of item 1 was `static_union`'s record
    variable whose record holds a union, narrowed after the lift writes
    it, which reads a field of a composed record variable in a guard (ADR 0087 "Landing order" item 8, its last

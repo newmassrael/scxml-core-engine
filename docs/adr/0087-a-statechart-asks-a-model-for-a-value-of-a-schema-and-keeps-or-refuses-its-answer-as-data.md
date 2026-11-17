@@ -1191,6 +1191,27 @@ because the sections above do not settle it:
     write any value whole. Lowering it on the seven lanes and the Interpreter, with a fixture and its scenario on
     every driver, is what is left of docs/adr/0099's item 1.
 
+    Landed 2026-11-17. The rule is read once, `SchemaField::start` (`sce-build/src/forge/model.rs`): a field of one
+    entry is `Given`, an optional composed one `Absent`, a list of no lower count `Empty`, and a union, a record or a
+    list of a lower count above 0 `Unstarted`; the judge (`Judge::composed_record`) and the lowering
+    (`composed_record_start`) each read it, so they cannot disagree. The one table's `records` position holds the
+    built variable as well as the optional one, since every lane holds both: a second position flipped on every row
+    at once would say nothing the first does not. Each lane spells the start by `ComposedSpelling::record_of` (now
+    on all seven lanes and the Interpreter, where only Rust had it) and `ComposedSpelling::empty_list`, an absent
+    field by `absent_value`, and the saved state holds the variable as `saved_kind` `record`, read by the record's
+    own saved form as the optional one's present value is. `static_union`'s `board`, a record of a text, a number,
+    an optional text, a list of unions with no lower count and an optional union, is built where it is declared,
+    read in a guard, lifted into and restored, and `scenarios/static_union.json` replays it on every driver
+    (`a_record_variable_that_holds_a_composition_is_built_where_it_is_declared`). Two things were decided while
+    landing it:
+    - **A `<sce:set>` of a field with no start is refused with the variable, not as a set**: the refusal that names
+      the field and the repair `optional<record:R>` is the one an author can act on, and a second sentence about the
+      set would name the same field without the repair.
+    - **The fixture is a variable of `static_union`, not a machine of its own**: it holds the union, its records and
+      a restore step on every driver already, so the built record is read back by its type beside the unions it
+      holds with no driver gaining a machine; one variable of its own name keeps each of the scenario's variables
+      one type (decision 4).
+
 ## Consequences
 
 - A statechart can ask a model for a value of a schema and act on either outcome as data, on every lane, with no

@@ -5041,10 +5041,16 @@ must be is judged where the document is read:
   with the aliases it imports), or a union it imports (docs/adr/0092); a schema whose
   record holds a list or a record at any depth is read as any other is, by the reader
   of a delivery of its type (docs/adr/0087, Landing order item 8), into a variable of
-  `optional<record:R>`, which starts absent: a backend whose row of "Which backend
-  lowers a composed value" does not hold `records` refuses that variable by its own
-  name (`generate/unsupported-feature`), and with it the lift, and a variable of
-  `record:R` of such a record is refused on every backend;
+  `optional<record:R>`, which starts absent, or of `record:R`, built where it is
+  declared by definite assignment (docs/adr/0087, "Decided while landing item 8",
+  decision 10): each field of one entry given by one `<sce:set>`, an optional
+  composed field starting absent and a list of no lower count empty. A field with no
+  value before something writes one (a union, a record, a list of a lower count above
+  0) refuses the `record:R` variable by name, naming `optional<record:R>` as the
+  repair, and so does a `<sce:set>` of a composed field
+  (`scxml/static-datamodel-rule`). A backend whose row of "Which backend lowers a
+  composed value" does not hold `records` refuses either variable by its own name
+  (`generate/unsupported-feature`), and with it the lift;
 - `location` is a variable of `record:R` or `optional<record:R>`, `R` the document
   `schema` names, and `refusal` another variable, of `optional<record:L>`, `L` the
   document `sce:std/lift/refusal.scxml` by whatever alias it is imported
@@ -5674,8 +5680,10 @@ renders each row from it and holds this list to them, so the list cannot say
 what the build does not. `reads` is a statechart's read of a composed payload at
 any depth, `copies` a list taken whole into a list variable, `unions` a variable
 of a union and a payload that holds one, `records` a variable of
-`optional<record:R>` whose record holds a composition, which starts absent and
-a `<sce:lift>` of `R` writes whole (docs/adr/0087, Landing order item 8), and
+`optional<record:R>` or `record:R` whose record holds a composition, the one
+starting absent and the other built where it is declared, which a `<sce:lift>` of
+`R` writes whole (docs/adr/0087, Landing order item 8 and "Decided while landing
+item 8", decision 10), and
 `sends` a `<send>` of a composed value by its name. `ecmascript` is the
 Interpreter's lowering. A backend refuses by its own name each position it does
 not lower.
