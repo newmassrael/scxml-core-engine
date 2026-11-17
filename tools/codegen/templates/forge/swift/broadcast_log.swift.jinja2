@@ -20,7 +20,7 @@
 // from a buffer only that read holds.
 //
 // Operations (from `{{ runtime_dep }}`, typed here over the element):
-//   {{ pascal }}.publish(publisher, element{% if context.flags and context.given_flags %}, {% if context.said_flags %}given: given{% else %}flags: flags{% endif %}{% endif %}) -> {{ pascal }}.Publish
+//   {{ pascal }}.publish(publisher, element{% if context.flags and context.given_flags %}, {% if context.derives_flags %}given: given{% else %}flags: flags{% endif %}{% endif %}) -> {{ pascal }}.Publish
 //       wait-free; the entry's sequence number, or why the element was refused
 //   {{ pascal }}.read(log, &reader) -> {{ pascal }}.Read
 //       wait-free; an item, nothing new, how many were missed, or an entry that does not decode
@@ -35,7 +35,7 @@
 // section 4).
 {% if context.flags %}
 {% if context.given_flags %}
-// `publish` takes the flags{% if context.said_flags %} the element's value does not say{% endif %}, and an `item` returns them{% if context.said_flags %} all{% endif %}.
+// `publish` takes the flags{% if context.derives_flags %} the element's value does not say in every value{% endif %}, and an `item` returns them{% if context.derives_flags %} all{% endif %}.
 {% else %}
 // An `item` returns the flags.
 {% endif %}
@@ -114,10 +114,11 @@ public enum {{ pascal }} {
 {% endfor %}
         }
     }
-{% if context.said_flags and context.given_flags %}
+{% if context.derives_flags and context.given_flags %}
 
     /// The flag inputs `publish` takes from its caller: those the element's value does not
-    /// say. The log reads the others off the element (ADR 0065 section 6, R4a).
+    /// say in every value, each used where the value says nothing of it. The log reads the
+    /// others off the element (ADR 0065 section 6, R4a, R4e).
     public struct GivenFlags: Equatable, Sendable {
 {% for flag in context.flags if not flag.said %}
         public var {{ flag.camel }}: Bool
@@ -180,7 +181,7 @@ public enum {{ pascal }} {
     /// the runtime stops the program, which no run reaches in practice.
 {% if context.flags %}
     ///
-{% if context.said_flags %}
+{% if context.derives_flags %}
     /// The flag inputs the element's codec takes from its caller are stored in the entry's
     /// context words, so that every reader decodes the entry under what it was published
     /// under. A flag the element's value says is read off `element` and stored as it says
@@ -203,15 +204,19 @@ public enum {{ pascal }} {
     /// every reader decodes the entry under the arm it was published as.
 {% endif %}
     public static func publish(
-        _ publisher: SceForgeRuntime.BroadcastLogPublisher, _ element: {{ element_pascal }}{% if context.flags and context.given_flags %}, {% if context.said_flags %}given: GivenFlags{% else %}flags: Flags{% endif %}{% endif %}{{ '' }}
+        _ publisher: SceForgeRuntime.BroadcastLogPublisher, _ element: {{ element_pascal }}{% if context.flags and context.given_flags %}, {% if context.derives_flags %}given: GivenFlags{% else %}flags: Flags{% endif %}{% endif %}{{ '' }}
     ) -> Publish {
 {# A flag the element's value says is read off it by the input's own function, which the
    printed codec declares (`input` and the input's name, docs/adr/0065 §6 R4a). #}
-{% if context.said_flags %}
+{% if context.derives_flags %}
         let flags = Flags(
 {% for flag in context.flags %}
 {% if flag.said %}
             {{ flag.camel }}: {{ element_pascal }}.input{{ flag.pascal }}(element) != 0{% if not loop.last %},{% endif %}
+{# A flag the value says in some of its values only (docs/adr/0065 §6 R4e) is what it says where
+   it says it, and what the caller gives where it says nothing (`nil`). #}
+{% elif flag.partly %}
+            {{ flag.camel }}: {{ element_pascal }}.input{{ flag.pascal }}(element).map { $0 != 0 } ?? given.{{ flag.camel }}{% if not loop.last %},{% endif %}
 {% else %}
             {{ flag.camel }}: given.{{ flag.camel }}{% if not loop.last %},{% endif %}
 {% endif %}
@@ -220,7 +225,7 @@ public enum {{ pascal }} {
 {% endif %}
         var sink = BoundedSink(capacity: maxEncodedBytes)
         do throws(CodecError) {
-            try element.encode(into: &sink{% for flag in context.flags if not flag.said %}, {{ flag.name }}: flagInput(flags.{{ flag.camel }}){% endfor %})
+            try element.encode(into: &sink{% for flag in context.flags if not (flag.said or flag.partly) %}, {{ flag.name }}: flagInput(flags.{{ flag.camel }}){% endfor %})
         } catch {
             return .refused(error)
         }

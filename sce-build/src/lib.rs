@@ -4724,6 +4724,13 @@ pub struct BroadcastLogElementFacts {
     /// of them: a log in such a language derives them from the element when it
     /// publishes, and its caller does not give them.
     pub said_flag_inputs: Vec<String>,
+    /// The flag inputs among [`Self::caller_flag_inputs`] that the element's
+    /// value says in some of its values only (ADR 0065 §6 R4e): an encode
+    /// through the source interface takes none of them either, and the value
+    /// says nothing of one in the others. A log stores what the value says where
+    /// it says it and what the caller gives where it does not, so the caller
+    /// still gives them.
+    pub partly_said_flag_inputs: Vec<String>,
     /// The element is a variant whose tag the caller supplies, because the wire
     /// form carries no tag field. The tag is a `u8` on decode.
     pub caller_variant_tag: bool,
@@ -8694,7 +8701,7 @@ fn broadcast_log_element_facts(
     codec: &forge::model::CodecModel,
     imports: &[forge::model::ForgeImport],
     base_dir: &Path,
-    said_flag_inputs: Vec<String>,
+    (said_flag_inputs, partly_said_flag_inputs): (Vec<String>, Vec<String>),
 ) -> BroadcastLogElementFacts {
     BroadcastLogElementFacts {
         caller_flag_inputs: codec
@@ -8703,6 +8710,7 @@ fn broadcast_log_element_facts(
             .map(|input| input.name.clone())
             .collect(),
         said_flag_inputs,
+        partly_said_flag_inputs,
         caller_variant_tag: codec
             .variant
             .as_ref()
@@ -9351,13 +9359,13 @@ fn validate_broadcast_log_cross_refs(
                 (
                     forge::codec_size::largest_encoded_bytes(&sized),
                     // An input the element says in some values only stays the
-                    // caller's: a log stores a flag for every element.
+                    // caller's where the value says nothing: a log stores a flag
+                    // for every element.
                     broadcast_log_element_facts(
                         codec,
                         imports,
                         base_dir,
-                        codec_says_inputs_by_extent(codec, imports, base_dir, &mut HashSet::new())
-                            .0,
+                        codec_says_inputs_by_extent(codec, imports, base_dir, &mut HashSet::new()),
                     ),
                 )
             }

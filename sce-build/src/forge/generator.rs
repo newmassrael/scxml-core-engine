@@ -29092,16 +29092,19 @@ struct BroadcastLogRenderInputs {
 /// one more context word, after the flag words, that holds the tag. The value
 /// has, for a template:
 ///
-/// * `flags`: one `{name, snake, camel, pascal, bit, word, shift, said}` per
-///   flag input, in the order of the codec's signature (`word` is relative to
-///   the first context word, so the slot index is `1 + word`; `said` is whether
-///   the element's value says it, ADR 0065 §6 R4a, and the language's encode of
-///   the element reads it off the value, `encode_reads_said`: the Rust encode
-///   always does, a C++ or a Swift one once the element is printed from its
-///   plan (docs/adr/0081 §6), and every other encode takes each flag from its
-///   caller);
+/// * `flags`: one `{name, snake, camel, pascal, bit, word, shift, said,
+///   partly}` per flag input, in the order of the codec's signature (`word` is
+///   relative to the first context word, so the slot index is `1 + word`;
+///   `said` is whether the element's value says it, ADR 0065 §6 R4a, and the
+///   language's encode of the element reads it off the value,
+///   `encode_reads_said`: the Rust encode always does, a C++ or a Swift one once
+///   the element is printed from its plan (docs/adr/0081 §6), and every other
+///   encode takes each flag from its caller; `partly` is whether, so read, the
+///   value says it in some of its values only, R4e, so that the caller still
+///   gives it for the others and the encode does not take it);
 /// * `said_flags` and `given_flags`: whether some flag input is said, and
-///   whether some is not;
+///   whether some is not; `derives_flags`: whether some is said, in every value
+///   or in some, so that `publish` reads it off the element;
 /// * `flag_words`, `has_tag`, `tag_word` (relative as well; the slot index is
 ///   `1 + tag_word`), `context_words`, and `payload_start`, the slot index of
 ///   the first payload word.
@@ -29116,6 +29119,8 @@ fn broadcast_log_context_value(
 ) -> minijinja::Value {
     let said_by_value =
         |name: &String| encode_reads_said && element.said_flag_inputs.contains(name);
+    let partly_by_value =
+        |name: &String| encode_reads_said && element.partly_said_flag_inputs.contains(name);
     let flags: Vec<minijinja::Value> = element
         .caller_flag_inputs
         .iter()
@@ -29131,6 +29136,7 @@ fn broadcast_log_context_value(
                 word => index / word_bits,
                 shift => index % word_bits,
                 said => said_by_value(name),
+                partly => partly_by_value(name),
             }
         })
         .collect();
@@ -29141,9 +29147,15 @@ fn broadcast_log_context_value(
         .iter()
         .filter(|name| said_by_value(name))
         .count();
+    let partly = element
+        .caller_flag_inputs
+        .iter()
+        .filter(|name| partly_by_value(name))
+        .count();
     minijinja::context! {
         flags => flags,
         said_flags => said > 0,
+        derives_flags => said + partly > 0,
         given_flags => said < element.caller_flag_inputs.len(),
         flag_words => flag_words,
         has_tag => element.caller_variant_tag,

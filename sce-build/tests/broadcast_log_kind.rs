@@ -6437,6 +6437,40 @@ fn swift_stores_the_tag_of_a_variant_element_beside_its_bytes() {
 }
 
 #[test]
+fn swift_stores_a_flag_the_element_says_in_some_values_as_said_and_else_as_given() {
+    // An element printed from its plan whose value says `S` in some of its values only (ADR 0065
+    // §6 R4e) answers `nil` from `inputS` where it says nothing: the log stores what the value
+    // says where it says it, and what the caller gives where it does not, and the printed encode
+    // takes no `S`. A `nil` read as set would store a flag the caller never gave.
+    let facts = BroadcastLogElementFacts {
+        caller_flag_inputs: vec!["S".to_string()],
+        partly_said_flag_inputs: vec!["S".to_string()],
+        ..BroadcastLogElementFacts::default()
+    };
+    let options = ForgeCompileOptions {
+        element_type_swift_printed: Some(std::collections::HashSet::from([
+            "event_record".to_string()
+        ])),
+        ..resolution_options(None, 4, facts)
+    };
+    let code = compile_single_as(Language::Swift, "EventRing.swift", &event_ring(), &options)
+        .expect("a log over an element that says a flag in some values is generated");
+    assert_holds(
+        &code,
+        &[
+            "public struct GivenFlags: Equatable, Sendable {",
+            "_ element: EventRecord, given: GivenFlags\n    ) -> Publish {",
+            "            S: EventRecord.inputS(element).map { $0 != 0 } ?? given.S\n",
+            "try element.encode(into: &sink)\n",
+        ],
+    );
+    assert!(
+        !code.contains("EventRecord.inputS(element) != 0"),
+        "a value that says nothing of the flag does not set it:\n{code}"
+    );
+}
+
+#[test]
 fn swift_stores_the_flag_inputs_an_element_asks_its_caller_for() {
     // The codec `event_record` takes the flag input `S` from its caller on `decode`, and its
     // value says it (ADR 0065 §6 R4a), which the encode Swift prints from its plan reads off the
