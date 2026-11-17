@@ -410,20 +410,22 @@ fn a_send_or_raise_of_the_event_of_a_composed_schema_is_refused_by_name() {
 
 #[test]
 fn a_variable_that_names_a_composed_record_is_refused_by_name() {
-    // A record and an element of a list alike: the record holds a list
-    // (`tags`) at whatever depth the variable names it, and no backend holds
-    // either.
-    for data in [
-        r#"<data id="kept" sce:type="record:Item"/>"#,
-        r#"<data id="kept" sce:type="list&lt;record:Item&gt;[2]"/>"#,
-    ] {
-        let out = refusal_of(
-            &["check"],
-            &reader(data, "", r#"<transition event="go" target="idle"/>"#),
-        );
-        assert!(out.contains("the field `tags`"), "{out}");
-        assert!(out.contains("a statechart's variable"), "{out}");
-    }
+    // An element of a list: the record holds a list (`tags`), and no backend
+    // holds a list of such records. A variable of the record itself is built
+    // where it is declared (docs/adr/0087, "Decided while landing item 8",
+    // decision 10), which
+    // `a_record_variable_that_holds_a_composition_is_built_where_it_is_declared`
+    // holds.
+    let out = refusal_of(
+        &["check"],
+        &reader(
+            r#"<data id="kept" sce:type="list&lt;record:Item&gt;[2]"/>"#,
+            "",
+            r#"<transition event="go" target="idle"/>"#,
+        ),
+    );
+    assert!(out.contains("the field `tags`"), "{out}");
+    assert!(out.contains("a statechart's variable"), "{out}");
 }
 
 /// Pinned by `ComposedLowering::of`'s `records`: an optional record that holds

@@ -188,7 +188,9 @@ pub fn check(
     let held_enums = model.held_enums();
     // The schemas read one entry per field: every use of one that holds a
     // composition was refused where the document was parsed
-    // ([`crate::forge::event_schema_check::check_composed_uses`]).
+    // ([`crate::forge::event_schema_check::check_composed_uses`]), but a
+    // variable of the record itself, which is judged from the imports
+    // ([`Judge::composed_record`]).
     let records = model.entry_records();
     let event_schemas = model.entry_event_schemas();
     let received = model.received_events();
@@ -2333,10 +2335,15 @@ impl<'a> Judge<'a> {
         alias: &str,
         records: &std::collections::BTreeMap<String, crate::forge::model::EntrySchema>,
     ) -> Result<(), Located<ForgeError>> {
-        // An alias the parser admitted names an import; without sibling
-        // files to read it has no schema here, and nothing to judge against.
+        // A record that holds a composition is read whole from the imports, as
+        // no record of entries describes it. An alias the parser admitted names
+        // an import; without sibling files to read it has no schema here, and
+        // nothing to judge against.
         let Some(schema) = records.get(alias) else {
-            return Ok(());
+            return match self.lift_schemas.get(alias) {
+                Some(composed) => self.composed_record(ctx, var, alias, composed),
+                None => Ok(()),
+            };
         };
         let declared: Vec<&str> = schema.fields.iter().map(|f| f.id.as_str()).collect();
         let ordered = crate::forge::generator::order_record_fields(
@@ -2356,6 +2363,104 @@ impl<'a> Judge<'a> {
         self.schema_enums_named(var, alias, schema)?;
         self.schema_strings_bounded(var, alias, schema)?;
         self.record_starts(ctx, schema, ordered)
+    }
+
+    /// A `record:<alias>` variable whose record holds a composition, built where
+    /// it is declared by definite assignment (docs/adr/0087, "Decided while
+    /// landing item 8", decision 10): each field of one entry given by one
+    /// `<sce:set>`, judged as a field of a record of entries is
+    /// ([`Self::record_starts`]), and each composed field starting at the one
+    /// value its type has without a writer ([`SchemaField::start`]): absent for
+    /// an optional one, empty for a list of no lower count. A `<sce:set>` of a
+    /// composed field is refused by name, since no expression of the language
+    /// builds a list, a union or a record, and so is a field with no such
+    /// value, naming the repair: `optional<record:R>`, which starts absent and
+    /// a lift writes whole.
+    ///
+    /// [`SchemaField::start`]: crate::forge::model::SchemaField::start
+    fn composed_record(
+        &self,
+        ctx: &TypeCtx<'_>,
+        var: &Variable,
+        alias: &str,
+        schema: &crate::forge::model::EventSchemaModel,
+    ) -> Result<(), Located<ForgeError>> {
+        use crate::forge::model::FieldStart;
+        let written_type = var
+            .value_type
+            .as_ref()
+            .map(|t| t.as_attr())
+            .unwrap_or_default();
+        let element = format!("<data id=\"{}\" sce:type=\"{written_type}\">", var.id);
+        // A `<sce:set>` that names a composed field first: it names no field a
+        // `<sce:set>` gives, and the reason is the language's, not a typo. One
+        // of a field with no start is refused below with the variable, which
+        // names the repair.
+        for init in &var.record_fields {
+            let Some(field) = schema.fields.iter().find(|f| f.id == init.name) else {
+                continue;
+            };
+            let starts = match field.start() {
+                FieldStart::Given(_) | FieldStart::Unstarted(_) => continue,
+                FieldStart::Absent => "absent",
+                FieldStart::Empty => "empty",
+            };
+            let spelling = init.name_spelling.as_ref();
+            return Err(self.rule_at(
+                format!("<sce:set name=\"{}\" expr=\"{}\">", init.name, init.expr),
+                &format!(
+                    "the field `{}` of record:{alias} holds `{}`, and no expression of the \
+                     language builds a list, a union or a record: it starts {starts} where \
+                     the record is declared, and a lift writes the record whole",
+                    field.id, field.sce_type
+                ),
+                spelling.map(|s| s.row()),
+                spelling.map(|s| s.col()),
+                "",
+                &init.name,
+            ));
+        }
+        // A composed field with no value without a writer leaves the record
+        // nothing to start at: no type has a zero (docs/adr/0099).
+        if let Some((field, what)) = schema.fields.iter().find_map(|field| match field.start() {
+            FieldStart::Unstarted(what) => Some((field, what)),
+            FieldStart::Given(_) | FieldStart::Absent | FieldStart::Empty => None,
+        }) {
+            let spelling = var.value_type_spelling.as_ref();
+            return Err(self.rule_at(
+                element,
+                &format!(
+                    "the field `{}` of record:{alias} holds `{}`, {what}, which has no value \
+                     before something writes one, and no <sce:set> builds one: a record is \
+                     built where it is declared only when each of its composed fields is \
+                     optional or a list of no lower count. Declare \
+                     optional<record:{alias}>, which starts absent and a lift writes whole",
+                    field.id, field.sce_type
+                ),
+                spelling.map(|s| s.row()),
+                spelling.map(|s| s.col()),
+                "",
+                &written_type,
+            ));
+        }
+        // Every other field holds one entry, and is given as a field of a
+        // record of entries is.
+        let given = schema.given_fields();
+        let declared: Vec<&str> = given.fields.iter().map(|f| f.id.as_str()).collect();
+        let ordered = crate::forge::generator::order_record_fields(
+            &var.record_fields,
+            &declared,
+            alias,
+            format!("<data id=\"{}\">", var.id),
+            "sce:type",
+            &written_type,
+            var.value_type_spelling.as_ref(),
+        )
+        .map_err(|error| Located::in_file(error, self.diag_label))?;
+        self.schema_enums_closed(var, alias, &given)?;
+        self.schema_enums_named(var, alias, &given)?;
+        self.schema_strings_bounded(var, alias, &given)?;
+        self.record_starts(ctx, &given, ordered)
     }
 
     /// Each field of a record built whole starts at the value its `<sce:set>`

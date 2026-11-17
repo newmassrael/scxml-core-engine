@@ -6097,43 +6097,161 @@ fn union_variable_field(
     })
 }
 
-/// The alias of the record a statechart's variable of `optional<record:R>`
-/// holds where `R` holds a list or a record at any depth, which no record of
-/// entries in `records` describes; `None` for every other variable.
+/// How a statechart's variable of a record that holds a composition starts
+/// (docs/adr/0087, "Decided while landing item 8", decisions 1 and 10): a
+/// `record:R` variable at the record its definite assignment builds where it is
+/// declared, an `optional<record:R>` one absent.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum ComposedRecordStart {
+    Built,
+    Absent,
+}
+
+/// The alias of the record a statechart's variable of `record:R` or
+/// `optional<record:R>` holds where `R` holds a list or a record at any depth,
+/// which no record of entries in `records` describes, with how the variable
+/// starts; `None` for every other variable.
 fn composed_record_of<'v>(
     var: &'v crate::model::Variable,
     records: &BTreeMap<String, EntrySchema>,
-) -> Option<&'v str> {
-    var.value_type
-        .as_ref()?
-        .optional_elem()?
-        .record_alias()
-        .filter(|alias| !records.contains_key(*alias))
+) -> Option<(&'v str, ComposedRecordStart)> {
+    let ty = var.value_type.as_ref()?;
+    let (alias, start) = match ty.record_alias() {
+        Some(alias) => (alias, ComposedRecordStart::Built),
+        None => (
+            ty.optional_elem()?.record_alias()?,
+            ComposedRecordStart::Absent,
+        ),
+    };
+    (!records.contains_key(alias)).then_some((alias, start))
 }
 
-/// The field a statechart's variable of `optional<record:R>` is held in where
-/// `R` (`alias`) holds a list or a record at any depth (docs/adr/0087,
-/// "Landing order" item 8): the target's optional type over the machine's own
-/// record, declared with every record, enum and union it holds, each described
-/// for a saved state ([`ComposedHolder::Variable`]). It starts absent, and a
-/// `<sce:lift>` of `R` writes it whole. The one table of what each target
-/// lowers refused it by name where the target holds none
-/// ([`crate::forge::event_schema_check::ComposedLowering::records`]), so a
+/// The record a `record:R` variable of a record that holds a composition starts
+/// at, held in `record_ty` (docs/adr/0087, "Decided while landing item 8",
+/// decision 10), each field in the schema's order: a field of one entry at the
+/// value its `<sce:set>` gives, built as a record variable of entries builds
+/// it ([`record_start_values`]); an optional composed field absent
+/// ([`absent_value`]); a list of no lower count empty
+/// ([`crate::forge::composed_lowering::ComposedSpelling::empty_list`]); and the
+/// record spelled whole by the composed walk
+/// ([`crate::forge::composed_lowering::ComposedSpelling::record_of`]). The judge
+/// refused a field with no such start where the document was read
+/// ([`crate::forge::static_datamodel::check`]), so a refusal here names a
+/// model it never read.
+#[allow(clippy::too_many_arguments)]
+fn composed_record_start(
+    var: &crate::model::Variable,
+    alias: &str,
+    record_ty: &str,
+    held: &crate::forge::composed_lowering::StatechartRecords,
+    enums: &BTreeMap<String, crate::forge::composed_lowering::MachineEnum>,
+    spelling: &dyn crate::forge::composed_lowering::ComposedSpelling,
+    declarations: &TypeDeclarations<'_>,
+    initial: &dyn Fn(&str, InferredType) -> Result<String, GenerateError>,
+    refused: &dyn Fn(String) -> GenerateError,
+    what: &str,
+) -> Result<String, GenerateError> {
+    use crate::forge::composed_lowering::{self as composed, RecordEnv};
+    use crate::forge::model::FieldStart;
+    let target = declarations.target;
+    let machine = declarations.machine;
+    let record = held.record(None, alias).map_err(refused)?;
+    // The fields of one entry, each from its `<sce:set>`, in the schema's
+    // order: the values the walk below takes in turn.
+    let place_of = |field: &EntryField| {
+        field
+            .sce_type
+            .optional_elem()
+            .map(|elem| optional_place(target, machine, elem, field.max_size))
+    };
+    let mut given = record_start_values(
+        &var.id,
+        &var.record_fields,
+        &record.schema.given_fields(),
+        &place_of,
+        target,
+        initial,
+    )?
+    .into_iter()
+    .map(|(_, value)| value);
+    // A field's type names the records and unions it holds in the record's own
+    // document.
+    let typed = |ty: &crate::forge::value_type::ValueType| {
+        composed::machine_type(ty, Some(record.alias), held, enums, spelling).map_err(refused)
+    };
+    let mut fields = Vec::with_capacity(record.schema.fields.len());
+    for field in &record.schema.fields {
+        let value = match field.start() {
+            FieldStart::Given(_) => given
+                .next()
+                .ok_or_else(|| refused(format!("no <sce:set> gives `{}`", field.id)))?,
+            FieldStart::Absent => {
+                let elem = field
+                    .sce_type
+                    .optional_elem()
+                    .ok_or_else(|| refused(format!("`{}` holds no optional value", field.id)))?;
+                absent_value(target, &typed(elem)?, what)?
+            }
+            FieldStart::Empty => {
+                let list_ty = typed(&field.sce_type)?;
+                spelling.empty_list(&list_ty).ok_or_else(|| {
+                    refused(format!(
+                        "{} spells no empty list of `{}` yet",
+                        target.name(),
+                        field.sce_type
+                    ))
+                })?
+            }
+            FieldStart::Unstarted(holds) => {
+                return Err(refused(format!(
+                    "the field `{}` holds {holds}, which has no value before something writes \
+                     one",
+                    field.id
+                )))
+            }
+        };
+        fields.push((field.id.clone(), value));
+    }
+    spelling.record_of(record_ty, &fields).ok_or_else(|| {
+        refused(format!(
+            "{} spells no record built from its fields yet",
+            target.name()
+        ))
+    })
+}
+
+/// The field a statechart's variable of `record:R` or `optional<record:R>` is
+/// held in where `R` (`alias`) holds a list or a record at any depth
+/// (docs/adr/0087, "Landing order" item 8 and "Decided while landing item 8",
+/// decision 10): the machine's own record, or the target's optional type over
+/// it, declared with every record, enum and union it holds, each described for
+/// a saved state ([`ComposedHolder::Variable`]). A built one starts at the
+/// record its definite assignment builds ([`composed_record_start`]), an
+/// optional one absent, and a `<sce:lift>` of `R` writes either whole. The one
+/// table of what each target lowers refused it by name where the target holds
+/// none ([`crate::forge::event_schema_check::ComposedLowering::records`]), so a
 /// refusal here names a model that table never read.
 fn composed_record_variable_field(
     var: &crate::model::Variable,
     alias: &str,
+    start: ComposedRecordStart,
     model: &SCXMLModel,
     declarations: &mut TypeDeclarations<'_>,
+    initial: &dyn Fn(&str, InferredType) -> Result<String, GenerateError>,
 ) -> Result<StaticField, GenerateError> {
     use crate::forge::composed_lowering as composed;
     use crate::forge::value_type::ValueType;
     let target = declarations.target;
     let machine = declarations.machine;
-    let what = format!(
-        "<data id=\"{}\" sce:type=\"optional<record:{alias}>\">",
-        var.id
-    );
+    let what = match start {
+        ComposedRecordStart::Built => {
+            format!("<data id=\"{}\" sce:type=\"record:{alias}\">", var.id)
+        }
+        ComposedRecordStart::Absent => format!(
+            "<data id=\"{}\" sce:type=\"optional<record:{alias}>\">",
+            var.id
+        ),
+    };
     let refused = |why: String| {
         GenerateError::unsupported(format!(
             "{what}: {why} (docs/adr/0087, \"Landing order\" item 8)"
@@ -6158,25 +6276,45 @@ fn composed_record_variable_field(
     let held = composed::StatechartRecords::of(model);
     let record_ty =
         composed::machine_type(&record, None, &held, &enums, &*spelling).map_err(refused)?;
-    let field_ty = composed::machine_type(
-        &ValueType::Optional {
-            elem: Box::new(record),
-        },
-        None,
-        &held,
-        &enums,
-        &*spelling,
-    )
-    .map_err(refused)?;
+    let (field_ty, init) = match start {
+        ComposedRecordStart::Built => {
+            let init = composed_record_start(
+                var,
+                alias,
+                &record_ty,
+                &held,
+                &enums,
+                &*spelling,
+                declarations,
+                initial,
+                &refused,
+                &what,
+            )?;
+            (record_ty.clone(), init)
+        }
+        ComposedRecordStart::Absent => {
+            let field_ty = composed::machine_type(
+                &ValueType::Optional {
+                    elem: Box::new(record),
+                },
+                None,
+                &held,
+                &enums,
+                &*spelling,
+            )
+            .map_err(refused)?;
+            (field_ty, absent_value(target, &record_ty, &what)?)
+        }
+    };
     // A target that declares a type per shape of a composition (C11) declares
-    // the optional value of the record after the record, once however many
-    // variables hold one, as it declares a union's.
+    // the optional value of the record after the record, and the optional value
+    // and the list each field starts at, once however many variables hold one,
+    // as it declares a union's.
     for def in spelling.take_declared() {
         if !declarations.type_defs.contains(&def) {
             declarations.type_defs.push(def);
         }
     }
-    let init = absent_value(target, &record_ty, &what)?;
     Ok(StaticField {
         id: var.id.clone(),
         name: target.field_name(&var.id),
@@ -6189,12 +6327,19 @@ fn composed_record_variable_field(
         view: target.whole_value_view(&field_ty),
         read: None,
         bound: None,
-        // A saved state holds it as `null` or as the record it holds, which
-        // the machine's own record type writes and reads back by its type
-        // (docs/adr/0055, section 4).
-        saved_kind: "optional",
+        // A saved state holds a built one as the record it holds, and an
+        // optional one as `null` or as that record, which the machine's own
+        // record type writes and reads back by its type (docs/adr/0055, section
+        // 4; docs/adr/0087, "Decided while landing item 8", decision 7).
+        saved_kind: match start {
+            ComposedRecordStart::Built => "record",
+            ComposedRecordStart::Absent => "optional",
+        },
         saved_type: record_ty,
-        saved_elem: Some("record"),
+        saved_elem: match start {
+            ComposedRecordStart::Built => None,
+            ComposedRecordStart::Absent => Some("record"),
+        },
         elem_ty: None,
         reader: None,
         holds_bytes: false,
@@ -6892,6 +7037,35 @@ pub fn lower(
                     var.id
                 )));
             }
+            // A record whose record holds a list or a record at any depth is
+            // held in the machine's own record, or the target's optional type
+            // over it, declared with every record and enum it holds: a
+            // `record:R` one built where it is declared by definite assignment,
+            // an optional one absent until a lift writes it whole
+            // (docs/adr/0087, "Landing order" item 8 and "Decided while landing
+            // item 8", decision 10). Taken before a record of entries, which no
+            // such record is.
+            if let Some((alias, start)) = composed_record_of(var, &records) {
+                let field = composed_record_variable_field(
+                    var,
+                    alias,
+                    start,
+                    model,
+                    &mut declarations,
+                    &|written: &str, slot: InferredType| {
+                        initial_value(written, target, &ctx, &renames, slot)
+                            .map_err(|r| refused("the field value", written, r))
+                    },
+                )?;
+                if let Some(element) = target.data_element(&var.id, &field.init) {
+                    rewrites.note_element(var.value_type_spelling.as_ref(), &element);
+                }
+                if start == ComposedRecordStart::Absent {
+                    rewrites.note(&var.expr, var.expr_spelling.as_ref(), &field.init);
+                }
+                fields.push(field);
+                continue;
+            }
             // A record variable is built whole from its `<sce:set>`s, in
             // the schema's order — the rule the judge already held it to.
             if let Some(alias) = var.value_type.as_ref().and_then(|t| t.record_alias()) {
@@ -6970,20 +7144,6 @@ pub fn lower(
                 if start == UnionStart::Absent {
                     rewrites.note(&var.expr, var.expr_spelling.as_ref(), &field.init);
                 }
-                fields.push(field);
-                continue;
-            }
-            // An optional record whose record holds a list or a record at any
-            // depth is held in the target's optional type over the machine's
-            // own record, declared with every record and enum it holds, and
-            // starts absent until a lift writes it whole (docs/adr/0087,
-            // "Landing order" item 8).
-            if let Some(alias) = composed_record_of(var, &records) {
-                let field = composed_record_variable_field(var, alias, model, &mut declarations)?;
-                if let Some(element) = target.data_element(&var.id, &field.init) {
-                    rewrites.note_element(var.value_type_spelling.as_ref(), &element);
-                }
-                rewrites.note(&var.expr, var.expr_spelling.as_ref(), &field.init);
                 fields.push(field);
                 continue;
             }
@@ -8519,8 +8679,7 @@ fn saved_shape(model: &SCXMLModel, scope: &StaticScope) -> Option<SavedShape> {
     // the same document names them in the same order on every backend.
     let mut records: BTreeMap<String, SavedRecordLineage> = BTreeMap::new();
     // The records of entries a variable may name, one entry per field; a record
-    // that holds a composition, which only an optional variable names, is named
-    // by its type below.
+    // that holds a composition is named by its type below.
     let entry_records = model.entry_records();
     // The unions a variable may name, each with its cases' records.
     let type_scope = crate::forge::value_path::statechart_scope(model);
@@ -8587,9 +8746,11 @@ fn saved_shape(model: &SCXMLModel, scope: &StaticScope) -> Option<SavedShape> {
                 }
             }
         }
-        // A record that holds a list or a record at any depth, which only an
-        // optional variable holds (docs/adr/0087, "Landing order" item 8), is
-        // named by its document and each field's type, as a union's case is,
+        // A record that holds a list or a record at any depth, which a variable
+        // holds built where it is declared or optional (docs/adr/0087, "Landing
+        // order" item 8 and "Decided while landing item 8", decision 10), each
+        // named by its shape type alike, is named by its document and each
+        // field's type, as a union's case is,
         // so a change of the record moves the shape as a change of a record of
         // entries does.
         if let Some(record) = shaped

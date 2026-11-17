@@ -636,8 +636,21 @@ pub trait ComposedSpelling {
         None
     }
     /// A value of the machine's record held in `ty`, each field's id with its
-    /// value, in the schema's order. `None` as for [`Self::unit_field`].
+    /// value, in the schema's order: what the walk makes a record of from a
+    /// unit's ([`Self::unit_field`]), and what a statechart's `record:R`
+    /// variable of a record that holds a composition starts at where it is
+    /// declared (docs/adr/0087, "Decided while landing item 8", decision 10).
+    /// `None` for a backend that spells none, which each caller refuses by
+    /// name.
     fn record_of(&self, _ty: &str, _fields: &[(String, String)]) -> Option<String> {
+        None
+    }
+    /// The empty list held in `ty`, the type the machine holds a list of no
+    /// lower count in ([`Self::list_type`]): what a field of such a list starts
+    /// at where a `record:R` variable of the record that holds it is declared
+    /// (docs/adr/0087, "Decided while landing item 8", decision 10). `None`
+    /// for a backend that spells none, which the lowering refuses by name.
+    fn empty_list(&self, _ty: &str) -> Option<String> {
         None
     }
 

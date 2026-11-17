@@ -1327,6 +1327,52 @@ impl SchemaField {
         }
         Ok(field)
     }
+
+    /// How the field starts where a statechart declares a `record:R` variable of
+    /// the record that holds it, by definite assignment (docs/adr/0087, "Decided
+    /// while landing item 8", decision 10): a field of one entry is given by its
+    /// `<sce:set>`, a composed one starts at the one value its type has without a
+    /// writer, and a composed one with no such value has no start at all. The one
+    /// reading of the rule, so the judge that refuses a field with no start and
+    /// the lowering that spells each start cannot disagree.
+    pub fn start(&self) -> FieldStart {
+        use crate::forge::value_type::ValueType;
+        if let Ok(entry) = self.entry_field() {
+            return FieldStart::Given(entry);
+        }
+        match &self.sce_type {
+            ValueType::Optional { .. } => FieldStart::Absent,
+            ValueType::List { max, .. } if max.min == 0 => FieldStart::Empty,
+            ValueType::List { max, .. } => FieldStart::Unstarted(format!(
+                "a list of at least {} element{}",
+                max.min,
+                if max.min == 1 { "" } else { "s" }
+            )),
+            ValueType::Union { .. } => FieldStart::Unstarted("a union".to_string()),
+            ValueType::Record { .. } => FieldStart::Unstarted("a record".to_string()),
+            // A scalar, a text and a byte string are one entry, taken above.
+            ValueType::Scalar(_) | ValueType::Text { .. } | ValueType::Bytes { .. } => {
+                unreachable!("a field of a scalar, a text or a byte string is one entry")
+            }
+        }
+    }
+}
+
+/// How a field of a record that holds a composition starts where a `record:R`
+/// variable of the record is declared ([`SchemaField::start`]).
+#[derive(Debug, Clone)]
+pub enum FieldStart {
+    /// A field of one entry, a scalar or an optional scalar: given by one
+    /// `<sce:set>`, judged as a field of a record of entries is.
+    Given(EntryField),
+    /// `optional<T>` over a composition: it starts absent.
+    Absent,
+    /// A list whose type states no lower count, or one of 0: it starts empty.
+    Empty,
+    /// A union, a record, or a list whose type states a lower count above 0: no
+    /// value of it exists without a writer, and no expression of the language
+    /// builds one. Holds what it is, as a refusal names it ("a union").
+    Unstarted(String),
 }
 
 /// A field of an event schema whose type is a composition a lowering does not
@@ -1848,6 +1894,27 @@ impl EventSchemaModel {
             revision: self.revision,
             source_location: self.source_location.clone(),
         })
+    }
+
+    /// The fields of the schema a `<sce:set>` gives where a statechart declares a
+    /// `record:R` variable of it, each seen as one entry, in declaration order:
+    /// every field of one entry, and none that holds a composition, which starts
+    /// without one ([`SchemaField::start`]). For a schema of entries, its
+    /// [`Self::entry_schema`] whole.
+    pub fn given_fields(&self) -> EntrySchema {
+        EventSchemaModel {
+            name: self.name.clone(),
+            event_name: self.event_name.clone(),
+            fields: self
+                .fields
+                .iter()
+                .filter_map(|field| field.entry_field().ok())
+                .collect(),
+            payload_none: self.payload_none,
+            datamodel_markers: self.datamodel_markers.clone(),
+            revision: self.revision,
+            source_location: self.source_location.clone(),
+        }
     }
 
     /// Whether a field of the schema may be absent anywhere inside its type
