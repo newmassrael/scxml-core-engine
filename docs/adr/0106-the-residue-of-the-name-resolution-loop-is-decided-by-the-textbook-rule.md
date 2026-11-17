@@ -269,9 +269,18 @@ reason:, message:)`) engines, each with a tree (`runtime-kotlin`, `runtime-go`, 
 Where a backend raised a BasicHTTP send with no target as `error.execution` because the document names no
 `error.communication`, the code is `sendTargetInvalid`, so the record never names the other event.
 `sce-build/tests/every_error_reason_is_a_declared_code.rs` holds the document's names (lowerCamel, one value each, every
-value in one half), the codes the generator hands `raise_execution_error`, and every code a Rust, Kotlin, Go, Python or
-Swift template or runtime writes to the declared set and to the event its value names. Left, each its own commit: the
-C++ (AOT and interpreter) and C11 engines; the Mesh runtimes' move to the generated enum and its spellings, with
+value in one half), the codes the generator hands `raise_execution_error`, and every code a Rust, Kotlin, Go, Python,
+Swift or C++ template or runtime writes to the declared set and to the event its value names.
+
+Implemented (2026-11-17), the C++ engines: the tree `runtime-cpp` generates the document into `sce/include/generated`,
+a public header directory, written by the step that emits the embed manifest (ADR 0097, amendment of 2026-11-17, "The
+C++ engines' tree"); `common/ErrorData.h` names the enum `SCE::Common::ErrorReason` and builds the record. The AOT
+engine raises through `EventWithMetadata::platformError(event, reason, detail[, sendId])`, every C++ template, the
+static engine, `CppTarget::raise_execution_error` and the native-action guard among its sites; the Interpreter through
+`IEventRaiser::raiseError(reason, detail[, sendId])`, which derives the event from the code, so an Interpreter site
+names no event at all. The door's refusal is `payloadRefused` on both.
+
+Left, each its own commit: the C11 engine; the Mesh runtimes' move to the generated enum and its spellings, with
 SCE_MESH.md sections 10.7.1 and 16.7 and the two sheet-peer scenarios; the scenarios and expected logs that read a
 reason on the C++ and C11 lanes.
 

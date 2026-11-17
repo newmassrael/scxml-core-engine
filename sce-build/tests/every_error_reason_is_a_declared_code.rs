@@ -230,6 +230,34 @@ const SPELLINGS: &[Spelling] = &[
         ],
         suffixes: &[".jinja2", ".swift"],
     },
+    Spelling {
+        language: Language::Cpp,
+        // `ErrorReason::X` wherever a site writes the member (the AOT
+        // templates, the static engine, the Interpreter's `raiseError`), and
+        // the member a template hands as text: a `send_arg_error` macro's
+        // first argument and the two arms of a `<param>`'s choice.
+        member: r"(?:ErrorReason::|send_arg_error\('|\{\{ '|if param\.expr else ')([A-Z][A-Za-z0-9]*)",
+        communication: &["Event::Error_communication"],
+        execution: &["Event::Error_execution", "send_arg_error("],
+        // The C++ templates are the top level of the template tree, its
+        // `actions/` and the C++ macro; the other languages' directories
+        // beside them are judged in their own spelling.
+        dirs: &[
+            "tools/codegen/templates/datamodel_macros.jinja2",
+            "tools/codegen/templates/entry_exit_actions.jinja2",
+            "tools/codegen/templates/invoke_methods.jinja2",
+            "tools/codegen/templates/scriptengine_helpers.jinja2",
+            "tools/codegen/templates/state_machine.jinja2",
+            "tools/codegen/templates/utility_methods.jinja2",
+            "tools/codegen/templates/actions",
+            "tools/codegen/templates/_macros/cpp_invoke_start.jinja2",
+            "sce/include/static/StaticExecutionEngine.h",
+            "sce/src/runtime",
+            "sce/src/events",
+            "sce-build/src/forge/native_action.rs",
+        ],
+        suffixes: &[".jinja2", ".h", ".cpp"],
+    },
 ];
 
 #[test]
