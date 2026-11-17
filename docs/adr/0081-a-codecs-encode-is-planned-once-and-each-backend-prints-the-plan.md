@@ -1269,6 +1269,23 @@ old encode, the old encode and its templates are removed in the same landing.
    printer is two named arms of one class, which no variant of the repository has (each arm of every variant imports
    a document of its own, read 2026-11-17), so the census of the codecs the Python backend prints is the C++ census,
    one list of 167 codecs of the resources, and neither refuses a codec of the repository.
+
+   *The nineteenth Python landing, 2026-11-18:* the forms of a list held to its law that the fourteenth landing left
+   unlowered beside C++, which the forty-third to forty-fifth C++ landings print, with their resources
+   (`codec_repeat_flag_forward_group`, `codec_repeat_flag_aligned_group`, `codec_repeat_flag_aligned_always`), which
+   the Python backend had refused by name since they joined the set every backend compiles with flag entries. A
+   list a group holds whose law is over the codec's own input says the input by its start, read off the arm the
+   value holds (docs/adr/0065 §6 R4b, R8): `input_<name>` reads the group once, as `_g_<group>`, and answers the
+   start of the list where the value holds the arm that holds it and `None` otherwise, as the encode binds a member
+   off the arm (`python_source::off_arm`, one reading of a member for both). A list held to its law that shares its
+   count with another (R5) is the `Lawful` of it in the arm's `Aligned`, whichever of the two it is, as it is alone:
+   set as the `Lawful` of the start and the entries the pair is handed, made by default as the `Lawful` of no
+   entries, and decoded as the `Lawful` of the start the frame gave, which raises `PresentIfMismatch` for entries
+   that break the law before the two are paired. The flag the start says is derived from the list the encode bound
+   off the arm, as for a list alone, and the list always there is read off whichever arm the value holds. A pair
+   whose lists start with entries made by default is made anew for every value, since such an entry is a dataclass
+   a caller can change. With this the census of the codecs the Python backend prints is the C++ census again, one
+   list of 170 codecs of the resources.
 5. Swift, when its codec lowers what the plan holds.
    *Swift lowers what the plan holds, 2026-11-16:* its codec writes every codec of the repository Rust writes,
    but the one only an MCU-class backend writes (`a_swift_codec_is_written_wherever_rust_writes_one.rs`): an

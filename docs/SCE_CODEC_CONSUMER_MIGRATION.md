@@ -2150,3 +2150,20 @@ moves: each was printed already.
 - A value with a variant holds the arm itself in `body`, as every printed codec has since ADR 0081's twelfth
   Python landing: read the arm by `isinstance(value.body, ArmCodec)`, not by `value.body.kind`.
 
+## A printed Python codec holds a list to its law in the arm of a gate and beside a gated list (ADR 0081 step 4)
+
+Landing: the commit that adds this section; every Python tree is regenerated after it. No codec of the repository
+outside the resources changes: none used the forms. The printed set grows by `codec_repeat_flag_forward_group`,
+`codec_repeat_flag_aligned_group` and `codec_repeat_flag_aligned_always` of the resources, which `generate` had
+refused by name.
+
+- A codec whose own flag input is bound to every entry of a list one side of a gate holds says the input by the
+  list's start: `input_<name>(src)` answers the start where the value's group holds the arm that holds the list,
+  and `None` in any other arm. The encode takes no argument for the input; the decode takes it and holds the list
+  it read to the law from it.
+- Two lists of one count of which one is held to its law are one `Aligned` of the arm, that list a
+  `{Codec}{List}Lawful` in it: make the pair as `Aligned(MsgLinksList(links), MsgWeightsLawful(1, weights))` or with
+  `MsgWeightsLawful.of(weights)`, and read the list held to its law as `.first` or `.second`, which reads as its
+  entries. The flag bound to every entry is derived from that list's start: the value's own bit there is not
+  written.
+
