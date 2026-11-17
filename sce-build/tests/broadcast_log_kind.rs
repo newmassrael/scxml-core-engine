@@ -2617,12 +2617,14 @@ fn c11_refuses_what_the_shared_judgement_refuses_in_the_shared_words() {
 
 #[test]
 fn c11_stores_the_flag_inputs_an_element_asks_its_caller_for() {
-    // The codec `event_record` takes the flag input `S` from its caller on `encode` and
-    // `decode`, as a `uint8_t` after the writer or the cursor. The log stores it in a
-    // context word of the entry, takes it on `publish` as a `bool` of a struct, and gives
-    // it back in the read result, so that every reader decodes the entry under what it was
-    // published under. The element is a `uint8` and an optional `uint8`: 2 bytes, an entry
-    // of 1 length word, 1 context word and 1 word of bytes.
+    // The codec `event_record` takes the flag input `S` from its caller on `decode`, as a
+    // `uint8_t` after the cursor, and its value says it (ADR 0065 §6 R4a), which the
+    // encode C11 prints from its plan reads off the value (docs/adr/0081 §6). The log
+    // stores it in a context word of the entry, reads it off the element on `publish`
+    // instead of taking it, and gives it back in the read result, so that every reader
+    // decodes the entry under what it was published under. The element is a `uint8` and
+    // an optional `uint8`: 2 bytes, an entry of 1 length word, 1 context word and 1 word
+    // of bytes.
     let xml = event_ring();
     let codec = flag_input_codec();
     let code = generated_c_log(
@@ -2644,9 +2646,10 @@ fn c11_stores_the_flag_inputs_an_element_asks_its_caller_for() {
             "static inline uint8_t event_ring_flag_input(bool on)",
             "    event_ring_flags_t flags;\n} event_ring_read_result_t;",
             "static inline event_ring_publish_result_t event_ring_publish(event_ring_publisher_t \
-             *publisher, const event_record_t *element, const event_ring_flags_t *flags)",
-            "event_record_encode_to_buf(element, bytes, EVENT_RING_MAX_ENCODED_BYTES, &length, \
-             event_ring_flag_input(flags->s))",
+             *publisher, const event_record_t *element)\n{\n",
+            "    held_flags.s = event_record_input_s(event_record_value_source(), element) != 0u;\n",
+            "    const event_ring_flags_t *flags = &held_flags;\n",
+            "event_record_encode_to_buf(element, bytes, EVENT_RING_MAX_ENCODED_BYTES, &length);",
             "if (flags->s) {\n        entry[1u + 0u] |= UINT64_C(1) << 0u;\n    }",
             "entry[2u + index / 8u] |= (uint64_t)bytes[index] << (8u * (index % 8u));",
             "result.flags.s = false;",
@@ -2658,6 +2661,10 @@ fn c11_stores_the_flag_inputs_an_element_asks_its_caller_for() {
     assert!(
         !code.contains("uint8_t tag") && !code.contains("result.tag"),
         "the element has no tag:\n{code}"
+    );
+    assert!(
+        !code.contains("const event_ring_flags_t *flags)") && !code.contains("given_flags_t"),
+        "`publish` takes no flag the element says:\n{code}"
     );
     // The flag is stored before the bytes are packed, and the bits are read back before
     // the decode that is given them.
@@ -3297,9 +3304,11 @@ fn c11_the_narrow_row_stores_the_context_in_32_bit_words() {
 
 #[test]
 fn c11_the_narrow_row_stores_the_flag_input_of_the_real_codec() {
-    // The codec `event_record` takes the flag input `S` from its caller. Generated as a set
-    // for a 32-bit target, the log keeps it in one context word of 32 bits ahead of the
-    // 2 bytes of the element (1 word of bytes): 1 + 1 + ceil(2 / 4) = 3 words an entry.
+    // The codec `event_record` takes the flag input `S` from its caller on `decode`, and
+    // its value says it, which the printed encode reads off the value, so `publish` reads
+    // it off the element (docs/adr/0065 §6 R4a). Generated as a set for a 32-bit target,
+    // the log keeps it in one context word of 32 bits ahead of the 2 bytes of the element
+    // (1 word of bytes): 1 + 1 + ceil(2 / 4) = 3 words an entry.
     let xml = event_ring();
     let codec = flag_input_codec();
     let deploy = parse_deploy_str(
@@ -3337,8 +3346,8 @@ topology:
             "#define EVENT_RING_MAX_ENCODED_BYTES ((size_t)2u)",
             "#define EVENT_RING_CONTEXT_WORDS ((uint32_t)1u)",
             "typedef struct {\n    bool s;\n} event_ring_flags_t;",
-            "event_record_encode_to_buf(element, bytes, EVENT_RING_MAX_ENCODED_BYTES, &length, \
-             event_ring_flag_input(flags->s))",
+            "    held_flags.s = event_record_input_s(event_record_value_source(), element) != 0u;\n",
+            "event_record_encode_to_buf(element, bytes, EVENT_RING_MAX_ENCODED_BYTES, &length);",
             "if (flags->s) {\n        entry[1u + 0u] |= UINT32_C(1) << 0u;\n    }",
             "entry[2u + index / 4u] |= (uint32_t)bytes[index] << (8u * (index % 4u));",
             "result.flags.s = ((entry[1u + 0u] >> 0u) & UINT32_C(1)) != 0u;",

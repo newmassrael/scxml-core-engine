@@ -451,8 +451,10 @@ static inline sce_forge_codec_status_t {{ c_decode_func }}(sce_forge_cursor_t *c
  * SCE_FORGE_CODEC_BUFFER_OVERFLOW when the writer ran out of capacity.
  * Callers either pre-reserve {{ c_max_bytes_macro }} bytes and use
  * `{{ c_encode_to_buf_func }}` (below), or run the writer themselves
- * for coalesced-send paths. */
-static inline sce_forge_codec_status_t {{ c_encode_func }}(const {{ c_struct_typedef }} *self, sce_forge_writer_t *w{{ params_after_first_arg }}) {
+ * for coalesced-send paths. It takes the flag inputs the value does not
+ * say: a codec printed from its plan reads the others off the value
+ * (docs/adr/0065 §6 R4a), and any other takes every input. */
+static inline sce_forge_codec_status_t {{ c_encode_func }}(const {{ c_struct_typedef }} *self, sce_forge_writer_t *w{{ encode_params_after_first_arg }}) {
 {% if c11_source %}
 {{ c11_source.encode_body }}{% else %}
 {% if has_parent_flags %}
@@ -590,9 +592,9 @@ static inline sce_forge_codec_status_t {{ c_encode_func }}(const {{ c_struct_typ
  * was insufficient for this codec's wire bytes. Worst-case bound is
  * `{{ c_max_bytes_macro }}` — callers sizing `buf` accordingly never
  * see overflow. */
-static inline sce_forge_codec_status_t {{ c_encode_to_buf_func }}(const {{ c_struct_typedef }} *self, uint8_t *buf, size_t cap, size_t *out_len{{ params_after_first_arg }}) {
+static inline sce_forge_codec_status_t {{ c_encode_to_buf_func }}(const {{ c_struct_typedef }} *self, uint8_t *buf, size_t cap, size_t *out_len{{ encode_params_after_first_arg }}) {
     sce_forge_writer_t _w = sce_forge_writer_init_buf(buf, cap);
-    sce_forge_codec_status_t _st = {{ c_encode_func }}(self, &_w{{ params_first_arg_with_comma }});
+    sce_forge_codec_status_t _st = {{ c_encode_func }}(self, &_w{{ encode_args_with_comma }});
     *out_len = _w.pos;
     return _st;
 }

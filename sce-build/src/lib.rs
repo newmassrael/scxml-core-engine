@@ -4689,6 +4689,14 @@ pub struct ForgeCompileOptions {
     pub element_type_go_printed:
         Option<std::collections::HashMap<String, forge::generator::PrintedCodec>>,
 
+    /// docs/adr/0081 step 4: the element-type candidates the C11 backend
+    /// prints from their encode plan, by the snake element name. Such an
+    /// element's encode reads each flag input its value says off the value
+    /// (docs/adr/0065 §6 R4a), so a broadcast log hands it only the others and
+    /// stores the said ones as the element says them. Populated on a C11
+    /// compile only; `None` elsewhere.
+    pub element_type_c11_printed: Option<std::collections::HashSet<String>>,
+
     /// Whether each element-type candidate emits a `{Codec}Owned` mirror,
     /// keyed by the snake element name. Decided by the same predicate the
     /// codec emit uses, so a bounded-collection storing the element names the
@@ -5750,6 +5758,10 @@ fn compile_document_set(
         String,
         forge::generator::PrintedCodec,
     > = std::collections::HashMap::new();
+    // Likewise on a C11 compile: their encode reads the flag inputs the value
+    // says off the value (docs/adr/0065 §6 R4a), so a log over such an element
+    // reads those off it.
+    let mut element_type_c11_printed: HashSet<String> = HashSet::new();
     let mut element_import_sources: std::collections::HashMap<
         String,
         (Vec<forge::model::ForgeImport>, PathBuf),
@@ -5927,6 +5939,11 @@ fn compile_document_set(
                         && kotlin_codec_printed_file(forge_path, &[], options)?.unwrap_or(false)
                     {
                         element_type_kotlin_printed.insert(filters::to_snake_case(key.clone()));
+                    }
+                    if language == generator::Language::C11
+                        && c11_codec_printed_file(forge_path, &[], options)?.unwrap_or(false)
+                    {
+                        element_type_c11_printed.insert(filters::to_snake_case(key.clone()));
                     }
                 }
                 element_type_candidates.insert(key, doc);
@@ -6501,6 +6518,7 @@ fn compile_document_set(
         || !element_type_swift_printed.is_empty()
         || !element_type_kotlin_printed.is_empty()
         || !element_type_go_printed.is_empty()
+        || !element_type_c11_printed.is_empty()
         || !element_type_owned_mirrors.is_empty()
         || queue_resolutions_override.is_some()
         || broadcast_log_resolutions_override.is_some();
@@ -6534,6 +6552,9 @@ fn compile_document_set(
         }
         if !element_type_go_printed.is_empty() {
             overridden.element_type_go_printed = Some(element_type_go_printed);
+        }
+        if !element_type_c11_printed.is_empty() {
+            overridden.element_type_c11_printed = Some(element_type_c11_printed);
         }
         if !element_type_owned_mirrors.is_empty() {
             overridden.element_type_owned_mirrors = Some(element_type_owned_mirrors);
