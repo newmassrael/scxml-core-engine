@@ -408,7 +408,7 @@ class AnOriginIsTheAddressItsSenderPublishedStateMachine(
             try {
                 engine.setVariable(sid, "processor", engine.evaluateExpr(sid, com.sce.runtime.ScriptSource.lua("\"http://www.w3.org/TR/scxml/#SCXMLEventProcessor\"", "'http://www.w3.org/TR/scxml/#SCXMLEventProcessor'")))
             } catch (e: Exception) {
-                raisePlatformError(AnOriginIsTheAddressItsSenderPublishedEvent.Error.Execution, "<data id='processor'> expr failed to evaluate")
+                raisePlatformError(AnOriginIsTheAddressItsSenderPublishedEvent.Error.Execution, ErrorReason.EXPRESSION_FAILED, "<data id='processor'> expr failed to evaluate")
             }
         }
         // §scxml-6.4: 'childLocation' takes a value its invoke handed it, in place of its own
@@ -417,7 +417,7 @@ class AnOriginIsTheAddressItsSenderPublishedStateMachine(
             try {
                 engine.setVariable(sid, "childLocation", engine.evaluateExpr(sid, com.sce.runtime.ScriptSource.lua("\"\"", "''")))
             } catch (e: Exception) {
-                raisePlatformError(AnOriginIsTheAddressItsSenderPublishedEvent.Error.Execution, "<data id='childLocation'> expr failed to evaluate")
+                raisePlatformError(AnOriginIsTheAddressItsSenderPublishedEvent.Error.Execution, ErrorReason.EXPRESSION_FAILED, "<data id='childLocation'> expr failed to evaluate")
             }
         }
         // §scxml-6.4: 'selfOk' takes a value its invoke handed it, in place of its own
@@ -426,7 +426,7 @@ class AnOriginIsTheAddressItsSenderPublishedStateMachine(
             try {
                 engine.setVariable(sid, "selfOk", engine.evaluateExpr(sid, com.sce.runtime.ScriptSource.lua("0", "0")))
             } catch (e: Exception) {
-                raisePlatformError(AnOriginIsTheAddressItsSenderPublishedEvent.Error.Execution, "<data id='selfOk'> expr failed to evaluate")
+                raisePlatformError(AnOriginIsTheAddressItsSenderPublishedEvent.Error.Execution, ErrorReason.EXPRESSION_FAILED, "<data id='selfOk'> expr failed to evaluate")
             }
         }
         // §scxml-6.4: 'selfReplied' takes a value its invoke handed it, in place of its own
@@ -435,7 +435,7 @@ class AnOriginIsTheAddressItsSenderPublishedStateMachine(
             try {
                 engine.setVariable(sid, "selfReplied", engine.evaluateExpr(sid, com.sce.runtime.ScriptSource.lua("0", "0")))
             } catch (e: Exception) {
-                raisePlatformError(AnOriginIsTheAddressItsSenderPublishedEvent.Error.Execution, "<data id='selfReplied'> expr failed to evaluate")
+                raisePlatformError(AnOriginIsTheAddressItsSenderPublishedEvent.Error.Execution, ErrorReason.EXPRESSION_FAILED, "<data id='selfReplied'> expr failed to evaluate")
             }
         }
         // §scxml-6.4: 'childOk' takes a value its invoke handed it, in place of its own
@@ -444,7 +444,7 @@ class AnOriginIsTheAddressItsSenderPublishedStateMachine(
             try {
                 engine.setVariable(sid, "childOk", engine.evaluateExpr(sid, com.sce.runtime.ScriptSource.lua("0", "0")))
             } catch (e: Exception) {
-                raisePlatformError(AnOriginIsTheAddressItsSenderPublishedEvent.Error.Execution, "<data id='childOk'> expr failed to evaluate")
+                raisePlatformError(AnOriginIsTheAddressItsSenderPublishedEvent.Error.Execution, ErrorReason.EXPRESSION_FAILED, "<data id='childOk'> expr failed to evaluate")
             }
         }
         // §scxml-6.4: 'childReplied' takes a value its invoke handed it, in place of its own
@@ -453,7 +453,7 @@ class AnOriginIsTheAddressItsSenderPublishedStateMachine(
             try {
                 engine.setVariable(sid, "childReplied", engine.evaluateExpr(sid, com.sce.runtime.ScriptSource.lua("0", "0")))
             } catch (e: Exception) {
-                raisePlatformError(AnOriginIsTheAddressItsSenderPublishedEvent.Error.Execution, "<data id='childReplied'> expr failed to evaluate")
+                raisePlatformError(AnOriginIsTheAddressItsSenderPublishedEvent.Error.Execution, ErrorReason.EXPRESSION_FAILED, "<data id='childReplied'> expr failed to evaluate")
             }
         }
         // §scxml-6.4: 'parentOk' takes a value its invoke handed it, in place of its own
@@ -462,7 +462,7 @@ class AnOriginIsTheAddressItsSenderPublishedStateMachine(
             try {
                 engine.setVariable(sid, "parentOk", engine.evaluateExpr(sid, com.sce.runtime.ScriptSource.lua("0", "0")))
             } catch (e: Exception) {
-                raisePlatformError(AnOriginIsTheAddressItsSenderPublishedEvent.Error.Execution, "<data id='parentOk'> expr failed to evaluate")
+                raisePlatformError(AnOriginIsTheAddressItsSenderPublishedEvent.Error.Execution, ErrorReason.EXPRESSION_FAILED, "<data id='parentOk'> expr failed to evaluate")
             }
         }
         // §scxml-6.4: 'parentReplied' takes a value its invoke handed it, in place of its own
@@ -471,7 +471,7 @@ class AnOriginIsTheAddressItsSenderPublishedStateMachine(
             try {
                 engine.setVariable(sid, "parentReplied", engine.evaluateExpr(sid, com.sce.runtime.ScriptSource.lua("0", "0")))
             } catch (e: Exception) {
-                raisePlatformError(AnOriginIsTheAddressItsSenderPublishedEvent.Error.Execution, "<data id='parentReplied'> expr failed to evaluate")
+                raisePlatformError(AnOriginIsTheAddressItsSenderPublishedEvent.Error.Execution, ErrorReason.EXPRESSION_FAILED, "<data id='parentReplied'> expr failed to evaluate")
             }
         }
     }
@@ -501,14 +501,14 @@ class AnOriginIsTheAddressItsSenderPublishedStateMachine(
 
     // W3C SCXML 5.9.1: a cond that cannot be evaluated raises error.execution;
     // `null` says so, where a bare `false` could not.
-    private fun evaluateGuardRaising(guardExpr: com.sce.runtime.ScriptSource, reason: String): Boolean? {
+    private fun evaluateGuardRaising(guardExpr: com.sce.runtime.ScriptSource, detail: String): Boolean? {
         assertScriptSession()
         val engine = scriptEngine ?: error("scriptEngine is required (codegen invariant: needs_script_engine == true)")
         val sid = scriptSessionId ?: error("scriptSessionId is established by the start (codegen invariant)")
         return try {
             engine.evaluateCondition(sid, guardExpr)
         } catch (e: Exception) {
-            raisePlatformError(AnOriginIsTheAddressItsSenderPublishedEvent.Error.Execution, reason)
+            raisePlatformError(AnOriginIsTheAddressItsSenderPublishedEvent.Error.Execution, ErrorReason.EXPRESSION_FAILED, detail)
             null
         }
     }
@@ -549,7 +549,7 @@ class AnOriginIsTheAddressItsSenderPublishedStateMachine(
         return try {
             engine.evaluateExpr(sid, serialized)?.toString() ?: ""
         } catch (e: Exception) {
-            raisePlatformError(AnOriginIsTheAddressItsSenderPublishedEvent.Error.Execution, "an expression could not be serialised to JSON")
+            raisePlatformError(AnOriginIsTheAddressItsSenderPublishedEvent.Error.Execution, ErrorReason.EXPRESSION_FAILED, "an expression could not be serialised to JSON")
             ""
         }
     }
@@ -570,7 +570,7 @@ class AnOriginIsTheAddressItsSenderPublishedStateMachine(
             engine.assign(sid, location, expr)
             true
         } catch (e: Exception) {
-            raisePlatformError(AnOriginIsTheAddressItsSenderPublishedEvent.Error.Execution, "<assign> failed")
+            raisePlatformError(AnOriginIsTheAddressItsSenderPublishedEvent.Error.Execution, ErrorReason.ASSIGNMENT_FAILED, "<assign> failed")
             false
         }
     }
@@ -586,7 +586,7 @@ class AnOriginIsTheAddressItsSenderPublishedStateMachine(
             engine.executeScript(sid, script)
             true
         } catch (e: Exception) {
-            raisePlatformError(AnOriginIsTheAddressItsSenderPublishedEvent.Error.Execution, "<script> failed to execute")
+            raisePlatformError(AnOriginIsTheAddressItsSenderPublishedEvent.Error.Execution, ErrorReason.SCRIPT_FAILED, "<script> failed to execute")
             false
         }
     }
@@ -922,12 +922,12 @@ class AnOriginIsTheAddressItsSenderPublishedStateMachine(
             val _rt = try {
                 valueToWireString(argEngine.evaluateExpr(argSid, com.sce.runtime.ScriptSource.lua("_event.origin", "_event.origin")))
             } catch (_: Exception) {
-                raisePlatformError(AnOriginIsTheAddressItsSenderPublishedEvent.Error.Execution, "<send> targetexpr could not be evaluated", "__send_2")
+                raisePlatformError(AnOriginIsTheAddressItsSenderPublishedEvent.Error.Execution, ErrorReason.EXPRESSION_FAILED, "<send> targetexpr could not be evaluated", "__send_2")
                 return@send true
             }
             if (com.sce.runtime.SendHelper.isInvalidTarget(_rt)) {
                 // W3C SCXML 6.2 (test194): refused as a static one is.
-                raisePlatformError(AnOriginIsTheAddressItsSenderPublishedEvent.Error.Execution, "<send> targetexpr produced a target this processor cannot address", "__send_2")
+                raisePlatformError(AnOriginIsTheAddressItsSenderPublishedEvent.Error.Execution, ErrorReason.SEND_TARGET_INVALID, "<send> targetexpr produced a target this processor cannot address", "__send_2")
                 return@send true
             }
             // W3C SCXML 6.2: a type the platform does not support is the same
@@ -935,18 +935,18 @@ class AnOriginIsTheAddressItsSenderPublishedStateMachine(
             val sendTypeValue = try {
                 valueToWireString(argEngine.evaluateExpr(argSid, com.sce.runtime.ScriptSource.lua("_event.origintype", "_event.origintype")))
             } catch (_: Exception) {
-                raisePlatformError(AnOriginIsTheAddressItsSenderPublishedEvent.Error.Execution, "<send> typeexpr could not be evaluated", "__send_2")
+                raisePlatformError(AnOriginIsTheAddressItsSenderPublishedEvent.Error.Execution, ErrorReason.EXPRESSION_FAILED, "<send> typeexpr could not be evaluated", "__send_2")
                 return@send true
             }
             if (!com.sce.runtime.SendHelper.isSupportedSendType(sendTypeValue)) {
-                raisePlatformError(AnOriginIsTheAddressItsSenderPublishedEvent.Error.Execution, "<send> typeexpr names a processor this platform does not support", "__send_2")
+                raisePlatformError(AnOriginIsTheAddressItsSenderPublishedEvent.Error.Execution, ErrorReason.SEND_TYPE_UNSUPPORTED, "<send> typeexpr names a processor this platform does not support", "__send_2")
                 return@send true
             }
             if (com.sce.runtime.SendHelper.isUnreachableTarget(_rt)) {
                 // W3C SCXML C.1 (test496): a target that names nothing is not
                 // reachable — error.communication, nothing delivered, and the
                 // error ends the block as any other would (W3C SCXML 4.9).
-                raisePlatformError(AnOriginIsTheAddressItsSenderPublishedEvent.Error.Communication, "<send> targetexpr evaluated to nothing, so there is no target to reach", "__send_2")
+                raisePlatformError(AnOriginIsTheAddressItsSenderPublishedEvent.Error.Communication, ErrorReason.TARGET_UNREACHABLE, "<send> targetexpr evaluated to nothing, so there is no target to reach", "__send_2")
                 return@send true
             }
             val sendData = ""
@@ -964,11 +964,11 @@ AnOriginIsTheAddressItsSenderPublishedEvent.Welcome,
                 AnOriginIsTheAddressItsSenderPublishedEvent.Error.Communication,
             )) {
                 com.sce.runtime.TargetSendOutcome.UNSUPPORTED -> {
-                    raisePlatformError(AnOriginIsTheAddressItsSenderPublishedEvent.Error.Execution, "<send> targetexpr produced a value that is not a target", "__send_2")
+                    raisePlatformError(AnOriginIsTheAddressItsSenderPublishedEvent.Error.Execution, ErrorReason.SEND_TARGET_INVALID, "<send> targetexpr produced a value that is not a target", "__send_2")
                     return@send true
                 }
                 com.sce.runtime.TargetSendOutcome.UNREACHABLE -> {
-                    raisePlatformError(AnOriginIsTheAddressItsSenderPublishedEvent.Error.Communication, "<send> targetexpr names a session this processor cannot reach", "__send_2")
+                    raisePlatformError(AnOriginIsTheAddressItsSenderPublishedEvent.Error.Communication, ErrorReason.TARGET_UNREACHABLE, "<send> targetexpr names a session this processor cannot reach", "__send_2")
                     return@send true
                 }
                 com.sce.runtime.TargetSendOutcome.SENT -> {}
@@ -1047,7 +1047,7 @@ AnOriginIsTheAddressItsSenderPublishedEvent.Welcome,
             try {
                 putParam(sendPayload, "location", payloadEngine.evaluateExpr(payloadSid, com.sce.runtime.ScriptSource.lua("_ioprocessors.scxml.location", "_ioprocessors['scxml'].location")))
             } catch (_: Exception) {
-                raisePlatformError(AnOriginIsTheAddressItsSenderPublishedEvent.Error.Execution, "<send> <param name='location'> could not be read")
+                raisePlatformError(AnOriginIsTheAddressItsSenderPublishedEvent.Error.Execution, ErrorReason.LOCATION_INVALID, "<send> <param name='location'> could not be read")
                 paramFailed = true
             }
 
@@ -1056,7 +1056,7 @@ AnOriginIsTheAddressItsSenderPublishedEvent.Welcome,
             // refused a target naming no invocation above; one that is not
             // running is not there to reach (W3C SCXML C.1).
             if (!sendToChild("kid", "hi", sendData)) {
-                raisePlatformError(AnOriginIsTheAddressItsSenderPublishedEvent.Error.Communication, "<send target='#_kid'> names an invocation that is not running", "__send_3")
+                raisePlatformError(AnOriginIsTheAddressItsSenderPublishedEvent.Error.Communication, ErrorReason.TARGET_UNREACHABLE, "<send target='#_kid'> names an invocation that is not running", "__send_3")
                 return@send true
             }
             paramFailed
@@ -1106,12 +1106,12 @@ AnOriginIsTheAddressItsSenderPublishedEvent.Welcome,
             val _rt = try {
                 valueToWireString(argEngine.evaluateExpr(argSid, com.sce.runtime.ScriptSource.lua("_event.origin", "_event.origin")))
             } catch (_: Exception) {
-                raisePlatformError(AnOriginIsTheAddressItsSenderPublishedEvent.Error.Execution, "<send> targetexpr could not be evaluated", "__send_0")
+                raisePlatformError(AnOriginIsTheAddressItsSenderPublishedEvent.Error.Execution, ErrorReason.EXPRESSION_FAILED, "<send> targetexpr could not be evaluated", "__send_0")
                 return@send true
             }
             if (com.sce.runtime.SendHelper.isInvalidTarget(_rt)) {
                 // W3C SCXML 6.2 (test194): refused as a static one is.
-                raisePlatformError(AnOriginIsTheAddressItsSenderPublishedEvent.Error.Execution, "<send> targetexpr produced a target this processor cannot address", "__send_0")
+                raisePlatformError(AnOriginIsTheAddressItsSenderPublishedEvent.Error.Execution, ErrorReason.SEND_TARGET_INVALID, "<send> targetexpr produced a target this processor cannot address", "__send_0")
                 return@send true
             }
             // W3C SCXML 6.2: a type the platform does not support is the same
@@ -1119,18 +1119,18 @@ AnOriginIsTheAddressItsSenderPublishedEvent.Welcome,
             val sendTypeValue = try {
                 valueToWireString(argEngine.evaluateExpr(argSid, com.sce.runtime.ScriptSource.lua("_event.origintype", "_event.origintype")))
             } catch (_: Exception) {
-                raisePlatformError(AnOriginIsTheAddressItsSenderPublishedEvent.Error.Execution, "<send> typeexpr could not be evaluated", "__send_0")
+                raisePlatformError(AnOriginIsTheAddressItsSenderPublishedEvent.Error.Execution, ErrorReason.EXPRESSION_FAILED, "<send> typeexpr could not be evaluated", "__send_0")
                 return@send true
             }
             if (!com.sce.runtime.SendHelper.isSupportedSendType(sendTypeValue)) {
-                raisePlatformError(AnOriginIsTheAddressItsSenderPublishedEvent.Error.Execution, "<send> typeexpr names a processor this platform does not support", "__send_0")
+                raisePlatformError(AnOriginIsTheAddressItsSenderPublishedEvent.Error.Execution, ErrorReason.SEND_TYPE_UNSUPPORTED, "<send> typeexpr names a processor this platform does not support", "__send_0")
                 return@send true
             }
             if (com.sce.runtime.SendHelper.isUnreachableTarget(_rt)) {
                 // W3C SCXML C.1 (test496): a target that names nothing is not
                 // reachable — error.communication, nothing delivered, and the
                 // error ends the block as any other would (W3C SCXML 4.9).
-                raisePlatformError(AnOriginIsTheAddressItsSenderPublishedEvent.Error.Communication, "<send> targetexpr evaluated to nothing, so there is no target to reach", "__send_0")
+                raisePlatformError(AnOriginIsTheAddressItsSenderPublishedEvent.Error.Communication, ErrorReason.TARGET_UNREACHABLE, "<send> targetexpr evaluated to nothing, so there is no target to reach", "__send_0")
                 return@send true
             }
             val sendData = ""
@@ -1148,11 +1148,11 @@ AnOriginIsTheAddressItsSenderPublishedEvent.Pong,
                 AnOriginIsTheAddressItsSenderPublishedEvent.Error.Communication,
             )) {
                 com.sce.runtime.TargetSendOutcome.UNSUPPORTED -> {
-                    raisePlatformError(AnOriginIsTheAddressItsSenderPublishedEvent.Error.Execution, "<send> targetexpr produced a value that is not a target", "__send_0")
+                    raisePlatformError(AnOriginIsTheAddressItsSenderPublishedEvent.Error.Execution, ErrorReason.SEND_TARGET_INVALID, "<send> targetexpr produced a value that is not a target", "__send_0")
                     return@send true
                 }
                 com.sce.runtime.TargetSendOutcome.UNREACHABLE -> {
-                    raisePlatformError(AnOriginIsTheAddressItsSenderPublishedEvent.Error.Communication, "<send> targetexpr names a session this processor cannot reach", "__send_0")
+                    raisePlatformError(AnOriginIsTheAddressItsSenderPublishedEvent.Error.Communication, ErrorReason.TARGET_UNREACHABLE, "<send> targetexpr names a session this processor cannot reach", "__send_0")
                     return@send true
                 }
                 com.sce.runtime.TargetSendOutcome.SENT -> {}

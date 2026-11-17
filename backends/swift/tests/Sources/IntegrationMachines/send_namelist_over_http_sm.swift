@@ -505,8 +505,12 @@ public final class SendNamelistOverHttpPolicy: InvocablePolicy {
 
     /// Says what went wrong where the document can see it: `error.execution` on the internal
     /// queue (§scxml-5.9.1, 5.3).
-    private func raiseExecutionError(_ message: String, engine: Engine<SendNamelistOverHttpPolicy>) {
-        engine.raise(EventWithMetadata.platformError(SendNamelistOverHttpEvent.errorExecution, message: message))
+    /// `reason` is the code of sce:std/engine/error_reason the record carries
+    /// (docs/adr/0106 #111).
+    private func raiseExecutionError(
+        _ reason: ErrorReason, _ message: String, engine: Engine<SendNamelistOverHttpPolicy>
+    ) {
+        engine.raise(EventWithMetadata.platformError(SendNamelistOverHttpEvent.errorExecution, reason: reason, message: message))
     }
 
     /// W3C SCXML 5.3: the `<data id>` `id` takes the value of the lowered expression, or nil when it
@@ -563,6 +567,7 @@ public final class SendNamelistOverHttpPolicy: InvocablePolicy {
             }
         } catch {
             raiseExecutionError(
+                handed == nil ? .expressionFailed : .paramUnfit,
                 handed == nil
                     ? "<data id='\(id)'> expr failed to evaluate"
                     : "<data id='\(id)'> could not hold the value its parent handed it",
@@ -726,7 +731,7 @@ public final class SendNamelistOverHttpPolicy: InvocablePolicy {
             // this call the payload is lost to the document and to the host alike.
             engine.notePayloadReading(event, reading: Self.payloadReading(of: reading))
         } catch {
-            raiseExecutionError("_event could not be bound for '\(name)'", engine: engine)
+            raiseExecutionError(.payloadRefused, "_event could not be bound for '\(name)'", engine: engine)
         }
     }
 
@@ -763,7 +768,7 @@ public final class SendNamelistOverHttpPolicy: InvocablePolicy {
         do {
             return try scriptSession.evaluateCondition(condition, chunkName: "=cond")
         } catch {
-            raiseExecutionError("a \(element) cond failed to evaluate", engine: engine)
+            raiseExecutionError(.expressionFailed, "a \(element) cond failed to evaluate", engine: engine)
             failed = true
             return false
         }
@@ -801,7 +806,11 @@ public final class SendNamelistOverHttpPolicy: InvocablePolicy {
                 // W3C SCXML 6.2: send id="__send_3"
                 do {
                     var sendArgError = ""
-                    sendArgError = "<send> namelist names '__sce_not_declared__', which is not declared"
+                    // Why the argument failed, a code of sce:std/engine/error_reason
+                    // (docs/adr/0106 #111), set with every sentence below.
+                    var sendArgReason = ErrorReason.expressionFailed
+                    _ = sendArgReason
+                    sendArgError = "<send> namelist names '__sce_not_declared__', which is not declared"; sendArgReason = .locationInvalid
                     // W3C SCXML 6.2.4 + C.1: a targetexpr is a target. Its value is read from the
                     // engine now and routed as the same value written in `target` is, below; an
                     // expression that cannot be evaluated is the argument error, and a value that
@@ -813,11 +822,11 @@ public final class SendNamelistOverHttpPolicy: InvocablePolicy {
                             sendTarget = routed
                             sendTargetKnown = true
                         } else {
-                            sendArgError = "<send> targetexpr could not be evaluated"
+                            sendArgError = "<send> targetexpr could not be evaluated"; sendArgReason = .expressionFailed
                         }
                     }
                     if !sendArgError.isEmpty {
-                        var sendError = EventWithMetadata.platformError(SendNamelistOverHttpEvent.errorExecution, message: sendArgError)
+                        var sendError = EventWithMetadata.platformError(SendNamelistOverHttpEvent.errorExecution, reason: sendArgReason, message: sendArgError)
                         sendError.metadata.sendID = "__send_3"
                         engine.raise(sendError)
 
@@ -828,7 +837,7 @@ public final class SendNamelistOverHttpPolicy: InvocablePolicy {
                         // names nothing (empty or "undefined"), is not reachable —
                         // error.communication, nothing delivered, and the error ends the block
                         // as any other would (W3C SCXML 4.9).
-                        var sendError = EventWithMetadata.platformError(SendNamelistOverHttpEvent.errorCommunication, message: "<send> targetexpr evaluated to nothing, or to a route the send does not declare, so there is no target to reach")
+                        var sendError = EventWithMetadata.platformError(SendNamelistOverHttpEvent.errorCommunication, reason: .targetUnreachable, message: "<send> targetexpr evaluated to nothing, or to a route the send does not declare, so there is no target to reach")
                         sendError.metadata.sendID = "__send_3"
                         engine.raise(sendError)
 
@@ -850,7 +859,7 @@ public final class SendNamelistOverHttpPolicy: InvocablePolicy {
                     // goes. BasicHTTP posts to a URL, so any other value names nothing this processor
                     // can reach: error.communication, and the error ends the block (4.9).
                     if !isHTTPURL(sendTarget) {
-                        var sendError = EventWithMetadata.platformError(SendNamelistOverHttpEvent.errorCommunication, message: "<send> over BasicHTTP resolved a target that is not an http(s) URL")
+                        var sendError = EventWithMetadata.platformError(SendNamelistOverHttpEvent.errorCommunication, reason: .httpTargetInvalid, message: "<send> over BasicHTTP resolved a target that is not an http(s) URL")
                         sendError.metadata.sendID = "__send_3"
                         engine.raise(sendError)
 
@@ -896,6 +905,10 @@ public final class SendNamelistOverHttpPolicy: InvocablePolicy {
                 // W3C SCXML 6.2: send id="__send_1"
                 do {
                     var sendArgError = ""
+                    // Why the argument failed, a code of sce:std/engine/error_reason
+                    // (docs/adr/0106 #111), set with every sentence below.
+                    var sendArgReason = ErrorReason.expressionFailed
+                    _ = sendArgReason
                     // W3C SCXML 6.2.4 + C.1: a targetexpr is a target. Its value is read from the
                     // engine now and routed as the same value written in `target` is, below; an
                     // expression that cannot be evaluated is the argument error, and a value that
@@ -907,11 +920,11 @@ public final class SendNamelistOverHttpPolicy: InvocablePolicy {
                             sendTarget = routed
                             sendTargetKnown = true
                         } else {
-                            sendArgError = "<send> targetexpr could not be evaluated"
+                            sendArgError = "<send> targetexpr could not be evaluated"; sendArgReason = .expressionFailed
                         }
                     }
                     if !sendArgError.isEmpty {
-                        var sendError = EventWithMetadata.platformError(SendNamelistOverHttpEvent.errorExecution, message: sendArgError)
+                        var sendError = EventWithMetadata.platformError(SendNamelistOverHttpEvent.errorExecution, reason: sendArgReason, message: sendArgError)
                         sendError.metadata.sendID = "__send_1"
                         engine.raise(sendError)
 
@@ -922,7 +935,7 @@ public final class SendNamelistOverHttpPolicy: InvocablePolicy {
                         // names nothing (empty or "undefined"), is not reachable —
                         // error.communication, nothing delivered, and the error ends the block
                         // as any other would (W3C SCXML 4.9).
-                        var sendError = EventWithMetadata.platformError(SendNamelistOverHttpEvent.errorCommunication, message: "<send> targetexpr evaluated to nothing, or to a route the send does not declare, so there is no target to reach")
+                        var sendError = EventWithMetadata.platformError(SendNamelistOverHttpEvent.errorCommunication, reason: .targetUnreachable, message: "<send> targetexpr evaluated to nothing, or to a route the send does not declare, so there is no target to reach")
                         sendError.metadata.sendID = "__send_1"
                         engine.raise(sendError)
 
@@ -939,7 +952,7 @@ public final class SendNamelistOverHttpPolicy: InvocablePolicy {
                     if let paramValue = evaluateText("Var1") {
                         appendFormParam(&sendForm, "Var1", .text(paramValue))
                     } else {
-                        engine.raise(EventWithMetadata.platformError(SendNamelistOverHttpEvent.errorExecution, message: "<send> <param name=Var1> failed to evaluate"))
+                        engine.raise(EventWithMetadata.platformError(SendNamelistOverHttpEvent.errorExecution, reason: .expressionFailed, message: "<send> <param name=Var1> failed to evaluate"))
                         paramFailed = true
                     }
 
@@ -951,7 +964,7 @@ public final class SendNamelistOverHttpPolicy: InvocablePolicy {
                     // goes. BasicHTTP posts to a URL, so any other value names nothing this processor
                     // can reach: error.communication, and the error ends the block (4.9).
                     if !isHTTPURL(sendTarget) {
-                        var sendError = EventWithMetadata.platformError(SendNamelistOverHttpEvent.errorCommunication, message: "<send> over BasicHTTP resolved a target that is not an http(s) URL")
+                        var sendError = EventWithMetadata.platformError(SendNamelistOverHttpEvent.errorCommunication, reason: .httpTargetInvalid, message: "<send> over BasicHTTP resolved a target that is not an http(s) URL")
                         sendError.metadata.sendID = "__send_1"
                         engine.raise(sendError)
 
@@ -1124,7 +1137,7 @@ public final class SendNamelistOverHttpPolicy: InvocablePolicy {
 
                 // W3C SCXML 5.4: <assign location="sawNamelistError">
                 if !assignData("sawNamelistError", "1") {
-                    raiseExecutionError("<assign> to 'sawNamelistError' failed", engine: engine)
+                    raiseExecutionError(.assignmentFailed, "<assign> to 'sawNamelistError' failed", engine: engine)
                     break sceBlock  // W3C SCXML 4.9: the error ends the block
                 }
 
@@ -1140,7 +1153,7 @@ public final class SendNamelistOverHttpPolicy: InvocablePolicy {
 
                 // W3C SCXML 5.4: <assign location="echoed">
                 if !assignData("echoed", "_event.data.Var1") {
-                    raiseExecutionError("<assign> to 'echoed' failed", engine: engine)
+                    raiseExecutionError(.assignmentFailed, "<assign> to 'echoed' failed", engine: engine)
                     break sceBlock  // W3C SCXML 4.9: the error ends the block
                 }
 

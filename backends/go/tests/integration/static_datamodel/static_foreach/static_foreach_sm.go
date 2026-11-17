@@ -31,6 +31,7 @@ import (
 	"time"
 
 	sce "github.com/newmassrael/sce-go-runtime"
+	sceerrorreason "github.com/newmassrael/sce-go-runtime/generated/error_reason"
 	scealgorithm "github.com/newmassrael/sce-forge-runtime/algorithm"
 )
 
@@ -40,6 +41,9 @@ var (
 	_ = filepath.Join
 	_ = strings.HasPrefix
 	_ = time.Duration(0)
+	// Why an error.* event is raised (sce:std/engine/error_reason,
+	// docs/adr/0106 #111); a machine that raises none still imports it.
+	_ = sceerrorreason.ErrorReasonExpressionFailed
 	_ scealgorithm.Failure
 )
 
@@ -1106,7 +1110,7 @@ func (p *StaticForeachPolicy) ExecuteTransitionContent(source StaticForeachState
 
 	// SCE Accepted Subset §2.15: <sce:append target="picked">
 
-	if func() bool { var sceFailure scealgorithm.Failure; if len(p.vPicked) >= 4 { engine.Raise(sce.NewPlatformError(StaticForeachEventErrorExecution, "<sce:append target='picked'>: the list already holds its capacity of 4")); return true }; sceValue := scealgorithm.ElementOf(p.vPicked, 100); if sceFailure.Failed() { engine.Raise(sce.NewPlatformError(StaticForeachEventErrorExecution, "<sce:append target='picked'>: an integer operation overflowed or failed")); return true }; p.vPicked = append(p.vPicked, sceValue); return false }() {
+	if func() bool { var sceFailure scealgorithm.Failure; if len(p.vPicked) >= 4 { engine.Raise(sce.NewPlatformError(StaticForeachEventErrorExecution, sceerrorreason.ErrorReasonAssignmentFailed, "<sce:append target='picked'>: the list already holds its capacity of 4")); return true }; sceValue := scealgorithm.ElementOf(p.vPicked, 100); if sceFailure.Failed() { engine.Raise(sce.NewPlatformError(StaticForeachEventErrorExecution, sceerrorreason.ErrorReasonExpressionFailed, "<sce:append target='picked'>: an integer operation overflowed or failed")); return true }; p.vPicked = append(p.vPicked, sceValue); return false }() {
 		return  // W3C SCXML 4.9: the error ends the block
 	}
 
@@ -1118,7 +1122,7 @@ func (p *StaticForeachPolicy) ExecuteTransitionContent(source StaticForeachState
 
 	// SCE Accepted Subset §2.15: <sce:append target="picked">
 
-	if func() bool { var sceFailure scealgorithm.Failure; if len(p.vPicked) >= 4 { engine.Raise(sce.NewPlatformError(StaticForeachEventErrorExecution, "<sce:append target='picked'>: the list already holds its capacity of 4")); return true }; sceValue := scealgorithm.ElementOf(p.vPicked, 200); if sceFailure.Failed() { engine.Raise(sce.NewPlatformError(StaticForeachEventErrorExecution, "<sce:append target='picked'>: an integer operation overflowed or failed")); return true }; p.vPicked = append(p.vPicked, sceValue); return false }() {
+	if func() bool { var sceFailure scealgorithm.Failure; if len(p.vPicked) >= 4 { engine.Raise(sce.NewPlatformError(StaticForeachEventErrorExecution, sceerrorreason.ErrorReasonAssignmentFailed, "<sce:append target='picked'>: the list already holds its capacity of 4")); return true }; sceValue := scealgorithm.ElementOf(p.vPicked, 200); if sceFailure.Failed() { engine.Raise(sce.NewPlatformError(StaticForeachEventErrorExecution, sceerrorreason.ErrorReasonExpressionFailed, "<sce:append target='picked'>: an integer operation overflowed or failed")); return true }; p.vPicked = append(p.vPicked, sceValue); return false }() {
 		return  // W3C SCXML 4.9: the error ends the block
 	}
 
@@ -1130,7 +1134,7 @@ func (p *StaticForeachPolicy) ExecuteTransitionContent(source StaticForeachState
 
 	// SCE Accepted Subset §2.15: <sce:append target="picked">
 
-	if func() bool { var sceFailure scealgorithm.Failure; if len(p.vPicked) >= 4 { engine.Raise(sce.NewPlatformError(StaticForeachEventErrorExecution, "<sce:append target='picked'>: the list already holds its capacity of 4")); return true }; sceValue := scealgorithm.ElementOf(p.vPicked, 5); if sceFailure.Failed() { engine.Raise(sce.NewPlatformError(StaticForeachEventErrorExecution, "<sce:append target='picked'>: an integer operation overflowed or failed")); return true }; p.vPicked = append(p.vPicked, sceValue); return false }() {
+	if func() bool { var sceFailure scealgorithm.Failure; if len(p.vPicked) >= 4 { engine.Raise(sce.NewPlatformError(StaticForeachEventErrorExecution, sceerrorreason.ErrorReasonAssignmentFailed, "<sce:append target='picked'>: the list already holds its capacity of 4")); return true }; sceValue := scealgorithm.ElementOf(p.vPicked, 5); if sceFailure.Failed() { engine.Raise(sce.NewPlatformError(StaticForeachEventErrorExecution, sceerrorreason.ErrorReasonExpressionFailed, "<sce:append target='picked'>: an integer operation overflowed or failed")); return true }; p.vPicked = append(p.vPicked, sceValue); return false }() {
 		return  // W3C SCXML 4.9: the error ends the block
 	}
 
@@ -1159,7 +1163,7 @@ func (p *StaticForeachPolicy) ExecuteTransitionContent(source StaticForeachState
 		_ = v
 
 
-	if func() bool { var sceFailure scealgorithm.Failure; sceValue := scealgorithm.AddUint32(&sceFailure, p.vTotal, uint32(v)); if sceFailure.Failed() { engine.Raise(sce.NewPlatformError(StaticForeachEventErrorExecution, "<assign location='total'>: an integer operation overflowed or failed")); return true }; p.vTotal = sceValue; return false }() {
+	if func() bool { var sceFailure scealgorithm.Failure; sceValue := scealgorithm.AddUint32(&sceFailure, p.vTotal, uint32(v)); if sceFailure.Failed() { engine.Raise(sce.NewPlatformError(StaticForeachEventErrorExecution, sceerrorreason.ErrorReasonExpressionFailed, "<assign location='total'>: an integer operation overflowed or failed")); return true }; p.vTotal = sceValue; return false }() {
 		return  // W3C SCXML 4.9: the error ends the block
 	}
 
@@ -1167,7 +1171,7 @@ func (p *StaticForeachPolicy) ExecuteTransitionContent(source StaticForeachState
 
 
 
-	if func() bool { var sceFailure scealgorithm.Failure; sceValue := scealgorithm.AddUint32(&sceFailure, p.vFinished, 1); if sceFailure.Failed() { engine.Raise(sce.NewPlatformError(StaticForeachEventErrorExecution, "<assign location='finished'>: an integer operation overflowed or failed")); return true }; p.vFinished = sceValue; return false }() {
+	if func() bool { var sceFailure scealgorithm.Failure; sceValue := scealgorithm.AddUint32(&sceFailure, p.vFinished, 1); if sceFailure.Failed() { engine.Raise(sce.NewPlatformError(StaticForeachEventErrorExecution, sceerrorreason.ErrorReasonExpressionFailed, "<assign location='finished'>: an integer operation overflowed or failed")); return true }; p.vFinished = sceValue; return false }() {
 		return  // W3C SCXML 4.9: the error ends the block
 	}
 
@@ -1186,7 +1190,7 @@ func (p *StaticForeachPolicy) ExecuteTransitionContent(source StaticForeachState
 		i := uint32(sceIndex); _ = i; _ = v
 
 
-	if func() bool { var sceFailure scealgorithm.Failure; sceValue := scealgorithm.AddUint32(&sceFailure, p.vWeighted, scealgorithm.MulUint32(&sceFailure, uint32(v), scealgorithm.AddUint32(&sceFailure, i, 1))); if sceFailure.Failed() { engine.Raise(sce.NewPlatformError(StaticForeachEventErrorExecution, "<assign location='weighted'>: an integer operation overflowed or failed")); return true }; p.vWeighted = sceValue; return false }() {
+	if func() bool { var sceFailure scealgorithm.Failure; sceValue := scealgorithm.AddUint32(&sceFailure, p.vWeighted, scealgorithm.MulUint32(&sceFailure, uint32(v), scealgorithm.AddUint32(&sceFailure, i, 1))); if sceFailure.Failed() { engine.Raise(sce.NewPlatformError(StaticForeachEventErrorExecution, sceerrorreason.ErrorReasonExpressionFailed, "<assign location='weighted'>: an integer operation overflowed or failed")); return true }; p.vWeighted = sceValue; return false }() {
 		return  // W3C SCXML 4.9: the error ends the block
 	}
 
@@ -1194,7 +1198,7 @@ func (p *StaticForeachPolicy) ExecuteTransitionContent(source StaticForeachState
 
 
 
-	if func() bool { var sceFailure scealgorithm.Failure; sceValue := scealgorithm.AddUint32(&sceFailure, p.vFinished, 1); if sceFailure.Failed() { engine.Raise(sce.NewPlatformError(StaticForeachEventErrorExecution, "<assign location='finished'>: an integer operation overflowed or failed")); return true }; p.vFinished = sceValue; return false }() {
+	if func() bool { var sceFailure scealgorithm.Failure; sceValue := scealgorithm.AddUint32(&sceFailure, p.vFinished, 1); if sceFailure.Failed() { engine.Raise(sce.NewPlatformError(StaticForeachEventErrorExecution, sceerrorreason.ErrorReasonExpressionFailed, "<assign location='finished'>: an integer operation overflowed or failed")); return true }; p.vFinished = sceValue; return false }() {
 		return  // W3C SCXML 4.9: the error ends the block
 	}
 
@@ -1213,7 +1217,7 @@ func (p *StaticForeachPolicy) ExecuteTransitionContent(source StaticForeachState
 		_ = v
 
 
-	if func() bool { var sceFailure scealgorithm.Failure; sceValue := scealgorithm.AddUint8(&sceFailure, p.vSmall, v); if sceFailure.Failed() { engine.Raise(sce.NewPlatformError(StaticForeachEventErrorExecution, "<assign location='small'>: an integer operation overflowed or failed")); return true }; p.vSmall = sceValue; return false }() {
+	if func() bool { var sceFailure scealgorithm.Failure; sceValue := scealgorithm.AddUint8(&sceFailure, p.vSmall, v); if sceFailure.Failed() { engine.Raise(sce.NewPlatformError(StaticForeachEventErrorExecution, sceerrorreason.ErrorReasonExpressionFailed, "<assign location='small'>: an integer operation overflowed or failed")); return true }; p.vSmall = sceValue; return false }() {
 		return  // W3C SCXML 4.9: the error ends the block
 	}
 
@@ -1221,7 +1225,7 @@ func (p *StaticForeachPolicy) ExecuteTransitionContent(source StaticForeachState
 
 
 
-	if func() bool { var sceFailure scealgorithm.Failure; sceValue := scealgorithm.AddUint32(&sceFailure, p.vFinished, 1); if sceFailure.Failed() { engine.Raise(sce.NewPlatformError(StaticForeachEventErrorExecution, "<assign location='finished'>: an integer operation overflowed or failed")); return true }; p.vFinished = sceValue; return false }() {
+	if func() bool { var sceFailure scealgorithm.Failure; sceValue := scealgorithm.AddUint32(&sceFailure, p.vFinished, 1); if sceFailure.Failed() { engine.Raise(sce.NewPlatformError(StaticForeachEventErrorExecution, sceerrorreason.ErrorReasonExpressionFailed, "<assign location='finished'>: an integer operation overflowed or failed")); return true }; p.vFinished = sceValue; return false }() {
 		return  // W3C SCXML 4.9: the error ends the block
 	}
 
@@ -1237,7 +1241,7 @@ func (p *StaticForeachPolicy) ExecuteTransitionContent(source StaticForeachState
 
 	// SCE Accepted Subset §2.15: <sce:append target="picked">
 
-	if func() bool { var sceFailure scealgorithm.Failure; if len(p.vPicked) >= 4 { engine.Raise(sce.NewPlatformError(StaticForeachEventErrorExecution, "<sce:append target='picked'>: the list already holds its capacity of 4")); return true }; sceValue := scealgorithm.ElementOf(p.vPicked, v); if sceFailure.Failed() { engine.Raise(sce.NewPlatformError(StaticForeachEventErrorExecution, "<sce:append target='picked'>: an integer operation overflowed or failed")); return true }; p.vPicked = append(p.vPicked, sceValue); return false }() {
+	if func() bool { var sceFailure scealgorithm.Failure; if len(p.vPicked) >= 4 { engine.Raise(sce.NewPlatformError(StaticForeachEventErrorExecution, sceerrorreason.ErrorReasonAssignmentFailed, "<sce:append target='picked'>: the list already holds its capacity of 4")); return true }; sceValue := scealgorithm.ElementOf(p.vPicked, v); if sceFailure.Failed() { engine.Raise(sce.NewPlatformError(StaticForeachEventErrorExecution, sceerrorreason.ErrorReasonExpressionFailed, "<sce:append target='picked'>: an integer operation overflowed or failed")); return true }; p.vPicked = append(p.vPicked, sceValue); return false }() {
 		return  // W3C SCXML 4.9: the error ends the block
 	}
 
@@ -1245,7 +1249,7 @@ func (p *StaticForeachPolicy) ExecuteTransitionContent(source StaticForeachState
 
 
 
-	if func() bool { var sceFailure scealgorithm.Failure; sceValue := scealgorithm.AddUint32(&sceFailure, p.vFinished, 1); if sceFailure.Failed() { engine.Raise(sce.NewPlatformError(StaticForeachEventErrorExecution, "<assign location='finished'>: an integer operation overflowed or failed")); return true }; p.vFinished = sceValue; return false }() {
+	if func() bool { var sceFailure scealgorithm.Failure; sceValue := scealgorithm.AddUint32(&sceFailure, p.vFinished, 1); if sceFailure.Failed() { engine.Raise(sce.NewPlatformError(StaticForeachEventErrorExecution, sceerrorreason.ErrorReasonExpressionFailed, "<assign location='finished'>: an integer operation overflowed or failed")); return true }; p.vFinished = sceValue; return false }() {
 		return  // W3C SCXML 4.9: the error ends the block
 	}
 
@@ -1268,7 +1272,7 @@ func (p *StaticForeachPolicy) ExecuteTransitionContent(source StaticForeachState
 		_ = w
 
 
-	if func() bool { var sceFailure scealgorithm.Failure; sceValue := scealgorithm.AddUint32(&sceFailure, p.vCrossings, 1); if sceFailure.Failed() { engine.Raise(sce.NewPlatformError(StaticForeachEventErrorExecution, "<assign location='crossings'>: an integer operation overflowed or failed")); return true }; p.vCrossings = sceValue; return false }() {
+	if func() bool { var sceFailure scealgorithm.Failure; sceValue := scealgorithm.AddUint32(&sceFailure, p.vCrossings, 1); if sceFailure.Failed() { engine.Raise(sce.NewPlatformError(StaticForeachEventErrorExecution, sceerrorreason.ErrorReasonExpressionFailed, "<assign location='crossings'>: an integer operation overflowed or failed")); return true }; p.vCrossings = sceValue; return false }() {
 		return  // W3C SCXML 4.9: the error ends the block
 	}
 
@@ -1291,7 +1295,7 @@ func (p *StaticForeachPolicy) ExecuteTransitionContent(source StaticForeachState
 		i := uint32(sceIndex); _ = i; _ = v
 
 
-	if func() bool { var sceFailure scealgorithm.Failure; sceValue := scealgorithm.AddUint32(&sceFailure, p.vVisited, 1); if sceFailure.Failed() { engine.Raise(sce.NewPlatformError(StaticForeachEventErrorExecution, "<assign location='visited'>: an integer operation overflowed or failed")); return true }; p.vVisited = sceValue; return false }() {
+	if func() bool { var sceFailure scealgorithm.Failure; sceValue := scealgorithm.AddUint32(&sceFailure, p.vVisited, 1); if sceFailure.Failed() { engine.Raise(sce.NewPlatformError(StaticForeachEventErrorExecution, sceerrorreason.ErrorReasonExpressionFailed, "<assign location='visited'>: an integer operation overflowed or failed")); return true }; p.vVisited = sceValue; return false }() {
 		return  // W3C SCXML 4.9: the error ends the block
 	}
 
@@ -1304,7 +1308,7 @@ func (p *StaticForeachPolicy) ExecuteTransitionContent(source StaticForeachState
 			func() {
 
 
-	if func() bool { var sceFailure scealgorithm.Failure; sceValue := scealgorithm.AddUint32(&sceFailure, p.vErrors, 1); if sceFailure.Failed() { engine.Raise(sce.NewPlatformError(StaticForeachEventErrorExecution, "<assign location='errors'>: an integer operation overflowed or failed")); return true }; p.vErrors = sceValue; return false }() {
+	if func() bool { var sceFailure scealgorithm.Failure; sceValue := scealgorithm.AddUint32(&sceFailure, p.vErrors, 1); if sceFailure.Failed() { engine.Raise(sce.NewPlatformError(StaticForeachEventErrorExecution, sceerrorreason.ErrorReasonExpressionFailed, "<assign location='errors'>: an integer operation overflowed or failed")); return true }; p.vErrors = sceValue; return false }() {
 		return  // W3C SCXML 4.9: the error ends the block
 	}
 

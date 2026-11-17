@@ -166,7 +166,7 @@ class Test422SceSynthInvokeInvoke1StateMachine(
             // no parent — error.communication, nothing delivered, the block ended.
             val toParent = onSendToParent
             if (toParent == null) {
-                raisePlatformError(Test422SceSynthInvokeInvoke1Event.Error.Communication, "<send target='#_parent'> has no parent session to reach", "__send_0")
+                raisePlatformError(Test422SceSynthInvokeInvoke1Event.Error.Communication, ErrorReason.TARGET_UNREACHABLE, "<send target='#_parent'> has no parent session to reach", "__send_0")
                 return@send true
             }
             toParent("invokeS11", sendData)

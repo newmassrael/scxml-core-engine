@@ -618,7 +618,7 @@ class StaticInvokeTreeStateMachine(
             // refused a target naming no invocation above; one that is not
             // running is not there to reach (W3C SCXML C.1).
             if (!sendToChild("worker", "question", sendData)) {
-                raisePlatformError(StaticInvokeTreeEvent.Error.Communication, "<send target='#_worker'> names an invocation that is not running", "__send_0")
+                raisePlatformError(StaticInvokeTreeEvent.Error.Communication, ErrorReason.TARGET_UNREACHABLE, "<send target='#_worker'> names an invocation that is not running", "__send_0")
                 return@send true
             }
             false
@@ -650,7 +650,7 @@ class StaticInvokeTreeStateMachine(
     private fun transitionContentOfWorkingAt4() {
                 // SCE-MAP: static_invoke_tree.scxml:91 :: working :: _transition_4
 
-            if (try { vAnswers = com.sce.forge.runtime.SceChecked.add(vAnswers, 1.toUInt()); false } catch (_: com.sce.forge.runtime.AlgorithmFailure) { raisePlatformError(StaticInvokeTreeEvent.Error.Execution, "<assign location='answers'>: an integer operation overflowed or failed"); true }) {
+            if (try { vAnswers = com.sce.forge.runtime.SceChecked.add(vAnswers, 1.toUInt()); false } catch (_: com.sce.forge.runtime.AlgorithmFailure) { raisePlatformError(StaticInvokeTreeEvent.Error.Execution, ErrorReason.EXPRESSION_FAILED, "<assign location='answers'>: an integer operation overflowed or failed"); true }) {
                 return
             }
     }
@@ -658,7 +658,7 @@ class StaticInvokeTreeStateMachine(
     private fun transitionContentOfWorkingAt5() {
                 // SCE-MAP: static_invoke_tree.scxml:94 :: working :: _transition_5
 
-            if (try { vReports = com.sce.forge.runtime.SceChecked.add(vReports, 1.toUInt()); false } catch (_: com.sce.forge.runtime.AlgorithmFailure) { raisePlatformError(StaticInvokeTreeEvent.Error.Execution, "<assign location='reports'>: an integer operation overflowed or failed"); true }) {
+            if (try { vReports = com.sce.forge.runtime.SceChecked.add(vReports, 1.toUInt()); false } catch (_: com.sce.forge.runtime.AlgorithmFailure) { raisePlatformError(StaticInvokeTreeEvent.Error.Execution, ErrorReason.EXPRESSION_FAILED, "<assign location='reports'>: an integer operation overflowed or failed"); true }) {
                 return
             }
     }
@@ -666,7 +666,7 @@ class StaticInvokeTreeStateMachine(
     private fun transitionContentOfWorkingAt6() {
                 // SCE-MAP: static_invoke_tree.scxml:97 :: working :: _transition_6
 
-            if (try { vStamps = com.sce.forge.runtime.SceChecked.add(vStamps, 1.toUInt()); false } catch (_: com.sce.forge.runtime.AlgorithmFailure) { raisePlatformError(StaticInvokeTreeEvent.Error.Execution, "<assign location='stamps'>: an integer operation overflowed or failed"); true }) {
+            if (try { vStamps = com.sce.forge.runtime.SceChecked.add(vStamps, 1.toUInt()); false } catch (_: com.sce.forge.runtime.AlgorithmFailure) { raisePlatformError(StaticInvokeTreeEvent.Error.Execution, ErrorReason.EXPRESSION_FAILED, "<assign location='stamps'>: an integer operation overflowed or failed"); true }) {
                 return
             }
     }

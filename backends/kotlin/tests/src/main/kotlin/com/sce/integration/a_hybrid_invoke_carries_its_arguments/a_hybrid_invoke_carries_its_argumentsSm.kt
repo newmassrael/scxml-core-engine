@@ -362,7 +362,7 @@ class AHybridInvokeCarriesItsArgumentsStateMachine(
             try {
                 engine.setVariable(sid, "pick", engine.evaluateExpr(sid, com.sce.runtime.ScriptSource.lua("\"file:keeper.scxml\"", "'file:keeper.scxml'")))
             } catch (e: Exception) {
-                raisePlatformError(AHybridInvokeCarriesItsArgumentsEvent.Error.Execution, "<data id='pick'> expr failed to evaluate")
+                raisePlatformError(AHybridInvokeCarriesItsArgumentsEvent.Error.Execution, ErrorReason.EXPRESSION_FAILED, "<data id='pick'> expr failed to evaluate")
             }
         }
         // §scxml-6.4: 'v' takes a value its invoke handed it, in place of its own
@@ -371,7 +371,7 @@ class AHybridInvokeCarriesItsArgumentsStateMachine(
             try {
                 engine.setVariable(sid, "v", engine.evaluateExpr(sid, com.sce.runtime.ScriptSource.lua("7", "7")))
             } catch (e: Exception) {
-                raisePlatformError(AHybridInvokeCarriesItsArgumentsEvent.Error.Execution, "<data id='v'> expr failed to evaluate")
+                raisePlatformError(AHybridInvokeCarriesItsArgumentsEvent.Error.Execution, ErrorReason.EXPRESSION_FAILED, "<data id='v'> expr failed to evaluate")
             }
         }
         // §scxml-6.4: 'seed' takes a value its invoke handed it, in place of its own
@@ -380,7 +380,7 @@ class AHybridInvokeCarriesItsArgumentsStateMachine(
             try {
                 engine.setVariable(sid, "seed", engine.evaluateExpr(sid, com.sce.runtime.ScriptSource.lua("41", "41")))
             } catch (e: Exception) {
-                raisePlatformError(AHybridInvokeCarriesItsArgumentsEvent.Error.Execution, "<data id='seed'> expr failed to evaluate")
+                raisePlatformError(AHybridInvokeCarriesItsArgumentsEvent.Error.Execution, ErrorReason.EXPRESSION_FAILED, "<data id='seed'> expr failed to evaluate")
             }
         }
         // §scxml-6.4: 'errors' takes a value its invoke handed it, in place of its own
@@ -389,7 +389,7 @@ class AHybridInvokeCarriesItsArgumentsStateMachine(
             try {
                 engine.setVariable(sid, "errors", engine.evaluateExpr(sid, com.sce.runtime.ScriptSource.lua("0", "0")))
             } catch (e: Exception) {
-                raisePlatformError(AHybridInvokeCarriesItsArgumentsEvent.Error.Execution, "<data id='errors'> expr failed to evaluate")
+                raisePlatformError(AHybridInvokeCarriesItsArgumentsEvent.Error.Execution, ErrorReason.EXPRESSION_FAILED, "<data id='errors'> expr failed to evaluate")
             }
         }
         // §scxml-6.4: 'started' takes a value its invoke handed it, in place of its own
@@ -398,7 +398,7 @@ class AHybridInvokeCarriesItsArgumentsStateMachine(
             try {
                 engine.setVariable(sid, "started", engine.evaluateExpr(sid, com.sce.runtime.ScriptSource.lua("0", "0")))
             } catch (e: Exception) {
-                raisePlatformError(AHybridInvokeCarriesItsArgumentsEvent.Error.Execution, "<data id='started'> expr failed to evaluate")
+                raisePlatformError(AHybridInvokeCarriesItsArgumentsEvent.Error.Execution, ErrorReason.EXPRESSION_FAILED, "<data id='started'> expr failed to evaluate")
             }
         }
         // §scxml-6.4: 'paramsOk' takes a value its invoke handed it, in place of its own
@@ -407,7 +407,7 @@ class AHybridInvokeCarriesItsArgumentsStateMachine(
             try {
                 engine.setVariable(sid, "paramsOk", engine.evaluateExpr(sid, com.sce.runtime.ScriptSource.lua("0", "0")))
             } catch (e: Exception) {
-                raisePlatformError(AHybridInvokeCarriesItsArgumentsEvent.Error.Execution, "<data id='paramsOk'> expr failed to evaluate")
+                raisePlatformError(AHybridInvokeCarriesItsArgumentsEvent.Error.Execution, ErrorReason.EXPRESSION_FAILED, "<data id='paramsOk'> expr failed to evaluate")
             }
         }
         // §scxml-6.4: 'namelistOk' takes a value its invoke handed it, in place of its own
@@ -416,7 +416,7 @@ class AHybridInvokeCarriesItsArgumentsStateMachine(
             try {
                 engine.setVariable(sid, "namelistOk", engine.evaluateExpr(sid, com.sce.runtime.ScriptSource.lua("0", "0")))
             } catch (e: Exception) {
-                raisePlatformError(AHybridInvokeCarriesItsArgumentsEvent.Error.Execution, "<data id='namelistOk'> expr failed to evaluate")
+                raisePlatformError(AHybridInvokeCarriesItsArgumentsEvent.Error.Execution, ErrorReason.EXPRESSION_FAILED, "<data id='namelistOk'> expr failed to evaluate")
             }
         }
     }
@@ -446,14 +446,14 @@ class AHybridInvokeCarriesItsArgumentsStateMachine(
 
     // W3C SCXML 5.9.1: a cond that cannot be evaluated raises error.execution;
     // `null` says so, where a bare `false` could not.
-    private fun evaluateGuardRaising(guardExpr: com.sce.runtime.ScriptSource, reason: String): Boolean? {
+    private fun evaluateGuardRaising(guardExpr: com.sce.runtime.ScriptSource, detail: String): Boolean? {
         assertScriptSession()
         val engine = scriptEngine ?: error("scriptEngine is required (codegen invariant: needs_script_engine == true)")
         val sid = scriptSessionId ?: error("scriptSessionId is established by the start (codegen invariant)")
         return try {
             engine.evaluateCondition(sid, guardExpr)
         } catch (e: Exception) {
-            raisePlatformError(AHybridInvokeCarriesItsArgumentsEvent.Error.Execution, reason)
+            raisePlatformError(AHybridInvokeCarriesItsArgumentsEvent.Error.Execution, ErrorReason.EXPRESSION_FAILED, detail)
             null
         }
     }
@@ -494,7 +494,7 @@ class AHybridInvokeCarriesItsArgumentsStateMachine(
         return try {
             engine.evaluateExpr(sid, serialized)?.toString() ?: ""
         } catch (e: Exception) {
-            raisePlatformError(AHybridInvokeCarriesItsArgumentsEvent.Error.Execution, "an expression could not be serialised to JSON")
+            raisePlatformError(AHybridInvokeCarriesItsArgumentsEvent.Error.Execution, ErrorReason.EXPRESSION_FAILED, "an expression could not be serialised to JSON")
             ""
         }
     }
@@ -515,7 +515,7 @@ class AHybridInvokeCarriesItsArgumentsStateMachine(
             engine.assign(sid, location, expr)
             true
         } catch (e: Exception) {
-            raisePlatformError(AHybridInvokeCarriesItsArgumentsEvent.Error.Execution, "<assign> failed")
+            raisePlatformError(AHybridInvokeCarriesItsArgumentsEvent.Error.Execution, ErrorReason.ASSIGNMENT_FAILED, "<assign> failed")
             false
         }
     }
@@ -531,7 +531,7 @@ class AHybridInvokeCarriesItsArgumentsStateMachine(
             engine.executeScript(sid, script)
             true
         } catch (e: Exception) {
-            raisePlatformError(AHybridInvokeCarriesItsArgumentsEvent.Error.Execution, "<script> failed to execute")
+            raisePlatformError(AHybridInvokeCarriesItsArgumentsEvent.Error.Execution, ErrorReason.SCRIPT_FAILED, "<script> failed to execute")
             false
         }
     }
@@ -754,7 +754,7 @@ class AHybridInvokeCarriesItsArgumentsStateMachine(
                                 null
                             }
                             if (filePath == null) {
-                                raisePlatformError(AHybridInvokeCarriesItsArgumentsEvent.Error.Execution, "<invoke srcexpr='pick'> could not be evaluated")
+                                raisePlatformError(AHybridInvokeCarriesItsArgumentsEvent.Error.Execution, ErrorReason.EXPRESSION_FAILED, "<invoke srcexpr='pick'> could not be evaluated")
                                 return@deferInvoke
                             }
                             // §scxml-6.4 + SCE_ACCEPTED_SUBSET.md §2.13: the value
@@ -771,7 +771,7 @@ class AHybridInvokeCarriesItsArgumentsStateMachine(
                                 else -> {
                                     // The failure the Interpreter reports when a
                                     // document will not load: nothing to create.
-                                    raisePlatformError(AHybridInvokeCarriesItsArgumentsEvent.Error.Execution, "<invoke srcexpr='pick'> evaluated to a document it did not declare")
+                                    raisePlatformError(AHybridInvokeCarriesItsArgumentsEvent.Error.Execution, ErrorReason.INVOKE_SRC_NOT_FOUND, "<invoke srcexpr='pick'> evaluated to a document it did not declare")
                                     return@deferInvoke
                                 }
                             }
@@ -783,7 +783,7 @@ class AHybridInvokeCarriesItsArgumentsStateMachine(
                         val sidInv = scriptSessionId ?: error("scriptSessionId is established by the start (codegen invariant)")
                         val invokeParams = mutableMapOf<String, Any?>()
                         if (!(engineInv.hasVariable(sidInv, "seed"))) {
-                            raisePlatformError(AHybridInvokeCarriesItsArgumentsEvent.Error.Execution, "<invoke> namelist names a location that cannot be read")
+                            raisePlatformError(AHybridInvokeCarriesItsArgumentsEvent.Error.Execution, ErrorReason.LOCATION_INVALID, "<invoke> namelist names a location that cannot be read")
                             return@deferInvoke
                         }
                         invokeParams["seed"] = engineInv.getVariable(sidInv, "seed")
@@ -794,7 +794,7 @@ class AHybridInvokeCarriesItsArgumentsStateMachine(
                             // W3C SCXML 6.4: the child could not be started. Evaluation
                             // failure no longer reaches here — it has its own raise above,
                             // under the one wording every emitter uses for that fact.
-                            raisePlatformError(AHybridInvokeCarriesItsArgumentsEvent.Error.Execution, "<invoke> could not start a child")
+                            raisePlatformError(AHybridInvokeCarriesItsArgumentsEvent.Error.Execution, ErrorReason.INVOKE_CHILD_INIT_FAILED, "<invoke> could not start a child")
                         }
                     }
                 }
@@ -824,7 +824,7 @@ class AHybridInvokeCarriesItsArgumentsStateMachine(
                                 null
                             }
                             if (filePath == null) {
-                                raisePlatformError(AHybridInvokeCarriesItsArgumentsEvent.Error.Execution, "<invoke srcexpr='pick'> could not be evaluated")
+                                raisePlatformError(AHybridInvokeCarriesItsArgumentsEvent.Error.Execution, ErrorReason.EXPRESSION_FAILED, "<invoke srcexpr='pick'> could not be evaluated")
                                 return@deferInvoke
                             }
                             // §scxml-6.4 + SCE_ACCEPTED_SUBSET.md §2.13: the value
@@ -841,7 +841,7 @@ class AHybridInvokeCarriesItsArgumentsStateMachine(
                                 else -> {
                                     // The failure the Interpreter reports when a
                                     // document will not load: nothing to create.
-                                    raisePlatformError(AHybridInvokeCarriesItsArgumentsEvent.Error.Execution, "<invoke srcexpr='pick'> evaluated to a document it did not declare")
+                                    raisePlatformError(AHybridInvokeCarriesItsArgumentsEvent.Error.Execution, ErrorReason.INVOKE_SRC_NOT_FOUND, "<invoke srcexpr='pick'> evaluated to a document it did not declare")
                                     return@deferInvoke
                                 }
                             }
@@ -859,7 +859,7 @@ class AHybridInvokeCarriesItsArgumentsStateMachine(
                         try {
                             invokeParams["seed"] = engineInv.evaluateExpr(sidInv, com.sce.runtime.ScriptSource.lua("_scxml_add(seed, 1)", "seed + 1"))
                         } catch (_: Exception) {
-                            raisePlatformError(AHybridInvokeCarriesItsArgumentsEvent.Error.Execution, "<invoke> <param name='seed'> could not be read")
+                            raisePlatformError(AHybridInvokeCarriesItsArgumentsEvent.Error.Execution, ErrorReason.LOCATION_INVALID, "<invoke> <param name='seed'> could not be read")
                         }
                         // §scxml-5.7.1: a `<param>` that will not evaluate costs
                         // `error.execution` AND the name and value — nothing else: the
@@ -868,9 +868,9 @@ class AHybridInvokeCarriesItsArgumentsStateMachine(
                         try {
                             invokeParams["fromLoc"] = engineInv.evaluateExpr(sidInv, com.sce.runtime.ScriptSource.lua("v", "v"))
                         } catch (_: Exception) {
-                            raisePlatformError(AHybridInvokeCarriesItsArgumentsEvent.Error.Execution, "<invoke> <param name='fromLoc'> could not be read")
+                            raisePlatformError(AHybridInvokeCarriesItsArgumentsEvent.Error.Execution, ErrorReason.LOCATION_INVALID, "<invoke> <param name='fromLoc'> could not be read")
                         }
-                        raisePlatformError(AHybridInvokeCarriesItsArgumentsEvent.Error.Execution, "<invoke> <param name='emptyLoc'> names no location")
+                        raisePlatformError(AHybridInvokeCarriesItsArgumentsEvent.Error.Execution, ErrorReason.LOCATION_INVALID, "<invoke> <param name='emptyLoc'> names no location")
                         // §scxml-5.7.1: a `<param>` that will not evaluate costs
                         // `error.execution` AND the name and value — nothing else: the
                         // child still starts. The map insert is inside the `try`, so a
@@ -878,7 +878,7 @@ class AHybridInvokeCarriesItsArgumentsStateMachine(
                         try {
                             invokeParams["nowhere"] = engineInv.evaluateExpr(sidInv, com.sce.runtime.ScriptSource.lua("\"leaked\"", "'leaked'"))
                         } catch (_: Exception) {
-                            raisePlatformError(AHybridInvokeCarriesItsArgumentsEvent.Error.Execution, "<invoke> <param name='nowhere'> could not be read")
+                            raisePlatformError(AHybridInvokeCarriesItsArgumentsEvent.Error.Execution, ErrorReason.LOCATION_INVALID, "<invoke> <param name='nowhere'> could not be read")
                         }
 
                             setInvokeParams(childSM, invokeParams)
@@ -887,7 +887,7 @@ class AHybridInvokeCarriesItsArgumentsStateMachine(
                             // W3C SCXML 6.4: the child could not be started. Evaluation
                             // failure no longer reaches here — it has its own raise above,
                             // under the one wording every emitter uses for that fact.
-                            raisePlatformError(AHybridInvokeCarriesItsArgumentsEvent.Error.Execution, "<invoke> could not start a child")
+                            raisePlatformError(AHybridInvokeCarriesItsArgumentsEvent.Error.Execution, ErrorReason.INVOKE_CHILD_INIT_FAILED, "<invoke> could not start a child")
                         }
                     }
                 }
@@ -917,7 +917,7 @@ class AHybridInvokeCarriesItsArgumentsStateMachine(
                                 null
                             }
                             if (filePath == null) {
-                                raisePlatformError(AHybridInvokeCarriesItsArgumentsEvent.Error.Execution, "<invoke srcexpr='pick'> could not be evaluated")
+                                raisePlatformError(AHybridInvokeCarriesItsArgumentsEvent.Error.Execution, ErrorReason.EXPRESSION_FAILED, "<invoke srcexpr='pick'> could not be evaluated")
                                 return@deferInvoke
                             }
                             // §scxml-6.4 + SCE_ACCEPTED_SUBSET.md §2.13: the value
@@ -934,7 +934,7 @@ class AHybridInvokeCarriesItsArgumentsStateMachine(
                                 else -> {
                                     // The failure the Interpreter reports when a
                                     // document will not load: nothing to create.
-                                    raisePlatformError(AHybridInvokeCarriesItsArgumentsEvent.Error.Execution, "<invoke srcexpr='pick'> evaluated to a document it did not declare")
+                                    raisePlatformError(AHybridInvokeCarriesItsArgumentsEvent.Error.Execution, ErrorReason.INVOKE_SRC_NOT_FOUND, "<invoke srcexpr='pick'> evaluated to a document it did not declare")
                                     return@deferInvoke
                                 }
                             }
@@ -946,7 +946,7 @@ class AHybridInvokeCarriesItsArgumentsStateMachine(
                         val sidInv = scriptSessionId ?: error("scriptSessionId is established by the start (codegen invariant)")
                         val invokeParams = mutableMapOf<String, Any?>()
                         if (!(engineInv.hasVariable(sidInv, "undeclaredA"))) {
-                            raisePlatformError(AHybridInvokeCarriesItsArgumentsEvent.Error.Execution, "<invoke> namelist names a location that cannot be read")
+                            raisePlatformError(AHybridInvokeCarriesItsArgumentsEvent.Error.Execution, ErrorReason.LOCATION_INVALID, "<invoke> namelist names a location that cannot be read")
                             return@deferInvoke
                         }
                         invokeParams["undeclaredA"] = engineInv.getVariable(sidInv, "undeclaredA")
@@ -957,7 +957,7 @@ class AHybridInvokeCarriesItsArgumentsStateMachine(
                         try {
                             invokeParams["seed"] = engineInv.evaluateExpr(sidInv, com.sce.runtime.ScriptSource.lua("seed", "seed"))
                         } catch (_: Exception) {
-                            raisePlatformError(AHybridInvokeCarriesItsArgumentsEvent.Error.Execution, "<invoke> <param name='seed'> could not be read")
+                            raisePlatformError(AHybridInvokeCarriesItsArgumentsEvent.Error.Execution, ErrorReason.LOCATION_INVALID, "<invoke> <param name='seed'> could not be read")
                         }
 
                             setInvokeParams(childSM, invokeParams)
@@ -966,7 +966,7 @@ class AHybridInvokeCarriesItsArgumentsStateMachine(
                             // W3C SCXML 6.4: the child could not be started. Evaluation
                             // failure no longer reaches here — it has its own raise above,
                             // under the one wording every emitter uses for that fact.
-                            raisePlatformError(AHybridInvokeCarriesItsArgumentsEvent.Error.Execution, "<invoke> could not start a child")
+                            raisePlatformError(AHybridInvokeCarriesItsArgumentsEvent.Error.Execution, ErrorReason.INVOKE_CHILD_INIT_FAILED, "<invoke> could not start a child")
                         }
                     }
                 }

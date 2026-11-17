@@ -219,7 +219,7 @@ class ATargetExpressionIsRoutedAsItsLiteralIsSceSynthInvokeKidStateMachine(
             try {
                 engine.setVariable(sid, "tParent", engine.evaluateExpr(sid, com.sce.runtime.ScriptSource.lua("\"#_parent\"", "'#_parent'")))
             } catch (e: Exception) {
-                raisePlatformError(ATargetExpressionIsRoutedAsItsLiteralIsSceSynthInvokeKidEvent.Error.Execution, "<data id='tParent'> expr failed to evaluate")
+                raisePlatformError(ATargetExpressionIsRoutedAsItsLiteralIsSceSynthInvokeKidEvent.Error.Execution, ErrorReason.EXPRESSION_FAILED, "<data id='tParent'> expr failed to evaluate")
             }
         }
     }
@@ -249,14 +249,14 @@ class ATargetExpressionIsRoutedAsItsLiteralIsSceSynthInvokeKidStateMachine(
 
     // W3C SCXML 5.9.1: a cond that cannot be evaluated raises error.execution;
     // `null` says so, where a bare `false` could not.
-    private fun evaluateGuardRaising(guardExpr: com.sce.runtime.ScriptSource, reason: String): Boolean? {
+    private fun evaluateGuardRaising(guardExpr: com.sce.runtime.ScriptSource, detail: String): Boolean? {
         assertScriptSession()
         val engine = scriptEngine ?: error("scriptEngine is required (codegen invariant: needs_script_engine == true)")
         val sid = scriptSessionId ?: error("scriptSessionId is established by the start (codegen invariant)")
         return try {
             engine.evaluateCondition(sid, guardExpr)
         } catch (e: Exception) {
-            raisePlatformError(ATargetExpressionIsRoutedAsItsLiteralIsSceSynthInvokeKidEvent.Error.Execution, reason)
+            raisePlatformError(ATargetExpressionIsRoutedAsItsLiteralIsSceSynthInvokeKidEvent.Error.Execution, ErrorReason.EXPRESSION_FAILED, detail)
             null
         }
     }
@@ -297,7 +297,7 @@ class ATargetExpressionIsRoutedAsItsLiteralIsSceSynthInvokeKidStateMachine(
         return try {
             engine.evaluateExpr(sid, serialized)?.toString() ?: ""
         } catch (e: Exception) {
-            raisePlatformError(ATargetExpressionIsRoutedAsItsLiteralIsSceSynthInvokeKidEvent.Error.Execution, "an expression could not be serialised to JSON")
+            raisePlatformError(ATargetExpressionIsRoutedAsItsLiteralIsSceSynthInvokeKidEvent.Error.Execution, ErrorReason.EXPRESSION_FAILED, "an expression could not be serialised to JSON")
             ""
         }
     }
@@ -318,7 +318,7 @@ class ATargetExpressionIsRoutedAsItsLiteralIsSceSynthInvokeKidStateMachine(
             engine.assign(sid, location, expr)
             true
         } catch (e: Exception) {
-            raisePlatformError(ATargetExpressionIsRoutedAsItsLiteralIsSceSynthInvokeKidEvent.Error.Execution, "<assign> failed")
+            raisePlatformError(ATargetExpressionIsRoutedAsItsLiteralIsSceSynthInvokeKidEvent.Error.Execution, ErrorReason.ASSIGNMENT_FAILED, "<assign> failed")
             false
         }
     }
@@ -334,7 +334,7 @@ class ATargetExpressionIsRoutedAsItsLiteralIsSceSynthInvokeKidStateMachine(
             engine.executeScript(sid, script)
             true
         } catch (e: Exception) {
-            raisePlatformError(ATargetExpressionIsRoutedAsItsLiteralIsSceSynthInvokeKidEvent.Error.Execution, "<script> failed to execute")
+            raisePlatformError(ATargetExpressionIsRoutedAsItsLiteralIsSceSynthInvokeKidEvent.Error.Execution, ErrorReason.SCRIPT_FAILED, "<script> failed to execute")
             false
         }
     }
@@ -446,7 +446,7 @@ class ATargetExpressionIsRoutedAsItsLiteralIsSceSynthInvokeKidStateMachine(
             // no parent — error.communication, nothing delivered, the block ended.
             val toParent = onSendToParent
             if (toParent == null) {
-                raisePlatformError(ATargetExpressionIsRoutedAsItsLiteralIsSceSynthInvokeKidEvent.Error.Communication, "<send target='#_parent'> has no parent session to reach", "__send_4")
+                raisePlatformError(ATargetExpressionIsRoutedAsItsLiteralIsSceSynthInvokeKidEvent.Error.Communication, ErrorReason.TARGET_UNREACHABLE, "<send target='#_parent'> has no parent session to reach", "__send_4")
                 return@send true
             }
             toParent("hello", sendData)
@@ -512,19 +512,19 @@ class ATargetExpressionIsRoutedAsItsLiteralIsSceSynthInvokeKidStateMachine(
             val _rt = try {
                 valueToWireString(argEngine.evaluateExpr(argSid, com.sce.runtime.ScriptSource.lua("tParent", "tParent")))
             } catch (_: Exception) {
-                raisePlatformError(ATargetExpressionIsRoutedAsItsLiteralIsSceSynthInvokeKidEvent.Error.Execution, "<send> targetexpr could not be evaluated", "__send_0")
+                raisePlatformError(ATargetExpressionIsRoutedAsItsLiteralIsSceSynthInvokeKidEvent.Error.Execution, ErrorReason.EXPRESSION_FAILED, "<send> targetexpr could not be evaluated", "__send_0")
                 return@send true
             }
             if (com.sce.runtime.SendHelper.isInvalidTarget(_rt)) {
                 // W3C SCXML 6.2 (test194): refused as a static one is.
-                raisePlatformError(ATargetExpressionIsRoutedAsItsLiteralIsSceSynthInvokeKidEvent.Error.Execution, "<send> targetexpr produced a target this processor cannot address", "__send_0")
+                raisePlatformError(ATargetExpressionIsRoutedAsItsLiteralIsSceSynthInvokeKidEvent.Error.Execution, ErrorReason.SEND_TARGET_INVALID, "<send> targetexpr produced a target this processor cannot address", "__send_0")
                 return@send true
             }
             if (com.sce.runtime.SendHelper.isUnreachableTarget(_rt)) {
                 // W3C SCXML C.1 (test496): a target that names nothing is not
                 // reachable — error.communication, nothing delivered, and the
                 // error ends the block as any other would (W3C SCXML 4.9).
-                raisePlatformError(ATargetExpressionIsRoutedAsItsLiteralIsSceSynthInvokeKidEvent.Error.Communication, "<send> targetexpr evaluated to nothing, so there is no target to reach", "__send_0")
+                raisePlatformError(ATargetExpressionIsRoutedAsItsLiteralIsSceSynthInvokeKidEvent.Error.Communication, ErrorReason.TARGET_UNREACHABLE, "<send> targetexpr evaluated to nothing, so there is no target to reach", "__send_0")
                 return@send true
             }
             val sendData = ""
@@ -555,7 +555,7 @@ class ATargetExpressionIsRoutedAsItsLiteralIsSceSynthInvokeKidStateMachine(
             // event as an undeclared type, so a wiring mistake cannot read
             // as success.
             if (hostServed == null && !hasEventProcessor("sce:mesh")) {
-                raisePlatformError(ATargetExpressionIsRoutedAsItsLiteralIsSceSynthInvokeKidEvent.Error.Execution, "<send type='sce:mesh'> names a processor the host declared but never registered", "__send_0")
+                raisePlatformError(ATargetExpressionIsRoutedAsItsLiteralIsSceSynthInvokeKidEvent.Error.Execution, ErrorReason.PROCESSOR_UNREGISTERED, "<send type='sce:mesh'> names a processor the host declared but never registered", "__send_0")
             }
             } else {
             // W3C SCXML 6.2.4 + C.1: a targetexpr is a target — the value is
@@ -572,11 +572,11 @@ ATargetExpressionIsRoutedAsItsLiteralIsSceSynthInvokeKidEvent.KAckNow,
                 ATargetExpressionIsRoutedAsItsLiteralIsSceSynthInvokeKidEvent.Error.Communication,
             )) {
                 com.sce.runtime.TargetSendOutcome.UNSUPPORTED -> {
-                    raisePlatformError(ATargetExpressionIsRoutedAsItsLiteralIsSceSynthInvokeKidEvent.Error.Execution, "<send> targetexpr produced a value that is not a target", "__send_0")
+                    raisePlatformError(ATargetExpressionIsRoutedAsItsLiteralIsSceSynthInvokeKidEvent.Error.Execution, ErrorReason.SEND_TARGET_INVALID, "<send> targetexpr produced a value that is not a target", "__send_0")
                     return@send true
                 }
                 com.sce.runtime.TargetSendOutcome.UNREACHABLE -> {
-                    raisePlatformError(ATargetExpressionIsRoutedAsItsLiteralIsSceSynthInvokeKidEvent.Error.Communication, "<send> targetexpr names a session this processor cannot reach", "__send_0")
+                    raisePlatformError(ATargetExpressionIsRoutedAsItsLiteralIsSceSynthInvokeKidEvent.Error.Communication, ErrorReason.TARGET_UNREACHABLE, "<send> targetexpr names a session this processor cannot reach", "__send_0")
                     return@send true
                 }
                 com.sce.runtime.TargetSendOutcome.SENT -> {}
@@ -603,19 +603,19 @@ ATargetExpressionIsRoutedAsItsLiteralIsSceSynthInvokeKidEvent.KAckNow,
             val _rt = try {
                 valueToWireString(argEngine.evaluateExpr(argSid, com.sce.runtime.ScriptSource.lua("tParent", "tParent")))
             } catch (_: Exception) {
-                raisePlatformError(ATargetExpressionIsRoutedAsItsLiteralIsSceSynthInvokeKidEvent.Error.Execution, "<send> targetexpr could not be evaluated", "__send_1")
+                raisePlatformError(ATargetExpressionIsRoutedAsItsLiteralIsSceSynthInvokeKidEvent.Error.Execution, ErrorReason.EXPRESSION_FAILED, "<send> targetexpr could not be evaluated", "__send_1")
                 return@send true
             }
             if (com.sce.runtime.SendHelper.isInvalidTarget(_rt)) {
                 // W3C SCXML 6.2 (test194): refused as a static one is.
-                raisePlatformError(ATargetExpressionIsRoutedAsItsLiteralIsSceSynthInvokeKidEvent.Error.Execution, "<send> targetexpr produced a target this processor cannot address", "__send_1")
+                raisePlatformError(ATargetExpressionIsRoutedAsItsLiteralIsSceSynthInvokeKidEvent.Error.Execution, ErrorReason.SEND_TARGET_INVALID, "<send> targetexpr produced a target this processor cannot address", "__send_1")
                 return@send true
             }
             if (com.sce.runtime.SendHelper.isUnreachableTarget(_rt)) {
                 // W3C SCXML C.1 (test496): a target that names nothing is not
                 // reachable — error.communication, nothing delivered, and the
                 // error ends the block as any other would (W3C SCXML 4.9).
-                raisePlatformError(ATargetExpressionIsRoutedAsItsLiteralIsSceSynthInvokeKidEvent.Error.Communication, "<send> targetexpr evaluated to nothing, so there is no target to reach", "__send_1")
+                raisePlatformError(ATargetExpressionIsRoutedAsItsLiteralIsSceSynthInvokeKidEvent.Error.Communication, ErrorReason.TARGET_UNREACHABLE, "<send> targetexpr evaluated to nothing, so there is no target to reach", "__send_1")
                 return@send true
             }
             val sendData = ""
@@ -661,11 +661,11 @@ ATargetExpressionIsRoutedAsItsLiteralIsSceSynthInvokeKidEvent.KAckLater,
                 ATargetExpressionIsRoutedAsItsLiteralIsSceSynthInvokeKidEvent.Error.Communication,
             )) {
                 com.sce.runtime.TargetSendOutcome.UNSUPPORTED -> {
-                    raisePlatformError(ATargetExpressionIsRoutedAsItsLiteralIsSceSynthInvokeKidEvent.Error.Execution, "<send> targetexpr produced a value that is not a target", "__send_1")
+                    raisePlatformError(ATargetExpressionIsRoutedAsItsLiteralIsSceSynthInvokeKidEvent.Error.Execution, ErrorReason.SEND_TARGET_INVALID, "<send> targetexpr produced a value that is not a target", "__send_1")
                     return@send true
                 }
                 com.sce.runtime.TargetSendOutcome.UNREACHABLE -> {
-                    raisePlatformError(ATargetExpressionIsRoutedAsItsLiteralIsSceSynthInvokeKidEvent.Error.Communication, "<send> targetexpr names a session this processor cannot reach", "__send_1")
+                    raisePlatformError(ATargetExpressionIsRoutedAsItsLiteralIsSceSynthInvokeKidEvent.Error.Communication, ErrorReason.TARGET_UNREACHABLE, "<send> targetexpr names a session this processor cannot reach", "__send_1")
                     return@send true
                 }
                 com.sce.runtime.TargetSendOutcome.SENT -> {}
@@ -692,19 +692,19 @@ ATargetExpressionIsRoutedAsItsLiteralIsSceSynthInvokeKidEvent.KAckLater,
             val _rt = try {
                 valueToWireString(argEngine.evaluateExpr(argSid, com.sce.runtime.ScriptSource.lua("tParent", "tParent")))
             } catch (_: Exception) {
-                raisePlatformError(ATargetExpressionIsRoutedAsItsLiteralIsSceSynthInvokeKidEvent.Error.Execution, "<send> targetexpr could not be evaluated", "__send_2")
+                raisePlatformError(ATargetExpressionIsRoutedAsItsLiteralIsSceSynthInvokeKidEvent.Error.Execution, ErrorReason.EXPRESSION_FAILED, "<send> targetexpr could not be evaluated", "__send_2")
                 return@send true
             }
             if (com.sce.runtime.SendHelper.isInvalidTarget(_rt)) {
                 // W3C SCXML 6.2 (test194): refused as a static one is.
-                raisePlatformError(ATargetExpressionIsRoutedAsItsLiteralIsSceSynthInvokeKidEvent.Error.Execution, "<send> targetexpr produced a target this processor cannot address", "__send_2")
+                raisePlatformError(ATargetExpressionIsRoutedAsItsLiteralIsSceSynthInvokeKidEvent.Error.Execution, ErrorReason.SEND_TARGET_INVALID, "<send> targetexpr produced a target this processor cannot address", "__send_2")
                 return@send true
             }
             if (com.sce.runtime.SendHelper.isUnreachableTarget(_rt)) {
                 // W3C SCXML C.1 (test496): a target that names nothing is not
                 // reachable — error.communication, nothing delivered, and the
                 // error ends the block as any other would (W3C SCXML 4.9).
-                raisePlatformError(ATargetExpressionIsRoutedAsItsLiteralIsSceSynthInvokeKidEvent.Error.Communication, "<send> targetexpr evaluated to nothing, so there is no target to reach", "__send_2")
+                raisePlatformError(ATargetExpressionIsRoutedAsItsLiteralIsSceSynthInvokeKidEvent.Error.Communication, ErrorReason.TARGET_UNREACHABLE, "<send> targetexpr evaluated to nothing, so there is no target to reach", "__send_2")
                 return@send true
             }
             val sendData = ""
@@ -735,7 +735,7 @@ ATargetExpressionIsRoutedAsItsLiteralIsSceSynthInvokeKidEvent.KAckLater,
             // event as an undeclared type, so a wiring mistake cannot read
             // as success.
             if (hostServed == null && !hasEventProcessor("sce:mesh")) {
-                raisePlatformError(ATargetExpressionIsRoutedAsItsLiteralIsSceSynthInvokeKidEvent.Error.Execution, "<send type='sce:mesh'> names a processor the host declared but never registered", "__send_2")
+                raisePlatformError(ATargetExpressionIsRoutedAsItsLiteralIsSceSynthInvokeKidEvent.Error.Execution, ErrorReason.PROCESSOR_UNREGISTERED, "<send type='sce:mesh'> names a processor the host declared but never registered", "__send_2")
             }
             } else {
             // W3C SCXML 6.2.4 + C.1: a targetexpr is a target — the value is
@@ -752,11 +752,11 @@ ATargetExpressionIsRoutedAsItsLiteralIsSceSynthInvokeKidEvent.SAckNow,
                 ATargetExpressionIsRoutedAsItsLiteralIsSceSynthInvokeKidEvent.Error.Communication,
             )) {
                 com.sce.runtime.TargetSendOutcome.UNSUPPORTED -> {
-                    raisePlatformError(ATargetExpressionIsRoutedAsItsLiteralIsSceSynthInvokeKidEvent.Error.Execution, "<send> targetexpr produced a value that is not a target", "__send_2")
+                    raisePlatformError(ATargetExpressionIsRoutedAsItsLiteralIsSceSynthInvokeKidEvent.Error.Execution, ErrorReason.SEND_TARGET_INVALID, "<send> targetexpr produced a value that is not a target", "__send_2")
                     return@send true
                 }
                 com.sce.runtime.TargetSendOutcome.UNREACHABLE -> {
-                    raisePlatformError(ATargetExpressionIsRoutedAsItsLiteralIsSceSynthInvokeKidEvent.Error.Communication, "<send> targetexpr names a session this processor cannot reach", "__send_2")
+                    raisePlatformError(ATargetExpressionIsRoutedAsItsLiteralIsSceSynthInvokeKidEvent.Error.Communication, ErrorReason.TARGET_UNREACHABLE, "<send> targetexpr names a session this processor cannot reach", "__send_2")
                     return@send true
                 }
                 com.sce.runtime.TargetSendOutcome.SENT -> {}
@@ -783,19 +783,19 @@ ATargetExpressionIsRoutedAsItsLiteralIsSceSynthInvokeKidEvent.SAckNow,
             val _rt = try {
                 valueToWireString(argEngine.evaluateExpr(argSid, com.sce.runtime.ScriptSource.lua("tParent", "tParent")))
             } catch (_: Exception) {
-                raisePlatformError(ATargetExpressionIsRoutedAsItsLiteralIsSceSynthInvokeKidEvent.Error.Execution, "<send> targetexpr could not be evaluated", "__send_3")
+                raisePlatformError(ATargetExpressionIsRoutedAsItsLiteralIsSceSynthInvokeKidEvent.Error.Execution, ErrorReason.EXPRESSION_FAILED, "<send> targetexpr could not be evaluated", "__send_3")
                 return@send true
             }
             if (com.sce.runtime.SendHelper.isInvalidTarget(_rt)) {
                 // W3C SCXML 6.2 (test194): refused as a static one is.
-                raisePlatformError(ATargetExpressionIsRoutedAsItsLiteralIsSceSynthInvokeKidEvent.Error.Execution, "<send> targetexpr produced a target this processor cannot address", "__send_3")
+                raisePlatformError(ATargetExpressionIsRoutedAsItsLiteralIsSceSynthInvokeKidEvent.Error.Execution, ErrorReason.SEND_TARGET_INVALID, "<send> targetexpr produced a target this processor cannot address", "__send_3")
                 return@send true
             }
             if (com.sce.runtime.SendHelper.isUnreachableTarget(_rt)) {
                 // W3C SCXML C.1 (test496): a target that names nothing is not
                 // reachable — error.communication, nothing delivered, and the
                 // error ends the block as any other would (W3C SCXML 4.9).
-                raisePlatformError(ATargetExpressionIsRoutedAsItsLiteralIsSceSynthInvokeKidEvent.Error.Communication, "<send> targetexpr evaluated to nothing, so there is no target to reach", "__send_3")
+                raisePlatformError(ATargetExpressionIsRoutedAsItsLiteralIsSceSynthInvokeKidEvent.Error.Communication, ErrorReason.TARGET_UNREACHABLE, "<send> targetexpr evaluated to nothing, so there is no target to reach", "__send_3")
                 return@send true
             }
             val sendData = ""
@@ -841,11 +841,11 @@ ATargetExpressionIsRoutedAsItsLiteralIsSceSynthInvokeKidEvent.SAckLater,
                 ATargetExpressionIsRoutedAsItsLiteralIsSceSynthInvokeKidEvent.Error.Communication,
             )) {
                 com.sce.runtime.TargetSendOutcome.UNSUPPORTED -> {
-                    raisePlatformError(ATargetExpressionIsRoutedAsItsLiteralIsSceSynthInvokeKidEvent.Error.Execution, "<send> targetexpr produced a value that is not a target", "__send_3")
+                    raisePlatformError(ATargetExpressionIsRoutedAsItsLiteralIsSceSynthInvokeKidEvent.Error.Execution, ErrorReason.SEND_TARGET_INVALID, "<send> targetexpr produced a value that is not a target", "__send_3")
                     return@send true
                 }
                 com.sce.runtime.TargetSendOutcome.UNREACHABLE -> {
-                    raisePlatformError(ATargetExpressionIsRoutedAsItsLiteralIsSceSynthInvokeKidEvent.Error.Communication, "<send> targetexpr names a session this processor cannot reach", "__send_3")
+                    raisePlatformError(ATargetExpressionIsRoutedAsItsLiteralIsSceSynthInvokeKidEvent.Error.Communication, ErrorReason.TARGET_UNREACHABLE, "<send> targetexpr names a session this processor cannot reach", "__send_3")
                     return@send true
                 }
                 com.sce.runtime.TargetSendOutcome.SENT -> {}

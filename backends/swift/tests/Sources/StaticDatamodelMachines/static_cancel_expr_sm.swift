@@ -620,7 +620,7 @@ public final class StaticCancelExprPolicy: InvocablePolicy {
                     let cancelSendID = (try Checked.mul(self.vScale, 2000000000)) > 1 ? "a" : "b"
                     _ = engine.cancelEvent(sendID: cancelSendID)
                 } catch {
-                    engine.raise(EventWithMetadata.platformError(StaticCancelExprEvent.errorExecution, message: "<cancel> sendidexpr failed to evaluate"))
+                    engine.raise(EventWithMetadata.platformError(StaticCancelExprEvent.errorExecution, reason: .expressionFailed, message: "<cancel> sendidexpr failed to evaluate"))
                     break sceBlock  // W3C SCXML 4.9: the error ends the block
                 }
 
@@ -630,7 +630,7 @@ public final class StaticCancelExprPolicy: InvocablePolicy {
                 sceBlock: do {
 
 
-                if ({ () -> Bool in do { let sceValue: String = (try Checked.bounded("b", capacity: 8)); self.vWhich = sceValue } catch { engine.raise(EventWithMetadata.platformError(StaticCancelExprEvent.errorExecution, message: "<assign location='which'>: an integer operation overflowed or failed")); return true }; return false }()) {
+                if ({ () -> Bool in do { let sceValue: String = (try Checked.bounded("b", capacity: 8)); self.vWhich = sceValue } catch { engine.raise(EventWithMetadata.platformError(StaticCancelExprEvent.errorExecution, reason: .expressionFailed, message: "<assign location='which'>: an integer operation overflowed or failed")); return true }; return false }()) {
                     break sceBlock  // W3C SCXML 4.9: the error ends the block
                 }
 
@@ -640,7 +640,7 @@ public final class StaticCancelExprPolicy: InvocablePolicy {
                 sceBlock: do {
 
 
-                if ({ () -> Bool in do { let sceValue: String = (try Checked.bounded("", capacity: 8)); self.vWhich = sceValue } catch { engine.raise(EventWithMetadata.platformError(StaticCancelExprEvent.errorExecution, message: "<assign location='which'>: an integer operation overflowed or failed")); return true }; return false }()) {
+                if ({ () -> Bool in do { let sceValue: String = (try Checked.bounded("", capacity: 8)); self.vWhich = sceValue } catch { engine.raise(EventWithMetadata.platformError(StaticCancelExprEvent.errorExecution, reason: .expressionFailed, message: "<assign location='which'>: an integer operation overflowed or failed")); return true }; return false }()) {
                     break sceBlock  // W3C SCXML 4.9: the error ends the block
                 }
 
@@ -650,7 +650,7 @@ public final class StaticCancelExprPolicy: InvocablePolicy {
                 sceBlock: do {
 
 
-                if ({ () -> Bool in do { let sceValue: UInt32 = (try Checked.add(self.vAFired, 1)); self.vAFired = sceValue } catch { engine.raise(EventWithMetadata.platformError(StaticCancelExprEvent.errorExecution, message: "<assign location='a_fired'>: an integer operation overflowed or failed")); return true }; return false }()) {
+                if ({ () -> Bool in do { let sceValue: UInt32 = (try Checked.add(self.vAFired, 1)); self.vAFired = sceValue } catch { engine.raise(EventWithMetadata.platformError(StaticCancelExprEvent.errorExecution, reason: .expressionFailed, message: "<assign location='a_fired'>: an integer operation overflowed or failed")); return true }; return false }()) {
                     break sceBlock  // W3C SCXML 4.9: the error ends the block
                 }
 
@@ -660,7 +660,7 @@ public final class StaticCancelExprPolicy: InvocablePolicy {
                 sceBlock: do {
 
 
-                if ({ () -> Bool in do { let sceValue: UInt32 = (try Checked.add(self.vBFired, 1)); self.vBFired = sceValue } catch { engine.raise(EventWithMetadata.platformError(StaticCancelExprEvent.errorExecution, message: "<assign location='b_fired'>: an integer operation overflowed or failed")); return true }; return false }()) {
+                if ({ () -> Bool in do { let sceValue: UInt32 = (try Checked.add(self.vBFired, 1)); self.vBFired = sceValue } catch { engine.raise(EventWithMetadata.platformError(StaticCancelExprEvent.errorExecution, reason: .expressionFailed, message: "<assign location='b_fired'>: an integer operation overflowed or failed")); return true }; return false }()) {
                     break sceBlock  // W3C SCXML 4.9: the error ends the block
                 }
 
@@ -670,7 +670,7 @@ public final class StaticCancelExprPolicy: InvocablePolicy {
                 sceBlock: do {
 
 
-                if ({ () -> Bool in do { let sceValue: UInt32 = (try Checked.add(self.vRefusals, 1)); self.vRefusals = sceValue } catch { engine.raise(EventWithMetadata.platformError(StaticCancelExprEvent.errorExecution, message: "<assign location='refusals'>: an integer operation overflowed or failed")); return true }; return false }()) {
+                if ({ () -> Bool in do { let sceValue: UInt32 = (try Checked.add(self.vRefusals, 1)); self.vRefusals = sceValue } catch { engine.raise(EventWithMetadata.platformError(StaticCancelExprEvent.errorExecution, reason: .expressionFailed, message: "<assign location='refusals'>: an integer operation overflowed or failed")); return true }; return false }()) {
                     break sceBlock  // W3C SCXML 4.9: the error ends the block
                 }
 

@@ -751,7 +751,7 @@ class StaticComposedSendStateMachine(
                 // docs/adr/0086, section 15.6: the list is short of its field's lower
                 // count, so the event is refused whole: one error, nothing delivered,
                 // and the error ends the block (W3C SCXML 6.2.3, 4.9).
-                raisePlatformError(StaticComposedSendEvent.Error.Execution, "<send> <param name='kept'> holds fewer elements than the 1 its field's type declares, so the event is not sent", "__send_1")
+                raisePlatformError(StaticComposedSendEvent.Error.Execution, ErrorReason.PARAM_UNFIT, "<send> <param name='kept'> holds fewer elements than the 1 its field's type declares, so the event is not sent", "__send_1")
                 return@send true
             }
 
@@ -775,7 +775,7 @@ class StaticComposedSendStateMachine(
                     return
                 }
 
-            if (try { vDeliveries = com.sce.forge.runtime.SceChecked.add(vDeliveries, 1.toUInt()); false } catch (_: com.sce.forge.runtime.AlgorithmFailure) { raisePlatformError(StaticComposedSendEvent.Error.Execution, "<assign location='deliveries'>: an integer operation overflowed or failed"); true }) {
+            if (try { vDeliveries = com.sce.forge.runtime.SceChecked.add(vDeliveries, 1.toUInt()); false } catch (_: com.sce.forge.runtime.AlgorithmFailure) { raisePlatformError(StaticComposedSendEvent.Error.Execution, ErrorReason.EXPRESSION_FAILED, "<assign location='deliveries'>: an integer operation overflowed or failed"); true }) {
                 return
             }
 
@@ -787,11 +787,11 @@ class StaticComposedSendStateMachine(
             for ((sce_position_of_i, row) in pendingBatchSentPayload!!.items.withIndex()) {
                 @Suppress("UNUSED_VARIABLE") val i = sce_position_of_i.toUInt()
 
-            if (try { vTagCount = com.sce.forge.runtime.SceChecked.add(vTagCount, (row.tags).size.toUInt()); false } catch (_: com.sce.forge.runtime.AlgorithmFailure) { raisePlatformError(StaticComposedSendEvent.Error.Execution, "<assign location='tag_count'>: an integer operation overflowed or failed"); true }) {
+            if (try { vTagCount = com.sce.forge.runtime.SceChecked.add(vTagCount, (row.tags).size.toUInt()); false } catch (_: com.sce.forge.runtime.AlgorithmFailure) { raisePlatformError(StaticComposedSendEvent.Error.Execution, ErrorReason.EXPRESSION_FAILED, "<assign location='tag_count'>: an integer operation overflowed or failed"); true }) {
                 return
             }
 
-            if (try { vIdSum = com.sce.forge.runtime.SceChecked.add(vIdSum, com.sce.forge.runtime.SceChecked.at(pendingBatchSentPayload!!.items, (i).toLong()).id); false } catch (_: com.sce.forge.runtime.AlgorithmFailure) { raisePlatformError(StaticComposedSendEvent.Error.Execution, "<assign location='id_sum'>: an integer operation overflowed or failed"); true }) {
+            if (try { vIdSum = com.sce.forge.runtime.SceChecked.add(vIdSum, com.sce.forge.runtime.SceChecked.at(pendingBatchSentPayload!!.items, (i).toLong()).id); false } catch (_: com.sce.forge.runtime.AlgorithmFailure) { raisePlatformError(StaticComposedSendEvent.Error.Execution, ErrorReason.EXPRESSION_FAILED, "<assign location='id_sum'>: an integer operation overflowed or failed"); true }) {
                 return
             }
             }
@@ -802,7 +802,7 @@ class StaticComposedSendStateMachine(
 
             for (n in cells) {
 
-            if (try { vCellSum = com.sce.forge.runtime.SceChecked.add(vCellSum, n.toUInt()); false } catch (_: com.sce.forge.runtime.AlgorithmFailure) { raisePlatformError(StaticComposedSendEvent.Error.Execution, "<assign location='cell_sum'>: an integer operation overflowed or failed"); true }) {
+            if (try { vCellSum = com.sce.forge.runtime.SceChecked.add(vCellSum, n.toUInt()); false } catch (_: com.sce.forge.runtime.AlgorithmFailure) { raisePlatformError(StaticComposedSendEvent.Error.Execution, ErrorReason.EXPRESSION_FAILED, "<assign location='cell_sum'>: an integer operation overflowed or failed"); true }) {
                 return
             }
             }
@@ -811,7 +811,7 @@ class StaticComposedSendStateMachine(
 
             for (each in pendingBatchSentPayload!!.late) {
 
-            if (try { vLateSum = com.sce.forge.runtime.SceChecked.add(vLateSum, each.toUInt()); false } catch (_: com.sce.forge.runtime.AlgorithmFailure) { raisePlatformError(StaticComposedSendEvent.Error.Execution, "<assign location='late_sum'>: an integer operation overflowed or failed"); true }) {
+            if (try { vLateSum = com.sce.forge.runtime.SceChecked.add(vLateSum, each.toUInt()); false } catch (_: com.sce.forge.runtime.AlgorithmFailure) { raisePlatformError(StaticComposedSendEvent.Error.Execution, ErrorReason.EXPRESSION_FAILED, "<assign location='late_sum'>: an integer operation overflowed or failed"); true }) {
                 return
             }
             }
@@ -819,12 +819,12 @@ class StaticComposedSendStateMachine(
 
             if ((pendingBatchSentPayload!!.maybe).size.toUInt() > 0.toUInt()) {
 
-            if (try { vFirstMaybe = com.sce.forge.runtime.SceChecked.at(pendingBatchSentPayload!!.maybe, (0).toLong()); false } catch (_: com.sce.forge.runtime.AlgorithmFailure) { raisePlatformError(StaticComposedSendEvent.Error.Execution, "<assign location='first_maybe'>: an integer operation overflowed or failed"); true }) {
+            if (try { vFirstMaybe = com.sce.forge.runtime.SceChecked.at(pendingBatchSentPayload!!.maybe, (0).toLong()); false } catch (_: com.sce.forge.runtime.AlgorithmFailure) { raisePlatformError(StaticComposedSendEvent.Error.Execution, ErrorReason.EXPRESSION_FAILED, "<assign location='first_maybe'>: an integer operation overflowed or failed"); true }) {
                 return
             }
             }
 
-            if (if (vHeld.size < 2) { vHeld = vHeld + (7.toUByte()); false } else { raisePlatformError(StaticComposedSendEvent.Error.Execution, "<sce:append target='held'>: the list already holds its capacity of 2"); true }) {
+            if (if (vHeld.size < 2) { vHeld = vHeld + (7.toUByte()); false } else { raisePlatformError(StaticComposedSendEvent.Error.Execution, ErrorReason.ASSIGNMENT_FAILED, "<sce:append target='held'>: the list already holds its capacity of 2"); true }) {
                 return
             }
 
@@ -837,7 +837,7 @@ class StaticComposedSendStateMachine(
                 // docs/adr/0086, section 15.6: the list is short of its field's lower
                 // count, so the event is refused whole: one error, nothing delivered,
                 // and the error ends the block (W3C SCXML 6.2.3, 4.9).
-                raisePlatformError(StaticComposedSendEvent.Error.Execution, "<send> <param name='kept'> holds fewer elements than the 1 its field's type declares, so the event is not sent", "__send_2")
+                raisePlatformError(StaticComposedSendEvent.Error.Execution, ErrorReason.PARAM_UNFIT, "<send> <param name='kept'> holds fewer elements than the 1 its field's type declares, so the event is not sent", "__send_2")
                 return@send true
             }
 
@@ -888,7 +888,7 @@ class StaticComposedSendStateMachine(
                     return
                 }
 
-            if (try { vCountedDeliveries = com.sce.forge.runtime.SceChecked.add(vCountedDeliveries, 1.toUInt()); false } catch (_: com.sce.forge.runtime.AlgorithmFailure) { raisePlatformError(StaticComposedSendEvent.Error.Execution, "<assign location='counted_deliveries'>: an integer operation overflowed or failed"); true }) {
+            if (try { vCountedDeliveries = com.sce.forge.runtime.SceChecked.add(vCountedDeliveries, 1.toUInt()); false } catch (_: com.sce.forge.runtime.AlgorithmFailure) { raisePlatformError(StaticComposedSendEvent.Error.Execution, ErrorReason.EXPRESSION_FAILED, "<assign location='counted_deliveries'>: an integer operation overflowed or failed"); true }) {
                 return
             }
 
@@ -897,7 +897,7 @@ class StaticComposedSendStateMachine(
 
             for (each in pendingCountedSentPayload!!.kept) {
 
-            if (try { vCountedSum = com.sce.forge.runtime.SceChecked.add(vCountedSum, each.toUInt()); false } catch (_: com.sce.forge.runtime.AlgorithmFailure) { raisePlatformError(StaticComposedSendEvent.Error.Execution, "<assign location='counted_sum'>: an integer operation overflowed or failed"); true }) {
+            if (try { vCountedSum = com.sce.forge.runtime.SceChecked.add(vCountedSum, each.toUInt()); false } catch (_: com.sce.forge.runtime.AlgorithmFailure) { raisePlatformError(StaticComposedSendEvent.Error.Execution, ErrorReason.EXPRESSION_FAILED, "<assign location='counted_sum'>: an integer operation overflowed or failed"); true }) {
                 return
             }
             }
@@ -906,7 +906,7 @@ class StaticComposedSendStateMachine(
     private fun transitionContentOfIdleAt4() {
                 // SCE-MAP: static_composed_send.scxml:135 :: idle :: _transition_4
 
-            if (try { vRefusals = com.sce.forge.runtime.SceChecked.add(vRefusals, 1.toUInt()); false } catch (_: com.sce.forge.runtime.AlgorithmFailure) { raisePlatformError(StaticComposedSendEvent.Error.Execution, "<assign location='refusals'>: an integer operation overflowed or failed"); true }) {
+            if (try { vRefusals = com.sce.forge.runtime.SceChecked.add(vRefusals, 1.toUInt()); false } catch (_: com.sce.forge.runtime.AlgorithmFailure) { raisePlatformError(StaticComposedSendEvent.Error.Execution, ErrorReason.EXPRESSION_FAILED, "<assign location='refusals'>: an integer operation overflowed or failed"); true }) {
                 return
             }
     }

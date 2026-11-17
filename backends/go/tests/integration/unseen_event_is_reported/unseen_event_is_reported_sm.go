@@ -31,6 +31,7 @@ import (
 	"time"
 
 	sce "github.com/newmassrael/sce-go-runtime"
+	sceerrorreason "github.com/newmassrael/sce-go-runtime/generated/error_reason"
 )
 
 // Ensure imports are used
@@ -39,6 +40,9 @@ var (
 	_ = filepath.Join
 	_ = strings.HasPrefix
 	_ = time.Duration(0)
+	// Why an error.* event is raised (sce:std/engine/error_reason,
+	// docs/adr/0106 #111); a machine that raises none still imports it.
+	_ = sceerrorreason.ErrorReasonExpressionFailed
 )
 
 // ======================================================================
@@ -322,7 +326,7 @@ func (p *UnseenEventIsReportedPolicy) InitializeDataModel(eng *sce.Engine[Unseen
 		if err == nil {
 			_ = engine.SetVariable(sessionID, "pokes", result)
 		} else {
-			eng.Raise(sce.NewPlatformError(UnseenEventIsReportedEventErrorExecution, "<data id='pokes'> expr failed to evaluate"))
+			eng.Raise(sce.NewPlatformError(UnseenEventIsReportedEventErrorExecution, sceerrorreason.ErrorReasonExpressionFailed, "<data id='pokes'> expr failed to evaluate"))
 			_ = engine.SetVariable(sessionID, "pokes", nil)
 		}
 	}
@@ -354,12 +358,12 @@ func (p *UnseenEventIsReportedPolicy) evaluateIfCond(guard string, eng *sce.Engi
 // evaluateGuardRaising evaluates a cond, raising error.execution when it cannot
 // be evaluated (W3C SCXML 5.9.1); ok is false then, where a bare false could
 // not say so.
-func (p *UnseenEventIsReportedPolicy) evaluateGuardRaising(guard string, eng *sce.Engine[UnseenEventIsReportedState, UnseenEventIsReportedEvent], reason string) (value bool, ok bool) {
+func (p *UnseenEventIsReportedPolicy) evaluateGuardRaising(guard string, eng *sce.Engine[UnseenEventIsReportedState, UnseenEventIsReportedEvent], detail string) (value bool, ok bool) {
 	p.assertScriptSession()
 	engine := p.ScriptEngine
 	result, err := engine.EvaluateExpression(p.SessionID, guard)
 	if err != nil {
-		eng.Raise(sce.NewPlatformError(UnseenEventIsReportedEventErrorExecution, reason))
+		eng.Raise(sce.NewPlatformError(UnseenEventIsReportedEventErrorExecution, sceerrorreason.ErrorReasonExpressionFailed, detail))
 		return false, false
 	}
 	return sce.ScriptToBool(result), true
@@ -462,7 +466,7 @@ func (p *UnseenEventIsReportedPolicy) SetParamValueInScriptEngine(name string, v
 // failed is left (docs/adr/0098).
 func (p *UnseenEventIsReportedPolicy) declareHandedValue(eng *sce.Engine[UnseenEventIsReportedState, UnseenEventIsReportedEvent], engine sce.IScriptEngine, sessionID, name string, value interface{}) {
 	if err := engine.SetVariable(sessionID, name, value); err != nil {
-		eng.Raise(sce.NewPlatformError(UnseenEventIsReportedEventErrorExecution, "<data id='"+name+"'> could not hold the value its invoking session handed it"))
+		eng.Raise(sce.NewPlatformError(UnseenEventIsReportedEventErrorExecution, sceerrorreason.ErrorReasonDataInitFailed, "<data id='"+name+"'> could not hold the value its invoking session handed it"))
 		_ = engine.SetVariable(sessionID, name, nil)
 	}
 }
@@ -811,7 +815,7 @@ func (p *UnseenEventIsReportedPolicy) ExecuteTransitionContent(source UnseenEven
 
 	// W3C SCXML 5.3: <assign location="pokes" expr="pokes + 1">
 	if err := p.assignVariable(`pokes`, `_scxml_add(pokes, 1)`); err != nil {
-		engine.Raise(sce.NewPlatformError(UnseenEventIsReportedEventErrorExecution, "<assign> to 'pokes' failed"))
+		engine.Raise(sce.NewPlatformError(UnseenEventIsReportedEventErrorExecution, sceerrorreason.ErrorReasonAssignmentFailed, "<assign> to 'pokes' failed"))
 		return  // W3C SCXML 4.9: the error ends the block
 	}
 

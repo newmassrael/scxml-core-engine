@@ -1687,14 +1687,14 @@ public final class RecordListParentPolicy: InvocablePolicy {
                         sender: self.sessionID
                     )
                     if sendRouted == .notSupported {
-                        var sendError = EventWithMetadata.platformError(RecordListParentEvent.errorExecution, message: "<send> target is not a target")
+                        var sendError = EventWithMetadata.platformError(RecordListParentEvent.errorExecution, reason: .sendTargetInvalid, message: "<send> target is not a target")
                         sendError.metadata.sendID = "__send_0"
                         engine.raise(sendError)
 
                         break sceBlock  // W3C SCXML 4.9: the error ends the block
                     }
                     if sendRouted == .notReachable {
-                        var sendError = EventWithMetadata.platformError(RecordListParentEvent.errorCommunication, message: "<send> target names a session this processor cannot reach")
+                        var sendError = EventWithMetadata.platformError(RecordListParentEvent.errorCommunication, reason: .targetUnreachable, message: "<send> target names a session this processor cannot reach")
                         sendError.metadata.sendID = "__send_0"
                         engine.raise(sendError)
 
@@ -1765,14 +1765,14 @@ public final class RecordListParentPolicy: InvocablePolicy {
                         sender: self.sessionID
                     )
                     if sendRouted == .notSupported {
-                        var sendError = EventWithMetadata.platformError(RecordListParentEvent.errorExecution, message: "<send> target is not a target")
+                        var sendError = EventWithMetadata.platformError(RecordListParentEvent.errorExecution, reason: .sendTargetInvalid, message: "<send> target is not a target")
                         sendError.metadata.sendID = "__send_1"
                         engine.raise(sendError)
 
                         break sceBlock  // W3C SCXML 4.9: the error ends the block
                     }
                     if sendRouted == .notReachable {
-                        var sendError = EventWithMetadata.platformError(RecordListParentEvent.errorCommunication, message: "<send> target names a session this processor cannot reach")
+                        var sendError = EventWithMetadata.platformError(RecordListParentEvent.errorCommunication, reason: .targetUnreachable, message: "<send> target names a session this processor cannot reach")
                         sendError.metadata.sendID = "__send_1"
                         engine.raise(sendError)
 
@@ -1835,14 +1835,14 @@ public final class RecordListParentPolicy: InvocablePolicy {
                         sender: self.sessionID
                     )
                     if sendRouted == .notSupported {
-                        var sendError = EventWithMetadata.platformError(RecordListParentEvent.errorExecution, message: "<send> target is not a target")
+                        var sendError = EventWithMetadata.platformError(RecordListParentEvent.errorExecution, reason: .sendTargetInvalid, message: "<send> target is not a target")
                         sendError.metadata.sendID = "__send_2"
                         engine.raise(sendError)
 
                         break sceBlock  // W3C SCXML 4.9: the error ends the block
                     }
                     if sendRouted == .notReachable {
-                        var sendError = EventWithMetadata.platformError(RecordListParentEvent.errorCommunication, message: "<send> target names a session this processor cannot reach")
+                        var sendError = EventWithMetadata.platformError(RecordListParentEvent.errorCommunication, reason: .targetUnreachable, message: "<send> target names a session this processor cannot reach")
                         sendError.metadata.sendID = "__send_2"
                         engine.raise(sendError)
 
@@ -1901,14 +1901,14 @@ public final class RecordListParentPolicy: InvocablePolicy {
                         sender: self.sessionID
                     )
                     if sendRouted == .notSupported {
-                        var sendError = EventWithMetadata.platformError(RecordListParentEvent.errorExecution, message: "<send> target is not a target")
+                        var sendError = EventWithMetadata.platformError(RecordListParentEvent.errorExecution, reason: .sendTargetInvalid, message: "<send> target is not a target")
                         sendError.metadata.sendID = "__send_3"
                         engine.raise(sendError)
 
                         break sceBlock  // W3C SCXML 4.9: the error ends the block
                     }
                     if sendRouted == .notReachable {
-                        var sendError = EventWithMetadata.platformError(RecordListParentEvent.errorCommunication, message: "<send> target names a session this processor cannot reach")
+                        var sendError = EventWithMetadata.platformError(RecordListParentEvent.errorCommunication, reason: .targetUnreachable, message: "<send> target names a session this processor cannot reach")
                         sendError.metadata.sendID = "__send_3"
                         engine.raise(sendError)
 
@@ -1967,14 +1967,14 @@ public final class RecordListParentPolicy: InvocablePolicy {
                         sender: self.sessionID
                     )
                     if sendRouted == .notSupported {
-                        var sendError = EventWithMetadata.platformError(RecordListParentEvent.errorExecution, message: "<send> target is not a target")
+                        var sendError = EventWithMetadata.platformError(RecordListParentEvent.errorExecution, reason: .sendTargetInvalid, message: "<send> target is not a target")
                         sendError.metadata.sendID = "__send_4"
                         engine.raise(sendError)
 
                         break sceBlock  // W3C SCXML 4.9: the error ends the block
                     }
                     if sendRouted == .notReachable {
-                        var sendError = EventWithMetadata.platformError(RecordListParentEvent.errorCommunication, message: "<send> target names a session this processor cannot reach")
+                        var sendError = EventWithMetadata.platformError(RecordListParentEvent.errorCommunication, reason: .targetUnreachable, message: "<send> target names a session this processor cannot reach")
                         sendError.metadata.sendID = "__send_4"
                         engine.raise(sendError)
 
@@ -2029,14 +2029,14 @@ public final class RecordListParentPolicy: InvocablePolicy {
                         sender: self.sessionID
                     )
                     if sendRouted == .notSupported {
-                        var sendError = EventWithMetadata.platformError(RecordListParentEvent.errorExecution, message: "<send> target is not a target")
+                        var sendError = EventWithMetadata.platformError(RecordListParentEvent.errorExecution, reason: .sendTargetInvalid, message: "<send> target is not a target")
                         sendError.metadata.sendID = "__send_5"
                         engine.raise(sendError)
 
                         break sceBlock  // W3C SCXML 4.9: the error ends the block
                     }
                     if sendRouted == .notReachable {
-                        var sendError = EventWithMetadata.platformError(RecordListParentEvent.errorCommunication, message: "<send> target names a session this processor cannot reach")
+                        var sendError = EventWithMetadata.platformError(RecordListParentEvent.errorCommunication, reason: .targetUnreachable, message: "<send> target names a session this processor cannot reach")
                         sendError.metadata.sendID = "__send_5"
                         engine.raise(sendError)
 
@@ -2091,14 +2091,14 @@ public final class RecordListParentPolicy: InvocablePolicy {
                         sender: self.sessionID
                     )
                     if sendRouted == .notSupported {
-                        var sendError = EventWithMetadata.platformError(RecordListParentEvent.errorExecution, message: "<send> target is not a target")
+                        var sendError = EventWithMetadata.platformError(RecordListParentEvent.errorExecution, reason: .sendTargetInvalid, message: "<send> target is not a target")
                         sendError.metadata.sendID = "__send_6"
                         engine.raise(sendError)
 
                         break sceBlock  // W3C SCXML 4.9: the error ends the block
                     }
                     if sendRouted == .notReachable {
-                        var sendError = EventWithMetadata.platformError(RecordListParentEvent.errorCommunication, message: "<send> target names a session this processor cannot reach")
+                        var sendError = EventWithMetadata.platformError(RecordListParentEvent.errorCommunication, reason: .targetUnreachable, message: "<send> target names a session this processor cannot reach")
                         sendError.metadata.sendID = "__send_6"
                         engine.raise(sendError)
 
@@ -2149,14 +2149,14 @@ public final class RecordListParentPolicy: InvocablePolicy {
                         sender: self.sessionID
                     )
                     if sendRouted == .notSupported {
-                        var sendError = EventWithMetadata.platformError(RecordListParentEvent.errorExecution, message: "<send> target is not a target")
+                        var sendError = EventWithMetadata.platformError(RecordListParentEvent.errorExecution, reason: .sendTargetInvalid, message: "<send> target is not a target")
                         sendError.metadata.sendID = "__send_7"
                         engine.raise(sendError)
 
                         break sceBlock  // W3C SCXML 4.9: the error ends the block
                     }
                     if sendRouted == .notReachable {
-                        var sendError = EventWithMetadata.platformError(RecordListParentEvent.errorCommunication, message: "<send> target names a session this processor cannot reach")
+                        var sendError = EventWithMetadata.platformError(RecordListParentEvent.errorCommunication, reason: .targetUnreachable, message: "<send> target names a session this processor cannot reach")
                         sendError.metadata.sendID = "__send_7"
                         engine.raise(sendError)
 
@@ -2211,14 +2211,14 @@ public final class RecordListParentPolicy: InvocablePolicy {
                         sender: self.sessionID
                     )
                     if sendRouted == .notSupported {
-                        var sendError = EventWithMetadata.platformError(RecordListParentEvent.errorExecution, message: "<send> target is not a target")
+                        var sendError = EventWithMetadata.platformError(RecordListParentEvent.errorExecution, reason: .sendTargetInvalid, message: "<send> target is not a target")
                         sendError.metadata.sendID = "__send_8"
                         engine.raise(sendError)
 
                         break sceBlock  // W3C SCXML 4.9: the error ends the block
                     }
                     if sendRouted == .notReachable {
-                        var sendError = EventWithMetadata.platformError(RecordListParentEvent.errorCommunication, message: "<send> target names a session this processor cannot reach")
+                        var sendError = EventWithMetadata.platformError(RecordListParentEvent.errorCommunication, reason: .targetUnreachable, message: "<send> target names a session this processor cannot reach")
                         sendError.metadata.sendID = "__send_8"
                         engine.raise(sendError)
 
@@ -2277,14 +2277,14 @@ public final class RecordListParentPolicy: InvocablePolicy {
                         sender: self.sessionID
                     )
                     if sendRouted == .notSupported {
-                        var sendError = EventWithMetadata.platformError(RecordListParentEvent.errorExecution, message: "<send> target is not a target")
+                        var sendError = EventWithMetadata.platformError(RecordListParentEvent.errorExecution, reason: .sendTargetInvalid, message: "<send> target is not a target")
                         sendError.metadata.sendID = "__send_9"
                         engine.raise(sendError)
 
                         break sceBlock  // W3C SCXML 4.9: the error ends the block
                     }
                     if sendRouted == .notReachable {
-                        var sendError = EventWithMetadata.platformError(RecordListParentEvent.errorCommunication, message: "<send> target names a session this processor cannot reach")
+                        var sendError = EventWithMetadata.platformError(RecordListParentEvent.errorCommunication, reason: .targetUnreachable, message: "<send> target names a session this processor cannot reach")
                         sendError.metadata.sendID = "__send_9"
                         engine.raise(sendError)
 
@@ -2321,7 +2321,7 @@ public final class RecordListParentPolicy: InvocablePolicy {
 
 
 
-                if ({ () -> Bool in do { let sceValue: String = (try Checked.bounded(self.pendingRecordListRegisterPayload.text, capacity: 96)); self.vShown.text = sceValue } catch { engine.raise(EventWithMetadata.platformError(RecordListParentEvent.errorExecution, message: "<assign location='shown.text'>: an integer operation overflowed or failed")); return true }; return false }()) {
+                if ({ () -> Bool in do { let sceValue: String = (try Checked.bounded(self.pendingRecordListRegisterPayload.text, capacity: 96)); self.vShown.text = sceValue } catch { engine.raise(EventWithMetadata.platformError(RecordListParentEvent.errorExecution, reason: .expressionFailed, message: "<assign location='shown.text'>: an integer operation overflowed or failed")); return true }; return false }()) {
                     break sceBlock  // W3C SCXML 4.9: the error ends the block
                 }
 
@@ -2344,7 +2344,7 @@ public final class RecordListParentPolicy: InvocablePolicy {
 
 
 
-                if ({ () -> Bool in do { let sceValue: UInt32 = (try Checked.add(self.vTold, 1)); self.vTold = sceValue } catch { engine.raise(EventWithMetadata.platformError(RecordListParentEvent.errorExecution, message: "<assign location='told'>: an integer operation overflowed or failed")); return true }; return false }()) {
+                if ({ () -> Bool in do { let sceValue: UInt32 = (try Checked.add(self.vTold, 1)); self.vTold = sceValue } catch { engine.raise(EventWithMetadata.platformError(RecordListParentEvent.errorExecution, reason: .expressionFailed, message: "<assign location='told'>: an integer operation overflowed or failed")); return true }; return false }()) {
                     break sceBlock  // W3C SCXML 4.9: the error ends the block
                 }
 
@@ -2373,7 +2373,7 @@ public final class RecordListParentPolicy: InvocablePolicy {
 
 
 
-                if ({ () -> Bool in do { let sceValue: String = (try Checked.bounded(self.pendingRecordListValuePayload.text, capacity: 96)); self.vOther.text = sceValue } catch { engine.raise(EventWithMetadata.platformError(RecordListParentEvent.errorExecution, message: "<assign location='other.text'>: an integer operation overflowed or failed")); return true }; return false }()) {
+                if ({ () -> Bool in do { let sceValue: String = (try Checked.bounded(self.pendingRecordListValuePayload.text, capacity: 96)); self.vOther.text = sceValue } catch { engine.raise(EventWithMetadata.platformError(RecordListParentEvent.errorExecution, reason: .expressionFailed, message: "<assign location='other.text'>: an integer operation overflowed or failed")); return true }; return false }()) {
                     break sceBlock  // W3C SCXML 4.9: the error ends the block
                 }
 
@@ -2392,13 +2392,13 @@ public final class RecordListParentPolicy: InvocablePolicy {
 
                 // SCE Accepted Subset §2.15: <sce:append target="others">
 
-                if ({ () -> Bool in if self.vOthers.count >= 8 { engine.raise(EventWithMetadata.platformError(RecordListParentEvent.errorExecution, message: "<sce:append target='others'>: the list already holds its capacity of 8")); return true }; let sceValue = Checked.element(of: self.vOthers, self.vOther); self.vOthers.append(sceValue); return false }()) {
+                if ({ () -> Bool in if self.vOthers.count >= 8 { engine.raise(EventWithMetadata.platformError(RecordListParentEvent.errorExecution, reason: .assignmentFailed, message: "<sce:append target='others'>: the list already holds its capacity of 8")); return true }; let sceValue = Checked.element(of: self.vOthers, self.vOther); self.vOthers.append(sceValue); return false }()) {
                     break sceBlock  // W3C SCXML 4.9: the error ends the block
                 }
 
 
 
-                if ({ () -> Bool in do { let sceValue: UInt32 = (try Checked.add(self.vTold, 1)); self.vTold = sceValue } catch { engine.raise(EventWithMetadata.platformError(RecordListParentEvent.errorExecution, message: "<assign location='told'>: an integer operation overflowed or failed")); return true }; return false }()) {
+                if ({ () -> Bool in do { let sceValue: UInt32 = (try Checked.add(self.vTold, 1)); self.vTold = sceValue } catch { engine.raise(EventWithMetadata.platformError(RecordListParentEvent.errorExecution, reason: .expressionFailed, message: "<assign location='told'>: an integer operation overflowed or failed")); return true }; return false }()) {
                     break sceBlock  // W3C SCXML 4.9: the error ends the block
                 }
 
@@ -2415,7 +2415,7 @@ public final class RecordListParentPolicy: InvocablePolicy {
 
 
 
-                if ({ () -> Bool in do { let sceValue: UInt32 = (try Checked.add(self.vRefusedCount, 1)); self.vRefusedCount = sceValue } catch { engine.raise(EventWithMetadata.platformError(RecordListParentEvent.errorExecution, message: "<assign location='refusedCount'>: an integer operation overflowed or failed")); return true }; return false }()) {
+                if ({ () -> Bool in do { let sceValue: UInt32 = (try Checked.add(self.vRefusedCount, 1)); self.vRefusedCount = sceValue } catch { engine.raise(EventWithMetadata.platformError(RecordListParentEvent.errorExecution, reason: .expressionFailed, message: "<assign location='refusedCount'>: an integer operation overflowed or failed")); return true }; return false }()) {
                     break sceBlock  // W3C SCXML 4.9: the error ends the block
                 }
 
@@ -2425,7 +2425,7 @@ public final class RecordListParentPolicy: InvocablePolicy {
                 sceBlock: do {
 
 
-                if ({ () -> Bool in do { let sceValue: UInt32 = (try Checked.add(self.vPendingCount, 1)); self.vPendingCount = sceValue } catch { engine.raise(EventWithMetadata.platformError(RecordListParentEvent.errorExecution, message: "<assign location='pendingCount'>: an integer operation overflowed or failed")); return true }; return false }()) {
+                if ({ () -> Bool in do { let sceValue: UInt32 = (try Checked.add(self.vPendingCount, 1)); self.vPendingCount = sceValue } catch { engine.raise(EventWithMetadata.platformError(RecordListParentEvent.errorExecution, reason: .expressionFailed, message: "<assign location='pendingCount'>: an integer operation overflowed or failed")); return true }; return false }()) {
                     break sceBlock  // W3C SCXML 4.9: the error ends the block
                 }
 
@@ -2435,7 +2435,7 @@ public final class RecordListParentPolicy: InvocablePolicy {
                 sceBlock: do {
 
 
-                if ({ () -> Bool in do { let sceValue: UInt32 = (try Checked.add(self.vConfirmedCount, 1)); self.vConfirmedCount = sceValue } catch { engine.raise(EventWithMetadata.platformError(RecordListParentEvent.errorExecution, message: "<assign location='confirmedCount'>: an integer operation overflowed or failed")); return true }; return false }()) {
+                if ({ () -> Bool in do { let sceValue: UInt32 = (try Checked.add(self.vConfirmedCount, 1)); self.vConfirmedCount = sceValue } catch { engine.raise(EventWithMetadata.platformError(RecordListParentEvent.errorExecution, reason: .expressionFailed, message: "<assign location='confirmedCount'>: an integer operation overflowed or failed")); return true }; return false }()) {
                     break sceBlock  // W3C SCXML 4.9: the error ends the block
                 }
 

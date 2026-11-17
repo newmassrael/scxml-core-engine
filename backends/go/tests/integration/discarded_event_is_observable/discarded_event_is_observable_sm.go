@@ -31,6 +31,7 @@ import (
 	"time"
 
 	sce "github.com/newmassrael/sce-go-runtime"
+	sceerrorreason "github.com/newmassrael/sce-go-runtime/generated/error_reason"
 )
 
 // Ensure imports are used
@@ -39,6 +40,9 @@ var (
 	_ = filepath.Join
 	_ = strings.HasPrefix
 	_ = time.Duration(0)
+	// Why an error.* event is raised (sce:std/engine/error_reason,
+	// docs/adr/0106 #111); a machine that raises none still imports it.
+	_ = sceerrorreason.ErrorReasonExpressionFailed
 )
 
 // ======================================================================
@@ -350,7 +354,7 @@ func (p *DiscardedEventIsObservablePolicy) InitializeDataModel(eng *sce.Engine[D
 		if err == nil {
 			_ = engine.SetVariable(sessionID, "pokes", result)
 		} else {
-			eng.Raise(sce.NewPlatformError(DiscardedEventIsObservableEventErrorExecution, "<data id='pokes'> expr failed to evaluate"))
+			eng.Raise(sce.NewPlatformError(DiscardedEventIsObservableEventErrorExecution, sceerrorreason.ErrorReasonExpressionFailed, "<data id='pokes'> expr failed to evaluate"))
 			_ = engine.SetVariable(sessionID, "pokes", nil)
 		}
 	}
@@ -364,7 +368,7 @@ func (p *DiscardedEventIsObservablePolicy) InitializeDataModel(eng *sce.Engine[D
 		if err == nil {
 			_ = engine.SetVariable(sessionID, "nudges", result)
 		} else {
-			eng.Raise(sce.NewPlatformError(DiscardedEventIsObservableEventErrorExecution, "<data id='nudges'> expr failed to evaluate"))
+			eng.Raise(sce.NewPlatformError(DiscardedEventIsObservableEventErrorExecution, sceerrorreason.ErrorReasonExpressionFailed, "<data id='nudges'> expr failed to evaluate"))
 			_ = engine.SetVariable(sessionID, "nudges", nil)
 		}
 	}
@@ -396,12 +400,12 @@ func (p *DiscardedEventIsObservablePolicy) evaluateIfCond(guard string, eng *sce
 // evaluateGuardRaising evaluates a cond, raising error.execution when it cannot
 // be evaluated (W3C SCXML 5.9.1); ok is false then, where a bare false could
 // not say so.
-func (p *DiscardedEventIsObservablePolicy) evaluateGuardRaising(guard string, eng *sce.Engine[DiscardedEventIsObservableState, DiscardedEventIsObservableEvent], reason string) (value bool, ok bool) {
+func (p *DiscardedEventIsObservablePolicy) evaluateGuardRaising(guard string, eng *sce.Engine[DiscardedEventIsObservableState, DiscardedEventIsObservableEvent], detail string) (value bool, ok bool) {
 	p.assertScriptSession()
 	engine := p.ScriptEngine
 	result, err := engine.EvaluateExpression(p.SessionID, guard)
 	if err != nil {
-		eng.Raise(sce.NewPlatformError(DiscardedEventIsObservableEventErrorExecution, reason))
+		eng.Raise(sce.NewPlatformError(DiscardedEventIsObservableEventErrorExecution, sceerrorreason.ErrorReasonExpressionFailed, detail))
 		return false, false
 	}
 	return sce.ScriptToBool(result), true
@@ -504,7 +508,7 @@ func (p *DiscardedEventIsObservablePolicy) SetParamValueInScriptEngine(name stri
 // failed is left (docs/adr/0098).
 func (p *DiscardedEventIsObservablePolicy) declareHandedValue(eng *sce.Engine[DiscardedEventIsObservableState, DiscardedEventIsObservableEvent], engine sce.IScriptEngine, sessionID, name string, value interface{}) {
 	if err := engine.SetVariable(sessionID, name, value); err != nil {
-		eng.Raise(sce.NewPlatformError(DiscardedEventIsObservableEventErrorExecution, "<data id='"+name+"'> could not hold the value its invoking session handed it"))
+		eng.Raise(sce.NewPlatformError(DiscardedEventIsObservableEventErrorExecution, sceerrorreason.ErrorReasonDataInitFailed, "<data id='"+name+"'> could not hold the value its invoking session handed it"))
 		_ = engine.SetVariable(sessionID, name, nil)
 	}
 }
@@ -882,7 +886,7 @@ func (p *DiscardedEventIsObservablePolicy) ExecuteTransitionContent(source Disca
 
 	// W3C SCXML 5.3: <assign location="pokes" expr="pokes + 1">
 	if err := p.assignVariable(`pokes`, `_scxml_add(pokes, 1)`); err != nil {
-		engine.Raise(sce.NewPlatformError(DiscardedEventIsObservableEventErrorExecution, "<assign> to 'pokes' failed"))
+		engine.Raise(sce.NewPlatformError(DiscardedEventIsObservableEventErrorExecution, sceerrorreason.ErrorReasonAssignmentFailed, "<assign> to 'pokes' failed"))
 		return  // W3C SCXML 4.9: the error ends the block
 	}
 
@@ -894,7 +898,7 @@ func (p *DiscardedEventIsObservablePolicy) ExecuteTransitionContent(source Disca
 
 	// W3C SCXML 5.3: <assign location="nudges" expr="nudges + 1">
 	if err := p.assignVariable(`nudges`, `_scxml_add(nudges, 1)`); err != nil {
-		engine.Raise(sce.NewPlatformError(DiscardedEventIsObservableEventErrorExecution, "<assign> to 'nudges' failed"))
+		engine.Raise(sce.NewPlatformError(DiscardedEventIsObservableEventErrorExecution, sceerrorreason.ErrorReasonAssignmentFailed, "<assign> to 'nudges' failed"))
 		return  // W3C SCXML 4.9: the error ends the block
 	}
 

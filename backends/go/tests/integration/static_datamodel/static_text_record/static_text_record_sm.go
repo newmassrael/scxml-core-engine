@@ -31,6 +31,7 @@ import (
 	"time"
 
 	sce "github.com/newmassrael/sce-go-runtime"
+	sceerrorreason "github.com/newmassrael/sce-go-runtime/generated/error_reason"
 	scealgorithm "github.com/newmassrael/sce-forge-runtime/algorithm"
 	sce_text_slot "github.com/newmassrael/sce-go-tests/integration/static_datamodel/text_slot"
 	sce_text_slot_holds "github.com/newmassrael/sce-go-tests/integration/static_datamodel/text_slot_holds"
@@ -44,6 +45,9 @@ var (
 	_ = filepath.Join
 	_ = strings.HasPrefix
 	_ = time.Duration(0)
+	// Why an error.* event is raised (sce:std/engine/error_reason,
+	// docs/adr/0106 #111); a machine that raises none still imports it.
+	_ = sceerrorreason.ErrorReasonExpressionFailed
 	_ scealgorithm.Failure
 )
 
@@ -1082,7 +1086,7 @@ func (p *StaticTextRecordPolicy) ExecuteTransitionContent(source StaticTextRecor
 				}
 
 
-	if func() bool { var sceFailure scealgorithm.Failure; sceValue := StaticTextRecordSlotRecord{slot: p.pendingTextSlotPayload.slot, version: p.pendingTextSlotPayload.version, text: scealgorithm.Bounded(&sceFailure, p.pendingTextSlotPayload.text, 32)}; if sceFailure.Failed() { engine.Raise(sce.NewPlatformError(StaticTextRecordEventErrorExecution, "<assign location='incoming'>: an integer operation overflowed or failed")); return true }; p.vIncoming = sceValue; return false }() {
+	if func() bool { var sceFailure scealgorithm.Failure; sceValue := StaticTextRecordSlotRecord{slot: p.pendingTextSlotPayload.slot, version: p.pendingTextSlotPayload.version, text: scealgorithm.Bounded(&sceFailure, p.pendingTextSlotPayload.text, 32)}; if sceFailure.Failed() { engine.Raise(sce.NewPlatformError(StaticTextRecordEventErrorExecution, sceerrorreason.ErrorReasonExpressionFailed, "<assign location='incoming'>: an integer operation overflowed or failed")); return true }; p.vIncoming = sceValue; return false }() {
 		return  // W3C SCXML 4.9: the error ends the block
 	}
 
@@ -1094,7 +1098,7 @@ func (p *StaticTextRecordPolicy) ExecuteTransitionContent(source StaticTextRecor
 	if sceAdapt_StaticTextRecord_Holds__vv(p.vSlots, p.vIncoming) {
 
 
-	if func() bool { var sceFailure scealgorithm.Failure; sceValue := scealgorithm.AddUint32(&sceFailure, p.vKnown, 1); if sceFailure.Failed() { engine.Raise(sce.NewPlatformError(StaticTextRecordEventErrorExecution, "<assign location='known'>: an integer operation overflowed or failed")); return true }; p.vKnown = sceValue; return false }() {
+	if func() bool { var sceFailure scealgorithm.Failure; sceValue := scealgorithm.AddUint32(&sceFailure, p.vKnown, 1); if sceFailure.Failed() { engine.Raise(sce.NewPlatformError(StaticTextRecordEventErrorExecution, sceerrorreason.ErrorReasonExpressionFailed, "<assign location='known'>: an integer operation overflowed or failed")); return true }; p.vKnown = sceValue; return false }() {
 		return  // W3C SCXML 4.9: the error ends the block
 	}
 
@@ -1103,7 +1107,7 @@ func (p *StaticTextRecordPolicy) ExecuteTransitionContent(source StaticTextRecor
 
 	// SCE Accepted Subset §2.15: <sce:append target="slots">
 
-	if func() bool { var sceFailure scealgorithm.Failure; if len(p.vSlots) >= 16 { engine.Raise(sce.NewPlatformError(StaticTextRecordEventErrorExecution, "<sce:append target='slots'>: the list already holds its capacity of 16")); return true }; sceValue := scealgorithm.ElementOf(p.vSlots, p.vIncoming); if sceFailure.Failed() { engine.Raise(sce.NewPlatformError(StaticTextRecordEventErrorExecution, "<sce:append target='slots'>: an integer operation overflowed or failed")); return true }; p.vSlots = append(p.vSlots, sceValue); return false }() {
+	if func() bool { var sceFailure scealgorithm.Failure; if len(p.vSlots) >= 16 { engine.Raise(sce.NewPlatformError(StaticTextRecordEventErrorExecution, sceerrorreason.ErrorReasonAssignmentFailed, "<sce:append target='slots'>: the list already holds its capacity of 16")); return true }; sceValue := scealgorithm.ElementOf(p.vSlots, p.vIncoming); if sceFailure.Failed() { engine.Raise(sce.NewPlatformError(StaticTextRecordEventErrorExecution, sceerrorreason.ErrorReasonExpressionFailed, "<sce:append target='slots'>: an integer operation overflowed or failed")); return true }; p.vSlots = append(p.vSlots, sceValue); return false }() {
 		return  // W3C SCXML 4.9: the error ends the block
 	}
 
@@ -1114,7 +1118,7 @@ func (p *StaticTextRecordPolicy) ExecuteTransitionContent(source StaticTextRecor
 			func() {
 
 
-	if func() bool { var sceFailure scealgorithm.Failure; sceValue := scealgorithm.Within(&sceFailure, scealgorithm.TakeOutcome(&sceFailure, sceAdapt_StaticTextRecord_Retitled__v(p.vSlots)), 16); if sceFailure.Failed() { engine.Raise(sce.NewPlatformError(StaticTextRecordEventErrorExecution, "<assign location='slots'>: an integer operation overflowed or failed")); return true }; p.vSlots = sceValue; return false }() {
+	if func() bool { var sceFailure scealgorithm.Failure; sceValue := scealgorithm.Within(&sceFailure, scealgorithm.TakeOutcome(&sceFailure, sceAdapt_StaticTextRecord_Retitled__v(p.vSlots)), 16); if sceFailure.Failed() { engine.Raise(sce.NewPlatformError(StaticTextRecordEventErrorExecution, sceerrorreason.ErrorReasonExpressionFailed, "<assign location='slots'>: an integer operation overflowed or failed")); return true }; p.vSlots = sceValue; return false }() {
 		return  // W3C SCXML 4.9: the error ends the block
 	}
 
@@ -1125,7 +1129,7 @@ func (p *StaticTextRecordPolicy) ExecuteTransitionContent(source StaticTextRecor
 			func() {
 
 
-	if func() bool { var sceFailure scealgorithm.Failure; sceValue := scealgorithm.AddUint32(&sceFailure, p.vRefusals, 1); if sceFailure.Failed() { engine.Raise(sce.NewPlatformError(StaticTextRecordEventErrorExecution, "<assign location='refusals'>: an integer operation overflowed or failed")); return true }; p.vRefusals = sceValue; return false }() {
+	if func() bool { var sceFailure scealgorithm.Failure; sceValue := scealgorithm.AddUint32(&sceFailure, p.vRefusals, 1); if sceFailure.Failed() { engine.Raise(sce.NewPlatformError(StaticTextRecordEventErrorExecution, sceerrorreason.ErrorReasonExpressionFailed, "<assign location='refusals'>: an integer operation overflowed or failed")); return true }; p.vRefusals = sceValue; return false }() {
 		return  // W3C SCXML 4.9: the error ends the block
 	}
 

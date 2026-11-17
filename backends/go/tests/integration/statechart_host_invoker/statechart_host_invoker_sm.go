@@ -1,5 +1,5 @@
 // SCE-GENERATED — DO NOT EDIT
-// source-hash: e3e91f36cc7b8591c060b277b157f8471b6940f92608c548338f70603c760055
+// source-hash: f02e6d1d557556839c99891abeba3d1ef7bc15e5821c4215914c8e1ef9ecc561
 
 
 // SPDX-License-Identifier: AGPL-3.0-only WITH AdditionRef-SCE-Linking-Exception OR LicenseRef-SCE-Commercial
@@ -31,6 +31,7 @@ import (
 	"time"
 
 	sce "github.com/newmassrael/sce-go-runtime"
+	sceerrorreason "github.com/newmassrael/sce-go-runtime/generated/error_reason"
 )
 
 // Ensure imports are used
@@ -39,6 +40,9 @@ var (
 	_ = filepath.Join
 	_ = strings.HasPrefix
 	_ = time.Duration(0)
+	// Why an error.* event is raised (sce:std/engine/error_reason,
+	// docs/adr/0106 #111); a machine that raises none still imports it.
+	_ = sceerrorreason.ErrorReasonExpressionFailed
 )
 
 // ======================================================================
@@ -863,7 +867,7 @@ func (p *StatechartHostInvokerPolicy) InitializeDataModel(eng *sce.Engine[Statec
 		if err == nil {
 			_ = engine.SetVariable(sessionID, "started", result)
 		} else {
-			eng.Raise(sce.NewPlatformError(StatechartHostInvokerEventErrorExecution, "<data id='started'> expr failed to evaluate"))
+			eng.Raise(sce.NewPlatformError(StatechartHostInvokerEventErrorExecution, sceerrorreason.ErrorReasonExpressionFailed, "<data id='started'> expr failed to evaluate"))
 			_ = engine.SetVariable(sessionID, "started", nil)
 		}
 	}
@@ -877,7 +881,7 @@ func (p *StatechartHostInvokerPolicy) InitializeDataModel(eng *sce.Engine[Statec
 		if err == nil {
 			_ = engine.SetVariable(sessionID, "started2", result)
 		} else {
-			eng.Raise(sce.NewPlatformError(StatechartHostInvokerEventErrorExecution, "<data id='started2'> expr failed to evaluate"))
+			eng.Raise(sce.NewPlatformError(StatechartHostInvokerEventErrorExecution, sceerrorreason.ErrorReasonExpressionFailed, "<data id='started2'> expr failed to evaluate"))
 			_ = engine.SetVariable(sessionID, "started2", nil)
 		}
 	}
@@ -891,7 +895,7 @@ func (p *StatechartHostInvokerPolicy) InitializeDataModel(eng *sce.Engine[Statec
 		if err == nil {
 			_ = engine.SetVariable(sessionID, "refused", result)
 		} else {
-			eng.Raise(sce.NewPlatformError(StatechartHostInvokerEventErrorExecution, "<data id='refused'> expr failed to evaluate"))
+			eng.Raise(sce.NewPlatformError(StatechartHostInvokerEventErrorExecution, sceerrorreason.ErrorReasonExpressionFailed, "<data id='refused'> expr failed to evaluate"))
 			_ = engine.SetVariable(sessionID, "refused", nil)
 		}
 	}
@@ -905,7 +909,7 @@ func (p *StatechartHostInvokerPolicy) InitializeDataModel(eng *sce.Engine[Statec
 		if err == nil {
 			_ = engine.SetVariable(sessionID, "ended", result)
 		} else {
-			eng.Raise(sce.NewPlatformError(StatechartHostInvokerEventErrorExecution, "<data id='ended'> expr failed to evaluate"))
+			eng.Raise(sce.NewPlatformError(StatechartHostInvokerEventErrorExecution, sceerrorreason.ErrorReasonExpressionFailed, "<data id='ended'> expr failed to evaluate"))
 			_ = engine.SetVariable(sessionID, "ended", nil)
 		}
 	}
@@ -919,7 +923,7 @@ func (p *StatechartHostInvokerPolicy) InitializeDataModel(eng *sce.Engine[Statec
 		if err == nil {
 			_ = engine.SetVariable(sessionID, "entered", result)
 		} else {
-			eng.Raise(sce.NewPlatformError(StatechartHostInvokerEventErrorExecution, "<data id='entered'> expr failed to evaluate"))
+			eng.Raise(sce.NewPlatformError(StatechartHostInvokerEventErrorExecution, sceerrorreason.ErrorReasonExpressionFailed, "<data id='entered'> expr failed to evaluate"))
 			_ = engine.SetVariable(sessionID, "entered", nil)
 		}
 	}
@@ -933,7 +937,7 @@ func (p *StatechartHostInvokerPolicy) InitializeDataModel(eng *sce.Engine[Statec
 		if err == nil {
 			_ = engine.SetVariable(sessionID, "destination", result)
 		} else {
-			eng.Raise(sce.NewPlatformError(StatechartHostInvokerEventErrorExecution, "<data id='destination'> expr failed to evaluate"))
+			eng.Raise(sce.NewPlatformError(StatechartHostInvokerEventErrorExecution, sceerrorreason.ErrorReasonExpressionFailed, "<data id='destination'> expr failed to evaluate"))
 			_ = engine.SetVariable(sessionID, "destination", nil)
 		}
 	}
@@ -947,7 +951,7 @@ func (p *StatechartHostInvokerPolicy) InitializeDataModel(eng *sce.Engine[Statec
 		if err == nil {
 			_ = engine.SetVariable(sessionID, "n", result)
 		} else {
-			eng.Raise(sce.NewPlatformError(StatechartHostInvokerEventErrorExecution, "<data id='n'> expr failed to evaluate"))
+			eng.Raise(sce.NewPlatformError(StatechartHostInvokerEventErrorExecution, sceerrorreason.ErrorReasonExpressionFailed, "<data id='n'> expr failed to evaluate"))
 			_ = engine.SetVariable(sessionID, "n", nil)
 		}
 	}
@@ -961,7 +965,7 @@ func (p *StatechartHostInvokerPolicy) InitializeDataModel(eng *sce.Engine[Statec
 		if err == nil {
 			_ = engine.SetVariable(sessionID, "dropped", result)
 		} else {
-			eng.Raise(sce.NewPlatformError(StatechartHostInvokerEventErrorExecution, "<data id='dropped'> expr failed to evaluate"))
+			eng.Raise(sce.NewPlatformError(StatechartHostInvokerEventErrorExecution, sceerrorreason.ErrorReasonExpressionFailed, "<data id='dropped'> expr failed to evaluate"))
 			_ = engine.SetVariable(sessionID, "dropped", nil)
 		}
 	}
@@ -975,7 +979,7 @@ func (p *StatechartHostInvokerPolicy) InitializeDataModel(eng *sce.Engine[Statec
 		if err == nil {
 			_ = engine.SetVariable(sessionID, "doneId", result)
 		} else {
-			eng.Raise(sce.NewPlatformError(StatechartHostInvokerEventErrorExecution, "<data id='doneId'> expr failed to evaluate"))
+			eng.Raise(sce.NewPlatformError(StatechartHostInvokerEventErrorExecution, sceerrorreason.ErrorReasonExpressionFailed, "<data id='doneId'> expr failed to evaluate"))
 			_ = engine.SetVariable(sessionID, "doneId", nil)
 		}
 	}
@@ -989,7 +993,7 @@ func (p *StatechartHostInvokerPolicy) InitializeDataModel(eng *sce.Engine[Statec
 		if err == nil {
 			_ = engine.SetVariable(sessionID, "matched", result)
 		} else {
-			eng.Raise(sce.NewPlatformError(StatechartHostInvokerEventErrorExecution, "<data id='matched'> expr failed to evaluate"))
+			eng.Raise(sce.NewPlatformError(StatechartHostInvokerEventErrorExecution, sceerrorreason.ErrorReasonExpressionFailed, "<data id='matched'> expr failed to evaluate"))
 			_ = engine.SetVariable(sessionID, "matched", nil)
 		}
 	}
@@ -1003,7 +1007,7 @@ func (p *StatechartHostInvokerPolicy) InitializeDataModel(eng *sce.Engine[Statec
 		if err == nil {
 			_ = engine.SetVariable(sessionID, "slot", result)
 		} else {
-			eng.Raise(sce.NewPlatformError(StatechartHostInvokerEventErrorExecution, "<data id='slot'> expr failed to evaluate"))
+			eng.Raise(sce.NewPlatformError(StatechartHostInvokerEventErrorExecution, sceerrorreason.ErrorReasonExpressionFailed, "<data id='slot'> expr failed to evaluate"))
 			_ = engine.SetVariable(sessionID, "slot", nil)
 		}
 	}
@@ -1017,7 +1021,7 @@ func (p *StatechartHostInvokerPolicy) InitializeDataModel(eng *sce.Engine[Statec
 		if err == nil {
 			_ = engine.SetVariable(sessionID, "slotted", result)
 		} else {
-			eng.Raise(sce.NewPlatformError(StatechartHostInvokerEventErrorExecution, "<data id='slotted'> expr failed to evaluate"))
+			eng.Raise(sce.NewPlatformError(StatechartHostInvokerEventErrorExecution, sceerrorreason.ErrorReasonExpressionFailed, "<data id='slotted'> expr failed to evaluate"))
 			_ = engine.SetVariable(sessionID, "slotted", nil)
 		}
 	}
@@ -1031,7 +1035,7 @@ func (p *StatechartHostInvokerPolicy) InitializeDataModel(eng *sce.Engine[Statec
 		if err == nil {
 			_ = engine.SetVariable(sessionID, "pinged", result)
 		} else {
-			eng.Raise(sce.NewPlatformError(StatechartHostInvokerEventErrorExecution, "<data id='pinged'> expr failed to evaluate"))
+			eng.Raise(sce.NewPlatformError(StatechartHostInvokerEventErrorExecution, sceerrorreason.ErrorReasonExpressionFailed, "<data id='pinged'> expr failed to evaluate"))
 			_ = engine.SetVariable(sessionID, "pinged", nil)
 		}
 	}
@@ -1045,7 +1049,7 @@ func (p *StatechartHostInvokerPolicy) InitializeDataModel(eng *sce.Engine[Statec
 		if err == nil {
 			_ = engine.SetVariable(sessionID, "leaked", result)
 		} else {
-			eng.Raise(sce.NewPlatformError(StatechartHostInvokerEventErrorExecution, "<data id='leaked'> expr failed to evaluate"))
+			eng.Raise(sce.NewPlatformError(StatechartHostInvokerEventErrorExecution, sceerrorreason.ErrorReasonExpressionFailed, "<data id='leaked'> expr failed to evaluate"))
 			_ = engine.SetVariable(sessionID, "leaked", nil)
 		}
 	}
@@ -1059,7 +1063,7 @@ func (p *StatechartHostInvokerPolicy) InitializeDataModel(eng *sce.Engine[Statec
 		if err == nil {
 			_ = engine.SetVariable(sessionID, "lost", result)
 		} else {
-			eng.Raise(sce.NewPlatformError(StatechartHostInvokerEventErrorExecution, "<data id='lost'> expr failed to evaluate"))
+			eng.Raise(sce.NewPlatformError(StatechartHostInvokerEventErrorExecution, sceerrorreason.ErrorReasonExpressionFailed, "<data id='lost'> expr failed to evaluate"))
 			_ = engine.SetVariable(sessionID, "lost", nil)
 		}
 	}
@@ -1073,7 +1077,7 @@ func (p *StatechartHostInvokerPolicy) InitializeDataModel(eng *sce.Engine[Statec
 		if err == nil {
 			_ = engine.SetVariable(sessionID, "expired", result)
 		} else {
-			eng.Raise(sce.NewPlatformError(StatechartHostInvokerEventErrorExecution, "<data id='expired'> expr failed to evaluate"))
+			eng.Raise(sce.NewPlatformError(StatechartHostInvokerEventErrorExecution, sceerrorreason.ErrorReasonExpressionFailed, "<data id='expired'> expr failed to evaluate"))
 			_ = engine.SetVariable(sessionID, "expired", nil)
 		}
 	}
@@ -1087,7 +1091,7 @@ func (p *StatechartHostInvokerPolicy) InitializeDataModel(eng *sce.Engine[Statec
 		if err == nil {
 			_ = engine.SetVariable(sessionID, "finished", result)
 		} else {
-			eng.Raise(sce.NewPlatformError(StatechartHostInvokerEventErrorExecution, "<data id='finished'> expr failed to evaluate"))
+			eng.Raise(sce.NewPlatformError(StatechartHostInvokerEventErrorExecution, sceerrorreason.ErrorReasonExpressionFailed, "<data id='finished'> expr failed to evaluate"))
 			_ = engine.SetVariable(sessionID, "finished", nil)
 		}
 	}
@@ -1101,7 +1105,7 @@ func (p *StatechartHostInvokerPolicy) InitializeDataModel(eng *sce.Engine[Statec
 		if err == nil {
 			_ = engine.SetVariable(sessionID, "misdated", result)
 		} else {
-			eng.Raise(sce.NewPlatformError(StatechartHostInvokerEventErrorExecution, "<data id='misdated'> expr failed to evaluate"))
+			eng.Raise(sce.NewPlatformError(StatechartHostInvokerEventErrorExecution, sceerrorreason.ErrorReasonExpressionFailed, "<data id='misdated'> expr failed to evaluate"))
 			_ = engine.SetVariable(sessionID, "misdated", nil)
 		}
 	}
@@ -1115,7 +1119,7 @@ func (p *StatechartHostInvokerPolicy) InitializeDataModel(eng *sce.Engine[Statec
 		if err == nil {
 			_ = engine.SetVariable(sessionID, "granted", result)
 		} else {
-			eng.Raise(sce.NewPlatformError(StatechartHostInvokerEventErrorExecution, "<data id='granted'> expr failed to evaluate"))
+			eng.Raise(sce.NewPlatformError(StatechartHostInvokerEventErrorExecution, sceerrorreason.ErrorReasonExpressionFailed, "<data id='granted'> expr failed to evaluate"))
 			_ = engine.SetVariable(sessionID, "granted", nil)
 		}
 	}
@@ -1129,7 +1133,7 @@ func (p *StatechartHostInvokerPolicy) InitializeDataModel(eng *sce.Engine[Statec
 		if err == nil {
 			_ = engine.SetVariable(sessionID, "denied", result)
 		} else {
-			eng.Raise(sce.NewPlatformError(StatechartHostInvokerEventErrorExecution, "<data id='denied'> expr failed to evaluate"))
+			eng.Raise(sce.NewPlatformError(StatechartHostInvokerEventErrorExecution, sceerrorreason.ErrorReasonExpressionFailed, "<data id='denied'> expr failed to evaluate"))
 			_ = engine.SetVariable(sessionID, "denied", nil)
 		}
 	}
@@ -1143,7 +1147,7 @@ func (p *StatechartHostInvokerPolicy) InitializeDataModel(eng *sce.Engine[Statec
 		if err == nil {
 			_ = engine.SetVariable(sessionID, "unreadable", result)
 		} else {
-			eng.Raise(sce.NewPlatformError(StatechartHostInvokerEventErrorExecution, "<data id='unreadable'> expr failed to evaluate"))
+			eng.Raise(sce.NewPlatformError(StatechartHostInvokerEventErrorExecution, sceerrorreason.ErrorReasonExpressionFailed, "<data id='unreadable'> expr failed to evaluate"))
 			_ = engine.SetVariable(sessionID, "unreadable", nil)
 		}
 	}
@@ -1157,7 +1161,7 @@ func (p *StatechartHostInvokerPolicy) InitializeDataModel(eng *sce.Engine[Statec
 		if err == nil {
 			_ = engine.SetVariable(sessionID, "scope", result)
 		} else {
-			eng.Raise(sce.NewPlatformError(StatechartHostInvokerEventErrorExecution, "<data id='scope'> expr failed to evaluate"))
+			eng.Raise(sce.NewPlatformError(StatechartHostInvokerEventErrorExecution, sceerrorreason.ErrorReasonExpressionFailed, "<data id='scope'> expr failed to evaluate"))
 			_ = engine.SetVariable(sessionID, "scope", nil)
 		}
 	}
@@ -1171,7 +1175,7 @@ func (p *StatechartHostInvokerPolicy) InitializeDataModel(eng *sce.Engine[Statec
 		if err == nil {
 			_ = engine.SetVariable(sessionID, "level", result)
 		} else {
-			eng.Raise(sce.NewPlatformError(StatechartHostInvokerEventErrorExecution, "<data id='level'> expr failed to evaluate"))
+			eng.Raise(sce.NewPlatformError(StatechartHostInvokerEventErrorExecution, sceerrorreason.ErrorReasonExpressionFailed, "<data id='level'> expr failed to evaluate"))
 			_ = engine.SetVariable(sessionID, "level", nil)
 		}
 	}
@@ -1185,7 +1189,7 @@ func (p *StatechartHostInvokerPolicy) InitializeDataModel(eng *sce.Engine[Statec
 		if err == nil {
 			_ = engine.SetVariable(sessionID, "failed", result)
 		} else {
-			eng.Raise(sce.NewPlatformError(StatechartHostInvokerEventErrorExecution, "<data id='failed'> expr failed to evaluate"))
+			eng.Raise(sce.NewPlatformError(StatechartHostInvokerEventErrorExecution, sceerrorreason.ErrorReasonExpressionFailed, "<data id='failed'> expr failed to evaluate"))
 			_ = engine.SetVariable(sessionID, "failed", nil)
 		}
 	}
@@ -1199,7 +1203,7 @@ func (p *StatechartHostInvokerPolicy) InitializeDataModel(eng *sce.Engine[Statec
 		if err == nil {
 			_ = engine.SetVariable(sessionID, "overturned", result)
 		} else {
-			eng.Raise(sce.NewPlatformError(StatechartHostInvokerEventErrorExecution, "<data id='overturned'> expr failed to evaluate"))
+			eng.Raise(sce.NewPlatformError(StatechartHostInvokerEventErrorExecution, sceerrorreason.ErrorReasonExpressionFailed, "<data id='overturned'> expr failed to evaluate"))
 			_ = engine.SetVariable(sessionID, "overturned", nil)
 		}
 	}
@@ -1213,7 +1217,7 @@ func (p *StatechartHostInvokerPolicy) InitializeDataModel(eng *sce.Engine[Statec
 		if err == nil {
 			_ = engine.SetVariable(sessionID, "unstarted", result)
 		} else {
-			eng.Raise(sce.NewPlatformError(StatechartHostInvokerEventErrorExecution, "<data id='unstarted'> expr failed to evaluate"))
+			eng.Raise(sce.NewPlatformError(StatechartHostInvokerEventErrorExecution, sceerrorreason.ErrorReasonExpressionFailed, "<data id='unstarted'> expr failed to evaluate"))
 			_ = engine.SetVariable(sessionID, "unstarted", nil)
 		}
 	}
@@ -1227,7 +1231,7 @@ func (p *StatechartHostInvokerPolicy) InitializeDataModel(eng *sce.Engine[Statec
 		if err == nil {
 			_ = engine.SetVariable(sessionID, "revived", result)
 		} else {
-			eng.Raise(sce.NewPlatformError(StatechartHostInvokerEventErrorExecution, "<data id='revived'> expr failed to evaluate"))
+			eng.Raise(sce.NewPlatformError(StatechartHostInvokerEventErrorExecution, sceerrorreason.ErrorReasonExpressionFailed, "<data id='revived'> expr failed to evaluate"))
 			_ = engine.SetVariable(sessionID, "revived", nil)
 		}
 	}
@@ -1259,12 +1263,12 @@ func (p *StatechartHostInvokerPolicy) evaluateIfCond(guard string, eng *sce.Engi
 // evaluateGuardRaising evaluates a cond, raising error.execution when it cannot
 // be evaluated (W3C SCXML 5.9.1); ok is false then, where a bare false could
 // not say so.
-func (p *StatechartHostInvokerPolicy) evaluateGuardRaising(guard string, eng *sce.Engine[StatechartHostInvokerState, StatechartHostInvokerEvent], reason string) (value bool, ok bool) {
+func (p *StatechartHostInvokerPolicy) evaluateGuardRaising(guard string, eng *sce.Engine[StatechartHostInvokerState, StatechartHostInvokerEvent], detail string) (value bool, ok bool) {
 	p.assertScriptSession()
 	engine := p.ScriptEngine
 	result, err := engine.EvaluateExpression(p.SessionID, guard)
 	if err != nil {
-		eng.Raise(sce.NewPlatformError(StatechartHostInvokerEventErrorExecution, reason))
+		eng.Raise(sce.NewPlatformError(StatechartHostInvokerEventErrorExecution, sceerrorreason.ErrorReasonExpressionFailed, detail))
 		return false, false
 	}
 	return sce.ScriptToBool(result), true
@@ -1377,7 +1381,7 @@ func (p *StatechartHostInvokerPolicy) SetParamValueInScriptEngine(name string, v
 // failed is left (docs/adr/0098).
 func (p *StatechartHostInvokerPolicy) declareHandedValue(eng *sce.Engine[StatechartHostInvokerState, StatechartHostInvokerEvent], engine sce.IScriptEngine, sessionID, name string, value interface{}) {
 	if err := engine.SetVariable(sessionID, name, value); err != nil {
-		eng.Raise(sce.NewPlatformError(StatechartHostInvokerEventErrorExecution, "<data id='"+name+"'> could not hold the value its invoking session handed it"))
+		eng.Raise(sce.NewPlatformError(StatechartHostInvokerEventErrorExecution, sceerrorreason.ErrorReasonDataInitFailed, "<data id='"+name+"'> could not hold the value its invoking session handed it"))
 		_ = engine.SetVariable(sessionID, name, nil)
 	}
 }
@@ -1416,7 +1420,7 @@ func (p *StatechartHostInvokerPolicy) ExecutePendingInvokes(engine *sce.Engine[S
 			// a location that cannot take the id starts nothing (W3C SCXML
 			// 5.9.2), like any argument that cannot be evaluated.
 			if err := p.storeIDInLocation(`doneId`, "done._invoke_0"); err != nil {
-				engine.Raise(sce.NewPlatformError(StatechartHostInvokerEventErrorExecution, "<invoke idlocation='doneId'> could not take the invoke id"))
+				engine.Raise(sce.NewPlatformError(StatechartHostInvokerEventErrorExecution, sceerrorreason.ErrorReasonLocationInvalid, "<invoke idlocation='doneId'> could not take the invoke id"))
 				continue
 			}
 			hostInvokeParams := map[string][]string{}
@@ -1440,7 +1444,7 @@ func (p *StatechartHostInvokerPolicy) ExecutePendingInvokes(engine *sce.Engine[S
 				// document asked for a process to be run and none was, which
 				// is the same fact as an unsupported type — so the same
 				// event, rather than a silence that reads as started.
-				engine.Raise(sce.NewPlatformError(StatechartHostInvokerEventErrorExecution, "<invoke> names an invoker the host declared but never registered"))
+				engine.Raise(sce.NewPlatformError(StatechartHostInvokerEventErrorExecution, sceerrorreason.ErrorReasonProcessorUnregistered, "<invoke> names an invoker the host declared but never registered"))
 			}
 			continue
 		}
@@ -1460,7 +1464,7 @@ func (p *StatechartHostInvokerPolicy) ExecutePendingInvokes(engine *sce.Engine[S
 			if val, err := p.ScriptEngine.EvaluateExpression(p.SessionID, `destination`); err == nil {
 				hostInvokeSrc = sce.ToWireString(val)
 			} else {
-				engine.Raise(sce.NewPlatformError(StatechartHostInvokerEventErrorExecution, "<invoke srcexpr='destination'> could not be evaluated"))
+				engine.Raise(sce.NewPlatformError(StatechartHostInvokerEventErrorExecution, sceerrorreason.ErrorReasonExpressionFailed, "<invoke srcexpr='destination'> could not be evaluated"))
 				continue
 			}
 			hostInvokeParams := map[string][]string{}
@@ -1483,7 +1487,7 @@ func (p *StatechartHostInvokerPolicy) ExecutePendingInvokes(engine *sce.Engine[S
 				}
 			}
 			if namelistFailed {
-				engine.Raise(sce.NewPlatformError(StatechartHostInvokerEventErrorExecution, "<invoke> namelist names a location that could not be read"))
+				engine.Raise(sce.NewPlatformError(StatechartHostInvokerEventErrorExecution, sceerrorreason.ErrorReasonLocationInvalid, "<invoke> namelist names a location that could not be read"))
 				continue
 			}
 			hostInvokeParams["twice"] = append(hostInvokeParams["twice"], "a")
@@ -1497,7 +1501,7 @@ func (p *StatechartHostInvokerPolicy) ExecutePendingInvokes(engine *sce.Engine[S
 			} else {
 				// W3C SCXML 5.7.1: the pair is dropped AND the failure is
 				// reported.
-				engine.Raise(sce.NewPlatformError(StatechartHostInvokerEventErrorExecution, "<invoke> <param name='twice'> expr failed to evaluate"))
+				engine.Raise(sce.NewPlatformError(StatechartHostInvokerEventErrorExecution, sceerrorreason.ErrorReasonExpressionFailed, "<invoke> <param name='twice'> expr failed to evaluate"))
 			}
 			if paramVal, paramErr := p.ScriptEngine.EvaluateExpression(p.SessionID, `n.nope.deeper`); paramErr == nil {
 				// W3C SCXML C.2: the value crosses as text, rendered by the
@@ -1508,7 +1512,7 @@ func (p *StatechartHostInvokerPolicy) ExecutePendingInvokes(engine *sce.Engine[S
 			} else {
 				// W3C SCXML 5.7.1: the pair is dropped AND the failure is
 				// reported.
-				engine.Raise(sce.NewPlatformError(StatechartHostInvokerEventErrorExecution, "<invoke> <param name='bad'> expr failed to evaluate"))
+				engine.Raise(sce.NewPlatformError(StatechartHostInvokerEventErrorExecution, sceerrorreason.ErrorReasonExpressionFailed, "<invoke> <param name='bad'> expr failed to evaluate"))
 			}
 			hostInvokeEventData := ""
 			if len(hostInvokePayload) > 0 {
@@ -1526,7 +1530,7 @@ func (p *StatechartHostInvokerPolicy) ExecutePendingInvokes(engine *sce.Engine[S
 				// document asked for a process to be run and none was, which
 				// is the same fact as an unsupported type — so the same
 				// event, rather than a silence that reads as started.
-				engine.Raise(sce.NewPlatformError(StatechartHostInvokerEventErrorExecution, "<invoke> names an invoker the host declared but never registered"))
+				engine.Raise(sce.NewPlatformError(StatechartHostInvokerEventErrorExecution, sceerrorreason.ErrorReasonProcessorUnregistered, "<invoke> names an invoker the host declared but never registered"))
 			}
 			continue
 		}
@@ -1546,7 +1550,7 @@ func (p *StatechartHostInvokerPolicy) ExecutePendingInvokes(engine *sce.Engine[S
 			if val, err := p.ScriptEngine.EvaluateExpression(p.SessionID, `("body:" .. _scxml_tostring(n))`); err == nil {
 				hostInvokeContent = sce.ToWireString(val)
 			} else {
-				engine.Raise(sce.NewPlatformError(StatechartHostInvokerEventErrorExecution, "<invoke contentexpr=''body:' + n'> could not be evaluated"))
+				engine.Raise(sce.NewPlatformError(StatechartHostInvokerEventErrorExecution, sceerrorreason.ErrorReasonExpressionFailed, "<invoke contentexpr=''body:' + n'> could not be evaluated"))
 				continue
 			}
 			hostInvokeParams := map[string][]string{}
@@ -1570,7 +1574,7 @@ func (p *StatechartHostInvokerPolicy) ExecutePendingInvokes(engine *sce.Engine[S
 				// document asked for a process to be run and none was, which
 				// is the same fact as an unsupported type — so the same
 				// event, rather than a silence that reads as started.
-				engine.Raise(sce.NewPlatformError(StatechartHostInvokerEventErrorExecution, "<invoke> names an invoker the host declared but never registered"))
+				engine.Raise(sce.NewPlatformError(StatechartHostInvokerEventErrorExecution, sceerrorreason.ErrorReasonProcessorUnregistered, "<invoke> names an invoker the host declared but never registered"))
 			}
 			continue
 		}
@@ -1590,7 +1594,7 @@ func (p *StatechartHostInvokerPolicy) ExecutePendingInvokes(engine *sce.Engine[S
 			if val, err := p.ScriptEngine.EvaluateExpression(p.SessionID, `n.nope.deeper`); err == nil {
 				hostInvokeSrc = sce.ToWireString(val)
 			} else {
-				engine.Raise(sce.NewPlatformError(StatechartHostInvokerEventErrorExecution, "<invoke srcexpr='n.nope.deeper'> could not be evaluated"))
+				engine.Raise(sce.NewPlatformError(StatechartHostInvokerEventErrorExecution, sceerrorreason.ErrorReasonExpressionFailed, "<invoke srcexpr='n.nope.deeper'> could not be evaluated"))
 				continue
 			}
 			hostInvokeParams := map[string][]string{}
@@ -1614,7 +1618,7 @@ func (p *StatechartHostInvokerPolicy) ExecutePendingInvokes(engine *sce.Engine[S
 				// document asked for a process to be run and none was, which
 				// is the same fact as an unsupported type — so the same
 				// event, rather than a silence that reads as started.
-				engine.Raise(sce.NewPlatformError(StatechartHostInvokerEventErrorExecution, "<invoke> names an invoker the host declared but never registered"))
+				engine.Raise(sce.NewPlatformError(StatechartHostInvokerEventErrorExecution, sceerrorreason.ErrorReasonProcessorUnregistered, "<invoke> names an invoker the host declared but never registered"))
 			}
 			continue
 		}
@@ -1651,7 +1655,7 @@ func (p *StatechartHostInvokerPolicy) ExecutePendingInvokes(engine *sce.Engine[S
 				// document asked for a process to be run and none was, which
 				// is the same fact as an unsupported type — so the same
 				// event, rather than a silence that reads as started.
-				engine.Raise(sce.NewPlatformError(StatechartHostInvokerEventErrorExecution, "<invoke> names an invoker the host declared but never registered"))
+				engine.Raise(sce.NewPlatformError(StatechartHostInvokerEventErrorExecution, sceerrorreason.ErrorReasonProcessorUnregistered, "<invoke> names an invoker the host declared but never registered"))
 			}
 			continue
 		}
@@ -1690,7 +1694,7 @@ func (p *StatechartHostInvokerPolicy) ExecutePendingInvokes(engine *sce.Engine[S
 				// document asked for a process to be run and none was, which
 				// is the same fact as an unsupported type — so the same
 				// event, rather than a silence that reads as started.
-				engine.Raise(sce.NewPlatformError(StatechartHostInvokerEventErrorExecution, "<invoke> names an invoker the host declared but never registered"))
+				engine.Raise(sce.NewPlatformError(StatechartHostInvokerEventErrorExecution, sceerrorreason.ErrorReasonProcessorUnregistered, "<invoke> names an invoker the host declared but never registered"))
 			}
 			continue
 		}
@@ -1727,7 +1731,7 @@ func (p *StatechartHostInvokerPolicy) ExecutePendingInvokes(engine *sce.Engine[S
 				// document asked for a process to be run and none was, which
 				// is the same fact as an unsupported type — so the same
 				// event, rather than a silence that reads as started.
-				engine.Raise(sce.NewPlatformError(StatechartHostInvokerEventErrorExecution, "<invoke> names an invoker the host declared but never registered"))
+				engine.Raise(sce.NewPlatformError(StatechartHostInvokerEventErrorExecution, sceerrorreason.ErrorReasonProcessorUnregistered, "<invoke> names an invoker the host declared but never registered"))
 			}
 			continue
 		}
@@ -1751,7 +1755,7 @@ func (p *StatechartHostInvokerPolicy) ExecutePendingInvokes(engine *sce.Engine[S
 			// a location that cannot take the id starts nothing (W3C SCXML
 			// 5.9.2), like any argument that cannot be evaluated.
 			if err := p.storeIDInLocation(`slot.id`, "locating._invoke_1"); err != nil {
-				engine.Raise(sce.NewPlatformError(StatechartHostInvokerEventErrorExecution, "<invoke idlocation='slot.id'> could not take the invoke id"))
+				engine.Raise(sce.NewPlatformError(StatechartHostInvokerEventErrorExecution, sceerrorreason.ErrorReasonLocationInvalid, "<invoke idlocation='slot.id'> could not take the invoke id"))
 				continue
 			}
 			hostInvokeParams := map[string][]string{}
@@ -1775,7 +1779,7 @@ func (p *StatechartHostInvokerPolicy) ExecutePendingInvokes(engine *sce.Engine[S
 				// document asked for a process to be run and none was, which
 				// is the same fact as an unsupported type — so the same
 				// event, rather than a silence that reads as started.
-				engine.Raise(sce.NewPlatformError(StatechartHostInvokerEventErrorExecution, "<invoke> names an invoker the host declared but never registered"))
+				engine.Raise(sce.NewPlatformError(StatechartHostInvokerEventErrorExecution, sceerrorreason.ErrorReasonProcessorUnregistered, "<invoke> names an invoker the host declared but never registered"))
 			}
 			continue
 		}
@@ -1799,7 +1803,7 @@ func (p *StatechartHostInvokerPolicy) ExecutePendingInvokes(engine *sce.Engine[S
 			// a location that cannot take the id starts nothing (W3C SCXML
 			// 5.9.2), like any argument that cannot be evaluated.
 			if err := p.storeIDInLocation(`n.nope.deeper`, "locating._invoke_2"); err != nil {
-				engine.Raise(sce.NewPlatformError(StatechartHostInvokerEventErrorExecution, "<invoke idlocation='n.nope.deeper'> could not take the invoke id"))
+				engine.Raise(sce.NewPlatformError(StatechartHostInvokerEventErrorExecution, sceerrorreason.ErrorReasonLocationInvalid, "<invoke idlocation='n.nope.deeper'> could not take the invoke id"))
 				continue
 			}
 			hostInvokeParams := map[string][]string{}
@@ -1823,7 +1827,7 @@ func (p *StatechartHostInvokerPolicy) ExecutePendingInvokes(engine *sce.Engine[S
 				// document asked for a process to be run and none was, which
 				// is the same fact as an unsupported type — so the same
 				// event, rather than a silence that reads as started.
-				engine.Raise(sce.NewPlatformError(StatechartHostInvokerEventErrorExecution, "<invoke> names an invoker the host declared but never registered"))
+				engine.Raise(sce.NewPlatformError(StatechartHostInvokerEventErrorExecution, sceerrorreason.ErrorReasonProcessorUnregistered, "<invoke> names an invoker the host declared but never registered"))
 			}
 			continue
 		}
@@ -1860,7 +1864,7 @@ func (p *StatechartHostInvokerPolicy) ExecutePendingInvokes(engine *sce.Engine[S
 				// document asked for a process to be run and none was, which
 				// is the same fact as an unsupported type — so the same
 				// event, rather than a silence that reads as started.
-				engine.Raise(sce.NewPlatformError(StatechartHostInvokerEventErrorExecution, "<invoke> names an invoker the host declared but never registered"))
+				engine.Raise(sce.NewPlatformError(StatechartHostInvokerEventErrorExecution, sceerrorreason.ErrorReasonProcessorUnregistered, "<invoke> names an invoker the host declared but never registered"))
 			}
 			continue
 		}
@@ -1897,7 +1901,7 @@ func (p *StatechartHostInvokerPolicy) ExecutePendingInvokes(engine *sce.Engine[S
 				// document asked for a process to be run and none was, which
 				// is the same fact as an unsupported type — so the same
 				// event, rather than a silence that reads as started.
-				engine.Raise(sce.NewPlatformError(StatechartHostInvokerEventErrorExecution, "<invoke> names an invoker the host declared but never registered"))
+				engine.Raise(sce.NewPlatformError(StatechartHostInvokerEventErrorExecution, sceerrorreason.ErrorReasonProcessorUnregistered, "<invoke> names an invoker the host declared but never registered"))
 			}
 			continue
 		}
@@ -1928,7 +1932,7 @@ func (p *StatechartHostInvokerPolicy) ExecutePendingInvokes(engine *sce.Engine[S
 			} else {
 				// W3C SCXML 5.7.1: the pair is dropped AND the failure is
 				// reported.
-				engine.Raise(sce.NewPlatformError(StatechartHostInvokerEventErrorExecution, "<invoke> <param name='_sce_deadline_ms'> expr failed to evaluate"))
+				engine.Raise(sce.NewPlatformError(StatechartHostInvokerEventErrorExecution, sceerrorreason.ErrorReasonExpressionFailed, "<invoke> <param name='_sce_deadline_ms'> expr failed to evaluate"))
 			}
 			hostInvokeEventData := ""
 			if len(hostInvokePayload) > 0 {
@@ -1946,7 +1950,7 @@ func (p *StatechartHostInvokerPolicy) ExecutePendingInvokes(engine *sce.Engine[S
 				// document asked for a process to be run and none was, which
 				// is the same fact as an unsupported type — so the same
 				// event, rather than a silence that reads as started.
-				engine.Raise(sce.NewPlatformError(StatechartHostInvokerEventErrorExecution, "<invoke> names an invoker the host declared but never registered"))
+				engine.Raise(sce.NewPlatformError(StatechartHostInvokerEventErrorExecution, sceerrorreason.ErrorReasonProcessorUnregistered, "<invoke> names an invoker the host declared but never registered"))
 			}
 			continue
 		}
@@ -1985,7 +1989,7 @@ func (p *StatechartHostInvokerPolicy) ExecutePendingInvokes(engine *sce.Engine[S
 				// document asked for a process to be run and none was, which
 				// is the same fact as an unsupported type — so the same
 				// event, rather than a silence that reads as started.
-				engine.Raise(sce.NewPlatformError(StatechartHostInvokerEventErrorExecution, "<invoke> names an invoker the host declared but never registered"))
+				engine.Raise(sce.NewPlatformError(StatechartHostInvokerEventErrorExecution, sceerrorreason.ErrorReasonProcessorUnregistered, "<invoke> names an invoker the host declared but never registered"))
 			}
 			continue
 		}
@@ -2021,7 +2025,7 @@ func (p *StatechartHostInvokerPolicy) ExecutePendingInvokes(engine *sce.Engine[S
 					hostInvokeParams["scope"] = append(hostInvokeParams["scope"], paramText)
 				hostInvokePayload = append(hostInvokePayload, sce.EventDataParam{Name: "scope", Value: paramVal})
 				} else {
-					engine.Raise(sce.NewPlatformError(StatechartHostInvokerEventErrorExecution, "<invoke> <param name='scope'> cannot be its request field: "+paramErr.Error()))
+					engine.Raise(sce.NewPlatformError(StatechartHostInvokerEventErrorExecution, sceerrorreason.ErrorReasonParamUnfit, "<invoke> <param name='scope'> cannot be its request field: "+paramErr.Error()))
 					requestRefused = true
 				}
 			}
@@ -2035,7 +2039,7 @@ func (p *StatechartHostInvokerPolicy) ExecutePendingInvokes(engine *sce.Engine[S
 					hostInvokeParams["level"] = append(hostInvokeParams["level"], paramText)
 				hostInvokePayload = append(hostInvokePayload, sce.EventDataParam{Name: "level", Value: paramVal})
 				} else {
-					engine.Raise(sce.NewPlatformError(StatechartHostInvokerEventErrorExecution, "<invoke> <param name='level'> cannot be its request field: "+paramErr.Error()))
+					engine.Raise(sce.NewPlatformError(StatechartHostInvokerEventErrorExecution, sceerrorreason.ErrorReasonParamUnfit, "<invoke> <param name='level'> cannot be its request field: "+paramErr.Error()))
 					requestRefused = true
 				}
 			}
@@ -2058,7 +2062,7 @@ func (p *StatechartHostInvokerPolicy) ExecutePendingInvokes(engine *sce.Engine[S
 				// document asked for a process to be run and none was, which
 				// is the same fact as an unsupported type — so the same
 				// event, rather than a silence that reads as started.
-				engine.Raise(sce.NewPlatformError(StatechartHostInvokerEventErrorExecution, "<invoke> names an invoker the host declared but never registered"))
+				engine.Raise(sce.NewPlatformError(StatechartHostInvokerEventErrorExecution, sceerrorreason.ErrorReasonProcessorUnregistered, "<invoke> names an invoker the host declared but never registered"))
 			}
 			continue
 		}
@@ -2480,7 +2484,7 @@ func (p *StatechartHostInvokerPolicy) ExecuteEntryActions(state StatechartHostIn
 
 	// W3C SCXML 5.3: <assign location="ended" expr="ended + 1">
 	if err := p.assignVariable(`ended`, `_scxml_add(ended, 1)`); err != nil {
-		engine.Raise(sce.NewPlatformError(StatechartHostInvokerEventErrorExecution, "<assign> to 'ended' failed"))
+		engine.Raise(sce.NewPlatformError(StatechartHostInvokerEventErrorExecution, sceerrorreason.ErrorReasonAssignmentFailed, "<assign> to 'ended' failed"))
 		return  // W3C SCXML 4.9: the error ends the block
 	}
 
@@ -2549,7 +2553,7 @@ func (p *StatechartHostInvokerPolicy) ExecuteEntryActions(state StatechartHostIn
 
 	// W3C SCXML 5.3: <assign location="entered" expr="entered + 1">
 	if err := p.assignVariable(`entered`, `_scxml_add(entered, 1)`); err != nil {
-		engine.Raise(sce.NewPlatformError(StatechartHostInvokerEventErrorExecution, "<assign> to 'entered' failed"))
+		engine.Raise(sce.NewPlatformError(StatechartHostInvokerEventErrorExecution, sceerrorreason.ErrorReasonAssignmentFailed, "<assign> to 'entered' failed"))
 		return  // W3C SCXML 4.9: the error ends the block
 	}
 
@@ -2587,15 +2591,19 @@ func (p *StatechartHostInvokerPolicy) ExecuteEntryActions(state StatechartHostIn
 	_ = sendID
 	p.assertScriptSession()
 	sendArgError := ""
+	// Why the argument failed, a code of sce:std/engine/error_reason
+	// (docs/adr/0106 #111), set with every sentence below.
+	var sendArgReason sce.ErrorReason
+	_ = sendArgReason
 	// W3C SCXML 6.2.4: the send id goes to `idlocation` first, so it is
 	// there even when a later argument fails, through the assignment
 	// `<assign>` makes; a location that cannot take it is an argument that
 	// cannot be evaluated too (W3C SCXML 5.9.2).
 	if err := p.storeIDInLocation(`slot.sid`, sendID); err != nil {
-		sendArgError = "<send idlocation='slot.sid'> could not take the send id"
+		sendArgError, sendArgReason = "<send idlocation='slot.sid'> could not take the send id", sceerrorreason.ErrorReasonLocationInvalid
 	}
 	if sendArgError != "" {
-		errEvt := sce.NewPlatformError(StatechartHostInvokerEventErrorExecution, sendArgError)
+		errEvt := sce.NewPlatformError(StatechartHostInvokerEventErrorExecution, sendArgReason, sendArgError)
 		errEvt.Metadata.SendID = sendID
 		engine.Raise(errEvt)
 		return  // W3C SCXML 4.9: the error ends the block
@@ -2620,15 +2628,19 @@ func (p *StatechartHostInvokerPolicy) ExecuteEntryActions(state StatechartHostIn
 	_ = sendID
 	p.assertScriptSession()
 	sendArgError := ""
+	// Why the argument failed, a code of sce:std/engine/error_reason
+	// (docs/adr/0106 #111), set with every sentence below.
+	var sendArgReason sce.ErrorReason
+	_ = sendArgReason
 	// W3C SCXML 6.2.4: the send id goes to `idlocation` first, so it is
 	// there even when a later argument fails, through the assignment
 	// `<assign>` makes; a location that cannot take it is an argument that
 	// cannot be evaluated too (W3C SCXML 5.9.2).
 	if err := p.storeIDInLocation(`n.nope.deeper`, sendID); err != nil {
-		sendArgError = "<send idlocation='n.nope.deeper'> could not take the send id"
+		sendArgError, sendArgReason = "<send idlocation='n.nope.deeper'> could not take the send id", sceerrorreason.ErrorReasonLocationInvalid
 	}
 	if sendArgError != "" {
-		errEvt := sce.NewPlatformError(StatechartHostInvokerEventErrorExecution, sendArgError)
+		errEvt := sce.NewPlatformError(StatechartHostInvokerEventErrorExecution, sendArgReason, sendArgError)
 		errEvt.Metadata.SendID = sendID
 		engine.Raise(errEvt)
 		return  // W3C SCXML 4.9: the error ends the block
@@ -3250,7 +3262,7 @@ func (p *StatechartHostInvokerPolicy) ExecuteTransitionContent(source Statechart
 
 	// W3C SCXML 5.3: <assign location="matched" expr="matched + 1">
 	if err := p.assignVariable(`matched`, `_scxml_add(matched, 1)`); err != nil {
-		engine.Raise(sce.NewPlatformError(StatechartHostInvokerEventErrorExecution, "<assign> to 'matched' failed"))
+		engine.Raise(sce.NewPlatformError(StatechartHostInvokerEventErrorExecution, sceerrorreason.ErrorReasonAssignmentFailed, "<assign> to 'matched' failed"))
 		return  // W3C SCXML 4.9: the error ends the block
 	}
 
@@ -3265,7 +3277,7 @@ func (p *StatechartHostInvokerPolicy) ExecuteTransitionContent(source Statechart
 
 	// W3C SCXML 5.3: <assign location="dropped" expr="dropped + 1">
 	if err := p.assignVariable(`dropped`, `_scxml_add(dropped, 1)`); err != nil {
-		engine.Raise(sce.NewPlatformError(StatechartHostInvokerEventErrorExecution, "<assign> to 'dropped' failed"))
+		engine.Raise(sce.NewPlatformError(StatechartHostInvokerEventErrorExecution, sceerrorreason.ErrorReasonAssignmentFailed, "<assign> to 'dropped' failed"))
 		return  // W3C SCXML 4.9: the error ends the block
 	}
 
@@ -3280,7 +3292,7 @@ func (p *StatechartHostInvokerPolicy) ExecuteTransitionContent(source Statechart
 
 	// W3C SCXML 5.3: <assign location="failed" expr="failed + 1">
 	if err := p.assignVariable(`failed`, `_scxml_add(failed, 1)`); err != nil {
-		engine.Raise(sce.NewPlatformError(StatechartHostInvokerEventErrorExecution, "<assign> to 'failed' failed"))
+		engine.Raise(sce.NewPlatformError(StatechartHostInvokerEventErrorExecution, sceerrorreason.ErrorReasonAssignmentFailed, "<assign> to 'failed' failed"))
 		return  // W3C SCXML 4.9: the error ends the block
 	}
 
@@ -3292,7 +3304,7 @@ func (p *StatechartHostInvokerPolicy) ExecuteTransitionContent(source Statechart
 
 	// W3C SCXML 5.3: <assign location="overturned" expr="overturned + 1">
 	if err := p.assignVariable(`overturned`, `_scxml_add(overturned, 1)`); err != nil {
-		engine.Raise(sce.NewPlatformError(StatechartHostInvokerEventErrorExecution, "<assign> to 'overturned' failed"))
+		engine.Raise(sce.NewPlatformError(StatechartHostInvokerEventErrorExecution, sceerrorreason.ErrorReasonAssignmentFailed, "<assign> to 'overturned' failed"))
 		return  // W3C SCXML 4.9: the error ends the block
 	}
 
@@ -3307,7 +3319,7 @@ func (p *StatechartHostInvokerPolicy) ExecuteTransitionContent(source Statechart
 
 	// W3C SCXML 5.3: <assign location="started" expr="started + 1">
 	if err := p.assignVariable(`started`, `_scxml_add(started, 1)`); err != nil {
-		engine.Raise(sce.NewPlatformError(StatechartHostInvokerEventErrorExecution, "<assign> to 'started' failed"))
+		engine.Raise(sce.NewPlatformError(StatechartHostInvokerEventErrorExecution, sceerrorreason.ErrorReasonAssignmentFailed, "<assign> to 'started' failed"))
 		return  // W3C SCXML 4.9: the error ends the block
 	}
 
@@ -3319,7 +3331,7 @@ func (p *StatechartHostInvokerPolicy) ExecuteTransitionContent(source Statechart
 
 	// W3C SCXML 5.3: <assign location="started2" expr="started2 + 1">
 	if err := p.assignVariable(`started2`, `_scxml_add(started2, 1)`); err != nil {
-		engine.Raise(sce.NewPlatformError(StatechartHostInvokerEventErrorExecution, "<assign> to 'started2' failed"))
+		engine.Raise(sce.NewPlatformError(StatechartHostInvokerEventErrorExecution, sceerrorreason.ErrorReasonAssignmentFailed, "<assign> to 'started2' failed"))
 		return  // W3C SCXML 4.9: the error ends the block
 	}
 
@@ -3331,7 +3343,7 @@ func (p *StatechartHostInvokerPolicy) ExecuteTransitionContent(source Statechart
 
 	// W3C SCXML 5.3: <assign location="refused" expr="refused + 1">
 	if err := p.assignVariable(`refused`, `_scxml_add(refused, 1)`); err != nil {
-		engine.Raise(sce.NewPlatformError(StatechartHostInvokerEventErrorExecution, "<assign> to 'refused' failed"))
+		engine.Raise(sce.NewPlatformError(StatechartHostInvokerEventErrorExecution, sceerrorreason.ErrorReasonAssignmentFailed, "<assign> to 'refused' failed"))
 		return  // W3C SCXML 4.9: the error ends the block
 	}
 
@@ -3346,7 +3358,7 @@ func (p *StatechartHostInvokerPolicy) ExecuteTransitionContent(source Statechart
 
 	// W3C SCXML 5.3: <assign location="slotted" expr="slotted + 1">
 	if err := p.assignVariable(`slotted`, `_scxml_add(slotted, 1)`); err != nil {
-		engine.Raise(sce.NewPlatformError(StatechartHostInvokerEventErrorExecution, "<assign> to 'slotted' failed"))
+		engine.Raise(sce.NewPlatformError(StatechartHostInvokerEventErrorExecution, sceerrorreason.ErrorReasonAssignmentFailed, "<assign> to 'slotted' failed"))
 		return  // W3C SCXML 4.9: the error ends the block
 	}
 
@@ -3358,7 +3370,7 @@ func (p *StatechartHostInvokerPolicy) ExecuteTransitionContent(source Statechart
 
 	// W3C SCXML 5.3: <assign location="pinged" expr="pinged + 1">
 	if err := p.assignVariable(`pinged`, `_scxml_add(pinged, 1)`); err != nil {
-		engine.Raise(sce.NewPlatformError(StatechartHostInvokerEventErrorExecution, "<assign> to 'pinged' failed"))
+		engine.Raise(sce.NewPlatformError(StatechartHostInvokerEventErrorExecution, sceerrorreason.ErrorReasonAssignmentFailed, "<assign> to 'pinged' failed"))
 		return  // W3C SCXML 4.9: the error ends the block
 	}
 
@@ -3370,7 +3382,7 @@ func (p *StatechartHostInvokerPolicy) ExecuteTransitionContent(source Statechart
 
 	// W3C SCXML 5.3: <assign location="leaked" expr="leaked + 1">
 	if err := p.assignVariable(`leaked`, `_scxml_add(leaked, 1)`); err != nil {
-		engine.Raise(sce.NewPlatformError(StatechartHostInvokerEventErrorExecution, "<assign> to 'leaked' failed"))
+		engine.Raise(sce.NewPlatformError(StatechartHostInvokerEventErrorExecution, sceerrorreason.ErrorReasonAssignmentFailed, "<assign> to 'leaked' failed"))
 		return  // W3C SCXML 4.9: the error ends the block
 	}
 
@@ -3382,7 +3394,7 @@ func (p *StatechartHostInvokerPolicy) ExecuteTransitionContent(source Statechart
 
 	// W3C SCXML 5.3: <assign location="lost" expr="lost + 1">
 	if err := p.assignVariable(`lost`, `_scxml_add(lost, 1)`); err != nil {
-		engine.Raise(sce.NewPlatformError(StatechartHostInvokerEventErrorExecution, "<assign> to 'lost' failed"))
+		engine.Raise(sce.NewPlatformError(StatechartHostInvokerEventErrorExecution, sceerrorreason.ErrorReasonAssignmentFailed, "<assign> to 'lost' failed"))
 		return  // W3C SCXML 4.9: the error ends the block
 	}
 
@@ -3397,7 +3409,7 @@ func (p *StatechartHostInvokerPolicy) ExecuteTransitionContent(source Statechart
 
 	// W3C SCXML 5.3: <assign location="unstarted" expr="unstarted + 1">
 	if err := p.assignVariable(`unstarted`, `_scxml_add(unstarted, 1)`); err != nil {
-		engine.Raise(sce.NewPlatformError(StatechartHostInvokerEventErrorExecution, "<assign> to 'unstarted' failed"))
+		engine.Raise(sce.NewPlatformError(StatechartHostInvokerEventErrorExecution, sceerrorreason.ErrorReasonAssignmentFailed, "<assign> to 'unstarted' failed"))
 		return  // W3C SCXML 4.9: the error ends the block
 	}
 
@@ -3409,7 +3421,7 @@ func (p *StatechartHostInvokerPolicy) ExecuteTransitionContent(source Statechart
 
 	// W3C SCXML 5.3: <assign location="revived" expr="revived + 1">
 	if err := p.assignVariable(`revived`, `_scxml_add(revived, 1)`); err != nil {
-		engine.Raise(sce.NewPlatformError(StatechartHostInvokerEventErrorExecution, "<assign> to 'revived' failed"))
+		engine.Raise(sce.NewPlatformError(StatechartHostInvokerEventErrorExecution, sceerrorreason.ErrorReasonAssignmentFailed, "<assign> to 'revived' failed"))
 		return  // W3C SCXML 4.9: the error ends the block
 	}
 
@@ -3424,7 +3436,7 @@ func (p *StatechartHostInvokerPolicy) ExecuteTransitionContent(source Statechart
 
 	// W3C SCXML 5.3: <assign location="misdated" expr="misdated + 1">
 	if err := p.assignVariable(`misdated`, `_scxml_add(misdated, 1)`); err != nil {
-		engine.Raise(sce.NewPlatformError(StatechartHostInvokerEventErrorExecution, "<assign> to 'misdated' failed"))
+		engine.Raise(sce.NewPlatformError(StatechartHostInvokerEventErrorExecution, sceerrorreason.ErrorReasonAssignmentFailed, "<assign> to 'misdated' failed"))
 		return  // W3C SCXML 4.9: the error ends the block
 	}
 
@@ -3439,7 +3451,7 @@ func (p *StatechartHostInvokerPolicy) ExecuteTransitionContent(source Statechart
 		if cancelErr != nil {
 			// W3C SCXML 5.9: a sendidexpr that fails raises error.execution,
 			// and (W3C SCXML 4.9) the error ends the block.
-			engine.Raise(sce.NewPlatformError(StatechartHostInvokerEventErrorExecution, "<cancel> sendidexpr failed to evaluate"))
+			engine.Raise(sce.NewPlatformError(StatechartHostInvokerEventErrorExecution, sceerrorreason.ErrorReasonExpressionFailed, "<cancel> sendidexpr failed to evaluate"))
 			return
 		} else if cancelSendIDVal != nil {
 			engine.CancelEvent(fmt.Sprintf("%v", cancelSendIDVal))
@@ -3454,7 +3466,7 @@ func (p *StatechartHostInvokerPolicy) ExecuteTransitionContent(source Statechart
 
 	// W3C SCXML 5.3: <assign location="expired" expr="expired + 1">
 	if err := p.assignVariable(`expired`, `_scxml_add(expired, 1)`); err != nil {
-		engine.Raise(sce.NewPlatformError(StatechartHostInvokerEventErrorExecution, "<assign> to 'expired' failed"))
+		engine.Raise(sce.NewPlatformError(StatechartHostInvokerEventErrorExecution, sceerrorreason.ErrorReasonAssignmentFailed, "<assign> to 'expired' failed"))
 		return  // W3C SCXML 4.9: the error ends the block
 	}
 
@@ -3466,7 +3478,7 @@ func (p *StatechartHostInvokerPolicy) ExecuteTransitionContent(source Statechart
 
 	// W3C SCXML 5.3: <assign location="finished" expr="finished + 1">
 	if err := p.assignVariable(`finished`, `_scxml_add(finished, 1)`); err != nil {
-		engine.Raise(sce.NewPlatformError(StatechartHostInvokerEventErrorExecution, "<assign> to 'finished' failed"))
+		engine.Raise(sce.NewPlatformError(StatechartHostInvokerEventErrorExecution, sceerrorreason.ErrorReasonAssignmentFailed, "<assign> to 'finished' failed"))
 		return  // W3C SCXML 4.9: the error ends the block
 	}
 
@@ -3481,7 +3493,7 @@ func (p *StatechartHostInvokerPolicy) ExecuteTransitionContent(source Statechart
 
 	// W3C SCXML 5.3: <assign location="granted" expr="granted + 1">
 	if err := p.assignVariable(`granted`, `_scxml_add(granted, 1)`); err != nil {
-		engine.Raise(sce.NewPlatformError(StatechartHostInvokerEventErrorExecution, "<assign> to 'granted' failed"))
+		engine.Raise(sce.NewPlatformError(StatechartHostInvokerEventErrorExecution, sceerrorreason.ErrorReasonAssignmentFailed, "<assign> to 'granted' failed"))
 		return  // W3C SCXML 4.9: the error ends the block
 	}
 
@@ -3493,7 +3505,7 @@ func (p *StatechartHostInvokerPolicy) ExecuteTransitionContent(source Statechart
 
 	// W3C SCXML 5.3: <assign location="denied" expr="denied + 1">
 	if err := p.assignVariable(`denied`, `_scxml_add(denied, 1)`); err != nil {
-		engine.Raise(sce.NewPlatformError(StatechartHostInvokerEventErrorExecution, "<assign> to 'denied' failed"))
+		engine.Raise(sce.NewPlatformError(StatechartHostInvokerEventErrorExecution, sceerrorreason.ErrorReasonAssignmentFailed, "<assign> to 'denied' failed"))
 		return  // W3C SCXML 4.9: the error ends the block
 	}
 
@@ -3505,7 +3517,7 @@ func (p *StatechartHostInvokerPolicy) ExecuteTransitionContent(source Statechart
 
 	// W3C SCXML 5.3: <assign location="unreadable" expr="unreadable + 1">
 	if err := p.assignVariable(`unreadable`, `_scxml_add(unreadable, 1)`); err != nil {
-		engine.Raise(sce.NewPlatformError(StatechartHostInvokerEventErrorExecution, "<assign> to 'unreadable' failed"))
+		engine.Raise(sce.NewPlatformError(StatechartHostInvokerEventErrorExecution, sceerrorreason.ErrorReasonAssignmentFailed, "<assign> to 'unreadable' failed"))
 		return  // W3C SCXML 4.9: the error ends the block
 	}
 
@@ -3517,7 +3529,7 @@ func (p *StatechartHostInvokerPolicy) ExecuteTransitionContent(source Statechart
 
 	// W3C SCXML 5.3: <assign location="level" expr="'high'">
 	if err := p.assignVariable(`level`, `"high"`); err != nil {
-		engine.Raise(sce.NewPlatformError(StatechartHostInvokerEventErrorExecution, "<assign> to 'level' failed"))
+		engine.Raise(sce.NewPlatformError(StatechartHostInvokerEventErrorExecution, sceerrorreason.ErrorReasonAssignmentFailed, "<assign> to 'level' failed"))
 		return  // W3C SCXML 4.9: the error ends the block
 	}
 

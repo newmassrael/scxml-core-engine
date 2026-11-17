@@ -471,7 +471,7 @@ class StaticSendTypeStateMachine(
 
             if (run send@{
             // W3C SCXML 6.2 (test199): Unsupported send type raises error.execution
-            raisePlatformError(StaticSendTypeEvent.Error.Execution, "<send type='sce:undeclared-type'> names a processor this platform does not support", "__send_0")
+            raisePlatformError(StaticSendTypeEvent.Error.Execution, ErrorReason.SEND_TYPE_UNSUPPORTED, "<send type='sce:undeclared-type'> names a processor this platform does not support", "__send_0")
             true  // W3C SCXML 5.10: discarded; the block stops below
             }) {
                 // W3C SCXML 4.9: an error raised while this element was
@@ -484,7 +484,7 @@ class StaticSendTypeStateMachine(
     private fun transitionContentOfIdleAt1() {
                 // SCE-MAP: static_send_type.scxml:28 :: idle :: _transition_1
 
-            if (try { vKind = com.sce.forge.runtime.SceChecked.bounded("http://www.w3.org/TR/scxml/#SCXMLEventProcessor", 64); false } catch (_: com.sce.forge.runtime.AlgorithmFailure) { raisePlatformError(StaticSendTypeEvent.Error.Execution, "<assign location='kind'>: an integer operation overflowed or failed"); true }) {
+            if (try { vKind = com.sce.forge.runtime.SceChecked.bounded("http://www.w3.org/TR/scxml/#SCXMLEventProcessor", 64); false } catch (_: com.sce.forge.runtime.AlgorithmFailure) { raisePlatformError(StaticSendTypeEvent.Error.Execution, ErrorReason.EXPRESSION_FAILED, "<assign location='kind'>: an integer operation overflowed or failed"); true }) {
                 return
             }
     }
@@ -492,7 +492,7 @@ class StaticSendTypeStateMachine(
     private fun transitionContentOfIdleAt2() {
                 // SCE-MAP: static_send_type.scxml:31 :: idle :: _transition_2
 
-            if (try { vKind = com.sce.forge.runtime.SceChecked.bounded("urn:example:no-such-processor", 64); false } catch (_: com.sce.forge.runtime.AlgorithmFailure) { raisePlatformError(StaticSendTypeEvent.Error.Execution, "<assign location='kind'>: an integer operation overflowed or failed"); true }) {
+            if (try { vKind = com.sce.forge.runtime.SceChecked.bounded("urn:example:no-such-processor", 64); false } catch (_: com.sce.forge.runtime.AlgorithmFailure) { raisePlatformError(StaticSendTypeEvent.Error.Execution, ErrorReason.EXPRESSION_FAILED, "<assign location='kind'>: an integer operation overflowed or failed"); true }) {
                 return
             }
     }
@@ -500,7 +500,7 @@ class StaticSendTypeStateMachine(
     private fun transitionContentOfIdleAt3() {
                 // SCE-MAP: static_send_type.scxml:34 :: idle :: _transition_3
 
-            if (try { vKind = com.sce.forge.runtime.SceChecked.bounded("http://www.w3.org/TR/scxml/#BasicHTTPEventProcessor", 64); false } catch (_: com.sce.forge.runtime.AlgorithmFailure) { raisePlatformError(StaticSendTypeEvent.Error.Execution, "<assign location='kind'>: an integer operation overflowed or failed"); true }) {
+            if (try { vKind = com.sce.forge.runtime.SceChecked.bounded("http://www.w3.org/TR/scxml/#BasicHTTPEventProcessor", 64); false } catch (_: com.sce.forge.runtime.AlgorithmFailure) { raisePlatformError(StaticSendTypeEvent.Error.Execution, ErrorReason.EXPRESSION_FAILED, "<assign location='kind'>: an integer operation overflowed or failed"); true }) {
                 return
             }
     }
@@ -508,7 +508,7 @@ class StaticSendTypeStateMachine(
     private fun transitionContentOfIdleAt4() {
                 // SCE-MAP: static_send_type.scxml:37 :: idle :: _transition_4
 
-            if (try { vLanded = com.sce.forge.runtime.SceChecked.add(vLanded, 1.toUInt()); false } catch (_: com.sce.forge.runtime.AlgorithmFailure) { raisePlatformError(StaticSendTypeEvent.Error.Execution, "<assign location='landed'>: an integer operation overflowed or failed"); true }) {
+            if (try { vLanded = com.sce.forge.runtime.SceChecked.add(vLanded, 1.toUInt()); false } catch (_: com.sce.forge.runtime.AlgorithmFailure) { raisePlatformError(StaticSendTypeEvent.Error.Execution, ErrorReason.EXPRESSION_FAILED, "<assign location='landed'>: an integer operation overflowed or failed"); true }) {
                 return
             }
     }
@@ -516,7 +516,7 @@ class StaticSendTypeStateMachine(
     private fun transitionContentOfIdleAt5() {
                 // SCE-MAP: static_send_type.scxml:40 :: idle :: _transition_5
 
-            if (try { vRefused = com.sce.forge.runtime.SceChecked.add(vRefused, 1.toUInt()); false } catch (_: com.sce.forge.runtime.AlgorithmFailure) { raisePlatformError(StaticSendTypeEvent.Error.Execution, "<assign location='refused'>: an integer operation overflowed or failed"); true }) {
+            if (try { vRefused = com.sce.forge.runtime.SceChecked.add(vRefused, 1.toUInt()); false } catch (_: com.sce.forge.runtime.AlgorithmFailure) { raisePlatformError(StaticSendTypeEvent.Error.Execution, ErrorReason.EXPRESSION_FAILED, "<assign location='refused'>: an integer operation overflowed or failed"); true }) {
                 return
             }
     }

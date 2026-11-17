@@ -31,6 +31,7 @@ import (
 	"time"
 
 	sce "github.com/newmassrael/sce-go-runtime"
+	sceerrorreason "github.com/newmassrael/sce-go-runtime/generated/error_reason"
 )
 
 // Ensure imports are used
@@ -39,6 +40,9 @@ var (
 	_ = filepath.Join
 	_ = strings.HasPrefix
 	_ = time.Duration(0)
+	// Why an error.* event is raised (sce:std/engine/error_reason,
+	// docs/adr/0106 #111); a machine that raises none still imports it.
+	_ = sceerrorreason.ErrorReasonExpressionFailed
 )
 
 // ======================================================================
@@ -403,7 +407,7 @@ func (p *ABadSendParamEndsItsBlockPolicy) InitializeDataModel(eng *sce.Engine[AB
 		if err == nil {
 			_ = engine.SetVariable(sessionID, "errors", result)
 		} else {
-			eng.Raise(sce.NewPlatformError(ABadSendParamEndsItsBlockEventErrorExecution, "<data id='errors'> expr failed to evaluate"))
+			eng.Raise(sce.NewPlatformError(ABadSendParamEndsItsBlockEventErrorExecution, sceerrorreason.ErrorReasonExpressionFailed, "<data id='errors'> expr failed to evaluate"))
 			_ = engine.SetVariable(sessionID, "errors", nil)
 		}
 	}
@@ -417,7 +421,7 @@ func (p *ABadSendParamEndsItsBlockPolicy) InitializeDataModel(eng *sce.Engine[AB
 		if err == nil {
 			_ = engine.SetVariable(sessionID, "partials", result)
 		} else {
-			eng.Raise(sce.NewPlatformError(ABadSendParamEndsItsBlockEventErrorExecution, "<data id='partials'> expr failed to evaluate"))
+			eng.Raise(sce.NewPlatformError(ABadSendParamEndsItsBlockEventErrorExecution, sceerrorreason.ErrorReasonExpressionFailed, "<data id='partials'> expr failed to evaluate"))
 			_ = engine.SetVariable(sessionID, "partials", nil)
 		}
 	}
@@ -431,7 +435,7 @@ func (p *ABadSendParamEndsItsBlockPolicy) InitializeDataModel(eng *sce.Engine[AB
 		if err == nil {
 			_ = engine.SetVariable(sessionID, "bares", result)
 		} else {
-			eng.Raise(sce.NewPlatformError(ABadSendParamEndsItsBlockEventErrorExecution, "<data id='bares'> expr failed to evaluate"))
+			eng.Raise(sce.NewPlatformError(ABadSendParamEndsItsBlockEventErrorExecution, sceerrorreason.ErrorReasonExpressionFailed, "<data id='bares'> expr failed to evaluate"))
 			_ = engine.SetVariable(sessionID, "bares", nil)
 		}
 	}
@@ -445,7 +449,7 @@ func (p *ABadSendParamEndsItsBlockPolicy) InitializeDataModel(eng *sce.Engine[AB
 		if err == nil {
 			_ = engine.SetVariable(sessionID, "after", result)
 		} else {
-			eng.Raise(sce.NewPlatformError(ABadSendParamEndsItsBlockEventErrorExecution, "<data id='after'> expr failed to evaluate"))
+			eng.Raise(sce.NewPlatformError(ABadSendParamEndsItsBlockEventErrorExecution, sceerrorreason.ErrorReasonExpressionFailed, "<data id='after'> expr failed to evaluate"))
 			_ = engine.SetVariable(sessionID, "after", nil)
 		}
 	}
@@ -459,7 +463,7 @@ func (p *ABadSendParamEndsItsBlockPolicy) InitializeDataModel(eng *sce.Engine[AB
 		if err == nil {
 			_ = engine.SetVariable(sessionID, "carried", result)
 		} else {
-			eng.Raise(sce.NewPlatformError(ABadSendParamEndsItsBlockEventErrorExecution, "<data id='carried'> expr failed to evaluate"))
+			eng.Raise(sce.NewPlatformError(ABadSendParamEndsItsBlockEventErrorExecution, sceerrorreason.ErrorReasonExpressionFailed, "<data id='carried'> expr failed to evaluate"))
 			_ = engine.SetVariable(sessionID, "carried", nil)
 		}
 	}
@@ -473,7 +477,7 @@ func (p *ABadSendParamEndsItsBlockPolicy) InitializeDataModel(eng *sce.Engine[AB
 		if err == nil {
 			_ = engine.SetVariable(sessionID, "v", result)
 		} else {
-			eng.Raise(sce.NewPlatformError(ABadSendParamEndsItsBlockEventErrorExecution, "<data id='v'> expr failed to evaluate"))
+			eng.Raise(sce.NewPlatformError(ABadSendParamEndsItsBlockEventErrorExecution, sceerrorreason.ErrorReasonExpressionFailed, "<data id='v'> expr failed to evaluate"))
 			_ = engine.SetVariable(sessionID, "v", nil)
 		}
 	}
@@ -487,7 +491,7 @@ func (p *ABadSendParamEndsItsBlockPolicy) InitializeDataModel(eng *sce.Engine[AB
 		if err == nil {
 			_ = engine.SetVariable(sessionID, "obj", result)
 		} else {
-			eng.Raise(sce.NewPlatformError(ABadSendParamEndsItsBlockEventErrorExecution, "<data id='obj'> expr failed to evaluate"))
+			eng.Raise(sce.NewPlatformError(ABadSendParamEndsItsBlockEventErrorExecution, sceerrorreason.ErrorReasonExpressionFailed, "<data id='obj'> expr failed to evaluate"))
 			_ = engine.SetVariable(sessionID, "obj", nil)
 		}
 	}
@@ -519,12 +523,12 @@ func (p *ABadSendParamEndsItsBlockPolicy) evaluateIfCond(guard string, eng *sce.
 // evaluateGuardRaising evaluates a cond, raising error.execution when it cannot
 // be evaluated (W3C SCXML 5.9.1); ok is false then, where a bare false could
 // not say so.
-func (p *ABadSendParamEndsItsBlockPolicy) evaluateGuardRaising(guard string, eng *sce.Engine[ABadSendParamEndsItsBlockState, ABadSendParamEndsItsBlockEvent], reason string) (value bool, ok bool) {
+func (p *ABadSendParamEndsItsBlockPolicy) evaluateGuardRaising(guard string, eng *sce.Engine[ABadSendParamEndsItsBlockState, ABadSendParamEndsItsBlockEvent], detail string) (value bool, ok bool) {
 	p.assertScriptSession()
 	engine := p.ScriptEngine
 	result, err := engine.EvaluateExpression(p.SessionID, guard)
 	if err != nil {
-		eng.Raise(sce.NewPlatformError(ABadSendParamEndsItsBlockEventErrorExecution, reason))
+		eng.Raise(sce.NewPlatformError(ABadSendParamEndsItsBlockEventErrorExecution, sceerrorreason.ErrorReasonExpressionFailed, detail))
 		return false, false
 	}
 	return sce.ScriptToBool(result), true
@@ -627,7 +631,7 @@ func (p *ABadSendParamEndsItsBlockPolicy) SetParamValueInScriptEngine(name strin
 // failed is left (docs/adr/0098).
 func (p *ABadSendParamEndsItsBlockPolicy) declareHandedValue(eng *sce.Engine[ABadSendParamEndsItsBlockState, ABadSendParamEndsItsBlockEvent], engine sce.IScriptEngine, sessionID, name string, value interface{}) {
 	if err := engine.SetVariable(sessionID, name, value); err != nil {
-		eng.Raise(sce.NewPlatformError(ABadSendParamEndsItsBlockEventErrorExecution, "<data id='"+name+"'> could not hold the value its invoking session handed it"))
+		eng.Raise(sce.NewPlatformError(ABadSendParamEndsItsBlockEventErrorExecution, sceerrorreason.ErrorReasonDataInitFailed, "<data id='"+name+"'> could not hold the value its invoking session handed it"))
 		_ = engine.SetVariable(sessionID, name, nil)
 	}
 }
@@ -901,13 +905,13 @@ func (p *ABadSendParamEndsItsBlockPolicy) ExecuteEntryActions(state ABadSendPara
 		if paramVal, paramErr := se.EvaluateExpression(p.SessionID, `obj.missing.deep`); paramErr == nil {
 			parts = append(parts, sce.EventDataParam{Name: "bad", Value: paramVal})
 		} else {
-			engine.Raise(sce.NewPlatformError(ABadSendParamEndsItsBlockEventErrorExecution, "<send> <param name='bad'> expr failed to evaluate"))
+			engine.Raise(sce.NewPlatformError(ABadSendParamEndsItsBlockEventErrorExecution, sceerrorreason.ErrorReasonExpressionFailed, "<send> <param name='bad'> expr failed to evaluate"))
 			paramFailed = true
 		}
 		if paramVal, paramErr := se.EvaluateExpression(p.SessionID, `1`); paramErr == nil {
 			parts = append(parts, sce.EventDataParam{Name: "good", Value: paramVal})
 		} else {
-			engine.Raise(sce.NewPlatformError(ABadSendParamEndsItsBlockEventErrorExecution, "<send> <param name='good'> expr failed to evaluate"))
+			engine.Raise(sce.NewPlatformError(ABadSendParamEndsItsBlockEventErrorExecution, sceerrorreason.ErrorReasonExpressionFailed, "<send> <param name='good'> expr failed to evaluate"))
 			paramFailed = true
 		}
 		eventDataStr := sce.BuildJSONFromTypedParams(parts)
@@ -929,7 +933,7 @@ func (p *ABadSendParamEndsItsBlockPolicy) ExecuteEntryActions(state ABadSendPara
 
 	// W3C SCXML 5.3: <assign location="after" expr="after + 1">
 	if err := p.assignVariable(`after`, `_scxml_add(after, 1)`); err != nil {
-		engine.Raise(sce.NewPlatformError(ABadSendParamEndsItsBlockEventErrorExecution, "<assign> to 'after' failed"))
+		engine.Raise(sce.NewPlatformError(ABadSendParamEndsItsBlockEventErrorExecution, sceerrorreason.ErrorReasonAssignmentFailed, "<assign> to 'after' failed"))
 		return  // W3C SCXML 4.9: the error ends the block
 	}
 
@@ -956,13 +960,13 @@ func (p *ABadSendParamEndsItsBlockPolicy) ExecuteEntryActions(state ABadSendPara
 		if paramVal, paramErr := se.EvaluateExpression(p.SessionID, `1`); paramErr == nil {
 			parts = append(parts, sce.EventDataParam{Name: "good", Value: paramVal})
 		} else {
-			engine.Raise(sce.NewPlatformError(ABadSendParamEndsItsBlockEventErrorExecution, "<send> <param name='good'> expr failed to evaluate"))
+			engine.Raise(sce.NewPlatformError(ABadSendParamEndsItsBlockEventErrorExecution, sceerrorreason.ErrorReasonExpressionFailed, "<send> <param name='good'> expr failed to evaluate"))
 			paramFailed = true
 		}
 		if paramVal, paramErr := se.EvaluateExpression(p.SessionID, `obj.missing.deep`); paramErr == nil {
 			parts = append(parts, sce.EventDataParam{Name: "bad", Value: paramVal})
 		} else {
-			engine.Raise(sce.NewPlatformError(ABadSendParamEndsItsBlockEventErrorExecution, "<send> <param name='bad'> location could not be read"))
+			engine.Raise(sce.NewPlatformError(ABadSendParamEndsItsBlockEventErrorExecution, sceerrorreason.ErrorReasonLocationInvalid, "<send> <param name='bad'> location could not be read"))
 			paramFailed = true
 		}
 		eventDataStr := sce.BuildJSONFromTypedParams(parts)
@@ -984,7 +988,7 @@ func (p *ABadSendParamEndsItsBlockPolicy) ExecuteEntryActions(state ABadSendPara
 
 	// W3C SCXML 5.3: <assign location="after" expr="after + 100">
 	if err := p.assignVariable(`after`, `_scxml_add(after, 100)`); err != nil {
-		engine.Raise(sce.NewPlatformError(ABadSendParamEndsItsBlockEventErrorExecution, "<assign> to 'after' failed"))
+		engine.Raise(sce.NewPlatformError(ABadSendParamEndsItsBlockEventErrorExecution, sceerrorreason.ErrorReasonAssignmentFailed, "<assign> to 'after' failed"))
 		return  // W3C SCXML 4.9: the error ends the block
 	}
 
@@ -1009,7 +1013,7 @@ func (p *ABadSendParamEndsItsBlockPolicy) ExecuteEntryActions(state ABadSendPara
 		parts := make([]sce.EventDataParam, 0)
 		// W3C SCXML 5.7.1: an empty location names no location in the data
 		// model — reported, and the pair left out.
-		engine.Raise(sce.NewPlatformError(ABadSendParamEndsItsBlockEventErrorExecution, "<send> <param name='p'> names no location"))
+		engine.Raise(sce.NewPlatformError(ABadSendParamEndsItsBlockEventErrorExecution, sceerrorreason.ErrorReasonLocationInvalid, "<send> <param name='p'> names no location"))
 		paramFailed = true
 		eventDataStr := sce.BuildJSONFromTypedParams(parts)
 		_ = eventDataStr
@@ -1030,7 +1034,7 @@ func (p *ABadSendParamEndsItsBlockPolicy) ExecuteEntryActions(state ABadSendPara
 
 	// W3C SCXML 5.3: <assign location="after" expr="after + 10">
 	if err := p.assignVariable(`after`, `_scxml_add(after, 10)`); err != nil {
-		engine.Raise(sce.NewPlatformError(ABadSendParamEndsItsBlockEventErrorExecution, "<assign> to 'after' failed"))
+		engine.Raise(sce.NewPlatformError(ABadSendParamEndsItsBlockEventErrorExecution, sceerrorreason.ErrorReasonAssignmentFailed, "<assign> to 'after' failed"))
 		return  // W3C SCXML 4.9: the error ends the block
 	}
 
@@ -1057,7 +1061,7 @@ func (p *ABadSendParamEndsItsBlockPolicy) ExecuteEntryActions(state ABadSendPara
 		if paramVal, paramErr := se.EvaluateExpression(p.SessionID, `v`); paramErr == nil {
 			parts = append(parts, sce.EventDataParam{Name: "p", Value: paramVal})
 		} else {
-			engine.Raise(sce.NewPlatformError(ABadSendParamEndsItsBlockEventErrorExecution, "<send> <param name='p'> location could not be read"))
+			engine.Raise(sce.NewPlatformError(ABadSendParamEndsItsBlockEventErrorExecution, sceerrorreason.ErrorReasonLocationInvalid, "<send> <param name='p'> location could not be read"))
 			paramFailed = true
 		}
 		eventDataStr := sce.BuildJSONFromTypedParams(parts)
@@ -1210,7 +1214,7 @@ func (p *ABadSendParamEndsItsBlockPolicy) ExecuteTransitionContent(source ABadSe
 
 	// W3C SCXML 5.3: <assign location="errors" expr="errors + 1">
 	if err := p.assignVariable(`errors`, `_scxml_add(errors, 1)`); err != nil {
-		engine.Raise(sce.NewPlatformError(ABadSendParamEndsItsBlockEventErrorExecution, "<assign> to 'errors' failed"))
+		engine.Raise(sce.NewPlatformError(ABadSendParamEndsItsBlockEventErrorExecution, sceerrorreason.ErrorReasonAssignmentFailed, "<assign> to 'errors' failed"))
 		return  // W3C SCXML 4.9: the error ends the block
 	}
 
@@ -1222,7 +1226,7 @@ func (p *ABadSendParamEndsItsBlockPolicy) ExecuteTransitionContent(source ABadSe
 
 	// W3C SCXML 5.3: <assign location="partials" expr="partials + 1">
 	if err := p.assignVariable(`partials`, `_scxml_add(partials, 1)`); err != nil {
-		engine.Raise(sce.NewPlatformError(ABadSendParamEndsItsBlockEventErrorExecution, "<assign> to 'partials' failed"))
+		engine.Raise(sce.NewPlatformError(ABadSendParamEndsItsBlockEventErrorExecution, sceerrorreason.ErrorReasonAssignmentFailed, "<assign> to 'partials' failed"))
 		return  // W3C SCXML 4.9: the error ends the block
 	}
 
@@ -1234,7 +1238,7 @@ func (p *ABadSendParamEndsItsBlockPolicy) ExecuteTransitionContent(source ABadSe
 
 	// W3C SCXML 5.3: <assign location="bares" expr="bares + 1">
 	if err := p.assignVariable(`bares`, `_scxml_add(bares, 1)`); err != nil {
-		engine.Raise(sce.NewPlatformError(ABadSendParamEndsItsBlockEventErrorExecution, "<assign> to 'bares' failed"))
+		engine.Raise(sce.NewPlatformError(ABadSendParamEndsItsBlockEventErrorExecution, sceerrorreason.ErrorReasonAssignmentFailed, "<assign> to 'bares' failed"))
 		return  // W3C SCXML 4.9: the error ends the block
 	}
 
@@ -1246,7 +1250,7 @@ func (p *ABadSendParamEndsItsBlockPolicy) ExecuteTransitionContent(source ABadSe
 
 	// W3C SCXML 5.3: <assign location="carried" expr="1">
 	if err := p.assignVariable(`carried`, `1`); err != nil {
-		engine.Raise(sce.NewPlatformError(ABadSendParamEndsItsBlockEventErrorExecution, "<assign> to 'carried' failed"))
+		engine.Raise(sce.NewPlatformError(ABadSendParamEndsItsBlockEventErrorExecution, sceerrorreason.ErrorReasonAssignmentFailed, "<assign> to 'carried' failed"))
 		return  // W3C SCXML 4.9: the error ends the block
 	}
 

@@ -205,7 +205,7 @@ class AChildTakesAHandedValueInPlaceOfItsDataSceSynthInvokeByNamelistStateMachin
             try {
                 engine.setVariable(sid, "listed", engine.evaluateExpr(sid, com.sce.runtime.ScriptSource.lua("nil.invalidProperty", "undefined.invalidProperty")))
             } catch (e: Exception) {
-                raisePlatformError(AChildTakesAHandedValueInPlaceOfItsDataSceSynthInvokeByNamelistEvent.Error.Execution, "<data id='listed'> expr failed to evaluate")
+                raisePlatformError(AChildTakesAHandedValueInPlaceOfItsDataSceSynthInvokeByNamelistEvent.Error.Execution, ErrorReason.EXPRESSION_FAILED, "<data id='listed'> expr failed to evaluate")
             }
         }
         // §scxml-6.4: 'record' takes a value its invoke handed it, in place of its own
@@ -214,7 +214,7 @@ class AChildTakesAHandedValueInPlaceOfItsDataSceSynthInvokeByNamelistStateMachin
             try {
                 engine.setVariable(sid, "record", engine.evaluateExpr(sid, com.sce.runtime.ScriptSource.lua("\"own record\"", "'own record'")))
             } catch (e: Exception) {
-                raisePlatformError(AChildTakesAHandedValueInPlaceOfItsDataSceSynthInvokeByNamelistEvent.Error.Execution, "<data id='record'> expr failed to evaluate")
+                raisePlatformError(AChildTakesAHandedValueInPlaceOfItsDataSceSynthInvokeByNamelistEvent.Error.Execution, ErrorReason.EXPRESSION_FAILED, "<data id='record'> expr failed to evaluate")
             }
         }
         // §scxml-6.4: 'errors' takes a value its invoke handed it, in place of its own
@@ -223,7 +223,7 @@ class AChildTakesAHandedValueInPlaceOfItsDataSceSynthInvokeByNamelistStateMachin
             try {
                 engine.setVariable(sid, "errors", engine.evaluateExpr(sid, com.sce.runtime.ScriptSource.lua("0", "0")))
             } catch (e: Exception) {
-                raisePlatformError(AChildTakesAHandedValueInPlaceOfItsDataSceSynthInvokeByNamelistEvent.Error.Execution, "<data id='errors'> expr failed to evaluate")
+                raisePlatformError(AChildTakesAHandedValueInPlaceOfItsDataSceSynthInvokeByNamelistEvent.Error.Execution, ErrorReason.EXPRESSION_FAILED, "<data id='errors'> expr failed to evaluate")
             }
         }
     }
@@ -253,14 +253,14 @@ class AChildTakesAHandedValueInPlaceOfItsDataSceSynthInvokeByNamelistStateMachin
 
     // W3C SCXML 5.9.1: a cond that cannot be evaluated raises error.execution;
     // `null` says so, where a bare `false` could not.
-    private fun evaluateGuardRaising(guardExpr: com.sce.runtime.ScriptSource, reason: String): Boolean? {
+    private fun evaluateGuardRaising(guardExpr: com.sce.runtime.ScriptSource, detail: String): Boolean? {
         assertScriptSession()
         val engine = scriptEngine ?: error("scriptEngine is required (codegen invariant: needs_script_engine == true)")
         val sid = scriptSessionId ?: error("scriptSessionId is established by the start (codegen invariant)")
         return try {
             engine.evaluateCondition(sid, guardExpr)
         } catch (e: Exception) {
-            raisePlatformError(AChildTakesAHandedValueInPlaceOfItsDataSceSynthInvokeByNamelistEvent.Error.Execution, reason)
+            raisePlatformError(AChildTakesAHandedValueInPlaceOfItsDataSceSynthInvokeByNamelistEvent.Error.Execution, ErrorReason.EXPRESSION_FAILED, detail)
             null
         }
     }
@@ -301,7 +301,7 @@ class AChildTakesAHandedValueInPlaceOfItsDataSceSynthInvokeByNamelistStateMachin
         return try {
             engine.evaluateExpr(sid, serialized)?.toString() ?: ""
         } catch (e: Exception) {
-            raisePlatformError(AChildTakesAHandedValueInPlaceOfItsDataSceSynthInvokeByNamelistEvent.Error.Execution, "an expression could not be serialised to JSON")
+            raisePlatformError(AChildTakesAHandedValueInPlaceOfItsDataSceSynthInvokeByNamelistEvent.Error.Execution, ErrorReason.EXPRESSION_FAILED, "an expression could not be serialised to JSON")
             ""
         }
     }
@@ -322,7 +322,7 @@ class AChildTakesAHandedValueInPlaceOfItsDataSceSynthInvokeByNamelistStateMachin
             engine.assign(sid, location, expr)
             true
         } catch (e: Exception) {
-            raisePlatformError(AChildTakesAHandedValueInPlaceOfItsDataSceSynthInvokeByNamelistEvent.Error.Execution, "<assign> failed")
+            raisePlatformError(AChildTakesAHandedValueInPlaceOfItsDataSceSynthInvokeByNamelistEvent.Error.Execution, ErrorReason.ASSIGNMENT_FAILED, "<assign> failed")
             false
         }
     }
@@ -338,7 +338,7 @@ class AChildTakesAHandedValueInPlaceOfItsDataSceSynthInvokeByNamelistStateMachin
             engine.executeScript(sid, script)
             true
         } catch (e: Exception) {
-            raisePlatformError(AChildTakesAHandedValueInPlaceOfItsDataSceSynthInvokeByNamelistEvent.Error.Execution, "<script> failed to execute")
+            raisePlatformError(AChildTakesAHandedValueInPlaceOfItsDataSceSynthInvokeByNamelistEvent.Error.Execution, ErrorReason.SCRIPT_FAILED, "<script> failed to execute")
             false
         }
     }
@@ -518,28 +518,28 @@ class AChildTakesAHandedValueInPlaceOfItsDataSceSynthInvokeByNamelistStateMachin
             try {
                 putParam(sendPayload, "listed", payloadEngine.evaluateExpr(payloadSid, com.sce.runtime.ScriptSource.lua("listed", "listed")))
             } catch (_: Exception) {
-                raisePlatformError(AChildTakesAHandedValueInPlaceOfItsDataSceSynthInvokeByNamelistEvent.Error.Execution, "<send> <param name='listed'> could not be read")
+                raisePlatformError(AChildTakesAHandedValueInPlaceOfItsDataSceSynthInvokeByNamelistEvent.Error.Execution, ErrorReason.LOCATION_INVALID, "<send> <param name='listed'> could not be read")
                 paramFailed = true
             }
 
             try {
                 putParam(sendPayload, "stray", payloadEngine.evaluateExpr(payloadSid, com.sce.runtime.ScriptSource.lua("_typeof(stray)", "typeof stray")))
             } catch (_: Exception) {
-                raisePlatformError(AChildTakesAHandedValueInPlaceOfItsDataSceSynthInvokeByNamelistEvent.Error.Execution, "<send> <param name='stray'> could not be read")
+                raisePlatformError(AChildTakesAHandedValueInPlaceOfItsDataSceSynthInvokeByNamelistEvent.Error.Execution, ErrorReason.LOCATION_INVALID, "<send> <param name='stray'> could not be read")
                 paramFailed = true
             }
 
             try {
                 putParam(sendPayload, "record", payloadEngine.evaluateExpr(payloadSid, com.sce.runtime.ScriptSource.lua("(function() if (((((_typeof(record) == \"object\") and (record ~= nil)) and (record.name == \"whole\")) and (record.inner.depth == 2)) and (#record.list == 3)) then return \"whole\" end return \"broken\" end)()", "typeof record === 'object' && record !== null && record.name === 'whole' && record.inner.depth === 2 && record.list.length === 3 ? 'whole' : 'broken'")))
             } catch (_: Exception) {
-                raisePlatformError(AChildTakesAHandedValueInPlaceOfItsDataSceSynthInvokeByNamelistEvent.Error.Execution, "<send> <param name='record'> could not be read")
+                raisePlatformError(AChildTakesAHandedValueInPlaceOfItsDataSceSynthInvokeByNamelistEvent.Error.Execution, ErrorReason.LOCATION_INVALID, "<send> <param name='record'> could not be read")
                 paramFailed = true
             }
 
             try {
                 putParam(sendPayload, "errors", payloadEngine.evaluateExpr(payloadSid, com.sce.runtime.ScriptSource.lua("errors", "errors")))
             } catch (_: Exception) {
-                raisePlatformError(AChildTakesAHandedValueInPlaceOfItsDataSceSynthInvokeByNamelistEvent.Error.Execution, "<send> <param name='errors'> could not be read")
+                raisePlatformError(AChildTakesAHandedValueInPlaceOfItsDataSceSynthInvokeByNamelistEvent.Error.Execution, ErrorReason.LOCATION_INVALID, "<send> <param name='errors'> could not be read")
                 paramFailed = true
             }
 
@@ -549,7 +549,7 @@ class AChildTakesAHandedValueInPlaceOfItsDataSceSynthInvokeByNamelistStateMachin
             // no parent — error.communication, nothing delivered, the block ended.
             val toParent = onSendToParent
             if (toParent == null) {
-                raisePlatformError(AChildTakesAHandedValueInPlaceOfItsDataSceSynthInvokeByNamelistEvent.Error.Communication, "<send target='#_parent'> has no parent session to reach", "__send_0")
+                raisePlatformError(AChildTakesAHandedValueInPlaceOfItsDataSceSynthInvokeByNamelistEvent.Error.Communication, ErrorReason.TARGET_UNREACHABLE, "<send target='#_parent'> has no parent session to reach", "__send_0")
                 return@send true
             }
             toParent("names.report", sendData)

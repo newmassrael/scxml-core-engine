@@ -31,6 +31,7 @@ import (
 	"time"
 
 	sce "github.com/newmassrael/sce-go-runtime"
+	sceerrorreason "github.com/newmassrael/sce-go-runtime/generated/error_reason"
 )
 
 // Ensure imports are used
@@ -39,6 +40,9 @@ var (
 	_ = filepath.Join
 	_ = strings.HasPrefix
 	_ = time.Duration(0)
+	// Why an error.* event is raised (sce:std/engine/error_reason,
+	// docs/adr/0106 #111); a machine that raises none still imports it.
+	_ = sceerrorreason.ErrorReasonExpressionFailed
 )
 
 // ======================================================================
@@ -350,7 +354,7 @@ func (p *CancellingAnInvokeRaisesNothingPolicy) InitializeDataModel(eng *sce.Eng
 		if err == nil {
 			_ = engine.SetVariable(sessionID, "spurious", result)
 		} else {
-			eng.Raise(sce.NewPlatformError(CancellingAnInvokeRaisesNothingEventErrorExecution, "<data id='spurious'> expr failed to evaluate"))
+			eng.Raise(sce.NewPlatformError(CancellingAnInvokeRaisesNothingEventErrorExecution, sceerrorreason.ErrorReasonExpressionFailed, "<data id='spurious'> expr failed to evaluate"))
 			_ = engine.SetVariable(sessionID, "spurious", nil)
 		}
 	}
@@ -382,12 +386,12 @@ func (p *CancellingAnInvokeRaisesNothingPolicy) evaluateIfCond(guard string, eng
 // evaluateGuardRaising evaluates a cond, raising error.execution when it cannot
 // be evaluated (W3C SCXML 5.9.1); ok is false then, where a bare false could
 // not say so.
-func (p *CancellingAnInvokeRaisesNothingPolicy) evaluateGuardRaising(guard string, eng *sce.Engine[CancellingAnInvokeRaisesNothingState, CancellingAnInvokeRaisesNothingEvent], reason string) (value bool, ok bool) {
+func (p *CancellingAnInvokeRaisesNothingPolicy) evaluateGuardRaising(guard string, eng *sce.Engine[CancellingAnInvokeRaisesNothingState, CancellingAnInvokeRaisesNothingEvent], detail string) (value bool, ok bool) {
 	p.assertScriptSession()
 	engine := p.ScriptEngine
 	result, err := engine.EvaluateExpression(p.SessionID, guard)
 	if err != nil {
-		eng.Raise(sce.NewPlatformError(CancellingAnInvokeRaisesNothingEventErrorExecution, reason))
+		eng.Raise(sce.NewPlatformError(CancellingAnInvokeRaisesNothingEventErrorExecution, sceerrorreason.ErrorReasonExpressionFailed, detail))
 		return false, false
 	}
 	return sce.ScriptToBool(result), true
@@ -490,7 +494,7 @@ func (p *CancellingAnInvokeRaisesNothingPolicy) SetParamValueInScriptEngine(name
 // failed is left (docs/adr/0098).
 func (p *CancellingAnInvokeRaisesNothingPolicy) declareHandedValue(eng *sce.Engine[CancellingAnInvokeRaisesNothingState, CancellingAnInvokeRaisesNothingEvent], engine sce.IScriptEngine, sessionID, name string, value interface{}) {
 	if err := engine.SetVariable(sessionID, name, value); err != nil {
-		eng.Raise(sce.NewPlatformError(CancellingAnInvokeRaisesNothingEventErrorExecution, "<data id='"+name+"'> could not hold the value its invoking session handed it"))
+		eng.Raise(sce.NewPlatformError(CancellingAnInvokeRaisesNothingEventErrorExecution, sceerrorreason.ErrorReasonDataInitFailed, "<data id='"+name+"'> could not hold the value its invoking session handed it"))
 		_ = engine.SetVariable(sessionID, name, nil)
 	}
 }
@@ -566,7 +570,7 @@ func (p *CancellingAnInvokeRaisesNothingPolicy) ExecutePendingInvokes(engine *sc
 			if refused := childEngine.Initialize(); refused != nil {
 				childEngine.DetachMesh()
 				delete(p.activeInvokes, "child")
-				engine.Raise(sce.NewPlatformError(CancellingAnInvokeRaisesNothingEventErrorExecution, sce.ChildStartRefusal("child", refused)))
+				engine.Raise(sce.NewPlatformError(CancellingAnInvokeRaisesNothingEventErrorExecution, sceerrorreason.ErrorReasonInvokeChildInitFailed, sce.ChildStartRefusal("child", refused)))
 				continue
 			}
 
@@ -1161,7 +1165,7 @@ func (p *CancellingAnInvokeRaisesNothingPolicy) ExecuteTransitionContent(source 
 
 	// W3C SCXML 5.3: <assign location="spurious" expr="spurious + 1">
 	if err := p.assignVariable(`spurious`, `_scxml_add(spurious, 1)`); err != nil {
-		engine.Raise(sce.NewPlatformError(CancellingAnInvokeRaisesNothingEventErrorExecution, "<assign> to 'spurious' failed"))
+		engine.Raise(sce.NewPlatformError(CancellingAnInvokeRaisesNothingEventErrorExecution, sceerrorreason.ErrorReasonAssignmentFailed, "<assign> to 'spurious' failed"))
 		return  // W3C SCXML 4.9: the error ends the block
 	}
 
@@ -1173,7 +1177,7 @@ func (p *CancellingAnInvokeRaisesNothingPolicy) ExecuteTransitionContent(source 
 
 	// W3C SCXML 5.3: <assign location="spurious" expr="spurious + 1">
 	if err := p.assignVariable(`spurious`, `_scxml_add(spurious, 1)`); err != nil {
-		engine.Raise(sce.NewPlatformError(CancellingAnInvokeRaisesNothingEventErrorExecution, "<assign> to 'spurious' failed"))
+		engine.Raise(sce.NewPlatformError(CancellingAnInvokeRaisesNothingEventErrorExecution, sceerrorreason.ErrorReasonAssignmentFailed, "<assign> to 'spurious' failed"))
 		return  // W3C SCXML 4.9: the error ends the block
 	}
 

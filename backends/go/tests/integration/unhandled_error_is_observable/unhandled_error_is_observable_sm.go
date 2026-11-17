@@ -31,6 +31,7 @@ import (
 	"time"
 
 	sce "github.com/newmassrael/sce-go-runtime"
+	sceerrorreason "github.com/newmassrael/sce-go-runtime/generated/error_reason"
 )
 
 // Ensure imports are used
@@ -39,6 +40,9 @@ var (
 	_ = filepath.Join
 	_ = strings.HasPrefix
 	_ = time.Duration(0)
+	// Why an error.* event is raised (sce:std/engine/error_reason,
+	// docs/adr/0106 #111); a machine that raises none still imports it.
+	_ = sceerrorreason.ErrorReasonExpressionFailed
 )
 
 // ======================================================================
@@ -392,7 +396,7 @@ func (p *UnhandledErrorIsObservablePolicy) InitializeDataModel(eng *sce.Engine[U
 		if err == nil {
 			_ = engine.SetVariable(sessionID, "pokes", result)
 		} else {
-			eng.Raise(sce.NewPlatformError(UnhandledErrorIsObservableEventErrorExecution, "<data id='pokes'> expr failed to evaluate"))
+			eng.Raise(sce.NewPlatformError(UnhandledErrorIsObservableEventErrorExecution, sceerrorreason.ErrorReasonExpressionFailed, "<data id='pokes'> expr failed to evaluate"))
 			_ = engine.SetVariable(sessionID, "pokes", nil)
 		}
 	}
@@ -406,7 +410,7 @@ func (p *UnhandledErrorIsObservablePolicy) InitializeDataModel(eng *sce.Engine[U
 		if err == nil {
 			_ = engine.SetVariable(sessionID, "booms", result)
 		} else {
-			eng.Raise(sce.NewPlatformError(UnhandledErrorIsObservableEventErrorExecution, "<data id='booms'> expr failed to evaluate"))
+			eng.Raise(sce.NewPlatformError(UnhandledErrorIsObservableEventErrorExecution, sceerrorreason.ErrorReasonExpressionFailed, "<data id='booms'> expr failed to evaluate"))
 			_ = engine.SetVariable(sessionID, "booms", nil)
 		}
 	}
@@ -420,7 +424,7 @@ func (p *UnhandledErrorIsObservablePolicy) InitializeDataModel(eng *sce.Engine[U
 		if err == nil {
 			_ = engine.SetVariable(sessionID, "caught", result)
 		} else {
-			eng.Raise(sce.NewPlatformError(UnhandledErrorIsObservableEventErrorExecution, "<data id='caught'> expr failed to evaluate"))
+			eng.Raise(sce.NewPlatformError(UnhandledErrorIsObservableEventErrorExecution, sceerrorreason.ErrorReasonExpressionFailed, "<data id='caught'> expr failed to evaluate"))
 			_ = engine.SetVariable(sessionID, "caught", nil)
 		}
 	}
@@ -434,7 +438,7 @@ func (p *UnhandledErrorIsObservablePolicy) InitializeDataModel(eng *sce.Engine[U
 		if err == nil {
 			_ = engine.SetVariable(sessionID, "detail", result)
 		} else {
-			eng.Raise(sce.NewPlatformError(UnhandledErrorIsObservableEventErrorExecution, "<data id='detail'> expr failed to evaluate"))
+			eng.Raise(sce.NewPlatformError(UnhandledErrorIsObservableEventErrorExecution, sceerrorreason.ErrorReasonExpressionFailed, "<data id='detail'> expr failed to evaluate"))
 			_ = engine.SetVariable(sessionID, "detail", nil)
 		}
 	}
@@ -448,7 +452,7 @@ func (p *UnhandledErrorIsObservablePolicy) InitializeDataModel(eng *sce.Engine[U
 		if err == nil {
 			_ = engine.SetVariable(sessionID, "heards", result)
 		} else {
-			eng.Raise(sce.NewPlatformError(UnhandledErrorIsObservableEventErrorExecution, "<data id='heards'> expr failed to evaluate"))
+			eng.Raise(sce.NewPlatformError(UnhandledErrorIsObservableEventErrorExecution, sceerrorreason.ErrorReasonExpressionFailed, "<data id='heards'> expr failed to evaluate"))
 			_ = engine.SetVariable(sessionID, "heards", nil)
 		}
 	}
@@ -480,12 +484,12 @@ func (p *UnhandledErrorIsObservablePolicy) evaluateIfCond(guard string, eng *sce
 // evaluateGuardRaising evaluates a cond, raising error.execution when it cannot
 // be evaluated (W3C SCXML 5.9.1); ok is false then, where a bare false could
 // not say so.
-func (p *UnhandledErrorIsObservablePolicy) evaluateGuardRaising(guard string, eng *sce.Engine[UnhandledErrorIsObservableState, UnhandledErrorIsObservableEvent], reason string) (value bool, ok bool) {
+func (p *UnhandledErrorIsObservablePolicy) evaluateGuardRaising(guard string, eng *sce.Engine[UnhandledErrorIsObservableState, UnhandledErrorIsObservableEvent], detail string) (value bool, ok bool) {
 	p.assertScriptSession()
 	engine := p.ScriptEngine
 	result, err := engine.EvaluateExpression(p.SessionID, guard)
 	if err != nil {
-		eng.Raise(sce.NewPlatformError(UnhandledErrorIsObservableEventErrorExecution, reason))
+		eng.Raise(sce.NewPlatformError(UnhandledErrorIsObservableEventErrorExecution, sceerrorreason.ErrorReasonExpressionFailed, detail))
 		return false, false
 	}
 	return sce.ScriptToBool(result), true
@@ -588,7 +592,7 @@ func (p *UnhandledErrorIsObservablePolicy) SetParamValueInScriptEngine(name stri
 // failed is left (docs/adr/0098).
 func (p *UnhandledErrorIsObservablePolicy) declareHandedValue(eng *sce.Engine[UnhandledErrorIsObservableState, UnhandledErrorIsObservableEvent], engine sce.IScriptEngine, sessionID, name string, value interface{}) {
 	if err := engine.SetVariable(sessionID, name, value); err != nil {
-		eng.Raise(sce.NewPlatformError(UnhandledErrorIsObservableEventErrorExecution, "<data id='"+name+"'> could not hold the value its invoking session handed it"))
+		eng.Raise(sce.NewPlatformError(UnhandledErrorIsObservableEventErrorExecution, sceerrorreason.ErrorReasonDataInitFailed, "<data id='"+name+"'> could not hold the value its invoking session handed it"))
 		_ = engine.SetVariable(sessionID, name, nil)
 	}
 }
@@ -1001,13 +1005,13 @@ func (p *UnhandledErrorIsObservablePolicy) ExecuteTransitionContent(source Unhan
 
 	// W3C SCXML 5.3: <assign location="booms" expr="booms + 1">
 	if err := p.assignVariable(`booms`, `_scxml_add(booms, 1)`); err != nil {
-		engine.Raise(sce.NewPlatformError(UnhandledErrorIsObservableEventErrorExecution, "<assign> to 'booms' failed"))
+		engine.Raise(sce.NewPlatformError(UnhandledErrorIsObservableEventErrorExecution, sceerrorreason.ErrorReasonAssignmentFailed, "<assign> to 'booms' failed"))
 		return  // W3C SCXML 4.9: the error ends the block
 	}
 
 
 	// W3C SCXML 5.3/B.2: Invalid or read-only location ""
-	engine.Raise(sce.NewPlatformError(UnhandledErrorIsObservableEventErrorExecution, "<assign> has an invalid or read-only location ''"))
+	engine.Raise(sce.NewPlatformError(UnhandledErrorIsObservableEventErrorExecution, sceerrorreason.ErrorReasonLocationInvalid, "<assign> has an invalid or read-only location ''"))
 	return  // W3C SCXML 4.9: the error ends the block
 
 			}()
@@ -1018,14 +1022,14 @@ func (p *UnhandledErrorIsObservablePolicy) ExecuteTransitionContent(source Unhan
 
 	// W3C SCXML 5.3: <assign location="caught" expr="caught + 1">
 	if err := p.assignVariable(`caught`, `_scxml_add(caught, 1)`); err != nil {
-		engine.Raise(sce.NewPlatformError(UnhandledErrorIsObservableEventErrorExecution, "<assign> to 'caught' failed"))
+		engine.Raise(sce.NewPlatformError(UnhandledErrorIsObservableEventErrorExecution, sceerrorreason.ErrorReasonAssignmentFailed, "<assign> to 'caught' failed"))
 		return  // W3C SCXML 4.9: the error ends the block
 	}
 
 
 	// W3C SCXML 5.3: <assign location="detail" expr="_event.name">
 	if err := p.assignVariable(`detail`, `_event.name`); err != nil {
-		engine.Raise(sce.NewPlatformError(UnhandledErrorIsObservableEventErrorExecution, "<assign> to 'detail' failed"))
+		engine.Raise(sce.NewPlatformError(UnhandledErrorIsObservableEventErrorExecution, sceerrorreason.ErrorReasonAssignmentFailed, "<assign> to 'detail' failed"))
 		return  // W3C SCXML 4.9: the error ends the block
 	}
 
@@ -1040,7 +1044,7 @@ func (p *UnhandledErrorIsObservablePolicy) ExecuteTransitionContent(source Unhan
 
 	// W3C SCXML 5.3: <assign location="pokes" expr="pokes + 1">
 	if err := p.assignVariable(`pokes`, `_scxml_add(pokes, 1)`); err != nil {
-		engine.Raise(sce.NewPlatformError(UnhandledErrorIsObservableEventErrorExecution, "<assign> to 'pokes' failed"))
+		engine.Raise(sce.NewPlatformError(UnhandledErrorIsObservableEventErrorExecution, sceerrorreason.ErrorReasonAssignmentFailed, "<assign> to 'pokes' failed"))
 		return  // W3C SCXML 4.9: the error ends the block
 	}
 
@@ -1066,7 +1070,7 @@ func (p *UnhandledErrorIsObservablePolicy) ExecuteTransitionContent(source Unhan
 
 	// W3C SCXML 5.3: <assign location="heards" expr="heards + 1">
 	if err := p.assignVariable(`heards`, `_scxml_add(heards, 1)`); err != nil {
-		engine.Raise(sce.NewPlatformError(UnhandledErrorIsObservableEventErrorExecution, "<assign> to 'heards' failed"))
+		engine.Raise(sce.NewPlatformError(UnhandledErrorIsObservableEventErrorExecution, sceerrorreason.ErrorReasonAssignmentFailed, "<assign> to 'heards' failed"))
 		return  // W3C SCXML 4.9: the error ends the block
 	}
 
@@ -1078,13 +1082,13 @@ func (p *UnhandledErrorIsObservablePolicy) ExecuteTransitionContent(source Unhan
 
 	// W3C SCXML 5.3: <assign location="booms" expr="booms + 1">
 	if err := p.assignVariable(`booms`, `_scxml_add(booms, 1)`); err != nil {
-		engine.Raise(sce.NewPlatformError(UnhandledErrorIsObservableEventErrorExecution, "<assign> to 'booms' failed"))
+		engine.Raise(sce.NewPlatformError(UnhandledErrorIsObservableEventErrorExecution, sceerrorreason.ErrorReasonAssignmentFailed, "<assign> to 'booms' failed"))
 		return  // W3C SCXML 4.9: the error ends the block
 	}
 
 
 	// W3C SCXML 5.3/B.2: Invalid or read-only location ""
-	engine.Raise(sce.NewPlatformError(UnhandledErrorIsObservableEventErrorExecution, "<assign> has an invalid or read-only location ''"))
+	engine.Raise(sce.NewPlatformError(UnhandledErrorIsObservableEventErrorExecution, sceerrorreason.ErrorReasonLocationInvalid, "<assign> has an invalid or read-only location ''"))
 	return  // W3C SCXML 4.9: the error ends the block
 
 			}()

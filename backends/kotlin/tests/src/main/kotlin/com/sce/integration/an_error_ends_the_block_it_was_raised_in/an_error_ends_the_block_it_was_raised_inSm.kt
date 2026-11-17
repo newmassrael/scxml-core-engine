@@ -540,7 +540,7 @@ class AnErrorEndsTheBlockItWasRaisedInStateMachine(
             try {
                 engine.setVariable(sid, "errors", engine.evaluateExpr(sid, com.sce.runtime.ScriptSource.lua("0", "0")))
             } catch (e: Exception) {
-                raisePlatformError(AnErrorEndsTheBlockItWasRaisedInEvent.Error.Execution, "<data id='errors'> expr failed to evaluate")
+                raisePlatformError(AnErrorEndsTheBlockItWasRaisedInEvent.Error.Execution, ErrorReason.EXPRESSION_FAILED, "<data id='errors'> expr failed to evaluate")
             }
         }
         // §scxml-6.4: 'afterAssign' takes a value its invoke handed it, in place of its own
@@ -549,7 +549,7 @@ class AnErrorEndsTheBlockItWasRaisedInStateMachine(
             try {
                 engine.setVariable(sid, "afterAssign", engine.evaluateExpr(sid, com.sce.runtime.ScriptSource.lua("0", "0")))
             } catch (e: Exception) {
-                raisePlatformError(AnErrorEndsTheBlockItWasRaisedInEvent.Error.Execution, "<data id='afterAssign'> expr failed to evaluate")
+                raisePlatformError(AnErrorEndsTheBlockItWasRaisedInEvent.Error.Execution, ErrorReason.EXPRESSION_FAILED, "<data id='afterAssign'> expr failed to evaluate")
             }
         }
         // §scxml-6.4: 'afterScript' takes a value its invoke handed it, in place of its own
@@ -558,7 +558,7 @@ class AnErrorEndsTheBlockItWasRaisedInStateMachine(
             try {
                 engine.setVariable(sid, "afterScript", engine.evaluateExpr(sid, com.sce.runtime.ScriptSource.lua("0", "0")))
             } catch (e: Exception) {
-                raisePlatformError(AnErrorEndsTheBlockItWasRaisedInEvent.Error.Execution, "<data id='afterScript'> expr failed to evaluate")
+                raisePlatformError(AnErrorEndsTheBlockItWasRaisedInEvent.Error.Execution, ErrorReason.EXPRESSION_FAILED, "<data id='afterScript'> expr failed to evaluate")
             }
         }
         // §scxml-6.4: 'afterLog' takes a value its invoke handed it, in place of its own
@@ -567,7 +567,7 @@ class AnErrorEndsTheBlockItWasRaisedInStateMachine(
             try {
                 engine.setVariable(sid, "afterLog", engine.evaluateExpr(sid, com.sce.runtime.ScriptSource.lua("0", "0")))
             } catch (e: Exception) {
-                raisePlatformError(AnErrorEndsTheBlockItWasRaisedInEvent.Error.Execution, "<data id='afterLog'> expr failed to evaluate")
+                raisePlatformError(AnErrorEndsTheBlockItWasRaisedInEvent.Error.Execution, ErrorReason.EXPRESSION_FAILED, "<data id='afterLog'> expr failed to evaluate")
             }
         }
         // §scxml-6.4: 'afterCancel' takes a value its invoke handed it, in place of its own
@@ -576,7 +576,7 @@ class AnErrorEndsTheBlockItWasRaisedInStateMachine(
             try {
                 engine.setVariable(sid, "afterCancel", engine.evaluateExpr(sid, com.sce.runtime.ScriptSource.lua("0", "0")))
             } catch (e: Exception) {
-                raisePlatformError(AnErrorEndsTheBlockItWasRaisedInEvent.Error.Execution, "<data id='afterCancel'> expr failed to evaluate")
+                raisePlatformError(AnErrorEndsTheBlockItWasRaisedInEvent.Error.Execution, ErrorReason.EXPRESSION_FAILED, "<data id='afterCancel'> expr failed to evaluate")
             }
         }
         // §scxml-6.4: 'afterIfInner' takes a value its invoke handed it, in place of its own
@@ -585,7 +585,7 @@ class AnErrorEndsTheBlockItWasRaisedInStateMachine(
             try {
                 engine.setVariable(sid, "afterIfInner", engine.evaluateExpr(sid, com.sce.runtime.ScriptSource.lua("0", "0")))
             } catch (e: Exception) {
-                raisePlatformError(AnErrorEndsTheBlockItWasRaisedInEvent.Error.Execution, "<data id='afterIfInner'> expr failed to evaluate")
+                raisePlatformError(AnErrorEndsTheBlockItWasRaisedInEvent.Error.Execution, ErrorReason.EXPRESSION_FAILED, "<data id='afterIfInner'> expr failed to evaluate")
             }
         }
         // §scxml-6.4: 'afterIf' takes a value its invoke handed it, in place of its own
@@ -594,7 +594,7 @@ class AnErrorEndsTheBlockItWasRaisedInStateMachine(
             try {
                 engine.setVariable(sid, "afterIf", engine.evaluateExpr(sid, com.sce.runtime.ScriptSource.lua("0", "0")))
             } catch (e: Exception) {
-                raisePlatformError(AnErrorEndsTheBlockItWasRaisedInEvent.Error.Execution, "<data id='afterIf'> expr failed to evaluate")
+                raisePlatformError(AnErrorEndsTheBlockItWasRaisedInEvent.Error.Execution, ErrorReason.EXPRESSION_FAILED, "<data id='afterIf'> expr failed to evaluate")
             }
         }
         // §scxml-6.4: 'ifThen' takes a value its invoke handed it, in place of its own
@@ -603,7 +603,7 @@ class AnErrorEndsTheBlockItWasRaisedInStateMachine(
             try {
                 engine.setVariable(sid, "ifThen", engine.evaluateExpr(sid, com.sce.runtime.ScriptSource.lua("0", "0")))
             } catch (e: Exception) {
-                raisePlatformError(AnErrorEndsTheBlockItWasRaisedInEvent.Error.Execution, "<data id='ifThen'> expr failed to evaluate")
+                raisePlatformError(AnErrorEndsTheBlockItWasRaisedInEvent.Error.Execution, ErrorReason.EXPRESSION_FAILED, "<data id='ifThen'> expr failed to evaluate")
             }
         }
         // §scxml-6.4: 'ifElse' takes a value its invoke handed it, in place of its own
@@ -612,7 +612,7 @@ class AnErrorEndsTheBlockItWasRaisedInStateMachine(
             try {
                 engine.setVariable(sid, "ifElse", engine.evaluateExpr(sid, com.sce.runtime.ScriptSource.lua("0", "0")))
             } catch (e: Exception) {
-                raisePlatformError(AnErrorEndsTheBlockItWasRaisedInEvent.Error.Execution, "<data id='ifElse'> expr failed to evaluate")
+                raisePlatformError(AnErrorEndsTheBlockItWasRaisedInEvent.Error.Execution, ErrorReason.EXPRESSION_FAILED, "<data id='ifElse'> expr failed to evaluate")
             }
         }
         // §scxml-6.4: 'afterIfCond' takes a value its invoke handed it, in place of its own
@@ -621,7 +621,7 @@ class AnErrorEndsTheBlockItWasRaisedInStateMachine(
             try {
                 engine.setVariable(sid, "afterIfCond", engine.evaluateExpr(sid, com.sce.runtime.ScriptSource.lua("0", "0")))
             } catch (e: Exception) {
-                raisePlatformError(AnErrorEndsTheBlockItWasRaisedInEvent.Error.Execution, "<data id='afterIfCond'> expr failed to evaluate")
+                raisePlatformError(AnErrorEndsTheBlockItWasRaisedInEvent.Error.Execution, ErrorReason.EXPRESSION_FAILED, "<data id='afterIfCond'> expr failed to evaluate")
             }
         }
         // §scxml-6.4: 'elseifThen' takes a value its invoke handed it, in place of its own
@@ -630,7 +630,7 @@ class AnErrorEndsTheBlockItWasRaisedInStateMachine(
             try {
                 engine.setVariable(sid, "elseifThen", engine.evaluateExpr(sid, com.sce.runtime.ScriptSource.lua("0", "0")))
             } catch (e: Exception) {
-                raisePlatformError(AnErrorEndsTheBlockItWasRaisedInEvent.Error.Execution, "<data id='elseifThen'> expr failed to evaluate")
+                raisePlatformError(AnErrorEndsTheBlockItWasRaisedInEvent.Error.Execution, ErrorReason.EXPRESSION_FAILED, "<data id='elseifThen'> expr failed to evaluate")
             }
         }
         // §scxml-6.4: 'elseifElse' takes a value its invoke handed it, in place of its own
@@ -639,7 +639,7 @@ class AnErrorEndsTheBlockItWasRaisedInStateMachine(
             try {
                 engine.setVariable(sid, "elseifElse", engine.evaluateExpr(sid, com.sce.runtime.ScriptSource.lua("0", "0")))
             } catch (e: Exception) {
-                raisePlatformError(AnErrorEndsTheBlockItWasRaisedInEvent.Error.Execution, "<data id='elseifElse'> expr failed to evaluate")
+                raisePlatformError(AnErrorEndsTheBlockItWasRaisedInEvent.Error.Execution, ErrorReason.EXPRESSION_FAILED, "<data id='elseifElse'> expr failed to evaluate")
             }
         }
         // §scxml-6.4: 'afterElseifCond' takes a value its invoke handed it, in place of its own
@@ -648,7 +648,7 @@ class AnErrorEndsTheBlockItWasRaisedInStateMachine(
             try {
                 engine.setVariable(sid, "afterElseifCond", engine.evaluateExpr(sid, com.sce.runtime.ScriptSource.lua("0", "0")))
             } catch (e: Exception) {
-                raisePlatformError(AnErrorEndsTheBlockItWasRaisedInEvent.Error.Execution, "<data id='afterElseifCond'> expr failed to evaluate")
+                raisePlatformError(AnErrorEndsTheBlockItWasRaisedInEvent.Error.Execution, ErrorReason.EXPRESSION_FAILED, "<data id='afterElseifCond'> expr failed to evaluate")
             }
         }
         // §scxml-6.4: 'afterNestedIf' takes a value its invoke handed it, in place of its own
@@ -657,7 +657,7 @@ class AnErrorEndsTheBlockItWasRaisedInStateMachine(
             try {
                 engine.setVariable(sid, "afterNestedIf", engine.evaluateExpr(sid, com.sce.runtime.ScriptSource.lua("0", "0")))
             } catch (e: Exception) {
-                raisePlatformError(AnErrorEndsTheBlockItWasRaisedInEvent.Error.Execution, "<data id='afterNestedIf'> expr failed to evaluate")
+                raisePlatformError(AnErrorEndsTheBlockItWasRaisedInEvent.Error.Execution, ErrorReason.EXPRESSION_FAILED, "<data id='afterNestedIf'> expr failed to evaluate")
             }
         }
         // §scxml-6.4: 'afterOuterIf' takes a value its invoke handed it, in place of its own
@@ -666,7 +666,7 @@ class AnErrorEndsTheBlockItWasRaisedInStateMachine(
             try {
                 engine.setVariable(sid, "afterOuterIf", engine.evaluateExpr(sid, com.sce.runtime.ScriptSource.lua("0", "0")))
             } catch (e: Exception) {
-                raisePlatformError(AnErrorEndsTheBlockItWasRaisedInEvent.Error.Execution, "<data id='afterOuterIf'> expr failed to evaluate")
+                raisePlatformError(AnErrorEndsTheBlockItWasRaisedInEvent.Error.Execution, ErrorReason.EXPRESSION_FAILED, "<data id='afterOuterIf'> expr failed to evaluate")
             }
         }
         // §scxml-6.4: 'afterSingle' takes a value its invoke handed it, in place of its own
@@ -675,7 +675,7 @@ class AnErrorEndsTheBlockItWasRaisedInStateMachine(
             try {
                 engine.setVariable(sid, "afterSingle", engine.evaluateExpr(sid, com.sce.runtime.ScriptSource.lua("0", "0")))
             } catch (e: Exception) {
-                raisePlatformError(AnErrorEndsTheBlockItWasRaisedInEvent.Error.Execution, "<data id='afterSingle'> expr failed to evaluate")
+                raisePlatformError(AnErrorEndsTheBlockItWasRaisedInEvent.Error.Execution, ErrorReason.EXPRESSION_FAILED, "<data id='afterSingle'> expr failed to evaluate")
             }
         }
         // §scxml-6.4: 'afterTrans' takes a value its invoke handed it, in place of its own
@@ -684,7 +684,7 @@ class AnErrorEndsTheBlockItWasRaisedInStateMachine(
             try {
                 engine.setVariable(sid, "afterTrans", engine.evaluateExpr(sid, com.sce.runtime.ScriptSource.lua("0", "0")))
             } catch (e: Exception) {
-                raisePlatformError(AnErrorEndsTheBlockItWasRaisedInEvent.Error.Execution, "<data id='afterTrans'> expr failed to evaluate")
+                raisePlatformError(AnErrorEndsTheBlockItWasRaisedInEvent.Error.Execution, ErrorReason.EXPRESSION_FAILED, "<data id='afterTrans'> expr failed to evaluate")
             }
         }
         // §scxml-6.4: 'initRan' takes a value its invoke handed it, in place of its own
@@ -693,7 +693,7 @@ class AnErrorEndsTheBlockItWasRaisedInStateMachine(
             try {
                 engine.setVariable(sid, "initRan", engine.evaluateExpr(sid, com.sce.runtime.ScriptSource.lua("0", "0")))
             } catch (e: Exception) {
-                raisePlatformError(AnErrorEndsTheBlockItWasRaisedInEvent.Error.Execution, "<data id='initRan'> expr failed to evaluate")
+                raisePlatformError(AnErrorEndsTheBlockItWasRaisedInEvent.Error.Execution, ErrorReason.EXPRESSION_FAILED, "<data id='initRan'> expr failed to evaluate")
             }
         }
         // §scxml-6.4: 'pairs' takes a value its invoke handed it, in place of its own
@@ -702,7 +702,7 @@ class AnErrorEndsTheBlockItWasRaisedInStateMachine(
             try {
                 engine.setVariable(sid, "pairs", engine.evaluateExpr(sid, com.sce.runtime.ScriptSource.lua("0", "0")))
             } catch (e: Exception) {
-                raisePlatformError(AnErrorEndsTheBlockItWasRaisedInEvent.Error.Execution, "<data id='pairs'> expr failed to evaluate")
+                raisePlatformError(AnErrorEndsTheBlockItWasRaisedInEvent.Error.Execution, ErrorReason.EXPRESSION_FAILED, "<data id='pairs'> expr failed to evaluate")
             }
         }
         // §scxml-6.4: 'sum' takes a value its invoke handed it, in place of its own
@@ -711,7 +711,7 @@ class AnErrorEndsTheBlockItWasRaisedInStateMachine(
             try {
                 engine.setVariable(sid, "sum", engine.evaluateExpr(sid, com.sce.runtime.ScriptSource.lua("0", "0")))
             } catch (e: Exception) {
-                raisePlatformError(AnErrorEndsTheBlockItWasRaisedInEvent.Error.Execution, "<data id='sum'> expr failed to evaluate")
+                raisePlatformError(AnErrorEndsTheBlockItWasRaisedInEvent.Error.Execution, ErrorReason.EXPRESSION_FAILED, "<data id='sum'> expr failed to evaluate")
             }
         }
         // §scxml-6.4: 'outer' takes a value its invoke handed it, in place of its own
@@ -720,7 +720,7 @@ class AnErrorEndsTheBlockItWasRaisedInStateMachine(
             try {
                 engine.setVariable(sid, "outer", engine.evaluateExpr(sid, com.sce.runtime.ScriptSource.lua("{1, 2}", "[1, 2]")))
             } catch (e: Exception) {
-                raisePlatformError(AnErrorEndsTheBlockItWasRaisedInEvent.Error.Execution, "<data id='outer'> expr failed to evaluate")
+                raisePlatformError(AnErrorEndsTheBlockItWasRaisedInEvent.Error.Execution, ErrorReason.EXPRESSION_FAILED, "<data id='outer'> expr failed to evaluate")
             }
         }
         // §scxml-6.4: 'inner' takes a value its invoke handed it, in place of its own
@@ -729,7 +729,7 @@ class AnErrorEndsTheBlockItWasRaisedInStateMachine(
             try {
                 engine.setVariable(sid, "inner", engine.evaluateExpr(sid, com.sce.runtime.ScriptSource.lua("{10, 20}", "[10, 20]")))
             } catch (e: Exception) {
-                raisePlatformError(AnErrorEndsTheBlockItWasRaisedInEvent.Error.Execution, "<data id='inner'> expr failed to evaluate")
+                raisePlatformError(AnErrorEndsTheBlockItWasRaisedInEvent.Error.Execution, ErrorReason.EXPRESSION_FAILED, "<data id='inner'> expr failed to evaluate")
             }
         }
         // §scxml-6.4: 'o' takes a value its invoke handed it, in place of its own
@@ -738,7 +738,7 @@ class AnErrorEndsTheBlockItWasRaisedInStateMachine(
             try {
                 engine.setVariable(sid, "o", engine.evaluateExpr(sid, com.sce.runtime.ScriptSource.lua("0", "0")))
             } catch (e: Exception) {
-                raisePlatformError(AnErrorEndsTheBlockItWasRaisedInEvent.Error.Execution, "<data id='o'> expr failed to evaluate")
+                raisePlatformError(AnErrorEndsTheBlockItWasRaisedInEvent.Error.Execution, ErrorReason.EXPRESSION_FAILED, "<data id='o'> expr failed to evaluate")
             }
         }
         // §scxml-6.4: 'i' takes a value its invoke handed it, in place of its own
@@ -747,7 +747,7 @@ class AnErrorEndsTheBlockItWasRaisedInStateMachine(
             try {
                 engine.setVariable(sid, "i", engine.evaluateExpr(sid, com.sce.runtime.ScriptSource.lua("0", "0")))
             } catch (e: Exception) {
-                raisePlatformError(AnErrorEndsTheBlockItWasRaisedInEvent.Error.Execution, "<data id='i'> expr failed to evaluate")
+                raisePlatformError(AnErrorEndsTheBlockItWasRaisedInEvent.Error.Execution, ErrorReason.EXPRESSION_FAILED, "<data id='i'> expr failed to evaluate")
             }
         }
         // §scxml-6.4: 'obj' takes a value its invoke handed it, in place of its own
@@ -756,7 +756,7 @@ class AnErrorEndsTheBlockItWasRaisedInStateMachine(
             try {
                 engine.setVariable(sid, "obj", engine.evaluateExpr(sid, com.sce.runtime.ScriptSource.lua("{}", "({})")))
             } catch (e: Exception) {
-                raisePlatformError(AnErrorEndsTheBlockItWasRaisedInEvent.Error.Execution, "<data id='obj'> expr failed to evaluate")
+                raisePlatformError(AnErrorEndsTheBlockItWasRaisedInEvent.Error.Execution, ErrorReason.EXPRESSION_FAILED, "<data id='obj'> expr failed to evaluate")
             }
         }
     }
@@ -786,14 +786,14 @@ class AnErrorEndsTheBlockItWasRaisedInStateMachine(
 
     // W3C SCXML 5.9.1: a cond that cannot be evaluated raises error.execution;
     // `null` says so, where a bare `false` could not.
-    private fun evaluateGuardRaising(guardExpr: com.sce.runtime.ScriptSource, reason: String): Boolean? {
+    private fun evaluateGuardRaising(guardExpr: com.sce.runtime.ScriptSource, detail: String): Boolean? {
         assertScriptSession()
         val engine = scriptEngine ?: error("scriptEngine is required (codegen invariant: needs_script_engine == true)")
         val sid = scriptSessionId ?: error("scriptSessionId is established by the start (codegen invariant)")
         return try {
             engine.evaluateCondition(sid, guardExpr)
         } catch (e: Exception) {
-            raisePlatformError(AnErrorEndsTheBlockItWasRaisedInEvent.Error.Execution, reason)
+            raisePlatformError(AnErrorEndsTheBlockItWasRaisedInEvent.Error.Execution, ErrorReason.EXPRESSION_FAILED, detail)
             null
         }
     }
@@ -834,7 +834,7 @@ class AnErrorEndsTheBlockItWasRaisedInStateMachine(
         return try {
             engine.evaluateExpr(sid, serialized)?.toString() ?: ""
         } catch (e: Exception) {
-            raisePlatformError(AnErrorEndsTheBlockItWasRaisedInEvent.Error.Execution, "an expression could not be serialised to JSON")
+            raisePlatformError(AnErrorEndsTheBlockItWasRaisedInEvent.Error.Execution, ErrorReason.EXPRESSION_FAILED, "an expression could not be serialised to JSON")
             ""
         }
     }
@@ -855,7 +855,7 @@ class AnErrorEndsTheBlockItWasRaisedInStateMachine(
             engine.assign(sid, location, expr)
             true
         } catch (e: Exception) {
-            raisePlatformError(AnErrorEndsTheBlockItWasRaisedInEvent.Error.Execution, "<assign> failed")
+            raisePlatformError(AnErrorEndsTheBlockItWasRaisedInEvent.Error.Execution, ErrorReason.ASSIGNMENT_FAILED, "<assign> failed")
             false
         }
     }
@@ -871,7 +871,7 @@ class AnErrorEndsTheBlockItWasRaisedInStateMachine(
             engine.executeScript(sid, script)
             true
         } catch (e: Exception) {
-            raisePlatformError(AnErrorEndsTheBlockItWasRaisedInEvent.Error.Execution, "<script> failed to execute")
+            raisePlatformError(AnErrorEndsTheBlockItWasRaisedInEvent.Error.Execution, ErrorReason.SCRIPT_FAILED, "<script> failed to execute")
             false
         }
     }
@@ -1050,7 +1050,7 @@ class AnErrorEndsTheBlockItWasRaisedInStateMachine(
                     println("unreadable: " + (scriptEngine?.evaluateExpr(scriptSessionId ?: "", com.sce.runtime.ScriptSource.lua("obj.missing.deep", "obj.missing.deep"))?.toString() ?: ""))
                     false
                 } catch (_: Exception) {
-                    raisePlatformError(AnErrorEndsTheBlockItWasRaisedInEvent.Error.Execution, "<log> expr failed to evaluate")
+                    raisePlatformError(AnErrorEndsTheBlockItWasRaisedInEvent.Error.Execution, ErrorReason.EXPRESSION_FAILED, "<log> expr failed to evaluate")
                     true
                 }
             }) {
@@ -1079,7 +1079,7 @@ class AnErrorEndsTheBlockItWasRaisedInStateMachine(
                     if (sendidToCancel.isNotEmpty()) cancelSend(sendidToCancel)
                     false
                 } catch (_: Exception) {
-                    raisePlatformError(AnErrorEndsTheBlockItWasRaisedInEvent.Error.Execution, "<cancel> sendidexpr failed to evaluate")
+                    raisePlatformError(AnErrorEndsTheBlockItWasRaisedInEvent.Error.Execution, ErrorReason.EXPRESSION_FAILED, "<cancel> sendidexpr failed to evaluate")
                     true
                 }
             }) {
@@ -1242,7 +1242,7 @@ class AnErrorEndsTheBlockItWasRaisedInStateMachine(
                     // block; nothing more is raised here.
                     true
                 } catch (e: Exception) {
-                    raisePlatformError(AnErrorEndsTheBlockItWasRaisedInEvent.Error.Execution, "<foreach array='inner'> failed to iterate")
+                    raisePlatformError(AnErrorEndsTheBlockItWasRaisedInEvent.Error.Execution, ErrorReason.FOREACH_INVALID, "<foreach array='inner'> failed to iterate")
                     true
                 }
             }) {
@@ -1256,7 +1256,7 @@ class AnErrorEndsTheBlockItWasRaisedInStateMachine(
                     // block; nothing more is raised here.
                     true
                 } catch (e: Exception) {
-                    raisePlatformError(AnErrorEndsTheBlockItWasRaisedInEvent.Error.Execution, "<foreach array='outer'> failed to iterate")
+                    raisePlatformError(AnErrorEndsTheBlockItWasRaisedInEvent.Error.Execution, ErrorReason.FOREACH_INVALID, "<foreach array='outer'> failed to iterate")
                     true
                 }
             }) {

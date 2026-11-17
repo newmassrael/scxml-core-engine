@@ -1,5 +1,5 @@
 // SCE-GENERATED — DO NOT EDIT
-// source-hash: e3e91f36cc7b8591c060b277b157f8471b6940f92608c548338f70603c760055
+// source-hash: f02e6d1d557556839c99891abeba3d1ef7bc15e5821c4215914c8e1ef9ecc561
 
 // GENERATED CODE — DO NOT EDIT
 // Source: sce-build/tests/fixtures/host_processor/statechart_host_invoker_optional.scxml
@@ -651,7 +651,7 @@ class StatechartHostInvokerOptionalStateMachine(
                             // be run and none was, which is the same fact as
                             // an unsupported type — so the same event, rather
                             // than a silence that reads as started.
-                            raisePlatformError(StatechartHostInvokerOptionalEvent.Error.Execution, "<invoke> names an invoker the host declared but never registered")
+                            raisePlatformError(StatechartHostInvokerOptionalEvent.Error.Execution, ErrorReason.PROCESSOR_UNREGISTERED, "<invoke> names an invoker the host declared but never registered")
                         }
                     }
                 }
@@ -719,7 +719,7 @@ class StatechartHostInvokerOptionalStateMachine(
 
             vAt = pendingDoneInvokeLookupPayload!!.at
 
-            if (try { vLabel = (pendingDoneInvokeLookupPayload!!.label)?.let { scePresent -> com.sce.forge.runtime.SceChecked.bounded(scePresent, 16) }; false } catch (_: com.sce.forge.runtime.AlgorithmFailure) { raisePlatformError(StatechartHostInvokerOptionalEvent.Error.Execution, "<assign location='label'>: an integer operation overflowed or failed"); true }) {
+            if (try { vLabel = (pendingDoneInvokeLookupPayload!!.label)?.let { scePresent -> com.sce.forge.runtime.SceChecked.bounded(scePresent, 16) }; false } catch (_: com.sce.forge.runtime.AlgorithmFailure) { raisePlatformError(StatechartHostInvokerOptionalEvent.Error.Execution, ErrorReason.EXPRESSION_FAILED, "<assign location='label'>: an integer operation overflowed or failed"); true }) {
                 return
             }
 
@@ -738,12 +738,12 @@ class StatechartHostInvokerOptionalStateMachine(
 
             if (vLabel != null) {
 
-            if (try { vLabelValue = com.sce.forge.runtime.SceChecked.bounded(com.sce.forge.runtime.SceOptional.proven(vLabel), 16); false } catch (_: com.sce.forge.runtime.AlgorithmFailure) { raisePlatformError(StatechartHostInvokerOptionalEvent.Error.Execution, "<assign location='label_value'>: an integer operation overflowed or failed"); true }) {
+            if (try { vLabelValue = com.sce.forge.runtime.SceChecked.bounded(com.sce.forge.runtime.SceOptional.proven(vLabel), 16); false } catch (_: com.sce.forge.runtime.AlgorithmFailure) { raisePlatformError(StatechartHostInvokerOptionalEvent.Error.Execution, ErrorReason.EXPRESSION_FAILED, "<assign location='label_value'>: an integer operation overflowed or failed"); true }) {
                 return
             }
             } else {
 
-            if (try { vLabelValue = com.sce.forge.runtime.SceChecked.bounded("", 16); false } catch (_: com.sce.forge.runtime.AlgorithmFailure) { raisePlatformError(StatechartHostInvokerOptionalEvent.Error.Execution, "<assign location='label_value'>: an integer operation overflowed or failed"); true }) {
+            if (try { vLabelValue = com.sce.forge.runtime.SceChecked.bounded("", 16); false } catch (_: com.sce.forge.runtime.AlgorithmFailure) { raisePlatformError(StatechartHostInvokerOptionalEvent.Error.Execution, ErrorReason.EXPRESSION_FAILED, "<assign location='label_value'>: an integer operation overflowed or failed"); true }) {
                 return
             }
             }
@@ -752,7 +752,7 @@ class StatechartHostInvokerOptionalStateMachine(
 
             vHitTrue = vHit == true
 
-            if (try { vAnswered = com.sce.forge.runtime.SceChecked.add(vAnswered, 1.toUByte()); false } catch (_: com.sce.forge.runtime.AlgorithmFailure) { raisePlatformError(StatechartHostInvokerOptionalEvent.Error.Execution, "<assign location='answered'>: an integer operation overflowed or failed"); true }) {
+            if (try { vAnswered = com.sce.forge.runtime.SceChecked.add(vAnswered, 1.toUByte()); false } catch (_: com.sce.forge.runtime.AlgorithmFailure) { raisePlatformError(StatechartHostInvokerOptionalEvent.Error.Execution, ErrorReason.EXPRESSION_FAILED, "<assign location='answered'>: an integer operation overflowed or failed"); true }) {
                 return
             }
     }

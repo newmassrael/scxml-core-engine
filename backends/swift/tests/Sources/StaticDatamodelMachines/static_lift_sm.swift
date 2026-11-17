@@ -765,7 +765,7 @@ public final class StaticLiftPolicy: InvocablePolicy {
 
 
 
-                if ({ () -> Bool in do { let sceValue: UInt32 = (try Checked.add(self.vLifts, 1)); self.vLifts = sceValue } catch { engine.raise(EventWithMetadata.platformError(StaticLiftEvent.errorExecution, message: "<assign location='lifts'>: an integer operation overflowed or failed")); return true }; return false }()) {
+                if ({ () -> Bool in do { let sceValue: UInt32 = (try Checked.add(self.vLifts, 1)); self.vLifts = sceValue } catch { engine.raise(EventWithMetadata.platformError(StaticLiftEvent.errorExecution, reason: .expressionFailed, message: "<assign location='lifts'>: an integer operation overflowed or failed")); return true }; return false }()) {
                     break sceBlock  // W3C SCXML 4.9: the error ends the block
                 }
 
@@ -778,7 +778,7 @@ public final class StaticLiftPolicy: InvocablePolicy {
                     }
 
 
-                if ({ () -> Bool in do { let sceValue: String = (try Checked.bounded(self.pendingTextKeptPayload.text, capacity: 512)); self.vSaid = sceValue } catch { engine.raise(EventWithMetadata.platformError(StaticLiftEvent.errorExecution, message: "<assign location='said'>: an integer operation overflowed or failed")); return true }; return false }()) {
+                if ({ () -> Bool in do { let sceValue: String = (try Checked.bounded(self.pendingTextKeptPayload.text, capacity: 512)); self.vSaid = sceValue } catch { engine.raise(EventWithMetadata.platformError(StaticLiftEvent.errorExecution, reason: .expressionFailed, message: "<assign location='said'>: an integer operation overflowed or failed")); return true }; return false }()) {
                     break sceBlock  // W3C SCXML 4.9: the error ends the block
                 }
 
@@ -789,7 +789,7 @@ public final class StaticLiftPolicy: InvocablePolicy {
 
 
 
-                if ({ () -> Bool in do { let sceValue: UInt32 = (try Checked.add(self.vLifts, 1)); self.vLifts = sceValue } catch { engine.raise(EventWithMetadata.platformError(StaticLiftEvent.errorExecution, message: "<assign location='lifts'>: an integer operation overflowed or failed")); return true }; return false }()) {
+                if ({ () -> Bool in do { let sceValue: UInt32 = (try Checked.add(self.vLifts, 1)); self.vLifts = sceValue } catch { engine.raise(EventWithMetadata.platformError(StaticLiftEvent.errorExecution, reason: .expressionFailed, message: "<assign location='lifts'>: an integer operation overflowed or failed")); return true }; return false }()) {
                     break sceBlock  // W3C SCXML 4.9: the error ends the block
                 }
 
@@ -799,7 +799,7 @@ public final class StaticLiftPolicy: InvocablePolicy {
                 sceBlock: do {
 
 
-                if ({ () -> Bool in do { let sceValue: UInt32 = (try Checked.add(self.vErrors, 1)); self.vErrors = sceValue } catch { engine.raise(EventWithMetadata.platformError(StaticLiftEvent.errorExecution, message: "<assign location='errors'>: an integer operation overflowed or failed")); return true }; return false }()) {
+                if ({ () -> Bool in do { let sceValue: UInt32 = (try Checked.add(self.vErrors, 1)); self.vErrors = sceValue } catch { engine.raise(EventWithMetadata.platformError(StaticLiftEvent.errorExecution, reason: .expressionFailed, message: "<assign location='errors'>: an integer operation overflowed or failed")); return true }; return false }()) {
                     break sceBlock  // W3C SCXML 4.9: the error ends the block
                 }
 

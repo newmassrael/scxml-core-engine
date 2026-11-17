@@ -31,6 +31,7 @@ import (
 	"time"
 
 	sce "github.com/newmassrael/sce-go-runtime"
+	sceerrorreason "github.com/newmassrael/sce-go-runtime/generated/error_reason"
 	scealgorithm "github.com/newmassrael/sce-forge-runtime/algorithm"
 )
 
@@ -40,6 +41,9 @@ var (
 	_ = filepath.Join
 	_ = strings.HasPrefix
 	_ = time.Duration(0)
+	// Why an error.* event is raised (sce:std/engine/error_reason,
+	// docs/adr/0106 #111); a machine that raises none still imports it.
+	_ = sceerrorreason.ErrorReasonExpressionFailed
 	_ scealgorithm.Failure
 )
 
@@ -772,7 +776,7 @@ func (p *StaticOverflowPolicy) FirstEnabledTransition(state StaticOverflowState,
 			// NL→IR Item C1 Path A: native typed `_event.data` guard — cond
 			// "level + 10 > 0" lowered to a tag-checked field comparison on
 			// the lifted `pending<Event>Payload` (no script engine).
-			if func() bool { var sceFailure scealgorithm.Failure; sceValue := scealgorithm.AddUint8(&sceFailure, p.vLevel, 10) > 0; if sceFailure.Failed() { engine.Raise(sce.NewPlatformError(StaticOverflowEventErrorExecution, "<transition cond='level + 10 > 0'>: an integer operation overflowed or failed")); return false }; return sceValue }() {
+			if func() bool { var sceFailure scealgorithm.Failure; sceValue := scealgorithm.AddUint8(&sceFailure, p.vLevel, 10) > 0; if sceFailure.Failed() { engine.Raise(sce.NewPlatformError(StaticOverflowEventErrorExecution, sceerrorreason.ErrorReasonExpressionFailed, "<transition cond='level + 10 > 0'>: an integer operation overflowed or failed")); return false }; return sceValue }() {
 				return sce.EnabledTransition[StaticOverflowState, sce.HistoryID]{
 					Source:          state,
 					Targets:         transitionTargetsOfStaticOverflow[state][1],
@@ -809,7 +813,7 @@ func (p *StaticOverflowPolicy) ExecuteTransitionContent(source StaticOverflowSta
 			func() {
 
 
-	if func() bool { var sceFailure scealgorithm.Failure; sceValue := scealgorithm.AddUint8(&sceFailure, p.vLevel, 3); if sceFailure.Failed() { engine.Raise(sce.NewPlatformError(StaticOverflowEventErrorExecution, "<assign location='level'>: an integer operation overflowed or failed")); return true }; p.vLevel = sceValue; return false }() {
+	if func() bool { var sceFailure scealgorithm.Failure; sceValue := scealgorithm.AddUint8(&sceFailure, p.vLevel, 3); if sceFailure.Failed() { engine.Raise(sce.NewPlatformError(StaticOverflowEventErrorExecution, sceerrorreason.ErrorReasonExpressionFailed, "<assign location='level'>: an integer operation overflowed or failed")); return true }; p.vLevel = sceValue; return false }() {
 		return  // W3C SCXML 4.9: the error ends the block
 	}
 
@@ -820,7 +824,7 @@ func (p *StaticOverflowPolicy) ExecuteTransitionContent(source StaticOverflowSta
 			func() {
 
 
-	if func() bool { var sceFailure scealgorithm.Failure; sceValue := scealgorithm.AddUint32(&sceFailure, p.vRefusals, 1); if sceFailure.Failed() { engine.Raise(sce.NewPlatformError(StaticOverflowEventErrorExecution, "<assign location='refusals'>: an integer operation overflowed or failed")); return true }; p.vRefusals = sceValue; return false }() {
+	if func() bool { var sceFailure scealgorithm.Failure; sceValue := scealgorithm.AddUint32(&sceFailure, p.vRefusals, 1); if sceFailure.Failed() { engine.Raise(sce.NewPlatformError(StaticOverflowEventErrorExecution, sceerrorreason.ErrorReasonExpressionFailed, "<assign location='refusals'>: an integer operation overflowed or failed")); return true }; p.vRefusals = sceValue; return false }() {
 		return  // W3C SCXML 4.9: the error ends the block
 	}
 

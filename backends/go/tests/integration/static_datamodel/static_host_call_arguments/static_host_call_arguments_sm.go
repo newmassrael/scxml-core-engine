@@ -31,6 +31,7 @@ import (
 	"time"
 
 	sce "github.com/newmassrael/sce-go-runtime"
+	sceerrorreason "github.com/newmassrael/sce-go-runtime/generated/error_reason"
 	scealgorithm "github.com/newmassrael/sce-forge-runtime/algorithm"
 )
 
@@ -40,6 +41,9 @@ var (
 	_ = filepath.Join
 	_ = strings.HasPrefix
 	_ = time.Duration(0)
+	// Why an error.* event is raised (sce:std/engine/error_reason,
+	// docs/adr/0106 #111); a machine that raises none still imports it.
+	_ = sceerrorreason.ErrorReasonExpressionFailed
 	_ scealgorithm.Failure
 )
 
@@ -806,7 +810,7 @@ func (p *StaticHostCallArgumentsPolicy) ExecuteTransitionContent(source StaticHo
 			func() {
 
 		// W3C SCXML G.7: <sce:action name="report">
-		{ var sceFailure scealgorithm.Failure; sceArg0 := scealgorithm.AddUint8(&sceFailure, p.vLevel, 1); if sceFailure.Failed() { engine.Raise(sce.NewPlatformError(StaticHostCallArgumentsEventErrorExecution, "<sce:action name='report'>: an integer operation overflowed or failed")) } else { p.actions.Report(sceArg0) } }
+		{ var sceFailure scealgorithm.Failure; sceArg0 := scealgorithm.AddUint8(&sceFailure, p.vLevel, 1); if sceFailure.Failed() { engine.Raise(sce.NewPlatformError(StaticHostCallArgumentsEventErrorExecution, sceerrorreason.ErrorReasonExpressionFailed, "<sce:action name='report'>: an integer operation overflowed or failed")) } else { p.actions.Report(sceArg0) } }
 			}()
 		case 1:
 //line static_host_call_arguments.scxml:29
@@ -814,7 +818,7 @@ func (p *StaticHostCallArgumentsPolicy) ExecuteTransitionContent(source StaticHo
 			func() {
 
 		// W3C SCXML G.7: <sce:action name="report">
-		{ var sceFailure scealgorithm.Failure; sceArg0 := scealgorithm.AddUint8(&sceFailure, p.vLevel, 10); if sceFailure.Failed() { engine.Raise(sce.NewPlatformError(StaticHostCallArgumentsEventErrorExecution, "<sce:action name='report'>: an integer operation overflowed or failed")) } else { p.actions.Report(sceArg0) } }
+		{ var sceFailure scealgorithm.Failure; sceArg0 := scealgorithm.AddUint8(&sceFailure, p.vLevel, 10); if sceFailure.Failed() { engine.Raise(sce.NewPlatformError(StaticHostCallArgumentsEventErrorExecution, sceerrorreason.ErrorReasonExpressionFailed, "<sce:action name='report'>: an integer operation overflowed or failed")) } else { p.actions.Report(sceArg0) } }
 			}()
 		case 2:
 //line static_host_call_arguments.scxml:34
@@ -822,7 +826,7 @@ func (p *StaticHostCallArgumentsPolicy) ExecuteTransitionContent(source StaticHo
 			func() {
 
 
-	if func() bool { var sceFailure scealgorithm.Failure; sceValue := scealgorithm.AddUint8(&sceFailure, p.vErrors, 1); if sceFailure.Failed() { engine.Raise(sce.NewPlatformError(StaticHostCallArgumentsEventErrorExecution, "<assign location='errors'>: an integer operation overflowed or failed")); return true }; p.vErrors = sceValue; return false }() {
+	if func() bool { var sceFailure scealgorithm.Failure; sceValue := scealgorithm.AddUint8(&sceFailure, p.vErrors, 1); if sceFailure.Failed() { engine.Raise(sce.NewPlatformError(StaticHostCallArgumentsEventErrorExecution, sceerrorreason.ErrorReasonExpressionFailed, "<assign location='errors'>: an integer operation overflowed or failed")); return true }; p.vErrors = sceValue; return false }() {
 		return  // W3C SCXML 4.9: the error ends the block
 	}
 

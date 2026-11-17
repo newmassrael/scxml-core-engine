@@ -31,6 +31,7 @@ import (
 	"time"
 
 	sce "github.com/newmassrael/sce-go-runtime"
+	sceerrorreason "github.com/newmassrael/sce-go-runtime/generated/error_reason"
 )
 
 // Ensure imports are used
@@ -39,6 +40,9 @@ var (
 	_ = filepath.Join
 	_ = strings.HasPrefix
 	_ = time.Duration(0)
+	// Why an error.* event is raised (sce:std/engine/error_reason,
+	// docs/adr/0106 #111); a machine that raises none still imports it.
+	_ = sceerrorreason.ErrorReasonExpressionFailed
 )
 
 // ======================================================================
@@ -346,7 +350,7 @@ func (p *ABadInvokeArgumentIsReportedOnceSceSynthInvokeInv1Policy) InitializeDat
 		if err == nil {
 			_ = engine.SetVariable(sessionID, "fromLoc", result)
 		} else {
-			eng.Raise(sce.NewPlatformError(ABadInvokeArgumentIsReportedOnceSceSynthInvokeInv1EventErrorExecution, "<data id='fromLoc'> expr failed to evaluate"))
+			eng.Raise(sce.NewPlatformError(ABadInvokeArgumentIsReportedOnceSceSynthInvokeInv1EventErrorExecution, sceerrorreason.ErrorReasonExpressionFailed, "<data id='fromLoc'> expr failed to evaluate"))
 			_ = engine.SetVariable(sessionID, "fromLoc", nil)
 		}
 	}
@@ -360,7 +364,7 @@ func (p *ABadInvokeArgumentIsReportedOnceSceSynthInvokeInv1Policy) InitializeDat
 		if err == nil {
 			_ = engine.SetVariable(sessionID, "emptyLoc", result)
 		} else {
-			eng.Raise(sce.NewPlatformError(ABadInvokeArgumentIsReportedOnceSceSynthInvokeInv1EventErrorExecution, "<data id='emptyLoc'> expr failed to evaluate"))
+			eng.Raise(sce.NewPlatformError(ABadInvokeArgumentIsReportedOnceSceSynthInvokeInv1EventErrorExecution, sceerrorreason.ErrorReasonExpressionFailed, "<data id='emptyLoc'> expr failed to evaluate"))
 			_ = engine.SetVariable(sessionID, "emptyLoc", nil)
 		}
 	}
@@ -374,7 +378,7 @@ func (p *ABadInvokeArgumentIsReportedOnceSceSynthInvokeInv1Policy) InitializeDat
 		if err == nil {
 			_ = engine.SetVariable(sessionID, "broken", result)
 		} else {
-			eng.Raise(sce.NewPlatformError(ABadInvokeArgumentIsReportedOnceSceSynthInvokeInv1EventErrorExecution, "<data id='broken'> expr failed to evaluate"))
+			eng.Raise(sce.NewPlatformError(ABadInvokeArgumentIsReportedOnceSceSynthInvokeInv1EventErrorExecution, sceerrorreason.ErrorReasonExpressionFailed, "<data id='broken'> expr failed to evaluate"))
 			_ = engine.SetVariable(sessionID, "broken", nil)
 		}
 	}
@@ -406,12 +410,12 @@ func (p *ABadInvokeArgumentIsReportedOnceSceSynthInvokeInv1Policy) evaluateIfCon
 // evaluateGuardRaising evaluates a cond, raising error.execution when it cannot
 // be evaluated (W3C SCXML 5.9.1); ok is false then, where a bare false could
 // not say so.
-func (p *ABadInvokeArgumentIsReportedOnceSceSynthInvokeInv1Policy) evaluateGuardRaising(guard string, eng *sce.Engine[ABadInvokeArgumentIsReportedOnceSceSynthInvokeInv1State, ABadInvokeArgumentIsReportedOnceSceSynthInvokeInv1Event], reason string) (value bool, ok bool) {
+func (p *ABadInvokeArgumentIsReportedOnceSceSynthInvokeInv1Policy) evaluateGuardRaising(guard string, eng *sce.Engine[ABadInvokeArgumentIsReportedOnceSceSynthInvokeInv1State, ABadInvokeArgumentIsReportedOnceSceSynthInvokeInv1Event], detail string) (value bool, ok bool) {
 	p.assertScriptSession()
 	engine := p.ScriptEngine
 	result, err := engine.EvaluateExpression(p.SessionID, guard)
 	if err != nil {
-		eng.Raise(sce.NewPlatformError(ABadInvokeArgumentIsReportedOnceSceSynthInvokeInv1EventErrorExecution, reason))
+		eng.Raise(sce.NewPlatformError(ABadInvokeArgumentIsReportedOnceSceSynthInvokeInv1EventErrorExecution, sceerrorreason.ErrorReasonExpressionFailed, detail))
 		return false, false
 	}
 	return sce.ScriptToBool(result), true
@@ -514,7 +518,7 @@ func (p *ABadInvokeArgumentIsReportedOnceSceSynthInvokeInv1Policy) SetParamValue
 // failed is left (docs/adr/0098).
 func (p *ABadInvokeArgumentIsReportedOnceSceSynthInvokeInv1Policy) declareHandedValue(eng *sce.Engine[ABadInvokeArgumentIsReportedOnceSceSynthInvokeInv1State, ABadInvokeArgumentIsReportedOnceSceSynthInvokeInv1Event], engine sce.IScriptEngine, sessionID, name string, value interface{}) {
 	if err := engine.SetVariable(sessionID, name, value); err != nil {
-		eng.Raise(sce.NewPlatformError(ABadInvokeArgumentIsReportedOnceSceSynthInvokeInv1EventErrorExecution, "<data id='"+name+"'> could not hold the value its invoking session handed it"))
+		eng.Raise(sce.NewPlatformError(ABadInvokeArgumentIsReportedOnceSceSynthInvokeInv1EventErrorExecution, sceerrorreason.ErrorReasonDataInitFailed, "<data id='"+name+"'> could not hold the value its invoking session handed it"))
 		_ = engine.SetVariable(sessionID, name, nil)
 	}
 }
@@ -869,19 +873,19 @@ func (p *ABadInvokeArgumentIsReportedOnceSceSynthInvokeInv1Policy) ExecuteTransi
 		if paramVal, paramErr := se.EvaluateExpression(p.SessionID, `fromLoc`); paramErr == nil {
 			parts = append(parts, sce.EventDataParam{Name: "fromLoc", Value: paramVal})
 		} else {
-			engine.Raise(sce.NewPlatformError(ABadInvokeArgumentIsReportedOnceSceSynthInvokeInv1EventErrorExecution, "<send> <param name='fromLoc'> expr failed to evaluate"))
+			engine.Raise(sce.NewPlatformError(ABadInvokeArgumentIsReportedOnceSceSynthInvokeInv1EventErrorExecution, sceerrorreason.ErrorReasonExpressionFailed, "<send> <param name='fromLoc'> expr failed to evaluate"))
 			paramFailed = true
 		}
 		if paramVal, paramErr := se.EvaluateExpression(p.SessionID, `emptyLoc`); paramErr == nil {
 			parts = append(parts, sce.EventDataParam{Name: "emptyLoc", Value: paramVal})
 		} else {
-			engine.Raise(sce.NewPlatformError(ABadInvokeArgumentIsReportedOnceSceSynthInvokeInv1EventErrorExecution, "<send> <param name='emptyLoc'> expr failed to evaluate"))
+			engine.Raise(sce.NewPlatformError(ABadInvokeArgumentIsReportedOnceSceSynthInvokeInv1EventErrorExecution, sceerrorreason.ErrorReasonExpressionFailed, "<send> <param name='emptyLoc'> expr failed to evaluate"))
 			paramFailed = true
 		}
 		if paramVal, paramErr := se.EvaluateExpression(p.SessionID, `broken`); paramErr == nil {
 			parts = append(parts, sce.EventDataParam{Name: "broken", Value: paramVal})
 		} else {
-			engine.Raise(sce.NewPlatformError(ABadInvokeArgumentIsReportedOnceSceSynthInvokeInv1EventErrorExecution, "<send> <param name='broken'> expr failed to evaluate"))
+			engine.Raise(sce.NewPlatformError(ABadInvokeArgumentIsReportedOnceSceSynthInvokeInv1EventErrorExecution, sceerrorreason.ErrorReasonExpressionFailed, "<send> <param name='broken'> expr failed to evaluate"))
 			paramFailed = true
 		}
 		eventDataStr := sce.BuildJSONFromTypedParams(parts)
@@ -891,7 +895,7 @@ func (p *ABadInvokeArgumentIsReportedOnceSceSynthInvokeInv1Policy) ExecuteTransi
 		// W3C SCXML C.1: this session was started by its host, not by an
 		// `<invoke>`, so `#_parent` reaches nobody — error.communication,
 		// nothing delivered, and the block ends (4.9).
-		errEvt := sce.NewPlatformError(ABadInvokeArgumentIsReportedOnceSceSynthInvokeInv1EventErrorCommunication, "<send target='#_parent'> has no parent session to reach")
+		errEvt := sce.NewPlatformError(ABadInvokeArgumentIsReportedOnceSceSynthInvokeInv1EventErrorCommunication, sceerrorreason.ErrorReasonTargetUnreachable, "<send target='#_parent'> has no parent session to reach")
 		errEvt.Metadata.SendID = "__send_0"
 		engine.Raise(errEvt)
 		return  // W3C SCXML 4.9: the error ends the block

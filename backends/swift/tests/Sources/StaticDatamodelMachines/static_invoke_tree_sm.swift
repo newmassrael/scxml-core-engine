@@ -836,14 +836,14 @@ public final class StaticInvokeTreePolicy: InvocablePolicy {
                         sender: self.sessionID
                     )
                     if sendRouted == .notSupported {
-                        var sendError = EventWithMetadata.platformError(StaticInvokeTreeEvent.errorExecution, message: "<send> target is not a target")
+                        var sendError = EventWithMetadata.platformError(StaticInvokeTreeEvent.errorExecution, reason: .sendTargetInvalid, message: "<send> target is not a target")
                         sendError.metadata.sendID = "__send_0"
                         engine.raise(sendError)
 
                         break sceBlock  // W3C SCXML 4.9: the error ends the block
                     }
                     if sendRouted == .notReachable {
-                        var sendError = EventWithMetadata.platformError(StaticInvokeTreeEvent.errorCommunication, message: "<send> target names a session this processor cannot reach")
+                        var sendError = EventWithMetadata.platformError(StaticInvokeTreeEvent.errorCommunication, reason: .targetUnreachable, message: "<send> target names a session this processor cannot reach")
                         sendError.metadata.sendID = "__send_0"
                         engine.raise(sendError)
 
@@ -873,14 +873,14 @@ public final class StaticInvokeTreePolicy: InvocablePolicy {
                         sender: self.sessionID
                     )
                     if sendRouted == .notSupported {
-                        var sendError = EventWithMetadata.platformError(StaticInvokeTreeEvent.errorExecution, message: "<send> target is not a target")
+                        var sendError = EventWithMetadata.platformError(StaticInvokeTreeEvent.errorExecution, reason: .sendTargetInvalid, message: "<send> target is not a target")
                         sendError.metadata.sendID = "poke"
                         engine.raise(sendError)
 
                         break sceBlock  // W3C SCXML 4.9: the error ends the block
                     }
                     if sendRouted == .notReachable {
-                        var sendError = EventWithMetadata.platformError(StaticInvokeTreeEvent.errorCommunication, message: "<send> target names a session this processor cannot reach")
+                        var sendError = EventWithMetadata.platformError(StaticInvokeTreeEvent.errorCommunication, reason: .targetUnreachable, message: "<send> target names a session this processor cannot reach")
                         sendError.metadata.sendID = "poke"
                         engine.raise(sendError)
 
@@ -893,7 +893,7 @@ public final class StaticInvokeTreePolicy: InvocablePolicy {
                 sceBlock: do {
 
 
-                if ({ () -> Bool in do { let sceValue: UInt32 = (try Checked.add(self.vAnswers, 1)); self.vAnswers = sceValue } catch { engine.raise(EventWithMetadata.platformError(StaticInvokeTreeEvent.errorExecution, message: "<assign location='answers'>: an integer operation overflowed or failed")); return true }; return false }()) {
+                if ({ () -> Bool in do { let sceValue: UInt32 = (try Checked.add(self.vAnswers, 1)); self.vAnswers = sceValue } catch { engine.raise(EventWithMetadata.platformError(StaticInvokeTreeEvent.errorExecution, reason: .expressionFailed, message: "<assign location='answers'>: an integer operation overflowed or failed")); return true }; return false }()) {
                     break sceBlock  // W3C SCXML 4.9: the error ends the block
                 }
 
@@ -903,7 +903,7 @@ public final class StaticInvokeTreePolicy: InvocablePolicy {
                 sceBlock: do {
 
 
-                if ({ () -> Bool in do { let sceValue: UInt32 = (try Checked.add(self.vReports, 1)); self.vReports = sceValue } catch { engine.raise(EventWithMetadata.platformError(StaticInvokeTreeEvent.errorExecution, message: "<assign location='reports'>: an integer operation overflowed or failed")); return true }; return false }()) {
+                if ({ () -> Bool in do { let sceValue: UInt32 = (try Checked.add(self.vReports, 1)); self.vReports = sceValue } catch { engine.raise(EventWithMetadata.platformError(StaticInvokeTreeEvent.errorExecution, reason: .expressionFailed, message: "<assign location='reports'>: an integer operation overflowed or failed")); return true }; return false }()) {
                     break sceBlock  // W3C SCXML 4.9: the error ends the block
                 }
 
@@ -913,7 +913,7 @@ public final class StaticInvokeTreePolicy: InvocablePolicy {
                 sceBlock: do {
 
 
-                if ({ () -> Bool in do { let sceValue: UInt32 = (try Checked.add(self.vStamps, 1)); self.vStamps = sceValue } catch { engine.raise(EventWithMetadata.platformError(StaticInvokeTreeEvent.errorExecution, message: "<assign location='stamps'>: an integer operation overflowed or failed")); return true }; return false }()) {
+                if ({ () -> Bool in do { let sceValue: UInt32 = (try Checked.add(self.vStamps, 1)); self.vStamps = sceValue } catch { engine.raise(EventWithMetadata.platformError(StaticInvokeTreeEvent.errorExecution, reason: .expressionFailed, message: "<assign location='stamps'>: an integer operation overflowed or failed")); return true }; return false }()) {
                     break sceBlock  // W3C SCXML 4.9: the error ends the block
                 }
 

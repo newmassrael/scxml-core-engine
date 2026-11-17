@@ -187,14 +187,14 @@ class EventOriginIsALocationSceSynthInvokeInvPeerStateMachine(
 
     // W3C SCXML 5.9.1: a cond that cannot be evaluated raises error.execution;
     // `null` says so, where a bare `false` could not.
-    private fun evaluateGuardRaising(guardExpr: com.sce.runtime.ScriptSource, reason: String): Boolean? {
+    private fun evaluateGuardRaising(guardExpr: com.sce.runtime.ScriptSource, detail: String): Boolean? {
         assertScriptSession()
         val engine = scriptEngine ?: error("scriptEngine is required (codegen invariant: needs_script_engine == true)")
         val sid = scriptSessionId ?: error("scriptSessionId is established by the start (codegen invariant)")
         return try {
             engine.evaluateCondition(sid, guardExpr)
         } catch (e: Exception) {
-            raisePlatformError(EventOriginIsALocationSceSynthInvokeInvPeerEvent.Error.Execution, reason)
+            raisePlatformError(EventOriginIsALocationSceSynthInvokeInvPeerEvent.Error.Execution, ErrorReason.EXPRESSION_FAILED, detail)
             null
         }
     }
@@ -235,7 +235,7 @@ class EventOriginIsALocationSceSynthInvokeInvPeerStateMachine(
         return try {
             engine.evaluateExpr(sid, serialized)?.toString() ?: ""
         } catch (e: Exception) {
-            raisePlatformError(EventOriginIsALocationSceSynthInvokeInvPeerEvent.Error.Execution, "an expression could not be serialised to JSON")
+            raisePlatformError(EventOriginIsALocationSceSynthInvokeInvPeerEvent.Error.Execution, ErrorReason.EXPRESSION_FAILED, "an expression could not be serialised to JSON")
             ""
         }
     }
@@ -256,7 +256,7 @@ class EventOriginIsALocationSceSynthInvokeInvPeerStateMachine(
             engine.assign(sid, location, expr)
             true
         } catch (e: Exception) {
-            raisePlatformError(EventOriginIsALocationSceSynthInvokeInvPeerEvent.Error.Execution, "<assign> failed")
+            raisePlatformError(EventOriginIsALocationSceSynthInvokeInvPeerEvent.Error.Execution, ErrorReason.ASSIGNMENT_FAILED, "<assign> failed")
             false
         }
     }
@@ -272,7 +272,7 @@ class EventOriginIsALocationSceSynthInvokeInvPeerStateMachine(
             engine.executeScript(sid, script)
             true
         } catch (e: Exception) {
-            raisePlatformError(EventOriginIsALocationSceSynthInvokeInvPeerEvent.Error.Execution, "<script> failed to execute")
+            raisePlatformError(EventOriginIsALocationSceSynthInvokeInvPeerEvent.Error.Execution, ErrorReason.SCRIPT_FAILED, "<script> failed to execute")
             false
         }
     }
@@ -391,7 +391,7 @@ class EventOriginIsALocationSceSynthInvokeInvPeerStateMachine(
             try {
                 putParam(sendPayload, "myLocation", payloadEngine.evaluateExpr(payloadSid, com.sce.runtime.ScriptSource.lua("_ioprocessors.scxml.location", "_ioprocessors['scxml'].location")))
             } catch (_: Exception) {
-                raisePlatformError(EventOriginIsALocationSceSynthInvokeInvPeerEvent.Error.Execution, "<send> <param name='myLocation'> could not be read")
+                raisePlatformError(EventOriginIsALocationSceSynthInvokeInvPeerEvent.Error.Execution, ErrorReason.LOCATION_INVALID, "<send> <param name='myLocation'> could not be read")
                 paramFailed = true
             }
 
@@ -401,7 +401,7 @@ class EventOriginIsALocationSceSynthInvokeInvPeerStateMachine(
             // no parent — error.communication, nothing delivered, the block ended.
             val toParent = onSendToParent
             if (toParent == null) {
-                raisePlatformError(EventOriginIsALocationSceSynthInvokeInvPeerEvent.Error.Communication, "<send target='#_parent'> has no parent session to reach", "__send_1")
+                raisePlatformError(EventOriginIsALocationSceSynthInvokeInvPeerEvent.Error.Communication, ErrorReason.TARGET_UNREACHABLE, "<send target='#_parent'> has no parent session to reach", "__send_1")
                 return@send true
             }
             toParent("fromChild", sendData)
@@ -468,7 +468,7 @@ class EventOriginIsALocationSceSynthInvokeInvPeerStateMachine(
             // no parent — error.communication, nothing delivered, the block ended.
             val toParent = onSendToParent
             if (toParent == null) {
-                raisePlatformError(EventOriginIsALocationSceSynthInvokeInvPeerEvent.Error.Communication, "<send target='#_parent'> has no parent session to reach", "__send_0")
+                raisePlatformError(EventOriginIsALocationSceSynthInvokeInvPeerEvent.Error.Communication, ErrorReason.TARGET_UNREACHABLE, "<send target='#_parent'> has no parent session to reach", "__send_0")
                 return@send true
             }
             toParent("replyArrived", sendData)

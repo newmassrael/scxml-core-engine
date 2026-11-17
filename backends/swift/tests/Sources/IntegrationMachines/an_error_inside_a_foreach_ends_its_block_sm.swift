@@ -456,8 +456,12 @@ public final class AnErrorInsideAForeachEndsItsBlockPolicy: InvocablePolicy {
 
     /// Says what went wrong where the document can see it: `error.execution` on the internal
     /// queue (§scxml-5.9.1, 5.3).
-    private func raiseExecutionError(_ message: String, engine: Engine<AnErrorInsideAForeachEndsItsBlockPolicy>) {
-        engine.raise(EventWithMetadata.platformError(AnErrorInsideAForeachEndsItsBlockEvent.errorExecution, message: message))
+    /// `reason` is the code of sce:std/engine/error_reason the record carries
+    /// (docs/adr/0106 #111).
+    private func raiseExecutionError(
+        _ reason: ErrorReason, _ message: String, engine: Engine<AnErrorInsideAForeachEndsItsBlockPolicy>
+    ) {
+        engine.raise(EventWithMetadata.platformError(AnErrorInsideAForeachEndsItsBlockEvent.errorExecution, reason: reason, message: message))
     }
 
     /// W3C SCXML 5.3: the `<data id>` `id` takes the value of the lowered expression, or nil when it
@@ -514,6 +518,7 @@ public final class AnErrorInsideAForeachEndsItsBlockPolicy: InvocablePolicy {
             }
         } catch {
             raiseExecutionError(
+                handed == nil ? .expressionFailed : .paramUnfit,
                 handed == nil
                     ? "<data id='\(id)'> expr failed to evaluate"
                     : "<data id='\(id)'> could not hold the value its parent handed it",
@@ -685,7 +690,7 @@ public final class AnErrorInsideAForeachEndsItsBlockPolicy: InvocablePolicy {
             // this call the payload is lost to the document and to the host alike.
             engine.notePayloadReading(event, reading: Self.payloadReading(of: reading))
         } catch {
-            raiseExecutionError("_event could not be bound for '\(name)'", engine: engine)
+            raiseExecutionError(.payloadRefused, "_event could not be bound for '\(name)'", engine: engine)
         }
     }
 
@@ -722,7 +727,7 @@ public final class AnErrorInsideAForeachEndsItsBlockPolicy: InvocablePolicy {
         do {
             return try scriptSession.evaluateCondition(condition, chunkName: "=cond")
         } catch {
-            raiseExecutionError("a \(element) cond failed to evaluate", engine: engine)
+            raiseExecutionError(.expressionFailed, "a \(element) cond failed to evaluate", engine: engine)
             failed = true
             return false
         }
@@ -743,13 +748,13 @@ public final class AnErrorInsideAForeachEndsItsBlockPolicy: InvocablePolicy {
                 if let foreachCount1 = beginForeach(1, "items") {
                     for foreachPosition1 in 0..<foreachCount1 {
                         if !bindForeach(1, at: foreachPosition1, item: "item", index: nil) {
-                            raiseExecutionError("<foreach> cannot set its item or index", engine: engine)
+                            raiseExecutionError(.foreachInvalid, "<foreach> cannot set its item or index", engine: engine)
                             break sceBlock  // W3C SCXML 4.9: the error ends the block
                         }
 
                 // W3C SCXML 5.4: <assign location="iters1">
                 if !assignData("iters1", "_scxml_add(iters1, 1)") {
-                    raiseExecutionError("<assign> to 'iters1' failed", engine: engine)
+                    raiseExecutionError(.assignmentFailed, "<assign> to 'iters1' failed", engine: engine)
                     break sceBlock  // W3C SCXML 4.9: the error ends the block
                 }
 
@@ -764,7 +769,7 @@ public final class AnErrorInsideAForeachEndsItsBlockPolicy: InvocablePolicy {
                     if let paramValue = evaluateJSON("obj.missing.deep") {
                         sendParts.append(PayloadPair.json("bad", rawJSON: paramValue))
                     } else {
-                        engine.raise(EventWithMetadata.platformError(AnErrorInsideAForeachEndsItsBlockEvent.errorExecution, message: "<send> <param name=bad> failed to evaluate"))
+                        engine.raise(EventWithMetadata.platformError(AnErrorInsideAForeachEndsItsBlockEvent.errorExecution, reason: .expressionFailed, message: "<send> <param name=bad> failed to evaluate"))
                         paramFailed = true
                     }
 
@@ -782,14 +787,14 @@ public final class AnErrorInsideAForeachEndsItsBlockPolicy: InvocablePolicy {
                 }
                     }
                 } else {
-                    raiseExecutionError("<foreach array='items'> is not an array it can walk", engine: engine)
+                    raiseExecutionError(.foreachInvalid, "<foreach array='items'> is not an array it can walk", engine: engine)
                     break sceBlock  // W3C SCXML 4.9: the error ends the block
                 }
 
 
                 // W3C SCXML 5.4: <assign location="after1">
                 if !assignData("after1", "1") {
-                    raiseExecutionError("<assign> to 'after1' failed", engine: engine)
+                    raiseExecutionError(.assignmentFailed, "<assign> to 'after1' failed", engine: engine)
                     break sceBlock  // W3C SCXML 4.9: the error ends the block
                 }
 
@@ -802,33 +807,33 @@ public final class AnErrorInsideAForeachEndsItsBlockPolicy: InvocablePolicy {
                 if let foreachCount1 = beginForeach(1, "items") {
                     for foreachPosition1 in 0..<foreachCount1 {
                         if !bindForeach(1, at: foreachPosition1, item: "item", index: nil) {
-                            raiseExecutionError("<foreach> cannot set its item or index", engine: engine)
+                            raiseExecutionError(.foreachInvalid, "<foreach> cannot set its item or index", engine: engine)
                             break sceBlock  // W3C SCXML 4.9: the error ends the block
                         }
 
                 // W3C SCXML 5.4: <assign location="iters2">
                 if !assignData("iters2", "_scxml_add(iters2, 1)") {
-                    raiseExecutionError("<assign> to 'iters2' failed", engine: engine)
+                    raiseExecutionError(.assignmentFailed, "<assign> to 'iters2' failed", engine: engine)
                     break sceBlock  // W3C SCXML 4.9: the error ends the block
                 }
 
 
                 // W3C SCXML 5.4: <assign location="obj.missing.deep">
                 if !assignData("obj.missing.deep", "1") {
-                    raiseExecutionError("<assign> to 'obj.missing.deep' failed", engine: engine)
+                    raiseExecutionError(.assignmentFailed, "<assign> to 'obj.missing.deep' failed", engine: engine)
                     break sceBlock  // W3C SCXML 4.9: the error ends the block
                 }
 
                     }
                 } else {
-                    raiseExecutionError("<foreach array='items'> is not an array it can walk", engine: engine)
+                    raiseExecutionError(.foreachInvalid, "<foreach array='items'> is not an array it can walk", engine: engine)
                     break sceBlock  // W3C SCXML 4.9: the error ends the block
                 }
 
 
                 // W3C SCXML 5.4: <assign location="after2">
                 if !assignData("after2", "1") {
-                    raiseExecutionError("<assign> to 'after2' failed", engine: engine)
+                    raiseExecutionError(.assignmentFailed, "<assign> to 'after2' failed", engine: engine)
                     break sceBlock  // W3C SCXML 4.9: the error ends the block
                 }
 
@@ -949,7 +954,7 @@ public final class AnErrorInsideAForeachEndsItsBlockPolicy: InvocablePolicy {
 
                 // W3C SCXML 5.4: <assign location="errors">
                 if !assignData("errors", "_scxml_add(errors, 1)") {
-                    raiseExecutionError("<assign> to 'errors' failed", engine: engine)
+                    raiseExecutionError(.assignmentFailed, "<assign> to 'errors' failed", engine: engine)
                     break sceBlock  // W3C SCXML 4.9: the error ends the block
                 }
 
@@ -960,7 +965,7 @@ public final class AnErrorInsideAForeachEndsItsBlockPolicy: InvocablePolicy {
 
                 // W3C SCXML 5.4: <assign location="sent">
                 if !assignData("sent", "_scxml_add(sent, 1)") {
-                    raiseExecutionError("<assign> to 'sent' failed", engine: engine)
+                    raiseExecutionError(.assignmentFailed, "<assign> to 'sent' failed", engine: engine)
                     break sceBlock  // W3C SCXML 4.9: the error ends the block
                 }
 
@@ -973,13 +978,13 @@ public final class AnErrorInsideAForeachEndsItsBlockPolicy: InvocablePolicy {
                 if let foreachCount1 = beginForeach(1, "items") {
                     for foreachPosition1 in 0..<foreachCount1 {
                         if !bindForeach(1, at: foreachPosition1, item: "item", index: nil) {
-                            raiseExecutionError("<foreach> cannot set its item or index", engine: engine)
+                            raiseExecutionError(.foreachInvalid, "<foreach> cannot set its item or index", engine: engine)
                             break sceBlock  // W3C SCXML 4.9: the error ends the block
                         }
 
                 // W3C SCXML 5.4: <assign location="iters3">
                 if !assignData("iters3", "_scxml_add(iters3, 1)") {
-                    raiseExecutionError("<assign> to 'iters3' failed", engine: engine)
+                    raiseExecutionError(.assignmentFailed, "<assign> to 'iters3' failed", engine: engine)
                     break sceBlock  // W3C SCXML 4.9: the error ends the block
                 }
 
@@ -994,7 +999,7 @@ public final class AnErrorInsideAForeachEndsItsBlockPolicy: InvocablePolicy {
                     if let paramValue = evaluateJSON("obj.missing.deep") {
                         sendParts.append(PayloadPair.json("bad", rawJSON: paramValue))
                     } else {
-                        engine.raise(EventWithMetadata.platformError(AnErrorInsideAForeachEndsItsBlockEvent.errorExecution, message: "<send> <param name=bad> failed to evaluate"))
+                        engine.raise(EventWithMetadata.platformError(AnErrorInsideAForeachEndsItsBlockEvent.errorExecution, reason: .expressionFailed, message: "<send> <param name=bad> failed to evaluate"))
                         paramFailed = true
                     }
 
@@ -1012,14 +1017,14 @@ public final class AnErrorInsideAForeachEndsItsBlockPolicy: InvocablePolicy {
                 }
                     }
                 } else {
-                    raiseExecutionError("<foreach array='items'> is not an array it can walk", engine: engine)
+                    raiseExecutionError(.foreachInvalid, "<foreach array='items'> is not an array it can walk", engine: engine)
                     break sceBlock  // W3C SCXML 4.9: the error ends the block
                 }
 
 
                 // W3C SCXML 5.4: <assign location="after3">
                 if !assignData("after3", "1") {
-                    raiseExecutionError("<assign> to 'after3' failed", engine: engine)
+                    raiseExecutionError(.assignmentFailed, "<assign> to 'after3' failed", engine: engine)
                     break sceBlock  // W3C SCXML 4.9: the error ends the block
                 }
 

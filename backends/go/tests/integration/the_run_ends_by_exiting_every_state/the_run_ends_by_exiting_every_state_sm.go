@@ -31,6 +31,7 @@ import (
 	"time"
 
 	sce "github.com/newmassrael/sce-go-runtime"
+	sceerrorreason "github.com/newmassrael/sce-go-runtime/generated/error_reason"
 )
 
 // Ensure imports are used
@@ -39,6 +40,9 @@ var (
 	_ = filepath.Join
 	_ = strings.HasPrefix
 	_ = time.Duration(0)
+	// Why an error.* event is raised (sce:std/engine/error_reason,
+	// docs/adr/0106 #111); a machine that raises none still imports it.
+	_ = sceerrorreason.ErrorReasonExpressionFailed
 )
 
 // ======================================================================
@@ -369,7 +373,7 @@ func (p *TheRunEndsByExitingEveryStatePolicy) InitializeDataModel(eng *sce.Engin
 		if err == nil {
 			_ = engine.SetVariable(sessionID, "order", result)
 		} else {
-			eng.Raise(sce.NewPlatformError(TheRunEndsByExitingEveryStateEventErrorExecution, "<data id='order'> expr failed to evaluate"))
+			eng.Raise(sce.NewPlatformError(TheRunEndsByExitingEveryStateEventErrorExecution, sceerrorreason.ErrorReasonExpressionFailed, "<data id='order'> expr failed to evaluate"))
 			_ = engine.SetVariable(sessionID, "order", nil)
 		}
 	}
@@ -383,7 +387,7 @@ func (p *TheRunEndsByExitingEveryStatePolicy) InitializeDataModel(eng *sce.Engin
 		if err == nil {
 			_ = engine.SetVariable(sessionID, "finalExits", result)
 		} else {
-			eng.Raise(sce.NewPlatformError(TheRunEndsByExitingEveryStateEventErrorExecution, "<data id='finalExits'> expr failed to evaluate"))
+			eng.Raise(sce.NewPlatformError(TheRunEndsByExitingEveryStateEventErrorExecution, sceerrorreason.ErrorReasonExpressionFailed, "<data id='finalExits'> expr failed to evaluate"))
 			_ = engine.SetVariable(sessionID, "finalExits", nil)
 		}
 	}
@@ -397,7 +401,7 @@ func (p *TheRunEndsByExitingEveryStatePolicy) InitializeDataModel(eng *sce.Engin
 		if err == nil {
 			_ = engine.SetVariable(sessionID, "selfInFinal", result)
 		} else {
-			eng.Raise(sce.NewPlatformError(TheRunEndsByExitingEveryStateEventErrorExecution, "<data id='selfInFinal'> expr failed to evaluate"))
+			eng.Raise(sce.NewPlatformError(TheRunEndsByExitingEveryStateEventErrorExecution, sceerrorreason.ErrorReasonExpressionFailed, "<data id='selfInFinal'> expr failed to evaluate"))
 			_ = engine.SetVariable(sessionID, "selfInFinal", nil)
 		}
 	}
@@ -429,12 +433,12 @@ func (p *TheRunEndsByExitingEveryStatePolicy) evaluateIfCond(guard string, eng *
 // evaluateGuardRaising evaluates a cond, raising error.execution when it cannot
 // be evaluated (W3C SCXML 5.9.1); ok is false then, where a bare false could
 // not say so.
-func (p *TheRunEndsByExitingEveryStatePolicy) evaluateGuardRaising(guard string, eng *sce.Engine[TheRunEndsByExitingEveryStateState, TheRunEndsByExitingEveryStateEvent], reason string) (value bool, ok bool) {
+func (p *TheRunEndsByExitingEveryStatePolicy) evaluateGuardRaising(guard string, eng *sce.Engine[TheRunEndsByExitingEveryStateState, TheRunEndsByExitingEveryStateEvent], detail string) (value bool, ok bool) {
 	p.assertScriptSession()
 	engine := p.ScriptEngine
 	result, err := engine.EvaluateExpression(p.SessionID, guard)
 	if err != nil {
-		eng.Raise(sce.NewPlatformError(TheRunEndsByExitingEveryStateEventErrorExecution, reason))
+		eng.Raise(sce.NewPlatformError(TheRunEndsByExitingEveryStateEventErrorExecution, sceerrorreason.ErrorReasonExpressionFailed, detail))
 		return false, false
 	}
 	return sce.ScriptToBool(result), true
@@ -537,7 +541,7 @@ func (p *TheRunEndsByExitingEveryStatePolicy) SetParamValueInScriptEngine(name s
 // failed is left (docs/adr/0098).
 func (p *TheRunEndsByExitingEveryStatePolicy) declareHandedValue(eng *sce.Engine[TheRunEndsByExitingEveryStateState, TheRunEndsByExitingEveryStateEvent], engine sce.IScriptEngine, sessionID, name string, value interface{}) {
 	if err := engine.SetVariable(sessionID, name, value); err != nil {
-		eng.Raise(sce.NewPlatformError(TheRunEndsByExitingEveryStateEventErrorExecution, "<data id='"+name+"'> could not hold the value its invoking session handed it"))
+		eng.Raise(sce.NewPlatformError(TheRunEndsByExitingEveryStateEventErrorExecution, sceerrorreason.ErrorReasonDataInitFailed, "<data id='"+name+"'> could not hold the value its invoking session handed it"))
 		_ = engine.SetVariable(sessionID, name, nil)
 	}
 }
@@ -833,7 +837,7 @@ func (p *TheRunEndsByExitingEveryStatePolicy) ExecuteExitActions(state TheRunEnd
 
 	// W3C SCXML 5.3: <assign location="finalExits" expr="finalExits + 1">
 	if err := p.assignVariable(`finalExits`, `_scxml_add(finalExits, 1)`); err != nil {
-		engine.Raise(sce.NewPlatformError(TheRunEndsByExitingEveryStateEventErrorExecution, "<assign> to 'finalExits' failed"))
+		engine.Raise(sce.NewPlatformError(TheRunEndsByExitingEveryStateEventErrorExecution, sceerrorreason.ErrorReasonAssignmentFailed, "<assign> to 'finalExits' failed"))
 		return  // W3C SCXML 4.9: the error ends the block
 	}
 
@@ -842,7 +846,7 @@ func (p *TheRunEndsByExitingEveryStatePolicy) ExecuteExitActions(state TheRunEnd
 
 	// W3C SCXML 5.3: <assign location="selfInFinal" expr="1">
 	if err := p.assignVariable(`selfInFinal`, `1`); err != nil {
-		engine.Raise(sce.NewPlatformError(TheRunEndsByExitingEveryStateEventErrorExecution, "<assign> to 'selfInFinal' failed"))
+		engine.Raise(sce.NewPlatformError(TheRunEndsByExitingEveryStateEventErrorExecution, sceerrorreason.ErrorReasonAssignmentFailed, "<assign> to 'selfInFinal' failed"))
 		return  // W3C SCXML 4.9: the error ends the block
 	}
 
@@ -857,7 +861,7 @@ func (p *TheRunEndsByExitingEveryStatePolicy) ExecuteExitActions(state TheRunEnd
 
 	// W3C SCXML 5.3: <assign location="order" expr="order * 10 + 1">
 	if err := p.assignVariable(`order`, `_scxml_add((order * 10), 1)`); err != nil {
-		engine.Raise(sce.NewPlatformError(TheRunEndsByExitingEveryStateEventErrorExecution, "<assign> to 'order' failed"))
+		engine.Raise(sce.NewPlatformError(TheRunEndsByExitingEveryStateEventErrorExecution, sceerrorreason.ErrorReasonAssignmentFailed, "<assign> to 'order' failed"))
 		return  // W3C SCXML 4.9: the error ends the block
 	}
 
@@ -870,7 +874,7 @@ func (p *TheRunEndsByExitingEveryStatePolicy) ExecuteExitActions(state TheRunEnd
 
 	// W3C SCXML 5.3: <assign location="order" expr="order * 10 + 2">
 	if err := p.assignVariable(`order`, `_scxml_add((order * 10), 2)`); err != nil {
-		engine.Raise(sce.NewPlatformError(TheRunEndsByExitingEveryStateEventErrorExecution, "<assign> to 'order' failed"))
+		engine.Raise(sce.NewPlatformError(TheRunEndsByExitingEveryStateEventErrorExecution, sceerrorreason.ErrorReasonAssignmentFailed, "<assign> to 'order' failed"))
 		return  // W3C SCXML 4.9: the error ends the block
 	}
 

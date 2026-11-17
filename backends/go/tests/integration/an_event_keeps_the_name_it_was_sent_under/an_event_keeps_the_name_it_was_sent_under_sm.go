@@ -31,6 +31,7 @@ import (
 	"time"
 
 	sce "github.com/newmassrael/sce-go-runtime"
+	sceerrorreason "github.com/newmassrael/sce-go-runtime/generated/error_reason"
 )
 
 // Ensure imports are used
@@ -39,6 +40,9 @@ var (
 	_ = filepath.Join
 	_ = strings.HasPrefix
 	_ = time.Duration(0)
+	// Why an error.* event is raised (sce:std/engine/error_reason,
+	// docs/adr/0106 #111); a machine that raises none still imports it.
+	_ = sceerrorreason.ErrorReasonExpressionFailed
 )
 
 // ======================================================================
@@ -356,12 +360,12 @@ func (p *AnEventKeepsTheNameItWasSentUnderPolicy) evaluateIfCond(guard string, e
 // evaluateGuardRaising evaluates a cond, raising error.execution when it cannot
 // be evaluated (W3C SCXML 5.9.1); ok is false then, where a bare false could
 // not say so.
-func (p *AnEventKeepsTheNameItWasSentUnderPolicy) evaluateGuardRaising(guard string, eng *sce.Engine[AnEventKeepsTheNameItWasSentUnderState, AnEventKeepsTheNameItWasSentUnderEvent], reason string) (value bool, ok bool) {
+func (p *AnEventKeepsTheNameItWasSentUnderPolicy) evaluateGuardRaising(guard string, eng *sce.Engine[AnEventKeepsTheNameItWasSentUnderState, AnEventKeepsTheNameItWasSentUnderEvent], detail string) (value bool, ok bool) {
 	p.assertScriptSession()
 	engine := p.ScriptEngine
 	result, err := engine.EvaluateExpression(p.SessionID, guard)
 	if err != nil {
-		eng.Raise(sce.NewPlatformError(AnEventKeepsTheNameItWasSentUnderEventErrorExecution, reason))
+		eng.Raise(sce.NewPlatformError(AnEventKeepsTheNameItWasSentUnderEventErrorExecution, sceerrorreason.ErrorReasonExpressionFailed, detail))
 		return false, false
 	}
 	return sce.ScriptToBool(result), true
@@ -528,7 +532,7 @@ func (p *AnEventKeepsTheNameItWasSentUnderPolicy) ExecutePendingInvokes(engine *
 			if refused := childEngine.Initialize(); refused != nil {
 				childEngine.DetachMesh()
 				delete(p.activeInvokes, "listener")
-				engine.Raise(sce.NewPlatformError(AnEventKeepsTheNameItWasSentUnderEventErrorExecution, sce.ChildStartRefusal("listener", refused)))
+				engine.Raise(sce.NewPlatformError(AnEventKeepsTheNameItWasSentUnderEventErrorExecution, sceerrorreason.ErrorReasonInvokeChildInitFailed, sce.ChildStartRefusal("listener", refused)))
 				continue
 			}
 
@@ -1155,7 +1159,7 @@ func (p *AnEventKeepsTheNameItWasSentUnderPolicy) ExecuteTransitionContent(sourc
 	} else {
 		// W3C SCXML C.1: the invocation is not running, so the session the
 		// target names is not there to reach.
-		errEvt := sce.NewPlatformError(AnEventKeepsTheNameItWasSentUnderEventErrorCommunication, "<send target='#_listener'> names an invocation that is not running")
+		errEvt := sce.NewPlatformError(AnEventKeepsTheNameItWasSentUnderEventErrorCommunication, sceerrorreason.ErrorReasonTargetUnreachable, "<send target='#_listener'> names an invocation that is not running")
 		errEvt.Metadata.SendID = "__send_0"
 		engine.Raise(errEvt)
 		return

@@ -446,8 +446,12 @@ public final class InvokeCandidateSelectsTheChildPolicy: InvocablePolicy {
 
     /// Says what went wrong where the document can see it: `error.execution` on the internal
     /// queue (§scxml-5.9.1, 5.3).
-    private func raiseExecutionError(_ message: String, engine: Engine<InvokeCandidateSelectsTheChildPolicy>) {
-        engine.raise(EventWithMetadata.platformError(InvokeCandidateSelectsTheChildEvent.errorExecution, message: message))
+    /// `reason` is the code of sce:std/engine/error_reason the record carries
+    /// (docs/adr/0106 #111).
+    private func raiseExecutionError(
+        _ reason: ErrorReason, _ message: String, engine: Engine<InvokeCandidateSelectsTheChildPolicy>
+    ) {
+        engine.raise(EventWithMetadata.platformError(InvokeCandidateSelectsTheChildEvent.errorExecution, reason: reason, message: message))
     }
 
     /// W3C SCXML 5.3: the `<data id>` `id` takes the value of the lowered expression, or nil when it
@@ -504,6 +508,7 @@ public final class InvokeCandidateSelectsTheChildPolicy: InvocablePolicy {
             }
         } catch {
             raiseExecutionError(
+                handed == nil ? .expressionFailed : .paramUnfit,
                 handed == nil
                     ? "<data id='\(id)'> expr failed to evaluate"
                     : "<data id='\(id)'> could not hold the value its parent handed it",
@@ -665,7 +670,7 @@ public final class InvokeCandidateSelectsTheChildPolicy: InvocablePolicy {
             // this call the payload is lost to the document and to the host alike.
             engine.notePayloadReading(event, reading: Self.payloadReading(of: reading))
         } catch {
-            raiseExecutionError("_event could not be bound for '\(name)'", engine: engine)
+            raiseExecutionError(.payloadRefused, "_event could not be bound for '\(name)'", engine: engine)
         }
     }
 
@@ -702,7 +707,7 @@ public final class InvokeCandidateSelectsTheChildPolicy: InvocablePolicy {
         do {
             return try scriptSession.evaluateCondition(condition, chunkName: "=cond")
         } catch {
-            raiseExecutionError("a \(element) cond failed to evaluate", engine: engine)
+            raiseExecutionError(.expressionFailed, "a \(element) cond failed to evaluate", engine: engine)
             failed = true
             return false
         }
@@ -755,7 +760,7 @@ public final class InvokeCandidateSelectsTheChildPolicy: InvocablePolicy {
         // Under `datamodel="ecmascript"` the engine reads it, as ECMAScript converts the value
         // to a string, and the arguments are read only for the candidate it chose (6.4.3).
         guard let sceValue = evaluateText("pick") else {
-            engine.raise(EventWithMetadata.platformError(InvokeCandidateSelectsTheChildEvent.errorExecution, message: "<invoke srcexpr> could not be evaluated"))
+            engine.raise(EventWithMetadata.platformError(InvokeCandidateSelectsTheChildEvent.errorExecution, reason: .expressionFailed, message: "<invoke srcexpr> could not be evaluated"))
             return
         }
         let sceSelected = documentStem(sceValue)
@@ -796,7 +801,7 @@ public final class InvokeCandidateSelectsTheChildPolicy: InvocablePolicy {
             // A value naming none of the declared candidates is the failure the
             // Interpreter reports when a document will not load: nothing is created,
             // and, as there, the arguments are not read.
-            engine.raise(EventWithMetadata.platformError(InvokeCandidateSelectsTheChildEvent.errorExecution, message: "<invoke srcexpr> evaluated to a document it did not declare"))
+            engine.raise(EventWithMetadata.platformError(InvokeCandidateSelectsTheChildEvent.errorExecution, reason: .invokeSrcNotFound, message: "<invoke srcexpr> evaluated to a document it did not declare"))
             return
         }
         // W3C SCXML 6.4.1: tracked before the child initializes.

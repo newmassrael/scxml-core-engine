@@ -950,7 +950,7 @@ class AiLoopStateMachine(
             try {
                 engine.setVariable(sid, "north_star", engine.evaluateExpr(sid, com.sce.runtime.ScriptSource.lua("\"(edit me) the outcome this loop exists to reach\"", "'(edit me) the outcome this loop exists to reach'")))
             } catch (e: Exception) {
-                raisePlatformError(AiLoopEvent.Error.Execution, "<data id='north_star'> expr failed to evaluate")
+                raisePlatformError(AiLoopEvent.Error.Execution, ErrorReason.EXPRESSION_FAILED, "<data id='north_star'> expr failed to evaluate")
             }
         }
         // §scxml-6.4: 'milestone' takes a value its invoke handed it, in place of its own
@@ -959,7 +959,7 @@ class AiLoopStateMachine(
             try {
                 engine.setVariable(sid, "milestone", engine.evaluateExpr(sid, com.sce.runtime.ScriptSource.lua("\"(edit me) the next checkpoint on the way there\"", "'(edit me) the next checkpoint on the way there'")))
             } catch (e: Exception) {
-                raisePlatformError(AiLoopEvent.Error.Execution, "<data id='milestone'> expr failed to evaluate")
+                raisePlatformError(AiLoopEvent.Error.Execution, ErrorReason.EXPRESSION_FAILED, "<data id='milestone'> expr failed to evaluate")
             }
         }
         // §scxml-6.4: 'reference' takes a value its invoke handed it, in place of its own
@@ -968,7 +968,7 @@ class AiLoopStateMachine(
             try {
                 engine.setVariable(sid, "reference", engine.evaluateExpr(sid, com.sce.runtime.ScriptSource.lua("\"(edit me) paths, URLs or repos to consult\"", "'(edit me) paths, URLs or repos to consult'")))
             } catch (e: Exception) {
-                raisePlatformError(AiLoopEvent.Error.Execution, "<data id='reference'> expr failed to evaluate")
+                raisePlatformError(AiLoopEvent.Error.Execution, ErrorReason.EXPRESSION_FAILED, "<data id='reference'> expr failed to evaluate")
             }
         }
         // §scxml-6.4: 'start_prompt' takes a value its invoke handed it, in place of its own
@@ -977,7 +977,7 @@ class AiLoopStateMachine(
             try {
                 engine.setVariable(sid, "start_prompt", engine.evaluateExpr(sid, com.sce.runtime.ScriptSource.lua("(_scxml_tostring((_scxml_tostring(_scxml_add((_scxml_tostring((_scxml_tostring(_scxml_add((_scxml_tostring((_scxml_tostring((\"North star: \" .. _scxml_tostring(north_star))) .. \"\\n\")) .. \"Milestone: \"), milestone)) .. \"\\n\")) .. \"Reference: \"), reference)) .. \"\\n\")) .. \"Report what you did and what is left.\")", "'North star: ' + north_star + '\\n' +                 'Milestone: ' + milestone + '\\n' +                 'Reference: ' + reference + '\\n' +                 'Report what you did and what is left.'")))
             } catch (e: Exception) {
-                raisePlatformError(AiLoopEvent.Error.Execution, "<data id='start_prompt'> expr failed to evaluate")
+                raisePlatformError(AiLoopEvent.Error.Execution, ErrorReason.EXPRESSION_FAILED, "<data id='start_prompt'> expr failed to evaluate")
             }
         }
         // §scxml-6.4: 'turn_prompt' takes a value its invoke handed it, in place of its own
@@ -986,7 +986,7 @@ class AiLoopStateMachine(
             try {
                 engine.setVariable(sid, "turn_prompt", engine.evaluateExpr(sid, com.sce.runtime.ScriptSource.lua("(_scxml_tostring((_scxml_tostring((\"Continue toward: \" .. _scxml_tostring(milestone))) .. \"\\n\")) .. \"Do the next smallest thing that is verifiable, then report.\")", "'Continue toward: ' + milestone + '\\n' +                 'Do the next smallest thing that is verifiable, then report.'")))
             } catch (e: Exception) {
-                raisePlatformError(AiLoopEvent.Error.Execution, "<data id='turn_prompt'> expr failed to evaluate")
+                raisePlatformError(AiLoopEvent.Error.Execution, ErrorReason.EXPRESSION_FAILED, "<data id='turn_prompt'> expr failed to evaluate")
             }
         }
         // §scxml-6.4: 'end_prompt' takes a value its invoke handed it, in place of its own
@@ -995,7 +995,7 @@ class AiLoopStateMachine(
             try {
                 engine.setVariable(sid, "end_prompt", engine.evaluateExpr(sid, com.sce.runtime.ScriptSource.lua("\"Summarise what changed, what was verified, and what is left open.\"", "'Summarise what changed, what was verified, and what is left open.'")))
             } catch (e: Exception) {
-                raisePlatformError(AiLoopEvent.Error.Execution, "<data id='end_prompt'> expr failed to evaluate")
+                raisePlatformError(AiLoopEvent.Error.Execution, ErrorReason.EXPRESSION_FAILED, "<data id='end_prompt'> expr failed to evaluate")
             }
         }
         // §scxml-6.4: 'done_marker' takes a value its invoke handed it, in place of its own
@@ -1004,7 +1004,7 @@ class AiLoopStateMachine(
             try {
                 engine.setVariable(sid, "done_marker", engine.evaluateExpr(sid, com.sce.runtime.ScriptSource.lua("\"MILESTONE REACHED\"", "'MILESTONE REACHED'")))
             } catch (e: Exception) {
-                raisePlatformError(AiLoopEvent.Error.Execution, "<data id='done_marker'> expr failed to evaluate")
+                raisePlatformError(AiLoopEvent.Error.Execution, ErrorReason.EXPRESSION_FAILED, "<data id='done_marker'> expr failed to evaluate")
             }
         }
         // §scxml-6.4: 'screen_rules' takes a value its invoke handed it, in place of its own
@@ -1013,7 +1013,7 @@ class AiLoopStateMachine(
             try {
                 engine.setVariable(sid, "screen_rules", engine.evaluateExpr(sid, com.sce.runtime.ScriptSource.lua("{{[\"when\"] = \"design-decision\", [\"keys\"] = \"Escape\", [\"text\"] = \"Ignore cost. Rethink for the most durable answer, then proceed.\"}, {[\"when\"] = \"design-proposal\", [\"keys\"] = \"Escape\", [\"text\"] = \"Ignore cost. Rethink for the most durable answer, then proceed.\"}, {[\"when\"] = \"multiple-choice\", [\"keys\"] = \"Escape\", [\"text\"] = \"Ignore cost. Rethink for the most durable answer, then proceed.\"}}", "[             { when: 'design-decision', keys: 'Escape',               text: 'Ignore cost. Rethink for the most durable answer, then proceed.' },             { when: 'design-proposal', keys: 'Escape',               text: 'Ignore cost. Rethink for the most durable answer, then proceed.' },             { when: 'multiple-choice', keys: 'Escape',               text: 'Ignore cost. Rethink for the most durable answer, then proceed.' }           ]")))
             } catch (e: Exception) {
-                raisePlatformError(AiLoopEvent.Error.Execution, "<data id='screen_rules'> expr failed to evaluate")
+                raisePlatformError(AiLoopEvent.Error.Execution, ErrorReason.EXPRESSION_FAILED, "<data id='screen_rules'> expr failed to evaluate")
             }
         }
         // §scxml-6.4: 'screen_permissions' takes a value its invoke handed it, in place of its own
@@ -1022,7 +1022,7 @@ class AiLoopStateMachine(
             try {
                 engine.setVariable(sid, "screen_permissions", engine.evaluateExpr(sid, com.sce.runtime.ScriptSource.lua("false", "false")))
             } catch (e: Exception) {
-                raisePlatformError(AiLoopEvent.Error.Execution, "<data id='screen_permissions'> expr failed to evaluate")
+                raisePlatformError(AiLoopEvent.Error.Execution, ErrorReason.EXPRESSION_FAILED, "<data id='screen_permissions'> expr failed to evaluate")
             }
         }
         // §scxml-6.4: 'max_turns' takes a value its invoke handed it, in place of its own
@@ -1031,7 +1031,7 @@ class AiLoopStateMachine(
             try {
                 engine.setVariable(sid, "max_turns", engine.evaluateExpr(sid, com.sce.runtime.ScriptSource.lua("40", "40")))
             } catch (e: Exception) {
-                raisePlatformError(AiLoopEvent.Error.Execution, "<data id='max_turns'> expr failed to evaluate")
+                raisePlatformError(AiLoopEvent.Error.Execution, ErrorReason.EXPRESSION_FAILED, "<data id='max_turns'> expr failed to evaluate")
             }
         }
         // §scxml-6.4: 'reflect_every' takes a value its invoke handed it, in place of its own
@@ -1040,7 +1040,7 @@ class AiLoopStateMachine(
             try {
                 engine.setVariable(sid, "reflect_every", engine.evaluateExpr(sid, com.sce.runtime.ScriptSource.lua("8", "8")))
             } catch (e: Exception) {
-                raisePlatformError(AiLoopEvent.Error.Execution, "<data id='reflect_every'> expr failed to evaluate")
+                raisePlatformError(AiLoopEvent.Error.Execution, ErrorReason.EXPRESSION_FAILED, "<data id='reflect_every'> expr failed to evaluate")
             }
         }
         // §scxml-6.4: 'max_restarts' takes a value its invoke handed it, in place of its own
@@ -1049,7 +1049,7 @@ class AiLoopStateMachine(
             try {
                 engine.setVariable(sid, "max_restarts", engine.evaluateExpr(sid, com.sce.runtime.ScriptSource.lua("6", "6")))
             } catch (e: Exception) {
-                raisePlatformError(AiLoopEvent.Error.Execution, "<data id='max_restarts'> expr failed to evaluate")
+                raisePlatformError(AiLoopEvent.Error.Execution, ErrorReason.EXPRESSION_FAILED, "<data id='max_restarts'> expr failed to evaluate")
             }
         }
         // §scxml-6.4: 'turns' takes a value its invoke handed it, in place of its own
@@ -1058,7 +1058,7 @@ class AiLoopStateMachine(
             try {
                 engine.setVariable(sid, "turns", engine.evaluateExpr(sid, com.sce.runtime.ScriptSource.lua("0", "0")))
             } catch (e: Exception) {
-                raisePlatformError(AiLoopEvent.Error.Execution, "<data id='turns'> expr failed to evaluate")
+                raisePlatformError(AiLoopEvent.Error.Execution, ErrorReason.EXPRESSION_FAILED, "<data id='turns'> expr failed to evaluate")
             }
         }
         // §scxml-6.4: 'turns_since_reflect' takes a value its invoke handed it, in place of its own
@@ -1067,7 +1067,7 @@ class AiLoopStateMachine(
             try {
                 engine.setVariable(sid, "turns_since_reflect", engine.evaluateExpr(sid, com.sce.runtime.ScriptSource.lua("0", "0")))
             } catch (e: Exception) {
-                raisePlatformError(AiLoopEvent.Error.Execution, "<data id='turns_since_reflect'> expr failed to evaluate")
+                raisePlatformError(AiLoopEvent.Error.Execution, ErrorReason.EXPRESSION_FAILED, "<data id='turns_since_reflect'> expr failed to evaluate")
             }
         }
         // §scxml-6.4: 'screened' takes a value its invoke handed it, in place of its own
@@ -1076,7 +1076,7 @@ class AiLoopStateMachine(
             try {
                 engine.setVariable(sid, "screened", engine.evaluateExpr(sid, com.sce.runtime.ScriptSource.lua("0", "0")))
             } catch (e: Exception) {
-                raisePlatformError(AiLoopEvent.Error.Execution, "<data id='screened'> expr failed to evaluate")
+                raisePlatformError(AiLoopEvent.Error.Execution, ErrorReason.EXPRESSION_FAILED, "<data id='screened'> expr failed to evaluate")
             }
         }
         // §scxml-6.4: 'restarts' takes a value its invoke handed it, in place of its own
@@ -1085,7 +1085,7 @@ class AiLoopStateMachine(
             try {
                 engine.setVariable(sid, "restarts", engine.evaluateExpr(sid, com.sce.runtime.ScriptSource.lua("0", "0")))
             } catch (e: Exception) {
-                raisePlatformError(AiLoopEvent.Error.Execution, "<data id='restarts'> expr failed to evaluate")
+                raisePlatformError(AiLoopEvent.Error.Execution, ErrorReason.EXPRESSION_FAILED, "<data id='restarts'> expr failed to evaluate")
             }
         }
     }
@@ -1115,14 +1115,14 @@ class AiLoopStateMachine(
 
     // W3C SCXML 5.9.1: a cond that cannot be evaluated raises error.execution;
     // `null` says so, where a bare `false` could not.
-    private fun evaluateGuardRaising(guardExpr: com.sce.runtime.ScriptSource, reason: String): Boolean? {
+    private fun evaluateGuardRaising(guardExpr: com.sce.runtime.ScriptSource, detail: String): Boolean? {
         assertScriptSession()
         val engine = scriptEngine ?: error("scriptEngine is required (codegen invariant: needs_script_engine == true)")
         val sid = scriptSessionId ?: error("scriptSessionId is established by the start (codegen invariant)")
         return try {
             engine.evaluateCondition(sid, guardExpr)
         } catch (e: Exception) {
-            raisePlatformError(AiLoopEvent.Error.Execution, reason)
+            raisePlatformError(AiLoopEvent.Error.Execution, ErrorReason.EXPRESSION_FAILED, detail)
             null
         }
     }
@@ -1163,7 +1163,7 @@ class AiLoopStateMachine(
         return try {
             engine.evaluateExpr(sid, serialized)?.toString() ?: ""
         } catch (e: Exception) {
-            raisePlatformError(AiLoopEvent.Error.Execution, "an expression could not be serialised to JSON")
+            raisePlatformError(AiLoopEvent.Error.Execution, ErrorReason.EXPRESSION_FAILED, "an expression could not be serialised to JSON")
             ""
         }
     }
@@ -1184,7 +1184,7 @@ class AiLoopStateMachine(
             engine.assign(sid, location, expr)
             true
         } catch (e: Exception) {
-            raisePlatformError(AiLoopEvent.Error.Execution, "<assign> failed")
+            raisePlatformError(AiLoopEvent.Error.Execution, ErrorReason.ASSIGNMENT_FAILED, "<assign> failed")
             false
         }
     }
@@ -1200,7 +1200,7 @@ class AiLoopStateMachine(
             engine.executeScript(sid, script)
             true
         } catch (e: Exception) {
-            raisePlatformError(AiLoopEvent.Error.Execution, "<script> failed to execute")
+            raisePlatformError(AiLoopEvent.Error.Execution, ErrorReason.SCRIPT_FAILED, "<script> failed to execute")
             false
         }
     }
@@ -1487,7 +1487,7 @@ class AiLoopStateMachine(
             try {
                 putParam(sendPayload, "text", payloadEngine.evaluateExpr(payloadSid, com.sce.runtime.ScriptSource.lua("end_prompt", "end_prompt")))
             } catch (_: Exception) {
-                raisePlatformError(AiLoopEvent.Error.Execution, "<send> <param name='text'> could not be read")
+                raisePlatformError(AiLoopEvent.Error.Execution, ErrorReason.LOCATION_INVALID, "<send> <param name='text'> could not be read")
                 paramFailed = true
             }
 
@@ -1522,7 +1522,7 @@ class AiLoopStateMachine(
             // event as an undeclared type, so a wiring mistake cannot read
             // as success.
             if (hostServed == null && !hasEventProcessor("x-sce-host")) {
-                raisePlatformError(AiLoopEvent.Error.Execution, "<send type='x-sce-host'> names a processor the host declared but never registered", "__send_7")
+                raisePlatformError(AiLoopEvent.Error.Execution, ErrorReason.PROCESSOR_UNREGISTERED, "<send type='x-sce-host'> names a processor the host declared but never registered", "__send_7")
             }
             paramFailed
             }) {
@@ -1570,7 +1570,7 @@ class AiLoopStateMachine(
             try {
                 putParam(sendPayload, "marker", payloadEngine.evaluateExpr(payloadSid, com.sce.runtime.ScriptSource.lua("done_marker", "done_marker")))
             } catch (_: Exception) {
-                raisePlatformError(AiLoopEvent.Error.Execution, "<send> <param name='marker'> could not be read")
+                raisePlatformError(AiLoopEvent.Error.Execution, ErrorReason.LOCATION_INVALID, "<send> <param name='marker'> could not be read")
                 paramFailed = true
             }
 
@@ -1605,7 +1605,7 @@ class AiLoopStateMachine(
             // event as an undeclared type, so a wiring mistake cannot read
             // as success.
             if (hostServed == null && !hasEventProcessor("x-sce-host")) {
-                raisePlatformError(AiLoopEvent.Error.Execution, "<send type='x-sce-host'> names a processor the host declared but never registered", "__send_3")
+                raisePlatformError(AiLoopEvent.Error.Execution, ErrorReason.PROCESSOR_UNREGISTERED, "<send type='x-sce-host'> names a processor the host declared but never registered", "__send_3")
             }
             paramFailed
             }) {
@@ -1650,7 +1650,7 @@ class AiLoopStateMachine(
             // event as an undeclared type, so a wiring mistake cannot read
             // as success.
             if (hostServed == null && !hasEventProcessor("x-sce-host")) {
-                raisePlatformError(AiLoopEvent.Error.Execution, "<send type='x-sce-host'> names a processor the host declared but never registered", "__send_8")
+                raisePlatformError(AiLoopEvent.Error.Execution, ErrorReason.PROCESSOR_UNREGISTERED, "<send type='x-sce-host'> names a processor the host declared but never registered", "__send_8")
             }
             false
             }) {
@@ -1676,7 +1676,7 @@ class AiLoopStateMachine(
             try {
                 putParam(sendPayload, "text", payloadEngine.evaluateExpr(payloadSid, com.sce.runtime.ScriptSource.lua("start_prompt", "start_prompt")))
             } catch (_: Exception) {
-                raisePlatformError(AiLoopEvent.Error.Execution, "<send> <param name='text'> could not be read")
+                raisePlatformError(AiLoopEvent.Error.Execution, ErrorReason.LOCATION_INVALID, "<send> <param name='text'> could not be read")
                 paramFailed = true
             }
 
@@ -1711,7 +1711,7 @@ class AiLoopStateMachine(
             // event as an undeclared type, so a wiring mistake cannot read
             // as success.
             if (hostServed == null && !hasEventProcessor("x-sce-host")) {
-                raisePlatformError(AiLoopEvent.Error.Execution, "<send type='x-sce-host'> names a processor the host declared but never registered", "__send_0")
+                raisePlatformError(AiLoopEvent.Error.Execution, ErrorReason.PROCESSOR_UNREGISTERED, "<send type='x-sce-host'> names a processor the host declared but never registered", "__send_0")
             }
             paramFailed
             }) {
@@ -1765,7 +1765,7 @@ class AiLoopStateMachine(
             // event as an undeclared type, so a wiring mistake cannot read
             // as success.
             if (hostServed == null && !hasEventProcessor("x-sce-host")) {
-                raisePlatformError(AiLoopEvent.Error.Execution, "<send type='x-sce-host'> names a processor the host declared but never registered", "__send_5")
+                raisePlatformError(AiLoopEvent.Error.Execution, ErrorReason.PROCESSOR_UNREGISTERED, "<send type='x-sce-host'> names a processor the host declared but never registered", "__send_5")
             }
             false
             }) {
@@ -1826,7 +1826,7 @@ class AiLoopStateMachine(
             // event as an undeclared type, so a wiring mistake cannot read
             // as success.
             if (hostServed == null && !hasEventProcessor("x-sce-host")) {
-                raisePlatformError(AiLoopEvent.Error.Execution, "<send type='x-sce-host'> names a processor the host declared but never registered", "__send_6")
+                raisePlatformError(AiLoopEvent.Error.Execution, ErrorReason.PROCESSOR_UNREGISTERED, "<send type='x-sce-host'> names a processor the host declared but never registered", "__send_6")
             }
             false
             }) {
@@ -1884,7 +1884,7 @@ class AiLoopStateMachine(
             // event as an undeclared type, so a wiring mistake cannot read
             // as success.
             if (hostServed == null && !hasEventProcessor("x-sce-host")) {
-                raisePlatformError(AiLoopEvent.Error.Execution, "<send type='x-sce-host'> names a processor the host declared but never registered", "__send_1")
+                raisePlatformError(AiLoopEvent.Error.Execution, ErrorReason.PROCESSOR_UNREGISTERED, "<send type='x-sce-host'> names a processor the host declared but never registered", "__send_1")
             }
             false
             }) {
@@ -2102,7 +2102,7 @@ class AiLoopStateMachine(
             try {
                 putParam(sendPayload, "text", payloadEngine.evaluateExpr(payloadSid, com.sce.runtime.ScriptSource.lua("turn_prompt", "turn_prompt")))
             } catch (_: Exception) {
-                raisePlatformError(AiLoopEvent.Error.Execution, "<send> <param name='text'> could not be read")
+                raisePlatformError(AiLoopEvent.Error.Execution, ErrorReason.LOCATION_INVALID, "<send> <param name='text'> could not be read")
                 paramFailed = true
             }
 
@@ -2137,7 +2137,7 @@ class AiLoopStateMachine(
             // event as an undeclared type, so a wiring mistake cannot read
             // as success.
             if (hostServed == null && !hasEventProcessor("x-sce-host")) {
-                raisePlatformError(AiLoopEvent.Error.Execution, "<send type='x-sce-host'> names a processor the host declared but never registered", "__send_2")
+                raisePlatformError(AiLoopEvent.Error.Execution, ErrorReason.PROCESSOR_UNREGISTERED, "<send type='x-sce-host'> names a processor the host declared but never registered", "__send_2")
             }
             paramFailed
             }) {
@@ -2215,7 +2215,7 @@ class AiLoopStateMachine(
             try {
                 putParam(sendPayload, "text", payloadEngine.evaluateExpr(payloadSid, com.sce.runtime.ScriptSource.lua("turn_prompt", "turn_prompt")))
             } catch (_: Exception) {
-                raisePlatformError(AiLoopEvent.Error.Execution, "<send> <param name='text'> could not be read")
+                raisePlatformError(AiLoopEvent.Error.Execution, ErrorReason.LOCATION_INVALID, "<send> <param name='text'> could not be read")
                 paramFailed = true
             }
 
@@ -2250,7 +2250,7 @@ class AiLoopStateMachine(
             // event as an undeclared type, so a wiring mistake cannot read
             // as success.
             if (hostServed == null && !hasEventProcessor("x-sce-host")) {
-                raisePlatformError(AiLoopEvent.Error.Execution, "<send type='x-sce-host'> names a processor the host declared but never registered", "__send_4")
+                raisePlatformError(AiLoopEvent.Error.Execution, ErrorReason.PROCESSOR_UNREGISTERED, "<send type='x-sce-host'> names a processor the host declared but never registered", "__send_4")
             }
             paramFailed
             }) {

@@ -31,6 +31,7 @@ import (
 	"time"
 
 	sce "github.com/newmassrael/sce-go-runtime"
+	sceerrorreason "github.com/newmassrael/sce-go-runtime/generated/error_reason"
 	scealgorithm "github.com/newmassrael/sce-forge-runtime/algorithm"
 	"github.com/newmassrael/sce-forge-runtime/optional"
 	sce_hlc_receive "github.com/newmassrael/sce-go-tests/integration/static_datamodel/hlc_receive"
@@ -54,6 +55,9 @@ var (
 	_ = filepath.Join
 	_ = strings.HasPrefix
 	_ = time.Duration(0)
+	// Why an error.* event is raised (sce:std/engine/error_reason,
+	// docs/adr/0106 #111); a machine that raises none still imports it.
+	_ = sceerrorreason.ErrorReasonExpressionFailed
 	_ scealgorithm.Failure
 )
 
@@ -4967,7 +4971,7 @@ func (p *RecordListPolicy) ExecuteTransitionContent(source RecordListState, tran
 				}
 
 
-	if func() bool { var sceFailure scealgorithm.Failure; sceValue := scealgorithm.Within(&sceFailure, scealgorithm.TakeOutcome(&sceFailure, sceAdapt_RecordList_RecordRoster__v(p.vRoster, p.pendingRecordListRolePayload.node, p.pendingRecordListRolePayload.role)), 64); if sceFailure.Failed() { engine.Raise(sce.NewPlatformError(RecordListEventErrorExecution, "<assign location='roster'>: an integer operation overflowed or failed")); return true }; p.vRoster = sceValue; return false }() {
+	if func() bool { var sceFailure scealgorithm.Failure; sceValue := scealgorithm.Within(&sceFailure, scealgorithm.TakeOutcome(&sceFailure, sceAdapt_RecordList_RecordRoster__v(p.vRoster, p.pendingRecordListRolePayload.node, p.pendingRecordListRolePayload.role)), 64); if sceFailure.Failed() { engine.Raise(sce.NewPlatformError(RecordListEventErrorExecution, sceerrorreason.ErrorReasonExpressionFailed, "<assign location='roster'>: an integer operation overflowed or failed")); return true }; p.vRoster = sceValue; return false }() {
 		return  // W3C SCXML 4.9: the error ends the block
 	}
 
@@ -4978,7 +4982,7 @@ func (p *RecordListPolicy) ExecuteTransitionContent(source RecordListState, tran
 			func() {
 
 
-	if func() bool { var sceFailure scealgorithm.Failure; sceValue := scealgorithm.AddUint32(&sceFailure, p.vRefusals, 1); if sceFailure.Failed() { engine.Raise(sce.NewPlatformError(RecordListEventErrorExecution, "<assign location='refusals'>: an integer operation overflowed or failed")); return true }; p.vRefusals = sceValue; return false }() {
+	if func() bool { var sceFailure scealgorithm.Failure; sceValue := scealgorithm.AddUint32(&sceFailure, p.vRefusals, 1); if sceFailure.Failed() { engine.Raise(sce.NewPlatformError(RecordListEventErrorExecution, sceerrorreason.ErrorReasonExpressionFailed, "<assign location='refusals'>: an integer operation overflowed or failed")); return true }; p.vRefusals = sceValue; return false }() {
 		return  // W3C SCXML 4.9: the error ends the block
 	}
 
@@ -4989,7 +4993,7 @@ func (p *RecordListPolicy) ExecuteTransitionContent(source RecordListState, tran
 			func() {
 
 
-	if func() bool { var sceFailure scealgorithm.Failure; sceValue := scealgorithm.AddUint32(&sceFailure, p.vRefusals, 1); if sceFailure.Failed() { engine.Raise(sce.NewPlatformError(RecordListEventErrorExecution, "<assign location='refusals'>: an integer operation overflowed or failed")); return true }; p.vRefusals = sceValue; return false }() {
+	if func() bool { var sceFailure scealgorithm.Failure; sceValue := scealgorithm.AddUint32(&sceFailure, p.vRefusals, 1); if sceFailure.Failed() { engine.Raise(sce.NewPlatformError(RecordListEventErrorExecution, sceerrorreason.ErrorReasonExpressionFailed, "<assign location='refusals'>: an integer operation overflowed or failed")); return true }; p.vRefusals = sceValue; return false }() {
 		return  // W3C SCXML 4.9: the error ends the block
 	}
 
@@ -5000,7 +5004,7 @@ func (p *RecordListPolicy) ExecuteTransitionContent(source RecordListState, tran
 			func() {
 
 
-	if func() bool { var sceFailure scealgorithm.Failure; sceValue := scealgorithm.AddUint32(&sceFailure, p.vRefusals, 1); if sceFailure.Failed() { engine.Raise(sce.NewPlatformError(RecordListEventErrorExecution, "<assign location='refusals'>: an integer operation overflowed or failed")); return true }; p.vRefusals = sceValue; return false }() {
+	if func() bool { var sceFailure scealgorithm.Failure; sceValue := scealgorithm.AddUint32(&sceFailure, p.vRefusals, 1); if sceFailure.Failed() { engine.Raise(sce.NewPlatformError(RecordListEventErrorExecution, sceerrorreason.ErrorReasonExpressionFailed, "<assign location='refusals'>: an integer operation overflowed or failed")); return true }; p.vRefusals = sceValue; return false }() {
 		return  // W3C SCXML 4.9: the error ends the block
 	}
 
@@ -5056,7 +5060,7 @@ func (p *RecordListPolicy) ExecuteTransitionContent(source RecordListState, tran
 
 
 
-	if func() bool { var sceFailure scealgorithm.Failure; sceValue := scealgorithm.Bounded(&sceFailure, p.pendingRecordListEditPayload.text, 96); if sceFailure.Failed() { engine.Raise(sce.NewPlatformError(RecordListEventErrorExecution, "<assign location='staging.text'>: an integer operation overflowed or failed")); return true }; p.vStaging.text = sceValue; return false }() {
+	if func() bool { var sceFailure scealgorithm.Failure; sceValue := scealgorithm.Bounded(&sceFailure, p.pendingRecordListEditPayload.text, 96); if sceFailure.Failed() { engine.Raise(sce.NewPlatformError(RecordListEventErrorExecution, sceerrorreason.ErrorReasonExpressionFailed, "<assign location='staging.text'>: an integer operation overflowed or failed")); return true }; p.vStaging.text = sceValue; return false }() {
 		return  // W3C SCXML 4.9: the error ends the block
 	}
 
@@ -5067,7 +5071,7 @@ func (p *RecordListPolicy) ExecuteTransitionContent(source RecordListState, tran
 
 	// SCE Accepted Subset §2.15: <sce:append target="staged">
 
-	if func() bool { var sceFailure scealgorithm.Failure; if len(p.vStaged) >= 32 { engine.Raise(sce.NewPlatformError(RecordListEventErrorExecution, "<sce:append target='staged'>: the list already holds its capacity of 32")); return true }; sceValue := scealgorithm.ElementOf(p.vStaged, p.vStaging); if sceFailure.Failed() { engine.Raise(sce.NewPlatformError(RecordListEventErrorExecution, "<sce:append target='staged'>: an integer operation overflowed or failed")); return true }; p.vStaged = append(p.vStaged, sceValue); return false }() {
+	if func() bool { var sceFailure scealgorithm.Failure; if len(p.vStaged) >= 32 { engine.Raise(sce.NewPlatformError(RecordListEventErrorExecution, sceerrorreason.ErrorReasonAssignmentFailed, "<sce:append target='staged'>: the list already holds its capacity of 32")); return true }; sceValue := scealgorithm.ElementOf(p.vStaged, p.vStaging); if sceFailure.Failed() { engine.Raise(sce.NewPlatformError(RecordListEventErrorExecution, sceerrorreason.ErrorReasonExpressionFailed, "<sce:append target='staged'>: an integer operation overflowed or failed")); return true }; p.vStaged = append(p.vStaged, sceValue); return false }() {
 		return  // W3C SCXML 4.9: the error ends the block
 	}
 
@@ -5156,14 +5160,14 @@ func (p *RecordListPolicy) ExecuteTransitionContent(source RecordListState, tran
 
 
 
-	if func() bool { var sceFailure scealgorithm.Failure; sceValue := scealgorithm.Bounded(&sceFailure, "", 96); if sceFailure.Failed() { engine.Raise(sce.NewPlatformError(RecordListEventErrorExecution, "<assign location='staging.text'>: an integer operation overflowed or failed")); return true }; p.vStaging.text = sceValue; return false }() {
+	if func() bool { var sceFailure scealgorithm.Failure; sceValue := scealgorithm.Bounded(&sceFailure, "", 96); if sceFailure.Failed() { engine.Raise(sce.NewPlatformError(RecordListEventErrorExecution, sceerrorreason.ErrorReasonExpressionFailed, "<assign location='staging.text'>: an integer operation overflowed or failed")); return true }; p.vStaging.text = sceValue; return false }() {
 		return  // W3C SCXML 4.9: the error ends the block
 	}
 
 
 	// SCE Accepted Subset §2.15: <sce:append target="staged">
 
-	if func() bool { var sceFailure scealgorithm.Failure; if len(p.vStaged) >= 32 { engine.Raise(sce.NewPlatformError(RecordListEventErrorExecution, "<sce:append target='staged'>: the list already holds its capacity of 32")); return true }; sceValue := scealgorithm.ElementOf(p.vStaged, p.vStaging); if sceFailure.Failed() { engine.Raise(sce.NewPlatformError(RecordListEventErrorExecution, "<sce:append target='staged'>: an integer operation overflowed or failed")); return true }; p.vStaged = append(p.vStaged, sceValue); return false }() {
+	if func() bool { var sceFailure scealgorithm.Failure; if len(p.vStaged) >= 32 { engine.Raise(sce.NewPlatformError(RecordListEventErrorExecution, sceerrorreason.ErrorReasonAssignmentFailed, "<sce:append target='staged'>: the list already holds its capacity of 32")); return true }; sceValue := scealgorithm.ElementOf(p.vStaged, p.vStaging); if sceFailure.Failed() { engine.Raise(sce.NewPlatformError(RecordListEventErrorExecution, sceerrorreason.ErrorReasonExpressionFailed, "<sce:append target='staged'>: an integer operation overflowed or failed")); return true }; p.vStaged = append(p.vStaged, sceValue); return false }() {
 		return  // W3C SCXML 4.9: the error ends the block
 	}
 
@@ -5252,14 +5256,14 @@ func (p *RecordListPolicy) ExecuteTransitionContent(source RecordListState, tran
 
 
 
-	if func() bool { var sceFailure scealgorithm.Failure; sceValue := scealgorithm.Bounded(&sceFailure, "", 96); if sceFailure.Failed() { engine.Raise(sce.NewPlatformError(RecordListEventErrorExecution, "<assign location='staging.text'>: an integer operation overflowed or failed")); return true }; p.vStaging.text = sceValue; return false }() {
+	if func() bool { var sceFailure scealgorithm.Failure; sceValue := scealgorithm.Bounded(&sceFailure, "", 96); if sceFailure.Failed() { engine.Raise(sce.NewPlatformError(RecordListEventErrorExecution, sceerrorreason.ErrorReasonExpressionFailed, "<assign location='staging.text'>: an integer operation overflowed or failed")); return true }; p.vStaging.text = sceValue; return false }() {
 		return  // W3C SCXML 4.9: the error ends the block
 	}
 
 
 	// SCE Accepted Subset §2.15: <sce:append target="staged">
 
-	if func() bool { var sceFailure scealgorithm.Failure; if len(p.vStaged) >= 32 { engine.Raise(sce.NewPlatformError(RecordListEventErrorExecution, "<sce:append target='staged'>: the list already holds its capacity of 32")); return true }; sceValue := scealgorithm.ElementOf(p.vStaged, p.vStaging); if sceFailure.Failed() { engine.Raise(sce.NewPlatformError(RecordListEventErrorExecution, "<sce:append target='staged'>: an integer operation overflowed or failed")); return true }; p.vStaged = append(p.vStaged, sceValue); return false }() {
+	if func() bool { var sceFailure scealgorithm.Failure; if len(p.vStaged) >= 32 { engine.Raise(sce.NewPlatformError(RecordListEventErrorExecution, sceerrorreason.ErrorReasonAssignmentFailed, "<sce:append target='staged'>: the list already holds its capacity of 32")); return true }; sceValue := scealgorithm.ElementOf(p.vStaged, p.vStaging); if sceFailure.Failed() { engine.Raise(sce.NewPlatformError(RecordListEventErrorExecution, sceerrorreason.ErrorReasonExpressionFailed, "<sce:append target='staged'>: an integer operation overflowed or failed")); return true }; p.vStaged = append(p.vStaged, sceValue); return false }() {
 		return  // W3C SCXML 4.9: the error ends the block
 	}
 
@@ -5321,7 +5325,7 @@ func (p *RecordListPolicy) ExecuteTransitionContent(source RecordListState, tran
 	if p.vForbidden {
 
 
-	if func() bool { var sceFailure scealgorithm.Failure; sceValue := scealgorithm.AddUint32(&sceFailure, p.vDenied, 1); if sceFailure.Failed() { engine.Raise(sce.NewPlatformError(RecordListEventErrorExecution, "<assign location='denied'>: an integer operation overflowed or failed")); return true }; p.vDenied = sceValue; return false }() {
+	if func() bool { var sceFailure scealgorithm.Failure; sceValue := scealgorithm.AddUint32(&sceFailure, p.vDenied, 1); if sceFailure.Failed() { engine.Raise(sce.NewPlatformError(RecordListEventErrorExecution, sceerrorreason.ErrorReasonExpressionFailed, "<assign location='denied'>: an integer operation overflowed or failed")); return true }; p.vDenied = sceValue; return false }() {
 		return  // W3C SCXML 4.9: the error ends the block
 	}
 
@@ -5411,7 +5415,7 @@ func (p *RecordListPolicy) ExecuteTransitionContent(source RecordListState, tran
 
 	{
 	var ifCondFailed14 bool
-	if func() bool { var sceFailure scealgorithm.Failure; sceValue := scealgorithm.DivUint64(&sceFailure, a.element, 65536) == uint64(s.id) && (s.kind == 2 || scealgorithm.RemUint64(&sceFailure, a.element, 65536) == uint64(s.field)); if sceFailure.Failed() { engine.Raise(sce.NewPlatformError(RecordListEventErrorExecution, "<if cond='a.element / 65536 === s.id && (s.kind === 2 || a.element % 65536 === s.field)'>: an integer operation overflowed or failed")); ifCondFailed14 = true; return false }; return sceValue }() {
+	if func() bool { var sceFailure scealgorithm.Failure; sceValue := scealgorithm.DivUint64(&sceFailure, a.element, 65536) == uint64(s.id) && (s.kind == 2 || scealgorithm.RemUint64(&sceFailure, a.element, 65536) == uint64(s.field)); if sceFailure.Failed() { engine.Raise(sce.NewPlatformError(RecordListEventErrorExecution, sceerrorreason.ErrorReasonExpressionFailed, "<if cond='a.element / 65536 === s.id && (s.kind === 2 || a.element % 65536 === s.field)'>: an integer operation overflowed or failed")); ifCondFailed14 = true; return false }; return sceValue }() {
 
 
 	p.vCovered = true
@@ -5428,7 +5432,7 @@ func (p *RecordListPolicy) ExecuteTransitionContent(source RecordListState, tran
 	if p.vCovered {
 
 
-	if func() bool { var sceFailure scealgorithm.Failure; sceValue := scealgorithm.AddUint32(&sceFailure, p.vGone, 1); if sceFailure.Failed() { engine.Raise(sce.NewPlatformError(RecordListEventErrorExecution, "<assign location='gone'>: an integer operation overflowed or failed")); return true }; p.vGone = sceValue; return false }() {
+	if func() bool { var sceFailure scealgorithm.Failure; sceValue := scealgorithm.AddUint32(&sceFailure, p.vGone, 1); if sceFailure.Failed() { engine.Raise(sce.NewPlatformError(RecordListEventErrorExecution, sceerrorreason.ErrorReasonExpressionFailed, "<assign location='gone'>: an integer operation overflowed or failed")); return true }; p.vGone = sceValue; return false }() {
 		return  // W3C SCXML 4.9: the error ends the block
 	}
 
@@ -5444,7 +5448,7 @@ func (p *RecordListPolicy) ExecuteTransitionContent(source RecordListState, tran
 	if s.kind == 0 {
 
 
-	if func() bool { var sceFailure scealgorithm.Failure; sceValue := scealgorithm.AddUint32(&sceFailure, p.vWrites, 1); if sceFailure.Failed() { engine.Raise(sce.NewPlatformError(RecordListEventErrorExecution, "<assign location='writes'>: an integer operation overflowed or failed")); return true }; p.vWrites = sceValue; return false }() {
+	if func() bool { var sceFailure scealgorithm.Failure; sceValue := scealgorithm.AddUint32(&sceFailure, p.vWrites, 1); if sceFailure.Failed() { engine.Raise(sce.NewPlatformError(RecordListEventErrorExecution, sceerrorreason.ErrorReasonExpressionFailed, "<assign location='writes'>: an integer operation overflowed or failed")); return true }; p.vWrites = sceValue; return false }() {
 		return  // W3C SCXML 4.9: the error ends the block
 	}
 
@@ -5457,10 +5461,10 @@ func (p *RecordListPolicy) ExecuteTransitionContent(source RecordListState, tran
 
 	{
 	var ifCondFailed17 bool
-	if func() bool { var sceFailure scealgorithm.Failure; sceValue := !p.vSpoiled && scealgorithm.AddUint32(&sceFailure, p.vGone, p.vWrites) > 0 && p.vRoomValues > 0 && p.vWrites > p.vGone && scealgorithm.AddUint32(&sceFailure, uint32(len(p.vValues)), p.vWrites) > scealgorithm.AddUint32(&sceFailure, p.vRoomValues, p.vGone); if sceFailure.Failed() { engine.Raise(sce.NewPlatformError(RecordListEventErrorExecution, "<if cond='!spoiled && gone + writes > 0 && roomValues > 0 && writes > gone && len(values) + writes > roomValues + gone'>: an integer operation overflowed or failed")); ifCondFailed17 = true; return false }; return sceValue }() {
+	if func() bool { var sceFailure scealgorithm.Failure; sceValue := !p.vSpoiled && scealgorithm.AddUint32(&sceFailure, p.vGone, p.vWrites) > 0 && p.vRoomValues > 0 && p.vWrites > p.vGone && scealgorithm.AddUint32(&sceFailure, uint32(len(p.vValues)), p.vWrites) > scealgorithm.AddUint32(&sceFailure, p.vRoomValues, p.vGone); if sceFailure.Failed() { engine.Raise(sce.NewPlatformError(RecordListEventErrorExecution, sceerrorreason.ErrorReasonExpressionFailed, "<if cond='!spoiled && gone + writes > 0 && roomValues > 0 && writes > gone && len(values) + writes > roomValues + gone'>: an integer operation overflowed or failed")); ifCondFailed17 = true; return false }; return sceValue }() {
 
 
-	if func() bool { var sceFailure scealgorithm.Failure; sceValue := scealgorithm.AddUint32(&sceFailure, p.vFull, 1); if sceFailure.Failed() { engine.Raise(sce.NewPlatformError(RecordListEventErrorExecution, "<assign location='full'>: an integer operation overflowed or failed")); return true }; p.vFull = sceValue; return false }() {
+	if func() bool { var sceFailure scealgorithm.Failure; sceValue := scealgorithm.AddUint32(&sceFailure, p.vFull, 1); if sceFailure.Failed() { engine.Raise(sce.NewPlatformError(RecordListEventErrorExecution, sceerrorreason.ErrorReasonExpressionFailed, "<assign location='full'>: an integer operation overflowed or failed")); return true }; p.vFull = sceValue; return false }() {
 		return  // W3C SCXML 4.9: the error ends the block
 	}
 
@@ -5481,7 +5485,7 @@ func (p *RecordListPolicy) ExecuteTransitionContent(source RecordListState, tran
 
 	{
 	var ifCondFailed18 bool
-	if func() bool { var sceFailure scealgorithm.Failure; sceValue := !p.vSpoiled && p.vJournal && scealgorithm.AddUint32(&sceFailure, p.vGone, p.vWrites) > 0 && uint32(len(p.vProvisional)) >= 8; if sceFailure.Failed() { engine.Raise(sce.NewPlatformError(RecordListEventErrorExecution, "<if cond='!spoiled && journal && gone + writes > 0 && len(provisional) >= _x.limits.shared_provisional'>: an integer operation overflowed or failed")); ifCondFailed18 = true; return false }; return sceValue }() {
+	if func() bool { var sceFailure scealgorithm.Failure; sceValue := !p.vSpoiled && p.vJournal && scealgorithm.AddUint32(&sceFailure, p.vGone, p.vWrites) > 0 && uint32(len(p.vProvisional)) >= 8; if sceFailure.Failed() { engine.Raise(sce.NewPlatformError(RecordListEventErrorExecution, sceerrorreason.ErrorReasonExpressionFailed, "<if cond='!spoiled && journal && gone + writes > 0 && len(provisional) >= _x.limits.shared_provisional'>: an integer operation overflowed or failed")); ifCondFailed18 = true; return false }; return sceValue }() {
 
 
 	p.vSpoiled = true
@@ -5499,7 +5503,7 @@ func (p *RecordListPolicy) ExecuteTransitionContent(source RecordListState, tran
 
 	{
 	var ifCondFailed19 bool
-	if func() bool { var sceFailure scealgorithm.Failure; sceValue := !p.vSpoiled && scealgorithm.AddUint32(&sceFailure, p.vGone, p.vWrites) > 0; if sceFailure.Failed() { engine.Raise(sce.NewPlatformError(RecordListEventErrorExecution, "<if cond='!spoiled && gone + writes > 0'>: an integer operation overflowed or failed")); ifCondFailed19 = true; return false }; return sceValue }() {
+	if func() bool { var sceFailure scealgorithm.Failure; sceValue := !p.vSpoiled && scealgorithm.AddUint32(&sceFailure, p.vGone, p.vWrites) > 0; if sceFailure.Failed() { engine.Raise(sce.NewPlatformError(RecordListEventErrorExecution, sceerrorreason.ErrorReasonExpressionFailed, "<if cond='!spoiled && gone + writes > 0'>: an integer operation overflowed or failed")); ifCondFailed19 = true; return false }; return sceValue }() {
 
 
 	p.vProbing = true
@@ -5510,7 +5514,7 @@ func (p *RecordListPolicy) ExecuteTransitionContent(source RecordListState, tran
 
 
 
-	if func() bool { var sceFailure scealgorithm.Failure; sceValue := scealgorithm.TakeOutcome(&sceFailure, sceAdapt_RecordList_HlcSend__v(p.vClock, p.vClosingNow, p.vNode)); if sceFailure.Failed() { engine.Raise(sce.NewPlatformError(RecordListEventErrorExecution, "<assign location='stamp'>: an integer operation overflowed or failed")); return true }; p.vStamp = sceValue; return false }() {
+	if func() bool { var sceFailure scealgorithm.Failure; sceValue := scealgorithm.TakeOutcome(&sceFailure, sceAdapt_RecordList_HlcSend__v(p.vClock, p.vClosingNow, p.vNode)); if sceFailure.Failed() { engine.Raise(sce.NewPlatformError(RecordListEventErrorExecution, sceerrorreason.ErrorReasonExpressionFailed, "<assign location='stamp'>: an integer operation overflowed or failed")); return true }; p.vStamp = sceValue; return false }() {
 		return  // W3C SCXML 4.9: the error ends the block
 	}
 
@@ -5542,7 +5546,7 @@ func (p *RecordListPolicy) ExecuteTransitionContent(source RecordListState, tran
 
 	{
 	var ifCondFailed20 bool
-	if func() bool { var sceFailure scealgorithm.Failure; sceValue := scealgorithm.DivUint64(&sceFailure, a.element, 65536) == uint64(s.id) && (s.kind == 2 || scealgorithm.RemUint64(&sceFailure, a.element, 65536) == uint64(s.field)); if sceFailure.Failed() { engine.Raise(sce.NewPlatformError(RecordListEventErrorExecution, "<if cond='a.element / 65536 === s.id && (s.kind === 2 || a.element % 65536 === s.field)'>: an integer operation overflowed or failed")); ifCondFailed20 = true; return false }; return sceValue }() {
+	if func() bool { var sceFailure scealgorithm.Failure; sceValue := scealgorithm.DivUint64(&sceFailure, a.element, 65536) == uint64(s.id) && (s.kind == 2 || scealgorithm.RemUint64(&sceFailure, a.element, 65536) == uint64(s.field)); if sceFailure.Failed() { engine.Raise(sce.NewPlatformError(RecordListEventErrorExecution, sceerrorreason.ErrorReasonExpressionFailed, "<if cond='a.element / 65536 === s.id && (s.kind === 2 || a.element % 65536 === s.field)'>: an integer operation overflowed or failed")); ifCondFailed20 = true; return false }; return sceValue }() {
 
 
 	p.vCovered = true
@@ -5563,13 +5567,13 @@ func (p *RecordListPolicy) ExecuteTransitionContent(source RecordListState, tran
 
 
 
-	if func() bool { var sceFailure scealgorithm.Failure; sceValue := scealgorithm.NarrowUint32FromUint(&sceFailure, uint64(scealgorithm.DivUint64(&sceFailure, a.element, 65536))); if sceFailure.Failed() { engine.Raise(sce.NewPlatformError(RecordListEventErrorExecution, "<assign location='op.id'>: an integer operation overflowed or failed")); return true }; p.vOp.id = sceValue; return false }() {
+	if func() bool { var sceFailure scealgorithm.Failure; sceValue := scealgorithm.NarrowUint32FromUint(&sceFailure, uint64(scealgorithm.DivUint64(&sceFailure, a.element, 65536))); if sceFailure.Failed() { engine.Raise(sce.NewPlatformError(RecordListEventErrorExecution, sceerrorreason.ErrorReasonExpressionFailed, "<assign location='op.id'>: an integer operation overflowed or failed")); return true }; p.vOp.id = sceValue; return false }() {
 		return  // W3C SCXML 4.9: the error ends the block
 	}
 
 
 
-	if func() bool { var sceFailure scealgorithm.Failure; sceValue := scealgorithm.NarrowUint16FromUint(&sceFailure, uint64(scealgorithm.RemUint64(&sceFailure, a.element, 65536))); if sceFailure.Failed() { engine.Raise(sce.NewPlatformError(RecordListEventErrorExecution, "<assign location='op.field'>: an integer operation overflowed or failed")); return true }; p.vOp.field = sceValue; return false }() {
+	if func() bool { var sceFailure scealgorithm.Failure; sceValue := scealgorithm.NarrowUint16FromUint(&sceFailure, uint64(scealgorithm.RemUint64(&sceFailure, a.element, 65536))); if sceFailure.Failed() { engine.Raise(sce.NewPlatformError(RecordListEventErrorExecution, sceerrorreason.ErrorReasonExpressionFailed, "<assign location='op.field'>: an integer operation overflowed or failed")); return true }; p.vOp.field = sceValue; return false }() {
 		return  // W3C SCXML 4.9: the error ends the block
 	}
 
@@ -5579,7 +5583,7 @@ func (p *RecordListPolicy) ExecuteTransitionContent(source RecordListState, tran
 
 
 
-	if func() bool { var sceFailure scealgorithm.Failure; sceValue := scealgorithm.Bounded(&sceFailure, "", 96); if sceFailure.Failed() { engine.Raise(sce.NewPlatformError(RecordListEventErrorExecution, "<assign location='op.text'>: an integer operation overflowed or failed")); return true }; p.vOp.text = sceValue; return false }() {
+	if func() bool { var sceFailure scealgorithm.Failure; sceValue := scealgorithm.Bounded(&sceFailure, "", 96); if sceFailure.Failed() { engine.Raise(sce.NewPlatformError(RecordListEventErrorExecution, sceerrorreason.ErrorReasonExpressionFailed, "<assign location='op.text'>: an integer operation overflowed or failed")); return true }; p.vOp.text = sceValue; return false }() {
 		return  // W3C SCXML 4.9: the error ends the block
 	}
 
@@ -5598,7 +5602,7 @@ func (p *RecordListPolicy) ExecuteTransitionContent(source RecordListState, tran
 
 	// SCE Accepted Subset §2.15: <sce:append target="taking">
 
-	if func() bool { var sceFailure scealgorithm.Failure; if len(p.vTaking) >= 64 { engine.Raise(sce.NewPlatformError(RecordListEventErrorExecution, "<sce:append target='taking'>: the list already holds its capacity of 64")); return true }; sceValue := scealgorithm.ElementOf(p.vTaking, p.vOp); if sceFailure.Failed() { engine.Raise(sce.NewPlatformError(RecordListEventErrorExecution, "<sce:append target='taking'>: an integer operation overflowed or failed")); return true }; p.vTaking = append(p.vTaking, sceValue); return false }() {
+	if func() bool { var sceFailure scealgorithm.Failure; if len(p.vTaking) >= 64 { engine.Raise(sce.NewPlatformError(RecordListEventErrorExecution, sceerrorreason.ErrorReasonAssignmentFailed, "<sce:append target='taking'>: the list already holds its capacity of 64")); return true }; sceValue := scealgorithm.ElementOf(p.vTaking, p.vOp); if sceFailure.Failed() { engine.Raise(sce.NewPlatformError(RecordListEventErrorExecution, sceerrorreason.ErrorReasonExpressionFailed, "<sce:append target='taking'>: an integer operation overflowed or failed")); return true }; p.vTaking = append(p.vTaking, sceValue); return false }() {
 		return  // W3C SCXML 4.9: the error ends the block
 	}
 
@@ -5630,7 +5634,7 @@ func (p *RecordListPolicy) ExecuteTransitionContent(source RecordListState, tran
 
 
 
-	if func() bool { var sceFailure scealgorithm.Failure; sceValue := scealgorithm.Bounded(&sceFailure, s.text, 96); if sceFailure.Failed() { engine.Raise(sce.NewPlatformError(RecordListEventErrorExecution, "<assign location='op.text'>: an integer operation overflowed or failed")); return true }; p.vOp.text = sceValue; return false }() {
+	if func() bool { var sceFailure scealgorithm.Failure; sceValue := scealgorithm.Bounded(&sceFailure, s.text, 96); if sceFailure.Failed() { engine.Raise(sce.NewPlatformError(RecordListEventErrorExecution, sceerrorreason.ErrorReasonExpressionFailed, "<assign location='op.text'>: an integer operation overflowed or failed")); return true }; p.vOp.text = sceValue; return false }() {
 		return  // W3C SCXML 4.9: the error ends the block
 	}
 
@@ -5649,7 +5653,7 @@ func (p *RecordListPolicy) ExecuteTransitionContent(source RecordListState, tran
 
 	// SCE Accepted Subset §2.15: <sce:append target="taking">
 
-	if func() bool { var sceFailure scealgorithm.Failure; if len(p.vTaking) >= 64 { engine.Raise(sce.NewPlatformError(RecordListEventErrorExecution, "<sce:append target='taking'>: the list already holds its capacity of 64")); return true }; sceValue := scealgorithm.ElementOf(p.vTaking, p.vOp); if sceFailure.Failed() { engine.Raise(sce.NewPlatformError(RecordListEventErrorExecution, "<sce:append target='taking'>: an integer operation overflowed or failed")); return true }; p.vTaking = append(p.vTaking, sceValue); return false }() {
+	if func() bool { var sceFailure scealgorithm.Failure; if len(p.vTaking) >= 64 { engine.Raise(sce.NewPlatformError(RecordListEventErrorExecution, sceerrorreason.ErrorReasonAssignmentFailed, "<sce:append target='taking'>: the list already holds its capacity of 64")); return true }; sceValue := scealgorithm.ElementOf(p.vTaking, p.vOp); if sceFailure.Failed() { engine.Raise(sce.NewPlatformError(RecordListEventErrorExecution, sceerrorreason.ErrorReasonExpressionFailed, "<sce:append target='taking'>: an integer operation overflowed or failed")); return true }; p.vTaking = append(p.vTaking, sceValue); return false }() {
 		return  // W3C SCXML 4.9: the error ends the block
 	}
 
@@ -5736,7 +5740,7 @@ func (p *RecordListPolicy) ExecuteTransitionContent(source RecordListState, tran
 
 	// SCE Accepted Subset §2.15: <sce:append target="offered">
 
-	if func() bool { var sceFailure scealgorithm.Failure; if len(p.vOffered) >= 64 { engine.Raise(sce.NewPlatformError(RecordListEventErrorExecution, "<sce:append target='offered'>: the list already holds its capacity of 64")); return true }; sceValue := scealgorithm.ElementOf(p.vOffered, t); if sceFailure.Failed() { engine.Raise(sce.NewPlatformError(RecordListEventErrorExecution, "<sce:append target='offered'>: an integer operation overflowed or failed")); return true }; p.vOffered = append(p.vOffered, sceValue); return false }() {
+	if func() bool { var sceFailure scealgorithm.Failure; if len(p.vOffered) >= 64 { engine.Raise(sce.NewPlatformError(RecordListEventErrorExecution, sceerrorreason.ErrorReasonAssignmentFailed, "<sce:append target='offered'>: the list already holds its capacity of 64")); return true }; sceValue := scealgorithm.ElementOf(p.vOffered, t); if sceFailure.Failed() { engine.Raise(sce.NewPlatformError(RecordListEventErrorExecution, sceerrorreason.ErrorReasonExpressionFailed, "<sce:append target='offered'>: an integer operation overflowed or failed")); return true }; p.vOffered = append(p.vOffered, sceValue); return false }() {
 		return  // W3C SCXML 4.9: the error ends the block
 	}
 
@@ -5772,7 +5776,7 @@ func (p *RecordListPolicy) ExecuteTransitionContent(source RecordListState, tran
 
 	{
 	var ifCondFailed25 bool
-	if func() bool { var sceFailure scealgorithm.Failure; sceValue := !p.vSpoiled && scealgorithm.AddUint32(&sceFailure, p.vGone, p.vWrites) == 0; if sceFailure.Failed() { engine.Raise(sce.NewPlatformError(RecordListEventErrorExecution, "<if cond='!spoiled && gone + writes === 0'>: an integer operation overflowed or failed")); ifCondFailed25 = true; return false }; return sceValue }() {
+	if func() bool { var sceFailure scealgorithm.Failure; sceValue := !p.vSpoiled && scealgorithm.AddUint32(&sceFailure, p.vGone, p.vWrites) == 0; if sceFailure.Failed() { engine.Raise(sce.NewPlatformError(RecordListEventErrorExecution, sceerrorreason.ErrorReasonExpressionFailed, "<if cond='!spoiled && gone + writes === 0'>: an integer operation overflowed or failed")); ifCondFailed25 = true; return false }; return sceValue }() {
 
 	// SCE Accepted Subset §2.15: <sce:clear target="staged">
 
@@ -5879,6 +5883,10 @@ func (p *RecordListPolicy) ExecuteTransitionContent(source RecordListState, tran
 	// W3C SCXML 6.2: send id="__send_8"
 	{
 	sendArgError := ""
+	// Why the argument failed, a code of sce:std/engine/error_reason
+	// (docs/adr/0106 #111), set with every sentence below.
+	var sendArgReason sce.ErrorReason
+	_ = sendArgReason
 	// docs/adr/0005, decision 3: the target is a string computed from the machine's
 	// fields now, and the send goes only by a route the document declared as
 	// `sce:targets`. A value in none of them names no route this send may take — an
@@ -5898,7 +5906,7 @@ func (p *RecordListPolicy) ExecuteTransitionContent(source RecordListState, tran
 	_ = sendTargetVal
 	_ = sendTarget
 	if sendArgError != "" {
-		errEvt := sce.NewPlatformError(RecordListEventErrorExecution, sendArgError)
+		errEvt := sce.NewPlatformError(RecordListEventErrorExecution, sendArgReason, sendArgError)
 		errEvt.Metadata.SendID = "__send_8"
 		engine.Raise(errEvt)
 		return  // W3C SCXML 4.9: the error ends the block
@@ -5910,7 +5918,7 @@ func (p *RecordListPolicy) ExecuteTransitionContent(source RecordListState, tran
 		// ends the block as any other would (W3C SCXML 4.9). A self-sent
 		// event names its origin, so `targetexpr="_event.origin"` (test336)
 		// reads this session's location, never "".
-		errEvt := sce.NewPlatformError(RecordListEventErrorCommunication, "<send> targetexpr evaluated to nothing, or to a route the send does not declare, so there is no target to reach")
+		errEvt := sce.NewPlatformError(RecordListEventErrorCommunication, sceerrorreason.ErrorReasonTargetUnreachable, "<send> targetexpr evaluated to nothing, or to a route the send does not declare, so there is no target to reach")
 		errEvt.Metadata.SendID = "__send_8"
 		engine.Raise(errEvt)
 		return
@@ -5961,13 +5969,13 @@ func (p *RecordListPolicy) ExecuteTransitionContent(source RecordListState, tran
 		routed := engine.SendToTarget(sendEvt, sendHasEvt, "record_list.refused", sendTarget, p.SessionID,
 0, "__send_8", eventDataStr, p.SessionID)
 		if routed == sce.TargetNotSupported {
-			errEvt := sce.NewPlatformError(RecordListEventErrorExecution, "<send> targetexpr produced a value that is not a target")
+			errEvt := sce.NewPlatformError(RecordListEventErrorExecution, sceerrorreason.ErrorReasonSendTargetInvalid, "<send> targetexpr produced a value that is not a target")
 			errEvt.Metadata.SendID = "__send_8"
 			engine.Raise(errEvt)
 			return // W3C SCXML 4.9: the error ends the block
 		}
 		if routed == sce.TargetNotReachable {
-			errEvt := sce.NewPlatformError(RecordListEventErrorCommunication, "<send> targetexpr names a session this processor cannot reach")
+			errEvt := sce.NewPlatformError(RecordListEventErrorCommunication, sceerrorreason.ErrorReasonTargetUnreachable, "<send> targetexpr names a session this processor cannot reach")
 			errEvt.Metadata.SendID = "__send_8"
 			engine.Raise(errEvt)
 			return // W3C SCXML 4.9: the error ends the block
@@ -6024,7 +6032,7 @@ func (p *RecordListPolicy) ExecuteTransitionContent(source RecordListState, tran
 				// docs/adr/0086, section 15.6: the list is short of its field's
 				// lower count, so the event is refused whole: one error, nothing
 				// delivered, and the error ends the block (W3C SCXML 6.2.3, 4.9).
-				errEvt := sce.NewPlatformError(RecordListEventErrorExecution, "<send> <param name='ops'> holds fewer elements than the 1 its field's type declares, so the event is not sent")
+				errEvt := sce.NewPlatformError(RecordListEventErrorExecution, sceerrorreason.ErrorReasonParamUnfit, "<send> <param name='ops'> holds fewer elements than the 1 its field's type declares, so the event is not sent")
 				errEvt.Metadata.SendID = "__send_9"
 				engine.Raise(errEvt)
 				return
@@ -6064,7 +6072,7 @@ func (p *RecordListPolicy) ExecuteTransitionContent(source RecordListState, tran
 		// act it asked for was performed by nobody. Same event as an
 		// undeclared type, so a wiring mistake cannot read as success.
 		if !hostServed && !engine.HasEventProcessor("sce:mesh") {
-			errEvt := sce.NewPlatformError(RecordListEventErrorExecution, "<send type='sce:mesh'> names a processor the host declared but never registered")
+			errEvt := sce.NewPlatformError(RecordListEventErrorExecution, sceerrorreason.ErrorReasonProcessorUnregistered, "<send type='sce:mesh'> names a processor the host declared but never registered")
 			errEvt.Metadata.SendID = "__send_9"
 			engine.Raise(errEvt)
 		}
@@ -6098,20 +6106,20 @@ func (p *RecordListPolicy) ExecuteTransitionContent(source RecordListState, tran
 
 
 
-	if func() bool { var sceFailure scealgorithm.Failure; sceValue := scealgorithm.At(&sceFailure, p.vOffered[:], int64(0)).id; if sceFailure.Failed() { engine.Raise(sce.NewPlatformError(RecordListEventErrorExecution, "<assign location='standing.id'>: an integer operation overflowed or failed")); return true }; p.vStanding.id = sceValue; return false }() {
+	if func() bool { var sceFailure scealgorithm.Failure; sceValue := scealgorithm.At(&sceFailure, p.vOffered[:], int64(0)).id; if sceFailure.Failed() { engine.Raise(sce.NewPlatformError(RecordListEventErrorExecution, sceerrorreason.ErrorReasonExpressionFailed, "<assign location='standing.id'>: an integer operation overflowed or failed")); return true }; p.vStanding.id = sceValue; return false }() {
 		return  // W3C SCXML 4.9: the error ends the block
 	}
 
 
 
-	if func() bool { var sceFailure scealgorithm.Failure; sceValue := scealgorithm.At(&sceFailure, p.vOffered[:], int64(0)).field; if sceFailure.Failed() { engine.Raise(sce.NewPlatformError(RecordListEventErrorExecution, "<assign location='standing.field'>: an integer operation overflowed or failed")); return true }; p.vStanding.field = sceValue; return false }() {
+	if func() bool { var sceFailure scealgorithm.Failure; sceValue := scealgorithm.At(&sceFailure, p.vOffered[:], int64(0)).field; if sceFailure.Failed() { engine.Raise(sce.NewPlatformError(RecordListEventErrorExecution, sceerrorreason.ErrorReasonExpressionFailed, "<assign location='standing.field'>: an integer operation overflowed or failed")); return true }; p.vStanding.field = sceValue; return false }() {
 		return  // W3C SCXML 4.9: the error ends the block
 	}
 
 
 	{
 	var ifCondFailed30 bool
-	if func() bool { var sceFailure scealgorithm.Failure; sceValue := scealgorithm.At(&sceFailure, p.vOffered[:], int64(0)).kind == 0; if sceFailure.Failed() { engine.Raise(sce.NewPlatformError(RecordListEventErrorExecution, "<if cond='offered[0].kind === 0'>: an integer operation overflowed or failed")); ifCondFailed30 = true; return false }; return sceValue }() {
+	if func() bool { var sceFailure scealgorithm.Failure; sceValue := scealgorithm.At(&sceFailure, p.vOffered[:], int64(0)).kind == 0; if sceFailure.Failed() { engine.Raise(sce.NewPlatformError(RecordListEventErrorExecution, sceerrorreason.ErrorReasonExpressionFailed, "<if cond='offered[0].kind === 0'>: an integer operation overflowed or failed")); ifCondFailed30 = true; return false }; return sceValue }() {
 
 
 	p.vStanding.kind = RecordListCommandEnumEdit
@@ -6180,6 +6188,10 @@ func (p *RecordListPolicy) ExecuteTransitionContent(source RecordListState, tran
 	// W3C SCXML 6.2: send id="__send_11"
 	{
 	sendArgError := ""
+	// Why the argument failed, a code of sce:std/engine/error_reason
+	// (docs/adr/0106 #111), set with every sentence below.
+	var sendArgReason sce.ErrorReason
+	_ = sendArgReason
 	// docs/adr/0005, decision 3: the target is a string computed from the machine's
 	// fields now, and the send goes only by a route the document declared as
 	// `sce:targets`. A value in none of them names no route this send may take — an
@@ -6199,7 +6211,7 @@ func (p *RecordListPolicy) ExecuteTransitionContent(source RecordListState, tran
 	_ = sendTargetVal
 	_ = sendTarget
 	if sendArgError != "" {
-		errEvt := sce.NewPlatformError(RecordListEventErrorExecution, sendArgError)
+		errEvt := sce.NewPlatformError(RecordListEventErrorExecution, sendArgReason, sendArgError)
 		errEvt.Metadata.SendID = "__send_11"
 		engine.Raise(errEvt)
 		return  // W3C SCXML 4.9: the error ends the block
@@ -6211,7 +6223,7 @@ func (p *RecordListPolicy) ExecuteTransitionContent(source RecordListState, tran
 		// ends the block as any other would (W3C SCXML 4.9). A self-sent
 		// event names its origin, so `targetexpr="_event.origin"` (test336)
 		// reads this session's location, never "".
-		errEvt := sce.NewPlatformError(RecordListEventErrorCommunication, "<send> targetexpr evaluated to nothing, or to a route the send does not declare, so there is no target to reach")
+		errEvt := sce.NewPlatformError(RecordListEventErrorCommunication, sceerrorreason.ErrorReasonTargetUnreachable, "<send> targetexpr evaluated to nothing, or to a route the send does not declare, so there is no target to reach")
 		errEvt.Metadata.SendID = "__send_11"
 		engine.Raise(errEvt)
 		return
@@ -6262,13 +6274,13 @@ func (p *RecordListPolicy) ExecuteTransitionContent(source RecordListState, tran
 		routed := engine.SendToTarget(sendEvt, sendHasEvt, "record_list.refused", sendTarget, p.SessionID,
 0, "__send_11", eventDataStr, p.SessionID)
 		if routed == sce.TargetNotSupported {
-			errEvt := sce.NewPlatformError(RecordListEventErrorExecution, "<send> targetexpr produced a value that is not a target")
+			errEvt := sce.NewPlatformError(RecordListEventErrorExecution, sceerrorreason.ErrorReasonSendTargetInvalid, "<send> targetexpr produced a value that is not a target")
 			errEvt.Metadata.SendID = "__send_11"
 			engine.Raise(errEvt)
 			return // W3C SCXML 4.9: the error ends the block
 		}
 		if routed == sce.TargetNotReachable {
-			errEvt := sce.NewPlatformError(RecordListEventErrorCommunication, "<send> targetexpr names a session this processor cannot reach")
+			errEvt := sce.NewPlatformError(RecordListEventErrorCommunication, sceerrorreason.ErrorReasonTargetUnreachable, "<send> targetexpr names a session this processor cannot reach")
 			errEvt.Metadata.SendID = "__send_11"
 			engine.Raise(errEvt)
 			return // W3C SCXML 4.9: the error ends the block
@@ -6307,7 +6319,7 @@ func (p *RecordListPolicy) ExecuteTransitionContent(source RecordListState, tran
 
 	// SCE Accepted Subset §2.15: <sce:append target="taking">
 
-	if func() bool { var sceFailure scealgorithm.Failure; if len(p.vTaking) >= 64 { engine.Raise(sce.NewPlatformError(RecordListEventErrorExecution, "<sce:append target='taking'>: the list already holds its capacity of 64")); return true }; sceValue := scealgorithm.ElementOf(p.vTaking, t); if sceFailure.Failed() { engine.Raise(sce.NewPlatformError(RecordListEventErrorExecution, "<sce:append target='taking'>: an integer operation overflowed or failed")); return true }; p.vTaking = append(p.vTaking, sceValue); return false }() {
+	if func() bool { var sceFailure scealgorithm.Failure; if len(p.vTaking) >= 64 { engine.Raise(sce.NewPlatformError(RecordListEventErrorExecution, sceerrorreason.ErrorReasonAssignmentFailed, "<sce:append target='taking'>: the list already holds its capacity of 64")); return true }; sceValue := scealgorithm.ElementOf(p.vTaking, t); if sceFailure.Failed() { engine.Raise(sce.NewPlatformError(RecordListEventErrorExecution, sceerrorreason.ErrorReasonExpressionFailed, "<sce:append target='taking'>: an integer operation overflowed or failed")); return true }; p.vTaking = append(p.vTaking, sceValue); return false }() {
 		return  // W3C SCXML 4.9: the error ends the block
 	}
 
@@ -6334,7 +6346,7 @@ func (p *RecordListPolicy) ExecuteTransitionContent(source RecordListState, tran
 
 	// SCE Accepted Subset §2.15: <sce:append target="provisional">
 
-	if func() bool { var sceFailure scealgorithm.Failure; if len(p.vProvisional) >= 8 { engine.Raise(sce.NewPlatformError(RecordListEventErrorExecution, "<sce:append target='provisional'>: the list already holds its capacity of 8")); return true }; sceValue := scealgorithm.ElementOf(p.vProvisional, p.vStanding); if sceFailure.Failed() { engine.Raise(sce.NewPlatformError(RecordListEventErrorExecution, "<sce:append target='provisional'>: an integer operation overflowed or failed")); return true }; p.vProvisional = append(p.vProvisional, sceValue); return false }() {
+	if func() bool { var sceFailure scealgorithm.Failure; if len(p.vProvisional) >= 8 { engine.Raise(sce.NewPlatformError(RecordListEventErrorExecution, sceerrorreason.ErrorReasonAssignmentFailed, "<sce:append target='provisional'>: the list already holds its capacity of 8")); return true }; sceValue := scealgorithm.ElementOf(p.vProvisional, p.vStanding); if sceFailure.Failed() { engine.Raise(sce.NewPlatformError(RecordListEventErrorExecution, sceerrorreason.ErrorReasonExpressionFailed, "<sce:append target='provisional'>: an integer operation overflowed or failed")); return true }; p.vProvisional = append(p.vProvisional, sceValue); return false }() {
 		return  // W3C SCXML 4.9: the error ends the block
 	}
 
@@ -6387,6 +6399,10 @@ func (p *RecordListPolicy) ExecuteTransitionContent(source RecordListState, tran
 	// W3C SCXML 6.2: send id="__send_14"
 	{
 	sendArgError := ""
+	// Why the argument failed, a code of sce:std/engine/error_reason
+	// (docs/adr/0106 #111), set with every sentence below.
+	var sendArgReason sce.ErrorReason
+	_ = sendArgReason
 	// docs/adr/0005, decision 3: the target is a string computed from the machine's
 	// fields now, and the send goes only by a route the document declared as
 	// `sce:targets`. A value in none of them names no route this send may take — an
@@ -6406,7 +6422,7 @@ func (p *RecordListPolicy) ExecuteTransitionContent(source RecordListState, tran
 	_ = sendTargetVal
 	_ = sendTarget
 	if sendArgError != "" {
-		errEvt := sce.NewPlatformError(RecordListEventErrorExecution, sendArgError)
+		errEvt := sce.NewPlatformError(RecordListEventErrorExecution, sendArgReason, sendArgError)
 		errEvt.Metadata.SendID = "__send_14"
 		engine.Raise(errEvt)
 		return  // W3C SCXML 4.9: the error ends the block
@@ -6418,7 +6434,7 @@ func (p *RecordListPolicy) ExecuteTransitionContent(source RecordListState, tran
 		// ends the block as any other would (W3C SCXML 4.9). A self-sent
 		// event names its origin, so `targetexpr="_event.origin"` (test336)
 		// reads this session's location, never "".
-		errEvt := sce.NewPlatformError(RecordListEventErrorCommunication, "<send> targetexpr evaluated to nothing, or to a route the send does not declare, so there is no target to reach")
+		errEvt := sce.NewPlatformError(RecordListEventErrorCommunication, sceerrorreason.ErrorReasonTargetUnreachable, "<send> targetexpr evaluated to nothing, or to a route the send does not declare, so there is no target to reach")
 		errEvt.Metadata.SendID = "__send_14"
 		engine.Raise(errEvt)
 		return
@@ -6457,13 +6473,13 @@ func (p *RecordListPolicy) ExecuteTransitionContent(source RecordListState, tran
 		routed := engine.SendToTarget(sendEvt, sendHasEvt, "record_list.pending", sendTarget, p.SessionID,
 0, "__send_14", eventDataStr, p.SessionID)
 		if routed == sce.TargetNotSupported {
-			errEvt := sce.NewPlatformError(RecordListEventErrorExecution, "<send> targetexpr produced a value that is not a target")
+			errEvt := sce.NewPlatformError(RecordListEventErrorExecution, sceerrorreason.ErrorReasonSendTargetInvalid, "<send> targetexpr produced a value that is not a target")
 			errEvt.Metadata.SendID = "__send_14"
 			engine.Raise(errEvt)
 			return // W3C SCXML 4.9: the error ends the block
 		}
 		if routed == sce.TargetNotReachable {
-			errEvt := sce.NewPlatformError(RecordListEventErrorCommunication, "<send> targetexpr names a session this processor cannot reach")
+			errEvt := sce.NewPlatformError(RecordListEventErrorCommunication, sceerrorreason.ErrorReasonTargetUnreachable, "<send> targetexpr names a session this processor cannot reach")
 			errEvt.Metadata.SendID = "__send_14"
 			engine.Raise(errEvt)
 			return // W3C SCXML 4.9: the error ends the block
@@ -6487,7 +6503,7 @@ func (p *RecordListPolicy) ExecuteTransitionContent(source RecordListState, tran
 			func() {
 
 
-	if func() bool { var sceFailure scealgorithm.Failure; sceValue := scealgorithm.AddUint32(&sceFailure, p.vRefusals, 1); if sceFailure.Failed() { engine.Raise(sce.NewPlatformError(RecordListEventErrorExecution, "<assign location='refusals'>: an integer operation overflowed or failed")); return true }; p.vRefusals = sceValue; return false }() {
+	if func() bool { var sceFailure scealgorithm.Failure; sceValue := scealgorithm.AddUint32(&sceFailure, p.vRefusals, 1); if sceFailure.Failed() { engine.Raise(sce.NewPlatformError(RecordListEventErrorExecution, sceerrorreason.ErrorReasonExpressionFailed, "<assign location='refusals'>: an integer operation overflowed or failed")); return true }; p.vRefusals = sceValue; return false }() {
 		return  // W3C SCXML 4.9: the error ends the block
 	}
 
@@ -6560,7 +6576,7 @@ func (p *RecordListPolicy) ExecuteTransitionContent(source RecordListState, tran
 		// act it asked for was performed by nobody. Same event as an
 		// undeclared type, so a wiring mistake cannot read as success.
 		if !hostServed && !engine.HasEventProcessor("sce:mesh") {
-			errEvt := sce.NewPlatformError(RecordListEventErrorExecution, "<send type='sce:mesh'> names a processor the host declared but never registered")
+			errEvt := sce.NewPlatformError(RecordListEventErrorExecution, sceerrorreason.ErrorReasonProcessorUnregistered, "<send type='sce:mesh'> names a processor the host declared but never registered")
 			errEvt.Metadata.SendID = "__send_15"
 			engine.Raise(errEvt)
 		}
@@ -6610,7 +6626,7 @@ func (p *RecordListPolicy) ExecuteTransitionContent(source RecordListState, tran
 	if !p.vAuthorized {
 
 
-	if func() bool { var sceFailure scealgorithm.Failure; sceValue := scealgorithm.AddUint32(&sceFailure, p.vDenied, 1); if sceFailure.Failed() { engine.Raise(sce.NewPlatformError(RecordListEventErrorExecution, "<assign location='denied'>: an integer operation overflowed or failed")); return true }; p.vDenied = sceValue; return false }() {
+	if func() bool { var sceFailure scealgorithm.Failure; sceValue := scealgorithm.AddUint32(&sceFailure, p.vDenied, 1); if sceFailure.Failed() { engine.Raise(sce.NewPlatformError(RecordListEventErrorExecution, sceerrorreason.ErrorReasonExpressionFailed, "<assign location='denied'>: an integer operation overflowed or failed")); return true }; p.vDenied = sceValue; return false }() {
 		return  // W3C SCXML 4.9: the error ends the block
 	}
 
@@ -6715,20 +6731,20 @@ func (p *RecordListPolicy) ExecuteTransitionContent(source RecordListState, tran
 
 
 
-	if func() bool { var sceFailure scealgorithm.Failure; sceValue := scealgorithm.At(&sceFailure, p.vTaking[:], int64(0)).id; if sceFailure.Failed() { engine.Raise(sce.NewPlatformError(RecordListEventErrorExecution, "<assign location='standing.id'>: an integer operation overflowed or failed")); return true }; p.vStanding.id = sceValue; return false }() {
+	if func() bool { var sceFailure scealgorithm.Failure; sceValue := scealgorithm.At(&sceFailure, p.vTaking[:], int64(0)).id; if sceFailure.Failed() { engine.Raise(sce.NewPlatformError(RecordListEventErrorExecution, sceerrorreason.ErrorReasonExpressionFailed, "<assign location='standing.id'>: an integer operation overflowed or failed")); return true }; p.vStanding.id = sceValue; return false }() {
 		return  // W3C SCXML 4.9: the error ends the block
 	}
 
 
 
-	if func() bool { var sceFailure scealgorithm.Failure; sceValue := scealgorithm.At(&sceFailure, p.vTaking[:], int64(0)).field; if sceFailure.Failed() { engine.Raise(sce.NewPlatformError(RecordListEventErrorExecution, "<assign location='standing.field'>: an integer operation overflowed or failed")); return true }; p.vStanding.field = sceValue; return false }() {
+	if func() bool { var sceFailure scealgorithm.Failure; sceValue := scealgorithm.At(&sceFailure, p.vTaking[:], int64(0)).field; if sceFailure.Failed() { engine.Raise(sce.NewPlatformError(RecordListEventErrorExecution, sceerrorreason.ErrorReasonExpressionFailed, "<assign location='standing.field'>: an integer operation overflowed or failed")); return true }; p.vStanding.field = sceValue; return false }() {
 		return  // W3C SCXML 4.9: the error ends the block
 	}
 
 
 	{
 	var ifCondFailed42 bool
-	if func() bool { var sceFailure scealgorithm.Failure; sceValue := scealgorithm.At(&sceFailure, p.vTaking[:], int64(0)).kind == 0; if sceFailure.Failed() { engine.Raise(sce.NewPlatformError(RecordListEventErrorExecution, "<if cond='taking[0].kind === 0'>: an integer operation overflowed or failed")); ifCondFailed42 = true; return false }; return sceValue }() {
+	if func() bool { var sceFailure scealgorithm.Failure; sceValue := scealgorithm.At(&sceFailure, p.vTaking[:], int64(0)).kind == 0; if sceFailure.Failed() { engine.Raise(sce.NewPlatformError(RecordListEventErrorExecution, sceerrorreason.ErrorReasonExpressionFailed, "<if cond='taking[0].kind === 0'>: an integer operation overflowed or failed")); ifCondFailed42 = true; return false }; return sceValue }() {
 
 
 	p.vStanding.kind = RecordListCommandEnumEdit
@@ -6747,7 +6763,7 @@ func (p *RecordListPolicy) ExecuteTransitionContent(source RecordListState, tran
 
 	// SCE Accepted Subset §2.15: <sce:append target="provisional">
 
-	if func() bool { var sceFailure scealgorithm.Failure; if len(p.vProvisional) >= 8 { engine.Raise(sce.NewPlatformError(RecordListEventErrorExecution, "<sce:append target='provisional'>: the list already holds its capacity of 8")); return true }; sceValue := scealgorithm.ElementOf(p.vProvisional, p.vStanding); if sceFailure.Failed() { engine.Raise(sce.NewPlatformError(RecordListEventErrorExecution, "<sce:append target='provisional'>: an integer operation overflowed or failed")); return true }; p.vProvisional = append(p.vProvisional, sceValue); return false }() {
+	if func() bool { var sceFailure scealgorithm.Failure; if len(p.vProvisional) >= 8 { engine.Raise(sce.NewPlatformError(RecordListEventErrorExecution, sceerrorreason.ErrorReasonAssignmentFailed, "<sce:append target='provisional'>: the list already holds its capacity of 8")); return true }; sceValue := scealgorithm.ElementOf(p.vProvisional, p.vStanding); if sceFailure.Failed() { engine.Raise(sce.NewPlatformError(RecordListEventErrorExecution, sceerrorreason.ErrorReasonExpressionFailed, "<sce:append target='provisional'>: an integer operation overflowed or failed")); return true }; p.vProvisional = append(p.vProvisional, sceValue); return false }() {
 		return  // W3C SCXML 4.9: the error ends the block
 	}
 
@@ -6810,7 +6826,7 @@ func (p *RecordListPolicy) ExecuteTransitionContent(source RecordListState, tran
 	if p.vDot.nodeId != p.vNode {
 
 
-	if func() bool { var sceFailure scealgorithm.Failure; sceValue := scealgorithm.TakeOutcome(&sceFailure, sceAdapt_RecordList_HlcReceive__vv(p.vClock, p.vDot, p.vClock.wallTime, p.vNode)); if sceFailure.Failed() { engine.Raise(sce.NewPlatformError(RecordListEventErrorExecution, "<assign location='clock'>: an integer operation overflowed or failed")); return true }; p.vClock = sceValue; return false }() {
+	if func() bool { var sceFailure scealgorithm.Failure; sceValue := scealgorithm.TakeOutcome(&sceFailure, sceAdapt_RecordList_HlcReceive__vv(p.vClock, p.vDot, p.vClock.wallTime, p.vNode)); if sceFailure.Failed() { engine.Raise(sce.NewPlatformError(RecordListEventErrorExecution, sceerrorreason.ErrorReasonExpressionFailed, "<assign location='clock'>: an integer operation overflowed or failed")); return true }; p.vClock = sceValue; return false }() {
 		return  // W3C SCXML 4.9: the error ends the block
 	}
 
@@ -6900,13 +6916,13 @@ func (p *RecordListPolicy) ExecuteTransitionContent(source RecordListState, tran
 			func() {
 
 
-	if func() bool { var sceFailure scealgorithm.Failure; sceValue := scealgorithm.At(&sceFailure, p.vTaking[:], int64(p.vTook)); if sceFailure.Failed() { engine.Raise(sce.NewPlatformError(RecordListEventErrorExecution, "<assign location='op'>: an integer operation overflowed or failed")); return true }; p.vOp = sceValue; return false }() {
+	if func() bool { var sceFailure scealgorithm.Failure; sceValue := scealgorithm.At(&sceFailure, p.vTaking[:], int64(p.vTook)); if sceFailure.Failed() { engine.Raise(sce.NewPlatformError(RecordListEventErrorExecution, sceerrorreason.ErrorReasonExpressionFailed, "<assign location='op'>: an integer operation overflowed or failed")); return true }; p.vOp = sceValue; return false }() {
 		return  // W3C SCXML 4.9: the error ends the block
 	}
 
 
 
-	if func() bool { var sceFailure scealgorithm.Failure; sceValue := scealgorithm.AddUint32(&sceFailure, p.vTook, 1); if sceFailure.Failed() { engine.Raise(sce.NewPlatformError(RecordListEventErrorExecution, "<assign location='took'>: an integer operation overflowed or failed")); return true }; p.vTook = sceValue; return false }() {
+	if func() bool { var sceFailure scealgorithm.Failure; sceValue := scealgorithm.AddUint32(&sceFailure, p.vTook, 1); if sceFailure.Failed() { engine.Raise(sce.NewPlatformError(RecordListEventErrorExecution, sceerrorreason.ErrorReasonExpressionFailed, "<assign location='took'>: an integer operation overflowed or failed")); return true }; p.vTook = sceValue; return false }() {
 		return  // W3C SCXML 4.9: the error ends the block
 	}
 
@@ -6916,7 +6932,7 @@ func (p *RecordListPolicy) ExecuteTransitionContent(source RecordListState, tran
 
 
 
-	if func() bool { var sceFailure scealgorithm.Failure; sceValue := scealgorithm.AddUint64(&sceFailure, scealgorithm.MulUint64(&sceFailure, p.vEntry.element, 65536), uint64(p.vOp.field)); if sceFailure.Failed() { engine.Raise(sce.NewPlatformError(RecordListEventErrorExecution, "<assign location='entry.element'>: an integer operation overflowed or failed")); return true }; p.vEntry.element = sceValue; return false }() {
+	if func() bool { var sceFailure scealgorithm.Failure; sceValue := scealgorithm.AddUint64(&sceFailure, scealgorithm.MulUint64(&sceFailure, p.vEntry.element, 65536), uint64(p.vOp.field)); if sceFailure.Failed() { engine.Raise(sce.NewPlatformError(RecordListEventErrorExecution, sceerrorreason.ErrorReasonExpressionFailed, "<assign location='entry.element'>: an integer operation overflowed or failed")); return true }; p.vEntry.element = sceValue; return false }() {
 		return  // W3C SCXML 4.9: the error ends the block
 	}
 
@@ -6924,7 +6940,7 @@ func (p *RecordListPolicy) ExecuteTransitionContent(source RecordListState, tran
 	if p.vOp.kind == 0 {
 
 
-	if func() bool { var sceFailure scealgorithm.Failure; sceValue := scealgorithm.Bounded(&sceFailure, p.vOp.text, 96); if sceFailure.Failed() { engine.Raise(sce.NewPlatformError(RecordListEventErrorExecution, "<assign location='held.text'>: an integer operation overflowed or failed")); return true }; p.vHeld.text = sceValue; return false }() {
+	if func() bool { var sceFailure scealgorithm.Failure; sceValue := scealgorithm.Bounded(&sceFailure, p.vOp.text, 96); if sceFailure.Failed() { engine.Raise(sce.NewPlatformError(RecordListEventErrorExecution, sceerrorreason.ErrorReasonExpressionFailed, "<assign location='held.text'>: an integer operation overflowed or failed")); return true }; p.vHeld.text = sceValue; return false }() {
 		return  // W3C SCXML 4.9: the error ends the block
 	}
 
@@ -6994,19 +7010,19 @@ func (p *RecordListPolicy) ExecuteTransitionContent(source RecordListState, tran
 
 	// SCE Accepted Subset §2.15: <sce:append target="one">
 
-	if func() bool { var sceFailure scealgorithm.Failure; if len(p.vOne) >= 1024 { engine.Raise(sce.NewPlatformError(RecordListEventErrorExecution, "<sce:append target='one'>: the list already holds its capacity of 1024")); return true }; sceValue := scealgorithm.ElementOf(p.vOne, p.vEntry); if sceFailure.Failed() { engine.Raise(sce.NewPlatformError(RecordListEventErrorExecution, "<sce:append target='one'>: an integer operation overflowed or failed")); return true }; p.vOne = append(p.vOne, sceValue); return false }() {
+	if func() bool { var sceFailure scealgorithm.Failure; if len(p.vOne) >= 1024 { engine.Raise(sce.NewPlatformError(RecordListEventErrorExecution, sceerrorreason.ErrorReasonAssignmentFailed, "<sce:append target='one'>: the list already holds its capacity of 1024")); return true }; sceValue := scealgorithm.ElementOf(p.vOne, p.vEntry); if sceFailure.Failed() { engine.Raise(sce.NewPlatformError(RecordListEventErrorExecution, sceerrorreason.ErrorReasonExpressionFailed, "<sce:append target='one'>: an integer operation overflowed or failed")); return true }; p.vOne = append(p.vOne, sceValue); return false }() {
 		return  // W3C SCXML 4.9: the error ends the block
 	}
 
 
 
-	if func() bool { var sceFailure scealgorithm.Failure; sceValue := scealgorithm.Within(&sceFailure, scealgorithm.TakeOutcome(&sceFailure, sceAdapt_RecordList_OrsetUnion__vv(p.vAdds, p.vOne)), 1024); if sceFailure.Failed() { engine.Raise(sce.NewPlatformError(RecordListEventErrorExecution, "<assign location='adds'>: an integer operation overflowed or failed")); return true }; p.vAdds = sceValue; return false }() {
+	if func() bool { var sceFailure scealgorithm.Failure; sceValue := scealgorithm.Within(&sceFailure, scealgorithm.TakeOutcome(&sceFailure, sceAdapt_RecordList_OrsetUnion__vv(p.vAdds, p.vOne)), 1024); if sceFailure.Failed() { engine.Raise(sce.NewPlatformError(RecordListEventErrorExecution, sceerrorreason.ErrorReasonExpressionFailed, "<assign location='adds'>: an integer operation overflowed or failed")); return true }; p.vAdds = sceValue; return false }() {
 		return  // W3C SCXML 4.9: the error ends the block
 	}
 
 
 
-	if func() bool { var sceFailure scealgorithm.Failure; sceValue := scealgorithm.Within(&sceFailure, scealgorithm.TakeOutcome(&sceFailure, sceAdapt_RecordList_MvValueKeep__vv(p.vValues, p.vHeld)), 512); if sceFailure.Failed() { engine.Raise(sce.NewPlatformError(RecordListEventErrorExecution, "<assign location='values'>: an integer operation overflowed or failed")); return true }; p.vValues = sceValue; return false }() {
+	if func() bool { var sceFailure scealgorithm.Failure; sceValue := scealgorithm.Within(&sceFailure, scealgorithm.TakeOutcome(&sceFailure, sceAdapt_RecordList_MvValueKeep__vv(p.vValues, p.vHeld)), 512); if sceFailure.Failed() { engine.Raise(sce.NewPlatformError(RecordListEventErrorExecution, sceerrorreason.ErrorReasonExpressionFailed, "<assign location='values'>: an integer operation overflowed or failed")); return true }; p.vValues = sceValue; return false }() {
 		return  // W3C SCXML 4.9: the error ends the block
 	}
 
@@ -7116,7 +7132,7 @@ func (p *RecordListPolicy) ExecuteTransitionContent(source RecordListState, tran
 
 
 
-	if func() bool { var sceFailure scealgorithm.Failure; sceValue := scealgorithm.Bounded(&sceFailure, v.text, 96); if sceFailure.Failed() { engine.Raise(sce.NewPlatformError(RecordListEventErrorExecution, "<assign location='undoing.text'>: an integer operation overflowed or failed")); return true }; p.vUndoing.text = sceValue; return false }() {
+	if func() bool { var sceFailure scealgorithm.Failure; sceValue := scealgorithm.Bounded(&sceFailure, v.text, 96); if sceFailure.Failed() { engine.Raise(sce.NewPlatformError(RecordListEventErrorExecution, sceerrorreason.ErrorReasonExpressionFailed, "<assign location='undoing.text'>: an integer operation overflowed or failed")); return true }; p.vUndoing.text = sceValue; return false }() {
 		return  // W3C SCXML 4.9: the error ends the block
 	}
 
@@ -7147,7 +7163,7 @@ func (p *RecordListPolicy) ExecuteTransitionContent(source RecordListState, tran
 
 	// SCE Accepted Subset §2.15: <sce:append target="undo">
 
-	if func() bool { var sceFailure scealgorithm.Failure; if len(p.vUndo) >= 512 { engine.Raise(sce.NewPlatformError(RecordListEventErrorExecution, "<sce:append target='undo'>: the list already holds its capacity of 512")); return true }; sceValue := scealgorithm.ElementOf(p.vUndo, p.vUndoing); if sceFailure.Failed() { engine.Raise(sce.NewPlatformError(RecordListEventErrorExecution, "<sce:append target='undo'>: an integer operation overflowed or failed")); return true }; p.vUndo = append(p.vUndo, sceValue); return false }() {
+	if func() bool { var sceFailure scealgorithm.Failure; if len(p.vUndo) >= 512 { engine.Raise(sce.NewPlatformError(RecordListEventErrorExecution, sceerrorreason.ErrorReasonAssignmentFailed, "<sce:append target='undo'>: the list already holds its capacity of 512")); return true }; sceValue := scealgorithm.ElementOf(p.vUndo, p.vUndoing); if sceFailure.Failed() { engine.Raise(sce.NewPlatformError(RecordListEventErrorExecution, sceerrorreason.ErrorReasonExpressionFailed, "<sce:append target='undo'>: an integer operation overflowed or failed")); return true }; p.vUndo = append(p.vUndo, sceValue); return false }() {
 		return  // W3C SCXML 4.9: the error ends the block
 	}
 
@@ -7169,7 +7185,7 @@ func (p *RecordListPolicy) ExecuteTransitionContent(source RecordListState, tran
 
 	// SCE Accepted Subset §2.15: <sce:append target="undoKept">
 
-	if func() bool { var sceFailure scealgorithm.Failure; if len(p.vUndoKept) >= 512 { engine.Raise(sce.NewPlatformError(RecordListEventErrorExecution, "<sce:append target='undoKept'>: the list already holds its capacity of 512")); return true }; sceValue := scealgorithm.ElementOf(p.vUndoKept, u); if sceFailure.Failed() { engine.Raise(sce.NewPlatformError(RecordListEventErrorExecution, "<sce:append target='undoKept'>: an integer operation overflowed or failed")); return true }; p.vUndoKept = append(p.vUndoKept, sceValue); return false }() {
+	if func() bool { var sceFailure scealgorithm.Failure; if len(p.vUndoKept) >= 512 { engine.Raise(sce.NewPlatformError(RecordListEventErrorExecution, sceerrorreason.ErrorReasonAssignmentFailed, "<sce:append target='undoKept'>: the list already holds its capacity of 512")); return true }; sceValue := scealgorithm.ElementOf(p.vUndoKept, u); if sceFailure.Failed() { engine.Raise(sce.NewPlatformError(RecordListEventErrorExecution, sceerrorreason.ErrorReasonExpressionFailed, "<sce:append target='undoKept'>: an integer operation overflowed or failed")); return true }; p.vUndoKept = append(p.vUndoKept, sceValue); return false }() {
 		return  // W3C SCXML 4.9: the error ends the block
 	}
 
@@ -7189,7 +7205,7 @@ func (p *RecordListPolicy) ExecuteTransitionContent(source RecordListState, tran
 
 	// SCE Accepted Subset §2.15: <sce:append target="undo">
 
-	if func() bool { var sceFailure scealgorithm.Failure; if len(p.vUndo) >= 512 { engine.Raise(sce.NewPlatformError(RecordListEventErrorExecution, "<sce:append target='undo'>: the list already holds its capacity of 512")); return true }; sceValue := scealgorithm.ElementOf(p.vUndo, u); if sceFailure.Failed() { engine.Raise(sce.NewPlatformError(RecordListEventErrorExecution, "<sce:append target='undo'>: an integer operation overflowed or failed")); return true }; p.vUndo = append(p.vUndo, sceValue); return false }() {
+	if func() bool { var sceFailure scealgorithm.Failure; if len(p.vUndo) >= 512 { engine.Raise(sce.NewPlatformError(RecordListEventErrorExecution, sceerrorreason.ErrorReasonAssignmentFailed, "<sce:append target='undo'>: the list already holds its capacity of 512")); return true }; sceValue := scealgorithm.ElementOf(p.vUndo, u); if sceFailure.Failed() { engine.Raise(sce.NewPlatformError(RecordListEventErrorExecution, sceerrorreason.ErrorReasonExpressionFailed, "<sce:append target='undo'>: an integer operation overflowed or failed")); return true }; p.vUndo = append(p.vUndo, sceValue); return false }() {
 		return  // W3C SCXML 4.9: the error ends the block
 	}
 
@@ -7205,19 +7221,19 @@ func (p *RecordListPolicy) ExecuteTransitionContent(source RecordListState, tran
 
 	// SCE Accepted Subset §2.15: <sce:append target="one">
 
-	if func() bool { var sceFailure scealgorithm.Failure; if len(p.vOne) >= 1024 { engine.Raise(sce.NewPlatformError(RecordListEventErrorExecution, "<sce:append target='one'>: the list already holds its capacity of 1024")); return true }; sceValue := scealgorithm.ElementOf(p.vOne, p.vEntry); if sceFailure.Failed() { engine.Raise(sce.NewPlatformError(RecordListEventErrorExecution, "<sce:append target='one'>: an integer operation overflowed or failed")); return true }; p.vOne = append(p.vOne, sceValue); return false }() {
+	if func() bool { var sceFailure scealgorithm.Failure; if len(p.vOne) >= 1024 { engine.Raise(sce.NewPlatformError(RecordListEventErrorExecution, sceerrorreason.ErrorReasonAssignmentFailed, "<sce:append target='one'>: the list already holds its capacity of 1024")); return true }; sceValue := scealgorithm.ElementOf(p.vOne, p.vEntry); if sceFailure.Failed() { engine.Raise(sce.NewPlatformError(RecordListEventErrorExecution, sceerrorreason.ErrorReasonExpressionFailed, "<sce:append target='one'>: an integer operation overflowed or failed")); return true }; p.vOne = append(p.vOne, sceValue); return false }() {
 		return  // W3C SCXML 4.9: the error ends the block
 	}
 
 
 
-	if func() bool { var sceFailure scealgorithm.Failure; sceValue := scealgorithm.Within(&sceFailure, scealgorithm.TakeOutcome(&sceFailure, sceAdapt_RecordList_OrsetLive__vv(p.vAdds, p.vOne)), 1024); if sceFailure.Failed() { engine.Raise(sce.NewPlatformError(RecordListEventErrorExecution, "<assign location='adds'>: an integer operation overflowed or failed")); return true }; p.vAdds = sceValue; return false }() {
+	if func() bool { var sceFailure scealgorithm.Failure; sceValue := scealgorithm.Within(&sceFailure, scealgorithm.TakeOutcome(&sceFailure, sceAdapt_RecordList_OrsetLive__vv(p.vAdds, p.vOne)), 1024); if sceFailure.Failed() { engine.Raise(sce.NewPlatformError(RecordListEventErrorExecution, sceerrorreason.ErrorReasonExpressionFailed, "<assign location='adds'>: an integer operation overflowed or failed")); return true }; p.vAdds = sceValue; return false }() {
 		return  // W3C SCXML 4.9: the error ends the block
 	}
 
 
 
-	if func() bool { var sceFailure scealgorithm.Failure; sceValue := scealgorithm.Within(&sceFailure, scealgorithm.TakeOutcome(&sceFailure, sceAdapt_RecordList_MvValueDrop__vv(p.vValues, p.vHeld)), 512); if sceFailure.Failed() { engine.Raise(sce.NewPlatformError(RecordListEventErrorExecution, "<assign location='values'>: an integer operation overflowed or failed")); return true }; p.vValues = sceValue; return false }() {
+	if func() bool { var sceFailure scealgorithm.Failure; sceValue := scealgorithm.Within(&sceFailure, scealgorithm.TakeOutcome(&sceFailure, sceAdapt_RecordList_MvValueDrop__vv(p.vValues, p.vHeld)), 512); if sceFailure.Failed() { engine.Raise(sce.NewPlatformError(RecordListEventErrorExecution, sceerrorreason.ErrorReasonExpressionFailed, "<assign location='values'>: an integer operation overflowed or failed")); return true }; p.vValues = sceValue; return false }() {
 		return  // W3C SCXML 4.9: the error ends the block
 	}
 
@@ -7305,7 +7321,7 @@ func (p *RecordListPolicy) ExecuteTransitionContent(source RecordListState, tran
 				// docs/adr/0086, section 15.6: the list is short of its field's
 				// lower count, so the event is refused whole: one error, nothing
 				// delivered, and the error ends the block (W3C SCXML 6.2.3, 4.9).
-				errEvt := sce.NewPlatformError(RecordListEventErrorExecution, "<send> <param name='ops'> holds fewer elements than the 1 its field's type declares, so the event is not sent")
+				errEvt := sce.NewPlatformError(RecordListEventErrorExecution, sceerrorreason.ErrorReasonParamUnfit, "<send> <param name='ops'> holds fewer elements than the 1 its field's type declares, so the event is not sent")
 				errEvt.Metadata.SendID = "__send_22"
 				engine.Raise(errEvt)
 				return
@@ -7341,7 +7357,7 @@ func (p *RecordListPolicy) ExecuteTransitionContent(source RecordListState, tran
 		// act it asked for was performed by nobody. Same event as an
 		// undeclared type, so a wiring mistake cannot read as success.
 		if !hostServed && !engine.HasEventProcessor("sce:mesh") {
-			errEvt := sce.NewPlatformError(RecordListEventErrorExecution, "<send type='sce:mesh'> names a processor the host declared but never registered")
+			errEvt := sce.NewPlatformError(RecordListEventErrorExecution, sceerrorreason.ErrorReasonProcessorUnregistered, "<send type='sce:mesh'> names a processor the host declared but never registered")
 			errEvt.Metadata.SendID = "__send_22"
 			engine.Raise(errEvt)
 		}
@@ -7387,7 +7403,7 @@ func (p *RecordListPolicy) ExecuteTransitionContent(source RecordListState, tran
 	if !p.vProvisionalFound {
 
 
-	if func() bool { var sceFailure scealgorithm.Failure; sceValue := scealgorithm.AddUint32(&sceFailure, p.vRefusals, 1); if sceFailure.Failed() { engine.Raise(sce.NewPlatformError(RecordListEventErrorExecution, "<assign location='refusals'>: an integer operation overflowed or failed")); return true }; p.vRefusals = sceValue; return false }() {
+	if func() bool { var sceFailure scealgorithm.Failure; sceValue := scealgorithm.AddUint32(&sceFailure, p.vRefusals, 1); if sceFailure.Failed() { engine.Raise(sce.NewPlatformError(RecordListEventErrorExecution, sceerrorreason.ErrorReasonExpressionFailed, "<assign location='refusals'>: an integer operation overflowed or failed")); return true }; p.vRefusals = sceValue; return false }() {
 		return  // W3C SCXML 4.9: the error ends the block
 	}
 
@@ -7409,7 +7425,7 @@ func (p *RecordListPolicy) ExecuteTransitionContent(source RecordListState, tran
 
 	// SCE Accepted Subset §2.15: <sce:append target="provisionalKept">
 
-	if func() bool { var sceFailure scealgorithm.Failure; if len(p.vProvisionalKept) >= 8 { engine.Raise(sce.NewPlatformError(RecordListEventErrorExecution, "<sce:append target='provisionalKept'>: the list already holds its capacity of 8")); return true }; sceValue := scealgorithm.ElementOf(p.vProvisionalKept, p_); if sceFailure.Failed() { engine.Raise(sce.NewPlatformError(RecordListEventErrorExecution, "<sce:append target='provisionalKept'>: an integer operation overflowed or failed")); return true }; p.vProvisionalKept = append(p.vProvisionalKept, sceValue); return false }() {
+	if func() bool { var sceFailure scealgorithm.Failure; if len(p.vProvisionalKept) >= 8 { engine.Raise(sce.NewPlatformError(RecordListEventErrorExecution, sceerrorreason.ErrorReasonAssignmentFailed, "<sce:append target='provisionalKept'>: the list already holds its capacity of 8")); return true }; sceValue := scealgorithm.ElementOf(p.vProvisionalKept, p_); if sceFailure.Failed() { engine.Raise(sce.NewPlatformError(RecordListEventErrorExecution, sceerrorreason.ErrorReasonExpressionFailed, "<sce:append target='provisionalKept'>: an integer operation overflowed or failed")); return true }; p.vProvisionalKept = append(p.vProvisionalKept, sceValue); return false }() {
 		return  // W3C SCXML 4.9: the error ends the block
 	}
 
@@ -7429,7 +7445,7 @@ func (p *RecordListPolicy) ExecuteTransitionContent(source RecordListState, tran
 
 	// SCE Accepted Subset §2.15: <sce:append target="provisional">
 
-	if func() bool { var sceFailure scealgorithm.Failure; if len(p.vProvisional) >= 8 { engine.Raise(sce.NewPlatformError(RecordListEventErrorExecution, "<sce:append target='provisional'>: the list already holds its capacity of 8")); return true }; sceValue := scealgorithm.ElementOf(p.vProvisional, p_); if sceFailure.Failed() { engine.Raise(sce.NewPlatformError(RecordListEventErrorExecution, "<sce:append target='provisional'>: an integer operation overflowed or failed")); return true }; p.vProvisional = append(p.vProvisional, sceValue); return false }() {
+	if func() bool { var sceFailure scealgorithm.Failure; if len(p.vProvisional) >= 8 { engine.Raise(sce.NewPlatformError(RecordListEventErrorExecution, sceerrorreason.ErrorReasonAssignmentFailed, "<sce:append target='provisional'>: the list already holds its capacity of 8")); return true }; sceValue := scealgorithm.ElementOf(p.vProvisional, p_); if sceFailure.Failed() { engine.Raise(sce.NewPlatformError(RecordListEventErrorExecution, sceerrorreason.ErrorReasonExpressionFailed, "<sce:append target='provisional'>: an integer operation overflowed or failed")); return true }; p.vProvisional = append(p.vProvisional, sceValue); return false }() {
 		return  // W3C SCXML 4.9: the error ends the block
 	}
 
@@ -7449,7 +7465,7 @@ func (p *RecordListPolicy) ExecuteTransitionContent(source RecordListState, tran
 
 	// SCE Accepted Subset §2.15: <sce:append target="undoKept">
 
-	if func() bool { var sceFailure scealgorithm.Failure; if len(p.vUndoKept) >= 512 { engine.Raise(sce.NewPlatformError(RecordListEventErrorExecution, "<sce:append target='undoKept'>: the list already holds its capacity of 512")); return true }; sceValue := scealgorithm.ElementOf(p.vUndoKept, u); if sceFailure.Failed() { engine.Raise(sce.NewPlatformError(RecordListEventErrorExecution, "<sce:append target='undoKept'>: an integer operation overflowed or failed")); return true }; p.vUndoKept = append(p.vUndoKept, sceValue); return false }() {
+	if func() bool { var sceFailure scealgorithm.Failure; if len(p.vUndoKept) >= 512 { engine.Raise(sce.NewPlatformError(RecordListEventErrorExecution, sceerrorreason.ErrorReasonAssignmentFailed, "<sce:append target='undoKept'>: the list already holds its capacity of 512")); return true }; sceValue := scealgorithm.ElementOf(p.vUndoKept, u); if sceFailure.Failed() { engine.Raise(sce.NewPlatformError(RecordListEventErrorExecution, sceerrorreason.ErrorReasonExpressionFailed, "<sce:append target='undoKept'>: an integer operation overflowed or failed")); return true }; p.vUndoKept = append(p.vUndoKept, sceValue); return false }() {
 		return  // W3C SCXML 4.9: the error ends the block
 	}
 
@@ -7469,7 +7485,7 @@ func (p *RecordListPolicy) ExecuteTransitionContent(source RecordListState, tran
 
 	// SCE Accepted Subset §2.15: <sce:append target="undo">
 
-	if func() bool { var sceFailure scealgorithm.Failure; if len(p.vUndo) >= 512 { engine.Raise(sce.NewPlatformError(RecordListEventErrorExecution, "<sce:append target='undo'>: the list already holds its capacity of 512")); return true }; sceValue := scealgorithm.ElementOf(p.vUndo, u); if sceFailure.Failed() { engine.Raise(sce.NewPlatformError(RecordListEventErrorExecution, "<sce:append target='undo'>: an integer operation overflowed or failed")); return true }; p.vUndo = append(p.vUndo, sceValue); return false }() {
+	if func() bool { var sceFailure scealgorithm.Failure; if len(p.vUndo) >= 512 { engine.Raise(sce.NewPlatformError(RecordListEventErrorExecution, sceerrorreason.ErrorReasonAssignmentFailed, "<sce:append target='undo'>: the list already holds its capacity of 512")); return true }; sceValue := scealgorithm.ElementOf(p.vUndo, u); if sceFailure.Failed() { engine.Raise(sce.NewPlatformError(RecordListEventErrorExecution, sceerrorreason.ErrorReasonExpressionFailed, "<sce:append target='undo'>: an integer operation overflowed or failed")); return true }; p.vUndo = append(p.vUndo, sceValue); return false }() {
 		return  // W3C SCXML 4.9: the error ends the block
 	}
 
@@ -7481,6 +7497,10 @@ func (p *RecordListPolicy) ExecuteTransitionContent(source RecordListState, tran
 	// W3C SCXML 6.2: send id="__send_23"
 	{
 	sendArgError := ""
+	// Why the argument failed, a code of sce:std/engine/error_reason
+	// (docs/adr/0106 #111), set with every sentence below.
+	var sendArgReason sce.ErrorReason
+	_ = sendArgReason
 	// docs/adr/0005, decision 3: the target is a string computed from the machine's
 	// fields now, and the send goes only by a route the document declared as
 	// `sce:targets`. A value in none of them names no route this send may take — an
@@ -7500,7 +7520,7 @@ func (p *RecordListPolicy) ExecuteTransitionContent(source RecordListState, tran
 	_ = sendTargetVal
 	_ = sendTarget
 	if sendArgError != "" {
-		errEvt := sce.NewPlatformError(RecordListEventErrorExecution, sendArgError)
+		errEvt := sce.NewPlatformError(RecordListEventErrorExecution, sendArgReason, sendArgError)
 		errEvt.Metadata.SendID = "__send_23"
 		engine.Raise(errEvt)
 		return  // W3C SCXML 4.9: the error ends the block
@@ -7512,7 +7532,7 @@ func (p *RecordListPolicy) ExecuteTransitionContent(source RecordListState, tran
 		// ends the block as any other would (W3C SCXML 4.9). A self-sent
 		// event names its origin, so `targetexpr="_event.origin"` (test336)
 		// reads this session's location, never "".
-		errEvt := sce.NewPlatformError(RecordListEventErrorCommunication, "<send> targetexpr evaluated to nothing, or to a route the send does not declare, so there is no target to reach")
+		errEvt := sce.NewPlatformError(RecordListEventErrorCommunication, sceerrorreason.ErrorReasonTargetUnreachable, "<send> targetexpr evaluated to nothing, or to a route the send does not declare, so there is no target to reach")
 		errEvt.Metadata.SendID = "__send_23"
 		engine.Raise(errEvt)
 		return
@@ -7551,13 +7571,13 @@ func (p *RecordListPolicy) ExecuteTransitionContent(source RecordListState, tran
 		routed := engine.SendToTarget(sendEvt, sendHasEvt, "record_list.confirmed", sendTarget, p.SessionID,
 0, "__send_23", eventDataStr, p.SessionID)
 		if routed == sce.TargetNotSupported {
-			errEvt := sce.NewPlatformError(RecordListEventErrorExecution, "<send> targetexpr produced a value that is not a target")
+			errEvt := sce.NewPlatformError(RecordListEventErrorExecution, sceerrorreason.ErrorReasonSendTargetInvalid, "<send> targetexpr produced a value that is not a target")
 			errEvt.Metadata.SendID = "__send_23"
 			engine.Raise(errEvt)
 			return // W3C SCXML 4.9: the error ends the block
 		}
 		if routed == sce.TargetNotReachable {
-			errEvt := sce.NewPlatformError(RecordListEventErrorCommunication, "<send> targetexpr names a session this processor cannot reach")
+			errEvt := sce.NewPlatformError(RecordListEventErrorCommunication, sceerrorreason.ErrorReasonTargetUnreachable, "<send> targetexpr names a session this processor cannot reach")
 			errEvt.Metadata.SendID = "__send_23"
 			engine.Raise(errEvt)
 			return // W3C SCXML 4.9: the error ends the block
@@ -7608,7 +7628,7 @@ func (p *RecordListPolicy) ExecuteTransitionContent(source RecordListState, tran
 	if !p.vProvisionalFound {
 
 
-	if func() bool { var sceFailure scealgorithm.Failure; sceValue := scealgorithm.AddUint32(&sceFailure, p.vRefusals, 1); if sceFailure.Failed() { engine.Raise(sce.NewPlatformError(RecordListEventErrorExecution, "<assign location='refusals'>: an integer operation overflowed or failed")); return true }; p.vRefusals = sceValue; return false }() {
+	if func() bool { var sceFailure scealgorithm.Failure; sceValue := scealgorithm.AddUint32(&sceFailure, p.vRefusals, 1); if sceFailure.Failed() { engine.Raise(sce.NewPlatformError(RecordListEventErrorExecution, sceerrorreason.ErrorReasonExpressionFailed, "<assign location='refusals'>: an integer operation overflowed or failed")); return true }; p.vRefusals = sceValue; return false }() {
 		return  // W3C SCXML 4.9: the error ends the block
 	}
 
@@ -7650,7 +7670,7 @@ func (p *RecordListPolicy) ExecuteTransitionContent(source RecordListState, tran
 			func() {
 
 
-	if func() bool { var sceFailure scealgorithm.Failure; sceValue := scealgorithm.At(&sceFailure, p.vProvisional[:], int64(scealgorithm.SubUint32(&sceFailure, uint32(len(p.vProvisional)), 1))); if sceFailure.Failed() { engine.Raise(sce.NewPlatformError(RecordListEventErrorExecution, "<assign location='standing'>: an integer operation overflowed or failed")); return true }; p.vStanding = sceValue; return false }() {
+	if func() bool { var sceFailure scealgorithm.Failure; sceValue := scealgorithm.At(&sceFailure, p.vProvisional[:], int64(scealgorithm.SubUint32(&sceFailure, uint32(len(p.vProvisional)), 1))); if sceFailure.Failed() { engine.Raise(sce.NewPlatformError(RecordListEventErrorExecution, sceerrorreason.ErrorReasonExpressionFailed, "<assign location='standing'>: an integer operation overflowed or failed")); return true }; p.vStanding = sceValue; return false }() {
 		return  // W3C SCXML 4.9: the error ends the block
 	}
 
@@ -7668,7 +7688,7 @@ func (p *RecordListPolicy) ExecuteTransitionContent(source RecordListState, tran
 
 	// SCE Accepted Subset §2.15: <sce:append target="one">
 
-	if func() bool { var sceFailure scealgorithm.Failure; if len(p.vOne) >= 1024 { engine.Raise(sce.NewPlatformError(RecordListEventErrorExecution, "<sce:append target='one'>: the list already holds its capacity of 1024")); return true }; sceValue := scealgorithm.ElementOf(p.vOne, a); if sceFailure.Failed() { engine.Raise(sce.NewPlatformError(RecordListEventErrorExecution, "<sce:append target='one'>: an integer operation overflowed or failed")); return true }; p.vOne = append(p.vOne, sceValue); return false }() {
+	if func() bool { var sceFailure scealgorithm.Failure; if len(p.vOne) >= 1024 { engine.Raise(sce.NewPlatformError(RecordListEventErrorExecution, sceerrorreason.ErrorReasonAssignmentFailed, "<sce:append target='one'>: the list already holds its capacity of 1024")); return true }; sceValue := scealgorithm.ElementOf(p.vOne, a); if sceFailure.Failed() { engine.Raise(sce.NewPlatformError(RecordListEventErrorExecution, sceerrorreason.ErrorReasonExpressionFailed, "<sce:append target='one'>: an integer operation overflowed or failed")); return true }; p.vOne = append(p.vOne, sceValue); return false }() {
 		return  // W3C SCXML 4.9: the error ends the block
 	}
 
@@ -7678,7 +7698,7 @@ func (p *RecordListPolicy) ExecuteTransitionContent(source RecordListState, tran
 
 
 
-	if func() bool { var sceFailure scealgorithm.Failure; sceValue := scealgorithm.Within(&sceFailure, scealgorithm.TakeOutcome(&sceFailure, sceAdapt_RecordList_OrsetLive__vv(p.vAdds, p.vOne)), 1024); if sceFailure.Failed() { engine.Raise(sce.NewPlatformError(RecordListEventErrorExecution, "<assign location='adds'>: an integer operation overflowed or failed")); return true }; p.vAdds = sceValue; return false }() {
+	if func() bool { var sceFailure scealgorithm.Failure; sceValue := scealgorithm.Within(&sceFailure, scealgorithm.TakeOutcome(&sceFailure, sceAdapt_RecordList_OrsetLive__vv(p.vAdds, p.vOne)), 1024); if sceFailure.Failed() { engine.Raise(sce.NewPlatformError(RecordListEventErrorExecution, sceerrorreason.ErrorReasonExpressionFailed, "<assign location='adds'>: an integer operation overflowed or failed")); return true }; p.vAdds = sceValue; return false }() {
 		return  // W3C SCXML 4.9: the error ends the block
 	}
 
@@ -7688,13 +7708,13 @@ func (p *RecordListPolicy) ExecuteTransitionContent(source RecordListState, tran
 		_ = a
 
 
-	if func() bool { var sceFailure scealgorithm.Failure; sceValue := scealgorithm.DivUint64(&sceFailure, a.element, 65536); if sceFailure.Failed() { engine.Raise(sce.NewPlatformError(RecordListEventErrorExecution, "<assign location='held.id'>: an integer operation overflowed or failed")); return true }; p.vHeld.id = sceValue; return false }() {
+	if func() bool { var sceFailure scealgorithm.Failure; sceValue := scealgorithm.DivUint64(&sceFailure, a.element, 65536); if sceFailure.Failed() { engine.Raise(sce.NewPlatformError(RecordListEventErrorExecution, sceerrorreason.ErrorReasonExpressionFailed, "<assign location='held.id'>: an integer operation overflowed or failed")); return true }; p.vHeld.id = sceValue; return false }() {
 		return  // W3C SCXML 4.9: the error ends the block
 	}
 
 
 
-	if func() bool { var sceFailure scealgorithm.Failure; sceValue := scealgorithm.RemUint64(&sceFailure, a.element, 65536); if sceFailure.Failed() { engine.Raise(sce.NewPlatformError(RecordListEventErrorExecution, "<assign location='held.field'>: an integer operation overflowed or failed")); return true }; p.vHeld.field = sceValue; return false }() {
+	if func() bool { var sceFailure scealgorithm.Failure; sceValue := scealgorithm.RemUint64(&sceFailure, a.element, 65536); if sceFailure.Failed() { engine.Raise(sce.NewPlatformError(RecordListEventErrorExecution, sceerrorreason.ErrorReasonExpressionFailed, "<assign location='held.field'>: an integer operation overflowed or failed")); return true }; p.vHeld.field = sceValue; return false }() {
 		return  // W3C SCXML 4.9: the error ends the block
 	}
 
@@ -7712,7 +7732,7 @@ func (p *RecordListPolicy) ExecuteTransitionContent(source RecordListState, tran
 
 
 
-	if func() bool { var sceFailure scealgorithm.Failure; sceValue := scealgorithm.Within(&sceFailure, scealgorithm.TakeOutcome(&sceFailure, sceAdapt_RecordList_MvValueDrop__vv(p.vValues, p.vHeld)), 512); if sceFailure.Failed() { engine.Raise(sce.NewPlatformError(RecordListEventErrorExecution, "<assign location='values'>: an integer operation overflowed or failed")); return true }; p.vValues = sceValue; return false }() {
+	if func() bool { var sceFailure scealgorithm.Failure; sceValue := scealgorithm.Within(&sceFailure, scealgorithm.TakeOutcome(&sceFailure, sceAdapt_RecordList_MvValueDrop__vv(p.vValues, p.vHeld)), 512); if sceFailure.Failed() { engine.Raise(sce.NewPlatformError(RecordListEventErrorExecution, sceerrorreason.ErrorReasonExpressionFailed, "<assign location='values'>: an integer operation overflowed or failed")); return true }; p.vValues = sceValue; return false }() {
 		return  // W3C SCXML 4.9: the error ends the block
 	}
 
@@ -7720,13 +7740,13 @@ func (p *RecordListPolicy) ExecuteTransitionContent(source RecordListState, tran
 	if p.vAnnounce {
 
 
-	if func() bool { var sceFailure scealgorithm.Failure; sceValue := scealgorithm.NarrowUint32FromUint(&sceFailure, uint64(scealgorithm.DivUint64(&sceFailure, a.element, 65536))); if sceFailure.Failed() { engine.Raise(sce.NewPlatformError(RecordListEventErrorExecution, "<assign location='shareId'>: an integer operation overflowed or failed")); return true }; p.vShareId = sceValue; return false }() {
+	if func() bool { var sceFailure scealgorithm.Failure; sceValue := scealgorithm.NarrowUint32FromUint(&sceFailure, uint64(scealgorithm.DivUint64(&sceFailure, a.element, 65536))); if sceFailure.Failed() { engine.Raise(sce.NewPlatformError(RecordListEventErrorExecution, sceerrorreason.ErrorReasonExpressionFailed, "<assign location='shareId'>: an integer operation overflowed or failed")); return true }; p.vShareId = sceValue; return false }() {
 		return  // W3C SCXML 4.9: the error ends the block
 	}
 
 
 
-	if func() bool { var sceFailure scealgorithm.Failure; sceValue := scealgorithm.NarrowUint16FromUint(&sceFailure, uint64(scealgorithm.RemUint64(&sceFailure, a.element, 65536))); if sceFailure.Failed() { engine.Raise(sce.NewPlatformError(RecordListEventErrorExecution, "<assign location='shareField'>: an integer operation overflowed or failed")); return true }; p.vShareField = sceValue; return false }() {
+	if func() bool { var sceFailure scealgorithm.Failure; sceValue := scealgorithm.NarrowUint16FromUint(&sceFailure, uint64(scealgorithm.RemUint64(&sceFailure, a.element, 65536))); if sceFailure.Failed() { engine.Raise(sce.NewPlatformError(RecordListEventErrorExecution, sceerrorreason.ErrorReasonExpressionFailed, "<assign location='shareField'>: an integer operation overflowed or failed")); return true }; p.vShareField = sceValue; return false }() {
 		return  // W3C SCXML 4.9: the error ends the block
 	}
 
@@ -7784,7 +7804,7 @@ func (p *RecordListPolicy) ExecuteTransitionContent(source RecordListState, tran
 
 
 
-	if func() bool { var sceFailure scealgorithm.Failure; sceValue := scealgorithm.AddUint64(&sceFailure, scealgorithm.MulUint64(&sceFailure, p.vEntry.element, 65536), u.field); if sceFailure.Failed() { engine.Raise(sce.NewPlatformError(RecordListEventErrorExecution, "<assign location='entry.element'>: an integer operation overflowed or failed")); return true }; p.vEntry.element = sceValue; return false }() {
+	if func() bool { var sceFailure scealgorithm.Failure; sceValue := scealgorithm.AddUint64(&sceFailure, scealgorithm.MulUint64(&sceFailure, p.vEntry.element, 65536), u.field); if sceFailure.Failed() { engine.Raise(sce.NewPlatformError(RecordListEventErrorExecution, sceerrorreason.ErrorReasonExpressionFailed, "<assign location='entry.element'>: an integer operation overflowed or failed")); return true }; p.vEntry.element = sceValue; return false }() {
 		return  // W3C SCXML 4.9: the error ends the block
 	}
 
@@ -7808,13 +7828,13 @@ func (p *RecordListPolicy) ExecuteTransitionContent(source RecordListState, tran
 
 	// SCE Accepted Subset §2.15: <sce:append target="one">
 
-	if func() bool { var sceFailure scealgorithm.Failure; if len(p.vOne) >= 1024 { engine.Raise(sce.NewPlatformError(RecordListEventErrorExecution, "<sce:append target='one'>: the list already holds its capacity of 1024")); return true }; sceValue := scealgorithm.ElementOf(p.vOne, p.vEntry); if sceFailure.Failed() { engine.Raise(sce.NewPlatformError(RecordListEventErrorExecution, "<sce:append target='one'>: an integer operation overflowed or failed")); return true }; p.vOne = append(p.vOne, sceValue); return false }() {
+	if func() bool { var sceFailure scealgorithm.Failure; if len(p.vOne) >= 1024 { engine.Raise(sce.NewPlatformError(RecordListEventErrorExecution, sceerrorreason.ErrorReasonAssignmentFailed, "<sce:append target='one'>: the list already holds its capacity of 1024")); return true }; sceValue := scealgorithm.ElementOf(p.vOne, p.vEntry); if sceFailure.Failed() { engine.Raise(sce.NewPlatformError(RecordListEventErrorExecution, sceerrorreason.ErrorReasonExpressionFailed, "<sce:append target='one'>: an integer operation overflowed or failed")); return true }; p.vOne = append(p.vOne, sceValue); return false }() {
 		return  // W3C SCXML 4.9: the error ends the block
 	}
 
 
 
-	if func() bool { var sceFailure scealgorithm.Failure; sceValue := scealgorithm.Within(&sceFailure, scealgorithm.TakeOutcome(&sceFailure, sceAdapt_RecordList_OrsetUnion__vv(p.vAdds, p.vOne)), 1024); if sceFailure.Failed() { engine.Raise(sce.NewPlatformError(RecordListEventErrorExecution, "<assign location='adds'>: an integer operation overflowed or failed")); return true }; p.vAdds = sceValue; return false }() {
+	if func() bool { var sceFailure scealgorithm.Failure; sceValue := scealgorithm.Within(&sceFailure, scealgorithm.TakeOutcome(&sceFailure, sceAdapt_RecordList_OrsetUnion__vv(p.vAdds, p.vOne)), 1024); if sceFailure.Failed() { engine.Raise(sce.NewPlatformError(RecordListEventErrorExecution, sceerrorreason.ErrorReasonExpressionFailed, "<assign location='adds'>: an integer operation overflowed or failed")); return true }; p.vAdds = sceValue; return false }() {
 		return  // W3C SCXML 4.9: the error ends the block
 	}
 
@@ -7832,7 +7852,7 @@ func (p *RecordListPolicy) ExecuteTransitionContent(source RecordListState, tran
 
 
 
-	if func() bool { var sceFailure scealgorithm.Failure; sceValue := scealgorithm.Bounded(&sceFailure, u.text, 96); if sceFailure.Failed() { engine.Raise(sce.NewPlatformError(RecordListEventErrorExecution, "<assign location='held.text'>: an integer operation overflowed or failed")); return true }; p.vHeld.text = sceValue; return false }() {
+	if func() bool { var sceFailure scealgorithm.Failure; sceValue := scealgorithm.Bounded(&sceFailure, u.text, 96); if sceFailure.Failed() { engine.Raise(sce.NewPlatformError(RecordListEventErrorExecution, sceerrorreason.ErrorReasonExpressionFailed, "<assign location='held.text'>: an integer operation overflowed or failed")); return true }; p.vHeld.text = sceValue; return false }() {
 		return  // W3C SCXML 4.9: the error ends the block
 	}
 
@@ -7850,7 +7870,7 @@ func (p *RecordListPolicy) ExecuteTransitionContent(source RecordListState, tran
 
 
 
-	if func() bool { var sceFailure scealgorithm.Failure; sceValue := scealgorithm.Within(&sceFailure, scealgorithm.TakeOutcome(&sceFailure, sceAdapt_RecordList_MvValueKeep__vv(p.vValues, p.vHeld)), 512); if sceFailure.Failed() { engine.Raise(sce.NewPlatformError(RecordListEventErrorExecution, "<assign location='values'>: an integer operation overflowed or failed")); return true }; p.vValues = sceValue; return false }() {
+	if func() bool { var sceFailure scealgorithm.Failure; sceValue := scealgorithm.Within(&sceFailure, scealgorithm.TakeOutcome(&sceFailure, sceAdapt_RecordList_MvValueKeep__vv(p.vValues, p.vHeld)), 512); if sceFailure.Failed() { engine.Raise(sce.NewPlatformError(RecordListEventErrorExecution, sceerrorreason.ErrorReasonExpressionFailed, "<assign location='values'>: an integer operation overflowed or failed")); return true }; p.vValues = sceValue; return false }() {
 		return  // W3C SCXML 4.9: the error ends the block
 	}
 
@@ -7858,13 +7878,13 @@ func (p *RecordListPolicy) ExecuteTransitionContent(source RecordListState, tran
 	if p.vAnnounce {
 
 
-	if func() bool { var sceFailure scealgorithm.Failure; sceValue := scealgorithm.NarrowUint32FromUint(&sceFailure, uint64(u.id)); if sceFailure.Failed() { engine.Raise(sce.NewPlatformError(RecordListEventErrorExecution, "<assign location='shareId'>: an integer operation overflowed or failed")); return true }; p.vShareId = sceValue; return false }() {
+	if func() bool { var sceFailure scealgorithm.Failure; sceValue := scealgorithm.NarrowUint32FromUint(&sceFailure, uint64(u.id)); if sceFailure.Failed() { engine.Raise(sce.NewPlatformError(RecordListEventErrorExecution, sceerrorreason.ErrorReasonExpressionFailed, "<assign location='shareId'>: an integer operation overflowed or failed")); return true }; p.vShareId = sceValue; return false }() {
 		return  // W3C SCXML 4.9: the error ends the block
 	}
 
 
 
-	if func() bool { var sceFailure scealgorithm.Failure; sceValue := scealgorithm.NarrowUint16FromUint(&sceFailure, uint64(u.field)); if sceFailure.Failed() { engine.Raise(sce.NewPlatformError(RecordListEventErrorExecution, "<assign location='shareField'>: an integer operation overflowed or failed")); return true }; p.vShareField = sceValue; return false }() {
+	if func() bool { var sceFailure scealgorithm.Failure; sceValue := scealgorithm.NarrowUint16FromUint(&sceFailure, uint64(u.field)); if sceFailure.Failed() { engine.Raise(sce.NewPlatformError(RecordListEventErrorExecution, sceerrorreason.ErrorReasonExpressionFailed, "<assign location='shareField'>: an integer operation overflowed or failed")); return true }; p.vShareField = sceValue; return false }() {
 		return  // W3C SCXML 4.9: the error ends the block
 	}
 
@@ -7926,7 +7946,7 @@ func (p *RecordListPolicy) ExecuteTransitionContent(source RecordListState, tran
 
 	// SCE Accepted Subset §2.15: <sce:append target="undoKept">
 
-	if func() bool { var sceFailure scealgorithm.Failure; if len(p.vUndoKept) >= 512 { engine.Raise(sce.NewPlatformError(RecordListEventErrorExecution, "<sce:append target='undoKept'>: the list already holds its capacity of 512")); return true }; sceValue := scealgorithm.ElementOf(p.vUndoKept, u); if sceFailure.Failed() { engine.Raise(sce.NewPlatformError(RecordListEventErrorExecution, "<sce:append target='undoKept'>: an integer operation overflowed or failed")); return true }; p.vUndoKept = append(p.vUndoKept, sceValue); return false }() {
+	if func() bool { var sceFailure scealgorithm.Failure; if len(p.vUndoKept) >= 512 { engine.Raise(sce.NewPlatformError(RecordListEventErrorExecution, sceerrorreason.ErrorReasonAssignmentFailed, "<sce:append target='undoKept'>: the list already holds its capacity of 512")); return true }; sceValue := scealgorithm.ElementOf(p.vUndoKept, u); if sceFailure.Failed() { engine.Raise(sce.NewPlatformError(RecordListEventErrorExecution, sceerrorreason.ErrorReasonExpressionFailed, "<sce:append target='undoKept'>: an integer operation overflowed or failed")); return true }; p.vUndoKept = append(p.vUndoKept, sceValue); return false }() {
 		return  // W3C SCXML 4.9: the error ends the block
 	}
 
@@ -7946,7 +7966,7 @@ func (p *RecordListPolicy) ExecuteTransitionContent(source RecordListState, tran
 
 	// SCE Accepted Subset §2.15: <sce:append target="undo">
 
-	if func() bool { var sceFailure scealgorithm.Failure; if len(p.vUndo) >= 512 { engine.Raise(sce.NewPlatformError(RecordListEventErrorExecution, "<sce:append target='undo'>: the list already holds its capacity of 512")); return true }; sceValue := scealgorithm.ElementOf(p.vUndo, u); if sceFailure.Failed() { engine.Raise(sce.NewPlatformError(RecordListEventErrorExecution, "<sce:append target='undo'>: an integer operation overflowed or failed")); return true }; p.vUndo = append(p.vUndo, sceValue); return false }() {
+	if func() bool { var sceFailure scealgorithm.Failure; if len(p.vUndo) >= 512 { engine.Raise(sce.NewPlatformError(RecordListEventErrorExecution, sceerrorreason.ErrorReasonAssignmentFailed, "<sce:append target='undo'>: the list already holds its capacity of 512")); return true }; sceValue := scealgorithm.ElementOf(p.vUndo, u); if sceFailure.Failed() { engine.Raise(sce.NewPlatformError(RecordListEventErrorExecution, sceerrorreason.ErrorReasonExpressionFailed, "<sce:append target='undo'>: an integer operation overflowed or failed")); return true }; p.vUndo = append(p.vUndo, sceValue); return false }() {
 		return  // W3C SCXML 4.9: the error ends the block
 	}
 
@@ -7964,11 +7984,11 @@ func (p *RecordListPolicy) ExecuteTransitionContent(source RecordListState, tran
 
 	{
 	var ifCondFailed72 bool
-	if func() bool { var sceFailure scealgorithm.Failure; sceValue := scealgorithm.AddUint32(&sceFailure, at, 1) < uint32(len(p.vProvisional)); if sceFailure.Failed() { engine.Raise(sce.NewPlatformError(RecordListEventErrorExecution, "<if cond='at + 1 < len(provisional)'>: an integer operation overflowed or failed")); ifCondFailed72 = true; return false }; return sceValue }() {
+	if func() bool { var sceFailure scealgorithm.Failure; sceValue := scealgorithm.AddUint32(&sceFailure, at, 1) < uint32(len(p.vProvisional)); if sceFailure.Failed() { engine.Raise(sce.NewPlatformError(RecordListEventErrorExecution, sceerrorreason.ErrorReasonExpressionFailed, "<if cond='at + 1 < len(provisional)'>: an integer operation overflowed or failed")); ifCondFailed72 = true; return false }; return sceValue }() {
 
 	// SCE Accepted Subset §2.15: <sce:append target="provisionalKept">
 
-	if func() bool { var sceFailure scealgorithm.Failure; if len(p.vProvisionalKept) >= 8 { engine.Raise(sce.NewPlatformError(RecordListEventErrorExecution, "<sce:append target='provisionalKept'>: the list already holds its capacity of 8")); return true }; sceValue := scealgorithm.ElementOf(p.vProvisionalKept, p_); if sceFailure.Failed() { engine.Raise(sce.NewPlatformError(RecordListEventErrorExecution, "<sce:append target='provisionalKept'>: an integer operation overflowed or failed")); return true }; p.vProvisionalKept = append(p.vProvisionalKept, sceValue); return false }() {
+	if func() bool { var sceFailure scealgorithm.Failure; if len(p.vProvisionalKept) >= 8 { engine.Raise(sce.NewPlatformError(RecordListEventErrorExecution, sceerrorreason.ErrorReasonAssignmentFailed, "<sce:append target='provisionalKept'>: the list already holds its capacity of 8")); return true }; sceValue := scealgorithm.ElementOf(p.vProvisionalKept, p_); if sceFailure.Failed() { engine.Raise(sce.NewPlatformError(RecordListEventErrorExecution, sceerrorreason.ErrorReasonExpressionFailed, "<sce:append target='provisionalKept'>: an integer operation overflowed or failed")); return true }; p.vProvisionalKept = append(p.vProvisionalKept, sceValue); return false }() {
 		return  // W3C SCXML 4.9: the error ends the block
 	}
 
@@ -7992,7 +8012,7 @@ func (p *RecordListPolicy) ExecuteTransitionContent(source RecordListState, tran
 
 	// SCE Accepted Subset §2.15: <sce:append target="provisional">
 
-	if func() bool { var sceFailure scealgorithm.Failure; if len(p.vProvisional) >= 8 { engine.Raise(sce.NewPlatformError(RecordListEventErrorExecution, "<sce:append target='provisional'>: the list already holds its capacity of 8")); return true }; sceValue := scealgorithm.ElementOf(p.vProvisional, p_); if sceFailure.Failed() { engine.Raise(sce.NewPlatformError(RecordListEventErrorExecution, "<sce:append target='provisional'>: an integer operation overflowed or failed")); return true }; p.vProvisional = append(p.vProvisional, sceValue); return false }() {
+	if func() bool { var sceFailure scealgorithm.Failure; if len(p.vProvisional) >= 8 { engine.Raise(sce.NewPlatformError(RecordListEventErrorExecution, sceerrorreason.ErrorReasonAssignmentFailed, "<sce:append target='provisional'>: the list already holds its capacity of 8")); return true }; sceValue := scealgorithm.ElementOf(p.vProvisional, p_); if sceFailure.Failed() { engine.Raise(sce.NewPlatformError(RecordListEventErrorExecution, sceerrorreason.ErrorReasonExpressionFailed, "<sce:append target='provisional'>: an integer operation overflowed or failed")); return true }; p.vProvisional = append(p.vProvisional, sceValue); return false }() {
 		return  // W3C SCXML 4.9: the error ends the block
 	}
 
@@ -8004,6 +8024,10 @@ func (p *RecordListPolicy) ExecuteTransitionContent(source RecordListState, tran
 	// W3C SCXML 6.2: send id="__send_27"
 	{
 	sendArgError := ""
+	// Why the argument failed, a code of sce:std/engine/error_reason
+	// (docs/adr/0106 #111), set with every sentence below.
+	var sendArgReason sce.ErrorReason
+	_ = sendArgReason
 	// docs/adr/0005, decision 3: the target is a string computed from the machine's
 	// fields now, and the send goes only by a route the document declared as
 	// `sce:targets`. A value in none of them names no route this send may take — an
@@ -8023,7 +8047,7 @@ func (p *RecordListPolicy) ExecuteTransitionContent(source RecordListState, tran
 	_ = sendTargetVal
 	_ = sendTarget
 	if sendArgError != "" {
-		errEvt := sce.NewPlatformError(RecordListEventErrorExecution, sendArgError)
+		errEvt := sce.NewPlatformError(RecordListEventErrorExecution, sendArgReason, sendArgError)
 		errEvt.Metadata.SendID = "__send_27"
 		engine.Raise(errEvt)
 		return  // W3C SCXML 4.9: the error ends the block
@@ -8035,7 +8059,7 @@ func (p *RecordListPolicy) ExecuteTransitionContent(source RecordListState, tran
 		// ends the block as any other would (W3C SCXML 4.9). A self-sent
 		// event names its origin, so `targetexpr="_event.origin"` (test336)
 		// reads this session's location, never "".
-		errEvt := sce.NewPlatformError(RecordListEventErrorCommunication, "<send> targetexpr evaluated to nothing, or to a route the send does not declare, so there is no target to reach")
+		errEvt := sce.NewPlatformError(RecordListEventErrorCommunication, sceerrorreason.ErrorReasonTargetUnreachable, "<send> targetexpr evaluated to nothing, or to a route the send does not declare, so there is no target to reach")
 		errEvt.Metadata.SendID = "__send_27"
 		engine.Raise(errEvt)
 		return
@@ -8086,13 +8110,13 @@ func (p *RecordListPolicy) ExecuteTransitionContent(source RecordListState, tran
 		routed := engine.SendToTarget(sendEvt, sendHasEvt, "record_list.refused", sendTarget, p.SessionID,
 0, "__send_27", eventDataStr, p.SessionID)
 		if routed == sce.TargetNotSupported {
-			errEvt := sce.NewPlatformError(RecordListEventErrorExecution, "<send> targetexpr produced a value that is not a target")
+			errEvt := sce.NewPlatformError(RecordListEventErrorExecution, sceerrorreason.ErrorReasonSendTargetInvalid, "<send> targetexpr produced a value that is not a target")
 			errEvt.Metadata.SendID = "__send_27"
 			engine.Raise(errEvt)
 			return // W3C SCXML 4.9: the error ends the block
 		}
 		if routed == sce.TargetNotReachable {
-			errEvt := sce.NewPlatformError(RecordListEventErrorCommunication, "<send> targetexpr names a session this processor cannot reach")
+			errEvt := sce.NewPlatformError(RecordListEventErrorCommunication, sceerrorreason.ErrorReasonTargetUnreachable, "<send> targetexpr names a session this processor cannot reach")
 			errEvt.Metadata.SendID = "__send_27"
 			engine.Raise(errEvt)
 			return // W3C SCXML 4.9: the error ends the block
@@ -8121,7 +8145,7 @@ func (p *RecordListPolicy) ExecuteTransitionContent(source RecordListState, tran
 
 
 
-	if func() bool { var sceFailure scealgorithm.Failure; sceValue := scealgorithm.AddUint64(&sceFailure, scealgorithm.MulUint64(&sceFailure, p.vEntry.element, 65536), uint64(p.pendingRecordListAnnouncePayload.field)); if sceFailure.Failed() { engine.Raise(sce.NewPlatformError(RecordListEventErrorExecution, "<assign location='entry.element'>: an integer operation overflowed or failed")); return true }; p.vEntry.element = sceValue; return false }() {
+	if func() bool { var sceFailure scealgorithm.Failure; sceValue := scealgorithm.AddUint64(&sceFailure, scealgorithm.MulUint64(&sceFailure, p.vEntry.element, 65536), uint64(p.pendingRecordListAnnouncePayload.field)); if sceFailure.Failed() { engine.Raise(sce.NewPlatformError(RecordListEventErrorExecution, sceerrorreason.ErrorReasonExpressionFailed, "<assign location='entry.element'>: an integer operation overflowed or failed")); return true }; p.vEntry.element = sceValue; return false }() {
 		return  // W3C SCXML 4.9: the error ends the block
 	}
 
@@ -8167,7 +8191,7 @@ func (p *RecordListPolicy) ExecuteTransitionContent(source RecordListState, tran
 
 	// SCE Accepted Subset §2.15: <sce:append target="moved">
 
-	if func() bool { var sceFailure scealgorithm.Failure; if len(p.vMoved) >= 64 { engine.Raise(sce.NewPlatformError(RecordListEventErrorExecution, "<sce:append target='moved'>: the list already holds its capacity of 64")); return true }; sceValue := scealgorithm.ElementOf(p.vMoved, p.vEntry.element); if sceFailure.Failed() { engine.Raise(sce.NewPlatformError(RecordListEventErrorExecution, "<sce:append target='moved'>: an integer operation overflowed or failed")); return true }; p.vMoved = append(p.vMoved, sceValue); return false }() {
+	if func() bool { var sceFailure scealgorithm.Failure; if len(p.vMoved) >= 64 { engine.Raise(sce.NewPlatformError(RecordListEventErrorExecution, sceerrorreason.ErrorReasonAssignmentFailed, "<sce:append target='moved'>: the list already holds its capacity of 64")); return true }; sceValue := scealgorithm.ElementOf(p.vMoved, p.vEntry.element); if sceFailure.Failed() { engine.Raise(sce.NewPlatformError(RecordListEventErrorExecution, sceerrorreason.ErrorReasonExpressionFailed, "<sce:append target='moved'>: an integer operation overflowed or failed")); return true }; p.vMoved = append(p.vMoved, sceValue); return false }() {
 		return  // W3C SCXML 4.9: the error ends the block
 	}
 
@@ -8184,19 +8208,19 @@ func (p *RecordListPolicy) ExecuteTransitionContent(source RecordListState, tran
 		_ = named
 
 
-	if func() bool { var sceFailure scealgorithm.Failure; sceValue := scealgorithm.NarrowUint32FromUint(&sceFailure, uint64(scealgorithm.DivUint64(&sceFailure, named, 65536))); if sceFailure.Failed() { engine.Raise(sce.NewPlatformError(RecordListEventErrorExecution, "<assign location='shareId'>: an integer operation overflowed or failed")); return true }; p.vShareId = sceValue; return false }() {
+	if func() bool { var sceFailure scealgorithm.Failure; sceValue := scealgorithm.NarrowUint32FromUint(&sceFailure, uint64(scealgorithm.DivUint64(&sceFailure, named, 65536))); if sceFailure.Failed() { engine.Raise(sce.NewPlatformError(RecordListEventErrorExecution, sceerrorreason.ErrorReasonExpressionFailed, "<assign location='shareId'>: an integer operation overflowed or failed")); return true }; p.vShareId = sceValue; return false }() {
 		return  // W3C SCXML 4.9: the error ends the block
 	}
 
 
 
-	if func() bool { var sceFailure scealgorithm.Failure; sceValue := scealgorithm.NarrowUint16FromUint(&sceFailure, uint64(scealgorithm.RemUint64(&sceFailure, named, 65536))); if sceFailure.Failed() { engine.Raise(sce.NewPlatformError(RecordListEventErrorExecution, "<assign location='shareField'>: an integer operation overflowed or failed")); return true }; p.vShareField = sceValue; return false }() {
+	if func() bool { var sceFailure scealgorithm.Failure; sceValue := scealgorithm.NarrowUint16FromUint(&sceFailure, uint64(scealgorithm.RemUint64(&sceFailure, named, 65536))); if sceFailure.Failed() { engine.Raise(sce.NewPlatformError(RecordListEventErrorExecution, sceerrorreason.ErrorReasonExpressionFailed, "<assign location='shareField'>: an integer operation overflowed or failed")); return true }; p.vShareField = sceValue; return false }() {
 		return  // W3C SCXML 4.9: the error ends the block
 	}
 
 
 
-	if func() bool { var sceFailure scealgorithm.Failure; sceValue := scealgorithm.Within(&sceFailure, scealgorithm.TakeOutcome(&sceFailure, sceAdapt_RecordList_RegisterValues__v(p.vValues, uint64(p.vShareId), uint64(p.vShareField))), 512); if sceFailure.Failed() { engine.Raise(sce.NewPlatformError(RecordListEventErrorExecution, "<assign location='live'>: an integer operation overflowed or failed")); return true }; p.vLive = sceValue; return false }() {
+	if func() bool { var sceFailure scealgorithm.Failure; sceValue := scealgorithm.Within(&sceFailure, scealgorithm.TakeOutcome(&sceFailure, sceAdapt_RecordList_RegisterValues__v(p.vValues, uint64(p.vShareId), uint64(p.vShareField))), 512); if sceFailure.Failed() { engine.Raise(sce.NewPlatformError(RecordListEventErrorExecution, sceerrorreason.ErrorReasonExpressionFailed, "<assign location='live'>: an integer operation overflowed or failed")); return true }; p.vLive = sceValue; return false }() {
 		return  // W3C SCXML 4.9: the error ends the block
 	}
 
@@ -8206,6 +8230,10 @@ func (p *RecordListPolicy) ExecuteTransitionContent(source RecordListState, tran
 	// W3C SCXML 6.2: send id="__send_29"
 	{
 	sendArgError := ""
+	// Why the argument failed, a code of sce:std/engine/error_reason
+	// (docs/adr/0106 #111), set with every sentence below.
+	var sendArgReason sce.ErrorReason
+	_ = sendArgReason
 	// docs/adr/0005, decision 3: the target is a string computed from the machine's
 	// fields now, and the send goes only by a route the document declared as
 	// `sce:targets`. A value in none of them names no route this send may take — an
@@ -8225,7 +8253,7 @@ func (p *RecordListPolicy) ExecuteTransitionContent(source RecordListState, tran
 	_ = sendTargetVal
 	_ = sendTarget
 	if sendArgError != "" {
-		errEvt := sce.NewPlatformError(RecordListEventErrorExecution, sendArgError)
+		errEvt := sce.NewPlatformError(RecordListEventErrorExecution, sendArgReason, sendArgError)
 		errEvt.Metadata.SendID = "__send_29"
 		engine.Raise(errEvt)
 		return  // W3C SCXML 4.9: the error ends the block
@@ -8237,7 +8265,7 @@ func (p *RecordListPolicy) ExecuteTransitionContent(source RecordListState, tran
 		// ends the block as any other would (W3C SCXML 4.9). A self-sent
 		// event names its origin, so `targetexpr="_event.origin"` (test336)
 		// reads this session's location, never "".
-		errEvt := sce.NewPlatformError(RecordListEventErrorCommunication, "<send> targetexpr evaluated to nothing, or to a route the send does not declare, so there is no target to reach")
+		errEvt := sce.NewPlatformError(RecordListEventErrorCommunication, sceerrorreason.ErrorReasonTargetUnreachable, "<send> targetexpr evaluated to nothing, or to a route the send does not declare, so there is no target to reach")
 		errEvt.Metadata.SendID = "__send_29"
 		engine.Raise(errEvt)
 		return
@@ -8296,13 +8324,13 @@ func (p *RecordListPolicy) ExecuteTransitionContent(source RecordListState, tran
 		routed := engine.SendToTarget(sendEvt, sendHasEvt, "record_list.register", sendTarget, p.SessionID,
 0, "__send_29", eventDataStr, p.SessionID)
 		if routed == sce.TargetNotSupported {
-			errEvt := sce.NewPlatformError(RecordListEventErrorExecution, "<send> targetexpr produced a value that is not a target")
+			errEvt := sce.NewPlatformError(RecordListEventErrorExecution, sceerrorreason.ErrorReasonSendTargetInvalid, "<send> targetexpr produced a value that is not a target")
 			errEvt.Metadata.SendID = "__send_29"
 			engine.Raise(errEvt)
 			return // W3C SCXML 4.9: the error ends the block
 		}
 		if routed == sce.TargetNotReachable {
-			errEvt := sce.NewPlatformError(RecordListEventErrorCommunication, "<send> targetexpr names a session this processor cannot reach")
+			errEvt := sce.NewPlatformError(RecordListEventErrorCommunication, sceerrorreason.ErrorReasonTargetUnreachable, "<send> targetexpr names a session this processor cannot reach")
 			errEvt.Metadata.SendID = "__send_29"
 			engine.Raise(errEvt)
 			return // W3C SCXML 4.9: the error ends the block
@@ -8317,7 +8345,7 @@ func (p *RecordListPolicy) ExecuteTransitionContent(source RecordListState, tran
 	}
 
 
-	if func() bool { var sceFailure scealgorithm.Failure; sceValue := scealgorithm.AddUint32(&sceFailure, p.vAnnounced, 1); if sceFailure.Failed() { engine.Raise(sce.NewPlatformError(RecordListEventErrorExecution, "<assign location='announced'>: an integer operation overflowed or failed")); return true }; p.vAnnounced = sceValue; return false }() {
+	if func() bool { var sceFailure scealgorithm.Failure; sceValue := scealgorithm.AddUint32(&sceFailure, p.vAnnounced, 1); if sceFailure.Failed() { engine.Raise(sce.NewPlatformError(RecordListEventErrorExecution, sceerrorreason.ErrorReasonExpressionFailed, "<assign location='announced'>: an integer operation overflowed or failed")); return true }; p.vAnnounced = sceValue; return false }() {
 		return  // W3C SCXML 4.9: the error ends the block
 	}
 
@@ -8337,6 +8365,10 @@ func (p *RecordListPolicy) ExecuteTransitionContent(source RecordListState, tran
 	// W3C SCXML 6.2: send id="__send_30"
 	{
 	sendArgError := ""
+	// Why the argument failed, a code of sce:std/engine/error_reason
+	// (docs/adr/0106 #111), set with every sentence below.
+	var sendArgReason sce.ErrorReason
+	_ = sendArgReason
 	// docs/adr/0005, decision 3: the target is a string computed from the machine's
 	// fields now, and the send goes only by a route the document declared as
 	// `sce:targets`. A value in none of them names no route this send may take — an
@@ -8356,7 +8388,7 @@ func (p *RecordListPolicy) ExecuteTransitionContent(source RecordListState, tran
 	_ = sendTargetVal
 	_ = sendTarget
 	if sendArgError != "" {
-		errEvt := sce.NewPlatformError(RecordListEventErrorExecution, sendArgError)
+		errEvt := sce.NewPlatformError(RecordListEventErrorExecution, sendArgReason, sendArgError)
 		errEvt.Metadata.SendID = "__send_30"
 		engine.Raise(errEvt)
 		return  // W3C SCXML 4.9: the error ends the block
@@ -8368,7 +8400,7 @@ func (p *RecordListPolicy) ExecuteTransitionContent(source RecordListState, tran
 		// ends the block as any other would (W3C SCXML 4.9). A self-sent
 		// event names its origin, so `targetexpr="_event.origin"` (test336)
 		// reads this session's location, never "".
-		errEvt := sce.NewPlatformError(RecordListEventErrorCommunication, "<send> targetexpr evaluated to nothing, or to a route the send does not declare, so there is no target to reach")
+		errEvt := sce.NewPlatformError(RecordListEventErrorCommunication, sceerrorreason.ErrorReasonTargetUnreachable, "<send> targetexpr evaluated to nothing, or to a route the send does not declare, so there is no target to reach")
 		errEvt.Metadata.SendID = "__send_30"
 		engine.Raise(errEvt)
 		return
@@ -8427,13 +8459,13 @@ func (p *RecordListPolicy) ExecuteTransitionContent(source RecordListState, tran
 		routed := engine.SendToTarget(sendEvt, sendHasEvt, "record_list.register", sendTarget, p.SessionID,
 0, "__send_30", eventDataStr, p.SessionID)
 		if routed == sce.TargetNotSupported {
-			errEvt := sce.NewPlatformError(RecordListEventErrorExecution, "<send> targetexpr produced a value that is not a target")
+			errEvt := sce.NewPlatformError(RecordListEventErrorExecution, sceerrorreason.ErrorReasonSendTargetInvalid, "<send> targetexpr produced a value that is not a target")
 			errEvt.Metadata.SendID = "__send_30"
 			engine.Raise(errEvt)
 			return // W3C SCXML 4.9: the error ends the block
 		}
 		if routed == sce.TargetNotReachable {
-			errEvt := sce.NewPlatformError(RecordListEventErrorCommunication, "<send> targetexpr names a session this processor cannot reach")
+			errEvt := sce.NewPlatformError(RecordListEventErrorCommunication, sceerrorreason.ErrorReasonTargetUnreachable, "<send> targetexpr names a session this processor cannot reach")
 			errEvt.Metadata.SendID = "__send_30"
 			engine.Raise(errEvt)
 			return // W3C SCXML 4.9: the error ends the block
@@ -8454,6 +8486,10 @@ func (p *RecordListPolicy) ExecuteTransitionContent(source RecordListState, tran
 	// W3C SCXML 6.2: send id="__send_31"
 	{
 	sendArgError := ""
+	// Why the argument failed, a code of sce:std/engine/error_reason
+	// (docs/adr/0106 #111), set with every sentence below.
+	var sendArgReason sce.ErrorReason
+	_ = sendArgReason
 	// docs/adr/0005, decision 3: the target is a string computed from the machine's
 	// fields now, and the send goes only by a route the document declared as
 	// `sce:targets`. A value in none of them names no route this send may take — an
@@ -8473,7 +8509,7 @@ func (p *RecordListPolicy) ExecuteTransitionContent(source RecordListState, tran
 	_ = sendTargetVal
 	_ = sendTarget
 	if sendArgError != "" {
-		errEvt := sce.NewPlatformError(RecordListEventErrorExecution, sendArgError)
+		errEvt := sce.NewPlatformError(RecordListEventErrorExecution, sendArgReason, sendArgError)
 		errEvt.Metadata.SendID = "__send_31"
 		engine.Raise(errEvt)
 		return  // W3C SCXML 4.9: the error ends the block
@@ -8485,7 +8521,7 @@ func (p *RecordListPolicy) ExecuteTransitionContent(source RecordListState, tran
 		// ends the block as any other would (W3C SCXML 4.9). A self-sent
 		// event names its origin, so `targetexpr="_event.origin"` (test336)
 		// reads this session's location, never "".
-		errEvt := sce.NewPlatformError(RecordListEventErrorCommunication, "<send> targetexpr evaluated to nothing, or to a route the send does not declare, so there is no target to reach")
+		errEvt := sce.NewPlatformError(RecordListEventErrorCommunication, sceerrorreason.ErrorReasonTargetUnreachable, "<send> targetexpr evaluated to nothing, or to a route the send does not declare, so there is no target to reach")
 		errEvt.Metadata.SendID = "__send_31"
 		engine.Raise(errEvt)
 		return
@@ -8544,13 +8580,13 @@ func (p *RecordListPolicy) ExecuteTransitionContent(source RecordListState, tran
 		routed := engine.SendToTarget(sendEvt, sendHasEvt, "record_list.value", sendTarget, p.SessionID,
 0, "__send_31", eventDataStr, p.SessionID)
 		if routed == sce.TargetNotSupported {
-			errEvt := sce.NewPlatformError(RecordListEventErrorExecution, "<send> targetexpr produced a value that is not a target")
+			errEvt := sce.NewPlatformError(RecordListEventErrorExecution, sceerrorreason.ErrorReasonSendTargetInvalid, "<send> targetexpr produced a value that is not a target")
 			errEvt.Metadata.SendID = "__send_31"
 			engine.Raise(errEvt)
 			return // W3C SCXML 4.9: the error ends the block
 		}
 		if routed == sce.TargetNotReachable {
-			errEvt := sce.NewPlatformError(RecordListEventErrorCommunication, "<send> targetexpr names a session this processor cannot reach")
+			errEvt := sce.NewPlatformError(RecordListEventErrorCommunication, sceerrorreason.ErrorReasonTargetUnreachable, "<send> targetexpr names a session this processor cannot reach")
 			errEvt.Metadata.SendID = "__send_31"
 			engine.Raise(errEvt)
 			return // W3C SCXML 4.9: the error ends the block
@@ -8567,13 +8603,13 @@ func (p *RecordListPolicy) ExecuteTransitionContent(source RecordListState, tran
 
 
 
-	if func() bool { var sceFailure scealgorithm.Failure; sceValue := scealgorithm.AddUint32(&sceFailure, p.vAnnounced, 1); if sceFailure.Failed() { engine.Raise(sce.NewPlatformError(RecordListEventErrorExecution, "<assign location='announced'>: an integer operation overflowed or failed")); return true }; p.vAnnounced = sceValue; return false }() {
+	if func() bool { var sceFailure scealgorithm.Failure; sceValue := scealgorithm.AddUint32(&sceFailure, p.vAnnounced, 1); if sceFailure.Failed() { engine.Raise(sce.NewPlatformError(RecordListEventErrorExecution, sceerrorreason.ErrorReasonExpressionFailed, "<assign location='announced'>: an integer operation overflowed or failed")); return true }; p.vAnnounced = sceValue; return false }() {
 		return  // W3C SCXML 4.9: the error ends the block
 	}
 
 
 
-	if func() bool { var sceFailure scealgorithm.Failure; sceValue := scealgorithm.AddUint32(&sceFailure, p.vOrdinal, 1); if sceFailure.Failed() { engine.Raise(sce.NewPlatformError(RecordListEventErrorExecution, "<assign location='ordinal'>: an integer operation overflowed or failed")); return true }; p.vOrdinal = sceValue; return false }() {
+	if func() bool { var sceFailure scealgorithm.Failure; sceValue := scealgorithm.AddUint32(&sceFailure, p.vOrdinal, 1); if sceFailure.Failed() { engine.Raise(sce.NewPlatformError(RecordListEventErrorExecution, sceerrorreason.ErrorReasonExpressionFailed, "<assign location='ordinal'>: an integer operation overflowed or failed")); return true }; p.vOrdinal = sceValue; return false }() {
 		return  // W3C SCXML 4.9: the error ends the block
 	}
 
@@ -8593,7 +8629,7 @@ func (p *RecordListPolicy) ExecuteTransitionContent(source RecordListState, tran
 			func() {
 
 
-	if func() bool { var sceFailure scealgorithm.Failure; sceValue := scealgorithm.AddUint32(&sceFailure, p.vRefusals, 1); if sceFailure.Failed() { engine.Raise(sce.NewPlatformError(RecordListEventErrorExecution, "<assign location='refusals'>: an integer operation overflowed or failed")); return true }; p.vRefusals = sceValue; return false }() {
+	if func() bool { var sceFailure scealgorithm.Failure; sceValue := scealgorithm.AddUint32(&sceFailure, p.vRefusals, 1); if sceFailure.Failed() { engine.Raise(sce.NewPlatformError(RecordListEventErrorExecution, sceerrorreason.ErrorReasonExpressionFailed, "<assign location='refusals'>: an integer operation overflowed or failed")); return true }; p.vRefusals = sceValue; return false }() {
 		return  // W3C SCXML 4.9: the error ends the block
 	}
 

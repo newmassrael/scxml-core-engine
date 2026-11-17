@@ -495,7 +495,7 @@ class StaticOptionalWidenedStateMachine(
 
             vEntry = pendingDueWidenedPayload!!.id
 
-            if (try { vTaken = com.sce.forge.runtime.SceChecked.add(vTaken, 1.toUInt()); false } catch (_: com.sce.forge.runtime.AlgorithmFailure) { raisePlatformError(StaticOptionalWidenedEvent.Error.Execution, "<assign location='taken'>: an integer operation overflowed or failed"); true }) {
+            if (try { vTaken = com.sce.forge.runtime.SceChecked.add(vTaken, 1.toUInt()); false } catch (_: com.sce.forge.runtime.AlgorithmFailure) { raisePlatformError(StaticOptionalWidenedEvent.Error.Execution, ErrorReason.EXPRESSION_FAILED, "<assign location='taken'>: an integer operation overflowed or failed"); true }) {
                 return
             }
     }
@@ -503,7 +503,7 @@ class StaticOptionalWidenedStateMachine(
     private fun transitionContentOfReadingAt1() {
                 // SCE-MAP: static_optional_widened.scxml:36 :: reading :: _transition_1
 
-            if (try { vRefusals = com.sce.forge.runtime.SceChecked.add(vRefusals, 1.toUInt()); false } catch (_: com.sce.forge.runtime.AlgorithmFailure) { raisePlatformError(StaticOptionalWidenedEvent.Error.Execution, "<assign location='refusals'>: an integer operation overflowed or failed"); true }) {
+            if (try { vRefusals = com.sce.forge.runtime.SceChecked.add(vRefusals, 1.toUInt()); false } catch (_: com.sce.forge.runtime.AlgorithmFailure) { raisePlatformError(StaticOptionalWidenedEvent.Error.Execution, ErrorReason.EXPRESSION_FAILED, "<assign location='refusals'>: an integer operation overflowed or failed"); true }) {
                 return
             }
     }

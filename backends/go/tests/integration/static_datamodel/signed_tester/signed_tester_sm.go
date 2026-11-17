@@ -31,6 +31,7 @@ import (
 	"time"
 
 	sce "github.com/newmassrael/sce-go-runtime"
+	sceerrorreason "github.com/newmassrael/sce-go-runtime/generated/error_reason"
 	scetestprofile "github.com/newmassrael/sce-go-runtime/testprofile"
 	sce_signed_reading_sent "github.com/newmassrael/sce-go-tests/integration/static_datamodel/signed_reading_sent"
 	sce_signed_reading_within "github.com/newmassrael/sce-go-tests/integration/static_datamodel/signed_reading_within"
@@ -42,6 +43,9 @@ var (
 	_ = filepath.Join
 	_ = strings.HasPrefix
 	_ = time.Duration(0)
+	// Why an error.* event is raised (sce:std/engine/error_reason,
+	// docs/adr/0106 #111); a machine that raises none still imports it.
+	_ = sceerrorreason.ErrorReasonExpressionFailed
 )
 
 // ======================================================================
@@ -784,7 +788,7 @@ func (p *SignedTesterPolicy) ExecuteEntryActions(state SignedTesterState, engine
 		// act it asked for was performed by nobody. Same event as an
 		// undeclared type, so a wiring mistake cannot read as success.
 		if !hostServed && !engine.HasEventProcessor("http://sce.dev/ext/test-port") {
-			errEvt := sce.NewPlatformError(SignedTesterEventErrorExecution, "<send type='http://sce.dev/ext/test-port'> names a processor the host declared but never registered")
+			errEvt := sce.NewPlatformError(SignedTesterEventErrorExecution, sceerrorreason.ErrorReasonProcessorUnregistered, "<send type='http://sce.dev/ext/test-port'> names a processor the host declared but never registered")
 			errEvt.Metadata.SendID = "__send_0"
 			engine.Raise(errEvt)
 		}

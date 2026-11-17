@@ -349,7 +349,7 @@ class ABadInvokeArgumentIsReportedOnceStateMachine(
             try {
                 engine.setVariable(sid, "v", engine.evaluateExpr(sid, com.sce.runtime.ScriptSource.lua("7", "7")))
             } catch (e: Exception) {
-                raisePlatformError(ABadInvokeArgumentIsReportedOnceEvent.Error.Execution, "<data id='v'> expr failed to evaluate")
+                raisePlatformError(ABadInvokeArgumentIsReportedOnceEvent.Error.Execution, ErrorReason.EXPRESSION_FAILED, "<data id='v'> expr failed to evaluate")
             }
         }
         // §scxml-6.4: 'obj' takes a value its invoke handed it, in place of its own
@@ -358,7 +358,7 @@ class ABadInvokeArgumentIsReportedOnceStateMachine(
             try {
                 engine.setVariable(sid, "obj", engine.evaluateExpr(sid, com.sce.runtime.ScriptSource.lua("{}", "({})")))
             } catch (e: Exception) {
-                raisePlatformError(ABadInvokeArgumentIsReportedOnceEvent.Error.Execution, "<data id='obj'> expr failed to evaluate")
+                raisePlatformError(ABadInvokeArgumentIsReportedOnceEvent.Error.Execution, ErrorReason.EXPRESSION_FAILED, "<data id='obj'> expr failed to evaluate")
             }
         }
         // §scxml-6.4: 'errors' takes a value its invoke handed it, in place of its own
@@ -367,7 +367,7 @@ class ABadInvokeArgumentIsReportedOnceStateMachine(
             try {
                 engine.setVariable(sid, "errors", engine.evaluateExpr(sid, com.sce.runtime.ScriptSource.lua("0", "0")))
             } catch (e: Exception) {
-                raisePlatformError(ABadInvokeArgumentIsReportedOnceEvent.Error.Execution, "<data id='errors'> expr failed to evaluate")
+                raisePlatformError(ABadInvokeArgumentIsReportedOnceEvent.Error.Execution, ErrorReason.EXPRESSION_FAILED, "<data id='errors'> expr failed to evaluate")
             }
         }
         // §scxml-6.4: 'started' takes a value its invoke handed it, in place of its own
@@ -376,7 +376,7 @@ class ABadInvokeArgumentIsReportedOnceStateMachine(
             try {
                 engine.setVariable(sid, "started", engine.evaluateExpr(sid, com.sce.runtime.ScriptSource.lua("0", "0")))
             } catch (e: Exception) {
-                raisePlatformError(ABadInvokeArgumentIsReportedOnceEvent.Error.Execution, "<data id='started'> expr failed to evaluate")
+                raisePlatformError(ABadInvokeArgumentIsReportedOnceEvent.Error.Execution, ErrorReason.EXPRESSION_FAILED, "<data id='started'> expr failed to evaluate")
             }
         }
         // §scxml-6.4: 'fromLocOk' takes a value its invoke handed it, in place of its own
@@ -385,7 +385,7 @@ class ABadInvokeArgumentIsReportedOnceStateMachine(
             try {
                 engine.setVariable(sid, "fromLocOk", engine.evaluateExpr(sid, com.sce.runtime.ScriptSource.lua("0", "0")))
             } catch (e: Exception) {
-                raisePlatformError(ABadInvokeArgumentIsReportedOnceEvent.Error.Execution, "<data id='fromLocOk'> expr failed to evaluate")
+                raisePlatformError(ABadInvokeArgumentIsReportedOnceEvent.Error.Execution, ErrorReason.EXPRESSION_FAILED, "<data id='fromLocOk'> expr failed to evaluate")
             }
         }
         // §scxml-6.4: 'emptyLocLeftOut' takes a value its invoke handed it, in place of its own
@@ -394,7 +394,7 @@ class ABadInvokeArgumentIsReportedOnceStateMachine(
             try {
                 engine.setVariable(sid, "emptyLocLeftOut", engine.evaluateExpr(sid, com.sce.runtime.ScriptSource.lua("0", "0")))
             } catch (e: Exception) {
-                raisePlatformError(ABadInvokeArgumentIsReportedOnceEvent.Error.Execution, "<data id='emptyLocLeftOut'> expr failed to evaluate")
+                raisePlatformError(ABadInvokeArgumentIsReportedOnceEvent.Error.Execution, ErrorReason.EXPRESSION_FAILED, "<data id='emptyLocLeftOut'> expr failed to evaluate")
             }
         }
         // §scxml-6.4: 'brokenLeftOut' takes a value its invoke handed it, in place of its own
@@ -403,7 +403,7 @@ class ABadInvokeArgumentIsReportedOnceStateMachine(
             try {
                 engine.setVariable(sid, "brokenLeftOut", engine.evaluateExpr(sid, com.sce.runtime.ScriptSource.lua("0", "0")))
             } catch (e: Exception) {
-                raisePlatformError(ABadInvokeArgumentIsReportedOnceEvent.Error.Execution, "<data id='brokenLeftOut'> expr failed to evaluate")
+                raisePlatformError(ABadInvokeArgumentIsReportedOnceEvent.Error.Execution, ErrorReason.EXPRESSION_FAILED, "<data id='brokenLeftOut'> expr failed to evaluate")
             }
         }
     }
@@ -433,14 +433,14 @@ class ABadInvokeArgumentIsReportedOnceStateMachine(
 
     // W3C SCXML 5.9.1: a cond that cannot be evaluated raises error.execution;
     // `null` says so, where a bare `false` could not.
-    private fun evaluateGuardRaising(guardExpr: com.sce.runtime.ScriptSource, reason: String): Boolean? {
+    private fun evaluateGuardRaising(guardExpr: com.sce.runtime.ScriptSource, detail: String): Boolean? {
         assertScriptSession()
         val engine = scriptEngine ?: error("scriptEngine is required (codegen invariant: needs_script_engine == true)")
         val sid = scriptSessionId ?: error("scriptSessionId is established by the start (codegen invariant)")
         return try {
             engine.evaluateCondition(sid, guardExpr)
         } catch (e: Exception) {
-            raisePlatformError(ABadInvokeArgumentIsReportedOnceEvent.Error.Execution, reason)
+            raisePlatformError(ABadInvokeArgumentIsReportedOnceEvent.Error.Execution, ErrorReason.EXPRESSION_FAILED, detail)
             null
         }
     }
@@ -481,7 +481,7 @@ class ABadInvokeArgumentIsReportedOnceStateMachine(
         return try {
             engine.evaluateExpr(sid, serialized)?.toString() ?: ""
         } catch (e: Exception) {
-            raisePlatformError(ABadInvokeArgumentIsReportedOnceEvent.Error.Execution, "an expression could not be serialised to JSON")
+            raisePlatformError(ABadInvokeArgumentIsReportedOnceEvent.Error.Execution, ErrorReason.EXPRESSION_FAILED, "an expression could not be serialised to JSON")
             ""
         }
     }
@@ -502,7 +502,7 @@ class ABadInvokeArgumentIsReportedOnceStateMachine(
             engine.assign(sid, location, expr)
             true
         } catch (e: Exception) {
-            raisePlatformError(ABadInvokeArgumentIsReportedOnceEvent.Error.Execution, "<assign> failed")
+            raisePlatformError(ABadInvokeArgumentIsReportedOnceEvent.Error.Execution, ErrorReason.ASSIGNMENT_FAILED, "<assign> failed")
             false
         }
     }
@@ -518,7 +518,7 @@ class ABadInvokeArgumentIsReportedOnceStateMachine(
             engine.executeScript(sid, script)
             true
         } catch (e: Exception) {
-            raisePlatformError(ABadInvokeArgumentIsReportedOnceEvent.Error.Execution, "<script> failed to execute")
+            raisePlatformError(ABadInvokeArgumentIsReportedOnceEvent.Error.Execution, ErrorReason.SCRIPT_FAILED, "<script> failed to execute")
             false
         }
     }
@@ -697,9 +697,9 @@ class ABadInvokeArgumentIsReportedOnceStateMachine(
                         try {
                             invokeParams["fromLoc"] = engineInv.evaluateExpr(sidInv, com.sce.runtime.ScriptSource.lua("v", "v"))
                         } catch (_: Exception) {
-                            raisePlatformError(ABadInvokeArgumentIsReportedOnceEvent.Error.Execution, "<invoke> <param name='fromLoc'> could not be read")
+                            raisePlatformError(ABadInvokeArgumentIsReportedOnceEvent.Error.Execution, ErrorReason.LOCATION_INVALID, "<invoke> <param name='fromLoc'> could not be read")
                         }
-                        raisePlatformError(ABadInvokeArgumentIsReportedOnceEvent.Error.Execution, "<invoke> <param name='emptyLoc'> names no location")
+                        raisePlatformError(ABadInvokeArgumentIsReportedOnceEvent.Error.Execution, ErrorReason.LOCATION_INVALID, "<invoke> <param name='emptyLoc'> names no location")
                         // §scxml-5.7.1: a `<param>` that will not evaluate costs
                         // `error.execution` AND the name and value — nothing else: the
                         // child still starts. The map insert is inside the `try`, so a
@@ -707,7 +707,7 @@ class ABadInvokeArgumentIsReportedOnceStateMachine(
                         try {
                             invokeParams["broken"] = engineInv.evaluateExpr(sidInv, com.sce.runtime.ScriptSource.lua("obj.missing.deep", "obj.missing.deep"))
                         } catch (_: Exception) {
-                            raisePlatformError(ABadInvokeArgumentIsReportedOnceEvent.Error.Execution, "<invoke> <param name='broken'> could not be read")
+                            raisePlatformError(ABadInvokeArgumentIsReportedOnceEvent.Error.Execution, ErrorReason.LOCATION_INVALID, "<invoke> <param name='broken'> could not be read")
                         }
                         // §scxml-5.7.1: a `<param>` that will not evaluate costs
                         // `error.execution` AND the name and value — nothing else: the
@@ -716,7 +716,7 @@ class ABadInvokeArgumentIsReportedOnceStateMachine(
                         try {
                             invokeParams["notInChild"] = engineInv.evaluateExpr(sidInv, com.sce.runtime.ScriptSource.lua("obj.missing.deep", "obj.missing.deep"))
                         } catch (_: Exception) {
-                            raisePlatformError(ABadInvokeArgumentIsReportedOnceEvent.Error.Execution, "<invoke> <param name='notInChild'> could not be read")
+                            raisePlatformError(ABadInvokeArgumentIsReportedOnceEvent.Error.Execution, ErrorReason.LOCATION_INVALID, "<invoke> <param name='notInChild'> could not be read")
                         }
 
                     val childSM = adoptChild(ABadInvokeArgumentIsReportedOnceSceSynthInvokeInv1StateMachine(scriptEngine ?: error("scriptEngine is required for invoke (codegen invariant: parent needs_script_engine == true)")), generatedInvokeId)
@@ -741,7 +741,7 @@ class ABadInvokeArgumentIsReportedOnceStateMachine(
                         val sidInv = scriptSessionId ?: error("scriptSessionId is established by the start (codegen invariant)")
                         val invokeParams = mutableMapOf<String, Any?>()
                         if (!(engineInv.hasVariable(sidInv, "undeclaredA") && engineInv.hasVariable(sidInv, "undeclaredB"))) {
-                            raisePlatformError(ABadInvokeArgumentIsReportedOnceEvent.Error.Execution, "<invoke> namelist names a location that cannot be read")
+                            raisePlatformError(ABadInvokeArgumentIsReportedOnceEvent.Error.Execution, ErrorReason.LOCATION_INVALID, "<invoke> namelist names a location that cannot be read")
                             return@deferInvoke
                         }
                         invokeParams["undeclaredA"] = engineInv.getVariable(sidInv, "undeclaredA")
@@ -769,7 +769,7 @@ class ABadInvokeArgumentIsReportedOnceStateMachine(
                         val sidInv = scriptSessionId ?: error("scriptSessionId is established by the start (codegen invariant)")
                         val invokeParams = mutableMapOf<String, Any?>()
                         if (!(engineInv.hasVariable(sidInv, "obj.missing.deep"))) {
-                            raisePlatformError(ABadInvokeArgumentIsReportedOnceEvent.Error.Execution, "<invoke> namelist names a location that cannot be read")
+                            raisePlatformError(ABadInvokeArgumentIsReportedOnceEvent.Error.Execution, ErrorReason.LOCATION_INVALID, "<invoke> namelist names a location that cannot be read")
                             return@deferInvoke
                         }
                         invokeParams["obj.missing.deep"] = engineInv.getVariable(sidInv, "obj.missing.deep")
@@ -780,7 +780,7 @@ class ABadInvokeArgumentIsReportedOnceStateMachine(
                         try {
                             invokeParams["alsoBroken"] = engineInv.evaluateExpr(sidInv, com.sce.runtime.ScriptSource.lua("obj.missing.deep", "obj.missing.deep"))
                         } catch (_: Exception) {
-                            raisePlatformError(ABadInvokeArgumentIsReportedOnceEvent.Error.Execution, "<invoke> <param name='alsoBroken'> could not be read")
+                            raisePlatformError(ABadInvokeArgumentIsReportedOnceEvent.Error.Execution, ErrorReason.LOCATION_INVALID, "<invoke> <param name='alsoBroken'> could not be read")
                         }
 
                     val childSM = adoptChild(ABadInvokeArgumentIsReportedOnceSceSynthInvokeInv3StateMachine(scriptEngine ?: error("scriptEngine is required for invoke (codegen invariant: parent needs_script_engine == true)")), generatedInvokeId)

@@ -349,7 +349,7 @@ class StaticOverflowStateMachine(
     // waiting's own transitions, in document order.
     @Suppress("UNUSED_PARAMETER") private fun firstEnabledTransitionOfWaiting(state: StaticOverflowState, event: StaticOverflowEvent?): EnabledTransition<StaticOverflowState, HistoryId>? = when {
         event is StaticOverflowEvent.Up -> TransitionsPart0.transitionWaitingAt0
-        event is StaticOverflowEvent.Probe && (try { com.sce.forge.runtime.SceChecked.add(vLevel, 10.toUByte()) > 0.toUByte() } catch (_: com.sce.forge.runtime.AlgorithmFailure) { raisePlatformError(StaticOverflowEvent.Error.Execution, "<transition cond='level + 10 > 0'>: an integer operation overflowed or failed"); false }) -> TransitionsPart0.transitionWaitingAt1
+        event is StaticOverflowEvent.Probe && (try { com.sce.forge.runtime.SceChecked.add(vLevel, 10.toUByte()) > 0.toUByte() } catch (_: com.sce.forge.runtime.AlgorithmFailure) { raisePlatformError(StaticOverflowEvent.Error.Execution, ErrorReason.EXPRESSION_FAILED, "<transition cond='level + 10 > 0'>: an integer operation overflowed or failed"); false }) -> TransitionsPart0.transitionWaitingAt1
         event is StaticOverflowEvent.Error.Execution -> TransitionsPart0.transitionWaitingAt2
         else -> null
     }
@@ -425,7 +425,7 @@ class StaticOverflowStateMachine(
     private fun transitionContentOfWaitingAt0() {
                 // SCE-MAP: static_overflow.scxml:22 :: waiting :: _transition_0
 
-            if (try { vLevel = com.sce.forge.runtime.SceChecked.add(vLevel, 3.toUByte()); false } catch (_: com.sce.forge.runtime.AlgorithmFailure) { raisePlatformError(StaticOverflowEvent.Error.Execution, "<assign location='level'>: an integer operation overflowed or failed"); true }) {
+            if (try { vLevel = com.sce.forge.runtime.SceChecked.add(vLevel, 3.toUByte()); false } catch (_: com.sce.forge.runtime.AlgorithmFailure) { raisePlatformError(StaticOverflowEvent.Error.Execution, ErrorReason.EXPRESSION_FAILED, "<assign location='level'>: an integer operation overflowed or failed"); true }) {
                 return
             }
     }
@@ -433,7 +433,7 @@ class StaticOverflowStateMachine(
     private fun transitionContentOfWaitingAt2() {
                 // SCE-MAP: static_overflow.scxml:26 :: waiting :: _transition_2
 
-            if (try { vRefusals = com.sce.forge.runtime.SceChecked.add(vRefusals, 1.toUInt()); false } catch (_: com.sce.forge.runtime.AlgorithmFailure) { raisePlatformError(StaticOverflowEvent.Error.Execution, "<assign location='refusals'>: an integer operation overflowed or failed"); true }) {
+            if (try { vRefusals = com.sce.forge.runtime.SceChecked.add(vRefusals, 1.toUInt()); false } catch (_: com.sce.forge.runtime.AlgorithmFailure) { raisePlatformError(StaticOverflowEvent.Error.Execution, ErrorReason.EXPRESSION_FAILED, "<assign location='refusals'>: an integer operation overflowed or failed"); true }) {
                 return
             }
     }

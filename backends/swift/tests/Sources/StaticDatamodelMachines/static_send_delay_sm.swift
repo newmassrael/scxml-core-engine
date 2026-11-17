@@ -513,6 +513,10 @@ public final class StaticSendDelayPolicy: InvocablePolicy {
                 // W3C SCXML 6.2: send id="__send_0"
                 do {
                     var sendArgError = ""
+                    // Why the argument failed, a code of sce:std/engine/error_reason
+                    // (docs/adr/0106 #111), set with every sentence below.
+                    var sendArgReason = ErrorReason.expressionFailed
+                    _ = sendArgReason
                     var sendDelayMs: UInt64 = 0
                     if sendArgError.isEmpty {
                         // The delay is a string computed from the machine's fields now, and
@@ -523,11 +527,11 @@ public final class StaticSendDelayPolicy: InvocablePolicy {
                         if let ms = parseDelayToMs(sceDelay) {
                             sendDelayMs = ms
                         } else {
-                            sendArgError = "<send> delayexpr is not a CSS2 time"
+                            sendArgError = "<send> delayexpr is not a CSS2 time"; sendArgReason = .sendDelayInvalid
                         }
                     }
                     if !sendArgError.isEmpty {
-                        var sendError = EventWithMetadata.platformError(StaticSendDelayEvent.errorExecution, message: sendArgError)
+                        var sendError = EventWithMetadata.platformError(StaticSendDelayEvent.errorExecution, reason: sendArgReason, message: sendArgError)
                         sendError.metadata.sendID = "__send_0"
                         engine.raise(sendError)
 
@@ -554,7 +558,7 @@ public final class StaticSendDelayPolicy: InvocablePolicy {
                 sceBlock: do {
 
 
-                if ({ () -> Bool in do { let sceValue: UInt32 = (try Checked.mul(self.vWait, 2)); self.vWait = sceValue } catch { engine.raise(EventWithMetadata.platformError(StaticSendDelayEvent.errorExecution, message: "<assign location='wait'>: an integer operation overflowed or failed")); return true }; return false }()) {
+                if ({ () -> Bool in do { let sceValue: UInt32 = (try Checked.mul(self.vWait, 2)); self.vWait = sceValue } catch { engine.raise(EventWithMetadata.platformError(StaticSendDelayEvent.errorExecution, reason: .expressionFailed, message: "<assign location='wait'>: an integer operation overflowed or failed")); return true }; return false }()) {
                     break sceBlock  // W3C SCXML 4.9: the error ends the block
                 }
 
@@ -566,6 +570,10 @@ public final class StaticSendDelayPolicy: InvocablePolicy {
                 // W3C SCXML 6.2: send id="__send_1"
                 do {
                     var sendArgError = ""
+                    // Why the argument failed, a code of sce:std/engine/error_reason
+                    // (docs/adr/0106 #111), set with every sentence below.
+                    var sendArgReason = ErrorReason.expressionFailed
+                    _ = sendArgReason
                     var sendDelayMs: UInt64 = 0
                     if sendArgError.isEmpty {
                         // The delay is a string computed from the machine's fields now, and
@@ -576,11 +584,11 @@ public final class StaticSendDelayPolicy: InvocablePolicy {
                         if let ms = parseDelayToMs(sceDelay) {
                             sendDelayMs = ms
                         } else {
-                            sendArgError = "<send> delayexpr is not a CSS2 time"
+                            sendArgError = "<send> delayexpr is not a CSS2 time"; sendArgReason = .sendDelayInvalid
                         }
                     }
                     if !sendArgError.isEmpty {
-                        var sendError = EventWithMetadata.platformError(StaticSendDelayEvent.errorExecution, message: sendArgError)
+                        var sendError = EventWithMetadata.platformError(StaticSendDelayEvent.errorExecution, reason: sendArgReason, message: sendArgError)
                         sendError.metadata.sendID = "__send_1"
                         engine.raise(sendError)
 
@@ -609,6 +617,10 @@ public final class StaticSendDelayPolicy: InvocablePolicy {
                 // W3C SCXML 6.2: send id="__send_2"
                 do {
                     var sendArgError = ""
+                    // Why the argument failed, a code of sce:std/engine/error_reason
+                    // (docs/adr/0106 #111), set with every sentence below.
+                    var sendArgReason = ErrorReason.expressionFailed
+                    _ = sendArgReason
                     var sendDelayMs: UInt64 = 0
                     if sendArgError.isEmpty {
                         // The delay is a string computed from the machine's fields now, and
@@ -620,14 +632,14 @@ public final class StaticSendDelayPolicy: InvocablePolicy {
                             if let ms = parseDelayToMs(sceDelay) {
                                 sendDelayMs = ms
                             } else {
-                                sendArgError = "<send> delayexpr is not a CSS2 time"
+                                sendArgError = "<send> delayexpr is not a CSS2 time"; sendArgReason = .sendDelayInvalid
                             }
                         } catch {
-                            sendArgError = "<send> delayexpr could not be evaluated"
+                            sendArgError = "<send> delayexpr could not be evaluated"; sendArgReason = .expressionFailed
                         }
                     }
                     if !sendArgError.isEmpty {
-                        var sendError = EventWithMetadata.platformError(StaticSendDelayEvent.errorExecution, message: sendArgError)
+                        var sendError = EventWithMetadata.platformError(StaticSendDelayEvent.errorExecution, reason: sendArgReason, message: sendArgError)
                         sendError.metadata.sendID = "__send_2"
                         engine.raise(sendError)
 
@@ -654,7 +666,7 @@ public final class StaticSendDelayPolicy: InvocablePolicy {
                 sceBlock: do {
 
 
-                if ({ () -> Bool in do { let sceValue: UInt32 = (try Checked.add(self.vBeats, 1)); self.vBeats = sceValue } catch { engine.raise(EventWithMetadata.platformError(StaticSendDelayEvent.errorExecution, message: "<assign location='beats'>: an integer operation overflowed or failed")); return true }; return false }()) {
+                if ({ () -> Bool in do { let sceValue: UInt32 = (try Checked.add(self.vBeats, 1)); self.vBeats = sceValue } catch { engine.raise(EventWithMetadata.platformError(StaticSendDelayEvent.errorExecution, reason: .expressionFailed, message: "<assign location='beats'>: an integer operation overflowed or failed")); return true }; return false }()) {
                     break sceBlock  // W3C SCXML 4.9: the error ends the block
                 }
 
@@ -664,7 +676,7 @@ public final class StaticSendDelayPolicy: InvocablePolicy {
                 sceBlock: do {
 
 
-                if ({ () -> Bool in do { let sceValue: UInt32 = (try Checked.add(self.vRefusals, 1)); self.vRefusals = sceValue } catch { engine.raise(EventWithMetadata.platformError(StaticSendDelayEvent.errorExecution, message: "<assign location='refusals'>: an integer operation overflowed or failed")); return true }; return false }()) {
+                if ({ () -> Bool in do { let sceValue: UInt32 = (try Checked.add(self.vRefusals, 1)); self.vRefusals = sceValue } catch { engine.raise(EventWithMetadata.platformError(StaticSendDelayEvent.errorExecution, reason: .expressionFailed, message: "<assign location='refusals'>: an integer operation overflowed or failed")); return true }; return false }()) {
                     break sceBlock  // W3C SCXML 4.9: the error ends the block
                 }
 

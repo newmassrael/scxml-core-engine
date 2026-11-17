@@ -432,7 +432,7 @@ class StatechartNativeActionStateMachine(
                 // SCE-MAP: statechart_native_action.scxml:44 :: idle :: _transition_0
 
             // W3C SCXML G.7: <sce:action name="append_fragment_payload">
-            pendingFragmentReceivedPayload?.let { actions.appendFragmentPayload(it.payload, it.offset) } ?: run { raiseInternal(StatechartNativeActionEvent.Error.Execution, EventMetadata(data = "<sce:action name='append_fragment_payload'> needs the typed payload of 'fragment.received', which this delivery did not carry", type = "platform")) }
+            pendingFragmentReceivedPayload?.let { actions.appendFragmentPayload(it.payload, it.offset) } ?: run { raisePlatformError(StatechartNativeActionEvent.Error.Execution, ErrorReason.PAYLOAD_REFUSED, "<sce:action name='append_fragment_payload'> needs the typed payload of 'fragment.received', which this delivery did not carry") }
     }
 
     private fun transitionContentOfIdleAt1() {

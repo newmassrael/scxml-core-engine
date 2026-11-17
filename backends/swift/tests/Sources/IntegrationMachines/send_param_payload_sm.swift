@@ -602,8 +602,12 @@ public final class SendParamPayloadPolicy: InvocablePolicy {
 
     /// Says what went wrong where the document can see it: `error.execution` on the internal
     /// queue (§scxml-5.9.1, 5.3).
-    private func raiseExecutionError(_ message: String, engine: Engine<SendParamPayloadPolicy>) {
-        engine.raise(EventWithMetadata.platformError(SendParamPayloadEvent.errorExecution, message: message))
+    /// `reason` is the code of sce:std/engine/error_reason the record carries
+    /// (docs/adr/0106 #111).
+    private func raiseExecutionError(
+        _ reason: ErrorReason, _ message: String, engine: Engine<SendParamPayloadPolicy>
+    ) {
+        engine.raise(EventWithMetadata.platformError(SendParamPayloadEvent.errorExecution, reason: reason, message: message))
     }
 
     /// W3C SCXML 5.3: the `<data id>` `id` takes the value of the lowered expression, or nil when it
@@ -660,6 +664,7 @@ public final class SendParamPayloadPolicy: InvocablePolicy {
             }
         } catch {
             raiseExecutionError(
+                handed == nil ? .expressionFailed : .paramUnfit,
                 handed == nil
                     ? "<data id='\(id)'> expr failed to evaluate"
                     : "<data id='\(id)'> could not hold the value its parent handed it",
@@ -827,7 +832,7 @@ public final class SendParamPayloadPolicy: InvocablePolicy {
             // this call the payload is lost to the document and to the host alike.
             engine.notePayloadReading(event, reading: Self.payloadReading(of: reading))
         } catch {
-            raiseExecutionError("_event could not be bound for '\(name)'", engine: engine)
+            raiseExecutionError(.payloadRefused, "_event could not be bound for '\(name)'", engine: engine)
         }
     }
 
@@ -864,7 +869,7 @@ public final class SendParamPayloadPolicy: InvocablePolicy {
         do {
             return try scriptSession.evaluateCondition(condition, chunkName: "=cond")
         } catch {
-            raiseExecutionError("a \(element) cond failed to evaluate", engine: engine)
+            raiseExecutionError(.expressionFailed, "a \(element) cond failed to evaluate", engine: engine)
             failed = true
             return false
         }
@@ -1089,14 +1094,14 @@ public final class SendParamPayloadPolicy: InvocablePolicy {
                     if let paramValue = evaluateJSON("lines") {
                         sendParts.append(PayloadPair.json("text", rawJSON: paramValue))
                     } else {
-                        engine.raise(EventWithMetadata.platformError(SendParamPayloadEvent.errorExecution, message: "<send> <param name=text> failed to evaluate"))
+                        engine.raise(EventWithMetadata.platformError(SendParamPayloadEvent.errorExecution, reason: .expressionFailed, message: "<send> <param name=text> failed to evaluate"))
                         paramFailed = true
                     }
 
                     if let paramValue = evaluateJSON("keyed") {
                         sendParts.append(PayloadPair.json("obj", rawJSON: paramValue))
                     } else {
-                        engine.raise(EventWithMetadata.platformError(SendParamPayloadEvent.errorExecution, message: "<send> <param name=obj> failed to evaluate"))
+                        engine.raise(EventWithMetadata.platformError(SendParamPayloadEvent.errorExecution, reason: .expressionFailed, message: "<send> <param name=obj> failed to evaluate"))
                         paramFailed = true
                     }
 
@@ -1153,7 +1158,7 @@ public final class SendParamPayloadPolicy: InvocablePolicy {
                     if let paramValue = evaluateJSON("nothing.deep") {
                         sendParts.append(PayloadPair.json("broken", rawJSON: paramValue))
                     } else {
-                        engine.raise(EventWithMetadata.platformError(SendParamPayloadEvent.errorExecution, message: "<send> <param name=broken> failed to evaluate"))
+                        engine.raise(EventWithMetadata.platformError(SendParamPayloadEvent.errorExecution, reason: .expressionFailed, message: "<send> <param name=broken> failed to evaluate"))
                         paramFailed = true
                     }
 
@@ -1184,28 +1189,28 @@ public final class SendParamPayloadPolicy: InvocablePolicy {
                     if let paramValue = evaluateJSON("7") {
                         sendParts.append(PayloadPair.json("n", rawJSON: paramValue))
                     } else {
-                        engine.raise(EventWithMetadata.platformError(SendParamPayloadEvent.errorExecution, message: "<send> <param name=n> failed to evaluate"))
+                        engine.raise(EventWithMetadata.platformError(SendParamPayloadEvent.errorExecution, reason: .expressionFailed, message: "<send> <param name=n> failed to evaluate"))
                         paramFailed = true
                     }
 
                     if let paramValue = evaluateJSON("tag") {
                         sendParts.append(PayloadPair.json("s", rawJSON: paramValue))
                     } else {
-                        engine.raise(EventWithMetadata.platformError(SendParamPayloadEvent.errorExecution, message: "<send> <param name=s> failed to evaluate"))
+                        engine.raise(EventWithMetadata.platformError(SendParamPayloadEvent.errorExecution, reason: .expressionFailed, message: "<send> <param name=s> failed to evaluate"))
                         paramFailed = true
                     }
 
                     if let paramValue = evaluateJSON("1") {
                         sendParts.append(PayloadPair.json("d", rawJSON: paramValue))
                     } else {
-                        engine.raise(EventWithMetadata.platformError(SendParamPayloadEvent.errorExecution, message: "<send> <param name=d> failed to evaluate"))
+                        engine.raise(EventWithMetadata.platformError(SendParamPayloadEvent.errorExecution, reason: .expressionFailed, message: "<send> <param name=d> failed to evaluate"))
                         paramFailed = true
                     }
 
                     if let paramValue = evaluateJSON("2") {
                         sendParts.append(PayloadPair.json("d", rawJSON: paramValue))
                     } else {
-                        engine.raise(EventWithMetadata.platformError(SendParamPayloadEvent.errorExecution, message: "<send> <param name=d> failed to evaluate"))
+                        engine.raise(EventWithMetadata.platformError(SendParamPayloadEvent.errorExecution, reason: .expressionFailed, message: "<send> <param name=d> failed to evaluate"))
                         paramFailed = true
                     }
 
@@ -1487,7 +1492,7 @@ public final class SendParamPayloadPolicy: InvocablePolicy {
 
                 // W3C SCXML 5.4: <assign location="sawParamError">
                 if !assignData("sawParamError", "1") {
-                    raiseExecutionError("<assign> to 'sawParamError' failed", engine: engine)
+                    raiseExecutionError(.assignmentFailed, "<assign> to 'sawParamError' failed", engine: engine)
                     break sceBlock  // W3C SCXML 4.9: the error ends the block
                 }
 

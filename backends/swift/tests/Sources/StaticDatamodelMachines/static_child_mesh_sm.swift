@@ -473,7 +473,7 @@ public final class StaticChildMeshPolicy: InvocablePolicy {
             // A value naming none of the declared candidates is the failure the
             // Interpreter reports when a document will not load: nothing is created,
             // and, as there, the arguments are not read.
-            engine.raise(EventWithMetadata.platformError(StaticChildMeshEvent.errorExecution, message: "<invoke srcexpr> evaluated to a document it did not declare"))
+            engine.raise(EventWithMetadata.platformError(StaticChildMeshEvent.errorExecution, reason: .invokeSrcNotFound, message: "<invoke srcexpr> evaluated to a document it did not declare"))
             return
         }
         // W3C SCXML 6.4.1: tracked before the child initializes.
@@ -862,7 +862,7 @@ public final class StaticChildMeshPolicy: InvocablePolicy {
                 sceBlock: do {
 
 
-                if ({ () -> Bool in do { let sceValue: UInt32 = (try Checked.add(self.vRefusals, 1)); self.vRefusals = sceValue } catch { engine.raise(EventWithMetadata.platformError(StaticChildMeshEvent.errorExecution, message: "<assign location='refusals'>: an integer operation overflowed or failed")); return true }; return false }()) {
+                if ({ () -> Bool in do { let sceValue: UInt32 = (try Checked.add(self.vRefusals, 1)); self.vRefusals = sceValue } catch { engine.raise(EventWithMetadata.platformError(StaticChildMeshEvent.errorExecution, reason: .expressionFailed, message: "<assign location='refusals'>: an integer operation overflowed or failed")); return true }; return false }()) {
                     break sceBlock  // W3C SCXML 4.9: the error ends the block
                 }
 

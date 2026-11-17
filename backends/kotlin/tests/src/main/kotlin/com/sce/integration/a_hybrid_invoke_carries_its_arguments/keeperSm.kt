@@ -203,7 +203,7 @@ class KeeperStateMachine(
             try {
                 engine.setVariable(sid, "seed", engine.evaluateExpr(sid, com.sce.runtime.ScriptSource.lua("\"unset\"", "'unset'")))
             } catch (e: Exception) {
-                raisePlatformError(KeeperEvent.Error.Execution, "<data id='seed'> expr failed to evaluate")
+                raisePlatformError(KeeperEvent.Error.Execution, ErrorReason.EXPRESSION_FAILED, "<data id='seed'> expr failed to evaluate")
             }
         }
         // §scxml-6.4: 'fromLoc' takes a value its invoke handed it, in place of its own
@@ -212,7 +212,7 @@ class KeeperStateMachine(
             try {
                 engine.setVariable(sid, "fromLoc", engine.evaluateExpr(sid, com.sce.runtime.ScriptSource.lua("\"unset\"", "'unset'")))
             } catch (e: Exception) {
-                raisePlatformError(KeeperEvent.Error.Execution, "<data id='fromLoc'> expr failed to evaluate")
+                raisePlatformError(KeeperEvent.Error.Execution, ErrorReason.EXPRESSION_FAILED, "<data id='fromLoc'> expr failed to evaluate")
             }
         }
         // §scxml-6.4: 'emptyLoc' takes a value its invoke handed it, in place of its own
@@ -221,7 +221,7 @@ class KeeperStateMachine(
             try {
                 engine.setVariable(sid, "emptyLoc", engine.evaluateExpr(sid, com.sce.runtime.ScriptSource.lua("\"unset\"", "'unset'")))
             } catch (e: Exception) {
-                raisePlatformError(KeeperEvent.Error.Execution, "<data id='emptyLoc'> expr failed to evaluate")
+                raisePlatformError(KeeperEvent.Error.Execution, ErrorReason.EXPRESSION_FAILED, "<data id='emptyLoc'> expr failed to evaluate")
             }
         }
     }
@@ -251,14 +251,14 @@ class KeeperStateMachine(
 
     // W3C SCXML 5.9.1: a cond that cannot be evaluated raises error.execution;
     // `null` says so, where a bare `false` could not.
-    private fun evaluateGuardRaising(guardExpr: com.sce.runtime.ScriptSource, reason: String): Boolean? {
+    private fun evaluateGuardRaising(guardExpr: com.sce.runtime.ScriptSource, detail: String): Boolean? {
         assertScriptSession()
         val engine = scriptEngine ?: error("scriptEngine is required (codegen invariant: needs_script_engine == true)")
         val sid = scriptSessionId ?: error("scriptSessionId is established by the start (codegen invariant)")
         return try {
             engine.evaluateCondition(sid, guardExpr)
         } catch (e: Exception) {
-            raisePlatformError(KeeperEvent.Error.Execution, reason)
+            raisePlatformError(KeeperEvent.Error.Execution, ErrorReason.EXPRESSION_FAILED, detail)
             null
         }
     }
@@ -299,7 +299,7 @@ class KeeperStateMachine(
         return try {
             engine.evaluateExpr(sid, serialized)?.toString() ?: ""
         } catch (e: Exception) {
-            raisePlatformError(KeeperEvent.Error.Execution, "an expression could not be serialised to JSON")
+            raisePlatformError(KeeperEvent.Error.Execution, ErrorReason.EXPRESSION_FAILED, "an expression could not be serialised to JSON")
             ""
         }
     }
@@ -320,7 +320,7 @@ class KeeperStateMachine(
             engine.assign(sid, location, expr)
             true
         } catch (e: Exception) {
-            raisePlatformError(KeeperEvent.Error.Execution, "<assign> failed")
+            raisePlatformError(KeeperEvent.Error.Execution, ErrorReason.ASSIGNMENT_FAILED, "<assign> failed")
             false
         }
     }
@@ -336,7 +336,7 @@ class KeeperStateMachine(
             engine.executeScript(sid, script)
             true
         } catch (e: Exception) {
-            raisePlatformError(KeeperEvent.Error.Execution, "<script> failed to execute")
+            raisePlatformError(KeeperEvent.Error.Execution, ErrorReason.SCRIPT_FAILED, "<script> failed to execute")
             false
         }
     }
@@ -500,28 +500,28 @@ class KeeperStateMachine(
             try {
                 putParam(sendPayload, "seed", payloadEngine.evaluateExpr(payloadSid, com.sce.runtime.ScriptSource.lua("seed", "seed")))
             } catch (_: Exception) {
-                raisePlatformError(KeeperEvent.Error.Execution, "<send> <param name='seed'> could not be read")
+                raisePlatformError(KeeperEvent.Error.Execution, ErrorReason.LOCATION_INVALID, "<send> <param name='seed'> could not be read")
                 paramFailed = true
             }
 
             try {
                 putParam(sendPayload, "fromLoc", payloadEngine.evaluateExpr(payloadSid, com.sce.runtime.ScriptSource.lua("fromLoc", "fromLoc")))
             } catch (_: Exception) {
-                raisePlatformError(KeeperEvent.Error.Execution, "<send> <param name='fromLoc'> could not be read")
+                raisePlatformError(KeeperEvent.Error.Execution, ErrorReason.LOCATION_INVALID, "<send> <param name='fromLoc'> could not be read")
                 paramFailed = true
             }
 
             try {
                 putParam(sendPayload, "emptyLoc", payloadEngine.evaluateExpr(payloadSid, com.sce.runtime.ScriptSource.lua("emptyLoc", "emptyLoc")))
             } catch (_: Exception) {
-                raisePlatformError(KeeperEvent.Error.Execution, "<send> <param name='emptyLoc'> could not be read")
+                raisePlatformError(KeeperEvent.Error.Execution, ErrorReason.LOCATION_INVALID, "<send> <param name='emptyLoc'> could not be read")
                 paramFailed = true
             }
 
             try {
                 putParam(sendPayload, "leak", payloadEngine.evaluateExpr(payloadSid, com.sce.runtime.ScriptSource.lua("_typeof(nowhere)", "typeof nowhere")))
             } catch (_: Exception) {
-                raisePlatformError(KeeperEvent.Error.Execution, "<send> <param name='leak'> could not be read")
+                raisePlatformError(KeeperEvent.Error.Execution, ErrorReason.LOCATION_INVALID, "<send> <param name='leak'> could not be read")
                 paramFailed = true
             }
 
@@ -531,7 +531,7 @@ class KeeperStateMachine(
             // no parent — error.communication, nothing delivered, the block ended.
             val toParent = onSendToParent
             if (toParent == null) {
-                raisePlatformError(KeeperEvent.Error.Communication, "<send target='#_parent'> has no parent session to reach", "__send_0")
+                raisePlatformError(KeeperEvent.Error.Communication, ErrorReason.TARGET_UNREACHABLE, "<send target='#_parent'> has no parent session to reach", "__send_0")
                 return@send true
             }
             toParent("childUp", sendData)

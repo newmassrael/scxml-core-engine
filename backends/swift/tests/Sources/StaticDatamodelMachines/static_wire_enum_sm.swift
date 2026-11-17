@@ -763,7 +763,7 @@ public final class StaticWireEnumPolicy: InvocablePolicy {
 
 
 
-                if ({ () -> Bool in do { let sceValue: UInt32 = (try Checked.add(self.vDeliveries, 1)); self.vDeliveries = sceValue } catch { engine.raise(EventWithMetadata.platformError(StaticWireEnumEvent.errorExecution, message: "<assign location='deliveries'>: an integer operation overflowed or failed")); return true }; return false }()) {
+                if ({ () -> Bool in do { let sceValue: UInt32 = (try Checked.add(self.vDeliveries, 1)); self.vDeliveries = sceValue } catch { engine.raise(EventWithMetadata.platformError(StaticWireEnumEvent.errorExecution, reason: .expressionFailed, message: "<assign location='deliveries'>: an integer operation overflowed or failed")); return true }; return false }()) {
                     break sceBlock  // W3C SCXML 4.9: the error ends the block
                 }
 

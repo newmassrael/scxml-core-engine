@@ -269,7 +269,7 @@ class ADelayIsACss2TimeStateMachine(
             try {
                 engine.setVariable(sid, "errors", engine.evaluateExpr(sid, com.sce.runtime.ScriptSource.lua("0", "0")))
             } catch (e: Exception) {
-                raisePlatformError(ADelayIsACss2TimeEvent.Error.Execution, "<data id='errors'> expr failed to evaluate")
+                raisePlatformError(ADelayIsACss2TimeEvent.Error.Execution, ErrorReason.EXPRESSION_FAILED, "<data id='errors'> expr failed to evaluate")
             }
         }
         // §scxml-6.4: 'after' takes a value its invoke handed it, in place of its own
@@ -278,7 +278,7 @@ class ADelayIsACss2TimeStateMachine(
             try {
                 engine.setVariable(sid, "after", engine.evaluateExpr(sid, com.sce.runtime.ScriptSource.lua("0", "0")))
             } catch (e: Exception) {
-                raisePlatformError(ADelayIsACss2TimeEvent.Error.Execution, "<data id='after'> expr failed to evaluate")
+                raisePlatformError(ADelayIsACss2TimeEvent.Error.Execution, ErrorReason.EXPRESSION_FAILED, "<data id='after'> expr failed to evaluate")
             }
         }
         // §scxml-6.4: 'bad' takes a value its invoke handed it, in place of its own
@@ -287,7 +287,7 @@ class ADelayIsACss2TimeStateMachine(
             try {
                 engine.setVariable(sid, "bad", engine.evaluateExpr(sid, com.sce.runtime.ScriptSource.lua("0", "0")))
             } catch (e: Exception) {
-                raisePlatformError(ADelayIsACss2TimeEvent.Error.Execution, "<data id='bad'> expr failed to evaluate")
+                raisePlatformError(ADelayIsACss2TimeEvent.Error.Execution, ErrorReason.EXPRESSION_FAILED, "<data id='bad'> expr failed to evaluate")
             }
         }
         // §scxml-6.4: 'bSeen' takes a value its invoke handed it, in place of its own
@@ -296,7 +296,7 @@ class ADelayIsACss2TimeStateMachine(
             try {
                 engine.setVariable(sid, "bSeen", engine.evaluateExpr(sid, com.sce.runtime.ScriptSource.lua("0", "0")))
             } catch (e: Exception) {
-                raisePlatformError(ADelayIsACss2TimeEvent.Error.Execution, "<data id='bSeen'> expr failed to evaluate")
+                raisePlatformError(ADelayIsACss2TimeEvent.Error.Execution, ErrorReason.EXPRESSION_FAILED, "<data id='bSeen'> expr failed to evaluate")
             }
         }
         // §scxml-6.4: 'aAfterB' takes a value its invoke handed it, in place of its own
@@ -305,7 +305,7 @@ class ADelayIsACss2TimeStateMachine(
             try {
                 engine.setVariable(sid, "aAfterB", engine.evaluateExpr(sid, com.sce.runtime.ScriptSource.lua("(-1)", "-1")))
             } catch (e: Exception) {
-                raisePlatformError(ADelayIsACss2TimeEvent.Error.Execution, "<data id='aAfterB'> expr failed to evaluate")
+                raisePlatformError(ADelayIsACss2TimeEvent.Error.Execution, ErrorReason.EXPRESSION_FAILED, "<data id='aAfterB'> expr failed to evaluate")
             }
         }
         // §scxml-6.4: 'bare' takes a value its invoke handed it, in place of its own
@@ -314,7 +314,7 @@ class ADelayIsACss2TimeStateMachine(
             try {
                 engine.setVariable(sid, "bare", engine.evaluateExpr(sid, com.sce.runtime.ScriptSource.lua("5", "5")))
             } catch (e: Exception) {
-                raisePlatformError(ADelayIsACss2TimeEvent.Error.Execution, "<data id='bare'> expr failed to evaluate")
+                raisePlatformError(ADelayIsACss2TimeEvent.Error.Execution, ErrorReason.EXPRESSION_FAILED, "<data id='bare'> expr failed to evaluate")
             }
         }
     }
@@ -344,14 +344,14 @@ class ADelayIsACss2TimeStateMachine(
 
     // W3C SCXML 5.9.1: a cond that cannot be evaluated raises error.execution;
     // `null` says so, where a bare `false` could not.
-    private fun evaluateGuardRaising(guardExpr: com.sce.runtime.ScriptSource, reason: String): Boolean? {
+    private fun evaluateGuardRaising(guardExpr: com.sce.runtime.ScriptSource, detail: String): Boolean? {
         assertScriptSession()
         val engine = scriptEngine ?: error("scriptEngine is required (codegen invariant: needs_script_engine == true)")
         val sid = scriptSessionId ?: error("scriptSessionId is established by the start (codegen invariant)")
         return try {
             engine.evaluateCondition(sid, guardExpr)
         } catch (e: Exception) {
-            raisePlatformError(ADelayIsACss2TimeEvent.Error.Execution, reason)
+            raisePlatformError(ADelayIsACss2TimeEvent.Error.Execution, ErrorReason.EXPRESSION_FAILED, detail)
             null
         }
     }
@@ -392,7 +392,7 @@ class ADelayIsACss2TimeStateMachine(
         return try {
             engine.evaluateExpr(sid, serialized)?.toString() ?: ""
         } catch (e: Exception) {
-            raisePlatformError(ADelayIsACss2TimeEvent.Error.Execution, "an expression could not be serialised to JSON")
+            raisePlatformError(ADelayIsACss2TimeEvent.Error.Execution, ErrorReason.EXPRESSION_FAILED, "an expression could not be serialised to JSON")
             ""
         }
     }
@@ -413,7 +413,7 @@ class ADelayIsACss2TimeStateMachine(
             engine.assign(sid, location, expr)
             true
         } catch (e: Exception) {
-            raisePlatformError(ADelayIsACss2TimeEvent.Error.Execution, "<assign> failed")
+            raisePlatformError(ADelayIsACss2TimeEvent.Error.Execution, ErrorReason.ASSIGNMENT_FAILED, "<assign> failed")
             false
         }
     }
@@ -429,7 +429,7 @@ class ADelayIsACss2TimeStateMachine(
             engine.executeScript(sid, script)
             true
         } catch (e: Exception) {
-            raisePlatformError(ADelayIsACss2TimeEvent.Error.Execution, "<script> failed to execute")
+            raisePlatformError(ADelayIsACss2TimeEvent.Error.Execution, ErrorReason.SCRIPT_FAILED, "<script> failed to execute")
             false
         }
     }
@@ -547,7 +547,7 @@ class ADelayIsACss2TimeStateMachine(
             // (ARCHITECTURE.md, "Durations"; the build decided it once). It is
             // known before anything is evaluated, so the send ends here with
             // the argument error, as it does on every engine.
-            raisePlatformError(ADelayIsACss2TimeEvent.Error.Execution, "<send> delay is not a CSS2 time", "__send_0")
+            raisePlatformError(ADelayIsACss2TimeEvent.Error.Execution, ErrorReason.SEND_DELAY_INVALID, "<send> delay is not a CSS2 time", "__send_0")
             true
             }) {
                 // W3C SCXML 4.9: an error raised while this element was
@@ -569,11 +569,11 @@ class ADelayIsACss2TimeStateMachine(
             val sendDelayText = try {
                 valueToWireString(argEngine.evaluateExpr(argSid, com.sce.runtime.ScriptSource.lua("bare", "bare")))
             } catch (_: Exception) {
-                raisePlatformError(ADelayIsACss2TimeEvent.Error.Execution, "<send> delayexpr could not be evaluated", "__send_1")
+                raisePlatformError(ADelayIsACss2TimeEvent.Error.Execution, ErrorReason.EXPRESSION_FAILED, "<send> delayexpr could not be evaluated", "__send_1")
                 return@send true
             }
             val sendDelayMs = com.sce.runtime.SendHelper.parseDelayMs(sendDelayText) ?: run {
-                raisePlatformError(ADelayIsACss2TimeEvent.Error.Execution, "<send> delayexpr is not a CSS2 time", "__send_1")
+                raisePlatformError(ADelayIsACss2TimeEvent.Error.Execution, ErrorReason.SEND_DELAY_INVALID, "<send> delayexpr is not a CSS2 time", "__send_1")
                 return@send true
             }
             val sendData = ""
@@ -605,11 +605,11 @@ class ADelayIsACss2TimeStateMachine(
             val sendDelayText = try {
                 valueToWireString(argEngine.evaluateExpr(argSid, com.sce.runtime.ScriptSource.lua("\"0.57s\"", "'0.57s'")))
             } catch (_: Exception) {
-                raisePlatformError(ADelayIsACss2TimeEvent.Error.Execution, "<send> delayexpr could not be evaluated", "__send_2")
+                raisePlatformError(ADelayIsACss2TimeEvent.Error.Execution, ErrorReason.EXPRESSION_FAILED, "<send> delayexpr could not be evaluated", "__send_2")
                 return@send true
             }
             val sendDelayMs = com.sce.runtime.SendHelper.parseDelayMs(sendDelayText) ?: run {
-                raisePlatformError(ADelayIsACss2TimeEvent.Error.Execution, "<send> delayexpr is not a CSS2 time", "__send_2")
+                raisePlatformError(ADelayIsACss2TimeEvent.Error.Execution, ErrorReason.SEND_DELAY_INVALID, "<send> delayexpr is not a CSS2 time", "__send_2")
                 return@send true
             }
             val sendData = ""

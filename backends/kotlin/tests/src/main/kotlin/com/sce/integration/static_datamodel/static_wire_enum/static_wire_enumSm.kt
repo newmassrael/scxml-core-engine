@@ -657,7 +657,7 @@ class StaticWireEnumStateMachine(
 
             vReceived = pendingViewShownPayload!!.layout
 
-            if (try { vDeliveries = com.sce.forge.runtime.SceChecked.add(vDeliveries, 1.toUInt()); false } catch (_: com.sce.forge.runtime.AlgorithmFailure) { raisePlatformError(StaticWireEnumEvent.Error.Execution, "<assign location='deliveries'>: an integer operation overflowed or failed"); true }) {
+            if (try { vDeliveries = com.sce.forge.runtime.SceChecked.add(vDeliveries, 1.toUInt()); false } catch (_: com.sce.forge.runtime.AlgorithmFailure) { raisePlatformError(StaticWireEnumEvent.Error.Execution, ErrorReason.EXPRESSION_FAILED, "<assign location='deliveries'>: an integer operation overflowed or failed"); true }) {
                 return
             }
     }

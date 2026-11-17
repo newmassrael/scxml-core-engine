@@ -1314,7 +1314,7 @@ class TodoPeerStateMachine(
                     return
                 }
 
-            if (try { vRoster = com.sce.forge.runtime.SceChecked.within(com.sce.forge.runtime.SceChecked.take(call_EventRoster__v(vRoster, pendingTodoRolePayload!!.node, pendingTodoRolePayload!!.role)), 64); false } catch (_: com.sce.forge.runtime.AlgorithmFailure) { raisePlatformError(TodoPeerEvent.Error.Execution, "<assign location='roster'>: an integer operation overflowed or failed"); true }) {
+            if (try { vRoster = com.sce.forge.runtime.SceChecked.within(com.sce.forge.runtime.SceChecked.take(call_EventRoster__v(vRoster, pendingTodoRolePayload!!.node, pendingTodoRolePayload!!.role)), 64); false } catch (_: com.sce.forge.runtime.AlgorithmFailure) { raisePlatformError(TodoPeerEvent.Error.Execution, ErrorReason.EXPRESSION_FAILED, "<assign location='roster'>: an integer operation overflowed or failed"); true }) {
                 return
             }
     }
@@ -1325,13 +1325,13 @@ class TodoPeerStateMachine(
                     return
                 }
 
-            if (try { vTyped = com.sce.forge.runtime.SceChecked.bounded(pendingTodoEditPayload!!.text, 32); false } catch (_: com.sce.forge.runtime.AlgorithmFailure) { raisePlatformError(TodoPeerEvent.Error.Execution, "<assign location='typed'>: an integer operation overflowed or failed"); true }) {
+            if (try { vTyped = com.sce.forge.runtime.SceChecked.bounded(pendingTodoEditPayload!!.text, 32); false } catch (_: com.sce.forge.runtime.AlgorithmFailure) { raisePlatformError(TodoPeerEvent.Error.Execution, ErrorReason.EXPRESSION_FAILED, "<assign location='typed'>: an integer operation overflowed or failed"); true }) {
                 return
             }
 
             vEntry = vEntry.copy(element = pendingTodoEditPayload!!.id.toULong())
 
-            if (try { vEntry = vEntry.copy(element = com.sce.forge.runtime.SceChecked.add(com.sce.forge.runtime.SceChecked.mul(vEntry.element, 65536.toULong()), pendingTodoEditPayload!!.field.toULong())); false } catch (_: com.sce.forge.runtime.AlgorithmFailure) { raisePlatformError(TodoPeerEvent.Error.Execution, "<assign location='entry.element'>: an integer operation overflowed or failed"); true }) {
+            if (try { vEntry = vEntry.copy(element = com.sce.forge.runtime.SceChecked.add(com.sce.forge.runtime.SceChecked.mul(vEntry.element, 65536.toULong()), pendingTodoEditPayload!!.field.toULong())); false } catch (_: com.sce.forge.runtime.AlgorithmFailure) { raisePlatformError(TodoPeerEvent.Error.Execution, ErrorReason.EXPRESSION_FAILED, "<assign location='entry.element'>: an integer operation overflowed or failed"); true }) {
                 return
             }
 
@@ -1356,7 +1356,7 @@ class TodoPeerStateMachine(
 
             if (vForbidden) {
 
-            if (try { vDenied = com.sce.forge.runtime.SceChecked.add(vDenied, 1.toUInt()); false } catch (_: com.sce.forge.runtime.AlgorithmFailure) { raisePlatformError(TodoPeerEvent.Error.Execution, "<assign location='denied'>: an integer operation overflowed or failed"); true }) {
+            if (try { vDenied = com.sce.forge.runtime.SceChecked.add(vDenied, 1.toUInt()); false } catch (_: com.sce.forge.runtime.AlgorithmFailure) { raisePlatformError(TodoPeerEvent.Error.Execution, ErrorReason.EXPRESSION_FAILED, "<assign location='denied'>: an integer operation overflowed or failed"); true }) {
                 return
             }
             }
@@ -1369,7 +1369,7 @@ class TodoPeerStateMachine(
 
             if (o.element == vEntry.element) {
 
-            if (try { vGone = com.sce.forge.runtime.SceChecked.add(vGone, 1.toUInt()); false } catch (_: com.sce.forge.runtime.AlgorithmFailure) { raisePlatformError(TodoPeerEvent.Error.Execution, "<assign location='gone'>: an integer operation overflowed or failed"); true }) {
+            if (try { vGone = com.sce.forge.runtime.SceChecked.add(vGone, 1.toUInt()); false } catch (_: com.sce.forge.runtime.AlgorithmFailure) { raisePlatformError(TodoPeerEvent.Error.Execution, ErrorReason.EXPRESSION_FAILED, "<assign location='gone'>: an integer operation overflowed or failed"); true }) {
                 return
             }
             }
@@ -1378,7 +1378,7 @@ class TodoPeerStateMachine(
 
             if (!vForbidden && vRoomValues > 0.toUInt() && vGone == 0.toUInt() && (vValues).size.toUInt() >= vRoomValues) {
 
-            if (try { vFull = com.sce.forge.runtime.SceChecked.add(vFull, 1.toUInt()); false } catch (_: com.sce.forge.runtime.AlgorithmFailure) { raisePlatformError(TodoPeerEvent.Error.Execution, "<assign location='full'>: an integer operation overflowed or failed"); true }) {
+            if (try { vFull = com.sce.forge.runtime.SceChecked.add(vFull, 1.toUInt()); false } catch (_: com.sce.forge.runtime.AlgorithmFailure) { raisePlatformError(TodoPeerEvent.Error.Execution, ErrorReason.EXPRESSION_FAILED, "<assign location='full'>: an integer operation overflowed or failed"); true }) {
                 return
             }
 
@@ -1388,7 +1388,7 @@ class TodoPeerStateMachine(
 
             if (!vForbidden) {
 
-            if (try { vStamp = com.sce.forge.runtime.SceChecked.take(call_HlcSend__v(vClock, pendingTodoEditPayload!!.now, vNode)); false } catch (_: com.sce.forge.runtime.AlgorithmFailure) { raisePlatformError(TodoPeerEvent.Error.Execution, "<assign location='stamp'>: an integer operation overflowed or failed"); true }) {
+            if (try { vStamp = com.sce.forge.runtime.SceChecked.take(call_HlcSend__v(vClock, pendingTodoEditPayload!!.now, vNode)); false } catch (_: com.sce.forge.runtime.AlgorithmFailure) { raisePlatformError(TodoPeerEvent.Error.Execution, ErrorReason.EXPRESSION_FAILED, "<assign location='stamp'>: an integer operation overflowed or failed"); true }) {
                 return
             }
 
@@ -1410,7 +1410,7 @@ class TodoPeerStateMachine(
 
             vOp = vOp.copy(value = 0)
 
-            if (try { vOp = vOp.copy(text = com.sce.forge.runtime.SceChecked.bounded("", 96)); false } catch (_: com.sce.forge.runtime.AlgorithmFailure) { raisePlatformError(TodoPeerEvent.Error.Execution, "<assign location='op.text'>: an integer operation overflowed or failed"); true }) {
+            if (try { vOp = vOp.copy(text = com.sce.forge.runtime.SceChecked.bounded("", 96)); false } catch (_: com.sce.forge.runtime.AlgorithmFailure) { raisePlatformError(TodoPeerEvent.Error.Execution, ErrorReason.EXPRESSION_FAILED, "<assign location='op.text'>: an integer operation overflowed or failed"); true }) {
                 return
             }
 
@@ -1420,7 +1420,7 @@ class TodoPeerStateMachine(
 
             vOp = vOp.copy(nodeId = o.nodeId)
 
-            if (if (vTaking.size < 64) { vTaking = vTaking + (vOp); false } else { raisePlatformError(TodoPeerEvent.Error.Execution, "<sce:append target='taking'>: the list already holds its capacity of 64"); true }) {
+            if (if (vTaking.size < 64) { vTaking = vTaking + (vOp); false } else { raisePlatformError(TodoPeerEvent.Error.Execution, ErrorReason.ASSIGNMENT_FAILED, "<sce:append target='taking'>: the list already holds its capacity of 64"); true }) {
                 return
             }
             }
@@ -1434,7 +1434,7 @@ class TodoPeerStateMachine(
 
             vOp = vOp.copy(value = pendingTodoEditPayload!!.value)
 
-            if (try { vOp = vOp.copy(text = com.sce.forge.runtime.SceChecked.bounded(pendingTodoEditPayload!!.text, 96)); false } catch (_: com.sce.forge.runtime.AlgorithmFailure) { raisePlatformError(TodoPeerEvent.Error.Execution, "<assign location='op.text'>: an integer operation overflowed or failed"); true }) {
+            if (try { vOp = vOp.copy(text = com.sce.forge.runtime.SceChecked.bounded(pendingTodoEditPayload!!.text, 96)); false } catch (_: com.sce.forge.runtime.AlgorithmFailure) { raisePlatformError(TodoPeerEvent.Error.Execution, ErrorReason.EXPRESSION_FAILED, "<assign location='op.text'>: an integer operation overflowed or failed"); true }) {
                 return
             }
 
@@ -1444,7 +1444,7 @@ class TodoPeerStateMachine(
 
             vOp = vOp.copy(nodeId = 0.toULong())
 
-            if (if (vTaking.size < 64) { vTaking = vTaking + (vOp); false } else { raisePlatformError(TodoPeerEvent.Error.Execution, "<sce:append target='taking'>: the list already holds its capacity of 64"); true }) {
+            if (if (vTaking.size < 64) { vTaking = vTaking + (vOp); false } else { raisePlatformError(TodoPeerEvent.Error.Execution, ErrorReason.ASSIGNMENT_FAILED, "<sce:append target='taking'>: the list already holds its capacity of 64"); true }) {
                 return
             }
 
@@ -1511,7 +1511,7 @@ class TodoPeerStateMachine(
 
             if (!vAuthorized) {
 
-            if (try { vDenied = com.sce.forge.runtime.SceChecked.add(vDenied, 1.toUInt()); false } catch (_: com.sce.forge.runtime.AlgorithmFailure) { raisePlatformError(TodoPeerEvent.Error.Execution, "<assign location='denied'>: an integer operation overflowed or failed"); true }) {
+            if (try { vDenied = com.sce.forge.runtime.SceChecked.add(vDenied, 1.toUInt()); false } catch (_: com.sce.forge.runtime.AlgorithmFailure) { raisePlatformError(TodoPeerEvent.Error.Execution, ErrorReason.EXPRESSION_FAILED, "<assign location='denied'>: an integer operation overflowed or failed"); true }) {
                 return
             }
             }
@@ -1557,7 +1557,7 @@ class TodoPeerStateMachine(
 
             if (vDot.nodeId != vNode) {
 
-            if (try { vClock = com.sce.forge.runtime.SceChecked.take(call_HlcReceive__vv(vClock, vDot, vClock.wallTime, vNode)); false } catch (_: com.sce.forge.runtime.AlgorithmFailure) { raisePlatformError(TodoPeerEvent.Error.Execution, "<assign location='clock'>: an integer operation overflowed or failed"); true }) {
+            if (try { vClock = com.sce.forge.runtime.SceChecked.take(call_HlcReceive__vv(vClock, vDot, vClock.wallTime, vNode)); false } catch (_: com.sce.forge.runtime.AlgorithmFailure) { raisePlatformError(TodoPeerEvent.Error.Execution, ErrorReason.EXPRESSION_FAILED, "<assign location='clock'>: an integer operation overflowed or failed"); true }) {
                 return
             }
             }
@@ -1567,24 +1567,24 @@ class TodoPeerStateMachine(
     private fun transitionContentOfOpenAt5() {
                 // SCE-MAP: todo_peer.scxml:403 :: open :: _transition_5
 
-            if (try { vOp = com.sce.forge.runtime.SceChecked.at(vTaking, (vTook).toLong()); false } catch (_: com.sce.forge.runtime.AlgorithmFailure) { raisePlatformError(TodoPeerEvent.Error.Execution, "<assign location='op'>: an integer operation overflowed or failed"); true }) {
+            if (try { vOp = com.sce.forge.runtime.SceChecked.at(vTaking, (vTook).toLong()); false } catch (_: com.sce.forge.runtime.AlgorithmFailure) { raisePlatformError(TodoPeerEvent.Error.Execution, ErrorReason.EXPRESSION_FAILED, "<assign location='op'>: an integer operation overflowed or failed"); true }) {
                 return
             }
 
-            if (try { vTook = com.sce.forge.runtime.SceChecked.add(vTook, 1.toUInt()); false } catch (_: com.sce.forge.runtime.AlgorithmFailure) { raisePlatformError(TodoPeerEvent.Error.Execution, "<assign location='took'>: an integer operation overflowed or failed"); true }) {
+            if (try { vTook = com.sce.forge.runtime.SceChecked.add(vTook, 1.toUInt()); false } catch (_: com.sce.forge.runtime.AlgorithmFailure) { raisePlatformError(TodoPeerEvent.Error.Execution, ErrorReason.EXPRESSION_FAILED, "<assign location='took'>: an integer operation overflowed or failed"); true }) {
                 return
             }
 
             vEntry = vEntry.copy(element = vOp.id.toULong())
 
-            if (try { vEntry = vEntry.copy(element = com.sce.forge.runtime.SceChecked.add(com.sce.forge.runtime.SceChecked.mul(vEntry.element, 65536.toULong()), vOp.field.toULong())); false } catch (_: com.sce.forge.runtime.AlgorithmFailure) { raisePlatformError(TodoPeerEvent.Error.Execution, "<assign location='entry.element'>: an integer operation overflowed or failed"); true }) {
+            if (try { vEntry = vEntry.copy(element = com.sce.forge.runtime.SceChecked.add(com.sce.forge.runtime.SceChecked.mul(vEntry.element, 65536.toULong()), vOp.field.toULong())); false } catch (_: com.sce.forge.runtime.AlgorithmFailure) { raisePlatformError(TodoPeerEvent.Error.Execution, ErrorReason.EXPRESSION_FAILED, "<assign location='entry.element'>: an integer operation overflowed or failed"); true }) {
                 return
             }
 
 
             if (vOp.kind == 0.toUByte()) {
 
-            if (try { vHeld = vHeld.copy(text = com.sce.forge.runtime.SceChecked.bounded(vOp.text, 96)); false } catch (_: com.sce.forge.runtime.AlgorithmFailure) { raisePlatformError(TodoPeerEvent.Error.Execution, "<assign location='held.text'>: an integer operation overflowed or failed"); true }) {
+            if (try { vHeld = vHeld.copy(text = com.sce.forge.runtime.SceChecked.bounded(vOp.text, 96)); false } catch (_: com.sce.forge.runtime.AlgorithmFailure) { raisePlatformError(TodoPeerEvent.Error.Execution, ErrorReason.EXPRESSION_FAILED, "<assign location='held.text'>: an integer operation overflowed or failed"); true }) {
                 return
             }
 
@@ -1613,15 +1613,15 @@ class TodoPeerStateMachine(
 
             vOne = emptyList()
 
-            if (if (vOne.size < 1024) { vOne = vOne + (vEntry); false } else { raisePlatformError(TodoPeerEvent.Error.Execution, "<sce:append target='one'>: the list already holds its capacity of 1024"); true }) {
+            if (if (vOne.size < 1024) { vOne = vOne + (vEntry); false } else { raisePlatformError(TodoPeerEvent.Error.Execution, ErrorReason.ASSIGNMENT_FAILED, "<sce:append target='one'>: the list already holds its capacity of 1024"); true }) {
                 return
             }
 
-            if (try { vAdds = com.sce.forge.runtime.SceChecked.within(com.sce.forge.runtime.SceChecked.take(call_OrsetUnion__vv(vAdds, vOne)), 1024); false } catch (_: com.sce.forge.runtime.AlgorithmFailure) { raisePlatformError(TodoPeerEvent.Error.Execution, "<assign location='adds'>: an integer operation overflowed or failed"); true }) {
+            if (try { vAdds = com.sce.forge.runtime.SceChecked.within(com.sce.forge.runtime.SceChecked.take(call_OrsetUnion__vv(vAdds, vOne)), 1024); false } catch (_: com.sce.forge.runtime.AlgorithmFailure) { raisePlatformError(TodoPeerEvent.Error.Execution, ErrorReason.EXPRESSION_FAILED, "<assign location='adds'>: an integer operation overflowed or failed"); true }) {
                 return
             }
 
-            if (try { vValues = com.sce.forge.runtime.SceChecked.within(com.sce.forge.runtime.SceChecked.take(call_MvValueKeep__vv(vValues, vHeld)), 512); false } catch (_: com.sce.forge.runtime.AlgorithmFailure) { raisePlatformError(TodoPeerEvent.Error.Execution, "<assign location='values'>: an integer operation overflowed or failed"); true }) {
+            if (try { vValues = com.sce.forge.runtime.SceChecked.within(com.sce.forge.runtime.SceChecked.take(call_MvValueKeep__vv(vValues, vHeld)), 512); false } catch (_: com.sce.forge.runtime.AlgorithmFailure) { raisePlatformError(TodoPeerEvent.Error.Execution, ErrorReason.EXPRESSION_FAILED, "<assign location='values'>: an integer operation overflowed or failed"); true }) {
                 return
             }
             }
@@ -1650,15 +1650,15 @@ class TodoPeerStateMachine(
 
             vOne = emptyList()
 
-            if (if (vOne.size < 1024) { vOne = vOne + (vEntry); false } else { raisePlatformError(TodoPeerEvent.Error.Execution, "<sce:append target='one'>: the list already holds its capacity of 1024"); true }) {
+            if (if (vOne.size < 1024) { vOne = vOne + (vEntry); false } else { raisePlatformError(TodoPeerEvent.Error.Execution, ErrorReason.ASSIGNMENT_FAILED, "<sce:append target='one'>: the list already holds its capacity of 1024"); true }) {
                 return
             }
 
-            if (try { vAdds = com.sce.forge.runtime.SceChecked.within(com.sce.forge.runtime.SceChecked.take(call_OrsetLive__vv(vAdds, vOne)), 1024); false } catch (_: com.sce.forge.runtime.AlgorithmFailure) { raisePlatformError(TodoPeerEvent.Error.Execution, "<assign location='adds'>: an integer operation overflowed or failed"); true }) {
+            if (try { vAdds = com.sce.forge.runtime.SceChecked.within(com.sce.forge.runtime.SceChecked.take(call_OrsetLive__vv(vAdds, vOne)), 1024); false } catch (_: com.sce.forge.runtime.AlgorithmFailure) { raisePlatformError(TodoPeerEvent.Error.Execution, ErrorReason.EXPRESSION_FAILED, "<assign location='adds'>: an integer operation overflowed or failed"); true }) {
                 return
             }
 
-            if (try { vValues = com.sce.forge.runtime.SceChecked.within(com.sce.forge.runtime.SceChecked.take(call_MvValueDrop__vv(vValues, vHeld)), 512); false } catch (_: com.sce.forge.runtime.AlgorithmFailure) { raisePlatformError(TodoPeerEvent.Error.Execution, "<assign location='values'>: an integer operation overflowed or failed"); true }) {
+            if (try { vValues = com.sce.forge.runtime.SceChecked.within(com.sce.forge.runtime.SceChecked.take(call_MvValueDrop__vv(vValues, vHeld)), 512); false } catch (_: com.sce.forge.runtime.AlgorithmFailure) { raisePlatformError(TodoPeerEvent.Error.Execution, ErrorReason.EXPRESSION_FAILED, "<assign location='values'>: an integer operation overflowed or failed"); true }) {
                 return
             }
             }
@@ -1682,7 +1682,7 @@ class TodoPeerStateMachine(
                 // docs/adr/0086, section 15.6: the list is short of its field's lower
                 // count, so the event is refused whole: one error, nothing delivered,
                 // and the error ends the block (W3C SCXML 6.2.3, 4.9).
-                raisePlatformError(TodoPeerEvent.Error.Execution, "<send> <param name='ops'> holds fewer elements than the 1 its field's type declares, so the event is not sent", "__send_3")
+                raisePlatformError(TodoPeerEvent.Error.Execution, ErrorReason.PARAM_UNFIT, "<send> <param name='ops'> holds fewer elements than the 1 its field's type declares, so the event is not sent", "__send_3")
                 return@send true
             }
 
@@ -1717,7 +1717,7 @@ class TodoPeerStateMachine(
             // event as an undeclared type, so a wiring mistake cannot read
             // as success.
             if (hostServed == null && !hasEventProcessor("sce:mesh")) {
-                raisePlatformError(TodoPeerEvent.Error.Execution, "<send type='sce:mesh'> names a processor the host declared but never registered", "__send_3")
+                raisePlatformError(TodoPeerEvent.Error.Execution, ErrorReason.PROCESSOR_UNREGISTERED, "<send type='sce:mesh'> names a processor the host declared but never registered", "__send_3")
             }
             false
             }) {
@@ -1851,11 +1851,11 @@ class TodoPeerStateMachine(
 
             for (s1 in vZoneStarts1) {
 
-            if (if (vZoneStarts.size < 64) { vZoneStarts = vZoneStarts + (s1); false } else { raisePlatformError(TodoPeerEvent.Error.Execution, "<sce:append target='zoneStarts'>: the list already holds its capacity of 64"); true }) {
+            if (if (vZoneStarts.size < 64) { vZoneStarts = vZoneStarts + (s1); false } else { raisePlatformError(TodoPeerEvent.Error.Execution, ErrorReason.ASSIGNMENT_FAILED, "<sce:append target='zoneStarts'>: the list already holds its capacity of 64"); true }) {
                 return
             }
 
-            if (try { vZoneRows = com.sce.forge.runtime.SceChecked.add(vZoneRows, 1.toUInt()); false } catch (_: com.sce.forge.runtime.AlgorithmFailure) { raisePlatformError(TodoPeerEvent.Error.Execution, "<assign location='zoneRows'>: an integer operation overflowed or failed"); true }) {
+            if (try { vZoneRows = com.sce.forge.runtime.SceChecked.add(vZoneRows, 1.toUInt()); false } catch (_: com.sce.forge.runtime.AlgorithmFailure) { raisePlatformError(TodoPeerEvent.Error.Execution, ErrorReason.EXPRESSION_FAILED, "<assign location='zoneRows'>: an integer operation overflowed or failed"); true }) {
                 return
             }
             }
@@ -1863,7 +1863,7 @@ class TodoPeerStateMachine(
 
             for (o1 in vZoneOffsets1) {
 
-            if (if (vZoneOffsets.size < 64) { vZoneOffsets = vZoneOffsets + (o1); false } else { raisePlatformError(TodoPeerEvent.Error.Execution, "<sce:append target='zoneOffsets'>: the list already holds its capacity of 64"); true }) {
+            if (if (vZoneOffsets.size < 64) { vZoneOffsets = vZoneOffsets + (o1); false } else { raisePlatformError(TodoPeerEvent.Error.Execution, ErrorReason.ASSIGNMENT_FAILED, "<sce:append target='zoneOffsets'>: the list already holds its capacity of 64"); true }) {
                 return
             }
             }
@@ -1875,11 +1875,11 @@ class TodoPeerStateMachine(
 
             for (s2 in vZoneStarts2) {
 
-            if (if (vZoneStarts.size < 64) { vZoneStarts = vZoneStarts + (s2); false } else { raisePlatformError(TodoPeerEvent.Error.Execution, "<sce:append target='zoneStarts'>: the list already holds its capacity of 64"); true }) {
+            if (if (vZoneStarts.size < 64) { vZoneStarts = vZoneStarts + (s2); false } else { raisePlatformError(TodoPeerEvent.Error.Execution, ErrorReason.ASSIGNMENT_FAILED, "<sce:append target='zoneStarts'>: the list already holds its capacity of 64"); true }) {
                 return
             }
 
-            if (try { vZoneRows = com.sce.forge.runtime.SceChecked.add(vZoneRows, 1.toUInt()); false } catch (_: com.sce.forge.runtime.AlgorithmFailure) { raisePlatformError(TodoPeerEvent.Error.Execution, "<assign location='zoneRows'>: an integer operation overflowed or failed"); true }) {
+            if (try { vZoneRows = com.sce.forge.runtime.SceChecked.add(vZoneRows, 1.toUInt()); false } catch (_: com.sce.forge.runtime.AlgorithmFailure) { raisePlatformError(TodoPeerEvent.Error.Execution, ErrorReason.EXPRESSION_FAILED, "<assign location='zoneRows'>: an integer operation overflowed or failed"); true }) {
                 return
             }
             }
@@ -1887,7 +1887,7 @@ class TodoPeerStateMachine(
 
             for (o2 in vZoneOffsets2) {
 
-            if (if (vZoneOffsets.size < 64) { vZoneOffsets = vZoneOffsets + (o2); false } else { raisePlatformError(TodoPeerEvent.Error.Execution, "<sce:append target='zoneOffsets'>: the list already holds its capacity of 64"); true }) {
+            if (if (vZoneOffsets.size < 64) { vZoneOffsets = vZoneOffsets + (o2); false } else { raisePlatformError(TodoPeerEvent.Error.Execution, ErrorReason.ASSIGNMENT_FAILED, "<sce:append target='zoneOffsets'>: the list already holds its capacity of 64"); true }) {
                 return
             }
             }
@@ -1899,11 +1899,11 @@ class TodoPeerStateMachine(
 
             for (s3 in vZoneStarts3) {
 
-            if (if (vZoneStarts.size < 64) { vZoneStarts = vZoneStarts + (s3); false } else { raisePlatformError(TodoPeerEvent.Error.Execution, "<sce:append target='zoneStarts'>: the list already holds its capacity of 64"); true }) {
+            if (if (vZoneStarts.size < 64) { vZoneStarts = vZoneStarts + (s3); false } else { raisePlatformError(TodoPeerEvent.Error.Execution, ErrorReason.ASSIGNMENT_FAILED, "<sce:append target='zoneStarts'>: the list already holds its capacity of 64"); true }) {
                 return
             }
 
-            if (try { vZoneRows = com.sce.forge.runtime.SceChecked.add(vZoneRows, 1.toUInt()); false } catch (_: com.sce.forge.runtime.AlgorithmFailure) { raisePlatformError(TodoPeerEvent.Error.Execution, "<assign location='zoneRows'>: an integer operation overflowed or failed"); true }) {
+            if (try { vZoneRows = com.sce.forge.runtime.SceChecked.add(vZoneRows, 1.toUInt()); false } catch (_: com.sce.forge.runtime.AlgorithmFailure) { raisePlatformError(TodoPeerEvent.Error.Execution, ErrorReason.EXPRESSION_FAILED, "<assign location='zoneRows'>: an integer operation overflowed or failed"); true }) {
                 return
             }
             }
@@ -1911,7 +1911,7 @@ class TodoPeerStateMachine(
 
             for (o3 in vZoneOffsets3) {
 
-            if (if (vZoneOffsets.size < 64) { vZoneOffsets = vZoneOffsets + (o3); false } else { raisePlatformError(TodoPeerEvent.Error.Execution, "<sce:append target='zoneOffsets'>: the list already holds its capacity of 64"); true }) {
+            if (if (vZoneOffsets.size < 64) { vZoneOffsets = vZoneOffsets + (o3); false } else { raisePlatformError(TodoPeerEvent.Error.Execution, ErrorReason.ASSIGNMENT_FAILED, "<sce:append target='zoneOffsets'>: the list already holds its capacity of 64"); true }) {
                 return
             }
             }
@@ -1923,11 +1923,11 @@ class TodoPeerStateMachine(
 
             for (s4 in vZoneStarts4) {
 
-            if (if (vZoneStarts.size < 64) { vZoneStarts = vZoneStarts + (s4); false } else { raisePlatformError(TodoPeerEvent.Error.Execution, "<sce:append target='zoneStarts'>: the list already holds its capacity of 64"); true }) {
+            if (if (vZoneStarts.size < 64) { vZoneStarts = vZoneStarts + (s4); false } else { raisePlatformError(TodoPeerEvent.Error.Execution, ErrorReason.ASSIGNMENT_FAILED, "<sce:append target='zoneStarts'>: the list already holds its capacity of 64"); true }) {
                 return
             }
 
-            if (try { vZoneRows = com.sce.forge.runtime.SceChecked.add(vZoneRows, 1.toUInt()); false } catch (_: com.sce.forge.runtime.AlgorithmFailure) { raisePlatformError(TodoPeerEvent.Error.Execution, "<assign location='zoneRows'>: an integer operation overflowed or failed"); true }) {
+            if (try { vZoneRows = com.sce.forge.runtime.SceChecked.add(vZoneRows, 1.toUInt()); false } catch (_: com.sce.forge.runtime.AlgorithmFailure) { raisePlatformError(TodoPeerEvent.Error.Execution, ErrorReason.EXPRESSION_FAILED, "<assign location='zoneRows'>: an integer operation overflowed or failed"); true }) {
                 return
             }
             }
@@ -1935,7 +1935,7 @@ class TodoPeerStateMachine(
 
             for (o4 in vZoneOffsets4) {
 
-            if (if (vZoneOffsets.size < 64) { vZoneOffsets = vZoneOffsets + (o4); false } else { raisePlatformError(TodoPeerEvent.Error.Execution, "<sce:append target='zoneOffsets'>: the list already holds its capacity of 64"); true }) {
+            if (if (vZoneOffsets.size < 64) { vZoneOffsets = vZoneOffsets + (o4); false } else { raisePlatformError(TodoPeerEvent.Error.Execution, ErrorReason.ASSIGNMENT_FAILED, "<sce:append target='zoneOffsets'>: the list already holds its capacity of 64"); true }) {
                 return
             }
             }
@@ -1944,14 +1944,14 @@ class TodoPeerStateMachine(
 
             if (vZoneRows == 0.toUInt()) {
 
-            if (try { vAgenda = com.sce.forge.runtime.SceChecked.within(com.sce.forge.runtime.SceChecked.take(call_EventAgenda__vv(vSched, vValues, pendingTodoAgendaPayload!!.id.toULong(), pendingTodoAgendaPayload!!.windowStart, pendingTodoAgendaPayload!!.windowEnd, pendingTodoAgendaPayload!!.skip)), 64); false } catch (_: com.sce.forge.runtime.AlgorithmFailure) { raisePlatformError(TodoPeerEvent.Error.Execution, "<assign location='agenda'>: an integer operation overflowed or failed"); true }) {
+            if (try { vAgenda = com.sce.forge.runtime.SceChecked.within(com.sce.forge.runtime.SceChecked.take(call_EventAgenda__vv(vSched, vValues, pendingTodoAgendaPayload!!.id.toULong(), pendingTodoAgendaPayload!!.windowStart, pendingTodoAgendaPayload!!.windowEnd, pendingTodoAgendaPayload!!.skip)), 64); false } catch (_: com.sce.forge.runtime.AlgorithmFailure) { raisePlatformError(TodoPeerEvent.Error.Execution, ErrorReason.EXPRESSION_FAILED, "<assign location='agenda'>: an integer operation overflowed or failed"); true }) {
                 return
             }
 
 
             for (a in vAgenda) {
 
-            if (try { vRawCount = com.sce.forge.runtime.SceChecked.add(vRawCount, 1.toUInt()); false } catch (_: com.sce.forge.runtime.AlgorithmFailure) { raisePlatformError(TodoPeerEvent.Error.Execution, "<assign location='rawCount'>: an integer operation overflowed or failed"); true }) {
+            if (try { vRawCount = com.sce.forge.runtime.SceChecked.add(vRawCount, 1.toUInt()); false } catch (_: com.sce.forge.runtime.AlgorithmFailure) { raisePlatformError(TodoPeerEvent.Error.Execution, ErrorReason.EXPRESSION_FAILED, "<assign location='rawCount'>: an integer operation overflowed or failed"); true }) {
                 return
             }
 
@@ -1962,14 +1962,14 @@ class TodoPeerStateMachine(
 
             if (vZoneRows != 0.toUInt()) {
 
-            if (try { vLocal = com.sce.forge.runtime.SceChecked.within(com.sce.forge.runtime.SceChecked.take(call_EventAgenda__vv(vSched, vValues, pendingTodoAgendaPayload!!.id.toULong(), com.sce.forge.runtime.SceChecked.sub(pendingTodoAgendaPayload!!.windowStart, 86400000), com.sce.forge.runtime.SceChecked.add(pendingTodoAgendaPayload!!.windowEnd, 86400000), pendingTodoAgendaPayload!!.skip)), 64); false } catch (_: com.sce.forge.runtime.AlgorithmFailure) { raisePlatformError(TodoPeerEvent.Error.Execution, "<assign location='local'>: an integer operation overflowed or failed"); true }) {
+            if (try { vLocal = com.sce.forge.runtime.SceChecked.within(com.sce.forge.runtime.SceChecked.take(call_EventAgenda__vv(vSched, vValues, pendingTodoAgendaPayload!!.id.toULong(), com.sce.forge.runtime.SceChecked.sub(pendingTodoAgendaPayload!!.windowStart, 86400000), com.sce.forge.runtime.SceChecked.add(pendingTodoAgendaPayload!!.windowEnd, 86400000), pendingTodoAgendaPayload!!.skip)), 64); false } catch (_: com.sce.forge.runtime.AlgorithmFailure) { raisePlatformError(TodoPeerEvent.Error.Execution, ErrorReason.EXPRESSION_FAILED, "<assign location='local'>: an integer operation overflowed or failed"); true }) {
                 return
             }
 
 
             for (l in vLocal) {
 
-            if (try { vRawCount = com.sce.forge.runtime.SceChecked.add(vRawCount, 1.toUInt()); false } catch (_: com.sce.forge.runtime.AlgorithmFailure) { raisePlatformError(TodoPeerEvent.Error.Execution, "<assign location='rawCount'>: an integer operation overflowed or failed"); true }) {
+            if (try { vRawCount = com.sce.forge.runtime.SceChecked.add(vRawCount, 1.toUInt()); false } catch (_: com.sce.forge.runtime.AlgorithmFailure) { raisePlatformError(TodoPeerEvent.Error.Execution, ErrorReason.EXPRESSION_FAILED, "<assign location='rawCount'>: an integer operation overflowed or failed"); true }) {
                 return
             }
 
@@ -1981,22 +1981,22 @@ class TodoPeerStateMachine(
 
             vOcc = vOcc.copy(conflict = l.conflict)
 
-            if (try { vUtcSec = com.sce.forge.runtime.SceChecked.take(call_UtcFromLocal__vv(vZoneStarts, vZoneOffsets, com.sce.forge.runtime.SceChecked.div(l.start, 1000))); false } catch (_: com.sce.forge.runtime.AlgorithmFailure) { raisePlatformError(TodoPeerEvent.Error.Execution, "<assign location='utcSec'>: an integer operation overflowed or failed"); true }) {
+            if (try { vUtcSec = com.sce.forge.runtime.SceChecked.take(call_UtcFromLocal__vv(vZoneStarts, vZoneOffsets, com.sce.forge.runtime.SceChecked.div(l.start, 1000))); false } catch (_: com.sce.forge.runtime.AlgorithmFailure) { raisePlatformError(TodoPeerEvent.Error.Execution, ErrorReason.EXPRESSION_FAILED, "<assign location='utcSec'>: an integer operation overflowed or failed"); true }) {
                 return
             }
 
-            if (try { vOcc = vOcc.copy(start = com.sce.forge.runtime.SceChecked.add(com.sce.forge.runtime.SceChecked.mul(vUtcSec, 1000), com.sce.forge.runtime.SceChecked.rem(l.start, 1000))); false } catch (_: com.sce.forge.runtime.AlgorithmFailure) { raisePlatformError(TodoPeerEvent.Error.Execution, "<assign location='occ.start'>: an integer operation overflowed or failed"); true }) {
+            if (try { vOcc = vOcc.copy(start = com.sce.forge.runtime.SceChecked.add(com.sce.forge.runtime.SceChecked.mul(vUtcSec, 1000), com.sce.forge.runtime.SceChecked.rem(l.start, 1000))); false } catch (_: com.sce.forge.runtime.AlgorithmFailure) { raisePlatformError(TodoPeerEvent.Error.Execution, ErrorReason.EXPRESSION_FAILED, "<assign location='occ.start'>: an integer operation overflowed or failed"); true }) {
                 return
             }
 
-            if (try { vOcc = vOcc.copy(end = com.sce.forge.runtime.SceChecked.add(vOcc.start, com.sce.forge.runtime.SceChecked.sub(l.end, l.start))); false } catch (_: com.sce.forge.runtime.AlgorithmFailure) { raisePlatformError(TodoPeerEvent.Error.Execution, "<assign location='occ.end'>: an integer operation overflowed or failed"); true }) {
+            if (try { vOcc = vOcc.copy(end = com.sce.forge.runtime.SceChecked.add(vOcc.start, com.sce.forge.runtime.SceChecked.sub(l.end, l.start))); false } catch (_: com.sce.forge.runtime.AlgorithmFailure) { raisePlatformError(TodoPeerEvent.Error.Execution, ErrorReason.EXPRESSION_FAILED, "<assign location='occ.end'>: an integer operation overflowed or failed"); true }) {
                 return
             }
 
 
             if ((vOcc.end > pendingTodoAgendaPayload!!.windowStart || vOcc.start >= pendingTodoAgendaPayload!!.windowStart) && vOcc.start < pendingTodoAgendaPayload!!.windowEnd) {
 
-            if (if (vAgenda.size < 64) { vAgenda = vAgenda + (vOcc); false } else { raisePlatformError(TodoPeerEvent.Error.Execution, "<sce:append target='agenda'>: the list already holds its capacity of 64"); true }) {
+            if (if (vAgenda.size < 64) { vAgenda = vAgenda + (vOcc); false } else { raisePlatformError(TodoPeerEvent.Error.Execution, ErrorReason.ASSIGNMENT_FAILED, "<sce:append target='agenda'>: the list already holds its capacity of 64"); true }) {
                 return
             }
             }
@@ -2006,7 +2006,7 @@ class TodoPeerStateMachine(
 
             if (vRawCount == 64.toUInt()) {
 
-            if (try { vAgendaNext = com.sce.forge.runtime.SceChecked.add(vRawLast, 1.toUInt()); false } catch (_: com.sce.forge.runtime.AlgorithmFailure) { raisePlatformError(TodoPeerEvent.Error.Execution, "<assign location='agendaNext'>: an integer operation overflowed or failed"); true }) {
+            if (try { vAgendaNext = com.sce.forge.runtime.SceChecked.add(vRawLast, 1.toUInt()); false } catch (_: com.sce.forge.runtime.AlgorithmFailure) { raisePlatformError(TodoPeerEvent.Error.Execution, ErrorReason.EXPRESSION_FAILED, "<assign location='agendaNext'>: an integer operation overflowed or failed"); true }) {
                 return
             }
             }
@@ -2021,11 +2021,11 @@ class TodoPeerStateMachine(
 
             if (pendingTodoZonePayload!!.zone == 1.toUByte()) {
 
-            if (if (vZoneStarts1.size < 64) { vZoneStarts1 = vZoneStarts1 + (pendingTodoZonePayload!!.start); false } else { raisePlatformError(TodoPeerEvent.Error.Execution, "<sce:append target='zoneStarts1'>: the list already holds its capacity of 64"); true }) {
+            if (if (vZoneStarts1.size < 64) { vZoneStarts1 = vZoneStarts1 + (pendingTodoZonePayload!!.start); false } else { raisePlatformError(TodoPeerEvent.Error.Execution, ErrorReason.ASSIGNMENT_FAILED, "<sce:append target='zoneStarts1'>: the list already holds its capacity of 64"); true }) {
                 return
             }
 
-            if (if (vZoneOffsets1.size < 64) { vZoneOffsets1 = vZoneOffsets1 + (pendingTodoZonePayload!!.offset); false } else { raisePlatformError(TodoPeerEvent.Error.Execution, "<sce:append target='zoneOffsets1'>: the list already holds its capacity of 64"); true }) {
+            if (if (vZoneOffsets1.size < 64) { vZoneOffsets1 = vZoneOffsets1 + (pendingTodoZonePayload!!.offset); false } else { raisePlatformError(TodoPeerEvent.Error.Execution, ErrorReason.ASSIGNMENT_FAILED, "<sce:append target='zoneOffsets1'>: the list already holds its capacity of 64"); true }) {
                 return
             }
             }
@@ -2033,11 +2033,11 @@ class TodoPeerStateMachine(
 
             if (pendingTodoZonePayload!!.zone == 2.toUByte()) {
 
-            if (if (vZoneStarts2.size < 64) { vZoneStarts2 = vZoneStarts2 + (pendingTodoZonePayload!!.start); false } else { raisePlatformError(TodoPeerEvent.Error.Execution, "<sce:append target='zoneStarts2'>: the list already holds its capacity of 64"); true }) {
+            if (if (vZoneStarts2.size < 64) { vZoneStarts2 = vZoneStarts2 + (pendingTodoZonePayload!!.start); false } else { raisePlatformError(TodoPeerEvent.Error.Execution, ErrorReason.ASSIGNMENT_FAILED, "<sce:append target='zoneStarts2'>: the list already holds its capacity of 64"); true }) {
                 return
             }
 
-            if (if (vZoneOffsets2.size < 64) { vZoneOffsets2 = vZoneOffsets2 + (pendingTodoZonePayload!!.offset); false } else { raisePlatformError(TodoPeerEvent.Error.Execution, "<sce:append target='zoneOffsets2'>: the list already holds its capacity of 64"); true }) {
+            if (if (vZoneOffsets2.size < 64) { vZoneOffsets2 = vZoneOffsets2 + (pendingTodoZonePayload!!.offset); false } else { raisePlatformError(TodoPeerEvent.Error.Execution, ErrorReason.ASSIGNMENT_FAILED, "<sce:append target='zoneOffsets2'>: the list already holds its capacity of 64"); true }) {
                 return
             }
             }
@@ -2045,11 +2045,11 @@ class TodoPeerStateMachine(
 
             if (pendingTodoZonePayload!!.zone == 3.toUByte()) {
 
-            if (if (vZoneStarts3.size < 64) { vZoneStarts3 = vZoneStarts3 + (pendingTodoZonePayload!!.start); false } else { raisePlatformError(TodoPeerEvent.Error.Execution, "<sce:append target='zoneStarts3'>: the list already holds its capacity of 64"); true }) {
+            if (if (vZoneStarts3.size < 64) { vZoneStarts3 = vZoneStarts3 + (pendingTodoZonePayload!!.start); false } else { raisePlatformError(TodoPeerEvent.Error.Execution, ErrorReason.ASSIGNMENT_FAILED, "<sce:append target='zoneStarts3'>: the list already holds its capacity of 64"); true }) {
                 return
             }
 
-            if (if (vZoneOffsets3.size < 64) { vZoneOffsets3 = vZoneOffsets3 + (pendingTodoZonePayload!!.offset); false } else { raisePlatformError(TodoPeerEvent.Error.Execution, "<sce:append target='zoneOffsets3'>: the list already holds its capacity of 64"); true }) {
+            if (if (vZoneOffsets3.size < 64) { vZoneOffsets3 = vZoneOffsets3 + (pendingTodoZonePayload!!.offset); false } else { raisePlatformError(TodoPeerEvent.Error.Execution, ErrorReason.ASSIGNMENT_FAILED, "<sce:append target='zoneOffsets3'>: the list already holds its capacity of 64"); true }) {
                 return
             }
             }
@@ -2057,11 +2057,11 @@ class TodoPeerStateMachine(
 
             if (pendingTodoZonePayload!!.zone == 4.toUByte()) {
 
-            if (if (vZoneStarts4.size < 64) { vZoneStarts4 = vZoneStarts4 + (pendingTodoZonePayload!!.start); false } else { raisePlatformError(TodoPeerEvent.Error.Execution, "<sce:append target='zoneStarts4'>: the list already holds its capacity of 64"); true }) {
+            if (if (vZoneStarts4.size < 64) { vZoneStarts4 = vZoneStarts4 + (pendingTodoZonePayload!!.start); false } else { raisePlatformError(TodoPeerEvent.Error.Execution, ErrorReason.ASSIGNMENT_FAILED, "<sce:append target='zoneStarts4'>: the list already holds its capacity of 64"); true }) {
                 return
             }
 
-            if (if (vZoneOffsets4.size < 64) { vZoneOffsets4 = vZoneOffsets4 + (pendingTodoZonePayload!!.offset); false } else { raisePlatformError(TodoPeerEvent.Error.Execution, "<sce:append target='zoneOffsets4'>: the list already holds its capacity of 64"); true }) {
+            if (if (vZoneOffsets4.size < 64) { vZoneOffsets4 = vZoneOffsets4 + (pendingTodoZonePayload!!.offset); false } else { raisePlatformError(TodoPeerEvent.Error.Execution, ErrorReason.ASSIGNMENT_FAILED, "<sce:append target='zoneOffsets4'>: the list already holds its capacity of 64"); true }) {
                 return
             }
             }
@@ -2090,7 +2090,7 @@ class TodoPeerStateMachine(
     private fun transitionContentOfOpenAt10() {
                 // SCE-MAP: todo_peer.scxml:614 :: open :: _transition_10
 
-            if (try { vRefusals = com.sce.forge.runtime.SceChecked.add(vRefusals, 1.toUInt()); false } catch (_: com.sce.forge.runtime.AlgorithmFailure) { raisePlatformError(TodoPeerEvent.Error.Execution, "<assign location='refusals'>: an integer operation overflowed or failed"); true }) {
+            if (try { vRefusals = com.sce.forge.runtime.SceChecked.add(vRefusals, 1.toUInt()); false } catch (_: com.sce.forge.runtime.AlgorithmFailure) { raisePlatformError(TodoPeerEvent.Error.Execution, ErrorReason.EXPRESSION_FAILED, "<assign location='refusals'>: an integer operation overflowed or failed"); true }) {
                 return
             }
     }

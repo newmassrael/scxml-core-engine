@@ -31,6 +31,7 @@ import (
 	"time"
 
 	sce "github.com/newmassrael/sce-go-runtime"
+	sceerrorreason "github.com/newmassrael/sce-go-runtime/generated/error_reason"
 )
 
 // Ensure imports are used
@@ -39,6 +40,9 @@ var (
 	_ = filepath.Join
 	_ = strings.HasPrefix
 	_ = time.Duration(0)
+	// Why an error.* event is raised (sce:std/engine/error_reason,
+	// docs/adr/0106 #111); a machine that raises none still imports it.
+	_ = sceerrorreason.ErrorReasonExpressionFailed
 )
 
 // ======================================================================
@@ -709,7 +713,7 @@ func (p *StatechartNativeActionPolicy) ExecuteTransitionContent(source Statechar
 		if p.pendingPayloadTag == StatechartNativeActionPayloadTagFragmentReceived {
 		p.actions.AppendFragmentPayload(p.pendingFragmentReceivedPayload.payload, p.pendingFragmentReceivedPayload.offset)
 	} else {
-		engine.Raise(sce.NewPlatformError(StatechartNativeActionEventErrorExecution, "<sce:action name='append_fragment_payload'> needs the typed payload of 'fragment.received', which this delivery did not carry"))
+		engine.Raise(sce.NewPlatformError(StatechartNativeActionEventErrorExecution, sceerrorreason.ErrorReasonPayloadRefused, "<sce:action name='append_fragment_payload'> needs the typed payload of 'fragment.received', which this delivery did not carry"))
 	}
 			}()
 		case 1:

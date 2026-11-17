@@ -422,8 +422,12 @@ public final class TypedReaderNamesPolicy: InvocablePolicy {
 
     /// Says what went wrong where the document can see it: `error.execution` on the internal
     /// queue (§scxml-5.9.1, 5.3).
-    private func raiseExecutionError(_ message: String, engine: Engine<TypedReaderNamesPolicy>) {
-        engine.raise(EventWithMetadata.platformError(TypedReaderNamesEvent.errorExecution, message: message))
+    /// `reason` is the code of sce:std/engine/error_reason the record carries
+    /// (docs/adr/0106 #111).
+    private func raiseExecutionError(
+        _ reason: ErrorReason, _ message: String, engine: Engine<TypedReaderNamesPolicy>
+    ) {
+        engine.raise(EventWithMetadata.platformError(TypedReaderNamesEvent.errorExecution, reason: reason, message: message))
     }
 
     /// W3C SCXML 5.3: the `<data id>` `id` takes the value of the lowered expression, or nil when it
@@ -480,6 +484,7 @@ public final class TypedReaderNamesPolicy: InvocablePolicy {
             }
         } catch {
             raiseExecutionError(
+                handed == nil ? .expressionFailed : .paramUnfit,
                 handed == nil
                     ? "<data id='\(id)'> expr failed to evaluate"
                     : "<data id='\(id)'> could not hold the value its parent handed it",
@@ -651,7 +656,7 @@ public final class TypedReaderNamesPolicy: InvocablePolicy {
             // this call the payload is lost to the document and to the host alike.
             engine.notePayloadReading(event, reading: Self.payloadReading(of: reading))
         } catch {
-            raiseExecutionError("_event could not be bound for '\(name)'", engine: engine)
+            raiseExecutionError(.payloadRefused, "_event could not be bound for '\(name)'", engine: engine)
         }
     }
 
@@ -688,7 +693,7 @@ public final class TypedReaderNamesPolicy: InvocablePolicy {
         do {
             return try scriptSession.evaluateCondition(condition, chunkName: "=cond")
         } catch {
-            raiseExecutionError("a \(element) cond failed to evaluate", engine: engine)
+            raiseExecutionError(.expressionFailed, "a \(element) cond failed to evaluate", engine: engine)
             failed = true
             return false
         }
@@ -783,28 +788,28 @@ public final class TypedReaderNamesPolicy: InvocablePolicy {
 
                 // W3C SCXML 5.4: <assign location="box">
                 if !assignData("box", "_scxml_add(box, 10)") {
-                    raiseExecutionError("<assign> to 'box' failed", engine: engine)
+                    raiseExecutionError(.assignmentFailed, "<assign> to 'box' failed", engine: engine)
                     break sceBlock  // W3C SCXML 4.9: the error ends the block
                 }
 
 
                 // W3C SCXML 5.4: <assign location="object">
                 if !assignData("object", "_scxml_add(object, 10)") {
-                    raiseExecutionError("<assign> to 'object' failed", engine: engine)
+                    raiseExecutionError(.assignmentFailed, "<assign> to 'object' failed", engine: engine)
                     break sceBlock  // W3C SCXML 4.9: the error ends the block
                 }
 
 
                 // W3C SCXML 5.4: <assign location="pass">
                 if !assignData("pass", "_scxml_add(pass, 10)") {
-                    raiseExecutionError("<assign> to 'pass' failed", engine: engine)
+                    raiseExecutionError(.assignmentFailed, "<assign> to 'pass' failed", engine: engine)
                     break sceBlock  // W3C SCXML 4.9: the error ends the block
                 }
 
 
                 // W3C SCXML 5.4: <assign location="a_b">
                 if !assignData("a_b", "_scxml_add(a_b, 10)") {
-                    raiseExecutionError("<assign> to 'a_b' failed", engine: engine)
+                    raiseExecutionError(.assignmentFailed, "<assign> to 'a_b' failed", engine: engine)
                     break sceBlock  // W3C SCXML 4.9: the error ends the block
                 }
 

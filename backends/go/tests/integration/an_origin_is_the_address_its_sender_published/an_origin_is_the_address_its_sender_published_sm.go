@@ -31,6 +31,7 @@ import (
 	"time"
 
 	sce "github.com/newmassrael/sce-go-runtime"
+	sceerrorreason "github.com/newmassrael/sce-go-runtime/generated/error_reason"
 )
 
 // Ensure imports are used
@@ -39,6 +40,9 @@ var (
 	_ = filepath.Join
 	_ = strings.HasPrefix
 	_ = time.Duration(0)
+	// Why an error.* event is raised (sce:std/engine/error_reason,
+	// docs/adr/0106 #111); a machine that raises none still imports it.
+	_ = sceerrorreason.ErrorReasonExpressionFailed
 )
 
 // ======================================================================
@@ -493,7 +497,7 @@ func (p *AnOriginIsTheAddressItsSenderPublishedPolicy) InitializeDataModel(eng *
 		if err == nil {
 			_ = engine.SetVariable(sessionID, "processor", result)
 		} else {
-			eng.Raise(sce.NewPlatformError(AnOriginIsTheAddressItsSenderPublishedEventErrorExecution, "<data id='processor'> expr failed to evaluate"))
+			eng.Raise(sce.NewPlatformError(AnOriginIsTheAddressItsSenderPublishedEventErrorExecution, sceerrorreason.ErrorReasonExpressionFailed, "<data id='processor'> expr failed to evaluate"))
 			_ = engine.SetVariable(sessionID, "processor", nil)
 		}
 	}
@@ -507,7 +511,7 @@ func (p *AnOriginIsTheAddressItsSenderPublishedPolicy) InitializeDataModel(eng *
 		if err == nil {
 			_ = engine.SetVariable(sessionID, "childLocation", result)
 		} else {
-			eng.Raise(sce.NewPlatformError(AnOriginIsTheAddressItsSenderPublishedEventErrorExecution, "<data id='childLocation'> expr failed to evaluate"))
+			eng.Raise(sce.NewPlatformError(AnOriginIsTheAddressItsSenderPublishedEventErrorExecution, sceerrorreason.ErrorReasonExpressionFailed, "<data id='childLocation'> expr failed to evaluate"))
 			_ = engine.SetVariable(sessionID, "childLocation", nil)
 		}
 	}
@@ -521,7 +525,7 @@ func (p *AnOriginIsTheAddressItsSenderPublishedPolicy) InitializeDataModel(eng *
 		if err == nil {
 			_ = engine.SetVariable(sessionID, "selfOk", result)
 		} else {
-			eng.Raise(sce.NewPlatformError(AnOriginIsTheAddressItsSenderPublishedEventErrorExecution, "<data id='selfOk'> expr failed to evaluate"))
+			eng.Raise(sce.NewPlatformError(AnOriginIsTheAddressItsSenderPublishedEventErrorExecution, sceerrorreason.ErrorReasonExpressionFailed, "<data id='selfOk'> expr failed to evaluate"))
 			_ = engine.SetVariable(sessionID, "selfOk", nil)
 		}
 	}
@@ -535,7 +539,7 @@ func (p *AnOriginIsTheAddressItsSenderPublishedPolicy) InitializeDataModel(eng *
 		if err == nil {
 			_ = engine.SetVariable(sessionID, "selfReplied", result)
 		} else {
-			eng.Raise(sce.NewPlatformError(AnOriginIsTheAddressItsSenderPublishedEventErrorExecution, "<data id='selfReplied'> expr failed to evaluate"))
+			eng.Raise(sce.NewPlatformError(AnOriginIsTheAddressItsSenderPublishedEventErrorExecution, sceerrorreason.ErrorReasonExpressionFailed, "<data id='selfReplied'> expr failed to evaluate"))
 			_ = engine.SetVariable(sessionID, "selfReplied", nil)
 		}
 	}
@@ -549,7 +553,7 @@ func (p *AnOriginIsTheAddressItsSenderPublishedPolicy) InitializeDataModel(eng *
 		if err == nil {
 			_ = engine.SetVariable(sessionID, "childOk", result)
 		} else {
-			eng.Raise(sce.NewPlatformError(AnOriginIsTheAddressItsSenderPublishedEventErrorExecution, "<data id='childOk'> expr failed to evaluate"))
+			eng.Raise(sce.NewPlatformError(AnOriginIsTheAddressItsSenderPublishedEventErrorExecution, sceerrorreason.ErrorReasonExpressionFailed, "<data id='childOk'> expr failed to evaluate"))
 			_ = engine.SetVariable(sessionID, "childOk", nil)
 		}
 	}
@@ -563,7 +567,7 @@ func (p *AnOriginIsTheAddressItsSenderPublishedPolicy) InitializeDataModel(eng *
 		if err == nil {
 			_ = engine.SetVariable(sessionID, "childReplied", result)
 		} else {
-			eng.Raise(sce.NewPlatformError(AnOriginIsTheAddressItsSenderPublishedEventErrorExecution, "<data id='childReplied'> expr failed to evaluate"))
+			eng.Raise(sce.NewPlatformError(AnOriginIsTheAddressItsSenderPublishedEventErrorExecution, sceerrorreason.ErrorReasonExpressionFailed, "<data id='childReplied'> expr failed to evaluate"))
 			_ = engine.SetVariable(sessionID, "childReplied", nil)
 		}
 	}
@@ -577,7 +581,7 @@ func (p *AnOriginIsTheAddressItsSenderPublishedPolicy) InitializeDataModel(eng *
 		if err == nil {
 			_ = engine.SetVariable(sessionID, "parentOk", result)
 		} else {
-			eng.Raise(sce.NewPlatformError(AnOriginIsTheAddressItsSenderPublishedEventErrorExecution, "<data id='parentOk'> expr failed to evaluate"))
+			eng.Raise(sce.NewPlatformError(AnOriginIsTheAddressItsSenderPublishedEventErrorExecution, sceerrorreason.ErrorReasonExpressionFailed, "<data id='parentOk'> expr failed to evaluate"))
 			_ = engine.SetVariable(sessionID, "parentOk", nil)
 		}
 	}
@@ -591,7 +595,7 @@ func (p *AnOriginIsTheAddressItsSenderPublishedPolicy) InitializeDataModel(eng *
 		if err == nil {
 			_ = engine.SetVariable(sessionID, "parentReplied", result)
 		} else {
-			eng.Raise(sce.NewPlatformError(AnOriginIsTheAddressItsSenderPublishedEventErrorExecution, "<data id='parentReplied'> expr failed to evaluate"))
+			eng.Raise(sce.NewPlatformError(AnOriginIsTheAddressItsSenderPublishedEventErrorExecution, sceerrorreason.ErrorReasonExpressionFailed, "<data id='parentReplied'> expr failed to evaluate"))
 			_ = engine.SetVariable(sessionID, "parentReplied", nil)
 		}
 	}
@@ -623,12 +627,12 @@ func (p *AnOriginIsTheAddressItsSenderPublishedPolicy) evaluateIfCond(guard stri
 // evaluateGuardRaising evaluates a cond, raising error.execution when it cannot
 // be evaluated (W3C SCXML 5.9.1); ok is false then, where a bare false could
 // not say so.
-func (p *AnOriginIsTheAddressItsSenderPublishedPolicy) evaluateGuardRaising(guard string, eng *sce.Engine[AnOriginIsTheAddressItsSenderPublishedState, AnOriginIsTheAddressItsSenderPublishedEvent], reason string) (value bool, ok bool) {
+func (p *AnOriginIsTheAddressItsSenderPublishedPolicy) evaluateGuardRaising(guard string, eng *sce.Engine[AnOriginIsTheAddressItsSenderPublishedState, AnOriginIsTheAddressItsSenderPublishedEvent], detail string) (value bool, ok bool) {
 	p.assertScriptSession()
 	engine := p.ScriptEngine
 	result, err := engine.EvaluateExpression(p.SessionID, guard)
 	if err != nil {
-		eng.Raise(sce.NewPlatformError(AnOriginIsTheAddressItsSenderPublishedEventErrorExecution, reason))
+		eng.Raise(sce.NewPlatformError(AnOriginIsTheAddressItsSenderPublishedEventErrorExecution, sceerrorreason.ErrorReasonExpressionFailed, detail))
 		return false, false
 	}
 	return sce.ScriptToBool(result), true
@@ -731,7 +735,7 @@ func (p *AnOriginIsTheAddressItsSenderPublishedPolicy) SetParamValueInScriptEngi
 // failed is left (docs/adr/0098).
 func (p *AnOriginIsTheAddressItsSenderPublishedPolicy) declareHandedValue(eng *sce.Engine[AnOriginIsTheAddressItsSenderPublishedState, AnOriginIsTheAddressItsSenderPublishedEvent], engine sce.IScriptEngine, sessionID, name string, value interface{}) {
 	if err := engine.SetVariable(sessionID, name, value); err != nil {
-		eng.Raise(sce.NewPlatformError(AnOriginIsTheAddressItsSenderPublishedEventErrorExecution, "<data id='"+name+"'> could not hold the value its invoking session handed it"))
+		eng.Raise(sce.NewPlatformError(AnOriginIsTheAddressItsSenderPublishedEventErrorExecution, sceerrorreason.ErrorReasonDataInitFailed, "<data id='"+name+"'> could not hold the value its invoking session handed it"))
 		_ = engine.SetVariable(sessionID, name, nil)
 	}
 }
@@ -808,7 +812,7 @@ func (p *AnOriginIsTheAddressItsSenderPublishedPolicy) ExecutePendingInvokes(eng
 			if refused := childEngine.Initialize(); refused != nil {
 				childEngine.DetachMesh()
 				delete(p.activeInvokes, "kid")
-				engine.Raise(sce.NewPlatformError(AnOriginIsTheAddressItsSenderPublishedEventErrorExecution, sce.ChildStartRefusal("kid", refused)))
+				engine.Raise(sce.NewPlatformError(AnOriginIsTheAddressItsSenderPublishedEventErrorExecution, sceerrorreason.ErrorReasonInvokeChildInitFailed, sce.ChildStartRefusal("kid", refused)))
 				continue
 			}
 
@@ -1487,7 +1491,7 @@ func (p *AnOriginIsTheAddressItsSenderPublishedPolicy) ExecuteTransitionContent(
 
 	// W3C SCXML 5.3: <assign location="childOk" expr="1">
 	if err := p.assignVariable(`childOk`, `1`); err != nil {
-		engine.Raise(sce.NewPlatformError(AnOriginIsTheAddressItsSenderPublishedEventErrorExecution, "<assign> to 'childOk' failed"))
+		engine.Raise(sce.NewPlatformError(AnOriginIsTheAddressItsSenderPublishedEventErrorExecution, sceerrorreason.ErrorReasonAssignmentFailed, "<assign> to 'childOk' failed"))
 		return  // W3C SCXML 4.9: the error ends the block
 	}
 
@@ -1500,7 +1504,7 @@ func (p *AnOriginIsTheAddressItsSenderPublishedPolicy) ExecuteTransitionContent(
 
 	// W3C SCXML 5.3: <assign location="childLocation" expr="_event.origin">
 	if err := p.assignVariable(`childLocation`, `_event.origin`); err != nil {
-		engine.Raise(sce.NewPlatformError(AnOriginIsTheAddressItsSenderPublishedEventErrorExecution, "<assign> to 'childLocation' failed"))
+		engine.Raise(sce.NewPlatformError(AnOriginIsTheAddressItsSenderPublishedEventErrorExecution, sceerrorreason.ErrorReasonAssignmentFailed, "<assign> to 'childLocation' failed"))
 		return  // W3C SCXML 4.9: the error ends the block
 	}
 
@@ -1509,6 +1513,10 @@ func (p *AnOriginIsTheAddressItsSenderPublishedPolicy) ExecuteTransitionContent(
 	{
 	p.assertScriptSession()
 	sendArgError := ""
+	// Why the argument failed, a code of sce:std/engine/error_reason
+	// (docs/adr/0106 #111), set with every sentence below.
+	var sendArgReason sce.ErrorReason
+	_ = sendArgReason
 	// A target that evaluates to nothing is not an evaluation error: it is
 	// an address nobody answers at, which the arm reports as
 	// error.communication (W3C SCXML 6.2.4).
@@ -1519,13 +1527,13 @@ func (p *AnOriginIsTheAddressItsSenderPublishedPolicy) ExecuteTransitionContent(
 			sendTargetVal = v
 			sendTarget = sce.ToWireString(v)
 		} else {
-			sendArgError = "<send> targetexpr could not be evaluated"
+			sendArgError, sendArgReason = "<send> targetexpr could not be evaluated", sceerrorreason.ErrorReasonExpressionFailed
 		}
 	}
 	if sendArgError == "" && sce.IsInvalidTarget(sendTarget) {
 		// W3C SCXML 6.2: a target this processor cannot address is refused
 		// as a static one is, before anything is delivered.
-		sendArgError = "<send> targetexpr produced a target this processor cannot address"
+		sendArgError, sendArgReason = "<send> targetexpr produced a target this processor cannot address", sceerrorreason.ErrorReasonSendTargetInvalid
 	}
 	_ = sendTargetVal
 	_ = sendTarget
@@ -1533,13 +1541,13 @@ func (p *AnOriginIsTheAddressItsSenderPublishedPolicy) ExecuteTransitionContent(
 		// W3C SCXML 6.2: a type the platform does not support is the same
 		// error as one that cannot be evaluated.
 		if v, err := p.ScriptEngine.EvaluateExpression(p.SessionID, `_event.origintype`); err != nil {
-			sendArgError = "<send> typeexpr could not be evaluated"
+			sendArgError, sendArgReason = "<send> typeexpr could not be evaluated", sceerrorreason.ErrorReasonExpressionFailed
 		} else if !sce.IsSupportedSendType(sce.ToWireString(v)) {
-			sendArgError = "<send> typeexpr names a processor this platform does not support"
+			sendArgError, sendArgReason = "<send> typeexpr names a processor this platform does not support", sceerrorreason.ErrorReasonSendTypeUnsupported
 		}
 	}
 	if sendArgError != "" {
-		errEvt := sce.NewPlatformError(AnOriginIsTheAddressItsSenderPublishedEventErrorExecution, sendArgError)
+		errEvt := sce.NewPlatformError(AnOriginIsTheAddressItsSenderPublishedEventErrorExecution, sendArgReason, sendArgError)
 		errEvt.Metadata.SendID = "__send_2"
 		engine.Raise(errEvt)
 		return  // W3C SCXML 4.9: the error ends the block
@@ -1551,7 +1559,7 @@ func (p *AnOriginIsTheAddressItsSenderPublishedPolicy) ExecuteTransitionContent(
 		// ends the block as any other would (W3C SCXML 4.9). A self-sent
 		// event names its origin, so `targetexpr="_event.origin"` (test336)
 		// reads this session's location, never "".
-		errEvt := sce.NewPlatformError(AnOriginIsTheAddressItsSenderPublishedEventErrorCommunication, "<send> targetexpr evaluated to nothing, so there is no target to reach")
+		errEvt := sce.NewPlatformError(AnOriginIsTheAddressItsSenderPublishedEventErrorCommunication, sceerrorreason.ErrorReasonTargetUnreachable, "<send> targetexpr evaluated to nothing, so there is no target to reach")
 		errEvt.Metadata.SendID = "__send_2"
 		engine.Raise(errEvt)
 		return
@@ -1568,13 +1576,13 @@ func (p *AnOriginIsTheAddressItsSenderPublishedPolicy) ExecuteTransitionContent(
 		routed := engine.SendToTarget(sendEvt, sendHasEvt, "welcome", sendTarget, p.SessionID,
 0, "__send_2", eventDataStr, p.SessionID)
 		if routed == sce.TargetNotSupported {
-			errEvt := sce.NewPlatformError(AnOriginIsTheAddressItsSenderPublishedEventErrorExecution, "<send> targetexpr produced a value that is not a target")
+			errEvt := sce.NewPlatformError(AnOriginIsTheAddressItsSenderPublishedEventErrorExecution, sceerrorreason.ErrorReasonSendTargetInvalid, "<send> targetexpr produced a value that is not a target")
 			errEvt.Metadata.SendID = "__send_2"
 			engine.Raise(errEvt)
 			return // W3C SCXML 4.9: the error ends the block
 		}
 		if routed == sce.TargetNotReachable {
-			errEvt := sce.NewPlatformError(AnOriginIsTheAddressItsSenderPublishedEventErrorCommunication, "<send> targetexpr names a session this processor cannot reach")
+			errEvt := sce.NewPlatformError(AnOriginIsTheAddressItsSenderPublishedEventErrorCommunication, sceerrorreason.ErrorReasonTargetUnreachable, "<send> targetexpr names a session this processor cannot reach")
 			errEvt.Metadata.SendID = "__send_2"
 			engine.Raise(errEvt)
 			return // W3C SCXML 4.9: the error ends the block
@@ -1593,7 +1601,7 @@ func (p *AnOriginIsTheAddressItsSenderPublishedPolicy) ExecuteTransitionContent(
 
 	// W3C SCXML 5.3: <assign location="parentOk" expr="1">
 	if err := p.assignVariable(`parentOk`, `1`); err != nil {
-		engine.Raise(sce.NewPlatformError(AnOriginIsTheAddressItsSenderPublishedEventErrorExecution, "<assign> to 'parentOk' failed"))
+		engine.Raise(sce.NewPlatformError(AnOriginIsTheAddressItsSenderPublishedEventErrorExecution, sceerrorreason.ErrorReasonAssignmentFailed, "<assign> to 'parentOk' failed"))
 		return  // W3C SCXML 4.9: the error ends the block
 	}
 
@@ -1604,7 +1612,7 @@ func (p *AnOriginIsTheAddressItsSenderPublishedPolicy) ExecuteTransitionContent(
 
 	// W3C SCXML 5.3: <assign location="parentReplied" expr="1">
 	if err := p.assignVariable(`parentReplied`, `1`); err != nil {
-		engine.Raise(sce.NewPlatformError(AnOriginIsTheAddressItsSenderPublishedEventErrorExecution, "<assign> to 'parentReplied' failed"))
+		engine.Raise(sce.NewPlatformError(AnOriginIsTheAddressItsSenderPublishedEventErrorExecution, sceerrorreason.ErrorReasonAssignmentFailed, "<assign> to 'parentReplied' failed"))
 		return  // W3C SCXML 4.9: the error ends the block
 	}
 
@@ -1625,7 +1633,7 @@ func (p *AnOriginIsTheAddressItsSenderPublishedPolicy) ExecuteTransitionContent(
 
 	// W3C SCXML 5.3: <assign location="childReplied" expr="1">
 	if err := p.assignVariable(`childReplied`, `1`); err != nil {
-		engine.Raise(sce.NewPlatformError(AnOriginIsTheAddressItsSenderPublishedEventErrorExecution, "<assign> to 'childReplied' failed"))
+		engine.Raise(sce.NewPlatformError(AnOriginIsTheAddressItsSenderPublishedEventErrorExecution, sceerrorreason.ErrorReasonAssignmentFailed, "<assign> to 'childReplied' failed"))
 		return  // W3C SCXML 4.9: the error ends the block
 	}
 
@@ -1648,7 +1656,7 @@ func (p *AnOriginIsTheAddressItsSenderPublishedPolicy) ExecuteTransitionContent(
 		if paramVal, paramErr := se.EvaluateExpression(p.SessionID, `_ioprocessors.scxml.location`); paramErr == nil {
 			parts = append(parts, sce.EventDataParam{Name: "location", Value: paramVal})
 		} else {
-			engine.Raise(sce.NewPlatformError(AnOriginIsTheAddressItsSenderPublishedEventErrorExecution, "<send> <param name='location'> expr failed to evaluate"))
+			engine.Raise(sce.NewPlatformError(AnOriginIsTheAddressItsSenderPublishedEventErrorExecution, sceerrorreason.ErrorReasonExpressionFailed, "<send> <param name='location'> expr failed to evaluate"))
 			paramFailed = true
 		}
 		eventDataStr := sce.BuildJSONFromTypedParams(parts)
@@ -1667,7 +1675,7 @@ func (p *AnOriginIsTheAddressItsSenderPublishedPolicy) ExecuteTransitionContent(
 	} else {
 		// W3C SCXML C.1: the invocation is not running, so the session the
 		// target names is not there to reach.
-		errEvt := sce.NewPlatformError(AnOriginIsTheAddressItsSenderPublishedEventErrorCommunication, "<send target='#_kid'> names an invocation that is not running")
+		errEvt := sce.NewPlatformError(AnOriginIsTheAddressItsSenderPublishedEventErrorCommunication, sceerrorreason.ErrorReasonTargetUnreachable, "<send target='#_kid'> names an invocation that is not running")
 		errEvt.Metadata.SendID = "__send_3"
 		engine.Raise(errEvt)
 		return
@@ -1694,7 +1702,7 @@ func (p *AnOriginIsTheAddressItsSenderPublishedPolicy) ExecuteTransitionContent(
 
 	// W3C SCXML 5.3: <assign location="selfOk" expr="1">
 	if err := p.assignVariable(`selfOk`, `1`); err != nil {
-		engine.Raise(sce.NewPlatformError(AnOriginIsTheAddressItsSenderPublishedEventErrorExecution, "<assign> to 'selfOk' failed"))
+		engine.Raise(sce.NewPlatformError(AnOriginIsTheAddressItsSenderPublishedEventErrorExecution, sceerrorreason.ErrorReasonAssignmentFailed, "<assign> to 'selfOk' failed"))
 		return  // W3C SCXML 4.9: the error ends the block
 	}
 
@@ -1709,6 +1717,10 @@ func (p *AnOriginIsTheAddressItsSenderPublishedPolicy) ExecuteTransitionContent(
 	{
 	p.assertScriptSession()
 	sendArgError := ""
+	// Why the argument failed, a code of sce:std/engine/error_reason
+	// (docs/adr/0106 #111), set with every sentence below.
+	var sendArgReason sce.ErrorReason
+	_ = sendArgReason
 	// A target that evaluates to nothing is not an evaluation error: it is
 	// an address nobody answers at, which the arm reports as
 	// error.communication (W3C SCXML 6.2.4).
@@ -1719,13 +1731,13 @@ func (p *AnOriginIsTheAddressItsSenderPublishedPolicy) ExecuteTransitionContent(
 			sendTargetVal = v
 			sendTarget = sce.ToWireString(v)
 		} else {
-			sendArgError = "<send> targetexpr could not be evaluated"
+			sendArgError, sendArgReason = "<send> targetexpr could not be evaluated", sceerrorreason.ErrorReasonExpressionFailed
 		}
 	}
 	if sendArgError == "" && sce.IsInvalidTarget(sendTarget) {
 		// W3C SCXML 6.2: a target this processor cannot address is refused
 		// as a static one is, before anything is delivered.
-		sendArgError = "<send> targetexpr produced a target this processor cannot address"
+		sendArgError, sendArgReason = "<send> targetexpr produced a target this processor cannot address", sceerrorreason.ErrorReasonSendTargetInvalid
 	}
 	_ = sendTargetVal
 	_ = sendTarget
@@ -1733,13 +1745,13 @@ func (p *AnOriginIsTheAddressItsSenderPublishedPolicy) ExecuteTransitionContent(
 		// W3C SCXML 6.2: a type the platform does not support is the same
 		// error as one that cannot be evaluated.
 		if v, err := p.ScriptEngine.EvaluateExpression(p.SessionID, `_event.origintype`); err != nil {
-			sendArgError = "<send> typeexpr could not be evaluated"
+			sendArgError, sendArgReason = "<send> typeexpr could not be evaluated", sceerrorreason.ErrorReasonExpressionFailed
 		} else if !sce.IsSupportedSendType(sce.ToWireString(v)) {
-			sendArgError = "<send> typeexpr names a processor this platform does not support"
+			sendArgError, sendArgReason = "<send> typeexpr names a processor this platform does not support", sceerrorreason.ErrorReasonSendTypeUnsupported
 		}
 	}
 	if sendArgError != "" {
-		errEvt := sce.NewPlatformError(AnOriginIsTheAddressItsSenderPublishedEventErrorExecution, sendArgError)
+		errEvt := sce.NewPlatformError(AnOriginIsTheAddressItsSenderPublishedEventErrorExecution, sendArgReason, sendArgError)
 		errEvt.Metadata.SendID = "__send_0"
 		engine.Raise(errEvt)
 		return  // W3C SCXML 4.9: the error ends the block
@@ -1751,7 +1763,7 @@ func (p *AnOriginIsTheAddressItsSenderPublishedPolicy) ExecuteTransitionContent(
 		// ends the block as any other would (W3C SCXML 4.9). A self-sent
 		// event names its origin, so `targetexpr="_event.origin"` (test336)
 		// reads this session's location, never "".
-		errEvt := sce.NewPlatformError(AnOriginIsTheAddressItsSenderPublishedEventErrorCommunication, "<send> targetexpr evaluated to nothing, so there is no target to reach")
+		errEvt := sce.NewPlatformError(AnOriginIsTheAddressItsSenderPublishedEventErrorCommunication, sceerrorreason.ErrorReasonTargetUnreachable, "<send> targetexpr evaluated to nothing, so there is no target to reach")
 		errEvt.Metadata.SendID = "__send_0"
 		engine.Raise(errEvt)
 		return
@@ -1768,13 +1780,13 @@ func (p *AnOriginIsTheAddressItsSenderPublishedPolicy) ExecuteTransitionContent(
 		routed := engine.SendToTarget(sendEvt, sendHasEvt, "pong", sendTarget, p.SessionID,
 0, "__send_0", eventDataStr, p.SessionID)
 		if routed == sce.TargetNotSupported {
-			errEvt := sce.NewPlatformError(AnOriginIsTheAddressItsSenderPublishedEventErrorExecution, "<send> targetexpr produced a value that is not a target")
+			errEvt := sce.NewPlatformError(AnOriginIsTheAddressItsSenderPublishedEventErrorExecution, sceerrorreason.ErrorReasonSendTargetInvalid, "<send> targetexpr produced a value that is not a target")
 			errEvt.Metadata.SendID = "__send_0"
 			engine.Raise(errEvt)
 			return // W3C SCXML 4.9: the error ends the block
 		}
 		if routed == sce.TargetNotReachable {
-			errEvt := sce.NewPlatformError(AnOriginIsTheAddressItsSenderPublishedEventErrorCommunication, "<send> targetexpr names a session this processor cannot reach")
+			errEvt := sce.NewPlatformError(AnOriginIsTheAddressItsSenderPublishedEventErrorCommunication, sceerrorreason.ErrorReasonTargetUnreachable, "<send> targetexpr names a session this processor cannot reach")
 			errEvt.Metadata.SendID = "__send_0"
 			engine.Raise(errEvt)
 			return // W3C SCXML 4.9: the error ends the block
@@ -1793,7 +1805,7 @@ func (p *AnOriginIsTheAddressItsSenderPublishedPolicy) ExecuteTransitionContent(
 
 	// W3C SCXML 5.3: <assign location="selfReplied" expr="1">
 	if err := p.assignVariable(`selfReplied`, `1`); err != nil {
-		engine.Raise(sce.NewPlatformError(AnOriginIsTheAddressItsSenderPublishedEventErrorExecution, "<assign> to 'selfReplied' failed"))
+		engine.Raise(sce.NewPlatformError(AnOriginIsTheAddressItsSenderPublishedEventErrorExecution, sceerrorreason.ErrorReasonAssignmentFailed, "<assign> to 'selfReplied' failed"))
 		return  // W3C SCXML 4.9: the error ends the block
 	}
 

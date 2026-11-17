@@ -31,6 +31,7 @@ import (
 	"time"
 
 	sce "github.com/newmassrael/sce-go-runtime"
+	sceerrorreason "github.com/newmassrael/sce-go-runtime/generated/error_reason"
 )
 
 // Ensure imports are used
@@ -39,6 +40,9 @@ var (
 	_ = filepath.Join
 	_ = strings.HasPrefix
 	_ = time.Duration(0)
+	// Why an error.* event is raised (sce:std/engine/error_reason,
+	// docs/adr/0106 #111); a machine that raises none still imports it.
+	_ = sceerrorreason.ErrorReasonExpressionFailed
 )
 
 // ======================================================================
@@ -324,7 +328,7 @@ func (p *InvokeExpressionFailureIsReportedPolicy) InitializeDataModel(eng *sce.E
 		if err == nil {
 			_ = engine.SetVariable(sessionID, "target", result)
 		} else {
-			eng.Raise(sce.NewPlatformError(InvokeExpressionFailureIsReportedEventErrorExecution, "<data id='target'> expr failed to evaluate"))
+			eng.Raise(sce.NewPlatformError(InvokeExpressionFailureIsReportedEventErrorExecution, sceerrorreason.ErrorReasonExpressionFailed, "<data id='target'> expr failed to evaluate"))
 			_ = engine.SetVariable(sessionID, "target", nil)
 		}
 	}
@@ -356,12 +360,12 @@ func (p *InvokeExpressionFailureIsReportedPolicy) evaluateIfCond(guard string, e
 // evaluateGuardRaising evaluates a cond, raising error.execution when it cannot
 // be evaluated (W3C SCXML 5.9.1); ok is false then, where a bare false could
 // not say so.
-func (p *InvokeExpressionFailureIsReportedPolicy) evaluateGuardRaising(guard string, eng *sce.Engine[InvokeExpressionFailureIsReportedState, InvokeExpressionFailureIsReportedEvent], reason string) (value bool, ok bool) {
+func (p *InvokeExpressionFailureIsReportedPolicy) evaluateGuardRaising(guard string, eng *sce.Engine[InvokeExpressionFailureIsReportedState, InvokeExpressionFailureIsReportedEvent], detail string) (value bool, ok bool) {
 	p.assertScriptSession()
 	engine := p.ScriptEngine
 	result, err := engine.EvaluateExpression(p.SessionID, guard)
 	if err != nil {
-		eng.Raise(sce.NewPlatformError(InvokeExpressionFailureIsReportedEventErrorExecution, reason))
+		eng.Raise(sce.NewPlatformError(InvokeExpressionFailureIsReportedEventErrorExecution, sceerrorreason.ErrorReasonExpressionFailed, detail))
 		return false, false
 	}
 	return sce.ScriptToBool(result), true
@@ -464,7 +468,7 @@ func (p *InvokeExpressionFailureIsReportedPolicy) SetParamValueInScriptEngine(na
 // failed is left (docs/adr/0098).
 func (p *InvokeExpressionFailureIsReportedPolicy) declareHandedValue(eng *sce.Engine[InvokeExpressionFailureIsReportedState, InvokeExpressionFailureIsReportedEvent], engine sce.IScriptEngine, sessionID, name string, value interface{}) {
 	if err := engine.SetVariable(sessionID, name, value); err != nil {
-		eng.Raise(sce.NewPlatformError(InvokeExpressionFailureIsReportedEventErrorExecution, "<data id='"+name+"'> could not hold the value its invoking session handed it"))
+		eng.Raise(sce.NewPlatformError(InvokeExpressionFailureIsReportedEventErrorExecution, sceerrorreason.ErrorReasonDataInitFailed, "<data id='"+name+"'> could not hold the value its invoking session handed it"))
 		_ = engine.SetVariable(sessionID, name, nil)
 	}
 }
@@ -489,7 +493,7 @@ func (p *InvokeExpressionFailureIsReportedPolicy) ExecutePendingInvokes(engine *
 			{
 				se := p.ScriptEngine
 				if _, err := se.EvaluateExpression(p.SessionID, `target.path`); err != nil {
-					engine.Raise(sce.NewPlatformError(InvokeExpressionFailureIsReportedEventErrorExecution, "<invoke srcexpr='target.path'> could not be evaluated"))
+					engine.Raise(sce.NewPlatformError(InvokeExpressionFailureIsReportedEventErrorExecution, sceerrorreason.ErrorReasonExpressionFailed, "<invoke srcexpr='target.path'> could not be evaluated"))
 					continue
 				}
 			}
@@ -546,7 +550,7 @@ func (p *InvokeExpressionFailureIsReportedPolicy) ExecutePendingInvokes(engine *
 			if refused := childEngine.Initialize(); refused != nil {
 				childEngine.DetachMesh()
 				delete(p.activeInvokes, "_invoke_0")
-				engine.Raise(sce.NewPlatformError(InvokeExpressionFailureIsReportedEventErrorExecution, sce.ChildStartRefusal("_invoke_0", refused)))
+				engine.Raise(sce.NewPlatformError(InvokeExpressionFailureIsReportedEventErrorExecution, sceerrorreason.ErrorReasonInvokeChildInitFailed, sce.ChildStartRefusal("_invoke_0", refused)))
 				continue
 			}
 

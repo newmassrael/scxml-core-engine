@@ -31,6 +31,7 @@ import (
 	"time"
 
 	sce "github.com/newmassrael/sce-go-runtime"
+	sceerrorreason "github.com/newmassrael/sce-go-runtime/generated/error_reason"
 )
 
 // Ensure imports are used
@@ -39,6 +40,9 @@ var (
 	_ = filepath.Join
 	_ = strings.HasPrefix
 	_ = time.Duration(0)
+	// Why an error.* event is raised (sce:std/engine/error_reason,
+	// docs/adr/0106 #111); a machine that raises none still imports it.
+	_ = sceerrorreason.ErrorReasonExpressionFailed
 )
 
 // ======================================================================
@@ -349,7 +353,7 @@ func (p *EventTypeNamesItsQueuePolicy) InitializeDataModel(eng *sce.Engine[Event
 		if err == nil {
 			_ = engine.SetVariable(sessionID, "intCode", result)
 		} else {
-			eng.Raise(sce.NewPlatformError(EventTypeNamesItsQueueEventErrorExecution, "<data id='intCode'> expr failed to evaluate"))
+			eng.Raise(sce.NewPlatformError(EventTypeNamesItsQueueEventErrorExecution, sceerrorreason.ErrorReasonExpressionFailed, "<data id='intCode'> expr failed to evaluate"))
 			_ = engine.SetVariable(sessionID, "intCode", nil)
 		}
 	}
@@ -363,7 +367,7 @@ func (p *EventTypeNamesItsQueuePolicy) InitializeDataModel(eng *sce.Engine[Event
 		if err == nil {
 			_ = engine.SetVariable(sessionID, "sendCode", result)
 		} else {
-			eng.Raise(sce.NewPlatformError(EventTypeNamesItsQueueEventErrorExecution, "<data id='sendCode'> expr failed to evaluate"))
+			eng.Raise(sce.NewPlatformError(EventTypeNamesItsQueueEventErrorExecution, sceerrorreason.ErrorReasonExpressionFailed, "<data id='sendCode'> expr failed to evaluate"))
 			_ = engine.SetVariable(sessionID, "sendCode", nil)
 		}
 	}
@@ -377,7 +381,7 @@ func (p *EventTypeNamesItsQueuePolicy) InitializeDataModel(eng *sce.Engine[Event
 		if err == nil {
 			_ = engine.SetVariable(sessionID, "extCode", result)
 		} else {
-			eng.Raise(sce.NewPlatformError(EventTypeNamesItsQueueEventErrorExecution, "<data id='extCode'> expr failed to evaluate"))
+			eng.Raise(sce.NewPlatformError(EventTypeNamesItsQueueEventErrorExecution, sceerrorreason.ErrorReasonExpressionFailed, "<data id='extCode'> expr failed to evaluate"))
 			_ = engine.SetVariable(sessionID, "extCode", nil)
 		}
 	}
@@ -409,12 +413,12 @@ func (p *EventTypeNamesItsQueuePolicy) evaluateIfCond(guard string, eng *sce.Eng
 // evaluateGuardRaising evaluates a cond, raising error.execution when it cannot
 // be evaluated (W3C SCXML 5.9.1); ok is false then, where a bare false could
 // not say so.
-func (p *EventTypeNamesItsQueuePolicy) evaluateGuardRaising(guard string, eng *sce.Engine[EventTypeNamesItsQueueState, EventTypeNamesItsQueueEvent], reason string) (value bool, ok bool) {
+func (p *EventTypeNamesItsQueuePolicy) evaluateGuardRaising(guard string, eng *sce.Engine[EventTypeNamesItsQueueState, EventTypeNamesItsQueueEvent], detail string) (value bool, ok bool) {
 	p.assertScriptSession()
 	engine := p.ScriptEngine
 	result, err := engine.EvaluateExpression(p.SessionID, guard)
 	if err != nil {
-		eng.Raise(sce.NewPlatformError(EventTypeNamesItsQueueEventErrorExecution, reason))
+		eng.Raise(sce.NewPlatformError(EventTypeNamesItsQueueEventErrorExecution, sceerrorreason.ErrorReasonExpressionFailed, detail))
 		return false, false
 	}
 	return sce.ScriptToBool(result), true
@@ -517,7 +521,7 @@ func (p *EventTypeNamesItsQueuePolicy) SetParamValueInScriptEngine(name string, 
 // failed is left (docs/adr/0098).
 func (p *EventTypeNamesItsQueuePolicy) declareHandedValue(eng *sce.Engine[EventTypeNamesItsQueueState, EventTypeNamesItsQueueEvent], engine sce.IScriptEngine, sessionID, name string, value interface{}) {
 	if err := engine.SetVariable(sessionID, name, value); err != nil {
-		eng.Raise(sce.NewPlatformError(EventTypeNamesItsQueueEventErrorExecution, "<data id='"+name+"'> could not hold the value its invoking session handed it"))
+		eng.Raise(sce.NewPlatformError(EventTypeNamesItsQueueEventErrorExecution, sceerrorreason.ErrorReasonDataInitFailed, "<data id='"+name+"'> could not hold the value its invoking session handed it"))
 		_ = engine.SetVariable(sessionID, name, nil)
 	}
 }
@@ -807,7 +811,7 @@ func (p *EventTypeNamesItsQueuePolicy) ExecuteEntryActions(state EventTypeNamesI
 		if paramVal, paramErr := se.EvaluateExpression(p.SessionID, `1`); paramErr == nil {
 			parts = append(parts, sce.EventDataParam{Name: "a", Value: paramVal})
 		} else {
-			engine.Raise(sce.NewPlatformError(EventTypeNamesItsQueueEventErrorExecution, "<send> <param name='a'> expr failed to evaluate"))
+			engine.Raise(sce.NewPlatformError(EventTypeNamesItsQueueEventErrorExecution, sceerrorreason.ErrorReasonExpressionFailed, "<send> <param name='a'> expr failed to evaluate"))
 			paramFailed = true
 		}
 		eventDataStr := sce.BuildJSONFromTypedParams(parts)
@@ -944,7 +948,7 @@ func (p *EventTypeNamesItsQueuePolicy) ExecuteTransitionContent(source EventType
 
 	// W3C SCXML 5.3: <assign location="intCode" expr="1">
 	if err := p.assignVariable(`intCode`, `1`); err != nil {
-		engine.Raise(sce.NewPlatformError(EventTypeNamesItsQueueEventErrorExecution, "<assign> to 'intCode' failed"))
+		engine.Raise(sce.NewPlatformError(EventTypeNamesItsQueueEventErrorExecution, sceerrorreason.ErrorReasonAssignmentFailed, "<assign> to 'intCode' failed"))
 		return  // W3C SCXML 4.9: the error ends the block
 	}
 
@@ -952,7 +956,7 @@ func (p *EventTypeNamesItsQueuePolicy) ExecuteTransitionContent(source EventType
 
 	// W3C SCXML 5.3: <assign location="intCode" expr="2">
 	if err := p.assignVariable(`intCode`, `2`); err != nil {
-		engine.Raise(sce.NewPlatformError(EventTypeNamesItsQueueEventErrorExecution, "<assign> to 'intCode' failed"))
+		engine.Raise(sce.NewPlatformError(EventTypeNamesItsQueueEventErrorExecution, sceerrorreason.ErrorReasonAssignmentFailed, "<assign> to 'intCode' failed"))
 		return  // W3C SCXML 4.9: the error ends the block
 	}
 
@@ -960,7 +964,7 @@ func (p *EventTypeNamesItsQueuePolicy) ExecuteTransitionContent(source EventType
 
 	// W3C SCXML 5.3: <assign location="intCode" expr="3">
 	if err := p.assignVariable(`intCode`, `3`); err != nil {
-		engine.Raise(sce.NewPlatformError(EventTypeNamesItsQueueEventErrorExecution, "<assign> to 'intCode' failed"))
+		engine.Raise(sce.NewPlatformError(EventTypeNamesItsQueueEventErrorExecution, sceerrorreason.ErrorReasonAssignmentFailed, "<assign> to 'intCode' failed"))
 		return  // W3C SCXML 4.9: the error ends the block
 	}
 
@@ -982,7 +986,7 @@ func (p *EventTypeNamesItsQueuePolicy) ExecuteTransitionContent(source EventType
 
 	// W3C SCXML 5.3: <assign location="sendCode" expr="1">
 	if err := p.assignVariable(`sendCode`, `1`); err != nil {
-		engine.Raise(sce.NewPlatformError(EventTypeNamesItsQueueEventErrorExecution, "<assign> to 'sendCode' failed"))
+		engine.Raise(sce.NewPlatformError(EventTypeNamesItsQueueEventErrorExecution, sceerrorreason.ErrorReasonAssignmentFailed, "<assign> to 'sendCode' failed"))
 		return  // W3C SCXML 4.9: the error ends the block
 	}
 
@@ -990,7 +994,7 @@ func (p *EventTypeNamesItsQueuePolicy) ExecuteTransitionContent(source EventType
 
 	// W3C SCXML 5.3: <assign location="sendCode" expr="2">
 	if err := p.assignVariable(`sendCode`, `2`); err != nil {
-		engine.Raise(sce.NewPlatformError(EventTypeNamesItsQueueEventErrorExecution, "<assign> to 'sendCode' failed"))
+		engine.Raise(sce.NewPlatformError(EventTypeNamesItsQueueEventErrorExecution, sceerrorreason.ErrorReasonAssignmentFailed, "<assign> to 'sendCode' failed"))
 		return  // W3C SCXML 4.9: the error ends the block
 	}
 
@@ -998,7 +1002,7 @@ func (p *EventTypeNamesItsQueuePolicy) ExecuteTransitionContent(source EventType
 
 	// W3C SCXML 5.3: <assign location="sendCode" expr="3">
 	if err := p.assignVariable(`sendCode`, `3`); err != nil {
-		engine.Raise(sce.NewPlatformError(EventTypeNamesItsQueueEventErrorExecution, "<assign> to 'sendCode' failed"))
+		engine.Raise(sce.NewPlatformError(EventTypeNamesItsQueueEventErrorExecution, sceerrorreason.ErrorReasonAssignmentFailed, "<assign> to 'sendCode' failed"))
 		return  // W3C SCXML 4.9: the error ends the block
 	}
 
@@ -1020,7 +1024,7 @@ func (p *EventTypeNamesItsQueuePolicy) ExecuteTransitionContent(source EventType
 
 	// W3C SCXML 5.3: <assign location="extCode" expr="1">
 	if err := p.assignVariable(`extCode`, `1`); err != nil {
-		engine.Raise(sce.NewPlatformError(EventTypeNamesItsQueueEventErrorExecution, "<assign> to 'extCode' failed"))
+		engine.Raise(sce.NewPlatformError(EventTypeNamesItsQueueEventErrorExecution, sceerrorreason.ErrorReasonAssignmentFailed, "<assign> to 'extCode' failed"))
 		return  // W3C SCXML 4.9: the error ends the block
 	}
 
@@ -1028,7 +1032,7 @@ func (p *EventTypeNamesItsQueuePolicy) ExecuteTransitionContent(source EventType
 
 	// W3C SCXML 5.3: <assign location="extCode" expr="2">
 	if err := p.assignVariable(`extCode`, `2`); err != nil {
-		engine.Raise(sce.NewPlatformError(EventTypeNamesItsQueueEventErrorExecution, "<assign> to 'extCode' failed"))
+		engine.Raise(sce.NewPlatformError(EventTypeNamesItsQueueEventErrorExecution, sceerrorreason.ErrorReasonAssignmentFailed, "<assign> to 'extCode' failed"))
 		return  // W3C SCXML 4.9: the error ends the block
 	}
 
@@ -1036,7 +1040,7 @@ func (p *EventTypeNamesItsQueuePolicy) ExecuteTransitionContent(source EventType
 
 	// W3C SCXML 5.3: <assign location="extCode" expr="3">
 	if err := p.assignVariable(`extCode`, `3`); err != nil {
-		engine.Raise(sce.NewPlatformError(EventTypeNamesItsQueueEventErrorExecution, "<assign> to 'extCode' failed"))
+		engine.Raise(sce.NewPlatformError(EventTypeNamesItsQueueEventErrorExecution, sceerrorreason.ErrorReasonAssignmentFailed, "<assign> to 'extCode' failed"))
 		return  // W3C SCXML 4.9: the error ends the block
 	}
 

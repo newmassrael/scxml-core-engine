@@ -599,7 +599,7 @@ class StaticRecordListStateMachine(
 
             vDraft = vDraft.copy(dayOfMonth = pendingDayPickedPayload!!.dayOfMonth)
 
-            if (if (vDays.size < 3) { vDays = vDays + (vDraft); false } else { raisePlatformError(StaticRecordListEvent.Error.Execution, "<sce:append target='days'>: the list already holds its capacity of 3"); true }) {
+            if (if (vDays.size < 3) { vDays = vDays + (vDraft); false } else { raisePlatformError(StaticRecordListEvent.Error.Execution, ErrorReason.ASSIGNMENT_FAILED, "<sce:append target='days'>: the list already holds its capacity of 3"); true }) {
                 return
             }
     }
@@ -612,7 +612,7 @@ class StaticRecordListStateMachine(
 
             for (d in vDays) {
 
-            if (try { vTotal = com.sce.forge.runtime.SceChecked.add(vTotal, d.dayOfMonth.toUInt()); false } catch (_: com.sce.forge.runtime.AlgorithmFailure) { raisePlatformError(StaticRecordListEvent.Error.Execution, "<assign location='total'>: an integer operation overflowed or failed"); true }) {
+            if (try { vTotal = com.sce.forge.runtime.SceChecked.add(vTotal, d.dayOfMonth.toUInt()); false } catch (_: com.sce.forge.runtime.AlgorithmFailure) { raisePlatformError(StaticRecordListEvent.Error.Execution, ErrorReason.EXPRESSION_FAILED, "<assign location='total'>: an integer operation overflowed or failed"); true }) {
                 return
             }
             }
@@ -627,7 +627,7 @@ class StaticRecordListStateMachine(
             for ((sce_position_of_i, d) in vDays.withIndex()) {
                 @Suppress("UNUSED_VARIABLE") val i = sce_position_of_i.toUInt()
 
-            if (if (vCopies.size < 3) { vCopies = vCopies + (d); false } else { raisePlatformError(StaticRecordListEvent.Error.Execution, "<sce:append target='copies'>: the list already holds its capacity of 3"); true }) {
+            if (if (vCopies.size < 3) { vCopies = vCopies + (d); false } else { raisePlatformError(StaticRecordListEvent.Error.Execution, ErrorReason.ASSIGNMENT_FAILED, "<sce:append target='copies'>: the list already holds its capacity of 3"); true }) {
                 return
             }
             }
@@ -658,7 +658,7 @@ class StaticRecordListStateMachine(
     private fun transitionContentOfCollectingAt6() {
                 // SCE-MAP: static_record_list.scxml:72 :: collecting :: _transition_6
 
-            if (try { vErrors = com.sce.forge.runtime.SceChecked.add(vErrors, 1.toUInt()); false } catch (_: com.sce.forge.runtime.AlgorithmFailure) { raisePlatformError(StaticRecordListEvent.Error.Execution, "<assign location='errors'>: an integer operation overflowed or failed"); true }) {
+            if (try { vErrors = com.sce.forge.runtime.SceChecked.add(vErrors, 1.toUInt()); false } catch (_: com.sce.forge.runtime.AlgorithmFailure) { raisePlatformError(StaticRecordListEvent.Error.Execution, ErrorReason.EXPRESSION_FAILED, "<assign location='errors'>: an integer operation overflowed or failed"); true }) {
                 return
             }
     }

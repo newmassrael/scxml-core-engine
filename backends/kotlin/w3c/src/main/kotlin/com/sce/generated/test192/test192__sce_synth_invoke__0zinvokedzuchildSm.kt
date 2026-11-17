@@ -185,7 +185,7 @@ class Test192SceSynthInvoke0zinvokedzuchildStateMachine(
             // no parent — error.communication, nothing delivered, the block ended.
             val toParent = onSendToParent
             if (toParent == null) {
-                raisePlatformError(Test192SceSynthInvoke0zinvokedzuchildEvent.Error.Communication, "<send target='#_parent'> has no parent session to reach", "__send_1")
+                raisePlatformError(Test192SceSynthInvoke0zinvokedzuchildEvent.Error.Communication, ErrorReason.TARGET_UNREACHABLE, "<send target='#_parent'> has no parent session to reach", "__send_1")
                 return@send true
             }
             toParent("childToParent", sendData)
@@ -270,7 +270,7 @@ class Test192SceSynthInvoke0zinvokedzuchildStateMachine(
             // no parent — error.communication, nothing delivered, the block ended.
             val toParent = onSendToParent
             if (toParent == null) {
-                raisePlatformError(Test192SceSynthInvoke0zinvokedzuchildEvent.Error.Communication, "<send target='#_parent'> has no parent session to reach", "__send_0")
+                raisePlatformError(Test192SceSynthInvoke0zinvokedzuchildEvent.Error.Communication, ErrorReason.TARGET_UNREACHABLE, "<send target='#_parent'> has no parent session to reach", "__send_0")
                 return@send true
             }
             toParent("eventReceived", sendData)

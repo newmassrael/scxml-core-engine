@@ -31,6 +31,7 @@ import (
 	"time"
 
 	sce "github.com/newmassrael/sce-go-runtime"
+	sceerrorreason "github.com/newmassrael/sce-go-runtime/generated/error_reason"
 	scealgorithm "github.com/newmassrael/sce-forge-runtime/algorithm"
 	sce_sync_delete_outcome "github.com/newmassrael/sce-go-tests/integration/static_datamodel/sync_delete_outcome"
 	sce_sync_failure "github.com/newmassrael/sce-go-tests/integration/static_datamodel/sync_failure"
@@ -44,6 +45,9 @@ var (
 	_ = filepath.Join
 	_ = strings.HasPrefix
 	_ = time.Duration(0)
+	// Why an error.* event is raised (sce:std/engine/error_reason,
+	// docs/adr/0106 #111); a machine that raises none still imports it.
+	_ = sceerrorreason.ErrorReasonExpressionFailed
 	_ scealgorithm.Failure
 )
 
@@ -1253,7 +1257,7 @@ func (p *SyncClientPolicy) FirstEnabledTransition(state SyncClientState, event S
 			// NL→IR Item C1 Path A: native typed `_event.data` guard — cond
 			// "DeleteOutcome(_event.data.kind, _event.data.status) === 0" lowered to a tag-checked field comparison on
 			// the lifted `pending<Event>Payload` (no script engine).
-			if p.pendingPayloadTag == SyncClientPayloadTagSyncResponse && (func() bool { var sceFailure scealgorithm.Failure; sceValue := scealgorithm.Take[uint8](&sceFailure)(sce_sync_delete_outcome.SyncDeleteOutcome(p.pendingSyncResponsePayload.kind, p.pendingSyncResponsePayload.status)) == 0; if sceFailure.Failed() { engine.Raise(sce.NewPlatformError(SyncClientEventErrorExecution, "<transition cond='DeleteOutcome(_event.data.kind, _event.data.status) === 0'>: an integer operation overflowed or failed")); return false }; return sceValue }()) {
+			if p.pendingPayloadTag == SyncClientPayloadTagSyncResponse && (func() bool { var sceFailure scealgorithm.Failure; sceValue := scealgorithm.Take[uint8](&sceFailure)(sce_sync_delete_outcome.SyncDeleteOutcome(p.pendingSyncResponsePayload.kind, p.pendingSyncResponsePayload.status)) == 0; if sceFailure.Failed() { engine.Raise(sce.NewPlatformError(SyncClientEventErrorExecution, sceerrorreason.ErrorReasonExpressionFailed, "<transition cond='DeleteOutcome(_event.data.kind, _event.data.status) === 0'>: an integer operation overflowed or failed")); return false }; return sceValue }()) {
 				return sce.EnabledTransition[SyncClientState, sce.HistoryID]{
 					Source:          state,
 					TransitionIndex: 0,
@@ -1266,7 +1270,7 @@ func (p *SyncClientPolicy) FirstEnabledTransition(state SyncClientState, event S
 			// NL→IR Item C1 Path A: native typed `_event.data` guard — cond
 			// "DeleteOutcome(_event.data.kind, _event.data.status) === 1" lowered to a tag-checked field comparison on
 			// the lifted `pending<Event>Payload` (no script engine).
-			if p.pendingPayloadTag == SyncClientPayloadTagSyncResponse && (func() bool { var sceFailure scealgorithm.Failure; sceValue := scealgorithm.Take[uint8](&sceFailure)(sce_sync_delete_outcome.SyncDeleteOutcome(p.pendingSyncResponsePayload.kind, p.pendingSyncResponsePayload.status)) == 1; if sceFailure.Failed() { engine.Raise(sce.NewPlatformError(SyncClientEventErrorExecution, "<transition cond='DeleteOutcome(_event.data.kind, _event.data.status) === 1'>: an integer operation overflowed or failed")); return false }; return sceValue }()) {
+			if p.pendingPayloadTag == SyncClientPayloadTagSyncResponse && (func() bool { var sceFailure scealgorithm.Failure; sceValue := scealgorithm.Take[uint8](&sceFailure)(sce_sync_delete_outcome.SyncDeleteOutcome(p.pendingSyncResponsePayload.kind, p.pendingSyncResponsePayload.status)) == 1; if sceFailure.Failed() { engine.Raise(sce.NewPlatformError(SyncClientEventErrorExecution, sceerrorreason.ErrorReasonExpressionFailed, "<transition cond='DeleteOutcome(_event.data.kind, _event.data.status) === 1'>: an integer operation overflowed or failed")); return false }; return sceValue }()) {
 				return sce.EnabledTransition[SyncClientState, sce.HistoryID]{
 					Source:          state,
 					TransitionIndex: 1,
@@ -1377,7 +1381,7 @@ func (p *SyncClientPolicy) FirstEnabledTransition(state SyncClientState, event S
 			// NL→IR Item C1 Path A: native typed `_event.data` guard — cond
 			// "UploadOutcome(_event.data.create, _event.data.status, _event.data.davError) === 0" lowered to a tag-checked field comparison on
 			// the lifted `pending<Event>Payload` (no script engine).
-			if p.pendingPayloadTag == SyncClientPayloadTagSyncResponse && (func() bool { var sceFailure scealgorithm.Failure; sceValue := scealgorithm.Take[uint8](&sceFailure)(sce_sync_upload_outcome.SyncUploadOutcome(p.pendingSyncResponsePayload.create, p.pendingSyncResponsePayload.status, p.pendingSyncResponsePayload.davError)) == 0; if sceFailure.Failed() { engine.Raise(sce.NewPlatformError(SyncClientEventErrorExecution, "<transition cond='UploadOutcome(_event.data.create, _event.data.status, _event.data.davError) === 0'>: an integer operation overflowed or failed")); return false }; return sceValue }()) {
+			if p.pendingPayloadTag == SyncClientPayloadTagSyncResponse && (func() bool { var sceFailure scealgorithm.Failure; sceValue := scealgorithm.Take[uint8](&sceFailure)(sce_sync_upload_outcome.SyncUploadOutcome(p.pendingSyncResponsePayload.create, p.pendingSyncResponsePayload.status, p.pendingSyncResponsePayload.davError)) == 0; if sceFailure.Failed() { engine.Raise(sce.NewPlatformError(SyncClientEventErrorExecution, sceerrorreason.ErrorReasonExpressionFailed, "<transition cond='UploadOutcome(_event.data.create, _event.data.status, _event.data.davError) === 0'>: an integer operation overflowed or failed")); return false }; return sceValue }()) {
 				return sce.EnabledTransition[SyncClientState, sce.HistoryID]{
 					Source:          state,
 					TransitionIndex: 1,
@@ -1390,7 +1394,7 @@ func (p *SyncClientPolicy) FirstEnabledTransition(state SyncClientState, event S
 			// NL→IR Item C1 Path A: native typed `_event.data` guard — cond
 			// "UploadOutcome(_event.data.create, _event.data.status, _event.data.davError) === 1" lowered to a tag-checked field comparison on
 			// the lifted `pending<Event>Payload` (no script engine).
-			if p.pendingPayloadTag == SyncClientPayloadTagSyncResponse && (func() bool { var sceFailure scealgorithm.Failure; sceValue := scealgorithm.Take[uint8](&sceFailure)(sce_sync_upload_outcome.SyncUploadOutcome(p.pendingSyncResponsePayload.create, p.pendingSyncResponsePayload.status, p.pendingSyncResponsePayload.davError)) == 1; if sceFailure.Failed() { engine.Raise(sce.NewPlatformError(SyncClientEventErrorExecution, "<transition cond='UploadOutcome(_event.data.create, _event.data.status, _event.data.davError) === 1'>: an integer operation overflowed or failed")); return false }; return sceValue }()) {
+			if p.pendingPayloadTag == SyncClientPayloadTagSyncResponse && (func() bool { var sceFailure scealgorithm.Failure; sceValue := scealgorithm.Take[uint8](&sceFailure)(sce_sync_upload_outcome.SyncUploadOutcome(p.pendingSyncResponsePayload.create, p.pendingSyncResponsePayload.status, p.pendingSyncResponsePayload.davError)) == 1; if sceFailure.Failed() { engine.Raise(sce.NewPlatformError(SyncClientEventErrorExecution, sceerrorreason.ErrorReasonExpressionFailed, "<transition cond='UploadOutcome(_event.data.create, _event.data.status, _event.data.davError) === 1'>: an integer operation overflowed or failed")); return false }; return sceValue }()) {
 				return sce.EnabledTransition[SyncClientState, sce.HistoryID]{
 					Source:          state,
 					TransitionIndex: 2,
@@ -1438,7 +1442,7 @@ func (p *SyncClientPolicy) ExecuteTransitionContent(source SyncClientState, tran
 			func() {
 
 
-	if func() bool { var sceFailure scealgorithm.Failure; sceValue := scealgorithm.AddUint32(&sceFailure, p.vRefusals, 1); if sceFailure.Failed() { engine.Raise(sce.NewPlatformError(SyncClientEventErrorExecution, "<assign location='refusals'>: an integer operation overflowed or failed")); return true }; p.vRefusals = sceValue; return false }() {
+	if func() bool { var sceFailure scealgorithm.Failure; sceValue := scealgorithm.AddUint32(&sceFailure, p.vRefusals, 1); if sceFailure.Failed() { engine.Raise(sce.NewPlatformError(SyncClientEventErrorExecution, sceerrorreason.ErrorReasonExpressionFailed, "<assign location='refusals'>: an integer operation overflowed or failed")); return true }; p.vRefusals = sceValue; return false }() {
 		return  // W3C SCXML 4.9: the error ends the block
 	}
 
@@ -1452,7 +1456,7 @@ func (p *SyncClientPolicy) ExecuteTransitionContent(source SyncClientState, tran
 			func() {
 
 
-	if func() bool { var sceFailure scealgorithm.Failure; sceValue := scealgorithm.AddUint32(&sceFailure, p.vDeleted, 1); if sceFailure.Failed() { engine.Raise(sce.NewPlatformError(SyncClientEventErrorExecution, "<assign location='deleted'>: an integer operation overflowed or failed")); return true }; p.vDeleted = sceValue; return false }() {
+	if func() bool { var sceFailure scealgorithm.Failure; sceValue := scealgorithm.AddUint32(&sceFailure, p.vDeleted, 1); if sceFailure.Failed() { engine.Raise(sce.NewPlatformError(SyncClientEventErrorExecution, sceerrorreason.ErrorReasonExpressionFailed, "<assign location='deleted'>: an integer operation overflowed or failed")); return true }; p.vDeleted = sceValue; return false }() {
 		return  // W3C SCXML 4.9: the error ends the block
 	}
 
@@ -1479,13 +1483,13 @@ func (p *SyncClientPolicy) ExecuteTransitionContent(source SyncClientState, tran
 				}
 
 
-	if func() bool { var sceFailure scealgorithm.Failure; sceValue := scealgorithm.Take[uint8](&sceFailure)(sce_sync_failure.SyncFailure(p.pendingSyncResponsePayload.kind, p.pendingSyncResponsePayload.status)); if sceFailure.Failed() { engine.Raise(sce.NewPlatformError(SyncClientEventErrorExecution, "<assign location='outcome'>: an integer operation overflowed or failed")); return true }; p.vOutcome = sceValue; return false }() {
+	if func() bool { var sceFailure scealgorithm.Failure; sceValue := scealgorithm.Take[uint8](&sceFailure)(sce_sync_failure.SyncFailure(p.pendingSyncResponsePayload.kind, p.pendingSyncResponsePayload.status)); if sceFailure.Failed() { engine.Raise(sce.NewPlatformError(SyncClientEventErrorExecution, sceerrorreason.ErrorReasonExpressionFailed, "<assign location='outcome'>: an integer operation overflowed or failed")); return true }; p.vOutcome = sceValue; return false }() {
 		return  // W3C SCXML 4.9: the error ends the block
 	}
 
 
 
-	if func() bool { var sceFailure scealgorithm.Failure; sceValue := scealgorithm.Take[int64](&sceFailure)(sce_sync_retry_at.SyncRetryAt(p.vRetryAt, p.pendingSyncResponsePayload.kind, p.pendingSyncResponsePayload.status, p.pendingSyncResponsePayload.now, p.pendingSyncResponsePayload.retryAfter)); if sceFailure.Failed() { engine.Raise(sce.NewPlatformError(SyncClientEventErrorExecution, "<assign location='retryAt'>: an integer operation overflowed or failed")); return true }; p.vRetryAt = sceValue; return false }() {
+	if func() bool { var sceFailure scealgorithm.Failure; sceValue := scealgorithm.Take[int64](&sceFailure)(sce_sync_retry_at.SyncRetryAt(p.vRetryAt, p.pendingSyncResponsePayload.kind, p.pendingSyncResponsePayload.status, p.pendingSyncResponsePayload.now, p.pendingSyncResponsePayload.retryAfter)); if sceFailure.Failed() { engine.Raise(sce.NewPlatformError(SyncClientEventErrorExecution, sceerrorreason.ErrorReasonExpressionFailed, "<assign location='retryAt'>: an integer operation overflowed or failed")); return true }; p.vRetryAt = sceValue; return false }() {
 		return  // W3C SCXML 4.9: the error ends the block
 	}
 
@@ -1534,7 +1538,7 @@ func (p *SyncClientPolicy) ExecuteTransitionContent(source SyncClientState, tran
 			func() {
 
 
-	if func() bool { var sceFailure scealgorithm.Failure; sceValue := scealgorithm.AddUint32(&sceFailure, p.vPages, 1); if sceFailure.Failed() { engine.Raise(sce.NewPlatformError(SyncClientEventErrorExecution, "<assign location='pages'>: an integer operation overflowed or failed")); return true }; p.vPages = sceValue; return false }() {
+	if func() bool { var sceFailure scealgorithm.Failure; sceValue := scealgorithm.AddUint32(&sceFailure, p.vPages, 1); if sceFailure.Failed() { engine.Raise(sce.NewPlatformError(SyncClientEventErrorExecution, sceerrorreason.ErrorReasonExpressionFailed, "<assign location='pages'>: an integer operation overflowed or failed")); return true }; p.vPages = sceValue; return false }() {
 		return  // W3C SCXML 4.9: the error ends the block
 	}
 
@@ -1545,7 +1549,7 @@ func (p *SyncClientPolicy) ExecuteTransitionContent(source SyncClientState, tran
 			func() {
 
 
-	if func() bool { var sceFailure scealgorithm.Failure; sceValue := scealgorithm.AddUint32(&sceFailure, p.vPages, 1); if sceFailure.Failed() { engine.Raise(sce.NewPlatformError(SyncClientEventErrorExecution, "<assign location='pages'>: an integer operation overflowed or failed")); return true }; p.vPages = sceValue; return false }() {
+	if func() bool { var sceFailure scealgorithm.Failure; sceValue := scealgorithm.AddUint32(&sceFailure, p.vPages, 1); if sceFailure.Failed() { engine.Raise(sce.NewPlatformError(SyncClientEventErrorExecution, sceerrorreason.ErrorReasonExpressionFailed, "<assign location='pages'>: an integer operation overflowed or failed")); return true }; p.vPages = sceValue; return false }() {
 		return  // W3C SCXML 4.9: the error ends the block
 	}
 
@@ -1572,13 +1576,13 @@ func (p *SyncClientPolicy) ExecuteTransitionContent(source SyncClientState, tran
 				}
 
 
-	if func() bool { var sceFailure scealgorithm.Failure; sceValue := scealgorithm.Take[uint8](&sceFailure)(sce_sync_failure.SyncFailure(p.pendingSyncResponsePayload.kind, p.pendingSyncResponsePayload.status)); if sceFailure.Failed() { engine.Raise(sce.NewPlatformError(SyncClientEventErrorExecution, "<assign location='outcome'>: an integer operation overflowed or failed")); return true }; p.vOutcome = sceValue; return false }() {
+	if func() bool { var sceFailure scealgorithm.Failure; sceValue := scealgorithm.Take[uint8](&sceFailure)(sce_sync_failure.SyncFailure(p.pendingSyncResponsePayload.kind, p.pendingSyncResponsePayload.status)); if sceFailure.Failed() { engine.Raise(sce.NewPlatformError(SyncClientEventErrorExecution, sceerrorreason.ErrorReasonExpressionFailed, "<assign location='outcome'>: an integer operation overflowed or failed")); return true }; p.vOutcome = sceValue; return false }() {
 		return  // W3C SCXML 4.9: the error ends the block
 	}
 
 
 
-	if func() bool { var sceFailure scealgorithm.Failure; sceValue := scealgorithm.Take[int64](&sceFailure)(sce_sync_retry_at.SyncRetryAt(p.vRetryAt, p.pendingSyncResponsePayload.kind, p.pendingSyncResponsePayload.status, p.pendingSyncResponsePayload.now, p.pendingSyncResponsePayload.retryAfter)); if sceFailure.Failed() { engine.Raise(sce.NewPlatformError(SyncClientEventErrorExecution, "<assign location='retryAt'>: an integer operation overflowed or failed")); return true }; p.vRetryAt = sceValue; return false }() {
+	if func() bool { var sceFailure scealgorithm.Failure; sceValue := scealgorithm.Take[int64](&sceFailure)(sce_sync_retry_at.SyncRetryAt(p.vRetryAt, p.pendingSyncResponsePayload.kind, p.pendingSyncResponsePayload.status, p.pendingSyncResponsePayload.now, p.pendingSyncResponsePayload.retryAfter)); if sceFailure.Failed() { engine.Raise(sce.NewPlatformError(SyncClientEventErrorExecution, sceerrorreason.ErrorReasonExpressionFailed, "<assign location='retryAt'>: an integer operation overflowed or failed")); return true }; p.vRetryAt = sceValue; return false }() {
 		return  // W3C SCXML 4.9: the error ends the block
 	}
 
@@ -1595,13 +1599,13 @@ func (p *SyncClientPolicy) ExecuteTransitionContent(source SyncClientState, tran
 				}
 
 
-	if func() bool { var sceFailure scealgorithm.Failure; sceValue := scealgorithm.Take[uint8](&sceFailure)(sce_sync_failure.SyncFailure(p.pendingSyncResponsePayload.kind, p.pendingSyncResponsePayload.status)); if sceFailure.Failed() { engine.Raise(sce.NewPlatformError(SyncClientEventErrorExecution, "<assign location='outcome'>: an integer operation overflowed or failed")); return true }; p.vOutcome = sceValue; return false }() {
+	if func() bool { var sceFailure scealgorithm.Failure; sceValue := scealgorithm.Take[uint8](&sceFailure)(sce_sync_failure.SyncFailure(p.pendingSyncResponsePayload.kind, p.pendingSyncResponsePayload.status)); if sceFailure.Failed() { engine.Raise(sce.NewPlatformError(SyncClientEventErrorExecution, sceerrorreason.ErrorReasonExpressionFailed, "<assign location='outcome'>: an integer operation overflowed or failed")); return true }; p.vOutcome = sceValue; return false }() {
 		return  // W3C SCXML 4.9: the error ends the block
 	}
 
 
 
-	if func() bool { var sceFailure scealgorithm.Failure; sceValue := scealgorithm.Take[int64](&sceFailure)(sce_sync_retry_at.SyncRetryAt(p.vRetryAt, p.pendingSyncResponsePayload.kind, p.pendingSyncResponsePayload.status, p.pendingSyncResponsePayload.now, p.pendingSyncResponsePayload.retryAfter)); if sceFailure.Failed() { engine.Raise(sce.NewPlatformError(SyncClientEventErrorExecution, "<assign location='retryAt'>: an integer operation overflowed or failed")); return true }; p.vRetryAt = sceValue; return false }() {
+	if func() bool { var sceFailure scealgorithm.Failure; sceValue := scealgorithm.Take[int64](&sceFailure)(sce_sync_retry_at.SyncRetryAt(p.vRetryAt, p.pendingSyncResponsePayload.kind, p.pendingSyncResponsePayload.status, p.pendingSyncResponsePayload.now, p.pendingSyncResponsePayload.retryAfter)); if sceFailure.Failed() { engine.Raise(sce.NewPlatformError(SyncClientEventErrorExecution, sceerrorreason.ErrorReasonExpressionFailed, "<assign location='retryAt'>: an integer operation overflowed or failed")); return true }; p.vRetryAt = sceValue; return false }() {
 		return  // W3C SCXML 4.9: the error ends the block
 	}
 
@@ -1612,7 +1616,7 @@ func (p *SyncClientPolicy) ExecuteTransitionContent(source SyncClientState, tran
 			func() {
 
 
-	if func() bool { var sceFailure scealgorithm.Failure; sceValue := scealgorithm.AddUint32(&sceFailure, p.vUploaded, 1); if sceFailure.Failed() { engine.Raise(sce.NewPlatformError(SyncClientEventErrorExecution, "<assign location='uploaded'>: an integer operation overflowed or failed")); return true }; p.vUploaded = sceValue; return false }() {
+	if func() bool { var sceFailure scealgorithm.Failure; sceValue := scealgorithm.AddUint32(&sceFailure, p.vUploaded, 1); if sceFailure.Failed() { engine.Raise(sce.NewPlatformError(SyncClientEventErrorExecution, sceerrorreason.ErrorReasonExpressionFailed, "<assign location='uploaded'>: an integer operation overflowed or failed")); return true }; p.vUploaded = sceValue; return false }() {
 		return  // W3C SCXML 4.9: the error ends the block
 	}
 
@@ -1623,7 +1627,7 @@ func (p *SyncClientPolicy) ExecuteTransitionContent(source SyncClientState, tran
 			func() {
 
 
-	if func() bool { var sceFailure scealgorithm.Failure; sceValue := scealgorithm.AddUint32(&sceFailure, p.vDiscarded, 1); if sceFailure.Failed() { engine.Raise(sce.NewPlatformError(SyncClientEventErrorExecution, "<assign location='discarded'>: an integer operation overflowed or failed")); return true }; p.vDiscarded = sceValue; return false }() {
+	if func() bool { var sceFailure scealgorithm.Failure; sceValue := scealgorithm.AddUint32(&sceFailure, p.vDiscarded, 1); if sceFailure.Failed() { engine.Raise(sce.NewPlatformError(SyncClientEventErrorExecution, sceerrorreason.ErrorReasonExpressionFailed, "<assign location='discarded'>: an integer operation overflowed or failed")); return true }; p.vDiscarded = sceValue; return false }() {
 		return  // W3C SCXML 4.9: the error ends the block
 	}
 
@@ -1645,13 +1649,13 @@ func (p *SyncClientPolicy) ExecuteTransitionContent(source SyncClientState, tran
 				}
 
 
-	if func() bool { var sceFailure scealgorithm.Failure; sceValue := scealgorithm.Take[uint8](&sceFailure)(sce_sync_failure.SyncFailure(4, p.pendingSyncResponsePayload.status)); if sceFailure.Failed() { engine.Raise(sce.NewPlatformError(SyncClientEventErrorExecution, "<assign location='outcome'>: an integer operation overflowed or failed")); return true }; p.vOutcome = sceValue; return false }() {
+	if func() bool { var sceFailure scealgorithm.Failure; sceValue := scealgorithm.Take[uint8](&sceFailure)(sce_sync_failure.SyncFailure(4, p.pendingSyncResponsePayload.status)); if sceFailure.Failed() { engine.Raise(sce.NewPlatformError(SyncClientEventErrorExecution, sceerrorreason.ErrorReasonExpressionFailed, "<assign location='outcome'>: an integer operation overflowed or failed")); return true }; p.vOutcome = sceValue; return false }() {
 		return  // W3C SCXML 4.9: the error ends the block
 	}
 
 
 
-	if func() bool { var sceFailure scealgorithm.Failure; sceValue := scealgorithm.Take[int64](&sceFailure)(sce_sync_retry_at.SyncRetryAt(p.vRetryAt, 4, p.pendingSyncResponsePayload.status, p.pendingSyncResponsePayload.now, p.pendingSyncResponsePayload.retryAfter)); if sceFailure.Failed() { engine.Raise(sce.NewPlatformError(SyncClientEventErrorExecution, "<assign location='retryAt'>: an integer operation overflowed or failed")); return true }; p.vRetryAt = sceValue; return false }() {
+	if func() bool { var sceFailure scealgorithm.Failure; sceValue := scealgorithm.Take[int64](&sceFailure)(sce_sync_retry_at.SyncRetryAt(p.vRetryAt, 4, p.pendingSyncResponsePayload.status, p.pendingSyncResponsePayload.now, p.pendingSyncResponsePayload.retryAfter)); if sceFailure.Failed() { engine.Raise(sce.NewPlatformError(SyncClientEventErrorExecution, sceerrorreason.ErrorReasonExpressionFailed, "<assign location='retryAt'>: an integer operation overflowed or failed")); return true }; p.vRetryAt = sceValue; return false }() {
 		return  // W3C SCXML 4.9: the error ends the block
 	}
 

@@ -31,6 +31,7 @@ import (
 	"time"
 
 	sce "github.com/newmassrael/sce-go-runtime"
+	sceerrorreason "github.com/newmassrael/sce-go-runtime/generated/error_reason"
 )
 
 // Ensure imports are used
@@ -39,6 +40,9 @@ var (
 	_ = filepath.Join
 	_ = strings.HasPrefix
 	_ = time.Duration(0)
+	// Why an error.* event is raised (sce:std/engine/error_reason,
+	// docs/adr/0106 #111); a machine that raises none still imports it.
+	_ = sceerrorreason.ErrorReasonExpressionFailed
 )
 
 // ======================================================================
@@ -328,7 +332,7 @@ func (p *AChildMaySendManyEventsInOneTickSceSynthInvokeChattyPolicy) InitializeD
 		if err == nil {
 			_ = engine.SetVariable(sessionID, "items", result)
 		} else {
-			eng.Raise(sce.NewPlatformError(AChildMaySendManyEventsInOneTickSceSynthInvokeChattyEventErrorExecution, "<data id='items'> expr failed to evaluate"))
+			eng.Raise(sce.NewPlatformError(AChildMaySendManyEventsInOneTickSceSynthInvokeChattyEventErrorExecution, sceerrorreason.ErrorReasonExpressionFailed, "<data id='items'> expr failed to evaluate"))
 			_ = engine.SetVariable(sessionID, "items", nil)
 		}
 	}
@@ -342,7 +346,7 @@ func (p *AChildMaySendManyEventsInOneTickSceSynthInvokeChattyPolicy) InitializeD
 		if err == nil {
 			_ = engine.SetVariable(sessionID, "item", result)
 		} else {
-			eng.Raise(sce.NewPlatformError(AChildMaySendManyEventsInOneTickSceSynthInvokeChattyEventErrorExecution, "<data id='item'> expr failed to evaluate"))
+			eng.Raise(sce.NewPlatformError(AChildMaySendManyEventsInOneTickSceSynthInvokeChattyEventErrorExecution, sceerrorreason.ErrorReasonExpressionFailed, "<data id='item'> expr failed to evaluate"))
 			_ = engine.SetVariable(sessionID, "item", nil)
 		}
 	}
@@ -374,12 +378,12 @@ func (p *AChildMaySendManyEventsInOneTickSceSynthInvokeChattyPolicy) evaluateIfC
 // evaluateGuardRaising evaluates a cond, raising error.execution when it cannot
 // be evaluated (W3C SCXML 5.9.1); ok is false then, where a bare false could
 // not say so.
-func (p *AChildMaySendManyEventsInOneTickSceSynthInvokeChattyPolicy) evaluateGuardRaising(guard string, eng *sce.Engine[AChildMaySendManyEventsInOneTickSceSynthInvokeChattyState, AChildMaySendManyEventsInOneTickSceSynthInvokeChattyEvent], reason string) (value bool, ok bool) {
+func (p *AChildMaySendManyEventsInOneTickSceSynthInvokeChattyPolicy) evaluateGuardRaising(guard string, eng *sce.Engine[AChildMaySendManyEventsInOneTickSceSynthInvokeChattyState, AChildMaySendManyEventsInOneTickSceSynthInvokeChattyEvent], detail string) (value bool, ok bool) {
 	p.assertScriptSession()
 	engine := p.ScriptEngine
 	result, err := engine.EvaluateExpression(p.SessionID, guard)
 	if err != nil {
-		eng.Raise(sce.NewPlatformError(AChildMaySendManyEventsInOneTickSceSynthInvokeChattyEventErrorExecution, reason))
+		eng.Raise(sce.NewPlatformError(AChildMaySendManyEventsInOneTickSceSynthInvokeChattyEventErrorExecution, sceerrorreason.ErrorReasonExpressionFailed, detail))
 		return false, false
 	}
 	return sce.ScriptToBool(result), true
@@ -482,7 +486,7 @@ func (p *AChildMaySendManyEventsInOneTickSceSynthInvokeChattyPolicy) SetParamVal
 // failed is left (docs/adr/0098).
 func (p *AChildMaySendManyEventsInOneTickSceSynthInvokeChattyPolicy) declareHandedValue(eng *sce.Engine[AChildMaySendManyEventsInOneTickSceSynthInvokeChattyState, AChildMaySendManyEventsInOneTickSceSynthInvokeChattyEvent], engine sce.IScriptEngine, sessionID, name string, value interface{}) {
 	if err := engine.SetVariable(sessionID, name, value); err != nil {
-		eng.Raise(sce.NewPlatformError(AChildMaySendManyEventsInOneTickSceSynthInvokeChattyEventErrorExecution, "<data id='"+name+"'> could not hold the value its invoking session handed it"))
+		eng.Raise(sce.NewPlatformError(AChildMaySendManyEventsInOneTickSceSynthInvokeChattyEventErrorExecution, sceerrorreason.ErrorReasonDataInitFailed, "<data id='"+name+"'> could not hold the value its invoking session handed it"))
 		_ = engine.SetVariable(sessionID, name, nil)
 	}
 }
@@ -734,12 +738,12 @@ func (p *AChildMaySendManyEventsInOneTickSceSynthInvokeChattyPolicy) ExecuteEntr
 	{
 		foreachItemName := "item"
 		if foreachItemName == "" || !sce.IsValidIdentifier(foreachItemName) {
-			engine.Raise(sce.NewPlatformError(AChildMaySendManyEventsInOneTickSceSynthInvokeChattyEventErrorExecution, "<foreach item='item'> is missing or not a legal variable name"))
+			engine.Raise(sce.NewPlatformError(AChildMaySendManyEventsInOneTickSceSynthInvokeChattyEventErrorExecution, sceerrorreason.ErrorReasonForeachInvalid, "<foreach item='item'> is missing or not a legal variable name"))
 			return
 		} else {
 			foreachArrVal, foreachErr := p.ScriptEngine.EvaluateExpression(p.SessionID, `items`)
 			if foreachErr != nil {
-				engine.Raise(sce.NewPlatformError(AChildMaySendManyEventsInOneTickSceSynthInvokeChattyEventErrorExecution, "<foreach array='items'> failed to evaluate"))
+				engine.Raise(sce.NewPlatformError(AChildMaySendManyEventsInOneTickSceSynthInvokeChattyEventErrorExecution, sceerrorreason.ErrorReasonExpressionFailed, "<foreach array='items'> failed to evaluate"))
 				return
 			} else if foreachArr, foreachOk := sce.ToSlice(foreachArrVal); foreachOk {
 				foreachSuccess := true
@@ -760,7 +764,7 @@ func (p *AChildMaySendManyEventsInOneTickSceSynthInvokeChattyPolicy) ExecuteEntr
 		// W3C SCXML C.1: this session was started by its host, not by an
 		// `<invoke>`, so `#_parent` reaches nobody — error.communication,
 		// nothing delivered, and the block ends (4.9).
-		errEvt := sce.NewPlatformError(AChildMaySendManyEventsInOneTickSceSynthInvokeChattyEventErrorCommunication, "<send target='#_parent'> has no parent session to reach")
+		errEvt := sce.NewPlatformError(AChildMaySendManyEventsInOneTickSceSynthInvokeChattyEventErrorCommunication, sceerrorreason.ErrorReasonTargetUnreachable, "<send target='#_parent'> has no parent session to reach")
 		errEvt.Metadata.SendID = "__send_0"
 		engine.Raise(errEvt)
 		return  // W3C SCXML 4.9: the error ends the block
@@ -771,12 +775,12 @@ func (p *AChildMaySendManyEventsInOneTickSceSynthInvokeChattyPolicy) ExecuteEntr
 	}
 				}
 				if !foreachSuccess {
-					engine.Raise(sce.NewPlatformError(AChildMaySendManyEventsInOneTickSceSynthInvokeChattyEventErrorExecution, "<foreach> could not set its loop variable"))
+					engine.Raise(sce.NewPlatformError(AChildMaySendManyEventsInOneTickSceSynthInvokeChattyEventErrorExecution, sceerrorreason.ErrorReasonForeachInvalid, "<foreach> could not set its loop variable"))
 					return
 				}
 			} else {
 				// Not an array — raise error.execution (W3C SCXML 4.6)
-				engine.Raise(sce.NewPlatformError(AChildMaySendManyEventsInOneTickSceSynthInvokeChattyEventErrorExecution, "<foreach array='items'> is not an array"))
+				engine.Raise(sce.NewPlatformError(AChildMaySendManyEventsInOneTickSceSynthInvokeChattyEventErrorExecution, sceerrorreason.ErrorReasonForeachInvalid, "<foreach array='items'> is not an array"))
 				return
 			}
 		}

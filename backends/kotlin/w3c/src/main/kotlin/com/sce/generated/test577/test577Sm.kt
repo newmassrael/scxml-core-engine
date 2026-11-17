@@ -207,7 +207,7 @@ class Test577StateMachine(
 
             if (run send@{
             // W3C SCXML C.2 (test577): BasicHTTP requires target, missing raises error.communication
-            raisePlatformError(Test577Event.Error.Communication, "<send> over BasicHTTPEventProcessor has no target to post to", "__send_1")
+            raisePlatformError(Test577Event.Error.Communication, ErrorReason.HTTP_TARGET_INVALID, "<send> over BasicHTTPEventProcessor has no target to post to", "__send_1")
             true  // W3C SCXML 5.10: discarded; the block stops below
             }) {
                 // W3C SCXML 4.9: an error raised while this element was

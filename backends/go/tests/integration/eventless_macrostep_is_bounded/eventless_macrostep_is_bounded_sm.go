@@ -31,6 +31,7 @@ import (
 	"time"
 
 	sce "github.com/newmassrael/sce-go-runtime"
+	sceerrorreason "github.com/newmassrael/sce-go-runtime/generated/error_reason"
 )
 
 // Ensure imports are used
@@ -39,6 +40,9 @@ var (
 	_ = filepath.Join
 	_ = strings.HasPrefix
 	_ = time.Duration(0)
+	// Why an error.* event is raised (sce:std/engine/error_reason,
+	// docs/adr/0106 #111); a machine that raises none still imports it.
+	_ = sceerrorreason.ErrorReasonExpressionFailed
 )
 
 // ======================================================================
@@ -386,7 +390,7 @@ func (p *EventlessMacrostepIsBoundedPolicy) InitializeDataModel(eng *sce.Engine[
 		if err == nil {
 			_ = engine.SetVariable(sessionID, "pokes", result)
 		} else {
-			eng.Raise(sce.NewPlatformError(EventlessMacrostepIsBoundedEventErrorExecution, "<data id='pokes'> expr failed to evaluate"))
+			eng.Raise(sce.NewPlatformError(EventlessMacrostepIsBoundedEventErrorExecution, sceerrorreason.ErrorReasonExpressionFailed, "<data id='pokes'> expr failed to evaluate"))
 			_ = engine.SetVariable(sessionID, "pokes", nil)
 		}
 	}
@@ -400,7 +404,7 @@ func (p *EventlessMacrostepIsBoundedPolicy) InitializeDataModel(eng *sce.Engine[
 		if err == nil {
 			_ = engine.SetVariable(sessionID, "laps", result)
 		} else {
-			eng.Raise(sce.NewPlatformError(EventlessMacrostepIsBoundedEventErrorExecution, "<data id='laps'> expr failed to evaluate"))
+			eng.Raise(sce.NewPlatformError(EventlessMacrostepIsBoundedEventErrorExecution, sceerrorreason.ErrorReasonExpressionFailed, "<data id='laps'> expr failed to evaluate"))
 			_ = engine.SetVariable(sessionID, "laps", nil)
 		}
 	}
@@ -414,7 +418,7 @@ func (p *EventlessMacrostepIsBoundedPolicy) InitializeDataModel(eng *sce.Engine[
 		if err == nil {
 			_ = engine.SetVariable(sessionID, "spins", result)
 		} else {
-			eng.Raise(sce.NewPlatformError(EventlessMacrostepIsBoundedEventErrorExecution, "<data id='spins'> expr failed to evaluate"))
+			eng.Raise(sce.NewPlatformError(EventlessMacrostepIsBoundedEventErrorExecution, sceerrorreason.ErrorReasonExpressionFailed, "<data id='spins'> expr failed to evaluate"))
 			_ = engine.SetVariable(sessionID, "spins", nil)
 		}
 	}
@@ -446,12 +450,12 @@ func (p *EventlessMacrostepIsBoundedPolicy) evaluateIfCond(guard string, eng *sc
 // evaluateGuardRaising evaluates a cond, raising error.execution when it cannot
 // be evaluated (W3C SCXML 5.9.1); ok is false then, where a bare false could
 // not say so.
-func (p *EventlessMacrostepIsBoundedPolicy) evaluateGuardRaising(guard string, eng *sce.Engine[EventlessMacrostepIsBoundedState, EventlessMacrostepIsBoundedEvent], reason string) (value bool, ok bool) {
+func (p *EventlessMacrostepIsBoundedPolicy) evaluateGuardRaising(guard string, eng *sce.Engine[EventlessMacrostepIsBoundedState, EventlessMacrostepIsBoundedEvent], detail string) (value bool, ok bool) {
 	p.assertScriptSession()
 	engine := p.ScriptEngine
 	result, err := engine.EvaluateExpression(p.SessionID, guard)
 	if err != nil {
-		eng.Raise(sce.NewPlatformError(EventlessMacrostepIsBoundedEventErrorExecution, reason))
+		eng.Raise(sce.NewPlatformError(EventlessMacrostepIsBoundedEventErrorExecution, sceerrorreason.ErrorReasonExpressionFailed, detail))
 		return false, false
 	}
 	return sce.ScriptToBool(result), true
@@ -554,7 +558,7 @@ func (p *EventlessMacrostepIsBoundedPolicy) SetParamValueInScriptEngine(name str
 // failed is left (docs/adr/0098).
 func (p *EventlessMacrostepIsBoundedPolicy) declareHandedValue(eng *sce.Engine[EventlessMacrostepIsBoundedState, EventlessMacrostepIsBoundedEvent], engine sce.IScriptEngine, sessionID, name string, value interface{}) {
 	if err := engine.SetVariable(sessionID, name, value); err != nil {
-		eng.Raise(sce.NewPlatformError(EventlessMacrostepIsBoundedEventErrorExecution, "<data id='"+name+"'> could not hold the value its invoking session handed it"))
+		eng.Raise(sce.NewPlatformError(EventlessMacrostepIsBoundedEventErrorExecution, sceerrorreason.ErrorReasonDataInitFailed, "<data id='"+name+"'> could not hold the value its invoking session handed it"))
 		_ = engine.SetVariable(sessionID, name, nil)
 	}
 }
@@ -1013,7 +1017,7 @@ func (p *EventlessMacrostepIsBoundedPolicy) ExecuteTransitionContent(source Even
 
 	// W3C SCXML 5.3: <assign location="laps" expr="laps + 1">
 	if err := p.assignVariable(`laps`, `_scxml_add(laps, 1)`); err != nil {
-		engine.Raise(sce.NewPlatformError(EventlessMacrostepIsBoundedEventErrorExecution, "<assign> to 'laps' failed"))
+		engine.Raise(sce.NewPlatformError(EventlessMacrostepIsBoundedEventErrorExecution, sceerrorreason.ErrorReasonAssignmentFailed, "<assign> to 'laps' failed"))
 		return  // W3C SCXML 4.9: the error ends the block
 	}
 
@@ -1025,7 +1029,7 @@ func (p *EventlessMacrostepIsBoundedPolicy) ExecuteTransitionContent(source Even
 
 	// W3C SCXML 5.3: <assign location="pokes" expr="pokes + 1">
 	if err := p.assignVariable(`pokes`, `_scxml_add(pokes, 1)`); err != nil {
-		engine.Raise(sce.NewPlatformError(EventlessMacrostepIsBoundedEventErrorExecution, "<assign> to 'pokes' failed"))
+		engine.Raise(sce.NewPlatformError(EventlessMacrostepIsBoundedEventErrorExecution, sceerrorreason.ErrorReasonAssignmentFailed, "<assign> to 'pokes' failed"))
 		return  // W3C SCXML 4.9: the error ends the block
 	}
 
@@ -1040,7 +1044,7 @@ func (p *EventlessMacrostepIsBoundedPolicy) ExecuteTransitionContent(source Even
 
 	// W3C SCXML 5.3: <assign location="pokes" expr="pokes + 1">
 	if err := p.assignVariable(`pokes`, `_scxml_add(pokes, 1)`); err != nil {
-		engine.Raise(sce.NewPlatformError(EventlessMacrostepIsBoundedEventErrorExecution, "<assign> to 'pokes' failed"))
+		engine.Raise(sce.NewPlatformError(EventlessMacrostepIsBoundedEventErrorExecution, sceerrorreason.ErrorReasonAssignmentFailed, "<assign> to 'pokes' failed"))
 		return  // W3C SCXML 4.9: the error ends the block
 	}
 
@@ -1055,7 +1059,7 @@ func (p *EventlessMacrostepIsBoundedPolicy) ExecuteTransitionContent(source Even
 
 	// W3C SCXML 5.3: <assign location="spins" expr="spins + 1">
 	if err := p.assignVariable(`spins`, `_scxml_add(spins, 1)`); err != nil {
-		engine.Raise(sce.NewPlatformError(EventlessMacrostepIsBoundedEventErrorExecution, "<assign> to 'spins' failed"))
+		engine.Raise(sce.NewPlatformError(EventlessMacrostepIsBoundedEventErrorExecution, sceerrorreason.ErrorReasonAssignmentFailed, "<assign> to 'spins' failed"))
 		return  // W3C SCXML 4.9: the error ends the block
 	}
 
@@ -1067,7 +1071,7 @@ func (p *EventlessMacrostepIsBoundedPolicy) ExecuteTransitionContent(source Even
 
 	// W3C SCXML 5.3: <assign location="pokes" expr="pokes + 1">
 	if err := p.assignVariable(`pokes`, `_scxml_add(pokes, 1)`); err != nil {
-		engine.Raise(sce.NewPlatformError(EventlessMacrostepIsBoundedEventErrorExecution, "<assign> to 'pokes' failed"))
+		engine.Raise(sce.NewPlatformError(EventlessMacrostepIsBoundedEventErrorExecution, sceerrorreason.ErrorReasonAssignmentFailed, "<assign> to 'pokes' failed"))
 		return  // W3C SCXML 4.9: the error ends the block
 	}
 

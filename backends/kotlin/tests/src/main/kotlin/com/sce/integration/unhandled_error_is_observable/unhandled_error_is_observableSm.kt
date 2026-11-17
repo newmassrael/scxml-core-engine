@@ -293,7 +293,7 @@ class UnhandledErrorIsObservableStateMachine(
             try {
                 engine.setVariable(sid, "pokes", engine.evaluateExpr(sid, com.sce.runtime.ScriptSource.lua("0", "0")))
             } catch (e: Exception) {
-                raisePlatformError(UnhandledErrorIsObservableEvent.Error.Execution, "<data id='pokes'> expr failed to evaluate")
+                raisePlatformError(UnhandledErrorIsObservableEvent.Error.Execution, ErrorReason.EXPRESSION_FAILED, "<data id='pokes'> expr failed to evaluate")
             }
         }
         // §scxml-6.4: 'booms' takes a value its invoke handed it, in place of its own
@@ -302,7 +302,7 @@ class UnhandledErrorIsObservableStateMachine(
             try {
                 engine.setVariable(sid, "booms", engine.evaluateExpr(sid, com.sce.runtime.ScriptSource.lua("0", "0")))
             } catch (e: Exception) {
-                raisePlatformError(UnhandledErrorIsObservableEvent.Error.Execution, "<data id='booms'> expr failed to evaluate")
+                raisePlatformError(UnhandledErrorIsObservableEvent.Error.Execution, ErrorReason.EXPRESSION_FAILED, "<data id='booms'> expr failed to evaluate")
             }
         }
         // §scxml-6.4: 'caught' takes a value its invoke handed it, in place of its own
@@ -311,7 +311,7 @@ class UnhandledErrorIsObservableStateMachine(
             try {
                 engine.setVariable(sid, "caught", engine.evaluateExpr(sid, com.sce.runtime.ScriptSource.lua("0", "0")))
             } catch (e: Exception) {
-                raisePlatformError(UnhandledErrorIsObservableEvent.Error.Execution, "<data id='caught'> expr failed to evaluate")
+                raisePlatformError(UnhandledErrorIsObservableEvent.Error.Execution, ErrorReason.EXPRESSION_FAILED, "<data id='caught'> expr failed to evaluate")
             }
         }
         // §scxml-6.4: 'detail' takes a value its invoke handed it, in place of its own
@@ -320,7 +320,7 @@ class UnhandledErrorIsObservableStateMachine(
             try {
                 engine.setVariable(sid, "detail", engine.evaluateExpr(sid, com.sce.runtime.ScriptSource.lua("\"none\"", "'none'")))
             } catch (e: Exception) {
-                raisePlatformError(UnhandledErrorIsObservableEvent.Error.Execution, "<data id='detail'> expr failed to evaluate")
+                raisePlatformError(UnhandledErrorIsObservableEvent.Error.Execution, ErrorReason.EXPRESSION_FAILED, "<data id='detail'> expr failed to evaluate")
             }
         }
         // §scxml-6.4: 'heards' takes a value its invoke handed it, in place of its own
@@ -329,7 +329,7 @@ class UnhandledErrorIsObservableStateMachine(
             try {
                 engine.setVariable(sid, "heards", engine.evaluateExpr(sid, com.sce.runtime.ScriptSource.lua("0", "0")))
             } catch (e: Exception) {
-                raisePlatformError(UnhandledErrorIsObservableEvent.Error.Execution, "<data id='heards'> expr failed to evaluate")
+                raisePlatformError(UnhandledErrorIsObservableEvent.Error.Execution, ErrorReason.EXPRESSION_FAILED, "<data id='heards'> expr failed to evaluate")
             }
         }
     }
@@ -359,14 +359,14 @@ class UnhandledErrorIsObservableStateMachine(
 
     // W3C SCXML 5.9.1: a cond that cannot be evaluated raises error.execution;
     // `null` says so, where a bare `false` could not.
-    private fun evaluateGuardRaising(guardExpr: com.sce.runtime.ScriptSource, reason: String): Boolean? {
+    private fun evaluateGuardRaising(guardExpr: com.sce.runtime.ScriptSource, detail: String): Boolean? {
         assertScriptSession()
         val engine = scriptEngine ?: error("scriptEngine is required (codegen invariant: needs_script_engine == true)")
         val sid = scriptSessionId ?: error("scriptSessionId is established by the start (codegen invariant)")
         return try {
             engine.evaluateCondition(sid, guardExpr)
         } catch (e: Exception) {
-            raisePlatformError(UnhandledErrorIsObservableEvent.Error.Execution, reason)
+            raisePlatformError(UnhandledErrorIsObservableEvent.Error.Execution, ErrorReason.EXPRESSION_FAILED, detail)
             null
         }
     }
@@ -407,7 +407,7 @@ class UnhandledErrorIsObservableStateMachine(
         return try {
             engine.evaluateExpr(sid, serialized)?.toString() ?: ""
         } catch (e: Exception) {
-            raisePlatformError(UnhandledErrorIsObservableEvent.Error.Execution, "an expression could not be serialised to JSON")
+            raisePlatformError(UnhandledErrorIsObservableEvent.Error.Execution, ErrorReason.EXPRESSION_FAILED, "an expression could not be serialised to JSON")
             ""
         }
     }
@@ -428,7 +428,7 @@ class UnhandledErrorIsObservableStateMachine(
             engine.assign(sid, location, expr)
             true
         } catch (e: Exception) {
-            raisePlatformError(UnhandledErrorIsObservableEvent.Error.Execution, "<assign> failed")
+            raisePlatformError(UnhandledErrorIsObservableEvent.Error.Execution, ErrorReason.ASSIGNMENT_FAILED, "<assign> failed")
             false
         }
     }
@@ -444,7 +444,7 @@ class UnhandledErrorIsObservableStateMachine(
             engine.executeScript(sid, script)
             true
         } catch (e: Exception) {
-            raisePlatformError(UnhandledErrorIsObservableEvent.Error.Execution, "<script> failed to execute")
+            raisePlatformError(UnhandledErrorIsObservableEvent.Error.Execution, ErrorReason.SCRIPT_FAILED, "<script> failed to execute")
             false
         }
     }
@@ -619,7 +619,7 @@ class UnhandledErrorIsObservableStateMachine(
             // The same `if (run name@{ ... })` shape <send> refuses through, so
             // the block exit is not an unconditional jump the compiler reports.
             if (run assign@{
-                raisePlatformError(UnhandledErrorIsObservableEvent.Error.Execution, "<assign> has an invalid or read-only location")
+                raisePlatformError(UnhandledErrorIsObservableEvent.Error.Execution, ErrorReason.LOCATION_INVALID, "<assign> has an invalid or read-only location")
                 true
             }) {
                 return
@@ -697,7 +697,7 @@ class UnhandledErrorIsObservableStateMachine(
             // The same `if (run name@{ ... })` shape <send> refuses through, so
             // the block exit is not an unconditional jump the compiler reports.
             if (run assign@{
-                raisePlatformError(UnhandledErrorIsObservableEvent.Error.Execution, "<assign> has an invalid or read-only location")
+                raisePlatformError(UnhandledErrorIsObservableEvent.Error.Execution, ErrorReason.LOCATION_INVALID, "<assign> has an invalid or read-only location")
                 true
             }) {
                 return

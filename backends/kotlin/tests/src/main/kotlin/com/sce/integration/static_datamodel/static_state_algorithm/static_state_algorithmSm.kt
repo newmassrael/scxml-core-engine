@@ -617,11 +617,11 @@ class StaticStateAlgorithmStateMachine(
                     return
                 }
 
-            if (try { vEntries = com.sce.forge.runtime.SceChecked.within(com.sce.forge.runtime.SceChecked.take(call_AddEntry__v(vEntries, pendingLedgerEntryPayload!!.id, pendingLedgerEntryPayload!!.amount)), 8); false } catch (_: com.sce.forge.runtime.AlgorithmFailure) { raisePlatformError(StaticStateAlgorithmEvent.Error.Execution, "<assign location='entries'>: an integer operation overflowed or failed"); true }) {
+            if (try { vEntries = com.sce.forge.runtime.SceChecked.within(com.sce.forge.runtime.SceChecked.take(call_AddEntry__v(vEntries, pendingLedgerEntryPayload!!.id, pendingLedgerEntryPayload!!.amount)), 8); false } catch (_: com.sce.forge.runtime.AlgorithmFailure) { raisePlatformError(StaticStateAlgorithmEvent.Error.Execution, ErrorReason.EXPRESSION_FAILED, "<assign location='entries'>: an integer operation overflowed or failed"); true }) {
                 return
             }
 
-            if (try { vTotal = com.sce.forge.runtime.SceChecked.take(call_TotalOf__v(vEntries)); false } catch (_: com.sce.forge.runtime.AlgorithmFailure) { raisePlatformError(StaticStateAlgorithmEvent.Error.Execution, "<assign location='total'>: an integer operation overflowed or failed"); true }) {
+            if (try { vTotal = com.sce.forge.runtime.SceChecked.take(call_TotalOf__v(vEntries)); false } catch (_: com.sce.forge.runtime.AlgorithmFailure) { raisePlatformError(StaticStateAlgorithmEvent.Error.Execution, ErrorReason.EXPRESSION_FAILED, "<assign location='total'>: an integer operation overflowed or failed"); true }) {
                 return
             }
 
@@ -630,7 +630,7 @@ class StaticStateAlgorithmStateMachine(
 
             if (call_AmountOf__p(pendingLedgerEntryPayload!!) > 100) {
 
-            if (try { vLarge = com.sce.forge.runtime.SceChecked.add(vLarge, 1.toUInt()); false } catch (_: com.sce.forge.runtime.AlgorithmFailure) { raisePlatformError(StaticStateAlgorithmEvent.Error.Execution, "<assign location='large'>: an integer operation overflowed or failed"); true }) {
+            if (try { vLarge = com.sce.forge.runtime.SceChecked.add(vLarge, 1.toUInt()); false } catch (_: com.sce.forge.runtime.AlgorithmFailure) { raisePlatformError(StaticStateAlgorithmEvent.Error.Execution, ErrorReason.EXPRESSION_FAILED, "<assign location='large'>: an integer operation overflowed or failed"); true }) {
                 return
             }
             }
@@ -639,7 +639,7 @@ class StaticStateAlgorithmStateMachine(
     private fun transitionContentOfOpenAt1() {
                 // SCE-MAP: static_state_algorithm.scxml:53 :: open :: _transition_1
 
-            if (try { vTotal = com.sce.forge.runtime.SceChecked.take(call_Bump__v(vTotal, 1)); false } catch (_: com.sce.forge.runtime.AlgorithmFailure) { raisePlatformError(StaticStateAlgorithmEvent.Error.Execution, "<assign location='total'>: an integer operation overflowed or failed"); true }) {
+            if (try { vTotal = com.sce.forge.runtime.SceChecked.take(call_Bump__v(vTotal, 1)); false } catch (_: com.sce.forge.runtime.AlgorithmFailure) { raisePlatformError(StaticStateAlgorithmEvent.Error.Execution, ErrorReason.EXPRESSION_FAILED, "<assign location='total'>: an integer operation overflowed or failed"); true }) {
                 return
             }
     }
@@ -647,11 +647,11 @@ class StaticStateAlgorithmStateMachine(
     private fun transitionContentOfOpenAt2() {
                 // SCE-MAP: static_state_algorithm.scxml:56 :: open :: _transition_2
 
-            if (if (vIds.size < 8) { vIds = vIds + (vLast.id); false } else { raisePlatformError(StaticStateAlgorithmEvent.Error.Execution, "<sce:append target='ids'>: the list already holds its capacity of 8"); true }) {
+            if (if (vIds.size < 8) { vIds = vIds + (vLast.id); false } else { raisePlatformError(StaticStateAlgorithmEvent.Error.Execution, ErrorReason.ASSIGNMENT_FAILED, "<sce:append target='ids'>: the list already holds its capacity of 8"); true }) {
                 return
             }
 
-            if (try { vIdsum = com.sce.forge.runtime.SceChecked.take(call_IdSum__v(vIds)); false } catch (_: com.sce.forge.runtime.AlgorithmFailure) { raisePlatformError(StaticStateAlgorithmEvent.Error.Execution, "<assign location='idsum'>: an integer operation overflowed or failed"); true }) {
+            if (try { vIdsum = com.sce.forge.runtime.SceChecked.take(call_IdSum__v(vIds)); false } catch (_: com.sce.forge.runtime.AlgorithmFailure) { raisePlatformError(StaticStateAlgorithmEvent.Error.Execution, ErrorReason.EXPRESSION_FAILED, "<assign location='idsum'>: an integer operation overflowed or failed"); true }) {
                 return
             }
     }
@@ -659,7 +659,7 @@ class StaticStateAlgorithmStateMachine(
     private fun transitionContentOfOpenAt3() {
                 // SCE-MAP: static_state_algorithm.scxml:60 :: open :: _transition_3
 
-            if (try { vRefusals = com.sce.forge.runtime.SceChecked.add(vRefusals, 1.toUInt()); false } catch (_: com.sce.forge.runtime.AlgorithmFailure) { raisePlatformError(StaticStateAlgorithmEvent.Error.Execution, "<assign location='refusals'>: an integer operation overflowed or failed"); true }) {
+            if (try { vRefusals = com.sce.forge.runtime.SceChecked.add(vRefusals, 1.toUInt()); false } catch (_: com.sce.forge.runtime.AlgorithmFailure) { raisePlatformError(StaticStateAlgorithmEvent.Error.Execution, ErrorReason.EXPRESSION_FAILED, "<assign location='refusals'>: an integer operation overflowed or failed"); true }) {
                 return
             }
     }

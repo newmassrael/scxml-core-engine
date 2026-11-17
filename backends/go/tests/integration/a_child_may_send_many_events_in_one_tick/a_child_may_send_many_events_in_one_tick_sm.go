@@ -31,6 +31,7 @@ import (
 	"time"
 
 	sce "github.com/newmassrael/sce-go-runtime"
+	sceerrorreason "github.com/newmassrael/sce-go-runtime/generated/error_reason"
 )
 
 // Ensure imports are used
@@ -39,6 +40,9 @@ var (
 	_ = filepath.Join
 	_ = strings.HasPrefix
 	_ = time.Duration(0)
+	// Why an error.* event is raised (sce:std/engine/error_reason,
+	// docs/adr/0106 #111); a machine that raises none still imports it.
+	_ = sceerrorreason.ErrorReasonExpressionFailed
 )
 
 // ======================================================================
@@ -335,7 +339,7 @@ func (p *AChildMaySendManyEventsInOneTickPolicy) InitializeDataModel(eng *sce.En
 		if err == nil {
 			_ = engine.SetVariable(sessionID, "ticks", result)
 		} else {
-			eng.Raise(sce.NewPlatformError(AChildMaySendManyEventsInOneTickEventErrorExecution, "<data id='ticks'> expr failed to evaluate"))
+			eng.Raise(sce.NewPlatformError(AChildMaySendManyEventsInOneTickEventErrorExecution, sceerrorreason.ErrorReasonExpressionFailed, "<data id='ticks'> expr failed to evaluate"))
 			_ = engine.SetVariable(sessionID, "ticks", nil)
 		}
 	}
@@ -367,12 +371,12 @@ func (p *AChildMaySendManyEventsInOneTickPolicy) evaluateIfCond(guard string, en
 // evaluateGuardRaising evaluates a cond, raising error.execution when it cannot
 // be evaluated (W3C SCXML 5.9.1); ok is false then, where a bare false could
 // not say so.
-func (p *AChildMaySendManyEventsInOneTickPolicy) evaluateGuardRaising(guard string, eng *sce.Engine[AChildMaySendManyEventsInOneTickState, AChildMaySendManyEventsInOneTickEvent], reason string) (value bool, ok bool) {
+func (p *AChildMaySendManyEventsInOneTickPolicy) evaluateGuardRaising(guard string, eng *sce.Engine[AChildMaySendManyEventsInOneTickState, AChildMaySendManyEventsInOneTickEvent], detail string) (value bool, ok bool) {
 	p.assertScriptSession()
 	engine := p.ScriptEngine
 	result, err := engine.EvaluateExpression(p.SessionID, guard)
 	if err != nil {
-		eng.Raise(sce.NewPlatformError(AChildMaySendManyEventsInOneTickEventErrorExecution, reason))
+		eng.Raise(sce.NewPlatformError(AChildMaySendManyEventsInOneTickEventErrorExecution, sceerrorreason.ErrorReasonExpressionFailed, detail))
 		return false, false
 	}
 	return sce.ScriptToBool(result), true
@@ -475,7 +479,7 @@ func (p *AChildMaySendManyEventsInOneTickPolicy) SetParamValueInScriptEngine(nam
 // failed is left (docs/adr/0098).
 func (p *AChildMaySendManyEventsInOneTickPolicy) declareHandedValue(eng *sce.Engine[AChildMaySendManyEventsInOneTickState, AChildMaySendManyEventsInOneTickEvent], engine sce.IScriptEngine, sessionID, name string, value interface{}) {
 	if err := engine.SetVariable(sessionID, name, value); err != nil {
-		eng.Raise(sce.NewPlatformError(AChildMaySendManyEventsInOneTickEventErrorExecution, "<data id='"+name+"'> could not hold the value its invoking session handed it"))
+		eng.Raise(sce.NewPlatformError(AChildMaySendManyEventsInOneTickEventErrorExecution, sceerrorreason.ErrorReasonDataInitFailed, "<data id='"+name+"'> could not hold the value its invoking session handed it"))
 		_ = engine.SetVariable(sessionID, name, nil)
 	}
 }
@@ -552,7 +556,7 @@ func (p *AChildMaySendManyEventsInOneTickPolicy) ExecutePendingInvokes(engine *s
 			if refused := childEngine.Initialize(); refused != nil {
 				childEngine.DetachMesh()
 				delete(p.activeInvokes, "chatty")
-				engine.Raise(sce.NewPlatformError(AChildMaySendManyEventsInOneTickEventErrorExecution, sce.ChildStartRefusal("chatty", refused)))
+				engine.Raise(sce.NewPlatformError(AChildMaySendManyEventsInOneTickEventErrorExecution, sceerrorreason.ErrorReasonInvokeChildInitFailed, sce.ChildStartRefusal("chatty", refused)))
 				continue
 			}
 
@@ -1119,7 +1123,7 @@ func (p *AChildMaySendManyEventsInOneTickPolicy) ExecuteTransitionContent(source
 
 	// W3C SCXML 5.3: <assign location="ticks" expr="ticks + 1">
 	if err := p.assignVariable(`ticks`, `_scxml_add(ticks, 1)`); err != nil {
-		engine.Raise(sce.NewPlatformError(AChildMaySendManyEventsInOneTickEventErrorExecution, "<assign> to 'ticks' failed"))
+		engine.Raise(sce.NewPlatformError(AChildMaySendManyEventsInOneTickEventErrorExecution, sceerrorreason.ErrorReasonAssignmentFailed, "<assign> to 'ticks' failed"))
 		return  // W3C SCXML 4.9: the error ends the block
 	}
 

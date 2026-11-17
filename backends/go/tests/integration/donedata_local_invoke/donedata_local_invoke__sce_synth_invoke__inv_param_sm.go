@@ -31,6 +31,7 @@ import (
 	"time"
 
 	sce "github.com/newmassrael/sce-go-runtime"
+	sceerrorreason "github.com/newmassrael/sce-go-runtime/generated/error_reason"
 )
 
 // Ensure imports are used
@@ -39,6 +40,9 @@ var (
 	_ = filepath.Join
 	_ = strings.HasPrefix
 	_ = time.Duration(0)
+	// Why an error.* event is raised (sce:std/engine/error_reason,
+	// docs/adr/0106 #111); a machine that raises none still imports it.
+	_ = sceerrorreason.ErrorReasonExpressionFailed
 )
 
 // ======================================================================
@@ -310,12 +314,12 @@ func (p *DonedataLocalInvokeSceSynthInvokeInvParamPolicy) evaluateIfCond(guard s
 // evaluateGuardRaising evaluates a cond, raising error.execution when it cannot
 // be evaluated (W3C SCXML 5.9.1); ok is false then, where a bare false could
 // not say so.
-func (p *DonedataLocalInvokeSceSynthInvokeInvParamPolicy) evaluateGuardRaising(guard string, eng *sce.Engine[DonedataLocalInvokeSceSynthInvokeInvParamState, DonedataLocalInvokeSceSynthInvokeInvParamEvent], reason string) (value bool, ok bool) {
+func (p *DonedataLocalInvokeSceSynthInvokeInvParamPolicy) evaluateGuardRaising(guard string, eng *sce.Engine[DonedataLocalInvokeSceSynthInvokeInvParamState, DonedataLocalInvokeSceSynthInvokeInvParamEvent], detail string) (value bool, ok bool) {
 	p.assertScriptSession()
 	engine := p.ScriptEngine
 	result, err := engine.EvaluateExpression(p.SessionID, guard)
 	if err != nil {
-		eng.Raise(sce.NewPlatformError(DonedataLocalInvokeSceSynthInvokeInvParamEventErrorExecution, reason))
+		eng.Raise(sce.NewPlatformError(DonedataLocalInvokeSceSynthInvokeInvParamEventErrorExecution, sceerrorreason.ErrorReasonExpressionFailed, detail))
 		return false, false
 	}
 	return sce.ScriptToBool(result), true
@@ -660,7 +664,7 @@ func (p *DonedataLocalInvokeSceSynthInvokeInvParamPolicy) ExecuteEntryActions(st
 					// `<send>`'s params take.
 					jsonParts = append(jsonParts, "\"result\":" + sce.ScriptValueToJSON(val))
 				} else {
-					engine.Raise(sce.NewPlatformError(DonedataLocalInvokeSceSynthInvokeInvParamEventErrorExecution, "<donedata> <param name='result'> failed to evaluate"))
+					engine.Raise(sce.NewPlatformError(DonedataLocalInvokeSceSynthInvokeInvParamEventErrorExecution, sceerrorreason.ErrorReasonExpressionFailed, "<donedata> <param name='result'> failed to evaluate"))
 				}
 				// §scxml-5.5: the pairs that survived, `{}` when none did.
 				doneEventData = "{" + strings.Join(jsonParts, ",") + "}"

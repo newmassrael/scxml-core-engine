@@ -427,8 +427,12 @@ public final class AChildTakesAHandedValueInPlaceOfItsDataSceSynthInvokeByNameli
 
     /// Says what went wrong where the document can see it: `error.execution` on the internal
     /// queue (§scxml-5.9.1, 5.3).
-    private func raiseExecutionError(_ message: String, engine: Engine<AChildTakesAHandedValueInPlaceOfItsDataSceSynthInvokeByNamelistPolicy>) {
-        engine.raise(EventWithMetadata.platformError(AChildTakesAHandedValueInPlaceOfItsDataSceSynthInvokeByNamelistEvent.errorExecution, message: message))
+    /// `reason` is the code of sce:std/engine/error_reason the record carries
+    /// (docs/adr/0106 #111).
+    private func raiseExecutionError(
+        _ reason: ErrorReason, _ message: String, engine: Engine<AChildTakesAHandedValueInPlaceOfItsDataSceSynthInvokeByNamelistPolicy>
+    ) {
+        engine.raise(EventWithMetadata.platformError(AChildTakesAHandedValueInPlaceOfItsDataSceSynthInvokeByNamelistEvent.errorExecution, reason: reason, message: message))
     }
 
     /// W3C SCXML 5.3: the `<data id>` `id` takes the value of the lowered expression, or nil when it
@@ -485,6 +489,7 @@ public final class AChildTakesAHandedValueInPlaceOfItsDataSceSynthInvokeByNameli
             }
         } catch {
             raiseExecutionError(
+                handed == nil ? .expressionFailed : .paramUnfit,
                 handed == nil
                     ? "<data id='\(id)'> expr failed to evaluate"
                     : "<data id='\(id)'> could not hold the value its parent handed it",
@@ -648,7 +653,7 @@ public final class AChildTakesAHandedValueInPlaceOfItsDataSceSynthInvokeByNameli
             // this call the payload is lost to the document and to the host alike.
             engine.notePayloadReading(event, reading: Self.payloadReading(of: reading))
         } catch {
-            raiseExecutionError("_event could not be bound for '\(name)'", engine: engine)
+            raiseExecutionError(.payloadRefused, "_event could not be bound for '\(name)'", engine: engine)
         }
     }
 
@@ -685,7 +690,7 @@ public final class AChildTakesAHandedValueInPlaceOfItsDataSceSynthInvokeByNameli
         do {
             return try scriptSession.evaluateCondition(condition, chunkName: "=cond")
         } catch {
-            raiseExecutionError("a \(element) cond failed to evaluate", engine: engine)
+            raiseExecutionError(.expressionFailed, "a \(element) cond failed to evaluate", engine: engine)
             failed = true
             return false
         }
@@ -787,7 +792,7 @@ public final class AChildTakesAHandedValueInPlaceOfItsDataSceSynthInvokeByNameli
 
                 // W3C SCXML 5.4: <assign location="errors">
                 if !assignData("errors", "_scxml_add(errors, 1)") {
-                    raiseExecutionError("<assign> to 'errors' failed", engine: engine)
+                    raiseExecutionError(.assignmentFailed, "<assign> to 'errors' failed", engine: engine)
                     break sceBlock  // W3C SCXML 4.9: the error ends the block
                 }
 
@@ -806,28 +811,28 @@ public final class AChildTakesAHandedValueInPlaceOfItsDataSceSynthInvokeByNameli
                     if let paramValue = evaluateJSON("listed") {
                         sendParts.append(PayloadPair.json("listed", rawJSON: paramValue))
                     } else {
-                        engine.raise(EventWithMetadata.platformError(AChildTakesAHandedValueInPlaceOfItsDataSceSynthInvokeByNamelistEvent.errorExecution, message: "<send> <param name=listed> failed to evaluate"))
+                        engine.raise(EventWithMetadata.platformError(AChildTakesAHandedValueInPlaceOfItsDataSceSynthInvokeByNamelistEvent.errorExecution, reason: .expressionFailed, message: "<send> <param name=listed> failed to evaluate"))
                         paramFailed = true
                     }
 
                     if let paramValue = evaluateJSON("_typeof(stray)") {
                         sendParts.append(PayloadPair.json("stray", rawJSON: paramValue))
                     } else {
-                        engine.raise(EventWithMetadata.platformError(AChildTakesAHandedValueInPlaceOfItsDataSceSynthInvokeByNamelistEvent.errorExecution, message: "<send> <param name=stray> failed to evaluate"))
+                        engine.raise(EventWithMetadata.platformError(AChildTakesAHandedValueInPlaceOfItsDataSceSynthInvokeByNamelistEvent.errorExecution, reason: .expressionFailed, message: "<send> <param name=stray> failed to evaluate"))
                         paramFailed = true
                     }
 
                     if let paramValue = evaluateJSON("(function() if (((((_typeof(record) == \"object\") and (record ~= nil)) and (record.name == \"whole\")) and (record.inner.depth == 2)) and (#record.list == 3)) then return \"whole\" end return \"broken\" end)()") {
                         sendParts.append(PayloadPair.json("record", rawJSON: paramValue))
                     } else {
-                        engine.raise(EventWithMetadata.platformError(AChildTakesAHandedValueInPlaceOfItsDataSceSynthInvokeByNamelistEvent.errorExecution, message: "<send> <param name=record> failed to evaluate"))
+                        engine.raise(EventWithMetadata.platformError(AChildTakesAHandedValueInPlaceOfItsDataSceSynthInvokeByNamelistEvent.errorExecution, reason: .expressionFailed, message: "<send> <param name=record> failed to evaluate"))
                         paramFailed = true
                     }
 
                     if let paramValue = evaluateJSON("errors") {
                         sendParts.append(PayloadPair.json("errors", rawJSON: paramValue))
                     } else {
-                        engine.raise(EventWithMetadata.platformError(AChildTakesAHandedValueInPlaceOfItsDataSceSynthInvokeByNamelistEvent.errorExecution, message: "<send> <param name=errors> failed to evaluate"))
+                        engine.raise(EventWithMetadata.platformError(AChildTakesAHandedValueInPlaceOfItsDataSceSynthInvokeByNamelistEvent.errorExecution, reason: .expressionFailed, message: "<send> <param name=errors> failed to evaluate"))
                         paramFailed = true
                     }
 
@@ -837,7 +842,7 @@ public final class AChildTakesAHandedValueInPlaceOfItsDataSceSynthInvokeByNameli
                         // W3C SCXML C.1: this session was started by its host, not by an
                         // `<invoke>`, so `#_parent` reaches nobody — error.communication,
                         // nothing delivered, and the block ends (4.9).
-                        var sendError = EventWithMetadata.platformError(AChildTakesAHandedValueInPlaceOfItsDataSceSynthInvokeByNamelistEvent.errorCommunication, message: "<send target=#_parent> has no parent session to reach")
+                        var sendError = EventWithMetadata.platformError(AChildTakesAHandedValueInPlaceOfItsDataSceSynthInvokeByNamelistEvent.errorCommunication, reason: .targetUnreachable, message: "<send target=#_parent> has no parent session to reach")
                         sendError.metadata.sendID = "__send_0"
                         engine.raise(sendError)
 

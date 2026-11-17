@@ -665,7 +665,7 @@ class StaticLiftListStateMachine(
 
             when (val sceLift = com.sce.runtime.EventPayload.liftValue(pendingTextGivenPayload!!.text, 3, 256) { it.record("{\"priority\":3}") { StaticLiftListPlanRecord(title = it.field("title").let { it.string(16) }, items = it.field("items").let { it.listWithin(1, 3) { it.record(null) { StaticLiftListItemRecord(title = it.field("title").let { it.string(16) }, at = it.field("at").let { it.uint8() }) } } }, priority = it.field("priority").let { it.uint8() }) } }) { is com.sce.runtime.EventPayload.LiftOutcome.Lifted -> { vAnswer = sceLift.value; vWhy = null }; is com.sce.runtime.EventPayload.LiftOutcome.Refused -> { vWhy = StaticLiftListLiftRefusalRecord(code = when (sceLift.refusal.code) { com.sce.runtime.EventPayload.RefusalCode.NOT_JSON -> StaticLiftListRefusalCodeEnum.NOT_JSON; com.sce.runtime.EventPayload.RefusalCode.NOT_OBJECT -> StaticLiftListRefusalCodeEnum.NOT_OBJECT; com.sce.runtime.EventPayload.RefusalCode.TOO_DEEP -> StaticLiftListRefusalCodeEnum.TOO_DEEP; com.sce.runtime.EventPayload.RefusalCode.MISSING -> StaticLiftListRefusalCodeEnum.MISSING; com.sce.runtime.EventPayload.RefusalCode.NULL_NOT_OPTIONAL -> StaticLiftListRefusalCodeEnum.NULL_NOT_OPTIONAL; com.sce.runtime.EventPayload.RefusalCode.WRONG_KIND -> StaticLiftListRefusalCodeEnum.WRONG_KIND; com.sce.runtime.EventPayload.RefusalCode.BAD_NUMBER -> StaticLiftListRefusalCodeEnum.BAD_NUMBER; com.sce.runtime.EventPayload.RefusalCode.OUT_OF_RANGE -> StaticLiftListRefusalCodeEnum.OUT_OF_RANGE; com.sce.runtime.EventPayload.RefusalCode.TOO_LONG -> StaticLiftListRefusalCodeEnum.TOO_LONG; com.sce.runtime.EventPayload.RefusalCode.TOO_MANY -> StaticLiftListRefusalCodeEnum.TOO_MANY; com.sce.runtime.EventPayload.RefusalCode.UNKNOWN_VARIANT -> StaticLiftListRefusalCodeEnum.UNKNOWN_VARIANT; com.sce.runtime.EventPayload.RefusalCode.NOT_BYTE_TEXT -> StaticLiftListRefusalCodeEnum.NOT_BYTE_TEXT; com.sce.runtime.EventPayload.RefusalCode.NUL_IN_TEXT -> StaticLiftListRefusalCodeEnum.NUL_IN_TEXT; com.sce.runtime.EventPayload.RefusalCode.TOO_FEW -> StaticLiftListRefusalCodeEnum.TOO_FEW; }, path = sceLift.refusal.pointer, bound = sceLift.refusal.bound?.toUInt()) } }
 
-            if (try { vLifts = com.sce.forge.runtime.SceChecked.add(vLifts, 1.toUInt()); false } catch (_: com.sce.forge.runtime.AlgorithmFailure) { raisePlatformError(StaticLiftListEvent.Error.Execution, "<assign location='lifts'>: an integer operation overflowed or failed"); true }) {
+            if (try { vLifts = com.sce.forge.runtime.SceChecked.add(vLifts, 1.toUInt()); false } catch (_: com.sce.forge.runtime.AlgorithmFailure) { raisePlatformError(StaticLiftListEvent.Error.Execution, ErrorReason.EXPRESSION_FAILED, "<assign location='lifts'>: an integer operation overflowed or failed"); true }) {
                 return
             }
 
@@ -681,7 +681,7 @@ class StaticLiftListStateMachine(
     private fun transitionContentOfLiftingAt1() {
                 // SCE-MAP: static_lift_list.scxml:52 :: lifting :: _transition_1
 
-            if (try { vWeeks = com.sce.forge.runtime.SceChecked.add(vWeeks, 1.toUInt()); false } catch (_: com.sce.forge.runtime.AlgorithmFailure) { raisePlatformError(StaticLiftListEvent.Error.Execution, "<assign location='weeks'>: an integer operation overflowed or failed"); true }) {
+            if (try { vWeeks = com.sce.forge.runtime.SceChecked.add(vWeeks, 1.toUInt()); false } catch (_: com.sce.forge.runtime.AlgorithmFailure) { raisePlatformError(StaticLiftListEvent.Error.Execution, ErrorReason.EXPRESSION_FAILED, "<assign location='weeks'>: an integer operation overflowed or failed"); true }) {
                 return
             }
     }
@@ -689,7 +689,7 @@ class StaticLiftListStateMachine(
     private fun transitionContentOfLiftingAt2() {
                 // SCE-MAP: static_lift_list.scxml:56 :: lifting :: _transition_2
 
-            if (try { vOtherReads = com.sce.forge.runtime.SceChecked.add(vOtherReads, 1.toUInt()); false } catch (_: com.sce.forge.runtime.AlgorithmFailure) { raisePlatformError(StaticLiftListEvent.Error.Execution, "<assign location='other_reads'>: an integer operation overflowed or failed"); true }) {
+            if (try { vOtherReads = com.sce.forge.runtime.SceChecked.add(vOtherReads, 1.toUInt()); false } catch (_: com.sce.forge.runtime.AlgorithmFailure) { raisePlatformError(StaticLiftListEvent.Error.Execution, ErrorReason.EXPRESSION_FAILED, "<assign location='other_reads'>: an integer operation overflowed or failed"); true }) {
                 return
             }
     }
@@ -697,7 +697,7 @@ class StaticLiftListStateMachine(
     private fun transitionContentOfLiftingAt3() {
                 // SCE-MAP: static_lift_list.scxml:59 :: lifting :: _transition_3
 
-            if (try { vErrors = com.sce.forge.runtime.SceChecked.add(vErrors, 1.toUInt()); false } catch (_: com.sce.forge.runtime.AlgorithmFailure) { raisePlatformError(StaticLiftListEvent.Error.Execution, "<assign location='errors'>: an integer operation overflowed or failed"); true }) {
+            if (try { vErrors = com.sce.forge.runtime.SceChecked.add(vErrors, 1.toUInt()); false } catch (_: com.sce.forge.runtime.AlgorithmFailure) { raisePlatformError(StaticLiftListEvent.Error.Execution, ErrorReason.EXPRESSION_FAILED, "<assign location='errors'>: an integer operation overflowed or failed"); true }) {
                 return
             }
     }

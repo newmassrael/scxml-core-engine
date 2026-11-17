@@ -1,6 +1,6 @@
 // SCE-GENERATED — DO NOT EDIT
-// source-hash: 53ead28a870c2ad5d88410b2ecb965ce3fb28c959a7506a3621cf967578d5d39
-// SCE-MAP: error_reason.scxml:55 :: _forge_body
+// source-hash: 55e9ecc57d956027bb6dd08c16d46cb9a2c0a99fe474a4b0312c33d8ac0ac34c
+// SCE-MAP: error_reason.scxml:60 :: _forge_body
 
 // SCE Forge: Auto-generated from Extended SCXML (sce:kind="enum")
 // Runtime: none
@@ -31,6 +31,7 @@ public enum ErrorReason: UInt8, CaseIterable, Sendable {
     case reservedParamConflict = 15
     case sessionTransportUnavailable = 16
     case payloadRefused = 17
+    case capacityExceeded = 18
     case targetUnreachable = 64
     case httpTargetInvalid = 65
     case transportUnavailable = 66
@@ -72,6 +73,7 @@ public enum ErrorReason: UInt8, CaseIterable, Sendable {
         case .reservedParamConflict: return "reservedParamConflict"
         case .sessionTransportUnavailable: return "sessionTransportUnavailable"
         case .payloadRefused: return "payloadRefused"
+        case .capacityExceeded: return "capacityExceeded"
         case .targetUnreachable: return "targetUnreachable"
         case .httpTargetInvalid: return "httpTargetInvalid"
         case .transportUnavailable: return "transportUnavailable"
@@ -126,6 +128,7 @@ public enum ErrorReason: UInt8, CaseIterable, Sendable {
         case "reservedParamConflict": self = .reservedParamConflict
         case "sessionTransportUnavailable": self = .sessionTransportUnavailable
         case "payloadRefused": self = .payloadRefused
+        case "capacityExceeded": self = .capacityExceeded
         case "targetUnreachable": self = .targetUnreachable
         case "httpTargetInvalid": self = .httpTargetInvalid
         case "transportUnavailable": self = .transportUnavailable

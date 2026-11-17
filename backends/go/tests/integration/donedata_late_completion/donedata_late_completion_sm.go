@@ -31,6 +31,7 @@ import (
 	"time"
 
 	sce "github.com/newmassrael/sce-go-runtime"
+	sceerrorreason "github.com/newmassrael/sce-go-runtime/generated/error_reason"
 )
 
 // Ensure imports are used
@@ -39,6 +40,9 @@ var (
 	_ = filepath.Join
 	_ = strings.HasPrefix
 	_ = time.Duration(0)
+	// Why an error.* event is raised (sce:std/engine/error_reason,
+	// docs/adr/0106 #111); a machine that raises none still imports it.
+	_ = sceerrorreason.ErrorReasonExpressionFailed
 )
 
 // ======================================================================
@@ -352,12 +356,12 @@ func (p *DonedataLateCompletionPolicy) evaluateIfCond(guard string, eng *sce.Eng
 // evaluateGuardRaising evaluates a cond, raising error.execution when it cannot
 // be evaluated (W3C SCXML 5.9.1); ok is false then, where a bare false could
 // not say so.
-func (p *DonedataLateCompletionPolicy) evaluateGuardRaising(guard string, eng *sce.Engine[DonedataLateCompletionState, DonedataLateCompletionEvent], reason string) (value bool, ok bool) {
+func (p *DonedataLateCompletionPolicy) evaluateGuardRaising(guard string, eng *sce.Engine[DonedataLateCompletionState, DonedataLateCompletionEvent], detail string) (value bool, ok bool) {
 	p.assertScriptSession()
 	engine := p.ScriptEngine
 	result, err := engine.EvaluateExpression(p.SessionID, guard)
 	if err != nil {
-		eng.Raise(sce.NewPlatformError(DonedataLateCompletionEventErrorExecution, reason))
+		eng.Raise(sce.NewPlatformError(DonedataLateCompletionEventErrorExecution, sceerrorreason.ErrorReasonExpressionFailed, detail))
 		return false, false
 	}
 	return sce.ScriptToBool(result), true
@@ -524,7 +528,7 @@ func (p *DonedataLateCompletionPolicy) ExecutePendingInvokes(engine *sce.Engine[
 			if refused := childEngine.Initialize(); refused != nil {
 				childEngine.DetachMesh()
 				delete(p.activeInvokes, "inv_late")
-				engine.Raise(sce.NewPlatformError(DonedataLateCompletionEventErrorExecution, sce.ChildStartRefusal("inv_late", refused)))
+				engine.Raise(sce.NewPlatformError(DonedataLateCompletionEventErrorExecution, sceerrorreason.ErrorReasonInvokeChildInitFailed, sce.ChildStartRefusal("inv_late", refused)))
 				continue
 			}
 
@@ -1138,7 +1142,7 @@ func (p *DonedataLateCompletionPolicy) ExecuteTransitionContent(source DonedataL
 	} else {
 		// W3C SCXML C.1: the invocation is not running, so the session the
 		// target names is not there to reach.
-		errEvt := sce.NewPlatformError(DonedataLateCompletionEventErrorCommunication, "<send target='#_inv_late'> names an invocation that is not running")
+		errEvt := sce.NewPlatformError(DonedataLateCompletionEventErrorCommunication, sceerrorreason.ErrorReasonTargetUnreachable, "<send target='#_inv_late'> names an invocation that is not running")
 		errEvt.Metadata.SendID = "__send_0"
 		engine.Raise(errEvt)
 		return

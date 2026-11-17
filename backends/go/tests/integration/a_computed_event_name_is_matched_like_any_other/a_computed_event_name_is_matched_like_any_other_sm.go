@@ -31,6 +31,7 @@ import (
 	"time"
 
 	sce "github.com/newmassrael/sce-go-runtime"
+	sceerrorreason "github.com/newmassrael/sce-go-runtime/generated/error_reason"
 )
 
 // Ensure imports are used
@@ -39,6 +40,9 @@ var (
 	_ = filepath.Join
 	_ = strings.HasPrefix
 	_ = time.Duration(0)
+	// Why an error.* event is raised (sce:std/engine/error_reason,
+	// docs/adr/0106 #111); a machine that raises none still imports it.
+	_ = sceerrorreason.ErrorReasonExpressionFailed
 )
 
 // ======================================================================
@@ -417,12 +421,12 @@ func (p *AComputedEventNameIsMatchedLikeAnyOtherPolicy) evaluateIfCond(guard str
 // evaluateGuardRaising evaluates a cond, raising error.execution when it cannot
 // be evaluated (W3C SCXML 5.9.1); ok is false then, where a bare false could
 // not say so.
-func (p *AComputedEventNameIsMatchedLikeAnyOtherPolicy) evaluateGuardRaising(guard string, eng *sce.Engine[AComputedEventNameIsMatchedLikeAnyOtherState, AComputedEventNameIsMatchedLikeAnyOtherEvent], reason string) (value bool, ok bool) {
+func (p *AComputedEventNameIsMatchedLikeAnyOtherPolicy) evaluateGuardRaising(guard string, eng *sce.Engine[AComputedEventNameIsMatchedLikeAnyOtherState, AComputedEventNameIsMatchedLikeAnyOtherEvent], detail string) (value bool, ok bool) {
 	p.assertScriptSession()
 	engine := p.ScriptEngine
 	result, err := engine.EvaluateExpression(p.SessionID, guard)
 	if err != nil {
-		eng.Raise(sce.NewPlatformError(AComputedEventNameIsMatchedLikeAnyOtherEventErrorExecution, reason))
+		eng.Raise(sce.NewPlatformError(AComputedEventNameIsMatchedLikeAnyOtherEventErrorExecution, sceerrorreason.ErrorReasonExpressionFailed, detail))
 		return false, false
 	}
 	return sce.ScriptToBool(result), true
@@ -780,6 +784,10 @@ func (p *AComputedEventNameIsMatchedLikeAnyOtherPolicy) ExecuteEntryActions(stat
 	{
 	p.assertScriptSession()
 	sendArgError := ""
+	// Why the argument failed, a code of sce:std/engine/error_reason
+	// (docs/adr/0106 #111), set with every sentence below.
+	var sendArgReason sce.ErrorReason
+	_ = sendArgReason
 	// An event name that evaluates to nothing names no event: the same
 	// failure as one that does not evaluate.
 	sendEventName := ""
@@ -788,12 +796,12 @@ func (p *AComputedEventNameIsMatchedLikeAnyOtherPolicy) ExecuteEntryActions(stat
 			sendEventName = sce.ToWireString(v)
 		}
 		if sendEventName == "" {
-			sendArgError = "<send> eventexpr could not be evaluated to an event name"
+			sendArgError, sendArgReason = "<send> eventexpr could not be evaluated to an event name", sceerrorreason.ErrorReasonExpressionFailed
 		}
 	}
 	_ = sendEventName
 	if sendArgError != "" {
-		errEvt := sce.NewPlatformError(AComputedEventNameIsMatchedLikeAnyOtherEventErrorExecution, sendArgError)
+		errEvt := sce.NewPlatformError(AComputedEventNameIsMatchedLikeAnyOtherEventErrorExecution, sendArgReason, sendArgError)
 		errEvt.Metadata.SendID = "__send_0"
 		engine.Raise(errEvt)
 		return  // W3C SCXML 4.9: the error ends the block
@@ -817,6 +825,10 @@ func (p *AComputedEventNameIsMatchedLikeAnyOtherPolicy) ExecuteEntryActions(stat
 	{
 	p.assertScriptSession()
 	sendArgError := ""
+	// Why the argument failed, a code of sce:std/engine/error_reason
+	// (docs/adr/0106 #111), set with every sentence below.
+	var sendArgReason sce.ErrorReason
+	_ = sendArgReason
 	// An event name that evaluates to nothing names no event: the same
 	// failure as one that does not evaluate.
 	sendEventName := ""
@@ -825,12 +837,12 @@ func (p *AComputedEventNameIsMatchedLikeAnyOtherPolicy) ExecuteEntryActions(stat
 			sendEventName = sce.ToWireString(v)
 		}
 		if sendEventName == "" {
-			sendArgError = "<send> eventexpr could not be evaluated to an event name"
+			sendArgError, sendArgReason = "<send> eventexpr could not be evaluated to an event name", sceerrorreason.ErrorReasonExpressionFailed
 		}
 	}
 	_ = sendEventName
 	if sendArgError != "" {
-		errEvt := sce.NewPlatformError(AComputedEventNameIsMatchedLikeAnyOtherEventErrorExecution, sendArgError)
+		errEvt := sce.NewPlatformError(AComputedEventNameIsMatchedLikeAnyOtherEventErrorExecution, sendArgReason, sendArgError)
 		errEvt.Metadata.SendID = "__send_1"
 		engine.Raise(errEvt)
 		return  // W3C SCXML 4.9: the error ends the block
@@ -858,6 +870,10 @@ func (p *AComputedEventNameIsMatchedLikeAnyOtherPolicy) ExecuteEntryActions(stat
 	{
 	p.assertScriptSession()
 	sendArgError := ""
+	// Why the argument failed, a code of sce:std/engine/error_reason
+	// (docs/adr/0106 #111), set with every sentence below.
+	var sendArgReason sce.ErrorReason
+	_ = sendArgReason
 	// An event name that evaluates to nothing names no event: the same
 	// failure as one that does not evaluate.
 	sendEventName := ""
@@ -866,12 +882,12 @@ func (p *AComputedEventNameIsMatchedLikeAnyOtherPolicy) ExecuteEntryActions(stat
 			sendEventName = sce.ToWireString(v)
 		}
 		if sendEventName == "" {
-			sendArgError = "<send> eventexpr could not be evaluated to an event name"
+			sendArgError, sendArgReason = "<send> eventexpr could not be evaluated to an event name", sceerrorreason.ErrorReasonExpressionFailed
 		}
 	}
 	_ = sendEventName
 	if sendArgError != "" {
-		errEvt := sce.NewPlatformError(AComputedEventNameIsMatchedLikeAnyOtherEventErrorExecution, sendArgError)
+		errEvt := sce.NewPlatformError(AComputedEventNameIsMatchedLikeAnyOtherEventErrorExecution, sendArgReason, sendArgError)
 		errEvt.Metadata.SendID = "__send_2"
 		engine.Raise(errEvt)
 		return  // W3C SCXML 4.9: the error ends the block
@@ -897,6 +913,10 @@ func (p *AComputedEventNameIsMatchedLikeAnyOtherPolicy) ExecuteEntryActions(stat
 	{
 	p.assertScriptSession()
 	sendArgError := ""
+	// Why the argument failed, a code of sce:std/engine/error_reason
+	// (docs/adr/0106 #111), set with every sentence below.
+	var sendArgReason sce.ErrorReason
+	_ = sendArgReason
 	// An event name that evaluates to nothing names no event: the same
 	// failure as one that does not evaluate.
 	sendEventName := ""
@@ -905,12 +925,12 @@ func (p *AComputedEventNameIsMatchedLikeAnyOtherPolicy) ExecuteEntryActions(stat
 			sendEventName = sce.ToWireString(v)
 		}
 		if sendEventName == "" {
-			sendArgError = "<send> eventexpr could not be evaluated to an event name"
+			sendArgError, sendArgReason = "<send> eventexpr could not be evaluated to an event name", sceerrorreason.ErrorReasonExpressionFailed
 		}
 	}
 	_ = sendEventName
 	if sendArgError != "" {
-		errEvt := sce.NewPlatformError(AComputedEventNameIsMatchedLikeAnyOtherEventErrorExecution, sendArgError)
+		errEvt := sce.NewPlatformError(AComputedEventNameIsMatchedLikeAnyOtherEventErrorExecution, sendArgReason, sendArgError)
 		errEvt.Metadata.SendID = "__send_3"
 		engine.Raise(errEvt)
 		return  // W3C SCXML 4.9: the error ends the block
@@ -936,6 +956,10 @@ func (p *AComputedEventNameIsMatchedLikeAnyOtherPolicy) ExecuteEntryActions(stat
 	{
 	p.assertScriptSession()
 	sendArgError := ""
+	// Why the argument failed, a code of sce:std/engine/error_reason
+	// (docs/adr/0106 #111), set with every sentence below.
+	var sendArgReason sce.ErrorReason
+	_ = sendArgReason
 	// An event name that evaluates to nothing names no event: the same
 	// failure as one that does not evaluate.
 	sendEventName := ""
@@ -944,7 +968,7 @@ func (p *AComputedEventNameIsMatchedLikeAnyOtherPolicy) ExecuteEntryActions(stat
 			sendEventName = sce.ToWireString(v)
 		}
 		if sendEventName == "" {
-			sendArgError = "<send> eventexpr could not be evaluated to an event name"
+			sendArgError, sendArgReason = "<send> eventexpr could not be evaluated to an event name", sceerrorreason.ErrorReasonExpressionFailed
 		}
 	}
 	_ = sendEventName
@@ -958,18 +982,18 @@ func (p *AComputedEventNameIsMatchedLikeAnyOtherPolicy) ExecuteEntryActions(stat
 			sendTargetVal = v
 			sendTarget = sce.ToWireString(v)
 		} else {
-			sendArgError = "<send> targetexpr could not be evaluated"
+			sendArgError, sendArgReason = "<send> targetexpr could not be evaluated", sceerrorreason.ErrorReasonExpressionFailed
 		}
 	}
 	if sendArgError == "" && sce.IsInvalidTarget(sendTarget) {
 		// W3C SCXML 6.2: a target this processor cannot address is refused
 		// as a static one is, before anything is delivered.
-		sendArgError = "<send> targetexpr produced a target this processor cannot address"
+		sendArgError, sendArgReason = "<send> targetexpr produced a target this processor cannot address", sceerrorreason.ErrorReasonSendTargetInvalid
 	}
 	_ = sendTargetVal
 	_ = sendTarget
 	if sendArgError != "" {
-		errEvt := sce.NewPlatformError(AComputedEventNameIsMatchedLikeAnyOtherEventErrorExecution, sendArgError)
+		errEvt := sce.NewPlatformError(AComputedEventNameIsMatchedLikeAnyOtherEventErrorExecution, sendArgReason, sendArgError)
 		errEvt.Metadata.SendID = "__send_4"
 		engine.Raise(errEvt)
 		return  // W3C SCXML 4.9: the error ends the block
@@ -981,7 +1005,7 @@ func (p *AComputedEventNameIsMatchedLikeAnyOtherPolicy) ExecuteEntryActions(stat
 		// ends the block as any other would (W3C SCXML 4.9). A self-sent
 		// event names its origin, so `targetexpr="_event.origin"` (test336)
 		// reads this session's location, never "".
-		errEvt := sce.NewPlatformError(AComputedEventNameIsMatchedLikeAnyOtherEventErrorCommunication, "<send> targetexpr evaluated to nothing, so there is no target to reach")
+		errEvt := sce.NewPlatformError(AComputedEventNameIsMatchedLikeAnyOtherEventErrorCommunication, sceerrorreason.ErrorReasonTargetUnreachable, "<send> targetexpr evaluated to nothing, so there is no target to reach")
 		errEvt.Metadata.SendID = "__send_4"
 		engine.Raise(errEvt)
 		return
@@ -1018,7 +1042,7 @@ func (p *AComputedEventNameIsMatchedLikeAnyOtherPolicy) ExecuteEntryActions(stat
 		// act it asked for was performed by nobody. Same event as an
 		// undeclared type, so a wiring mistake cannot read as success.
 		if !hostServed && !engine.HasEventProcessor("sce:mesh") {
-			errEvt := sce.NewPlatformError(AComputedEventNameIsMatchedLikeAnyOtherEventErrorExecution, "<send type='sce:mesh'> names a processor the host declared but never registered")
+			errEvt := sce.NewPlatformError(AComputedEventNameIsMatchedLikeAnyOtherEventErrorExecution, sceerrorreason.ErrorReasonProcessorUnregistered, "<send type='sce:mesh'> names a processor the host declared but never registered")
 			errEvt.Metadata.SendID = "__send_4"
 			engine.Raise(errEvt)
 		}
@@ -1033,13 +1057,13 @@ func (p *AComputedEventNameIsMatchedLikeAnyOtherPolicy) ExecuteEntryActions(stat
 		routed := engine.SendToTarget(sendEvt, sendHasEvt, sendEventName, sendTarget, p.SessionID,
 0, "__send_4", eventDataStr, p.SessionID)
 		if routed == sce.TargetNotSupported {
-			errEvt := sce.NewPlatformError(AComputedEventNameIsMatchedLikeAnyOtherEventErrorExecution, "<send> targetexpr produced a value that is not a target")
+			errEvt := sce.NewPlatformError(AComputedEventNameIsMatchedLikeAnyOtherEventErrorExecution, sceerrorreason.ErrorReasonSendTargetInvalid, "<send> targetexpr produced a value that is not a target")
 			errEvt.Metadata.SendID = "__send_4"
 			engine.Raise(errEvt)
 			return // W3C SCXML 4.9: the error ends the block
 		}
 		if routed == sce.TargetNotReachable {
-			errEvt := sce.NewPlatformError(AComputedEventNameIsMatchedLikeAnyOtherEventErrorCommunication, "<send> targetexpr names a session this processor cannot reach")
+			errEvt := sce.NewPlatformError(AComputedEventNameIsMatchedLikeAnyOtherEventErrorCommunication, sceerrorreason.ErrorReasonTargetUnreachable, "<send> targetexpr names a session this processor cannot reach")
 			errEvt.Metadata.SendID = "__send_4"
 			engine.Raise(errEvt)
 			return // W3C SCXML 4.9: the error ends the block
@@ -1059,6 +1083,10 @@ func (p *AComputedEventNameIsMatchedLikeAnyOtherPolicy) ExecuteEntryActions(stat
 	{
 	p.assertScriptSession()
 	sendArgError := ""
+	// Why the argument failed, a code of sce:std/engine/error_reason
+	// (docs/adr/0106 #111), set with every sentence below.
+	var sendArgReason sce.ErrorReason
+	_ = sendArgReason
 	// An event name that evaluates to nothing names no event: the same
 	// failure as one that does not evaluate.
 	sendEventName := ""
@@ -1067,7 +1095,7 @@ func (p *AComputedEventNameIsMatchedLikeAnyOtherPolicy) ExecuteEntryActions(stat
 			sendEventName = sce.ToWireString(v)
 		}
 		if sendEventName == "" {
-			sendArgError = "<send> eventexpr could not be evaluated to an event name"
+			sendArgError, sendArgReason = "<send> eventexpr could not be evaluated to an event name", sceerrorreason.ErrorReasonExpressionFailed
 		}
 	}
 	_ = sendEventName
@@ -1081,18 +1109,18 @@ func (p *AComputedEventNameIsMatchedLikeAnyOtherPolicy) ExecuteEntryActions(stat
 			sendTargetVal = v
 			sendTarget = sce.ToWireString(v)
 		} else {
-			sendArgError = "<send> targetexpr could not be evaluated"
+			sendArgError, sendArgReason = "<send> targetexpr could not be evaluated", sceerrorreason.ErrorReasonExpressionFailed
 		}
 	}
 	if sendArgError == "" && sce.IsInvalidTarget(sendTarget) {
 		// W3C SCXML 6.2: a target this processor cannot address is refused
 		// as a static one is, before anything is delivered.
-		sendArgError = "<send> targetexpr produced a target this processor cannot address"
+		sendArgError, sendArgReason = "<send> targetexpr produced a target this processor cannot address", sceerrorreason.ErrorReasonSendTargetInvalid
 	}
 	_ = sendTargetVal
 	_ = sendTarget
 	if sendArgError != "" {
-		errEvt := sce.NewPlatformError(AComputedEventNameIsMatchedLikeAnyOtherEventErrorExecution, sendArgError)
+		errEvt := sce.NewPlatformError(AComputedEventNameIsMatchedLikeAnyOtherEventErrorExecution, sendArgReason, sendArgError)
 		errEvt.Metadata.SendID = "__send_5"
 		engine.Raise(errEvt)
 		return  // W3C SCXML 4.9: the error ends the block
@@ -1104,7 +1132,7 @@ func (p *AComputedEventNameIsMatchedLikeAnyOtherPolicy) ExecuteEntryActions(stat
 		// ends the block as any other would (W3C SCXML 4.9). A self-sent
 		// event names its origin, so `targetexpr="_event.origin"` (test336)
 		// reads this session's location, never "".
-		errEvt := sce.NewPlatformError(AComputedEventNameIsMatchedLikeAnyOtherEventErrorCommunication, "<send> targetexpr evaluated to nothing, so there is no target to reach")
+		errEvt := sce.NewPlatformError(AComputedEventNameIsMatchedLikeAnyOtherEventErrorCommunication, sceerrorreason.ErrorReasonTargetUnreachable, "<send> targetexpr evaluated to nothing, so there is no target to reach")
 		errEvt.Metadata.SendID = "__send_5"
 		engine.Raise(errEvt)
 		return
@@ -1154,13 +1182,13 @@ func (p *AComputedEventNameIsMatchedLikeAnyOtherPolicy) ExecuteEntryActions(stat
 		routed := engine.SendToTarget(sendEvt, sendHasEvt, sendEventName, sendTarget, p.SessionID,
 time.Duration(20) * time.Millisecond, "__send_5", eventDataStr, p.SessionID)
 		if routed == sce.TargetNotSupported {
-			errEvt := sce.NewPlatformError(AComputedEventNameIsMatchedLikeAnyOtherEventErrorExecution, "<send> targetexpr produced a value that is not a target")
+			errEvt := sce.NewPlatformError(AComputedEventNameIsMatchedLikeAnyOtherEventErrorExecution, sceerrorreason.ErrorReasonSendTargetInvalid, "<send> targetexpr produced a value that is not a target")
 			errEvt.Metadata.SendID = "__send_5"
 			engine.Raise(errEvt)
 			return // W3C SCXML 4.9: the error ends the block
 		}
 		if routed == sce.TargetNotReachable {
-			errEvt := sce.NewPlatformError(AComputedEventNameIsMatchedLikeAnyOtherEventErrorCommunication, "<send> targetexpr names a session this processor cannot reach")
+			errEvt := sce.NewPlatformError(AComputedEventNameIsMatchedLikeAnyOtherEventErrorCommunication, sceerrorreason.ErrorReasonTargetUnreachable, "<send> targetexpr names a session this processor cannot reach")
 			errEvt.Metadata.SendID = "__send_5"
 			engine.Raise(errEvt)
 			return // W3C SCXML 4.9: the error ends the block

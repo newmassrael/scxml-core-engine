@@ -31,6 +31,7 @@ import (
 	"time"
 
 	sce "github.com/newmassrael/sce-go-runtime"
+	sceerrorreason "github.com/newmassrael/sce-go-runtime/generated/error_reason"
 )
 
 // Ensure imports are used
@@ -39,6 +40,9 @@ var (
 	_ = filepath.Join
 	_ = strings.HasPrefix
 	_ = time.Duration(0)
+	// Why an error.* event is raised (sce:std/engine/error_reason,
+	// docs/adr/0106 #111); a machine that raises none still imports it.
+	_ = sceerrorreason.ErrorReasonExpressionFailed
 )
 
 // ======================================================================
@@ -332,7 +336,7 @@ func (p *AnInvokeLeftBeforeItStartsRaisesNothingPolicy) InitializeDataModel(eng 
 		if err == nil {
 			_ = engine.SetVariable(sessionID, "errors", result)
 		} else {
-			eng.Raise(sce.NewPlatformError(AnInvokeLeftBeforeItStartsRaisesNothingEventErrorExecution, "<data id='errors'> expr failed to evaluate"))
+			eng.Raise(sce.NewPlatformError(AnInvokeLeftBeforeItStartsRaisesNothingEventErrorExecution, sceerrorreason.ErrorReasonExpressionFailed, "<data id='errors'> expr failed to evaluate"))
 			_ = engine.SetVariable(sessionID, "errors", nil)
 		}
 	}
@@ -364,12 +368,12 @@ func (p *AnInvokeLeftBeforeItStartsRaisesNothingPolicy) evaluateIfCond(guard str
 // evaluateGuardRaising evaluates a cond, raising error.execution when it cannot
 // be evaluated (W3C SCXML 5.9.1); ok is false then, where a bare false could
 // not say so.
-func (p *AnInvokeLeftBeforeItStartsRaisesNothingPolicy) evaluateGuardRaising(guard string, eng *sce.Engine[AnInvokeLeftBeforeItStartsRaisesNothingState, AnInvokeLeftBeforeItStartsRaisesNothingEvent], reason string) (value bool, ok bool) {
+func (p *AnInvokeLeftBeforeItStartsRaisesNothingPolicy) evaluateGuardRaising(guard string, eng *sce.Engine[AnInvokeLeftBeforeItStartsRaisesNothingState, AnInvokeLeftBeforeItStartsRaisesNothingEvent], detail string) (value bool, ok bool) {
 	p.assertScriptSession()
 	engine := p.ScriptEngine
 	result, err := engine.EvaluateExpression(p.SessionID, guard)
 	if err != nil {
-		eng.Raise(sce.NewPlatformError(AnInvokeLeftBeforeItStartsRaisesNothingEventErrorExecution, reason))
+		eng.Raise(sce.NewPlatformError(AnInvokeLeftBeforeItStartsRaisesNothingEventErrorExecution, sceerrorreason.ErrorReasonExpressionFailed, detail))
 		return false, false
 	}
 	return sce.ScriptToBool(result), true
@@ -472,7 +476,7 @@ func (p *AnInvokeLeftBeforeItStartsRaisesNothingPolicy) SetParamValueInScriptEng
 // failed is left (docs/adr/0098).
 func (p *AnInvokeLeftBeforeItStartsRaisesNothingPolicy) declareHandedValue(eng *sce.Engine[AnInvokeLeftBeforeItStartsRaisesNothingState, AnInvokeLeftBeforeItStartsRaisesNothingEvent], engine sce.IScriptEngine, sessionID, name string, value interface{}) {
 	if err := engine.SetVariable(sessionID, name, value); err != nil {
-		eng.Raise(sce.NewPlatformError(AnInvokeLeftBeforeItStartsRaisesNothingEventErrorExecution, "<data id='"+name+"'> could not hold the value its invoking session handed it"))
+		eng.Raise(sce.NewPlatformError(AnInvokeLeftBeforeItStartsRaisesNothingEventErrorExecution, sceerrorreason.ErrorReasonDataInitFailed, "<data id='"+name+"'> could not hold the value its invoking session handed it"))
 		_ = engine.SetVariable(sessionID, name, nil)
 	}
 }
@@ -494,7 +498,7 @@ func (p *AnInvokeLeftBeforeItStartsRaisesNothingPolicy) ExecutePendingInvokes(en
 		if pending.DocumentID == "never" {
 			// W3C SCXML 6.4.1: unsupported `type` — place error.execution on
 			// the internal queue and start nothing.
-			engine.Raise(sce.NewPlatformError(AnInvokeLeftBeforeItStartsRaisesNothingEventErrorExecution, "<invoke type='http://example.invalid/unsupported'> names an external service this platform does not support"))
+			engine.Raise(sce.NewPlatformError(AnInvokeLeftBeforeItStartsRaisesNothingEventErrorExecution, sceerrorreason.ErrorReasonInvokeTypeUnsupported, "<invoke type='http://example.invalid/unsupported'> names an external service this platform does not support"))
 			continue
 		}
 	}
@@ -933,7 +937,7 @@ func (p *AnInvokeLeftBeforeItStartsRaisesNothingPolicy) ExecuteTransitionContent
 
 	// W3C SCXML 5.3: <assign location="errors" expr="errors + 1">
 	if err := p.assignVariable(`errors`, `_scxml_add(errors, 1)`); err != nil {
-		engine.Raise(sce.NewPlatformError(AnInvokeLeftBeforeItStartsRaisesNothingEventErrorExecution, "<assign> to 'errors' failed"))
+		engine.Raise(sce.NewPlatformError(AnInvokeLeftBeforeItStartsRaisesNothingEventErrorExecution, sceerrorreason.ErrorReasonAssignmentFailed, "<assign> to 'errors' failed"))
 		return  // W3C SCXML 4.9: the error ends the block
 	}
 

@@ -837,7 +837,7 @@ public final class StaticInvokeParamsPolicy: InvocablePolicy {
             sceBlock: do {
 
 
-                if ({ () -> Bool in do { let sceValue: UInt32 = (try Checked.add(self.vBase, 3)); self.vBase = sceValue } catch { engine.raise(EventWithMetadata.platformError(StaticInvokeParamsEvent.errorExecution, message: "<assign location='base'>: an integer operation overflowed or failed")); return true }; return false }()) {
+                if ({ () -> Bool in do { let sceValue: UInt32 = (try Checked.add(self.vBase, 3)); self.vBase = sceValue } catch { engine.raise(EventWithMetadata.platformError(StaticInvokeParamsEvent.errorExecution, reason: .expressionFailed, message: "<assign location='base'>: an integer operation overflowed or failed")); return true }; return false }()) {
                     break sceBlock  // W3C SCXML 4.9: the error ends the block
                 }
 
@@ -984,7 +984,7 @@ public final class StaticInvokeParamsPolicy: InvocablePolicy {
                 sceBlock: do {
 
 
-                if ({ () -> Bool in do { let sceValue: UInt32 = (try Checked.add(self.vCompleted, 100)); self.vCompleted = sceValue } catch { engine.raise(EventWithMetadata.platformError(StaticInvokeParamsEvent.errorExecution, message: "<assign location='completed'>: an integer operation overflowed or failed")); return true }; return false }()) {
+                if ({ () -> Bool in do { let sceValue: UInt32 = (try Checked.add(self.vCompleted, 100)); self.vCompleted = sceValue } catch { engine.raise(EventWithMetadata.platformError(StaticInvokeParamsEvent.errorExecution, reason: .expressionFailed, message: "<assign location='completed'>: an integer operation overflowed or failed")); return true }; return false }()) {
                     break sceBlock  // W3C SCXML 4.9: the error ends the block
                 }
 
@@ -994,7 +994,7 @@ public final class StaticInvokeParamsPolicy: InvocablePolicy {
                 sceBlock: do {
 
 
-                if ({ () -> Bool in do { let sceValue: UInt32 = (try Checked.add(self.vBase, 1)); self.vBase = sceValue } catch { engine.raise(EventWithMetadata.platformError(StaticInvokeParamsEvent.errorExecution, message: "<assign location='base'>: an integer operation overflowed or failed")); return true }; return false }()) {
+                if ({ () -> Bool in do { let sceValue: UInt32 = (try Checked.add(self.vBase, 1)); self.vBase = sceValue } catch { engine.raise(EventWithMetadata.platformError(StaticInvokeParamsEvent.errorExecution, reason: .expressionFailed, message: "<assign location='base'>: an integer operation overflowed or failed")); return true }; return false }()) {
                     break sceBlock  // W3C SCXML 4.9: the error ends the block
                 }
 
@@ -1004,7 +1004,7 @@ public final class StaticInvokeParamsPolicy: InvocablePolicy {
                 sceBlock: do {
 
 
-                if ({ () -> Bool in do { let sceValue: UInt32 = (try Checked.add(self.vCompleted, 10)); self.vCompleted = sceValue } catch { engine.raise(EventWithMetadata.platformError(StaticInvokeParamsEvent.errorExecution, message: "<assign location='completed'>: an integer operation overflowed or failed")); return true }; return false }()) {
+                if ({ () -> Bool in do { let sceValue: UInt32 = (try Checked.add(self.vCompleted, 10)); self.vCompleted = sceValue } catch { engine.raise(EventWithMetadata.platformError(StaticInvokeParamsEvent.errorExecution, reason: .expressionFailed, message: "<assign location='completed'>: an integer operation overflowed or failed")); return true }; return false }()) {
                     break sceBlock  // W3C SCXML 4.9: the error ends the block
                 }
 
@@ -1019,7 +1019,7 @@ public final class StaticInvokeParamsPolicy: InvocablePolicy {
                 sceBlock: do {
 
 
-                if ({ () -> Bool in do { let sceValue: UInt32 = (try Checked.add(self.vCompleted, 1)); self.vCompleted = sceValue } catch { engine.raise(EventWithMetadata.platformError(StaticInvokeParamsEvent.errorExecution, message: "<assign location='completed'>: an integer operation overflowed or failed")); return true }; return false }()) {
+                if ({ () -> Bool in do { let sceValue: UInt32 = (try Checked.add(self.vCompleted, 1)); self.vCompleted = sceValue } catch { engine.raise(EventWithMetadata.platformError(StaticInvokeParamsEvent.errorExecution, reason: .expressionFailed, message: "<assign location='completed'>: an integer operation overflowed or failed")); return true }; return false }()) {
                     break sceBlock  // W3C SCXML 4.9: the error ends the block
                 }
 

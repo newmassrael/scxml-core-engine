@@ -249,7 +249,7 @@ class InvokeParamErrorStartsTheChildStateMachine(
             try {
                 engine.setVariable(sid, "nothing", engine.evaluateExpr(sid, com.sce.runtime.ScriptSource.lua("nil", "null")))
             } catch (e: Exception) {
-                raisePlatformError(InvokeParamErrorStartsTheChildEvent.Error.Execution, "<data id='nothing'> expr failed to evaluate")
+                raisePlatformError(InvokeParamErrorStartsTheChildEvent.Error.Execution, ErrorReason.EXPRESSION_FAILED, "<data id='nothing'> expr failed to evaluate")
             }
         }
         // §scxml-6.4: 'sawParamError' takes a value its invoke handed it, in place of its own
@@ -258,7 +258,7 @@ class InvokeParamErrorStartsTheChildStateMachine(
             try {
                 engine.setVariable(sid, "sawParamError", engine.evaluateExpr(sid, com.sce.runtime.ScriptSource.lua("0", "0")))
             } catch (e: Exception) {
-                raisePlatformError(InvokeParamErrorStartsTheChildEvent.Error.Execution, "<data id='sawParamError'> expr failed to evaluate")
+                raisePlatformError(InvokeParamErrorStartsTheChildEvent.Error.Execution, ErrorReason.EXPRESSION_FAILED, "<data id='sawParamError'> expr failed to evaluate")
             }
         }
     }
@@ -288,14 +288,14 @@ class InvokeParamErrorStartsTheChildStateMachine(
 
     // W3C SCXML 5.9.1: a cond that cannot be evaluated raises error.execution;
     // `null` says so, where a bare `false` could not.
-    private fun evaluateGuardRaising(guardExpr: com.sce.runtime.ScriptSource, reason: String): Boolean? {
+    private fun evaluateGuardRaising(guardExpr: com.sce.runtime.ScriptSource, detail: String): Boolean? {
         assertScriptSession()
         val engine = scriptEngine ?: error("scriptEngine is required (codegen invariant: needs_script_engine == true)")
         val sid = scriptSessionId ?: error("scriptSessionId is established by the start (codegen invariant)")
         return try {
             engine.evaluateCondition(sid, guardExpr)
         } catch (e: Exception) {
-            raisePlatformError(InvokeParamErrorStartsTheChildEvent.Error.Execution, reason)
+            raisePlatformError(InvokeParamErrorStartsTheChildEvent.Error.Execution, ErrorReason.EXPRESSION_FAILED, detail)
             null
         }
     }
@@ -336,7 +336,7 @@ class InvokeParamErrorStartsTheChildStateMachine(
         return try {
             engine.evaluateExpr(sid, serialized)?.toString() ?: ""
         } catch (e: Exception) {
-            raisePlatformError(InvokeParamErrorStartsTheChildEvent.Error.Execution, "an expression could not be serialised to JSON")
+            raisePlatformError(InvokeParamErrorStartsTheChildEvent.Error.Execution, ErrorReason.EXPRESSION_FAILED, "an expression could not be serialised to JSON")
             ""
         }
     }
@@ -357,7 +357,7 @@ class InvokeParamErrorStartsTheChildStateMachine(
             engine.assign(sid, location, expr)
             true
         } catch (e: Exception) {
-            raisePlatformError(InvokeParamErrorStartsTheChildEvent.Error.Execution, "<assign> failed")
+            raisePlatformError(InvokeParamErrorStartsTheChildEvent.Error.Execution, ErrorReason.ASSIGNMENT_FAILED, "<assign> failed")
             false
         }
     }
@@ -373,7 +373,7 @@ class InvokeParamErrorStartsTheChildStateMachine(
             engine.executeScript(sid, script)
             true
         } catch (e: Exception) {
-            raisePlatformError(InvokeParamErrorStartsTheChildEvent.Error.Execution, "<script> failed to execute")
+            raisePlatformError(InvokeParamErrorStartsTheChildEvent.Error.Execution, ErrorReason.SCRIPT_FAILED, "<script> failed to execute")
             false
         }
     }
@@ -573,7 +573,7 @@ class InvokeParamErrorStartsTheChildStateMachine(
                         try {
                             invokeParams["kept"] = engineInv.evaluateExpr(sidInv, com.sce.runtime.ScriptSource.lua("\"here\"", "'here'"))
                         } catch (_: Exception) {
-                            raisePlatformError(InvokeParamErrorStartsTheChildEvent.Error.Execution, "<invoke> <param name='kept'> could not be read")
+                            raisePlatformError(InvokeParamErrorStartsTheChildEvent.Error.Execution, ErrorReason.LOCATION_INVALID, "<invoke> <param name='kept'> could not be read")
                         }
                         // §scxml-5.7.1: a `<param>` that will not evaluate costs
                         // `error.execution` AND the name and value — nothing else: the
@@ -582,7 +582,7 @@ class InvokeParamErrorStartsTheChildStateMachine(
                         try {
                             invokeParams["broken"] = engineInv.evaluateExpr(sidInv, com.sce.runtime.ScriptSource.lua("nothing.deep", "nothing.deep"))
                         } catch (_: Exception) {
-                            raisePlatformError(InvokeParamErrorStartsTheChildEvent.Error.Execution, "<invoke> <param name='broken'> could not be read")
+                            raisePlatformError(InvokeParamErrorStartsTheChildEvent.Error.Execution, ErrorReason.LOCATION_INVALID, "<invoke> <param name='broken'> could not be read")
                         }
 
                     val childSM = adoptChild(InvokeParamErrorStartsTheChildSceSynthInvokeInvProbeStateMachine(scriptEngine ?: error("scriptEngine is required for invoke (codegen invariant: parent needs_script_engine == true)")), generatedInvokeId)

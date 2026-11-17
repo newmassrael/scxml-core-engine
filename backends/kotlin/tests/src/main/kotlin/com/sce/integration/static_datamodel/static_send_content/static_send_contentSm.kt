@@ -596,7 +596,7 @@ class StaticSendContentStateMachine(
     private fun transitionContentOfViewingAt0() {
                 // SCE-MAP: static_send_content.scxml:29 :: viewing :: _transition_0
 
-            if (try { vShown = vShown.copy(zoom = com.sce.forge.runtime.SceChecked.add(vShown.zoom, 1.toUByte())); false } catch (_: com.sce.forge.runtime.AlgorithmFailure) { raisePlatformError(StaticSendContentEvent.Error.Execution, "<assign location='shown.zoom'>: an integer operation overflowed or failed"); true }) {
+            if (try { vShown = vShown.copy(zoom = com.sce.forge.runtime.SceChecked.add(vShown.zoom, 1.toUByte())); false } catch (_: com.sce.forge.runtime.AlgorithmFailure) { raisePlatformError(StaticSendContentEvent.Error.Execution, ErrorReason.EXPRESSION_FAILED, "<assign location='shown.zoom'>: an integer operation overflowed or failed"); true }) {
                 return
             }
 
@@ -658,7 +658,7 @@ class StaticSendContentStateMachine(
 
             vLevel = pendingViewRelayedPayload!!.zoom
 
-            if (try { vRelays = com.sce.forge.runtime.SceChecked.add(vRelays, 1.toUInt()); false } catch (_: com.sce.forge.runtime.AlgorithmFailure) { raisePlatformError(StaticSendContentEvent.Error.Execution, "<assign location='relays'>: an integer operation overflowed or failed"); true }) {
+            if (try { vRelays = com.sce.forge.runtime.SceChecked.add(vRelays, 1.toUInt()); false } catch (_: com.sce.forge.runtime.AlgorithmFailure) { raisePlatformError(StaticSendContentEvent.Error.Execution, ErrorReason.EXPRESSION_FAILED, "<assign location='relays'>: an integer operation overflowed or failed"); true }) {
                 return
             }
     }

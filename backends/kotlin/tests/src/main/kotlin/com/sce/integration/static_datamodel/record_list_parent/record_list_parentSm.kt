@@ -1339,7 +1339,7 @@ class RecordListParentStateMachine(
             // refused a target naming no invocation above; one that is not
             // running is not there to reach (W3C SCXML C.1).
             if (!sendToChild("list", "record_list.join", sendData)) {
-                raisePlatformError(RecordListParentEvent.Error.Communication, "<send target='#_list'> names an invocation that is not running", "__send_0")
+                raisePlatformError(RecordListParentEvent.Error.Communication, ErrorReason.TARGET_UNREACHABLE, "<send target='#_list'> names an invocation that is not running", "__send_0")
                 return@send true
             }
             false
@@ -1378,7 +1378,7 @@ class RecordListParentStateMachine(
             // refused a target naming no invocation above; one that is not
             // running is not there to reach (W3C SCXML C.1).
             if (!sendToChild("list", "record_list.edit", sendData)) {
-                raisePlatformError(RecordListParentEvent.Error.Communication, "<send target='#_list'> names an invocation that is not running", "__send_1")
+                raisePlatformError(RecordListParentEvent.Error.Communication, ErrorReason.TARGET_UNREACHABLE, "<send target='#_list'> names an invocation that is not running", "__send_1")
                 return@send true
             }
             false
@@ -1413,7 +1413,7 @@ class RecordListParentStateMachine(
             // refused a target naming no invocation above; one that is not
             // running is not there to reach (W3C SCXML C.1).
             if (!sendToChild("list", "record_list.clear", sendData)) {
-                raisePlatformError(RecordListParentEvent.Error.Communication, "<send target='#_list'> names an invocation that is not running", "__send_2")
+                raisePlatformError(RecordListParentEvent.Error.Communication, ErrorReason.TARGET_UNREACHABLE, "<send target='#_list'> names an invocation that is not running", "__send_2")
                 return@send true
             }
             false
@@ -1446,7 +1446,7 @@ class RecordListParentStateMachine(
             // refused a target naming no invocation above; one that is not
             // running is not there to reach (W3C SCXML C.1).
             if (!sendToChild("list", "record_list.retire", sendData)) {
-                raisePlatformError(RecordListParentEvent.Error.Communication, "<send target='#_list'> names an invocation that is not running", "__send_3")
+                raisePlatformError(RecordListParentEvent.Error.Communication, ErrorReason.TARGET_UNREACHABLE, "<send target='#_list'> names an invocation that is not running", "__send_3")
                 return@send true
             }
             false
@@ -1479,7 +1479,7 @@ class RecordListParentStateMachine(
             // refused a target naming no invocation above; one that is not
             // running is not there to reach (W3C SCXML C.1).
             if (!sendToChild("list", "record_list.verdict", sendData)) {
-                raisePlatformError(RecordListParentEvent.Error.Communication, "<send target='#_list'> names an invocation that is not running", "__send_4")
+                raisePlatformError(RecordListParentEvent.Error.Communication, ErrorReason.TARGET_UNREACHABLE, "<send target='#_list'> names an invocation that is not running", "__send_4")
                 return@send true
             }
             false
@@ -1510,7 +1510,7 @@ class RecordListParentStateMachine(
             // refused a target naming no invocation above; one that is not
             // running is not there to reach (W3C SCXML C.1).
             if (!sendToChild("list", "record_list.confirm", sendData)) {
-                raisePlatformError(RecordListParentEvent.Error.Communication, "<send target='#_list'> names an invocation that is not running", "__send_5")
+                raisePlatformError(RecordListParentEvent.Error.Communication, ErrorReason.TARGET_UNREACHABLE, "<send target='#_list'> names an invocation that is not running", "__send_5")
                 return@send true
             }
             false
@@ -1541,7 +1541,7 @@ class RecordListParentStateMachine(
             // refused a target naming no invocation above; one that is not
             // running is not there to reach (W3C SCXML C.1).
             if (!sendToChild("list", "record_list.withdraw", sendData)) {
-                raisePlatformError(RecordListParentEvent.Error.Communication, "<send target='#_list'> names an invocation that is not running", "__send_6")
+                raisePlatformError(RecordListParentEvent.Error.Communication, ErrorReason.TARGET_UNREACHABLE, "<send target='#_list'> names an invocation that is not running", "__send_6")
                 return@send true
             }
             false
@@ -1570,7 +1570,7 @@ class RecordListParentStateMachine(
             // refused a target naming no invocation above; one that is not
             // running is not there to reach (W3C SCXML C.1).
             if (!sendToChild("list", "record_list.role", sendData)) {
-                raisePlatformError(RecordListParentEvent.Error.Communication, "<send target='#_list'> names an invocation that is not running", "__send_7")
+                raisePlatformError(RecordListParentEvent.Error.Communication, ErrorReason.TARGET_UNREACHABLE, "<send target='#_list'> names an invocation that is not running", "__send_7")
                 return@send true
             }
             false
@@ -1601,7 +1601,7 @@ class RecordListParentStateMachine(
             // refused a target naming no invocation above; one that is not
             // running is not there to reach (W3C SCXML C.1).
             if (!sendToChild("list", "record_list.room", sendData)) {
-                raisePlatformError(RecordListParentEvent.Error.Communication, "<send target='#_list'> names an invocation that is not running", "__send_8")
+                raisePlatformError(RecordListParentEvent.Error.Communication, ErrorReason.TARGET_UNREACHABLE, "<send target='#_list'> names an invocation that is not running", "__send_8")
                 return@send true
             }
             false
@@ -1634,7 +1634,7 @@ class RecordListParentStateMachine(
             // refused a target naming no invocation above; one that is not
             // running is not there to reach (W3C SCXML C.1).
             if (!sendToChild("list", "record_list.change", sendData)) {
-                raisePlatformError(RecordListParentEvent.Error.Communication, "<send target='#_list'> names an invocation that is not running", "__send_9")
+                raisePlatformError(RecordListParentEvent.Error.Communication, ErrorReason.TARGET_UNREACHABLE, "<send target='#_list'> names an invocation that is not running", "__send_9")
                 return@send true
             }
             false
@@ -1659,7 +1659,7 @@ class RecordListParentStateMachine(
 
             vShown = vShown.copy(value = pendingRecordListRegisterPayload!!.value)
 
-            if (try { vShown = vShown.copy(text = com.sce.forge.runtime.SceChecked.bounded(pendingRecordListRegisterPayload!!.text, 96)); false } catch (_: com.sce.forge.runtime.AlgorithmFailure) { raisePlatformError(RecordListParentEvent.Error.Execution, "<assign location='shown.text'>: an integer operation overflowed or failed"); true }) {
+            if (try { vShown = vShown.copy(text = com.sce.forge.runtime.SceChecked.bounded(pendingRecordListRegisterPayload!!.text, 96)); false } catch (_: com.sce.forge.runtime.AlgorithmFailure) { raisePlatformError(RecordListParentEvent.Error.Execution, ErrorReason.EXPRESSION_FAILED, "<assign location='shown.text'>: an integer operation overflowed or failed"); true }) {
                 return
             }
 
@@ -1671,7 +1671,7 @@ class RecordListParentStateMachine(
 
             vOthers = emptyList()
 
-            if (try { vTold = com.sce.forge.runtime.SceChecked.add(vTold, 1.toUInt()); false } catch (_: com.sce.forge.runtime.AlgorithmFailure) { raisePlatformError(RecordListParentEvent.Error.Execution, "<assign location='told'>: an integer operation overflowed or failed"); true }) {
+            if (try { vTold = com.sce.forge.runtime.SceChecked.add(vTold, 1.toUInt()); false } catch (_: com.sce.forge.runtime.AlgorithmFailure) { raisePlatformError(RecordListParentEvent.Error.Execution, ErrorReason.EXPRESSION_FAILED, "<assign location='told'>: an integer operation overflowed or failed"); true }) {
                 return
             }
     }
@@ -1690,7 +1690,7 @@ class RecordListParentStateMachine(
 
             vOther = vOther.copy(value = pendingRecordListValuePayload!!.value)
 
-            if (try { vOther = vOther.copy(text = com.sce.forge.runtime.SceChecked.bounded(pendingRecordListValuePayload!!.text, 96)); false } catch (_: com.sce.forge.runtime.AlgorithmFailure) { raisePlatformError(RecordListParentEvent.Error.Execution, "<assign location='other.text'>: an integer operation overflowed or failed"); true }) {
+            if (try { vOther = vOther.copy(text = com.sce.forge.runtime.SceChecked.bounded(pendingRecordListValuePayload!!.text, 96)); false } catch (_: com.sce.forge.runtime.AlgorithmFailure) { raisePlatformError(RecordListParentEvent.Error.Execution, ErrorReason.EXPRESSION_FAILED, "<assign location='other.text'>: an integer operation overflowed or failed"); true }) {
                 return
             }
 
@@ -1700,11 +1700,11 @@ class RecordListParentStateMachine(
 
             vOther = vOther.copy(nodeId = pendingRecordListValuePayload!!.nodeId)
 
-            if (if (vOthers.size < 8) { vOthers = vOthers + (vOther); false } else { raisePlatformError(RecordListParentEvent.Error.Execution, "<sce:append target='others'>: the list already holds its capacity of 8"); true }) {
+            if (if (vOthers.size < 8) { vOthers = vOthers + (vOther); false } else { raisePlatformError(RecordListParentEvent.Error.Execution, ErrorReason.ASSIGNMENT_FAILED, "<sce:append target='others'>: the list already holds its capacity of 8"); true }) {
                 return
             }
 
-            if (try { vTold = com.sce.forge.runtime.SceChecked.add(vTold, 1.toUInt()); false } catch (_: com.sce.forge.runtime.AlgorithmFailure) { raisePlatformError(RecordListParentEvent.Error.Execution, "<assign location='told'>: an integer operation overflowed or failed"); true }) {
+            if (try { vTold = com.sce.forge.runtime.SceChecked.add(vTold, 1.toUInt()); false } catch (_: com.sce.forge.runtime.AlgorithmFailure) { raisePlatformError(RecordListParentEvent.Error.Execution, ErrorReason.EXPRESSION_FAILED, "<assign location='told'>: an integer operation overflowed or failed"); true }) {
                 return
             }
     }
@@ -1717,7 +1717,7 @@ class RecordListParentStateMachine(
 
             vRefused = RecordListParentRefusedRecord(id = pendingRecordListRefusedPayload!!.id, field = pendingRecordListRefusedPayload!!.field, kind = pendingRecordListRefusedPayload!!.kind, reason = pendingRecordListRefusedPayload!!.reason, command = pendingRecordListRefusedPayload!!.command, withdrawn = pendingRecordListRefusedPayload!!.withdrawn)
 
-            if (try { vRefusedCount = com.sce.forge.runtime.SceChecked.add(vRefusedCount, 1.toUInt()); false } catch (_: com.sce.forge.runtime.AlgorithmFailure) { raisePlatformError(RecordListParentEvent.Error.Execution, "<assign location='refusedCount'>: an integer operation overflowed or failed"); true }) {
+            if (try { vRefusedCount = com.sce.forge.runtime.SceChecked.add(vRefusedCount, 1.toUInt()); false } catch (_: com.sce.forge.runtime.AlgorithmFailure) { raisePlatformError(RecordListParentEvent.Error.Execution, ErrorReason.EXPRESSION_FAILED, "<assign location='refusedCount'>: an integer operation overflowed or failed"); true }) {
                 return
             }
     }
@@ -1725,7 +1725,7 @@ class RecordListParentStateMachine(
     private fun transitionContentOfHoldingAt13() {
                 // SCE-MAP: record_list_parent.scxml:229 :: holding :: _transition_13
 
-            if (try { vPendingCount = com.sce.forge.runtime.SceChecked.add(vPendingCount, 1.toUInt()); false } catch (_: com.sce.forge.runtime.AlgorithmFailure) { raisePlatformError(RecordListParentEvent.Error.Execution, "<assign location='pendingCount'>: an integer operation overflowed or failed"); true }) {
+            if (try { vPendingCount = com.sce.forge.runtime.SceChecked.add(vPendingCount, 1.toUInt()); false } catch (_: com.sce.forge.runtime.AlgorithmFailure) { raisePlatformError(RecordListParentEvent.Error.Execution, ErrorReason.EXPRESSION_FAILED, "<assign location='pendingCount'>: an integer operation overflowed or failed"); true }) {
                 return
             }
     }
@@ -1733,7 +1733,7 @@ class RecordListParentStateMachine(
     private fun transitionContentOfHoldingAt14() {
                 // SCE-MAP: record_list_parent.scxml:232 :: holding :: _transition_14
 
-            if (try { vConfirmedCount = com.sce.forge.runtime.SceChecked.add(vConfirmedCount, 1.toUInt()); false } catch (_: com.sce.forge.runtime.AlgorithmFailure) { raisePlatformError(RecordListParentEvent.Error.Execution, "<assign location='confirmedCount'>: an integer operation overflowed or failed"); true }) {
+            if (try { vConfirmedCount = com.sce.forge.runtime.SceChecked.add(vConfirmedCount, 1.toUInt()); false } catch (_: com.sce.forge.runtime.AlgorithmFailure) { raisePlatformError(RecordListParentEvent.Error.Execution, ErrorReason.EXPRESSION_FAILED, "<assign location='confirmedCount'>: an integer operation overflowed or failed"); true }) {
                 return
             }
     }

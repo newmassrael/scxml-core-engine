@@ -296,7 +296,7 @@ class ABadSendParamEndsItsBlockStateMachine(
             try {
                 engine.setVariable(sid, "errors", engine.evaluateExpr(sid, com.sce.runtime.ScriptSource.lua("0", "0")))
             } catch (e: Exception) {
-                raisePlatformError(ABadSendParamEndsItsBlockEvent.Error.Execution, "<data id='errors'> expr failed to evaluate")
+                raisePlatformError(ABadSendParamEndsItsBlockEvent.Error.Execution, ErrorReason.EXPRESSION_FAILED, "<data id='errors'> expr failed to evaluate")
             }
         }
         // §scxml-6.4: 'partials' takes a value its invoke handed it, in place of its own
@@ -305,7 +305,7 @@ class ABadSendParamEndsItsBlockStateMachine(
             try {
                 engine.setVariable(sid, "partials", engine.evaluateExpr(sid, com.sce.runtime.ScriptSource.lua("0", "0")))
             } catch (e: Exception) {
-                raisePlatformError(ABadSendParamEndsItsBlockEvent.Error.Execution, "<data id='partials'> expr failed to evaluate")
+                raisePlatformError(ABadSendParamEndsItsBlockEvent.Error.Execution, ErrorReason.EXPRESSION_FAILED, "<data id='partials'> expr failed to evaluate")
             }
         }
         // §scxml-6.4: 'bares' takes a value its invoke handed it, in place of its own
@@ -314,7 +314,7 @@ class ABadSendParamEndsItsBlockStateMachine(
             try {
                 engine.setVariable(sid, "bares", engine.evaluateExpr(sid, com.sce.runtime.ScriptSource.lua("0", "0")))
             } catch (e: Exception) {
-                raisePlatformError(ABadSendParamEndsItsBlockEvent.Error.Execution, "<data id='bares'> expr failed to evaluate")
+                raisePlatformError(ABadSendParamEndsItsBlockEvent.Error.Execution, ErrorReason.EXPRESSION_FAILED, "<data id='bares'> expr failed to evaluate")
             }
         }
         // §scxml-6.4: 'after' takes a value its invoke handed it, in place of its own
@@ -323,7 +323,7 @@ class ABadSendParamEndsItsBlockStateMachine(
             try {
                 engine.setVariable(sid, "after", engine.evaluateExpr(sid, com.sce.runtime.ScriptSource.lua("0", "0")))
             } catch (e: Exception) {
-                raisePlatformError(ABadSendParamEndsItsBlockEvent.Error.Execution, "<data id='after'> expr failed to evaluate")
+                raisePlatformError(ABadSendParamEndsItsBlockEvent.Error.Execution, ErrorReason.EXPRESSION_FAILED, "<data id='after'> expr failed to evaluate")
             }
         }
         // §scxml-6.4: 'carried' takes a value its invoke handed it, in place of its own
@@ -332,7 +332,7 @@ class ABadSendParamEndsItsBlockStateMachine(
             try {
                 engine.setVariable(sid, "carried", engine.evaluateExpr(sid, com.sce.runtime.ScriptSource.lua("0", "0")))
             } catch (e: Exception) {
-                raisePlatformError(ABadSendParamEndsItsBlockEvent.Error.Execution, "<data id='carried'> expr failed to evaluate")
+                raisePlatformError(ABadSendParamEndsItsBlockEvent.Error.Execution, ErrorReason.EXPRESSION_FAILED, "<data id='carried'> expr failed to evaluate")
             }
         }
         // §scxml-6.4: 'v' takes a value its invoke handed it, in place of its own
@@ -341,7 +341,7 @@ class ABadSendParamEndsItsBlockStateMachine(
             try {
                 engine.setVariable(sid, "v", engine.evaluateExpr(sid, com.sce.runtime.ScriptSource.lua("7", "7")))
             } catch (e: Exception) {
-                raisePlatformError(ABadSendParamEndsItsBlockEvent.Error.Execution, "<data id='v'> expr failed to evaluate")
+                raisePlatformError(ABadSendParamEndsItsBlockEvent.Error.Execution, ErrorReason.EXPRESSION_FAILED, "<data id='v'> expr failed to evaluate")
             }
         }
         // §scxml-6.4: 'obj' takes a value its invoke handed it, in place of its own
@@ -350,7 +350,7 @@ class ABadSendParamEndsItsBlockStateMachine(
             try {
                 engine.setVariable(sid, "obj", engine.evaluateExpr(sid, com.sce.runtime.ScriptSource.lua("{}", "({})")))
             } catch (e: Exception) {
-                raisePlatformError(ABadSendParamEndsItsBlockEvent.Error.Execution, "<data id='obj'> expr failed to evaluate")
+                raisePlatformError(ABadSendParamEndsItsBlockEvent.Error.Execution, ErrorReason.EXPRESSION_FAILED, "<data id='obj'> expr failed to evaluate")
             }
         }
     }
@@ -380,14 +380,14 @@ class ABadSendParamEndsItsBlockStateMachine(
 
     // W3C SCXML 5.9.1: a cond that cannot be evaluated raises error.execution;
     // `null` says so, where a bare `false` could not.
-    private fun evaluateGuardRaising(guardExpr: com.sce.runtime.ScriptSource, reason: String): Boolean? {
+    private fun evaluateGuardRaising(guardExpr: com.sce.runtime.ScriptSource, detail: String): Boolean? {
         assertScriptSession()
         val engine = scriptEngine ?: error("scriptEngine is required (codegen invariant: needs_script_engine == true)")
         val sid = scriptSessionId ?: error("scriptSessionId is established by the start (codegen invariant)")
         return try {
             engine.evaluateCondition(sid, guardExpr)
         } catch (e: Exception) {
-            raisePlatformError(ABadSendParamEndsItsBlockEvent.Error.Execution, reason)
+            raisePlatformError(ABadSendParamEndsItsBlockEvent.Error.Execution, ErrorReason.EXPRESSION_FAILED, detail)
             null
         }
     }
@@ -428,7 +428,7 @@ class ABadSendParamEndsItsBlockStateMachine(
         return try {
             engine.evaluateExpr(sid, serialized)?.toString() ?: ""
         } catch (e: Exception) {
-            raisePlatformError(ABadSendParamEndsItsBlockEvent.Error.Execution, "an expression could not be serialised to JSON")
+            raisePlatformError(ABadSendParamEndsItsBlockEvent.Error.Execution, ErrorReason.EXPRESSION_FAILED, "an expression could not be serialised to JSON")
             ""
         }
     }
@@ -449,7 +449,7 @@ class ABadSendParamEndsItsBlockStateMachine(
             engine.assign(sid, location, expr)
             true
         } catch (e: Exception) {
-            raisePlatformError(ABadSendParamEndsItsBlockEvent.Error.Execution, "<assign> failed")
+            raisePlatformError(ABadSendParamEndsItsBlockEvent.Error.Execution, ErrorReason.ASSIGNMENT_FAILED, "<assign> failed")
             false
         }
     }
@@ -465,7 +465,7 @@ class ABadSendParamEndsItsBlockStateMachine(
             engine.executeScript(sid, script)
             true
         } catch (e: Exception) {
-            raisePlatformError(ABadSendParamEndsItsBlockEvent.Error.Execution, "<script> failed to execute")
+            raisePlatformError(ABadSendParamEndsItsBlockEvent.Error.Execution, ErrorReason.SCRIPT_FAILED, "<script> failed to execute")
             false
         }
     }
@@ -588,14 +588,14 @@ class ABadSendParamEndsItsBlockStateMachine(
             try {
                 putParam(sendPayload, "bad", payloadEngine.evaluateExpr(payloadSid, com.sce.runtime.ScriptSource.lua("obj.missing.deep", "obj.missing.deep")))
             } catch (_: Exception) {
-                raisePlatformError(ABadSendParamEndsItsBlockEvent.Error.Execution, "<send> <param name='bad'> could not be read")
+                raisePlatformError(ABadSendParamEndsItsBlockEvent.Error.Execution, ErrorReason.LOCATION_INVALID, "<send> <param name='bad'> could not be read")
                 paramFailed = true
             }
 
             try {
                 putParam(sendPayload, "good", payloadEngine.evaluateExpr(payloadSid, com.sce.runtime.ScriptSource.lua("1", "1")))
             } catch (_: Exception) {
-                raisePlatformError(ABadSendParamEndsItsBlockEvent.Error.Execution, "<send> <param name='good'> could not be read")
+                raisePlatformError(ABadSendParamEndsItsBlockEvent.Error.Execution, ErrorReason.LOCATION_INVALID, "<send> <param name='good'> could not be read")
                 paramFailed = true
             }
 
@@ -628,14 +628,14 @@ class ABadSendParamEndsItsBlockStateMachine(
             try {
                 putParam(sendPayload, "good", payloadEngine.evaluateExpr(payloadSid, com.sce.runtime.ScriptSource.lua("1", "1")))
             } catch (_: Exception) {
-                raisePlatformError(ABadSendParamEndsItsBlockEvent.Error.Execution, "<send> <param name='good'> could not be read")
+                raisePlatformError(ABadSendParamEndsItsBlockEvent.Error.Execution, ErrorReason.LOCATION_INVALID, "<send> <param name='good'> could not be read")
                 paramFailed = true
             }
 
             try {
                 putParam(sendPayload, "bad", payloadEngine.evaluateExpr(payloadSid, com.sce.runtime.ScriptSource.lua("obj.missing.deep", "obj.missing.deep")))
             } catch (_: Exception) {
-                raisePlatformError(ABadSendParamEndsItsBlockEvent.Error.Execution, "<send> <param name='bad'> could not be read")
+                raisePlatformError(ABadSendParamEndsItsBlockEvent.Error.Execution, ErrorReason.LOCATION_INVALID, "<send> <param name='bad'> could not be read")
                 paramFailed = true
             }
 
@@ -665,7 +665,7 @@ class ABadSendParamEndsItsBlockStateMachine(
             val payloadEngine = scriptEngine ?: error("scriptEngine is required (codegen invariant: needs_script_engine == true)")
             val payloadSid = scriptSessionId ?: error("scriptSessionId is established by the start (codegen invariant)")
             val sendPayload = mutableMapOf<String, Any?>()
-            raisePlatformError(ABadSendParamEndsItsBlockEvent.Error.Execution, "<send> <param name='p'> names no location")
+            raisePlatformError(ABadSendParamEndsItsBlockEvent.Error.Execution, ErrorReason.LOCATION_INVALID, "<send> <param name='p'> names no location")
             paramFailed = true
 
             val sendData = buildJsonFromParams(sendPayload)
@@ -696,7 +696,7 @@ class ABadSendParamEndsItsBlockStateMachine(
             try {
                 putParam(sendPayload, "p", payloadEngine.evaluateExpr(payloadSid, com.sce.runtime.ScriptSource.lua("v", "v")))
             } catch (_: Exception) {
-                raisePlatformError(ABadSendParamEndsItsBlockEvent.Error.Execution, "<send> <param name='p'> could not be read")
+                raisePlatformError(ABadSendParamEndsItsBlockEvent.Error.Execution, ErrorReason.LOCATION_INVALID, "<send> <param name='p'> could not be read")
                 paramFailed = true
             }
 

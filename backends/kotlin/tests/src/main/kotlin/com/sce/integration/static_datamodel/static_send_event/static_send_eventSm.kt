@@ -506,7 +506,7 @@ class StaticSendEventStateMachine(
             // that fails cannot be evaluated: either is the argument error.
             val sendEventName: String = vName
             if (sendEventName.isEmpty()) {
-                raisePlatformError(StaticSendEventEvent.Error.Execution, "<send> eventexpr could not be evaluated to an event name", "__send_0")
+                raisePlatformError(StaticSendEventEvent.Error.Execution, ErrorReason.EXPRESSION_FAILED, "<send> eventexpr could not be evaluated to an event name", "__send_0")
                 return@send true
             }
             val sendData = ""
@@ -539,7 +539,7 @@ class StaticSendEventStateMachine(
                 ""
             }
             if (sendEventName.isEmpty()) {
-                raisePlatformError(StaticSendEventEvent.Error.Execution, "<send> eventexpr could not be evaluated to an event name", "__send_1")
+                raisePlatformError(StaticSendEventEvent.Error.Execution, ErrorReason.EXPRESSION_FAILED, "<send> eventexpr could not be evaluated to an event name", "__send_1")
                 return@send true
             }
             val sendData = ""
@@ -561,7 +561,7 @@ class StaticSendEventStateMachine(
     private fun transitionContentOfIdleAt2() {
                 // SCE-MAP: static_send_event.scxml:32 :: idle :: _transition_2
 
-            if (try { vName = com.sce.forge.runtime.SceChecked.bounded("pong", 16); false } catch (_: com.sce.forge.runtime.AlgorithmFailure) { raisePlatformError(StaticSendEventEvent.Error.Execution, "<assign location='name'>: an integer operation overflowed or failed"); true }) {
+            if (try { vName = com.sce.forge.runtime.SceChecked.bounded("pong", 16); false } catch (_: com.sce.forge.runtime.AlgorithmFailure) { raisePlatformError(StaticSendEventEvent.Error.Execution, ErrorReason.EXPRESSION_FAILED, "<assign location='name'>: an integer operation overflowed or failed"); true }) {
                 return
             }
     }
@@ -569,7 +569,7 @@ class StaticSendEventStateMachine(
     private fun transitionContentOfIdleAt3() {
                 // SCE-MAP: static_send_event.scxml:35 :: idle :: _transition_3
 
-            if (try { vName = com.sce.forge.runtime.SceChecked.bounded("ping", 16); false } catch (_: com.sce.forge.runtime.AlgorithmFailure) { raisePlatformError(StaticSendEventEvent.Error.Execution, "<assign location='name'>: an integer operation overflowed or failed"); true }) {
+            if (try { vName = com.sce.forge.runtime.SceChecked.bounded("ping", 16); false } catch (_: com.sce.forge.runtime.AlgorithmFailure) { raisePlatformError(StaticSendEventEvent.Error.Execution, ErrorReason.EXPRESSION_FAILED, "<assign location='name'>: an integer operation overflowed or failed"); true }) {
                 return
             }
     }
@@ -577,7 +577,7 @@ class StaticSendEventStateMachine(
     private fun transitionContentOfIdleAt4() {
                 // SCE-MAP: static_send_event.scxml:38 :: idle :: _transition_4
 
-            if (try { vName = com.sce.forge.runtime.SceChecked.bounded("", 16); false } catch (_: com.sce.forge.runtime.AlgorithmFailure) { raisePlatformError(StaticSendEventEvent.Error.Execution, "<assign location='name'>: an integer operation overflowed or failed"); true }) {
+            if (try { vName = com.sce.forge.runtime.SceChecked.bounded("", 16); false } catch (_: com.sce.forge.runtime.AlgorithmFailure) { raisePlatformError(StaticSendEventEvent.Error.Execution, ErrorReason.EXPRESSION_FAILED, "<assign location='name'>: an integer operation overflowed or failed"); true }) {
                 return
             }
     }
@@ -585,7 +585,7 @@ class StaticSendEventStateMachine(
     private fun transitionContentOfIdleAt5() {
                 // SCE-MAP: static_send_event.scxml:41 :: idle :: _transition_5
 
-            if (try { vPings = com.sce.forge.runtime.SceChecked.add(vPings, 1.toUInt()); false } catch (_: com.sce.forge.runtime.AlgorithmFailure) { raisePlatformError(StaticSendEventEvent.Error.Execution, "<assign location='pings'>: an integer operation overflowed or failed"); true }) {
+            if (try { vPings = com.sce.forge.runtime.SceChecked.add(vPings, 1.toUInt()); false } catch (_: com.sce.forge.runtime.AlgorithmFailure) { raisePlatformError(StaticSendEventEvent.Error.Execution, ErrorReason.EXPRESSION_FAILED, "<assign location='pings'>: an integer operation overflowed or failed"); true }) {
                 return
             }
     }
@@ -593,7 +593,7 @@ class StaticSendEventStateMachine(
     private fun transitionContentOfIdleAt6() {
                 // SCE-MAP: static_send_event.scxml:44 :: idle :: _transition_6
 
-            if (try { vPongs = com.sce.forge.runtime.SceChecked.add(vPongs, 1.toUInt()); false } catch (_: com.sce.forge.runtime.AlgorithmFailure) { raisePlatformError(StaticSendEventEvent.Error.Execution, "<assign location='pongs'>: an integer operation overflowed or failed"); true }) {
+            if (try { vPongs = com.sce.forge.runtime.SceChecked.add(vPongs, 1.toUInt()); false } catch (_: com.sce.forge.runtime.AlgorithmFailure) { raisePlatformError(StaticSendEventEvent.Error.Execution, ErrorReason.EXPRESSION_FAILED, "<assign location='pongs'>: an integer operation overflowed or failed"); true }) {
                 return
             }
     }
@@ -601,7 +601,7 @@ class StaticSendEventStateMachine(
     private fun transitionContentOfIdleAt7() {
                 // SCE-MAP: static_send_event.scxml:47 :: idle :: _transition_7
 
-            if (try { vRefusals = com.sce.forge.runtime.SceChecked.add(vRefusals, 1.toUInt()); false } catch (_: com.sce.forge.runtime.AlgorithmFailure) { raisePlatformError(StaticSendEventEvent.Error.Execution, "<assign location='refusals'>: an integer operation overflowed or failed"); true }) {
+            if (try { vRefusals = com.sce.forge.runtime.SceChecked.add(vRefusals, 1.toUInt()); false } catch (_: com.sce.forge.runtime.AlgorithmFailure) { raisePlatformError(StaticSendEventEvent.Error.Execution, ErrorReason.EXPRESSION_FAILED, "<assign location='refusals'>: an integer operation overflowed or failed"); true }) {
                 return
             }
     }

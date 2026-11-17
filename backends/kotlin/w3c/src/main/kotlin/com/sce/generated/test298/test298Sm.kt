@@ -261,7 +261,7 @@ class Test298StateMachine(
             try {
                 engine.setVariable(sid, "Var1", engine.evaluateExpr(sid, com.sce.runtime.ScriptSource.lua("0", "0")))
             } catch (e: Exception) {
-                raisePlatformError(Test298Event.Error.Execution, "<data id='Var1'> expr failed to evaluate")
+                raisePlatformError(Test298Event.Error.Execution, ErrorReason.EXPRESSION_FAILED, "<data id='Var1'> expr failed to evaluate")
             }
         }
     }
@@ -291,14 +291,14 @@ class Test298StateMachine(
 
     // W3C SCXML 5.9.1: a cond that cannot be evaluated raises error.execution;
     // `null` says so, where a bare `false` could not.
-    private fun evaluateGuardRaising(guardExpr: com.sce.runtime.ScriptSource, reason: String): Boolean? {
+    private fun evaluateGuardRaising(guardExpr: com.sce.runtime.ScriptSource, detail: String): Boolean? {
         assertScriptSession()
         val engine = scriptEngine ?: error("scriptEngine is required (codegen invariant: needs_script_engine == true)")
         val sid = scriptSessionId ?: error("scriptSessionId is established by the start (codegen invariant)")
         return try {
             engine.evaluateCondition(sid, guardExpr)
         } catch (e: Exception) {
-            raisePlatformError(Test298Event.Error.Execution, reason)
+            raisePlatformError(Test298Event.Error.Execution, ErrorReason.EXPRESSION_FAILED, detail)
             null
         }
     }
@@ -339,7 +339,7 @@ class Test298StateMachine(
         return try {
             engine.evaluateExpr(sid, serialized)?.toString() ?: ""
         } catch (e: Exception) {
-            raisePlatformError(Test298Event.Error.Execution, "an expression could not be serialised to JSON")
+            raisePlatformError(Test298Event.Error.Execution, ErrorReason.EXPRESSION_FAILED, "an expression could not be serialised to JSON")
             ""
         }
     }
@@ -360,7 +360,7 @@ class Test298StateMachine(
             engine.assign(sid, location, expr)
             true
         } catch (e: Exception) {
-            raisePlatformError(Test298Event.Error.Execution, "<assign> failed")
+            raisePlatformError(Test298Event.Error.Execution, ErrorReason.ASSIGNMENT_FAILED, "<assign> failed")
             false
         }
     }
@@ -376,7 +376,7 @@ class Test298StateMachine(
             engine.executeScript(sid, script)
             true
         } catch (e: Exception) {
-            raisePlatformError(Test298Event.Error.Execution, "<script> failed to execute")
+            raisePlatformError(Test298Event.Error.Execution, ErrorReason.SCRIPT_FAILED, "<script> failed to execute")
             false
         }
     }
@@ -533,7 +533,7 @@ class Test298StateMachine(
                     val doneParams = mutableMapOf<String, Any?>()
                     // §scxml-5.7: an empty location names no location —
                     // error.execution, and this pair is ignored.
-                    raisePlatformError(Test298Event.Error.Execution, "<donedata> <param name='Var3'> has an empty location")
+                    raisePlatformError(Test298Event.Error.Execution, ErrorReason.LOCATION_INVALID, "<donedata> <param name='Var3'> has an empty location")
                     // §scxml-5.5: the pairs that survived, `{}` when none did
                     // (C++ DoneDataHelper::evaluateParams). Not left to
                     // buildJsonFromParams, whose empty answer is a <send>'s.

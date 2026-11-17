@@ -320,7 +320,7 @@ class ASendContentExprIsThePayloadStateMachine(
             try {
                 engine.setVariable(sid, "obj", engine.evaluateExpr(sid, com.sce.runtime.ScriptSource.lua("{}", "({})")))
             } catch (e: Exception) {
-                raisePlatformError(ASendContentExprIsThePayloadEvent.Error.Execution, "<data id='obj'> expr failed to evaluate")
+                raisePlatformError(ASendContentExprIsThePayloadEvent.Error.Execution, ErrorReason.EXPRESSION_FAILED, "<data id='obj'> expr failed to evaluate")
             }
         }
         // §scxml-6.4: 'numberOk' takes a value its invoke handed it, in place of its own
@@ -329,7 +329,7 @@ class ASendContentExprIsThePayloadStateMachine(
             try {
                 engine.setVariable(sid, "numberOk", engine.evaluateExpr(sid, com.sce.runtime.ScriptSource.lua("0", "0")))
             } catch (e: Exception) {
-                raisePlatformError(ASendContentExprIsThePayloadEvent.Error.Execution, "<data id='numberOk'> expr failed to evaluate")
+                raisePlatformError(ASendContentExprIsThePayloadEvent.Error.Execution, ErrorReason.EXPRESSION_FAILED, "<data id='numberOk'> expr failed to evaluate")
             }
         }
         // §scxml-6.4: 'objectOk' takes a value its invoke handed it, in place of its own
@@ -338,7 +338,7 @@ class ASendContentExprIsThePayloadStateMachine(
             try {
                 engine.setVariable(sid, "objectOk", engine.evaluateExpr(sid, com.sce.runtime.ScriptSource.lua("0", "0")))
             } catch (e: Exception) {
-                raisePlatformError(ASendContentExprIsThePayloadEvent.Error.Execution, "<data id='objectOk'> expr failed to evaluate")
+                raisePlatformError(ASendContentExprIsThePayloadEvent.Error.Execution, ErrorReason.EXPRESSION_FAILED, "<data id='objectOk'> expr failed to evaluate")
             }
         }
         // §scxml-6.4: 'textOk' takes a value its invoke handed it, in place of its own
@@ -347,7 +347,7 @@ class ASendContentExprIsThePayloadStateMachine(
             try {
                 engine.setVariable(sid, "textOk", engine.evaluateExpr(sid, com.sce.runtime.ScriptSource.lua("0", "0")))
             } catch (e: Exception) {
-                raisePlatformError(ASendContentExprIsThePayloadEvent.Error.Execution, "<data id='textOk'> expr failed to evaluate")
+                raisePlatformError(ASendContentExprIsThePayloadEvent.Error.Execution, ErrorReason.EXPRESSION_FAILED, "<data id='textOk'> expr failed to evaluate")
             }
         }
         // §scxml-6.4: 'errors' takes a value its invoke handed it, in place of its own
@@ -356,7 +356,7 @@ class ASendContentExprIsThePayloadStateMachine(
             try {
                 engine.setVariable(sid, "errors", engine.evaluateExpr(sid, com.sce.runtime.ScriptSource.lua("0", "0")))
             } catch (e: Exception) {
-                raisePlatformError(ASendContentExprIsThePayloadEvent.Error.Execution, "<data id='errors'> expr failed to evaluate")
+                raisePlatformError(ASendContentExprIsThePayloadEvent.Error.Execution, ErrorReason.EXPRESSION_FAILED, "<data id='errors'> expr failed to evaluate")
             }
         }
         // §scxml-6.4: 'badArrived' takes a value its invoke handed it, in place of its own
@@ -365,7 +365,7 @@ class ASendContentExprIsThePayloadStateMachine(
             try {
                 engine.setVariable(sid, "badArrived", engine.evaluateExpr(sid, com.sce.runtime.ScriptSource.lua("0", "0")))
             } catch (e: Exception) {
-                raisePlatformError(ASendContentExprIsThePayloadEvent.Error.Execution, "<data id='badArrived'> expr failed to evaluate")
+                raisePlatformError(ASendContentExprIsThePayloadEvent.Error.Execution, ErrorReason.EXPRESSION_FAILED, "<data id='badArrived'> expr failed to evaluate")
             }
         }
         // §scxml-6.4: 'badEmpty' takes a value its invoke handed it, in place of its own
@@ -374,7 +374,7 @@ class ASendContentExprIsThePayloadStateMachine(
             try {
                 engine.setVariable(sid, "badEmpty", engine.evaluateExpr(sid, com.sce.runtime.ScriptSource.lua("0", "0")))
             } catch (e: Exception) {
-                raisePlatformError(ASendContentExprIsThePayloadEvent.Error.Execution, "<data id='badEmpty'> expr failed to evaluate")
+                raisePlatformError(ASendContentExprIsThePayloadEvent.Error.Execution, ErrorReason.EXPRESSION_FAILED, "<data id='badEmpty'> expr failed to evaluate")
             }
         }
         // §scxml-6.4: 'afterBad' takes a value its invoke handed it, in place of its own
@@ -383,7 +383,7 @@ class ASendContentExprIsThePayloadStateMachine(
             try {
                 engine.setVariable(sid, "afterBad", engine.evaluateExpr(sid, com.sce.runtime.ScriptSource.lua("0", "0")))
             } catch (e: Exception) {
-                raisePlatformError(ASendContentExprIsThePayloadEvent.Error.Execution, "<data id='afterBad'> expr failed to evaluate")
+                raisePlatformError(ASendContentExprIsThePayloadEvent.Error.Execution, ErrorReason.EXPRESSION_FAILED, "<data id='afterBad'> expr failed to evaluate")
             }
         }
     }
@@ -413,14 +413,14 @@ class ASendContentExprIsThePayloadStateMachine(
 
     // W3C SCXML 5.9.1: a cond that cannot be evaluated raises error.execution;
     // `null` says so, where a bare `false` could not.
-    private fun evaluateGuardRaising(guardExpr: com.sce.runtime.ScriptSource, reason: String): Boolean? {
+    private fun evaluateGuardRaising(guardExpr: com.sce.runtime.ScriptSource, detail: String): Boolean? {
         assertScriptSession()
         val engine = scriptEngine ?: error("scriptEngine is required (codegen invariant: needs_script_engine == true)")
         val sid = scriptSessionId ?: error("scriptSessionId is established by the start (codegen invariant)")
         return try {
             engine.evaluateCondition(sid, guardExpr)
         } catch (e: Exception) {
-            raisePlatformError(ASendContentExprIsThePayloadEvent.Error.Execution, reason)
+            raisePlatformError(ASendContentExprIsThePayloadEvent.Error.Execution, ErrorReason.EXPRESSION_FAILED, detail)
             null
         }
     }
@@ -461,7 +461,7 @@ class ASendContentExprIsThePayloadStateMachine(
         return try {
             engine.evaluateExpr(sid, serialized)?.toString() ?: ""
         } catch (e: Exception) {
-            raisePlatformError(ASendContentExprIsThePayloadEvent.Error.Execution, "an expression could not be serialised to JSON")
+            raisePlatformError(ASendContentExprIsThePayloadEvent.Error.Execution, ErrorReason.EXPRESSION_FAILED, "an expression could not be serialised to JSON")
             ""
         }
     }
@@ -482,7 +482,7 @@ class ASendContentExprIsThePayloadStateMachine(
             engine.assign(sid, location, expr)
             true
         } catch (e: Exception) {
-            raisePlatformError(ASendContentExprIsThePayloadEvent.Error.Execution, "<assign> failed")
+            raisePlatformError(ASendContentExprIsThePayloadEvent.Error.Execution, ErrorReason.ASSIGNMENT_FAILED, "<assign> failed")
             false
         }
     }
@@ -498,7 +498,7 @@ class ASendContentExprIsThePayloadStateMachine(
             engine.executeScript(sid, script)
             true
         } catch (e: Exception) {
-            raisePlatformError(ASendContentExprIsThePayloadEvent.Error.Execution, "<script> failed to execute")
+            raisePlatformError(ASendContentExprIsThePayloadEvent.Error.Execution, ErrorReason.SCRIPT_FAILED, "<script> failed to execute")
             false
         }
     }
@@ -627,7 +627,7 @@ class ASendContentExprIsThePayloadStateMachine(
                     .evaluateExpr(scriptSessionId ?: error("scriptSessionId is established by the start (codegen invariant)"), com.sce.runtime.ScriptSource.lua("(40 + 2)", "40 + 2"))
                 if (sendContentValue != null) valueToJson(sendContentValue) else ""
             } catch (_: Exception) {
-                raisePlatformError(ASendContentExprIsThePayloadEvent.Error.Execution, "<send> contentexpr failed to evaluate", "__send_0")
+                raisePlatformError(ASendContentExprIsThePayloadEvent.Error.Execution, ErrorReason.EXPRESSION_FAILED, "<send> contentexpr failed to evaluate", "__send_0")
                 paramFailed = true
                 valueToJson("")
             }
@@ -655,7 +655,7 @@ class ASendContentExprIsThePayloadStateMachine(
                     .evaluateExpr(scriptSessionId ?: error("scriptSessionId is established by the start (codegen invariant)"), com.sce.runtime.ScriptSource.lua("{[\"a\"] = 1}", "({a: 1})"))
                 if (sendContentValue != null) valueToJson(sendContentValue) else ""
             } catch (_: Exception) {
-                raisePlatformError(ASendContentExprIsThePayloadEvent.Error.Execution, "<send> contentexpr failed to evaluate", "__send_1")
+                raisePlatformError(ASendContentExprIsThePayloadEvent.Error.Execution, ErrorReason.EXPRESSION_FAILED, "<send> contentexpr failed to evaluate", "__send_1")
                 paramFailed = true
                 valueToJson("")
             }
@@ -683,7 +683,7 @@ class ASendContentExprIsThePayloadStateMachine(
                     .evaluateExpr(scriptSessionId ?: error("scriptSessionId is established by the start (codegen invariant)"), com.sce.runtime.ScriptSource.lua("\"hi\"", "'hi'"))
                 if (sendContentValue != null) valueToJson(sendContentValue) else ""
             } catch (_: Exception) {
-                raisePlatformError(ASendContentExprIsThePayloadEvent.Error.Execution, "<send> contentexpr failed to evaluate", "__send_2")
+                raisePlatformError(ASendContentExprIsThePayloadEvent.Error.Execution, ErrorReason.EXPRESSION_FAILED, "<send> contentexpr failed to evaluate", "__send_2")
                 paramFailed = true
                 valueToJson("")
             }
@@ -714,7 +714,7 @@ class ASendContentExprIsThePayloadStateMachine(
                     .evaluateExpr(scriptSessionId ?: error("scriptSessionId is established by the start (codegen invariant)"), com.sce.runtime.ScriptSource.lua("obj.missing.deep", "obj.missing.deep"))
                 if (sendContentValue != null) valueToJson(sendContentValue) else ""
             } catch (_: Exception) {
-                raisePlatformError(ASendContentExprIsThePayloadEvent.Error.Execution, "<send> contentexpr failed to evaluate", "__send_3")
+                raisePlatformError(ASendContentExprIsThePayloadEvent.Error.Execution, ErrorReason.EXPRESSION_FAILED, "<send> contentexpr failed to evaluate", "__send_3")
                 paramFailed = true
                 valueToJson("")
             }

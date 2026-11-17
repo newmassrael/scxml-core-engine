@@ -345,7 +345,7 @@ class ABadDonedataPairIsIgnoredStateMachine(
             try {
                 engine.setVariable(sid, "errors", engine.evaluateExpr(sid, com.sce.runtime.ScriptSource.lua("0", "0")))
             } catch (e: Exception) {
-                raisePlatformError(ABadDonedataPairIsIgnoredEvent.Error.Execution, "<data id='errors'> expr failed to evaluate")
+                raisePlatformError(ABadDonedataPairIsIgnoredEvent.Error.Execution, ErrorReason.EXPRESSION_FAILED, "<data id='errors'> expr failed to evaluate")
             }
         }
         // §scxml-6.4: 'shape' takes a value its invoke handed it, in place of its own
@@ -354,7 +354,7 @@ class ABadDonedataPairIsIgnoredStateMachine(
             try {
                 engine.setVariable(sid, "shape", engine.evaluateExpr(sid, com.sce.runtime.ScriptSource.lua("0", "0")))
             } catch (e: Exception) {
-                raisePlatformError(ABadDonedataPairIsIgnoredEvent.Error.Execution, "<data id='shape'> expr failed to evaluate")
+                raisePlatformError(ABadDonedataPairIsIgnoredEvent.Error.Execution, ErrorReason.EXPRESSION_FAILED, "<data id='shape'> expr failed to evaluate")
             }
         }
         // §scxml-6.4: 'v' takes a value its invoke handed it, in place of its own
@@ -363,7 +363,7 @@ class ABadDonedataPairIsIgnoredStateMachine(
             try {
                 engine.setVariable(sid, "v", engine.evaluateExpr(sid, com.sce.runtime.ScriptSource.lua("7", "7")))
             } catch (e: Exception) {
-                raisePlatformError(ABadDonedataPairIsIgnoredEvent.Error.Execution, "<data id='v'> expr failed to evaluate")
+                raisePlatformError(ABadDonedataPairIsIgnoredEvent.Error.Execution, ErrorReason.EXPRESSION_FAILED, "<data id='v'> expr failed to evaluate")
             }
         }
         // §scxml-6.4: 'obj' takes a value its invoke handed it, in place of its own
@@ -372,7 +372,7 @@ class ABadDonedataPairIsIgnoredStateMachine(
             try {
                 engine.setVariable(sid, "obj", engine.evaluateExpr(sid, com.sce.runtime.ScriptSource.lua("{}", "({})")))
             } catch (e: Exception) {
-                raisePlatformError(ABadDonedataPairIsIgnoredEvent.Error.Execution, "<data id='obj'> expr failed to evaluate")
+                raisePlatformError(ABadDonedataPairIsIgnoredEvent.Error.Execution, ErrorReason.EXPRESSION_FAILED, "<data id='obj'> expr failed to evaluate")
             }
         }
     }
@@ -402,14 +402,14 @@ class ABadDonedataPairIsIgnoredStateMachine(
 
     // W3C SCXML 5.9.1: a cond that cannot be evaluated raises error.execution;
     // `null` says so, where a bare `false` could not.
-    private fun evaluateGuardRaising(guardExpr: com.sce.runtime.ScriptSource, reason: String): Boolean? {
+    private fun evaluateGuardRaising(guardExpr: com.sce.runtime.ScriptSource, detail: String): Boolean? {
         assertScriptSession()
         val engine = scriptEngine ?: error("scriptEngine is required (codegen invariant: needs_script_engine == true)")
         val sid = scriptSessionId ?: error("scriptSessionId is established by the start (codegen invariant)")
         return try {
             engine.evaluateCondition(sid, guardExpr)
         } catch (e: Exception) {
-            raisePlatformError(ABadDonedataPairIsIgnoredEvent.Error.Execution, reason)
+            raisePlatformError(ABadDonedataPairIsIgnoredEvent.Error.Execution, ErrorReason.EXPRESSION_FAILED, detail)
             null
         }
     }
@@ -450,7 +450,7 @@ class ABadDonedataPairIsIgnoredStateMachine(
         return try {
             engine.evaluateExpr(sid, serialized)?.toString() ?: ""
         } catch (e: Exception) {
-            raisePlatformError(ABadDonedataPairIsIgnoredEvent.Error.Execution, "an expression could not be serialised to JSON")
+            raisePlatformError(ABadDonedataPairIsIgnoredEvent.Error.Execution, ErrorReason.EXPRESSION_FAILED, "an expression could not be serialised to JSON")
             ""
         }
     }
@@ -471,7 +471,7 @@ class ABadDonedataPairIsIgnoredStateMachine(
             engine.assign(sid, location, expr)
             true
         } catch (e: Exception) {
-            raisePlatformError(ABadDonedataPairIsIgnoredEvent.Error.Execution, "<assign> failed")
+            raisePlatformError(ABadDonedataPairIsIgnoredEvent.Error.Execution, ErrorReason.ASSIGNMENT_FAILED, "<assign> failed")
             false
         }
     }
@@ -487,7 +487,7 @@ class ABadDonedataPairIsIgnoredStateMachine(
             engine.executeScript(sid, script)
             true
         } catch (e: Exception) {
-            raisePlatformError(ABadDonedataPairIsIgnoredEvent.Error.Execution, "<script> failed to execute")
+            raisePlatformError(ABadDonedataPairIsIgnoredEvent.Error.Execution, ErrorReason.SCRIPT_FAILED, "<script> failed to execute")
             false
         }
     }
@@ -631,18 +631,18 @@ class ABadDonedataPairIsIgnoredStateMachine(
                     val doneParams = mutableMapOf<String, Any?>()
                     // §scxml-5.7: an empty location names no location —
                     // error.execution, and this pair is ignored.
-                    raisePlatformError(ABadDonedataPairIsIgnoredEvent.Error.Execution, "<donedata> <param name='empty'> has an empty location")
+                    raisePlatformError(ABadDonedataPairIsIgnoredEvent.Error.Execution, ErrorReason.LOCATION_INVALID, "<donedata> <param name='empty'> has an empty location")
                     try {
                         doneParams["good"] = engineDD.evaluateExpr(sidDD, com.sce.runtime.ScriptSource.lua("v", "v"))
                     } catch (_: Exception) {
                         // §scxml-5.7: error.execution, and this pair is ignored.
-                        raisePlatformError(ABadDonedataPairIsIgnoredEvent.Error.Execution, "<donedata> <param name='good'> failed to evaluate")
+                        raisePlatformError(ABadDonedataPairIsIgnoredEvent.Error.Execution, ErrorReason.EXPRESSION_FAILED, "<donedata> <param name='good'> failed to evaluate")
                     }
                     try {
                         doneParams["bad"] = engineDD.evaluateExpr(sidDD, com.sce.runtime.ScriptSource.lua("obj.missing.deep", "obj.missing.deep"))
                     } catch (_: Exception) {
                         // §scxml-5.7: error.execution, and this pair is ignored.
-                        raisePlatformError(ABadDonedataPairIsIgnoredEvent.Error.Execution, "<donedata> <param name='bad'> failed to evaluate")
+                        raisePlatformError(ABadDonedataPairIsIgnoredEvent.Error.Execution, ErrorReason.EXPRESSION_FAILED, "<donedata> <param name='bad'> failed to evaluate")
                     }
                     // §scxml-5.5: the pairs that survived, `{}` when none did
                     // (C++ DoneDataHelper::evaluateParams). Not left to

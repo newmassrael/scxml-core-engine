@@ -544,7 +544,7 @@ class StaticTextRecordStateMachine(
                     return
                 }
 
-            if (try { vIncoming = StaticTextRecordSlotRecord(slot = pendingTextSlotPayload!!.slot, version = pendingTextSlotPayload!!.version, text = com.sce.forge.runtime.SceChecked.bounded(pendingTextSlotPayload!!.text, 32)); false } catch (_: com.sce.forge.runtime.AlgorithmFailure) { raisePlatformError(StaticTextRecordEvent.Error.Execution, "<assign location='incoming'>: an integer operation overflowed or failed"); true }) {
+            if (try { vIncoming = StaticTextRecordSlotRecord(slot = pendingTextSlotPayload!!.slot, version = pendingTextSlotPayload!!.version, text = com.sce.forge.runtime.SceChecked.bounded(pendingTextSlotPayload!!.text, 32)); false } catch (_: com.sce.forge.runtime.AlgorithmFailure) { raisePlatformError(StaticTextRecordEvent.Error.Execution, ErrorReason.EXPRESSION_FAILED, "<assign location='incoming'>: an integer operation overflowed or failed"); true }) {
                 return
             }
 
@@ -553,12 +553,12 @@ class StaticTextRecordStateMachine(
 
             if (call_Holds__vv(vSlots, vIncoming)) {
 
-            if (try { vKnown = com.sce.forge.runtime.SceChecked.add(vKnown, 1.toUInt()); false } catch (_: com.sce.forge.runtime.AlgorithmFailure) { raisePlatformError(StaticTextRecordEvent.Error.Execution, "<assign location='known'>: an integer operation overflowed or failed"); true }) {
+            if (try { vKnown = com.sce.forge.runtime.SceChecked.add(vKnown, 1.toUInt()); false } catch (_: com.sce.forge.runtime.AlgorithmFailure) { raisePlatformError(StaticTextRecordEvent.Error.Execution, ErrorReason.EXPRESSION_FAILED, "<assign location='known'>: an integer operation overflowed or failed"); true }) {
                 return
             }
             }
 
-            if (if (vSlots.size < 16) { vSlots = vSlots + (vIncoming); false } else { raisePlatformError(StaticTextRecordEvent.Error.Execution, "<sce:append target='slots'>: the list already holds its capacity of 16"); true }) {
+            if (if (vSlots.size < 16) { vSlots = vSlots + (vIncoming); false } else { raisePlatformError(StaticTextRecordEvent.Error.Execution, ErrorReason.ASSIGNMENT_FAILED, "<sce:append target='slots'>: the list already holds its capacity of 16"); true }) {
                 return
             }
     }
@@ -566,7 +566,7 @@ class StaticTextRecordStateMachine(
     private fun transitionContentOfOpenAt1() {
                 // SCE-MAP: static_text_record.scxml:49 :: open :: _transition_1
 
-            if (try { vSlots = com.sce.forge.runtime.SceChecked.within(com.sce.forge.runtime.SceChecked.take(call_Retitled__v(vSlots)), 16); false } catch (_: com.sce.forge.runtime.AlgorithmFailure) { raisePlatformError(StaticTextRecordEvent.Error.Execution, "<assign location='slots'>: an integer operation overflowed or failed"); true }) {
+            if (try { vSlots = com.sce.forge.runtime.SceChecked.within(com.sce.forge.runtime.SceChecked.take(call_Retitled__v(vSlots)), 16); false } catch (_: com.sce.forge.runtime.AlgorithmFailure) { raisePlatformError(StaticTextRecordEvent.Error.Execution, ErrorReason.EXPRESSION_FAILED, "<assign location='slots'>: an integer operation overflowed or failed"); true }) {
                 return
             }
     }
@@ -574,7 +574,7 @@ class StaticTextRecordStateMachine(
     private fun transitionContentOfOpenAt2() {
                 // SCE-MAP: static_text_record.scxml:52 :: open :: _transition_2
 
-            if (try { vRefusals = com.sce.forge.runtime.SceChecked.add(vRefusals, 1.toUInt()); false } catch (_: com.sce.forge.runtime.AlgorithmFailure) { raisePlatformError(StaticTextRecordEvent.Error.Execution, "<assign location='refusals'>: an integer operation overflowed or failed"); true }) {
+            if (try { vRefusals = com.sce.forge.runtime.SceChecked.add(vRefusals, 1.toUInt()); false } catch (_: com.sce.forge.runtime.AlgorithmFailure) { raisePlatformError(StaticTextRecordEvent.Error.Execution, ErrorReason.EXPRESSION_FAILED, "<assign location='refusals'>: an integer operation overflowed or failed"); true }) {
                 return
             }
     }

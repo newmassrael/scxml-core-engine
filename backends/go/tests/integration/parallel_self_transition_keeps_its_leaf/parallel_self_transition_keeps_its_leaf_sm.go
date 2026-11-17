@@ -31,6 +31,7 @@ import (
 	"time"
 
 	sce "github.com/newmassrael/sce-go-runtime"
+	sceerrorreason "github.com/newmassrael/sce-go-runtime/generated/error_reason"
 )
 
 // Ensure imports are used
@@ -39,6 +40,9 @@ var (
 	_ = filepath.Join
 	_ = strings.HasPrefix
 	_ = time.Duration(0)
+	// Why an error.* event is raised (sce:std/engine/error_reason,
+	// docs/adr/0106 #111); a machine that raises none still imports it.
+	_ = sceerrorreason.ErrorReasonExpressionFailed
 )
 
 // ======================================================================
@@ -401,7 +405,7 @@ func (p *ParallelSelfTransitionKeepsItsLeafPolicy) InitializeDataModel(eng *sce.
 		if err == nil {
 			_ = engine.SetVariable(sessionID, "n", result)
 		} else {
-			eng.Raise(sce.NewPlatformError(ParallelSelfTransitionKeepsItsLeafEventErrorExecution, "<data id='n'> expr failed to evaluate"))
+			eng.Raise(sce.NewPlatformError(ParallelSelfTransitionKeepsItsLeafEventErrorExecution, sceerrorreason.ErrorReasonExpressionFailed, "<data id='n'> expr failed to evaluate"))
 			_ = engine.SetVariable(sessionID, "n", nil)
 		}
 	}
@@ -415,7 +419,7 @@ func (p *ParallelSelfTransitionKeepsItsLeafPolicy) InitializeDataModel(eng *sce.
 		if err == nil {
 			_ = engine.SetVariable(sessionID, "m", result)
 		} else {
-			eng.Raise(sce.NewPlatformError(ParallelSelfTransitionKeepsItsLeafEventErrorExecution, "<data id='m'> expr failed to evaluate"))
+			eng.Raise(sce.NewPlatformError(ParallelSelfTransitionKeepsItsLeafEventErrorExecution, sceerrorreason.ErrorReasonExpressionFailed, "<data id='m'> expr failed to evaluate"))
 			_ = engine.SetVariable(sessionID, "m", nil)
 		}
 	}
@@ -447,12 +451,12 @@ func (p *ParallelSelfTransitionKeepsItsLeafPolicy) evaluateIfCond(guard string, 
 // evaluateGuardRaising evaluates a cond, raising error.execution when it cannot
 // be evaluated (W3C SCXML 5.9.1); ok is false then, where a bare false could
 // not say so.
-func (p *ParallelSelfTransitionKeepsItsLeafPolicy) evaluateGuardRaising(guard string, eng *sce.Engine[ParallelSelfTransitionKeepsItsLeafState, ParallelSelfTransitionKeepsItsLeafEvent], reason string) (value bool, ok bool) {
+func (p *ParallelSelfTransitionKeepsItsLeafPolicy) evaluateGuardRaising(guard string, eng *sce.Engine[ParallelSelfTransitionKeepsItsLeafState, ParallelSelfTransitionKeepsItsLeafEvent], detail string) (value bool, ok bool) {
 	p.assertScriptSession()
 	engine := p.ScriptEngine
 	result, err := engine.EvaluateExpression(p.SessionID, guard)
 	if err != nil {
-		eng.Raise(sce.NewPlatformError(ParallelSelfTransitionKeepsItsLeafEventErrorExecution, reason))
+		eng.Raise(sce.NewPlatformError(ParallelSelfTransitionKeepsItsLeafEventErrorExecution, sceerrorreason.ErrorReasonExpressionFailed, detail))
 		return false, false
 	}
 	return sce.ScriptToBool(result), true
@@ -555,7 +559,7 @@ func (p *ParallelSelfTransitionKeepsItsLeafPolicy) SetParamValueInScriptEngine(n
 // failed is left (docs/adr/0098).
 func (p *ParallelSelfTransitionKeepsItsLeafPolicy) declareHandedValue(eng *sce.Engine[ParallelSelfTransitionKeepsItsLeafState, ParallelSelfTransitionKeepsItsLeafEvent], engine sce.IScriptEngine, sessionID, name string, value interface{}) {
 	if err := engine.SetVariable(sessionID, name, value); err != nil {
-		eng.Raise(sce.NewPlatformError(ParallelSelfTransitionKeepsItsLeafEventErrorExecution, "<data id='"+name+"'> could not hold the value its invoking session handed it"))
+		eng.Raise(sce.NewPlatformError(ParallelSelfTransitionKeepsItsLeafEventErrorExecution, sceerrorreason.ErrorReasonDataInitFailed, "<data id='"+name+"'> could not hold the value its invoking session handed it"))
 		_ = engine.SetVariable(sessionID, name, nil)
 	}
 }
@@ -975,7 +979,7 @@ func (p *ParallelSelfTransitionKeepsItsLeafPolicy) ExecuteTransitionContent(sour
 
 	// W3C SCXML 5.3: <assign location="m" expr="m + 1">
 	if err := p.assignVariable(`m`, `_scxml_add(m, 1)`); err != nil {
-		engine.Raise(sce.NewPlatformError(ParallelSelfTransitionKeepsItsLeafEventErrorExecution, "<assign> to 'm' failed"))
+		engine.Raise(sce.NewPlatformError(ParallelSelfTransitionKeepsItsLeafEventErrorExecution, sceerrorreason.ErrorReasonAssignmentFailed, "<assign> to 'm' failed"))
 		return  // W3C SCXML 4.9: the error ends the block
 	}
 
@@ -990,7 +994,7 @@ func (p *ParallelSelfTransitionKeepsItsLeafPolicy) ExecuteTransitionContent(sour
 
 	// W3C SCXML 5.3: <assign location="n" expr="n + 1">
 	if err := p.assignVariable(`n`, `_scxml_add(n, 1)`); err != nil {
-		engine.Raise(sce.NewPlatformError(ParallelSelfTransitionKeepsItsLeafEventErrorExecution, "<assign> to 'n' failed"))
+		engine.Raise(sce.NewPlatformError(ParallelSelfTransitionKeepsItsLeafEventErrorExecution, sceerrorreason.ErrorReasonAssignmentFailed, "<assign> to 'n' failed"))
 		return  // W3C SCXML 4.9: the error ends the block
 	}
 

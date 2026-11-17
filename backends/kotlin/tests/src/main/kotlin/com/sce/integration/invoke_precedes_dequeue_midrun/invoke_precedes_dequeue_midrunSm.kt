@@ -386,7 +386,7 @@ class InvokePrecedesDequeueMidrunStateMachine(
             // refused a target naming no invocation above; one that is not
             // running is not there to reach (W3C SCXML C.1).
             if (!sendToChild("inv_watch", "probe", sendData)) {
-                raisePlatformError(InvokePrecedesDequeueMidrunEvent.Error.Communication, "<send target='#_inv_watch'> names an invocation that is not running", "__send_1")
+                raisePlatformError(InvokePrecedesDequeueMidrunEvent.Error.Communication, ErrorReason.TARGET_UNREACHABLE, "<send target='#_inv_watch'> names an invocation that is not running", "__send_1")
                 return@send true
             }
             false

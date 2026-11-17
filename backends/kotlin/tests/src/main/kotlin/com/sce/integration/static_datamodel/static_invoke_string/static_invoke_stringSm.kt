@@ -442,7 +442,7 @@ class StaticInvokeStringStateMachine(
                         childSeed.title = com.sce.forge.runtime.SceChecked.bounded("wxyz", 4)
                     } catch (_: com.sce.forge.runtime.AlgorithmFailure) {
                         // W3C SCXML 5.7.1: report the failure and leave the value out.
-                        raisePlatformError(StaticInvokeStringEvent.Error.Execution, "<invoke> <param name='title'> expr failed to evaluate")
+                        raisePlatformError(StaticInvokeStringEvent.Error.Execution, ErrorReason.EXPRESSION_FAILED, "<invoke> <param name='title'> expr failed to evaluate")
                     }
                     childSM.acceptParams(childSeed)
 
@@ -466,7 +466,7 @@ class StaticInvokeStringStateMachine(
                         childSeed.title = com.sce.forge.runtime.SceChecked.bounded(vLengthy, 4)
                     } catch (_: com.sce.forge.runtime.AlgorithmFailure) {
                         // W3C SCXML 5.7.1: report the failure and leave the value out.
-                        raisePlatformError(StaticInvokeStringEvent.Error.Execution, "<invoke> <param name='title'> expr failed to evaluate")
+                        raisePlatformError(StaticInvokeStringEvent.Error.Execution, ErrorReason.EXPRESSION_FAILED, "<invoke> <param name='title'> expr failed to evaluate")
                     }
                     childSM.acceptParams(childSeed)
 
@@ -490,7 +490,7 @@ class StaticInvokeStringStateMachine(
                         childSeed.title = com.sce.forge.runtime.SceChecked.bounded("é€", 4)
                     } catch (_: com.sce.forge.runtime.AlgorithmFailure) {
                         // W3C SCXML 5.7.1: report the failure and leave the value out.
-                        raisePlatformError(StaticInvokeStringEvent.Error.Execution, "<invoke> <param name='title'> expr failed to evaluate")
+                        raisePlatformError(StaticInvokeStringEvent.Error.Execution, ErrorReason.EXPRESSION_FAILED, "<invoke> <param name='title'> expr failed to evaluate")
                     }
                     childSM.acceptParams(childSeed)
 
@@ -599,7 +599,7 @@ class StaticInvokeStringStateMachine(
     private fun transitionContentOfRunningAt0() {
                 // SCE-MAP: static_invoke_string.scxml:76 :: running :: _transition_0
 
-            if (try { vCompleted = com.sce.forge.runtime.SceChecked.add(vCompleted, 1.toUInt()); false } catch (_: com.sce.forge.runtime.AlgorithmFailure) { raisePlatformError(StaticInvokeStringEvent.Error.Execution, "<assign location='completed'>: an integer operation overflowed or failed"); true }) {
+            if (try { vCompleted = com.sce.forge.runtime.SceChecked.add(vCompleted, 1.toUInt()); false } catch (_: com.sce.forge.runtime.AlgorithmFailure) { raisePlatformError(StaticInvokeStringEvent.Error.Execution, ErrorReason.EXPRESSION_FAILED, "<assign location='completed'>: an integer operation overflowed or failed"); true }) {
                 return
             }
     }
@@ -607,7 +607,7 @@ class StaticInvokeStringStateMachine(
     private fun transitionContentOfRunningAt1() {
                 // SCE-MAP: static_invoke_string.scxml:79 :: running :: _transition_1
 
-            if (try { vCompleted = com.sce.forge.runtime.SceChecked.add(vCompleted, 10.toUInt()); false } catch (_: com.sce.forge.runtime.AlgorithmFailure) { raisePlatformError(StaticInvokeStringEvent.Error.Execution, "<assign location='completed'>: an integer operation overflowed or failed"); true }) {
+            if (try { vCompleted = com.sce.forge.runtime.SceChecked.add(vCompleted, 10.toUInt()); false } catch (_: com.sce.forge.runtime.AlgorithmFailure) { raisePlatformError(StaticInvokeStringEvent.Error.Execution, ErrorReason.EXPRESSION_FAILED, "<assign location='completed'>: an integer operation overflowed or failed"); true }) {
                 return
             }
     }
@@ -615,7 +615,7 @@ class StaticInvokeStringStateMachine(
     private fun transitionContentOfRunningAt2() {
                 // SCE-MAP: static_invoke_string.scxml:82 :: running :: _transition_2
 
-            if (try { vCompleted = com.sce.forge.runtime.SceChecked.add(vCompleted, 100.toUInt()); false } catch (_: com.sce.forge.runtime.AlgorithmFailure) { raisePlatformError(StaticInvokeStringEvent.Error.Execution, "<assign location='completed'>: an integer operation overflowed or failed"); true }) {
+            if (try { vCompleted = com.sce.forge.runtime.SceChecked.add(vCompleted, 100.toUInt()); false } catch (_: com.sce.forge.runtime.AlgorithmFailure) { raisePlatformError(StaticInvokeStringEvent.Error.Execution, ErrorReason.EXPRESSION_FAILED, "<assign location='completed'>: an integer operation overflowed or failed"); true }) {
                 return
             }
     }
@@ -623,7 +623,7 @@ class StaticInvokeStringStateMachine(
     private fun transitionContentOfRunningAt3() {
                 // SCE-MAP: static_invoke_string.scxml:85 :: running :: _transition_3
 
-            if (try { vErrors = com.sce.forge.runtime.SceChecked.add(vErrors, 1.toUInt()); false } catch (_: com.sce.forge.runtime.AlgorithmFailure) { raisePlatformError(StaticInvokeStringEvent.Error.Execution, "<assign location='errors'>: an integer operation overflowed or failed"); true }) {
+            if (try { vErrors = com.sce.forge.runtime.SceChecked.add(vErrors, 1.toUInt()); false } catch (_: com.sce.forge.runtime.AlgorithmFailure) { raisePlatformError(StaticInvokeStringEvent.Error.Execution, ErrorReason.EXPRESSION_FAILED, "<assign location='errors'>: an integer operation overflowed or failed"); true }) {
                 return
             }
     }

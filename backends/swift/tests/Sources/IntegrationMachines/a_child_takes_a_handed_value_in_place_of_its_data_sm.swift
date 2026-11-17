@@ -665,8 +665,12 @@ public final class AChildTakesAHandedValueInPlaceOfItsDataPolicy: InvocablePolic
 
     /// Says what went wrong where the document can see it: `error.execution` on the internal
     /// queue (§scxml-5.9.1, 5.3).
-    private func raiseExecutionError(_ message: String, engine: Engine<AChildTakesAHandedValueInPlaceOfItsDataPolicy>) {
-        engine.raise(EventWithMetadata.platformError(AChildTakesAHandedValueInPlaceOfItsDataEvent.errorExecution, message: message))
+    /// `reason` is the code of sce:std/engine/error_reason the record carries
+    /// (docs/adr/0106 #111).
+    private func raiseExecutionError(
+        _ reason: ErrorReason, _ message: String, engine: Engine<AChildTakesAHandedValueInPlaceOfItsDataPolicy>
+    ) {
+        engine.raise(EventWithMetadata.platformError(AChildTakesAHandedValueInPlaceOfItsDataEvent.errorExecution, reason: reason, message: message))
     }
 
     /// W3C SCXML 5.3: the `<data id>` `id` takes the value of the lowered expression, or nil when it
@@ -723,6 +727,7 @@ public final class AChildTakesAHandedValueInPlaceOfItsDataPolicy: InvocablePolic
             }
         } catch {
             raiseExecutionError(
+                handed == nil ? .expressionFailed : .paramUnfit,
                 handed == nil
                     ? "<data id='\(id)'> expr failed to evaluate"
                     : "<data id='\(id)'> could not hold the value its parent handed it",
@@ -900,7 +905,7 @@ public final class AChildTakesAHandedValueInPlaceOfItsDataPolicy: InvocablePolic
             // this call the payload is lost to the document and to the host alike.
             engine.notePayloadReading(event, reading: Self.payloadReading(of: reading))
         } catch {
-            raiseExecutionError("_event could not be bound for '\(name)'", engine: engine)
+            raiseExecutionError(.payloadRefused, "_event could not be bound for '\(name)'", engine: engine)
         }
     }
 
@@ -937,7 +942,7 @@ public final class AChildTakesAHandedValueInPlaceOfItsDataPolicy: InvocablePolic
         do {
             return try scriptSession.evaluateCondition(condition, chunkName: "=cond")
         } catch {
-            raiseExecutionError("a \(element) cond failed to evaluate", engine: engine)
+            raiseExecutionError(.expressionFailed, "a \(element) cond failed to evaluate", engine: engine)
             failed = true
             return false
         }
@@ -1031,17 +1036,17 @@ public final class AChildTakesAHandedValueInPlaceOfItsDataPolicy: InvocablePolic
         if let seedValue = evaluateSeed("listed") {
             seeds["listed"] = seedValue
         } else {
-            raiseExecutionError("<invoke> namelist entry 'listed' could not be read", engine: engine)
+            raiseExecutionError(.locationInvalid, "<invoke> namelist entry 'listed' could not be read", engine: engine)
         }
         if let seedValue = evaluateSeed("stray") {
             seeds["stray"] = seedValue
         } else {
-            raiseExecutionError("<invoke> namelist entry 'stray' could not be read", engine: engine)
+            raiseExecutionError(.locationInvalid, "<invoke> namelist entry 'stray' could not be read", engine: engine)
         }
         if let seedValue = evaluateSeed("record") {
             seeds["record"] = seedValue
         } else {
-            raiseExecutionError("<invoke> namelist entry 'record' could not be read", engine: engine)
+            raiseExecutionError(.locationInvalid, "<invoke> namelist entry 'record' could not be read", engine: engine)
         }
         childPolicy.acceptSeeds(seeds)
 
@@ -1122,7 +1127,7 @@ public final class AChildTakesAHandedValueInPlaceOfItsDataPolicy: InvocablePolic
         if let seedValue = evaluateSeed("record") {
             seeds["payload"] = seedValue
         } else {
-            raiseExecutionError("<invoke> <param name='payload'> could not be read", engine: engine)
+            raiseExecutionError(.locationInvalid, "<invoke> <param name='payload'> could not be read", engine: engine)
         }
         childPolicy.acceptSeeds(seeds)
 
@@ -1970,28 +1975,28 @@ public final class AChildTakesAHandedValueInPlaceOfItsDataPolicy: InvocablePolic
 
                 // W3C SCXML 5.4: <assign location="listed_seen">
                 if !assignData("listed_seen", "_event.data.listed") {
-                    raiseExecutionError("<assign> to 'listed_seen' failed", engine: engine)
+                    raiseExecutionError(.assignmentFailed, "<assign> to 'listed_seen' failed", engine: engine)
                     break sceBlock  // W3C SCXML 4.9: the error ends the block
                 }
 
 
                 // W3C SCXML 5.4: <assign location="stray_seen">
                 if !assignData("stray_seen", "_event.data.stray") {
-                    raiseExecutionError("<assign> to 'stray_seen' failed", engine: engine)
+                    raiseExecutionError(.assignmentFailed, "<assign> to 'stray_seen' failed", engine: engine)
                     break sceBlock  // W3C SCXML 4.9: the error ends the block
                 }
 
 
                 // W3C SCXML 5.4: <assign location="record_seen">
                 if !assignData("record_seen", "_event.data.record") {
-                    raiseExecutionError("<assign> to 'record_seen' failed", engine: engine)
+                    raiseExecutionError(.assignmentFailed, "<assign> to 'record_seen' failed", engine: engine)
                     break sceBlock  // W3C SCXML 4.9: the error ends the block
                 }
 
 
                 // W3C SCXML 5.4: <assign location="list_errors_seen">
                 if !assignData("list_errors_seen", "_event.data.errors") {
-                    raiseExecutionError("<assign> to 'list_errors_seen' failed", engine: engine)
+                    raiseExecutionError(.assignmentFailed, "<assign> to 'list_errors_seen' failed", engine: engine)
                     break sceBlock  // W3C SCXML 4.9: the error ends the block
                 }
 
@@ -2007,70 +2012,70 @@ public final class AChildTakesAHandedValueInPlaceOfItsDataPolicy: InvocablePolic
 
                 // W3C SCXML 5.4: <assign location="raising_seen">
                 if !assignData("raising_seen", "_event.data.raising") {
-                    raiseExecutionError("<assign> to 'raising_seen' failed", engine: engine)
+                    raiseExecutionError(.assignmentFailed, "<assign> to 'raising_seen' failed", engine: engine)
                     break sceBlock  // W3C SCXML 4.9: the error ends the block
                 }
 
 
                 // W3C SCXML 5.4: <assign location="effectful_seen">
                 if !assignData("effectful_seen", "_event.data.effectful") {
-                    raiseExecutionError("<assign> to 'effectful_seen' failed", engine: engine)
+                    raiseExecutionError(.assignmentFailed, "<assign> to 'effectful_seen' failed", engine: engine)
                     break sceBlock  // W3C SCXML 4.9: the error ends the block
                 }
 
 
                 // W3C SCXML 5.4: <assign location="effects_seen">
                 if !assignData("effects_seen", "_event.data.effects") {
-                    raiseExecutionError("<assign> to 'effects_seen' failed", engine: engine)
+                    raiseExecutionError(.assignmentFailed, "<assign> to 'effects_seen' failed", engine: engine)
                     break sceBlock  // W3C SCXML 4.9: the error ends the block
                 }
 
 
                 // W3C SCXML 5.4: <assign location="refusable_seen">
                 if !assignData("refusable_seen", "_event.data.refusable") {
-                    raiseExecutionError("<assign> to 'refusable_seen' failed", engine: engine)
+                    raiseExecutionError(.assignmentFailed, "<assign> to 'refusable_seen' failed", engine: engine)
                     break sceBlock  // W3C SCXML 4.9: the error ends the block
                 }
 
 
                 // W3C SCXML 5.4: <assign location="kept_seen">
                 if !assignData("kept_seen", "_event.data.kept") {
-                    raiseExecutionError("<assign> to 'kept_seen' failed", engine: engine)
+                    raiseExecutionError(.assignmentFailed, "<assign> to 'kept_seen' failed", engine: engine)
                     break sceBlock  // W3C SCXML 4.9: the error ends the block
                 }
 
 
                 // W3C SCXML 5.4: <assign location="stranger_seen">
                 if !assignData("stranger_seen", "_event.data.stranger") {
-                    raiseExecutionError("<assign> to 'stranger_seen' failed", engine: engine)
+                    raiseExecutionError(.assignmentFailed, "<assign> to 'stranger_seen' failed", engine: engine)
                     break sceBlock  // W3C SCXML 4.9: the error ends the block
                 }
 
 
                 // W3C SCXML 5.4: <assign location="payload_seen">
                 if !assignData("payload_seen", "_event.data.payload") {
-                    raiseExecutionError("<assign> to 'payload_seen' failed", engine: engine)
+                    raiseExecutionError(.assignmentFailed, "<assign> to 'payload_seen' failed", engine: engine)
                     break sceBlock  // W3C SCXML 4.9: the error ends the block
                 }
 
 
                 // W3C SCXML 5.4: <assign location="script_seen">
                 if !assignData("script_seen", "_event.data.script") {
-                    raiseExecutionError("<assign> to 'script_seen' failed", engine: engine)
+                    raiseExecutionError(.assignmentFailed, "<assign> to 'script_seen' failed", engine: engine)
                     break sceBlock  // W3C SCXML 4.9: the error ends the block
                 }
 
 
                 // W3C SCXML 5.4: <assign location="entry_seen">
                 if !assignData("entry_seen", "_event.data.entry") {
-                    raiseExecutionError("<assign> to 'entry_seen' failed", engine: engine)
+                    raiseExecutionError(.assignmentFailed, "<assign> to 'entry_seen' failed", engine: engine)
                     break sceBlock  // W3C SCXML 4.9: the error ends the block
                 }
 
 
                 // W3C SCXML 5.4: <assign location="errors_seen">
                 if !assignData("errors_seen", "_event.data.errors") {
-                    raiseExecutionError("<assign> to 'errors_seen' failed", engine: engine)
+                    raiseExecutionError(.assignmentFailed, "<assign> to 'errors_seen' failed", engine: engine)
                     break sceBlock  // W3C SCXML 4.9: the error ends the block
                 }
 

@@ -330,7 +330,7 @@ class EmptyFinalizeUpdatesTheLocationStateMachine(
             try {
                 engine.setVariable(sid, "tally", engine.evaluateExpr(sid, com.sce.runtime.ScriptSource.lua("1", "1")))
             } catch (e: Exception) {
-                raisePlatformError(EmptyFinalizeUpdatesTheLocationEvent.Error.Execution, "<data id='tally'> expr failed to evaluate")
+                raisePlatformError(EmptyFinalizeUpdatesTheLocationEvent.Error.Execution, ErrorReason.EXPRESSION_FAILED, "<data id='tally'> expr failed to evaluate")
             }
         }
         // §scxml-6.4: 'guard' takes a value its invoke handed it, in place of its own
@@ -339,7 +339,7 @@ class EmptyFinalizeUpdatesTheLocationStateMachine(
             try {
                 engine.setVariable(sid, "guard", engine.evaluateExpr(sid, com.sce.runtime.ScriptSource.lua("1", "1")))
             } catch (e: Exception) {
-                raisePlatformError(EmptyFinalizeUpdatesTheLocationEvent.Error.Execution, "<data id='guard'> expr failed to evaluate")
+                raisePlatformError(EmptyFinalizeUpdatesTheLocationEvent.Error.Execution, ErrorReason.EXPRESSION_FAILED, "<data id='guard'> expr failed to evaluate")
             }
         }
         // §scxml-6.4: 'keeper' takes a value its invoke handed it, in place of its own
@@ -348,7 +348,7 @@ class EmptyFinalizeUpdatesTheLocationStateMachine(
             try {
                 engine.setVariable(sid, "keeper", engine.evaluateExpr(sid, com.sce.runtime.ScriptSource.lua("3", "3")))
             } catch (e: Exception) {
-                raisePlatformError(EmptyFinalizeUpdatesTheLocationEvent.Error.Execution, "<data id='keeper'> expr failed to evaluate")
+                raisePlatformError(EmptyFinalizeUpdatesTheLocationEvent.Error.Execution, ErrorReason.EXPRESSION_FAILED, "<data id='keeper'> expr failed to evaluate")
             }
         }
     }
@@ -378,14 +378,14 @@ class EmptyFinalizeUpdatesTheLocationStateMachine(
 
     // W3C SCXML 5.9.1: a cond that cannot be evaluated raises error.execution;
     // `null` says so, where a bare `false` could not.
-    private fun evaluateGuardRaising(guardExpr: com.sce.runtime.ScriptSource, reason: String): Boolean? {
+    private fun evaluateGuardRaising(guardExpr: com.sce.runtime.ScriptSource, detail: String): Boolean? {
         assertScriptSession()
         val engine = scriptEngine ?: error("scriptEngine is required (codegen invariant: needs_script_engine == true)")
         val sid = scriptSessionId ?: error("scriptSessionId is established by the start (codegen invariant)")
         return try {
             engine.evaluateCondition(sid, guardExpr)
         } catch (e: Exception) {
-            raisePlatformError(EmptyFinalizeUpdatesTheLocationEvent.Error.Execution, reason)
+            raisePlatformError(EmptyFinalizeUpdatesTheLocationEvent.Error.Execution, ErrorReason.EXPRESSION_FAILED, detail)
             null
         }
     }
@@ -426,7 +426,7 @@ class EmptyFinalizeUpdatesTheLocationStateMachine(
         return try {
             engine.evaluateExpr(sid, serialized)?.toString() ?: ""
         } catch (e: Exception) {
-            raisePlatformError(EmptyFinalizeUpdatesTheLocationEvent.Error.Execution, "an expression could not be serialised to JSON")
+            raisePlatformError(EmptyFinalizeUpdatesTheLocationEvent.Error.Execution, ErrorReason.EXPRESSION_FAILED, "an expression could not be serialised to JSON")
             ""
         }
     }
@@ -447,7 +447,7 @@ class EmptyFinalizeUpdatesTheLocationStateMachine(
             engine.assign(sid, location, expr)
             true
         } catch (e: Exception) {
-            raisePlatformError(EmptyFinalizeUpdatesTheLocationEvent.Error.Execution, "<assign> failed")
+            raisePlatformError(EmptyFinalizeUpdatesTheLocationEvent.Error.Execution, ErrorReason.ASSIGNMENT_FAILED, "<assign> failed")
             false
         }
     }
@@ -463,7 +463,7 @@ class EmptyFinalizeUpdatesTheLocationStateMachine(
             engine.executeScript(sid, script)
             true
         } catch (e: Exception) {
-            raisePlatformError(EmptyFinalizeUpdatesTheLocationEvent.Error.Execution, "<script> failed to execute")
+            raisePlatformError(EmptyFinalizeUpdatesTheLocationEvent.Error.Execution, ErrorReason.SCRIPT_FAILED, "<script> failed to execute")
             false
         }
     }
@@ -734,7 +734,7 @@ class EmptyFinalizeUpdatesTheLocationStateMachine(
                         val sidInv = scriptSessionId ?: error("scriptSessionId is established by the start (codegen invariant)")
                         val invokeParams = mutableMapOf<String, Any?>()
                         if (!(engineInv.hasVariable(sidInv, "guard"))) {
-                            raisePlatformError(EmptyFinalizeUpdatesTheLocationEvent.Error.Execution, "<invoke> namelist names a location that cannot be read")
+                            raisePlatformError(EmptyFinalizeUpdatesTheLocationEvent.Error.Execution, ErrorReason.LOCATION_INVALID, "<invoke> namelist names a location that cannot be read")
                             return@deferInvoke
                         }
                         invokeParams["guard"] = engineInv.getVariable(sidInv, "guard")
@@ -761,7 +761,7 @@ class EmptyFinalizeUpdatesTheLocationStateMachine(
                         val sidInv = scriptSessionId ?: error("scriptSessionId is established by the start (codegen invariant)")
                         val invokeParams = mutableMapOf<String, Any?>()
                         if (!(engineInv.hasVariable(sidInv, "tally"))) {
-                            raisePlatformError(EmptyFinalizeUpdatesTheLocationEvent.Error.Execution, "<invoke> namelist names a location that cannot be read")
+                            raisePlatformError(EmptyFinalizeUpdatesTheLocationEvent.Error.Execution, ErrorReason.LOCATION_INVALID, "<invoke> namelist names a location that cannot be read")
                             return@deferInvoke
                         }
                         invokeParams["tally"] = engineInv.getVariable(sidInv, "tally")
@@ -788,7 +788,7 @@ class EmptyFinalizeUpdatesTheLocationStateMachine(
                         val sidInv = scriptSessionId ?: error("scriptSessionId is established by the start (codegen invariant)")
                         val invokeParams = mutableMapOf<String, Any?>()
                         if (!(engineInv.hasVariable(sidInv, "keeper"))) {
-                            raisePlatformError(EmptyFinalizeUpdatesTheLocationEvent.Error.Execution, "<invoke> namelist names a location that cannot be read")
+                            raisePlatformError(EmptyFinalizeUpdatesTheLocationEvent.Error.Execution, ErrorReason.LOCATION_INVALID, "<invoke> namelist names a location that cannot be read")
                             return@deferInvoke
                         }
                         invokeParams["keeper"] = engineInv.getVariable(sidInv, "keeper")

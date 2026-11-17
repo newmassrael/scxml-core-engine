@@ -556,7 +556,7 @@ public final class StaticListPolicy: InvocablePolicy {
 
                 // SCE Accepted Subset §2.15: <sce:append target="picked">
 
-                if ({ () -> Bool in if self.vPicked.count >= 3 { engine.raise(EventWithMetadata.platformError(StaticListEvent.errorExecution, message: "<sce:append target='picked'>: the list already holds its capacity of 3")); return true }; let sceValue = Checked.element(of: self.vPicked, self.pendingDayPickedPayload.dayOfMonth); self.vPicked.append(sceValue); return false }()) {
+                if ({ () -> Bool in if self.vPicked.count >= 3 { engine.raise(EventWithMetadata.platformError(StaticListEvent.errorExecution, reason: .assignmentFailed, message: "<sce:append target='picked'>: the list already holds its capacity of 3")); return true }; let sceValue = Checked.element(of: self.vPicked, self.pendingDayPickedPayload.dayOfMonth); self.vPicked.append(sceValue); return false }()) {
                     break sceBlock  // W3C SCXML 4.9: the error ends the block
                 }
 
@@ -579,7 +579,7 @@ public final class StaticListPolicy: InvocablePolicy {
                 sceBlock: do {
 
 
-                if ({ () -> Bool in do { let sceValue: UInt32 = (try Checked.add(self.vRefusals, 1)); self.vRefusals = sceValue } catch { engine.raise(EventWithMetadata.platformError(StaticListEvent.errorExecution, message: "<assign location='refusals'>: an integer operation overflowed or failed")); return true }; return false }()) {
+                if ({ () -> Bool in do { let sceValue: UInt32 = (try Checked.add(self.vRefusals, 1)); self.vRefusals = sceValue } catch { engine.raise(EventWithMetadata.platformError(StaticListEvent.errorExecution, reason: .expressionFailed, message: "<assign location='refusals'>: an integer operation overflowed or failed")); return true }; return false }()) {
                     break sceBlock  // W3C SCXML 4.9: the error ends the block
                 }
 

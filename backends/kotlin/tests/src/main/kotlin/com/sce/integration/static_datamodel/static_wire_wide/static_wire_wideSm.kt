@@ -551,7 +551,7 @@ class StaticWireWideStateMachine(
             try {
                 putParam(sendPayload, "small", (com.sce.forge.runtime.SceChecked.sub(pendingWideInPayload!!.small, 1)).toString())
             } catch (_: com.sce.forge.runtime.AlgorithmFailure) {
-                raisePlatformError(StaticWireWideEvent.Error.Execution, "<send> <param name='small'> could not be read")
+                raisePlatformError(StaticWireWideEvent.Error.Execution, ErrorReason.LOCATION_INVALID, "<send> <param name='small'> could not be read")
                 paramFailed = true
             }
 
@@ -572,19 +572,19 @@ class StaticWireWideStateMachine(
                     return
                 }
 
-            if (try { vLow = com.sce.forge.runtime.SceChecked.rem(pendingWideRelayedPayload!!.big, 1000.toULong()); false } catch (_: com.sce.forge.runtime.AlgorithmFailure) { raisePlatformError(StaticWireWideEvent.Error.Execution, "<assign location='low'>: an integer operation overflowed or failed"); true }) {
+            if (try { vLow = com.sce.forge.runtime.SceChecked.rem(pendingWideRelayedPayload!!.big, 1000.toULong()); false } catch (_: com.sce.forge.runtime.AlgorithmFailure) { raisePlatformError(StaticWireWideEvent.Error.Execution, ErrorReason.EXPRESSION_FAILED, "<assign location='low'>: an integer operation overflowed or failed"); true }) {
                 return
             }
 
             vLarge = pendingWideRelayedPayload!!.big > 9007199254740992.toULong()
 
-            if (try { vSmallLow = com.sce.forge.runtime.SceChecked.rem(pendingWideRelayedPayload!!.small, 1000); false } catch (_: com.sce.forge.runtime.AlgorithmFailure) { raisePlatformError(StaticWireWideEvent.Error.Execution, "<assign location='smallLow'>: an integer operation overflowed or failed"); true }) {
+            if (try { vSmallLow = com.sce.forge.runtime.SceChecked.rem(pendingWideRelayedPayload!!.small, 1000); false } catch (_: com.sce.forge.runtime.AlgorithmFailure) { raisePlatformError(StaticWireWideEvent.Error.Execution, ErrorReason.EXPRESSION_FAILED, "<assign location='smallLow'>: an integer operation overflowed or failed"); true }) {
                 return
             }
 
             vNegative = pendingWideRelayedPayload!!.small < 0
 
-            if (try { vRelays = com.sce.forge.runtime.SceChecked.add(vRelays, 1.toUInt()); false } catch (_: com.sce.forge.runtime.AlgorithmFailure) { raisePlatformError(StaticWireWideEvent.Error.Execution, "<assign location='relays'>: an integer operation overflowed or failed"); true }) {
+            if (try { vRelays = com.sce.forge.runtime.SceChecked.add(vRelays, 1.toUInt()); false } catch (_: com.sce.forge.runtime.AlgorithmFailure) { raisePlatformError(StaticWireWideEvent.Error.Execution, ErrorReason.EXPRESSION_FAILED, "<assign location='relays'>: an integer operation overflowed or failed"); true }) {
                 return
             }
     }
@@ -592,7 +592,7 @@ class StaticWireWideStateMachine(
     private fun transitionContentOfRelayingAt2() {
                 // SCE-MAP: static_wire_wide.scxml:54 :: relaying :: _transition_2
 
-            if (try { vRefusals = com.sce.forge.runtime.SceChecked.add(vRefusals, 1.toUInt()); false } catch (_: com.sce.forge.runtime.AlgorithmFailure) { raisePlatformError(StaticWireWideEvent.Error.Execution, "<assign location='refusals'>: an integer operation overflowed or failed"); true }) {
+            if (try { vRefusals = com.sce.forge.runtime.SceChecked.add(vRefusals, 1.toUInt()); false } catch (_: com.sce.forge.runtime.AlgorithmFailure) { raisePlatformError(StaticWireWideEvent.Error.Execution, ErrorReason.EXPRESSION_FAILED, "<assign location='refusals'>: an integer operation overflowed or failed"); true }) {
                 return
             }
     }

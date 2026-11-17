@@ -455,8 +455,12 @@ public final class AnOriginIsTheAddressItsSenderPublishedSceSynthInvokeKidPolicy
 
     /// Says what went wrong where the document can see it: `error.execution` on the internal
     /// queue (§scxml-5.9.1, 5.3).
-    private func raiseExecutionError(_ message: String, engine: Engine<AnOriginIsTheAddressItsSenderPublishedSceSynthInvokeKidPolicy>) {
-        engine.raise(EventWithMetadata.platformError(AnOriginIsTheAddressItsSenderPublishedSceSynthInvokeKidEvent.errorExecution, message: message))
+    /// `reason` is the code of sce:std/engine/error_reason the record carries
+    /// (docs/adr/0106 #111).
+    private func raiseExecutionError(
+        _ reason: ErrorReason, _ message: String, engine: Engine<AnOriginIsTheAddressItsSenderPublishedSceSynthInvokeKidPolicy>
+    ) {
+        engine.raise(EventWithMetadata.platformError(AnOriginIsTheAddressItsSenderPublishedSceSynthInvokeKidEvent.errorExecution, reason: reason, message: message))
     }
 
     /// W3C SCXML 5.3: the `<data id>` `id` takes the value of the lowered expression, or nil when it
@@ -513,6 +517,7 @@ public final class AnOriginIsTheAddressItsSenderPublishedSceSynthInvokeKidPolicy
             }
         } catch {
             raiseExecutionError(
+                handed == nil ? .expressionFailed : .paramUnfit,
                 handed == nil
                     ? "<data id='\(id)'> expr failed to evaluate"
                     : "<data id='\(id)'> could not hold the value its parent handed it",
@@ -674,7 +679,7 @@ public final class AnOriginIsTheAddressItsSenderPublishedSceSynthInvokeKidPolicy
             // this call the payload is lost to the document and to the host alike.
             engine.notePayloadReading(event, reading: Self.payloadReading(of: reading))
         } catch {
-            raiseExecutionError("_event could not be bound for '\(name)'", engine: engine)
+            raiseExecutionError(.payloadRefused, "_event could not be bound for '\(name)'", engine: engine)
         }
     }
 
@@ -711,7 +716,7 @@ public final class AnOriginIsTheAddressItsSenderPublishedSceSynthInvokeKidPolicy
         do {
             return try scriptSession.evaluateCondition(condition, chunkName: "=cond")
         } catch {
-            raiseExecutionError("a \(element) cond failed to evaluate", engine: engine)
+            raiseExecutionError(.expressionFailed, "a \(element) cond failed to evaluate", engine: engine)
             failed = true
             return false
         }
@@ -738,7 +743,7 @@ public final class AnOriginIsTheAddressItsSenderPublishedSceSynthInvokeKidPolicy
                     if let paramValue = evaluateJSON("_ioprocessors.scxml.location") {
                         sendParts.append(PayloadPair.json("location", rawJSON: paramValue))
                     } else {
-                        engine.raise(EventWithMetadata.platformError(AnOriginIsTheAddressItsSenderPublishedSceSynthInvokeKidEvent.errorExecution, message: "<send> <param name=location> failed to evaluate"))
+                        engine.raise(EventWithMetadata.platformError(AnOriginIsTheAddressItsSenderPublishedSceSynthInvokeKidEvent.errorExecution, reason: .expressionFailed, message: "<send> <param name=location> failed to evaluate"))
                         paramFailed = true
                     }
 
@@ -748,7 +753,7 @@ public final class AnOriginIsTheAddressItsSenderPublishedSceSynthInvokeKidPolicy
                         // W3C SCXML C.1: this session was started by its host, not by an
                         // `<invoke>`, so `#_parent` reaches nobody — error.communication,
                         // nothing delivered, and the block ends (4.9).
-                        var sendError = EventWithMetadata.platformError(AnOriginIsTheAddressItsSenderPublishedSceSynthInvokeKidEvent.errorCommunication, message: "<send target=#_parent> has no parent session to reach")
+                        var sendError = EventWithMetadata.platformError(AnOriginIsTheAddressItsSenderPublishedSceSynthInvokeKidEvent.errorCommunication, reason: .targetUnreachable, message: "<send target=#_parent> has no parent session to reach")
                         sendError.metadata.sendID = "__send_1"
                         engine.raise(sendError)
 
@@ -862,7 +867,7 @@ public final class AnOriginIsTheAddressItsSenderPublishedSceSynthInvokeKidPolicy
                         // W3C SCXML C.1: this session was started by its host, not by an
                         // `<invoke>`, so `#_parent` reaches nobody — error.communication,
                         // nothing delivered, and the block ends (4.9).
-                        var sendError = EventWithMetadata.platformError(AnOriginIsTheAddressItsSenderPublishedSceSynthInvokeKidEvent.errorCommunication, message: "<send target=#_parent> has no parent session to reach")
+                        var sendError = EventWithMetadata.platformError(AnOriginIsTheAddressItsSenderPublishedSceSynthInvokeKidEvent.errorCommunication, reason: .targetUnreachable, message: "<send target=#_parent> has no parent session to reach")
                         sendError.metadata.sendID = "__send_0"
                         engine.raise(sendError)
 
@@ -882,6 +887,10 @@ public final class AnOriginIsTheAddressItsSenderPublishedSceSynthInvokeKidPolicy
                 // W3C SCXML 6.2: send id="__send_2"
                 do {
                     var sendArgError = ""
+                    // Why the argument failed, a code of sce:std/engine/error_reason
+                    // (docs/adr/0106 #111), set with every sentence below.
+                    var sendArgReason = ErrorReason.expressionFailed
+                    _ = sendArgReason
                     // W3C SCXML 6.2.4 + C.1: a targetexpr is a target. Its value is read from the
                     // engine now and routed as the same value written in `target` is, below; an
                     // expression that cannot be evaluated is the argument error, and a value that
@@ -893,7 +902,7 @@ public final class AnOriginIsTheAddressItsSenderPublishedSceSynthInvokeKidPolicy
                             sendTarget = routed
                             sendTargetKnown = true
                         } else {
-                            sendArgError = "<send> targetexpr could not be evaluated"
+                            sendArgError = "<send> targetexpr could not be evaluated"; sendArgReason = .expressionFailed
                         }
                     }
                     // W3C SCXML 6.2: a typeexpr is the processor type, read from the engine now
@@ -906,16 +915,16 @@ public final class AnOriginIsTheAddressItsSenderPublishedSceSynthInvokeKidPolicy
                     if sendArgError.isEmpty {
                         if let sendType = evaluateText("_event.origintype") {
                             if !isSupportedSendType(sendType) {
-                                sendArgError = "<send> typeexpr names a processor this platform does not support"
+                                sendArgError = "<send> typeexpr names a processor this platform does not support"; sendArgReason = .sendTypeUnsupported
                             } else if sendType.utf8.elementsEqual(basicHTTPEventProcessorType.utf8) {
-                                sendArgError = "<send> typeexpr names the BasicHTTP processor, which a computed type cannot select"
+                                sendArgError = "<send> typeexpr names the BasicHTTP processor, which a computed type cannot select"; sendArgReason = .sendTypeUnsupported
                             }
                         } else {
-                            sendArgError = "<send> typeexpr could not be evaluated"
+                            sendArgError = "<send> typeexpr could not be evaluated"; sendArgReason = .expressionFailed
                         }
                     }
                     if !sendArgError.isEmpty {
-                        var sendError = EventWithMetadata.platformError(AnOriginIsTheAddressItsSenderPublishedSceSynthInvokeKidEvent.errorExecution, message: sendArgError)
+                        var sendError = EventWithMetadata.platformError(AnOriginIsTheAddressItsSenderPublishedSceSynthInvokeKidEvent.errorExecution, reason: sendArgReason, message: sendArgError)
                         sendError.metadata.sendID = "__send_2"
                         engine.raise(sendError)
 
@@ -926,7 +935,7 @@ public final class AnOriginIsTheAddressItsSenderPublishedSceSynthInvokeKidPolicy
                         // names nothing (empty or "undefined"), is not reachable —
                         // error.communication, nothing delivered, and the error ends the block
                         // as any other would (W3C SCXML 4.9).
-                        var sendError = EventWithMetadata.platformError(AnOriginIsTheAddressItsSenderPublishedSceSynthInvokeKidEvent.errorCommunication, message: "<send> targetexpr evaluated to nothing, or to a route the send does not declare, so there is no target to reach")
+                        var sendError = EventWithMetadata.platformError(AnOriginIsTheAddressItsSenderPublishedSceSynthInvokeKidEvent.errorCommunication, reason: .targetUnreachable, message: "<send> targetexpr evaluated to nothing, or to a route the send does not declare, so there is no target to reach")
                         sendError.metadata.sendID = "__send_2"
                         engine.raise(sendError)
 
@@ -948,14 +957,14 @@ public final class AnOriginIsTheAddressItsSenderPublishedSceSynthInvokeKidPolicy
                         sender: self.sessionID
                     )
                     if sendRouted == .notSupported {
-                        var sendError = EventWithMetadata.platformError(AnOriginIsTheAddressItsSenderPublishedSceSynthInvokeKidEvent.errorExecution, message: "<send> targetexpr produced a value that is not a target")
+                        var sendError = EventWithMetadata.platformError(AnOriginIsTheAddressItsSenderPublishedSceSynthInvokeKidEvent.errorExecution, reason: .sendTargetInvalid, message: "<send> targetexpr produced a value that is not a target")
                         sendError.metadata.sendID = "__send_2"
                         engine.raise(sendError)
 
                         break sceBlock  // W3C SCXML 4.9: the error ends the block
                     }
                     if sendRouted == .notReachable {
-                        var sendError = EventWithMetadata.platformError(AnOriginIsTheAddressItsSenderPublishedSceSynthInvokeKidEvent.errorCommunication, message: "<send> targetexpr names a session this processor cannot reach")
+                        var sendError = EventWithMetadata.platformError(AnOriginIsTheAddressItsSenderPublishedSceSynthInvokeKidEvent.errorCommunication, reason: .targetUnreachable, message: "<send> targetexpr names a session this processor cannot reach")
                         sendError.metadata.sendID = "__send_2"
                         engine.raise(sendError)
 
@@ -975,7 +984,7 @@ public final class AnOriginIsTheAddressItsSenderPublishedSceSynthInvokeKidPolicy
                         // W3C SCXML C.1: this session was started by its host, not by an
                         // `<invoke>`, so `#_parent` reaches nobody — error.communication,
                         // nothing delivered, and the block ends (4.9).
-                        var sendError = EventWithMetadata.platformError(AnOriginIsTheAddressItsSenderPublishedSceSynthInvokeKidEvent.errorCommunication, message: "<send target=#_parent> has no parent session to reach")
+                        var sendError = EventWithMetadata.platformError(AnOriginIsTheAddressItsSenderPublishedSceSynthInvokeKidEvent.errorCommunication, reason: .targetUnreachable, message: "<send target=#_parent> has no parent session to reach")
                         sendError.metadata.sendID = "__send_3"
                         engine.raise(sendError)
 

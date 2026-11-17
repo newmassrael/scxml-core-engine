@@ -737,14 +737,14 @@ public final class AutoforwardDequeuePointPolicy: InvocablePolicy {
                         sender: self.sessionID
                     )
                     if sendRouted == .notSupported {
-                        var sendError = EventWithMetadata.platformError(AutoforwardDequeuePointEvent.errorExecution, message: "<send> target is not a target")
+                        var sendError = EventWithMetadata.platformError(AutoforwardDequeuePointEvent.errorExecution, reason: .sendTargetInvalid, message: "<send> target is not a target")
                         sendError.metadata.sendID = "__send_2"
                         engine.raise(sendError)
 
                         break sceBlock  // W3C SCXML 4.9: the error ends the block
                     }
                     if sendRouted == .notReachable {
-                        var sendError = EventWithMetadata.platformError(AutoforwardDequeuePointEvent.errorCommunication, message: "<send> target names a session this processor cannot reach")
+                        var sendError = EventWithMetadata.platformError(AutoforwardDequeuePointEvent.errorCommunication, reason: .targetUnreachable, message: "<send> target names a session this processor cannot reach")
                         sendError.metadata.sendID = "__send_2"
                         engine.raise(sendError)
 

@@ -762,14 +762,14 @@ public final class InvokePrecedesDequeueMidrunPolicy: InvocablePolicy {
                         sender: self.sessionID
                     )
                     if sendRouted == .notSupported {
-                        var sendError = EventWithMetadata.platformError(InvokePrecedesDequeueMidrunEvent.errorExecution, message: "<send> target is not a target")
+                        var sendError = EventWithMetadata.platformError(InvokePrecedesDequeueMidrunEvent.errorExecution, reason: .sendTargetInvalid, message: "<send> target is not a target")
                         sendError.metadata.sendID = "__send_1"
                         engine.raise(sendError)
 
                         break sceBlock  // W3C SCXML 4.9: the error ends the block
                     }
                     if sendRouted == .notReachable {
-                        var sendError = EventWithMetadata.platformError(InvokePrecedesDequeueMidrunEvent.errorCommunication, message: "<send> target names a session this processor cannot reach")
+                        var sendError = EventWithMetadata.platformError(InvokePrecedesDequeueMidrunEvent.errorCommunication, reason: .targetUnreachable, message: "<send> target names a session this processor cannot reach")
                         sendError.metadata.sendID = "__send_1"
                         engine.raise(sendError)
 

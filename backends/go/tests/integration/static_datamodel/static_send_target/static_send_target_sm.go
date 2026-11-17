@@ -31,6 +31,7 @@ import (
 	"time"
 
 	sce "github.com/newmassrael/sce-go-runtime"
+	sceerrorreason "github.com/newmassrael/sce-go-runtime/generated/error_reason"
 	scealgorithm "github.com/newmassrael/sce-forge-runtime/algorithm"
 )
 
@@ -40,6 +41,9 @@ var (
 	_ = filepath.Join
 	_ = strings.HasPrefix
 	_ = time.Duration(0)
+	// Why an error.* event is raised (sce:std/engine/error_reason,
+	// docs/adr/0106 #111); a machine that raises none still imports it.
+	_ = sceerrorreason.ErrorReasonExpressionFailed
 	_ scealgorithm.Failure
 )
 
@@ -889,6 +893,10 @@ func (p *StaticSendTargetPolicy) ExecuteTransitionContent(source StaticSendTarge
 	// W3C SCXML 6.2: send id="__send_0"
 	{
 	sendArgError := ""
+	// Why the argument failed, a code of sce:std/engine/error_reason
+	// (docs/adr/0106 #111), set with every sentence below.
+	var sendArgReason sce.ErrorReason
+	_ = sendArgReason
 	// docs/adr/0005, decision 3: the target is a string computed from the machine's
 	// fields now, and the send goes only by a route the document declared as
 	// `sce:targets`. A value in none of them names no route this send may take — an
@@ -908,7 +916,7 @@ func (p *StaticSendTargetPolicy) ExecuteTransitionContent(source StaticSendTarge
 	_ = sendTargetVal
 	_ = sendTarget
 	if sendArgError != "" {
-		errEvt := sce.NewPlatformError(StaticSendTargetEventErrorExecution, sendArgError)
+		errEvt := sce.NewPlatformError(StaticSendTargetEventErrorExecution, sendArgReason, sendArgError)
 		errEvt.Metadata.SendID = "__send_0"
 		engine.Raise(errEvt)
 		return  // W3C SCXML 4.9: the error ends the block
@@ -920,7 +928,7 @@ func (p *StaticSendTargetPolicy) ExecuteTransitionContent(source StaticSendTarge
 		// ends the block as any other would (W3C SCXML 4.9). A self-sent
 		// event names its origin, so `targetexpr="_event.origin"` (test336)
 		// reads this session's location, never "".
-		errEvt := sce.NewPlatformError(StaticSendTargetEventErrorCommunication, "<send> targetexpr evaluated to nothing, or to a route the send does not declare, so there is no target to reach")
+		errEvt := sce.NewPlatformError(StaticSendTargetEventErrorCommunication, sceerrorreason.ErrorReasonTargetUnreachable, "<send> targetexpr evaluated to nothing, or to a route the send does not declare, so there is no target to reach")
 		errEvt.Metadata.SendID = "__send_0"
 		engine.Raise(errEvt)
 		return
@@ -937,13 +945,13 @@ func (p *StaticSendTargetPolicy) ExecuteTransitionContent(source StaticSendTarge
 		routed := engine.SendToTarget(sendEvt, sendHasEvt, "landed", sendTarget, p.SessionID,
 0, "__send_0", eventDataStr, p.SessionID)
 		if routed == sce.TargetNotSupported {
-			errEvt := sce.NewPlatformError(StaticSendTargetEventErrorExecution, "<send> targetexpr produced a value that is not a target")
+			errEvt := sce.NewPlatformError(StaticSendTargetEventErrorExecution, sceerrorreason.ErrorReasonSendTargetInvalid, "<send> targetexpr produced a value that is not a target")
 			errEvt.Metadata.SendID = "__send_0"
 			engine.Raise(errEvt)
 			return // W3C SCXML 4.9: the error ends the block
 		}
 		if routed == sce.TargetNotReachable {
-			errEvt := sce.NewPlatformError(StaticSendTargetEventErrorCommunication, "<send> targetexpr names a session this processor cannot reach")
+			errEvt := sce.NewPlatformError(StaticSendTargetEventErrorCommunication, sceerrorreason.ErrorReasonTargetUnreachable, "<send> targetexpr names a session this processor cannot reach")
 			errEvt.Metadata.SendID = "__send_0"
 			engine.Raise(errEvt)
 			return // W3C SCXML 4.9: the error ends the block
@@ -960,6 +968,10 @@ func (p *StaticSendTargetPolicy) ExecuteTransitionContent(source StaticSendTarge
 	// W3C SCXML 6.2: send id="__send_1"
 	{
 	sendArgError := ""
+	// Why the argument failed, a code of sce:std/engine/error_reason
+	// (docs/adr/0106 #111), set with every sentence below.
+	var sendArgReason sce.ErrorReason
+	_ = sendArgReason
 	// docs/adr/0005, decision 3: the target is a string computed from the machine's
 	// fields now, and the send goes only by a route the document declared as
 	// `sce:targets`. A value in none of them names no route this send may take — an
@@ -979,7 +991,7 @@ func (p *StaticSendTargetPolicy) ExecuteTransitionContent(source StaticSendTarge
 	_ = sendTargetVal
 	_ = sendTarget
 	if sendArgError != "" {
-		errEvt := sce.NewPlatformError(StaticSendTargetEventErrorExecution, sendArgError)
+		errEvt := sce.NewPlatformError(StaticSendTargetEventErrorExecution, sendArgReason, sendArgError)
 		errEvt.Metadata.SendID = "__send_1"
 		engine.Raise(errEvt)
 		return  // W3C SCXML 4.9: the error ends the block
@@ -991,7 +1003,7 @@ func (p *StaticSendTargetPolicy) ExecuteTransitionContent(source StaticSendTarge
 		// ends the block as any other would (W3C SCXML 4.9). A self-sent
 		// event names its origin, so `targetexpr="_event.origin"` (test336)
 		// reads this session's location, never "".
-		errEvt := sce.NewPlatformError(StaticSendTargetEventErrorCommunication, "<send> targetexpr evaluated to nothing, or to a route the send does not declare, so there is no target to reach")
+		errEvt := sce.NewPlatformError(StaticSendTargetEventErrorCommunication, sceerrorreason.ErrorReasonTargetUnreachable, "<send> targetexpr evaluated to nothing, or to a route the send does not declare, so there is no target to reach")
 		errEvt.Metadata.SendID = "__send_1"
 		engine.Raise(errEvt)
 		return
@@ -1008,13 +1020,13 @@ func (p *StaticSendTargetPolicy) ExecuteTransitionContent(source StaticSendTarge
 		routed := engine.SendToTarget(sendEvt, sendHasEvt, "landed", sendTarget, p.SessionID,
 0, "__send_1", eventDataStr, p.SessionID)
 		if routed == sce.TargetNotSupported {
-			errEvt := sce.NewPlatformError(StaticSendTargetEventErrorExecution, "<send> targetexpr produced a value that is not a target")
+			errEvt := sce.NewPlatformError(StaticSendTargetEventErrorExecution, sceerrorreason.ErrorReasonSendTargetInvalid, "<send> targetexpr produced a value that is not a target")
 			errEvt.Metadata.SendID = "__send_1"
 			engine.Raise(errEvt)
 			return // W3C SCXML 4.9: the error ends the block
 		}
 		if routed == sce.TargetNotReachable {
-			errEvt := sce.NewPlatformError(StaticSendTargetEventErrorCommunication, "<send> targetexpr names a session this processor cannot reach")
+			errEvt := sce.NewPlatformError(StaticSendTargetEventErrorCommunication, sceerrorreason.ErrorReasonTargetUnreachable, "<send> targetexpr names a session this processor cannot reach")
 			errEvt.Metadata.SendID = "__send_1"
 			engine.Raise(errEvt)
 			return // W3C SCXML 4.9: the error ends the block
@@ -1029,7 +1041,7 @@ func (p *StaticSendTargetPolicy) ExecuteTransitionContent(source StaticSendTarge
 			func() {
 
 
-	if func() bool { var sceFailure scealgorithm.Failure; sceValue := scealgorithm.Bounded(&sceFailure, "#_internal", 24); if sceFailure.Failed() { engine.Raise(sce.NewPlatformError(StaticSendTargetEventErrorExecution, "<assign location='route'>: an integer operation overflowed or failed")); return true }; p.vRoute = sceValue; return false }() {
+	if func() bool { var sceFailure scealgorithm.Failure; sceValue := scealgorithm.Bounded(&sceFailure, "#_internal", 24); if sceFailure.Failed() { engine.Raise(sce.NewPlatformError(StaticSendTargetEventErrorExecution, sceerrorreason.ErrorReasonExpressionFailed, "<assign location='route'>: an integer operation overflowed or failed")); return true }; p.vRoute = sceValue; return false }() {
 		return  // W3C SCXML 4.9: the error ends the block
 	}
 
@@ -1040,7 +1052,7 @@ func (p *StaticSendTargetPolicy) ExecuteTransitionContent(source StaticSendTarge
 			func() {
 
 
-	if func() bool { var sceFailure scealgorithm.Failure; sceValue := scealgorithm.Bounded(&sceFailure, "#_parent", 24); if sceFailure.Failed() { engine.Raise(sce.NewPlatformError(StaticSendTargetEventErrorExecution, "<assign location='route'>: an integer operation overflowed or failed")); return true }; p.vRoute = sceValue; return false }() {
+	if func() bool { var sceFailure scealgorithm.Failure; sceValue := scealgorithm.Bounded(&sceFailure, "#_parent", 24); if sceFailure.Failed() { engine.Raise(sce.NewPlatformError(StaticSendTargetEventErrorExecution, sceerrorreason.ErrorReasonExpressionFailed, "<assign location='route'>: an integer operation overflowed or failed")); return true }; p.vRoute = sceValue; return false }() {
 		return  // W3C SCXML 4.9: the error ends the block
 	}
 
@@ -1051,7 +1063,7 @@ func (p *StaticSendTargetPolicy) ExecuteTransitionContent(source StaticSendTarge
 			func() {
 
 
-	if func() bool { var sceFailure scealgorithm.Failure; sceValue := scealgorithm.Bounded(&sceFailure, "#_scxml_stranger", 24); if sceFailure.Failed() { engine.Raise(sce.NewPlatformError(StaticSendTargetEventErrorExecution, "<assign location='route'>: an integer operation overflowed or failed")); return true }; p.vRoute = sceValue; return false }() {
+	if func() bool { var sceFailure scealgorithm.Failure; sceValue := scealgorithm.Bounded(&sceFailure, "#_scxml_stranger", 24); if sceFailure.Failed() { engine.Raise(sce.NewPlatformError(StaticSendTargetEventErrorExecution, sceerrorreason.ErrorReasonExpressionFailed, "<assign location='route'>: an integer operation overflowed or failed")); return true }; p.vRoute = sceValue; return false }() {
 		return  // W3C SCXML 4.9: the error ends the block
 	}
 
@@ -1062,7 +1074,7 @@ func (p *StaticSendTargetPolicy) ExecuteTransitionContent(source StaticSendTarge
 			func() {
 
 
-	if func() bool { var sceFailure scealgorithm.Failure; sceValue := scealgorithm.AddUint32(&sceFailure, p.vLanded, 1); if sceFailure.Failed() { engine.Raise(sce.NewPlatformError(StaticSendTargetEventErrorExecution, "<assign location='landed'>: an integer operation overflowed or failed")); return true }; p.vLanded = sceValue; return false }() {
+	if func() bool { var sceFailure scealgorithm.Failure; sceValue := scealgorithm.AddUint32(&sceFailure, p.vLanded, 1); if sceFailure.Failed() { engine.Raise(sce.NewPlatformError(StaticSendTargetEventErrorExecution, sceerrorreason.ErrorReasonExpressionFailed, "<assign location='landed'>: an integer operation overflowed or failed")); return true }; p.vLanded = sceValue; return false }() {
 		return  // W3C SCXML 4.9: the error ends the block
 	}
 
@@ -1073,7 +1085,7 @@ func (p *StaticSendTargetPolicy) ExecuteTransitionContent(source StaticSendTarge
 			func() {
 
 
-	if func() bool { var sceFailure scealgorithm.Failure; sceValue := scealgorithm.AddUint32(&sceFailure, p.vRefused, 1); if sceFailure.Failed() { engine.Raise(sce.NewPlatformError(StaticSendTargetEventErrorExecution, "<assign location='refused'>: an integer operation overflowed or failed")); return true }; p.vRefused = sceValue; return false }() {
+	if func() bool { var sceFailure scealgorithm.Failure; sceValue := scealgorithm.AddUint32(&sceFailure, p.vRefused, 1); if sceFailure.Failed() { engine.Raise(sce.NewPlatformError(StaticSendTargetEventErrorExecution, sceerrorreason.ErrorReasonExpressionFailed, "<assign location='refused'>: an integer operation overflowed or failed")); return true }; p.vRefused = sceValue; return false }() {
 		return  // W3C SCXML 4.9: the error ends the block
 	}
 

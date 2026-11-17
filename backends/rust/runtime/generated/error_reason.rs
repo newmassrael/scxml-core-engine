@@ -1,7 +1,7 @@
 // SCE-GENERATED — DO NOT EDIT
-// source-hash: 2e7868e2e35cbb777852462588336307ea70f196d6e164600b644a4b693ccd2e
-#![doc = "SCE-MAP: error_reason.scxml:55 :: _forge_body"]
-// SCE-MAP: error_reason.scxml:55 :: _forge_body
+// source-hash: e8f320f75dfeb19d8a1c86b952355e53aa00519f4b2e9108eb558cc94a73e2ba
+#![doc = "SCE-MAP: error_reason.scxml:60 :: _forge_body"]
+// SCE-MAP: error_reason.scxml:60 :: _forge_body
 
 // SCE Forge: Auto-generated from Extended SCXML (sce:kind="enum")
 // Runtime: none
@@ -28,6 +28,7 @@ pub enum ErrorReason {
     ReservedParamConflict = 15,
     SessionTransportUnavailable = 16,
     PayloadRefused = 17,
+    CapacityExceeded = 18,
     TargetUnreachable = 64,
     HttpTargetInvalid = 65,
     TransportUnavailable = 66,
@@ -78,6 +79,7 @@ impl ErrorReason {
             15 => Some(Self::ReservedParamConflict),
             16 => Some(Self::SessionTransportUnavailable),
             17 => Some(Self::PayloadRefused),
+            18 => Some(Self::CapacityExceeded),
             64 => Some(Self::TargetUnreachable),
             65 => Some(Self::HttpTargetInvalid),
             66 => Some(Self::TransportUnavailable),
@@ -122,6 +124,7 @@ impl ErrorReason {
             Self::ReservedParamConflict => "reservedParamConflict",
             Self::SessionTransportUnavailable => "sessionTransportUnavailable",
             Self::PayloadRefused => "payloadRefused",
+            Self::CapacityExceeded => "capacityExceeded",
             Self::TargetUnreachable => "targetUnreachable",
             Self::HttpTargetInvalid => "httpTargetInvalid",
             Self::TransportUnavailable => "transportUnavailable",

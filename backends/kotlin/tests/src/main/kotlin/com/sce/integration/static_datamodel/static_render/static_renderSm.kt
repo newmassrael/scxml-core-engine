@@ -546,7 +546,7 @@ class StaticRenderStateMachine(
     private fun transitionContentOfIdleAt0() {
                 // SCE-MAP: static_render.scxml:27 :: idle :: _transition_0
 
-            if (try { vNote = com.sce.forge.runtime.SceChecked.bounded(TextNotice.render(vWho, vCount, (vView).declaredName, vSaid), 95); false } catch (_: com.sce.forge.runtime.AlgorithmFailure) { raisePlatformError(StaticRenderEvent.Error.Execution, "<sce:render template='Notice'>: an integer operation overflowed or failed"); true }) {
+            if (try { vNote = com.sce.forge.runtime.SceChecked.bounded(TextNotice.render(vWho, vCount, (vView).declaredName, vSaid), 95); false } catch (_: com.sce.forge.runtime.AlgorithmFailure) { raisePlatformError(StaticRenderEvent.Error.Execution, ErrorReason.EXPRESSION_FAILED, "<sce:render template='Notice'>: an integer operation overflowed or failed"); true }) {
                 return
             }
     }
@@ -554,7 +554,7 @@ class StaticRenderStateMachine(
     private fun transitionContentOfIdleAt1() {
                 // SCE-MAP: static_render.scxml:36 :: idle :: _transition_1
 
-            if (try { vWho = com.sce.forge.runtime.SceChecked.bounded("abcdefgh", 8); false } catch (_: com.sce.forge.runtime.AlgorithmFailure) { raisePlatformError(StaticRenderEvent.Error.Execution, "<assign location='who'>: an integer operation overflowed or failed"); true }) {
+            if (try { vWho = com.sce.forge.runtime.SceChecked.bounded("abcdefgh", 8); false } catch (_: com.sce.forge.runtime.AlgorithmFailure) { raisePlatformError(StaticRenderEvent.Error.Execution, ErrorReason.EXPRESSION_FAILED, "<assign location='who'>: an integer operation overflowed or failed"); true }) {
                 return
             }
 
@@ -562,7 +562,7 @@ class StaticRenderStateMachine(
 
             vView = StaticRenderViewModeEnum.AGENDA_LIST
 
-            if (try { vSaid = com.sce.forge.runtime.SceChecked.bounded("0123456789abcdef", 16); false } catch (_: com.sce.forge.runtime.AlgorithmFailure) { raisePlatformError(StaticRenderEvent.Error.Execution, "<assign location='said'>: an integer operation overflowed or failed"); true }) {
+            if (try { vSaid = com.sce.forge.runtime.SceChecked.bounded("0123456789abcdef", 16); false } catch (_: com.sce.forge.runtime.AlgorithmFailure) { raisePlatformError(StaticRenderEvent.Error.Execution, ErrorReason.EXPRESSION_FAILED, "<assign location='said'>: an integer operation overflowed or failed"); true }) {
                 return
             }
     }
@@ -570,7 +570,7 @@ class StaticRenderStateMachine(
     private fun transitionContentOfIdleAt2() {
                 // SCE-MAP: static_render.scxml:43 :: idle :: _transition_2
 
-            if (try { vSaid = com.sce.forge.runtime.SceChecked.bounded("a[[TEXTbTEXT]]c", 16); false } catch (_: com.sce.forge.runtime.AlgorithmFailure) { raisePlatformError(StaticRenderEvent.Error.Execution, "<assign location='said'>: an integer operation overflowed or failed"); true }) {
+            if (try { vSaid = com.sce.forge.runtime.SceChecked.bounded("a[[TEXTbTEXT]]c", 16); false } catch (_: com.sce.forge.runtime.AlgorithmFailure) { raisePlatformError(StaticRenderEvent.Error.Execution, ErrorReason.EXPRESSION_FAILED, "<assign location='said'>: an integer operation overflowed or failed"); true }) {
                 return
             }
     }
@@ -578,7 +578,7 @@ class StaticRenderStateMachine(
     private fun transitionContentOfIdleAt3() {
                 // SCE-MAP: static_render.scxml:47 :: idle :: _transition_3
 
-            if (try { vSaid = com.sce.forge.runtime.SceChecked.bounded("[[TE[[TEXTXT", 16); false } catch (_: com.sce.forge.runtime.AlgorithmFailure) { raisePlatformError(StaticRenderEvent.Error.Execution, "<assign location='said'>: an integer operation overflowed or failed"); true }) {
+            if (try { vSaid = com.sce.forge.runtime.SceChecked.bounded("[[TE[[TEXTXT", 16); false } catch (_: com.sce.forge.runtime.AlgorithmFailure) { raisePlatformError(StaticRenderEvent.Error.Execution, ErrorReason.EXPRESSION_FAILED, "<assign location='said'>: an integer operation overflowed or failed"); true }) {
                 return
             }
     }
@@ -586,7 +586,7 @@ class StaticRenderStateMachine(
     private fun transitionContentOfIdleAt4() {
                 // SCE-MAP: static_render.scxml:51 :: idle :: _transition_4
 
-            if (try { vSaid = com.sce.forge.runtime.SceChecked.bounded("é[[TEXTü", 16); false } catch (_: com.sce.forge.runtime.AlgorithmFailure) { raisePlatformError(StaticRenderEvent.Error.Execution, "<assign location='said'>: an integer operation overflowed or failed"); true }) {
+            if (try { vSaid = com.sce.forge.runtime.SceChecked.bounded("é[[TEXTü", 16); false } catch (_: com.sce.forge.runtime.AlgorithmFailure) { raisePlatformError(StaticRenderEvent.Error.Execution, ErrorReason.EXPRESSION_FAILED, "<assign location='said'>: an integer operation overflowed or failed"); true }) {
                 return
             }
     }
@@ -594,11 +594,11 @@ class StaticRenderStateMachine(
     private fun transitionContentOfIdleAt5() {
                 // SCE-MAP: static_render.scxml:55 :: idle :: _transition_5
 
-            if (try { vNote = com.sce.forge.runtime.SceChecked.bounded(TextNotice.render(vWho, com.sce.forge.runtime.SceChecked.sub(vCount, 1), (vView).declaredName, vSaid), 95); false } catch (_: com.sce.forge.runtime.AlgorithmFailure) { raisePlatformError(StaticRenderEvent.Error.Execution, "<sce:render template='Notice'>: an integer operation overflowed or failed"); true }) {
+            if (try { vNote = com.sce.forge.runtime.SceChecked.bounded(TextNotice.render(vWho, com.sce.forge.runtime.SceChecked.sub(vCount, 1), (vView).declaredName, vSaid), 95); false } catch (_: com.sce.forge.runtime.AlgorithmFailure) { raisePlatformError(StaticRenderEvent.Error.Execution, ErrorReason.EXPRESSION_FAILED, "<sce:render template='Notice'>: an integer operation overflowed or failed"); true }) {
                 return
             }
 
-            if (try { vRefusals = com.sce.forge.runtime.SceChecked.add(vRefusals, 100.toUInt()); false } catch (_: com.sce.forge.runtime.AlgorithmFailure) { raisePlatformError(StaticRenderEvent.Error.Execution, "<assign location='refusals'>: an integer operation overflowed or failed"); true }) {
+            if (try { vRefusals = com.sce.forge.runtime.SceChecked.add(vRefusals, 100.toUInt()); false } catch (_: com.sce.forge.runtime.AlgorithmFailure) { raisePlatformError(StaticRenderEvent.Error.Execution, ErrorReason.EXPRESSION_FAILED, "<assign location='refusals'>: an integer operation overflowed or failed"); true }) {
                 return
             }
     }
@@ -606,7 +606,7 @@ class StaticRenderStateMachine(
     private fun transitionContentOfIdleAt6() {
                 // SCE-MAP: static_render.scxml:64 :: idle :: _transition_6
 
-            if (try { vRefusals = com.sce.forge.runtime.SceChecked.add(vRefusals, 1.toUInt()); false } catch (_: com.sce.forge.runtime.AlgorithmFailure) { raisePlatformError(StaticRenderEvent.Error.Execution, "<assign location='refusals'>: an integer operation overflowed or failed"); true }) {
+            if (try { vRefusals = com.sce.forge.runtime.SceChecked.add(vRefusals, 1.toUInt()); false } catch (_: com.sce.forge.runtime.AlgorithmFailure) { raisePlatformError(StaticRenderEvent.Error.Execution, ErrorReason.EXPRESSION_FAILED, "<assign location='refusals'>: an integer operation overflowed or failed"); true }) {
                 return
             }
     }

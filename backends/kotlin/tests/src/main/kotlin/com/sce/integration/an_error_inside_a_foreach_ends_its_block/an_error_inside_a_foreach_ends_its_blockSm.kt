@@ -398,7 +398,7 @@ class AnErrorInsideAForeachEndsItsBlockStateMachine(
             try {
                 engine.setVariable(sid, "errors", engine.evaluateExpr(sid, com.sce.runtime.ScriptSource.lua("0", "0")))
             } catch (e: Exception) {
-                raisePlatformError(AnErrorInsideAForeachEndsItsBlockEvent.Error.Execution, "<data id='errors'> expr failed to evaluate")
+                raisePlatformError(AnErrorInsideAForeachEndsItsBlockEvent.Error.Execution, ErrorReason.EXPRESSION_FAILED, "<data id='errors'> expr failed to evaluate")
             }
         }
         // §scxml-6.4: 'sent' takes a value its invoke handed it, in place of its own
@@ -407,7 +407,7 @@ class AnErrorInsideAForeachEndsItsBlockStateMachine(
             try {
                 engine.setVariable(sid, "sent", engine.evaluateExpr(sid, com.sce.runtime.ScriptSource.lua("0", "0")))
             } catch (e: Exception) {
-                raisePlatformError(AnErrorInsideAForeachEndsItsBlockEvent.Error.Execution, "<data id='sent'> expr failed to evaluate")
+                raisePlatformError(AnErrorInsideAForeachEndsItsBlockEvent.Error.Execution, ErrorReason.EXPRESSION_FAILED, "<data id='sent'> expr failed to evaluate")
             }
         }
         // §scxml-6.4: 'iters1' takes a value its invoke handed it, in place of its own
@@ -416,7 +416,7 @@ class AnErrorInsideAForeachEndsItsBlockStateMachine(
             try {
                 engine.setVariable(sid, "iters1", engine.evaluateExpr(sid, com.sce.runtime.ScriptSource.lua("0", "0")))
             } catch (e: Exception) {
-                raisePlatformError(AnErrorInsideAForeachEndsItsBlockEvent.Error.Execution, "<data id='iters1'> expr failed to evaluate")
+                raisePlatformError(AnErrorInsideAForeachEndsItsBlockEvent.Error.Execution, ErrorReason.EXPRESSION_FAILED, "<data id='iters1'> expr failed to evaluate")
             }
         }
         // §scxml-6.4: 'after1' takes a value its invoke handed it, in place of its own
@@ -425,7 +425,7 @@ class AnErrorInsideAForeachEndsItsBlockStateMachine(
             try {
                 engine.setVariable(sid, "after1", engine.evaluateExpr(sid, com.sce.runtime.ScriptSource.lua("0", "0")))
             } catch (e: Exception) {
-                raisePlatformError(AnErrorInsideAForeachEndsItsBlockEvent.Error.Execution, "<data id='after1'> expr failed to evaluate")
+                raisePlatformError(AnErrorInsideAForeachEndsItsBlockEvent.Error.Execution, ErrorReason.EXPRESSION_FAILED, "<data id='after1'> expr failed to evaluate")
             }
         }
         // §scxml-6.4: 'iters2' takes a value its invoke handed it, in place of its own
@@ -434,7 +434,7 @@ class AnErrorInsideAForeachEndsItsBlockStateMachine(
             try {
                 engine.setVariable(sid, "iters2", engine.evaluateExpr(sid, com.sce.runtime.ScriptSource.lua("0", "0")))
             } catch (e: Exception) {
-                raisePlatformError(AnErrorInsideAForeachEndsItsBlockEvent.Error.Execution, "<data id='iters2'> expr failed to evaluate")
+                raisePlatformError(AnErrorInsideAForeachEndsItsBlockEvent.Error.Execution, ErrorReason.EXPRESSION_FAILED, "<data id='iters2'> expr failed to evaluate")
             }
         }
         // §scxml-6.4: 'after2' takes a value its invoke handed it, in place of its own
@@ -443,7 +443,7 @@ class AnErrorInsideAForeachEndsItsBlockStateMachine(
             try {
                 engine.setVariable(sid, "after2", engine.evaluateExpr(sid, com.sce.runtime.ScriptSource.lua("0", "0")))
             } catch (e: Exception) {
-                raisePlatformError(AnErrorInsideAForeachEndsItsBlockEvent.Error.Execution, "<data id='after2'> expr failed to evaluate")
+                raisePlatformError(AnErrorInsideAForeachEndsItsBlockEvent.Error.Execution, ErrorReason.EXPRESSION_FAILED, "<data id='after2'> expr failed to evaluate")
             }
         }
         // §scxml-6.4: 'iters3' takes a value its invoke handed it, in place of its own
@@ -452,7 +452,7 @@ class AnErrorInsideAForeachEndsItsBlockStateMachine(
             try {
                 engine.setVariable(sid, "iters3", engine.evaluateExpr(sid, com.sce.runtime.ScriptSource.lua("0", "0")))
             } catch (e: Exception) {
-                raisePlatformError(AnErrorInsideAForeachEndsItsBlockEvent.Error.Execution, "<data id='iters3'> expr failed to evaluate")
+                raisePlatformError(AnErrorInsideAForeachEndsItsBlockEvent.Error.Execution, ErrorReason.EXPRESSION_FAILED, "<data id='iters3'> expr failed to evaluate")
             }
         }
         // §scxml-6.4: 'after3' takes a value its invoke handed it, in place of its own
@@ -461,7 +461,7 @@ class AnErrorInsideAForeachEndsItsBlockStateMachine(
             try {
                 engine.setVariable(sid, "after3", engine.evaluateExpr(sid, com.sce.runtime.ScriptSource.lua("0", "0")))
             } catch (e: Exception) {
-                raisePlatformError(AnErrorInsideAForeachEndsItsBlockEvent.Error.Execution, "<data id='after3'> expr failed to evaluate")
+                raisePlatformError(AnErrorInsideAForeachEndsItsBlockEvent.Error.Execution, ErrorReason.EXPRESSION_FAILED, "<data id='after3'> expr failed to evaluate")
             }
         }
         // §scxml-6.4: 'items' takes a value its invoke handed it, in place of its own
@@ -470,7 +470,7 @@ class AnErrorInsideAForeachEndsItsBlockStateMachine(
             try {
                 engine.setVariable(sid, "items", engine.evaluateExpr(sid, com.sce.runtime.ScriptSource.lua("{1, 2, 3}", "[1, 2, 3]")))
             } catch (e: Exception) {
-                raisePlatformError(AnErrorInsideAForeachEndsItsBlockEvent.Error.Execution, "<data id='items'> expr failed to evaluate")
+                raisePlatformError(AnErrorInsideAForeachEndsItsBlockEvent.Error.Execution, ErrorReason.EXPRESSION_FAILED, "<data id='items'> expr failed to evaluate")
             }
         }
         // §scxml-6.4: 'item' takes a value its invoke handed it, in place of its own
@@ -479,7 +479,7 @@ class AnErrorInsideAForeachEndsItsBlockStateMachine(
             try {
                 engine.setVariable(sid, "item", engine.evaluateExpr(sid, com.sce.runtime.ScriptSource.lua("0", "0")))
             } catch (e: Exception) {
-                raisePlatformError(AnErrorInsideAForeachEndsItsBlockEvent.Error.Execution, "<data id='item'> expr failed to evaluate")
+                raisePlatformError(AnErrorInsideAForeachEndsItsBlockEvent.Error.Execution, ErrorReason.EXPRESSION_FAILED, "<data id='item'> expr failed to evaluate")
             }
         }
         // §scxml-6.4: 'obj' takes a value its invoke handed it, in place of its own
@@ -488,7 +488,7 @@ class AnErrorInsideAForeachEndsItsBlockStateMachine(
             try {
                 engine.setVariable(sid, "obj", engine.evaluateExpr(sid, com.sce.runtime.ScriptSource.lua("{}", "({})")))
             } catch (e: Exception) {
-                raisePlatformError(AnErrorInsideAForeachEndsItsBlockEvent.Error.Execution, "<data id='obj'> expr failed to evaluate")
+                raisePlatformError(AnErrorInsideAForeachEndsItsBlockEvent.Error.Execution, ErrorReason.EXPRESSION_FAILED, "<data id='obj'> expr failed to evaluate")
             }
         }
     }
@@ -518,14 +518,14 @@ class AnErrorInsideAForeachEndsItsBlockStateMachine(
 
     // W3C SCXML 5.9.1: a cond that cannot be evaluated raises error.execution;
     // `null` says so, where a bare `false` could not.
-    private fun evaluateGuardRaising(guardExpr: com.sce.runtime.ScriptSource, reason: String): Boolean? {
+    private fun evaluateGuardRaising(guardExpr: com.sce.runtime.ScriptSource, detail: String): Boolean? {
         assertScriptSession()
         val engine = scriptEngine ?: error("scriptEngine is required (codegen invariant: needs_script_engine == true)")
         val sid = scriptSessionId ?: error("scriptSessionId is established by the start (codegen invariant)")
         return try {
             engine.evaluateCondition(sid, guardExpr)
         } catch (e: Exception) {
-            raisePlatformError(AnErrorInsideAForeachEndsItsBlockEvent.Error.Execution, reason)
+            raisePlatformError(AnErrorInsideAForeachEndsItsBlockEvent.Error.Execution, ErrorReason.EXPRESSION_FAILED, detail)
             null
         }
     }
@@ -566,7 +566,7 @@ class AnErrorInsideAForeachEndsItsBlockStateMachine(
         return try {
             engine.evaluateExpr(sid, serialized)?.toString() ?: ""
         } catch (e: Exception) {
-            raisePlatformError(AnErrorInsideAForeachEndsItsBlockEvent.Error.Execution, "an expression could not be serialised to JSON")
+            raisePlatformError(AnErrorInsideAForeachEndsItsBlockEvent.Error.Execution, ErrorReason.EXPRESSION_FAILED, "an expression could not be serialised to JSON")
             ""
         }
     }
@@ -587,7 +587,7 @@ class AnErrorInsideAForeachEndsItsBlockStateMachine(
             engine.assign(sid, location, expr)
             true
         } catch (e: Exception) {
-            raisePlatformError(AnErrorInsideAForeachEndsItsBlockEvent.Error.Execution, "<assign> failed")
+            raisePlatformError(AnErrorInsideAForeachEndsItsBlockEvent.Error.Execution, ErrorReason.ASSIGNMENT_FAILED, "<assign> failed")
             false
         }
     }
@@ -603,7 +603,7 @@ class AnErrorInsideAForeachEndsItsBlockStateMachine(
             engine.executeScript(sid, script)
             true
         } catch (e: Exception) {
-            raisePlatformError(AnErrorInsideAForeachEndsItsBlockEvent.Error.Execution, "<script> failed to execute")
+            raisePlatformError(AnErrorInsideAForeachEndsItsBlockEvent.Error.Execution, ErrorReason.SCRIPT_FAILED, "<script> failed to execute")
             false
         }
     }
@@ -750,7 +750,7 @@ class AnErrorInsideAForeachEndsItsBlockStateMachine(
             try {
                 putParam(sendPayload, "bad", payloadEngine.evaluateExpr(payloadSid, com.sce.runtime.ScriptSource.lua("obj.missing.deep", "obj.missing.deep")))
             } catch (_: Exception) {
-                raisePlatformError(AnErrorInsideAForeachEndsItsBlockEvent.Error.Execution, "<send> <param name='bad'> could not be read")
+                raisePlatformError(AnErrorInsideAForeachEndsItsBlockEvent.Error.Execution, ErrorReason.LOCATION_INVALID, "<send> <param name='bad'> could not be read")
                 paramFailed = true
             }
 
@@ -771,7 +771,7 @@ class AnErrorInsideAForeachEndsItsBlockStateMachine(
                     // block; nothing more is raised here.
                     true
                 } catch (e: Exception) {
-                    raisePlatformError(AnErrorInsideAForeachEndsItsBlockEvent.Error.Execution, "<foreach array='items'> failed to iterate")
+                    raisePlatformError(AnErrorInsideAForeachEndsItsBlockEvent.Error.Execution, ErrorReason.FOREACH_INVALID, "<foreach array='items'> failed to iterate")
                     true
                 }
             }) {
@@ -811,7 +811,7 @@ class AnErrorInsideAForeachEndsItsBlockStateMachine(
                     // block; nothing more is raised here.
                     true
                 } catch (e: Exception) {
-                    raisePlatformError(AnErrorInsideAForeachEndsItsBlockEvent.Error.Execution, "<foreach array='items'> failed to iterate")
+                    raisePlatformError(AnErrorInsideAForeachEndsItsBlockEvent.Error.Execution, ErrorReason.FOREACH_INVALID, "<foreach array='items'> failed to iterate")
                     true
                 }
             }) {
@@ -923,7 +923,7 @@ class AnErrorInsideAForeachEndsItsBlockStateMachine(
             try {
                 putParam(sendPayload, "bad", payloadEngine.evaluateExpr(payloadSid, com.sce.runtime.ScriptSource.lua("obj.missing.deep", "obj.missing.deep")))
             } catch (_: Exception) {
-                raisePlatformError(AnErrorInsideAForeachEndsItsBlockEvent.Error.Execution, "<send> <param name='bad'> could not be read")
+                raisePlatformError(AnErrorInsideAForeachEndsItsBlockEvent.Error.Execution, ErrorReason.LOCATION_INVALID, "<send> <param name='bad'> could not be read")
                 paramFailed = true
             }
 
@@ -944,7 +944,7 @@ class AnErrorInsideAForeachEndsItsBlockStateMachine(
                     // block; nothing more is raised here.
                     true
                 } catch (e: Exception) {
-                    raisePlatformError(AnErrorInsideAForeachEndsItsBlockEvent.Error.Execution, "<foreach array='items'> failed to iterate")
+                    raisePlatformError(AnErrorInsideAForeachEndsItsBlockEvent.Error.Execution, ErrorReason.FOREACH_INVALID, "<foreach array='items'> failed to iterate")
                     true
                 }
             }) {

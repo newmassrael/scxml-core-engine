@@ -31,6 +31,7 @@ import (
 	"time"
 
 	sce "github.com/newmassrael/sce-go-runtime"
+	sceerrorreason "github.com/newmassrael/sce-go-runtime/generated/error_reason"
 )
 
 // Ensure imports are used
@@ -39,6 +40,9 @@ var (
 	_ = filepath.Join
 	_ = strings.HasPrefix
 	_ = time.Duration(0)
+	// Why an error.* event is raised (sce:std/engine/error_reason,
+	// docs/adr/0106 #111); a machine that raises none still imports it.
+	_ = sceerrorreason.ErrorReasonExpressionFailed
 )
 
 // ======================================================================
@@ -326,7 +330,7 @@ func (p *InvokeParamSeedsDeclaredChildDataSceSynthInvokeInvNamelistPolicy) Initi
 		if err == nil {
 			_ = engine.SetVariable(sessionID, "token", result)
 		} else {
-			eng.Raise(sce.NewPlatformError(InvokeParamSeedsDeclaredChildDataSceSynthInvokeInvNamelistEventErrorExecution, "<data id='token'> expr failed to evaluate"))
+			eng.Raise(sce.NewPlatformError(InvokeParamSeedsDeclaredChildDataSceSynthInvokeInvNamelistEventErrorExecution, sceerrorreason.ErrorReasonExpressionFailed, "<data id='token'> expr failed to evaluate"))
 			_ = engine.SetVariable(sessionID, "token", nil)
 		}
 	}
@@ -358,12 +362,12 @@ func (p *InvokeParamSeedsDeclaredChildDataSceSynthInvokeInvNamelistPolicy) evalu
 // evaluateGuardRaising evaluates a cond, raising error.execution when it cannot
 // be evaluated (W3C SCXML 5.9.1); ok is false then, where a bare false could
 // not say so.
-func (p *InvokeParamSeedsDeclaredChildDataSceSynthInvokeInvNamelistPolicy) evaluateGuardRaising(guard string, eng *sce.Engine[InvokeParamSeedsDeclaredChildDataSceSynthInvokeInvNamelistState, InvokeParamSeedsDeclaredChildDataSceSynthInvokeInvNamelistEvent], reason string) (value bool, ok bool) {
+func (p *InvokeParamSeedsDeclaredChildDataSceSynthInvokeInvNamelistPolicy) evaluateGuardRaising(guard string, eng *sce.Engine[InvokeParamSeedsDeclaredChildDataSceSynthInvokeInvNamelistState, InvokeParamSeedsDeclaredChildDataSceSynthInvokeInvNamelistEvent], detail string) (value bool, ok bool) {
 	p.assertScriptSession()
 	engine := p.ScriptEngine
 	result, err := engine.EvaluateExpression(p.SessionID, guard)
 	if err != nil {
-		eng.Raise(sce.NewPlatformError(InvokeParamSeedsDeclaredChildDataSceSynthInvokeInvNamelistEventErrorExecution, reason))
+		eng.Raise(sce.NewPlatformError(InvokeParamSeedsDeclaredChildDataSceSynthInvokeInvNamelistEventErrorExecution, sceerrorreason.ErrorReasonExpressionFailed, detail))
 		return false, false
 	}
 	return sce.ScriptToBool(result), true
@@ -466,7 +470,7 @@ func (p *InvokeParamSeedsDeclaredChildDataSceSynthInvokeInvNamelistPolicy) SetPa
 // failed is left (docs/adr/0098).
 func (p *InvokeParamSeedsDeclaredChildDataSceSynthInvokeInvNamelistPolicy) declareHandedValue(eng *sce.Engine[InvokeParamSeedsDeclaredChildDataSceSynthInvokeInvNamelistState, InvokeParamSeedsDeclaredChildDataSceSynthInvokeInvNamelistEvent], engine sce.IScriptEngine, sessionID, name string, value interface{}) {
 	if err := engine.SetVariable(sessionID, name, value); err != nil {
-		eng.Raise(sce.NewPlatformError(InvokeParamSeedsDeclaredChildDataSceSynthInvokeInvNamelistEventErrorExecution, "<data id='"+name+"'> could not hold the value its invoking session handed it"))
+		eng.Raise(sce.NewPlatformError(InvokeParamSeedsDeclaredChildDataSceSynthInvokeInvNamelistEventErrorExecution, sceerrorreason.ErrorReasonDataInitFailed, "<data id='"+name+"'> could not hold the value its invoking session handed it"))
 		_ = engine.SetVariable(sessionID, name, nil)
 	}
 }
@@ -826,7 +830,7 @@ func (p *InvokeParamSeedsDeclaredChildDataSceSynthInvokeInvNamelistPolicy) Execu
 		// W3C SCXML C.1: this session was started by its host, not by an
 		// `<invoke>`, so `#_parent` reaches nobody — error.communication,
 		// nothing delivered, and the block ends (4.9).
-		errEvt := sce.NewPlatformError(InvokeParamSeedsDeclaredChildDataSceSynthInvokeInvNamelistEventErrorCommunication, "<send target='#_parent'> has no parent session to reach")
+		errEvt := sce.NewPlatformError(InvokeParamSeedsDeclaredChildDataSceSynthInvokeInvNamelistEventErrorCommunication, sceerrorreason.ErrorReasonTargetUnreachable, "<send target='#_parent'> has no parent session to reach")
 		errEvt.Metadata.SendID = "__send_0"
 		engine.Raise(errEvt)
 		return  // W3C SCXML 4.9: the error ends the block
@@ -851,7 +855,7 @@ func (p *InvokeParamSeedsDeclaredChildDataSceSynthInvokeInvNamelistPolicy) Execu
 		// W3C SCXML C.1: this session was started by its host, not by an
 		// `<invoke>`, so `#_parent` reaches nobody — error.communication,
 		// nothing delivered, and the block ends (4.9).
-		errEvt := sce.NewPlatformError(InvokeParamSeedsDeclaredChildDataSceSynthInvokeInvNamelistEventErrorCommunication, "<send target='#_parent'> has no parent session to reach")
+		errEvt := sce.NewPlatformError(InvokeParamSeedsDeclaredChildDataSceSynthInvokeInvNamelistEventErrorCommunication, sceerrorreason.ErrorReasonTargetUnreachable, "<send target='#_parent'> has no parent session to reach")
 		errEvt.Metadata.SendID = "__send_1"
 		engine.Raise(errEvt)
 		return  // W3C SCXML 4.9: the error ends the block

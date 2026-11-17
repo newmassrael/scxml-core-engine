@@ -607,8 +607,12 @@ public final class AncestorEntryIsNotDefaultEntryPolicy: InvocablePolicy {
 
     /// Says what went wrong where the document can see it: `error.execution` on the internal
     /// queue (§scxml-5.9.1, 5.3).
-    private func raiseExecutionError(_ message: String, engine: Engine<AncestorEntryIsNotDefaultEntryPolicy>) {
-        engine.raise(EventWithMetadata.platformError(AncestorEntryIsNotDefaultEntryEvent.errorExecution, message: message))
+    /// `reason` is the code of sce:std/engine/error_reason the record carries
+    /// (docs/adr/0106 #111).
+    private func raiseExecutionError(
+        _ reason: ErrorReason, _ message: String, engine: Engine<AncestorEntryIsNotDefaultEntryPolicy>
+    ) {
+        engine.raise(EventWithMetadata.platformError(AncestorEntryIsNotDefaultEntryEvent.errorExecution, reason: reason, message: message))
     }
 
     /// W3C SCXML 5.3: the `<data id>` `id` takes the value of the lowered expression, or nil when it
@@ -665,6 +669,7 @@ public final class AncestorEntryIsNotDefaultEntryPolicy: InvocablePolicy {
             }
         } catch {
             raiseExecutionError(
+                handed == nil ? .expressionFailed : .paramUnfit,
                 handed == nil
                     ? "<data id='\(id)'> expr failed to evaluate"
                     : "<data id='\(id)'> could not hold the value its parent handed it",
@@ -829,7 +834,7 @@ public final class AncestorEntryIsNotDefaultEntryPolicy: InvocablePolicy {
             // this call the payload is lost to the document and to the host alike.
             engine.notePayloadReading(event, reading: Self.payloadReading(of: reading))
         } catch {
-            raiseExecutionError("_event could not be bound for '\(name)'", engine: engine)
+            raiseExecutionError(.payloadRefused, "_event could not be bound for '\(name)'", engine: engine)
         }
     }
 
@@ -866,7 +871,7 @@ public final class AncestorEntryIsNotDefaultEntryPolicy: InvocablePolicy {
         do {
             return try scriptSession.evaluateCondition(condition, chunkName: "=cond")
         } catch {
-            raiseExecutionError("a \(element) cond failed to evaluate", engine: engine)
+            raiseExecutionError(.expressionFailed, "a \(element) cond failed to evaluate", engine: engine)
             failed = true
             return false
         }
@@ -891,7 +896,7 @@ public final class AncestorEntryIsNotDefaultEntryPolicy: InvocablePolicy {
 
                 // W3C SCXML 5.4: <assign location="defaulted">
                 if !assignData("defaulted", "_scxml_add(defaulted, 1)") {
-                    raiseExecutionError("<assign> to 'defaulted' failed", engine: engine)
+                    raiseExecutionError(.assignmentFailed, "<assign> to 'defaulted' failed", engine: engine)
                     break sceBlock  // W3C SCXML 4.9: the error ends the block
                 }
 
@@ -902,7 +907,7 @@ public final class AncestorEntryIsNotDefaultEntryPolicy: InvocablePolicy {
 
                 // W3C SCXML 5.4: <assign location="targeted">
                 if !assignData("targeted", "_scxml_add(targeted, 1)") {
-                    raiseExecutionError("<assign> to 'targeted' failed", engine: engine)
+                    raiseExecutionError(.assignmentFailed, "<assign> to 'targeted' failed", engine: engine)
                     break sceBlock  // W3C SCXML 4.9: the error ends the block
                 }
 
@@ -913,7 +918,7 @@ public final class AncestorEntryIsNotDefaultEntryPolicy: InvocablePolicy {
 
                 // W3C SCXML 5.4: <assign location="idled">
                 if !assignData("idled", "_scxml_add(idled, 1)") {
-                    raiseExecutionError("<assign> to 'idled' failed", engine: engine)
+                    raiseExecutionError(.assignmentFailed, "<assign> to 'idled' failed", engine: engine)
                     break sceBlock  // W3C SCXML 4.9: the error ends the block
                 }
 
@@ -924,7 +929,7 @@ public final class AncestorEntryIsNotDefaultEntryPolicy: InvocablePolicy {
 
                 // W3C SCXML 5.4: <assign location="lobbied">
                 if !assignData("lobbied", "_scxml_add(lobbied, 1)") {
-                    raiseExecutionError("<assign> to 'lobbied' failed", engine: engine)
+                    raiseExecutionError(.assignmentFailed, "<assign> to 'lobbied' failed", engine: engine)
                     break sceBlock  // W3C SCXML 4.9: the error ends the block
                 }
 

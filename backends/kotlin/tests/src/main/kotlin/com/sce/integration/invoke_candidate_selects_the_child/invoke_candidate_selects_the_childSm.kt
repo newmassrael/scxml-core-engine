@@ -209,7 +209,7 @@ class InvokeCandidateSelectsTheChildStateMachine(
             try {
                 engine.setVariable(sid, "pick", engine.evaluateExpr(sid, com.sce.runtime.ScriptSource.lua("\"file:chosen.scxml\"", "'file:chosen.scxml'")))
             } catch (e: Exception) {
-                raisePlatformError(InvokeCandidateSelectsTheChildEvent.Error.Execution, "<data id='pick'> expr failed to evaluate")
+                raisePlatformError(InvokeCandidateSelectsTheChildEvent.Error.Execution, ErrorReason.EXPRESSION_FAILED, "<data id='pick'> expr failed to evaluate")
             }
         }
     }
@@ -239,14 +239,14 @@ class InvokeCandidateSelectsTheChildStateMachine(
 
     // W3C SCXML 5.9.1: a cond that cannot be evaluated raises error.execution;
     // `null` says so, where a bare `false` could not.
-    private fun evaluateGuardRaising(guardExpr: com.sce.runtime.ScriptSource, reason: String): Boolean? {
+    private fun evaluateGuardRaising(guardExpr: com.sce.runtime.ScriptSource, detail: String): Boolean? {
         assertScriptSession()
         val engine = scriptEngine ?: error("scriptEngine is required (codegen invariant: needs_script_engine == true)")
         val sid = scriptSessionId ?: error("scriptSessionId is established by the start (codegen invariant)")
         return try {
             engine.evaluateCondition(sid, guardExpr)
         } catch (e: Exception) {
-            raisePlatformError(InvokeCandidateSelectsTheChildEvent.Error.Execution, reason)
+            raisePlatformError(InvokeCandidateSelectsTheChildEvent.Error.Execution, ErrorReason.EXPRESSION_FAILED, detail)
             null
         }
     }
@@ -287,7 +287,7 @@ class InvokeCandidateSelectsTheChildStateMachine(
         return try {
             engine.evaluateExpr(sid, serialized)?.toString() ?: ""
         } catch (e: Exception) {
-            raisePlatformError(InvokeCandidateSelectsTheChildEvent.Error.Execution, "an expression could not be serialised to JSON")
+            raisePlatformError(InvokeCandidateSelectsTheChildEvent.Error.Execution, ErrorReason.EXPRESSION_FAILED, "an expression could not be serialised to JSON")
             ""
         }
     }
@@ -308,7 +308,7 @@ class InvokeCandidateSelectsTheChildStateMachine(
             engine.assign(sid, location, expr)
             true
         } catch (e: Exception) {
-            raisePlatformError(InvokeCandidateSelectsTheChildEvent.Error.Execution, "<assign> failed")
+            raisePlatformError(InvokeCandidateSelectsTheChildEvent.Error.Execution, ErrorReason.ASSIGNMENT_FAILED, "<assign> failed")
             false
         }
     }
@@ -324,7 +324,7 @@ class InvokeCandidateSelectsTheChildStateMachine(
             engine.executeScript(sid, script)
             true
         } catch (e: Exception) {
-            raisePlatformError(InvokeCandidateSelectsTheChildEvent.Error.Execution, "<script> failed to execute")
+            raisePlatformError(InvokeCandidateSelectsTheChildEvent.Error.Execution, ErrorReason.SCRIPT_FAILED, "<script> failed to execute")
             false
         }
     }
@@ -498,7 +498,7 @@ class InvokeCandidateSelectsTheChildStateMachine(
                                 null
                             }
                             if (filePath == null) {
-                                raisePlatformError(InvokeCandidateSelectsTheChildEvent.Error.Execution, "<invoke srcexpr='pick'> could not be evaluated")
+                                raisePlatformError(InvokeCandidateSelectsTheChildEvent.Error.Execution, ErrorReason.EXPRESSION_FAILED, "<invoke srcexpr='pick'> could not be evaluated")
                                 return@deferInvoke
                             }
                             // §scxml-6.4 + SCE_ACCEPTED_SUBSET.md §2.13: the value
@@ -515,7 +515,7 @@ class InvokeCandidateSelectsTheChildStateMachine(
                                 else -> {
                                     // The failure the Interpreter reports when a
                                     // document will not load: nothing to create.
-                                    raisePlatformError(InvokeCandidateSelectsTheChildEvent.Error.Execution, "<invoke srcexpr='pick'> evaluated to a document it did not declare")
+                                    raisePlatformError(InvokeCandidateSelectsTheChildEvent.Error.Execution, ErrorReason.INVOKE_SRC_NOT_FOUND, "<invoke srcexpr='pick'> evaluated to a document it did not declare")
                                     return@deferInvoke
                                 }
                             }
@@ -525,7 +525,7 @@ class InvokeCandidateSelectsTheChildStateMachine(
                             // W3C SCXML 6.4: the child could not be started. Evaluation
                             // failure no longer reaches here — it has its own raise above,
                             // under the one wording every emitter uses for that fact.
-                            raisePlatformError(InvokeCandidateSelectsTheChildEvent.Error.Execution, "<invoke> could not start a child")
+                            raisePlatformError(InvokeCandidateSelectsTheChildEvent.Error.Execution, ErrorReason.INVOKE_CHILD_INIT_FAILED, "<invoke> could not start a child")
                         }
                     }
                 }

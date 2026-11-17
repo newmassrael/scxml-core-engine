@@ -265,7 +265,7 @@ class Test354StateMachine(
             try {
                 engine.setVariable(sid, "Var1", engine.evaluateExpr(sid, com.sce.runtime.ScriptSource.lua("1", "1")))
             } catch (e: Exception) {
-                raisePlatformError(Test354Event.Error.Execution, "<data id='Var1'> expr failed to evaluate")
+                raisePlatformError(Test354Event.Error.Execution, ErrorReason.EXPRESSION_FAILED, "<data id='Var1'> expr failed to evaluate")
             }
         }
         // §scxml-6.4: 'Var2' takes a value its invoke handed it, in place of its own
@@ -311,14 +311,14 @@ class Test354StateMachine(
 
     // W3C SCXML 5.9.1: a cond that cannot be evaluated raises error.execution;
     // `null` says so, where a bare `false` could not.
-    private fun evaluateGuardRaising(guardExpr: com.sce.runtime.ScriptSource, reason: String): Boolean? {
+    private fun evaluateGuardRaising(guardExpr: com.sce.runtime.ScriptSource, detail: String): Boolean? {
         assertScriptSession()
         val engine = scriptEngine ?: error("scriptEngine is required (codegen invariant: needs_script_engine == true)")
         val sid = scriptSessionId ?: error("scriptSessionId is established by the start (codegen invariant)")
         return try {
             engine.evaluateCondition(sid, guardExpr)
         } catch (e: Exception) {
-            raisePlatformError(Test354Event.Error.Execution, reason)
+            raisePlatformError(Test354Event.Error.Execution, ErrorReason.EXPRESSION_FAILED, detail)
             null
         }
     }
@@ -359,7 +359,7 @@ class Test354StateMachine(
         return try {
             engine.evaluateExpr(sid, serialized)?.toString() ?: ""
         } catch (e: Exception) {
-            raisePlatformError(Test354Event.Error.Execution, "an expression could not be serialised to JSON")
+            raisePlatformError(Test354Event.Error.Execution, ErrorReason.EXPRESSION_FAILED, "an expression could not be serialised to JSON")
             ""
         }
     }
@@ -380,7 +380,7 @@ class Test354StateMachine(
             engine.assign(sid, location, expr)
             true
         } catch (e: Exception) {
-            raisePlatformError(Test354Event.Error.Execution, "<assign> failed")
+            raisePlatformError(Test354Event.Error.Execution, ErrorReason.ASSIGNMENT_FAILED, "<assign> failed")
             false
         }
     }
@@ -396,7 +396,7 @@ class Test354StateMachine(
             engine.executeScript(sid, script)
             true
         } catch (e: Exception) {
-            raisePlatformError(Test354Event.Error.Execution, "<script> failed to execute")
+            raisePlatformError(Test354Event.Error.Execution, ErrorReason.SCRIPT_FAILED, "<script> failed to execute")
             false
         }
     }
@@ -566,13 +566,13 @@ class Test354StateMachine(
             // one error however many of its names are bad.
             val sendNamelist = mutableListOf<Pair<String, Any?>>()
             if (!argEngine.hasVariable(argSid, "Var1")) {
-                raisePlatformError(Test354Event.Error.Execution, "<send> namelist names 'Var1', which is not declared", "__send_1")
+                raisePlatformError(Test354Event.Error.Execution, ErrorReason.LOCATION_INVALID, "<send> namelist names 'Var1', which is not declared", "__send_1")
                 return@send true
             }
             try {
                 sendNamelist.add("Var1" to argEngine.getVariable(argSid, "Var1"))
             } catch (_: Exception) {
-                raisePlatformError(Test354Event.Error.Execution, "<send> namelist entry 'Var1' could not be read", "__send_1")
+                raisePlatformError(Test354Event.Error.Execution, ErrorReason.LOCATION_INVALID, "<send> namelist entry 'Var1' could not be read", "__send_1")
                 return@send true
             }
             assertScriptSession()
@@ -582,7 +582,7 @@ class Test354StateMachine(
             try {
                 putParam(sendPayload, "param1", payloadEngine.evaluateExpr(payloadSid, com.sce.runtime.ScriptSource.lua("2", "2")))
             } catch (_: Exception) {
-                raisePlatformError(Test354Event.Error.Execution, "<send> <param name='param1'> could not be read")
+                raisePlatformError(Test354Event.Error.Execution, ErrorReason.LOCATION_INVALID, "<send> <param name='param1'> could not be read")
                 paramFailed = true
             }
 

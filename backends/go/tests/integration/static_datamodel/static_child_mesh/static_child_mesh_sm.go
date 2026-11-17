@@ -31,6 +31,7 @@ import (
 	"time"
 
 	sce "github.com/newmassrael/sce-go-runtime"
+	sceerrorreason "github.com/newmassrael/sce-go-runtime/generated/error_reason"
 	scealgorithm "github.com/newmassrael/sce-forge-runtime/algorithm"
 )
 
@@ -40,6 +41,9 @@ var (
 	_ = filepath.Join
 	_ = strings.HasPrefix
 	_ = time.Duration(0)
+	// Why an error.* event is raised (sce:std/engine/error_reason,
+	// docs/adr/0106 #111); a machine that raises none still imports it.
+	_ = sceerrorreason.ErrorReasonExpressionFailed
 	_ scealgorithm.Failure
 )
 
@@ -767,7 +771,7 @@ func (p *StaticChildMeshPolicy) ExecutePendingInvokes(engine *sce.Engine[StaticC
 			if refused := childEngine.Initialize(); refused != nil {
 				childEngine.DetachMesh()
 				delete(p.activeInvokes, "list")
-				engine.Raise(sce.NewPlatformError(StaticChildMeshEventErrorExecution, sce.ChildStartRefusal("list", refused)))
+				engine.Raise(sce.NewPlatformError(StaticChildMeshEventErrorExecution, sceerrorreason.ErrorReasonInvokeChildInitFailed, sce.ChildStartRefusal("list", refused)))
 				continue
 			}
 
@@ -804,7 +808,7 @@ func (p *StaticChildMeshPolicy) ExecutePendingInvokes(engine *sce.Engine[StaticC
 			switch __sceSelected {
 			case "static_mesh_relay":
 			default:
-				engine.Raise(sce.NewPlatformError(StaticChildMeshEventErrorExecution, "<invoke srcexpr> evaluated to a document it did not declare"))
+				engine.Raise(sce.NewPlatformError(StaticChildMeshEventErrorExecution, sceerrorreason.ErrorReasonInvokeSrcNotFound, "<invoke srcexpr> evaluated to a document it did not declare"))
 				continue
 			}
 
@@ -864,7 +868,7 @@ func (p *StaticChildMeshPolicy) ExecutePendingInvokes(engine *sce.Engine[StaticC
 			if refused := childEngine.Initialize(); refused != nil {
 				childEngine.DetachMesh()
 				delete(p.activeInvokes, "peer")
-				engine.Raise(sce.NewPlatformError(StaticChildMeshEventErrorExecution, sce.ChildStartRefusal("peer", refused)))
+				engine.Raise(sce.NewPlatformError(StaticChildMeshEventErrorExecution, sceerrorreason.ErrorReasonInvokeChildInitFailed, sce.ChildStartRefusal("peer", refused)))
 				continue
 			}
 
@@ -1560,7 +1564,7 @@ func (p *StaticChildMeshPolicy) ExecuteTransitionContent(source StaticChildMeshS
 			func() {
 
 
-	if func() bool { var sceFailure scealgorithm.Failure; sceValue := scealgorithm.AddUint32(&sceFailure, p.vRefusals, 1); if sceFailure.Failed() { engine.Raise(sce.NewPlatformError(StaticChildMeshEventErrorExecution, "<assign location='refusals'>: an integer operation overflowed or failed")); return true }; p.vRefusals = sceValue; return false }() {
+	if func() bool { var sceFailure scealgorithm.Failure; sceValue := scealgorithm.AddUint32(&sceFailure, p.vRefusals, 1); if sceFailure.Failed() { engine.Raise(sce.NewPlatformError(StaticChildMeshEventErrorExecution, sceerrorreason.ErrorReasonExpressionFailed, "<assign location='refusals'>: an integer operation overflowed or failed")); return true }; p.vRefusals = sceValue; return false }() {
 		return  // W3C SCXML 4.9: the error ends the block
 	}
 

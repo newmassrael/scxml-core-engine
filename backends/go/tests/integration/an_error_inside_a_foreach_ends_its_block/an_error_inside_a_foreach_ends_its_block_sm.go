@@ -31,6 +31,7 @@ import (
 	"time"
 
 	sce "github.com/newmassrael/sce-go-runtime"
+	sceerrorreason "github.com/newmassrael/sce-go-runtime/generated/error_reason"
 )
 
 // Ensure imports are used
@@ -39,6 +40,9 @@ var (
 	_ = filepath.Join
 	_ = strings.HasPrefix
 	_ = time.Duration(0)
+	// Why an error.* event is raised (sce:std/engine/error_reason,
+	// docs/adr/0106 #111); a machine that raises none still imports it.
+	_ = sceerrorreason.ErrorReasonExpressionFailed
 )
 
 // ======================================================================
@@ -471,7 +475,7 @@ func (p *AnErrorInsideAForeachEndsItsBlockPolicy) InitializeDataModel(eng *sce.E
 		if err == nil {
 			_ = engine.SetVariable(sessionID, "errors", result)
 		} else {
-			eng.Raise(sce.NewPlatformError(AnErrorInsideAForeachEndsItsBlockEventErrorExecution, "<data id='errors'> expr failed to evaluate"))
+			eng.Raise(sce.NewPlatformError(AnErrorInsideAForeachEndsItsBlockEventErrorExecution, sceerrorreason.ErrorReasonExpressionFailed, "<data id='errors'> expr failed to evaluate"))
 			_ = engine.SetVariable(sessionID, "errors", nil)
 		}
 	}
@@ -485,7 +489,7 @@ func (p *AnErrorInsideAForeachEndsItsBlockPolicy) InitializeDataModel(eng *sce.E
 		if err == nil {
 			_ = engine.SetVariable(sessionID, "sent", result)
 		} else {
-			eng.Raise(sce.NewPlatformError(AnErrorInsideAForeachEndsItsBlockEventErrorExecution, "<data id='sent'> expr failed to evaluate"))
+			eng.Raise(sce.NewPlatformError(AnErrorInsideAForeachEndsItsBlockEventErrorExecution, sceerrorreason.ErrorReasonExpressionFailed, "<data id='sent'> expr failed to evaluate"))
 			_ = engine.SetVariable(sessionID, "sent", nil)
 		}
 	}
@@ -499,7 +503,7 @@ func (p *AnErrorInsideAForeachEndsItsBlockPolicy) InitializeDataModel(eng *sce.E
 		if err == nil {
 			_ = engine.SetVariable(sessionID, "iters1", result)
 		} else {
-			eng.Raise(sce.NewPlatformError(AnErrorInsideAForeachEndsItsBlockEventErrorExecution, "<data id='iters1'> expr failed to evaluate"))
+			eng.Raise(sce.NewPlatformError(AnErrorInsideAForeachEndsItsBlockEventErrorExecution, sceerrorreason.ErrorReasonExpressionFailed, "<data id='iters1'> expr failed to evaluate"))
 			_ = engine.SetVariable(sessionID, "iters1", nil)
 		}
 	}
@@ -513,7 +517,7 @@ func (p *AnErrorInsideAForeachEndsItsBlockPolicy) InitializeDataModel(eng *sce.E
 		if err == nil {
 			_ = engine.SetVariable(sessionID, "after1", result)
 		} else {
-			eng.Raise(sce.NewPlatformError(AnErrorInsideAForeachEndsItsBlockEventErrorExecution, "<data id='after1'> expr failed to evaluate"))
+			eng.Raise(sce.NewPlatformError(AnErrorInsideAForeachEndsItsBlockEventErrorExecution, sceerrorreason.ErrorReasonExpressionFailed, "<data id='after1'> expr failed to evaluate"))
 			_ = engine.SetVariable(sessionID, "after1", nil)
 		}
 	}
@@ -527,7 +531,7 @@ func (p *AnErrorInsideAForeachEndsItsBlockPolicy) InitializeDataModel(eng *sce.E
 		if err == nil {
 			_ = engine.SetVariable(sessionID, "iters2", result)
 		} else {
-			eng.Raise(sce.NewPlatformError(AnErrorInsideAForeachEndsItsBlockEventErrorExecution, "<data id='iters2'> expr failed to evaluate"))
+			eng.Raise(sce.NewPlatformError(AnErrorInsideAForeachEndsItsBlockEventErrorExecution, sceerrorreason.ErrorReasonExpressionFailed, "<data id='iters2'> expr failed to evaluate"))
 			_ = engine.SetVariable(sessionID, "iters2", nil)
 		}
 	}
@@ -541,7 +545,7 @@ func (p *AnErrorInsideAForeachEndsItsBlockPolicy) InitializeDataModel(eng *sce.E
 		if err == nil {
 			_ = engine.SetVariable(sessionID, "after2", result)
 		} else {
-			eng.Raise(sce.NewPlatformError(AnErrorInsideAForeachEndsItsBlockEventErrorExecution, "<data id='after2'> expr failed to evaluate"))
+			eng.Raise(sce.NewPlatformError(AnErrorInsideAForeachEndsItsBlockEventErrorExecution, sceerrorreason.ErrorReasonExpressionFailed, "<data id='after2'> expr failed to evaluate"))
 			_ = engine.SetVariable(sessionID, "after2", nil)
 		}
 	}
@@ -555,7 +559,7 @@ func (p *AnErrorInsideAForeachEndsItsBlockPolicy) InitializeDataModel(eng *sce.E
 		if err == nil {
 			_ = engine.SetVariable(sessionID, "iters3", result)
 		} else {
-			eng.Raise(sce.NewPlatformError(AnErrorInsideAForeachEndsItsBlockEventErrorExecution, "<data id='iters3'> expr failed to evaluate"))
+			eng.Raise(sce.NewPlatformError(AnErrorInsideAForeachEndsItsBlockEventErrorExecution, sceerrorreason.ErrorReasonExpressionFailed, "<data id='iters3'> expr failed to evaluate"))
 			_ = engine.SetVariable(sessionID, "iters3", nil)
 		}
 	}
@@ -569,7 +573,7 @@ func (p *AnErrorInsideAForeachEndsItsBlockPolicy) InitializeDataModel(eng *sce.E
 		if err == nil {
 			_ = engine.SetVariable(sessionID, "after3", result)
 		} else {
-			eng.Raise(sce.NewPlatformError(AnErrorInsideAForeachEndsItsBlockEventErrorExecution, "<data id='after3'> expr failed to evaluate"))
+			eng.Raise(sce.NewPlatformError(AnErrorInsideAForeachEndsItsBlockEventErrorExecution, sceerrorreason.ErrorReasonExpressionFailed, "<data id='after3'> expr failed to evaluate"))
 			_ = engine.SetVariable(sessionID, "after3", nil)
 		}
 	}
@@ -583,7 +587,7 @@ func (p *AnErrorInsideAForeachEndsItsBlockPolicy) InitializeDataModel(eng *sce.E
 		if err == nil {
 			_ = engine.SetVariable(sessionID, "items", result)
 		} else {
-			eng.Raise(sce.NewPlatformError(AnErrorInsideAForeachEndsItsBlockEventErrorExecution, "<data id='items'> expr failed to evaluate"))
+			eng.Raise(sce.NewPlatformError(AnErrorInsideAForeachEndsItsBlockEventErrorExecution, sceerrorreason.ErrorReasonExpressionFailed, "<data id='items'> expr failed to evaluate"))
 			_ = engine.SetVariable(sessionID, "items", nil)
 		}
 	}
@@ -597,7 +601,7 @@ func (p *AnErrorInsideAForeachEndsItsBlockPolicy) InitializeDataModel(eng *sce.E
 		if err == nil {
 			_ = engine.SetVariable(sessionID, "item", result)
 		} else {
-			eng.Raise(sce.NewPlatformError(AnErrorInsideAForeachEndsItsBlockEventErrorExecution, "<data id='item'> expr failed to evaluate"))
+			eng.Raise(sce.NewPlatformError(AnErrorInsideAForeachEndsItsBlockEventErrorExecution, sceerrorreason.ErrorReasonExpressionFailed, "<data id='item'> expr failed to evaluate"))
 			_ = engine.SetVariable(sessionID, "item", nil)
 		}
 	}
@@ -611,7 +615,7 @@ func (p *AnErrorInsideAForeachEndsItsBlockPolicy) InitializeDataModel(eng *sce.E
 		if err == nil {
 			_ = engine.SetVariable(sessionID, "obj", result)
 		} else {
-			eng.Raise(sce.NewPlatformError(AnErrorInsideAForeachEndsItsBlockEventErrorExecution, "<data id='obj'> expr failed to evaluate"))
+			eng.Raise(sce.NewPlatformError(AnErrorInsideAForeachEndsItsBlockEventErrorExecution, sceerrorreason.ErrorReasonExpressionFailed, "<data id='obj'> expr failed to evaluate"))
 			_ = engine.SetVariable(sessionID, "obj", nil)
 		}
 	}
@@ -643,12 +647,12 @@ func (p *AnErrorInsideAForeachEndsItsBlockPolicy) evaluateIfCond(guard string, e
 // evaluateGuardRaising evaluates a cond, raising error.execution when it cannot
 // be evaluated (W3C SCXML 5.9.1); ok is false then, where a bare false could
 // not say so.
-func (p *AnErrorInsideAForeachEndsItsBlockPolicy) evaluateGuardRaising(guard string, eng *sce.Engine[AnErrorInsideAForeachEndsItsBlockState, AnErrorInsideAForeachEndsItsBlockEvent], reason string) (value bool, ok bool) {
+func (p *AnErrorInsideAForeachEndsItsBlockPolicy) evaluateGuardRaising(guard string, eng *sce.Engine[AnErrorInsideAForeachEndsItsBlockState, AnErrorInsideAForeachEndsItsBlockEvent], detail string) (value bool, ok bool) {
 	p.assertScriptSession()
 	engine := p.ScriptEngine
 	result, err := engine.EvaluateExpression(p.SessionID, guard)
 	if err != nil {
-		eng.Raise(sce.NewPlatformError(AnErrorInsideAForeachEndsItsBlockEventErrorExecution, reason))
+		eng.Raise(sce.NewPlatformError(AnErrorInsideAForeachEndsItsBlockEventErrorExecution, sceerrorreason.ErrorReasonExpressionFailed, detail))
 		return false, false
 	}
 	return sce.ScriptToBool(result), true
@@ -751,7 +755,7 @@ func (p *AnErrorInsideAForeachEndsItsBlockPolicy) SetParamValueInScriptEngine(na
 // failed is left (docs/adr/0098).
 func (p *AnErrorInsideAForeachEndsItsBlockPolicy) declareHandedValue(eng *sce.Engine[AnErrorInsideAForeachEndsItsBlockState, AnErrorInsideAForeachEndsItsBlockEvent], engine sce.IScriptEngine, sessionID, name string, value interface{}) {
 	if err := engine.SetVariable(sessionID, name, value); err != nil {
-		eng.Raise(sce.NewPlatformError(AnErrorInsideAForeachEndsItsBlockEventErrorExecution, "<data id='"+name+"'> could not hold the value its invoking session handed it"))
+		eng.Raise(sce.NewPlatformError(AnErrorInsideAForeachEndsItsBlockEventErrorExecution, sceerrorreason.ErrorReasonDataInitFailed, "<data id='"+name+"'> could not hold the value its invoking session handed it"))
 		_ = engine.SetVariable(sessionID, name, nil)
 	}
 }
@@ -1019,12 +1023,12 @@ func (p *AnErrorInsideAForeachEndsItsBlockPolicy) ExecuteEntryActions(state AnEr
 	{
 		foreachItemName := "item"
 		if foreachItemName == "" || !sce.IsValidIdentifier(foreachItemName) {
-			engine.Raise(sce.NewPlatformError(AnErrorInsideAForeachEndsItsBlockEventErrorExecution, "<foreach item='item'> is missing or not a legal variable name"))
+			engine.Raise(sce.NewPlatformError(AnErrorInsideAForeachEndsItsBlockEventErrorExecution, sceerrorreason.ErrorReasonForeachInvalid, "<foreach item='item'> is missing or not a legal variable name"))
 			return
 		} else {
 			foreachArrVal, foreachErr := p.ScriptEngine.EvaluateExpression(p.SessionID, `items`)
 			if foreachErr != nil {
-				engine.Raise(sce.NewPlatformError(AnErrorInsideAForeachEndsItsBlockEventErrorExecution, "<foreach array='items'> failed to evaluate"))
+				engine.Raise(sce.NewPlatformError(AnErrorInsideAForeachEndsItsBlockEventErrorExecution, sceerrorreason.ErrorReasonExpressionFailed, "<foreach array='items'> failed to evaluate"))
 				return
 			} else if foreachArr, foreachOk := sce.ToSlice(foreachArrVal); foreachOk {
 				foreachSuccess := true
@@ -1037,7 +1041,7 @@ func (p *AnErrorInsideAForeachEndsItsBlockPolicy) ExecuteEntryActions(state AnEr
 
 	// W3C SCXML 5.3: <assign location="iters1" expr="iters1 + 1">
 	if err := p.assignVariable(`iters1`, `_scxml_add(iters1, 1)`); err != nil {
-		engine.Raise(sce.NewPlatformError(AnErrorInsideAForeachEndsItsBlockEventErrorExecution, "<assign> to 'iters1' failed"))
+		engine.Raise(sce.NewPlatformError(AnErrorInsideAForeachEndsItsBlockEventErrorExecution, sceerrorreason.ErrorReasonAssignmentFailed, "<assign> to 'iters1' failed"))
 		return  // W3C SCXML 4.9: the error ends the block
 	}
 
@@ -1060,7 +1064,7 @@ func (p *AnErrorInsideAForeachEndsItsBlockPolicy) ExecuteEntryActions(state AnEr
 		if paramVal, paramErr := se.EvaluateExpression(p.SessionID, `obj.missing.deep`); paramErr == nil {
 			parts = append(parts, sce.EventDataParam{Name: "bad", Value: paramVal})
 		} else {
-			engine.Raise(sce.NewPlatformError(AnErrorInsideAForeachEndsItsBlockEventErrorExecution, "<send> <param name='bad'> expr failed to evaluate"))
+			engine.Raise(sce.NewPlatformError(AnErrorInsideAForeachEndsItsBlockEventErrorExecution, sceerrorreason.ErrorReasonExpressionFailed, "<send> <param name='bad'> expr failed to evaluate"))
 			paramFailed = true
 		}
 		eventDataStr := sce.BuildJSONFromTypedParams(parts)
@@ -1081,12 +1085,12 @@ func (p *AnErrorInsideAForeachEndsItsBlockPolicy) ExecuteEntryActions(state AnEr
 	}
 				}
 				if !foreachSuccess {
-					engine.Raise(sce.NewPlatformError(AnErrorInsideAForeachEndsItsBlockEventErrorExecution, "<foreach> could not set its loop variable"))
+					engine.Raise(sce.NewPlatformError(AnErrorInsideAForeachEndsItsBlockEventErrorExecution, sceerrorreason.ErrorReasonForeachInvalid, "<foreach> could not set its loop variable"))
 					return
 				}
 			} else {
 				// Not an array — raise error.execution (W3C SCXML 4.6)
-				engine.Raise(sce.NewPlatformError(AnErrorInsideAForeachEndsItsBlockEventErrorExecution, "<foreach array='items'> is not an array"))
+				engine.Raise(sce.NewPlatformError(AnErrorInsideAForeachEndsItsBlockEventErrorExecution, sceerrorreason.ErrorReasonForeachInvalid, "<foreach array='items'> is not an array"))
 				return
 			}
 		}
@@ -1095,7 +1099,7 @@ func (p *AnErrorInsideAForeachEndsItsBlockPolicy) ExecuteEntryActions(state AnEr
 
 	// W3C SCXML 5.3: <assign location="after1" expr="1">
 	if err := p.assignVariable(`after1`, `1`); err != nil {
-		engine.Raise(sce.NewPlatformError(AnErrorInsideAForeachEndsItsBlockEventErrorExecution, "<assign> to 'after1' failed"))
+		engine.Raise(sce.NewPlatformError(AnErrorInsideAForeachEndsItsBlockEventErrorExecution, sceerrorreason.ErrorReasonAssignmentFailed, "<assign> to 'after1' failed"))
 		return  // W3C SCXML 4.9: the error ends the block
 	}
 
@@ -1110,12 +1114,12 @@ func (p *AnErrorInsideAForeachEndsItsBlockPolicy) ExecuteEntryActions(state AnEr
 	{
 		foreachItemName := "item"
 		if foreachItemName == "" || !sce.IsValidIdentifier(foreachItemName) {
-			engine.Raise(sce.NewPlatformError(AnErrorInsideAForeachEndsItsBlockEventErrorExecution, "<foreach item='item'> is missing or not a legal variable name"))
+			engine.Raise(sce.NewPlatformError(AnErrorInsideAForeachEndsItsBlockEventErrorExecution, sceerrorreason.ErrorReasonForeachInvalid, "<foreach item='item'> is missing or not a legal variable name"))
 			return
 		} else {
 			foreachArrVal, foreachErr := p.ScriptEngine.EvaluateExpression(p.SessionID, `items`)
 			if foreachErr != nil {
-				engine.Raise(sce.NewPlatformError(AnErrorInsideAForeachEndsItsBlockEventErrorExecution, "<foreach array='items'> failed to evaluate"))
+				engine.Raise(sce.NewPlatformError(AnErrorInsideAForeachEndsItsBlockEventErrorExecution, sceerrorreason.ErrorReasonExpressionFailed, "<foreach array='items'> failed to evaluate"))
 				return
 			} else if foreachArr, foreachOk := sce.ToSlice(foreachArrVal); foreachOk {
 				foreachSuccess := true
@@ -1128,25 +1132,25 @@ func (p *AnErrorInsideAForeachEndsItsBlockPolicy) ExecuteEntryActions(state AnEr
 
 	// W3C SCXML 5.3: <assign location="iters2" expr="iters2 + 1">
 	if err := p.assignVariable(`iters2`, `_scxml_add(iters2, 1)`); err != nil {
-		engine.Raise(sce.NewPlatformError(AnErrorInsideAForeachEndsItsBlockEventErrorExecution, "<assign> to 'iters2' failed"))
+		engine.Raise(sce.NewPlatformError(AnErrorInsideAForeachEndsItsBlockEventErrorExecution, sceerrorreason.ErrorReasonAssignmentFailed, "<assign> to 'iters2' failed"))
 		return  // W3C SCXML 4.9: the error ends the block
 	}
 
 
 	// W3C SCXML 5.3: <assign location="obj.missing.deep" expr="1">
 	if err := p.assignVariable(`obj.missing.deep`, `1`); err != nil {
-		engine.Raise(sce.NewPlatformError(AnErrorInsideAForeachEndsItsBlockEventErrorExecution, "<assign> to 'obj.missing.deep' failed"))
+		engine.Raise(sce.NewPlatformError(AnErrorInsideAForeachEndsItsBlockEventErrorExecution, sceerrorreason.ErrorReasonAssignmentFailed, "<assign> to 'obj.missing.deep' failed"))
 		return  // W3C SCXML 4.9: the error ends the block
 	}
 
 				}
 				if !foreachSuccess {
-					engine.Raise(sce.NewPlatformError(AnErrorInsideAForeachEndsItsBlockEventErrorExecution, "<foreach> could not set its loop variable"))
+					engine.Raise(sce.NewPlatformError(AnErrorInsideAForeachEndsItsBlockEventErrorExecution, sceerrorreason.ErrorReasonForeachInvalid, "<foreach> could not set its loop variable"))
 					return
 				}
 			} else {
 				// Not an array — raise error.execution (W3C SCXML 4.6)
-				engine.Raise(sce.NewPlatformError(AnErrorInsideAForeachEndsItsBlockEventErrorExecution, "<foreach array='items'> is not an array"))
+				engine.Raise(sce.NewPlatformError(AnErrorInsideAForeachEndsItsBlockEventErrorExecution, sceerrorreason.ErrorReasonForeachInvalid, "<foreach array='items'> is not an array"))
 				return
 			}
 		}
@@ -1155,7 +1159,7 @@ func (p *AnErrorInsideAForeachEndsItsBlockPolicy) ExecuteEntryActions(state AnEr
 
 	// W3C SCXML 5.3: <assign location="after2" expr="1">
 	if err := p.assignVariable(`after2`, `1`); err != nil {
-		engine.Raise(sce.NewPlatformError(AnErrorInsideAForeachEndsItsBlockEventErrorExecution, "<assign> to 'after2' failed"))
+		engine.Raise(sce.NewPlatformError(AnErrorInsideAForeachEndsItsBlockEventErrorExecution, sceerrorreason.ErrorReasonAssignmentFailed, "<assign> to 'after2' failed"))
 		return  // W3C SCXML 4.9: the error ends the block
 	}
 
@@ -1295,7 +1299,7 @@ func (p *AnErrorInsideAForeachEndsItsBlockPolicy) ExecuteTransitionContent(sourc
 
 	// W3C SCXML 5.3: <assign location="errors" expr="errors + 1">
 	if err := p.assignVariable(`errors`, `_scxml_add(errors, 1)`); err != nil {
-		engine.Raise(sce.NewPlatformError(AnErrorInsideAForeachEndsItsBlockEventErrorExecution, "<assign> to 'errors' failed"))
+		engine.Raise(sce.NewPlatformError(AnErrorInsideAForeachEndsItsBlockEventErrorExecution, sceerrorreason.ErrorReasonAssignmentFailed, "<assign> to 'errors' failed"))
 		return  // W3C SCXML 4.9: the error ends the block
 	}
 
@@ -1307,7 +1311,7 @@ func (p *AnErrorInsideAForeachEndsItsBlockPolicy) ExecuteTransitionContent(sourc
 
 	// W3C SCXML 5.3: <assign location="sent" expr="sent + 1">
 	if err := p.assignVariable(`sent`, `_scxml_add(sent, 1)`); err != nil {
-		engine.Raise(sce.NewPlatformError(AnErrorInsideAForeachEndsItsBlockEventErrorExecution, "<assign> to 'sent' failed"))
+		engine.Raise(sce.NewPlatformError(AnErrorInsideAForeachEndsItsBlockEventErrorExecution, sceerrorreason.ErrorReasonAssignmentFailed, "<assign> to 'sent' failed"))
 		return  // W3C SCXML 4.9: the error ends the block
 	}
 
@@ -1321,12 +1325,12 @@ func (p *AnErrorInsideAForeachEndsItsBlockPolicy) ExecuteTransitionContent(sourc
 	{
 		foreachItemName := "item"
 		if foreachItemName == "" || !sce.IsValidIdentifier(foreachItemName) {
-			engine.Raise(sce.NewPlatformError(AnErrorInsideAForeachEndsItsBlockEventErrorExecution, "<foreach item='item'> is missing or not a legal variable name"))
+			engine.Raise(sce.NewPlatformError(AnErrorInsideAForeachEndsItsBlockEventErrorExecution, sceerrorreason.ErrorReasonForeachInvalid, "<foreach item='item'> is missing or not a legal variable name"))
 			return
 		} else {
 			foreachArrVal, foreachErr := p.ScriptEngine.EvaluateExpression(p.SessionID, `items`)
 			if foreachErr != nil {
-				engine.Raise(sce.NewPlatformError(AnErrorInsideAForeachEndsItsBlockEventErrorExecution, "<foreach array='items'> failed to evaluate"))
+				engine.Raise(sce.NewPlatformError(AnErrorInsideAForeachEndsItsBlockEventErrorExecution, sceerrorreason.ErrorReasonExpressionFailed, "<foreach array='items'> failed to evaluate"))
 				return
 			} else if foreachArr, foreachOk := sce.ToSlice(foreachArrVal); foreachOk {
 				foreachSuccess := true
@@ -1339,7 +1343,7 @@ func (p *AnErrorInsideAForeachEndsItsBlockPolicy) ExecuteTransitionContent(sourc
 
 	// W3C SCXML 5.3: <assign location="iters3" expr="iters3 + 1">
 	if err := p.assignVariable(`iters3`, `_scxml_add(iters3, 1)`); err != nil {
-		engine.Raise(sce.NewPlatformError(AnErrorInsideAForeachEndsItsBlockEventErrorExecution, "<assign> to 'iters3' failed"))
+		engine.Raise(sce.NewPlatformError(AnErrorInsideAForeachEndsItsBlockEventErrorExecution, sceerrorreason.ErrorReasonAssignmentFailed, "<assign> to 'iters3' failed"))
 		return  // W3C SCXML 4.9: the error ends the block
 	}
 
@@ -1362,7 +1366,7 @@ func (p *AnErrorInsideAForeachEndsItsBlockPolicy) ExecuteTransitionContent(sourc
 		if paramVal, paramErr := se.EvaluateExpression(p.SessionID, `obj.missing.deep`); paramErr == nil {
 			parts = append(parts, sce.EventDataParam{Name: "bad", Value: paramVal})
 		} else {
-			engine.Raise(sce.NewPlatformError(AnErrorInsideAForeachEndsItsBlockEventErrorExecution, "<send> <param name='bad'> expr failed to evaluate"))
+			engine.Raise(sce.NewPlatformError(AnErrorInsideAForeachEndsItsBlockEventErrorExecution, sceerrorreason.ErrorReasonExpressionFailed, "<send> <param name='bad'> expr failed to evaluate"))
 			paramFailed = true
 		}
 		eventDataStr := sce.BuildJSONFromTypedParams(parts)
@@ -1383,12 +1387,12 @@ func (p *AnErrorInsideAForeachEndsItsBlockPolicy) ExecuteTransitionContent(sourc
 	}
 				}
 				if !foreachSuccess {
-					engine.Raise(sce.NewPlatformError(AnErrorInsideAForeachEndsItsBlockEventErrorExecution, "<foreach> could not set its loop variable"))
+					engine.Raise(sce.NewPlatformError(AnErrorInsideAForeachEndsItsBlockEventErrorExecution, sceerrorreason.ErrorReasonForeachInvalid, "<foreach> could not set its loop variable"))
 					return
 				}
 			} else {
 				// Not an array — raise error.execution (W3C SCXML 4.6)
-				engine.Raise(sce.NewPlatformError(AnErrorInsideAForeachEndsItsBlockEventErrorExecution, "<foreach array='items'> is not an array"))
+				engine.Raise(sce.NewPlatformError(AnErrorInsideAForeachEndsItsBlockEventErrorExecution, sceerrorreason.ErrorReasonForeachInvalid, "<foreach array='items'> is not an array"))
 				return
 			}
 		}
@@ -1397,7 +1401,7 @@ func (p *AnErrorInsideAForeachEndsItsBlockPolicy) ExecuteTransitionContent(sourc
 
 	// W3C SCXML 5.3: <assign location="after3" expr="1">
 	if err := p.assignVariable(`after3`, `1`); err != nil {
-		engine.Raise(sce.NewPlatformError(AnErrorInsideAForeachEndsItsBlockEventErrorExecution, "<assign> to 'after3' failed"))
+		engine.Raise(sce.NewPlatformError(AnErrorInsideAForeachEndsItsBlockEventErrorExecution, sceerrorreason.ErrorReasonAssignmentFailed, "<assign> to 'after3' failed"))
 		return  // W3C SCXML 4.9: the error ends the block
 	}
 

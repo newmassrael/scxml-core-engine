@@ -31,6 +31,7 @@ import (
 	"time"
 
 	sce "github.com/newmassrael/sce-go-runtime"
+	sceerrorreason "github.com/newmassrael/sce-go-runtime/generated/error_reason"
 )
 
 // Ensure imports are used
@@ -39,6 +40,9 @@ var (
 	_ = filepath.Join
 	_ = strings.HasPrefix
 	_ = time.Duration(0)
+	// Why an error.* event is raised (sce:std/engine/error_reason,
+	// docs/adr/0106 #111); a machine that raises none still imports it.
+	_ = sceerrorreason.ErrorReasonExpressionFailed
 )
 
 // ======================================================================
@@ -323,7 +327,7 @@ func (p *AChildTakesAHandedValueInPlaceOfItsDataSceSynthInvokeFirstMacrostepPoli
 		if err == nil {
 			_ = engine.SetVariable(sessionID, "handed", result)
 		} else {
-			eng.Raise(sce.NewPlatformError(AChildTakesAHandedValueInPlaceOfItsDataSceSynthInvokeFirstMacrostepEventErrorExecution, "<data id='handed'> expr failed to evaluate"))
+			eng.Raise(sce.NewPlatformError(AChildTakesAHandedValueInPlaceOfItsDataSceSynthInvokeFirstMacrostepEventErrorExecution, sceerrorreason.ErrorReasonExpressionFailed, "<data id='handed'> expr failed to evaluate"))
 			_ = engine.SetVariable(sessionID, "handed", nil)
 		}
 	}
@@ -355,12 +359,12 @@ func (p *AChildTakesAHandedValueInPlaceOfItsDataSceSynthInvokeFirstMacrostepPoli
 // evaluateGuardRaising evaluates a cond, raising error.execution when it cannot
 // be evaluated (W3C SCXML 5.9.1); ok is false then, where a bare false could
 // not say so.
-func (p *AChildTakesAHandedValueInPlaceOfItsDataSceSynthInvokeFirstMacrostepPolicy) evaluateGuardRaising(guard string, eng *sce.Engine[AChildTakesAHandedValueInPlaceOfItsDataSceSynthInvokeFirstMacrostepState, AChildTakesAHandedValueInPlaceOfItsDataSceSynthInvokeFirstMacrostepEvent], reason string) (value bool, ok bool) {
+func (p *AChildTakesAHandedValueInPlaceOfItsDataSceSynthInvokeFirstMacrostepPolicy) evaluateGuardRaising(guard string, eng *sce.Engine[AChildTakesAHandedValueInPlaceOfItsDataSceSynthInvokeFirstMacrostepState, AChildTakesAHandedValueInPlaceOfItsDataSceSynthInvokeFirstMacrostepEvent], detail string) (value bool, ok bool) {
 	p.assertScriptSession()
 	engine := p.ScriptEngine
 	result, err := engine.EvaluateExpression(p.SessionID, guard)
 	if err != nil {
-		eng.Raise(sce.NewPlatformError(AChildTakesAHandedValueInPlaceOfItsDataSceSynthInvokeFirstMacrostepEventErrorExecution, reason))
+		eng.Raise(sce.NewPlatformError(AChildTakesAHandedValueInPlaceOfItsDataSceSynthInvokeFirstMacrostepEventErrorExecution, sceerrorreason.ErrorReasonExpressionFailed, detail))
 		return false, false
 	}
 	return sce.ScriptToBool(result), true
@@ -463,7 +467,7 @@ func (p *AChildTakesAHandedValueInPlaceOfItsDataSceSynthInvokeFirstMacrostepPoli
 // failed is left (docs/adr/0098).
 func (p *AChildTakesAHandedValueInPlaceOfItsDataSceSynthInvokeFirstMacrostepPolicy) declareHandedValue(eng *sce.Engine[AChildTakesAHandedValueInPlaceOfItsDataSceSynthInvokeFirstMacrostepState, AChildTakesAHandedValueInPlaceOfItsDataSceSynthInvokeFirstMacrostepEvent], engine sce.IScriptEngine, sessionID, name string, value interface{}) {
 	if err := engine.SetVariable(sessionID, name, value); err != nil {
-		eng.Raise(sce.NewPlatformError(AChildTakesAHandedValueInPlaceOfItsDataSceSynthInvokeFirstMacrostepEventErrorExecution, "<data id='"+name+"'> could not hold the value its invoking session handed it"))
+		eng.Raise(sce.NewPlatformError(AChildTakesAHandedValueInPlaceOfItsDataSceSynthInvokeFirstMacrostepEventErrorExecution, sceerrorreason.ErrorReasonDataInitFailed, "<data id='"+name+"'> could not hold the value its invoking session handed it"))
 		_ = engine.SetVariable(sessionID, name, nil)
 	}
 }

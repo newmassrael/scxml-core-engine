@@ -31,6 +31,7 @@ import (
 	"time"
 
 	sce "github.com/newmassrael/sce-go-runtime"
+	sceerrorreason "github.com/newmassrael/sce-go-runtime/generated/error_reason"
 	scealgorithm "github.com/newmassrael/sce-forge-runtime/algorithm"
 	"github.com/newmassrael/sce-forge-runtime/optional"
 	sce_forge_call_code "github.com/newmassrael/sce-go-tests/integration/static_datamodel/forge_call_code"
@@ -52,6 +53,9 @@ var (
 	_ = filepath.Join
 	_ = strings.HasPrefix
 	_ = time.Duration(0)
+	// Why an error.* event is raised (sce:std/engine/error_reason,
+	// docs/adr/0106 #111); a machine that raises none still imports it.
+	_ = sceerrorreason.ErrorReasonExpressionFailed
 	_ scealgorithm.Failure
 )
 
@@ -1424,7 +1428,7 @@ func (p *StaticForgeCallsPolicy) ExecuteTransitionContent(source StaticForgeCall
 			func() {
 
 
-	if func() bool { var sceFailure scealgorithm.Failure; sceValue := scealgorithm.AddUint8(&sceFailure, p.vGear, 1); if sceFailure.Failed() { engine.Raise(sce.NewPlatformError(StaticForgeCallsEventErrorExecution, "<assign location='gear'>: an integer operation overflowed or failed")); return true }; p.vGear = sceValue; return false }() {
+	if func() bool { var sceFailure scealgorithm.Failure; sceValue := scealgorithm.AddUint8(&sceFailure, p.vGear, 1); if sceFailure.Failed() { engine.Raise(sce.NewPlatformError(StaticForgeCallsEventErrorExecution, sceerrorreason.ErrorReasonExpressionFailed, "<assign location='gear'>: an integer operation overflowed or failed")); return true }; p.vGear = sceValue; return false }() {
 		return  // W3C SCXML 4.9: the error ends the block
 	}
 
@@ -1434,7 +1438,7 @@ func (p *StaticForgeCallsPolicy) ExecuteTransitionContent(source StaticForgeCall
 
 
 
-	if func() bool { var sceFailure scealgorithm.Failure; sceValue := scealgorithm.TakeOutcome(&sceFailure, scealgorithm.Found(sce_forge_call_code.LookupCode(p.vGear))); if sceFailure.Failed() { engine.Raise(sce.NewPlatformError(StaticForgeCallsEventErrorExecution, "<assign location='code'>: an integer operation overflowed or failed")); return true }; p.vCode = sceValue; return false }() {
+	if func() bool { var sceFailure scealgorithm.Failure; sceValue := scealgorithm.TakeOutcome(&sceFailure, scealgorithm.Found(sce_forge_call_code.LookupCode(p.vGear))); if sceFailure.Failed() { engine.Raise(sce.NewPlatformError(StaticForgeCallsEventErrorExecution, sceerrorreason.ErrorReasonExpressionFailed, "<assign location='code'>: an integer operation overflowed or failed")); return true }; p.vCode = sceValue; return false }() {
 		return  // W3C SCXML 4.9: the error ends the block
 	}
 
@@ -1445,7 +1449,7 @@ func (p *StaticForgeCallsPolicy) ExecuteTransitionContent(source StaticForgeCall
 			func() {
 
 
-	if func() bool { var sceFailure scealgorithm.Failure; sceValue := scealgorithm.AddInt32(&sceFailure, p.vLevel, 7); if sceFailure.Failed() { engine.Raise(sce.NewPlatformError(StaticForgeCallsEventErrorExecution, "<assign location='level'>: an integer operation overflowed or failed")); return true }; p.vLevel = sceValue; return false }() {
+	if func() bool { var sceFailure scealgorithm.Failure; sceValue := scealgorithm.AddInt32(&sceFailure, p.vLevel, 7); if sceFailure.Failed() { engine.Raise(sce.NewPlatformError(StaticForgeCallsEventErrorExecution, sceerrorreason.ErrorReasonExpressionFailed, "<assign location='level'>: an integer operation overflowed or failed")); return true }; p.vLevel = sceValue; return false }() {
 		return  // W3C SCXML 4.9: the error ends the block
 	}
 
@@ -1464,7 +1468,7 @@ func (p *StaticForgeCallsPolicy) ExecuteTransitionContent(source StaticForgeCall
 			func() {
 
 
-	if func() bool { var sceFailure scealgorithm.Failure; sceValue := scealgorithm.AddUint16(&sceFailure, p.vRpm, 500); if sceFailure.Failed() { engine.Raise(sce.NewPlatformError(StaticForgeCallsEventErrorExecution, "<assign location='rpm'>: an integer operation overflowed or failed")); return true }; p.vRpm = sceValue; return false }() {
+	if func() bool { var sceFailure scealgorithm.Failure; sceValue := scealgorithm.AddUint16(&sceFailure, p.vRpm, 500); if sceFailure.Failed() { engine.Raise(sce.NewPlatformError(StaticForgeCallsEventErrorExecution, sceerrorreason.ErrorReasonExpressionFailed, "<assign location='rpm'>: an integer operation overflowed or failed")); return true }; p.vRpm = sceValue; return false }() {
 		return  // W3C SCXML 4.9: the error ends the block
 	}
 
@@ -1479,7 +1483,7 @@ func (p *StaticForgeCallsPolicy) ExecuteTransitionContent(source StaticForgeCall
 			func() {
 
 
-	if func() bool { var sceFailure scealgorithm.Failure; sceValue := scealgorithm.AddUint32(&sceFailure, p.vHighs, 1); if sceFailure.Failed() { engine.Raise(sce.NewPlatformError(StaticForgeCallsEventErrorExecution, "<assign location='highs'>: an integer operation overflowed or failed")); return true }; p.vHighs = sceValue; return false }() {
+	if func() bool { var sceFailure scealgorithm.Failure; sceValue := scealgorithm.AddUint32(&sceFailure, p.vHighs, 1); if sceFailure.Failed() { engine.Raise(sce.NewPlatformError(StaticForgeCallsEventErrorExecution, sceerrorreason.ErrorReasonExpressionFailed, "<assign location='highs'>: an integer operation overflowed or failed")); return true }; p.vHighs = sceValue; return false }() {
 		return  // W3C SCXML 4.9: the error ends the block
 	}
 
@@ -1494,7 +1498,7 @@ func (p *StaticForgeCallsPolicy) ExecuteTransitionContent(source StaticForgeCall
 
 
 
-	if func() bool { var sceFailure scealgorithm.Failure; sceValue := StaticForgeCallsLevelEnumFromDocument(scealgorithm.TakeOutcome(&sceFailure, scealgorithm.Found(sce_forge_call_weight.LookupWeight(StaticForgeCallsStatusEnumToDocument(p.vPhase))))); if sceFailure.Failed() { engine.Raise(sce.NewPlatformError(StaticForgeCallsEventErrorExecution, "<assign location='weight'>: an integer operation overflowed or failed")); return true }; p.vWeight = sceValue; return false }() {
+	if func() bool { var sceFailure scealgorithm.Failure; sceValue := StaticForgeCallsLevelEnumFromDocument(scealgorithm.TakeOutcome(&sceFailure, scealgorithm.Found(sce_forge_call_weight.LookupWeight(StaticForgeCallsStatusEnumToDocument(p.vPhase))))); if sceFailure.Failed() { engine.Raise(sce.NewPlatformError(StaticForgeCallsEventErrorExecution, sceerrorreason.ErrorReasonExpressionFailed, "<assign location='weight'>: an integer operation overflowed or failed")); return true }; p.vWeight = sceValue; return false }() {
 		return  // W3C SCXML 4.9: the error ends the block
 	}
 
@@ -1514,7 +1518,7 @@ func (p *StaticForgeCallsPolicy) ExecuteTransitionContent(source StaticForgeCall
 			func() {
 
 
-	if func() bool { var sceFailure scealgorithm.Failure; sceValue := scealgorithm.Bounded(&sceFailure, "", 16); if sceFailure.Failed() { engine.Raise(sce.NewPlatformError(StaticForgeCallsEventErrorExecution, "<assign location='customer'>: an integer operation overflowed or failed")); return true }; p.vCustomer = sceValue; return false }() {
+	if func() bool { var sceFailure scealgorithm.Failure; sceValue := scealgorithm.Bounded(&sceFailure, "", 16); if sceFailure.Failed() { engine.Raise(sce.NewPlatformError(StaticForgeCallsEventErrorExecution, sceerrorreason.ErrorReasonExpressionFailed, "<assign location='customer'>: an integer operation overflowed or failed")); return true }; p.vCustomer = sceValue; return false }() {
 		return  // W3C SCXML 4.9: the error ends the block
 	}
 
@@ -1525,7 +1529,7 @@ func (p *StaticForgeCallsPolicy) ExecuteTransitionContent(source StaticForgeCall
 			func() {
 
 
-	if func() bool { var sceFailure scealgorithm.Failure; sceValue := scealgorithm.AddUint32(&sceFailure, p.vMisses, 1); if sceFailure.Failed() { engine.Raise(sce.NewPlatformError(StaticForgeCallsEventErrorExecution, "<assign location='misses'>: an integer operation overflowed or failed")); return true }; p.vMisses = sceValue; return false }() {
+	if func() bool { var sceFailure scealgorithm.Failure; sceValue := scealgorithm.AddUint32(&sceFailure, p.vMisses, 1); if sceFailure.Failed() { engine.Raise(sce.NewPlatformError(StaticForgeCallsEventErrorExecution, sceerrorreason.ErrorReasonExpressionFailed, "<assign location='misses'>: an integer operation overflowed or failed")); return true }; p.vMisses = sceValue; return false }() {
 		return  // W3C SCXML 4.9: the error ends the block
 	}
 

@@ -358,7 +358,7 @@ class OnexitRunsBeforeTheStateLeavesStateMachine(
             try {
                 engine.setVariable(sid, "selfInInner", engine.evaluateExpr(sid, com.sce.runtime.ScriptSource.lua("0", "0")))
             } catch (e: Exception) {
-                raisePlatformError(OnexitRunsBeforeTheStateLeavesEvent.Error.Execution, "<data id='selfInInner'> expr failed to evaluate")
+                raisePlatformError(OnexitRunsBeforeTheStateLeavesEvent.Error.Execution, ErrorReason.EXPRESSION_FAILED, "<data id='selfInInner'> expr failed to evaluate")
             }
         }
         // §scxml-6.4: 'parentInInner' takes a value its invoke handed it, in place of its own
@@ -367,7 +367,7 @@ class OnexitRunsBeforeTheStateLeavesStateMachine(
             try {
                 engine.setVariable(sid, "parentInInner", engine.evaluateExpr(sid, com.sce.runtime.ScriptSource.lua("0", "0")))
             } catch (e: Exception) {
-                raisePlatformError(OnexitRunsBeforeTheStateLeavesEvent.Error.Execution, "<data id='parentInInner'> expr failed to evaluate")
+                raisePlatformError(OnexitRunsBeforeTheStateLeavesEvent.Error.Execution, ErrorReason.EXPRESSION_FAILED, "<data id='parentInInner'> expr failed to evaluate")
             }
         }
         // §scxml-6.4: 'selfInOuter' takes a value its invoke handed it, in place of its own
@@ -376,7 +376,7 @@ class OnexitRunsBeforeTheStateLeavesStateMachine(
             try {
                 engine.setVariable(sid, "selfInOuter", engine.evaluateExpr(sid, com.sce.runtime.ScriptSource.lua("0", "0")))
             } catch (e: Exception) {
-                raisePlatformError(OnexitRunsBeforeTheStateLeavesEvent.Error.Execution, "<data id='selfInOuter'> expr failed to evaluate")
+                raisePlatformError(OnexitRunsBeforeTheStateLeavesEvent.Error.Execution, ErrorReason.EXPRESSION_FAILED, "<data id='selfInOuter'> expr failed to evaluate")
             }
         }
         // §scxml-6.4: 'childInOuter' takes a value its invoke handed it, in place of its own
@@ -385,7 +385,7 @@ class OnexitRunsBeforeTheStateLeavesStateMachine(
             try {
                 engine.setVariable(sid, "childInOuter", engine.evaluateExpr(sid, com.sce.runtime.ScriptSource.lua("0", "0")))
             } catch (e: Exception) {
-                raisePlatformError(OnexitRunsBeforeTheStateLeavesEvent.Error.Execution, "<data id='childInOuter'> expr failed to evaluate")
+                raisePlatformError(OnexitRunsBeforeTheStateLeavesEvent.Error.Execution, ErrorReason.EXPRESSION_FAILED, "<data id='childInOuter'> expr failed to evaluate")
             }
         }
         // §scxml-6.4: 'exits' takes a value its invoke handed it, in place of its own
@@ -394,7 +394,7 @@ class OnexitRunsBeforeTheStateLeavesStateMachine(
             try {
                 engine.setVariable(sid, "exits", engine.evaluateExpr(sid, com.sce.runtime.ScriptSource.lua("0", "0")))
             } catch (e: Exception) {
-                raisePlatformError(OnexitRunsBeforeTheStateLeavesEvent.Error.Execution, "<data id='exits'> expr failed to evaluate")
+                raisePlatformError(OnexitRunsBeforeTheStateLeavesEvent.Error.Execution, ErrorReason.EXPRESSION_FAILED, "<data id='exits'> expr failed to evaluate")
             }
         }
     }
@@ -424,14 +424,14 @@ class OnexitRunsBeforeTheStateLeavesStateMachine(
 
     // W3C SCXML 5.9.1: a cond that cannot be evaluated raises error.execution;
     // `null` says so, where a bare `false` could not.
-    private fun evaluateGuardRaising(guardExpr: com.sce.runtime.ScriptSource, reason: String): Boolean? {
+    private fun evaluateGuardRaising(guardExpr: com.sce.runtime.ScriptSource, detail: String): Boolean? {
         assertScriptSession()
         val engine = scriptEngine ?: error("scriptEngine is required (codegen invariant: needs_script_engine == true)")
         val sid = scriptSessionId ?: error("scriptSessionId is established by the start (codegen invariant)")
         return try {
             engine.evaluateCondition(sid, guardExpr)
         } catch (e: Exception) {
-            raisePlatformError(OnexitRunsBeforeTheStateLeavesEvent.Error.Execution, reason)
+            raisePlatformError(OnexitRunsBeforeTheStateLeavesEvent.Error.Execution, ErrorReason.EXPRESSION_FAILED, detail)
             null
         }
     }
@@ -472,7 +472,7 @@ class OnexitRunsBeforeTheStateLeavesStateMachine(
         return try {
             engine.evaluateExpr(sid, serialized)?.toString() ?: ""
         } catch (e: Exception) {
-            raisePlatformError(OnexitRunsBeforeTheStateLeavesEvent.Error.Execution, "an expression could not be serialised to JSON")
+            raisePlatformError(OnexitRunsBeforeTheStateLeavesEvent.Error.Execution, ErrorReason.EXPRESSION_FAILED, "an expression could not be serialised to JSON")
             ""
         }
     }
@@ -493,7 +493,7 @@ class OnexitRunsBeforeTheStateLeavesStateMachine(
             engine.assign(sid, location, expr)
             true
         } catch (e: Exception) {
-            raisePlatformError(OnexitRunsBeforeTheStateLeavesEvent.Error.Execution, "<assign> failed")
+            raisePlatformError(OnexitRunsBeforeTheStateLeavesEvent.Error.Execution, ErrorReason.ASSIGNMENT_FAILED, "<assign> failed")
             false
         }
     }
@@ -509,7 +509,7 @@ class OnexitRunsBeforeTheStateLeavesStateMachine(
             engine.executeScript(sid, script)
             true
         } catch (e: Exception) {
-            raisePlatformError(OnexitRunsBeforeTheStateLeavesEvent.Error.Execution, "<script> failed to execute")
+            raisePlatformError(OnexitRunsBeforeTheStateLeavesEvent.Error.Execution, ErrorReason.SCRIPT_FAILED, "<script> failed to execute")
             false
         }
     }

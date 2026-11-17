@@ -31,6 +31,7 @@ import (
 	"time"
 
 	sce "github.com/newmassrael/sce-go-runtime"
+	sceerrorreason "github.com/newmassrael/sce-go-runtime/generated/error_reason"
 	scealgorithm "github.com/newmassrael/sce-forge-runtime/algorithm"
 )
 
@@ -40,6 +41,9 @@ var (
 	_ = filepath.Join
 	_ = strings.HasPrefix
 	_ = time.Duration(0)
+	// Why an error.* event is raised (sce:std/engine/error_reason,
+	// docs/adr/0106 #111); a machine that raises none still imports it.
+	_ = sceerrorreason.ErrorReasonExpressionFailed
 	_ scealgorithm.Failure
 )
 
@@ -922,7 +926,7 @@ func (p *StaticSendHttpPolicy) ExecuteTransitionContent(source StaticSendHttpSta
 
 
 
-	if func() bool { var sceFailure scealgorithm.Failure; sceValue := scealgorithm.Bounded(&sceFailure, "busy", 16); if sceFailure.Failed() { engine.Raise(sce.NewPlatformError(StaticSendHttpEventErrorExecution, "<assign location='label'>: an integer operation overflowed or failed")); return true }; p.vLabel = sceValue; return false }() {
+	if func() bool { var sceFailure scealgorithm.Failure; sceValue := scealgorithm.Bounded(&sceFailure, "busy", 16); if sceFailure.Failed() { engine.Raise(sce.NewPlatformError(StaticSendHttpEventErrorExecution, sceerrorreason.ErrorReasonExpressionFailed, "<assign location='label'>: an integer operation overflowed or failed")); return true }; p.vLabel = sceValue; return false }() {
 		return  // W3C SCXML 4.9: the error ends the block
 	}
 
@@ -963,7 +967,7 @@ func (p *StaticSendHttpPolicy) ExecuteTransitionContent(source StaticSendHttpSta
 			if !sceFailure.Failed() {
 				parts = append(parts, sce.EventDataParam{Name: "twice", Value: sceValue})
 			} else {
-				engine.Raise(sce.NewPlatformError(StaticSendHttpEventErrorExecution, "<send> <param name='twice'> failed to evaluate"))
+				engine.Raise(sce.NewPlatformError(StaticSendHttpEventErrorExecution, sceerrorreason.ErrorReasonExpressionFailed, "<send> <param name='twice'> failed to evaluate"))
 				paramFailed = true
 			}
 		}
@@ -982,7 +986,7 @@ func (p *StaticSendHttpPolicy) ExecuteTransitionContent(source StaticSendHttpSta
 		httpTarget := "http://example.invalid/hook"
 		// W3C SCXML C.2: Validate target before HTTP send
 		if httpTarget == "" {
-			errEvt := sce.NewPlatformError(StaticSendHttpEventErrorExecution, "<send> over BasicHTTPEventProcessor has no target to post to")
+			errEvt := sce.NewPlatformError(StaticSendHttpEventErrorExecution, sceerrorreason.ErrorReasonSendTargetInvalid, "<send> over BasicHTTPEventProcessor has no target to post to")
 			errEvt.Metadata.SendID = "__send_0"
 			engine.Raise(errEvt)
 			return  // W3C SCXML 4.9: the error ends the block
@@ -1030,7 +1034,7 @@ func (p *StaticSendHttpPolicy) ExecuteTransitionContent(source StaticSendHttpSta
 			if !sceFailure.Failed() {
 				parts = append(parts, sce.EventDataParam{Name: "big", Value: sceValue})
 			} else {
-				engine.Raise(sce.NewPlatformError(StaticSendHttpEventErrorExecution, "<send> <param name='big'> failed to evaluate"))
+				engine.Raise(sce.NewPlatformError(StaticSendHttpEventErrorExecution, sceerrorreason.ErrorReasonExpressionFailed, "<send> <param name='big'> failed to evaluate"))
 				paramFailed = true
 			}
 		}
@@ -1041,7 +1045,7 @@ func (p *StaticSendHttpPolicy) ExecuteTransitionContent(source StaticSendHttpSta
 		httpTarget := "http://example.invalid/hook"
 		// W3C SCXML C.2: Validate target before HTTP send
 		if httpTarget == "" {
-			errEvt := sce.NewPlatformError(StaticSendHttpEventErrorExecution, "<send> over BasicHTTPEventProcessor has no target to post to")
+			errEvt := sce.NewPlatformError(StaticSendHttpEventErrorExecution, sceerrorreason.ErrorReasonSendTargetInvalid, "<send> over BasicHTTPEventProcessor has no target to post to")
 			errEvt.Metadata.SendID = "__send_1"
 			engine.Raise(errEvt)
 			return  // W3C SCXML 4.9: the error ends the block
@@ -1067,7 +1071,7 @@ func (p *StaticSendHttpPolicy) ExecuteTransitionContent(source StaticSendHttpSta
 			func() {
 
 
-	if func() bool { var sceFailure scealgorithm.Failure; sceValue := scealgorithm.AddUint32(&sceFailure, p.vErrors, 1); if sceFailure.Failed() { engine.Raise(sce.NewPlatformError(StaticSendHttpEventErrorExecution, "<assign location='errors'>: an integer operation overflowed or failed")); return true }; p.vErrors = sceValue; return false }() {
+	if func() bool { var sceFailure scealgorithm.Failure; sceValue := scealgorithm.AddUint32(&sceFailure, p.vErrors, 1); if sceFailure.Failed() { engine.Raise(sce.NewPlatformError(StaticSendHttpEventErrorExecution, sceerrorreason.ErrorReasonExpressionFailed, "<assign location='errors'>: an integer operation overflowed or failed")); return true }; p.vErrors = sceValue; return false }() {
 		return  // W3C SCXML 4.9: the error ends the block
 	}
 

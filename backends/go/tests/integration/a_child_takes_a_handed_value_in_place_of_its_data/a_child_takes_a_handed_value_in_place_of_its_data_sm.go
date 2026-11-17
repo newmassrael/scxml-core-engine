@@ -31,6 +31,7 @@ import (
 	"time"
 
 	sce "github.com/newmassrael/sce-go-runtime"
+	sceerrorreason "github.com/newmassrael/sce-go-runtime/generated/error_reason"
 )
 
 // Ensure imports are used
@@ -39,6 +40,9 @@ var (
 	_ = filepath.Join
 	_ = strings.HasPrefix
 	_ = time.Duration(0)
+	// Why an error.* event is raised (sce:std/engine/error_reason,
+	// docs/adr/0106 #111); a machine that raises none still imports it.
+	_ = sceerrorreason.ErrorReasonExpressionFailed
 )
 
 // ======================================================================
@@ -709,7 +713,7 @@ func (p *AChildTakesAHandedValueInPlaceOfItsDataPolicy) InitializeDataModel(eng 
 		if err == nil {
 			_ = engine.SetVariable(sessionID, "record", result)
 		} else {
-			eng.Raise(sce.NewPlatformError(AChildTakesAHandedValueInPlaceOfItsDataEventErrorExecution, "<data id='record'> expr failed to evaluate"))
+			eng.Raise(sce.NewPlatformError(AChildTakesAHandedValueInPlaceOfItsDataEventErrorExecution, sceerrorreason.ErrorReasonExpressionFailed, "<data id='record'> expr failed to evaluate"))
 			_ = engine.SetVariable(sessionID, "record", nil)
 		}
 	}
@@ -723,7 +727,7 @@ func (p *AChildTakesAHandedValueInPlaceOfItsDataPolicy) InitializeDataModel(eng 
 		if err == nil {
 			_ = engine.SetVariable(sessionID, "listed", result)
 		} else {
-			eng.Raise(sce.NewPlatformError(AChildTakesAHandedValueInPlaceOfItsDataEventErrorExecution, "<data id='listed'> expr failed to evaluate"))
+			eng.Raise(sce.NewPlatformError(AChildTakesAHandedValueInPlaceOfItsDataEventErrorExecution, sceerrorreason.ErrorReasonExpressionFailed, "<data id='listed'> expr failed to evaluate"))
 			_ = engine.SetVariable(sessionID, "listed", nil)
 		}
 	}
@@ -737,7 +741,7 @@ func (p *AChildTakesAHandedValueInPlaceOfItsDataPolicy) InitializeDataModel(eng 
 		if err == nil {
 			_ = engine.SetVariable(sessionID, "stray", result)
 		} else {
-			eng.Raise(sce.NewPlatformError(AChildTakesAHandedValueInPlaceOfItsDataEventErrorExecution, "<data id='stray'> expr failed to evaluate"))
+			eng.Raise(sce.NewPlatformError(AChildTakesAHandedValueInPlaceOfItsDataEventErrorExecution, sceerrorreason.ErrorReasonExpressionFailed, "<data id='stray'> expr failed to evaluate"))
 			_ = engine.SetVariable(sessionID, "stray", nil)
 		}
 	}
@@ -751,7 +755,7 @@ func (p *AChildTakesAHandedValueInPlaceOfItsDataPolicy) InitializeDataModel(eng 
 		if err == nil {
 			_ = engine.SetVariable(sessionID, "raising_seen", result)
 		} else {
-			eng.Raise(sce.NewPlatformError(AChildTakesAHandedValueInPlaceOfItsDataEventErrorExecution, "<data id='raising_seen'> expr failed to evaluate"))
+			eng.Raise(sce.NewPlatformError(AChildTakesAHandedValueInPlaceOfItsDataEventErrorExecution, sceerrorreason.ErrorReasonExpressionFailed, "<data id='raising_seen'> expr failed to evaluate"))
 			_ = engine.SetVariable(sessionID, "raising_seen", nil)
 		}
 	}
@@ -765,7 +769,7 @@ func (p *AChildTakesAHandedValueInPlaceOfItsDataPolicy) InitializeDataModel(eng 
 		if err == nil {
 			_ = engine.SetVariable(sessionID, "effectful_seen", result)
 		} else {
-			eng.Raise(sce.NewPlatformError(AChildTakesAHandedValueInPlaceOfItsDataEventErrorExecution, "<data id='effectful_seen'> expr failed to evaluate"))
+			eng.Raise(sce.NewPlatformError(AChildTakesAHandedValueInPlaceOfItsDataEventErrorExecution, sceerrorreason.ErrorReasonExpressionFailed, "<data id='effectful_seen'> expr failed to evaluate"))
 			_ = engine.SetVariable(sessionID, "effectful_seen", nil)
 		}
 	}
@@ -779,7 +783,7 @@ func (p *AChildTakesAHandedValueInPlaceOfItsDataPolicy) InitializeDataModel(eng 
 		if err == nil {
 			_ = engine.SetVariable(sessionID, "effects_seen", result)
 		} else {
-			eng.Raise(sce.NewPlatformError(AChildTakesAHandedValueInPlaceOfItsDataEventErrorExecution, "<data id='effects_seen'> expr failed to evaluate"))
+			eng.Raise(sce.NewPlatformError(AChildTakesAHandedValueInPlaceOfItsDataEventErrorExecution, sceerrorreason.ErrorReasonExpressionFailed, "<data id='effects_seen'> expr failed to evaluate"))
 			_ = engine.SetVariable(sessionID, "effects_seen", nil)
 		}
 	}
@@ -793,7 +797,7 @@ func (p *AChildTakesAHandedValueInPlaceOfItsDataPolicy) InitializeDataModel(eng 
 		if err == nil {
 			_ = engine.SetVariable(sessionID, "refusable_seen", result)
 		} else {
-			eng.Raise(sce.NewPlatformError(AChildTakesAHandedValueInPlaceOfItsDataEventErrorExecution, "<data id='refusable_seen'> expr failed to evaluate"))
+			eng.Raise(sce.NewPlatformError(AChildTakesAHandedValueInPlaceOfItsDataEventErrorExecution, sceerrorreason.ErrorReasonExpressionFailed, "<data id='refusable_seen'> expr failed to evaluate"))
 			_ = engine.SetVariable(sessionID, "refusable_seen", nil)
 		}
 	}
@@ -807,7 +811,7 @@ func (p *AChildTakesAHandedValueInPlaceOfItsDataPolicy) InitializeDataModel(eng 
 		if err == nil {
 			_ = engine.SetVariable(sessionID, "kept_seen", result)
 		} else {
-			eng.Raise(sce.NewPlatformError(AChildTakesAHandedValueInPlaceOfItsDataEventErrorExecution, "<data id='kept_seen'> expr failed to evaluate"))
+			eng.Raise(sce.NewPlatformError(AChildTakesAHandedValueInPlaceOfItsDataEventErrorExecution, sceerrorreason.ErrorReasonExpressionFailed, "<data id='kept_seen'> expr failed to evaluate"))
 			_ = engine.SetVariable(sessionID, "kept_seen", nil)
 		}
 	}
@@ -821,7 +825,7 @@ func (p *AChildTakesAHandedValueInPlaceOfItsDataPolicy) InitializeDataModel(eng 
 		if err == nil {
 			_ = engine.SetVariable(sessionID, "stranger_seen", result)
 		} else {
-			eng.Raise(sce.NewPlatformError(AChildTakesAHandedValueInPlaceOfItsDataEventErrorExecution, "<data id='stranger_seen'> expr failed to evaluate"))
+			eng.Raise(sce.NewPlatformError(AChildTakesAHandedValueInPlaceOfItsDataEventErrorExecution, sceerrorreason.ErrorReasonExpressionFailed, "<data id='stranger_seen'> expr failed to evaluate"))
 			_ = engine.SetVariable(sessionID, "stranger_seen", nil)
 		}
 	}
@@ -835,7 +839,7 @@ func (p *AChildTakesAHandedValueInPlaceOfItsDataPolicy) InitializeDataModel(eng 
 		if err == nil {
 			_ = engine.SetVariable(sessionID, "payload_seen", result)
 		} else {
-			eng.Raise(sce.NewPlatformError(AChildTakesAHandedValueInPlaceOfItsDataEventErrorExecution, "<data id='payload_seen'> expr failed to evaluate"))
+			eng.Raise(sce.NewPlatformError(AChildTakesAHandedValueInPlaceOfItsDataEventErrorExecution, sceerrorreason.ErrorReasonExpressionFailed, "<data id='payload_seen'> expr failed to evaluate"))
 			_ = engine.SetVariable(sessionID, "payload_seen", nil)
 		}
 	}
@@ -849,7 +853,7 @@ func (p *AChildTakesAHandedValueInPlaceOfItsDataPolicy) InitializeDataModel(eng 
 		if err == nil {
 			_ = engine.SetVariable(sessionID, "script_seen", result)
 		} else {
-			eng.Raise(sce.NewPlatformError(AChildTakesAHandedValueInPlaceOfItsDataEventErrorExecution, "<data id='script_seen'> expr failed to evaluate"))
+			eng.Raise(sce.NewPlatformError(AChildTakesAHandedValueInPlaceOfItsDataEventErrorExecution, sceerrorreason.ErrorReasonExpressionFailed, "<data id='script_seen'> expr failed to evaluate"))
 			_ = engine.SetVariable(sessionID, "script_seen", nil)
 		}
 	}
@@ -863,7 +867,7 @@ func (p *AChildTakesAHandedValueInPlaceOfItsDataPolicy) InitializeDataModel(eng 
 		if err == nil {
 			_ = engine.SetVariable(sessionID, "entry_seen", result)
 		} else {
-			eng.Raise(sce.NewPlatformError(AChildTakesAHandedValueInPlaceOfItsDataEventErrorExecution, "<data id='entry_seen'> expr failed to evaluate"))
+			eng.Raise(sce.NewPlatformError(AChildTakesAHandedValueInPlaceOfItsDataEventErrorExecution, sceerrorreason.ErrorReasonExpressionFailed, "<data id='entry_seen'> expr failed to evaluate"))
 			_ = engine.SetVariable(sessionID, "entry_seen", nil)
 		}
 	}
@@ -877,7 +881,7 @@ func (p *AChildTakesAHandedValueInPlaceOfItsDataPolicy) InitializeDataModel(eng 
 		if err == nil {
 			_ = engine.SetVariable(sessionID, "errors_seen", result)
 		} else {
-			eng.Raise(sce.NewPlatformError(AChildTakesAHandedValueInPlaceOfItsDataEventErrorExecution, "<data id='errors_seen'> expr failed to evaluate"))
+			eng.Raise(sce.NewPlatformError(AChildTakesAHandedValueInPlaceOfItsDataEventErrorExecution, sceerrorreason.ErrorReasonExpressionFailed, "<data id='errors_seen'> expr failed to evaluate"))
 			_ = engine.SetVariable(sessionID, "errors_seen", nil)
 		}
 	}
@@ -891,7 +895,7 @@ func (p *AChildTakesAHandedValueInPlaceOfItsDataPolicy) InitializeDataModel(eng 
 		if err == nil {
 			_ = engine.SetVariable(sessionID, "listed_seen", result)
 		} else {
-			eng.Raise(sce.NewPlatformError(AChildTakesAHandedValueInPlaceOfItsDataEventErrorExecution, "<data id='listed_seen'> expr failed to evaluate"))
+			eng.Raise(sce.NewPlatformError(AChildTakesAHandedValueInPlaceOfItsDataEventErrorExecution, sceerrorreason.ErrorReasonExpressionFailed, "<data id='listed_seen'> expr failed to evaluate"))
 			_ = engine.SetVariable(sessionID, "listed_seen", nil)
 		}
 	}
@@ -905,7 +909,7 @@ func (p *AChildTakesAHandedValueInPlaceOfItsDataPolicy) InitializeDataModel(eng 
 		if err == nil {
 			_ = engine.SetVariable(sessionID, "stray_seen", result)
 		} else {
-			eng.Raise(sce.NewPlatformError(AChildTakesAHandedValueInPlaceOfItsDataEventErrorExecution, "<data id='stray_seen'> expr failed to evaluate"))
+			eng.Raise(sce.NewPlatformError(AChildTakesAHandedValueInPlaceOfItsDataEventErrorExecution, sceerrorreason.ErrorReasonExpressionFailed, "<data id='stray_seen'> expr failed to evaluate"))
 			_ = engine.SetVariable(sessionID, "stray_seen", nil)
 		}
 	}
@@ -919,7 +923,7 @@ func (p *AChildTakesAHandedValueInPlaceOfItsDataPolicy) InitializeDataModel(eng 
 		if err == nil {
 			_ = engine.SetVariable(sessionID, "record_seen", result)
 		} else {
-			eng.Raise(sce.NewPlatformError(AChildTakesAHandedValueInPlaceOfItsDataEventErrorExecution, "<data id='record_seen'> expr failed to evaluate"))
+			eng.Raise(sce.NewPlatformError(AChildTakesAHandedValueInPlaceOfItsDataEventErrorExecution, sceerrorreason.ErrorReasonExpressionFailed, "<data id='record_seen'> expr failed to evaluate"))
 			_ = engine.SetVariable(sessionID, "record_seen", nil)
 		}
 	}
@@ -933,7 +937,7 @@ func (p *AChildTakesAHandedValueInPlaceOfItsDataPolicy) InitializeDataModel(eng 
 		if err == nil {
 			_ = engine.SetVariable(sessionID, "list_errors_seen", result)
 		} else {
-			eng.Raise(sce.NewPlatformError(AChildTakesAHandedValueInPlaceOfItsDataEventErrorExecution, "<data id='list_errors_seen'> expr failed to evaluate"))
+			eng.Raise(sce.NewPlatformError(AChildTakesAHandedValueInPlaceOfItsDataEventErrorExecution, sceerrorreason.ErrorReasonExpressionFailed, "<data id='list_errors_seen'> expr failed to evaluate"))
 			_ = engine.SetVariable(sessionID, "list_errors_seen", nil)
 		}
 	}
@@ -965,12 +969,12 @@ func (p *AChildTakesAHandedValueInPlaceOfItsDataPolicy) evaluateIfCond(guard str
 // evaluateGuardRaising evaluates a cond, raising error.execution when it cannot
 // be evaluated (W3C SCXML 5.9.1); ok is false then, where a bare false could
 // not say so.
-func (p *AChildTakesAHandedValueInPlaceOfItsDataPolicy) evaluateGuardRaising(guard string, eng *sce.Engine[AChildTakesAHandedValueInPlaceOfItsDataState, AChildTakesAHandedValueInPlaceOfItsDataEvent], reason string) (value bool, ok bool) {
+func (p *AChildTakesAHandedValueInPlaceOfItsDataPolicy) evaluateGuardRaising(guard string, eng *sce.Engine[AChildTakesAHandedValueInPlaceOfItsDataState, AChildTakesAHandedValueInPlaceOfItsDataEvent], detail string) (value bool, ok bool) {
 	p.assertScriptSession()
 	engine := p.ScriptEngine
 	result, err := engine.EvaluateExpression(p.SessionID, guard)
 	if err != nil {
-		eng.Raise(sce.NewPlatformError(AChildTakesAHandedValueInPlaceOfItsDataEventErrorExecution, reason))
+		eng.Raise(sce.NewPlatformError(AChildTakesAHandedValueInPlaceOfItsDataEventErrorExecution, sceerrorreason.ErrorReasonExpressionFailed, detail))
 		return false, false
 	}
 	return sce.ScriptToBool(result), true
@@ -1073,7 +1077,7 @@ func (p *AChildTakesAHandedValueInPlaceOfItsDataPolicy) SetParamValueInScriptEng
 // failed is left (docs/adr/0098).
 func (p *AChildTakesAHandedValueInPlaceOfItsDataPolicy) declareHandedValue(eng *sce.Engine[AChildTakesAHandedValueInPlaceOfItsDataState, AChildTakesAHandedValueInPlaceOfItsDataEvent], engine sce.IScriptEngine, sessionID, name string, value interface{}) {
 	if err := engine.SetVariable(sessionID, name, value); err != nil {
-		eng.Raise(sce.NewPlatformError(AChildTakesAHandedValueInPlaceOfItsDataEventErrorExecution, "<data id='"+name+"'> could not hold the value its invoking session handed it"))
+		eng.Raise(sce.NewPlatformError(AChildTakesAHandedValueInPlaceOfItsDataEventErrorExecution, sceerrorreason.ErrorReasonDataInitFailed, "<data id='"+name+"'> could not hold the value its invoking session handed it"))
 		_ = engine.SetVariable(sessionID, name, nil)
 	}
 }
@@ -1107,7 +1111,7 @@ func (p *AChildTakesAHandedValueInPlaceOfItsDataPolicy) ExecutePendingInvokes(en
 					namelistValid = false
 				}
 				if !namelistValid {
-					engine.Raise(sce.NewPlatformError(AChildTakesAHandedValueInPlaceOfItsDataEventErrorExecution, "<invoke> namelist names a location that cannot be read"))
+					engine.Raise(sce.NewPlatformError(AChildTakesAHandedValueInPlaceOfItsDataEventErrorExecution, sceerrorreason.ErrorReasonLocationInvalid, "<invoke> namelist names a location that cannot be read"))
 					continue
 				}
 			}
@@ -1187,7 +1191,7 @@ func (p *AChildTakesAHandedValueInPlaceOfItsDataPolicy) ExecutePendingInvokes(en
 			if refused := childEngine.Initialize(); refused != nil {
 				childEngine.DetachMesh()
 				delete(p.activeInvokes, "by_namelist")
-				engine.Raise(sce.NewPlatformError(AChildTakesAHandedValueInPlaceOfItsDataEventErrorExecution, sce.ChildStartRefusal("by_namelist", refused)))
+				engine.Raise(sce.NewPlatformError(AChildTakesAHandedValueInPlaceOfItsDataEventErrorExecution, sceerrorreason.ErrorReasonInvokeChildInitFailed, sce.ChildStartRefusal("by_namelist", refused)))
 				continue
 			}
 
@@ -1252,7 +1256,7 @@ func (p *AChildTakesAHandedValueInPlaceOfItsDataPolicy) ExecutePendingInvokes(en
 					// "terminate the processing of the element" is not what a
 					// failing `<param>` costs: the child still starts, one pair
 					// short.
-					engine.Raise(sce.NewPlatformError(AChildTakesAHandedValueInPlaceOfItsDataEventErrorExecution, "<invoke> <param name='raising'> could not be read"))
+					engine.Raise(sce.NewPlatformError(AChildTakesAHandedValueInPlaceOfItsDataEventErrorExecution, sceerrorreason.ErrorReasonLocationInvalid, "<invoke> <param name='raising'> could not be read"))
 				}
 				if val, err := se.EvaluateExpression(p.SessionID, `"handed effectful"`); err == nil {
 					// §scxml-6.4.3: the VALUE of the param element becomes the
@@ -1266,7 +1270,7 @@ func (p *AChildTakesAHandedValueInPlaceOfItsDataPolicy) ExecutePendingInvokes(en
 					// "terminate the processing of the element" is not what a
 					// failing `<param>` costs: the child still starts, one pair
 					// short.
-					engine.Raise(sce.NewPlatformError(AChildTakesAHandedValueInPlaceOfItsDataEventErrorExecution, "<invoke> <param name='effectful'> could not be read"))
+					engine.Raise(sce.NewPlatformError(AChildTakesAHandedValueInPlaceOfItsDataEventErrorExecution, sceerrorreason.ErrorReasonLocationInvalid, "<invoke> <param name='effectful'> could not be read"))
 				}
 				if val, err := se.EvaluateExpression(p.SessionID, `"handed refusable"`); err == nil {
 					// §scxml-6.4.3: the VALUE of the param element becomes the
@@ -1280,7 +1284,7 @@ func (p *AChildTakesAHandedValueInPlaceOfItsDataPolicy) ExecutePendingInvokes(en
 					// "terminate the processing of the element" is not what a
 					// failing `<param>` costs: the child still starts, one pair
 					// short.
-					engine.Raise(sce.NewPlatformError(AChildTakesAHandedValueInPlaceOfItsDataEventErrorExecution, "<invoke> <param name='refusable'> could not be read"))
+					engine.Raise(sce.NewPlatformError(AChildTakesAHandedValueInPlaceOfItsDataEventErrorExecution, sceerrorreason.ErrorReasonLocationInvalid, "<invoke> <param name='refusable'> could not be read"))
 				}
 				if val, err := se.EvaluateExpression(p.SessionID, `"handed kept"`); err == nil {
 					// §scxml-6.4.3: the VALUE of the param element becomes the
@@ -1294,7 +1298,7 @@ func (p *AChildTakesAHandedValueInPlaceOfItsDataPolicy) ExecutePendingInvokes(en
 					// "terminate the processing of the element" is not what a
 					// failing `<param>` costs: the child still starts, one pair
 					// short.
-					engine.Raise(sce.NewPlatformError(AChildTakesAHandedValueInPlaceOfItsDataEventErrorExecution, "<invoke> <param name='kept'> could not be read"))
+					engine.Raise(sce.NewPlatformError(AChildTakesAHandedValueInPlaceOfItsDataEventErrorExecution, sceerrorreason.ErrorReasonLocationInvalid, "<invoke> <param name='kept'> could not be read"))
 				}
 				if val, err := se.EvaluateExpression(p.SessionID, `"handed stranger"`); err == nil {
 					// §scxml-6.4.3: the VALUE of the param element becomes the
@@ -1308,7 +1312,7 @@ func (p *AChildTakesAHandedValueInPlaceOfItsDataPolicy) ExecutePendingInvokes(en
 					// "terminate the processing of the element" is not what a
 					// failing `<param>` costs: the child still starts, one pair
 					// short.
-					engine.Raise(sce.NewPlatformError(AChildTakesAHandedValueInPlaceOfItsDataEventErrorExecution, "<invoke> <param name='stranger'> could not be read"))
+					engine.Raise(sce.NewPlatformError(AChildTakesAHandedValueInPlaceOfItsDataEventErrorExecution, sceerrorreason.ErrorReasonLocationInvalid, "<invoke> <param name='stranger'> could not be read"))
 				}
 				if val, err := se.EvaluateExpression(p.SessionID, `record`); err == nil {
 					// §scxml-6.4.3: the VALUE of the param element becomes the
@@ -1322,7 +1326,7 @@ func (p *AChildTakesAHandedValueInPlaceOfItsDataPolicy) ExecutePendingInvokes(en
 					// "terminate the processing of the element" is not what a
 					// failing `<param>` costs: the child still starts, one pair
 					// short.
-					engine.Raise(sce.NewPlatformError(AChildTakesAHandedValueInPlaceOfItsDataEventErrorExecution, "<invoke> <param name='payload'> could not be read"))
+					engine.Raise(sce.NewPlatformError(AChildTakesAHandedValueInPlaceOfItsDataEventErrorExecution, sceerrorreason.ErrorReasonLocationInvalid, "<invoke> <param name='payload'> could not be read"))
 				}
 			}
 
@@ -1358,7 +1362,7 @@ func (p *AChildTakesAHandedValueInPlaceOfItsDataPolicy) ExecutePendingInvokes(en
 			if refused := childEngine.Initialize(); refused != nil {
 				childEngine.DetachMesh()
 				delete(p.activeInvokes, "by_param")
-				engine.Raise(sce.NewPlatformError(AChildTakesAHandedValueInPlaceOfItsDataEventErrorExecution, sce.ChildStartRefusal("by_param", refused)))
+				engine.Raise(sce.NewPlatformError(AChildTakesAHandedValueInPlaceOfItsDataEventErrorExecution, sceerrorreason.ErrorReasonInvokeChildInitFailed, sce.ChildStartRefusal("by_param", refused)))
 				continue
 			}
 
@@ -1423,7 +1427,7 @@ func (p *AChildTakesAHandedValueInPlaceOfItsDataPolicy) ExecutePendingInvokes(en
 					// "terminate the processing of the element" is not what a
 					// failing `<param>` costs: the child still starts, one pair
 					// short.
-					engine.Raise(sce.NewPlatformError(AChildTakesAHandedValueInPlaceOfItsDataEventErrorExecution, "<invoke> <param name='handed'> could not be read"))
+					engine.Raise(sce.NewPlatformError(AChildTakesAHandedValueInPlaceOfItsDataEventErrorExecution, sceerrorreason.ErrorReasonLocationInvalid, "<invoke> <param name='handed'> could not be read"))
 				}
 			}
 
@@ -1459,7 +1463,7 @@ func (p *AChildTakesAHandedValueInPlaceOfItsDataPolicy) ExecutePendingInvokes(en
 			if refused := childEngine.Initialize(); refused != nil {
 				childEngine.DetachMesh()
 				delete(p.activeInvokes, "first_macrostep")
-				engine.Raise(sce.NewPlatformError(AChildTakesAHandedValueInPlaceOfItsDataEventErrorExecution, sce.ChildStartRefusal("first_macrostep", refused)))
+				engine.Raise(sce.NewPlatformError(AChildTakesAHandedValueInPlaceOfItsDataEventErrorExecution, sceerrorreason.ErrorReasonInvokeChildInitFailed, sce.ChildStartRefusal("first_macrostep", refused)))
 				continue
 			}
 
@@ -1524,7 +1528,7 @@ func (p *AChildTakesAHandedValueInPlaceOfItsDataPolicy) ExecutePendingInvokes(en
 					// "terminate the processing of the element" is not what a
 					// failing `<param>` costs: the child still starts, one pair
 					// short.
-					engine.Raise(sce.NewPlatformError(AChildTakesAHandedValueInPlaceOfItsDataEventErrorExecution, "<invoke> <param name='handed'> could not be read"))
+					engine.Raise(sce.NewPlatformError(AChildTakesAHandedValueInPlaceOfItsDataEventErrorExecution, sceerrorreason.ErrorReasonLocationInvalid, "<invoke> <param name='handed'> could not be read"))
 				}
 				if val, err := se.EvaluateExpression(p.SessionID, `"handed kept"`); err == nil {
 					// §scxml-6.4.3: the VALUE of the param element becomes the
@@ -1538,7 +1542,7 @@ func (p *AChildTakesAHandedValueInPlaceOfItsDataPolicy) ExecutePendingInvokes(en
 					// "terminate the processing of the element" is not what a
 					// failing `<param>` costs: the child still starts, one pair
 					// short.
-					engine.Raise(sce.NewPlatformError(AChildTakesAHandedValueInPlaceOfItsDataEventErrorExecution, "<invoke> <param name='kept'> could not be read"))
+					engine.Raise(sce.NewPlatformError(AChildTakesAHandedValueInPlaceOfItsDataEventErrorExecution, sceerrorreason.ErrorReasonLocationInvalid, "<invoke> <param name='kept'> could not be read"))
 				}
 			}
 
@@ -1574,7 +1578,7 @@ func (p *AChildTakesAHandedValueInPlaceOfItsDataPolicy) ExecutePendingInvokes(en
 			if refused := childEngine.Initialize(); refused != nil {
 				childEngine.DetachMesh()
 				delete(p.activeInvokes, "late_bound")
-				engine.Raise(sce.NewPlatformError(AChildTakesAHandedValueInPlaceOfItsDataEventErrorExecution, sce.ChildStartRefusal("late_bound", refused)))
+				engine.Raise(sce.NewPlatformError(AChildTakesAHandedValueInPlaceOfItsDataEventErrorExecution, sceerrorreason.ErrorReasonInvokeChildInitFailed, sce.ChildStartRefusal("late_bound", refused)))
 				continue
 			}
 
@@ -2806,28 +2810,28 @@ func (p *AChildTakesAHandedValueInPlaceOfItsDataPolicy) ExecuteTransitionContent
 
 	// W3C SCXML 5.3: <assign location="listed_seen" expr="_event.data.listed">
 	if err := p.assignVariable(`listed_seen`, `_event.data.listed`); err != nil {
-		engine.Raise(sce.NewPlatformError(AChildTakesAHandedValueInPlaceOfItsDataEventErrorExecution, "<assign> to 'listed_seen' failed"))
+		engine.Raise(sce.NewPlatformError(AChildTakesAHandedValueInPlaceOfItsDataEventErrorExecution, sceerrorreason.ErrorReasonAssignmentFailed, "<assign> to 'listed_seen' failed"))
 		return  // W3C SCXML 4.9: the error ends the block
 	}
 
 
 	// W3C SCXML 5.3: <assign location="stray_seen" expr="_event.data.stray">
 	if err := p.assignVariable(`stray_seen`, `_event.data.stray`); err != nil {
-		engine.Raise(sce.NewPlatformError(AChildTakesAHandedValueInPlaceOfItsDataEventErrorExecution, "<assign> to 'stray_seen' failed"))
+		engine.Raise(sce.NewPlatformError(AChildTakesAHandedValueInPlaceOfItsDataEventErrorExecution, sceerrorreason.ErrorReasonAssignmentFailed, "<assign> to 'stray_seen' failed"))
 		return  // W3C SCXML 4.9: the error ends the block
 	}
 
 
 	// W3C SCXML 5.3: <assign location="record_seen" expr="_event.data.record">
 	if err := p.assignVariable(`record_seen`, `_event.data.record`); err != nil {
-		engine.Raise(sce.NewPlatformError(AChildTakesAHandedValueInPlaceOfItsDataEventErrorExecution, "<assign> to 'record_seen' failed"))
+		engine.Raise(sce.NewPlatformError(AChildTakesAHandedValueInPlaceOfItsDataEventErrorExecution, sceerrorreason.ErrorReasonAssignmentFailed, "<assign> to 'record_seen' failed"))
 		return  // W3C SCXML 4.9: the error ends the block
 	}
 
 
 	// W3C SCXML 5.3: <assign location="list_errors_seen" expr="_event.data.errors">
 	if err := p.assignVariable(`list_errors_seen`, `_event.data.errors`); err != nil {
-		engine.Raise(sce.NewPlatformError(AChildTakesAHandedValueInPlaceOfItsDataEventErrorExecution, "<assign> to 'list_errors_seen' failed"))
+		engine.Raise(sce.NewPlatformError(AChildTakesAHandedValueInPlaceOfItsDataEventErrorExecution, sceerrorreason.ErrorReasonAssignmentFailed, "<assign> to 'list_errors_seen' failed"))
 		return  // W3C SCXML 4.9: the error ends the block
 	}
 
@@ -2842,70 +2846,70 @@ func (p *AChildTakesAHandedValueInPlaceOfItsDataPolicy) ExecuteTransitionContent
 
 	// W3C SCXML 5.3: <assign location="raising_seen" expr="_event.data.raising">
 	if err := p.assignVariable(`raising_seen`, `_event.data.raising`); err != nil {
-		engine.Raise(sce.NewPlatformError(AChildTakesAHandedValueInPlaceOfItsDataEventErrorExecution, "<assign> to 'raising_seen' failed"))
+		engine.Raise(sce.NewPlatformError(AChildTakesAHandedValueInPlaceOfItsDataEventErrorExecution, sceerrorreason.ErrorReasonAssignmentFailed, "<assign> to 'raising_seen' failed"))
 		return  // W3C SCXML 4.9: the error ends the block
 	}
 
 
 	// W3C SCXML 5.3: <assign location="effectful_seen" expr="_event.data.effectful">
 	if err := p.assignVariable(`effectful_seen`, `_event.data.effectful`); err != nil {
-		engine.Raise(sce.NewPlatformError(AChildTakesAHandedValueInPlaceOfItsDataEventErrorExecution, "<assign> to 'effectful_seen' failed"))
+		engine.Raise(sce.NewPlatformError(AChildTakesAHandedValueInPlaceOfItsDataEventErrorExecution, sceerrorreason.ErrorReasonAssignmentFailed, "<assign> to 'effectful_seen' failed"))
 		return  // W3C SCXML 4.9: the error ends the block
 	}
 
 
 	// W3C SCXML 5.3: <assign location="effects_seen" expr="_event.data.effects">
 	if err := p.assignVariable(`effects_seen`, `_event.data.effects`); err != nil {
-		engine.Raise(sce.NewPlatformError(AChildTakesAHandedValueInPlaceOfItsDataEventErrorExecution, "<assign> to 'effects_seen' failed"))
+		engine.Raise(sce.NewPlatformError(AChildTakesAHandedValueInPlaceOfItsDataEventErrorExecution, sceerrorreason.ErrorReasonAssignmentFailed, "<assign> to 'effects_seen' failed"))
 		return  // W3C SCXML 4.9: the error ends the block
 	}
 
 
 	// W3C SCXML 5.3: <assign location="refusable_seen" expr="_event.data.refusable">
 	if err := p.assignVariable(`refusable_seen`, `_event.data.refusable`); err != nil {
-		engine.Raise(sce.NewPlatformError(AChildTakesAHandedValueInPlaceOfItsDataEventErrorExecution, "<assign> to 'refusable_seen' failed"))
+		engine.Raise(sce.NewPlatformError(AChildTakesAHandedValueInPlaceOfItsDataEventErrorExecution, sceerrorreason.ErrorReasonAssignmentFailed, "<assign> to 'refusable_seen' failed"))
 		return  // W3C SCXML 4.9: the error ends the block
 	}
 
 
 	// W3C SCXML 5.3: <assign location="kept_seen" expr="_event.data.kept">
 	if err := p.assignVariable(`kept_seen`, `_event.data.kept`); err != nil {
-		engine.Raise(sce.NewPlatformError(AChildTakesAHandedValueInPlaceOfItsDataEventErrorExecution, "<assign> to 'kept_seen' failed"))
+		engine.Raise(sce.NewPlatformError(AChildTakesAHandedValueInPlaceOfItsDataEventErrorExecution, sceerrorreason.ErrorReasonAssignmentFailed, "<assign> to 'kept_seen' failed"))
 		return  // W3C SCXML 4.9: the error ends the block
 	}
 
 
 	// W3C SCXML 5.3: <assign location="stranger_seen" expr="_event.data.stranger">
 	if err := p.assignVariable(`stranger_seen`, `_event.data.stranger`); err != nil {
-		engine.Raise(sce.NewPlatformError(AChildTakesAHandedValueInPlaceOfItsDataEventErrorExecution, "<assign> to 'stranger_seen' failed"))
+		engine.Raise(sce.NewPlatformError(AChildTakesAHandedValueInPlaceOfItsDataEventErrorExecution, sceerrorreason.ErrorReasonAssignmentFailed, "<assign> to 'stranger_seen' failed"))
 		return  // W3C SCXML 4.9: the error ends the block
 	}
 
 
 	// W3C SCXML 5.3: <assign location="payload_seen" expr="_event.data.payload">
 	if err := p.assignVariable(`payload_seen`, `_event.data.payload`); err != nil {
-		engine.Raise(sce.NewPlatformError(AChildTakesAHandedValueInPlaceOfItsDataEventErrorExecution, "<assign> to 'payload_seen' failed"))
+		engine.Raise(sce.NewPlatformError(AChildTakesAHandedValueInPlaceOfItsDataEventErrorExecution, sceerrorreason.ErrorReasonAssignmentFailed, "<assign> to 'payload_seen' failed"))
 		return  // W3C SCXML 4.9: the error ends the block
 	}
 
 
 	// W3C SCXML 5.3: <assign location="script_seen" expr="_event.data.script">
 	if err := p.assignVariable(`script_seen`, `_event.data.script`); err != nil {
-		engine.Raise(sce.NewPlatformError(AChildTakesAHandedValueInPlaceOfItsDataEventErrorExecution, "<assign> to 'script_seen' failed"))
+		engine.Raise(sce.NewPlatformError(AChildTakesAHandedValueInPlaceOfItsDataEventErrorExecution, sceerrorreason.ErrorReasonAssignmentFailed, "<assign> to 'script_seen' failed"))
 		return  // W3C SCXML 4.9: the error ends the block
 	}
 
 
 	// W3C SCXML 5.3: <assign location="entry_seen" expr="_event.data.entry">
 	if err := p.assignVariable(`entry_seen`, `_event.data.entry`); err != nil {
-		engine.Raise(sce.NewPlatformError(AChildTakesAHandedValueInPlaceOfItsDataEventErrorExecution, "<assign> to 'entry_seen' failed"))
+		engine.Raise(sce.NewPlatformError(AChildTakesAHandedValueInPlaceOfItsDataEventErrorExecution, sceerrorreason.ErrorReasonAssignmentFailed, "<assign> to 'entry_seen' failed"))
 		return  // W3C SCXML 4.9: the error ends the block
 	}
 
 
 	// W3C SCXML 5.3: <assign location="errors_seen" expr="_event.data.errors">
 	if err := p.assignVariable(`errors_seen`, `_event.data.errors`); err != nil {
-		engine.Raise(sce.NewPlatformError(AChildTakesAHandedValueInPlaceOfItsDataEventErrorExecution, "<assign> to 'errors_seen' failed"))
+		engine.Raise(sce.NewPlatformError(AChildTakesAHandedValueInPlaceOfItsDataEventErrorExecution, sceerrorreason.ErrorReasonAssignmentFailed, "<assign> to 'errors_seen' failed"))
 		return  // W3C SCXML 4.9: the error ends the block
 	}
 

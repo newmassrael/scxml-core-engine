@@ -754,14 +754,14 @@ public final class StaticInvokeEndingOrderPolicy: InvocablePolicy {
                         sender: self.sessionID
                     )
                     if sendRouted == .notSupported {
-                        var sendError = EventWithMetadata.platformError(StaticInvokeEndingOrderEvent.errorExecution, message: "<send> target is not a target")
+                        var sendError = EventWithMetadata.platformError(StaticInvokeEndingOrderEvent.errorExecution, reason: .sendTargetInvalid, message: "<send> target is not a target")
                         sendError.metadata.sendID = "__send_0"
                         engine.raise(sendError)
 
                         break sceBlock  // W3C SCXML 4.9: the error ends the block
                     }
                     if sendRouted == .notReachable {
-                        var sendError = EventWithMetadata.platformError(StaticInvokeEndingOrderEvent.errorCommunication, message: "<send> target names a session this processor cannot reach")
+                        var sendError = EventWithMetadata.platformError(StaticInvokeEndingOrderEvent.errorCommunication, reason: .targetUnreachable, message: "<send> target names a session this processor cannot reach")
                         sendError.metadata.sendID = "__send_0"
                         engine.raise(sendError)
 
@@ -774,7 +774,7 @@ public final class StaticInvokeEndingOrderPolicy: InvocablePolicy {
                 sceBlock: do {
 
 
-                if ({ () -> Bool in do { let sceValue: UInt32 = (try Checked.add(self.vHeard, 1)); self.vHeard = sceValue } catch { engine.raise(EventWithMetadata.platformError(StaticInvokeEndingOrderEvent.errorExecution, message: "<assign location='heard'>: an integer operation overflowed or failed")); return true }; return false }()) {
+                if ({ () -> Bool in do { let sceValue: UInt32 = (try Checked.add(self.vHeard, 1)); self.vHeard = sceValue } catch { engine.raise(EventWithMetadata.platformError(StaticInvokeEndingOrderEvent.errorExecution, reason: .expressionFailed, message: "<assign location='heard'>: an integer operation overflowed or failed")); return true }; return false }()) {
                     break sceBlock  // W3C SCXML 4.9: the error ends the block
                 }
 
@@ -788,7 +788,7 @@ public final class StaticInvokeEndingOrderPolicy: InvocablePolicy {
                 sceBlock: do {
 
 
-                if ({ () -> Bool in do { let sceValue: UInt32 = (try Checked.add(self.vHeard, 1)); self.vHeard = sceValue } catch { engine.raise(EventWithMetadata.platformError(StaticInvokeEndingOrderEvent.errorExecution, message: "<assign location='heard'>: an integer operation overflowed or failed")); return true }; return false }()) {
+                if ({ () -> Bool in do { let sceValue: UInt32 = (try Checked.add(self.vHeard, 1)); self.vHeard = sceValue } catch { engine.raise(EventWithMetadata.platformError(StaticInvokeEndingOrderEvent.errorExecution, reason: .expressionFailed, message: "<assign location='heard'>: an integer operation overflowed or failed")); return true }; return false }()) {
                     break sceBlock  // W3C SCXML 4.9: the error ends the block
                 }
 

@@ -31,6 +31,7 @@ import (
 	"time"
 
 	sce "github.com/newmassrael/sce-go-runtime"
+	sceerrorreason "github.com/newmassrael/sce-go-runtime/generated/error_reason"
 )
 
 // Ensure imports are used
@@ -39,6 +40,9 @@ var (
 	_ = filepath.Join
 	_ = strings.HasPrefix
 	_ = time.Duration(0)
+	// Why an error.* event is raised (sce:std/engine/error_reason,
+	// docs/adr/0106 #111); a machine that raises none still imports it.
+	_ = sceerrorreason.ErrorReasonExpressionFailed
 )
 
 // ======================================================================
@@ -370,7 +374,7 @@ func (p *TypedReaderNamesPolicy) InitializeDataModel(eng *sce.Engine[TypedReader
 		if err == nil {
 			_ = engine.SetVariable(sessionID, "box", result)
 		} else {
-			eng.Raise(sce.NewPlatformError(TypedReaderNamesEventErrorExecution, "<data id='box'> expr failed to evaluate"))
+			eng.Raise(sce.NewPlatformError(TypedReaderNamesEventErrorExecution, sceerrorreason.ErrorReasonExpressionFailed, "<data id='box'> expr failed to evaluate"))
 			_ = engine.SetVariable(sessionID, "box", nil)
 		}
 	}
@@ -384,7 +388,7 @@ func (p *TypedReaderNamesPolicy) InitializeDataModel(eng *sce.Engine[TypedReader
 		if err == nil {
 			_ = engine.SetVariable(sessionID, "object", result)
 		} else {
-			eng.Raise(sce.NewPlatformError(TypedReaderNamesEventErrorExecution, "<data id='object'> expr failed to evaluate"))
+			eng.Raise(sce.NewPlatformError(TypedReaderNamesEventErrorExecution, sceerrorreason.ErrorReasonExpressionFailed, "<data id='object'> expr failed to evaluate"))
 			_ = engine.SetVariable(sessionID, "object", nil)
 		}
 	}
@@ -398,7 +402,7 @@ func (p *TypedReaderNamesPolicy) InitializeDataModel(eng *sce.Engine[TypedReader
 		if err == nil {
 			_ = engine.SetVariable(sessionID, "pass", result)
 		} else {
-			eng.Raise(sce.NewPlatformError(TypedReaderNamesEventErrorExecution, "<data id='pass'> expr failed to evaluate"))
+			eng.Raise(sce.NewPlatformError(TypedReaderNamesEventErrorExecution, sceerrorreason.ErrorReasonExpressionFailed, "<data id='pass'> expr failed to evaluate"))
 			_ = engine.SetVariable(sessionID, "pass", nil)
 		}
 	}
@@ -412,7 +416,7 @@ func (p *TypedReaderNamesPolicy) InitializeDataModel(eng *sce.Engine[TypedReader
 		if err == nil {
 			_ = engine.SetVariable(sessionID, "screen-rules", result)
 		} else {
-			eng.Raise(sce.NewPlatformError(TypedReaderNamesEventErrorExecution, "<data id='screen-rules'> expr failed to evaluate"))
+			eng.Raise(sce.NewPlatformError(TypedReaderNamesEventErrorExecution, sceerrorreason.ErrorReasonExpressionFailed, "<data id='screen-rules'> expr failed to evaluate"))
 			_ = engine.SetVariable(sessionID, "screen-rules", nil)
 		}
 	}
@@ -426,7 +430,7 @@ func (p *TypedReaderNamesPolicy) InitializeDataModel(eng *sce.Engine[TypedReader
 		if err == nil {
 			_ = engine.SetVariable(sessionID, "auto", result)
 		} else {
-			eng.Raise(sce.NewPlatformError(TypedReaderNamesEventErrorExecution, "<data id='auto'> expr failed to evaluate"))
+			eng.Raise(sce.NewPlatformError(TypedReaderNamesEventErrorExecution, sceerrorreason.ErrorReasonExpressionFailed, "<data id='auto'> expr failed to evaluate"))
 			_ = engine.SetVariable(sessionID, "auto", nil)
 		}
 	}
@@ -440,7 +444,7 @@ func (p *TypedReaderNamesPolicy) InitializeDataModel(eng *sce.Engine[TypedReader
 		if err == nil {
 			_ = engine.SetVariable(sessionID, "self", result)
 		} else {
-			eng.Raise(sce.NewPlatformError(TypedReaderNamesEventErrorExecution, "<data id='self'> expr failed to evaluate"))
+			eng.Raise(sce.NewPlatformError(TypedReaderNamesEventErrorExecution, sceerrorreason.ErrorReasonExpressionFailed, "<data id='self'> expr failed to evaluate"))
 			_ = engine.SetVariable(sessionID, "self", nil)
 		}
 	}
@@ -454,7 +458,7 @@ func (p *TypedReaderNamesPolicy) InitializeDataModel(eng *sce.Engine[TypedReader
 		if err == nil {
 			_ = engine.SetVariable(sessionID, "new", result)
 		} else {
-			eng.Raise(sce.NewPlatformError(TypedReaderNamesEventErrorExecution, "<data id='new'> expr failed to evaluate"))
+			eng.Raise(sce.NewPlatformError(TypedReaderNamesEventErrorExecution, sceerrorreason.ErrorReasonExpressionFailed, "<data id='new'> expr failed to evaluate"))
 			_ = engine.SetVariable(sessionID, "new", nil)
 		}
 	}
@@ -468,7 +472,7 @@ func (p *TypedReaderNamesPolicy) InitializeDataModel(eng *sce.Engine[TypedReader
 		if err == nil {
 			_ = engine.SetVariable(sessionID, "start", result)
 		} else {
-			eng.Raise(sce.NewPlatformError(TypedReaderNamesEventErrorExecution, "<data id='start'> expr failed to evaluate"))
+			eng.Raise(sce.NewPlatformError(TypedReaderNamesEventErrorExecution, sceerrorreason.ErrorReasonExpressionFailed, "<data id='start'> expr failed to evaluate"))
 			_ = engine.SetVariable(sessionID, "start", nil)
 		}
 	}
@@ -482,7 +486,7 @@ func (p *TypedReaderNamesPolicy) InitializeDataModel(eng *sce.Engine[TypedReader
 		if err == nil {
 			_ = engine.SetVariable(sessionID, "t", result)
 		} else {
-			eng.Raise(sce.NewPlatformError(TypedReaderNamesEventErrorExecution, "<data id='t'> expr failed to evaluate"))
+			eng.Raise(sce.NewPlatformError(TypedReaderNamesEventErrorExecution, sceerrorreason.ErrorReasonExpressionFailed, "<data id='t'> expr failed to evaluate"))
 			_ = engine.SetVariable(sessionID, "t", nil)
 		}
 	}
@@ -496,7 +500,7 @@ func (p *TypedReaderNamesPolicy) InitializeDataModel(eng *sce.Engine[TypedReader
 		if err == nil {
 			_ = engine.SetVariable(sessionID, "a_b", result)
 		} else {
-			eng.Raise(sce.NewPlatformError(TypedReaderNamesEventErrorExecution, "<data id='a_b'> expr failed to evaluate"))
+			eng.Raise(sce.NewPlatformError(TypedReaderNamesEventErrorExecution, sceerrorreason.ErrorReasonExpressionFailed, "<data id='a_b'> expr failed to evaluate"))
 			_ = engine.SetVariable(sessionID, "a_b", nil)
 		}
 	}
@@ -510,7 +514,7 @@ func (p *TypedReaderNamesPolicy) InitializeDataModel(eng *sce.Engine[TypedReader
 		if err == nil {
 			_ = engine.SetVariable(sessionID, "a-b", result)
 		} else {
-			eng.Raise(sce.NewPlatformError(TypedReaderNamesEventErrorExecution, "<data id='a-b'> expr failed to evaluate"))
+			eng.Raise(sce.NewPlatformError(TypedReaderNamesEventErrorExecution, sceerrorreason.ErrorReasonExpressionFailed, "<data id='a-b'> expr failed to evaluate"))
 			_ = engine.SetVariable(sessionID, "a-b", nil)
 		}
 	}
@@ -542,12 +546,12 @@ func (p *TypedReaderNamesPolicy) evaluateIfCond(guard string, eng *sce.Engine[Ty
 // evaluateGuardRaising evaluates a cond, raising error.execution when it cannot
 // be evaluated (W3C SCXML 5.9.1); ok is false then, where a bare false could
 // not say so.
-func (p *TypedReaderNamesPolicy) evaluateGuardRaising(guard string, eng *sce.Engine[TypedReaderNamesState, TypedReaderNamesEvent], reason string) (value bool, ok bool) {
+func (p *TypedReaderNamesPolicy) evaluateGuardRaising(guard string, eng *sce.Engine[TypedReaderNamesState, TypedReaderNamesEvent], detail string) (value bool, ok bool) {
 	p.assertScriptSession()
 	engine := p.ScriptEngine
 	result, err := engine.EvaluateExpression(p.SessionID, guard)
 	if err != nil {
-		eng.Raise(sce.NewPlatformError(TypedReaderNamesEventErrorExecution, reason))
+		eng.Raise(sce.NewPlatformError(TypedReaderNamesEventErrorExecution, sceerrorreason.ErrorReasonExpressionFailed, detail))
 		return false, false
 	}
 	return sce.ScriptToBool(result), true
@@ -650,7 +654,7 @@ func (p *TypedReaderNamesPolicy) SetParamValueInScriptEngine(name string, value 
 // failed is left (docs/adr/0098).
 func (p *TypedReaderNamesPolicy) declareHandedValue(eng *sce.Engine[TypedReaderNamesState, TypedReaderNamesEvent], engine sce.IScriptEngine, sessionID, name string, value interface{}) {
 	if err := engine.SetVariable(sessionID, name, value); err != nil {
-		eng.Raise(sce.NewPlatformError(TypedReaderNamesEventErrorExecution, "<data id='"+name+"'> could not hold the value its invoking session handed it"))
+		eng.Raise(sce.NewPlatformError(TypedReaderNamesEventErrorExecution, sceerrorreason.ErrorReasonDataInitFailed, "<data id='"+name+"'> could not hold the value its invoking session handed it"))
 		_ = engine.SetVariable(sessionID, name, nil)
 	}
 }
@@ -999,28 +1003,28 @@ func (p *TypedReaderNamesPolicy) ExecuteTransitionContent(source TypedReaderName
 
 	// W3C SCXML 5.3: <assign location="box" expr="box + 10">
 	if err := p.assignVariable(`box`, `_scxml_add(box, 10)`); err != nil {
-		engine.Raise(sce.NewPlatformError(TypedReaderNamesEventErrorExecution, "<assign> to 'box' failed"))
+		engine.Raise(sce.NewPlatformError(TypedReaderNamesEventErrorExecution, sceerrorreason.ErrorReasonAssignmentFailed, "<assign> to 'box' failed"))
 		return  // W3C SCXML 4.9: the error ends the block
 	}
 
 
 	// W3C SCXML 5.3: <assign location="object" expr="object + 10">
 	if err := p.assignVariable(`object`, `_scxml_add(object, 10)`); err != nil {
-		engine.Raise(sce.NewPlatformError(TypedReaderNamesEventErrorExecution, "<assign> to 'object' failed"))
+		engine.Raise(sce.NewPlatformError(TypedReaderNamesEventErrorExecution, sceerrorreason.ErrorReasonAssignmentFailed, "<assign> to 'object' failed"))
 		return  // W3C SCXML 4.9: the error ends the block
 	}
 
 
 	// W3C SCXML 5.3: <assign location="pass" expr="pass + 10">
 	if err := p.assignVariable(`pass`, `_scxml_add(pass, 10)`); err != nil {
-		engine.Raise(sce.NewPlatformError(TypedReaderNamesEventErrorExecution, "<assign> to 'pass' failed"))
+		engine.Raise(sce.NewPlatformError(TypedReaderNamesEventErrorExecution, sceerrorreason.ErrorReasonAssignmentFailed, "<assign> to 'pass' failed"))
 		return  // W3C SCXML 4.9: the error ends the block
 	}
 
 
 	// W3C SCXML 5.3: <assign location="a_b" expr="a_b + 10">
 	if err := p.assignVariable(`a_b`, `_scxml_add(a_b, 10)`); err != nil {
-		engine.Raise(sce.NewPlatformError(TypedReaderNamesEventErrorExecution, "<assign> to 'a_b' failed"))
+		engine.Raise(sce.NewPlatformError(TypedReaderNamesEventErrorExecution, sceerrorreason.ErrorReasonAssignmentFailed, "<assign> to 'a_b' failed"))
 		return  // W3C SCXML 4.9: the error ends the block
 	}
 

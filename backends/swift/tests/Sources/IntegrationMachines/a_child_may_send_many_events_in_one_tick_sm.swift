@@ -427,8 +427,12 @@ public final class AChildMaySendManyEventsInOneTickPolicy: InvocablePolicy {
 
     /// Says what went wrong where the document can see it: `error.execution` on the internal
     /// queue (§scxml-5.9.1, 5.3).
-    private func raiseExecutionError(_ message: String, engine: Engine<AChildMaySendManyEventsInOneTickPolicy>) {
-        engine.raise(EventWithMetadata.platformError(AChildMaySendManyEventsInOneTickEvent.errorExecution, message: message))
+    /// `reason` is the code of sce:std/engine/error_reason the record carries
+    /// (docs/adr/0106 #111).
+    private func raiseExecutionError(
+        _ reason: ErrorReason, _ message: String, engine: Engine<AChildMaySendManyEventsInOneTickPolicy>
+    ) {
+        engine.raise(EventWithMetadata.platformError(AChildMaySendManyEventsInOneTickEvent.errorExecution, reason: reason, message: message))
     }
 
     /// W3C SCXML 5.3: the `<data id>` `id` takes the value of the lowered expression, or nil when it
@@ -485,6 +489,7 @@ public final class AChildMaySendManyEventsInOneTickPolicy: InvocablePolicy {
             }
         } catch {
             raiseExecutionError(
+                handed == nil ? .expressionFailed : .paramUnfit,
                 handed == nil
                     ? "<data id='\(id)'> expr failed to evaluate"
                     : "<data id='\(id)'> could not hold the value its parent handed it",
@@ -646,7 +651,7 @@ public final class AChildMaySendManyEventsInOneTickPolicy: InvocablePolicy {
             // this call the payload is lost to the document and to the host alike.
             engine.notePayloadReading(event, reading: Self.payloadReading(of: reading))
         } catch {
-            raiseExecutionError("_event could not be bound for '\(name)'", engine: engine)
+            raiseExecutionError(.payloadRefused, "_event could not be bound for '\(name)'", engine: engine)
         }
     }
 
@@ -683,7 +688,7 @@ public final class AChildMaySendManyEventsInOneTickPolicy: InvocablePolicy {
         do {
             return try scriptSession.evaluateCondition(condition, chunkName: "=cond")
         } catch {
-            raiseExecutionError("a \(element) cond failed to evaluate", engine: engine)
+            raiseExecutionError(.expressionFailed, "a \(element) cond failed to evaluate", engine: engine)
             failed = true
             return false
         }
@@ -995,7 +1000,7 @@ public final class AChildMaySendManyEventsInOneTickPolicy: InvocablePolicy {
 
                 // W3C SCXML 5.4: <assign location="ticks">
                 if !assignData("ticks", "_scxml_add(ticks, 1)") {
-                    raiseExecutionError("<assign> to 'ticks' failed", engine: engine)
+                    raiseExecutionError(.assignmentFailed, "<assign> to 'ticks' failed", engine: engine)
                     break sceBlock  // W3C SCXML 4.9: the error ends the block
                 }
 

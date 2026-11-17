@@ -433,7 +433,7 @@ public final class StaticDonedataContentPolicy: InvocablePolicy {
                 let doneValue: WireValue = .integer(Int64((try Checked.mul(self.vCount, 2000000000))))
                 doneEventData = doneValue.json
             } catch {
-                engine.raise(EventWithMetadata.platformError(StaticDonedataContentEvent.errorExecution, message: "<donedata> <content expr> failed to evaluate"))
+                engine.raise(EventWithMetadata.platformError(StaticDonedataContentEvent.errorExecution, reason: .expressionFailed, message: "<donedata> <content expr> failed to evaluate"))
                 doneEventData = WireValue.text("").json
             }
             // W3C SCXML 5.5 + 6.3.1: a top-level final stashes its data on the engine, so the
@@ -464,7 +464,7 @@ public final class StaticDonedataContentPolicy: InvocablePolicy {
                 let doneValue: WireValue = .integer(Int64((try Checked.mul(self.vCount, 2))))
                 doneEventData = doneValue.json
             } catch {
-                engine.raise(EventWithMetadata.platformError(StaticDonedataContentEvent.errorExecution, message: "<donedata> <content expr> failed to evaluate"))
+                engine.raise(EventWithMetadata.platformError(StaticDonedataContentEvent.errorExecution, reason: .expressionFailed, message: "<donedata> <content expr> failed to evaluate"))
                 doneEventData = WireValue.text("").json
             }
             // W3C SCXML 5.5 + 6.3.1: a top-level final stashes its data on the engine, so the
@@ -584,7 +584,7 @@ public final class StaticDonedataContentPolicy: InvocablePolicy {
                 sceBlock: do {
 
 
-                if ({ () -> Bool in do { let sceValue: UInt32 = (try Checked.add(self.vCount, 1)); self.vCount = sceValue } catch { engine.raise(EventWithMetadata.platformError(StaticDonedataContentEvent.errorExecution, message: "<assign location='count'>: an integer operation overflowed or failed")); return true }; return false }()) {
+                if ({ () -> Bool in do { let sceValue: UInt32 = (try Checked.add(self.vCount, 1)); self.vCount = sceValue } catch { engine.raise(EventWithMetadata.platformError(StaticDonedataContentEvent.errorExecution, reason: .expressionFailed, message: "<assign location='count'>: an integer operation overflowed or failed")); return true }; return false }()) {
                     break sceBlock  // W3C SCXML 4.9: the error ends the block
                 }
 

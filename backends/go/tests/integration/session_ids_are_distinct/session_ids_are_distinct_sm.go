@@ -31,6 +31,7 @@ import (
 	"time"
 
 	sce "github.com/newmassrael/sce-go-runtime"
+	sceerrorreason "github.com/newmassrael/sce-go-runtime/generated/error_reason"
 )
 
 // Ensure imports are used
@@ -39,6 +40,9 @@ var (
 	_ = filepath.Join
 	_ = strings.HasPrefix
 	_ = time.Duration(0)
+	// Why an error.* event is raised (sce:std/engine/error_reason,
+	// docs/adr/0106 #111); a machine that raises none still imports it.
+	_ = sceerrorreason.ErrorReasonExpressionFailed
 )
 
 // ======================================================================
@@ -377,7 +381,7 @@ func (p *SessionIdsAreDistinctPolicy) InitializeDataModel(eng *sce.Engine[Sessio
 		if err == nil {
 			_ = engine.SetVariable(sessionID, "firstSid", result)
 		} else {
-			eng.Raise(sce.NewPlatformError(SessionIdsAreDistinctEventErrorExecution, "<data id='firstSid'> expr failed to evaluate"))
+			eng.Raise(sce.NewPlatformError(SessionIdsAreDistinctEventErrorExecution, sceerrorreason.ErrorReasonExpressionFailed, "<data id='firstSid'> expr failed to evaluate"))
 			_ = engine.SetVariable(sessionID, "firstSid", nil)
 		}
 	}
@@ -391,7 +395,7 @@ func (p *SessionIdsAreDistinctPolicy) InitializeDataModel(eng *sce.Engine[Sessio
 		if err == nil {
 			_ = engine.SetVariable(sessionID, "readBackProbe", result)
 		} else {
-			eng.Raise(sce.NewPlatformError(SessionIdsAreDistinctEventErrorExecution, "<data id='readBackProbe'> expr failed to evaluate"))
+			eng.Raise(sce.NewPlatformError(SessionIdsAreDistinctEventErrorExecution, sceerrorreason.ErrorReasonExpressionFailed, "<data id='readBackProbe'> expr failed to evaluate"))
 			_ = engine.SetVariable(sessionID, "readBackProbe", nil)
 		}
 	}
@@ -423,12 +427,12 @@ func (p *SessionIdsAreDistinctPolicy) evaluateIfCond(guard string, eng *sce.Engi
 // evaluateGuardRaising evaluates a cond, raising error.execution when it cannot
 // be evaluated (W3C SCXML 5.9.1); ok is false then, where a bare false could
 // not say so.
-func (p *SessionIdsAreDistinctPolicy) evaluateGuardRaising(guard string, eng *sce.Engine[SessionIdsAreDistinctState, SessionIdsAreDistinctEvent], reason string) (value bool, ok bool) {
+func (p *SessionIdsAreDistinctPolicy) evaluateGuardRaising(guard string, eng *sce.Engine[SessionIdsAreDistinctState, SessionIdsAreDistinctEvent], detail string) (value bool, ok bool) {
 	p.assertScriptSession()
 	engine := p.ScriptEngine
 	result, err := engine.EvaluateExpression(p.SessionID, guard)
 	if err != nil {
-		eng.Raise(sce.NewPlatformError(SessionIdsAreDistinctEventErrorExecution, reason))
+		eng.Raise(sce.NewPlatformError(SessionIdsAreDistinctEventErrorExecution, sceerrorreason.ErrorReasonExpressionFailed, detail))
 		return false, false
 	}
 	return sce.ScriptToBool(result), true
@@ -531,7 +535,7 @@ func (p *SessionIdsAreDistinctPolicy) SetParamValueInScriptEngine(name string, v
 // failed is left (docs/adr/0098).
 func (p *SessionIdsAreDistinctPolicy) declareHandedValue(eng *sce.Engine[SessionIdsAreDistinctState, SessionIdsAreDistinctEvent], engine sce.IScriptEngine, sessionID, name string, value interface{}) {
 	if err := engine.SetVariable(sessionID, name, value); err != nil {
-		eng.Raise(sce.NewPlatformError(SessionIdsAreDistinctEventErrorExecution, "<data id='"+name+"'> could not hold the value its invoking session handed it"))
+		eng.Raise(sce.NewPlatformError(SessionIdsAreDistinctEventErrorExecution, sceerrorreason.ErrorReasonDataInitFailed, "<data id='"+name+"'> could not hold the value its invoking session handed it"))
 		_ = engine.SetVariable(sessionID, name, nil)
 	}
 }
@@ -608,7 +612,7 @@ func (p *SessionIdsAreDistinctPolicy) ExecutePendingInvokes(engine *sce.Engine[S
 			if refused := childEngine.Initialize(); refused != nil {
 				childEngine.DetachMesh()
 				delete(p.activeInvokes, "inv_a")
-				engine.Raise(sce.NewPlatformError(SessionIdsAreDistinctEventErrorExecution, sce.ChildStartRefusal("inv_a", refused)))
+				engine.Raise(sce.NewPlatformError(SessionIdsAreDistinctEventErrorExecution, sceerrorreason.ErrorReasonInvokeChildInitFailed, sce.ChildStartRefusal("inv_a", refused)))
 				continue
 			}
 
@@ -690,7 +694,7 @@ func (p *SessionIdsAreDistinctPolicy) ExecutePendingInvokes(engine *sce.Engine[S
 			if refused := childEngine.Initialize(); refused != nil {
 				childEngine.DetachMesh()
 				delete(p.activeInvokes, "inv_b")
-				engine.Raise(sce.NewPlatformError(SessionIdsAreDistinctEventErrorExecution, sce.ChildStartRefusal("inv_b", refused)))
+				engine.Raise(sce.NewPlatformError(SessionIdsAreDistinctEventErrorExecution, sceerrorreason.ErrorReasonInvokeChildInitFailed, sce.ChildStartRefusal("inv_b", refused)))
 				continue
 			}
 
@@ -1382,7 +1386,7 @@ func (p *SessionIdsAreDistinctPolicy) ExecuteTransitionContent(source SessionIds
 
 	// W3C SCXML 5.3: <assign location="firstSid" expr="_event.data.sid">
 	if err := p.assignVariable(`firstSid`, `_event.data.sid`); err != nil {
-		engine.Raise(sce.NewPlatformError(SessionIdsAreDistinctEventErrorExecution, "<assign> to 'firstSid' failed"))
+		engine.Raise(sce.NewPlatformError(SessionIdsAreDistinctEventErrorExecution, sceerrorreason.ErrorReasonAssignmentFailed, "<assign> to 'firstSid' failed"))
 		return  // W3C SCXML 4.9: the error ends the block
 	}
 

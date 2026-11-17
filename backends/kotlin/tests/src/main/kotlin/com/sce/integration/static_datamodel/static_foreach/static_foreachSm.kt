@@ -584,7 +584,7 @@ class StaticForeachStateMachine(
     private fun transitionContentOfWorkingAt0() {
                 // SCE-MAP: static_foreach.scxml:26 :: working :: _transition_0
 
-            if (if (vPicked.size < 4) { vPicked = vPicked + (100.toUByte()); false } else { raisePlatformError(StaticForeachEvent.Error.Execution, "<sce:append target='picked'>: the list already holds its capacity of 4"); true }) {
+            if (if (vPicked.size < 4) { vPicked = vPicked + (100.toUByte()); false } else { raisePlatformError(StaticForeachEvent.Error.Execution, ErrorReason.ASSIGNMENT_FAILED, "<sce:append target='picked'>: the list already holds its capacity of 4"); true }) {
                 return
             }
     }
@@ -592,7 +592,7 @@ class StaticForeachStateMachine(
     private fun transitionContentOfWorkingAt1() {
                 // SCE-MAP: static_foreach.scxml:27 :: working :: _transition_1
 
-            if (if (vPicked.size < 4) { vPicked = vPicked + (200.toUByte()); false } else { raisePlatformError(StaticForeachEvent.Error.Execution, "<sce:append target='picked'>: the list already holds its capacity of 4"); true }) {
+            if (if (vPicked.size < 4) { vPicked = vPicked + (200.toUByte()); false } else { raisePlatformError(StaticForeachEvent.Error.Execution, ErrorReason.ASSIGNMENT_FAILED, "<sce:append target='picked'>: the list already holds its capacity of 4"); true }) {
                 return
             }
     }
@@ -600,7 +600,7 @@ class StaticForeachStateMachine(
     private fun transitionContentOfWorkingAt2() {
                 // SCE-MAP: static_foreach.scxml:28 :: working :: _transition_2
 
-            if (if (vPicked.size < 4) { vPicked = vPicked + (5.toUByte()); false } else { raisePlatformError(StaticForeachEvent.Error.Execution, "<sce:append target='picked'>: the list already holds its capacity of 4"); true }) {
+            if (if (vPicked.size < 4) { vPicked = vPicked + (5.toUByte()); false } else { raisePlatformError(StaticForeachEvent.Error.Execution, ErrorReason.ASSIGNMENT_FAILED, "<sce:append target='picked'>: the list already holds its capacity of 4"); true }) {
                 return
             }
     }
@@ -619,12 +619,12 @@ class StaticForeachStateMachine(
 
             for (v in vPicked) {
 
-            if (try { vTotal = com.sce.forge.runtime.SceChecked.add(vTotal, v.toUInt()); false } catch (_: com.sce.forge.runtime.AlgorithmFailure) { raisePlatformError(StaticForeachEvent.Error.Execution, "<assign location='total'>: an integer operation overflowed or failed"); true }) {
+            if (try { vTotal = com.sce.forge.runtime.SceChecked.add(vTotal, v.toUInt()); false } catch (_: com.sce.forge.runtime.AlgorithmFailure) { raisePlatformError(StaticForeachEvent.Error.Execution, ErrorReason.EXPRESSION_FAILED, "<assign location='total'>: an integer operation overflowed or failed"); true }) {
                 return
             }
             }
 
-            if (try { vFinished = com.sce.forge.runtime.SceChecked.add(vFinished, 1.toUInt()); false } catch (_: com.sce.forge.runtime.AlgorithmFailure) { raisePlatformError(StaticForeachEvent.Error.Execution, "<assign location='finished'>: an integer operation overflowed or failed"); true }) {
+            if (try { vFinished = com.sce.forge.runtime.SceChecked.add(vFinished, 1.toUInt()); false } catch (_: com.sce.forge.runtime.AlgorithmFailure) { raisePlatformError(StaticForeachEvent.Error.Execution, ErrorReason.EXPRESSION_FAILED, "<assign location='finished'>: an integer operation overflowed or failed"); true }) {
                 return
             }
     }
@@ -638,12 +638,12 @@ class StaticForeachStateMachine(
             for ((sce_position_of_i, v) in vPicked.withIndex()) {
                 @Suppress("UNUSED_VARIABLE") val i = sce_position_of_i.toUInt()
 
-            if (try { vWeighted = com.sce.forge.runtime.SceChecked.add(vWeighted, com.sce.forge.runtime.SceChecked.mul(v.toUInt(), com.sce.forge.runtime.SceChecked.add(i, 1.toUInt()))); false } catch (_: com.sce.forge.runtime.AlgorithmFailure) { raisePlatformError(StaticForeachEvent.Error.Execution, "<assign location='weighted'>: an integer operation overflowed or failed"); true }) {
+            if (try { vWeighted = com.sce.forge.runtime.SceChecked.add(vWeighted, com.sce.forge.runtime.SceChecked.mul(v.toUInt(), com.sce.forge.runtime.SceChecked.add(i, 1.toUInt()))); false } catch (_: com.sce.forge.runtime.AlgorithmFailure) { raisePlatformError(StaticForeachEvent.Error.Execution, ErrorReason.EXPRESSION_FAILED, "<assign location='weighted'>: an integer operation overflowed or failed"); true }) {
                 return
             }
             }
 
-            if (try { vFinished = com.sce.forge.runtime.SceChecked.add(vFinished, 1.toUInt()); false } catch (_: com.sce.forge.runtime.AlgorithmFailure) { raisePlatformError(StaticForeachEvent.Error.Execution, "<assign location='finished'>: an integer operation overflowed or failed"); true }) {
+            if (try { vFinished = com.sce.forge.runtime.SceChecked.add(vFinished, 1.toUInt()); false } catch (_: com.sce.forge.runtime.AlgorithmFailure) { raisePlatformError(StaticForeachEvent.Error.Execution, ErrorReason.EXPRESSION_FAILED, "<assign location='finished'>: an integer operation overflowed or failed"); true }) {
                 return
             }
     }
@@ -656,12 +656,12 @@ class StaticForeachStateMachine(
 
             for (v in vPicked) {
 
-            if (try { vSmall = com.sce.forge.runtime.SceChecked.add(vSmall, v); false } catch (_: com.sce.forge.runtime.AlgorithmFailure) { raisePlatformError(StaticForeachEvent.Error.Execution, "<assign location='small'>: an integer operation overflowed or failed"); true }) {
+            if (try { vSmall = com.sce.forge.runtime.SceChecked.add(vSmall, v); false } catch (_: com.sce.forge.runtime.AlgorithmFailure) { raisePlatformError(StaticForeachEvent.Error.Execution, ErrorReason.EXPRESSION_FAILED, "<assign location='small'>: an integer operation overflowed or failed"); true }) {
                 return
             }
             }
 
-            if (try { vFinished = com.sce.forge.runtime.SceChecked.add(vFinished, 1.toUInt()); false } catch (_: com.sce.forge.runtime.AlgorithmFailure) { raisePlatformError(StaticForeachEvent.Error.Execution, "<assign location='finished'>: an integer operation overflowed or failed"); true }) {
+            if (try { vFinished = com.sce.forge.runtime.SceChecked.add(vFinished, 1.toUInt()); false } catch (_: com.sce.forge.runtime.AlgorithmFailure) { raisePlatformError(StaticForeachEvent.Error.Execution, ErrorReason.EXPRESSION_FAILED, "<assign location='finished'>: an integer operation overflowed or failed"); true }) {
                 return
             }
     }
@@ -672,12 +672,12 @@ class StaticForeachStateMachine(
 
             for (v in vPicked) {
 
-            if (if (vPicked.size < 4) { vPicked = vPicked + (v); false } else { raisePlatformError(StaticForeachEvent.Error.Execution, "<sce:append target='picked'>: the list already holds its capacity of 4"); true }) {
+            if (if (vPicked.size < 4) { vPicked = vPicked + (v); false } else { raisePlatformError(StaticForeachEvent.Error.Execution, ErrorReason.ASSIGNMENT_FAILED, "<sce:append target='picked'>: the list already holds its capacity of 4"); true }) {
                 return
             }
             }
 
-            if (try { vFinished = com.sce.forge.runtime.SceChecked.add(vFinished, 1.toUInt()); false } catch (_: com.sce.forge.runtime.AlgorithmFailure) { raisePlatformError(StaticForeachEvent.Error.Execution, "<assign location='finished'>: an integer operation overflowed or failed"); true }) {
+            if (try { vFinished = com.sce.forge.runtime.SceChecked.add(vFinished, 1.toUInt()); false } catch (_: com.sce.forge.runtime.AlgorithmFailure) { raisePlatformError(StaticForeachEvent.Error.Execution, ErrorReason.EXPRESSION_FAILED, "<assign location='finished'>: an integer operation overflowed or failed"); true }) {
                 return
             }
     }
@@ -694,7 +694,7 @@ class StaticForeachStateMachine(
 
             for (w in vPicked) {
 
-            if (try { vCrossings = com.sce.forge.runtime.SceChecked.add(vCrossings, 1.toUInt()); false } catch (_: com.sce.forge.runtime.AlgorithmFailure) { raisePlatformError(StaticForeachEvent.Error.Execution, "<assign location='crossings'>: an integer operation overflowed or failed"); true }) {
+            if (try { vCrossings = com.sce.forge.runtime.SceChecked.add(vCrossings, 1.toUInt()); false } catch (_: com.sce.forge.runtime.AlgorithmFailure) { raisePlatformError(StaticForeachEvent.Error.Execution, ErrorReason.EXPRESSION_FAILED, "<assign location='crossings'>: an integer operation overflowed or failed"); true }) {
                 return
             }
             }
@@ -710,7 +710,7 @@ class StaticForeachStateMachine(
             for ((sce_position_of_i, v) in vPicked.withIndex()) {
                 @Suppress("UNUSED_VARIABLE") val i = sce_position_of_i.toUInt()
 
-            if (try { vVisited = com.sce.forge.runtime.SceChecked.add(vVisited, 1.toUInt()); false } catch (_: com.sce.forge.runtime.AlgorithmFailure) { raisePlatformError(StaticForeachEvent.Error.Execution, "<assign location='visited'>: an integer operation overflowed or failed"); true }) {
+            if (try { vVisited = com.sce.forge.runtime.SceChecked.add(vVisited, 1.toUInt()); false } catch (_: com.sce.forge.runtime.AlgorithmFailure) { raisePlatformError(StaticForeachEvent.Error.Execution, ErrorReason.EXPRESSION_FAILED, "<assign location='visited'>: an integer operation overflowed or failed"); true }) {
                 return
             }
             }
@@ -719,7 +719,7 @@ class StaticForeachStateMachine(
     private fun transitionContentOfWorkingAt10() {
                 // SCE-MAP: static_foreach.scxml:80 :: working :: _transition_10
 
-            if (try { vErrors = com.sce.forge.runtime.SceChecked.add(vErrors, 1.toUInt()); false } catch (_: com.sce.forge.runtime.AlgorithmFailure) { raisePlatformError(StaticForeachEvent.Error.Execution, "<assign location='errors'>: an integer operation overflowed or failed"); true }) {
+            if (try { vErrors = com.sce.forge.runtime.SceChecked.add(vErrors, 1.toUInt()); false } catch (_: com.sce.forge.runtime.AlgorithmFailure) { raisePlatformError(StaticForeachEvent.Error.Execution, ErrorReason.EXPRESSION_FAILED, "<assign location='errors'>: an integer operation overflowed or failed"); true }) {
                 return
             }
     }

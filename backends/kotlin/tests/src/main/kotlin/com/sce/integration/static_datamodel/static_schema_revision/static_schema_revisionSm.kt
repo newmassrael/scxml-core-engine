@@ -531,7 +531,7 @@ class StaticSchemaRevisionStateMachine(
 
             vLast = StaticSchemaRevisionRevisedRecord(level = pendingReadingRevisedPayload!!.level, layout = pendingReadingRevisedPayload!!.layout, urgent = pendingReadingRevisedPayload!!.urgent)
 
-            if (try { vTaken = com.sce.forge.runtime.SceChecked.add(vTaken, 1.toUInt()); false } catch (_: com.sce.forge.runtime.AlgorithmFailure) { raisePlatformError(StaticSchemaRevisionEvent.Error.Execution, "<assign location='taken'>: an integer operation overflowed or failed"); true }) {
+            if (try { vTaken = com.sce.forge.runtime.SceChecked.add(vTaken, 1.toUInt()); false } catch (_: com.sce.forge.runtime.AlgorithmFailure) { raisePlatformError(StaticSchemaRevisionEvent.Error.Execution, ErrorReason.EXPRESSION_FAILED, "<assign location='taken'>: an integer operation overflowed or failed"); true }) {
                 return
             }
     }
@@ -539,7 +539,7 @@ class StaticSchemaRevisionStateMachine(
     private fun transitionContentOfReadingAt1() {
                 // SCE-MAP: static_schema_revision.scxml:37 :: reading :: _transition_1
 
-            if (try { vRefusals = com.sce.forge.runtime.SceChecked.add(vRefusals, 1.toUInt()); false } catch (_: com.sce.forge.runtime.AlgorithmFailure) { raisePlatformError(StaticSchemaRevisionEvent.Error.Execution, "<assign location='refusals'>: an integer operation overflowed or failed"); true }) {
+            if (try { vRefusals = com.sce.forge.runtime.SceChecked.add(vRefusals, 1.toUInt()); false } catch (_: com.sce.forge.runtime.AlgorithmFailure) { raisePlatformError(StaticSchemaRevisionEvent.Error.Execution, ErrorReason.EXPRESSION_FAILED, "<assign location='refusals'>: an integer operation overflowed or failed"); true }) {
                 return
             }
     }

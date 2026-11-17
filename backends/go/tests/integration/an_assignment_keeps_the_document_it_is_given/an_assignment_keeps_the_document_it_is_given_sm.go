@@ -31,6 +31,7 @@ import (
 	"time"
 
 	sce "github.com/newmassrael/sce-go-runtime"
+	sceerrorreason "github.com/newmassrael/sce-go-runtime/generated/error_reason"
 )
 
 // Ensure imports are used
@@ -39,6 +40,9 @@ var (
 	_ = filepath.Join
 	_ = strings.HasPrefix
 	_ = time.Duration(0)
+	// Why an error.* event is raised (sce:std/engine/error_reason,
+	// docs/adr/0106 #111); a machine that raises none still imports it.
+	_ = sceerrorreason.ErrorReasonExpressionFailed
 )
 
 // ======================================================================
@@ -347,7 +351,7 @@ func (p *AnAssignmentKeepsTheDocumentItIsGivenPolicy) InitializeDataModel(eng *s
 		if err == nil {
 			_ = engine.SetVariable(sessionID, "holder", result)
 		} else {
-			eng.Raise(sce.NewPlatformError(AnAssignmentKeepsTheDocumentItIsGivenEventErrorExecution, "<data id='holder'> expr failed to evaluate"))
+			eng.Raise(sce.NewPlatformError(AnAssignmentKeepsTheDocumentItIsGivenEventErrorExecution, sceerrorreason.ErrorReasonExpressionFailed, "<data id='holder'> expr failed to evaluate"))
 			_ = engine.SetVariable(sessionID, "holder", nil)
 		}
 	}
@@ -379,12 +383,12 @@ func (p *AnAssignmentKeepsTheDocumentItIsGivenPolicy) evaluateIfCond(guard strin
 // evaluateGuardRaising evaluates a cond, raising error.execution when it cannot
 // be evaluated (W3C SCXML 5.9.1); ok is false then, where a bare false could
 // not say so.
-func (p *AnAssignmentKeepsTheDocumentItIsGivenPolicy) evaluateGuardRaising(guard string, eng *sce.Engine[AnAssignmentKeepsTheDocumentItIsGivenState, AnAssignmentKeepsTheDocumentItIsGivenEvent], reason string) (value bool, ok bool) {
+func (p *AnAssignmentKeepsTheDocumentItIsGivenPolicy) evaluateGuardRaising(guard string, eng *sce.Engine[AnAssignmentKeepsTheDocumentItIsGivenState, AnAssignmentKeepsTheDocumentItIsGivenEvent], detail string) (value bool, ok bool) {
 	p.assertScriptSession()
 	engine := p.ScriptEngine
 	result, err := engine.EvaluateExpression(p.SessionID, guard)
 	if err != nil {
-		eng.Raise(sce.NewPlatformError(AnAssignmentKeepsTheDocumentItIsGivenEventErrorExecution, reason))
+		eng.Raise(sce.NewPlatformError(AnAssignmentKeepsTheDocumentItIsGivenEventErrorExecution, sceerrorreason.ErrorReasonExpressionFailed, detail))
 		return false, false
 	}
 	return sce.ScriptToBool(result), true
@@ -487,7 +491,7 @@ func (p *AnAssignmentKeepsTheDocumentItIsGivenPolicy) SetParamValueInScriptEngin
 // failed is left (docs/adr/0098).
 func (p *AnAssignmentKeepsTheDocumentItIsGivenPolicy) declareHandedValue(eng *sce.Engine[AnAssignmentKeepsTheDocumentItIsGivenState, AnAssignmentKeepsTheDocumentItIsGivenEvent], engine sce.IScriptEngine, sessionID, name string, value interface{}) {
 	if err := engine.SetVariable(sessionID, name, value); err != nil {
-		eng.Raise(sce.NewPlatformError(AnAssignmentKeepsTheDocumentItIsGivenEventErrorExecution, "<data id='"+name+"'> could not hold the value its invoking session handed it"))
+		eng.Raise(sce.NewPlatformError(AnAssignmentKeepsTheDocumentItIsGivenEventErrorExecution, sceerrorreason.ErrorReasonDataInitFailed, "<data id='"+name+"'> could not hold the value its invoking session handed it"))
 		_ = engine.SetVariable(sessionID, name, nil)
 	}
 }
@@ -910,14 +914,14 @@ func (p *AnAssignmentKeepsTheDocumentItIsGivenPolicy) ExecuteTransitionContent(s
 
 	// W3C SCXML 5.3: <assign location="v" expr="_event.data">
 	if err := p.assignVariable(`v`, `_event.data`); err != nil {
-		engine.Raise(sce.NewPlatformError(AnAssignmentKeepsTheDocumentItIsGivenEventErrorExecution, "<assign> to 'v' failed"))
+		engine.Raise(sce.NewPlatformError(AnAssignmentKeepsTheDocumentItIsGivenEventErrorExecution, sceerrorreason.ErrorReasonAssignmentFailed, "<assign> to 'v' failed"))
 		return  // W3C SCXML 4.9: the error ends the block
 	}
 
 
 	// W3C SCXML 5.3: <assign location="holder.doc" expr="_event.data">
 	if err := p.assignVariable(`holder.doc`, `_event.data`); err != nil {
-		engine.Raise(sce.NewPlatformError(AnAssignmentKeepsTheDocumentItIsGivenEventErrorExecution, "<assign> to 'holder.doc' failed"))
+		engine.Raise(sce.NewPlatformError(AnAssignmentKeepsTheDocumentItIsGivenEventErrorExecution, sceerrorreason.ErrorReasonAssignmentFailed, "<assign> to 'holder.doc' failed"))
 		return  // W3C SCXML 4.9: the error ends the block
 	}
 

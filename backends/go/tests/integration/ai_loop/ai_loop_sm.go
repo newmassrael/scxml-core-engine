@@ -31,6 +31,7 @@ import (
 	"time"
 
 	sce "github.com/newmassrael/sce-go-runtime"
+	sceerrorreason "github.com/newmassrael/sce-go-runtime/generated/error_reason"
 )
 
 // Ensure imports are used
@@ -39,6 +40,9 @@ var (
 	_ = filepath.Join
 	_ = strings.HasPrefix
 	_ = time.Duration(0)
+	// Why an error.* event is raised (sce:std/engine/error_reason,
+	// docs/adr/0106 #111); a machine that raises none still imports it.
+	_ = sceerrorreason.ErrorReasonExpressionFailed
 )
 
 // ======================================================================
@@ -834,7 +838,7 @@ func (p *AiLoopPolicy) InitializeDataModel(eng *sce.Engine[AiLoopState, AiLoopEv
 		if err == nil {
 			_ = engine.SetVariable(sessionID, "north_star", result)
 		} else {
-			eng.Raise(sce.NewPlatformError(AiLoopEventErrorExecution, "<data id='north_star'> expr failed to evaluate"))
+			eng.Raise(sce.NewPlatformError(AiLoopEventErrorExecution, sceerrorreason.ErrorReasonExpressionFailed, "<data id='north_star'> expr failed to evaluate"))
 			_ = engine.SetVariable(sessionID, "north_star", nil)
 		}
 	}
@@ -848,7 +852,7 @@ func (p *AiLoopPolicy) InitializeDataModel(eng *sce.Engine[AiLoopState, AiLoopEv
 		if err == nil {
 			_ = engine.SetVariable(sessionID, "milestone", result)
 		} else {
-			eng.Raise(sce.NewPlatformError(AiLoopEventErrorExecution, "<data id='milestone'> expr failed to evaluate"))
+			eng.Raise(sce.NewPlatformError(AiLoopEventErrorExecution, sceerrorreason.ErrorReasonExpressionFailed, "<data id='milestone'> expr failed to evaluate"))
 			_ = engine.SetVariable(sessionID, "milestone", nil)
 		}
 	}
@@ -862,7 +866,7 @@ func (p *AiLoopPolicy) InitializeDataModel(eng *sce.Engine[AiLoopState, AiLoopEv
 		if err == nil {
 			_ = engine.SetVariable(sessionID, "reference", result)
 		} else {
-			eng.Raise(sce.NewPlatformError(AiLoopEventErrorExecution, "<data id='reference'> expr failed to evaluate"))
+			eng.Raise(sce.NewPlatformError(AiLoopEventErrorExecution, sceerrorreason.ErrorReasonExpressionFailed, "<data id='reference'> expr failed to evaluate"))
 			_ = engine.SetVariable(sessionID, "reference", nil)
 		}
 	}
@@ -876,7 +880,7 @@ func (p *AiLoopPolicy) InitializeDataModel(eng *sce.Engine[AiLoopState, AiLoopEv
 		if err == nil {
 			_ = engine.SetVariable(sessionID, "start_prompt", result)
 		} else {
-			eng.Raise(sce.NewPlatformError(AiLoopEventErrorExecution, "<data id='start_prompt'> expr failed to evaluate"))
+			eng.Raise(sce.NewPlatformError(AiLoopEventErrorExecution, sceerrorreason.ErrorReasonExpressionFailed, "<data id='start_prompt'> expr failed to evaluate"))
 			_ = engine.SetVariable(sessionID, "start_prompt", nil)
 		}
 	}
@@ -890,7 +894,7 @@ func (p *AiLoopPolicy) InitializeDataModel(eng *sce.Engine[AiLoopState, AiLoopEv
 		if err == nil {
 			_ = engine.SetVariable(sessionID, "turn_prompt", result)
 		} else {
-			eng.Raise(sce.NewPlatformError(AiLoopEventErrorExecution, "<data id='turn_prompt'> expr failed to evaluate"))
+			eng.Raise(sce.NewPlatformError(AiLoopEventErrorExecution, sceerrorreason.ErrorReasonExpressionFailed, "<data id='turn_prompt'> expr failed to evaluate"))
 			_ = engine.SetVariable(sessionID, "turn_prompt", nil)
 		}
 	}
@@ -904,7 +908,7 @@ func (p *AiLoopPolicy) InitializeDataModel(eng *sce.Engine[AiLoopState, AiLoopEv
 		if err == nil {
 			_ = engine.SetVariable(sessionID, "end_prompt", result)
 		} else {
-			eng.Raise(sce.NewPlatformError(AiLoopEventErrorExecution, "<data id='end_prompt'> expr failed to evaluate"))
+			eng.Raise(sce.NewPlatformError(AiLoopEventErrorExecution, sceerrorreason.ErrorReasonExpressionFailed, "<data id='end_prompt'> expr failed to evaluate"))
 			_ = engine.SetVariable(sessionID, "end_prompt", nil)
 		}
 	}
@@ -918,7 +922,7 @@ func (p *AiLoopPolicy) InitializeDataModel(eng *sce.Engine[AiLoopState, AiLoopEv
 		if err == nil {
 			_ = engine.SetVariable(sessionID, "done_marker", result)
 		} else {
-			eng.Raise(sce.NewPlatformError(AiLoopEventErrorExecution, "<data id='done_marker'> expr failed to evaluate"))
+			eng.Raise(sce.NewPlatformError(AiLoopEventErrorExecution, sceerrorreason.ErrorReasonExpressionFailed, "<data id='done_marker'> expr failed to evaluate"))
 			_ = engine.SetVariable(sessionID, "done_marker", nil)
 		}
 	}
@@ -932,7 +936,7 @@ func (p *AiLoopPolicy) InitializeDataModel(eng *sce.Engine[AiLoopState, AiLoopEv
 		if err == nil {
 			_ = engine.SetVariable(sessionID, "screen_rules", result)
 		} else {
-			eng.Raise(sce.NewPlatformError(AiLoopEventErrorExecution, "<data id='screen_rules'> expr failed to evaluate"))
+			eng.Raise(sce.NewPlatformError(AiLoopEventErrorExecution, sceerrorreason.ErrorReasonExpressionFailed, "<data id='screen_rules'> expr failed to evaluate"))
 			_ = engine.SetVariable(sessionID, "screen_rules", nil)
 		}
 	}
@@ -946,7 +950,7 @@ func (p *AiLoopPolicy) InitializeDataModel(eng *sce.Engine[AiLoopState, AiLoopEv
 		if err == nil {
 			_ = engine.SetVariable(sessionID, "screen_permissions", result)
 		} else {
-			eng.Raise(sce.NewPlatformError(AiLoopEventErrorExecution, "<data id='screen_permissions'> expr failed to evaluate"))
+			eng.Raise(sce.NewPlatformError(AiLoopEventErrorExecution, sceerrorreason.ErrorReasonExpressionFailed, "<data id='screen_permissions'> expr failed to evaluate"))
 			_ = engine.SetVariable(sessionID, "screen_permissions", nil)
 		}
 	}
@@ -960,7 +964,7 @@ func (p *AiLoopPolicy) InitializeDataModel(eng *sce.Engine[AiLoopState, AiLoopEv
 		if err == nil {
 			_ = engine.SetVariable(sessionID, "max_turns", result)
 		} else {
-			eng.Raise(sce.NewPlatformError(AiLoopEventErrorExecution, "<data id='max_turns'> expr failed to evaluate"))
+			eng.Raise(sce.NewPlatformError(AiLoopEventErrorExecution, sceerrorreason.ErrorReasonExpressionFailed, "<data id='max_turns'> expr failed to evaluate"))
 			_ = engine.SetVariable(sessionID, "max_turns", nil)
 		}
 	}
@@ -974,7 +978,7 @@ func (p *AiLoopPolicy) InitializeDataModel(eng *sce.Engine[AiLoopState, AiLoopEv
 		if err == nil {
 			_ = engine.SetVariable(sessionID, "reflect_every", result)
 		} else {
-			eng.Raise(sce.NewPlatformError(AiLoopEventErrorExecution, "<data id='reflect_every'> expr failed to evaluate"))
+			eng.Raise(sce.NewPlatformError(AiLoopEventErrorExecution, sceerrorreason.ErrorReasonExpressionFailed, "<data id='reflect_every'> expr failed to evaluate"))
 			_ = engine.SetVariable(sessionID, "reflect_every", nil)
 		}
 	}
@@ -988,7 +992,7 @@ func (p *AiLoopPolicy) InitializeDataModel(eng *sce.Engine[AiLoopState, AiLoopEv
 		if err == nil {
 			_ = engine.SetVariable(sessionID, "max_restarts", result)
 		} else {
-			eng.Raise(sce.NewPlatformError(AiLoopEventErrorExecution, "<data id='max_restarts'> expr failed to evaluate"))
+			eng.Raise(sce.NewPlatformError(AiLoopEventErrorExecution, sceerrorreason.ErrorReasonExpressionFailed, "<data id='max_restarts'> expr failed to evaluate"))
 			_ = engine.SetVariable(sessionID, "max_restarts", nil)
 		}
 	}
@@ -1002,7 +1006,7 @@ func (p *AiLoopPolicy) InitializeDataModel(eng *sce.Engine[AiLoopState, AiLoopEv
 		if err == nil {
 			_ = engine.SetVariable(sessionID, "turns", result)
 		} else {
-			eng.Raise(sce.NewPlatformError(AiLoopEventErrorExecution, "<data id='turns'> expr failed to evaluate"))
+			eng.Raise(sce.NewPlatformError(AiLoopEventErrorExecution, sceerrorreason.ErrorReasonExpressionFailed, "<data id='turns'> expr failed to evaluate"))
 			_ = engine.SetVariable(sessionID, "turns", nil)
 		}
 	}
@@ -1016,7 +1020,7 @@ func (p *AiLoopPolicy) InitializeDataModel(eng *sce.Engine[AiLoopState, AiLoopEv
 		if err == nil {
 			_ = engine.SetVariable(sessionID, "turns_since_reflect", result)
 		} else {
-			eng.Raise(sce.NewPlatformError(AiLoopEventErrorExecution, "<data id='turns_since_reflect'> expr failed to evaluate"))
+			eng.Raise(sce.NewPlatformError(AiLoopEventErrorExecution, sceerrorreason.ErrorReasonExpressionFailed, "<data id='turns_since_reflect'> expr failed to evaluate"))
 			_ = engine.SetVariable(sessionID, "turns_since_reflect", nil)
 		}
 	}
@@ -1030,7 +1034,7 @@ func (p *AiLoopPolicy) InitializeDataModel(eng *sce.Engine[AiLoopState, AiLoopEv
 		if err == nil {
 			_ = engine.SetVariable(sessionID, "screened", result)
 		} else {
-			eng.Raise(sce.NewPlatformError(AiLoopEventErrorExecution, "<data id='screened'> expr failed to evaluate"))
+			eng.Raise(sce.NewPlatformError(AiLoopEventErrorExecution, sceerrorreason.ErrorReasonExpressionFailed, "<data id='screened'> expr failed to evaluate"))
 			_ = engine.SetVariable(sessionID, "screened", nil)
 		}
 	}
@@ -1044,7 +1048,7 @@ func (p *AiLoopPolicy) InitializeDataModel(eng *sce.Engine[AiLoopState, AiLoopEv
 		if err == nil {
 			_ = engine.SetVariable(sessionID, "restarts", result)
 		} else {
-			eng.Raise(sce.NewPlatformError(AiLoopEventErrorExecution, "<data id='restarts'> expr failed to evaluate"))
+			eng.Raise(sce.NewPlatformError(AiLoopEventErrorExecution, sceerrorreason.ErrorReasonExpressionFailed, "<data id='restarts'> expr failed to evaluate"))
 			_ = engine.SetVariable(sessionID, "restarts", nil)
 		}
 	}
@@ -1076,12 +1080,12 @@ func (p *AiLoopPolicy) evaluateIfCond(guard string, eng *sce.Engine[AiLoopState,
 // evaluateGuardRaising evaluates a cond, raising error.execution when it cannot
 // be evaluated (W3C SCXML 5.9.1); ok is false then, where a bare false could
 // not say so.
-func (p *AiLoopPolicy) evaluateGuardRaising(guard string, eng *sce.Engine[AiLoopState, AiLoopEvent], reason string) (value bool, ok bool) {
+func (p *AiLoopPolicy) evaluateGuardRaising(guard string, eng *sce.Engine[AiLoopState, AiLoopEvent], detail string) (value bool, ok bool) {
 	p.assertScriptSession()
 	engine := p.ScriptEngine
 	result, err := engine.EvaluateExpression(p.SessionID, guard)
 	if err != nil {
-		eng.Raise(sce.NewPlatformError(AiLoopEventErrorExecution, reason))
+		eng.Raise(sce.NewPlatformError(AiLoopEventErrorExecution, sceerrorreason.ErrorReasonExpressionFailed, detail))
 		return false, false
 	}
 	return sce.ScriptToBool(result), true
@@ -1184,7 +1188,7 @@ func (p *AiLoopPolicy) SetParamValueInScriptEngine(name string, value interface{
 // failed is left (docs/adr/0098).
 func (p *AiLoopPolicy) declareHandedValue(eng *sce.Engine[AiLoopState, AiLoopEvent], engine sce.IScriptEngine, sessionID, name string, value interface{}) {
 	if err := engine.SetVariable(sessionID, name, value); err != nil {
-		eng.Raise(sce.NewPlatformError(AiLoopEventErrorExecution, "<data id='"+name+"'> could not hold the value its invoking session handed it"))
+		eng.Raise(sce.NewPlatformError(AiLoopEventErrorExecution, sceerrorreason.ErrorReasonDataInitFailed, "<data id='"+name+"'> could not hold the value its invoking session handed it"))
 		_ = engine.SetVariable(sessionID, name, nil)
 	}
 }
@@ -1657,7 +1661,7 @@ func (p *AiLoopPolicy) ExecuteEntryActions(state AiLoopState, engine *sce.Engine
 		if paramVal, paramErr := se.EvaluateExpression(p.SessionID, `end_prompt`); paramErr == nil {
 			parts = append(parts, sce.EventDataParam{Name: "text", Value: paramVal})
 		} else {
-			engine.Raise(sce.NewPlatformError(AiLoopEventErrorExecution, "<send> <param name='text'> expr failed to evaluate"))
+			engine.Raise(sce.NewPlatformError(AiLoopEventErrorExecution, sceerrorreason.ErrorReasonExpressionFailed, "<send> <param name='text'> expr failed to evaluate"))
 			paramFailed = true
 		}
 		eventDataStr := sce.BuildJSONFromTypedParams(parts)
@@ -1690,7 +1694,7 @@ func (p *AiLoopPolicy) ExecuteEntryActions(state AiLoopState, engine *sce.Engine
 		// act it asked for was performed by nobody. Same event as an
 		// undeclared type, so a wiring mistake cannot read as success.
 		if !hostServed && !engine.HasEventProcessor("x-sce-host") {
-			errEvt := sce.NewPlatformError(AiLoopEventErrorExecution, "<send type='x-sce-host'> names a processor the host declared but never registered")
+			errEvt := sce.NewPlatformError(AiLoopEventErrorExecution, sceerrorreason.ErrorReasonProcessorUnregistered, "<send type='x-sce-host'> names a processor the host declared but never registered")
 			errEvt.Metadata.SendID = "__send_7"
 			engine.Raise(errEvt)
 		}
@@ -1727,7 +1731,7 @@ func (p *AiLoopPolicy) ExecuteEntryActions(state AiLoopState, engine *sce.Engine
 		if paramVal, paramErr := se.EvaluateExpression(p.SessionID, `done_marker`); paramErr == nil {
 			parts = append(parts, sce.EventDataParam{Name: "marker", Value: paramVal})
 		} else {
-			engine.Raise(sce.NewPlatformError(AiLoopEventErrorExecution, "<send> <param name='marker'> expr failed to evaluate"))
+			engine.Raise(sce.NewPlatformError(AiLoopEventErrorExecution, sceerrorreason.ErrorReasonExpressionFailed, "<send> <param name='marker'> expr failed to evaluate"))
 			paramFailed = true
 		}
 		eventDataStr := sce.BuildJSONFromTypedParams(parts)
@@ -1760,7 +1764,7 @@ func (p *AiLoopPolicy) ExecuteEntryActions(state AiLoopState, engine *sce.Engine
 		// act it asked for was performed by nobody. Same event as an
 		// undeclared type, so a wiring mistake cannot read as success.
 		if !hostServed && !engine.HasEventProcessor("x-sce-host") {
-			errEvt := sce.NewPlatformError(AiLoopEventErrorExecution, "<send type='x-sce-host'> names a processor the host declared but never registered")
+			errEvt := sce.NewPlatformError(AiLoopEventErrorExecution, sceerrorreason.ErrorReasonProcessorUnregistered, "<send type='x-sce-host'> names a processor the host declared but never registered")
 			errEvt.Metadata.SendID = "__send_3"
 			engine.Raise(errEvt)
 		}
@@ -1812,7 +1816,7 @@ func (p *AiLoopPolicy) ExecuteEntryActions(state AiLoopState, engine *sce.Engine
 		// act it asked for was performed by nobody. Same event as an
 		// undeclared type, so a wiring mistake cannot read as success.
 		if !hostServed && !engine.HasEventProcessor("x-sce-host") {
-			errEvt := sce.NewPlatformError(AiLoopEventErrorExecution, "<send type='x-sce-host'> names a processor the host declared but never registered")
+			errEvt := sce.NewPlatformError(AiLoopEventErrorExecution, sceerrorreason.ErrorReasonProcessorUnregistered, "<send type='x-sce-host'> names a processor the host declared but never registered")
 			errEvt.Metadata.SendID = "__send_8"
 			engine.Raise(errEvt)
 		}
@@ -1844,7 +1848,7 @@ func (p *AiLoopPolicy) ExecuteEntryActions(state AiLoopState, engine *sce.Engine
 		if paramVal, paramErr := se.EvaluateExpression(p.SessionID, `start_prompt`); paramErr == nil {
 			parts = append(parts, sce.EventDataParam{Name: "text", Value: paramVal})
 		} else {
-			engine.Raise(sce.NewPlatformError(AiLoopEventErrorExecution, "<send> <param name='text'> expr failed to evaluate"))
+			engine.Raise(sce.NewPlatformError(AiLoopEventErrorExecution, sceerrorreason.ErrorReasonExpressionFailed, "<send> <param name='text'> expr failed to evaluate"))
 			paramFailed = true
 		}
 		eventDataStr := sce.BuildJSONFromTypedParams(parts)
@@ -1877,7 +1881,7 @@ func (p *AiLoopPolicy) ExecuteEntryActions(state AiLoopState, engine *sce.Engine
 		// act it asked for was performed by nobody. Same event as an
 		// undeclared type, so a wiring mistake cannot read as success.
 		if !hostServed && !engine.HasEventProcessor("x-sce-host") {
-			errEvt := sce.NewPlatformError(AiLoopEventErrorExecution, "<send type='x-sce-host'> names a processor the host declared but never registered")
+			errEvt := sce.NewPlatformError(AiLoopEventErrorExecution, sceerrorreason.ErrorReasonProcessorUnregistered, "<send type='x-sce-host'> names a processor the host declared but never registered")
 			errEvt.Metadata.SendID = "__send_0"
 			engine.Raise(errEvt)
 		}
@@ -1898,7 +1902,7 @@ func (p *AiLoopPolicy) ExecuteEntryActions(state AiLoopState, engine *sce.Engine
 
 	// W3C SCXML 5.3: <assign location="turns_since_reflect" expr="0">
 	if err := p.assignVariable(`turns_since_reflect`, `0`); err != nil {
-		engine.Raise(sce.NewPlatformError(AiLoopEventErrorExecution, "<assign> to 'turns_since_reflect' failed"))
+		engine.Raise(sce.NewPlatformError(AiLoopEventErrorExecution, sceerrorreason.ErrorReasonAssignmentFailed, "<assign> to 'turns_since_reflect' failed"))
 		return  // W3C SCXML 4.9: the error ends the block
 	}
 
@@ -1936,7 +1940,7 @@ func (p *AiLoopPolicy) ExecuteEntryActions(state AiLoopState, engine *sce.Engine
 		// act it asked for was performed by nobody. Same event as an
 		// undeclared type, so a wiring mistake cannot read as success.
 		if !hostServed && !engine.HasEventProcessor("x-sce-host") {
-			errEvt := sce.NewPlatformError(AiLoopEventErrorExecution, "<send type='x-sce-host'> names a processor the host declared but never registered")
+			errEvt := sce.NewPlatformError(AiLoopEventErrorExecution, sceerrorreason.ErrorReasonProcessorUnregistered, "<send type='x-sce-host'> names a processor the host declared but never registered")
 			errEvt.Metadata.SendID = "__send_5"
 			engine.Raise(errEvt)
 		}
@@ -1963,7 +1967,7 @@ func (p *AiLoopPolicy) ExecuteEntryActions(state AiLoopState, engine *sce.Engine
 
 	// W3C SCXML 5.3: <assign location="restarts" expr="restarts + 1">
 	if err := p.assignVariable(`restarts`, `_scxml_add(restarts, 1)`); err != nil {
-		engine.Raise(sce.NewPlatformError(AiLoopEventErrorExecution, "<assign> to 'restarts' failed"))
+		engine.Raise(sce.NewPlatformError(AiLoopEventErrorExecution, sceerrorreason.ErrorReasonAssignmentFailed, "<assign> to 'restarts' failed"))
 		return  // W3C SCXML 4.9: the error ends the block
 	}
 
@@ -2001,7 +2005,7 @@ func (p *AiLoopPolicy) ExecuteEntryActions(state AiLoopState, engine *sce.Engine
 		// act it asked for was performed by nobody. Same event as an
 		// undeclared type, so a wiring mistake cannot read as success.
 		if !hostServed && !engine.HasEventProcessor("x-sce-host") {
-			errEvt := sce.NewPlatformError(AiLoopEventErrorExecution, "<send type='x-sce-host'> names a processor the host declared but never registered")
+			errEvt := sce.NewPlatformError(AiLoopEventErrorExecution, sceerrorreason.ErrorReasonProcessorUnregistered, "<send type='x-sce-host'> names a processor the host declared but never registered")
 			errEvt.Metadata.SendID = "__send_6"
 			engine.Raise(errEvt)
 		}
@@ -2017,7 +2021,7 @@ func (p *AiLoopPolicy) ExecuteEntryActions(state AiLoopState, engine *sce.Engine
 
 	// W3C SCXML 5.3: <assign location="screened" expr="screened + 1">
 	if err := p.assignVariable(`screened`, `_scxml_add(screened, 1)`); err != nil {
-		engine.Raise(sce.NewPlatformError(AiLoopEventErrorExecution, "<assign> to 'screened' failed"))
+		engine.Raise(sce.NewPlatformError(AiLoopEventErrorExecution, sceerrorreason.ErrorReasonAssignmentFailed, "<assign> to 'screened' failed"))
 		return  // W3C SCXML 4.9: the error ends the block
 	}
 
@@ -2055,7 +2059,7 @@ func (p *AiLoopPolicy) ExecuteEntryActions(state AiLoopState, engine *sce.Engine
 		// act it asked for was performed by nobody. Same event as an
 		// undeclared type, so a wiring mistake cannot read as success.
 		if !hostServed && !engine.HasEventProcessor("x-sce-host") {
-			errEvt := sce.NewPlatformError(AiLoopEventErrorExecution, "<send type='x-sce-host'> names a processor the host declared but never registered")
+			errEvt := sce.NewPlatformError(AiLoopEventErrorExecution, sceerrorreason.ErrorReasonProcessorUnregistered, "<send type='x-sce-host'> names a processor the host declared but never registered")
 			errEvt.Metadata.SendID = "__send_1"
 			engine.Raise(errEvt)
 		}
@@ -2542,7 +2546,7 @@ func (p *AiLoopPolicy) ExecuteTransitionContent(source AiLoopState, transitionIn
 		if paramVal, paramErr := se.EvaluateExpression(p.SessionID, `turn_prompt`); paramErr == nil {
 			parts = append(parts, sce.EventDataParam{Name: "text", Value: paramVal})
 		} else {
-			engine.Raise(sce.NewPlatformError(AiLoopEventErrorExecution, "<send> <param name='text'> expr failed to evaluate"))
+			engine.Raise(sce.NewPlatformError(AiLoopEventErrorExecution, sceerrorreason.ErrorReasonExpressionFailed, "<send> <param name='text'> expr failed to evaluate"))
 			paramFailed = true
 		}
 		eventDataStr := sce.BuildJSONFromTypedParams(parts)
@@ -2575,7 +2579,7 @@ func (p *AiLoopPolicy) ExecuteTransitionContent(source AiLoopState, transitionIn
 		// act it asked for was performed by nobody. Same event as an
 		// undeclared type, so a wiring mistake cannot read as success.
 		if !hostServed && !engine.HasEventProcessor("x-sce-host") {
-			errEvt := sce.NewPlatformError(AiLoopEventErrorExecution, "<send type='x-sce-host'> names a processor the host declared but never registered")
+			errEvt := sce.NewPlatformError(AiLoopEventErrorExecution, sceerrorreason.ErrorReasonProcessorUnregistered, "<send type='x-sce-host'> names a processor the host declared but never registered")
 			errEvt.Metadata.SendID = "__send_2"
 			engine.Raise(errEvt)
 		}
@@ -2598,7 +2602,7 @@ func (p *AiLoopPolicy) ExecuteTransitionContent(source AiLoopState, transitionIn
 
 	// W3C SCXML 5.3: <assign location="turns_since_reflect" expr="turns_since_reflect + 1">
 	if err := p.assignVariable(`turns_since_reflect`, `_scxml_add(turns_since_reflect, 1)`); err != nil {
-		engine.Raise(sce.NewPlatformError(AiLoopEventErrorExecution, "<assign> to 'turns_since_reflect' failed"))
+		engine.Raise(sce.NewPlatformError(AiLoopEventErrorExecution, sceerrorreason.ErrorReasonAssignmentFailed, "<assign> to 'turns_since_reflect' failed"))
 		return  // W3C SCXML 4.9: the error ends the block
 	}
 
@@ -2613,21 +2617,21 @@ func (p *AiLoopPolicy) ExecuteTransitionContent(source AiLoopState, transitionIn
 
 	// W3C SCXML 5.3: <assign location="start_prompt" expr="_event.data.start_prompt">
 	if err := p.assignVariable(`start_prompt`, `_event.data.start_prompt`); err != nil {
-		engine.Raise(sce.NewPlatformError(AiLoopEventErrorExecution, "<assign> to 'start_prompt' failed"))
+		engine.Raise(sce.NewPlatformError(AiLoopEventErrorExecution, sceerrorreason.ErrorReasonAssignmentFailed, "<assign> to 'start_prompt' failed"))
 		return  // W3C SCXML 4.9: the error ends the block
 	}
 
 
 	// W3C SCXML 5.3: <assign location="turn_prompt" expr="_event.data.turn_prompt">
 	if err := p.assignVariable(`turn_prompt`, `_event.data.turn_prompt`); err != nil {
-		engine.Raise(sce.NewPlatformError(AiLoopEventErrorExecution, "<assign> to 'turn_prompt' failed"))
+		engine.Raise(sce.NewPlatformError(AiLoopEventErrorExecution, sceerrorreason.ErrorReasonAssignmentFailed, "<assign> to 'turn_prompt' failed"))
 		return  // W3C SCXML 4.9: the error ends the block
 	}
 
 
 	// W3C SCXML 5.3: <assign location="milestone" expr="_event.data.milestone">
 	if err := p.assignVariable(`milestone`, `_event.data.milestone`); err != nil {
-		engine.Raise(sce.NewPlatformError(AiLoopEventErrorExecution, "<assign> to 'milestone' failed"))
+		engine.Raise(sce.NewPlatformError(AiLoopEventErrorExecution, sceerrorreason.ErrorReasonAssignmentFailed, "<assign> to 'milestone' failed"))
 		return  // W3C SCXML 4.9: the error ends the block
 	}
 
@@ -2655,7 +2659,7 @@ func (p *AiLoopPolicy) ExecuteTransitionContent(source AiLoopState, transitionIn
 		if paramVal, paramErr := se.EvaluateExpression(p.SessionID, `turn_prompt`); paramErr == nil {
 			parts = append(parts, sce.EventDataParam{Name: "text", Value: paramVal})
 		} else {
-			engine.Raise(sce.NewPlatformError(AiLoopEventErrorExecution, "<send> <param name='text'> expr failed to evaluate"))
+			engine.Raise(sce.NewPlatformError(AiLoopEventErrorExecution, sceerrorreason.ErrorReasonExpressionFailed, "<send> <param name='text'> expr failed to evaluate"))
 			paramFailed = true
 		}
 		eventDataStr := sce.BuildJSONFromTypedParams(parts)
@@ -2688,7 +2692,7 @@ func (p *AiLoopPolicy) ExecuteTransitionContent(source AiLoopState, transitionIn
 		// act it asked for was performed by nobody. Same event as an
 		// undeclared type, so a wiring mistake cannot read as success.
 		if !hostServed && !engine.HasEventProcessor("x-sce-host") {
-			errEvt := sce.NewPlatformError(AiLoopEventErrorExecution, "<send type='x-sce-host'> names a processor the host declared but never registered")
+			errEvt := sce.NewPlatformError(AiLoopEventErrorExecution, sceerrorreason.ErrorReasonProcessorUnregistered, "<send type='x-sce-host'> names a processor the host declared but never registered")
 			errEvt.Metadata.SendID = "__send_4"
 			engine.Raise(errEvt)
 		}
@@ -2711,7 +2715,7 @@ func (p *AiLoopPolicy) ExecuteTransitionContent(source AiLoopState, transitionIn
 
 	// W3C SCXML 5.3: <assign location="turns" expr="turns + 1">
 	if err := p.assignVariable(`turns`, `_scxml_add(turns, 1)`); err != nil {
-		engine.Raise(sce.NewPlatformError(AiLoopEventErrorExecution, "<assign> to 'turns' failed"))
+		engine.Raise(sce.NewPlatformError(AiLoopEventErrorExecution, sceerrorreason.ErrorReasonAssignmentFailed, "<assign> to 'turns' failed"))
 		return  // W3C SCXML 4.9: the error ends the block
 	}
 
@@ -2723,7 +2727,7 @@ func (p *AiLoopPolicy) ExecuteTransitionContent(source AiLoopState, transitionIn
 
 	// W3C SCXML 5.3: <assign location="turns" expr="turns + 1">
 	if err := p.assignVariable(`turns`, `_scxml_add(turns, 1)`); err != nil {
-		engine.Raise(sce.NewPlatformError(AiLoopEventErrorExecution, "<assign> to 'turns' failed"))
+		engine.Raise(sce.NewPlatformError(AiLoopEventErrorExecution, sceerrorreason.ErrorReasonAssignmentFailed, "<assign> to 'turns' failed"))
 		return  // W3C SCXML 4.9: the error ends the block
 	}
 
@@ -2738,7 +2742,7 @@ func (p *AiLoopPolicy) ExecuteTransitionContent(source AiLoopState, transitionIn
 
 	// W3C SCXML 5.3: <assign location="turns_since_reflect" expr="turns_since_reflect + 1">
 	if err := p.assignVariable(`turns_since_reflect`, `_scxml_add(turns_since_reflect, 1)`); err != nil {
-		engine.Raise(sce.NewPlatformError(AiLoopEventErrorExecution, "<assign> to 'turns_since_reflect' failed"))
+		engine.Raise(sce.NewPlatformError(AiLoopEventErrorExecution, sceerrorreason.ErrorReasonAssignmentFailed, "<assign> to 'turns_since_reflect' failed"))
 		return  // W3C SCXML 4.9: the error ends the block
 	}
 

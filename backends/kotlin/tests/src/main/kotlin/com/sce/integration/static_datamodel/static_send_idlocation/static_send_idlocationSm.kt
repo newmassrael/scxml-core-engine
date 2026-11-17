@@ -552,11 +552,11 @@ class StaticSendIdlocationStateMachine(
             val sendDelayText: String = try {
                 if (com.sce.forge.runtime.SceChecked.mul(vScale, 2000000000.toUInt()) > 1.toUInt()) "200ms" else "300ms"
             } catch (_: com.sce.forge.runtime.AlgorithmFailure) {
-                raisePlatformError(StaticSendIdlocationEvent.Error.Execution, "<send> delayexpr could not be evaluated", sendIdGenerated)
+                raisePlatformError(StaticSendIdlocationEvent.Error.Execution, ErrorReason.EXPRESSION_FAILED, "<send> delayexpr could not be evaluated", sendIdGenerated)
                 return@send true
             }
             val sendDelayMs = com.sce.runtime.SendHelper.parseDelayMs(sendDelayText) ?: run {
-                raisePlatformError(StaticSendIdlocationEvent.Error.Execution, "<send> delayexpr is not a CSS2 time", sendIdGenerated)
+                raisePlatformError(StaticSendIdlocationEvent.Error.Execution, ErrorReason.SEND_DELAY_INVALID, "<send> delayexpr is not a CSS2 time", sendIdGenerated)
                 return@send true
             }
             val sendData = ""
@@ -595,7 +595,7 @@ class StaticSendIdlocationStateMachine(
     private fun transitionContentOfIdleAt4() {
                 // SCE-MAP: static_send_idlocation.scxml:50 :: idle :: _transition_4
 
-            if (try { vFirstFired = com.sce.forge.runtime.SceChecked.add(vFirstFired, 1.toUInt()); false } catch (_: com.sce.forge.runtime.AlgorithmFailure) { raisePlatformError(StaticSendIdlocationEvent.Error.Execution, "<assign location='first_fired'>: an integer operation overflowed or failed"); true }) {
+            if (try { vFirstFired = com.sce.forge.runtime.SceChecked.add(vFirstFired, 1.toUInt()); false } catch (_: com.sce.forge.runtime.AlgorithmFailure) { raisePlatformError(StaticSendIdlocationEvent.Error.Execution, ErrorReason.EXPRESSION_FAILED, "<assign location='first_fired'>: an integer operation overflowed or failed"); true }) {
                 return
             }
     }
@@ -603,7 +603,7 @@ class StaticSendIdlocationStateMachine(
     private fun transitionContentOfIdleAt5() {
                 // SCE-MAP: static_send_idlocation.scxml:53 :: idle :: _transition_5
 
-            if (try { vSecondFired = com.sce.forge.runtime.SceChecked.add(vSecondFired, 1.toUInt()); false } catch (_: com.sce.forge.runtime.AlgorithmFailure) { raisePlatformError(StaticSendIdlocationEvent.Error.Execution, "<assign location='second_fired'>: an integer operation overflowed or failed"); true }) {
+            if (try { vSecondFired = com.sce.forge.runtime.SceChecked.add(vSecondFired, 1.toUInt()); false } catch (_: com.sce.forge.runtime.AlgorithmFailure) { raisePlatformError(StaticSendIdlocationEvent.Error.Execution, ErrorReason.EXPRESSION_FAILED, "<assign location='second_fired'>: an integer operation overflowed or failed"); true }) {
                 return
             }
     }
@@ -611,7 +611,7 @@ class StaticSendIdlocationStateMachine(
     private fun transitionContentOfIdleAt6() {
                 // SCE-MAP: static_send_idlocation.scxml:56 :: idle :: _transition_6
 
-            if (try { vRefusals = com.sce.forge.runtime.SceChecked.add(vRefusals, 1.toUInt()); false } catch (_: com.sce.forge.runtime.AlgorithmFailure) { raisePlatformError(StaticSendIdlocationEvent.Error.Execution, "<assign location='refusals'>: an integer operation overflowed or failed"); true }) {
+            if (try { vRefusals = com.sce.forge.runtime.SceChecked.add(vRefusals, 1.toUInt()); false } catch (_: com.sce.forge.runtime.AlgorithmFailure) { raisePlatformError(StaticSendIdlocationEvent.Error.Execution, ErrorReason.EXPRESSION_FAILED, "<assign location='refusals'>: an integer operation overflowed or failed"); true }) {
                 return
             }
     }

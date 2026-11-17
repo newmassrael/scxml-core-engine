@@ -227,7 +227,7 @@ class APeerNamedAtRunTimeReachesTheRouterStateMachine(
             try {
                 engine.setVariable(sid, "peer", engine.evaluateExpr(sid, com.sce.runtime.ScriptSource.lua("\"#hmi\"", "'#hmi'")))
             } catch (e: Exception) {
-                raisePlatformError(APeerNamedAtRunTimeReachesTheRouterEvent.Error.Execution, "<data id='peer'> expr failed to evaluate")
+                raisePlatformError(APeerNamedAtRunTimeReachesTheRouterEvent.Error.Execution, ErrorReason.EXPRESSION_FAILED, "<data id='peer'> expr failed to evaluate")
             }
         }
         // §scxml-6.4: 'here' takes a value its invoke handed it, in place of its own
@@ -236,7 +236,7 @@ class APeerNamedAtRunTimeReachesTheRouterStateMachine(
             try {
                 engine.setVariable(sid, "here", engine.evaluateExpr(sid, com.sce.runtime.ScriptSource.lua("\"#_internal\"", "'#_internal'")))
             } catch (e: Exception) {
-                raisePlatformError(APeerNamedAtRunTimeReachesTheRouterEvent.Error.Execution, "<data id='here'> expr failed to evaluate")
+                raisePlatformError(APeerNamedAtRunTimeReachesTheRouterEvent.Error.Execution, ErrorReason.EXPRESSION_FAILED, "<data id='here'> expr failed to evaluate")
             }
         }
         // §scxml-6.4: 'refused' takes a value its invoke handed it, in place of its own
@@ -245,7 +245,7 @@ class APeerNamedAtRunTimeReachesTheRouterStateMachine(
             try {
                 engine.setVariable(sid, "refused", engine.evaluateExpr(sid, com.sce.runtime.ScriptSource.lua("0", "0")))
             } catch (e: Exception) {
-                raisePlatformError(APeerNamedAtRunTimeReachesTheRouterEvent.Error.Execution, "<data id='refused'> expr failed to evaluate")
+                raisePlatformError(APeerNamedAtRunTimeReachesTheRouterEvent.Error.Execution, ErrorReason.EXPRESSION_FAILED, "<data id='refused'> expr failed to evaluate")
             }
         }
         // §scxml-6.4: 'looped' takes a value its invoke handed it, in place of its own
@@ -254,7 +254,7 @@ class APeerNamedAtRunTimeReachesTheRouterStateMachine(
             try {
                 engine.setVariable(sid, "looped", engine.evaluateExpr(sid, com.sce.runtime.ScriptSource.lua("0", "0")))
             } catch (e: Exception) {
-                raisePlatformError(APeerNamedAtRunTimeReachesTheRouterEvent.Error.Execution, "<data id='looped'> expr failed to evaluate")
+                raisePlatformError(APeerNamedAtRunTimeReachesTheRouterEvent.Error.Execution, ErrorReason.EXPRESSION_FAILED, "<data id='looped'> expr failed to evaluate")
             }
         }
     }
@@ -284,14 +284,14 @@ class APeerNamedAtRunTimeReachesTheRouterStateMachine(
 
     // W3C SCXML 5.9.1: a cond that cannot be evaluated raises error.execution;
     // `null` says so, where a bare `false` could not.
-    private fun evaluateGuardRaising(guardExpr: com.sce.runtime.ScriptSource, reason: String): Boolean? {
+    private fun evaluateGuardRaising(guardExpr: com.sce.runtime.ScriptSource, detail: String): Boolean? {
         assertScriptSession()
         val engine = scriptEngine ?: error("scriptEngine is required (codegen invariant: needs_script_engine == true)")
         val sid = scriptSessionId ?: error("scriptSessionId is established by the start (codegen invariant)")
         return try {
             engine.evaluateCondition(sid, guardExpr)
         } catch (e: Exception) {
-            raisePlatformError(APeerNamedAtRunTimeReachesTheRouterEvent.Error.Execution, reason)
+            raisePlatformError(APeerNamedAtRunTimeReachesTheRouterEvent.Error.Execution, ErrorReason.EXPRESSION_FAILED, detail)
             null
         }
     }
@@ -332,7 +332,7 @@ class APeerNamedAtRunTimeReachesTheRouterStateMachine(
         return try {
             engine.evaluateExpr(sid, serialized)?.toString() ?: ""
         } catch (e: Exception) {
-            raisePlatformError(APeerNamedAtRunTimeReachesTheRouterEvent.Error.Execution, "an expression could not be serialised to JSON")
+            raisePlatformError(APeerNamedAtRunTimeReachesTheRouterEvent.Error.Execution, ErrorReason.EXPRESSION_FAILED, "an expression could not be serialised to JSON")
             ""
         }
     }
@@ -353,7 +353,7 @@ class APeerNamedAtRunTimeReachesTheRouterStateMachine(
             engine.assign(sid, location, expr)
             true
         } catch (e: Exception) {
-            raisePlatformError(APeerNamedAtRunTimeReachesTheRouterEvent.Error.Execution, "<assign> failed")
+            raisePlatformError(APeerNamedAtRunTimeReachesTheRouterEvent.Error.Execution, ErrorReason.ASSIGNMENT_FAILED, "<assign> failed")
             false
         }
     }
@@ -369,7 +369,7 @@ class APeerNamedAtRunTimeReachesTheRouterStateMachine(
             engine.executeScript(sid, script)
             true
         } catch (e: Exception) {
-            raisePlatformError(APeerNamedAtRunTimeReachesTheRouterEvent.Error.Execution, "<script> failed to execute")
+            raisePlatformError(APeerNamedAtRunTimeReachesTheRouterEvent.Error.Execution, ErrorReason.SCRIPT_FAILED, "<script> failed to execute")
             false
         }
     }
@@ -489,19 +489,19 @@ class APeerNamedAtRunTimeReachesTheRouterStateMachine(
             val _rt = try {
                 valueToWireString(argEngine.evaluateExpr(argSid, com.sce.runtime.ScriptSource.lua("peer", "peer")))
             } catch (_: Exception) {
-                raisePlatformError(APeerNamedAtRunTimeReachesTheRouterEvent.Error.Execution, "<send> targetexpr could not be evaluated", "__send_0")
+                raisePlatformError(APeerNamedAtRunTimeReachesTheRouterEvent.Error.Execution, ErrorReason.EXPRESSION_FAILED, "<send> targetexpr could not be evaluated", "__send_0")
                 return@send true
             }
             if (com.sce.runtime.SendHelper.isInvalidTarget(_rt)) {
                 // W3C SCXML 6.2 (test194): refused as a static one is.
-                raisePlatformError(APeerNamedAtRunTimeReachesTheRouterEvent.Error.Execution, "<send> targetexpr produced a target this processor cannot address", "__send_0")
+                raisePlatformError(APeerNamedAtRunTimeReachesTheRouterEvent.Error.Execution, ErrorReason.SEND_TARGET_INVALID, "<send> targetexpr produced a target this processor cannot address", "__send_0")
                 return@send true
             }
             if (com.sce.runtime.SendHelper.isUnreachableTarget(_rt)) {
                 // W3C SCXML C.1 (test496): a target that names nothing is not
                 // reachable — error.communication, nothing delivered, and the
                 // error ends the block as any other would (W3C SCXML 4.9).
-                raisePlatformError(APeerNamedAtRunTimeReachesTheRouterEvent.Error.Communication, "<send> targetexpr evaluated to nothing, so there is no target to reach", "__send_0")
+                raisePlatformError(APeerNamedAtRunTimeReachesTheRouterEvent.Error.Communication, ErrorReason.TARGET_UNREACHABLE, "<send> targetexpr evaluated to nothing, so there is no target to reach", "__send_0")
                 return@send true
             }
             val sendData = ""
@@ -532,7 +532,7 @@ class APeerNamedAtRunTimeReachesTheRouterStateMachine(
             // event as an undeclared type, so a wiring mistake cannot read
             // as success.
             if (hostServed == null && !hasEventProcessor("sce:mesh")) {
-                raisePlatformError(APeerNamedAtRunTimeReachesTheRouterEvent.Error.Execution, "<send type='sce:mesh'> names a processor the host declared but never registered", "__send_0")
+                raisePlatformError(APeerNamedAtRunTimeReachesTheRouterEvent.Error.Execution, ErrorReason.PROCESSOR_UNREGISTERED, "<send type='sce:mesh'> names a processor the host declared but never registered", "__send_0")
             }
             } else {
             // W3C SCXML 6.2.4 + C.1: a targetexpr is a target — the value is
@@ -549,11 +549,11 @@ APeerNamedAtRunTimeReachesTheRouterEvent.Ping,
                 APeerNamedAtRunTimeReachesTheRouterEvent.Error.Communication,
             )) {
                 com.sce.runtime.TargetSendOutcome.UNSUPPORTED -> {
-                    raisePlatformError(APeerNamedAtRunTimeReachesTheRouterEvent.Error.Execution, "<send> targetexpr produced a value that is not a target", "__send_0")
+                    raisePlatformError(APeerNamedAtRunTimeReachesTheRouterEvent.Error.Execution, ErrorReason.SEND_TARGET_INVALID, "<send> targetexpr produced a value that is not a target", "__send_0")
                     return@send true
                 }
                 com.sce.runtime.TargetSendOutcome.UNREACHABLE -> {
-                    raisePlatformError(APeerNamedAtRunTimeReachesTheRouterEvent.Error.Communication, "<send> targetexpr names a session this processor cannot reach", "__send_0")
+                    raisePlatformError(APeerNamedAtRunTimeReachesTheRouterEvent.Error.Communication, ErrorReason.TARGET_UNREACHABLE, "<send> targetexpr names a session this processor cannot reach", "__send_0")
                     return@send true
                 }
                 com.sce.runtime.TargetSendOutcome.SENT -> {}
@@ -576,19 +576,19 @@ APeerNamedAtRunTimeReachesTheRouterEvent.Ping,
             val _rt = try {
                 valueToWireString(argEngine.evaluateExpr(argSid, com.sce.runtime.ScriptSource.lua("here", "here")))
             } catch (_: Exception) {
-                raisePlatformError(APeerNamedAtRunTimeReachesTheRouterEvent.Error.Execution, "<send> targetexpr could not be evaluated", "__send_1")
+                raisePlatformError(APeerNamedAtRunTimeReachesTheRouterEvent.Error.Execution, ErrorReason.EXPRESSION_FAILED, "<send> targetexpr could not be evaluated", "__send_1")
                 return@send true
             }
             if (com.sce.runtime.SendHelper.isInvalidTarget(_rt)) {
                 // W3C SCXML 6.2 (test194): refused as a static one is.
-                raisePlatformError(APeerNamedAtRunTimeReachesTheRouterEvent.Error.Execution, "<send> targetexpr produced a target this processor cannot address", "__send_1")
+                raisePlatformError(APeerNamedAtRunTimeReachesTheRouterEvent.Error.Execution, ErrorReason.SEND_TARGET_INVALID, "<send> targetexpr produced a target this processor cannot address", "__send_1")
                 return@send true
             }
             if (com.sce.runtime.SendHelper.isUnreachableTarget(_rt)) {
                 // W3C SCXML C.1 (test496): a target that names nothing is not
                 // reachable — error.communication, nothing delivered, and the
                 // error ends the block as any other would (W3C SCXML 4.9).
-                raisePlatformError(APeerNamedAtRunTimeReachesTheRouterEvent.Error.Communication, "<send> targetexpr evaluated to nothing, so there is no target to reach", "__send_1")
+                raisePlatformError(APeerNamedAtRunTimeReachesTheRouterEvent.Error.Communication, ErrorReason.TARGET_UNREACHABLE, "<send> targetexpr evaluated to nothing, so there is no target to reach", "__send_1")
                 return@send true
             }
             val sendData = ""
@@ -619,7 +619,7 @@ APeerNamedAtRunTimeReachesTheRouterEvent.Ping,
             // event as an undeclared type, so a wiring mistake cannot read
             // as success.
             if (hostServed == null && !hasEventProcessor("sce:mesh")) {
-                raisePlatformError(APeerNamedAtRunTimeReachesTheRouterEvent.Error.Execution, "<send type='sce:mesh'> names a processor the host declared but never registered", "__send_1")
+                raisePlatformError(APeerNamedAtRunTimeReachesTheRouterEvent.Error.Execution, ErrorReason.PROCESSOR_UNREGISTERED, "<send type='sce:mesh'> names a processor the host declared but never registered", "__send_1")
             }
             } else {
             // W3C SCXML 6.2.4 + C.1: a targetexpr is a target — the value is
@@ -636,11 +636,11 @@ APeerNamedAtRunTimeReachesTheRouterEvent.Loopback,
                 APeerNamedAtRunTimeReachesTheRouterEvent.Error.Communication,
             )) {
                 com.sce.runtime.TargetSendOutcome.UNSUPPORTED -> {
-                    raisePlatformError(APeerNamedAtRunTimeReachesTheRouterEvent.Error.Execution, "<send> targetexpr produced a value that is not a target", "__send_1")
+                    raisePlatformError(APeerNamedAtRunTimeReachesTheRouterEvent.Error.Execution, ErrorReason.SEND_TARGET_INVALID, "<send> targetexpr produced a value that is not a target", "__send_1")
                     return@send true
                 }
                 com.sce.runtime.TargetSendOutcome.UNREACHABLE -> {
-                    raisePlatformError(APeerNamedAtRunTimeReachesTheRouterEvent.Error.Communication, "<send> targetexpr names a session this processor cannot reach", "__send_1")
+                    raisePlatformError(APeerNamedAtRunTimeReachesTheRouterEvent.Error.Communication, ErrorReason.TARGET_UNREACHABLE, "<send> targetexpr names a session this processor cannot reach", "__send_1")
                     return@send true
                 }
                 com.sce.runtime.TargetSendOutcome.SENT -> {}

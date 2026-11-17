@@ -417,7 +417,7 @@ class StaticInvokeParamsStateMachine(
                 // W3C SCXML 3.8: Onentry block 1/1
                 run {
 
-            if (try { vBase = com.sce.forge.runtime.SceChecked.add(vBase, 3.toUInt()); false } catch (_: com.sce.forge.runtime.AlgorithmFailure) { raisePlatformError(StaticInvokeParamsEvent.Error.Execution, "<assign location='base'>: an integer operation overflowed or failed"); true }) {
+            if (try { vBase = com.sce.forge.runtime.SceChecked.add(vBase, 3.toUInt()); false } catch (_: com.sce.forge.runtime.AlgorithmFailure) { raisePlatformError(StaticInvokeParamsEvent.Error.Execution, ErrorReason.EXPRESSION_FAILED, "<assign location='base'>: an integer operation overflowed or failed"); true }) {
                 return@run
             }
                 }
@@ -609,7 +609,7 @@ class StaticInvokeParamsStateMachine(
     private fun transitionContentOfPlainAt0() {
                 // SCE-MAP: static_invoke_params.scxml:80 :: plain :: _transition_0
 
-            if (try { vCompleted = com.sce.forge.runtime.SceChecked.add(vCompleted, 100.toUInt()); false } catch (_: com.sce.forge.runtime.AlgorithmFailure) { raisePlatformError(StaticInvokeParamsEvent.Error.Execution, "<assign location='completed'>: an integer operation overflowed or failed"); true }) {
+            if (try { vCompleted = com.sce.forge.runtime.SceChecked.add(vCompleted, 100.toUInt()); false } catch (_: com.sce.forge.runtime.AlgorithmFailure) { raisePlatformError(StaticInvokeParamsEvent.Error.Execution, ErrorReason.EXPRESSION_FAILED, "<assign location='completed'>: an integer operation overflowed or failed"); true }) {
                 return
             }
     }
@@ -617,7 +617,7 @@ class StaticInvokeParamsStateMachine(
     private fun transitionContentOfPlainAt1() {
                 // SCE-MAP: static_invoke_params.scxml:98 :: plain :: _transition_1
 
-            if (try { vBase = com.sce.forge.runtime.SceChecked.add(vBase, 1.toUInt()); false } catch (_: com.sce.forge.runtime.AlgorithmFailure) { raisePlatformError(StaticInvokeParamsEvent.Error.Execution, "<assign location='base'>: an integer operation overflowed or failed"); true }) {
+            if (try { vBase = com.sce.forge.runtime.SceChecked.add(vBase, 1.toUInt()); false } catch (_: com.sce.forge.runtime.AlgorithmFailure) { raisePlatformError(StaticInvokeParamsEvent.Error.Execution, ErrorReason.EXPRESSION_FAILED, "<assign location='base'>: an integer operation overflowed or failed"); true }) {
                 return
             }
     }
@@ -625,7 +625,7 @@ class StaticInvokeParamsStateMachine(
     private fun transitionContentOfPlainAt2() {
                 // SCE-MAP: static_invoke_params.scxml:101 :: plain :: _transition_2
 
-            if (try { vCompleted = com.sce.forge.runtime.SceChecked.add(vCompleted, 10.toUInt()); false } catch (_: com.sce.forge.runtime.AlgorithmFailure) { raisePlatformError(StaticInvokeParamsEvent.Error.Execution, "<assign location='completed'>: an integer operation overflowed or failed"); true }) {
+            if (try { vCompleted = com.sce.forge.runtime.SceChecked.add(vCompleted, 10.toUInt()); false } catch (_: com.sce.forge.runtime.AlgorithmFailure) { raisePlatformError(StaticInvokeParamsEvent.Error.Execution, ErrorReason.EXPRESSION_FAILED, "<assign location='completed'>: an integer operation overflowed or failed"); true }) {
                 return
             }
     }
@@ -646,7 +646,7 @@ class StaticInvokeParamsStateMachine(
     private fun transitionContentOfWorkingAt0() {
                 // SCE-MAP: static_invoke_params.scxml:60 :: working :: _transition_0
 
-            if (try { vCompleted = com.sce.forge.runtime.SceChecked.add(vCompleted, 1.toUInt()); false } catch (_: com.sce.forge.runtime.AlgorithmFailure) { raisePlatformError(StaticInvokeParamsEvent.Error.Execution, "<assign location='completed'>: an integer operation overflowed or failed"); true }) {
+            if (try { vCompleted = com.sce.forge.runtime.SceChecked.add(vCompleted, 1.toUInt()); false } catch (_: com.sce.forge.runtime.AlgorithmFailure) { raisePlatformError(StaticInvokeParamsEvent.Error.Execution, ErrorReason.EXPRESSION_FAILED, "<assign location='completed'>: an integer operation overflowed or failed"); true }) {
                 return
             }
     }

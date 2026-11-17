@@ -31,6 +31,7 @@ import (
 	"time"
 
 	sce "github.com/newmassrael/sce-go-runtime"
+	sceerrorreason "github.com/newmassrael/sce-go-runtime/generated/error_reason"
 )
 
 // Ensure imports are used
@@ -39,6 +40,9 @@ var (
 	_ = filepath.Join
 	_ = strings.HasPrefix
 	_ = time.Duration(0)
+	// Why an error.* event is raised (sce:std/engine/error_reason,
+	// docs/adr/0106 #111); a machine that raises none still imports it.
+	_ = sceerrorreason.ErrorReasonExpressionFailed
 )
 
 // ======================================================================
@@ -363,7 +367,7 @@ func (p *InvokeParamErrorStartsTheChildPolicy) InitializeDataModel(eng *sce.Engi
 		if err == nil {
 			_ = engine.SetVariable(sessionID, "nothing", result)
 		} else {
-			eng.Raise(sce.NewPlatformError(InvokeParamErrorStartsTheChildEventErrorExecution, "<data id='nothing'> expr failed to evaluate"))
+			eng.Raise(sce.NewPlatformError(InvokeParamErrorStartsTheChildEventErrorExecution, sceerrorreason.ErrorReasonExpressionFailed, "<data id='nothing'> expr failed to evaluate"))
 			_ = engine.SetVariable(sessionID, "nothing", nil)
 		}
 	}
@@ -377,7 +381,7 @@ func (p *InvokeParamErrorStartsTheChildPolicy) InitializeDataModel(eng *sce.Engi
 		if err == nil {
 			_ = engine.SetVariable(sessionID, "sawParamError", result)
 		} else {
-			eng.Raise(sce.NewPlatformError(InvokeParamErrorStartsTheChildEventErrorExecution, "<data id='sawParamError'> expr failed to evaluate"))
+			eng.Raise(sce.NewPlatformError(InvokeParamErrorStartsTheChildEventErrorExecution, sceerrorreason.ErrorReasonExpressionFailed, "<data id='sawParamError'> expr failed to evaluate"))
 			_ = engine.SetVariable(sessionID, "sawParamError", nil)
 		}
 	}
@@ -409,12 +413,12 @@ func (p *InvokeParamErrorStartsTheChildPolicy) evaluateIfCond(guard string, eng 
 // evaluateGuardRaising evaluates a cond, raising error.execution when it cannot
 // be evaluated (W3C SCXML 5.9.1); ok is false then, where a bare false could
 // not say so.
-func (p *InvokeParamErrorStartsTheChildPolicy) evaluateGuardRaising(guard string, eng *sce.Engine[InvokeParamErrorStartsTheChildState, InvokeParamErrorStartsTheChildEvent], reason string) (value bool, ok bool) {
+func (p *InvokeParamErrorStartsTheChildPolicy) evaluateGuardRaising(guard string, eng *sce.Engine[InvokeParamErrorStartsTheChildState, InvokeParamErrorStartsTheChildEvent], detail string) (value bool, ok bool) {
 	p.assertScriptSession()
 	engine := p.ScriptEngine
 	result, err := engine.EvaluateExpression(p.SessionID, guard)
 	if err != nil {
-		eng.Raise(sce.NewPlatformError(InvokeParamErrorStartsTheChildEventErrorExecution, reason))
+		eng.Raise(sce.NewPlatformError(InvokeParamErrorStartsTheChildEventErrorExecution, sceerrorreason.ErrorReasonExpressionFailed, detail))
 		return false, false
 	}
 	return sce.ScriptToBool(result), true
@@ -517,7 +521,7 @@ func (p *InvokeParamErrorStartsTheChildPolicy) SetParamValueInScriptEngine(name 
 // failed is left (docs/adr/0098).
 func (p *InvokeParamErrorStartsTheChildPolicy) declareHandedValue(eng *sce.Engine[InvokeParamErrorStartsTheChildState, InvokeParamErrorStartsTheChildEvent], engine sce.IScriptEngine, sessionID, name string, value interface{}) {
 	if err := engine.SetVariable(sessionID, name, value); err != nil {
-		eng.Raise(sce.NewPlatformError(InvokeParamErrorStartsTheChildEventErrorExecution, "<data id='"+name+"'> could not hold the value its invoking session handed it"))
+		eng.Raise(sce.NewPlatformError(InvokeParamErrorStartsTheChildEventErrorExecution, sceerrorreason.ErrorReasonDataInitFailed, "<data id='"+name+"'> could not hold the value its invoking session handed it"))
 		_ = engine.SetVariable(sessionID, name, nil)
 	}
 }
@@ -577,7 +581,7 @@ func (p *InvokeParamErrorStartsTheChildPolicy) ExecutePendingInvokes(engine *sce
 					// "terminate the processing of the element" is not what a
 					// failing `<param>` costs: the child still starts, one pair
 					// short.
-					engine.Raise(sce.NewPlatformError(InvokeParamErrorStartsTheChildEventErrorExecution, "<invoke> <param name='kept'> could not be read"))
+					engine.Raise(sce.NewPlatformError(InvokeParamErrorStartsTheChildEventErrorExecution, sceerrorreason.ErrorReasonLocationInvalid, "<invoke> <param name='kept'> could not be read"))
 				}
 				if val, err := se.EvaluateExpression(p.SessionID, `nothing.deep`); err == nil {
 					// §scxml-6.4.3: the VALUE of the param element becomes the
@@ -591,7 +595,7 @@ func (p *InvokeParamErrorStartsTheChildPolicy) ExecutePendingInvokes(engine *sce
 					// "terminate the processing of the element" is not what a
 					// failing `<param>` costs: the child still starts, one pair
 					// short.
-					engine.Raise(sce.NewPlatformError(InvokeParamErrorStartsTheChildEventErrorExecution, "<invoke> <param name='broken'> could not be read"))
+					engine.Raise(sce.NewPlatformError(InvokeParamErrorStartsTheChildEventErrorExecution, sceerrorreason.ErrorReasonLocationInvalid, "<invoke> <param name='broken'> could not be read"))
 				}
 			}
 
@@ -627,7 +631,7 @@ func (p *InvokeParamErrorStartsTheChildPolicy) ExecutePendingInvokes(engine *sce
 			if refused := childEngine.Initialize(); refused != nil {
 				childEngine.DetachMesh()
 				delete(p.activeInvokes, "inv_probe")
-				engine.Raise(sce.NewPlatformError(InvokeParamErrorStartsTheChildEventErrorExecution, sce.ChildStartRefusal("inv_probe", refused)))
+				engine.Raise(sce.NewPlatformError(InvokeParamErrorStartsTheChildEventErrorExecution, sceerrorreason.ErrorReasonInvokeChildInitFailed, sce.ChildStartRefusal("inv_probe", refused)))
 				continue
 			}
 
@@ -1273,7 +1277,7 @@ func (p *InvokeParamErrorStartsTheChildPolicy) ExecuteTransitionContent(source I
 
 	// W3C SCXML 5.3: <assign location="sawParamError" expr="1">
 	if err := p.assignVariable(`sawParamError`, `1`); err != nil {
-		engine.Raise(sce.NewPlatformError(InvokeParamErrorStartsTheChildEventErrorExecution, "<assign> to 'sawParamError' failed"))
+		engine.Raise(sce.NewPlatformError(InvokeParamErrorStartsTheChildEventErrorExecution, sceerrorreason.ErrorReasonAssignmentFailed, "<assign> to 'sawParamError' failed"))
 		return  // W3C SCXML 4.9: the error ends the block
 	}
 

@@ -31,6 +31,7 @@ import (
 	"time"
 
 	sce "github.com/newmassrael/sce-go-runtime"
+	sceerrorreason "github.com/newmassrael/sce-go-runtime/generated/error_reason"
 )
 
 // Ensure imports are used
@@ -39,6 +40,9 @@ var (
 	_ = filepath.Join
 	_ = strings.HasPrefix
 	_ = time.Duration(0)
+	// Why an error.* event is raised (sce:std/engine/error_reason,
+	// docs/adr/0106 #111); a machine that raises none still imports it.
+	_ = sceerrorreason.ErrorReasonExpressionFailed
 )
 
 // ======================================================================
@@ -388,7 +392,7 @@ func (p *AChildTakesAHandedValueInPlaceOfItsDataSceSynthInvokeByParamPolicy) Ini
 		if err == nil {
 			_ = engine.SetVariable(sessionID, "effects", result)
 		} else {
-			eng.Raise(sce.NewPlatformError(AChildTakesAHandedValueInPlaceOfItsDataSceSynthInvokeByParamEventErrorExecution, "<data id='effects'> expr failed to evaluate"))
+			eng.Raise(sce.NewPlatformError(AChildTakesAHandedValueInPlaceOfItsDataSceSynthInvokeByParamEventErrorExecution, sceerrorreason.ErrorReasonExpressionFailed, "<data id='effects'> expr failed to evaluate"))
 			_ = engine.SetVariable(sessionID, "effects", nil)
 		}
 	}
@@ -402,7 +406,7 @@ func (p *AChildTakesAHandedValueInPlaceOfItsDataSceSynthInvokeByParamPolicy) Ini
 		if err == nil {
 			_ = engine.SetVariable(sessionID, "raising", result)
 		} else {
-			eng.Raise(sce.NewPlatformError(AChildTakesAHandedValueInPlaceOfItsDataSceSynthInvokeByParamEventErrorExecution, "<data id='raising'> expr failed to evaluate"))
+			eng.Raise(sce.NewPlatformError(AChildTakesAHandedValueInPlaceOfItsDataSceSynthInvokeByParamEventErrorExecution, sceerrorreason.ErrorReasonExpressionFailed, "<data id='raising'> expr failed to evaluate"))
 			_ = engine.SetVariable(sessionID, "raising", nil)
 		}
 	}
@@ -416,7 +420,7 @@ func (p *AChildTakesAHandedValueInPlaceOfItsDataSceSynthInvokeByParamPolicy) Ini
 		if err == nil {
 			_ = engine.SetVariable(sessionID, "effectful", result)
 		} else {
-			eng.Raise(sce.NewPlatformError(AChildTakesAHandedValueInPlaceOfItsDataSceSynthInvokeByParamEventErrorExecution, "<data id='effectful'> expr failed to evaluate"))
+			eng.Raise(sce.NewPlatformError(AChildTakesAHandedValueInPlaceOfItsDataSceSynthInvokeByParamEventErrorExecution, sceerrorreason.ErrorReasonExpressionFailed, "<data id='effectful'> expr failed to evaluate"))
 			_ = engine.SetVariable(sessionID, "effectful", nil)
 		}
 	}
@@ -430,7 +434,7 @@ func (p *AChildTakesAHandedValueInPlaceOfItsDataSceSynthInvokeByParamPolicy) Ini
 		if err == nil {
 			_ = engine.SetVariable(sessionID, "refusable", result)
 		} else {
-			eng.Raise(sce.NewPlatformError(AChildTakesAHandedValueInPlaceOfItsDataSceSynthInvokeByParamEventErrorExecution, "<data id='refusable'> expr failed to evaluate"))
+			eng.Raise(sce.NewPlatformError(AChildTakesAHandedValueInPlaceOfItsDataSceSynthInvokeByParamEventErrorExecution, sceerrorreason.ErrorReasonExpressionFailed, "<data id='refusable'> expr failed to evaluate"))
 			_ = engine.SetVariable(sessionID, "refusable", nil)
 		}
 	}
@@ -444,7 +448,7 @@ func (p *AChildTakesAHandedValueInPlaceOfItsDataSceSynthInvokeByParamPolicy) Ini
 		if err == nil {
 			_ = engine.SetVariable(sessionID, "payload", result)
 		} else {
-			eng.Raise(sce.NewPlatformError(AChildTakesAHandedValueInPlaceOfItsDataSceSynthInvokeByParamEventErrorExecution, "<data id='payload'> expr failed to evaluate"))
+			eng.Raise(sce.NewPlatformError(AChildTakesAHandedValueInPlaceOfItsDataSceSynthInvokeByParamEventErrorExecution, sceerrorreason.ErrorReasonExpressionFailed, "<data id='payload'> expr failed to evaluate"))
 			_ = engine.SetVariable(sessionID, "payload", nil)
 		}
 	}
@@ -458,7 +462,7 @@ func (p *AChildTakesAHandedValueInPlaceOfItsDataSceSynthInvokeByParamPolicy) Ini
 		if err == nil {
 			_ = engine.SetVariable(sessionID, "script_saw", result)
 		} else {
-			eng.Raise(sce.NewPlatformError(AChildTakesAHandedValueInPlaceOfItsDataSceSynthInvokeByParamEventErrorExecution, "<data id='script_saw'> expr failed to evaluate"))
+			eng.Raise(sce.NewPlatformError(AChildTakesAHandedValueInPlaceOfItsDataSceSynthInvokeByParamEventErrorExecution, sceerrorreason.ErrorReasonExpressionFailed, "<data id='script_saw'> expr failed to evaluate"))
 			_ = engine.SetVariable(sessionID, "script_saw", nil)
 		}
 	}
@@ -472,7 +476,7 @@ func (p *AChildTakesAHandedValueInPlaceOfItsDataSceSynthInvokeByParamPolicy) Ini
 		if err == nil {
 			_ = engine.SetVariable(sessionID, "entry_saw", result)
 		} else {
-			eng.Raise(sce.NewPlatformError(AChildTakesAHandedValueInPlaceOfItsDataSceSynthInvokeByParamEventErrorExecution, "<data id='entry_saw'> expr failed to evaluate"))
+			eng.Raise(sce.NewPlatformError(AChildTakesAHandedValueInPlaceOfItsDataSceSynthInvokeByParamEventErrorExecution, sceerrorreason.ErrorReasonExpressionFailed, "<data id='entry_saw'> expr failed to evaluate"))
 			_ = engine.SetVariable(sessionID, "entry_saw", nil)
 		}
 	}
@@ -486,7 +490,7 @@ func (p *AChildTakesAHandedValueInPlaceOfItsDataSceSynthInvokeByParamPolicy) Ini
 		if err == nil {
 			_ = engine.SetVariable(sessionID, "errors", result)
 		} else {
-			eng.Raise(sce.NewPlatformError(AChildTakesAHandedValueInPlaceOfItsDataSceSynthInvokeByParamEventErrorExecution, "<data id='errors'> expr failed to evaluate"))
+			eng.Raise(sce.NewPlatformError(AChildTakesAHandedValueInPlaceOfItsDataSceSynthInvokeByParamEventErrorExecution, sceerrorreason.ErrorReasonExpressionFailed, "<data id='errors'> expr failed to evaluate"))
 			_ = engine.SetVariable(sessionID, "errors", nil)
 		}
 	}
@@ -497,7 +501,7 @@ func (p *AChildTakesAHandedValueInPlaceOfItsDataSceSynthInvokeByParamPolicy) Ini
 		if err == nil {
 			_ = engine.SetVariable(sessionID, "kept", result)
 		} else {
-			eng.Raise(sce.NewPlatformError(AChildTakesAHandedValueInPlaceOfItsDataSceSynthInvokeByParamEventErrorExecution, "<data id='kept'> expr failed to evaluate"))
+			eng.Raise(sce.NewPlatformError(AChildTakesAHandedValueInPlaceOfItsDataSceSynthInvokeByParamEventErrorExecution, sceerrorreason.ErrorReasonExpressionFailed, "<data id='kept'> expr failed to evaluate"))
 			_ = engine.SetVariable(sessionID, "kept", nil)
 		}
 	}
@@ -505,7 +509,7 @@ func (p *AChildTakesAHandedValueInPlaceOfItsDataSceSynthInvokeByParamPolicy) Ini
 
 	// W3C SCXML 5.8: Execute global scripts at document load time
 	if err := engine.ExecuteScript(sessionID, `script_saw = _scxml_add((_scxml_tostring(_scxml_add((_scxml_tostring(raising) .. "|"), effectful)) .. "|"), payload.name)`); err != nil {
-		eng.Raise(sce.NewPlatformError(AChildTakesAHandedValueInPlaceOfItsDataSceSynthInvokeByParamEventErrorExecution, "a top-level <script> failed to execute"))
+		eng.Raise(sce.NewPlatformError(AChildTakesAHandedValueInPlaceOfItsDataSceSynthInvokeByParamEventErrorExecution, sceerrorreason.ErrorReasonScriptFailed, "a top-level <script> failed to execute"))
 	}
 	return nil
 }
@@ -533,12 +537,12 @@ func (p *AChildTakesAHandedValueInPlaceOfItsDataSceSynthInvokeByParamPolicy) eva
 // evaluateGuardRaising evaluates a cond, raising error.execution when it cannot
 // be evaluated (W3C SCXML 5.9.1); ok is false then, where a bare false could
 // not say so.
-func (p *AChildTakesAHandedValueInPlaceOfItsDataSceSynthInvokeByParamPolicy) evaluateGuardRaising(guard string, eng *sce.Engine[AChildTakesAHandedValueInPlaceOfItsDataSceSynthInvokeByParamState, AChildTakesAHandedValueInPlaceOfItsDataSceSynthInvokeByParamEvent], reason string) (value bool, ok bool) {
+func (p *AChildTakesAHandedValueInPlaceOfItsDataSceSynthInvokeByParamPolicy) evaluateGuardRaising(guard string, eng *sce.Engine[AChildTakesAHandedValueInPlaceOfItsDataSceSynthInvokeByParamState, AChildTakesAHandedValueInPlaceOfItsDataSceSynthInvokeByParamEvent], detail string) (value bool, ok bool) {
 	p.assertScriptSession()
 	engine := p.ScriptEngine
 	result, err := engine.EvaluateExpression(p.SessionID, guard)
 	if err != nil {
-		eng.Raise(sce.NewPlatformError(AChildTakesAHandedValueInPlaceOfItsDataSceSynthInvokeByParamEventErrorExecution, reason))
+		eng.Raise(sce.NewPlatformError(AChildTakesAHandedValueInPlaceOfItsDataSceSynthInvokeByParamEventErrorExecution, sceerrorreason.ErrorReasonExpressionFailed, detail))
 		return false, false
 	}
 	return sce.ScriptToBool(result), true
@@ -641,7 +645,7 @@ func (p *AChildTakesAHandedValueInPlaceOfItsDataSceSynthInvokeByParamPolicy) Set
 // failed is left (docs/adr/0098).
 func (p *AChildTakesAHandedValueInPlaceOfItsDataSceSynthInvokeByParamPolicy) declareHandedValue(eng *sce.Engine[AChildTakesAHandedValueInPlaceOfItsDataSceSynthInvokeByParamState, AChildTakesAHandedValueInPlaceOfItsDataSceSynthInvokeByParamEvent], engine sce.IScriptEngine, sessionID, name string, value interface{}) {
 	if err := engine.SetVariable(sessionID, name, value); err != nil {
-		eng.Raise(sce.NewPlatformError(AChildTakesAHandedValueInPlaceOfItsDataSceSynthInvokeByParamEventErrorExecution, "<data id='"+name+"'> could not hold the value its invoking session handed it"))
+		eng.Raise(sce.NewPlatformError(AChildTakesAHandedValueInPlaceOfItsDataSceSynthInvokeByParamEventErrorExecution, sceerrorreason.ErrorReasonDataInitFailed, "<data id='"+name+"'> could not hold the value its invoking session handed it"))
 		_ = engine.SetVariable(sessionID, name, nil)
 	}
 }
@@ -897,7 +901,7 @@ func (p *AChildTakesAHandedValueInPlaceOfItsDataSceSynthInvokeByParamPolicy) Exe
 
 	// W3C SCXML 5.3: <assign location="entry_saw" expr="raising + '|' + effectful + '|' + payload.inner.label">
 	if err := p.assignVariable(`entry_saw`, `_scxml_add((_scxml_tostring(_scxml_add((_scxml_tostring(raising) .. "|"), effectful)) .. "|"), payload.inner.label)`); err != nil {
-		engine.Raise(sce.NewPlatformError(AChildTakesAHandedValueInPlaceOfItsDataSceSynthInvokeByParamEventErrorExecution, "<assign> to 'entry_saw' failed"))
+		engine.Raise(sce.NewPlatformError(AChildTakesAHandedValueInPlaceOfItsDataSceSynthInvokeByParamEventErrorExecution, sceerrorreason.ErrorReasonAssignmentFailed, "<assign> to 'entry_saw' failed"))
 		return  // W3C SCXML 4.9: the error ends the block
 	}
 
@@ -1008,7 +1012,7 @@ func (p *AChildTakesAHandedValueInPlaceOfItsDataSceSynthInvokeByParamPolicy) Exe
 
 	// W3C SCXML 5.3: <assign location="errors" expr="errors + 1">
 	if err := p.assignVariable(`errors`, `_scxml_add(errors, 1)`); err != nil {
-		engine.Raise(sce.NewPlatformError(AChildTakesAHandedValueInPlaceOfItsDataSceSynthInvokeByParamEventErrorExecution, "<assign> to 'errors' failed"))
+		engine.Raise(sce.NewPlatformError(AChildTakesAHandedValueInPlaceOfItsDataSceSynthInvokeByParamEventErrorExecution, sceerrorreason.ErrorReasonAssignmentFailed, "<assign> to 'errors' failed"))
 		return  // W3C SCXML 4.9: the error ends the block
 	}
 
@@ -1036,61 +1040,61 @@ func (p *AChildTakesAHandedValueInPlaceOfItsDataSceSynthInvokeByParamPolicy) Exe
 		if paramVal, paramErr := se.EvaluateExpression(p.SessionID, `raising`); paramErr == nil {
 			parts = append(parts, sce.EventDataParam{Name: "raising", Value: paramVal})
 		} else {
-			engine.Raise(sce.NewPlatformError(AChildTakesAHandedValueInPlaceOfItsDataSceSynthInvokeByParamEventErrorExecution, "<send> <param name='raising'> expr failed to evaluate"))
+			engine.Raise(sce.NewPlatformError(AChildTakesAHandedValueInPlaceOfItsDataSceSynthInvokeByParamEventErrorExecution, sceerrorreason.ErrorReasonExpressionFailed, "<send> <param name='raising'> expr failed to evaluate"))
 			paramFailed = true
 		}
 		if paramVal, paramErr := se.EvaluateExpression(p.SessionID, `effectful`); paramErr == nil {
 			parts = append(parts, sce.EventDataParam{Name: "effectful", Value: paramVal})
 		} else {
-			engine.Raise(sce.NewPlatformError(AChildTakesAHandedValueInPlaceOfItsDataSceSynthInvokeByParamEventErrorExecution, "<send> <param name='effectful'> expr failed to evaluate"))
+			engine.Raise(sce.NewPlatformError(AChildTakesAHandedValueInPlaceOfItsDataSceSynthInvokeByParamEventErrorExecution, sceerrorreason.ErrorReasonExpressionFailed, "<send> <param name='effectful'> expr failed to evaluate"))
 			paramFailed = true
 		}
 		if paramVal, paramErr := se.EvaluateExpression(p.SessionID, `#effects`); paramErr == nil {
 			parts = append(parts, sce.EventDataParam{Name: "effects", Value: paramVal})
 		} else {
-			engine.Raise(sce.NewPlatformError(AChildTakesAHandedValueInPlaceOfItsDataSceSynthInvokeByParamEventErrorExecution, "<send> <param name='effects'> expr failed to evaluate"))
+			engine.Raise(sce.NewPlatformError(AChildTakesAHandedValueInPlaceOfItsDataSceSynthInvokeByParamEventErrorExecution, sceerrorreason.ErrorReasonExpressionFailed, "<send> <param name='effects'> expr failed to evaluate"))
 			paramFailed = true
 		}
 		if paramVal, paramErr := se.EvaluateExpression(p.SessionID, `(function() if (_typeof(refusable) == "undefined") then return "unbound" end return refusable end)()`); paramErr == nil {
 			parts = append(parts, sce.EventDataParam{Name: "refusable", Value: paramVal})
 		} else {
-			engine.Raise(sce.NewPlatformError(AChildTakesAHandedValueInPlaceOfItsDataSceSynthInvokeByParamEventErrorExecution, "<send> <param name='refusable'> expr failed to evaluate"))
+			engine.Raise(sce.NewPlatformError(AChildTakesAHandedValueInPlaceOfItsDataSceSynthInvokeByParamEventErrorExecution, sceerrorreason.ErrorReasonExpressionFailed, "<send> <param name='refusable'> expr failed to evaluate"))
 			paramFailed = true
 		}
 		if paramVal, paramErr := se.EvaluateExpression(p.SessionID, `kept`); paramErr == nil {
 			parts = append(parts, sce.EventDataParam{Name: "kept", Value: paramVal})
 		} else {
-			engine.Raise(sce.NewPlatformError(AChildTakesAHandedValueInPlaceOfItsDataSceSynthInvokeByParamEventErrorExecution, "<send> <param name='kept'> expr failed to evaluate"))
+			engine.Raise(sce.NewPlatformError(AChildTakesAHandedValueInPlaceOfItsDataSceSynthInvokeByParamEventErrorExecution, sceerrorreason.ErrorReasonExpressionFailed, "<send> <param name='kept'> expr failed to evaluate"))
 			paramFailed = true
 		}
 		if paramVal, paramErr := se.EvaluateExpression(p.SessionID, `_typeof(stranger)`); paramErr == nil {
 			parts = append(parts, sce.EventDataParam{Name: "stranger", Value: paramVal})
 		} else {
-			engine.Raise(sce.NewPlatformError(AChildTakesAHandedValueInPlaceOfItsDataSceSynthInvokeByParamEventErrorExecution, "<send> <param name='stranger'> expr failed to evaluate"))
+			engine.Raise(sce.NewPlatformError(AChildTakesAHandedValueInPlaceOfItsDataSceSynthInvokeByParamEventErrorExecution, sceerrorreason.ErrorReasonExpressionFailed, "<send> <param name='stranger'> expr failed to evaluate"))
 			paramFailed = true
 		}
 		if paramVal, paramErr := se.EvaluateExpression(p.SessionID, `(function() if ((((((((_typeof(payload) == "object") and (payload ~= nil)) and (payload.name == "whole")) and (payload.inner.label == "inner")) and (payload.inner.depth == 2)) and (#payload.list == 3)) and (payload.list[1] == 1)) and (payload.list[3] == 3)) then return "whole" end return "broken" end)()`); paramErr == nil {
 			parts = append(parts, sce.EventDataParam{Name: "payload", Value: paramVal})
 		} else {
-			engine.Raise(sce.NewPlatformError(AChildTakesAHandedValueInPlaceOfItsDataSceSynthInvokeByParamEventErrorExecution, "<send> <param name='payload'> expr failed to evaluate"))
+			engine.Raise(sce.NewPlatformError(AChildTakesAHandedValueInPlaceOfItsDataSceSynthInvokeByParamEventErrorExecution, sceerrorreason.ErrorReasonExpressionFailed, "<send> <param name='payload'> expr failed to evaluate"))
 			paramFailed = true
 		}
 		if paramVal, paramErr := se.EvaluateExpression(p.SessionID, `script_saw`); paramErr == nil {
 			parts = append(parts, sce.EventDataParam{Name: "script", Value: paramVal})
 		} else {
-			engine.Raise(sce.NewPlatformError(AChildTakesAHandedValueInPlaceOfItsDataSceSynthInvokeByParamEventErrorExecution, "<send> <param name='script'> expr failed to evaluate"))
+			engine.Raise(sce.NewPlatformError(AChildTakesAHandedValueInPlaceOfItsDataSceSynthInvokeByParamEventErrorExecution, sceerrorreason.ErrorReasonExpressionFailed, "<send> <param name='script'> expr failed to evaluate"))
 			paramFailed = true
 		}
 		if paramVal, paramErr := se.EvaluateExpression(p.SessionID, `entry_saw`); paramErr == nil {
 			parts = append(parts, sce.EventDataParam{Name: "entry", Value: paramVal})
 		} else {
-			engine.Raise(sce.NewPlatformError(AChildTakesAHandedValueInPlaceOfItsDataSceSynthInvokeByParamEventErrorExecution, "<send> <param name='entry'> expr failed to evaluate"))
+			engine.Raise(sce.NewPlatformError(AChildTakesAHandedValueInPlaceOfItsDataSceSynthInvokeByParamEventErrorExecution, sceerrorreason.ErrorReasonExpressionFailed, "<send> <param name='entry'> expr failed to evaluate"))
 			paramFailed = true
 		}
 		if paramVal, paramErr := se.EvaluateExpression(p.SessionID, `errors`); paramErr == nil {
 			parts = append(parts, sce.EventDataParam{Name: "errors", Value: paramVal})
 		} else {
-			engine.Raise(sce.NewPlatformError(AChildTakesAHandedValueInPlaceOfItsDataSceSynthInvokeByParamEventErrorExecution, "<send> <param name='errors'> expr failed to evaluate"))
+			engine.Raise(sce.NewPlatformError(AChildTakesAHandedValueInPlaceOfItsDataSceSynthInvokeByParamEventErrorExecution, sceerrorreason.ErrorReasonExpressionFailed, "<send> <param name='errors'> expr failed to evaluate"))
 			paramFailed = true
 		}
 		eventDataStr := sce.BuildJSONFromTypedParams(parts)
@@ -1100,7 +1104,7 @@ func (p *AChildTakesAHandedValueInPlaceOfItsDataSceSynthInvokeByParamPolicy) Exe
 		// W3C SCXML C.1: this session was started by its host, not by an
 		// `<invoke>`, so `#_parent` reaches nobody — error.communication,
 		// nothing delivered, and the block ends (4.9).
-		errEvt := sce.NewPlatformError(AChildTakesAHandedValueInPlaceOfItsDataSceSynthInvokeByParamEventErrorCommunication, "<send target='#_parent'> has no parent session to reach")
+		errEvt := sce.NewPlatformError(AChildTakesAHandedValueInPlaceOfItsDataSceSynthInvokeByParamEventErrorCommunication, sceerrorreason.ErrorReasonTargetUnreachable, "<send target='#_parent'> has no parent session to reach")
 		errEvt.Metadata.SendID = "__send_0"
 		engine.Raise(errEvt)
 		return  // W3C SCXML 4.9: the error ends the block
@@ -1117,7 +1121,7 @@ func (p *AChildTakesAHandedValueInPlaceOfItsDataSceSynthInvokeByParamPolicy) Exe
 
 	// W3C SCXML 5.3: <assign location="payload.name" expr="'written by the child'">
 	if err := p.assignVariable(`payload.name`, `"written by the child"`); err != nil {
-		engine.Raise(sce.NewPlatformError(AChildTakesAHandedValueInPlaceOfItsDataSceSynthInvokeByParamEventErrorExecution, "<assign> to 'payload.name' failed"))
+		engine.Raise(sce.NewPlatformError(AChildTakesAHandedValueInPlaceOfItsDataSceSynthInvokeByParamEventErrorExecution, sceerrorreason.ErrorReasonAssignmentFailed, "<assign> to 'payload.name' failed"))
 		return  // W3C SCXML 4.9: the error ends the block
 	}
 

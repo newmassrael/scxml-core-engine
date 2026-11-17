@@ -234,14 +234,14 @@ class Test253SceSynthInvokeFooStateMachine(
 
     // W3C SCXML 5.9.1: a cond that cannot be evaluated raises error.execution;
     // `null` says so, where a bare `false` could not.
-    private fun evaluateGuardRaising(guardExpr: com.sce.runtime.ScriptSource, reason: String): Boolean? {
+    private fun evaluateGuardRaising(guardExpr: com.sce.runtime.ScriptSource, detail: String): Boolean? {
         assertScriptSession()
         val engine = scriptEngine ?: error("scriptEngine is required (codegen invariant: needs_script_engine == true)")
         val sid = scriptSessionId ?: error("scriptSessionId is established by the start (codegen invariant)")
         return try {
             engine.evaluateCondition(sid, guardExpr)
         } catch (e: Exception) {
-            raisePlatformError(Test253SceSynthInvokeFooEvent.Error.Execution, reason)
+            raisePlatformError(Test253SceSynthInvokeFooEvent.Error.Execution, ErrorReason.EXPRESSION_FAILED, detail)
             null
         }
     }
@@ -282,7 +282,7 @@ class Test253SceSynthInvokeFooStateMachine(
         return try {
             engine.evaluateExpr(sid, serialized)?.toString() ?: ""
         } catch (e: Exception) {
-            raisePlatformError(Test253SceSynthInvokeFooEvent.Error.Execution, "an expression could not be serialised to JSON")
+            raisePlatformError(Test253SceSynthInvokeFooEvent.Error.Execution, ErrorReason.EXPRESSION_FAILED, "an expression could not be serialised to JSON")
             ""
         }
     }
@@ -303,7 +303,7 @@ class Test253SceSynthInvokeFooStateMachine(
             engine.assign(sid, location, expr)
             true
         } catch (e: Exception) {
-            raisePlatformError(Test253SceSynthInvokeFooEvent.Error.Execution, "<assign> failed")
+            raisePlatformError(Test253SceSynthInvokeFooEvent.Error.Execution, ErrorReason.ASSIGNMENT_FAILED, "<assign> failed")
             false
         }
     }
@@ -319,7 +319,7 @@ class Test253SceSynthInvokeFooStateMachine(
             engine.executeScript(sid, script)
             true
         } catch (e: Exception) {
-            raisePlatformError(Test253SceSynthInvokeFooEvent.Error.Execution, "<script> failed to execute")
+            raisePlatformError(Test253SceSynthInvokeFooEvent.Error.Execution, ErrorReason.SCRIPT_FAILED, "<script> failed to execute")
             false
         }
     }
@@ -441,7 +441,7 @@ class Test253SceSynthInvokeFooStateMachine(
             // no parent — error.communication, nothing delivered, the block ended.
             val toParent = onSendToParent
             if (toParent == null) {
-                raisePlatformError(Test253SceSynthInvokeFooEvent.Error.Communication, "<send target='#_parent'> has no parent session to reach", "__send_0")
+                raisePlatformError(Test253SceSynthInvokeFooEvent.Error.Communication, ErrorReason.TARGET_UNREACHABLE, "<send target='#_parent'> has no parent session to reach", "__send_0")
                 return@send true
             }
             toParent("childRunning", sendData)
@@ -548,7 +548,7 @@ class Test253SceSynthInvokeFooStateMachine(
             // no parent — error.communication, nothing delivered, the block ended.
             val toParent = onSendToParent
             if (toParent == null) {
-                raisePlatformError(Test253SceSynthInvokeFooEvent.Error.Communication, "<send target='#_parent'> has no parent session to reach", "__send_1")
+                raisePlatformError(Test253SceSynthInvokeFooEvent.Error.Communication, ErrorReason.TARGET_UNREACHABLE, "<send target='#_parent'> has no parent session to reach", "__send_1")
                 return@send true
             }
             toParent("success", sendData)
@@ -571,7 +571,7 @@ class Test253SceSynthInvokeFooStateMachine(
             // no parent — error.communication, nothing delivered, the block ended.
             val toParent = onSendToParent
             if (toParent == null) {
-                raisePlatformError(Test253SceSynthInvokeFooEvent.Error.Communication, "<send target='#_parent'> has no parent session to reach", "__send_2")
+                raisePlatformError(Test253SceSynthInvokeFooEvent.Error.Communication, ErrorReason.TARGET_UNREACHABLE, "<send target='#_parent'> has no parent session to reach", "__send_2")
                 return@send true
             }
             toParent("success", sendData)
@@ -594,7 +594,7 @@ class Test253SceSynthInvokeFooStateMachine(
             // no parent — error.communication, nothing delivered, the block ended.
             val toParent = onSendToParent
             if (toParent == null) {
-                raisePlatformError(Test253SceSynthInvokeFooEvent.Error.Communication, "<send target='#_parent'> has no parent session to reach", "__send_3")
+                raisePlatformError(Test253SceSynthInvokeFooEvent.Error.Communication, ErrorReason.TARGET_UNREACHABLE, "<send target='#_parent'> has no parent session to reach", "__send_3")
                 return@send true
             }
             toParent("failure", sendData)

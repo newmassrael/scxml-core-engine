@@ -402,8 +402,12 @@ public final class DonedataLocalInvokeSceSynthInvokeInvContentPolicy: InvocableP
 
     /// Says what went wrong where the document can see it: `error.execution` on the internal
     /// queue (§scxml-5.9.1, 5.3).
-    private func raiseExecutionError(_ message: String, engine: Engine<DonedataLocalInvokeSceSynthInvokeInvContentPolicy>) {
-        engine.raise(EventWithMetadata.platformError(DonedataLocalInvokeSceSynthInvokeInvContentEvent.errorExecution, message: message))
+    /// `reason` is the code of sce:std/engine/error_reason the record carries
+    /// (docs/adr/0106 #111).
+    private func raiseExecutionError(
+        _ reason: ErrorReason, _ message: String, engine: Engine<DonedataLocalInvokeSceSynthInvokeInvContentPolicy>
+    ) {
+        engine.raise(EventWithMetadata.platformError(DonedataLocalInvokeSceSynthInvokeInvContentEvent.errorExecution, reason: reason, message: message))
     }
 
     /// W3C SCXML 5.3: the `<data id>` `id` takes the value of the lowered expression, or nil when it
@@ -460,6 +464,7 @@ public final class DonedataLocalInvokeSceSynthInvokeInvContentPolicy: InvocableP
             }
         } catch {
             raiseExecutionError(
+                handed == nil ? .expressionFailed : .paramUnfit,
                 handed == nil
                     ? "<data id='\(id)'> expr failed to evaluate"
                     : "<data id='\(id)'> could not hold the value its parent handed it",
@@ -619,7 +624,7 @@ public final class DonedataLocalInvokeSceSynthInvokeInvContentPolicy: InvocableP
             // this call the payload is lost to the document and to the host alike.
             engine.notePayloadReading(event, reading: Self.payloadReading(of: reading))
         } catch {
-            raiseExecutionError("_event could not be bound for '\(name)'", engine: engine)
+            raiseExecutionError(.payloadRefused, "_event could not be bound for '\(name)'", engine: engine)
         }
     }
 
@@ -656,7 +661,7 @@ public final class DonedataLocalInvokeSceSynthInvokeInvContentPolicy: InvocableP
         do {
             return try scriptSession.evaluateCondition(condition, chunkName: "=cond")
         } catch {
-            raiseExecutionError("a \(element) cond failed to evaluate", engine: engine)
+            raiseExecutionError(.expressionFailed, "a \(element) cond failed to evaluate", engine: engine)
             failed = true
             return false
         }
@@ -678,7 +683,7 @@ public final class DonedataLocalInvokeSceSynthInvokeInvContentPolicy: InvocableP
             if let doneValue = evaluateJSON("\"hello_content\"") {
                 doneEventData = doneValue
             } else {
-                raiseExecutionError("<donedata> <content expr> failed to evaluate", engine: engine)
+                raiseExecutionError(.expressionFailed, "<donedata> <content expr> failed to evaluate", engine: engine)
                 doneEventData = WireValue.text("").json
             }
             // W3C SCXML 5.5 + 6.3.1: a top-level final stashes its data on the engine, so the

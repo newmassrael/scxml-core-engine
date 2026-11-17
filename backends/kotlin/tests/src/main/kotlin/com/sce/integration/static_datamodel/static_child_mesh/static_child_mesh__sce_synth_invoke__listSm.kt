@@ -297,7 +297,7 @@ class StaticChildMeshSceSynthInvokeListStateMachine(
             // event as an undeclared type, so a wiring mistake cannot read
             // as success.
             if (hostServed == null && !hasEventProcessor("sce:mesh")) {
-                raisePlatformError(StaticChildMeshSceSynthInvokeListEvent.Error.Execution, "<send type='sce:mesh'> names a processor the host declared but never registered", "__send_1")
+                raisePlatformError(StaticChildMeshSceSynthInvokeListEvent.Error.Execution, ErrorReason.PROCESSOR_UNREGISTERED, "<send type='sce:mesh'> names a processor the host declared but never registered", "__send_1")
             }
             false
             }) {
@@ -389,7 +389,7 @@ class StaticChildMeshSceSynthInvokeListStateMachine(
             // event as an undeclared type, so a wiring mistake cannot read
             // as success.
             if (hostServed == null && !hasEventProcessor("sce:mesh")) {
-                raisePlatformError(StaticChildMeshSceSynthInvokeListEvent.Error.Execution, "<send type='sce:mesh'> names a processor the host declared but never registered", "__send_0")
+                raisePlatformError(StaticChildMeshSceSynthInvokeListEvent.Error.Execution, ErrorReason.PROCESSOR_UNREGISTERED, "<send type='sce:mesh'> names a processor the host declared but never registered", "__send_0")
             }
             false
             }) {

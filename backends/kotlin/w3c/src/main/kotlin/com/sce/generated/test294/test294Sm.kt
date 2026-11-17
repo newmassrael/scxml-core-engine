@@ -303,7 +303,7 @@ class Test294StateMachine(
             try {
                 engine.setVariable(sid, "Var1", engine.evaluateExpr(sid, com.sce.runtime.ScriptSource.lua("0", "0")))
             } catch (e: Exception) {
-                raisePlatformError(Test294Event.Error.Execution, "<data id='Var1'> expr failed to evaluate")
+                raisePlatformError(Test294Event.Error.Execution, ErrorReason.EXPRESSION_FAILED, "<data id='Var1'> expr failed to evaluate")
             }
         }
     }
@@ -333,14 +333,14 @@ class Test294StateMachine(
 
     // W3C SCXML 5.9.1: a cond that cannot be evaluated raises error.execution;
     // `null` says so, where a bare `false` could not.
-    private fun evaluateGuardRaising(guardExpr: com.sce.runtime.ScriptSource, reason: String): Boolean? {
+    private fun evaluateGuardRaising(guardExpr: com.sce.runtime.ScriptSource, detail: String): Boolean? {
         assertScriptSession()
         val engine = scriptEngine ?: error("scriptEngine is required (codegen invariant: needs_script_engine == true)")
         val sid = scriptSessionId ?: error("scriptSessionId is established by the start (codegen invariant)")
         return try {
             engine.evaluateCondition(sid, guardExpr)
         } catch (e: Exception) {
-            raisePlatformError(Test294Event.Error.Execution, reason)
+            raisePlatformError(Test294Event.Error.Execution, ErrorReason.EXPRESSION_FAILED, detail)
             null
         }
     }
@@ -381,7 +381,7 @@ class Test294StateMachine(
         return try {
             engine.evaluateExpr(sid, serialized)?.toString() ?: ""
         } catch (e: Exception) {
-            raisePlatformError(Test294Event.Error.Execution, "an expression could not be serialised to JSON")
+            raisePlatformError(Test294Event.Error.Execution, ErrorReason.EXPRESSION_FAILED, "an expression could not be serialised to JSON")
             ""
         }
     }
@@ -402,7 +402,7 @@ class Test294StateMachine(
             engine.assign(sid, location, expr)
             true
         } catch (e: Exception) {
-            raisePlatformError(Test294Event.Error.Execution, "<assign> failed")
+            raisePlatformError(Test294Event.Error.Execution, ErrorReason.ASSIGNMENT_FAILED, "<assign> failed")
             false
         }
     }
@@ -418,7 +418,7 @@ class Test294StateMachine(
             engine.executeScript(sid, script)
             true
         } catch (e: Exception) {
-            raisePlatformError(Test294Event.Error.Execution, "<script> failed to execute")
+            raisePlatformError(Test294Event.Error.Execution, ErrorReason.SCRIPT_FAILED, "<script> failed to execute")
             false
         }
     }
@@ -582,7 +582,7 @@ class Test294StateMachine(
                         doneParams["Var1"] = engineDD.evaluateExpr(sidDD, com.sce.runtime.ScriptSource.lua("1", "1"))
                     } catch (_: Exception) {
                         // §scxml-5.7: error.execution, and this pair is ignored.
-                        raisePlatformError(Test294Event.Error.Execution, "<donedata> <param name='Var1'> failed to evaluate")
+                        raisePlatformError(Test294Event.Error.Execution, ErrorReason.EXPRESSION_FAILED, "<donedata> <param name='Var1'> failed to evaluate")
                     }
                     // §scxml-5.5: the pairs that survived, `{}` when none did
                     // (C++ DoneDataHelper::evaluateParams). Not left to

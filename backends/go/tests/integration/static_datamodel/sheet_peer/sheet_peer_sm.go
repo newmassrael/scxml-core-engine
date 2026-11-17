@@ -31,6 +31,7 @@ import (
 	"time"
 
 	sce "github.com/newmassrael/sce-go-runtime"
+	sceerrorreason "github.com/newmassrael/sce-go-runtime/generated/error_reason"
 	scealgorithm "github.com/newmassrael/sce-forge-runtime/algorithm"
 	sce_hlc_receive "github.com/newmassrael/sce-go-tests/integration/static_datamodel/hlc_receive"
 	sce_hlc_send "github.com/newmassrael/sce-go-tests/integration/static_datamodel/hlc_send"
@@ -52,6 +53,9 @@ var (
 	_ = filepath.Join
 	_ = strings.HasPrefix
 	_ = time.Duration(0)
+	// Why an error.* event is raised (sce:std/engine/error_reason,
+	// docs/adr/0106 #111); a machine that raises none still imports it.
+	_ = sceerrorreason.ErrorReasonExpressionFailed
 	_ scealgorithm.Failure
 )
 
@@ -2837,7 +2841,7 @@ func (p *SheetPeerPolicy) ExecuteTransitionContent(source SheetPeerState, transi
 				}
 
 
-	if func() bool { var sceFailure scealgorithm.Failure; sceValue := scealgorithm.TakeOutcome(&sceFailure, sceAdapt_SheetPeer_HlcSend__v(p.vClock, p.pendingSheetEditPayload.now, p.vNode)); if sceFailure.Failed() { engine.Raise(sce.NewPlatformError(SheetPeerEventErrorExecution, "<assign location='clock'>: an integer operation overflowed or failed")); return true }; p.vClock = sceValue; return false }() {
+	if func() bool { var sceFailure scealgorithm.Failure; sceValue := scealgorithm.TakeOutcome(&sceFailure, sceAdapt_SheetPeer_HlcSend__v(p.vClock, p.pendingSheetEditPayload.now, p.vNode)); if sceFailure.Failed() { engine.Raise(sce.NewPlatformError(SheetPeerEventErrorExecution, sceerrorreason.ErrorReasonExpressionFailed, "<assign location='clock'>: an integer operation overflowed or failed")); return true }; p.vClock = sceValue; return false }() {
 		return  // W3C SCXML 4.9: the error ends the block
 	}
 
@@ -3035,7 +3039,7 @@ func (p *SheetPeerPolicy) ExecuteTransitionContent(source SheetPeerState, transi
 		// act it asked for was performed by nobody. Same event as an
 		// undeclared type, so a wiring mistake cannot read as success.
 		if !hostServed && !engine.HasEventProcessor("sce:mesh") {
-			errEvt := sce.NewPlatformError(SheetPeerEventErrorExecution, "<send type='sce:mesh'> names a processor the host declared but never registered")
+			errEvt := sce.NewPlatformError(SheetPeerEventErrorExecution, sceerrorreason.ErrorReasonProcessorUnregistered, "<send type='sce:mesh'> names a processor the host declared but never registered")
 			errEvt.Metadata.SendID = "__send_1"
 			engine.Raise(errEvt)
 		}
@@ -3057,7 +3061,7 @@ func (p *SheetPeerPolicy) ExecuteTransitionContent(source SheetPeerState, transi
 				}
 
 
-	if func() bool { var sceFailure scealgorithm.Failure; sceValue := scealgorithm.TakeOutcome(&sceFailure, sceAdapt_SheetPeer_HlcSend__v(p.vClock, p.pendingSheetFormulaPayload.now, p.vNode)); if sceFailure.Failed() { engine.Raise(sce.NewPlatformError(SheetPeerEventErrorExecution, "<assign location='clock'>: an integer operation overflowed or failed")); return true }; p.vClock = sceValue; return false }() {
+	if func() bool { var sceFailure scealgorithm.Failure; sceValue := scealgorithm.TakeOutcome(&sceFailure, sceAdapt_SheetPeer_HlcSend__v(p.vClock, p.pendingSheetFormulaPayload.now, p.vNode)); if sceFailure.Failed() { engine.Raise(sce.NewPlatformError(SheetPeerEventErrorExecution, sceerrorreason.ErrorReasonExpressionFailed, "<assign location='clock'>: an integer operation overflowed or failed")); return true }; p.vClock = sceValue; return false }() {
 		return  // W3C SCXML 4.9: the error ends the block
 	}
 
@@ -3255,7 +3259,7 @@ func (p *SheetPeerPolicy) ExecuteTransitionContent(source SheetPeerState, transi
 		// act it asked for was performed by nobody. Same event as an
 		// undeclared type, so a wiring mistake cannot read as success.
 		if !hostServed && !engine.HasEventProcessor("sce:mesh") {
-			errEvt := sce.NewPlatformError(SheetPeerEventErrorExecution, "<send type='sce:mesh'> names a processor the host declared but never registered")
+			errEvt := sce.NewPlatformError(SheetPeerEventErrorExecution, sceerrorreason.ErrorReasonProcessorUnregistered, "<send type='sce:mesh'> names a processor the host declared but never registered")
 			errEvt.Metadata.SendID = "__send_3"
 			engine.Raise(errEvt)
 		}
@@ -3291,7 +3295,7 @@ func (p *SheetPeerPolicy) ExecuteTransitionContent(source SheetPeerState, transi
 
 
 
-	if func() bool { var sceFailure scealgorithm.Failure; sceValue := scealgorithm.TakeOutcome(&sceFailure, sceAdapt_SheetPeer_HlcReceive__vv(p.vClock, p.vStamp, p.vClock.wallTime, p.vNode)); if sceFailure.Failed() { engine.Raise(sce.NewPlatformError(SheetPeerEventErrorExecution, "<assign location='clock'>: an integer operation overflowed or failed")); return true }; p.vClock = sceValue; return false }() {
+	if func() bool { var sceFailure scealgorithm.Failure; sceValue := scealgorithm.TakeOutcome(&sceFailure, sceAdapt_SheetPeer_HlcReceive__vv(p.vClock, p.vStamp, p.vClock.wallTime, p.vNode)); if sceFailure.Failed() { engine.Raise(sce.NewPlatformError(SheetPeerEventErrorExecution, sceerrorreason.ErrorReasonExpressionFailed, "<assign location='clock'>: an integer operation overflowed or failed")); return true }; p.vClock = sceValue; return false }() {
 		return  // W3C SCXML 4.9: the error ends the block
 	}
 
@@ -3359,7 +3363,7 @@ func (p *SheetPeerPolicy) ExecuteTransitionContent(source SheetPeerState, transi
 
 
 
-	if func() bool { var sceFailure scealgorithm.Failure; sceValue := scealgorithm.Within(&sceFailure, scealgorithm.TakeOutcome(&sceFailure, sceAdapt_SheetPeer_LwwWrite__vv(p.vCells, p.vWrite)), 256); if sceFailure.Failed() { engine.Raise(sce.NewPlatformError(SheetPeerEventErrorExecution, "<assign location='cells'>: an integer operation overflowed or failed")); return true }; p.vCells = sceValue; return false }() {
+	if func() bool { var sceFailure scealgorithm.Failure; sceValue := scealgorithm.Within(&sceFailure, scealgorithm.TakeOutcome(&sceFailure, sceAdapt_SheetPeer_LwwWrite__vv(p.vCells, p.vWrite)), 256); if sceFailure.Failed() { engine.Raise(sce.NewPlatformError(SheetPeerEventErrorExecution, sceerrorreason.ErrorReasonExpressionFailed, "<assign location='cells'>: an integer operation overflowed or failed")); return true }; p.vCells = sceValue; return false }() {
 		return  // W3C SCXML 4.9: the error ends the block
 	}
 
@@ -3484,7 +3488,7 @@ func (p *SheetPeerPolicy) ExecuteTransitionContent(source SheetPeerState, transi
 		// act it asked for was performed by nobody. Same event as an
 		// undeclared type, so a wiring mistake cannot read as success.
 		if !hostServed && !engine.HasEventProcessor("sce:mesh") {
-			errEvt := sce.NewPlatformError(SheetPeerEventErrorExecution, "<send type='sce:mesh'> names a processor the host declared but never registered")
+			errEvt := sce.NewPlatformError(SheetPeerEventErrorExecution, sceerrorreason.ErrorReasonProcessorUnregistered, "<send type='sce:mesh'> names a processor the host declared but never registered")
 			errEvt.Metadata.SendID = "__send_5"
 			engine.Raise(errEvt)
 		}
@@ -3604,7 +3608,7 @@ func (p *SheetPeerPolicy) ExecuteTransitionContent(source SheetPeerState, transi
 		// act it asked for was performed by nobody. Same event as an
 		// undeclared type, so a wiring mistake cannot read as success.
 		if !hostServed && !engine.HasEventProcessor("sce:mesh") {
-			errEvt := sce.NewPlatformError(SheetPeerEventErrorExecution, "<send type='sce:mesh'> names a processor the host declared but never registered")
+			errEvt := sce.NewPlatformError(SheetPeerEventErrorExecution, sceerrorreason.ErrorReasonProcessorUnregistered, "<send type='sce:mesh'> names a processor the host declared but never registered")
 			errEvt.Metadata.SendID = "__send_6"
 			engine.Raise(errEvt)
 		}
@@ -3625,13 +3629,13 @@ func (p *SheetPeerPolicy) ExecuteTransitionContent(source SheetPeerState, transi
 			func() {
 
 
-	if func() bool { var sceFailure scealgorithm.Failure; sceValue := scealgorithm.Within(&sceFailure, scealgorithm.TakeOutcome(&sceFailure, sceAdapt_SheetPeer_SheetSettle__vvvvv(p.vCells, p.vRows, p.vGone, p.vCols, p.vGoneCols)), 768); if sceFailure.Failed() { engine.Raise(sce.NewPlatformError(SheetPeerEventErrorExecution, "<assign location='trail'>: an integer operation overflowed or failed")); return true }; p.vTrail = sceValue; return false }() {
+	if func() bool { var sceFailure scealgorithm.Failure; sceValue := scealgorithm.Within(&sceFailure, scealgorithm.TakeOutcome(&sceFailure, sceAdapt_SheetPeer_SheetSettle__vvvvv(p.vCells, p.vRows, p.vGone, p.vCols, p.vGoneCols)), 768); if sceFailure.Failed() { engine.Raise(sce.NewPlatformError(SheetPeerEventErrorExecution, sceerrorreason.ErrorReasonExpressionFailed, "<assign location='trail'>: an integer operation overflowed or failed")); return true }; p.vTrail = sceValue; return false }() {
 		return  // W3C SCXML 4.9: the error ends the block
 	}
 
 
 
-	if func() bool { var sceFailure scealgorithm.Failure; sceValue := scealgorithm.Within(&sceFailure, scealgorithm.TakeOutcome(&sceFailure, sceAdapt_SheetPeer_SheetShow__vv(p.vCells, p.vTrail)), 256); if sceFailure.Failed() { engine.Raise(sce.NewPlatformError(SheetPeerEventErrorExecution, "<assign location='shown'>: an integer operation overflowed or failed")); return true }; p.vShown = sceValue; return false }() {
+	if func() bool { var sceFailure scealgorithm.Failure; sceValue := scealgorithm.Within(&sceFailure, scealgorithm.TakeOutcome(&sceFailure, sceAdapt_SheetPeer_SheetShow__vv(p.vCells, p.vTrail)), 256); if sceFailure.Failed() { engine.Raise(sce.NewPlatformError(SheetPeerEventErrorExecution, sceerrorreason.ErrorReasonExpressionFailed, "<assign location='shown'>: an integer operation overflowed or failed")); return true }; p.vShown = sceValue; return false }() {
 		return  // W3C SCXML 4.9: the error ends the block
 	}
 
@@ -3645,13 +3649,13 @@ func (p *SheetPeerPolicy) ExecuteTransitionContent(source SheetPeerState, transi
 				}
 
 
-	if func() bool { var sceFailure scealgorithm.Failure; sceValue := scealgorithm.AddUint64(&sceFailure, p.vLamport, 1); if sceFailure.Failed() { engine.Raise(sce.NewPlatformError(SheetPeerEventErrorExecution, "<assign location='lamport'>: an integer operation overflowed or failed")); return true }; p.vLamport = sceValue; return false }() {
+	if func() bool { var sceFailure scealgorithm.Failure; sceValue := scealgorithm.AddUint64(&sceFailure, p.vLamport, 1); if sceFailure.Failed() { engine.Raise(sce.NewPlatformError(SheetPeerEventErrorExecution, sceerrorreason.ErrorReasonExpressionFailed, "<assign location='lamport'>: an integer operation overflowed or failed")); return true }; p.vLamport = sceValue; return false }() {
 		return  // W3C SCXML 4.9: the error ends the block
 	}
 
 
 
-	if func() bool { var sceFailure scealgorithm.Failure; sceValue := scealgorithm.AddUint64(&sceFailure, scealgorithm.MulUint64(&sceFailure, p.vLamport, 256), p.vNode); if sceFailure.Failed() { engine.Raise(sce.NewPlatformError(SheetPeerEventErrorExecution, "<assign location='newKey'>: an integer operation overflowed or failed")); return true }; p.vNewKey = sceValue; return false }() {
+	if func() bool { var sceFailure scealgorithm.Failure; sceValue := scealgorithm.AddUint64(&sceFailure, scealgorithm.MulUint64(&sceFailure, p.vLamport, 256), p.vNode); if sceFailure.Failed() { engine.Raise(sce.NewPlatformError(SheetPeerEventErrorExecution, sceerrorreason.ErrorReasonExpressionFailed, "<assign location='newKey'>: an integer operation overflowed or failed")); return true }; p.vNewKey = sceValue; return false }() {
 		return  // W3C SCXML 4.9: the error ends the block
 	}
 
@@ -3745,7 +3749,7 @@ func (p *SheetPeerPolicy) ExecuteTransitionContent(source SheetPeerState, transi
 		// act it asked for was performed by nobody. Same event as an
 		// undeclared type, so a wiring mistake cannot read as success.
 		if !hostServed && !engine.HasEventProcessor("sce:mesh") {
-			errEvt := sce.NewPlatformError(SheetPeerEventErrorExecution, "<send type='sce:mesh'> names a processor the host declared but never registered")
+			errEvt := sce.NewPlatformError(SheetPeerEventErrorExecution, sceerrorreason.ErrorReasonProcessorUnregistered, "<send type='sce:mesh'> names a processor the host declared but never registered")
 			errEvt.Metadata.SendID = "__send_8"
 			engine.Raise(errEvt)
 		}
@@ -3768,10 +3772,10 @@ func (p *SheetPeerPolicy) ExecuteTransitionContent(source SheetPeerState, transi
 
 	{
 	var ifCondFailed4 bool
-	if func() bool { var sceFailure scealgorithm.Failure; sceValue := scealgorithm.DivUint64(&sceFailure, p.pendingSheetRowPayload.key, 256) > p.vLamport; if sceFailure.Failed() { engine.Raise(sce.NewPlatformError(SheetPeerEventErrorExecution, "<if cond='_event.data.key / 256 > lamport'>: an integer operation overflowed or failed")); ifCondFailed4 = true; return false }; return sceValue }() {
+	if func() bool { var sceFailure scealgorithm.Failure; sceValue := scealgorithm.DivUint64(&sceFailure, p.pendingSheetRowPayload.key, 256) > p.vLamport; if sceFailure.Failed() { engine.Raise(sce.NewPlatformError(SheetPeerEventErrorExecution, sceerrorreason.ErrorReasonExpressionFailed, "<if cond='_event.data.key / 256 > lamport'>: an integer operation overflowed or failed")); ifCondFailed4 = true; return false }; return sceValue }() {
 
 
-	if func() bool { var sceFailure scealgorithm.Failure; sceValue := scealgorithm.DivUint64(&sceFailure, p.pendingSheetRowPayload.key, 256); if sceFailure.Failed() { engine.Raise(sce.NewPlatformError(SheetPeerEventErrorExecution, "<assign location='lamport'>: an integer operation overflowed or failed")); return true }; p.vLamport = sceValue; return false }() {
+	if func() bool { var sceFailure scealgorithm.Failure; sceValue := scealgorithm.DivUint64(&sceFailure, p.pendingSheetRowPayload.key, 256); if sceFailure.Failed() { engine.Raise(sce.NewPlatformError(SheetPeerEventErrorExecution, sceerrorreason.ErrorReasonExpressionFailed, "<assign location='lamport'>: an integer operation overflowed or failed")); return true }; p.vLamport = sceValue; return false }() {
 		return  // W3C SCXML 4.9: the error ends the block
 	}
 
@@ -3793,7 +3797,7 @@ func (p *SheetPeerPolicy) ExecuteTransitionContent(source SheetPeerState, transi
 	if p.pendingSheetRowPayload.after != 0 && !sceAdapt_SheetPeer_RgaHolds__v(p.vRows, p.pendingSheetRowPayload.key) && !sceAdapt_SheetPeer_RgaHolds__v(p.vRows, p.pendingSheetRowPayload.after) {
 
 
-	if func() bool { var sceFailure scealgorithm.Failure; sceValue := scealgorithm.AddUint32(&sceFailure, p.vOrphans, 1); if sceFailure.Failed() { engine.Raise(sce.NewPlatformError(SheetPeerEventErrorExecution, "<assign location='orphans'>: an integer operation overflowed or failed")); return true }; p.vOrphans = sceValue; return false }() {
+	if func() bool { var sceFailure scealgorithm.Failure; sceValue := scealgorithm.AddUint32(&sceFailure, p.vOrphans, 1); if sceFailure.Failed() { engine.Raise(sce.NewPlatformError(SheetPeerEventErrorExecution, sceerrorreason.ErrorReasonExpressionFailed, "<assign location='orphans'>: an integer operation overflowed or failed")); return true }; p.vOrphans = sceValue; return false }() {
 		return  // W3C SCXML 4.9: the error ends the block
 	}
 
@@ -3801,7 +3805,7 @@ func (p *SheetPeerPolicy) ExecuteTransitionContent(source SheetPeerState, transi
 
 
 
-	if func() bool { var sceFailure scealgorithm.Failure; sceValue := scealgorithm.Within(&sceFailure, scealgorithm.TakeOutcome(&sceFailure, sceAdapt_SheetPeer_RgaInsert__vv(p.vRows, p.vPlaced)), 256); if sceFailure.Failed() { engine.Raise(sce.NewPlatformError(SheetPeerEventErrorExecution, "<assign location='rows'>: an integer operation overflowed or failed")); return true }; p.vRows = sceValue; return false }() {
+	if func() bool { var sceFailure scealgorithm.Failure; sceValue := scealgorithm.Within(&sceFailure, scealgorithm.TakeOutcome(&sceFailure, sceAdapt_SheetPeer_RgaInsert__vv(p.vRows, p.vPlaced)), 256); if sceFailure.Failed() { engine.Raise(sce.NewPlatformError(SheetPeerEventErrorExecution, sceerrorreason.ErrorReasonExpressionFailed, "<assign location='rows'>: an integer operation overflowed or failed")); return true }; p.vRows = sceValue; return false }() {
 		return  // W3C SCXML 4.9: the error ends the block
 	}
 
@@ -3823,7 +3827,7 @@ func (p *SheetPeerPolicy) ExecuteTransitionContent(source SheetPeerState, transi
 
 	{
 	var ifCondFailed6 bool
-	if func() bool { var sceFailure scealgorithm.Failure; sceValue := p.vHub && scealgorithm.RemUint64(&sceFailure, p.pendingSheetRowPayload.key, 256) != 1; if sceFailure.Failed() { engine.Raise(sce.NewPlatformError(SheetPeerEventErrorExecution, "<if cond='hub && _event.data.key % 256 !== 1'>: an integer operation overflowed or failed")); ifCondFailed6 = true; return false }; return sceValue }() {
+	if func() bool { var sceFailure scealgorithm.Failure; sceValue := p.vHub && scealgorithm.RemUint64(&sceFailure, p.pendingSheetRowPayload.key, 256) != 1; if sceFailure.Failed() { engine.Raise(sce.NewPlatformError(SheetPeerEventErrorExecution, sceerrorreason.ErrorReasonExpressionFailed, "<if cond='hub && _event.data.key % 256 !== 1'>: an integer operation overflowed or failed")); ifCondFailed6 = true; return false }; return sceValue }() {
 
 	// W3C SCXML 6.2: send id="__send_10"
 	{
@@ -3876,7 +3880,7 @@ func (p *SheetPeerPolicy) ExecuteTransitionContent(source SheetPeerState, transi
 		// act it asked for was performed by nobody. Same event as an
 		// undeclared type, so a wiring mistake cannot read as success.
 		if !hostServed && !engine.HasEventProcessor("sce:mesh") {
-			errEvt := sce.NewPlatformError(SheetPeerEventErrorExecution, "<send type='sce:mesh'> names a processor the host declared but never registered")
+			errEvt := sce.NewPlatformError(SheetPeerEventErrorExecution, sceerrorreason.ErrorReasonProcessorUnregistered, "<send type='sce:mesh'> names a processor the host declared but never registered")
 			errEvt.Metadata.SendID = "__send_10"
 			engine.Raise(errEvt)
 		}
@@ -3897,7 +3901,7 @@ func (p *SheetPeerPolicy) ExecuteTransitionContent(source SheetPeerState, transi
 
 	{
 	var ifCondFailed7 bool
-	if func() bool { var sceFailure scealgorithm.Failure; sceValue := p.vHub && scealgorithm.RemUint64(&sceFailure, p.pendingSheetRowPayload.key, 256) != 2; if sceFailure.Failed() { engine.Raise(sce.NewPlatformError(SheetPeerEventErrorExecution, "<if cond='hub && _event.data.key % 256 !== 2'>: an integer operation overflowed or failed")); ifCondFailed7 = true; return false }; return sceValue }() {
+	if func() bool { var sceFailure scealgorithm.Failure; sceValue := p.vHub && scealgorithm.RemUint64(&sceFailure, p.pendingSheetRowPayload.key, 256) != 2; if sceFailure.Failed() { engine.Raise(sce.NewPlatformError(SheetPeerEventErrorExecution, sceerrorreason.ErrorReasonExpressionFailed, "<if cond='hub && _event.data.key % 256 !== 2'>: an integer operation overflowed or failed")); ifCondFailed7 = true; return false }; return sceValue }() {
 
 	// W3C SCXML 6.2: send id="__send_11"
 	{
@@ -3950,7 +3954,7 @@ func (p *SheetPeerPolicy) ExecuteTransitionContent(source SheetPeerState, transi
 		// act it asked for was performed by nobody. Same event as an
 		// undeclared type, so a wiring mistake cannot read as success.
 		if !hostServed && !engine.HasEventProcessor("sce:mesh") {
-			errEvt := sce.NewPlatformError(SheetPeerEventErrorExecution, "<send type='sce:mesh'> names a processor the host declared but never registered")
+			errEvt := sce.NewPlatformError(SheetPeerEventErrorExecution, sceerrorreason.ErrorReasonProcessorUnregistered, "<send type='sce:mesh'> names a processor the host declared but never registered")
 			errEvt.Metadata.SendID = "__send_11"
 			engine.Raise(errEvt)
 		}
@@ -4066,7 +4070,7 @@ func (p *SheetPeerPolicy) ExecuteTransitionContent(source SheetPeerState, transi
 		// act it asked for was performed by nobody. Same event as an
 		// undeclared type, so a wiring mistake cannot read as success.
 		if !hostServed && !engine.HasEventProcessor("sce:mesh") {
-			errEvt := sce.NewPlatformError(SheetPeerEventErrorExecution, "<send type='sce:mesh'> names a processor the host declared but never registered")
+			errEvt := sce.NewPlatformError(SheetPeerEventErrorExecution, sceerrorreason.ErrorReasonProcessorUnregistered, "<send type='sce:mesh'> names a processor the host declared but never registered")
 			errEvt.Metadata.SendID = "__send_13"
 			engine.Raise(errEvt)
 		}
@@ -4096,7 +4100,7 @@ func (p *SheetPeerPolicy) ExecuteTransitionContent(source SheetPeerState, transi
 
 
 
-	if func() bool { var sceFailure scealgorithm.Failure; sceValue := scealgorithm.Within(&sceFailure, scealgorithm.TakeOutcome(&sceFailure, sceAdapt_SheetPeer_RgaRemove__vv(p.vGone, p.vRemoval)), 256); if sceFailure.Failed() { engine.Raise(sce.NewPlatformError(SheetPeerEventErrorExecution, "<assign location='gone'>: an integer operation overflowed or failed")); return true }; p.vGone = sceValue; return false }() {
+	if func() bool { var sceFailure scealgorithm.Failure; sceValue := scealgorithm.Within(&sceFailure, scealgorithm.TakeOutcome(&sceFailure, sceAdapt_SheetPeer_RgaRemove__vv(p.vGone, p.vRemoval)), 256); if sceFailure.Failed() { engine.Raise(sce.NewPlatformError(SheetPeerEventErrorExecution, sceerrorreason.ErrorReasonExpressionFailed, "<assign location='gone'>: an integer operation overflowed or failed")); return true }; p.vGone = sceValue; return false }() {
 		return  // W3C SCXML 4.9: the error ends the block
 	}
 
@@ -4169,7 +4173,7 @@ func (p *SheetPeerPolicy) ExecuteTransitionContent(source SheetPeerState, transi
 		// act it asked for was performed by nobody. Same event as an
 		// undeclared type, so a wiring mistake cannot read as success.
 		if !hostServed && !engine.HasEventProcessor("sce:mesh") {
-			errEvt := sce.NewPlatformError(SheetPeerEventErrorExecution, "<send type='sce:mesh'> names a processor the host declared but never registered")
+			errEvt := sce.NewPlatformError(SheetPeerEventErrorExecution, sceerrorreason.ErrorReasonProcessorUnregistered, "<send type='sce:mesh'> names a processor the host declared but never registered")
 			errEvt.Metadata.SendID = "__send_15"
 			engine.Raise(errEvt)
 		}
@@ -4237,7 +4241,7 @@ func (p *SheetPeerPolicy) ExecuteTransitionContent(source SheetPeerState, transi
 		// act it asked for was performed by nobody. Same event as an
 		// undeclared type, so a wiring mistake cannot read as success.
 		if !hostServed && !engine.HasEventProcessor("sce:mesh") {
-			errEvt := sce.NewPlatformError(SheetPeerEventErrorExecution, "<send type='sce:mesh'> names a processor the host declared but never registered")
+			errEvt := sce.NewPlatformError(SheetPeerEventErrorExecution, sceerrorreason.ErrorReasonProcessorUnregistered, "<send type='sce:mesh'> names a processor the host declared but never registered")
 			errEvt.Metadata.SendID = "__send_16"
 			engine.Raise(errEvt)
 		}
@@ -4261,13 +4265,13 @@ func (p *SheetPeerPolicy) ExecuteTransitionContent(source SheetPeerState, transi
 				}
 
 
-	if func() bool { var sceFailure scealgorithm.Failure; sceValue := scealgorithm.AddUint64(&sceFailure, p.vLamport, 1); if sceFailure.Failed() { engine.Raise(sce.NewPlatformError(SheetPeerEventErrorExecution, "<assign location='lamport'>: an integer operation overflowed or failed")); return true }; p.vLamport = sceValue; return false }() {
+	if func() bool { var sceFailure scealgorithm.Failure; sceValue := scealgorithm.AddUint64(&sceFailure, p.vLamport, 1); if sceFailure.Failed() { engine.Raise(sce.NewPlatformError(SheetPeerEventErrorExecution, sceerrorreason.ErrorReasonExpressionFailed, "<assign location='lamport'>: an integer operation overflowed or failed")); return true }; p.vLamport = sceValue; return false }() {
 		return  // W3C SCXML 4.9: the error ends the block
 	}
 
 
 
-	if func() bool { var sceFailure scealgorithm.Failure; sceValue := scealgorithm.AddUint64(&sceFailure, scealgorithm.MulUint64(&sceFailure, p.vLamport, 256), p.vNode); if sceFailure.Failed() { engine.Raise(sce.NewPlatformError(SheetPeerEventErrorExecution, "<assign location='newKey'>: an integer operation overflowed or failed")); return true }; p.vNewKey = sceValue; return false }() {
+	if func() bool { var sceFailure scealgorithm.Failure; sceValue := scealgorithm.AddUint64(&sceFailure, scealgorithm.MulUint64(&sceFailure, p.vLamport, 256), p.vNode); if sceFailure.Failed() { engine.Raise(sce.NewPlatformError(SheetPeerEventErrorExecution, sceerrorreason.ErrorReasonExpressionFailed, "<assign location='newKey'>: an integer operation overflowed or failed")); return true }; p.vNewKey = sceValue; return false }() {
 		return  // W3C SCXML 4.9: the error ends the block
 	}
 
@@ -4361,7 +4365,7 @@ func (p *SheetPeerPolicy) ExecuteTransitionContent(source SheetPeerState, transi
 		// act it asked for was performed by nobody. Same event as an
 		// undeclared type, so a wiring mistake cannot read as success.
 		if !hostServed && !engine.HasEventProcessor("sce:mesh") {
-			errEvt := sce.NewPlatformError(SheetPeerEventErrorExecution, "<send type='sce:mesh'> names a processor the host declared but never registered")
+			errEvt := sce.NewPlatformError(SheetPeerEventErrorExecution, sceerrorreason.ErrorReasonProcessorUnregistered, "<send type='sce:mesh'> names a processor the host declared but never registered")
 			errEvt.Metadata.SendID = "__send_18"
 			engine.Raise(errEvt)
 		}
@@ -4384,10 +4388,10 @@ func (p *SheetPeerPolicy) ExecuteTransitionContent(source SheetPeerState, transi
 
 	{
 	var ifCondFailed10 bool
-	if func() bool { var sceFailure scealgorithm.Failure; sceValue := scealgorithm.DivUint64(&sceFailure, p.pendingSheetColPayload.key, 256) > p.vLamport; if sceFailure.Failed() { engine.Raise(sce.NewPlatformError(SheetPeerEventErrorExecution, "<if cond='_event.data.key / 256 > lamport'>: an integer operation overflowed or failed")); ifCondFailed10 = true; return false }; return sceValue }() {
+	if func() bool { var sceFailure scealgorithm.Failure; sceValue := scealgorithm.DivUint64(&sceFailure, p.pendingSheetColPayload.key, 256) > p.vLamport; if sceFailure.Failed() { engine.Raise(sce.NewPlatformError(SheetPeerEventErrorExecution, sceerrorreason.ErrorReasonExpressionFailed, "<if cond='_event.data.key / 256 > lamport'>: an integer operation overflowed or failed")); ifCondFailed10 = true; return false }; return sceValue }() {
 
 
-	if func() bool { var sceFailure scealgorithm.Failure; sceValue := scealgorithm.DivUint64(&sceFailure, p.pendingSheetColPayload.key, 256); if sceFailure.Failed() { engine.Raise(sce.NewPlatformError(SheetPeerEventErrorExecution, "<assign location='lamport'>: an integer operation overflowed or failed")); return true }; p.vLamport = sceValue; return false }() {
+	if func() bool { var sceFailure scealgorithm.Failure; sceValue := scealgorithm.DivUint64(&sceFailure, p.pendingSheetColPayload.key, 256); if sceFailure.Failed() { engine.Raise(sce.NewPlatformError(SheetPeerEventErrorExecution, sceerrorreason.ErrorReasonExpressionFailed, "<assign location='lamport'>: an integer operation overflowed or failed")); return true }; p.vLamport = sceValue; return false }() {
 		return  // W3C SCXML 4.9: the error ends the block
 	}
 
@@ -4409,7 +4413,7 @@ func (p *SheetPeerPolicy) ExecuteTransitionContent(source SheetPeerState, transi
 	if p.pendingSheetColPayload.after != 0 && !sceAdapt_SheetPeer_RgaHolds__v(p.vCols, p.pendingSheetColPayload.key) && !sceAdapt_SheetPeer_RgaHolds__v(p.vCols, p.pendingSheetColPayload.after) {
 
 
-	if func() bool { var sceFailure scealgorithm.Failure; sceValue := scealgorithm.AddUint32(&sceFailure, p.vOrphans, 1); if sceFailure.Failed() { engine.Raise(sce.NewPlatformError(SheetPeerEventErrorExecution, "<assign location='orphans'>: an integer operation overflowed or failed")); return true }; p.vOrphans = sceValue; return false }() {
+	if func() bool { var sceFailure scealgorithm.Failure; sceValue := scealgorithm.AddUint32(&sceFailure, p.vOrphans, 1); if sceFailure.Failed() { engine.Raise(sce.NewPlatformError(SheetPeerEventErrorExecution, sceerrorreason.ErrorReasonExpressionFailed, "<assign location='orphans'>: an integer operation overflowed or failed")); return true }; p.vOrphans = sceValue; return false }() {
 		return  // W3C SCXML 4.9: the error ends the block
 	}
 
@@ -4417,7 +4421,7 @@ func (p *SheetPeerPolicy) ExecuteTransitionContent(source SheetPeerState, transi
 
 
 
-	if func() bool { var sceFailure scealgorithm.Failure; sceValue := scealgorithm.Within(&sceFailure, scealgorithm.TakeOutcome(&sceFailure, sceAdapt_SheetPeer_RgaInsert__vv(p.vCols, p.vPlaced)), 256); if sceFailure.Failed() { engine.Raise(sce.NewPlatformError(SheetPeerEventErrorExecution, "<assign location='cols'>: an integer operation overflowed or failed")); return true }; p.vCols = sceValue; return false }() {
+	if func() bool { var sceFailure scealgorithm.Failure; sceValue := scealgorithm.Within(&sceFailure, scealgorithm.TakeOutcome(&sceFailure, sceAdapt_SheetPeer_RgaInsert__vv(p.vCols, p.vPlaced)), 256); if sceFailure.Failed() { engine.Raise(sce.NewPlatformError(SheetPeerEventErrorExecution, sceerrorreason.ErrorReasonExpressionFailed, "<assign location='cols'>: an integer operation overflowed or failed")); return true }; p.vCols = sceValue; return false }() {
 		return  // W3C SCXML 4.9: the error ends the block
 	}
 
@@ -4439,7 +4443,7 @@ func (p *SheetPeerPolicy) ExecuteTransitionContent(source SheetPeerState, transi
 
 	{
 	var ifCondFailed12 bool
-	if func() bool { var sceFailure scealgorithm.Failure; sceValue := p.vHub && scealgorithm.RemUint64(&sceFailure, p.pendingSheetColPayload.key, 256) != 1; if sceFailure.Failed() { engine.Raise(sce.NewPlatformError(SheetPeerEventErrorExecution, "<if cond='hub && _event.data.key % 256 !== 1'>: an integer operation overflowed or failed")); ifCondFailed12 = true; return false }; return sceValue }() {
+	if func() bool { var sceFailure scealgorithm.Failure; sceValue := p.vHub && scealgorithm.RemUint64(&sceFailure, p.pendingSheetColPayload.key, 256) != 1; if sceFailure.Failed() { engine.Raise(sce.NewPlatformError(SheetPeerEventErrorExecution, sceerrorreason.ErrorReasonExpressionFailed, "<if cond='hub && _event.data.key % 256 !== 1'>: an integer operation overflowed or failed")); ifCondFailed12 = true; return false }; return sceValue }() {
 
 	// W3C SCXML 6.2: send id="__send_20"
 	{
@@ -4492,7 +4496,7 @@ func (p *SheetPeerPolicy) ExecuteTransitionContent(source SheetPeerState, transi
 		// act it asked for was performed by nobody. Same event as an
 		// undeclared type, so a wiring mistake cannot read as success.
 		if !hostServed && !engine.HasEventProcessor("sce:mesh") {
-			errEvt := sce.NewPlatformError(SheetPeerEventErrorExecution, "<send type='sce:mesh'> names a processor the host declared but never registered")
+			errEvt := sce.NewPlatformError(SheetPeerEventErrorExecution, sceerrorreason.ErrorReasonProcessorUnregistered, "<send type='sce:mesh'> names a processor the host declared but never registered")
 			errEvt.Metadata.SendID = "__send_20"
 			engine.Raise(errEvt)
 		}
@@ -4513,7 +4517,7 @@ func (p *SheetPeerPolicy) ExecuteTransitionContent(source SheetPeerState, transi
 
 	{
 	var ifCondFailed13 bool
-	if func() bool { var sceFailure scealgorithm.Failure; sceValue := p.vHub && scealgorithm.RemUint64(&sceFailure, p.pendingSheetColPayload.key, 256) != 2; if sceFailure.Failed() { engine.Raise(sce.NewPlatformError(SheetPeerEventErrorExecution, "<if cond='hub && _event.data.key % 256 !== 2'>: an integer operation overflowed or failed")); ifCondFailed13 = true; return false }; return sceValue }() {
+	if func() bool { var sceFailure scealgorithm.Failure; sceValue := p.vHub && scealgorithm.RemUint64(&sceFailure, p.pendingSheetColPayload.key, 256) != 2; if sceFailure.Failed() { engine.Raise(sce.NewPlatformError(SheetPeerEventErrorExecution, sceerrorreason.ErrorReasonExpressionFailed, "<if cond='hub && _event.data.key % 256 !== 2'>: an integer operation overflowed or failed")); ifCondFailed13 = true; return false }; return sceValue }() {
 
 	// W3C SCXML 6.2: send id="__send_21"
 	{
@@ -4566,7 +4570,7 @@ func (p *SheetPeerPolicy) ExecuteTransitionContent(source SheetPeerState, transi
 		// act it asked for was performed by nobody. Same event as an
 		// undeclared type, so a wiring mistake cannot read as success.
 		if !hostServed && !engine.HasEventProcessor("sce:mesh") {
-			errEvt := sce.NewPlatformError(SheetPeerEventErrorExecution, "<send type='sce:mesh'> names a processor the host declared but never registered")
+			errEvt := sce.NewPlatformError(SheetPeerEventErrorExecution, sceerrorreason.ErrorReasonProcessorUnregistered, "<send type='sce:mesh'> names a processor the host declared but never registered")
 			errEvt.Metadata.SendID = "__send_21"
 			engine.Raise(errEvt)
 		}
@@ -4682,7 +4686,7 @@ func (p *SheetPeerPolicy) ExecuteTransitionContent(source SheetPeerState, transi
 		// act it asked for was performed by nobody. Same event as an
 		// undeclared type, so a wiring mistake cannot read as success.
 		if !hostServed && !engine.HasEventProcessor("sce:mesh") {
-			errEvt := sce.NewPlatformError(SheetPeerEventErrorExecution, "<send type='sce:mesh'> names a processor the host declared but never registered")
+			errEvt := sce.NewPlatformError(SheetPeerEventErrorExecution, sceerrorreason.ErrorReasonProcessorUnregistered, "<send type='sce:mesh'> names a processor the host declared but never registered")
 			errEvt.Metadata.SendID = "__send_23"
 			engine.Raise(errEvt)
 		}
@@ -4712,7 +4716,7 @@ func (p *SheetPeerPolicy) ExecuteTransitionContent(source SheetPeerState, transi
 
 
 
-	if func() bool { var sceFailure scealgorithm.Failure; sceValue := scealgorithm.Within(&sceFailure, scealgorithm.TakeOutcome(&sceFailure, sceAdapt_SheetPeer_RgaRemove__vv(p.vGoneCols, p.vRemoval)), 256); if sceFailure.Failed() { engine.Raise(sce.NewPlatformError(SheetPeerEventErrorExecution, "<assign location='goneCols'>: an integer operation overflowed or failed")); return true }; p.vGoneCols = sceValue; return false }() {
+	if func() bool { var sceFailure scealgorithm.Failure; sceValue := scealgorithm.Within(&sceFailure, scealgorithm.TakeOutcome(&sceFailure, sceAdapt_SheetPeer_RgaRemove__vv(p.vGoneCols, p.vRemoval)), 256); if sceFailure.Failed() { engine.Raise(sce.NewPlatformError(SheetPeerEventErrorExecution, sceerrorreason.ErrorReasonExpressionFailed, "<assign location='goneCols'>: an integer operation overflowed or failed")); return true }; p.vGoneCols = sceValue; return false }() {
 		return  // W3C SCXML 4.9: the error ends the block
 	}
 
@@ -4785,7 +4789,7 @@ func (p *SheetPeerPolicy) ExecuteTransitionContent(source SheetPeerState, transi
 		// act it asked for was performed by nobody. Same event as an
 		// undeclared type, so a wiring mistake cannot read as success.
 		if !hostServed && !engine.HasEventProcessor("sce:mesh") {
-			errEvt := sce.NewPlatformError(SheetPeerEventErrorExecution, "<send type='sce:mesh'> names a processor the host declared but never registered")
+			errEvt := sce.NewPlatformError(SheetPeerEventErrorExecution, sceerrorreason.ErrorReasonProcessorUnregistered, "<send type='sce:mesh'> names a processor the host declared but never registered")
 			errEvt.Metadata.SendID = "__send_25"
 			engine.Raise(errEvt)
 		}
@@ -4853,7 +4857,7 @@ func (p *SheetPeerPolicy) ExecuteTransitionContent(source SheetPeerState, transi
 		// act it asked for was performed by nobody. Same event as an
 		// undeclared type, so a wiring mistake cannot read as success.
 		if !hostServed && !engine.HasEventProcessor("sce:mesh") {
-			errEvt := sce.NewPlatformError(SheetPeerEventErrorExecution, "<send type='sce:mesh'> names a processor the host declared but never registered")
+			errEvt := sce.NewPlatformError(SheetPeerEventErrorExecution, sceerrorreason.ErrorReasonProcessorUnregistered, "<send type='sce:mesh'> names a processor the host declared but never registered")
 			errEvt.Metadata.SendID = "__send_26"
 			engine.Raise(errEvt)
 		}
@@ -4874,7 +4878,7 @@ func (p *SheetPeerPolicy) ExecuteTransitionContent(source SheetPeerState, transi
 			func() {
 
 
-	if func() bool { var sceFailure scealgorithm.Failure; sceValue := scealgorithm.AddUint32(&sceFailure, p.vRefusals, 1); if sceFailure.Failed() { engine.Raise(sce.NewPlatformError(SheetPeerEventErrorExecution, "<assign location='refusals'>: an integer operation overflowed or failed")); return true }; p.vRefusals = sceValue; return false }() {
+	if func() bool { var sceFailure scealgorithm.Failure; sceValue := scealgorithm.AddUint32(&sceFailure, p.vRefusals, 1); if sceFailure.Failed() { engine.Raise(sce.NewPlatformError(SheetPeerEventErrorExecution, sceerrorreason.ErrorReasonExpressionFailed, "<assign location='refusals'>: an integer operation overflowed or failed")); return true }; p.vRefusals = sceValue; return false }() {
 		return  // W3C SCXML 4.9: the error ends the block
 	}
 

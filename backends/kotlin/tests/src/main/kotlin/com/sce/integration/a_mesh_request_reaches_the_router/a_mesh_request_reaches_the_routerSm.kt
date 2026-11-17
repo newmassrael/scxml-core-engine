@@ -239,7 +239,7 @@ class AMeshRequestReachesTheRouterStateMachine(
             try {
                 engine.setVariable(sid, "answered", engine.evaluateExpr(sid, com.sce.runtime.ScriptSource.lua("0", "0")))
             } catch (e: Exception) {
-                raisePlatformError(AMeshRequestReachesTheRouterEvent.Error.Execution, "<data id='answered'> expr failed to evaluate")
+                raisePlatformError(AMeshRequestReachesTheRouterEvent.Error.Execution, ErrorReason.EXPRESSION_FAILED, "<data id='answered'> expr failed to evaluate")
             }
         }
         // §scxml-6.4: 'failed' takes a value its invoke handed it, in place of its own
@@ -248,7 +248,7 @@ class AMeshRequestReachesTheRouterStateMachine(
             try {
                 engine.setVariable(sid, "failed", engine.evaluateExpr(sid, com.sce.runtime.ScriptSource.lua("0", "0")))
             } catch (e: Exception) {
-                raisePlatformError(AMeshRequestReachesTheRouterEvent.Error.Execution, "<data id='failed'> expr failed to evaluate")
+                raisePlatformError(AMeshRequestReachesTheRouterEvent.Error.Execution, ErrorReason.EXPRESSION_FAILED, "<data id='failed'> expr failed to evaluate")
             }
         }
         // §scxml-6.4: 'refused' takes a value its invoke handed it, in place of its own
@@ -257,7 +257,7 @@ class AMeshRequestReachesTheRouterStateMachine(
             try {
                 engine.setVariable(sid, "refused", engine.evaluateExpr(sid, com.sce.runtime.ScriptSource.lua("0", "0")))
             } catch (e: Exception) {
-                raisePlatformError(AMeshRequestReachesTheRouterEvent.Error.Execution, "<data id='refused'> expr failed to evaluate")
+                raisePlatformError(AMeshRequestReachesTheRouterEvent.Error.Execution, ErrorReason.EXPRESSION_FAILED, "<data id='refused'> expr failed to evaluate")
             }
         }
     }
@@ -287,14 +287,14 @@ class AMeshRequestReachesTheRouterStateMachine(
 
     // W3C SCXML 5.9.1: a cond that cannot be evaluated raises error.execution;
     // `null` says so, where a bare `false` could not.
-    private fun evaluateGuardRaising(guardExpr: com.sce.runtime.ScriptSource, reason: String): Boolean? {
+    private fun evaluateGuardRaising(guardExpr: com.sce.runtime.ScriptSource, detail: String): Boolean? {
         assertScriptSession()
         val engine = scriptEngine ?: error("scriptEngine is required (codegen invariant: needs_script_engine == true)")
         val sid = scriptSessionId ?: error("scriptSessionId is established by the start (codegen invariant)")
         return try {
             engine.evaluateCondition(sid, guardExpr)
         } catch (e: Exception) {
-            raisePlatformError(AMeshRequestReachesTheRouterEvent.Error.Execution, reason)
+            raisePlatformError(AMeshRequestReachesTheRouterEvent.Error.Execution, ErrorReason.EXPRESSION_FAILED, detail)
             null
         }
     }
@@ -335,7 +335,7 @@ class AMeshRequestReachesTheRouterStateMachine(
         return try {
             engine.evaluateExpr(sid, serialized)?.toString() ?: ""
         } catch (e: Exception) {
-            raisePlatformError(AMeshRequestReachesTheRouterEvent.Error.Execution, "an expression could not be serialised to JSON")
+            raisePlatformError(AMeshRequestReachesTheRouterEvent.Error.Execution, ErrorReason.EXPRESSION_FAILED, "an expression could not be serialised to JSON")
             ""
         }
     }
@@ -356,7 +356,7 @@ class AMeshRequestReachesTheRouterStateMachine(
             engine.assign(sid, location, expr)
             true
         } catch (e: Exception) {
-            raisePlatformError(AMeshRequestReachesTheRouterEvent.Error.Execution, "<assign> failed")
+            raisePlatformError(AMeshRequestReachesTheRouterEvent.Error.Execution, ErrorReason.ASSIGNMENT_FAILED, "<assign> failed")
             false
         }
     }
@@ -372,7 +372,7 @@ class AMeshRequestReachesTheRouterStateMachine(
             engine.executeScript(sid, script)
             true
         } catch (e: Exception) {
-            raisePlatformError(AMeshRequestReachesTheRouterEvent.Error.Execution, "<script> failed to execute")
+            raisePlatformError(AMeshRequestReachesTheRouterEvent.Error.Execution, ErrorReason.SCRIPT_FAILED, "<script> failed to execute")
             false
         }
     }
@@ -515,7 +515,7 @@ class AMeshRequestReachesTheRouterStateMachine(
                             // W3C SCXML 5.7.1: report the failure and omit the name and the
                             // value — the act still happens, without a field the document
                             // could not produce.
-                            raisePlatformError(AMeshRequestReachesTheRouterEvent.Error.Execution, "<invoke> <param name='force'> expr failed to evaluate")
+                            raisePlatformError(AMeshRequestReachesTheRouterEvent.Error.Execution, ErrorReason.EXPRESSION_FAILED, "<invoke> <param name='force'> expr failed to evaluate")
                         }
                         hostInvokeParams["speed"] =
                             (hostInvokeParams["speed"] ?: emptyList()) + "3"
@@ -535,7 +535,7 @@ class AMeshRequestReachesTheRouterStateMachine(
                             // be run and none was, which is the same fact as
                             // an unsupported type — so the same event, rather
                             // than a silence that reads as started.
-                            raisePlatformError(AMeshRequestReachesTheRouterEvent.Error.Execution, "<invoke> names an invoker the host declared but never registered")
+                            raisePlatformError(AMeshRequestReachesTheRouterEvent.Error.Execution, ErrorReason.PROCESSOR_UNREGISTERED, "<invoke> names an invoker the host declared but never registered")
                         }
                     }
                 }

@@ -524,8 +524,12 @@ public final class OnexitRunsBeforeTheStateLeavesPolicy: InvocablePolicy {
 
     /// Says what went wrong where the document can see it: `error.execution` on the internal
     /// queue (§scxml-5.9.1, 5.3).
-    private func raiseExecutionError(_ message: String, engine: Engine<OnexitRunsBeforeTheStateLeavesPolicy>) {
-        engine.raise(EventWithMetadata.platformError(OnexitRunsBeforeTheStateLeavesEvent.errorExecution, message: message))
+    /// `reason` is the code of sce:std/engine/error_reason the record carries
+    /// (docs/adr/0106 #111).
+    private func raiseExecutionError(
+        _ reason: ErrorReason, _ message: String, engine: Engine<OnexitRunsBeforeTheStateLeavesPolicy>
+    ) {
+        engine.raise(EventWithMetadata.platformError(OnexitRunsBeforeTheStateLeavesEvent.errorExecution, reason: reason, message: message))
     }
 
     /// W3C SCXML 5.3: the `<data id>` `id` takes the value of the lowered expression, or nil when it
@@ -582,6 +586,7 @@ public final class OnexitRunsBeforeTheStateLeavesPolicy: InvocablePolicy {
             }
         } catch {
             raiseExecutionError(
+                handed == nil ? .expressionFailed : .paramUnfit,
                 handed == nil
                     ? "<data id='\(id)'> expr failed to evaluate"
                     : "<data id='\(id)'> could not hold the value its parent handed it",
@@ -747,7 +752,7 @@ public final class OnexitRunsBeforeTheStateLeavesPolicy: InvocablePolicy {
             // this call the payload is lost to the document and to the host alike.
             engine.notePayloadReading(event, reading: Self.payloadReading(of: reading))
         } catch {
-            raiseExecutionError("_event could not be bound for '\(name)'", engine: engine)
+            raiseExecutionError(.payloadRefused, "_event could not be bound for '\(name)'", engine: engine)
         }
     }
 
@@ -784,7 +789,7 @@ public final class OnexitRunsBeforeTheStateLeavesPolicy: InvocablePolicy {
         do {
             return try scriptSession.evaluateCondition(condition, chunkName: "=cond")
         } catch {
-            raiseExecutionError("a \(element) cond failed to evaluate", engine: engine)
+            raiseExecutionError(.expressionFailed, "a \(element) cond failed to evaluate", engine: engine)
             failed = true
             return false
         }
@@ -832,7 +837,7 @@ public final class OnexitRunsBeforeTheStateLeavesPolicy: InvocablePolicy {
 
                 // W3C SCXML 5.4: <assign location="exits">
                 if !assignData("exits", "_scxml_add(exits, 1)") {
-                    raiseExecutionError("<assign> to 'exits' failed", engine: engine)
+                    raiseExecutionError(.assignmentFailed, "<assign> to 'exits' failed", engine: engine)
                     break sceBlock  // W3C SCXML 4.9: the error ends the block
                 }
 
@@ -841,7 +846,7 @@ public final class OnexitRunsBeforeTheStateLeavesPolicy: InvocablePolicy {
 
                 // W3C SCXML 5.4: <assign location="selfInInner">
                 if !assignData("selfInInner", "1") {
-                    raiseExecutionError("<assign> to 'selfInInner' failed", engine: engine)
+                    raiseExecutionError(.assignmentFailed, "<assign> to 'selfInInner' failed", engine: engine)
                     break sceBlock  // W3C SCXML 4.9: the error ends the block
                 }
 
@@ -852,7 +857,7 @@ public final class OnexitRunsBeforeTheStateLeavesPolicy: InvocablePolicy {
 
                 // W3C SCXML 5.4: <assign location="parentInInner">
                 if !assignData("parentInInner", "1") {
-                    raiseExecutionError("<assign> to 'parentInInner' failed", engine: engine)
+                    raiseExecutionError(.assignmentFailed, "<assign> to 'parentInInner' failed", engine: engine)
                     break sceBlock  // W3C SCXML 4.9: the error ends the block
                 }
 
@@ -865,7 +870,7 @@ public final class OnexitRunsBeforeTheStateLeavesPolicy: InvocablePolicy {
 
                 // W3C SCXML 5.4: <assign location="exits">
                 if !assignData("exits", "_scxml_add(exits, 1)") {
-                    raiseExecutionError("<assign> to 'exits' failed", engine: engine)
+                    raiseExecutionError(.assignmentFailed, "<assign> to 'exits' failed", engine: engine)
                     break sceBlock  // W3C SCXML 4.9: the error ends the block
                 }
 
@@ -874,7 +879,7 @@ public final class OnexitRunsBeforeTheStateLeavesPolicy: InvocablePolicy {
 
                 // W3C SCXML 5.4: <assign location="selfInOuter">
                 if !assignData("selfInOuter", "1") {
-                    raiseExecutionError("<assign> to 'selfInOuter' failed", engine: engine)
+                    raiseExecutionError(.assignmentFailed, "<assign> to 'selfInOuter' failed", engine: engine)
                     break sceBlock  // W3C SCXML 4.9: the error ends the block
                 }
 
@@ -885,7 +890,7 @@ public final class OnexitRunsBeforeTheStateLeavesPolicy: InvocablePolicy {
 
                 // W3C SCXML 5.4: <assign location="childInOuter">
                 if !assignData("childInOuter", "1") {
-                    raiseExecutionError("<assign> to 'childInOuter' failed", engine: engine)
+                    raiseExecutionError(.assignmentFailed, "<assign> to 'childInOuter' failed", engine: engine)
                     break sceBlock  // W3C SCXML 4.9: the error ends the block
                 }
 

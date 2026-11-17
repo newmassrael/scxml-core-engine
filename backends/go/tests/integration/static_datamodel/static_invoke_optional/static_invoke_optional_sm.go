@@ -31,6 +31,7 @@ import (
 	"time"
 
 	sce "github.com/newmassrael/sce-go-runtime"
+	sceerrorreason "github.com/newmassrael/sce-go-runtime/generated/error_reason"
 	scealgorithm "github.com/newmassrael/sce-forge-runtime/algorithm"
 	"github.com/newmassrael/sce-forge-runtime/optional"
 )
@@ -41,6 +42,9 @@ var (
 	_ = filepath.Join
 	_ = strings.HasPrefix
 	_ = time.Duration(0)
+	// Why an error.* event is raised (sce:std/engine/error_reason,
+	// docs/adr/0106 #111); a machine that raises none still imports it.
+	_ = sceerrorreason.ErrorReasonExpressionFailed
 	_ scealgorithm.Failure
 )
 
@@ -1159,7 +1163,7 @@ func (p *StaticInvokeOptionalPolicy) ExecutePendingInvokes(engine *sce.Engine[St
 						seed.VLabel = sceValue					} else {
 						// §scxml-5.7.1: a value that failed is reported and the
 						// child still starts, one value short.
-						engine.Raise(sce.NewPlatformError(StaticInvokeOptionalEventErrorExecution, "<invoke> <param name='label'> could not be read"))
+						engine.Raise(sce.NewPlatformError(StaticInvokeOptionalEventErrorExecution, sceerrorreason.ErrorReasonLocationInvalid, "<invoke> <param name='label'> could not be read"))
 					}
 				}
 				childPolicy.AcceptParams(seed)
@@ -1198,7 +1202,7 @@ func (p *StaticInvokeOptionalPolicy) ExecutePendingInvokes(engine *sce.Engine[St
 			if refused := childEngine.Initialize(); refused != nil {
 				childEngine.DetachMesh()
 				delete(p.activeInvokes, "given")
-				engine.Raise(sce.NewPlatformError(StaticInvokeOptionalEventErrorExecution, sce.ChildStartRefusal("given", refused)))
+				engine.Raise(sce.NewPlatformError(StaticInvokeOptionalEventErrorExecution, sceerrorreason.ErrorReasonInvokeChildInitFailed, sce.ChildStartRefusal("given", refused)))
 				continue
 			}
 
@@ -1259,7 +1263,7 @@ func (p *StaticInvokeOptionalPolicy) ExecutePendingInvokes(engine *sce.Engine[St
 						seed.VLabel = sceValue					} else {
 						// §scxml-5.7.1: a value that failed is reported and the
 						// child still starts, one value short.
-						engine.Raise(sce.NewPlatformError(StaticInvokeOptionalEventErrorExecution, "<invoke> <param name='label'> could not be read"))
+						engine.Raise(sce.NewPlatformError(StaticInvokeOptionalEventErrorExecution, sceerrorreason.ErrorReasonLocationInvalid, "<invoke> <param name='label'> could not be read"))
 					}
 				}
 				childPolicy.AcceptParams(seed)
@@ -1298,7 +1302,7 @@ func (p *StaticInvokeOptionalPolicy) ExecutePendingInvokes(engine *sce.Engine[St
 			if refused := childEngine.Initialize(); refused != nil {
 				childEngine.DetachMesh()
 				delete(p.activeInvokes, "lifted")
-				engine.Raise(sce.NewPlatformError(StaticInvokeOptionalEventErrorExecution, sce.ChildStartRefusal("lifted", refused)))
+				engine.Raise(sce.NewPlatformError(StaticInvokeOptionalEventErrorExecution, sceerrorreason.ErrorReasonInvokeChildInitFailed, sce.ChildStartRefusal("lifted", refused)))
 				continue
 			}
 
@@ -1391,7 +1395,7 @@ func (p *StaticInvokeOptionalPolicy) ExecutePendingInvokes(engine *sce.Engine[St
 			if refused := childEngine.Initialize(); refused != nil {
 				childEngine.DetachMesh()
 				delete(p.activeInvokes, "absent")
-				engine.Raise(sce.NewPlatformError(StaticInvokeOptionalEventErrorExecution, sce.ChildStartRefusal("absent", refused)))
+				engine.Raise(sce.NewPlatformError(StaticInvokeOptionalEventErrorExecution, sceerrorreason.ErrorReasonInvokeChildInitFailed, sce.ChildStartRefusal("absent", refused)))
 				continue
 			}
 
@@ -1481,7 +1485,7 @@ func (p *StaticInvokeOptionalPolicy) ExecutePendingInvokes(engine *sce.Engine[St
 			if refused := childEngine.Initialize(); refused != nil {
 				childEngine.DetachMesh()
 				delete(p.activeInvokes, "replaced")
-				engine.Raise(sce.NewPlatformError(StaticInvokeOptionalEventErrorExecution, sce.ChildStartRefusal("replaced", refused)))
+				engine.Raise(sce.NewPlatformError(StaticInvokeOptionalEventErrorExecution, sceerrorreason.ErrorReasonInvokeChildInitFailed, sce.ChildStartRefusal("replaced", refused)))
 				continue
 			}
 
@@ -1539,7 +1543,7 @@ func (p *StaticInvokeOptionalPolicy) ExecutePendingInvokes(engine *sce.Engine[St
 						seed.VLabel = sceValue					} else {
 						// §scxml-5.7.1: a value that failed is reported and the
 						// child still starts, one value short.
-						engine.Raise(sce.NewPlatformError(StaticInvokeOptionalEventErrorExecution, "<invoke> <param name='label'> could not be read"))
+						engine.Raise(sce.NewPlatformError(StaticInvokeOptionalEventErrorExecution, sceerrorreason.ErrorReasonLocationInvalid, "<invoke> <param name='label'> could not be read"))
 					}
 				}
 				childPolicy.AcceptParams(seed)
@@ -1578,7 +1582,7 @@ func (p *StaticInvokeOptionalPolicy) ExecutePendingInvokes(engine *sce.Engine[St
 			if refused := childEngine.Initialize(); refused != nil {
 				childEngine.DetachMesh()
 				delete(p.activeInvokes, "over")
-				engine.Raise(sce.NewPlatformError(StaticInvokeOptionalEventErrorExecution, sce.ChildStartRefusal("over", refused)))
+				engine.Raise(sce.NewPlatformError(StaticInvokeOptionalEventErrorExecution, sceerrorreason.ErrorReasonInvokeChildInitFailed, sce.ChildStartRefusal("over", refused)))
 				continue
 			}
 
@@ -1636,7 +1640,7 @@ func (p *StaticInvokeOptionalPolicy) ExecutePendingInvokes(engine *sce.Engine[St
 						seed.VLabel = sceValue					} else {
 						// §scxml-5.7.1: a value that failed is reported and the
 						// child still starts, one value short.
-						engine.Raise(sce.NewPlatformError(StaticInvokeOptionalEventErrorExecution, "<invoke> <param name='label'> could not be read"))
+						engine.Raise(sce.NewPlatformError(StaticInvokeOptionalEventErrorExecution, sceerrorreason.ErrorReasonLocationInvalid, "<invoke> <param name='label'> could not be read"))
 					}
 				}
 				childPolicy.AcceptParams(seed)
@@ -1675,7 +1679,7 @@ func (p *StaticInvokeOptionalPolicy) ExecutePendingInvokes(engine *sce.Engine[St
 			if refused := childEngine.Initialize(); refused != nil {
 				childEngine.DetachMesh()
 				delete(p.activeInvokes, "fits")
-				engine.Raise(sce.NewPlatformError(StaticInvokeOptionalEventErrorExecution, sce.ChildStartRefusal("fits", refused)))
+				engine.Raise(sce.NewPlatformError(StaticInvokeOptionalEventErrorExecution, sceerrorreason.ErrorReasonInvokeChildInitFailed, sce.ChildStartRefusal("fits", refused)))
 				continue
 			}
 
@@ -2846,7 +2850,7 @@ func (p *StaticInvokeOptionalPolicy) ExecuteTransitionContent(source StaticInvok
 			func() {
 
 
-	if func() bool { var sceFailure scealgorithm.Failure; sceValue := scealgorithm.AddUint32(&sceFailure, p.vCompleted, 1); if sceFailure.Failed() { engine.Raise(sce.NewPlatformError(StaticInvokeOptionalEventErrorExecution, "<assign location='completed'>: an integer operation overflowed or failed")); return true }; p.vCompleted = sceValue; return false }() {
+	if func() bool { var sceFailure scealgorithm.Failure; sceValue := scealgorithm.AddUint32(&sceFailure, p.vCompleted, 1); if sceFailure.Failed() { engine.Raise(sce.NewPlatformError(StaticInvokeOptionalEventErrorExecution, sceerrorreason.ErrorReasonExpressionFailed, "<assign location='completed'>: an integer operation overflowed or failed")); return true }; p.vCompleted = sceValue; return false }() {
 		return  // W3C SCXML 4.9: the error ends the block
 	}
 
@@ -2857,7 +2861,7 @@ func (p *StaticInvokeOptionalPolicy) ExecuteTransitionContent(source StaticInvok
 			func() {
 
 
-	if func() bool { var sceFailure scealgorithm.Failure; sceValue := scealgorithm.AddUint32(&sceFailure, p.vCompleted, 10); if sceFailure.Failed() { engine.Raise(sce.NewPlatformError(StaticInvokeOptionalEventErrorExecution, "<assign location='completed'>: an integer operation overflowed or failed")); return true }; p.vCompleted = sceValue; return false }() {
+	if func() bool { var sceFailure scealgorithm.Failure; sceValue := scealgorithm.AddUint32(&sceFailure, p.vCompleted, 10); if sceFailure.Failed() { engine.Raise(sce.NewPlatformError(StaticInvokeOptionalEventErrorExecution, sceerrorreason.ErrorReasonExpressionFailed, "<assign location='completed'>: an integer operation overflowed or failed")); return true }; p.vCompleted = sceValue; return false }() {
 		return  // W3C SCXML 4.9: the error ends the block
 	}
 
@@ -2868,7 +2872,7 @@ func (p *StaticInvokeOptionalPolicy) ExecuteTransitionContent(source StaticInvok
 			func() {
 
 
-	if func() bool { var sceFailure scealgorithm.Failure; sceValue := scealgorithm.AddUint32(&sceFailure, p.vCompleted, 100); if sceFailure.Failed() { engine.Raise(sce.NewPlatformError(StaticInvokeOptionalEventErrorExecution, "<assign location='completed'>: an integer operation overflowed or failed")); return true }; p.vCompleted = sceValue; return false }() {
+	if func() bool { var sceFailure scealgorithm.Failure; sceValue := scealgorithm.AddUint32(&sceFailure, p.vCompleted, 100); if sceFailure.Failed() { engine.Raise(sce.NewPlatformError(StaticInvokeOptionalEventErrorExecution, sceerrorreason.ErrorReasonExpressionFailed, "<assign location='completed'>: an integer operation overflowed or failed")); return true }; p.vCompleted = sceValue; return false }() {
 		return  // W3C SCXML 4.9: the error ends the block
 	}
 
@@ -2879,7 +2883,7 @@ func (p *StaticInvokeOptionalPolicy) ExecuteTransitionContent(source StaticInvok
 			func() {
 
 
-	if func() bool { var sceFailure scealgorithm.Failure; sceValue := scealgorithm.AddUint32(&sceFailure, p.vCompleted, 1000); if sceFailure.Failed() { engine.Raise(sce.NewPlatformError(StaticInvokeOptionalEventErrorExecution, "<assign location='completed'>: an integer operation overflowed or failed")); return true }; p.vCompleted = sceValue; return false }() {
+	if func() bool { var sceFailure scealgorithm.Failure; sceValue := scealgorithm.AddUint32(&sceFailure, p.vCompleted, 1000); if sceFailure.Failed() { engine.Raise(sce.NewPlatformError(StaticInvokeOptionalEventErrorExecution, sceerrorreason.ErrorReasonExpressionFailed, "<assign location='completed'>: an integer operation overflowed or failed")); return true }; p.vCompleted = sceValue; return false }() {
 		return  // W3C SCXML 4.9: the error ends the block
 	}
 
@@ -2890,7 +2894,7 @@ func (p *StaticInvokeOptionalPolicy) ExecuteTransitionContent(source StaticInvok
 			func() {
 
 
-	if func() bool { var sceFailure scealgorithm.Failure; sceValue := scealgorithm.AddUint32(&sceFailure, p.vCompleted, 10000); if sceFailure.Failed() { engine.Raise(sce.NewPlatformError(StaticInvokeOptionalEventErrorExecution, "<assign location='completed'>: an integer operation overflowed or failed")); return true }; p.vCompleted = sceValue; return false }() {
+	if func() bool { var sceFailure scealgorithm.Failure; sceValue := scealgorithm.AddUint32(&sceFailure, p.vCompleted, 10000); if sceFailure.Failed() { engine.Raise(sce.NewPlatformError(StaticInvokeOptionalEventErrorExecution, sceerrorreason.ErrorReasonExpressionFailed, "<assign location='completed'>: an integer operation overflowed or failed")); return true }; p.vCompleted = sceValue; return false }() {
 		return  // W3C SCXML 4.9: the error ends the block
 	}
 
@@ -2901,7 +2905,7 @@ func (p *StaticInvokeOptionalPolicy) ExecuteTransitionContent(source StaticInvok
 			func() {
 
 
-	if func() bool { var sceFailure scealgorithm.Failure; sceValue := scealgorithm.AddUint32(&sceFailure, p.vCompleted, 100000); if sceFailure.Failed() { engine.Raise(sce.NewPlatformError(StaticInvokeOptionalEventErrorExecution, "<assign location='completed'>: an integer operation overflowed or failed")); return true }; p.vCompleted = sceValue; return false }() {
+	if func() bool { var sceFailure scealgorithm.Failure; sceValue := scealgorithm.AddUint32(&sceFailure, p.vCompleted, 100000); if sceFailure.Failed() { engine.Raise(sce.NewPlatformError(StaticInvokeOptionalEventErrorExecution, sceerrorreason.ErrorReasonExpressionFailed, "<assign location='completed'>: an integer operation overflowed or failed")); return true }; p.vCompleted = sceValue; return false }() {
 		return  // W3C SCXML 4.9: the error ends the block
 	}
 
@@ -2912,7 +2916,7 @@ func (p *StaticInvokeOptionalPolicy) ExecuteTransitionContent(source StaticInvok
 			func() {
 
 
-	if func() bool { var sceFailure scealgorithm.Failure; sceValue := scealgorithm.AddUint32(&sceFailure, p.vErrors, 1); if sceFailure.Failed() { engine.Raise(sce.NewPlatformError(StaticInvokeOptionalEventErrorExecution, "<assign location='errors'>: an integer operation overflowed or failed")); return true }; p.vErrors = sceValue; return false }() {
+	if func() bool { var sceFailure scealgorithm.Failure; sceValue := scealgorithm.AddUint32(&sceFailure, p.vErrors, 1); if sceFailure.Failed() { engine.Raise(sce.NewPlatformError(StaticInvokeOptionalEventErrorExecution, sceerrorreason.ErrorReasonExpressionFailed, "<assign location='errors'>: an integer operation overflowed or failed")); return true }; p.vErrors = sceValue; return false }() {
 		return  // W3C SCXML 4.9: the error ends the block
 	}
 

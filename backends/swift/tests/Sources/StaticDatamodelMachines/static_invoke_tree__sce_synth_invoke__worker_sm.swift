@@ -605,7 +605,7 @@ public final class StaticInvokeTreeSceSynthInvokeWorkerPolicy: InvocablePolicy {
             // A value naming none of the declared candidates is the failure the
             // Interpreter reports when a document will not load: nothing is created,
             // and, as there, the arguments are not read.
-            engine.raise(EventWithMetadata.platformError(StaticInvokeTreeSceSynthInvokeWorkerEvent.errorExecution, message: "<invoke srcexpr> evaluated to a document it did not declare"))
+            engine.raise(EventWithMetadata.platformError(StaticInvokeTreeSceSynthInvokeWorkerEvent.errorExecution, reason: .invokeSrcNotFound, message: "<invoke srcexpr> evaluated to a document it did not declare"))
             return
         }
         // W3C SCXML 6.4.1: tracked before the child initializes.
@@ -662,7 +662,7 @@ public final class StaticInvokeTreeSceSynthInvokeWorkerPolicy: InvocablePolicy {
             sessionID: sessionID
         )
         if !engine.performHostInvoke(request) {
-            engine.raise(EventWithMetadata.platformError(StaticInvokeTreeSceSynthInvokeWorkerEvent.errorExecution, message: "<invoke> names an invoker the host declared but never registered"))
+            engine.raise(EventWithMetadata.platformError(StaticInvokeTreeSceSynthInvokeWorkerEvent.errorExecution, reason: .processorUnregistered, message: "<invoke> names an invoker the host declared but never registered"))
         }
     }
 
@@ -925,7 +925,7 @@ public final class StaticInvokeTreeSceSynthInvokeWorkerPolicy: InvocablePolicy {
                 sceBlock: do {
 
 
-                if ({ () -> Bool in do { let sceValue: UInt32 = (try Checked.add(self.vSteps, 1)); self.vSteps = sceValue } catch { engine.raise(EventWithMetadata.platformError(StaticInvokeTreeSceSynthInvokeWorkerEvent.errorExecution, message: "<assign location='steps'>: an integer operation overflowed or failed")); return true }; return false }()) {
+                if ({ () -> Bool in do { let sceValue: UInt32 = (try Checked.add(self.vSteps, 1)); self.vSteps = sceValue } catch { engine.raise(EventWithMetadata.platformError(StaticInvokeTreeSceSynthInvokeWorkerEvent.errorExecution, reason: .expressionFailed, message: "<assign location='steps'>: an integer operation overflowed or failed")); return true }; return false }()) {
                     break sceBlock  // W3C SCXML 4.9: the error ends the block
                 }
 
@@ -958,7 +958,7 @@ public final class StaticInvokeTreeSceSynthInvokeWorkerPolicy: InvocablePolicy {
                         // W3C SCXML C.1: this session was started by its host, not by an
                         // `<invoke>`, so `#_parent` reaches nobody — error.communication,
                         // nothing delivered, and the block ends (4.9).
-                        var sendError = EventWithMetadata.platformError(StaticInvokeTreeSceSynthInvokeWorkerEvent.errorCommunication, message: "<send target=#_parent> has no parent session to reach")
+                        var sendError = EventWithMetadata.platformError(StaticInvokeTreeSceSynthInvokeWorkerEvent.errorCommunication, reason: .targetUnreachable, message: "<send target=#_parent> has no parent session to reach")
                         sendError.metadata.sendID = "__send_0"
                         engine.raise(sendError)
 
@@ -983,7 +983,7 @@ public final class StaticInvokeTreeSceSynthInvokeWorkerPolicy: InvocablePolicy {
                         // W3C SCXML C.1: this session was started by its host, not by an
                         // `<invoke>`, so `#_parent` reaches nobody — error.communication,
                         // nothing delivered, and the block ends (4.9).
-                        var sendError = EventWithMetadata.platformError(StaticInvokeTreeSceSynthInvokeWorkerEvent.errorCommunication, message: "<send target=#_parent> has no parent session to reach")
+                        var sendError = EventWithMetadata.platformError(StaticInvokeTreeSceSynthInvokeWorkerEvent.errorCommunication, reason: .targetUnreachable, message: "<send target=#_parent> has no parent session to reach")
                         sendError.metadata.sendID = "__send_1"
                         engine.raise(sendError)
 
@@ -996,7 +996,7 @@ public final class StaticInvokeTreeSceSynthInvokeWorkerPolicy: InvocablePolicy {
                 sceBlock: do {
 
 
-                if ({ () -> Bool in do { let sceValue: String = (try Checked.bounded("static_hybrid_holder.scxml", capacity: 48)); self.vPick = sceValue } catch { engine.raise(EventWithMetadata.platformError(StaticInvokeTreeSceSynthInvokeWorkerEvent.errorExecution, message: "<assign location='pick'>: an integer operation overflowed or failed")); return true }; return false }()) {
+                if ({ () -> Bool in do { let sceValue: String = (try Checked.bounded("static_hybrid_holder.scxml", capacity: 48)); self.vPick = sceValue } catch { engine.raise(EventWithMetadata.platformError(StaticInvokeTreeSceSynthInvokeWorkerEvent.errorExecution, reason: .expressionFailed, message: "<assign location='pick'>: an integer operation overflowed or failed")); return true }; return false }()) {
                     break sceBlock  // W3C SCXML 4.9: the error ends the block
                 }
 
@@ -1006,7 +1006,7 @@ public final class StaticInvokeTreeSceSynthInvokeWorkerPolicy: InvocablePolicy {
                 sceBlock: do {
 
 
-                if ({ () -> Bool in do { let sceValue: UInt32 = (try Checked.add(self.vSteps, 10)); self.vSteps = sceValue } catch { engine.raise(EventWithMetadata.platformError(StaticInvokeTreeSceSynthInvokeWorkerEvent.errorExecution, message: "<assign location='steps'>: an integer operation overflowed or failed")); return true }; return false }()) {
+                if ({ () -> Bool in do { let sceValue: UInt32 = (try Checked.add(self.vSteps, 10)); self.vSteps = sceValue } catch { engine.raise(EventWithMetadata.platformError(StaticInvokeTreeSceSynthInvokeWorkerEvent.errorExecution, reason: .expressionFailed, message: "<assign location='steps'>: an integer operation overflowed or failed")); return true }; return false }()) {
                     break sceBlock  // W3C SCXML 4.9: the error ends the block
                 }
 
@@ -1023,7 +1023,7 @@ public final class StaticInvokeTreeSceSynthInvokeWorkerPolicy: InvocablePolicy {
                         // W3C SCXML C.1: this session was started by its host, not by an
                         // `<invoke>`, so `#_parent` reaches nobody — error.communication,
                         // nothing delivered, and the block ends (4.9).
-                        var sendError = EventWithMetadata.platformError(StaticInvokeTreeSceSynthInvokeWorkerEvent.errorCommunication, message: "<send target=#_parent> has no parent session to reach")
+                        var sendError = EventWithMetadata.platformError(StaticInvokeTreeSceSynthInvokeWorkerEvent.errorCommunication, reason: .targetUnreachable, message: "<send target=#_parent> has no parent session to reach")
                         sendError.metadata.sendID = "__send_2"
                         engine.raise(sendError)
 

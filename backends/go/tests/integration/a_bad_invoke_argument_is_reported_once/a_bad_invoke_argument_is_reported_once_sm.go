@@ -31,6 +31,7 @@ import (
 	"time"
 
 	sce "github.com/newmassrael/sce-go-runtime"
+	sceerrorreason "github.com/newmassrael/sce-go-runtime/generated/error_reason"
 )
 
 // Ensure imports are used
@@ -39,6 +40,9 @@ var (
 	_ = filepath.Join
 	_ = strings.HasPrefix
 	_ = time.Duration(0)
+	// Why an error.* event is raised (sce:std/engine/error_reason,
+	// docs/adr/0106 #111); a machine that raises none still imports it.
+	_ = sceerrorreason.ErrorReasonExpressionFailed
 )
 
 // ======================================================================
@@ -442,7 +446,7 @@ func (p *ABadInvokeArgumentIsReportedOncePolicy) InitializeDataModel(eng *sce.En
 		if err == nil {
 			_ = engine.SetVariable(sessionID, "v", result)
 		} else {
-			eng.Raise(sce.NewPlatformError(ABadInvokeArgumentIsReportedOnceEventErrorExecution, "<data id='v'> expr failed to evaluate"))
+			eng.Raise(sce.NewPlatformError(ABadInvokeArgumentIsReportedOnceEventErrorExecution, sceerrorreason.ErrorReasonExpressionFailed, "<data id='v'> expr failed to evaluate"))
 			_ = engine.SetVariable(sessionID, "v", nil)
 		}
 	}
@@ -456,7 +460,7 @@ func (p *ABadInvokeArgumentIsReportedOncePolicy) InitializeDataModel(eng *sce.En
 		if err == nil {
 			_ = engine.SetVariable(sessionID, "obj", result)
 		} else {
-			eng.Raise(sce.NewPlatformError(ABadInvokeArgumentIsReportedOnceEventErrorExecution, "<data id='obj'> expr failed to evaluate"))
+			eng.Raise(sce.NewPlatformError(ABadInvokeArgumentIsReportedOnceEventErrorExecution, sceerrorreason.ErrorReasonExpressionFailed, "<data id='obj'> expr failed to evaluate"))
 			_ = engine.SetVariable(sessionID, "obj", nil)
 		}
 	}
@@ -470,7 +474,7 @@ func (p *ABadInvokeArgumentIsReportedOncePolicy) InitializeDataModel(eng *sce.En
 		if err == nil {
 			_ = engine.SetVariable(sessionID, "errors", result)
 		} else {
-			eng.Raise(sce.NewPlatformError(ABadInvokeArgumentIsReportedOnceEventErrorExecution, "<data id='errors'> expr failed to evaluate"))
+			eng.Raise(sce.NewPlatformError(ABadInvokeArgumentIsReportedOnceEventErrorExecution, sceerrorreason.ErrorReasonExpressionFailed, "<data id='errors'> expr failed to evaluate"))
 			_ = engine.SetVariable(sessionID, "errors", nil)
 		}
 	}
@@ -484,7 +488,7 @@ func (p *ABadInvokeArgumentIsReportedOncePolicy) InitializeDataModel(eng *sce.En
 		if err == nil {
 			_ = engine.SetVariable(sessionID, "started", result)
 		} else {
-			eng.Raise(sce.NewPlatformError(ABadInvokeArgumentIsReportedOnceEventErrorExecution, "<data id='started'> expr failed to evaluate"))
+			eng.Raise(sce.NewPlatformError(ABadInvokeArgumentIsReportedOnceEventErrorExecution, sceerrorreason.ErrorReasonExpressionFailed, "<data id='started'> expr failed to evaluate"))
 			_ = engine.SetVariable(sessionID, "started", nil)
 		}
 	}
@@ -498,7 +502,7 @@ func (p *ABadInvokeArgumentIsReportedOncePolicy) InitializeDataModel(eng *sce.En
 		if err == nil {
 			_ = engine.SetVariable(sessionID, "fromLocOk", result)
 		} else {
-			eng.Raise(sce.NewPlatformError(ABadInvokeArgumentIsReportedOnceEventErrorExecution, "<data id='fromLocOk'> expr failed to evaluate"))
+			eng.Raise(sce.NewPlatformError(ABadInvokeArgumentIsReportedOnceEventErrorExecution, sceerrorreason.ErrorReasonExpressionFailed, "<data id='fromLocOk'> expr failed to evaluate"))
 			_ = engine.SetVariable(sessionID, "fromLocOk", nil)
 		}
 	}
@@ -512,7 +516,7 @@ func (p *ABadInvokeArgumentIsReportedOncePolicy) InitializeDataModel(eng *sce.En
 		if err == nil {
 			_ = engine.SetVariable(sessionID, "emptyLocLeftOut", result)
 		} else {
-			eng.Raise(sce.NewPlatformError(ABadInvokeArgumentIsReportedOnceEventErrorExecution, "<data id='emptyLocLeftOut'> expr failed to evaluate"))
+			eng.Raise(sce.NewPlatformError(ABadInvokeArgumentIsReportedOnceEventErrorExecution, sceerrorreason.ErrorReasonExpressionFailed, "<data id='emptyLocLeftOut'> expr failed to evaluate"))
 			_ = engine.SetVariable(sessionID, "emptyLocLeftOut", nil)
 		}
 	}
@@ -526,7 +530,7 @@ func (p *ABadInvokeArgumentIsReportedOncePolicy) InitializeDataModel(eng *sce.En
 		if err == nil {
 			_ = engine.SetVariable(sessionID, "brokenLeftOut", result)
 		} else {
-			eng.Raise(sce.NewPlatformError(ABadInvokeArgumentIsReportedOnceEventErrorExecution, "<data id='brokenLeftOut'> expr failed to evaluate"))
+			eng.Raise(sce.NewPlatformError(ABadInvokeArgumentIsReportedOnceEventErrorExecution, sceerrorreason.ErrorReasonExpressionFailed, "<data id='brokenLeftOut'> expr failed to evaluate"))
 			_ = engine.SetVariable(sessionID, "brokenLeftOut", nil)
 		}
 	}
@@ -558,12 +562,12 @@ func (p *ABadInvokeArgumentIsReportedOncePolicy) evaluateIfCond(guard string, en
 // evaluateGuardRaising evaluates a cond, raising error.execution when it cannot
 // be evaluated (W3C SCXML 5.9.1); ok is false then, where a bare false could
 // not say so.
-func (p *ABadInvokeArgumentIsReportedOncePolicy) evaluateGuardRaising(guard string, eng *sce.Engine[ABadInvokeArgumentIsReportedOnceState, ABadInvokeArgumentIsReportedOnceEvent], reason string) (value bool, ok bool) {
+func (p *ABadInvokeArgumentIsReportedOncePolicy) evaluateGuardRaising(guard string, eng *sce.Engine[ABadInvokeArgumentIsReportedOnceState, ABadInvokeArgumentIsReportedOnceEvent], detail string) (value bool, ok bool) {
 	p.assertScriptSession()
 	engine := p.ScriptEngine
 	result, err := engine.EvaluateExpression(p.SessionID, guard)
 	if err != nil {
-		eng.Raise(sce.NewPlatformError(ABadInvokeArgumentIsReportedOnceEventErrorExecution, reason))
+		eng.Raise(sce.NewPlatformError(ABadInvokeArgumentIsReportedOnceEventErrorExecution, sceerrorreason.ErrorReasonExpressionFailed, detail))
 		return false, false
 	}
 	return sce.ScriptToBool(result), true
@@ -666,7 +670,7 @@ func (p *ABadInvokeArgumentIsReportedOncePolicy) SetParamValueInScriptEngine(nam
 // failed is left (docs/adr/0098).
 func (p *ABadInvokeArgumentIsReportedOncePolicy) declareHandedValue(eng *sce.Engine[ABadInvokeArgumentIsReportedOnceState, ABadInvokeArgumentIsReportedOnceEvent], engine sce.IScriptEngine, sessionID, name string, value interface{}) {
 	if err := engine.SetVariable(sessionID, name, value); err != nil {
-		eng.Raise(sce.NewPlatformError(ABadInvokeArgumentIsReportedOnceEventErrorExecution, "<data id='"+name+"'> could not hold the value its invoking session handed it"))
+		eng.Raise(sce.NewPlatformError(ABadInvokeArgumentIsReportedOnceEventErrorExecution, sceerrorreason.ErrorReasonDataInitFailed, "<data id='"+name+"'> could not hold the value its invoking session handed it"))
 		_ = engine.SetVariable(sessionID, name, nil)
 	}
 }
@@ -726,9 +730,9 @@ func (p *ABadInvokeArgumentIsReportedOncePolicy) ExecutePendingInvokes(engine *s
 					// "terminate the processing of the element" is not what a
 					// failing `<param>` costs: the child still starts, one pair
 					// short.
-					engine.Raise(sce.NewPlatformError(ABadInvokeArgumentIsReportedOnceEventErrorExecution, "<invoke> <param name='fromLoc'> could not be read"))
+					engine.Raise(sce.NewPlatformError(ABadInvokeArgumentIsReportedOnceEventErrorExecution, sceerrorreason.ErrorReasonLocationInvalid, "<invoke> <param name='fromLoc'> could not be read"))
 				}
-				engine.Raise(sce.NewPlatformError(ABadInvokeArgumentIsReportedOnceEventErrorExecution, "<invoke> <param name='emptyLoc'> names no location"))
+				engine.Raise(sce.NewPlatformError(ABadInvokeArgumentIsReportedOnceEventErrorExecution, sceerrorreason.ErrorReasonLocationInvalid, "<invoke> <param name='emptyLoc'> names no location"))
 				if val, err := se.EvaluateExpression(p.SessionID, `obj.missing.deep`); err == nil {
 					// §scxml-6.4.3: the VALUE of the param element becomes the
 					// child `<data>`'s initial value.
@@ -741,7 +745,7 @@ func (p *ABadInvokeArgumentIsReportedOncePolicy) ExecutePendingInvokes(engine *s
 					// "terminate the processing of the element" is not what a
 					// failing `<param>` costs: the child still starts, one pair
 					// short.
-					engine.Raise(sce.NewPlatformError(ABadInvokeArgumentIsReportedOnceEventErrorExecution, "<invoke> <param name='broken'> could not be read"))
+					engine.Raise(sce.NewPlatformError(ABadInvokeArgumentIsReportedOnceEventErrorExecution, sceerrorreason.ErrorReasonLocationInvalid, "<invoke> <param name='broken'> could not be read"))
 				}
 				if val, err := se.EvaluateExpression(p.SessionID, `obj.missing.deep`); err == nil {
 					// §scxml-6.4.3: the VALUE of the param element becomes the
@@ -755,7 +759,7 @@ func (p *ABadInvokeArgumentIsReportedOncePolicy) ExecutePendingInvokes(engine *s
 					// "terminate the processing of the element" is not what a
 					// failing `<param>` costs: the child still starts, one pair
 					// short.
-					engine.Raise(sce.NewPlatformError(ABadInvokeArgumentIsReportedOnceEventErrorExecution, "<invoke> <param name='notInChild'> could not be read"))
+					engine.Raise(sce.NewPlatformError(ABadInvokeArgumentIsReportedOnceEventErrorExecution, sceerrorreason.ErrorReasonLocationInvalid, "<invoke> <param name='notInChild'> could not be read"))
 				}
 			}
 
@@ -791,7 +795,7 @@ func (p *ABadInvokeArgumentIsReportedOncePolicy) ExecutePendingInvokes(engine *s
 			if refused := childEngine.Initialize(); refused != nil {
 				childEngine.DetachMesh()
 				delete(p.activeInvokes, "inv1")
-				engine.Raise(sce.NewPlatformError(ABadInvokeArgumentIsReportedOnceEventErrorExecution, sce.ChildStartRefusal("inv1", refused)))
+				engine.Raise(sce.NewPlatformError(ABadInvokeArgumentIsReportedOnceEventErrorExecution, sceerrorreason.ErrorReasonInvokeChildInitFailed, sce.ChildStartRefusal("inv1", refused)))
 				continue
 			}
 
@@ -827,7 +831,7 @@ func (p *ABadInvokeArgumentIsReportedOncePolicy) ExecutePendingInvokes(engine *s
 					namelistValid = false
 				}
 				if !namelistValid {
-					engine.Raise(sce.NewPlatformError(ABadInvokeArgumentIsReportedOnceEventErrorExecution, "<invoke> namelist names a location that cannot be read"))
+					engine.Raise(sce.NewPlatformError(ABadInvokeArgumentIsReportedOnceEventErrorExecution, sceerrorreason.ErrorReasonLocationInvalid, "<invoke> namelist names a location that cannot be read"))
 					continue
 				}
 			}
@@ -887,7 +891,7 @@ func (p *ABadInvokeArgumentIsReportedOncePolicy) ExecutePendingInvokes(engine *s
 			if refused := childEngine.Initialize(); refused != nil {
 				childEngine.DetachMesh()
 				delete(p.activeInvokes, "inv2")
-				engine.Raise(sce.NewPlatformError(ABadInvokeArgumentIsReportedOnceEventErrorExecution, sce.ChildStartRefusal("inv2", refused)))
+				engine.Raise(sce.NewPlatformError(ABadInvokeArgumentIsReportedOnceEventErrorExecution, sceerrorreason.ErrorReasonInvokeChildInitFailed, sce.ChildStartRefusal("inv2", refused)))
 				continue
 			}
 
@@ -920,7 +924,7 @@ func (p *ABadInvokeArgumentIsReportedOncePolicy) ExecutePendingInvokes(engine *s
 					namelistValid = false
 				}
 				if !namelistValid {
-					engine.Raise(sce.NewPlatformError(ABadInvokeArgumentIsReportedOnceEventErrorExecution, "<invoke> namelist names a location that cannot be read"))
+					engine.Raise(sce.NewPlatformError(ABadInvokeArgumentIsReportedOnceEventErrorExecution, sceerrorreason.ErrorReasonLocationInvalid, "<invoke> namelist names a location that cannot be read"))
 					continue
 				}
 			}
@@ -973,7 +977,7 @@ func (p *ABadInvokeArgumentIsReportedOncePolicy) ExecutePendingInvokes(engine *s
 					// "terminate the processing of the element" is not what a
 					// failing `<param>` costs: the child still starts, one pair
 					// short.
-					engine.Raise(sce.NewPlatformError(ABadInvokeArgumentIsReportedOnceEventErrorExecution, "<invoke> <param name='alsoBroken'> could not be read"))
+					engine.Raise(sce.NewPlatformError(ABadInvokeArgumentIsReportedOnceEventErrorExecution, sceerrorreason.ErrorReasonLocationInvalid, "<invoke> <param name='alsoBroken'> could not be read"))
 				}
 			}
 
@@ -1009,7 +1013,7 @@ func (p *ABadInvokeArgumentIsReportedOncePolicy) ExecutePendingInvokes(engine *s
 			if refused := childEngine.Initialize(); refused != nil {
 				childEngine.DetachMesh()
 				delete(p.activeInvokes, "inv3")
-				engine.Raise(sce.NewPlatformError(ABadInvokeArgumentIsReportedOnceEventErrorExecution, sce.ChildStartRefusal("inv3", refused)))
+				engine.Raise(sce.NewPlatformError(ABadInvokeArgumentIsReportedOnceEventErrorExecution, sceerrorreason.ErrorReasonInvokeChildInitFailed, sce.ChildStartRefusal("inv3", refused)))
 				continue
 			}
 
@@ -1827,7 +1831,7 @@ func (p *ABadInvokeArgumentIsReportedOncePolicy) ExecuteTransitionContent(source
 
 	// W3C SCXML 5.3: <assign location="errors" expr="errors + 1">
 	if err := p.assignVariable(`errors`, `_scxml_add(errors, 1)`); err != nil {
-		engine.Raise(sce.NewPlatformError(ABadInvokeArgumentIsReportedOnceEventErrorExecution, "<assign> to 'errors' failed"))
+		engine.Raise(sce.NewPlatformError(ABadInvokeArgumentIsReportedOnceEventErrorExecution, sceerrorreason.ErrorReasonAssignmentFailed, "<assign> to 'errors' failed"))
 		return  // W3C SCXML 4.9: the error ends the block
 	}
 
@@ -1839,7 +1843,7 @@ func (p *ABadInvokeArgumentIsReportedOncePolicy) ExecuteTransitionContent(source
 
 	// W3C SCXML 5.3: <assign location="started" expr="started + 1">
 	if err := p.assignVariable(`started`, `_scxml_add(started, 1)`); err != nil {
-		engine.Raise(sce.NewPlatformError(ABadInvokeArgumentIsReportedOnceEventErrorExecution, "<assign> to 'started' failed"))
+		engine.Raise(sce.NewPlatformError(ABadInvokeArgumentIsReportedOnceEventErrorExecution, sceerrorreason.ErrorReasonAssignmentFailed, "<assign> to 'started' failed"))
 		return  // W3C SCXML 4.9: the error ends the block
 	}
 
@@ -1854,14 +1858,14 @@ func (p *ABadInvokeArgumentIsReportedOncePolicy) ExecuteTransitionContent(source
 
 	// W3C SCXML 5.3: <assign location="fromLocOk" expr="1">
 	if err := p.assignVariable(`fromLocOk`, `1`); err != nil {
-		engine.Raise(sce.NewPlatformError(ABadInvokeArgumentIsReportedOnceEventErrorExecution, "<assign> to 'fromLocOk' failed"))
+		engine.Raise(sce.NewPlatformError(ABadInvokeArgumentIsReportedOnceEventErrorExecution, sceerrorreason.ErrorReasonAssignmentFailed, "<assign> to 'fromLocOk' failed"))
 		return  // W3C SCXML 4.9: the error ends the block
 	}
 
 
 	// W3C SCXML 5.3: <assign location="started" expr="started + 1">
 	if err := p.assignVariable(`started`, `_scxml_add(started, 1)`); err != nil {
-		engine.Raise(sce.NewPlatformError(ABadInvokeArgumentIsReportedOnceEventErrorExecution, "<assign> to 'started' failed"))
+		engine.Raise(sce.NewPlatformError(ABadInvokeArgumentIsReportedOnceEventErrorExecution, sceerrorreason.ErrorReasonAssignmentFailed, "<assign> to 'started' failed"))
 		return  // W3C SCXML 4.9: the error ends the block
 	}
 
@@ -1872,7 +1876,7 @@ func (p *ABadInvokeArgumentIsReportedOncePolicy) ExecuteTransitionContent(source
 
 	// W3C SCXML 5.3: <assign location="emptyLocLeftOut" expr="1">
 	if err := p.assignVariable(`emptyLocLeftOut`, `1`); err != nil {
-		engine.Raise(sce.NewPlatformError(ABadInvokeArgumentIsReportedOnceEventErrorExecution, "<assign> to 'emptyLocLeftOut' failed"))
+		engine.Raise(sce.NewPlatformError(ABadInvokeArgumentIsReportedOnceEventErrorExecution, sceerrorreason.ErrorReasonAssignmentFailed, "<assign> to 'emptyLocLeftOut' failed"))
 		return  // W3C SCXML 4.9: the error ends the block
 	}
 
@@ -1889,7 +1893,7 @@ func (p *ABadInvokeArgumentIsReportedOncePolicy) ExecuteTransitionContent(source
 
 	// W3C SCXML 5.3: <assign location="brokenLeftOut" expr="1">
 	if err := p.assignVariable(`brokenLeftOut`, `1`); err != nil {
-		engine.Raise(sce.NewPlatformError(ABadInvokeArgumentIsReportedOnceEventErrorExecution, "<assign> to 'brokenLeftOut' failed"))
+		engine.Raise(sce.NewPlatformError(ABadInvokeArgumentIsReportedOnceEventErrorExecution, sceerrorreason.ErrorReasonAssignmentFailed, "<assign> to 'brokenLeftOut' failed"))
 		return  // W3C SCXML 4.9: the error ends the block
 	}
 

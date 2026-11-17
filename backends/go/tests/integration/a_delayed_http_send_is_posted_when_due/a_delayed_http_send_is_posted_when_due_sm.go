@@ -31,6 +31,7 @@ import (
 	"time"
 
 	sce "github.com/newmassrael/sce-go-runtime"
+	sceerrorreason "github.com/newmassrael/sce-go-runtime/generated/error_reason"
 )
 
 // Ensure imports are used
@@ -39,6 +40,9 @@ var (
 	_ = filepath.Join
 	_ = strings.HasPrefix
 	_ = time.Duration(0)
+	// Why an error.* event is raised (sce:std/engine/error_reason,
+	// docs/adr/0106 #111); a machine that raises none still imports it.
+	_ = sceerrorreason.ErrorReasonExpressionFailed
 )
 
 // ======================================================================
@@ -340,7 +344,7 @@ func (p *ADelayedHttpSendIsPostedWhenDuePolicy) InitializeDataModel(eng *sce.Eng
 		if err == nil {
 			_ = engine.SetVariable(sessionID, "dynamicUrl", result)
 		} else {
-			eng.Raise(sce.NewPlatformError(ADelayedHttpSendIsPostedWhenDueEventErrorExecution, "<data id='dynamicUrl'> expr failed to evaluate"))
+			eng.Raise(sce.NewPlatformError(ADelayedHttpSendIsPostedWhenDueEventErrorExecution, sceerrorreason.ErrorReasonExpressionFailed, "<data id='dynamicUrl'> expr failed to evaluate"))
 			_ = engine.SetVariable(sessionID, "dynamicUrl", nil)
 		}
 	}
@@ -372,12 +376,12 @@ func (p *ADelayedHttpSendIsPostedWhenDuePolicy) evaluateIfCond(guard string, eng
 // evaluateGuardRaising evaluates a cond, raising error.execution when it cannot
 // be evaluated (W3C SCXML 5.9.1); ok is false then, where a bare false could
 // not say so.
-func (p *ADelayedHttpSendIsPostedWhenDuePolicy) evaluateGuardRaising(guard string, eng *sce.Engine[ADelayedHttpSendIsPostedWhenDueState, ADelayedHttpSendIsPostedWhenDueEvent], reason string) (value bool, ok bool) {
+func (p *ADelayedHttpSendIsPostedWhenDuePolicy) evaluateGuardRaising(guard string, eng *sce.Engine[ADelayedHttpSendIsPostedWhenDueState, ADelayedHttpSendIsPostedWhenDueEvent], detail string) (value bool, ok bool) {
 	p.assertScriptSession()
 	engine := p.ScriptEngine
 	result, err := engine.EvaluateExpression(p.SessionID, guard)
 	if err != nil {
-		eng.Raise(sce.NewPlatformError(ADelayedHttpSendIsPostedWhenDueEventErrorExecution, reason))
+		eng.Raise(sce.NewPlatformError(ADelayedHttpSendIsPostedWhenDueEventErrorExecution, sceerrorreason.ErrorReasonExpressionFailed, detail))
 		return false, false
 	}
 	return sce.ScriptToBool(result), true
@@ -480,7 +484,7 @@ func (p *ADelayedHttpSendIsPostedWhenDuePolicy) SetParamValueInScriptEngine(name
 // failed is left (docs/adr/0098).
 func (p *ADelayedHttpSendIsPostedWhenDuePolicy) declareHandedValue(eng *sce.Engine[ADelayedHttpSendIsPostedWhenDueState, ADelayedHttpSendIsPostedWhenDueEvent], engine sce.IScriptEngine, sessionID, name string, value interface{}) {
 	if err := engine.SetVariable(sessionID, name, value); err != nil {
-		eng.Raise(sce.NewPlatformError(ADelayedHttpSendIsPostedWhenDueEventErrorExecution, "<data id='"+name+"'> could not hold the value its invoking session handed it"))
+		eng.Raise(sce.NewPlatformError(ADelayedHttpSendIsPostedWhenDueEventErrorExecution, sceerrorreason.ErrorReasonDataInitFailed, "<data id='"+name+"'> could not hold the value its invoking session handed it"))
 		_ = engine.SetVariable(sessionID, name, nil)
 	}
 }
@@ -754,7 +758,7 @@ func (p *ADelayedHttpSendIsPostedWhenDuePolicy) ExecuteEntryActions(state ADelay
 		httpTarget := "http://127.0.0.1:18081/now"
 		// W3C SCXML C.2: Validate target before HTTP send
 		if httpTarget == "" {
-			errEvt := sce.NewPlatformError(ADelayedHttpSendIsPostedWhenDueEventErrorCommunication, "<send> over BasicHTTPEventProcessor has no target to post to")
+			errEvt := sce.NewPlatformError(ADelayedHttpSendIsPostedWhenDueEventErrorCommunication, sceerrorreason.ErrorReasonHttpTargetInvalid, "<send> over BasicHTTPEventProcessor has no target to post to")
 			errEvt.Metadata.SendID = "__send_0"
 			engine.Raise(errEvt)
 			return  // W3C SCXML 4.9: the error ends the block
@@ -777,7 +781,7 @@ func (p *ADelayedHttpSendIsPostedWhenDuePolicy) ExecuteEntryActions(state ADelay
 		httpTarget := "http://127.0.0.1:18081/zero"
 		// W3C SCXML C.2: Validate target before HTTP send
 		if httpTarget == "" {
-			errEvt := sce.NewPlatformError(ADelayedHttpSendIsPostedWhenDueEventErrorCommunication, "<send> over BasicHTTPEventProcessor has no target to post to")
+			errEvt := sce.NewPlatformError(ADelayedHttpSendIsPostedWhenDueEventErrorCommunication, sceerrorreason.ErrorReasonHttpTargetInvalid, "<send> over BasicHTTPEventProcessor has no target to post to")
 			errEvt.Metadata.SendID = "__send_1"
 			engine.Raise(errEvt)
 			return  // W3C SCXML 4.9: the error ends the block
@@ -797,22 +801,26 @@ func (p *ADelayedHttpSendIsPostedWhenDuePolicy) ExecuteEntryActions(state ADelay
 	{
 	p.assertScriptSession()
 	sendArgError := ""
+	// Why the argument failed, a code of sce:std/engine/error_reason
+	// (docs/adr/0106 #111), set with every sentence below.
+	var sendArgReason sce.ErrorReason
+	_ = sendArgReason
 	sendDelayMs := uint64(0)
 	if sendArgError == "" {
 		// The expression failing is the argument error, and so is a value that
 		// is not the CSS2 time the clause names (ARCHITECTURE.md, "Durations"):
 		// the message is not scheduled under some default wait.
 		if v, err := p.ScriptEngine.EvaluateExpression(p.SessionID, `"0ms"`); err != nil {
-			sendArgError = "<send> delayexpr could not be evaluated"
+			sendArgError, sendArgReason = "<send> delayexpr could not be evaluated", sceerrorreason.ErrorReasonExpressionFailed
 		} else if ms, ok := sce.ParseDelayToMs(sce.ToWireString(v)); ok {
 			sendDelayMs = ms
 		} else {
-			sendArgError = "<send> delayexpr is not a CSS2 time"
+			sendArgError, sendArgReason = "<send> delayexpr is not a CSS2 time", sceerrorreason.ErrorReasonSendDelayInvalid
 		}
 	}
 	_ = sendDelayMs
 	if sendArgError != "" {
-		errEvt := sce.NewPlatformError(ADelayedHttpSendIsPostedWhenDueEventErrorExecution, sendArgError)
+		errEvt := sce.NewPlatformError(ADelayedHttpSendIsPostedWhenDueEventErrorExecution, sendArgReason, sendArgError)
 		errEvt.Metadata.SendID = "__send_2"
 		engine.Raise(errEvt)
 		return  // W3C SCXML 4.9: the error ends the block
@@ -825,7 +833,7 @@ func (p *ADelayedHttpSendIsPostedWhenDuePolicy) ExecuteEntryActions(state ADelay
 		httpTarget := "http://127.0.0.1:18081/zeroexpr"
 		// W3C SCXML C.2: Validate target before HTTP send
 		if httpTarget == "" {
-			errEvt := sce.NewPlatformError(ADelayedHttpSendIsPostedWhenDueEventErrorCommunication, "<send> over BasicHTTPEventProcessor has no target to post to")
+			errEvt := sce.NewPlatformError(ADelayedHttpSendIsPostedWhenDueEventErrorCommunication, sceerrorreason.ErrorReasonHttpTargetInvalid, "<send> over BasicHTTPEventProcessor has no target to post to")
 			errEvt.Metadata.SendID = "__send_2"
 			engine.Raise(errEvt)
 			return  // W3C SCXML 4.9: the error ends the block
@@ -851,7 +859,7 @@ func (p *ADelayedHttpSendIsPostedWhenDuePolicy) ExecuteEntryActions(state ADelay
 		httpTarget := "http://127.0.0.1:18081/later"
 		// W3C SCXML C.2: Validate target before HTTP send
 		if httpTarget == "" {
-			errEvt := sce.NewPlatformError(ADelayedHttpSendIsPostedWhenDueEventErrorCommunication, "<send> over BasicHTTPEventProcessor has no target to post to")
+			errEvt := sce.NewPlatformError(ADelayedHttpSendIsPostedWhenDueEventErrorCommunication, sceerrorreason.ErrorReasonHttpTargetInvalid, "<send> over BasicHTTPEventProcessor has no target to post to")
 			errEvt.Metadata.SendID = "later"
 			engine.Raise(errEvt)
 			return  // W3C SCXML 4.9: the error ends the block
@@ -877,7 +885,7 @@ func (p *ADelayedHttpSendIsPostedWhenDuePolicy) ExecuteEntryActions(state ADelay
 		httpTarget := "http://127.0.0.1:18081/dropped"
 		// W3C SCXML C.2: Validate target before HTTP send
 		if httpTarget == "" {
-			errEvt := sce.NewPlatformError(ADelayedHttpSendIsPostedWhenDueEventErrorCommunication, "<send> over BasicHTTPEventProcessor has no target to post to")
+			errEvt := sce.NewPlatformError(ADelayedHttpSendIsPostedWhenDueEventErrorCommunication, sceerrorreason.ErrorReasonHttpTargetInvalid, "<send> over BasicHTTPEventProcessor has no target to post to")
 			errEvt.Metadata.SendID = "dropped"
 			engine.Raise(errEvt)
 			return  // W3C SCXML 4.9: the error ends the block
@@ -900,6 +908,10 @@ func (p *ADelayedHttpSendIsPostedWhenDuePolicy) ExecuteEntryActions(state ADelay
 	{
 	p.assertScriptSession()
 	sendArgError := ""
+	// Why the argument failed, a code of sce:std/engine/error_reason
+	// (docs/adr/0106 #111), set with every sentence below.
+	var sendArgReason sce.ErrorReason
+	_ = sendArgReason
 	// A target that evaluates to nothing is not an evaluation error: it is
 	// an address nobody answers at, which the arm reports as
 	// error.communication (W3C SCXML 6.2.4).
@@ -910,18 +922,18 @@ func (p *ADelayedHttpSendIsPostedWhenDuePolicy) ExecuteEntryActions(state ADelay
 			sendTargetVal = v
 			sendTarget = sce.ToWireString(v)
 		} else {
-			sendArgError = "<send> targetexpr could not be evaluated"
+			sendArgError, sendArgReason = "<send> targetexpr could not be evaluated", sceerrorreason.ErrorReasonExpressionFailed
 		}
 	}
 	if sendArgError == "" && sce.IsInvalidTarget(sendTarget) {
 		// W3C SCXML 6.2: a target this processor cannot address is refused
 		// as a static one is, before anything is delivered.
-		sendArgError = "<send> targetexpr produced a target this processor cannot address"
+		sendArgError, sendArgReason = "<send> targetexpr produced a target this processor cannot address", sceerrorreason.ErrorReasonSendTargetInvalid
 	}
 	_ = sendTargetVal
 	_ = sendTarget
 	if sendArgError != "" {
-		errEvt := sce.NewPlatformError(ADelayedHttpSendIsPostedWhenDueEventErrorExecution, sendArgError)
+		errEvt := sce.NewPlatformError(ADelayedHttpSendIsPostedWhenDueEventErrorExecution, sendArgReason, sendArgError)
 		errEvt.Metadata.SendID = "dynamic"
 		engine.Raise(errEvt)
 		return  // W3C SCXML 4.9: the error ends the block
@@ -933,7 +945,7 @@ func (p *ADelayedHttpSendIsPostedWhenDuePolicy) ExecuteEntryActions(state ADelay
 		// ends the block as any other would (W3C SCXML 4.9). A self-sent
 		// event names its origin, so `targetexpr="_event.origin"` (test336)
 		// reads this session's location, never "".
-		errEvt := sce.NewPlatformError(ADelayedHttpSendIsPostedWhenDueEventErrorCommunication, "<send> targetexpr evaluated to nothing, so there is no target to reach")
+		errEvt := sce.NewPlatformError(ADelayedHttpSendIsPostedWhenDueEventErrorCommunication, sceerrorreason.ErrorReasonTargetUnreachable, "<send> targetexpr evaluated to nothing, so there is no target to reach")
 		errEvt.Metadata.SendID = "dynamic"
 		engine.Raise(errEvt)
 		return
@@ -955,7 +967,7 @@ func (p *ADelayedHttpSendIsPostedWhenDuePolicy) ExecuteEntryActions(state ADelay
 		httpTarget := sendTarget
 		// W3C SCXML C.2: Validate target before HTTP send
 		if httpTarget == "" {
-			errEvt := sce.NewPlatformError(ADelayedHttpSendIsPostedWhenDueEventErrorCommunication, "<send> over BasicHTTPEventProcessor has no target to post to")
+			errEvt := sce.NewPlatformError(ADelayedHttpSendIsPostedWhenDueEventErrorCommunication, sceerrorreason.ErrorReasonHttpTargetInvalid, "<send> over BasicHTTPEventProcessor has no target to post to")
 			errEvt.Metadata.SendID = "dynamic"
 			engine.Raise(errEvt)
 			return  // W3C SCXML 4.9: the error ends the block

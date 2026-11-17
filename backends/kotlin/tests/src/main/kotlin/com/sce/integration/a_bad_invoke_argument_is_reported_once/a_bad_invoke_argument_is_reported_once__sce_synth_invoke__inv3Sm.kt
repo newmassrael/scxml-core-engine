@@ -179,7 +179,7 @@ class ABadInvokeArgumentIsReportedOnceSceSynthInvokeInv3StateMachine(
             try {
                 engine.setVariable(sid, "alsoBroken", engine.evaluateExpr(sid, com.sce.runtime.ScriptSource.lua("\"unset\"", "'unset'")))
             } catch (e: Exception) {
-                raisePlatformError(ABadInvokeArgumentIsReportedOnceSceSynthInvokeInv3Event.Error.Execution, "<data id='alsoBroken'> expr failed to evaluate")
+                raisePlatformError(ABadInvokeArgumentIsReportedOnceSceSynthInvokeInv3Event.Error.Execution, ErrorReason.EXPRESSION_FAILED, "<data id='alsoBroken'> expr failed to evaluate")
             }
         }
     }
@@ -209,14 +209,14 @@ class ABadInvokeArgumentIsReportedOnceSceSynthInvokeInv3StateMachine(
 
     // W3C SCXML 5.9.1: a cond that cannot be evaluated raises error.execution;
     // `null` says so, where a bare `false` could not.
-    private fun evaluateGuardRaising(guardExpr: com.sce.runtime.ScriptSource, reason: String): Boolean? {
+    private fun evaluateGuardRaising(guardExpr: com.sce.runtime.ScriptSource, detail: String): Boolean? {
         assertScriptSession()
         val engine = scriptEngine ?: error("scriptEngine is required (codegen invariant: needs_script_engine == true)")
         val sid = scriptSessionId ?: error("scriptSessionId is established by the start (codegen invariant)")
         return try {
             engine.evaluateCondition(sid, guardExpr)
         } catch (e: Exception) {
-            raisePlatformError(ABadInvokeArgumentIsReportedOnceSceSynthInvokeInv3Event.Error.Execution, reason)
+            raisePlatformError(ABadInvokeArgumentIsReportedOnceSceSynthInvokeInv3Event.Error.Execution, ErrorReason.EXPRESSION_FAILED, detail)
             null
         }
     }
@@ -257,7 +257,7 @@ class ABadInvokeArgumentIsReportedOnceSceSynthInvokeInv3StateMachine(
         return try {
             engine.evaluateExpr(sid, serialized)?.toString() ?: ""
         } catch (e: Exception) {
-            raisePlatformError(ABadInvokeArgumentIsReportedOnceSceSynthInvokeInv3Event.Error.Execution, "an expression could not be serialised to JSON")
+            raisePlatformError(ABadInvokeArgumentIsReportedOnceSceSynthInvokeInv3Event.Error.Execution, ErrorReason.EXPRESSION_FAILED, "an expression could not be serialised to JSON")
             ""
         }
     }
@@ -278,7 +278,7 @@ class ABadInvokeArgumentIsReportedOnceSceSynthInvokeInv3StateMachine(
             engine.assign(sid, location, expr)
             true
         } catch (e: Exception) {
-            raisePlatformError(ABadInvokeArgumentIsReportedOnceSceSynthInvokeInv3Event.Error.Execution, "<assign> failed")
+            raisePlatformError(ABadInvokeArgumentIsReportedOnceSceSynthInvokeInv3Event.Error.Execution, ErrorReason.ASSIGNMENT_FAILED, "<assign> failed")
             false
         }
     }
@@ -294,7 +294,7 @@ class ABadInvokeArgumentIsReportedOnceSceSynthInvokeInv3StateMachine(
             engine.executeScript(sid, script)
             true
         } catch (e: Exception) {
-            raisePlatformError(ABadInvokeArgumentIsReportedOnceSceSynthInvokeInv3Event.Error.Execution, "<script> failed to execute")
+            raisePlatformError(ABadInvokeArgumentIsReportedOnceSceSynthInvokeInv3Event.Error.Execution, ErrorReason.SCRIPT_FAILED, "<script> failed to execute")
             false
         }
     }
@@ -456,7 +456,7 @@ class ABadInvokeArgumentIsReportedOnceSceSynthInvokeInv3StateMachine(
             // no parent — error.communication, nothing delivered, the block ended.
             val toParent = onSendToParent
             if (toParent == null) {
-                raisePlatformError(ABadInvokeArgumentIsReportedOnceSceSynthInvokeInv3Event.Error.Communication, "<send target='#_parent'> has no parent session to reach", "__send_0")
+                raisePlatformError(ABadInvokeArgumentIsReportedOnceSceSynthInvokeInv3Event.Error.Communication, ErrorReason.TARGET_UNREACHABLE, "<send target='#_parent'> has no parent session to reach", "__send_0")
                 return@send true
             }
             toParent("childUp", sendData)

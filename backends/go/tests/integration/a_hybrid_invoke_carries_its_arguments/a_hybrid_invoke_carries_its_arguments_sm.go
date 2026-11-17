@@ -31,6 +31,7 @@ import (
 	"time"
 
 	sce "github.com/newmassrael/sce-go-runtime"
+	sceerrorreason "github.com/newmassrael/sce-go-runtime/generated/error_reason"
 )
 
 // Ensure imports are used
@@ -39,6 +40,9 @@ var (
 	_ = filepath.Join
 	_ = strings.HasPrefix
 	_ = time.Duration(0)
+	// Why an error.* event is raised (sce:std/engine/error_reason,
+	// docs/adr/0106 #111); a machine that raises none still imports it.
+	_ = sceerrorreason.ErrorReasonExpressionFailed
 )
 
 // ======================================================================
@@ -458,7 +462,7 @@ func (p *AHybridInvokeCarriesItsArgumentsPolicy) InitializeDataModel(eng *sce.En
 		if err == nil {
 			_ = engine.SetVariable(sessionID, "pick", result)
 		} else {
-			eng.Raise(sce.NewPlatformError(AHybridInvokeCarriesItsArgumentsEventErrorExecution, "<data id='pick'> expr failed to evaluate"))
+			eng.Raise(sce.NewPlatformError(AHybridInvokeCarriesItsArgumentsEventErrorExecution, sceerrorreason.ErrorReasonExpressionFailed, "<data id='pick'> expr failed to evaluate"))
 			_ = engine.SetVariable(sessionID, "pick", nil)
 		}
 	}
@@ -472,7 +476,7 @@ func (p *AHybridInvokeCarriesItsArgumentsPolicy) InitializeDataModel(eng *sce.En
 		if err == nil {
 			_ = engine.SetVariable(sessionID, "v", result)
 		} else {
-			eng.Raise(sce.NewPlatformError(AHybridInvokeCarriesItsArgumentsEventErrorExecution, "<data id='v'> expr failed to evaluate"))
+			eng.Raise(sce.NewPlatformError(AHybridInvokeCarriesItsArgumentsEventErrorExecution, sceerrorreason.ErrorReasonExpressionFailed, "<data id='v'> expr failed to evaluate"))
 			_ = engine.SetVariable(sessionID, "v", nil)
 		}
 	}
@@ -486,7 +490,7 @@ func (p *AHybridInvokeCarriesItsArgumentsPolicy) InitializeDataModel(eng *sce.En
 		if err == nil {
 			_ = engine.SetVariable(sessionID, "seed", result)
 		} else {
-			eng.Raise(sce.NewPlatformError(AHybridInvokeCarriesItsArgumentsEventErrorExecution, "<data id='seed'> expr failed to evaluate"))
+			eng.Raise(sce.NewPlatformError(AHybridInvokeCarriesItsArgumentsEventErrorExecution, sceerrorreason.ErrorReasonExpressionFailed, "<data id='seed'> expr failed to evaluate"))
 			_ = engine.SetVariable(sessionID, "seed", nil)
 		}
 	}
@@ -500,7 +504,7 @@ func (p *AHybridInvokeCarriesItsArgumentsPolicy) InitializeDataModel(eng *sce.En
 		if err == nil {
 			_ = engine.SetVariable(sessionID, "errors", result)
 		} else {
-			eng.Raise(sce.NewPlatformError(AHybridInvokeCarriesItsArgumentsEventErrorExecution, "<data id='errors'> expr failed to evaluate"))
+			eng.Raise(sce.NewPlatformError(AHybridInvokeCarriesItsArgumentsEventErrorExecution, sceerrorreason.ErrorReasonExpressionFailed, "<data id='errors'> expr failed to evaluate"))
 			_ = engine.SetVariable(sessionID, "errors", nil)
 		}
 	}
@@ -514,7 +518,7 @@ func (p *AHybridInvokeCarriesItsArgumentsPolicy) InitializeDataModel(eng *sce.En
 		if err == nil {
 			_ = engine.SetVariable(sessionID, "started", result)
 		} else {
-			eng.Raise(sce.NewPlatformError(AHybridInvokeCarriesItsArgumentsEventErrorExecution, "<data id='started'> expr failed to evaluate"))
+			eng.Raise(sce.NewPlatformError(AHybridInvokeCarriesItsArgumentsEventErrorExecution, sceerrorreason.ErrorReasonExpressionFailed, "<data id='started'> expr failed to evaluate"))
 			_ = engine.SetVariable(sessionID, "started", nil)
 		}
 	}
@@ -528,7 +532,7 @@ func (p *AHybridInvokeCarriesItsArgumentsPolicy) InitializeDataModel(eng *sce.En
 		if err == nil {
 			_ = engine.SetVariable(sessionID, "paramsOk", result)
 		} else {
-			eng.Raise(sce.NewPlatformError(AHybridInvokeCarriesItsArgumentsEventErrorExecution, "<data id='paramsOk'> expr failed to evaluate"))
+			eng.Raise(sce.NewPlatformError(AHybridInvokeCarriesItsArgumentsEventErrorExecution, sceerrorreason.ErrorReasonExpressionFailed, "<data id='paramsOk'> expr failed to evaluate"))
 			_ = engine.SetVariable(sessionID, "paramsOk", nil)
 		}
 	}
@@ -542,7 +546,7 @@ func (p *AHybridInvokeCarriesItsArgumentsPolicy) InitializeDataModel(eng *sce.En
 		if err == nil {
 			_ = engine.SetVariable(sessionID, "namelistOk", result)
 		} else {
-			eng.Raise(sce.NewPlatformError(AHybridInvokeCarriesItsArgumentsEventErrorExecution, "<data id='namelistOk'> expr failed to evaluate"))
+			eng.Raise(sce.NewPlatformError(AHybridInvokeCarriesItsArgumentsEventErrorExecution, sceerrorreason.ErrorReasonExpressionFailed, "<data id='namelistOk'> expr failed to evaluate"))
 			_ = engine.SetVariable(sessionID, "namelistOk", nil)
 		}
 	}
@@ -574,12 +578,12 @@ func (p *AHybridInvokeCarriesItsArgumentsPolicy) evaluateIfCond(guard string, en
 // evaluateGuardRaising evaluates a cond, raising error.execution when it cannot
 // be evaluated (W3C SCXML 5.9.1); ok is false then, where a bare false could
 // not say so.
-func (p *AHybridInvokeCarriesItsArgumentsPolicy) evaluateGuardRaising(guard string, eng *sce.Engine[AHybridInvokeCarriesItsArgumentsState, AHybridInvokeCarriesItsArgumentsEvent], reason string) (value bool, ok bool) {
+func (p *AHybridInvokeCarriesItsArgumentsPolicy) evaluateGuardRaising(guard string, eng *sce.Engine[AHybridInvokeCarriesItsArgumentsState, AHybridInvokeCarriesItsArgumentsEvent], detail string) (value bool, ok bool) {
 	p.assertScriptSession()
 	engine := p.ScriptEngine
 	result, err := engine.EvaluateExpression(p.SessionID, guard)
 	if err != nil {
-		eng.Raise(sce.NewPlatformError(AHybridInvokeCarriesItsArgumentsEventErrorExecution, reason))
+		eng.Raise(sce.NewPlatformError(AHybridInvokeCarriesItsArgumentsEventErrorExecution, sceerrorreason.ErrorReasonExpressionFailed, detail))
 		return false, false
 	}
 	return sce.ScriptToBool(result), true
@@ -682,7 +686,7 @@ func (p *AHybridInvokeCarriesItsArgumentsPolicy) SetParamValueInScriptEngine(nam
 // failed is left (docs/adr/0098).
 func (p *AHybridInvokeCarriesItsArgumentsPolicy) declareHandedValue(eng *sce.Engine[AHybridInvokeCarriesItsArgumentsState, AHybridInvokeCarriesItsArgumentsEvent], engine sce.IScriptEngine, sessionID, name string, value interface{}) {
 	if err := engine.SetVariable(sessionID, name, value); err != nil {
-		eng.Raise(sce.NewPlatformError(AHybridInvokeCarriesItsArgumentsEventErrorExecution, "<data id='"+name+"'> could not hold the value its invoking session handed it"))
+		eng.Raise(sce.NewPlatformError(AHybridInvokeCarriesItsArgumentsEventErrorExecution, sceerrorreason.ErrorReasonDataInitFailed, "<data id='"+name+"'> could not hold the value its invoking session handed it"))
 		_ = engine.SetVariable(sessionID, name, nil)
 	}
 }
@@ -710,7 +714,7 @@ func (p *AHybridInvokeCarriesItsArgumentsPolicy) ExecutePendingInvokes(engine *s
 			{
 				se := p.ScriptEngine
 				if __sceValue, err := se.EvaluateExpression(p.SessionID, `pick`); err != nil {
-					engine.Raise(sce.NewPlatformError(AHybridInvokeCarriesItsArgumentsEventErrorExecution, "<invoke srcexpr='pick'> could not be evaluated"))
+					engine.Raise(sce.NewPlatformError(AHybridInvokeCarriesItsArgumentsEventErrorExecution, sceerrorreason.ErrorReasonExpressionFailed, "<invoke srcexpr='pick'> could not be evaluated"))
 					continue
 				} else {
 					__sceSelected = sce.DocumentStem(fmt.Sprintf("%v", __sceValue))
@@ -723,7 +727,7 @@ func (p *AHybridInvokeCarriesItsArgumentsPolicy) ExecutePendingInvokes(engine *s
 			switch __sceSelected {
 			case "keeper", "bare":
 			default:
-				engine.Raise(sce.NewPlatformError(AHybridInvokeCarriesItsArgumentsEventErrorExecution, "<invoke srcexpr='pick'> evaluated to a document it did not declare"))
+				engine.Raise(sce.NewPlatformError(AHybridInvokeCarriesItsArgumentsEventErrorExecution, sceerrorreason.ErrorReasonInvokeSrcNotFound, "<invoke srcexpr='pick'> evaluated to a document it did not declare"))
 				continue
 			}
 			{
@@ -734,7 +738,7 @@ func (p *AHybridInvokeCarriesItsArgumentsPolicy) ExecutePendingInvokes(engine *s
 					namelistValid = false
 				}
 				if !namelistValid {
-					engine.Raise(sce.NewPlatformError(AHybridInvokeCarriesItsArgumentsEventErrorExecution, "<invoke> namelist names a location that cannot be read"))
+					engine.Raise(sce.NewPlatformError(AHybridInvokeCarriesItsArgumentsEventErrorExecution, sceerrorreason.ErrorReasonLocationInvalid, "<invoke> namelist names a location that cannot be read"))
 					continue
 				}
 			}
@@ -805,7 +809,7 @@ func (p *AHybridInvokeCarriesItsArgumentsPolicy) ExecutePendingInvokes(engine *s
 			if refused := childEngine.Initialize(); refused != nil {
 				childEngine.DetachMesh()
 				delete(p.activeInvokes, "_invoke_1")
-				engine.Raise(sce.NewPlatformError(AHybridInvokeCarriesItsArgumentsEventErrorExecution, sce.ChildStartRefusal("_invoke_1", refused)))
+				engine.Raise(sce.NewPlatformError(AHybridInvokeCarriesItsArgumentsEventErrorExecution, sceerrorreason.ErrorReasonInvokeChildInitFailed, sce.ChildStartRefusal("_invoke_1", refused)))
 				continue
 			}
 
@@ -888,7 +892,7 @@ func (p *AHybridInvokeCarriesItsArgumentsPolicy) ExecutePendingInvokes(engine *s
 			if refused := childEngine.Initialize(); refused != nil {
 				childEngine.DetachMesh()
 				delete(p.activeInvokes, "_invoke_1")
-				engine.Raise(sce.NewPlatformError(AHybridInvokeCarriesItsArgumentsEventErrorExecution, sce.ChildStartRefusal("_invoke_1", refused)))
+				engine.Raise(sce.NewPlatformError(AHybridInvokeCarriesItsArgumentsEventErrorExecution, sceerrorreason.ErrorReasonInvokeChildInitFailed, sce.ChildStartRefusal("_invoke_1", refused)))
 				continue
 			}
 
@@ -920,7 +924,7 @@ func (p *AHybridInvokeCarriesItsArgumentsPolicy) ExecutePendingInvokes(engine *s
 			{
 				se := p.ScriptEngine
 				if __sceValue, err := se.EvaluateExpression(p.SessionID, `pick`); err != nil {
-					engine.Raise(sce.NewPlatformError(AHybridInvokeCarriesItsArgumentsEventErrorExecution, "<invoke srcexpr='pick'> could not be evaluated"))
+					engine.Raise(sce.NewPlatformError(AHybridInvokeCarriesItsArgumentsEventErrorExecution, sceerrorreason.ErrorReasonExpressionFailed, "<invoke srcexpr='pick'> could not be evaluated"))
 					continue
 				} else {
 					__sceSelected = sce.DocumentStem(fmt.Sprintf("%v", __sceValue))
@@ -933,7 +937,7 @@ func (p *AHybridInvokeCarriesItsArgumentsPolicy) ExecutePendingInvokes(engine *s
 			switch __sceSelected {
 			case "keeper", "bare":
 			default:
-				engine.Raise(sce.NewPlatformError(AHybridInvokeCarriesItsArgumentsEventErrorExecution, "<invoke srcexpr='pick'> evaluated to a document it did not declare"))
+				engine.Raise(sce.NewPlatformError(AHybridInvokeCarriesItsArgumentsEventErrorExecution, sceerrorreason.ErrorReasonInvokeSrcNotFound, "<invoke srcexpr='pick'> evaluated to a document it did not declare"))
 				continue
 			}
 
@@ -979,7 +983,7 @@ func (p *AHybridInvokeCarriesItsArgumentsPolicy) ExecutePendingInvokes(engine *s
 					// "terminate the processing of the element" is not what a
 					// failing `<param>` costs: the child still starts, one pair
 					// short.
-					engine.Raise(sce.NewPlatformError(AHybridInvokeCarriesItsArgumentsEventErrorExecution, "<invoke> <param name='seed'> could not be read"))
+					engine.Raise(sce.NewPlatformError(AHybridInvokeCarriesItsArgumentsEventErrorExecution, sceerrorreason.ErrorReasonLocationInvalid, "<invoke> <param name='seed'> could not be read"))
 				}
 				if val, err := se.EvaluateExpression(p.SessionID, `v`); err == nil {
 					// §scxml-6.4.3: the VALUE of the param element becomes the
@@ -993,9 +997,9 @@ func (p *AHybridInvokeCarriesItsArgumentsPolicy) ExecutePendingInvokes(engine *s
 					// "terminate the processing of the element" is not what a
 					// failing `<param>` costs: the child still starts, one pair
 					// short.
-					engine.Raise(sce.NewPlatformError(AHybridInvokeCarriesItsArgumentsEventErrorExecution, "<invoke> <param name='fromLoc'> could not be read"))
+					engine.Raise(sce.NewPlatformError(AHybridInvokeCarriesItsArgumentsEventErrorExecution, sceerrorreason.ErrorReasonLocationInvalid, "<invoke> <param name='fromLoc'> could not be read"))
 				}
-				engine.Raise(sce.NewPlatformError(AHybridInvokeCarriesItsArgumentsEventErrorExecution, "<invoke> <param name='emptyLoc'> names no location"))
+				engine.Raise(sce.NewPlatformError(AHybridInvokeCarriesItsArgumentsEventErrorExecution, sceerrorreason.ErrorReasonLocationInvalid, "<invoke> <param name='emptyLoc'> names no location"))
 				if val, err := se.EvaluateExpression(p.SessionID, `"leaked"`); err == nil {
 					// §scxml-6.4.3: the VALUE of the param element becomes the
 					// child `<data>`'s initial value.
@@ -1008,7 +1012,7 @@ func (p *AHybridInvokeCarriesItsArgumentsPolicy) ExecutePendingInvokes(engine *s
 					// "terminate the processing of the element" is not what a
 					// failing `<param>` costs: the child still starts, one pair
 					// short.
-					engine.Raise(sce.NewPlatformError(AHybridInvokeCarriesItsArgumentsEventErrorExecution, "<invoke> <param name='nowhere'> could not be read"))
+					engine.Raise(sce.NewPlatformError(AHybridInvokeCarriesItsArgumentsEventErrorExecution, sceerrorreason.ErrorReasonLocationInvalid, "<invoke> <param name='nowhere'> could not be read"))
 				}
 			}
 
@@ -1042,7 +1046,7 @@ func (p *AHybridInvokeCarriesItsArgumentsPolicy) ExecutePendingInvokes(engine *s
 			if refused := childEngine.Initialize(); refused != nil {
 				childEngine.DetachMesh()
 				delete(p.activeInvokes, "_invoke_0")
-				engine.Raise(sce.NewPlatformError(AHybridInvokeCarriesItsArgumentsEventErrorExecution, sce.ChildStartRefusal("_invoke_0", refused)))
+				engine.Raise(sce.NewPlatformError(AHybridInvokeCarriesItsArgumentsEventErrorExecution, sceerrorreason.ErrorReasonInvokeChildInitFailed, sce.ChildStartRefusal("_invoke_0", refused)))
 				continue
 			}
 
@@ -1101,7 +1105,7 @@ func (p *AHybridInvokeCarriesItsArgumentsPolicy) ExecutePendingInvokes(engine *s
 					// "terminate the processing of the element" is not what a
 					// failing `<param>` costs: the child still starts, one pair
 					// short.
-					engine.Raise(sce.NewPlatformError(AHybridInvokeCarriesItsArgumentsEventErrorExecution, "<invoke> <param name='seed'> could not be read"))
+					engine.Raise(sce.NewPlatformError(AHybridInvokeCarriesItsArgumentsEventErrorExecution, sceerrorreason.ErrorReasonLocationInvalid, "<invoke> <param name='seed'> could not be read"))
 				}
 				if val, err := se.EvaluateExpression(p.SessionID, `v`); err == nil {
 					// §scxml-6.4.3: the VALUE of the param element becomes the
@@ -1115,9 +1119,9 @@ func (p *AHybridInvokeCarriesItsArgumentsPolicy) ExecutePendingInvokes(engine *s
 					// "terminate the processing of the element" is not what a
 					// failing `<param>` costs: the child still starts, one pair
 					// short.
-					engine.Raise(sce.NewPlatformError(AHybridInvokeCarriesItsArgumentsEventErrorExecution, "<invoke> <param name='fromLoc'> could not be read"))
+					engine.Raise(sce.NewPlatformError(AHybridInvokeCarriesItsArgumentsEventErrorExecution, sceerrorreason.ErrorReasonLocationInvalid, "<invoke> <param name='fromLoc'> could not be read"))
 				}
-				engine.Raise(sce.NewPlatformError(AHybridInvokeCarriesItsArgumentsEventErrorExecution, "<invoke> <param name='emptyLoc'> names no location"))
+				engine.Raise(sce.NewPlatformError(AHybridInvokeCarriesItsArgumentsEventErrorExecution, sceerrorreason.ErrorReasonLocationInvalid, "<invoke> <param name='emptyLoc'> names no location"))
 				if val, err := se.EvaluateExpression(p.SessionID, `"leaked"`); err == nil {
 					// §scxml-6.4.3: the VALUE of the param element becomes the
 					// child `<data>`'s initial value.
@@ -1130,7 +1134,7 @@ func (p *AHybridInvokeCarriesItsArgumentsPolicy) ExecutePendingInvokes(engine *s
 					// "terminate the processing of the element" is not what a
 					// failing `<param>` costs: the child still starts, one pair
 					// short.
-					engine.Raise(sce.NewPlatformError(AHybridInvokeCarriesItsArgumentsEventErrorExecution, "<invoke> <param name='nowhere'> could not be read"))
+					engine.Raise(sce.NewPlatformError(AHybridInvokeCarriesItsArgumentsEventErrorExecution, sceerrorreason.ErrorReasonLocationInvalid, "<invoke> <param name='nowhere'> could not be read"))
 				}
 			}
 
@@ -1164,7 +1168,7 @@ func (p *AHybridInvokeCarriesItsArgumentsPolicy) ExecutePendingInvokes(engine *s
 			if refused := childEngine.Initialize(); refused != nil {
 				childEngine.DetachMesh()
 				delete(p.activeInvokes, "_invoke_0")
-				engine.Raise(sce.NewPlatformError(AHybridInvokeCarriesItsArgumentsEventErrorExecution, sce.ChildStartRefusal("_invoke_0", refused)))
+				engine.Raise(sce.NewPlatformError(AHybridInvokeCarriesItsArgumentsEventErrorExecution, sceerrorreason.ErrorReasonInvokeChildInitFailed, sce.ChildStartRefusal("_invoke_0", refused)))
 				continue
 			}
 
@@ -1196,7 +1200,7 @@ func (p *AHybridInvokeCarriesItsArgumentsPolicy) ExecutePendingInvokes(engine *s
 			{
 				se := p.ScriptEngine
 				if __sceValue, err := se.EvaluateExpression(p.SessionID, `pick`); err != nil {
-					engine.Raise(sce.NewPlatformError(AHybridInvokeCarriesItsArgumentsEventErrorExecution, "<invoke srcexpr='pick'> could not be evaluated"))
+					engine.Raise(sce.NewPlatformError(AHybridInvokeCarriesItsArgumentsEventErrorExecution, sceerrorreason.ErrorReasonExpressionFailed, "<invoke srcexpr='pick'> could not be evaluated"))
 					continue
 				} else {
 					__sceSelected = sce.DocumentStem(fmt.Sprintf("%v", __sceValue))
@@ -1209,7 +1213,7 @@ func (p *AHybridInvokeCarriesItsArgumentsPolicy) ExecutePendingInvokes(engine *s
 			switch __sceSelected {
 			case "keeper", "bare":
 			default:
-				engine.Raise(sce.NewPlatformError(AHybridInvokeCarriesItsArgumentsEventErrorExecution, "<invoke srcexpr='pick'> evaluated to a document it did not declare"))
+				engine.Raise(sce.NewPlatformError(AHybridInvokeCarriesItsArgumentsEventErrorExecution, sceerrorreason.ErrorReasonInvokeSrcNotFound, "<invoke srcexpr='pick'> evaluated to a document it did not declare"))
 				continue
 			}
 			{
@@ -1220,7 +1224,7 @@ func (p *AHybridInvokeCarriesItsArgumentsPolicy) ExecutePendingInvokes(engine *s
 					namelistValid = false
 				}
 				if !namelistValid {
-					engine.Raise(sce.NewPlatformError(AHybridInvokeCarriesItsArgumentsEventErrorExecution, "<invoke> namelist names a location that cannot be read"))
+					engine.Raise(sce.NewPlatformError(AHybridInvokeCarriesItsArgumentsEventErrorExecution, sceerrorreason.ErrorReasonLocationInvalid, "<invoke> namelist names a location that cannot be read"))
 					continue
 				}
 			}
@@ -1276,7 +1280,7 @@ func (p *AHybridInvokeCarriesItsArgumentsPolicy) ExecutePendingInvokes(engine *s
 					// "terminate the processing of the element" is not what a
 					// failing `<param>` costs: the child still starts, one pair
 					// short.
-					engine.Raise(sce.NewPlatformError(AHybridInvokeCarriesItsArgumentsEventErrorExecution, "<invoke> <param name='seed'> could not be read"))
+					engine.Raise(sce.NewPlatformError(AHybridInvokeCarriesItsArgumentsEventErrorExecution, sceerrorreason.ErrorReasonLocationInvalid, "<invoke> <param name='seed'> could not be read"))
 				}
 			}
 
@@ -1310,7 +1314,7 @@ func (p *AHybridInvokeCarriesItsArgumentsPolicy) ExecutePendingInvokes(engine *s
 			if refused := childEngine.Initialize(); refused != nil {
 				childEngine.DetachMesh()
 				delete(p.activeInvokes, "_invoke_2")
-				engine.Raise(sce.NewPlatformError(AHybridInvokeCarriesItsArgumentsEventErrorExecution, sce.ChildStartRefusal("_invoke_2", refused)))
+				engine.Raise(sce.NewPlatformError(AHybridInvokeCarriesItsArgumentsEventErrorExecution, sceerrorreason.ErrorReasonInvokeChildInitFailed, sce.ChildStartRefusal("_invoke_2", refused)))
 				continue
 			}
 
@@ -1378,7 +1382,7 @@ func (p *AHybridInvokeCarriesItsArgumentsPolicy) ExecutePendingInvokes(engine *s
 					// "terminate the processing of the element" is not what a
 					// failing `<param>` costs: the child still starts, one pair
 					// short.
-					engine.Raise(sce.NewPlatformError(AHybridInvokeCarriesItsArgumentsEventErrorExecution, "<invoke> <param name='seed'> could not be read"))
+					engine.Raise(sce.NewPlatformError(AHybridInvokeCarriesItsArgumentsEventErrorExecution, sceerrorreason.ErrorReasonLocationInvalid, "<invoke> <param name='seed'> could not be read"))
 				}
 			}
 
@@ -1412,7 +1416,7 @@ func (p *AHybridInvokeCarriesItsArgumentsPolicy) ExecutePendingInvokes(engine *s
 			if refused := childEngine.Initialize(); refused != nil {
 				childEngine.DetachMesh()
 				delete(p.activeInvokes, "_invoke_2")
-				engine.Raise(sce.NewPlatformError(AHybridInvokeCarriesItsArgumentsEventErrorExecution, sce.ChildStartRefusal("_invoke_2", refused)))
+				engine.Raise(sce.NewPlatformError(AHybridInvokeCarriesItsArgumentsEventErrorExecution, sceerrorreason.ErrorReasonInvokeChildInitFailed, sce.ChildStartRefusal("_invoke_2", refused)))
 				continue
 			}
 
@@ -2253,7 +2257,7 @@ func (p *AHybridInvokeCarriesItsArgumentsPolicy) ExecuteTransitionContent(source
 
 	// W3C SCXML 5.3: <assign location="started" expr="started + 1">
 	if err := p.assignVariable(`started`, `_scxml_add(started, 1)`); err != nil {
-		engine.Raise(sce.NewPlatformError(AHybridInvokeCarriesItsArgumentsEventErrorExecution, "<assign> to 'started' failed"))
+		engine.Raise(sce.NewPlatformError(AHybridInvokeCarriesItsArgumentsEventErrorExecution, sceerrorreason.ErrorReasonAssignmentFailed, "<assign> to 'started' failed"))
 		return  // W3C SCXML 4.9: the error ends the block
 	}
 
@@ -2264,7 +2268,7 @@ func (p *AHybridInvokeCarriesItsArgumentsPolicy) ExecuteTransitionContent(source
 
 	// W3C SCXML 5.3: <assign location="namelistOk" expr="1">
 	if err := p.assignVariable(`namelistOk`, `1`); err != nil {
-		engine.Raise(sce.NewPlatformError(AHybridInvokeCarriesItsArgumentsEventErrorExecution, "<assign> to 'namelistOk' failed"))
+		engine.Raise(sce.NewPlatformError(AHybridInvokeCarriesItsArgumentsEventErrorExecution, sceerrorreason.ErrorReasonAssignmentFailed, "<assign> to 'namelistOk' failed"))
 		return  // W3C SCXML 4.9: the error ends the block
 	}
 
@@ -2285,7 +2289,7 @@ func (p *AHybridInvokeCarriesItsArgumentsPolicy) ExecuteTransitionContent(source
 
 	// W3C SCXML 5.3: <assign location="started" expr="started + 1">
 	if err := p.assignVariable(`started`, `_scxml_add(started, 1)`); err != nil {
-		engine.Raise(sce.NewPlatformError(AHybridInvokeCarriesItsArgumentsEventErrorExecution, "<assign> to 'started' failed"))
+		engine.Raise(sce.NewPlatformError(AHybridInvokeCarriesItsArgumentsEventErrorExecution, sceerrorreason.ErrorReasonAssignmentFailed, "<assign> to 'started' failed"))
 		return  // W3C SCXML 4.9: the error ends the block
 	}
 
@@ -2296,7 +2300,7 @@ func (p *AHybridInvokeCarriesItsArgumentsPolicy) ExecuteTransitionContent(source
 
 	// W3C SCXML 5.3: <assign location="paramsOk" expr="1">
 	if err := p.assignVariable(`paramsOk`, `1`); err != nil {
-		engine.Raise(sce.NewPlatformError(AHybridInvokeCarriesItsArgumentsEventErrorExecution, "<assign> to 'paramsOk' failed"))
+		engine.Raise(sce.NewPlatformError(AHybridInvokeCarriesItsArgumentsEventErrorExecution, sceerrorreason.ErrorReasonAssignmentFailed, "<assign> to 'paramsOk' failed"))
 		return  // W3C SCXML 4.9: the error ends the block
 	}
 
@@ -2317,7 +2321,7 @@ func (p *AHybridInvokeCarriesItsArgumentsPolicy) ExecuteTransitionContent(source
 
 	// W3C SCXML 5.3: <assign location="errors" expr="errors + 1">
 	if err := p.assignVariable(`errors`, `_scxml_add(errors, 1)`); err != nil {
-		engine.Raise(sce.NewPlatformError(AHybridInvokeCarriesItsArgumentsEventErrorExecution, "<assign> to 'errors' failed"))
+		engine.Raise(sce.NewPlatformError(AHybridInvokeCarriesItsArgumentsEventErrorExecution, sceerrorreason.ErrorReasonAssignmentFailed, "<assign> to 'errors' failed"))
 		return  // W3C SCXML 4.9: the error ends the block
 	}
 
@@ -2332,7 +2336,7 @@ func (p *AHybridInvokeCarriesItsArgumentsPolicy) ExecuteTransitionContent(source
 
 	// W3C SCXML 5.3: <assign location="errors" expr="errors + 1">
 	if err := p.assignVariable(`errors`, `_scxml_add(errors, 1)`); err != nil {
-		engine.Raise(sce.NewPlatformError(AHybridInvokeCarriesItsArgumentsEventErrorExecution, "<assign> to 'errors' failed"))
+		engine.Raise(sce.NewPlatformError(AHybridInvokeCarriesItsArgumentsEventErrorExecution, sceerrorreason.ErrorReasonAssignmentFailed, "<assign> to 'errors' failed"))
 		return  // W3C SCXML 4.9: the error ends the block
 	}
 

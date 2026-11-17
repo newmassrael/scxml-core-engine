@@ -31,6 +31,7 @@ import (
 	"time"
 
 	sce "github.com/newmassrael/sce-go-runtime"
+	sceerrorreason "github.com/newmassrael/sce-go-runtime/generated/error_reason"
 )
 
 // Ensure imports are used
@@ -39,6 +40,9 @@ var (
 	_ = filepath.Join
 	_ = strings.HasPrefix
 	_ = time.Duration(0)
+	// Why an error.* event is raised (sce:std/engine/error_reason,
+	// docs/adr/0106 #111); a machine that raises none still imports it.
+	_ = sceerrorreason.ErrorReasonExpressionFailed
 )
 
 // ======================================================================
@@ -460,7 +464,7 @@ func (p *ExternalChainIsBoundedPolicy) InitializeDataModel(eng *sce.Engine[Exter
 		if err == nil {
 			_ = engine.SetVariable(sessionID, "pokes", result)
 		} else {
-			eng.Raise(sce.NewPlatformError(ExternalChainIsBoundedEventErrorExecution, "<data id='pokes'> expr failed to evaluate"))
+			eng.Raise(sce.NewPlatformError(ExternalChainIsBoundedEventErrorExecution, sceerrorreason.ErrorReasonExpressionFailed, "<data id='pokes'> expr failed to evaluate"))
 			_ = engine.SetVariable(sessionID, "pokes", nil)
 		}
 	}
@@ -474,7 +478,7 @@ func (p *ExternalChainIsBoundedPolicy) InitializeDataModel(eng *sce.Engine[Exter
 		if err == nil {
 			_ = engine.SetVariable(sessionID, "links", result)
 		} else {
-			eng.Raise(sce.NewPlatformError(ExternalChainIsBoundedEventErrorExecution, "<data id='links'> expr failed to evaluate"))
+			eng.Raise(sce.NewPlatformError(ExternalChainIsBoundedEventErrorExecution, sceerrorreason.ErrorReasonExpressionFailed, "<data id='links'> expr failed to evaluate"))
 			_ = engine.SetVariable(sessionID, "links", nil)
 		}
 	}
@@ -488,7 +492,7 @@ func (p *ExternalChainIsBoundedPolicy) InitializeDataModel(eng *sce.Engine[Exter
 		if err == nil {
 			_ = engine.SetVariable(sessionID, "laps", result)
 		} else {
-			eng.Raise(sce.NewPlatformError(ExternalChainIsBoundedEventErrorExecution, "<data id='laps'> expr failed to evaluate"))
+			eng.Raise(sce.NewPlatformError(ExternalChainIsBoundedEventErrorExecution, sceerrorreason.ErrorReasonExpressionFailed, "<data id='laps'> expr failed to evaluate"))
 			_ = engine.SetVariable(sessionID, "laps", nil)
 		}
 	}
@@ -502,7 +506,7 @@ func (p *ExternalChainIsBoundedPolicy) InitializeDataModel(eng *sce.Engine[Exter
 		if err == nil {
 			_ = engine.SetVariable(sessionID, "beats", result)
 		} else {
-			eng.Raise(sce.NewPlatformError(ExternalChainIsBoundedEventErrorExecution, "<data id='beats'> expr failed to evaluate"))
+			eng.Raise(sce.NewPlatformError(ExternalChainIsBoundedEventErrorExecution, sceerrorreason.ErrorReasonExpressionFailed, "<data id='beats'> expr failed to evaluate"))
 			_ = engine.SetVariable(sessionID, "beats", nil)
 		}
 	}
@@ -516,7 +520,7 @@ func (p *ExternalChainIsBoundedPolicy) InitializeDataModel(eng *sce.Engine[Exter
 		if err == nil {
 			_ = engine.SetVariable(sessionID, "blinks", result)
 		} else {
-			eng.Raise(sce.NewPlatformError(ExternalChainIsBoundedEventErrorExecution, "<data id='blinks'> expr failed to evaluate"))
+			eng.Raise(sce.NewPlatformError(ExternalChainIsBoundedEventErrorExecution, sceerrorreason.ErrorReasonExpressionFailed, "<data id='blinks'> expr failed to evaluate"))
 			_ = engine.SetVariable(sessionID, "blinks", nil)
 		}
 	}
@@ -530,7 +534,7 @@ func (p *ExternalChainIsBoundedPolicy) InitializeDataModel(eng *sce.Engine[Exter
 		if err == nil {
 			_ = engine.SetVariable(sessionID, "exprs", result)
 		} else {
-			eng.Raise(sce.NewPlatformError(ExternalChainIsBoundedEventErrorExecution, "<data id='exprs'> expr failed to evaluate"))
+			eng.Raise(sce.NewPlatformError(ExternalChainIsBoundedEventErrorExecution, sceerrorreason.ErrorReasonExpressionFailed, "<data id='exprs'> expr failed to evaluate"))
 			_ = engine.SetVariable(sessionID, "exprs", nil)
 		}
 	}
@@ -544,7 +548,7 @@ func (p *ExternalChainIsBoundedPolicy) InitializeDataModel(eng *sce.Engine[Exter
 		if err == nil {
 			_ = engine.SetVariable(sessionID, "pulses", result)
 		} else {
-			eng.Raise(sce.NewPlatformError(ExternalChainIsBoundedEventErrorExecution, "<data id='pulses'> expr failed to evaluate"))
+			eng.Raise(sce.NewPlatformError(ExternalChainIsBoundedEventErrorExecution, sceerrorreason.ErrorReasonExpressionFailed, "<data id='pulses'> expr failed to evaluate"))
 			_ = engine.SetVariable(sessionID, "pulses", nil)
 		}
 	}
@@ -576,12 +580,12 @@ func (p *ExternalChainIsBoundedPolicy) evaluateIfCond(guard string, eng *sce.Eng
 // evaluateGuardRaising evaluates a cond, raising error.execution when it cannot
 // be evaluated (W3C SCXML 5.9.1); ok is false then, where a bare false could
 // not say so.
-func (p *ExternalChainIsBoundedPolicy) evaluateGuardRaising(guard string, eng *sce.Engine[ExternalChainIsBoundedState, ExternalChainIsBoundedEvent], reason string) (value bool, ok bool) {
+func (p *ExternalChainIsBoundedPolicy) evaluateGuardRaising(guard string, eng *sce.Engine[ExternalChainIsBoundedState, ExternalChainIsBoundedEvent], detail string) (value bool, ok bool) {
 	p.assertScriptSession()
 	engine := p.ScriptEngine
 	result, err := engine.EvaluateExpression(p.SessionID, guard)
 	if err != nil {
-		eng.Raise(sce.NewPlatformError(ExternalChainIsBoundedEventErrorExecution, reason))
+		eng.Raise(sce.NewPlatformError(ExternalChainIsBoundedEventErrorExecution, sceerrorreason.ErrorReasonExpressionFailed, detail))
 		return false, false
 	}
 	return sce.ScriptToBool(result), true
@@ -684,7 +688,7 @@ func (p *ExternalChainIsBoundedPolicy) SetParamValueInScriptEngine(name string, 
 // failed is left (docs/adr/0098).
 func (p *ExternalChainIsBoundedPolicy) declareHandedValue(eng *sce.Engine[ExternalChainIsBoundedState, ExternalChainIsBoundedEvent], engine sce.IScriptEngine, sessionID, name string, value interface{}) {
 	if err := engine.SetVariable(sessionID, name, value); err != nil {
-		eng.Raise(sce.NewPlatformError(ExternalChainIsBoundedEventErrorExecution, "<data id='"+name+"'> could not hold the value its invoking session handed it"))
+		eng.Raise(sce.NewPlatformError(ExternalChainIsBoundedEventErrorExecution, sceerrorreason.ErrorReasonDataInitFailed, "<data id='"+name+"'> could not hold the value its invoking session handed it"))
 		_ = engine.SetVariable(sessionID, name, nil)
 	}
 }
@@ -1178,22 +1182,26 @@ func (p *ExternalChainIsBoundedPolicy) ExecuteEntryActions(state ExternalChainIs
 	{
 	p.assertScriptSession()
 	sendArgError := ""
+	// Why the argument failed, a code of sce:std/engine/error_reason
+	// (docs/adr/0106 #111), set with every sentence below.
+	var sendArgReason sce.ErrorReason
+	_ = sendArgReason
 	sendDelayMs := uint64(0)
 	if sendArgError == "" {
 		// The expression failing is the argument error, and so is a value that
 		// is not the CSS2 time the clause names (ARCHITECTURE.md, "Durations"):
 		// the message is not scheduled under some default wait.
 		if v, err := p.ScriptEngine.EvaluateExpression(p.SessionID, `"0ms"`); err != nil {
-			sendArgError = "<send> delayexpr could not be evaluated"
+			sendArgError, sendArgReason = "<send> delayexpr could not be evaluated", sceerrorreason.ErrorReasonExpressionFailed
 		} else if ms, ok := sce.ParseDelayToMs(sce.ToWireString(v)); ok {
 			sendDelayMs = ms
 		} else {
-			sendArgError = "<send> delayexpr is not a CSS2 time"
+			sendArgError, sendArgReason = "<send> delayexpr is not a CSS2 time", sceerrorreason.ErrorReasonSendDelayInvalid
 		}
 	}
 	_ = sendDelayMs
 	if sendArgError != "" {
-		errEvt := sce.NewPlatformError(ExternalChainIsBoundedEventErrorExecution, sendArgError)
+		errEvt := sce.NewPlatformError(ExternalChainIsBoundedEventErrorExecution, sendArgReason, sendArgError)
 		errEvt.Metadata.SendID = "__send_9"
 		engine.Raise(errEvt)
 		return  // W3C SCXML 4.9: the error ends the block
@@ -1516,7 +1524,7 @@ func (p *ExternalChainIsBoundedPolicy) ExecuteTransitionContent(source ExternalC
 
 	// W3C SCXML 5.3: <assign location="laps" expr="laps + 1">
 	if err := p.assignVariable(`laps`, `_scxml_add(laps, 1)`); err != nil {
-		engine.Raise(sce.NewPlatformError(ExternalChainIsBoundedEventErrorExecution, "<assign> to 'laps' failed"))
+		engine.Raise(sce.NewPlatformError(ExternalChainIsBoundedEventErrorExecution, sceerrorreason.ErrorReasonAssignmentFailed, "<assign> to 'laps' failed"))
 		return  // W3C SCXML 4.9: the error ends the block
 	}
 
@@ -1543,7 +1551,7 @@ func (p *ExternalChainIsBoundedPolicy) ExecuteTransitionContent(source ExternalC
 
 	// W3C SCXML 5.3: <assign location="laps" expr="laps + 1">
 	if err := p.assignVariable(`laps`, `_scxml_add(laps, 1)`); err != nil {
-		engine.Raise(sce.NewPlatformError(ExternalChainIsBoundedEventErrorExecution, "<assign> to 'laps' failed"))
+		engine.Raise(sce.NewPlatformError(ExternalChainIsBoundedEventErrorExecution, sceerrorreason.ErrorReasonAssignmentFailed, "<assign> to 'laps' failed"))
 		return  // W3C SCXML 4.9: the error ends the block
 	}
 
@@ -1555,7 +1563,7 @@ func (p *ExternalChainIsBoundedPolicy) ExecuteTransitionContent(source ExternalC
 
 	// W3C SCXML 5.3: <assign location="pokes" expr="pokes + 1">
 	if err := p.assignVariable(`pokes`, `_scxml_add(pokes, 1)`); err != nil {
-		engine.Raise(sce.NewPlatformError(ExternalChainIsBoundedEventErrorExecution, "<assign> to 'pokes' failed"))
+		engine.Raise(sce.NewPlatformError(ExternalChainIsBoundedEventErrorExecution, sceerrorreason.ErrorReasonAssignmentFailed, "<assign> to 'pokes' failed"))
 		return  // W3C SCXML 4.9: the error ends the block
 	}
 
@@ -1570,7 +1578,7 @@ func (p *ExternalChainIsBoundedPolicy) ExecuteTransitionContent(source ExternalC
 
 	// W3C SCXML 5.3: <assign location="pokes" expr="pokes + 1">
 	if err := p.assignVariable(`pokes`, `_scxml_add(pokes, 1)`); err != nil {
-		engine.Raise(sce.NewPlatformError(ExternalChainIsBoundedEventErrorExecution, "<assign> to 'pokes' failed"))
+		engine.Raise(sce.NewPlatformError(ExternalChainIsBoundedEventErrorExecution, sceerrorreason.ErrorReasonAssignmentFailed, "<assign> to 'pokes' failed"))
 		return  // W3C SCXML 4.9: the error ends the block
 	}
 
@@ -1585,7 +1593,7 @@ func (p *ExternalChainIsBoundedPolicy) ExecuteTransitionContent(source ExternalC
 
 	// W3C SCXML 5.3: <assign location="beats" expr="beats + 1">
 	if err := p.assignVariable(`beats`, `_scxml_add(beats, 1)`); err != nil {
-		engine.Raise(sce.NewPlatformError(ExternalChainIsBoundedEventErrorExecution, "<assign> to 'beats' failed"))
+		engine.Raise(sce.NewPlatformError(ExternalChainIsBoundedEventErrorExecution, sceerrorreason.ErrorReasonAssignmentFailed, "<assign> to 'beats' failed"))
 		return  // W3C SCXML 4.9: the error ends the block
 	}
 
@@ -1612,7 +1620,7 @@ func (p *ExternalChainIsBoundedPolicy) ExecuteTransitionContent(source ExternalC
 
 	// W3C SCXML 5.3: <assign location="beats" expr="beats + 1">
 	if err := p.assignVariable(`beats`, `_scxml_add(beats, 1)`); err != nil {
-		engine.Raise(sce.NewPlatformError(ExternalChainIsBoundedEventErrorExecution, "<assign> to 'beats' failed"))
+		engine.Raise(sce.NewPlatformError(ExternalChainIsBoundedEventErrorExecution, sceerrorreason.ErrorReasonAssignmentFailed, "<assign> to 'beats' failed"))
 		return  // W3C SCXML 4.9: the error ends the block
 	}
 
@@ -1624,7 +1632,7 @@ func (p *ExternalChainIsBoundedPolicy) ExecuteTransitionContent(source ExternalC
 
 	// W3C SCXML 5.3: <assign location="pokes" expr="pokes + 1">
 	if err := p.assignVariable(`pokes`, `_scxml_add(pokes, 1)`); err != nil {
-		engine.Raise(sce.NewPlatformError(ExternalChainIsBoundedEventErrorExecution, "<assign> to 'pokes' failed"))
+		engine.Raise(sce.NewPlatformError(ExternalChainIsBoundedEventErrorExecution, sceerrorreason.ErrorReasonAssignmentFailed, "<assign> to 'pokes' failed"))
 		return  // W3C SCXML 4.9: the error ends the block
 	}
 
@@ -1639,7 +1647,7 @@ func (p *ExternalChainIsBoundedPolicy) ExecuteTransitionContent(source ExternalC
 
 	// W3C SCXML 5.3: <assign location="links" expr="links + 1">
 	if err := p.assignVariable(`links`, `_scxml_add(links, 1)`); err != nil {
-		engine.Raise(sce.NewPlatformError(ExternalChainIsBoundedEventErrorExecution, "<assign> to 'links' failed"))
+		engine.Raise(sce.NewPlatformError(ExternalChainIsBoundedEventErrorExecution, sceerrorreason.ErrorReasonAssignmentFailed, "<assign> to 'links' failed"))
 		return  // W3C SCXML 4.9: the error ends the block
 	}
 
@@ -1666,7 +1674,7 @@ func (p *ExternalChainIsBoundedPolicy) ExecuteTransitionContent(source ExternalC
 
 	// W3C SCXML 5.3: <assign location="pokes" expr="pokes + 1">
 	if err := p.assignVariable(`pokes`, `_scxml_add(pokes, 1)`); err != nil {
-		engine.Raise(sce.NewPlatformError(ExternalChainIsBoundedEventErrorExecution, "<assign> to 'pokes' failed"))
+		engine.Raise(sce.NewPlatformError(ExternalChainIsBoundedEventErrorExecution, sceerrorreason.ErrorReasonAssignmentFailed, "<assign> to 'pokes' failed"))
 		return  // W3C SCXML 4.9: the error ends the block
 	}
 
@@ -1681,7 +1689,7 @@ func (p *ExternalChainIsBoundedPolicy) ExecuteTransitionContent(source ExternalC
 
 	// W3C SCXML 5.3: <assign location="pulses" expr="pulses + 1">
 	if err := p.assignVariable(`pulses`, `_scxml_add(pulses, 1)`); err != nil {
-		engine.Raise(sce.NewPlatformError(ExternalChainIsBoundedEventErrorExecution, "<assign> to 'pulses' failed"))
+		engine.Raise(sce.NewPlatformError(ExternalChainIsBoundedEventErrorExecution, sceerrorreason.ErrorReasonAssignmentFailed, "<assign> to 'pulses' failed"))
 		return  // W3C SCXML 4.9: the error ends the block
 	}
 
@@ -1693,7 +1701,7 @@ func (p *ExternalChainIsBoundedPolicy) ExecuteTransitionContent(source ExternalC
 
 	// W3C SCXML 5.3: <assign location="pokes" expr="pokes + 1">
 	if err := p.assignVariable(`pokes`, `_scxml_add(pokes, 1)`); err != nil {
-		engine.Raise(sce.NewPlatformError(ExternalChainIsBoundedEventErrorExecution, "<assign> to 'pokes' failed"))
+		engine.Raise(sce.NewPlatformError(ExternalChainIsBoundedEventErrorExecution, sceerrorreason.ErrorReasonAssignmentFailed, "<assign> to 'pokes' failed"))
 		return  // W3C SCXML 4.9: the error ends the block
 	}
 
@@ -1708,7 +1716,7 @@ func (p *ExternalChainIsBoundedPolicy) ExecuteTransitionContent(source ExternalC
 
 	// W3C SCXML 5.3: <assign location="blinks" expr="blinks + 1">
 	if err := p.assignVariable(`blinks`, `_scxml_add(blinks, 1)`); err != nil {
-		engine.Raise(sce.NewPlatformError(ExternalChainIsBoundedEventErrorExecution, "<assign> to 'blinks' failed"))
+		engine.Raise(sce.NewPlatformError(ExternalChainIsBoundedEventErrorExecution, sceerrorreason.ErrorReasonAssignmentFailed, "<assign> to 'blinks' failed"))
 		return  // W3C SCXML 4.9: the error ends the block
 	}
 
@@ -1735,7 +1743,7 @@ func (p *ExternalChainIsBoundedPolicy) ExecuteTransitionContent(source ExternalC
 
 	// W3C SCXML 5.3: <assign location="pokes" expr="pokes + 1">
 	if err := p.assignVariable(`pokes`, `_scxml_add(pokes, 1)`); err != nil {
-		engine.Raise(sce.NewPlatformError(ExternalChainIsBoundedEventErrorExecution, "<assign> to 'pokes' failed"))
+		engine.Raise(sce.NewPlatformError(ExternalChainIsBoundedEventErrorExecution, sceerrorreason.ErrorReasonAssignmentFailed, "<assign> to 'pokes' failed"))
 		return  // W3C SCXML 4.9: the error ends the block
 	}
 
@@ -1750,7 +1758,7 @@ func (p *ExternalChainIsBoundedPolicy) ExecuteTransitionContent(source ExternalC
 
 	// W3C SCXML 5.3: <assign location="exprs" expr="exprs + 1">
 	if err := p.assignVariable(`exprs`, `_scxml_add(exprs, 1)`); err != nil {
-		engine.Raise(sce.NewPlatformError(ExternalChainIsBoundedEventErrorExecution, "<assign> to 'exprs' failed"))
+		engine.Raise(sce.NewPlatformError(ExternalChainIsBoundedEventErrorExecution, sceerrorreason.ErrorReasonAssignmentFailed, "<assign> to 'exprs' failed"))
 		return  // W3C SCXML 4.9: the error ends the block
 	}
 
@@ -1759,22 +1767,26 @@ func (p *ExternalChainIsBoundedPolicy) ExecuteTransitionContent(source ExternalC
 	{
 	p.assertScriptSession()
 	sendArgError := ""
+	// Why the argument failed, a code of sce:std/engine/error_reason
+	// (docs/adr/0106 #111), set with every sentence below.
+	var sendArgReason sce.ErrorReason
+	_ = sendArgReason
 	sendDelayMs := uint64(0)
 	if sendArgError == "" {
 		// The expression failing is the argument error, and so is a value that
 		// is not the CSS2 time the clause names (ARCHITECTURE.md, "Durations"):
 		// the message is not scheduled under some default wait.
 		if v, err := p.ScriptEngine.EvaluateExpression(p.SessionID, `"0ms"`); err != nil {
-			sendArgError = "<send> delayexpr could not be evaluated"
+			sendArgError, sendArgReason = "<send> delayexpr could not be evaluated", sceerrorreason.ErrorReasonExpressionFailed
 		} else if ms, ok := sce.ParseDelayToMs(sce.ToWireString(v)); ok {
 			sendDelayMs = ms
 		} else {
-			sendArgError = "<send> delayexpr is not a CSS2 time"
+			sendArgError, sendArgReason = "<send> delayexpr is not a CSS2 time", sceerrorreason.ErrorReasonSendDelayInvalid
 		}
 	}
 	_ = sendDelayMs
 	if sendArgError != "" {
-		errEvt := sce.NewPlatformError(ExternalChainIsBoundedEventErrorExecution, sendArgError)
+		errEvt := sce.NewPlatformError(ExternalChainIsBoundedEventErrorExecution, sendArgReason, sendArgError)
 		errEvt.Metadata.SendID = "__send_8"
 		engine.Raise(errEvt)
 		return  // W3C SCXML 4.9: the error ends the block
@@ -1799,7 +1811,7 @@ func (p *ExternalChainIsBoundedPolicy) ExecuteTransitionContent(source ExternalC
 
 	// W3C SCXML 5.3: <assign location="pokes" expr="pokes + 1">
 	if err := p.assignVariable(`pokes`, `_scxml_add(pokes, 1)`); err != nil {
-		engine.Raise(sce.NewPlatformError(ExternalChainIsBoundedEventErrorExecution, "<assign> to 'pokes' failed"))
+		engine.Raise(sce.NewPlatformError(ExternalChainIsBoundedEventErrorExecution, sceerrorreason.ErrorReasonAssignmentFailed, "<assign> to 'pokes' failed"))
 		return  // W3C SCXML 4.9: the error ends the block
 	}
 

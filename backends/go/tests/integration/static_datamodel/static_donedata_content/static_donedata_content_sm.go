@@ -31,6 +31,7 @@ import (
 	"time"
 
 	sce "github.com/newmassrael/sce-go-runtime"
+	sceerrorreason "github.com/newmassrael/sce-go-runtime/generated/error_reason"
 	scealgorithm "github.com/newmassrael/sce-forge-runtime/algorithm"
 )
 
@@ -40,6 +41,9 @@ var (
 	_ = filepath.Join
 	_ = strings.HasPrefix
 	_ = time.Duration(0)
+	// Why an error.* event is raised (sce:std/engine/error_reason,
+	// docs/adr/0106 #111); a machine that raises none still imports it.
+	_ = sceerrorreason.ErrorReasonExpressionFailed
 	_ scealgorithm.Failure
 )
 
@@ -775,7 +779,7 @@ func (p *StaticDonedataContentPolicy) ExecuteEntryActions(state StaticDonedataCo
 			var sceFailure scealgorithm.Failure
 			var contentValue interface{} = int64(scealgorithm.MulUint32(&sceFailure, p.vCount, 2000000000))
 			if sceFailure.Failed() {
-				engine.Raise(sce.NewPlatformError(StaticDonedataContentEventErrorExecution, "<donedata> <content expr> failed to evaluate"))
+				engine.Raise(sce.NewPlatformError(StaticDonedataContentEventErrorExecution, sceerrorreason.ErrorReasonExpressionFailed, "<donedata> <content expr> failed to evaluate"))
 				contentValue = ""
 			}
 			doneEventData = sce.ScriptValueToJSON(contentValue)
@@ -812,7 +816,7 @@ func (p *StaticDonedataContentPolicy) ExecuteEntryActions(state StaticDonedataCo
 			var sceFailure scealgorithm.Failure
 			var contentValue interface{} = int64(scealgorithm.MulUint32(&sceFailure, p.vCount, 2))
 			if sceFailure.Failed() {
-				engine.Raise(sce.NewPlatformError(StaticDonedataContentEventErrorExecution, "<donedata> <content expr> failed to evaluate"))
+				engine.Raise(sce.NewPlatformError(StaticDonedataContentEventErrorExecution, sceerrorreason.ErrorReasonExpressionFailed, "<donedata> <content expr> failed to evaluate"))
 				contentValue = ""
 			}
 			doneEventData = sce.ScriptValueToJSON(contentValue)
@@ -944,7 +948,7 @@ func (p *StaticDonedataContentPolicy) ExecuteTransitionContent(source StaticDone
 			func() {
 
 
-	if func() bool { var sceFailure scealgorithm.Failure; sceValue := scealgorithm.AddUint32(&sceFailure, p.vCount, 1); if sceFailure.Failed() { engine.Raise(sce.NewPlatformError(StaticDonedataContentEventErrorExecution, "<assign location='count'>: an integer operation overflowed or failed")); return true }; p.vCount = sceValue; return false }() {
+	if func() bool { var sceFailure scealgorithm.Failure; sceValue := scealgorithm.AddUint32(&sceFailure, p.vCount, 1); if sceFailure.Failed() { engine.Raise(sce.NewPlatformError(StaticDonedataContentEventErrorExecution, sceerrorreason.ErrorReasonExpressionFailed, "<assign location='count'>: an integer operation overflowed or failed")); return true }; p.vCount = sceValue; return false }() {
 		return  // W3C SCXML 4.9: the error ends the block
 	}
 

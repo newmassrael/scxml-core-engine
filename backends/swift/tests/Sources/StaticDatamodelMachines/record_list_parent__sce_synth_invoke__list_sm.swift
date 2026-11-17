@@ -2347,7 +2347,7 @@ public final class RecordListParentSceSynthInvokeListPolicy: InvocablePolicy {
                     }
 
 
-                if ({ () -> Bool in do { let sceValue = (try Checked.within((try call_RecordRoster__v(self.vRoster, self.pendingRecordListRolePayload.node, self.pendingRecordListRolePayload.role)), capacity: 64)); self.vRoster = sceValue } catch { engine.raise(EventWithMetadata.platformError(RecordListParentSceSynthInvokeListEvent.errorExecution, message: "<assign location='roster'>: an integer operation overflowed or failed")); return true }; return false }()) {
+                if ({ () -> Bool in do { let sceValue = (try Checked.within((try call_RecordRoster__v(self.vRoster, self.pendingRecordListRolePayload.node, self.pendingRecordListRolePayload.role)), capacity: 64)); self.vRoster = sceValue } catch { engine.raise(EventWithMetadata.platformError(RecordListParentSceSynthInvokeListEvent.errorExecution, reason: .expressionFailed, message: "<assign location='roster'>: an integer operation overflowed or failed")); return true }; return false }()) {
                     break sceBlock  // W3C SCXML 4.9: the error ends the block
                 }
 
@@ -2357,7 +2357,7 @@ public final class RecordListParentSceSynthInvokeListPolicy: InvocablePolicy {
                 sceBlock: do {
 
 
-                if ({ () -> Bool in do { let sceValue: UInt32 = (try Checked.add(self.vRefusals, 1)); self.vRefusals = sceValue } catch { engine.raise(EventWithMetadata.platformError(RecordListParentSceSynthInvokeListEvent.errorExecution, message: "<assign location='refusals'>: an integer operation overflowed or failed")); return true }; return false }()) {
+                if ({ () -> Bool in do { let sceValue: UInt32 = (try Checked.add(self.vRefusals, 1)); self.vRefusals = sceValue } catch { engine.raise(EventWithMetadata.platformError(RecordListParentSceSynthInvokeListEvent.errorExecution, reason: .expressionFailed, message: "<assign location='refusals'>: an integer operation overflowed or failed")); return true }; return false }()) {
                     break sceBlock  // W3C SCXML 4.9: the error ends the block
                 }
 
@@ -2367,7 +2367,7 @@ public final class RecordListParentSceSynthInvokeListPolicy: InvocablePolicy {
                 sceBlock: do {
 
 
-                if ({ () -> Bool in do { let sceValue: UInt32 = (try Checked.add(self.vRefusals, 1)); self.vRefusals = sceValue } catch { engine.raise(EventWithMetadata.platformError(RecordListParentSceSynthInvokeListEvent.errorExecution, message: "<assign location='refusals'>: an integer operation overflowed or failed")); return true }; return false }()) {
+                if ({ () -> Bool in do { let sceValue: UInt32 = (try Checked.add(self.vRefusals, 1)); self.vRefusals = sceValue } catch { engine.raise(EventWithMetadata.platformError(RecordListParentSceSynthInvokeListEvent.errorExecution, reason: .expressionFailed, message: "<assign location='refusals'>: an integer operation overflowed or failed")); return true }; return false }()) {
                     break sceBlock  // W3C SCXML 4.9: the error ends the block
                 }
 
@@ -2377,7 +2377,7 @@ public final class RecordListParentSceSynthInvokeListPolicy: InvocablePolicy {
                 sceBlock: do {
 
 
-                if ({ () -> Bool in do { let sceValue: UInt32 = (try Checked.add(self.vRefusals, 1)); self.vRefusals = sceValue } catch { engine.raise(EventWithMetadata.platformError(RecordListParentSceSynthInvokeListEvent.errorExecution, message: "<assign location='refusals'>: an integer operation overflowed or failed")); return true }; return false }()) {
+                if ({ () -> Bool in do { let sceValue: UInt32 = (try Checked.add(self.vRefusals, 1)); self.vRefusals = sceValue } catch { engine.raise(EventWithMetadata.platformError(RecordListParentSceSynthInvokeListEvent.errorExecution, reason: .expressionFailed, message: "<assign location='refusals'>: an integer operation overflowed or failed")); return true }; return false }()) {
                     break sceBlock  // W3C SCXML 4.9: the error ends the block
                 }
 
@@ -2432,7 +2432,7 @@ public final class RecordListParentSceSynthInvokeListPolicy: InvocablePolicy {
 
 
 
-                if ({ () -> Bool in do { let sceValue: String = (try Checked.bounded(self.pendingRecordListEditPayload.text, capacity: 96)); self.vStaging.text = sceValue } catch { engine.raise(EventWithMetadata.platformError(RecordListParentSceSynthInvokeListEvent.errorExecution, message: "<assign location='staging.text'>: an integer operation overflowed or failed")); return true }; return false }()) {
+                if ({ () -> Bool in do { let sceValue: String = (try Checked.bounded(self.pendingRecordListEditPayload.text, capacity: 96)); self.vStaging.text = sceValue } catch { engine.raise(EventWithMetadata.platformError(RecordListParentSceSynthInvokeListEvent.errorExecution, reason: .expressionFailed, message: "<assign location='staging.text'>: an integer operation overflowed or failed")); return true }; return false }()) {
                     break sceBlock  // W3C SCXML 4.9: the error ends the block
                 }
 
@@ -2443,7 +2443,7 @@ public final class RecordListParentSceSynthInvokeListPolicy: InvocablePolicy {
 
                 // SCE Accepted Subset §2.15: <sce:append target="staged">
 
-                if ({ () -> Bool in if self.vStaged.count >= 32 { engine.raise(EventWithMetadata.platformError(RecordListParentSceSynthInvokeListEvent.errorExecution, message: "<sce:append target='staged'>: the list already holds its capacity of 32")); return true }; let sceValue = Checked.element(of: self.vStaged, self.vStaging); self.vStaged.append(sceValue); return false }()) {
+                if ({ () -> Bool in if self.vStaged.count >= 32 { engine.raise(EventWithMetadata.platformError(RecordListParentSceSynthInvokeListEvent.errorExecution, reason: .assignmentFailed, message: "<sce:append target='staged'>: the list already holds its capacity of 32")); return true }; let sceValue = Checked.element(of: self.vStaged, self.vStaging); self.vStaged.append(sceValue); return false }()) {
                     break sceBlock  // W3C SCXML 4.9: the error ends the block
                 }
 
@@ -2526,14 +2526,14 @@ public final class RecordListParentSceSynthInvokeListPolicy: InvocablePolicy {
 
 
 
-                if ({ () -> Bool in do { let sceValue: String = (try Checked.bounded("", capacity: 96)); self.vStaging.text = sceValue } catch { engine.raise(EventWithMetadata.platformError(RecordListParentSceSynthInvokeListEvent.errorExecution, message: "<assign location='staging.text'>: an integer operation overflowed or failed")); return true }; return false }()) {
+                if ({ () -> Bool in do { let sceValue: String = (try Checked.bounded("", capacity: 96)); self.vStaging.text = sceValue } catch { engine.raise(EventWithMetadata.platformError(RecordListParentSceSynthInvokeListEvent.errorExecution, reason: .expressionFailed, message: "<assign location='staging.text'>: an integer operation overflowed or failed")); return true }; return false }()) {
                     break sceBlock  // W3C SCXML 4.9: the error ends the block
                 }
 
 
                 // SCE Accepted Subset §2.15: <sce:append target="staged">
 
-                if ({ () -> Bool in if self.vStaged.count >= 32 { engine.raise(EventWithMetadata.platformError(RecordListParentSceSynthInvokeListEvent.errorExecution, message: "<sce:append target='staged'>: the list already holds its capacity of 32")); return true }; let sceValue = Checked.element(of: self.vStaged, self.vStaging); self.vStaged.append(sceValue); return false }()) {
+                if ({ () -> Bool in if self.vStaged.count >= 32 { engine.raise(EventWithMetadata.platformError(RecordListParentSceSynthInvokeListEvent.errorExecution, reason: .assignmentFailed, message: "<sce:append target='staged'>: the list already holds its capacity of 32")); return true }; let sceValue = Checked.element(of: self.vStaged, self.vStaging); self.vStaged.append(sceValue); return false }()) {
                     break sceBlock  // W3C SCXML 4.9: the error ends the block
                 }
 
@@ -2616,14 +2616,14 @@ public final class RecordListParentSceSynthInvokeListPolicy: InvocablePolicy {
 
 
 
-                if ({ () -> Bool in do { let sceValue: String = (try Checked.bounded("", capacity: 96)); self.vStaging.text = sceValue } catch { engine.raise(EventWithMetadata.platformError(RecordListParentSceSynthInvokeListEvent.errorExecution, message: "<assign location='staging.text'>: an integer operation overflowed or failed")); return true }; return false }()) {
+                if ({ () -> Bool in do { let sceValue: String = (try Checked.bounded("", capacity: 96)); self.vStaging.text = sceValue } catch { engine.raise(EventWithMetadata.platformError(RecordListParentSceSynthInvokeListEvent.errorExecution, reason: .expressionFailed, message: "<assign location='staging.text'>: an integer operation overflowed or failed")); return true }; return false }()) {
                     break sceBlock  // W3C SCXML 4.9: the error ends the block
                 }
 
 
                 // SCE Accepted Subset §2.15: <sce:append target="staged">
 
-                if ({ () -> Bool in if self.vStaged.count >= 32 { engine.raise(EventWithMetadata.platformError(RecordListParentSceSynthInvokeListEvent.errorExecution, message: "<sce:append target='staged'>: the list already holds its capacity of 32")); return true }; let sceValue = Checked.element(of: self.vStaged, self.vStaging); self.vStaged.append(sceValue); return false }()) {
+                if ({ () -> Bool in if self.vStaged.count >= 32 { engine.raise(EventWithMetadata.platformError(RecordListParentSceSynthInvokeListEvent.errorExecution, reason: .assignmentFailed, message: "<sce:append target='staged'>: the list already holds its capacity of 32")); return true }; let sceValue = Checked.element(of: self.vStaged, self.vStaging); self.vStaged.append(sceValue); return false }()) {
                     break sceBlock  // W3C SCXML 4.9: the error ends the block
                 }
 
@@ -2678,7 +2678,7 @@ public final class RecordListParentSceSynthInvokeListPolicy: InvocablePolicy {
                 if (self.vForbidden) {
 
 
-                if ({ () -> Bool in do { let sceValue: UInt32 = (try Checked.add(self.vDenied, 1)); self.vDenied = sceValue } catch { engine.raise(EventWithMetadata.platformError(RecordListParentSceSynthInvokeListEvent.errorExecution, message: "<assign location='denied'>: an integer operation overflowed or failed")); return true }; return false }()) {
+                if ({ () -> Bool in do { let sceValue: UInt32 = (try Checked.add(self.vDenied, 1)); self.vDenied = sceValue } catch { engine.raise(EventWithMetadata.platformError(RecordListParentSceSynthInvokeListEvent.errorExecution, reason: .expressionFailed, message: "<assign location='denied'>: an integer operation overflowed or failed")); return true }; return false }()) {
                     break sceBlock  // W3C SCXML 4.9: the error ends the block
                 }
 
@@ -2765,7 +2765,7 @@ public final class RecordListParentSceSynthInvokeListPolicy: InvocablePolicy {
                     _ = s
 
                 var ifCondFailed14 = false
-                if ({ () -> Bool in do { return (try Checked.and((try Checked.div(a.element, 65536)) == UInt64(s.id), { () throws(AlgorithmError) -> Bool in (try Checked.or(s.kind == 2, { () throws(AlgorithmError) -> Bool in (try Checked.rem(a.element, 65536)) == UInt64(s.field) })) })) } catch { engine.raise(EventWithMetadata.platformError(RecordListParentSceSynthInvokeListEvent.errorExecution, message: "<if cond='a.element / 65536 === s.id && (s.kind === 2 || a.element % 65536 === s.field)'>: an integer operation overflowed or failed")); ifCondFailed14 = true; return false } }()) {
+                if ({ () -> Bool in do { return (try Checked.and((try Checked.div(a.element, 65536)) == UInt64(s.id), { () throws(AlgorithmError) -> Bool in (try Checked.or(s.kind == 2, { () throws(AlgorithmError) -> Bool in (try Checked.rem(a.element, 65536)) == UInt64(s.field) })) })) } catch { engine.raise(EventWithMetadata.platformError(RecordListParentSceSynthInvokeListEvent.errorExecution, reason: .expressionFailed, message: "<if cond='a.element / 65536 === s.id && (s.kind === 2 || a.element % 65536 === s.field)'>: an integer operation overflowed or failed")); ifCondFailed14 = true; return false } }()) {
 
 
                 self.vCovered = true
@@ -2780,7 +2780,7 @@ public final class RecordListParentSceSynthInvokeListPolicy: InvocablePolicy {
                 if (self.vCovered) {
 
 
-                if ({ () -> Bool in do { let sceValue: UInt32 = (try Checked.add(self.vGone, 1)); self.vGone = sceValue } catch { engine.raise(EventWithMetadata.platformError(RecordListParentSceSynthInvokeListEvent.errorExecution, message: "<assign location='gone'>: an integer operation overflowed or failed")); return true }; return false }()) {
+                if ({ () -> Bool in do { let sceValue: UInt32 = (try Checked.add(self.vGone, 1)); self.vGone = sceValue } catch { engine.raise(EventWithMetadata.platformError(RecordListParentSceSynthInvokeListEvent.errorExecution, reason: .expressionFailed, message: "<assign location='gone'>: an integer operation overflowed or failed")); return true }; return false }()) {
                     break sceBlock  // W3C SCXML 4.9: the error ends the block
                 }
 
@@ -2795,7 +2795,7 @@ public final class RecordListParentSceSynthInvokeListPolicy: InvocablePolicy {
                 if (s.kind == 0) {
 
 
-                if ({ () -> Bool in do { let sceValue: UInt32 = (try Checked.add(self.vWrites, 1)); self.vWrites = sceValue } catch { engine.raise(EventWithMetadata.platformError(RecordListParentSceSynthInvokeListEvent.errorExecution, message: "<assign location='writes'>: an integer operation overflowed or failed")); return true }; return false }()) {
+                if ({ () -> Bool in do { let sceValue: UInt32 = (try Checked.add(self.vWrites, 1)); self.vWrites = sceValue } catch { engine.raise(EventWithMetadata.platformError(RecordListParentSceSynthInvokeListEvent.errorExecution, reason: .expressionFailed, message: "<assign location='writes'>: an integer operation overflowed or failed")); return true }; return false }()) {
                     break sceBlock  // W3C SCXML 4.9: the error ends the block
                 }
 
@@ -2806,10 +2806,10 @@ public final class RecordListParentSceSynthInvokeListPolicy: InvocablePolicy {
 
 
                 var ifCondFailed17 = false
-                if ({ () -> Bool in do { return (try Checked.and((try Checked.and(!self.vSpoiled, { () throws(AlgorithmError) -> Bool in (try Checked.add(self.vGone, self.vWrites)) > 0 })) && self.vRoomValues > 0 && self.vWrites > self.vGone, { () throws(AlgorithmError) -> Bool in (try Checked.add(UInt32(truncatingIfNeeded: self.vValues.count), self.vWrites)) > (try Checked.add(self.vRoomValues, self.vGone)) })) } catch { engine.raise(EventWithMetadata.platformError(RecordListParentSceSynthInvokeListEvent.errorExecution, message: "<if cond='!spoiled && gone + writes > 0 && roomValues > 0 && writes > gone && len(values) + writes > roomValues + gone'>: an integer operation overflowed or failed")); ifCondFailed17 = true; return false } }()) {
+                if ({ () -> Bool in do { return (try Checked.and((try Checked.and(!self.vSpoiled, { () throws(AlgorithmError) -> Bool in (try Checked.add(self.vGone, self.vWrites)) > 0 })) && self.vRoomValues > 0 && self.vWrites > self.vGone, { () throws(AlgorithmError) -> Bool in (try Checked.add(UInt32(truncatingIfNeeded: self.vValues.count), self.vWrites)) > (try Checked.add(self.vRoomValues, self.vGone)) })) } catch { engine.raise(EventWithMetadata.platformError(RecordListParentSceSynthInvokeListEvent.errorExecution, reason: .expressionFailed, message: "<if cond='!spoiled && gone + writes > 0 && roomValues > 0 && writes > gone && len(values) + writes > roomValues + gone'>: an integer operation overflowed or failed")); ifCondFailed17 = true; return false } }()) {
 
 
-                if ({ () -> Bool in do { let sceValue: UInt32 = (try Checked.add(self.vFull, 1)); self.vFull = sceValue } catch { engine.raise(EventWithMetadata.platformError(RecordListParentSceSynthInvokeListEvent.errorExecution, message: "<assign location='full'>: an integer operation overflowed or failed")); return true }; return false }()) {
+                if ({ () -> Bool in do { let sceValue: UInt32 = (try Checked.add(self.vFull, 1)); self.vFull = sceValue } catch { engine.raise(EventWithMetadata.platformError(RecordListParentSceSynthInvokeListEvent.errorExecution, reason: .expressionFailed, message: "<assign location='full'>: an integer operation overflowed or failed")); return true }; return false }()) {
                     break sceBlock  // W3C SCXML 4.9: the error ends the block
                 }
 
@@ -2828,7 +2828,7 @@ public final class RecordListParentSceSynthInvokeListPolicy: InvocablePolicy {
 
 
                 var ifCondFailed18 = false
-                if ({ () -> Bool in do { return (try Checked.and(!self.vSpoiled && self.vJournal, { () throws(AlgorithmError) -> Bool in (try Checked.add(self.vGone, self.vWrites)) > 0 })) && UInt32(truncatingIfNeeded: self.vProvisional.count) >= 8 } catch { engine.raise(EventWithMetadata.platformError(RecordListParentSceSynthInvokeListEvent.errorExecution, message: "<if cond='!spoiled && journal && gone + writes > 0 && len(provisional) >= _x.limits.shared_provisional'>: an integer operation overflowed or failed")); ifCondFailed18 = true; return false } }()) {
+                if ({ () -> Bool in do { return (try Checked.and(!self.vSpoiled && self.vJournal, { () throws(AlgorithmError) -> Bool in (try Checked.add(self.vGone, self.vWrites)) > 0 })) && UInt32(truncatingIfNeeded: self.vProvisional.count) >= 8 } catch { engine.raise(EventWithMetadata.platformError(RecordListParentSceSynthInvokeListEvent.errorExecution, reason: .expressionFailed, message: "<if cond='!spoiled && journal && gone + writes > 0 && len(provisional) >= _x.limits.shared_provisional'>: an integer operation overflowed or failed")); ifCondFailed18 = true; return false } }()) {
 
 
                 self.vSpoiled = true
@@ -2844,7 +2844,7 @@ public final class RecordListParentSceSynthInvokeListPolicy: InvocablePolicy {
 
 
                 var ifCondFailed19 = false
-                if ({ () -> Bool in do { return (try Checked.and(!self.vSpoiled, { () throws(AlgorithmError) -> Bool in (try Checked.add(self.vGone, self.vWrites)) > 0 })) } catch { engine.raise(EventWithMetadata.platformError(RecordListParentSceSynthInvokeListEvent.errorExecution, message: "<if cond='!spoiled && gone + writes > 0'>: an integer operation overflowed or failed")); ifCondFailed19 = true; return false } }()) {
+                if ({ () -> Bool in do { return (try Checked.and(!self.vSpoiled, { () throws(AlgorithmError) -> Bool in (try Checked.add(self.vGone, self.vWrites)) > 0 })) } catch { engine.raise(EventWithMetadata.platformError(RecordListParentSceSynthInvokeListEvent.errorExecution, reason: .expressionFailed, message: "<if cond='!spoiled && gone + writes > 0'>: an integer operation overflowed or failed")); ifCondFailed19 = true; return false } }()) {
 
 
                 self.vProbing = true
@@ -2855,7 +2855,7 @@ public final class RecordListParentSceSynthInvokeListPolicy: InvocablePolicy {
 
 
 
-                if ({ () -> Bool in do { let sceValue: RecordListParentSceSynthInvokeListHlcRecord = (try call_HlcSend__v(self.vClock, self.vClosingNow, self.vNode)); self.vStamp = sceValue } catch { engine.raise(EventWithMetadata.platformError(RecordListParentSceSynthInvokeListEvent.errorExecution, message: "<assign location='stamp'>: an integer operation overflowed or failed")); return true }; return false }()) {
+                if ({ () -> Bool in do { let sceValue: RecordListParentSceSynthInvokeListHlcRecord = (try call_HlcSend__v(self.vClock, self.vClosingNow, self.vNode)); self.vStamp = sceValue } catch { engine.raise(EventWithMetadata.platformError(RecordListParentSceSynthInvokeListEvent.errorExecution, reason: .expressionFailed, message: "<assign location='stamp'>: an integer operation overflowed or failed")); return true }; return false }()) {
                     break sceBlock  // W3C SCXML 4.9: the error ends the block
                 }
 
@@ -2886,7 +2886,7 @@ public final class RecordListParentSceSynthInvokeListPolicy: InvocablePolicy {
                     _ = s
 
                 var ifCondFailed20 = false
-                if ({ () -> Bool in do { return (try Checked.and((try Checked.div(a.element, 65536)) == UInt64(s.id), { () throws(AlgorithmError) -> Bool in (try Checked.or(s.kind == 2, { () throws(AlgorithmError) -> Bool in (try Checked.rem(a.element, 65536)) == UInt64(s.field) })) })) } catch { engine.raise(EventWithMetadata.platformError(RecordListParentSceSynthInvokeListEvent.errorExecution, message: "<if cond='a.element / 65536 === s.id && (s.kind === 2 || a.element % 65536 === s.field)'>: an integer operation overflowed or failed")); ifCondFailed20 = true; return false } }()) {
+                if ({ () -> Bool in do { return (try Checked.and((try Checked.div(a.element, 65536)) == UInt64(s.id), { () throws(AlgorithmError) -> Bool in (try Checked.or(s.kind == 2, { () throws(AlgorithmError) -> Bool in (try Checked.rem(a.element, 65536)) == UInt64(s.field) })) })) } catch { engine.raise(EventWithMetadata.platformError(RecordListParentSceSynthInvokeListEvent.errorExecution, reason: .expressionFailed, message: "<if cond='a.element / 65536 === s.id && (s.kind === 2 || a.element % 65536 === s.field)'>: an integer operation overflowed or failed")); ifCondFailed20 = true; return false } }()) {
 
 
                 self.vCovered = true
@@ -2905,13 +2905,13 @@ public final class RecordListParentSceSynthInvokeListPolicy: InvocablePolicy {
 
 
 
-                if ({ () -> Bool in do { let sceValue: UInt32 = (try Checked.narrow((try Checked.div(a.element, 65536)), to: UInt32.self)); self.vOp.id = sceValue } catch { engine.raise(EventWithMetadata.platformError(RecordListParentSceSynthInvokeListEvent.errorExecution, message: "<assign location='op.id'>: an integer operation overflowed or failed")); return true }; return false }()) {
+                if ({ () -> Bool in do { let sceValue: UInt32 = (try Checked.narrow((try Checked.div(a.element, 65536)), to: UInt32.self)); self.vOp.id = sceValue } catch { engine.raise(EventWithMetadata.platformError(RecordListParentSceSynthInvokeListEvent.errorExecution, reason: .expressionFailed, message: "<assign location='op.id'>: an integer operation overflowed or failed")); return true }; return false }()) {
                     break sceBlock  // W3C SCXML 4.9: the error ends the block
                 }
 
 
 
-                if ({ () -> Bool in do { let sceValue: UInt16 = (try Checked.narrow((try Checked.rem(a.element, 65536)), to: UInt16.self)); self.vOp.field = sceValue } catch { engine.raise(EventWithMetadata.platformError(RecordListParentSceSynthInvokeListEvent.errorExecution, message: "<assign location='op.field'>: an integer operation overflowed or failed")); return true }; return false }()) {
+                if ({ () -> Bool in do { let sceValue: UInt16 = (try Checked.narrow((try Checked.rem(a.element, 65536)), to: UInt16.self)); self.vOp.field = sceValue } catch { engine.raise(EventWithMetadata.platformError(RecordListParentSceSynthInvokeListEvent.errorExecution, reason: .expressionFailed, message: "<assign location='op.field'>: an integer operation overflowed or failed")); return true }; return false }()) {
                     break sceBlock  // W3C SCXML 4.9: the error ends the block
                 }
 
@@ -2921,7 +2921,7 @@ public final class RecordListParentSceSynthInvokeListPolicy: InvocablePolicy {
 
 
 
-                if ({ () -> Bool in do { let sceValue: String = (try Checked.bounded("", capacity: 96)); self.vOp.text = sceValue } catch { engine.raise(EventWithMetadata.platformError(RecordListParentSceSynthInvokeListEvent.errorExecution, message: "<assign location='op.text'>: an integer operation overflowed or failed")); return true }; return false }()) {
+                if ({ () -> Bool in do { let sceValue: String = (try Checked.bounded("", capacity: 96)); self.vOp.text = sceValue } catch { engine.raise(EventWithMetadata.platformError(RecordListParentSceSynthInvokeListEvent.errorExecution, reason: .expressionFailed, message: "<assign location='op.text'>: an integer operation overflowed or failed")); return true }; return false }()) {
                     break sceBlock  // W3C SCXML 4.9: the error ends the block
                 }
 
@@ -2940,7 +2940,7 @@ public final class RecordListParentSceSynthInvokeListPolicy: InvocablePolicy {
 
                 // SCE Accepted Subset §2.15: <sce:append target="taking">
 
-                if ({ () -> Bool in if self.vTaking.count >= 64 { engine.raise(EventWithMetadata.platformError(RecordListParentSceSynthInvokeListEvent.errorExecution, message: "<sce:append target='taking'>: the list already holds its capacity of 64")); return true }; let sceValue = Checked.element(of: self.vTaking, self.vOp); self.vTaking.append(sceValue); return false }()) {
+                if ({ () -> Bool in if self.vTaking.count >= 64 { engine.raise(EventWithMetadata.platformError(RecordListParentSceSynthInvokeListEvent.errorExecution, reason: .assignmentFailed, message: "<sce:append target='taking'>: the list already holds its capacity of 64")); return true }; let sceValue = Checked.element(of: self.vTaking, self.vOp); self.vTaking.append(sceValue); return false }()) {
                     break sceBlock  // W3C SCXML 4.9: the error ends the block
                 }
 
@@ -2971,7 +2971,7 @@ public final class RecordListParentSceSynthInvokeListPolicy: InvocablePolicy {
 
 
 
-                if ({ () -> Bool in do { let sceValue: String = (try Checked.bounded(s.text, capacity: 96)); self.vOp.text = sceValue } catch { engine.raise(EventWithMetadata.platformError(RecordListParentSceSynthInvokeListEvent.errorExecution, message: "<assign location='op.text'>: an integer operation overflowed or failed")); return true }; return false }()) {
+                if ({ () -> Bool in do { let sceValue: String = (try Checked.bounded(s.text, capacity: 96)); self.vOp.text = sceValue } catch { engine.raise(EventWithMetadata.platformError(RecordListParentSceSynthInvokeListEvent.errorExecution, reason: .expressionFailed, message: "<assign location='op.text'>: an integer operation overflowed or failed")); return true }; return false }()) {
                     break sceBlock  // W3C SCXML 4.9: the error ends the block
                 }
 
@@ -2990,7 +2990,7 @@ public final class RecordListParentSceSynthInvokeListPolicy: InvocablePolicy {
 
                 // SCE Accepted Subset §2.15: <sce:append target="taking">
 
-                if ({ () -> Bool in if self.vTaking.count >= 64 { engine.raise(EventWithMetadata.platformError(RecordListParentSceSynthInvokeListEvent.errorExecution, message: "<sce:append target='taking'>: the list already holds its capacity of 64")); return true }; let sceValue = Checked.element(of: self.vTaking, self.vOp); self.vTaking.append(sceValue); return false }()) {
+                if ({ () -> Bool in if self.vTaking.count >= 64 { engine.raise(EventWithMetadata.platformError(RecordListParentSceSynthInvokeListEvent.errorExecution, reason: .assignmentFailed, message: "<sce:append target='taking'>: the list already holds its capacity of 64")); return true }; let sceValue = Checked.element(of: self.vTaking, self.vOp); self.vTaking.append(sceValue); return false }()) {
                     break sceBlock  // W3C SCXML 4.9: the error ends the block
                 }
 
@@ -3065,7 +3065,7 @@ public final class RecordListParentSceSynthInvokeListPolicy: InvocablePolicy {
 
                 // SCE Accepted Subset §2.15: <sce:append target="offered">
 
-                if ({ () -> Bool in if self.vOffered.count >= 64 { engine.raise(EventWithMetadata.platformError(RecordListParentSceSynthInvokeListEvent.errorExecution, message: "<sce:append target='offered'>: the list already holds its capacity of 64")); return true }; let sceValue = Checked.element(of: self.vOffered, t); self.vOffered.append(sceValue); return false }()) {
+                if ({ () -> Bool in if self.vOffered.count >= 64 { engine.raise(EventWithMetadata.platformError(RecordListParentSceSynthInvokeListEvent.errorExecution, reason: .assignmentFailed, message: "<sce:append target='offered'>: the list already holds its capacity of 64")); return true }; let sceValue = Checked.element(of: self.vOffered, t); self.vOffered.append(sceValue); return false }()) {
                     break sceBlock  // W3C SCXML 4.9: the error ends the block
                 }
 
@@ -3093,7 +3093,7 @@ public final class RecordListParentSceSynthInvokeListPolicy: InvocablePolicy {
 
 
                 var ifCondFailed25 = false
-                if ({ () -> Bool in do { return (try Checked.and(!self.vSpoiled, { () throws(AlgorithmError) -> Bool in (try Checked.add(self.vGone, self.vWrites)) == 0 })) } catch { engine.raise(EventWithMetadata.platformError(RecordListParentSceSynthInvokeListEvent.errorExecution, message: "<if cond='!spoiled && gone + writes === 0'>: an integer operation overflowed or failed")); ifCondFailed25 = true; return false } }()) {
+                if ({ () -> Bool in do { return (try Checked.and(!self.vSpoiled, { () throws(AlgorithmError) -> Bool in (try Checked.add(self.vGone, self.vWrites)) == 0 })) } catch { engine.raise(EventWithMetadata.platformError(RecordListParentSceSynthInvokeListEvent.errorExecution, reason: .expressionFailed, message: "<if cond='!spoiled && gone + writes === 0'>: an integer operation overflowed or failed")); ifCondFailed25 = true; return false } }()) {
 
                 // SCE Accepted Subset §2.15: <sce:clear target="staged">
 
@@ -3189,6 +3189,10 @@ public final class RecordListParentSceSynthInvokeListPolicy: InvocablePolicy {
                 // W3C SCXML 6.2: send id="__send_8"
                 do {
                     var sendArgError = ""
+                    // Why the argument failed, a code of sce:std/engine/error_reason
+                    // (docs/adr/0106 #111), set with every sentence below.
+                    var sendArgReason = ErrorReason.expressionFailed
+                    _ = sendArgReason
                     // docs/adr/0005, decision 3: the target is a string computed from the
                     // machine's fields now, and the send goes only by a route the document
                     // declared as `sce:targets`. A value in none of them names no route this
@@ -3208,7 +3212,7 @@ public final class RecordListParentSceSynthInvokeListPolicy: InvocablePolicy {
                         }
                     }
                     if !sendArgError.isEmpty {
-                        var sendError = EventWithMetadata.platformError(RecordListParentSceSynthInvokeListEvent.errorExecution, message: sendArgError)
+                        var sendError = EventWithMetadata.platformError(RecordListParentSceSynthInvokeListEvent.errorExecution, reason: sendArgReason, message: sendArgError)
                         sendError.metadata.sendID = "__send_8"
                         engine.raise(sendError)
 
@@ -3219,7 +3223,7 @@ public final class RecordListParentSceSynthInvokeListPolicy: InvocablePolicy {
                         // names nothing (empty or "undefined"), is not reachable —
                         // error.communication, nothing delivered, and the error ends the block
                         // as any other would (W3C SCXML 4.9).
-                        var sendError = EventWithMetadata.platformError(RecordListParentSceSynthInvokeListEvent.errorCommunication, message: "<send> targetexpr evaluated to nothing, or to a route the send does not declare, so there is no target to reach")
+                        var sendError = EventWithMetadata.platformError(RecordListParentSceSynthInvokeListEvent.errorCommunication, reason: .targetUnreachable, message: "<send> targetexpr evaluated to nothing, or to a route the send does not declare, so there is no target to reach")
                         sendError.metadata.sendID = "__send_8"
                         engine.raise(sendError)
 
@@ -3270,14 +3274,14 @@ public final class RecordListParentSceSynthInvokeListPolicy: InvocablePolicy {
                         sender: self.sessionID
                     )
                     if sendRouted == .notSupported {
-                        var sendError = EventWithMetadata.platformError(RecordListParentSceSynthInvokeListEvent.errorExecution, message: "<send> targetexpr produced a value that is not a target")
+                        var sendError = EventWithMetadata.platformError(RecordListParentSceSynthInvokeListEvent.errorExecution, reason: .sendTargetInvalid, message: "<send> targetexpr produced a value that is not a target")
                         sendError.metadata.sendID = "__send_8"
                         engine.raise(sendError)
 
                         break sceBlock  // W3C SCXML 4.9: the error ends the block
                     }
                     if sendRouted == .notReachable {
-                        var sendError = EventWithMetadata.platformError(RecordListParentSceSynthInvokeListEvent.errorCommunication, message: "<send> targetexpr names a session this processor cannot reach")
+                        var sendError = EventWithMetadata.platformError(RecordListParentSceSynthInvokeListEvent.errorCommunication, reason: .targetUnreachable, message: "<send> targetexpr names a session this processor cannot reach")
                         sendError.metadata.sendID = "__send_8"
                         engine.raise(sendError)
 
@@ -3332,7 +3336,7 @@ public final class RecordListParentSceSynthInvokeListPolicy: InvocablePolicy {
                             // docs/adr/0086, section 15.6: the list is short of its field's
                             // lower count, so the event is refused whole: one error, nothing
                             // delivered, and the error ends the block (W3C SCXML 6.2.3, 4.9).
-                        var sendError = EventWithMetadata.platformError(RecordListParentSceSynthInvokeListEvent.errorExecution, message: "<send> <param name=ops> holds fewer elements than the 1 its field's type declares, so the event is not sent")
+                        var sendError = EventWithMetadata.platformError(RecordListParentSceSynthInvokeListEvent.errorExecution, reason: .paramUnfit, message: "<send> <param name=ops> holds fewer elements than the 1 its field's type declares, so the event is not sent")
                         sendError.metadata.sendID = "__send_9"
                         engine.raise(sendError)
 break sceBlock
@@ -3386,19 +3390,19 @@ break sceBlock
 
 
 
-                if ({ () -> Bool in do { let sceValue: UInt32 = (try Checked.at(self.vOffered, 0)).id; self.vStanding.id = sceValue } catch { engine.raise(EventWithMetadata.platformError(RecordListParentSceSynthInvokeListEvent.errorExecution, message: "<assign location='standing.id'>: an integer operation overflowed or failed")); return true }; return false }()) {
+                if ({ () -> Bool in do { let sceValue: UInt32 = (try Checked.at(self.vOffered, 0)).id; self.vStanding.id = sceValue } catch { engine.raise(EventWithMetadata.platformError(RecordListParentSceSynthInvokeListEvent.errorExecution, reason: .expressionFailed, message: "<assign location='standing.id'>: an integer operation overflowed or failed")); return true }; return false }()) {
                     break sceBlock  // W3C SCXML 4.9: the error ends the block
                 }
 
 
 
-                if ({ () -> Bool in do { let sceValue: UInt16 = (try Checked.at(self.vOffered, 0)).field; self.vStanding.field = sceValue } catch { engine.raise(EventWithMetadata.platformError(RecordListParentSceSynthInvokeListEvent.errorExecution, message: "<assign location='standing.field'>: an integer operation overflowed or failed")); return true }; return false }()) {
+                if ({ () -> Bool in do { let sceValue: UInt16 = (try Checked.at(self.vOffered, 0)).field; self.vStanding.field = sceValue } catch { engine.raise(EventWithMetadata.platformError(RecordListParentSceSynthInvokeListEvent.errorExecution, reason: .expressionFailed, message: "<assign location='standing.field'>: an integer operation overflowed or failed")); return true }; return false }()) {
                     break sceBlock  // W3C SCXML 4.9: the error ends the block
                 }
 
 
                 var ifCondFailed30 = false
-                if ({ () -> Bool in do { return (try Checked.at(self.vOffered, 0)).kind == 0 } catch { engine.raise(EventWithMetadata.platformError(RecordListParentSceSynthInvokeListEvent.errorExecution, message: "<if cond='offered[0].kind === 0'>: an integer operation overflowed or failed")); ifCondFailed30 = true; return false } }()) {
+                if ({ () -> Bool in do { return (try Checked.at(self.vOffered, 0)).kind == 0 } catch { engine.raise(EventWithMetadata.platformError(RecordListParentSceSynthInvokeListEvent.errorExecution, reason: .expressionFailed, message: "<if cond='offered[0].kind === 0'>: an integer operation overflowed or failed")); ifCondFailed30 = true; return false } }()) {
 
 
                 self.vStanding.kind = RecordListParentSceSynthInvokeListCommandEnum.edit
@@ -3461,6 +3465,10 @@ break sceBlock
                 // W3C SCXML 6.2: send id="__send_11"
                 do {
                     var sendArgError = ""
+                    // Why the argument failed, a code of sce:std/engine/error_reason
+                    // (docs/adr/0106 #111), set with every sentence below.
+                    var sendArgReason = ErrorReason.expressionFailed
+                    _ = sendArgReason
                     // docs/adr/0005, decision 3: the target is a string computed from the
                     // machine's fields now, and the send goes only by a route the document
                     // declared as `sce:targets`. A value in none of them names no route this
@@ -3480,7 +3488,7 @@ break sceBlock
                         }
                     }
                     if !sendArgError.isEmpty {
-                        var sendError = EventWithMetadata.platformError(RecordListParentSceSynthInvokeListEvent.errorExecution, message: sendArgError)
+                        var sendError = EventWithMetadata.platformError(RecordListParentSceSynthInvokeListEvent.errorExecution, reason: sendArgReason, message: sendArgError)
                         sendError.metadata.sendID = "__send_11"
                         engine.raise(sendError)
 
@@ -3491,7 +3499,7 @@ break sceBlock
                         // names nothing (empty or "undefined"), is not reachable —
                         // error.communication, nothing delivered, and the error ends the block
                         // as any other would (W3C SCXML 4.9).
-                        var sendError = EventWithMetadata.platformError(RecordListParentSceSynthInvokeListEvent.errorCommunication, message: "<send> targetexpr evaluated to nothing, or to a route the send does not declare, so there is no target to reach")
+                        var sendError = EventWithMetadata.platformError(RecordListParentSceSynthInvokeListEvent.errorCommunication, reason: .targetUnreachable, message: "<send> targetexpr evaluated to nothing, or to a route the send does not declare, so there is no target to reach")
                         sendError.metadata.sendID = "__send_11"
                         engine.raise(sendError)
 
@@ -3542,14 +3550,14 @@ break sceBlock
                         sender: self.sessionID
                     )
                     if sendRouted == .notSupported {
-                        var sendError = EventWithMetadata.platformError(RecordListParentSceSynthInvokeListEvent.errorExecution, message: "<send> targetexpr produced a value that is not a target")
+                        var sendError = EventWithMetadata.platformError(RecordListParentSceSynthInvokeListEvent.errorExecution, reason: .sendTargetInvalid, message: "<send> targetexpr produced a value that is not a target")
                         sendError.metadata.sendID = "__send_11"
                         engine.raise(sendError)
 
                         break sceBlock  // W3C SCXML 4.9: the error ends the block
                     }
                     if sendRouted == .notReachable {
-                        var sendError = EventWithMetadata.platformError(RecordListParentSceSynthInvokeListEvent.errorCommunication, message: "<send> targetexpr names a session this processor cannot reach")
+                        var sendError = EventWithMetadata.platformError(RecordListParentSceSynthInvokeListEvent.errorCommunication, reason: .targetUnreachable, message: "<send> targetexpr names a session this processor cannot reach")
                         sendError.metadata.sendID = "__send_11"
                         engine.raise(sendError)
 
@@ -3587,7 +3595,7 @@ break sceBlock
 
                 // SCE Accepted Subset §2.15: <sce:append target="taking">
 
-                if ({ () -> Bool in if self.vTaking.count >= 64 { engine.raise(EventWithMetadata.platformError(RecordListParentSceSynthInvokeListEvent.errorExecution, message: "<sce:append target='taking'>: the list already holds its capacity of 64")); return true }; let sceValue = Checked.element(of: self.vTaking, t); self.vTaking.append(sceValue); return false }()) {
+                if ({ () -> Bool in if self.vTaking.count >= 64 { engine.raise(EventWithMetadata.platformError(RecordListParentSceSynthInvokeListEvent.errorExecution, reason: .assignmentFailed, message: "<sce:append target='taking'>: the list already holds its capacity of 64")); return true }; let sceValue = Checked.element(of: self.vTaking, t); self.vTaking.append(sceValue); return false }()) {
                     break sceBlock  // W3C SCXML 4.9: the error ends the block
                 }
 
@@ -3613,7 +3621,7 @@ break sceBlock
 
                 // SCE Accepted Subset §2.15: <sce:append target="provisional">
 
-                if ({ () -> Bool in if self.vProvisional.count >= 8 { engine.raise(EventWithMetadata.platformError(RecordListParentSceSynthInvokeListEvent.errorExecution, message: "<sce:append target='provisional'>: the list already holds its capacity of 8")); return true }; let sceValue = Checked.element(of: self.vProvisional, self.vStanding); self.vProvisional.append(sceValue); return false }()) {
+                if ({ () -> Bool in if self.vProvisional.count >= 8 { engine.raise(EventWithMetadata.platformError(RecordListParentSceSynthInvokeListEvent.errorExecution, reason: .assignmentFailed, message: "<sce:append target='provisional'>: the list already holds its capacity of 8")); return true }; let sceValue = Checked.element(of: self.vProvisional, self.vStanding); self.vProvisional.append(sceValue); return false }()) {
                     break sceBlock  // W3C SCXML 4.9: the error ends the block
                 }
 
@@ -3655,6 +3663,10 @@ break sceBlock
                 // W3C SCXML 6.2: send id="__send_14"
                 do {
                     var sendArgError = ""
+                    // Why the argument failed, a code of sce:std/engine/error_reason
+                    // (docs/adr/0106 #111), set with every sentence below.
+                    var sendArgReason = ErrorReason.expressionFailed
+                    _ = sendArgReason
                     // docs/adr/0005, decision 3: the target is a string computed from the
                     // machine's fields now, and the send goes only by a route the document
                     // declared as `sce:targets`. A value in none of them names no route this
@@ -3674,7 +3686,7 @@ break sceBlock
                         }
                     }
                     if !sendArgError.isEmpty {
-                        var sendError = EventWithMetadata.platformError(RecordListParentSceSynthInvokeListEvent.errorExecution, message: sendArgError)
+                        var sendError = EventWithMetadata.platformError(RecordListParentSceSynthInvokeListEvent.errorExecution, reason: sendArgReason, message: sendArgError)
                         sendError.metadata.sendID = "__send_14"
                         engine.raise(sendError)
 
@@ -3685,7 +3697,7 @@ break sceBlock
                         // names nothing (empty or "undefined"), is not reachable —
                         // error.communication, nothing delivered, and the error ends the block
                         // as any other would (W3C SCXML 4.9).
-                        var sendError = EventWithMetadata.platformError(RecordListParentSceSynthInvokeListEvent.errorCommunication, message: "<send> targetexpr evaluated to nothing, or to a route the send does not declare, so there is no target to reach")
+                        var sendError = EventWithMetadata.platformError(RecordListParentSceSynthInvokeListEvent.errorCommunication, reason: .targetUnreachable, message: "<send> targetexpr evaluated to nothing, or to a route the send does not declare, so there is no target to reach")
                         sendError.metadata.sendID = "__send_14"
                         engine.raise(sendError)
 
@@ -3724,14 +3736,14 @@ break sceBlock
                         sender: self.sessionID
                     )
                     if sendRouted == .notSupported {
-                        var sendError = EventWithMetadata.platformError(RecordListParentSceSynthInvokeListEvent.errorExecution, message: "<send> targetexpr produced a value that is not a target")
+                        var sendError = EventWithMetadata.platformError(RecordListParentSceSynthInvokeListEvent.errorExecution, reason: .sendTargetInvalid, message: "<send> targetexpr produced a value that is not a target")
                         sendError.metadata.sendID = "__send_14"
                         engine.raise(sendError)
 
                         break sceBlock  // W3C SCXML 4.9: the error ends the block
                     }
                     if sendRouted == .notReachable {
-                        var sendError = EventWithMetadata.platformError(RecordListParentSceSynthInvokeListEvent.errorCommunication, message: "<send> targetexpr names a session this processor cannot reach")
+                        var sendError = EventWithMetadata.platformError(RecordListParentSceSynthInvokeListEvent.errorCommunication, reason: .targetUnreachable, message: "<send> targetexpr names a session this processor cannot reach")
                         sendError.metadata.sendID = "__send_14"
                         engine.raise(sendError)
 
@@ -3753,7 +3765,7 @@ break sceBlock
                 sceBlock: do {
 
 
-                if ({ () -> Bool in do { let sceValue: UInt32 = (try Checked.add(self.vRefusals, 1)); self.vRefusals = sceValue } catch { engine.raise(EventWithMetadata.platformError(RecordListParentSceSynthInvokeListEvent.errorExecution, message: "<assign location='refusals'>: an integer operation overflowed or failed")); return true }; return false }()) {
+                if ({ () -> Bool in do { let sceValue: UInt32 = (try Checked.add(self.vRefusals, 1)); self.vRefusals = sceValue } catch { engine.raise(EventWithMetadata.platformError(RecordListParentSceSynthInvokeListEvent.errorExecution, reason: .expressionFailed, message: "<assign location='refusals'>: an integer operation overflowed or failed")); return true }; return false }()) {
                     break sceBlock  // W3C SCXML 4.9: the error ends the block
                 }
 
@@ -3857,7 +3869,7 @@ break sceBlock
                 if (!self.vAuthorized) {
 
 
-                if ({ () -> Bool in do { let sceValue: UInt32 = (try Checked.add(self.vDenied, 1)); self.vDenied = sceValue } catch { engine.raise(EventWithMetadata.platformError(RecordListParentSceSynthInvokeListEvent.errorExecution, message: "<assign location='denied'>: an integer operation overflowed or failed")); return true }; return false }()) {
+                if ({ () -> Bool in do { let sceValue: UInt32 = (try Checked.add(self.vDenied, 1)); self.vDenied = sceValue } catch { engine.raise(EventWithMetadata.platformError(RecordListParentSceSynthInvokeListEvent.errorExecution, reason: .expressionFailed, message: "<assign location='denied'>: an integer operation overflowed or failed")); return true }; return false }()) {
                     break sceBlock  // W3C SCXML 4.9: the error ends the block
                 }
 
@@ -3956,19 +3968,19 @@ break sceBlock
 
 
 
-                if ({ () -> Bool in do { let sceValue: UInt32 = (try Checked.at(self.vTaking, 0)).id; self.vStanding.id = sceValue } catch { engine.raise(EventWithMetadata.platformError(RecordListParentSceSynthInvokeListEvent.errorExecution, message: "<assign location='standing.id'>: an integer operation overflowed or failed")); return true }; return false }()) {
+                if ({ () -> Bool in do { let sceValue: UInt32 = (try Checked.at(self.vTaking, 0)).id; self.vStanding.id = sceValue } catch { engine.raise(EventWithMetadata.platformError(RecordListParentSceSynthInvokeListEvent.errorExecution, reason: .expressionFailed, message: "<assign location='standing.id'>: an integer operation overflowed or failed")); return true }; return false }()) {
                     break sceBlock  // W3C SCXML 4.9: the error ends the block
                 }
 
 
 
-                if ({ () -> Bool in do { let sceValue: UInt16 = (try Checked.at(self.vTaking, 0)).field; self.vStanding.field = sceValue } catch { engine.raise(EventWithMetadata.platformError(RecordListParentSceSynthInvokeListEvent.errorExecution, message: "<assign location='standing.field'>: an integer operation overflowed or failed")); return true }; return false }()) {
+                if ({ () -> Bool in do { let sceValue: UInt16 = (try Checked.at(self.vTaking, 0)).field; self.vStanding.field = sceValue } catch { engine.raise(EventWithMetadata.platformError(RecordListParentSceSynthInvokeListEvent.errorExecution, reason: .expressionFailed, message: "<assign location='standing.field'>: an integer operation overflowed or failed")); return true }; return false }()) {
                     break sceBlock  // W3C SCXML 4.9: the error ends the block
                 }
 
 
                 var ifCondFailed42 = false
-                if ({ () -> Bool in do { return (try Checked.at(self.vTaking, 0)).kind == 0 } catch { engine.raise(EventWithMetadata.platformError(RecordListParentSceSynthInvokeListEvent.errorExecution, message: "<if cond='taking[0].kind === 0'>: an integer operation overflowed or failed")); ifCondFailed42 = true; return false } }()) {
+                if ({ () -> Bool in do { return (try Checked.at(self.vTaking, 0)).kind == 0 } catch { engine.raise(EventWithMetadata.platformError(RecordListParentSceSynthInvokeListEvent.errorExecution, reason: .expressionFailed, message: "<if cond='taking[0].kind === 0'>: an integer operation overflowed or failed")); ifCondFailed42 = true; return false } }()) {
 
 
                 self.vStanding.kind = RecordListParentSceSynthInvokeListCommandEnum.edit
@@ -3986,7 +3998,7 @@ break sceBlock
 
                 // SCE Accepted Subset §2.15: <sce:append target="provisional">
 
-                if ({ () -> Bool in if self.vProvisional.count >= 8 { engine.raise(EventWithMetadata.platformError(RecordListParentSceSynthInvokeListEvent.errorExecution, message: "<sce:append target='provisional'>: the list already holds its capacity of 8")); return true }; let sceValue = Checked.element(of: self.vProvisional, self.vStanding); self.vProvisional.append(sceValue); return false }()) {
+                if ({ () -> Bool in if self.vProvisional.count >= 8 { engine.raise(EventWithMetadata.platformError(RecordListParentSceSynthInvokeListEvent.errorExecution, reason: .assignmentFailed, message: "<sce:append target='provisional'>: the list already holds its capacity of 8")); return true }; let sceValue = Checked.element(of: self.vProvisional, self.vStanding); self.vProvisional.append(sceValue); return false }()) {
                     break sceBlock  // W3C SCXML 4.9: the error ends the block
                 }
 
@@ -4037,7 +4049,7 @@ break sceBlock
                 if (self.vDot.nodeId != self.vNode) {
 
 
-                if ({ () -> Bool in do { let sceValue: RecordListParentSceSynthInvokeListHlcRecord = (try call_HlcReceive__vv(self.vClock, self.vDot, self.vClock.wallTime, self.vNode)); self.vClock = sceValue } catch { engine.raise(EventWithMetadata.platformError(RecordListParentSceSynthInvokeListEvent.errorExecution, message: "<assign location='clock'>: an integer operation overflowed or failed")); return true }; return false }()) {
+                if ({ () -> Bool in do { let sceValue: RecordListParentSceSynthInvokeListHlcRecord = (try call_HlcReceive__vv(self.vClock, self.vDot, self.vClock.wallTime, self.vNode)); self.vClock = sceValue } catch { engine.raise(EventWithMetadata.platformError(RecordListParentSceSynthInvokeListEvent.errorExecution, reason: .expressionFailed, message: "<assign location='clock'>: an integer operation overflowed or failed")); return true }; return false }()) {
                     break sceBlock  // W3C SCXML 4.9: the error ends the block
                 }
 
@@ -4118,13 +4130,13 @@ break sceBlock
                 sceBlock: do {
 
 
-                if ({ () -> Bool in do { let sceValue: RecordListParentSceSynthInvokeListOpRecord = (try Checked.at(self.vTaking, self.vTook)); self.vOp = sceValue } catch { engine.raise(EventWithMetadata.platformError(RecordListParentSceSynthInvokeListEvent.errorExecution, message: "<assign location='op'>: an integer operation overflowed or failed")); return true }; return false }()) {
+                if ({ () -> Bool in do { let sceValue: RecordListParentSceSynthInvokeListOpRecord = (try Checked.at(self.vTaking, self.vTook)); self.vOp = sceValue } catch { engine.raise(EventWithMetadata.platformError(RecordListParentSceSynthInvokeListEvent.errorExecution, reason: .expressionFailed, message: "<assign location='op'>: an integer operation overflowed or failed")); return true }; return false }()) {
                     break sceBlock  // W3C SCXML 4.9: the error ends the block
                 }
 
 
 
-                if ({ () -> Bool in do { let sceValue: UInt32 = (try Checked.add(self.vTook, 1)); self.vTook = sceValue } catch { engine.raise(EventWithMetadata.platformError(RecordListParentSceSynthInvokeListEvent.errorExecution, message: "<assign location='took'>: an integer operation overflowed or failed")); return true }; return false }()) {
+                if ({ () -> Bool in do { let sceValue: UInt32 = (try Checked.add(self.vTook, 1)); self.vTook = sceValue } catch { engine.raise(EventWithMetadata.platformError(RecordListParentSceSynthInvokeListEvent.errorExecution, reason: .expressionFailed, message: "<assign location='took'>: an integer operation overflowed or failed")); return true }; return false }()) {
                     break sceBlock  // W3C SCXML 4.9: the error ends the block
                 }
 
@@ -4134,7 +4146,7 @@ break sceBlock
 
 
 
-                if ({ () -> Bool in do { let sceValue: UInt64 = (try Checked.add((try Checked.mul(self.vEntry.element, 65536)), UInt64(self.vOp.field))); self.vEntry.element = sceValue } catch { engine.raise(EventWithMetadata.platformError(RecordListParentSceSynthInvokeListEvent.errorExecution, message: "<assign location='entry.element'>: an integer operation overflowed or failed")); return true }; return false }()) {
+                if ({ () -> Bool in do { let sceValue: UInt64 = (try Checked.add((try Checked.mul(self.vEntry.element, 65536)), UInt64(self.vOp.field))); self.vEntry.element = sceValue } catch { engine.raise(EventWithMetadata.platformError(RecordListParentSceSynthInvokeListEvent.errorExecution, reason: .expressionFailed, message: "<assign location='entry.element'>: an integer operation overflowed or failed")); return true }; return false }()) {
                     break sceBlock  // W3C SCXML 4.9: the error ends the block
                 }
 
@@ -4142,7 +4154,7 @@ break sceBlock
                 if (self.vOp.kind == 0) {
 
 
-                if ({ () -> Bool in do { let sceValue: String = (try Checked.bounded(self.vOp.text, capacity: 96)); self.vHeld.text = sceValue } catch { engine.raise(EventWithMetadata.platformError(RecordListParentSceSynthInvokeListEvent.errorExecution, message: "<assign location='held.text'>: an integer operation overflowed or failed")); return true }; return false }()) {
+                if ({ () -> Bool in do { let sceValue: String = (try Checked.bounded(self.vOp.text, capacity: 96)); self.vHeld.text = sceValue } catch { engine.raise(EventWithMetadata.platformError(RecordListParentSceSynthInvokeListEvent.errorExecution, reason: .expressionFailed, message: "<assign location='held.text'>: an integer operation overflowed or failed")); return true }; return false }()) {
                     break sceBlock  // W3C SCXML 4.9: the error ends the block
                 }
 
@@ -4212,19 +4224,19 @@ break sceBlock
 
                 // SCE Accepted Subset §2.15: <sce:append target="one">
 
-                if ({ () -> Bool in if self.vOne.count >= 1024 { engine.raise(EventWithMetadata.platformError(RecordListParentSceSynthInvokeListEvent.errorExecution, message: "<sce:append target='one'>: the list already holds its capacity of 1024")); return true }; let sceValue = Checked.element(of: self.vOne, self.vEntry); self.vOne.append(sceValue); return false }()) {
+                if ({ () -> Bool in if self.vOne.count >= 1024 { engine.raise(EventWithMetadata.platformError(RecordListParentSceSynthInvokeListEvent.errorExecution, reason: .assignmentFailed, message: "<sce:append target='one'>: the list already holds its capacity of 1024")); return true }; let sceValue = Checked.element(of: self.vOne, self.vEntry); self.vOne.append(sceValue); return false }()) {
                     break sceBlock  // W3C SCXML 4.9: the error ends the block
                 }
 
 
 
-                if ({ () -> Bool in do { let sceValue = (try Checked.within((try call_OrsetUnion__vv(self.vAdds, self.vOne)), capacity: 1024)); self.vAdds = sceValue } catch { engine.raise(EventWithMetadata.platformError(RecordListParentSceSynthInvokeListEvent.errorExecution, message: "<assign location='adds'>: an integer operation overflowed or failed")); return true }; return false }()) {
+                if ({ () -> Bool in do { let sceValue = (try Checked.within((try call_OrsetUnion__vv(self.vAdds, self.vOne)), capacity: 1024)); self.vAdds = sceValue } catch { engine.raise(EventWithMetadata.platformError(RecordListParentSceSynthInvokeListEvent.errorExecution, reason: .expressionFailed, message: "<assign location='adds'>: an integer operation overflowed or failed")); return true }; return false }()) {
                     break sceBlock  // W3C SCXML 4.9: the error ends the block
                 }
 
 
 
-                if ({ () -> Bool in do { let sceValue = (try Checked.within((try call_MvValueKeep__vv(self.vValues, self.vHeld)), capacity: 512)); self.vValues = sceValue } catch { engine.raise(EventWithMetadata.platformError(RecordListParentSceSynthInvokeListEvent.errorExecution, message: "<assign location='values'>: an integer operation overflowed or failed")); return true }; return false }()) {
+                if ({ () -> Bool in do { let sceValue = (try Checked.within((try call_MvValueKeep__vv(self.vValues, self.vHeld)), capacity: 512)); self.vValues = sceValue } catch { engine.raise(EventWithMetadata.platformError(RecordListParentSceSynthInvokeListEvent.errorExecution, reason: .expressionFailed, message: "<assign location='values'>: an integer operation overflowed or failed")); return true }; return false }()) {
                     break sceBlock  // W3C SCXML 4.9: the error ends the block
                 }
 
@@ -4324,7 +4336,7 @@ break sceBlock
 
 
 
-                if ({ () -> Bool in do { let sceValue: String = (try Checked.bounded(v.text, capacity: 96)); self.vUndoing.text = sceValue } catch { engine.raise(EventWithMetadata.platformError(RecordListParentSceSynthInvokeListEvent.errorExecution, message: "<assign location='undoing.text'>: an integer operation overflowed or failed")); return true }; return false }()) {
+                if ({ () -> Bool in do { let sceValue: String = (try Checked.bounded(v.text, capacity: 96)); self.vUndoing.text = sceValue } catch { engine.raise(EventWithMetadata.platformError(RecordListParentSceSynthInvokeListEvent.errorExecution, reason: .expressionFailed, message: "<assign location='undoing.text'>: an integer operation overflowed or failed")); return true }; return false }()) {
                     break sceBlock  // W3C SCXML 4.9: the error ends the block
                 }
 
@@ -4354,7 +4366,7 @@ break sceBlock
 
                 // SCE Accepted Subset §2.15: <sce:append target="undo">
 
-                if ({ () -> Bool in if self.vUndo.count >= 512 { engine.raise(EventWithMetadata.platformError(RecordListParentSceSynthInvokeListEvent.errorExecution, message: "<sce:append target='undo'>: the list already holds its capacity of 512")); return true }; let sceValue = Checked.element(of: self.vUndo, self.vUndoing); self.vUndo.append(sceValue); return false }()) {
+                if ({ () -> Bool in if self.vUndo.count >= 512 { engine.raise(EventWithMetadata.platformError(RecordListParentSceSynthInvokeListEvent.errorExecution, reason: .assignmentFailed, message: "<sce:append target='undo'>: the list already holds its capacity of 512")); return true }; let sceValue = Checked.element(of: self.vUndo, self.vUndoing); self.vUndo.append(sceValue); return false }()) {
                     break sceBlock  // W3C SCXML 4.9: the error ends the block
                 }
 
@@ -4376,7 +4388,7 @@ break sceBlock
 
                 // SCE Accepted Subset §2.15: <sce:append target="undoKept">
 
-                if ({ () -> Bool in if self.vUndoKept.count >= 512 { engine.raise(EventWithMetadata.platformError(RecordListParentSceSynthInvokeListEvent.errorExecution, message: "<sce:append target='undoKept'>: the list already holds its capacity of 512")); return true }; let sceValue = Checked.element(of: self.vUndoKept, u); self.vUndoKept.append(sceValue); return false }()) {
+                if ({ () -> Bool in if self.vUndoKept.count >= 512 { engine.raise(EventWithMetadata.platformError(RecordListParentSceSynthInvokeListEvent.errorExecution, reason: .assignmentFailed, message: "<sce:append target='undoKept'>: the list already holds its capacity of 512")); return true }; let sceValue = Checked.element(of: self.vUndoKept, u); self.vUndoKept.append(sceValue); return false }()) {
                     break sceBlock  // W3C SCXML 4.9: the error ends the block
                 }
 
@@ -4395,7 +4407,7 @@ break sceBlock
 
                 // SCE Accepted Subset §2.15: <sce:append target="undo">
 
-                if ({ () -> Bool in if self.vUndo.count >= 512 { engine.raise(EventWithMetadata.platformError(RecordListParentSceSynthInvokeListEvent.errorExecution, message: "<sce:append target='undo'>: the list already holds its capacity of 512")); return true }; let sceValue = Checked.element(of: self.vUndo, u); self.vUndo.append(sceValue); return false }()) {
+                if ({ () -> Bool in if self.vUndo.count >= 512 { engine.raise(EventWithMetadata.platformError(RecordListParentSceSynthInvokeListEvent.errorExecution, reason: .assignmentFailed, message: "<sce:append target='undo'>: the list already holds its capacity of 512")); return true }; let sceValue = Checked.element(of: self.vUndo, u); self.vUndo.append(sceValue); return false }()) {
                     break sceBlock  // W3C SCXML 4.9: the error ends the block
                 }
 
@@ -4410,19 +4422,19 @@ break sceBlock
 
                 // SCE Accepted Subset §2.15: <sce:append target="one">
 
-                if ({ () -> Bool in if self.vOne.count >= 1024 { engine.raise(EventWithMetadata.platformError(RecordListParentSceSynthInvokeListEvent.errorExecution, message: "<sce:append target='one'>: the list already holds its capacity of 1024")); return true }; let sceValue = Checked.element(of: self.vOne, self.vEntry); self.vOne.append(sceValue); return false }()) {
+                if ({ () -> Bool in if self.vOne.count >= 1024 { engine.raise(EventWithMetadata.platformError(RecordListParentSceSynthInvokeListEvent.errorExecution, reason: .assignmentFailed, message: "<sce:append target='one'>: the list already holds its capacity of 1024")); return true }; let sceValue = Checked.element(of: self.vOne, self.vEntry); self.vOne.append(sceValue); return false }()) {
                     break sceBlock  // W3C SCXML 4.9: the error ends the block
                 }
 
 
 
-                if ({ () -> Bool in do { let sceValue = (try Checked.within((try call_OrsetLive__vv(self.vAdds, self.vOne)), capacity: 1024)); self.vAdds = sceValue } catch { engine.raise(EventWithMetadata.platformError(RecordListParentSceSynthInvokeListEvent.errorExecution, message: "<assign location='adds'>: an integer operation overflowed or failed")); return true }; return false }()) {
+                if ({ () -> Bool in do { let sceValue = (try Checked.within((try call_OrsetLive__vv(self.vAdds, self.vOne)), capacity: 1024)); self.vAdds = sceValue } catch { engine.raise(EventWithMetadata.platformError(RecordListParentSceSynthInvokeListEvent.errorExecution, reason: .expressionFailed, message: "<assign location='adds'>: an integer operation overflowed or failed")); return true }; return false }()) {
                     break sceBlock  // W3C SCXML 4.9: the error ends the block
                 }
 
 
 
-                if ({ () -> Bool in do { let sceValue = (try Checked.within((try call_MvValueDrop__vv(self.vValues, self.vHeld)), capacity: 512)); self.vValues = sceValue } catch { engine.raise(EventWithMetadata.platformError(RecordListParentSceSynthInvokeListEvent.errorExecution, message: "<assign location='values'>: an integer operation overflowed or failed")); return true }; return false }()) {
+                if ({ () -> Bool in do { let sceValue = (try Checked.within((try call_MvValueDrop__vv(self.vValues, self.vHeld)), capacity: 512)); self.vValues = sceValue } catch { engine.raise(EventWithMetadata.platformError(RecordListParentSceSynthInvokeListEvent.errorExecution, reason: .expressionFailed, message: "<assign location='values'>: an integer operation overflowed or failed")); return true }; return false }()) {
                     break sceBlock  // W3C SCXML 4.9: the error ends the block
                 }
 
@@ -4499,7 +4511,7 @@ break sceBlock
                             // docs/adr/0086, section 15.6: the list is short of its field's
                             // lower count, so the event is refused whole: one error, nothing
                             // delivered, and the error ends the block (W3C SCXML 6.2.3, 4.9).
-                        var sendError = EventWithMetadata.platformError(RecordListParentSceSynthInvokeListEvent.errorExecution, message: "<send> <param name=ops> holds fewer elements than the 1 its field's type declares, so the event is not sent")
+                        var sendError = EventWithMetadata.platformError(RecordListParentSceSynthInvokeListEvent.errorExecution, reason: .paramUnfit, message: "<send> <param name=ops> holds fewer elements than the 1 its field's type declares, so the event is not sent")
                         sendError.metadata.sendID = "__send_22"
                         engine.raise(sendError)
 break sceBlock
@@ -4559,7 +4571,7 @@ break sceBlock
                 if (!self.vProvisionalFound) {
 
 
-                if ({ () -> Bool in do { let sceValue: UInt32 = (try Checked.add(self.vRefusals, 1)); self.vRefusals = sceValue } catch { engine.raise(EventWithMetadata.platformError(RecordListParentSceSynthInvokeListEvent.errorExecution, message: "<assign location='refusals'>: an integer operation overflowed or failed")); return true }; return false }()) {
+                if ({ () -> Bool in do { let sceValue: UInt32 = (try Checked.add(self.vRefusals, 1)); self.vRefusals = sceValue } catch { engine.raise(EventWithMetadata.platformError(RecordListParentSceSynthInvokeListEvent.errorExecution, reason: .expressionFailed, message: "<assign location='refusals'>: an integer operation overflowed or failed")); return true }; return false }()) {
                     break sceBlock  // W3C SCXML 4.9: the error ends the block
                 }
 
@@ -4581,7 +4593,7 @@ break sceBlock
 
                 // SCE Accepted Subset §2.15: <sce:append target="provisionalKept">
 
-                if ({ () -> Bool in if self.vProvisionalKept.count >= 8 { engine.raise(EventWithMetadata.platformError(RecordListParentSceSynthInvokeListEvent.errorExecution, message: "<sce:append target='provisionalKept'>: the list already holds its capacity of 8")); return true }; let sceValue = Checked.element(of: self.vProvisionalKept, p); self.vProvisionalKept.append(sceValue); return false }()) {
+                if ({ () -> Bool in if self.vProvisionalKept.count >= 8 { engine.raise(EventWithMetadata.platformError(RecordListParentSceSynthInvokeListEvent.errorExecution, reason: .assignmentFailed, message: "<sce:append target='provisionalKept'>: the list already holds its capacity of 8")); return true }; let sceValue = Checked.element(of: self.vProvisionalKept, p); self.vProvisionalKept.append(sceValue); return false }()) {
                     break sceBlock  // W3C SCXML 4.9: the error ends the block
                 }
 
@@ -4600,7 +4612,7 @@ break sceBlock
 
                 // SCE Accepted Subset §2.15: <sce:append target="provisional">
 
-                if ({ () -> Bool in if self.vProvisional.count >= 8 { engine.raise(EventWithMetadata.platformError(RecordListParentSceSynthInvokeListEvent.errorExecution, message: "<sce:append target='provisional'>: the list already holds its capacity of 8")); return true }; let sceValue = Checked.element(of: self.vProvisional, p); self.vProvisional.append(sceValue); return false }()) {
+                if ({ () -> Bool in if self.vProvisional.count >= 8 { engine.raise(EventWithMetadata.platformError(RecordListParentSceSynthInvokeListEvent.errorExecution, reason: .assignmentFailed, message: "<sce:append target='provisional'>: the list already holds its capacity of 8")); return true }; let sceValue = Checked.element(of: self.vProvisional, p); self.vProvisional.append(sceValue); return false }()) {
                     break sceBlock  // W3C SCXML 4.9: the error ends the block
                 }
 
@@ -4619,7 +4631,7 @@ break sceBlock
 
                 // SCE Accepted Subset §2.15: <sce:append target="undoKept">
 
-                if ({ () -> Bool in if self.vUndoKept.count >= 512 { engine.raise(EventWithMetadata.platformError(RecordListParentSceSynthInvokeListEvent.errorExecution, message: "<sce:append target='undoKept'>: the list already holds its capacity of 512")); return true }; let sceValue = Checked.element(of: self.vUndoKept, u); self.vUndoKept.append(sceValue); return false }()) {
+                if ({ () -> Bool in if self.vUndoKept.count >= 512 { engine.raise(EventWithMetadata.platformError(RecordListParentSceSynthInvokeListEvent.errorExecution, reason: .assignmentFailed, message: "<sce:append target='undoKept'>: the list already holds its capacity of 512")); return true }; let sceValue = Checked.element(of: self.vUndoKept, u); self.vUndoKept.append(sceValue); return false }()) {
                     break sceBlock  // W3C SCXML 4.9: the error ends the block
                 }
 
@@ -4638,7 +4650,7 @@ break sceBlock
 
                 // SCE Accepted Subset §2.15: <sce:append target="undo">
 
-                if ({ () -> Bool in if self.vUndo.count >= 512 { engine.raise(EventWithMetadata.platformError(RecordListParentSceSynthInvokeListEvent.errorExecution, message: "<sce:append target='undo'>: the list already holds its capacity of 512")); return true }; let sceValue = Checked.element(of: self.vUndo, u); self.vUndo.append(sceValue); return false }()) {
+                if ({ () -> Bool in if self.vUndo.count >= 512 { engine.raise(EventWithMetadata.platformError(RecordListParentSceSynthInvokeListEvent.errorExecution, reason: .assignmentFailed, message: "<sce:append target='undo'>: the list already holds its capacity of 512")); return true }; let sceValue = Checked.element(of: self.vUndo, u); self.vUndo.append(sceValue); return false }()) {
                     break sceBlock  // W3C SCXML 4.9: the error ends the block
                 }
 
@@ -4649,6 +4661,10 @@ break sceBlock
                 // W3C SCXML 6.2: send id="__send_23"
                 do {
                     var sendArgError = ""
+                    // Why the argument failed, a code of sce:std/engine/error_reason
+                    // (docs/adr/0106 #111), set with every sentence below.
+                    var sendArgReason = ErrorReason.expressionFailed
+                    _ = sendArgReason
                     // docs/adr/0005, decision 3: the target is a string computed from the
                     // machine's fields now, and the send goes only by a route the document
                     // declared as `sce:targets`. A value in none of them names no route this
@@ -4668,7 +4684,7 @@ break sceBlock
                         }
                     }
                     if !sendArgError.isEmpty {
-                        var sendError = EventWithMetadata.platformError(RecordListParentSceSynthInvokeListEvent.errorExecution, message: sendArgError)
+                        var sendError = EventWithMetadata.platformError(RecordListParentSceSynthInvokeListEvent.errorExecution, reason: sendArgReason, message: sendArgError)
                         sendError.metadata.sendID = "__send_23"
                         engine.raise(sendError)
 
@@ -4679,7 +4695,7 @@ break sceBlock
                         // names nothing (empty or "undefined"), is not reachable —
                         // error.communication, nothing delivered, and the error ends the block
                         // as any other would (W3C SCXML 4.9).
-                        var sendError = EventWithMetadata.platformError(RecordListParentSceSynthInvokeListEvent.errorCommunication, message: "<send> targetexpr evaluated to nothing, or to a route the send does not declare, so there is no target to reach")
+                        var sendError = EventWithMetadata.platformError(RecordListParentSceSynthInvokeListEvent.errorCommunication, reason: .targetUnreachable, message: "<send> targetexpr evaluated to nothing, or to a route the send does not declare, so there is no target to reach")
                         sendError.metadata.sendID = "__send_23"
                         engine.raise(sendError)
 
@@ -4718,14 +4734,14 @@ break sceBlock
                         sender: self.sessionID
                     )
                     if sendRouted == .notSupported {
-                        var sendError = EventWithMetadata.platformError(RecordListParentSceSynthInvokeListEvent.errorExecution, message: "<send> targetexpr produced a value that is not a target")
+                        var sendError = EventWithMetadata.platformError(RecordListParentSceSynthInvokeListEvent.errorExecution, reason: .sendTargetInvalid, message: "<send> targetexpr produced a value that is not a target")
                         sendError.metadata.sendID = "__send_23"
                         engine.raise(sendError)
 
                         break sceBlock  // W3C SCXML 4.9: the error ends the block
                     }
                     if sendRouted == .notReachable {
-                        var sendError = EventWithMetadata.platformError(RecordListParentSceSynthInvokeListEvent.errorCommunication, message: "<send> targetexpr names a session this processor cannot reach")
+                        var sendError = EventWithMetadata.platformError(RecordListParentSceSynthInvokeListEvent.errorCommunication, reason: .targetUnreachable, message: "<send> targetexpr names a session this processor cannot reach")
                         sendError.metadata.sendID = "__send_23"
                         engine.raise(sendError)
 
@@ -4773,7 +4789,7 @@ break sceBlock
                 if (!self.vProvisionalFound) {
 
 
-                if ({ () -> Bool in do { let sceValue: UInt32 = (try Checked.add(self.vRefusals, 1)); self.vRefusals = sceValue } catch { engine.raise(EventWithMetadata.platformError(RecordListParentSceSynthInvokeListEvent.errorExecution, message: "<assign location='refusals'>: an integer operation overflowed or failed")); return true }; return false }()) {
+                if ({ () -> Bool in do { let sceValue: UInt32 = (try Checked.add(self.vRefusals, 1)); self.vRefusals = sceValue } catch { engine.raise(EventWithMetadata.platformError(RecordListParentSceSynthInvokeListEvent.errorExecution, reason: .expressionFailed, message: "<assign location='refusals'>: an integer operation overflowed or failed")); return true }; return false }()) {
                     break sceBlock  // W3C SCXML 4.9: the error ends the block
                 }
 
@@ -4808,7 +4824,7 @@ break sceBlock
                 sceBlock: do {
 
 
-                if ({ () -> Bool in do { let sceValue: RecordListParentSceSynthInvokeListProvisionalRecord = (try Checked.at(self.vProvisional, (try Checked.sub(UInt32(truncatingIfNeeded: self.vProvisional.count), 1)))); self.vStanding = sceValue } catch { engine.raise(EventWithMetadata.platformError(RecordListParentSceSynthInvokeListEvent.errorExecution, message: "<assign location='standing'>: an integer operation overflowed or failed")); return true }; return false }()) {
+                if ({ () -> Bool in do { let sceValue: RecordListParentSceSynthInvokeListProvisionalRecord = (try Checked.at(self.vProvisional, (try Checked.sub(UInt32(truncatingIfNeeded: self.vProvisional.count), 1)))); self.vStanding = sceValue } catch { engine.raise(EventWithMetadata.platformError(RecordListParentSceSynthInvokeListEvent.errorExecution, reason: .expressionFailed, message: "<assign location='standing'>: an integer operation overflowed or failed")); return true }; return false }()) {
                     break sceBlock  // W3C SCXML 4.9: the error ends the block
                 }
 
@@ -4826,7 +4842,7 @@ break sceBlock
 
                 // SCE Accepted Subset §2.15: <sce:append target="one">
 
-                if ({ () -> Bool in if self.vOne.count >= 1024 { engine.raise(EventWithMetadata.platformError(RecordListParentSceSynthInvokeListEvent.errorExecution, message: "<sce:append target='one'>: the list already holds its capacity of 1024")); return true }; let sceValue = Checked.element(of: self.vOne, a); self.vOne.append(sceValue); return false }()) {
+                if ({ () -> Bool in if self.vOne.count >= 1024 { engine.raise(EventWithMetadata.platformError(RecordListParentSceSynthInvokeListEvent.errorExecution, reason: .assignmentFailed, message: "<sce:append target='one'>: the list already holds its capacity of 1024")); return true }; let sceValue = Checked.element(of: self.vOne, a); self.vOne.append(sceValue); return false }()) {
                     break sceBlock  // W3C SCXML 4.9: the error ends the block
                 }
 
@@ -4835,7 +4851,7 @@ break sceBlock
                 }
 
 
-                if ({ () -> Bool in do { let sceValue = (try Checked.within((try call_OrsetLive__vv(self.vAdds, self.vOne)), capacity: 1024)); self.vAdds = sceValue } catch { engine.raise(EventWithMetadata.platformError(RecordListParentSceSynthInvokeListEvent.errorExecution, message: "<assign location='adds'>: an integer operation overflowed or failed")); return true }; return false }()) {
+                if ({ () -> Bool in do { let sceValue = (try Checked.within((try call_OrsetLive__vv(self.vAdds, self.vOne)), capacity: 1024)); self.vAdds = sceValue } catch { engine.raise(EventWithMetadata.platformError(RecordListParentSceSynthInvokeListEvent.errorExecution, reason: .expressionFailed, message: "<assign location='adds'>: an integer operation overflowed or failed")); return true }; return false }()) {
                     break sceBlock  // W3C SCXML 4.9: the error ends the block
                 }
 
@@ -4845,13 +4861,13 @@ break sceBlock
                     _ = a
 
 
-                if ({ () -> Bool in do { let sceValue: UInt64 = (try Checked.div(a.element, 65536)); self.vHeld.id = sceValue } catch { engine.raise(EventWithMetadata.platformError(RecordListParentSceSynthInvokeListEvent.errorExecution, message: "<assign location='held.id'>: an integer operation overflowed or failed")); return true }; return false }()) {
+                if ({ () -> Bool in do { let sceValue: UInt64 = (try Checked.div(a.element, 65536)); self.vHeld.id = sceValue } catch { engine.raise(EventWithMetadata.platformError(RecordListParentSceSynthInvokeListEvent.errorExecution, reason: .expressionFailed, message: "<assign location='held.id'>: an integer operation overflowed or failed")); return true }; return false }()) {
                     break sceBlock  // W3C SCXML 4.9: the error ends the block
                 }
 
 
 
-                if ({ () -> Bool in do { let sceValue: UInt64 = (try Checked.rem(a.element, 65536)); self.vHeld.field = sceValue } catch { engine.raise(EventWithMetadata.platformError(RecordListParentSceSynthInvokeListEvent.errorExecution, message: "<assign location='held.field'>: an integer operation overflowed or failed")); return true }; return false }()) {
+                if ({ () -> Bool in do { let sceValue: UInt64 = (try Checked.rem(a.element, 65536)); self.vHeld.field = sceValue } catch { engine.raise(EventWithMetadata.platformError(RecordListParentSceSynthInvokeListEvent.errorExecution, reason: .expressionFailed, message: "<assign location='held.field'>: an integer operation overflowed or failed")); return true }; return false }()) {
                     break sceBlock  // W3C SCXML 4.9: the error ends the block
                 }
 
@@ -4869,7 +4885,7 @@ break sceBlock
 
 
 
-                if ({ () -> Bool in do { let sceValue = (try Checked.within((try call_MvValueDrop__vv(self.vValues, self.vHeld)), capacity: 512)); self.vValues = sceValue } catch { engine.raise(EventWithMetadata.platformError(RecordListParentSceSynthInvokeListEvent.errorExecution, message: "<assign location='values'>: an integer operation overflowed or failed")); return true }; return false }()) {
+                if ({ () -> Bool in do { let sceValue = (try Checked.within((try call_MvValueDrop__vv(self.vValues, self.vHeld)), capacity: 512)); self.vValues = sceValue } catch { engine.raise(EventWithMetadata.platformError(RecordListParentSceSynthInvokeListEvent.errorExecution, reason: .expressionFailed, message: "<assign location='values'>: an integer operation overflowed or failed")); return true }; return false }()) {
                     break sceBlock  // W3C SCXML 4.9: the error ends the block
                 }
 
@@ -4877,13 +4893,13 @@ break sceBlock
                 if (self.vAnnounce) {
 
 
-                if ({ () -> Bool in do { let sceValue: UInt32 = (try Checked.narrow((try Checked.div(a.element, 65536)), to: UInt32.self)); self.vShareId = sceValue } catch { engine.raise(EventWithMetadata.platformError(RecordListParentSceSynthInvokeListEvent.errorExecution, message: "<assign location='shareId'>: an integer operation overflowed or failed")); return true }; return false }()) {
+                if ({ () -> Bool in do { let sceValue: UInt32 = (try Checked.narrow((try Checked.div(a.element, 65536)), to: UInt32.self)); self.vShareId = sceValue } catch { engine.raise(EventWithMetadata.platformError(RecordListParentSceSynthInvokeListEvent.errorExecution, reason: .expressionFailed, message: "<assign location='shareId'>: an integer operation overflowed or failed")); return true }; return false }()) {
                     break sceBlock  // W3C SCXML 4.9: the error ends the block
                 }
 
 
 
-                if ({ () -> Bool in do { let sceValue: UInt16 = (try Checked.narrow((try Checked.rem(a.element, 65536)), to: UInt16.self)); self.vShareField = sceValue } catch { engine.raise(EventWithMetadata.platformError(RecordListParentSceSynthInvokeListEvent.errorExecution, message: "<assign location='shareField'>: an integer operation overflowed or failed")); return true }; return false }()) {
+                if ({ () -> Bool in do { let sceValue: UInt16 = (try Checked.narrow((try Checked.rem(a.element, 65536)), to: UInt16.self)); self.vShareField = sceValue } catch { engine.raise(EventWithMetadata.platformError(RecordListParentSceSynthInvokeListEvent.errorExecution, reason: .expressionFailed, message: "<assign location='shareField'>: an integer operation overflowed or failed")); return true }; return false }()) {
                     break sceBlock  // W3C SCXML 4.9: the error ends the block
                 }
 
@@ -4930,7 +4946,7 @@ break sceBlock
 
 
 
-                if ({ () -> Bool in do { let sceValue: UInt64 = (try Checked.add((try Checked.mul(self.vEntry.element, 65536)), u.field)); self.vEntry.element = sceValue } catch { engine.raise(EventWithMetadata.platformError(RecordListParentSceSynthInvokeListEvent.errorExecution, message: "<assign location='entry.element'>: an integer operation overflowed or failed")); return true }; return false }()) {
+                if ({ () -> Bool in do { let sceValue: UInt64 = (try Checked.add((try Checked.mul(self.vEntry.element, 65536)), u.field)); self.vEntry.element = sceValue } catch { engine.raise(EventWithMetadata.platformError(RecordListParentSceSynthInvokeListEvent.errorExecution, reason: .expressionFailed, message: "<assign location='entry.element'>: an integer operation overflowed or failed")); return true }; return false }()) {
                     break sceBlock  // W3C SCXML 4.9: the error ends the block
                 }
 
@@ -4954,13 +4970,13 @@ break sceBlock
 
                 // SCE Accepted Subset §2.15: <sce:append target="one">
 
-                if ({ () -> Bool in if self.vOne.count >= 1024 { engine.raise(EventWithMetadata.platformError(RecordListParentSceSynthInvokeListEvent.errorExecution, message: "<sce:append target='one'>: the list already holds its capacity of 1024")); return true }; let sceValue = Checked.element(of: self.vOne, self.vEntry); self.vOne.append(sceValue); return false }()) {
+                if ({ () -> Bool in if self.vOne.count >= 1024 { engine.raise(EventWithMetadata.platformError(RecordListParentSceSynthInvokeListEvent.errorExecution, reason: .assignmentFailed, message: "<sce:append target='one'>: the list already holds its capacity of 1024")); return true }; let sceValue = Checked.element(of: self.vOne, self.vEntry); self.vOne.append(sceValue); return false }()) {
                     break sceBlock  // W3C SCXML 4.9: the error ends the block
                 }
 
 
 
-                if ({ () -> Bool in do { let sceValue = (try Checked.within((try call_OrsetUnion__vv(self.vAdds, self.vOne)), capacity: 1024)); self.vAdds = sceValue } catch { engine.raise(EventWithMetadata.platformError(RecordListParentSceSynthInvokeListEvent.errorExecution, message: "<assign location='adds'>: an integer operation overflowed or failed")); return true }; return false }()) {
+                if ({ () -> Bool in do { let sceValue = (try Checked.within((try call_OrsetUnion__vv(self.vAdds, self.vOne)), capacity: 1024)); self.vAdds = sceValue } catch { engine.raise(EventWithMetadata.platformError(RecordListParentSceSynthInvokeListEvent.errorExecution, reason: .expressionFailed, message: "<assign location='adds'>: an integer operation overflowed or failed")); return true }; return false }()) {
                     break sceBlock  // W3C SCXML 4.9: the error ends the block
                 }
 
@@ -4978,7 +4994,7 @@ break sceBlock
 
 
 
-                if ({ () -> Bool in do { let sceValue: String = (try Checked.bounded(u.text, capacity: 96)); self.vHeld.text = sceValue } catch { engine.raise(EventWithMetadata.platformError(RecordListParentSceSynthInvokeListEvent.errorExecution, message: "<assign location='held.text'>: an integer operation overflowed or failed")); return true }; return false }()) {
+                if ({ () -> Bool in do { let sceValue: String = (try Checked.bounded(u.text, capacity: 96)); self.vHeld.text = sceValue } catch { engine.raise(EventWithMetadata.platformError(RecordListParentSceSynthInvokeListEvent.errorExecution, reason: .expressionFailed, message: "<assign location='held.text'>: an integer operation overflowed or failed")); return true }; return false }()) {
                     break sceBlock  // W3C SCXML 4.9: the error ends the block
                 }
 
@@ -4996,7 +5012,7 @@ break sceBlock
 
 
 
-                if ({ () -> Bool in do { let sceValue = (try Checked.within((try call_MvValueKeep__vv(self.vValues, self.vHeld)), capacity: 512)); self.vValues = sceValue } catch { engine.raise(EventWithMetadata.platformError(RecordListParentSceSynthInvokeListEvent.errorExecution, message: "<assign location='values'>: an integer operation overflowed or failed")); return true }; return false }()) {
+                if ({ () -> Bool in do { let sceValue = (try Checked.within((try call_MvValueKeep__vv(self.vValues, self.vHeld)), capacity: 512)); self.vValues = sceValue } catch { engine.raise(EventWithMetadata.platformError(RecordListParentSceSynthInvokeListEvent.errorExecution, reason: .expressionFailed, message: "<assign location='values'>: an integer operation overflowed or failed")); return true }; return false }()) {
                     break sceBlock  // W3C SCXML 4.9: the error ends the block
                 }
 
@@ -5004,13 +5020,13 @@ break sceBlock
                 if (self.vAnnounce) {
 
 
-                if ({ () -> Bool in do { let sceValue: UInt32 = (try Checked.narrow(u.id, to: UInt32.self)); self.vShareId = sceValue } catch { engine.raise(EventWithMetadata.platformError(RecordListParentSceSynthInvokeListEvent.errorExecution, message: "<assign location='shareId'>: an integer operation overflowed or failed")); return true }; return false }()) {
+                if ({ () -> Bool in do { let sceValue: UInt32 = (try Checked.narrow(u.id, to: UInt32.self)); self.vShareId = sceValue } catch { engine.raise(EventWithMetadata.platformError(RecordListParentSceSynthInvokeListEvent.errorExecution, reason: .expressionFailed, message: "<assign location='shareId'>: an integer operation overflowed or failed")); return true }; return false }()) {
                     break sceBlock  // W3C SCXML 4.9: the error ends the block
                 }
 
 
 
-                if ({ () -> Bool in do { let sceValue: UInt16 = (try Checked.narrow(u.field, to: UInt16.self)); self.vShareField = sceValue } catch { engine.raise(EventWithMetadata.platformError(RecordListParentSceSynthInvokeListEvent.errorExecution, message: "<assign location='shareField'>: an integer operation overflowed or failed")); return true }; return false }()) {
+                if ({ () -> Bool in do { let sceValue: UInt16 = (try Checked.narrow(u.field, to: UInt16.self)); self.vShareField = sceValue } catch { engine.raise(EventWithMetadata.platformError(RecordListParentSceSynthInvokeListEvent.errorExecution, reason: .expressionFailed, message: "<assign location='shareField'>: an integer operation overflowed or failed")); return true }; return false }()) {
                     break sceBlock  // W3C SCXML 4.9: the error ends the block
                 }
 
@@ -5061,7 +5077,7 @@ break sceBlock
 
                 // SCE Accepted Subset §2.15: <sce:append target="undoKept">
 
-                if ({ () -> Bool in if self.vUndoKept.count >= 512 { engine.raise(EventWithMetadata.platformError(RecordListParentSceSynthInvokeListEvent.errorExecution, message: "<sce:append target='undoKept'>: the list already holds its capacity of 512")); return true }; let sceValue = Checked.element(of: self.vUndoKept, u); self.vUndoKept.append(sceValue); return false }()) {
+                if ({ () -> Bool in if self.vUndoKept.count >= 512 { engine.raise(EventWithMetadata.platformError(RecordListParentSceSynthInvokeListEvent.errorExecution, reason: .assignmentFailed, message: "<sce:append target='undoKept'>: the list already holds its capacity of 512")); return true }; let sceValue = Checked.element(of: self.vUndoKept, u); self.vUndoKept.append(sceValue); return false }()) {
                     break sceBlock  // W3C SCXML 4.9: the error ends the block
                 }
 
@@ -5080,7 +5096,7 @@ break sceBlock
 
                 // SCE Accepted Subset §2.15: <sce:append target="undo">
 
-                if ({ () -> Bool in if self.vUndo.count >= 512 { engine.raise(EventWithMetadata.platformError(RecordListParentSceSynthInvokeListEvent.errorExecution, message: "<sce:append target='undo'>: the list already holds its capacity of 512")); return true }; let sceValue = Checked.element(of: self.vUndo, u); self.vUndo.append(sceValue); return false }()) {
+                if ({ () -> Bool in if self.vUndo.count >= 512 { engine.raise(EventWithMetadata.platformError(RecordListParentSceSynthInvokeListEvent.errorExecution, reason: .assignmentFailed, message: "<sce:append target='undo'>: the list already holds its capacity of 512")); return true }; let sceValue = Checked.element(of: self.vUndo, u); self.vUndo.append(sceValue); return false }()) {
                     break sceBlock  // W3C SCXML 4.9: the error ends the block
                 }
 
@@ -5096,11 +5112,11 @@ break sceBlock
                     let at = UInt32(truncatingIfNeeded: sceIndex); _ = at; _ = p
 
                 var ifCondFailed72 = false
-                if ({ () -> Bool in do { return (try Checked.add(at, 1)) < UInt32(truncatingIfNeeded: self.vProvisional.count) } catch { engine.raise(EventWithMetadata.platformError(RecordListParentSceSynthInvokeListEvent.errorExecution, message: "<if cond='at + 1 < len(provisional)'>: an integer operation overflowed or failed")); ifCondFailed72 = true; return false } }()) {
+                if ({ () -> Bool in do { return (try Checked.add(at, 1)) < UInt32(truncatingIfNeeded: self.vProvisional.count) } catch { engine.raise(EventWithMetadata.platformError(RecordListParentSceSynthInvokeListEvent.errorExecution, reason: .expressionFailed, message: "<if cond='at + 1 < len(provisional)'>: an integer operation overflowed or failed")); ifCondFailed72 = true; return false } }()) {
 
                 // SCE Accepted Subset §2.15: <sce:append target="provisionalKept">
 
-                if ({ () -> Bool in if self.vProvisionalKept.count >= 8 { engine.raise(EventWithMetadata.platformError(RecordListParentSceSynthInvokeListEvent.errorExecution, message: "<sce:append target='provisionalKept'>: the list already holds its capacity of 8")); return true }; let sceValue = Checked.element(of: self.vProvisionalKept, p); self.vProvisionalKept.append(sceValue); return false }()) {
+                if ({ () -> Bool in if self.vProvisionalKept.count >= 8 { engine.raise(EventWithMetadata.platformError(RecordListParentSceSynthInvokeListEvent.errorExecution, reason: .assignmentFailed, message: "<sce:append target='provisionalKept'>: the list already holds its capacity of 8")); return true }; let sceValue = Checked.element(of: self.vProvisionalKept, p); self.vProvisionalKept.append(sceValue); return false }()) {
                     break sceBlock  // W3C SCXML 4.9: the error ends the block
                 }
 
@@ -5122,7 +5138,7 @@ break sceBlock
 
                 // SCE Accepted Subset §2.15: <sce:append target="provisional">
 
-                if ({ () -> Bool in if self.vProvisional.count >= 8 { engine.raise(EventWithMetadata.platformError(RecordListParentSceSynthInvokeListEvent.errorExecution, message: "<sce:append target='provisional'>: the list already holds its capacity of 8")); return true }; let sceValue = Checked.element(of: self.vProvisional, p); self.vProvisional.append(sceValue); return false }()) {
+                if ({ () -> Bool in if self.vProvisional.count >= 8 { engine.raise(EventWithMetadata.platformError(RecordListParentSceSynthInvokeListEvent.errorExecution, reason: .assignmentFailed, message: "<sce:append target='provisional'>: the list already holds its capacity of 8")); return true }; let sceValue = Checked.element(of: self.vProvisional, p); self.vProvisional.append(sceValue); return false }()) {
                     break sceBlock  // W3C SCXML 4.9: the error ends the block
                 }
 
@@ -5133,6 +5149,10 @@ break sceBlock
                 // W3C SCXML 6.2: send id="__send_27"
                 do {
                     var sendArgError = ""
+                    // Why the argument failed, a code of sce:std/engine/error_reason
+                    // (docs/adr/0106 #111), set with every sentence below.
+                    var sendArgReason = ErrorReason.expressionFailed
+                    _ = sendArgReason
                     // docs/adr/0005, decision 3: the target is a string computed from the
                     // machine's fields now, and the send goes only by a route the document
                     // declared as `sce:targets`. A value in none of them names no route this
@@ -5152,7 +5172,7 @@ break sceBlock
                         }
                     }
                     if !sendArgError.isEmpty {
-                        var sendError = EventWithMetadata.platformError(RecordListParentSceSynthInvokeListEvent.errorExecution, message: sendArgError)
+                        var sendError = EventWithMetadata.platformError(RecordListParentSceSynthInvokeListEvent.errorExecution, reason: sendArgReason, message: sendArgError)
                         sendError.metadata.sendID = "__send_27"
                         engine.raise(sendError)
 
@@ -5163,7 +5183,7 @@ break sceBlock
                         // names nothing (empty or "undefined"), is not reachable —
                         // error.communication, nothing delivered, and the error ends the block
                         // as any other would (W3C SCXML 4.9).
-                        var sendError = EventWithMetadata.platformError(RecordListParentSceSynthInvokeListEvent.errorCommunication, message: "<send> targetexpr evaluated to nothing, or to a route the send does not declare, so there is no target to reach")
+                        var sendError = EventWithMetadata.platformError(RecordListParentSceSynthInvokeListEvent.errorCommunication, reason: .targetUnreachable, message: "<send> targetexpr evaluated to nothing, or to a route the send does not declare, so there is no target to reach")
                         sendError.metadata.sendID = "__send_27"
                         engine.raise(sendError)
 
@@ -5214,14 +5234,14 @@ break sceBlock
                         sender: self.sessionID
                     )
                     if sendRouted == .notSupported {
-                        var sendError = EventWithMetadata.platformError(RecordListParentSceSynthInvokeListEvent.errorExecution, message: "<send> targetexpr produced a value that is not a target")
+                        var sendError = EventWithMetadata.platformError(RecordListParentSceSynthInvokeListEvent.errorExecution, reason: .sendTargetInvalid, message: "<send> targetexpr produced a value that is not a target")
                         sendError.metadata.sendID = "__send_27"
                         engine.raise(sendError)
 
                         break sceBlock  // W3C SCXML 4.9: the error ends the block
                     }
                     if sendRouted == .notReachable {
-                        var sendError = EventWithMetadata.platformError(RecordListParentSceSynthInvokeListEvent.errorCommunication, message: "<send> targetexpr names a session this processor cannot reach")
+                        var sendError = EventWithMetadata.platformError(RecordListParentSceSynthInvokeListEvent.errorCommunication, reason: .targetUnreachable, message: "<send> targetexpr names a session this processor cannot reach")
                         sendError.metadata.sendID = "__send_27"
                         engine.raise(sendError)
 
@@ -5248,7 +5268,7 @@ break sceBlock
 
 
 
-                if ({ () -> Bool in do { let sceValue: UInt64 = (try Checked.add((try Checked.mul(self.vEntry.element, 65536)), UInt64(self.pendingRecordListAnnouncePayload.field))); self.vEntry.element = sceValue } catch { engine.raise(EventWithMetadata.platformError(RecordListParentSceSynthInvokeListEvent.errorExecution, message: "<assign location='entry.element'>: an integer operation overflowed or failed")); return true }; return false }()) {
+                if ({ () -> Bool in do { let sceValue: UInt64 = (try Checked.add((try Checked.mul(self.vEntry.element, 65536)), UInt64(self.pendingRecordListAnnouncePayload.field))); self.vEntry.element = sceValue } catch { engine.raise(EventWithMetadata.platformError(RecordListParentSceSynthInvokeListEvent.errorExecution, reason: .expressionFailed, message: "<assign location='entry.element'>: an integer operation overflowed or failed")); return true }; return false }()) {
                     break sceBlock  // W3C SCXML 4.9: the error ends the block
                 }
 
@@ -5288,7 +5308,7 @@ break sceBlock
 
                 // SCE Accepted Subset §2.15: <sce:append target="moved">
 
-                if ({ () -> Bool in if self.vMoved.count >= 64 { engine.raise(EventWithMetadata.platformError(RecordListParentSceSynthInvokeListEvent.errorExecution, message: "<sce:append target='moved'>: the list already holds its capacity of 64")); return true }; let sceValue = Checked.element(of: self.vMoved, self.vEntry.element); self.vMoved.append(sceValue); return false }()) {
+                if ({ () -> Bool in if self.vMoved.count >= 64 { engine.raise(EventWithMetadata.platformError(RecordListParentSceSynthInvokeListEvent.errorExecution, reason: .assignmentFailed, message: "<sce:append target='moved'>: the list already holds its capacity of 64")); return true }; let sceValue = Checked.element(of: self.vMoved, self.vEntry.element); self.vMoved.append(sceValue); return false }()) {
                     break sceBlock  // W3C SCXML 4.9: the error ends the block
                 }
 
@@ -5304,19 +5324,19 @@ break sceBlock
                     _ = named
 
 
-                if ({ () -> Bool in do { let sceValue: UInt32 = (try Checked.narrow((try Checked.div(named, 65536)), to: UInt32.self)); self.vShareId = sceValue } catch { engine.raise(EventWithMetadata.platformError(RecordListParentSceSynthInvokeListEvent.errorExecution, message: "<assign location='shareId'>: an integer operation overflowed or failed")); return true }; return false }()) {
+                if ({ () -> Bool in do { let sceValue: UInt32 = (try Checked.narrow((try Checked.div(named, 65536)), to: UInt32.self)); self.vShareId = sceValue } catch { engine.raise(EventWithMetadata.platformError(RecordListParentSceSynthInvokeListEvent.errorExecution, reason: .expressionFailed, message: "<assign location='shareId'>: an integer operation overflowed or failed")); return true }; return false }()) {
                     break sceBlock  // W3C SCXML 4.9: the error ends the block
                 }
 
 
 
-                if ({ () -> Bool in do { let sceValue: UInt16 = (try Checked.narrow((try Checked.rem(named, 65536)), to: UInt16.self)); self.vShareField = sceValue } catch { engine.raise(EventWithMetadata.platformError(RecordListParentSceSynthInvokeListEvent.errorExecution, message: "<assign location='shareField'>: an integer operation overflowed or failed")); return true }; return false }()) {
+                if ({ () -> Bool in do { let sceValue: UInt16 = (try Checked.narrow((try Checked.rem(named, 65536)), to: UInt16.self)); self.vShareField = sceValue } catch { engine.raise(EventWithMetadata.platformError(RecordListParentSceSynthInvokeListEvent.errorExecution, reason: .expressionFailed, message: "<assign location='shareField'>: an integer operation overflowed or failed")); return true }; return false }()) {
                     break sceBlock  // W3C SCXML 4.9: the error ends the block
                 }
 
 
 
-                if ({ () -> Bool in do { let sceValue = (try Checked.within((try call_RegisterValues__v(self.vValues, UInt64(self.vShareId), UInt64(self.vShareField))), capacity: 512)); self.vLive = sceValue } catch { engine.raise(EventWithMetadata.platformError(RecordListParentSceSynthInvokeListEvent.errorExecution, message: "<assign location='live'>: an integer operation overflowed or failed")); return true }; return false }()) {
+                if ({ () -> Bool in do { let sceValue = (try Checked.within((try call_RegisterValues__v(self.vValues, UInt64(self.vShareId), UInt64(self.vShareField))), capacity: 512)); self.vLive = sceValue } catch { engine.raise(EventWithMetadata.platformError(RecordListParentSceSynthInvokeListEvent.errorExecution, reason: .expressionFailed, message: "<assign location='live'>: an integer operation overflowed or failed")); return true }; return false }()) {
                     break sceBlock  // W3C SCXML 4.9: the error ends the block
                 }
 
@@ -5326,6 +5346,10 @@ break sceBlock
                 // W3C SCXML 6.2: send id="__send_29"
                 do {
                     var sendArgError = ""
+                    // Why the argument failed, a code of sce:std/engine/error_reason
+                    // (docs/adr/0106 #111), set with every sentence below.
+                    var sendArgReason = ErrorReason.expressionFailed
+                    _ = sendArgReason
                     // docs/adr/0005, decision 3: the target is a string computed from the
                     // machine's fields now, and the send goes only by a route the document
                     // declared as `sce:targets`. A value in none of them names no route this
@@ -5345,7 +5369,7 @@ break sceBlock
                         }
                     }
                     if !sendArgError.isEmpty {
-                        var sendError = EventWithMetadata.platformError(RecordListParentSceSynthInvokeListEvent.errorExecution, message: sendArgError)
+                        var sendError = EventWithMetadata.platformError(RecordListParentSceSynthInvokeListEvent.errorExecution, reason: sendArgReason, message: sendArgError)
                         sendError.metadata.sendID = "__send_29"
                         engine.raise(sendError)
 
@@ -5356,7 +5380,7 @@ break sceBlock
                         // names nothing (empty or "undefined"), is not reachable —
                         // error.communication, nothing delivered, and the error ends the block
                         // as any other would (W3C SCXML 4.9).
-                        var sendError = EventWithMetadata.platformError(RecordListParentSceSynthInvokeListEvent.errorCommunication, message: "<send> targetexpr evaluated to nothing, or to a route the send does not declare, so there is no target to reach")
+                        var sendError = EventWithMetadata.platformError(RecordListParentSceSynthInvokeListEvent.errorCommunication, reason: .targetUnreachable, message: "<send> targetexpr evaluated to nothing, or to a route the send does not declare, so there is no target to reach")
                         sendError.metadata.sendID = "__send_29"
                         engine.raise(sendError)
 
@@ -5415,14 +5439,14 @@ break sceBlock
                         sender: self.sessionID
                     )
                     if sendRouted == .notSupported {
-                        var sendError = EventWithMetadata.platformError(RecordListParentSceSynthInvokeListEvent.errorExecution, message: "<send> targetexpr produced a value that is not a target")
+                        var sendError = EventWithMetadata.platformError(RecordListParentSceSynthInvokeListEvent.errorExecution, reason: .sendTargetInvalid, message: "<send> targetexpr produced a value that is not a target")
                         sendError.metadata.sendID = "__send_29"
                         engine.raise(sendError)
 
                         break sceBlock  // W3C SCXML 4.9: the error ends the block
                     }
                     if sendRouted == .notReachable {
-                        var sendError = EventWithMetadata.platformError(RecordListParentSceSynthInvokeListEvent.errorCommunication, message: "<send> targetexpr names a session this processor cannot reach")
+                        var sendError = EventWithMetadata.platformError(RecordListParentSceSynthInvokeListEvent.errorCommunication, reason: .targetUnreachable, message: "<send> targetexpr names a session this processor cannot reach")
                         sendError.metadata.sendID = "__send_29"
                         engine.raise(sendError)
 
@@ -5436,7 +5460,7 @@ break sceBlock
                 }
 
 
-                if ({ () -> Bool in do { let sceValue: UInt32 = (try Checked.add(self.vAnnounced, 1)); self.vAnnounced = sceValue } catch { engine.raise(EventWithMetadata.platformError(RecordListParentSceSynthInvokeListEvent.errorExecution, message: "<assign location='announced'>: an integer operation overflowed or failed")); return true }; return false }()) {
+                if ({ () -> Bool in do { let sceValue: UInt32 = (try Checked.add(self.vAnnounced, 1)); self.vAnnounced = sceValue } catch { engine.raise(EventWithMetadata.platformError(RecordListParentSceSynthInvokeListEvent.errorExecution, reason: .expressionFailed, message: "<assign location='announced'>: an integer operation overflowed or failed")); return true }; return false }()) {
                     break sceBlock  // W3C SCXML 4.9: the error ends the block
                 }
 
@@ -5456,6 +5480,10 @@ break sceBlock
                 // W3C SCXML 6.2: send id="__send_30"
                 do {
                     var sendArgError = ""
+                    // Why the argument failed, a code of sce:std/engine/error_reason
+                    // (docs/adr/0106 #111), set with every sentence below.
+                    var sendArgReason = ErrorReason.expressionFailed
+                    _ = sendArgReason
                     // docs/adr/0005, decision 3: the target is a string computed from the
                     // machine's fields now, and the send goes only by a route the document
                     // declared as `sce:targets`. A value in none of them names no route this
@@ -5475,7 +5503,7 @@ break sceBlock
                         }
                     }
                     if !sendArgError.isEmpty {
-                        var sendError = EventWithMetadata.platformError(RecordListParentSceSynthInvokeListEvent.errorExecution, message: sendArgError)
+                        var sendError = EventWithMetadata.platformError(RecordListParentSceSynthInvokeListEvent.errorExecution, reason: sendArgReason, message: sendArgError)
                         sendError.metadata.sendID = "__send_30"
                         engine.raise(sendError)
 
@@ -5486,7 +5514,7 @@ break sceBlock
                         // names nothing (empty or "undefined"), is not reachable —
                         // error.communication, nothing delivered, and the error ends the block
                         // as any other would (W3C SCXML 4.9).
-                        var sendError = EventWithMetadata.platformError(RecordListParentSceSynthInvokeListEvent.errorCommunication, message: "<send> targetexpr evaluated to nothing, or to a route the send does not declare, so there is no target to reach")
+                        var sendError = EventWithMetadata.platformError(RecordListParentSceSynthInvokeListEvent.errorCommunication, reason: .targetUnreachable, message: "<send> targetexpr evaluated to nothing, or to a route the send does not declare, so there is no target to reach")
                         sendError.metadata.sendID = "__send_30"
                         engine.raise(sendError)
 
@@ -5545,14 +5573,14 @@ break sceBlock
                         sender: self.sessionID
                     )
                     if sendRouted == .notSupported {
-                        var sendError = EventWithMetadata.platformError(RecordListParentSceSynthInvokeListEvent.errorExecution, message: "<send> targetexpr produced a value that is not a target")
+                        var sendError = EventWithMetadata.platformError(RecordListParentSceSynthInvokeListEvent.errorExecution, reason: .sendTargetInvalid, message: "<send> targetexpr produced a value that is not a target")
                         sendError.metadata.sendID = "__send_30"
                         engine.raise(sendError)
 
                         break sceBlock  // W3C SCXML 4.9: the error ends the block
                     }
                     if sendRouted == .notReachable {
-                        var sendError = EventWithMetadata.platformError(RecordListParentSceSynthInvokeListEvent.errorCommunication, message: "<send> targetexpr names a session this processor cannot reach")
+                        var sendError = EventWithMetadata.platformError(RecordListParentSceSynthInvokeListEvent.errorCommunication, reason: .targetUnreachable, message: "<send> targetexpr names a session this processor cannot reach")
                         sendError.metadata.sendID = "__send_30"
                         engine.raise(sendError)
 
@@ -5572,6 +5600,10 @@ break sceBlock
                 // W3C SCXML 6.2: send id="__send_31"
                 do {
                     var sendArgError = ""
+                    // Why the argument failed, a code of sce:std/engine/error_reason
+                    // (docs/adr/0106 #111), set with every sentence below.
+                    var sendArgReason = ErrorReason.expressionFailed
+                    _ = sendArgReason
                     // docs/adr/0005, decision 3: the target is a string computed from the
                     // machine's fields now, and the send goes only by a route the document
                     // declared as `sce:targets`. A value in none of them names no route this
@@ -5591,7 +5623,7 @@ break sceBlock
                         }
                     }
                     if !sendArgError.isEmpty {
-                        var sendError = EventWithMetadata.platformError(RecordListParentSceSynthInvokeListEvent.errorExecution, message: sendArgError)
+                        var sendError = EventWithMetadata.platformError(RecordListParentSceSynthInvokeListEvent.errorExecution, reason: sendArgReason, message: sendArgError)
                         sendError.metadata.sendID = "__send_31"
                         engine.raise(sendError)
 
@@ -5602,7 +5634,7 @@ break sceBlock
                         // names nothing (empty or "undefined"), is not reachable —
                         // error.communication, nothing delivered, and the error ends the block
                         // as any other would (W3C SCXML 4.9).
-                        var sendError = EventWithMetadata.platformError(RecordListParentSceSynthInvokeListEvent.errorCommunication, message: "<send> targetexpr evaluated to nothing, or to a route the send does not declare, so there is no target to reach")
+                        var sendError = EventWithMetadata.platformError(RecordListParentSceSynthInvokeListEvent.errorCommunication, reason: .targetUnreachable, message: "<send> targetexpr evaluated to nothing, or to a route the send does not declare, so there is no target to reach")
                         sendError.metadata.sendID = "__send_31"
                         engine.raise(sendError)
 
@@ -5661,14 +5693,14 @@ break sceBlock
                         sender: self.sessionID
                     )
                     if sendRouted == .notSupported {
-                        var sendError = EventWithMetadata.platformError(RecordListParentSceSynthInvokeListEvent.errorExecution, message: "<send> targetexpr produced a value that is not a target")
+                        var sendError = EventWithMetadata.platformError(RecordListParentSceSynthInvokeListEvent.errorExecution, reason: .sendTargetInvalid, message: "<send> targetexpr produced a value that is not a target")
                         sendError.metadata.sendID = "__send_31"
                         engine.raise(sendError)
 
                         break sceBlock  // W3C SCXML 4.9: the error ends the block
                     }
                     if sendRouted == .notReachable {
-                        var sendError = EventWithMetadata.platformError(RecordListParentSceSynthInvokeListEvent.errorCommunication, message: "<send> targetexpr names a session this processor cannot reach")
+                        var sendError = EventWithMetadata.platformError(RecordListParentSceSynthInvokeListEvent.errorCommunication, reason: .targetUnreachable, message: "<send> targetexpr names a session this processor cannot reach")
                         sendError.metadata.sendID = "__send_31"
                         engine.raise(sendError)
 
@@ -5684,13 +5716,13 @@ break sceBlock
 
 
 
-                if ({ () -> Bool in do { let sceValue: UInt32 = (try Checked.add(self.vAnnounced, 1)); self.vAnnounced = sceValue } catch { engine.raise(EventWithMetadata.platformError(RecordListParentSceSynthInvokeListEvent.errorExecution, message: "<assign location='announced'>: an integer operation overflowed or failed")); return true }; return false }()) {
+                if ({ () -> Bool in do { let sceValue: UInt32 = (try Checked.add(self.vAnnounced, 1)); self.vAnnounced = sceValue } catch { engine.raise(EventWithMetadata.platformError(RecordListParentSceSynthInvokeListEvent.errorExecution, reason: .expressionFailed, message: "<assign location='announced'>: an integer operation overflowed or failed")); return true }; return false }()) {
                     break sceBlock  // W3C SCXML 4.9: the error ends the block
                 }
 
 
 
-                if ({ () -> Bool in do { let sceValue: UInt32 = (try Checked.add(self.vOrdinal, 1)); self.vOrdinal = sceValue } catch { engine.raise(EventWithMetadata.platformError(RecordListParentSceSynthInvokeListEvent.errorExecution, message: "<assign location='ordinal'>: an integer operation overflowed or failed")); return true }; return false }()) {
+                if ({ () -> Bool in do { let sceValue: UInt32 = (try Checked.add(self.vOrdinal, 1)); self.vOrdinal = sceValue } catch { engine.raise(EventWithMetadata.platformError(RecordListParentSceSynthInvokeListEvent.errorExecution, reason: .expressionFailed, message: "<assign location='ordinal'>: an integer operation overflowed or failed")); return true }; return false }()) {
                     break sceBlock  // W3C SCXML 4.9: the error ends the block
                 }
 
@@ -5707,7 +5739,7 @@ break sceBlock
                 sceBlock: do {
 
 
-                if ({ () -> Bool in do { let sceValue: UInt32 = (try Checked.add(self.vRefusals, 1)); self.vRefusals = sceValue } catch { engine.raise(EventWithMetadata.platformError(RecordListParentSceSynthInvokeListEvent.errorExecution, message: "<assign location='refusals'>: an integer operation overflowed or failed")); return true }; return false }()) {
+                if ({ () -> Bool in do { let sceValue: UInt32 = (try Checked.add(self.vRefusals, 1)); self.vRefusals = sceValue } catch { engine.raise(EventWithMetadata.platformError(RecordListParentSceSynthInvokeListEvent.errorExecution, reason: .expressionFailed, message: "<assign location='refusals'>: an integer operation overflowed or failed")); return true }; return false }()) {
                     break sceBlock  // W3C SCXML 4.9: the error ends the block
                 }
 

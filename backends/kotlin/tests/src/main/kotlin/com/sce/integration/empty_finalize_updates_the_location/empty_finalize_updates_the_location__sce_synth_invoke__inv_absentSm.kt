@@ -194,14 +194,14 @@ class EmptyFinalizeUpdatesTheLocationSceSynthInvokeInvAbsentStateMachine(
 
     // W3C SCXML 5.9.1: a cond that cannot be evaluated raises error.execution;
     // `null` says so, where a bare `false` could not.
-    private fun evaluateGuardRaising(guardExpr: com.sce.runtime.ScriptSource, reason: String): Boolean? {
+    private fun evaluateGuardRaising(guardExpr: com.sce.runtime.ScriptSource, detail: String): Boolean? {
         assertScriptSession()
         val engine = scriptEngine ?: error("scriptEngine is required (codegen invariant: needs_script_engine == true)")
         val sid = scriptSessionId ?: error("scriptSessionId is established by the start (codegen invariant)")
         return try {
             engine.evaluateCondition(sid, guardExpr)
         } catch (e: Exception) {
-            raisePlatformError(EmptyFinalizeUpdatesTheLocationSceSynthInvokeInvAbsentEvent.Error.Execution, reason)
+            raisePlatformError(EmptyFinalizeUpdatesTheLocationSceSynthInvokeInvAbsentEvent.Error.Execution, ErrorReason.EXPRESSION_FAILED, detail)
             null
         }
     }
@@ -242,7 +242,7 @@ class EmptyFinalizeUpdatesTheLocationSceSynthInvokeInvAbsentStateMachine(
         return try {
             engine.evaluateExpr(sid, serialized)?.toString() ?: ""
         } catch (e: Exception) {
-            raisePlatformError(EmptyFinalizeUpdatesTheLocationSceSynthInvokeInvAbsentEvent.Error.Execution, "an expression could not be serialised to JSON")
+            raisePlatformError(EmptyFinalizeUpdatesTheLocationSceSynthInvokeInvAbsentEvent.Error.Execution, ErrorReason.EXPRESSION_FAILED, "an expression could not be serialised to JSON")
             ""
         }
     }
@@ -263,7 +263,7 @@ class EmptyFinalizeUpdatesTheLocationSceSynthInvokeInvAbsentStateMachine(
             engine.assign(sid, location, expr)
             true
         } catch (e: Exception) {
-            raisePlatformError(EmptyFinalizeUpdatesTheLocationSceSynthInvokeInvAbsentEvent.Error.Execution, "<assign> failed")
+            raisePlatformError(EmptyFinalizeUpdatesTheLocationSceSynthInvokeInvAbsentEvent.Error.Execution, ErrorReason.ASSIGNMENT_FAILED, "<assign> failed")
             false
         }
     }
@@ -279,7 +279,7 @@ class EmptyFinalizeUpdatesTheLocationSceSynthInvokeInvAbsentStateMachine(
             engine.executeScript(sid, script)
             true
         } catch (e: Exception) {
-            raisePlatformError(EmptyFinalizeUpdatesTheLocationSceSynthInvokeInvAbsentEvent.Error.Execution, "<script> failed to execute")
+            raisePlatformError(EmptyFinalizeUpdatesTheLocationSceSynthInvokeInvAbsentEvent.Error.Execution, ErrorReason.SCRIPT_FAILED, "<script> failed to execute")
             false
         }
     }
@@ -443,7 +443,7 @@ class EmptyFinalizeUpdatesTheLocationSceSynthInvokeInvAbsentStateMachine(
             try {
                 putParam(sendPayload, "guard", payloadEngine.evaluateExpr(payloadSid, com.sce.runtime.ScriptSource.lua("9", "9")))
             } catch (_: Exception) {
-                raisePlatformError(EmptyFinalizeUpdatesTheLocationSceSynthInvokeInvAbsentEvent.Error.Execution, "<send> <param name='guard'> could not be read")
+                raisePlatformError(EmptyFinalizeUpdatesTheLocationSceSynthInvokeInvAbsentEvent.Error.Execution, ErrorReason.LOCATION_INVALID, "<send> <param name='guard'> could not be read")
                 paramFailed = true
             }
 
@@ -453,7 +453,7 @@ class EmptyFinalizeUpdatesTheLocationSceSynthInvokeInvAbsentStateMachine(
             // no parent — error.communication, nothing delivered, the block ended.
             val toParent = onSendToParent
             if (toParent == null) {
-                raisePlatformError(EmptyFinalizeUpdatesTheLocationSceSynthInvokeInvAbsentEvent.Error.Communication, "<send target='#_parent'> has no parent session to reach", "__send_0")
+                raisePlatformError(EmptyFinalizeUpdatesTheLocationSceSynthInvokeInvAbsentEvent.Error.Communication, ErrorReason.TARGET_UNREACHABLE, "<send target='#_parent'> has no parent session to reach", "__send_0")
                 return@send true
             }
             toParent("fromAbsentChild", sendData)

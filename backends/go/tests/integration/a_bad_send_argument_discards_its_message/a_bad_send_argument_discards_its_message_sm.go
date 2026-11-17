@@ -31,6 +31,7 @@ import (
 	"time"
 
 	sce "github.com/newmassrael/sce-go-runtime"
+	sceerrorreason "github.com/newmassrael/sce-go-runtime/generated/error_reason"
 )
 
 // Ensure imports are used
@@ -39,6 +40,9 @@ var (
 	_ = filepath.Join
 	_ = strings.HasPrefix
 	_ = time.Duration(0)
+	// Why an error.* event is raised (sce:std/engine/error_reason,
+	// docs/adr/0106 #111); a machine that raises none still imports it.
+	_ = sceerrorreason.ErrorReasonExpressionFailed
 )
 
 // ======================================================================
@@ -364,7 +368,7 @@ func (p *ABadSendArgumentDiscardsItsMessagePolicy) InitializeDataModel(eng *sce.
 		if err == nil {
 			_ = engine.SetVariable(sessionID, "errors", result)
 		} else {
-			eng.Raise(sce.NewPlatformError(ABadSendArgumentDiscardsItsMessageEventErrorExecution, "<data id='errors'> expr failed to evaluate"))
+			eng.Raise(sce.NewPlatformError(ABadSendArgumentDiscardsItsMessageEventErrorExecution, sceerrorreason.ErrorReasonExpressionFailed, "<data id='errors'> expr failed to evaluate"))
 			_ = engine.SetVariable(sessionID, "errors", nil)
 		}
 	}
@@ -378,7 +382,7 @@ func (p *ABadSendArgumentDiscardsItsMessagePolicy) InitializeDataModel(eng *sce.
 		if err == nil {
 			_ = engine.SetVariable(sessionID, "sent", result)
 		} else {
-			eng.Raise(sce.NewPlatformError(ABadSendArgumentDiscardsItsMessageEventErrorExecution, "<data id='sent'> expr failed to evaluate"))
+			eng.Raise(sce.NewPlatformError(ABadSendArgumentDiscardsItsMessageEventErrorExecution, sceerrorreason.ErrorReasonExpressionFailed, "<data id='sent'> expr failed to evaluate"))
 			_ = engine.SetVariable(sessionID, "sent", nil)
 		}
 	}
@@ -392,7 +396,7 @@ func (p *ABadSendArgumentDiscardsItsMessagePolicy) InitializeDataModel(eng *sce.
 		if err == nil {
 			_ = engine.SetVariable(sessionID, "after", result)
 		} else {
-			eng.Raise(sce.NewPlatformError(ABadSendArgumentDiscardsItsMessageEventErrorExecution, "<data id='after'> expr failed to evaluate"))
+			eng.Raise(sce.NewPlatformError(ABadSendArgumentDiscardsItsMessageEventErrorExecution, sceerrorreason.ErrorReasonExpressionFailed, "<data id='after'> expr failed to evaluate"))
 			_ = engine.SetVariable(sessionID, "after", nil)
 		}
 	}
@@ -406,7 +410,7 @@ func (p *ABadSendArgumentDiscardsItsMessagePolicy) InitializeDataModel(eng *sce.
 		if err == nil {
 			_ = engine.SetVariable(sessionID, "obj", result)
 		} else {
-			eng.Raise(sce.NewPlatformError(ABadSendArgumentDiscardsItsMessageEventErrorExecution, "<data id='obj'> expr failed to evaluate"))
+			eng.Raise(sce.NewPlatformError(ABadSendArgumentDiscardsItsMessageEventErrorExecution, sceerrorreason.ErrorReasonExpressionFailed, "<data id='obj'> expr failed to evaluate"))
 			_ = engine.SetVariable(sessionID, "obj", nil)
 		}
 	}
@@ -438,12 +442,12 @@ func (p *ABadSendArgumentDiscardsItsMessagePolicy) evaluateIfCond(guard string, 
 // evaluateGuardRaising evaluates a cond, raising error.execution when it cannot
 // be evaluated (W3C SCXML 5.9.1); ok is false then, where a bare false could
 // not say so.
-func (p *ABadSendArgumentDiscardsItsMessagePolicy) evaluateGuardRaising(guard string, eng *sce.Engine[ABadSendArgumentDiscardsItsMessageState, ABadSendArgumentDiscardsItsMessageEvent], reason string) (value bool, ok bool) {
+func (p *ABadSendArgumentDiscardsItsMessagePolicy) evaluateGuardRaising(guard string, eng *sce.Engine[ABadSendArgumentDiscardsItsMessageState, ABadSendArgumentDiscardsItsMessageEvent], detail string) (value bool, ok bool) {
 	p.assertScriptSession()
 	engine := p.ScriptEngine
 	result, err := engine.EvaluateExpression(p.SessionID, guard)
 	if err != nil {
-		eng.Raise(sce.NewPlatformError(ABadSendArgumentDiscardsItsMessageEventErrorExecution, reason))
+		eng.Raise(sce.NewPlatformError(ABadSendArgumentDiscardsItsMessageEventErrorExecution, sceerrorreason.ErrorReasonExpressionFailed, detail))
 		return false, false
 	}
 	return sce.ScriptToBool(result), true
@@ -556,7 +560,7 @@ func (p *ABadSendArgumentDiscardsItsMessagePolicy) SetParamValueInScriptEngine(n
 // failed is left (docs/adr/0098).
 func (p *ABadSendArgumentDiscardsItsMessagePolicy) declareHandedValue(eng *sce.Engine[ABadSendArgumentDiscardsItsMessageState, ABadSendArgumentDiscardsItsMessageEvent], engine sce.IScriptEngine, sessionID, name string, value interface{}) {
 	if err := engine.SetVariable(sessionID, name, value); err != nil {
-		eng.Raise(sce.NewPlatformError(ABadSendArgumentDiscardsItsMessageEventErrorExecution, "<data id='"+name+"'> could not hold the value its invoking session handed it"))
+		eng.Raise(sce.NewPlatformError(ABadSendArgumentDiscardsItsMessageEventErrorExecution, sceerrorreason.ErrorReasonDataInitFailed, "<data id='"+name+"'> could not hold the value its invoking session handed it"))
 		_ = engine.SetVariable(sessionID, name, nil)
 	}
 }
@@ -814,30 +818,34 @@ func (p *ABadSendArgumentDiscardsItsMessagePolicy) ExecuteEntryActions(state ABa
 	{
 	p.assertScriptSession()
 	sendArgError := ""
+	// Why the argument failed, a code of sce:std/engine/error_reason
+	// (docs/adr/0106 #111), set with every sentence below.
+	var sendArgReason sce.ErrorReason
+	_ = sendArgReason
 	// W3C SCXML 6.2 + B.2: a namelist names locations, and one that is not
 	// declared is an argument that cannot be evaluated — one error however
 	// many of its names are bad.
 	namelistParts := make([]sce.EventDataParam, 0)
 	if sendArgError == "" {
 		if !p.ScriptEngine.HasVariable(p.SessionID, "undeclaredA") {
-			sendArgError = "<send> namelist names 'undeclaredA', which is not declared"
+			sendArgError, sendArgReason = "<send> namelist names 'undeclaredA', which is not declared", sceerrorreason.ErrorReasonLocationInvalid
 		} else if nlVal, nlErr := p.ScriptEngine.EvaluateExpression(p.SessionID, `undeclaredA`); nlErr == nil {
 			namelistParts = append(namelistParts, sce.EventDataParam{Name: "undeclaredA", Value: nlVal})
 		} else {
-			sendArgError = "<send> namelist entry 'undeclaredA' could not be read"
+			sendArgError, sendArgReason = "<send> namelist entry 'undeclaredA' could not be read", sceerrorreason.ErrorReasonLocationInvalid
 		}
 	}
 	if sendArgError == "" {
 		if !p.ScriptEngine.HasVariable(p.SessionID, "undeclaredB") {
-			sendArgError = "<send> namelist names 'undeclaredB', which is not declared"
+			sendArgError, sendArgReason = "<send> namelist names 'undeclaredB', which is not declared", sceerrorreason.ErrorReasonLocationInvalid
 		} else if nlVal, nlErr := p.ScriptEngine.EvaluateExpression(p.SessionID, `undeclaredB`); nlErr == nil {
 			namelistParts = append(namelistParts, sce.EventDataParam{Name: "undeclaredB", Value: nlVal})
 		} else {
-			sendArgError = "<send> namelist entry 'undeclaredB' could not be read"
+			sendArgError, sendArgReason = "<send> namelist entry 'undeclaredB' could not be read", sceerrorreason.ErrorReasonLocationInvalid
 		}
 	}
 	if sendArgError != "" {
-		errEvt := sce.NewPlatformError(ABadSendArgumentDiscardsItsMessageEventErrorExecution, sendArgError)
+		errEvt := sce.NewPlatformError(ABadSendArgumentDiscardsItsMessageEventErrorExecution, sendArgReason, sendArgError)
 		errEvt.Metadata.SendID = "__send_0"
 		engine.Raise(errEvt)
 		return  // W3C SCXML 4.9: the error ends the block
@@ -865,7 +873,7 @@ func (p *ABadSendArgumentDiscardsItsMessagePolicy) ExecuteEntryActions(state ABa
 
 	// W3C SCXML 5.3: <assign location="after" expr="after + 1">
 	if err := p.assignVariable(`after`, `_scxml_add(after, 1)`); err != nil {
-		engine.Raise(sce.NewPlatformError(ABadSendArgumentDiscardsItsMessageEventErrorExecution, "<assign> to 'after' failed"))
+		engine.Raise(sce.NewPlatformError(ABadSendArgumentDiscardsItsMessageEventErrorExecution, sceerrorreason.ErrorReasonAssignmentFailed, "<assign> to 'after' failed"))
 		return  // W3C SCXML 4.9: the error ends the block
 	}
 
@@ -878,6 +886,10 @@ func (p *ABadSendArgumentDiscardsItsMessagePolicy) ExecuteEntryActions(state ABa
 	{
 	p.assertScriptSession()
 	sendArgError := ""
+	// Why the argument failed, a code of sce:std/engine/error_reason
+	// (docs/adr/0106 #111), set with every sentence below.
+	var sendArgReason sce.ErrorReason
+	_ = sendArgReason
 	// An event name that evaluates to nothing names no event: the same
 	// failure as one that does not evaluate.
 	sendEventName := ""
@@ -886,12 +898,12 @@ func (p *ABadSendArgumentDiscardsItsMessagePolicy) ExecuteEntryActions(state ABa
 			sendEventName = sce.ToWireString(v)
 		}
 		if sendEventName == "" {
-			sendArgError = "<send> eventexpr could not be evaluated to an event name"
+			sendArgError, sendArgReason = "<send> eventexpr could not be evaluated to an event name", sceerrorreason.ErrorReasonExpressionFailed
 		}
 	}
 	_ = sendEventName
 	if sendArgError != "" {
-		errEvt := sce.NewPlatformError(ABadSendArgumentDiscardsItsMessageEventErrorExecution, sendArgError)
+		errEvt := sce.NewPlatformError(ABadSendArgumentDiscardsItsMessageEventErrorExecution, sendArgReason, sendArgError)
 		errEvt.Metadata.SendID = "__send_1"
 		engine.Raise(errEvt)
 		return  // W3C SCXML 4.9: the error ends the block
@@ -907,7 +919,7 @@ func (p *ABadSendArgumentDiscardsItsMessagePolicy) ExecuteEntryActions(state ABa
 
 	// W3C SCXML 5.3: <assign location="after" expr="after + 1">
 	if err := p.assignVariable(`after`, `_scxml_add(after, 1)`); err != nil {
-		engine.Raise(sce.NewPlatformError(ABadSendArgumentDiscardsItsMessageEventErrorExecution, "<assign> to 'after' failed"))
+		engine.Raise(sce.NewPlatformError(ABadSendArgumentDiscardsItsMessageEventErrorExecution, sceerrorreason.ErrorReasonAssignmentFailed, "<assign> to 'after' failed"))
 		return  // W3C SCXML 4.9: the error ends the block
 	}
 
@@ -920,6 +932,10 @@ func (p *ABadSendArgumentDiscardsItsMessagePolicy) ExecuteEntryActions(state ABa
 	{
 	p.assertScriptSession()
 	sendArgError := ""
+	// Why the argument failed, a code of sce:std/engine/error_reason
+	// (docs/adr/0106 #111), set with every sentence below.
+	var sendArgReason sce.ErrorReason
+	_ = sendArgReason
 	// A target that evaluates to nothing is not an evaluation error: it is
 	// an address nobody answers at, which the arm reports as
 	// error.communication (W3C SCXML 6.2.4).
@@ -930,18 +946,18 @@ func (p *ABadSendArgumentDiscardsItsMessagePolicy) ExecuteEntryActions(state ABa
 			sendTargetVal = v
 			sendTarget = sce.ToWireString(v)
 		} else {
-			sendArgError = "<send> targetexpr could not be evaluated"
+			sendArgError, sendArgReason = "<send> targetexpr could not be evaluated", sceerrorreason.ErrorReasonExpressionFailed
 		}
 	}
 	if sendArgError == "" && sce.IsInvalidTarget(sendTarget) {
 		// W3C SCXML 6.2: a target this processor cannot address is refused
 		// as a static one is, before anything is delivered.
-		sendArgError = "<send> targetexpr produced a target this processor cannot address"
+		sendArgError, sendArgReason = "<send> targetexpr produced a target this processor cannot address", sceerrorreason.ErrorReasonSendTargetInvalid
 	}
 	_ = sendTargetVal
 	_ = sendTarget
 	if sendArgError != "" {
-		errEvt := sce.NewPlatformError(ABadSendArgumentDiscardsItsMessageEventErrorExecution, sendArgError)
+		errEvt := sce.NewPlatformError(ABadSendArgumentDiscardsItsMessageEventErrorExecution, sendArgReason, sendArgError)
 		errEvt.Metadata.SendID = "__send_2"
 		engine.Raise(errEvt)
 		return  // W3C SCXML 4.9: the error ends the block
@@ -953,7 +969,7 @@ func (p *ABadSendArgumentDiscardsItsMessagePolicy) ExecuteEntryActions(state ABa
 		// ends the block as any other would (W3C SCXML 4.9). A self-sent
 		// event names its origin, so `targetexpr="_event.origin"` (test336)
 		// reads this session's location, never "".
-		errEvt := sce.NewPlatformError(ABadSendArgumentDiscardsItsMessageEventErrorCommunication, "<send> targetexpr evaluated to nothing, so there is no target to reach")
+		errEvt := sce.NewPlatformError(ABadSendArgumentDiscardsItsMessageEventErrorCommunication, sceerrorreason.ErrorReasonTargetUnreachable, "<send> targetexpr evaluated to nothing, so there is no target to reach")
 		errEvt.Metadata.SendID = "__send_2"
 		engine.Raise(errEvt)
 		return
@@ -990,7 +1006,7 @@ func (p *ABadSendArgumentDiscardsItsMessagePolicy) ExecuteEntryActions(state ABa
 		// act it asked for was performed by nobody. Same event as an
 		// undeclared type, so a wiring mistake cannot read as success.
 		if !hostServed && !engine.HasEventProcessor("sce:mesh") {
-			errEvt := sce.NewPlatformError(ABadSendArgumentDiscardsItsMessageEventErrorExecution, "<send type='sce:mesh'> names a processor the host declared but never registered")
+			errEvt := sce.NewPlatformError(ABadSendArgumentDiscardsItsMessageEventErrorExecution, sceerrorreason.ErrorReasonProcessorUnregistered, "<send type='sce:mesh'> names a processor the host declared but never registered")
 			errEvt.Metadata.SendID = "__send_2"
 			engine.Raise(errEvt)
 		}
@@ -1005,13 +1021,13 @@ func (p *ABadSendArgumentDiscardsItsMessagePolicy) ExecuteEntryActions(state ABa
 		routed := engine.SendToTarget(sendEvt, sendHasEvt, "sent", sendTarget, p.SessionID,
 0, "__send_2", eventDataStr, p.SessionID)
 		if routed == sce.TargetNotSupported {
-			errEvt := sce.NewPlatformError(ABadSendArgumentDiscardsItsMessageEventErrorExecution, "<send> targetexpr produced a value that is not a target")
+			errEvt := sce.NewPlatformError(ABadSendArgumentDiscardsItsMessageEventErrorExecution, sceerrorreason.ErrorReasonSendTargetInvalid, "<send> targetexpr produced a value that is not a target")
 			errEvt.Metadata.SendID = "__send_2"
 			engine.Raise(errEvt)
 			return // W3C SCXML 4.9: the error ends the block
 		}
 		if routed == sce.TargetNotReachable {
-			errEvt := sce.NewPlatformError(ABadSendArgumentDiscardsItsMessageEventErrorCommunication, "<send> targetexpr names a session this processor cannot reach")
+			errEvt := sce.NewPlatformError(ABadSendArgumentDiscardsItsMessageEventErrorCommunication, sceerrorreason.ErrorReasonTargetUnreachable, "<send> targetexpr names a session this processor cannot reach")
 			errEvt.Metadata.SendID = "__send_2"
 			engine.Raise(errEvt)
 			return // W3C SCXML 4.9: the error ends the block
@@ -1023,7 +1039,7 @@ func (p *ABadSendArgumentDiscardsItsMessagePolicy) ExecuteEntryActions(state ABa
 
 	// W3C SCXML 5.3: <assign location="after" expr="after + 1">
 	if err := p.assignVariable(`after`, `_scxml_add(after, 1)`); err != nil {
-		engine.Raise(sce.NewPlatformError(ABadSendArgumentDiscardsItsMessageEventErrorExecution, "<assign> to 'after' failed"))
+		engine.Raise(sce.NewPlatformError(ABadSendArgumentDiscardsItsMessageEventErrorExecution, sceerrorreason.ErrorReasonAssignmentFailed, "<assign> to 'after' failed"))
 		return  // W3C SCXML 4.9: the error ends the block
 	}
 
@@ -1036,22 +1052,26 @@ func (p *ABadSendArgumentDiscardsItsMessagePolicy) ExecuteEntryActions(state ABa
 	{
 	p.assertScriptSession()
 	sendArgError := ""
+	// Why the argument failed, a code of sce:std/engine/error_reason
+	// (docs/adr/0106 #111), set with every sentence below.
+	var sendArgReason sce.ErrorReason
+	_ = sendArgReason
 	sendDelayMs := uint64(0)
 	if sendArgError == "" {
 		// The expression failing is the argument error, and so is a value that
 		// is not the CSS2 time the clause names (ARCHITECTURE.md, "Durations"):
 		// the message is not scheduled under some default wait.
 		if v, err := p.ScriptEngine.EvaluateExpression(p.SessionID, `obj.missing.deep`); err != nil {
-			sendArgError = "<send> delayexpr could not be evaluated"
+			sendArgError, sendArgReason = "<send> delayexpr could not be evaluated", sceerrorreason.ErrorReasonExpressionFailed
 		} else if ms, ok := sce.ParseDelayToMs(sce.ToWireString(v)); ok {
 			sendDelayMs = ms
 		} else {
-			sendArgError = "<send> delayexpr is not a CSS2 time"
+			sendArgError, sendArgReason = "<send> delayexpr is not a CSS2 time", sceerrorreason.ErrorReasonSendDelayInvalid
 		}
 	}
 	_ = sendDelayMs
 	if sendArgError != "" {
-		errEvt := sce.NewPlatformError(ABadSendArgumentDiscardsItsMessageEventErrorExecution, sendArgError)
+		errEvt := sce.NewPlatformError(ABadSendArgumentDiscardsItsMessageEventErrorExecution, sendArgReason, sendArgError)
 		errEvt.Metadata.SendID = "__send_3"
 		engine.Raise(errEvt)
 		return  // W3C SCXML 4.9: the error ends the block
@@ -1071,7 +1091,7 @@ func (p *ABadSendArgumentDiscardsItsMessagePolicy) ExecuteEntryActions(state ABa
 
 	// W3C SCXML 5.3: <assign location="after" expr="after + 1">
 	if err := p.assignVariable(`after`, `_scxml_add(after, 1)`); err != nil {
-		engine.Raise(sce.NewPlatformError(ABadSendArgumentDiscardsItsMessageEventErrorExecution, "<assign> to 'after' failed"))
+		engine.Raise(sce.NewPlatformError(ABadSendArgumentDiscardsItsMessageEventErrorExecution, sceerrorreason.ErrorReasonAssignmentFailed, "<assign> to 'after' failed"))
 		return  // W3C SCXML 4.9: the error ends the block
 	}
 
@@ -1087,15 +1107,19 @@ func (p *ABadSendArgumentDiscardsItsMessagePolicy) ExecuteEntryActions(state ABa
 	_ = sendID
 	p.assertScriptSession()
 	sendArgError := ""
+	// Why the argument failed, a code of sce:std/engine/error_reason
+	// (docs/adr/0106 #111), set with every sentence below.
+	var sendArgReason sce.ErrorReason
+	_ = sendArgReason
 	// W3C SCXML 6.2.4: the send id goes to `idlocation` first, so it is
 	// there even when a later argument fails, through the assignment
 	// `<assign>` makes; a location that cannot take it is an argument that
 	// cannot be evaluated too (W3C SCXML 5.9.2).
 	if err := p.storeIDInLocation(`obj.missing.deep`, sendID); err != nil {
-		sendArgError = "<send idlocation='obj.missing.deep'> could not take the send id"
+		sendArgError, sendArgReason = "<send idlocation='obj.missing.deep'> could not take the send id", sceerrorreason.ErrorReasonLocationInvalid
 	}
 	if sendArgError != "" {
-		errEvt := sce.NewPlatformError(ABadSendArgumentDiscardsItsMessageEventErrorExecution, sendArgError)
+		errEvt := sce.NewPlatformError(ABadSendArgumentDiscardsItsMessageEventErrorExecution, sendArgReason, sendArgError)
 		errEvt.Metadata.SendID = sendID
 		engine.Raise(errEvt)
 		return  // W3C SCXML 4.9: the error ends the block
@@ -1115,7 +1139,7 @@ func (p *ABadSendArgumentDiscardsItsMessagePolicy) ExecuteEntryActions(state ABa
 
 	// W3C SCXML 5.3: <assign location="after" expr="after + 1">
 	if err := p.assignVariable(`after`, `_scxml_add(after, 1)`); err != nil {
-		engine.Raise(sce.NewPlatformError(ABadSendArgumentDiscardsItsMessageEventErrorExecution, "<assign> to 'after' failed"))
+		engine.Raise(sce.NewPlatformError(ABadSendArgumentDiscardsItsMessageEventErrorExecution, sceerrorreason.ErrorReasonAssignmentFailed, "<assign> to 'after' failed"))
 		return  // W3C SCXML 4.9: the error ends the block
 	}
 
@@ -1128,17 +1152,21 @@ func (p *ABadSendArgumentDiscardsItsMessagePolicy) ExecuteEntryActions(state ABa
 	{
 	p.assertScriptSession()
 	sendArgError := ""
+	// Why the argument failed, a code of sce:std/engine/error_reason
+	// (docs/adr/0106 #111), set with every sentence below.
+	var sendArgReason sce.ErrorReason
+	_ = sendArgReason
 	if sendArgError == "" {
 		// W3C SCXML 6.2: a type the platform does not support is the same
 		// error as one that cannot be evaluated.
 		if v, err := p.ScriptEngine.EvaluateExpression(p.SessionID, `obj.missing.deep`); err != nil {
-			sendArgError = "<send> typeexpr could not be evaluated"
+			sendArgError, sendArgReason = "<send> typeexpr could not be evaluated", sceerrorreason.ErrorReasonExpressionFailed
 		} else if !sce.IsSupportedSendType(sce.ToWireString(v)) {
-			sendArgError = "<send> typeexpr names a processor this platform does not support"
+			sendArgError, sendArgReason = "<send> typeexpr names a processor this platform does not support", sceerrorreason.ErrorReasonSendTypeUnsupported
 		}
 	}
 	if sendArgError != "" {
-		errEvt := sce.NewPlatformError(ABadSendArgumentDiscardsItsMessageEventErrorExecution, sendArgError)
+		errEvt := sce.NewPlatformError(ABadSendArgumentDiscardsItsMessageEventErrorExecution, sendArgReason, sendArgError)
 		errEvt.Metadata.SendID = "__send_5"
 		engine.Raise(errEvt)
 		return  // W3C SCXML 4.9: the error ends the block
@@ -1158,7 +1186,7 @@ func (p *ABadSendArgumentDiscardsItsMessagePolicy) ExecuteEntryActions(state ABa
 
 	// W3C SCXML 5.3: <assign location="after" expr="after + 1">
 	if err := p.assignVariable(`after`, `_scxml_add(after, 1)`); err != nil {
-		engine.Raise(sce.NewPlatformError(ABadSendArgumentDiscardsItsMessageEventErrorExecution, "<assign> to 'after' failed"))
+		engine.Raise(sce.NewPlatformError(ABadSendArgumentDiscardsItsMessageEventErrorExecution, sceerrorreason.ErrorReasonAssignmentFailed, "<assign> to 'after' failed"))
 		return  // W3C SCXML 4.9: the error ends the block
 	}
 
@@ -1276,7 +1304,7 @@ func (p *ABadSendArgumentDiscardsItsMessagePolicy) ExecuteTransitionContent(sour
 
 	// W3C SCXML 5.3: <assign location="errors" expr="errors + 1">
 	if err := p.assignVariable(`errors`, `_scxml_add(errors, 1)`); err != nil {
-		engine.Raise(sce.NewPlatformError(ABadSendArgumentDiscardsItsMessageEventErrorExecution, "<assign> to 'errors' failed"))
+		engine.Raise(sce.NewPlatformError(ABadSendArgumentDiscardsItsMessageEventErrorExecution, sceerrorreason.ErrorReasonAssignmentFailed, "<assign> to 'errors' failed"))
 		return  // W3C SCXML 4.9: the error ends the block
 	}
 
@@ -1288,7 +1316,7 @@ func (p *ABadSendArgumentDiscardsItsMessagePolicy) ExecuteTransitionContent(sour
 
 	// W3C SCXML 5.3: <assign location="sent" expr="sent + 1">
 	if err := p.assignVariable(`sent`, `_scxml_add(sent, 1)`); err != nil {
-		engine.Raise(sce.NewPlatformError(ABadSendArgumentDiscardsItsMessageEventErrorExecution, "<assign> to 'sent' failed"))
+		engine.Raise(sce.NewPlatformError(ABadSendArgumentDiscardsItsMessageEventErrorExecution, sceerrorreason.ErrorReasonAssignmentFailed, "<assign> to 'sent' failed"))
 		return  // W3C SCXML 4.9: the error ends the block
 	}
 

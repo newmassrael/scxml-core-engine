@@ -557,7 +557,7 @@ class StaticRealStateMachine(
 
             vLevel = vLevel * 2.0 + vRate
 
-            if (if (vSamples.size < 3) { vSamples = vSamples + (vLevel); false } else { raisePlatformError(StaticRealEvent.Error.Execution, "<sce:append target='samples'>: the list already holds its capacity of 3"); true }) {
+            if (if (vSamples.size < 3) { vSamples = vSamples + (vLevel); false } else { raisePlatformError(StaticRealEvent.Error.Execution, ErrorReason.ASSIGNMENT_FAILED, "<sce:append target='samples'>: the list already holds its capacity of 3"); true }) {
                 return
             }
     }
@@ -589,7 +589,7 @@ class StaticRealStateMachine(
     private fun transitionContentOfLowAt5() {
                 // SCE-MAP: static_real.scxml:53 :: low :: _transition_5
 
-            if (try { vErrors = com.sce.forge.runtime.SceChecked.add(vErrors, 1.toUInt()); false } catch (_: com.sce.forge.runtime.AlgorithmFailure) { raisePlatformError(StaticRealEvent.Error.Execution, "<assign location='errors'>: an integer operation overflowed or failed"); true }) {
+            if (try { vErrors = com.sce.forge.runtime.SceChecked.add(vErrors, 1.toUInt()); false } catch (_: com.sce.forge.runtime.AlgorithmFailure) { raisePlatformError(StaticRealEvent.Error.Execution, ErrorReason.EXPRESSION_FAILED, "<assign location='errors'>: an integer operation overflowed or failed"); true }) {
                 return
             }
     }

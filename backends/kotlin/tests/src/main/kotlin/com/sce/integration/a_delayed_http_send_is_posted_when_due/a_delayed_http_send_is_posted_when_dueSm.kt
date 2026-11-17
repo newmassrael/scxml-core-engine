@@ -197,7 +197,7 @@ class ADelayedHttpSendIsPostedWhenDueStateMachine(
             try {
                 engine.setVariable(sid, "dynamicUrl", engine.evaluateExpr(sid, com.sce.runtime.ScriptSource.lua("\"http://127.0.0.1:18081/dynamic\"", "'http://127.0.0.1:18081/dynamic'")))
             } catch (e: Exception) {
-                raisePlatformError(ADelayedHttpSendIsPostedWhenDueEvent.Error.Execution, "<data id='dynamicUrl'> expr failed to evaluate")
+                raisePlatformError(ADelayedHttpSendIsPostedWhenDueEvent.Error.Execution, ErrorReason.EXPRESSION_FAILED, "<data id='dynamicUrl'> expr failed to evaluate")
             }
         }
     }
@@ -227,14 +227,14 @@ class ADelayedHttpSendIsPostedWhenDueStateMachine(
 
     // W3C SCXML 5.9.1: a cond that cannot be evaluated raises error.execution;
     // `null` says so, where a bare `false` could not.
-    private fun evaluateGuardRaising(guardExpr: com.sce.runtime.ScriptSource, reason: String): Boolean? {
+    private fun evaluateGuardRaising(guardExpr: com.sce.runtime.ScriptSource, detail: String): Boolean? {
         assertScriptSession()
         val engine = scriptEngine ?: error("scriptEngine is required (codegen invariant: needs_script_engine == true)")
         val sid = scriptSessionId ?: error("scriptSessionId is established by the start (codegen invariant)")
         return try {
             engine.evaluateCondition(sid, guardExpr)
         } catch (e: Exception) {
-            raisePlatformError(ADelayedHttpSendIsPostedWhenDueEvent.Error.Execution, reason)
+            raisePlatformError(ADelayedHttpSendIsPostedWhenDueEvent.Error.Execution, ErrorReason.EXPRESSION_FAILED, detail)
             null
         }
     }
@@ -275,7 +275,7 @@ class ADelayedHttpSendIsPostedWhenDueStateMachine(
         return try {
             engine.evaluateExpr(sid, serialized)?.toString() ?: ""
         } catch (e: Exception) {
-            raisePlatformError(ADelayedHttpSendIsPostedWhenDueEvent.Error.Execution, "an expression could not be serialised to JSON")
+            raisePlatformError(ADelayedHttpSendIsPostedWhenDueEvent.Error.Execution, ErrorReason.EXPRESSION_FAILED, "an expression could not be serialised to JSON")
             ""
         }
     }
@@ -296,7 +296,7 @@ class ADelayedHttpSendIsPostedWhenDueStateMachine(
             engine.assign(sid, location, expr)
             true
         } catch (e: Exception) {
-            raisePlatformError(ADelayedHttpSendIsPostedWhenDueEvent.Error.Execution, "<assign> failed")
+            raisePlatformError(ADelayedHttpSendIsPostedWhenDueEvent.Error.Execution, ErrorReason.ASSIGNMENT_FAILED, "<assign> failed")
             false
         }
     }
@@ -312,7 +312,7 @@ class ADelayedHttpSendIsPostedWhenDueStateMachine(
             engine.executeScript(sid, script)
             true
         } catch (e: Exception) {
-            raisePlatformError(ADelayedHttpSendIsPostedWhenDueEvent.Error.Execution, "<script> failed to execute")
+            raisePlatformError(ADelayedHttpSendIsPostedWhenDueEvent.Error.Execution, ErrorReason.SCRIPT_FAILED, "<script> failed to execute")
             false
         }
     }
@@ -460,11 +460,11 @@ class ADelayedHttpSendIsPostedWhenDueStateMachine(
             val sendDelayText = try {
                 valueToWireString(argEngine.evaluateExpr(argSid, com.sce.runtime.ScriptSource.lua("\"0ms\"", "'0ms'")))
             } catch (_: Exception) {
-                raisePlatformError(ADelayedHttpSendIsPostedWhenDueEvent.Error.Execution, "<send> delayexpr could not be evaluated", "__send_2")
+                raisePlatformError(ADelayedHttpSendIsPostedWhenDueEvent.Error.Execution, ErrorReason.EXPRESSION_FAILED, "<send> delayexpr could not be evaluated", "__send_2")
                 return@send true
             }
             val sendDelayMs = com.sce.runtime.SendHelper.parseDelayMs(sendDelayText) ?: run {
-                raisePlatformError(ADelayedHttpSendIsPostedWhenDueEvent.Error.Execution, "<send> delayexpr is not a CSS2 time", "__send_2")
+                raisePlatformError(ADelayedHttpSendIsPostedWhenDueEvent.Error.Execution, ErrorReason.SEND_DELAY_INVALID, "<send> delayexpr is not a CSS2 time", "__send_2")
                 return@send true
             }
             val sendData = ""
@@ -520,19 +520,19 @@ class ADelayedHttpSendIsPostedWhenDueStateMachine(
             val _rt = try {
                 valueToWireString(argEngine.evaluateExpr(argSid, com.sce.runtime.ScriptSource.lua("dynamicUrl", "dynamicUrl")))
             } catch (_: Exception) {
-                raisePlatformError(ADelayedHttpSendIsPostedWhenDueEvent.Error.Execution, "<send> targetexpr could not be evaluated", "dynamic")
+                raisePlatformError(ADelayedHttpSendIsPostedWhenDueEvent.Error.Execution, ErrorReason.EXPRESSION_FAILED, "<send> targetexpr could not be evaluated", "dynamic")
                 return@send true
             }
             if (com.sce.runtime.SendHelper.isInvalidTarget(_rt)) {
                 // W3C SCXML 6.2 (test194): refused as a static one is.
-                raisePlatformError(ADelayedHttpSendIsPostedWhenDueEvent.Error.Execution, "<send> targetexpr produced a target this processor cannot address", "dynamic")
+                raisePlatformError(ADelayedHttpSendIsPostedWhenDueEvent.Error.Execution, ErrorReason.SEND_TARGET_INVALID, "<send> targetexpr produced a target this processor cannot address", "dynamic")
                 return@send true
             }
             if (com.sce.runtime.SendHelper.isUnreachableTarget(_rt)) {
                 // W3C SCXML C.1 (test496): a target that names nothing is not
                 // reachable — error.communication, nothing delivered, and the
                 // error ends the block as any other would (W3C SCXML 4.9).
-                raisePlatformError(ADelayedHttpSendIsPostedWhenDueEvent.Error.Communication, "<send> targetexpr evaluated to nothing, so there is no target to reach", "dynamic")
+                raisePlatformError(ADelayedHttpSendIsPostedWhenDueEvent.Error.Communication, ErrorReason.TARGET_UNREACHABLE, "<send> targetexpr evaluated to nothing, so there is no target to reach", "dynamic")
                 return@send true
             }
             val sendPayload = mutableMapOf<String, Any?>()
@@ -545,7 +545,7 @@ class ADelayedHttpSendIsPostedWhenDueStateMachine(
             }
             // W3C SCXML C.2: BasicHTTP send — one arm for a static and a dynamic target
             if (!_rt.startsWith("http://") && !_rt.startsWith("https://")) {
-                raisePlatformError(ADelayedHttpSendIsPostedWhenDueEvent.Error.Communication, "<send> over BasicHTTPEventProcessor resolved a target that is not an http(s) URL", "dynamic")
+                raisePlatformError(ADelayedHttpSendIsPostedWhenDueEvent.Error.Communication, ErrorReason.HTTP_TARGET_INVALID, "<send> over BasicHTTPEventProcessor resolved a target that is not an http(s) URL", "dynamic")
                 return@send true
             }
             val httpContent = ""

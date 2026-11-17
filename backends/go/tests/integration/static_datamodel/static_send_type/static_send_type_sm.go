@@ -31,6 +31,7 @@ import (
 	"time"
 
 	sce "github.com/newmassrael/sce-go-runtime"
+	sceerrorreason "github.com/newmassrael/sce-go-runtime/generated/error_reason"
 	scealgorithm "github.com/newmassrael/sce-forge-runtime/algorithm"
 )
 
@@ -40,6 +41,9 @@ var (
 	_ = filepath.Join
 	_ = strings.HasPrefix
 	_ = time.Duration(0)
+	// Why an error.* event is raised (sce:std/engine/error_reason,
+	// docs/adr/0106 #111); a machine that raises none still imports it.
+	_ = sceerrorreason.ErrorReasonExpressionFailed
 	_ scealgorithm.Failure
 )
 
@@ -885,7 +889,7 @@ func (p *StaticSendTypePolicy) ExecuteTransitionContent(source StaticSendTypeSta
 	{
 	// W3C SCXML 6.2: Unsupported send type "sce:undeclared-type" raises error.execution
 	{
-		errEvt := sce.NewPlatformError(StaticSendTypeEventErrorExecution, "<send type='sce:undeclared-type'> names a processor this platform does not support")
+		errEvt := sce.NewPlatformError(StaticSendTypeEventErrorExecution, sceerrorreason.ErrorReasonSendTypeUnsupported, "<send type='sce:undeclared-type'> names a processor this platform does not support")
 		errEvt.Metadata.SendID = "__send_0"
 		engine.Raise(errEvt)
 	}
@@ -900,7 +904,7 @@ func (p *StaticSendTypePolicy) ExecuteTransitionContent(source StaticSendTypeSta
 			func() {
 
 
-	if func() bool { var sceFailure scealgorithm.Failure; sceValue := scealgorithm.Bounded(&sceFailure, "http://www.w3.org/TR/scxml/#SCXMLEventProcessor", 64); if sceFailure.Failed() { engine.Raise(sce.NewPlatformError(StaticSendTypeEventErrorExecution, "<assign location='kind'>: an integer operation overflowed or failed")); return true }; p.vKind = sceValue; return false }() {
+	if func() bool { var sceFailure scealgorithm.Failure; sceValue := scealgorithm.Bounded(&sceFailure, "http://www.w3.org/TR/scxml/#SCXMLEventProcessor", 64); if sceFailure.Failed() { engine.Raise(sce.NewPlatformError(StaticSendTypeEventErrorExecution, sceerrorreason.ErrorReasonExpressionFailed, "<assign location='kind'>: an integer operation overflowed or failed")); return true }; p.vKind = sceValue; return false }() {
 		return  // W3C SCXML 4.9: the error ends the block
 	}
 
@@ -911,7 +915,7 @@ func (p *StaticSendTypePolicy) ExecuteTransitionContent(source StaticSendTypeSta
 			func() {
 
 
-	if func() bool { var sceFailure scealgorithm.Failure; sceValue := scealgorithm.Bounded(&sceFailure, "urn:example:no-such-processor", 64); if sceFailure.Failed() { engine.Raise(sce.NewPlatformError(StaticSendTypeEventErrorExecution, "<assign location='kind'>: an integer operation overflowed or failed")); return true }; p.vKind = sceValue; return false }() {
+	if func() bool { var sceFailure scealgorithm.Failure; sceValue := scealgorithm.Bounded(&sceFailure, "urn:example:no-such-processor", 64); if sceFailure.Failed() { engine.Raise(sce.NewPlatformError(StaticSendTypeEventErrorExecution, sceerrorreason.ErrorReasonExpressionFailed, "<assign location='kind'>: an integer operation overflowed or failed")); return true }; p.vKind = sceValue; return false }() {
 		return  // W3C SCXML 4.9: the error ends the block
 	}
 
@@ -922,7 +926,7 @@ func (p *StaticSendTypePolicy) ExecuteTransitionContent(source StaticSendTypeSta
 			func() {
 
 
-	if func() bool { var sceFailure scealgorithm.Failure; sceValue := scealgorithm.Bounded(&sceFailure, "http://www.w3.org/TR/scxml/#BasicHTTPEventProcessor", 64); if sceFailure.Failed() { engine.Raise(sce.NewPlatformError(StaticSendTypeEventErrorExecution, "<assign location='kind'>: an integer operation overflowed or failed")); return true }; p.vKind = sceValue; return false }() {
+	if func() bool { var sceFailure scealgorithm.Failure; sceValue := scealgorithm.Bounded(&sceFailure, "http://www.w3.org/TR/scxml/#BasicHTTPEventProcessor", 64); if sceFailure.Failed() { engine.Raise(sce.NewPlatformError(StaticSendTypeEventErrorExecution, sceerrorreason.ErrorReasonExpressionFailed, "<assign location='kind'>: an integer operation overflowed or failed")); return true }; p.vKind = sceValue; return false }() {
 		return  // W3C SCXML 4.9: the error ends the block
 	}
 
@@ -933,7 +937,7 @@ func (p *StaticSendTypePolicy) ExecuteTransitionContent(source StaticSendTypeSta
 			func() {
 
 
-	if func() bool { var sceFailure scealgorithm.Failure; sceValue := scealgorithm.AddUint32(&sceFailure, p.vLanded, 1); if sceFailure.Failed() { engine.Raise(sce.NewPlatformError(StaticSendTypeEventErrorExecution, "<assign location='landed'>: an integer operation overflowed or failed")); return true }; p.vLanded = sceValue; return false }() {
+	if func() bool { var sceFailure scealgorithm.Failure; sceValue := scealgorithm.AddUint32(&sceFailure, p.vLanded, 1); if sceFailure.Failed() { engine.Raise(sce.NewPlatformError(StaticSendTypeEventErrorExecution, sceerrorreason.ErrorReasonExpressionFailed, "<assign location='landed'>: an integer operation overflowed or failed")); return true }; p.vLanded = sceValue; return false }() {
 		return  // W3C SCXML 4.9: the error ends the block
 	}
 
@@ -944,7 +948,7 @@ func (p *StaticSendTypePolicy) ExecuteTransitionContent(source StaticSendTypeSta
 			func() {
 
 
-	if func() bool { var sceFailure scealgorithm.Failure; sceValue := scealgorithm.AddUint32(&sceFailure, p.vRefused, 1); if sceFailure.Failed() { engine.Raise(sce.NewPlatformError(StaticSendTypeEventErrorExecution, "<assign location='refused'>: an integer operation overflowed or failed")); return true }; p.vRefused = sceValue; return false }() {
+	if func() bool { var sceFailure scealgorithm.Failure; sceValue := scealgorithm.AddUint32(&sceFailure, p.vRefused, 1); if sceFailure.Failed() { engine.Raise(sce.NewPlatformError(StaticSendTypeEventErrorExecution, sceerrorreason.ErrorReasonExpressionFailed, "<assign location='refused'>: an integer operation overflowed or failed")); return true }; p.vRefused = sceValue; return false }() {
 		return  // W3C SCXML 4.9: the error ends the block
 	}
 

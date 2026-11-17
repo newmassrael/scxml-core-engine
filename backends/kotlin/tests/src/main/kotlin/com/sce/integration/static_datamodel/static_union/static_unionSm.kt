@@ -1349,7 +1349,7 @@ class StaticUnionStateMachine(
 
             if (pendingShapesSentPayload!!.one.kind == StaticUnionKindEnum.DOT) {
 
-            if (try { vDots = com.sce.forge.runtime.SceChecked.add(vDots, 1.toUInt()); false } catch (_: com.sce.forge.runtime.AlgorithmFailure) { raisePlatformError(StaticUnionEvent.Error.Execution, "<assign location='dots'>: an integer operation overflowed or failed"); true }) {
+            if (try { vDots = com.sce.forge.runtime.SceChecked.add(vDots, 1.toUInt()); false } catch (_: com.sce.forge.runtime.AlgorithmFailure) { raisePlatformError(StaticUnionEvent.Error.Execution, ErrorReason.EXPRESSION_FAILED, "<assign location='dots'>: an integer operation overflowed or failed"); true }) {
                 return
             }
             } else if (pendingShapesSentPayload!!.one.kind == StaticUnionKindEnum.CIRCLE || pendingShapesSentPayload!!.one.kind == StaticUnionKindEnum.DISC) {
@@ -1365,13 +1365,13 @@ class StaticUnionStateMachine(
 
             for (point in pendingShapesSentPayload!!.one.provenPath().points) {
 
-            if (try { vPoints = com.sce.forge.runtime.SceChecked.add(vPoints, 1.toUInt()); false } catch (_: com.sce.forge.runtime.AlgorithmFailure) { raisePlatformError(StaticUnionEvent.Error.Execution, "<assign location='points'>: an integer operation overflowed or failed"); true }) {
+            if (try { vPoints = com.sce.forge.runtime.SceChecked.add(vPoints, 1.toUInt()); false } catch (_: com.sce.forge.runtime.AlgorithmFailure) { raisePlatformError(StaticUnionEvent.Error.Execution, ErrorReason.EXPRESSION_FAILED, "<assign location='points'>: an integer operation overflowed or failed"); true }) {
                 return
             }
             }
             } else {
 
-            if (try { vLabels = com.sce.forge.runtime.SceChecked.add(vLabels, 1.toUInt()); false } catch (_: com.sce.forge.runtime.AlgorithmFailure) { raisePlatformError(StaticUnionEvent.Error.Execution, "<assign location='labels'>: an integer operation overflowed or failed"); true }) {
+            if (try { vLabels = com.sce.forge.runtime.SceChecked.add(vLabels, 1.toUInt()); false } catch (_: com.sce.forge.runtime.AlgorithmFailure) { raisePlatformError(StaticUnionEvent.Error.Execution, ErrorReason.EXPRESSION_FAILED, "<assign location='labels'>: an integer operation overflowed or failed"); true }) {
                 return
             }
             }
@@ -1379,7 +1379,7 @@ class StaticUnionStateMachine(
 
             for (shape in pendingShapesSentPayload!!.many) {
 
-            if (try { vManyShapes = com.sce.forge.runtime.SceChecked.add(vManyShapes, 1.toUInt()); false } catch (_: com.sce.forge.runtime.AlgorithmFailure) { raisePlatformError(StaticUnionEvent.Error.Execution, "<assign location='many_shapes'>: an integer operation overflowed or failed"); true }) {
+            if (try { vManyShapes = com.sce.forge.runtime.SceChecked.add(vManyShapes, 1.toUInt()); false } catch (_: com.sce.forge.runtime.AlgorithmFailure) { raisePlatformError(StaticUnionEvent.Error.Execution, ErrorReason.EXPRESSION_FAILED, "<assign location='many_shapes'>: an integer operation overflowed or failed"); true }) {
                 return
             }
 
@@ -1402,7 +1402,7 @@ class StaticUnionStateMachine(
 
             if (vBuilt.kind == StaticUnionKindEnum.RECT) {
 
-            if (try { vBuilt = StaticUnionUnionShapeUnion.RECT(vBuilt.provenRect().copy(width = com.sce.forge.runtime.SceChecked.add(vBuilt.provenRect().width, 1.toUShort()))); false } catch (_: com.sce.forge.runtime.AlgorithmFailure) { raisePlatformError(StaticUnionEvent.Error.Execution, "<assign location='built.width'>: an integer operation overflowed or failed"); true }) {
+            if (try { vBuilt = StaticUnionUnionShapeUnion.RECT(vBuilt.provenRect().copy(width = com.sce.forge.runtime.SceChecked.add(vBuilt.provenRect().width, 1.toUShort()))); false } catch (_: com.sce.forge.runtime.AlgorithmFailure) { raisePlatformError(StaticUnionEvent.Error.Execution, ErrorReason.EXPRESSION_FAILED, "<assign location='built.width'>: an integer operation overflowed or failed"); true }) {
                 return
             }
             }
@@ -1448,7 +1448,7 @@ class StaticUnionStateMachine(
     private fun transitionContentOfIdleAt4() {
                 // SCE-MAP: static_union.scxml:164 :: idle :: _transition_4
 
-            if (try { vBoards = com.sce.forge.runtime.SceChecked.add(vBoards, 1.toUInt()); false } catch (_: com.sce.forge.runtime.AlgorithmFailure) { raisePlatformError(StaticUnionEvent.Error.Execution, "<assign location='boards'>: an integer operation overflowed or failed"); true }) {
+            if (try { vBoards = com.sce.forge.runtime.SceChecked.add(vBoards, 1.toUInt()); false } catch (_: com.sce.forge.runtime.AlgorithmFailure) { raisePlatformError(StaticUnionEvent.Error.Execution, ErrorReason.EXPRESSION_FAILED, "<assign location='boards'>: an integer operation overflowed or failed"); true }) {
                 return
             }
     }
@@ -1459,15 +1459,15 @@ class StaticUnionStateMachine(
                     return
                 }
 
-            if (try { vPicked = com.sce.forge.runtime.SceChecked.at(pendingShapesPickedPayload!!.many, (pendingShapesPickedPayload!!.at).toLong()); false } catch (_: com.sce.forge.runtime.AlgorithmFailure) { raisePlatformError(StaticUnionEvent.Error.Execution, "<assign location='picked'>: an integer operation overflowed or failed"); true }) {
+            if (try { vPicked = com.sce.forge.runtime.SceChecked.at(pendingShapesPickedPayload!!.many, (pendingShapesPickedPayload!!.at).toLong()); false } catch (_: com.sce.forge.runtime.AlgorithmFailure) { raisePlatformError(StaticUnionEvent.Error.Execution, ErrorReason.EXPRESSION_FAILED, "<assign location='picked'>: an integer operation overflowed or failed"); true }) {
                 return
             }
 
-            if (try { vPickedMaybe = com.sce.forge.runtime.SceChecked.at(pendingShapesPickedPayload!!.many, (pendingShapesPickedPayload!!.at).toLong()); false } catch (_: com.sce.forge.runtime.AlgorithmFailure) { raisePlatformError(StaticUnionEvent.Error.Execution, "<assign location='picked_maybe'>: an integer operation overflowed or failed"); true }) {
+            if (try { vPickedMaybe = com.sce.forge.runtime.SceChecked.at(pendingShapesPickedPayload!!.many, (pendingShapesPickedPayload!!.at).toLong()); false } catch (_: com.sce.forge.runtime.AlgorithmFailure) { raisePlatformError(StaticUnionEvent.Error.Execution, ErrorReason.EXPRESSION_FAILED, "<assign location='picked_maybe'>: an integer operation overflowed or failed"); true }) {
                 return
             }
 
-            if (try { vPicks = com.sce.forge.runtime.SceChecked.add(vPicks, 1.toUInt()); false } catch (_: com.sce.forge.runtime.AlgorithmFailure) { raisePlatformError(StaticUnionEvent.Error.Execution, "<assign location='picks'>: an integer operation overflowed or failed"); true }) {
+            if (try { vPicks = com.sce.forge.runtime.SceChecked.add(vPicks, 1.toUInt()); false } catch (_: com.sce.forge.runtime.AlgorithmFailure) { raisePlatformError(StaticUnionEvent.Error.Execution, ErrorReason.EXPRESSION_FAILED, "<assign location='picks'>: an integer operation overflowed or failed"); true }) {
                 return
             }
 
@@ -1484,11 +1484,11 @@ class StaticUnionStateMachine(
                     return
                 }
 
-            if (try { vPicked = com.sce.forge.runtime.SceChecked.at(com.sce.forge.runtime.SceChecked.at(pendingShapesGroupedPayload!!.groups, (pendingShapesGroupedPayload!!.at).toLong()).shapes, (pendingShapesGroupedPayload!!.inner).toLong()); false } catch (_: com.sce.forge.runtime.AlgorithmFailure) { raisePlatformError(StaticUnionEvent.Error.Execution, "<assign location='picked'>: an integer operation overflowed or failed"); true }) {
+            if (try { vPicked = com.sce.forge.runtime.SceChecked.at(com.sce.forge.runtime.SceChecked.at(pendingShapesGroupedPayload!!.groups, (pendingShapesGroupedPayload!!.at).toLong()).shapes, (pendingShapesGroupedPayload!!.inner).toLong()); false } catch (_: com.sce.forge.runtime.AlgorithmFailure) { raisePlatformError(StaticUnionEvent.Error.Execution, ErrorReason.EXPRESSION_FAILED, "<assign location='picked'>: an integer operation overflowed or failed"); true }) {
                 return
             }
 
-            if (try { vPicks = com.sce.forge.runtime.SceChecked.add(vPicks, 1.toUInt()); false } catch (_: com.sce.forge.runtime.AlgorithmFailure) { raisePlatformError(StaticUnionEvent.Error.Execution, "<assign location='picks'>: an integer operation overflowed or failed"); true }) {
+            if (try { vPicks = com.sce.forge.runtime.SceChecked.add(vPicks, 1.toUInt()); false } catch (_: com.sce.forge.runtime.AlgorithmFailure) { raisePlatformError(StaticUnionEvent.Error.Execution, ErrorReason.EXPRESSION_FAILED, "<assign location='picks'>: an integer operation overflowed or failed"); true }) {
                 return
             }
 
@@ -1505,11 +1505,11 @@ class StaticUnionStateMachine(
                     return
                 }
 
-            if (try { vPicked = com.sce.forge.runtime.SceChecked.at(com.sce.forge.runtime.SceChecked.at(pendingShapesRowedPayload!!.rows, (pendingShapesRowedPayload!!.at).toLong()), (pendingShapesRowedPayload!!.inner).toLong()); false } catch (_: com.sce.forge.runtime.AlgorithmFailure) { raisePlatformError(StaticUnionEvent.Error.Execution, "<assign location='picked'>: an integer operation overflowed or failed"); true }) {
+            if (try { vPicked = com.sce.forge.runtime.SceChecked.at(com.sce.forge.runtime.SceChecked.at(pendingShapesRowedPayload!!.rows, (pendingShapesRowedPayload!!.at).toLong()), (pendingShapesRowedPayload!!.inner).toLong()); false } catch (_: com.sce.forge.runtime.AlgorithmFailure) { raisePlatformError(StaticUnionEvent.Error.Execution, ErrorReason.EXPRESSION_FAILED, "<assign location='picked'>: an integer operation overflowed or failed"); true }) {
                 return
             }
 
-            if (try { vPicks = com.sce.forge.runtime.SceChecked.add(vPicks, 1.toUInt()); false } catch (_: com.sce.forge.runtime.AlgorithmFailure) { raisePlatformError(StaticUnionEvent.Error.Execution, "<assign location='picks'>: an integer operation overflowed or failed"); true }) {
+            if (try { vPicks = com.sce.forge.runtime.SceChecked.add(vPicks, 1.toUInt()); false } catch (_: com.sce.forge.runtime.AlgorithmFailure) { raisePlatformError(StaticUnionEvent.Error.Execution, ErrorReason.EXPRESSION_FAILED, "<assign location='picks'>: an integer operation overflowed or failed"); true }) {
                 return
             }
 
@@ -1523,7 +1523,7 @@ class StaticUnionStateMachine(
     private fun transitionContentOfIdleAt8() {
                 // SCE-MAP: static_union.scxml:203 :: idle :: _transition_8
 
-            if (try { vRefusals = com.sce.forge.runtime.SceChecked.add(vRefusals, 1.toUInt()); false } catch (_: com.sce.forge.runtime.AlgorithmFailure) { raisePlatformError(StaticUnionEvent.Error.Execution, "<assign location='refusals'>: an integer operation overflowed or failed"); true }) {
+            if (try { vRefusals = com.sce.forge.runtime.SceChecked.add(vRefusals, 1.toUInt()); false } catch (_: com.sce.forge.runtime.AlgorithmFailure) { raisePlatformError(StaticUnionEvent.Error.Execution, ErrorReason.EXPRESSION_FAILED, "<assign location='refusals'>: an integer operation overflowed or failed"); true }) {
                 return
             }
     }

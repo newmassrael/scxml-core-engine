@@ -354,7 +354,7 @@ class AutoforwardDequeuePointStateMachine(
             // refused a target naming no invocation above; one that is not
             // running is not there to reach (W3C SCXML C.1).
             if (!sendToChild("inv_probe", "mark", sendData)) {
-                raisePlatformError(AutoforwardDequeuePointEvent.Error.Communication, "<send target='#_inv_probe'> names an invocation that is not running", "__send_2")
+                raisePlatformError(AutoforwardDequeuePointEvent.Error.Communication, ErrorReason.TARGET_UNREACHABLE, "<send target='#_inv_probe'> names an invocation that is not running", "__send_2")
                 return@send true
             }
             false

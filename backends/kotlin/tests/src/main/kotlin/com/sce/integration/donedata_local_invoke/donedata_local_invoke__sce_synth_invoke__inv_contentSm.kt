@@ -158,14 +158,14 @@ class DonedataLocalInvokeSceSynthInvokeInvContentStateMachine(
 
     // W3C SCXML 5.9.1: a cond that cannot be evaluated raises error.execution;
     // `null` says so, where a bare `false` could not.
-    private fun evaluateGuardRaising(guardExpr: com.sce.runtime.ScriptSource, reason: String): Boolean? {
+    private fun evaluateGuardRaising(guardExpr: com.sce.runtime.ScriptSource, detail: String): Boolean? {
         assertScriptSession()
         val engine = scriptEngine ?: error("scriptEngine is required (codegen invariant: needs_script_engine == true)")
         val sid = scriptSessionId ?: error("scriptSessionId is established by the start (codegen invariant)")
         return try {
             engine.evaluateCondition(sid, guardExpr)
         } catch (e: Exception) {
-            raisePlatformError(DonedataLocalInvokeSceSynthInvokeInvContentEvent.Error.Execution, reason)
+            raisePlatformError(DonedataLocalInvokeSceSynthInvokeInvContentEvent.Error.Execution, ErrorReason.EXPRESSION_FAILED, detail)
             null
         }
     }
@@ -206,7 +206,7 @@ class DonedataLocalInvokeSceSynthInvokeInvContentStateMachine(
         return try {
             engine.evaluateExpr(sid, serialized)?.toString() ?: ""
         } catch (e: Exception) {
-            raisePlatformError(DonedataLocalInvokeSceSynthInvokeInvContentEvent.Error.Execution, "an expression could not be serialised to JSON")
+            raisePlatformError(DonedataLocalInvokeSceSynthInvokeInvContentEvent.Error.Execution, ErrorReason.EXPRESSION_FAILED, "an expression could not be serialised to JSON")
             ""
         }
     }
@@ -227,7 +227,7 @@ class DonedataLocalInvokeSceSynthInvokeInvContentStateMachine(
             engine.assign(sid, location, expr)
             true
         } catch (e: Exception) {
-            raisePlatformError(DonedataLocalInvokeSceSynthInvokeInvContentEvent.Error.Execution, "<assign> failed")
+            raisePlatformError(DonedataLocalInvokeSceSynthInvokeInvContentEvent.Error.Execution, ErrorReason.ASSIGNMENT_FAILED, "<assign> failed")
             false
         }
     }
@@ -243,7 +243,7 @@ class DonedataLocalInvokeSceSynthInvokeInvContentStateMachine(
             engine.executeScript(sid, script)
             true
         } catch (e: Exception) {
-            raisePlatformError(DonedataLocalInvokeSceSynthInvokeInvContentEvent.Error.Execution, "<script> failed to execute")
+            raisePlatformError(DonedataLocalInvokeSceSynthInvokeInvContentEvent.Error.Execution, ErrorReason.SCRIPT_FAILED, "<script> failed to execute")
             false
         }
     }
@@ -346,7 +346,7 @@ class DonedataLocalInvokeSceSynthInvokeInvContentStateMachine(
                         // C++ DoneDataHelper::evaluateContent: EventDataHelper::scriptValueToJsonString
                         doneEventData = if (contentResult != null) valueToJson(contentResult) else ""
                     } catch (_: Exception) {
-                        raisePlatformError(DonedataLocalInvokeSceSynthInvokeInvContentEvent.Error.Execution, "<donedata> <content expr> failed to evaluate")
+                        raisePlatformError(DonedataLocalInvokeSceSynthInvokeInvContentEvent.Error.Execution, ErrorReason.EXPRESSION_FAILED, "<donedata> <content expr> failed to evaluate")
                     }
                     // W3C SCXML 5.5 + 6.3.1: stash onto the engine so the invoking parent's
                     // startInvoke completion callback can lift the payload onto

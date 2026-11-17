@@ -592,7 +592,7 @@ class ParamAskerStateMachine(
             // event as an undeclared type, so a wiring mistake cannot read
             // as success.
             if (hostServed == null && !hasEventProcessor("http://sce.dev/ext/test-port")) {
-                raisePlatformError(ParamAskerEvent.Error.Execution, "<send type='http://sce.dev/ext/test-port'> names a processor the host declared but never registered", "__send_0")
+                raisePlatformError(ParamAskerEvent.Error.Execution, ErrorReason.PROCESSOR_UNREGISTERED, "<send type='http://sce.dev/ext/test-port'> names a processor the host declared but never registered", "__send_0")
             }
             false
             }) {

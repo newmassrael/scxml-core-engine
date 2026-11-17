@@ -355,7 +355,7 @@ public final class StaticInvokeEndingOrderSceSynthInvokeWorkerPolicy: InvocableP
             sessionID: sessionID
         )
         if !engine.performHostInvoke(request) {
-            engine.raise(EventWithMetadata.platformError(StaticInvokeEndingOrderSceSynthInvokeWorkerEvent.errorExecution, message: "<invoke> names an invoker the host declared but never registered"))
+            engine.raise(EventWithMetadata.platformError(StaticInvokeEndingOrderSceSynthInvokeWorkerEvent.errorExecution, reason: .processorUnregistered, message: "<invoke> names an invoker the host declared but never registered"))
         }
     }
 
@@ -474,7 +474,7 @@ public final class StaticInvokeEndingOrderSceSynthInvokeWorkerPolicy: InvocableP
                         // W3C SCXML C.1: this session was started by its host, not by an
                         // `<invoke>`, so `#_parent` reaches nobody — error.communication,
                         // nothing delivered, and the block ends (4.9).
-                        var sendError = EventWithMetadata.platformError(StaticInvokeEndingOrderSceSynthInvokeWorkerEvent.errorCommunication, message: "<send target=#_parent> has no parent session to reach")
+                        var sendError = EventWithMetadata.platformError(StaticInvokeEndingOrderSceSynthInvokeWorkerEvent.errorCommunication, reason: .targetUnreachable, message: "<send target=#_parent> has no parent session to reach")
                         sendError.metadata.sendID = "__send_0"
                         engine.raise(sendError)
 
@@ -494,7 +494,7 @@ public final class StaticInvokeEndingOrderSceSynthInvokeWorkerPolicy: InvocableP
                         // W3C SCXML C.1: this session was started by its host, not by an
                         // `<invoke>`, so `#_parent` reaches nobody — error.communication,
                         // nothing delivered, and the block ends (4.9).
-                        var sendError = EventWithMetadata.platformError(StaticInvokeEndingOrderSceSynthInvokeWorkerEvent.errorCommunication, message: "<send target=#_parent> has no parent session to reach")
+                        var sendError = EventWithMetadata.platformError(StaticInvokeEndingOrderSceSynthInvokeWorkerEvent.errorCommunication, reason: .targetUnreachable, message: "<send target=#_parent> has no parent session to reach")
                         sendError.metadata.sendID = "__send_1"
                         engine.raise(sendError)
 

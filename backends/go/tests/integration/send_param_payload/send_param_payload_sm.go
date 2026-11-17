@@ -31,6 +31,7 @@ import (
 	"time"
 
 	sce "github.com/newmassrael/sce-go-runtime"
+	sceerrorreason "github.com/newmassrael/sce-go-runtime/generated/error_reason"
 )
 
 // Ensure imports are used
@@ -39,6 +40,9 @@ var (
 	_ = filepath.Join
 	_ = strings.HasPrefix
 	_ = time.Duration(0)
+	// Why an error.* event is raised (sce:std/engine/error_reason,
+	// docs/adr/0106 #111); a machine that raises none still imports it.
+	_ = sceerrorreason.ErrorReasonExpressionFailed
 )
 
 // ======================================================================
@@ -489,7 +493,7 @@ func (p *SendParamPayloadPolicy) InitializeDataModel(eng *sce.Engine[SendParamPa
 		if err == nil {
 			_ = engine.SetVariable(sessionID, "nothing", result)
 		} else {
-			eng.Raise(sce.NewPlatformError(SendParamPayloadEventErrorExecution, "<data id='nothing'> expr failed to evaluate"))
+			eng.Raise(sce.NewPlatformError(SendParamPayloadEventErrorExecution, sceerrorreason.ErrorReasonExpressionFailed, "<data id='nothing'> expr failed to evaluate"))
 			_ = engine.SetVariable(sessionID, "nothing", nil)
 		}
 	}
@@ -503,7 +507,7 @@ func (p *SendParamPayloadPolicy) InitializeDataModel(eng *sce.Engine[SendParamPa
 		if err == nil {
 			_ = engine.SetVariable(sessionID, "sawParamError", result)
 		} else {
-			eng.Raise(sce.NewPlatformError(SendParamPayloadEventErrorExecution, "<data id='sawParamError'> expr failed to evaluate"))
+			eng.Raise(sce.NewPlatformError(SendParamPayloadEventErrorExecution, sceerrorreason.ErrorReasonExpressionFailed, "<data id='sawParamError'> expr failed to evaluate"))
 			_ = engine.SetVariable(sessionID, "sawParamError", nil)
 		}
 	}
@@ -514,7 +518,7 @@ func (p *SendParamPayloadPolicy) InitializeDataModel(eng *sce.Engine[SendParamPa
 		if err == nil {
 			_ = engine.SetVariable(sessionID, "lines", result)
 		} else {
-			eng.Raise(sce.NewPlatformError(SendParamPayloadEventErrorExecution, "<data id='lines'> expr failed to evaluate"))
+			eng.Raise(sce.NewPlatformError(SendParamPayloadEventErrorExecution, sceerrorreason.ErrorReasonExpressionFailed, "<data id='lines'> expr failed to evaluate"))
 			_ = engine.SetVariable(sessionID, "lines", nil)
 		}
 	}
@@ -524,7 +528,7 @@ func (p *SendParamPayloadPolicy) InitializeDataModel(eng *sce.Engine[SendParamPa
 		if err == nil {
 			_ = engine.SetVariable(sessionID, "keyed", result)
 		} else {
-			eng.Raise(sce.NewPlatformError(SendParamPayloadEventErrorExecution, "<data id='keyed'> expr failed to evaluate"))
+			eng.Raise(sce.NewPlatformError(SendParamPayloadEventErrorExecution, sceerrorreason.ErrorReasonExpressionFailed, "<data id='keyed'> expr failed to evaluate"))
 			_ = engine.SetVariable(sessionID, "keyed", nil)
 		}
 	}
@@ -535,7 +539,7 @@ func (p *SendParamPayloadPolicy) InitializeDataModel(eng *sce.Engine[SendParamPa
 		if err == nil {
 			_ = engine.SetVariable(sessionID, "tag", result)
 		} else {
-			eng.Raise(sce.NewPlatformError(SendParamPayloadEventErrorExecution, "<data id='tag'> expr failed to evaluate"))
+			eng.Raise(sce.NewPlatformError(SendParamPayloadEventErrorExecution, sceerrorreason.ErrorReasonExpressionFailed, "<data id='tag'> expr failed to evaluate"))
 			_ = engine.SetVariable(sessionID, "tag", nil)
 		}
 	}
@@ -567,12 +571,12 @@ func (p *SendParamPayloadPolicy) evaluateIfCond(guard string, eng *sce.Engine[Se
 // evaluateGuardRaising evaluates a cond, raising error.execution when it cannot
 // be evaluated (W3C SCXML 5.9.1); ok is false then, where a bare false could
 // not say so.
-func (p *SendParamPayloadPolicy) evaluateGuardRaising(guard string, eng *sce.Engine[SendParamPayloadState, SendParamPayloadEvent], reason string) (value bool, ok bool) {
+func (p *SendParamPayloadPolicy) evaluateGuardRaising(guard string, eng *sce.Engine[SendParamPayloadState, SendParamPayloadEvent], detail string) (value bool, ok bool) {
 	p.assertScriptSession()
 	engine := p.ScriptEngine
 	result, err := engine.EvaluateExpression(p.SessionID, guard)
 	if err != nil {
-		eng.Raise(sce.NewPlatformError(SendParamPayloadEventErrorExecution, reason))
+		eng.Raise(sce.NewPlatformError(SendParamPayloadEventErrorExecution, sceerrorreason.ErrorReasonExpressionFailed, detail))
 		return false, false
 	}
 	return sce.ScriptToBool(result), true
@@ -675,7 +679,7 @@ func (p *SendParamPayloadPolicy) SetParamValueInScriptEngine(name string, value 
 // failed is left (docs/adr/0098).
 func (p *SendParamPayloadPolicy) declareHandedValue(eng *sce.Engine[SendParamPayloadState, SendParamPayloadEvent], engine sce.IScriptEngine, sessionID, name string, value interface{}) {
 	if err := engine.SetVariable(sessionID, name, value); err != nil {
-		eng.Raise(sce.NewPlatformError(SendParamPayloadEventErrorExecution, "<data id='"+name+"'> could not hold the value its invoking session handed it"))
+		eng.Raise(sce.NewPlatformError(SendParamPayloadEventErrorExecution, sceerrorreason.ErrorReasonDataInitFailed, "<data id='"+name+"'> could not hold the value its invoking session handed it"))
 		_ = engine.SetVariable(sessionID, name, nil)
 	}
 }
@@ -751,7 +755,7 @@ func (p *SendParamPayloadPolicy) ExecutePendingInvokes(engine *sce.Engine[SendPa
 			if refused := childEngine.Initialize(); refused != nil {
 				childEngine.DetachMesh()
 				delete(p.activeInvokes, "inv_emitter")
-				engine.Raise(sce.NewPlatformError(SendParamPayloadEventErrorExecution, sce.ChildStartRefusal("inv_emitter", refused)))
+				engine.Raise(sce.NewPlatformError(SendParamPayloadEventErrorExecution, sceerrorreason.ErrorReasonInvokeChildInitFailed, sce.ChildStartRefusal("inv_emitter", refused)))
 				continue
 			}
 
@@ -1275,13 +1279,13 @@ func (p *SendParamPayloadPolicy) ExecuteEntryActions(state SendParamPayloadState
 		if paramVal, paramErr := se.EvaluateExpression(p.SessionID, `lines`); paramErr == nil {
 			parts = append(parts, sce.EventDataParam{Name: "text", Value: paramVal})
 		} else {
-			engine.Raise(sce.NewPlatformError(SendParamPayloadEventErrorExecution, "<send> <param name='text'> expr failed to evaluate"))
+			engine.Raise(sce.NewPlatformError(SendParamPayloadEventErrorExecution, sceerrorreason.ErrorReasonExpressionFailed, "<send> <param name='text'> expr failed to evaluate"))
 			paramFailed = true
 		}
 		if paramVal, paramErr := se.EvaluateExpression(p.SessionID, `keyed`); paramErr == nil {
 			parts = append(parts, sce.EventDataParam{Name: "obj", Value: paramVal})
 		} else {
-			engine.Raise(sce.NewPlatformError(SendParamPayloadEventErrorExecution, "<send> <param name='obj'> expr failed to evaluate"))
+			engine.Raise(sce.NewPlatformError(SendParamPayloadEventErrorExecution, sceerrorreason.ErrorReasonExpressionFailed, "<send> <param name='obj'> expr failed to evaluate"))
 			paramFailed = true
 		}
 		eventDataStr := sce.BuildJSONFromTypedParams(parts)
@@ -1356,7 +1360,7 @@ func (p *SendParamPayloadPolicy) ExecuteEntryActions(state SendParamPayloadState
 		if paramVal, paramErr := se.EvaluateExpression(p.SessionID, `nothing.deep`); paramErr == nil {
 			parts = append(parts, sce.EventDataParam{Name: "broken", Value: paramVal})
 		} else {
-			engine.Raise(sce.NewPlatformError(SendParamPayloadEventErrorExecution, "<send> <param name='broken'> expr failed to evaluate"))
+			engine.Raise(sce.NewPlatformError(SendParamPayloadEventErrorExecution, sceerrorreason.ErrorReasonExpressionFailed, "<send> <param name='broken'> expr failed to evaluate"))
 			paramFailed = true
 		}
 		eventDataStr := sce.BuildJSONFromTypedParams(parts)
@@ -1400,25 +1404,25 @@ func (p *SendParamPayloadPolicy) ExecuteEntryActions(state SendParamPayloadState
 		if paramVal, paramErr := se.EvaluateExpression(p.SessionID, `7`); paramErr == nil {
 			parts = append(parts, sce.EventDataParam{Name: "n", Value: paramVal})
 		} else {
-			engine.Raise(sce.NewPlatformError(SendParamPayloadEventErrorExecution, "<send> <param name='n'> expr failed to evaluate"))
+			engine.Raise(sce.NewPlatformError(SendParamPayloadEventErrorExecution, sceerrorreason.ErrorReasonExpressionFailed, "<send> <param name='n'> expr failed to evaluate"))
 			paramFailed = true
 		}
 		if paramVal, paramErr := se.EvaluateExpression(p.SessionID, `tag`); paramErr == nil {
 			parts = append(parts, sce.EventDataParam{Name: "s", Value: paramVal})
 		} else {
-			engine.Raise(sce.NewPlatformError(SendParamPayloadEventErrorExecution, "<send> <param name='s'> expr failed to evaluate"))
+			engine.Raise(sce.NewPlatformError(SendParamPayloadEventErrorExecution, sceerrorreason.ErrorReasonExpressionFailed, "<send> <param name='s'> expr failed to evaluate"))
 			paramFailed = true
 		}
 		if paramVal, paramErr := se.EvaluateExpression(p.SessionID, `1`); paramErr == nil {
 			parts = append(parts, sce.EventDataParam{Name: "d", Value: paramVal})
 		} else {
-			engine.Raise(sce.NewPlatformError(SendParamPayloadEventErrorExecution, "<send> <param name='d'> expr failed to evaluate"))
+			engine.Raise(sce.NewPlatformError(SendParamPayloadEventErrorExecution, sceerrorreason.ErrorReasonExpressionFailed, "<send> <param name='d'> expr failed to evaluate"))
 			paramFailed = true
 		}
 		if paramVal, paramErr := se.EvaluateExpression(p.SessionID, `2`); paramErr == nil {
 			parts = append(parts, sce.EventDataParam{Name: "d", Value: paramVal})
 		} else {
-			engine.Raise(sce.NewPlatformError(SendParamPayloadEventErrorExecution, "<send> <param name='d'> expr failed to evaluate"))
+			engine.Raise(sce.NewPlatformError(SendParamPayloadEventErrorExecution, sceerrorreason.ErrorReasonExpressionFailed, "<send> <param name='d'> expr failed to evaluate"))
 			paramFailed = true
 		}
 		eventDataStr := sce.BuildJSONFromTypedParams(parts)
@@ -1717,7 +1721,7 @@ func (p *SendParamPayloadPolicy) ExecuteTransitionContent(source SendParamPayloa
 
 	// W3C SCXML 5.3: <assign location="sawParamError" expr="1">
 	if err := p.assignVariable(`sawParamError`, `1`); err != nil {
-		engine.Raise(sce.NewPlatformError(SendParamPayloadEventErrorExecution, "<assign> to 'sawParamError' failed"))
+		engine.Raise(sce.NewPlatformError(SendParamPayloadEventErrorExecution, sceerrorreason.ErrorReasonAssignmentFailed, "<assign> to 'sawParamError' failed"))
 		return  // W3C SCXML 4.9: the error ends the block
 	}
 

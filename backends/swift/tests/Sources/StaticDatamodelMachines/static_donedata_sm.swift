@@ -444,7 +444,7 @@ public final class StaticDonedataPolicy: InvocablePolicy {
                 let sceValue: WireValue = .integer(Int64((try Checked.mul(self.vCount, 2))))
                 doneParts.append(PayloadPair("total", sceValue))
             } catch {
-                engine.raise(EventWithMetadata.platformError(StaticDonedataEvent.errorExecution, message: "<donedata> <param name=total> failed to evaluate"))
+                engine.raise(EventWithMetadata.platformError(StaticDonedataEvent.errorExecution, reason: .expressionFailed, message: "<donedata> <param name=total> failed to evaluate"))
             }
             do {
                 let sceValue: WireValue = .truth(self.vCount > 2)
@@ -462,7 +462,7 @@ public final class StaticDonedataPolicy: InvocablePolicy {
                 let sceValue: WireValue = .integer(Int64((try Checked.add(self.vSmall, self.vSmall))))
                 doneParts.append(PayloadPair("overflow", sceValue))
             } catch {
-                engine.raise(EventWithMetadata.platformError(StaticDonedataEvent.errorExecution, message: "<donedata> <param name=overflow> failed to evaluate"))
+                engine.raise(EventWithMetadata.platformError(StaticDonedataEvent.errorExecution, reason: .expressionFailed, message: "<donedata> <param name=overflow> failed to evaluate"))
             }
             doneEventData = doneParts.isEmpty ? "{}" : payloadJSON(doneParts)
             // W3C SCXML 5.5 + 6.3.1: a top-level final stashes its data on the engine, so the
@@ -560,7 +560,7 @@ public final class StaticDonedataPolicy: InvocablePolicy {
                 sceBlock: do {
 
 
-                if ({ () -> Bool in do { let sceValue: UInt32 = (try Checked.add(self.vCount, 1)); self.vCount = sceValue } catch { engine.raise(EventWithMetadata.platformError(StaticDonedataEvent.errorExecution, message: "<assign location='count'>: an integer operation overflowed or failed")); return true }; return false }()) {
+                if ({ () -> Bool in do { let sceValue: UInt32 = (try Checked.add(self.vCount, 1)); self.vCount = sceValue } catch { engine.raise(EventWithMetadata.platformError(StaticDonedataEvent.errorExecution, reason: .expressionFailed, message: "<assign location='count'>: an integer operation overflowed or failed")); return true }; return false }()) {
                     break sceBlock  // W3C SCXML 4.9: the error ends the block
                 }
 

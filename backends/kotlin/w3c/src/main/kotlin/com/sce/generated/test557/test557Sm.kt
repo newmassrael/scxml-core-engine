@@ -195,7 +195,7 @@ class Test557StateMachine(
             try {
                 engine.setVariable(sid, "var1", engine.parseDataValue(sid, "<books xmlns=\"\">\n     <book title=\"title1\"></book>\n     <book title=\"title2\"></book>\n   </books>"))
             } catch (e: Exception) {
-                raisePlatformError(Test557Event.Error.Execution, "<data id='var1'> content failed to initialise")
+                raisePlatformError(Test557Event.Error.Execution, ErrorReason.DATA_INIT_FAILED, "<data id='var1'> content failed to initialise")
             }
         }
         // §scxml-6.4: 'var2' takes a value its invoke handed it, in place of its own
@@ -204,7 +204,7 @@ class Test557StateMachine(
             try {
                 engine.loadDataFromSrc("file:test557.txt", "resources/557")?.let { engine.setVariable(sid, "var2", engine.parseDataValue(sid, it)) }
             } catch (e: Exception) {
-                raisePlatformError(Test557Event.Error.Execution, "<data id='var2' src='file:test557.txt'> could not be loaded")
+                raisePlatformError(Test557Event.Error.Execution, ErrorReason.DATA_INIT_FAILED, "<data id='var2' src='file:test557.txt'> could not be loaded")
             }
         }
     }
@@ -234,14 +234,14 @@ class Test557StateMachine(
 
     // W3C SCXML 5.9.1: a cond that cannot be evaluated raises error.execution;
     // `null` says so, where a bare `false` could not.
-    private fun evaluateGuardRaising(guardExpr: com.sce.runtime.ScriptSource, reason: String): Boolean? {
+    private fun evaluateGuardRaising(guardExpr: com.sce.runtime.ScriptSource, detail: String): Boolean? {
         assertScriptSession()
         val engine = scriptEngine ?: error("scriptEngine is required (codegen invariant: needs_script_engine == true)")
         val sid = scriptSessionId ?: error("scriptSessionId is established by the start (codegen invariant)")
         return try {
             engine.evaluateCondition(sid, guardExpr)
         } catch (e: Exception) {
-            raisePlatformError(Test557Event.Error.Execution, reason)
+            raisePlatformError(Test557Event.Error.Execution, ErrorReason.EXPRESSION_FAILED, detail)
             null
         }
     }
@@ -282,7 +282,7 @@ class Test557StateMachine(
         return try {
             engine.evaluateExpr(sid, serialized)?.toString() ?: ""
         } catch (e: Exception) {
-            raisePlatformError(Test557Event.Error.Execution, "an expression could not be serialised to JSON")
+            raisePlatformError(Test557Event.Error.Execution, ErrorReason.EXPRESSION_FAILED, "an expression could not be serialised to JSON")
             ""
         }
     }
@@ -303,7 +303,7 @@ class Test557StateMachine(
             engine.assign(sid, location, expr)
             true
         } catch (e: Exception) {
-            raisePlatformError(Test557Event.Error.Execution, "<assign> failed")
+            raisePlatformError(Test557Event.Error.Execution, ErrorReason.ASSIGNMENT_FAILED, "<assign> failed")
             false
         }
     }
@@ -319,7 +319,7 @@ class Test557StateMachine(
             engine.executeScript(sid, script)
             true
         } catch (e: Exception) {
-            raisePlatformError(Test557Event.Error.Execution, "<script> failed to execute")
+            raisePlatformError(Test557Event.Error.Execution, ErrorReason.SCRIPT_FAILED, "<script> failed to execute")
             false
         }
     }

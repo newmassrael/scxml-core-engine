@@ -31,6 +31,7 @@ import (
 	"time"
 
 	sce "github.com/newmassrael/sce-go-runtime"
+	sceerrorreason "github.com/newmassrael/sce-go-runtime/generated/error_reason"
 )
 
 // Ensure imports are used
@@ -39,6 +40,9 @@ var (
 	_ = filepath.Join
 	_ = strings.HasPrefix
 	_ = time.Duration(0)
+	// Why an error.* event is raised (sce:std/engine/error_reason,
+	// docs/adr/0106 #111); a machine that raises none still imports it.
+	_ = sceerrorreason.ErrorReasonExpressionFailed
 )
 
 // ======================================================================
@@ -401,7 +405,7 @@ func (p *TargetlessTransitionCompletesMacrostepPolicy) InitializeDataModel(eng *
 		if err == nil {
 			_ = engine.SetVariable(sessionID, "quiet", result)
 		} else {
-			eng.Raise(sce.NewPlatformError(TargetlessTransitionCompletesMacrostepEventErrorExecution, "<data id='quiet'> expr failed to evaluate"))
+			eng.Raise(sce.NewPlatformError(TargetlessTransitionCompletesMacrostepEventErrorExecution, sceerrorreason.ErrorReasonExpressionFailed, "<data id='quiet'> expr failed to evaluate"))
 			_ = engine.SetVariable(sessionID, "quiet", nil)
 		}
 	}
@@ -415,7 +419,7 @@ func (p *TargetlessTransitionCompletesMacrostepPolicy) InitializeDataModel(eng *
 		if err == nil {
 			_ = engine.SetVariable(sessionID, "armed", result)
 		} else {
-			eng.Raise(sce.NewPlatformError(TargetlessTransitionCompletesMacrostepEventErrorExecution, "<data id='armed'> expr failed to evaluate"))
+			eng.Raise(sce.NewPlatformError(TargetlessTransitionCompletesMacrostepEventErrorExecution, sceerrorreason.ErrorReasonExpressionFailed, "<data id='armed'> expr failed to evaluate"))
 			_ = engine.SetVariable(sessionID, "armed", nil)
 		}
 	}
@@ -429,7 +433,7 @@ func (p *TargetlessTransitionCompletesMacrostepPolicy) InitializeDataModel(eng *
 		if err == nil {
 			_ = engine.SetVariable(sessionID, "chained", result)
 		} else {
-			eng.Raise(sce.NewPlatformError(TargetlessTransitionCompletesMacrostepEventErrorExecution, "<data id='chained'> expr failed to evaluate"))
+			eng.Raise(sce.NewPlatformError(TargetlessTransitionCompletesMacrostepEventErrorExecution, sceerrorreason.ErrorReasonExpressionFailed, "<data id='chained'> expr failed to evaluate"))
 			_ = engine.SetVariable(sessionID, "chained", nil)
 		}
 	}
@@ -443,7 +447,7 @@ func (p *TargetlessTransitionCompletesMacrostepPolicy) InitializeDataModel(eng *
 		if err == nil {
 			_ = engine.SetVariable(sessionID, "polished", result)
 		} else {
-			eng.Raise(sce.NewPlatformError(TargetlessTransitionCompletesMacrostepEventErrorExecution, "<data id='polished'> expr failed to evaluate"))
+			eng.Raise(sce.NewPlatformError(TargetlessTransitionCompletesMacrostepEventErrorExecution, sceerrorreason.ErrorReasonExpressionFailed, "<data id='polished'> expr failed to evaluate"))
 			_ = engine.SetVariable(sessionID, "polished", nil)
 		}
 	}
@@ -457,7 +461,7 @@ func (p *TargetlessTransitionCompletesMacrostepPolicy) InitializeDataModel(eng *
 		if err == nil {
 			_ = engine.SetVariable(sessionID, "answered", result)
 		} else {
-			eng.Raise(sce.NewPlatformError(TargetlessTransitionCompletesMacrostepEventErrorExecution, "<data id='answered'> expr failed to evaluate"))
+			eng.Raise(sce.NewPlatformError(TargetlessTransitionCompletesMacrostepEventErrorExecution, sceerrorreason.ErrorReasonExpressionFailed, "<data id='answered'> expr failed to evaluate"))
 			_ = engine.SetVariable(sessionID, "answered", nil)
 		}
 	}
@@ -471,7 +475,7 @@ func (p *TargetlessTransitionCompletesMacrostepPolicy) InitializeDataModel(eng *
 		if err == nil {
 			_ = engine.SetVariable(sessionID, "entries", result)
 		} else {
-			eng.Raise(sce.NewPlatformError(TargetlessTransitionCompletesMacrostepEventErrorExecution, "<data id='entries'> expr failed to evaluate"))
+			eng.Raise(sce.NewPlatformError(TargetlessTransitionCompletesMacrostepEventErrorExecution, sceerrorreason.ErrorReasonExpressionFailed, "<data id='entries'> expr failed to evaluate"))
 			_ = engine.SetVariable(sessionID, "entries", nil)
 		}
 	}
@@ -503,12 +507,12 @@ func (p *TargetlessTransitionCompletesMacrostepPolicy) evaluateIfCond(guard stri
 // evaluateGuardRaising evaluates a cond, raising error.execution when it cannot
 // be evaluated (W3C SCXML 5.9.1); ok is false then, where a bare false could
 // not say so.
-func (p *TargetlessTransitionCompletesMacrostepPolicy) evaluateGuardRaising(guard string, eng *sce.Engine[TargetlessTransitionCompletesMacrostepState, TargetlessTransitionCompletesMacrostepEvent], reason string) (value bool, ok bool) {
+func (p *TargetlessTransitionCompletesMacrostepPolicy) evaluateGuardRaising(guard string, eng *sce.Engine[TargetlessTransitionCompletesMacrostepState, TargetlessTransitionCompletesMacrostepEvent], detail string) (value bool, ok bool) {
 	p.assertScriptSession()
 	engine := p.ScriptEngine
 	result, err := engine.EvaluateExpression(p.SessionID, guard)
 	if err != nil {
-		eng.Raise(sce.NewPlatformError(TargetlessTransitionCompletesMacrostepEventErrorExecution, reason))
+		eng.Raise(sce.NewPlatformError(TargetlessTransitionCompletesMacrostepEventErrorExecution, sceerrorreason.ErrorReasonExpressionFailed, detail))
 		return false, false
 	}
 	return sce.ScriptToBool(result), true
@@ -611,7 +615,7 @@ func (p *TargetlessTransitionCompletesMacrostepPolicy) SetParamValueInScriptEngi
 // failed is left (docs/adr/0098).
 func (p *TargetlessTransitionCompletesMacrostepPolicy) declareHandedValue(eng *sce.Engine[TargetlessTransitionCompletesMacrostepState, TargetlessTransitionCompletesMacrostepEvent], engine sce.IScriptEngine, sessionID, name string, value interface{}) {
 	if err := engine.SetVariable(sessionID, name, value); err != nil {
-		eng.Raise(sce.NewPlatformError(TargetlessTransitionCompletesMacrostepEventErrorExecution, "<data id='"+name+"'> could not hold the value its invoking session handed it"))
+		eng.Raise(sce.NewPlatformError(TargetlessTransitionCompletesMacrostepEventErrorExecution, sceerrorreason.ErrorReasonDataInitFailed, "<data id='"+name+"'> could not hold the value its invoking session handed it"))
 		_ = engine.SetVariable(sessionID, name, nil)
 	}
 }
@@ -871,7 +875,7 @@ func (p *TargetlessTransitionCompletesMacrostepPolicy) ExecuteEntryActions(state
 
 	// W3C SCXML 5.3: <assign location="entries" expr="entries + 1">
 	if err := p.assignVariable(`entries`, `_scxml_add(entries, 1)`); err != nil {
-		engine.Raise(sce.NewPlatformError(TargetlessTransitionCompletesMacrostepEventErrorExecution, "<assign> to 'entries' failed"))
+		engine.Raise(sce.NewPlatformError(TargetlessTransitionCompletesMacrostepEventErrorExecution, sceerrorreason.ErrorReasonAssignmentFailed, "<assign> to 'entries' failed"))
 		return  // W3C SCXML 4.9: the error ends the block
 	}
 
@@ -1043,7 +1047,7 @@ func (p *TargetlessTransitionCompletesMacrostepPolicy) ExecuteTransitionContent(
 
 	// W3C SCXML 5.3: <assign location="chained" expr="chained + 1">
 	if err := p.assignVariable(`chained`, `_scxml_add(chained, 1)`); err != nil {
-		engine.Raise(sce.NewPlatformError(TargetlessTransitionCompletesMacrostepEventErrorExecution, "<assign> to 'chained' failed"))
+		engine.Raise(sce.NewPlatformError(TargetlessTransitionCompletesMacrostepEventErrorExecution, sceerrorreason.ErrorReasonAssignmentFailed, "<assign> to 'chained' failed"))
 		return  // W3C SCXML 4.9: the error ends the block
 	}
 
@@ -1055,7 +1059,7 @@ func (p *TargetlessTransitionCompletesMacrostepPolicy) ExecuteTransitionContent(
 
 	// W3C SCXML 5.3: <assign location="quiet" expr="quiet + 1">
 	if err := p.assignVariable(`quiet`, `_scxml_add(quiet, 1)`); err != nil {
-		engine.Raise(sce.NewPlatformError(TargetlessTransitionCompletesMacrostepEventErrorExecution, "<assign> to 'quiet' failed"))
+		engine.Raise(sce.NewPlatformError(TargetlessTransitionCompletesMacrostepEventErrorExecution, sceerrorreason.ErrorReasonAssignmentFailed, "<assign> to 'quiet' failed"))
 		return  // W3C SCXML 4.9: the error ends the block
 	}
 
@@ -1067,7 +1071,7 @@ func (p *TargetlessTransitionCompletesMacrostepPolicy) ExecuteTransitionContent(
 
 	// W3C SCXML 5.3: <assign location="armed" expr="1">
 	if err := p.assignVariable(`armed`, `1`); err != nil {
-		engine.Raise(sce.NewPlatformError(TargetlessTransitionCompletesMacrostepEventErrorExecution, "<assign> to 'armed' failed"))
+		engine.Raise(sce.NewPlatformError(TargetlessTransitionCompletesMacrostepEventErrorExecution, sceerrorreason.ErrorReasonAssignmentFailed, "<assign> to 'armed' failed"))
 		return  // W3C SCXML 4.9: the error ends the block
 	}
 
@@ -1087,7 +1091,7 @@ func (p *TargetlessTransitionCompletesMacrostepPolicy) ExecuteTransitionContent(
 
 	// W3C SCXML 5.3: <assign location="answered" expr="answered + 1">
 	if err := p.assignVariable(`answered`, `_scxml_add(answered, 1)`); err != nil {
-		engine.Raise(sce.NewPlatformError(TargetlessTransitionCompletesMacrostepEventErrorExecution, "<assign> to 'answered' failed"))
+		engine.Raise(sce.NewPlatformError(TargetlessTransitionCompletesMacrostepEventErrorExecution, sceerrorreason.ErrorReasonAssignmentFailed, "<assign> to 'answered' failed"))
 		return  // W3C SCXML 4.9: the error ends the block
 	}
 
@@ -1102,7 +1106,7 @@ func (p *TargetlessTransitionCompletesMacrostepPolicy) ExecuteTransitionContent(
 
 	// W3C SCXML 5.3: <assign location="polished" expr="polished + 1">
 	if err := p.assignVariable(`polished`, `_scxml_add(polished, 1)`); err != nil {
-		engine.Raise(sce.NewPlatformError(TargetlessTransitionCompletesMacrostepEventErrorExecution, "<assign> to 'polished' failed"))
+		engine.Raise(sce.NewPlatformError(TargetlessTransitionCompletesMacrostepEventErrorExecution, sceerrorreason.ErrorReasonAssignmentFailed, "<assign> to 'polished' failed"))
 		return  // W3C SCXML 4.9: the error ends the block
 	}
 

@@ -236,7 +236,7 @@ class TypedReaderNamesStateMachine(
             try {
                 engine.setVariable(sid, "box", engine.evaluateExpr(sid, com.sce.runtime.ScriptSource.lua("1", "1")))
             } catch (e: Exception) {
-                raisePlatformError(TypedReaderNamesEvent.Error.Execution, "<data id='box'> expr failed to evaluate")
+                raisePlatformError(TypedReaderNamesEvent.Error.Execution, ErrorReason.EXPRESSION_FAILED, "<data id='box'> expr failed to evaluate")
             }
         }
         // §scxml-6.4: 'object' takes a value its invoke handed it, in place of its own
@@ -245,7 +245,7 @@ class TypedReaderNamesStateMachine(
             try {
                 engine.setVariable(sid, "object", engine.evaluateExpr(sid, com.sce.runtime.ScriptSource.lua("2", "2")))
             } catch (e: Exception) {
-                raisePlatformError(TypedReaderNamesEvent.Error.Execution, "<data id='object'> expr failed to evaluate")
+                raisePlatformError(TypedReaderNamesEvent.Error.Execution, ErrorReason.EXPRESSION_FAILED, "<data id='object'> expr failed to evaluate")
             }
         }
         // §scxml-6.4: 'pass' takes a value its invoke handed it, in place of its own
@@ -254,7 +254,7 @@ class TypedReaderNamesStateMachine(
             try {
                 engine.setVariable(sid, "pass", engine.evaluateExpr(sid, com.sce.runtime.ScriptSource.lua("3", "3")))
             } catch (e: Exception) {
-                raisePlatformError(TypedReaderNamesEvent.Error.Execution, "<data id='pass'> expr failed to evaluate")
+                raisePlatformError(TypedReaderNamesEvent.Error.Execution, ErrorReason.EXPRESSION_FAILED, "<data id='pass'> expr failed to evaluate")
             }
         }
         // §scxml-6.4: 'screen-rules' takes a value its invoke handed it, in place of its own
@@ -263,7 +263,7 @@ class TypedReaderNamesStateMachine(
             try {
                 engine.setVariable(sid, "screen-rules", engine.evaluateExpr(sid, com.sce.runtime.ScriptSource.lua("4", "4")))
             } catch (e: Exception) {
-                raisePlatformError(TypedReaderNamesEvent.Error.Execution, "<data id='screen-rules'> expr failed to evaluate")
+                raisePlatformError(TypedReaderNamesEvent.Error.Execution, ErrorReason.EXPRESSION_FAILED, "<data id='screen-rules'> expr failed to evaluate")
             }
         }
         // §scxml-6.4: 'auto' takes a value its invoke handed it, in place of its own
@@ -272,7 +272,7 @@ class TypedReaderNamesStateMachine(
             try {
                 engine.setVariable(sid, "auto", engine.evaluateExpr(sid, com.sce.runtime.ScriptSource.lua("5", "5")))
             } catch (e: Exception) {
-                raisePlatformError(TypedReaderNamesEvent.Error.Execution, "<data id='auto'> expr failed to evaluate")
+                raisePlatformError(TypedReaderNamesEvent.Error.Execution, ErrorReason.EXPRESSION_FAILED, "<data id='auto'> expr failed to evaluate")
             }
         }
         // §scxml-6.4: 'self' takes a value its invoke handed it, in place of its own
@@ -281,7 +281,7 @@ class TypedReaderNamesStateMachine(
             try {
                 engine.setVariable(sid, "self", engine.evaluateExpr(sid, com.sce.runtime.ScriptSource.lua("6", "6")))
             } catch (e: Exception) {
-                raisePlatformError(TypedReaderNamesEvent.Error.Execution, "<data id='self'> expr failed to evaluate")
+                raisePlatformError(TypedReaderNamesEvent.Error.Execution, ErrorReason.EXPRESSION_FAILED, "<data id='self'> expr failed to evaluate")
             }
         }
         // §scxml-6.4: 'new' takes a value its invoke handed it, in place of its own
@@ -290,7 +290,7 @@ class TypedReaderNamesStateMachine(
             try {
                 engine.setVariable(sid, "new", engine.evaluateExpr(sid, com.sce.runtime.ScriptSource.lua("7", "7")))
             } catch (e: Exception) {
-                raisePlatformError(TypedReaderNamesEvent.Error.Execution, "<data id='new'> expr failed to evaluate")
+                raisePlatformError(TypedReaderNamesEvent.Error.Execution, ErrorReason.EXPRESSION_FAILED, "<data id='new'> expr failed to evaluate")
             }
         }
         // §scxml-6.4: 'start' takes a value its invoke handed it, in place of its own
@@ -299,7 +299,7 @@ class TypedReaderNamesStateMachine(
             try {
                 engine.setVariable(sid, "start", engine.evaluateExpr(sid, com.sce.runtime.ScriptSource.lua("8", "8")))
             } catch (e: Exception) {
-                raisePlatformError(TypedReaderNamesEvent.Error.Execution, "<data id='start'> expr failed to evaluate")
+                raisePlatformError(TypedReaderNamesEvent.Error.Execution, ErrorReason.EXPRESSION_FAILED, "<data id='start'> expr failed to evaluate")
             }
         }
         // §scxml-6.4: 't' takes a value its invoke handed it, in place of its own
@@ -308,7 +308,7 @@ class TypedReaderNamesStateMachine(
             try {
                 engine.setVariable(sid, "t", engine.evaluateExpr(sid, com.sce.runtime.ScriptSource.lua("9", "9")))
             } catch (e: Exception) {
-                raisePlatformError(TypedReaderNamesEvent.Error.Execution, "<data id='t'> expr failed to evaluate")
+                raisePlatformError(TypedReaderNamesEvent.Error.Execution, ErrorReason.EXPRESSION_FAILED, "<data id='t'> expr failed to evaluate")
             }
         }
         // §scxml-6.4: 'a_b' takes a value its invoke handed it, in place of its own
@@ -317,7 +317,7 @@ class TypedReaderNamesStateMachine(
             try {
                 engine.setVariable(sid, "a_b", engine.evaluateExpr(sid, com.sce.runtime.ScriptSource.lua("10", "10")))
             } catch (e: Exception) {
-                raisePlatformError(TypedReaderNamesEvent.Error.Execution, "<data id='a_b'> expr failed to evaluate")
+                raisePlatformError(TypedReaderNamesEvent.Error.Execution, ErrorReason.EXPRESSION_FAILED, "<data id='a_b'> expr failed to evaluate")
             }
         }
         // §scxml-6.4: 'a-b' takes a value its invoke handed it, in place of its own
@@ -326,7 +326,7 @@ class TypedReaderNamesStateMachine(
             try {
                 engine.setVariable(sid, "a-b", engine.evaluateExpr(sid, com.sce.runtime.ScriptSource.lua("11", "11")))
             } catch (e: Exception) {
-                raisePlatformError(TypedReaderNamesEvent.Error.Execution, "<data id='a-b'> expr failed to evaluate")
+                raisePlatformError(TypedReaderNamesEvent.Error.Execution, ErrorReason.EXPRESSION_FAILED, "<data id='a-b'> expr failed to evaluate")
             }
         }
     }
@@ -356,14 +356,14 @@ class TypedReaderNamesStateMachine(
 
     // W3C SCXML 5.9.1: a cond that cannot be evaluated raises error.execution;
     // `null` says so, where a bare `false` could not.
-    private fun evaluateGuardRaising(guardExpr: com.sce.runtime.ScriptSource, reason: String): Boolean? {
+    private fun evaluateGuardRaising(guardExpr: com.sce.runtime.ScriptSource, detail: String): Boolean? {
         assertScriptSession()
         val engine = scriptEngine ?: error("scriptEngine is required (codegen invariant: needs_script_engine == true)")
         val sid = scriptSessionId ?: error("scriptSessionId is established by the start (codegen invariant)")
         return try {
             engine.evaluateCondition(sid, guardExpr)
         } catch (e: Exception) {
-            raisePlatformError(TypedReaderNamesEvent.Error.Execution, reason)
+            raisePlatformError(TypedReaderNamesEvent.Error.Execution, ErrorReason.EXPRESSION_FAILED, detail)
             null
         }
     }
@@ -404,7 +404,7 @@ class TypedReaderNamesStateMachine(
         return try {
             engine.evaluateExpr(sid, serialized)?.toString() ?: ""
         } catch (e: Exception) {
-            raisePlatformError(TypedReaderNamesEvent.Error.Execution, "an expression could not be serialised to JSON")
+            raisePlatformError(TypedReaderNamesEvent.Error.Execution, ErrorReason.EXPRESSION_FAILED, "an expression could not be serialised to JSON")
             ""
         }
     }
@@ -425,7 +425,7 @@ class TypedReaderNamesStateMachine(
             engine.assign(sid, location, expr)
             true
         } catch (e: Exception) {
-            raisePlatformError(TypedReaderNamesEvent.Error.Execution, "<assign> failed")
+            raisePlatformError(TypedReaderNamesEvent.Error.Execution, ErrorReason.ASSIGNMENT_FAILED, "<assign> failed")
             false
         }
     }
@@ -441,7 +441,7 @@ class TypedReaderNamesStateMachine(
             engine.executeScript(sid, script)
             true
         } catch (e: Exception) {
-            raisePlatformError(TypedReaderNamesEvent.Error.Execution, "<script> failed to execute")
+            raisePlatformError(TypedReaderNamesEvent.Error.Execution, ErrorReason.SCRIPT_FAILED, "<script> failed to execute")
             false
         }
     }

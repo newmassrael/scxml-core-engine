@@ -940,17 +940,17 @@ class StaticOptionalStateMachine(
 
             vDue = pendingDueSetPayload!!.due
 
-            if (try { vTitle = (pendingDueSetPayload!!.title)?.let { scePresent -> com.sce.forge.runtime.SceChecked.bounded(scePresent, 16) }; false } catch (_: com.sce.forge.runtime.AlgorithmFailure) { raisePlatformError(StaticOptionalEvent.Error.Execution, "<assign location='title'>: an integer operation overflowed or failed"); true }) {
+            if (try { vTitle = (pendingDueSetPayload!!.title)?.let { scePresent -> com.sce.forge.runtime.SceChecked.bounded(scePresent, 16) }; false } catch (_: com.sce.forge.runtime.AlgorithmFailure) { raisePlatformError(StaticOptionalEvent.Error.Execution, ErrorReason.EXPRESSION_FAILED, "<assign location='title'>: an integer operation overflowed or failed"); true }) {
                 return
             }
 
             vStatus = pendingDueSetPayload!!.status
 
-            if (try { vItem = StaticOptionalDueRecord(id = pendingDueSetPayload!!.id, due = pendingDueSetPayload!!.due, title = (pendingDueSetPayload!!.title)?.let { scePresent -> com.sce.forge.runtime.SceChecked.bounded(scePresent, 16) }, status = pendingDueSetPayload!!.status); false } catch (_: com.sce.forge.runtime.AlgorithmFailure) { raisePlatformError(StaticOptionalEvent.Error.Execution, "<assign location='item'>: an integer operation overflowed or failed"); true }) {
+            if (try { vItem = StaticOptionalDueRecord(id = pendingDueSetPayload!!.id, due = pendingDueSetPayload!!.due, title = (pendingDueSetPayload!!.title)?.let { scePresent -> com.sce.forge.runtime.SceChecked.bounded(scePresent, 16) }, status = pendingDueSetPayload!!.status); false } catch (_: com.sce.forge.runtime.AlgorithmFailure) { raisePlatformError(StaticOptionalEvent.Error.Execution, ErrorReason.EXPRESSION_FAILED, "<assign location='item'>: an integer operation overflowed or failed"); true }) {
                 return
             }
 
-            if (if (vItems.size < 3) { vItems = vItems + (vItem); false } else { raisePlatformError(StaticOptionalEvent.Error.Execution, "<sce:append target='items'>: the list already holds its capacity of 3"); true }) {
+            if (if (vItems.size < 3) { vItems = vItems + (vItem); false } else { raisePlatformError(StaticOptionalEvent.Error.Execution, ErrorReason.ASSIGNMENT_FAILED, "<sce:append target='items'>: the list already holds its capacity of 3"); true }) {
                 return
             }
     }
@@ -976,24 +976,24 @@ class StaticOptionalStateMachine(
 
             vEarly = vDue == null || com.sce.forge.runtime.SceOptional.proven(vDue) < 3
 
-            if (try { vFollowing = if (!(vDue == null)) com.sce.forge.runtime.SceChecked.add(com.sce.forge.runtime.SceOptional.proven(vDue), 1) else 0; false } catch (_: com.sce.forge.runtime.AlgorithmFailure) { raisePlatformError(StaticOptionalEvent.Error.Execution, "<assign location='following'>: an integer operation overflowed or failed"); true }) {
+            if (try { vFollowing = if (!(vDue == null)) com.sce.forge.runtime.SceChecked.add(com.sce.forge.runtime.SceOptional.proven(vDue), 1) else 0; false } catch (_: com.sce.forge.runtime.AlgorithmFailure) { raisePlatformError(StaticOptionalEvent.Error.Execution, ErrorReason.EXPRESSION_FAILED, "<assign location='following'>: an integer operation overflowed or failed"); true }) {
                 return
             }
 
 
             if (vTitle == null) {
 
-            if (try { vLabel = com.sce.forge.runtime.SceChecked.bounded("untitled", 16); false } catch (_: com.sce.forge.runtime.AlgorithmFailure) { raisePlatformError(StaticOptionalEvent.Error.Execution, "<assign location='label'>: an integer operation overflowed or failed"); true }) {
+            if (try { vLabel = com.sce.forge.runtime.SceChecked.bounded("untitled", 16); false } catch (_: com.sce.forge.runtime.AlgorithmFailure) { raisePlatformError(StaticOptionalEvent.Error.Execution, ErrorReason.EXPRESSION_FAILED, "<assign location='label'>: an integer operation overflowed or failed"); true }) {
                 return
             }
             } else if (com.sce.forge.runtime.SceOptional.proven(vTitle) == "soon") {
 
-            if (try { vLabel = com.sce.forge.runtime.SceChecked.bounded("due soon", 16); false } catch (_: com.sce.forge.runtime.AlgorithmFailure) { raisePlatformError(StaticOptionalEvent.Error.Execution, "<assign location='label'>: an integer operation overflowed or failed"); true }) {
+            if (try { vLabel = com.sce.forge.runtime.SceChecked.bounded("due soon", 16); false } catch (_: com.sce.forge.runtime.AlgorithmFailure) { raisePlatformError(StaticOptionalEvent.Error.Execution, ErrorReason.EXPRESSION_FAILED, "<assign location='label'>: an integer operation overflowed or failed"); true }) {
                 return
             }
             } else {
 
-            if (try { vLabel = com.sce.forge.runtime.SceChecked.bounded(com.sce.forge.runtime.SceOptional.proven(vTitle), 16); false } catch (_: com.sce.forge.runtime.AlgorithmFailure) { raisePlatformError(StaticOptionalEvent.Error.Execution, "<assign location='label'>: an integer operation overflowed or failed"); true }) {
+            if (try { vLabel = com.sce.forge.runtime.SceChecked.bounded(com.sce.forge.runtime.SceOptional.proven(vTitle), 16); false } catch (_: com.sce.forge.runtime.AlgorithmFailure) { raisePlatformError(StaticOptionalEvent.Error.Execution, ErrorReason.EXPRESSION_FAILED, "<assign location='label'>: an integer operation overflowed or failed"); true }) {
                 return
             }
             }
@@ -1020,12 +1020,12 @@ class StaticOptionalStateMachine(
 
             if (it.due != null) {
 
-            if (try { vListed = com.sce.forge.runtime.SceChecked.add(vListed, com.sce.forge.runtime.SceOptional.proven(it.due)); false } catch (_: com.sce.forge.runtime.AlgorithmFailure) { raisePlatformError(StaticOptionalEvent.Error.Execution, "<assign location='listed'>: an integer operation overflowed or failed"); true }) {
+            if (try { vListed = com.sce.forge.runtime.SceChecked.add(vListed, com.sce.forge.runtime.SceOptional.proven(it.due)); false } catch (_: com.sce.forge.runtime.AlgorithmFailure) { raisePlatformError(StaticOptionalEvent.Error.Execution, ErrorReason.EXPRESSION_FAILED, "<assign location='listed'>: an integer operation overflowed or failed"); true }) {
                 return
             }
             } else {
 
-            if (try { vMissing = com.sce.forge.runtime.SceChecked.add(vMissing, 1.toUInt()); false } catch (_: com.sce.forge.runtime.AlgorithmFailure) { raisePlatformError(StaticOptionalEvent.Error.Execution, "<assign location='missing'>: an integer operation overflowed or failed"); true }) {
+            if (try { vMissing = com.sce.forge.runtime.SceChecked.add(vMissing, 1.toUInt()); false } catch (_: com.sce.forge.runtime.AlgorithmFailure) { raisePlatformError(StaticOptionalEvent.Error.Execution, ErrorReason.EXPRESSION_FAILED, "<assign location='missing'>: an integer operation overflowed or failed"); true }) {
                 return
             }
             }
@@ -1045,15 +1045,15 @@ class StaticOptionalStateMachine(
     private fun transitionContentOfTrackingAt3() {
                 // SCE-MAP: static_optional.scxml:117 :: tracking :: _transition_3
 
-            if (try { vLabel = com.sce.forge.runtime.SceChecked.bounded(vTitle ?: "none", 16); false } catch (_: com.sce.forge.runtime.AlgorithmFailure) { raisePlatformError(StaticOptionalEvent.Error.Execution, "<assign location='label'>: an integer operation overflowed or failed"); true }) {
+            if (try { vLabel = com.sce.forge.runtime.SceChecked.bounded(vTitle ?: "none", 16); false } catch (_: com.sce.forge.runtime.AlgorithmFailure) { raisePlatformError(StaticOptionalEvent.Error.Execution, ErrorReason.EXPRESSION_FAILED, "<assign location='label'>: an integer operation overflowed or failed"); true }) {
                 return
             }
 
-            if (try { vDays = vDue ?: com.sce.forge.runtime.SceChecked.mul(vHuge, vHuge); false } catch (_: com.sce.forge.runtime.AlgorithmFailure) { raisePlatformError(StaticOptionalEvent.Error.Execution, "<assign location='days'>: an integer operation overflowed or failed"); true }) {
+            if (try { vDays = vDue ?: com.sce.forge.runtime.SceChecked.mul(vHuge, vHuge); false } catch (_: com.sce.forge.runtime.AlgorithmFailure) { raisePlatformError(StaticOptionalEvent.Error.Execution, ErrorReason.EXPRESSION_FAILED, "<assign location='days'>: an integer operation overflowed or failed"); true }) {
                 return
             }
 
-            if (try { vFallbacks = com.sce.forge.runtime.SceChecked.add(vFallbacks, 1.toUInt()); false } catch (_: com.sce.forge.runtime.AlgorithmFailure) { raisePlatformError(StaticOptionalEvent.Error.Execution, "<assign location='fallbacks'>: an integer operation overflowed or failed"); true }) {
+            if (try { vFallbacks = com.sce.forge.runtime.SceChecked.add(vFallbacks, 1.toUInt()); false } catch (_: com.sce.forge.runtime.AlgorithmFailure) { raisePlatformError(StaticOptionalEvent.Error.Execution, ErrorReason.EXPRESSION_FAILED, "<assign location='fallbacks'>: an integer operation overflowed or failed"); true }) {
                 return
             }
     }
@@ -1089,7 +1089,7 @@ class StaticOptionalStateMachine(
 
             vEchoed = com.sce.forge.runtime.SceOptional.proven(pendingDueSentPayload!!.due)
 
-            if (try { vEchoTitle = (pendingDueSentPayload!!.title)?.let { scePresent -> com.sce.forge.runtime.SceChecked.bounded(scePresent, 16) }; false } catch (_: com.sce.forge.runtime.AlgorithmFailure) { raisePlatformError(StaticOptionalEvent.Error.Execution, "<assign location='echoTitle'>: an integer operation overflowed or failed"); true }) {
+            if (try { vEchoTitle = (pendingDueSentPayload!!.title)?.let { scePresent -> com.sce.forge.runtime.SceChecked.bounded(scePresent, 16) }; false } catch (_: com.sce.forge.runtime.AlgorithmFailure) { raisePlatformError(StaticOptionalEvent.Error.Execution, ErrorReason.EXPRESSION_FAILED, "<assign location='echoTitle'>: an integer operation overflowed or failed"); true }) {
                 return
             }
 
@@ -1104,7 +1104,7 @@ class StaticOptionalStateMachine(
 
             vEchoed = -1
 
-            if (try { vEchoTitle = (pendingDueSentPayload!!.title)?.let { scePresent -> com.sce.forge.runtime.SceChecked.bounded(scePresent, 16) }; false } catch (_: com.sce.forge.runtime.AlgorithmFailure) { raisePlatformError(StaticOptionalEvent.Error.Execution, "<assign location='echoTitle'>: an integer operation overflowed or failed"); true }) {
+            if (try { vEchoTitle = (pendingDueSentPayload!!.title)?.let { scePresent -> com.sce.forge.runtime.SceChecked.bounded(scePresent, 16) }; false } catch (_: com.sce.forge.runtime.AlgorithmFailure) { raisePlatformError(StaticOptionalEvent.Error.Execution, ErrorReason.EXPRESSION_FAILED, "<assign location='echoTitle'>: an integer operation overflowed or failed"); true }) {
                 return
             }
 
@@ -1114,7 +1114,7 @@ class StaticOptionalStateMachine(
     private fun transitionContentOfTrackingAt7() {
                 // SCE-MAP: static_optional.scxml:143 :: tracking :: _transition_7
 
-            if (try { vErrors = com.sce.forge.runtime.SceChecked.add(vErrors, 1.toUInt()); false } catch (_: com.sce.forge.runtime.AlgorithmFailure) { raisePlatformError(StaticOptionalEvent.Error.Execution, "<assign location='errors'>: an integer operation overflowed or failed"); true }) {
+            if (try { vErrors = com.sce.forge.runtime.SceChecked.add(vErrors, 1.toUInt()); false } catch (_: com.sce.forge.runtime.AlgorithmFailure) { raisePlatformError(StaticOptionalEvent.Error.Execution, ErrorReason.EXPRESSION_FAILED, "<assign location='errors'>: an integer operation overflowed or failed"); true }) {
                 return
             }
     }

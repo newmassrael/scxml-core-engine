@@ -203,7 +203,7 @@ class AutoforwardInternalQueueSceSynthInvokeInvWatchStateMachine(
             // no parent — error.communication, nothing delivered, the block ended.
             val toParent = onSendToParent
             if (toParent == null) {
-                raisePlatformError(AutoforwardInternalQueueSceSynthInvokeInvWatchEvent.Error.Communication, "<send target='#_parent'> has no parent session to reach", "__send_2")
+                raisePlatformError(AutoforwardInternalQueueSceSynthInvokeInvWatchEvent.Error.Communication, ErrorReason.TARGET_UNREACHABLE, "<send target='#_parent'> has no parent session to reach", "__send_2")
                 return@send true
             }
             toParent("ready", sendData)
@@ -276,7 +276,7 @@ class AutoforwardInternalQueueSceSynthInvokeInvWatchStateMachine(
             // no parent — error.communication, nothing delivered, the block ended.
             val toParent = onSendToParent
             if (toParent == null) {
-                raisePlatformError(AutoforwardInternalQueueSceSynthInvokeInvWatchEvent.Error.Communication, "<send target='#_parent'> has no parent session to reach", "__send_0")
+                raisePlatformError(AutoforwardInternalQueueSceSynthInvokeInvWatchEvent.Error.Communication, ErrorReason.TARGET_UNREACHABLE, "<send target='#_parent'> has no parent session to reach", "__send_0")
                 return@send true
             }
             toParent("sawInternal", sendData)
@@ -299,7 +299,7 @@ class AutoforwardInternalQueueSceSynthInvokeInvWatchStateMachine(
             // no parent — error.communication, nothing delivered, the block ended.
             val toParent = onSendToParent
             if (toParent == null) {
-                raisePlatformError(AutoforwardInternalQueueSceSynthInvokeInvWatchEvent.Error.Communication, "<send target='#_parent'> has no parent session to reach", "__send_1")
+                raisePlatformError(AutoforwardInternalQueueSceSynthInvokeInvWatchEvent.Error.Communication, ErrorReason.TARGET_UNREACHABLE, "<send target='#_parent'> has no parent session to reach", "__send_1")
                 return@send true
             }
             toParent("sawProbeOnly", sendData)

@@ -31,6 +31,7 @@ import (
 	"time"
 
 	sce "github.com/newmassrael/sce-go-runtime"
+	sceerrorreason "github.com/newmassrael/sce-go-runtime/generated/error_reason"
 	scealgorithm "github.com/newmassrael/sce-forge-runtime/algorithm"
 	"strconv"
 )
@@ -41,6 +42,9 @@ var (
 	_ = filepath.Join
 	_ = strings.HasPrefix
 	_ = time.Duration(0)
+	// Why an error.* event is raised (sce:std/engine/error_reason,
+	// docs/adr/0106 #111); a machine that raises none still imports it.
+	_ = sceerrorreason.ErrorReasonExpressionFailed
 	_ scealgorithm.Failure
 )
 
@@ -873,6 +877,10 @@ func (p *StaticSendDelayPolicy) ExecuteTransitionContent(source StaticSendDelayS
 	// W3C SCXML 6.2: send id="__send_0"
 	{
 	sendArgError := ""
+	// Why the argument failed, a code of sce:std/engine/error_reason
+	// (docs/adr/0106 #111), set with every sentence below.
+	var sendArgReason sce.ErrorReason
+	_ = sendArgReason
 	sendDelayMs := uint64(0)
 	if sendArgError == "" {
 		// The delay is a string computed from the machine's fields now, and
@@ -883,12 +891,12 @@ func (p *StaticSendDelayPolicy) ExecuteTransitionContent(source StaticSendDelayS
 		if ms, ok := sce.ParseDelayToMs(sceDelay); ok {
 			sendDelayMs = ms
 		} else {
-			sendArgError = "<send> delayexpr is not a CSS2 time"
+			sendArgError, sendArgReason = "<send> delayexpr is not a CSS2 time", sceerrorreason.ErrorReasonSendDelayInvalid
 		}
 	}
 	_ = sendDelayMs
 	if sendArgError != "" {
-		errEvt := sce.NewPlatformError(StaticSendDelayEventErrorExecution, sendArgError)
+		errEvt := sce.NewPlatformError(StaticSendDelayEventErrorExecution, sendArgReason, sendArgError)
 		errEvt.Metadata.SendID = "__send_0"
 		engine.Raise(errEvt)
 		return  // W3C SCXML 4.9: the error ends the block
@@ -912,7 +920,7 @@ func (p *StaticSendDelayPolicy) ExecuteTransitionContent(source StaticSendDelayS
 			func() {
 
 
-	if func() bool { var sceFailure scealgorithm.Failure; sceValue := scealgorithm.MulUint32(&sceFailure, p.vWait, 2); if sceFailure.Failed() { engine.Raise(sce.NewPlatformError(StaticSendDelayEventErrorExecution, "<assign location='wait'>: an integer operation overflowed or failed")); return true }; p.vWait = sceValue; return false }() {
+	if func() bool { var sceFailure scealgorithm.Failure; sceValue := scealgorithm.MulUint32(&sceFailure, p.vWait, 2); if sceFailure.Failed() { engine.Raise(sce.NewPlatformError(StaticSendDelayEventErrorExecution, sceerrorreason.ErrorReasonExpressionFailed, "<assign location='wait'>: an integer operation overflowed or failed")); return true }; p.vWait = sceValue; return false }() {
 		return  // W3C SCXML 4.9: the error ends the block
 	}
 
@@ -925,6 +933,10 @@ func (p *StaticSendDelayPolicy) ExecuteTransitionContent(source StaticSendDelayS
 	// W3C SCXML 6.2: send id="__send_1"
 	{
 	sendArgError := ""
+	// Why the argument failed, a code of sce:std/engine/error_reason
+	// (docs/adr/0106 #111), set with every sentence below.
+	var sendArgReason sce.ErrorReason
+	_ = sendArgReason
 	sendDelayMs := uint64(0)
 	if sendArgError == "" {
 		// The delay is a string computed from the machine's fields now, and
@@ -935,12 +947,12 @@ func (p *StaticSendDelayPolicy) ExecuteTransitionContent(source StaticSendDelayS
 		if ms, ok := sce.ParseDelayToMs(sceDelay); ok {
 			sendDelayMs = ms
 		} else {
-			sendArgError = "<send> delayexpr is not a CSS2 time"
+			sendArgError, sendArgReason = "<send> delayexpr is not a CSS2 time", sceerrorreason.ErrorReasonSendDelayInvalid
 		}
 	}
 	_ = sendDelayMs
 	if sendArgError != "" {
-		errEvt := sce.NewPlatformError(StaticSendDelayEventErrorExecution, sendArgError)
+		errEvt := sce.NewPlatformError(StaticSendDelayEventErrorExecution, sendArgReason, sendArgError)
 		errEvt.Metadata.SendID = "__send_1"
 		engine.Raise(errEvt)
 		return  // W3C SCXML 4.9: the error ends the block
@@ -966,6 +978,10 @@ func (p *StaticSendDelayPolicy) ExecuteTransitionContent(source StaticSendDelayS
 	// W3C SCXML 6.2: send id="__send_2"
 	{
 	sendArgError := ""
+	// Why the argument failed, a code of sce:std/engine/error_reason
+	// (docs/adr/0106 #111), set with every sentence below.
+	var sendArgReason sce.ErrorReason
+	_ = sendArgReason
 	sendDelayMs := uint64(0)
 	if sendArgError == "" {
 		// The delay is a string computed from the machine's fields now, and
@@ -975,16 +991,16 @@ func (p *StaticSendDelayPolicy) ExecuteTransitionContent(source StaticSendDelayS
 		var sceFailure scealgorithm.Failure
 		sceDelay := strconv.FormatUint(uint64(scealgorithm.MulUint32(&sceFailure, p.vWait, 100000000)), 10) + "ms"
 		if sceFailure.Failed() {
-			sendArgError = "<send> delayexpr could not be evaluated"
+			sendArgError, sendArgReason = "<send> delayexpr could not be evaluated", sceerrorreason.ErrorReasonExpressionFailed
 		} else if ms, ok := sce.ParseDelayToMs(sceDelay); ok {
 			sendDelayMs = ms
 		} else {
-			sendArgError = "<send> delayexpr is not a CSS2 time"
+			sendArgError, sendArgReason = "<send> delayexpr is not a CSS2 time", sceerrorreason.ErrorReasonSendDelayInvalid
 		}
 	}
 	_ = sendDelayMs
 	if sendArgError != "" {
-		errEvt := sce.NewPlatformError(StaticSendDelayEventErrorExecution, sendArgError)
+		errEvt := sce.NewPlatformError(StaticSendDelayEventErrorExecution, sendArgReason, sendArgError)
 		errEvt.Metadata.SendID = "__send_2"
 		engine.Raise(errEvt)
 		return  // W3C SCXML 4.9: the error ends the block
@@ -1008,7 +1024,7 @@ func (p *StaticSendDelayPolicy) ExecuteTransitionContent(source StaticSendDelayS
 			func() {
 
 
-	if func() bool { var sceFailure scealgorithm.Failure; sceValue := scealgorithm.AddUint32(&sceFailure, p.vBeats, 1); if sceFailure.Failed() { engine.Raise(sce.NewPlatformError(StaticSendDelayEventErrorExecution, "<assign location='beats'>: an integer operation overflowed or failed")); return true }; p.vBeats = sceValue; return false }() {
+	if func() bool { var sceFailure scealgorithm.Failure; sceValue := scealgorithm.AddUint32(&sceFailure, p.vBeats, 1); if sceFailure.Failed() { engine.Raise(sce.NewPlatformError(StaticSendDelayEventErrorExecution, sceerrorreason.ErrorReasonExpressionFailed, "<assign location='beats'>: an integer operation overflowed or failed")); return true }; p.vBeats = sceValue; return false }() {
 		return  // W3C SCXML 4.9: the error ends the block
 	}
 
@@ -1019,7 +1035,7 @@ func (p *StaticSendDelayPolicy) ExecuteTransitionContent(source StaticSendDelayS
 			func() {
 
 
-	if func() bool { var sceFailure scealgorithm.Failure; sceValue := scealgorithm.AddUint32(&sceFailure, p.vRefusals, 1); if sceFailure.Failed() { engine.Raise(sce.NewPlatformError(StaticSendDelayEventErrorExecution, "<assign location='refusals'>: an integer operation overflowed or failed")); return true }; p.vRefusals = sceValue; return false }() {
+	if func() bool { var sceFailure scealgorithm.Failure; sceValue := scealgorithm.AddUint32(&sceFailure, p.vRefusals, 1); if sceFailure.Failed() { engine.Raise(sce.NewPlatformError(StaticSendDelayEventErrorExecution, sceerrorreason.ErrorReasonExpressionFailed, "<assign location='refusals'>: an integer operation overflowed or failed")); return true }; p.vRefusals = sceValue; return false }() {
 		return  // W3C SCXML 4.9: the error ends the block
 	}
 

@@ -689,7 +689,7 @@ public final class SyncClientPolicy: InvocablePolicy {
         case .deleting:
             if event == .syncResponse {
                 // W3C SCXML 5.9: cond="DeleteOutcome(_event.data.kind, _event.data.status) === 0" lowered to Swift at build time
-                if (self.pendingPayloadTag == .syncResponse && ({ () -> Bool in do { return (try SyncDeleteOutcome.syncDeleteOutcome(self.pendingSyncResponsePayload.kind, self.pendingSyncResponsePayload.status)) == 0 } catch { engine.raise(EventWithMetadata.platformError(SyncClientEvent.errorExecution, message: "<transition cond='DeleteOutcome(_event.data.kind, _event.data.status) === 0'>: an integer operation overflowed or failed")); return false } }())) {
+                if (self.pendingPayloadTag == .syncResponse && ({ () -> Bool in do { return (try SyncDeleteOutcome.syncDeleteOutcome(self.pendingSyncResponsePayload.kind, self.pendingSyncResponsePayload.status)) == 0 } catch { engine.raise(EventWithMetadata.platformError(SyncClientEvent.errorExecution, reason: .expressionFailed, message: "<transition cond='DeleteOutcome(_event.data.kind, _event.data.status) === 0'>: an integer operation overflowed or failed")); return false } }())) {
                     return EnabledTransition(
                         source: state,
                         targets: [],
@@ -701,7 +701,7 @@ public final class SyncClientPolicy: InvocablePolicy {
             }
             if event == .syncResponse {
                 // W3C SCXML 5.9: cond="DeleteOutcome(_event.data.kind, _event.data.status) === 1" lowered to Swift at build time
-                if (self.pendingPayloadTag == .syncResponse && ({ () -> Bool in do { return (try SyncDeleteOutcome.syncDeleteOutcome(self.pendingSyncResponsePayload.kind, self.pendingSyncResponsePayload.status)) == 1 } catch { engine.raise(EventWithMetadata.platformError(SyncClientEvent.errorExecution, message: "<transition cond='DeleteOutcome(_event.data.kind, _event.data.status) === 1'>: an integer operation overflowed or failed")); return false } }())) {
+                if (self.pendingPayloadTag == .syncResponse && ({ () -> Bool in do { return (try SyncDeleteOutcome.syncDeleteOutcome(self.pendingSyncResponsePayload.kind, self.pendingSyncResponsePayload.status)) == 1 } catch { engine.raise(EventWithMetadata.platformError(SyncClientEvent.errorExecution, reason: .expressionFailed, message: "<transition cond='DeleteOutcome(_event.data.kind, _event.data.status) === 1'>: an integer operation overflowed or failed")); return false } }())) {
                     return EnabledTransition(
                         source: state,
                         targets: [],
@@ -807,7 +807,7 @@ public final class SyncClientPolicy: InvocablePolicy {
             }
             if event == .syncResponse {
                 // W3C SCXML 5.9: cond="UploadOutcome(_event.data.create, _event.data.status, _event.data.davError) === 0" lowered to Swift at build time
-                if (self.pendingPayloadTag == .syncResponse && ({ () -> Bool in do { return (try SyncUploadOutcome.syncUploadOutcome(self.pendingSyncResponsePayload.create, self.pendingSyncResponsePayload.status, self.pendingSyncResponsePayload.davError)) == 0 } catch { engine.raise(EventWithMetadata.platformError(SyncClientEvent.errorExecution, message: "<transition cond='UploadOutcome(_event.data.create, _event.data.status, _event.data.davError) === 0'>: an integer operation overflowed or failed")); return false } }())) {
+                if (self.pendingPayloadTag == .syncResponse && ({ () -> Bool in do { return (try SyncUploadOutcome.syncUploadOutcome(self.pendingSyncResponsePayload.create, self.pendingSyncResponsePayload.status, self.pendingSyncResponsePayload.davError)) == 0 } catch { engine.raise(EventWithMetadata.platformError(SyncClientEvent.errorExecution, reason: .expressionFailed, message: "<transition cond='UploadOutcome(_event.data.create, _event.data.status, _event.data.davError) === 0'>: an integer operation overflowed or failed")); return false } }())) {
                     return EnabledTransition(
                         source: state,
                         targets: [],
@@ -819,7 +819,7 @@ public final class SyncClientPolicy: InvocablePolicy {
             }
             if event == .syncResponse {
                 // W3C SCXML 5.9: cond="UploadOutcome(_event.data.create, _event.data.status, _event.data.davError) === 1" lowered to Swift at build time
-                if (self.pendingPayloadTag == .syncResponse && ({ () -> Bool in do { return (try SyncUploadOutcome.syncUploadOutcome(self.pendingSyncResponsePayload.create, self.pendingSyncResponsePayload.status, self.pendingSyncResponsePayload.davError)) == 1 } catch { engine.raise(EventWithMetadata.platformError(SyncClientEvent.errorExecution, message: "<transition cond='UploadOutcome(_event.data.create, _event.data.status, _event.data.davError) === 1'>: an integer operation overflowed or failed")); return false } }())) {
+                if (self.pendingPayloadTag == .syncResponse && ({ () -> Bool in do { return (try SyncUploadOutcome.syncUploadOutcome(self.pendingSyncResponsePayload.create, self.pendingSyncResponsePayload.status, self.pendingSyncResponsePayload.davError)) == 1 } catch { engine.raise(EventWithMetadata.platformError(SyncClientEvent.errorExecution, reason: .expressionFailed, message: "<transition cond='UploadOutcome(_event.data.create, _event.data.status, _event.data.davError) === 1'>: an integer operation overflowed or failed")); return false } }())) {
                     return EnabledTransition(
                         source: state,
                         targets: [],
@@ -868,7 +868,7 @@ public final class SyncClientPolicy: InvocablePolicy {
                 sceBlock: do {
 
 
-                if ({ () -> Bool in do { let sceValue: UInt32 = (try Checked.add(self.vRefusals, 1)); self.vRefusals = sceValue } catch { engine.raise(EventWithMetadata.platformError(SyncClientEvent.errorExecution, message: "<assign location='refusals'>: an integer operation overflowed or failed")); return true }; return false }()) {
+                if ({ () -> Bool in do { let sceValue: UInt32 = (try Checked.add(self.vRefusals, 1)); self.vRefusals = sceValue } catch { engine.raise(EventWithMetadata.platformError(SyncClientEvent.errorExecution, reason: .expressionFailed, message: "<assign location='refusals'>: an integer operation overflowed or failed")); return true }; return false }()) {
                     break sceBlock  // W3C SCXML 4.9: the error ends the block
                 }
 
@@ -883,7 +883,7 @@ public final class SyncClientPolicy: InvocablePolicy {
                 sceBlock: do {
 
 
-                if ({ () -> Bool in do { let sceValue: UInt32 = (try Checked.add(self.vDeleted, 1)); self.vDeleted = sceValue } catch { engine.raise(EventWithMetadata.platformError(SyncClientEvent.errorExecution, message: "<assign location='deleted'>: an integer operation overflowed or failed")); return true }; return false }()) {
+                if ({ () -> Bool in do { let sceValue: UInt32 = (try Checked.add(self.vDeleted, 1)); self.vDeleted = sceValue } catch { engine.raise(EventWithMetadata.platformError(SyncClientEvent.errorExecution, reason: .expressionFailed, message: "<assign location='deleted'>: an integer operation overflowed or failed")); return true }; return false }()) {
                     break sceBlock  // W3C SCXML 4.9: the error ends the block
                 }
 
@@ -908,13 +908,13 @@ public final class SyncClientPolicy: InvocablePolicy {
                     }
 
 
-                if ({ () -> Bool in do { let sceValue: UInt8 = (try SyncFailure.syncFailure(self.pendingSyncResponsePayload.kind, self.pendingSyncResponsePayload.status)); self.vOutcome = sceValue } catch { engine.raise(EventWithMetadata.platformError(SyncClientEvent.errorExecution, message: "<assign location='outcome'>: an integer operation overflowed or failed")); return true }; return false }()) {
+                if ({ () -> Bool in do { let sceValue: UInt8 = (try SyncFailure.syncFailure(self.pendingSyncResponsePayload.kind, self.pendingSyncResponsePayload.status)); self.vOutcome = sceValue } catch { engine.raise(EventWithMetadata.platformError(SyncClientEvent.errorExecution, reason: .expressionFailed, message: "<assign location='outcome'>: an integer operation overflowed or failed")); return true }; return false }()) {
                     break sceBlock  // W3C SCXML 4.9: the error ends the block
                 }
 
 
 
-                if ({ () -> Bool in do { let sceValue: Int64 = (try SyncRetryAt.syncRetryAt(self.vRetryAt, self.pendingSyncResponsePayload.kind, self.pendingSyncResponsePayload.status, self.pendingSyncResponsePayload.now, self.pendingSyncResponsePayload.retryAfter)); self.vRetryAt = sceValue } catch { engine.raise(EventWithMetadata.platformError(SyncClientEvent.errorExecution, message: "<assign location='retryAt'>: an integer operation overflowed or failed")); return true }; return false }()) {
+                if ({ () -> Bool in do { let sceValue: Int64 = (try SyncRetryAt.syncRetryAt(self.vRetryAt, self.pendingSyncResponsePayload.kind, self.pendingSyncResponsePayload.status, self.pendingSyncResponsePayload.now, self.pendingSyncResponsePayload.retryAfter)); self.vRetryAt = sceValue } catch { engine.raise(EventWithMetadata.platformError(SyncClientEvent.errorExecution, reason: .expressionFailed, message: "<assign location='retryAt'>: an integer operation overflowed or failed")); return true }; return false }()) {
                     break sceBlock  // W3C SCXML 4.9: the error ends the block
                 }
 
@@ -965,7 +965,7 @@ public final class SyncClientPolicy: InvocablePolicy {
                 sceBlock: do {
 
 
-                if ({ () -> Bool in do { let sceValue: UInt32 = (try Checked.add(self.vPages, 1)); self.vPages = sceValue } catch { engine.raise(EventWithMetadata.platformError(SyncClientEvent.errorExecution, message: "<assign location='pages'>: an integer operation overflowed or failed")); return true }; return false }()) {
+                if ({ () -> Bool in do { let sceValue: UInt32 = (try Checked.add(self.vPages, 1)); self.vPages = sceValue } catch { engine.raise(EventWithMetadata.platformError(SyncClientEvent.errorExecution, reason: .expressionFailed, message: "<assign location='pages'>: an integer operation overflowed or failed")); return true }; return false }()) {
                     break sceBlock  // W3C SCXML 4.9: the error ends the block
                 }
 
@@ -975,7 +975,7 @@ public final class SyncClientPolicy: InvocablePolicy {
                 sceBlock: do {
 
 
-                if ({ () -> Bool in do { let sceValue: UInt32 = (try Checked.add(self.vPages, 1)); self.vPages = sceValue } catch { engine.raise(EventWithMetadata.platformError(SyncClientEvent.errorExecution, message: "<assign location='pages'>: an integer operation overflowed or failed")); return true }; return false }()) {
+                if ({ () -> Bool in do { let sceValue: UInt32 = (try Checked.add(self.vPages, 1)); self.vPages = sceValue } catch { engine.raise(EventWithMetadata.platformError(SyncClientEvent.errorExecution, reason: .expressionFailed, message: "<assign location='pages'>: an integer operation overflowed or failed")); return true }; return false }()) {
                     break sceBlock  // W3C SCXML 4.9: the error ends the block
                 }
 
@@ -1000,13 +1000,13 @@ public final class SyncClientPolicy: InvocablePolicy {
                     }
 
 
-                if ({ () -> Bool in do { let sceValue: UInt8 = (try SyncFailure.syncFailure(self.pendingSyncResponsePayload.kind, self.pendingSyncResponsePayload.status)); self.vOutcome = sceValue } catch { engine.raise(EventWithMetadata.platformError(SyncClientEvent.errorExecution, message: "<assign location='outcome'>: an integer operation overflowed or failed")); return true }; return false }()) {
+                if ({ () -> Bool in do { let sceValue: UInt8 = (try SyncFailure.syncFailure(self.pendingSyncResponsePayload.kind, self.pendingSyncResponsePayload.status)); self.vOutcome = sceValue } catch { engine.raise(EventWithMetadata.platformError(SyncClientEvent.errorExecution, reason: .expressionFailed, message: "<assign location='outcome'>: an integer operation overflowed or failed")); return true }; return false }()) {
                     break sceBlock  // W3C SCXML 4.9: the error ends the block
                 }
 
 
 
-                if ({ () -> Bool in do { let sceValue: Int64 = (try SyncRetryAt.syncRetryAt(self.vRetryAt, self.pendingSyncResponsePayload.kind, self.pendingSyncResponsePayload.status, self.pendingSyncResponsePayload.now, self.pendingSyncResponsePayload.retryAfter)); self.vRetryAt = sceValue } catch { engine.raise(EventWithMetadata.platformError(SyncClientEvent.errorExecution, message: "<assign location='retryAt'>: an integer operation overflowed or failed")); return true }; return false }()) {
+                if ({ () -> Bool in do { let sceValue: Int64 = (try SyncRetryAt.syncRetryAt(self.vRetryAt, self.pendingSyncResponsePayload.kind, self.pendingSyncResponsePayload.status, self.pendingSyncResponsePayload.now, self.pendingSyncResponsePayload.retryAfter)); self.vRetryAt = sceValue } catch { engine.raise(EventWithMetadata.platformError(SyncClientEvent.errorExecution, reason: .expressionFailed, message: "<assign location='retryAt'>: an integer operation overflowed or failed")); return true }; return false }()) {
                     break sceBlock  // W3C SCXML 4.9: the error ends the block
                 }
 
@@ -1024,13 +1024,13 @@ public final class SyncClientPolicy: InvocablePolicy {
                     }
 
 
-                if ({ () -> Bool in do { let sceValue: UInt8 = (try SyncFailure.syncFailure(self.pendingSyncResponsePayload.kind, self.pendingSyncResponsePayload.status)); self.vOutcome = sceValue } catch { engine.raise(EventWithMetadata.platformError(SyncClientEvent.errorExecution, message: "<assign location='outcome'>: an integer operation overflowed or failed")); return true }; return false }()) {
+                if ({ () -> Bool in do { let sceValue: UInt8 = (try SyncFailure.syncFailure(self.pendingSyncResponsePayload.kind, self.pendingSyncResponsePayload.status)); self.vOutcome = sceValue } catch { engine.raise(EventWithMetadata.platformError(SyncClientEvent.errorExecution, reason: .expressionFailed, message: "<assign location='outcome'>: an integer operation overflowed or failed")); return true }; return false }()) {
                     break sceBlock  // W3C SCXML 4.9: the error ends the block
                 }
 
 
 
-                if ({ () -> Bool in do { let sceValue: Int64 = (try SyncRetryAt.syncRetryAt(self.vRetryAt, self.pendingSyncResponsePayload.kind, self.pendingSyncResponsePayload.status, self.pendingSyncResponsePayload.now, self.pendingSyncResponsePayload.retryAfter)); self.vRetryAt = sceValue } catch { engine.raise(EventWithMetadata.platformError(SyncClientEvent.errorExecution, message: "<assign location='retryAt'>: an integer operation overflowed or failed")); return true }; return false }()) {
+                if ({ () -> Bool in do { let sceValue: Int64 = (try SyncRetryAt.syncRetryAt(self.vRetryAt, self.pendingSyncResponsePayload.kind, self.pendingSyncResponsePayload.status, self.pendingSyncResponsePayload.now, self.pendingSyncResponsePayload.retryAfter)); self.vRetryAt = sceValue } catch { engine.raise(EventWithMetadata.platformError(SyncClientEvent.errorExecution, reason: .expressionFailed, message: "<assign location='retryAt'>: an integer operation overflowed or failed")); return true }; return false }()) {
                     break sceBlock  // W3C SCXML 4.9: the error ends the block
                 }
 
@@ -1040,7 +1040,7 @@ public final class SyncClientPolicy: InvocablePolicy {
                 sceBlock: do {
 
 
-                if ({ () -> Bool in do { let sceValue: UInt32 = (try Checked.add(self.vUploaded, 1)); self.vUploaded = sceValue } catch { engine.raise(EventWithMetadata.platformError(SyncClientEvent.errorExecution, message: "<assign location='uploaded'>: an integer operation overflowed or failed")); return true }; return false }()) {
+                if ({ () -> Bool in do { let sceValue: UInt32 = (try Checked.add(self.vUploaded, 1)); self.vUploaded = sceValue } catch { engine.raise(EventWithMetadata.platformError(SyncClientEvent.errorExecution, reason: .expressionFailed, message: "<assign location='uploaded'>: an integer operation overflowed or failed")); return true }; return false }()) {
                     break sceBlock  // W3C SCXML 4.9: the error ends the block
                 }
 
@@ -1050,7 +1050,7 @@ public final class SyncClientPolicy: InvocablePolicy {
                 sceBlock: do {
 
 
-                if ({ () -> Bool in do { let sceValue: UInt32 = (try Checked.add(self.vDiscarded, 1)); self.vDiscarded = sceValue } catch { engine.raise(EventWithMetadata.platformError(SyncClientEvent.errorExecution, message: "<assign location='discarded'>: an integer operation overflowed or failed")); return true }; return false }()) {
+                if ({ () -> Bool in do { let sceValue: UInt32 = (try Checked.add(self.vDiscarded, 1)); self.vDiscarded = sceValue } catch { engine.raise(EventWithMetadata.platformError(SyncClientEvent.errorExecution, reason: .expressionFailed, message: "<assign location='discarded'>: an integer operation overflowed or failed")); return true }; return false }()) {
                     break sceBlock  // W3C SCXML 4.9: the error ends the block
                 }
 
@@ -1071,13 +1071,13 @@ public final class SyncClientPolicy: InvocablePolicy {
                     }
 
 
-                if ({ () -> Bool in do { let sceValue: UInt8 = (try SyncFailure.syncFailure(4, self.pendingSyncResponsePayload.status)); self.vOutcome = sceValue } catch { engine.raise(EventWithMetadata.platformError(SyncClientEvent.errorExecution, message: "<assign location='outcome'>: an integer operation overflowed or failed")); return true }; return false }()) {
+                if ({ () -> Bool in do { let sceValue: UInt8 = (try SyncFailure.syncFailure(4, self.pendingSyncResponsePayload.status)); self.vOutcome = sceValue } catch { engine.raise(EventWithMetadata.platformError(SyncClientEvent.errorExecution, reason: .expressionFailed, message: "<assign location='outcome'>: an integer operation overflowed or failed")); return true }; return false }()) {
                     break sceBlock  // W3C SCXML 4.9: the error ends the block
                 }
 
 
 
-                if ({ () -> Bool in do { let sceValue: Int64 = (try SyncRetryAt.syncRetryAt(self.vRetryAt, 4, self.pendingSyncResponsePayload.status, self.pendingSyncResponsePayload.now, self.pendingSyncResponsePayload.retryAfter)); self.vRetryAt = sceValue } catch { engine.raise(EventWithMetadata.platformError(SyncClientEvent.errorExecution, message: "<assign location='retryAt'>: an integer operation overflowed or failed")); return true }; return false }()) {
+                if ({ () -> Bool in do { let sceValue: Int64 = (try SyncRetryAt.syncRetryAt(self.vRetryAt, 4, self.pendingSyncResponsePayload.status, self.pendingSyncResponsePayload.now, self.pendingSyncResponsePayload.retryAfter)); self.vRetryAt = sceValue } catch { engine.raise(EventWithMetadata.platformError(SyncClientEvent.errorExecution, reason: .expressionFailed, message: "<assign location='retryAt'>: an integer operation overflowed or failed")); return true }; return false }()) {
                     break sceBlock  // W3C SCXML 4.9: the error ends the block
                 }
 

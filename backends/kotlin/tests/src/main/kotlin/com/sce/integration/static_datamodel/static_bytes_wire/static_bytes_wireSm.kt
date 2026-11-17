@@ -583,7 +583,7 @@ class StaticBytesWireStateMachine(
                     return
                 }
 
-            if (try { vHeld = com.sce.forge.runtime.SceChecked.bounded(pendingFramedTakenPayload!!.frame, 8); false } catch (_: com.sce.forge.runtime.AlgorithmFailure) { raisePlatformError(StaticBytesWireEvent.Error.Execution, "<assign location='held'>: an integer operation overflowed or failed"); true }) {
+            if (try { vHeld = com.sce.forge.runtime.SceChecked.bounded(pendingFramedTakenPayload!!.frame, 8); false } catch (_: com.sce.forge.runtime.AlgorithmFailure) { raisePlatformError(StaticBytesWireEvent.Error.Execution, ErrorReason.EXPRESSION_FAILED, "<assign location='held'>: an integer operation overflowed or failed"); true }) {
                 return
             }
     }
@@ -615,11 +615,11 @@ class StaticBytesWireStateMachine(
                     return
                 }
 
-            if (try { vEcho = com.sce.forge.runtime.SceChecked.bounded(pendingFramedRelayedPayload!!.frame, 8); false } catch (_: com.sce.forge.runtime.AlgorithmFailure) { raisePlatformError(StaticBytesWireEvent.Error.Execution, "<assign location='echo'>: an integer operation overflowed or failed"); true }) {
+            if (try { vEcho = com.sce.forge.runtime.SceChecked.bounded(pendingFramedRelayedPayload!!.frame, 8); false } catch (_: com.sce.forge.runtime.AlgorithmFailure) { raisePlatformError(StaticBytesWireEvent.Error.Execution, ErrorReason.EXPRESSION_FAILED, "<assign location='echo'>: an integer operation overflowed or failed"); true }) {
                 return
             }
 
-            if (try { vRelays = com.sce.forge.runtime.SceChecked.add(vRelays, 1.toUInt()); false } catch (_: com.sce.forge.runtime.AlgorithmFailure) { raisePlatformError(StaticBytesWireEvent.Error.Execution, "<assign location='relays'>: an integer operation overflowed or failed"); true }) {
+            if (try { vRelays = com.sce.forge.runtime.SceChecked.add(vRelays, 1.toUInt()); false } catch (_: com.sce.forge.runtime.AlgorithmFailure) { raisePlatformError(StaticBytesWireEvent.Error.Execution, ErrorReason.EXPRESSION_FAILED, "<assign location='relays'>: an integer operation overflowed or failed"); true }) {
                 return
             }
     }
@@ -627,7 +627,7 @@ class StaticBytesWireStateMachine(
     private fun transitionContentOfIdleAt4() {
                 // SCE-MAP: static_bytes_wire.scxml:40 :: idle :: _transition_4
 
-            if (try { vErrors = com.sce.forge.runtime.SceChecked.add(vErrors, 1.toUInt()); false } catch (_: com.sce.forge.runtime.AlgorithmFailure) { raisePlatformError(StaticBytesWireEvent.Error.Execution, "<assign location='errors'>: an integer operation overflowed or failed"); true }) {
+            if (try { vErrors = com.sce.forge.runtime.SceChecked.add(vErrors, 1.toUInt()); false } catch (_: com.sce.forge.runtime.AlgorithmFailure) { raisePlatformError(StaticBytesWireEvent.Error.Execution, ErrorReason.EXPRESSION_FAILED, "<assign location='errors'>: an integer operation overflowed or failed"); true }) {
                 return
             }
     }

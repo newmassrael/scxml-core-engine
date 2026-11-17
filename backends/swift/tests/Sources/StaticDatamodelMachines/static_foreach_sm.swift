@@ -666,7 +666,7 @@ public final class StaticForeachPolicy: InvocablePolicy {
 
                 // SCE Accepted Subset §2.15: <sce:append target="picked">
 
-                if ({ () -> Bool in if self.vPicked.count >= 4 { engine.raise(EventWithMetadata.platformError(StaticForeachEvent.errorExecution, message: "<sce:append target='picked'>: the list already holds its capacity of 4")); return true }; let sceValue = Checked.element(of: self.vPicked, 100); self.vPicked.append(sceValue); return false }()) {
+                if ({ () -> Bool in if self.vPicked.count >= 4 { engine.raise(EventWithMetadata.platformError(StaticForeachEvent.errorExecution, reason: .assignmentFailed, message: "<sce:append target='picked'>: the list already holds its capacity of 4")); return true }; let sceValue = Checked.element(of: self.vPicked, 100); self.vPicked.append(sceValue); return false }()) {
                     break sceBlock  // W3C SCXML 4.9: the error ends the block
                 }
 
@@ -677,7 +677,7 @@ public final class StaticForeachPolicy: InvocablePolicy {
 
                 // SCE Accepted Subset §2.15: <sce:append target="picked">
 
-                if ({ () -> Bool in if self.vPicked.count >= 4 { engine.raise(EventWithMetadata.platformError(StaticForeachEvent.errorExecution, message: "<sce:append target='picked'>: the list already holds its capacity of 4")); return true }; let sceValue = Checked.element(of: self.vPicked, 200); self.vPicked.append(sceValue); return false }()) {
+                if ({ () -> Bool in if self.vPicked.count >= 4 { engine.raise(EventWithMetadata.platformError(StaticForeachEvent.errorExecution, reason: .assignmentFailed, message: "<sce:append target='picked'>: the list already holds its capacity of 4")); return true }; let sceValue = Checked.element(of: self.vPicked, 200); self.vPicked.append(sceValue); return false }()) {
                     break sceBlock  // W3C SCXML 4.9: the error ends the block
                 }
 
@@ -688,7 +688,7 @@ public final class StaticForeachPolicy: InvocablePolicy {
 
                 // SCE Accepted Subset §2.15: <sce:append target="picked">
 
-                if ({ () -> Bool in if self.vPicked.count >= 4 { engine.raise(EventWithMetadata.platformError(StaticForeachEvent.errorExecution, message: "<sce:append target='picked'>: the list already holds its capacity of 4")); return true }; let sceValue = Checked.element(of: self.vPicked, 5); self.vPicked.append(sceValue); return false }()) {
+                if ({ () -> Bool in if self.vPicked.count >= 4 { engine.raise(EventWithMetadata.platformError(StaticForeachEvent.errorExecution, reason: .assignmentFailed, message: "<sce:append target='picked'>: the list already holds its capacity of 4")); return true }; let sceValue = Checked.element(of: self.vPicked, 5); self.vPicked.append(sceValue); return false }()) {
                     break sceBlock  // W3C SCXML 4.9: the error ends the block
                 }
 
@@ -715,14 +715,14 @@ public final class StaticForeachPolicy: InvocablePolicy {
                     _ = v
 
 
-                if ({ () -> Bool in do { let sceValue: UInt32 = (try Checked.add(self.vTotal, UInt32(v))); self.vTotal = sceValue } catch { engine.raise(EventWithMetadata.platformError(StaticForeachEvent.errorExecution, message: "<assign location='total'>: an integer operation overflowed or failed")); return true }; return false }()) {
+                if ({ () -> Bool in do { let sceValue: UInt32 = (try Checked.add(self.vTotal, UInt32(v))); self.vTotal = sceValue } catch { engine.raise(EventWithMetadata.platformError(StaticForeachEvent.errorExecution, reason: .expressionFailed, message: "<assign location='total'>: an integer operation overflowed or failed")); return true }; return false }()) {
                     break sceBlock  // W3C SCXML 4.9: the error ends the block
                 }
 
                 }
 
 
-                if ({ () -> Bool in do { let sceValue: UInt32 = (try Checked.add(self.vFinished, 1)); self.vFinished = sceValue } catch { engine.raise(EventWithMetadata.platformError(StaticForeachEvent.errorExecution, message: "<assign location='finished'>: an integer operation overflowed or failed")); return true }; return false }()) {
+                if ({ () -> Bool in do { let sceValue: UInt32 = (try Checked.add(self.vFinished, 1)); self.vFinished = sceValue } catch { engine.raise(EventWithMetadata.platformError(StaticForeachEvent.errorExecution, reason: .expressionFailed, message: "<assign location='finished'>: an integer operation overflowed or failed")); return true }; return false }()) {
                     break sceBlock  // W3C SCXML 4.9: the error ends the block
                 }
 
@@ -740,14 +740,14 @@ public final class StaticForeachPolicy: InvocablePolicy {
                     let i = UInt32(truncatingIfNeeded: sceIndex); _ = i; _ = v
 
 
-                if ({ () -> Bool in do { let sceValue: UInt32 = (try Checked.add(self.vWeighted, (try Checked.mul(UInt32(v), (try Checked.add(i, 1)))))); self.vWeighted = sceValue } catch { engine.raise(EventWithMetadata.platformError(StaticForeachEvent.errorExecution, message: "<assign location='weighted'>: an integer operation overflowed or failed")); return true }; return false }()) {
+                if ({ () -> Bool in do { let sceValue: UInt32 = (try Checked.add(self.vWeighted, (try Checked.mul(UInt32(v), (try Checked.add(i, 1)))))); self.vWeighted = sceValue } catch { engine.raise(EventWithMetadata.platformError(StaticForeachEvent.errorExecution, reason: .expressionFailed, message: "<assign location='weighted'>: an integer operation overflowed or failed")); return true }; return false }()) {
                     break sceBlock  // W3C SCXML 4.9: the error ends the block
                 }
 
                 }
 
 
-                if ({ () -> Bool in do { let sceValue: UInt32 = (try Checked.add(self.vFinished, 1)); self.vFinished = sceValue } catch { engine.raise(EventWithMetadata.platformError(StaticForeachEvent.errorExecution, message: "<assign location='finished'>: an integer operation overflowed or failed")); return true }; return false }()) {
+                if ({ () -> Bool in do { let sceValue: UInt32 = (try Checked.add(self.vFinished, 1)); self.vFinished = sceValue } catch { engine.raise(EventWithMetadata.platformError(StaticForeachEvent.errorExecution, reason: .expressionFailed, message: "<assign location='finished'>: an integer operation overflowed or failed")); return true }; return false }()) {
                     break sceBlock  // W3C SCXML 4.9: the error ends the block
                 }
 
@@ -765,14 +765,14 @@ public final class StaticForeachPolicy: InvocablePolicy {
                     _ = v
 
 
-                if ({ () -> Bool in do { let sceValue: UInt8 = (try Checked.add(self.vSmall, v)); self.vSmall = sceValue } catch { engine.raise(EventWithMetadata.platformError(StaticForeachEvent.errorExecution, message: "<assign location='small'>: an integer operation overflowed or failed")); return true }; return false }()) {
+                if ({ () -> Bool in do { let sceValue: UInt8 = (try Checked.add(self.vSmall, v)); self.vSmall = sceValue } catch { engine.raise(EventWithMetadata.platformError(StaticForeachEvent.errorExecution, reason: .expressionFailed, message: "<assign location='small'>: an integer operation overflowed or failed")); return true }; return false }()) {
                     break sceBlock  // W3C SCXML 4.9: the error ends the block
                 }
 
                 }
 
 
-                if ({ () -> Bool in do { let sceValue: UInt32 = (try Checked.add(self.vFinished, 1)); self.vFinished = sceValue } catch { engine.raise(EventWithMetadata.platformError(StaticForeachEvent.errorExecution, message: "<assign location='finished'>: an integer operation overflowed or failed")); return true }; return false }()) {
+                if ({ () -> Bool in do { let sceValue: UInt32 = (try Checked.add(self.vFinished, 1)); self.vFinished = sceValue } catch { engine.raise(EventWithMetadata.platformError(StaticForeachEvent.errorExecution, reason: .expressionFailed, message: "<assign location='finished'>: an integer operation overflowed or failed")); return true }; return false }()) {
                     break sceBlock  // W3C SCXML 4.9: the error ends the block
                 }
 
@@ -787,14 +787,14 @@ public final class StaticForeachPolicy: InvocablePolicy {
 
                 // SCE Accepted Subset §2.15: <sce:append target="picked">
 
-                if ({ () -> Bool in if self.vPicked.count >= 4 { engine.raise(EventWithMetadata.platformError(StaticForeachEvent.errorExecution, message: "<sce:append target='picked'>: the list already holds its capacity of 4")); return true }; let sceValue = Checked.element(of: self.vPicked, v); self.vPicked.append(sceValue); return false }()) {
+                if ({ () -> Bool in if self.vPicked.count >= 4 { engine.raise(EventWithMetadata.platformError(StaticForeachEvent.errorExecution, reason: .assignmentFailed, message: "<sce:append target='picked'>: the list already holds its capacity of 4")); return true }; let sceValue = Checked.element(of: self.vPicked, v); self.vPicked.append(sceValue); return false }()) {
                     break sceBlock  // W3C SCXML 4.9: the error ends the block
                 }
 
                 }
 
 
-                if ({ () -> Bool in do { let sceValue: UInt32 = (try Checked.add(self.vFinished, 1)); self.vFinished = sceValue } catch { engine.raise(EventWithMetadata.platformError(StaticForeachEvent.errorExecution, message: "<assign location='finished'>: an integer operation overflowed or failed")); return true }; return false }()) {
+                if ({ () -> Bool in do { let sceValue: UInt32 = (try Checked.add(self.vFinished, 1)); self.vFinished = sceValue } catch { engine.raise(EventWithMetadata.platformError(StaticForeachEvent.errorExecution, reason: .expressionFailed, message: "<assign location='finished'>: an integer operation overflowed or failed")); return true }; return false }()) {
                     break sceBlock  // W3C SCXML 4.9: the error ends the block
                 }
 
@@ -816,7 +816,7 @@ public final class StaticForeachPolicy: InvocablePolicy {
                     _ = w
 
 
-                if ({ () -> Bool in do { let sceValue: UInt32 = (try Checked.add(self.vCrossings, 1)); self.vCrossings = sceValue } catch { engine.raise(EventWithMetadata.platformError(StaticForeachEvent.errorExecution, message: "<assign location='crossings'>: an integer operation overflowed or failed")); return true }; return false }()) {
+                if ({ () -> Bool in do { let sceValue: UInt32 = (try Checked.add(self.vCrossings, 1)); self.vCrossings = sceValue } catch { engine.raise(EventWithMetadata.platformError(StaticForeachEvent.errorExecution, reason: .expressionFailed, message: "<assign location='crossings'>: an integer operation overflowed or failed")); return true }; return false }()) {
                     break sceBlock  // W3C SCXML 4.9: the error ends the block
                 }
 
@@ -836,7 +836,7 @@ public final class StaticForeachPolicy: InvocablePolicy {
                     let i = UInt32(truncatingIfNeeded: sceIndex); _ = i; _ = v
 
 
-                if ({ () -> Bool in do { let sceValue: UInt32 = (try Checked.add(self.vVisited, 1)); self.vVisited = sceValue } catch { engine.raise(EventWithMetadata.platformError(StaticForeachEvent.errorExecution, message: "<assign location='visited'>: an integer operation overflowed or failed")); return true }; return false }()) {
+                if ({ () -> Bool in do { let sceValue: UInt32 = (try Checked.add(self.vVisited, 1)); self.vVisited = sceValue } catch { engine.raise(EventWithMetadata.platformError(StaticForeachEvent.errorExecution, reason: .expressionFailed, message: "<assign location='visited'>: an integer operation overflowed or failed")); return true }; return false }()) {
                     break sceBlock  // W3C SCXML 4.9: the error ends the block
                 }
 
@@ -847,7 +847,7 @@ public final class StaticForeachPolicy: InvocablePolicy {
                 sceBlock: do {
 
 
-                if ({ () -> Bool in do { let sceValue: UInt32 = (try Checked.add(self.vErrors, 1)); self.vErrors = sceValue } catch { engine.raise(EventWithMetadata.platformError(StaticForeachEvent.errorExecution, message: "<assign location='errors'>: an integer operation overflowed or failed")); return true }; return false }()) {
+                if ({ () -> Bool in do { let sceValue: UInt32 = (try Checked.add(self.vErrors, 1)); self.vErrors = sceValue } catch { engine.raise(EventWithMetadata.platformError(StaticForeachEvent.errorExecution, reason: .expressionFailed, message: "<assign location='errors'>: an integer operation overflowed or failed")); return true }; return false }()) {
                     break sceBlock  // W3C SCXML 4.9: the error ends the block
                 }
 

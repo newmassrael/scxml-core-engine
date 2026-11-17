@@ -427,7 +427,7 @@ class PtcKeeperStateMachine(
                             // be run and none was, which is the same fact as
                             // an unsupported type — so the same event, rather
                             // than a silence that reads as started.
-                            raisePlatformError(PtcKeeperEvent.Error.Execution, "<invoke> names an invoker the host declared but never registered")
+                            raisePlatformError(PtcKeeperEvent.Error.Execution, ErrorReason.PROCESSOR_UNREGISTERED, "<invoke> names an invoker the host declared but never registered")
                         }
                     }
                 }

@@ -569,6 +569,10 @@ public final class StaticSendEventPolicy: InvocablePolicy {
                 // W3C SCXML 6.2: send id="__send_0"
                 do {
                     var sendArgError = ""
+                    // Why the argument failed, a code of sce:std/engine/error_reason
+                    // (docs/adr/0106 #111), set with every sentence below.
+                    var sendArgReason = ErrorReason.expressionFailed
+                    _ = sendArgReason
                     // The event's name is a string computed from the machine's fields now. A
                     // name that evaluates to nothing names no event, and an operation that
                     // fails cannot be evaluated: either is the argument error.
@@ -576,11 +580,11 @@ public final class StaticSendEventPolicy: InvocablePolicy {
                     if sendArgError.isEmpty {
                         sendEventName = self.vName
                         if sendEventName.isEmpty {
-                            sendArgError = "<send> eventexpr could not be evaluated to an event name"
+                            sendArgError = "<send> eventexpr could not be evaluated to an event name"; sendArgReason = .expressionFailed
                         }
                     }
                     if !sendArgError.isEmpty {
-                        var sendError = EventWithMetadata.platformError(StaticSendEventEvent.errorExecution, message: sendArgError)
+                        var sendError = EventWithMetadata.platformError(StaticSendEventEvent.errorExecution, reason: sendArgReason, message: sendArgError)
                         sendError.metadata.sendID = "__send_0"
                         engine.raise(sendError)
 
@@ -610,6 +614,10 @@ public final class StaticSendEventPolicy: InvocablePolicy {
                 // W3C SCXML 6.2: send id="__send_1"
                 do {
                     var sendArgError = ""
+                    // Why the argument failed, a code of sce:std/engine/error_reason
+                    // (docs/adr/0106 #111), set with every sentence below.
+                    var sendArgReason = ErrorReason.expressionFailed
+                    _ = sendArgReason
                     // The event's name is a string computed from the machine's fields now. A
                     // name that evaluates to nothing names no event, and an operation that
                     // fails cannot be evaluated: either is the argument error.
@@ -621,11 +629,11 @@ public final class StaticSendEventPolicy: InvocablePolicy {
                             sendEventName = ""
                         }
                         if sendEventName.isEmpty {
-                            sendArgError = "<send> eventexpr could not be evaluated to an event name"
+                            sendArgError = "<send> eventexpr could not be evaluated to an event name"; sendArgReason = .expressionFailed
                         }
                     }
                     if !sendArgError.isEmpty {
-                        var sendError = EventWithMetadata.platformError(StaticSendEventEvent.errorExecution, message: sendArgError)
+                        var sendError = EventWithMetadata.platformError(StaticSendEventEvent.errorExecution, reason: sendArgReason, message: sendArgError)
                         sendError.metadata.sendID = "__send_1"
                         engine.raise(sendError)
 
@@ -653,7 +661,7 @@ public final class StaticSendEventPolicy: InvocablePolicy {
                 sceBlock: do {
 
 
-                if ({ () -> Bool in do { let sceValue: String = (try Checked.bounded("pong", capacity: 16)); self.vName = sceValue } catch { engine.raise(EventWithMetadata.platformError(StaticSendEventEvent.errorExecution, message: "<assign location='name'>: an integer operation overflowed or failed")); return true }; return false }()) {
+                if ({ () -> Bool in do { let sceValue: String = (try Checked.bounded("pong", capacity: 16)); self.vName = sceValue } catch { engine.raise(EventWithMetadata.platformError(StaticSendEventEvent.errorExecution, reason: .expressionFailed, message: "<assign location='name'>: an integer operation overflowed or failed")); return true }; return false }()) {
                     break sceBlock  // W3C SCXML 4.9: the error ends the block
                 }
 
@@ -663,7 +671,7 @@ public final class StaticSendEventPolicy: InvocablePolicy {
                 sceBlock: do {
 
 
-                if ({ () -> Bool in do { let sceValue: String = (try Checked.bounded("ping", capacity: 16)); self.vName = sceValue } catch { engine.raise(EventWithMetadata.platformError(StaticSendEventEvent.errorExecution, message: "<assign location='name'>: an integer operation overflowed or failed")); return true }; return false }()) {
+                if ({ () -> Bool in do { let sceValue: String = (try Checked.bounded("ping", capacity: 16)); self.vName = sceValue } catch { engine.raise(EventWithMetadata.platformError(StaticSendEventEvent.errorExecution, reason: .expressionFailed, message: "<assign location='name'>: an integer operation overflowed or failed")); return true }; return false }()) {
                     break sceBlock  // W3C SCXML 4.9: the error ends the block
                 }
 
@@ -673,7 +681,7 @@ public final class StaticSendEventPolicy: InvocablePolicy {
                 sceBlock: do {
 
 
-                if ({ () -> Bool in do { let sceValue: String = (try Checked.bounded("", capacity: 16)); self.vName = sceValue } catch { engine.raise(EventWithMetadata.platformError(StaticSendEventEvent.errorExecution, message: "<assign location='name'>: an integer operation overflowed or failed")); return true }; return false }()) {
+                if ({ () -> Bool in do { let sceValue: String = (try Checked.bounded("", capacity: 16)); self.vName = sceValue } catch { engine.raise(EventWithMetadata.platformError(StaticSendEventEvent.errorExecution, reason: .expressionFailed, message: "<assign location='name'>: an integer operation overflowed or failed")); return true }; return false }()) {
                     break sceBlock  // W3C SCXML 4.9: the error ends the block
                 }
 
@@ -683,7 +691,7 @@ public final class StaticSendEventPolicy: InvocablePolicy {
                 sceBlock: do {
 
 
-                if ({ () -> Bool in do { let sceValue: UInt32 = (try Checked.add(self.vPings, 1)); self.vPings = sceValue } catch { engine.raise(EventWithMetadata.platformError(StaticSendEventEvent.errorExecution, message: "<assign location='pings'>: an integer operation overflowed or failed")); return true }; return false }()) {
+                if ({ () -> Bool in do { let sceValue: UInt32 = (try Checked.add(self.vPings, 1)); self.vPings = sceValue } catch { engine.raise(EventWithMetadata.platformError(StaticSendEventEvent.errorExecution, reason: .expressionFailed, message: "<assign location='pings'>: an integer operation overflowed or failed")); return true }; return false }()) {
                     break sceBlock  // W3C SCXML 4.9: the error ends the block
                 }
 
@@ -693,7 +701,7 @@ public final class StaticSendEventPolicy: InvocablePolicy {
                 sceBlock: do {
 
 
-                if ({ () -> Bool in do { let sceValue: UInt32 = (try Checked.add(self.vPongs, 1)); self.vPongs = sceValue } catch { engine.raise(EventWithMetadata.platformError(StaticSendEventEvent.errorExecution, message: "<assign location='pongs'>: an integer operation overflowed or failed")); return true }; return false }()) {
+                if ({ () -> Bool in do { let sceValue: UInt32 = (try Checked.add(self.vPongs, 1)); self.vPongs = sceValue } catch { engine.raise(EventWithMetadata.platformError(StaticSendEventEvent.errorExecution, reason: .expressionFailed, message: "<assign location='pongs'>: an integer operation overflowed or failed")); return true }; return false }()) {
                     break sceBlock  // W3C SCXML 4.9: the error ends the block
                 }
 
@@ -703,7 +711,7 @@ public final class StaticSendEventPolicy: InvocablePolicy {
                 sceBlock: do {
 
 
-                if ({ () -> Bool in do { let sceValue: UInt32 = (try Checked.add(self.vRefusals, 1)); self.vRefusals = sceValue } catch { engine.raise(EventWithMetadata.platformError(StaticSendEventEvent.errorExecution, message: "<assign location='refusals'>: an integer operation overflowed or failed")); return true }; return false }()) {
+                if ({ () -> Bool in do { let sceValue: UInt32 = (try Checked.add(self.vRefusals, 1)); self.vRefusals = sceValue } catch { engine.raise(EventWithMetadata.platformError(StaticSendEventEvent.errorExecution, reason: .expressionFailed, message: "<assign location='refusals'>: an integer operation overflowed or failed")); return true }; return false }()) {
                     break sceBlock  // W3C SCXML 4.9: the error ends the block
                 }
 

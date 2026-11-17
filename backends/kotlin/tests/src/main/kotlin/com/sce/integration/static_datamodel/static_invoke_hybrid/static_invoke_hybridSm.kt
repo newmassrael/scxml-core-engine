@@ -540,7 +540,7 @@ class StaticInvokeHybridStateMachine(
                 // W3C SCXML 3.8: Onentry block 1/1
                 run {
 
-            if (try { vBase = com.sce.forge.runtime.SceChecked.add(vBase, 3.toUInt()); false } catch (_: com.sce.forge.runtime.AlgorithmFailure) { raisePlatformError(StaticInvokeHybridEvent.Error.Execution, "<assign location='base'>: an integer operation overflowed or failed"); true }) {
+            if (try { vBase = com.sce.forge.runtime.SceChecked.add(vBase, 3.toUInt()); false } catch (_: com.sce.forge.runtime.AlgorithmFailure) { raisePlatformError(StaticInvokeHybridEvent.Error.Execution, ErrorReason.EXPRESSION_FAILED, "<assign location='base'>: an integer operation overflowed or failed"); true }) {
                 return@run
             }
                 }
@@ -555,7 +555,7 @@ class StaticInvokeHybridStateMachine(
                 // W3C SCXML 3.8: Onentry block 1/1
                 run {
 
-            if (try { vPick = com.sce.forge.runtime.SceChecked.bounded("./static_hybrid_first.scxml", 48); false } catch (_: com.sce.forge.runtime.AlgorithmFailure) { raisePlatformError(StaticInvokeHybridEvent.Error.Execution, "<assign location='pick'>: an integer operation overflowed or failed"); true }) {
+            if (try { vPick = com.sce.forge.runtime.SceChecked.bounded("./static_hybrid_first.scxml", 48); false } catch (_: com.sce.forge.runtime.AlgorithmFailure) { raisePlatformError(StaticInvokeHybridEvent.Error.Execution, ErrorReason.EXPRESSION_FAILED, "<assign location='pick'>: an integer operation overflowed or failed"); true }) {
                 return@run
             }
                 }
@@ -570,7 +570,7 @@ class StaticInvokeHybridStateMachine(
                 // W3C SCXML 3.8: Onentry block 1/1
                 run {
 
-            if (try { vPick = com.sce.forge.runtime.SceChecked.bounded("static_hybrid_missing.scxml", 48); false } catch (_: com.sce.forge.runtime.AlgorithmFailure) { raisePlatformError(StaticInvokeHybridEvent.Error.Execution, "<assign location='pick'>: an integer operation overflowed or failed"); true }) {
+            if (try { vPick = com.sce.forge.runtime.SceChecked.bounded("static_hybrid_missing.scxml", 48); false } catch (_: com.sce.forge.runtime.AlgorithmFailure) { raisePlatformError(StaticInvokeHybridEvent.Error.Execution, ErrorReason.EXPRESSION_FAILED, "<assign location='pick'>: an integer operation overflowed or failed"); true }) {
                 return@run
             }
                 }
@@ -595,7 +595,7 @@ class StaticInvokeHybridStateMachine(
                 // W3C SCXML 3.8: Onentry block 1/1
                 run {
 
-            if (try { vPick = com.sce.forge.runtime.SceChecked.bounded("/opt/charts/static_hybrid_second.scxml", 48); false } catch (_: com.sce.forge.runtime.AlgorithmFailure) { raisePlatformError(StaticInvokeHybridEvent.Error.Execution, "<assign location='pick'>: an integer operation overflowed or failed"); true }) {
+            if (try { vPick = com.sce.forge.runtime.SceChecked.bounded("/opt/charts/static_hybrid_second.scxml", 48); false } catch (_: com.sce.forge.runtime.AlgorithmFailure) { raisePlatformError(StaticInvokeHybridEvent.Error.Execution, ErrorReason.EXPRESSION_FAILED, "<assign location='pick'>: an integer operation overflowed or failed"); true }) {
                 return@run
             }
                 }
@@ -662,7 +662,7 @@ class StaticInvokeHybridStateMachine(
                                     try {
                                         (com.sce.forge.runtime.SceChecked.sub(vBase, 4.toUInt())).toLong()
                                     } catch (_: com.sce.forge.runtime.AlgorithmFailure) {
-                                        raisePlatformError(StaticInvokeHybridEvent.Error.Execution, "<invoke> <param name='extra'> expr failed to evaluate")
+                                        raisePlatformError(StaticInvokeHybridEvent.Error.Execution, ErrorReason.EXPRESSION_FAILED, "<invoke> <param name='extra'> expr failed to evaluate")
                                     }
 
                                 }
@@ -674,7 +674,7 @@ class StaticInvokeHybridStateMachine(
                                         childSeed.extra = com.sce.forge.runtime.SceChecked.sub(vBase, 4.toUInt())
                                     } catch (_: com.sce.forge.runtime.AlgorithmFailure) {
                                         // W3C SCXML 5.7.1: report the failure and leave the value out.
-                                        raisePlatformError(StaticInvokeHybridEvent.Error.Execution, "<invoke> <param name='extra'> expr failed to evaluate")
+                                        raisePlatformError(StaticInvokeHybridEvent.Error.Execution, ErrorReason.EXPRESSION_FAILED, "<invoke> <param name='extra'> expr failed to evaluate")
                                     }
                                     child.acceptParams(childSeed)
 
@@ -682,7 +682,7 @@ class StaticInvokeHybridStateMachine(
                                 else -> {
                                     // The failure the Interpreter reports when a
                                     // document will not load: nothing to create.
-                                    raisePlatformError(StaticInvokeHybridEvent.Error.Execution, "<invoke srcexpr> evaluated to a document it did not declare")
+                                    raisePlatformError(StaticInvokeHybridEvent.Error.Execution, ErrorReason.INVOKE_SRC_NOT_FOUND, "<invoke srcexpr> evaluated to a document it did not declare")
                                     return@deferInvoke
                                 }
                             }
@@ -692,7 +692,7 @@ class StaticInvokeHybridStateMachine(
                             // W3C SCXML 6.4: the child could not be started. Evaluation
                             // failure no longer reaches here — it has its own raise above,
                             // under the one wording every emitter uses for that fact.
-                            raisePlatformError(StaticInvokeHybridEvent.Error.Execution, "<invoke> could not start a child")
+                            raisePlatformError(StaticInvokeHybridEvent.Error.Execution, ErrorReason.INVOKE_CHILD_INIT_FAILED, "<invoke> could not start a child")
                         }
                     }
                 }
@@ -730,7 +730,7 @@ class StaticInvokeHybridStateMachine(
                                     try {
                                         (com.sce.forge.runtime.SceChecked.mul(vBase, 2000000000.toUInt())).toLong()
                                     } catch (_: com.sce.forge.runtime.AlgorithmFailure) {
-                                        raisePlatformError(StaticInvokeHybridEvent.Error.Execution, "<invoke> <param name='extra'> expr failed to evaluate")
+                                        raisePlatformError(StaticInvokeHybridEvent.Error.Execution, ErrorReason.EXPRESSION_FAILED, "<invoke> <param name='extra'> expr failed to evaluate")
                                     }
 
                                 }
@@ -742,7 +742,7 @@ class StaticInvokeHybridStateMachine(
                                         childSeed.extra = com.sce.forge.runtime.SceChecked.mul(vBase, 2000000000.toUInt())
                                     } catch (_: com.sce.forge.runtime.AlgorithmFailure) {
                                         // W3C SCXML 5.7.1: report the failure and leave the value out.
-                                        raisePlatformError(StaticInvokeHybridEvent.Error.Execution, "<invoke> <param name='extra'> expr failed to evaluate")
+                                        raisePlatformError(StaticInvokeHybridEvent.Error.Execution, ErrorReason.EXPRESSION_FAILED, "<invoke> <param name='extra'> expr failed to evaluate")
                                     }
                                     child.acceptParams(childSeed)
 
@@ -750,7 +750,7 @@ class StaticInvokeHybridStateMachine(
                                 else -> {
                                     // The failure the Interpreter reports when a
                                     // document will not load: nothing to create.
-                                    raisePlatformError(StaticInvokeHybridEvent.Error.Execution, "<invoke srcexpr> evaluated to a document it did not declare")
+                                    raisePlatformError(StaticInvokeHybridEvent.Error.Execution, ErrorReason.INVOKE_SRC_NOT_FOUND, "<invoke srcexpr> evaluated to a document it did not declare")
                                     return@deferInvoke
                                 }
                             }
@@ -760,7 +760,7 @@ class StaticInvokeHybridStateMachine(
                             // W3C SCXML 6.4: the child could not be started. Evaluation
                             // failure no longer reaches here — it has its own raise above,
                             // under the one wording every emitter uses for that fact.
-                            raisePlatformError(StaticInvokeHybridEvent.Error.Execution, "<invoke> could not start a child")
+                            raisePlatformError(StaticInvokeHybridEvent.Error.Execution, ErrorReason.INVOKE_CHILD_INIT_FAILED, "<invoke> could not start a child")
                         }
                     }
                 }
@@ -804,7 +804,7 @@ class StaticInvokeHybridStateMachine(
                                 else -> {
                                     // The failure the Interpreter reports when a
                                     // document will not load: nothing to create.
-                                    raisePlatformError(StaticInvokeHybridEvent.Error.Execution, "<invoke srcexpr> evaluated to a document it did not declare")
+                                    raisePlatformError(StaticInvokeHybridEvent.Error.Execution, ErrorReason.INVOKE_SRC_NOT_FOUND, "<invoke srcexpr> evaluated to a document it did not declare")
                                     return@deferInvoke
                                 }
                             }
@@ -814,7 +814,7 @@ class StaticInvokeHybridStateMachine(
                             // W3C SCXML 6.4: the child could not be started. Evaluation
                             // failure no longer reaches here — it has its own raise above,
                             // under the one wording every emitter uses for that fact.
-                            raisePlatformError(StaticInvokeHybridEvent.Error.Execution, "<invoke> could not start a child")
+                            raisePlatformError(StaticInvokeHybridEvent.Error.Execution, ErrorReason.INVOKE_CHILD_INIT_FAILED, "<invoke> could not start a child")
                         }
                     }
                 }
@@ -852,7 +852,7 @@ class StaticInvokeHybridStateMachine(
                                     try {
                                         (com.sce.forge.runtime.SceChecked.sub(vBase, 4.toUInt())).toLong()
                                     } catch (_: com.sce.forge.runtime.AlgorithmFailure) {
-                                        raisePlatformError(StaticInvokeHybridEvent.Error.Execution, "<invoke> <param name='extra'> expr failed to evaluate")
+                                        raisePlatformError(StaticInvokeHybridEvent.Error.Execution, ErrorReason.EXPRESSION_FAILED, "<invoke> <param name='extra'> expr failed to evaluate")
                                     }
 
                                 }
@@ -864,7 +864,7 @@ class StaticInvokeHybridStateMachine(
                                         childSeed.extra = com.sce.forge.runtime.SceChecked.sub(vBase, 4.toUInt())
                                     } catch (_: com.sce.forge.runtime.AlgorithmFailure) {
                                         // W3C SCXML 5.7.1: report the failure and leave the value out.
-                                        raisePlatformError(StaticInvokeHybridEvent.Error.Execution, "<invoke> <param name='extra'> expr failed to evaluate")
+                                        raisePlatformError(StaticInvokeHybridEvent.Error.Execution, ErrorReason.EXPRESSION_FAILED, "<invoke> <param name='extra'> expr failed to evaluate")
                                     }
                                     child.acceptParams(childSeed)
 
@@ -872,7 +872,7 @@ class StaticInvokeHybridStateMachine(
                                 else -> {
                                     // The failure the Interpreter reports when a
                                     // document will not load: nothing to create.
-                                    raisePlatformError(StaticInvokeHybridEvent.Error.Execution, "<invoke srcexpr> evaluated to a document it did not declare")
+                                    raisePlatformError(StaticInvokeHybridEvent.Error.Execution, ErrorReason.INVOKE_SRC_NOT_FOUND, "<invoke srcexpr> evaluated to a document it did not declare")
                                     return@deferInvoke
                                 }
                             }
@@ -882,7 +882,7 @@ class StaticInvokeHybridStateMachine(
                             // W3C SCXML 6.4: the child could not be started. Evaluation
                             // failure no longer reaches here — it has its own raise above,
                             // under the one wording every emitter uses for that fact.
-                            raisePlatformError(StaticInvokeHybridEvent.Error.Execution, "<invoke> could not start a child")
+                            raisePlatformError(StaticInvokeHybridEvent.Error.Execution, ErrorReason.INVOKE_CHILD_INIT_FAILED, "<invoke> could not start a child")
                         }
                     }
                 }
@@ -1045,7 +1045,7 @@ class StaticInvokeHybridStateMachine(
     private fun transitionContentOfFirstAt0() {
                 // SCE-MAP: static_invoke_hybrid.scxml:55 :: first :: _transition_0
 
-            if (try { vCompleted = com.sce.forge.runtime.SceChecked.add(vCompleted, 1.toUInt()); false } catch (_: com.sce.forge.runtime.AlgorithmFailure) { raisePlatformError(StaticInvokeHybridEvent.Error.Execution, "<assign location='completed'>: an integer operation overflowed or failed"); true }) {
+            if (try { vCompleted = com.sce.forge.runtime.SceChecked.add(vCompleted, 1.toUInt()); false } catch (_: com.sce.forge.runtime.AlgorithmFailure) { raisePlatformError(StaticInvokeHybridEvent.Error.Execution, ErrorReason.EXPRESSION_FAILED, "<assign location='completed'>: an integer operation overflowed or failed"); true }) {
                 return
             }
     }
@@ -1066,7 +1066,7 @@ class StaticInvokeHybridStateMachine(
     private fun transitionContentOfLossyAt0() {
                 // SCE-MAP: static_invoke_hybrid.scxml:81 :: lossy :: _transition_0
 
-            if (try { vCompleted = com.sce.forge.runtime.SceChecked.add(vCompleted, 100.toUInt()); false } catch (_: com.sce.forge.runtime.AlgorithmFailure) { raisePlatformError(StaticInvokeHybridEvent.Error.Execution, "<assign location='completed'>: an integer operation overflowed or failed"); true }) {
+            if (try { vCompleted = com.sce.forge.runtime.SceChecked.add(vCompleted, 100.toUInt()); false } catch (_: com.sce.forge.runtime.AlgorithmFailure) { raisePlatformError(StaticInvokeHybridEvent.Error.Execution, ErrorReason.EXPRESSION_FAILED, "<assign location='completed'>: an integer operation overflowed or failed"); true }) {
                 return
             }
     }
@@ -1088,7 +1088,7 @@ class StaticInvokeHybridStateMachine(
     private fun transitionContentOfMissingAt0() {
                 // SCE-MAP: static_invoke_hybrid.scxml:93 :: missing :: _transition_0
 
-            if (try { vCompleted = com.sce.forge.runtime.SceChecked.add(vCompleted, 1000.toUInt()); false } catch (_: com.sce.forge.runtime.AlgorithmFailure) { raisePlatformError(StaticInvokeHybridEvent.Error.Execution, "<assign location='completed'>: an integer operation overflowed or failed"); true }) {
+            if (try { vCompleted = com.sce.forge.runtime.SceChecked.add(vCompleted, 1000.toUInt()); false } catch (_: com.sce.forge.runtime.AlgorithmFailure) { raisePlatformError(StaticInvokeHybridEvent.Error.Execution, ErrorReason.EXPRESSION_FAILED, "<assign location='completed'>: an integer operation overflowed or failed"); true }) {
                 return
             }
     }
@@ -1096,7 +1096,7 @@ class StaticInvokeHybridStateMachine(
     private fun transitionContentOfMissingAt1() {
                 // SCE-MAP: static_invoke_hybrid.scxml:96 :: missing :: _transition_1
 
-            if (try { vErrors = com.sce.forge.runtime.SceChecked.add(vErrors, 1.toUInt()); false } catch (_: com.sce.forge.runtime.AlgorithmFailure) { raisePlatformError(StaticInvokeHybridEvent.Error.Execution, "<assign location='errors'>: an integer operation overflowed or failed"); true }) {
+            if (try { vErrors = com.sce.forge.runtime.SceChecked.add(vErrors, 1.toUInt()); false } catch (_: com.sce.forge.runtime.AlgorithmFailure) { raisePlatformError(StaticInvokeHybridEvent.Error.Execution, ErrorReason.EXPRESSION_FAILED, "<assign location='errors'>: an integer operation overflowed or failed"); true }) {
                 return
             }
     }
@@ -1117,7 +1117,7 @@ class StaticInvokeHybridStateMachine(
     private fun transitionContentOfRunAt0() {
                 // SCE-MAP: static_invoke_hybrid.scxml:43 :: run :: _transition_0
 
-            if (try { vErrors = com.sce.forge.runtime.SceChecked.add(vErrors, 1.toUInt()); false } catch (_: com.sce.forge.runtime.AlgorithmFailure) { raisePlatformError(StaticInvokeHybridEvent.Error.Execution, "<assign location='errors'>: an integer operation overflowed or failed"); true }) {
+            if (try { vErrors = com.sce.forge.runtime.SceChecked.add(vErrors, 1.toUInt()); false } catch (_: com.sce.forge.runtime.AlgorithmFailure) { raisePlatformError(StaticInvokeHybridEvent.Error.Execution, ErrorReason.EXPRESSION_FAILED, "<assign location='errors'>: an integer operation overflowed or failed"); true }) {
                 return
             }
     }
@@ -1138,7 +1138,7 @@ class StaticInvokeHybridStateMachine(
     private fun transitionContentOfSecondAt0() {
                 // SCE-MAP: static_invoke_hybrid.scxml:68 :: second :: _transition_0
 
-            if (try { vCompleted = com.sce.forge.runtime.SceChecked.add(vCompleted, 10.toUInt()); false } catch (_: com.sce.forge.runtime.AlgorithmFailure) { raisePlatformError(StaticInvokeHybridEvent.Error.Execution, "<assign location='completed'>: an integer operation overflowed or failed"); true }) {
+            if (try { vCompleted = com.sce.forge.runtime.SceChecked.add(vCompleted, 10.toUInt()); false } catch (_: com.sce.forge.runtime.AlgorithmFailure) { raisePlatformError(StaticInvokeHybridEvent.Error.Execution, ErrorReason.EXPRESSION_FAILED, "<assign location='completed'>: an integer operation overflowed or failed"); true }) {
                 return
             }
     }

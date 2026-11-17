@@ -878,7 +878,7 @@ public final class StaticComposedSendPolicy: InvocablePolicy {
                             // docs/adr/0086, section 15.6: the list is short of its field's
                             // lower count, so the event is refused whole: one error, nothing
                             // delivered, and the error ends the block (W3C SCXML 6.2.3, 4.9).
-                        var sendError = EventWithMetadata.platformError(StaticComposedSendEvent.errorExecution, message: "<send> <param name=kept> holds fewer elements than the 1 its field's type declares, so the event is not sent")
+                        var sendError = EventWithMetadata.platformError(StaticComposedSendEvent.errorExecution, reason: .paramUnfit, message: "<send> <param name=kept> holds fewer elements than the 1 its field's type declares, so the event is not sent")
                         sendError.metadata.sendID = "__send_1"
                         engine.raise(sendError)
 break sceBlock
@@ -908,7 +908,7 @@ break sceBlock
                     }
 
 
-                if ({ () -> Bool in do { let sceValue: UInt32 = (try Checked.add(self.vDeliveries, 1)); self.vDeliveries = sceValue } catch { engine.raise(EventWithMetadata.platformError(StaticComposedSendEvent.errorExecution, message: "<assign location='deliveries'>: an integer operation overflowed or failed")); return true }; return false }()) {
+                if ({ () -> Bool in do { let sceValue: UInt32 = (try Checked.add(self.vDeliveries, 1)); self.vDeliveries = sceValue } catch { engine.raise(EventWithMetadata.platformError(StaticComposedSendEvent.errorExecution, reason: .expressionFailed, message: "<assign location='deliveries'>: an integer operation overflowed or failed")); return true }; return false }()) {
                     break sceBlock  // W3C SCXML 4.9: the error ends the block
                 }
 
@@ -926,13 +926,13 @@ break sceBlock
                     let i = UInt32(truncatingIfNeeded: sceIndex); _ = i; _ = row
 
 
-                if ({ () -> Bool in do { let sceValue: UInt32 = (try Checked.add(self.vTagCount, UInt32(truncatingIfNeeded: row.tags.count))); self.vTagCount = sceValue } catch { engine.raise(EventWithMetadata.platformError(StaticComposedSendEvent.errorExecution, message: "<assign location='tag_count'>: an integer operation overflowed or failed")); return true }; return false }()) {
+                if ({ () -> Bool in do { let sceValue: UInt32 = (try Checked.add(self.vTagCount, UInt32(truncatingIfNeeded: row.tags.count))); self.vTagCount = sceValue } catch { engine.raise(EventWithMetadata.platformError(StaticComposedSendEvent.errorExecution, reason: .expressionFailed, message: "<assign location='tag_count'>: an integer operation overflowed or failed")); return true }; return false }()) {
                     break sceBlock  // W3C SCXML 4.9: the error ends the block
                 }
 
 
 
-                if ({ () -> Bool in do { let sceValue: UInt32 = (try Checked.add(self.vIdSum, (try Checked.at(self.pendingBatchSentPayload.items, i)).id)); self.vIdSum = sceValue } catch { engine.raise(EventWithMetadata.platformError(StaticComposedSendEvent.errorExecution, message: "<assign location='id_sum'>: an integer operation overflowed or failed")); return true }; return false }()) {
+                if ({ () -> Bool in do { let sceValue: UInt32 = (try Checked.add(self.vIdSum, (try Checked.at(self.pendingBatchSentPayload.items, i)).id)); self.vIdSum = sceValue } catch { engine.raise(EventWithMetadata.platformError(StaticComposedSendEvent.errorExecution, reason: .expressionFailed, message: "<assign location='id_sum'>: an integer operation overflowed or failed")); return true }; return false }()) {
                     break sceBlock  // W3C SCXML 4.9: the error ends the block
                 }
 
@@ -947,7 +947,7 @@ break sceBlock
                     _ = n
 
 
-                if ({ () -> Bool in do { let sceValue: UInt32 = (try Checked.add(self.vCellSum, UInt32(n))); self.vCellSum = sceValue } catch { engine.raise(EventWithMetadata.platformError(StaticComposedSendEvent.errorExecution, message: "<assign location='cell_sum'>: an integer operation overflowed or failed")); return true }; return false }()) {
+                if ({ () -> Bool in do { let sceValue: UInt32 = (try Checked.add(self.vCellSum, UInt32(n))); self.vCellSum = sceValue } catch { engine.raise(EventWithMetadata.platformError(StaticComposedSendEvent.errorExecution, reason: .expressionFailed, message: "<assign location='cell_sum'>: an integer operation overflowed or failed")); return true }; return false }()) {
                     break sceBlock  // W3C SCXML 4.9: the error ends the block
                 }
 
@@ -959,7 +959,7 @@ break sceBlock
                     _ = each
 
 
-                if ({ () -> Bool in do { let sceValue: UInt32 = (try Checked.add(self.vLateSum, UInt32(each))); self.vLateSum = sceValue } catch { engine.raise(EventWithMetadata.platformError(StaticComposedSendEvent.errorExecution, message: "<assign location='late_sum'>: an integer operation overflowed or failed")); return true }; return false }()) {
+                if ({ () -> Bool in do { let sceValue: UInt32 = (try Checked.add(self.vLateSum, UInt32(each))); self.vLateSum = sceValue } catch { engine.raise(EventWithMetadata.platformError(StaticComposedSendEvent.errorExecution, reason: .expressionFailed, message: "<assign location='late_sum'>: an integer operation overflowed or failed")); return true }; return false }()) {
                     break sceBlock  // W3C SCXML 4.9: the error ends the block
                 }
 
@@ -968,7 +968,7 @@ break sceBlock
                 if (UInt32(truncatingIfNeeded: self.pendingBatchSentPayload.maybe.count) > 0) {
 
 
-                if ({ () -> Bool in do { let sceValue = (try Checked.at(self.pendingBatchSentPayload.maybe, 0)); self.vFirstMaybe = sceValue } catch { engine.raise(EventWithMetadata.platformError(StaticComposedSendEvent.errorExecution, message: "<assign location='first_maybe'>: an integer operation overflowed or failed")); return true }; return false }()) {
+                if ({ () -> Bool in do { let sceValue = (try Checked.at(self.pendingBatchSentPayload.maybe, 0)); self.vFirstMaybe = sceValue } catch { engine.raise(EventWithMetadata.platformError(StaticComposedSendEvent.errorExecution, reason: .expressionFailed, message: "<assign location='first_maybe'>: an integer operation overflowed or failed")); return true }; return false }()) {
                     break sceBlock  // W3C SCXML 4.9: the error ends the block
                 }
 
@@ -977,7 +977,7 @@ break sceBlock
 
                 // SCE Accepted Subset §2.15: <sce:append target="held">
 
-                if ({ () -> Bool in if self.vHeld.count >= 2 { engine.raise(EventWithMetadata.platformError(StaticComposedSendEvent.errorExecution, message: "<sce:append target='held'>: the list already holds its capacity of 2")); return true }; let sceValue = Checked.element(of: self.vHeld, 7); self.vHeld.append(sceValue); return false }()) {
+                if ({ () -> Bool in if self.vHeld.count >= 2 { engine.raise(EventWithMetadata.platformError(StaticComposedSendEvent.errorExecution, reason: .assignmentFailed, message: "<sce:append target='held'>: the list already holds its capacity of 2")); return true }; let sceValue = Checked.element(of: self.vHeld, 7); self.vHeld.append(sceValue); return false }()) {
                     break sceBlock  // W3C SCXML 4.9: the error ends the block
                 }
 
@@ -996,7 +996,7 @@ break sceBlock
                             // docs/adr/0086, section 15.6: the list is short of its field's
                             // lower count, so the event is refused whole: one error, nothing
                             // delivered, and the error ends the block (W3C SCXML 6.2.3, 4.9).
-                        var sendError = EventWithMetadata.platformError(StaticComposedSendEvent.errorExecution, message: "<send> <param name=kept> holds fewer elements than the 1 its field's type declares, so the event is not sent")
+                        var sendError = EventWithMetadata.platformError(StaticComposedSendEvent.errorExecution, reason: .paramUnfit, message: "<send> <param name=kept> holds fewer elements than the 1 its field's type declares, so the event is not sent")
                         sendError.metadata.sendID = "__send_2"
                         engine.raise(sendError)
 break sceBlock
@@ -1065,7 +1065,7 @@ break sceBlock
                     }
 
 
-                if ({ () -> Bool in do { let sceValue: UInt32 = (try Checked.add(self.vCountedDeliveries, 1)); self.vCountedDeliveries = sceValue } catch { engine.raise(EventWithMetadata.platformError(StaticComposedSendEvent.errorExecution, message: "<assign location='counted_deliveries'>: an integer operation overflowed or failed")); return true }; return false }()) {
+                if ({ () -> Bool in do { let sceValue: UInt32 = (try Checked.add(self.vCountedDeliveries, 1)); self.vCountedDeliveries = sceValue } catch { engine.raise(EventWithMetadata.platformError(StaticComposedSendEvent.errorExecution, reason: .expressionFailed, message: "<assign location='counted_deliveries'>: an integer operation overflowed or failed")); return true }; return false }()) {
                     break sceBlock  // W3C SCXML 4.9: the error ends the block
                 }
 
@@ -1079,7 +1079,7 @@ break sceBlock
                     _ = each
 
 
-                if ({ () -> Bool in do { let sceValue: UInt32 = (try Checked.add(self.vCountedSum, UInt32(each))); self.vCountedSum = sceValue } catch { engine.raise(EventWithMetadata.platformError(StaticComposedSendEvent.errorExecution, message: "<assign location='counted_sum'>: an integer operation overflowed or failed")); return true }; return false }()) {
+                if ({ () -> Bool in do { let sceValue: UInt32 = (try Checked.add(self.vCountedSum, UInt32(each))); self.vCountedSum = sceValue } catch { engine.raise(EventWithMetadata.platformError(StaticComposedSendEvent.errorExecution, reason: .expressionFailed, message: "<assign location='counted_sum'>: an integer operation overflowed or failed")); return true }; return false }()) {
                     break sceBlock  // W3C SCXML 4.9: the error ends the block
                 }
 
@@ -1090,7 +1090,7 @@ break sceBlock
                 sceBlock: do {
 
 
-                if ({ () -> Bool in do { let sceValue: UInt32 = (try Checked.add(self.vRefusals, 1)); self.vRefusals = sceValue } catch { engine.raise(EventWithMetadata.platformError(StaticComposedSendEvent.errorExecution, message: "<assign location='refusals'>: an integer operation overflowed or failed")); return true }; return false }()) {
+                if ({ () -> Bool in do { let sceValue: UInt32 = (try Checked.add(self.vRefusals, 1)); self.vRefusals = sceValue } catch { engine.raise(EventWithMetadata.platformError(StaticComposedSendEvent.errorExecution, reason: .expressionFailed, message: "<assign location='refusals'>: an integer operation overflowed or failed")); return true }; return false }()) {
                     break sceBlock  // W3C SCXML 4.9: the error ends the block
                 }
 

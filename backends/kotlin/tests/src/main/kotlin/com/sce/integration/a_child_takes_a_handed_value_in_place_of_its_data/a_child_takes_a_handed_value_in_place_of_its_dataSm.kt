@@ -714,7 +714,7 @@ class AChildTakesAHandedValueInPlaceOfItsDataStateMachine(
             try {
                 engine.setVariable(sid, "record", engine.evaluateExpr(sid, com.sce.runtime.ScriptSource.lua("{[\"name\"] = \"whole\", [\"inner\"] = {[\"label\"] = \"inner\", [\"depth\"] = 2}, [\"list\"] = {1, 2, 3}}", "({name: 'whole', inner: {label: 'inner', depth: 2}, list: [1, 2, 3]})")))
             } catch (e: Exception) {
-                raisePlatformError(AChildTakesAHandedValueInPlaceOfItsDataEvent.Error.Execution, "<data id='record'> expr failed to evaluate")
+                raisePlatformError(AChildTakesAHandedValueInPlaceOfItsDataEvent.Error.Execution, ErrorReason.EXPRESSION_FAILED, "<data id='record'> expr failed to evaluate")
             }
         }
         // §scxml-6.4: 'listed' takes a value its invoke handed it, in place of its own
@@ -723,7 +723,7 @@ class AChildTakesAHandedValueInPlaceOfItsDataStateMachine(
             try {
                 engine.setVariable(sid, "listed", engine.evaluateExpr(sid, com.sce.runtime.ScriptSource.lua("\"handed listed\"", "'handed listed'")))
             } catch (e: Exception) {
-                raisePlatformError(AChildTakesAHandedValueInPlaceOfItsDataEvent.Error.Execution, "<data id='listed'> expr failed to evaluate")
+                raisePlatformError(AChildTakesAHandedValueInPlaceOfItsDataEvent.Error.Execution, ErrorReason.EXPRESSION_FAILED, "<data id='listed'> expr failed to evaluate")
             }
         }
         // §scxml-6.4: 'stray' takes a value its invoke handed it, in place of its own
@@ -732,7 +732,7 @@ class AChildTakesAHandedValueInPlaceOfItsDataStateMachine(
             try {
                 engine.setVariable(sid, "stray", engine.evaluateExpr(sid, com.sce.runtime.ScriptSource.lua("\"handed stray\"", "'handed stray'")))
             } catch (e: Exception) {
-                raisePlatformError(AChildTakesAHandedValueInPlaceOfItsDataEvent.Error.Execution, "<data id='stray'> expr failed to evaluate")
+                raisePlatformError(AChildTakesAHandedValueInPlaceOfItsDataEvent.Error.Execution, ErrorReason.EXPRESSION_FAILED, "<data id='stray'> expr failed to evaluate")
             }
         }
         // §scxml-6.4: 'raising_seen' takes a value its invoke handed it, in place of its own
@@ -741,7 +741,7 @@ class AChildTakesAHandedValueInPlaceOfItsDataStateMachine(
             try {
                 engine.setVariable(sid, "raising_seen", engine.evaluateExpr(sid, com.sce.runtime.ScriptSource.lua("\"\"", "''")))
             } catch (e: Exception) {
-                raisePlatformError(AChildTakesAHandedValueInPlaceOfItsDataEvent.Error.Execution, "<data id='raising_seen'> expr failed to evaluate")
+                raisePlatformError(AChildTakesAHandedValueInPlaceOfItsDataEvent.Error.Execution, ErrorReason.EXPRESSION_FAILED, "<data id='raising_seen'> expr failed to evaluate")
             }
         }
         // §scxml-6.4: 'effectful_seen' takes a value its invoke handed it, in place of its own
@@ -750,7 +750,7 @@ class AChildTakesAHandedValueInPlaceOfItsDataStateMachine(
             try {
                 engine.setVariable(sid, "effectful_seen", engine.evaluateExpr(sid, com.sce.runtime.ScriptSource.lua("\"\"", "''")))
             } catch (e: Exception) {
-                raisePlatformError(AChildTakesAHandedValueInPlaceOfItsDataEvent.Error.Execution, "<data id='effectful_seen'> expr failed to evaluate")
+                raisePlatformError(AChildTakesAHandedValueInPlaceOfItsDataEvent.Error.Execution, ErrorReason.EXPRESSION_FAILED, "<data id='effectful_seen'> expr failed to evaluate")
             }
         }
         // §scxml-6.4: 'effects_seen' takes a value its invoke handed it, in place of its own
@@ -759,7 +759,7 @@ class AChildTakesAHandedValueInPlaceOfItsDataStateMachine(
             try {
                 engine.setVariable(sid, "effects_seen", engine.evaluateExpr(sid, com.sce.runtime.ScriptSource.lua("(-1)", "-1")))
             } catch (e: Exception) {
-                raisePlatformError(AChildTakesAHandedValueInPlaceOfItsDataEvent.Error.Execution, "<data id='effects_seen'> expr failed to evaluate")
+                raisePlatformError(AChildTakesAHandedValueInPlaceOfItsDataEvent.Error.Execution, ErrorReason.EXPRESSION_FAILED, "<data id='effects_seen'> expr failed to evaluate")
             }
         }
         // §scxml-6.4: 'refusable_seen' takes a value its invoke handed it, in place of its own
@@ -768,7 +768,7 @@ class AChildTakesAHandedValueInPlaceOfItsDataStateMachine(
             try {
                 engine.setVariable(sid, "refusable_seen", engine.evaluateExpr(sid, com.sce.runtime.ScriptSource.lua("\"\"", "''")))
             } catch (e: Exception) {
-                raisePlatformError(AChildTakesAHandedValueInPlaceOfItsDataEvent.Error.Execution, "<data id='refusable_seen'> expr failed to evaluate")
+                raisePlatformError(AChildTakesAHandedValueInPlaceOfItsDataEvent.Error.Execution, ErrorReason.EXPRESSION_FAILED, "<data id='refusable_seen'> expr failed to evaluate")
             }
         }
         // §scxml-6.4: 'kept_seen' takes a value its invoke handed it, in place of its own
@@ -777,7 +777,7 @@ class AChildTakesAHandedValueInPlaceOfItsDataStateMachine(
             try {
                 engine.setVariable(sid, "kept_seen", engine.evaluateExpr(sid, com.sce.runtime.ScriptSource.lua("\"\"", "''")))
             } catch (e: Exception) {
-                raisePlatformError(AChildTakesAHandedValueInPlaceOfItsDataEvent.Error.Execution, "<data id='kept_seen'> expr failed to evaluate")
+                raisePlatformError(AChildTakesAHandedValueInPlaceOfItsDataEvent.Error.Execution, ErrorReason.EXPRESSION_FAILED, "<data id='kept_seen'> expr failed to evaluate")
             }
         }
         // §scxml-6.4: 'stranger_seen' takes a value its invoke handed it, in place of its own
@@ -786,7 +786,7 @@ class AChildTakesAHandedValueInPlaceOfItsDataStateMachine(
             try {
                 engine.setVariable(sid, "stranger_seen", engine.evaluateExpr(sid, com.sce.runtime.ScriptSource.lua("\"\"", "''")))
             } catch (e: Exception) {
-                raisePlatformError(AChildTakesAHandedValueInPlaceOfItsDataEvent.Error.Execution, "<data id='stranger_seen'> expr failed to evaluate")
+                raisePlatformError(AChildTakesAHandedValueInPlaceOfItsDataEvent.Error.Execution, ErrorReason.EXPRESSION_FAILED, "<data id='stranger_seen'> expr failed to evaluate")
             }
         }
         // §scxml-6.4: 'payload_seen' takes a value its invoke handed it, in place of its own
@@ -795,7 +795,7 @@ class AChildTakesAHandedValueInPlaceOfItsDataStateMachine(
             try {
                 engine.setVariable(sid, "payload_seen", engine.evaluateExpr(sid, com.sce.runtime.ScriptSource.lua("\"\"", "''")))
             } catch (e: Exception) {
-                raisePlatformError(AChildTakesAHandedValueInPlaceOfItsDataEvent.Error.Execution, "<data id='payload_seen'> expr failed to evaluate")
+                raisePlatformError(AChildTakesAHandedValueInPlaceOfItsDataEvent.Error.Execution, ErrorReason.EXPRESSION_FAILED, "<data id='payload_seen'> expr failed to evaluate")
             }
         }
         // §scxml-6.4: 'script_seen' takes a value its invoke handed it, in place of its own
@@ -804,7 +804,7 @@ class AChildTakesAHandedValueInPlaceOfItsDataStateMachine(
             try {
                 engine.setVariable(sid, "script_seen", engine.evaluateExpr(sid, com.sce.runtime.ScriptSource.lua("\"\"", "''")))
             } catch (e: Exception) {
-                raisePlatformError(AChildTakesAHandedValueInPlaceOfItsDataEvent.Error.Execution, "<data id='script_seen'> expr failed to evaluate")
+                raisePlatformError(AChildTakesAHandedValueInPlaceOfItsDataEvent.Error.Execution, ErrorReason.EXPRESSION_FAILED, "<data id='script_seen'> expr failed to evaluate")
             }
         }
         // §scxml-6.4: 'entry_seen' takes a value its invoke handed it, in place of its own
@@ -813,7 +813,7 @@ class AChildTakesAHandedValueInPlaceOfItsDataStateMachine(
             try {
                 engine.setVariable(sid, "entry_seen", engine.evaluateExpr(sid, com.sce.runtime.ScriptSource.lua("\"\"", "''")))
             } catch (e: Exception) {
-                raisePlatformError(AChildTakesAHandedValueInPlaceOfItsDataEvent.Error.Execution, "<data id='entry_seen'> expr failed to evaluate")
+                raisePlatformError(AChildTakesAHandedValueInPlaceOfItsDataEvent.Error.Execution, ErrorReason.EXPRESSION_FAILED, "<data id='entry_seen'> expr failed to evaluate")
             }
         }
         // §scxml-6.4: 'errors_seen' takes a value its invoke handed it, in place of its own
@@ -822,7 +822,7 @@ class AChildTakesAHandedValueInPlaceOfItsDataStateMachine(
             try {
                 engine.setVariable(sid, "errors_seen", engine.evaluateExpr(sid, com.sce.runtime.ScriptSource.lua("(-1)", "-1")))
             } catch (e: Exception) {
-                raisePlatformError(AChildTakesAHandedValueInPlaceOfItsDataEvent.Error.Execution, "<data id='errors_seen'> expr failed to evaluate")
+                raisePlatformError(AChildTakesAHandedValueInPlaceOfItsDataEvent.Error.Execution, ErrorReason.EXPRESSION_FAILED, "<data id='errors_seen'> expr failed to evaluate")
             }
         }
         // §scxml-6.4: 'listed_seen' takes a value its invoke handed it, in place of its own
@@ -831,7 +831,7 @@ class AChildTakesAHandedValueInPlaceOfItsDataStateMachine(
             try {
                 engine.setVariable(sid, "listed_seen", engine.evaluateExpr(sid, com.sce.runtime.ScriptSource.lua("\"\"", "''")))
             } catch (e: Exception) {
-                raisePlatformError(AChildTakesAHandedValueInPlaceOfItsDataEvent.Error.Execution, "<data id='listed_seen'> expr failed to evaluate")
+                raisePlatformError(AChildTakesAHandedValueInPlaceOfItsDataEvent.Error.Execution, ErrorReason.EXPRESSION_FAILED, "<data id='listed_seen'> expr failed to evaluate")
             }
         }
         // §scxml-6.4: 'stray_seen' takes a value its invoke handed it, in place of its own
@@ -840,7 +840,7 @@ class AChildTakesAHandedValueInPlaceOfItsDataStateMachine(
             try {
                 engine.setVariable(sid, "stray_seen", engine.evaluateExpr(sid, com.sce.runtime.ScriptSource.lua("\"\"", "''")))
             } catch (e: Exception) {
-                raisePlatformError(AChildTakesAHandedValueInPlaceOfItsDataEvent.Error.Execution, "<data id='stray_seen'> expr failed to evaluate")
+                raisePlatformError(AChildTakesAHandedValueInPlaceOfItsDataEvent.Error.Execution, ErrorReason.EXPRESSION_FAILED, "<data id='stray_seen'> expr failed to evaluate")
             }
         }
         // §scxml-6.4: 'record_seen' takes a value its invoke handed it, in place of its own
@@ -849,7 +849,7 @@ class AChildTakesAHandedValueInPlaceOfItsDataStateMachine(
             try {
                 engine.setVariable(sid, "record_seen", engine.evaluateExpr(sid, com.sce.runtime.ScriptSource.lua("\"\"", "''")))
             } catch (e: Exception) {
-                raisePlatformError(AChildTakesAHandedValueInPlaceOfItsDataEvent.Error.Execution, "<data id='record_seen'> expr failed to evaluate")
+                raisePlatformError(AChildTakesAHandedValueInPlaceOfItsDataEvent.Error.Execution, ErrorReason.EXPRESSION_FAILED, "<data id='record_seen'> expr failed to evaluate")
             }
         }
         // §scxml-6.4: 'list_errors_seen' takes a value its invoke handed it, in place of its own
@@ -858,7 +858,7 @@ class AChildTakesAHandedValueInPlaceOfItsDataStateMachine(
             try {
                 engine.setVariable(sid, "list_errors_seen", engine.evaluateExpr(sid, com.sce.runtime.ScriptSource.lua("(-1)", "-1")))
             } catch (e: Exception) {
-                raisePlatformError(AChildTakesAHandedValueInPlaceOfItsDataEvent.Error.Execution, "<data id='list_errors_seen'> expr failed to evaluate")
+                raisePlatformError(AChildTakesAHandedValueInPlaceOfItsDataEvent.Error.Execution, ErrorReason.EXPRESSION_FAILED, "<data id='list_errors_seen'> expr failed to evaluate")
             }
         }
     }
@@ -888,14 +888,14 @@ class AChildTakesAHandedValueInPlaceOfItsDataStateMachine(
 
     // W3C SCXML 5.9.1: a cond that cannot be evaluated raises error.execution;
     // `null` says so, where a bare `false` could not.
-    private fun evaluateGuardRaising(guardExpr: com.sce.runtime.ScriptSource, reason: String): Boolean? {
+    private fun evaluateGuardRaising(guardExpr: com.sce.runtime.ScriptSource, detail: String): Boolean? {
         assertScriptSession()
         val engine = scriptEngine ?: error("scriptEngine is required (codegen invariant: needs_script_engine == true)")
         val sid = scriptSessionId ?: error("scriptSessionId is established by the start (codegen invariant)")
         return try {
             engine.evaluateCondition(sid, guardExpr)
         } catch (e: Exception) {
-            raisePlatformError(AChildTakesAHandedValueInPlaceOfItsDataEvent.Error.Execution, reason)
+            raisePlatformError(AChildTakesAHandedValueInPlaceOfItsDataEvent.Error.Execution, ErrorReason.EXPRESSION_FAILED, detail)
             null
         }
     }
@@ -936,7 +936,7 @@ class AChildTakesAHandedValueInPlaceOfItsDataStateMachine(
         return try {
             engine.evaluateExpr(sid, serialized)?.toString() ?: ""
         } catch (e: Exception) {
-            raisePlatformError(AChildTakesAHandedValueInPlaceOfItsDataEvent.Error.Execution, "an expression could not be serialised to JSON")
+            raisePlatformError(AChildTakesAHandedValueInPlaceOfItsDataEvent.Error.Execution, ErrorReason.EXPRESSION_FAILED, "an expression could not be serialised to JSON")
             ""
         }
     }
@@ -957,7 +957,7 @@ class AChildTakesAHandedValueInPlaceOfItsDataStateMachine(
             engine.assign(sid, location, expr)
             true
         } catch (e: Exception) {
-            raisePlatformError(AChildTakesAHandedValueInPlaceOfItsDataEvent.Error.Execution, "<assign> failed")
+            raisePlatformError(AChildTakesAHandedValueInPlaceOfItsDataEvent.Error.Execution, ErrorReason.ASSIGNMENT_FAILED, "<assign> failed")
             false
         }
     }
@@ -973,7 +973,7 @@ class AChildTakesAHandedValueInPlaceOfItsDataStateMachine(
             engine.executeScript(sid, script)
             true
         } catch (e: Exception) {
-            raisePlatformError(AChildTakesAHandedValueInPlaceOfItsDataEvent.Error.Execution, "<script> failed to execute")
+            raisePlatformError(AChildTakesAHandedValueInPlaceOfItsDataEvent.Error.Execution, ErrorReason.SCRIPT_FAILED, "<script> failed to execute")
             false
         }
     }
@@ -1311,7 +1311,7 @@ class AChildTakesAHandedValueInPlaceOfItsDataStateMachine(
                         val sidInv = scriptSessionId ?: error("scriptSessionId is established by the start (codegen invariant)")
                         val invokeParams = mutableMapOf<String, Any?>()
                         if (!(engineInv.hasVariable(sidInv, "listed") && engineInv.hasVariable(sidInv, "stray") && engineInv.hasVariable(sidInv, "record"))) {
-                            raisePlatformError(AChildTakesAHandedValueInPlaceOfItsDataEvent.Error.Execution, "<invoke> namelist names a location that cannot be read")
+                            raisePlatformError(AChildTakesAHandedValueInPlaceOfItsDataEvent.Error.Execution, ErrorReason.LOCATION_INVALID, "<invoke> namelist names a location that cannot be read")
                             return@deferInvoke
                         }
                         invokeParams["listed"] = engineInv.getVariable(sidInv, "listed")
@@ -1346,7 +1346,7 @@ class AChildTakesAHandedValueInPlaceOfItsDataStateMachine(
                         try {
                             invokeParams["raising"] = engineInv.evaluateExpr(sidInv, com.sce.runtime.ScriptSource.lua("\"handed raising\"", "'handed raising'"))
                         } catch (_: Exception) {
-                            raisePlatformError(AChildTakesAHandedValueInPlaceOfItsDataEvent.Error.Execution, "<invoke> <param name='raising'> could not be read")
+                            raisePlatformError(AChildTakesAHandedValueInPlaceOfItsDataEvent.Error.Execution, ErrorReason.LOCATION_INVALID, "<invoke> <param name='raising'> could not be read")
                         }
                         // §scxml-5.7.1: a `<param>` that will not evaluate costs
                         // `error.execution` AND the name and value — nothing else: the
@@ -1355,7 +1355,7 @@ class AChildTakesAHandedValueInPlaceOfItsDataStateMachine(
                         try {
                             invokeParams["effectful"] = engineInv.evaluateExpr(sidInv, com.sce.runtime.ScriptSource.lua("\"handed effectful\"", "'handed effectful'"))
                         } catch (_: Exception) {
-                            raisePlatformError(AChildTakesAHandedValueInPlaceOfItsDataEvent.Error.Execution, "<invoke> <param name='effectful'> could not be read")
+                            raisePlatformError(AChildTakesAHandedValueInPlaceOfItsDataEvent.Error.Execution, ErrorReason.LOCATION_INVALID, "<invoke> <param name='effectful'> could not be read")
                         }
                         // §scxml-5.7.1: a `<param>` that will not evaluate costs
                         // `error.execution` AND the name and value — nothing else: the
@@ -1364,7 +1364,7 @@ class AChildTakesAHandedValueInPlaceOfItsDataStateMachine(
                         try {
                             invokeParams["refusable"] = engineInv.evaluateExpr(sidInv, com.sce.runtime.ScriptSource.lua("\"handed refusable\"", "'handed refusable'"))
                         } catch (_: Exception) {
-                            raisePlatformError(AChildTakesAHandedValueInPlaceOfItsDataEvent.Error.Execution, "<invoke> <param name='refusable'> could not be read")
+                            raisePlatformError(AChildTakesAHandedValueInPlaceOfItsDataEvent.Error.Execution, ErrorReason.LOCATION_INVALID, "<invoke> <param name='refusable'> could not be read")
                         }
                         // §scxml-5.7.1: a `<param>` that will not evaluate costs
                         // `error.execution` AND the name and value — nothing else: the
@@ -1373,7 +1373,7 @@ class AChildTakesAHandedValueInPlaceOfItsDataStateMachine(
                         try {
                             invokeParams["kept"] = engineInv.evaluateExpr(sidInv, com.sce.runtime.ScriptSource.lua("\"handed kept\"", "'handed kept'"))
                         } catch (_: Exception) {
-                            raisePlatformError(AChildTakesAHandedValueInPlaceOfItsDataEvent.Error.Execution, "<invoke> <param name='kept'> could not be read")
+                            raisePlatformError(AChildTakesAHandedValueInPlaceOfItsDataEvent.Error.Execution, ErrorReason.LOCATION_INVALID, "<invoke> <param name='kept'> could not be read")
                         }
                         // §scxml-5.7.1: a `<param>` that will not evaluate costs
                         // `error.execution` AND the name and value — nothing else: the
@@ -1382,7 +1382,7 @@ class AChildTakesAHandedValueInPlaceOfItsDataStateMachine(
                         try {
                             invokeParams["stranger"] = engineInv.evaluateExpr(sidInv, com.sce.runtime.ScriptSource.lua("\"handed stranger\"", "'handed stranger'"))
                         } catch (_: Exception) {
-                            raisePlatformError(AChildTakesAHandedValueInPlaceOfItsDataEvent.Error.Execution, "<invoke> <param name='stranger'> could not be read")
+                            raisePlatformError(AChildTakesAHandedValueInPlaceOfItsDataEvent.Error.Execution, ErrorReason.LOCATION_INVALID, "<invoke> <param name='stranger'> could not be read")
                         }
                         // §scxml-5.7.1: a `<param>` that will not evaluate costs
                         // `error.execution` AND the name and value — nothing else: the
@@ -1391,7 +1391,7 @@ class AChildTakesAHandedValueInPlaceOfItsDataStateMachine(
                         try {
                             invokeParams["payload"] = engineInv.evaluateExpr(sidInv, com.sce.runtime.ScriptSource.lua("record", "record"))
                         } catch (_: Exception) {
-                            raisePlatformError(AChildTakesAHandedValueInPlaceOfItsDataEvent.Error.Execution, "<invoke> <param name='payload'> could not be read")
+                            raisePlatformError(AChildTakesAHandedValueInPlaceOfItsDataEvent.Error.Execution, ErrorReason.LOCATION_INVALID, "<invoke> <param name='payload'> could not be read")
                         }
 
                     val childSM = adoptChild(AChildTakesAHandedValueInPlaceOfItsDataSceSynthInvokeByParamStateMachine(scriptEngine ?: error("scriptEngine is required for invoke (codegen invariant: parent needs_script_engine == true)")), generatedInvokeId)
@@ -1422,7 +1422,7 @@ class AChildTakesAHandedValueInPlaceOfItsDataStateMachine(
                         try {
                             invokeParams["handed"] = engineInv.evaluateExpr(sidInv, com.sce.runtime.ScriptSource.lua("\"handed first\"", "'handed first'"))
                         } catch (_: Exception) {
-                            raisePlatformError(AChildTakesAHandedValueInPlaceOfItsDataEvent.Error.Execution, "<invoke> <param name='handed'> could not be read")
+                            raisePlatformError(AChildTakesAHandedValueInPlaceOfItsDataEvent.Error.Execution, ErrorReason.LOCATION_INVALID, "<invoke> <param name='handed'> could not be read")
                         }
 
                     val childSM = adoptChild(AChildTakesAHandedValueInPlaceOfItsDataSceSynthInvokeFirstMacrostepStateMachine(scriptEngine ?: error("scriptEngine is required for invoke (codegen invariant: parent needs_script_engine == true)")), generatedInvokeId)
@@ -1453,7 +1453,7 @@ class AChildTakesAHandedValueInPlaceOfItsDataStateMachine(
                         try {
                             invokeParams["handed"] = engineInv.evaluateExpr(sidInv, com.sce.runtime.ScriptSource.lua("\"handed late\"", "'handed late'"))
                         } catch (_: Exception) {
-                            raisePlatformError(AChildTakesAHandedValueInPlaceOfItsDataEvent.Error.Execution, "<invoke> <param name='handed'> could not be read")
+                            raisePlatformError(AChildTakesAHandedValueInPlaceOfItsDataEvent.Error.Execution, ErrorReason.LOCATION_INVALID, "<invoke> <param name='handed'> could not be read")
                         }
                         // §scxml-5.7.1: a `<param>` that will not evaluate costs
                         // `error.execution` AND the name and value — nothing else: the
@@ -1462,7 +1462,7 @@ class AChildTakesAHandedValueInPlaceOfItsDataStateMachine(
                         try {
                             invokeParams["kept"] = engineInv.evaluateExpr(sidInv, com.sce.runtime.ScriptSource.lua("\"handed kept\"", "'handed kept'"))
                         } catch (_: Exception) {
-                            raisePlatformError(AChildTakesAHandedValueInPlaceOfItsDataEvent.Error.Execution, "<invoke> <param name='kept'> could not be read")
+                            raisePlatformError(AChildTakesAHandedValueInPlaceOfItsDataEvent.Error.Execution, ErrorReason.LOCATION_INVALID, "<invoke> <param name='kept'> could not be read")
                         }
 
                     val childSM = adoptChild(AChildTakesAHandedValueInPlaceOfItsDataSceSynthInvokeLateBoundStateMachine(scriptEngine ?: error("scriptEngine is required for invoke (codegen invariant: parent needs_script_engine == true)")), generatedInvokeId)

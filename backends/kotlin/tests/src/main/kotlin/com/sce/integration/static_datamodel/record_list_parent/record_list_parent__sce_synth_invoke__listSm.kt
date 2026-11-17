@@ -2018,7 +2018,7 @@ class RecordListParentSceSynthInvokeListStateMachine(
                     return
                 }
 
-            if (try { vRoster = com.sce.forge.runtime.SceChecked.within(com.sce.forge.runtime.SceChecked.take(call_RecordRoster__v(vRoster, pendingRecordListRolePayload!!.node, pendingRecordListRolePayload!!.role)), 64); false } catch (_: com.sce.forge.runtime.AlgorithmFailure) { raisePlatformError(RecordListParentSceSynthInvokeListEvent.Error.Execution, "<assign location='roster'>: an integer operation overflowed or failed"); true }) {
+            if (try { vRoster = com.sce.forge.runtime.SceChecked.within(com.sce.forge.runtime.SceChecked.take(call_RecordRoster__v(vRoster, pendingRecordListRolePayload!!.node, pendingRecordListRolePayload!!.role)), 64); false } catch (_: com.sce.forge.runtime.AlgorithmFailure) { raisePlatformError(RecordListParentSceSynthInvokeListEvent.Error.Execution, ErrorReason.EXPRESSION_FAILED, "<assign location='roster'>: an integer operation overflowed or failed"); true }) {
                 return
             }
     }
@@ -2026,7 +2026,7 @@ class RecordListParentSceSynthInvokeListStateMachine(
     private fun transitionContentOfOpenAt3() {
                 // SCE-MAP: record_list.scxml:476 :: open :: _transition_3
 
-            if (try { vRefusals = com.sce.forge.runtime.SceChecked.add(vRefusals, 1.toUInt()); false } catch (_: com.sce.forge.runtime.AlgorithmFailure) { raisePlatformError(RecordListParentSceSynthInvokeListEvent.Error.Execution, "<assign location='refusals'>: an integer operation overflowed or failed"); true }) {
+            if (try { vRefusals = com.sce.forge.runtime.SceChecked.add(vRefusals, 1.toUInt()); false } catch (_: com.sce.forge.runtime.AlgorithmFailure) { raisePlatformError(RecordListParentSceSynthInvokeListEvent.Error.Execution, ErrorReason.EXPRESSION_FAILED, "<assign location='refusals'>: an integer operation overflowed or failed"); true }) {
                 return
             }
     }
@@ -2034,7 +2034,7 @@ class RecordListParentSceSynthInvokeListStateMachine(
     private fun transitionContentOfOpenAt4() {
                 // SCE-MAP: record_list.scxml:479 :: open :: _transition_4
 
-            if (try { vRefusals = com.sce.forge.runtime.SceChecked.add(vRefusals, 1.toUInt()); false } catch (_: com.sce.forge.runtime.AlgorithmFailure) { raisePlatformError(RecordListParentSceSynthInvokeListEvent.Error.Execution, "<assign location='refusals'>: an integer operation overflowed or failed"); true }) {
+            if (try { vRefusals = com.sce.forge.runtime.SceChecked.add(vRefusals, 1.toUInt()); false } catch (_: com.sce.forge.runtime.AlgorithmFailure) { raisePlatformError(RecordListParentSceSynthInvokeListEvent.Error.Execution, ErrorReason.EXPRESSION_FAILED, "<assign location='refusals'>: an integer operation overflowed or failed"); true }) {
                 return
             }
     }
@@ -2042,7 +2042,7 @@ class RecordListParentSceSynthInvokeListStateMachine(
     private fun transitionContentOfOpenAt5() {
                 // SCE-MAP: record_list.scxml:482 :: open :: _transition_5
 
-            if (try { vRefusals = com.sce.forge.runtime.SceChecked.add(vRefusals, 1.toUInt()); false } catch (_: com.sce.forge.runtime.AlgorithmFailure) { raisePlatformError(RecordListParentSceSynthInvokeListEvent.Error.Execution, "<assign location='refusals'>: an integer operation overflowed or failed"); true }) {
+            if (try { vRefusals = com.sce.forge.runtime.SceChecked.add(vRefusals, 1.toUInt()); false } catch (_: com.sce.forge.runtime.AlgorithmFailure) { raisePlatformError(RecordListParentSceSynthInvokeListEvent.Error.Execution, ErrorReason.EXPRESSION_FAILED, "<assign location='refusals'>: an integer operation overflowed or failed"); true }) {
                 return
             }
     }
@@ -2076,13 +2076,13 @@ class RecordListParentSceSynthInvokeListStateMachine(
 
             vStaging = vStaging.copy(value = pendingRecordListEditPayload!!.value)
 
-            if (try { vStaging = vStaging.copy(text = com.sce.forge.runtime.SceChecked.bounded(pendingRecordListEditPayload!!.text, 96)); false } catch (_: com.sce.forge.runtime.AlgorithmFailure) { raisePlatformError(RecordListParentSceSynthInvokeListEvent.Error.Execution, "<assign location='staging.text'>: an integer operation overflowed or failed"); true }) {
+            if (try { vStaging = vStaging.copy(text = com.sce.forge.runtime.SceChecked.bounded(pendingRecordListEditPayload!!.text, 96)); false } catch (_: com.sce.forge.runtime.AlgorithmFailure) { raisePlatformError(RecordListParentSceSynthInvokeListEvent.Error.Execution, ErrorReason.EXPRESSION_FAILED, "<assign location='staging.text'>: an integer operation overflowed or failed"); true }) {
                 return
             }
 
             vProbe = RecordListParentSceSynthInvokeListRefusalEnum.CHANGE_TOO_LARGE
 
-            if (if (vStaged.size < 32) { vStaged = vStaged + (vStaging); false } else { raisePlatformError(RecordListParentSceSynthInvokeListEvent.Error.Execution, "<sce:append target='staged'>: the list already holds its capacity of 32"); true }) {
+            if (if (vStaged.size < 32) { vStaged = vStaged + (vStaging); false } else { raisePlatformError(RecordListParentSceSynthInvokeListEvent.Error.Execution, ErrorReason.ASSIGNMENT_FAILED, "<sce:append target='staged'>: the list already holds its capacity of 32"); true }) {
                 return
             }
 
@@ -2140,11 +2140,11 @@ class RecordListParentSceSynthInvokeListStateMachine(
 
             vStaging = vStaging.copy(value = 0)
 
-            if (try { vStaging = vStaging.copy(text = com.sce.forge.runtime.SceChecked.bounded("", 96)); false } catch (_: com.sce.forge.runtime.AlgorithmFailure) { raisePlatformError(RecordListParentSceSynthInvokeListEvent.Error.Execution, "<assign location='staging.text'>: an integer operation overflowed or failed"); true }) {
+            if (try { vStaging = vStaging.copy(text = com.sce.forge.runtime.SceChecked.bounded("", 96)); false } catch (_: com.sce.forge.runtime.AlgorithmFailure) { raisePlatformError(RecordListParentSceSynthInvokeListEvent.Error.Execution, ErrorReason.EXPRESSION_FAILED, "<assign location='staging.text'>: an integer operation overflowed or failed"); true }) {
                 return
             }
 
-            if (if (vStaged.size < 32) { vStaged = vStaged + (vStaging); false } else { raisePlatformError(RecordListParentSceSynthInvokeListEvent.Error.Execution, "<sce:append target='staged'>: the list already holds its capacity of 32"); true }) {
+            if (if (vStaged.size < 32) { vStaged = vStaged + (vStaging); false } else { raisePlatformError(RecordListParentSceSynthInvokeListEvent.Error.Execution, ErrorReason.ASSIGNMENT_FAILED, "<sce:append target='staged'>: the list already holds its capacity of 32"); true }) {
                 return
             }
 
@@ -2202,11 +2202,11 @@ class RecordListParentSceSynthInvokeListStateMachine(
 
             vStaging = vStaging.copy(value = 0)
 
-            if (try { vStaging = vStaging.copy(text = com.sce.forge.runtime.SceChecked.bounded("", 96)); false } catch (_: com.sce.forge.runtime.AlgorithmFailure) { raisePlatformError(RecordListParentSceSynthInvokeListEvent.Error.Execution, "<assign location='staging.text'>: an integer operation overflowed or failed"); true }) {
+            if (try { vStaging = vStaging.copy(text = com.sce.forge.runtime.SceChecked.bounded("", 96)); false } catch (_: com.sce.forge.runtime.AlgorithmFailure) { raisePlatformError(RecordListParentSceSynthInvokeListEvent.Error.Execution, ErrorReason.EXPRESSION_FAILED, "<assign location='staging.text'>: an integer operation overflowed or failed"); true }) {
                 return
             }
 
-            if (if (vStaged.size < 32) { vStaged = vStaged + (vStaging); false } else { raisePlatformError(RecordListParentSceSynthInvokeListEvent.Error.Execution, "<sce:append target='staged'>: the list already holds its capacity of 32"); true }) {
+            if (if (vStaged.size < 32) { vStaged = vStaged + (vStaging); false } else { raisePlatformError(RecordListParentSceSynthInvokeListEvent.Error.Execution, ErrorReason.ASSIGNMENT_FAILED, "<sce:append target='staged'>: the list already holds its capacity of 32"); true }) {
                 return
             }
 
@@ -2254,7 +2254,7 @@ class RecordListParentSceSynthInvokeListStateMachine(
 
             if (vForbidden) {
 
-            if (try { vDenied = com.sce.forge.runtime.SceChecked.add(vDenied, 1.toUInt()); false } catch (_: com.sce.forge.runtime.AlgorithmFailure) { raisePlatformError(RecordListParentSceSynthInvokeListEvent.Error.Execution, "<assign location='denied'>: an integer operation overflowed or failed"); true }) {
+            if (try { vDenied = com.sce.forge.runtime.SceChecked.add(vDenied, 1.toUInt()); false } catch (_: com.sce.forge.runtime.AlgorithmFailure) { raisePlatformError(RecordListParentSceSynthInvokeListEvent.Error.Execution, ErrorReason.EXPRESSION_FAILED, "<assign location='denied'>: an integer operation overflowed or failed"); true }) {
                 return
             }
 
@@ -2316,7 +2316,7 @@ class RecordListParentSceSynthInvokeListStateMachine(
 
 
             var ifCondFailed14 = false
-            if ((try { com.sce.forge.runtime.SceChecked.div(a.element, 65536.toULong()) == s.id.toULong() && (s.kind == 2.toUByte() || com.sce.forge.runtime.SceChecked.rem(a.element, 65536.toULong()) == s.field.toULong()) } catch (_: com.sce.forge.runtime.AlgorithmFailure) { raisePlatformError(RecordListParentSceSynthInvokeListEvent.Error.Execution, "<if cond='a.element / 65536 === s.id && (s.kind === 2 || a.element % 65536 === s.field)'>: an integer operation overflowed or failed"); ifCondFailed14 = true; false })) {
+            if ((try { com.sce.forge.runtime.SceChecked.div(a.element, 65536.toULong()) == s.id.toULong() && (s.kind == 2.toUByte() || com.sce.forge.runtime.SceChecked.rem(a.element, 65536.toULong()) == s.field.toULong()) } catch (_: com.sce.forge.runtime.AlgorithmFailure) { raisePlatformError(RecordListParentSceSynthInvokeListEvent.Error.Execution, ErrorReason.EXPRESSION_FAILED, "<if cond='a.element / 65536 === s.id && (s.kind === 2 || a.element % 65536 === s.field)'>: an integer operation overflowed or failed"); ifCondFailed14 = true; false })) {
 
             vCovered = true
             }
@@ -2328,7 +2328,7 @@ class RecordListParentSceSynthInvokeListStateMachine(
 
             if (vCovered) {
 
-            if (try { vGone = com.sce.forge.runtime.SceChecked.add(vGone, 1.toUInt()); false } catch (_: com.sce.forge.runtime.AlgorithmFailure) { raisePlatformError(RecordListParentSceSynthInvokeListEvent.Error.Execution, "<assign location='gone'>: an integer operation overflowed or failed"); true }) {
+            if (try { vGone = com.sce.forge.runtime.SceChecked.add(vGone, 1.toUInt()); false } catch (_: com.sce.forge.runtime.AlgorithmFailure) { raisePlatformError(RecordListParentSceSynthInvokeListEvent.Error.Execution, ErrorReason.EXPRESSION_FAILED, "<assign location='gone'>: an integer operation overflowed or failed"); true }) {
                 return
             }
             }
@@ -2340,7 +2340,7 @@ class RecordListParentSceSynthInvokeListStateMachine(
 
             if (s.kind == 0.toUByte()) {
 
-            if (try { vWrites = com.sce.forge.runtime.SceChecked.add(vWrites, 1.toUInt()); false } catch (_: com.sce.forge.runtime.AlgorithmFailure) { raisePlatformError(RecordListParentSceSynthInvokeListEvent.Error.Execution, "<assign location='writes'>: an integer operation overflowed or failed"); true }) {
+            if (try { vWrites = com.sce.forge.runtime.SceChecked.add(vWrites, 1.toUInt()); false } catch (_: com.sce.forge.runtime.AlgorithmFailure) { raisePlatformError(RecordListParentSceSynthInvokeListEvent.Error.Execution, ErrorReason.EXPRESSION_FAILED, "<assign location='writes'>: an integer operation overflowed or failed"); true }) {
                 return
             }
             }
@@ -2349,9 +2349,9 @@ class RecordListParentSceSynthInvokeListStateMachine(
 
 
             var ifCondFailed17 = false
-            if ((try { !vSpoiled && com.sce.forge.runtime.SceChecked.add(vGone, vWrites) > 0.toUInt() && vRoomValues > 0.toUInt() && vWrites > vGone && com.sce.forge.runtime.SceChecked.add((vValues).size.toUInt(), vWrites) > com.sce.forge.runtime.SceChecked.add(vRoomValues, vGone) } catch (_: com.sce.forge.runtime.AlgorithmFailure) { raisePlatformError(RecordListParentSceSynthInvokeListEvent.Error.Execution, "<if cond='!spoiled && gone + writes > 0 && roomValues > 0 && writes > gone && len(values) + writes > roomValues + gone'>: an integer operation overflowed or failed"); ifCondFailed17 = true; false })) {
+            if ((try { !vSpoiled && com.sce.forge.runtime.SceChecked.add(vGone, vWrites) > 0.toUInt() && vRoomValues > 0.toUInt() && vWrites > vGone && com.sce.forge.runtime.SceChecked.add((vValues).size.toUInt(), vWrites) > com.sce.forge.runtime.SceChecked.add(vRoomValues, vGone) } catch (_: com.sce.forge.runtime.AlgorithmFailure) { raisePlatformError(RecordListParentSceSynthInvokeListEvent.Error.Execution, ErrorReason.EXPRESSION_FAILED, "<if cond='!spoiled && gone + writes > 0 && roomValues > 0 && writes > gone && len(values) + writes > roomValues + gone'>: an integer operation overflowed or failed"); ifCondFailed17 = true; false })) {
 
-            if (try { vFull = com.sce.forge.runtime.SceChecked.add(vFull, 1.toUInt()); false } catch (_: com.sce.forge.runtime.AlgorithmFailure) { raisePlatformError(RecordListParentSceSynthInvokeListEvent.Error.Execution, "<assign location='full'>: an integer operation overflowed or failed"); true }) {
+            if (try { vFull = com.sce.forge.runtime.SceChecked.add(vFull, 1.toUInt()); false } catch (_: com.sce.forge.runtime.AlgorithmFailure) { raisePlatformError(RecordListParentSceSynthInvokeListEvent.Error.Execution, ErrorReason.EXPRESSION_FAILED, "<assign location='full'>: an integer operation overflowed or failed"); true }) {
                 return
             }
 
@@ -2365,7 +2365,7 @@ class RecordListParentSceSynthInvokeListStateMachine(
 
 
             var ifCondFailed18 = false
-            if ((try { !vSpoiled && vJournal && com.sce.forge.runtime.SceChecked.add(vGone, vWrites) > 0.toUInt() && (vProvisional).size.toUInt() >= 8.toUInt() } catch (_: com.sce.forge.runtime.AlgorithmFailure) { raisePlatformError(RecordListParentSceSynthInvokeListEvent.Error.Execution, "<if cond='!spoiled && journal && gone + writes > 0 && len(provisional) >= _x.limits.shared_provisional'>: an integer operation overflowed or failed"); ifCondFailed18 = true; false })) {
+            if ((try { !vSpoiled && vJournal && com.sce.forge.runtime.SceChecked.add(vGone, vWrites) > 0.toUInt() && (vProvisional).size.toUInt() >= 8.toUInt() } catch (_: com.sce.forge.runtime.AlgorithmFailure) { raisePlatformError(RecordListParentSceSynthInvokeListEvent.Error.Execution, ErrorReason.EXPRESSION_FAILED, "<if cond='!spoiled && journal && gone + writes > 0 && len(provisional) >= _x.limits.shared_provisional'>: an integer operation overflowed or failed"); ifCondFailed18 = true; false })) {
 
             vSpoiled = true
 
@@ -2377,13 +2377,13 @@ class RecordListParentSceSynthInvokeListStateMachine(
 
 
             var ifCondFailed19 = false
-            if ((try { !vSpoiled && com.sce.forge.runtime.SceChecked.add(vGone, vWrites) > 0.toUInt() } catch (_: com.sce.forge.runtime.AlgorithmFailure) { raisePlatformError(RecordListParentSceSynthInvokeListEvent.Error.Execution, "<if cond='!spoiled && gone + writes > 0'>: an integer operation overflowed or failed"); ifCondFailed19 = true; false })) {
+            if ((try { !vSpoiled && com.sce.forge.runtime.SceChecked.add(vGone, vWrites) > 0.toUInt() } catch (_: com.sce.forge.runtime.AlgorithmFailure) { raisePlatformError(RecordListParentSceSynthInvokeListEvent.Error.Execution, ErrorReason.EXPRESSION_FAILED, "<if cond='!spoiled && gone + writes > 0'>: an integer operation overflowed or failed"); ifCondFailed19 = true; false })) {
 
             vProbing = true
 
             vProbe = RecordListParentSceSynthInvokeListRefusalEnum.CLOCK_EXHAUSTED
 
-            if (try { vStamp = com.sce.forge.runtime.SceChecked.take(call_HlcSend__v(vClock, vClosingNow, vNode)); false } catch (_: com.sce.forge.runtime.AlgorithmFailure) { raisePlatformError(RecordListParentSceSynthInvokeListEvent.Error.Execution, "<assign location='stamp'>: an integer operation overflowed or failed"); true }) {
+            if (try { vStamp = com.sce.forge.runtime.SceChecked.take(call_HlcSend__v(vClock, vClosingNow, vNode)); false } catch (_: com.sce.forge.runtime.AlgorithmFailure) { raisePlatformError(RecordListParentSceSynthInvokeListEvent.Error.Execution, ErrorReason.EXPRESSION_FAILED, "<assign location='stamp'>: an integer operation overflowed or failed"); true }) {
                 return
             }
 
@@ -2403,7 +2403,7 @@ class RecordListParentSceSynthInvokeListStateMachine(
 
 
             var ifCondFailed20 = false
-            if ((try { com.sce.forge.runtime.SceChecked.div(a.element, 65536.toULong()) == s.id.toULong() && (s.kind == 2.toUByte() || com.sce.forge.runtime.SceChecked.rem(a.element, 65536.toULong()) == s.field.toULong()) } catch (_: com.sce.forge.runtime.AlgorithmFailure) { raisePlatformError(RecordListParentSceSynthInvokeListEvent.Error.Execution, "<if cond='a.element / 65536 === s.id && (s.kind === 2 || a.element % 65536 === s.field)'>: an integer operation overflowed or failed"); ifCondFailed20 = true; false })) {
+            if ((try { com.sce.forge.runtime.SceChecked.div(a.element, 65536.toULong()) == s.id.toULong() && (s.kind == 2.toUByte() || com.sce.forge.runtime.SceChecked.rem(a.element, 65536.toULong()) == s.field.toULong()) } catch (_: com.sce.forge.runtime.AlgorithmFailure) { raisePlatformError(RecordListParentSceSynthInvokeListEvent.Error.Execution, ErrorReason.EXPRESSION_FAILED, "<if cond='a.element / 65536 === s.id && (s.kind === 2 || a.element % 65536 === s.field)'>: an integer operation overflowed or failed"); ifCondFailed20 = true; false })) {
 
             vCovered = true
             }
@@ -2417,17 +2417,17 @@ class RecordListParentSceSynthInvokeListStateMachine(
 
             vOp = vOp.copy(kind = 1.toUByte())
 
-            if (try { vOp = vOp.copy(id = com.sce.forge.runtime.SceChecked.narrowToUInt(com.sce.forge.runtime.SceChecked.div(a.element, 65536.toULong()))); false } catch (_: com.sce.forge.runtime.AlgorithmFailure) { raisePlatformError(RecordListParentSceSynthInvokeListEvent.Error.Execution, "<assign location='op.id'>: an integer operation overflowed or failed"); true }) {
+            if (try { vOp = vOp.copy(id = com.sce.forge.runtime.SceChecked.narrowToUInt(com.sce.forge.runtime.SceChecked.div(a.element, 65536.toULong()))); false } catch (_: com.sce.forge.runtime.AlgorithmFailure) { raisePlatformError(RecordListParentSceSynthInvokeListEvent.Error.Execution, ErrorReason.EXPRESSION_FAILED, "<assign location='op.id'>: an integer operation overflowed or failed"); true }) {
                 return
             }
 
-            if (try { vOp = vOp.copy(field = com.sce.forge.runtime.SceChecked.narrowToUShort(com.sce.forge.runtime.SceChecked.rem(a.element, 65536.toULong()))); false } catch (_: com.sce.forge.runtime.AlgorithmFailure) { raisePlatformError(RecordListParentSceSynthInvokeListEvent.Error.Execution, "<assign location='op.field'>: an integer operation overflowed or failed"); true }) {
+            if (try { vOp = vOp.copy(field = com.sce.forge.runtime.SceChecked.narrowToUShort(com.sce.forge.runtime.SceChecked.rem(a.element, 65536.toULong()))); false } catch (_: com.sce.forge.runtime.AlgorithmFailure) { raisePlatformError(RecordListParentSceSynthInvokeListEvent.Error.Execution, ErrorReason.EXPRESSION_FAILED, "<assign location='op.field'>: an integer operation overflowed or failed"); true }) {
                 return
             }
 
             vOp = vOp.copy(value = 0)
 
-            if (try { vOp = vOp.copy(text = com.sce.forge.runtime.SceChecked.bounded("", 96)); false } catch (_: com.sce.forge.runtime.AlgorithmFailure) { raisePlatformError(RecordListParentSceSynthInvokeListEvent.Error.Execution, "<assign location='op.text'>: an integer operation overflowed or failed"); true }) {
+            if (try { vOp = vOp.copy(text = com.sce.forge.runtime.SceChecked.bounded("", 96)); false } catch (_: com.sce.forge.runtime.AlgorithmFailure) { raisePlatformError(RecordListParentSceSynthInvokeListEvent.Error.Execution, ErrorReason.EXPRESSION_FAILED, "<assign location='op.text'>: an integer operation overflowed or failed"); true }) {
                 return
             }
 
@@ -2437,7 +2437,7 @@ class RecordListParentSceSynthInvokeListStateMachine(
 
             vOp = vOp.copy(nodeId = a.nodeId)
 
-            if (if (vTaking.size < 64) { vTaking = vTaking + (vOp); false } else { raisePlatformError(RecordListParentSceSynthInvokeListEvent.Error.Execution, "<sce:append target='taking'>: the list already holds its capacity of 64"); true }) {
+            if (if (vTaking.size < 64) { vTaking = vTaking + (vOp); false } else { raisePlatformError(RecordListParentSceSynthInvokeListEvent.Error.Execution, ErrorReason.ASSIGNMENT_FAILED, "<sce:append target='taking'>: the list already holds its capacity of 64"); true }) {
                 return
             }
             }
@@ -2457,7 +2457,7 @@ class RecordListParentSceSynthInvokeListStateMachine(
 
             vOp = vOp.copy(value = s.value)
 
-            if (try { vOp = vOp.copy(text = com.sce.forge.runtime.SceChecked.bounded(s.text, 96)); false } catch (_: com.sce.forge.runtime.AlgorithmFailure) { raisePlatformError(RecordListParentSceSynthInvokeListEvent.Error.Execution, "<assign location='op.text'>: an integer operation overflowed or failed"); true }) {
+            if (try { vOp = vOp.copy(text = com.sce.forge.runtime.SceChecked.bounded(s.text, 96)); false } catch (_: com.sce.forge.runtime.AlgorithmFailure) { raisePlatformError(RecordListParentSceSynthInvokeListEvent.Error.Execution, ErrorReason.EXPRESSION_FAILED, "<assign location='op.text'>: an integer operation overflowed or failed"); true }) {
                 return
             }
 
@@ -2467,7 +2467,7 @@ class RecordListParentSceSynthInvokeListStateMachine(
 
             vOp = vOp.copy(nodeId = 0.toULong())
 
-            if (if (vTaking.size < 64) { vTaking = vTaking + (vOp); false } else { raisePlatformError(RecordListParentSceSynthInvokeListEvent.Error.Execution, "<sce:append target='taking'>: the list already holds its capacity of 64"); true }) {
+            if (if (vTaking.size < 64) { vTaking = vTaking + (vOp); false } else { raisePlatformError(RecordListParentSceSynthInvokeListEvent.Error.Execution, ErrorReason.ASSIGNMENT_FAILED, "<sce:append target='taking'>: the list already holds its capacity of 64"); true }) {
                 return
             }
             }
@@ -2527,7 +2527,7 @@ class RecordListParentSceSynthInvokeListStateMachine(
 
             for (t in vTaking) {
 
-            if (if (vOffered.size < 64) { vOffered = vOffered + (t); false } else { raisePlatformError(RecordListParentSceSynthInvokeListEvent.Error.Execution, "<sce:append target='offered'>: the list already holds its capacity of 64"); true }) {
+            if (if (vOffered.size < 64) { vOffered = vOffered + (t); false } else { raisePlatformError(RecordListParentSceSynthInvokeListEvent.Error.Execution, ErrorReason.ASSIGNMENT_FAILED, "<sce:append target='offered'>: the list already holds its capacity of 64"); true }) {
                 return
             }
             }
@@ -2554,7 +2554,7 @@ class RecordListParentSceSynthInvokeListStateMachine(
 
 
             var ifCondFailed25 = false
-            if ((try { !vSpoiled && com.sce.forge.runtime.SceChecked.add(vGone, vWrites) == 0.toUInt() } catch (_: com.sce.forge.runtime.AlgorithmFailure) { raisePlatformError(RecordListParentSceSynthInvokeListEvent.Error.Execution, "<if cond='!spoiled && gone + writes === 0'>: an integer operation overflowed or failed"); ifCondFailed25 = true; false })) {
+            if ((try { !vSpoiled && com.sce.forge.runtime.SceChecked.add(vGone, vWrites) == 0.toUInt() } catch (_: com.sce.forge.runtime.AlgorithmFailure) { raisePlatformError(RecordListParentSceSynthInvokeListEvent.Error.Execution, ErrorReason.EXPRESSION_FAILED, "<if cond='!spoiled && gone + writes === 0'>: an integer operation overflowed or failed"); ifCondFailed25 = true; false })) {
 
             vStaged = emptyList()
 
@@ -2640,7 +2640,7 @@ class RecordListParentSceSynthInvokeListStateMachine(
                 // W3C SCXML C.1 (test496): a target that names nothing is not
                 // reachable — error.communication, nothing delivered, and the
                 // error ends the block as any other would (W3C SCXML 4.9).
-                raisePlatformError(RecordListParentSceSynthInvokeListEvent.Error.Communication, "<send> targetexpr evaluated to nothing, or to a route the send does not declare, so there is no target to reach", "__send_8")
+                raisePlatformError(RecordListParentSceSynthInvokeListEvent.Error.Communication, ErrorReason.TARGET_UNREACHABLE, "<send> targetexpr evaluated to nothing, or to a route the send does not declare, so there is no target to reach", "__send_8")
                 return@send true
             }
             val sendPayload = mutableMapOf<String, Any?>()
@@ -2671,11 +2671,11 @@ RecordListParentSceSynthInvokeListEvent.RecordList.Refused,
                 RecordListParentSceSynthInvokeListEvent.Error.Communication,
             )) {
                 com.sce.runtime.TargetSendOutcome.UNSUPPORTED -> {
-                    raisePlatformError(RecordListParentSceSynthInvokeListEvent.Error.Execution, "<send> targetexpr produced a value that is not a target", "__send_8")
+                    raisePlatformError(RecordListParentSceSynthInvokeListEvent.Error.Execution, ErrorReason.SEND_TARGET_INVALID, "<send> targetexpr produced a value that is not a target", "__send_8")
                     return@send true
                 }
                 com.sce.runtime.TargetSendOutcome.UNREACHABLE -> {
-                    raisePlatformError(RecordListParentSceSynthInvokeListEvent.Error.Communication, "<send> targetexpr names a session this processor cannot reach", "__send_8")
+                    raisePlatformError(RecordListParentSceSynthInvokeListEvent.Error.Communication, ErrorReason.TARGET_UNREACHABLE, "<send> targetexpr names a session this processor cannot reach", "__send_8")
                     return@send true
                 }
                 com.sce.runtime.TargetSendOutcome.SENT -> {}
@@ -2708,7 +2708,7 @@ RecordListParentSceSynthInvokeListEvent.RecordList.Refused,
                 // docs/adr/0086, section 15.6: the list is short of its field's lower
                 // count, so the event is refused whole: one error, nothing delivered,
                 // and the error ends the block (W3C SCXML 6.2.3, 4.9).
-                raisePlatformError(RecordListParentSceSynthInvokeListEvent.Error.Execution, "<send> <param name='ops'> holds fewer elements than the 1 its field's type declares, so the event is not sent", "__send_9")
+                raisePlatformError(RecordListParentSceSynthInvokeListEvent.Error.Execution, ErrorReason.PARAM_UNFIT, "<send> <param name='ops'> holds fewer elements than the 1 its field's type declares, so the event is not sent", "__send_9")
                 return@send true
             }
 
@@ -2745,7 +2745,7 @@ RecordListParentSceSynthInvokeListEvent.RecordList.Refused,
             // event as an undeclared type, so a wiring mistake cannot read
             // as success.
             if (hostServed == null && !hasEventProcessor("sce:mesh")) {
-                raisePlatformError(RecordListParentSceSynthInvokeListEvent.Error.Execution, "<send type='sce:mesh'> names a processor the host declared but never registered", "__send_9")
+                raisePlatformError(RecordListParentSceSynthInvokeListEvent.Error.Execution, ErrorReason.PROCESSOR_UNREGISTERED, "<send type='sce:mesh'> names a processor the host declared but never registered", "__send_9")
             }
             false
             }) {
@@ -2767,17 +2767,17 @@ RecordListParentSceSynthInvokeListEvent.RecordList.Refused,
 
             vStanding = vStanding.copy(command = vClosingCommand)
 
-            if (try { vStanding = vStanding.copy(id = com.sce.forge.runtime.SceChecked.at(vOffered, (0).toLong()).id); false } catch (_: com.sce.forge.runtime.AlgorithmFailure) { raisePlatformError(RecordListParentSceSynthInvokeListEvent.Error.Execution, "<assign location='standing.id'>: an integer operation overflowed or failed"); true }) {
+            if (try { vStanding = vStanding.copy(id = com.sce.forge.runtime.SceChecked.at(vOffered, (0).toLong()).id); false } catch (_: com.sce.forge.runtime.AlgorithmFailure) { raisePlatformError(RecordListParentSceSynthInvokeListEvent.Error.Execution, ErrorReason.EXPRESSION_FAILED, "<assign location='standing.id'>: an integer operation overflowed or failed"); true }) {
                 return
             }
 
-            if (try { vStanding = vStanding.copy(field = com.sce.forge.runtime.SceChecked.at(vOffered, (0).toLong()).field); false } catch (_: com.sce.forge.runtime.AlgorithmFailure) { raisePlatformError(RecordListParentSceSynthInvokeListEvent.Error.Execution, "<assign location='standing.field'>: an integer operation overflowed or failed"); true }) {
+            if (try { vStanding = vStanding.copy(field = com.sce.forge.runtime.SceChecked.at(vOffered, (0).toLong()).field); false } catch (_: com.sce.forge.runtime.AlgorithmFailure) { raisePlatformError(RecordListParentSceSynthInvokeListEvent.Error.Execution, ErrorReason.EXPRESSION_FAILED, "<assign location='standing.field'>: an integer operation overflowed or failed"); true }) {
                 return
             }
 
 
             var ifCondFailed30 = false
-            if ((try { com.sce.forge.runtime.SceChecked.at(vOffered, (0).toLong()).kind == 0.toUByte() } catch (_: com.sce.forge.runtime.AlgorithmFailure) { raisePlatformError(RecordListParentSceSynthInvokeListEvent.Error.Execution, "<if cond='offered[0].kind === 0'>: an integer operation overflowed or failed"); ifCondFailed30 = true; false })) {
+            if ((try { com.sce.forge.runtime.SceChecked.at(vOffered, (0).toLong()).kind == 0.toUByte() } catch (_: com.sce.forge.runtime.AlgorithmFailure) { raisePlatformError(RecordListParentSceSynthInvokeListEvent.Error.Execution, ErrorReason.EXPRESSION_FAILED, "<if cond='offered[0].kind === 0'>: an integer operation overflowed or failed"); ifCondFailed30 = true; false })) {
 
             vStanding = vStanding.copy(kind = RecordListParentSceSynthInvokeListCommandEnum.EDIT)
             } else {
@@ -2838,7 +2838,7 @@ RecordListParentSceSynthInvokeListEvent.RecordList.Refused,
                 // W3C SCXML C.1 (test496): a target that names nothing is not
                 // reachable — error.communication, nothing delivered, and the
                 // error ends the block as any other would (W3C SCXML 4.9).
-                raisePlatformError(RecordListParentSceSynthInvokeListEvent.Error.Communication, "<send> targetexpr evaluated to nothing, or to a route the send does not declare, so there is no target to reach", "__send_11")
+                raisePlatformError(RecordListParentSceSynthInvokeListEvent.Error.Communication, ErrorReason.TARGET_UNREACHABLE, "<send> targetexpr evaluated to nothing, or to a route the send does not declare, so there is no target to reach", "__send_11")
                 return@send true
             }
             val sendPayload = mutableMapOf<String, Any?>()
@@ -2869,11 +2869,11 @@ RecordListParentSceSynthInvokeListEvent.RecordList.Refused,
                 RecordListParentSceSynthInvokeListEvent.Error.Communication,
             )) {
                 com.sce.runtime.TargetSendOutcome.UNSUPPORTED -> {
-                    raisePlatformError(RecordListParentSceSynthInvokeListEvent.Error.Execution, "<send> targetexpr produced a value that is not a target", "__send_11")
+                    raisePlatformError(RecordListParentSceSynthInvokeListEvent.Error.Execution, ErrorReason.SEND_TARGET_INVALID, "<send> targetexpr produced a value that is not a target", "__send_11")
                     return@send true
                 }
                 com.sce.runtime.TargetSendOutcome.UNREACHABLE -> {
-                    raisePlatformError(RecordListParentSceSynthInvokeListEvent.Error.Communication, "<send> targetexpr names a session this processor cannot reach", "__send_11")
+                    raisePlatformError(RecordListParentSceSynthInvokeListEvent.Error.Communication, ErrorReason.TARGET_UNREACHABLE, "<send> targetexpr names a session this processor cannot reach", "__send_11")
                     return@send true
                 }
                 com.sce.runtime.TargetSendOutcome.SENT -> {}
@@ -2899,7 +2899,7 @@ RecordListParentSceSynthInvokeListEvent.RecordList.Refused,
 
             for (t in vOffered) {
 
-            if (if (vTaking.size < 64) { vTaking = vTaking + (t); false } else { raisePlatformError(RecordListParentSceSynthInvokeListEvent.Error.Execution, "<sce:append target='taking'>: the list already holds its capacity of 64"); true }) {
+            if (if (vTaking.size < 64) { vTaking = vTaking + (t); false } else { raisePlatformError(RecordListParentSceSynthInvokeListEvent.Error.Execution, ErrorReason.ASSIGNMENT_FAILED, "<sce:append target='taking'>: the list already holds its capacity of 64"); true }) {
                 return
             }
             }
@@ -2915,7 +2915,7 @@ RecordListParentSceSynthInvokeListEvent.RecordList.Refused,
 
             if (vTentative) {
 
-            if (if (vProvisional.size < 8) { vProvisional = vProvisional + (vStanding); false } else { raisePlatformError(RecordListParentSceSynthInvokeListEvent.Error.Execution, "<sce:append target='provisional'>: the list already holds its capacity of 8"); true }) {
+            if (if (vProvisional.size < 8) { vProvisional = vProvisional + (vStanding); false } else { raisePlatformError(RecordListParentSceSynthInvokeListEvent.Error.Execution, ErrorReason.ASSIGNMENT_FAILED, "<sce:append target='provisional'>: the list already holds its capacity of 8"); true }) {
                 return
             }
             }
@@ -2969,7 +2969,7 @@ RecordListParentSceSynthInvokeListEvent.RecordList.Refused,
                 // W3C SCXML C.1 (test496): a target that names nothing is not
                 // reachable — error.communication, nothing delivered, and the
                 // error ends the block as any other would (W3C SCXML 4.9).
-                raisePlatformError(RecordListParentSceSynthInvokeListEvent.Error.Communication, "<send> targetexpr evaluated to nothing, or to a route the send does not declare, so there is no target to reach", "__send_14")
+                raisePlatformError(RecordListParentSceSynthInvokeListEvent.Error.Communication, ErrorReason.TARGET_UNREACHABLE, "<send> targetexpr evaluated to nothing, or to a route the send does not declare, so there is no target to reach", "__send_14")
                 return@send true
             }
             val sendPayload = mutableMapOf<String, Any?>()
@@ -2994,11 +2994,11 @@ RecordListParentSceSynthInvokeListEvent.RecordList.Pending,
                 RecordListParentSceSynthInvokeListEvent.Error.Communication,
             )) {
                 com.sce.runtime.TargetSendOutcome.UNSUPPORTED -> {
-                    raisePlatformError(RecordListParentSceSynthInvokeListEvent.Error.Execution, "<send> targetexpr produced a value that is not a target", "__send_14")
+                    raisePlatformError(RecordListParentSceSynthInvokeListEvent.Error.Execution, ErrorReason.SEND_TARGET_INVALID, "<send> targetexpr produced a value that is not a target", "__send_14")
                     return@send true
                 }
                 com.sce.runtime.TargetSendOutcome.UNREACHABLE -> {
-                    raisePlatformError(RecordListParentSceSynthInvokeListEvent.Error.Communication, "<send> targetexpr names a session this processor cannot reach", "__send_14")
+                    raisePlatformError(RecordListParentSceSynthInvokeListEvent.Error.Communication, ErrorReason.TARGET_UNREACHABLE, "<send> targetexpr names a session this processor cannot reach", "__send_14")
                     return@send true
                 }
                 com.sce.runtime.TargetSendOutcome.SENT -> {}
@@ -3016,7 +3016,7 @@ RecordListParentSceSynthInvokeListEvent.RecordList.Pending,
     private fun transitionContentOfOpenAt12() {
                 // SCE-MAP: record_list.scxml:857 :: open :: _transition_12
 
-            if (try { vRefusals = com.sce.forge.runtime.SceChecked.add(vRefusals, 1.toUInt()); false } catch (_: com.sce.forge.runtime.AlgorithmFailure) { raisePlatformError(RecordListParentSceSynthInvokeListEvent.Error.Execution, "<assign location='refusals'>: an integer operation overflowed or failed"); true }) {
+            if (try { vRefusals = com.sce.forge.runtime.SceChecked.add(vRefusals, 1.toUInt()); false } catch (_: com.sce.forge.runtime.AlgorithmFailure) { raisePlatformError(RecordListParentSceSynthInvokeListEvent.Error.Execution, ErrorReason.EXPRESSION_FAILED, "<assign location='refusals'>: an integer operation overflowed or failed"); true }) {
                 return
             }
     }
@@ -3068,7 +3068,7 @@ RecordListParentSceSynthInvokeListEvent.RecordList.Pending,
             // event as an undeclared type, so a wiring mistake cannot read
             // as success.
             if (hostServed == null && !hasEventProcessor("sce:mesh")) {
-                raisePlatformError(RecordListParentSceSynthInvokeListEvent.Error.Execution, "<send type='sce:mesh'> names a processor the host declared but never registered", "__send_15")
+                raisePlatformError(RecordListParentSceSynthInvokeListEvent.Error.Execution, ErrorReason.PROCESSOR_UNREGISTERED, "<send type='sce:mesh'> names a processor the host declared but never registered", "__send_15")
             }
             false
             }) {
@@ -3105,7 +3105,7 @@ RecordListParentSceSynthInvokeListEvent.RecordList.Pending,
 
             if (!vAuthorized) {
 
-            if (try { vDenied = com.sce.forge.runtime.SceChecked.add(vDenied, 1.toUInt()); false } catch (_: com.sce.forge.runtime.AlgorithmFailure) { raisePlatformError(RecordListParentSceSynthInvokeListEvent.Error.Execution, "<assign location='denied'>: an integer operation overflowed or failed"); true }) {
+            if (try { vDenied = com.sce.forge.runtime.SceChecked.add(vDenied, 1.toUInt()); false } catch (_: com.sce.forge.runtime.AlgorithmFailure) { raisePlatformError(RecordListParentSceSynthInvokeListEvent.Error.Execution, ErrorReason.EXPRESSION_FAILED, "<assign location='denied'>: an integer operation overflowed or failed"); true }) {
                 return
             }
             }
@@ -3171,17 +3171,17 @@ RecordListParentSceSynthInvokeListEvent.RecordList.Pending,
 
             vStanding = vStanding.copy(command = pendingRecordListRecallPayload!!.command)
 
-            if (try { vStanding = vStanding.copy(id = com.sce.forge.runtime.SceChecked.at(vTaking, (0).toLong()).id); false } catch (_: com.sce.forge.runtime.AlgorithmFailure) { raisePlatformError(RecordListParentSceSynthInvokeListEvent.Error.Execution, "<assign location='standing.id'>: an integer operation overflowed or failed"); true }) {
+            if (try { vStanding = vStanding.copy(id = com.sce.forge.runtime.SceChecked.at(vTaking, (0).toLong()).id); false } catch (_: com.sce.forge.runtime.AlgorithmFailure) { raisePlatformError(RecordListParentSceSynthInvokeListEvent.Error.Execution, ErrorReason.EXPRESSION_FAILED, "<assign location='standing.id'>: an integer operation overflowed or failed"); true }) {
                 return
             }
 
-            if (try { vStanding = vStanding.copy(field = com.sce.forge.runtime.SceChecked.at(vTaking, (0).toLong()).field); false } catch (_: com.sce.forge.runtime.AlgorithmFailure) { raisePlatformError(RecordListParentSceSynthInvokeListEvent.Error.Execution, "<assign location='standing.field'>: an integer operation overflowed or failed"); true }) {
+            if (try { vStanding = vStanding.copy(field = com.sce.forge.runtime.SceChecked.at(vTaking, (0).toLong()).field); false } catch (_: com.sce.forge.runtime.AlgorithmFailure) { raisePlatformError(RecordListParentSceSynthInvokeListEvent.Error.Execution, ErrorReason.EXPRESSION_FAILED, "<assign location='standing.field'>: an integer operation overflowed or failed"); true }) {
                 return
             }
 
 
             var ifCondFailed42 = false
-            if ((try { com.sce.forge.runtime.SceChecked.at(vTaking, (0).toLong()).kind == 0.toUByte() } catch (_: com.sce.forge.runtime.AlgorithmFailure) { raisePlatformError(RecordListParentSceSynthInvokeListEvent.Error.Execution, "<if cond='taking[0].kind === 0'>: an integer operation overflowed or failed"); ifCondFailed42 = true; false })) {
+            if ((try { com.sce.forge.runtime.SceChecked.at(vTaking, (0).toLong()).kind == 0.toUByte() } catch (_: com.sce.forge.runtime.AlgorithmFailure) { raisePlatformError(RecordListParentSceSynthInvokeListEvent.Error.Execution, ErrorReason.EXPRESSION_FAILED, "<if cond='taking[0].kind === 0'>: an integer operation overflowed or failed"); ifCondFailed42 = true; false })) {
 
             vStanding = vStanding.copy(kind = RecordListParentSceSynthInvokeListCommandEnum.EDIT)
             } else {
@@ -3192,7 +3192,7 @@ RecordListParentSceSynthInvokeListEvent.RecordList.Pending,
                 return
             }
 
-            if (if (vProvisional.size < 8) { vProvisional = vProvisional + (vStanding); false } else { raisePlatformError(RecordListParentSceSynthInvokeListEvent.Error.Execution, "<sce:append target='provisional'>: the list already holds its capacity of 8"); true }) {
+            if (if (vProvisional.size < 8) { vProvisional = vProvisional + (vStanding); false } else { raisePlatformError(RecordListParentSceSynthInvokeListEvent.Error.Execution, ErrorReason.ASSIGNMENT_FAILED, "<sce:append target='provisional'>: the list already holds its capacity of 8"); true }) {
                 return
             }
             }
@@ -3242,7 +3242,7 @@ RecordListParentSceSynthInvokeListEvent.RecordList.Pending,
 
             if (vDot.nodeId != vNode) {
 
-            if (try { vClock = com.sce.forge.runtime.SceChecked.take(call_HlcReceive__vv(vClock, vDot, vClock.wallTime, vNode)); false } catch (_: com.sce.forge.runtime.AlgorithmFailure) { raisePlatformError(RecordListParentSceSynthInvokeListEvent.Error.Execution, "<assign location='clock'>: an integer operation overflowed or failed"); true }) {
+            if (try { vClock = com.sce.forge.runtime.SceChecked.take(call_HlcReceive__vv(vClock, vDot, vClock.wallTime, vNode)); false } catch (_: com.sce.forge.runtime.AlgorithmFailure) { raisePlatformError(RecordListParentSceSynthInvokeListEvent.Error.Execution, ErrorReason.EXPRESSION_FAILED, "<assign location='clock'>: an integer operation overflowed or failed"); true }) {
                 return
             }
             }
@@ -3306,24 +3306,24 @@ RecordListParentSceSynthInvokeListEvent.RecordList.Pending,
     private fun transitionContentOfOpenAt19() {
                 // SCE-MAP: record_list.scxml:1001 :: open :: _transition_19
 
-            if (try { vOp = com.sce.forge.runtime.SceChecked.at(vTaking, (vTook).toLong()); false } catch (_: com.sce.forge.runtime.AlgorithmFailure) { raisePlatformError(RecordListParentSceSynthInvokeListEvent.Error.Execution, "<assign location='op'>: an integer operation overflowed or failed"); true }) {
+            if (try { vOp = com.sce.forge.runtime.SceChecked.at(vTaking, (vTook).toLong()); false } catch (_: com.sce.forge.runtime.AlgorithmFailure) { raisePlatformError(RecordListParentSceSynthInvokeListEvent.Error.Execution, ErrorReason.EXPRESSION_FAILED, "<assign location='op'>: an integer operation overflowed or failed"); true }) {
                 return
             }
 
-            if (try { vTook = com.sce.forge.runtime.SceChecked.add(vTook, 1.toUInt()); false } catch (_: com.sce.forge.runtime.AlgorithmFailure) { raisePlatformError(RecordListParentSceSynthInvokeListEvent.Error.Execution, "<assign location='took'>: an integer operation overflowed or failed"); true }) {
+            if (try { vTook = com.sce.forge.runtime.SceChecked.add(vTook, 1.toUInt()); false } catch (_: com.sce.forge.runtime.AlgorithmFailure) { raisePlatformError(RecordListParentSceSynthInvokeListEvent.Error.Execution, ErrorReason.EXPRESSION_FAILED, "<assign location='took'>: an integer operation overflowed or failed"); true }) {
                 return
             }
 
             vEntry = vEntry.copy(element = vOp.id.toULong())
 
-            if (try { vEntry = vEntry.copy(element = com.sce.forge.runtime.SceChecked.add(com.sce.forge.runtime.SceChecked.mul(vEntry.element, 65536.toULong()), vOp.field.toULong())); false } catch (_: com.sce.forge.runtime.AlgorithmFailure) { raisePlatformError(RecordListParentSceSynthInvokeListEvent.Error.Execution, "<assign location='entry.element'>: an integer operation overflowed or failed"); true }) {
+            if (try { vEntry = vEntry.copy(element = com.sce.forge.runtime.SceChecked.add(com.sce.forge.runtime.SceChecked.mul(vEntry.element, 65536.toULong()), vOp.field.toULong())); false } catch (_: com.sce.forge.runtime.AlgorithmFailure) { raisePlatformError(RecordListParentSceSynthInvokeListEvent.Error.Execution, ErrorReason.EXPRESSION_FAILED, "<assign location='entry.element'>: an integer operation overflowed or failed"); true }) {
                 return
             }
 
 
             if (vOp.kind == 0.toUByte()) {
 
-            if (try { vHeld = vHeld.copy(text = com.sce.forge.runtime.SceChecked.bounded(vOp.text, 96)); false } catch (_: com.sce.forge.runtime.AlgorithmFailure) { raisePlatformError(RecordListParentSceSynthInvokeListEvent.Error.Execution, "<assign location='held.text'>: an integer operation overflowed or failed"); true }) {
+            if (try { vHeld = vHeld.copy(text = com.sce.forge.runtime.SceChecked.bounded(vOp.text, 96)); false } catch (_: com.sce.forge.runtime.AlgorithmFailure) { raisePlatformError(RecordListParentSceSynthInvokeListEvent.Error.Execution, ErrorReason.EXPRESSION_FAILED, "<assign location='held.text'>: an integer operation overflowed or failed"); true }) {
                 return
             }
 
@@ -3362,15 +3362,15 @@ RecordListParentSceSynthInvokeListEvent.RecordList.Pending,
 
             vOne = emptyList()
 
-            if (if (vOne.size < 1024) { vOne = vOne + (vEntry); false } else { raisePlatformError(RecordListParentSceSynthInvokeListEvent.Error.Execution, "<sce:append target='one'>: the list already holds its capacity of 1024"); true }) {
+            if (if (vOne.size < 1024) { vOne = vOne + (vEntry); false } else { raisePlatformError(RecordListParentSceSynthInvokeListEvent.Error.Execution, ErrorReason.ASSIGNMENT_FAILED, "<sce:append target='one'>: the list already holds its capacity of 1024"); true }) {
                 return
             }
 
-            if (try { vAdds = com.sce.forge.runtime.SceChecked.within(com.sce.forge.runtime.SceChecked.take(call_OrsetUnion__vv(vAdds, vOne)), 1024); false } catch (_: com.sce.forge.runtime.AlgorithmFailure) { raisePlatformError(RecordListParentSceSynthInvokeListEvent.Error.Execution, "<assign location='adds'>: an integer operation overflowed or failed"); true }) {
+            if (try { vAdds = com.sce.forge.runtime.SceChecked.within(com.sce.forge.runtime.SceChecked.take(call_OrsetUnion__vv(vAdds, vOne)), 1024); false } catch (_: com.sce.forge.runtime.AlgorithmFailure) { raisePlatformError(RecordListParentSceSynthInvokeListEvent.Error.Execution, ErrorReason.EXPRESSION_FAILED, "<assign location='adds'>: an integer operation overflowed or failed"); true }) {
                 return
             }
 
-            if (try { vValues = com.sce.forge.runtime.SceChecked.within(com.sce.forge.runtime.SceChecked.take(call_MvValueKeep__vv(vValues, vHeld)), 512); false } catch (_: com.sce.forge.runtime.AlgorithmFailure) { raisePlatformError(RecordListParentSceSynthInvokeListEvent.Error.Execution, "<assign location='values'>: an integer operation overflowed or failed"); true }) {
+            if (try { vValues = com.sce.forge.runtime.SceChecked.within(com.sce.forge.runtime.SceChecked.take(call_MvValueKeep__vv(vValues, vHeld)), 512); false } catch (_: com.sce.forge.runtime.AlgorithmFailure) { raisePlatformError(RecordListParentSceSynthInvokeListEvent.Error.Execution, ErrorReason.EXPRESSION_FAILED, "<assign location='values'>: an integer operation overflowed or failed"); true }) {
                 return
             }
             }
@@ -3434,7 +3434,7 @@ RecordListParentSceSynthInvokeListEvent.RecordList.Pending,
 
             vUndoing = vUndoing.copy(value = v.value)
 
-            if (try { vUndoing = vUndoing.copy(text = com.sce.forge.runtime.SceChecked.bounded(v.text, 96)); false } catch (_: com.sce.forge.runtime.AlgorithmFailure) { raisePlatformError(RecordListParentSceSynthInvokeListEvent.Error.Execution, "<assign location='undoing.text'>: an integer operation overflowed or failed"); true }) {
+            if (try { vUndoing = vUndoing.copy(text = com.sce.forge.runtime.SceChecked.bounded(v.text, 96)); false } catch (_: com.sce.forge.runtime.AlgorithmFailure) { raisePlatformError(RecordListParentSceSynthInvokeListEvent.Error.Execution, ErrorReason.EXPRESSION_FAILED, "<assign location='undoing.text'>: an integer operation overflowed or failed"); true }) {
                 return
             }
 
@@ -3450,7 +3450,7 @@ RecordListParentSceSynthInvokeListEvent.RecordList.Pending,
 
             vUndoing = vUndoing.copy(atCounter = vDot.counter)
 
-            if (if (vUndo.size < 512) { vUndo = vUndo + (vUndoing); false } else { raisePlatformError(RecordListParentSceSynthInvokeListEvent.Error.Execution, "<sce:append target='undo'>: the list already holds its capacity of 512"); true }) {
+            if (if (vUndo.size < 512) { vUndo = vUndo + (vUndoing); false } else { raisePlatformError(RecordListParentSceSynthInvokeListEvent.Error.Execution, ErrorReason.ASSIGNMENT_FAILED, "<sce:append target='undo'>: the list already holds its capacity of 512"); true }) {
                 return
             }
             }
@@ -3466,7 +3466,7 @@ RecordListParentSceSynthInvokeListEvent.RecordList.Pending,
 
             if (u.id != vHeld.id || u.field != vHeld.field || u.wallTime != vHeld.wallTime || u.counter != vHeld.counter || u.nodeId != vHeld.nodeId) {
 
-            if (if (vUndoKept.size < 512) { vUndoKept = vUndoKept + (u); false } else { raisePlatformError(RecordListParentSceSynthInvokeListEvent.Error.Execution, "<sce:append target='undoKept'>: the list already holds its capacity of 512"); true }) {
+            if (if (vUndoKept.size < 512) { vUndoKept = vUndoKept + (u); false } else { raisePlatformError(RecordListParentSceSynthInvokeListEvent.Error.Execution, ErrorReason.ASSIGNMENT_FAILED, "<sce:append target='undoKept'>: the list already holds its capacity of 512"); true }) {
                 return
             }
             }
@@ -3477,7 +3477,7 @@ RecordListParentSceSynthInvokeListEvent.RecordList.Pending,
 
             for (u in vUndoKept) {
 
-            if (if (vUndo.size < 512) { vUndo = vUndo + (u); false } else { raisePlatformError(RecordListParentSceSynthInvokeListEvent.Error.Execution, "<sce:append target='undo'>: the list already holds its capacity of 512"); true }) {
+            if (if (vUndo.size < 512) { vUndo = vUndo + (u); false } else { raisePlatformError(RecordListParentSceSynthInvokeListEvent.Error.Execution, ErrorReason.ASSIGNMENT_FAILED, "<sce:append target='undo'>: the list already holds its capacity of 512"); true }) {
                 return
             }
             }
@@ -3485,15 +3485,15 @@ RecordListParentSceSynthInvokeListEvent.RecordList.Pending,
 
             vOne = emptyList()
 
-            if (if (vOne.size < 1024) { vOne = vOne + (vEntry); false } else { raisePlatformError(RecordListParentSceSynthInvokeListEvent.Error.Execution, "<sce:append target='one'>: the list already holds its capacity of 1024"); true }) {
+            if (if (vOne.size < 1024) { vOne = vOne + (vEntry); false } else { raisePlatformError(RecordListParentSceSynthInvokeListEvent.Error.Execution, ErrorReason.ASSIGNMENT_FAILED, "<sce:append target='one'>: the list already holds its capacity of 1024"); true }) {
                 return
             }
 
-            if (try { vAdds = com.sce.forge.runtime.SceChecked.within(com.sce.forge.runtime.SceChecked.take(call_OrsetLive__vv(vAdds, vOne)), 1024); false } catch (_: com.sce.forge.runtime.AlgorithmFailure) { raisePlatformError(RecordListParentSceSynthInvokeListEvent.Error.Execution, "<assign location='adds'>: an integer operation overflowed or failed"); true }) {
+            if (try { vAdds = com.sce.forge.runtime.SceChecked.within(com.sce.forge.runtime.SceChecked.take(call_OrsetLive__vv(vAdds, vOne)), 1024); false } catch (_: com.sce.forge.runtime.AlgorithmFailure) { raisePlatformError(RecordListParentSceSynthInvokeListEvent.Error.Execution, ErrorReason.EXPRESSION_FAILED, "<assign location='adds'>: an integer operation overflowed or failed"); true }) {
                 return
             }
 
-            if (try { vValues = com.sce.forge.runtime.SceChecked.within(com.sce.forge.runtime.SceChecked.take(call_MvValueDrop__vv(vValues, vHeld)), 512); false } catch (_: com.sce.forge.runtime.AlgorithmFailure) { raisePlatformError(RecordListParentSceSynthInvokeListEvent.Error.Execution, "<assign location='values'>: an integer operation overflowed or failed"); true }) {
+            if (try { vValues = com.sce.forge.runtime.SceChecked.within(com.sce.forge.runtime.SceChecked.take(call_MvValueDrop__vv(vValues, vHeld)), 512); false } catch (_: com.sce.forge.runtime.AlgorithmFailure) { raisePlatformError(RecordListParentSceSynthInvokeListEvent.Error.Execution, ErrorReason.EXPRESSION_FAILED, "<assign location='values'>: an integer operation overflowed or failed"); true }) {
                 return
             }
 
@@ -3539,7 +3539,7 @@ RecordListParentSceSynthInvokeListEvent.RecordList.Pending,
                 // docs/adr/0086, section 15.6: the list is short of its field's lower
                 // count, so the event is refused whole: one error, nothing delivered,
                 // and the error ends the block (W3C SCXML 6.2.3, 4.9).
-                raisePlatformError(RecordListParentSceSynthInvokeListEvent.Error.Execution, "<send> <param name='ops'> holds fewer elements than the 1 its field's type declares, so the event is not sent", "__send_22")
+                raisePlatformError(RecordListParentSceSynthInvokeListEvent.Error.Execution, ErrorReason.PARAM_UNFIT, "<send> <param name='ops'> holds fewer elements than the 1 its field's type declares, so the event is not sent", "__send_22")
                 return@send true
             }
 
@@ -3574,7 +3574,7 @@ RecordListParentSceSynthInvokeListEvent.RecordList.Pending,
             // event as an undeclared type, so a wiring mistake cannot read
             // as success.
             if (hostServed == null && !hasEventProcessor("sce:mesh")) {
-                raisePlatformError(RecordListParentSceSynthInvokeListEvent.Error.Execution, "<send type='sce:mesh'> names a processor the host declared but never registered", "__send_22")
+                raisePlatformError(RecordListParentSceSynthInvokeListEvent.Error.Execution, ErrorReason.PROCESSOR_UNREGISTERED, "<send type='sce:mesh'> names a processor the host declared but never registered", "__send_22")
             }
             false
             }) {
@@ -3607,7 +3607,7 @@ RecordListParentSceSynthInvokeListEvent.RecordList.Pending,
 
             if (!vProvisionalFound) {
 
-            if (try { vRefusals = com.sce.forge.runtime.SceChecked.add(vRefusals, 1.toUInt()); false } catch (_: com.sce.forge.runtime.AlgorithmFailure) { raisePlatformError(RecordListParentSceSynthInvokeListEvent.Error.Execution, "<assign location='refusals'>: an integer operation overflowed or failed"); true }) {
+            if (try { vRefusals = com.sce.forge.runtime.SceChecked.add(vRefusals, 1.toUInt()); false } catch (_: com.sce.forge.runtime.AlgorithmFailure) { raisePlatformError(RecordListParentSceSynthInvokeListEvent.Error.Execution, ErrorReason.EXPRESSION_FAILED, "<assign location='refusals'>: an integer operation overflowed or failed"); true }) {
                 return
             }
             }
@@ -3623,7 +3623,7 @@ RecordListParentSceSynthInvokeListEvent.RecordList.Pending,
 
             if (p.wallTime != vStanding.wallTime || p.counter != vStanding.counter) {
 
-            if (if (vProvisionalKept.size < 8) { vProvisionalKept = vProvisionalKept + (p); false } else { raisePlatformError(RecordListParentSceSynthInvokeListEvent.Error.Execution, "<sce:append target='provisionalKept'>: the list already holds its capacity of 8"); true }) {
+            if (if (vProvisionalKept.size < 8) { vProvisionalKept = vProvisionalKept + (p); false } else { raisePlatformError(RecordListParentSceSynthInvokeListEvent.Error.Execution, ErrorReason.ASSIGNMENT_FAILED, "<sce:append target='provisionalKept'>: the list already holds its capacity of 8"); true }) {
                 return
             }
             }
@@ -3634,7 +3634,7 @@ RecordListParentSceSynthInvokeListEvent.RecordList.Pending,
 
             for (p in vProvisionalKept) {
 
-            if (if (vProvisional.size < 8) { vProvisional = vProvisional + (p); false } else { raisePlatformError(RecordListParentSceSynthInvokeListEvent.Error.Execution, "<sce:append target='provisional'>: the list already holds its capacity of 8"); true }) {
+            if (if (vProvisional.size < 8) { vProvisional = vProvisional + (p); false } else { raisePlatformError(RecordListParentSceSynthInvokeListEvent.Error.Execution, ErrorReason.ASSIGNMENT_FAILED, "<sce:append target='provisional'>: the list already holds its capacity of 8"); true }) {
                 return
             }
             }
@@ -3647,7 +3647,7 @@ RecordListParentSceSynthInvokeListEvent.RecordList.Pending,
 
             if (u.atWallTime != vStanding.wallTime || u.atCounter != vStanding.counter) {
 
-            if (if (vUndoKept.size < 512) { vUndoKept = vUndoKept + (u); false } else { raisePlatformError(RecordListParentSceSynthInvokeListEvent.Error.Execution, "<sce:append target='undoKept'>: the list already holds its capacity of 512"); true }) {
+            if (if (vUndoKept.size < 512) { vUndoKept = vUndoKept + (u); false } else { raisePlatformError(RecordListParentSceSynthInvokeListEvent.Error.Execution, ErrorReason.ASSIGNMENT_FAILED, "<sce:append target='undoKept'>: the list already holds its capacity of 512"); true }) {
                 return
             }
             }
@@ -3658,7 +3658,7 @@ RecordListParentSceSynthInvokeListEvent.RecordList.Pending,
 
             for (u in vUndoKept) {
 
-            if (if (vUndo.size < 512) { vUndo = vUndo + (u); false } else { raisePlatformError(RecordListParentSceSynthInvokeListEvent.Error.Execution, "<sce:append target='undo'>: the list already holds its capacity of 512"); true }) {
+            if (if (vUndo.size < 512) { vUndo = vUndo + (u); false } else { raisePlatformError(RecordListParentSceSynthInvokeListEvent.Error.Execution, ErrorReason.ASSIGNMENT_FAILED, "<sce:append target='undo'>: the list already holds its capacity of 512"); true }) {
                 return
             }
             }
@@ -3680,7 +3680,7 @@ RecordListParentSceSynthInvokeListEvent.RecordList.Pending,
                 // W3C SCXML C.1 (test496): a target that names nothing is not
                 // reachable — error.communication, nothing delivered, and the
                 // error ends the block as any other would (W3C SCXML 4.9).
-                raisePlatformError(RecordListParentSceSynthInvokeListEvent.Error.Communication, "<send> targetexpr evaluated to nothing, or to a route the send does not declare, so there is no target to reach", "__send_23")
+                raisePlatformError(RecordListParentSceSynthInvokeListEvent.Error.Communication, ErrorReason.TARGET_UNREACHABLE, "<send> targetexpr evaluated to nothing, or to a route the send does not declare, so there is no target to reach", "__send_23")
                 return@send true
             }
             val sendPayload = mutableMapOf<String, Any?>()
@@ -3705,11 +3705,11 @@ RecordListParentSceSynthInvokeListEvent.RecordList.Confirmed,
                 RecordListParentSceSynthInvokeListEvent.Error.Communication,
             )) {
                 com.sce.runtime.TargetSendOutcome.UNSUPPORTED -> {
-                    raisePlatformError(RecordListParentSceSynthInvokeListEvent.Error.Execution, "<send> targetexpr produced a value that is not a target", "__send_23")
+                    raisePlatformError(RecordListParentSceSynthInvokeListEvent.Error.Execution, ErrorReason.SEND_TARGET_INVALID, "<send> targetexpr produced a value that is not a target", "__send_23")
                     return@send true
                 }
                 com.sce.runtime.TargetSendOutcome.UNREACHABLE -> {
-                    raisePlatformError(RecordListParentSceSynthInvokeListEvent.Error.Communication, "<send> targetexpr names a session this processor cannot reach", "__send_23")
+                    raisePlatformError(RecordListParentSceSynthInvokeListEvent.Error.Communication, ErrorReason.TARGET_UNREACHABLE, "<send> targetexpr names a session this processor cannot reach", "__send_23")
                     return@send true
                 }
                 com.sce.runtime.TargetSendOutcome.SENT -> {}
@@ -3748,7 +3748,7 @@ RecordListParentSceSynthInvokeListEvent.RecordList.Confirmed,
 
             if (!vProvisionalFound) {
 
-            if (try { vRefusals = com.sce.forge.runtime.SceChecked.add(vRefusals, 1.toUInt()); false } catch (_: com.sce.forge.runtime.AlgorithmFailure) { raisePlatformError(RecordListParentSceSynthInvokeListEvent.Error.Execution, "<assign location='refusals'>: an integer operation overflowed or failed"); true }) {
+            if (try { vRefusals = com.sce.forge.runtime.SceChecked.add(vRefusals, 1.toUInt()); false } catch (_: com.sce.forge.runtime.AlgorithmFailure) { raisePlatformError(RecordListParentSceSynthInvokeListEvent.Error.Execution, ErrorReason.EXPRESSION_FAILED, "<assign location='refusals'>: an integer operation overflowed or failed"); true }) {
                 return
             }
             }
@@ -3783,7 +3783,7 @@ RecordListParentSceSynthInvokeListEvent.RecordList.Confirmed,
     private fun transitionContentOfOpenAt23() {
                 // SCE-MAP: record_list.scxml:1194 :: open :: _transition_23
 
-            if (try { vStanding = com.sce.forge.runtime.SceChecked.at(vProvisional, (com.sce.forge.runtime.SceChecked.sub((vProvisional).size.toUInt(), 1.toUInt())).toLong()); false } catch (_: com.sce.forge.runtime.AlgorithmFailure) { raisePlatformError(RecordListParentSceSynthInvokeListEvent.Error.Execution, "<assign location='standing'>: an integer operation overflowed or failed"); true }) {
+            if (try { vStanding = com.sce.forge.runtime.SceChecked.at(vProvisional, (com.sce.forge.runtime.SceChecked.sub((vProvisional).size.toUInt(), 1.toUInt())).toLong()); false } catch (_: com.sce.forge.runtime.AlgorithmFailure) { raisePlatformError(RecordListParentSceSynthInvokeListEvent.Error.Execution, ErrorReason.EXPRESSION_FAILED, "<assign location='standing'>: an integer operation overflowed or failed"); true }) {
                 return
             }
 
@@ -3795,24 +3795,24 @@ RecordListParentSceSynthInvokeListEvent.RecordList.Confirmed,
 
             if (a.wallTime == vStanding.wallTime && a.counter == vStanding.counter && a.nodeId == vNode) {
 
-            if (if (vOne.size < 1024) { vOne = vOne + (a); false } else { raisePlatformError(RecordListParentSceSynthInvokeListEvent.Error.Execution, "<sce:append target='one'>: the list already holds its capacity of 1024"); true }) {
+            if (if (vOne.size < 1024) { vOne = vOne + (a); false } else { raisePlatformError(RecordListParentSceSynthInvokeListEvent.Error.Execution, ErrorReason.ASSIGNMENT_FAILED, "<sce:append target='one'>: the list already holds its capacity of 1024"); true }) {
                 return
             }
             }
             }
 
-            if (try { vAdds = com.sce.forge.runtime.SceChecked.within(com.sce.forge.runtime.SceChecked.take(call_OrsetLive__vv(vAdds, vOne)), 1024); false } catch (_: com.sce.forge.runtime.AlgorithmFailure) { raisePlatformError(RecordListParentSceSynthInvokeListEvent.Error.Execution, "<assign location='adds'>: an integer operation overflowed or failed"); true }) {
+            if (try { vAdds = com.sce.forge.runtime.SceChecked.within(com.sce.forge.runtime.SceChecked.take(call_OrsetLive__vv(vAdds, vOne)), 1024); false } catch (_: com.sce.forge.runtime.AlgorithmFailure) { raisePlatformError(RecordListParentSceSynthInvokeListEvent.Error.Execution, ErrorReason.EXPRESSION_FAILED, "<assign location='adds'>: an integer operation overflowed or failed"); true }) {
                 return
             }
 
 
             for (a in vOne) {
 
-            if (try { vHeld = vHeld.copy(id = com.sce.forge.runtime.SceChecked.div(a.element, 65536.toULong())); false } catch (_: com.sce.forge.runtime.AlgorithmFailure) { raisePlatformError(RecordListParentSceSynthInvokeListEvent.Error.Execution, "<assign location='held.id'>: an integer operation overflowed or failed"); true }) {
+            if (try { vHeld = vHeld.copy(id = com.sce.forge.runtime.SceChecked.div(a.element, 65536.toULong())); false } catch (_: com.sce.forge.runtime.AlgorithmFailure) { raisePlatformError(RecordListParentSceSynthInvokeListEvent.Error.Execution, ErrorReason.EXPRESSION_FAILED, "<assign location='held.id'>: an integer operation overflowed or failed"); true }) {
                 return
             }
 
-            if (try { vHeld = vHeld.copy(field = com.sce.forge.runtime.SceChecked.rem(a.element, 65536.toULong())); false } catch (_: com.sce.forge.runtime.AlgorithmFailure) { raisePlatformError(RecordListParentSceSynthInvokeListEvent.Error.Execution, "<assign location='held.field'>: an integer operation overflowed or failed"); true }) {
+            if (try { vHeld = vHeld.copy(field = com.sce.forge.runtime.SceChecked.rem(a.element, 65536.toULong())); false } catch (_: com.sce.forge.runtime.AlgorithmFailure) { raisePlatformError(RecordListParentSceSynthInvokeListEvent.Error.Execution, ErrorReason.EXPRESSION_FAILED, "<assign location='held.field'>: an integer operation overflowed or failed"); true }) {
                 return
             }
 
@@ -3822,18 +3822,18 @@ RecordListParentSceSynthInvokeListEvent.RecordList.Confirmed,
 
             vHeld = vHeld.copy(nodeId = a.nodeId)
 
-            if (try { vValues = com.sce.forge.runtime.SceChecked.within(com.sce.forge.runtime.SceChecked.take(call_MvValueDrop__vv(vValues, vHeld)), 512); false } catch (_: com.sce.forge.runtime.AlgorithmFailure) { raisePlatformError(RecordListParentSceSynthInvokeListEvent.Error.Execution, "<assign location='values'>: an integer operation overflowed or failed"); true }) {
+            if (try { vValues = com.sce.forge.runtime.SceChecked.within(com.sce.forge.runtime.SceChecked.take(call_MvValueDrop__vv(vValues, vHeld)), 512); false } catch (_: com.sce.forge.runtime.AlgorithmFailure) { raisePlatformError(RecordListParentSceSynthInvokeListEvent.Error.Execution, ErrorReason.EXPRESSION_FAILED, "<assign location='values'>: an integer operation overflowed or failed"); true }) {
                 return
             }
 
 
             if (vAnnounce) {
 
-            if (try { vShareId = com.sce.forge.runtime.SceChecked.narrowToUInt(com.sce.forge.runtime.SceChecked.div(a.element, 65536.toULong())); false } catch (_: com.sce.forge.runtime.AlgorithmFailure) { raisePlatformError(RecordListParentSceSynthInvokeListEvent.Error.Execution, "<assign location='shareId'>: an integer operation overflowed or failed"); true }) {
+            if (try { vShareId = com.sce.forge.runtime.SceChecked.narrowToUInt(com.sce.forge.runtime.SceChecked.div(a.element, 65536.toULong())); false } catch (_: com.sce.forge.runtime.AlgorithmFailure) { raisePlatformError(RecordListParentSceSynthInvokeListEvent.Error.Execution, ErrorReason.EXPRESSION_FAILED, "<assign location='shareId'>: an integer operation overflowed or failed"); true }) {
                 return
             }
 
-            if (try { vShareField = com.sce.forge.runtime.SceChecked.narrowToUShort(com.sce.forge.runtime.SceChecked.rem(a.element, 65536.toULong())); false } catch (_: com.sce.forge.runtime.AlgorithmFailure) { raisePlatformError(RecordListParentSceSynthInvokeListEvent.Error.Execution, "<assign location='shareField'>: an integer operation overflowed or failed"); true }) {
+            if (try { vShareField = com.sce.forge.runtime.SceChecked.narrowToUShort(com.sce.forge.runtime.SceChecked.rem(a.element, 65536.toULong())); false } catch (_: com.sce.forge.runtime.AlgorithmFailure) { raisePlatformError(RecordListParentSceSynthInvokeListEvent.Error.Execution, ErrorReason.EXPRESSION_FAILED, "<assign location='shareField'>: an integer operation overflowed or failed"); true }) {
                 return
             }
 
@@ -3865,7 +3865,7 @@ RecordListParentSceSynthInvokeListEvent.RecordList.Confirmed,
 
             vEntry = vEntry.copy(element = u.id)
 
-            if (try { vEntry = vEntry.copy(element = com.sce.forge.runtime.SceChecked.add(com.sce.forge.runtime.SceChecked.mul(vEntry.element, 65536.toULong()), u.field)); false } catch (_: com.sce.forge.runtime.AlgorithmFailure) { raisePlatformError(RecordListParentSceSynthInvokeListEvent.Error.Execution, "<assign location='entry.element'>: an integer operation overflowed or failed"); true }) {
+            if (try { vEntry = vEntry.copy(element = com.sce.forge.runtime.SceChecked.add(com.sce.forge.runtime.SceChecked.mul(vEntry.element, 65536.toULong()), u.field)); false } catch (_: com.sce.forge.runtime.AlgorithmFailure) { raisePlatformError(RecordListParentSceSynthInvokeListEvent.Error.Execution, ErrorReason.EXPRESSION_FAILED, "<assign location='entry.element'>: an integer operation overflowed or failed"); true }) {
                 return
             }
 
@@ -3877,11 +3877,11 @@ RecordListParentSceSynthInvokeListEvent.RecordList.Confirmed,
 
             vOne = emptyList()
 
-            if (if (vOne.size < 1024) { vOne = vOne + (vEntry); false } else { raisePlatformError(RecordListParentSceSynthInvokeListEvent.Error.Execution, "<sce:append target='one'>: the list already holds its capacity of 1024"); true }) {
+            if (if (vOne.size < 1024) { vOne = vOne + (vEntry); false } else { raisePlatformError(RecordListParentSceSynthInvokeListEvent.Error.Execution, ErrorReason.ASSIGNMENT_FAILED, "<sce:append target='one'>: the list already holds its capacity of 1024"); true }) {
                 return
             }
 
-            if (try { vAdds = com.sce.forge.runtime.SceChecked.within(com.sce.forge.runtime.SceChecked.take(call_OrsetUnion__vv(vAdds, vOne)), 1024); false } catch (_: com.sce.forge.runtime.AlgorithmFailure) { raisePlatformError(RecordListParentSceSynthInvokeListEvent.Error.Execution, "<assign location='adds'>: an integer operation overflowed or failed"); true }) {
+            if (try { vAdds = com.sce.forge.runtime.SceChecked.within(com.sce.forge.runtime.SceChecked.take(call_OrsetUnion__vv(vAdds, vOne)), 1024); false } catch (_: com.sce.forge.runtime.AlgorithmFailure) { raisePlatformError(RecordListParentSceSynthInvokeListEvent.Error.Execution, ErrorReason.EXPRESSION_FAILED, "<assign location='adds'>: an integer operation overflowed or failed"); true }) {
                 return
             }
 
@@ -3891,7 +3891,7 @@ RecordListParentSceSynthInvokeListEvent.RecordList.Confirmed,
 
             vHeld = vHeld.copy(value = u.value)
 
-            if (try { vHeld = vHeld.copy(text = com.sce.forge.runtime.SceChecked.bounded(u.text, 96)); false } catch (_: com.sce.forge.runtime.AlgorithmFailure) { raisePlatformError(RecordListParentSceSynthInvokeListEvent.Error.Execution, "<assign location='held.text'>: an integer operation overflowed or failed"); true }) {
+            if (try { vHeld = vHeld.copy(text = com.sce.forge.runtime.SceChecked.bounded(u.text, 96)); false } catch (_: com.sce.forge.runtime.AlgorithmFailure) { raisePlatformError(RecordListParentSceSynthInvokeListEvent.Error.Execution, ErrorReason.EXPRESSION_FAILED, "<assign location='held.text'>: an integer operation overflowed or failed"); true }) {
                 return
             }
 
@@ -3901,18 +3901,18 @@ RecordListParentSceSynthInvokeListEvent.RecordList.Confirmed,
 
             vHeld = vHeld.copy(nodeId = u.nodeId)
 
-            if (try { vValues = com.sce.forge.runtime.SceChecked.within(com.sce.forge.runtime.SceChecked.take(call_MvValueKeep__vv(vValues, vHeld)), 512); false } catch (_: com.sce.forge.runtime.AlgorithmFailure) { raisePlatformError(RecordListParentSceSynthInvokeListEvent.Error.Execution, "<assign location='values'>: an integer operation overflowed or failed"); true }) {
+            if (try { vValues = com.sce.forge.runtime.SceChecked.within(com.sce.forge.runtime.SceChecked.take(call_MvValueKeep__vv(vValues, vHeld)), 512); false } catch (_: com.sce.forge.runtime.AlgorithmFailure) { raisePlatformError(RecordListParentSceSynthInvokeListEvent.Error.Execution, ErrorReason.EXPRESSION_FAILED, "<assign location='values'>: an integer operation overflowed or failed"); true }) {
                 return
             }
 
 
             if (vAnnounce) {
 
-            if (try { vShareId = com.sce.forge.runtime.SceChecked.narrowToUInt(u.id); false } catch (_: com.sce.forge.runtime.AlgorithmFailure) { raisePlatformError(RecordListParentSceSynthInvokeListEvent.Error.Execution, "<assign location='shareId'>: an integer operation overflowed or failed"); true }) {
+            if (try { vShareId = com.sce.forge.runtime.SceChecked.narrowToUInt(u.id); false } catch (_: com.sce.forge.runtime.AlgorithmFailure) { raisePlatformError(RecordListParentSceSynthInvokeListEvent.Error.Execution, ErrorReason.EXPRESSION_FAILED, "<assign location='shareId'>: an integer operation overflowed or failed"); true }) {
                 return
             }
 
-            if (try { vShareField = com.sce.forge.runtime.SceChecked.narrowToUShort(u.field); false } catch (_: com.sce.forge.runtime.AlgorithmFailure) { raisePlatformError(RecordListParentSceSynthInvokeListEvent.Error.Execution, "<assign location='shareField'>: an integer operation overflowed or failed"); true }) {
+            if (try { vShareField = com.sce.forge.runtime.SceChecked.narrowToUShort(u.field); false } catch (_: com.sce.forge.runtime.AlgorithmFailure) { raisePlatformError(RecordListParentSceSynthInvokeListEvent.Error.Execution, ErrorReason.EXPRESSION_FAILED, "<assign location='shareField'>: an integer operation overflowed or failed"); true }) {
                 return
             }
 
@@ -3945,7 +3945,7 @@ RecordListParentSceSynthInvokeListEvent.RecordList.Confirmed,
 
             if (u.atWallTime != vStanding.wallTime || u.atCounter != vStanding.counter) {
 
-            if (if (vUndoKept.size < 512) { vUndoKept = vUndoKept + (u); false } else { raisePlatformError(RecordListParentSceSynthInvokeListEvent.Error.Execution, "<sce:append target='undoKept'>: the list already holds its capacity of 512"); true }) {
+            if (if (vUndoKept.size < 512) { vUndoKept = vUndoKept + (u); false } else { raisePlatformError(RecordListParentSceSynthInvokeListEvent.Error.Execution, ErrorReason.ASSIGNMENT_FAILED, "<sce:append target='undoKept'>: the list already holds its capacity of 512"); true }) {
                 return
             }
             }
@@ -3956,7 +3956,7 @@ RecordListParentSceSynthInvokeListEvent.RecordList.Confirmed,
 
             for (u in vUndoKept) {
 
-            if (if (vUndo.size < 512) { vUndo = vUndo + (u); false } else { raisePlatformError(RecordListParentSceSynthInvokeListEvent.Error.Execution, "<sce:append target='undo'>: the list already holds its capacity of 512"); true }) {
+            if (if (vUndo.size < 512) { vUndo = vUndo + (u); false } else { raisePlatformError(RecordListParentSceSynthInvokeListEvent.Error.Execution, ErrorReason.ASSIGNMENT_FAILED, "<sce:append target='undo'>: the list already holds its capacity of 512"); true }) {
                 return
             }
             }
@@ -3969,9 +3969,9 @@ RecordListParentSceSynthInvokeListEvent.RecordList.Confirmed,
 
 
             var ifCondFailed72 = false
-            if ((try { com.sce.forge.runtime.SceChecked.add(at, 1.toUInt()) < (vProvisional).size.toUInt() } catch (_: com.sce.forge.runtime.AlgorithmFailure) { raisePlatformError(RecordListParentSceSynthInvokeListEvent.Error.Execution, "<if cond='at + 1 < len(provisional)'>: an integer operation overflowed or failed"); ifCondFailed72 = true; false })) {
+            if ((try { com.sce.forge.runtime.SceChecked.add(at, 1.toUInt()) < (vProvisional).size.toUInt() } catch (_: com.sce.forge.runtime.AlgorithmFailure) { raisePlatformError(RecordListParentSceSynthInvokeListEvent.Error.Execution, ErrorReason.EXPRESSION_FAILED, "<if cond='at + 1 < len(provisional)'>: an integer operation overflowed or failed"); ifCondFailed72 = true; false })) {
 
-            if (if (vProvisionalKept.size < 8) { vProvisionalKept = vProvisionalKept + (p); false } else { raisePlatformError(RecordListParentSceSynthInvokeListEvent.Error.Execution, "<sce:append target='provisionalKept'>: the list already holds its capacity of 8"); true }) {
+            if (if (vProvisionalKept.size < 8) { vProvisionalKept = vProvisionalKept + (p); false } else { raisePlatformError(RecordListParentSceSynthInvokeListEvent.Error.Execution, ErrorReason.ASSIGNMENT_FAILED, "<sce:append target='provisionalKept'>: the list already holds its capacity of 8"); true }) {
                 return
             }
             }
@@ -3985,7 +3985,7 @@ RecordListParentSceSynthInvokeListEvent.RecordList.Confirmed,
 
             for (p in vProvisionalKept) {
 
-            if (if (vProvisional.size < 8) { vProvisional = vProvisional + (p); false } else { raisePlatformError(RecordListParentSceSynthInvokeListEvent.Error.Execution, "<sce:append target='provisional'>: the list already holds its capacity of 8"); true }) {
+            if (if (vProvisional.size < 8) { vProvisional = vProvisional + (p); false } else { raisePlatformError(RecordListParentSceSynthInvokeListEvent.Error.Execution, ErrorReason.ASSIGNMENT_FAILED, "<sce:append target='provisional'>: the list already holds its capacity of 8"); true }) {
                 return
             }
             }
@@ -4007,7 +4007,7 @@ RecordListParentSceSynthInvokeListEvent.RecordList.Confirmed,
                 // W3C SCXML C.1 (test496): a target that names nothing is not
                 // reachable — error.communication, nothing delivered, and the
                 // error ends the block as any other would (W3C SCXML 4.9).
-                raisePlatformError(RecordListParentSceSynthInvokeListEvent.Error.Communication, "<send> targetexpr evaluated to nothing, or to a route the send does not declare, so there is no target to reach", "__send_27")
+                raisePlatformError(RecordListParentSceSynthInvokeListEvent.Error.Communication, ErrorReason.TARGET_UNREACHABLE, "<send> targetexpr evaluated to nothing, or to a route the send does not declare, so there is no target to reach", "__send_27")
                 return@send true
             }
             val sendPayload = mutableMapOf<String, Any?>()
@@ -4038,11 +4038,11 @@ RecordListParentSceSynthInvokeListEvent.RecordList.Refused,
                 RecordListParentSceSynthInvokeListEvent.Error.Communication,
             )) {
                 com.sce.runtime.TargetSendOutcome.UNSUPPORTED -> {
-                    raisePlatformError(RecordListParentSceSynthInvokeListEvent.Error.Execution, "<send> targetexpr produced a value that is not a target", "__send_27")
+                    raisePlatformError(RecordListParentSceSynthInvokeListEvent.Error.Execution, ErrorReason.SEND_TARGET_INVALID, "<send> targetexpr produced a value that is not a target", "__send_27")
                     return@send true
                 }
                 com.sce.runtime.TargetSendOutcome.UNREACHABLE -> {
-                    raisePlatformError(RecordListParentSceSynthInvokeListEvent.Error.Communication, "<send> targetexpr names a session this processor cannot reach", "__send_27")
+                    raisePlatformError(RecordListParentSceSynthInvokeListEvent.Error.Communication, ErrorReason.TARGET_UNREACHABLE, "<send> targetexpr names a session this processor cannot reach", "__send_27")
                     return@send true
                 }
                 com.sce.runtime.TargetSendOutcome.SENT -> {}
@@ -4064,7 +4064,7 @@ RecordListParentSceSynthInvokeListEvent.RecordList.Refused,
 
             vEntry = vEntry.copy(element = pendingRecordListAnnouncePayload!!.id.toULong())
 
-            if (try { vEntry = vEntry.copy(element = com.sce.forge.runtime.SceChecked.add(com.sce.forge.runtime.SceChecked.mul(vEntry.element, 65536.toULong()), pendingRecordListAnnouncePayload!!.field.toULong())); false } catch (_: com.sce.forge.runtime.AlgorithmFailure) { raisePlatformError(RecordListParentSceSynthInvokeListEvent.Error.Execution, "<assign location='entry.element'>: an integer operation overflowed or failed"); true }) {
+            if (try { vEntry = vEntry.copy(element = com.sce.forge.runtime.SceChecked.add(com.sce.forge.runtime.SceChecked.mul(vEntry.element, 65536.toULong()), pendingRecordListAnnouncePayload!!.field.toULong())); false } catch (_: com.sce.forge.runtime.AlgorithmFailure) { raisePlatformError(RecordListParentSceSynthInvokeListEvent.Error.Execution, ErrorReason.EXPRESSION_FAILED, "<assign location='entry.element'>: an integer operation overflowed or failed"); true }) {
                 return
             }
 
@@ -4100,7 +4100,7 @@ RecordListParentSceSynthInvokeListEvent.RecordList.Refused,
 
             if (!vListed) {
 
-            if (if (vMoved.size < 64) { vMoved = vMoved + (vEntry.element); false } else { raisePlatformError(RecordListParentSceSynthInvokeListEvent.Error.Execution, "<sce:append target='moved'>: the list already holds its capacity of 64"); true }) {
+            if (if (vMoved.size < 64) { vMoved = vMoved + (vEntry.element); false } else { raisePlatformError(RecordListParentSceSynthInvokeListEvent.Error.Execution, ErrorReason.ASSIGNMENT_FAILED, "<sce:append target='moved'>: the list already holds its capacity of 64"); true }) {
                 return
             }
             }
@@ -4112,15 +4112,15 @@ RecordListParentSceSynthInvokeListEvent.RecordList.Refused,
 
             for (named in vMoved) {
 
-            if (try { vShareId = com.sce.forge.runtime.SceChecked.narrowToUInt(com.sce.forge.runtime.SceChecked.div(named, 65536.toULong())); false } catch (_: com.sce.forge.runtime.AlgorithmFailure) { raisePlatformError(RecordListParentSceSynthInvokeListEvent.Error.Execution, "<assign location='shareId'>: an integer operation overflowed or failed"); true }) {
+            if (try { vShareId = com.sce.forge.runtime.SceChecked.narrowToUInt(com.sce.forge.runtime.SceChecked.div(named, 65536.toULong())); false } catch (_: com.sce.forge.runtime.AlgorithmFailure) { raisePlatformError(RecordListParentSceSynthInvokeListEvent.Error.Execution, ErrorReason.EXPRESSION_FAILED, "<assign location='shareId'>: an integer operation overflowed or failed"); true }) {
                 return
             }
 
-            if (try { vShareField = com.sce.forge.runtime.SceChecked.narrowToUShort(com.sce.forge.runtime.SceChecked.rem(named, 65536.toULong())); false } catch (_: com.sce.forge.runtime.AlgorithmFailure) { raisePlatformError(RecordListParentSceSynthInvokeListEvent.Error.Execution, "<assign location='shareField'>: an integer operation overflowed or failed"); true }) {
+            if (try { vShareField = com.sce.forge.runtime.SceChecked.narrowToUShort(com.sce.forge.runtime.SceChecked.rem(named, 65536.toULong())); false } catch (_: com.sce.forge.runtime.AlgorithmFailure) { raisePlatformError(RecordListParentSceSynthInvokeListEvent.Error.Execution, ErrorReason.EXPRESSION_FAILED, "<assign location='shareField'>: an integer operation overflowed or failed"); true }) {
                 return
             }
 
-            if (try { vLive = com.sce.forge.runtime.SceChecked.within(com.sce.forge.runtime.SceChecked.take(call_RegisterValues__v(vValues, vShareId.toULong(), vShareField.toULong())), 512); false } catch (_: com.sce.forge.runtime.AlgorithmFailure) { raisePlatformError(RecordListParentSceSynthInvokeListEvent.Error.Execution, "<assign location='live'>: an integer operation overflowed or failed"); true }) {
+            if (try { vLive = com.sce.forge.runtime.SceChecked.within(com.sce.forge.runtime.SceChecked.take(call_RegisterValues__v(vValues, vShareId.toULong(), vShareField.toULong())), 512); false } catch (_: com.sce.forge.runtime.AlgorithmFailure) { raisePlatformError(RecordListParentSceSynthInvokeListEvent.Error.Execution, ErrorReason.EXPRESSION_FAILED, "<assign location='live'>: an integer operation overflowed or failed"); true }) {
                 return
             }
 
@@ -4141,7 +4141,7 @@ RecordListParentSceSynthInvokeListEvent.RecordList.Refused,
                 // W3C SCXML C.1 (test496): a target that names nothing is not
                 // reachable — error.communication, nothing delivered, and the
                 // error ends the block as any other would (W3C SCXML 4.9).
-                raisePlatformError(RecordListParentSceSynthInvokeListEvent.Error.Communication, "<send> targetexpr evaluated to nothing, or to a route the send does not declare, so there is no target to reach", "__send_29")
+                raisePlatformError(RecordListParentSceSynthInvokeListEvent.Error.Communication, ErrorReason.TARGET_UNREACHABLE, "<send> targetexpr evaluated to nothing, or to a route the send does not declare, so there is no target to reach", "__send_29")
                 return@send true
             }
             val sendPayload = mutableMapOf<String, Any?>()
@@ -4176,11 +4176,11 @@ RecordListParentSceSynthInvokeListEvent.RecordList.Register,
                 RecordListParentSceSynthInvokeListEvent.Error.Communication,
             )) {
                 com.sce.runtime.TargetSendOutcome.UNSUPPORTED -> {
-                    raisePlatformError(RecordListParentSceSynthInvokeListEvent.Error.Execution, "<send> targetexpr produced a value that is not a target", "__send_29")
+                    raisePlatformError(RecordListParentSceSynthInvokeListEvent.Error.Execution, ErrorReason.SEND_TARGET_INVALID, "<send> targetexpr produced a value that is not a target", "__send_29")
                     return@send true
                 }
                 com.sce.runtime.TargetSendOutcome.UNREACHABLE -> {
-                    raisePlatformError(RecordListParentSceSynthInvokeListEvent.Error.Communication, "<send> targetexpr names a session this processor cannot reach", "__send_29")
+                    raisePlatformError(RecordListParentSceSynthInvokeListEvent.Error.Communication, ErrorReason.TARGET_UNREACHABLE, "<send> targetexpr names a session this processor cannot reach", "__send_29")
                     return@send true
                 }
                 com.sce.runtime.TargetSendOutcome.SENT -> {}
@@ -4192,7 +4192,7 @@ RecordListParentSceSynthInvokeListEvent.RecordList.Register,
                 return
             } // end of run send@ (W3C SCXML 6.2: a discarded message)
 
-            if (try { vAnnounced = com.sce.forge.runtime.SceChecked.add(vAnnounced, 1.toUInt()); false } catch (_: com.sce.forge.runtime.AlgorithmFailure) { raisePlatformError(RecordListParentSceSynthInvokeListEvent.Error.Execution, "<assign location='announced'>: an integer operation overflowed or failed"); true }) {
+            if (try { vAnnounced = com.sce.forge.runtime.SceChecked.add(vAnnounced, 1.toUInt()); false } catch (_: com.sce.forge.runtime.AlgorithmFailure) { raisePlatformError(RecordListParentSceSynthInvokeListEvent.Error.Execution, ErrorReason.EXPRESSION_FAILED, "<assign location='announced'>: an integer operation overflowed or failed"); true }) {
                 return
             }
             }
@@ -4219,7 +4219,7 @@ RecordListParentSceSynthInvokeListEvent.RecordList.Register,
                 // W3C SCXML C.1 (test496): a target that names nothing is not
                 // reachable — error.communication, nothing delivered, and the
                 // error ends the block as any other would (W3C SCXML 4.9).
-                raisePlatformError(RecordListParentSceSynthInvokeListEvent.Error.Communication, "<send> targetexpr evaluated to nothing, or to a route the send does not declare, so there is no target to reach", "__send_30")
+                raisePlatformError(RecordListParentSceSynthInvokeListEvent.Error.Communication, ErrorReason.TARGET_UNREACHABLE, "<send> targetexpr evaluated to nothing, or to a route the send does not declare, so there is no target to reach", "__send_30")
                 return@send true
             }
             val sendPayload = mutableMapOf<String, Any?>()
@@ -4254,11 +4254,11 @@ RecordListParentSceSynthInvokeListEvent.RecordList.Register,
                 RecordListParentSceSynthInvokeListEvent.Error.Communication,
             )) {
                 com.sce.runtime.TargetSendOutcome.UNSUPPORTED -> {
-                    raisePlatformError(RecordListParentSceSynthInvokeListEvent.Error.Execution, "<send> targetexpr produced a value that is not a target", "__send_30")
+                    raisePlatformError(RecordListParentSceSynthInvokeListEvent.Error.Execution, ErrorReason.SEND_TARGET_INVALID, "<send> targetexpr produced a value that is not a target", "__send_30")
                     return@send true
                 }
                 com.sce.runtime.TargetSendOutcome.UNREACHABLE -> {
-                    raisePlatformError(RecordListParentSceSynthInvokeListEvent.Error.Communication, "<send> targetexpr names a session this processor cannot reach", "__send_30")
+                    raisePlatformError(RecordListParentSceSynthInvokeListEvent.Error.Communication, ErrorReason.TARGET_UNREACHABLE, "<send> targetexpr names a session this processor cannot reach", "__send_30")
                     return@send true
                 }
                 com.sce.runtime.TargetSendOutcome.SENT -> {}
@@ -4288,7 +4288,7 @@ RecordListParentSceSynthInvokeListEvent.RecordList.Register,
                 // W3C SCXML C.1 (test496): a target that names nothing is not
                 // reachable — error.communication, nothing delivered, and the
                 // error ends the block as any other would (W3C SCXML 4.9).
-                raisePlatformError(RecordListParentSceSynthInvokeListEvent.Error.Communication, "<send> targetexpr evaluated to nothing, or to a route the send does not declare, so there is no target to reach", "__send_31")
+                raisePlatformError(RecordListParentSceSynthInvokeListEvent.Error.Communication, ErrorReason.TARGET_UNREACHABLE, "<send> targetexpr evaluated to nothing, or to a route the send does not declare, so there is no target to reach", "__send_31")
                 return@send true
             }
             val sendPayload = mutableMapOf<String, Any?>()
@@ -4323,11 +4323,11 @@ RecordListParentSceSynthInvokeListEvent.RecordList.Value,
                 RecordListParentSceSynthInvokeListEvent.Error.Communication,
             )) {
                 com.sce.runtime.TargetSendOutcome.UNSUPPORTED -> {
-                    raisePlatformError(RecordListParentSceSynthInvokeListEvent.Error.Execution, "<send> targetexpr produced a value that is not a target", "__send_31")
+                    raisePlatformError(RecordListParentSceSynthInvokeListEvent.Error.Execution, ErrorReason.SEND_TARGET_INVALID, "<send> targetexpr produced a value that is not a target", "__send_31")
                     return@send true
                 }
                 com.sce.runtime.TargetSendOutcome.UNREACHABLE -> {
-                    raisePlatformError(RecordListParentSceSynthInvokeListEvent.Error.Communication, "<send> targetexpr names a session this processor cannot reach", "__send_31")
+                    raisePlatformError(RecordListParentSceSynthInvokeListEvent.Error.Communication, ErrorReason.TARGET_UNREACHABLE, "<send> targetexpr names a session this processor cannot reach", "__send_31")
                     return@send true
                 }
                 com.sce.runtime.TargetSendOutcome.SENT -> {}
@@ -4340,11 +4340,11 @@ RecordListParentSceSynthInvokeListEvent.RecordList.Value,
             } // end of run send@ (W3C SCXML 6.2: a discarded message)
             }
 
-            if (try { vAnnounced = com.sce.forge.runtime.SceChecked.add(vAnnounced, 1.toUInt()); false } catch (_: com.sce.forge.runtime.AlgorithmFailure) { raisePlatformError(RecordListParentSceSynthInvokeListEvent.Error.Execution, "<assign location='announced'>: an integer operation overflowed or failed"); true }) {
+            if (try { vAnnounced = com.sce.forge.runtime.SceChecked.add(vAnnounced, 1.toUInt()); false } catch (_: com.sce.forge.runtime.AlgorithmFailure) { raisePlatformError(RecordListParentSceSynthInvokeListEvent.Error.Execution, ErrorReason.EXPRESSION_FAILED, "<assign location='announced'>: an integer operation overflowed or failed"); true }) {
                 return
             }
 
-            if (try { vOrdinal = com.sce.forge.runtime.SceChecked.add(vOrdinal, 1.toUInt()); false } catch (_: com.sce.forge.runtime.AlgorithmFailure) { raisePlatformError(RecordListParentSceSynthInvokeListEvent.Error.Execution, "<assign location='ordinal'>: an integer operation overflowed or failed"); true }) {
+            if (try { vOrdinal = com.sce.forge.runtime.SceChecked.add(vOrdinal, 1.toUInt()); false } catch (_: com.sce.forge.runtime.AlgorithmFailure) { raisePlatformError(RecordListParentSceSynthInvokeListEvent.Error.Execution, ErrorReason.EXPRESSION_FAILED, "<assign location='ordinal'>: an integer operation overflowed or failed"); true }) {
                 return
             }
             }
@@ -4356,7 +4356,7 @@ RecordListParentSceSynthInvokeListEvent.RecordList.Value,
     private fun transitionContentOfOpenAt26() {
                 // SCE-MAP: record_list.scxml:1365 :: open :: _transition_26
 
-            if (try { vRefusals = com.sce.forge.runtime.SceChecked.add(vRefusals, 1.toUInt()); false } catch (_: com.sce.forge.runtime.AlgorithmFailure) { raisePlatformError(RecordListParentSceSynthInvokeListEvent.Error.Execution, "<assign location='refusals'>: an integer operation overflowed or failed"); true }) {
+            if (try { vRefusals = com.sce.forge.runtime.SceChecked.add(vRefusals, 1.toUInt()); false } catch (_: com.sce.forge.runtime.AlgorithmFailure) { raisePlatformError(RecordListParentSceSynthInvokeListEvent.Error.Execution, ErrorReason.EXPRESSION_FAILED, "<assign location='refusals'>: an integer operation overflowed or failed"); true }) {
                 return
             }
 

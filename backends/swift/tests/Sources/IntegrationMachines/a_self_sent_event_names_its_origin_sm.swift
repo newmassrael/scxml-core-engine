@@ -490,8 +490,12 @@ public final class ASelfSentEventNamesItsOriginPolicy: InvocablePolicy {
 
     /// Says what went wrong where the document can see it: `error.execution` on the internal
     /// queue (§scxml-5.9.1, 5.3).
-    private func raiseExecutionError(_ message: String, engine: Engine<ASelfSentEventNamesItsOriginPolicy>) {
-        engine.raise(EventWithMetadata.platformError(ASelfSentEventNamesItsOriginEvent.errorExecution, message: message))
+    /// `reason` is the code of sce:std/engine/error_reason the record carries
+    /// (docs/adr/0106 #111).
+    private func raiseExecutionError(
+        _ reason: ErrorReason, _ message: String, engine: Engine<ASelfSentEventNamesItsOriginPolicy>
+    ) {
+        engine.raise(EventWithMetadata.platformError(ASelfSentEventNamesItsOriginEvent.errorExecution, reason: reason, message: message))
     }
 
     /// W3C SCXML 5.3: the `<data id>` `id` takes the value of the lowered expression, or nil when it
@@ -548,6 +552,7 @@ public final class ASelfSentEventNamesItsOriginPolicy: InvocablePolicy {
             }
         } catch {
             raiseExecutionError(
+                handed == nil ? .expressionFailed : .paramUnfit,
                 handed == nil
                     ? "<data id='\(id)'> expr failed to evaluate"
                     : "<data id='\(id)'> could not hold the value its parent handed it",
@@ -738,7 +743,7 @@ public final class ASelfSentEventNamesItsOriginPolicy: InvocablePolicy {
             // this call the payload is lost to the document and to the host alike.
             engine.notePayloadReading(event, reading: Self.payloadReading(of: reading))
         } catch {
-            raiseExecutionError("_event could not be bound for '\(name)'", engine: engine)
+            raiseExecutionError(.payloadRefused, "_event could not be bound for '\(name)'", engine: engine)
         }
     }
 
@@ -775,7 +780,7 @@ public final class ASelfSentEventNamesItsOriginPolicy: InvocablePolicy {
         do {
             return try scriptSession.evaluateCondition(condition, chunkName: "=cond")
         } catch {
-            raiseExecutionError("a \(element) cond failed to evaluate", engine: engine)
+            raiseExecutionError(.expressionFailed, "a \(element) cond failed to evaluate", engine: engine)
             failed = true
             return false
         }
@@ -795,6 +800,10 @@ public final class ASelfSentEventNamesItsOriginPolicy: InvocablePolicy {
                 // W3C SCXML 6.2: send id="__send_3"
                 do {
                     var sendArgError = ""
+                    // Why the argument failed, a code of sce:std/engine/error_reason
+                    // (docs/adr/0106 #111), set with every sentence below.
+                    var sendArgReason = ErrorReason.expressionFailed
+                    _ = sendArgReason
                     // W3C SCXML 6.2.4 + C.1: a targetexpr is a target. Its value is read from the
                     // engine now and routed as the same value written in `target` is, below; an
                     // expression that cannot be evaluated is the argument error, and a value that
@@ -806,11 +815,11 @@ public final class ASelfSentEventNamesItsOriginPolicy: InvocablePolicy {
                             sendTarget = routed
                             sendTargetKnown = true
                         } else {
-                            sendArgError = "<send> targetexpr could not be evaluated"
+                            sendArgError = "<send> targetexpr could not be evaluated"; sendArgReason = .expressionFailed
                         }
                     }
                     if !sendArgError.isEmpty {
-                        var sendError = EventWithMetadata.platformError(ASelfSentEventNamesItsOriginEvent.errorExecution, message: sendArgError)
+                        var sendError = EventWithMetadata.platformError(ASelfSentEventNamesItsOriginEvent.errorExecution, reason: sendArgReason, message: sendArgError)
                         sendError.metadata.sendID = "__send_3"
                         engine.raise(sendError)
 
@@ -821,7 +830,7 @@ public final class ASelfSentEventNamesItsOriginPolicy: InvocablePolicy {
                         // names nothing (empty or "undefined"), is not reachable —
                         // error.communication, nothing delivered, and the error ends the block
                         // as any other would (W3C SCXML 4.9).
-                        var sendError = EventWithMetadata.platformError(ASelfSentEventNamesItsOriginEvent.errorCommunication, message: "<send> targetexpr evaluated to nothing, or to a route the send does not declare, so there is no target to reach")
+                        var sendError = EventWithMetadata.platformError(ASelfSentEventNamesItsOriginEvent.errorCommunication, reason: .targetUnreachable, message: "<send> targetexpr evaluated to nothing, or to a route the send does not declare, so there is no target to reach")
                         sendError.metadata.sendID = "__send_3"
                         engine.raise(sendError)
 
@@ -865,14 +874,14 @@ public final class ASelfSentEventNamesItsOriginPolicy: InvocablePolicy {
                         sender: self.sessionID
                     )
                     if sendRouted == .notSupported {
-                        var sendError = EventWithMetadata.platformError(ASelfSentEventNamesItsOriginEvent.errorExecution, message: "<send> targetexpr produced a value that is not a target")
+                        var sendError = EventWithMetadata.platformError(ASelfSentEventNamesItsOriginEvent.errorExecution, reason: .sendTargetInvalid, message: "<send> targetexpr produced a value that is not a target")
                         sendError.metadata.sendID = "__send_3"
                         engine.raise(sendError)
 
                         break sceBlock  // W3C SCXML 4.9: the error ends the block
                     }
                     if sendRouted == .notReachable {
-                        var sendError = EventWithMetadata.platformError(ASelfSentEventNamesItsOriginEvent.errorCommunication, message: "<send> targetexpr names a session this processor cannot reach")
+                        var sendError = EventWithMetadata.platformError(ASelfSentEventNamesItsOriginEvent.errorCommunication, reason: .targetUnreachable, message: "<send> targetexpr names a session this processor cannot reach")
                         sendError.metadata.sendID = "__send_3"
                         engine.raise(sendError)
 
@@ -1070,7 +1079,7 @@ public final class ASelfSentEventNamesItsOriginPolicy: InvocablePolicy {
 
                 // W3C SCXML 5.4: <assign location="unreachable">
                 if !assignData("unreachable", "_scxml_add(unreachable, 1)") {
-                    raiseExecutionError("<assign> to 'unreachable' failed", engine: engine)
+                    raiseExecutionError(.assignmentFailed, "<assign> to 'unreachable' failed", engine: engine)
                     break sceBlock  // W3C SCXML 4.9: the error ends the block
                 }
 
@@ -1089,7 +1098,7 @@ public final class ASelfSentEventNamesItsOriginPolicy: InvocablePolicy {
 
                 // W3C SCXML 5.4: <assign location="delayedOk">
                 if !assignData("delayedOk", "1") {
-                    raiseExecutionError("<assign> to 'delayedOk' failed", engine: engine)
+                    raiseExecutionError(.assignmentFailed, "<assign> to 'delayedOk' failed", engine: engine)
                     break sceBlock  // W3C SCXML 4.9: the error ends the block
                 }
 
@@ -1113,7 +1122,7 @@ public final class ASelfSentEventNamesItsOriginPolicy: InvocablePolicy {
 
                 // W3C SCXML 5.4: <assign location="immediateOk">
                 if !assignData("immediateOk", "1") {
-                    raiseExecutionError("<assign> to 'immediateOk' failed", engine: engine)
+                    raiseExecutionError(.assignmentFailed, "<assign> to 'immediateOk' failed", engine: engine)
                     break sceBlock  // W3C SCXML 4.9: the error ends the block
                 }
 
@@ -1126,6 +1135,10 @@ public final class ASelfSentEventNamesItsOriginPolicy: InvocablePolicy {
                 // W3C SCXML 6.2: send id="__send_0"
                 do {
                     var sendArgError = ""
+                    // Why the argument failed, a code of sce:std/engine/error_reason
+                    // (docs/adr/0106 #111), set with every sentence below.
+                    var sendArgReason = ErrorReason.expressionFailed
+                    _ = sendArgReason
                     // W3C SCXML 6.2.4 + C.1: a targetexpr is a target. Its value is read from the
                     // engine now and routed as the same value written in `target` is, below; an
                     // expression that cannot be evaluated is the argument error, and a value that
@@ -1137,11 +1150,11 @@ public final class ASelfSentEventNamesItsOriginPolicy: InvocablePolicy {
                             sendTarget = routed
                             sendTargetKnown = true
                         } else {
-                            sendArgError = "<send> targetexpr could not be evaluated"
+                            sendArgError = "<send> targetexpr could not be evaluated"; sendArgReason = .expressionFailed
                         }
                     }
                     if !sendArgError.isEmpty {
-                        var sendError = EventWithMetadata.platformError(ASelfSentEventNamesItsOriginEvent.errorExecution, message: sendArgError)
+                        var sendError = EventWithMetadata.platformError(ASelfSentEventNamesItsOriginEvent.errorExecution, reason: sendArgReason, message: sendArgError)
                         sendError.metadata.sendID = "__send_0"
                         engine.raise(sendError)
 
@@ -1152,7 +1165,7 @@ public final class ASelfSentEventNamesItsOriginPolicy: InvocablePolicy {
                         // names nothing (empty or "undefined"), is not reachable —
                         // error.communication, nothing delivered, and the error ends the block
                         // as any other would (W3C SCXML 4.9).
-                        var sendError = EventWithMetadata.platformError(ASelfSentEventNamesItsOriginEvent.errorCommunication, message: "<send> targetexpr evaluated to nothing, or to a route the send does not declare, so there is no target to reach")
+                        var sendError = EventWithMetadata.platformError(ASelfSentEventNamesItsOriginEvent.errorCommunication, reason: .targetUnreachable, message: "<send> targetexpr evaluated to nothing, or to a route the send does not declare, so there is no target to reach")
                         sendError.metadata.sendID = "__send_0"
                         engine.raise(sendError)
 
@@ -1196,14 +1209,14 @@ public final class ASelfSentEventNamesItsOriginPolicy: InvocablePolicy {
                         sender: self.sessionID
                     )
                     if sendRouted == .notSupported {
-                        var sendError = EventWithMetadata.platformError(ASelfSentEventNamesItsOriginEvent.errorExecution, message: "<send> targetexpr produced a value that is not a target")
+                        var sendError = EventWithMetadata.platformError(ASelfSentEventNamesItsOriginEvent.errorExecution, reason: .sendTargetInvalid, message: "<send> targetexpr produced a value that is not a target")
                         sendError.metadata.sendID = "__send_0"
                         engine.raise(sendError)
 
                         break sceBlock  // W3C SCXML 4.9: the error ends the block
                     }
                     if sendRouted == .notReachable {
-                        var sendError = EventWithMetadata.platformError(ASelfSentEventNamesItsOriginEvent.errorCommunication, message: "<send> targetexpr names a session this processor cannot reach")
+                        var sendError = EventWithMetadata.platformError(ASelfSentEventNamesItsOriginEvent.errorCommunication, reason: .targetUnreachable, message: "<send> targetexpr names a session this processor cannot reach")
                         sendError.metadata.sendID = "__send_0"
                         engine.raise(sendError)
 
@@ -1223,7 +1236,7 @@ public final class ASelfSentEventNamesItsOriginPolicy: InvocablePolicy {
 
                 // W3C SCXML 5.4: <assign location="replied">
                 if !assignData("replied", "1") {
-                    raiseExecutionError("<assign> to 'replied' failed", engine: engine)
+                    raiseExecutionError(.assignmentFailed, "<assign> to 'replied' failed", engine: engine)
                     break sceBlock  // W3C SCXML 4.9: the error ends the block
                 }
 
@@ -1239,7 +1252,7 @@ public final class ASelfSentEventNamesItsOriginPolicy: InvocablePolicy {
 
                 // W3C SCXML 5.4: <assign location="strayed">
                 if !assignData("strayed", "_scxml_add(strayed, 1)") {
-                    raiseExecutionError("<assign> to 'strayed' failed", engine: engine)
+                    raiseExecutionError(.assignmentFailed, "<assign> to 'strayed' failed", engine: engine)
                     break sceBlock  // W3C SCXML 4.9: the error ends the block
                 }
 

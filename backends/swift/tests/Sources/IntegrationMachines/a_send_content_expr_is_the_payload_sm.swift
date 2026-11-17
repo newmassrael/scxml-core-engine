@@ -437,8 +437,12 @@ public final class ASendContentExprIsThePayloadPolicy: InvocablePolicy {
 
     /// Says what went wrong where the document can see it: `error.execution` on the internal
     /// queue (§scxml-5.9.1, 5.3).
-    private func raiseExecutionError(_ message: String, engine: Engine<ASendContentExprIsThePayloadPolicy>) {
-        engine.raise(EventWithMetadata.platformError(ASendContentExprIsThePayloadEvent.errorExecution, message: message))
+    /// `reason` is the code of sce:std/engine/error_reason the record carries
+    /// (docs/adr/0106 #111).
+    private func raiseExecutionError(
+        _ reason: ErrorReason, _ message: String, engine: Engine<ASendContentExprIsThePayloadPolicy>
+    ) {
+        engine.raise(EventWithMetadata.platformError(ASendContentExprIsThePayloadEvent.errorExecution, reason: reason, message: message))
     }
 
     /// W3C SCXML 5.3: the `<data id>` `id` takes the value of the lowered expression, or nil when it
@@ -495,6 +499,7 @@ public final class ASendContentExprIsThePayloadPolicy: InvocablePolicy {
             }
         } catch {
             raiseExecutionError(
+                handed == nil ? .expressionFailed : .paramUnfit,
                 handed == nil
                     ? "<data id='\(id)'> expr failed to evaluate"
                     : "<data id='\(id)'> could not hold the value its parent handed it",
@@ -663,7 +668,7 @@ public final class ASendContentExprIsThePayloadPolicy: InvocablePolicy {
             // this call the payload is lost to the document and to the host alike.
             engine.notePayloadReading(event, reading: Self.payloadReading(of: reading))
         } catch {
-            raiseExecutionError("_event could not be bound for '\(name)'", engine: engine)
+            raiseExecutionError(.payloadRefused, "_event could not be bound for '\(name)'", engine: engine)
         }
     }
 
@@ -700,7 +705,7 @@ public final class ASendContentExprIsThePayloadPolicy: InvocablePolicy {
         do {
             return try scriptSession.evaluateCondition(condition, chunkName: "=cond")
         } catch {
-            raiseExecutionError("a \(element) cond failed to evaluate", engine: engine)
+            raiseExecutionError(.expressionFailed, "a \(element) cond failed to evaluate", engine: engine)
             failed = true
             return false
         }
@@ -729,7 +734,7 @@ public final class ASendContentExprIsThePayloadPolicy: InvocablePolicy {
                     if let contentJSON = evaluateJSON("(40 + 2)") {
                         sendEventData = contentJSON
                     } else {
-                        engine.raise(EventWithMetadata.platformError(ASendContentExprIsThePayloadEvent.errorExecution, message: "<send> contentexpr failed to evaluate"))
+                        engine.raise(EventWithMetadata.platformError(ASendContentExprIsThePayloadEvent.errorExecution, reason: .expressionFailed, message: "<send> contentexpr failed to evaluate"))
                         paramFailed = true
                     }
                     do {
@@ -761,7 +766,7 @@ public final class ASendContentExprIsThePayloadPolicy: InvocablePolicy {
                     if let contentJSON = evaluateJSON("{[\"a\"] = 1}") {
                         sendEventData = contentJSON
                     } else {
-                        engine.raise(EventWithMetadata.platformError(ASendContentExprIsThePayloadEvent.errorExecution, message: "<send> contentexpr failed to evaluate"))
+                        engine.raise(EventWithMetadata.platformError(ASendContentExprIsThePayloadEvent.errorExecution, reason: .expressionFailed, message: "<send> contentexpr failed to evaluate"))
                         paramFailed = true
                     }
                     do {
@@ -793,7 +798,7 @@ public final class ASendContentExprIsThePayloadPolicy: InvocablePolicy {
                     if let contentJSON = evaluateJSON("\"hi\"") {
                         sendEventData = contentJSON
                     } else {
-                        engine.raise(EventWithMetadata.platformError(ASendContentExprIsThePayloadEvent.errorExecution, message: "<send> contentexpr failed to evaluate"))
+                        engine.raise(EventWithMetadata.platformError(ASendContentExprIsThePayloadEvent.errorExecution, reason: .expressionFailed, message: "<send> contentexpr failed to evaluate"))
                         paramFailed = true
                     }
                     do {
@@ -828,7 +833,7 @@ public final class ASendContentExprIsThePayloadPolicy: InvocablePolicy {
                     if let contentJSON = evaluateJSON("obj.missing.deep") {
                         sendEventData = contentJSON
                     } else {
-                        engine.raise(EventWithMetadata.platformError(ASendContentExprIsThePayloadEvent.errorExecution, message: "<send> contentexpr failed to evaluate"))
+                        engine.raise(EventWithMetadata.platformError(ASendContentExprIsThePayloadEvent.errorExecution, reason: .expressionFailed, message: "<send> contentexpr failed to evaluate"))
                         paramFailed = true
                     }
                     do {
@@ -850,7 +855,7 @@ public final class ASendContentExprIsThePayloadPolicy: InvocablePolicy {
 
                 // W3C SCXML 5.4: <assign location="afterBad">
                 if !assignData("afterBad", "1") {
-                    raiseExecutionError("<assign> to 'afterBad' failed", engine: engine)
+                    raiseExecutionError(.assignmentFailed, "<assign> to 'afterBad' failed", engine: engine)
                     break sceBlock  // W3C SCXML 4.9: the error ends the block
                 }
 
@@ -1002,7 +1007,7 @@ public final class ASendContentExprIsThePayloadPolicy: InvocablePolicy {
 
                 // W3C SCXML 5.4: <assign location="errors">
                 if !assignData("errors", "_scxml_add(errors, 1)") {
-                    raiseExecutionError("<assign> to 'errors' failed", engine: engine)
+                    raiseExecutionError(.assignmentFailed, "<assign> to 'errors' failed", engine: engine)
                     break sceBlock  // W3C SCXML 4.9: the error ends the block
                 }
 
@@ -1013,7 +1018,7 @@ public final class ASendContentExprIsThePayloadPolicy: InvocablePolicy {
 
                 // W3C SCXML 5.4: <assign location="numberOk">
                 if !assignData("numberOk", "1") {
-                    raiseExecutionError("<assign> to 'numberOk' failed", engine: engine)
+                    raiseExecutionError(.assignmentFailed, "<assign> to 'numberOk' failed", engine: engine)
                     break sceBlock  // W3C SCXML 4.9: the error ends the block
                 }
 
@@ -1024,7 +1029,7 @@ public final class ASendContentExprIsThePayloadPolicy: InvocablePolicy {
 
                 // W3C SCXML 5.4: <assign location="objectOk">
                 if !assignData("objectOk", "1") {
-                    raiseExecutionError("<assign> to 'objectOk' failed", engine: engine)
+                    raiseExecutionError(.assignmentFailed, "<assign> to 'objectOk' failed", engine: engine)
                     break sceBlock  // W3C SCXML 4.9: the error ends the block
                 }
 
@@ -1035,7 +1040,7 @@ public final class ASendContentExprIsThePayloadPolicy: InvocablePolicy {
 
                 // W3C SCXML 5.4: <assign location="textOk">
                 if !assignData("textOk", "1") {
-                    raiseExecutionError("<assign> to 'textOk' failed", engine: engine)
+                    raiseExecutionError(.assignmentFailed, "<assign> to 'textOk' failed", engine: engine)
                     break sceBlock  // W3C SCXML 4.9: the error ends the block
                 }
 
@@ -1046,7 +1051,7 @@ public final class ASendContentExprIsThePayloadPolicy: InvocablePolicy {
 
                 // W3C SCXML 5.4: <assign location="badArrived">
                 if !assignData("badArrived", "1") {
-                    raiseExecutionError("<assign> to 'badArrived' failed", engine: engine)
+                    raiseExecutionError(.assignmentFailed, "<assign> to 'badArrived' failed", engine: engine)
                     break sceBlock  // W3C SCXML 4.9: the error ends the block
                 }
 
@@ -1056,7 +1061,7 @@ public final class ASendContentExprIsThePayloadPolicy: InvocablePolicy {
 
                 // W3C SCXML 5.4: <assign location="badEmpty">
                 if !assignData("badEmpty", "1") {
-                    raiseExecutionError("<assign> to 'badEmpty' failed", engine: engine)
+                    raiseExecutionError(.assignmentFailed, "<assign> to 'badEmpty' failed", engine: engine)
                     break sceBlock  // W3C SCXML 4.9: the error ends the block
                 }
 

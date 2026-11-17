@@ -31,6 +31,7 @@ import (
 	"time"
 
 	sce "github.com/newmassrael/sce-go-runtime"
+	sceerrorreason "github.com/newmassrael/sce-go-runtime/generated/error_reason"
 )
 
 // Ensure imports are used
@@ -39,6 +40,9 @@ var (
 	_ = filepath.Join
 	_ = strings.HasPrefix
 	_ = time.Duration(0)
+	// Why an error.* event is raised (sce:std/engine/error_reason,
+	// docs/adr/0106 #111); a machine that raises none still imports it.
+	_ = sceerrorreason.ErrorReasonExpressionFailed
 )
 
 // ======================================================================
@@ -405,12 +409,12 @@ func (p *EventDataArrivesAsSentPolicy) evaluateIfCond(guard string, eng *sce.Eng
 // evaluateGuardRaising evaluates a cond, raising error.execution when it cannot
 // be evaluated (W3C SCXML 5.9.1); ok is false then, where a bare false could
 // not say so.
-func (p *EventDataArrivesAsSentPolicy) evaluateGuardRaising(guard string, eng *sce.Engine[EventDataArrivesAsSentState, EventDataArrivesAsSentEvent], reason string) (value bool, ok bool) {
+func (p *EventDataArrivesAsSentPolicy) evaluateGuardRaising(guard string, eng *sce.Engine[EventDataArrivesAsSentState, EventDataArrivesAsSentEvent], detail string) (value bool, ok bool) {
 	p.assertScriptSession()
 	engine := p.ScriptEngine
 	result, err := engine.EvaluateExpression(p.SessionID, guard)
 	if err != nil {
-		eng.Raise(sce.NewPlatformError(EventDataArrivesAsSentEventErrorExecution, reason))
+		eng.Raise(sce.NewPlatformError(EventDataArrivesAsSentEventErrorExecution, sceerrorreason.ErrorReasonExpressionFailed, detail))
 		return false, false
 	}
 	return sce.ScriptToBool(result), true

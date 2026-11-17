@@ -399,7 +399,7 @@ class WildcardInDocumentOrderStateMachine(
             try {
                 engine.setVariable(sid, "armed", engine.evaluateExpr(sid, com.sce.runtime.ScriptSource.lua("false", "false")))
             } catch (e: Exception) {
-                raisePlatformError(WildcardInDocumentOrderEvent.Error.Execution, "<data id='armed'> expr failed to evaluate")
+                raisePlatformError(WildcardInDocumentOrderEvent.Error.Execution, ErrorReason.EXPRESSION_FAILED, "<data id='armed'> expr failed to evaluate")
             }
         }
         // §scxml-6.4: 'guardedEntries' takes a value its invoke handed it, in place of its own
@@ -408,7 +408,7 @@ class WildcardInDocumentOrderStateMachine(
             try {
                 engine.setVariable(sid, "guardedEntries", engine.evaluateExpr(sid, com.sce.runtime.ScriptSource.lua("0", "0")))
             } catch (e: Exception) {
-                raisePlatformError(WildcardInDocumentOrderEvent.Error.Execution, "<data id='guardedEntries'> expr failed to evaluate")
+                raisePlatformError(WildcardInDocumentOrderEvent.Error.Execution, ErrorReason.EXPRESSION_FAILED, "<data id='guardedEntries'> expr failed to evaluate")
             }
         }
         // §scxml-6.4: 'sealedEntries' takes a value its invoke handed it, in place of its own
@@ -417,7 +417,7 @@ class WildcardInDocumentOrderStateMachine(
             try {
                 engine.setVariable(sid, "sealedEntries", engine.evaluateExpr(sid, com.sce.runtime.ScriptSource.lua("0", "0")))
             } catch (e: Exception) {
-                raisePlatformError(WildcardInDocumentOrderEvent.Error.Execution, "<data id='sealedEntries'> expr failed to evaluate")
+                raisePlatformError(WildcardInDocumentOrderEvent.Error.Execution, ErrorReason.EXPRESSION_FAILED, "<data id='sealedEntries'> expr failed to evaluate")
             }
         }
     }
@@ -447,14 +447,14 @@ class WildcardInDocumentOrderStateMachine(
 
     // W3C SCXML 5.9.1: a cond that cannot be evaluated raises error.execution;
     // `null` says so, where a bare `false` could not.
-    private fun evaluateGuardRaising(guardExpr: com.sce.runtime.ScriptSource, reason: String): Boolean? {
+    private fun evaluateGuardRaising(guardExpr: com.sce.runtime.ScriptSource, detail: String): Boolean? {
         assertScriptSession()
         val engine = scriptEngine ?: error("scriptEngine is required (codegen invariant: needs_script_engine == true)")
         val sid = scriptSessionId ?: error("scriptSessionId is established by the start (codegen invariant)")
         return try {
             engine.evaluateCondition(sid, guardExpr)
         } catch (e: Exception) {
-            raisePlatformError(WildcardInDocumentOrderEvent.Error.Execution, reason)
+            raisePlatformError(WildcardInDocumentOrderEvent.Error.Execution, ErrorReason.EXPRESSION_FAILED, detail)
             null
         }
     }
@@ -495,7 +495,7 @@ class WildcardInDocumentOrderStateMachine(
         return try {
             engine.evaluateExpr(sid, serialized)?.toString() ?: ""
         } catch (e: Exception) {
-            raisePlatformError(WildcardInDocumentOrderEvent.Error.Execution, "an expression could not be serialised to JSON")
+            raisePlatformError(WildcardInDocumentOrderEvent.Error.Execution, ErrorReason.EXPRESSION_FAILED, "an expression could not be serialised to JSON")
             ""
         }
     }
@@ -516,7 +516,7 @@ class WildcardInDocumentOrderStateMachine(
             engine.assign(sid, location, expr)
             true
         } catch (e: Exception) {
-            raisePlatformError(WildcardInDocumentOrderEvent.Error.Execution, "<assign> failed")
+            raisePlatformError(WildcardInDocumentOrderEvent.Error.Execution, ErrorReason.ASSIGNMENT_FAILED, "<assign> failed")
             false
         }
     }
@@ -532,7 +532,7 @@ class WildcardInDocumentOrderStateMachine(
             engine.executeScript(sid, script)
             true
         } catch (e: Exception) {
-            raisePlatformError(WildcardInDocumentOrderEvent.Error.Execution, "<script> failed to execute")
+            raisePlatformError(WildcardInDocumentOrderEvent.Error.Execution, ErrorReason.SCRIPT_FAILED, "<script> failed to execute")
             false
         }
     }

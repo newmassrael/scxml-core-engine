@@ -31,6 +31,7 @@ import (
 	"time"
 
 	sce "github.com/newmassrael/sce-go-runtime"
+	sceerrorreason "github.com/newmassrael/sce-go-runtime/generated/error_reason"
 )
 
 // Ensure imports are used
@@ -39,6 +40,9 @@ var (
 	_ = filepath.Join
 	_ = strings.HasPrefix
 	_ = time.Duration(0)
+	// Why an error.* event is raised (sce:std/engine/error_reason,
+	// docs/adr/0106 #111); a machine that raises none still imports it.
+	_ = sceerrorreason.ErrorReasonExpressionFailed
 )
 
 // ======================================================================
@@ -346,7 +350,7 @@ func (p *AnEventNoProcessorDeliveredHasNoOriginPolicy) InitializeDataModel(eng *
 		if err == nil {
 			_ = engine.SetVariable(sessionID, "postedBlank", result)
 		} else {
-			eng.Raise(sce.NewPlatformError(AnEventNoProcessorDeliveredHasNoOriginEventErrorExecution, "<data id='postedBlank'> expr failed to evaluate"))
+			eng.Raise(sce.NewPlatformError(AnEventNoProcessorDeliveredHasNoOriginEventErrorExecution, sceerrorreason.ErrorReasonExpressionFailed, "<data id='postedBlank'> expr failed to evaluate"))
 			_ = engine.SetVariable(sessionID, "postedBlank", nil)
 		}
 	}
@@ -360,7 +364,7 @@ func (p *AnEventNoProcessorDeliveredHasNoOriginPolicy) InitializeDataModel(eng *
 		if err == nil {
 			_ = engine.SetVariable(sessionID, "replyBlank", result)
 		} else {
-			eng.Raise(sce.NewPlatformError(AnEventNoProcessorDeliveredHasNoOriginEventErrorExecution, "<data id='replyBlank'> expr failed to evaluate"))
+			eng.Raise(sce.NewPlatformError(AnEventNoProcessorDeliveredHasNoOriginEventErrorExecution, sceerrorreason.ErrorReasonExpressionFailed, "<data id='replyBlank'> expr failed to evaluate"))
 			_ = engine.SetVariable(sessionID, "replyBlank", nil)
 		}
 	}
@@ -392,12 +396,12 @@ func (p *AnEventNoProcessorDeliveredHasNoOriginPolicy) evaluateIfCond(guard stri
 // evaluateGuardRaising evaluates a cond, raising error.execution when it cannot
 // be evaluated (W3C SCXML 5.9.1); ok is false then, where a bare false could
 // not say so.
-func (p *AnEventNoProcessorDeliveredHasNoOriginPolicy) evaluateGuardRaising(guard string, eng *sce.Engine[AnEventNoProcessorDeliveredHasNoOriginState, AnEventNoProcessorDeliveredHasNoOriginEvent], reason string) (value bool, ok bool) {
+func (p *AnEventNoProcessorDeliveredHasNoOriginPolicy) evaluateGuardRaising(guard string, eng *sce.Engine[AnEventNoProcessorDeliveredHasNoOriginState, AnEventNoProcessorDeliveredHasNoOriginEvent], detail string) (value bool, ok bool) {
 	p.assertScriptSession()
 	engine := p.ScriptEngine
 	result, err := engine.EvaluateExpression(p.SessionID, guard)
 	if err != nil {
-		eng.Raise(sce.NewPlatformError(AnEventNoProcessorDeliveredHasNoOriginEventErrorExecution, reason))
+		eng.Raise(sce.NewPlatformError(AnEventNoProcessorDeliveredHasNoOriginEventErrorExecution, sceerrorreason.ErrorReasonExpressionFailed, detail))
 		return false, false
 	}
 	return sce.ScriptToBool(result), true
@@ -500,7 +504,7 @@ func (p *AnEventNoProcessorDeliveredHasNoOriginPolicy) SetParamValueInScriptEngi
 // failed is left (docs/adr/0098).
 func (p *AnEventNoProcessorDeliveredHasNoOriginPolicy) declareHandedValue(eng *sce.Engine[AnEventNoProcessorDeliveredHasNoOriginState, AnEventNoProcessorDeliveredHasNoOriginEvent], engine sce.IScriptEngine, sessionID, name string, value interface{}) {
 	if err := engine.SetVariable(sessionID, name, value); err != nil {
-		eng.Raise(sce.NewPlatformError(AnEventNoProcessorDeliveredHasNoOriginEventErrorExecution, "<data id='"+name+"'> could not hold the value its invoking session handed it"))
+		eng.Raise(sce.NewPlatformError(AnEventNoProcessorDeliveredHasNoOriginEventErrorExecution, sceerrorreason.ErrorReasonDataInitFailed, "<data id='"+name+"'> could not hold the value its invoking session handed it"))
 		_ = engine.SetVariable(sessionID, name, nil)
 	}
 }
@@ -789,7 +793,7 @@ func (p *AnEventNoProcessorDeliveredHasNoOriginPolicy) ExecuteEntryActions(state
 		// act it asked for was performed by nobody. Same event as an
 		// undeclared type, so a wiring mistake cannot read as success.
 		if !hostServed && !engine.HasEventProcessor("x-sce-host") {
-			errEvt := sce.NewPlatformError(AnEventNoProcessorDeliveredHasNoOriginEventErrorExecution, "<send type='x-sce-host'> names a processor the host declared but never registered")
+			errEvt := sce.NewPlatformError(AnEventNoProcessorDeliveredHasNoOriginEventErrorExecution, sceerrorreason.ErrorReasonProcessorUnregistered, "<send type='x-sce-host'> names a processor the host declared but never registered")
 			errEvt.Metadata.SendID = "__send_0"
 			engine.Raise(errEvt)
 		}
@@ -906,7 +910,7 @@ func (p *AnEventNoProcessorDeliveredHasNoOriginPolicy) ExecuteTransitionContent(
 
 	// W3C SCXML 5.3: <assign location="replyBlank" expr="1">
 	if err := p.assignVariable(`replyBlank`, `1`); err != nil {
-		engine.Raise(sce.NewPlatformError(AnEventNoProcessorDeliveredHasNoOriginEventErrorExecution, "<assign> to 'replyBlank' failed"))
+		engine.Raise(sce.NewPlatformError(AnEventNoProcessorDeliveredHasNoOriginEventErrorExecution, sceerrorreason.ErrorReasonAssignmentFailed, "<assign> to 'replyBlank' failed"))
 		return  // W3C SCXML 4.9: the error ends the block
 	}
 
@@ -931,7 +935,7 @@ func (p *AnEventNoProcessorDeliveredHasNoOriginPolicy) ExecuteTransitionContent(
 
 	// W3C SCXML 5.3: <assign location="postedBlank" expr="1">
 	if err := p.assignVariable(`postedBlank`, `1`); err != nil {
-		engine.Raise(sce.NewPlatformError(AnEventNoProcessorDeliveredHasNoOriginEventErrorExecution, "<assign> to 'postedBlank' failed"))
+		engine.Raise(sce.NewPlatformError(AnEventNoProcessorDeliveredHasNoOriginEventErrorExecution, sceerrorreason.ErrorReasonAssignmentFailed, "<assign> to 'postedBlank' failed"))
 		return  // W3C SCXML 4.9: the error ends the block
 	}
 

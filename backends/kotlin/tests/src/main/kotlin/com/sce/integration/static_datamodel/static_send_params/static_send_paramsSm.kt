@@ -588,7 +588,7 @@ class StaticSendParamsStateMachine(
             try {
                 putParam(sendPayload, "total", (com.sce.forge.runtime.SceChecked.mul(vCount, 2.toUInt())).toLong())
             } catch (_: com.sce.forge.runtime.AlgorithmFailure) {
-                raisePlatformError(StaticSendParamsEvent.Error.Execution, "<send> <param name='total'> could not be read")
+                raisePlatformError(StaticSendParamsEvent.Error.Execution, ErrorReason.LOCATION_INVALID, "<send> <param name='total'> could not be read")
                 paramFailed = true
             }
 
@@ -617,14 +617,14 @@ class StaticSendParamsStateMachine(
             try {
                 putParam(sendPayload, "total", (com.sce.forge.runtime.SceChecked.mul(vCount, 2.toUInt())).toLong())
             } catch (_: com.sce.forge.runtime.AlgorithmFailure) {
-                raisePlatformError(StaticSendParamsEvent.Error.Execution, "<send> <param name='total'> could not be read")
+                raisePlatformError(StaticSendParamsEvent.Error.Execution, ErrorReason.LOCATION_INVALID, "<send> <param name='total'> could not be read")
                 paramFailed = true
             }
 
             try {
                 putParam(sendPayload, "part", (com.sce.forge.runtime.SceChecked.add(vSmall, vSmall)).toLong())
             } catch (_: com.sce.forge.runtime.AlgorithmFailure) {
-                raisePlatformError(StaticSendParamsEvent.Error.Execution, "<send> <param name='part'> could not be read")
+                raisePlatformError(StaticSendParamsEvent.Error.Execution, ErrorReason.LOCATION_INVALID, "<send> <param name='part'> could not be read")
                 paramFailed = true
             }
 
@@ -649,7 +649,7 @@ class StaticSendParamsStateMachine(
 
             vOk = pendingEchoPayload!!.ok
 
-            if (try { vTag = com.sce.forge.runtime.SceChecked.bounded(pendingEchoPayload!!.tag, 16); false } catch (_: com.sce.forge.runtime.AlgorithmFailure) { raisePlatformError(StaticSendParamsEvent.Error.Execution, "<assign location='tag'>: an integer operation overflowed or failed"); true }) {
+            if (try { vTag = com.sce.forge.runtime.SceChecked.bounded(pendingEchoPayload!!.tag, 16); false } catch (_: com.sce.forge.runtime.AlgorithmFailure) { raisePlatformError(StaticSendParamsEvent.Error.Execution, ErrorReason.EXPRESSION_FAILED, "<assign location='tag'>: an integer operation overflowed or failed"); true }) {
                 return
             }
     }
@@ -668,7 +668,7 @@ class StaticSendParamsStateMachine(
     private fun transitionContentOfIdleAt4() {
                 // SCE-MAP: static_send_params.scxml:61 :: idle :: _transition_4
 
-            if (try { vRefusals = com.sce.forge.runtime.SceChecked.add(vRefusals, 1.toUInt()); false } catch (_: com.sce.forge.runtime.AlgorithmFailure) { raisePlatformError(StaticSendParamsEvent.Error.Execution, "<assign location='refusals'>: an integer operation overflowed or failed"); true }) {
+            if (try { vRefusals = com.sce.forge.runtime.SceChecked.add(vRefusals, 1.toUInt()); false } catch (_: com.sce.forge.runtime.AlgorithmFailure) { raisePlatformError(StaticSendParamsEvent.Error.Execution, ErrorReason.EXPRESSION_FAILED, "<assign location='refusals'>: an integer operation overflowed or failed"); true }) {
                 return
             }
     }

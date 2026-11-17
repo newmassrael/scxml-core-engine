@@ -693,7 +693,7 @@ public final class StaticRecordListIndexPolicy: InvocablePolicy {
             }
             if event == .order {
                 // W3C SCXML 5.9: cond="days[0].dayOfMonth < days[1].dayOfMonth" lowered to Swift at build time
-                if ({ () -> Bool in do { return (try Checked.at(self.vDays, 0)).dayOfMonth < (try Checked.at(self.vDays, 1)).dayOfMonth } catch { engine.raise(EventWithMetadata.platformError(StaticRecordListIndexEvent.errorExecution, message: "<transition cond='days[0].dayOfMonth < days[1].dayOfMonth'>: an integer operation overflowed or failed")); return false } }()) {
+                if ({ () -> Bool in do { return (try Checked.at(self.vDays, 0)).dayOfMonth < (try Checked.at(self.vDays, 1)).dayOfMonth } catch { engine.raise(EventWithMetadata.platformError(StaticRecordListIndexEvent.errorExecution, reason: .expressionFailed, message: "<transition cond='days[0].dayOfMonth < days[1].dayOfMonth'>: an integer operation overflowed or failed")); return false } }()) {
                     return EnabledTransition(
                         source: state,
                         targets: [],
@@ -758,7 +758,7 @@ public final class StaticRecordListIndexPolicy: InvocablePolicy {
 
                 // SCE Accepted Subset §2.15: <sce:append target="days">
 
-                if ({ () -> Bool in if self.vDays.count >= 3 { engine.raise(EventWithMetadata.platformError(StaticRecordListIndexEvent.errorExecution, message: "<sce:append target='days'>: the list already holds its capacity of 3")); return true }; let sceValue = Checked.element(of: self.vDays, self.vDraft); self.vDays.append(sceValue); return false }()) {
+                if ({ () -> Bool in if self.vDays.count >= 3 { engine.raise(EventWithMetadata.platformError(StaticRecordListIndexEvent.errorExecution, reason: .assignmentFailed, message: "<sce:append target='days'>: the list already holds its capacity of 3")); return true }; let sceValue = Checked.element(of: self.vDays, self.vDraft); self.vDays.append(sceValue); return false }()) {
                     break sceBlock  // W3C SCXML 4.9: the error ends the block
                 }
 
@@ -768,19 +768,19 @@ public final class StaticRecordListIndexPolicy: InvocablePolicy {
                 sceBlock: do {
 
 
-                if ({ () -> Bool in do { let sceValue: UInt8 = (try Checked.at(self.vDays, self.vCursor)).dayOfMonth; self.vDay = sceValue } catch { engine.raise(EventWithMetadata.platformError(StaticRecordListIndexEvent.errorExecution, message: "<assign location='day'>: an integer operation overflowed or failed")); return true }; return false }()) {
+                if ({ () -> Bool in do { let sceValue: UInt8 = (try Checked.at(self.vDays, self.vCursor)).dayOfMonth; self.vDay = sceValue } catch { engine.raise(EventWithMetadata.platformError(StaticRecordListIndexEvent.errorExecution, reason: .expressionFailed, message: "<assign location='day'>: an integer operation overflowed or failed")); return true }; return false }()) {
                     break sceBlock  // W3C SCXML 4.9: the error ends the block
                 }
 
 
 
-                if ({ () -> Bool in do { let sceValue: UInt16 = (try Checked.at(self.vDays, self.vCursor)).year; self.vYear = sceValue } catch { engine.raise(EventWithMetadata.platformError(StaticRecordListIndexEvent.errorExecution, message: "<assign location='year'>: an integer operation overflowed or failed")); return true }; return false }()) {
+                if ({ () -> Bool in do { let sceValue: UInt16 = (try Checked.at(self.vDays, self.vCursor)).year; self.vYear = sceValue } catch { engine.raise(EventWithMetadata.platformError(StaticRecordListIndexEvent.errorExecution, reason: .expressionFailed, message: "<assign location='year'>: an integer operation overflowed or failed")); return true }; return false }()) {
                     break sceBlock  // W3C SCXML 4.9: the error ends the block
                 }
 
 
 
-                if ({ () -> Bool in do { let sceValue: Int32 = (try Checked.add(self.vCursor, 1)); self.vCursor = sceValue } catch { engine.raise(EventWithMetadata.platformError(StaticRecordListIndexEvent.errorExecution, message: "<assign location='cursor'>: an integer operation overflowed or failed")); return true }; return false }()) {
+                if ({ () -> Bool in do { let sceValue: Int32 = (try Checked.add(self.vCursor, 1)); self.vCursor = sceValue } catch { engine.raise(EventWithMetadata.platformError(StaticRecordListIndexEvent.errorExecution, reason: .expressionFailed, message: "<assign location='cursor'>: an integer operation overflowed or failed")); return true }; return false }()) {
                     break sceBlock  // W3C SCXML 4.9: the error ends the block
                 }
 
@@ -790,7 +790,7 @@ public final class StaticRecordListIndexPolicy: InvocablePolicy {
                 sceBlock: do {
 
 
-                if ({ () -> Bool in do { let sceValue: UInt8 = (try Checked.at(self.vDays, (try Checked.sub(UInt32(truncatingIfNeeded: self.vDays.count), 1)))).dayOfMonth; self.vDay = sceValue } catch { engine.raise(EventWithMetadata.platformError(StaticRecordListIndexEvent.errorExecution, message: "<assign location='day'>: an integer operation overflowed or failed")); return true }; return false }()) {
+                if ({ () -> Bool in do { let sceValue: UInt8 = (try Checked.at(self.vDays, (try Checked.sub(UInt32(truncatingIfNeeded: self.vDays.count), 1)))).dayOfMonth; self.vDay = sceValue } catch { engine.raise(EventWithMetadata.platformError(StaticRecordListIndexEvent.errorExecution, reason: .expressionFailed, message: "<assign location='day'>: an integer operation overflowed or failed")); return true }; return false }()) {
                     break sceBlock  // W3C SCXML 4.9: the error ends the block
                 }
 
@@ -800,7 +800,7 @@ public final class StaticRecordListIndexPolicy: InvocablePolicy {
                 sceBlock: do {
 
 
-                if ({ () -> Bool in do { let sceValue: StaticRecordListIndexDayRecord = (try Checked.at(self.vDays, 0)); self.vPicked = sceValue } catch { engine.raise(EventWithMetadata.platformError(StaticRecordListIndexEvent.errorExecution, message: "<assign location='picked'>: an integer operation overflowed or failed")); return true }; return false }()) {
+                if ({ () -> Bool in do { let sceValue: StaticRecordListIndexDayRecord = (try Checked.at(self.vDays, 0)); self.vPicked = sceValue } catch { engine.raise(EventWithMetadata.platformError(StaticRecordListIndexEvent.errorExecution, reason: .expressionFailed, message: "<assign location='picked'>: an integer operation overflowed or failed")); return true }; return false }()) {
                     break sceBlock  // W3C SCXML 4.9: the error ends the block
                 }
 
@@ -810,7 +810,7 @@ public final class StaticRecordListIndexPolicy: InvocablePolicy {
                 sceBlock: do {
 
 
-                if ({ () -> Bool in do { let sceValue: StaticRecordListIndexDayRecord = (try Checked.at(self.vDays, (try Checked.sub(UInt32(truncatingIfNeeded: self.vDays.count), 1)))); self.vPicked = sceValue } catch { engine.raise(EventWithMetadata.platformError(StaticRecordListIndexEvent.errorExecution, message: "<assign location='picked'>: an integer operation overflowed or failed")); return true }; return false }()) {
+                if ({ () -> Bool in do { let sceValue: StaticRecordListIndexDayRecord = (try Checked.at(self.vDays, (try Checked.sub(UInt32(truncatingIfNeeded: self.vDays.count), 1)))); self.vPicked = sceValue } catch { engine.raise(EventWithMetadata.platformError(StaticRecordListIndexEvent.errorExecution, reason: .expressionFailed, message: "<assign location='picked'>: an integer operation overflowed or failed")); return true }; return false }()) {
                     break sceBlock  // W3C SCXML 4.9: the error ends the block
                 }
 
@@ -820,7 +820,7 @@ public final class StaticRecordListIndexPolicy: InvocablePolicy {
                 sceBlock: do {
 
 
-                if ({ () -> Bool in do { let sceValue: StaticRecordListIndexDayRecord = (try Checked.at(self.vDays, self.vCursor)); self.vPicked = sceValue } catch { engine.raise(EventWithMetadata.platformError(StaticRecordListIndexEvent.errorExecution, message: "<assign location='picked'>: an integer operation overflowed or failed")); return true }; return false }()) {
+                if ({ () -> Bool in do { let sceValue: StaticRecordListIndexDayRecord = (try Checked.at(self.vDays, self.vCursor)); self.vPicked = sceValue } catch { engine.raise(EventWithMetadata.platformError(StaticRecordListIndexEvent.errorExecution, reason: .expressionFailed, message: "<assign location='picked'>: an integer operation overflowed or failed")); return true }; return false }()) {
                     break sceBlock  // W3C SCXML 4.9: the error ends the block
                 }
 
@@ -830,7 +830,7 @@ public final class StaticRecordListIndexPolicy: InvocablePolicy {
                 sceBlock: do {
 
 
-                if ({ () -> Bool in do { let sceValue: UInt32 = UInt32((try Checked.add((try Checked.at(self.vDays, 0)).dayOfMonth, (try Checked.at(self.vDays, 1)).dayOfMonth))); self.vSum = sceValue } catch { engine.raise(EventWithMetadata.platformError(StaticRecordListIndexEvent.errorExecution, message: "<assign location='sum'>: an integer operation overflowed or failed")); return true }; return false }()) {
+                if ({ () -> Bool in do { let sceValue: UInt32 = UInt32((try Checked.add((try Checked.at(self.vDays, 0)).dayOfMonth, (try Checked.at(self.vDays, 1)).dayOfMonth))); self.vSum = sceValue } catch { engine.raise(EventWithMetadata.platformError(StaticRecordListIndexEvent.errorExecution, reason: .expressionFailed, message: "<assign location='sum'>: an integer operation overflowed or failed")); return true }; return false }()) {
                     break sceBlock  // W3C SCXML 4.9: the error ends the block
                 }
 
@@ -856,7 +856,7 @@ public final class StaticRecordListIndexPolicy: InvocablePolicy {
                 sceBlock: do {
 
 
-                if ({ () -> Bool in do { let sceValue: UInt32 = (try Checked.add(self.vRefusals, 1)); self.vRefusals = sceValue } catch { engine.raise(EventWithMetadata.platformError(StaticRecordListIndexEvent.errorExecution, message: "<assign location='refusals'>: an integer operation overflowed or failed")); return true }; return false }()) {
+                if ({ () -> Bool in do { let sceValue: UInt32 = (try Checked.add(self.vRefusals, 1)); self.vRefusals = sceValue } catch { engine.raise(EventWithMetadata.platformError(StaticRecordListIndexEvent.errorExecution, reason: .expressionFailed, message: "<assign location='refusals'>: an integer operation overflowed or failed")); return true }; return false }()) {
                     break sceBlock  // W3C SCXML 4.9: the error ends the block
                 }
 

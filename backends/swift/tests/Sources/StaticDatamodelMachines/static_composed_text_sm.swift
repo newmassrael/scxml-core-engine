@@ -726,7 +726,7 @@ public final class StaticComposedTextPolicy: InvocablePolicy {
                 if (UInt32(truncatingIfNeeded: self.pendingBatchSentPayload.items.count) > 0) {
 
 
-                if ({ () -> Bool in do { let sceValue: Bool = (try Checked.at(self.pendingBatchSentPayload.items, 0)).label.utf8.elementsEqual("ab".utf8); self.vFirstLabelIsAb = sceValue } catch { engine.raise(EventWithMetadata.platformError(StaticComposedTextEvent.errorExecution, message: "<assign location='first_label_is_ab'>: an integer operation overflowed or failed")); return true }; return false }()) {
+                if ({ () -> Bool in do { let sceValue: Bool = (try Checked.at(self.pendingBatchSentPayload.items, 0)).label.utf8.elementsEqual("ab".utf8); self.vFirstLabelIsAb = sceValue } catch { engine.raise(EventWithMetadata.platformError(StaticComposedTextEvent.errorExecution, reason: .expressionFailed, message: "<assign location='first_label_is_ab'>: an integer operation overflowed or failed")); return true }; return false }()) {
                     break sceBlock  // W3C SCXML 4.9: the error ends the block
                 }
 
@@ -740,7 +740,7 @@ public final class StaticComposedTextPolicy: InvocablePolicy {
                 if (row.label.utf8.elementsEqual("ab".utf8)) {
 
 
-                if ({ () -> Bool in do { let sceValue: UInt32 = (try Checked.add(self.vLabelsAb, 1)); self.vLabelsAb = sceValue } catch { engine.raise(EventWithMetadata.platformError(StaticComposedTextEvent.errorExecution, message: "<assign location='labels_ab'>: an integer operation overflowed or failed")); return true }; return false }()) {
+                if ({ () -> Bool in do { let sceValue: UInt32 = (try Checked.add(self.vLabelsAb, 1)); self.vLabelsAb = sceValue } catch { engine.raise(EventWithMetadata.platformError(StaticComposedTextEvent.errorExecution, reason: .expressionFailed, message: "<assign location='labels_ab'>: an integer operation overflowed or failed")); return true }; return false }()) {
                     break sceBlock  // W3C SCXML 4.9: the error ends the block
                 }
 
@@ -748,10 +748,10 @@ public final class StaticComposedTextPolicy: InvocablePolicy {
 
 
                 var ifCondFailed3 = false
-                if ({ () -> Bool in do { return (try Checked.and(UInt32(truncatingIfNeeded: row.tags.count) > 0, { () throws(AlgorithmError) -> Bool in (try Checked.at(row.tags, 0)).utf8.elementsEqual("ab".utf8) })) } catch { engine.raise(EventWithMetadata.platformError(StaticComposedTextEvent.errorExecution, message: "<if cond='len(row.tags) > 0 && row.tags[0] === 'ab''>: an integer operation overflowed or failed")); ifCondFailed3 = true; return false } }()) {
+                if ({ () -> Bool in do { return (try Checked.and(UInt32(truncatingIfNeeded: row.tags.count) > 0, { () throws(AlgorithmError) -> Bool in (try Checked.at(row.tags, 0)).utf8.elementsEqual("ab".utf8) })) } catch { engine.raise(EventWithMetadata.platformError(StaticComposedTextEvent.errorExecution, reason: .expressionFailed, message: "<if cond='len(row.tags) > 0 && row.tags[0] === 'ab''>: an integer operation overflowed or failed")); ifCondFailed3 = true; return false } }()) {
 
 
-                if ({ () -> Bool in do { let sceValue: UInt32 = (try Checked.add(self.vFirstTagsAb, 1)); self.vFirstTagsAb = sceValue } catch { engine.raise(EventWithMetadata.platformError(StaticComposedTextEvent.errorExecution, message: "<assign location='first_tags_ab'>: an integer operation overflowed or failed")); return true }; return false }()) {
+                if ({ () -> Bool in do { let sceValue: UInt32 = (try Checked.add(self.vFirstTagsAb, 1)); self.vFirstTagsAb = sceValue } catch { engine.raise(EventWithMetadata.platformError(StaticComposedTextEvent.errorExecution, reason: .expressionFailed, message: "<assign location='first_tags_ab'>: an integer operation overflowed or failed")); return true }; return false }()) {
                     break sceBlock  // W3C SCXML 4.9: the error ends the block
                 }
 
@@ -768,7 +768,7 @@ public final class StaticComposedTextPolicy: InvocablePolicy {
                 if (word.utf8.elementsEqual("ab".utf8)) {
 
 
-                if ({ () -> Bool in do { let sceValue: UInt32 = (try Checked.add(self.vWordsAb, 1)); self.vWordsAb = sceValue } catch { engine.raise(EventWithMetadata.platformError(StaticComposedTextEvent.errorExecution, message: "<assign location='words_ab'>: an integer operation overflowed or failed")); return true }; return false }()) {
+                if ({ () -> Bool in do { let sceValue: UInt32 = (try Checked.add(self.vWordsAb, 1)); self.vWordsAb = sceValue } catch { engine.raise(EventWithMetadata.platformError(StaticComposedTextEvent.errorExecution, reason: .expressionFailed, message: "<assign location='words_ab'>: an integer operation overflowed or failed")); return true }; return false }()) {
                     break sceBlock  // W3C SCXML 4.9: the error ends the block
                 }
 
@@ -777,13 +777,13 @@ public final class StaticComposedTextPolicy: InvocablePolicy {
                 }
 
 
-                if ({ () -> Bool in do { let sceValue: String = (try Checked.bounded(row.label, capacity: 8)); self.vLastLabel = sceValue } catch { engine.raise(EventWithMetadata.platformError(StaticComposedTextEvent.errorExecution, message: "<assign location='last_label'>: an integer operation overflowed or failed")); return true }; return false }()) {
+                if ({ () -> Bool in do { let sceValue: String = (try Checked.bounded(row.label, capacity: 8)); self.vLastLabel = sceValue } catch { engine.raise(EventWithMetadata.platformError(StaticComposedTextEvent.errorExecution, reason: .expressionFailed, message: "<assign location='last_label'>: an integer operation overflowed or failed")); return true }; return false }()) {
                     break sceBlock  // W3C SCXML 4.9: the error ends the block
                 }
 
 
 
-                if ({ () -> Bool in do { let sceValue: UInt32 = (try Checked.add(self.vBlobBytes, UInt32(truncatingIfNeeded: row.blob.count))); self.vBlobBytes = sceValue } catch { engine.raise(EventWithMetadata.platformError(StaticComposedTextEvent.errorExecution, message: "<assign location='blob_bytes'>: an integer operation overflowed or failed")); return true }; return false }()) {
+                if ({ () -> Bool in do { let sceValue: UInt32 = (try Checked.add(self.vBlobBytes, UInt32(truncatingIfNeeded: row.blob.count))); self.vBlobBytes = sceValue } catch { engine.raise(EventWithMetadata.platformError(StaticComposedTextEvent.errorExecution, reason: .expressionFailed, message: "<assign location='blob_bytes'>: an integer operation overflowed or failed")); return true }; return false }()) {
                     break sceBlock  // W3C SCXML 4.9: the error ends the block
                 }
 
@@ -791,7 +791,7 @@ public final class StaticComposedTextPolicy: InvocablePolicy {
                 if (row.blob == Array("ab".utf8)) {
 
 
-                if ({ () -> Bool in do { let sceValue: UInt32 = (try Checked.add(self.vBlobsAb, 1)); self.vBlobsAb = sceValue } catch { engine.raise(EventWithMetadata.platformError(StaticComposedTextEvent.errorExecution, message: "<assign location='blobs_ab'>: an integer operation overflowed or failed")); return true }; return false }()) {
+                if ({ () -> Bool in do { let sceValue: UInt32 = (try Checked.add(self.vBlobsAb, 1)); self.vBlobsAb = sceValue } catch { engine.raise(EventWithMetadata.platformError(StaticComposedTextEvent.errorExecution, reason: .expressionFailed, message: "<assign location='blobs_ab'>: an integer operation overflowed or failed")); return true }; return false }()) {
                     break sceBlock  // W3C SCXML 4.9: the error ends the block
                 }
 
@@ -815,7 +815,7 @@ public final class StaticComposedTextPolicy: InvocablePolicy {
                 sceBlock: do {
 
 
-                if ({ () -> Bool in do { let sceValue: UInt32 = (try Checked.add(self.vRefusals, 1)); self.vRefusals = sceValue } catch { engine.raise(EventWithMetadata.platformError(StaticComposedTextEvent.errorExecution, message: "<assign location='refusals'>: an integer operation overflowed or failed")); return true }; return false }()) {
+                if ({ () -> Bool in do { let sceValue: UInt32 = (try Checked.add(self.vRefusals, 1)); self.vRefusals = sceValue } catch { engine.raise(EventWithMetadata.platformError(StaticComposedTextEvent.errorExecution, reason: .expressionFailed, message: "<assign location='refusals'>: an integer operation overflowed or failed")); return true }; return false }()) {
                     break sceBlock  // W3C SCXML 4.9: the error ends the block
                 }
 

@@ -442,13 +442,13 @@ public final class StaticBlockEndsListPolicy: InvocablePolicy {
 
                 // SCE Accepted Subset §2.15: <sce:append target="picked">
 
-                if ({ () -> Bool in if self.vPicked.count >= 2 { engine.raise(EventWithMetadata.platformError(StaticBlockEndsListEvent.errorExecution, message: "<sce:append target='picked'>: the list already holds its capacity of 2")); return true }; let sceValue = Checked.element(of: self.vPicked, 7); self.vPicked.append(sceValue); return false }()) {
+                if ({ () -> Bool in if self.vPicked.count >= 2 { engine.raise(EventWithMetadata.platformError(StaticBlockEndsListEvent.errorExecution, reason: .assignmentFailed, message: "<sce:append target='picked'>: the list already holds its capacity of 2")); return true }; let sceValue = Checked.element(of: self.vPicked, 7); self.vPicked.append(sceValue); return false }()) {
                     break sceBlock  // W3C SCXML 4.9: the error ends the block
                 }
 
 
 
-                if ({ () -> Bool in do { let sceValue: UInt8 = (try Checked.add(self.vAfterAppend, 1)); self.vAfterAppend = sceValue } catch { engine.raise(EventWithMetadata.platformError(StaticBlockEndsListEvent.errorExecution, message: "<assign location='afterAppend'>: an integer operation overflowed or failed")); return true }; return false }()) {
+                if ({ () -> Bool in do { let sceValue: UInt8 = (try Checked.add(self.vAfterAppend, 1)); self.vAfterAppend = sceValue } catch { engine.raise(EventWithMetadata.platformError(StaticBlockEndsListEvent.errorExecution, reason: .expressionFailed, message: "<assign location='afterAppend'>: an integer operation overflowed or failed")); return true }; return false }()) {
                     break sceBlock  // W3C SCXML 4.9: the error ends the block
                 }
 
@@ -458,7 +458,7 @@ public final class StaticBlockEndsListPolicy: InvocablePolicy {
                 sceBlock: do {
 
 
-                if ({ () -> Bool in do { let sceValue: UInt8 = (try Checked.add(self.vErrors, 1)); self.vErrors = sceValue } catch { engine.raise(EventWithMetadata.platformError(StaticBlockEndsListEvent.errorExecution, message: "<assign location='errors'>: an integer operation overflowed or failed")); return true }; return false }()) {
+                if ({ () -> Bool in do { let sceValue: UInt8 = (try Checked.add(self.vErrors, 1)); self.vErrors = sceValue } catch { engine.raise(EventWithMetadata.platformError(StaticBlockEndsListEvent.errorExecution, reason: .expressionFailed, message: "<assign location='errors'>: an integer operation overflowed or failed")); return true }; return false }()) {
                     break sceBlock  // W3C SCXML 4.9: the error ends the block
                 }
 

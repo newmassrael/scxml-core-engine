@@ -31,6 +31,7 @@ import (
 	"time"
 
 	sce "github.com/newmassrael/sce-go-runtime"
+	sceerrorreason "github.com/newmassrael/sce-go-runtime/generated/error_reason"
 )
 
 // Ensure imports are used
@@ -39,6 +40,9 @@ var (
 	_ = filepath.Join
 	_ = strings.HasPrefix
 	_ = time.Duration(0)
+	// Why an error.* event is raised (sce:std/engine/error_reason,
+	// docs/adr/0106 #111); a machine that raises none still imports it.
+	_ = sceerrorreason.ErrorReasonExpressionFailed
 )
 
 // ======================================================================
@@ -458,7 +462,7 @@ func (p *WildcardInDocumentOrderPolicy) InitializeDataModel(eng *sce.Engine[Wild
 		if err == nil {
 			_ = engine.SetVariable(sessionID, "armed", result)
 		} else {
-			eng.Raise(sce.NewPlatformError(WildcardInDocumentOrderEventErrorExecution, "<data id='armed'> expr failed to evaluate"))
+			eng.Raise(sce.NewPlatformError(WildcardInDocumentOrderEventErrorExecution, sceerrorreason.ErrorReasonExpressionFailed, "<data id='armed'> expr failed to evaluate"))
 			_ = engine.SetVariable(sessionID, "armed", nil)
 		}
 	}
@@ -472,7 +476,7 @@ func (p *WildcardInDocumentOrderPolicy) InitializeDataModel(eng *sce.Engine[Wild
 		if err == nil {
 			_ = engine.SetVariable(sessionID, "guardedEntries", result)
 		} else {
-			eng.Raise(sce.NewPlatformError(WildcardInDocumentOrderEventErrorExecution, "<data id='guardedEntries'> expr failed to evaluate"))
+			eng.Raise(sce.NewPlatformError(WildcardInDocumentOrderEventErrorExecution, sceerrorreason.ErrorReasonExpressionFailed, "<data id='guardedEntries'> expr failed to evaluate"))
 			_ = engine.SetVariable(sessionID, "guardedEntries", nil)
 		}
 	}
@@ -486,7 +490,7 @@ func (p *WildcardInDocumentOrderPolicy) InitializeDataModel(eng *sce.Engine[Wild
 		if err == nil {
 			_ = engine.SetVariable(sessionID, "sealedEntries", result)
 		} else {
-			eng.Raise(sce.NewPlatformError(WildcardInDocumentOrderEventErrorExecution, "<data id='sealedEntries'> expr failed to evaluate"))
+			eng.Raise(sce.NewPlatformError(WildcardInDocumentOrderEventErrorExecution, sceerrorreason.ErrorReasonExpressionFailed, "<data id='sealedEntries'> expr failed to evaluate"))
 			_ = engine.SetVariable(sessionID, "sealedEntries", nil)
 		}
 	}
@@ -518,12 +522,12 @@ func (p *WildcardInDocumentOrderPolicy) evaluateIfCond(guard string, eng *sce.En
 // evaluateGuardRaising evaluates a cond, raising error.execution when it cannot
 // be evaluated (W3C SCXML 5.9.1); ok is false then, where a bare false could
 // not say so.
-func (p *WildcardInDocumentOrderPolicy) evaluateGuardRaising(guard string, eng *sce.Engine[WildcardInDocumentOrderState, WildcardInDocumentOrderEvent], reason string) (value bool, ok bool) {
+func (p *WildcardInDocumentOrderPolicy) evaluateGuardRaising(guard string, eng *sce.Engine[WildcardInDocumentOrderState, WildcardInDocumentOrderEvent], detail string) (value bool, ok bool) {
 	p.assertScriptSession()
 	engine := p.ScriptEngine
 	result, err := engine.EvaluateExpression(p.SessionID, guard)
 	if err != nil {
-		eng.Raise(sce.NewPlatformError(WildcardInDocumentOrderEventErrorExecution, reason))
+		eng.Raise(sce.NewPlatformError(WildcardInDocumentOrderEventErrorExecution, sceerrorreason.ErrorReasonExpressionFailed, detail))
 		return false, false
 	}
 	return sce.ScriptToBool(result), true
@@ -626,7 +630,7 @@ func (p *WildcardInDocumentOrderPolicy) SetParamValueInScriptEngine(name string,
 // failed is left (docs/adr/0098).
 func (p *WildcardInDocumentOrderPolicy) declareHandedValue(eng *sce.Engine[WildcardInDocumentOrderState, WildcardInDocumentOrderEvent], engine sce.IScriptEngine, sessionID, name string, value interface{}) {
 	if err := engine.SetVariable(sessionID, name, value); err != nil {
-		eng.Raise(sce.NewPlatformError(WildcardInDocumentOrderEventErrorExecution, "<data id='"+name+"'> could not hold the value its invoking session handed it"))
+		eng.Raise(sce.NewPlatformError(WildcardInDocumentOrderEventErrorExecution, sceerrorreason.ErrorReasonDataInitFailed, "<data id='"+name+"'> could not hold the value its invoking session handed it"))
 		_ = engine.SetVariable(sessionID, name, nil)
 	}
 }
@@ -937,7 +941,7 @@ func (p *WildcardInDocumentOrderPolicy) ExecuteEntryActions(state WildcardInDocu
 
 	// W3C SCXML 5.3: <assign location="guardedEntries" expr="guardedEntries + 1">
 	if err := p.assignVariable(`guardedEntries`, `_scxml_add(guardedEntries, 1)`); err != nil {
-		engine.Raise(sce.NewPlatformError(WildcardInDocumentOrderEventErrorExecution, "<assign> to 'guardedEntries' failed"))
+		engine.Raise(sce.NewPlatformError(WildcardInDocumentOrderEventErrorExecution, sceerrorreason.ErrorReasonAssignmentFailed, "<assign> to 'guardedEntries' failed"))
 		return  // W3C SCXML 4.9: the error ends the block
 	}
 
@@ -953,7 +957,7 @@ func (p *WildcardInDocumentOrderPolicy) ExecuteEntryActions(state WildcardInDocu
 
 	// W3C SCXML 5.3: <assign location="armed" expr="true">
 	if err := p.assignVariable(`armed`, `true`); err != nil {
-		engine.Raise(sce.NewPlatformError(WildcardInDocumentOrderEventErrorExecution, "<assign> to 'armed' failed"))
+		engine.Raise(sce.NewPlatformError(WildcardInDocumentOrderEventErrorExecution, sceerrorreason.ErrorReasonAssignmentFailed, "<assign> to 'armed' failed"))
 		return  // W3C SCXML 4.9: the error ends the block
 	}
 
@@ -969,7 +973,7 @@ func (p *WildcardInDocumentOrderPolicy) ExecuteEntryActions(state WildcardInDocu
 
 	// W3C SCXML 5.3: <assign location="sealedEntries" expr="sealedEntries + 1">
 	if err := p.assignVariable(`sealedEntries`, `_scxml_add(sealedEntries, 1)`); err != nil {
-		engine.Raise(sce.NewPlatformError(WildcardInDocumentOrderEventErrorExecution, "<assign> to 'sealedEntries' failed"))
+		engine.Raise(sce.NewPlatformError(WildcardInDocumentOrderEventErrorExecution, sceerrorreason.ErrorReasonAssignmentFailed, "<assign> to 'sealedEntries' failed"))
 		return  // W3C SCXML 4.9: the error ends the block
 	}
 

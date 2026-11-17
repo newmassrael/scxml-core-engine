@@ -563,7 +563,7 @@ public final class StaticListAssignPolicy: InvocablePolicy {
                 sceBlock: do {
 
 
-                if ({ () -> Bool in do { let sceValue = (try Checked.within((try DayRun.dayRun(self.vFirst, 3)), capacity: 8)); self.vShown = sceValue } catch { engine.raise(EventWithMetadata.platformError(StaticListAssignEvent.errorExecution, message: "<assign location='shown'>: an integer operation overflowed or failed")); return true }; return false }()) {
+                if ({ () -> Bool in do { let sceValue = (try Checked.within((try DayRun.dayRun(self.vFirst, 3)), capacity: 8)); self.vShown = sceValue } catch { engine.raise(EventWithMetadata.platformError(StaticListAssignEvent.errorExecution, reason: .expressionFailed, message: "<assign location='shown'>: an integer operation overflowed or failed")); return true }; return false }()) {
                     break sceBlock  // W3C SCXML 4.9: the error ends the block
                 }
 
@@ -577,7 +577,7 @@ public final class StaticListAssignPolicy: InvocablePolicy {
                 sceBlock: do {
 
 
-                if ({ () -> Bool in do { let sceValue = (try Checked.within((try DayRun.dayRun(self.vFirst, 8)), capacity: 8)); self.vShown = sceValue } catch { engine.raise(EventWithMetadata.platformError(StaticListAssignEvent.errorExecution, message: "<assign location='shown'>: an integer operation overflowed or failed")); return true }; return false }()) {
+                if ({ () -> Bool in do { let sceValue = (try Checked.within((try DayRun.dayRun(self.vFirst, 8)), capacity: 8)); self.vShown = sceValue } catch { engine.raise(EventWithMetadata.platformError(StaticListAssignEvent.errorExecution, reason: .expressionFailed, message: "<assign location='shown'>: an integer operation overflowed or failed")); return true }; return false }()) {
                     break sceBlock  // W3C SCXML 4.9: the error ends the block
                 }
 
@@ -591,7 +591,7 @@ public final class StaticListAssignPolicy: InvocablePolicy {
                 sceBlock: do {
 
 
-                if ({ () -> Bool in do { let sceValue = (try Checked.within((try DayRun.dayRun(self.vFirst, 0)), capacity: 8)); self.vShown = sceValue } catch { engine.raise(EventWithMetadata.platformError(StaticListAssignEvent.errorExecution, message: "<assign location='shown'>: an integer operation overflowed or failed")); return true }; return false }()) {
+                if ({ () -> Bool in do { let sceValue = (try Checked.within((try DayRun.dayRun(self.vFirst, 0)), capacity: 8)); self.vShown = sceValue } catch { engine.raise(EventWithMetadata.platformError(StaticListAssignEvent.errorExecution, reason: .expressionFailed, message: "<assign location='shown'>: an integer operation overflowed or failed")); return true }; return false }()) {
                     break sceBlock  // W3C SCXML 4.9: the error ends the block
                 }
 
@@ -605,7 +605,7 @@ public final class StaticListAssignPolicy: InvocablePolicy {
                 sceBlock: do {
 
 
-                if ({ () -> Bool in do { let sceValue = (try Checked.within((try DayRepeat.dayRepeat(self.vFirst, 3)), capacity: 4)); self.vFew = sceValue } catch { engine.raise(EventWithMetadata.platformError(StaticListAssignEvent.errorExecution, message: "<assign location='few'>: an integer operation overflowed or failed")); return true }; return false }()) {
+                if ({ () -> Bool in do { let sceValue = (try Checked.within((try DayRepeat.dayRepeat(self.vFirst, 3)), capacity: 4)); self.vFew = sceValue } catch { engine.raise(EventWithMetadata.platformError(StaticListAssignEvent.errorExecution, reason: .expressionFailed, message: "<assign location='few'>: an integer operation overflowed or failed")); return true }; return false }()) {
                     break sceBlock  // W3C SCXML 4.9: the error ends the block
                 }
 
@@ -619,7 +619,7 @@ public final class StaticListAssignPolicy: InvocablePolicy {
                 sceBlock: do {
 
 
-                if ({ () -> Bool in do { let sceValue = (try Checked.within((try DayRepeat.dayRepeat(self.vFirst, 5)), capacity: 4)); self.vFew = sceValue } catch { engine.raise(EventWithMetadata.platformError(StaticListAssignEvent.errorExecution, message: "<assign location='few'>: an integer operation overflowed or failed")); return true }; return false }()) {
+                if ({ () -> Bool in do { let sceValue = (try Checked.within((try DayRepeat.dayRepeat(self.vFirst, 5)), capacity: 4)); self.vFew = sceValue } catch { engine.raise(EventWithMetadata.platformError(StaticListAssignEvent.errorExecution, reason: .expressionFailed, message: "<assign location='few'>: an integer operation overflowed or failed")); return true }; return false }()) {
                     break sceBlock  // W3C SCXML 4.9: the error ends the block
                 }
 
@@ -641,7 +641,7 @@ public final class StaticListAssignPolicy: InvocablePolicy {
                 sceBlock: do {
 
 
-                if ({ () -> Bool in do { let sceValue: UInt32 = (try Checked.add(self.vRefusals, 1)); self.vRefusals = sceValue } catch { engine.raise(EventWithMetadata.platformError(StaticListAssignEvent.errorExecution, message: "<assign location='refusals'>: an integer operation overflowed or failed")); return true }; return false }()) {
+                if ({ () -> Bool in do { let sceValue: UInt32 = (try Checked.add(self.vRefusals, 1)); self.vRefusals = sceValue } catch { engine.raise(EventWithMetadata.platformError(StaticListAssignEvent.errorExecution, reason: .expressionFailed, message: "<assign location='refusals'>: an integer operation overflowed or failed")); return true }; return false }()) {
                     break sceBlock  // W3C SCXML 4.9: the error ends the block
                 }
 

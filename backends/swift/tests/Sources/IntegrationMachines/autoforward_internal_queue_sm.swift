@@ -680,7 +680,7 @@ public final class AutoforwardInternalQueuePolicy: InvocablePolicy {
                     // W3C SCXML 6.2: Unsupported send type raises error.execution — the build
                     // decided it once, as it decides the choice a computed `typeexpr` makes
                     // when its value is none of the declared types.
-                        var sendError = EventWithMetadata.platformError(AutoforwardInternalQueueEvent.errorExecution, message: "<send type=urn:x-sce-unsupported-processor> names a processor this platform does not support")
+                        var sendError = EventWithMetadata.platformError(AutoforwardInternalQueueEvent.errorExecution, reason: .sendTypeUnsupported, message: "<send type=urn:x-sce-unsupported-processor> names a processor this platform does not support")
                         sendError.metadata.sendID = "__send_0"
                         engine.raise(sendError)
 

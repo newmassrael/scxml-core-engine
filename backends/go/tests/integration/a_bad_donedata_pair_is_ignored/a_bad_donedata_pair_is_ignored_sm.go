@@ -31,6 +31,7 @@ import (
 	"time"
 
 	sce "github.com/newmassrael/sce-go-runtime"
+	sceerrorreason "github.com/newmassrael/sce-go-runtime/generated/error_reason"
 )
 
 // Ensure imports are used
@@ -39,6 +40,9 @@ var (
 	_ = filepath.Join
 	_ = strings.HasPrefix
 	_ = time.Duration(0)
+	// Why an error.* event is raised (sce:std/engine/error_reason,
+	// docs/adr/0106 #111); a machine that raises none still imports it.
+	_ = sceerrorreason.ErrorReasonExpressionFailed
 )
 
 // ======================================================================
@@ -420,7 +424,7 @@ func (p *ABadDonedataPairIsIgnoredPolicy) InitializeDataModel(eng *sce.Engine[AB
 		if err == nil {
 			_ = engine.SetVariable(sessionID, "errors", result)
 		} else {
-			eng.Raise(sce.NewPlatformError(ABadDonedataPairIsIgnoredEventErrorExecution, "<data id='errors'> expr failed to evaluate"))
+			eng.Raise(sce.NewPlatformError(ABadDonedataPairIsIgnoredEventErrorExecution, sceerrorreason.ErrorReasonExpressionFailed, "<data id='errors'> expr failed to evaluate"))
 			_ = engine.SetVariable(sessionID, "errors", nil)
 		}
 	}
@@ -434,7 +438,7 @@ func (p *ABadDonedataPairIsIgnoredPolicy) InitializeDataModel(eng *sce.Engine[AB
 		if err == nil {
 			_ = engine.SetVariable(sessionID, "shape", result)
 		} else {
-			eng.Raise(sce.NewPlatformError(ABadDonedataPairIsIgnoredEventErrorExecution, "<data id='shape'> expr failed to evaluate"))
+			eng.Raise(sce.NewPlatformError(ABadDonedataPairIsIgnoredEventErrorExecution, sceerrorreason.ErrorReasonExpressionFailed, "<data id='shape'> expr failed to evaluate"))
 			_ = engine.SetVariable(sessionID, "shape", nil)
 		}
 	}
@@ -448,7 +452,7 @@ func (p *ABadDonedataPairIsIgnoredPolicy) InitializeDataModel(eng *sce.Engine[AB
 		if err == nil {
 			_ = engine.SetVariable(sessionID, "v", result)
 		} else {
-			eng.Raise(sce.NewPlatformError(ABadDonedataPairIsIgnoredEventErrorExecution, "<data id='v'> expr failed to evaluate"))
+			eng.Raise(sce.NewPlatformError(ABadDonedataPairIsIgnoredEventErrorExecution, sceerrorreason.ErrorReasonExpressionFailed, "<data id='v'> expr failed to evaluate"))
 			_ = engine.SetVariable(sessionID, "v", nil)
 		}
 	}
@@ -462,7 +466,7 @@ func (p *ABadDonedataPairIsIgnoredPolicy) InitializeDataModel(eng *sce.Engine[AB
 		if err == nil {
 			_ = engine.SetVariable(sessionID, "obj", result)
 		} else {
-			eng.Raise(sce.NewPlatformError(ABadDonedataPairIsIgnoredEventErrorExecution, "<data id='obj'> expr failed to evaluate"))
+			eng.Raise(sce.NewPlatformError(ABadDonedataPairIsIgnoredEventErrorExecution, sceerrorreason.ErrorReasonExpressionFailed, "<data id='obj'> expr failed to evaluate"))
 			_ = engine.SetVariable(sessionID, "obj", nil)
 		}
 	}
@@ -494,12 +498,12 @@ func (p *ABadDonedataPairIsIgnoredPolicy) evaluateIfCond(guard string, eng *sce.
 // evaluateGuardRaising evaluates a cond, raising error.execution when it cannot
 // be evaluated (W3C SCXML 5.9.1); ok is false then, where a bare false could
 // not say so.
-func (p *ABadDonedataPairIsIgnoredPolicy) evaluateGuardRaising(guard string, eng *sce.Engine[ABadDonedataPairIsIgnoredState, ABadDonedataPairIsIgnoredEvent], reason string) (value bool, ok bool) {
+func (p *ABadDonedataPairIsIgnoredPolicy) evaluateGuardRaising(guard string, eng *sce.Engine[ABadDonedataPairIsIgnoredState, ABadDonedataPairIsIgnoredEvent], detail string) (value bool, ok bool) {
 	p.assertScriptSession()
 	engine := p.ScriptEngine
 	result, err := engine.EvaluateExpression(p.SessionID, guard)
 	if err != nil {
-		eng.Raise(sce.NewPlatformError(ABadDonedataPairIsIgnoredEventErrorExecution, reason))
+		eng.Raise(sce.NewPlatformError(ABadDonedataPairIsIgnoredEventErrorExecution, sceerrorreason.ErrorReasonExpressionFailed, detail))
 		return false, false
 	}
 	return sce.ScriptToBool(result), true
@@ -602,7 +606,7 @@ func (p *ABadDonedataPairIsIgnoredPolicy) SetParamValueInScriptEngine(name strin
 // failed is left (docs/adr/0098).
 func (p *ABadDonedataPairIsIgnoredPolicy) declareHandedValue(eng *sce.Engine[ABadDonedataPairIsIgnoredState, ABadDonedataPairIsIgnoredEvent], engine sce.IScriptEngine, sessionID, name string, value interface{}) {
 	if err := engine.SetVariable(sessionID, name, value); err != nil {
-		eng.Raise(sce.NewPlatformError(ABadDonedataPairIsIgnoredEventErrorExecution, "<data id='"+name+"'> could not hold the value its invoking session handed it"))
+		eng.Raise(sce.NewPlatformError(ABadDonedataPairIsIgnoredEventErrorExecution, sceerrorreason.ErrorReasonDataInitFailed, "<data id='"+name+"'> could not hold the value its invoking session handed it"))
 		_ = engine.SetVariable(sessionID, name, nil)
 	}
 }
@@ -907,14 +911,14 @@ func (p *ABadDonedataPairIsIgnoredPolicy) ExecuteEntryActions(state ABadDonedata
 				var jsonParts []string
 				// §scxml-5.7: an empty location names no location —
 				// error.execution, and this pair is ignored.
-				engine.Raise(sce.NewPlatformError(ABadDonedataPairIsIgnoredEventErrorExecution, "<donedata> <param name='empty'> has an empty location"))
+				engine.Raise(sce.NewPlatformError(ABadDonedataPairIsIgnoredEventErrorExecution, sceerrorreason.ErrorReasonLocationInvalid, "<donedata> <param name='empty'> has an empty location"))
 				if val, err := se.EvaluateExpression(p.SessionID, "v"); err == nil {
 					// §scxml-B-2-9: donedata rides an event, so it leaves the
 					// data model and travels as JSON — the same wire
 					// `<send>`'s params take.
 					jsonParts = append(jsonParts, "\"good\":" + sce.ScriptValueToJSON(val))
 				} else {
-					engine.Raise(sce.NewPlatformError(ABadDonedataPairIsIgnoredEventErrorExecution, "<donedata> <param name='good'> failed to evaluate"))
+					engine.Raise(sce.NewPlatformError(ABadDonedataPairIsIgnoredEventErrorExecution, sceerrorreason.ErrorReasonExpressionFailed, "<donedata> <param name='good'> failed to evaluate"))
 				}
 				if val, err := se.EvaluateExpression(p.SessionID, "obj.missing.deep"); err == nil {
 					// §scxml-B-2-9: donedata rides an event, so it leaves the
@@ -922,7 +926,7 @@ func (p *ABadDonedataPairIsIgnoredPolicy) ExecuteEntryActions(state ABadDonedata
 					// `<send>`'s params take.
 					jsonParts = append(jsonParts, "\"bad\":" + sce.ScriptValueToJSON(val))
 				} else {
-					engine.Raise(sce.NewPlatformError(ABadDonedataPairIsIgnoredEventErrorExecution, "<donedata> <param name='bad'> failed to evaluate"))
+					engine.Raise(sce.NewPlatformError(ABadDonedataPairIsIgnoredEventErrorExecution, sceerrorreason.ErrorReasonExpressionFailed, "<donedata> <param name='bad'> failed to evaluate"))
 				}
 				// §scxml-5.5: the pairs that survived, `{}` when none did.
 				doneEventData = "{" + strings.Join(jsonParts, ",") + "}"
@@ -1099,7 +1103,7 @@ func (p *ABadDonedataPairIsIgnoredPolicy) ExecuteTransitionContent(source ABadDo
 
 	// W3C SCXML 5.3: <assign location="errors" expr="errors + 1">
 	if err := p.assignVariable(`errors`, `_scxml_add(errors, 1)`); err != nil {
-		engine.Raise(sce.NewPlatformError(ABadDonedataPairIsIgnoredEventErrorExecution, "<assign> to 'errors' failed"))
+		engine.Raise(sce.NewPlatformError(ABadDonedataPairIsIgnoredEventErrorExecution, sceerrorreason.ErrorReasonAssignmentFailed, "<assign> to 'errors' failed"))
 		return  // W3C SCXML 4.9: the error ends the block
 	}
 
@@ -1111,7 +1115,7 @@ func (p *ABadDonedataPairIsIgnoredPolicy) ExecuteTransitionContent(source ABadDo
 
 	// W3C SCXML 5.3: <assign location="shape" expr="1">
 	if err := p.assignVariable(`shape`, `1`); err != nil {
-		engine.Raise(sce.NewPlatformError(ABadDonedataPairIsIgnoredEventErrorExecution, "<assign> to 'shape' failed"))
+		engine.Raise(sce.NewPlatformError(ABadDonedataPairIsIgnoredEventErrorExecution, sceerrorreason.ErrorReasonAssignmentFailed, "<assign> to 'shape' failed"))
 		return  // W3C SCXML 4.9: the error ends the block
 	}
 
@@ -1123,7 +1127,7 @@ func (p *ABadDonedataPairIsIgnoredPolicy) ExecuteTransitionContent(source ABadDo
 
 	// W3C SCXML 5.3: <assign location="shape" expr="2">
 	if err := p.assignVariable(`shape`, `2`); err != nil {
-		engine.Raise(sce.NewPlatformError(ABadDonedataPairIsIgnoredEventErrorExecution, "<assign> to 'shape' failed"))
+		engine.Raise(sce.NewPlatformError(ABadDonedataPairIsIgnoredEventErrorExecution, sceerrorreason.ErrorReasonAssignmentFailed, "<assign> to 'shape' failed"))
 		return  // W3C SCXML 4.9: the error ends the block
 	}
 

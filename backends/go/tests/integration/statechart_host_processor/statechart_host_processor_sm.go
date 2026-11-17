@@ -1,5 +1,5 @@
 // SCE-GENERATED — DO NOT EDIT
-// source-hash: e3e91f36cc7b8591c060b277b157f8471b6940f92608c548338f70603c760055
+// source-hash: f02e6d1d557556839c99891abeba3d1ef7bc15e5821c4215914c8e1ef9ecc561
 
 
 // SPDX-License-Identifier: AGPL-3.0-only WITH AdditionRef-SCE-Linking-Exception OR LicenseRef-SCE-Commercial
@@ -31,6 +31,7 @@ import (
 	"time"
 
 	sce "github.com/newmassrael/sce-go-runtime"
+	sceerrorreason "github.com/newmassrael/sce-go-runtime/generated/error_reason"
 )
 
 // Ensure imports are used
@@ -39,6 +40,9 @@ var (
 	_ = filepath.Join
 	_ = strings.HasPrefix
 	_ = time.Duration(0)
+	// Why an error.* event is raised (sce:std/engine/error_reason,
+	// docs/adr/0106 #111); a machine that raises none still imports it.
+	_ = sceerrorreason.ErrorReasonExpressionFailed
 )
 
 // ======================================================================
@@ -385,7 +389,7 @@ func (p *StatechartHostProcessorPolicy) InitializeDataModel(eng *sce.Engine[Stat
 		if err == nil {
 			_ = engine.SetVariable(sessionID, "served", result)
 		} else {
-			eng.Raise(sce.NewPlatformError(StatechartHostProcessorEventErrorExecution, "<data id='served'> expr failed to evaluate"))
+			eng.Raise(sce.NewPlatformError(StatechartHostProcessorEventErrorExecution, sceerrorreason.ErrorReasonExpressionFailed, "<data id='served'> expr failed to evaluate"))
 			_ = engine.SetVariable(sessionID, "served", nil)
 		}
 	}
@@ -399,7 +403,7 @@ func (p *StatechartHostProcessorPolicy) InitializeDataModel(eng *sce.Engine[Stat
 		if err == nil {
 			_ = engine.SetVariable(sessionID, "refused", result)
 		} else {
-			eng.Raise(sce.NewPlatformError(StatechartHostProcessorEventErrorExecution, "<data id='refused'> expr failed to evaluate"))
+			eng.Raise(sce.NewPlatformError(StatechartHostProcessorEventErrorExecution, sceerrorreason.ErrorReasonExpressionFailed, "<data id='refused'> expr failed to evaluate"))
 			_ = engine.SetVariable(sessionID, "refused", nil)
 		}
 	}
@@ -413,7 +417,7 @@ func (p *StatechartHostProcessorPolicy) InitializeDataModel(eng *sce.Engine[Stat
 		if err == nil {
 			_ = engine.SetVariable(sessionID, "plain", result)
 		} else {
-			eng.Raise(sce.NewPlatformError(StatechartHostProcessorEventErrorExecution, "<data id='plain'> expr failed to evaluate"))
+			eng.Raise(sce.NewPlatformError(StatechartHostProcessorEventErrorExecution, sceerrorreason.ErrorReasonExpressionFailed, "<data id='plain'> expr failed to evaluate"))
 			_ = engine.SetVariable(sessionID, "plain", nil)
 		}
 	}
@@ -427,7 +431,7 @@ func (p *StatechartHostProcessorPolicy) InitializeDataModel(eng *sce.Engine[Stat
 		if err == nil {
 			_ = engine.SetVariable(sessionID, "paramErrors", result)
 		} else {
-			eng.Raise(sce.NewPlatformError(StatechartHostProcessorEventErrorExecution, "<data id='paramErrors'> expr failed to evaluate"))
+			eng.Raise(sce.NewPlatformError(StatechartHostProcessorEventErrorExecution, sceerrorreason.ErrorReasonExpressionFailed, "<data id='paramErrors'> expr failed to evaluate"))
 			_ = engine.SetVariable(sessionID, "paramErrors", nil)
 		}
 	}
@@ -441,7 +445,7 @@ func (p *StatechartHostProcessorPolicy) InitializeDataModel(eng *sce.Engine[Stat
 		if err == nil {
 			_ = engine.SetVariable(sessionID, "mode", result)
 		} else {
-			eng.Raise(sce.NewPlatformError(StatechartHostProcessorEventErrorExecution, "<data id='mode'> expr failed to evaluate"))
+			eng.Raise(sce.NewPlatformError(StatechartHostProcessorEventErrorExecution, sceerrorreason.ErrorReasonExpressionFailed, "<data id='mode'> expr failed to evaluate"))
 			_ = engine.SetVariable(sessionID, "mode", nil)
 		}
 	}
@@ -455,7 +459,7 @@ func (p *StatechartHostProcessorPolicy) InitializeDataModel(eng *sce.Engine[Stat
 		if err == nil {
 			_ = engine.SetVariable(sessionID, "nothing", result)
 		} else {
-			eng.Raise(sce.NewPlatformError(StatechartHostProcessorEventErrorExecution, "<data id='nothing'> expr failed to evaluate"))
+			eng.Raise(sce.NewPlatformError(StatechartHostProcessorEventErrorExecution, sceerrorreason.ErrorReasonExpressionFailed, "<data id='nothing'> expr failed to evaluate"))
 			_ = engine.SetVariable(sessionID, "nothing", nil)
 		}
 	}
@@ -487,12 +491,12 @@ func (p *StatechartHostProcessorPolicy) evaluateIfCond(guard string, eng *sce.En
 // evaluateGuardRaising evaluates a cond, raising error.execution when it cannot
 // be evaluated (W3C SCXML 5.9.1); ok is false then, where a bare false could
 // not say so.
-func (p *StatechartHostProcessorPolicy) evaluateGuardRaising(guard string, eng *sce.Engine[StatechartHostProcessorState, StatechartHostProcessorEvent], reason string) (value bool, ok bool) {
+func (p *StatechartHostProcessorPolicy) evaluateGuardRaising(guard string, eng *sce.Engine[StatechartHostProcessorState, StatechartHostProcessorEvent], detail string) (value bool, ok bool) {
 	p.assertScriptSession()
 	engine := p.ScriptEngine
 	result, err := engine.EvaluateExpression(p.SessionID, guard)
 	if err != nil {
-		eng.Raise(sce.NewPlatformError(StatechartHostProcessorEventErrorExecution, reason))
+		eng.Raise(sce.NewPlatformError(StatechartHostProcessorEventErrorExecution, sceerrorreason.ErrorReasonExpressionFailed, detail))
 		return false, false
 	}
 	return sce.ScriptToBool(result), true
@@ -595,7 +599,7 @@ func (p *StatechartHostProcessorPolicy) SetParamValueInScriptEngine(name string,
 // failed is left (docs/adr/0098).
 func (p *StatechartHostProcessorPolicy) declareHandedValue(eng *sce.Engine[StatechartHostProcessorState, StatechartHostProcessorEvent], engine sce.IScriptEngine, sessionID, name string, value interface{}) {
 	if err := engine.SetVariable(sessionID, name, value); err != nil {
-		eng.Raise(sce.NewPlatformError(StatechartHostProcessorEventErrorExecution, "<data id='"+name+"'> could not hold the value its invoking session handed it"))
+		eng.Raise(sce.NewPlatformError(StatechartHostProcessorEventErrorExecution, sceerrorreason.ErrorReasonDataInitFailed, "<data id='"+name+"'> could not hold the value its invoking session handed it"))
 		_ = engine.SetVariable(sessionID, name, nil)
 	}
 }
@@ -914,7 +918,7 @@ func (p *StatechartHostProcessorPolicy) ExecuteEntryActions(state StatechartHost
 		// act it asked for was performed by nobody. Same event as an
 		// undeclared type, so a wiring mistake cannot read as success.
 		if !hostServed && !engine.HasEventProcessor("x-sce-host") {
-			errEvt := sce.NewPlatformError(StatechartHostProcessorEventErrorExecution, "<send type='x-sce-host'> names a processor the host declared but never registered")
+			errEvt := sce.NewPlatformError(StatechartHostProcessorEventErrorExecution, sceerrorreason.ErrorReasonProcessorUnregistered, "<send type='x-sce-host'> names a processor the host declared but never registered")
 			errEvt.Metadata.SendID = "__send_1"
 			engine.Raise(errEvt)
 		}
@@ -947,21 +951,25 @@ func (p *StatechartHostProcessorPolicy) ExecuteEntryActions(state StatechartHost
 	{
 	p.assertScriptSession()
 	sendArgError := ""
+	// Why the argument failed, a code of sce:std/engine/error_reason
+	// (docs/adr/0106 #111), set with every sentence below.
+	var sendArgReason sce.ErrorReason
+	_ = sendArgReason
 	// W3C SCXML 6.2 + B.2: a namelist names locations, and one that is not
 	// declared is an argument that cannot be evaluated — one error however
 	// many of its names are bad.
 	namelistParts := make([]sce.EventDataParam, 0)
 	if sendArgError == "" {
 		if !p.ScriptEngine.HasVariable(p.SessionID, "mode") {
-			sendArgError = "<send> namelist names 'mode', which is not declared"
+			sendArgError, sendArgReason = "<send> namelist names 'mode', which is not declared", sceerrorreason.ErrorReasonLocationInvalid
 		} else if nlVal, nlErr := p.ScriptEngine.EvaluateExpression(p.SessionID, `mode`); nlErr == nil {
 			namelistParts = append(namelistParts, sce.EventDataParam{Name: "mode", Value: nlVal})
 		} else {
-			sendArgError = "<send> namelist entry 'mode' could not be read"
+			sendArgError, sendArgReason = "<send> namelist entry 'mode' could not be read", sceerrorreason.ErrorReasonLocationInvalid
 		}
 	}
 	if sendArgError != "" {
-		errEvt := sce.NewPlatformError(StatechartHostProcessorEventErrorExecution, sendArgError)
+		errEvt := sce.NewPlatformError(StatechartHostProcessorEventErrorExecution, sendArgReason, sendArgError)
 		errEvt.Metadata.SendID = "__send_4"
 		engine.Raise(errEvt)
 		return  // W3C SCXML 4.9: the error ends the block
@@ -983,7 +991,7 @@ func (p *StatechartHostProcessorPolicy) ExecuteEntryActions(state StatechartHost
 		if paramVal, paramErr := se.EvaluateExpression(p.SessionID, `nothing.deep`); paramErr == nil {
 			parts = append(parts, sce.EventDataParam{Name: "broken", Value: paramVal})
 		} else {
-			engine.Raise(sce.NewPlatformError(StatechartHostProcessorEventErrorExecution, "<send> <param name='broken'> expr failed to evaluate"))
+			engine.Raise(sce.NewPlatformError(StatechartHostProcessorEventErrorExecution, sceerrorreason.ErrorReasonExpressionFailed, "<send> <param name='broken'> expr failed to evaluate"))
 			paramFailed = true
 		}
 		// The namelist values the prologue read, after the params.
@@ -1018,7 +1026,7 @@ func (p *StatechartHostProcessorPolicy) ExecuteEntryActions(state StatechartHost
 		// act it asked for was performed by nobody. Same event as an
 		// undeclared type, so a wiring mistake cannot read as success.
 		if !hostServed && !engine.HasEventProcessor("x-sce-host") {
-			errEvt := sce.NewPlatformError(StatechartHostProcessorEventErrorExecution, "<send type='x-sce-host'> names a processor the host declared but never registered")
+			errEvt := sce.NewPlatformError(StatechartHostProcessorEventErrorExecution, sceerrorreason.ErrorReasonProcessorUnregistered, "<send type='x-sce-host'> names a processor the host declared but never registered")
 			errEvt.Metadata.SendID = "__send_4"
 			engine.Raise(errEvt)
 		}
@@ -1175,7 +1183,7 @@ func (p *StatechartHostProcessorPolicy) ExecuteTransitionContent(source Statecha
 
 	// W3C SCXML 5.3: <assign location="plain" expr="plain + 1">
 	if err := p.assignVariable(`plain`, `_scxml_add(plain, 1)`); err != nil {
-		engine.Raise(sce.NewPlatformError(StatechartHostProcessorEventErrorExecution, "<assign> to 'plain' failed"))
+		engine.Raise(sce.NewPlatformError(StatechartHostProcessorEventErrorExecution, sceerrorreason.ErrorReasonAssignmentFailed, "<assign> to 'plain' failed"))
 		return  // W3C SCXML 4.9: the error ends the block
 	}
 
@@ -1187,7 +1195,7 @@ func (p *StatechartHostProcessorPolicy) ExecuteTransitionContent(source Statecha
 
 	// W3C SCXML 5.3: <assign location="served" expr="served + 1">
 	if err := p.assignVariable(`served`, `_scxml_add(served, 1)`); err != nil {
-		engine.Raise(sce.NewPlatformError(StatechartHostProcessorEventErrorExecution, "<assign> to 'served' failed"))
+		engine.Raise(sce.NewPlatformError(StatechartHostProcessorEventErrorExecution, sceerrorreason.ErrorReasonAssignmentFailed, "<assign> to 'served' failed"))
 		return  // W3C SCXML 4.9: the error ends the block
 	}
 
@@ -1199,7 +1207,7 @@ func (p *StatechartHostProcessorPolicy) ExecuteTransitionContent(source Statecha
 
 	// W3C SCXML 5.3: <assign location="refused" expr="refused + 1">
 	if err := p.assignVariable(`refused`, `_scxml_add(refused, 1)`); err != nil {
-		engine.Raise(sce.NewPlatformError(StatechartHostProcessorEventErrorExecution, "<assign> to 'refused' failed"))
+		engine.Raise(sce.NewPlatformError(StatechartHostProcessorEventErrorExecution, sceerrorreason.ErrorReasonAssignmentFailed, "<assign> to 'refused' failed"))
 		return  // W3C SCXML 4.9: the error ends the block
 	}
 
@@ -1214,7 +1222,7 @@ func (p *StatechartHostProcessorPolicy) ExecuteTransitionContent(source Statecha
 
 	// W3C SCXML 5.3: <assign location="paramErrors" expr="paramErrors + 1">
 	if err := p.assignVariable(`paramErrors`, `_scxml_add(paramErrors, 1)`); err != nil {
-		engine.Raise(sce.NewPlatformError(StatechartHostProcessorEventErrorExecution, "<assign> to 'paramErrors' failed"))
+		engine.Raise(sce.NewPlatformError(StatechartHostProcessorEventErrorExecution, sceerrorreason.ErrorReasonAssignmentFailed, "<assign> to 'paramErrors' failed"))
 		return  // W3C SCXML 4.9: the error ends the block
 	}
 
@@ -1257,7 +1265,7 @@ func (p *StatechartHostProcessorPolicy) ExecuteTransitionContent(source Statecha
 		// act it asked for was performed by nobody. Same event as an
 		// undeclared type, so a wiring mistake cannot read as success.
 		if !hostServed && !engine.HasEventProcessor("x-sce-host") {
-			errEvt := sce.NewPlatformError(StatechartHostProcessorEventErrorExecution, "<send type='x-sce-host'> names a processor the host declared but never registered")
+			errEvt := sce.NewPlatformError(StatechartHostProcessorEventErrorExecution, sceerrorreason.ErrorReasonProcessorUnregistered, "<send type='x-sce-host'> names a processor the host declared but never registered")
 			errEvt.Metadata.SendID = "__send_3"
 			engine.Raise(errEvt)
 		}

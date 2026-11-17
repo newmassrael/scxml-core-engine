@@ -815,7 +815,7 @@ public final class StaticForgeCallsPolicy: InvocablePolicy {
                 sceBlock: do {
 
 
-                if ({ () -> Bool in do { let sceValue: UInt8 = (try Checked.add(self.vGear, 1)); self.vGear = sceValue } catch { engine.raise(EventWithMetadata.platformError(StaticForgeCallsEvent.errorExecution, message: "<assign location='gear'>: an integer operation overflowed or failed")); return true }; return false }()) {
+                if ({ () -> Bool in do { let sceValue: UInt8 = (try Checked.add(self.vGear, 1)); self.vGear = sceValue } catch { engine.raise(EventWithMetadata.platformError(StaticForgeCallsEvent.errorExecution, reason: .expressionFailed, message: "<assign location='gear'>: an integer operation overflowed or failed")); return true }; return false }()) {
                     break sceBlock  // W3C SCXML 4.9: the error ends the block
                 }
 
@@ -825,7 +825,7 @@ public final class StaticForgeCallsPolicy: InvocablePolicy {
 
 
 
-                if ({ () -> Bool in do { let sceValue: Int32 = (try Checked.found(ForgeCallCode.lookupCode(self.vGear))); self.vCode = sceValue } catch { engine.raise(EventWithMetadata.platformError(StaticForgeCallsEvent.errorExecution, message: "<assign location='code'>: an integer operation overflowed or failed")); return true }; return false }()) {
+                if ({ () -> Bool in do { let sceValue: Int32 = (try Checked.found(ForgeCallCode.lookupCode(self.vGear))); self.vCode = sceValue } catch { engine.raise(EventWithMetadata.platformError(StaticForgeCallsEvent.errorExecution, reason: .expressionFailed, message: "<assign location='code'>: an integer operation overflowed or failed")); return true }; return false }()) {
                     break sceBlock  // W3C SCXML 4.9: the error ends the block
                 }
 
@@ -835,7 +835,7 @@ public final class StaticForgeCallsPolicy: InvocablePolicy {
                 sceBlock: do {
 
 
-                if ({ () -> Bool in do { let sceValue: Int32 = (try Checked.add(self.vLevel, 7)); self.vLevel = sceValue } catch { engine.raise(EventWithMetadata.platformError(StaticForgeCallsEvent.errorExecution, message: "<assign location='level'>: an integer operation overflowed or failed")); return true }; return false }()) {
+                if ({ () -> Bool in do { let sceValue: Int32 = (try Checked.add(self.vLevel, 7)); self.vLevel = sceValue } catch { engine.raise(EventWithMetadata.platformError(StaticForgeCallsEvent.errorExecution, reason: .expressionFailed, message: "<assign location='level'>: an integer operation overflowed or failed")); return true }; return false }()) {
                     break sceBlock  // W3C SCXML 4.9: the error ends the block
                 }
 
@@ -853,7 +853,7 @@ public final class StaticForgeCallsPolicy: InvocablePolicy {
                 sceBlock: do {
 
 
-                if ({ () -> Bool in do { let sceValue: UInt16 = (try Checked.add(self.vRpm, 500)); self.vRpm = sceValue } catch { engine.raise(EventWithMetadata.platformError(StaticForgeCallsEvent.errorExecution, message: "<assign location='rpm'>: an integer operation overflowed or failed")); return true }; return false }()) {
+                if ({ () -> Bool in do { let sceValue: UInt16 = (try Checked.add(self.vRpm, 500)); self.vRpm = sceValue } catch { engine.raise(EventWithMetadata.platformError(StaticForgeCallsEvent.errorExecution, reason: .expressionFailed, message: "<assign location='rpm'>: an integer operation overflowed or failed")); return true }; return false }()) {
                     break sceBlock  // W3C SCXML 4.9: the error ends the block
                 }
 
@@ -867,7 +867,7 @@ public final class StaticForgeCallsPolicy: InvocablePolicy {
                 sceBlock: do {
 
 
-                if ({ () -> Bool in do { let sceValue: UInt32 = (try Checked.add(self.vHighs, 1)); self.vHighs = sceValue } catch { engine.raise(EventWithMetadata.platformError(StaticForgeCallsEvent.errorExecution, message: "<assign location='highs'>: an integer operation overflowed or failed")); return true }; return false }()) {
+                if ({ () -> Bool in do { let sceValue: UInt32 = (try Checked.add(self.vHighs, 1)); self.vHighs = sceValue } catch { engine.raise(EventWithMetadata.platformError(StaticForgeCallsEvent.errorExecution, reason: .expressionFailed, message: "<assign location='highs'>: an integer operation overflowed or failed")); return true }; return false }()) {
                     break sceBlock  // W3C SCXML 4.9: the error ends the block
                 }
 
@@ -881,7 +881,7 @@ public final class StaticForgeCallsPolicy: InvocablePolicy {
 
 
 
-                if ({ () -> Bool in do { let sceValue = StaticForgeCallsLevelEnumFromDocument((try Checked.found(ForgeCallWeight.lookupWeight(StaticForgeCallsStatusEnumToDocument(self.vPhase))))); self.vWeight = sceValue } catch { engine.raise(EventWithMetadata.platformError(StaticForgeCallsEvent.errorExecution, message: "<assign location='weight'>: an integer operation overflowed or failed")); return true }; return false }()) {
+                if ({ () -> Bool in do { let sceValue = StaticForgeCallsLevelEnumFromDocument((try Checked.found(ForgeCallWeight.lookupWeight(StaticForgeCallsStatusEnumToDocument(self.vPhase))))); self.vWeight = sceValue } catch { engine.raise(EventWithMetadata.platformError(StaticForgeCallsEvent.errorExecution, reason: .expressionFailed, message: "<assign location='weight'>: an integer operation overflowed or failed")); return true }; return false }()) {
                     break sceBlock  // W3C SCXML 4.9: the error ends the block
                 }
 
@@ -899,7 +899,7 @@ public final class StaticForgeCallsPolicy: InvocablePolicy {
                 sceBlock: do {
 
 
-                if ({ () -> Bool in do { let sceValue: String = (try Checked.bounded("", capacity: 16)); self.vCustomer = sceValue } catch { engine.raise(EventWithMetadata.platformError(StaticForgeCallsEvent.errorExecution, message: "<assign location='customer'>: an integer operation overflowed or failed")); return true }; return false }()) {
+                if ({ () -> Bool in do { let sceValue: String = (try Checked.bounded("", capacity: 16)); self.vCustomer = sceValue } catch { engine.raise(EventWithMetadata.platformError(StaticForgeCallsEvent.errorExecution, reason: .expressionFailed, message: "<assign location='customer'>: an integer operation overflowed or failed")); return true }; return false }()) {
                     break sceBlock  // W3C SCXML 4.9: the error ends the block
                 }
 
@@ -909,7 +909,7 @@ public final class StaticForgeCallsPolicy: InvocablePolicy {
                 sceBlock: do {
 
 
-                if ({ () -> Bool in do { let sceValue: UInt32 = (try Checked.add(self.vMisses, 1)); self.vMisses = sceValue } catch { engine.raise(EventWithMetadata.platformError(StaticForgeCallsEvent.errorExecution, message: "<assign location='misses'>: an integer operation overflowed or failed")); return true }; return false }()) {
+                if ({ () -> Bool in do { let sceValue: UInt32 = (try Checked.add(self.vMisses, 1)); self.vMisses = sceValue } catch { engine.raise(EventWithMetadata.platformError(StaticForgeCallsEvent.errorExecution, reason: .expressionFailed, message: "<assign location='misses'>: an integer operation overflowed or failed")); return true }; return false }()) {
                     break sceBlock  // W3C SCXML 4.9: the error ends the block
                 }
 

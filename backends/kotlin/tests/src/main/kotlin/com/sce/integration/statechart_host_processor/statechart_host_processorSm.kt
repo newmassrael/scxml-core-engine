@@ -1,5 +1,5 @@
 // SCE-GENERATED — DO NOT EDIT
-// source-hash: e3e91f36cc7b8591c060b277b157f8471b6940f92608c548338f70603c760055
+// source-hash: f02e6d1d557556839c99891abeba3d1ef7bc15e5821c4215914c8e1ef9ecc561
 
 // GENERATED CODE — DO NOT EDIT
 // Source: sce-build/tests/fixtures/host_processor/statechart_host_processor.scxml
@@ -288,7 +288,7 @@ class StatechartHostProcessorStateMachine(
             try {
                 engine.setVariable(sid, "served", engine.evaluateExpr(sid, com.sce.runtime.ScriptSource.lua("0", "0")))
             } catch (e: Exception) {
-                raisePlatformError(StatechartHostProcessorEvent.Error.Execution, "<data id='served'> expr failed to evaluate")
+                raisePlatformError(StatechartHostProcessorEvent.Error.Execution, ErrorReason.EXPRESSION_FAILED, "<data id='served'> expr failed to evaluate")
             }
         }
         // §scxml-6.4: 'refused' takes a value its invoke handed it, in place of its own
@@ -297,7 +297,7 @@ class StatechartHostProcessorStateMachine(
             try {
                 engine.setVariable(sid, "refused", engine.evaluateExpr(sid, com.sce.runtime.ScriptSource.lua("0", "0")))
             } catch (e: Exception) {
-                raisePlatformError(StatechartHostProcessorEvent.Error.Execution, "<data id='refused'> expr failed to evaluate")
+                raisePlatformError(StatechartHostProcessorEvent.Error.Execution, ErrorReason.EXPRESSION_FAILED, "<data id='refused'> expr failed to evaluate")
             }
         }
         // §scxml-6.4: 'plain' takes a value its invoke handed it, in place of its own
@@ -306,7 +306,7 @@ class StatechartHostProcessorStateMachine(
             try {
                 engine.setVariable(sid, "plain", engine.evaluateExpr(sid, com.sce.runtime.ScriptSource.lua("0", "0")))
             } catch (e: Exception) {
-                raisePlatformError(StatechartHostProcessorEvent.Error.Execution, "<data id='plain'> expr failed to evaluate")
+                raisePlatformError(StatechartHostProcessorEvent.Error.Execution, ErrorReason.EXPRESSION_FAILED, "<data id='plain'> expr failed to evaluate")
             }
         }
         // §scxml-6.4: 'paramErrors' takes a value its invoke handed it, in place of its own
@@ -315,7 +315,7 @@ class StatechartHostProcessorStateMachine(
             try {
                 engine.setVariable(sid, "paramErrors", engine.evaluateExpr(sid, com.sce.runtime.ScriptSource.lua("0", "0")))
             } catch (e: Exception) {
-                raisePlatformError(StatechartHostProcessorEvent.Error.Execution, "<data id='paramErrors'> expr failed to evaluate")
+                raisePlatformError(StatechartHostProcessorEvent.Error.Execution, ErrorReason.EXPRESSION_FAILED, "<data id='paramErrors'> expr failed to evaluate")
             }
         }
         // §scxml-6.4: 'mode' takes a value its invoke handed it, in place of its own
@@ -324,7 +324,7 @@ class StatechartHostProcessorStateMachine(
             try {
                 engine.setVariable(sid, "mode", engine.evaluateExpr(sid, com.sce.runtime.ScriptSource.lua("\"pairs\"", "'pairs'")))
             } catch (e: Exception) {
-                raisePlatformError(StatechartHostProcessorEvent.Error.Execution, "<data id='mode'> expr failed to evaluate")
+                raisePlatformError(StatechartHostProcessorEvent.Error.Execution, ErrorReason.EXPRESSION_FAILED, "<data id='mode'> expr failed to evaluate")
             }
         }
         // §scxml-6.4: 'nothing' takes a value its invoke handed it, in place of its own
@@ -333,7 +333,7 @@ class StatechartHostProcessorStateMachine(
             try {
                 engine.setVariable(sid, "nothing", engine.evaluateExpr(sid, com.sce.runtime.ScriptSource.lua("nil", "null")))
             } catch (e: Exception) {
-                raisePlatformError(StatechartHostProcessorEvent.Error.Execution, "<data id='nothing'> expr failed to evaluate")
+                raisePlatformError(StatechartHostProcessorEvent.Error.Execution, ErrorReason.EXPRESSION_FAILED, "<data id='nothing'> expr failed to evaluate")
             }
         }
     }
@@ -363,14 +363,14 @@ class StatechartHostProcessorStateMachine(
 
     // W3C SCXML 5.9.1: a cond that cannot be evaluated raises error.execution;
     // `null` says so, where a bare `false` could not.
-    private fun evaluateGuardRaising(guardExpr: com.sce.runtime.ScriptSource, reason: String): Boolean? {
+    private fun evaluateGuardRaising(guardExpr: com.sce.runtime.ScriptSource, detail: String): Boolean? {
         assertScriptSession()
         val engine = scriptEngine ?: error("scriptEngine is required (codegen invariant: needs_script_engine == true)")
         val sid = scriptSessionId ?: error("scriptSessionId is established by the start (codegen invariant)")
         return try {
             engine.evaluateCondition(sid, guardExpr)
         } catch (e: Exception) {
-            raisePlatformError(StatechartHostProcessorEvent.Error.Execution, reason)
+            raisePlatformError(StatechartHostProcessorEvent.Error.Execution, ErrorReason.EXPRESSION_FAILED, detail)
             null
         }
     }
@@ -411,7 +411,7 @@ class StatechartHostProcessorStateMachine(
         return try {
             engine.evaluateExpr(sid, serialized)?.toString() ?: ""
         } catch (e: Exception) {
-            raisePlatformError(StatechartHostProcessorEvent.Error.Execution, "an expression could not be serialised to JSON")
+            raisePlatformError(StatechartHostProcessorEvent.Error.Execution, ErrorReason.EXPRESSION_FAILED, "an expression could not be serialised to JSON")
             ""
         }
     }
@@ -432,7 +432,7 @@ class StatechartHostProcessorStateMachine(
             engine.assign(sid, location, expr)
             true
         } catch (e: Exception) {
-            raisePlatformError(StatechartHostProcessorEvent.Error.Execution, "<assign> failed")
+            raisePlatformError(StatechartHostProcessorEvent.Error.Execution, ErrorReason.ASSIGNMENT_FAILED, "<assign> failed")
             false
         }
     }
@@ -448,7 +448,7 @@ class StatechartHostProcessorStateMachine(
             engine.executeScript(sid, script)
             true
         } catch (e: Exception) {
-            raisePlatformError(StatechartHostProcessorEvent.Error.Execution, "<script> failed to execute")
+            raisePlatformError(StatechartHostProcessorEvent.Error.Execution, ErrorReason.SCRIPT_FAILED, "<script> failed to execute")
             false
         }
     }
@@ -609,7 +609,7 @@ class StatechartHostProcessorStateMachine(
             // event as an undeclared type, so a wiring mistake cannot read
             // as success.
             if (hostServed == null && !hasEventProcessor("x-sce-host")) {
-                raisePlatformError(StatechartHostProcessorEvent.Error.Execution, "<send type='x-sce-host'> names a processor the host declared but never registered", "__send_1")
+                raisePlatformError(StatechartHostProcessorEvent.Error.Execution, ErrorReason.PROCESSOR_UNREGISTERED, "<send type='x-sce-host'> names a processor the host declared but never registered", "__send_1")
             }
             false
             }) {
@@ -648,13 +648,13 @@ class StatechartHostProcessorStateMachine(
             // one error however many of its names are bad.
             val sendNamelist = mutableListOf<Pair<String, Any?>>()
             if (!argEngine.hasVariable(argSid, "mode")) {
-                raisePlatformError(StatechartHostProcessorEvent.Error.Execution, "<send> namelist names 'mode', which is not declared", "__send_4")
+                raisePlatformError(StatechartHostProcessorEvent.Error.Execution, ErrorReason.LOCATION_INVALID, "<send> namelist names 'mode', which is not declared", "__send_4")
                 return@send true
             }
             try {
                 sendNamelist.add("mode" to argEngine.getVariable(argSid, "mode"))
             } catch (_: Exception) {
-                raisePlatformError(StatechartHostProcessorEvent.Error.Execution, "<send> namelist entry 'mode' could not be read", "__send_4")
+                raisePlatformError(StatechartHostProcessorEvent.Error.Execution, ErrorReason.LOCATION_INVALID, "<send> namelist entry 'mode' could not be read", "__send_4")
                 return@send true
             }
             assertScriptSession()
@@ -665,7 +665,7 @@ class StatechartHostProcessorStateMachine(
             try {
                 putParam(sendPayload, "broken", payloadEngine.evaluateExpr(payloadSid, com.sce.runtime.ScriptSource.lua("nothing.deep", "nothing.deep")))
             } catch (_: Exception) {
-                raisePlatformError(StatechartHostProcessorEvent.Error.Execution, "<send> <param name='broken'> could not be read")
+                raisePlatformError(StatechartHostProcessorEvent.Error.Execution, ErrorReason.LOCATION_INVALID, "<send> <param name='broken'> could not be read")
                 paramFailed = true
             }
 
@@ -703,7 +703,7 @@ class StatechartHostProcessorStateMachine(
             // event as an undeclared type, so a wiring mistake cannot read
             // as success.
             if (hostServed == null && !hasEventProcessor("x-sce-host")) {
-                raisePlatformError(StatechartHostProcessorEvent.Error.Execution, "<send type='x-sce-host'> names a processor the host declared but never registered", "__send_4")
+                raisePlatformError(StatechartHostProcessorEvent.Error.Execution, ErrorReason.PROCESSOR_UNREGISTERED, "<send type='x-sce-host'> names a processor the host declared but never registered", "__send_4")
             }
             paramFailed
             }) {
@@ -841,7 +841,7 @@ class StatechartHostProcessorStateMachine(
             // event as an undeclared type, so a wiring mistake cannot read
             // as success.
             if (hostServed == null && !hasEventProcessor("x-sce-host")) {
-                raisePlatformError(StatechartHostProcessorEvent.Error.Execution, "<send type='x-sce-host'> names a processor the host declared but never registered", "__send_3")
+                raisePlatformError(StatechartHostProcessorEvent.Error.Execution, ErrorReason.PROCESSOR_UNREGISTERED, "<send type='x-sce-host'> names a processor the host declared but never registered", "__send_3")
             }
             false
             }) {

@@ -673,7 +673,7 @@ class StaticStateAlgorithmEnumStateMachine(
 
             vDraft = StaticStateAlgorithmEnumItemRecord(id = pendingItemAddedPayload!!.id, status = pendingItemAddedPayload!!.status)
 
-            if (if (vItems.size < 4) { vItems = vItems + (vDraft); false } else { raisePlatformError(StaticStateAlgorithmEnumEvent.Error.Execution, "<sce:append target='items'>: the list already holds its capacity of 4"); true }) {
+            if (if (vItems.size < 4) { vItems = vItems + (vDraft); false } else { raisePlatformError(StaticStateAlgorithmEnumEvent.Error.Execution, ErrorReason.ASSIGNMENT_FAILED, "<sce:append target='items'>: the list already holds its capacity of 4"); true }) {
                 return
             }
     }
@@ -684,7 +684,7 @@ class StaticStateAlgorithmEnumStateMachine(
                     return
                 }
 
-            if (try { vItems = com.sce.forge.runtime.SceChecked.within(com.sce.forge.runtime.SceChecked.take(call_SetStatus__v(vItems, pendingItemMovedPayload!!.id, pendingItemMovedPayload!!.status)), 4); false } catch (_: com.sce.forge.runtime.AlgorithmFailure) { raisePlatformError(StaticStateAlgorithmEnumEvent.Error.Execution, "<assign location='items'>: an integer operation overflowed or failed"); true }) {
+            if (try { vItems = com.sce.forge.runtime.SceChecked.within(com.sce.forge.runtime.SceChecked.take(call_SetStatus__v(vItems, pendingItemMovedPayload!!.id, pendingItemMovedPayload!!.status)), 4); false } catch (_: com.sce.forge.runtime.AlgorithmFailure) { raisePlatformError(StaticStateAlgorithmEnumEvent.Error.Execution, ErrorReason.EXPRESSION_FAILED, "<assign location='items'>: an integer operation overflowed or failed"); true }) {
                 return
             }
 
@@ -694,15 +694,15 @@ class StaticStateAlgorithmEnumStateMachine(
     private fun transitionContentOfBoardAt2() {
                 // SCE-MAP: static_state_algorithm_enum.scxml:52 :: board :: _transition_2
 
-            if (try { vOpenCount = com.sce.forge.runtime.SceChecked.take(call_CountStatus__v(vItems, StaticStateAlgorithmEnumStatusEnum.OPEN)); false } catch (_: com.sce.forge.runtime.AlgorithmFailure) { raisePlatformError(StaticStateAlgorithmEnumEvent.Error.Execution, "<assign location='openCount'>: an integer operation overflowed or failed"); true }) {
+            if (try { vOpenCount = com.sce.forge.runtime.SceChecked.take(call_CountStatus__v(vItems, StaticStateAlgorithmEnumStatusEnum.OPEN)); false } catch (_: com.sce.forge.runtime.AlgorithmFailure) { raisePlatformError(StaticStateAlgorithmEnumEvent.Error.Execution, ErrorReason.EXPRESSION_FAILED, "<assign location='openCount'>: an integer operation overflowed or failed"); true }) {
                 return
             }
 
-            if (try { vStartedCount = com.sce.forge.runtime.SceChecked.take(call_CountStatus__v(vItems, StaticStateAlgorithmEnumStatusEnum.IN_PROGRESS)); false } catch (_: com.sce.forge.runtime.AlgorithmFailure) { raisePlatformError(StaticStateAlgorithmEnumEvent.Error.Execution, "<assign location='startedCount'>: an integer operation overflowed or failed"); true }) {
+            if (try { vStartedCount = com.sce.forge.runtime.SceChecked.take(call_CountStatus__v(vItems, StaticStateAlgorithmEnumStatusEnum.IN_PROGRESS)); false } catch (_: com.sce.forge.runtime.AlgorithmFailure) { raisePlatformError(StaticStateAlgorithmEnumEvent.Error.Execution, ErrorReason.EXPRESSION_FAILED, "<assign location='startedCount'>: an integer operation overflowed or failed"); true }) {
                 return
             }
 
-            if (try { vDoneCount = com.sce.forge.runtime.SceChecked.take(call_CountStatus__v(vItems, StaticStateAlgorithmEnumStatusEnum.DONE)); false } catch (_: com.sce.forge.runtime.AlgorithmFailure) { raisePlatformError(StaticStateAlgorithmEnumEvent.Error.Execution, "<assign location='doneCount'>: an integer operation overflowed or failed"); true }) {
+            if (try { vDoneCount = com.sce.forge.runtime.SceChecked.take(call_CountStatus__v(vItems, StaticStateAlgorithmEnumStatusEnum.DONE)); false } catch (_: com.sce.forge.runtime.AlgorithmFailure) { raisePlatformError(StaticStateAlgorithmEnumEvent.Error.Execution, ErrorReason.EXPRESSION_FAILED, "<assign location='doneCount'>: an integer operation overflowed or failed"); true }) {
                 return
             }
     }
@@ -710,7 +710,7 @@ class StaticStateAlgorithmEnumStateMachine(
     private fun transitionContentOfBoardAt3() {
                 // SCE-MAP: static_state_algorithm_enum.scxml:57 :: board :: _transition_3
 
-            if (try { vChecks = com.sce.forge.runtime.SceChecked.add(vChecks, 1.toUInt()); false } catch (_: com.sce.forge.runtime.AlgorithmFailure) { raisePlatformError(StaticStateAlgorithmEnumEvent.Error.Execution, "<assign location='checks'>: an integer operation overflowed or failed"); true }) {
+            if (try { vChecks = com.sce.forge.runtime.SceChecked.add(vChecks, 1.toUInt()); false } catch (_: com.sce.forge.runtime.AlgorithmFailure) { raisePlatformError(StaticStateAlgorithmEnumEvent.Error.Execution, ErrorReason.EXPRESSION_FAILED, "<assign location='checks'>: an integer operation overflowed or failed"); true }) {
                 return
             }
     }
@@ -718,7 +718,7 @@ class StaticStateAlgorithmEnumStateMachine(
     private fun transitionContentOfBoardAt4() {
                 // SCE-MAP: static_state_algorithm_enum.scxml:60 :: board :: _transition_4
 
-            if (try { vRefusals = com.sce.forge.runtime.SceChecked.add(vRefusals, 1.toUInt()); false } catch (_: com.sce.forge.runtime.AlgorithmFailure) { raisePlatformError(StaticStateAlgorithmEnumEvent.Error.Execution, "<assign location='refusals'>: an integer operation overflowed or failed"); true }) {
+            if (try { vRefusals = com.sce.forge.runtime.SceChecked.add(vRefusals, 1.toUInt()); false } catch (_: com.sce.forge.runtime.AlgorithmFailure) { raisePlatformError(StaticStateAlgorithmEnumEvent.Error.Execution, ErrorReason.EXPRESSION_FAILED, "<assign location='refusals'>: an integer operation overflowed or failed"); true }) {
                 return
             }
     }

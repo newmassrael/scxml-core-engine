@@ -436,8 +436,12 @@ public final class AMeshRequestReachesTheRouterPolicy: InvocablePolicy {
 
     /// Says what went wrong where the document can see it: `error.execution` on the internal
     /// queue (§scxml-5.9.1, 5.3).
-    private func raiseExecutionError(_ message: String, engine: Engine<AMeshRequestReachesTheRouterPolicy>) {
-        engine.raise(EventWithMetadata.platformError(AMeshRequestReachesTheRouterEvent.errorExecution, message: message))
+    /// `reason` is the code of sce:std/engine/error_reason the record carries
+    /// (docs/adr/0106 #111).
+    private func raiseExecutionError(
+        _ reason: ErrorReason, _ message: String, engine: Engine<AMeshRequestReachesTheRouterPolicy>
+    ) {
+        engine.raise(EventWithMetadata.platformError(AMeshRequestReachesTheRouterEvent.errorExecution, reason: reason, message: message))
     }
 
     /// W3C SCXML 5.3: the `<data id>` `id` takes the value of the lowered expression, or nil when it
@@ -494,6 +498,7 @@ public final class AMeshRequestReachesTheRouterPolicy: InvocablePolicy {
             }
         } catch {
             raiseExecutionError(
+                handed == nil ? .expressionFailed : .paramUnfit,
                 handed == nil
                     ? "<data id='\(id)'> expr failed to evaluate"
                     : "<data id='\(id)'> could not hold the value its parent handed it",
@@ -681,7 +686,7 @@ public final class AMeshRequestReachesTheRouterPolicy: InvocablePolicy {
             // this call the payload is lost to the document and to the host alike.
             engine.notePayloadReading(event, reading: Self.payloadReading(of: reading))
         } catch {
-            raiseExecutionError("_event could not be bound for '\(name)'", engine: engine)
+            raiseExecutionError(.payloadRefused, "_event could not be bound for '\(name)'", engine: engine)
         }
     }
 
@@ -718,7 +723,7 @@ public final class AMeshRequestReachesTheRouterPolicy: InvocablePolicy {
         do {
             return try scriptSession.evaluateCondition(condition, chunkName: "=cond")
         } catch {
-            raiseExecutionError("a \(element) cond failed to evaluate", engine: engine)
+            raiseExecutionError(.expressionFailed, "a \(element) cond failed to evaluate", engine: engine)
             failed = true
             return false
         }
@@ -764,7 +769,7 @@ public final class AMeshRequestReachesTheRouterPolicy: InvocablePolicy {
             hostParams["force", default: []].append(wire.text)
             hostParts.append(PayloadPair.json("force", rawJSON: wire.json))
         } else {
-            raiseExecutionError("<invoke> <param name='force'> failed to evaluate", engine: engine)
+            raiseExecutionError(.expressionFailed, "<invoke> <param name='force'> failed to evaluate", engine: engine)
             return
         }
         hostParams["speed", default: []].append("3")
@@ -778,7 +783,7 @@ public final class AMeshRequestReachesTheRouterPolicy: InvocablePolicy {
             sessionID: sessionID
         )
         if !engine.performHostInvoke(request) {
-            engine.raise(EventWithMetadata.platformError(AMeshRequestReachesTheRouterEvent.errorExecution, message: "<invoke> names an invoker the host declared but never registered"))
+            engine.raise(EventWithMetadata.platformError(AMeshRequestReachesTheRouterEvent.errorExecution, reason: .processorUnregistered, message: "<invoke> names an invoker the host declared but never registered"))
         }
     }
 
@@ -904,7 +909,7 @@ public final class AMeshRequestReachesTheRouterPolicy: InvocablePolicy {
 
                 // W3C SCXML 5.4: <assign location="answered">
                 if !assignData("answered", "_scxml_add(answered, 1)") {
-                    raiseExecutionError("<assign> to 'answered' failed", engine: engine)
+                    raiseExecutionError(.assignmentFailed, "<assign> to 'answered' failed", engine: engine)
                     break sceBlock  // W3C SCXML 4.9: the error ends the block
                 }
 
@@ -915,7 +920,7 @@ public final class AMeshRequestReachesTheRouterPolicy: InvocablePolicy {
 
                 // W3C SCXML 5.4: <assign location="failed">
                 if !assignData("failed", "_scxml_add(failed, 1)") {
-                    raiseExecutionError("<assign> to 'failed' failed", engine: engine)
+                    raiseExecutionError(.assignmentFailed, "<assign> to 'failed' failed", engine: engine)
                     break sceBlock  // W3C SCXML 4.9: the error ends the block
                 }
 
@@ -926,7 +931,7 @@ public final class AMeshRequestReachesTheRouterPolicy: InvocablePolicy {
 
                 // W3C SCXML 5.4: <assign location="refused">
                 if !assignData("refused", "_scxml_add(refused, 1)") {
-                    raiseExecutionError("<assign> to 'refused' failed", engine: engine)
+                    raiseExecutionError(.assignmentFailed, "<assign> to 'refused' failed", engine: engine)
                     break sceBlock  // W3C SCXML 4.9: the error ends the block
                 }
 

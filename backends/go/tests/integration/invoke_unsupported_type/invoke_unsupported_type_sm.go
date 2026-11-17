@@ -31,6 +31,7 @@ import (
 	"time"
 
 	sce "github.com/newmassrael/sce-go-runtime"
+	sceerrorreason "github.com/newmassrael/sce-go-runtime/generated/error_reason"
 )
 
 // Ensure imports are used
@@ -39,6 +40,9 @@ var (
 	_ = filepath.Join
 	_ = strings.HasPrefix
 	_ = time.Duration(0)
+	// Why an error.* event is raised (sce:std/engine/error_reason,
+	// docs/adr/0106 #111); a machine that raises none still imports it.
+	_ = sceerrorreason.ErrorReasonExpressionFailed
 )
 
 // ======================================================================
@@ -217,7 +221,7 @@ func (p *InvokeUnsupportedTypePolicy) ExecutePendingInvokes(engine *sce.Engine[I
 		if pending.DocumentID == "_invoke_0" {
 			// W3C SCXML 6.4.1: unsupported `type` — place error.execution on
 			// the internal queue and start nothing.
-			engine.Raise(sce.NewPlatformError(InvokeUnsupportedTypeEventErrorExecution, "<invoke type='urn:example:no-such-processor'> names an external service this platform does not support"))
+			engine.Raise(sce.NewPlatformError(InvokeUnsupportedTypeEventErrorExecution, sceerrorreason.ErrorReasonInvokeTypeUnsupported, "<invoke type='urn:example:no-such-processor'> names an external service this platform does not support"))
 			continue
 		}
 	}

@@ -179,14 +179,14 @@ class ADelayedSendReachesWhatItsTargetNamesSceSynthInvokeKidStateMachine(
 
     // W3C SCXML 5.9.1: a cond that cannot be evaluated raises error.execution;
     // `null` says so, where a bare `false` could not.
-    private fun evaluateGuardRaising(guardExpr: com.sce.runtime.ScriptSource, reason: String): Boolean? {
+    private fun evaluateGuardRaising(guardExpr: com.sce.runtime.ScriptSource, detail: String): Boolean? {
         assertScriptSession()
         val engine = scriptEngine ?: error("scriptEngine is required (codegen invariant: needs_script_engine == true)")
         val sid = scriptSessionId ?: error("scriptSessionId is established by the start (codegen invariant)")
         return try {
             engine.evaluateCondition(sid, guardExpr)
         } catch (e: Exception) {
-            raisePlatformError(ADelayedSendReachesWhatItsTargetNamesSceSynthInvokeKidEvent.Error.Execution, reason)
+            raisePlatformError(ADelayedSendReachesWhatItsTargetNamesSceSynthInvokeKidEvent.Error.Execution, ErrorReason.EXPRESSION_FAILED, detail)
             null
         }
     }
@@ -227,7 +227,7 @@ class ADelayedSendReachesWhatItsTargetNamesSceSynthInvokeKidStateMachine(
         return try {
             engine.evaluateExpr(sid, serialized)?.toString() ?: ""
         } catch (e: Exception) {
-            raisePlatformError(ADelayedSendReachesWhatItsTargetNamesSceSynthInvokeKidEvent.Error.Execution, "an expression could not be serialised to JSON")
+            raisePlatformError(ADelayedSendReachesWhatItsTargetNamesSceSynthInvokeKidEvent.Error.Execution, ErrorReason.EXPRESSION_FAILED, "an expression could not be serialised to JSON")
             ""
         }
     }
@@ -248,7 +248,7 @@ class ADelayedSendReachesWhatItsTargetNamesSceSynthInvokeKidStateMachine(
             engine.assign(sid, location, expr)
             true
         } catch (e: Exception) {
-            raisePlatformError(ADelayedSendReachesWhatItsTargetNamesSceSynthInvokeKidEvent.Error.Execution, "<assign> failed")
+            raisePlatformError(ADelayedSendReachesWhatItsTargetNamesSceSynthInvokeKidEvent.Error.Execution, ErrorReason.ASSIGNMENT_FAILED, "<assign> failed")
             false
         }
     }
@@ -264,7 +264,7 @@ class ADelayedSendReachesWhatItsTargetNamesSceSynthInvokeKidStateMachine(
             engine.executeScript(sid, script)
             true
         } catch (e: Exception) {
-            raisePlatformError(ADelayedSendReachesWhatItsTargetNamesSceSynthInvokeKidEvent.Error.Execution, "<script> failed to execute")
+            raisePlatformError(ADelayedSendReachesWhatItsTargetNamesSceSynthInvokeKidEvent.Error.Execution, ErrorReason.SCRIPT_FAILED, "<script> failed to execute")
             false
         }
     }
@@ -373,7 +373,7 @@ class ADelayedSendReachesWhatItsTargetNamesSceSynthInvokeKidStateMachine(
             // no parent — error.communication, nothing delivered, the block ended.
             val toParent = onSendToParent
             if (toParent == null) {
-                raisePlatformError(ADelayedSendReachesWhatItsTargetNamesSceSynthInvokeKidEvent.Error.Communication, "<send target='#_parent'> has no parent session to reach", "__send_1")
+                raisePlatformError(ADelayedSendReachesWhatItsTargetNamesSceSynthInvokeKidEvent.Error.Communication, ErrorReason.TARGET_UNREACHABLE, "<send target='#_parent'> has no parent session to reach", "__send_1")
                 return@send true
             }
             toParent("hello", sendData)
@@ -399,7 +399,7 @@ class ADelayedSendReachesWhatItsTargetNamesSceSynthInvokeKidStateMachine(
                     .evaluateExpr(scriptSessionId ?: error("scriptSessionId is established by the start (codegen invariant)"), com.sce.runtime.ScriptSource.lua("5", "5"))
                 if (sendContentValue != null) valueToJson(sendContentValue) else ""
             } catch (_: Exception) {
-                raisePlatformError(ADelayedSendReachesWhatItsTargetNamesSceSynthInvokeKidEvent.Error.Execution, "<send> contentexpr failed to evaluate", "__send_2")
+                raisePlatformError(ADelayedSendReachesWhatItsTargetNamesSceSynthInvokeKidEvent.Error.Execution, ErrorReason.EXPRESSION_FAILED, "<send> contentexpr failed to evaluate", "__send_2")
                 paramFailed = true
                 valueToJson("")
             }
@@ -469,7 +469,7 @@ class ADelayedSendReachesWhatItsTargetNamesSceSynthInvokeKidStateMachine(
                     .evaluateExpr(scriptSessionId ?: error("scriptSessionId is established by the start (codegen invariant)"), com.sce.runtime.ScriptSource.lua("_scxml_add(_event.data, 1)", "_event.data + 1"))
                 if (sendContentValue != null) valueToJson(sendContentValue) else ""
             } catch (_: Exception) {
-                raisePlatformError(ADelayedSendReachesWhatItsTargetNamesSceSynthInvokeKidEvent.Error.Execution, "<send> contentexpr failed to evaluate", "__send_0")
+                raisePlatformError(ADelayedSendReachesWhatItsTargetNamesSceSynthInvokeKidEvent.Error.Execution, ErrorReason.EXPRESSION_FAILED, "<send> contentexpr failed to evaluate", "__send_0")
                 paramFailed = true
                 valueToJson("")
             }
@@ -478,7 +478,7 @@ class ADelayedSendReachesWhatItsTargetNamesSceSynthInvokeKidStateMachine(
             // no parent — error.communication, nothing delivered, the block ended.
             val toParent = onSendToParent
             if (toParent == null) {
-                raisePlatformError(ADelayedSendReachesWhatItsTargetNamesSceSynthInvokeKidEvent.Error.Communication, "<send target='#_parent'> has no parent session to reach", "__send_0")
+                raisePlatformError(ADelayedSendReachesWhatItsTargetNamesSceSynthInvokeKidEvent.Error.Communication, ErrorReason.TARGET_UNREACHABLE, "<send target='#_parent'> has no parent session to reach", "__send_0")
                 return@send true
             }
             toParent("pong", sendData)

@@ -1,5 +1,5 @@
 // SCE-GENERATED — DO NOT EDIT
-// source-hash: e3e91f36cc7b8591c060b277b157f8471b6940f92608c548338f70603c760055
+// source-hash: f02e6d1d557556839c99891abeba3d1ef7bc15e5821c4215914c8e1ef9ecc561
 
 
 // SPDX-License-Identifier: AGPL-3.0-only WITH AdditionRef-SCE-Linking-Exception OR LicenseRef-SCE-Commercial
@@ -31,6 +31,7 @@ import (
 	"time"
 
 	sce "github.com/newmassrael/sce-go-runtime"
+	sceerrorreason "github.com/newmassrael/sce-go-runtime/generated/error_reason"
 	scealgorithm "github.com/newmassrael/sce-forge-runtime/algorithm"
 )
 
@@ -40,6 +41,9 @@ var (
 	_ = filepath.Join
 	_ = strings.HasPrefix
 	_ = time.Duration(0)
+	// Why an error.* event is raised (sce:std/engine/error_reason,
+	// docs/adr/0106 #111); a machine that raises none still imports it.
+	_ = sceerrorreason.ErrorReasonExpressionFailed
 	_ scealgorithm.Failure
 )
 
@@ -712,7 +716,7 @@ func (p *StatechartStaticHostParamsPolicy) ExecutePendingInvokes(engine *sce.Eng
 				var sceFailure scealgorithm.Failure
 				computedSrc := func() string { if scealgorithm.MulUint32(&sceFailure, p.vCount, 2) > 0 { return p.vTag }; return p.vTag }()
 				if sceFailure.Failed() {
-					engine.Raise(sce.NewPlatformError(StatechartStaticHostParamsEventErrorExecution, "<invoke srcexpr> could not be evaluated"))
+					engine.Raise(sce.NewPlatformError(StatechartStaticHostParamsEventErrorExecution, sceerrorreason.ErrorReasonExpressionFailed, "<invoke srcexpr> could not be evaluated"))
 					continue
 				}
 				hostInvokeSrc = computedSrc
@@ -721,7 +725,7 @@ func (p *StatechartStaticHostParamsPolicy) ExecutePendingInvokes(engine *sce.Eng
 				var sceFailure scealgorithm.Failure
 				computedContent := func() string { if scealgorithm.MulUint32(&sceFailure, p.vHuge, 2) > 0 { return p.vLabel }; return p.vLabel }()
 				if sceFailure.Failed() {
-					engine.Raise(sce.NewPlatformError(StatechartStaticHostParamsEventErrorExecution, "<invoke> content expr could not be evaluated"))
+					engine.Raise(sce.NewPlatformError(StatechartStaticHostParamsEventErrorExecution, sceerrorreason.ErrorReasonExpressionFailed, "<invoke> content expr could not be evaluated"))
 					continue
 				}
 				hostInvokeContent = computedContent
@@ -753,7 +757,7 @@ func (p *StatechartStaticHostParamsPolicy) ExecutePendingInvokes(engine *sce.Eng
 				hostInvokeParams["twice"] = append(hostInvokeParams["twice"], sce.ToWireString(sceValue))
 				hostInvokePayload = append(hostInvokePayload, sce.EventDataParam{Name: "twice", Value: sceValue})
 				} else {
-					engine.Raise(sce.NewPlatformError(StatechartStaticHostParamsEventErrorExecution, "<invoke> <param name='twice'> failed to evaluate"))
+					engine.Raise(sce.NewPlatformError(StatechartStaticHostParamsEventErrorExecution, sceerrorreason.ErrorReasonExpressionFailed, "<invoke> <param name='twice'> failed to evaluate"))
 				}
 			}
 			{
@@ -763,7 +767,7 @@ func (p *StatechartStaticHostParamsPolicy) ExecutePendingInvokes(engine *sce.Eng
 				hostInvokeParams["boom"] = append(hostInvokeParams["boom"], sce.ToWireString(sceValue))
 				hostInvokePayload = append(hostInvokePayload, sce.EventDataParam{Name: "boom", Value: sceValue})
 				} else {
-					engine.Raise(sce.NewPlatformError(StatechartStaticHostParamsEventErrorExecution, "<invoke> <param name='boom'> failed to evaluate"))
+					engine.Raise(sce.NewPlatformError(StatechartStaticHostParamsEventErrorExecution, sceerrorreason.ErrorReasonExpressionFailed, "<invoke> <param name='boom'> failed to evaluate"))
 				}
 			}
 			{
@@ -792,7 +796,7 @@ func (p *StatechartStaticHostParamsPolicy) ExecutePendingInvokes(engine *sce.Eng
 				// document asked for a process to be run and none was, which
 				// is the same fact as an unsupported type — so the same
 				// event, rather than a silence that reads as started.
-				engine.Raise(sce.NewPlatformError(StatechartStaticHostParamsEventErrorExecution, "<invoke> names an invoker the host declared but never registered"))
+				engine.Raise(sce.NewPlatformError(StatechartStaticHostParamsEventErrorExecution, sceerrorreason.ErrorReasonProcessorUnregistered, "<invoke> names an invoker the host declared but never registered"))
 			}
 			continue
 		}
@@ -1151,7 +1155,7 @@ func (p *StatechartStaticHostParamsPolicy) ExecuteEntryActions(state StatechartS
 			if !sceFailure.Failed() {
 				parts = append(parts, sce.EventDataParam{Name: "twice", Value: sceValue})
 			} else {
-				engine.Raise(sce.NewPlatformError(StatechartStaticHostParamsEventErrorExecution, "<send> <param name='twice'> failed to evaluate"))
+				engine.Raise(sce.NewPlatformError(StatechartStaticHostParamsEventErrorExecution, sceerrorreason.ErrorReasonExpressionFailed, "<send> <param name='twice'> failed to evaluate"))
 				paramFailed = true
 			}
 		}
@@ -1169,7 +1173,7 @@ func (p *StatechartStaticHostParamsPolicy) ExecuteEntryActions(state StatechartS
 			if !sceFailure.Failed() {
 				parts = append(parts, sce.EventDataParam{Name: "boom", Value: sceValue})
 			} else {
-				engine.Raise(sce.NewPlatformError(StatechartStaticHostParamsEventErrorExecution, "<send> <param name='boom'> failed to evaluate"))
+				engine.Raise(sce.NewPlatformError(StatechartStaticHostParamsEventErrorExecution, sceerrorreason.ErrorReasonExpressionFailed, "<send> <param name='boom'> failed to evaluate"))
 				paramFailed = true
 			}
 		}
@@ -1203,7 +1207,7 @@ func (p *StatechartStaticHostParamsPolicy) ExecuteEntryActions(state StatechartS
 		// act it asked for was performed by nobody. Same event as an
 		// undeclared type, so a wiring mistake cannot read as success.
 		if !hostServed && !engine.HasEventProcessor("x-sce-host") {
-			errEvt := sce.NewPlatformError(StatechartStaticHostParamsEventErrorExecution, "<send type='x-sce-host'> names a processor the host declared but never registered")
+			errEvt := sce.NewPlatformError(StatechartStaticHostParamsEventErrorExecution, sceerrorreason.ErrorReasonProcessorUnregistered, "<send type='x-sce-host'> names a processor the host declared but never registered")
 			errEvt.Metadata.SendID = "__send_0"
 			engine.Raise(errEvt)
 		}
@@ -1235,7 +1239,7 @@ func (p *StatechartStaticHostParamsPolicy) ExecuteEntryActions(state StatechartS
 		var sceFailure scealgorithm.Failure
 		var contentValue interface{} = int64(scealgorithm.MulUint32(&sceFailure, p.vCount, 2))
 		if sceFailure.Failed() {
-			engine.Raise(sce.NewPlatformError(StatechartStaticHostParamsEventErrorExecution, "<send> contentexpr failed to evaluate"))
+			engine.Raise(sce.NewPlatformError(StatechartStaticHostParamsEventErrorExecution, sceerrorreason.ErrorReasonExpressionFailed, "<send> contentexpr failed to evaluate"))
 			paramFailed = true
 			contentValue = ""
 		}
@@ -1269,7 +1273,7 @@ func (p *StatechartStaticHostParamsPolicy) ExecuteEntryActions(state StatechartS
 		// act it asked for was performed by nobody. Same event as an
 		// undeclared type, so a wiring mistake cannot read as success.
 		if !hostServed && !engine.HasEventProcessor("x-sce-host") {
-			errEvt := sce.NewPlatformError(StatechartStaticHostParamsEventErrorExecution, "<send type='x-sce-host'> names a processor the host declared but never registered")
+			errEvt := sce.NewPlatformError(StatechartStaticHostParamsEventErrorExecution, sceerrorreason.ErrorReasonProcessorUnregistered, "<send type='x-sce-host'> names a processor the host declared but never registered")
 			errEvt.Metadata.SendID = "__send_1"
 			engine.Raise(errEvt)
 		}
@@ -1324,7 +1328,7 @@ func (p *StatechartStaticHostParamsPolicy) ExecuteEntryActions(state StatechartS
 		// act it asked for was performed by nobody. Same event as an
 		// undeclared type, so a wiring mistake cannot read as success.
 		if !hostServed && !engine.HasEventProcessor("x-sce-host") {
-			errEvt := sce.NewPlatformError(StatechartStaticHostParamsEventErrorExecution, "<send type='x-sce-host'> names a processor the host declared but never registered")
+			errEvt := sce.NewPlatformError(StatechartStaticHostParamsEventErrorExecution, sceerrorreason.ErrorReasonProcessorUnregistered, "<send type='x-sce-host'> names a processor the host declared but never registered")
 			errEvt.Metadata.SendID = "__send_2"
 			engine.Raise(errEvt)
 		}
@@ -1351,7 +1355,7 @@ func (p *StatechartStaticHostParamsPolicy) ExecuteEntryActions(state StatechartS
 		var sceFailure scealgorithm.Failure
 		var contentValue interface{} = int64(scealgorithm.MulUint32(&sceFailure, p.vCount, 2000000000))
 		if sceFailure.Failed() {
-			engine.Raise(sce.NewPlatformError(StatechartStaticHostParamsEventErrorExecution, "<send> contentexpr failed to evaluate"))
+			engine.Raise(sce.NewPlatformError(StatechartStaticHostParamsEventErrorExecution, sceerrorreason.ErrorReasonExpressionFailed, "<send> contentexpr failed to evaluate"))
 			paramFailed = true
 			contentValue = ""
 		}
@@ -1385,7 +1389,7 @@ func (p *StatechartStaticHostParamsPolicy) ExecuteEntryActions(state StatechartS
 		// act it asked for was performed by nobody. Same event as an
 		// undeclared type, so a wiring mistake cannot read as success.
 		if !hostServed && !engine.HasEventProcessor("x-sce-host") {
-			errEvt := sce.NewPlatformError(StatechartStaticHostParamsEventErrorExecution, "<send type='x-sce-host'> names a processor the host declared but never registered")
+			errEvt := sce.NewPlatformError(StatechartStaticHostParamsEventErrorExecution, sceerrorreason.ErrorReasonProcessorUnregistered, "<send type='x-sce-host'> names a processor the host declared but never registered")
 			errEvt.Metadata.SendID = "__send_3"
 			engine.Raise(errEvt)
 		}
@@ -1440,7 +1444,7 @@ func (p *StatechartStaticHostParamsPolicy) ExecuteEntryActions(state StatechartS
 		// act it asked for was performed by nobody. Same event as an
 		// undeclared type, so a wiring mistake cannot read as success.
 		if !hostServed && !engine.HasEventProcessor("x-sce-host") {
-			errEvt := sce.NewPlatformError(StatechartStaticHostParamsEventErrorExecution, "<send type='x-sce-host'> names a processor the host declared but never registered")
+			errEvt := sce.NewPlatformError(StatechartStaticHostParamsEventErrorExecution, sceerrorreason.ErrorReasonProcessorUnregistered, "<send type='x-sce-host'> names a processor the host declared but never registered")
 			errEvt.Metadata.SendID = "__send_4"
 			engine.Raise(errEvt)
 		}
@@ -1600,7 +1604,7 @@ func (p *StatechartStaticHostParamsPolicy) ExecuteTransitionContent(source State
 			func() {
 
 
-	if func() bool { var sceFailure scealgorithm.Failure; sceValue := scealgorithm.AddUint32(&sceFailure, p.vCount, 1); if sceFailure.Failed() { engine.Raise(sce.NewPlatformError(StatechartStaticHostParamsEventErrorExecution, "<assign location='count'>: an integer operation overflowed or failed")); return true }; p.vCount = sceValue; return false }() {
+	if func() bool { var sceFailure scealgorithm.Failure; sceValue := scealgorithm.AddUint32(&sceFailure, p.vCount, 1); if sceFailure.Failed() { engine.Raise(sce.NewPlatformError(StatechartStaticHostParamsEventErrorExecution, sceerrorreason.ErrorReasonExpressionFailed, "<assign location='count'>: an integer operation overflowed or failed")); return true }; p.vCount = sceValue; return false }() {
 		return  // W3C SCXML 4.9: the error ends the block
 	}
 
@@ -1610,7 +1614,7 @@ func (p *StatechartStaticHostParamsPolicy) ExecuteTransitionContent(source State
 
 
 
-	if func() bool { var sceFailure scealgorithm.Failure; sceValue := scealgorithm.Bounded(&sceFailure, "busy", 16); if sceFailure.Failed() { engine.Raise(sce.NewPlatformError(StatechartStaticHostParamsEventErrorExecution, "<assign location='label'>: an integer operation overflowed or failed")); return true }; p.vLabel = sceValue; return false }() {
+	if func() bool { var sceFailure scealgorithm.Failure; sceValue := scealgorithm.Bounded(&sceFailure, "busy", 16); if sceFailure.Failed() { engine.Raise(sce.NewPlatformError(StatechartStaticHostParamsEventErrorExecution, sceerrorreason.ErrorReasonExpressionFailed, "<assign location='label'>: an integer operation overflowed or failed")); return true }; p.vLabel = sceValue; return false }() {
 		return  // W3C SCXML 4.9: the error ends the block
 	}
 
@@ -1642,7 +1646,7 @@ func (p *StatechartStaticHostParamsPolicy) ExecuteTransitionContent(source State
 			func() {
 
 
-	if func() bool { var sceFailure scealgorithm.Failure; sceValue := scealgorithm.AddUint32(&sceFailure, p.vErrors, 1); if sceFailure.Failed() { engine.Raise(sce.NewPlatformError(StatechartStaticHostParamsEventErrorExecution, "<assign location='errors'>: an integer operation overflowed or failed")); return true }; p.vErrors = sceValue; return false }() {
+	if func() bool { var sceFailure scealgorithm.Failure; sceValue := scealgorithm.AddUint32(&sceFailure, p.vErrors, 1); if sceFailure.Failed() { engine.Raise(sce.NewPlatformError(StatechartStaticHostParamsEventErrorExecution, sceerrorreason.ErrorReasonExpressionFailed, "<assign location='errors'>: an integer operation overflowed or failed")); return true }; p.vErrors = sceValue; return false }() {
 		return  // W3C SCXML 4.9: the error ends the block
 	}
 

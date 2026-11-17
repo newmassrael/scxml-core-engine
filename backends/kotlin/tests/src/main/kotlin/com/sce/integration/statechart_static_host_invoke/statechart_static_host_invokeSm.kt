@@ -1,5 +1,5 @@
 // SCE-GENERATED — DO NOT EDIT
-// source-hash: e3e91f36cc7b8591c060b277b157f8471b6940f92608c548338f70603c760055
+// source-hash: f02e6d1d557556839c99891abeba3d1ef7bc15e5821c4215914c8e1ef9ecc561
 
 // GENERATED CODE — DO NOT EDIT
 // Source: sce-build/tests/fixtures/host_processor/statechart_static_host_invoke.scxml
@@ -517,7 +517,7 @@ class StatechartStaticHostInvokeStateMachine(
                             // be run and none was, which is the same fact as
                             // an unsupported type — so the same event, rather
                             // than a silence that reads as started.
-                            raisePlatformError(StatechartStaticHostInvokeEvent.Error.Execution, "<invoke> names an invoker the host declared but never registered")
+                            raisePlatformError(StatechartStaticHostInvokeEvent.Error.Execution, ErrorReason.PROCESSOR_UNREGISTERED, "<invoke> names an invoker the host declared but never registered")
                         }
                     }
                 }
@@ -587,7 +587,7 @@ class StatechartStaticHostInvokeStateMachine(
     private fun transitionContentOfIdleAt0() {
                 // SCE-MAP: statechart_static_host_invoke.scxml:55 :: idle :: _transition_0
 
-            if (try { vJob = com.sce.forge.runtime.SceChecked.add(vJob, 1.toUInt()); false } catch (_: com.sce.forge.runtime.AlgorithmFailure) { raisePlatformError(StatechartStaticHostInvokeEvent.Error.Execution, "<assign location='job'>: an integer operation overflowed or failed"); true }) {
+            if (try { vJob = com.sce.forge.runtime.SceChecked.add(vJob, 1.toUInt()); false } catch (_: com.sce.forge.runtime.AlgorithmFailure) { raisePlatformError(StatechartStaticHostInvokeEvent.Error.Execution, ErrorReason.EXPRESSION_FAILED, "<assign location='job'>: an integer operation overflowed or failed"); true }) {
                 return
             }
     }
@@ -610,7 +610,7 @@ class StatechartStaticHostInvokeStateMachine(
     private fun transitionContentOfWorkingAt0() {
                 // SCE-MAP: statechart_static_host_invoke.scxml:68 :: working :: _transition_0
 
-            if (try { vJob = com.sce.forge.runtime.SceChecked.add(vJob, 1.toUInt()); false } catch (_: com.sce.forge.runtime.AlgorithmFailure) { raisePlatformError(StatechartStaticHostInvokeEvent.Error.Execution, "<assign location='job'>: an integer operation overflowed or failed"); true }) {
+            if (try { vJob = com.sce.forge.runtime.SceChecked.add(vJob, 1.toUInt()); false } catch (_: com.sce.forge.runtime.AlgorithmFailure) { raisePlatformError(StatechartStaticHostInvokeEvent.Error.Execution, ErrorReason.EXPRESSION_FAILED, "<assign location='job'>: an integer operation overflowed or failed"); true }) {
                 return
             }
     }
@@ -618,7 +618,7 @@ class StatechartStaticHostInvokeStateMachine(
     private fun transitionContentOfWorkingAt1() {
                 // SCE-MAP: statechart_static_host_invoke.scxml:71 :: working :: _transition_1
 
-            if (try { vSeen = com.sce.forge.runtime.SceChecked.add(com.sce.forge.runtime.SceChecked.mul(vSeen, 10.toUInt()), 1.toUInt()); false } catch (_: com.sce.forge.runtime.AlgorithmFailure) { raisePlatformError(StatechartStaticHostInvokeEvent.Error.Execution, "<assign location='seen'>: an integer operation overflowed or failed"); true }) {
+            if (try { vSeen = com.sce.forge.runtime.SceChecked.add(com.sce.forge.runtime.SceChecked.mul(vSeen, 10.toUInt()), 1.toUInt()); false } catch (_: com.sce.forge.runtime.AlgorithmFailure) { raisePlatformError(StatechartStaticHostInvokeEvent.Error.Execution, ErrorReason.EXPRESSION_FAILED, "<assign location='seen'>: an integer operation overflowed or failed"); true }) {
                 return
             }
     }
@@ -626,7 +626,7 @@ class StatechartStaticHostInvokeStateMachine(
     private fun transitionContentOfWorkingAt2() {
                 // SCE-MAP: statechart_static_host_invoke.scxml:74 :: working :: _transition_2
 
-            if (try { vSeen = com.sce.forge.runtime.SceChecked.add(com.sce.forge.runtime.SceChecked.mul(vSeen, 10.toUInt()), 2.toUInt()); false } catch (_: com.sce.forge.runtime.AlgorithmFailure) { raisePlatformError(StatechartStaticHostInvokeEvent.Error.Execution, "<assign location='seen'>: an integer operation overflowed or failed"); true }) {
+            if (try { vSeen = com.sce.forge.runtime.SceChecked.add(com.sce.forge.runtime.SceChecked.mul(vSeen, 10.toUInt()), 2.toUInt()); false } catch (_: com.sce.forge.runtime.AlgorithmFailure) { raisePlatformError(StatechartStaticHostInvokeEvent.Error.Execution, ErrorReason.EXPRESSION_FAILED, "<assign location='seen'>: an integer operation overflowed or failed"); true }) {
                 return
             }
     }

@@ -31,6 +31,7 @@ import (
 	"time"
 
 	sce "github.com/newmassrael/sce-go-runtime"
+	sceerrorreason "github.com/newmassrael/sce-go-runtime/generated/error_reason"
 	scealgorithm "github.com/newmassrael/sce-forge-runtime/algorithm"
 )
 
@@ -40,6 +41,9 @@ var (
 	_ = filepath.Join
 	_ = strings.HasPrefix
 	_ = time.Duration(0)
+	// Why an error.* event is raised (sce:std/engine/error_reason,
+	// docs/adr/0106 #111); a machine that raises none still imports it.
+	_ = sceerrorreason.ErrorReasonExpressionFailed
 	_ scealgorithm.Failure
 )
 
@@ -634,7 +638,7 @@ func (p *AStaticChildDeclaresItsDataWithAHandedValuePolicy) ExecutePendingInvoke
 			if refused := childEngine.Initialize(); refused != nil {
 				childEngine.DetachMesh()
 				delete(p.activeInvokes, "worker")
-				engine.Raise(sce.NewPlatformError(AStaticChildDeclaresItsDataWithAHandedValueEventErrorExecution, sce.ChildStartRefusal("worker", refused)))
+				engine.Raise(sce.NewPlatformError(AStaticChildDeclaresItsDataWithAHandedValueEventErrorExecution, sceerrorreason.ErrorReasonInvokeChildInitFailed, sce.ChildStartRefusal("worker", refused)))
 				continue
 			}
 

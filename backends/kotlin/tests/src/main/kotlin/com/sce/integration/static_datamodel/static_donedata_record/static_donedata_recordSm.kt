@@ -457,7 +457,7 @@ class StaticDonedataRecordStateMachine(
     private fun transitionContentOfCountingAt0() {
                 // SCE-MAP: static_donedata_record.scxml:24 :: counting :: _transition_0
 
-            if (try { vShown = vShown.copy(zoom = com.sce.forge.runtime.SceChecked.add(vShown.zoom, 1.toUByte())); false } catch (_: com.sce.forge.runtime.AlgorithmFailure) { raisePlatformError(StaticDonedataRecordEvent.Error.Execution, "<assign location='shown.zoom'>: an integer operation overflowed or failed"); true }) {
+            if (try { vShown = vShown.copy(zoom = com.sce.forge.runtime.SceChecked.add(vShown.zoom, 1.toUByte())); false } catch (_: com.sce.forge.runtime.AlgorithmFailure) { raisePlatformError(StaticDonedataRecordEvent.Error.Execution, ErrorReason.EXPRESSION_FAILED, "<assign location='shown.zoom'>: an integer operation overflowed or failed"); true }) {
                 return
             }
 

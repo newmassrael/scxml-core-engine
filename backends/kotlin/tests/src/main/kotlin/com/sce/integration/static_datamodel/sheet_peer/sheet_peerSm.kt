@@ -1262,7 +1262,7 @@ class SheetPeerStateMachine(
                     return
                 }
 
-            if (try { vClock = com.sce.forge.runtime.SceChecked.take(call_HlcSend__v(vClock, pendingSheetEditPayload!!.now, vNode)); false } catch (_: com.sce.forge.runtime.AlgorithmFailure) { raisePlatformError(SheetPeerEvent.Error.Execution, "<assign location='clock'>: an integer operation overflowed or failed"); true }) {
+            if (try { vClock = com.sce.forge.runtime.SceChecked.take(call_HlcSend__v(vClock, pendingSheetEditPayload!!.now, vNode)); false } catch (_: com.sce.forge.runtime.AlgorithmFailure) { raisePlatformError(SheetPeerEvent.Error.Execution, ErrorReason.EXPRESSION_FAILED, "<assign location='clock'>: an integer operation overflowed or failed"); true }) {
                 return
             }
 
@@ -1374,7 +1374,7 @@ class SheetPeerStateMachine(
             // event as an undeclared type, so a wiring mistake cannot read
             // as success.
             if (hostServed == null && !hasEventProcessor("sce:mesh")) {
-                raisePlatformError(SheetPeerEvent.Error.Execution, "<send type='sce:mesh'> names a processor the host declared but never registered", "__send_1")
+                raisePlatformError(SheetPeerEvent.Error.Execution, ErrorReason.PROCESSOR_UNREGISTERED, "<send type='sce:mesh'> names a processor the host declared but never registered", "__send_1")
             }
             false
             }) {
@@ -1390,7 +1390,7 @@ class SheetPeerStateMachine(
                     return
                 }
 
-            if (try { vClock = com.sce.forge.runtime.SceChecked.take(call_HlcSend__v(vClock, pendingSheetFormulaPayload!!.now, vNode)); false } catch (_: com.sce.forge.runtime.AlgorithmFailure) { raisePlatformError(SheetPeerEvent.Error.Execution, "<assign location='clock'>: an integer operation overflowed or failed"); true }) {
+            if (try { vClock = com.sce.forge.runtime.SceChecked.take(call_HlcSend__v(vClock, pendingSheetFormulaPayload!!.now, vNode)); false } catch (_: com.sce.forge.runtime.AlgorithmFailure) { raisePlatformError(SheetPeerEvent.Error.Execution, ErrorReason.EXPRESSION_FAILED, "<assign location='clock'>: an integer operation overflowed or failed"); true }) {
                 return
             }
 
@@ -1502,7 +1502,7 @@ class SheetPeerStateMachine(
             // event as an undeclared type, so a wiring mistake cannot read
             // as success.
             if (hostServed == null && !hasEventProcessor("sce:mesh")) {
-                raisePlatformError(SheetPeerEvent.Error.Execution, "<send type='sce:mesh'> names a processor the host declared but never registered", "__send_3")
+                raisePlatformError(SheetPeerEvent.Error.Execution, ErrorReason.PROCESSOR_UNREGISTERED, "<send type='sce:mesh'> names a processor the host declared but never registered", "__send_3")
             }
             false
             }) {
@@ -1527,7 +1527,7 @@ class SheetPeerStateMachine(
 
             vStamp = vStamp.copy(nodeId = pendingSheetCellPayload!!.nodeId)
 
-            if (try { vClock = com.sce.forge.runtime.SceChecked.take(call_HlcReceive__vv(vClock, vStamp, vClock.wallTime, vNode)); false } catch (_: com.sce.forge.runtime.AlgorithmFailure) { raisePlatformError(SheetPeerEvent.Error.Execution, "<assign location='clock'>: an integer operation overflowed or failed"); true }) {
+            if (try { vClock = com.sce.forge.runtime.SceChecked.take(call_HlcReceive__vv(vClock, vStamp, vClock.wallTime, vNode)); false } catch (_: com.sce.forge.runtime.AlgorithmFailure) { raisePlatformError(SheetPeerEvent.Error.Execution, ErrorReason.EXPRESSION_FAILED, "<assign location='clock'>: an integer operation overflowed or failed"); true }) {
                 return
             }
             }
@@ -1562,7 +1562,7 @@ class SheetPeerStateMachine(
 
             vWrite = vWrite.copy(bVal = pendingSheetCellPayload!!.bVal)
 
-            if (try { vCells = com.sce.forge.runtime.SceChecked.within(com.sce.forge.runtime.SceChecked.take(call_LwwWrite__vv(vCells, vWrite)), 256); false } catch (_: com.sce.forge.runtime.AlgorithmFailure) { raisePlatformError(SheetPeerEvent.Error.Execution, "<assign location='cells'>: an integer operation overflowed or failed"); true }) {
+            if (try { vCells = com.sce.forge.runtime.SceChecked.within(com.sce.forge.runtime.SceChecked.take(call_LwwWrite__vv(vCells, vWrite)), 256); false } catch (_: com.sce.forge.runtime.AlgorithmFailure) { raisePlatformError(SheetPeerEvent.Error.Execution, ErrorReason.EXPRESSION_FAILED, "<assign location='cells'>: an integer operation overflowed or failed"); true }) {
                 return
             }
 
@@ -1646,7 +1646,7 @@ class SheetPeerStateMachine(
             // event as an undeclared type, so a wiring mistake cannot read
             // as success.
             if (hostServed == null && !hasEventProcessor("sce:mesh")) {
-                raisePlatformError(SheetPeerEvent.Error.Execution, "<send type='sce:mesh'> names a processor the host declared but never registered", "__send_5")
+                raisePlatformError(SheetPeerEvent.Error.Execution, ErrorReason.PROCESSOR_UNREGISTERED, "<send type='sce:mesh'> names a processor the host declared but never registered", "__send_5")
             }
             false
             }) {
@@ -1723,7 +1723,7 @@ class SheetPeerStateMachine(
             // event as an undeclared type, so a wiring mistake cannot read
             // as success.
             if (hostServed == null && !hasEventProcessor("sce:mesh")) {
-                raisePlatformError(SheetPeerEvent.Error.Execution, "<send type='sce:mesh'> names a processor the host declared but never registered", "__send_6")
+                raisePlatformError(SheetPeerEvent.Error.Execution, ErrorReason.PROCESSOR_UNREGISTERED, "<send type='sce:mesh'> names a processor the host declared but never registered", "__send_6")
             }
             false
             }) {
@@ -1737,11 +1737,11 @@ class SheetPeerStateMachine(
     private fun transitionContentOfOpenAt4() {
                 // SCE-MAP: sheet_peer.scxml:264 :: open :: _transition_4
 
-            if (try { vTrail = com.sce.forge.runtime.SceChecked.within(com.sce.forge.runtime.SceChecked.take(call_SheetSettle__vvvvv(vCells, vRows, vGone, vCols, vGoneCols)), 768); false } catch (_: com.sce.forge.runtime.AlgorithmFailure) { raisePlatformError(SheetPeerEvent.Error.Execution, "<assign location='trail'>: an integer operation overflowed or failed"); true }) {
+            if (try { vTrail = com.sce.forge.runtime.SceChecked.within(com.sce.forge.runtime.SceChecked.take(call_SheetSettle__vvvvv(vCells, vRows, vGone, vCols, vGoneCols)), 768); false } catch (_: com.sce.forge.runtime.AlgorithmFailure) { raisePlatformError(SheetPeerEvent.Error.Execution, ErrorReason.EXPRESSION_FAILED, "<assign location='trail'>: an integer operation overflowed or failed"); true }) {
                 return
             }
 
-            if (try { vShown = com.sce.forge.runtime.SceChecked.within(com.sce.forge.runtime.SceChecked.take(call_SheetShow__vv(vCells, vTrail)), 256); false } catch (_: com.sce.forge.runtime.AlgorithmFailure) { raisePlatformError(SheetPeerEvent.Error.Execution, "<assign location='shown'>: an integer operation overflowed or failed"); true }) {
+            if (try { vShown = com.sce.forge.runtime.SceChecked.within(com.sce.forge.runtime.SceChecked.take(call_SheetShow__vv(vCells, vTrail)), 256); false } catch (_: com.sce.forge.runtime.AlgorithmFailure) { raisePlatformError(SheetPeerEvent.Error.Execution, ErrorReason.EXPRESSION_FAILED, "<assign location='shown'>: an integer operation overflowed or failed"); true }) {
                 return
             }
     }
@@ -1752,11 +1752,11 @@ class SheetPeerStateMachine(
                     return
                 }
 
-            if (try { vLamport = com.sce.forge.runtime.SceChecked.add(vLamport, 1.toULong()); false } catch (_: com.sce.forge.runtime.AlgorithmFailure) { raisePlatformError(SheetPeerEvent.Error.Execution, "<assign location='lamport'>: an integer operation overflowed or failed"); true }) {
+            if (try { vLamport = com.sce.forge.runtime.SceChecked.add(vLamport, 1.toULong()); false } catch (_: com.sce.forge.runtime.AlgorithmFailure) { raisePlatformError(SheetPeerEvent.Error.Execution, ErrorReason.EXPRESSION_FAILED, "<assign location='lamport'>: an integer operation overflowed or failed"); true }) {
                 return
             }
 
-            if (try { vNewKey = com.sce.forge.runtime.SceChecked.add(com.sce.forge.runtime.SceChecked.mul(vLamport, 256.toULong()), vNode); false } catch (_: com.sce.forge.runtime.AlgorithmFailure) { raisePlatformError(SheetPeerEvent.Error.Execution, "<assign location='newKey'>: an integer operation overflowed or failed"); true }) {
+            if (try { vNewKey = com.sce.forge.runtime.SceChecked.add(com.sce.forge.runtime.SceChecked.mul(vLamport, 256.toULong()), vNode); false } catch (_: com.sce.forge.runtime.AlgorithmFailure) { raisePlatformError(SheetPeerEvent.Error.Execution, ErrorReason.EXPRESSION_FAILED, "<assign location='newKey'>: an integer operation overflowed or failed"); true }) {
                 return
             }
 
@@ -1816,7 +1816,7 @@ class SheetPeerStateMachine(
             // event as an undeclared type, so a wiring mistake cannot read
             // as success.
             if (hostServed == null && !hasEventProcessor("sce:mesh")) {
-                raisePlatformError(SheetPeerEvent.Error.Execution, "<send type='sce:mesh'> names a processor the host declared but never registered", "__send_8")
+                raisePlatformError(SheetPeerEvent.Error.Execution, ErrorReason.PROCESSOR_UNREGISTERED, "<send type='sce:mesh'> names a processor the host declared but never registered", "__send_8")
             }
             false
             }) {
@@ -1834,9 +1834,9 @@ class SheetPeerStateMachine(
 
 
             var ifCondFailed4 = false
-            if ((try { com.sce.forge.runtime.SceChecked.div(pendingSheetRowPayload!!.key, 256.toULong()) > vLamport } catch (_: com.sce.forge.runtime.AlgorithmFailure) { raisePlatformError(SheetPeerEvent.Error.Execution, "<if cond='_event.data.key / 256 > lamport'>: an integer operation overflowed or failed"); ifCondFailed4 = true; false })) {
+            if ((try { com.sce.forge.runtime.SceChecked.div(pendingSheetRowPayload!!.key, 256.toULong()) > vLamport } catch (_: com.sce.forge.runtime.AlgorithmFailure) { raisePlatformError(SheetPeerEvent.Error.Execution, ErrorReason.EXPRESSION_FAILED, "<if cond='_event.data.key / 256 > lamport'>: an integer operation overflowed or failed"); ifCondFailed4 = true; false })) {
 
-            if (try { vLamport = com.sce.forge.runtime.SceChecked.div(pendingSheetRowPayload!!.key, 256.toULong()); false } catch (_: com.sce.forge.runtime.AlgorithmFailure) { raisePlatformError(SheetPeerEvent.Error.Execution, "<assign location='lamport'>: an integer operation overflowed or failed"); true }) {
+            if (try { vLamport = com.sce.forge.runtime.SceChecked.div(pendingSheetRowPayload!!.key, 256.toULong()); false } catch (_: com.sce.forge.runtime.AlgorithmFailure) { raisePlatformError(SheetPeerEvent.Error.Execution, ErrorReason.EXPRESSION_FAILED, "<assign location='lamport'>: an integer operation overflowed or failed"); true }) {
                 return
             }
             }
@@ -1851,12 +1851,12 @@ class SheetPeerStateMachine(
 
             if (pendingSheetRowPayload!!.after != 0.toULong() && !call_RgaHolds__v(vRows, pendingSheetRowPayload!!.key) && !call_RgaHolds__v(vRows, pendingSheetRowPayload!!.after)) {
 
-            if (try { vOrphans = com.sce.forge.runtime.SceChecked.add(vOrphans, 1.toUInt()); false } catch (_: com.sce.forge.runtime.AlgorithmFailure) { raisePlatformError(SheetPeerEvent.Error.Execution, "<assign location='orphans'>: an integer operation overflowed or failed"); true }) {
+            if (try { vOrphans = com.sce.forge.runtime.SceChecked.add(vOrphans, 1.toUInt()); false } catch (_: com.sce.forge.runtime.AlgorithmFailure) { raisePlatformError(SheetPeerEvent.Error.Execution, ErrorReason.EXPRESSION_FAILED, "<assign location='orphans'>: an integer operation overflowed or failed"); true }) {
                 return
             }
             }
 
-            if (try { vRows = com.sce.forge.runtime.SceChecked.within(com.sce.forge.runtime.SceChecked.take(call_RgaInsert__vv(vRows, vPlaced)), 256); false } catch (_: com.sce.forge.runtime.AlgorithmFailure) { raisePlatformError(SheetPeerEvent.Error.Execution, "<assign location='rows'>: an integer operation overflowed or failed"); true }) {
+            if (try { vRows = com.sce.forge.runtime.SceChecked.within(com.sce.forge.runtime.SceChecked.take(call_RgaInsert__vv(vRows, vPlaced)), 256); false } catch (_: com.sce.forge.runtime.AlgorithmFailure) { raisePlatformError(SheetPeerEvent.Error.Execution, ErrorReason.EXPRESSION_FAILED, "<assign location='rows'>: an integer operation overflowed or failed"); true }) {
                 return
             }
 
@@ -1875,7 +1875,7 @@ class SheetPeerStateMachine(
 
 
             var ifCondFailed6 = false
-            if ((try { vHub && com.sce.forge.runtime.SceChecked.rem(pendingSheetRowPayload!!.key, 256.toULong()) != 1.toULong() } catch (_: com.sce.forge.runtime.AlgorithmFailure) { raisePlatformError(SheetPeerEvent.Error.Execution, "<if cond='hub && _event.data.key % 256 !== 1'>: an integer operation overflowed or failed"); ifCondFailed6 = true; false })) {
+            if ((try { vHub && com.sce.forge.runtime.SceChecked.rem(pendingSheetRowPayload!!.key, 256.toULong()) != 1.toULong() } catch (_: com.sce.forge.runtime.AlgorithmFailure) { raisePlatformError(SheetPeerEvent.Error.Execution, ErrorReason.EXPRESSION_FAILED, "<if cond='hub && _event.data.key % 256 !== 1'>: an integer operation overflowed or failed"); ifCondFailed6 = true; false })) {
 
 
             if (run send@{
@@ -1915,7 +1915,7 @@ class SheetPeerStateMachine(
             // event as an undeclared type, so a wiring mistake cannot read
             // as success.
             if (hostServed == null && !hasEventProcessor("sce:mesh")) {
-                raisePlatformError(SheetPeerEvent.Error.Execution, "<send type='sce:mesh'> names a processor the host declared but never registered", "__send_10")
+                raisePlatformError(SheetPeerEvent.Error.Execution, ErrorReason.PROCESSOR_UNREGISTERED, "<send type='sce:mesh'> names a processor the host declared but never registered", "__send_10")
             }
             false
             }) {
@@ -1930,7 +1930,7 @@ class SheetPeerStateMachine(
 
 
             var ifCondFailed7 = false
-            if ((try { vHub && com.sce.forge.runtime.SceChecked.rem(pendingSheetRowPayload!!.key, 256.toULong()) != 2.toULong() } catch (_: com.sce.forge.runtime.AlgorithmFailure) { raisePlatformError(SheetPeerEvent.Error.Execution, "<if cond='hub && _event.data.key % 256 !== 2'>: an integer operation overflowed or failed"); ifCondFailed7 = true; false })) {
+            if ((try { vHub && com.sce.forge.runtime.SceChecked.rem(pendingSheetRowPayload!!.key, 256.toULong()) != 2.toULong() } catch (_: com.sce.forge.runtime.AlgorithmFailure) { raisePlatformError(SheetPeerEvent.Error.Execution, ErrorReason.EXPRESSION_FAILED, "<if cond='hub && _event.data.key % 256 !== 2'>: an integer operation overflowed or failed"); ifCondFailed7 = true; false })) {
 
 
             if (run send@{
@@ -1970,7 +1970,7 @@ class SheetPeerStateMachine(
             // event as an undeclared type, so a wiring mistake cannot read
             // as success.
             if (hostServed == null && !hasEventProcessor("sce:mesh")) {
-                raisePlatformError(SheetPeerEvent.Error.Execution, "<send type='sce:mesh'> names a processor the host declared but never registered", "__send_11")
+                raisePlatformError(SheetPeerEvent.Error.Execution, ErrorReason.PROCESSOR_UNREGISTERED, "<send type='sce:mesh'> names a processor the host declared but never registered", "__send_11")
             }
             false
             }) {
@@ -2046,7 +2046,7 @@ class SheetPeerStateMachine(
             // event as an undeclared type, so a wiring mistake cannot read
             // as success.
             if (hostServed == null && !hasEventProcessor("sce:mesh")) {
-                raisePlatformError(SheetPeerEvent.Error.Execution, "<send type='sce:mesh'> names a processor the host declared but never registered", "__send_13")
+                raisePlatformError(SheetPeerEvent.Error.Execution, ErrorReason.PROCESSOR_UNREGISTERED, "<send type='sce:mesh'> names a processor the host declared but never registered", "__send_13")
             }
             false
             }) {
@@ -2066,7 +2066,7 @@ class SheetPeerStateMachine(
 
             vRemoval = vRemoval.copy(by = pendingSheetGonePayload!!.by)
 
-            if (try { vGone = com.sce.forge.runtime.SceChecked.within(com.sce.forge.runtime.SceChecked.take(call_RgaRemove__vv(vGone, vRemoval)), 256); false } catch (_: com.sce.forge.runtime.AlgorithmFailure) { raisePlatformError(SheetPeerEvent.Error.Execution, "<assign location='gone'>: an integer operation overflowed or failed"); true }) {
+            if (try { vGone = com.sce.forge.runtime.SceChecked.within(com.sce.forge.runtime.SceChecked.take(call_RgaRemove__vv(vGone, vRemoval)), 256); false } catch (_: com.sce.forge.runtime.AlgorithmFailure) { raisePlatformError(SheetPeerEvent.Error.Execution, ErrorReason.EXPRESSION_FAILED, "<assign location='gone'>: an integer operation overflowed or failed"); true }) {
                 return
             }
 
@@ -2124,7 +2124,7 @@ class SheetPeerStateMachine(
             // event as an undeclared type, so a wiring mistake cannot read
             // as success.
             if (hostServed == null && !hasEventProcessor("sce:mesh")) {
-                raisePlatformError(SheetPeerEvent.Error.Execution, "<send type='sce:mesh'> names a processor the host declared but never registered", "__send_15")
+                raisePlatformError(SheetPeerEvent.Error.Execution, ErrorReason.PROCESSOR_UNREGISTERED, "<send type='sce:mesh'> names a processor the host declared but never registered", "__send_15")
             }
             false
             }) {
@@ -2175,7 +2175,7 @@ class SheetPeerStateMachine(
             // event as an undeclared type, so a wiring mistake cannot read
             // as success.
             if (hostServed == null && !hasEventProcessor("sce:mesh")) {
-                raisePlatformError(SheetPeerEvent.Error.Execution, "<send type='sce:mesh'> names a processor the host declared but never registered", "__send_16")
+                raisePlatformError(SheetPeerEvent.Error.Execution, ErrorReason.PROCESSOR_UNREGISTERED, "<send type='sce:mesh'> names a processor the host declared but never registered", "__send_16")
             }
             false
             }) {
@@ -2192,11 +2192,11 @@ class SheetPeerStateMachine(
                     return
                 }
 
-            if (try { vLamport = com.sce.forge.runtime.SceChecked.add(vLamport, 1.toULong()); false } catch (_: com.sce.forge.runtime.AlgorithmFailure) { raisePlatformError(SheetPeerEvent.Error.Execution, "<assign location='lamport'>: an integer operation overflowed or failed"); true }) {
+            if (try { vLamport = com.sce.forge.runtime.SceChecked.add(vLamport, 1.toULong()); false } catch (_: com.sce.forge.runtime.AlgorithmFailure) { raisePlatformError(SheetPeerEvent.Error.Execution, ErrorReason.EXPRESSION_FAILED, "<assign location='lamport'>: an integer operation overflowed or failed"); true }) {
                 return
             }
 
-            if (try { vNewKey = com.sce.forge.runtime.SceChecked.add(com.sce.forge.runtime.SceChecked.mul(vLamport, 256.toULong()), vNode); false } catch (_: com.sce.forge.runtime.AlgorithmFailure) { raisePlatformError(SheetPeerEvent.Error.Execution, "<assign location='newKey'>: an integer operation overflowed or failed"); true }) {
+            if (try { vNewKey = com.sce.forge.runtime.SceChecked.add(com.sce.forge.runtime.SceChecked.mul(vLamport, 256.toULong()), vNode); false } catch (_: com.sce.forge.runtime.AlgorithmFailure) { raisePlatformError(SheetPeerEvent.Error.Execution, ErrorReason.EXPRESSION_FAILED, "<assign location='newKey'>: an integer operation overflowed or failed"); true }) {
                 return
             }
 
@@ -2256,7 +2256,7 @@ class SheetPeerStateMachine(
             // event as an undeclared type, so a wiring mistake cannot read
             // as success.
             if (hostServed == null && !hasEventProcessor("sce:mesh")) {
-                raisePlatformError(SheetPeerEvent.Error.Execution, "<send type='sce:mesh'> names a processor the host declared but never registered", "__send_18")
+                raisePlatformError(SheetPeerEvent.Error.Execution, ErrorReason.PROCESSOR_UNREGISTERED, "<send type='sce:mesh'> names a processor the host declared but never registered", "__send_18")
             }
             false
             }) {
@@ -2274,9 +2274,9 @@ class SheetPeerStateMachine(
 
 
             var ifCondFailed10 = false
-            if ((try { com.sce.forge.runtime.SceChecked.div(pendingSheetColPayload!!.key, 256.toULong()) > vLamport } catch (_: com.sce.forge.runtime.AlgorithmFailure) { raisePlatformError(SheetPeerEvent.Error.Execution, "<if cond='_event.data.key / 256 > lamport'>: an integer operation overflowed or failed"); ifCondFailed10 = true; false })) {
+            if ((try { com.sce.forge.runtime.SceChecked.div(pendingSheetColPayload!!.key, 256.toULong()) > vLamport } catch (_: com.sce.forge.runtime.AlgorithmFailure) { raisePlatformError(SheetPeerEvent.Error.Execution, ErrorReason.EXPRESSION_FAILED, "<if cond='_event.data.key / 256 > lamport'>: an integer operation overflowed or failed"); ifCondFailed10 = true; false })) {
 
-            if (try { vLamport = com.sce.forge.runtime.SceChecked.div(pendingSheetColPayload!!.key, 256.toULong()); false } catch (_: com.sce.forge.runtime.AlgorithmFailure) { raisePlatformError(SheetPeerEvent.Error.Execution, "<assign location='lamport'>: an integer operation overflowed or failed"); true }) {
+            if (try { vLamport = com.sce.forge.runtime.SceChecked.div(pendingSheetColPayload!!.key, 256.toULong()); false } catch (_: com.sce.forge.runtime.AlgorithmFailure) { raisePlatformError(SheetPeerEvent.Error.Execution, ErrorReason.EXPRESSION_FAILED, "<assign location='lamport'>: an integer operation overflowed or failed"); true }) {
                 return
             }
             }
@@ -2291,12 +2291,12 @@ class SheetPeerStateMachine(
 
             if (pendingSheetColPayload!!.after != 0.toULong() && !call_RgaHolds__v(vCols, pendingSheetColPayload!!.key) && !call_RgaHolds__v(vCols, pendingSheetColPayload!!.after)) {
 
-            if (try { vOrphans = com.sce.forge.runtime.SceChecked.add(vOrphans, 1.toUInt()); false } catch (_: com.sce.forge.runtime.AlgorithmFailure) { raisePlatformError(SheetPeerEvent.Error.Execution, "<assign location='orphans'>: an integer operation overflowed or failed"); true }) {
+            if (try { vOrphans = com.sce.forge.runtime.SceChecked.add(vOrphans, 1.toUInt()); false } catch (_: com.sce.forge.runtime.AlgorithmFailure) { raisePlatformError(SheetPeerEvent.Error.Execution, ErrorReason.EXPRESSION_FAILED, "<assign location='orphans'>: an integer operation overflowed or failed"); true }) {
                 return
             }
             }
 
-            if (try { vCols = com.sce.forge.runtime.SceChecked.within(com.sce.forge.runtime.SceChecked.take(call_RgaInsert__vv(vCols, vPlaced)), 256); false } catch (_: com.sce.forge.runtime.AlgorithmFailure) { raisePlatformError(SheetPeerEvent.Error.Execution, "<assign location='cols'>: an integer operation overflowed or failed"); true }) {
+            if (try { vCols = com.sce.forge.runtime.SceChecked.within(com.sce.forge.runtime.SceChecked.take(call_RgaInsert__vv(vCols, vPlaced)), 256); false } catch (_: com.sce.forge.runtime.AlgorithmFailure) { raisePlatformError(SheetPeerEvent.Error.Execution, ErrorReason.EXPRESSION_FAILED, "<assign location='cols'>: an integer operation overflowed or failed"); true }) {
                 return
             }
 
@@ -2315,7 +2315,7 @@ class SheetPeerStateMachine(
 
 
             var ifCondFailed12 = false
-            if ((try { vHub && com.sce.forge.runtime.SceChecked.rem(pendingSheetColPayload!!.key, 256.toULong()) != 1.toULong() } catch (_: com.sce.forge.runtime.AlgorithmFailure) { raisePlatformError(SheetPeerEvent.Error.Execution, "<if cond='hub && _event.data.key % 256 !== 1'>: an integer operation overflowed or failed"); ifCondFailed12 = true; false })) {
+            if ((try { vHub && com.sce.forge.runtime.SceChecked.rem(pendingSheetColPayload!!.key, 256.toULong()) != 1.toULong() } catch (_: com.sce.forge.runtime.AlgorithmFailure) { raisePlatformError(SheetPeerEvent.Error.Execution, ErrorReason.EXPRESSION_FAILED, "<if cond='hub && _event.data.key % 256 !== 1'>: an integer operation overflowed or failed"); ifCondFailed12 = true; false })) {
 
 
             if (run send@{
@@ -2355,7 +2355,7 @@ class SheetPeerStateMachine(
             // event as an undeclared type, so a wiring mistake cannot read
             // as success.
             if (hostServed == null && !hasEventProcessor("sce:mesh")) {
-                raisePlatformError(SheetPeerEvent.Error.Execution, "<send type='sce:mesh'> names a processor the host declared but never registered", "__send_20")
+                raisePlatformError(SheetPeerEvent.Error.Execution, ErrorReason.PROCESSOR_UNREGISTERED, "<send type='sce:mesh'> names a processor the host declared but never registered", "__send_20")
             }
             false
             }) {
@@ -2370,7 +2370,7 @@ class SheetPeerStateMachine(
 
 
             var ifCondFailed13 = false
-            if ((try { vHub && com.sce.forge.runtime.SceChecked.rem(pendingSheetColPayload!!.key, 256.toULong()) != 2.toULong() } catch (_: com.sce.forge.runtime.AlgorithmFailure) { raisePlatformError(SheetPeerEvent.Error.Execution, "<if cond='hub && _event.data.key % 256 !== 2'>: an integer operation overflowed or failed"); ifCondFailed13 = true; false })) {
+            if ((try { vHub && com.sce.forge.runtime.SceChecked.rem(pendingSheetColPayload!!.key, 256.toULong()) != 2.toULong() } catch (_: com.sce.forge.runtime.AlgorithmFailure) { raisePlatformError(SheetPeerEvent.Error.Execution, ErrorReason.EXPRESSION_FAILED, "<if cond='hub && _event.data.key % 256 !== 2'>: an integer operation overflowed or failed"); ifCondFailed13 = true; false })) {
 
 
             if (run send@{
@@ -2410,7 +2410,7 @@ class SheetPeerStateMachine(
             // event as an undeclared type, so a wiring mistake cannot read
             // as success.
             if (hostServed == null && !hasEventProcessor("sce:mesh")) {
-                raisePlatformError(SheetPeerEvent.Error.Execution, "<send type='sce:mesh'> names a processor the host declared but never registered", "__send_21")
+                raisePlatformError(SheetPeerEvent.Error.Execution, ErrorReason.PROCESSOR_UNREGISTERED, "<send type='sce:mesh'> names a processor the host declared but never registered", "__send_21")
             }
             false
             }) {
@@ -2486,7 +2486,7 @@ class SheetPeerStateMachine(
             // event as an undeclared type, so a wiring mistake cannot read
             // as success.
             if (hostServed == null && !hasEventProcessor("sce:mesh")) {
-                raisePlatformError(SheetPeerEvent.Error.Execution, "<send type='sce:mesh'> names a processor the host declared but never registered", "__send_23")
+                raisePlatformError(SheetPeerEvent.Error.Execution, ErrorReason.PROCESSOR_UNREGISTERED, "<send type='sce:mesh'> names a processor the host declared but never registered", "__send_23")
             }
             false
             }) {
@@ -2506,7 +2506,7 @@ class SheetPeerStateMachine(
 
             vRemoval = vRemoval.copy(by = pendingSheetGoneColPayload!!.by)
 
-            if (try { vGoneCols = com.sce.forge.runtime.SceChecked.within(com.sce.forge.runtime.SceChecked.take(call_RgaRemove__vv(vGoneCols, vRemoval)), 256); false } catch (_: com.sce.forge.runtime.AlgorithmFailure) { raisePlatformError(SheetPeerEvent.Error.Execution, "<assign location='goneCols'>: an integer operation overflowed or failed"); true }) {
+            if (try { vGoneCols = com.sce.forge.runtime.SceChecked.within(com.sce.forge.runtime.SceChecked.take(call_RgaRemove__vv(vGoneCols, vRemoval)), 256); false } catch (_: com.sce.forge.runtime.AlgorithmFailure) { raisePlatformError(SheetPeerEvent.Error.Execution, ErrorReason.EXPRESSION_FAILED, "<assign location='goneCols'>: an integer operation overflowed or failed"); true }) {
                 return
             }
 
@@ -2564,7 +2564,7 @@ class SheetPeerStateMachine(
             // event as an undeclared type, so a wiring mistake cannot read
             // as success.
             if (hostServed == null && !hasEventProcessor("sce:mesh")) {
-                raisePlatformError(SheetPeerEvent.Error.Execution, "<send type='sce:mesh'> names a processor the host declared but never registered", "__send_25")
+                raisePlatformError(SheetPeerEvent.Error.Execution, ErrorReason.PROCESSOR_UNREGISTERED, "<send type='sce:mesh'> names a processor the host declared but never registered", "__send_25")
             }
             false
             }) {
@@ -2615,7 +2615,7 @@ class SheetPeerStateMachine(
             // event as an undeclared type, so a wiring mistake cannot read
             // as success.
             if (hostServed == null && !hasEventProcessor("sce:mesh")) {
-                raisePlatformError(SheetPeerEvent.Error.Execution, "<send type='sce:mesh'> names a processor the host declared but never registered", "__send_26")
+                raisePlatformError(SheetPeerEvent.Error.Execution, ErrorReason.PROCESSOR_UNREGISTERED, "<send type='sce:mesh'> names a processor the host declared but never registered", "__send_26")
             }
             false
             }) {
@@ -2629,7 +2629,7 @@ class SheetPeerStateMachine(
     private fun transitionContentOfOpenAt13() {
                 // SCE-MAP: sheet_peer.scxml:417 :: open :: _transition_13
 
-            if (try { vRefusals = com.sce.forge.runtime.SceChecked.add(vRefusals, 1.toUInt()); false } catch (_: com.sce.forge.runtime.AlgorithmFailure) { raisePlatformError(SheetPeerEvent.Error.Execution, "<assign location='refusals'>: an integer operation overflowed or failed"); true }) {
+            if (try { vRefusals = com.sce.forge.runtime.SceChecked.add(vRefusals, 1.toUInt()); false } catch (_: com.sce.forge.runtime.AlgorithmFailure) { raisePlatformError(SheetPeerEvent.Error.Execution, ErrorReason.EXPRESSION_FAILED, "<assign location='refusals'>: an integer operation overflowed or failed"); true }) {
                 return
             }
     }

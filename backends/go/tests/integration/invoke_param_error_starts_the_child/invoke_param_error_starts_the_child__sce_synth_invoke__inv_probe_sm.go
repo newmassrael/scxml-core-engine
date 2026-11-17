@@ -31,6 +31,7 @@ import (
 	"time"
 
 	sce "github.com/newmassrael/sce-go-runtime"
+	sceerrorreason "github.com/newmassrael/sce-go-runtime/generated/error_reason"
 )
 
 // Ensure imports are used
@@ -39,6 +40,9 @@ var (
 	_ = filepath.Join
 	_ = strings.HasPrefix
 	_ = time.Duration(0)
+	// Why an error.* event is raised (sce:std/engine/error_reason,
+	// docs/adr/0106 #111); a machine that raises none still imports it.
+	_ = sceerrorreason.ErrorReasonExpressionFailed
 )
 
 // ======================================================================
@@ -344,12 +348,12 @@ func (p *InvokeParamErrorStartsTheChildSceSynthInvokeInvProbePolicy) evaluateIfC
 // evaluateGuardRaising evaluates a cond, raising error.execution when it cannot
 // be evaluated (W3C SCXML 5.9.1); ok is false then, where a bare false could
 // not say so.
-func (p *InvokeParamErrorStartsTheChildSceSynthInvokeInvProbePolicy) evaluateGuardRaising(guard string, eng *sce.Engine[InvokeParamErrorStartsTheChildSceSynthInvokeInvProbeState, InvokeParamErrorStartsTheChildSceSynthInvokeInvProbeEvent], reason string) (value bool, ok bool) {
+func (p *InvokeParamErrorStartsTheChildSceSynthInvokeInvProbePolicy) evaluateGuardRaising(guard string, eng *sce.Engine[InvokeParamErrorStartsTheChildSceSynthInvokeInvProbeState, InvokeParamErrorStartsTheChildSceSynthInvokeInvProbeEvent], detail string) (value bool, ok bool) {
 	p.assertScriptSession()
 	engine := p.ScriptEngine
 	result, err := engine.EvaluateExpression(p.SessionID, guard)
 	if err != nil {
-		eng.Raise(sce.NewPlatformError(InvokeParamErrorStartsTheChildSceSynthInvokeInvProbeEventErrorExecution, reason))
+		eng.Raise(sce.NewPlatformError(InvokeParamErrorStartsTheChildSceSynthInvokeInvProbeEventErrorExecution, sceerrorreason.ErrorReasonExpressionFailed, detail))
 		return false, false
 	}
 	return sce.ScriptToBool(result), true
@@ -452,7 +456,7 @@ func (p *InvokeParamErrorStartsTheChildSceSynthInvokeInvProbePolicy) SetParamVal
 // failed is left (docs/adr/0098).
 func (p *InvokeParamErrorStartsTheChildSceSynthInvokeInvProbePolicy) declareHandedValue(eng *sce.Engine[InvokeParamErrorStartsTheChildSceSynthInvokeInvProbeState, InvokeParamErrorStartsTheChildSceSynthInvokeInvProbeEvent], engine sce.IScriptEngine, sessionID, name string, value interface{}) {
 	if err := engine.SetVariable(sessionID, name, value); err != nil {
-		eng.Raise(sce.NewPlatformError(InvokeParamErrorStartsTheChildSceSynthInvokeInvProbeEventErrorExecution, "<data id='"+name+"'> could not hold the value its invoking session handed it"))
+		eng.Raise(sce.NewPlatformError(InvokeParamErrorStartsTheChildSceSynthInvokeInvProbeEventErrorExecution, sceerrorreason.ErrorReasonDataInitFailed, "<data id='"+name+"'> could not hold the value its invoking session handed it"))
 		_ = engine.SetVariable(sessionID, name, nil)
 	}
 }
@@ -807,13 +811,13 @@ func (p *InvokeParamErrorStartsTheChildSceSynthInvokeInvProbePolicy) ExecuteTran
 		if paramVal, paramErr := se.EvaluateExpression(p.SessionID, `kept`); paramErr == nil {
 			parts = append(parts, sce.EventDataParam{Name: "kept", Value: paramVal})
 		} else {
-			engine.Raise(sce.NewPlatformError(InvokeParamErrorStartsTheChildSceSynthInvokeInvProbeEventErrorExecution, "<send> <param name='kept'> expr failed to evaluate"))
+			engine.Raise(sce.NewPlatformError(InvokeParamErrorStartsTheChildSceSynthInvokeInvProbeEventErrorExecution, sceerrorreason.ErrorReasonExpressionFailed, "<send> <param name='kept'> expr failed to evaluate"))
 			paramFailed = true
 		}
 		if paramVal, paramErr := se.EvaluateExpression(p.SessionID, `(broken == "")`); paramErr == nil {
 			parts = append(parts, sce.EventDataParam{Name: "brokenPlaceholder", Value: paramVal})
 		} else {
-			engine.Raise(sce.NewPlatformError(InvokeParamErrorStartsTheChildSceSynthInvokeInvProbeEventErrorExecution, "<send> <param name='brokenPlaceholder'> expr failed to evaluate"))
+			engine.Raise(sce.NewPlatformError(InvokeParamErrorStartsTheChildSceSynthInvokeInvProbeEventErrorExecution, sceerrorreason.ErrorReasonExpressionFailed, "<send> <param name='brokenPlaceholder'> expr failed to evaluate"))
 			paramFailed = true
 		}
 		eventDataStr := sce.BuildJSONFromTypedParams(parts)
@@ -823,7 +827,7 @@ func (p *InvokeParamErrorStartsTheChildSceSynthInvokeInvProbePolicy) ExecuteTran
 		// W3C SCXML C.1: this session was started by its host, not by an
 		// `<invoke>`, so `#_parent` reaches nobody — error.communication,
 		// nothing delivered, and the block ends (4.9).
-		errEvt := sce.NewPlatformError(InvokeParamErrorStartsTheChildSceSynthInvokeInvProbeEventErrorCommunication, "<send target='#_parent'> has no parent session to reach")
+		errEvt := sce.NewPlatformError(InvokeParamErrorStartsTheChildSceSynthInvokeInvProbeEventErrorCommunication, sceerrorreason.ErrorReasonTargetUnreachable, "<send target='#_parent'> has no parent session to reach")
 		errEvt.Metadata.SendID = "__send_0"
 		engine.Raise(errEvt)
 		return  // W3C SCXML 4.9: the error ends the block

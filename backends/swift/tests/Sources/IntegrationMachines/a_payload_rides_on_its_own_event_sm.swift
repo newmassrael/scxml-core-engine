@@ -457,8 +457,12 @@ public final class APayloadRidesOnItsOwnEventPolicy: InvocablePolicy {
 
     /// Says what went wrong where the document can see it: `error.execution` on the internal
     /// queue (§scxml-5.9.1, 5.3).
-    private func raiseExecutionError(_ message: String, engine: Engine<APayloadRidesOnItsOwnEventPolicy>) {
-        engine.raise(EventWithMetadata.platformError(APayloadRidesOnItsOwnEventEvent.errorExecution, message: message))
+    /// `reason` is the code of sce:std/engine/error_reason the record carries
+    /// (docs/adr/0106 #111).
+    private func raiseExecutionError(
+        _ reason: ErrorReason, _ message: String, engine: Engine<APayloadRidesOnItsOwnEventPolicy>
+    ) {
+        engine.raise(EventWithMetadata.platformError(APayloadRidesOnItsOwnEventEvent.errorExecution, reason: reason, message: message))
     }
 
     /// W3C SCXML 5.3: the `<data id>` `id` takes the value of the lowered expression, or nil when it
@@ -515,6 +519,7 @@ public final class APayloadRidesOnItsOwnEventPolicy: InvocablePolicy {
             }
         } catch {
             raiseExecutionError(
+                handed == nil ? .expressionFailed : .paramUnfit,
                 handed == nil
                     ? "<data id='\(id)'> expr failed to evaluate"
                     : "<data id='\(id)'> could not hold the value its parent handed it",
@@ -679,7 +684,7 @@ public final class APayloadRidesOnItsOwnEventPolicy: InvocablePolicy {
             // this call the payload is lost to the document and to the host alike.
             engine.notePayloadReading(event, reading: Self.payloadReading(of: reading))
         } catch {
-            raiseExecutionError("_event could not be bound for '\(name)'", engine: engine)
+            raiseExecutionError(.payloadRefused, "_event could not be bound for '\(name)'", engine: engine)
         }
     }
 
@@ -716,7 +721,7 @@ public final class APayloadRidesOnItsOwnEventPolicy: InvocablePolicy {
         do {
             return try scriptSession.evaluateCondition(condition, chunkName: "=cond")
         } catch {
-            raiseExecutionError("a \(element) cond failed to evaluate", engine: engine)
+            raiseExecutionError(.expressionFailed, "a \(element) cond failed to evaluate", engine: engine)
             failed = true
             return false
         }
@@ -746,7 +751,7 @@ public final class APayloadRidesOnItsOwnEventPolicy: InvocablePolicy {
                     if let paramValue = evaluateJSON("7") {
                         sendParts.append(PayloadPair.json("v", rawJSON: paramValue))
                     } else {
-                        engine.raise(EventWithMetadata.platformError(APayloadRidesOnItsOwnEventEvent.errorExecution, message: "<send> <param name=v> failed to evaluate"))
+                        engine.raise(EventWithMetadata.platformError(APayloadRidesOnItsOwnEventEvent.errorExecution, reason: .expressionFailed, message: "<send> <param name=v> failed to evaluate"))
                         paramFailed = true
                     }
 
@@ -776,7 +781,7 @@ public final class APayloadRidesOnItsOwnEventPolicy: InvocablePolicy {
                     if let paramValue = evaluateJSON("8") {
                         sendParts.append(PayloadPair.json("v", rawJSON: paramValue))
                     } else {
-                        engine.raise(EventWithMetadata.platformError(APayloadRidesOnItsOwnEventEvent.errorExecution, message: "<send> <param name=v> failed to evaluate"))
+                        engine.raise(EventWithMetadata.platformError(APayloadRidesOnItsOwnEventEvent.errorExecution, reason: .expressionFailed, message: "<send> <param name=v> failed to evaluate"))
                         paramFailed = true
                     }
 
@@ -814,7 +819,7 @@ public final class APayloadRidesOnItsOwnEventPolicy: InvocablePolicy {
                     if let paramValue = evaluateJSON("v9") {
                         sendParts.append(PayloadPair.json("v9", rawJSON: paramValue))
                     } else {
-                        engine.raise(EventWithMetadata.platformError(APayloadRidesOnItsOwnEventEvent.errorExecution, message: "<send> <param name=v9> failed to evaluate"))
+                        engine.raise(EventWithMetadata.platformError(APayloadRidesOnItsOwnEventEvent.errorExecution, reason: .expressionFailed, message: "<send> <param name=v9> failed to evaluate"))
                         paramFailed = true
                     }
 
@@ -1005,7 +1010,7 @@ public final class APayloadRidesOnItsOwnEventPolicy: InvocablePolicy {
 
                 // W3C SCXML 5.4: <assign location="stolen">
                 if !assignData("stolen", "_scxml_add(stolen, 1)") {
-                    raiseExecutionError("<assign> to 'stolen' failed", engine: engine)
+                    raiseExecutionError(.assignmentFailed, "<assign> to 'stolen' failed", engine: engine)
                     break sceBlock  // W3C SCXML 4.9: the error ends the block
                 }
 
@@ -1016,7 +1021,7 @@ public final class APayloadRidesOnItsOwnEventPolicy: InvocablePolicy {
 
                 // W3C SCXML 5.4: <assign location="plains">
                 if !assignData("plains", "_scxml_add(plains, 1)") {
-                    raiseExecutionError("<assign> to 'plains' failed", engine: engine)
+                    raiseExecutionError(.assignmentFailed, "<assign> to 'plains' failed", engine: engine)
                     break sceBlock  // W3C SCXML 4.9: the error ends the block
                 }
 
@@ -1027,7 +1032,7 @@ public final class APayloadRidesOnItsOwnEventPolicy: InvocablePolicy {
 
                 // W3C SCXML 5.4: <assign location="got">
                 if !assignData("got", "_scxml_add(got, 1)") {
-                    raiseExecutionError("<assign> to 'got' failed", engine: engine)
+                    raiseExecutionError(.assignmentFailed, "<assign> to 'got' failed", engine: engine)
                     break sceBlock  // W3C SCXML 4.9: the error ends the block
                 }
 
@@ -1038,7 +1043,7 @@ public final class APayloadRidesOnItsOwnEventPolicy: InvocablePolicy {
 
                 // W3C SCXML 5.4: <assign location="got">
                 if !assignData("got", "_scxml_add(got, 1)") {
-                    raiseExecutionError("<assign> to 'got' failed", engine: engine)
+                    raiseExecutionError(.assignmentFailed, "<assign> to 'got' failed", engine: engine)
                     break sceBlock  // W3C SCXML 4.9: the error ends the block
                 }
 
@@ -1049,7 +1054,7 @@ public final class APayloadRidesOnItsOwnEventPolicy: InvocablePolicy {
 
                 // W3C SCXML 5.4: <assign location="got">
                 if !assignData("got", "_scxml_add(got, 1)") {
-                    raiseExecutionError("<assign> to 'got' failed", engine: engine)
+                    raiseExecutionError(.assignmentFailed, "<assign> to 'got' failed", engine: engine)
                     break sceBlock  // W3C SCXML 4.9: the error ends the block
                 }
 
@@ -1060,7 +1065,7 @@ public final class APayloadRidesOnItsOwnEventPolicy: InvocablePolicy {
 
                 // W3C SCXML 5.4: <assign location="got">
                 if !assignData("got", "_scxml_add(got, 1)") {
-                    raiseExecutionError("<assign> to 'got' failed", engine: engine)
+                    raiseExecutionError(.assignmentFailed, "<assign> to 'got' failed", engine: engine)
                     break sceBlock  // W3C SCXML 4.9: the error ends the block
                 }
 

@@ -31,6 +31,7 @@ import (
 	"time"
 
 	sce "github.com/newmassrael/sce-go-runtime"
+	sceerrorreason "github.com/newmassrael/sce-go-runtime/generated/error_reason"
 )
 
 // Ensure imports are used
@@ -39,6 +40,9 @@ var (
 	_ = filepath.Join
 	_ = strings.HasPrefix
 	_ = time.Duration(0)
+	// Why an error.* event is raised (sce:std/engine/error_reason,
+	// docs/adr/0106 #111); a machine that raises none still imports it.
+	_ = sceerrorreason.ErrorReasonExpressionFailed
 )
 
 // ======================================================================
@@ -335,7 +339,7 @@ func (p *AChildReplyArrivesWithoutATickPolicy) InitializeDataModel(eng *sce.Engi
 		if err == nil {
 			_ = engine.SetVariable(sessionID, "hellos", result)
 		} else {
-			eng.Raise(sce.NewPlatformError(AChildReplyArrivesWithoutATickEventErrorExecution, "<data id='hellos'> expr failed to evaluate"))
+			eng.Raise(sce.NewPlatformError(AChildReplyArrivesWithoutATickEventErrorExecution, sceerrorreason.ErrorReasonExpressionFailed, "<data id='hellos'> expr failed to evaluate"))
 			_ = engine.SetVariable(sessionID, "hellos", nil)
 		}
 	}
@@ -367,12 +371,12 @@ func (p *AChildReplyArrivesWithoutATickPolicy) evaluateIfCond(guard string, eng 
 // evaluateGuardRaising evaluates a cond, raising error.execution when it cannot
 // be evaluated (W3C SCXML 5.9.1); ok is false then, where a bare false could
 // not say so.
-func (p *AChildReplyArrivesWithoutATickPolicy) evaluateGuardRaising(guard string, eng *sce.Engine[AChildReplyArrivesWithoutATickState, AChildReplyArrivesWithoutATickEvent], reason string) (value bool, ok bool) {
+func (p *AChildReplyArrivesWithoutATickPolicy) evaluateGuardRaising(guard string, eng *sce.Engine[AChildReplyArrivesWithoutATickState, AChildReplyArrivesWithoutATickEvent], detail string) (value bool, ok bool) {
 	p.assertScriptSession()
 	engine := p.ScriptEngine
 	result, err := engine.EvaluateExpression(p.SessionID, guard)
 	if err != nil {
-		eng.Raise(sce.NewPlatformError(AChildReplyArrivesWithoutATickEventErrorExecution, reason))
+		eng.Raise(sce.NewPlatformError(AChildReplyArrivesWithoutATickEventErrorExecution, sceerrorreason.ErrorReasonExpressionFailed, detail))
 		return false, false
 	}
 	return sce.ScriptToBool(result), true
@@ -475,7 +479,7 @@ func (p *AChildReplyArrivesWithoutATickPolicy) SetParamValueInScriptEngine(name 
 // failed is left (docs/adr/0098).
 func (p *AChildReplyArrivesWithoutATickPolicy) declareHandedValue(eng *sce.Engine[AChildReplyArrivesWithoutATickState, AChildReplyArrivesWithoutATickEvent], engine sce.IScriptEngine, sessionID, name string, value interface{}) {
 	if err := engine.SetVariable(sessionID, name, value); err != nil {
-		eng.Raise(sce.NewPlatformError(AChildReplyArrivesWithoutATickEventErrorExecution, "<data id='"+name+"'> could not hold the value its invoking session handed it"))
+		eng.Raise(sce.NewPlatformError(AChildReplyArrivesWithoutATickEventErrorExecution, sceerrorreason.ErrorReasonDataInitFailed, "<data id='"+name+"'> could not hold the value its invoking session handed it"))
 		_ = engine.SetVariable(sessionID, name, nil)
 	}
 }
@@ -551,7 +555,7 @@ func (p *AChildReplyArrivesWithoutATickPolicy) ExecutePendingInvokes(engine *sce
 			if refused := childEngine.Initialize(); refused != nil {
 				childEngine.DetachMesh()
 				delete(p.activeInvokes, "kid")
-				engine.Raise(sce.NewPlatformError(AChildReplyArrivesWithoutATickEventErrorExecution, sce.ChildStartRefusal("kid", refused)))
+				engine.Raise(sce.NewPlatformError(AChildReplyArrivesWithoutATickEventErrorExecution, sceerrorreason.ErrorReasonInvokeChildInitFailed, sce.ChildStartRefusal("kid", refused)))
 				continue
 			}
 
@@ -1118,7 +1122,7 @@ func (p *AChildReplyArrivesWithoutATickPolicy) ExecuteTransitionContent(source A
 
 	// W3C SCXML 5.3: <assign location="hellos" expr="hellos + 1">
 	if err := p.assignVariable(`hellos`, `_scxml_add(hellos, 1)`); err != nil {
-		engine.Raise(sce.NewPlatformError(AChildReplyArrivesWithoutATickEventErrorExecution, "<assign> to 'hellos' failed"))
+		engine.Raise(sce.NewPlatformError(AChildReplyArrivesWithoutATickEventErrorExecution, sceerrorreason.ErrorReasonAssignmentFailed, "<assign> to 'hellos' failed"))
 		return  // W3C SCXML 4.9: the error ends the block
 	}
 

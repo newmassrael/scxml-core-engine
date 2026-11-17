@@ -31,6 +31,7 @@ import (
 	"time"
 
 	sce "github.com/newmassrael/sce-go-runtime"
+	sceerrorreason "github.com/newmassrael/sce-go-runtime/generated/error_reason"
 	scealgorithm "github.com/newmassrael/sce-forge-runtime/algorithm"
 	"github.com/newmassrael/sce-forge-runtime/optional"
 	sce_enum_item_status "github.com/newmassrael/sce-go-tests/integration/static_datamodel/enum_item_status"
@@ -46,6 +47,9 @@ var (
 	_ = filepath.Join
 	_ = strings.HasPrefix
 	_ = time.Duration(0)
+	// Why an error.* event is raised (sce:std/engine/error_reason,
+	// docs/adr/0106 #111); a machine that raises none still imports it.
+	_ = sceerrorreason.ErrorReasonExpressionFailed
 	_ scealgorithm.Failure
 )
 
@@ -1319,7 +1323,7 @@ func (p *StaticStateAlgorithmEnumPolicy) ExecuteTransitionContent(source StaticS
 
 	// SCE Accepted Subset §2.15: <sce:append target="items">
 
-	if func() bool { var sceFailure scealgorithm.Failure; if len(p.vItems) >= 4 { engine.Raise(sce.NewPlatformError(StaticStateAlgorithmEnumEventErrorExecution, "<sce:append target='items'>: the list already holds its capacity of 4")); return true }; sceValue := scealgorithm.ElementOf(p.vItems, p.vDraft); if sceFailure.Failed() { engine.Raise(sce.NewPlatformError(StaticStateAlgorithmEnumEventErrorExecution, "<sce:append target='items'>: an integer operation overflowed or failed")); return true }; p.vItems = append(p.vItems, sceValue); return false }() {
+	if func() bool { var sceFailure scealgorithm.Failure; if len(p.vItems) >= 4 { engine.Raise(sce.NewPlatformError(StaticStateAlgorithmEnumEventErrorExecution, sceerrorreason.ErrorReasonAssignmentFailed, "<sce:append target='items'>: the list already holds its capacity of 4")); return true }; sceValue := scealgorithm.ElementOf(p.vItems, p.vDraft); if sceFailure.Failed() { engine.Raise(sce.NewPlatformError(StaticStateAlgorithmEnumEventErrorExecution, sceerrorreason.ErrorReasonExpressionFailed, "<sce:append target='items'>: an integer operation overflowed or failed")); return true }; p.vItems = append(p.vItems, sceValue); return false }() {
 		return  // W3C SCXML 4.9: the error ends the block
 	}
 
@@ -1333,7 +1337,7 @@ func (p *StaticStateAlgorithmEnumPolicy) ExecuteTransitionContent(source StaticS
 				}
 
 
-	if func() bool { var sceFailure scealgorithm.Failure; sceValue := scealgorithm.Within(&sceFailure, scealgorithm.TakeOutcome(&sceFailure, sceAdapt_StaticStateAlgorithmEnum_SetStatus__v(p.vItems, p.pendingItemMovedPayload.id, p.pendingItemMovedPayload.status)), 4); if sceFailure.Failed() { engine.Raise(sce.NewPlatformError(StaticStateAlgorithmEnumEventErrorExecution, "<assign location='items'>: an integer operation overflowed or failed")); return true }; p.vItems = sceValue; return false }() {
+	if func() bool { var sceFailure scealgorithm.Failure; sceValue := scealgorithm.Within(&sceFailure, scealgorithm.TakeOutcome(&sceFailure, sceAdapt_StaticStateAlgorithmEnum_SetStatus__v(p.vItems, p.pendingItemMovedPayload.id, p.pendingItemMovedPayload.status)), 4); if sceFailure.Failed() { engine.Raise(sce.NewPlatformError(StaticStateAlgorithmEnumEventErrorExecution, sceerrorreason.ErrorReasonExpressionFailed, "<assign location='items'>: an integer operation overflowed or failed")); return true }; p.vItems = sceValue; return false }() {
 		return  // W3C SCXML 4.9: the error ends the block
 	}
 
@@ -1348,19 +1352,19 @@ func (p *StaticStateAlgorithmEnumPolicy) ExecuteTransitionContent(source StaticS
 			func() {
 
 
-	if func() bool { var sceFailure scealgorithm.Failure; sceValue := scealgorithm.TakeOutcome(&sceFailure, sceAdapt_StaticStateAlgorithmEnum_CountStatus__v(p.vItems, StaticStateAlgorithmEnumStatusEnumOpen)); if sceFailure.Failed() { engine.Raise(sce.NewPlatformError(StaticStateAlgorithmEnumEventErrorExecution, "<assign location='openCount'>: an integer operation overflowed or failed")); return true }; p.vOpenCount = sceValue; return false }() {
+	if func() bool { var sceFailure scealgorithm.Failure; sceValue := scealgorithm.TakeOutcome(&sceFailure, sceAdapt_StaticStateAlgorithmEnum_CountStatus__v(p.vItems, StaticStateAlgorithmEnumStatusEnumOpen)); if sceFailure.Failed() { engine.Raise(sce.NewPlatformError(StaticStateAlgorithmEnumEventErrorExecution, sceerrorreason.ErrorReasonExpressionFailed, "<assign location='openCount'>: an integer operation overflowed or failed")); return true }; p.vOpenCount = sceValue; return false }() {
 		return  // W3C SCXML 4.9: the error ends the block
 	}
 
 
 
-	if func() bool { var sceFailure scealgorithm.Failure; sceValue := scealgorithm.TakeOutcome(&sceFailure, sceAdapt_StaticStateAlgorithmEnum_CountStatus__v(p.vItems, StaticStateAlgorithmEnumStatusEnumInProgress)); if sceFailure.Failed() { engine.Raise(sce.NewPlatformError(StaticStateAlgorithmEnumEventErrorExecution, "<assign location='startedCount'>: an integer operation overflowed or failed")); return true }; p.vStartedCount = sceValue; return false }() {
+	if func() bool { var sceFailure scealgorithm.Failure; sceValue := scealgorithm.TakeOutcome(&sceFailure, sceAdapt_StaticStateAlgorithmEnum_CountStatus__v(p.vItems, StaticStateAlgorithmEnumStatusEnumInProgress)); if sceFailure.Failed() { engine.Raise(sce.NewPlatformError(StaticStateAlgorithmEnumEventErrorExecution, sceerrorreason.ErrorReasonExpressionFailed, "<assign location='startedCount'>: an integer operation overflowed or failed")); return true }; p.vStartedCount = sceValue; return false }() {
 		return  // W3C SCXML 4.9: the error ends the block
 	}
 
 
 
-	if func() bool { var sceFailure scealgorithm.Failure; sceValue := scealgorithm.TakeOutcome(&sceFailure, sceAdapt_StaticStateAlgorithmEnum_CountStatus__v(p.vItems, StaticStateAlgorithmEnumStatusEnumDone)); if sceFailure.Failed() { engine.Raise(sce.NewPlatformError(StaticStateAlgorithmEnumEventErrorExecution, "<assign location='doneCount'>: an integer operation overflowed or failed")); return true }; p.vDoneCount = sceValue; return false }() {
+	if func() bool { var sceFailure scealgorithm.Failure; sceValue := scealgorithm.TakeOutcome(&sceFailure, sceAdapt_StaticStateAlgorithmEnum_CountStatus__v(p.vItems, StaticStateAlgorithmEnumStatusEnumDone)); if sceFailure.Failed() { engine.Raise(sce.NewPlatformError(StaticStateAlgorithmEnumEventErrorExecution, sceerrorreason.ErrorReasonExpressionFailed, "<assign location='doneCount'>: an integer operation overflowed or failed")); return true }; p.vDoneCount = sceValue; return false }() {
 		return  // W3C SCXML 4.9: the error ends the block
 	}
 
@@ -1371,7 +1375,7 @@ func (p *StaticStateAlgorithmEnumPolicy) ExecuteTransitionContent(source StaticS
 			func() {
 
 
-	if func() bool { var sceFailure scealgorithm.Failure; sceValue := scealgorithm.AddUint32(&sceFailure, p.vChecks, 1); if sceFailure.Failed() { engine.Raise(sce.NewPlatformError(StaticStateAlgorithmEnumEventErrorExecution, "<assign location='checks'>: an integer operation overflowed or failed")); return true }; p.vChecks = sceValue; return false }() {
+	if func() bool { var sceFailure scealgorithm.Failure; sceValue := scealgorithm.AddUint32(&sceFailure, p.vChecks, 1); if sceFailure.Failed() { engine.Raise(sce.NewPlatformError(StaticStateAlgorithmEnumEventErrorExecution, sceerrorreason.ErrorReasonExpressionFailed, "<assign location='checks'>: an integer operation overflowed or failed")); return true }; p.vChecks = sceValue; return false }() {
 		return  // W3C SCXML 4.9: the error ends the block
 	}
 
@@ -1382,7 +1386,7 @@ func (p *StaticStateAlgorithmEnumPolicy) ExecuteTransitionContent(source StaticS
 			func() {
 
 
-	if func() bool { var sceFailure scealgorithm.Failure; sceValue := scealgorithm.AddUint32(&sceFailure, p.vRefusals, 1); if sceFailure.Failed() { engine.Raise(sce.NewPlatformError(StaticStateAlgorithmEnumEventErrorExecution, "<assign location='refusals'>: an integer operation overflowed or failed")); return true }; p.vRefusals = sceValue; return false }() {
+	if func() bool { var sceFailure scealgorithm.Failure; sceValue := scealgorithm.AddUint32(&sceFailure, p.vRefusals, 1); if sceFailure.Failed() { engine.Raise(sce.NewPlatformError(StaticStateAlgorithmEnumEventErrorExecution, sceerrorreason.ErrorReasonExpressionFailed, "<assign location='refusals'>: an integer operation overflowed or failed")); return true }; p.vRefusals = sceValue; return false }() {
 		return  // W3C SCXML 4.9: the error ends the block
 	}
 

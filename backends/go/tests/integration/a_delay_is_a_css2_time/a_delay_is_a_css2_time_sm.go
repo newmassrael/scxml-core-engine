@@ -31,6 +31,7 @@ import (
 	"time"
 
 	sce "github.com/newmassrael/sce-go-runtime"
+	sceerrorreason "github.com/newmassrael/sce-go-runtime/generated/error_reason"
 )
 
 // Ensure imports are used
@@ -39,6 +40,9 @@ var (
 	_ = filepath.Join
 	_ = strings.HasPrefix
 	_ = time.Duration(0)
+	// Why an error.* event is raised (sce:std/engine/error_reason,
+	// docs/adr/0106 #111); a machine that raises none still imports it.
+	_ = sceerrorreason.ErrorReasonExpressionFailed
 )
 
 // ======================================================================
@@ -385,7 +389,7 @@ func (p *ADelayIsACss2TimePolicy) InitializeDataModel(eng *sce.Engine[ADelayIsAC
 		if err == nil {
 			_ = engine.SetVariable(sessionID, "errors", result)
 		} else {
-			eng.Raise(sce.NewPlatformError(ADelayIsACss2TimeEventErrorExecution, "<data id='errors'> expr failed to evaluate"))
+			eng.Raise(sce.NewPlatformError(ADelayIsACss2TimeEventErrorExecution, sceerrorreason.ErrorReasonExpressionFailed, "<data id='errors'> expr failed to evaluate"))
 			_ = engine.SetVariable(sessionID, "errors", nil)
 		}
 	}
@@ -399,7 +403,7 @@ func (p *ADelayIsACss2TimePolicy) InitializeDataModel(eng *sce.Engine[ADelayIsAC
 		if err == nil {
 			_ = engine.SetVariable(sessionID, "after", result)
 		} else {
-			eng.Raise(sce.NewPlatformError(ADelayIsACss2TimeEventErrorExecution, "<data id='after'> expr failed to evaluate"))
+			eng.Raise(sce.NewPlatformError(ADelayIsACss2TimeEventErrorExecution, sceerrorreason.ErrorReasonExpressionFailed, "<data id='after'> expr failed to evaluate"))
 			_ = engine.SetVariable(sessionID, "after", nil)
 		}
 	}
@@ -413,7 +417,7 @@ func (p *ADelayIsACss2TimePolicy) InitializeDataModel(eng *sce.Engine[ADelayIsAC
 		if err == nil {
 			_ = engine.SetVariable(sessionID, "bad", result)
 		} else {
-			eng.Raise(sce.NewPlatformError(ADelayIsACss2TimeEventErrorExecution, "<data id='bad'> expr failed to evaluate"))
+			eng.Raise(sce.NewPlatformError(ADelayIsACss2TimeEventErrorExecution, sceerrorreason.ErrorReasonExpressionFailed, "<data id='bad'> expr failed to evaluate"))
 			_ = engine.SetVariable(sessionID, "bad", nil)
 		}
 	}
@@ -427,7 +431,7 @@ func (p *ADelayIsACss2TimePolicy) InitializeDataModel(eng *sce.Engine[ADelayIsAC
 		if err == nil {
 			_ = engine.SetVariable(sessionID, "bSeen", result)
 		} else {
-			eng.Raise(sce.NewPlatformError(ADelayIsACss2TimeEventErrorExecution, "<data id='bSeen'> expr failed to evaluate"))
+			eng.Raise(sce.NewPlatformError(ADelayIsACss2TimeEventErrorExecution, sceerrorreason.ErrorReasonExpressionFailed, "<data id='bSeen'> expr failed to evaluate"))
 			_ = engine.SetVariable(sessionID, "bSeen", nil)
 		}
 	}
@@ -441,7 +445,7 @@ func (p *ADelayIsACss2TimePolicy) InitializeDataModel(eng *sce.Engine[ADelayIsAC
 		if err == nil {
 			_ = engine.SetVariable(sessionID, "aAfterB", result)
 		} else {
-			eng.Raise(sce.NewPlatformError(ADelayIsACss2TimeEventErrorExecution, "<data id='aAfterB'> expr failed to evaluate"))
+			eng.Raise(sce.NewPlatformError(ADelayIsACss2TimeEventErrorExecution, sceerrorreason.ErrorReasonExpressionFailed, "<data id='aAfterB'> expr failed to evaluate"))
 			_ = engine.SetVariable(sessionID, "aAfterB", nil)
 		}
 	}
@@ -455,7 +459,7 @@ func (p *ADelayIsACss2TimePolicy) InitializeDataModel(eng *sce.Engine[ADelayIsAC
 		if err == nil {
 			_ = engine.SetVariable(sessionID, "bare", result)
 		} else {
-			eng.Raise(sce.NewPlatformError(ADelayIsACss2TimeEventErrorExecution, "<data id='bare'> expr failed to evaluate"))
+			eng.Raise(sce.NewPlatformError(ADelayIsACss2TimeEventErrorExecution, sceerrorreason.ErrorReasonExpressionFailed, "<data id='bare'> expr failed to evaluate"))
 			_ = engine.SetVariable(sessionID, "bare", nil)
 		}
 	}
@@ -487,12 +491,12 @@ func (p *ADelayIsACss2TimePolicy) evaluateIfCond(guard string, eng *sce.Engine[A
 // evaluateGuardRaising evaluates a cond, raising error.execution when it cannot
 // be evaluated (W3C SCXML 5.9.1); ok is false then, where a bare false could
 // not say so.
-func (p *ADelayIsACss2TimePolicy) evaluateGuardRaising(guard string, eng *sce.Engine[ADelayIsACss2TimeState, ADelayIsACss2TimeEvent], reason string) (value bool, ok bool) {
+func (p *ADelayIsACss2TimePolicy) evaluateGuardRaising(guard string, eng *sce.Engine[ADelayIsACss2TimeState, ADelayIsACss2TimeEvent], detail string) (value bool, ok bool) {
 	p.assertScriptSession()
 	engine := p.ScriptEngine
 	result, err := engine.EvaluateExpression(p.SessionID, guard)
 	if err != nil {
-		eng.Raise(sce.NewPlatformError(ADelayIsACss2TimeEventErrorExecution, reason))
+		eng.Raise(sce.NewPlatformError(ADelayIsACss2TimeEventErrorExecution, sceerrorreason.ErrorReasonExpressionFailed, detail))
 		return false, false
 	}
 	return sce.ScriptToBool(result), true
@@ -595,7 +599,7 @@ func (p *ADelayIsACss2TimePolicy) SetParamValueInScriptEngine(name string, value
 // failed is left (docs/adr/0098).
 func (p *ADelayIsACss2TimePolicy) declareHandedValue(eng *sce.Engine[ADelayIsACss2TimeState, ADelayIsACss2TimeEvent], engine sce.IScriptEngine, sessionID, name string, value interface{}) {
 	if err := engine.SetVariable(sessionID, name, value); err != nil {
-		eng.Raise(sce.NewPlatformError(ADelayIsACss2TimeEventErrorExecution, "<data id='"+name+"'> could not hold the value its invoking session handed it"))
+		eng.Raise(sce.NewPlatformError(ADelayIsACss2TimeEventErrorExecution, sceerrorreason.ErrorReasonDataInitFailed, "<data id='"+name+"'> could not hold the value its invoking session handed it"))
 		_ = engine.SetVariable(sessionID, name, nil)
 	}
 }
@@ -855,7 +859,7 @@ func (p *ADelayIsACss2TimePolicy) ExecuteEntryActions(state ADelayIsACss2TimeSta
 	// "Durations"; the build decided it once). It is known before anything is
 	// evaluated, so the send ends here with the argument error, as it does on
 	// every engine.
-	errEvt := sce.NewPlatformError(ADelayIsACss2TimeEventErrorExecution, "<send> delay is not a CSS2 time")
+	errEvt := sce.NewPlatformError(ADelayIsACss2TimeEventErrorExecution, sceerrorreason.ErrorReasonSendDelayInvalid, "<send> delay is not a CSS2 time")
 	errEvt.Metadata.SendID = "__send_0"
 	engine.Raise(errEvt)
 	return  // W3C SCXML 4.9: the error ends the block
@@ -869,22 +873,26 @@ func (p *ADelayIsACss2TimePolicy) ExecuteEntryActions(state ADelayIsACss2TimeSta
 	{
 	p.assertScriptSession()
 	sendArgError := ""
+	// Why the argument failed, a code of sce:std/engine/error_reason
+	// (docs/adr/0106 #111), set with every sentence below.
+	var sendArgReason sce.ErrorReason
+	_ = sendArgReason
 	sendDelayMs := uint64(0)
 	if sendArgError == "" {
 		// The expression failing is the argument error, and so is a value that
 		// is not the CSS2 time the clause names (ARCHITECTURE.md, "Durations"):
 		// the message is not scheduled under some default wait.
 		if v, err := p.ScriptEngine.EvaluateExpression(p.SessionID, `bare`); err != nil {
-			sendArgError = "<send> delayexpr could not be evaluated"
+			sendArgError, sendArgReason = "<send> delayexpr could not be evaluated", sceerrorreason.ErrorReasonExpressionFailed
 		} else if ms, ok := sce.ParseDelayToMs(sce.ToWireString(v)); ok {
 			sendDelayMs = ms
 		} else {
-			sendArgError = "<send> delayexpr is not a CSS2 time"
+			sendArgError, sendArgReason = "<send> delayexpr is not a CSS2 time", sceerrorreason.ErrorReasonSendDelayInvalid
 		}
 	}
 	_ = sendDelayMs
 	if sendArgError != "" {
-		errEvt := sce.NewPlatformError(ADelayIsACss2TimeEventErrorExecution, sendArgError)
+		errEvt := sce.NewPlatformError(ADelayIsACss2TimeEventErrorExecution, sendArgReason, sendArgError)
 		errEvt.Metadata.SendID = "__send_1"
 		engine.Raise(errEvt)
 		return  // W3C SCXML 4.9: the error ends the block
@@ -904,7 +912,7 @@ func (p *ADelayIsACss2TimePolicy) ExecuteEntryActions(state ADelayIsACss2TimeSta
 
 	// W3C SCXML 5.3: <assign location="after" expr="after + 1">
 	if err := p.assignVariable(`after`, `_scxml_add(after, 1)`); err != nil {
-		engine.Raise(sce.NewPlatformError(ADelayIsACss2TimeEventErrorExecution, "<assign> to 'after' failed"))
+		engine.Raise(sce.NewPlatformError(ADelayIsACss2TimeEventErrorExecution, sceerrorreason.ErrorReasonAssignmentFailed, "<assign> to 'after' failed"))
 		return  // W3C SCXML 4.9: the error ends the block
 	}
 
@@ -917,22 +925,26 @@ func (p *ADelayIsACss2TimePolicy) ExecuteEntryActions(state ADelayIsACss2TimeSta
 	{
 	p.assertScriptSession()
 	sendArgError := ""
+	// Why the argument failed, a code of sce:std/engine/error_reason
+	// (docs/adr/0106 #111), set with every sentence below.
+	var sendArgReason sce.ErrorReason
+	_ = sendArgReason
 	sendDelayMs := uint64(0)
 	if sendArgError == "" {
 		// The expression failing is the argument error, and so is a value that
 		// is not the CSS2 time the clause names (ARCHITECTURE.md, "Durations"):
 		// the message is not scheduled under some default wait.
 		if v, err := p.ScriptEngine.EvaluateExpression(p.SessionID, `"0.57s"`); err != nil {
-			sendArgError = "<send> delayexpr could not be evaluated"
+			sendArgError, sendArgReason = "<send> delayexpr could not be evaluated", sceerrorreason.ErrorReasonExpressionFailed
 		} else if ms, ok := sce.ParseDelayToMs(sce.ToWireString(v)); ok {
 			sendDelayMs = ms
 		} else {
-			sendArgError = "<send> delayexpr is not a CSS2 time"
+			sendArgError, sendArgReason = "<send> delayexpr is not a CSS2 time", sceerrorreason.ErrorReasonSendDelayInvalid
 		}
 	}
 	_ = sendDelayMs
 	if sendArgError != "" {
-		errEvt := sce.NewPlatformError(ADelayIsACss2TimeEventErrorExecution, sendArgError)
+		errEvt := sce.NewPlatformError(ADelayIsACss2TimeEventErrorExecution, sendArgReason, sendArgError)
 		errEvt.Metadata.SendID = "__send_2"
 		engine.Raise(errEvt)
 		return  // W3C SCXML 4.9: the error ends the block
@@ -1088,7 +1100,7 @@ func (p *ADelayIsACss2TimePolicy) ExecuteTransitionContent(source ADelayIsACss2T
 
 	// W3C SCXML 5.3: <assign location="errors" expr="errors + 1">
 	if err := p.assignVariable(`errors`, `_scxml_add(errors, 1)`); err != nil {
-		engine.Raise(sce.NewPlatformError(ADelayIsACss2TimeEventErrorExecution, "<assign> to 'errors' failed"))
+		engine.Raise(sce.NewPlatformError(ADelayIsACss2TimeEventErrorExecution, sceerrorreason.ErrorReasonAssignmentFailed, "<assign> to 'errors' failed"))
 		return  // W3C SCXML 4.9: the error ends the block
 	}
 
@@ -1100,7 +1112,7 @@ func (p *ADelayIsACss2TimePolicy) ExecuteTransitionContent(source ADelayIsACss2T
 
 	// W3C SCXML 5.3: <assign location="bad" expr="bad + 1">
 	if err := p.assignVariable(`bad`, `_scxml_add(bad, 1)`); err != nil {
-		engine.Raise(sce.NewPlatformError(ADelayIsACss2TimeEventErrorExecution, "<assign> to 'bad' failed"))
+		engine.Raise(sce.NewPlatformError(ADelayIsACss2TimeEventErrorExecution, sceerrorreason.ErrorReasonAssignmentFailed, "<assign> to 'bad' failed"))
 		return  // W3C SCXML 4.9: the error ends the block
 	}
 
@@ -1112,7 +1124,7 @@ func (p *ADelayIsACss2TimePolicy) ExecuteTransitionContent(source ADelayIsACss2T
 
 	// W3C SCXML 5.3: <assign location="bSeen" expr="1">
 	if err := p.assignVariable(`bSeen`, `1`); err != nil {
-		engine.Raise(sce.NewPlatformError(ADelayIsACss2TimeEventErrorExecution, "<assign> to 'bSeen' failed"))
+		engine.Raise(sce.NewPlatformError(ADelayIsACss2TimeEventErrorExecution, sceerrorreason.ErrorReasonAssignmentFailed, "<assign> to 'bSeen' failed"))
 		return  // W3C SCXML 4.9: the error ends the block
 	}
 
@@ -1124,7 +1136,7 @@ func (p *ADelayIsACss2TimePolicy) ExecuteTransitionContent(source ADelayIsACss2T
 
 	// W3C SCXML 5.3: <assign location="aAfterB" expr="bSeen">
 	if err := p.assignVariable(`aAfterB`, `bSeen`); err != nil {
-		engine.Raise(sce.NewPlatformError(ADelayIsACss2TimeEventErrorExecution, "<assign> to 'aAfterB' failed"))
+		engine.Raise(sce.NewPlatformError(ADelayIsACss2TimeEventErrorExecution, sceerrorreason.ErrorReasonAssignmentFailed, "<assign> to 'aAfterB' failed"))
 		return  // W3C SCXML 4.9: the error ends the block
 	}
 

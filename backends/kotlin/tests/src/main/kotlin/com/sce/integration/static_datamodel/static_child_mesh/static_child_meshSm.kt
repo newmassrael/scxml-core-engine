@@ -526,7 +526,7 @@ class StaticChildMeshStateMachine(
                                 else -> {
                                     // The failure the Interpreter reports when a
                                     // document will not load: nothing to create.
-                                    raisePlatformError(StaticChildMeshEvent.Error.Execution, "<invoke srcexpr> evaluated to a document it did not declare")
+                                    raisePlatformError(StaticChildMeshEvent.Error.Execution, ErrorReason.INVOKE_SRC_NOT_FOUND, "<invoke srcexpr> evaluated to a document it did not declare")
                                     return@deferInvoke
                                 }
                             }
@@ -536,7 +536,7 @@ class StaticChildMeshStateMachine(
                             // W3C SCXML 6.4: the child could not be started. Evaluation
                             // failure no longer reaches here — it has its own raise above,
                             // under the one wording every emitter uses for that fact.
-                            raisePlatformError(StaticChildMeshEvent.Error.Execution, "<invoke> could not start a child")
+                            raisePlatformError(StaticChildMeshEvent.Error.Execution, ErrorReason.INVOKE_CHILD_INIT_FAILED, "<invoke> could not start a child")
                         }
                     }
                 }
@@ -657,7 +657,7 @@ class StaticChildMeshStateMachine(
     private fun transitionContentOfWorkingAt0() {
                 // SCE-MAP: static_child_mesh.scxml:54 :: working :: _transition_0
 
-            if (try { vRefusals = com.sce.forge.runtime.SceChecked.add(vRefusals, 1.toUInt()); false } catch (_: com.sce.forge.runtime.AlgorithmFailure) { raisePlatformError(StaticChildMeshEvent.Error.Execution, "<assign location='refusals'>: an integer operation overflowed or failed"); true }) {
+            if (try { vRefusals = com.sce.forge.runtime.SceChecked.add(vRefusals, 1.toUInt()); false } catch (_: com.sce.forge.runtime.AlgorithmFailure) { raisePlatformError(StaticChildMeshEvent.Error.Execution, ErrorReason.EXPRESSION_FAILED, "<assign location='refusals'>: an integer operation overflowed or failed"); true }) {
                 return
             }
     }

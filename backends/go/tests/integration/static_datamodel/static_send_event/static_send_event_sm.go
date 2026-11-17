@@ -31,6 +31,7 @@ import (
 	"time"
 
 	sce "github.com/newmassrael/sce-go-runtime"
+	sceerrorreason "github.com/newmassrael/sce-go-runtime/generated/error_reason"
 	scealgorithm "github.com/newmassrael/sce-forge-runtime/algorithm"
 )
 
@@ -40,6 +41,9 @@ var (
 	_ = filepath.Join
 	_ = strings.HasPrefix
 	_ = time.Duration(0)
+	// Why an error.* event is raised (sce:std/engine/error_reason,
+	// docs/adr/0106 #111); a machine that raises none still imports it.
+	_ = sceerrorreason.ErrorReasonExpressionFailed
 	_ scealgorithm.Failure
 )
 
@@ -956,6 +960,10 @@ func (p *StaticSendEventPolicy) ExecuteTransitionContent(source StaticSendEventS
 	// W3C SCXML 6.2: send id="__send_0"
 	{
 	sendArgError := ""
+	// Why the argument failed, a code of sce:std/engine/error_reason
+	// (docs/adr/0106 #111), set with every sentence below.
+	var sendArgReason sce.ErrorReason
+	_ = sendArgReason
 	// The event's name is a string computed from the machine's fields now. A name
 	// that evaluates to nothing names no event, and an operation that fails cannot
 	// be evaluated: either is the argument error.
@@ -963,12 +971,12 @@ func (p *StaticSendEventPolicy) ExecuteTransitionContent(source StaticSendEventS
 	if sendArgError == "" {
 		sendEventName = p.vName
 		if sendEventName == "" {
-			sendArgError = "<send> eventexpr could not be evaluated to an event name"
+			sendArgError, sendArgReason = "<send> eventexpr could not be evaluated to an event name", sceerrorreason.ErrorReasonExpressionFailed
 		}
 	}
 	_ = sendEventName
 	if sendArgError != "" {
-		errEvt := sce.NewPlatformError(StaticSendEventEventErrorExecution, sendArgError)
+		errEvt := sce.NewPlatformError(StaticSendEventEventErrorExecution, sendArgReason, sendArgError)
 		errEvt.Metadata.SendID = "__send_0"
 		engine.Raise(errEvt)
 		return  // W3C SCXML 4.9: the error ends the block
@@ -990,6 +998,10 @@ func (p *StaticSendEventPolicy) ExecuteTransitionContent(source StaticSendEventS
 	// W3C SCXML 6.2: send id="__send_1"
 	{
 	sendArgError := ""
+	// Why the argument failed, a code of sce:std/engine/error_reason
+	// (docs/adr/0106 #111), set with every sentence below.
+	var sendArgReason sce.ErrorReason
+	_ = sendArgReason
 	// The event's name is a string computed from the machine's fields now. A name
 	// that evaluates to nothing names no event, and an operation that fails cannot
 	// be evaluated: either is the argument error.
@@ -1001,12 +1013,12 @@ func (p *StaticSendEventPolicy) ExecuteTransitionContent(source StaticSendEventS
 			sendEventName = ""
 		}
 		if sendEventName == "" {
-			sendArgError = "<send> eventexpr could not be evaluated to an event name"
+			sendArgError, sendArgReason = "<send> eventexpr could not be evaluated to an event name", sceerrorreason.ErrorReasonExpressionFailed
 		}
 	}
 	_ = sendEventName
 	if sendArgError != "" {
-		errEvt := sce.NewPlatformError(StaticSendEventEventErrorExecution, sendArgError)
+		errEvt := sce.NewPlatformError(StaticSendEventEventErrorExecution, sendArgReason, sendArgError)
 		errEvt.Metadata.SendID = "__send_1"
 		engine.Raise(errEvt)
 		return  // W3C SCXML 4.9: the error ends the block
@@ -1026,7 +1038,7 @@ func (p *StaticSendEventPolicy) ExecuteTransitionContent(source StaticSendEventS
 			func() {
 
 
-	if func() bool { var sceFailure scealgorithm.Failure; sceValue := scealgorithm.Bounded(&sceFailure, "pong", 16); if sceFailure.Failed() { engine.Raise(sce.NewPlatformError(StaticSendEventEventErrorExecution, "<assign location='name'>: an integer operation overflowed or failed")); return true }; p.vName = sceValue; return false }() {
+	if func() bool { var sceFailure scealgorithm.Failure; sceValue := scealgorithm.Bounded(&sceFailure, "pong", 16); if sceFailure.Failed() { engine.Raise(sce.NewPlatformError(StaticSendEventEventErrorExecution, sceerrorreason.ErrorReasonExpressionFailed, "<assign location='name'>: an integer operation overflowed or failed")); return true }; p.vName = sceValue; return false }() {
 		return  // W3C SCXML 4.9: the error ends the block
 	}
 
@@ -1037,7 +1049,7 @@ func (p *StaticSendEventPolicy) ExecuteTransitionContent(source StaticSendEventS
 			func() {
 
 
-	if func() bool { var sceFailure scealgorithm.Failure; sceValue := scealgorithm.Bounded(&sceFailure, "ping", 16); if sceFailure.Failed() { engine.Raise(sce.NewPlatformError(StaticSendEventEventErrorExecution, "<assign location='name'>: an integer operation overflowed or failed")); return true }; p.vName = sceValue; return false }() {
+	if func() bool { var sceFailure scealgorithm.Failure; sceValue := scealgorithm.Bounded(&sceFailure, "ping", 16); if sceFailure.Failed() { engine.Raise(sce.NewPlatformError(StaticSendEventEventErrorExecution, sceerrorreason.ErrorReasonExpressionFailed, "<assign location='name'>: an integer operation overflowed or failed")); return true }; p.vName = sceValue; return false }() {
 		return  // W3C SCXML 4.9: the error ends the block
 	}
 
@@ -1048,7 +1060,7 @@ func (p *StaticSendEventPolicy) ExecuteTransitionContent(source StaticSendEventS
 			func() {
 
 
-	if func() bool { var sceFailure scealgorithm.Failure; sceValue := scealgorithm.Bounded(&sceFailure, "", 16); if sceFailure.Failed() { engine.Raise(sce.NewPlatformError(StaticSendEventEventErrorExecution, "<assign location='name'>: an integer operation overflowed or failed")); return true }; p.vName = sceValue; return false }() {
+	if func() bool { var sceFailure scealgorithm.Failure; sceValue := scealgorithm.Bounded(&sceFailure, "", 16); if sceFailure.Failed() { engine.Raise(sce.NewPlatformError(StaticSendEventEventErrorExecution, sceerrorreason.ErrorReasonExpressionFailed, "<assign location='name'>: an integer operation overflowed or failed")); return true }; p.vName = sceValue; return false }() {
 		return  // W3C SCXML 4.9: the error ends the block
 	}
 
@@ -1059,7 +1071,7 @@ func (p *StaticSendEventPolicy) ExecuteTransitionContent(source StaticSendEventS
 			func() {
 
 
-	if func() bool { var sceFailure scealgorithm.Failure; sceValue := scealgorithm.AddUint32(&sceFailure, p.vPings, 1); if sceFailure.Failed() { engine.Raise(sce.NewPlatformError(StaticSendEventEventErrorExecution, "<assign location='pings'>: an integer operation overflowed or failed")); return true }; p.vPings = sceValue; return false }() {
+	if func() bool { var sceFailure scealgorithm.Failure; sceValue := scealgorithm.AddUint32(&sceFailure, p.vPings, 1); if sceFailure.Failed() { engine.Raise(sce.NewPlatformError(StaticSendEventEventErrorExecution, sceerrorreason.ErrorReasonExpressionFailed, "<assign location='pings'>: an integer operation overflowed or failed")); return true }; p.vPings = sceValue; return false }() {
 		return  // W3C SCXML 4.9: the error ends the block
 	}
 
@@ -1070,7 +1082,7 @@ func (p *StaticSendEventPolicy) ExecuteTransitionContent(source StaticSendEventS
 			func() {
 
 
-	if func() bool { var sceFailure scealgorithm.Failure; sceValue := scealgorithm.AddUint32(&sceFailure, p.vPongs, 1); if sceFailure.Failed() { engine.Raise(sce.NewPlatformError(StaticSendEventEventErrorExecution, "<assign location='pongs'>: an integer operation overflowed or failed")); return true }; p.vPongs = sceValue; return false }() {
+	if func() bool { var sceFailure scealgorithm.Failure; sceValue := scealgorithm.AddUint32(&sceFailure, p.vPongs, 1); if sceFailure.Failed() { engine.Raise(sce.NewPlatformError(StaticSendEventEventErrorExecution, sceerrorreason.ErrorReasonExpressionFailed, "<assign location='pongs'>: an integer operation overflowed or failed")); return true }; p.vPongs = sceValue; return false }() {
 		return  // W3C SCXML 4.9: the error ends the block
 	}
 
@@ -1081,7 +1093,7 @@ func (p *StaticSendEventPolicy) ExecuteTransitionContent(source StaticSendEventS
 			func() {
 
 
-	if func() bool { var sceFailure scealgorithm.Failure; sceValue := scealgorithm.AddUint32(&sceFailure, p.vRefusals, 1); if sceFailure.Failed() { engine.Raise(sce.NewPlatformError(StaticSendEventEventErrorExecution, "<assign location='refusals'>: an integer operation overflowed or failed")); return true }; p.vRefusals = sceValue; return false }() {
+	if func() bool { var sceFailure scealgorithm.Failure; sceValue := scealgorithm.AddUint32(&sceFailure, p.vRefusals, 1); if sceFailure.Failed() { engine.Raise(sce.NewPlatformError(StaticSendEventEventErrorExecution, sceerrorreason.ErrorReasonExpressionFailed, "<assign location='refusals'>: an integer operation overflowed or failed")); return true }; p.vRefusals = sceValue; return false }() {
 		return  // W3C SCXML 4.9: the error ends the block
 	}
 

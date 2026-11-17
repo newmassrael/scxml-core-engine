@@ -31,6 +31,7 @@ import (
 	"time"
 
 	sce "github.com/newmassrael/sce-go-runtime"
+	sceerrorreason "github.com/newmassrael/sce-go-runtime/generated/error_reason"
 )
 
 // Ensure imports are used
@@ -39,6 +40,9 @@ var (
 	_ = filepath.Join
 	_ = strings.HasPrefix
 	_ = time.Duration(0)
+	// Why an error.* event is raised (sce:std/engine/error_reason,
+	// docs/adr/0106 #111); a machine that raises none still imports it.
+	_ = sceerrorreason.ErrorReasonExpressionFailed
 )
 
 // ======================================================================
@@ -334,7 +338,7 @@ func (p *UndecodablePayloadIsReportedPolicy) InitializeDataModel(eng *sce.Engine
 		if err == nil {
 			_ = engine.SetVariable(sessionID, "answers", result)
 		} else {
-			eng.Raise(sce.NewPlatformError(UndecodablePayloadIsReportedEventErrorExecution, "<data id='answers'> expr failed to evaluate"))
+			eng.Raise(sce.NewPlatformError(UndecodablePayloadIsReportedEventErrorExecution, sceerrorreason.ErrorReasonExpressionFailed, "<data id='answers'> expr failed to evaluate"))
 			_ = engine.SetVariable(sessionID, "answers", nil)
 		}
 	}
@@ -348,7 +352,7 @@ func (p *UndecodablePayloadIsReportedPolicy) InitializeDataModel(eng *sce.Engine
 		if err == nil {
 			_ = engine.SetVariable(sessionID, "notes", result)
 		} else {
-			eng.Raise(sce.NewPlatformError(UndecodablePayloadIsReportedEventErrorExecution, "<data id='notes'> expr failed to evaluate"))
+			eng.Raise(sce.NewPlatformError(UndecodablePayloadIsReportedEventErrorExecution, sceerrorreason.ErrorReasonExpressionFailed, "<data id='notes'> expr failed to evaluate"))
 			_ = engine.SetVariable(sessionID, "notes", nil)
 		}
 	}
@@ -380,12 +384,12 @@ func (p *UndecodablePayloadIsReportedPolicy) evaluateIfCond(guard string, eng *s
 // evaluateGuardRaising evaluates a cond, raising error.execution when it cannot
 // be evaluated (W3C SCXML 5.9.1); ok is false then, where a bare false could
 // not say so.
-func (p *UndecodablePayloadIsReportedPolicy) evaluateGuardRaising(guard string, eng *sce.Engine[UndecodablePayloadIsReportedState, UndecodablePayloadIsReportedEvent], reason string) (value bool, ok bool) {
+func (p *UndecodablePayloadIsReportedPolicy) evaluateGuardRaising(guard string, eng *sce.Engine[UndecodablePayloadIsReportedState, UndecodablePayloadIsReportedEvent], detail string) (value bool, ok bool) {
 	p.assertScriptSession()
 	engine := p.ScriptEngine
 	result, err := engine.EvaluateExpression(p.SessionID, guard)
 	if err != nil {
-		eng.Raise(sce.NewPlatformError(UndecodablePayloadIsReportedEventErrorExecution, reason))
+		eng.Raise(sce.NewPlatformError(UndecodablePayloadIsReportedEventErrorExecution, sceerrorreason.ErrorReasonExpressionFailed, detail))
 		return false, false
 	}
 	return sce.ScriptToBool(result), true
@@ -488,7 +492,7 @@ func (p *UndecodablePayloadIsReportedPolicy) SetParamValueInScriptEngine(name st
 // failed is left (docs/adr/0098).
 func (p *UndecodablePayloadIsReportedPolicy) declareHandedValue(eng *sce.Engine[UndecodablePayloadIsReportedState, UndecodablePayloadIsReportedEvent], engine sce.IScriptEngine, sessionID, name string, value interface{}) {
 	if err := engine.SetVariable(sessionID, name, value); err != nil {
-		eng.Raise(sce.NewPlatformError(UndecodablePayloadIsReportedEventErrorExecution, "<data id='"+name+"'> could not hold the value its invoking session handed it"))
+		eng.Raise(sce.NewPlatformError(UndecodablePayloadIsReportedEventErrorExecution, sceerrorreason.ErrorReasonDataInitFailed, "<data id='"+name+"'> could not hold the value its invoking session handed it"))
 		_ = engine.SetVariable(sessionID, name, nil)
 	}
 }
@@ -847,7 +851,7 @@ func (p *UndecodablePayloadIsReportedPolicy) ExecuteTransitionContent(source Und
 
 	// W3C SCXML 5.3: <assign location="answers" expr="answers + 1">
 	if err := p.assignVariable(`answers`, `_scxml_add(answers, 1)`); err != nil {
-		engine.Raise(sce.NewPlatformError(UndecodablePayloadIsReportedEventErrorExecution, "<assign> to 'answers' failed"))
+		engine.Raise(sce.NewPlatformError(UndecodablePayloadIsReportedEventErrorExecution, sceerrorreason.ErrorReasonAssignmentFailed, "<assign> to 'answers' failed"))
 		return  // W3C SCXML 4.9: the error ends the block
 	}
 
@@ -859,7 +863,7 @@ func (p *UndecodablePayloadIsReportedPolicy) ExecuteTransitionContent(source Und
 
 	// W3C SCXML 5.3: <assign location="notes" expr="notes + 1">
 	if err := p.assignVariable(`notes`, `_scxml_add(notes, 1)`); err != nil {
-		engine.Raise(sce.NewPlatformError(UndecodablePayloadIsReportedEventErrorExecution, "<assign> to 'notes' failed"))
+		engine.Raise(sce.NewPlatformError(UndecodablePayloadIsReportedEventErrorExecution, sceerrorreason.ErrorReasonAssignmentFailed, "<assign> to 'notes' failed"))
 		return  // W3C SCXML 4.9: the error ends the block
 	}
 

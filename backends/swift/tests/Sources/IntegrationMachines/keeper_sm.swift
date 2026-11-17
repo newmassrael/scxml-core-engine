@@ -422,8 +422,12 @@ public final class KeeperPolicy: InvocablePolicy {
 
     /// Says what went wrong where the document can see it: `error.execution` on the internal
     /// queue (§scxml-5.9.1, 5.3).
-    private func raiseExecutionError(_ message: String, engine: Engine<KeeperPolicy>) {
-        engine.raise(EventWithMetadata.platformError(KeeperEvent.errorExecution, message: message))
+    /// `reason` is the code of sce:std/engine/error_reason the record carries
+    /// (docs/adr/0106 #111).
+    private func raiseExecutionError(
+        _ reason: ErrorReason, _ message: String, engine: Engine<KeeperPolicy>
+    ) {
+        engine.raise(EventWithMetadata.platformError(KeeperEvent.errorExecution, reason: reason, message: message))
     }
 
     /// W3C SCXML 5.3: the `<data id>` `id` takes the value of the lowered expression, or nil when it
@@ -480,6 +484,7 @@ public final class KeeperPolicy: InvocablePolicy {
             }
         } catch {
             raiseExecutionError(
+                handed == nil ? .expressionFailed : .paramUnfit,
                 handed == nil
                     ? "<data id='\(id)'> expr failed to evaluate"
                     : "<data id='\(id)'> could not hold the value its parent handed it",
@@ -643,7 +648,7 @@ public final class KeeperPolicy: InvocablePolicy {
             // this call the payload is lost to the document and to the host alike.
             engine.notePayloadReading(event, reading: Self.payloadReading(of: reading))
         } catch {
-            raiseExecutionError("_event could not be bound for '\(name)'", engine: engine)
+            raiseExecutionError(.payloadRefused, "_event could not be bound for '\(name)'", engine: engine)
         }
     }
 
@@ -680,7 +685,7 @@ public final class KeeperPolicy: InvocablePolicy {
         do {
             return try scriptSession.evaluateCondition(condition, chunkName: "=cond")
         } catch {
-            raiseExecutionError("a \(element) cond failed to evaluate", engine: engine)
+            raiseExecutionError(.expressionFailed, "a \(element) cond failed to evaluate", engine: engine)
             failed = true
             return false
         }
@@ -772,28 +777,28 @@ public final class KeeperPolicy: InvocablePolicy {
                     if let paramValue = evaluateJSON("seed") {
                         sendParts.append(PayloadPair.json("seed", rawJSON: paramValue))
                     } else {
-                        engine.raise(EventWithMetadata.platformError(KeeperEvent.errorExecution, message: "<send> <param name=seed> failed to evaluate"))
+                        engine.raise(EventWithMetadata.platformError(KeeperEvent.errorExecution, reason: .expressionFailed, message: "<send> <param name=seed> failed to evaluate"))
                         paramFailed = true
                     }
 
                     if let paramValue = evaluateJSON("fromLoc") {
                         sendParts.append(PayloadPair.json("fromLoc", rawJSON: paramValue))
                     } else {
-                        engine.raise(EventWithMetadata.platformError(KeeperEvent.errorExecution, message: "<send> <param name=fromLoc> failed to evaluate"))
+                        engine.raise(EventWithMetadata.platformError(KeeperEvent.errorExecution, reason: .expressionFailed, message: "<send> <param name=fromLoc> failed to evaluate"))
                         paramFailed = true
                     }
 
                     if let paramValue = evaluateJSON("emptyLoc") {
                         sendParts.append(PayloadPair.json("emptyLoc", rawJSON: paramValue))
                     } else {
-                        engine.raise(EventWithMetadata.platformError(KeeperEvent.errorExecution, message: "<send> <param name=emptyLoc> failed to evaluate"))
+                        engine.raise(EventWithMetadata.platformError(KeeperEvent.errorExecution, reason: .expressionFailed, message: "<send> <param name=emptyLoc> failed to evaluate"))
                         paramFailed = true
                     }
 
                     if let paramValue = evaluateJSON("_typeof(nowhere)") {
                         sendParts.append(PayloadPair.json("leak", rawJSON: paramValue))
                     } else {
-                        engine.raise(EventWithMetadata.platformError(KeeperEvent.errorExecution, message: "<send> <param name=leak> failed to evaluate"))
+                        engine.raise(EventWithMetadata.platformError(KeeperEvent.errorExecution, reason: .expressionFailed, message: "<send> <param name=leak> failed to evaluate"))
                         paramFailed = true
                     }
 
@@ -803,7 +808,7 @@ public final class KeeperPolicy: InvocablePolicy {
                         // W3C SCXML C.1: this session was started by its host, not by an
                         // `<invoke>`, so `#_parent` reaches nobody — error.communication,
                         // nothing delivered, and the block ends (4.9).
-                        var sendError = EventWithMetadata.platformError(KeeperEvent.errorCommunication, message: "<send target=#_parent> has no parent session to reach")
+                        var sendError = EventWithMetadata.platformError(KeeperEvent.errorCommunication, reason: .targetUnreachable, message: "<send target=#_parent> has no parent session to reach")
                         sendError.metadata.sendID = "__send_0"
                         engine.raise(sendError)
 

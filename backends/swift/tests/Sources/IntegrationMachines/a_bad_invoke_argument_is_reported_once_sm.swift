@@ -456,8 +456,12 @@ public final class ABadInvokeArgumentIsReportedOncePolicy: InvocablePolicy {
 
     /// Says what went wrong where the document can see it: `error.execution` on the internal
     /// queue (§scxml-5.9.1, 5.3).
-    private func raiseExecutionError(_ message: String, engine: Engine<ABadInvokeArgumentIsReportedOncePolicy>) {
-        engine.raise(EventWithMetadata.platformError(ABadInvokeArgumentIsReportedOnceEvent.errorExecution, message: message))
+    /// `reason` is the code of sce:std/engine/error_reason the record carries
+    /// (docs/adr/0106 #111).
+    private func raiseExecutionError(
+        _ reason: ErrorReason, _ message: String, engine: Engine<ABadInvokeArgumentIsReportedOncePolicy>
+    ) {
+        engine.raise(EventWithMetadata.platformError(ABadInvokeArgumentIsReportedOnceEvent.errorExecution, reason: reason, message: message))
     }
 
     /// W3C SCXML 5.3: the `<data id>` `id` takes the value of the lowered expression, or nil when it
@@ -514,6 +518,7 @@ public final class ABadInvokeArgumentIsReportedOncePolicy: InvocablePolicy {
             }
         } catch {
             raiseExecutionError(
+                handed == nil ? .expressionFailed : .paramUnfit,
                 handed == nil
                     ? "<data id='\(id)'> expr failed to evaluate"
                     : "<data id='\(id)'> could not hold the value its parent handed it",
@@ -681,7 +686,7 @@ public final class ABadInvokeArgumentIsReportedOncePolicy: InvocablePolicy {
             // this call the payload is lost to the document and to the host alike.
             engine.notePayloadReading(event, reading: Self.payloadReading(of: reading))
         } catch {
-            raiseExecutionError("_event could not be bound for '\(name)'", engine: engine)
+            raiseExecutionError(.payloadRefused, "_event could not be bound for '\(name)'", engine: engine)
         }
     }
 
@@ -718,7 +723,7 @@ public final class ABadInvokeArgumentIsReportedOncePolicy: InvocablePolicy {
         do {
             return try scriptSession.evaluateCondition(condition, chunkName: "=cond")
         } catch {
-            raiseExecutionError("a \(element) cond failed to evaluate", engine: engine)
+            raiseExecutionError(.expressionFailed, "a \(element) cond failed to evaluate", engine: engine)
             failed = true
             return false
         }
@@ -799,18 +804,18 @@ public final class ABadInvokeArgumentIsReportedOncePolicy: InvocablePolicy {
         if let seedValue = evaluateSeed("v") {
             seeds["fromLoc"] = seedValue
         } else {
-            raiseExecutionError("<invoke> <param name='fromLoc'> could not be read", engine: engine)
+            raiseExecutionError(.locationInvalid, "<invoke> <param name='fromLoc'> could not be read", engine: engine)
         }
-        raiseExecutionError("<invoke> <param name='emptyLoc'> names no location", engine: engine)
+        raiseExecutionError(.locationInvalid, "<invoke> <param name='emptyLoc'> names no location", engine: engine)
         if let seedValue = evaluateSeed("obj.missing.deep") {
             seeds["broken"] = seedValue
         } else {
-            raiseExecutionError("<invoke> <param name='broken'> could not be read", engine: engine)
+            raiseExecutionError(.locationInvalid, "<invoke> <param name='broken'> could not be read", engine: engine)
         }
         if let seedValue = evaluateSeed("obj.missing.deep") {
             seeds["notInChild"] = seedValue
         } else {
-            raiseExecutionError("<invoke> <param name='notInChild'> could not be read", engine: engine)
+            raiseExecutionError(.locationInvalid, "<invoke> <param name='notInChild'> could not be read", engine: engine)
         }
         childPolicy.acceptSeeds(seeds)
 
@@ -873,7 +878,7 @@ public final class ABadInvokeArgumentIsReportedOncePolicy: InvocablePolicy {
     private func sceStartInvokeInv2(_ pending: PendingInvoke<ABadInvokeArgumentIsReportedOnceState>, engine: Engine<ABadInvokeArgumentIsReportedOncePolicy>) {
         // W3C SCXML 6.4: the namelist names a location that cannot be read, so the element ends
         // here: one error.execution, and no session starts.
-        raiseExecutionError("<invoke> namelist names a location that cannot be read", engine: engine)
+        raiseExecutionError(.locationInvalid, "<invoke> namelist names a location that cannot be read", engine: engine)
     }
 
     /// Takes what the session of `<invoke>` `inv2` sent this machine, and
@@ -902,7 +907,7 @@ public final class ABadInvokeArgumentIsReportedOncePolicy: InvocablePolicy {
     private func sceStartInvokeInv3(_ pending: PendingInvoke<ABadInvokeArgumentIsReportedOnceState>, engine: Engine<ABadInvokeArgumentIsReportedOncePolicy>) {
         // W3C SCXML 6.4: the namelist names a location that cannot be read, so the element ends
         // here: one error.execution, and no session starts.
-        raiseExecutionError("<invoke> namelist names a location that cannot be read", engine: engine)
+        raiseExecutionError(.locationInvalid, "<invoke> namelist names a location that cannot be read", engine: engine)
     }
 
     /// Takes what the session of `<invoke>` `inv3` sent this machine, and
@@ -1268,7 +1273,7 @@ public final class ABadInvokeArgumentIsReportedOncePolicy: InvocablePolicy {
 
                 // W3C SCXML 5.4: <assign location="errors">
                 if !assignData("errors", "_scxml_add(errors, 1)") {
-                    raiseExecutionError("<assign> to 'errors' failed", engine: engine)
+                    raiseExecutionError(.assignmentFailed, "<assign> to 'errors' failed", engine: engine)
                     break sceBlock  // W3C SCXML 4.9: the error ends the block
                 }
 
@@ -1279,7 +1284,7 @@ public final class ABadInvokeArgumentIsReportedOncePolicy: InvocablePolicy {
 
                 // W3C SCXML 5.4: <assign location="started">
                 if !assignData("started", "_scxml_add(started, 1)") {
-                    raiseExecutionError("<assign> to 'started' failed", engine: engine)
+                    raiseExecutionError(.assignmentFailed, "<assign> to 'started' failed", engine: engine)
                     break sceBlock  // W3C SCXML 4.9: the error ends the block
                 }
 
@@ -1295,14 +1300,14 @@ public final class ABadInvokeArgumentIsReportedOncePolicy: InvocablePolicy {
 
                 // W3C SCXML 5.4: <assign location="fromLocOk">
                 if !assignData("fromLocOk", "1") {
-                    raiseExecutionError("<assign> to 'fromLocOk' failed", engine: engine)
+                    raiseExecutionError(.assignmentFailed, "<assign> to 'fromLocOk' failed", engine: engine)
                     break sceBlock  // W3C SCXML 4.9: the error ends the block
                 }
 
 
                 // W3C SCXML 5.4: <assign location="started">
                 if !assignData("started", "_scxml_add(started, 1)") {
-                    raiseExecutionError("<assign> to 'started' failed", engine: engine)
+                    raiseExecutionError(.assignmentFailed, "<assign> to 'started' failed", engine: engine)
                     break sceBlock  // W3C SCXML 4.9: the error ends the block
                 }
 
@@ -1312,7 +1317,7 @@ public final class ABadInvokeArgumentIsReportedOncePolicy: InvocablePolicy {
 
                 // W3C SCXML 5.4: <assign location="emptyLocLeftOut">
                 if !assignData("emptyLocLeftOut", "1") {
-                    raiseExecutionError("<assign> to 'emptyLocLeftOut' failed", engine: engine)
+                    raiseExecutionError(.assignmentFailed, "<assign> to 'emptyLocLeftOut' failed", engine: engine)
                     break sceBlock  // W3C SCXML 4.9: the error ends the block
                 }
 
@@ -1327,7 +1332,7 @@ public final class ABadInvokeArgumentIsReportedOncePolicy: InvocablePolicy {
 
                 // W3C SCXML 5.4: <assign location="brokenLeftOut">
                 if !assignData("brokenLeftOut", "1") {
-                    raiseExecutionError("<assign> to 'brokenLeftOut' failed", engine: engine)
+                    raiseExecutionError(.assignmentFailed, "<assign> to 'brokenLeftOut' failed", engine: engine)
                     break sceBlock  // W3C SCXML 4.9: the error ends the block
                 }
 

@@ -196,14 +196,14 @@ class Test230SceSynthInvokeInvoke0StateMachine(
 
     // W3C SCXML 5.9.1: a cond that cannot be evaluated raises error.execution;
     // `null` says so, where a bare `false` could not.
-    private fun evaluateGuardRaising(guardExpr: com.sce.runtime.ScriptSource, reason: String): Boolean? {
+    private fun evaluateGuardRaising(guardExpr: com.sce.runtime.ScriptSource, detail: String): Boolean? {
         assertScriptSession()
         val engine = scriptEngine ?: error("scriptEngine is required (codegen invariant: needs_script_engine == true)")
         val sid = scriptSessionId ?: error("scriptSessionId is established by the start (codegen invariant)")
         return try {
             engine.evaluateCondition(sid, guardExpr)
         } catch (e: Exception) {
-            raisePlatformError(Test230SceSynthInvokeInvoke0Event.Error.Execution, reason)
+            raisePlatformError(Test230SceSynthInvokeInvoke0Event.Error.Execution, ErrorReason.EXPRESSION_FAILED, detail)
             null
         }
     }
@@ -244,7 +244,7 @@ class Test230SceSynthInvokeInvoke0StateMachine(
         return try {
             engine.evaluateExpr(sid, serialized)?.toString() ?: ""
         } catch (e: Exception) {
-            raisePlatformError(Test230SceSynthInvokeInvoke0Event.Error.Execution, "an expression could not be serialised to JSON")
+            raisePlatformError(Test230SceSynthInvokeInvoke0Event.Error.Execution, ErrorReason.EXPRESSION_FAILED, "an expression could not be serialised to JSON")
             ""
         }
     }
@@ -265,7 +265,7 @@ class Test230SceSynthInvokeInvoke0StateMachine(
             engine.assign(sid, location, expr)
             true
         } catch (e: Exception) {
-            raisePlatformError(Test230SceSynthInvokeInvoke0Event.Error.Execution, "<assign> failed")
+            raisePlatformError(Test230SceSynthInvokeInvoke0Event.Error.Execution, ErrorReason.ASSIGNMENT_FAILED, "<assign> failed")
             false
         }
     }
@@ -281,7 +281,7 @@ class Test230SceSynthInvokeInvoke0StateMachine(
             engine.executeScript(sid, script)
             true
         } catch (e: Exception) {
-            raisePlatformError(Test230SceSynthInvokeInvoke0Event.Error.Execution, "<script> failed to execute")
+            raisePlatformError(Test230SceSynthInvokeInvoke0Event.Error.Execution, ErrorReason.SCRIPT_FAILED, "<script> failed to execute")
             false
         }
     }
@@ -393,7 +393,7 @@ class Test230SceSynthInvokeInvoke0StateMachine(
             // no parent — error.communication, nothing delivered, the block ended.
             val toParent = onSendToParent
             if (toParent == null) {
-                raisePlatformError(Test230SceSynthInvokeInvoke0Event.Error.Communication, "<send target='#_parent'> has no parent session to reach", "__send_0")
+                raisePlatformError(Test230SceSynthInvokeInvoke0Event.Error.Communication, ErrorReason.TARGET_UNREACHABLE, "<send target='#_parent'> has no parent session to reach", "__send_0")
                 return@send true
             }
             toParent("childToParent", sendData)
@@ -478,7 +478,7 @@ class Test230SceSynthInvokeInvoke0StateMachine(
                     println("name is : " + (scriptEngine?.evaluateExpr(scriptSessionId ?: "", com.sce.runtime.ScriptSource.lua("_event.name", "_event.name"))?.toString() ?: ""))
                     false
                 } catch (_: Exception) {
-                    raisePlatformError(Test230SceSynthInvokeInvoke0Event.Error.Execution, "<log> expr failed to evaluate")
+                    raisePlatformError(Test230SceSynthInvokeInvoke0Event.Error.Execution, ErrorReason.EXPRESSION_FAILED, "<log> expr failed to evaluate")
                     true
                 }
             }) {
@@ -493,7 +493,7 @@ class Test230SceSynthInvokeInvoke0StateMachine(
                     println("type is : " + (scriptEngine?.evaluateExpr(scriptSessionId ?: "", com.sce.runtime.ScriptSource.lua("_event.type", "_event.type"))?.toString() ?: ""))
                     false
                 } catch (_: Exception) {
-                    raisePlatformError(Test230SceSynthInvokeInvoke0Event.Error.Execution, "<log> expr failed to evaluate")
+                    raisePlatformError(Test230SceSynthInvokeInvoke0Event.Error.Execution, ErrorReason.EXPRESSION_FAILED, "<log> expr failed to evaluate")
                     true
                 }
             }) {
@@ -508,7 +508,7 @@ class Test230SceSynthInvokeInvoke0StateMachine(
                     println("sendid is : " + (scriptEngine?.evaluateExpr(scriptSessionId ?: "", com.sce.runtime.ScriptSource.lua("_event.sendid", "_event.sendid"))?.toString() ?: ""))
                     false
                 } catch (_: Exception) {
-                    raisePlatformError(Test230SceSynthInvokeInvoke0Event.Error.Execution, "<log> expr failed to evaluate")
+                    raisePlatformError(Test230SceSynthInvokeInvoke0Event.Error.Execution, ErrorReason.EXPRESSION_FAILED, "<log> expr failed to evaluate")
                     true
                 }
             }) {
@@ -523,7 +523,7 @@ class Test230SceSynthInvokeInvoke0StateMachine(
                     println("origin is : " + (scriptEngine?.evaluateExpr(scriptSessionId ?: "", com.sce.runtime.ScriptSource.lua("_event.origin", "_event.origin"))?.toString() ?: ""))
                     false
                 } catch (_: Exception) {
-                    raisePlatformError(Test230SceSynthInvokeInvoke0Event.Error.Execution, "<log> expr failed to evaluate")
+                    raisePlatformError(Test230SceSynthInvokeInvoke0Event.Error.Execution, ErrorReason.EXPRESSION_FAILED, "<log> expr failed to evaluate")
                     true
                 }
             }) {
@@ -538,7 +538,7 @@ class Test230SceSynthInvokeInvoke0StateMachine(
                     println("origintype is : " + (scriptEngine?.evaluateExpr(scriptSessionId ?: "", com.sce.runtime.ScriptSource.lua("_event.origintype", "_event.origintype"))?.toString() ?: ""))
                     false
                 } catch (_: Exception) {
-                    raisePlatformError(Test230SceSynthInvokeInvoke0Event.Error.Execution, "<log> expr failed to evaluate")
+                    raisePlatformError(Test230SceSynthInvokeInvoke0Event.Error.Execution, ErrorReason.EXPRESSION_FAILED, "<log> expr failed to evaluate")
                     true
                 }
             }) {
@@ -553,7 +553,7 @@ class Test230SceSynthInvokeInvoke0StateMachine(
                     println("invokeid is : " + (scriptEngine?.evaluateExpr(scriptSessionId ?: "", com.sce.runtime.ScriptSource.lua("_event.invokeid", "_event.invokeid"))?.toString() ?: ""))
                     false
                 } catch (_: Exception) {
-                    raisePlatformError(Test230SceSynthInvokeInvoke0Event.Error.Execution, "<log> expr failed to evaluate")
+                    raisePlatformError(Test230SceSynthInvokeInvoke0Event.Error.Execution, ErrorReason.EXPRESSION_FAILED, "<log> expr failed to evaluate")
                     true
                 }
             }) {
@@ -568,7 +568,7 @@ class Test230SceSynthInvokeInvoke0StateMachine(
                     println("data is : " + (scriptEngine?.evaluateExpr(scriptSessionId ?: "", com.sce.runtime.ScriptSource.lua("_event.data", "_event.data"))?.toString() ?: ""))
                     false
                 } catch (_: Exception) {
-                    raisePlatformError(Test230SceSynthInvokeInvoke0Event.Error.Execution, "<log> expr failed to evaluate")
+                    raisePlatformError(Test230SceSynthInvokeInvoke0Event.Error.Execution, ErrorReason.EXPRESSION_FAILED, "<log> expr failed to evaluate")
                     true
                 }
             }) {

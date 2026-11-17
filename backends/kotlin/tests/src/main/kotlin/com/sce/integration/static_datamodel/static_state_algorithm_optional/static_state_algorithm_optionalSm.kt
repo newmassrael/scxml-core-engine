@@ -604,21 +604,21 @@ class StaticStateAlgorithmOptionalStateMachine(
 
             vDraft = StaticStateAlgorithmOptionalGoalRecord(id = pendingGoalAddedPayload!!.id, day = pendingGoalAddedPayload!!.day, weight = pendingGoalAddedPayload!!.weight)
 
-            if (if (vGoals.size < 4) { vGoals = vGoals + (vDraft); false } else { raisePlatformError(StaticStateAlgorithmOptionalEvent.Error.Execution, "<sce:append target='goals'>: the list already holds its capacity of 4"); true }) {
+            if (if (vGoals.size < 4) { vGoals = vGoals + (vDraft); false } else { raisePlatformError(StaticStateAlgorithmOptionalEvent.Error.Execution, ErrorReason.ASSIGNMENT_FAILED, "<sce:append target='goals'>: the list already holds its capacity of 4"); true }) {
                 return
             }
 
             vFirst = call_Earliest__v(vGoals)
 
-            if (try { vLeft = com.sce.forge.runtime.SceChecked.take(goalUntil(vToday, vFirst)); false } catch (_: com.sce.forge.runtime.AlgorithmFailure) { raisePlatformError(StaticStateAlgorithmOptionalEvent.Error.Execution, "<assign location='left'>: an integer operation overflowed or failed"); true }) {
+            if (try { vLeft = com.sce.forge.runtime.SceChecked.take(goalUntil(vToday, vFirst)); false } catch (_: com.sce.forge.runtime.AlgorithmFailure) { raisePlatformError(StaticStateAlgorithmOptionalEvent.Error.Execution, ErrorReason.EXPRESSION_FAILED, "<assign location='left'>: an integer operation overflowed or failed"); true }) {
                 return
             }
 
-            if (try { vUndated = com.sce.forge.runtime.SceChecked.take(call_Undated__v(vGoals)); false } catch (_: com.sce.forge.runtime.AlgorithmFailure) { raisePlatformError(StaticStateAlgorithmOptionalEvent.Error.Execution, "<assign location='undated'>: an integer operation overflowed or failed"); true }) {
+            if (try { vUndated = com.sce.forge.runtime.SceChecked.take(call_Undated__v(vGoals)); false } catch (_: com.sce.forge.runtime.AlgorithmFailure) { raisePlatformError(StaticStateAlgorithmOptionalEvent.Error.Execution, ErrorReason.EXPRESSION_FAILED, "<assign location='undated'>: an integer operation overflowed or failed"); true }) {
                 return
             }
 
-            if (try { vTotal = com.sce.forge.runtime.SceChecked.take(call_DaySum__v(vGoals, 0)); false } catch (_: com.sce.forge.runtime.AlgorithmFailure) { raisePlatformError(StaticStateAlgorithmOptionalEvent.Error.Execution, "<assign location='total'>: an integer operation overflowed or failed"); true }) {
+            if (try { vTotal = com.sce.forge.runtime.SceChecked.take(call_DaySum__v(vGoals, 0)); false } catch (_: com.sce.forge.runtime.AlgorithmFailure) { raisePlatformError(StaticStateAlgorithmOptionalEvent.Error.Execution, ErrorReason.EXPRESSION_FAILED, "<assign location='total'>: an integer operation overflowed or failed"); true }) {
                 return
             }
     }
@@ -626,7 +626,7 @@ class StaticStateAlgorithmOptionalStateMachine(
     private fun transitionContentOfTrackingAt1() {
                 // SCE-MAP: static_state_algorithm_optional.scxml:53 :: tracking :: _transition_1
 
-            if (try { vLeft = com.sce.forge.runtime.SceChecked.take(goalUntil(vToday, null)); false } catch (_: com.sce.forge.runtime.AlgorithmFailure) { raisePlatformError(StaticStateAlgorithmOptionalEvent.Error.Execution, "<assign location='left'>: an integer operation overflowed or failed"); true }) {
+            if (try { vLeft = com.sce.forge.runtime.SceChecked.take(goalUntil(vToday, null)); false } catch (_: com.sce.forge.runtime.AlgorithmFailure) { raisePlatformError(StaticStateAlgorithmOptionalEvent.Error.Execution, ErrorReason.EXPRESSION_FAILED, "<assign location='left'>: an integer operation overflowed or failed"); true }) {
                 return
             }
     }
@@ -634,7 +634,7 @@ class StaticStateAlgorithmOptionalStateMachine(
     private fun transitionContentOfTrackingAt2() {
                 // SCE-MAP: static_state_algorithm_optional.scxml:56 :: tracking :: _transition_2
 
-            if (try { vLeft = com.sce.forge.runtime.SceChecked.take(goalUntil(vToday, 150L)); false } catch (_: com.sce.forge.runtime.AlgorithmFailure) { raisePlatformError(StaticStateAlgorithmOptionalEvent.Error.Execution, "<assign location='left'>: an integer operation overflowed or failed"); true }) {
+            if (try { vLeft = com.sce.forge.runtime.SceChecked.take(goalUntil(vToday, 150L)); false } catch (_: com.sce.forge.runtime.AlgorithmFailure) { raisePlatformError(StaticStateAlgorithmOptionalEvent.Error.Execution, ErrorReason.EXPRESSION_FAILED, "<assign location='left'>: an integer operation overflowed or failed"); true }) {
                 return
             }
     }
@@ -646,15 +646,15 @@ class StaticStateAlgorithmOptionalStateMachine(
 
             vFirst = call_Earliest__v(vGoals)
 
-            if (try { vLeft = com.sce.forge.runtime.SceChecked.take(goalUntil(vToday, vFirst)); false } catch (_: com.sce.forge.runtime.AlgorithmFailure) { raisePlatformError(StaticStateAlgorithmOptionalEvent.Error.Execution, "<assign location='left'>: an integer operation overflowed or failed"); true }) {
+            if (try { vLeft = com.sce.forge.runtime.SceChecked.take(goalUntil(vToday, vFirst)); false } catch (_: com.sce.forge.runtime.AlgorithmFailure) { raisePlatformError(StaticStateAlgorithmOptionalEvent.Error.Execution, ErrorReason.EXPRESSION_FAILED, "<assign location='left'>: an integer operation overflowed or failed"); true }) {
                 return
             }
 
-            if (try { vUndated = com.sce.forge.runtime.SceChecked.take(call_Undated__v(vGoals)); false } catch (_: com.sce.forge.runtime.AlgorithmFailure) { raisePlatformError(StaticStateAlgorithmOptionalEvent.Error.Execution, "<assign location='undated'>: an integer operation overflowed or failed"); true }) {
+            if (try { vUndated = com.sce.forge.runtime.SceChecked.take(call_Undated__v(vGoals)); false } catch (_: com.sce.forge.runtime.AlgorithmFailure) { raisePlatformError(StaticStateAlgorithmOptionalEvent.Error.Execution, ErrorReason.EXPRESSION_FAILED, "<assign location='undated'>: an integer operation overflowed or failed"); true }) {
                 return
             }
 
-            if (try { vTotal = com.sce.forge.runtime.SceChecked.take(call_DaySum__v(vGoals, 0)); false } catch (_: com.sce.forge.runtime.AlgorithmFailure) { raisePlatformError(StaticStateAlgorithmOptionalEvent.Error.Execution, "<assign location='total'>: an integer operation overflowed or failed"); true }) {
+            if (try { vTotal = com.sce.forge.runtime.SceChecked.take(call_DaySum__v(vGoals, 0)); false } catch (_: com.sce.forge.runtime.AlgorithmFailure) { raisePlatformError(StaticStateAlgorithmOptionalEvent.Error.Execution, ErrorReason.EXPRESSION_FAILED, "<assign location='total'>: an integer operation overflowed or failed"); true }) {
                 return
             }
     }
@@ -662,7 +662,7 @@ class StaticStateAlgorithmOptionalStateMachine(
     private fun transitionContentOfTrackingAt4() {
                 // SCE-MAP: static_state_algorithm_optional.scxml:66 :: tracking :: _transition_4
 
-            if (try { vErrors = com.sce.forge.runtime.SceChecked.add(vErrors, 1.toUInt()); false } catch (_: com.sce.forge.runtime.AlgorithmFailure) { raisePlatformError(StaticStateAlgorithmOptionalEvent.Error.Execution, "<assign location='errors'>: an integer operation overflowed or failed"); true }) {
+            if (try { vErrors = com.sce.forge.runtime.SceChecked.add(vErrors, 1.toUInt()); false } catch (_: com.sce.forge.runtime.AlgorithmFailure) { raisePlatformError(StaticStateAlgorithmOptionalEvent.Error.Execution, ErrorReason.EXPRESSION_FAILED, "<assign location='errors'>: an integer operation overflowed or failed"); true }) {
                 return
             }
     }

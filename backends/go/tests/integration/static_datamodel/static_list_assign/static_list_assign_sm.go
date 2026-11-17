@@ -31,6 +31,7 @@ import (
 	"time"
 
 	sce "github.com/newmassrael/sce-go-runtime"
+	sceerrorreason "github.com/newmassrael/sce-go-runtime/generated/error_reason"
 	scealgorithm "github.com/newmassrael/sce-forge-runtime/algorithm"
 	sce_day_repeat "github.com/newmassrael/sce-go-tests/integration/static_datamodel/day_repeat"
 	sce_day_run "github.com/newmassrael/sce-go-tests/integration/static_datamodel/day_run"
@@ -42,6 +43,9 @@ var (
 	_ = filepath.Join
 	_ = strings.HasPrefix
 	_ = time.Duration(0)
+	// Why an error.* event is raised (sce:std/engine/error_reason,
+	// docs/adr/0106 #111); a machine that raises none still imports it.
+	_ = sceerrorreason.ErrorReasonExpressionFailed
 	_ scealgorithm.Failure
 )
 
@@ -976,7 +980,7 @@ func (p *StaticListAssignPolicy) ExecuteTransitionContent(source StaticListAssig
 			func() {
 
 
-	if func() bool { var sceFailure scealgorithm.Failure; sceValue := scealgorithm.Within(&sceFailure, scealgorithm.Take[[]uint8](&sceFailure)(sce_day_run.DayRun(p.vFirst, 3)), 8); if sceFailure.Failed() { engine.Raise(sce.NewPlatformError(StaticListAssignEventErrorExecution, "<assign location='shown'>: an integer operation overflowed or failed")); return true }; p.vShown = sceValue; return false }() {
+	if func() bool { var sceFailure scealgorithm.Failure; sceValue := scealgorithm.Within(&sceFailure, scealgorithm.Take[[]uint8](&sceFailure)(sce_day_run.DayRun(p.vFirst, 3)), 8); if sceFailure.Failed() { engine.Raise(sce.NewPlatformError(StaticListAssignEventErrorExecution, sceerrorreason.ErrorReasonExpressionFailed, "<assign location='shown'>: an integer operation overflowed or failed")); return true }; p.vShown = sceValue; return false }() {
 		return  // W3C SCXML 4.9: the error ends the block
 	}
 
@@ -991,7 +995,7 @@ func (p *StaticListAssignPolicy) ExecuteTransitionContent(source StaticListAssig
 			func() {
 
 
-	if func() bool { var sceFailure scealgorithm.Failure; sceValue := scealgorithm.Within(&sceFailure, scealgorithm.Take[[]uint8](&sceFailure)(sce_day_run.DayRun(p.vFirst, 8)), 8); if sceFailure.Failed() { engine.Raise(sce.NewPlatformError(StaticListAssignEventErrorExecution, "<assign location='shown'>: an integer operation overflowed or failed")); return true }; p.vShown = sceValue; return false }() {
+	if func() bool { var sceFailure scealgorithm.Failure; sceValue := scealgorithm.Within(&sceFailure, scealgorithm.Take[[]uint8](&sceFailure)(sce_day_run.DayRun(p.vFirst, 8)), 8); if sceFailure.Failed() { engine.Raise(sce.NewPlatformError(StaticListAssignEventErrorExecution, sceerrorreason.ErrorReasonExpressionFailed, "<assign location='shown'>: an integer operation overflowed or failed")); return true }; p.vShown = sceValue; return false }() {
 		return  // W3C SCXML 4.9: the error ends the block
 	}
 
@@ -1006,7 +1010,7 @@ func (p *StaticListAssignPolicy) ExecuteTransitionContent(source StaticListAssig
 			func() {
 
 
-	if func() bool { var sceFailure scealgorithm.Failure; sceValue := scealgorithm.Within(&sceFailure, scealgorithm.Take[[]uint8](&sceFailure)(sce_day_run.DayRun(p.vFirst, 0)), 8); if sceFailure.Failed() { engine.Raise(sce.NewPlatformError(StaticListAssignEventErrorExecution, "<assign location='shown'>: an integer operation overflowed or failed")); return true }; p.vShown = sceValue; return false }() {
+	if func() bool { var sceFailure scealgorithm.Failure; sceValue := scealgorithm.Within(&sceFailure, scealgorithm.Take[[]uint8](&sceFailure)(sce_day_run.DayRun(p.vFirst, 0)), 8); if sceFailure.Failed() { engine.Raise(sce.NewPlatformError(StaticListAssignEventErrorExecution, sceerrorreason.ErrorReasonExpressionFailed, "<assign location='shown'>: an integer operation overflowed or failed")); return true }; p.vShown = sceValue; return false }() {
 		return  // W3C SCXML 4.9: the error ends the block
 	}
 
@@ -1021,7 +1025,7 @@ func (p *StaticListAssignPolicy) ExecuteTransitionContent(source StaticListAssig
 			func() {
 
 
-	if func() bool { var sceFailure scealgorithm.Failure; sceValue := scealgorithm.Within(&sceFailure, scealgorithm.Take[[]uint8](&sceFailure)(sce_day_repeat.DayRepeat(p.vFirst, 3)), 4); if sceFailure.Failed() { engine.Raise(sce.NewPlatformError(StaticListAssignEventErrorExecution, "<assign location='few'>: an integer operation overflowed or failed")); return true }; p.vFew = sceValue; return false }() {
+	if func() bool { var sceFailure scealgorithm.Failure; sceValue := scealgorithm.Within(&sceFailure, scealgorithm.Take[[]uint8](&sceFailure)(sce_day_repeat.DayRepeat(p.vFirst, 3)), 4); if sceFailure.Failed() { engine.Raise(sce.NewPlatformError(StaticListAssignEventErrorExecution, sceerrorreason.ErrorReasonExpressionFailed, "<assign location='few'>: an integer operation overflowed or failed")); return true }; p.vFew = sceValue; return false }() {
 		return  // W3C SCXML 4.9: the error ends the block
 	}
 
@@ -1036,7 +1040,7 @@ func (p *StaticListAssignPolicy) ExecuteTransitionContent(source StaticListAssig
 			func() {
 
 
-	if func() bool { var sceFailure scealgorithm.Failure; sceValue := scealgorithm.Within(&sceFailure, scealgorithm.Take[[]uint8](&sceFailure)(sce_day_repeat.DayRepeat(p.vFirst, 5)), 4); if sceFailure.Failed() { engine.Raise(sce.NewPlatformError(StaticListAssignEventErrorExecution, "<assign location='few'>: an integer operation overflowed or failed")); return true }; p.vFew = sceValue; return false }() {
+	if func() bool { var sceFailure scealgorithm.Failure; sceValue := scealgorithm.Within(&sceFailure, scealgorithm.Take[[]uint8](&sceFailure)(sce_day_repeat.DayRepeat(p.vFirst, 5)), 4); if sceFailure.Failed() { engine.Raise(sce.NewPlatformError(StaticListAssignEventErrorExecution, sceerrorreason.ErrorReasonExpressionFailed, "<assign location='few'>: an integer operation overflowed or failed")); return true }; p.vFew = sceValue; return false }() {
 		return  // W3C SCXML 4.9: the error ends the block
 	}
 
@@ -1060,7 +1064,7 @@ func (p *StaticListAssignPolicy) ExecuteTransitionContent(source StaticListAssig
 			func() {
 
 
-	if func() bool { var sceFailure scealgorithm.Failure; sceValue := scealgorithm.AddUint32(&sceFailure, p.vRefusals, 1); if sceFailure.Failed() { engine.Raise(sce.NewPlatformError(StaticListAssignEventErrorExecution, "<assign location='refusals'>: an integer operation overflowed or failed")); return true }; p.vRefusals = sceValue; return false }() {
+	if func() bool { var sceFailure scealgorithm.Failure; sceValue := scealgorithm.AddUint32(&sceFailure, p.vRefusals, 1); if sceFailure.Failed() { engine.Raise(sce.NewPlatformError(StaticListAssignEventErrorExecution, sceerrorreason.ErrorReasonExpressionFailed, "<assign location='refusals'>: an integer operation overflowed or failed")); return true }; p.vRefusals = sceValue; return false }() {
 		return  // W3C SCXML 4.9: the error ends the block
 	}
 

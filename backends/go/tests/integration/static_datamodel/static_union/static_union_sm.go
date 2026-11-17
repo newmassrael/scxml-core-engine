@@ -31,6 +31,7 @@ import (
 	"time"
 
 	sce "github.com/newmassrael/sce-go-runtime"
+	sceerrorreason "github.com/newmassrael/sce-go-runtime/generated/error_reason"
 	scealgorithm "github.com/newmassrael/sce-forge-runtime/algorithm"
 	"github.com/newmassrael/sce-forge-runtime/optional"
 )
@@ -41,6 +42,9 @@ var (
 	_ = filepath.Join
 	_ = strings.HasPrefix
 	_ = time.Duration(0)
+	// Why an error.* event is raised (sce:std/engine/error_reason,
+	// docs/adr/0106 #111); a machine that raises none still imports it.
+	_ = sceerrorreason.ErrorReasonExpressionFailed
 	_ scealgorithm.Failure
 )
 
@@ -2949,7 +2953,7 @@ func (p *StaticUnionPolicy) ExecuteTransitionContent(source StaticUnionState, tr
 	if p.pendingShapesSentPayload.one.Kind() == StaticUnionKindEnumDot {
 
 
-	if func() bool { var sceFailure scealgorithm.Failure; sceValue := scealgorithm.AddUint32(&sceFailure, p.vDots, 1); if sceFailure.Failed() { engine.Raise(sce.NewPlatformError(StaticUnionEventErrorExecution, "<assign location='dots'>: an integer operation overflowed or failed")); return true }; p.vDots = sceValue; return false }() {
+	if func() bool { var sceFailure scealgorithm.Failure; sceValue := scealgorithm.AddUint32(&sceFailure, p.vDots, 1); if sceFailure.Failed() { engine.Raise(sce.NewPlatformError(StaticUnionEventErrorExecution, sceerrorreason.ErrorReasonExpressionFailed, "<assign location='dots'>: an integer operation overflowed or failed")); return true }; p.vDots = sceValue; return false }() {
 		return  // W3C SCXML 4.9: the error ends the block
 	}
 
@@ -2974,7 +2978,7 @@ func (p *StaticUnionPolicy) ExecuteTransitionContent(source StaticUnionState, tr
 		_ = point
 
 
-	if func() bool { var sceFailure scealgorithm.Failure; sceValue := scealgorithm.AddUint32(&sceFailure, p.vPoints, 1); if sceFailure.Failed() { engine.Raise(sce.NewPlatformError(StaticUnionEventErrorExecution, "<assign location='points'>: an integer operation overflowed or failed")); return true }; p.vPoints = sceValue; return false }() {
+	if func() bool { var sceFailure scealgorithm.Failure; sceValue := scealgorithm.AddUint32(&sceFailure, p.vPoints, 1); if sceFailure.Failed() { engine.Raise(sce.NewPlatformError(StaticUnionEventErrorExecution, sceerrorreason.ErrorReasonExpressionFailed, "<assign location='points'>: an integer operation overflowed or failed")); return true }; p.vPoints = sceValue; return false }() {
 		return  // W3C SCXML 4.9: the error ends the block
 	}
 
@@ -2983,7 +2987,7 @@ func (p *StaticUnionPolicy) ExecuteTransitionContent(source StaticUnionState, tr
 	} else {
 
 
-	if func() bool { var sceFailure scealgorithm.Failure; sceValue := scealgorithm.AddUint32(&sceFailure, p.vLabels, 1); if sceFailure.Failed() { engine.Raise(sce.NewPlatformError(StaticUnionEventErrorExecution, "<assign location='labels'>: an integer operation overflowed or failed")); return true }; p.vLabels = sceValue; return false }() {
+	if func() bool { var sceFailure scealgorithm.Failure; sceValue := scealgorithm.AddUint32(&sceFailure, p.vLabels, 1); if sceFailure.Failed() { engine.Raise(sce.NewPlatformError(StaticUnionEventErrorExecution, sceerrorreason.ErrorReasonExpressionFailed, "<assign location='labels'>: an integer operation overflowed or failed")); return true }; p.vLabels = sceValue; return false }() {
 		return  // W3C SCXML 4.9: the error ends the block
 	}
 
@@ -2995,7 +2999,7 @@ func (p *StaticUnionPolicy) ExecuteTransitionContent(source StaticUnionState, tr
 		_ = shape
 
 
-	if func() bool { var sceFailure scealgorithm.Failure; sceValue := scealgorithm.AddUint32(&sceFailure, p.vManyShapes, 1); if sceFailure.Failed() { engine.Raise(sce.NewPlatformError(StaticUnionEventErrorExecution, "<assign location='many_shapes'>: an integer operation overflowed or failed")); return true }; p.vManyShapes = sceValue; return false }() {
+	if func() bool { var sceFailure scealgorithm.Failure; sceValue := scealgorithm.AddUint32(&sceFailure, p.vManyShapes, 1); if sceFailure.Failed() { engine.Raise(sce.NewPlatformError(StaticUnionEventErrorExecution, sceerrorreason.ErrorReasonExpressionFailed, "<assign location='many_shapes'>: an integer operation overflowed or failed")); return true }; p.vManyShapes = sceValue; return false }() {
 		return  // W3C SCXML 4.9: the error ends the block
 	}
 
@@ -3026,7 +3030,7 @@ func (p *StaticUnionPolicy) ExecuteTransitionContent(source StaticUnionState, tr
 	if p.vBuilt.Kind() == StaticUnionKindEnumRect {
 
 
-	if func() bool { var sceFailure scealgorithm.Failure; sceValue := scealgorithm.AddUint16(&sceFailure, p.vBuilt.ProvenRect().width, 1); if sceFailure.Failed() { engine.Raise(sce.NewPlatformError(StaticUnionEventErrorExecution, "<assign location='built.width'>: an integer operation overflowed or failed")); return true }; p.vBuilt.provenRectPlace().width = sceValue; return false }() {
+	if func() bool { var sceFailure scealgorithm.Failure; sceValue := scealgorithm.AddUint16(&sceFailure, p.vBuilt.ProvenRect().width, 1); if sceFailure.Failed() { engine.Raise(sce.NewPlatformError(StaticUnionEventErrorExecution, sceerrorreason.ErrorReasonExpressionFailed, "<assign location='built.width'>: an integer operation overflowed or failed")); return true }; p.vBuilt.provenRectPlace().width = sceValue; return false }() {
 		return  // W3C SCXML 4.9: the error ends the block
 	}
 
@@ -3094,7 +3098,7 @@ func (p *StaticUnionPolicy) ExecuteTransitionContent(source StaticUnionState, tr
 			func() {
 
 
-	if func() bool { var sceFailure scealgorithm.Failure; sceValue := scealgorithm.AddUint32(&sceFailure, p.vBoards, 1); if sceFailure.Failed() { engine.Raise(sce.NewPlatformError(StaticUnionEventErrorExecution, "<assign location='boards'>: an integer operation overflowed or failed")); return true }; p.vBoards = sceValue; return false }() {
+	if func() bool { var sceFailure scealgorithm.Failure; sceValue := scealgorithm.AddUint32(&sceFailure, p.vBoards, 1); if sceFailure.Failed() { engine.Raise(sce.NewPlatformError(StaticUnionEventErrorExecution, sceerrorreason.ErrorReasonExpressionFailed, "<assign location='boards'>: an integer operation overflowed or failed")); return true }; p.vBoards = sceValue; return false }() {
 		return  // W3C SCXML 4.9: the error ends the block
 	}
 
@@ -3108,19 +3112,19 @@ func (p *StaticUnionPolicy) ExecuteTransitionContent(source StaticUnionState, tr
 				}
 
 
-	if func() bool { var sceFailure scealgorithm.Failure; sceValue := scealgorithm.At(&sceFailure, p.pendingShapesPickedPayload.many[:], int64(p.pendingShapesPickedPayload.at)); if sceFailure.Failed() { engine.Raise(sce.NewPlatformError(StaticUnionEventErrorExecution, "<assign location='picked'>: an integer operation overflowed or failed")); return true }; p.vPicked = sceValue; return false }() {
+	if func() bool { var sceFailure scealgorithm.Failure; sceValue := scealgorithm.At(&sceFailure, p.pendingShapesPickedPayload.many[:], int64(p.pendingShapesPickedPayload.at)); if sceFailure.Failed() { engine.Raise(sce.NewPlatformError(StaticUnionEventErrorExecution, sceerrorreason.ErrorReasonExpressionFailed, "<assign location='picked'>: an integer operation overflowed or failed")); return true }; p.vPicked = sceValue; return false }() {
 		return  // W3C SCXML 4.9: the error ends the block
 	}
 
 
 
-	if func() bool { var sceFailure scealgorithm.Failure; sceValue := optional.Some(scealgorithm.At(&sceFailure, p.pendingShapesPickedPayload.many[:], int64(p.pendingShapesPickedPayload.at))); if sceFailure.Failed() { engine.Raise(sce.NewPlatformError(StaticUnionEventErrorExecution, "<assign location='picked_maybe'>: an integer operation overflowed or failed")); return true }; p.vPickedMaybe = sceValue; return false }() {
+	if func() bool { var sceFailure scealgorithm.Failure; sceValue := optional.Some(scealgorithm.At(&sceFailure, p.pendingShapesPickedPayload.many[:], int64(p.pendingShapesPickedPayload.at))); if sceFailure.Failed() { engine.Raise(sce.NewPlatformError(StaticUnionEventErrorExecution, sceerrorreason.ErrorReasonExpressionFailed, "<assign location='picked_maybe'>: an integer operation overflowed or failed")); return true }; p.vPickedMaybe = sceValue; return false }() {
 		return  // W3C SCXML 4.9: the error ends the block
 	}
 
 
 
-	if func() bool { var sceFailure scealgorithm.Failure; sceValue := scealgorithm.AddUint32(&sceFailure, p.vPicks, 1); if sceFailure.Failed() { engine.Raise(sce.NewPlatformError(StaticUnionEventErrorExecution, "<assign location='picks'>: an integer operation overflowed or failed")); return true }; p.vPicks = sceValue; return false }() {
+	if func() bool { var sceFailure scealgorithm.Failure; sceValue := scealgorithm.AddUint32(&sceFailure, p.vPicks, 1); if sceFailure.Failed() { engine.Raise(sce.NewPlatformError(StaticUnionEventErrorExecution, sceerrorreason.ErrorReasonExpressionFailed, "<assign location='picks'>: an integer operation overflowed or failed")); return true }; p.vPicks = sceValue; return false }() {
 		return  // W3C SCXML 4.9: the error ends the block
 	}
 
@@ -3142,13 +3146,13 @@ func (p *StaticUnionPolicy) ExecuteTransitionContent(source StaticUnionState, tr
 				}
 
 
-	if func() bool { var sceFailure scealgorithm.Failure; sceValue := scealgorithm.At(&sceFailure, scealgorithm.At(&sceFailure, p.pendingShapesGroupedPayload.groups[:], int64(p.pendingShapesGroupedPayload.at)).shapes[:], int64(p.pendingShapesGroupedPayload.inner)); if sceFailure.Failed() { engine.Raise(sce.NewPlatformError(StaticUnionEventErrorExecution, "<assign location='picked'>: an integer operation overflowed or failed")); return true }; p.vPicked = sceValue; return false }() {
+	if func() bool { var sceFailure scealgorithm.Failure; sceValue := scealgorithm.At(&sceFailure, scealgorithm.At(&sceFailure, p.pendingShapesGroupedPayload.groups[:], int64(p.pendingShapesGroupedPayload.at)).shapes[:], int64(p.pendingShapesGroupedPayload.inner)); if sceFailure.Failed() { engine.Raise(sce.NewPlatformError(StaticUnionEventErrorExecution, sceerrorreason.ErrorReasonExpressionFailed, "<assign location='picked'>: an integer operation overflowed or failed")); return true }; p.vPicked = sceValue; return false }() {
 		return  // W3C SCXML 4.9: the error ends the block
 	}
 
 
 
-	if func() bool { var sceFailure scealgorithm.Failure; sceValue := scealgorithm.AddUint32(&sceFailure, p.vPicks, 1); if sceFailure.Failed() { engine.Raise(sce.NewPlatformError(StaticUnionEventErrorExecution, "<assign location='picks'>: an integer operation overflowed or failed")); return true }; p.vPicks = sceValue; return false }() {
+	if func() bool { var sceFailure scealgorithm.Failure; sceValue := scealgorithm.AddUint32(&sceFailure, p.vPicks, 1); if sceFailure.Failed() { engine.Raise(sce.NewPlatformError(StaticUnionEventErrorExecution, sceerrorreason.ErrorReasonExpressionFailed, "<assign location='picks'>: an integer operation overflowed or failed")); return true }; p.vPicks = sceValue; return false }() {
 		return  // W3C SCXML 4.9: the error ends the block
 	}
 
@@ -3170,13 +3174,13 @@ func (p *StaticUnionPolicy) ExecuteTransitionContent(source StaticUnionState, tr
 				}
 
 
-	if func() bool { var sceFailure scealgorithm.Failure; sceValue := scealgorithm.At(&sceFailure, scealgorithm.At(&sceFailure, p.pendingShapesRowedPayload.rows[:], int64(p.pendingShapesRowedPayload.at))[:], int64(p.pendingShapesRowedPayload.inner)); if sceFailure.Failed() { engine.Raise(sce.NewPlatformError(StaticUnionEventErrorExecution, "<assign location='picked'>: an integer operation overflowed or failed")); return true }; p.vPicked = sceValue; return false }() {
+	if func() bool { var sceFailure scealgorithm.Failure; sceValue := scealgorithm.At(&sceFailure, scealgorithm.At(&sceFailure, p.pendingShapesRowedPayload.rows[:], int64(p.pendingShapesRowedPayload.at))[:], int64(p.pendingShapesRowedPayload.inner)); if sceFailure.Failed() { engine.Raise(sce.NewPlatformError(StaticUnionEventErrorExecution, sceerrorreason.ErrorReasonExpressionFailed, "<assign location='picked'>: an integer operation overflowed or failed")); return true }; p.vPicked = sceValue; return false }() {
 		return  // W3C SCXML 4.9: the error ends the block
 	}
 
 
 
-	if func() bool { var sceFailure scealgorithm.Failure; sceValue := scealgorithm.AddUint32(&sceFailure, p.vPicks, 1); if sceFailure.Failed() { engine.Raise(sce.NewPlatformError(StaticUnionEventErrorExecution, "<assign location='picks'>: an integer operation overflowed or failed")); return true }; p.vPicks = sceValue; return false }() {
+	if func() bool { var sceFailure scealgorithm.Failure; sceValue := scealgorithm.AddUint32(&sceFailure, p.vPicks, 1); if sceFailure.Failed() { engine.Raise(sce.NewPlatformError(StaticUnionEventErrorExecution, sceerrorreason.ErrorReasonExpressionFailed, "<assign location='picks'>: an integer operation overflowed or failed")); return true }; p.vPicks = sceValue; return false }() {
 		return  // W3C SCXML 4.9: the error ends the block
 	}
 
@@ -3195,7 +3199,7 @@ func (p *StaticUnionPolicy) ExecuteTransitionContent(source StaticUnionState, tr
 			func() {
 
 
-	if func() bool { var sceFailure scealgorithm.Failure; sceValue := scealgorithm.AddUint32(&sceFailure, p.vRefusals, 1); if sceFailure.Failed() { engine.Raise(sce.NewPlatformError(StaticUnionEventErrorExecution, "<assign location='refusals'>: an integer operation overflowed or failed")); return true }; p.vRefusals = sceValue; return false }() {
+	if func() bool { var sceFailure scealgorithm.Failure; sceValue := scealgorithm.AddUint32(&sceFailure, p.vRefusals, 1); if sceFailure.Failed() { engine.Raise(sce.NewPlatformError(StaticUnionEventErrorExecution, sceerrorreason.ErrorReasonExpressionFailed, "<assign location='refusals'>: an integer operation overflowed or failed")); return true }; p.vRefusals = sceValue; return false }() {
 		return  // W3C SCXML 4.9: the error ends the block
 	}
 

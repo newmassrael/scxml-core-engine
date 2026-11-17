@@ -581,7 +581,7 @@ class StaticEnumNumberStateMachine(
                     return
                 }
 
-            if (try { vStatus = com.sce.forge.runtime.SceChecked.take(com.sce.forge.runtime.SceChecked.found(StaticEnumNumberStatusEnum.fromUnderlying(com.sce.forge.runtime.SceChecked.narrowToUByte(pendingStatusNumberPayload!!.number)))); false } catch (_: com.sce.forge.runtime.AlgorithmFailure) { raisePlatformError(StaticEnumNumberEvent.Error.Execution, "<assign location='status'>: an integer operation overflowed or failed"); true }) {
+            if (try { vStatus = com.sce.forge.runtime.SceChecked.take(com.sce.forge.runtime.SceChecked.found(StaticEnumNumberStatusEnum.fromUnderlying(com.sce.forge.runtime.SceChecked.narrowToUByte(pendingStatusNumberPayload!!.number)))); false } catch (_: com.sce.forge.runtime.AlgorithmFailure) { raisePlatformError(StaticEnumNumberEvent.Error.Execution, ErrorReason.EXPRESSION_FAILED, "<assign location='status'>: an integer operation overflowed or failed"); true }) {
                 return
             }
     }
@@ -589,7 +589,7 @@ class StaticEnumNumberStateMachine(
     private fun transitionContentOfBoardAt2() {
                 // SCE-MAP: static_enum_number.scxml:37 :: board :: _transition_2
 
-            if (try { vChecks = com.sce.forge.runtime.SceChecked.add(vChecks, 1.toUInt()); false } catch (_: com.sce.forge.runtime.AlgorithmFailure) { raisePlatformError(StaticEnumNumberEvent.Error.Execution, "<assign location='checks'>: an integer operation overflowed or failed"); true }) {
+            if (try { vChecks = com.sce.forge.runtime.SceChecked.add(vChecks, 1.toUInt()); false } catch (_: com.sce.forge.runtime.AlgorithmFailure) { raisePlatformError(StaticEnumNumberEvent.Error.Execution, ErrorReason.EXPRESSION_FAILED, "<assign location='checks'>: an integer operation overflowed or failed"); true }) {
                 return
             }
     }
@@ -597,7 +597,7 @@ class StaticEnumNumberStateMachine(
     private fun transitionContentOfBoardAt3() {
                 // SCE-MAP: static_enum_number.scxml:40 :: board :: _transition_3
 
-            if (try { vRefusals = com.sce.forge.runtime.SceChecked.add(vRefusals, 1.toUInt()); false } catch (_: com.sce.forge.runtime.AlgorithmFailure) { raisePlatformError(StaticEnumNumberEvent.Error.Execution, "<assign location='refusals'>: an integer operation overflowed or failed"); true }) {
+            if (try { vRefusals = com.sce.forge.runtime.SceChecked.add(vRefusals, 1.toUInt()); false } catch (_: com.sce.forge.runtime.AlgorithmFailure) { raisePlatformError(StaticEnumNumberEvent.Error.Execution, ErrorReason.EXPRESSION_FAILED, "<assign location='refusals'>: an integer operation overflowed or failed"); true }) {
                 return
             }
     }

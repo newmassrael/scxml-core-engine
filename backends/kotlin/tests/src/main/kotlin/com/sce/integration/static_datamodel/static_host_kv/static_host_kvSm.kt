@@ -1326,7 +1326,7 @@ class StaticHostKvStateMachine(
                             // be run and none was, which is the same fact as
                             // an unsupported type — so the same event, rather
                             // than a silence that reads as started.
-                            raisePlatformError(StaticHostKvEvent.Error.Execution, "<invoke> names an invoker the host declared but never registered")
+                            raisePlatformError(StaticHostKvEvent.Error.Execution, ErrorReason.PROCESSOR_UNREGISTERED, "<invoke> names an invoker the host declared but never registered")
                         }
                     }
                 }
@@ -1377,7 +1377,7 @@ class StaticHostKvStateMachine(
                             // be run and none was, which is the same fact as
                             // an unsupported type — so the same event, rather
                             // than a silence that reads as started.
-                            raisePlatformError(StaticHostKvEvent.Error.Execution, "<invoke> names an invoker the host declared but never registered")
+                            raisePlatformError(StaticHostKvEvent.Error.Execution, ErrorReason.PROCESSOR_UNREGISTERED, "<invoke> names an invoker the host declared but never registered")
                         }
                     }
                 }
@@ -1438,7 +1438,7 @@ class StaticHostKvStateMachine(
                             // be run and none was, which is the same fact as
                             // an unsupported type — so the same event, rather
                             // than a silence that reads as started.
-                            raisePlatformError(StaticHostKvEvent.Error.Execution, "<invoke> names an invoker the host declared but never registered")
+                            raisePlatformError(StaticHostKvEvent.Error.Execution, ErrorReason.PROCESSOR_UNREGISTERED, "<invoke> names an invoker the host declared but never registered")
                         }
                     }
                 }
@@ -1495,7 +1495,7 @@ class StaticHostKvStateMachine(
                             // be run and none was, which is the same fact as
                             // an unsupported type — so the same event, rather
                             // than a silence that reads as started.
-                            raisePlatformError(StaticHostKvEvent.Error.Execution, "<invoke> names an invoker the host declared but never registered")
+                            raisePlatformError(StaticHostKvEvent.Error.Execution, ErrorReason.PROCESSOR_UNREGISTERED, "<invoke> names an invoker the host declared but never registered")
                         }
                     }
                 }
@@ -1601,7 +1601,7 @@ class StaticHostKvStateMachine(
 
             vExisted = pendingDoneInvokeDelPayload!!.existed
 
-            if (try { vOutcome = com.sce.forge.runtime.SceChecked.bounded("done", 24); false } catch (_: com.sce.forge.runtime.AlgorithmFailure) { raisePlatformError(StaticHostKvEvent.Error.Execution, "<assign location='outcome'>: an integer operation overflowed or failed"); true }) {
+            if (try { vOutcome = com.sce.forge.runtime.SceChecked.bounded("done", 24); false } catch (_: com.sce.forge.runtime.AlgorithmFailure) { raisePlatformError(StaticHostKvEvent.Error.Execution, ErrorReason.EXPRESSION_FAILED, "<assign location='outcome'>: an integer operation overflowed or failed"); true }) {
                 return
             }
     }
@@ -1612,7 +1612,7 @@ class StaticHostKvStateMachine(
                     return
                 }
 
-            if (try { vOutcome = com.sce.forge.runtime.SceChecked.bounded(pendingDoneInvokeDelPayload!!.error, 24); false } catch (_: com.sce.forge.runtime.AlgorithmFailure) { raisePlatformError(StaticHostKvEvent.Error.Execution, "<assign location='outcome'>: an integer operation overflowed or failed"); true }) {
+            if (try { vOutcome = com.sce.forge.runtime.SceChecked.bounded(pendingDoneInvokeDelPayload!!.error, 24); false } catch (_: com.sce.forge.runtime.AlgorithmFailure) { raisePlatformError(StaticHostKvEvent.Error.Execution, ErrorReason.EXPRESSION_FAILED, "<assign location='outcome'>: an integer operation overflowed or failed"); true }) {
                 return
             }
     }
@@ -1620,7 +1620,7 @@ class StaticHostKvStateMachine(
     private fun transitionContentOfDeletingAt2() {
                 // SCE-MAP: static_host_kv.scxml:123 :: deleting :: _transition_2
 
-            if (try { vOutcome = com.sce.forge.runtime.SceChecked.bounded("deadline", 24); false } catch (_: com.sce.forge.runtime.AlgorithmFailure) { raisePlatformError(StaticHostKvEvent.Error.Execution, "<assign location='outcome'>: an integer operation overflowed or failed"); true }) {
+            if (try { vOutcome = com.sce.forge.runtime.SceChecked.bounded("deadline", 24); false } catch (_: com.sce.forge.runtime.AlgorithmFailure) { raisePlatformError(StaticHostKvEvent.Error.Execution, ErrorReason.EXPRESSION_FAILED, "<assign location='outcome'>: an integer operation overflowed or failed"); true }) {
                 return
             }
     }
@@ -1628,7 +1628,7 @@ class StaticHostKvStateMachine(
     private fun transitionContentOfDeletingAt3() {
                 // SCE-MAP: static_host_kv.scxml:126 :: deleting :: _transition_3
 
-            if (try { vOutcome = com.sce.forge.runtime.SceChecked.bounded("refused", 24); false } catch (_: com.sce.forge.runtime.AlgorithmFailure) { raisePlatformError(StaticHostKvEvent.Error.Execution, "<assign location='outcome'>: an integer operation overflowed or failed"); true }) {
+            if (try { vOutcome = com.sce.forge.runtime.SceChecked.bounded("refused", 24); false } catch (_: com.sce.forge.runtime.AlgorithmFailure) { raisePlatformError(StaticHostKvEvent.Error.Execution, ErrorReason.EXPRESSION_FAILED, "<assign location='outcome'>: an integer operation overflowed or failed"); true }) {
                 return
             }
     }
@@ -1657,11 +1657,11 @@ class StaticHostKvStateMachine(
 
             vFound = pendingDoneInvokeGetPayload!!.found
 
-            if (try { vGot = com.sce.forge.runtime.SceChecked.bounded(pendingDoneInvokeGetPayload!!.value, 4096); false } catch (_: com.sce.forge.runtime.AlgorithmFailure) { raisePlatformError(StaticHostKvEvent.Error.Execution, "<assign location='got'>: an integer operation overflowed or failed"); true }) {
+            if (try { vGot = com.sce.forge.runtime.SceChecked.bounded(pendingDoneInvokeGetPayload!!.value, 4096); false } catch (_: com.sce.forge.runtime.AlgorithmFailure) { raisePlatformError(StaticHostKvEvent.Error.Execution, ErrorReason.EXPRESSION_FAILED, "<assign location='got'>: an integer operation overflowed or failed"); true }) {
                 return
             }
 
-            if (try { vOutcome = com.sce.forge.runtime.SceChecked.bounded("done", 24); false } catch (_: com.sce.forge.runtime.AlgorithmFailure) { raisePlatformError(StaticHostKvEvent.Error.Execution, "<assign location='outcome'>: an integer operation overflowed or failed"); true }) {
+            if (try { vOutcome = com.sce.forge.runtime.SceChecked.bounded("done", 24); false } catch (_: com.sce.forge.runtime.AlgorithmFailure) { raisePlatformError(StaticHostKvEvent.Error.Execution, ErrorReason.EXPRESSION_FAILED, "<assign location='outcome'>: an integer operation overflowed or failed"); true }) {
                 return
             }
     }
@@ -1672,7 +1672,7 @@ class StaticHostKvStateMachine(
                     return
                 }
 
-            if (try { vOutcome = com.sce.forge.runtime.SceChecked.bounded(pendingDoneInvokeGetPayload!!.error, 24); false } catch (_: com.sce.forge.runtime.AlgorithmFailure) { raisePlatformError(StaticHostKvEvent.Error.Execution, "<assign location='outcome'>: an integer operation overflowed or failed"); true }) {
+            if (try { vOutcome = com.sce.forge.runtime.SceChecked.bounded(pendingDoneInvokeGetPayload!!.error, 24); false } catch (_: com.sce.forge.runtime.AlgorithmFailure) { raisePlatformError(StaticHostKvEvent.Error.Execution, ErrorReason.EXPRESSION_FAILED, "<assign location='outcome'>: an integer operation overflowed or failed"); true }) {
                 return
             }
     }
@@ -1680,7 +1680,7 @@ class StaticHostKvStateMachine(
     private fun transitionContentOfGettingAt2() {
                 // SCE-MAP: static_host_kv.scxml:84 :: getting :: _transition_2
 
-            if (try { vOutcome = com.sce.forge.runtime.SceChecked.bounded("deadline", 24); false } catch (_: com.sce.forge.runtime.AlgorithmFailure) { raisePlatformError(StaticHostKvEvent.Error.Execution, "<assign location='outcome'>: an integer operation overflowed or failed"); true }) {
+            if (try { vOutcome = com.sce.forge.runtime.SceChecked.bounded("deadline", 24); false } catch (_: com.sce.forge.runtime.AlgorithmFailure) { raisePlatformError(StaticHostKvEvent.Error.Execution, ErrorReason.EXPRESSION_FAILED, "<assign location='outcome'>: an integer operation overflowed or failed"); true }) {
                 return
             }
     }
@@ -1688,7 +1688,7 @@ class StaticHostKvStateMachine(
     private fun transitionContentOfGettingAt3() {
                 // SCE-MAP: static_host_kv.scxml:87 :: getting :: _transition_3
 
-            if (try { vOutcome = com.sce.forge.runtime.SceChecked.bounded("refused", 24); false } catch (_: com.sce.forge.runtime.AlgorithmFailure) { raisePlatformError(StaticHostKvEvent.Error.Execution, "<assign location='outcome'>: an integer operation overflowed or failed"); true }) {
+            if (try { vOutcome = com.sce.forge.runtime.SceChecked.bounded("refused", 24); false } catch (_: com.sce.forge.runtime.AlgorithmFailure) { raisePlatformError(StaticHostKvEvent.Error.Execution, ErrorReason.EXPRESSION_FAILED, "<assign location='outcome'>: an integer operation overflowed or failed"); true }) {
                 return
             }
     }
@@ -1715,7 +1715,7 @@ class StaticHostKvStateMachine(
                     return
                 }
 
-            if (try { vKey = com.sce.forge.runtime.SceChecked.bounded(pendingHostKvGetRequestPayload!!.key, 256); false } catch (_: com.sce.forge.runtime.AlgorithmFailure) { raisePlatformError(StaticHostKvEvent.Error.Execution, "<assign location='key'>: an integer operation overflowed or failed"); true }) {
+            if (try { vKey = com.sce.forge.runtime.SceChecked.bounded(pendingHostKvGetRequestPayload!!.key, 256); false } catch (_: com.sce.forge.runtime.AlgorithmFailure) { raisePlatformError(StaticHostKvEvent.Error.Execution, ErrorReason.EXPRESSION_FAILED, "<assign location='key'>: an integer operation overflowed or failed"); true }) {
                 return
             }
     }
@@ -1726,11 +1726,11 @@ class StaticHostKvStateMachine(
                     return
                 }
 
-            if (try { vKey = com.sce.forge.runtime.SceChecked.bounded(pendingHostKvPutRequestPayload!!.key, 256); false } catch (_: com.sce.forge.runtime.AlgorithmFailure) { raisePlatformError(StaticHostKvEvent.Error.Execution, "<assign location='key'>: an integer operation overflowed or failed"); true }) {
+            if (try { vKey = com.sce.forge.runtime.SceChecked.bounded(pendingHostKvPutRequestPayload!!.key, 256); false } catch (_: com.sce.forge.runtime.AlgorithmFailure) { raisePlatformError(StaticHostKvEvent.Error.Execution, ErrorReason.EXPRESSION_FAILED, "<assign location='key'>: an integer operation overflowed or failed"); true }) {
                 return
             }
 
-            if (try { vValue = com.sce.forge.runtime.SceChecked.bounded(pendingHostKvPutRequestPayload!!.value, 4096); false } catch (_: com.sce.forge.runtime.AlgorithmFailure) { raisePlatformError(StaticHostKvEvent.Error.Execution, "<assign location='value'>: an integer operation overflowed or failed"); true }) {
+            if (try { vValue = com.sce.forge.runtime.SceChecked.bounded(pendingHostKvPutRequestPayload!!.value, 4096); false } catch (_: com.sce.forge.runtime.AlgorithmFailure) { raisePlatformError(StaticHostKvEvent.Error.Execution, ErrorReason.EXPRESSION_FAILED, "<assign location='value'>: an integer operation overflowed or failed"); true }) {
                 return
             }
     }
@@ -1741,7 +1741,7 @@ class StaticHostKvStateMachine(
                     return
                 }
 
-            if (try { vKey = com.sce.forge.runtime.SceChecked.bounded(pendingHostKvDeleteRequestPayload!!.key, 256); false } catch (_: com.sce.forge.runtime.AlgorithmFailure) { raisePlatformError(StaticHostKvEvent.Error.Execution, "<assign location='key'>: an integer operation overflowed or failed"); true }) {
+            if (try { vKey = com.sce.forge.runtime.SceChecked.bounded(pendingHostKvDeleteRequestPayload!!.key, 256); false } catch (_: com.sce.forge.runtime.AlgorithmFailure) { raisePlatformError(StaticHostKvEvent.Error.Execution, ErrorReason.EXPRESSION_FAILED, "<assign location='key'>: an integer operation overflowed or failed"); true }) {
                 return
             }
     }
@@ -1752,11 +1752,11 @@ class StaticHostKvStateMachine(
                     return
                 }
 
-            if (try { vAfter = com.sce.forge.runtime.SceChecked.bounded(pendingHostKvNextKeyRequestPayload!!.after, 256); false } catch (_: com.sce.forge.runtime.AlgorithmFailure) { raisePlatformError(StaticHostKvEvent.Error.Execution, "<assign location='after'>: an integer operation overflowed or failed"); true }) {
+            if (try { vAfter = com.sce.forge.runtime.SceChecked.bounded(pendingHostKvNextKeyRequestPayload!!.after, 256); false } catch (_: com.sce.forge.runtime.AlgorithmFailure) { raisePlatformError(StaticHostKvEvent.Error.Execution, ErrorReason.EXPRESSION_FAILED, "<assign location='after'>: an integer operation overflowed or failed"); true }) {
                 return
             }
 
-            if (try { vPrefix = com.sce.forge.runtime.SceChecked.bounded(pendingHostKvNextKeyRequestPayload!!.prefix, 256); false } catch (_: com.sce.forge.runtime.AlgorithmFailure) { raisePlatformError(StaticHostKvEvent.Error.Execution, "<assign location='prefix'>: an integer operation overflowed or failed"); true }) {
+            if (try { vPrefix = com.sce.forge.runtime.SceChecked.bounded(pendingHostKvNextKeyRequestPayload!!.prefix, 256); false } catch (_: com.sce.forge.runtime.AlgorithmFailure) { raisePlatformError(StaticHostKvEvent.Error.Execution, ErrorReason.EXPRESSION_FAILED, "<assign location='prefix'>: an integer operation overflowed or failed"); true }) {
                 return
             }
     }
@@ -1785,7 +1785,7 @@ class StaticHostKvStateMachine(
 
             vReplaced = pendingDoneInvokePutPayload!!.replaced
 
-            if (try { vOutcome = com.sce.forge.runtime.SceChecked.bounded("done", 24); false } catch (_: com.sce.forge.runtime.AlgorithmFailure) { raisePlatformError(StaticHostKvEvent.Error.Execution, "<assign location='outcome'>: an integer operation overflowed or failed"); true }) {
+            if (try { vOutcome = com.sce.forge.runtime.SceChecked.bounded("done", 24); false } catch (_: com.sce.forge.runtime.AlgorithmFailure) { raisePlatformError(StaticHostKvEvent.Error.Execution, ErrorReason.EXPRESSION_FAILED, "<assign location='outcome'>: an integer operation overflowed or failed"); true }) {
                 return
             }
     }
@@ -1796,7 +1796,7 @@ class StaticHostKvStateMachine(
                     return
                 }
 
-            if (try { vOutcome = com.sce.forge.runtime.SceChecked.bounded(pendingDoneInvokePutPayload!!.error, 24); false } catch (_: com.sce.forge.runtime.AlgorithmFailure) { raisePlatformError(StaticHostKvEvent.Error.Execution, "<assign location='outcome'>: an integer operation overflowed or failed"); true }) {
+            if (try { vOutcome = com.sce.forge.runtime.SceChecked.bounded(pendingDoneInvokePutPayload!!.error, 24); false } catch (_: com.sce.forge.runtime.AlgorithmFailure) { raisePlatformError(StaticHostKvEvent.Error.Execution, ErrorReason.EXPRESSION_FAILED, "<assign location='outcome'>: an integer operation overflowed or failed"); true }) {
                 return
             }
     }
@@ -1804,7 +1804,7 @@ class StaticHostKvStateMachine(
     private fun transitionContentOfPuttingAt2() {
                 // SCE-MAP: static_host_kv.scxml:104 :: putting :: _transition_2
 
-            if (try { vOutcome = com.sce.forge.runtime.SceChecked.bounded("deadline", 24); false } catch (_: com.sce.forge.runtime.AlgorithmFailure) { raisePlatformError(StaticHostKvEvent.Error.Execution, "<assign location='outcome'>: an integer operation overflowed or failed"); true }) {
+            if (try { vOutcome = com.sce.forge.runtime.SceChecked.bounded("deadline", 24); false } catch (_: com.sce.forge.runtime.AlgorithmFailure) { raisePlatformError(StaticHostKvEvent.Error.Execution, ErrorReason.EXPRESSION_FAILED, "<assign location='outcome'>: an integer operation overflowed or failed"); true }) {
                 return
             }
     }
@@ -1812,7 +1812,7 @@ class StaticHostKvStateMachine(
     private fun transitionContentOfPuttingAt3() {
                 // SCE-MAP: static_host_kv.scxml:107 :: putting :: _transition_3
 
-            if (try { vOutcome = com.sce.forge.runtime.SceChecked.bounded("refused", 24); false } catch (_: com.sce.forge.runtime.AlgorithmFailure) { raisePlatformError(StaticHostKvEvent.Error.Execution, "<assign location='outcome'>: an integer operation overflowed or failed"); true }) {
+            if (try { vOutcome = com.sce.forge.runtime.SceChecked.bounded("refused", 24); false } catch (_: com.sce.forge.runtime.AlgorithmFailure) { raisePlatformError(StaticHostKvEvent.Error.Execution, ErrorReason.EXPRESSION_FAILED, "<assign location='outcome'>: an integer operation overflowed or failed"); true }) {
                 return
             }
     }
@@ -1841,11 +1841,11 @@ class StaticHostKvStateMachine(
 
             vNextFound = pendingDoneInvokeWalkPayload!!.found
 
-            if (try { vNext = com.sce.forge.runtime.SceChecked.bounded(pendingDoneInvokeWalkPayload!!.key, 256); false } catch (_: com.sce.forge.runtime.AlgorithmFailure) { raisePlatformError(StaticHostKvEvent.Error.Execution, "<assign location='next'>: an integer operation overflowed or failed"); true }) {
+            if (try { vNext = com.sce.forge.runtime.SceChecked.bounded(pendingDoneInvokeWalkPayload!!.key, 256); false } catch (_: com.sce.forge.runtime.AlgorithmFailure) { raisePlatformError(StaticHostKvEvent.Error.Execution, ErrorReason.EXPRESSION_FAILED, "<assign location='next'>: an integer operation overflowed or failed"); true }) {
                 return
             }
 
-            if (try { vOutcome = com.sce.forge.runtime.SceChecked.bounded("done", 24); false } catch (_: com.sce.forge.runtime.AlgorithmFailure) { raisePlatformError(StaticHostKvEvent.Error.Execution, "<assign location='outcome'>: an integer operation overflowed or failed"); true }) {
+            if (try { vOutcome = com.sce.forge.runtime.SceChecked.bounded("done", 24); false } catch (_: com.sce.forge.runtime.AlgorithmFailure) { raisePlatformError(StaticHostKvEvent.Error.Execution, ErrorReason.EXPRESSION_FAILED, "<assign location='outcome'>: an integer operation overflowed or failed"); true }) {
                 return
             }
     }
@@ -1856,7 +1856,7 @@ class StaticHostKvStateMachine(
                     return
                 }
 
-            if (try { vOutcome = com.sce.forge.runtime.SceChecked.bounded(pendingDoneInvokeWalkPayload!!.error, 24); false } catch (_: com.sce.forge.runtime.AlgorithmFailure) { raisePlatformError(StaticHostKvEvent.Error.Execution, "<assign location='outcome'>: an integer operation overflowed or failed"); true }) {
+            if (try { vOutcome = com.sce.forge.runtime.SceChecked.bounded(pendingDoneInvokeWalkPayload!!.error, 24); false } catch (_: com.sce.forge.runtime.AlgorithmFailure) { raisePlatformError(StaticHostKvEvent.Error.Execution, ErrorReason.EXPRESSION_FAILED, "<assign location='outcome'>: an integer operation overflowed or failed"); true }) {
                 return
             }
     }
@@ -1864,7 +1864,7 @@ class StaticHostKvStateMachine(
     private fun transitionContentOfWalkingAt2() {
                 // SCE-MAP: static_host_kv.scxml:144 :: walking :: _transition_2
 
-            if (try { vOutcome = com.sce.forge.runtime.SceChecked.bounded("deadline", 24); false } catch (_: com.sce.forge.runtime.AlgorithmFailure) { raisePlatformError(StaticHostKvEvent.Error.Execution, "<assign location='outcome'>: an integer operation overflowed or failed"); true }) {
+            if (try { vOutcome = com.sce.forge.runtime.SceChecked.bounded("deadline", 24); false } catch (_: com.sce.forge.runtime.AlgorithmFailure) { raisePlatformError(StaticHostKvEvent.Error.Execution, ErrorReason.EXPRESSION_FAILED, "<assign location='outcome'>: an integer operation overflowed or failed"); true }) {
                 return
             }
     }
@@ -1872,7 +1872,7 @@ class StaticHostKvStateMachine(
     private fun transitionContentOfWalkingAt3() {
                 // SCE-MAP: static_host_kv.scxml:147 :: walking :: _transition_3
 
-            if (try { vOutcome = com.sce.forge.runtime.SceChecked.bounded("refused", 24); false } catch (_: com.sce.forge.runtime.AlgorithmFailure) { raisePlatformError(StaticHostKvEvent.Error.Execution, "<assign location='outcome'>: an integer operation overflowed or failed"); true }) {
+            if (try { vOutcome = com.sce.forge.runtime.SceChecked.bounded("refused", 24); false } catch (_: com.sce.forge.runtime.AlgorithmFailure) { raisePlatformError(StaticHostKvEvent.Error.Execution, ErrorReason.EXPRESSION_FAILED, "<assign location='outcome'>: an integer operation overflowed or failed"); true }) {
                 return
             }
     }

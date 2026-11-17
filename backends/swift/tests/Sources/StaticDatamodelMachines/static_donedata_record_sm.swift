@@ -502,7 +502,7 @@ public final class StaticDonedataRecordPolicy: InvocablePolicy {
                 sceBlock: do {
 
 
-                if ({ () -> Bool in do { let sceValue: UInt8 = (try Checked.add(self.vShown.zoom, 1)); self.vShown.zoom = sceValue } catch { engine.raise(EventWithMetadata.platformError(StaticDonedataRecordEvent.errorExecution, message: "<assign location='shown.zoom'>: an integer operation overflowed or failed")); return true }; return false }()) {
+                if ({ () -> Bool in do { let sceValue: UInt8 = (try Checked.add(self.vShown.zoom, 1)); self.vShown.zoom = sceValue } catch { engine.raise(EventWithMetadata.platformError(StaticDonedataRecordEvent.errorExecution, reason: .expressionFailed, message: "<assign location='shown.zoom'>: an integer operation overflowed or failed")); return true }; return false }()) {
                     break sceBlock  // W3C SCXML 4.9: the error ends the block
                 }
 

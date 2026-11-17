@@ -31,6 +31,7 @@ import (
 	"time"
 
 	sce "github.com/newmassrael/sce-go-runtime"
+	sceerrorreason "github.com/newmassrael/sce-go-runtime/generated/error_reason"
 	scealgorithm "github.com/newmassrael/sce-forge-runtime/algorithm"
 	"github.com/newmassrael/sce-forge-runtime/optional"
 )
@@ -41,6 +42,9 @@ var (
 	_ = filepath.Join
 	_ = strings.HasPrefix
 	_ = time.Duration(0)
+	// Why an error.* event is raised (sce:std/engine/error_reason,
+	// docs/adr/0106 #111); a machine that raises none still imports it.
+	_ = sceerrorreason.ErrorReasonExpressionFailed
 	_ scealgorithm.Failure
 )
 
@@ -1323,7 +1327,7 @@ func (p *StaticComposedTextPolicy) ExecuteTransitionContent(source StaticCompose
 	if uint32(len(p.pendingBatchSentPayload.items)) > 0 {
 
 
-	if func() bool { var sceFailure scealgorithm.Failure; sceValue := scealgorithm.At(&sceFailure, p.pendingBatchSentPayload.items[:], int64(0)).label == "ab"; if sceFailure.Failed() { engine.Raise(sce.NewPlatformError(StaticComposedTextEventErrorExecution, "<assign location='first_label_is_ab'>: an integer operation overflowed or failed")); return true }; p.vFirstLabelIsAb = sceValue; return false }() {
+	if func() bool { var sceFailure scealgorithm.Failure; sceValue := scealgorithm.At(&sceFailure, p.pendingBatchSentPayload.items[:], int64(0)).label == "ab"; if sceFailure.Failed() { engine.Raise(sce.NewPlatformError(StaticComposedTextEventErrorExecution, sceerrorreason.ErrorReasonExpressionFailed, "<assign location='first_label_is_ab'>: an integer operation overflowed or failed")); return true }; p.vFirstLabelIsAb = sceValue; return false }() {
 		return  // W3C SCXML 4.9: the error ends the block
 	}
 
@@ -1337,7 +1341,7 @@ func (p *StaticComposedTextPolicy) ExecuteTransitionContent(source StaticCompose
 	if row.label == "ab" {
 
 
-	if func() bool { var sceFailure scealgorithm.Failure; sceValue := scealgorithm.AddUint32(&sceFailure, p.vLabelsAb, 1); if sceFailure.Failed() { engine.Raise(sce.NewPlatformError(StaticComposedTextEventErrorExecution, "<assign location='labels_ab'>: an integer operation overflowed or failed")); return true }; p.vLabelsAb = sceValue; return false }() {
+	if func() bool { var sceFailure scealgorithm.Failure; sceValue := scealgorithm.AddUint32(&sceFailure, p.vLabelsAb, 1); if sceFailure.Failed() { engine.Raise(sce.NewPlatformError(StaticComposedTextEventErrorExecution, sceerrorreason.ErrorReasonExpressionFailed, "<assign location='labels_ab'>: an integer operation overflowed or failed")); return true }; p.vLabelsAb = sceValue; return false }() {
 		return  // W3C SCXML 4.9: the error ends the block
 	}
 
@@ -1346,10 +1350,10 @@ func (p *StaticComposedTextPolicy) ExecuteTransitionContent(source StaticCompose
 
 	{
 	var ifCondFailed3 bool
-	if func() bool { var sceFailure scealgorithm.Failure; sceValue := uint32(len(row.tags)) > 0 && scealgorithm.At(&sceFailure, row.tags[:], int64(0)) == "ab"; if sceFailure.Failed() { engine.Raise(sce.NewPlatformError(StaticComposedTextEventErrorExecution, "<if cond='len(row.tags) > 0 && row.tags[0] === 'ab''>: an integer operation overflowed or failed")); ifCondFailed3 = true; return false }; return sceValue }() {
+	if func() bool { var sceFailure scealgorithm.Failure; sceValue := uint32(len(row.tags)) > 0 && scealgorithm.At(&sceFailure, row.tags[:], int64(0)) == "ab"; if sceFailure.Failed() { engine.Raise(sce.NewPlatformError(StaticComposedTextEventErrorExecution, sceerrorreason.ErrorReasonExpressionFailed, "<if cond='len(row.tags) > 0 && row.tags[0] === 'ab''>: an integer operation overflowed or failed")); ifCondFailed3 = true; return false }; return sceValue }() {
 
 
-	if func() bool { var sceFailure scealgorithm.Failure; sceValue := scealgorithm.AddUint32(&sceFailure, p.vFirstTagsAb, 1); if sceFailure.Failed() { engine.Raise(sce.NewPlatformError(StaticComposedTextEventErrorExecution, "<assign location='first_tags_ab'>: an integer operation overflowed or failed")); return true }; p.vFirstTagsAb = sceValue; return false }() {
+	if func() bool { var sceFailure scealgorithm.Failure; sceValue := scealgorithm.AddUint32(&sceFailure, p.vFirstTagsAb, 1); if sceFailure.Failed() { engine.Raise(sce.NewPlatformError(StaticComposedTextEventErrorExecution, sceerrorreason.ErrorReasonExpressionFailed, "<assign location='first_tags_ab'>: an integer operation overflowed or failed")); return true }; p.vFirstTagsAb = sceValue; return false }() {
 		return  // W3C SCXML 4.9: the error ends the block
 	}
 
@@ -1367,7 +1371,7 @@ func (p *StaticComposedTextPolicy) ExecuteTransitionContent(source StaticCompose
 	if word == "ab" {
 
 
-	if func() bool { var sceFailure scealgorithm.Failure; sceValue := scealgorithm.AddUint32(&sceFailure, p.vWordsAb, 1); if sceFailure.Failed() { engine.Raise(sce.NewPlatformError(StaticComposedTextEventErrorExecution, "<assign location='words_ab'>: an integer operation overflowed or failed")); return true }; p.vWordsAb = sceValue; return false }() {
+	if func() bool { var sceFailure scealgorithm.Failure; sceValue := scealgorithm.AddUint32(&sceFailure, p.vWordsAb, 1); if sceFailure.Failed() { engine.Raise(sce.NewPlatformError(StaticComposedTextEventErrorExecution, sceerrorreason.ErrorReasonExpressionFailed, "<assign location='words_ab'>: an integer operation overflowed or failed")); return true }; p.vWordsAb = sceValue; return false }() {
 		return  // W3C SCXML 4.9: the error ends the block
 	}
 
@@ -1377,13 +1381,13 @@ func (p *StaticComposedTextPolicy) ExecuteTransitionContent(source StaticCompose
 
 
 
-	if func() bool { var sceFailure scealgorithm.Failure; sceValue := scealgorithm.Bounded(&sceFailure, row.label, 8); if sceFailure.Failed() { engine.Raise(sce.NewPlatformError(StaticComposedTextEventErrorExecution, "<assign location='last_label'>: an integer operation overflowed or failed")); return true }; p.vLastLabel = sceValue; return false }() {
+	if func() bool { var sceFailure scealgorithm.Failure; sceValue := scealgorithm.Bounded(&sceFailure, row.label, 8); if sceFailure.Failed() { engine.Raise(sce.NewPlatformError(StaticComposedTextEventErrorExecution, sceerrorreason.ErrorReasonExpressionFailed, "<assign location='last_label'>: an integer operation overflowed or failed")); return true }; p.vLastLabel = sceValue; return false }() {
 		return  // W3C SCXML 4.9: the error ends the block
 	}
 
 
 
-	if func() bool { var sceFailure scealgorithm.Failure; sceValue := scealgorithm.AddUint32(&sceFailure, p.vBlobBytes, uint32(len(row.blob))); if sceFailure.Failed() { engine.Raise(sce.NewPlatformError(StaticComposedTextEventErrorExecution, "<assign location='blob_bytes'>: an integer operation overflowed or failed")); return true }; p.vBlobBytes = sceValue; return false }() {
+	if func() bool { var sceFailure scealgorithm.Failure; sceValue := scealgorithm.AddUint32(&sceFailure, p.vBlobBytes, uint32(len(row.blob))); if sceFailure.Failed() { engine.Raise(sce.NewPlatformError(StaticComposedTextEventErrorExecution, sceerrorreason.ErrorReasonExpressionFailed, "<assign location='blob_bytes'>: an integer operation overflowed or failed")); return true }; p.vBlobBytes = sceValue; return false }() {
 		return  // W3C SCXML 4.9: the error ends the block
 	}
 
@@ -1391,7 +1395,7 @@ func (p *StaticComposedTextPolicy) ExecuteTransitionContent(source StaticCompose
 	if string(row.blob) == "ab" {
 
 
-	if func() bool { var sceFailure scealgorithm.Failure; sceValue := scealgorithm.AddUint32(&sceFailure, p.vBlobsAb, 1); if sceFailure.Failed() { engine.Raise(sce.NewPlatformError(StaticComposedTextEventErrorExecution, "<assign location='blobs_ab'>: an integer operation overflowed or failed")); return true }; p.vBlobsAb = sceValue; return false }() {
+	if func() bool { var sceFailure scealgorithm.Failure; sceValue := scealgorithm.AddUint32(&sceFailure, p.vBlobsAb, 1); if sceFailure.Failed() { engine.Raise(sce.NewPlatformError(StaticComposedTextEventErrorExecution, sceerrorreason.ErrorReasonExpressionFailed, "<assign location='blobs_ab'>: an integer operation overflowed or failed")); return true }; p.vBlobsAb = sceValue; return false }() {
 		return  // W3C SCXML 4.9: the error ends the block
 	}
 
@@ -1418,7 +1422,7 @@ func (p *StaticComposedTextPolicy) ExecuteTransitionContent(source StaticCompose
 			func() {
 
 
-	if func() bool { var sceFailure scealgorithm.Failure; sceValue := scealgorithm.AddUint32(&sceFailure, p.vRefusals, 1); if sceFailure.Failed() { engine.Raise(sce.NewPlatformError(StaticComposedTextEventErrorExecution, "<assign location='refusals'>: an integer operation overflowed or failed")); return true }; p.vRefusals = sceValue; return false }() {
+	if func() bool { var sceFailure scealgorithm.Failure; sceValue := scealgorithm.AddUint32(&sceFailure, p.vRefusals, 1); if sceFailure.Failed() { engine.Raise(sce.NewPlatformError(StaticComposedTextEventErrorExecution, sceerrorreason.ErrorReasonExpressionFailed, "<assign location='refusals'>: an integer operation overflowed or failed")); return true }; p.vRefusals = sceValue; return false }() {
 		return  // W3C SCXML 4.9: the error ends the block
 	}
 

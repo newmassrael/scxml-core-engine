@@ -464,7 +464,7 @@ class StaticSendDelayStateMachine(
             // default wait.
             val sendDelayText: String = vWait.toString() + "ms"
             val sendDelayMs = com.sce.runtime.SendHelper.parseDelayMs(sendDelayText) ?: run {
-                raisePlatformError(StaticSendDelayEvent.Error.Execution, "<send> delayexpr is not a CSS2 time", "__send_0")
+                raisePlatformError(StaticSendDelayEvent.Error.Execution, ErrorReason.SEND_DELAY_INVALID, "<send> delayexpr is not a CSS2 time", "__send_0")
                 return@send true
             }
             val sendData = ""
@@ -481,7 +481,7 @@ class StaticSendDelayStateMachine(
     private fun transitionContentOfIdleAt1() {
                 // SCE-MAP: static_send_delay.scxml:25 :: idle :: _transition_1
 
-            if (try { vWait = com.sce.forge.runtime.SceChecked.mul(vWait, 2.toUInt()); false } catch (_: com.sce.forge.runtime.AlgorithmFailure) { raisePlatformError(StaticSendDelayEvent.Error.Execution, "<assign location='wait'>: an integer operation overflowed or failed"); true }) {
+            if (try { vWait = com.sce.forge.runtime.SceChecked.mul(vWait, 2.toUInt()); false } catch (_: com.sce.forge.runtime.AlgorithmFailure) { raisePlatformError(StaticSendDelayEvent.Error.Execution, ErrorReason.EXPRESSION_FAILED, "<assign location='wait'>: an integer operation overflowed or failed"); true }) {
                 return
             }
     }
@@ -498,7 +498,7 @@ class StaticSendDelayStateMachine(
             // default wait.
             val sendDelayText: String = "soon"
             val sendDelayMs = com.sce.runtime.SendHelper.parseDelayMs(sendDelayText) ?: run {
-                raisePlatformError(StaticSendDelayEvent.Error.Execution, "<send> delayexpr is not a CSS2 time", "__send_1")
+                raisePlatformError(StaticSendDelayEvent.Error.Execution, ErrorReason.SEND_DELAY_INVALID, "<send> delayexpr is not a CSS2 time", "__send_1")
                 return@send true
             }
             val sendData = ""
@@ -525,11 +525,11 @@ class StaticSendDelayStateMachine(
             val sendDelayText: String = try {
                 com.sce.forge.runtime.SceChecked.mul(vWait, 100000000.toUInt()).toString() + "ms"
             } catch (_: com.sce.forge.runtime.AlgorithmFailure) {
-                raisePlatformError(StaticSendDelayEvent.Error.Execution, "<send> delayexpr could not be evaluated", "__send_2")
+                raisePlatformError(StaticSendDelayEvent.Error.Execution, ErrorReason.EXPRESSION_FAILED, "<send> delayexpr could not be evaluated", "__send_2")
                 return@send true
             }
             val sendDelayMs = com.sce.runtime.SendHelper.parseDelayMs(sendDelayText) ?: run {
-                raisePlatformError(StaticSendDelayEvent.Error.Execution, "<send> delayexpr is not a CSS2 time", "__send_2")
+                raisePlatformError(StaticSendDelayEvent.Error.Execution, ErrorReason.SEND_DELAY_INVALID, "<send> delayexpr is not a CSS2 time", "__send_2")
                 return@send true
             }
             val sendData = ""
@@ -546,7 +546,7 @@ class StaticSendDelayStateMachine(
     private fun transitionContentOfIdleAt4() {
                 // SCE-MAP: static_send_delay.scxml:34 :: idle :: _transition_4
 
-            if (try { vBeats = com.sce.forge.runtime.SceChecked.add(vBeats, 1.toUInt()); false } catch (_: com.sce.forge.runtime.AlgorithmFailure) { raisePlatformError(StaticSendDelayEvent.Error.Execution, "<assign location='beats'>: an integer operation overflowed or failed"); true }) {
+            if (try { vBeats = com.sce.forge.runtime.SceChecked.add(vBeats, 1.toUInt()); false } catch (_: com.sce.forge.runtime.AlgorithmFailure) { raisePlatformError(StaticSendDelayEvent.Error.Execution, ErrorReason.EXPRESSION_FAILED, "<assign location='beats'>: an integer operation overflowed or failed"); true }) {
                 return
             }
     }
@@ -554,7 +554,7 @@ class StaticSendDelayStateMachine(
     private fun transitionContentOfIdleAt5() {
                 // SCE-MAP: static_send_delay.scxml:37 :: idle :: _transition_5
 
-            if (try { vRefusals = com.sce.forge.runtime.SceChecked.add(vRefusals, 1.toUInt()); false } catch (_: com.sce.forge.runtime.AlgorithmFailure) { raisePlatformError(StaticSendDelayEvent.Error.Execution, "<assign location='refusals'>: an integer operation overflowed or failed"); true }) {
+            if (try { vRefusals = com.sce.forge.runtime.SceChecked.add(vRefusals, 1.toUInt()); false } catch (_: com.sce.forge.runtime.AlgorithmFailure) { raisePlatformError(StaticSendDelayEvent.Error.Execution, ErrorReason.EXPRESSION_FAILED, "<assign location='refusals'>: an integer operation overflowed or failed"); true }) {
                 return
             }
     }

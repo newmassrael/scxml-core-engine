@@ -31,6 +31,7 @@ import (
 	"time"
 
 	sce "github.com/newmassrael/sce-go-runtime"
+	sceerrorreason "github.com/newmassrael/sce-go-runtime/generated/error_reason"
 )
 
 // Ensure imports are used
@@ -39,6 +40,9 @@ var (
 	_ = filepath.Join
 	_ = strings.HasPrefix
 	_ = time.Duration(0)
+	// Why an error.* event is raised (sce:std/engine/error_reason,
+	// docs/adr/0106 #111); a machine that raises none still imports it.
+	_ = sceerrorreason.ErrorReasonExpressionFailed
 )
 
 // ======================================================================
@@ -337,7 +341,7 @@ func (p *ATargetExpressionIsRoutedAsItsLiteralIsSceSynthInvokeKidPolicy) Initial
 		if err == nil {
 			_ = engine.SetVariable(sessionID, "tParent", result)
 		} else {
-			eng.Raise(sce.NewPlatformError(ATargetExpressionIsRoutedAsItsLiteralIsSceSynthInvokeKidEventErrorExecution, "<data id='tParent'> expr failed to evaluate"))
+			eng.Raise(sce.NewPlatformError(ATargetExpressionIsRoutedAsItsLiteralIsSceSynthInvokeKidEventErrorExecution, sceerrorreason.ErrorReasonExpressionFailed, "<data id='tParent'> expr failed to evaluate"))
 			_ = engine.SetVariable(sessionID, "tParent", nil)
 		}
 	}
@@ -369,12 +373,12 @@ func (p *ATargetExpressionIsRoutedAsItsLiteralIsSceSynthInvokeKidPolicy) evaluat
 // evaluateGuardRaising evaluates a cond, raising error.execution when it cannot
 // be evaluated (W3C SCXML 5.9.1); ok is false then, where a bare false could
 // not say so.
-func (p *ATargetExpressionIsRoutedAsItsLiteralIsSceSynthInvokeKidPolicy) evaluateGuardRaising(guard string, eng *sce.Engine[ATargetExpressionIsRoutedAsItsLiteralIsSceSynthInvokeKidState, ATargetExpressionIsRoutedAsItsLiteralIsSceSynthInvokeKidEvent], reason string) (value bool, ok bool) {
+func (p *ATargetExpressionIsRoutedAsItsLiteralIsSceSynthInvokeKidPolicy) evaluateGuardRaising(guard string, eng *sce.Engine[ATargetExpressionIsRoutedAsItsLiteralIsSceSynthInvokeKidState, ATargetExpressionIsRoutedAsItsLiteralIsSceSynthInvokeKidEvent], detail string) (value bool, ok bool) {
 	p.assertScriptSession()
 	engine := p.ScriptEngine
 	result, err := engine.EvaluateExpression(p.SessionID, guard)
 	if err != nil {
-		eng.Raise(sce.NewPlatformError(ATargetExpressionIsRoutedAsItsLiteralIsSceSynthInvokeKidEventErrorExecution, reason))
+		eng.Raise(sce.NewPlatformError(ATargetExpressionIsRoutedAsItsLiteralIsSceSynthInvokeKidEventErrorExecution, sceerrorreason.ErrorReasonExpressionFailed, detail))
 		return false, false
 	}
 	return sce.ScriptToBool(result), true
@@ -477,7 +481,7 @@ func (p *ATargetExpressionIsRoutedAsItsLiteralIsSceSynthInvokeKidPolicy) SetPara
 // failed is left (docs/adr/0098).
 func (p *ATargetExpressionIsRoutedAsItsLiteralIsSceSynthInvokeKidPolicy) declareHandedValue(eng *sce.Engine[ATargetExpressionIsRoutedAsItsLiteralIsSceSynthInvokeKidState, ATargetExpressionIsRoutedAsItsLiteralIsSceSynthInvokeKidEvent], engine sce.IScriptEngine, sessionID, name string, value interface{}) {
 	if err := engine.SetVariable(sessionID, name, value); err != nil {
-		eng.Raise(sce.NewPlatformError(ATargetExpressionIsRoutedAsItsLiteralIsSceSynthInvokeKidEventErrorExecution, "<data id='"+name+"'> could not hold the value its invoking session handed it"))
+		eng.Raise(sce.NewPlatformError(ATargetExpressionIsRoutedAsItsLiteralIsSceSynthInvokeKidEventErrorExecution, sceerrorreason.ErrorReasonDataInitFailed, "<data id='"+name+"'> could not hold the value its invoking session handed it"))
 		_ = engine.SetVariable(sessionID, name, nil)
 	}
 }
@@ -751,7 +755,7 @@ func (p *ATargetExpressionIsRoutedAsItsLiteralIsSceSynthInvokeKidPolicy) Execute
 		// W3C SCXML C.1: this session was started by its host, not by an
 		// `<invoke>`, so `#_parent` reaches nobody — error.communication,
 		// nothing delivered, and the block ends (4.9).
-		errEvt := sce.NewPlatformError(ATargetExpressionIsRoutedAsItsLiteralIsSceSynthInvokeKidEventErrorCommunication, "<send target='#_parent'> has no parent session to reach")
+		errEvt := sce.NewPlatformError(ATargetExpressionIsRoutedAsItsLiteralIsSceSynthInvokeKidEventErrorCommunication, sceerrorreason.ErrorReasonTargetUnreachable, "<send target='#_parent'> has no parent session to reach")
 		errEvt.Metadata.SendID = "__send_4"
 		engine.Raise(errEvt)
 		return  // W3C SCXML 4.9: the error ends the block
@@ -885,6 +889,10 @@ func (p *ATargetExpressionIsRoutedAsItsLiteralIsSceSynthInvokeKidPolicy) Execute
 	{
 	p.assertScriptSession()
 	sendArgError := ""
+	// Why the argument failed, a code of sce:std/engine/error_reason
+	// (docs/adr/0106 #111), set with every sentence below.
+	var sendArgReason sce.ErrorReason
+	_ = sendArgReason
 	// A target that evaluates to nothing is not an evaluation error: it is
 	// an address nobody answers at, which the arm reports as
 	// error.communication (W3C SCXML 6.2.4).
@@ -895,18 +903,18 @@ func (p *ATargetExpressionIsRoutedAsItsLiteralIsSceSynthInvokeKidPolicy) Execute
 			sendTargetVal = v
 			sendTarget = sce.ToWireString(v)
 		} else {
-			sendArgError = "<send> targetexpr could not be evaluated"
+			sendArgError, sendArgReason = "<send> targetexpr could not be evaluated", sceerrorreason.ErrorReasonExpressionFailed
 		}
 	}
 	if sendArgError == "" && sce.IsInvalidTarget(sendTarget) {
 		// W3C SCXML 6.2: a target this processor cannot address is refused
 		// as a static one is, before anything is delivered.
-		sendArgError = "<send> targetexpr produced a target this processor cannot address"
+		sendArgError, sendArgReason = "<send> targetexpr produced a target this processor cannot address", sceerrorreason.ErrorReasonSendTargetInvalid
 	}
 	_ = sendTargetVal
 	_ = sendTarget
 	if sendArgError != "" {
-		errEvt := sce.NewPlatformError(ATargetExpressionIsRoutedAsItsLiteralIsSceSynthInvokeKidEventErrorExecution, sendArgError)
+		errEvt := sce.NewPlatformError(ATargetExpressionIsRoutedAsItsLiteralIsSceSynthInvokeKidEventErrorExecution, sendArgReason, sendArgError)
 		errEvt.Metadata.SendID = "__send_0"
 		engine.Raise(errEvt)
 		return  // W3C SCXML 4.9: the error ends the block
@@ -918,7 +926,7 @@ func (p *ATargetExpressionIsRoutedAsItsLiteralIsSceSynthInvokeKidPolicy) Execute
 		// ends the block as any other would (W3C SCXML 4.9). A self-sent
 		// event names its origin, so `targetexpr="_event.origin"` (test336)
 		// reads this session's location, never "".
-		errEvt := sce.NewPlatformError(ATargetExpressionIsRoutedAsItsLiteralIsSceSynthInvokeKidEventErrorCommunication, "<send> targetexpr evaluated to nothing, so there is no target to reach")
+		errEvt := sce.NewPlatformError(ATargetExpressionIsRoutedAsItsLiteralIsSceSynthInvokeKidEventErrorCommunication, sceerrorreason.ErrorReasonTargetUnreachable, "<send> targetexpr evaluated to nothing, so there is no target to reach")
 		errEvt.Metadata.SendID = "__send_0"
 		engine.Raise(errEvt)
 		return
@@ -955,7 +963,7 @@ func (p *ATargetExpressionIsRoutedAsItsLiteralIsSceSynthInvokeKidPolicy) Execute
 		// act it asked for was performed by nobody. Same event as an
 		// undeclared type, so a wiring mistake cannot read as success.
 		if !hostServed && !engine.HasEventProcessor("sce:mesh") {
-			errEvt := sce.NewPlatformError(ATargetExpressionIsRoutedAsItsLiteralIsSceSynthInvokeKidEventErrorExecution, "<send type='sce:mesh'> names a processor the host declared but never registered")
+			errEvt := sce.NewPlatformError(ATargetExpressionIsRoutedAsItsLiteralIsSceSynthInvokeKidEventErrorExecution, sceerrorreason.ErrorReasonProcessorUnregistered, "<send type='sce:mesh'> names a processor the host declared but never registered")
 			errEvt.Metadata.SendID = "__send_0"
 			engine.Raise(errEvt)
 		}
@@ -970,13 +978,13 @@ func (p *ATargetExpressionIsRoutedAsItsLiteralIsSceSynthInvokeKidPolicy) Execute
 		routed := engine.SendToTarget(sendEvt, sendHasEvt, "kAckNow", sendTarget, p.SessionID,
 0, "__send_0", eventDataStr, p.SessionID)
 		if routed == sce.TargetNotSupported {
-			errEvt := sce.NewPlatformError(ATargetExpressionIsRoutedAsItsLiteralIsSceSynthInvokeKidEventErrorExecution, "<send> targetexpr produced a value that is not a target")
+			errEvt := sce.NewPlatformError(ATargetExpressionIsRoutedAsItsLiteralIsSceSynthInvokeKidEventErrorExecution, sceerrorreason.ErrorReasonSendTargetInvalid, "<send> targetexpr produced a value that is not a target")
 			errEvt.Metadata.SendID = "__send_0"
 			engine.Raise(errEvt)
 			return // W3C SCXML 4.9: the error ends the block
 		}
 		if routed == sce.TargetNotReachable {
-			errEvt := sce.NewPlatformError(ATargetExpressionIsRoutedAsItsLiteralIsSceSynthInvokeKidEventErrorCommunication, "<send> targetexpr names a session this processor cannot reach")
+			errEvt := sce.NewPlatformError(ATargetExpressionIsRoutedAsItsLiteralIsSceSynthInvokeKidEventErrorCommunication, sceerrorreason.ErrorReasonTargetUnreachable, "<send> targetexpr names a session this processor cannot reach")
 			errEvt.Metadata.SendID = "__send_0"
 			engine.Raise(errEvt)
 			return // W3C SCXML 4.9: the error ends the block
@@ -995,6 +1003,10 @@ func (p *ATargetExpressionIsRoutedAsItsLiteralIsSceSynthInvokeKidPolicy) Execute
 	{
 	p.assertScriptSession()
 	sendArgError := ""
+	// Why the argument failed, a code of sce:std/engine/error_reason
+	// (docs/adr/0106 #111), set with every sentence below.
+	var sendArgReason sce.ErrorReason
+	_ = sendArgReason
 	// A target that evaluates to nothing is not an evaluation error: it is
 	// an address nobody answers at, which the arm reports as
 	// error.communication (W3C SCXML 6.2.4).
@@ -1005,18 +1017,18 @@ func (p *ATargetExpressionIsRoutedAsItsLiteralIsSceSynthInvokeKidPolicy) Execute
 			sendTargetVal = v
 			sendTarget = sce.ToWireString(v)
 		} else {
-			sendArgError = "<send> targetexpr could not be evaluated"
+			sendArgError, sendArgReason = "<send> targetexpr could not be evaluated", sceerrorreason.ErrorReasonExpressionFailed
 		}
 	}
 	if sendArgError == "" && sce.IsInvalidTarget(sendTarget) {
 		// W3C SCXML 6.2: a target this processor cannot address is refused
 		// as a static one is, before anything is delivered.
-		sendArgError = "<send> targetexpr produced a target this processor cannot address"
+		sendArgError, sendArgReason = "<send> targetexpr produced a target this processor cannot address", sceerrorreason.ErrorReasonSendTargetInvalid
 	}
 	_ = sendTargetVal
 	_ = sendTarget
 	if sendArgError != "" {
-		errEvt := sce.NewPlatformError(ATargetExpressionIsRoutedAsItsLiteralIsSceSynthInvokeKidEventErrorExecution, sendArgError)
+		errEvt := sce.NewPlatformError(ATargetExpressionIsRoutedAsItsLiteralIsSceSynthInvokeKidEventErrorExecution, sendArgReason, sendArgError)
 		errEvt.Metadata.SendID = "__send_1"
 		engine.Raise(errEvt)
 		return  // W3C SCXML 4.9: the error ends the block
@@ -1028,7 +1040,7 @@ func (p *ATargetExpressionIsRoutedAsItsLiteralIsSceSynthInvokeKidPolicy) Execute
 		// ends the block as any other would (W3C SCXML 4.9). A self-sent
 		// event names its origin, so `targetexpr="_event.origin"` (test336)
 		// reads this session's location, never "".
-		errEvt := sce.NewPlatformError(ATargetExpressionIsRoutedAsItsLiteralIsSceSynthInvokeKidEventErrorCommunication, "<send> targetexpr evaluated to nothing, so there is no target to reach")
+		errEvt := sce.NewPlatformError(ATargetExpressionIsRoutedAsItsLiteralIsSceSynthInvokeKidEventErrorCommunication, sceerrorreason.ErrorReasonTargetUnreachable, "<send> targetexpr evaluated to nothing, so there is no target to reach")
 		errEvt.Metadata.SendID = "__send_1"
 		engine.Raise(errEvt)
 		return
@@ -1078,13 +1090,13 @@ func (p *ATargetExpressionIsRoutedAsItsLiteralIsSceSynthInvokeKidPolicy) Execute
 		routed := engine.SendToTarget(sendEvt, sendHasEvt, "kAckLater", sendTarget, p.SessionID,
 time.Duration(10) * time.Millisecond, "__send_1", eventDataStr, p.SessionID)
 		if routed == sce.TargetNotSupported {
-			errEvt := sce.NewPlatformError(ATargetExpressionIsRoutedAsItsLiteralIsSceSynthInvokeKidEventErrorExecution, "<send> targetexpr produced a value that is not a target")
+			errEvt := sce.NewPlatformError(ATargetExpressionIsRoutedAsItsLiteralIsSceSynthInvokeKidEventErrorExecution, sceerrorreason.ErrorReasonSendTargetInvalid, "<send> targetexpr produced a value that is not a target")
 			errEvt.Metadata.SendID = "__send_1"
 			engine.Raise(errEvt)
 			return // W3C SCXML 4.9: the error ends the block
 		}
 		if routed == sce.TargetNotReachable {
-			errEvt := sce.NewPlatformError(ATargetExpressionIsRoutedAsItsLiteralIsSceSynthInvokeKidEventErrorCommunication, "<send> targetexpr names a session this processor cannot reach")
+			errEvt := sce.NewPlatformError(ATargetExpressionIsRoutedAsItsLiteralIsSceSynthInvokeKidEventErrorCommunication, sceerrorreason.ErrorReasonTargetUnreachable, "<send> targetexpr names a session this processor cannot reach")
 			errEvt.Metadata.SendID = "__send_1"
 			engine.Raise(errEvt)
 			return // W3C SCXML 4.9: the error ends the block
@@ -1103,6 +1115,10 @@ time.Duration(10) * time.Millisecond, "__send_1", eventDataStr, p.SessionID)
 	{
 	p.assertScriptSession()
 	sendArgError := ""
+	// Why the argument failed, a code of sce:std/engine/error_reason
+	// (docs/adr/0106 #111), set with every sentence below.
+	var sendArgReason sce.ErrorReason
+	_ = sendArgReason
 	// A target that evaluates to nothing is not an evaluation error: it is
 	// an address nobody answers at, which the arm reports as
 	// error.communication (W3C SCXML 6.2.4).
@@ -1113,18 +1129,18 @@ time.Duration(10) * time.Millisecond, "__send_1", eventDataStr, p.SessionID)
 			sendTargetVal = v
 			sendTarget = sce.ToWireString(v)
 		} else {
-			sendArgError = "<send> targetexpr could not be evaluated"
+			sendArgError, sendArgReason = "<send> targetexpr could not be evaluated", sceerrorreason.ErrorReasonExpressionFailed
 		}
 	}
 	if sendArgError == "" && sce.IsInvalidTarget(sendTarget) {
 		// W3C SCXML 6.2: a target this processor cannot address is refused
 		// as a static one is, before anything is delivered.
-		sendArgError = "<send> targetexpr produced a target this processor cannot address"
+		sendArgError, sendArgReason = "<send> targetexpr produced a target this processor cannot address", sceerrorreason.ErrorReasonSendTargetInvalid
 	}
 	_ = sendTargetVal
 	_ = sendTarget
 	if sendArgError != "" {
-		errEvt := sce.NewPlatformError(ATargetExpressionIsRoutedAsItsLiteralIsSceSynthInvokeKidEventErrorExecution, sendArgError)
+		errEvt := sce.NewPlatformError(ATargetExpressionIsRoutedAsItsLiteralIsSceSynthInvokeKidEventErrorExecution, sendArgReason, sendArgError)
 		errEvt.Metadata.SendID = "__send_2"
 		engine.Raise(errEvt)
 		return  // W3C SCXML 4.9: the error ends the block
@@ -1136,7 +1152,7 @@ time.Duration(10) * time.Millisecond, "__send_1", eventDataStr, p.SessionID)
 		// ends the block as any other would (W3C SCXML 4.9). A self-sent
 		// event names its origin, so `targetexpr="_event.origin"` (test336)
 		// reads this session's location, never "".
-		errEvt := sce.NewPlatformError(ATargetExpressionIsRoutedAsItsLiteralIsSceSynthInvokeKidEventErrorCommunication, "<send> targetexpr evaluated to nothing, so there is no target to reach")
+		errEvt := sce.NewPlatformError(ATargetExpressionIsRoutedAsItsLiteralIsSceSynthInvokeKidEventErrorCommunication, sceerrorreason.ErrorReasonTargetUnreachable, "<send> targetexpr evaluated to nothing, so there is no target to reach")
 		errEvt.Metadata.SendID = "__send_2"
 		engine.Raise(errEvt)
 		return
@@ -1173,7 +1189,7 @@ time.Duration(10) * time.Millisecond, "__send_1", eventDataStr, p.SessionID)
 		// act it asked for was performed by nobody. Same event as an
 		// undeclared type, so a wiring mistake cannot read as success.
 		if !hostServed && !engine.HasEventProcessor("sce:mesh") {
-			errEvt := sce.NewPlatformError(ATargetExpressionIsRoutedAsItsLiteralIsSceSynthInvokeKidEventErrorExecution, "<send type='sce:mesh'> names a processor the host declared but never registered")
+			errEvt := sce.NewPlatformError(ATargetExpressionIsRoutedAsItsLiteralIsSceSynthInvokeKidEventErrorExecution, sceerrorreason.ErrorReasonProcessorUnregistered, "<send type='sce:mesh'> names a processor the host declared but never registered")
 			errEvt.Metadata.SendID = "__send_2"
 			engine.Raise(errEvt)
 		}
@@ -1188,13 +1204,13 @@ time.Duration(10) * time.Millisecond, "__send_1", eventDataStr, p.SessionID)
 		routed := engine.SendToTarget(sendEvt, sendHasEvt, "sAckNow", sendTarget, p.SessionID,
 0, "__send_2", eventDataStr, p.SessionID)
 		if routed == sce.TargetNotSupported {
-			errEvt := sce.NewPlatformError(ATargetExpressionIsRoutedAsItsLiteralIsSceSynthInvokeKidEventErrorExecution, "<send> targetexpr produced a value that is not a target")
+			errEvt := sce.NewPlatformError(ATargetExpressionIsRoutedAsItsLiteralIsSceSynthInvokeKidEventErrorExecution, sceerrorreason.ErrorReasonSendTargetInvalid, "<send> targetexpr produced a value that is not a target")
 			errEvt.Metadata.SendID = "__send_2"
 			engine.Raise(errEvt)
 			return // W3C SCXML 4.9: the error ends the block
 		}
 		if routed == sce.TargetNotReachable {
-			errEvt := sce.NewPlatformError(ATargetExpressionIsRoutedAsItsLiteralIsSceSynthInvokeKidEventErrorCommunication, "<send> targetexpr names a session this processor cannot reach")
+			errEvt := sce.NewPlatformError(ATargetExpressionIsRoutedAsItsLiteralIsSceSynthInvokeKidEventErrorCommunication, sceerrorreason.ErrorReasonTargetUnreachable, "<send> targetexpr names a session this processor cannot reach")
 			errEvt.Metadata.SendID = "__send_2"
 			engine.Raise(errEvt)
 			return // W3C SCXML 4.9: the error ends the block
@@ -1213,6 +1229,10 @@ time.Duration(10) * time.Millisecond, "__send_1", eventDataStr, p.SessionID)
 	{
 	p.assertScriptSession()
 	sendArgError := ""
+	// Why the argument failed, a code of sce:std/engine/error_reason
+	// (docs/adr/0106 #111), set with every sentence below.
+	var sendArgReason sce.ErrorReason
+	_ = sendArgReason
 	// A target that evaluates to nothing is not an evaluation error: it is
 	// an address nobody answers at, which the arm reports as
 	// error.communication (W3C SCXML 6.2.4).
@@ -1223,18 +1243,18 @@ time.Duration(10) * time.Millisecond, "__send_1", eventDataStr, p.SessionID)
 			sendTargetVal = v
 			sendTarget = sce.ToWireString(v)
 		} else {
-			sendArgError = "<send> targetexpr could not be evaluated"
+			sendArgError, sendArgReason = "<send> targetexpr could not be evaluated", sceerrorreason.ErrorReasonExpressionFailed
 		}
 	}
 	if sendArgError == "" && sce.IsInvalidTarget(sendTarget) {
 		// W3C SCXML 6.2: a target this processor cannot address is refused
 		// as a static one is, before anything is delivered.
-		sendArgError = "<send> targetexpr produced a target this processor cannot address"
+		sendArgError, sendArgReason = "<send> targetexpr produced a target this processor cannot address", sceerrorreason.ErrorReasonSendTargetInvalid
 	}
 	_ = sendTargetVal
 	_ = sendTarget
 	if sendArgError != "" {
-		errEvt := sce.NewPlatformError(ATargetExpressionIsRoutedAsItsLiteralIsSceSynthInvokeKidEventErrorExecution, sendArgError)
+		errEvt := sce.NewPlatformError(ATargetExpressionIsRoutedAsItsLiteralIsSceSynthInvokeKidEventErrorExecution, sendArgReason, sendArgError)
 		errEvt.Metadata.SendID = "__send_3"
 		engine.Raise(errEvt)
 		return  // W3C SCXML 4.9: the error ends the block
@@ -1246,7 +1266,7 @@ time.Duration(10) * time.Millisecond, "__send_1", eventDataStr, p.SessionID)
 		// ends the block as any other would (W3C SCXML 4.9). A self-sent
 		// event names its origin, so `targetexpr="_event.origin"` (test336)
 		// reads this session's location, never "".
-		errEvt := sce.NewPlatformError(ATargetExpressionIsRoutedAsItsLiteralIsSceSynthInvokeKidEventErrorCommunication, "<send> targetexpr evaluated to nothing, so there is no target to reach")
+		errEvt := sce.NewPlatformError(ATargetExpressionIsRoutedAsItsLiteralIsSceSynthInvokeKidEventErrorCommunication, sceerrorreason.ErrorReasonTargetUnreachable, "<send> targetexpr evaluated to nothing, so there is no target to reach")
 		errEvt.Metadata.SendID = "__send_3"
 		engine.Raise(errEvt)
 		return
@@ -1296,13 +1316,13 @@ time.Duration(10) * time.Millisecond, "__send_1", eventDataStr, p.SessionID)
 		routed := engine.SendToTarget(sendEvt, sendHasEvt, "sAckLater", sendTarget, p.SessionID,
 time.Duration(10) * time.Millisecond, "__send_3", eventDataStr, p.SessionID)
 		if routed == sce.TargetNotSupported {
-			errEvt := sce.NewPlatformError(ATargetExpressionIsRoutedAsItsLiteralIsSceSynthInvokeKidEventErrorExecution, "<send> targetexpr produced a value that is not a target")
+			errEvt := sce.NewPlatformError(ATargetExpressionIsRoutedAsItsLiteralIsSceSynthInvokeKidEventErrorExecution, sceerrorreason.ErrorReasonSendTargetInvalid, "<send> targetexpr produced a value that is not a target")
 			errEvt.Metadata.SendID = "__send_3"
 			engine.Raise(errEvt)
 			return // W3C SCXML 4.9: the error ends the block
 		}
 		if routed == sce.TargetNotReachable {
-			errEvt := sce.NewPlatformError(ATargetExpressionIsRoutedAsItsLiteralIsSceSynthInvokeKidEventErrorCommunication, "<send> targetexpr names a session this processor cannot reach")
+			errEvt := sce.NewPlatformError(ATargetExpressionIsRoutedAsItsLiteralIsSceSynthInvokeKidEventErrorCommunication, sceerrorreason.ErrorReasonTargetUnreachable, "<send> targetexpr names a session this processor cannot reach")
 			errEvt.Metadata.SendID = "__send_3"
 			engine.Raise(errEvt)
 			return // W3C SCXML 4.9: the error ends the block

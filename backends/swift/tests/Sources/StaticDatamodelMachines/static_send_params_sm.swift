@@ -671,7 +671,7 @@ public final class StaticSendParamsPolicy: InvocablePolicy {
                         let sceValue: WireValue = .integer(Int64((try Checked.mul(self.vCount, 2))))
                         sendParts.append(PayloadPair("total", sceValue))
                     } catch {
-                            engine.raise(EventWithMetadata.platformError(StaticSendParamsEvent.errorExecution, message: "<send> <param name=total> failed to evaluate"))
+                            engine.raise(EventWithMetadata.platformError(StaticSendParamsEvent.errorExecution, reason: .expressionFailed, message: "<send> <param name=total> failed to evaluate"))
                             paramFailed = true
                     }
                     do {
@@ -715,14 +715,14 @@ public final class StaticSendParamsPolicy: InvocablePolicy {
                         let sceValue: WireValue = .integer(Int64((try Checked.mul(self.vCount, 2))))
                         sendParts.append(PayloadPair("total", sceValue))
                     } catch {
-                            engine.raise(EventWithMetadata.platformError(StaticSendParamsEvent.errorExecution, message: "<send> <param name=total> failed to evaluate"))
+                            engine.raise(EventWithMetadata.platformError(StaticSendParamsEvent.errorExecution, reason: .expressionFailed, message: "<send> <param name=total> failed to evaluate"))
                             paramFailed = true
                     }
                     do {
                         let sceValue: WireValue = .integer(Int64((try Checked.add(self.vSmall, self.vSmall))))
                         sendParts.append(PayloadPair("part", sceValue))
                     } catch {
-                            engine.raise(EventWithMetadata.platformError(StaticSendParamsEvent.errorExecution, message: "<send> <param name=part> failed to evaluate"))
+                            engine.raise(EventWithMetadata.platformError(StaticSendParamsEvent.errorExecution, reason: .expressionFailed, message: "<send> <param name=part> failed to evaluate"))
                             paramFailed = true
                     }
                     let sendEventData = payloadJSON(sendParts)
@@ -759,7 +759,7 @@ public final class StaticSendParamsPolicy: InvocablePolicy {
 
 
 
-                if ({ () -> Bool in do { let sceValue: String = (try Checked.bounded(self.pendingEchoPayload.tag, capacity: 16)); self.vTag = sceValue } catch { engine.raise(EventWithMetadata.platformError(StaticSendParamsEvent.errorExecution, message: "<assign location='tag'>: an integer operation overflowed or failed")); return true }; return false }()) {
+                if ({ () -> Bool in do { let sceValue: String = (try Checked.bounded(self.pendingEchoPayload.tag, capacity: 16)); self.vTag = sceValue } catch { engine.raise(EventWithMetadata.platformError(StaticSendParamsEvent.errorExecution, reason: .expressionFailed, message: "<assign location='tag'>: an integer operation overflowed or failed")); return true }; return false }()) {
                     break sceBlock  // W3C SCXML 4.9: the error ends the block
                 }
 
@@ -784,7 +784,7 @@ public final class StaticSendParamsPolicy: InvocablePolicy {
                 sceBlock: do {
 
 
-                if ({ () -> Bool in do { let sceValue: UInt32 = (try Checked.add(self.vRefusals, 1)); self.vRefusals = sceValue } catch { engine.raise(EventWithMetadata.platformError(StaticSendParamsEvent.errorExecution, message: "<assign location='refusals'>: an integer operation overflowed or failed")); return true }; return false }()) {
+                if ({ () -> Bool in do { let sceValue: UInt32 = (try Checked.add(self.vRefusals, 1)); self.vRefusals = sceValue } catch { engine.raise(EventWithMetadata.platformError(StaticSendParamsEvent.errorExecution, reason: .expressionFailed, message: "<assign location='refusals'>: an integer operation overflowed or failed")); return true }; return false }()) {
                     break sceBlock  // W3C SCXML 4.9: the error ends the block
                 }
 

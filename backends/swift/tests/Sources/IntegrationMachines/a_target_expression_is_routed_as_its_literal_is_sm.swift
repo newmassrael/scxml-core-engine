@@ -487,8 +487,12 @@ public final class ATargetExpressionIsRoutedAsItsLiteralIsPolicy: InvocablePolic
 
     /// Says what went wrong where the document can see it: `error.execution` on the internal
     /// queue (§scxml-5.9.1, 5.3).
-    private func raiseExecutionError(_ message: String, engine: Engine<ATargetExpressionIsRoutedAsItsLiteralIsPolicy>) {
-        engine.raise(EventWithMetadata.platformError(ATargetExpressionIsRoutedAsItsLiteralIsEvent.errorExecution, message: message))
+    /// `reason` is the code of sce:std/engine/error_reason the record carries
+    /// (docs/adr/0106 #111).
+    private func raiseExecutionError(
+        _ reason: ErrorReason, _ message: String, engine: Engine<ATargetExpressionIsRoutedAsItsLiteralIsPolicy>
+    ) {
+        engine.raise(EventWithMetadata.platformError(ATargetExpressionIsRoutedAsItsLiteralIsEvent.errorExecution, reason: reason, message: message))
     }
 
     /// W3C SCXML 5.3: the `<data id>` `id` takes the value of the lowered expression, or nil when it
@@ -545,6 +549,7 @@ public final class ATargetExpressionIsRoutedAsItsLiteralIsPolicy: InvocablePolic
             }
         } catch {
             raiseExecutionError(
+                handed == nil ? .expressionFailed : .paramUnfit,
                 handed == nil
                     ? "<data id='\(id)'> expr failed to evaluate"
                     : "<data id='\(id)'> could not hold the value its parent handed it",
@@ -749,7 +754,7 @@ public final class ATargetExpressionIsRoutedAsItsLiteralIsPolicy: InvocablePolic
             // this call the payload is lost to the document and to the host alike.
             engine.notePayloadReading(event, reading: Self.payloadReading(of: reading))
         } catch {
-            raiseExecutionError("_event could not be bound for '\(name)'", engine: engine)
+            raiseExecutionError(.payloadRefused, "_event could not be bound for '\(name)'", engine: engine)
         }
     }
 
@@ -786,7 +791,7 @@ public final class ATargetExpressionIsRoutedAsItsLiteralIsPolicy: InvocablePolic
         do {
             return try scriptSession.evaluateCondition(condition, chunkName: "=cond")
         } catch {
-            raiseExecutionError("a \(element) cond failed to evaluate", engine: engine)
+            raiseExecutionError(.expressionFailed, "a \(element) cond failed to evaluate", engine: engine)
             failed = true
             return false
         }
@@ -996,6 +1001,10 @@ public final class ATargetExpressionIsRoutedAsItsLiteralIsPolicy: InvocablePolic
                 // W3C SCXML 6.2: send id="__send_7"
                 do {
                     var sendArgError = ""
+                    // Why the argument failed, a code of sce:std/engine/error_reason
+                    // (docs/adr/0106 #111), set with every sentence below.
+                    var sendArgReason = ErrorReason.expressionFailed
+                    _ = sendArgReason
                     // W3C SCXML 6.2.4 + C.1: a targetexpr is a target. Its value is read from the
                     // engine now and routed as the same value written in `target` is, below; an
                     // expression that cannot be evaluated is the argument error, and a value that
@@ -1007,11 +1016,11 @@ public final class ATargetExpressionIsRoutedAsItsLiteralIsPolicy: InvocablePolic
                             sendTarget = routed
                             sendTargetKnown = true
                         } else {
-                            sendArgError = "<send> targetexpr could not be evaluated"
+                            sendArgError = "<send> targetexpr could not be evaluated"; sendArgReason = .expressionFailed
                         }
                     }
                     if !sendArgError.isEmpty {
-                        var sendError = EventWithMetadata.platformError(ATargetExpressionIsRoutedAsItsLiteralIsEvent.errorExecution, message: sendArgError)
+                        var sendError = EventWithMetadata.platformError(ATargetExpressionIsRoutedAsItsLiteralIsEvent.errorExecution, reason: sendArgReason, message: sendArgError)
                         sendError.metadata.sendID = "__send_7"
                         engine.raise(sendError)
 
@@ -1022,7 +1031,7 @@ public final class ATargetExpressionIsRoutedAsItsLiteralIsPolicy: InvocablePolic
                         // names nothing (empty or "undefined"), is not reachable —
                         // error.communication, nothing delivered, and the error ends the block
                         // as any other would (W3C SCXML 4.9).
-                        var sendError = EventWithMetadata.platformError(ATargetExpressionIsRoutedAsItsLiteralIsEvent.errorCommunication, message: "<send> targetexpr evaluated to nothing, or to a route the send does not declare, so there is no target to reach")
+                        var sendError = EventWithMetadata.platformError(ATargetExpressionIsRoutedAsItsLiteralIsEvent.errorCommunication, reason: .targetUnreachable, message: "<send> targetexpr evaluated to nothing, or to a route the send does not declare, so there is no target to reach")
                         sendError.metadata.sendID = "__send_7"
                         engine.raise(sendError)
 
@@ -1066,14 +1075,14 @@ public final class ATargetExpressionIsRoutedAsItsLiteralIsPolicy: InvocablePolic
                         sender: self.sessionID
                     )
                     if sendRouted == .notSupported {
-                        var sendError = EventWithMetadata.platformError(ATargetExpressionIsRoutedAsItsLiteralIsEvent.errorExecution, message: "<send> targetexpr produced a value that is not a target")
+                        var sendError = EventWithMetadata.platformError(ATargetExpressionIsRoutedAsItsLiteralIsEvent.errorExecution, reason: .sendTargetInvalid, message: "<send> targetexpr produced a value that is not a target")
                         sendError.metadata.sendID = "__send_7"
                         engine.raise(sendError)
 
                         break sceBlock  // W3C SCXML 4.9: the error ends the block
                     }
                     if sendRouted == .notReachable {
-                        var sendError = EventWithMetadata.platformError(ATargetExpressionIsRoutedAsItsLiteralIsEvent.errorCommunication, message: "<send> targetexpr names a session this processor cannot reach")
+                        var sendError = EventWithMetadata.platformError(ATargetExpressionIsRoutedAsItsLiteralIsEvent.errorCommunication, reason: .targetUnreachable, message: "<send> targetexpr names a session this processor cannot reach")
                         sendError.metadata.sendID = "__send_7"
                         engine.raise(sendError)
 
@@ -1084,7 +1093,7 @@ public final class ATargetExpressionIsRoutedAsItsLiteralIsPolicy: InvocablePolic
 
                 // W3C SCXML 5.4: <assign location="afterStranger">
                 if !assignData("afterStranger", "1") {
-                    raiseExecutionError("<assign> to 'afterStranger' failed", engine: engine)
+                    raiseExecutionError(.assignmentFailed, "<assign> to 'afterStranger' failed", engine: engine)
                     break sceBlock  // W3C SCXML 4.9: the error ends the block
                 }
 
@@ -1095,6 +1104,10 @@ public final class ATargetExpressionIsRoutedAsItsLiteralIsPolicy: InvocablePolic
                 // W3C SCXML 6.2: send id="__send_8"
                 do {
                     var sendArgError = ""
+                    // Why the argument failed, a code of sce:std/engine/error_reason
+                    // (docs/adr/0106 #111), set with every sentence below.
+                    var sendArgReason = ErrorReason.expressionFailed
+                    _ = sendArgReason
                     // W3C SCXML 6.2.4 + C.1: a targetexpr is a target. Its value is read from the
                     // engine now and routed as the same value written in `target` is, below; an
                     // expression that cannot be evaluated is the argument error, and a value that
@@ -1106,11 +1119,11 @@ public final class ATargetExpressionIsRoutedAsItsLiteralIsPolicy: InvocablePolic
                             sendTarget = routed
                             sendTargetKnown = true
                         } else {
-                            sendArgError = "<send> targetexpr could not be evaluated"
+                            sendArgError = "<send> targetexpr could not be evaluated"; sendArgReason = .expressionFailed
                         }
                     }
                     if !sendArgError.isEmpty {
-                        var sendError = EventWithMetadata.platformError(ATargetExpressionIsRoutedAsItsLiteralIsEvent.errorExecution, message: sendArgError)
+                        var sendError = EventWithMetadata.platformError(ATargetExpressionIsRoutedAsItsLiteralIsEvent.errorExecution, reason: sendArgReason, message: sendArgError)
                         sendError.metadata.sendID = "__send_8"
                         engine.raise(sendError)
 
@@ -1121,7 +1134,7 @@ public final class ATargetExpressionIsRoutedAsItsLiteralIsPolicy: InvocablePolic
                         // names nothing (empty or "undefined"), is not reachable —
                         // error.communication, nothing delivered, and the error ends the block
                         // as any other would (W3C SCXML 4.9).
-                        var sendError = EventWithMetadata.platformError(ATargetExpressionIsRoutedAsItsLiteralIsEvent.errorCommunication, message: "<send> targetexpr evaluated to nothing, or to a route the send does not declare, so there is no target to reach")
+                        var sendError = EventWithMetadata.platformError(ATargetExpressionIsRoutedAsItsLiteralIsEvent.errorCommunication, reason: .targetUnreachable, message: "<send> targetexpr evaluated to nothing, or to a route the send does not declare, so there is no target to reach")
                         sendError.metadata.sendID = "__send_8"
                         engine.raise(sendError)
 
@@ -1165,14 +1178,14 @@ public final class ATargetExpressionIsRoutedAsItsLiteralIsPolicy: InvocablePolic
                         sender: self.sessionID
                     )
                     if sendRouted == .notSupported {
-                        var sendError = EventWithMetadata.platformError(ATargetExpressionIsRoutedAsItsLiteralIsEvent.errorExecution, message: "<send> targetexpr produced a value that is not a target")
+                        var sendError = EventWithMetadata.platformError(ATargetExpressionIsRoutedAsItsLiteralIsEvent.errorExecution, reason: .sendTargetInvalid, message: "<send> targetexpr produced a value that is not a target")
                         sendError.metadata.sendID = "__send_8"
                         engine.raise(sendError)
 
                         break sceBlock  // W3C SCXML 4.9: the error ends the block
                     }
                     if sendRouted == .notReachable {
-                        var sendError = EventWithMetadata.platformError(ATargetExpressionIsRoutedAsItsLiteralIsEvent.errorCommunication, message: "<send> targetexpr names a session this processor cannot reach")
+                        var sendError = EventWithMetadata.platformError(ATargetExpressionIsRoutedAsItsLiteralIsEvent.errorCommunication, reason: .targetUnreachable, message: "<send> targetexpr names a session this processor cannot reach")
                         sendError.metadata.sendID = "__send_8"
                         engine.raise(sendError)
 
@@ -1183,7 +1196,7 @@ public final class ATargetExpressionIsRoutedAsItsLiteralIsPolicy: InvocablePolic
 
                 // W3C SCXML 5.4: <assign location="afterStrangerLater">
                 if !assignData("afterStrangerLater", "1") {
-                    raiseExecutionError("<assign> to 'afterStrangerLater' failed", engine: engine)
+                    raiseExecutionError(.assignmentFailed, "<assign> to 'afterStrangerLater' failed", engine: engine)
                     break sceBlock  // W3C SCXML 4.9: the error ends the block
                 }
 
@@ -1194,6 +1207,10 @@ public final class ATargetExpressionIsRoutedAsItsLiteralIsPolicy: InvocablePolic
                 // W3C SCXML 6.2: send id="__send_9"
                 do {
                     var sendArgError = ""
+                    // Why the argument failed, a code of sce:std/engine/error_reason
+                    // (docs/adr/0106 #111), set with every sentence below.
+                    var sendArgReason = ErrorReason.expressionFailed
+                    _ = sendArgReason
                     // W3C SCXML 6.2.4 + C.1: a targetexpr is a target. Its value is read from the
                     // engine now and routed as the same value written in `target` is, below; an
                     // expression that cannot be evaluated is the argument error, and a value that
@@ -1205,11 +1222,11 @@ public final class ATargetExpressionIsRoutedAsItsLiteralIsPolicy: InvocablePolic
                             sendTarget = routed
                             sendTargetKnown = true
                         } else {
-                            sendArgError = "<send> targetexpr could not be evaluated"
+                            sendArgError = "<send> targetexpr could not be evaluated"; sendArgReason = .expressionFailed
                         }
                     }
                     if !sendArgError.isEmpty {
-                        var sendError = EventWithMetadata.platformError(ATargetExpressionIsRoutedAsItsLiteralIsEvent.errorExecution, message: sendArgError)
+                        var sendError = EventWithMetadata.platformError(ATargetExpressionIsRoutedAsItsLiteralIsEvent.errorExecution, reason: sendArgReason, message: sendArgError)
                         sendError.metadata.sendID = "__send_9"
                         engine.raise(sendError)
 
@@ -1220,7 +1237,7 @@ public final class ATargetExpressionIsRoutedAsItsLiteralIsPolicy: InvocablePolic
                         // names nothing (empty or "undefined"), is not reachable —
                         // error.communication, nothing delivered, and the error ends the block
                         // as any other would (W3C SCXML 4.9).
-                        var sendError = EventWithMetadata.platformError(ATargetExpressionIsRoutedAsItsLiteralIsEvent.errorCommunication, message: "<send> targetexpr evaluated to nothing, or to a route the send does not declare, so there is no target to reach")
+                        var sendError = EventWithMetadata.platformError(ATargetExpressionIsRoutedAsItsLiteralIsEvent.errorCommunication, reason: .targetUnreachable, message: "<send> targetexpr evaluated to nothing, or to a route the send does not declare, so there is no target to reach")
                         sendError.metadata.sendID = "__send_9"
                         engine.raise(sendError)
 
@@ -1264,14 +1281,14 @@ public final class ATargetExpressionIsRoutedAsItsLiteralIsPolicy: InvocablePolic
                         sender: self.sessionID
                     )
                     if sendRouted == .notSupported {
-                        var sendError = EventWithMetadata.platformError(ATargetExpressionIsRoutedAsItsLiteralIsEvent.errorExecution, message: "<send> targetexpr produced a value that is not a target")
+                        var sendError = EventWithMetadata.platformError(ATargetExpressionIsRoutedAsItsLiteralIsEvent.errorExecution, reason: .sendTargetInvalid, message: "<send> targetexpr produced a value that is not a target")
                         sendError.metadata.sendID = "__send_9"
                         engine.raise(sendError)
 
                         break sceBlock  // W3C SCXML 4.9: the error ends the block
                     }
                     if sendRouted == .notReachable {
-                        var sendError = EventWithMetadata.platformError(ATargetExpressionIsRoutedAsItsLiteralIsEvent.errorCommunication, message: "<send> targetexpr names a session this processor cannot reach")
+                        var sendError = EventWithMetadata.platformError(ATargetExpressionIsRoutedAsItsLiteralIsEvent.errorCommunication, reason: .targetUnreachable, message: "<send> targetexpr names a session this processor cannot reach")
                         sendError.metadata.sendID = "__send_9"
                         engine.raise(sendError)
 
@@ -1282,7 +1299,7 @@ public final class ATargetExpressionIsRoutedAsItsLiteralIsPolicy: InvocablePolic
 
                 // W3C SCXML 5.4: <assign location="afterOrphan">
                 if !assignData("afterOrphan", "1") {
-                    raiseExecutionError("<assign> to 'afterOrphan' failed", engine: engine)
+                    raiseExecutionError(.assignmentFailed, "<assign> to 'afterOrphan' failed", engine: engine)
                     break sceBlock  // W3C SCXML 4.9: the error ends the block
                 }
 
@@ -1293,6 +1310,10 @@ public final class ATargetExpressionIsRoutedAsItsLiteralIsPolicy: InvocablePolic
                 // W3C SCXML 6.2: send id="__send_10"
                 do {
                     var sendArgError = ""
+                    // Why the argument failed, a code of sce:std/engine/error_reason
+                    // (docs/adr/0106 #111), set with every sentence below.
+                    var sendArgReason = ErrorReason.expressionFailed
+                    _ = sendArgReason
                     // W3C SCXML 6.2.4 + C.1: a targetexpr is a target. Its value is read from the
                     // engine now and routed as the same value written in `target` is, below; an
                     // expression that cannot be evaluated is the argument error, and a value that
@@ -1304,11 +1325,11 @@ public final class ATargetExpressionIsRoutedAsItsLiteralIsPolicy: InvocablePolic
                             sendTarget = routed
                             sendTargetKnown = true
                         } else {
-                            sendArgError = "<send> targetexpr could not be evaluated"
+                            sendArgError = "<send> targetexpr could not be evaluated"; sendArgReason = .expressionFailed
                         }
                     }
                     if !sendArgError.isEmpty {
-                        var sendError = EventWithMetadata.platformError(ATargetExpressionIsRoutedAsItsLiteralIsEvent.errorExecution, message: sendArgError)
+                        var sendError = EventWithMetadata.platformError(ATargetExpressionIsRoutedAsItsLiteralIsEvent.errorExecution, reason: sendArgReason, message: sendArgError)
                         sendError.metadata.sendID = "__send_10"
                         engine.raise(sendError)
 
@@ -1319,7 +1340,7 @@ public final class ATargetExpressionIsRoutedAsItsLiteralIsPolicy: InvocablePolic
                         // names nothing (empty or "undefined"), is not reachable —
                         // error.communication, nothing delivered, and the error ends the block
                         // as any other would (W3C SCXML 4.9).
-                        var sendError = EventWithMetadata.platformError(ATargetExpressionIsRoutedAsItsLiteralIsEvent.errorCommunication, message: "<send> targetexpr evaluated to nothing, or to a route the send does not declare, so there is no target to reach")
+                        var sendError = EventWithMetadata.platformError(ATargetExpressionIsRoutedAsItsLiteralIsEvent.errorCommunication, reason: .targetUnreachable, message: "<send> targetexpr evaluated to nothing, or to a route the send does not declare, so there is no target to reach")
                         sendError.metadata.sendID = "__send_10"
                         engine.raise(sendError)
 
@@ -1363,14 +1384,14 @@ public final class ATargetExpressionIsRoutedAsItsLiteralIsPolicy: InvocablePolic
                         sender: self.sessionID
                     )
                     if sendRouted == .notSupported {
-                        var sendError = EventWithMetadata.platformError(ATargetExpressionIsRoutedAsItsLiteralIsEvent.errorExecution, message: "<send> targetexpr produced a value that is not a target")
+                        var sendError = EventWithMetadata.platformError(ATargetExpressionIsRoutedAsItsLiteralIsEvent.errorExecution, reason: .sendTargetInvalid, message: "<send> targetexpr produced a value that is not a target")
                         sendError.metadata.sendID = "__send_10"
                         engine.raise(sendError)
 
                         break sceBlock  // W3C SCXML 4.9: the error ends the block
                     }
                     if sendRouted == .notReachable {
-                        var sendError = EventWithMetadata.platformError(ATargetExpressionIsRoutedAsItsLiteralIsEvent.errorCommunication, message: "<send> targetexpr names a session this processor cannot reach")
+                        var sendError = EventWithMetadata.platformError(ATargetExpressionIsRoutedAsItsLiteralIsEvent.errorCommunication, reason: .targetUnreachable, message: "<send> targetexpr names a session this processor cannot reach")
                         sendError.metadata.sendID = "__send_10"
                         engine.raise(sendError)
 
@@ -1381,7 +1402,7 @@ public final class ATargetExpressionIsRoutedAsItsLiteralIsPolicy: InvocablePolic
 
                 // W3C SCXML 5.4: <assign location="afterOrphanLater">
                 if !assignData("afterOrphanLater", "1") {
-                    raiseExecutionError("<assign> to 'afterOrphanLater' failed", engine: engine)
+                    raiseExecutionError(.assignmentFailed, "<assign> to 'afterOrphanLater' failed", engine: engine)
                     break sceBlock  // W3C SCXML 4.9: the error ends the block
                 }
 
@@ -1392,6 +1413,10 @@ public final class ATargetExpressionIsRoutedAsItsLiteralIsPolicy: InvocablePolic
                 // W3C SCXML 6.2: send id="__send_11"
                 do {
                     var sendArgError = ""
+                    // Why the argument failed, a code of sce:std/engine/error_reason
+                    // (docs/adr/0106 #111), set with every sentence below.
+                    var sendArgReason = ErrorReason.expressionFailed
+                    _ = sendArgReason
                     // W3C SCXML 6.2.4 + C.1: a targetexpr is a target. Its value is read from the
                     // engine now and routed as the same value written in `target` is, below; an
                     // expression that cannot be evaluated is the argument error, and a value that
@@ -1403,11 +1428,11 @@ public final class ATargetExpressionIsRoutedAsItsLiteralIsPolicy: InvocablePolic
                             sendTarget = routed
                             sendTargetKnown = true
                         } else {
-                            sendArgError = "<send> targetexpr could not be evaluated"
+                            sendArgError = "<send> targetexpr could not be evaluated"; sendArgReason = .expressionFailed
                         }
                     }
                     if !sendArgError.isEmpty {
-                        var sendError = EventWithMetadata.platformError(ATargetExpressionIsRoutedAsItsLiteralIsEvent.errorExecution, message: sendArgError)
+                        var sendError = EventWithMetadata.platformError(ATargetExpressionIsRoutedAsItsLiteralIsEvent.errorExecution, reason: sendArgReason, message: sendArgError)
                         sendError.metadata.sendID = "__send_11"
                         engine.raise(sendError)
 
@@ -1418,7 +1443,7 @@ public final class ATargetExpressionIsRoutedAsItsLiteralIsPolicy: InvocablePolic
                         // names nothing (empty or "undefined"), is not reachable —
                         // error.communication, nothing delivered, and the error ends the block
                         // as any other would (W3C SCXML 4.9).
-                        var sendError = EventWithMetadata.platformError(ATargetExpressionIsRoutedAsItsLiteralIsEvent.errorCommunication, message: "<send> targetexpr evaluated to nothing, or to a route the send does not declare, so there is no target to reach")
+                        var sendError = EventWithMetadata.platformError(ATargetExpressionIsRoutedAsItsLiteralIsEvent.errorCommunication, reason: .targetUnreachable, message: "<send> targetexpr evaluated to nothing, or to a route the send does not declare, so there is no target to reach")
                         sendError.metadata.sendID = "__send_11"
                         engine.raise(sendError)
 
@@ -1462,14 +1487,14 @@ public final class ATargetExpressionIsRoutedAsItsLiteralIsPolicy: InvocablePolic
                         sender: self.sessionID
                     )
                     if sendRouted == .notSupported {
-                        var sendError = EventWithMetadata.platformError(ATargetExpressionIsRoutedAsItsLiteralIsEvent.errorExecution, message: "<send> targetexpr produced a value that is not a target")
+                        var sendError = EventWithMetadata.platformError(ATargetExpressionIsRoutedAsItsLiteralIsEvent.errorExecution, reason: .sendTargetInvalid, message: "<send> targetexpr produced a value that is not a target")
                         sendError.metadata.sendID = "__send_11"
                         engine.raise(sendError)
 
                         break sceBlock  // W3C SCXML 4.9: the error ends the block
                     }
                     if sendRouted == .notReachable {
-                        var sendError = EventWithMetadata.platformError(ATargetExpressionIsRoutedAsItsLiteralIsEvent.errorCommunication, message: "<send> targetexpr names a session this processor cannot reach")
+                        var sendError = EventWithMetadata.platformError(ATargetExpressionIsRoutedAsItsLiteralIsEvent.errorCommunication, reason: .targetUnreachable, message: "<send> targetexpr names a session this processor cannot reach")
                         sendError.metadata.sendID = "__send_11"
                         engine.raise(sendError)
 
@@ -1480,7 +1505,7 @@ public final class ATargetExpressionIsRoutedAsItsLiteralIsPolicy: InvocablePolic
 
                 // W3C SCXML 5.4: <assign location="afterBogus">
                 if !assignData("afterBogus", "1") {
-                    raiseExecutionError("<assign> to 'afterBogus' failed", engine: engine)
+                    raiseExecutionError(.assignmentFailed, "<assign> to 'afterBogus' failed", engine: engine)
                     break sceBlock  // W3C SCXML 4.9: the error ends the block
                 }
 
@@ -1491,6 +1516,10 @@ public final class ATargetExpressionIsRoutedAsItsLiteralIsPolicy: InvocablePolic
                 // W3C SCXML 6.2: send id="__send_12"
                 do {
                     var sendArgError = ""
+                    // Why the argument failed, a code of sce:std/engine/error_reason
+                    // (docs/adr/0106 #111), set with every sentence below.
+                    var sendArgReason = ErrorReason.expressionFailed
+                    _ = sendArgReason
                     // W3C SCXML 6.2.4 + C.1: a targetexpr is a target. Its value is read from the
                     // engine now and routed as the same value written in `target` is, below; an
                     // expression that cannot be evaluated is the argument error, and a value that
@@ -1502,11 +1531,11 @@ public final class ATargetExpressionIsRoutedAsItsLiteralIsPolicy: InvocablePolic
                             sendTarget = routed
                             sendTargetKnown = true
                         } else {
-                            sendArgError = "<send> targetexpr could not be evaluated"
+                            sendArgError = "<send> targetexpr could not be evaluated"; sendArgReason = .expressionFailed
                         }
                     }
                     if !sendArgError.isEmpty {
-                        var sendError = EventWithMetadata.platformError(ATargetExpressionIsRoutedAsItsLiteralIsEvent.errorExecution, message: sendArgError)
+                        var sendError = EventWithMetadata.platformError(ATargetExpressionIsRoutedAsItsLiteralIsEvent.errorExecution, reason: sendArgReason, message: sendArgError)
                         sendError.metadata.sendID = "__send_12"
                         engine.raise(sendError)
 
@@ -1517,7 +1546,7 @@ public final class ATargetExpressionIsRoutedAsItsLiteralIsPolicy: InvocablePolic
                         // names nothing (empty or "undefined"), is not reachable —
                         // error.communication, nothing delivered, and the error ends the block
                         // as any other would (W3C SCXML 4.9).
-                        var sendError = EventWithMetadata.platformError(ATargetExpressionIsRoutedAsItsLiteralIsEvent.errorCommunication, message: "<send> targetexpr evaluated to nothing, or to a route the send does not declare, so there is no target to reach")
+                        var sendError = EventWithMetadata.platformError(ATargetExpressionIsRoutedAsItsLiteralIsEvent.errorCommunication, reason: .targetUnreachable, message: "<send> targetexpr evaluated to nothing, or to a route the send does not declare, so there is no target to reach")
                         sendError.metadata.sendID = "__send_12"
                         engine.raise(sendError)
 
@@ -1561,14 +1590,14 @@ public final class ATargetExpressionIsRoutedAsItsLiteralIsPolicy: InvocablePolic
                         sender: self.sessionID
                     )
                     if sendRouted == .notSupported {
-                        var sendError = EventWithMetadata.platformError(ATargetExpressionIsRoutedAsItsLiteralIsEvent.errorExecution, message: "<send> targetexpr produced a value that is not a target")
+                        var sendError = EventWithMetadata.platformError(ATargetExpressionIsRoutedAsItsLiteralIsEvent.errorExecution, reason: .sendTargetInvalid, message: "<send> targetexpr produced a value that is not a target")
                         sendError.metadata.sendID = "__send_12"
                         engine.raise(sendError)
 
                         break sceBlock  // W3C SCXML 4.9: the error ends the block
                     }
                     if sendRouted == .notReachable {
-                        var sendError = EventWithMetadata.platformError(ATargetExpressionIsRoutedAsItsLiteralIsEvent.errorCommunication, message: "<send> targetexpr names a session this processor cannot reach")
+                        var sendError = EventWithMetadata.platformError(ATargetExpressionIsRoutedAsItsLiteralIsEvent.errorCommunication, reason: .targetUnreachable, message: "<send> targetexpr names a session this processor cannot reach")
                         sendError.metadata.sendID = "__send_12"
                         engine.raise(sendError)
 
@@ -1579,7 +1608,7 @@ public final class ATargetExpressionIsRoutedAsItsLiteralIsPolicy: InvocablePolic
 
                 // W3C SCXML 5.4: <assign location="afterBogusLater">
                 if !assignData("afterBogusLater", "1") {
-                    raiseExecutionError("<assign> to 'afterBogusLater' failed", engine: engine)
+                    raiseExecutionError(.assignmentFailed, "<assign> to 'afterBogusLater' failed", engine: engine)
                     break sceBlock  // W3C SCXML 4.9: the error ends the block
                 }
 
@@ -1782,7 +1811,7 @@ public final class ATargetExpressionIsRoutedAsItsLiteralIsPolicy: InvocablePolic
 
                 // W3C SCXML 5.4: <assign location="commErrors">
                 if !assignData("commErrors", "_scxml_add(commErrors, 1)") {
-                    raiseExecutionError("<assign> to 'commErrors' failed", engine: engine)
+                    raiseExecutionError(.assignmentFailed, "<assign> to 'commErrors' failed", engine: engine)
                     break sceBlock  // W3C SCXML 4.9: the error ends the block
                 }
 
@@ -1793,7 +1822,7 @@ public final class ATargetExpressionIsRoutedAsItsLiteralIsPolicy: InvocablePolic
 
                 // W3C SCXML 5.4: <assign location="execErrors">
                 if !assignData("execErrors", "_scxml_add(execErrors, 1)") {
-                    raiseExecutionError("<assign> to 'execErrors' failed", engine: engine)
+                    raiseExecutionError(.assignmentFailed, "<assign> to 'execErrors' failed", engine: engine)
                     break sceBlock  // W3C SCXML 4.9: the error ends the block
                 }
 
@@ -1804,7 +1833,7 @@ public final class ATargetExpressionIsRoutedAsItsLiteralIsPolicy: InvocablePolic
 
                 // W3C SCXML 5.4: <assign location="kidLoc">
                 if !assignData("kidLoc", "_event.origin") {
-                    raiseExecutionError("<assign> to 'kidLoc' failed", engine: engine)
+                    raiseExecutionError(.assignmentFailed, "<assign> to 'kidLoc' failed", engine: engine)
                     break sceBlock  // W3C SCXML 4.9: the error ends the block
                 }
 
@@ -1812,6 +1841,10 @@ public final class ATargetExpressionIsRoutedAsItsLiteralIsPolicy: InvocablePolic
                 // W3C SCXML 6.2: send id="__send_0"
                 do {
                     var sendArgError = ""
+                    // Why the argument failed, a code of sce:std/engine/error_reason
+                    // (docs/adr/0106 #111), set with every sentence below.
+                    var sendArgReason = ErrorReason.expressionFailed
+                    _ = sendArgReason
                     // W3C SCXML 6.2.4 + C.1: a targetexpr is a target. Its value is read from the
                     // engine now and routed as the same value written in `target` is, below; an
                     // expression that cannot be evaluated is the argument error, and a value that
@@ -1823,11 +1856,11 @@ public final class ATargetExpressionIsRoutedAsItsLiteralIsPolicy: InvocablePolic
                             sendTarget = routed
                             sendTargetKnown = true
                         } else {
-                            sendArgError = "<send> targetexpr could not be evaluated"
+                            sendArgError = "<send> targetexpr could not be evaluated"; sendArgReason = .expressionFailed
                         }
                     }
                     if !sendArgError.isEmpty {
-                        var sendError = EventWithMetadata.platformError(ATargetExpressionIsRoutedAsItsLiteralIsEvent.errorExecution, message: sendArgError)
+                        var sendError = EventWithMetadata.platformError(ATargetExpressionIsRoutedAsItsLiteralIsEvent.errorExecution, reason: sendArgReason, message: sendArgError)
                         sendError.metadata.sendID = "__send_0"
                         engine.raise(sendError)
 
@@ -1838,7 +1871,7 @@ public final class ATargetExpressionIsRoutedAsItsLiteralIsPolicy: InvocablePolic
                         // names nothing (empty or "undefined"), is not reachable —
                         // error.communication, nothing delivered, and the error ends the block
                         // as any other would (W3C SCXML 4.9).
-                        var sendError = EventWithMetadata.platformError(ATargetExpressionIsRoutedAsItsLiteralIsEvent.errorCommunication, message: "<send> targetexpr evaluated to nothing, or to a route the send does not declare, so there is no target to reach")
+                        var sendError = EventWithMetadata.platformError(ATargetExpressionIsRoutedAsItsLiteralIsEvent.errorCommunication, reason: .targetUnreachable, message: "<send> targetexpr evaluated to nothing, or to a route the send does not declare, so there is no target to reach")
                         sendError.metadata.sendID = "__send_0"
                         engine.raise(sendError)
 
@@ -1882,14 +1915,14 @@ public final class ATargetExpressionIsRoutedAsItsLiteralIsPolicy: InvocablePolic
                         sender: self.sessionID
                     )
                     if sendRouted == .notSupported {
-                        var sendError = EventWithMetadata.platformError(ATargetExpressionIsRoutedAsItsLiteralIsEvent.errorExecution, message: "<send> targetexpr produced a value that is not a target")
+                        var sendError = EventWithMetadata.platformError(ATargetExpressionIsRoutedAsItsLiteralIsEvent.errorExecution, reason: .sendTargetInvalid, message: "<send> targetexpr produced a value that is not a target")
                         sendError.metadata.sendID = "__send_0"
                         engine.raise(sendError)
 
                         break sceBlock  // W3C SCXML 4.9: the error ends the block
                     }
                     if sendRouted == .notReachable {
-                        var sendError = EventWithMetadata.platformError(ATargetExpressionIsRoutedAsItsLiteralIsEvent.errorCommunication, message: "<send> targetexpr names a session this processor cannot reach")
+                        var sendError = EventWithMetadata.platformError(ATargetExpressionIsRoutedAsItsLiteralIsEvent.errorCommunication, reason: .targetUnreachable, message: "<send> targetexpr names a session this processor cannot reach")
                         sendError.metadata.sendID = "__send_0"
                         engine.raise(sendError)
 
@@ -1901,6 +1934,10 @@ public final class ATargetExpressionIsRoutedAsItsLiteralIsPolicy: InvocablePolic
                 // W3C SCXML 6.2: send id="__send_1"
                 do {
                     var sendArgError = ""
+                    // Why the argument failed, a code of sce:std/engine/error_reason
+                    // (docs/adr/0106 #111), set with every sentence below.
+                    var sendArgReason = ErrorReason.expressionFailed
+                    _ = sendArgReason
                     // W3C SCXML 6.2.4 + C.1: a targetexpr is a target. Its value is read from the
                     // engine now and routed as the same value written in `target` is, below; an
                     // expression that cannot be evaluated is the argument error, and a value that
@@ -1912,11 +1949,11 @@ public final class ATargetExpressionIsRoutedAsItsLiteralIsPolicy: InvocablePolic
                             sendTarget = routed
                             sendTargetKnown = true
                         } else {
-                            sendArgError = "<send> targetexpr could not be evaluated"
+                            sendArgError = "<send> targetexpr could not be evaluated"; sendArgReason = .expressionFailed
                         }
                     }
                     if !sendArgError.isEmpty {
-                        var sendError = EventWithMetadata.platformError(ATargetExpressionIsRoutedAsItsLiteralIsEvent.errorExecution, message: sendArgError)
+                        var sendError = EventWithMetadata.platformError(ATargetExpressionIsRoutedAsItsLiteralIsEvent.errorExecution, reason: sendArgReason, message: sendArgError)
                         sendError.metadata.sendID = "__send_1"
                         engine.raise(sendError)
 
@@ -1927,7 +1964,7 @@ public final class ATargetExpressionIsRoutedAsItsLiteralIsPolicy: InvocablePolic
                         // names nothing (empty or "undefined"), is not reachable —
                         // error.communication, nothing delivered, and the error ends the block
                         // as any other would (W3C SCXML 4.9).
-                        var sendError = EventWithMetadata.platformError(ATargetExpressionIsRoutedAsItsLiteralIsEvent.errorCommunication, message: "<send> targetexpr evaluated to nothing, or to a route the send does not declare, so there is no target to reach")
+                        var sendError = EventWithMetadata.platformError(ATargetExpressionIsRoutedAsItsLiteralIsEvent.errorCommunication, reason: .targetUnreachable, message: "<send> targetexpr evaluated to nothing, or to a route the send does not declare, so there is no target to reach")
                         sendError.metadata.sendID = "__send_1"
                         engine.raise(sendError)
 
@@ -1971,14 +2008,14 @@ public final class ATargetExpressionIsRoutedAsItsLiteralIsPolicy: InvocablePolic
                         sender: self.sessionID
                     )
                     if sendRouted == .notSupported {
-                        var sendError = EventWithMetadata.platformError(ATargetExpressionIsRoutedAsItsLiteralIsEvent.errorExecution, message: "<send> targetexpr produced a value that is not a target")
+                        var sendError = EventWithMetadata.platformError(ATargetExpressionIsRoutedAsItsLiteralIsEvent.errorExecution, reason: .sendTargetInvalid, message: "<send> targetexpr produced a value that is not a target")
                         sendError.metadata.sendID = "__send_1"
                         engine.raise(sendError)
 
                         break sceBlock  // W3C SCXML 4.9: the error ends the block
                     }
                     if sendRouted == .notReachable {
-                        var sendError = EventWithMetadata.platformError(ATargetExpressionIsRoutedAsItsLiteralIsEvent.errorCommunication, message: "<send> targetexpr names a session this processor cannot reach")
+                        var sendError = EventWithMetadata.platformError(ATargetExpressionIsRoutedAsItsLiteralIsEvent.errorCommunication, reason: .targetUnreachable, message: "<send> targetexpr names a session this processor cannot reach")
                         sendError.metadata.sendID = "__send_1"
                         engine.raise(sendError)
 
@@ -1990,6 +2027,10 @@ public final class ATargetExpressionIsRoutedAsItsLiteralIsPolicy: InvocablePolic
                 // W3C SCXML 6.2: send id="__send_2"
                 do {
                     var sendArgError = ""
+                    // Why the argument failed, a code of sce:std/engine/error_reason
+                    // (docs/adr/0106 #111), set with every sentence below.
+                    var sendArgReason = ErrorReason.expressionFailed
+                    _ = sendArgReason
                     // W3C SCXML 6.2.4 + C.1: a targetexpr is a target. Its value is read from the
                     // engine now and routed as the same value written in `target` is, below; an
                     // expression that cannot be evaluated is the argument error, and a value that
@@ -2001,11 +2042,11 @@ public final class ATargetExpressionIsRoutedAsItsLiteralIsPolicy: InvocablePolic
                             sendTarget = routed
                             sendTargetKnown = true
                         } else {
-                            sendArgError = "<send> targetexpr could not be evaluated"
+                            sendArgError = "<send> targetexpr could not be evaluated"; sendArgReason = .expressionFailed
                         }
                     }
                     if !sendArgError.isEmpty {
-                        var sendError = EventWithMetadata.platformError(ATargetExpressionIsRoutedAsItsLiteralIsEvent.errorExecution, message: sendArgError)
+                        var sendError = EventWithMetadata.platformError(ATargetExpressionIsRoutedAsItsLiteralIsEvent.errorExecution, reason: sendArgReason, message: sendArgError)
                         sendError.metadata.sendID = "__send_2"
                         engine.raise(sendError)
 
@@ -2016,7 +2057,7 @@ public final class ATargetExpressionIsRoutedAsItsLiteralIsPolicy: InvocablePolic
                         // names nothing (empty or "undefined"), is not reachable —
                         // error.communication, nothing delivered, and the error ends the block
                         // as any other would (W3C SCXML 4.9).
-                        var sendError = EventWithMetadata.platformError(ATargetExpressionIsRoutedAsItsLiteralIsEvent.errorCommunication, message: "<send> targetexpr evaluated to nothing, or to a route the send does not declare, so there is no target to reach")
+                        var sendError = EventWithMetadata.platformError(ATargetExpressionIsRoutedAsItsLiteralIsEvent.errorCommunication, reason: .targetUnreachable, message: "<send> targetexpr evaluated to nothing, or to a route the send does not declare, so there is no target to reach")
                         sendError.metadata.sendID = "__send_2"
                         engine.raise(sendError)
 
@@ -2060,14 +2101,14 @@ public final class ATargetExpressionIsRoutedAsItsLiteralIsPolicy: InvocablePolic
                         sender: self.sessionID
                     )
                     if sendRouted == .notSupported {
-                        var sendError = EventWithMetadata.platformError(ATargetExpressionIsRoutedAsItsLiteralIsEvent.errorExecution, message: "<send> targetexpr produced a value that is not a target")
+                        var sendError = EventWithMetadata.platformError(ATargetExpressionIsRoutedAsItsLiteralIsEvent.errorExecution, reason: .sendTargetInvalid, message: "<send> targetexpr produced a value that is not a target")
                         sendError.metadata.sendID = "__send_2"
                         engine.raise(sendError)
 
                         break sceBlock  // W3C SCXML 4.9: the error ends the block
                     }
                     if sendRouted == .notReachable {
-                        var sendError = EventWithMetadata.platformError(ATargetExpressionIsRoutedAsItsLiteralIsEvent.errorCommunication, message: "<send> targetexpr names a session this processor cannot reach")
+                        var sendError = EventWithMetadata.platformError(ATargetExpressionIsRoutedAsItsLiteralIsEvent.errorCommunication, reason: .targetUnreachable, message: "<send> targetexpr names a session this processor cannot reach")
                         sendError.metadata.sendID = "__send_2"
                         engine.raise(sendError)
 
@@ -2079,6 +2120,10 @@ public final class ATargetExpressionIsRoutedAsItsLiteralIsPolicy: InvocablePolic
                 // W3C SCXML 6.2: send id="__send_3"
                 do {
                     var sendArgError = ""
+                    // Why the argument failed, a code of sce:std/engine/error_reason
+                    // (docs/adr/0106 #111), set with every sentence below.
+                    var sendArgReason = ErrorReason.expressionFailed
+                    _ = sendArgReason
                     // W3C SCXML 6.2.4 + C.1: a targetexpr is a target. Its value is read from the
                     // engine now and routed as the same value written in `target` is, below; an
                     // expression that cannot be evaluated is the argument error, and a value that
@@ -2090,11 +2135,11 @@ public final class ATargetExpressionIsRoutedAsItsLiteralIsPolicy: InvocablePolic
                             sendTarget = routed
                             sendTargetKnown = true
                         } else {
-                            sendArgError = "<send> targetexpr could not be evaluated"
+                            sendArgError = "<send> targetexpr could not be evaluated"; sendArgReason = .expressionFailed
                         }
                     }
                     if !sendArgError.isEmpty {
-                        var sendError = EventWithMetadata.platformError(ATargetExpressionIsRoutedAsItsLiteralIsEvent.errorExecution, message: sendArgError)
+                        var sendError = EventWithMetadata.platformError(ATargetExpressionIsRoutedAsItsLiteralIsEvent.errorExecution, reason: sendArgReason, message: sendArgError)
                         sendError.metadata.sendID = "__send_3"
                         engine.raise(sendError)
 
@@ -2105,7 +2150,7 @@ public final class ATargetExpressionIsRoutedAsItsLiteralIsPolicy: InvocablePolic
                         // names nothing (empty or "undefined"), is not reachable —
                         // error.communication, nothing delivered, and the error ends the block
                         // as any other would (W3C SCXML 4.9).
-                        var sendError = EventWithMetadata.platformError(ATargetExpressionIsRoutedAsItsLiteralIsEvent.errorCommunication, message: "<send> targetexpr evaluated to nothing, or to a route the send does not declare, so there is no target to reach")
+                        var sendError = EventWithMetadata.platformError(ATargetExpressionIsRoutedAsItsLiteralIsEvent.errorCommunication, reason: .targetUnreachable, message: "<send> targetexpr evaluated to nothing, or to a route the send does not declare, so there is no target to reach")
                         sendError.metadata.sendID = "__send_3"
                         engine.raise(sendError)
 
@@ -2149,14 +2194,14 @@ public final class ATargetExpressionIsRoutedAsItsLiteralIsPolicy: InvocablePolic
                         sender: self.sessionID
                     )
                     if sendRouted == .notSupported {
-                        var sendError = EventWithMetadata.platformError(ATargetExpressionIsRoutedAsItsLiteralIsEvent.errorExecution, message: "<send> targetexpr produced a value that is not a target")
+                        var sendError = EventWithMetadata.platformError(ATargetExpressionIsRoutedAsItsLiteralIsEvent.errorExecution, reason: .sendTargetInvalid, message: "<send> targetexpr produced a value that is not a target")
                         sendError.metadata.sendID = "__send_3"
                         engine.raise(sendError)
 
                         break sceBlock  // W3C SCXML 4.9: the error ends the block
                     }
                     if sendRouted == .notReachable {
-                        var sendError = EventWithMetadata.platformError(ATargetExpressionIsRoutedAsItsLiteralIsEvent.errorCommunication, message: "<send> targetexpr names a session this processor cannot reach")
+                        var sendError = EventWithMetadata.platformError(ATargetExpressionIsRoutedAsItsLiteralIsEvent.errorCommunication, reason: .targetUnreachable, message: "<send> targetexpr names a session this processor cannot reach")
                         sendError.metadata.sendID = "__send_3"
                         engine.raise(sendError)
 
@@ -2168,6 +2213,10 @@ public final class ATargetExpressionIsRoutedAsItsLiteralIsPolicy: InvocablePolic
                 // W3C SCXML 6.2: send id="__send_4"
                 do {
                     var sendArgError = ""
+                    // Why the argument failed, a code of sce:std/engine/error_reason
+                    // (docs/adr/0106 #111), set with every sentence below.
+                    var sendArgReason = ErrorReason.expressionFailed
+                    _ = sendArgReason
                     // W3C SCXML 6.2.4 + C.1: a targetexpr is a target. Its value is read from the
                     // engine now and routed as the same value written in `target` is, below; an
                     // expression that cannot be evaluated is the argument error, and a value that
@@ -2179,11 +2228,11 @@ public final class ATargetExpressionIsRoutedAsItsLiteralIsPolicy: InvocablePolic
                             sendTarget = routed
                             sendTargetKnown = true
                         } else {
-                            sendArgError = "<send> targetexpr could not be evaluated"
+                            sendArgError = "<send> targetexpr could not be evaluated"; sendArgReason = .expressionFailed
                         }
                     }
                     if !sendArgError.isEmpty {
-                        var sendError = EventWithMetadata.platformError(ATargetExpressionIsRoutedAsItsLiteralIsEvent.errorExecution, message: sendArgError)
+                        var sendError = EventWithMetadata.platformError(ATargetExpressionIsRoutedAsItsLiteralIsEvent.errorExecution, reason: sendArgReason, message: sendArgError)
                         sendError.metadata.sendID = "__send_4"
                         engine.raise(sendError)
 
@@ -2194,7 +2243,7 @@ public final class ATargetExpressionIsRoutedAsItsLiteralIsPolicy: InvocablePolic
                         // names nothing (empty or "undefined"), is not reachable —
                         // error.communication, nothing delivered, and the error ends the block
                         // as any other would (W3C SCXML 4.9).
-                        var sendError = EventWithMetadata.platformError(ATargetExpressionIsRoutedAsItsLiteralIsEvent.errorCommunication, message: "<send> targetexpr evaluated to nothing, or to a route the send does not declare, so there is no target to reach")
+                        var sendError = EventWithMetadata.platformError(ATargetExpressionIsRoutedAsItsLiteralIsEvent.errorCommunication, reason: .targetUnreachable, message: "<send> targetexpr evaluated to nothing, or to a route the send does not declare, so there is no target to reach")
                         sendError.metadata.sendID = "__send_4"
                         engine.raise(sendError)
 
@@ -2238,14 +2287,14 @@ public final class ATargetExpressionIsRoutedAsItsLiteralIsPolicy: InvocablePolic
                         sender: self.sessionID
                     )
                     if sendRouted == .notSupported {
-                        var sendError = EventWithMetadata.platformError(ATargetExpressionIsRoutedAsItsLiteralIsEvent.errorExecution, message: "<send> targetexpr produced a value that is not a target")
+                        var sendError = EventWithMetadata.platformError(ATargetExpressionIsRoutedAsItsLiteralIsEvent.errorExecution, reason: .sendTargetInvalid, message: "<send> targetexpr produced a value that is not a target")
                         sendError.metadata.sendID = "__send_4"
                         engine.raise(sendError)
 
                         break sceBlock  // W3C SCXML 4.9: the error ends the block
                     }
                     if sendRouted == .notReachable {
-                        var sendError = EventWithMetadata.platformError(ATargetExpressionIsRoutedAsItsLiteralIsEvent.errorCommunication, message: "<send> targetexpr names a session this processor cannot reach")
+                        var sendError = EventWithMetadata.platformError(ATargetExpressionIsRoutedAsItsLiteralIsEvent.errorCommunication, reason: .targetUnreachable, message: "<send> targetexpr names a session this processor cannot reach")
                         sendError.metadata.sendID = "__send_4"
                         engine.raise(sendError)
 
@@ -2257,6 +2306,10 @@ public final class ATargetExpressionIsRoutedAsItsLiteralIsPolicy: InvocablePolic
                 // W3C SCXML 6.2: send id="__send_5"
                 do {
                     var sendArgError = ""
+                    // Why the argument failed, a code of sce:std/engine/error_reason
+                    // (docs/adr/0106 #111), set with every sentence below.
+                    var sendArgReason = ErrorReason.expressionFailed
+                    _ = sendArgReason
                     // W3C SCXML 6.2.4 + C.1: a targetexpr is a target. Its value is read from the
                     // engine now and routed as the same value written in `target` is, below; an
                     // expression that cannot be evaluated is the argument error, and a value that
@@ -2268,11 +2321,11 @@ public final class ATargetExpressionIsRoutedAsItsLiteralIsPolicy: InvocablePolic
                             sendTarget = routed
                             sendTargetKnown = true
                         } else {
-                            sendArgError = "<send> targetexpr could not be evaluated"
+                            sendArgError = "<send> targetexpr could not be evaluated"; sendArgReason = .expressionFailed
                         }
                     }
                     if !sendArgError.isEmpty {
-                        var sendError = EventWithMetadata.platformError(ATargetExpressionIsRoutedAsItsLiteralIsEvent.errorExecution, message: sendArgError)
+                        var sendError = EventWithMetadata.platformError(ATargetExpressionIsRoutedAsItsLiteralIsEvent.errorExecution, reason: sendArgReason, message: sendArgError)
                         sendError.metadata.sendID = "__send_5"
                         engine.raise(sendError)
 
@@ -2283,7 +2336,7 @@ public final class ATargetExpressionIsRoutedAsItsLiteralIsPolicy: InvocablePolic
                         // names nothing (empty or "undefined"), is not reachable —
                         // error.communication, nothing delivered, and the error ends the block
                         // as any other would (W3C SCXML 4.9).
-                        var sendError = EventWithMetadata.platformError(ATargetExpressionIsRoutedAsItsLiteralIsEvent.errorCommunication, message: "<send> targetexpr evaluated to nothing, or to a route the send does not declare, so there is no target to reach")
+                        var sendError = EventWithMetadata.platformError(ATargetExpressionIsRoutedAsItsLiteralIsEvent.errorCommunication, reason: .targetUnreachable, message: "<send> targetexpr evaluated to nothing, or to a route the send does not declare, so there is no target to reach")
                         sendError.metadata.sendID = "__send_5"
                         engine.raise(sendError)
 
@@ -2327,14 +2380,14 @@ public final class ATargetExpressionIsRoutedAsItsLiteralIsPolicy: InvocablePolic
                         sender: self.sessionID
                     )
                     if sendRouted == .notSupported {
-                        var sendError = EventWithMetadata.platformError(ATargetExpressionIsRoutedAsItsLiteralIsEvent.errorExecution, message: "<send> targetexpr produced a value that is not a target")
+                        var sendError = EventWithMetadata.platformError(ATargetExpressionIsRoutedAsItsLiteralIsEvent.errorExecution, reason: .sendTargetInvalid, message: "<send> targetexpr produced a value that is not a target")
                         sendError.metadata.sendID = "__send_5"
                         engine.raise(sendError)
 
                         break sceBlock  // W3C SCXML 4.9: the error ends the block
                     }
                     if sendRouted == .notReachable {
-                        var sendError = EventWithMetadata.platformError(ATargetExpressionIsRoutedAsItsLiteralIsEvent.errorCommunication, message: "<send> targetexpr names a session this processor cannot reach")
+                        var sendError = EventWithMetadata.platformError(ATargetExpressionIsRoutedAsItsLiteralIsEvent.errorCommunication, reason: .targetUnreachable, message: "<send> targetexpr names a session this processor cannot reach")
                         sendError.metadata.sendID = "__send_5"
                         engine.raise(sendError)
 
@@ -2367,7 +2420,7 @@ public final class ATargetExpressionIsRoutedAsItsLiteralIsPolicy: InvocablePolic
 
                 // W3C SCXML 5.4: <assign location="internalNow">
                 if !assignData("internalNow", "_scxml_add(internalNow, 1)") {
-                    raiseExecutionError("<assign> to 'internalNow' failed", engine: engine)
+                    raiseExecutionError(.assignmentFailed, "<assign> to 'internalNow' failed", engine: engine)
                     break sceBlock  // W3C SCXML 4.9: the error ends the block
                 }
 
@@ -2378,7 +2431,7 @@ public final class ATargetExpressionIsRoutedAsItsLiteralIsPolicy: InvocablePolic
 
                 // W3C SCXML 5.4: <assign location="internalLater">
                 if !assignData("internalLater", "_scxml_add(internalLater, 1)") {
-                    raiseExecutionError("<assign> to 'internalLater' failed", engine: engine)
+                    raiseExecutionError(.assignmentFailed, "<assign> to 'internalLater' failed", engine: engine)
                     break sceBlock  // W3C SCXML 4.9: the error ends the block
                 }
 
@@ -2389,7 +2442,7 @@ public final class ATargetExpressionIsRoutedAsItsLiteralIsPolicy: InvocablePolic
 
                 // W3C SCXML 5.4: <assign location="kidNow">
                 if !assignData("kidNow", "_scxml_add(kidNow, 1)") {
-                    raiseExecutionError("<assign> to 'kidNow' failed", engine: engine)
+                    raiseExecutionError(.assignmentFailed, "<assign> to 'kidNow' failed", engine: engine)
                     break sceBlock  // W3C SCXML 4.9: the error ends the block
                 }
 
@@ -2400,7 +2453,7 @@ public final class ATargetExpressionIsRoutedAsItsLiteralIsPolicy: InvocablePolic
 
                 // W3C SCXML 5.4: <assign location="kidLater">
                 if !assignData("kidLater", "_scxml_add(kidLater, 1)") {
-                    raiseExecutionError("<assign> to 'kidLater' failed", engine: engine)
+                    raiseExecutionError(.assignmentFailed, "<assign> to 'kidLater' failed", engine: engine)
                     break sceBlock  // W3C SCXML 4.9: the error ends the block
                 }
 
@@ -2411,7 +2464,7 @@ public final class ATargetExpressionIsRoutedAsItsLiteralIsPolicy: InvocablePolic
 
                 // W3C SCXML 5.4: <assign location="sessNow">
                 if !assignData("sessNow", "_scxml_add(sessNow, 1)") {
-                    raiseExecutionError("<assign> to 'sessNow' failed", engine: engine)
+                    raiseExecutionError(.assignmentFailed, "<assign> to 'sessNow' failed", engine: engine)
                     break sceBlock  // W3C SCXML 4.9: the error ends the block
                 }
 
@@ -2422,7 +2475,7 @@ public final class ATargetExpressionIsRoutedAsItsLiteralIsPolicy: InvocablePolic
 
                 // W3C SCXML 5.4: <assign location="sessLater">
                 if !assignData("sessLater", "_scxml_add(sessLater, 1)") {
-                    raiseExecutionError("<assign> to 'sessLater' failed", engine: engine)
+                    raiseExecutionError(.assignmentFailed, "<assign> to 'sessLater' failed", engine: engine)
                     break sceBlock  // W3C SCXML 4.9: the error ends the block
                 }
 

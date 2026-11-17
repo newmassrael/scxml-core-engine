@@ -171,7 +171,7 @@ class Test302StateMachine(
         try {
             engine.executeScript(sid, com.sce.runtime.ScriptSource.lua("Var1 = 1", "Var1 = 1"))
         } catch (e: Exception) {
-            raisePlatformError(Test302Event.Error.Execution, "a top-level <script> failed to execute")
+            raisePlatformError(Test302Event.Error.Execution, ErrorReason.SCRIPT_FAILED, "a top-level <script> failed to execute")
         }
     }
 
@@ -200,14 +200,14 @@ class Test302StateMachine(
 
     // W3C SCXML 5.9.1: a cond that cannot be evaluated raises error.execution;
     // `null` says so, where a bare `false` could not.
-    private fun evaluateGuardRaising(guardExpr: com.sce.runtime.ScriptSource, reason: String): Boolean? {
+    private fun evaluateGuardRaising(guardExpr: com.sce.runtime.ScriptSource, detail: String): Boolean? {
         assertScriptSession()
         val engine = scriptEngine ?: error("scriptEngine is required (codegen invariant: needs_script_engine == true)")
         val sid = scriptSessionId ?: error("scriptSessionId is established by the start (codegen invariant)")
         return try {
             engine.evaluateCondition(sid, guardExpr)
         } catch (e: Exception) {
-            raisePlatformError(Test302Event.Error.Execution, reason)
+            raisePlatformError(Test302Event.Error.Execution, ErrorReason.EXPRESSION_FAILED, detail)
             null
         }
     }
@@ -248,7 +248,7 @@ class Test302StateMachine(
         return try {
             engine.evaluateExpr(sid, serialized)?.toString() ?: ""
         } catch (e: Exception) {
-            raisePlatformError(Test302Event.Error.Execution, "an expression could not be serialised to JSON")
+            raisePlatformError(Test302Event.Error.Execution, ErrorReason.EXPRESSION_FAILED, "an expression could not be serialised to JSON")
             ""
         }
     }
@@ -269,7 +269,7 @@ class Test302StateMachine(
             engine.assign(sid, location, expr)
             true
         } catch (e: Exception) {
-            raisePlatformError(Test302Event.Error.Execution, "<assign> failed")
+            raisePlatformError(Test302Event.Error.Execution, ErrorReason.ASSIGNMENT_FAILED, "<assign> failed")
             false
         }
     }
@@ -285,7 +285,7 @@ class Test302StateMachine(
             engine.executeScript(sid, script)
             true
         } catch (e: Exception) {
-            raisePlatformError(Test302Event.Error.Execution, "<script> failed to execute")
+            raisePlatformError(Test302Event.Error.Execution, ErrorReason.SCRIPT_FAILED, "<script> failed to execute")
             false
         }
     }

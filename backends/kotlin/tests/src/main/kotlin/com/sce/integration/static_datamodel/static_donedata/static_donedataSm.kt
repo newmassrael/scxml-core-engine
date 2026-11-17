@@ -434,7 +434,7 @@ class StaticDonedataStateMachine(
                     try {
                         doneParams["total"] = (com.sce.forge.runtime.SceChecked.mul(vCount, 2.toUInt())).toLong()
                     } catch (_: com.sce.forge.runtime.AlgorithmFailure) {
-                        raisePlatformError(StaticDonedataEvent.Error.Execution, "<donedata> <param name='total'> failed to evaluate")
+                        raisePlatformError(StaticDonedataEvent.Error.Execution, ErrorReason.EXPRESSION_FAILED, "<donedata> <param name='total'> failed to evaluate")
                     }
                     doneParams["many"] = vCount > 2.toUInt()
                     doneParams["name"] = vLabel
@@ -442,7 +442,7 @@ class StaticDonedataStateMachine(
                     try {
                         doneParams["overflow"] = (com.sce.forge.runtime.SceChecked.add(vSmall, vSmall)).toLong()
                     } catch (_: com.sce.forge.runtime.AlgorithmFailure) {
-                        raisePlatformError(StaticDonedataEvent.Error.Execution, "<donedata> <param name='overflow'> failed to evaluate")
+                        raisePlatformError(StaticDonedataEvent.Error.Execution, ErrorReason.EXPRESSION_FAILED, "<donedata> <param name='overflow'> failed to evaluate")
                     }
                     // §scxml-5.5: the pairs that survived, `{}` when none did
                     // (C++ DoneDataHelper::evaluateParams). Not left to
@@ -504,7 +504,7 @@ class StaticDonedataStateMachine(
     private fun transitionContentOfCountingAt0() {
                 // SCE-MAP: static_donedata.scxml:26 :: counting :: _transition_0
 
-            if (try { vCount = com.sce.forge.runtime.SceChecked.add(vCount, 1.toUInt()); false } catch (_: com.sce.forge.runtime.AlgorithmFailure) { raisePlatformError(StaticDonedataEvent.Error.Execution, "<assign location='count'>: an integer operation overflowed or failed"); true }) {
+            if (try { vCount = com.sce.forge.runtime.SceChecked.add(vCount, 1.toUInt()); false } catch (_: com.sce.forge.runtime.AlgorithmFailure) { raisePlatformError(StaticDonedataEvent.Error.Execution, ErrorReason.EXPRESSION_FAILED, "<assign location='count'>: an integer operation overflowed or failed"); true }) {
                 return
             }
     }

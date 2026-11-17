@@ -745,19 +745,19 @@ public final class StaticOptionalRecordPolicy: InvocablePolicy {
 
                 // SCE Accepted Subset §2.15: <sce:append target="items">
 
-                if ({ () -> Bool in if self.vItems.count >= 3 { engine.raise(EventWithMetadata.platformError(StaticOptionalRecordEvent.errorExecution, message: "<sce:append target='items'>: the list already holds its capacity of 3")); return true }; do { let sceValue = Checked.element(of: self.vItems, StaticOptionalRecordItemRecord(id: self.pendingItemPickedPayload.id, title: (try Checked.bounded(self.pendingItemPickedPayload.title, capacity: 16)), count: self.pendingItemPickedPayload.count)); self.vItems.append(sceValue) } catch { engine.raise(EventWithMetadata.platformError(StaticOptionalRecordEvent.errorExecution, message: "<sce:append target='items'>: an integer operation overflowed or failed")); return true }; return false }()) {
+                if ({ () -> Bool in if self.vItems.count >= 3 { engine.raise(EventWithMetadata.platformError(StaticOptionalRecordEvent.errorExecution, reason: .assignmentFailed, message: "<sce:append target='items'>: the list already holds its capacity of 3")); return true }; do { let sceValue = Checked.element(of: self.vItems, StaticOptionalRecordItemRecord(id: self.pendingItemPickedPayload.id, title: (try Checked.bounded(self.pendingItemPickedPayload.title, capacity: 16)), count: self.pendingItemPickedPayload.count)); self.vItems.append(sceValue) } catch { engine.raise(EventWithMetadata.platformError(StaticOptionalRecordEvent.errorExecution, reason: .expressionFailed, message: "<sce:append target='items'>: an integer operation overflowed or failed")); return true }; return false }()) {
                     break sceBlock  // W3C SCXML 4.9: the error ends the block
                 }
 
 
 
-                if ({ () -> Bool in do { let sceValue: StaticOptionalRecordItemRecord = StaticOptionalRecordItemRecord(id: self.pendingItemPickedPayload.id, title: (try Checked.bounded(self.pendingItemPickedPayload.title, capacity: 16)), count: self.pendingItemPickedPayload.count); self.vDraft = sceValue } catch { engine.raise(EventWithMetadata.platformError(StaticOptionalRecordEvent.errorExecution, message: "<assign location='draft'>: an integer operation overflowed or failed")); return true }; return false }()) {
+                if ({ () -> Bool in do { let sceValue: StaticOptionalRecordItemRecord = StaticOptionalRecordItemRecord(id: self.pendingItemPickedPayload.id, title: (try Checked.bounded(self.pendingItemPickedPayload.title, capacity: 16)), count: self.pendingItemPickedPayload.count); self.vDraft = sceValue } catch { engine.raise(EventWithMetadata.platformError(StaticOptionalRecordEvent.errorExecution, reason: .expressionFailed, message: "<assign location='draft'>: an integer operation overflowed or failed")); return true }; return false }()) {
                     break sceBlock  // W3C SCXML 4.9: the error ends the block
                 }
 
 
 
-                if ({ () -> Bool in do { let sceValue: StaticOptionalRecordItemRecord? = StaticOptionalRecordItemRecord(id: self.pendingItemPickedPayload.id, title: (try Checked.bounded(self.pendingItemPickedPayload.title, capacity: 16)), count: self.pendingItemPickedPayload.count); self.vPick = sceValue } catch { engine.raise(EventWithMetadata.platformError(StaticOptionalRecordEvent.errorExecution, message: "<assign location='pick'>: an integer operation overflowed or failed")); return true }; return false }()) {
+                if ({ () -> Bool in do { let sceValue: StaticOptionalRecordItemRecord? = StaticOptionalRecordItemRecord(id: self.pendingItemPickedPayload.id, title: (try Checked.bounded(self.pendingItemPickedPayload.title, capacity: 16)), count: self.pendingItemPickedPayload.count); self.vPick = sceValue } catch { engine.raise(EventWithMetadata.platformError(StaticOptionalRecordEvent.errorExecution, reason: .expressionFailed, message: "<assign location='pick'>: an integer operation overflowed or failed")); return true }; return false }()) {
                     break sceBlock  // W3C SCXML 4.9: the error ends the block
                 }
 
@@ -775,7 +775,7 @@ public final class StaticOptionalRecordPolicy: InvocablePolicy {
                 sceBlock: do {
 
 
-                if ({ () -> Bool in do { let sceValue: StaticOptionalRecordItemRecord? = (try Checked.at(self.vItems, 1)); self.vPick = sceValue } catch { engine.raise(EventWithMetadata.platformError(StaticOptionalRecordEvent.errorExecution, message: "<assign location='pick'>: an integer operation overflowed or failed")); return true }; return false }()) {
+                if ({ () -> Bool in do { let sceValue: StaticOptionalRecordItemRecord? = (try Checked.at(self.vItems, 1)); self.vPick = sceValue } catch { engine.raise(EventWithMetadata.platformError(StaticOptionalRecordEvent.errorExecution, reason: .expressionFailed, message: "<assign location='pick'>: an integer operation overflowed or failed")); return true }; return false }()) {
                     break sceBlock  // W3C SCXML 4.9: the error ends the block
                 }
 
@@ -795,7 +795,7 @@ public final class StaticOptionalRecordPolicy: InvocablePolicy {
                 if (self.vPick != nil) {
 
 
-                if ({ () -> Bool in do { let sceValue: String = (try Checked.bounded(SceOptional.proven(self.vPick).title, capacity: 16)); self.vTitle = sceValue } catch { engine.raise(EventWithMetadata.platformError(StaticOptionalRecordEvent.errorExecution, message: "<assign location='title'>: an integer operation overflowed or failed")); return true }; return false }()) {
+                if ({ () -> Bool in do { let sceValue: String = (try Checked.bounded(SceOptional.proven(self.vPick).title, capacity: 16)); self.vTitle = sceValue } catch { engine.raise(EventWithMetadata.platformError(StaticOptionalRecordEvent.errorExecution, reason: .expressionFailed, message: "<assign location='title'>: an integer operation overflowed or failed")); return true }; return false }()) {
                     break sceBlock  // W3C SCXML 4.9: the error ends the block
                 }
 
@@ -806,7 +806,7 @@ public final class StaticOptionalRecordPolicy: InvocablePolicy {
                 } else {
 
 
-                if ({ () -> Bool in do { let sceValue: String = (try Checked.bounded("none", capacity: 16)); self.vTitle = sceValue } catch { engine.raise(EventWithMetadata.platformError(StaticOptionalRecordEvent.errorExecution, message: "<assign location='title'>: an integer operation overflowed or failed")); return true }; return false }()) {
+                if ({ () -> Bool in do { let sceValue: String = (try Checked.bounded("none", capacity: 16)); self.vTitle = sceValue } catch { engine.raise(EventWithMetadata.platformError(StaticOptionalRecordEvent.errorExecution, reason: .expressionFailed, message: "<assign location='title'>: an integer operation overflowed or failed")); return true }; return false }()) {
                     break sceBlock  // W3C SCXML 4.9: the error ends the block
                 }
 
@@ -836,13 +836,13 @@ public final class StaticOptionalRecordPolicy: InvocablePolicy {
                 if (self.vPick != nil) {
 
 
-                if ({ () -> Bool in do { let sceValue: Int32 = (try Checked.add(SceOptional.proven(self.vPick).count, 1)); do { var sceRecord = SceOptional.proven(self.vPick); sceRecord.count = sceValue; self.vPick = sceRecord } } catch { engine.raise(EventWithMetadata.platformError(StaticOptionalRecordEvent.errorExecution, message: "<assign location='pick.value.count'>: an integer operation overflowed or failed")); return true }; return false }()) {
+                if ({ () -> Bool in do { let sceValue: Int32 = (try Checked.add(SceOptional.proven(self.vPick).count, 1)); do { var sceRecord = SceOptional.proven(self.vPick); sceRecord.count = sceValue; self.vPick = sceRecord } } catch { engine.raise(EventWithMetadata.platformError(StaticOptionalRecordEvent.errorExecution, reason: .expressionFailed, message: "<assign location='pick.value.count'>: an integer operation overflowed or failed")); return true }; return false }()) {
                     break sceBlock  // W3C SCXML 4.9: the error ends the block
                 }
 
 
 
-                if ({ () -> Bool in do { let sceValue: String = (try Checked.bounded("bumped", capacity: 16)); do { var sceRecord = SceOptional.proven(self.vPick); sceRecord.title = sceValue; self.vPick = sceRecord } } catch { engine.raise(EventWithMetadata.platformError(StaticOptionalRecordEvent.errorExecution, message: "<assign location='pick.value.title'>: an integer operation overflowed or failed")); return true }; return false }()) {
+                if ({ () -> Bool in do { let sceValue: String = (try Checked.bounded("bumped", capacity: 16)); do { var sceRecord = SceOptional.proven(self.vPick); sceRecord.title = sceValue; self.vPick = sceRecord } } catch { engine.raise(EventWithMetadata.platformError(StaticOptionalRecordEvent.errorExecution, reason: .expressionFailed, message: "<assign location='pick.value.title'>: an integer operation overflowed or failed")); return true }; return false }()) {
                     break sceBlock  // W3C SCXML 4.9: the error ends the block
                 }
 
@@ -862,7 +862,7 @@ public final class StaticOptionalRecordPolicy: InvocablePolicy {
                 sceBlock: do {
 
 
-                if ({ () -> Bool in do { let sceValue: UInt32 = (try Checked.add(self.vErrors, 1)); self.vErrors = sceValue } catch { engine.raise(EventWithMetadata.platformError(StaticOptionalRecordEvent.errorExecution, message: "<assign location='errors'>: an integer operation overflowed or failed")); return true }; return false }()) {
+                if ({ () -> Bool in do { let sceValue: UInt32 = (try Checked.add(self.vErrors, 1)); self.vErrors = sceValue } catch { engine.raise(EventWithMetadata.platformError(StaticOptionalRecordEvent.errorExecution, reason: .expressionFailed, message: "<assign location='errors'>: an integer operation overflowed or failed")); return true }; return false }()) {
                     break sceBlock  // W3C SCXML 4.9: the error ends the block
                 }
 

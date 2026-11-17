@@ -319,7 +319,7 @@ class Test347StateMachine(
             // refused a target naming no invocation above; one that is not
             // running is not there to reach (W3C SCXML C.1).
             if (!sendToChild("child", "parentToChild", sendData)) {
-                raisePlatformError(Test347Event.Error.Communication, "<send target='#_child'> names an invocation that is not running", "__send_1")
+                raisePlatformError(Test347Event.Error.Communication, ErrorReason.TARGET_UNREACHABLE, "<send target='#_child'> names an invocation that is not running", "__send_1")
                 return@send true
             }
             false

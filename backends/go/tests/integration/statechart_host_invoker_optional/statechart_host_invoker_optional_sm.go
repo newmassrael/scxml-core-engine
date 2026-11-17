@@ -1,5 +1,5 @@
 // SCE-GENERATED — DO NOT EDIT
-// source-hash: e3e91f36cc7b8591c060b277b157f8471b6940f92608c548338f70603c760055
+// source-hash: f02e6d1d557556839c99891abeba3d1ef7bc15e5821c4215914c8e1ef9ecc561
 
 
 // SPDX-License-Identifier: AGPL-3.0-only WITH AdditionRef-SCE-Linking-Exception OR LicenseRef-SCE-Commercial
@@ -31,6 +31,7 @@ import (
 	"time"
 
 	sce "github.com/newmassrael/sce-go-runtime"
+	sceerrorreason "github.com/newmassrael/sce-go-runtime/generated/error_reason"
 	scealgorithm "github.com/newmassrael/sce-forge-runtime/algorithm"
 	"github.com/newmassrael/sce-forge-runtime/optional"
 )
@@ -41,6 +42,9 @@ var (
 	_ = filepath.Join
 	_ = strings.HasPrefix
 	_ = time.Duration(0)
+	// Why an error.* event is raised (sce:std/engine/error_reason,
+	// docs/adr/0106 #111); a machine that raises none still imports it.
+	_ = sceerrorreason.ErrorReasonExpressionFailed
 	_ scealgorithm.Failure
 )
 
@@ -953,7 +957,7 @@ func (p *StatechartHostInvokerOptionalPolicy) ExecutePendingInvokes(engine *sce.
 				// document asked for a process to be run and none was, which
 				// is the same fact as an unsupported type — so the same
 				// event, rather than a silence that reads as started.
-				engine.Raise(sce.NewPlatformError(StatechartHostInvokerOptionalEventErrorExecution, "<invoke> names an invoker the host declared but never registered"))
+				engine.Raise(sce.NewPlatformError(StatechartHostInvokerOptionalEventErrorExecution, sceerrorreason.ErrorReasonProcessorUnregistered, "<invoke> names an invoker the host declared but never registered"))
 			}
 			continue
 		}
@@ -1421,7 +1425,7 @@ func (p *StatechartHostInvokerOptionalPolicy) ExecuteTransitionContent(source St
 
 
 
-	if func() bool { var sceFailure scealgorithm.Failure; sceValue := optional.Map(p.pendingDoneInvokeLookupPayload.label, func(scePresent string) string { return scealgorithm.Bounded(&sceFailure, scePresent, 16) }); if sceFailure.Failed() { engine.Raise(sce.NewPlatformError(StatechartHostInvokerOptionalEventErrorExecution, "<assign location='label'>: an integer operation overflowed or failed")); return true }; p.vLabel = sceValue; return false }() {
+	if func() bool { var sceFailure scealgorithm.Failure; sceValue := optional.Map(p.pendingDoneInvokeLookupPayload.label, func(scePresent string) string { return scealgorithm.Bounded(&sceFailure, scePresent, 16) }); if sceFailure.Failed() { engine.Raise(sce.NewPlatformError(StatechartHostInvokerOptionalEventErrorExecution, sceerrorreason.ErrorReasonExpressionFailed, "<assign location='label'>: an integer operation overflowed or failed")); return true }; p.vLabel = sceValue; return false }() {
 		return  // W3C SCXML 4.9: the error ends the block
 	}
 
@@ -1453,14 +1457,14 @@ func (p *StatechartHostInvokerOptionalPolicy) ExecuteTransitionContent(source St
 	if p.vLabel.IsPresent() {
 
 
-	if func() bool { var sceFailure scealgorithm.Failure; sceValue := scealgorithm.Bounded(&sceFailure, p.vLabel.Proven(), 16); if sceFailure.Failed() { engine.Raise(sce.NewPlatformError(StatechartHostInvokerOptionalEventErrorExecution, "<assign location='label_value'>: an integer operation overflowed or failed")); return true }; p.vLabelValue = sceValue; return false }() {
+	if func() bool { var sceFailure scealgorithm.Failure; sceValue := scealgorithm.Bounded(&sceFailure, p.vLabel.Proven(), 16); if sceFailure.Failed() { engine.Raise(sce.NewPlatformError(StatechartHostInvokerOptionalEventErrorExecution, sceerrorreason.ErrorReasonExpressionFailed, "<assign location='label_value'>: an integer operation overflowed or failed")); return true }; p.vLabelValue = sceValue; return false }() {
 		return  // W3C SCXML 4.9: the error ends the block
 	}
 
 	} else {
 
 
-	if func() bool { var sceFailure scealgorithm.Failure; sceValue := scealgorithm.Bounded(&sceFailure, "", 16); if sceFailure.Failed() { engine.Raise(sce.NewPlatformError(StatechartHostInvokerOptionalEventErrorExecution, "<assign location='label_value'>: an integer operation overflowed or failed")); return true }; p.vLabelValue = sceValue; return false }() {
+	if func() bool { var sceFailure scealgorithm.Failure; sceValue := scealgorithm.Bounded(&sceFailure, "", 16); if sceFailure.Failed() { engine.Raise(sce.NewPlatformError(StatechartHostInvokerOptionalEventErrorExecution, sceerrorreason.ErrorReasonExpressionFailed, "<assign location='label_value'>: an integer operation overflowed or failed")); return true }; p.vLabelValue = sceValue; return false }() {
 		return  // W3C SCXML 4.9: the error ends the block
 	}
 
@@ -1476,7 +1480,7 @@ func (p *StatechartHostInvokerOptionalPolicy) ExecuteTransitionContent(source St
 
 
 
-	if func() bool { var sceFailure scealgorithm.Failure; sceValue := scealgorithm.AddUint8(&sceFailure, p.vAnswered, 1); if sceFailure.Failed() { engine.Raise(sce.NewPlatformError(StatechartHostInvokerOptionalEventErrorExecution, "<assign location='answered'>: an integer operation overflowed or failed")); return true }; p.vAnswered = sceValue; return false }() {
+	if func() bool { var sceFailure scealgorithm.Failure; sceValue := scealgorithm.AddUint8(&sceFailure, p.vAnswered, 1); if sceFailure.Failed() { engine.Raise(sce.NewPlatformError(StatechartHostInvokerOptionalEventErrorExecution, sceerrorreason.ErrorReasonExpressionFailed, "<assign location='answered'>: an integer operation overflowed or failed")); return true }; p.vAnswered = sceValue; return false }() {
 		return  // W3C SCXML 4.9: the error ends the block
 	}
 

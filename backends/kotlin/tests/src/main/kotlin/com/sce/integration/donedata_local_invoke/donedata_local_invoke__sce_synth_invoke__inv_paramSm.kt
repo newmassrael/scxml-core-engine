@@ -158,14 +158,14 @@ class DonedataLocalInvokeSceSynthInvokeInvParamStateMachine(
 
     // W3C SCXML 5.9.1: a cond that cannot be evaluated raises error.execution;
     // `null` says so, where a bare `false` could not.
-    private fun evaluateGuardRaising(guardExpr: com.sce.runtime.ScriptSource, reason: String): Boolean? {
+    private fun evaluateGuardRaising(guardExpr: com.sce.runtime.ScriptSource, detail: String): Boolean? {
         assertScriptSession()
         val engine = scriptEngine ?: error("scriptEngine is required (codegen invariant: needs_script_engine == true)")
         val sid = scriptSessionId ?: error("scriptSessionId is established by the start (codegen invariant)")
         return try {
             engine.evaluateCondition(sid, guardExpr)
         } catch (e: Exception) {
-            raisePlatformError(DonedataLocalInvokeSceSynthInvokeInvParamEvent.Error.Execution, reason)
+            raisePlatformError(DonedataLocalInvokeSceSynthInvokeInvParamEvent.Error.Execution, ErrorReason.EXPRESSION_FAILED, detail)
             null
         }
     }
@@ -206,7 +206,7 @@ class DonedataLocalInvokeSceSynthInvokeInvParamStateMachine(
         return try {
             engine.evaluateExpr(sid, serialized)?.toString() ?: ""
         } catch (e: Exception) {
-            raisePlatformError(DonedataLocalInvokeSceSynthInvokeInvParamEvent.Error.Execution, "an expression could not be serialised to JSON")
+            raisePlatformError(DonedataLocalInvokeSceSynthInvokeInvParamEvent.Error.Execution, ErrorReason.EXPRESSION_FAILED, "an expression could not be serialised to JSON")
             ""
         }
     }
@@ -227,7 +227,7 @@ class DonedataLocalInvokeSceSynthInvokeInvParamStateMachine(
             engine.assign(sid, location, expr)
             true
         } catch (e: Exception) {
-            raisePlatformError(DonedataLocalInvokeSceSynthInvokeInvParamEvent.Error.Execution, "<assign> failed")
+            raisePlatformError(DonedataLocalInvokeSceSynthInvokeInvParamEvent.Error.Execution, ErrorReason.ASSIGNMENT_FAILED, "<assign> failed")
             false
         }
     }
@@ -243,7 +243,7 @@ class DonedataLocalInvokeSceSynthInvokeInvParamStateMachine(
             engine.executeScript(sid, script)
             true
         } catch (e: Exception) {
-            raisePlatformError(DonedataLocalInvokeSceSynthInvokeInvParamEvent.Error.Execution, "<script> failed to execute")
+            raisePlatformError(DonedataLocalInvokeSceSynthInvokeInvParamEvent.Error.Execution, ErrorReason.SCRIPT_FAILED, "<script> failed to execute")
             false
         }
     }
@@ -346,7 +346,7 @@ class DonedataLocalInvokeSceSynthInvokeInvParamStateMachine(
                         doneParams["result"] = engineDD.evaluateExpr(sidDD, com.sce.runtime.ScriptSource.lua("42", "42"))
                     } catch (_: Exception) {
                         // §scxml-5.7: error.execution, and this pair is ignored.
-                        raisePlatformError(DonedataLocalInvokeSceSynthInvokeInvParamEvent.Error.Execution, "<donedata> <param name='result'> failed to evaluate")
+                        raisePlatformError(DonedataLocalInvokeSceSynthInvokeInvParamEvent.Error.Execution, ErrorReason.EXPRESSION_FAILED, "<donedata> <param name='result'> failed to evaluate")
                     }
                     // §scxml-5.5: the pairs that survived, `{}` when none did
                     // (C++ DoneDataHelper::evaluateParams). Not left to

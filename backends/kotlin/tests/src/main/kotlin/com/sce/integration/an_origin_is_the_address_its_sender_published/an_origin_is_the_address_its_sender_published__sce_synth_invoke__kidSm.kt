@@ -209,7 +209,7 @@ class AnOriginIsTheAddressItsSenderPublishedSceSynthInvokeKidStateMachine(
             try {
                 engine.setVariable(sid, "processor", engine.evaluateExpr(sid, com.sce.runtime.ScriptSource.lua("\"http://www.w3.org/TR/scxml/#SCXMLEventProcessor\"", "'http://www.w3.org/TR/scxml/#SCXMLEventProcessor'")))
             } catch (e: Exception) {
-                raisePlatformError(AnOriginIsTheAddressItsSenderPublishedSceSynthInvokeKidEvent.Error.Execution, "<data id='processor'> expr failed to evaluate")
+                raisePlatformError(AnOriginIsTheAddressItsSenderPublishedSceSynthInvokeKidEvent.Error.Execution, ErrorReason.EXPRESSION_FAILED, "<data id='processor'> expr failed to evaluate")
             }
         }
     }
@@ -239,14 +239,14 @@ class AnOriginIsTheAddressItsSenderPublishedSceSynthInvokeKidStateMachine(
 
     // W3C SCXML 5.9.1: a cond that cannot be evaluated raises error.execution;
     // `null` says so, where a bare `false` could not.
-    private fun evaluateGuardRaising(guardExpr: com.sce.runtime.ScriptSource, reason: String): Boolean? {
+    private fun evaluateGuardRaising(guardExpr: com.sce.runtime.ScriptSource, detail: String): Boolean? {
         assertScriptSession()
         val engine = scriptEngine ?: error("scriptEngine is required (codegen invariant: needs_script_engine == true)")
         val sid = scriptSessionId ?: error("scriptSessionId is established by the start (codegen invariant)")
         return try {
             engine.evaluateCondition(sid, guardExpr)
         } catch (e: Exception) {
-            raisePlatformError(AnOriginIsTheAddressItsSenderPublishedSceSynthInvokeKidEvent.Error.Execution, reason)
+            raisePlatformError(AnOriginIsTheAddressItsSenderPublishedSceSynthInvokeKidEvent.Error.Execution, ErrorReason.EXPRESSION_FAILED, detail)
             null
         }
     }
@@ -287,7 +287,7 @@ class AnOriginIsTheAddressItsSenderPublishedSceSynthInvokeKidStateMachine(
         return try {
             engine.evaluateExpr(sid, serialized)?.toString() ?: ""
         } catch (e: Exception) {
-            raisePlatformError(AnOriginIsTheAddressItsSenderPublishedSceSynthInvokeKidEvent.Error.Execution, "an expression could not be serialised to JSON")
+            raisePlatformError(AnOriginIsTheAddressItsSenderPublishedSceSynthInvokeKidEvent.Error.Execution, ErrorReason.EXPRESSION_FAILED, "an expression could not be serialised to JSON")
             ""
         }
     }
@@ -308,7 +308,7 @@ class AnOriginIsTheAddressItsSenderPublishedSceSynthInvokeKidStateMachine(
             engine.assign(sid, location, expr)
             true
         } catch (e: Exception) {
-            raisePlatformError(AnOriginIsTheAddressItsSenderPublishedSceSynthInvokeKidEvent.Error.Execution, "<assign> failed")
+            raisePlatformError(AnOriginIsTheAddressItsSenderPublishedSceSynthInvokeKidEvent.Error.Execution, ErrorReason.ASSIGNMENT_FAILED, "<assign> failed")
             false
         }
     }
@@ -324,7 +324,7 @@ class AnOriginIsTheAddressItsSenderPublishedSceSynthInvokeKidStateMachine(
             engine.executeScript(sid, script)
             true
         } catch (e: Exception) {
-            raisePlatformError(AnOriginIsTheAddressItsSenderPublishedSceSynthInvokeKidEvent.Error.Execution, "<script> failed to execute")
+            raisePlatformError(AnOriginIsTheAddressItsSenderPublishedSceSynthInvokeKidEvent.Error.Execution, ErrorReason.SCRIPT_FAILED, "<script> failed to execute")
             false
         }
     }
@@ -451,7 +451,7 @@ class AnOriginIsTheAddressItsSenderPublishedSceSynthInvokeKidStateMachine(
             try {
                 putParam(sendPayload, "location", payloadEngine.evaluateExpr(payloadSid, com.sce.runtime.ScriptSource.lua("_ioprocessors.scxml.location", "_ioprocessors['scxml'].location")))
             } catch (_: Exception) {
-                raisePlatformError(AnOriginIsTheAddressItsSenderPublishedSceSynthInvokeKidEvent.Error.Execution, "<send> <param name='location'> could not be read")
+                raisePlatformError(AnOriginIsTheAddressItsSenderPublishedSceSynthInvokeKidEvent.Error.Execution, ErrorReason.LOCATION_INVALID, "<send> <param name='location'> could not be read")
                 paramFailed = true
             }
 
@@ -461,7 +461,7 @@ class AnOriginIsTheAddressItsSenderPublishedSceSynthInvokeKidStateMachine(
             // no parent — error.communication, nothing delivered, the block ended.
             val toParent = onSendToParent
             if (toParent == null) {
-                raisePlatformError(AnOriginIsTheAddressItsSenderPublishedSceSynthInvokeKidEvent.Error.Communication, "<send target='#_parent'> has no parent session to reach", "__send_1")
+                raisePlatformError(AnOriginIsTheAddressItsSenderPublishedSceSynthInvokeKidEvent.Error.Communication, ErrorReason.TARGET_UNREACHABLE, "<send target='#_parent'> has no parent session to reach", "__send_1")
                 return@send true
             }
             toParent("hello", sendData)
@@ -538,7 +538,7 @@ class AnOriginIsTheAddressItsSenderPublishedSceSynthInvokeKidStateMachine(
             // no parent — error.communication, nothing delivered, the block ended.
             val toParent = onSendToParent
             if (toParent == null) {
-                raisePlatformError(AnOriginIsTheAddressItsSenderPublishedSceSynthInvokeKidEvent.Error.Communication, "<send target='#_parent'> has no parent session to reach", "__send_0")
+                raisePlatformError(AnOriginIsTheAddressItsSenderPublishedSceSynthInvokeKidEvent.Error.Communication, ErrorReason.TARGET_UNREACHABLE, "<send target='#_parent'> has no parent session to reach", "__send_0")
                 return@send true
             }
             toParent("welcomed", sendData)
@@ -577,12 +577,12 @@ class AnOriginIsTheAddressItsSenderPublishedSceSynthInvokeKidStateMachine(
             val _rt = try {
                 valueToWireString(argEngine.evaluateExpr(argSid, com.sce.runtime.ScriptSource.lua("_event.origin", "_event.origin")))
             } catch (_: Exception) {
-                raisePlatformError(AnOriginIsTheAddressItsSenderPublishedSceSynthInvokeKidEvent.Error.Execution, "<send> targetexpr could not be evaluated", "__send_2")
+                raisePlatformError(AnOriginIsTheAddressItsSenderPublishedSceSynthInvokeKidEvent.Error.Execution, ErrorReason.EXPRESSION_FAILED, "<send> targetexpr could not be evaluated", "__send_2")
                 return@send true
             }
             if (com.sce.runtime.SendHelper.isInvalidTarget(_rt)) {
                 // W3C SCXML 6.2 (test194): refused as a static one is.
-                raisePlatformError(AnOriginIsTheAddressItsSenderPublishedSceSynthInvokeKidEvent.Error.Execution, "<send> targetexpr produced a target this processor cannot address", "__send_2")
+                raisePlatformError(AnOriginIsTheAddressItsSenderPublishedSceSynthInvokeKidEvent.Error.Execution, ErrorReason.SEND_TARGET_INVALID, "<send> targetexpr produced a target this processor cannot address", "__send_2")
                 return@send true
             }
             // W3C SCXML 6.2: a type the platform does not support is the same
@@ -590,18 +590,18 @@ class AnOriginIsTheAddressItsSenderPublishedSceSynthInvokeKidStateMachine(
             val sendTypeValue = try {
                 valueToWireString(argEngine.evaluateExpr(argSid, com.sce.runtime.ScriptSource.lua("_event.origintype", "_event.origintype")))
             } catch (_: Exception) {
-                raisePlatformError(AnOriginIsTheAddressItsSenderPublishedSceSynthInvokeKidEvent.Error.Execution, "<send> typeexpr could not be evaluated", "__send_2")
+                raisePlatformError(AnOriginIsTheAddressItsSenderPublishedSceSynthInvokeKidEvent.Error.Execution, ErrorReason.EXPRESSION_FAILED, "<send> typeexpr could not be evaluated", "__send_2")
                 return@send true
             }
             if (!com.sce.runtime.SendHelper.isSupportedSendType(sendTypeValue)) {
-                raisePlatformError(AnOriginIsTheAddressItsSenderPublishedSceSynthInvokeKidEvent.Error.Execution, "<send> typeexpr names a processor this platform does not support", "__send_2")
+                raisePlatformError(AnOriginIsTheAddressItsSenderPublishedSceSynthInvokeKidEvent.Error.Execution, ErrorReason.SEND_TYPE_UNSUPPORTED, "<send> typeexpr names a processor this platform does not support", "__send_2")
                 return@send true
             }
             if (com.sce.runtime.SendHelper.isUnreachableTarget(_rt)) {
                 // W3C SCXML C.1 (test496): a target that names nothing is not
                 // reachable — error.communication, nothing delivered, and the
                 // error ends the block as any other would (W3C SCXML 4.9).
-                raisePlatformError(AnOriginIsTheAddressItsSenderPublishedSceSynthInvokeKidEvent.Error.Communication, "<send> targetexpr evaluated to nothing, so there is no target to reach", "__send_2")
+                raisePlatformError(AnOriginIsTheAddressItsSenderPublishedSceSynthInvokeKidEvent.Error.Communication, ErrorReason.TARGET_UNREACHABLE, "<send> targetexpr evaluated to nothing, so there is no target to reach", "__send_2")
                 return@send true
             }
             val sendData = ""
@@ -619,11 +619,11 @@ AnOriginIsTheAddressItsSenderPublishedSceSynthInvokeKidEvent.HiBack,
                 AnOriginIsTheAddressItsSenderPublishedSceSynthInvokeKidEvent.Error.Communication,
             )) {
                 com.sce.runtime.TargetSendOutcome.UNSUPPORTED -> {
-                    raisePlatformError(AnOriginIsTheAddressItsSenderPublishedSceSynthInvokeKidEvent.Error.Execution, "<send> targetexpr produced a value that is not a target", "__send_2")
+                    raisePlatformError(AnOriginIsTheAddressItsSenderPublishedSceSynthInvokeKidEvent.Error.Execution, ErrorReason.SEND_TARGET_INVALID, "<send> targetexpr produced a value that is not a target", "__send_2")
                     return@send true
                 }
                 com.sce.runtime.TargetSendOutcome.UNREACHABLE -> {
-                    raisePlatformError(AnOriginIsTheAddressItsSenderPublishedSceSynthInvokeKidEvent.Error.Communication, "<send> targetexpr names a session this processor cannot reach", "__send_2")
+                    raisePlatformError(AnOriginIsTheAddressItsSenderPublishedSceSynthInvokeKidEvent.Error.Communication, ErrorReason.TARGET_UNREACHABLE, "<send> targetexpr names a session this processor cannot reach", "__send_2")
                     return@send true
                 }
                 com.sce.runtime.TargetSendOutcome.SENT -> {}
@@ -647,7 +647,7 @@ AnOriginIsTheAddressItsSenderPublishedSceSynthInvokeKidEvent.HiBack,
             // no parent — error.communication, nothing delivered, the block ended.
             val toParent = onSendToParent
             if (toParent == null) {
-                raisePlatformError(AnOriginIsTheAddressItsSenderPublishedSceSynthInvokeKidEvent.Error.Communication, "<send target='#_parent'> has no parent session to reach", "__send_3")
+                raisePlatformError(AnOriginIsTheAddressItsSenderPublishedSceSynthInvokeKidEvent.Error.Communication, ErrorReason.TARGET_UNREACHABLE, "<send target='#_parent'> has no parent session to reach", "__send_3")
                 return@send true
             }
             toParent("hiWrong", sendData)

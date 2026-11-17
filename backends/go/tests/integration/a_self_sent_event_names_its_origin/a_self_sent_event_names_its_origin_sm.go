@@ -31,6 +31,7 @@ import (
 	"time"
 
 	sce "github.com/newmassrael/sce-go-runtime"
+	sceerrorreason "github.com/newmassrael/sce-go-runtime/generated/error_reason"
 )
 
 // Ensure imports are used
@@ -39,6 +40,9 @@ var (
 	_ = filepath.Join
 	_ = strings.HasPrefix
 	_ = time.Duration(0)
+	// Why an error.* event is raised (sce:std/engine/error_reason,
+	// docs/adr/0106 #111); a machine that raises none still imports it.
+	_ = sceerrorreason.ErrorReasonExpressionFailed
 )
 
 // ======================================================================
@@ -429,7 +433,7 @@ func (p *ASelfSentEventNamesItsOriginPolicy) InitializeDataModel(eng *sce.Engine
 		if err == nil {
 			_ = engine.SetVariable(sessionID, "blank", result)
 		} else {
-			eng.Raise(sce.NewPlatformError(ASelfSentEventNamesItsOriginEventErrorExecution, "<data id='blank'> expr failed to evaluate"))
+			eng.Raise(sce.NewPlatformError(ASelfSentEventNamesItsOriginEventErrorExecution, sceerrorreason.ErrorReasonExpressionFailed, "<data id='blank'> expr failed to evaluate"))
 			_ = engine.SetVariable(sessionID, "blank", nil)
 		}
 	}
@@ -443,7 +447,7 @@ func (p *ASelfSentEventNamesItsOriginPolicy) InitializeDataModel(eng *sce.Engine
 		if err == nil {
 			_ = engine.SetVariable(sessionID, "immediateOk", result)
 		} else {
-			eng.Raise(sce.NewPlatformError(ASelfSentEventNamesItsOriginEventErrorExecution, "<data id='immediateOk'> expr failed to evaluate"))
+			eng.Raise(sce.NewPlatformError(ASelfSentEventNamesItsOriginEventErrorExecution, sceerrorreason.ErrorReasonExpressionFailed, "<data id='immediateOk'> expr failed to evaluate"))
 			_ = engine.SetVariable(sessionID, "immediateOk", nil)
 		}
 	}
@@ -457,7 +461,7 @@ func (p *ASelfSentEventNamesItsOriginPolicy) InitializeDataModel(eng *sce.Engine
 		if err == nil {
 			_ = engine.SetVariable(sessionID, "replied", result)
 		} else {
-			eng.Raise(sce.NewPlatformError(ASelfSentEventNamesItsOriginEventErrorExecution, "<data id='replied'> expr failed to evaluate"))
+			eng.Raise(sce.NewPlatformError(ASelfSentEventNamesItsOriginEventErrorExecution, sceerrorreason.ErrorReasonExpressionFailed, "<data id='replied'> expr failed to evaluate"))
 			_ = engine.SetVariable(sessionID, "replied", nil)
 		}
 	}
@@ -471,7 +475,7 @@ func (p *ASelfSentEventNamesItsOriginPolicy) InitializeDataModel(eng *sce.Engine
 		if err == nil {
 			_ = engine.SetVariable(sessionID, "delayedOk", result)
 		} else {
-			eng.Raise(sce.NewPlatformError(ASelfSentEventNamesItsOriginEventErrorExecution, "<data id='delayedOk'> expr failed to evaluate"))
+			eng.Raise(sce.NewPlatformError(ASelfSentEventNamesItsOriginEventErrorExecution, sceerrorreason.ErrorReasonExpressionFailed, "<data id='delayedOk'> expr failed to evaluate"))
 			_ = engine.SetVariable(sessionID, "delayedOk", nil)
 		}
 	}
@@ -485,7 +489,7 @@ func (p *ASelfSentEventNamesItsOriginPolicy) InitializeDataModel(eng *sce.Engine
 		if err == nil {
 			_ = engine.SetVariable(sessionID, "unreachable", result)
 		} else {
-			eng.Raise(sce.NewPlatformError(ASelfSentEventNamesItsOriginEventErrorExecution, "<data id='unreachable'> expr failed to evaluate"))
+			eng.Raise(sce.NewPlatformError(ASelfSentEventNamesItsOriginEventErrorExecution, sceerrorreason.ErrorReasonExpressionFailed, "<data id='unreachable'> expr failed to evaluate"))
 			_ = engine.SetVariable(sessionID, "unreachable", nil)
 		}
 	}
@@ -499,7 +503,7 @@ func (p *ASelfSentEventNamesItsOriginPolicy) InitializeDataModel(eng *sce.Engine
 		if err == nil {
 			_ = engine.SetVariable(sessionID, "strayed", result)
 		} else {
-			eng.Raise(sce.NewPlatformError(ASelfSentEventNamesItsOriginEventErrorExecution, "<data id='strayed'> expr failed to evaluate"))
+			eng.Raise(sce.NewPlatformError(ASelfSentEventNamesItsOriginEventErrorExecution, sceerrorreason.ErrorReasonExpressionFailed, "<data id='strayed'> expr failed to evaluate"))
 			_ = engine.SetVariable(sessionID, "strayed", nil)
 		}
 	}
@@ -531,12 +535,12 @@ func (p *ASelfSentEventNamesItsOriginPolicy) evaluateIfCond(guard string, eng *s
 // evaluateGuardRaising evaluates a cond, raising error.execution when it cannot
 // be evaluated (W3C SCXML 5.9.1); ok is false then, where a bare false could
 // not say so.
-func (p *ASelfSentEventNamesItsOriginPolicy) evaluateGuardRaising(guard string, eng *sce.Engine[ASelfSentEventNamesItsOriginState, ASelfSentEventNamesItsOriginEvent], reason string) (value bool, ok bool) {
+func (p *ASelfSentEventNamesItsOriginPolicy) evaluateGuardRaising(guard string, eng *sce.Engine[ASelfSentEventNamesItsOriginState, ASelfSentEventNamesItsOriginEvent], detail string) (value bool, ok bool) {
 	p.assertScriptSession()
 	engine := p.ScriptEngine
 	result, err := engine.EvaluateExpression(p.SessionID, guard)
 	if err != nil {
-		eng.Raise(sce.NewPlatformError(ASelfSentEventNamesItsOriginEventErrorExecution, reason))
+		eng.Raise(sce.NewPlatformError(ASelfSentEventNamesItsOriginEventErrorExecution, sceerrorreason.ErrorReasonExpressionFailed, detail))
 		return false, false
 	}
 	return sce.ScriptToBool(result), true
@@ -639,7 +643,7 @@ func (p *ASelfSentEventNamesItsOriginPolicy) SetParamValueInScriptEngine(name st
 // failed is left (docs/adr/0098).
 func (p *ASelfSentEventNamesItsOriginPolicy) declareHandedValue(eng *sce.Engine[ASelfSentEventNamesItsOriginState, ASelfSentEventNamesItsOriginEvent], engine sce.IScriptEngine, sessionID, name string, value interface{}) {
 	if err := engine.SetVariable(sessionID, name, value); err != nil {
-		eng.Raise(sce.NewPlatformError(ASelfSentEventNamesItsOriginEventErrorExecution, "<data id='"+name+"'> could not hold the value its invoking session handed it"))
+		eng.Raise(sce.NewPlatformError(ASelfSentEventNamesItsOriginEventErrorExecution, sceerrorreason.ErrorReasonDataInitFailed, "<data id='"+name+"'> could not hold the value its invoking session handed it"))
 		_ = engine.SetVariable(sessionID, name, nil)
 	}
 }
@@ -919,6 +923,10 @@ func (p *ASelfSentEventNamesItsOriginPolicy) ExecuteEntryActions(state ASelfSent
 	{
 	p.assertScriptSession()
 	sendArgError := ""
+	// Why the argument failed, a code of sce:std/engine/error_reason
+	// (docs/adr/0106 #111), set with every sentence below.
+	var sendArgReason sce.ErrorReason
+	_ = sendArgReason
 	// A target that evaluates to nothing is not an evaluation error: it is
 	// an address nobody answers at, which the arm reports as
 	// error.communication (W3C SCXML 6.2.4).
@@ -929,18 +937,18 @@ func (p *ASelfSentEventNamesItsOriginPolicy) ExecuteEntryActions(state ASelfSent
 			sendTargetVal = v
 			sendTarget = sce.ToWireString(v)
 		} else {
-			sendArgError = "<send> targetexpr could not be evaluated"
+			sendArgError, sendArgReason = "<send> targetexpr could not be evaluated", sceerrorreason.ErrorReasonExpressionFailed
 		}
 	}
 	if sendArgError == "" && sce.IsInvalidTarget(sendTarget) {
 		// W3C SCXML 6.2: a target this processor cannot address is refused
 		// as a static one is, before anything is delivered.
-		sendArgError = "<send> targetexpr produced a target this processor cannot address"
+		sendArgError, sendArgReason = "<send> targetexpr produced a target this processor cannot address", sceerrorreason.ErrorReasonSendTargetInvalid
 	}
 	_ = sendTargetVal
 	_ = sendTarget
 	if sendArgError != "" {
-		errEvt := sce.NewPlatformError(ASelfSentEventNamesItsOriginEventErrorExecution, sendArgError)
+		errEvt := sce.NewPlatformError(ASelfSentEventNamesItsOriginEventErrorExecution, sendArgReason, sendArgError)
 		errEvt.Metadata.SendID = "__send_3"
 		engine.Raise(errEvt)
 		return  // W3C SCXML 4.9: the error ends the block
@@ -952,7 +960,7 @@ func (p *ASelfSentEventNamesItsOriginPolicy) ExecuteEntryActions(state ASelfSent
 		// ends the block as any other would (W3C SCXML 4.9). A self-sent
 		// event names its origin, so `targetexpr="_event.origin"` (test336)
 		// reads this session's location, never "".
-		errEvt := sce.NewPlatformError(ASelfSentEventNamesItsOriginEventErrorCommunication, "<send> targetexpr evaluated to nothing, so there is no target to reach")
+		errEvt := sce.NewPlatformError(ASelfSentEventNamesItsOriginEventErrorCommunication, sceerrorreason.ErrorReasonTargetUnreachable, "<send> targetexpr evaluated to nothing, so there is no target to reach")
 		errEvt.Metadata.SendID = "__send_3"
 		engine.Raise(errEvt)
 		return
@@ -989,7 +997,7 @@ func (p *ASelfSentEventNamesItsOriginPolicy) ExecuteEntryActions(state ASelfSent
 		// act it asked for was performed by nobody. Same event as an
 		// undeclared type, so a wiring mistake cannot read as success.
 		if !hostServed && !engine.HasEventProcessor("sce:mesh") {
-			errEvt := sce.NewPlatformError(ASelfSentEventNamesItsOriginEventErrorExecution, "<send type='sce:mesh'> names a processor the host declared but never registered")
+			errEvt := sce.NewPlatformError(ASelfSentEventNamesItsOriginEventErrorExecution, sceerrorreason.ErrorReasonProcessorUnregistered, "<send type='sce:mesh'> names a processor the host declared but never registered")
 			errEvt.Metadata.SendID = "__send_3"
 			engine.Raise(errEvt)
 		}
@@ -1004,13 +1012,13 @@ func (p *ASelfSentEventNamesItsOriginPolicy) ExecuteEntryActions(state ASelfSent
 		routed := engine.SendToTarget(sendEvt, sendHasEvt, "nowhere", sendTarget, p.SessionID,
 0, "__send_3", eventDataStr, p.SessionID)
 		if routed == sce.TargetNotSupported {
-			errEvt := sce.NewPlatformError(ASelfSentEventNamesItsOriginEventErrorExecution, "<send> targetexpr produced a value that is not a target")
+			errEvt := sce.NewPlatformError(ASelfSentEventNamesItsOriginEventErrorExecution, sceerrorreason.ErrorReasonSendTargetInvalid, "<send> targetexpr produced a value that is not a target")
 			errEvt.Metadata.SendID = "__send_3"
 			engine.Raise(errEvt)
 			return // W3C SCXML 4.9: the error ends the block
 		}
 		if routed == sce.TargetNotReachable {
-			errEvt := sce.NewPlatformError(ASelfSentEventNamesItsOriginEventErrorCommunication, "<send> targetexpr names a session this processor cannot reach")
+			errEvt := sce.NewPlatformError(ASelfSentEventNamesItsOriginEventErrorCommunication, sceerrorreason.ErrorReasonTargetUnreachable, "<send> targetexpr names a session this processor cannot reach")
 			errEvt.Metadata.SendID = "__send_3"
 			engine.Raise(errEvt)
 			return // W3C SCXML 4.9: the error ends the block
@@ -1231,7 +1239,7 @@ func (p *ASelfSentEventNamesItsOriginPolicy) ExecuteTransitionContent(source ASe
 
 	// W3C SCXML 5.3: <assign location="unreachable" expr="unreachable + 1">
 	if err := p.assignVariable(`unreachable`, `_scxml_add(unreachable, 1)`); err != nil {
-		engine.Raise(sce.NewPlatformError(ASelfSentEventNamesItsOriginEventErrorExecution, "<assign> to 'unreachable' failed"))
+		engine.Raise(sce.NewPlatformError(ASelfSentEventNamesItsOriginEventErrorExecution, sceerrorreason.ErrorReasonAssignmentFailed, "<assign> to 'unreachable' failed"))
 		return  // W3C SCXML 4.9: the error ends the block
 	}
 
@@ -1250,7 +1258,7 @@ func (p *ASelfSentEventNamesItsOriginPolicy) ExecuteTransitionContent(source ASe
 
 	// W3C SCXML 5.3: <assign location="delayedOk" expr="1">
 	if err := p.assignVariable(`delayedOk`, `1`); err != nil {
-		engine.Raise(sce.NewPlatformError(ASelfSentEventNamesItsOriginEventErrorExecution, "<assign> to 'delayedOk' failed"))
+		engine.Raise(sce.NewPlatformError(ASelfSentEventNamesItsOriginEventErrorExecution, sceerrorreason.ErrorReasonAssignmentFailed, "<assign> to 'delayedOk' failed"))
 		return  // W3C SCXML 4.9: the error ends the block
 	}
 
@@ -1275,7 +1283,7 @@ func (p *ASelfSentEventNamesItsOriginPolicy) ExecuteTransitionContent(source ASe
 
 	// W3C SCXML 5.3: <assign location="immediateOk" expr="1">
 	if err := p.assignVariable(`immediateOk`, `1`); err != nil {
-		engine.Raise(sce.NewPlatformError(ASelfSentEventNamesItsOriginEventErrorExecution, "<assign> to 'immediateOk' failed"))
+		engine.Raise(sce.NewPlatformError(ASelfSentEventNamesItsOriginEventErrorExecution, sceerrorreason.ErrorReasonAssignmentFailed, "<assign> to 'immediateOk' failed"))
 		return  // W3C SCXML 4.9: the error ends the block
 	}
 
@@ -1290,6 +1298,10 @@ func (p *ASelfSentEventNamesItsOriginPolicy) ExecuteTransitionContent(source ASe
 	{
 	p.assertScriptSession()
 	sendArgError := ""
+	// Why the argument failed, a code of sce:std/engine/error_reason
+	// (docs/adr/0106 #111), set with every sentence below.
+	var sendArgReason sce.ErrorReason
+	_ = sendArgReason
 	// A target that evaluates to nothing is not an evaluation error: it is
 	// an address nobody answers at, which the arm reports as
 	// error.communication (W3C SCXML 6.2.4).
@@ -1300,18 +1312,18 @@ func (p *ASelfSentEventNamesItsOriginPolicy) ExecuteTransitionContent(source ASe
 			sendTargetVal = v
 			sendTarget = sce.ToWireString(v)
 		} else {
-			sendArgError = "<send> targetexpr could not be evaluated"
+			sendArgError, sendArgReason = "<send> targetexpr could not be evaluated", sceerrorreason.ErrorReasonExpressionFailed
 		}
 	}
 	if sendArgError == "" && sce.IsInvalidTarget(sendTarget) {
 		// W3C SCXML 6.2: a target this processor cannot address is refused
 		// as a static one is, before anything is delivered.
-		sendArgError = "<send> targetexpr produced a target this processor cannot address"
+		sendArgError, sendArgReason = "<send> targetexpr produced a target this processor cannot address", sceerrorreason.ErrorReasonSendTargetInvalid
 	}
 	_ = sendTargetVal
 	_ = sendTarget
 	if sendArgError != "" {
-		errEvt := sce.NewPlatformError(ASelfSentEventNamesItsOriginEventErrorExecution, sendArgError)
+		errEvt := sce.NewPlatformError(ASelfSentEventNamesItsOriginEventErrorExecution, sendArgReason, sendArgError)
 		errEvt.Metadata.SendID = "__send_0"
 		engine.Raise(errEvt)
 		return  // W3C SCXML 4.9: the error ends the block
@@ -1323,7 +1335,7 @@ func (p *ASelfSentEventNamesItsOriginPolicy) ExecuteTransitionContent(source ASe
 		// ends the block as any other would (W3C SCXML 4.9). A self-sent
 		// event names its origin, so `targetexpr="_event.origin"` (test336)
 		// reads this session's location, never "".
-		errEvt := sce.NewPlatformError(ASelfSentEventNamesItsOriginEventErrorCommunication, "<send> targetexpr evaluated to nothing, so there is no target to reach")
+		errEvt := sce.NewPlatformError(ASelfSentEventNamesItsOriginEventErrorCommunication, sceerrorreason.ErrorReasonTargetUnreachable, "<send> targetexpr evaluated to nothing, so there is no target to reach")
 		errEvt.Metadata.SendID = "__send_0"
 		engine.Raise(errEvt)
 		return
@@ -1360,7 +1372,7 @@ func (p *ASelfSentEventNamesItsOriginPolicy) ExecuteTransitionContent(source ASe
 		// act it asked for was performed by nobody. Same event as an
 		// undeclared type, so a wiring mistake cannot read as success.
 		if !hostServed && !engine.HasEventProcessor("sce:mesh") {
-			errEvt := sce.NewPlatformError(ASelfSentEventNamesItsOriginEventErrorExecution, "<send type='sce:mesh'> names a processor the host declared but never registered")
+			errEvt := sce.NewPlatformError(ASelfSentEventNamesItsOriginEventErrorExecution, sceerrorreason.ErrorReasonProcessorUnregistered, "<send type='sce:mesh'> names a processor the host declared but never registered")
 			errEvt.Metadata.SendID = "__send_0"
 			engine.Raise(errEvt)
 		}
@@ -1375,13 +1387,13 @@ func (p *ASelfSentEventNamesItsOriginPolicy) ExecuteTransitionContent(source ASe
 		routed := engine.SendToTarget(sendEvt, sendHasEvt, "pong", sendTarget, p.SessionID,
 0, "__send_0", eventDataStr, p.SessionID)
 		if routed == sce.TargetNotSupported {
-			errEvt := sce.NewPlatformError(ASelfSentEventNamesItsOriginEventErrorExecution, "<send> targetexpr produced a value that is not a target")
+			errEvt := sce.NewPlatformError(ASelfSentEventNamesItsOriginEventErrorExecution, sceerrorreason.ErrorReasonSendTargetInvalid, "<send> targetexpr produced a value that is not a target")
 			errEvt.Metadata.SendID = "__send_0"
 			engine.Raise(errEvt)
 			return // W3C SCXML 4.9: the error ends the block
 		}
 		if routed == sce.TargetNotReachable {
-			errEvt := sce.NewPlatformError(ASelfSentEventNamesItsOriginEventErrorCommunication, "<send> targetexpr names a session this processor cannot reach")
+			errEvt := sce.NewPlatformError(ASelfSentEventNamesItsOriginEventErrorCommunication, sceerrorreason.ErrorReasonTargetUnreachable, "<send> targetexpr names a session this processor cannot reach")
 			errEvt.Metadata.SendID = "__send_0"
 			engine.Raise(errEvt)
 			return // W3C SCXML 4.9: the error ends the block
@@ -1401,7 +1413,7 @@ func (p *ASelfSentEventNamesItsOriginPolicy) ExecuteTransitionContent(source ASe
 
 	// W3C SCXML 5.3: <assign location="replied" expr="1">
 	if err := p.assignVariable(`replied`, `1`); err != nil {
-		engine.Raise(sce.NewPlatformError(ASelfSentEventNamesItsOriginEventErrorExecution, "<assign> to 'replied' failed"))
+		engine.Raise(sce.NewPlatformError(ASelfSentEventNamesItsOriginEventErrorExecution, sceerrorreason.ErrorReasonAssignmentFailed, "<assign> to 'replied' failed"))
 		return  // W3C SCXML 4.9: the error ends the block
 	}
 
@@ -1416,7 +1428,7 @@ func (p *ASelfSentEventNamesItsOriginPolicy) ExecuteTransitionContent(source ASe
 
 	// W3C SCXML 5.3: <assign location="strayed" expr="strayed + 1">
 	if err := p.assignVariable(`strayed`, `_scxml_add(strayed, 1)`); err != nil {
-		engine.Raise(sce.NewPlatformError(ASelfSentEventNamesItsOriginEventErrorExecution, "<assign> to 'strayed' failed"))
+		engine.Raise(sce.NewPlatformError(ASelfSentEventNamesItsOriginEventErrorExecution, sceerrorreason.ErrorReasonAssignmentFailed, "<assign> to 'strayed' failed"))
 		return  // W3C SCXML 4.9: the error ends the block
 	}
 

@@ -31,6 +31,7 @@ import (
 	"time"
 
 	sce "github.com/newmassrael/sce-go-runtime"
+	sceerrorreason "github.com/newmassrael/sce-go-runtime/generated/error_reason"
 )
 
 // Ensure imports are used
@@ -39,6 +40,9 @@ var (
 	_ = filepath.Join
 	_ = strings.HasPrefix
 	_ = time.Duration(0)
+	// Why an error.* event is raised (sce:std/engine/error_reason,
+	// docs/adr/0106 #111); a machine that raises none still imports it.
+	_ = sceerrorreason.ErrorReasonExpressionFailed
 )
 
 // ======================================================================
@@ -450,7 +454,7 @@ func (p *InternalChainIsBoundedPolicy) InitializeDataModel(eng *sce.Engine[Inter
 		if err == nil {
 			_ = engine.SetVariable(sessionID, "pokes", result)
 		} else {
-			eng.Raise(sce.NewPlatformError(InternalChainIsBoundedEventErrorExecution, "<data id='pokes'> expr failed to evaluate"))
+			eng.Raise(sce.NewPlatformError(InternalChainIsBoundedEventErrorExecution, sceerrorreason.ErrorReasonExpressionFailed, "<data id='pokes'> expr failed to evaluate"))
 			_ = engine.SetVariable(sessionID, "pokes", nil)
 		}
 	}
@@ -464,7 +468,7 @@ func (p *InternalChainIsBoundedPolicy) InitializeDataModel(eng *sce.Engine[Inter
 		if err == nil {
 			_ = engine.SetVariable(sessionID, "laps", result)
 		} else {
-			eng.Raise(sce.NewPlatformError(InternalChainIsBoundedEventErrorExecution, "<data id='laps'> expr failed to evaluate"))
+			eng.Raise(sce.NewPlatformError(InternalChainIsBoundedEventErrorExecution, sceerrorreason.ErrorReasonExpressionFailed, "<data id='laps'> expr failed to evaluate"))
 			_ = engine.SetVariable(sessionID, "laps", nil)
 		}
 	}
@@ -478,7 +482,7 @@ func (p *InternalChainIsBoundedPolicy) InitializeDataModel(eng *sce.Engine[Inter
 		if err == nil {
 			_ = engine.SetVariable(sessionID, "links", result)
 		} else {
-			eng.Raise(sce.NewPlatformError(InternalChainIsBoundedEventErrorExecution, "<data id='links'> expr failed to evaluate"))
+			eng.Raise(sce.NewPlatformError(InternalChainIsBoundedEventErrorExecution, sceerrorreason.ErrorReasonExpressionFailed, "<data id='links'> expr failed to evaluate"))
 			_ = engine.SetVariable(sessionID, "links", nil)
 		}
 	}
@@ -492,7 +496,7 @@ func (p *InternalChainIsBoundedPolicy) InitializeDataModel(eng *sce.Engine[Inter
 		if err == nil {
 			_ = engine.SetVariable(sessionID, "beats", result)
 		} else {
-			eng.Raise(sce.NewPlatformError(InternalChainIsBoundedEventErrorExecution, "<data id='beats'> expr failed to evaluate"))
+			eng.Raise(sce.NewPlatformError(InternalChainIsBoundedEventErrorExecution, sceerrorreason.ErrorReasonExpressionFailed, "<data id='beats'> expr failed to evaluate"))
 			_ = engine.SetVariable(sessionID, "beats", nil)
 		}
 	}
@@ -506,7 +510,7 @@ func (p *InternalChainIsBoundedPolicy) InitializeDataModel(eng *sce.Engine[Inter
 		if err == nil {
 			_ = engine.SetVariable(sessionID, "alts", result)
 		} else {
-			eng.Raise(sce.NewPlatformError(InternalChainIsBoundedEventErrorExecution, "<data id='alts'> expr failed to evaluate"))
+			eng.Raise(sce.NewPlatformError(InternalChainIsBoundedEventErrorExecution, sceerrorreason.ErrorReasonExpressionFailed, "<data id='alts'> expr failed to evaluate"))
 			_ = engine.SetVariable(sessionID, "alts", nil)
 		}
 	}
@@ -520,7 +524,7 @@ func (p *InternalChainIsBoundedPolicy) InitializeDataModel(eng *sce.Engine[Inter
 		if err == nil {
 			_ = engine.SetVariable(sessionID, "ignores", result)
 		} else {
-			eng.Raise(sce.NewPlatformError(InternalChainIsBoundedEventErrorExecution, "<data id='ignores'> expr failed to evaluate"))
+			eng.Raise(sce.NewPlatformError(InternalChainIsBoundedEventErrorExecution, sceerrorreason.ErrorReasonExpressionFailed, "<data id='ignores'> expr failed to evaluate"))
 			_ = engine.SetVariable(sessionID, "ignores", nil)
 		}
 	}
@@ -534,7 +538,7 @@ func (p *InternalChainIsBoundedPolicy) InitializeDataModel(eng *sce.Engine[Inter
 		if err == nil {
 			_ = engine.SetVariable(sessionID, "pending", result)
 		} else {
-			eng.Raise(sce.NewPlatformError(InternalChainIsBoundedEventErrorExecution, "<data id='pending'> expr failed to evaluate"))
+			eng.Raise(sce.NewPlatformError(InternalChainIsBoundedEventErrorExecution, sceerrorreason.ErrorReasonExpressionFailed, "<data id='pending'> expr failed to evaluate"))
 			_ = engine.SetVariable(sessionID, "pending", nil)
 		}
 	}
@@ -566,12 +570,12 @@ func (p *InternalChainIsBoundedPolicy) evaluateIfCond(guard string, eng *sce.Eng
 // evaluateGuardRaising evaluates a cond, raising error.execution when it cannot
 // be evaluated (W3C SCXML 5.9.1); ok is false then, where a bare false could
 // not say so.
-func (p *InternalChainIsBoundedPolicy) evaluateGuardRaising(guard string, eng *sce.Engine[InternalChainIsBoundedState, InternalChainIsBoundedEvent], reason string) (value bool, ok bool) {
+func (p *InternalChainIsBoundedPolicy) evaluateGuardRaising(guard string, eng *sce.Engine[InternalChainIsBoundedState, InternalChainIsBoundedEvent], detail string) (value bool, ok bool) {
 	p.assertScriptSession()
 	engine := p.ScriptEngine
 	result, err := engine.EvaluateExpression(p.SessionID, guard)
 	if err != nil {
-		eng.Raise(sce.NewPlatformError(InternalChainIsBoundedEventErrorExecution, reason))
+		eng.Raise(sce.NewPlatformError(InternalChainIsBoundedEventErrorExecution, sceerrorreason.ErrorReasonExpressionFailed, detail))
 		return false, false
 	}
 	return sce.ScriptToBool(result), true
@@ -674,7 +678,7 @@ func (p *InternalChainIsBoundedPolicy) SetParamValueInScriptEngine(name string, 
 // failed is left (docs/adr/0098).
 func (p *InternalChainIsBoundedPolicy) declareHandedValue(eng *sce.Engine[InternalChainIsBoundedState, InternalChainIsBoundedEvent], engine sce.IScriptEngine, sessionID, name string, value interface{}) {
 	if err := engine.SetVariable(sessionID, name, value); err != nil {
-		eng.Raise(sce.NewPlatformError(InternalChainIsBoundedEventErrorExecution, "<data id='"+name+"'> could not hold the value its invoking session handed it"))
+		eng.Raise(sce.NewPlatformError(InternalChainIsBoundedEventErrorExecution, sceerrorreason.ErrorReasonDataInitFailed, "<data id='"+name+"'> could not hold the value its invoking session handed it"))
 		_ = engine.SetVariable(sessionID, name, nil)
 	}
 }
@@ -1237,14 +1241,14 @@ func (p *InternalChainIsBoundedPolicy) ExecuteTransitionContent(source InternalC
 
 	// W3C SCXML 5.3: <assign location="alts" expr="alts + 1">
 	if err := p.assignVariable(`alts`, `_scxml_add(alts, 1)`); err != nil {
-		engine.Raise(sce.NewPlatformError(InternalChainIsBoundedEventErrorExecution, "<assign> to 'alts' failed"))
+		engine.Raise(sce.NewPlatformError(InternalChainIsBoundedEventErrorExecution, sceerrorreason.ErrorReasonAssignmentFailed, "<assign> to 'alts' failed"))
 		return  // W3C SCXML 4.9: the error ends the block
 	}
 
 
 	// W3C SCXML 5.3: <assign location="pending" expr="1">
 	if err := p.assignVariable(`pending`, `1`); err != nil {
-		engine.Raise(sce.NewPlatformError(InternalChainIsBoundedEventErrorExecution, "<assign> to 'pending' failed"))
+		engine.Raise(sce.NewPlatformError(InternalChainIsBoundedEventErrorExecution, sceerrorreason.ErrorReasonAssignmentFailed, "<assign> to 'pending' failed"))
 		return  // W3C SCXML 4.9: the error ends the block
 	}
 
@@ -1256,7 +1260,7 @@ func (p *InternalChainIsBoundedPolicy) ExecuteTransitionContent(source InternalC
 
 	// W3C SCXML 5.3: <assign location="pending" expr="0">
 	if err := p.assignVariable(`pending`, `0`); err != nil {
-		engine.Raise(sce.NewPlatformError(InternalChainIsBoundedEventErrorExecution, "<assign> to 'pending' failed"))
+		engine.Raise(sce.NewPlatformError(InternalChainIsBoundedEventErrorExecution, sceerrorreason.ErrorReasonAssignmentFailed, "<assign> to 'pending' failed"))
 		return  // W3C SCXML 4.9: the error ends the block
 	}
 
@@ -1271,7 +1275,7 @@ func (p *InternalChainIsBoundedPolicy) ExecuteTransitionContent(source InternalC
 
 	// W3C SCXML 5.3: <assign location="pokes" expr="pokes + 1">
 	if err := p.assignVariable(`pokes`, `_scxml_add(pokes, 1)`); err != nil {
-		engine.Raise(sce.NewPlatformError(InternalChainIsBoundedEventErrorExecution, "<assign> to 'pokes' failed"))
+		engine.Raise(sce.NewPlatformError(InternalChainIsBoundedEventErrorExecution, sceerrorreason.ErrorReasonAssignmentFailed, "<assign> to 'pokes' failed"))
 		return  // W3C SCXML 4.9: the error ends the block
 	}
 
@@ -1286,7 +1290,7 @@ func (p *InternalChainIsBoundedPolicy) ExecuteTransitionContent(source InternalC
 
 	// W3C SCXML 5.3: <assign location="laps" expr="laps + 1">
 	if err := p.assignVariable(`laps`, `_scxml_add(laps, 1)`); err != nil {
-		engine.Raise(sce.NewPlatformError(InternalChainIsBoundedEventErrorExecution, "<assign> to 'laps' failed"))
+		engine.Raise(sce.NewPlatformError(InternalChainIsBoundedEventErrorExecution, sceerrorreason.ErrorReasonAssignmentFailed, "<assign> to 'laps' failed"))
 		return  // W3C SCXML 4.9: the error ends the block
 	}
 
@@ -1301,7 +1305,7 @@ func (p *InternalChainIsBoundedPolicy) ExecuteTransitionContent(source InternalC
 
 	// W3C SCXML 5.3: <assign location="laps" expr="laps + 1">
 	if err := p.assignVariable(`laps`, `_scxml_add(laps, 1)`); err != nil {
-		engine.Raise(sce.NewPlatformError(InternalChainIsBoundedEventErrorExecution, "<assign> to 'laps' failed"))
+		engine.Raise(sce.NewPlatformError(InternalChainIsBoundedEventErrorExecution, sceerrorreason.ErrorReasonAssignmentFailed, "<assign> to 'laps' failed"))
 		return  // W3C SCXML 4.9: the error ends the block
 	}
 
@@ -1313,7 +1317,7 @@ func (p *InternalChainIsBoundedPolicy) ExecuteTransitionContent(source InternalC
 
 	// W3C SCXML 5.3: <assign location="pokes" expr="pokes + 1">
 	if err := p.assignVariable(`pokes`, `_scxml_add(pokes, 1)`); err != nil {
-		engine.Raise(sce.NewPlatformError(InternalChainIsBoundedEventErrorExecution, "<assign> to 'pokes' failed"))
+		engine.Raise(sce.NewPlatformError(InternalChainIsBoundedEventErrorExecution, sceerrorreason.ErrorReasonAssignmentFailed, "<assign> to 'pokes' failed"))
 		return  // W3C SCXML 4.9: the error ends the block
 	}
 
@@ -1328,7 +1332,7 @@ func (p *InternalChainIsBoundedPolicy) ExecuteTransitionContent(source InternalC
 
 	// W3C SCXML 5.3: <assign location="pokes" expr="pokes + 1">
 	if err := p.assignVariable(`pokes`, `_scxml_add(pokes, 1)`); err != nil {
-		engine.Raise(sce.NewPlatformError(InternalChainIsBoundedEventErrorExecution, "<assign> to 'pokes' failed"))
+		engine.Raise(sce.NewPlatformError(InternalChainIsBoundedEventErrorExecution, sceerrorreason.ErrorReasonAssignmentFailed, "<assign> to 'pokes' failed"))
 		return  // W3C SCXML 4.9: the error ends the block
 	}
 
@@ -1383,7 +1387,7 @@ func (p *InternalChainIsBoundedPolicy) ExecuteTransitionContent(source InternalC
 
 	// W3C SCXML 5.3: <assign location="ignores" expr="ignores + 1">
 	if err := p.assignVariable(`ignores`, `_scxml_add(ignores, 1)`); err != nil {
-		engine.Raise(sce.NewPlatformError(InternalChainIsBoundedEventErrorExecution, "<assign> to 'ignores' failed"))
+		engine.Raise(sce.NewPlatformError(InternalChainIsBoundedEventErrorExecution, sceerrorreason.ErrorReasonAssignmentFailed, "<assign> to 'ignores' failed"))
 		return  // W3C SCXML 4.9: the error ends the block
 	}
 
@@ -1401,7 +1405,7 @@ func (p *InternalChainIsBoundedPolicy) ExecuteTransitionContent(source InternalC
 
 	// W3C SCXML 5.3: <assign location="ignores" expr="ignores + 1">
 	if err := p.assignVariable(`ignores`, `_scxml_add(ignores, 1)`); err != nil {
-		engine.Raise(sce.NewPlatformError(InternalChainIsBoundedEventErrorExecution, "<assign> to 'ignores' failed"))
+		engine.Raise(sce.NewPlatformError(InternalChainIsBoundedEventErrorExecution, sceerrorreason.ErrorReasonAssignmentFailed, "<assign> to 'ignores' failed"))
 		return  // W3C SCXML 4.9: the error ends the block
 	}
 
@@ -1413,7 +1417,7 @@ func (p *InternalChainIsBoundedPolicy) ExecuteTransitionContent(source InternalC
 
 	// W3C SCXML 5.3: <assign location="pokes" expr="pokes + 1">
 	if err := p.assignVariable(`pokes`, `_scxml_add(pokes, 1)`); err != nil {
-		engine.Raise(sce.NewPlatformError(InternalChainIsBoundedEventErrorExecution, "<assign> to 'pokes' failed"))
+		engine.Raise(sce.NewPlatformError(InternalChainIsBoundedEventErrorExecution, sceerrorreason.ErrorReasonAssignmentFailed, "<assign> to 'pokes' failed"))
 		return  // W3C SCXML 4.9: the error ends the block
 	}
 
@@ -1428,7 +1432,7 @@ func (p *InternalChainIsBoundedPolicy) ExecuteTransitionContent(source InternalC
 
 	// W3C SCXML 5.3: <assign location="beats" expr="beats + 1">
 	if err := p.assignVariable(`beats`, `_scxml_add(beats, 1)`); err != nil {
-		engine.Raise(sce.NewPlatformError(InternalChainIsBoundedEventErrorExecution, "<assign> to 'beats' failed"))
+		engine.Raise(sce.NewPlatformError(InternalChainIsBoundedEventErrorExecution, sceerrorreason.ErrorReasonAssignmentFailed, "<assign> to 'beats' failed"))
 		return  // W3C SCXML 4.9: the error ends the block
 	}
 
@@ -1443,7 +1447,7 @@ func (p *InternalChainIsBoundedPolicy) ExecuteTransitionContent(source InternalC
 
 	// W3C SCXML 5.3: <assign location="beats" expr="beats + 1">
 	if err := p.assignVariable(`beats`, `_scxml_add(beats, 1)`); err != nil {
-		engine.Raise(sce.NewPlatformError(InternalChainIsBoundedEventErrorExecution, "<assign> to 'beats' failed"))
+		engine.Raise(sce.NewPlatformError(InternalChainIsBoundedEventErrorExecution, sceerrorreason.ErrorReasonAssignmentFailed, "<assign> to 'beats' failed"))
 		return  // W3C SCXML 4.9: the error ends the block
 	}
 
@@ -1455,7 +1459,7 @@ func (p *InternalChainIsBoundedPolicy) ExecuteTransitionContent(source InternalC
 
 	// W3C SCXML 5.3: <assign location="pokes" expr="pokes + 1">
 	if err := p.assignVariable(`pokes`, `_scxml_add(pokes, 1)`); err != nil {
-		engine.Raise(sce.NewPlatformError(InternalChainIsBoundedEventErrorExecution, "<assign> to 'pokes' failed"))
+		engine.Raise(sce.NewPlatformError(InternalChainIsBoundedEventErrorExecution, sceerrorreason.ErrorReasonAssignmentFailed, "<assign> to 'pokes' failed"))
 		return  // W3C SCXML 4.9: the error ends the block
 	}
 
@@ -1470,7 +1474,7 @@ func (p *InternalChainIsBoundedPolicy) ExecuteTransitionContent(source InternalC
 
 	// W3C SCXML 5.3: <assign location="links" expr="links + 1">
 	if err := p.assignVariable(`links`, `_scxml_add(links, 1)`); err != nil {
-		engine.Raise(sce.NewPlatformError(InternalChainIsBoundedEventErrorExecution, "<assign> to 'links' failed"))
+		engine.Raise(sce.NewPlatformError(InternalChainIsBoundedEventErrorExecution, sceerrorreason.ErrorReasonAssignmentFailed, "<assign> to 'links' failed"))
 		return  // W3C SCXML 4.9: the error ends the block
 	}
 
@@ -1485,7 +1489,7 @@ func (p *InternalChainIsBoundedPolicy) ExecuteTransitionContent(source InternalC
 
 	// W3C SCXML 5.3: <assign location="pokes" expr="pokes + 1">
 	if err := p.assignVariable(`pokes`, `_scxml_add(pokes, 1)`); err != nil {
-		engine.Raise(sce.NewPlatformError(InternalChainIsBoundedEventErrorExecution, "<assign> to 'pokes' failed"))
+		engine.Raise(sce.NewPlatformError(InternalChainIsBoundedEventErrorExecution, sceerrorreason.ErrorReasonAssignmentFailed, "<assign> to 'pokes' failed"))
 		return  // W3C SCXML 4.9: the error ends the block
 	}
 

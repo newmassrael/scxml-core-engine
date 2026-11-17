@@ -31,6 +31,7 @@ import (
 	"time"
 
 	sce "github.com/newmassrael/sce-go-runtime"
+	sceerrorreason "github.com/newmassrael/sce-go-runtime/generated/error_reason"
 	scealgorithm "github.com/newmassrael/sce-forge-runtime/algorithm"
 	"github.com/newmassrael/sce-forge-runtime/optional"
 )
@@ -41,6 +42,9 @@ var (
 	_ = filepath.Join
 	_ = strings.HasPrefix
 	_ = time.Duration(0)
+	// Why an error.* event is raised (sce:std/engine/error_reason,
+	// docs/adr/0106 #111); a machine that raises none still imports it.
+	_ = sceerrorreason.ErrorReasonExpressionFailed
 	_ scealgorithm.Failure
 )
 
@@ -1429,7 +1433,7 @@ func (p *StaticLiftPolicy) ExecuteTransitionContent(source StaticLiftState, tran
 
 
 
-	if func() bool { var sceFailure scealgorithm.Failure; sceValue := scealgorithm.AddUint32(&sceFailure, p.vLifts, 1); if sceFailure.Failed() { engine.Raise(sce.NewPlatformError(StaticLiftEventErrorExecution, "<assign location='lifts'>: an integer operation overflowed or failed")); return true }; p.vLifts = sceValue; return false }() {
+	if func() bool { var sceFailure scealgorithm.Failure; sceValue := scealgorithm.AddUint32(&sceFailure, p.vLifts, 1); if sceFailure.Failed() { engine.Raise(sce.NewPlatformError(StaticLiftEventErrorExecution, sceerrorreason.ErrorReasonExpressionFailed, "<assign location='lifts'>: an integer operation overflowed or failed")); return true }; p.vLifts = sceValue; return false }() {
 		return  // W3C SCXML 4.9: the error ends the block
 	}
 
@@ -1443,7 +1447,7 @@ func (p *StaticLiftPolicy) ExecuteTransitionContent(source StaticLiftState, tran
 				}
 
 
-	if func() bool { var sceFailure scealgorithm.Failure; sceValue := scealgorithm.Bounded(&sceFailure, p.pendingTextKeptPayload.text, 512); if sceFailure.Failed() { engine.Raise(sce.NewPlatformError(StaticLiftEventErrorExecution, "<assign location='said'>: an integer operation overflowed or failed")); return true }; p.vSaid = sceValue; return false }() {
+	if func() bool { var sceFailure scealgorithm.Failure; sceValue := scealgorithm.Bounded(&sceFailure, p.pendingTextKeptPayload.text, 512); if sceFailure.Failed() { engine.Raise(sce.NewPlatformError(StaticLiftEventErrorExecution, sceerrorreason.ErrorReasonExpressionFailed, "<assign location='said'>: an integer operation overflowed or failed")); return true }; p.vSaid = sceValue; return false }() {
 		return  // W3C SCXML 4.9: the error ends the block
 	}
 
@@ -1454,7 +1458,7 @@ func (p *StaticLiftPolicy) ExecuteTransitionContent(source StaticLiftState, tran
 
 
 
-	if func() bool { var sceFailure scealgorithm.Failure; sceValue := scealgorithm.AddUint32(&sceFailure, p.vLifts, 1); if sceFailure.Failed() { engine.Raise(sce.NewPlatformError(StaticLiftEventErrorExecution, "<assign location='lifts'>: an integer operation overflowed or failed")); return true }; p.vLifts = sceValue; return false }() {
+	if func() bool { var sceFailure scealgorithm.Failure; sceValue := scealgorithm.AddUint32(&sceFailure, p.vLifts, 1); if sceFailure.Failed() { engine.Raise(sce.NewPlatformError(StaticLiftEventErrorExecution, sceerrorreason.ErrorReasonExpressionFailed, "<assign location='lifts'>: an integer operation overflowed or failed")); return true }; p.vLifts = sceValue; return false }() {
 		return  // W3C SCXML 4.9: the error ends the block
 	}
 
@@ -1465,7 +1469,7 @@ func (p *StaticLiftPolicy) ExecuteTransitionContent(source StaticLiftState, tran
 			func() {
 
 
-	if func() bool { var sceFailure scealgorithm.Failure; sceValue := scealgorithm.AddUint32(&sceFailure, p.vErrors, 1); if sceFailure.Failed() { engine.Raise(sce.NewPlatformError(StaticLiftEventErrorExecution, "<assign location='errors'>: an integer operation overflowed or failed")); return true }; p.vErrors = sceValue; return false }() {
+	if func() bool { var sceFailure scealgorithm.Failure; sceValue := scealgorithm.AddUint32(&sceFailure, p.vErrors, 1); if sceFailure.Failed() { engine.Raise(sce.NewPlatformError(StaticLiftEventErrorExecution, sceerrorreason.ErrorReasonExpressionFailed, "<assign location='errors'>: an integer operation overflowed or failed")); return true }; p.vErrors = sceValue; return false }() {
 		return  // W3C SCXML 4.9: the error ends the block
 	}
 

@@ -612,7 +612,7 @@ public final class StaticBytesWirePolicy: InvocablePolicy {
                     }
 
 
-                if ({ () -> Bool in do { let sceValue: [UInt8] = (try Checked.bounded(self.pendingFramedTakenPayload.frame, capacity: 8)); self.vHeld = sceValue } catch { engine.raise(EventWithMetadata.platformError(StaticBytesWireEvent.errorExecution, message: "<assign location='held'>: an integer operation overflowed or failed")); return true }; return false }()) {
+                if ({ () -> Bool in do { let sceValue: [UInt8] = (try Checked.bounded(self.pendingFramedTakenPayload.frame, capacity: 8)); self.vHeld = sceValue } catch { engine.raise(EventWithMetadata.platformError(StaticBytesWireEvent.errorExecution, reason: .expressionFailed, message: "<assign location='held'>: an integer operation overflowed or failed")); return true }; return false }()) {
                     break sceBlock  // W3C SCXML 4.9: the error ends the block
                 }
 
@@ -662,13 +662,13 @@ public final class StaticBytesWirePolicy: InvocablePolicy {
                     }
 
 
-                if ({ () -> Bool in do { let sceValue: [UInt8] = (try Checked.bounded(self.pendingFramedRelayedPayload.frame, capacity: 8)); self.vEcho = sceValue } catch { engine.raise(EventWithMetadata.platformError(StaticBytesWireEvent.errorExecution, message: "<assign location='echo'>: an integer operation overflowed or failed")); return true }; return false }()) {
+                if ({ () -> Bool in do { let sceValue: [UInt8] = (try Checked.bounded(self.pendingFramedRelayedPayload.frame, capacity: 8)); self.vEcho = sceValue } catch { engine.raise(EventWithMetadata.platformError(StaticBytesWireEvent.errorExecution, reason: .expressionFailed, message: "<assign location='echo'>: an integer operation overflowed or failed")); return true }; return false }()) {
                     break sceBlock  // W3C SCXML 4.9: the error ends the block
                 }
 
 
 
-                if ({ () -> Bool in do { let sceValue: UInt32 = (try Checked.add(self.vRelays, 1)); self.vRelays = sceValue } catch { engine.raise(EventWithMetadata.platformError(StaticBytesWireEvent.errorExecution, message: "<assign location='relays'>: an integer operation overflowed or failed")); return true }; return false }()) {
+                if ({ () -> Bool in do { let sceValue: UInt32 = (try Checked.add(self.vRelays, 1)); self.vRelays = sceValue } catch { engine.raise(EventWithMetadata.platformError(StaticBytesWireEvent.errorExecution, reason: .expressionFailed, message: "<assign location='relays'>: an integer operation overflowed or failed")); return true }; return false }()) {
                     break sceBlock  // W3C SCXML 4.9: the error ends the block
                 }
 
@@ -678,7 +678,7 @@ public final class StaticBytesWirePolicy: InvocablePolicy {
                 sceBlock: do {
 
 
-                if ({ () -> Bool in do { let sceValue: UInt32 = (try Checked.add(self.vErrors, 1)); self.vErrors = sceValue } catch { engine.raise(EventWithMetadata.platformError(StaticBytesWireEvent.errorExecution, message: "<assign location='errors'>: an integer operation overflowed or failed")); return true }; return false }()) {
+                if ({ () -> Bool in do { let sceValue: UInt32 = (try Checked.add(self.vErrors, 1)); self.vErrors = sceValue } catch { engine.raise(EventWithMetadata.platformError(StaticBytesWireEvent.errorExecution, reason: .expressionFailed, message: "<assign location='errors'>: an integer operation overflowed or failed")); return true }; return false }()) {
                     break sceBlock  // W3C SCXML 4.9: the error ends the block
                 }
 

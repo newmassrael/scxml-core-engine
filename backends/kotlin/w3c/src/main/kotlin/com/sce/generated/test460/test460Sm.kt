@@ -202,7 +202,7 @@ class Test460StateMachine(
             try {
                 engine.setVariable(sid, "Var1", engine.evaluateExpr(sid, com.sce.runtime.ScriptSource.lua("{1, 2, 3}", "[1,2,3]")))
             } catch (e: Exception) {
-                raisePlatformError(Test460Event.Error.Execution, "<data id='Var1'> expr failed to evaluate")
+                raisePlatformError(Test460Event.Error.Execution, ErrorReason.EXPRESSION_FAILED, "<data id='Var1'> expr failed to evaluate")
             }
         }
         // §scxml-6.4: 'Var2' takes a value its invoke handed it, in place of its own
@@ -211,7 +211,7 @@ class Test460StateMachine(
             try {
                 engine.setVariable(sid, "Var2", engine.evaluateExpr(sid, com.sce.runtime.ScriptSource.lua("0", "0")))
             } catch (e: Exception) {
-                raisePlatformError(Test460Event.Error.Execution, "<data id='Var2'> expr failed to evaluate")
+                raisePlatformError(Test460Event.Error.Execution, ErrorReason.EXPRESSION_FAILED, "<data id='Var2'> expr failed to evaluate")
             }
         }
     }
@@ -241,14 +241,14 @@ class Test460StateMachine(
 
     // W3C SCXML 5.9.1: a cond that cannot be evaluated raises error.execution;
     // `null` says so, where a bare `false` could not.
-    private fun evaluateGuardRaising(guardExpr: com.sce.runtime.ScriptSource, reason: String): Boolean? {
+    private fun evaluateGuardRaising(guardExpr: com.sce.runtime.ScriptSource, detail: String): Boolean? {
         assertScriptSession()
         val engine = scriptEngine ?: error("scriptEngine is required (codegen invariant: needs_script_engine == true)")
         val sid = scriptSessionId ?: error("scriptSessionId is established by the start (codegen invariant)")
         return try {
             engine.evaluateCondition(sid, guardExpr)
         } catch (e: Exception) {
-            raisePlatformError(Test460Event.Error.Execution, reason)
+            raisePlatformError(Test460Event.Error.Execution, ErrorReason.EXPRESSION_FAILED, detail)
             null
         }
     }
@@ -289,7 +289,7 @@ class Test460StateMachine(
         return try {
             engine.evaluateExpr(sid, serialized)?.toString() ?: ""
         } catch (e: Exception) {
-            raisePlatformError(Test460Event.Error.Execution, "an expression could not be serialised to JSON")
+            raisePlatformError(Test460Event.Error.Execution, ErrorReason.EXPRESSION_FAILED, "an expression could not be serialised to JSON")
             ""
         }
     }
@@ -310,7 +310,7 @@ class Test460StateMachine(
             engine.assign(sid, location, expr)
             true
         } catch (e: Exception) {
-            raisePlatformError(Test460Event.Error.Execution, "<assign> failed")
+            raisePlatformError(Test460Event.Error.Execution, ErrorReason.ASSIGNMENT_FAILED, "<assign> failed")
             false
         }
     }
@@ -326,7 +326,7 @@ class Test460StateMachine(
             engine.executeScript(sid, script)
             true
         } catch (e: Exception) {
-            raisePlatformError(Test460Event.Error.Execution, "<script> failed to execute")
+            raisePlatformError(Test460Event.Error.Execution, ErrorReason.SCRIPT_FAILED, "<script> failed to execute")
             false
         }
     }
@@ -439,7 +439,7 @@ class Test460StateMachine(
                     println("Outcome: " + (scriptEngine?.evaluateExpr(scriptSessionId ?: "", com.sce.runtime.ScriptSource.lua("\"fail\"", "'fail'"))?.toString() ?: ""))
                     false
                 } catch (_: Exception) {
-                    raisePlatformError(Test460Event.Error.Execution, "<log> expr failed to evaluate")
+                    raisePlatformError(Test460Event.Error.Execution, ErrorReason.EXPRESSION_FAILED, "<log> expr failed to evaluate")
                     true
                 }
             }) {
@@ -463,7 +463,7 @@ class Test460StateMachine(
                     println("Outcome: " + (scriptEngine?.evaluateExpr(scriptSessionId ?: "", com.sce.runtime.ScriptSource.lua("\"pass\"", "'pass'"))?.toString() ?: ""))
                     false
                 } catch (_: Exception) {
-                    raisePlatformError(Test460Event.Error.Execution, "<log> expr failed to evaluate")
+                    raisePlatformError(Test460Event.Error.Execution, ErrorReason.EXPRESSION_FAILED, "<log> expr failed to evaluate")
                     true
                 }
             }) {
@@ -499,7 +499,7 @@ class Test460StateMachine(
                     // block; nothing more is raised here.
                     true
                 } catch (e: Exception) {
-                    raisePlatformError(Test460Event.Error.Execution, "<foreach array='Var1'> failed to iterate")
+                    raisePlatformError(Test460Event.Error.Execution, ErrorReason.FOREACH_INVALID, "<foreach array='Var1'> failed to iterate")
                     true
                 }
             }) {

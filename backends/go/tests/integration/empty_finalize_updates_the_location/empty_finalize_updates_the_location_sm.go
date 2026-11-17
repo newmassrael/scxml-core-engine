@@ -31,6 +31,7 @@ import (
 	"time"
 
 	sce "github.com/newmassrael/sce-go-runtime"
+	sceerrorreason "github.com/newmassrael/sce-go-runtime/generated/error_reason"
 )
 
 // Ensure imports are used
@@ -39,6 +40,9 @@ var (
 	_ = filepath.Join
 	_ = strings.HasPrefix
 	_ = time.Duration(0)
+	// Why an error.* event is raised (sce:std/engine/error_reason,
+	// docs/adr/0106 #111); a machine that raises none still imports it.
+	_ = sceerrorreason.ErrorReasonExpressionFailed
 )
 
 // ======================================================================
@@ -443,7 +447,7 @@ func (p *EmptyFinalizeUpdatesTheLocationPolicy) InitializeDataModel(eng *sce.Eng
 		if err == nil {
 			_ = engine.SetVariable(sessionID, "tally", result)
 		} else {
-			eng.Raise(sce.NewPlatformError(EmptyFinalizeUpdatesTheLocationEventErrorExecution, "<data id='tally'> expr failed to evaluate"))
+			eng.Raise(sce.NewPlatformError(EmptyFinalizeUpdatesTheLocationEventErrorExecution, sceerrorreason.ErrorReasonExpressionFailed, "<data id='tally'> expr failed to evaluate"))
 			_ = engine.SetVariable(sessionID, "tally", nil)
 		}
 	}
@@ -457,7 +461,7 @@ func (p *EmptyFinalizeUpdatesTheLocationPolicy) InitializeDataModel(eng *sce.Eng
 		if err == nil {
 			_ = engine.SetVariable(sessionID, "guard", result)
 		} else {
-			eng.Raise(sce.NewPlatformError(EmptyFinalizeUpdatesTheLocationEventErrorExecution, "<data id='guard'> expr failed to evaluate"))
+			eng.Raise(sce.NewPlatformError(EmptyFinalizeUpdatesTheLocationEventErrorExecution, sceerrorreason.ErrorReasonExpressionFailed, "<data id='guard'> expr failed to evaluate"))
 			_ = engine.SetVariable(sessionID, "guard", nil)
 		}
 	}
@@ -471,7 +475,7 @@ func (p *EmptyFinalizeUpdatesTheLocationPolicy) InitializeDataModel(eng *sce.Eng
 		if err == nil {
 			_ = engine.SetVariable(sessionID, "keeper", result)
 		} else {
-			eng.Raise(sce.NewPlatformError(EmptyFinalizeUpdatesTheLocationEventErrorExecution, "<data id='keeper'> expr failed to evaluate"))
+			eng.Raise(sce.NewPlatformError(EmptyFinalizeUpdatesTheLocationEventErrorExecution, sceerrorreason.ErrorReasonExpressionFailed, "<data id='keeper'> expr failed to evaluate"))
 			_ = engine.SetVariable(sessionID, "keeper", nil)
 		}
 	}
@@ -503,12 +507,12 @@ func (p *EmptyFinalizeUpdatesTheLocationPolicy) evaluateIfCond(guard string, eng
 // evaluateGuardRaising evaluates a cond, raising error.execution when it cannot
 // be evaluated (W3C SCXML 5.9.1); ok is false then, where a bare false could
 // not say so.
-func (p *EmptyFinalizeUpdatesTheLocationPolicy) evaluateGuardRaising(guard string, eng *sce.Engine[EmptyFinalizeUpdatesTheLocationState, EmptyFinalizeUpdatesTheLocationEvent], reason string) (value bool, ok bool) {
+func (p *EmptyFinalizeUpdatesTheLocationPolicy) evaluateGuardRaising(guard string, eng *sce.Engine[EmptyFinalizeUpdatesTheLocationState, EmptyFinalizeUpdatesTheLocationEvent], detail string) (value bool, ok bool) {
 	p.assertScriptSession()
 	engine := p.ScriptEngine
 	result, err := engine.EvaluateExpression(p.SessionID, guard)
 	if err != nil {
-		eng.Raise(sce.NewPlatformError(EmptyFinalizeUpdatesTheLocationEventErrorExecution, reason))
+		eng.Raise(sce.NewPlatformError(EmptyFinalizeUpdatesTheLocationEventErrorExecution, sceerrorreason.ErrorReasonExpressionFailed, detail))
 		return false, false
 	}
 	return sce.ScriptToBool(result), true
@@ -611,7 +615,7 @@ func (p *EmptyFinalizeUpdatesTheLocationPolicy) SetParamValueInScriptEngine(name
 // failed is left (docs/adr/0098).
 func (p *EmptyFinalizeUpdatesTheLocationPolicy) declareHandedValue(eng *sce.Engine[EmptyFinalizeUpdatesTheLocationState, EmptyFinalizeUpdatesTheLocationEvent], engine sce.IScriptEngine, sessionID, name string, value interface{}) {
 	if err := engine.SetVariable(sessionID, name, value); err != nil {
-		eng.Raise(sce.NewPlatformError(EmptyFinalizeUpdatesTheLocationEventErrorExecution, "<data id='"+name+"'> could not hold the value its invoking session handed it"))
+		eng.Raise(sce.NewPlatformError(EmptyFinalizeUpdatesTheLocationEventErrorExecution, sceerrorreason.ErrorReasonDataInitFailed, "<data id='"+name+"'> could not hold the value its invoking session handed it"))
 		_ = engine.SetVariable(sessionID, name, nil)
 	}
 }
@@ -639,7 +643,7 @@ func (p *EmptyFinalizeUpdatesTheLocationPolicy) ExecutePendingInvokes(engine *sc
 					namelistValid = false
 				}
 				if !namelistValid {
-					engine.Raise(sce.NewPlatformError(EmptyFinalizeUpdatesTheLocationEventErrorExecution, "<invoke> namelist names a location that cannot be read"))
+					engine.Raise(sce.NewPlatformError(EmptyFinalizeUpdatesTheLocationEventErrorExecution, sceerrorreason.ErrorReasonLocationInvalid, "<invoke> namelist names a location that cannot be read"))
 					continue
 				}
 			}
@@ -709,7 +713,7 @@ func (p *EmptyFinalizeUpdatesTheLocationPolicy) ExecutePendingInvokes(engine *sc
 			if refused := childEngine.Initialize(); refused != nil {
 				childEngine.DetachMesh()
 				delete(p.activeInvokes, "inv_absent")
-				engine.Raise(sce.NewPlatformError(EmptyFinalizeUpdatesTheLocationEventErrorExecution, sce.ChildStartRefusal("inv_absent", refused)))
+				engine.Raise(sce.NewPlatformError(EmptyFinalizeUpdatesTheLocationEventErrorExecution, sceerrorreason.ErrorReasonInvokeChildInitFailed, sce.ChildStartRefusal("inv_absent", refused)))
 				continue
 			}
 
@@ -742,7 +746,7 @@ func (p *EmptyFinalizeUpdatesTheLocationPolicy) ExecutePendingInvokes(engine *sc
 					namelistValid = false
 				}
 				if !namelistValid {
-					engine.Raise(sce.NewPlatformError(EmptyFinalizeUpdatesTheLocationEventErrorExecution, "<invoke> namelist names a location that cannot be read"))
+					engine.Raise(sce.NewPlatformError(EmptyFinalizeUpdatesTheLocationEventErrorExecution, sceerrorreason.ErrorReasonLocationInvalid, "<invoke> namelist names a location that cannot be read"))
 					continue
 				}
 			}
@@ -812,7 +816,7 @@ func (p *EmptyFinalizeUpdatesTheLocationPolicy) ExecutePendingInvokes(engine *sc
 			if refused := childEngine.Initialize(); refused != nil {
 				childEngine.DetachMesh()
 				delete(p.activeInvokes, "inv_empty")
-				engine.Raise(sce.NewPlatformError(EmptyFinalizeUpdatesTheLocationEventErrorExecution, sce.ChildStartRefusal("inv_empty", refused)))
+				engine.Raise(sce.NewPlatformError(EmptyFinalizeUpdatesTheLocationEventErrorExecution, sceerrorreason.ErrorReasonInvokeChildInitFailed, sce.ChildStartRefusal("inv_empty", refused)))
 				continue
 			}
 
@@ -845,7 +849,7 @@ func (p *EmptyFinalizeUpdatesTheLocationPolicy) ExecutePendingInvokes(engine *sc
 					namelistValid = false
 				}
 				if !namelistValid {
-					engine.Raise(sce.NewPlatformError(EmptyFinalizeUpdatesTheLocationEventErrorExecution, "<invoke> namelist names a location that cannot be read"))
+					engine.Raise(sce.NewPlatformError(EmptyFinalizeUpdatesTheLocationEventErrorExecution, sceerrorreason.ErrorReasonLocationInvalid, "<invoke> namelist names a location that cannot be read"))
 					continue
 				}
 			}
@@ -915,7 +919,7 @@ func (p *EmptyFinalizeUpdatesTheLocationPolicy) ExecutePendingInvokes(engine *sc
 			if refused := childEngine.Initialize(); refused != nil {
 				childEngine.DetachMesh()
 				delete(p.activeInvokes, "inv_unmatched")
-				engine.Raise(sce.NewPlatformError(EmptyFinalizeUpdatesTheLocationEventErrorExecution, sce.ChildStartRefusal("inv_unmatched", refused)))
+				engine.Raise(sce.NewPlatformError(EmptyFinalizeUpdatesTheLocationEventErrorExecution, sceerrorreason.ErrorReasonInvokeChildInitFailed, sce.ChildStartRefusal("inv_unmatched", refused)))
 				continue
 			}
 

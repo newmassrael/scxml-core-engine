@@ -618,7 +618,7 @@ class StaticComposedTextStateMachine(
 
             if ((pendingBatchSentPayload!!.items).size.toUInt() > 0.toUInt()) {
 
-            if (try { vFirstLabelIsAb = com.sce.forge.runtime.SceChecked.at(pendingBatchSentPayload!!.items, (0).toLong()).label == "ab"; false } catch (_: com.sce.forge.runtime.AlgorithmFailure) { raisePlatformError(StaticComposedTextEvent.Error.Execution, "<assign location='first_label_is_ab'>: an integer operation overflowed or failed"); true }) {
+            if (try { vFirstLabelIsAb = com.sce.forge.runtime.SceChecked.at(pendingBatchSentPayload!!.items, (0).toLong()).label == "ab"; false } catch (_: com.sce.forge.runtime.AlgorithmFailure) { raisePlatformError(StaticComposedTextEvent.Error.Execution, ErrorReason.EXPRESSION_FAILED, "<assign location='first_label_is_ab'>: an integer operation overflowed or failed"); true }) {
                 return
             }
             }
@@ -629,16 +629,16 @@ class StaticComposedTextStateMachine(
 
             if (row.label == "ab") {
 
-            if (try { vLabelsAb = com.sce.forge.runtime.SceChecked.add(vLabelsAb, 1.toUInt()); false } catch (_: com.sce.forge.runtime.AlgorithmFailure) { raisePlatformError(StaticComposedTextEvent.Error.Execution, "<assign location='labels_ab'>: an integer operation overflowed or failed"); true }) {
+            if (try { vLabelsAb = com.sce.forge.runtime.SceChecked.add(vLabelsAb, 1.toUInt()); false } catch (_: com.sce.forge.runtime.AlgorithmFailure) { raisePlatformError(StaticComposedTextEvent.Error.Execution, ErrorReason.EXPRESSION_FAILED, "<assign location='labels_ab'>: an integer operation overflowed or failed"); true }) {
                 return
             }
             }
 
 
             var ifCondFailed3 = false
-            if ((try { (row.tags).size.toUInt() > 0.toUInt() && com.sce.forge.runtime.SceChecked.at(row.tags, (0).toLong()) == "ab" } catch (_: com.sce.forge.runtime.AlgorithmFailure) { raisePlatformError(StaticComposedTextEvent.Error.Execution, "<if cond='len(row.tags) > 0 && row.tags[0] === 'ab''>: an integer operation overflowed or failed"); ifCondFailed3 = true; false })) {
+            if ((try { (row.tags).size.toUInt() > 0.toUInt() && com.sce.forge.runtime.SceChecked.at(row.tags, (0).toLong()) == "ab" } catch (_: com.sce.forge.runtime.AlgorithmFailure) { raisePlatformError(StaticComposedTextEvent.Error.Execution, ErrorReason.EXPRESSION_FAILED, "<if cond='len(row.tags) > 0 && row.tags[0] === 'ab''>: an integer operation overflowed or failed"); ifCondFailed3 = true; false })) {
 
-            if (try { vFirstTagsAb = com.sce.forge.runtime.SceChecked.add(vFirstTagsAb, 1.toUInt()); false } catch (_: com.sce.forge.runtime.AlgorithmFailure) { raisePlatformError(StaticComposedTextEvent.Error.Execution, "<assign location='first_tags_ab'>: an integer operation overflowed or failed"); true }) {
+            if (try { vFirstTagsAb = com.sce.forge.runtime.SceChecked.add(vFirstTagsAb, 1.toUInt()); false } catch (_: com.sce.forge.runtime.AlgorithmFailure) { raisePlatformError(StaticComposedTextEvent.Error.Execution, ErrorReason.EXPRESSION_FAILED, "<assign location='first_tags_ab'>: an integer operation overflowed or failed"); true }) {
                 return
             }
             }
@@ -652,24 +652,24 @@ class StaticComposedTextStateMachine(
 
             if (word == "ab") {
 
-            if (try { vWordsAb = com.sce.forge.runtime.SceChecked.add(vWordsAb, 1.toUInt()); false } catch (_: com.sce.forge.runtime.AlgorithmFailure) { raisePlatformError(StaticComposedTextEvent.Error.Execution, "<assign location='words_ab'>: an integer operation overflowed or failed"); true }) {
+            if (try { vWordsAb = com.sce.forge.runtime.SceChecked.add(vWordsAb, 1.toUInt()); false } catch (_: com.sce.forge.runtime.AlgorithmFailure) { raisePlatformError(StaticComposedTextEvent.Error.Execution, ErrorReason.EXPRESSION_FAILED, "<assign location='words_ab'>: an integer operation overflowed or failed"); true }) {
                 return
             }
             }
             }
 
-            if (try { vLastLabel = com.sce.forge.runtime.SceChecked.bounded(row.label, 8); false } catch (_: com.sce.forge.runtime.AlgorithmFailure) { raisePlatformError(StaticComposedTextEvent.Error.Execution, "<assign location='last_label'>: an integer operation overflowed or failed"); true }) {
+            if (try { vLastLabel = com.sce.forge.runtime.SceChecked.bounded(row.label, 8); false } catch (_: com.sce.forge.runtime.AlgorithmFailure) { raisePlatformError(StaticComposedTextEvent.Error.Execution, ErrorReason.EXPRESSION_FAILED, "<assign location='last_label'>: an integer operation overflowed or failed"); true }) {
                 return
             }
 
-            if (try { vBlobBytes = com.sce.forge.runtime.SceChecked.add(vBlobBytes, (row.blob).size.toUInt()); false } catch (_: com.sce.forge.runtime.AlgorithmFailure) { raisePlatformError(StaticComposedTextEvent.Error.Execution, "<assign location='blob_bytes'>: an integer operation overflowed or failed"); true }) {
+            if (try { vBlobBytes = com.sce.forge.runtime.SceChecked.add(vBlobBytes, (row.blob).size.toUInt()); false } catch (_: com.sce.forge.runtime.AlgorithmFailure) { raisePlatformError(StaticComposedTextEvent.Error.Execution, ErrorReason.EXPRESSION_FAILED, "<assign location='blob_bytes'>: an integer operation overflowed or failed"); true }) {
                 return
             }
 
 
             if (row.blob.contentEquals("ab".toByteArray())) {
 
-            if (try { vBlobsAb = com.sce.forge.runtime.SceChecked.add(vBlobsAb, 1.toUInt()); false } catch (_: com.sce.forge.runtime.AlgorithmFailure) { raisePlatformError(StaticComposedTextEvent.Error.Execution, "<assign location='blobs_ab'>: an integer operation overflowed or failed"); true }) {
+            if (try { vBlobsAb = com.sce.forge.runtime.SceChecked.add(vBlobsAb, 1.toUInt()); false } catch (_: com.sce.forge.runtime.AlgorithmFailure) { raisePlatformError(StaticComposedTextEvent.Error.Execution, ErrorReason.EXPRESSION_FAILED, "<assign location='blobs_ab'>: an integer operation overflowed or failed"); true }) {
                 return
             }
             }
@@ -688,7 +688,7 @@ class StaticComposedTextStateMachine(
     private fun transitionContentOfIdleAt2() {
                 // SCE-MAP: static_composed_text.scxml:83 :: idle :: _transition_2
 
-            if (try { vRefusals = com.sce.forge.runtime.SceChecked.add(vRefusals, 1.toUInt()); false } catch (_: com.sce.forge.runtime.AlgorithmFailure) { raisePlatformError(StaticComposedTextEvent.Error.Execution, "<assign location='refusals'>: an integer operation overflowed or failed"); true }) {
+            if (try { vRefusals = com.sce.forge.runtime.SceChecked.add(vRefusals, 1.toUInt()); false } catch (_: com.sce.forge.runtime.AlgorithmFailure) { raisePlatformError(StaticComposedTextEvent.Error.Execution, ErrorReason.EXPRESSION_FAILED, "<assign location='refusals'>: an integer operation overflowed or failed"); true }) {
                 return
             }
     }

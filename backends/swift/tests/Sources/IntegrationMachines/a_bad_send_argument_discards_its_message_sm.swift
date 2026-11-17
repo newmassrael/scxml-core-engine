@@ -427,8 +427,12 @@ public final class ABadSendArgumentDiscardsItsMessagePolicy: InvocablePolicy {
 
     /// Says what went wrong where the document can see it: `error.execution` on the internal
     /// queue (§scxml-5.9.1, 5.3).
-    private func raiseExecutionError(_ message: String, engine: Engine<ABadSendArgumentDiscardsItsMessagePolicy>) {
-        engine.raise(EventWithMetadata.platformError(ABadSendArgumentDiscardsItsMessageEvent.errorExecution, message: message))
+    /// `reason` is the code of sce:std/engine/error_reason the record carries
+    /// (docs/adr/0106 #111).
+    private func raiseExecutionError(
+        _ reason: ErrorReason, _ message: String, engine: Engine<ABadSendArgumentDiscardsItsMessagePolicy>
+    ) {
+        engine.raise(EventWithMetadata.platformError(ABadSendArgumentDiscardsItsMessageEvent.errorExecution, reason: reason, message: message))
     }
 
     /// W3C SCXML 5.3: the `<data id>` `id` takes the value of the lowered expression, or nil when it
@@ -485,6 +489,7 @@ public final class ABadSendArgumentDiscardsItsMessagePolicy: InvocablePolicy {
             }
         } catch {
             raiseExecutionError(
+                handed == nil ? .expressionFailed : .paramUnfit,
                 handed == nil
                     ? "<data id='\(id)'> expr failed to evaluate"
                     : "<data id='\(id)'> could not hold the value its parent handed it",
@@ -673,7 +678,7 @@ public final class ABadSendArgumentDiscardsItsMessagePolicy: InvocablePolicy {
             // this call the payload is lost to the document and to the host alike.
             engine.notePayloadReading(event, reading: Self.payloadReading(of: reading))
         } catch {
-            raiseExecutionError("_event could not be bound for '\(name)'", engine: engine)
+            raiseExecutionError(.payloadRefused, "_event could not be bound for '\(name)'", engine: engine)
         }
     }
 
@@ -710,7 +715,7 @@ public final class ABadSendArgumentDiscardsItsMessagePolicy: InvocablePolicy {
         do {
             return try scriptSession.evaluateCondition(condition, chunkName: "=cond")
         } catch {
-            raiseExecutionError("a \(element) cond failed to evaluate", engine: engine)
+            raiseExecutionError(.expressionFailed, "a \(element) cond failed to evaluate", engine: engine)
             failed = true
             return false
         }
@@ -730,9 +735,13 @@ public final class ABadSendArgumentDiscardsItsMessagePolicy: InvocablePolicy {
                 // W3C SCXML 6.2: send id="__send_0"
                 do {
                     var sendArgError = ""
-                    sendArgError = "<send> namelist names 'undeclaredA', which is not declared"
+                    // Why the argument failed, a code of sce:std/engine/error_reason
+                    // (docs/adr/0106 #111), set with every sentence below.
+                    var sendArgReason = ErrorReason.expressionFailed
+                    _ = sendArgReason
+                    sendArgError = "<send> namelist names 'undeclaredA', which is not declared"; sendArgReason = .locationInvalid
                     if !sendArgError.isEmpty {
-                        var sendError = EventWithMetadata.platformError(ABadSendArgumentDiscardsItsMessageEvent.errorExecution, message: sendArgError)
+                        var sendError = EventWithMetadata.platformError(ABadSendArgumentDiscardsItsMessageEvent.errorExecution, reason: sendArgReason, message: sendArgError)
                         sendError.metadata.sendID = "__send_0"
                         engine.raise(sendError)
 
@@ -763,7 +772,7 @@ public final class ABadSendArgumentDiscardsItsMessagePolicy: InvocablePolicy {
 
                 // W3C SCXML 5.4: <assign location="after">
                 if !assignData("after", "_scxml_add(after, 1)") {
-                    raiseExecutionError("<assign> to 'after' failed", engine: engine)
+                    raiseExecutionError(.assignmentFailed, "<assign> to 'after' failed", engine: engine)
                     break sceBlock  // W3C SCXML 4.9: the error ends the block
                 }
 
@@ -774,6 +783,10 @@ public final class ABadSendArgumentDiscardsItsMessagePolicy: InvocablePolicy {
                 // W3C SCXML 6.2: send id="__send_1"
                 do {
                     var sendArgError = ""
+                    // Why the argument failed, a code of sce:std/engine/error_reason
+                    // (docs/adr/0106 #111), set with every sentence below.
+                    var sendArgReason = ErrorReason.expressionFailed
+                    _ = sendArgReason
                     // The event's name is a string computed from the machine's fields now. A
                     // name that evaluates to nothing names no event, and an operation that
                     // fails cannot be evaluated: either is the argument error.
@@ -781,11 +794,11 @@ public final class ABadSendArgumentDiscardsItsMessagePolicy: InvocablePolicy {
                     if sendArgError.isEmpty {
                         sendEventName = (evaluateText("obj.missing.deep") ?? "")
                         if sendEventName.isEmpty {
-                            sendArgError = "<send> eventexpr could not be evaluated to an event name"
+                            sendArgError = "<send> eventexpr could not be evaluated to an event name"; sendArgReason = .expressionFailed
                         }
                     }
                     if !sendArgError.isEmpty {
-                        var sendError = EventWithMetadata.platformError(ABadSendArgumentDiscardsItsMessageEvent.errorExecution, message: sendArgError)
+                        var sendError = EventWithMetadata.platformError(ABadSendArgumentDiscardsItsMessageEvent.errorExecution, reason: sendArgReason, message: sendArgError)
                         sendError.metadata.sendID = "__send_1"
                         engine.raise(sendError)
 
@@ -810,7 +823,7 @@ public final class ABadSendArgumentDiscardsItsMessagePolicy: InvocablePolicy {
 
                 // W3C SCXML 5.4: <assign location="after">
                 if !assignData("after", "_scxml_add(after, 1)") {
-                    raiseExecutionError("<assign> to 'after' failed", engine: engine)
+                    raiseExecutionError(.assignmentFailed, "<assign> to 'after' failed", engine: engine)
                     break sceBlock  // W3C SCXML 4.9: the error ends the block
                 }
 
@@ -821,6 +834,10 @@ public final class ABadSendArgumentDiscardsItsMessagePolicy: InvocablePolicy {
                 // W3C SCXML 6.2: send id="__send_2"
                 do {
                     var sendArgError = ""
+                    // Why the argument failed, a code of sce:std/engine/error_reason
+                    // (docs/adr/0106 #111), set with every sentence below.
+                    var sendArgReason = ErrorReason.expressionFailed
+                    _ = sendArgReason
                     // W3C SCXML 6.2.4 + C.1: a targetexpr is a target. Its value is read from the
                     // engine now and routed as the same value written in `target` is, below; an
                     // expression that cannot be evaluated is the argument error, and a value that
@@ -832,11 +849,11 @@ public final class ABadSendArgumentDiscardsItsMessagePolicy: InvocablePolicy {
                             sendTarget = routed
                             sendTargetKnown = true
                         } else {
-                            sendArgError = "<send> targetexpr could not be evaluated"
+                            sendArgError = "<send> targetexpr could not be evaluated"; sendArgReason = .expressionFailed
                         }
                     }
                     if !sendArgError.isEmpty {
-                        var sendError = EventWithMetadata.platformError(ABadSendArgumentDiscardsItsMessageEvent.errorExecution, message: sendArgError)
+                        var sendError = EventWithMetadata.platformError(ABadSendArgumentDiscardsItsMessageEvent.errorExecution, reason: sendArgReason, message: sendArgError)
                         sendError.metadata.sendID = "__send_2"
                         engine.raise(sendError)
 
@@ -847,7 +864,7 @@ public final class ABadSendArgumentDiscardsItsMessagePolicy: InvocablePolicy {
                         // names nothing (empty or "undefined"), is not reachable —
                         // error.communication, nothing delivered, and the error ends the block
                         // as any other would (W3C SCXML 4.9).
-                        var sendError = EventWithMetadata.platformError(ABadSendArgumentDiscardsItsMessageEvent.errorCommunication, message: "<send> targetexpr evaluated to nothing, or to a route the send does not declare, so there is no target to reach")
+                        var sendError = EventWithMetadata.platformError(ABadSendArgumentDiscardsItsMessageEvent.errorCommunication, reason: .targetUnreachable, message: "<send> targetexpr evaluated to nothing, or to a route the send does not declare, so there is no target to reach")
                         sendError.metadata.sendID = "__send_2"
                         engine.raise(sendError)
 
@@ -891,14 +908,14 @@ public final class ABadSendArgumentDiscardsItsMessagePolicy: InvocablePolicy {
                         sender: self.sessionID
                     )
                     if sendRouted == .notSupported {
-                        var sendError = EventWithMetadata.platformError(ABadSendArgumentDiscardsItsMessageEvent.errorExecution, message: "<send> targetexpr produced a value that is not a target")
+                        var sendError = EventWithMetadata.platformError(ABadSendArgumentDiscardsItsMessageEvent.errorExecution, reason: .sendTargetInvalid, message: "<send> targetexpr produced a value that is not a target")
                         sendError.metadata.sendID = "__send_2"
                         engine.raise(sendError)
 
                         break sceBlock  // W3C SCXML 4.9: the error ends the block
                     }
                     if sendRouted == .notReachable {
-                        var sendError = EventWithMetadata.platformError(ABadSendArgumentDiscardsItsMessageEvent.errorCommunication, message: "<send> targetexpr names a session this processor cannot reach")
+                        var sendError = EventWithMetadata.platformError(ABadSendArgumentDiscardsItsMessageEvent.errorCommunication, reason: .targetUnreachable, message: "<send> targetexpr names a session this processor cannot reach")
                         sendError.metadata.sendID = "__send_2"
                         engine.raise(sendError)
 
@@ -909,7 +926,7 @@ public final class ABadSendArgumentDiscardsItsMessagePolicy: InvocablePolicy {
 
                 // W3C SCXML 5.4: <assign location="after">
                 if !assignData("after", "_scxml_add(after, 1)") {
-                    raiseExecutionError("<assign> to 'after' failed", engine: engine)
+                    raiseExecutionError(.assignmentFailed, "<assign> to 'after' failed", engine: engine)
                     break sceBlock  // W3C SCXML 4.9: the error ends the block
                 }
 
@@ -920,6 +937,10 @@ public final class ABadSendArgumentDiscardsItsMessagePolicy: InvocablePolicy {
                 // W3C SCXML 6.2: send id="__send_3"
                 do {
                     var sendArgError = ""
+                    // Why the argument failed, a code of sce:std/engine/error_reason
+                    // (docs/adr/0106 #111), set with every sentence below.
+                    var sendArgReason = ErrorReason.expressionFailed
+                    _ = sendArgReason
                     var sendDelayMs: UInt64 = 0
                     if sendArgError.isEmpty {
                         // The delay is a string computed from the machine's fields now, and
@@ -930,11 +951,11 @@ public final class ABadSendArgumentDiscardsItsMessagePolicy: InvocablePolicy {
                         if let ms = parseDelayToMs(sceDelay) {
                             sendDelayMs = ms
                         } else {
-                            sendArgError = "<send> delayexpr is not a CSS2 time"
+                            sendArgError = "<send> delayexpr is not a CSS2 time"; sendArgReason = .sendDelayInvalid
                         }
                     }
                     if !sendArgError.isEmpty {
-                        var sendError = EventWithMetadata.platformError(ABadSendArgumentDiscardsItsMessageEvent.errorExecution, message: sendArgError)
+                        var sendError = EventWithMetadata.platformError(ABadSendArgumentDiscardsItsMessageEvent.errorExecution, reason: sendArgReason, message: sendArgError)
                         sendError.metadata.sendID = "__send_3"
                         engine.raise(sendError)
 
@@ -958,7 +979,7 @@ public final class ABadSendArgumentDiscardsItsMessagePolicy: InvocablePolicy {
 
                 // W3C SCXML 5.4: <assign location="after">
                 if !assignData("after", "_scxml_add(after, 1)") {
-                    raiseExecutionError("<assign> to 'after' failed", engine: engine)
+                    raiseExecutionError(.assignmentFailed, "<assign> to 'after' failed", engine: engine)
                     break sceBlock  // W3C SCXML 4.9: the error ends the block
                 }
 
@@ -974,7 +995,7 @@ public final class ABadSendArgumentDiscardsItsMessagePolicy: InvocablePolicy {
                     // the id the send is known by.
                     let sendID = generateSendID()
                     if !assignData("obj.missing.deep", "\"\(sendID)\"") {
-                        var sendError = EventWithMetadata.platformError(ABadSendArgumentDiscardsItsMessageEvent.errorExecution, message: "<send> idlocation could not be written")
+                        var sendError = EventWithMetadata.platformError(ABadSendArgumentDiscardsItsMessageEvent.errorExecution, reason: .locationInvalid, message: "<send> idlocation could not be written")
                         sendError.metadata.sendID = sendID
                         engine.raise(sendError)
 
@@ -995,7 +1016,7 @@ public final class ABadSendArgumentDiscardsItsMessagePolicy: InvocablePolicy {
 
                 // W3C SCXML 5.4: <assign location="after">
                 if !assignData("after", "_scxml_add(after, 1)") {
-                    raiseExecutionError("<assign> to 'after' failed", engine: engine)
+                    raiseExecutionError(.assignmentFailed, "<assign> to 'after' failed", engine: engine)
                     break sceBlock  // W3C SCXML 4.9: the error ends the block
                 }
 
@@ -1006,6 +1027,10 @@ public final class ABadSendArgumentDiscardsItsMessagePolicy: InvocablePolicy {
                 // W3C SCXML 6.2: send id="__send_5"
                 do {
                     var sendArgError = ""
+                    // Why the argument failed, a code of sce:std/engine/error_reason
+                    // (docs/adr/0106 #111), set with every sentence below.
+                    var sendArgReason = ErrorReason.expressionFailed
+                    _ = sendArgReason
                     // W3C SCXML 6.2: a typeexpr is the processor type, read from the engine now
                     // (test 174: its current value, not the initial one). A value that is none of
                     // the processors this platform has is the same error as one that cannot be
@@ -1016,16 +1041,16 @@ public final class ABadSendArgumentDiscardsItsMessagePolicy: InvocablePolicy {
                     if sendArgError.isEmpty {
                         if let sendType = evaluateText("obj.missing.deep") {
                             if !isSupportedSendType(sendType) {
-                                sendArgError = "<send> typeexpr names a processor this platform does not support"
+                                sendArgError = "<send> typeexpr names a processor this platform does not support"; sendArgReason = .sendTypeUnsupported
                             } else if sendType.utf8.elementsEqual(basicHTTPEventProcessorType.utf8) {
-                                sendArgError = "<send> typeexpr names the BasicHTTP processor, which a computed type cannot select"
+                                sendArgError = "<send> typeexpr names the BasicHTTP processor, which a computed type cannot select"; sendArgReason = .sendTypeUnsupported
                             }
                         } else {
-                            sendArgError = "<send> typeexpr could not be evaluated"
+                            sendArgError = "<send> typeexpr could not be evaluated"; sendArgReason = .expressionFailed
                         }
                     }
                     if !sendArgError.isEmpty {
-                        var sendError = EventWithMetadata.platformError(ABadSendArgumentDiscardsItsMessageEvent.errorExecution, message: sendArgError)
+                        var sendError = EventWithMetadata.platformError(ABadSendArgumentDiscardsItsMessageEvent.errorExecution, reason: sendArgReason, message: sendArgError)
                         sendError.metadata.sendID = "__send_5"
                         engine.raise(sendError)
 
@@ -1046,7 +1071,7 @@ public final class ABadSendArgumentDiscardsItsMessagePolicy: InvocablePolicy {
 
                 // W3C SCXML 5.4: <assign location="after">
                 if !assignData("after", "_scxml_add(after, 1)") {
-                    raiseExecutionError("<assign> to 'after' failed", engine: engine)
+                    raiseExecutionError(.assignmentFailed, "<assign> to 'after' failed", engine: engine)
                     break sceBlock  // W3C SCXML 4.9: the error ends the block
                 }
 
@@ -1144,7 +1169,7 @@ public final class ABadSendArgumentDiscardsItsMessagePolicy: InvocablePolicy {
 
                 // W3C SCXML 5.4: <assign location="errors">
                 if !assignData("errors", "_scxml_add(errors, 1)") {
-                    raiseExecutionError("<assign> to 'errors' failed", engine: engine)
+                    raiseExecutionError(.assignmentFailed, "<assign> to 'errors' failed", engine: engine)
                     break sceBlock  // W3C SCXML 4.9: the error ends the block
                 }
 
@@ -1155,7 +1180,7 @@ public final class ABadSendArgumentDiscardsItsMessagePolicy: InvocablePolicy {
 
                 // W3C SCXML 5.4: <assign location="sent">
                 if !assignData("sent", "_scxml_add(sent, 1)") {
-                    raiseExecutionError("<assign> to 'sent' failed", engine: engine)
+                    raiseExecutionError(.assignmentFailed, "<assign> to 'sent' failed", engine: engine)
                     break sceBlock  // W3C SCXML 4.9: the error ends the block
                 }
 

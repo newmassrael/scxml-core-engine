@@ -31,6 +31,7 @@ import (
 	"time"
 
 	sce "github.com/newmassrael/sce-go-runtime"
+	sceerrorreason "github.com/newmassrael/sce-go-runtime/generated/error_reason"
 )
 
 // Ensure imports are used
@@ -39,6 +40,9 @@ var (
 	_ = filepath.Join
 	_ = strings.HasPrefix
 	_ = time.Duration(0)
+	// Why an error.* event is raised (sce:std/engine/error_reason,
+	// docs/adr/0106 #111); a machine that raises none still imports it.
+	_ = sceerrorreason.ErrorReasonExpressionFailed
 )
 
 // ======================================================================
@@ -364,7 +368,7 @@ func (p *LateDataBindsOnFirstEntryPolicy) InitializeDataModel(eng *sce.Engine[La
 		if err == nil {
 			_ = engine.SetVariable(sessionID, "entries", result)
 		} else {
-			eng.Raise(sce.NewPlatformError(LateDataBindsOnFirstEntryEventErrorExecution, "<data id='entries'> expr failed to evaluate"))
+			eng.Raise(sce.NewPlatformError(LateDataBindsOnFirstEntryEventErrorExecution, sceerrorreason.ErrorReasonExpressionFailed, "<data id='entries'> expr failed to evaluate"))
 			_ = engine.SetVariable(sessionID, "entries", nil)
 		}
 	}
@@ -378,7 +382,7 @@ func (p *LateDataBindsOnFirstEntryPolicy) InitializeDataModel(eng *sce.Engine[La
 		if err == nil {
 			_ = engine.SetVariable(sessionID, "seen", result)
 		} else {
-			eng.Raise(sce.NewPlatformError(LateDataBindsOnFirstEntryEventErrorExecution, "<data id='seen'> expr failed to evaluate"))
+			eng.Raise(sce.NewPlatformError(LateDataBindsOnFirstEntryEventErrorExecution, sceerrorreason.ErrorReasonExpressionFailed, "<data id='seen'> expr failed to evaluate"))
 			_ = engine.SetVariable(sessionID, "seen", nil)
 		}
 	}
@@ -392,7 +396,7 @@ func (p *LateDataBindsOnFirstEntryPolicy) InitializeDataModel(eng *sce.Engine[La
 		if err == nil {
 			_ = engine.SetVariable(sessionID, "contentSeen", result)
 		} else {
-			eng.Raise(sce.NewPlatformError(LateDataBindsOnFirstEntryEventErrorExecution, "<data id='contentSeen'> expr failed to evaluate"))
+			eng.Raise(sce.NewPlatformError(LateDataBindsOnFirstEntryEventErrorExecution, sceerrorreason.ErrorReasonExpressionFailed, "<data id='contentSeen'> expr failed to evaluate"))
 			_ = engine.SetVariable(sessionID, "contentSeen", nil)
 		}
 	}
@@ -416,7 +420,7 @@ func (p *LateDataBindsOnFirstEntryPolicy) bindStateData(state LateDataBindsOnFir
 		if err == nil {
 			_ = engine.SetVariable(sessionID, "v", result)
 		} else {
-			eng.Raise(sce.NewPlatformError(LateDataBindsOnFirstEntryEventErrorExecution, "<data id='v'> expr failed to evaluate"))
+			eng.Raise(sce.NewPlatformError(LateDataBindsOnFirstEntryEventErrorExecution, sceerrorreason.ErrorReasonExpressionFailed, "<data id='v'> expr failed to evaluate"))
 			_ = engine.SetVariable(sessionID, "v", nil)
 		}
 	}
@@ -456,12 +460,12 @@ func (p *LateDataBindsOnFirstEntryPolicy) evaluateIfCond(guard string, eng *sce.
 // evaluateGuardRaising evaluates a cond, raising error.execution when it cannot
 // be evaluated (W3C SCXML 5.9.1); ok is false then, where a bare false could
 // not say so.
-func (p *LateDataBindsOnFirstEntryPolicy) evaluateGuardRaising(guard string, eng *sce.Engine[LateDataBindsOnFirstEntryState, LateDataBindsOnFirstEntryEvent], reason string) (value bool, ok bool) {
+func (p *LateDataBindsOnFirstEntryPolicy) evaluateGuardRaising(guard string, eng *sce.Engine[LateDataBindsOnFirstEntryState, LateDataBindsOnFirstEntryEvent], detail string) (value bool, ok bool) {
 	p.assertScriptSession()
 	engine := p.ScriptEngine
 	result, err := engine.EvaluateExpression(p.SessionID, guard)
 	if err != nil {
-		eng.Raise(sce.NewPlatformError(LateDataBindsOnFirstEntryEventErrorExecution, reason))
+		eng.Raise(sce.NewPlatformError(LateDataBindsOnFirstEntryEventErrorExecution, sceerrorreason.ErrorReasonExpressionFailed, detail))
 		return false, false
 	}
 	return sce.ScriptToBool(result), true
@@ -564,7 +568,7 @@ func (p *LateDataBindsOnFirstEntryPolicy) SetParamValueInScriptEngine(name strin
 // failed is left (docs/adr/0098).
 func (p *LateDataBindsOnFirstEntryPolicy) declareHandedValue(eng *sce.Engine[LateDataBindsOnFirstEntryState, LateDataBindsOnFirstEntryEvent], engine sce.IScriptEngine, sessionID, name string, value interface{}) {
 	if err := engine.SetVariable(sessionID, name, value); err != nil {
-		eng.Raise(sce.NewPlatformError(LateDataBindsOnFirstEntryEventErrorExecution, "<data id='"+name+"'> could not hold the value its invoking session handed it"))
+		eng.Raise(sce.NewPlatformError(LateDataBindsOnFirstEntryEventErrorExecution, sceerrorreason.ErrorReasonDataInitFailed, "<data id='"+name+"'> could not hold the value its invoking session handed it"))
 		_ = engine.SetVariable(sessionID, name, nil)
 	}
 }
@@ -825,21 +829,21 @@ func (p *LateDataBindsOnFirstEntryPolicy) ExecuteEntryActions(state LateDataBind
 
 	// W3C SCXML 5.3: <assign location="entries" expr="entries + 1">
 	if err := p.assignVariable(`entries`, `_scxml_add(entries, 1)`); err != nil {
-		engine.Raise(sce.NewPlatformError(LateDataBindsOnFirstEntryEventErrorExecution, "<assign> to 'entries' failed"))
+		engine.Raise(sce.NewPlatformError(LateDataBindsOnFirstEntryEventErrorExecution, sceerrorreason.ErrorReasonAssignmentFailed, "<assign> to 'entries' failed"))
 		return  // W3C SCXML 4.9: the error ends the block
 	}
 
 
 	// W3C SCXML 5.3: <assign location="seen" expr="seen * 10 + v">
 	if err := p.assignVariable(`seen`, `_scxml_add((seen * 10), v)`); err != nil {
-		engine.Raise(sce.NewPlatformError(LateDataBindsOnFirstEntryEventErrorExecution, "<assign> to 'seen' failed"))
+		engine.Raise(sce.NewPlatformError(LateDataBindsOnFirstEntryEventErrorExecution, sceerrorreason.ErrorReasonAssignmentFailed, "<assign> to 'seen' failed"))
 		return  // W3C SCXML 4.9: the error ends the block
 	}
 
 
 	// W3C SCXML 5.3: <assign location="contentSeen" expr="c">
 	if err := p.assignVariable(`contentSeen`, `c`); err != nil {
-		engine.Raise(sce.NewPlatformError(LateDataBindsOnFirstEntryEventErrorExecution, "<assign> to 'contentSeen' failed"))
+		engine.Raise(sce.NewPlatformError(LateDataBindsOnFirstEntryEventErrorExecution, sceerrorreason.ErrorReasonAssignmentFailed, "<assign> to 'contentSeen' failed"))
 		return  // W3C SCXML 4.9: the error ends the block
 	}
 
@@ -959,7 +963,7 @@ func (p *LateDataBindsOnFirstEntryPolicy) ExecuteTransitionContent(source LateDa
 
 	// W3C SCXML 5.3: <assign location="v" expr="5">
 	if err := p.assignVariable(`v`, `5`); err != nil {
-		engine.Raise(sce.NewPlatformError(LateDataBindsOnFirstEntryEventErrorExecution, "<assign> to 'v' failed"))
+		engine.Raise(sce.NewPlatformError(LateDataBindsOnFirstEntryEventErrorExecution, sceerrorreason.ErrorReasonAssignmentFailed, "<assign> to 'v' failed"))
 		return  // W3C SCXML 4.9: the error ends the block
 	}
 

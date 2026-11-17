@@ -960,7 +960,7 @@ class StaticHostModelStateMachine(
                             // be run and none was, which is the same fact as
                             // an unsupported type — so the same event, rather
                             // than a silence that reads as started.
-                            raisePlatformError(StaticHostModelEvent.Error.Execution, "<invoke> names an invoker the host declared but never registered")
+                            raisePlatformError(StaticHostModelEvent.Error.Execution, ErrorReason.PROCESSOR_UNREGISTERED, "<invoke> names an invoker the host declared but never registered")
                         }
                     }
                 }
@@ -1030,13 +1030,13 @@ class StaticHostModelStateMachine(
                     return
                 }
 
-            if (try { vFinish = com.sce.forge.runtime.SceChecked.bounded(pendingDoneInvokeGenPayload!!.finish, 16); false } catch (_: com.sce.forge.runtime.AlgorithmFailure) { raisePlatformError(StaticHostModelEvent.Error.Execution, "<assign location='finish'>: an integer operation overflowed or failed"); true }) {
+            if (try { vFinish = com.sce.forge.runtime.SceChecked.bounded(pendingDoneInvokeGenPayload!!.finish, 16); false } catch (_: com.sce.forge.runtime.AlgorithmFailure) { raisePlatformError(StaticHostModelEvent.Error.Execution, ErrorReason.EXPRESSION_FAILED, "<assign location='finish'>: an integer operation overflowed or failed"); true }) {
                 return
             }
 
             vConstrained = pendingDoneInvokeGenPayload!!.constrained
 
-            if (try { vAnsweredBy = com.sce.forge.runtime.SceChecked.bounded(pendingDoneInvokeGenPayload!!.model, 128); false } catch (_: com.sce.forge.runtime.AlgorithmFailure) { raisePlatformError(StaticHostModelEvent.Error.Execution, "<assign location='answered_by'>: an integer operation overflowed or failed"); true }) {
+            if (try { vAnsweredBy = com.sce.forge.runtime.SceChecked.bounded(pendingDoneInvokeGenPayload!!.model, 128); false } catch (_: com.sce.forge.runtime.AlgorithmFailure) { raisePlatformError(StaticHostModelEvent.Error.Execution, ErrorReason.EXPRESSION_FAILED, "<assign location='answered_by'>: an integer operation overflowed or failed"); true }) {
                 return
             }
 
@@ -1049,12 +1049,12 @@ class StaticHostModelStateMachine(
 
             if (vWhy == null) {
 
-            if (try { vOutcome = com.sce.forge.runtime.SceChecked.bounded("read", 24); false } catch (_: com.sce.forge.runtime.AlgorithmFailure) { raisePlatformError(StaticHostModelEvent.Error.Execution, "<assign location='outcome'>: an integer operation overflowed or failed"); true }) {
+            if (try { vOutcome = com.sce.forge.runtime.SceChecked.bounded("read", 24); false } catch (_: com.sce.forge.runtime.AlgorithmFailure) { raisePlatformError(StaticHostModelEvent.Error.Execution, ErrorReason.EXPRESSION_FAILED, "<assign location='outcome'>: an integer operation overflowed or failed"); true }) {
                 return
             }
             } else {
 
-            if (try { vOutcome = com.sce.forge.runtime.SceChecked.bounded("refused", 24); false } catch (_: com.sce.forge.runtime.AlgorithmFailure) { raisePlatformError(StaticHostModelEvent.Error.Execution, "<assign location='outcome'>: an integer operation overflowed or failed"); true }) {
+            if (try { vOutcome = com.sce.forge.runtime.SceChecked.bounded("refused", 24); false } catch (_: com.sce.forge.runtime.AlgorithmFailure) { raisePlatformError(StaticHostModelEvent.Error.Execution, ErrorReason.EXPRESSION_FAILED, "<assign location='outcome'>: an integer operation overflowed or failed"); true }) {
                 return
             }
             }
@@ -1066,7 +1066,7 @@ class StaticHostModelStateMachine(
                     return
                 }
 
-            if (try { vOutcome = com.sce.forge.runtime.SceChecked.bounded(pendingDoneInvokeGenPayload!!.error, 24); false } catch (_: com.sce.forge.runtime.AlgorithmFailure) { raisePlatformError(StaticHostModelEvent.Error.Execution, "<assign location='outcome'>: an integer operation overflowed or failed"); true }) {
+            if (try { vOutcome = com.sce.forge.runtime.SceChecked.bounded(pendingDoneInvokeGenPayload!!.error, 24); false } catch (_: com.sce.forge.runtime.AlgorithmFailure) { raisePlatformError(StaticHostModelEvent.Error.Execution, ErrorReason.EXPRESSION_FAILED, "<assign location='outcome'>: an integer operation overflowed or failed"); true }) {
                 return
             }
     }
@@ -1074,7 +1074,7 @@ class StaticHostModelStateMachine(
     private fun transitionContentOfGeneratingAt2() {
                 // SCE-MAP: static_host_model.scxml:94 :: generating :: _transition_2
 
-            if (try { vOutcome = com.sce.forge.runtime.SceChecked.bounded("deadline", 24); false } catch (_: com.sce.forge.runtime.AlgorithmFailure) { raisePlatformError(StaticHostModelEvent.Error.Execution, "<assign location='outcome'>: an integer operation overflowed or failed"); true }) {
+            if (try { vOutcome = com.sce.forge.runtime.SceChecked.bounded("deadline", 24); false } catch (_: com.sce.forge.runtime.AlgorithmFailure) { raisePlatformError(StaticHostModelEvent.Error.Execution, ErrorReason.EXPRESSION_FAILED, "<assign location='outcome'>: an integer operation overflowed or failed"); true }) {
                 return
             }
     }
@@ -1082,7 +1082,7 @@ class StaticHostModelStateMachine(
     private fun transitionContentOfGeneratingAt3() {
                 // SCE-MAP: static_host_model.scxml:97 :: generating :: _transition_3
 
-            if (try { vOutcome = com.sce.forge.runtime.SceChecked.bounded("invalid_argument", 24); false } catch (_: com.sce.forge.runtime.AlgorithmFailure) { raisePlatformError(StaticHostModelEvent.Error.Execution, "<assign location='outcome'>: an integer operation overflowed or failed"); true }) {
+            if (try { vOutcome = com.sce.forge.runtime.SceChecked.bounded("invalid_argument", 24); false } catch (_: com.sce.forge.runtime.AlgorithmFailure) { raisePlatformError(StaticHostModelEvent.Error.Execution, ErrorReason.EXPRESSION_FAILED, "<assign location='outcome'>: an integer operation overflowed or failed"); true }) {
                 return
             }
     }
@@ -1090,7 +1090,7 @@ class StaticHostModelStateMachine(
     private fun transitionContentOfGeneratingAt4() {
                 // SCE-MAP: static_host_model.scxml:100 :: generating :: _transition_4
 
-            if (try { vOutcome = com.sce.forge.runtime.SceChecked.bounded("left", 24); false } catch (_: com.sce.forge.runtime.AlgorithmFailure) { raisePlatformError(StaticHostModelEvent.Error.Execution, "<assign location='outcome'>: an integer operation overflowed or failed"); true }) {
+            if (try { vOutcome = com.sce.forge.runtime.SceChecked.bounded("left", 24); false } catch (_: com.sce.forge.runtime.AlgorithmFailure) { raisePlatformError(StaticHostModelEvent.Error.Execution, ErrorReason.EXPRESSION_FAILED, "<assign location='outcome'>: an integer operation overflowed or failed"); true }) {
                 return
             }
     }
@@ -1114,7 +1114,7 @@ class StaticHostModelStateMachine(
                     return
                 }
 
-            if (try { vPrompt = com.sce.forge.runtime.SceChecked.bounded(pendingHostModelGenerateRequestPayload!!.prompt, 8192); false } catch (_: com.sce.forge.runtime.AlgorithmFailure) { raisePlatformError(StaticHostModelEvent.Error.Execution, "<assign location='prompt'>: an integer operation overflowed or failed"); true }) {
+            if (try { vPrompt = com.sce.forge.runtime.SceChecked.bounded(pendingHostModelGenerateRequestPayload!!.prompt, 8192); false } catch (_: com.sce.forge.runtime.AlgorithmFailure) { raisePlatformError(StaticHostModelEvent.Error.Execution, ErrorReason.EXPRESSION_FAILED, "<assign location='prompt'>: an integer operation overflowed or failed"); true }) {
                 return
             }
 
@@ -1122,21 +1122,21 @@ class StaticHostModelStateMachine(
 
             vTemperatureMilli = pendingHostModelGenerateRequestPayload!!.temperature_milli
 
-            if (try { vCalls = com.sce.forge.runtime.SceChecked.add(vCalls, 1.toUInt()); false } catch (_: com.sce.forge.runtime.AlgorithmFailure) { raisePlatformError(StaticHostModelEvent.Error.Execution, "<assign location='calls'>: an integer operation overflowed or failed"); true }) {
+            if (try { vCalls = com.sce.forge.runtime.SceChecked.add(vCalls, 1.toUInt()); false } catch (_: com.sce.forge.runtime.AlgorithmFailure) { raisePlatformError(StaticHostModelEvent.Error.Execution, ErrorReason.EXPRESSION_FAILED, "<assign location='calls'>: an integer operation overflowed or failed"); true }) {
                 return
             }
 
-            if (try { vOutcome = com.sce.forge.runtime.SceChecked.bounded("", 24); false } catch (_: com.sce.forge.runtime.AlgorithmFailure) { raisePlatformError(StaticHostModelEvent.Error.Execution, "<assign location='outcome'>: an integer operation overflowed or failed"); true }) {
+            if (try { vOutcome = com.sce.forge.runtime.SceChecked.bounded("", 24); false } catch (_: com.sce.forge.runtime.AlgorithmFailure) { raisePlatformError(StaticHostModelEvent.Error.Execution, ErrorReason.EXPRESSION_FAILED, "<assign location='outcome'>: an integer operation overflowed or failed"); true }) {
                 return
             }
 
-            if (try { vFinish = com.sce.forge.runtime.SceChecked.bounded("", 16); false } catch (_: com.sce.forge.runtime.AlgorithmFailure) { raisePlatformError(StaticHostModelEvent.Error.Execution, "<assign location='finish'>: an integer operation overflowed or failed"); true }) {
+            if (try { vFinish = com.sce.forge.runtime.SceChecked.bounded("", 16); false } catch (_: com.sce.forge.runtime.AlgorithmFailure) { raisePlatformError(StaticHostModelEvent.Error.Execution, ErrorReason.EXPRESSION_FAILED, "<assign location='finish'>: an integer operation overflowed or failed"); true }) {
                 return
             }
 
             vConstrained = false
 
-            if (try { vAnsweredBy = com.sce.forge.runtime.SceChecked.bounded("", 128); false } catch (_: com.sce.forge.runtime.AlgorithmFailure) { raisePlatformError(StaticHostModelEvent.Error.Execution, "<assign location='answered_by'>: an integer operation overflowed or failed"); true }) {
+            if (try { vAnsweredBy = com.sce.forge.runtime.SceChecked.bounded("", 128); false } catch (_: com.sce.forge.runtime.AlgorithmFailure) { raisePlatformError(StaticHostModelEvent.Error.Execution, ErrorReason.EXPRESSION_FAILED, "<assign location='answered_by'>: an integer operation overflowed or failed"); true }) {
                 return
             }
 

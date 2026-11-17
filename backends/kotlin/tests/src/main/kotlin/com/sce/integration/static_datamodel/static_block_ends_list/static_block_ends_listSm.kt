@@ -398,11 +398,11 @@ class StaticBlockEndsListStateMachine(
     private fun transitionContentOfWaitingAt0() {
                 // SCE-MAP: static_block_ends_list.scxml:25 :: waiting :: _transition_0
 
-            if (if (vPicked.size < 2) { vPicked = vPicked + (7.toUByte()); false } else { raisePlatformError(StaticBlockEndsListEvent.Error.Execution, "<sce:append target='picked'>: the list already holds its capacity of 2"); true }) {
+            if (if (vPicked.size < 2) { vPicked = vPicked + (7.toUByte()); false } else { raisePlatformError(StaticBlockEndsListEvent.Error.Execution, ErrorReason.ASSIGNMENT_FAILED, "<sce:append target='picked'>: the list already holds its capacity of 2"); true }) {
                 return
             }
 
-            if (try { vAfterAppend = com.sce.forge.runtime.SceChecked.add(vAfterAppend, 1.toUByte()); false } catch (_: com.sce.forge.runtime.AlgorithmFailure) { raisePlatformError(StaticBlockEndsListEvent.Error.Execution, "<assign location='afterAppend'>: an integer operation overflowed or failed"); true }) {
+            if (try { vAfterAppend = com.sce.forge.runtime.SceChecked.add(vAfterAppend, 1.toUByte()); false } catch (_: com.sce.forge.runtime.AlgorithmFailure) { raisePlatformError(StaticBlockEndsListEvent.Error.Execution, ErrorReason.EXPRESSION_FAILED, "<assign location='afterAppend'>: an integer operation overflowed or failed"); true }) {
                 return
             }
     }
@@ -410,7 +410,7 @@ class StaticBlockEndsListStateMachine(
     private fun transitionContentOfWaitingAt1() {
                 // SCE-MAP: static_block_ends_list.scxml:29 :: waiting :: _transition_1
 
-            if (try { vErrors = com.sce.forge.runtime.SceChecked.add(vErrors, 1.toUByte()); false } catch (_: com.sce.forge.runtime.AlgorithmFailure) { raisePlatformError(StaticBlockEndsListEvent.Error.Execution, "<assign location='errors'>: an integer operation overflowed or failed"); true }) {
+            if (try { vErrors = com.sce.forge.runtime.SceChecked.add(vErrors, 1.toUByte()); false } catch (_: com.sce.forge.runtime.AlgorithmFailure) { raisePlatformError(StaticBlockEndsListEvent.Error.Execution, ErrorReason.EXPRESSION_FAILED, "<assign location='errors'>: an integer operation overflowed or failed"); true }) {
                 return
             }
     }

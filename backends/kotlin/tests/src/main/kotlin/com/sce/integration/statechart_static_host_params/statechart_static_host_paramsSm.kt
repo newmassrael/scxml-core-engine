@@ -1,5 +1,5 @@
 // SCE-GENERATED — DO NOT EDIT
-// source-hash: e3e91f36cc7b8591c060b277b157f8471b6940f92608c548338f70603c760055
+// source-hash: f02e6d1d557556839c99891abeba3d1ef7bc15e5821c4215914c8e1ef9ecc561
 
 // GENERATED CODE — DO NOT EDIT
 // Source: sce-build/tests/fixtures/host_processor/statechart_static_host_params.scxml
@@ -519,7 +519,7 @@ class StatechartStaticHostParamsStateMachine(
             try {
                 putParam(sendPayload, "twice", (com.sce.forge.runtime.SceChecked.mul(vCount, 2.toUInt())).toLong())
             } catch (_: com.sce.forge.runtime.AlgorithmFailure) {
-                raisePlatformError(StatechartStaticHostParamsEvent.Error.Execution, "<send> <param name='twice'> could not be read")
+                raisePlatformError(StatechartStaticHostParamsEvent.Error.Execution, ErrorReason.LOCATION_INVALID, "<send> <param name='twice'> could not be read")
                 paramFailed = true
             }
 
@@ -530,7 +530,7 @@ class StatechartStaticHostParamsStateMachine(
             try {
                 putParam(sendPayload, "boom", (com.sce.forge.runtime.SceChecked.mul(vCount, 2000000000.toUInt())).toLong())
             } catch (_: com.sce.forge.runtime.AlgorithmFailure) {
-                raisePlatformError(StatechartStaticHostParamsEvent.Error.Execution, "<send> <param name='boom'> could not be read")
+                raisePlatformError(StatechartStaticHostParamsEvent.Error.Execution, ErrorReason.LOCATION_INVALID, "<send> <param name='boom'> could not be read")
                 paramFailed = true
             }
 
@@ -565,7 +565,7 @@ class StatechartStaticHostParamsStateMachine(
             // event as an undeclared type, so a wiring mistake cannot read
             // as success.
             if (hostServed == null && !hasEventProcessor("x-sce-host")) {
-                raisePlatformError(StatechartStaticHostParamsEvent.Error.Execution, "<send type='x-sce-host'> names a processor the host declared but never registered", "__send_0")
+                raisePlatformError(StatechartStaticHostParamsEvent.Error.Execution, ErrorReason.PROCESSOR_UNREGISTERED, "<send type='x-sce-host'> names a processor the host declared but never registered", "__send_0")
             }
             paramFailed
             }) {
@@ -591,7 +591,7 @@ class StatechartStaticHostParamsStateMachine(
             val sendContentValue: Any = try {
                 (com.sce.forge.runtime.SceChecked.mul(vCount, 2.toUInt())).toLong()
             } catch (_: com.sce.forge.runtime.AlgorithmFailure) {
-                raisePlatformError(StatechartStaticHostParamsEvent.Error.Execution, "<send> contentexpr failed to evaluate", "__send_1")
+                raisePlatformError(StatechartStaticHostParamsEvent.Error.Execution, ErrorReason.EXPRESSION_FAILED, "<send> contentexpr failed to evaluate", "__send_1")
                 paramFailed = true
                 ""
             }
@@ -622,7 +622,7 @@ class StatechartStaticHostParamsStateMachine(
             // event as an undeclared type, so a wiring mistake cannot read
             // as success.
             if (hostServed == null && !hasEventProcessor("x-sce-host")) {
-                raisePlatformError(StatechartStaticHostParamsEvent.Error.Execution, "<send type='x-sce-host'> names a processor the host declared but never registered", "__send_1")
+                raisePlatformError(StatechartStaticHostParamsEvent.Error.Execution, ErrorReason.PROCESSOR_UNREGISTERED, "<send type='x-sce-host'> names a processor the host declared but never registered", "__send_1")
             }
             paramFailed
             }) {
@@ -669,7 +669,7 @@ class StatechartStaticHostParamsStateMachine(
             // event as an undeclared type, so a wiring mistake cannot read
             // as success.
             if (hostServed == null && !hasEventProcessor("x-sce-host")) {
-                raisePlatformError(StatechartStaticHostParamsEvent.Error.Execution, "<send type='x-sce-host'> names a processor the host declared but never registered", "__send_2")
+                raisePlatformError(StatechartStaticHostParamsEvent.Error.Execution, ErrorReason.PROCESSOR_UNREGISTERED, "<send type='x-sce-host'> names a processor the host declared but never registered", "__send_2")
             }
             false
             }) {
@@ -695,7 +695,7 @@ class StatechartStaticHostParamsStateMachine(
             val sendContentValue: Any = try {
                 (com.sce.forge.runtime.SceChecked.mul(vCount, 2000000000.toUInt())).toLong()
             } catch (_: com.sce.forge.runtime.AlgorithmFailure) {
-                raisePlatformError(StatechartStaticHostParamsEvent.Error.Execution, "<send> contentexpr failed to evaluate", "__send_3")
+                raisePlatformError(StatechartStaticHostParamsEvent.Error.Execution, ErrorReason.EXPRESSION_FAILED, "<send> contentexpr failed to evaluate", "__send_3")
                 paramFailed = true
                 ""
             }
@@ -726,7 +726,7 @@ class StatechartStaticHostParamsStateMachine(
             // event as an undeclared type, so a wiring mistake cannot read
             // as success.
             if (hostServed == null && !hasEventProcessor("x-sce-host")) {
-                raisePlatformError(StatechartStaticHostParamsEvent.Error.Execution, "<send type='x-sce-host'> names a processor the host declared but never registered", "__send_3")
+                raisePlatformError(StatechartStaticHostParamsEvent.Error.Execution, ErrorReason.PROCESSOR_UNREGISTERED, "<send type='x-sce-host'> names a processor the host declared but never registered", "__send_3")
             }
             paramFailed
             }) {
@@ -773,7 +773,7 @@ class StatechartStaticHostParamsStateMachine(
             // event as an undeclared type, so a wiring mistake cannot read
             // as success.
             if (hostServed == null && !hasEventProcessor("x-sce-host")) {
-                raisePlatformError(StatechartStaticHostParamsEvent.Error.Execution, "<send type='x-sce-host'> names a processor the host declared but never registered", "__send_4")
+                raisePlatformError(StatechartStaticHostParamsEvent.Error.Execution, ErrorReason.PROCESSOR_UNREGISTERED, "<send type='x-sce-host'> names a processor the host declared but never registered", "__send_4")
             }
             false
             }) {
@@ -798,13 +798,13 @@ class StatechartStaticHostParamsStateMachine(
                         val hostInvokeSrc: String = try {
                             if (com.sce.forge.runtime.SceChecked.mul(vCount, 2.toUInt()) > 0.toUInt()) vTag else vTag
                         } catch (_: com.sce.forge.runtime.AlgorithmFailure) {
-                            raisePlatformError(StatechartStaticHostParamsEvent.Error.Execution, "<invoke> srcexpr failed to evaluate")
+                            raisePlatformError(StatechartStaticHostParamsEvent.Error.Execution, ErrorReason.EXPRESSION_FAILED, "<invoke> srcexpr failed to evaluate")
                             return@deferInvoke
                         }
                         val hostInvokeContent: String = try {
                             if (com.sce.forge.runtime.SceChecked.mul(vHuge, 2.toUInt()) > 0.toUInt()) vLabel else vLabel
                         } catch (_: com.sce.forge.runtime.AlgorithmFailure) {
-                            raisePlatformError(StatechartStaticHostParamsEvent.Error.Execution, "<invoke> content expr failed to evaluate")
+                            raisePlatformError(StatechartStaticHostParamsEvent.Error.Execution, ErrorReason.EXPRESSION_FAILED, "<invoke> content expr failed to evaluate")
                             return@deferInvoke
                         }
                         val hostInvokeParams = mutableMapOf<String, List<String>>()
@@ -837,7 +837,7 @@ class StatechartStaticHostParamsStateMachine(
                             putParam(hostInvokePayload, "twice", v)
                         } catch (_: com.sce.forge.runtime.AlgorithmFailure) {
                             // W3C SCXML 5.7.1: report the failure and omit the pair.
-                            raisePlatformError(StatechartStaticHostParamsEvent.Error.Execution, "<invoke> <param name='twice'> expr failed to evaluate")
+                            raisePlatformError(StatechartStaticHostParamsEvent.Error.Execution, ErrorReason.EXPRESSION_FAILED, "<invoke> <param name='twice'> expr failed to evaluate")
                         }
                         try {
                             val v: Any? = (com.sce.forge.runtime.SceChecked.mul(vCount, 2000000000.toUInt())).toLong()
@@ -846,7 +846,7 @@ class StatechartStaticHostParamsStateMachine(
                             putParam(hostInvokePayload, "boom", v)
                         } catch (_: com.sce.forge.runtime.AlgorithmFailure) {
                             // W3C SCXML 5.7.1: report the failure and omit the pair.
-                            raisePlatformError(StatechartStaticHostParamsEvent.Error.Execution, "<invoke> <param name='boom'> expr failed to evaluate")
+                            raisePlatformError(StatechartStaticHostParamsEvent.Error.Execution, ErrorReason.EXPRESSION_FAILED, "<invoke> <param name='boom'> expr failed to evaluate")
                         }
                         run {
                             val v: Any? = (vDelta).toLong()
@@ -875,7 +875,7 @@ class StatechartStaticHostParamsStateMachine(
                             // be run and none was, which is the same fact as
                             // an unsupported type — so the same event, rather
                             // than a silence that reads as started.
-                            raisePlatformError(StatechartStaticHostParamsEvent.Error.Execution, "<invoke> names an invoker the host declared but never registered")
+                            raisePlatformError(StatechartStaticHostParamsEvent.Error.Execution, ErrorReason.PROCESSOR_UNREGISTERED, "<invoke> names an invoker the host declared but never registered")
                         }
                     }
                 }
@@ -942,13 +942,13 @@ class StatechartStaticHostParamsStateMachine(
     private fun transitionContentOfIdleAt0() {
                 // SCE-MAP: statechart_static_host_params.scxml:94 :: idle :: _transition_0
 
-            if (try { vCount = com.sce.forge.runtime.SceChecked.add(vCount, 1.toUInt()); false } catch (_: com.sce.forge.runtime.AlgorithmFailure) { raisePlatformError(StatechartStaticHostParamsEvent.Error.Execution, "<assign location='count'>: an integer operation overflowed or failed"); true }) {
+            if (try { vCount = com.sce.forge.runtime.SceChecked.add(vCount, 1.toUInt()); false } catch (_: com.sce.forge.runtime.AlgorithmFailure) { raisePlatformError(StatechartStaticHostParamsEvent.Error.Execution, ErrorReason.EXPRESSION_FAILED, "<assign location='count'>: an integer operation overflowed or failed"); true }) {
                 return
             }
 
             vReady = true
 
-            if (try { vLabel = com.sce.forge.runtime.SceChecked.bounded("busy", 16); false } catch (_: com.sce.forge.runtime.AlgorithmFailure) { raisePlatformError(StatechartStaticHostParamsEvent.Error.Execution, "<assign location='label'>: an integer operation overflowed or failed"); true }) {
+            if (try { vLabel = com.sce.forge.runtime.SceChecked.bounded("busy", 16); false } catch (_: com.sce.forge.runtime.AlgorithmFailure) { raisePlatformError(StatechartStaticHostParamsEvent.Error.Execution, ErrorReason.EXPRESSION_FAILED, "<assign location='label'>: an integer operation overflowed or failed"); true }) {
                 return
             }
     }
@@ -981,7 +981,7 @@ class StatechartStaticHostParamsStateMachine(
     private fun transitionContentOfWorkingAt0() {
                 // SCE-MAP: statechart_static_host_params.scxml:145 :: working :: _transition_0
 
-            if (try { vErrors = com.sce.forge.runtime.SceChecked.add(vErrors, 1.toUInt()); false } catch (_: com.sce.forge.runtime.AlgorithmFailure) { raisePlatformError(StatechartStaticHostParamsEvent.Error.Execution, "<assign location='errors'>: an integer operation overflowed or failed"); true }) {
+            if (try { vErrors = com.sce.forge.runtime.SceChecked.add(vErrors, 1.toUInt()); false } catch (_: com.sce.forge.runtime.AlgorithmFailure) { raisePlatformError(StatechartStaticHostParamsEvent.Error.Execution, ErrorReason.EXPRESSION_FAILED, "<assign location='errors'>: an integer operation overflowed or failed"); true }) {
                 return
             }
     }

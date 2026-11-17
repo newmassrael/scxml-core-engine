@@ -227,7 +227,7 @@ class XmlDataIsADomTreeStateMachine(
             try {
                 engine.setVariable(sid, "doc", engine.parseDataValue(sid, "<books xmlns=\"\" count=\"2\">\n        <book title=\"t1\">first</book>\n        <book title=\"t2\"></book>\n      </books>"))
             } catch (e: Exception) {
-                raisePlatformError(XmlDataIsADomTreeEvent.Error.Execution, "<data id='doc'> content failed to initialise")
+                raisePlatformError(XmlDataIsADomTreeEvent.Error.Execution, ErrorReason.DATA_INIT_FAILED, "<data id='doc'> content failed to initialise")
             }
         }
     }
@@ -257,14 +257,14 @@ class XmlDataIsADomTreeStateMachine(
 
     // W3C SCXML 5.9.1: a cond that cannot be evaluated raises error.execution;
     // `null` says so, where a bare `false` could not.
-    private fun evaluateGuardRaising(guardExpr: com.sce.runtime.ScriptSource, reason: String): Boolean? {
+    private fun evaluateGuardRaising(guardExpr: com.sce.runtime.ScriptSource, detail: String): Boolean? {
         assertScriptSession()
         val engine = scriptEngine ?: error("scriptEngine is required (codegen invariant: needs_script_engine == true)")
         val sid = scriptSessionId ?: error("scriptSessionId is established by the start (codegen invariant)")
         return try {
             engine.evaluateCondition(sid, guardExpr)
         } catch (e: Exception) {
-            raisePlatformError(XmlDataIsADomTreeEvent.Error.Execution, reason)
+            raisePlatformError(XmlDataIsADomTreeEvent.Error.Execution, ErrorReason.EXPRESSION_FAILED, detail)
             null
         }
     }
@@ -305,7 +305,7 @@ class XmlDataIsADomTreeStateMachine(
         return try {
             engine.evaluateExpr(sid, serialized)?.toString() ?: ""
         } catch (e: Exception) {
-            raisePlatformError(XmlDataIsADomTreeEvent.Error.Execution, "an expression could not be serialised to JSON")
+            raisePlatformError(XmlDataIsADomTreeEvent.Error.Execution, ErrorReason.EXPRESSION_FAILED, "an expression could not be serialised to JSON")
             ""
         }
     }
@@ -326,7 +326,7 @@ class XmlDataIsADomTreeStateMachine(
             engine.assign(sid, location, expr)
             true
         } catch (e: Exception) {
-            raisePlatformError(XmlDataIsADomTreeEvent.Error.Execution, "<assign> failed")
+            raisePlatformError(XmlDataIsADomTreeEvent.Error.Execution, ErrorReason.ASSIGNMENT_FAILED, "<assign> failed")
             false
         }
     }
@@ -342,7 +342,7 @@ class XmlDataIsADomTreeStateMachine(
             engine.executeScript(sid, script)
             true
         } catch (e: Exception) {
-            raisePlatformError(XmlDataIsADomTreeEvent.Error.Execution, "<script> failed to execute")
+            raisePlatformError(XmlDataIsADomTreeEvent.Error.Execution, ErrorReason.SCRIPT_FAILED, "<script> failed to execute")
             false
         }
     }

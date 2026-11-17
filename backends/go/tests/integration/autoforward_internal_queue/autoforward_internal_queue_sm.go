@@ -31,6 +31,7 @@ import (
 	"time"
 
 	sce "github.com/newmassrael/sce-go-runtime"
+	sceerrorreason "github.com/newmassrael/sce-go-runtime/generated/error_reason"
 )
 
 // Ensure imports are used
@@ -39,6 +40,9 @@ var (
 	_ = filepath.Join
 	_ = strings.HasPrefix
 	_ = time.Duration(0)
+	// Why an error.* event is raised (sce:std/engine/error_reason,
+	// docs/adr/0106 #111); a machine that raises none still imports it.
+	_ = sceerrorreason.ErrorReasonExpressionFailed
 )
 
 // ======================================================================
@@ -302,7 +306,7 @@ func (p *AutoforwardInternalQueuePolicy) ExecutePendingInvokes(engine *sce.Engin
 			if refused := childEngine.Initialize(); refused != nil {
 				childEngine.DetachMesh()
 				delete(p.activeInvokes, "inv_watch")
-				engine.Raise(sce.NewPlatformError(AutoforwardInternalQueueEventErrorExecution, sce.ChildStartRefusal("inv_watch", refused)))
+				engine.Raise(sce.NewPlatformError(AutoforwardInternalQueueEventErrorExecution, sceerrorreason.ErrorReasonInvokeChildInitFailed, sce.ChildStartRefusal("inv_watch", refused)))
 				continue
 			}
 
@@ -891,7 +895,7 @@ func (p *AutoforwardInternalQueuePolicy) ExecuteTransitionContent(source Autofor
 	{
 	// W3C SCXML 6.2: Unsupported send type "urn:x-sce-unsupported-processor" raises error.execution
 	{
-		errEvt := sce.NewPlatformError(AutoforwardInternalQueueEventErrorExecution, "<send type='urn:x-sce-unsupported-processor'> names a processor this platform does not support")
+		errEvt := sce.NewPlatformError(AutoforwardInternalQueueEventErrorExecution, sceerrorreason.ErrorReasonSendTypeUnsupported, "<send type='urn:x-sce-unsupported-processor'> names a processor this platform does not support")
 		errEvt.Metadata.SendID = "__send_0"
 		engine.Raise(errEvt)
 	}

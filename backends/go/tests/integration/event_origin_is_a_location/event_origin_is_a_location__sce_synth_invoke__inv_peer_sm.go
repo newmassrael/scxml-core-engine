@@ -31,6 +31,7 @@ import (
 	"time"
 
 	sce "github.com/newmassrael/sce-go-runtime"
+	sceerrorreason "github.com/newmassrael/sce-go-runtime/generated/error_reason"
 )
 
 // Ensure imports are used
@@ -39,6 +40,9 @@ var (
 	_ = filepath.Join
 	_ = strings.HasPrefix
 	_ = time.Duration(0)
+	// Why an error.* event is raised (sce:std/engine/error_reason,
+	// docs/adr/0106 #111); a machine that raises none still imports it.
+	_ = sceerrorreason.ErrorReasonExpressionFailed
 )
 
 // ======================================================================
@@ -331,12 +335,12 @@ func (p *EventOriginIsALocationSceSynthInvokeInvPeerPolicy) evaluateIfCond(guard
 // evaluateGuardRaising evaluates a cond, raising error.execution when it cannot
 // be evaluated (W3C SCXML 5.9.1); ok is false then, where a bare false could
 // not say so.
-func (p *EventOriginIsALocationSceSynthInvokeInvPeerPolicy) evaluateGuardRaising(guard string, eng *sce.Engine[EventOriginIsALocationSceSynthInvokeInvPeerState, EventOriginIsALocationSceSynthInvokeInvPeerEvent], reason string) (value bool, ok bool) {
+func (p *EventOriginIsALocationSceSynthInvokeInvPeerPolicy) evaluateGuardRaising(guard string, eng *sce.Engine[EventOriginIsALocationSceSynthInvokeInvPeerState, EventOriginIsALocationSceSynthInvokeInvPeerEvent], detail string) (value bool, ok bool) {
 	p.assertScriptSession()
 	engine := p.ScriptEngine
 	result, err := engine.EvaluateExpression(p.SessionID, guard)
 	if err != nil {
-		eng.Raise(sce.NewPlatformError(EventOriginIsALocationSceSynthInvokeInvPeerEventErrorExecution, reason))
+		eng.Raise(sce.NewPlatformError(EventOriginIsALocationSceSynthInvokeInvPeerEventErrorExecution, sceerrorreason.ErrorReasonExpressionFailed, detail))
 		return false, false
 	}
 	return sce.ScriptToBool(result), true
@@ -700,7 +704,7 @@ func (p *EventOriginIsALocationSceSynthInvokeInvPeerPolicy) ExecuteEntryActions(
 		if paramVal, paramErr := se.EvaluateExpression(p.SessionID, `_ioprocessors.scxml.location`); paramErr == nil {
 			parts = append(parts, sce.EventDataParam{Name: "myLocation", Value: paramVal})
 		} else {
-			engine.Raise(sce.NewPlatformError(EventOriginIsALocationSceSynthInvokeInvPeerEventErrorExecution, "<send> <param name='myLocation'> expr failed to evaluate"))
+			engine.Raise(sce.NewPlatformError(EventOriginIsALocationSceSynthInvokeInvPeerEventErrorExecution, sceerrorreason.ErrorReasonExpressionFailed, "<send> <param name='myLocation'> expr failed to evaluate"))
 			paramFailed = true
 		}
 		eventDataStr := sce.BuildJSONFromTypedParams(parts)
@@ -710,7 +714,7 @@ func (p *EventOriginIsALocationSceSynthInvokeInvPeerPolicy) ExecuteEntryActions(
 		// W3C SCXML C.1: this session was started by its host, not by an
 		// `<invoke>`, so `#_parent` reaches nobody — error.communication,
 		// nothing delivered, and the block ends (4.9).
-		errEvt := sce.NewPlatformError(EventOriginIsALocationSceSynthInvokeInvPeerEventErrorCommunication, "<send target='#_parent'> has no parent session to reach")
+		errEvt := sce.NewPlatformError(EventOriginIsALocationSceSynthInvokeInvPeerEventErrorCommunication, sceerrorreason.ErrorReasonTargetUnreachable, "<send target='#_parent'> has no parent session to reach")
 		errEvt.Metadata.SendID = "__send_1"
 		engine.Raise(errEvt)
 		return  // W3C SCXML 4.9: the error ends the block
@@ -826,7 +830,7 @@ func (p *EventOriginIsALocationSceSynthInvokeInvPeerPolicy) ExecuteTransitionCon
 		// W3C SCXML C.1: this session was started by its host, not by an
 		// `<invoke>`, so `#_parent` reaches nobody — error.communication,
 		// nothing delivered, and the block ends (4.9).
-		errEvt := sce.NewPlatformError(EventOriginIsALocationSceSynthInvokeInvPeerEventErrorCommunication, "<send target='#_parent'> has no parent session to reach")
+		errEvt := sce.NewPlatformError(EventOriginIsALocationSceSynthInvokeInvPeerEventErrorCommunication, sceerrorreason.ErrorReasonTargetUnreachable, "<send target='#_parent'> has no parent session to reach")
 		errEvt.Metadata.SendID = "__send_0"
 		engine.Raise(errEvt)
 		return  // W3C SCXML 4.9: the error ends the block

@@ -31,6 +31,7 @@ import (
 	"time"
 
 	sce "github.com/newmassrael/sce-go-runtime"
+	sceerrorreason "github.com/newmassrael/sce-go-runtime/generated/error_reason"
 )
 
 // Ensure imports are used
@@ -39,6 +40,9 @@ var (
 	_ = filepath.Join
 	_ = strings.HasPrefix
 	_ = time.Duration(0)
+	// Why an error.* event is raised (sce:std/engine/error_reason,
+	// docs/adr/0106 #111); a machine that raises none still imports it.
+	_ = sceerrorreason.ErrorReasonExpressionFailed
 )
 
 // ======================================================================
@@ -401,7 +405,7 @@ func (p *SendNamelistOverHttpPolicy) InitializeDataModel(eng *sce.Engine[SendNam
 		if err == nil {
 			_ = engine.SetVariable(sessionID, "Var1", result)
 		} else {
-			eng.Raise(sce.NewPlatformError(SendNamelistOverHttpEventErrorExecution, "<data id='Var1'> expr failed to evaluate"))
+			eng.Raise(sce.NewPlatformError(SendNamelistOverHttpEventErrorExecution, sceerrorreason.ErrorReasonExpressionFailed, "<data id='Var1'> expr failed to evaluate"))
 			_ = engine.SetVariable(sessionID, "Var1", nil)
 		}
 	}
@@ -415,7 +419,7 @@ func (p *SendNamelistOverHttpPolicy) InitializeDataModel(eng *sce.Engine[SendNam
 		if err == nil {
 			_ = engine.SetVariable(sessionID, "echoed", result)
 		} else {
-			eng.Raise(sce.NewPlatformError(SendNamelistOverHttpEventErrorExecution, "<data id='echoed'> expr failed to evaluate"))
+			eng.Raise(sce.NewPlatformError(SendNamelistOverHttpEventErrorExecution, sceerrorreason.ErrorReasonExpressionFailed, "<data id='echoed'> expr failed to evaluate"))
 			_ = engine.SetVariable(sessionID, "echoed", nil)
 		}
 	}
@@ -429,7 +433,7 @@ func (p *SendNamelistOverHttpPolicy) InitializeDataModel(eng *sce.Engine[SendNam
 		if err == nil {
 			_ = engine.SetVariable(sessionID, "sawNamelistError", result)
 		} else {
-			eng.Raise(sce.NewPlatformError(SendNamelistOverHttpEventErrorExecution, "<data id='sawNamelistError'> expr failed to evaluate"))
+			eng.Raise(sce.NewPlatformError(SendNamelistOverHttpEventErrorExecution, sceerrorreason.ErrorReasonExpressionFailed, "<data id='sawNamelistError'> expr failed to evaluate"))
 			_ = engine.SetVariable(sessionID, "sawNamelistError", nil)
 		}
 	}
@@ -461,12 +465,12 @@ func (p *SendNamelistOverHttpPolicy) evaluateIfCond(guard string, eng *sce.Engin
 // evaluateGuardRaising evaluates a cond, raising error.execution when it cannot
 // be evaluated (W3C SCXML 5.9.1); ok is false then, where a bare false could
 // not say so.
-func (p *SendNamelistOverHttpPolicy) evaluateGuardRaising(guard string, eng *sce.Engine[SendNamelistOverHttpState, SendNamelistOverHttpEvent], reason string) (value bool, ok bool) {
+func (p *SendNamelistOverHttpPolicy) evaluateGuardRaising(guard string, eng *sce.Engine[SendNamelistOverHttpState, SendNamelistOverHttpEvent], detail string) (value bool, ok bool) {
 	p.assertScriptSession()
 	engine := p.ScriptEngine
 	result, err := engine.EvaluateExpression(p.SessionID, guard)
 	if err != nil {
-		eng.Raise(sce.NewPlatformError(SendNamelistOverHttpEventErrorExecution, reason))
+		eng.Raise(sce.NewPlatformError(SendNamelistOverHttpEventErrorExecution, sceerrorreason.ErrorReasonExpressionFailed, detail))
 		return false, false
 	}
 	return sce.ScriptToBool(result), true
@@ -569,7 +573,7 @@ func (p *SendNamelistOverHttpPolicy) SetParamValueInScriptEngine(name string, va
 // failed is left (docs/adr/0098).
 func (p *SendNamelistOverHttpPolicy) declareHandedValue(eng *sce.Engine[SendNamelistOverHttpState, SendNamelistOverHttpEvent], engine sce.IScriptEngine, sessionID, name string, value interface{}) {
 	if err := engine.SetVariable(sessionID, name, value); err != nil {
-		eng.Raise(sce.NewPlatformError(SendNamelistOverHttpEventErrorExecution, "<data id='"+name+"'> could not hold the value its invoking session handed it"))
+		eng.Raise(sce.NewPlatformError(SendNamelistOverHttpEventErrorExecution, sceerrorreason.ErrorReasonDataInitFailed, "<data id='"+name+"'> could not hold the value its invoking session handed it"))
 		_ = engine.SetVariable(sessionID, name, nil)
 	}
 }
@@ -866,6 +870,10 @@ func (p *SendNamelistOverHttpPolicy) ExecuteEntryActions(state SendNamelistOverH
 	{
 	p.assertScriptSession()
 	sendArgError := ""
+	// Why the argument failed, a code of sce:std/engine/error_reason
+	// (docs/adr/0106 #111), set with every sentence below.
+	var sendArgReason sce.ErrorReason
+	_ = sendArgReason
 	// A target that evaluates to nothing is not an evaluation error: it is
 	// an address nobody answers at, which the arm reports as
 	// error.communication (W3C SCXML 6.2.4).
@@ -876,13 +884,13 @@ func (p *SendNamelistOverHttpPolicy) ExecuteEntryActions(state SendNamelistOverH
 			sendTargetVal = v
 			sendTarget = sce.ToWireString(v)
 		} else {
-			sendArgError = "<send> targetexpr could not be evaluated"
+			sendArgError, sendArgReason = "<send> targetexpr could not be evaluated", sceerrorreason.ErrorReasonExpressionFailed
 		}
 	}
 	if sendArgError == "" && sce.IsInvalidTarget(sendTarget) {
 		// W3C SCXML 6.2: a target this processor cannot address is refused
 		// as a static one is, before anything is delivered.
-		sendArgError = "<send> targetexpr produced a target this processor cannot address"
+		sendArgError, sendArgReason = "<send> targetexpr produced a target this processor cannot address", sceerrorreason.ErrorReasonSendTargetInvalid
 	}
 	_ = sendTargetVal
 	_ = sendTarget
@@ -892,15 +900,15 @@ func (p *SendNamelistOverHttpPolicy) ExecuteEntryActions(state SendNamelistOverH
 	namelistParts := make([]sce.EventDataParam, 0)
 	if sendArgError == "" {
 		if !p.ScriptEngine.HasVariable(p.SessionID, "__sce_not_declared__") {
-			sendArgError = "<send> namelist names '__sce_not_declared__', which is not declared"
+			sendArgError, sendArgReason = "<send> namelist names '__sce_not_declared__', which is not declared", sceerrorreason.ErrorReasonLocationInvalid
 		} else if nlVal, nlErr := p.ScriptEngine.EvaluateExpression(p.SessionID, `__sce_not_declared__`); nlErr == nil {
 			namelistParts = append(namelistParts, sce.EventDataParam{Name: "__sce_not_declared__", Value: nlVal})
 		} else {
-			sendArgError = "<send> namelist entry '__sce_not_declared__' could not be read"
+			sendArgError, sendArgReason = "<send> namelist entry '__sce_not_declared__' could not be read", sceerrorreason.ErrorReasonLocationInvalid
 		}
 	}
 	if sendArgError != "" {
-		errEvt := sce.NewPlatformError(SendNamelistOverHttpEventErrorExecution, sendArgError)
+		errEvt := sce.NewPlatformError(SendNamelistOverHttpEventErrorExecution, sendArgReason, sendArgError)
 		errEvt.Metadata.SendID = "__send_3"
 		engine.Raise(errEvt)
 		return  // W3C SCXML 4.9: the error ends the block
@@ -912,7 +920,7 @@ func (p *SendNamelistOverHttpPolicy) ExecuteEntryActions(state SendNamelistOverH
 		// ends the block as any other would (W3C SCXML 4.9). A self-sent
 		// event names its origin, so `targetexpr="_event.origin"` (test336)
 		// reads this session's location, never "".
-		errEvt := sce.NewPlatformError(SendNamelistOverHttpEventErrorCommunication, "<send> targetexpr evaluated to nothing, so there is no target to reach")
+		errEvt := sce.NewPlatformError(SendNamelistOverHttpEventErrorCommunication, sceerrorreason.ErrorReasonTargetUnreachable, "<send> targetexpr evaluated to nothing, so there is no target to reach")
 		errEvt.Metadata.SendID = "__send_3"
 		engine.Raise(errEvt)
 		return
@@ -933,7 +941,7 @@ func (p *SendNamelistOverHttpPolicy) ExecuteEntryActions(state SendNamelistOverH
 		httpTarget := sendTarget
 		// W3C SCXML C.2: Validate target before HTTP send
 		if httpTarget == "" {
-			errEvt := sce.NewPlatformError(SendNamelistOverHttpEventErrorCommunication, "<send> over BasicHTTPEventProcessor has no target to post to")
+			errEvt := sce.NewPlatformError(SendNamelistOverHttpEventErrorCommunication, sceerrorreason.ErrorReasonHttpTargetInvalid, "<send> over BasicHTTPEventProcessor has no target to post to")
 			errEvt.Metadata.SendID = "__send_3"
 			engine.Raise(errEvt)
 			return  // W3C SCXML 4.9: the error ends the block
@@ -973,6 +981,10 @@ func (p *SendNamelistOverHttpPolicy) ExecuteEntryActions(state SendNamelistOverH
 	{
 	p.assertScriptSession()
 	sendArgError := ""
+	// Why the argument failed, a code of sce:std/engine/error_reason
+	// (docs/adr/0106 #111), set with every sentence below.
+	var sendArgReason sce.ErrorReason
+	_ = sendArgReason
 	// A target that evaluates to nothing is not an evaluation error: it is
 	// an address nobody answers at, which the arm reports as
 	// error.communication (W3C SCXML 6.2.4).
@@ -983,13 +995,13 @@ func (p *SendNamelistOverHttpPolicy) ExecuteEntryActions(state SendNamelistOverH
 			sendTargetVal = v
 			sendTarget = sce.ToWireString(v)
 		} else {
-			sendArgError = "<send> targetexpr could not be evaluated"
+			sendArgError, sendArgReason = "<send> targetexpr could not be evaluated", sceerrorreason.ErrorReasonExpressionFailed
 		}
 	}
 	if sendArgError == "" && sce.IsInvalidTarget(sendTarget) {
 		// W3C SCXML 6.2: a target this processor cannot address is refused
 		// as a static one is, before anything is delivered.
-		sendArgError = "<send> targetexpr produced a target this processor cannot address"
+		sendArgError, sendArgReason = "<send> targetexpr produced a target this processor cannot address", sceerrorreason.ErrorReasonSendTargetInvalid
 	}
 	_ = sendTargetVal
 	_ = sendTarget
@@ -999,15 +1011,15 @@ func (p *SendNamelistOverHttpPolicy) ExecuteEntryActions(state SendNamelistOverH
 	namelistParts := make([]sce.EventDataParam, 0)
 	if sendArgError == "" {
 		if !p.ScriptEngine.HasVariable(p.SessionID, "Var1") {
-			sendArgError = "<send> namelist names 'Var1', which is not declared"
+			sendArgError, sendArgReason = "<send> namelist names 'Var1', which is not declared", sceerrorreason.ErrorReasonLocationInvalid
 		} else if nlVal, nlErr := p.ScriptEngine.EvaluateExpression(p.SessionID, `Var1`); nlErr == nil {
 			namelistParts = append(namelistParts, sce.EventDataParam{Name: "Var1", Value: nlVal})
 		} else {
-			sendArgError = "<send> namelist entry 'Var1' could not be read"
+			sendArgError, sendArgReason = "<send> namelist entry 'Var1' could not be read", sceerrorreason.ErrorReasonLocationInvalid
 		}
 	}
 	if sendArgError != "" {
-		errEvt := sce.NewPlatformError(SendNamelistOverHttpEventErrorExecution, sendArgError)
+		errEvt := sce.NewPlatformError(SendNamelistOverHttpEventErrorExecution, sendArgReason, sendArgError)
 		errEvt.Metadata.SendID = "__send_1"
 		engine.Raise(errEvt)
 		return  // W3C SCXML 4.9: the error ends the block
@@ -1019,7 +1031,7 @@ func (p *SendNamelistOverHttpPolicy) ExecuteEntryActions(state SendNamelistOverH
 		// ends the block as any other would (W3C SCXML 4.9). A self-sent
 		// event names its origin, so `targetexpr="_event.origin"` (test336)
 		// reads this session's location, never "".
-		errEvt := sce.NewPlatformError(SendNamelistOverHttpEventErrorCommunication, "<send> targetexpr evaluated to nothing, so there is no target to reach")
+		errEvt := sce.NewPlatformError(SendNamelistOverHttpEventErrorCommunication, sceerrorreason.ErrorReasonTargetUnreachable, "<send> targetexpr evaluated to nothing, so there is no target to reach")
 		errEvt.Metadata.SendID = "__send_1"
 		engine.Raise(errEvt)
 		return
@@ -1040,7 +1052,7 @@ func (p *SendNamelistOverHttpPolicy) ExecuteEntryActions(state SendNamelistOverH
 		httpTarget := sendTarget
 		// W3C SCXML C.2: Validate target before HTTP send
 		if httpTarget == "" {
-			errEvt := sce.NewPlatformError(SendNamelistOverHttpEventErrorCommunication, "<send> over BasicHTTPEventProcessor has no target to post to")
+			errEvt := sce.NewPlatformError(SendNamelistOverHttpEventErrorCommunication, sceerrorreason.ErrorReasonHttpTargetInvalid, "<send> over BasicHTTPEventProcessor has no target to post to")
 			errEvt.Metadata.SendID = "__send_1"
 			engine.Raise(errEvt)
 			return  // W3C SCXML 4.9: the error ends the block
@@ -1226,7 +1238,7 @@ func (p *SendNamelistOverHttpPolicy) ExecuteTransitionContent(source SendNamelis
 
 	// W3C SCXML 5.3: <assign location="sawNamelistError" expr="1">
 	if err := p.assignVariable(`sawNamelistError`, `1`); err != nil {
-		engine.Raise(sce.NewPlatformError(SendNamelistOverHttpEventErrorExecution, "<assign> to 'sawNamelistError' failed"))
+		engine.Raise(sce.NewPlatformError(SendNamelistOverHttpEventErrorExecution, sceerrorreason.ErrorReasonAssignmentFailed, "<assign> to 'sawNamelistError' failed"))
 		return  // W3C SCXML 4.9: the error ends the block
 	}
 
@@ -1241,7 +1253,7 @@ func (p *SendNamelistOverHttpPolicy) ExecuteTransitionContent(source SendNamelis
 
 	// W3C SCXML 5.3: <assign location="echoed" expr="_event.data.Var1">
 	if err := p.assignVariable(`echoed`, `_event.data.Var1`); err != nil {
-		engine.Raise(sce.NewPlatformError(SendNamelistOverHttpEventErrorExecution, "<assign> to 'echoed' failed"))
+		engine.Raise(sce.NewPlatformError(SendNamelistOverHttpEventErrorExecution, sceerrorreason.ErrorReasonAssignmentFailed, "<assign> to 'echoed' failed"))
 		return  // W3C SCXML 4.9: the error ends the block
 	}
 

@@ -31,6 +31,7 @@ import (
 	"time"
 
 	sce "github.com/newmassrael/sce-go-runtime"
+	sceerrorreason "github.com/newmassrael/sce-go-runtime/generated/error_reason"
 )
 
 // Ensure imports are used
@@ -39,6 +40,9 @@ var (
 	_ = filepath.Join
 	_ = strings.HasPrefix
 	_ = time.Duration(0)
+	// Why an error.* event is raised (sce:std/engine/error_reason,
+	// docs/adr/0106 #111); a machine that raises none still imports it.
+	_ = sceerrorreason.ErrorReasonExpressionFailed
 )
 
 // ======================================================================
@@ -335,12 +339,12 @@ func (p *AnEventKeepsTheNameItWasSentUnderSceSynthInvokeListenerPolicy) evaluate
 // evaluateGuardRaising evaluates a cond, raising error.execution when it cannot
 // be evaluated (W3C SCXML 5.9.1); ok is false then, where a bare false could
 // not say so.
-func (p *AnEventKeepsTheNameItWasSentUnderSceSynthInvokeListenerPolicy) evaluateGuardRaising(guard string, eng *sce.Engine[AnEventKeepsTheNameItWasSentUnderSceSynthInvokeListenerState, AnEventKeepsTheNameItWasSentUnderSceSynthInvokeListenerEvent], reason string) (value bool, ok bool) {
+func (p *AnEventKeepsTheNameItWasSentUnderSceSynthInvokeListenerPolicy) evaluateGuardRaising(guard string, eng *sce.Engine[AnEventKeepsTheNameItWasSentUnderSceSynthInvokeListenerState, AnEventKeepsTheNameItWasSentUnderSceSynthInvokeListenerEvent], detail string) (value bool, ok bool) {
 	p.assertScriptSession()
 	engine := p.ScriptEngine
 	result, err := engine.EvaluateExpression(p.SessionID, guard)
 	if err != nil {
-		eng.Raise(sce.NewPlatformError(AnEventKeepsTheNameItWasSentUnderSceSynthInvokeListenerEventErrorExecution, reason))
+		eng.Raise(sce.NewPlatformError(AnEventKeepsTheNameItWasSentUnderSceSynthInvokeListenerEventErrorExecution, sceerrorreason.ErrorReasonExpressionFailed, detail))
 		return false, false
 	}
 	return sce.ScriptToBool(result), true
@@ -698,7 +702,7 @@ func (p *AnEventKeepsTheNameItWasSentUnderSceSynthInvokeListenerPolicy) ExecuteE
 		// W3C SCXML C.1: this session was started by its host, not by an
 		// `<invoke>`, so `#_parent` reaches nobody — error.communication,
 		// nothing delivered, and the block ends (4.9).
-		errEvt := sce.NewPlatformError(AnEventKeepsTheNameItWasSentUnderSceSynthInvokeListenerEventErrorCommunication, "<send target='#_parent'> has no parent session to reach")
+		errEvt := sce.NewPlatformError(AnEventKeepsTheNameItWasSentUnderSceSynthInvokeListenerEventErrorCommunication, sceerrorreason.ErrorReasonTargetUnreachable, "<send target='#_parent'> has no parent session to reach")
 		errEvt.Metadata.SendID = "__send_2"
 		engine.Raise(errEvt)
 		return  // W3C SCXML 4.9: the error ends the block
@@ -820,7 +824,7 @@ func (p *AnEventKeepsTheNameItWasSentUnderSceSynthInvokeListenerPolicy) ExecuteT
 		// W3C SCXML C.1: this session was started by its host, not by an
 		// `<invoke>`, so `#_parent` reaches nobody — error.communication,
 		// nothing delivered, and the block ends (4.9).
-		errEvt := sce.NewPlatformError(AnEventKeepsTheNameItWasSentUnderSceSynthInvokeListenerEventErrorCommunication, "<send target='#_parent'> has no parent session to reach")
+		errEvt := sce.NewPlatformError(AnEventKeepsTheNameItWasSentUnderSceSynthInvokeListenerEventErrorCommunication, sceerrorreason.ErrorReasonTargetUnreachable, "<send target='#_parent'> has no parent session to reach")
 		errEvt.Metadata.SendID = "__send_0"
 		engine.Raise(errEvt)
 		return  // W3C SCXML 4.9: the error ends the block
@@ -845,7 +849,7 @@ func (p *AnEventKeepsTheNameItWasSentUnderSceSynthInvokeListenerPolicy) ExecuteT
 		// W3C SCXML C.1: this session was started by its host, not by an
 		// `<invoke>`, so `#_parent` reaches nobody — error.communication,
 		// nothing delivered, and the block ends (4.9).
-		errEvt := sce.NewPlatformError(AnEventKeepsTheNameItWasSentUnderSceSynthInvokeListenerEventErrorCommunication, "<send target='#_parent'> has no parent session to reach")
+		errEvt := sce.NewPlatformError(AnEventKeepsTheNameItWasSentUnderSceSynthInvokeListenerEventErrorCommunication, sceerrorreason.ErrorReasonTargetUnreachable, "<send target='#_parent'> has no parent session to reach")
 		errEvt.Metadata.SendID = "__send_1"
 		engine.Raise(errEvt)
 		return  // W3C SCXML 4.9: the error ends the block

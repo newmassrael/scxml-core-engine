@@ -805,7 +805,7 @@ class PresencePeerStateMachine(
 
             if (!pendingPresenceJoinPayload!!.hub) {
 
-            if (try { vLease = com.sce.forge.runtime.SceChecked.add(pendingPresenceJoinPayload!!.ttl, pendingPresenceJoinPayload!!.slack); false } catch (_: com.sce.forge.runtime.AlgorithmFailure) { raisePlatformError(PresencePeerEvent.Error.Execution, "<assign location='lease'>: an integer operation overflowed or failed"); true }) {
+            if (try { vLease = com.sce.forge.runtime.SceChecked.add(pendingPresenceJoinPayload!!.ttl, pendingPresenceJoinPayload!!.slack); false } catch (_: com.sce.forge.runtime.AlgorithmFailure) { raisePlatformError(PresencePeerEvent.Error.Execution, ErrorReason.EXPRESSION_FAILED, "<assign location='lease'>: an integer operation overflowed or failed"); true }) {
                 return
             }
             }
@@ -855,7 +855,7 @@ class PresencePeerStateMachine(
             // event as an undeclared type, so a wiring mistake cannot read
             // as success.
             if (hostServed == null && !hasEventProcessor("sce:mesh")) {
-                raisePlatformError(PresencePeerEvent.Error.Execution, "<send type='sce:mesh'> names a processor the host declared but never registered", "__send_0")
+                raisePlatformError(PresencePeerEvent.Error.Execution, ErrorReason.PROCESSOR_UNREGISTERED, "<send type='sce:mesh'> names a processor the host declared but never registered", "__send_0")
             }
             false
             }) {
@@ -931,7 +931,7 @@ class PresencePeerStateMachine(
             // event as an undeclared type, so a wiring mistake cannot read
             // as success.
             if (hostServed == null && !hasEventProcessor("sce:mesh")) {
-                raisePlatformError(PresencePeerEvent.Error.Execution, "<send type='sce:mesh'> names a processor the host declared but never registered", "__send_2")
+                raisePlatformError(PresencePeerEvent.Error.Execution, ErrorReason.PROCESSOR_UNREGISTERED, "<send type='sce:mesh'> names a processor the host declared but never registered", "__send_2")
             }
             false
             }) {
@@ -963,7 +963,7 @@ class PresencePeerStateMachine(
 
             if (m.client != pendingPresenceSeenPayload!!.client) {
 
-            if (if (vRebuilt.size < 128) { vRebuilt = vRebuilt + (m); false } else { raisePlatformError(PresencePeerEvent.Error.Execution, "<sce:append target='rebuilt'>: the list already holds its capacity of 128"); true }) {
+            if (if (vRebuilt.size < 128) { vRebuilt = vRebuilt + (m); false } else { raisePlatformError(PresencePeerEvent.Error.Execution, ErrorReason.ASSIGNMENT_FAILED, "<sce:append target='rebuilt'>: the list already holds its capacity of 128"); true }) {
                 return
             }
             }
@@ -976,11 +976,11 @@ class PresencePeerStateMachine(
 
             vEntry = vEntry.copy(last = pendingPresenceSeenPayload!!.last)
 
-            if (try { vEntry = vEntry.copy(gen = com.sce.forge.runtime.SceChecked.add(vSerial, 1.toUInt())); false } catch (_: com.sce.forge.runtime.AlgorithmFailure) { raisePlatformError(PresencePeerEvent.Error.Execution, "<assign location='entry.gen'>: an integer operation overflowed or failed"); true }) {
+            if (try { vEntry = vEntry.copy(gen = com.sce.forge.runtime.SceChecked.add(vSerial, 1.toUInt())); false } catch (_: com.sce.forge.runtime.AlgorithmFailure) { raisePlatformError(PresencePeerEvent.Error.Execution, ErrorReason.EXPRESSION_FAILED, "<assign location='entry.gen'>: an integer operation overflowed or failed"); true }) {
                 return
             }
 
-            if (if (vRebuilt.size < 128) { vRebuilt = vRebuilt + (vEntry); false } else { raisePlatformError(PresencePeerEvent.Error.Execution, "<sce:append target='rebuilt'>: the list already holds its capacity of 128"); true }) {
+            if (if (vRebuilt.size < 128) { vRebuilt = vRebuilt + (vEntry); false } else { raisePlatformError(PresencePeerEvent.Error.Execution, ErrorReason.ASSIGNMENT_FAILED, "<sce:append target='rebuilt'>: the list already holds its capacity of 128"); true }) {
                 return
             }
 
@@ -989,12 +989,12 @@ class PresencePeerStateMachine(
 
             for (r in vRebuilt) {
 
-            if (if (vOnline.size < 128) { vOnline = vOnline + (r); false } else { raisePlatformError(PresencePeerEvent.Error.Execution, "<sce:append target='online'>: the list already holds its capacity of 128"); true }) {
+            if (if (vOnline.size < 128) { vOnline = vOnline + (r); false } else { raisePlatformError(PresencePeerEvent.Error.Execution, ErrorReason.ASSIGNMENT_FAILED, "<sce:append target='online'>: the list already holds its capacity of 128"); true }) {
                 return
             }
             }
 
-            if (try { vSerial = com.sce.forge.runtime.SceChecked.add(vSerial, 1.toUInt()); false } catch (_: com.sce.forge.runtime.AlgorithmFailure) { raisePlatformError(PresencePeerEvent.Error.Execution, "<assign location='serial'>: an integer operation overflowed or failed"); true }) {
+            if (try { vSerial = com.sce.forge.runtime.SceChecked.add(vSerial, 1.toUInt()); false } catch (_: com.sce.forge.runtime.AlgorithmFailure) { raisePlatformError(PresencePeerEvent.Error.Execution, ErrorReason.EXPRESSION_FAILED, "<assign location='serial'>: an integer operation overflowed or failed"); true }) {
                 return
             }
 
@@ -1007,7 +1007,7 @@ class PresencePeerStateMachine(
             // default wait.
             val sendDelayText: String = vLease.toString() + "ms"
             val sendDelayMs = com.sce.runtime.SendHelper.parseDelayMs(sendDelayText) ?: run {
-                raisePlatformError(PresencePeerEvent.Error.Execution, "<send> delayexpr is not a CSS2 time", "__send_3")
+                raisePlatformError(PresencePeerEvent.Error.Execution, ErrorReason.SEND_DELAY_INVALID, "<send> delayexpr is not a CSS2 time", "__send_3")
                 return@send true
             }
             val sendPayload = mutableMapOf<String, Any?>()
@@ -1049,7 +1049,7 @@ class PresencePeerStateMachine(
 
             if (m.gen != pendingPresenceExpirePayload!!.gen) {
 
-            if (if (vRebuilt.size < 128) { vRebuilt = vRebuilt + (m); false } else { raisePlatformError(PresencePeerEvent.Error.Execution, "<sce:append target='rebuilt'>: the list already holds its capacity of 128"); true }) {
+            if (if (vRebuilt.size < 128) { vRebuilt = vRebuilt + (m); false } else { raisePlatformError(PresencePeerEvent.Error.Execution, ErrorReason.ASSIGNMENT_FAILED, "<sce:append target='rebuilt'>: the list already holds its capacity of 128"); true }) {
                 return
             }
             }
@@ -1063,7 +1063,7 @@ class PresencePeerStateMachine(
 
             for (r in vRebuilt) {
 
-            if (if (vOnline.size < 128) { vOnline = vOnline + (r); false } else { raisePlatformError(PresencePeerEvent.Error.Execution, "<sce:append target='online'>: the list already holds its capacity of 128"); true }) {
+            if (if (vOnline.size < 128) { vOnline = vOnline + (r); false } else { raisePlatformError(PresencePeerEvent.Error.Execution, ErrorReason.ASSIGNMENT_FAILED, "<sce:append target='online'>: the list already holds its capacity of 128"); true }) {
                 return
             }
             }
@@ -1109,7 +1109,7 @@ class PresencePeerStateMachine(
             // event as an undeclared type, so a wiring mistake cannot read
             // as success.
             if (hostServed == null && !hasEventProcessor("sce:mesh")) {
-                raisePlatformError(PresencePeerEvent.Error.Execution, "<send type='sce:mesh'> names a processor the host declared but never registered", "__send_4")
+                raisePlatformError(PresencePeerEvent.Error.Execution, ErrorReason.PROCESSOR_UNREGISTERED, "<send type='sce:mesh'> names a processor the host declared but never registered", "__send_4")
             }
             false
             }) {
@@ -1135,7 +1135,7 @@ class PresencePeerStateMachine(
 
             if (m.client != pendingPresenceLeftPayload!!.client || m.last > pendingPresenceLeftPayload!!.last) {
 
-            if (if (vRebuilt.size < 128) { vRebuilt = vRebuilt + (m); false } else { raisePlatformError(PresencePeerEvent.Error.Execution, "<sce:append target='rebuilt'>: the list already holds its capacity of 128"); true }) {
+            if (if (vRebuilt.size < 128) { vRebuilt = vRebuilt + (m); false } else { raisePlatformError(PresencePeerEvent.Error.Execution, ErrorReason.ASSIGNMENT_FAILED, "<sce:append target='rebuilt'>: the list already holds its capacity of 128"); true }) {
                 return
             }
             }
@@ -1146,7 +1146,7 @@ class PresencePeerStateMachine(
 
             for (r in vRebuilt) {
 
-            if (if (vOnline.size < 128) { vOnline = vOnline + (r); false } else { raisePlatformError(PresencePeerEvent.Error.Execution, "<sce:append target='online'>: the list already holds its capacity of 128"); true }) {
+            if (if (vOnline.size < 128) { vOnline = vOnline + (r); false } else { raisePlatformError(PresencePeerEvent.Error.Execution, ErrorReason.ASSIGNMENT_FAILED, "<sce:append target='online'>: the list already holds its capacity of 128"); true }) {
                 return
             }
             }
@@ -1155,7 +1155,7 @@ class PresencePeerStateMachine(
     private fun transitionContentOfOpenAt6() {
                 // SCE-MAP: presence_peer.scxml:193 :: open :: _transition_6
 
-            if (try { vLost = com.sce.forge.runtime.SceChecked.add(vLost, 1.toUInt()); false } catch (_: com.sce.forge.runtime.AlgorithmFailure) { raisePlatformError(PresencePeerEvent.Error.Execution, "<assign location='lost'>: an integer operation overflowed or failed"); true }) {
+            if (try { vLost = com.sce.forge.runtime.SceChecked.add(vLost, 1.toUInt()); false } catch (_: com.sce.forge.runtime.AlgorithmFailure) { raisePlatformError(PresencePeerEvent.Error.Execution, ErrorReason.EXPRESSION_FAILED, "<assign location='lost'>: an integer operation overflowed or failed"); true }) {
                 return
             }
     }
@@ -1163,7 +1163,7 @@ class PresencePeerStateMachine(
     private fun transitionContentOfOpenAt7() {
                 // SCE-MAP: presence_peer.scxml:197 :: open :: _transition_7
 
-            if (try { vRefusals = com.sce.forge.runtime.SceChecked.add(vRefusals, 1.toUInt()); false } catch (_: com.sce.forge.runtime.AlgorithmFailure) { raisePlatformError(PresencePeerEvent.Error.Execution, "<assign location='refusals'>: an integer operation overflowed or failed"); true }) {
+            if (try { vRefusals = com.sce.forge.runtime.SceChecked.add(vRefusals, 1.toUInt()); false } catch (_: com.sce.forge.runtime.AlgorithmFailure) { raisePlatformError(PresencePeerEvent.Error.Execution, ErrorReason.EXPRESSION_FAILED, "<assign location='refusals'>: an integer operation overflowed or failed"); true }) {
                 return
             }
     }

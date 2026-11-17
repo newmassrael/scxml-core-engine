@@ -31,6 +31,7 @@ import (
 	"time"
 
 	sce "github.com/newmassrael/sce-go-runtime"
+	sceerrorreason "github.com/newmassrael/sce-go-runtime/generated/error_reason"
 )
 
 // Ensure imports are used
@@ -39,6 +40,9 @@ var (
 	_ = filepath.Join
 	_ = strings.HasPrefix
 	_ = time.Duration(0)
+	// Why an error.* event is raised (sce:std/engine/error_reason,
+	// docs/adr/0106 #111); a machine that raises none still imports it.
+	_ = sceerrorreason.ErrorReasonExpressionFailed
 )
 
 // ======================================================================
@@ -358,7 +362,7 @@ func (p *AMeshRequestReachesTheRouterPolicy) InitializeDataModel(eng *sce.Engine
 		if err == nil {
 			_ = engine.SetVariable(sessionID, "answered", result)
 		} else {
-			eng.Raise(sce.NewPlatformError(AMeshRequestReachesTheRouterEventErrorExecution, "<data id='answered'> expr failed to evaluate"))
+			eng.Raise(sce.NewPlatformError(AMeshRequestReachesTheRouterEventErrorExecution, sceerrorreason.ErrorReasonExpressionFailed, "<data id='answered'> expr failed to evaluate"))
 			_ = engine.SetVariable(sessionID, "answered", nil)
 		}
 	}
@@ -372,7 +376,7 @@ func (p *AMeshRequestReachesTheRouterPolicy) InitializeDataModel(eng *sce.Engine
 		if err == nil {
 			_ = engine.SetVariable(sessionID, "failed", result)
 		} else {
-			eng.Raise(sce.NewPlatformError(AMeshRequestReachesTheRouterEventErrorExecution, "<data id='failed'> expr failed to evaluate"))
+			eng.Raise(sce.NewPlatformError(AMeshRequestReachesTheRouterEventErrorExecution, sceerrorreason.ErrorReasonExpressionFailed, "<data id='failed'> expr failed to evaluate"))
 			_ = engine.SetVariable(sessionID, "failed", nil)
 		}
 	}
@@ -386,7 +390,7 @@ func (p *AMeshRequestReachesTheRouterPolicy) InitializeDataModel(eng *sce.Engine
 		if err == nil {
 			_ = engine.SetVariable(sessionID, "refused", result)
 		} else {
-			eng.Raise(sce.NewPlatformError(AMeshRequestReachesTheRouterEventErrorExecution, "<data id='refused'> expr failed to evaluate"))
+			eng.Raise(sce.NewPlatformError(AMeshRequestReachesTheRouterEventErrorExecution, sceerrorreason.ErrorReasonExpressionFailed, "<data id='refused'> expr failed to evaluate"))
 			_ = engine.SetVariable(sessionID, "refused", nil)
 		}
 	}
@@ -418,12 +422,12 @@ func (p *AMeshRequestReachesTheRouterPolicy) evaluateIfCond(guard string, eng *s
 // evaluateGuardRaising evaluates a cond, raising error.execution when it cannot
 // be evaluated (W3C SCXML 5.9.1); ok is false then, where a bare false could
 // not say so.
-func (p *AMeshRequestReachesTheRouterPolicy) evaluateGuardRaising(guard string, eng *sce.Engine[AMeshRequestReachesTheRouterState, AMeshRequestReachesTheRouterEvent], reason string) (value bool, ok bool) {
+func (p *AMeshRequestReachesTheRouterPolicy) evaluateGuardRaising(guard string, eng *sce.Engine[AMeshRequestReachesTheRouterState, AMeshRequestReachesTheRouterEvent], detail string) (value bool, ok bool) {
 	p.assertScriptSession()
 	engine := p.ScriptEngine
 	result, err := engine.EvaluateExpression(p.SessionID, guard)
 	if err != nil {
-		eng.Raise(sce.NewPlatformError(AMeshRequestReachesTheRouterEventErrorExecution, reason))
+		eng.Raise(sce.NewPlatformError(AMeshRequestReachesTheRouterEventErrorExecution, sceerrorreason.ErrorReasonExpressionFailed, detail))
 		return false, false
 	}
 	return sce.ScriptToBool(result), true
@@ -526,7 +530,7 @@ func (p *AMeshRequestReachesTheRouterPolicy) SetParamValueInScriptEngine(name st
 // failed is left (docs/adr/0098).
 func (p *AMeshRequestReachesTheRouterPolicy) declareHandedValue(eng *sce.Engine[AMeshRequestReachesTheRouterState, AMeshRequestReachesTheRouterEvent], engine sce.IScriptEngine, sessionID, name string, value interface{}) {
 	if err := engine.SetVariable(sessionID, name, value); err != nil {
-		eng.Raise(sce.NewPlatformError(AMeshRequestReachesTheRouterEventErrorExecution, "<data id='"+name+"'> could not hold the value its invoking session handed it"))
+		eng.Raise(sce.NewPlatformError(AMeshRequestReachesTheRouterEventErrorExecution, sceerrorreason.ErrorReasonDataInitFailed, "<data id='"+name+"'> could not hold the value its invoking session handed it"))
 		_ = engine.SetVariable(sessionID, name, nil)
 	}
 }
@@ -574,7 +578,7 @@ func (p *AMeshRequestReachesTheRouterPolicy) ExecutePendingInvokes(engine *sce.E
 			} else {
 				// W3C SCXML 5.7.1: the pair is dropped AND the failure is
 				// reported.
-				engine.Raise(sce.NewPlatformError(AMeshRequestReachesTheRouterEventErrorExecution, "<invoke> <param name='force'> expr failed to evaluate"))
+				engine.Raise(sce.NewPlatformError(AMeshRequestReachesTheRouterEventErrorExecution, sceerrorreason.ErrorReasonExpressionFailed, "<invoke> <param name='force'> expr failed to evaluate"))
 			}
 			hostInvokeParams["speed"] = append(hostInvokeParams["speed"], "3")
 			hostInvokePayload = append(hostInvokePayload, sce.EventDataParam{Name: "speed", Value: "3"})
@@ -594,7 +598,7 @@ func (p *AMeshRequestReachesTheRouterPolicy) ExecutePendingInvokes(engine *sce.E
 				// document asked for a process to be run and none was, which
 				// is the same fact as an unsupported type — so the same
 				// event, rather than a silence that reads as started.
-				engine.Raise(sce.NewPlatformError(AMeshRequestReachesTheRouterEventErrorExecution, "<invoke> names an invoker the host declared but never registered"))
+				engine.Raise(sce.NewPlatformError(AMeshRequestReachesTheRouterEventErrorExecution, sceerrorreason.ErrorReasonProcessorUnregistered, "<invoke> names an invoker the host declared but never registered"))
 			}
 			continue
 		}
@@ -1052,7 +1056,7 @@ func (p *AMeshRequestReachesTheRouterPolicy) ExecuteTransitionContent(source AMe
 
 	// W3C SCXML 5.3: <assign location="answered" expr="answered + 1">
 	if err := p.assignVariable(`answered`, `_scxml_add(answered, 1)`); err != nil {
-		engine.Raise(sce.NewPlatformError(AMeshRequestReachesTheRouterEventErrorExecution, "<assign> to 'answered' failed"))
+		engine.Raise(sce.NewPlatformError(AMeshRequestReachesTheRouterEventErrorExecution, sceerrorreason.ErrorReasonAssignmentFailed, "<assign> to 'answered' failed"))
 		return  // W3C SCXML 4.9: the error ends the block
 	}
 
@@ -1064,7 +1068,7 @@ func (p *AMeshRequestReachesTheRouterPolicy) ExecuteTransitionContent(source AMe
 
 	// W3C SCXML 5.3: <assign location="failed" expr="failed + 1">
 	if err := p.assignVariable(`failed`, `_scxml_add(failed, 1)`); err != nil {
-		engine.Raise(sce.NewPlatformError(AMeshRequestReachesTheRouterEventErrorExecution, "<assign> to 'failed' failed"))
+		engine.Raise(sce.NewPlatformError(AMeshRequestReachesTheRouterEventErrorExecution, sceerrorreason.ErrorReasonAssignmentFailed, "<assign> to 'failed' failed"))
 		return  // W3C SCXML 4.9: the error ends the block
 	}
 
@@ -1076,7 +1080,7 @@ func (p *AMeshRequestReachesTheRouterPolicy) ExecuteTransitionContent(source AMe
 
 	// W3C SCXML 5.3: <assign location="refused" expr="refused + 1">
 	if err := p.assignVariable(`refused`, `_scxml_add(refused, 1)`); err != nil {
-		engine.Raise(sce.NewPlatformError(AMeshRequestReachesTheRouterEventErrorExecution, "<assign> to 'refused' failed"))
+		engine.Raise(sce.NewPlatformError(AMeshRequestReachesTheRouterEventErrorExecution, sceerrorreason.ErrorReasonAssignmentFailed, "<assign> to 'refused' failed"))
 		return  // W3C SCXML 4.9: the error ends the block
 	}
 

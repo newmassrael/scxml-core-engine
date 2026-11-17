@@ -31,6 +31,7 @@ import (
 	"time"
 
 	sce "github.com/newmassrael/sce-go-runtime"
+	sceerrorreason "github.com/newmassrael/sce-go-runtime/generated/error_reason"
 )
 
 // Ensure imports are used
@@ -39,6 +40,9 @@ var (
 	_ = filepath.Join
 	_ = strings.HasPrefix
 	_ = time.Duration(0)
+	// Why an error.* event is raised (sce:std/engine/error_reason,
+	// docs/adr/0106 #111); a machine that raises none still imports it.
+	_ = sceerrorreason.ErrorReasonExpressionFailed
 )
 
 // ======================================================================
@@ -336,12 +340,12 @@ func (p *EmptyFinalizeUpdatesTheLocationSceSynthInvokeInvUnmatchedPolicy) evalua
 // evaluateGuardRaising evaluates a cond, raising error.execution when it cannot
 // be evaluated (W3C SCXML 5.9.1); ok is false then, where a bare false could
 // not say so.
-func (p *EmptyFinalizeUpdatesTheLocationSceSynthInvokeInvUnmatchedPolicy) evaluateGuardRaising(guard string, eng *sce.Engine[EmptyFinalizeUpdatesTheLocationSceSynthInvokeInvUnmatchedState, EmptyFinalizeUpdatesTheLocationSceSynthInvokeInvUnmatchedEvent], reason string) (value bool, ok bool) {
+func (p *EmptyFinalizeUpdatesTheLocationSceSynthInvokeInvUnmatchedPolicy) evaluateGuardRaising(guard string, eng *sce.Engine[EmptyFinalizeUpdatesTheLocationSceSynthInvokeInvUnmatchedState, EmptyFinalizeUpdatesTheLocationSceSynthInvokeInvUnmatchedEvent], detail string) (value bool, ok bool) {
 	p.assertScriptSession()
 	engine := p.ScriptEngine
 	result, err := engine.EvaluateExpression(p.SessionID, guard)
 	if err != nil {
-		eng.Raise(sce.NewPlatformError(EmptyFinalizeUpdatesTheLocationSceSynthInvokeInvUnmatchedEventErrorExecution, reason))
+		eng.Raise(sce.NewPlatformError(EmptyFinalizeUpdatesTheLocationSceSynthInvokeInvUnmatchedEventErrorExecution, sceerrorreason.ErrorReasonExpressionFailed, detail))
 		return false, false
 	}
 	return sce.ScriptToBool(result), true
@@ -444,7 +448,7 @@ func (p *EmptyFinalizeUpdatesTheLocationSceSynthInvokeInvUnmatchedPolicy) SetPar
 // failed is left (docs/adr/0098).
 func (p *EmptyFinalizeUpdatesTheLocationSceSynthInvokeInvUnmatchedPolicy) declareHandedValue(eng *sce.Engine[EmptyFinalizeUpdatesTheLocationSceSynthInvokeInvUnmatchedState, EmptyFinalizeUpdatesTheLocationSceSynthInvokeInvUnmatchedEvent], engine sce.IScriptEngine, sessionID, name string, value interface{}) {
 	if err := engine.SetVariable(sessionID, name, value); err != nil {
-		eng.Raise(sce.NewPlatformError(EmptyFinalizeUpdatesTheLocationSceSynthInvokeInvUnmatchedEventErrorExecution, "<data id='"+name+"'> could not hold the value its invoking session handed it"))
+		eng.Raise(sce.NewPlatformError(EmptyFinalizeUpdatesTheLocationSceSynthInvokeInvUnmatchedEventErrorExecution, sceerrorreason.ErrorReasonDataInitFailed, "<data id='"+name+"'> could not hold the value its invoking session handed it"))
 		_ = engine.SetVariable(sessionID, name, nil)
 	}
 }
@@ -799,7 +803,7 @@ func (p *EmptyFinalizeUpdatesTheLocationSceSynthInvokeInvUnmatchedPolicy) Execut
 		if paramVal, paramErr := se.EvaluateExpression(p.SessionID, `5`); paramErr == nil {
 			parts = append(parts, sce.EventDataParam{Name: "unrelated", Value: paramVal})
 		} else {
-			engine.Raise(sce.NewPlatformError(EmptyFinalizeUpdatesTheLocationSceSynthInvokeInvUnmatchedEventErrorExecution, "<send> <param name='unrelated'> expr failed to evaluate"))
+			engine.Raise(sce.NewPlatformError(EmptyFinalizeUpdatesTheLocationSceSynthInvokeInvUnmatchedEventErrorExecution, sceerrorreason.ErrorReasonExpressionFailed, "<send> <param name='unrelated'> expr failed to evaluate"))
 			paramFailed = true
 		}
 		eventDataStr := sce.BuildJSONFromTypedParams(parts)
@@ -809,7 +813,7 @@ func (p *EmptyFinalizeUpdatesTheLocationSceSynthInvokeInvUnmatchedPolicy) Execut
 		// W3C SCXML C.1: this session was started by its host, not by an
 		// `<invoke>`, so `#_parent` reaches nobody — error.communication,
 		// nothing delivered, and the block ends (4.9).
-		errEvt := sce.NewPlatformError(EmptyFinalizeUpdatesTheLocationSceSynthInvokeInvUnmatchedEventErrorCommunication, "<send target='#_parent'> has no parent session to reach")
+		errEvt := sce.NewPlatformError(EmptyFinalizeUpdatesTheLocationSceSynthInvokeInvUnmatchedEventErrorCommunication, sceerrorreason.ErrorReasonTargetUnreachable, "<send target='#_parent'> has no parent session to reach")
 		errEvt.Metadata.SendID = "__send_0"
 		engine.Raise(errEvt)
 		return  // W3C SCXML 4.9: the error ends the block

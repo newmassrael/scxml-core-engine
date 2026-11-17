@@ -631,7 +631,7 @@ public final class StaticEnumNumberPolicy: InvocablePolicy {
                     }
 
 
-                if ({ () -> Bool in do { let sceValue = (try Checked.found(StaticEnumNumberStatusEnum.fromUnderlying((try Checked.narrow(self.pendingStatusNumberPayload.number, to: UInt8.self))))); self.vStatus = sceValue } catch { engine.raise(EventWithMetadata.platformError(StaticEnumNumberEvent.errorExecution, message: "<assign location='status'>: an integer operation overflowed or failed")); return true }; return false }()) {
+                if ({ () -> Bool in do { let sceValue = (try Checked.found(StaticEnumNumberStatusEnum.fromUnderlying((try Checked.narrow(self.pendingStatusNumberPayload.number, to: UInt8.self))))); self.vStatus = sceValue } catch { engine.raise(EventWithMetadata.platformError(StaticEnumNumberEvent.errorExecution, reason: .expressionFailed, message: "<assign location='status'>: an integer operation overflowed or failed")); return true }; return false }()) {
                     break sceBlock  // W3C SCXML 4.9: the error ends the block
                 }
 
@@ -641,7 +641,7 @@ public final class StaticEnumNumberPolicy: InvocablePolicy {
                 sceBlock: do {
 
 
-                if ({ () -> Bool in do { let sceValue: UInt32 = (try Checked.add(self.vChecks, 1)); self.vChecks = sceValue } catch { engine.raise(EventWithMetadata.platformError(StaticEnumNumberEvent.errorExecution, message: "<assign location='checks'>: an integer operation overflowed or failed")); return true }; return false }()) {
+                if ({ () -> Bool in do { let sceValue: UInt32 = (try Checked.add(self.vChecks, 1)); self.vChecks = sceValue } catch { engine.raise(EventWithMetadata.platformError(StaticEnumNumberEvent.errorExecution, reason: .expressionFailed, message: "<assign location='checks'>: an integer operation overflowed or failed")); return true }; return false }()) {
                     break sceBlock  // W3C SCXML 4.9: the error ends the block
                 }
 
@@ -651,7 +651,7 @@ public final class StaticEnumNumberPolicy: InvocablePolicy {
                 sceBlock: do {
 
 
-                if ({ () -> Bool in do { let sceValue: UInt32 = (try Checked.add(self.vRefusals, 1)); self.vRefusals = sceValue } catch { engine.raise(EventWithMetadata.platformError(StaticEnumNumberEvent.errorExecution, message: "<assign location='refusals'>: an integer operation overflowed or failed")); return true }; return false }()) {
+                if ({ () -> Bool in do { let sceValue: UInt32 = (try Checked.add(self.vRefusals, 1)); self.vRefusals = sceValue } catch { engine.raise(EventWithMetadata.platformError(StaticEnumNumberEvent.errorExecution, reason: .expressionFailed, message: "<assign location='refusals'>: an integer operation overflowed or failed")); return true }; return false }()) {
                     break sceBlock  // W3C SCXML 4.9: the error ends the block
                 }
 

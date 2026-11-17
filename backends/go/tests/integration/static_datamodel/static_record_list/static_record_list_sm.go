@@ -31,6 +31,7 @@ import (
 	"time"
 
 	sce "github.com/newmassrael/sce-go-runtime"
+	sceerrorreason "github.com/newmassrael/sce-go-runtime/generated/error_reason"
 	scealgorithm "github.com/newmassrael/sce-forge-runtime/algorithm"
 )
 
@@ -40,6 +41,9 @@ var (
 	_ = filepath.Join
 	_ = strings.HasPrefix
 	_ = time.Duration(0)
+	// Why an error.* event is raised (sce:std/engine/error_reason,
+	// docs/adr/0106 #111); a machine that raises none still imports it.
+	_ = sceerrorreason.ErrorReasonExpressionFailed
 	_ scealgorithm.Failure
 )
 
@@ -1148,7 +1152,7 @@ func (p *StaticRecordListPolicy) ExecuteTransitionContent(source StaticRecordLis
 
 	// SCE Accepted Subset §2.15: <sce:append target="days">
 
-	if func() bool { var sceFailure scealgorithm.Failure; if len(p.vDays) >= 3 { engine.Raise(sce.NewPlatformError(StaticRecordListEventErrorExecution, "<sce:append target='days'>: the list already holds its capacity of 3")); return true }; sceValue := scealgorithm.ElementOf(p.vDays, p.vDraft); if sceFailure.Failed() { engine.Raise(sce.NewPlatformError(StaticRecordListEventErrorExecution, "<sce:append target='days'>: an integer operation overflowed or failed")); return true }; p.vDays = append(p.vDays, sceValue); return false }() {
+	if func() bool { var sceFailure scealgorithm.Failure; if len(p.vDays) >= 3 { engine.Raise(sce.NewPlatformError(StaticRecordListEventErrorExecution, sceerrorreason.ErrorReasonAssignmentFailed, "<sce:append target='days'>: the list already holds its capacity of 3")); return true }; sceValue := scealgorithm.ElementOf(p.vDays, p.vDraft); if sceFailure.Failed() { engine.Raise(sce.NewPlatformError(StaticRecordListEventErrorExecution, sceerrorreason.ErrorReasonExpressionFailed, "<sce:append target='days'>: an integer operation overflowed or failed")); return true }; p.vDays = append(p.vDays, sceValue); return false }() {
 		return  // W3C SCXML 4.9: the error ends the block
 	}
 
@@ -1167,7 +1171,7 @@ func (p *StaticRecordListPolicy) ExecuteTransitionContent(source StaticRecordLis
 		_ = d
 
 
-	if func() bool { var sceFailure scealgorithm.Failure; sceValue := scealgorithm.AddUint32(&sceFailure, p.vTotal, uint32(d.dayOfMonth)); if sceFailure.Failed() { engine.Raise(sce.NewPlatformError(StaticRecordListEventErrorExecution, "<assign location='total'>: an integer operation overflowed or failed")); return true }; p.vTotal = sceValue; return false }() {
+	if func() bool { var sceFailure scealgorithm.Failure; sceValue := scealgorithm.AddUint32(&sceFailure, p.vTotal, uint32(d.dayOfMonth)); if sceFailure.Failed() { engine.Raise(sce.NewPlatformError(StaticRecordListEventErrorExecution, sceerrorreason.ErrorReasonExpressionFailed, "<assign location='total'>: an integer operation overflowed or failed")); return true }; p.vTotal = sceValue; return false }() {
 		return  // W3C SCXML 4.9: the error ends the block
 	}
 
@@ -1190,7 +1194,7 @@ func (p *StaticRecordListPolicy) ExecuteTransitionContent(source StaticRecordLis
 
 	// SCE Accepted Subset §2.15: <sce:append target="copies">
 
-	if func() bool { var sceFailure scealgorithm.Failure; if len(p.vCopies) >= 3 { engine.Raise(sce.NewPlatformError(StaticRecordListEventErrorExecution, "<sce:append target='copies'>: the list already holds its capacity of 3")); return true }; sceValue := scealgorithm.ElementOf(p.vCopies, d); if sceFailure.Failed() { engine.Raise(sce.NewPlatformError(StaticRecordListEventErrorExecution, "<sce:append target='copies'>: an integer operation overflowed or failed")); return true }; p.vCopies = append(p.vCopies, sceValue); return false }() {
+	if func() bool { var sceFailure scealgorithm.Failure; if len(p.vCopies) >= 3 { engine.Raise(sce.NewPlatformError(StaticRecordListEventErrorExecution, sceerrorreason.ErrorReasonAssignmentFailed, "<sce:append target='copies'>: the list already holds its capacity of 3")); return true }; sceValue := scealgorithm.ElementOf(p.vCopies, d); if sceFailure.Failed() { engine.Raise(sce.NewPlatformError(StaticRecordListEventErrorExecution, sceerrorreason.ErrorReasonExpressionFailed, "<sce:append target='copies'>: an integer operation overflowed or failed")); return true }; p.vCopies = append(p.vCopies, sceValue); return false }() {
 		return  // W3C SCXML 4.9: the error ends the block
 	}
 
@@ -1237,7 +1241,7 @@ func (p *StaticRecordListPolicy) ExecuteTransitionContent(source StaticRecordLis
 			func() {
 
 
-	if func() bool { var sceFailure scealgorithm.Failure; sceValue := scealgorithm.AddUint32(&sceFailure, p.vErrors, 1); if sceFailure.Failed() { engine.Raise(sce.NewPlatformError(StaticRecordListEventErrorExecution, "<assign location='errors'>: an integer operation overflowed or failed")); return true }; p.vErrors = sceValue; return false }() {
+	if func() bool { var sceFailure scealgorithm.Failure; sceValue := scealgorithm.AddUint32(&sceFailure, p.vErrors, 1); if sceFailure.Failed() { engine.Raise(sce.NewPlatformError(StaticRecordListEventErrorExecution, sceerrorreason.ErrorReasonExpressionFailed, "<assign location='errors'>: an integer operation overflowed or failed")); return true }; p.vErrors = sceValue; return false }() {
 		return  // W3C SCXML 4.9: the error ends the block
 	}
 

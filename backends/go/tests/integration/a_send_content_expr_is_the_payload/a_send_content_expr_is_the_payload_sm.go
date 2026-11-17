@@ -31,6 +31,7 @@ import (
 	"time"
 
 	sce "github.com/newmassrael/sce-go-runtime"
+	sceerrorreason "github.com/newmassrael/sce-go-runtime/generated/error_reason"
 )
 
 // Ensure imports are used
@@ -39,6 +40,9 @@ var (
 	_ = filepath.Join
 	_ = strings.HasPrefix
 	_ = time.Duration(0)
+	// Why an error.* event is raised (sce:std/engine/error_reason,
+	// docs/adr/0106 #111); a machine that raises none still imports it.
+	_ = sceerrorreason.ErrorReasonExpressionFailed
 )
 
 // ======================================================================
@@ -418,7 +422,7 @@ func (p *ASendContentExprIsThePayloadPolicy) InitializeDataModel(eng *sce.Engine
 		if err == nil {
 			_ = engine.SetVariable(sessionID, "obj", result)
 		} else {
-			eng.Raise(sce.NewPlatformError(ASendContentExprIsThePayloadEventErrorExecution, "<data id='obj'> expr failed to evaluate"))
+			eng.Raise(sce.NewPlatformError(ASendContentExprIsThePayloadEventErrorExecution, sceerrorreason.ErrorReasonExpressionFailed, "<data id='obj'> expr failed to evaluate"))
 			_ = engine.SetVariable(sessionID, "obj", nil)
 		}
 	}
@@ -432,7 +436,7 @@ func (p *ASendContentExprIsThePayloadPolicy) InitializeDataModel(eng *sce.Engine
 		if err == nil {
 			_ = engine.SetVariable(sessionID, "numberOk", result)
 		} else {
-			eng.Raise(sce.NewPlatformError(ASendContentExprIsThePayloadEventErrorExecution, "<data id='numberOk'> expr failed to evaluate"))
+			eng.Raise(sce.NewPlatformError(ASendContentExprIsThePayloadEventErrorExecution, sceerrorreason.ErrorReasonExpressionFailed, "<data id='numberOk'> expr failed to evaluate"))
 			_ = engine.SetVariable(sessionID, "numberOk", nil)
 		}
 	}
@@ -446,7 +450,7 @@ func (p *ASendContentExprIsThePayloadPolicy) InitializeDataModel(eng *sce.Engine
 		if err == nil {
 			_ = engine.SetVariable(sessionID, "objectOk", result)
 		} else {
-			eng.Raise(sce.NewPlatformError(ASendContentExprIsThePayloadEventErrorExecution, "<data id='objectOk'> expr failed to evaluate"))
+			eng.Raise(sce.NewPlatformError(ASendContentExprIsThePayloadEventErrorExecution, sceerrorreason.ErrorReasonExpressionFailed, "<data id='objectOk'> expr failed to evaluate"))
 			_ = engine.SetVariable(sessionID, "objectOk", nil)
 		}
 	}
@@ -460,7 +464,7 @@ func (p *ASendContentExprIsThePayloadPolicy) InitializeDataModel(eng *sce.Engine
 		if err == nil {
 			_ = engine.SetVariable(sessionID, "textOk", result)
 		} else {
-			eng.Raise(sce.NewPlatformError(ASendContentExprIsThePayloadEventErrorExecution, "<data id='textOk'> expr failed to evaluate"))
+			eng.Raise(sce.NewPlatformError(ASendContentExprIsThePayloadEventErrorExecution, sceerrorreason.ErrorReasonExpressionFailed, "<data id='textOk'> expr failed to evaluate"))
 			_ = engine.SetVariable(sessionID, "textOk", nil)
 		}
 	}
@@ -474,7 +478,7 @@ func (p *ASendContentExprIsThePayloadPolicy) InitializeDataModel(eng *sce.Engine
 		if err == nil {
 			_ = engine.SetVariable(sessionID, "errors", result)
 		} else {
-			eng.Raise(sce.NewPlatformError(ASendContentExprIsThePayloadEventErrorExecution, "<data id='errors'> expr failed to evaluate"))
+			eng.Raise(sce.NewPlatformError(ASendContentExprIsThePayloadEventErrorExecution, sceerrorreason.ErrorReasonExpressionFailed, "<data id='errors'> expr failed to evaluate"))
 			_ = engine.SetVariable(sessionID, "errors", nil)
 		}
 	}
@@ -488,7 +492,7 @@ func (p *ASendContentExprIsThePayloadPolicy) InitializeDataModel(eng *sce.Engine
 		if err == nil {
 			_ = engine.SetVariable(sessionID, "badArrived", result)
 		} else {
-			eng.Raise(sce.NewPlatformError(ASendContentExprIsThePayloadEventErrorExecution, "<data id='badArrived'> expr failed to evaluate"))
+			eng.Raise(sce.NewPlatformError(ASendContentExprIsThePayloadEventErrorExecution, sceerrorreason.ErrorReasonExpressionFailed, "<data id='badArrived'> expr failed to evaluate"))
 			_ = engine.SetVariable(sessionID, "badArrived", nil)
 		}
 	}
@@ -502,7 +506,7 @@ func (p *ASendContentExprIsThePayloadPolicy) InitializeDataModel(eng *sce.Engine
 		if err == nil {
 			_ = engine.SetVariable(sessionID, "badEmpty", result)
 		} else {
-			eng.Raise(sce.NewPlatformError(ASendContentExprIsThePayloadEventErrorExecution, "<data id='badEmpty'> expr failed to evaluate"))
+			eng.Raise(sce.NewPlatformError(ASendContentExprIsThePayloadEventErrorExecution, sceerrorreason.ErrorReasonExpressionFailed, "<data id='badEmpty'> expr failed to evaluate"))
 			_ = engine.SetVariable(sessionID, "badEmpty", nil)
 		}
 	}
@@ -516,7 +520,7 @@ func (p *ASendContentExprIsThePayloadPolicy) InitializeDataModel(eng *sce.Engine
 		if err == nil {
 			_ = engine.SetVariable(sessionID, "afterBad", result)
 		} else {
-			eng.Raise(sce.NewPlatformError(ASendContentExprIsThePayloadEventErrorExecution, "<data id='afterBad'> expr failed to evaluate"))
+			eng.Raise(sce.NewPlatformError(ASendContentExprIsThePayloadEventErrorExecution, sceerrorreason.ErrorReasonExpressionFailed, "<data id='afterBad'> expr failed to evaluate"))
 			_ = engine.SetVariable(sessionID, "afterBad", nil)
 		}
 	}
@@ -548,12 +552,12 @@ func (p *ASendContentExprIsThePayloadPolicy) evaluateIfCond(guard string, eng *s
 // evaluateGuardRaising evaluates a cond, raising error.execution when it cannot
 // be evaluated (W3C SCXML 5.9.1); ok is false then, where a bare false could
 // not say so.
-func (p *ASendContentExprIsThePayloadPolicy) evaluateGuardRaising(guard string, eng *sce.Engine[ASendContentExprIsThePayloadState, ASendContentExprIsThePayloadEvent], reason string) (value bool, ok bool) {
+func (p *ASendContentExprIsThePayloadPolicy) evaluateGuardRaising(guard string, eng *sce.Engine[ASendContentExprIsThePayloadState, ASendContentExprIsThePayloadEvent], detail string) (value bool, ok bool) {
 	p.assertScriptSession()
 	engine := p.ScriptEngine
 	result, err := engine.EvaluateExpression(p.SessionID, guard)
 	if err != nil {
-		eng.Raise(sce.NewPlatformError(ASendContentExprIsThePayloadEventErrorExecution, reason))
+		eng.Raise(sce.NewPlatformError(ASendContentExprIsThePayloadEventErrorExecution, sceerrorreason.ErrorReasonExpressionFailed, detail))
 		return false, false
 	}
 	return sce.ScriptToBool(result), true
@@ -656,7 +660,7 @@ func (p *ASendContentExprIsThePayloadPolicy) SetParamValueInScriptEngine(name st
 // failed is left (docs/adr/0098).
 func (p *ASendContentExprIsThePayloadPolicy) declareHandedValue(eng *sce.Engine[ASendContentExprIsThePayloadState, ASendContentExprIsThePayloadEvent], engine sce.IScriptEngine, sessionID, name string, value interface{}) {
 	if err := engine.SetVariable(sessionID, name, value); err != nil {
-		eng.Raise(sce.NewPlatformError(ASendContentExprIsThePayloadEventErrorExecution, "<data id='"+name+"'> could not hold the value its invoking session handed it"))
+		eng.Raise(sce.NewPlatformError(ASendContentExprIsThePayloadEventErrorExecution, sceerrorreason.ErrorReasonDataInitFailed, "<data id='"+name+"'> could not hold the value its invoking session handed it"))
 		_ = engine.SetVariable(sessionID, name, nil)
 	}
 }
@@ -928,7 +932,7 @@ func (p *ASendContentExprIsThePayloadPolicy) ExecuteEntryActions(state ASendCont
 		if contentVal, contentErr := p.ScriptEngine.EvaluateExpression(p.SessionID, `(40 + 2)`); contentErr == nil {
 			eventDataStr = sce.ScriptValueToJSON(contentVal)
 		} else {
-			engine.Raise(sce.NewPlatformError(ASendContentExprIsThePayloadEventErrorExecution, "<send> contentexpr failed to evaluate"))
+			engine.Raise(sce.NewPlatformError(ASendContentExprIsThePayloadEventErrorExecution, sceerrorreason.ErrorReasonExpressionFailed, "<send> contentexpr failed to evaluate"))
 			paramFailed = true
 		}
 		_ = eventDataStr
@@ -961,7 +965,7 @@ func (p *ASendContentExprIsThePayloadPolicy) ExecuteEntryActions(state ASendCont
 		if contentVal, contentErr := p.ScriptEngine.EvaluateExpression(p.SessionID, `{["a"] = 1}`); contentErr == nil {
 			eventDataStr = sce.ScriptValueToJSON(contentVal)
 		} else {
-			engine.Raise(sce.NewPlatformError(ASendContentExprIsThePayloadEventErrorExecution, "<send> contentexpr failed to evaluate"))
+			engine.Raise(sce.NewPlatformError(ASendContentExprIsThePayloadEventErrorExecution, sceerrorreason.ErrorReasonExpressionFailed, "<send> contentexpr failed to evaluate"))
 			paramFailed = true
 		}
 		_ = eventDataStr
@@ -994,7 +998,7 @@ func (p *ASendContentExprIsThePayloadPolicy) ExecuteEntryActions(state ASendCont
 		if contentVal, contentErr := p.ScriptEngine.EvaluateExpression(p.SessionID, `"hi"`); contentErr == nil {
 			eventDataStr = sce.ScriptValueToJSON(contentVal)
 		} else {
-			engine.Raise(sce.NewPlatformError(ASendContentExprIsThePayloadEventErrorExecution, "<send> contentexpr failed to evaluate"))
+			engine.Raise(sce.NewPlatformError(ASendContentExprIsThePayloadEventErrorExecution, sceerrorreason.ErrorReasonExpressionFailed, "<send> contentexpr failed to evaluate"))
 			paramFailed = true
 		}
 		_ = eventDataStr
@@ -1031,7 +1035,7 @@ func (p *ASendContentExprIsThePayloadPolicy) ExecuteEntryActions(state ASendCont
 		if contentVal, contentErr := p.ScriptEngine.EvaluateExpression(p.SessionID, `obj.missing.deep`); contentErr == nil {
 			eventDataStr = sce.ScriptValueToJSON(contentVal)
 		} else {
-			engine.Raise(sce.NewPlatformError(ASendContentExprIsThePayloadEventErrorExecution, "<send> contentexpr failed to evaluate"))
+			engine.Raise(sce.NewPlatformError(ASendContentExprIsThePayloadEventErrorExecution, sceerrorreason.ErrorReasonExpressionFailed, "<send> contentexpr failed to evaluate"))
 			paramFailed = true
 		}
 		_ = eventDataStr
@@ -1052,7 +1056,7 @@ func (p *ASendContentExprIsThePayloadPolicy) ExecuteEntryActions(state ASendCont
 
 	// W3C SCXML 5.3: <assign location="afterBad" expr="1">
 	if err := p.assignVariable(`afterBad`, `1`); err != nil {
-		engine.Raise(sce.NewPlatformError(ASendContentExprIsThePayloadEventErrorExecution, "<assign> to 'afterBad' failed"))
+		engine.Raise(sce.NewPlatformError(ASendContentExprIsThePayloadEventErrorExecution, sceerrorreason.ErrorReasonAssignmentFailed, "<assign> to 'afterBad' failed"))
 		return  // W3C SCXML 4.9: the error ends the block
 	}
 
@@ -1219,7 +1223,7 @@ func (p *ASendContentExprIsThePayloadPolicy) ExecuteTransitionContent(source ASe
 
 	// W3C SCXML 5.3: <assign location="errors" expr="errors + 1">
 	if err := p.assignVariable(`errors`, `_scxml_add(errors, 1)`); err != nil {
-		engine.Raise(sce.NewPlatformError(ASendContentExprIsThePayloadEventErrorExecution, "<assign> to 'errors' failed"))
+		engine.Raise(sce.NewPlatformError(ASendContentExprIsThePayloadEventErrorExecution, sceerrorreason.ErrorReasonAssignmentFailed, "<assign> to 'errors' failed"))
 		return  // W3C SCXML 4.9: the error ends the block
 	}
 
@@ -1231,7 +1235,7 @@ func (p *ASendContentExprIsThePayloadPolicy) ExecuteTransitionContent(source ASe
 
 	// W3C SCXML 5.3: <assign location="numberOk" expr="1">
 	if err := p.assignVariable(`numberOk`, `1`); err != nil {
-		engine.Raise(sce.NewPlatformError(ASendContentExprIsThePayloadEventErrorExecution, "<assign> to 'numberOk' failed"))
+		engine.Raise(sce.NewPlatformError(ASendContentExprIsThePayloadEventErrorExecution, sceerrorreason.ErrorReasonAssignmentFailed, "<assign> to 'numberOk' failed"))
 		return  // W3C SCXML 4.9: the error ends the block
 	}
 
@@ -1243,7 +1247,7 @@ func (p *ASendContentExprIsThePayloadPolicy) ExecuteTransitionContent(source ASe
 
 	// W3C SCXML 5.3: <assign location="objectOk" expr="1">
 	if err := p.assignVariable(`objectOk`, `1`); err != nil {
-		engine.Raise(sce.NewPlatformError(ASendContentExprIsThePayloadEventErrorExecution, "<assign> to 'objectOk' failed"))
+		engine.Raise(sce.NewPlatformError(ASendContentExprIsThePayloadEventErrorExecution, sceerrorreason.ErrorReasonAssignmentFailed, "<assign> to 'objectOk' failed"))
 		return  // W3C SCXML 4.9: the error ends the block
 	}
 
@@ -1255,7 +1259,7 @@ func (p *ASendContentExprIsThePayloadPolicy) ExecuteTransitionContent(source ASe
 
 	// W3C SCXML 5.3: <assign location="textOk" expr="1">
 	if err := p.assignVariable(`textOk`, `1`); err != nil {
-		engine.Raise(sce.NewPlatformError(ASendContentExprIsThePayloadEventErrorExecution, "<assign> to 'textOk' failed"))
+		engine.Raise(sce.NewPlatformError(ASendContentExprIsThePayloadEventErrorExecution, sceerrorreason.ErrorReasonAssignmentFailed, "<assign> to 'textOk' failed"))
 		return  // W3C SCXML 4.9: the error ends the block
 	}
 
@@ -1267,7 +1271,7 @@ func (p *ASendContentExprIsThePayloadPolicy) ExecuteTransitionContent(source ASe
 
 	// W3C SCXML 5.3: <assign location="badArrived" expr="1">
 	if err := p.assignVariable(`badArrived`, `1`); err != nil {
-		engine.Raise(sce.NewPlatformError(ASendContentExprIsThePayloadEventErrorExecution, "<assign> to 'badArrived' failed"))
+		engine.Raise(sce.NewPlatformError(ASendContentExprIsThePayloadEventErrorExecution, sceerrorreason.ErrorReasonAssignmentFailed, "<assign> to 'badArrived' failed"))
 		return  // W3C SCXML 4.9: the error ends the block
 	}
 
@@ -1278,7 +1282,7 @@ func (p *ASendContentExprIsThePayloadPolicy) ExecuteTransitionContent(source ASe
 
 	// W3C SCXML 5.3: <assign location="badEmpty" expr="1">
 	if err := p.assignVariable(`badEmpty`, `1`); err != nil {
-		engine.Raise(sce.NewPlatformError(ASendContentExprIsThePayloadEventErrorExecution, "<assign> to 'badEmpty' failed"))
+		engine.Raise(sce.NewPlatformError(ASendContentExprIsThePayloadEventErrorExecution, sceerrorreason.ErrorReasonAssignmentFailed, "<assign> to 'badEmpty' failed"))
 		return  // W3C SCXML 4.9: the error ends the block
 	}
 

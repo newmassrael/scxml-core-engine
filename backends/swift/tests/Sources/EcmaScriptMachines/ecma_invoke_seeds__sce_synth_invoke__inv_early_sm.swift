@@ -460,8 +460,12 @@ public final class EcmaInvokeSeedsSceSynthInvokeInvEarlyPolicy: InvocablePolicy 
 
     /// Says what went wrong where the document can see it: `error.execution` on the internal
     /// queue (§scxml-5.9.1, 5.3).
-    private func raiseExecutionError(_ message: String, engine: Engine<EcmaInvokeSeedsSceSynthInvokeInvEarlyPolicy>) {
-        engine.raise(EventWithMetadata.platformError(EcmaInvokeSeedsSceSynthInvokeInvEarlyEvent.errorExecution, message: message))
+    /// `reason` is the code of sce:std/engine/error_reason the record carries
+    /// (docs/adr/0106 #111).
+    private func raiseExecutionError(
+        _ reason: ErrorReason, _ message: String, engine: Engine<EcmaInvokeSeedsSceSynthInvokeInvEarlyPolicy>
+    ) {
+        engine.raise(EventWithMetadata.platformError(EcmaInvokeSeedsSceSynthInvokeInvEarlyEvent.errorExecution, reason: reason, message: message))
     }
 
     /// W3C SCXML 5.3: the `<data id>` `id` takes the value of the lowered expression, or nil when it
@@ -518,6 +522,7 @@ public final class EcmaInvokeSeedsSceSynthInvokeInvEarlyPolicy: InvocablePolicy 
             }
         } catch {
             raiseExecutionError(
+                handed == nil ? .expressionFailed : .paramUnfit,
                 handed == nil
                     ? "<data id='\(id)'> expr failed to evaluate"
                     : "<data id='\(id)'> could not hold the value its parent handed it",
@@ -651,7 +656,7 @@ public final class EcmaInvokeSeedsSceSynthInvokeInvEarlyPolicy: InvocablePolicy 
         defineData("kept", as: "\"own\"", engine: engine)
         // W3C SCXML 5.8: the top-level scripts run at document load, after the data is declared
         if !executeScript("seenByScript = failing\nobjWhole = (function() local __l = (function() local __l = (function() local __l = (function() local __l = (function() local __l = (_typeof(obj) == \"object\") if _scxml_truthy(__l) then return (obj ~= nil) end return __l end)() if _scxml_truthy(__l) then return (obj.name == \"box\") end return __l end)() if _scxml_truthy(__l) then return (#obj.items == 2) end return __l end)() if _scxml_truthy(__l) then return (obj.items[1] == \"a\") end return __l end)() if _scxml_truthy(__l) then return (obj.items[2] == \"b\") end return __l end)()", name: "=script") {
-            raiseExecutionError("a top-level <script> failed to execute", engine: engine)
+            raiseExecutionError(.scriptFailed, "a top-level <script> failed to execute", engine: engine)
         }
     }
 
@@ -692,7 +697,7 @@ public final class EcmaInvokeSeedsSceSynthInvokeInvEarlyPolicy: InvocablePolicy 
             // this call the payload is lost to the document and to the host alike.
             engine.notePayloadReading(event, reading: Self.payloadReading(of: reading))
         } catch {
-            raiseExecutionError("_event could not be bound for '\(name)'", engine: engine)
+            raiseExecutionError(.payloadRefused, "_event could not be bound for '\(name)'", engine: engine)
         }
     }
 
@@ -729,7 +734,7 @@ public final class EcmaInvokeSeedsSceSynthInvokeInvEarlyPolicy: InvocablePolicy 
         do {
             return try scriptSession.evaluateCondition(condition, chunkName: "=cond")
         } catch {
-            raiseExecutionError("a \(element) cond failed to evaluate", engine: engine)
+            raiseExecutionError(.expressionFailed, "a \(element) cond failed to evaluate", engine: engine)
             failed = true
             return false
         }
@@ -748,7 +753,7 @@ public final class EcmaInvokeSeedsSceSynthInvokeInvEarlyPolicy: InvocablePolicy 
 
                 // W3C SCXML 5.4: <assign location="seenByEntry">
                 if !assignData("seenByEntry", "failing") {
-                    raiseExecutionError("<assign> to 'seenByEntry' failed", engine: engine)
+                    raiseExecutionError(.assignmentFailed, "<assign> to 'seenByEntry' failed", engine: engine)
                     break sceBlock  // W3C SCXML 4.9: the error ends the block
                 }
 
@@ -922,7 +927,7 @@ public final class EcmaInvokeSeedsSceSynthInvokeInvEarlyPolicy: InvocablePolicy 
 
                 // W3C SCXML 5.4: <assign location="errors">
                 if !assignData("errors", "_scxml_add(errors, 1)") {
-                    raiseExecutionError("<assign> to 'errors' failed", engine: engine)
+                    raiseExecutionError(.assignmentFailed, "<assign> to 'errors' failed", engine: engine)
                     break sceBlock  // W3C SCXML 4.9: the error ends the block
                 }
 
@@ -939,7 +944,7 @@ public final class EcmaInvokeSeedsSceSynthInvokeInvEarlyPolicy: InvocablePolicy 
                         // W3C SCXML C.1: this session was started by its host, not by an
                         // `<invoke>`, so `#_parent` reaches nobody — error.communication,
                         // nothing delivered, and the block ends (4.9).
-                        var sendError = EventWithMetadata.platformError(EcmaInvokeSeedsSceSynthInvokeInvEarlyEvent.errorCommunication, message: "<send target=#_parent> has no parent session to reach")
+                        var sendError = EventWithMetadata.platformError(EcmaInvokeSeedsSceSynthInvokeInvEarlyEvent.errorCommunication, reason: .targetUnreachable, message: "<send target=#_parent> has no parent session to reach")
                         sendError.metadata.sendID = "__send_0"
                         engine.raise(sendError)
 
@@ -959,7 +964,7 @@ public final class EcmaInvokeSeedsSceSynthInvokeInvEarlyPolicy: InvocablePolicy 
                         // W3C SCXML C.1: this session was started by its host, not by an
                         // `<invoke>`, so `#_parent` reaches nobody — error.communication,
                         // nothing delivered, and the block ends (4.9).
-                        var sendError = EventWithMetadata.platformError(EcmaInvokeSeedsSceSynthInvokeInvEarlyEvent.errorCommunication, message: "<send target=#_parent> has no parent session to reach")
+                        var sendError = EventWithMetadata.platformError(EcmaInvokeSeedsSceSynthInvokeInvEarlyEvent.errorCommunication, reason: .targetUnreachable, message: "<send target=#_parent> has no parent session to reach")
                         sendError.metadata.sendID = "__send_1"
                         engine.raise(sendError)
 
@@ -979,7 +984,7 @@ public final class EcmaInvokeSeedsSceSynthInvokeInvEarlyPolicy: InvocablePolicy 
                         // W3C SCXML C.1: this session was started by its host, not by an
                         // `<invoke>`, so `#_parent` reaches nobody — error.communication,
                         // nothing delivered, and the block ends (4.9).
-                        var sendError = EventWithMetadata.platformError(EcmaInvokeSeedsSceSynthInvokeInvEarlyEvent.errorCommunication, message: "<send target=#_parent> has no parent session to reach")
+                        var sendError = EventWithMetadata.platformError(EcmaInvokeSeedsSceSynthInvokeInvEarlyEvent.errorCommunication, reason: .targetUnreachable, message: "<send target=#_parent> has no parent session to reach")
                         sendError.metadata.sendID = "__send_2"
                         engine.raise(sendError)
 
@@ -999,7 +1004,7 @@ public final class EcmaInvokeSeedsSceSynthInvokeInvEarlyPolicy: InvocablePolicy 
                         // W3C SCXML C.1: this session was started by its host, not by an
                         // `<invoke>`, so `#_parent` reaches nobody — error.communication,
                         // nothing delivered, and the block ends (4.9).
-                        var sendError = EventWithMetadata.platformError(EcmaInvokeSeedsSceSynthInvokeInvEarlyEvent.errorCommunication, message: "<send target=#_parent> has no parent session to reach")
+                        var sendError = EventWithMetadata.platformError(EcmaInvokeSeedsSceSynthInvokeInvEarlyEvent.errorCommunication, reason: .targetUnreachable, message: "<send target=#_parent> has no parent session to reach")
                         sendError.metadata.sendID = "__send_3"
                         engine.raise(sendError)
 
@@ -1019,7 +1024,7 @@ public final class EcmaInvokeSeedsSceSynthInvokeInvEarlyPolicy: InvocablePolicy 
                         // W3C SCXML C.1: this session was started by its host, not by an
                         // `<invoke>`, so `#_parent` reaches nobody — error.communication,
                         // nothing delivered, and the block ends (4.9).
-                        var sendError = EventWithMetadata.platformError(EcmaInvokeSeedsSceSynthInvokeInvEarlyEvent.errorCommunication, message: "<send target=#_parent> has no parent session to reach")
+                        var sendError = EventWithMetadata.platformError(EcmaInvokeSeedsSceSynthInvokeInvEarlyEvent.errorCommunication, reason: .targetUnreachable, message: "<send target=#_parent> has no parent session to reach")
                         sendError.metadata.sendID = "__send_4"
                         engine.raise(sendError)
 
@@ -1039,7 +1044,7 @@ public final class EcmaInvokeSeedsSceSynthInvokeInvEarlyPolicy: InvocablePolicy 
                         // W3C SCXML C.1: this session was started by its host, not by an
                         // `<invoke>`, so `#_parent` reaches nobody — error.communication,
                         // nothing delivered, and the block ends (4.9).
-                        var sendError = EventWithMetadata.platformError(EcmaInvokeSeedsSceSynthInvokeInvEarlyEvent.errorCommunication, message: "<send target=#_parent> has no parent session to reach")
+                        var sendError = EventWithMetadata.platformError(EcmaInvokeSeedsSceSynthInvokeInvEarlyEvent.errorCommunication, reason: .targetUnreachable, message: "<send target=#_parent> has no parent session to reach")
                         sendError.metadata.sendID = "__send_5"
                         engine.raise(sendError)
 
@@ -1059,7 +1064,7 @@ public final class EcmaInvokeSeedsSceSynthInvokeInvEarlyPolicy: InvocablePolicy 
                         // W3C SCXML C.1: this session was started by its host, not by an
                         // `<invoke>`, so `#_parent` reaches nobody — error.communication,
                         // nothing delivered, and the block ends (4.9).
-                        var sendError = EventWithMetadata.platformError(EcmaInvokeSeedsSceSynthInvokeInvEarlyEvent.errorCommunication, message: "<send target=#_parent> has no parent session to reach")
+                        var sendError = EventWithMetadata.platformError(EcmaInvokeSeedsSceSynthInvokeInvEarlyEvent.errorCommunication, reason: .targetUnreachable, message: "<send target=#_parent> has no parent session to reach")
                         sendError.metadata.sendID = "__send_6"
                         engine.raise(sendError)
 
@@ -1079,7 +1084,7 @@ public final class EcmaInvokeSeedsSceSynthInvokeInvEarlyPolicy: InvocablePolicy 
                         // W3C SCXML C.1: this session was started by its host, not by an
                         // `<invoke>`, so `#_parent` reaches nobody — error.communication,
                         // nothing delivered, and the block ends (4.9).
-                        var sendError = EventWithMetadata.platformError(EcmaInvokeSeedsSceSynthInvokeInvEarlyEvent.errorCommunication, message: "<send target=#_parent> has no parent session to reach")
+                        var sendError = EventWithMetadata.platformError(EcmaInvokeSeedsSceSynthInvokeInvEarlyEvent.errorCommunication, reason: .targetUnreachable, message: "<send target=#_parent> has no parent session to reach")
                         sendError.metadata.sendID = "__send_7"
                         engine.raise(sendError)
 

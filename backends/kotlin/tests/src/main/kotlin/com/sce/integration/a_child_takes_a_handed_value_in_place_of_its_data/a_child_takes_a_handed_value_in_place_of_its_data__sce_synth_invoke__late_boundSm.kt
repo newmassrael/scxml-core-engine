@@ -220,7 +220,7 @@ class AChildTakesAHandedValueInPlaceOfItsDataSceSynthInvokeLateBoundStateMachine
             try {
                 engine.setVariable(sid, "handed", engine.evaluateExpr(sid, com.sce.runtime.ScriptSource.lua("\"own late\"", "'own late'")))
             } catch (e: Exception) {
-                raisePlatformError(AChildTakesAHandedValueInPlaceOfItsDataSceSynthInvokeLateBoundEvent.Error.Execution, "<data id='handed'> expr failed to evaluate")
+                raisePlatformError(AChildTakesAHandedValueInPlaceOfItsDataSceSynthInvokeLateBoundEvent.Error.Execution, ErrorReason.EXPRESSION_FAILED, "<data id='handed'> expr failed to evaluate")
             }
         }
     }
@@ -250,14 +250,14 @@ class AChildTakesAHandedValueInPlaceOfItsDataSceSynthInvokeLateBoundStateMachine
 
     // W3C SCXML 5.9.1: a cond that cannot be evaluated raises error.execution;
     // `null` says so, where a bare `false` could not.
-    private fun evaluateGuardRaising(guardExpr: com.sce.runtime.ScriptSource, reason: String): Boolean? {
+    private fun evaluateGuardRaising(guardExpr: com.sce.runtime.ScriptSource, detail: String): Boolean? {
         assertScriptSession()
         val engine = scriptEngine ?: error("scriptEngine is required (codegen invariant: needs_script_engine == true)")
         val sid = scriptSessionId ?: error("scriptSessionId is established by the start (codegen invariant)")
         return try {
             engine.evaluateCondition(sid, guardExpr)
         } catch (e: Exception) {
-            raisePlatformError(AChildTakesAHandedValueInPlaceOfItsDataSceSynthInvokeLateBoundEvent.Error.Execution, reason)
+            raisePlatformError(AChildTakesAHandedValueInPlaceOfItsDataSceSynthInvokeLateBoundEvent.Error.Execution, ErrorReason.EXPRESSION_FAILED, detail)
             null
         }
     }
@@ -298,7 +298,7 @@ class AChildTakesAHandedValueInPlaceOfItsDataSceSynthInvokeLateBoundStateMachine
         return try {
             engine.evaluateExpr(sid, serialized)?.toString() ?: ""
         } catch (e: Exception) {
-            raisePlatformError(AChildTakesAHandedValueInPlaceOfItsDataSceSynthInvokeLateBoundEvent.Error.Execution, "an expression could not be serialised to JSON")
+            raisePlatformError(AChildTakesAHandedValueInPlaceOfItsDataSceSynthInvokeLateBoundEvent.Error.Execution, ErrorReason.EXPRESSION_FAILED, "an expression could not be serialised to JSON")
             ""
         }
     }
@@ -319,7 +319,7 @@ class AChildTakesAHandedValueInPlaceOfItsDataSceSynthInvokeLateBoundStateMachine
             engine.assign(sid, location, expr)
             true
         } catch (e: Exception) {
-            raisePlatformError(AChildTakesAHandedValueInPlaceOfItsDataSceSynthInvokeLateBoundEvent.Error.Execution, "<assign> failed")
+            raisePlatformError(AChildTakesAHandedValueInPlaceOfItsDataSceSynthInvokeLateBoundEvent.Error.Execution, ErrorReason.ASSIGNMENT_FAILED, "<assign> failed")
             false
         }
     }
@@ -335,7 +335,7 @@ class AChildTakesAHandedValueInPlaceOfItsDataSceSynthInvokeLateBoundStateMachine
             engine.executeScript(sid, script)
             true
         } catch (e: Exception) {
-            raisePlatformError(AChildTakesAHandedValueInPlaceOfItsDataSceSynthInvokeLateBoundEvent.Error.Execution, "<script> failed to execute")
+            raisePlatformError(AChildTakesAHandedValueInPlaceOfItsDataSceSynthInvokeLateBoundEvent.Error.Execution, ErrorReason.SCRIPT_FAILED, "<script> failed to execute")
             false
         }
     }
@@ -449,7 +449,7 @@ class AChildTakesAHandedValueInPlaceOfItsDataSceSynthInvokeLateBoundStateMachine
                         val v = engine.evaluateExpr(sid, com.sce.runtime.ScriptSource.lua("\"own kept\"", "'own kept'"))
                         engine.setVariable(sid, "kept", v)
                     } catch (e: Exception) {
-                        raisePlatformError(AChildTakesAHandedValueInPlaceOfItsDataSceSynthInvokeLateBoundEvent.Error.Execution, "<data id='kept'> expr failed to evaluate")
+                        raisePlatformError(AChildTakesAHandedValueInPlaceOfItsDataSceSynthInvokeLateBoundEvent.Error.Execution, ErrorReason.EXPRESSION_FAILED, "<data id='kept'> expr failed to evaluate")
                     }
                 }
                 // W3C SCXML 3.8: Onentry block 1/1
@@ -521,7 +521,7 @@ class AChildTakesAHandedValueInPlaceOfItsDataSceSynthInvokeLateBoundStateMachine
             // no parent — error.communication, nothing delivered, the block ended.
             val toParent = onSendToParent
             if (toParent == null) {
-                raisePlatformError(AChildTakesAHandedValueInPlaceOfItsDataSceSynthInvokeLateBoundEvent.Error.Communication, "<send target='#_parent'> has no parent session to reach", "__send_0")
+                raisePlatformError(AChildTakesAHandedValueInPlaceOfItsDataSceSynthInvokeLateBoundEvent.Error.Communication, ErrorReason.TARGET_UNREACHABLE, "<send target='#_parent'> has no parent session to reach", "__send_0")
                 return@send true
             }
             toParent("late.kept", sendData)
@@ -544,7 +544,7 @@ class AChildTakesAHandedValueInPlaceOfItsDataSceSynthInvokeLateBoundStateMachine
             // no parent — error.communication, nothing delivered, the block ended.
             val toParent = onSendToParent
             if (toParent == null) {
-                raisePlatformError(AChildTakesAHandedValueInPlaceOfItsDataSceSynthInvokeLateBoundEvent.Error.Communication, "<send target='#_parent'> has no parent session to reach", "__send_1")
+                raisePlatformError(AChildTakesAHandedValueInPlaceOfItsDataSceSynthInvokeLateBoundEvent.Error.Communication, ErrorReason.TARGET_UNREACHABLE, "<send target='#_parent'> has no parent session to reach", "__send_1")
                 return@send true
             }
             toParent("late.lost", sendData)
@@ -567,7 +567,7 @@ class AChildTakesAHandedValueInPlaceOfItsDataSceSynthInvokeLateBoundStateMachine
             // no parent — error.communication, nothing delivered, the block ended.
             val toParent = onSendToParent
             if (toParent == null) {
-                raisePlatformError(AChildTakesAHandedValueInPlaceOfItsDataSceSynthInvokeLateBoundEvent.Error.Communication, "<send target='#_parent'> has no parent session to reach", "__send_2")
+                raisePlatformError(AChildTakesAHandedValueInPlaceOfItsDataSceSynthInvokeLateBoundEvent.Error.Communication, ErrorReason.TARGET_UNREACHABLE, "<send target='#_parent'> has no parent session to reach", "__send_2")
                 return@send true
             }
             toParent("late.ok", sendData)

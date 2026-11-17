@@ -529,7 +529,7 @@ public final class StaticSendTypePolicy: InvocablePolicy {
                     // W3C SCXML 6.2: Unsupported send type raises error.execution — the build
                     // decided it once, as it decides the choice a computed `typeexpr` makes
                     // when its value is none of the declared types.
-                        var sendError = EventWithMetadata.platformError(StaticSendTypeEvent.errorExecution, message: "<send type=sce:undeclared-type> names a processor this platform does not support")
+                        var sendError = EventWithMetadata.platformError(StaticSendTypeEvent.errorExecution, reason: .sendTypeUnsupported, message: "<send type=sce:undeclared-type> names a processor this platform does not support")
                         sendError.metadata.sendID = "__send_0"
                         engine.raise(sendError)
 
@@ -543,7 +543,7 @@ public final class StaticSendTypePolicy: InvocablePolicy {
                 sceBlock: do {
 
 
-                if ({ () -> Bool in do { let sceValue: String = (try Checked.bounded("http://www.w3.org/TR/scxml/#SCXMLEventProcessor", capacity: 64)); self.vKind = sceValue } catch { engine.raise(EventWithMetadata.platformError(StaticSendTypeEvent.errorExecution, message: "<assign location='kind'>: an integer operation overflowed or failed")); return true }; return false }()) {
+                if ({ () -> Bool in do { let sceValue: String = (try Checked.bounded("http://www.w3.org/TR/scxml/#SCXMLEventProcessor", capacity: 64)); self.vKind = sceValue } catch { engine.raise(EventWithMetadata.platformError(StaticSendTypeEvent.errorExecution, reason: .expressionFailed, message: "<assign location='kind'>: an integer operation overflowed or failed")); return true }; return false }()) {
                     break sceBlock  // W3C SCXML 4.9: the error ends the block
                 }
 
@@ -553,7 +553,7 @@ public final class StaticSendTypePolicy: InvocablePolicy {
                 sceBlock: do {
 
 
-                if ({ () -> Bool in do { let sceValue: String = (try Checked.bounded("urn:example:no-such-processor", capacity: 64)); self.vKind = sceValue } catch { engine.raise(EventWithMetadata.platformError(StaticSendTypeEvent.errorExecution, message: "<assign location='kind'>: an integer operation overflowed or failed")); return true }; return false }()) {
+                if ({ () -> Bool in do { let sceValue: String = (try Checked.bounded("urn:example:no-such-processor", capacity: 64)); self.vKind = sceValue } catch { engine.raise(EventWithMetadata.platformError(StaticSendTypeEvent.errorExecution, reason: .expressionFailed, message: "<assign location='kind'>: an integer operation overflowed or failed")); return true }; return false }()) {
                     break sceBlock  // W3C SCXML 4.9: the error ends the block
                 }
 
@@ -563,7 +563,7 @@ public final class StaticSendTypePolicy: InvocablePolicy {
                 sceBlock: do {
 
 
-                if ({ () -> Bool in do { let sceValue: String = (try Checked.bounded("http://www.w3.org/TR/scxml/#BasicHTTPEventProcessor", capacity: 64)); self.vKind = sceValue } catch { engine.raise(EventWithMetadata.platformError(StaticSendTypeEvent.errorExecution, message: "<assign location='kind'>: an integer operation overflowed or failed")); return true }; return false }()) {
+                if ({ () -> Bool in do { let sceValue: String = (try Checked.bounded("http://www.w3.org/TR/scxml/#BasicHTTPEventProcessor", capacity: 64)); self.vKind = sceValue } catch { engine.raise(EventWithMetadata.platformError(StaticSendTypeEvent.errorExecution, reason: .expressionFailed, message: "<assign location='kind'>: an integer operation overflowed or failed")); return true }; return false }()) {
                     break sceBlock  // W3C SCXML 4.9: the error ends the block
                 }
 
@@ -573,7 +573,7 @@ public final class StaticSendTypePolicy: InvocablePolicy {
                 sceBlock: do {
 
 
-                if ({ () -> Bool in do { let sceValue: UInt32 = (try Checked.add(self.vLanded, 1)); self.vLanded = sceValue } catch { engine.raise(EventWithMetadata.platformError(StaticSendTypeEvent.errorExecution, message: "<assign location='landed'>: an integer operation overflowed or failed")); return true }; return false }()) {
+                if ({ () -> Bool in do { let sceValue: UInt32 = (try Checked.add(self.vLanded, 1)); self.vLanded = sceValue } catch { engine.raise(EventWithMetadata.platformError(StaticSendTypeEvent.errorExecution, reason: .expressionFailed, message: "<assign location='landed'>: an integer operation overflowed or failed")); return true }; return false }()) {
                     break sceBlock  // W3C SCXML 4.9: the error ends the block
                 }
 
@@ -583,7 +583,7 @@ public final class StaticSendTypePolicy: InvocablePolicy {
                 sceBlock: do {
 
 
-                if ({ () -> Bool in do { let sceValue: UInt32 = (try Checked.add(self.vRefused, 1)); self.vRefused = sceValue } catch { engine.raise(EventWithMetadata.platformError(StaticSendTypeEvent.errorExecution, message: "<assign location='refused'>: an integer operation overflowed or failed")); return true }; return false }()) {
+                if ({ () -> Bool in do { let sceValue: UInt32 = (try Checked.add(self.vRefused, 1)); self.vRefused = sceValue } catch { engine.raise(EventWithMetadata.platformError(StaticSendTypeEvent.errorExecution, reason: .expressionFailed, message: "<assign location='refused'>: an integer operation overflowed or failed")); return true }; return false }()) {
                     break sceBlock  // W3C SCXML 4.9: the error ends the block
                 }
 

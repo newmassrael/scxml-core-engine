@@ -31,6 +31,7 @@ import (
 	"time"
 
 	sce "github.com/newmassrael/sce-go-runtime"
+	sceerrorreason "github.com/newmassrael/sce-go-runtime/generated/error_reason"
 	scealgorithm "github.com/newmassrael/sce-forge-runtime/algorithm"
 )
 
@@ -40,6 +41,9 @@ var (
 	_ = filepath.Join
 	_ = strings.HasPrefix
 	_ = time.Duration(0)
+	// Why an error.* event is raised (sce:std/engine/error_reason,
+	// docs/adr/0106 #111); a machine that raises none still imports it.
+	_ = sceerrorreason.ErrorReasonExpressionFailed
 	_ scealgorithm.Failure
 )
 
@@ -1086,7 +1090,7 @@ func (p *StaticBlockEndsPolicy) ExecuteTransitionContent(source StaticBlockEndsS
 			func() {
 
 
-	if func() bool { var sceFailure scealgorithm.Failure; sceValue := scealgorithm.AddUint8(&sceFailure, p.vA, 10); if sceFailure.Failed() { engine.Raise(sce.NewPlatformError(StaticBlockEndsEventErrorExecution, "<assign location='a'>: an integer operation overflowed or failed")); return true }; p.vA = sceValue; return false }() {
+	if func() bool { var sceFailure scealgorithm.Failure; sceValue := scealgorithm.AddUint8(&sceFailure, p.vA, 10); if sceFailure.Failed() { engine.Raise(sce.NewPlatformError(StaticBlockEndsEventErrorExecution, sceerrorreason.ErrorReasonExpressionFailed, "<assign location='a'>: an integer operation overflowed or failed")); return true }; p.vA = sceValue; return false }() {
 		return  // W3C SCXML 4.9: the error ends the block
 	}
 
@@ -1102,7 +1106,7 @@ func (p *StaticBlockEndsPolicy) ExecuteTransitionContent(source StaticBlockEndsS
 
 	{
 	var ifCondFailed1 bool
-	if func() bool { var sceFailure scealgorithm.Failure; sceValue := scealgorithm.AddUint8(&sceFailure, p.vA, 10) > 0; if sceFailure.Failed() { engine.Raise(sce.NewPlatformError(StaticBlockEndsEventErrorExecution, "<if cond='a + 10 > 0'>: an integer operation overflowed or failed")); ifCondFailed1 = true; return false }; return sceValue }() {
+	if func() bool { var sceFailure scealgorithm.Failure; sceValue := scealgorithm.AddUint8(&sceFailure, p.vA, 10) > 0; if sceFailure.Failed() { engine.Raise(sce.NewPlatformError(StaticBlockEndsEventErrorExecution, sceerrorreason.ErrorReasonExpressionFailed, "<if cond='a + 10 > 0'>: an integer operation overflowed or failed")); ifCondFailed1 = true; return false }; return sceValue }() {
 
 
 	p.vThenRan = 1
@@ -1131,7 +1135,7 @@ func (p *StaticBlockEndsPolicy) ExecuteTransitionContent(source StaticBlockEndsS
 	if p.vA > 0 {
 
 
-	if func() bool { var sceFailure scealgorithm.Failure; sceValue := scealgorithm.AddUint8(&sceFailure, p.vA, 10); if sceFailure.Failed() { engine.Raise(sce.NewPlatformError(StaticBlockEndsEventErrorExecution, "<assign location='a'>: an integer operation overflowed or failed")); return true }; p.vA = sceValue; return false }() {
+	if func() bool { var sceFailure scealgorithm.Failure; sceValue := scealgorithm.AddUint8(&sceFailure, p.vA, 10); if sceFailure.Failed() { engine.Raise(sce.NewPlatformError(StaticBlockEndsEventErrorExecution, sceerrorreason.ErrorReasonExpressionFailed, "<assign location='a'>: an integer operation overflowed or failed")); return true }; p.vA = sceValue; return false }() {
 		return  // W3C SCXML 4.9: the error ends the block
 	}
 
@@ -1152,7 +1156,7 @@ func (p *StaticBlockEndsPolicy) ExecuteTransitionContent(source StaticBlockEndsS
 			func() {
 
 
-	if func() bool { var sceFailure scealgorithm.Failure; sceValue := scealgorithm.AddUint8(&sceFailure, p.vB, 1); if sceFailure.Failed() { engine.Raise(sce.NewPlatformError(StaticBlockEndsEventErrorExecution, "<assign location='b'>: an integer operation overflowed or failed")); return true }; p.vB = sceValue; return false }() {
+	if func() bool { var sceFailure scealgorithm.Failure; sceValue := scealgorithm.AddUint8(&sceFailure, p.vB, 1); if sceFailure.Failed() { engine.Raise(sce.NewPlatformError(StaticBlockEndsEventErrorExecution, sceerrorreason.ErrorReasonExpressionFailed, "<assign location='b'>: an integer operation overflowed or failed")); return true }; p.vB = sceValue; return false }() {
 		return  // W3C SCXML 4.9: the error ends the block
 	}
 
@@ -1167,7 +1171,7 @@ func (p *StaticBlockEndsPolicy) ExecuteTransitionContent(source StaticBlockEndsS
 			func() {
 
 
-	if func() bool { var sceFailure scealgorithm.Failure; sceValue := scealgorithm.AddUint8(&sceFailure, p.vErrors, 1); if sceFailure.Failed() { engine.Raise(sce.NewPlatformError(StaticBlockEndsEventErrorExecution, "<assign location='errors'>: an integer operation overflowed or failed")); return true }; p.vErrors = sceValue; return false }() {
+	if func() bool { var sceFailure scealgorithm.Failure; sceValue := scealgorithm.AddUint8(&sceFailure, p.vErrors, 1); if sceFailure.Failed() { engine.Raise(sce.NewPlatformError(StaticBlockEndsEventErrorExecution, sceerrorreason.ErrorReasonExpressionFailed, "<assign location='errors'>: an integer operation overflowed or failed")); return true }; p.vErrors = sceValue; return false }() {
 		return  // W3C SCXML 4.9: the error ends the block
 	}
 

@@ -196,7 +196,7 @@ class Test452StateMachine(
             try {
                 engine.setVariable(sid, "foo", engine.evaluateExpr(sid, com.sce.runtime.ScriptSource.lua("0", "0")))
             } catch (e: Exception) {
-                raisePlatformError(Test452Event.Error.Execution, "<data id='foo'> expr failed to evaluate")
+                raisePlatformError(Test452Event.Error.Execution, ErrorReason.EXPRESSION_FAILED, "<data id='foo'> expr failed to evaluate")
             }
         }
     }
@@ -205,7 +205,7 @@ class Test452StateMachine(
         try {
             engine.executeScript(sid, com.sce.runtime.ScriptSource.lua("testobject = function() local self = {} self.bar = 0 return self end", "function testobject() {\n    this.bar = 0;}"))
         } catch (e: Exception) {
-            raisePlatformError(Test452Event.Error.Execution, "a top-level <script> failed to execute")
+            raisePlatformError(Test452Event.Error.Execution, ErrorReason.SCRIPT_FAILED, "a top-level <script> failed to execute")
         }
     }
 
@@ -234,14 +234,14 @@ class Test452StateMachine(
 
     // W3C SCXML 5.9.1: a cond that cannot be evaluated raises error.execution;
     // `null` says so, where a bare `false` could not.
-    private fun evaluateGuardRaising(guardExpr: com.sce.runtime.ScriptSource, reason: String): Boolean? {
+    private fun evaluateGuardRaising(guardExpr: com.sce.runtime.ScriptSource, detail: String): Boolean? {
         assertScriptSession()
         val engine = scriptEngine ?: error("scriptEngine is required (codegen invariant: needs_script_engine == true)")
         val sid = scriptSessionId ?: error("scriptSessionId is established by the start (codegen invariant)")
         return try {
             engine.evaluateCondition(sid, guardExpr)
         } catch (e: Exception) {
-            raisePlatformError(Test452Event.Error.Execution, reason)
+            raisePlatformError(Test452Event.Error.Execution, ErrorReason.EXPRESSION_FAILED, detail)
             null
         }
     }
@@ -282,7 +282,7 @@ class Test452StateMachine(
         return try {
             engine.evaluateExpr(sid, serialized)?.toString() ?: ""
         } catch (e: Exception) {
-            raisePlatformError(Test452Event.Error.Execution, "an expression could not be serialised to JSON")
+            raisePlatformError(Test452Event.Error.Execution, ErrorReason.EXPRESSION_FAILED, "an expression could not be serialised to JSON")
             ""
         }
     }
@@ -303,7 +303,7 @@ class Test452StateMachine(
             engine.assign(sid, location, expr)
             true
         } catch (e: Exception) {
-            raisePlatformError(Test452Event.Error.Execution, "<assign> failed")
+            raisePlatformError(Test452Event.Error.Execution, ErrorReason.ASSIGNMENT_FAILED, "<assign> failed")
             false
         }
     }
@@ -319,7 +319,7 @@ class Test452StateMachine(
             engine.executeScript(sid, script)
             true
         } catch (e: Exception) {
-            raisePlatformError(Test452Event.Error.Execution, "<script> failed to execute")
+            raisePlatformError(Test452Event.Error.Execution, ErrorReason.SCRIPT_FAILED, "<script> failed to execute")
             false
         }
     }

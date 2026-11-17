@@ -1,5 +1,5 @@
 // SCE-GENERATED — DO NOT EDIT
-// source-hash: e3e91f36cc7b8591c060b277b157f8471b6940f92608c548338f70603c760055
+// source-hash: f02e6d1d557556839c99891abeba3d1ef7bc15e5821c4215914c8e1ef9ecc561
 
 // GENERATED CODE — DO NOT EDIT
 // Source: sce-build/tests/fixtures/host_processor/statechart_host_invoker.scxml
@@ -1023,7 +1023,7 @@ class StatechartHostInvokerStateMachine(
             try {
                 engine.setVariable(sid, "started", engine.evaluateExpr(sid, com.sce.runtime.ScriptSource.lua("0", "0")))
             } catch (e: Exception) {
-                raisePlatformError(StatechartHostInvokerEvent.Error.Execution, "<data id='started'> expr failed to evaluate")
+                raisePlatformError(StatechartHostInvokerEvent.Error.Execution, ErrorReason.EXPRESSION_FAILED, "<data id='started'> expr failed to evaluate")
             }
         }
         // §scxml-6.4: 'started2' takes a value its invoke handed it, in place of its own
@@ -1032,7 +1032,7 @@ class StatechartHostInvokerStateMachine(
             try {
                 engine.setVariable(sid, "started2", engine.evaluateExpr(sid, com.sce.runtime.ScriptSource.lua("0", "0")))
             } catch (e: Exception) {
-                raisePlatformError(StatechartHostInvokerEvent.Error.Execution, "<data id='started2'> expr failed to evaluate")
+                raisePlatformError(StatechartHostInvokerEvent.Error.Execution, ErrorReason.EXPRESSION_FAILED, "<data id='started2'> expr failed to evaluate")
             }
         }
         // §scxml-6.4: 'refused' takes a value its invoke handed it, in place of its own
@@ -1041,7 +1041,7 @@ class StatechartHostInvokerStateMachine(
             try {
                 engine.setVariable(sid, "refused", engine.evaluateExpr(sid, com.sce.runtime.ScriptSource.lua("0", "0")))
             } catch (e: Exception) {
-                raisePlatformError(StatechartHostInvokerEvent.Error.Execution, "<data id='refused'> expr failed to evaluate")
+                raisePlatformError(StatechartHostInvokerEvent.Error.Execution, ErrorReason.EXPRESSION_FAILED, "<data id='refused'> expr failed to evaluate")
             }
         }
         // §scxml-6.4: 'ended' takes a value its invoke handed it, in place of its own
@@ -1050,7 +1050,7 @@ class StatechartHostInvokerStateMachine(
             try {
                 engine.setVariable(sid, "ended", engine.evaluateExpr(sid, com.sce.runtime.ScriptSource.lua("0", "0")))
             } catch (e: Exception) {
-                raisePlatformError(StatechartHostInvokerEvent.Error.Execution, "<data id='ended'> expr failed to evaluate")
+                raisePlatformError(StatechartHostInvokerEvent.Error.Execution, ErrorReason.EXPRESSION_FAILED, "<data id='ended'> expr failed to evaluate")
             }
         }
         // §scxml-6.4: 'entered' takes a value its invoke handed it, in place of its own
@@ -1059,7 +1059,7 @@ class StatechartHostInvokerStateMachine(
             try {
                 engine.setVariable(sid, "entered", engine.evaluateExpr(sid, com.sce.runtime.ScriptSource.lua("0", "0")))
             } catch (e: Exception) {
-                raisePlatformError(StatechartHostInvokerEvent.Error.Execution, "<data id='entered'> expr failed to evaluate")
+                raisePlatformError(StatechartHostInvokerEvent.Error.Execution, ErrorReason.EXPRESSION_FAILED, "<data id='entered'> expr failed to evaluate")
             }
         }
         // §scxml-6.4: 'destination' takes a value its invoke handed it, in place of its own
@@ -1068,7 +1068,7 @@ class StatechartHostInvokerStateMachine(
             try {
                 engine.setVariable(sid, "destination", engine.evaluateExpr(sid, com.sce.runtime.ScriptSource.lua("\"pane://dyn\"", "'pane://dyn'")))
             } catch (e: Exception) {
-                raisePlatformError(StatechartHostInvokerEvent.Error.Execution, "<data id='destination'> expr failed to evaluate")
+                raisePlatformError(StatechartHostInvokerEvent.Error.Execution, ErrorReason.EXPRESSION_FAILED, "<data id='destination'> expr failed to evaluate")
             }
         }
         // §scxml-6.4: 'n' takes a value its invoke handed it, in place of its own
@@ -1077,7 +1077,7 @@ class StatechartHostInvokerStateMachine(
             try {
                 engine.setVariable(sid, "n", engine.evaluateExpr(sid, com.sce.runtime.ScriptSource.lua("7", "7")))
             } catch (e: Exception) {
-                raisePlatformError(StatechartHostInvokerEvent.Error.Execution, "<data id='n'> expr failed to evaluate")
+                raisePlatformError(StatechartHostInvokerEvent.Error.Execution, ErrorReason.EXPRESSION_FAILED, "<data id='n'> expr failed to evaluate")
             }
         }
         // §scxml-6.4: 'dropped' takes a value its invoke handed it, in place of its own
@@ -1086,7 +1086,7 @@ class StatechartHostInvokerStateMachine(
             try {
                 engine.setVariable(sid, "dropped", engine.evaluateExpr(sid, com.sce.runtime.ScriptSource.lua("0", "0")))
             } catch (e: Exception) {
-                raisePlatformError(StatechartHostInvokerEvent.Error.Execution, "<data id='dropped'> expr failed to evaluate")
+                raisePlatformError(StatechartHostInvokerEvent.Error.Execution, ErrorReason.EXPRESSION_FAILED, "<data id='dropped'> expr failed to evaluate")
             }
         }
         // §scxml-6.4: 'doneId' takes a value its invoke handed it, in place of its own
@@ -1095,7 +1095,7 @@ class StatechartHostInvokerStateMachine(
             try {
                 engine.setVariable(sid, "doneId", engine.evaluateExpr(sid, com.sce.runtime.ScriptSource.lua("\"\"", "''")))
             } catch (e: Exception) {
-                raisePlatformError(StatechartHostInvokerEvent.Error.Execution, "<data id='doneId'> expr failed to evaluate")
+                raisePlatformError(StatechartHostInvokerEvent.Error.Execution, ErrorReason.EXPRESSION_FAILED, "<data id='doneId'> expr failed to evaluate")
             }
         }
         // §scxml-6.4: 'matched' takes a value its invoke handed it, in place of its own
@@ -1104,7 +1104,7 @@ class StatechartHostInvokerStateMachine(
             try {
                 engine.setVariable(sid, "matched", engine.evaluateExpr(sid, com.sce.runtime.ScriptSource.lua("0", "0")))
             } catch (e: Exception) {
-                raisePlatformError(StatechartHostInvokerEvent.Error.Execution, "<data id='matched'> expr failed to evaluate")
+                raisePlatformError(StatechartHostInvokerEvent.Error.Execution, ErrorReason.EXPRESSION_FAILED, "<data id='matched'> expr failed to evaluate")
             }
         }
         // §scxml-6.4: 'slot' takes a value its invoke handed it, in place of its own
@@ -1113,7 +1113,7 @@ class StatechartHostInvokerStateMachine(
             try {
                 engine.setVariable(sid, "slot", engine.evaluateExpr(sid, com.sce.runtime.ScriptSource.lua("{[\"id\"] = \"\", [\"sid\"] = \"\"}", "({ id: '', sid: '' })")))
             } catch (e: Exception) {
-                raisePlatformError(StatechartHostInvokerEvent.Error.Execution, "<data id='slot'> expr failed to evaluate")
+                raisePlatformError(StatechartHostInvokerEvent.Error.Execution, ErrorReason.EXPRESSION_FAILED, "<data id='slot'> expr failed to evaluate")
             }
         }
         // §scxml-6.4: 'slotted' takes a value its invoke handed it, in place of its own
@@ -1122,7 +1122,7 @@ class StatechartHostInvokerStateMachine(
             try {
                 engine.setVariable(sid, "slotted", engine.evaluateExpr(sid, com.sce.runtime.ScriptSource.lua("0", "0")))
             } catch (e: Exception) {
-                raisePlatformError(StatechartHostInvokerEvent.Error.Execution, "<data id='slotted'> expr failed to evaluate")
+                raisePlatformError(StatechartHostInvokerEvent.Error.Execution, ErrorReason.EXPRESSION_FAILED, "<data id='slotted'> expr failed to evaluate")
             }
         }
         // §scxml-6.4: 'pinged' takes a value its invoke handed it, in place of its own
@@ -1131,7 +1131,7 @@ class StatechartHostInvokerStateMachine(
             try {
                 engine.setVariable(sid, "pinged", engine.evaluateExpr(sid, com.sce.runtime.ScriptSource.lua("0", "0")))
             } catch (e: Exception) {
-                raisePlatformError(StatechartHostInvokerEvent.Error.Execution, "<data id='pinged'> expr failed to evaluate")
+                raisePlatformError(StatechartHostInvokerEvent.Error.Execution, ErrorReason.EXPRESSION_FAILED, "<data id='pinged'> expr failed to evaluate")
             }
         }
         // §scxml-6.4: 'leaked' takes a value its invoke handed it, in place of its own
@@ -1140,7 +1140,7 @@ class StatechartHostInvokerStateMachine(
             try {
                 engine.setVariable(sid, "leaked", engine.evaluateExpr(sid, com.sce.runtime.ScriptSource.lua("0", "0")))
             } catch (e: Exception) {
-                raisePlatformError(StatechartHostInvokerEvent.Error.Execution, "<data id='leaked'> expr failed to evaluate")
+                raisePlatformError(StatechartHostInvokerEvent.Error.Execution, ErrorReason.EXPRESSION_FAILED, "<data id='leaked'> expr failed to evaluate")
             }
         }
         // §scxml-6.4: 'lost' takes a value its invoke handed it, in place of its own
@@ -1149,7 +1149,7 @@ class StatechartHostInvokerStateMachine(
             try {
                 engine.setVariable(sid, "lost", engine.evaluateExpr(sid, com.sce.runtime.ScriptSource.lua("0", "0")))
             } catch (e: Exception) {
-                raisePlatformError(StatechartHostInvokerEvent.Error.Execution, "<data id='lost'> expr failed to evaluate")
+                raisePlatformError(StatechartHostInvokerEvent.Error.Execution, ErrorReason.EXPRESSION_FAILED, "<data id='lost'> expr failed to evaluate")
             }
         }
         // §scxml-6.4: 'expired' takes a value its invoke handed it, in place of its own
@@ -1158,7 +1158,7 @@ class StatechartHostInvokerStateMachine(
             try {
                 engine.setVariable(sid, "expired", engine.evaluateExpr(sid, com.sce.runtime.ScriptSource.lua("0", "0")))
             } catch (e: Exception) {
-                raisePlatformError(StatechartHostInvokerEvent.Error.Execution, "<data id='expired'> expr failed to evaluate")
+                raisePlatformError(StatechartHostInvokerEvent.Error.Execution, ErrorReason.EXPRESSION_FAILED, "<data id='expired'> expr failed to evaluate")
             }
         }
         // §scxml-6.4: 'finished' takes a value its invoke handed it, in place of its own
@@ -1167,7 +1167,7 @@ class StatechartHostInvokerStateMachine(
             try {
                 engine.setVariable(sid, "finished", engine.evaluateExpr(sid, com.sce.runtime.ScriptSource.lua("0", "0")))
             } catch (e: Exception) {
-                raisePlatformError(StatechartHostInvokerEvent.Error.Execution, "<data id='finished'> expr failed to evaluate")
+                raisePlatformError(StatechartHostInvokerEvent.Error.Execution, ErrorReason.EXPRESSION_FAILED, "<data id='finished'> expr failed to evaluate")
             }
         }
         // §scxml-6.4: 'misdated' takes a value its invoke handed it, in place of its own
@@ -1176,7 +1176,7 @@ class StatechartHostInvokerStateMachine(
             try {
                 engine.setVariable(sid, "misdated", engine.evaluateExpr(sid, com.sce.runtime.ScriptSource.lua("0", "0")))
             } catch (e: Exception) {
-                raisePlatformError(StatechartHostInvokerEvent.Error.Execution, "<data id='misdated'> expr failed to evaluate")
+                raisePlatformError(StatechartHostInvokerEvent.Error.Execution, ErrorReason.EXPRESSION_FAILED, "<data id='misdated'> expr failed to evaluate")
             }
         }
         // §scxml-6.4: 'granted' takes a value its invoke handed it, in place of its own
@@ -1185,7 +1185,7 @@ class StatechartHostInvokerStateMachine(
             try {
                 engine.setVariable(sid, "granted", engine.evaluateExpr(sid, com.sce.runtime.ScriptSource.lua("0", "0")))
             } catch (e: Exception) {
-                raisePlatformError(StatechartHostInvokerEvent.Error.Execution, "<data id='granted'> expr failed to evaluate")
+                raisePlatformError(StatechartHostInvokerEvent.Error.Execution, ErrorReason.EXPRESSION_FAILED, "<data id='granted'> expr failed to evaluate")
             }
         }
         // §scxml-6.4: 'denied' takes a value its invoke handed it, in place of its own
@@ -1194,7 +1194,7 @@ class StatechartHostInvokerStateMachine(
             try {
                 engine.setVariable(sid, "denied", engine.evaluateExpr(sid, com.sce.runtime.ScriptSource.lua("0", "0")))
             } catch (e: Exception) {
-                raisePlatformError(StatechartHostInvokerEvent.Error.Execution, "<data id='denied'> expr failed to evaluate")
+                raisePlatformError(StatechartHostInvokerEvent.Error.Execution, ErrorReason.EXPRESSION_FAILED, "<data id='denied'> expr failed to evaluate")
             }
         }
         // §scxml-6.4: 'unreadable' takes a value its invoke handed it, in place of its own
@@ -1203,7 +1203,7 @@ class StatechartHostInvokerStateMachine(
             try {
                 engine.setVariable(sid, "unreadable", engine.evaluateExpr(sid, com.sce.runtime.ScriptSource.lua("0", "0")))
             } catch (e: Exception) {
-                raisePlatformError(StatechartHostInvokerEvent.Error.Execution, "<data id='unreadable'> expr failed to evaluate")
+                raisePlatformError(StatechartHostInvokerEvent.Error.Execution, ErrorReason.EXPRESSION_FAILED, "<data id='unreadable'> expr failed to evaluate")
             }
         }
         // §scxml-6.4: 'scope' takes a value its invoke handed it, in place of its own
@@ -1212,7 +1212,7 @@ class StatechartHostInvokerStateMachine(
             try {
                 engine.setVariable(sid, "scope", engine.evaluateExpr(sid, com.sce.runtime.ScriptSource.lua("\"storage\"", "'storage'")))
             } catch (e: Exception) {
-                raisePlatformError(StatechartHostInvokerEvent.Error.Execution, "<data id='scope'> expr failed to evaluate")
+                raisePlatformError(StatechartHostInvokerEvent.Error.Execution, ErrorReason.EXPRESSION_FAILED, "<data id='scope'> expr failed to evaluate")
             }
         }
         // §scxml-6.4: 'level' takes a value its invoke handed it, in place of its own
@@ -1221,7 +1221,7 @@ class StatechartHostInvokerStateMachine(
             try {
                 engine.setVariable(sid, "level", engine.evaluateExpr(sid, com.sce.runtime.ScriptSource.lua("2", "2")))
             } catch (e: Exception) {
-                raisePlatformError(StatechartHostInvokerEvent.Error.Execution, "<data id='level'> expr failed to evaluate")
+                raisePlatformError(StatechartHostInvokerEvent.Error.Execution, ErrorReason.EXPRESSION_FAILED, "<data id='level'> expr failed to evaluate")
             }
         }
         // §scxml-6.4: 'failed' takes a value its invoke handed it, in place of its own
@@ -1230,7 +1230,7 @@ class StatechartHostInvokerStateMachine(
             try {
                 engine.setVariable(sid, "failed", engine.evaluateExpr(sid, com.sce.runtime.ScriptSource.lua("0", "0")))
             } catch (e: Exception) {
-                raisePlatformError(StatechartHostInvokerEvent.Error.Execution, "<data id='failed'> expr failed to evaluate")
+                raisePlatformError(StatechartHostInvokerEvent.Error.Execution, ErrorReason.EXPRESSION_FAILED, "<data id='failed'> expr failed to evaluate")
             }
         }
         // §scxml-6.4: 'overturned' takes a value its invoke handed it, in place of its own
@@ -1239,7 +1239,7 @@ class StatechartHostInvokerStateMachine(
             try {
                 engine.setVariable(sid, "overturned", engine.evaluateExpr(sid, com.sce.runtime.ScriptSource.lua("0", "0")))
             } catch (e: Exception) {
-                raisePlatformError(StatechartHostInvokerEvent.Error.Execution, "<data id='overturned'> expr failed to evaluate")
+                raisePlatformError(StatechartHostInvokerEvent.Error.Execution, ErrorReason.EXPRESSION_FAILED, "<data id='overturned'> expr failed to evaluate")
             }
         }
         // §scxml-6.4: 'unstarted' takes a value its invoke handed it, in place of its own
@@ -1248,7 +1248,7 @@ class StatechartHostInvokerStateMachine(
             try {
                 engine.setVariable(sid, "unstarted", engine.evaluateExpr(sid, com.sce.runtime.ScriptSource.lua("0", "0")))
             } catch (e: Exception) {
-                raisePlatformError(StatechartHostInvokerEvent.Error.Execution, "<data id='unstarted'> expr failed to evaluate")
+                raisePlatformError(StatechartHostInvokerEvent.Error.Execution, ErrorReason.EXPRESSION_FAILED, "<data id='unstarted'> expr failed to evaluate")
             }
         }
         // §scxml-6.4: 'revived' takes a value its invoke handed it, in place of its own
@@ -1257,7 +1257,7 @@ class StatechartHostInvokerStateMachine(
             try {
                 engine.setVariable(sid, "revived", engine.evaluateExpr(sid, com.sce.runtime.ScriptSource.lua("0", "0")))
             } catch (e: Exception) {
-                raisePlatformError(StatechartHostInvokerEvent.Error.Execution, "<data id='revived'> expr failed to evaluate")
+                raisePlatformError(StatechartHostInvokerEvent.Error.Execution, ErrorReason.EXPRESSION_FAILED, "<data id='revived'> expr failed to evaluate")
             }
         }
     }
@@ -1287,14 +1287,14 @@ class StatechartHostInvokerStateMachine(
 
     // W3C SCXML 5.9.1: a cond that cannot be evaluated raises error.execution;
     // `null` says so, where a bare `false` could not.
-    private fun evaluateGuardRaising(guardExpr: com.sce.runtime.ScriptSource, reason: String): Boolean? {
+    private fun evaluateGuardRaising(guardExpr: com.sce.runtime.ScriptSource, detail: String): Boolean? {
         assertScriptSession()
         val engine = scriptEngine ?: error("scriptEngine is required (codegen invariant: needs_script_engine == true)")
         val sid = scriptSessionId ?: error("scriptSessionId is established by the start (codegen invariant)")
         return try {
             engine.evaluateCondition(sid, guardExpr)
         } catch (e: Exception) {
-            raisePlatformError(StatechartHostInvokerEvent.Error.Execution, reason)
+            raisePlatformError(StatechartHostInvokerEvent.Error.Execution, ErrorReason.EXPRESSION_FAILED, detail)
             null
         }
     }
@@ -1335,7 +1335,7 @@ class StatechartHostInvokerStateMachine(
         return try {
             engine.evaluateExpr(sid, serialized)?.toString() ?: ""
         } catch (e: Exception) {
-            raisePlatformError(StatechartHostInvokerEvent.Error.Execution, "an expression could not be serialised to JSON")
+            raisePlatformError(StatechartHostInvokerEvent.Error.Execution, ErrorReason.EXPRESSION_FAILED, "an expression could not be serialised to JSON")
             ""
         }
     }
@@ -1356,7 +1356,7 @@ class StatechartHostInvokerStateMachine(
             engine.assign(sid, location, expr)
             true
         } catch (e: Exception) {
-            raisePlatformError(StatechartHostInvokerEvent.Error.Execution, "<assign> failed")
+            raisePlatformError(StatechartHostInvokerEvent.Error.Execution, ErrorReason.ASSIGNMENT_FAILED, "<assign> failed")
             false
         }
     }
@@ -1376,7 +1376,7 @@ class StatechartHostInvokerStateMachine(
             engine.assign(sid, location, com.sce.runtime.ScriptSource.stringLiteral(id, location.language))
             true
         } catch (e: Exception) {
-            raisePlatformError(StatechartHostInvokerEvent.Error.Execution, "$element idlocation could not take the id")
+            raisePlatformError(StatechartHostInvokerEvent.Error.Execution, ErrorReason.LOCATION_INVALID, "$element idlocation could not take the id")
             false
         }
     }
@@ -1392,7 +1392,7 @@ class StatechartHostInvokerStateMachine(
             engine.executeScript(sid, script)
             true
         } catch (e: Exception) {
-            raisePlatformError(StatechartHostInvokerEvent.Error.Execution, "<script> failed to execute")
+            raisePlatformError(StatechartHostInvokerEvent.Error.Execution, ErrorReason.SCRIPT_FAILED, "<script> failed to execute")
             false
         }
     }
@@ -1641,7 +1641,7 @@ class StatechartHostInvokerStateMachine(
                             // be run and none was, which is the same fact as
                             // an unsupported type — so the same event, rather
                             // than a silence that reads as started.
-                            raisePlatformError(StatechartHostInvokerEvent.Error.Execution, "<invoke> names an invoker the host declared but never registered")
+                            raisePlatformError(StatechartHostInvokerEvent.Error.Execution, ErrorReason.PROCESSOR_UNREGISTERED, "<invoke> names an invoker the host declared but never registered")
                         }
                     }
                 }
@@ -1673,7 +1673,7 @@ class StatechartHostInvokerStateMachine(
                         val hostInvokeSrc = try {
                             valueToWireString(hostEngine.evaluateExpr(hostSid, com.sce.runtime.ScriptSource.lua("destination", "destination")))
                         } catch (_: Exception) {
-                            raisePlatformError(StatechartHostInvokerEvent.Error.Execution, "<invoke> srcexpr failed to evaluate")
+                            raisePlatformError(StatechartHostInvokerEvent.Error.Execution, ErrorReason.EXPRESSION_FAILED, "<invoke> srcexpr failed to evaluate")
                             return@deferInvoke
                         }
                         val hostInvokeParams = mutableMapOf<String, List<String>>()
@@ -1682,7 +1682,7 @@ class StatechartHostInvokerStateMachine(
                         // params and typed for the JSON.
                         val hostInvokePayload = mutableMapOf<String, Any?>()
                         if (!hostEngine.hasVariable(hostSid, "n")) {
-                            raisePlatformError(StatechartHostInvokerEvent.Error.Execution, "<invoke> namelist names 'n', which is not declared")
+                            raisePlatformError(StatechartHostInvokerEvent.Error.Execution, ErrorReason.LOCATION_INVALID, "<invoke> namelist names 'n', which is not declared")
                             return@deferInvoke
                         }
                         try {
@@ -1691,7 +1691,7 @@ class StatechartHostInvokerStateMachine(
                                 (hostInvokeParams["n"] ?: emptyList()) + valueToWireString(namelistValue)
                             putParam(hostInvokePayload, "n", namelistValue)
                         } catch (_: Exception) {
-                            raisePlatformError(StatechartHostInvokerEvent.Error.Execution, "<invoke> namelist entry 'n' failed to evaluate")
+                            raisePlatformError(StatechartHostInvokerEvent.Error.Execution, ErrorReason.LOCATION_INVALID, "<invoke> namelist entry 'n' failed to evaluate")
                             return@deferInvoke
                         }
                         hostInvokeParams["twice"] =
@@ -1708,7 +1708,7 @@ class StatechartHostInvokerStateMachine(
                             // W3C SCXML 5.7.1: report the failure and omit the name and the
                             // value — the act still happens, without a field the document
                             // could not produce.
-                            raisePlatformError(StatechartHostInvokerEvent.Error.Execution, "<invoke> <param name='twice'> expr failed to evaluate")
+                            raisePlatformError(StatechartHostInvokerEvent.Error.Execution, ErrorReason.EXPRESSION_FAILED, "<invoke> <param name='twice'> expr failed to evaluate")
                         }
                         try {
                             // The param crosses as text, and `toString()` is the platform's
@@ -1721,7 +1721,7 @@ class StatechartHostInvokerStateMachine(
                             // W3C SCXML 5.7.1: report the failure and omit the name and the
                             // value — the act still happens, without a field the document
                             // could not produce.
-                            raisePlatformError(StatechartHostInvokerEvent.Error.Execution, "<invoke> <param name='bad'> expr failed to evaluate")
+                            raisePlatformError(StatechartHostInvokerEvent.Error.Execution, ErrorReason.EXPRESSION_FAILED, "<invoke> <param name='bad'> expr failed to evaluate")
                         }
                         val started = performHostInvoke(
                             HostInvokeRequest(
@@ -1738,7 +1738,7 @@ class StatechartHostInvokerStateMachine(
                             // be run and none was, which is the same fact as
                             // an unsupported type — so the same event, rather
                             // than a silence that reads as started.
-                            raisePlatformError(StatechartHostInvokerEvent.Error.Execution, "<invoke> names an invoker the host declared but never registered")
+                            raisePlatformError(StatechartHostInvokerEvent.Error.Execution, ErrorReason.PROCESSOR_UNREGISTERED, "<invoke> names an invoker the host declared but never registered")
                         }
                     }
                 }
@@ -1766,7 +1766,7 @@ class StatechartHostInvokerStateMachine(
                         val hostInvokeContent = try {
                             valueToWireString(hostEngine.evaluateExpr(hostSid, com.sce.runtime.ScriptSource.lua("(\"body:\" .. _scxml_tostring(n))", "'body:' + n")))
                         } catch (_: Exception) {
-                            raisePlatformError(StatechartHostInvokerEvent.Error.Execution, "<invoke> contentexpr failed to evaluate")
+                            raisePlatformError(StatechartHostInvokerEvent.Error.Execution, ErrorReason.EXPRESSION_FAILED, "<invoke> contentexpr failed to evaluate")
                             return@deferInvoke
                         }
                         val hostInvokeParams = mutableMapOf<String, List<String>>()
@@ -1789,7 +1789,7 @@ class StatechartHostInvokerStateMachine(
                             // be run and none was, which is the same fact as
                             // an unsupported type — so the same event, rather
                             // than a silence that reads as started.
-                            raisePlatformError(StatechartHostInvokerEvent.Error.Execution, "<invoke> names an invoker the host declared but never registered")
+                            raisePlatformError(StatechartHostInvokerEvent.Error.Execution, ErrorReason.PROCESSOR_UNREGISTERED, "<invoke> names an invoker the host declared but never registered")
                         }
                     }
                 }
@@ -1817,7 +1817,7 @@ class StatechartHostInvokerStateMachine(
                         val hostInvokeSrc = try {
                             valueToWireString(hostEngine.evaluateExpr(hostSid, com.sce.runtime.ScriptSource.lua("n.nope.deeper", "n.nope.deeper")))
                         } catch (_: Exception) {
-                            raisePlatformError(StatechartHostInvokerEvent.Error.Execution, "<invoke> srcexpr failed to evaluate")
+                            raisePlatformError(StatechartHostInvokerEvent.Error.Execution, ErrorReason.EXPRESSION_FAILED, "<invoke> srcexpr failed to evaluate")
                             return@deferInvoke
                         }
                         val hostInvokeParams = mutableMapOf<String, List<String>>()
@@ -1840,7 +1840,7 @@ class StatechartHostInvokerStateMachine(
                             // be run and none was, which is the same fact as
                             // an unsupported type — so the same event, rather
                             // than a silence that reads as started.
-                            raisePlatformError(StatechartHostInvokerEvent.Error.Execution, "<invoke> names an invoker the host declared but never registered")
+                            raisePlatformError(StatechartHostInvokerEvent.Error.Execution, ErrorReason.PROCESSOR_UNREGISTERED, "<invoke> names an invoker the host declared but never registered")
                         }
                     }
                 }
@@ -1881,7 +1881,7 @@ class StatechartHostInvokerStateMachine(
                             // be run and none was, which is the same fact as
                             // an unsupported type — so the same event, rather
                             // than a silence that reads as started.
-                            raisePlatformError(StatechartHostInvokerEvent.Error.Execution, "<invoke> names an invoker the host declared but never registered")
+                            raisePlatformError(StatechartHostInvokerEvent.Error.Execution, ErrorReason.PROCESSOR_UNREGISTERED, "<invoke> names an invoker the host declared but never registered")
                         }
                     }
                 }
@@ -1933,7 +1933,7 @@ class StatechartHostInvokerStateMachine(
                             // be run and none was, which is the same fact as
                             // an unsupported type — so the same event, rather
                             // than a silence that reads as started.
-                            raisePlatformError(StatechartHostInvokerEvent.Error.Execution, "<invoke> names an invoker the host declared but never registered")
+                            raisePlatformError(StatechartHostInvokerEvent.Error.Execution, ErrorReason.PROCESSOR_UNREGISTERED, "<invoke> names an invoker the host declared but never registered")
                         }
                     }
                 }
@@ -1970,7 +1970,7 @@ class StatechartHostInvokerStateMachine(
                             // be run and none was, which is the same fact as
                             // an unsupported type — so the same event, rather
                             // than a silence that reads as started.
-                            raisePlatformError(StatechartHostInvokerEvent.Error.Execution, "<invoke> names an invoker the host declared but never registered")
+                            raisePlatformError(StatechartHostInvokerEvent.Error.Execution, ErrorReason.PROCESSOR_UNREGISTERED, "<invoke> names an invoker the host declared but never registered")
                         }
                     }
                 }
@@ -2077,7 +2077,7 @@ class StatechartHostInvokerStateMachine(
                             // be run and none was, which is the same fact as
                             // an unsupported type — so the same event, rather
                             // than a silence that reads as started.
-                            raisePlatformError(StatechartHostInvokerEvent.Error.Execution, "<invoke> names an invoker the host declared but never registered")
+                            raisePlatformError(StatechartHostInvokerEvent.Error.Execution, ErrorReason.PROCESSOR_UNREGISTERED, "<invoke> names an invoker the host declared but never registered")
                         }
                     }
                 }
@@ -2129,7 +2129,7 @@ class StatechartHostInvokerStateMachine(
                             // be run and none was, which is the same fact as
                             // an unsupported type — so the same event, rather
                             // than a silence that reads as started.
-                            raisePlatformError(StatechartHostInvokerEvent.Error.Execution, "<invoke> names an invoker the host declared but never registered")
+                            raisePlatformError(StatechartHostInvokerEvent.Error.Execution, ErrorReason.PROCESSOR_UNREGISTERED, "<invoke> names an invoker the host declared but never registered")
                         }
                     }
                 }
@@ -2170,7 +2170,7 @@ class StatechartHostInvokerStateMachine(
                             // be run and none was, which is the same fact as
                             // an unsupported type — so the same event, rather
                             // than a silence that reads as started.
-                            raisePlatformError(StatechartHostInvokerEvent.Error.Execution, "<invoke> names an invoker the host declared but never registered")
+                            raisePlatformError(StatechartHostInvokerEvent.Error.Execution, ErrorReason.PROCESSOR_UNREGISTERED, "<invoke> names an invoker the host declared but never registered")
                         }
                     }
                 }
@@ -2211,7 +2211,7 @@ class StatechartHostInvokerStateMachine(
                             // be run and none was, which is the same fact as
                             // an unsupported type — so the same event, rather
                             // than a silence that reads as started.
-                            raisePlatformError(StatechartHostInvokerEvent.Error.Execution, "<invoke> names an invoker the host declared but never registered")
+                            raisePlatformError(StatechartHostInvokerEvent.Error.Execution, ErrorReason.PROCESSOR_UNREGISTERED, "<invoke> names an invoker the host declared but never registered")
                         }
                     }
                 }
@@ -2256,7 +2256,7 @@ class StatechartHostInvokerStateMachine(
                             // W3C SCXML 5.7.1: report the failure and omit the name and the
                             // value — the act still happens, without a field the document
                             // could not produce.
-                            raisePlatformError(StatechartHostInvokerEvent.Error.Execution, "<invoke> <param name='_sce_deadline_ms'> expr failed to evaluate")
+                            raisePlatformError(StatechartHostInvokerEvent.Error.Execution, ErrorReason.EXPRESSION_FAILED, "<invoke> <param name='_sce_deadline_ms'> expr failed to evaluate")
                         }
                         val started = performHostInvoke(
                             HostInvokeRequest(
@@ -2273,7 +2273,7 @@ class StatechartHostInvokerStateMachine(
                             // be run and none was, which is the same fact as
                             // an unsupported type — so the same event, rather
                             // than a silence that reads as started.
-                            raisePlatformError(StatechartHostInvokerEvent.Error.Execution, "<invoke> names an invoker the host declared but never registered")
+                            raisePlatformError(StatechartHostInvokerEvent.Error.Execution, ErrorReason.PROCESSOR_UNREGISTERED, "<invoke> names an invoker the host declared but never registered")
                         }
                     }
                 }
@@ -2313,7 +2313,7 @@ class StatechartHostInvokerStateMachine(
                             // be run and none was, which is the same fact as
                             // an unsupported type — so the same event, rather
                             // than a silence that reads as started.
-                            raisePlatformError(StatechartHostInvokerEvent.Error.Execution, "<invoke> names an invoker the host declared but never registered")
+                            raisePlatformError(StatechartHostInvokerEvent.Error.Execution, ErrorReason.PROCESSOR_UNREGISTERED, "<invoke> names an invoker the host declared but never registered")
                         }
                     }
                 }
@@ -2358,7 +2358,7 @@ class StatechartHostInvokerStateMachine(
                                     TypedRequest.wire(v, "scope", TypedRequest.FieldType.STRING, ::valueToWireString)
                             putParam(hostInvokePayload, "scope", v)
                         } catch (refusal: Exception) {
-                            raisePlatformError(StatechartHostInvokerEvent.Error.Execution, "<invoke> <param name='scope'> cannot be its request field: ${refusal.message}")
+                            raisePlatformError(StatechartHostInvokerEvent.Error.Execution, ErrorReason.PARAM_UNFIT, "<invoke> <param name='scope'> cannot be its request field: ${refusal.message}")
                             return@deferInvoke
                         }
                         try {
@@ -2368,7 +2368,7 @@ class StatechartHostInvokerStateMachine(
                                     TypedRequest.wire(v, "level", TypedRequest.FieldType.UINT8, ::valueToWireString)
                             putParam(hostInvokePayload, "level", v)
                         } catch (refusal: Exception) {
-                            raisePlatformError(StatechartHostInvokerEvent.Error.Execution, "<invoke> <param name='level'> cannot be its request field: ${refusal.message}")
+                            raisePlatformError(StatechartHostInvokerEvent.Error.Execution, ErrorReason.PARAM_UNFIT, "<invoke> <param name='level'> cannot be its request field: ${refusal.message}")
                             return@deferInvoke
                         }
                         val started = performHostInvoke(
@@ -2386,7 +2386,7 @@ class StatechartHostInvokerStateMachine(
                             // be run and none was, which is the same fact as
                             // an unsupported type — so the same event, rather
                             // than a silence that reads as started.
-                            raisePlatformError(StatechartHostInvokerEvent.Error.Execution, "<invoke> names an invoker the host declared but never registered")
+                            raisePlatformError(StatechartHostInvokerEvent.Error.Execution, ErrorReason.PROCESSOR_UNREGISTERED, "<invoke> names an invoker the host declared but never registered")
                         }
                     }
                 }
@@ -2796,7 +2796,7 @@ class StatechartHostInvokerStateMachine(
                     if (sendidToCancel.isNotEmpty()) cancelSend(sendidToCancel)
                     false
                 } catch (_: Exception) {
-                    raisePlatformError(StatechartHostInvokerEvent.Error.Execution, "<cancel> sendidexpr failed to evaluate")
+                    raisePlatformError(StatechartHostInvokerEvent.Error.Execution, ErrorReason.EXPRESSION_FAILED, "<cancel> sendidexpr failed to evaluate")
                     true
                 }
             }) {

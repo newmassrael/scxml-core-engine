@@ -644,7 +644,7 @@ class StaticInvokeTreeSceSynthInvokeWorkerStateMachine(
                             // be run and none was, which is the same fact as
                             // an unsupported type — so the same event, rather
                             // than a silence that reads as started.
-                            raisePlatformError(StaticInvokeTreeSceSynthInvokeWorkerEvent.Error.Execution, "<invoke> names an invoker the host declared but never registered")
+                            raisePlatformError(StaticInvokeTreeSceSynthInvokeWorkerEvent.Error.Execution, ErrorReason.PROCESSOR_UNREGISTERED, "<invoke> names an invoker the host declared but never registered")
                         }
                     }
                 }
@@ -712,7 +712,7 @@ class StaticInvokeTreeSceSynthInvokeWorkerStateMachine(
                                 else -> {
                                     // The failure the Interpreter reports when a
                                     // document will not load: nothing to create.
-                                    raisePlatformError(StaticInvokeTreeSceSynthInvokeWorkerEvent.Error.Execution, "<invoke srcexpr> evaluated to a document it did not declare")
+                                    raisePlatformError(StaticInvokeTreeSceSynthInvokeWorkerEvent.Error.Execution, ErrorReason.INVOKE_SRC_NOT_FOUND, "<invoke srcexpr> evaluated to a document it did not declare")
                                     return@deferInvoke
                                 }
                             }
@@ -722,7 +722,7 @@ class StaticInvokeTreeSceSynthInvokeWorkerStateMachine(
                             // W3C SCXML 6.4: the child could not be started. Evaluation
                             // failure no longer reaches here — it has its own raise above,
                             // under the one wording every emitter uses for that fact.
-                            raisePlatformError(StaticInvokeTreeSceSynthInvokeWorkerEvent.Error.Execution, "<invoke> could not start a child")
+                            raisePlatformError(StaticInvokeTreeSceSynthInvokeWorkerEvent.Error.Execution, ErrorReason.INVOKE_CHILD_INIT_FAILED, "<invoke> could not start a child")
                         }
                     }
                 }
@@ -813,7 +813,7 @@ class StaticInvokeTreeSceSynthInvokeWorkerStateMachine(
     private fun transitionContentOfFirstAt0() {
                 // SCE-MAP: static_invoke_tree.scxml:52 :: first :: _transition_0
 
-            if (try { vSteps = com.sce.forge.runtime.SceChecked.add(vSteps, 1.toUInt()); false } catch (_: com.sce.forge.runtime.AlgorithmFailure) { raisePlatformError(StaticInvokeTreeSceSynthInvokeWorkerEvent.Error.Execution, "<assign location='steps'>: an integer operation overflowed or failed"); true }) {
+            if (try { vSteps = com.sce.forge.runtime.SceChecked.add(vSteps, 1.toUInt()); false } catch (_: com.sce.forge.runtime.AlgorithmFailure) { raisePlatformError(StaticInvokeTreeSceSynthInvokeWorkerEvent.Error.Execution, ErrorReason.EXPRESSION_FAILED, "<assign location='steps'>: an integer operation overflowed or failed"); true }) {
                 return
             }
 
@@ -841,7 +841,7 @@ class StaticInvokeTreeSceSynthInvokeWorkerStateMachine(
             // no parent — error.communication, nothing delivered, the block ended.
             val toParent = onSendToParent
             if (toParent == null) {
-                raisePlatformError(StaticInvokeTreeSceSynthInvokeWorkerEvent.Error.Communication, "<send target='#_parent'> has no parent session to reach", "__send_0")
+                raisePlatformError(StaticInvokeTreeSceSynthInvokeWorkerEvent.Error.Communication, ErrorReason.TARGET_UNREACHABLE, "<send target='#_parent'> has no parent session to reach", "__send_0")
                 return@send true
             }
             toParent("answer", sendData)
@@ -880,7 +880,7 @@ class StaticInvokeTreeSceSynthInvokeWorkerStateMachine(
             // no parent — error.communication, nothing delivered, the block ended.
             val toParent = onSendToParent
             if (toParent == null) {
-                raisePlatformError(StaticInvokeTreeSceSynthInvokeWorkerEvent.Error.Communication, "<send target='#_parent'> has no parent session to reach", "__send_1")
+                raisePlatformError(StaticInvokeTreeSceSynthInvokeWorkerEvent.Error.Communication, ErrorReason.TARGET_UNREACHABLE, "<send target='#_parent'> has no parent session to reach", "__send_1")
                 return@send true
             }
             toParent("stamped", sendData)
@@ -895,7 +895,7 @@ class StaticInvokeTreeSceSynthInvokeWorkerStateMachine(
     private fun transitionContentOfSecondAt1() {
                 // SCE-MAP: static_invoke_tree.scxml:69 :: second :: _transition_1
 
-            if (try { vPick = com.sce.forge.runtime.SceChecked.bounded("static_hybrid_holder.scxml", 48); false } catch (_: com.sce.forge.runtime.AlgorithmFailure) { raisePlatformError(StaticInvokeTreeSceSynthInvokeWorkerEvent.Error.Execution, "<assign location='pick'>: an integer operation overflowed or failed"); true }) {
+            if (try { vPick = com.sce.forge.runtime.SceChecked.bounded("static_hybrid_holder.scxml", 48); false } catch (_: com.sce.forge.runtime.AlgorithmFailure) { raisePlatformError(StaticInvokeTreeSceSynthInvokeWorkerEvent.Error.Execution, ErrorReason.EXPRESSION_FAILED, "<assign location='pick'>: an integer operation overflowed or failed"); true }) {
                 return
             }
     }
@@ -903,7 +903,7 @@ class StaticInvokeTreeSceSynthInvokeWorkerStateMachine(
     private fun transitionContentOfSecondAt2() {
                 // SCE-MAP: static_invoke_tree.scxml:72 :: second :: _transition_2
 
-            if (try { vSteps = com.sce.forge.runtime.SceChecked.add(vSteps, 10.toUInt()); false } catch (_: com.sce.forge.runtime.AlgorithmFailure) { raisePlatformError(StaticInvokeTreeSceSynthInvokeWorkerEvent.Error.Execution, "<assign location='steps'>: an integer operation overflowed or failed"); true }) {
+            if (try { vSteps = com.sce.forge.runtime.SceChecked.add(vSteps, 10.toUInt()); false } catch (_: com.sce.forge.runtime.AlgorithmFailure) { raisePlatformError(StaticInvokeTreeSceSynthInvokeWorkerEvent.Error.Execution, ErrorReason.EXPRESSION_FAILED, "<assign location='steps'>: an integer operation overflowed or failed"); true }) {
                 return
             }
     }
@@ -919,7 +919,7 @@ class StaticInvokeTreeSceSynthInvokeWorkerStateMachine(
             // no parent — error.communication, nothing delivered, the block ended.
             val toParent = onSendToParent
             if (toParent == null) {
-                raisePlatformError(StaticInvokeTreeSceSynthInvokeWorkerEvent.Error.Communication, "<send target='#_parent'> has no parent session to reach", "__send_2")
+                raisePlatformError(StaticInvokeTreeSceSynthInvokeWorkerEvent.Error.Communication, ErrorReason.TARGET_UNREACHABLE, "<send target='#_parent'> has no parent session to reach", "__send_2")
                 return@send true
             }
             toParent("answer", sendData)

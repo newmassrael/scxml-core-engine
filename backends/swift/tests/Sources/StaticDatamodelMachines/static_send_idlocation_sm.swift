@@ -620,6 +620,10 @@ public final class StaticSendIdlocationPolicy: InvocablePolicy {
                     self.vFirst = engine.nextAutoSendID()
                     let sendID = self.vFirst
                     var sendArgError = ""
+                    // Why the argument failed, a code of sce:std/engine/error_reason
+                    // (docs/adr/0106 #111), set with every sentence below.
+                    var sendArgReason = ErrorReason.expressionFailed
+                    _ = sendArgReason
                     var sendDelayMs: UInt64 = 0
                     if sendArgError.isEmpty {
                         // The delay is a string computed from the machine's fields now, and
@@ -631,14 +635,14 @@ public final class StaticSendIdlocationPolicy: InvocablePolicy {
                             if let ms = parseDelayToMs(sceDelay) {
                                 sendDelayMs = ms
                             } else {
-                                sendArgError = "<send> delayexpr is not a CSS2 time"
+                                sendArgError = "<send> delayexpr is not a CSS2 time"; sendArgReason = .sendDelayInvalid
                             }
                         } catch {
-                            sendArgError = "<send> delayexpr could not be evaluated"
+                            sendArgError = "<send> delayexpr could not be evaluated"; sendArgReason = .expressionFailed
                         }
                     }
                     if !sendArgError.isEmpty {
-                        var sendError = EventWithMetadata.platformError(StaticSendIdlocationEvent.errorExecution, message: sendArgError)
+                        var sendError = EventWithMetadata.platformError(StaticSendIdlocationEvent.errorExecution, reason: sendArgReason, message: sendArgError)
                         sendError.metadata.sendID = sendID
                         engine.raise(sendError)
 
@@ -685,7 +689,7 @@ public final class StaticSendIdlocationPolicy: InvocablePolicy {
                 sceBlock: do {
 
 
-                if ({ () -> Bool in do { let sceValue: UInt32 = (try Checked.add(self.vFirstFired, 1)); self.vFirstFired = sceValue } catch { engine.raise(EventWithMetadata.platformError(StaticSendIdlocationEvent.errorExecution, message: "<assign location='first_fired'>: an integer operation overflowed or failed")); return true }; return false }()) {
+                if ({ () -> Bool in do { let sceValue: UInt32 = (try Checked.add(self.vFirstFired, 1)); self.vFirstFired = sceValue } catch { engine.raise(EventWithMetadata.platformError(StaticSendIdlocationEvent.errorExecution, reason: .expressionFailed, message: "<assign location='first_fired'>: an integer operation overflowed or failed")); return true }; return false }()) {
                     break sceBlock  // W3C SCXML 4.9: the error ends the block
                 }
 
@@ -695,7 +699,7 @@ public final class StaticSendIdlocationPolicy: InvocablePolicy {
                 sceBlock: do {
 
 
-                if ({ () -> Bool in do { let sceValue: UInt32 = (try Checked.add(self.vSecondFired, 1)); self.vSecondFired = sceValue } catch { engine.raise(EventWithMetadata.platformError(StaticSendIdlocationEvent.errorExecution, message: "<assign location='second_fired'>: an integer operation overflowed or failed")); return true }; return false }()) {
+                if ({ () -> Bool in do { let sceValue: UInt32 = (try Checked.add(self.vSecondFired, 1)); self.vSecondFired = sceValue } catch { engine.raise(EventWithMetadata.platformError(StaticSendIdlocationEvent.errorExecution, reason: .expressionFailed, message: "<assign location='second_fired'>: an integer operation overflowed or failed")); return true }; return false }()) {
                     break sceBlock  // W3C SCXML 4.9: the error ends the block
                 }
 
@@ -705,7 +709,7 @@ public final class StaticSendIdlocationPolicy: InvocablePolicy {
                 sceBlock: do {
 
 
-                if ({ () -> Bool in do { let sceValue: UInt32 = (try Checked.add(self.vRefusals, 1)); self.vRefusals = sceValue } catch { engine.raise(EventWithMetadata.platformError(StaticSendIdlocationEvent.errorExecution, message: "<assign location='refusals'>: an integer operation overflowed or failed")); return true }; return false }()) {
+                if ({ () -> Bool in do { let sceValue: UInt32 = (try Checked.add(self.vRefusals, 1)); self.vRefusals = sceValue } catch { engine.raise(EventWithMetadata.platformError(StaticSendIdlocationEvent.errorExecution, reason: .expressionFailed, message: "<assign location='refusals'>: an integer operation overflowed or failed")); return true }; return false }()) {
                     break sceBlock  // W3C SCXML 4.9: the error ends the block
                 }
 

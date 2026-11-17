@@ -31,6 +31,7 @@ import (
 	"time"
 
 	sce "github.com/newmassrael/sce-go-runtime"
+	sceerrorreason "github.com/newmassrael/sce-go-runtime/generated/error_reason"
 	scealgorithm "github.com/newmassrael/sce-forge-runtime/algorithm"
 	"github.com/newmassrael/sce-forge-runtime/optional"
 )
@@ -41,6 +42,9 @@ var (
 	_ = filepath.Join
 	_ = strings.HasPrefix
 	_ = time.Duration(0)
+	// Why an error.* event is raised (sce:std/engine/error_reason,
+	// docs/adr/0106 #111); a machine that raises none still imports it.
+	_ = sceerrorreason.ErrorReasonExpressionFailed
 	_ scealgorithm.Failure
 )
 
@@ -992,7 +996,7 @@ func (p *StaticInvokeTreeSceSynthInvokeWorkerPolicy) ExecutePendingInvokes(engin
 				// document asked for a process to be run and none was, which
 				// is the same fact as an unsupported type — so the same
 				// event, rather than a silence that reads as started.
-				engine.Raise(sce.NewPlatformError(StaticInvokeTreeSceSynthInvokeWorkerEventErrorExecution, "<invoke> names an invoker the host declared but never registered"))
+				engine.Raise(sce.NewPlatformError(StaticInvokeTreeSceSynthInvokeWorkerEventErrorExecution, sceerrorreason.ErrorReasonProcessorUnregistered, "<invoke> names an invoker the host declared but never registered"))
 			}
 			continue
 		}
@@ -1009,7 +1013,7 @@ func (p *StaticInvokeTreeSceSynthInvokeWorkerPolicy) ExecutePendingInvokes(engin
 			switch __sceSelected {
 			case "static_hybrid_watcher", "static_hybrid_holder":
 			default:
-				engine.Raise(sce.NewPlatformError(StaticInvokeTreeSceSynthInvokeWorkerEventErrorExecution, "<invoke srcexpr> evaluated to a document it did not declare"))
+				engine.Raise(sce.NewPlatformError(StaticInvokeTreeSceSynthInvokeWorkerEventErrorExecution, sceerrorreason.ErrorReasonInvokeSrcNotFound, "<invoke srcexpr> evaluated to a document it did not declare"))
 				continue
 			}
 
@@ -1078,7 +1082,7 @@ func (p *StaticInvokeTreeSceSynthInvokeWorkerPolicy) ExecutePendingInvokes(engin
 			if refused := childEngine.Initialize(); refused != nil {
 				childEngine.DetachMesh()
 				delete(p.activeInvokes, "_invoke_0")
-				engine.Raise(sce.NewPlatformError(StaticInvokeTreeSceSynthInvokeWorkerEventErrorExecution, sce.ChildStartRefusal("_invoke_0", refused)))
+				engine.Raise(sce.NewPlatformError(StaticInvokeTreeSceSynthInvokeWorkerEventErrorExecution, sceerrorreason.ErrorReasonInvokeChildInitFailed, sce.ChildStartRefusal("_invoke_0", refused)))
 				continue
 			}
 
@@ -1160,7 +1164,7 @@ func (p *StaticInvokeTreeSceSynthInvokeWorkerPolicy) ExecutePendingInvokes(engin
 			if refused := childEngine.Initialize(); refused != nil {
 				childEngine.DetachMesh()
 				delete(p.activeInvokes, "_invoke_0")
-				engine.Raise(sce.NewPlatformError(StaticInvokeTreeSceSynthInvokeWorkerEventErrorExecution, sce.ChildStartRefusal("_invoke_0", refused)))
+				engine.Raise(sce.NewPlatformError(StaticInvokeTreeSceSynthInvokeWorkerEventErrorExecution, sceerrorreason.ErrorReasonInvokeChildInitFailed, sce.ChildStartRefusal("_invoke_0", refused)))
 				continue
 			}
 
@@ -1788,7 +1792,7 @@ func (p *StaticInvokeTreeSceSynthInvokeWorkerPolicy) ExecuteTransitionContent(so
 			func() {
 
 
-	if func() bool { var sceFailure scealgorithm.Failure; sceValue := scealgorithm.AddUint32(&sceFailure, p.vSteps, 1); if sceFailure.Failed() { engine.Raise(sce.NewPlatformError(StaticInvokeTreeSceSynthInvokeWorkerEventErrorExecution, "<assign location='steps'>: an integer operation overflowed or failed")); return true }; p.vSteps = sceValue; return false }() {
+	if func() bool { var sceFailure scealgorithm.Failure; sceValue := scealgorithm.AddUint32(&sceFailure, p.vSteps, 1); if sceFailure.Failed() { engine.Raise(sce.NewPlatformError(StaticInvokeTreeSceSynthInvokeWorkerEventErrorExecution, sceerrorreason.ErrorReasonExpressionFailed, "<assign location='steps'>: an integer operation overflowed or failed")); return true }; p.vSteps = sceValue; return false }() {
 		return  // W3C SCXML 4.9: the error ends the block
 	}
 
@@ -1822,7 +1826,7 @@ func (p *StaticInvokeTreeSceSynthInvokeWorkerPolicy) ExecuteTransitionContent(so
 		// W3C SCXML C.1: this session was started by its host, not by an
 		// `<invoke>`, so `#_parent` reaches nobody — error.communication,
 		// nothing delivered, and the block ends (4.9).
-		errEvt := sce.NewPlatformError(StaticInvokeTreeSceSynthInvokeWorkerEventErrorCommunication, "<send target='#_parent'> has no parent session to reach")
+		errEvt := sce.NewPlatformError(StaticInvokeTreeSceSynthInvokeWorkerEventErrorCommunication, sceerrorreason.ErrorReasonTargetUnreachable, "<send target='#_parent'> has no parent session to reach")
 		errEvt.Metadata.SendID = "__send_0"
 		engine.Raise(errEvt)
 		return  // W3C SCXML 4.9: the error ends the block
@@ -1850,7 +1854,7 @@ func (p *StaticInvokeTreeSceSynthInvokeWorkerPolicy) ExecuteTransitionContent(so
 		// W3C SCXML C.1: this session was started by its host, not by an
 		// `<invoke>`, so `#_parent` reaches nobody — error.communication,
 		// nothing delivered, and the block ends (4.9).
-		errEvt := sce.NewPlatformError(StaticInvokeTreeSceSynthInvokeWorkerEventErrorCommunication, "<send target='#_parent'> has no parent session to reach")
+		errEvt := sce.NewPlatformError(StaticInvokeTreeSceSynthInvokeWorkerEventErrorCommunication, sceerrorreason.ErrorReasonTargetUnreachable, "<send target='#_parent'> has no parent session to reach")
 		errEvt.Metadata.SendID = "__send_1"
 		engine.Raise(errEvt)
 		return  // W3C SCXML 4.9: the error ends the block
@@ -1866,7 +1870,7 @@ func (p *StaticInvokeTreeSceSynthInvokeWorkerPolicy) ExecuteTransitionContent(so
 			func() {
 
 
-	if func() bool { var sceFailure scealgorithm.Failure; sceValue := scealgorithm.Bounded(&sceFailure, "static_hybrid_holder.scxml", 48); if sceFailure.Failed() { engine.Raise(sce.NewPlatformError(StaticInvokeTreeSceSynthInvokeWorkerEventErrorExecution, "<assign location='pick'>: an integer operation overflowed or failed")); return true }; p.vPick = sceValue; return false }() {
+	if func() bool { var sceFailure scealgorithm.Failure; sceValue := scealgorithm.Bounded(&sceFailure, "static_hybrid_holder.scxml", 48); if sceFailure.Failed() { engine.Raise(sce.NewPlatformError(StaticInvokeTreeSceSynthInvokeWorkerEventErrorExecution, sceerrorreason.ErrorReasonExpressionFailed, "<assign location='pick'>: an integer operation overflowed or failed")); return true }; p.vPick = sceValue; return false }() {
 		return  // W3C SCXML 4.9: the error ends the block
 	}
 
@@ -1877,7 +1881,7 @@ func (p *StaticInvokeTreeSceSynthInvokeWorkerPolicy) ExecuteTransitionContent(so
 			func() {
 
 
-	if func() bool { var sceFailure scealgorithm.Failure; sceValue := scealgorithm.AddUint32(&sceFailure, p.vSteps, 10); if sceFailure.Failed() { engine.Raise(sce.NewPlatformError(StaticInvokeTreeSceSynthInvokeWorkerEventErrorExecution, "<assign location='steps'>: an integer operation overflowed or failed")); return true }; p.vSteps = sceValue; return false }() {
+	if func() bool { var sceFailure scealgorithm.Failure; sceValue := scealgorithm.AddUint32(&sceFailure, p.vSteps, 10); if sceFailure.Failed() { engine.Raise(sce.NewPlatformError(StaticInvokeTreeSceSynthInvokeWorkerEventErrorExecution, sceerrorreason.ErrorReasonExpressionFailed, "<assign location='steps'>: an integer operation overflowed or failed")); return true }; p.vSteps = sceValue; return false }() {
 		return  // W3C SCXML 4.9: the error ends the block
 	}
 
@@ -1897,7 +1901,7 @@ func (p *StaticInvokeTreeSceSynthInvokeWorkerPolicy) ExecuteTransitionContent(so
 		// W3C SCXML C.1: this session was started by its host, not by an
 		// `<invoke>`, so `#_parent` reaches nobody — error.communication,
 		// nothing delivered, and the block ends (4.9).
-		errEvt := sce.NewPlatformError(StaticInvokeTreeSceSynthInvokeWorkerEventErrorCommunication, "<send target='#_parent'> has no parent session to reach")
+		errEvt := sce.NewPlatformError(StaticInvokeTreeSceSynthInvokeWorkerEventErrorCommunication, sceerrorreason.ErrorReasonTargetUnreachable, "<send target='#_parent'> has no parent session to reach")
 		errEvt.Metadata.SendID = "__send_2"
 		engine.Raise(errEvt)
 		return  // W3C SCXML 4.9: the error ends the block

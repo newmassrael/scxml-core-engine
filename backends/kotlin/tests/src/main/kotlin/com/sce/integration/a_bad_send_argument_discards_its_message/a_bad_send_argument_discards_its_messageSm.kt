@@ -239,7 +239,7 @@ class ABadSendArgumentDiscardsItsMessageStateMachine(
             try {
                 engine.setVariable(sid, "errors", engine.evaluateExpr(sid, com.sce.runtime.ScriptSource.lua("0", "0")))
             } catch (e: Exception) {
-                raisePlatformError(ABadSendArgumentDiscardsItsMessageEvent.Error.Execution, "<data id='errors'> expr failed to evaluate")
+                raisePlatformError(ABadSendArgumentDiscardsItsMessageEvent.Error.Execution, ErrorReason.EXPRESSION_FAILED, "<data id='errors'> expr failed to evaluate")
             }
         }
         // §scxml-6.4: 'sent' takes a value its invoke handed it, in place of its own
@@ -248,7 +248,7 @@ class ABadSendArgumentDiscardsItsMessageStateMachine(
             try {
                 engine.setVariable(sid, "sent", engine.evaluateExpr(sid, com.sce.runtime.ScriptSource.lua("0", "0")))
             } catch (e: Exception) {
-                raisePlatformError(ABadSendArgumentDiscardsItsMessageEvent.Error.Execution, "<data id='sent'> expr failed to evaluate")
+                raisePlatformError(ABadSendArgumentDiscardsItsMessageEvent.Error.Execution, ErrorReason.EXPRESSION_FAILED, "<data id='sent'> expr failed to evaluate")
             }
         }
         // §scxml-6.4: 'after' takes a value its invoke handed it, in place of its own
@@ -257,7 +257,7 @@ class ABadSendArgumentDiscardsItsMessageStateMachine(
             try {
                 engine.setVariable(sid, "after", engine.evaluateExpr(sid, com.sce.runtime.ScriptSource.lua("0", "0")))
             } catch (e: Exception) {
-                raisePlatformError(ABadSendArgumentDiscardsItsMessageEvent.Error.Execution, "<data id='after'> expr failed to evaluate")
+                raisePlatformError(ABadSendArgumentDiscardsItsMessageEvent.Error.Execution, ErrorReason.EXPRESSION_FAILED, "<data id='after'> expr failed to evaluate")
             }
         }
         // §scxml-6.4: 'obj' takes a value its invoke handed it, in place of its own
@@ -266,7 +266,7 @@ class ABadSendArgumentDiscardsItsMessageStateMachine(
             try {
                 engine.setVariable(sid, "obj", engine.evaluateExpr(sid, com.sce.runtime.ScriptSource.lua("{}", "({})")))
             } catch (e: Exception) {
-                raisePlatformError(ABadSendArgumentDiscardsItsMessageEvent.Error.Execution, "<data id='obj'> expr failed to evaluate")
+                raisePlatformError(ABadSendArgumentDiscardsItsMessageEvent.Error.Execution, ErrorReason.EXPRESSION_FAILED, "<data id='obj'> expr failed to evaluate")
             }
         }
     }
@@ -296,14 +296,14 @@ class ABadSendArgumentDiscardsItsMessageStateMachine(
 
     // W3C SCXML 5.9.1: a cond that cannot be evaluated raises error.execution;
     // `null` says so, where a bare `false` could not.
-    private fun evaluateGuardRaising(guardExpr: com.sce.runtime.ScriptSource, reason: String): Boolean? {
+    private fun evaluateGuardRaising(guardExpr: com.sce.runtime.ScriptSource, detail: String): Boolean? {
         assertScriptSession()
         val engine = scriptEngine ?: error("scriptEngine is required (codegen invariant: needs_script_engine == true)")
         val sid = scriptSessionId ?: error("scriptSessionId is established by the start (codegen invariant)")
         return try {
             engine.evaluateCondition(sid, guardExpr)
         } catch (e: Exception) {
-            raisePlatformError(ABadSendArgumentDiscardsItsMessageEvent.Error.Execution, reason)
+            raisePlatformError(ABadSendArgumentDiscardsItsMessageEvent.Error.Execution, ErrorReason.EXPRESSION_FAILED, detail)
             null
         }
     }
@@ -344,7 +344,7 @@ class ABadSendArgumentDiscardsItsMessageStateMachine(
         return try {
             engine.evaluateExpr(sid, serialized)?.toString() ?: ""
         } catch (e: Exception) {
-            raisePlatformError(ABadSendArgumentDiscardsItsMessageEvent.Error.Execution, "an expression could not be serialised to JSON")
+            raisePlatformError(ABadSendArgumentDiscardsItsMessageEvent.Error.Execution, ErrorReason.EXPRESSION_FAILED, "an expression could not be serialised to JSON")
             ""
         }
     }
@@ -365,7 +365,7 @@ class ABadSendArgumentDiscardsItsMessageStateMachine(
             engine.assign(sid, location, expr)
             true
         } catch (e: Exception) {
-            raisePlatformError(ABadSendArgumentDiscardsItsMessageEvent.Error.Execution, "<assign> failed")
+            raisePlatformError(ABadSendArgumentDiscardsItsMessageEvent.Error.Execution, ErrorReason.ASSIGNMENT_FAILED, "<assign> failed")
             false
         }
     }
@@ -385,7 +385,7 @@ class ABadSendArgumentDiscardsItsMessageStateMachine(
             engine.assign(sid, location, com.sce.runtime.ScriptSource.stringLiteral(id, location.language))
             true
         } catch (e: Exception) {
-            raisePlatformError(ABadSendArgumentDiscardsItsMessageEvent.Error.Execution, "$element idlocation could not take the id")
+            raisePlatformError(ABadSendArgumentDiscardsItsMessageEvent.Error.Execution, ErrorReason.LOCATION_INVALID, "$element idlocation could not take the id")
             false
         }
     }
@@ -401,7 +401,7 @@ class ABadSendArgumentDiscardsItsMessageStateMachine(
             engine.executeScript(sid, script)
             true
         } catch (e: Exception) {
-            raisePlatformError(ABadSendArgumentDiscardsItsMessageEvent.Error.Execution, "<script> failed to execute")
+            raisePlatformError(ABadSendArgumentDiscardsItsMessageEvent.Error.Execution, ErrorReason.SCRIPT_FAILED, "<script> failed to execute")
             false
         }
     }
@@ -522,23 +522,23 @@ class ABadSendArgumentDiscardsItsMessageStateMachine(
             // one error however many of its names are bad.
             val sendNamelist = mutableListOf<Pair<String, Any?>>()
             if (!argEngine.hasVariable(argSid, "undeclaredA")) {
-                raisePlatformError(ABadSendArgumentDiscardsItsMessageEvent.Error.Execution, "<send> namelist names 'undeclaredA', which is not declared", "__send_0")
+                raisePlatformError(ABadSendArgumentDiscardsItsMessageEvent.Error.Execution, ErrorReason.LOCATION_INVALID, "<send> namelist names 'undeclaredA', which is not declared", "__send_0")
                 return@send true
             }
             try {
                 sendNamelist.add("undeclaredA" to argEngine.getVariable(argSid, "undeclaredA"))
             } catch (_: Exception) {
-                raisePlatformError(ABadSendArgumentDiscardsItsMessageEvent.Error.Execution, "<send> namelist entry 'undeclaredA' could not be read", "__send_0")
+                raisePlatformError(ABadSendArgumentDiscardsItsMessageEvent.Error.Execution, ErrorReason.LOCATION_INVALID, "<send> namelist entry 'undeclaredA' could not be read", "__send_0")
                 return@send true
             }
             if (!argEngine.hasVariable(argSid, "undeclaredB")) {
-                raisePlatformError(ABadSendArgumentDiscardsItsMessageEvent.Error.Execution, "<send> namelist names 'undeclaredB', which is not declared", "__send_0")
+                raisePlatformError(ABadSendArgumentDiscardsItsMessageEvent.Error.Execution, ErrorReason.LOCATION_INVALID, "<send> namelist names 'undeclaredB', which is not declared", "__send_0")
                 return@send true
             }
             try {
                 sendNamelist.add("undeclaredB" to argEngine.getVariable(argSid, "undeclaredB"))
             } catch (_: Exception) {
-                raisePlatformError(ABadSendArgumentDiscardsItsMessageEvent.Error.Execution, "<send> namelist entry 'undeclaredB' could not be read", "__send_0")
+                raisePlatformError(ABadSendArgumentDiscardsItsMessageEvent.Error.Execution, ErrorReason.LOCATION_INVALID, "<send> namelist entry 'undeclaredB' could not be read", "__send_0")
                 return@send true
             }
             val sendPayload = mutableMapOf<String, Any?>()
@@ -576,7 +576,7 @@ class ABadSendArgumentDiscardsItsMessageStateMachine(
                 ""
             }
             if (sendEventName.isEmpty()) {
-                raisePlatformError(ABadSendArgumentDiscardsItsMessageEvent.Error.Execution, "<send> eventexpr could not be evaluated to an event name", "__send_1")
+                raisePlatformError(ABadSendArgumentDiscardsItsMessageEvent.Error.Execution, ErrorReason.EXPRESSION_FAILED, "<send> eventexpr could not be evaluated to an event name", "__send_1")
                 return@send true
             }
             val sendData = ""
@@ -612,19 +612,19 @@ class ABadSendArgumentDiscardsItsMessageStateMachine(
             val _rt = try {
                 valueToWireString(argEngine.evaluateExpr(argSid, com.sce.runtime.ScriptSource.lua("obj.missing.deep", "obj.missing.deep")))
             } catch (_: Exception) {
-                raisePlatformError(ABadSendArgumentDiscardsItsMessageEvent.Error.Execution, "<send> targetexpr could not be evaluated", "__send_2")
+                raisePlatformError(ABadSendArgumentDiscardsItsMessageEvent.Error.Execution, ErrorReason.EXPRESSION_FAILED, "<send> targetexpr could not be evaluated", "__send_2")
                 return@send true
             }
             if (com.sce.runtime.SendHelper.isInvalidTarget(_rt)) {
                 // W3C SCXML 6.2 (test194): refused as a static one is.
-                raisePlatformError(ABadSendArgumentDiscardsItsMessageEvent.Error.Execution, "<send> targetexpr produced a target this processor cannot address", "__send_2")
+                raisePlatformError(ABadSendArgumentDiscardsItsMessageEvent.Error.Execution, ErrorReason.SEND_TARGET_INVALID, "<send> targetexpr produced a target this processor cannot address", "__send_2")
                 return@send true
             }
             if (com.sce.runtime.SendHelper.isUnreachableTarget(_rt)) {
                 // W3C SCXML C.1 (test496): a target that names nothing is not
                 // reachable — error.communication, nothing delivered, and the
                 // error ends the block as any other would (W3C SCXML 4.9).
-                raisePlatformError(ABadSendArgumentDiscardsItsMessageEvent.Error.Communication, "<send> targetexpr evaluated to nothing, so there is no target to reach", "__send_2")
+                raisePlatformError(ABadSendArgumentDiscardsItsMessageEvent.Error.Communication, ErrorReason.TARGET_UNREACHABLE, "<send> targetexpr evaluated to nothing, so there is no target to reach", "__send_2")
                 return@send true
             }
             val sendData = ""
@@ -655,7 +655,7 @@ class ABadSendArgumentDiscardsItsMessageStateMachine(
             // event as an undeclared type, so a wiring mistake cannot read
             // as success.
             if (hostServed == null && !hasEventProcessor("sce:mesh")) {
-                raisePlatformError(ABadSendArgumentDiscardsItsMessageEvent.Error.Execution, "<send type='sce:mesh'> names a processor the host declared but never registered", "__send_2")
+                raisePlatformError(ABadSendArgumentDiscardsItsMessageEvent.Error.Execution, ErrorReason.PROCESSOR_UNREGISTERED, "<send type='sce:mesh'> names a processor the host declared but never registered", "__send_2")
             }
             } else {
             // W3C SCXML 6.2.4 + C.1: a targetexpr is a target — the value is
@@ -672,11 +672,11 @@ ABadSendArgumentDiscardsItsMessageEvent.Sent,
                 ABadSendArgumentDiscardsItsMessageEvent.Error.Communication,
             )) {
                 com.sce.runtime.TargetSendOutcome.UNSUPPORTED -> {
-                    raisePlatformError(ABadSendArgumentDiscardsItsMessageEvent.Error.Execution, "<send> targetexpr produced a value that is not a target", "__send_2")
+                    raisePlatformError(ABadSendArgumentDiscardsItsMessageEvent.Error.Execution, ErrorReason.SEND_TARGET_INVALID, "<send> targetexpr produced a value that is not a target", "__send_2")
                     return@send true
                 }
                 com.sce.runtime.TargetSendOutcome.UNREACHABLE -> {
-                    raisePlatformError(ABadSendArgumentDiscardsItsMessageEvent.Error.Communication, "<send> targetexpr names a session this processor cannot reach", "__send_2")
+                    raisePlatformError(ABadSendArgumentDiscardsItsMessageEvent.Error.Communication, ErrorReason.TARGET_UNREACHABLE, "<send> targetexpr names a session this processor cannot reach", "__send_2")
                     return@send true
                 }
                 com.sce.runtime.TargetSendOutcome.SENT -> {}
@@ -708,11 +708,11 @@ ABadSendArgumentDiscardsItsMessageEvent.Sent,
             val sendDelayText = try {
                 valueToWireString(argEngine.evaluateExpr(argSid, com.sce.runtime.ScriptSource.lua("obj.missing.deep", "obj.missing.deep")))
             } catch (_: Exception) {
-                raisePlatformError(ABadSendArgumentDiscardsItsMessageEvent.Error.Execution, "<send> delayexpr could not be evaluated", "__send_3")
+                raisePlatformError(ABadSendArgumentDiscardsItsMessageEvent.Error.Execution, ErrorReason.EXPRESSION_FAILED, "<send> delayexpr could not be evaluated", "__send_3")
                 return@send true
             }
             val sendDelayMs = com.sce.runtime.SendHelper.parseDelayMs(sendDelayText) ?: run {
-                raisePlatformError(ABadSendArgumentDiscardsItsMessageEvent.Error.Execution, "<send> delayexpr is not a CSS2 time", "__send_3")
+                raisePlatformError(ABadSendArgumentDiscardsItsMessageEvent.Error.Execution, ErrorReason.SEND_DELAY_INVALID, "<send> delayexpr is not a CSS2 time", "__send_3")
                 return@send true
             }
             val sendData = ""
@@ -775,11 +775,11 @@ ABadSendArgumentDiscardsItsMessageEvent.Sent,
             val sendTypeValue = try {
                 valueToWireString(argEngine.evaluateExpr(argSid, com.sce.runtime.ScriptSource.lua("obj.missing.deep", "obj.missing.deep")))
             } catch (_: Exception) {
-                raisePlatformError(ABadSendArgumentDiscardsItsMessageEvent.Error.Execution, "<send> typeexpr could not be evaluated", "__send_5")
+                raisePlatformError(ABadSendArgumentDiscardsItsMessageEvent.Error.Execution, ErrorReason.EXPRESSION_FAILED, "<send> typeexpr could not be evaluated", "__send_5")
                 return@send true
             }
             if (!com.sce.runtime.SendHelper.isSupportedSendType(sendTypeValue)) {
-                raisePlatformError(ABadSendArgumentDiscardsItsMessageEvent.Error.Execution, "<send> typeexpr names a processor this platform does not support", "__send_5")
+                raisePlatformError(ABadSendArgumentDiscardsItsMessageEvent.Error.Execution, ErrorReason.SEND_TYPE_UNSUPPORTED, "<send> typeexpr names a processor this platform does not support", "__send_5")
                 return@send true
             }
             val sendData = ""

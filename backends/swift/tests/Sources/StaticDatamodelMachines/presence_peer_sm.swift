@@ -876,7 +876,7 @@ public final class PresencePeerPolicy: InvocablePolicy {
                 if (!self.pendingPresenceJoinPayload.hub) {
 
 
-                if ({ () -> Bool in do { let sceValue: UInt32 = (try Checked.add(self.pendingPresenceJoinPayload.ttl, self.pendingPresenceJoinPayload.slack)); self.vLease = sceValue } catch { engine.raise(EventWithMetadata.platformError(PresencePeerEvent.errorExecution, message: "<assign location='lease'>: an integer operation overflowed or failed")); return true }; return false }()) {
+                if ({ () -> Bool in do { let sceValue: UInt32 = (try Checked.add(self.pendingPresenceJoinPayload.ttl, self.pendingPresenceJoinPayload.slack)); self.vLease = sceValue } catch { engine.raise(EventWithMetadata.platformError(PresencePeerEvent.errorExecution, reason: .expressionFailed, message: "<assign location='lease'>: an integer operation overflowed or failed")); return true }; return false }()) {
                     break sceBlock  // W3C SCXML 4.9: the error ends the block
                 }
 
@@ -1056,7 +1056,7 @@ public final class PresencePeerPolicy: InvocablePolicy {
 
                 // SCE Accepted Subset §2.15: <sce:append target="rebuilt">
 
-                if ({ () -> Bool in if self.vRebuilt.count >= 128 { engine.raise(EventWithMetadata.platformError(PresencePeerEvent.errorExecution, message: "<sce:append target='rebuilt'>: the list already holds its capacity of 128")); return true }; let sceValue = Checked.element(of: self.vRebuilt, m); self.vRebuilt.append(sceValue); return false }()) {
+                if ({ () -> Bool in if self.vRebuilt.count >= 128 { engine.raise(EventWithMetadata.platformError(PresencePeerEvent.errorExecution, reason: .assignmentFailed, message: "<sce:append target='rebuilt'>: the list already holds its capacity of 128")); return true }; let sceValue = Checked.element(of: self.vRebuilt, m); self.vRebuilt.append(sceValue); return false }()) {
                     break sceBlock  // W3C SCXML 4.9: the error ends the block
                 }
 
@@ -1075,14 +1075,14 @@ public final class PresencePeerPolicy: InvocablePolicy {
 
 
 
-                if ({ () -> Bool in do { let sceValue: UInt32 = (try Checked.add(self.vSerial, 1)); self.vEntry.gen = sceValue } catch { engine.raise(EventWithMetadata.platformError(PresencePeerEvent.errorExecution, message: "<assign location='entry.gen'>: an integer operation overflowed or failed")); return true }; return false }()) {
+                if ({ () -> Bool in do { let sceValue: UInt32 = (try Checked.add(self.vSerial, 1)); self.vEntry.gen = sceValue } catch { engine.raise(EventWithMetadata.platformError(PresencePeerEvent.errorExecution, reason: .expressionFailed, message: "<assign location='entry.gen'>: an integer operation overflowed or failed")); return true }; return false }()) {
                     break sceBlock  // W3C SCXML 4.9: the error ends the block
                 }
 
 
                 // SCE Accepted Subset §2.15: <sce:append target="rebuilt">
 
-                if ({ () -> Bool in if self.vRebuilt.count >= 128 { engine.raise(EventWithMetadata.platformError(PresencePeerEvent.errorExecution, message: "<sce:append target='rebuilt'>: the list already holds its capacity of 128")); return true }; let sceValue = Checked.element(of: self.vRebuilt, self.vEntry); self.vRebuilt.append(sceValue); return false }()) {
+                if ({ () -> Bool in if self.vRebuilt.count >= 128 { engine.raise(EventWithMetadata.platformError(PresencePeerEvent.errorExecution, reason: .assignmentFailed, message: "<sce:append target='rebuilt'>: the list already holds its capacity of 128")); return true }; let sceValue = Checked.element(of: self.vRebuilt, self.vEntry); self.vRebuilt.append(sceValue); return false }()) {
                     break sceBlock  // W3C SCXML 4.9: the error ends the block
                 }
 
@@ -1098,14 +1098,14 @@ public final class PresencePeerPolicy: InvocablePolicy {
 
                 // SCE Accepted Subset §2.15: <sce:append target="online">
 
-                if ({ () -> Bool in if self.vOnline.count >= 128 { engine.raise(EventWithMetadata.platformError(PresencePeerEvent.errorExecution, message: "<sce:append target='online'>: the list already holds its capacity of 128")); return true }; let sceValue = Checked.element(of: self.vOnline, r); self.vOnline.append(sceValue); return false }()) {
+                if ({ () -> Bool in if self.vOnline.count >= 128 { engine.raise(EventWithMetadata.platformError(PresencePeerEvent.errorExecution, reason: .assignmentFailed, message: "<sce:append target='online'>: the list already holds its capacity of 128")); return true }; let sceValue = Checked.element(of: self.vOnline, r); self.vOnline.append(sceValue); return false }()) {
                     break sceBlock  // W3C SCXML 4.9: the error ends the block
                 }
 
                 }
 
 
-                if ({ () -> Bool in do { let sceValue: UInt32 = (try Checked.add(self.vSerial, 1)); self.vSerial = sceValue } catch { engine.raise(EventWithMetadata.platformError(PresencePeerEvent.errorExecution, message: "<assign location='serial'>: an integer operation overflowed or failed")); return true }; return false }()) {
+                if ({ () -> Bool in do { let sceValue: UInt32 = (try Checked.add(self.vSerial, 1)); self.vSerial = sceValue } catch { engine.raise(EventWithMetadata.platformError(PresencePeerEvent.errorExecution, reason: .expressionFailed, message: "<assign location='serial'>: an integer operation overflowed or failed")); return true }; return false }()) {
                     break sceBlock  // W3C SCXML 4.9: the error ends the block
                 }
 
@@ -1113,6 +1113,10 @@ public final class PresencePeerPolicy: InvocablePolicy {
                 // W3C SCXML 6.2: send id="__send_3"
                 do {
                     var sendArgError = ""
+                    // Why the argument failed, a code of sce:std/engine/error_reason
+                    // (docs/adr/0106 #111), set with every sentence below.
+                    var sendArgReason = ErrorReason.expressionFailed
+                    _ = sendArgReason
                     var sendDelayMs: UInt64 = 0
                     if sendArgError.isEmpty {
                         // The delay is a string computed from the machine's fields now, and
@@ -1123,11 +1127,11 @@ public final class PresencePeerPolicy: InvocablePolicy {
                         if let ms = parseDelayToMs(sceDelay) {
                             sendDelayMs = ms
                         } else {
-                            sendArgError = "<send> delayexpr is not a CSS2 time"
+                            sendArgError = "<send> delayexpr is not a CSS2 time"; sendArgReason = .sendDelayInvalid
                         }
                     }
                     if !sendArgError.isEmpty {
-                        var sendError = EventWithMetadata.platformError(PresencePeerEvent.errorExecution, message: sendArgError)
+                        var sendError = EventWithMetadata.platformError(PresencePeerEvent.errorExecution, reason: sendArgReason, message: sendArgError)
                         sendError.metadata.sendID = "__send_3"
                         engine.raise(sendError)
 
@@ -1201,7 +1205,7 @@ public final class PresencePeerPolicy: InvocablePolicy {
 
                 // SCE Accepted Subset §2.15: <sce:append target="rebuilt">
 
-                if ({ () -> Bool in if self.vRebuilt.count >= 128 { engine.raise(EventWithMetadata.platformError(PresencePeerEvent.errorExecution, message: "<sce:append target='rebuilt'>: the list already holds its capacity of 128")); return true }; let sceValue = Checked.element(of: self.vRebuilt, m); self.vRebuilt.append(sceValue); return false }()) {
+                if ({ () -> Bool in if self.vRebuilt.count >= 128 { engine.raise(EventWithMetadata.platformError(PresencePeerEvent.errorExecution, reason: .assignmentFailed, message: "<sce:append target='rebuilt'>: the list already holds its capacity of 128")); return true }; let sceValue = Checked.element(of: self.vRebuilt, m); self.vRebuilt.append(sceValue); return false }()) {
                     break sceBlock  // W3C SCXML 4.9: the error ends the block
                 }
 
@@ -1222,7 +1226,7 @@ public final class PresencePeerPolicy: InvocablePolicy {
 
                 // SCE Accepted Subset §2.15: <sce:append target="online">
 
-                if ({ () -> Bool in if self.vOnline.count >= 128 { engine.raise(EventWithMetadata.platformError(PresencePeerEvent.errorExecution, message: "<sce:append target='online'>: the list already holds its capacity of 128")); return true }; let sceValue = Checked.element(of: self.vOnline, r); self.vOnline.append(sceValue); return false }()) {
+                if ({ () -> Bool in if self.vOnline.count >= 128 { engine.raise(EventWithMetadata.platformError(PresencePeerEvent.errorExecution, reason: .assignmentFailed, message: "<sce:append target='online'>: the list already holds its capacity of 128")); return true }; let sceValue = Checked.element(of: self.vOnline, r); self.vOnline.append(sceValue); return false }()) {
                     break sceBlock  // W3C SCXML 4.9: the error ends the block
                 }
 
@@ -1299,7 +1303,7 @@ public final class PresencePeerPolicy: InvocablePolicy {
 
                 // SCE Accepted Subset §2.15: <sce:append target="rebuilt">
 
-                if ({ () -> Bool in if self.vRebuilt.count >= 128 { engine.raise(EventWithMetadata.platformError(PresencePeerEvent.errorExecution, message: "<sce:append target='rebuilt'>: the list already holds its capacity of 128")); return true }; let sceValue = Checked.element(of: self.vRebuilt, m); self.vRebuilt.append(sceValue); return false }()) {
+                if ({ () -> Bool in if self.vRebuilt.count >= 128 { engine.raise(EventWithMetadata.platformError(PresencePeerEvent.errorExecution, reason: .assignmentFailed, message: "<sce:append target='rebuilt'>: the list already holds its capacity of 128")); return true }; let sceValue = Checked.element(of: self.vRebuilt, m); self.vRebuilt.append(sceValue); return false }()) {
                     break sceBlock  // W3C SCXML 4.9: the error ends the block
                 }
 
@@ -1318,7 +1322,7 @@ public final class PresencePeerPolicy: InvocablePolicy {
 
                 // SCE Accepted Subset §2.15: <sce:append target="online">
 
-                if ({ () -> Bool in if self.vOnline.count >= 128 { engine.raise(EventWithMetadata.platformError(PresencePeerEvent.errorExecution, message: "<sce:append target='online'>: the list already holds its capacity of 128")); return true }; let sceValue = Checked.element(of: self.vOnline, r); self.vOnline.append(sceValue); return false }()) {
+                if ({ () -> Bool in if self.vOnline.count >= 128 { engine.raise(EventWithMetadata.platformError(PresencePeerEvent.errorExecution, reason: .assignmentFailed, message: "<sce:append target='online'>: the list already holds its capacity of 128")); return true }; let sceValue = Checked.element(of: self.vOnline, r); self.vOnline.append(sceValue); return false }()) {
                     break sceBlock  // W3C SCXML 4.9: the error ends the block
                 }
 
@@ -1329,7 +1333,7 @@ public final class PresencePeerPolicy: InvocablePolicy {
                 sceBlock: do {
 
 
-                if ({ () -> Bool in do { let sceValue: UInt32 = (try Checked.add(self.vLost, 1)); self.vLost = sceValue } catch { engine.raise(EventWithMetadata.platformError(PresencePeerEvent.errorExecution, message: "<assign location='lost'>: an integer operation overflowed or failed")); return true }; return false }()) {
+                if ({ () -> Bool in do { let sceValue: UInt32 = (try Checked.add(self.vLost, 1)); self.vLost = sceValue } catch { engine.raise(EventWithMetadata.platformError(PresencePeerEvent.errorExecution, reason: .expressionFailed, message: "<assign location='lost'>: an integer operation overflowed or failed")); return true }; return false }()) {
                     break sceBlock  // W3C SCXML 4.9: the error ends the block
                 }
 
@@ -1339,7 +1343,7 @@ public final class PresencePeerPolicy: InvocablePolicy {
                 sceBlock: do {
 
 
-                if ({ () -> Bool in do { let sceValue: UInt32 = (try Checked.add(self.vRefusals, 1)); self.vRefusals = sceValue } catch { engine.raise(EventWithMetadata.platformError(PresencePeerEvent.errorExecution, message: "<assign location='refusals'>: an integer operation overflowed or failed")); return true }; return false }()) {
+                if ({ () -> Bool in do { let sceValue: UInt32 = (try Checked.add(self.vRefusals, 1)); self.vRefusals = sceValue } catch { engine.raise(EventWithMetadata.platformError(PresencePeerEvent.errorExecution, reason: .expressionFailed, message: "<assign location='refusals'>: an integer operation overflowed or failed")); return true }; return false }()) {
                     break sceBlock  // W3C SCXML 4.9: the error ends the block
                 }
 

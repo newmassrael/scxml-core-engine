@@ -505,8 +505,12 @@ public final class InternalChainIsBoundedPolicy: InvocablePolicy {
 
     /// Says what went wrong where the document can see it: `error.execution` on the internal
     /// queue (§scxml-5.9.1, 5.3).
-    private func raiseExecutionError(_ message: String, engine: Engine<InternalChainIsBoundedPolicy>) {
-        engine.raise(EventWithMetadata.platformError(InternalChainIsBoundedEvent.errorExecution, message: message))
+    /// `reason` is the code of sce:std/engine/error_reason the record carries
+    /// (docs/adr/0106 #111).
+    private func raiseExecutionError(
+        _ reason: ErrorReason, _ message: String, engine: Engine<InternalChainIsBoundedPolicy>
+    ) {
+        engine.raise(EventWithMetadata.platformError(InternalChainIsBoundedEvent.errorExecution, reason: reason, message: message))
     }
 
     /// W3C SCXML 5.3: the `<data id>` `id` takes the value of the lowered expression, or nil when it
@@ -563,6 +567,7 @@ public final class InternalChainIsBoundedPolicy: InvocablePolicy {
             }
         } catch {
             raiseExecutionError(
+                handed == nil ? .expressionFailed : .paramUnfit,
                 handed == nil
                     ? "<data id='\(id)'> expr failed to evaluate"
                     : "<data id='\(id)'> could not hold the value its parent handed it",
@@ -730,7 +735,7 @@ public final class InternalChainIsBoundedPolicy: InvocablePolicy {
             // this call the payload is lost to the document and to the host alike.
             engine.notePayloadReading(event, reading: Self.payloadReading(of: reading))
         } catch {
-            raiseExecutionError("_event could not be bound for '\(name)'", engine: engine)
+            raiseExecutionError(.payloadRefused, "_event could not be bound for '\(name)'", engine: engine)
         }
     }
 
@@ -767,7 +772,7 @@ public final class InternalChainIsBoundedPolicy: InvocablePolicy {
         do {
             return try scriptSession.evaluateCondition(condition, chunkName: "=cond")
         } catch {
-            raiseExecutionError("a \(element) cond failed to evaluate", engine: engine)
+            raiseExecutionError(.expressionFailed, "a \(element) cond failed to evaluate", engine: engine)
             failed = true
             return false
         }
@@ -1069,14 +1074,14 @@ public final class InternalChainIsBoundedPolicy: InvocablePolicy {
 
                 // W3C SCXML 5.4: <assign location="alts">
                 if !assignData("alts", "_scxml_add(alts, 1)") {
-                    raiseExecutionError("<assign> to 'alts' failed", engine: engine)
+                    raiseExecutionError(.assignmentFailed, "<assign> to 'alts' failed", engine: engine)
                     break sceBlock  // W3C SCXML 4.9: the error ends the block
                 }
 
 
                 // W3C SCXML 5.4: <assign location="pending">
                 if !assignData("pending", "1") {
-                    raiseExecutionError("<assign> to 'pending' failed", engine: engine)
+                    raiseExecutionError(.assignmentFailed, "<assign> to 'pending' failed", engine: engine)
                     break sceBlock  // W3C SCXML 4.9: the error ends the block
                 }
 
@@ -1087,7 +1092,7 @@ public final class InternalChainIsBoundedPolicy: InvocablePolicy {
 
                 // W3C SCXML 5.4: <assign location="pending">
                 if !assignData("pending", "0") {
-                    raiseExecutionError("<assign> to 'pending' failed", engine: engine)
+                    raiseExecutionError(.assignmentFailed, "<assign> to 'pending' failed", engine: engine)
                     break sceBlock  // W3C SCXML 4.9: the error ends the block
                 }
 
@@ -1101,7 +1106,7 @@ public final class InternalChainIsBoundedPolicy: InvocablePolicy {
 
                 // W3C SCXML 5.4: <assign location="pokes">
                 if !assignData("pokes", "_scxml_add(pokes, 1)") {
-                    raiseExecutionError("<assign> to 'pokes' failed", engine: engine)
+                    raiseExecutionError(.assignmentFailed, "<assign> to 'pokes' failed", engine: engine)
                     break sceBlock  // W3C SCXML 4.9: the error ends the block
                 }
 
@@ -1117,7 +1122,7 @@ public final class InternalChainIsBoundedPolicy: InvocablePolicy {
 
                 // W3C SCXML 5.4: <assign location="laps">
                 if !assignData("laps", "_scxml_add(laps, 1)") {
-                    raiseExecutionError("<assign> to 'laps' failed", engine: engine)
+                    raiseExecutionError(.assignmentFailed, "<assign> to 'laps' failed", engine: engine)
                     break sceBlock  // W3C SCXML 4.9: the error ends the block
                 }
 
@@ -1131,7 +1136,7 @@ public final class InternalChainIsBoundedPolicy: InvocablePolicy {
 
                 // W3C SCXML 5.4: <assign location="laps">
                 if !assignData("laps", "_scxml_add(laps, 1)") {
-                    raiseExecutionError("<assign> to 'laps' failed", engine: engine)
+                    raiseExecutionError(.assignmentFailed, "<assign> to 'laps' failed", engine: engine)
                     break sceBlock  // W3C SCXML 4.9: the error ends the block
                 }
 
@@ -1142,7 +1147,7 @@ public final class InternalChainIsBoundedPolicy: InvocablePolicy {
 
                 // W3C SCXML 5.4: <assign location="pokes">
                 if !assignData("pokes", "_scxml_add(pokes, 1)") {
-                    raiseExecutionError("<assign> to 'pokes' failed", engine: engine)
+                    raiseExecutionError(.assignmentFailed, "<assign> to 'pokes' failed", engine: engine)
                     break sceBlock  // W3C SCXML 4.9: the error ends the block
                 }
 
@@ -1158,7 +1163,7 @@ public final class InternalChainIsBoundedPolicy: InvocablePolicy {
 
                 // W3C SCXML 5.4: <assign location="pokes">
                 if !assignData("pokes", "_scxml_add(pokes, 1)") {
-                    raiseExecutionError("<assign> to 'pokes' failed", engine: engine)
+                    raiseExecutionError(.assignmentFailed, "<assign> to 'pokes' failed", engine: engine)
                     break sceBlock  // W3C SCXML 4.9: the error ends the block
                 }
 
@@ -1209,7 +1214,7 @@ public final class InternalChainIsBoundedPolicy: InvocablePolicy {
 
                 // W3C SCXML 5.4: <assign location="ignores">
                 if !assignData("ignores", "_scxml_add(ignores, 1)") {
-                    raiseExecutionError("<assign> to 'ignores' failed", engine: engine)
+                    raiseExecutionError(.assignmentFailed, "<assign> to 'ignores' failed", engine: engine)
                     break sceBlock  // W3C SCXML 4.9: the error ends the block
                 }
 
@@ -1226,7 +1231,7 @@ public final class InternalChainIsBoundedPolicy: InvocablePolicy {
 
                 // W3C SCXML 5.4: <assign location="ignores">
                 if !assignData("ignores", "_scxml_add(ignores, 1)") {
-                    raiseExecutionError("<assign> to 'ignores' failed", engine: engine)
+                    raiseExecutionError(.assignmentFailed, "<assign> to 'ignores' failed", engine: engine)
                     break sceBlock  // W3C SCXML 4.9: the error ends the block
                 }
 
@@ -1237,7 +1242,7 @@ public final class InternalChainIsBoundedPolicy: InvocablePolicy {
 
                 // W3C SCXML 5.4: <assign location="pokes">
                 if !assignData("pokes", "_scxml_add(pokes, 1)") {
-                    raiseExecutionError("<assign> to 'pokes' failed", engine: engine)
+                    raiseExecutionError(.assignmentFailed, "<assign> to 'pokes' failed", engine: engine)
                     break sceBlock  // W3C SCXML 4.9: the error ends the block
                 }
 
@@ -1253,7 +1258,7 @@ public final class InternalChainIsBoundedPolicy: InvocablePolicy {
 
                 // W3C SCXML 5.4: <assign location="beats">
                 if !assignData("beats", "_scxml_add(beats, 1)") {
-                    raiseExecutionError("<assign> to 'beats' failed", engine: engine)
+                    raiseExecutionError(.assignmentFailed, "<assign> to 'beats' failed", engine: engine)
                     break sceBlock  // W3C SCXML 4.9: the error ends the block
                 }
 
@@ -1267,7 +1272,7 @@ public final class InternalChainIsBoundedPolicy: InvocablePolicy {
 
                 // W3C SCXML 5.4: <assign location="beats">
                 if !assignData("beats", "_scxml_add(beats, 1)") {
-                    raiseExecutionError("<assign> to 'beats' failed", engine: engine)
+                    raiseExecutionError(.assignmentFailed, "<assign> to 'beats' failed", engine: engine)
                     break sceBlock  // W3C SCXML 4.9: the error ends the block
                 }
 
@@ -1278,7 +1283,7 @@ public final class InternalChainIsBoundedPolicy: InvocablePolicy {
 
                 // W3C SCXML 5.4: <assign location="pokes">
                 if !assignData("pokes", "_scxml_add(pokes, 1)") {
-                    raiseExecutionError("<assign> to 'pokes' failed", engine: engine)
+                    raiseExecutionError(.assignmentFailed, "<assign> to 'pokes' failed", engine: engine)
                     break sceBlock  // W3C SCXML 4.9: the error ends the block
                 }
 
@@ -1294,7 +1299,7 @@ public final class InternalChainIsBoundedPolicy: InvocablePolicy {
 
                 // W3C SCXML 5.4: <assign location="links">
                 if !assignData("links", "_scxml_add(links, 1)") {
-                    raiseExecutionError("<assign> to 'links' failed", engine: engine)
+                    raiseExecutionError(.assignmentFailed, "<assign> to 'links' failed", engine: engine)
                     break sceBlock  // W3C SCXML 4.9: the error ends the block
                 }
 
@@ -1308,7 +1313,7 @@ public final class InternalChainIsBoundedPolicy: InvocablePolicy {
 
                 // W3C SCXML 5.4: <assign location="pokes">
                 if !assignData("pokes", "_scxml_add(pokes, 1)") {
-                    raiseExecutionError("<assign> to 'pokes' failed", engine: engine)
+                    raiseExecutionError(.assignmentFailed, "<assign> to 'pokes' failed", engine: engine)
                     break sceBlock  // W3C SCXML 4.9: the error ends the block
                 }
 

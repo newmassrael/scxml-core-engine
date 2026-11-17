@@ -31,6 +31,7 @@ import (
 	"time"
 
 	sce "github.com/newmassrael/sce-go-runtime"
+	sceerrorreason "github.com/newmassrael/sce-go-runtime/generated/error_reason"
 	scealgorithm "github.com/newmassrael/sce-forge-runtime/algorithm"
 	"strconv"
 )
@@ -41,6 +42,9 @@ var (
 	_ = filepath.Join
 	_ = strings.HasPrefix
 	_ = time.Duration(0)
+	// Why an error.* event is raised (sce:std/engine/error_reason,
+	// docs/adr/0106 #111); a machine that raises none still imports it.
+	_ = sceerrorreason.ErrorReasonExpressionFailed
 	_ scealgorithm.Failure
 )
 
@@ -1589,7 +1593,7 @@ func (p *PresencePeerPolicy) ExecuteTransitionContent(source PresencePeerState, 
 	if !p.pendingPresenceJoinPayload.hub {
 
 
-	if func() bool { var sceFailure scealgorithm.Failure; sceValue := scealgorithm.AddUint32(&sceFailure, p.pendingPresenceJoinPayload.ttl, p.pendingPresenceJoinPayload.slack); if sceFailure.Failed() { engine.Raise(sce.NewPlatformError(PresencePeerEventErrorExecution, "<assign location='lease'>: an integer operation overflowed or failed")); return true }; p.vLease = sceValue; return false }() {
+	if func() bool { var sceFailure scealgorithm.Failure; sceValue := scealgorithm.AddUint32(&sceFailure, p.pendingPresenceJoinPayload.ttl, p.pendingPresenceJoinPayload.slack); if sceFailure.Failed() { engine.Raise(sce.NewPlatformError(PresencePeerEventErrorExecution, sceerrorreason.ErrorReasonExpressionFailed, "<assign location='lease'>: an integer operation overflowed or failed")); return true }; p.vLease = sceValue; return false }() {
 		return  // W3C SCXML 4.9: the error ends the block
 	}
 
@@ -1655,7 +1659,7 @@ func (p *PresencePeerPolicy) ExecuteTransitionContent(source PresencePeerState, 
 		// act it asked for was performed by nobody. Same event as an
 		// undeclared type, so a wiring mistake cannot read as success.
 		if !hostServed && !engine.HasEventProcessor("sce:mesh") {
-			errEvt := sce.NewPlatformError(PresencePeerEventErrorExecution, "<send type='sce:mesh'> names a processor the host declared but never registered")
+			errEvt := sce.NewPlatformError(PresencePeerEventErrorExecution, sceerrorreason.ErrorReasonProcessorUnregistered, "<send type='sce:mesh'> names a processor the host declared but never registered")
 			errEvt.Metadata.SendID = "__send_0"
 			engine.Raise(errEvt)
 		}
@@ -1773,7 +1777,7 @@ func (p *PresencePeerPolicy) ExecuteTransitionContent(source PresencePeerState, 
 		// act it asked for was performed by nobody. Same event as an
 		// undeclared type, so a wiring mistake cannot read as success.
 		if !hostServed && !engine.HasEventProcessor("sce:mesh") {
-			errEvt := sce.NewPlatformError(PresencePeerEventErrorExecution, "<send type='sce:mesh'> names a processor the host declared but never registered")
+			errEvt := sce.NewPlatformError(PresencePeerEventErrorExecution, sceerrorreason.ErrorReasonProcessorUnregistered, "<send type='sce:mesh'> names a processor the host declared but never registered")
 			errEvt.Metadata.SendID = "__send_2"
 			engine.Raise(errEvt)
 		}
@@ -1819,7 +1823,7 @@ func (p *PresencePeerPolicy) ExecuteTransitionContent(source PresencePeerState, 
 
 	// SCE Accepted Subset §2.15: <sce:append target="rebuilt">
 
-	if func() bool { var sceFailure scealgorithm.Failure; if len(p.vRebuilt) >= 128 { engine.Raise(sce.NewPlatformError(PresencePeerEventErrorExecution, "<sce:append target='rebuilt'>: the list already holds its capacity of 128")); return true }; sceValue := scealgorithm.ElementOf(p.vRebuilt, m); if sceFailure.Failed() { engine.Raise(sce.NewPlatformError(PresencePeerEventErrorExecution, "<sce:append target='rebuilt'>: an integer operation overflowed or failed")); return true }; p.vRebuilt = append(p.vRebuilt, sceValue); return false }() {
+	if func() bool { var sceFailure scealgorithm.Failure; if len(p.vRebuilt) >= 128 { engine.Raise(sce.NewPlatformError(PresencePeerEventErrorExecution, sceerrorreason.ErrorReasonAssignmentFailed, "<sce:append target='rebuilt'>: the list already holds its capacity of 128")); return true }; sceValue := scealgorithm.ElementOf(p.vRebuilt, m); if sceFailure.Failed() { engine.Raise(sce.NewPlatformError(PresencePeerEventErrorExecution, sceerrorreason.ErrorReasonExpressionFailed, "<sce:append target='rebuilt'>: an integer operation overflowed or failed")); return true }; p.vRebuilt = append(p.vRebuilt, sceValue); return false }() {
 		return  // W3C SCXML 4.9: the error ends the block
 	}
 
@@ -1839,14 +1843,14 @@ func (p *PresencePeerPolicy) ExecuteTransitionContent(source PresencePeerState, 
 
 
 
-	if func() bool { var sceFailure scealgorithm.Failure; sceValue := scealgorithm.AddUint32(&sceFailure, p.vSerial, 1); if sceFailure.Failed() { engine.Raise(sce.NewPlatformError(PresencePeerEventErrorExecution, "<assign location='entry.gen'>: an integer operation overflowed or failed")); return true }; p.vEntry.gen = sceValue; return false }() {
+	if func() bool { var sceFailure scealgorithm.Failure; sceValue := scealgorithm.AddUint32(&sceFailure, p.vSerial, 1); if sceFailure.Failed() { engine.Raise(sce.NewPlatformError(PresencePeerEventErrorExecution, sceerrorreason.ErrorReasonExpressionFailed, "<assign location='entry.gen'>: an integer operation overflowed or failed")); return true }; p.vEntry.gen = sceValue; return false }() {
 		return  // W3C SCXML 4.9: the error ends the block
 	}
 
 
 	// SCE Accepted Subset §2.15: <sce:append target="rebuilt">
 
-	if func() bool { var sceFailure scealgorithm.Failure; if len(p.vRebuilt) >= 128 { engine.Raise(sce.NewPlatformError(PresencePeerEventErrorExecution, "<sce:append target='rebuilt'>: the list already holds its capacity of 128")); return true }; sceValue := scealgorithm.ElementOf(p.vRebuilt, p.vEntry); if sceFailure.Failed() { engine.Raise(sce.NewPlatformError(PresencePeerEventErrorExecution, "<sce:append target='rebuilt'>: an integer operation overflowed or failed")); return true }; p.vRebuilt = append(p.vRebuilt, sceValue); return false }() {
+	if func() bool { var sceFailure scealgorithm.Failure; if len(p.vRebuilt) >= 128 { engine.Raise(sce.NewPlatformError(PresencePeerEventErrorExecution, sceerrorreason.ErrorReasonAssignmentFailed, "<sce:append target='rebuilt'>: the list already holds its capacity of 128")); return true }; sceValue := scealgorithm.ElementOf(p.vRebuilt, p.vEntry); if sceFailure.Failed() { engine.Raise(sce.NewPlatformError(PresencePeerEventErrorExecution, sceerrorreason.ErrorReasonExpressionFailed, "<sce:append target='rebuilt'>: an integer operation overflowed or failed")); return true }; p.vRebuilt = append(p.vRebuilt, sceValue); return false }() {
 		return  // W3C SCXML 4.9: the error ends the block
 	}
 
@@ -1862,7 +1866,7 @@ func (p *PresencePeerPolicy) ExecuteTransitionContent(source PresencePeerState, 
 
 	// SCE Accepted Subset §2.15: <sce:append target="online">
 
-	if func() bool { var sceFailure scealgorithm.Failure; if len(p.vOnline) >= 128 { engine.Raise(sce.NewPlatformError(PresencePeerEventErrorExecution, "<sce:append target='online'>: the list already holds its capacity of 128")); return true }; sceValue := scealgorithm.ElementOf(p.vOnline, r); if sceFailure.Failed() { engine.Raise(sce.NewPlatformError(PresencePeerEventErrorExecution, "<sce:append target='online'>: an integer operation overflowed or failed")); return true }; p.vOnline = append(p.vOnline, sceValue); return false }() {
+	if func() bool { var sceFailure scealgorithm.Failure; if len(p.vOnline) >= 128 { engine.Raise(sce.NewPlatformError(PresencePeerEventErrorExecution, sceerrorreason.ErrorReasonAssignmentFailed, "<sce:append target='online'>: the list already holds its capacity of 128")); return true }; sceValue := scealgorithm.ElementOf(p.vOnline, r); if sceFailure.Failed() { engine.Raise(sce.NewPlatformError(PresencePeerEventErrorExecution, sceerrorreason.ErrorReasonExpressionFailed, "<sce:append target='online'>: an integer operation overflowed or failed")); return true }; p.vOnline = append(p.vOnline, sceValue); return false }() {
 		return  // W3C SCXML 4.9: the error ends the block
 	}
 
@@ -1870,7 +1874,7 @@ func (p *PresencePeerPolicy) ExecuteTransitionContent(source PresencePeerState, 
 
 
 
-	if func() bool { var sceFailure scealgorithm.Failure; sceValue := scealgorithm.AddUint32(&sceFailure, p.vSerial, 1); if sceFailure.Failed() { engine.Raise(sce.NewPlatformError(PresencePeerEventErrorExecution, "<assign location='serial'>: an integer operation overflowed or failed")); return true }; p.vSerial = sceValue; return false }() {
+	if func() bool { var sceFailure scealgorithm.Failure; sceValue := scealgorithm.AddUint32(&sceFailure, p.vSerial, 1); if sceFailure.Failed() { engine.Raise(sce.NewPlatformError(PresencePeerEventErrorExecution, sceerrorreason.ErrorReasonExpressionFailed, "<assign location='serial'>: an integer operation overflowed or failed")); return true }; p.vSerial = sceValue; return false }() {
 		return  // W3C SCXML 4.9: the error ends the block
 	}
 
@@ -1878,6 +1882,10 @@ func (p *PresencePeerPolicy) ExecuteTransitionContent(source PresencePeerState, 
 	// W3C SCXML 6.2: send id="__send_3"
 	{
 	sendArgError := ""
+	// Why the argument failed, a code of sce:std/engine/error_reason
+	// (docs/adr/0106 #111), set with every sentence below.
+	var sendArgReason sce.ErrorReason
+	_ = sendArgReason
 	sendDelayMs := uint64(0)
 	if sendArgError == "" {
 		// The delay is a string computed from the machine's fields now, and
@@ -1888,12 +1896,12 @@ func (p *PresencePeerPolicy) ExecuteTransitionContent(source PresencePeerState, 
 		if ms, ok := sce.ParseDelayToMs(sceDelay); ok {
 			sendDelayMs = ms
 		} else {
-			sendArgError = "<send> delayexpr is not a CSS2 time"
+			sendArgError, sendArgReason = "<send> delayexpr is not a CSS2 time", sceerrorreason.ErrorReasonSendDelayInvalid
 		}
 	}
 	_ = sendDelayMs
 	if sendArgError != "" {
-		errEvt := sce.NewPlatformError(PresencePeerEventErrorExecution, sendArgError)
+		errEvt := sce.NewPlatformError(PresencePeerEventErrorExecution, sendArgReason, sendArgError)
 		errEvt.Metadata.SendID = "__send_3"
 		engine.Raise(errEvt)
 		return  // W3C SCXML 4.9: the error ends the block
@@ -1969,7 +1977,7 @@ func (p *PresencePeerPolicy) ExecuteTransitionContent(source PresencePeerState, 
 
 	// SCE Accepted Subset §2.15: <sce:append target="rebuilt">
 
-	if func() bool { var sceFailure scealgorithm.Failure; if len(p.vRebuilt) >= 128 { engine.Raise(sce.NewPlatformError(PresencePeerEventErrorExecution, "<sce:append target='rebuilt'>: the list already holds its capacity of 128")); return true }; sceValue := scealgorithm.ElementOf(p.vRebuilt, m); if sceFailure.Failed() { engine.Raise(sce.NewPlatformError(PresencePeerEventErrorExecution, "<sce:append target='rebuilt'>: an integer operation overflowed or failed")); return true }; p.vRebuilt = append(p.vRebuilt, sceValue); return false }() {
+	if func() bool { var sceFailure scealgorithm.Failure; if len(p.vRebuilt) >= 128 { engine.Raise(sce.NewPlatformError(PresencePeerEventErrorExecution, sceerrorreason.ErrorReasonAssignmentFailed, "<sce:append target='rebuilt'>: the list already holds its capacity of 128")); return true }; sceValue := scealgorithm.ElementOf(p.vRebuilt, m); if sceFailure.Failed() { engine.Raise(sce.NewPlatformError(PresencePeerEventErrorExecution, sceerrorreason.ErrorReasonExpressionFailed, "<sce:append target='rebuilt'>: an integer operation overflowed or failed")); return true }; p.vRebuilt = append(p.vRebuilt, sceValue); return false }() {
 		return  // W3C SCXML 4.9: the error ends the block
 	}
 
@@ -1991,7 +1999,7 @@ func (p *PresencePeerPolicy) ExecuteTransitionContent(source PresencePeerState, 
 
 	// SCE Accepted Subset §2.15: <sce:append target="online">
 
-	if func() bool { var sceFailure scealgorithm.Failure; if len(p.vOnline) >= 128 { engine.Raise(sce.NewPlatformError(PresencePeerEventErrorExecution, "<sce:append target='online'>: the list already holds its capacity of 128")); return true }; sceValue := scealgorithm.ElementOf(p.vOnline, r); if sceFailure.Failed() { engine.Raise(sce.NewPlatformError(PresencePeerEventErrorExecution, "<sce:append target='online'>: an integer operation overflowed or failed")); return true }; p.vOnline = append(p.vOnline, sceValue); return false }() {
+	if func() bool { var sceFailure scealgorithm.Failure; if len(p.vOnline) >= 128 { engine.Raise(sce.NewPlatformError(PresencePeerEventErrorExecution, sceerrorreason.ErrorReasonAssignmentFailed, "<sce:append target='online'>: the list already holds its capacity of 128")); return true }; sceValue := scealgorithm.ElementOf(p.vOnline, r); if sceFailure.Failed() { engine.Raise(sce.NewPlatformError(PresencePeerEventErrorExecution, sceerrorreason.ErrorReasonExpressionFailed, "<sce:append target='online'>: an integer operation overflowed or failed")); return true }; p.vOnline = append(p.vOnline, sceValue); return false }() {
 		return  // W3C SCXML 4.9: the error ends the block
 	}
 
@@ -2051,7 +2059,7 @@ func (p *PresencePeerPolicy) ExecuteTransitionContent(source PresencePeerState, 
 		// act it asked for was performed by nobody. Same event as an
 		// undeclared type, so a wiring mistake cannot read as success.
 		if !hostServed && !engine.HasEventProcessor("sce:mesh") {
-			errEvt := sce.NewPlatformError(PresencePeerEventErrorExecution, "<send type='sce:mesh'> names a processor the host declared but never registered")
+			errEvt := sce.NewPlatformError(PresencePeerEventErrorExecution, sceerrorreason.ErrorReasonProcessorUnregistered, "<send type='sce:mesh'> names a processor the host declared but never registered")
 			errEvt.Metadata.SendID = "__send_4"
 			engine.Raise(errEvt)
 		}
@@ -2089,7 +2097,7 @@ func (p *PresencePeerPolicy) ExecuteTransitionContent(source PresencePeerState, 
 
 	// SCE Accepted Subset §2.15: <sce:append target="rebuilt">
 
-	if func() bool { var sceFailure scealgorithm.Failure; if len(p.vRebuilt) >= 128 { engine.Raise(sce.NewPlatformError(PresencePeerEventErrorExecution, "<sce:append target='rebuilt'>: the list already holds its capacity of 128")); return true }; sceValue := scealgorithm.ElementOf(p.vRebuilt, m); if sceFailure.Failed() { engine.Raise(sce.NewPlatformError(PresencePeerEventErrorExecution, "<sce:append target='rebuilt'>: an integer operation overflowed or failed")); return true }; p.vRebuilt = append(p.vRebuilt, sceValue); return false }() {
+	if func() bool { var sceFailure scealgorithm.Failure; if len(p.vRebuilt) >= 128 { engine.Raise(sce.NewPlatformError(PresencePeerEventErrorExecution, sceerrorreason.ErrorReasonAssignmentFailed, "<sce:append target='rebuilt'>: the list already holds its capacity of 128")); return true }; sceValue := scealgorithm.ElementOf(p.vRebuilt, m); if sceFailure.Failed() { engine.Raise(sce.NewPlatformError(PresencePeerEventErrorExecution, sceerrorreason.ErrorReasonExpressionFailed, "<sce:append target='rebuilt'>: an integer operation overflowed or failed")); return true }; p.vRebuilt = append(p.vRebuilt, sceValue); return false }() {
 		return  // W3C SCXML 4.9: the error ends the block
 	}
 
@@ -2109,7 +2117,7 @@ func (p *PresencePeerPolicy) ExecuteTransitionContent(source PresencePeerState, 
 
 	// SCE Accepted Subset §2.15: <sce:append target="online">
 
-	if func() bool { var sceFailure scealgorithm.Failure; if len(p.vOnline) >= 128 { engine.Raise(sce.NewPlatformError(PresencePeerEventErrorExecution, "<sce:append target='online'>: the list already holds its capacity of 128")); return true }; sceValue := scealgorithm.ElementOf(p.vOnline, r); if sceFailure.Failed() { engine.Raise(sce.NewPlatformError(PresencePeerEventErrorExecution, "<sce:append target='online'>: an integer operation overflowed or failed")); return true }; p.vOnline = append(p.vOnline, sceValue); return false }() {
+	if func() bool { var sceFailure scealgorithm.Failure; if len(p.vOnline) >= 128 { engine.Raise(sce.NewPlatformError(PresencePeerEventErrorExecution, sceerrorreason.ErrorReasonAssignmentFailed, "<sce:append target='online'>: the list already holds its capacity of 128")); return true }; sceValue := scealgorithm.ElementOf(p.vOnline, r); if sceFailure.Failed() { engine.Raise(sce.NewPlatformError(PresencePeerEventErrorExecution, sceerrorreason.ErrorReasonExpressionFailed, "<sce:append target='online'>: an integer operation overflowed or failed")); return true }; p.vOnline = append(p.vOnline, sceValue); return false }() {
 		return  // W3C SCXML 4.9: the error ends the block
 	}
 
@@ -2122,7 +2130,7 @@ func (p *PresencePeerPolicy) ExecuteTransitionContent(source PresencePeerState, 
 			func() {
 
 
-	if func() bool { var sceFailure scealgorithm.Failure; sceValue := scealgorithm.AddUint32(&sceFailure, p.vLost, 1); if sceFailure.Failed() { engine.Raise(sce.NewPlatformError(PresencePeerEventErrorExecution, "<assign location='lost'>: an integer operation overflowed or failed")); return true }; p.vLost = sceValue; return false }() {
+	if func() bool { var sceFailure scealgorithm.Failure; sceValue := scealgorithm.AddUint32(&sceFailure, p.vLost, 1); if sceFailure.Failed() { engine.Raise(sce.NewPlatformError(PresencePeerEventErrorExecution, sceerrorreason.ErrorReasonExpressionFailed, "<assign location='lost'>: an integer operation overflowed or failed")); return true }; p.vLost = sceValue; return false }() {
 		return  // W3C SCXML 4.9: the error ends the block
 	}
 
@@ -2133,7 +2141,7 @@ func (p *PresencePeerPolicy) ExecuteTransitionContent(source PresencePeerState, 
 			func() {
 
 
-	if func() bool { var sceFailure scealgorithm.Failure; sceValue := scealgorithm.AddUint32(&sceFailure, p.vRefusals, 1); if sceFailure.Failed() { engine.Raise(sce.NewPlatformError(PresencePeerEventErrorExecution, "<assign location='refusals'>: an integer operation overflowed or failed")); return true }; p.vRefusals = sceValue; return false }() {
+	if func() bool { var sceFailure scealgorithm.Failure; sceValue := scealgorithm.AddUint32(&sceFailure, p.vRefusals, 1); if sceFailure.Failed() { engine.Raise(sce.NewPlatformError(PresencePeerEventErrorExecution, sceerrorreason.ErrorReasonExpressionFailed, "<assign location='refusals'>: an integer operation overflowed or failed")); return true }; p.vRefusals = sceValue; return false }() {
 		return  // W3C SCXML 4.9: the error ends the block
 	}
 

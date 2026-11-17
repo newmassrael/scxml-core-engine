@@ -483,7 +483,7 @@ class StaticSendTargetStateMachine(
                 // W3C SCXML C.1 (test496): a target that names nothing is not
                 // reachable — error.communication, nothing delivered, and the
                 // error ends the block as any other would (W3C SCXML 4.9).
-                raisePlatformError(StaticSendTargetEvent.Error.Communication, "<send> targetexpr evaluated to nothing, or to a route the send does not declare, so there is no target to reach", "__send_0")
+                raisePlatformError(StaticSendTargetEvent.Error.Communication, ErrorReason.TARGET_UNREACHABLE, "<send> targetexpr evaluated to nothing, or to a route the send does not declare, so there is no target to reach", "__send_0")
                 return@send true
             }
             val sendData = ""
@@ -501,11 +501,11 @@ StaticSendTargetEvent.Landed,
                 StaticSendTargetEvent.Error.Communication,
             )) {
                 com.sce.runtime.TargetSendOutcome.UNSUPPORTED -> {
-                    raisePlatformError(StaticSendTargetEvent.Error.Execution, "<send> targetexpr produced a value that is not a target", "__send_0")
+                    raisePlatformError(StaticSendTargetEvent.Error.Execution, ErrorReason.SEND_TARGET_INVALID, "<send> targetexpr produced a value that is not a target", "__send_0")
                     return@send true
                 }
                 com.sce.runtime.TargetSendOutcome.UNREACHABLE -> {
-                    raisePlatformError(StaticSendTargetEvent.Error.Communication, "<send> targetexpr names a session this processor cannot reach", "__send_0")
+                    raisePlatformError(StaticSendTargetEvent.Error.Communication, ErrorReason.TARGET_UNREACHABLE, "<send> targetexpr names a session this processor cannot reach", "__send_0")
                     return@send true
                 }
                 com.sce.runtime.TargetSendOutcome.SENT -> {}
@@ -535,7 +535,7 @@ StaticSendTargetEvent.Landed,
                 // W3C SCXML C.1 (test496): a target that names nothing is not
                 // reachable — error.communication, nothing delivered, and the
                 // error ends the block as any other would (W3C SCXML 4.9).
-                raisePlatformError(StaticSendTargetEvent.Error.Communication, "<send> targetexpr evaluated to nothing, or to a route the send does not declare, so there is no target to reach", "__send_1")
+                raisePlatformError(StaticSendTargetEvent.Error.Communication, ErrorReason.TARGET_UNREACHABLE, "<send> targetexpr evaluated to nothing, or to a route the send does not declare, so there is no target to reach", "__send_1")
                 return@send true
             }
             val sendData = ""
@@ -553,11 +553,11 @@ StaticSendTargetEvent.Landed,
                 StaticSendTargetEvent.Error.Communication,
             )) {
                 com.sce.runtime.TargetSendOutcome.UNSUPPORTED -> {
-                    raisePlatformError(StaticSendTargetEvent.Error.Execution, "<send> targetexpr produced a value that is not a target", "__send_1")
+                    raisePlatformError(StaticSendTargetEvent.Error.Execution, ErrorReason.SEND_TARGET_INVALID, "<send> targetexpr produced a value that is not a target", "__send_1")
                     return@send true
                 }
                 com.sce.runtime.TargetSendOutcome.UNREACHABLE -> {
-                    raisePlatformError(StaticSendTargetEvent.Error.Communication, "<send> targetexpr names a session this processor cannot reach", "__send_1")
+                    raisePlatformError(StaticSendTargetEvent.Error.Communication, ErrorReason.TARGET_UNREACHABLE, "<send> targetexpr names a session this processor cannot reach", "__send_1")
                     return@send true
                 }
                 com.sce.runtime.TargetSendOutcome.SENT -> {}
@@ -573,7 +573,7 @@ StaticSendTargetEvent.Landed,
     private fun transitionContentOfIdleAt2() {
                 // SCE-MAP: static_send_target.scxml:32 :: idle :: _transition_2
 
-            if (try { vRoute = com.sce.forge.runtime.SceChecked.bounded("#_internal", 24); false } catch (_: com.sce.forge.runtime.AlgorithmFailure) { raisePlatformError(StaticSendTargetEvent.Error.Execution, "<assign location='route'>: an integer operation overflowed or failed"); true }) {
+            if (try { vRoute = com.sce.forge.runtime.SceChecked.bounded("#_internal", 24); false } catch (_: com.sce.forge.runtime.AlgorithmFailure) { raisePlatformError(StaticSendTargetEvent.Error.Execution, ErrorReason.EXPRESSION_FAILED, "<assign location='route'>: an integer operation overflowed or failed"); true }) {
                 return
             }
     }
@@ -581,7 +581,7 @@ StaticSendTargetEvent.Landed,
     private fun transitionContentOfIdleAt3() {
                 // SCE-MAP: static_send_target.scxml:35 :: idle :: _transition_3
 
-            if (try { vRoute = com.sce.forge.runtime.SceChecked.bounded("#_parent", 24); false } catch (_: com.sce.forge.runtime.AlgorithmFailure) { raisePlatformError(StaticSendTargetEvent.Error.Execution, "<assign location='route'>: an integer operation overflowed or failed"); true }) {
+            if (try { vRoute = com.sce.forge.runtime.SceChecked.bounded("#_parent", 24); false } catch (_: com.sce.forge.runtime.AlgorithmFailure) { raisePlatformError(StaticSendTargetEvent.Error.Execution, ErrorReason.EXPRESSION_FAILED, "<assign location='route'>: an integer operation overflowed or failed"); true }) {
                 return
             }
     }
@@ -589,7 +589,7 @@ StaticSendTargetEvent.Landed,
     private fun transitionContentOfIdleAt4() {
                 // SCE-MAP: static_send_target.scxml:38 :: idle :: _transition_4
 
-            if (try { vRoute = com.sce.forge.runtime.SceChecked.bounded("#_scxml_stranger", 24); false } catch (_: com.sce.forge.runtime.AlgorithmFailure) { raisePlatformError(StaticSendTargetEvent.Error.Execution, "<assign location='route'>: an integer operation overflowed or failed"); true }) {
+            if (try { vRoute = com.sce.forge.runtime.SceChecked.bounded("#_scxml_stranger", 24); false } catch (_: com.sce.forge.runtime.AlgorithmFailure) { raisePlatformError(StaticSendTargetEvent.Error.Execution, ErrorReason.EXPRESSION_FAILED, "<assign location='route'>: an integer operation overflowed or failed"); true }) {
                 return
             }
     }
@@ -597,7 +597,7 @@ StaticSendTargetEvent.Landed,
     private fun transitionContentOfIdleAt5() {
                 // SCE-MAP: static_send_target.scxml:41 :: idle :: _transition_5
 
-            if (try { vLanded = com.sce.forge.runtime.SceChecked.add(vLanded, 1.toUInt()); false } catch (_: com.sce.forge.runtime.AlgorithmFailure) { raisePlatformError(StaticSendTargetEvent.Error.Execution, "<assign location='landed'>: an integer operation overflowed or failed"); true }) {
+            if (try { vLanded = com.sce.forge.runtime.SceChecked.add(vLanded, 1.toUInt()); false } catch (_: com.sce.forge.runtime.AlgorithmFailure) { raisePlatformError(StaticSendTargetEvent.Error.Execution, ErrorReason.EXPRESSION_FAILED, "<assign location='landed'>: an integer operation overflowed or failed"); true }) {
                 return
             }
     }
@@ -605,7 +605,7 @@ StaticSendTargetEvent.Landed,
     private fun transitionContentOfIdleAt6() {
                 // SCE-MAP: static_send_target.scxml:44 :: idle :: _transition_6
 
-            if (try { vRefused = com.sce.forge.runtime.SceChecked.add(vRefused, 1.toUInt()); false } catch (_: com.sce.forge.runtime.AlgorithmFailure) { raisePlatformError(StaticSendTargetEvent.Error.Execution, "<assign location='refused'>: an integer operation overflowed or failed"); true }) {
+            if (try { vRefused = com.sce.forge.runtime.SceChecked.add(vRefused, 1.toUInt()); false } catch (_: com.sce.forge.runtime.AlgorithmFailure) { raisePlatformError(StaticSendTargetEvent.Error.Execution, ErrorReason.EXPRESSION_FAILED, "<assign location='refused'>: an integer operation overflowed or failed"); true }) {
                 return
             }
     }

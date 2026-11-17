@@ -434,8 +434,12 @@ public final class AnErrorEndsTheBlockItWasRaisedInPolicy: InvocablePolicy {
 
     /// Says what went wrong where the document can see it: `error.execution` on the internal
     /// queue (§scxml-5.9.1, 5.3).
-    private func raiseExecutionError(_ message: String, engine: Engine<AnErrorEndsTheBlockItWasRaisedInPolicy>) {
-        engine.raise(EventWithMetadata.platformError(AnErrorEndsTheBlockItWasRaisedInEvent.errorExecution, message: message))
+    /// `reason` is the code of sce:std/engine/error_reason the record carries
+    /// (docs/adr/0106 #111).
+    private func raiseExecutionError(
+        _ reason: ErrorReason, _ message: String, engine: Engine<AnErrorEndsTheBlockItWasRaisedInPolicy>
+    ) {
+        engine.raise(EventWithMetadata.platformError(AnErrorEndsTheBlockItWasRaisedInEvent.errorExecution, reason: reason, message: message))
     }
 
     /// W3C SCXML 5.3: the `<data id>` `id` takes the value of the lowered expression, or nil when it
@@ -492,6 +496,7 @@ public final class AnErrorEndsTheBlockItWasRaisedInPolicy: InvocablePolicy {
             }
         } catch {
             raiseExecutionError(
+                handed == nil ? .expressionFailed : .paramUnfit,
                 handed == nil
                     ? "<data id='\(id)'> expr failed to evaluate"
                     : "<data id='\(id)'> could not hold the value its parent handed it",
@@ -677,7 +682,7 @@ public final class AnErrorEndsTheBlockItWasRaisedInPolicy: InvocablePolicy {
             // this call the payload is lost to the document and to the host alike.
             engine.notePayloadReading(event, reading: Self.payloadReading(of: reading))
         } catch {
-            raiseExecutionError("_event could not be bound for '\(name)'", engine: engine)
+            raiseExecutionError(.payloadRefused, "_event could not be bound for '\(name)'", engine: engine)
         }
     }
 
@@ -714,7 +719,7 @@ public final class AnErrorEndsTheBlockItWasRaisedInPolicy: InvocablePolicy {
         do {
             return try scriptSession.evaluateCondition(condition, chunkName: "=cond")
         } catch {
-            raiseExecutionError("a \(element) cond failed to evaluate", engine: engine)
+            raiseExecutionError(.expressionFailed, "a \(element) cond failed to evaluate", engine: engine)
             failed = true
             return false
         }
@@ -733,14 +738,14 @@ public final class AnErrorEndsTheBlockItWasRaisedInPolicy: InvocablePolicy {
 
                 // W3C SCXML 5.4: <assign location="obj.missing.deep">
                 if !assignData("obj.missing.deep", "1") {
-                    raiseExecutionError("<assign> to 'obj.missing.deep' failed", engine: engine)
+                    raiseExecutionError(.assignmentFailed, "<assign> to 'obj.missing.deep' failed", engine: engine)
                     break sceBlock  // W3C SCXML 4.9: the error ends the block
                 }
 
 
                 // W3C SCXML 5.4: <assign location="afterSingle">
                 if !assignData("afterSingle", "1") {
-                    raiseExecutionError("<assign> to 'afterSingle' failed", engine: engine)
+                    raiseExecutionError(.assignmentFailed, "<assign> to 'afterSingle' failed", engine: engine)
                     break sceBlock  // W3C SCXML 4.9: the error ends the block
                 }
 
@@ -753,7 +758,7 @@ public final class AnErrorEndsTheBlockItWasRaisedInPolicy: InvocablePolicy {
 
                 // W3C SCXML 5.4: <assign location="initRan">
                 if !assignData("initRan", "1") {
-                    raiseExecutionError("<assign> to 'initRan' failed", engine: engine)
+                    raiseExecutionError(.assignmentFailed, "<assign> to 'initRan' failed", engine: engine)
                     break sceBlock  // W3C SCXML 4.9: the error ends the block
                 }
 
@@ -765,14 +770,14 @@ public final class AnErrorEndsTheBlockItWasRaisedInPolicy: InvocablePolicy {
 
                 // W3C SCXML 5.4: <assign location="obj.missing.deep">
                 if !assignData("obj.missing.deep", "1") {
-                    raiseExecutionError("<assign> to 'obj.missing.deep' failed", engine: engine)
+                    raiseExecutionError(.assignmentFailed, "<assign> to 'obj.missing.deep' failed", engine: engine)
                     break sceBlock  // W3C SCXML 4.9: the error ends the block
                 }
 
 
                 // W3C SCXML 5.4: <assign location="afterAssign">
                 if !assignData("afterAssign", "1") {
-                    raiseExecutionError("<assign> to 'afterAssign' failed", engine: engine)
+                    raiseExecutionError(.assignmentFailed, "<assign> to 'afterAssign' failed", engine: engine)
                     break sceBlock  // W3C SCXML 4.9: the error ends the block
                 }
 
@@ -782,14 +787,14 @@ public final class AnErrorEndsTheBlockItWasRaisedInPolicy: InvocablePolicy {
 
                 // W3C SCXML 5.8: <script>
                 if !executeScript("obj.missing.deep = 1", name: "=script") {
-                    raiseExecutionError("<script> failed to execute", engine: engine)
+                    raiseExecutionError(.scriptFailed, "<script> failed to execute", engine: engine)
                     break sceBlock  // W3C SCXML 4.9: the error ends the block
                 }
 
 
                 // W3C SCXML 5.4: <assign location="afterScript">
                 if !assignData("afterScript", "1") {
-                    raiseExecutionError("<assign> to 'afterScript' failed", engine: engine)
+                    raiseExecutionError(.assignmentFailed, "<assign> to 'afterScript' failed", engine: engine)
                     break sceBlock  // W3C SCXML 4.9: the error ends the block
                 }
 
@@ -801,14 +806,14 @@ public final class AnErrorEndsTheBlockItWasRaisedInPolicy: InvocablePolicy {
                 if let logged = evaluateText("obj.missing.deep") {
                     print("unreadable: " + logged)
                 } else {
-                    raiseExecutionError("<log> expr failed to evaluate", engine: engine)
+                    raiseExecutionError(.expressionFailed, "<log> expr failed to evaluate", engine: engine)
                     break sceBlock  // W3C SCXML 4.9: the error ends the block
                 }
 
 
                 // W3C SCXML 5.4: <assign location="afterLog">
                 if !assignData("afterLog", "1") {
-                    raiseExecutionError("<assign> to 'afterLog' failed", engine: engine)
+                    raiseExecutionError(.assignmentFailed, "<assign> to 'afterLog' failed", engine: engine)
                     break sceBlock  // W3C SCXML 4.9: the error ends the block
                 }
 
@@ -824,7 +829,7 @@ public final class AnErrorEndsTheBlockItWasRaisedInPolicy: InvocablePolicy {
                     if let cancelSendID = evaluateText("obj.missing.deep") {
                         _ = engine.cancelEvent(sendID: cancelSendID)
                     } else {
-                        engine.raise(EventWithMetadata.platformError(AnErrorEndsTheBlockItWasRaisedInEvent.errorExecution, message: "<cancel> sendidexpr failed to evaluate"))
+                        engine.raise(EventWithMetadata.platformError(AnErrorEndsTheBlockItWasRaisedInEvent.errorExecution, reason: .expressionFailed, message: "<cancel> sendidexpr failed to evaluate"))
                         break sceBlock  // W3C SCXML 4.9: the error ends the block
                     }
                 }
@@ -832,7 +837,7 @@ public final class AnErrorEndsTheBlockItWasRaisedInPolicy: InvocablePolicy {
 
                 // W3C SCXML 5.4: <assign location="afterCancel">
                 if !assignData("afterCancel", "1") {
-                    raiseExecutionError("<assign> to 'afterCancel' failed", engine: engine)
+                    raiseExecutionError(.assignmentFailed, "<assign> to 'afterCancel' failed", engine: engine)
                     break sceBlock  // W3C SCXML 4.9: the error ends the block
                 }
 
@@ -845,14 +850,14 @@ public final class AnErrorEndsTheBlockItWasRaisedInPolicy: InvocablePolicy {
 
                 // W3C SCXML 5.4: <assign location="obj.missing.deep">
                 if !assignData("obj.missing.deep", "1") {
-                    raiseExecutionError("<assign> to 'obj.missing.deep' failed", engine: engine)
+                    raiseExecutionError(.assignmentFailed, "<assign> to 'obj.missing.deep' failed", engine: engine)
                     break sceBlock  // W3C SCXML 4.9: the error ends the block
                 }
 
 
                 // W3C SCXML 5.4: <assign location="afterIfInner">
                 if !assignData("afterIfInner", "1") {
-                    raiseExecutionError("<assign> to 'afterIfInner' failed", engine: engine)
+                    raiseExecutionError(.assignmentFailed, "<assign> to 'afterIfInner' failed", engine: engine)
                     break sceBlock  // W3C SCXML 4.9: the error ends the block
                 }
 
@@ -861,7 +866,7 @@ public final class AnErrorEndsTheBlockItWasRaisedInPolicy: InvocablePolicy {
 
                 // W3C SCXML 5.4: <assign location="afterIf">
                 if !assignData("afterIf", "1") {
-                    raiseExecutionError("<assign> to 'afterIf' failed", engine: engine)
+                    raiseExecutionError(.assignmentFailed, "<assign> to 'afterIf' failed", engine: engine)
                     break sceBlock  // W3C SCXML 4.9: the error ends the block
                 }
 
@@ -874,7 +879,7 @@ public final class AnErrorEndsTheBlockItWasRaisedInPolicy: InvocablePolicy {
 
                 // W3C SCXML 5.4: <assign location="ifThen">
                 if !assignData("ifThen", "1") {
-                    raiseExecutionError("<assign> to 'ifThen' failed", engine: engine)
+                    raiseExecutionError(.assignmentFailed, "<assign> to 'ifThen' failed", engine: engine)
                     break sceBlock  // W3C SCXML 4.9: the error ends the block
                 }
 
@@ -882,7 +887,7 @@ public final class AnErrorEndsTheBlockItWasRaisedInPolicy: InvocablePolicy {
 
                 // W3C SCXML 5.4: <assign location="ifElse">
                 if !assignData("ifElse", "1") {
-                    raiseExecutionError("<assign> to 'ifElse' failed", engine: engine)
+                    raiseExecutionError(.assignmentFailed, "<assign> to 'ifElse' failed", engine: engine)
                     break sceBlock  // W3C SCXML 4.9: the error ends the block
                 }
 
@@ -894,7 +899,7 @@ public final class AnErrorEndsTheBlockItWasRaisedInPolicy: InvocablePolicy {
 
                 // W3C SCXML 5.4: <assign location="afterIfCond">
                 if !assignData("afterIfCond", "1") {
-                    raiseExecutionError("<assign> to 'afterIfCond' failed", engine: engine)
+                    raiseExecutionError(.assignmentFailed, "<assign> to 'afterIfCond' failed", engine: engine)
                     break sceBlock  // W3C SCXML 4.9: the error ends the block
                 }
 
@@ -908,7 +913,7 @@ public final class AnErrorEndsTheBlockItWasRaisedInPolicy: InvocablePolicy {
 
                 // W3C SCXML 5.4: <assign location="elseifThen">
                 if !assignData("elseifThen", "2") {
-                    raiseExecutionError("<assign> to 'elseifThen' failed", engine: engine)
+                    raiseExecutionError(.assignmentFailed, "<assign> to 'elseifThen' failed", engine: engine)
                     break sceBlock  // W3C SCXML 4.9: the error ends the block
                 }
 
@@ -916,7 +921,7 @@ public final class AnErrorEndsTheBlockItWasRaisedInPolicy: InvocablePolicy {
 
                 // W3C SCXML 5.4: <assign location="elseifThen">
                 if !assignData("elseifThen", "1") {
-                    raiseExecutionError("<assign> to 'elseifThen' failed", engine: engine)
+                    raiseExecutionError(.assignmentFailed, "<assign> to 'elseifThen' failed", engine: engine)
                     break sceBlock  // W3C SCXML 4.9: the error ends the block
                 }
 
@@ -924,7 +929,7 @@ public final class AnErrorEndsTheBlockItWasRaisedInPolicy: InvocablePolicy {
 
                 // W3C SCXML 5.4: <assign location="elseifElse">
                 if !assignData("elseifElse", "1") {
-                    raiseExecutionError("<assign> to 'elseifElse' failed", engine: engine)
+                    raiseExecutionError(.assignmentFailed, "<assign> to 'elseifElse' failed", engine: engine)
                     break sceBlock  // W3C SCXML 4.9: the error ends the block
                 }
 
@@ -936,7 +941,7 @@ public final class AnErrorEndsTheBlockItWasRaisedInPolicy: InvocablePolicy {
 
                 // W3C SCXML 5.4: <assign location="afterElseifCond">
                 if !assignData("afterElseifCond", "1") {
-                    raiseExecutionError("<assign> to 'afterElseifCond' failed", engine: engine)
+                    raiseExecutionError(.assignmentFailed, "<assign> to 'afterElseifCond' failed", engine: engine)
                     break sceBlock  // W3C SCXML 4.9: the error ends the block
                 }
 
@@ -952,7 +957,7 @@ public final class AnErrorEndsTheBlockItWasRaisedInPolicy: InvocablePolicy {
 
                 // W3C SCXML 5.4: <assign location="ifThen">
                 if !assignData("ifThen", "2") {
-                    raiseExecutionError("<assign> to 'ifThen' failed", engine: engine)
+                    raiseExecutionError(.assignmentFailed, "<assign> to 'ifThen' failed", engine: engine)
                     break sceBlock  // W3C SCXML 4.9: the error ends the block
                 }
 
@@ -964,7 +969,7 @@ public final class AnErrorEndsTheBlockItWasRaisedInPolicy: InvocablePolicy {
 
                 // W3C SCXML 5.4: <assign location="afterNestedIf">
                 if !assignData("afterNestedIf", "1") {
-                    raiseExecutionError("<assign> to 'afterNestedIf' failed", engine: engine)
+                    raiseExecutionError(.assignmentFailed, "<assign> to 'afterNestedIf' failed", engine: engine)
                     break sceBlock  // W3C SCXML 4.9: the error ends the block
                 }
 
@@ -973,7 +978,7 @@ public final class AnErrorEndsTheBlockItWasRaisedInPolicy: InvocablePolicy {
 
                 // W3C SCXML 5.4: <assign location="afterOuterIf">
                 if !assignData("afterOuterIf", "1") {
-                    raiseExecutionError("<assign> to 'afterOuterIf' failed", engine: engine)
+                    raiseExecutionError(.assignmentFailed, "<assign> to 'afterOuterIf' failed", engine: engine)
                     break sceBlock  // W3C SCXML 4.9: the error ends the block
                 }
 
@@ -985,7 +990,7 @@ public final class AnErrorEndsTheBlockItWasRaisedInPolicy: InvocablePolicy {
                 if let foreachCount1 = beginForeach(1, "outer") {
                     for foreachPosition1 in 0..<foreachCount1 {
                         if !bindForeach(1, at: foreachPosition1, item: "o", index: nil) {
-                            raiseExecutionError("<foreach> cannot set its item or index", engine: engine)
+                            raiseExecutionError(.foreachInvalid, "<foreach> cannot set its item or index", engine: engine)
                             break sceBlock  // W3C SCXML 4.9: the error ends the block
                         }
 
@@ -993,32 +998,32 @@ public final class AnErrorEndsTheBlockItWasRaisedInPolicy: InvocablePolicy {
                 if let foreachCount2 = beginForeach(2, "inner") {
                     for foreachPosition2 in 0..<foreachCount2 {
                         if !bindForeach(2, at: foreachPosition2, item: "i", index: nil) {
-                            raiseExecutionError("<foreach> cannot set its item or index", engine: engine)
+                            raiseExecutionError(.foreachInvalid, "<foreach> cannot set its item or index", engine: engine)
                             break sceBlock  // W3C SCXML 4.9: the error ends the block
                         }
 
                 // W3C SCXML 5.4: <assign location="pairs">
                 if !assignData("pairs", "_scxml_add(pairs, 1)") {
-                    raiseExecutionError("<assign> to 'pairs' failed", engine: engine)
+                    raiseExecutionError(.assignmentFailed, "<assign> to 'pairs' failed", engine: engine)
                     break sceBlock  // W3C SCXML 4.9: the error ends the block
                 }
 
 
                 // W3C SCXML 5.4: <assign location="sum">
                 if !assignData("sum", "_scxml_add(sum, (o * i))") {
-                    raiseExecutionError("<assign> to 'sum' failed", engine: engine)
+                    raiseExecutionError(.assignmentFailed, "<assign> to 'sum' failed", engine: engine)
                     break sceBlock  // W3C SCXML 4.9: the error ends the block
                 }
 
                     }
                 } else {
-                    raiseExecutionError("<foreach array='inner'> is not an array it can walk", engine: engine)
+                    raiseExecutionError(.foreachInvalid, "<foreach array='inner'> is not an array it can walk", engine: engine)
                     break sceBlock  // W3C SCXML 4.9: the error ends the block
                 }
 
                     }
                 } else {
-                    raiseExecutionError("<foreach array='outer'> is not an array it can walk", engine: engine)
+                    raiseExecutionError(.foreachInvalid, "<foreach array='outer'> is not an array it can walk", engine: engine)
                     break sceBlock  // W3C SCXML 4.9: the error ends the block
                 }
 
@@ -1116,7 +1121,7 @@ public final class AnErrorEndsTheBlockItWasRaisedInPolicy: InvocablePolicy {
 
                 // W3C SCXML 5.4: <assign location="errors">
                 if !assignData("errors", "_scxml_add(errors, 1)") {
-                    raiseExecutionError("<assign> to 'errors' failed", engine: engine)
+                    raiseExecutionError(.assignmentFailed, "<assign> to 'errors' failed", engine: engine)
                     break sceBlock  // W3C SCXML 4.9: the error ends the block
                 }
 
@@ -1127,14 +1132,14 @@ public final class AnErrorEndsTheBlockItWasRaisedInPolicy: InvocablePolicy {
 
                 // W3C SCXML 5.4: <assign location="obj.missing.deep">
                 if !assignData("obj.missing.deep", "1") {
-                    raiseExecutionError("<assign> to 'obj.missing.deep' failed", engine: engine)
+                    raiseExecutionError(.assignmentFailed, "<assign> to 'obj.missing.deep' failed", engine: engine)
                     break sceBlock  // W3C SCXML 4.9: the error ends the block
                 }
 
 
                 // W3C SCXML 5.4: <assign location="afterTrans">
                 if !assignData("afterTrans", "1") {
-                    raiseExecutionError("<assign> to 'afterTrans' failed", engine: engine)
+                    raiseExecutionError(.assignmentFailed, "<assign> to 'afterTrans' failed", engine: engine)
                     break sceBlock  // W3C SCXML 4.9: the error ends the block
                 }
 

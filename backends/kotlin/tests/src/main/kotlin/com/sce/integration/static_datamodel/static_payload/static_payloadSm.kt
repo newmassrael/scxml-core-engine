@@ -492,7 +492,7 @@ class StaticPayloadStateMachine(
 
             vDay = pendingDayPickedPayload!!.dayOfMonth
 
-            if (try { vSinceEpoch = com.sce.forge.runtime.SceChecked.sub(pendingDayPickedPayload!!.year, 2000.toUShort()); false } catch (_: com.sce.forge.runtime.AlgorithmFailure) { raisePlatformError(StaticPayloadEvent.Error.Execution, "<assign location='sinceEpoch'>: an integer operation overflowed or failed"); true }) {
+            if (try { vSinceEpoch = com.sce.forge.runtime.SceChecked.sub(pendingDayPickedPayload!!.year, 2000.toUShort()); false } catch (_: com.sce.forge.runtime.AlgorithmFailure) { raisePlatformError(StaticPayloadEvent.Error.Execution, ErrorReason.EXPRESSION_FAILED, "<assign location='sinceEpoch'>: an integer operation overflowed or failed"); true }) {
                 return
             }
     }
@@ -507,7 +507,7 @@ class StaticPayloadStateMachine(
 
             vDay = pendingDayPickedPayload!!.dayOfMonth
 
-            if (try { vSinceEpoch = com.sce.forge.runtime.SceChecked.sub(pendingDayPickedPayload!!.year, 2000.toUShort()); false } catch (_: com.sce.forge.runtime.AlgorithmFailure) { raisePlatformError(StaticPayloadEvent.Error.Execution, "<assign location='sinceEpoch'>: an integer operation overflowed or failed"); true }) {
+            if (try { vSinceEpoch = com.sce.forge.runtime.SceChecked.sub(pendingDayPickedPayload!!.year, 2000.toUShort()); false } catch (_: com.sce.forge.runtime.AlgorithmFailure) { raisePlatformError(StaticPayloadEvent.Error.Execution, ErrorReason.EXPRESSION_FAILED, "<assign location='sinceEpoch'>: an integer operation overflowed or failed"); true }) {
                 return
             }
     }
@@ -515,7 +515,7 @@ class StaticPayloadStateMachine(
     private fun transitionContentOfWaitingAt2() {
                 // SCE-MAP: static_payload.scxml:34 :: waiting :: _transition_2
 
-            if (try { vRefusals = com.sce.forge.runtime.SceChecked.add(vRefusals, 1.toUInt()); false } catch (_: com.sce.forge.runtime.AlgorithmFailure) { raisePlatformError(StaticPayloadEvent.Error.Execution, "<assign location='refusals'>: an integer operation overflowed or failed"); true }) {
+            if (try { vRefusals = com.sce.forge.runtime.SceChecked.add(vRefusals, 1.toUInt()); false } catch (_: com.sce.forge.runtime.AlgorithmFailure) { raisePlatformError(StaticPayloadEvent.Error.Execution, ErrorReason.EXPRESSION_FAILED, "<assign location='refusals'>: an integer operation overflowed or failed"); true }) {
                 return
             }
     }

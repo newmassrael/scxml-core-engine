@@ -560,7 +560,7 @@ class StaticInvokeEndingOrderStateMachine(
             // refused a target naming no invocation above; one that is not
             // running is not there to reach (W3C SCXML C.1).
             if (!sendToChild("worker", "question", sendData)) {
-                raisePlatformError(StaticInvokeEndingOrderEvent.Error.Communication, "<send target='#_worker'> names an invocation that is not running", "__send_0")
+                raisePlatformError(StaticInvokeEndingOrderEvent.Error.Communication, ErrorReason.TARGET_UNREACHABLE, "<send target='#_worker'> names an invocation that is not running", "__send_0")
                 return@send true
             }
             false
@@ -574,7 +574,7 @@ class StaticInvokeEndingOrderStateMachine(
     private fun transitionContentOfWorkingAt1() {
                 // SCE-MAP: static_invoke_ending_order.scxml:64 :: working :: _transition_1
 
-            if (try { vHeard = com.sce.forge.runtime.SceChecked.add(vHeard, 1.toUInt()); false } catch (_: com.sce.forge.runtime.AlgorithmFailure) { raisePlatformError(StaticInvokeEndingOrderEvent.Error.Execution, "<assign location='heard'>: an integer operation overflowed or failed"); true }) {
+            if (try { vHeard = com.sce.forge.runtime.SceChecked.add(vHeard, 1.toUInt()); false } catch (_: com.sce.forge.runtime.AlgorithmFailure) { raisePlatformError(StaticInvokeEndingOrderEvent.Error.Execution, ErrorReason.EXPRESSION_FAILED, "<assign location='heard'>: an integer operation overflowed or failed"); true }) {
                 return
             }
 
@@ -584,7 +584,7 @@ class StaticInvokeEndingOrderStateMachine(
     private fun transitionContentOfWorkingAt2() {
                 // SCE-MAP: static_invoke_ending_order.scxml:68 :: working :: _transition_2
 
-            if (try { vHeard = com.sce.forge.runtime.SceChecked.add(vHeard, 1.toUInt()); false } catch (_: com.sce.forge.runtime.AlgorithmFailure) { raisePlatformError(StaticInvokeEndingOrderEvent.Error.Execution, "<assign location='heard'>: an integer operation overflowed or failed"); true }) {
+            if (try { vHeard = com.sce.forge.runtime.SceChecked.add(vHeard, 1.toUInt()); false } catch (_: com.sce.forge.runtime.AlgorithmFailure) { raisePlatformError(StaticInvokeEndingOrderEvent.Error.Execution, ErrorReason.EXPRESSION_FAILED, "<assign location='heard'>: an integer operation overflowed or failed"); true }) {
                 return
             }
 

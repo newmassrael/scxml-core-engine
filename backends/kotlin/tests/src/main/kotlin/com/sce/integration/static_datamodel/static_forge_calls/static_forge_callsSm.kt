@@ -711,13 +711,13 @@ class StaticForgeCallsStateMachine(
     private fun transitionContentOfRunAt0() {
                 // SCE-MAP: static_forge_calls.scxml:53 :: run :: _transition_0
 
-            if (try { vGear = com.sce.forge.runtime.SceChecked.add(vGear, 1.toUByte()); false } catch (_: com.sce.forge.runtime.AlgorithmFailure) { raisePlatformError(StaticForgeCallsEvent.Error.Execution, "<assign location='gear'>: an integer operation overflowed or failed"); true }) {
+            if (try { vGear = com.sce.forge.runtime.SceChecked.add(vGear, 1.toUByte()); false } catch (_: com.sce.forge.runtime.AlgorithmFailure) { raisePlatformError(StaticForgeCallsEvent.Error.Execution, ErrorReason.EXPRESSION_FAILED, "<assign location='gear'>: an integer operation overflowed or failed"); true }) {
                 return
             }
 
             vRatio = lookupRatio(vGear)
 
-            if (try { vCode = com.sce.forge.runtime.SceChecked.take(com.sce.forge.runtime.SceChecked.found(lookupCode(vGear))); false } catch (_: com.sce.forge.runtime.AlgorithmFailure) { raisePlatformError(StaticForgeCallsEvent.Error.Execution, "<assign location='code'>: an integer operation overflowed or failed"); true }) {
+            if (try { vCode = com.sce.forge.runtime.SceChecked.take(com.sce.forge.runtime.SceChecked.found(lookupCode(vGear))); false } catch (_: com.sce.forge.runtime.AlgorithmFailure) { raisePlatformError(StaticForgeCallsEvent.Error.Execution, ErrorReason.EXPRESSION_FAILED, "<assign location='code'>: an integer operation overflowed or failed"); true }) {
                 return
             }
     }
@@ -725,7 +725,7 @@ class StaticForgeCallsStateMachine(
     private fun transitionContentOfRunAt1() {
                 // SCE-MAP: static_forge_calls.scxml:58 :: run :: _transition_1
 
-            if (try { vLevel = com.sce.forge.runtime.SceChecked.add(vLevel, 7); false } catch (_: com.sce.forge.runtime.AlgorithmFailure) { raisePlatformError(StaticForgeCallsEvent.Error.Execution, "<assign location='level'>: an integer operation overflowed or failed"); true }) {
+            if (try { vLevel = com.sce.forge.runtime.SceChecked.add(vLevel, 7); false } catch (_: com.sce.forge.runtime.AlgorithmFailure) { raisePlatformError(StaticForgeCallsEvent.Error.Execution, ErrorReason.EXPRESSION_FAILED, "<assign location='level'>: an integer operation overflowed or failed"); true }) {
                 return
             }
 
@@ -737,7 +737,7 @@ class StaticForgeCallsStateMachine(
     private fun transitionContentOfRunAt2() {
                 // SCE-MAP: static_forge_calls.scxml:63 :: run :: _transition_2
 
-            if (try { vRpm = com.sce.forge.runtime.SceChecked.add(vRpm, 500.toUShort()); false } catch (_: com.sce.forge.runtime.AlgorithmFailure) { raisePlatformError(StaticForgeCallsEvent.Error.Execution, "<assign location='rpm'>: an integer operation overflowed or failed"); true }) {
+            if (try { vRpm = com.sce.forge.runtime.SceChecked.add(vRpm, 500.toUShort()); false } catch (_: com.sce.forge.runtime.AlgorithmFailure) { raisePlatformError(StaticForgeCallsEvent.Error.Execution, ErrorReason.EXPRESSION_FAILED, "<assign location='rpm'>: an integer operation overflowed or failed"); true }) {
                 return
             }
 
@@ -747,7 +747,7 @@ class StaticForgeCallsStateMachine(
     private fun transitionContentOfRunAt3() {
                 // SCE-MAP: static_forge_calls.scxml:67 :: run :: _transition_3
 
-            if (try { vHighs = com.sce.forge.runtime.SceChecked.add(vHighs, 1.toUInt()); false } catch (_: com.sce.forge.runtime.AlgorithmFailure) { raisePlatformError(StaticForgeCallsEvent.Error.Execution, "<assign location='highs'>: an integer operation overflowed or failed"); true }) {
+            if (try { vHighs = com.sce.forge.runtime.SceChecked.add(vHighs, 1.toUInt()); false } catch (_: com.sce.forge.runtime.AlgorithmFailure) { raisePlatformError(StaticForgeCallsEvent.Error.Execution, ErrorReason.EXPRESSION_FAILED, "<assign location='highs'>: an integer operation overflowed or failed"); true }) {
                 return
             }
     }
@@ -757,7 +757,7 @@ class StaticForgeCallsStateMachine(
 
             vPhase = StaticForgeCallsStatusEnumFromDocument(computeAfter(StaticForgeCallsStatusEnumToDocument(vPhase)))
 
-            if (try { vWeight = StaticForgeCallsLevelEnumFromDocument(com.sce.forge.runtime.SceChecked.take(com.sce.forge.runtime.SceChecked.found(lookupWeight(StaticForgeCallsStatusEnumToDocument(vPhase))))); false } catch (_: com.sce.forge.runtime.AlgorithmFailure) { raisePlatformError(StaticForgeCallsEvent.Error.Execution, "<assign location='weight'>: an integer operation overflowed or failed"); true }) {
+            if (try { vWeight = StaticForgeCallsLevelEnumFromDocument(com.sce.forge.runtime.SceChecked.take(com.sce.forge.runtime.SceChecked.found(lookupWeight(StaticForgeCallsStatusEnumToDocument(vPhase))))); false } catch (_: com.sce.forge.runtime.AlgorithmFailure) { raisePlatformError(StaticForgeCallsEvent.Error.Execution, ErrorReason.EXPRESSION_FAILED, "<assign location='weight'>: an integer operation overflowed or failed"); true }) {
                 return
             }
     }
@@ -771,7 +771,7 @@ class StaticForgeCallsStateMachine(
     private fun transitionContentOfRunAt6() {
                 // SCE-MAP: static_forge_calls.scxml:77 :: run :: _transition_6
 
-            if (try { vCustomer = com.sce.forge.runtime.SceChecked.bounded("", 16); false } catch (_: com.sce.forge.runtime.AlgorithmFailure) { raisePlatformError(StaticForgeCallsEvent.Error.Execution, "<assign location='customer'>: an integer operation overflowed or failed"); true }) {
+            if (try { vCustomer = com.sce.forge.runtime.SceChecked.bounded("", 16); false } catch (_: com.sce.forge.runtime.AlgorithmFailure) { raisePlatformError(StaticForgeCallsEvent.Error.Execution, ErrorReason.EXPRESSION_FAILED, "<assign location='customer'>: an integer operation overflowed or failed"); true }) {
                 return
             }
     }
@@ -779,7 +779,7 @@ class StaticForgeCallsStateMachine(
     private fun transitionContentOfRunAt7() {
                 // SCE-MAP: static_forge_calls.scxml:80 :: run :: _transition_7
 
-            if (try { vMisses = com.sce.forge.runtime.SceChecked.add(vMisses, 1.toUInt()); false } catch (_: com.sce.forge.runtime.AlgorithmFailure) { raisePlatformError(StaticForgeCallsEvent.Error.Execution, "<assign location='misses'>: an integer operation overflowed or failed"); true }) {
+            if (try { vMisses = com.sce.forge.runtime.SceChecked.add(vMisses, 1.toUInt()); false } catch (_: com.sce.forge.runtime.AlgorithmFailure) { raisePlatformError(StaticForgeCallsEvent.Error.Execution, ErrorReason.EXPRESSION_FAILED, "<assign location='misses'>: an integer operation overflowed or failed"); true }) {
                 return
             }
     }

@@ -571,7 +571,7 @@ public final class StaticInvokeHybridPolicy: InvocablePolicy {
             do {
                 let _: WireValue = .integer(Int64((try Checked.sub(self.vBase, 4))))
             } catch {
-                engine.raise(EventWithMetadata.platformError(StaticInvokeHybridEvent.errorExecution, message: "<invoke> <param name='extra'> could not be read"))
+                engine.raise(EventWithMetadata.platformError(StaticInvokeHybridEvent.errorExecution, reason: .locationInvalid, message: "<invoke> <param name='extra'> could not be read"))
             }
 
             let session = InvokedSession(
@@ -596,7 +596,7 @@ public final class StaticInvokeHybridPolicy: InvocablePolicy {
                 let sceValue: UInt32 = (try Checked.sub(self.vBase, 4))
                 seed.vExtra = sceValue
             } catch {
-                engine.raise(EventWithMetadata.platformError(StaticInvokeHybridEvent.errorExecution, message: "<invoke> <param name='extra'> could not be read"))
+                engine.raise(EventWithMetadata.platformError(StaticInvokeHybridEvent.errorExecution, reason: .locationInvalid, message: "<invoke> <param name='extra'> could not be read"))
             }
             childPolicy.acceptParams(seed)
 
@@ -614,7 +614,7 @@ public final class StaticInvokeHybridPolicy: InvocablePolicy {
             // A value naming none of the declared candidates is the failure the
             // Interpreter reports when a document will not load: nothing is created,
             // and, as there, the arguments are not read.
-            engine.raise(EventWithMetadata.platformError(StaticInvokeHybridEvent.errorExecution, message: "<invoke srcexpr> evaluated to a document it did not declare"))
+            engine.raise(EventWithMetadata.platformError(StaticInvokeHybridEvent.errorExecution, reason: .invokeSrcNotFound, message: "<invoke srcexpr> evaluated to a document it did not declare"))
             return
         }
         // W3C SCXML 6.4.1: tracked before the child initializes.
@@ -684,7 +684,7 @@ public final class StaticInvokeHybridPolicy: InvocablePolicy {
             do {
                 let _: WireValue = .integer(Int64((try Checked.mul(self.vBase, 2000000000))))
             } catch {
-                engine.raise(EventWithMetadata.platformError(StaticInvokeHybridEvent.errorExecution, message: "<invoke> <param name='extra'> could not be read"))
+                engine.raise(EventWithMetadata.platformError(StaticInvokeHybridEvent.errorExecution, reason: .locationInvalid, message: "<invoke> <param name='extra'> could not be read"))
             }
 
             let session = InvokedSession(
@@ -709,7 +709,7 @@ public final class StaticInvokeHybridPolicy: InvocablePolicy {
                 let sceValue: UInt32 = (try Checked.mul(self.vBase, 2000000000))
                 seed.vExtra = sceValue
             } catch {
-                engine.raise(EventWithMetadata.platformError(StaticInvokeHybridEvent.errorExecution, message: "<invoke> <param name='extra'> could not be read"))
+                engine.raise(EventWithMetadata.platformError(StaticInvokeHybridEvent.errorExecution, reason: .locationInvalid, message: "<invoke> <param name='extra'> could not be read"))
             }
             childPolicy.acceptParams(seed)
 
@@ -727,7 +727,7 @@ public final class StaticInvokeHybridPolicy: InvocablePolicy {
             // A value naming none of the declared candidates is the failure the
             // Interpreter reports when a document will not load: nothing is created,
             // and, as there, the arguments are not read.
-            engine.raise(EventWithMetadata.platformError(StaticInvokeHybridEvent.errorExecution, message: "<invoke srcexpr> evaluated to a document it did not declare"))
+            engine.raise(EventWithMetadata.platformError(StaticInvokeHybridEvent.errorExecution, reason: .invokeSrcNotFound, message: "<invoke srcexpr> evaluated to a document it did not declare"))
             return
         }
         // W3C SCXML 6.4.1: tracked before the child initializes.
@@ -829,7 +829,7 @@ public final class StaticInvokeHybridPolicy: InvocablePolicy {
             // A value naming none of the declared candidates is the failure the
             // Interpreter reports when a document will not load: nothing is created,
             // and, as there, the arguments are not read.
-            engine.raise(EventWithMetadata.platformError(StaticInvokeHybridEvent.errorExecution, message: "<invoke srcexpr> evaluated to a document it did not declare"))
+            engine.raise(EventWithMetadata.platformError(StaticInvokeHybridEvent.errorExecution, reason: .invokeSrcNotFound, message: "<invoke srcexpr> evaluated to a document it did not declare"))
             return
         }
         // W3C SCXML 6.4.1: tracked before the child initializes.
@@ -899,7 +899,7 @@ public final class StaticInvokeHybridPolicy: InvocablePolicy {
             do {
                 let _: WireValue = .integer(Int64((try Checked.sub(self.vBase, 4))))
             } catch {
-                engine.raise(EventWithMetadata.platformError(StaticInvokeHybridEvent.errorExecution, message: "<invoke> <param name='extra'> could not be read"))
+                engine.raise(EventWithMetadata.platformError(StaticInvokeHybridEvent.errorExecution, reason: .locationInvalid, message: "<invoke> <param name='extra'> could not be read"))
             }
 
             let session = InvokedSession(
@@ -924,7 +924,7 @@ public final class StaticInvokeHybridPolicy: InvocablePolicy {
                 let sceValue: UInt32 = (try Checked.sub(self.vBase, 4))
                 seed.vExtra = sceValue
             } catch {
-                engine.raise(EventWithMetadata.platformError(StaticInvokeHybridEvent.errorExecution, message: "<invoke> <param name='extra'> could not be read"))
+                engine.raise(EventWithMetadata.platformError(StaticInvokeHybridEvent.errorExecution, reason: .locationInvalid, message: "<invoke> <param name='extra'> could not be read"))
             }
             childPolicy.acceptParams(seed)
 
@@ -942,7 +942,7 @@ public final class StaticInvokeHybridPolicy: InvocablePolicy {
             // A value naming none of the declared candidates is the failure the
             // Interpreter reports when a document will not load: nothing is created,
             // and, as there, the arguments are not read.
-            engine.raise(EventWithMetadata.platformError(StaticInvokeHybridEvent.errorExecution, message: "<invoke srcexpr> evaluated to a document it did not declare"))
+            engine.raise(EventWithMetadata.platformError(StaticInvokeHybridEvent.errorExecution, reason: .invokeSrcNotFound, message: "<invoke srcexpr> evaluated to a document it did not declare"))
             return
         }
         // W3C SCXML 6.4.1: tracked before the child initializes.
@@ -1186,7 +1186,7 @@ public final class StaticInvokeHybridPolicy: InvocablePolicy {
             sceBlock: do {
 
 
-                if ({ () -> Bool in do { let sceValue: UInt32 = (try Checked.add(self.vBase, 3)); self.vBase = sceValue } catch { engine.raise(EventWithMetadata.platformError(StaticInvokeHybridEvent.errorExecution, message: "<assign location='base'>: an integer operation overflowed or failed")); return true }; return false }()) {
+                if ({ () -> Bool in do { let sceValue: UInt32 = (try Checked.add(self.vBase, 3)); self.vBase = sceValue } catch { engine.raise(EventWithMetadata.platformError(StaticInvokeHybridEvent.errorExecution, reason: .expressionFailed, message: "<assign location='base'>: an integer operation overflowed or failed")); return true }; return false }()) {
                     break sceBlock  // W3C SCXML 4.9: the error ends the block
                 }
 
@@ -1207,7 +1207,7 @@ public final class StaticInvokeHybridPolicy: InvocablePolicy {
             sceBlock: do {
 
 
-                if ({ () -> Bool in do { let sceValue: String = (try Checked.bounded("./static_hybrid_first.scxml", capacity: 48)); self.vPick = sceValue } catch { engine.raise(EventWithMetadata.platformError(StaticInvokeHybridEvent.errorExecution, message: "<assign location='pick'>: an integer operation overflowed or failed")); return true }; return false }()) {
+                if ({ () -> Bool in do { let sceValue: String = (try Checked.bounded("./static_hybrid_first.scxml", capacity: 48)); self.vPick = sceValue } catch { engine.raise(EventWithMetadata.platformError(StaticInvokeHybridEvent.errorExecution, reason: .expressionFailed, message: "<assign location='pick'>: an integer operation overflowed or failed")); return true }; return false }()) {
                     break sceBlock  // W3C SCXML 4.9: the error ends the block
                 }
 
@@ -1228,7 +1228,7 @@ public final class StaticInvokeHybridPolicy: InvocablePolicy {
             sceBlock: do {
 
 
-                if ({ () -> Bool in do { let sceValue: String = (try Checked.bounded("static_hybrid_missing.scxml", capacity: 48)); self.vPick = sceValue } catch { engine.raise(EventWithMetadata.platformError(StaticInvokeHybridEvent.errorExecution, message: "<assign location='pick'>: an integer operation overflowed or failed")); return true }; return false }()) {
+                if ({ () -> Bool in do { let sceValue: String = (try Checked.bounded("static_hybrid_missing.scxml", capacity: 48)); self.vPick = sceValue } catch { engine.raise(EventWithMetadata.platformError(StaticInvokeHybridEvent.errorExecution, reason: .expressionFailed, message: "<assign location='pick'>: an integer operation overflowed or failed")); return true }; return false }()) {
                     break sceBlock  // W3C SCXML 4.9: the error ends the block
                 }
 
@@ -1249,7 +1249,7 @@ public final class StaticInvokeHybridPolicy: InvocablePolicy {
             sceBlock: do {
 
 
-                if ({ () -> Bool in do { let sceValue: String = (try Checked.bounded("/opt/charts/static_hybrid_second.scxml", capacity: 48)); self.vPick = sceValue } catch { engine.raise(EventWithMetadata.platformError(StaticInvokeHybridEvent.errorExecution, message: "<assign location='pick'>: an integer operation overflowed or failed")); return true }; return false }()) {
+                if ({ () -> Bool in do { let sceValue: String = (try Checked.bounded("/opt/charts/static_hybrid_second.scxml", capacity: 48)); self.vPick = sceValue } catch { engine.raise(EventWithMetadata.platformError(StaticInvokeHybridEvent.errorExecution, reason: .expressionFailed, message: "<assign location='pick'>: an integer operation overflowed or failed")); return true }; return false }()) {
                     break sceBlock  // W3C SCXML 4.9: the error ends the block
                 }
 
@@ -1430,7 +1430,7 @@ public final class StaticInvokeHybridPolicy: InvocablePolicy {
                 sceBlock: do {
 
 
-                if ({ () -> Bool in do { let sceValue: UInt32 = (try Checked.add(self.vCompleted, 1)); self.vCompleted = sceValue } catch { engine.raise(EventWithMetadata.platformError(StaticInvokeHybridEvent.errorExecution, message: "<assign location='completed'>: an integer operation overflowed or failed")); return true }; return false }()) {
+                if ({ () -> Bool in do { let sceValue: UInt32 = (try Checked.add(self.vCompleted, 1)); self.vCompleted = sceValue } catch { engine.raise(EventWithMetadata.platformError(StaticInvokeHybridEvent.errorExecution, reason: .expressionFailed, message: "<assign location='completed'>: an integer operation overflowed or failed")); return true }; return false }()) {
                     break sceBlock  // W3C SCXML 4.9: the error ends the block
                 }
 
@@ -1445,7 +1445,7 @@ public final class StaticInvokeHybridPolicy: InvocablePolicy {
                 sceBlock: do {
 
 
-                if ({ () -> Bool in do { let sceValue: UInt32 = (try Checked.add(self.vCompleted, 100)); self.vCompleted = sceValue } catch { engine.raise(EventWithMetadata.platformError(StaticInvokeHybridEvent.errorExecution, message: "<assign location='completed'>: an integer operation overflowed or failed")); return true }; return false }()) {
+                if ({ () -> Bool in do { let sceValue: UInt32 = (try Checked.add(self.vCompleted, 100)); self.vCompleted = sceValue } catch { engine.raise(EventWithMetadata.platformError(StaticInvokeHybridEvent.errorExecution, reason: .expressionFailed, message: "<assign location='completed'>: an integer operation overflowed or failed")); return true }; return false }()) {
                     break sceBlock  // W3C SCXML 4.9: the error ends the block
                 }
 
@@ -1460,7 +1460,7 @@ public final class StaticInvokeHybridPolicy: InvocablePolicy {
                 sceBlock: do {
 
 
-                if ({ () -> Bool in do { let sceValue: UInt32 = (try Checked.add(self.vCompleted, 1000)); self.vCompleted = sceValue } catch { engine.raise(EventWithMetadata.platformError(StaticInvokeHybridEvent.errorExecution, message: "<assign location='completed'>: an integer operation overflowed or failed")); return true }; return false }()) {
+                if ({ () -> Bool in do { let sceValue: UInt32 = (try Checked.add(self.vCompleted, 1000)); self.vCompleted = sceValue } catch { engine.raise(EventWithMetadata.platformError(StaticInvokeHybridEvent.errorExecution, reason: .expressionFailed, message: "<assign location='completed'>: an integer operation overflowed or failed")); return true }; return false }()) {
                     break sceBlock  // W3C SCXML 4.9: the error ends the block
                 }
 
@@ -1470,7 +1470,7 @@ public final class StaticInvokeHybridPolicy: InvocablePolicy {
                 sceBlock: do {
 
 
-                if ({ () -> Bool in do { let sceValue: UInt32 = (try Checked.add(self.vErrors, 1)); self.vErrors = sceValue } catch { engine.raise(EventWithMetadata.platformError(StaticInvokeHybridEvent.errorExecution, message: "<assign location='errors'>: an integer operation overflowed or failed")); return true }; return false }()) {
+                if ({ () -> Bool in do { let sceValue: UInt32 = (try Checked.add(self.vErrors, 1)); self.vErrors = sceValue } catch { engine.raise(EventWithMetadata.platformError(StaticInvokeHybridEvent.errorExecution, reason: .expressionFailed, message: "<assign location='errors'>: an integer operation overflowed or failed")); return true }; return false }()) {
                     break sceBlock  // W3C SCXML 4.9: the error ends the block
                 }
 
@@ -1485,7 +1485,7 @@ public final class StaticInvokeHybridPolicy: InvocablePolicy {
                 sceBlock: do {
 
 
-                if ({ () -> Bool in do { let sceValue: UInt32 = (try Checked.add(self.vErrors, 1)); self.vErrors = sceValue } catch { engine.raise(EventWithMetadata.platformError(StaticInvokeHybridEvent.errorExecution, message: "<assign location='errors'>: an integer operation overflowed or failed")); return true }; return false }()) {
+                if ({ () -> Bool in do { let sceValue: UInt32 = (try Checked.add(self.vErrors, 1)); self.vErrors = sceValue } catch { engine.raise(EventWithMetadata.platformError(StaticInvokeHybridEvent.errorExecution, reason: .expressionFailed, message: "<assign location='errors'>: an integer operation overflowed or failed")); return true }; return false }()) {
                     break sceBlock  // W3C SCXML 4.9: the error ends the block
                 }
 
@@ -1500,7 +1500,7 @@ public final class StaticInvokeHybridPolicy: InvocablePolicy {
                 sceBlock: do {
 
 
-                if ({ () -> Bool in do { let sceValue: UInt32 = (try Checked.add(self.vCompleted, 10)); self.vCompleted = sceValue } catch { engine.raise(EventWithMetadata.platformError(StaticInvokeHybridEvent.errorExecution, message: "<assign location='completed'>: an integer operation overflowed or failed")); return true }; return false }()) {
+                if ({ () -> Bool in do { let sceValue: UInt32 = (try Checked.add(self.vCompleted, 10)); self.vCompleted = sceValue } catch { engine.raise(EventWithMetadata.platformError(StaticInvokeHybridEvent.errorExecution, reason: .expressionFailed, message: "<assign location='completed'>: an integer operation overflowed or failed")); return true }; return false }()) {
                     break sceBlock  // W3C SCXML 4.9: the error ends the block
                 }
 

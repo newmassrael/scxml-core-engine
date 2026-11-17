@@ -314,7 +314,7 @@ class ErrorCascadeIsBoundedStateMachine(
             try {
                 engine.setVariable(sid, "pokes", engine.evaluateExpr(sid, com.sce.runtime.ScriptSource.lua("0", "0")))
             } catch (e: Exception) {
-                raisePlatformError(ErrorCascadeIsBoundedEvent.Error.Execution, "<data id='pokes'> expr failed to evaluate")
+                raisePlatformError(ErrorCascadeIsBoundedEvent.Error.Execution, ErrorReason.EXPRESSION_FAILED, "<data id='pokes'> expr failed to evaluate")
             }
         }
         // §scxml-6.4: 'repairs' takes a value its invoke handed it, in place of its own
@@ -323,7 +323,7 @@ class ErrorCascadeIsBoundedStateMachine(
             try {
                 engine.setVariable(sid, "repairs", engine.evaluateExpr(sid, com.sce.runtime.ScriptSource.lua("0", "0")))
             } catch (e: Exception) {
-                raisePlatformError(ErrorCascadeIsBoundedEvent.Error.Execution, "<data id='repairs'> expr failed to evaluate")
+                raisePlatformError(ErrorCascadeIsBoundedEvent.Error.Execution, ErrorReason.EXPRESSION_FAILED, "<data id='repairs'> expr failed to evaluate")
             }
         }
         // §scxml-6.4: 'runs' takes a value its invoke handed it, in place of its own
@@ -332,7 +332,7 @@ class ErrorCascadeIsBoundedStateMachine(
             try {
                 engine.setVariable(sid, "runs", engine.evaluateExpr(sid, com.sce.runtime.ScriptSource.lua("0", "0")))
             } catch (e: Exception) {
-                raisePlatformError(ErrorCascadeIsBoundedEvent.Error.Execution, "<data id='runs'> expr failed to evaluate")
+                raisePlatformError(ErrorCascadeIsBoundedEvent.Error.Execution, ErrorReason.EXPRESSION_FAILED, "<data id='runs'> expr failed to evaluate")
             }
         }
         // §scxml-6.4: 'ticks' takes a value its invoke handed it, in place of its own
@@ -341,7 +341,7 @@ class ErrorCascadeIsBoundedStateMachine(
             try {
                 engine.setVariable(sid, "ticks", engine.evaluateExpr(sid, com.sce.runtime.ScriptSource.lua("0", "0")))
             } catch (e: Exception) {
-                raisePlatformError(ErrorCascadeIsBoundedEvent.Error.Execution, "<data id='ticks'> expr failed to evaluate")
+                raisePlatformError(ErrorCascadeIsBoundedEvent.Error.Execution, ErrorReason.EXPRESSION_FAILED, "<data id='ticks'> expr failed to evaluate")
             }
         }
     }
@@ -371,14 +371,14 @@ class ErrorCascadeIsBoundedStateMachine(
 
     // W3C SCXML 5.9.1: a cond that cannot be evaluated raises error.execution;
     // `null` says so, where a bare `false` could not.
-    private fun evaluateGuardRaising(guardExpr: com.sce.runtime.ScriptSource, reason: String): Boolean? {
+    private fun evaluateGuardRaising(guardExpr: com.sce.runtime.ScriptSource, detail: String): Boolean? {
         assertScriptSession()
         val engine = scriptEngine ?: error("scriptEngine is required (codegen invariant: needs_script_engine == true)")
         val sid = scriptSessionId ?: error("scriptSessionId is established by the start (codegen invariant)")
         return try {
             engine.evaluateCondition(sid, guardExpr)
         } catch (e: Exception) {
-            raisePlatformError(ErrorCascadeIsBoundedEvent.Error.Execution, reason)
+            raisePlatformError(ErrorCascadeIsBoundedEvent.Error.Execution, ErrorReason.EXPRESSION_FAILED, detail)
             null
         }
     }
@@ -419,7 +419,7 @@ class ErrorCascadeIsBoundedStateMachine(
         return try {
             engine.evaluateExpr(sid, serialized)?.toString() ?: ""
         } catch (e: Exception) {
-            raisePlatformError(ErrorCascadeIsBoundedEvent.Error.Execution, "an expression could not be serialised to JSON")
+            raisePlatformError(ErrorCascadeIsBoundedEvent.Error.Execution, ErrorReason.EXPRESSION_FAILED, "an expression could not be serialised to JSON")
             ""
         }
     }
@@ -440,7 +440,7 @@ class ErrorCascadeIsBoundedStateMachine(
             engine.assign(sid, location, expr)
             true
         } catch (e: Exception) {
-            raisePlatformError(ErrorCascadeIsBoundedEvent.Error.Execution, "<assign> failed")
+            raisePlatformError(ErrorCascadeIsBoundedEvent.Error.Execution, ErrorReason.ASSIGNMENT_FAILED, "<assign> failed")
             false
         }
     }
@@ -456,7 +456,7 @@ class ErrorCascadeIsBoundedStateMachine(
             engine.executeScript(sid, script)
             true
         } catch (e: Exception) {
-            raisePlatformError(ErrorCascadeIsBoundedEvent.Error.Execution, "<script> failed to execute")
+            raisePlatformError(ErrorCascadeIsBoundedEvent.Error.Execution, ErrorReason.SCRIPT_FAILED, "<script> failed to execute")
             false
         }
     }
@@ -592,7 +592,7 @@ class ErrorCascadeIsBoundedStateMachine(
             // The same `if (run name@{ ... })` shape <send> refuses through, so
             // the block exit is not an unconditional jump the compiler reports.
             if (run assign@{
-                raisePlatformError(ErrorCascadeIsBoundedEvent.Error.Execution, "<assign> has an invalid or read-only location")
+                raisePlatformError(ErrorCascadeIsBoundedEvent.Error.Execution, ErrorReason.LOCATION_INVALID, "<assign> has an invalid or read-only location")
                 true
             }) {
                 return@run
@@ -610,7 +610,7 @@ class ErrorCascadeIsBoundedStateMachine(
             // The same `if (run name@{ ... })` shape <send> refuses through, so
             // the block exit is not an unconditional jump the compiler reports.
             if (run assign@{
-                raisePlatformError(ErrorCascadeIsBoundedEvent.Error.Execution, "<assign> has an invalid or read-only location")
+                raisePlatformError(ErrorCascadeIsBoundedEvent.Error.Execution, ErrorReason.LOCATION_INVALID, "<assign> has an invalid or read-only location")
                 true
             }) {
                 return@run
@@ -685,7 +685,7 @@ class ErrorCascadeIsBoundedStateMachine(
             // The same `if (run name@{ ... })` shape <send> refuses through, so
             // the block exit is not an unconditional jump the compiler reports.
             if (run assign@{
-                raisePlatformError(ErrorCascadeIsBoundedEvent.Error.Execution, "<assign> has an invalid or read-only location")
+                raisePlatformError(ErrorCascadeIsBoundedEvent.Error.Execution, ErrorReason.LOCATION_INVALID, "<assign> has an invalid or read-only location")
                 true
             }) {
                 return
@@ -722,7 +722,7 @@ class ErrorCascadeIsBoundedStateMachine(
             // The same `if (run name@{ ... })` shape <send> refuses through, so
             // the block exit is not an unconditional jump the compiler reports.
             if (run assign@{
-                raisePlatformError(ErrorCascadeIsBoundedEvent.Error.Execution, "<assign> has an invalid or read-only location")
+                raisePlatformError(ErrorCascadeIsBoundedEvent.Error.Execution, ErrorReason.LOCATION_INVALID, "<assign> has an invalid or read-only location")
                 true
             }) {
                 return
@@ -774,7 +774,7 @@ class ErrorCascadeIsBoundedStateMachine(
             // The same `if (run name@{ ... })` shape <send> refuses through, so
             // the block exit is not an unconditional jump the compiler reports.
             if (run assign@{
-                raisePlatformError(ErrorCascadeIsBoundedEvent.Error.Execution, "<assign> has an invalid or read-only location")
+                raisePlatformError(ErrorCascadeIsBoundedEvent.Error.Execution, ErrorReason.LOCATION_INVALID, "<assign> has an invalid or read-only location")
                 true
             }) {
                 return

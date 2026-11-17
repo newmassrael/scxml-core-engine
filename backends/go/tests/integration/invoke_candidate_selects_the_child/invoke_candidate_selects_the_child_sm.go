@@ -31,6 +31,7 @@ import (
 	"time"
 
 	sce "github.com/newmassrael/sce-go-runtime"
+	sceerrorreason "github.com/newmassrael/sce-go-runtime/generated/error_reason"
 )
 
 // Ensure imports are used
@@ -39,6 +40,9 @@ var (
 	_ = filepath.Join
 	_ = strings.HasPrefix
 	_ = time.Duration(0)
+	// Why an error.* event is raised (sce:std/engine/error_reason,
+	// docs/adr/0106 #111); a machine that raises none still imports it.
+	_ = sceerrorreason.ErrorReasonExpressionFailed
 )
 
 // ======================================================================
@@ -346,7 +350,7 @@ func (p *InvokeCandidateSelectsTheChildPolicy) InitializeDataModel(eng *sce.Engi
 		if err == nil {
 			_ = engine.SetVariable(sessionID, "pick", result)
 		} else {
-			eng.Raise(sce.NewPlatformError(InvokeCandidateSelectsTheChildEventErrorExecution, "<data id='pick'> expr failed to evaluate"))
+			eng.Raise(sce.NewPlatformError(InvokeCandidateSelectsTheChildEventErrorExecution, sceerrorreason.ErrorReasonExpressionFailed, "<data id='pick'> expr failed to evaluate"))
 			_ = engine.SetVariable(sessionID, "pick", nil)
 		}
 	}
@@ -378,12 +382,12 @@ func (p *InvokeCandidateSelectsTheChildPolicy) evaluateIfCond(guard string, eng 
 // evaluateGuardRaising evaluates a cond, raising error.execution when it cannot
 // be evaluated (W3C SCXML 5.9.1); ok is false then, where a bare false could
 // not say so.
-func (p *InvokeCandidateSelectsTheChildPolicy) evaluateGuardRaising(guard string, eng *sce.Engine[InvokeCandidateSelectsTheChildState, InvokeCandidateSelectsTheChildEvent], reason string) (value bool, ok bool) {
+func (p *InvokeCandidateSelectsTheChildPolicy) evaluateGuardRaising(guard string, eng *sce.Engine[InvokeCandidateSelectsTheChildState, InvokeCandidateSelectsTheChildEvent], detail string) (value bool, ok bool) {
 	p.assertScriptSession()
 	engine := p.ScriptEngine
 	result, err := engine.EvaluateExpression(p.SessionID, guard)
 	if err != nil {
-		eng.Raise(sce.NewPlatformError(InvokeCandidateSelectsTheChildEventErrorExecution, reason))
+		eng.Raise(sce.NewPlatformError(InvokeCandidateSelectsTheChildEventErrorExecution, sceerrorreason.ErrorReasonExpressionFailed, detail))
 		return false, false
 	}
 	return sce.ScriptToBool(result), true
@@ -486,7 +490,7 @@ func (p *InvokeCandidateSelectsTheChildPolicy) SetParamValueInScriptEngine(name 
 // failed is left (docs/adr/0098).
 func (p *InvokeCandidateSelectsTheChildPolicy) declareHandedValue(eng *sce.Engine[InvokeCandidateSelectsTheChildState, InvokeCandidateSelectsTheChildEvent], engine sce.IScriptEngine, sessionID, name string, value interface{}) {
 	if err := engine.SetVariable(sessionID, name, value); err != nil {
-		eng.Raise(sce.NewPlatformError(InvokeCandidateSelectsTheChildEventErrorExecution, "<data id='"+name+"'> could not hold the value its invoking session handed it"))
+		eng.Raise(sce.NewPlatformError(InvokeCandidateSelectsTheChildEventErrorExecution, sceerrorreason.ErrorReasonDataInitFailed, "<data id='"+name+"'> could not hold the value its invoking session handed it"))
 		_ = engine.SetVariable(sessionID, name, nil)
 	}
 }
@@ -514,7 +518,7 @@ func (p *InvokeCandidateSelectsTheChildPolicy) ExecutePendingInvokes(engine *sce
 			{
 				se := p.ScriptEngine
 				if __sceValue, err := se.EvaluateExpression(p.SessionID, `pick`); err != nil {
-					engine.Raise(sce.NewPlatformError(InvokeCandidateSelectsTheChildEventErrorExecution, "<invoke srcexpr='pick'> could not be evaluated"))
+					engine.Raise(sce.NewPlatformError(InvokeCandidateSelectsTheChildEventErrorExecution, sceerrorreason.ErrorReasonExpressionFailed, "<invoke srcexpr='pick'> could not be evaluated"))
 					continue
 				} else {
 					__sceSelected = sce.DocumentStem(fmt.Sprintf("%v", __sceValue))
@@ -527,7 +531,7 @@ func (p *InvokeCandidateSelectsTheChildPolicy) ExecutePendingInvokes(engine *sce
 			switch __sceSelected {
 			case "chosen", "other":
 			default:
-				engine.Raise(sce.NewPlatformError(InvokeCandidateSelectsTheChildEventErrorExecution, "<invoke srcexpr='pick'> evaluated to a document it did not declare"))
+				engine.Raise(sce.NewPlatformError(InvokeCandidateSelectsTheChildEventErrorExecution, sceerrorreason.ErrorReasonInvokeSrcNotFound, "<invoke srcexpr='pick'> evaluated to a document it did not declare"))
 				continue
 			}
 
@@ -587,7 +591,7 @@ func (p *InvokeCandidateSelectsTheChildPolicy) ExecutePendingInvokes(engine *sce
 			if refused := childEngine.Initialize(); refused != nil {
 				childEngine.DetachMesh()
 				delete(p.activeInvokes, "_invoke_0")
-				engine.Raise(sce.NewPlatformError(InvokeCandidateSelectsTheChildEventErrorExecution, sce.ChildStartRefusal("_invoke_0", refused)))
+				engine.Raise(sce.NewPlatformError(InvokeCandidateSelectsTheChildEventErrorExecution, sceerrorreason.ErrorReasonInvokeChildInitFailed, sce.ChildStartRefusal("_invoke_0", refused)))
 				continue
 			}
 
@@ -660,7 +664,7 @@ func (p *InvokeCandidateSelectsTheChildPolicy) ExecutePendingInvokes(engine *sce
 			if refused := childEngine.Initialize(); refused != nil {
 				childEngine.DetachMesh()
 				delete(p.activeInvokes, "_invoke_0")
-				engine.Raise(sce.NewPlatformError(InvokeCandidateSelectsTheChildEventErrorExecution, sce.ChildStartRefusal("_invoke_0", refused)))
+				engine.Raise(sce.NewPlatformError(InvokeCandidateSelectsTheChildEventErrorExecution, sceerrorreason.ErrorReasonInvokeChildInitFailed, sce.ChildStartRefusal("_invoke_0", refused)))
 				continue
 			}
 

@@ -303,7 +303,7 @@ class SendNamelistOverHttpStateMachine(
             try {
                 engine.setVariable(sid, "Var1", engine.evaluateExpr(sid, com.sce.runtime.ScriptSource.lua("2", "2")))
             } catch (e: Exception) {
-                raisePlatformError(SendNamelistOverHttpEvent.Error.Execution, "<data id='Var1'> expr failed to evaluate")
+                raisePlatformError(SendNamelistOverHttpEvent.Error.Execution, ErrorReason.EXPRESSION_FAILED, "<data id='Var1'> expr failed to evaluate")
             }
         }
         // §scxml-6.4: 'echoed' takes a value its invoke handed it, in place of its own
@@ -312,7 +312,7 @@ class SendNamelistOverHttpStateMachine(
             try {
                 engine.setVariable(sid, "echoed", engine.evaluateExpr(sid, com.sce.runtime.ScriptSource.lua("0", "0")))
             } catch (e: Exception) {
-                raisePlatformError(SendNamelistOverHttpEvent.Error.Execution, "<data id='echoed'> expr failed to evaluate")
+                raisePlatformError(SendNamelistOverHttpEvent.Error.Execution, ErrorReason.EXPRESSION_FAILED, "<data id='echoed'> expr failed to evaluate")
             }
         }
         // §scxml-6.4: 'sawNamelistError' takes a value its invoke handed it, in place of its own
@@ -321,7 +321,7 @@ class SendNamelistOverHttpStateMachine(
             try {
                 engine.setVariable(sid, "sawNamelistError", engine.evaluateExpr(sid, com.sce.runtime.ScriptSource.lua("0", "0")))
             } catch (e: Exception) {
-                raisePlatformError(SendNamelistOverHttpEvent.Error.Execution, "<data id='sawNamelistError'> expr failed to evaluate")
+                raisePlatformError(SendNamelistOverHttpEvent.Error.Execution, ErrorReason.EXPRESSION_FAILED, "<data id='sawNamelistError'> expr failed to evaluate")
             }
         }
     }
@@ -351,14 +351,14 @@ class SendNamelistOverHttpStateMachine(
 
     // W3C SCXML 5.9.1: a cond that cannot be evaluated raises error.execution;
     // `null` says so, where a bare `false` could not.
-    private fun evaluateGuardRaising(guardExpr: com.sce.runtime.ScriptSource, reason: String): Boolean? {
+    private fun evaluateGuardRaising(guardExpr: com.sce.runtime.ScriptSource, detail: String): Boolean? {
         assertScriptSession()
         val engine = scriptEngine ?: error("scriptEngine is required (codegen invariant: needs_script_engine == true)")
         val sid = scriptSessionId ?: error("scriptSessionId is established by the start (codegen invariant)")
         return try {
             engine.evaluateCondition(sid, guardExpr)
         } catch (e: Exception) {
-            raisePlatformError(SendNamelistOverHttpEvent.Error.Execution, reason)
+            raisePlatformError(SendNamelistOverHttpEvent.Error.Execution, ErrorReason.EXPRESSION_FAILED, detail)
             null
         }
     }
@@ -399,7 +399,7 @@ class SendNamelistOverHttpStateMachine(
         return try {
             engine.evaluateExpr(sid, serialized)?.toString() ?: ""
         } catch (e: Exception) {
-            raisePlatformError(SendNamelistOverHttpEvent.Error.Execution, "an expression could not be serialised to JSON")
+            raisePlatformError(SendNamelistOverHttpEvent.Error.Execution, ErrorReason.EXPRESSION_FAILED, "an expression could not be serialised to JSON")
             ""
         }
     }
@@ -420,7 +420,7 @@ class SendNamelistOverHttpStateMachine(
             engine.assign(sid, location, expr)
             true
         } catch (e: Exception) {
-            raisePlatformError(SendNamelistOverHttpEvent.Error.Execution, "<assign> failed")
+            raisePlatformError(SendNamelistOverHttpEvent.Error.Execution, ErrorReason.ASSIGNMENT_FAILED, "<assign> failed")
             false
         }
     }
@@ -436,7 +436,7 @@ class SendNamelistOverHttpStateMachine(
             engine.executeScript(sid, script)
             true
         } catch (e: Exception) {
-            raisePlatformError(SendNamelistOverHttpEvent.Error.Execution, "<script> failed to execute")
+            raisePlatformError(SendNamelistOverHttpEvent.Error.Execution, ErrorReason.SCRIPT_FAILED, "<script> failed to execute")
             false
         }
     }
@@ -588,12 +588,12 @@ class SendNamelistOverHttpStateMachine(
             val _rt = try {
                 valueToWireString(argEngine.evaluateExpr(argSid, com.sce.runtime.ScriptSource.lua("_ioprocessors.basichttp.location", "_ioprocessors['basichttp'].location")))
             } catch (_: Exception) {
-                raisePlatformError(SendNamelistOverHttpEvent.Error.Execution, "<send> targetexpr could not be evaluated", "__send_3")
+                raisePlatformError(SendNamelistOverHttpEvent.Error.Execution, ErrorReason.EXPRESSION_FAILED, "<send> targetexpr could not be evaluated", "__send_3")
                 return@send true
             }
             if (com.sce.runtime.SendHelper.isInvalidTarget(_rt)) {
                 // W3C SCXML 6.2 (test194): refused as a static one is.
-                raisePlatformError(SendNamelistOverHttpEvent.Error.Execution, "<send> targetexpr produced a target this processor cannot address", "__send_3")
+                raisePlatformError(SendNamelistOverHttpEvent.Error.Execution, ErrorReason.SEND_TARGET_INVALID, "<send> targetexpr produced a target this processor cannot address", "__send_3")
                 return@send true
             }
             // W3C SCXML 6.2 + B.2 (test553): a namelist names locations, and one
@@ -601,20 +601,20 @@ class SendNamelistOverHttpStateMachine(
             // one error however many of its names are bad.
             val sendNamelist = mutableListOf<Pair<String, Any?>>()
             if (!argEngine.hasVariable(argSid, "__sce_not_declared__")) {
-                raisePlatformError(SendNamelistOverHttpEvent.Error.Execution, "<send> namelist names '__sce_not_declared__', which is not declared", "__send_3")
+                raisePlatformError(SendNamelistOverHttpEvent.Error.Execution, ErrorReason.LOCATION_INVALID, "<send> namelist names '__sce_not_declared__', which is not declared", "__send_3")
                 return@send true
             }
             try {
                 sendNamelist.add("__sce_not_declared__" to argEngine.getVariable(argSid, "__sce_not_declared__"))
             } catch (_: Exception) {
-                raisePlatformError(SendNamelistOverHttpEvent.Error.Execution, "<send> namelist entry '__sce_not_declared__' could not be read", "__send_3")
+                raisePlatformError(SendNamelistOverHttpEvent.Error.Execution, ErrorReason.LOCATION_INVALID, "<send> namelist entry '__sce_not_declared__' could not be read", "__send_3")
                 return@send true
             }
             if (com.sce.runtime.SendHelper.isUnreachableTarget(_rt)) {
                 // W3C SCXML C.1 (test496): a target that names nothing is not
                 // reachable — error.communication, nothing delivered, and the
                 // error ends the block as any other would (W3C SCXML 4.9).
-                raisePlatformError(SendNamelistOverHttpEvent.Error.Communication, "<send> targetexpr evaluated to nothing, so there is no target to reach", "__send_3")
+                raisePlatformError(SendNamelistOverHttpEvent.Error.Communication, ErrorReason.TARGET_UNREACHABLE, "<send> targetexpr evaluated to nothing, so there is no target to reach", "__send_3")
                 return@send true
             }
             val sendPayload = mutableMapOf<String, Any?>()
@@ -629,7 +629,7 @@ class SendNamelistOverHttpStateMachine(
             }
             // W3C SCXML C.2: BasicHTTP send — one arm for a static and a dynamic target
             if (!_rt.startsWith("http://") && !_rt.startsWith("https://")) {
-                raisePlatformError(SendNamelistOverHttpEvent.Error.Communication, "<send> over BasicHTTPEventProcessor resolved a target that is not an http(s) URL", "__send_3")
+                raisePlatformError(SendNamelistOverHttpEvent.Error.Communication, ErrorReason.HTTP_TARGET_INVALID, "<send> over BasicHTTPEventProcessor resolved a target that is not an http(s) URL", "__send_3")
                 return@send true
             }
             val httpContent = ""
@@ -694,12 +694,12 @@ class SendNamelistOverHttpStateMachine(
             val _rt = try {
                 valueToWireString(argEngine.evaluateExpr(argSid, com.sce.runtime.ScriptSource.lua("_ioprocessors.basichttp.location", "_ioprocessors['basichttp'].location")))
             } catch (_: Exception) {
-                raisePlatformError(SendNamelistOverHttpEvent.Error.Execution, "<send> targetexpr could not be evaluated", "__send_1")
+                raisePlatformError(SendNamelistOverHttpEvent.Error.Execution, ErrorReason.EXPRESSION_FAILED, "<send> targetexpr could not be evaluated", "__send_1")
                 return@send true
             }
             if (com.sce.runtime.SendHelper.isInvalidTarget(_rt)) {
                 // W3C SCXML 6.2 (test194): refused as a static one is.
-                raisePlatformError(SendNamelistOverHttpEvent.Error.Execution, "<send> targetexpr produced a target this processor cannot address", "__send_1")
+                raisePlatformError(SendNamelistOverHttpEvent.Error.Execution, ErrorReason.SEND_TARGET_INVALID, "<send> targetexpr produced a target this processor cannot address", "__send_1")
                 return@send true
             }
             // W3C SCXML 6.2 + B.2 (test553): a namelist names locations, and one
@@ -707,20 +707,20 @@ class SendNamelistOverHttpStateMachine(
             // one error however many of its names are bad.
             val sendNamelist = mutableListOf<Pair<String, Any?>>()
             if (!argEngine.hasVariable(argSid, "Var1")) {
-                raisePlatformError(SendNamelistOverHttpEvent.Error.Execution, "<send> namelist names 'Var1', which is not declared", "__send_1")
+                raisePlatformError(SendNamelistOverHttpEvent.Error.Execution, ErrorReason.LOCATION_INVALID, "<send> namelist names 'Var1', which is not declared", "__send_1")
                 return@send true
             }
             try {
                 sendNamelist.add("Var1" to argEngine.getVariable(argSid, "Var1"))
             } catch (_: Exception) {
-                raisePlatformError(SendNamelistOverHttpEvent.Error.Execution, "<send> namelist entry 'Var1' could not be read", "__send_1")
+                raisePlatformError(SendNamelistOverHttpEvent.Error.Execution, ErrorReason.LOCATION_INVALID, "<send> namelist entry 'Var1' could not be read", "__send_1")
                 return@send true
             }
             if (com.sce.runtime.SendHelper.isUnreachableTarget(_rt)) {
                 // W3C SCXML C.1 (test496): a target that names nothing is not
                 // reachable — error.communication, nothing delivered, and the
                 // error ends the block as any other would (W3C SCXML 4.9).
-                raisePlatformError(SendNamelistOverHttpEvent.Error.Communication, "<send> targetexpr evaluated to nothing, so there is no target to reach", "__send_1")
+                raisePlatformError(SendNamelistOverHttpEvent.Error.Communication, ErrorReason.TARGET_UNREACHABLE, "<send> targetexpr evaluated to nothing, so there is no target to reach", "__send_1")
                 return@send true
             }
             val sendPayload = mutableMapOf<String, Any?>()
@@ -735,7 +735,7 @@ class SendNamelistOverHttpStateMachine(
             }
             // W3C SCXML C.2: BasicHTTP send — one arm for a static and a dynamic target
             if (!_rt.startsWith("http://") && !_rt.startsWith("https://")) {
-                raisePlatformError(SendNamelistOverHttpEvent.Error.Communication, "<send> over BasicHTTPEventProcessor resolved a target that is not an http(s) URL", "__send_1")
+                raisePlatformError(SendNamelistOverHttpEvent.Error.Communication, ErrorReason.HTTP_TARGET_INVALID, "<send> over BasicHTTPEventProcessor resolved a target that is not an http(s) URL", "__send_1")
                 return@send true
             }
             val httpContent = ""

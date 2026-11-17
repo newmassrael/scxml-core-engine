@@ -474,7 +474,7 @@ class ExternalChainIsBoundedStateMachine(
             try {
                 engine.setVariable(sid, "pokes", engine.evaluateExpr(sid, com.sce.runtime.ScriptSource.lua("0", "0")))
             } catch (e: Exception) {
-                raisePlatformError(ExternalChainIsBoundedEvent.Error.Execution, "<data id='pokes'> expr failed to evaluate")
+                raisePlatformError(ExternalChainIsBoundedEvent.Error.Execution, ErrorReason.EXPRESSION_FAILED, "<data id='pokes'> expr failed to evaluate")
             }
         }
         // §scxml-6.4: 'links' takes a value its invoke handed it, in place of its own
@@ -483,7 +483,7 @@ class ExternalChainIsBoundedStateMachine(
             try {
                 engine.setVariable(sid, "links", engine.evaluateExpr(sid, com.sce.runtime.ScriptSource.lua("0", "0")))
             } catch (e: Exception) {
-                raisePlatformError(ExternalChainIsBoundedEvent.Error.Execution, "<data id='links'> expr failed to evaluate")
+                raisePlatformError(ExternalChainIsBoundedEvent.Error.Execution, ErrorReason.EXPRESSION_FAILED, "<data id='links'> expr failed to evaluate")
             }
         }
         // §scxml-6.4: 'laps' takes a value its invoke handed it, in place of its own
@@ -492,7 +492,7 @@ class ExternalChainIsBoundedStateMachine(
             try {
                 engine.setVariable(sid, "laps", engine.evaluateExpr(sid, com.sce.runtime.ScriptSource.lua("0", "0")))
             } catch (e: Exception) {
-                raisePlatformError(ExternalChainIsBoundedEvent.Error.Execution, "<data id='laps'> expr failed to evaluate")
+                raisePlatformError(ExternalChainIsBoundedEvent.Error.Execution, ErrorReason.EXPRESSION_FAILED, "<data id='laps'> expr failed to evaluate")
             }
         }
         // §scxml-6.4: 'beats' takes a value its invoke handed it, in place of its own
@@ -501,7 +501,7 @@ class ExternalChainIsBoundedStateMachine(
             try {
                 engine.setVariable(sid, "beats", engine.evaluateExpr(sid, com.sce.runtime.ScriptSource.lua("0", "0")))
             } catch (e: Exception) {
-                raisePlatformError(ExternalChainIsBoundedEvent.Error.Execution, "<data id='beats'> expr failed to evaluate")
+                raisePlatformError(ExternalChainIsBoundedEvent.Error.Execution, ErrorReason.EXPRESSION_FAILED, "<data id='beats'> expr failed to evaluate")
             }
         }
         // §scxml-6.4: 'blinks' takes a value its invoke handed it, in place of its own
@@ -510,7 +510,7 @@ class ExternalChainIsBoundedStateMachine(
             try {
                 engine.setVariable(sid, "blinks", engine.evaluateExpr(sid, com.sce.runtime.ScriptSource.lua("0", "0")))
             } catch (e: Exception) {
-                raisePlatformError(ExternalChainIsBoundedEvent.Error.Execution, "<data id='blinks'> expr failed to evaluate")
+                raisePlatformError(ExternalChainIsBoundedEvent.Error.Execution, ErrorReason.EXPRESSION_FAILED, "<data id='blinks'> expr failed to evaluate")
             }
         }
         // §scxml-6.4: 'exprs' takes a value its invoke handed it, in place of its own
@@ -519,7 +519,7 @@ class ExternalChainIsBoundedStateMachine(
             try {
                 engine.setVariable(sid, "exprs", engine.evaluateExpr(sid, com.sce.runtime.ScriptSource.lua("0", "0")))
             } catch (e: Exception) {
-                raisePlatformError(ExternalChainIsBoundedEvent.Error.Execution, "<data id='exprs'> expr failed to evaluate")
+                raisePlatformError(ExternalChainIsBoundedEvent.Error.Execution, ErrorReason.EXPRESSION_FAILED, "<data id='exprs'> expr failed to evaluate")
             }
         }
         // §scxml-6.4: 'pulses' takes a value its invoke handed it, in place of its own
@@ -528,7 +528,7 @@ class ExternalChainIsBoundedStateMachine(
             try {
                 engine.setVariable(sid, "pulses", engine.evaluateExpr(sid, com.sce.runtime.ScriptSource.lua("0", "0")))
             } catch (e: Exception) {
-                raisePlatformError(ExternalChainIsBoundedEvent.Error.Execution, "<data id='pulses'> expr failed to evaluate")
+                raisePlatformError(ExternalChainIsBoundedEvent.Error.Execution, ErrorReason.EXPRESSION_FAILED, "<data id='pulses'> expr failed to evaluate")
             }
         }
     }
@@ -558,14 +558,14 @@ class ExternalChainIsBoundedStateMachine(
 
     // W3C SCXML 5.9.1: a cond that cannot be evaluated raises error.execution;
     // `null` says so, where a bare `false` could not.
-    private fun evaluateGuardRaising(guardExpr: com.sce.runtime.ScriptSource, reason: String): Boolean? {
+    private fun evaluateGuardRaising(guardExpr: com.sce.runtime.ScriptSource, detail: String): Boolean? {
         assertScriptSession()
         val engine = scriptEngine ?: error("scriptEngine is required (codegen invariant: needs_script_engine == true)")
         val sid = scriptSessionId ?: error("scriptSessionId is established by the start (codegen invariant)")
         return try {
             engine.evaluateCondition(sid, guardExpr)
         } catch (e: Exception) {
-            raisePlatformError(ExternalChainIsBoundedEvent.Error.Execution, reason)
+            raisePlatformError(ExternalChainIsBoundedEvent.Error.Execution, ErrorReason.EXPRESSION_FAILED, detail)
             null
         }
     }
@@ -606,7 +606,7 @@ class ExternalChainIsBoundedStateMachine(
         return try {
             engine.evaluateExpr(sid, serialized)?.toString() ?: ""
         } catch (e: Exception) {
-            raisePlatformError(ExternalChainIsBoundedEvent.Error.Execution, "an expression could not be serialised to JSON")
+            raisePlatformError(ExternalChainIsBoundedEvent.Error.Execution, ErrorReason.EXPRESSION_FAILED, "an expression could not be serialised to JSON")
             ""
         }
     }
@@ -627,7 +627,7 @@ class ExternalChainIsBoundedStateMachine(
             engine.assign(sid, location, expr)
             true
         } catch (e: Exception) {
-            raisePlatformError(ExternalChainIsBoundedEvent.Error.Execution, "<assign> failed")
+            raisePlatformError(ExternalChainIsBoundedEvent.Error.Execution, ErrorReason.ASSIGNMENT_FAILED, "<assign> failed")
             false
         }
     }
@@ -643,7 +643,7 @@ class ExternalChainIsBoundedStateMachine(
             engine.executeScript(sid, script)
             true
         } catch (e: Exception) {
-            raisePlatformError(ExternalChainIsBoundedEvent.Error.Execution, "<script> failed to execute")
+            raisePlatformError(ExternalChainIsBoundedEvent.Error.Execution, ErrorReason.SCRIPT_FAILED, "<script> failed to execute")
             false
         }
     }
@@ -1006,11 +1006,11 @@ class ExternalChainIsBoundedStateMachine(
             val sendDelayText = try {
                 valueToWireString(argEngine.evaluateExpr(argSid, com.sce.runtime.ScriptSource.lua("\"0ms\"", "'0ms'")))
             } catch (_: Exception) {
-                raisePlatformError(ExternalChainIsBoundedEvent.Error.Execution, "<send> delayexpr could not be evaluated", "__send_9")
+                raisePlatformError(ExternalChainIsBoundedEvent.Error.Execution, ErrorReason.EXPRESSION_FAILED, "<send> delayexpr could not be evaluated", "__send_9")
                 return@send true
             }
             val sendDelayMs = com.sce.runtime.SendHelper.parseDelayMs(sendDelayText) ?: run {
-                raisePlatformError(ExternalChainIsBoundedEvent.Error.Execution, "<send> delayexpr is not a CSS2 time", "__send_9")
+                raisePlatformError(ExternalChainIsBoundedEvent.Error.Execution, ErrorReason.SEND_DELAY_INVALID, "<send> delayexpr is not a CSS2 time", "__send_9")
                 return@send true
             }
             val sendData = ""
@@ -1368,11 +1368,11 @@ class ExternalChainIsBoundedStateMachine(
             val sendDelayText = try {
                 valueToWireString(argEngine.evaluateExpr(argSid, com.sce.runtime.ScriptSource.lua("\"0ms\"", "'0ms'")))
             } catch (_: Exception) {
-                raisePlatformError(ExternalChainIsBoundedEvent.Error.Execution, "<send> delayexpr could not be evaluated", "__send_8")
+                raisePlatformError(ExternalChainIsBoundedEvent.Error.Execution, ErrorReason.EXPRESSION_FAILED, "<send> delayexpr could not be evaluated", "__send_8")
                 return@send true
             }
             val sendDelayMs = com.sce.runtime.SendHelper.parseDelayMs(sendDelayText) ?: run {
-                raisePlatformError(ExternalChainIsBoundedEvent.Error.Execution, "<send> delayexpr is not a CSS2 time", "__send_8")
+                raisePlatformError(ExternalChainIsBoundedEvent.Error.Execution, ErrorReason.SEND_DELAY_INVALID, "<send> delayexpr is not a CSS2 time", "__send_8")
                 return@send true
             }
             val sendData = ""

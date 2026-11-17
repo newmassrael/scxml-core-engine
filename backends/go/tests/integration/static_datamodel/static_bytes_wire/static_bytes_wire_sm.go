@@ -31,6 +31,7 @@ import (
 	"time"
 
 	sce "github.com/newmassrael/sce-go-runtime"
+	sceerrorreason "github.com/newmassrael/sce-go-runtime/generated/error_reason"
 	scealgorithm "github.com/newmassrael/sce-forge-runtime/algorithm"
 )
 
@@ -40,6 +41,9 @@ var (
 	_ = filepath.Join
 	_ = strings.HasPrefix
 	_ = time.Duration(0)
+	// Why an error.* event is raised (sce:std/engine/error_reason,
+	// docs/adr/0106 #111); a machine that raises none still imports it.
+	_ = sceerrorreason.ErrorReasonExpressionFailed
 	_ scealgorithm.Failure
 )
 
@@ -1054,7 +1058,7 @@ func (p *StaticBytesWirePolicy) ExecuteTransitionContent(source StaticBytesWireS
 				}
 
 
-	if func() bool { var sceFailure scealgorithm.Failure; sceValue := scealgorithm.BoundedBytes(&sceFailure, p.pendingFramedTakenPayload.frame, 8); if sceFailure.Failed() { engine.Raise(sce.NewPlatformError(StaticBytesWireEventErrorExecution, "<assign location='held'>: an integer operation overflowed or failed")); return true }; p.vHeld = sceValue; return false }() {
+	if func() bool { var sceFailure scealgorithm.Failure; sceValue := scealgorithm.BoundedBytes(&sceFailure, p.pendingFramedTakenPayload.frame, 8); if sceFailure.Failed() { engine.Raise(sce.NewPlatformError(StaticBytesWireEventErrorExecution, sceerrorreason.ErrorReasonExpressionFailed, "<assign location='held'>: an integer operation overflowed or failed")); return true }; p.vHeld = sceValue; return false }() {
 		return  // W3C SCXML 4.9: the error ends the block
 	}
 
@@ -1111,13 +1115,13 @@ func (p *StaticBytesWirePolicy) ExecuteTransitionContent(source StaticBytesWireS
 				}
 
 
-	if func() bool { var sceFailure scealgorithm.Failure; sceValue := scealgorithm.BoundedBytes(&sceFailure, p.pendingFramedRelayedPayload.frame, 8); if sceFailure.Failed() { engine.Raise(sce.NewPlatformError(StaticBytesWireEventErrorExecution, "<assign location='echo'>: an integer operation overflowed or failed")); return true }; p.vEcho = sceValue; return false }() {
+	if func() bool { var sceFailure scealgorithm.Failure; sceValue := scealgorithm.BoundedBytes(&sceFailure, p.pendingFramedRelayedPayload.frame, 8); if sceFailure.Failed() { engine.Raise(sce.NewPlatformError(StaticBytesWireEventErrorExecution, sceerrorreason.ErrorReasonExpressionFailed, "<assign location='echo'>: an integer operation overflowed or failed")); return true }; p.vEcho = sceValue; return false }() {
 		return  // W3C SCXML 4.9: the error ends the block
 	}
 
 
 
-	if func() bool { var sceFailure scealgorithm.Failure; sceValue := scealgorithm.AddUint32(&sceFailure, p.vRelays, 1); if sceFailure.Failed() { engine.Raise(sce.NewPlatformError(StaticBytesWireEventErrorExecution, "<assign location='relays'>: an integer operation overflowed or failed")); return true }; p.vRelays = sceValue; return false }() {
+	if func() bool { var sceFailure scealgorithm.Failure; sceValue := scealgorithm.AddUint32(&sceFailure, p.vRelays, 1); if sceFailure.Failed() { engine.Raise(sce.NewPlatformError(StaticBytesWireEventErrorExecution, sceerrorreason.ErrorReasonExpressionFailed, "<assign location='relays'>: an integer operation overflowed or failed")); return true }; p.vRelays = sceValue; return false }() {
 		return  // W3C SCXML 4.9: the error ends the block
 	}
 
@@ -1128,7 +1132,7 @@ func (p *StaticBytesWirePolicy) ExecuteTransitionContent(source StaticBytesWireS
 			func() {
 
 
-	if func() bool { var sceFailure scealgorithm.Failure; sceValue := scealgorithm.AddUint32(&sceFailure, p.vErrors, 1); if sceFailure.Failed() { engine.Raise(sce.NewPlatformError(StaticBytesWireEventErrorExecution, "<assign location='errors'>: an integer operation overflowed or failed")); return true }; p.vErrors = sceValue; return false }() {
+	if func() bool { var sceFailure scealgorithm.Failure; sceValue := scealgorithm.AddUint32(&sceFailure, p.vErrors, 1); if sceFailure.Failed() { engine.Raise(sce.NewPlatformError(StaticBytesWireEventErrorExecution, sceerrorreason.ErrorReasonExpressionFailed, "<assign location='errors'>: an integer operation overflowed or failed")); return true }; p.vErrors = sceValue; return false }() {
 		return  // W3C SCXML 4.9: the error ends the block
 	}
 

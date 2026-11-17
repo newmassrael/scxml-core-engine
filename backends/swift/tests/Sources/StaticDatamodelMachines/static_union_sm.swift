@@ -1561,7 +1561,7 @@ public final class StaticUnionPolicy: InvocablePolicy {
                 if (self.pendingShapesSentPayload.one.kind == StaticUnionKindEnum.dot) {
 
 
-                if ({ () -> Bool in do { let sceValue: UInt32 = (try Checked.add(self.vDots, 1)); self.vDots = sceValue } catch { engine.raise(EventWithMetadata.platformError(StaticUnionEvent.errorExecution, message: "<assign location='dots'>: an integer operation overflowed or failed")); return true }; return false }()) {
+                if ({ () -> Bool in do { let sceValue: UInt32 = (try Checked.add(self.vDots, 1)); self.vDots = sceValue } catch { engine.raise(EventWithMetadata.platformError(StaticUnionEvent.errorExecution, reason: .expressionFailed, message: "<assign location='dots'>: an integer operation overflowed or failed")); return true }; return false }()) {
                     break sceBlock  // W3C SCXML 4.9: the error ends the block
                 }
 
@@ -1586,7 +1586,7 @@ public final class StaticUnionPolicy: InvocablePolicy {
                     _ = point
 
 
-                if ({ () -> Bool in do { let sceValue: UInt32 = (try Checked.add(self.vPoints, 1)); self.vPoints = sceValue } catch { engine.raise(EventWithMetadata.platformError(StaticUnionEvent.errorExecution, message: "<assign location='points'>: an integer operation overflowed or failed")); return true }; return false }()) {
+                if ({ () -> Bool in do { let sceValue: UInt32 = (try Checked.add(self.vPoints, 1)); self.vPoints = sceValue } catch { engine.raise(EventWithMetadata.platformError(StaticUnionEvent.errorExecution, reason: .expressionFailed, message: "<assign location='points'>: an integer operation overflowed or failed")); return true }; return false }()) {
                     break sceBlock  // W3C SCXML 4.9: the error ends the block
                 }
 
@@ -1594,7 +1594,7 @@ public final class StaticUnionPolicy: InvocablePolicy {
                 } else {
 
 
-                if ({ () -> Bool in do { let sceValue: UInt32 = (try Checked.add(self.vLabels, 1)); self.vLabels = sceValue } catch { engine.raise(EventWithMetadata.platformError(StaticUnionEvent.errorExecution, message: "<assign location='labels'>: an integer operation overflowed or failed")); return true }; return false }()) {
+                if ({ () -> Bool in do { let sceValue: UInt32 = (try Checked.add(self.vLabels, 1)); self.vLabels = sceValue } catch { engine.raise(EventWithMetadata.platformError(StaticUnionEvent.errorExecution, reason: .expressionFailed, message: "<assign location='labels'>: an integer operation overflowed or failed")); return true }; return false }()) {
                     break sceBlock  // W3C SCXML 4.9: the error ends the block
                 }
 
@@ -1606,7 +1606,7 @@ public final class StaticUnionPolicy: InvocablePolicy {
                     _ = shape
 
 
-                if ({ () -> Bool in do { let sceValue: UInt32 = (try Checked.add(self.vManyShapes, 1)); self.vManyShapes = sceValue } catch { engine.raise(EventWithMetadata.platformError(StaticUnionEvent.errorExecution, message: "<assign location='many_shapes'>: an integer operation overflowed or failed")); return true }; return false }()) {
+                if ({ () -> Bool in do { let sceValue: UInt32 = (try Checked.add(self.vManyShapes, 1)); self.vManyShapes = sceValue } catch { engine.raise(EventWithMetadata.platformError(StaticUnionEvent.errorExecution, reason: .expressionFailed, message: "<assign location='many_shapes'>: an integer operation overflowed or failed")); return true }; return false }()) {
                     break sceBlock  // W3C SCXML 4.9: the error ends the block
                 }
 
@@ -1636,7 +1636,7 @@ public final class StaticUnionPolicy: InvocablePolicy {
                 if (self.vBuilt.kind == StaticUnionKindEnum.rect) {
 
 
-                if ({ () -> Bool in do { let sceValue: UInt16 = (try Checked.add(self.vBuilt.provenRect.width, 1)); self.vBuilt.provenRectPlace.width = sceValue } catch { engine.raise(EventWithMetadata.platformError(StaticUnionEvent.errorExecution, message: "<assign location='built.width'>: an integer operation overflowed or failed")); return true }; return false }()) {
+                if ({ () -> Bool in do { let sceValue: UInt16 = (try Checked.add(self.vBuilt.provenRect.width, 1)); self.vBuilt.provenRectPlace.width = sceValue } catch { engine.raise(EventWithMetadata.platformError(StaticUnionEvent.errorExecution, reason: .expressionFailed, message: "<assign location='built.width'>: an integer operation overflowed or failed")); return true }; return false }()) {
                     break sceBlock  // W3C SCXML 4.9: the error ends the block
                 }
 
@@ -1700,7 +1700,7 @@ public final class StaticUnionPolicy: InvocablePolicy {
                 sceBlock: do {
 
 
-                if ({ () -> Bool in do { let sceValue: UInt32 = (try Checked.add(self.vBoards, 1)); self.vBoards = sceValue } catch { engine.raise(EventWithMetadata.platformError(StaticUnionEvent.errorExecution, message: "<assign location='boards'>: an integer operation overflowed or failed")); return true }; return false }()) {
+                if ({ () -> Bool in do { let sceValue: UInt32 = (try Checked.add(self.vBoards, 1)); self.vBoards = sceValue } catch { engine.raise(EventWithMetadata.platformError(StaticUnionEvent.errorExecution, reason: .expressionFailed, message: "<assign location='boards'>: an integer operation overflowed or failed")); return true }; return false }()) {
                     break sceBlock  // W3C SCXML 4.9: the error ends the block
                 }
 
@@ -1713,19 +1713,19 @@ public final class StaticUnionPolicy: InvocablePolicy {
                     }
 
 
-                if ({ () -> Bool in do { let sceValue: StaticUnionUnionShapeUnion = (try Checked.at(self.pendingShapesPickedPayload.many, self.pendingShapesPickedPayload.at)); self.vPicked = sceValue } catch { engine.raise(EventWithMetadata.platformError(StaticUnionEvent.errorExecution, message: "<assign location='picked'>: an integer operation overflowed or failed")); return true }; return false }()) {
+                if ({ () -> Bool in do { let sceValue: StaticUnionUnionShapeUnion = (try Checked.at(self.pendingShapesPickedPayload.many, self.pendingShapesPickedPayload.at)); self.vPicked = sceValue } catch { engine.raise(EventWithMetadata.platformError(StaticUnionEvent.errorExecution, reason: .expressionFailed, message: "<assign location='picked'>: an integer operation overflowed or failed")); return true }; return false }()) {
                     break sceBlock  // W3C SCXML 4.9: the error ends the block
                 }
 
 
 
-                if ({ () -> Bool in do { let sceValue: StaticUnionUnionShapeUnion? = (try Checked.at(self.pendingShapesPickedPayload.many, self.pendingShapesPickedPayload.at)); self.vPickedMaybe = sceValue } catch { engine.raise(EventWithMetadata.platformError(StaticUnionEvent.errorExecution, message: "<assign location='picked_maybe'>: an integer operation overflowed or failed")); return true }; return false }()) {
+                if ({ () -> Bool in do { let sceValue: StaticUnionUnionShapeUnion? = (try Checked.at(self.pendingShapesPickedPayload.many, self.pendingShapesPickedPayload.at)); self.vPickedMaybe = sceValue } catch { engine.raise(EventWithMetadata.platformError(StaticUnionEvent.errorExecution, reason: .expressionFailed, message: "<assign location='picked_maybe'>: an integer operation overflowed or failed")); return true }; return false }()) {
                     break sceBlock  // W3C SCXML 4.9: the error ends the block
                 }
 
 
 
-                if ({ () -> Bool in do { let sceValue: UInt32 = (try Checked.add(self.vPicks, 1)); self.vPicks = sceValue } catch { engine.raise(EventWithMetadata.platformError(StaticUnionEvent.errorExecution, message: "<assign location='picks'>: an integer operation overflowed or failed")); return true }; return false }()) {
+                if ({ () -> Bool in do { let sceValue: UInt32 = (try Checked.add(self.vPicks, 1)); self.vPicks = sceValue } catch { engine.raise(EventWithMetadata.platformError(StaticUnionEvent.errorExecution, reason: .expressionFailed, message: "<assign location='picks'>: an integer operation overflowed or failed")); return true }; return false }()) {
                     break sceBlock  // W3C SCXML 4.9: the error ends the block
                 }
 
@@ -1746,13 +1746,13 @@ public final class StaticUnionPolicy: InvocablePolicy {
                     }
 
 
-                if ({ () -> Bool in do { let sceValue: StaticUnionUnionShapeUnion = (try Checked.at((try Checked.at(self.pendingShapesGroupedPayload.groups, self.pendingShapesGroupedPayload.at)).shapes, self.pendingShapesGroupedPayload.inner)); self.vPicked = sceValue } catch { engine.raise(EventWithMetadata.platformError(StaticUnionEvent.errorExecution, message: "<assign location='picked'>: an integer operation overflowed or failed")); return true }; return false }()) {
+                if ({ () -> Bool in do { let sceValue: StaticUnionUnionShapeUnion = (try Checked.at((try Checked.at(self.pendingShapesGroupedPayload.groups, self.pendingShapesGroupedPayload.at)).shapes, self.pendingShapesGroupedPayload.inner)); self.vPicked = sceValue } catch { engine.raise(EventWithMetadata.platformError(StaticUnionEvent.errorExecution, reason: .expressionFailed, message: "<assign location='picked'>: an integer operation overflowed or failed")); return true }; return false }()) {
                     break sceBlock  // W3C SCXML 4.9: the error ends the block
                 }
 
 
 
-                if ({ () -> Bool in do { let sceValue: UInt32 = (try Checked.add(self.vPicks, 1)); self.vPicks = sceValue } catch { engine.raise(EventWithMetadata.platformError(StaticUnionEvent.errorExecution, message: "<assign location='picks'>: an integer operation overflowed or failed")); return true }; return false }()) {
+                if ({ () -> Bool in do { let sceValue: UInt32 = (try Checked.add(self.vPicks, 1)); self.vPicks = sceValue } catch { engine.raise(EventWithMetadata.platformError(StaticUnionEvent.errorExecution, reason: .expressionFailed, message: "<assign location='picks'>: an integer operation overflowed or failed")); return true }; return false }()) {
                     break sceBlock  // W3C SCXML 4.9: the error ends the block
                 }
 
@@ -1773,13 +1773,13 @@ public final class StaticUnionPolicy: InvocablePolicy {
                     }
 
 
-                if ({ () -> Bool in do { let sceValue: StaticUnionUnionShapeUnion = (try Checked.at((try Checked.at(self.pendingShapesRowedPayload.rows, self.pendingShapesRowedPayload.at)), self.pendingShapesRowedPayload.inner)); self.vPicked = sceValue } catch { engine.raise(EventWithMetadata.platformError(StaticUnionEvent.errorExecution, message: "<assign location='picked'>: an integer operation overflowed or failed")); return true }; return false }()) {
+                if ({ () -> Bool in do { let sceValue: StaticUnionUnionShapeUnion = (try Checked.at((try Checked.at(self.pendingShapesRowedPayload.rows, self.pendingShapesRowedPayload.at)), self.pendingShapesRowedPayload.inner)); self.vPicked = sceValue } catch { engine.raise(EventWithMetadata.platformError(StaticUnionEvent.errorExecution, reason: .expressionFailed, message: "<assign location='picked'>: an integer operation overflowed or failed")); return true }; return false }()) {
                     break sceBlock  // W3C SCXML 4.9: the error ends the block
                 }
 
 
 
-                if ({ () -> Bool in do { let sceValue: UInt32 = (try Checked.add(self.vPicks, 1)); self.vPicks = sceValue } catch { engine.raise(EventWithMetadata.platformError(StaticUnionEvent.errorExecution, message: "<assign location='picks'>: an integer operation overflowed or failed")); return true }; return false }()) {
+                if ({ () -> Bool in do { let sceValue: UInt32 = (try Checked.add(self.vPicks, 1)); self.vPicks = sceValue } catch { engine.raise(EventWithMetadata.platformError(StaticUnionEvent.errorExecution, reason: .expressionFailed, message: "<assign location='picks'>: an integer operation overflowed or failed")); return true }; return false }()) {
                     break sceBlock  // W3C SCXML 4.9: the error ends the block
                 }
 
@@ -1797,7 +1797,7 @@ public final class StaticUnionPolicy: InvocablePolicy {
                 sceBlock: do {
 
 
-                if ({ () -> Bool in do { let sceValue: UInt32 = (try Checked.add(self.vRefusals, 1)); self.vRefusals = sceValue } catch { engine.raise(EventWithMetadata.platformError(StaticUnionEvent.errorExecution, message: "<assign location='refusals'>: an integer operation overflowed or failed")); return true }; return false }()) {
+                if ({ () -> Bool in do { let sceValue: UInt32 = (try Checked.add(self.vRefusals, 1)); self.vRefusals = sceValue } catch { engine.raise(EventWithMetadata.platformError(StaticUnionEvent.errorExecution, reason: .expressionFailed, message: "<assign location='refusals'>: an integer operation overflowed or failed")); return true }; return false }()) {
                     break sceBlock  // W3C SCXML 4.9: the error ends the block
                 }
 

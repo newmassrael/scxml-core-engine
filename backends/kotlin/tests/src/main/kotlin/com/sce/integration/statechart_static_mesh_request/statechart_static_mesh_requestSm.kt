@@ -1,5 +1,5 @@
 // SCE-GENERATED — DO NOT EDIT
-// source-hash: e3e91f36cc7b8591c060b277b157f8471b6940f92608c548338f70603c760055
+// source-hash: f02e6d1d557556839c99891abeba3d1ef7bc15e5821c4215914c8e1ef9ecc561
 
 // GENERATED CODE — DO NOT EDIT
 // Source: sce-build/tests/fixtures/host_processor/statechart_static_mesh_request.scxml
@@ -509,7 +509,7 @@ class StatechartStaticMeshRequestStateMachine(
                             putParam(hostInvokePayload, "force", v)
                         } catch (_: com.sce.forge.runtime.AlgorithmFailure) {
                             // W3C SCXML 5.7.1: report the failure and omit the pair.
-                            raisePlatformError(StatechartStaticMeshRequestEvent.Error.Execution, "<invoke> <param name='force'> expr failed to evaluate")
+                            raisePlatformError(StatechartStaticMeshRequestEvent.Error.Execution, ErrorReason.EXPRESSION_FAILED, "<invoke> <param name='force'> expr failed to evaluate")
                         }
                         run {
                             val v: Any? = vLabel
@@ -532,7 +532,7 @@ class StatechartStaticMeshRequestStateMachine(
                             // be run and none was, which is the same fact as
                             // an unsupported type — so the same event, rather
                             // than a silence that reads as started.
-                            raisePlatformError(StatechartStaticMeshRequestEvent.Error.Execution, "<invoke> names an invoker the host declared but never registered")
+                            raisePlatformError(StatechartStaticMeshRequestEvent.Error.Execution, ErrorReason.PROCESSOR_UNREGISTERED, "<invoke> names an invoker the host declared but never registered")
                         }
                     }
                 }
@@ -609,7 +609,7 @@ class StatechartStaticMeshRequestStateMachine(
     private fun transitionContentOfAskingAt0() {
                 // SCE-MAP: statechart_static_mesh_request.scxml:77 :: asking :: _transition_0
 
-            if (try { vAnswered = com.sce.forge.runtime.SceChecked.add(vAnswered, 1.toUInt()); false } catch (_: com.sce.forge.runtime.AlgorithmFailure) { raisePlatformError(StatechartStaticMeshRequestEvent.Error.Execution, "<assign location='answered'>: an integer operation overflowed or failed"); true }) {
+            if (try { vAnswered = com.sce.forge.runtime.SceChecked.add(vAnswered, 1.toUInt()); false } catch (_: com.sce.forge.runtime.AlgorithmFailure) { raisePlatformError(StatechartStaticMeshRequestEvent.Error.Execution, ErrorReason.EXPRESSION_FAILED, "<assign location='answered'>: an integer operation overflowed or failed"); true }) {
                 return
             }
     }
@@ -617,7 +617,7 @@ class StatechartStaticMeshRequestStateMachine(
     private fun transitionContentOfAskingAt1() {
                 // SCE-MAP: statechart_static_mesh_request.scxml:80 :: asking :: _transition_1
 
-            if (try { vFailed = com.sce.forge.runtime.SceChecked.add(vFailed, 1.toUInt()); false } catch (_: com.sce.forge.runtime.AlgorithmFailure) { raisePlatformError(StatechartStaticMeshRequestEvent.Error.Execution, "<assign location='failed'>: an integer operation overflowed or failed"); true }) {
+            if (try { vFailed = com.sce.forge.runtime.SceChecked.add(vFailed, 1.toUInt()); false } catch (_: com.sce.forge.runtime.AlgorithmFailure) { raisePlatformError(StatechartStaticMeshRequestEvent.Error.Execution, ErrorReason.EXPRESSION_FAILED, "<assign location='failed'>: an integer operation overflowed or failed"); true }) {
                 return
             }
     }
@@ -625,7 +625,7 @@ class StatechartStaticMeshRequestStateMachine(
     private fun transitionContentOfAskingAt2() {
                 // SCE-MAP: statechart_static_mesh_request.scxml:83 :: asking :: _transition_2
 
-            if (try { vRefused = com.sce.forge.runtime.SceChecked.add(vRefused, 1.toUInt()); false } catch (_: com.sce.forge.runtime.AlgorithmFailure) { raisePlatformError(StatechartStaticMeshRequestEvent.Error.Execution, "<assign location='refused'>: an integer operation overflowed or failed"); true }) {
+            if (try { vRefused = com.sce.forge.runtime.SceChecked.add(vRefused, 1.toUInt()); false } catch (_: com.sce.forge.runtime.AlgorithmFailure) { raisePlatformError(StatechartStaticMeshRequestEvent.Error.Execution, ErrorReason.EXPRESSION_FAILED, "<assign location='refused'>: an integer operation overflowed or failed"); true }) {
                 return
             }
     }
@@ -647,11 +647,11 @@ class StatechartStaticMeshRequestStateMachine(
     private fun transitionContentOfIdleAt0() {
                 // SCE-MAP: statechart_static_mesh_request.scxml:59 :: idle :: _transition_0
 
-            if (try { vLoad = com.sce.forge.runtime.SceChecked.add(vLoad, 1.toUInt()); false } catch (_: com.sce.forge.runtime.AlgorithmFailure) { raisePlatformError(StatechartStaticMeshRequestEvent.Error.Execution, "<assign location='load'>: an integer operation overflowed or failed"); true }) {
+            if (try { vLoad = com.sce.forge.runtime.SceChecked.add(vLoad, 1.toUInt()); false } catch (_: com.sce.forge.runtime.AlgorithmFailure) { raisePlatformError(StatechartStaticMeshRequestEvent.Error.Execution, ErrorReason.EXPRESSION_FAILED, "<assign location='load'>: an integer operation overflowed or failed"); true }) {
                 return
             }
 
-            if (try { vLabel = com.sce.forge.runtime.SceChecked.bounded("busy", 16); false } catch (_: com.sce.forge.runtime.AlgorithmFailure) { raisePlatformError(StatechartStaticMeshRequestEvent.Error.Execution, "<assign location='label'>: an integer operation overflowed or failed"); true }) {
+            if (try { vLabel = com.sce.forge.runtime.SceChecked.bounded("busy", 16); false } catch (_: com.sce.forge.runtime.AlgorithmFailure) { raisePlatformError(StatechartStaticMeshRequestEvent.Error.Execution, ErrorReason.EXPRESSION_FAILED, "<assign location='label'>: an integer operation overflowed or failed"); true }) {
                 return
             }
     }
@@ -659,7 +659,7 @@ class StatechartStaticMeshRequestStateMachine(
     private fun transitionContentOfIdleAt1() {
                 // SCE-MAP: statechart_static_mesh_request.scxml:63 :: idle :: _transition_1
 
-            if (try { vPeer = com.sce.forge.runtime.SceChecked.bounded("#ghost", 16); false } catch (_: com.sce.forge.runtime.AlgorithmFailure) { raisePlatformError(StatechartStaticMeshRequestEvent.Error.Execution, "<assign location='peer'>: an integer operation overflowed or failed"); true }) {
+            if (try { vPeer = com.sce.forge.runtime.SceChecked.bounded("#ghost", 16); false } catch (_: com.sce.forge.runtime.AlgorithmFailure) { raisePlatformError(StatechartStaticMeshRequestEvent.Error.Execution, ErrorReason.EXPRESSION_FAILED, "<assign location='peer'>: an integer operation overflowed or failed"); true }) {
                 return
             }
     }

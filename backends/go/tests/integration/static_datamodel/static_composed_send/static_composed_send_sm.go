@@ -31,6 +31,7 @@ import (
 	"time"
 
 	sce "github.com/newmassrael/sce-go-runtime"
+	sceerrorreason "github.com/newmassrael/sce-go-runtime/generated/error_reason"
 	scealgorithm "github.com/newmassrael/sce-forge-runtime/algorithm"
 	"github.com/newmassrael/sce-forge-runtime/optional"
 )
@@ -41,6 +42,9 @@ var (
 	_ = filepath.Join
 	_ = strings.HasPrefix
 	_ = time.Duration(0)
+	// Why an error.* event is raised (sce:std/engine/error_reason,
+	// docs/adr/0106 #111); a machine that raises none still imports it.
+	_ = sceerrorreason.ErrorReasonExpressionFailed
 	_ scealgorithm.Failure
 )
 
@@ -1607,7 +1611,7 @@ func (p *StaticComposedSendPolicy) ExecuteTransitionContent(source StaticCompose
 				// docs/adr/0086, section 15.6: the list is short of its field's
 				// lower count, so the event is refused whole: one error, nothing
 				// delivered, and the error ends the block (W3C SCXML 6.2.3, 4.9).
-				errEvt := sce.NewPlatformError(StaticComposedSendEventErrorExecution, "<send> <param name='kept'> holds fewer elements than the 1 its field's type declares, so the event is not sent")
+				errEvt := sce.NewPlatformError(StaticComposedSendEventErrorExecution, sceerrorreason.ErrorReasonParamUnfit, "<send> <param name='kept'> holds fewer elements than the 1 its field's type declares, so the event is not sent")
 				errEvt.Metadata.SendID = "__send_1"
 				engine.Raise(errEvt)
 				return
@@ -1643,7 +1647,7 @@ func (p *StaticComposedSendPolicy) ExecuteTransitionContent(source StaticCompose
 				}
 
 
-	if func() bool { var sceFailure scealgorithm.Failure; sceValue := scealgorithm.AddUint32(&sceFailure, p.vDeliveries, 1); if sceFailure.Failed() { engine.Raise(sce.NewPlatformError(StaticComposedSendEventErrorExecution, "<assign location='deliveries'>: an integer operation overflowed or failed")); return true }; p.vDeliveries = sceValue; return false }() {
+	if func() bool { var sceFailure scealgorithm.Failure; sceValue := scealgorithm.AddUint32(&sceFailure, p.vDeliveries, 1); if sceFailure.Failed() { engine.Raise(sce.NewPlatformError(StaticComposedSendEventErrorExecution, sceerrorreason.ErrorReasonExpressionFailed, "<assign location='deliveries'>: an integer operation overflowed or failed")); return true }; p.vDeliveries = sceValue; return false }() {
 		return  // W3C SCXML 4.9: the error ends the block
 	}
 
@@ -1661,13 +1665,13 @@ func (p *StaticComposedSendPolicy) ExecuteTransitionContent(source StaticCompose
 		i := uint32(sceIndex); _ = i; _ = row
 
 
-	if func() bool { var sceFailure scealgorithm.Failure; sceValue := scealgorithm.AddUint32(&sceFailure, p.vTagCount, uint32(len(row.tags))); if sceFailure.Failed() { engine.Raise(sce.NewPlatformError(StaticComposedSendEventErrorExecution, "<assign location='tag_count'>: an integer operation overflowed or failed")); return true }; p.vTagCount = sceValue; return false }() {
+	if func() bool { var sceFailure scealgorithm.Failure; sceValue := scealgorithm.AddUint32(&sceFailure, p.vTagCount, uint32(len(row.tags))); if sceFailure.Failed() { engine.Raise(sce.NewPlatformError(StaticComposedSendEventErrorExecution, sceerrorreason.ErrorReasonExpressionFailed, "<assign location='tag_count'>: an integer operation overflowed or failed")); return true }; p.vTagCount = sceValue; return false }() {
 		return  // W3C SCXML 4.9: the error ends the block
 	}
 
 
 
-	if func() bool { var sceFailure scealgorithm.Failure; sceValue := scealgorithm.AddUint32(&sceFailure, p.vIdSum, scealgorithm.AtU(&sceFailure, p.pendingBatchSentPayload.items[:], uint64(i)).id); if sceFailure.Failed() { engine.Raise(sce.NewPlatformError(StaticComposedSendEventErrorExecution, "<assign location='id_sum'>: an integer operation overflowed or failed")); return true }; p.vIdSum = sceValue; return false }() {
+	if func() bool { var sceFailure scealgorithm.Failure; sceValue := scealgorithm.AddUint32(&sceFailure, p.vIdSum, scealgorithm.AtU(&sceFailure, p.pendingBatchSentPayload.items[:], uint64(i)).id); if sceFailure.Failed() { engine.Raise(sce.NewPlatformError(StaticComposedSendEventErrorExecution, sceerrorreason.ErrorReasonExpressionFailed, "<assign location='id_sum'>: an integer operation overflowed or failed")); return true }; p.vIdSum = sceValue; return false }() {
 		return  // W3C SCXML 4.9: the error ends the block
 	}
 
@@ -1683,7 +1687,7 @@ func (p *StaticComposedSendPolicy) ExecuteTransitionContent(source StaticCompose
 		_ = n
 
 
-	if func() bool { var sceFailure scealgorithm.Failure; sceValue := scealgorithm.AddUint32(&sceFailure, p.vCellSum, uint32(n)); if sceFailure.Failed() { engine.Raise(sce.NewPlatformError(StaticComposedSendEventErrorExecution, "<assign location='cell_sum'>: an integer operation overflowed or failed")); return true }; p.vCellSum = sceValue; return false }() {
+	if func() bool { var sceFailure scealgorithm.Failure; sceValue := scealgorithm.AddUint32(&sceFailure, p.vCellSum, uint32(n)); if sceFailure.Failed() { engine.Raise(sce.NewPlatformError(StaticComposedSendEventErrorExecution, sceerrorreason.ErrorReasonExpressionFailed, "<assign location='cell_sum'>: an integer operation overflowed or failed")); return true }; p.vCellSum = sceValue; return false }() {
 		return  // W3C SCXML 4.9: the error ends the block
 	}
 
@@ -1697,7 +1701,7 @@ func (p *StaticComposedSendPolicy) ExecuteTransitionContent(source StaticCompose
 		_ = each
 
 
-	if func() bool { var sceFailure scealgorithm.Failure; sceValue := scealgorithm.AddUint32(&sceFailure, p.vLateSum, uint32(each)); if sceFailure.Failed() { engine.Raise(sce.NewPlatformError(StaticComposedSendEventErrorExecution, "<assign location='late_sum'>: an integer operation overflowed or failed")); return true }; p.vLateSum = sceValue; return false }() {
+	if func() bool { var sceFailure scealgorithm.Failure; sceValue := scealgorithm.AddUint32(&sceFailure, p.vLateSum, uint32(each)); if sceFailure.Failed() { engine.Raise(sce.NewPlatformError(StaticComposedSendEventErrorExecution, sceerrorreason.ErrorReasonExpressionFailed, "<assign location='late_sum'>: an integer operation overflowed or failed")); return true }; p.vLateSum = sceValue; return false }() {
 		return  // W3C SCXML 4.9: the error ends the block
 	}
 
@@ -1707,7 +1711,7 @@ func (p *StaticComposedSendPolicy) ExecuteTransitionContent(source StaticCompose
 	if uint32(len(p.pendingBatchSentPayload.maybe)) > 0 {
 
 
-	if func() bool { var sceFailure scealgorithm.Failure; sceValue := scealgorithm.At(&sceFailure, p.pendingBatchSentPayload.maybe[:], int64(0)); if sceFailure.Failed() { engine.Raise(sce.NewPlatformError(StaticComposedSendEventErrorExecution, "<assign location='first_maybe'>: an integer operation overflowed or failed")); return true }; p.vFirstMaybe = sceValue; return false }() {
+	if func() bool { var sceFailure scealgorithm.Failure; sceValue := scealgorithm.At(&sceFailure, p.pendingBatchSentPayload.maybe[:], int64(0)); if sceFailure.Failed() { engine.Raise(sce.NewPlatformError(StaticComposedSendEventErrorExecution, sceerrorreason.ErrorReasonExpressionFailed, "<assign location='first_maybe'>: an integer operation overflowed or failed")); return true }; p.vFirstMaybe = sceValue; return false }() {
 		return  // W3C SCXML 4.9: the error ends the block
 	}
 
@@ -1716,7 +1720,7 @@ func (p *StaticComposedSendPolicy) ExecuteTransitionContent(source StaticCompose
 
 	// SCE Accepted Subset §2.15: <sce:append target="held">
 
-	if func() bool { var sceFailure scealgorithm.Failure; if len(p.vHeld) >= 2 { engine.Raise(sce.NewPlatformError(StaticComposedSendEventErrorExecution, "<sce:append target='held'>: the list already holds its capacity of 2")); return true }; sceValue := scealgorithm.ElementOf(p.vHeld, 7); if sceFailure.Failed() { engine.Raise(sce.NewPlatformError(StaticComposedSendEventErrorExecution, "<sce:append target='held'>: an integer operation overflowed or failed")); return true }; p.vHeld = append(p.vHeld, sceValue); return false }() {
+	if func() bool { var sceFailure scealgorithm.Failure; if len(p.vHeld) >= 2 { engine.Raise(sce.NewPlatformError(StaticComposedSendEventErrorExecution, sceerrorreason.ErrorReasonAssignmentFailed, "<sce:append target='held'>: the list already holds its capacity of 2")); return true }; sceValue := scealgorithm.ElementOf(p.vHeld, 7); if sceFailure.Failed() { engine.Raise(sce.NewPlatformError(StaticComposedSendEventErrorExecution, sceerrorreason.ErrorReasonExpressionFailed, "<sce:append target='held'>: an integer operation overflowed or failed")); return true }; p.vHeld = append(p.vHeld, sceValue); return false }() {
 		return  // W3C SCXML 4.9: the error ends the block
 	}
 
@@ -1743,7 +1747,7 @@ func (p *StaticComposedSendPolicy) ExecuteTransitionContent(source StaticCompose
 				// docs/adr/0086, section 15.6: the list is short of its field's
 				// lower count, so the event is refused whole: one error, nothing
 				// delivered, and the error ends the block (W3C SCXML 6.2.3, 4.9).
-				errEvt := sce.NewPlatformError(StaticComposedSendEventErrorExecution, "<send> <param name='kept'> holds fewer elements than the 1 its field's type declares, so the event is not sent")
+				errEvt := sce.NewPlatformError(StaticComposedSendEventErrorExecution, sceerrorreason.ErrorReasonParamUnfit, "<send> <param name='kept'> holds fewer elements than the 1 its field's type declares, so the event is not sent")
 				errEvt.Metadata.SendID = "__send_2"
 				engine.Raise(errEvt)
 				return
@@ -1829,7 +1833,7 @@ func (p *StaticComposedSendPolicy) ExecuteTransitionContent(source StaticCompose
 				}
 
 
-	if func() bool { var sceFailure scealgorithm.Failure; sceValue := scealgorithm.AddUint32(&sceFailure, p.vCountedDeliveries, 1); if sceFailure.Failed() { engine.Raise(sce.NewPlatformError(StaticComposedSendEventErrorExecution, "<assign location='counted_deliveries'>: an integer operation overflowed or failed")); return true }; p.vCountedDeliveries = sceValue; return false }() {
+	if func() bool { var sceFailure scealgorithm.Failure; sceValue := scealgorithm.AddUint32(&sceFailure, p.vCountedDeliveries, 1); if sceFailure.Failed() { engine.Raise(sce.NewPlatformError(StaticComposedSendEventErrorExecution, sceerrorreason.ErrorReasonExpressionFailed, "<assign location='counted_deliveries'>: an integer operation overflowed or failed")); return true }; p.vCountedDeliveries = sceValue; return false }() {
 		return  // W3C SCXML 4.9: the error ends the block
 	}
 
@@ -1843,7 +1847,7 @@ func (p *StaticComposedSendPolicy) ExecuteTransitionContent(source StaticCompose
 		_ = each
 
 
-	if func() bool { var sceFailure scealgorithm.Failure; sceValue := scealgorithm.AddUint32(&sceFailure, p.vCountedSum, uint32(each)); if sceFailure.Failed() { engine.Raise(sce.NewPlatformError(StaticComposedSendEventErrorExecution, "<assign location='counted_sum'>: an integer operation overflowed or failed")); return true }; p.vCountedSum = sceValue; return false }() {
+	if func() bool { var sceFailure scealgorithm.Failure; sceValue := scealgorithm.AddUint32(&sceFailure, p.vCountedSum, uint32(each)); if sceFailure.Failed() { engine.Raise(sce.NewPlatformError(StaticComposedSendEventErrorExecution, sceerrorreason.ErrorReasonExpressionFailed, "<assign location='counted_sum'>: an integer operation overflowed or failed")); return true }; p.vCountedSum = sceValue; return false }() {
 		return  // W3C SCXML 4.9: the error ends the block
 	}
 
@@ -1856,7 +1860,7 @@ func (p *StaticComposedSendPolicy) ExecuteTransitionContent(source StaticCompose
 			func() {
 
 
-	if func() bool { var sceFailure scealgorithm.Failure; sceValue := scealgorithm.AddUint32(&sceFailure, p.vRefusals, 1); if sceFailure.Failed() { engine.Raise(sce.NewPlatformError(StaticComposedSendEventErrorExecution, "<assign location='refusals'>: an integer operation overflowed or failed")); return true }; p.vRefusals = sceValue; return false }() {
+	if func() bool { var sceFailure scealgorithm.Failure; sceValue := scealgorithm.AddUint32(&sceFailure, p.vRefusals, 1); if sceFailure.Failed() { engine.Raise(sce.NewPlatformError(StaticComposedSendEventErrorExecution, sceerrorreason.ErrorReasonExpressionFailed, "<assign location='refusals'>: an integer operation overflowed or failed")); return true }; p.vRefusals = sceValue; return false }() {
 		return  // W3C SCXML 4.9: the error ends the block
 	}
 

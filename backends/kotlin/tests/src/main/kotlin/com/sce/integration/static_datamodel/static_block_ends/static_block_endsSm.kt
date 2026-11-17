@@ -527,7 +527,7 @@ class StaticBlockEndsStateMachine(
     private fun transitionContentOfWaitingAt0() {
                 // SCE-MAP: static_block_ends.scxml:39 :: waiting :: _transition_0
 
-            if (try { vA = com.sce.forge.runtime.SceChecked.add(vA, 10.toUByte()); false } catch (_: com.sce.forge.runtime.AlgorithmFailure) { raisePlatformError(StaticBlockEndsEvent.Error.Execution, "<assign location='a'>: an integer operation overflowed or failed"); true }) {
+            if (try { vA = com.sce.forge.runtime.SceChecked.add(vA, 10.toUByte()); false } catch (_: com.sce.forge.runtime.AlgorithmFailure) { raisePlatformError(StaticBlockEndsEvent.Error.Execution, ErrorReason.EXPRESSION_FAILED, "<assign location='a'>: an integer operation overflowed or failed"); true }) {
                 return
             }
 
@@ -539,7 +539,7 @@ class StaticBlockEndsStateMachine(
 
 
             var ifCondFailed1 = false
-            if ((try { com.sce.forge.runtime.SceChecked.add(vA, 10.toUByte()) > 0.toUByte() } catch (_: com.sce.forge.runtime.AlgorithmFailure) { raisePlatformError(StaticBlockEndsEvent.Error.Execution, "<if cond='a + 10 > 0'>: an integer operation overflowed or failed"); ifCondFailed1 = true; false })) {
+            if ((try { com.sce.forge.runtime.SceChecked.add(vA, 10.toUByte()) > 0.toUByte() } catch (_: com.sce.forge.runtime.AlgorithmFailure) { raisePlatformError(StaticBlockEndsEvent.Error.Execution, ErrorReason.EXPRESSION_FAILED, "<if cond='a + 10 > 0'>: an integer operation overflowed or failed"); ifCondFailed1 = true; false })) {
 
             vThenRan = 1.toUByte()
             } else {
@@ -559,7 +559,7 @@ class StaticBlockEndsStateMachine(
 
             if (vA > 0.toUByte()) {
 
-            if (try { vA = com.sce.forge.runtime.SceChecked.add(vA, 10.toUByte()); false } catch (_: com.sce.forge.runtime.AlgorithmFailure) { raisePlatformError(StaticBlockEndsEvent.Error.Execution, "<assign location='a'>: an integer operation overflowed or failed"); true }) {
+            if (try { vA = com.sce.forge.runtime.SceChecked.add(vA, 10.toUByte()); false } catch (_: com.sce.forge.runtime.AlgorithmFailure) { raisePlatformError(StaticBlockEndsEvent.Error.Execution, ErrorReason.EXPRESSION_FAILED, "<assign location='a'>: an integer operation overflowed or failed"); true }) {
                 return
             }
 
@@ -572,7 +572,7 @@ class StaticBlockEndsStateMachine(
     private fun transitionContentOfWaitingAt3() {
                 // SCE-MAP: static_block_ends.scxml:58 :: waiting :: _transition_3
 
-            if (try { vB = com.sce.forge.runtime.SceChecked.add(vB, 1.toUByte()); false } catch (_: com.sce.forge.runtime.AlgorithmFailure) { raisePlatformError(StaticBlockEndsEvent.Error.Execution, "<assign location='b'>: an integer operation overflowed or failed"); true }) {
+            if (try { vB = com.sce.forge.runtime.SceChecked.add(vB, 1.toUByte()); false } catch (_: com.sce.forge.runtime.AlgorithmFailure) { raisePlatformError(StaticBlockEndsEvent.Error.Execution, ErrorReason.EXPRESSION_FAILED, "<assign location='b'>: an integer operation overflowed or failed"); true }) {
                 return
             }
 
@@ -582,7 +582,7 @@ class StaticBlockEndsStateMachine(
     private fun transitionContentOfWaitingAt4() {
                 // SCE-MAP: static_block_ends.scxml:62 :: waiting :: _transition_4
 
-            if (try { vErrors = com.sce.forge.runtime.SceChecked.add(vErrors, 1.toUByte()); false } catch (_: com.sce.forge.runtime.AlgorithmFailure) { raisePlatformError(StaticBlockEndsEvent.Error.Execution, "<assign location='errors'>: an integer operation overflowed or failed"); true }) {
+            if (try { vErrors = com.sce.forge.runtime.SceChecked.add(vErrors, 1.toUByte()); false } catch (_: com.sce.forge.runtime.AlgorithmFailure) { raisePlatformError(StaticBlockEndsEvent.Error.Execution, ErrorReason.EXPRESSION_FAILED, "<assign location='errors'>: an integer operation overflowed or failed"); true }) {
                 return
             }
     }

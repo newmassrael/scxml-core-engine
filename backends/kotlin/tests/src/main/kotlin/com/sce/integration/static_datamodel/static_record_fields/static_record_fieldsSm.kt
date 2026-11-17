@@ -500,7 +500,7 @@ class StaticRecordFieldsStateMachine(
     private fun transitionContentOfShowingAt0() {
                 // SCE-MAP: static_record_fields.scxml:26 :: showing :: _transition_0
 
-            if (try { vShown = vShown.copy(dayOfMonth = com.sce.forge.runtime.SceChecked.add(vShown.dayOfMonth, 1.toUByte())); false } catch (_: com.sce.forge.runtime.AlgorithmFailure) { raisePlatformError(StaticRecordFieldsEvent.Error.Execution, "<assign location='shown.dayOfMonth'>: an integer operation overflowed or failed"); true }) {
+            if (try { vShown = vShown.copy(dayOfMonth = com.sce.forge.runtime.SceChecked.add(vShown.dayOfMonth, 1.toUByte())); false } catch (_: com.sce.forge.runtime.AlgorithmFailure) { raisePlatformError(StaticRecordFieldsEvent.Error.Execution, ErrorReason.EXPRESSION_FAILED, "<assign location='shown.dayOfMonth'>: an integer operation overflowed or failed"); true }) {
                 return
             }
     }
@@ -521,7 +521,7 @@ class StaticRecordFieldsStateMachine(
     private fun transitionContentOfShowingAt2() {
                 // SCE-MAP: static_record_fields.scxml:34 :: showing :: _transition_2
 
-            if (try { vShown = vShown.copy(year = com.sce.forge.runtime.SceChecked.sub(vShown.year, 5000.toUShort())); false } catch (_: com.sce.forge.runtime.AlgorithmFailure) { raisePlatformError(StaticRecordFieldsEvent.Error.Execution, "<assign location='shown.year'>: an integer operation overflowed or failed"); true }) {
+            if (try { vShown = vShown.copy(year = com.sce.forge.runtime.SceChecked.sub(vShown.year, 5000.toUShort())); false } catch (_: com.sce.forge.runtime.AlgorithmFailure) { raisePlatformError(StaticRecordFieldsEvent.Error.Execution, ErrorReason.EXPRESSION_FAILED, "<assign location='shown.year'>: an integer operation overflowed or failed"); true }) {
                 return
             }
 
@@ -531,7 +531,7 @@ class StaticRecordFieldsStateMachine(
     private fun transitionContentOfShowingAt3() {
                 // SCE-MAP: static_record_fields.scxml:38 :: showing :: _transition_3
 
-            if (try { vRefusals = com.sce.forge.runtime.SceChecked.add(vRefusals, 1.toUInt()); false } catch (_: com.sce.forge.runtime.AlgorithmFailure) { raisePlatformError(StaticRecordFieldsEvent.Error.Execution, "<assign location='refusals'>: an integer operation overflowed or failed"); true }) {
+            if (try { vRefusals = com.sce.forge.runtime.SceChecked.add(vRefusals, 1.toUInt()); false } catch (_: com.sce.forge.runtime.AlgorithmFailure) { raisePlatformError(StaticRecordFieldsEvent.Error.Execution, ErrorReason.EXPRESSION_FAILED, "<assign location='refusals'>: an integer operation overflowed or failed"); true }) {
                 return
             }
     }

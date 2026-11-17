@@ -31,6 +31,7 @@ import (
 	"time"
 
 	sce "github.com/newmassrael/sce-go-runtime"
+	sceerrorreason "github.com/newmassrael/sce-go-runtime/generated/error_reason"
 )
 
 // Ensure imports are used
@@ -39,6 +40,9 @@ var (
 	_ = filepath.Join
 	_ = strings.HasPrefix
 	_ = time.Duration(0)
+	// Why an error.* event is raised (sce:std/engine/error_reason,
+	// docs/adr/0106 #111); a machine that raises none still imports it.
+	_ = sceerrorreason.ErrorReasonExpressionFailed
 )
 
 // ======================================================================
@@ -347,7 +351,7 @@ func (p *AnOriginIsTheAddressItsSenderPublishedSceSynthInvokeKidPolicy) Initiali
 		if err == nil {
 			_ = engine.SetVariable(sessionID, "processor", result)
 		} else {
-			eng.Raise(sce.NewPlatformError(AnOriginIsTheAddressItsSenderPublishedSceSynthInvokeKidEventErrorExecution, "<data id='processor'> expr failed to evaluate"))
+			eng.Raise(sce.NewPlatformError(AnOriginIsTheAddressItsSenderPublishedSceSynthInvokeKidEventErrorExecution, sceerrorreason.ErrorReasonExpressionFailed, "<data id='processor'> expr failed to evaluate"))
 			_ = engine.SetVariable(sessionID, "processor", nil)
 		}
 	}
@@ -379,12 +383,12 @@ func (p *AnOriginIsTheAddressItsSenderPublishedSceSynthInvokeKidPolicy) evaluate
 // evaluateGuardRaising evaluates a cond, raising error.execution when it cannot
 // be evaluated (W3C SCXML 5.9.1); ok is false then, where a bare false could
 // not say so.
-func (p *AnOriginIsTheAddressItsSenderPublishedSceSynthInvokeKidPolicy) evaluateGuardRaising(guard string, eng *sce.Engine[AnOriginIsTheAddressItsSenderPublishedSceSynthInvokeKidState, AnOriginIsTheAddressItsSenderPublishedSceSynthInvokeKidEvent], reason string) (value bool, ok bool) {
+func (p *AnOriginIsTheAddressItsSenderPublishedSceSynthInvokeKidPolicy) evaluateGuardRaising(guard string, eng *sce.Engine[AnOriginIsTheAddressItsSenderPublishedSceSynthInvokeKidState, AnOriginIsTheAddressItsSenderPublishedSceSynthInvokeKidEvent], detail string) (value bool, ok bool) {
 	p.assertScriptSession()
 	engine := p.ScriptEngine
 	result, err := engine.EvaluateExpression(p.SessionID, guard)
 	if err != nil {
-		eng.Raise(sce.NewPlatformError(AnOriginIsTheAddressItsSenderPublishedSceSynthInvokeKidEventErrorExecution, reason))
+		eng.Raise(sce.NewPlatformError(AnOriginIsTheAddressItsSenderPublishedSceSynthInvokeKidEventErrorExecution, sceerrorreason.ErrorReasonExpressionFailed, detail))
 		return false, false
 	}
 	return sce.ScriptToBool(result), true
@@ -487,7 +491,7 @@ func (p *AnOriginIsTheAddressItsSenderPublishedSceSynthInvokeKidPolicy) SetParam
 // failed is left (docs/adr/0098).
 func (p *AnOriginIsTheAddressItsSenderPublishedSceSynthInvokeKidPolicy) declareHandedValue(eng *sce.Engine[AnOriginIsTheAddressItsSenderPublishedSceSynthInvokeKidState, AnOriginIsTheAddressItsSenderPublishedSceSynthInvokeKidEvent], engine sce.IScriptEngine, sessionID, name string, value interface{}) {
 	if err := engine.SetVariable(sessionID, name, value); err != nil {
-		eng.Raise(sce.NewPlatformError(AnOriginIsTheAddressItsSenderPublishedSceSynthInvokeKidEventErrorExecution, "<data id='"+name+"'> could not hold the value its invoking session handed it"))
+		eng.Raise(sce.NewPlatformError(AnOriginIsTheAddressItsSenderPublishedSceSynthInvokeKidEventErrorExecution, sceerrorreason.ErrorReasonDataInitFailed, "<data id='"+name+"'> could not hold the value its invoking session handed it"))
 		_ = engine.SetVariable(sessionID, name, nil)
 	}
 }
@@ -767,7 +771,7 @@ func (p *AnOriginIsTheAddressItsSenderPublishedSceSynthInvokeKidPolicy) ExecuteE
 		if paramVal, paramErr := se.EvaluateExpression(p.SessionID, `_ioprocessors.scxml.location`); paramErr == nil {
 			parts = append(parts, sce.EventDataParam{Name: "location", Value: paramVal})
 		} else {
-			engine.Raise(sce.NewPlatformError(AnOriginIsTheAddressItsSenderPublishedSceSynthInvokeKidEventErrorExecution, "<send> <param name='location'> expr failed to evaluate"))
+			engine.Raise(sce.NewPlatformError(AnOriginIsTheAddressItsSenderPublishedSceSynthInvokeKidEventErrorExecution, sceerrorreason.ErrorReasonExpressionFailed, "<send> <param name='location'> expr failed to evaluate"))
 			paramFailed = true
 		}
 		eventDataStr := sce.BuildJSONFromTypedParams(parts)
@@ -777,7 +781,7 @@ func (p *AnOriginIsTheAddressItsSenderPublishedSceSynthInvokeKidPolicy) ExecuteE
 		// W3C SCXML C.1: this session was started by its host, not by an
 		// `<invoke>`, so `#_parent` reaches nobody — error.communication,
 		// nothing delivered, and the block ends (4.9).
-		errEvt := sce.NewPlatformError(AnOriginIsTheAddressItsSenderPublishedSceSynthInvokeKidEventErrorCommunication, "<send target='#_parent'> has no parent session to reach")
+		errEvt := sce.NewPlatformError(AnOriginIsTheAddressItsSenderPublishedSceSynthInvokeKidEventErrorCommunication, sceerrorreason.ErrorReasonTargetUnreachable, "<send target='#_parent'> has no parent session to reach")
 		errEvt.Metadata.SendID = "__send_1"
 		engine.Raise(errEvt)
 		return  // W3C SCXML 4.9: the error ends the block
@@ -916,7 +920,7 @@ func (p *AnOriginIsTheAddressItsSenderPublishedSceSynthInvokeKidPolicy) ExecuteT
 		// W3C SCXML C.1: this session was started by its host, not by an
 		// `<invoke>`, so `#_parent` reaches nobody — error.communication,
 		// nothing delivered, and the block ends (4.9).
-		errEvt := sce.NewPlatformError(AnOriginIsTheAddressItsSenderPublishedSceSynthInvokeKidEventErrorCommunication, "<send target='#_parent'> has no parent session to reach")
+		errEvt := sce.NewPlatformError(AnOriginIsTheAddressItsSenderPublishedSceSynthInvokeKidEventErrorCommunication, sceerrorreason.ErrorReasonTargetUnreachable, "<send target='#_parent'> has no parent session to reach")
 		errEvt.Metadata.SendID = "__send_0"
 		engine.Raise(errEvt)
 		return  // W3C SCXML 4.9: the error ends the block
@@ -938,6 +942,10 @@ func (p *AnOriginIsTheAddressItsSenderPublishedSceSynthInvokeKidPolicy) ExecuteT
 	{
 	p.assertScriptSession()
 	sendArgError := ""
+	// Why the argument failed, a code of sce:std/engine/error_reason
+	// (docs/adr/0106 #111), set with every sentence below.
+	var sendArgReason sce.ErrorReason
+	_ = sendArgReason
 	// A target that evaluates to nothing is not an evaluation error: it is
 	// an address nobody answers at, which the arm reports as
 	// error.communication (W3C SCXML 6.2.4).
@@ -948,13 +956,13 @@ func (p *AnOriginIsTheAddressItsSenderPublishedSceSynthInvokeKidPolicy) ExecuteT
 			sendTargetVal = v
 			sendTarget = sce.ToWireString(v)
 		} else {
-			sendArgError = "<send> targetexpr could not be evaluated"
+			sendArgError, sendArgReason = "<send> targetexpr could not be evaluated", sceerrorreason.ErrorReasonExpressionFailed
 		}
 	}
 	if sendArgError == "" && sce.IsInvalidTarget(sendTarget) {
 		// W3C SCXML 6.2: a target this processor cannot address is refused
 		// as a static one is, before anything is delivered.
-		sendArgError = "<send> targetexpr produced a target this processor cannot address"
+		sendArgError, sendArgReason = "<send> targetexpr produced a target this processor cannot address", sceerrorreason.ErrorReasonSendTargetInvalid
 	}
 	_ = sendTargetVal
 	_ = sendTarget
@@ -962,13 +970,13 @@ func (p *AnOriginIsTheAddressItsSenderPublishedSceSynthInvokeKidPolicy) ExecuteT
 		// W3C SCXML 6.2: a type the platform does not support is the same
 		// error as one that cannot be evaluated.
 		if v, err := p.ScriptEngine.EvaluateExpression(p.SessionID, `_event.origintype`); err != nil {
-			sendArgError = "<send> typeexpr could not be evaluated"
+			sendArgError, sendArgReason = "<send> typeexpr could not be evaluated", sceerrorreason.ErrorReasonExpressionFailed
 		} else if !sce.IsSupportedSendType(sce.ToWireString(v)) {
-			sendArgError = "<send> typeexpr names a processor this platform does not support"
+			sendArgError, sendArgReason = "<send> typeexpr names a processor this platform does not support", sceerrorreason.ErrorReasonSendTypeUnsupported
 		}
 	}
 	if sendArgError != "" {
-		errEvt := sce.NewPlatformError(AnOriginIsTheAddressItsSenderPublishedSceSynthInvokeKidEventErrorExecution, sendArgError)
+		errEvt := sce.NewPlatformError(AnOriginIsTheAddressItsSenderPublishedSceSynthInvokeKidEventErrorExecution, sendArgReason, sendArgError)
 		errEvt.Metadata.SendID = "__send_2"
 		engine.Raise(errEvt)
 		return  // W3C SCXML 4.9: the error ends the block
@@ -980,7 +988,7 @@ func (p *AnOriginIsTheAddressItsSenderPublishedSceSynthInvokeKidPolicy) ExecuteT
 		// ends the block as any other would (W3C SCXML 4.9). A self-sent
 		// event names its origin, so `targetexpr="_event.origin"` (test336)
 		// reads this session's location, never "".
-		errEvt := sce.NewPlatformError(AnOriginIsTheAddressItsSenderPublishedSceSynthInvokeKidEventErrorCommunication, "<send> targetexpr evaluated to nothing, so there is no target to reach")
+		errEvt := sce.NewPlatformError(AnOriginIsTheAddressItsSenderPublishedSceSynthInvokeKidEventErrorCommunication, sceerrorreason.ErrorReasonTargetUnreachable, "<send> targetexpr evaluated to nothing, so there is no target to reach")
 		errEvt.Metadata.SendID = "__send_2"
 		engine.Raise(errEvt)
 		return
@@ -997,13 +1005,13 @@ func (p *AnOriginIsTheAddressItsSenderPublishedSceSynthInvokeKidPolicy) ExecuteT
 		routed := engine.SendToTarget(sendEvt, sendHasEvt, "hiBack", sendTarget, p.SessionID,
 0, "__send_2", eventDataStr, p.SessionID)
 		if routed == sce.TargetNotSupported {
-			errEvt := sce.NewPlatformError(AnOriginIsTheAddressItsSenderPublishedSceSynthInvokeKidEventErrorExecution, "<send> targetexpr produced a value that is not a target")
+			errEvt := sce.NewPlatformError(AnOriginIsTheAddressItsSenderPublishedSceSynthInvokeKidEventErrorExecution, sceerrorreason.ErrorReasonSendTargetInvalid, "<send> targetexpr produced a value that is not a target")
 			errEvt.Metadata.SendID = "__send_2"
 			engine.Raise(errEvt)
 			return // W3C SCXML 4.9: the error ends the block
 		}
 		if routed == sce.TargetNotReachable {
-			errEvt := sce.NewPlatformError(AnOriginIsTheAddressItsSenderPublishedSceSynthInvokeKidEventErrorCommunication, "<send> targetexpr names a session this processor cannot reach")
+			errEvt := sce.NewPlatformError(AnOriginIsTheAddressItsSenderPublishedSceSynthInvokeKidEventErrorCommunication, sceerrorreason.ErrorReasonTargetUnreachable, "<send> targetexpr names a session this processor cannot reach")
 			errEvt.Metadata.SendID = "__send_2"
 			engine.Raise(errEvt)
 			return // W3C SCXML 4.9: the error ends the block
@@ -1027,7 +1035,7 @@ func (p *AnOriginIsTheAddressItsSenderPublishedSceSynthInvokeKidPolicy) ExecuteT
 		// W3C SCXML C.1: this session was started by its host, not by an
 		// `<invoke>`, so `#_parent` reaches nobody — error.communication,
 		// nothing delivered, and the block ends (4.9).
-		errEvt := sce.NewPlatformError(AnOriginIsTheAddressItsSenderPublishedSceSynthInvokeKidEventErrorCommunication, "<send target='#_parent'> has no parent session to reach")
+		errEvt := sce.NewPlatformError(AnOriginIsTheAddressItsSenderPublishedSceSynthInvokeKidEventErrorCommunication, sceerrorreason.ErrorReasonTargetUnreachable, "<send target='#_parent'> has no parent session to reach")
 		errEvt.Metadata.SendID = "__send_3"
 		engine.Raise(errEvt)
 		return  // W3C SCXML 4.9: the error ends the block

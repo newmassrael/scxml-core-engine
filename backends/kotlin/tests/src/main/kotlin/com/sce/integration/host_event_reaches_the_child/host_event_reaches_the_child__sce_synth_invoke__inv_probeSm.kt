@@ -206,7 +206,7 @@ class HostEventReachesTheChildSceSynthInvokeInvProbeStateMachine(
             // no parent — error.communication, nothing delivered, the block ended.
             val toParent = onSendToParent
             if (toParent == null) {
-                raisePlatformError(HostEventReachesTheChildSceSynthInvokeInvProbeEvent.Error.Communication, "<send target='#_parent'> has no parent session to reach", "__send_2")
+                raisePlatformError(HostEventReachesTheChildSceSynthInvokeInvProbeEvent.Error.Communication, ErrorReason.TARGET_UNREACHABLE, "<send target='#_parent'> has no parent session to reach", "__send_2")
                 return@send true
             }
             toParent("ready", sendData)
@@ -279,7 +279,7 @@ class HostEventReachesTheChildSceSynthInvokeInvProbeStateMachine(
             // no parent — error.communication, nothing delivered, the block ended.
             val toParent = onSendToParent
             if (toParent == null) {
-                raisePlatformError(HostEventReachesTheChildSceSynthInvokeInvProbeEvent.Error.Communication, "<send target='#_parent'> has no parent session to reach", "__send_0")
+                raisePlatformError(HostEventReachesTheChildSceSynthInvokeInvProbeEvent.Error.Communication, ErrorReason.TARGET_UNREACHABLE, "<send target='#_parent'> has no parent session to reach", "__send_0")
                 return@send true
             }
             toParent("sawHostPing", sendData)
@@ -302,7 +302,7 @@ class HostEventReachesTheChildSceSynthInvokeInvProbeStateMachine(
             // no parent — error.communication, nothing delivered, the block ended.
             val toParent = onSendToParent
             if (toParent == null) {
-                raisePlatformError(HostEventReachesTheChildSceSynthInvokeInvProbeEvent.Error.Communication, "<send target='#_parent'> has no parent session to reach", "__send_1")
+                raisePlatformError(HostEventReachesTheChildSceSynthInvokeInvProbeEvent.Error.Communication, ErrorReason.TARGET_UNREACHABLE, "<send target='#_parent'> has no parent session to reach", "__send_1")
                 return@send true
             }
             toParent("sawMarkerOnly", sendData)

@@ -229,7 +229,7 @@ class LateDataBindsOnFirstEntryStateMachine(
             try {
                 engine.setVariable(sid, "entries", engine.evaluateExpr(sid, com.sce.runtime.ScriptSource.lua("0", "0")))
             } catch (e: Exception) {
-                raisePlatformError(LateDataBindsOnFirstEntryEvent.Error.Execution, "<data id='entries'> expr failed to evaluate")
+                raisePlatformError(LateDataBindsOnFirstEntryEvent.Error.Execution, ErrorReason.EXPRESSION_FAILED, "<data id='entries'> expr failed to evaluate")
             }
         }
         // §scxml-6.4: 'seen' takes a value its invoke handed it, in place of its own
@@ -238,7 +238,7 @@ class LateDataBindsOnFirstEntryStateMachine(
             try {
                 engine.setVariable(sid, "seen", engine.evaluateExpr(sid, com.sce.runtime.ScriptSource.lua("0", "0")))
             } catch (e: Exception) {
-                raisePlatformError(LateDataBindsOnFirstEntryEvent.Error.Execution, "<data id='seen'> expr failed to evaluate")
+                raisePlatformError(LateDataBindsOnFirstEntryEvent.Error.Execution, ErrorReason.EXPRESSION_FAILED, "<data id='seen'> expr failed to evaluate")
             }
         }
         // §scxml-6.4: 'contentSeen' takes a value its invoke handed it, in place of its own
@@ -247,7 +247,7 @@ class LateDataBindsOnFirstEntryStateMachine(
             try {
                 engine.setVariable(sid, "contentSeen", engine.evaluateExpr(sid, com.sce.runtime.ScriptSource.lua("0", "0")))
             } catch (e: Exception) {
-                raisePlatformError(LateDataBindsOnFirstEntryEvent.Error.Execution, "<data id='contentSeen'> expr failed to evaluate")
+                raisePlatformError(LateDataBindsOnFirstEntryEvent.Error.Execution, ErrorReason.EXPRESSION_FAILED, "<data id='contentSeen'> expr failed to evaluate")
             }
         }
     }
@@ -277,14 +277,14 @@ class LateDataBindsOnFirstEntryStateMachine(
 
     // W3C SCXML 5.9.1: a cond that cannot be evaluated raises error.execution;
     // `null` says so, where a bare `false` could not.
-    private fun evaluateGuardRaising(guardExpr: com.sce.runtime.ScriptSource, reason: String): Boolean? {
+    private fun evaluateGuardRaising(guardExpr: com.sce.runtime.ScriptSource, detail: String): Boolean? {
         assertScriptSession()
         val engine = scriptEngine ?: error("scriptEngine is required (codegen invariant: needs_script_engine == true)")
         val sid = scriptSessionId ?: error("scriptSessionId is established by the start (codegen invariant)")
         return try {
             engine.evaluateCondition(sid, guardExpr)
         } catch (e: Exception) {
-            raisePlatformError(LateDataBindsOnFirstEntryEvent.Error.Execution, reason)
+            raisePlatformError(LateDataBindsOnFirstEntryEvent.Error.Execution, ErrorReason.EXPRESSION_FAILED, detail)
             null
         }
     }
@@ -325,7 +325,7 @@ class LateDataBindsOnFirstEntryStateMachine(
         return try {
             engine.evaluateExpr(sid, serialized)?.toString() ?: ""
         } catch (e: Exception) {
-            raisePlatformError(LateDataBindsOnFirstEntryEvent.Error.Execution, "an expression could not be serialised to JSON")
+            raisePlatformError(LateDataBindsOnFirstEntryEvent.Error.Execution, ErrorReason.EXPRESSION_FAILED, "an expression could not be serialised to JSON")
             ""
         }
     }
@@ -346,7 +346,7 @@ class LateDataBindsOnFirstEntryStateMachine(
             engine.assign(sid, location, expr)
             true
         } catch (e: Exception) {
-            raisePlatformError(LateDataBindsOnFirstEntryEvent.Error.Execution, "<assign> failed")
+            raisePlatformError(LateDataBindsOnFirstEntryEvent.Error.Execution, ErrorReason.ASSIGNMENT_FAILED, "<assign> failed")
             false
         }
     }
@@ -362,7 +362,7 @@ class LateDataBindsOnFirstEntryStateMachine(
             engine.executeScript(sid, script)
             true
         } catch (e: Exception) {
-            raisePlatformError(LateDataBindsOnFirstEntryEvent.Error.Execution, "<script> failed to execute")
+            raisePlatformError(LateDataBindsOnFirstEntryEvent.Error.Execution, ErrorReason.SCRIPT_FAILED, "<script> failed to execute")
             false
         }
     }
@@ -486,13 +486,13 @@ class LateDataBindsOnFirstEntryStateMachine(
                         val v = engine.evaluateExpr(sid, com.sce.runtime.ScriptSource.lua("1", "1"))
                         engine.setVariable(sid, "v", v)
                     } catch (e: Exception) {
-                        raisePlatformError(LateDataBindsOnFirstEntryEvent.Error.Execution, "<data id='v'> expr failed to evaluate")
+                        raisePlatformError(LateDataBindsOnFirstEntryEvent.Error.Execution, ErrorReason.EXPRESSION_FAILED, "<data id='v'> expr failed to evaluate")
                     }
                     try {
                         val v = engine.parseDataValue(sid, "7")
                         engine.setVariable(sid, "c", v)
                     } catch (e: Exception) {
-                        raisePlatformError(LateDataBindsOnFirstEntryEvent.Error.Execution, "<data id='c'> content failed to initialise")
+                        raisePlatformError(LateDataBindsOnFirstEntryEvent.Error.Execution, ErrorReason.DATA_INIT_FAILED, "<data id='c'> content failed to initialise")
                     }
                 }
                 // W3C SCXML 3.8: Onentry block 1/1

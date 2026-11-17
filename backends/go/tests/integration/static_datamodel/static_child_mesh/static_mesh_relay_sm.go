@@ -31,6 +31,7 @@ import (
 	"time"
 
 	sce "github.com/newmassrael/sce-go-runtime"
+	sceerrorreason "github.com/newmassrael/sce-go-runtime/generated/error_reason"
 )
 
 // Ensure imports are used
@@ -39,6 +40,9 @@ var (
 	_ = filepath.Join
 	_ = strings.HasPrefix
 	_ = time.Duration(0)
+	// Why an error.* event is raised (sce:std/engine/error_reason,
+	// docs/adr/0106 #111); a machine that raises none still imports it.
+	_ = sceerrorreason.ErrorReasonExpressionFailed
 )
 
 // ======================================================================
@@ -569,7 +573,7 @@ func (p *StaticMeshRelayPolicy) ExecutePendingInvokes(engine *sce.Engine[StaticM
 			if refused := childEngine.Initialize(); refused != nil {
 				childEngine.DetachMesh()
 				delete(p.activeInvokes, "inner")
-				engine.Raise(sce.NewPlatformError(StaticMeshRelayEventErrorExecution, sce.ChildStartRefusal("inner", refused)))
+				engine.Raise(sce.NewPlatformError(StaticMeshRelayEventErrorExecution, sceerrorreason.ErrorReasonInvokeChildInitFailed, sce.ChildStartRefusal("inner", refused)))
 				continue
 			}
 

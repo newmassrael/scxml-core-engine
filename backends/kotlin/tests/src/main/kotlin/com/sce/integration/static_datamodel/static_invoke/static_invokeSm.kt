@@ -541,7 +541,7 @@ class StaticInvokeStateMachine(
     private fun transitionContentOfWorkingAt2() {
                 // SCE-MAP: static_invoke.scxml:51 :: working :: _transition_2
 
-            if (try { vCompleted = com.sce.forge.runtime.SceChecked.add(vCompleted, 1.toUInt()); false } catch (_: com.sce.forge.runtime.AlgorithmFailure) { raisePlatformError(StaticInvokeEvent.Error.Execution, "<assign location='completed'>: an integer operation overflowed or failed"); true }) {
+            if (try { vCompleted = com.sce.forge.runtime.SceChecked.add(vCompleted, 1.toUInt()); false } catch (_: com.sce.forge.runtime.AlgorithmFailure) { raisePlatformError(StaticInvokeEvent.Error.Execution, ErrorReason.EXPRESSION_FAILED, "<assign location='completed'>: an integer operation overflowed or failed"); true }) {
                 return
             }
     }

@@ -163,7 +163,7 @@ class InvokeUnsupportedTypeStateMachine(
                 run {
                     val generatedInvokeId = "probe.${System.identityHashCode(this)}._invoke_0"
                     deferInvoke(InvokeUnsupportedTypeState.Probe, generatedInvokeId) {
-                        raisePlatformError(InvokeUnsupportedTypeEvent.Error.Execution, "<invoke type='urn:example:no-such-processor'> names an external service this platform does not support")
+                        raisePlatformError(InvokeUnsupportedTypeEvent.Error.Execution, ErrorReason.INVOKE_TYPE_UNSUPPORTED, "<invoke type='urn:example:no-such-processor'> names an external service this platform does not support")
                     }
                 }
     }

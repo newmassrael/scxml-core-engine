@@ -647,7 +647,7 @@ public final class StaticSendContentPolicy: InvocablePolicy {
                 sceBlock: do {
 
 
-                if ({ () -> Bool in do { let sceValue: UInt8 = (try Checked.add(self.vShown.zoom, 1)); self.vShown.zoom = sceValue } catch { engine.raise(EventWithMetadata.platformError(StaticSendContentEvent.errorExecution, message: "<assign location='shown.zoom'>: an integer operation overflowed or failed")); return true }; return false }()) {
+                if ({ () -> Bool in do { let sceValue: UInt8 = (try Checked.add(self.vShown.zoom, 1)); self.vShown.zoom = sceValue } catch { engine.raise(EventWithMetadata.platformError(StaticSendContentEvent.errorExecution, reason: .expressionFailed, message: "<assign location='shown.zoom'>: an integer operation overflowed or failed")); return true }; return false }()) {
                     break sceBlock  // W3C SCXML 4.9: the error ends the block
                 }
 
@@ -749,7 +749,7 @@ public final class StaticSendContentPolicy: InvocablePolicy {
 
 
 
-                if ({ () -> Bool in do { let sceValue: UInt32 = (try Checked.add(self.vRelays, 1)); self.vRelays = sceValue } catch { engine.raise(EventWithMetadata.platformError(StaticSendContentEvent.errorExecution, message: "<assign location='relays'>: an integer operation overflowed or failed")); return true }; return false }()) {
+                if ({ () -> Bool in do { let sceValue: UInt32 = (try Checked.add(self.vRelays, 1)); self.vRelays = sceValue } catch { engine.raise(EventWithMetadata.platformError(StaticSendContentEvent.errorExecution, reason: .expressionFailed, message: "<assign location='relays'>: an integer operation overflowed or failed")); return true }; return false }()) {
                     break sceBlock  // W3C SCXML 4.9: the error ends the block
                 }
 

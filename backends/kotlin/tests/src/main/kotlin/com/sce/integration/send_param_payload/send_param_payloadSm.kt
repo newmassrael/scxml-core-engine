@@ -435,7 +435,7 @@ class SendParamPayloadStateMachine(
             try {
                 engine.setVariable(sid, "nothing", engine.evaluateExpr(sid, com.sce.runtime.ScriptSource.lua("nil", "null")))
             } catch (e: Exception) {
-                raisePlatformError(SendParamPayloadEvent.Error.Execution, "<data id='nothing'> expr failed to evaluate")
+                raisePlatformError(SendParamPayloadEvent.Error.Execution, ErrorReason.EXPRESSION_FAILED, "<data id='nothing'> expr failed to evaluate")
             }
         }
         // §scxml-6.4: 'sawParamError' takes a value its invoke handed it, in place of its own
@@ -444,7 +444,7 @@ class SendParamPayloadStateMachine(
             try {
                 engine.setVariable(sid, "sawParamError", engine.evaluateExpr(sid, com.sce.runtime.ScriptSource.lua("0", "0")))
             } catch (e: Exception) {
-                raisePlatformError(SendParamPayloadEvent.Error.Execution, "<data id='sawParamError'> expr failed to evaluate")
+                raisePlatformError(SendParamPayloadEvent.Error.Execution, ErrorReason.EXPRESSION_FAILED, "<data id='sawParamError'> expr failed to evaluate")
             }
         }
     }
@@ -455,21 +455,21 @@ class SendParamPayloadStateMachine(
             val initResult_lines = engine.evaluateExpr(sid, com.sce.runtime.ScriptSource.lua("\"x\\ny\"", "'x\\ny'"))
             engine.setVariable(sid, "lines", initResult_lines)
         } catch (e: Exception) {
-            raisePlatformError(SendParamPayloadEvent.Error.Execution, "<data id='lines'> expr failed to evaluate")
+            raisePlatformError(SendParamPayloadEvent.Error.Execution, ErrorReason.EXPRESSION_FAILED, "<data id='lines'> expr failed to evaluate")
         }
         // State 'escapePhase' variable 'keyed'
         try {
             val initResult_keyed = engine.evaluateExpr(sid, com.sce.runtime.ScriptSource.lua("{[\"q\\\"k\"] = 1, [\"b\\\\k\"] = 2}", "({'q\"k': 1, 'b\\\\k': 2})"))
             engine.setVariable(sid, "keyed", initResult_keyed)
         } catch (e: Exception) {
-            raisePlatformError(SendParamPayloadEvent.Error.Execution, "<data id='keyed'> expr failed to evaluate")
+            raisePlatformError(SendParamPayloadEvent.Error.Execution, ErrorReason.EXPRESSION_FAILED, "<data id='keyed'> expr failed to evaluate")
         }
         // State 'typedPhase' variable 'tag'
         try {
             val initResult_tag = engine.evaluateExpr(sid, com.sce.runtime.ScriptSource.lua("\"kept\"", "'kept'"))
             engine.setVariable(sid, "tag", initResult_tag)
         } catch (e: Exception) {
-            raisePlatformError(SendParamPayloadEvent.Error.Execution, "<data id='tag'> expr failed to evaluate")
+            raisePlatformError(SendParamPayloadEvent.Error.Execution, ErrorReason.EXPRESSION_FAILED, "<data id='tag'> expr failed to evaluate")
         }
     }
 
@@ -498,14 +498,14 @@ class SendParamPayloadStateMachine(
 
     // W3C SCXML 5.9.1: a cond that cannot be evaluated raises error.execution;
     // `null` says so, where a bare `false` could not.
-    private fun evaluateGuardRaising(guardExpr: com.sce.runtime.ScriptSource, reason: String): Boolean? {
+    private fun evaluateGuardRaising(guardExpr: com.sce.runtime.ScriptSource, detail: String): Boolean? {
         assertScriptSession()
         val engine = scriptEngine ?: error("scriptEngine is required (codegen invariant: needs_script_engine == true)")
         val sid = scriptSessionId ?: error("scriptSessionId is established by the start (codegen invariant)")
         return try {
             engine.evaluateCondition(sid, guardExpr)
         } catch (e: Exception) {
-            raisePlatformError(SendParamPayloadEvent.Error.Execution, reason)
+            raisePlatformError(SendParamPayloadEvent.Error.Execution, ErrorReason.EXPRESSION_FAILED, detail)
             null
         }
     }
@@ -546,7 +546,7 @@ class SendParamPayloadStateMachine(
         return try {
             engine.evaluateExpr(sid, serialized)?.toString() ?: ""
         } catch (e: Exception) {
-            raisePlatformError(SendParamPayloadEvent.Error.Execution, "an expression could not be serialised to JSON")
+            raisePlatformError(SendParamPayloadEvent.Error.Execution, ErrorReason.EXPRESSION_FAILED, "an expression could not be serialised to JSON")
             ""
         }
     }
@@ -567,7 +567,7 @@ class SendParamPayloadStateMachine(
             engine.assign(sid, location, expr)
             true
         } catch (e: Exception) {
-            raisePlatformError(SendParamPayloadEvent.Error.Execution, "<assign> failed")
+            raisePlatformError(SendParamPayloadEvent.Error.Execution, ErrorReason.ASSIGNMENT_FAILED, "<assign> failed")
             false
         }
     }
@@ -583,7 +583,7 @@ class SendParamPayloadStateMachine(
             engine.executeScript(sid, script)
             true
         } catch (e: Exception) {
-            raisePlatformError(SendParamPayloadEvent.Error.Execution, "<script> failed to execute")
+            raisePlatformError(SendParamPayloadEvent.Error.Execution, ErrorReason.SCRIPT_FAILED, "<script> failed to execute")
             false
         }
     }
@@ -759,14 +759,14 @@ class SendParamPayloadStateMachine(
             try {
                 putParam(sendPayload, "text", payloadEngine.evaluateExpr(payloadSid, com.sce.runtime.ScriptSource.lua("lines", "lines")))
             } catch (_: Exception) {
-                raisePlatformError(SendParamPayloadEvent.Error.Execution, "<send> <param name='text'> could not be read")
+                raisePlatformError(SendParamPayloadEvent.Error.Execution, ErrorReason.LOCATION_INVALID, "<send> <param name='text'> could not be read")
                 paramFailed = true
             }
 
             try {
                 putParam(sendPayload, "obj", payloadEngine.evaluateExpr(payloadSid, com.sce.runtime.ScriptSource.lua("keyed", "keyed")))
             } catch (_: Exception) {
-                raisePlatformError(SendParamPayloadEvent.Error.Execution, "<send> <param name='obj'> could not be read")
+                raisePlatformError(SendParamPayloadEvent.Error.Execution, ErrorReason.LOCATION_INVALID, "<send> <param name='obj'> could not be read")
                 paramFailed = true
             }
 
@@ -881,7 +881,7 @@ class SendParamPayloadStateMachine(
             try {
                 putParam(sendPayload, "broken", payloadEngine.evaluateExpr(payloadSid, com.sce.runtime.ScriptSource.lua("nothing.deep", "nothing.deep")))
             } catch (_: Exception) {
-                raisePlatformError(SendParamPayloadEvent.Error.Execution, "<send> <param name='broken'> could not be read")
+                raisePlatformError(SendParamPayloadEvent.Error.Execution, ErrorReason.LOCATION_INVALID, "<send> <param name='broken'> could not be read")
                 paramFailed = true
             }
 
@@ -919,28 +919,28 @@ class SendParamPayloadStateMachine(
             try {
                 putParam(sendPayload, "n", payloadEngine.evaluateExpr(payloadSid, com.sce.runtime.ScriptSource.lua("7", "7")))
             } catch (_: Exception) {
-                raisePlatformError(SendParamPayloadEvent.Error.Execution, "<send> <param name='n'> could not be read")
+                raisePlatformError(SendParamPayloadEvent.Error.Execution, ErrorReason.LOCATION_INVALID, "<send> <param name='n'> could not be read")
                 paramFailed = true
             }
 
             try {
                 putParam(sendPayload, "s", payloadEngine.evaluateExpr(payloadSid, com.sce.runtime.ScriptSource.lua("tag", "tag")))
             } catch (_: Exception) {
-                raisePlatformError(SendParamPayloadEvent.Error.Execution, "<send> <param name='s'> could not be read")
+                raisePlatformError(SendParamPayloadEvent.Error.Execution, ErrorReason.LOCATION_INVALID, "<send> <param name='s'> could not be read")
                 paramFailed = true
             }
 
             try {
                 putParam(sendPayload, "d", payloadEngine.evaluateExpr(payloadSid, com.sce.runtime.ScriptSource.lua("1", "1")))
             } catch (_: Exception) {
-                raisePlatformError(SendParamPayloadEvent.Error.Execution, "<send> <param name='d'> could not be read")
+                raisePlatformError(SendParamPayloadEvent.Error.Execution, ErrorReason.LOCATION_INVALID, "<send> <param name='d'> could not be read")
                 paramFailed = true
             }
 
             try {
                 putParam(sendPayload, "d", payloadEngine.evaluateExpr(payloadSid, com.sce.runtime.ScriptSource.lua("2", "2")))
             } catch (_: Exception) {
-                raisePlatformError(SendParamPayloadEvent.Error.Execution, "<send> <param name='d'> could not be read")
+                raisePlatformError(SendParamPayloadEvent.Error.Execution, ErrorReason.LOCATION_INVALID, "<send> <param name='d'> could not be read")
                 paramFailed = true
             }
 

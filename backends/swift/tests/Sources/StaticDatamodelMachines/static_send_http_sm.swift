@@ -520,7 +520,7 @@ public final class StaticSendHttpPolicy: InvocablePolicy {
 
 
 
-                if ({ () -> Bool in do { let sceValue: String = (try Checked.bounded("busy", capacity: 16)); self.vLabel = sceValue } catch { engine.raise(EventWithMetadata.platformError(StaticSendHttpEvent.errorExecution, message: "<assign location='label'>: an integer operation overflowed or failed")); return true }; return false }()) {
+                if ({ () -> Bool in do { let sceValue: String = (try Checked.bounded("busy", capacity: 16)); self.vLabel = sceValue } catch { engine.raise(EventWithMetadata.platformError(StaticSendHttpEvent.errorExecution, reason: .expressionFailed, message: "<assign location='label'>: an integer operation overflowed or failed")); return true }; return false }()) {
                     break sceBlock  // W3C SCXML 4.9: the error ends the block
                 }
 
@@ -555,7 +555,7 @@ public final class StaticSendHttpPolicy: InvocablePolicy {
                         let sceValue: WireValue = .integer(Int64((try Checked.mul(self.vCount, 2))))
                         appendFormParam(&sendForm, "twice", sceValue)
                     } catch {
-                            engine.raise(EventWithMetadata.platformError(StaticSendHttpEvent.errorExecution, message: "<send> <param name=twice> failed to evaluate"))
+                            engine.raise(EventWithMetadata.platformError(StaticSendHttpEvent.errorExecution, reason: .expressionFailed, message: "<send> <param name=twice> failed to evaluate"))
                             paramFailed = true
                     }
                     do {
@@ -605,7 +605,7 @@ public final class StaticSendHttpPolicy: InvocablePolicy {
                         let sceValue: WireValue = .integer(Int64((try Checked.mul(self.vCount, 2000000000))))
                         appendFormParam(&sendForm, "big", sceValue)
                     } catch {
-                            engine.raise(EventWithMetadata.platformError(StaticSendHttpEvent.errorExecution, message: "<send> <param name=big> failed to evaluate"))
+                            engine.raise(EventWithMetadata.platformError(StaticSendHttpEvent.errorExecution, reason: .expressionFailed, message: "<send> <param name=big> failed to evaluate"))
                             paramFailed = true
                     }
                     // W3C SCXML C.2: a BasicHTTP send. The engine hands the request to the transport
@@ -630,7 +630,7 @@ public final class StaticSendHttpPolicy: InvocablePolicy {
                 sceBlock: do {
 
 
-                if ({ () -> Bool in do { let sceValue: UInt32 = (try Checked.add(self.vErrors, 1)); self.vErrors = sceValue } catch { engine.raise(EventWithMetadata.platformError(StaticSendHttpEvent.errorExecution, message: "<assign location='errors'>: an integer operation overflowed or failed")); return true }; return false }()) {
+                if ({ () -> Bool in do { let sceValue: UInt32 = (try Checked.add(self.vErrors, 1)); self.vErrors = sceValue } catch { engine.raise(EventWithMetadata.platformError(StaticSendHttpEvent.errorExecution, reason: .expressionFailed, message: "<assign location='errors'>: an integer operation overflowed or failed")); return true }; return false }()) {
                     break sceBlock  // W3C SCXML 4.9: the error ends the block
                 }
 

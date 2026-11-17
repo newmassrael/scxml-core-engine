@@ -486,7 +486,7 @@ class PtcRemoverStateMachine(
             // event as an undeclared type, so a wiring mistake cannot read
             // as success.
             if (hostServed == null && !hasEventProcessor("http://sce.dev/ext/test-port")) {
-                raisePlatformError(PtcRemoverEvent.Error.Execution, "<send type='http://sce.dev/ext/test-port'> names a processor the host declared but never registered", "__send_0")
+                raisePlatformError(PtcRemoverEvent.Error.Execution, ErrorReason.PROCESSOR_UNREGISTERED, "<send type='http://sce.dev/ext/test-port'> names a processor the host declared but never registered", "__send_0")
             }
             false
             }) {
@@ -543,7 +543,7 @@ class PtcRemoverStateMachine(
                             // be run and none was, which is the same fact as
                             // an unsupported type — so the same event, rather
                             // than a silence that reads as started.
-                            raisePlatformError(PtcRemoverEvent.Error.Execution, "<invoke> names an invoker the host declared but never registered")
+                            raisePlatformError(PtcRemoverEvent.Error.Execution, ErrorReason.PROCESSOR_UNREGISTERED, "<invoke> names an invoker the host declared but never registered")
                         }
                     }
                 }

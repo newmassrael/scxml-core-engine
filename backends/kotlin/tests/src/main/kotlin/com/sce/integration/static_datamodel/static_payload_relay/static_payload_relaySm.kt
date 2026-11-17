@@ -567,7 +567,7 @@ class StaticPayloadRelayStateMachine(
             try {
                 putParam(sendPayload, "zoom", (com.sce.forge.runtime.SceChecked.add(pendingViewShownPayload!!.zoom, 1.toUByte())).toLong())
             } catch (_: com.sce.forge.runtime.AlgorithmFailure) {
-                raisePlatformError(StaticPayloadRelayEvent.Error.Execution, "<send> <param name='zoom'> could not be read")
+                raisePlatformError(StaticPayloadRelayEvent.Error.Execution, ErrorReason.LOCATION_INVALID, "<send> <param name='zoom'> could not be read")
                 paramFailed = true
             }
 
@@ -592,7 +592,7 @@ class StaticPayloadRelayStateMachine(
 
             vLayout = pendingViewRelayedPayload!!.layout
 
-            if (try { vRelays = com.sce.forge.runtime.SceChecked.add(vRelays, 1.toUInt()); false } catch (_: com.sce.forge.runtime.AlgorithmFailure) { raisePlatformError(StaticPayloadRelayEvent.Error.Execution, "<assign location='relays'>: an integer operation overflowed or failed"); true }) {
+            if (try { vRelays = com.sce.forge.runtime.SceChecked.add(vRelays, 1.toUInt()); false } catch (_: com.sce.forge.runtime.AlgorithmFailure) { raisePlatformError(StaticPayloadRelayEvent.Error.Execution, ErrorReason.EXPRESSION_FAILED, "<assign location='relays'>: an integer operation overflowed or failed"); true }) {
                 return
             }
     }
@@ -600,7 +600,7 @@ class StaticPayloadRelayStateMachine(
     private fun transitionContentOfRelayingAt2() {
                 // SCE-MAP: static_payload_relay.scxml:41 :: relaying :: _transition_2
 
-            if (try { vRefusals = com.sce.forge.runtime.SceChecked.add(vRefusals, 1.toUInt()); false } catch (_: com.sce.forge.runtime.AlgorithmFailure) { raisePlatformError(StaticPayloadRelayEvent.Error.Execution, "<assign location='refusals'>: an integer operation overflowed or failed"); true }) {
+            if (try { vRefusals = com.sce.forge.runtime.SceChecked.add(vRefusals, 1.toUInt()); false } catch (_: com.sce.forge.runtime.AlgorithmFailure) { raisePlatformError(StaticPayloadRelayEvent.Error.Execution, ErrorReason.EXPRESSION_FAILED, "<assign location='refusals'>: an integer operation overflowed or failed"); true }) {
                 return
             }
     }

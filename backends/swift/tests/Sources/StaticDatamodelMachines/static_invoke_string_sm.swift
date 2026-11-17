@@ -442,7 +442,7 @@ public final class StaticInvokeStringPolicy: InvocablePolicy {
             let sceValue: String = (try Checked.bounded("wxyz", capacity: 4))
             seed.vTitle = sceValue
         } catch {
-            engine.raise(EventWithMetadata.platformError(StaticInvokeStringEvent.errorExecution, message: "<invoke> <param name='title'> could not be read"))
+            engine.raise(EventWithMetadata.platformError(StaticInvokeStringEvent.errorExecution, reason: .locationInvalid, message: "<invoke> <param name='title'> could not be read"))
         }
         childPolicy.acceptParams(seed)
 
@@ -515,7 +515,7 @@ public final class StaticInvokeStringPolicy: InvocablePolicy {
             let sceValue: String = (try Checked.bounded(self.vLengthy, capacity: 4))
             seed.vTitle = sceValue
         } catch {
-            engine.raise(EventWithMetadata.platformError(StaticInvokeStringEvent.errorExecution, message: "<invoke> <param name='title'> could not be read"))
+            engine.raise(EventWithMetadata.platformError(StaticInvokeStringEvent.errorExecution, reason: .locationInvalid, message: "<invoke> <param name='title'> could not be read"))
         }
         childPolicy.acceptParams(seed)
 
@@ -588,7 +588,7 @@ public final class StaticInvokeStringPolicy: InvocablePolicy {
             let sceValue: String = (try Checked.bounded("é€", capacity: 4))
             seed.vTitle = sceValue
         } catch {
-            engine.raise(EventWithMetadata.platformError(StaticInvokeStringEvent.errorExecution, message: "<invoke> <param name='title'> could not be read"))
+            engine.raise(EventWithMetadata.platformError(StaticInvokeStringEvent.errorExecution, reason: .locationInvalid, message: "<invoke> <param name='title'> could not be read"))
         }
         childPolicy.acceptParams(seed)
 
@@ -971,7 +971,7 @@ public final class StaticInvokeStringPolicy: InvocablePolicy {
                 sceBlock: do {
 
 
-                if ({ () -> Bool in do { let sceValue: UInt32 = (try Checked.add(self.vCompleted, 1)); self.vCompleted = sceValue } catch { engine.raise(EventWithMetadata.platformError(StaticInvokeStringEvent.errorExecution, message: "<assign location='completed'>: an integer operation overflowed or failed")); return true }; return false }()) {
+                if ({ () -> Bool in do { let sceValue: UInt32 = (try Checked.add(self.vCompleted, 1)); self.vCompleted = sceValue } catch { engine.raise(EventWithMetadata.platformError(StaticInvokeStringEvent.errorExecution, reason: .expressionFailed, message: "<assign location='completed'>: an integer operation overflowed or failed")); return true }; return false }()) {
                     break sceBlock  // W3C SCXML 4.9: the error ends the block
                 }
 
@@ -981,7 +981,7 @@ public final class StaticInvokeStringPolicy: InvocablePolicy {
                 sceBlock: do {
 
 
-                if ({ () -> Bool in do { let sceValue: UInt32 = (try Checked.add(self.vCompleted, 10)); self.vCompleted = sceValue } catch { engine.raise(EventWithMetadata.platformError(StaticInvokeStringEvent.errorExecution, message: "<assign location='completed'>: an integer operation overflowed or failed")); return true }; return false }()) {
+                if ({ () -> Bool in do { let sceValue: UInt32 = (try Checked.add(self.vCompleted, 10)); self.vCompleted = sceValue } catch { engine.raise(EventWithMetadata.platformError(StaticInvokeStringEvent.errorExecution, reason: .expressionFailed, message: "<assign location='completed'>: an integer operation overflowed or failed")); return true }; return false }()) {
                     break sceBlock  // W3C SCXML 4.9: the error ends the block
                 }
 
@@ -991,7 +991,7 @@ public final class StaticInvokeStringPolicy: InvocablePolicy {
                 sceBlock: do {
 
 
-                if ({ () -> Bool in do { let sceValue: UInt32 = (try Checked.add(self.vCompleted, 100)); self.vCompleted = sceValue } catch { engine.raise(EventWithMetadata.platformError(StaticInvokeStringEvent.errorExecution, message: "<assign location='completed'>: an integer operation overflowed or failed")); return true }; return false }()) {
+                if ({ () -> Bool in do { let sceValue: UInt32 = (try Checked.add(self.vCompleted, 100)); self.vCompleted = sceValue } catch { engine.raise(EventWithMetadata.platformError(StaticInvokeStringEvent.errorExecution, reason: .expressionFailed, message: "<assign location='completed'>: an integer operation overflowed or failed")); return true }; return false }()) {
                     break sceBlock  // W3C SCXML 4.9: the error ends the block
                 }
 
@@ -1001,7 +1001,7 @@ public final class StaticInvokeStringPolicy: InvocablePolicy {
                 sceBlock: do {
 
 
-                if ({ () -> Bool in do { let sceValue: UInt32 = (try Checked.add(self.vErrors, 1)); self.vErrors = sceValue } catch { engine.raise(EventWithMetadata.platformError(StaticInvokeStringEvent.errorExecution, message: "<assign location='errors'>: an integer operation overflowed or failed")); return true }; return false }()) {
+                if ({ () -> Bool in do { let sceValue: UInt32 = (try Checked.add(self.vErrors, 1)); self.vErrors = sceValue } catch { engine.raise(EventWithMetadata.platformError(StaticInvokeStringEvent.errorExecution, reason: .expressionFailed, message: "<assign location='errors'>: an integer operation overflowed or failed")); return true }; return false }()) {
                     break sceBlock  // W3C SCXML 4.9: the error ends the block
                 }
 

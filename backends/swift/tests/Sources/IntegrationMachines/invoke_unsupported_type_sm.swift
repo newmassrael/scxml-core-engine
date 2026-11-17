@@ -317,7 +317,7 @@ public final class InvokeUnsupportedTypePolicy: InvocablePolicy {
                 // W3C SCXML 6.4.1: no processor implements `type`, so no session starts and
                 // `done.invoke.<id>` never fires: the platform places error.execution on the
                 // internal queue, and that is all.
-                engine.raise(EventWithMetadata.platformError(InvokeUnsupportedTypeEvent.errorExecution, message: "<invoke type=\"urn:example:no-such-processor\"> names a processor this platform does not implement"))
+                engine.raise(EventWithMetadata.platformError(InvokeUnsupportedTypeEvent.errorExecution, reason: .invokeTypeUnsupported, message: "<invoke type=\"urn:example:no-such-processor\"> names a processor this platform does not implement"))
                 return
             }
         }

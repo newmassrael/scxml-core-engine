@@ -559,7 +559,7 @@ public final class StaticRecordFieldsPolicy: InvocablePolicy {
                 sceBlock: do {
 
 
-                if ({ () -> Bool in do { let sceValue: UInt8 = (try Checked.add(self.vShown.dayOfMonth, 1)); self.vShown.dayOfMonth = sceValue } catch { engine.raise(EventWithMetadata.platformError(StaticRecordFieldsEvent.errorExecution, message: "<assign location='shown.dayOfMonth'>: an integer operation overflowed or failed")); return true }; return false }()) {
+                if ({ () -> Bool in do { let sceValue: UInt8 = (try Checked.add(self.vShown.dayOfMonth, 1)); self.vShown.dayOfMonth = sceValue } catch { engine.raise(EventWithMetadata.platformError(StaticRecordFieldsEvent.errorExecution, reason: .expressionFailed, message: "<assign location='shown.dayOfMonth'>: an integer operation overflowed or failed")); return true }; return false }()) {
                     break sceBlock  // W3C SCXML 4.9: the error ends the block
                 }
 
@@ -588,7 +588,7 @@ public final class StaticRecordFieldsPolicy: InvocablePolicy {
                 sceBlock: do {
 
 
-                if ({ () -> Bool in do { let sceValue: UInt16 = (try Checked.sub(self.vShown.year, 5000)); self.vShown.year = sceValue } catch { engine.raise(EventWithMetadata.platformError(StaticRecordFieldsEvent.errorExecution, message: "<assign location='shown.year'>: an integer operation overflowed or failed")); return true }; return false }()) {
+                if ({ () -> Bool in do { let sceValue: UInt16 = (try Checked.sub(self.vShown.year, 5000)); self.vShown.year = sceValue } catch { engine.raise(EventWithMetadata.platformError(StaticRecordFieldsEvent.errorExecution, reason: .expressionFailed, message: "<assign location='shown.year'>: an integer operation overflowed or failed")); return true }; return false }()) {
                     break sceBlock  // W3C SCXML 4.9: the error ends the block
                 }
 
@@ -602,7 +602,7 @@ public final class StaticRecordFieldsPolicy: InvocablePolicy {
                 sceBlock: do {
 
 
-                if ({ () -> Bool in do { let sceValue: UInt32 = (try Checked.add(self.vRefusals, 1)); self.vRefusals = sceValue } catch { engine.raise(EventWithMetadata.platformError(StaticRecordFieldsEvent.errorExecution, message: "<assign location='refusals'>: an integer operation overflowed or failed")); return true }; return false }()) {
+                if ({ () -> Bool in do { let sceValue: UInt32 = (try Checked.add(self.vRefusals, 1)); self.vRefusals = sceValue } catch { engine.raise(EventWithMetadata.platformError(StaticRecordFieldsEvent.errorExecution, reason: .expressionFailed, message: "<assign location='refusals'>: an integer operation overflowed or failed")); return true }; return false }()) {
                     break sceBlock  // W3C SCXML 4.9: the error ends the block
                 }
 

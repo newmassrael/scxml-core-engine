@@ -472,8 +472,12 @@ public final class ADelayedSendReachesWhatItsTargetNamesPolicy: InvocablePolicy 
 
     /// Says what went wrong where the document can see it: `error.execution` on the internal
     /// queue (§scxml-5.9.1, 5.3).
-    private func raiseExecutionError(_ message: String, engine: Engine<ADelayedSendReachesWhatItsTargetNamesPolicy>) {
-        engine.raise(EventWithMetadata.platformError(ADelayedSendReachesWhatItsTargetNamesEvent.errorExecution, message: message))
+    /// `reason` is the code of sce:std/engine/error_reason the record carries
+    /// (docs/adr/0106 #111).
+    private func raiseExecutionError(
+        _ reason: ErrorReason, _ message: String, engine: Engine<ADelayedSendReachesWhatItsTargetNamesPolicy>
+    ) {
+        engine.raise(EventWithMetadata.platformError(ADelayedSendReachesWhatItsTargetNamesEvent.errorExecution, reason: reason, message: message))
     }
 
     /// W3C SCXML 5.3: the `<data id>` `id` takes the value of the lowered expression, or nil when it
@@ -530,6 +534,7 @@ public final class ADelayedSendReachesWhatItsTargetNamesPolicy: InvocablePolicy 
             }
         } catch {
             raiseExecutionError(
+                handed == nil ? .expressionFailed : .paramUnfit,
                 handed == nil
                     ? "<data id='\(id)'> expr failed to evaluate"
                     : "<data id='\(id)'> could not hold the value its parent handed it",
@@ -699,7 +704,7 @@ public final class ADelayedSendReachesWhatItsTargetNamesPolicy: InvocablePolicy 
             // this call the payload is lost to the document and to the host alike.
             engine.notePayloadReading(event, reading: Self.payloadReading(of: reading))
         } catch {
-            raiseExecutionError("_event could not be bound for '\(name)'", engine: engine)
+            raiseExecutionError(.payloadRefused, "_event could not be bound for '\(name)'", engine: engine)
         }
     }
 
@@ -736,7 +741,7 @@ public final class ADelayedSendReachesWhatItsTargetNamesPolicy: InvocablePolicy 
         do {
             return try scriptSession.evaluateCondition(condition, chunkName: "=cond")
         } catch {
-            raiseExecutionError("a \(element) cond failed to evaluate", engine: engine)
+            raiseExecutionError(.expressionFailed, "a \(element) cond failed to evaluate", engine: engine)
             failed = true
             return false
         }
@@ -1096,7 +1101,7 @@ public final class ADelayedSendReachesWhatItsTargetNamesPolicy: InvocablePolicy 
                     if self.sessionID != "stranger" {
                         // W3C SCXML C.1: `#_scxml_<sessionid>` names a session this processor
                         // cannot reach — error.communication, nothing delivered, the block ended.
-                        var sendError = EventWithMetadata.platformError(ADelayedSendReachesWhatItsTargetNamesEvent.errorCommunication, message: "<send target=#_scxml_stranger> names a session this processor cannot reach")
+                        var sendError = EventWithMetadata.platformError(ADelayedSendReachesWhatItsTargetNamesEvent.errorCommunication, reason: .targetUnreachable, message: "<send target=#_scxml_stranger> names a session this processor cannot reach")
                         sendError.metadata.sendID = "__send_6"
                         engine.raise(sendError)
 
@@ -1119,7 +1124,7 @@ public final class ADelayedSendReachesWhatItsTargetNamesPolicy: InvocablePolicy 
 
                 // W3C SCXML 5.4: <assign location="afterStranger">
                 if !assignData("afterStranger", "1") {
-                    raiseExecutionError("<assign> to 'afterStranger' failed", engine: engine)
+                    raiseExecutionError(.assignmentFailed, "<assign> to 'afterStranger' failed", engine: engine)
                     break sceBlock  // W3C SCXML 4.9: the error ends the block
                 }
 
@@ -1326,7 +1331,7 @@ public final class ADelayedSendReachesWhatItsTargetNamesPolicy: InvocablePolicy 
 
                 // W3C SCXML 5.4: <assign location="commErrors">
                 if !assignData("commErrors", "_scxml_add(commErrors, 1)") {
-                    raiseExecutionError("<assign> to 'commErrors' failed", engine: engine)
+                    raiseExecutionError(.assignmentFailed, "<assign> to 'commErrors' failed", engine: engine)
                     break sceBlock  // W3C SCXML 4.9: the error ends the block
                 }
 
@@ -1337,7 +1342,7 @@ public final class ADelayedSendReachesWhatItsTargetNamesPolicy: InvocablePolicy 
 
                 // W3C SCXML 5.4: <assign location="order">
                 if !assignData("order", "_scxml_add((order * 10), 1)") {
-                    raiseExecutionError("<assign> to 'order' failed", engine: engine)
+                    raiseExecutionError(.assignmentFailed, "<assign> to 'order' failed", engine: engine)
                     break sceBlock  // W3C SCXML 4.9: the error ends the block
                 }
 
@@ -1347,7 +1352,7 @@ public final class ADelayedSendReachesWhatItsTargetNamesPolicy: InvocablePolicy 
 
                 // W3C SCXML 5.4: <assign location="innerInternal">
                 if !assignData("innerInternal", "1") {
-                    raiseExecutionError("<assign> to 'innerInternal' failed", engine: engine)
+                    raiseExecutionError(.assignmentFailed, "<assign> to 'innerInternal' failed", engine: engine)
                     break sceBlock  // W3C SCXML 4.9: the error ends the block
                 }
 
@@ -1363,7 +1368,7 @@ public final class ADelayedSendReachesWhatItsTargetNamesPolicy: InvocablePolicy 
 
                 // W3C SCXML 5.4: <assign location="order">
                 if !assignData("order", "_scxml_add((order * 10), 3)") {
-                    raiseExecutionError("<assign> to 'order' failed", engine: engine)
+                    raiseExecutionError(.assignmentFailed, "<assign> to 'order' failed", engine: engine)
                     break sceBlock  // W3C SCXML 4.9: the error ends the block
                 }
 
@@ -1374,7 +1379,7 @@ public final class ADelayedSendReachesWhatItsTargetNamesPolicy: InvocablePolicy 
 
                 // W3C SCXML 5.4: <assign location="lateCount">
                 if !assignData("lateCount", "_scxml_add(lateCount, 1)") {
-                    raiseExecutionError("<assign> to 'lateCount' failed", engine: engine)
+                    raiseExecutionError(.assignmentFailed, "<assign> to 'lateCount' failed", engine: engine)
                     break sceBlock  // W3C SCXML 4.9: the error ends the block
                 }
 
@@ -1384,7 +1389,7 @@ public final class ADelayedSendReachesWhatItsTargetNamesPolicy: InvocablePolicy 
 
                 // W3C SCXML 5.4: <assign location="lateOk">
                 if !assignData("lateOk", "1") {
-                    raiseExecutionError("<assign> to 'lateOk' failed", engine: engine)
+                    raiseExecutionError(.assignmentFailed, "<assign> to 'lateOk' failed", engine: engine)
                     break sceBlock  // W3C SCXML 4.9: the error ends the block
                 }
 
@@ -1400,7 +1405,7 @@ public final class ADelayedSendReachesWhatItsTargetNamesPolicy: InvocablePolicy 
 
                 // W3C SCXML 5.4: <assign location="hellos">
                 if !assignData("hellos", "2") {
-                    raiseExecutionError("<assign> to 'hellos' failed", engine: engine)
+                    raiseExecutionError(.assignmentFailed, "<assign> to 'hellos' failed", engine: engine)
                     break sceBlock  // W3C SCXML 4.9: the error ends the block
                 }
 
@@ -1417,7 +1422,7 @@ public final class ADelayedSendReachesWhatItsTargetNamesPolicy: InvocablePolicy 
                     if let contentJSON = evaluateJSON("7") {
                         sendEventData = contentJSON
                     } else {
-                        engine.raise(EventWithMetadata.platformError(ADelayedSendReachesWhatItsTargetNamesEvent.errorExecution, message: "<send> contentexpr failed to evaluate"))
+                        engine.raise(EventWithMetadata.platformError(ADelayedSendReachesWhatItsTargetNamesEvent.errorExecution, reason: .expressionFailed, message: "<send> contentexpr failed to evaluate"))
                         paramFailed = true
                     }
                     // W3C SCXML 6.2.4 + C.1: a targetexpr is a target — the value is routed as
@@ -1435,14 +1440,14 @@ public final class ADelayedSendReachesWhatItsTargetNamesPolicy: InvocablePolicy 
                         sender: self.sessionID
                     )
                     if sendRouted == .notSupported {
-                        var sendError = EventWithMetadata.platformError(ADelayedSendReachesWhatItsTargetNamesEvent.errorExecution, message: "<send> target is not a target")
+                        var sendError = EventWithMetadata.platformError(ADelayedSendReachesWhatItsTargetNamesEvent.errorExecution, reason: .sendTargetInvalid, message: "<send> target is not a target")
                         sendError.metadata.sendID = "__send_0"
                         engine.raise(sendError)
 
                         break sceBlock  // W3C SCXML 4.9: the error ends the block
                     }
                     if sendRouted == .notReachable {
-                        var sendError = EventWithMetadata.platformError(ADelayedSendReachesWhatItsTargetNamesEvent.errorCommunication, message: "<send> target names a session this processor cannot reach")
+                        var sendError = EventWithMetadata.platformError(ADelayedSendReachesWhatItsTargetNamesEvent.errorCommunication, reason: .targetUnreachable, message: "<send> target names a session this processor cannot reach")
                         sendError.metadata.sendID = "__send_0"
                         engine.raise(sendError)
 
@@ -1473,14 +1478,14 @@ public final class ADelayedSendReachesWhatItsTargetNamesPolicy: InvocablePolicy 
                         sender: self.sessionID
                     )
                     if sendRouted == .notSupported {
-                        var sendError = EventWithMetadata.platformError(ADelayedSendReachesWhatItsTargetNamesEvent.errorExecution, message: "<send> target is not a target")
+                        var sendError = EventWithMetadata.platformError(ADelayedSendReachesWhatItsTargetNamesEvent.errorExecution, reason: .sendTargetInvalid, message: "<send> target is not a target")
                         sendError.metadata.sendID = "__send_1"
                         engine.raise(sendError)
 
                         break sceBlock  // W3C SCXML 4.9: the error ends the block
                     }
                     if sendRouted == .notReachable {
-                        var sendError = EventWithMetadata.platformError(ADelayedSendReachesWhatItsTargetNamesEvent.errorCommunication, message: "<send> target names a session this processor cannot reach")
+                        var sendError = EventWithMetadata.platformError(ADelayedSendReachesWhatItsTargetNamesEvent.errorCommunication, reason: .targetUnreachable, message: "<send> target names a session this processor cannot reach")
                         sendError.metadata.sendID = "__send_1"
                         engine.raise(sendError)
 
@@ -1506,14 +1511,14 @@ public final class ADelayedSendReachesWhatItsTargetNamesPolicy: InvocablePolicy 
                         sender: self.sessionID
                     )
                     if sendRouted == .notSupported {
-                        var sendError = EventWithMetadata.platformError(ADelayedSendReachesWhatItsTargetNamesEvent.errorExecution, message: "<send> target is not a target")
+                        var sendError = EventWithMetadata.platformError(ADelayedSendReachesWhatItsTargetNamesEvent.errorExecution, reason: .sendTargetInvalid, message: "<send> target is not a target")
                         sendError.metadata.sendID = "__send_2"
                         engine.raise(sendError)
 
                         break sceBlock  // W3C SCXML 4.9: the error ends the block
                     }
                     if sendRouted == .notReachable {
-                        var sendError = EventWithMetadata.platformError(ADelayedSendReachesWhatItsTargetNamesEvent.errorCommunication, message: "<send> target names a session this processor cannot reach")
+                        var sendError = EventWithMetadata.platformError(ADelayedSendReachesWhatItsTargetNamesEvent.errorCommunication, reason: .targetUnreachable, message: "<send> target names a session this processor cannot reach")
                         sendError.metadata.sendID = "__send_2"
                         engine.raise(sendError)
 
@@ -1527,7 +1532,7 @@ public final class ADelayedSendReachesWhatItsTargetNamesPolicy: InvocablePolicy 
 
                 // W3C SCXML 5.4: <assign location="hellos">
                 if !assignData("hellos", "_scxml_add(hellos, 1)") {
-                    raiseExecutionError("<assign> to 'hellos' failed", engine: engine)
+                    raiseExecutionError(.assignmentFailed, "<assign> to 'hellos' failed", engine: engine)
                     break sceBlock  // W3C SCXML 4.9: the error ends the block
                 }
 
@@ -1538,7 +1543,7 @@ public final class ADelayedSendReachesWhatItsTargetNamesPolicy: InvocablePolicy 
 
                 // W3C SCXML 5.4: <assign location="lostArrived">
                 if !assignData("lostArrived", "1") {
-                    raiseExecutionError("<assign> to 'lostArrived' failed", engine: engine)
+                    raiseExecutionError(.assignmentFailed, "<assign> to 'lostArrived' failed", engine: engine)
                     break sceBlock  // W3C SCXML 4.9: the error ends the block
                 }
 
@@ -1552,7 +1557,7 @@ public final class ADelayedSendReachesWhatItsTargetNamesPolicy: InvocablePolicy 
 
                 // W3C SCXML 5.4: <assign location="pongOk">
                 if !assignData("pongOk", "1") {
-                    raiseExecutionError("<assign> to 'pongOk' failed", engine: engine)
+                    raiseExecutionError(.assignmentFailed, "<assign> to 'pongOk' failed", engine: engine)
                     break sceBlock  // W3C SCXML 4.9: the error ends the block
                 }
 

@@ -31,6 +31,7 @@ import (
 	"time"
 
 	sce "github.com/newmassrael/sce-go-runtime"
+	sceerrorreason "github.com/newmassrael/sce-go-runtime/generated/error_reason"
 )
 
 // Ensure imports are used
@@ -39,6 +40,9 @@ var (
 	_ = filepath.Join
 	_ = strings.HasPrefix
 	_ = time.Duration(0)
+	// Why an error.* event is raised (sce:std/engine/error_reason,
+	// docs/adr/0106 #111); a machine that raises none still imports it.
+	_ = sceerrorreason.ErrorReasonExpressionFailed
 )
 
 // ======================================================================
@@ -437,7 +441,7 @@ func (p *OnexitRunsBeforeTheStateLeavesPolicy) InitializeDataModel(eng *sce.Engi
 		if err == nil {
 			_ = engine.SetVariable(sessionID, "selfInInner", result)
 		} else {
-			eng.Raise(sce.NewPlatformError(OnexitRunsBeforeTheStateLeavesEventErrorExecution, "<data id='selfInInner'> expr failed to evaluate"))
+			eng.Raise(sce.NewPlatformError(OnexitRunsBeforeTheStateLeavesEventErrorExecution, sceerrorreason.ErrorReasonExpressionFailed, "<data id='selfInInner'> expr failed to evaluate"))
 			_ = engine.SetVariable(sessionID, "selfInInner", nil)
 		}
 	}
@@ -451,7 +455,7 @@ func (p *OnexitRunsBeforeTheStateLeavesPolicy) InitializeDataModel(eng *sce.Engi
 		if err == nil {
 			_ = engine.SetVariable(sessionID, "parentInInner", result)
 		} else {
-			eng.Raise(sce.NewPlatformError(OnexitRunsBeforeTheStateLeavesEventErrorExecution, "<data id='parentInInner'> expr failed to evaluate"))
+			eng.Raise(sce.NewPlatformError(OnexitRunsBeforeTheStateLeavesEventErrorExecution, sceerrorreason.ErrorReasonExpressionFailed, "<data id='parentInInner'> expr failed to evaluate"))
 			_ = engine.SetVariable(sessionID, "parentInInner", nil)
 		}
 	}
@@ -465,7 +469,7 @@ func (p *OnexitRunsBeforeTheStateLeavesPolicy) InitializeDataModel(eng *sce.Engi
 		if err == nil {
 			_ = engine.SetVariable(sessionID, "selfInOuter", result)
 		} else {
-			eng.Raise(sce.NewPlatformError(OnexitRunsBeforeTheStateLeavesEventErrorExecution, "<data id='selfInOuter'> expr failed to evaluate"))
+			eng.Raise(sce.NewPlatformError(OnexitRunsBeforeTheStateLeavesEventErrorExecution, sceerrorreason.ErrorReasonExpressionFailed, "<data id='selfInOuter'> expr failed to evaluate"))
 			_ = engine.SetVariable(sessionID, "selfInOuter", nil)
 		}
 	}
@@ -479,7 +483,7 @@ func (p *OnexitRunsBeforeTheStateLeavesPolicy) InitializeDataModel(eng *sce.Engi
 		if err == nil {
 			_ = engine.SetVariable(sessionID, "childInOuter", result)
 		} else {
-			eng.Raise(sce.NewPlatformError(OnexitRunsBeforeTheStateLeavesEventErrorExecution, "<data id='childInOuter'> expr failed to evaluate"))
+			eng.Raise(sce.NewPlatformError(OnexitRunsBeforeTheStateLeavesEventErrorExecution, sceerrorreason.ErrorReasonExpressionFailed, "<data id='childInOuter'> expr failed to evaluate"))
 			_ = engine.SetVariable(sessionID, "childInOuter", nil)
 		}
 	}
@@ -493,7 +497,7 @@ func (p *OnexitRunsBeforeTheStateLeavesPolicy) InitializeDataModel(eng *sce.Engi
 		if err == nil {
 			_ = engine.SetVariable(sessionID, "exits", result)
 		} else {
-			eng.Raise(sce.NewPlatformError(OnexitRunsBeforeTheStateLeavesEventErrorExecution, "<data id='exits'> expr failed to evaluate"))
+			eng.Raise(sce.NewPlatformError(OnexitRunsBeforeTheStateLeavesEventErrorExecution, sceerrorreason.ErrorReasonExpressionFailed, "<data id='exits'> expr failed to evaluate"))
 			_ = engine.SetVariable(sessionID, "exits", nil)
 		}
 	}
@@ -525,12 +529,12 @@ func (p *OnexitRunsBeforeTheStateLeavesPolicy) evaluateIfCond(guard string, eng 
 // evaluateGuardRaising evaluates a cond, raising error.execution when it cannot
 // be evaluated (W3C SCXML 5.9.1); ok is false then, where a bare false could
 // not say so.
-func (p *OnexitRunsBeforeTheStateLeavesPolicy) evaluateGuardRaising(guard string, eng *sce.Engine[OnexitRunsBeforeTheStateLeavesState, OnexitRunsBeforeTheStateLeavesEvent], reason string) (value bool, ok bool) {
+func (p *OnexitRunsBeforeTheStateLeavesPolicy) evaluateGuardRaising(guard string, eng *sce.Engine[OnexitRunsBeforeTheStateLeavesState, OnexitRunsBeforeTheStateLeavesEvent], detail string) (value bool, ok bool) {
 	p.assertScriptSession()
 	engine := p.ScriptEngine
 	result, err := engine.EvaluateExpression(p.SessionID, guard)
 	if err != nil {
-		eng.Raise(sce.NewPlatformError(OnexitRunsBeforeTheStateLeavesEventErrorExecution, reason))
+		eng.Raise(sce.NewPlatformError(OnexitRunsBeforeTheStateLeavesEventErrorExecution, sceerrorreason.ErrorReasonExpressionFailed, detail))
 		return false, false
 	}
 	return sce.ScriptToBool(result), true
@@ -633,7 +637,7 @@ func (p *OnexitRunsBeforeTheStateLeavesPolicy) SetParamValueInScriptEngine(name 
 // failed is left (docs/adr/0098).
 func (p *OnexitRunsBeforeTheStateLeavesPolicy) declareHandedValue(eng *sce.Engine[OnexitRunsBeforeTheStateLeavesState, OnexitRunsBeforeTheStateLeavesEvent], engine sce.IScriptEngine, sessionID, name string, value interface{}) {
 	if err := engine.SetVariable(sessionID, name, value); err != nil {
-		eng.Raise(sce.NewPlatformError(OnexitRunsBeforeTheStateLeavesEventErrorExecution, "<data id='"+name+"'> could not hold the value its invoking session handed it"))
+		eng.Raise(sce.NewPlatformError(OnexitRunsBeforeTheStateLeavesEventErrorExecution, sceerrorreason.ErrorReasonDataInitFailed, "<data id='"+name+"'> could not hold the value its invoking session handed it"))
 		_ = engine.SetVariable(sessionID, name, nil)
 	}
 }
@@ -951,7 +955,7 @@ func (p *OnexitRunsBeforeTheStateLeavesPolicy) ExecuteExitActions(state OnexitRu
 
 	// W3C SCXML 5.3: <assign location="exits" expr="exits + 1">
 	if err := p.assignVariable(`exits`, `_scxml_add(exits, 1)`); err != nil {
-		engine.Raise(sce.NewPlatformError(OnexitRunsBeforeTheStateLeavesEventErrorExecution, "<assign> to 'exits' failed"))
+		engine.Raise(sce.NewPlatformError(OnexitRunsBeforeTheStateLeavesEventErrorExecution, sceerrorreason.ErrorReasonAssignmentFailed, "<assign> to 'exits' failed"))
 		return  // W3C SCXML 4.9: the error ends the block
 	}
 
@@ -960,7 +964,7 @@ func (p *OnexitRunsBeforeTheStateLeavesPolicy) ExecuteExitActions(state OnexitRu
 
 	// W3C SCXML 5.3: <assign location="selfInInner" expr="1">
 	if err := p.assignVariable(`selfInInner`, `1`); err != nil {
-		engine.Raise(sce.NewPlatformError(OnexitRunsBeforeTheStateLeavesEventErrorExecution, "<assign> to 'selfInInner' failed"))
+		engine.Raise(sce.NewPlatformError(OnexitRunsBeforeTheStateLeavesEventErrorExecution, sceerrorreason.ErrorReasonAssignmentFailed, "<assign> to 'selfInInner' failed"))
 		return  // W3C SCXML 4.9: the error ends the block
 	}
 
@@ -971,7 +975,7 @@ func (p *OnexitRunsBeforeTheStateLeavesPolicy) ExecuteExitActions(state OnexitRu
 
 	// W3C SCXML 5.3: <assign location="parentInInner" expr="1">
 	if err := p.assignVariable(`parentInInner`, `1`); err != nil {
-		engine.Raise(sce.NewPlatformError(OnexitRunsBeforeTheStateLeavesEventErrorExecution, "<assign> to 'parentInInner' failed"))
+		engine.Raise(sce.NewPlatformError(OnexitRunsBeforeTheStateLeavesEventErrorExecution, sceerrorreason.ErrorReasonAssignmentFailed, "<assign> to 'parentInInner' failed"))
 		return  // W3C SCXML 4.9: the error ends the block
 	}
 
@@ -986,7 +990,7 @@ func (p *OnexitRunsBeforeTheStateLeavesPolicy) ExecuteExitActions(state OnexitRu
 
 	// W3C SCXML 5.3: <assign location="exits" expr="exits + 1">
 	if err := p.assignVariable(`exits`, `_scxml_add(exits, 1)`); err != nil {
-		engine.Raise(sce.NewPlatformError(OnexitRunsBeforeTheStateLeavesEventErrorExecution, "<assign> to 'exits' failed"))
+		engine.Raise(sce.NewPlatformError(OnexitRunsBeforeTheStateLeavesEventErrorExecution, sceerrorreason.ErrorReasonAssignmentFailed, "<assign> to 'exits' failed"))
 		return  // W3C SCXML 4.9: the error ends the block
 	}
 
@@ -995,7 +999,7 @@ func (p *OnexitRunsBeforeTheStateLeavesPolicy) ExecuteExitActions(state OnexitRu
 
 	// W3C SCXML 5.3: <assign location="selfInOuter" expr="1">
 	if err := p.assignVariable(`selfInOuter`, `1`); err != nil {
-		engine.Raise(sce.NewPlatformError(OnexitRunsBeforeTheStateLeavesEventErrorExecution, "<assign> to 'selfInOuter' failed"))
+		engine.Raise(sce.NewPlatformError(OnexitRunsBeforeTheStateLeavesEventErrorExecution, sceerrorreason.ErrorReasonAssignmentFailed, "<assign> to 'selfInOuter' failed"))
 		return  // W3C SCXML 4.9: the error ends the block
 	}
 
@@ -1006,7 +1010,7 @@ func (p *OnexitRunsBeforeTheStateLeavesPolicy) ExecuteExitActions(state OnexitRu
 
 	// W3C SCXML 5.3: <assign location="childInOuter" expr="1">
 	if err := p.assignVariable(`childInOuter`, `1`); err != nil {
-		engine.Raise(sce.NewPlatformError(OnexitRunsBeforeTheStateLeavesEventErrorExecution, "<assign> to 'childInOuter' failed"))
+		engine.Raise(sce.NewPlatformError(OnexitRunsBeforeTheStateLeavesEventErrorExecution, sceerrorreason.ErrorReasonAssignmentFailed, "<assign> to 'childInOuter' failed"))
 		return  // W3C SCXML 4.9: the error ends the block
 	}
 

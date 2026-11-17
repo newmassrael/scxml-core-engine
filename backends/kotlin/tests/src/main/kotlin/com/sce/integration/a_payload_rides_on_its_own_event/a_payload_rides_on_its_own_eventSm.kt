@@ -290,7 +290,7 @@ class APayloadRidesOnItsOwnEventStateMachine(
             try {
                 engine.setVariable(sid, "got", engine.evaluateExpr(sid, com.sce.runtime.ScriptSource.lua("0", "0")))
             } catch (e: Exception) {
-                raisePlatformError(APayloadRidesOnItsOwnEventEvent.Error.Execution, "<data id='got'> expr failed to evaluate")
+                raisePlatformError(APayloadRidesOnItsOwnEventEvent.Error.Execution, ErrorReason.EXPRESSION_FAILED, "<data id='got'> expr failed to evaluate")
             }
         }
         // §scxml-6.4: 'stolen' takes a value its invoke handed it, in place of its own
@@ -299,7 +299,7 @@ class APayloadRidesOnItsOwnEventStateMachine(
             try {
                 engine.setVariable(sid, "stolen", engine.evaluateExpr(sid, com.sce.runtime.ScriptSource.lua("0", "0")))
             } catch (e: Exception) {
-                raisePlatformError(APayloadRidesOnItsOwnEventEvent.Error.Execution, "<data id='stolen'> expr failed to evaluate")
+                raisePlatformError(APayloadRidesOnItsOwnEventEvent.Error.Execution, ErrorReason.EXPRESSION_FAILED, "<data id='stolen'> expr failed to evaluate")
             }
         }
         // §scxml-6.4: 'plains' takes a value its invoke handed it, in place of its own
@@ -308,7 +308,7 @@ class APayloadRidesOnItsOwnEventStateMachine(
             try {
                 engine.setVariable(sid, "plains", engine.evaluateExpr(sid, com.sce.runtime.ScriptSource.lua("0", "0")))
             } catch (e: Exception) {
-                raisePlatformError(APayloadRidesOnItsOwnEventEvent.Error.Execution, "<data id='plains'> expr failed to evaluate")
+                raisePlatformError(APayloadRidesOnItsOwnEventEvent.Error.Execution, ErrorReason.EXPRESSION_FAILED, "<data id='plains'> expr failed to evaluate")
             }
         }
         // §scxml-6.4: 'v9' takes a value its invoke handed it, in place of its own
@@ -317,7 +317,7 @@ class APayloadRidesOnItsOwnEventStateMachine(
             try {
                 engine.setVariable(sid, "v9", engine.evaluateExpr(sid, com.sce.runtime.ScriptSource.lua("9", "9")))
             } catch (e: Exception) {
-                raisePlatformError(APayloadRidesOnItsOwnEventEvent.Error.Execution, "<data id='v9'> expr failed to evaluate")
+                raisePlatformError(APayloadRidesOnItsOwnEventEvent.Error.Execution, ErrorReason.EXPRESSION_FAILED, "<data id='v9'> expr failed to evaluate")
             }
         }
     }
@@ -347,14 +347,14 @@ class APayloadRidesOnItsOwnEventStateMachine(
 
     // W3C SCXML 5.9.1: a cond that cannot be evaluated raises error.execution;
     // `null` says so, where a bare `false` could not.
-    private fun evaluateGuardRaising(guardExpr: com.sce.runtime.ScriptSource, reason: String): Boolean? {
+    private fun evaluateGuardRaising(guardExpr: com.sce.runtime.ScriptSource, detail: String): Boolean? {
         assertScriptSession()
         val engine = scriptEngine ?: error("scriptEngine is required (codegen invariant: needs_script_engine == true)")
         val sid = scriptSessionId ?: error("scriptSessionId is established by the start (codegen invariant)")
         return try {
             engine.evaluateCondition(sid, guardExpr)
         } catch (e: Exception) {
-            raisePlatformError(APayloadRidesOnItsOwnEventEvent.Error.Execution, reason)
+            raisePlatformError(APayloadRidesOnItsOwnEventEvent.Error.Execution, ErrorReason.EXPRESSION_FAILED, detail)
             null
         }
     }
@@ -395,7 +395,7 @@ class APayloadRidesOnItsOwnEventStateMachine(
         return try {
             engine.evaluateExpr(sid, serialized)?.toString() ?: ""
         } catch (e: Exception) {
-            raisePlatformError(APayloadRidesOnItsOwnEventEvent.Error.Execution, "an expression could not be serialised to JSON")
+            raisePlatformError(APayloadRidesOnItsOwnEventEvent.Error.Execution, ErrorReason.EXPRESSION_FAILED, "an expression could not be serialised to JSON")
             ""
         }
     }
@@ -416,7 +416,7 @@ class APayloadRidesOnItsOwnEventStateMachine(
             engine.assign(sid, location, expr)
             true
         } catch (e: Exception) {
-            raisePlatformError(APayloadRidesOnItsOwnEventEvent.Error.Execution, "<assign> failed")
+            raisePlatformError(APayloadRidesOnItsOwnEventEvent.Error.Execution, ErrorReason.ASSIGNMENT_FAILED, "<assign> failed")
             false
         }
     }
@@ -432,7 +432,7 @@ class APayloadRidesOnItsOwnEventStateMachine(
             engine.executeScript(sid, script)
             true
         } catch (e: Exception) {
-            raisePlatformError(APayloadRidesOnItsOwnEventEvent.Error.Execution, "<script> failed to execute")
+            raisePlatformError(APayloadRidesOnItsOwnEventEvent.Error.Execution, ErrorReason.SCRIPT_FAILED, "<script> failed to execute")
             false
         }
     }
@@ -559,7 +559,7 @@ class APayloadRidesOnItsOwnEventStateMachine(
             try {
                 putParam(sendPayload, "v", payloadEngine.evaluateExpr(payloadSid, com.sce.runtime.ScriptSource.lua("7", "7")))
             } catch (_: Exception) {
-                raisePlatformError(APayloadRidesOnItsOwnEventEvent.Error.Execution, "<send> <param name='v'> could not be read")
+                raisePlatformError(APayloadRidesOnItsOwnEventEvent.Error.Execution, ErrorReason.LOCATION_INVALID, "<send> <param name='v'> could not be read")
                 paramFailed = true
             }
 
@@ -587,7 +587,7 @@ class APayloadRidesOnItsOwnEventStateMachine(
             try {
                 putParam(sendPayload, "v", payloadEngine.evaluateExpr(payloadSid, com.sce.runtime.ScriptSource.lua("8", "8")))
             } catch (_: Exception) {
-                raisePlatformError(APayloadRidesOnItsOwnEventEvent.Error.Execution, "<send> <param name='v'> could not be read")
+                raisePlatformError(APayloadRidesOnItsOwnEventEvent.Error.Execution, ErrorReason.LOCATION_INVALID, "<send> <param name='v'> could not be read")
                 paramFailed = true
             }
 
@@ -616,13 +616,13 @@ class APayloadRidesOnItsOwnEventStateMachine(
             // one error however many of its names are bad.
             val sendNamelist = mutableListOf<Pair<String, Any?>>()
             if (!argEngine.hasVariable(argSid, "v9")) {
-                raisePlatformError(APayloadRidesOnItsOwnEventEvent.Error.Execution, "<send> namelist names 'v9', which is not declared", "__send_2")
+                raisePlatformError(APayloadRidesOnItsOwnEventEvent.Error.Execution, ErrorReason.LOCATION_INVALID, "<send> namelist names 'v9', which is not declared", "__send_2")
                 return@send true
             }
             try {
                 sendNamelist.add("v9" to argEngine.getVariable(argSid, "v9"))
             } catch (_: Exception) {
-                raisePlatformError(APayloadRidesOnItsOwnEventEvent.Error.Execution, "<send> namelist entry 'v9' could not be read", "__send_2")
+                raisePlatformError(APayloadRidesOnItsOwnEventEvent.Error.Execution, ErrorReason.LOCATION_INVALID, "<send> namelist entry 'v9' could not be read", "__send_2")
                 return@send true
             }
             val sendPayload = mutableMapOf<String, Any?>()

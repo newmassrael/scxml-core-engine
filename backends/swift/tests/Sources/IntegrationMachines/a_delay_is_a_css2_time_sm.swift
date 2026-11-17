@@ -427,8 +427,12 @@ public final class ADelayIsACss2TimePolicy: InvocablePolicy {
 
     /// Says what went wrong where the document can see it: `error.execution` on the internal
     /// queue (§scxml-5.9.1, 5.3).
-    private func raiseExecutionError(_ message: String, engine: Engine<ADelayIsACss2TimePolicy>) {
-        engine.raise(EventWithMetadata.platformError(ADelayIsACss2TimeEvent.errorExecution, message: message))
+    /// `reason` is the code of sce:std/engine/error_reason the record carries
+    /// (docs/adr/0106 #111).
+    private func raiseExecutionError(
+        _ reason: ErrorReason, _ message: String, engine: Engine<ADelayIsACss2TimePolicy>
+    ) {
+        engine.raise(EventWithMetadata.platformError(ADelayIsACss2TimeEvent.errorExecution, reason: reason, message: message))
     }
 
     /// W3C SCXML 5.3: the `<data id>` `id` takes the value of the lowered expression, or nil when it
@@ -485,6 +489,7 @@ public final class ADelayIsACss2TimePolicy: InvocablePolicy {
             }
         } catch {
             raiseExecutionError(
+                handed == nil ? .expressionFailed : .paramUnfit,
                 handed == nil
                     ? "<data id='\(id)'> expr failed to evaluate"
                     : "<data id='\(id)'> could not hold the value its parent handed it",
@@ -651,7 +656,7 @@ public final class ADelayIsACss2TimePolicy: InvocablePolicy {
             // this call the payload is lost to the document and to the host alike.
             engine.notePayloadReading(event, reading: Self.payloadReading(of: reading))
         } catch {
-            raiseExecutionError("_event could not be bound for '\(name)'", engine: engine)
+            raiseExecutionError(.payloadRefused, "_event could not be bound for '\(name)'", engine: engine)
         }
     }
 
@@ -688,7 +693,7 @@ public final class ADelayIsACss2TimePolicy: InvocablePolicy {
         do {
             return try scriptSession.evaluateCondition(condition, chunkName: "=cond")
         } catch {
-            raiseExecutionError("a \(element) cond failed to evaluate", engine: engine)
+            raiseExecutionError(.expressionFailed, "a \(element) cond failed to evaluate", engine: engine)
             failed = true
             return false
         }
@@ -710,7 +715,7 @@ public final class ADelayIsACss2TimePolicy: InvocablePolicy {
                     // W3C SCXML 6.2: the written delay is not a CSS2 time (ARCHITECTURE.md,
                     // "Durations"; the build decided it once). It is known before anything
                     // is evaluated, so the send ends here with the argument error.
-                        var sendError = EventWithMetadata.platformError(ADelayIsACss2TimeEvent.errorExecution, message: "<send> delay is not a CSS2 time")
+                        var sendError = EventWithMetadata.platformError(ADelayIsACss2TimeEvent.errorExecution, reason: .sendDelayInvalid, message: "<send> delay is not a CSS2 time")
                         sendError.metadata.sendID = "__send_0"
                         engine.raise(sendError)
 
@@ -719,7 +724,7 @@ public final class ADelayIsACss2TimePolicy: InvocablePolicy {
 
                 // W3C SCXML 5.4: <assign location="after">
                 if !assignData("after", "_scxml_add(after, 1)") {
-                    raiseExecutionError("<assign> to 'after' failed", engine: engine)
+                    raiseExecutionError(.assignmentFailed, "<assign> to 'after' failed", engine: engine)
                     break sceBlock  // W3C SCXML 4.9: the error ends the block
                 }
 
@@ -730,6 +735,10 @@ public final class ADelayIsACss2TimePolicy: InvocablePolicy {
                 // W3C SCXML 6.2: send id="__send_1"
                 do {
                     var sendArgError = ""
+                    // Why the argument failed, a code of sce:std/engine/error_reason
+                    // (docs/adr/0106 #111), set with every sentence below.
+                    var sendArgReason = ErrorReason.expressionFailed
+                    _ = sendArgReason
                     var sendDelayMs: UInt64 = 0
                     if sendArgError.isEmpty {
                         // The delay is a string computed from the machine's fields now, and
@@ -740,11 +749,11 @@ public final class ADelayIsACss2TimePolicy: InvocablePolicy {
                         if let ms = parseDelayToMs(sceDelay) {
                             sendDelayMs = ms
                         } else {
-                            sendArgError = "<send> delayexpr is not a CSS2 time"
+                            sendArgError = "<send> delayexpr is not a CSS2 time"; sendArgReason = .sendDelayInvalid
                         }
                     }
                     if !sendArgError.isEmpty {
-                        var sendError = EventWithMetadata.platformError(ADelayIsACss2TimeEvent.errorExecution, message: sendArgError)
+                        var sendError = EventWithMetadata.platformError(ADelayIsACss2TimeEvent.errorExecution, reason: sendArgReason, message: sendArgError)
                         sendError.metadata.sendID = "__send_1"
                         engine.raise(sendError)
 
@@ -768,7 +777,7 @@ public final class ADelayIsACss2TimePolicy: InvocablePolicy {
 
                 // W3C SCXML 5.4: <assign location="after">
                 if !assignData("after", "_scxml_add(after, 1)") {
-                    raiseExecutionError("<assign> to 'after' failed", engine: engine)
+                    raiseExecutionError(.assignmentFailed, "<assign> to 'after' failed", engine: engine)
                     break sceBlock  // W3C SCXML 4.9: the error ends the block
                 }
 
@@ -779,6 +788,10 @@ public final class ADelayIsACss2TimePolicy: InvocablePolicy {
                 // W3C SCXML 6.2: send id="__send_2"
                 do {
                     var sendArgError = ""
+                    // Why the argument failed, a code of sce:std/engine/error_reason
+                    // (docs/adr/0106 #111), set with every sentence below.
+                    var sendArgReason = ErrorReason.expressionFailed
+                    _ = sendArgReason
                     var sendDelayMs: UInt64 = 0
                     if sendArgError.isEmpty {
                         // The delay is a string computed from the machine's fields now, and
@@ -789,11 +802,11 @@ public final class ADelayIsACss2TimePolicy: InvocablePolicy {
                         if let ms = parseDelayToMs(sceDelay) {
                             sendDelayMs = ms
                         } else {
-                            sendArgError = "<send> delayexpr is not a CSS2 time"
+                            sendArgError = "<send> delayexpr is not a CSS2 time"; sendArgReason = .sendDelayInvalid
                         }
                     }
                     if !sendArgError.isEmpty {
-                        var sendError = EventWithMetadata.platformError(ADelayIsACss2TimeEvent.errorExecution, message: sendArgError)
+                        var sendError = EventWithMetadata.platformError(ADelayIsACss2TimeEvent.errorExecution, reason: sendArgReason, message: sendArgError)
                         sendError.metadata.sendID = "__send_2"
                         engine.raise(sendError)
 
@@ -937,7 +950,7 @@ public final class ADelayIsACss2TimePolicy: InvocablePolicy {
 
                 // W3C SCXML 5.4: <assign location="errors">
                 if !assignData("errors", "_scxml_add(errors, 1)") {
-                    raiseExecutionError("<assign> to 'errors' failed", engine: engine)
+                    raiseExecutionError(.assignmentFailed, "<assign> to 'errors' failed", engine: engine)
                     break sceBlock  // W3C SCXML 4.9: the error ends the block
                 }
 
@@ -948,7 +961,7 @@ public final class ADelayIsACss2TimePolicy: InvocablePolicy {
 
                 // W3C SCXML 5.4: <assign location="bad">
                 if !assignData("bad", "_scxml_add(bad, 1)") {
-                    raiseExecutionError("<assign> to 'bad' failed", engine: engine)
+                    raiseExecutionError(.assignmentFailed, "<assign> to 'bad' failed", engine: engine)
                     break sceBlock  // W3C SCXML 4.9: the error ends the block
                 }
 
@@ -959,7 +972,7 @@ public final class ADelayIsACss2TimePolicy: InvocablePolicy {
 
                 // W3C SCXML 5.4: <assign location="bSeen">
                 if !assignData("bSeen", "1") {
-                    raiseExecutionError("<assign> to 'bSeen' failed", engine: engine)
+                    raiseExecutionError(.assignmentFailed, "<assign> to 'bSeen' failed", engine: engine)
                     break sceBlock  // W3C SCXML 4.9: the error ends the block
                 }
 
@@ -970,7 +983,7 @@ public final class ADelayIsACss2TimePolicy: InvocablePolicy {
 
                 // W3C SCXML 5.4: <assign location="aAfterB">
                 if !assignData("aAfterB", "bSeen") {
-                    raiseExecutionError("<assign> to 'aAfterB' failed", engine: engine)
+                    raiseExecutionError(.assignmentFailed, "<assign> to 'aAfterB' failed", engine: engine)
                     break sceBlock  // W3C SCXML 4.9: the error ends the block
                 }
 

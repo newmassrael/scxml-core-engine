@@ -445,7 +445,7 @@ class StaticSendHttpStateMachine(
 
             vReady = true
 
-            if (try { vLabel = com.sce.forge.runtime.SceChecked.bounded("busy", 16); false } catch (_: com.sce.forge.runtime.AlgorithmFailure) { raisePlatformError(StaticSendHttpEvent.Error.Execution, "<assign location='label'>: an integer operation overflowed or failed"); true }) {
+            if (try { vLabel = com.sce.forge.runtime.SceChecked.bounded("busy", 16); false } catch (_: com.sce.forge.runtime.AlgorithmFailure) { raisePlatformError(StaticSendHttpEvent.Error.Execution, ErrorReason.EXPRESSION_FAILED, "<assign location='label'>: an integer operation overflowed or failed"); true }) {
                 return
             }
     }
@@ -466,7 +466,7 @@ class StaticSendHttpStateMachine(
             try {
                 putParam(sendPayload, "twice", (com.sce.forge.runtime.SceChecked.mul(vCount, 2.toUInt())).toLong())
             } catch (_: com.sce.forge.runtime.AlgorithmFailure) {
-                raisePlatformError(StaticSendHttpEvent.Error.Execution, "<send> <param name='twice'> could not be read")
+                raisePlatformError(StaticSendHttpEvent.Error.Execution, ErrorReason.LOCATION_INVALID, "<send> <param name='twice'> could not be read")
                 paramFailed = true
             }
 
@@ -503,7 +503,7 @@ class StaticSendHttpStateMachine(
             try {
                 putParam(sendPayload, "big", (com.sce.forge.runtime.SceChecked.mul(vCount, 2000000000.toUInt())).toLong())
             } catch (_: com.sce.forge.runtime.AlgorithmFailure) {
-                raisePlatformError(StaticSendHttpEvent.Error.Execution, "<send> <param name='big'> could not be read")
+                raisePlatformError(StaticSendHttpEvent.Error.Execution, ErrorReason.LOCATION_INVALID, "<send> <param name='big'> could not be read")
                 paramFailed = true
             }
 
@@ -527,7 +527,7 @@ class StaticSendHttpStateMachine(
     private fun transitionContentOfIdleAt3() {
                 // SCE-MAP: static_send_http.scxml:66 :: idle :: _transition_3
 
-            if (try { vErrors = com.sce.forge.runtime.SceChecked.add(vErrors, 1.toUInt()); false } catch (_: com.sce.forge.runtime.AlgorithmFailure) { raisePlatformError(StaticSendHttpEvent.Error.Execution, "<assign location='errors'>: an integer operation overflowed or failed"); true }) {
+            if (try { vErrors = com.sce.forge.runtime.SceChecked.add(vErrors, 1.toUInt()); false } catch (_: com.sce.forge.runtime.AlgorithmFailure) { raisePlatformError(StaticSendHttpEvent.Error.Execution, ErrorReason.EXPRESSION_FAILED, "<assign location='errors'>: an integer operation overflowed or failed"); true }) {
                 return
             }
     }

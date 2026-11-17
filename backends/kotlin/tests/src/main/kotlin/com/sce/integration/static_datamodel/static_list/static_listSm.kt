@@ -516,7 +516,7 @@ class StaticListStateMachine(
                     return
                 }
 
-            if (if (vPicked.size < 3) { vPicked = vPicked + (pendingDayPickedPayload!!.dayOfMonth); false } else { raisePlatformError(StaticListEvent.Error.Execution, "<sce:append target='picked'>: the list already holds its capacity of 3"); true }) {
+            if (if (vPicked.size < 3) { vPicked = vPicked + (pendingDayPickedPayload!!.dayOfMonth); false } else { raisePlatformError(StaticListEvent.Error.Execution, ErrorReason.ASSIGNMENT_FAILED, "<sce:append target='picked'>: the list already holds its capacity of 3"); true }) {
                 return
             }
 
@@ -532,7 +532,7 @@ class StaticListStateMachine(
     private fun transitionContentOfCollectingAt3() {
                 // SCE-MAP: static_list.scxml:30 :: collecting :: _transition_3
 
-            if (try { vRefusals = com.sce.forge.runtime.SceChecked.add(vRefusals, 1.toUInt()); false } catch (_: com.sce.forge.runtime.AlgorithmFailure) { raisePlatformError(StaticListEvent.Error.Execution, "<assign location='refusals'>: an integer operation overflowed or failed"); true }) {
+            if (try { vRefusals = com.sce.forge.runtime.SceChecked.add(vRefusals, 1.toUInt()); false } catch (_: com.sce.forge.runtime.AlgorithmFailure) { raisePlatformError(StaticListEvent.Error.Execution, ErrorReason.EXPRESSION_FAILED, "<assign location='refusals'>: an integer operation overflowed or failed"); true }) {
                 return
             }
     }

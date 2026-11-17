@@ -452,8 +452,12 @@ public final class ADelayedHttpSendIsPostedWhenDuePolicy: InvocablePolicy {
 
     /// Says what went wrong where the document can see it: `error.execution` on the internal
     /// queue (§scxml-5.9.1, 5.3).
-    private func raiseExecutionError(_ message: String, engine: Engine<ADelayedHttpSendIsPostedWhenDuePolicy>) {
-        engine.raise(EventWithMetadata.platformError(ADelayedHttpSendIsPostedWhenDueEvent.errorExecution, message: message))
+    /// `reason` is the code of sce:std/engine/error_reason the record carries
+    /// (docs/adr/0106 #111).
+    private func raiseExecutionError(
+        _ reason: ErrorReason, _ message: String, engine: Engine<ADelayedHttpSendIsPostedWhenDuePolicy>
+    ) {
+        engine.raise(EventWithMetadata.platformError(ADelayedHttpSendIsPostedWhenDueEvent.errorExecution, reason: reason, message: message))
     }
 
     /// W3C SCXML 5.3: the `<data id>` `id` takes the value of the lowered expression, or nil when it
@@ -510,6 +514,7 @@ public final class ADelayedHttpSendIsPostedWhenDuePolicy: InvocablePolicy {
             }
         } catch {
             raiseExecutionError(
+                handed == nil ? .expressionFailed : .paramUnfit,
                 handed == nil
                     ? "<data id='\(id)'> expr failed to evaluate"
                     : "<data id='\(id)'> could not hold the value its parent handed it",
@@ -671,7 +676,7 @@ public final class ADelayedHttpSendIsPostedWhenDuePolicy: InvocablePolicy {
             // this call the payload is lost to the document and to the host alike.
             engine.notePayloadReading(event, reading: Self.payloadReading(of: reading))
         } catch {
-            raiseExecutionError("_event could not be bound for '\(name)'", engine: engine)
+            raiseExecutionError(.payloadRefused, "_event could not be bound for '\(name)'", engine: engine)
         }
     }
 
@@ -708,7 +713,7 @@ public final class ADelayedHttpSendIsPostedWhenDuePolicy: InvocablePolicy {
         do {
             return try scriptSession.evaluateCondition(condition, chunkName: "=cond")
         } catch {
-            raiseExecutionError("a \(element) cond failed to evaluate", engine: engine)
+            raiseExecutionError(.expressionFailed, "a \(element) cond failed to evaluate", engine: engine)
             failed = true
             return false
         }
@@ -762,6 +767,10 @@ public final class ADelayedHttpSendIsPostedWhenDuePolicy: InvocablePolicy {
                 // W3C SCXML 6.2: send id="__send_2"
                 do {
                     var sendArgError = ""
+                    // Why the argument failed, a code of sce:std/engine/error_reason
+                    // (docs/adr/0106 #111), set with every sentence below.
+                    var sendArgReason = ErrorReason.expressionFailed
+                    _ = sendArgReason
                     var sendDelayMs: UInt64 = 0
                     if sendArgError.isEmpty {
                         // The delay is a string computed from the machine's fields now, and
@@ -772,11 +781,11 @@ public final class ADelayedHttpSendIsPostedWhenDuePolicy: InvocablePolicy {
                         if let ms = parseDelayToMs(sceDelay) {
                             sendDelayMs = ms
                         } else {
-                            sendArgError = "<send> delayexpr is not a CSS2 time"
+                            sendArgError = "<send> delayexpr is not a CSS2 time"; sendArgReason = .sendDelayInvalid
                         }
                     }
                     if !sendArgError.isEmpty {
-                        var sendError = EventWithMetadata.platformError(ADelayedHttpSendIsPostedWhenDueEvent.errorExecution, message: sendArgError)
+                        var sendError = EventWithMetadata.platformError(ADelayedHttpSendIsPostedWhenDueEvent.errorExecution, reason: sendArgReason, message: sendArgError)
                         sendError.metadata.sendID = "__send_2"
                         engine.raise(sendError)
 
@@ -843,6 +852,10 @@ public final class ADelayedHttpSendIsPostedWhenDuePolicy: InvocablePolicy {
                 // W3C SCXML 6.2: send id="dynamic"
                 do {
                     var sendArgError = ""
+                    // Why the argument failed, a code of sce:std/engine/error_reason
+                    // (docs/adr/0106 #111), set with every sentence below.
+                    var sendArgReason = ErrorReason.expressionFailed
+                    _ = sendArgReason
                     // W3C SCXML 6.2.4 + C.1: a targetexpr is a target. Its value is read from the
                     // engine now and routed as the same value written in `target` is, below; an
                     // expression that cannot be evaluated is the argument error, and a value that
@@ -854,11 +867,11 @@ public final class ADelayedHttpSendIsPostedWhenDuePolicy: InvocablePolicy {
                             sendTarget = routed
                             sendTargetKnown = true
                         } else {
-                            sendArgError = "<send> targetexpr could not be evaluated"
+                            sendArgError = "<send> targetexpr could not be evaluated"; sendArgReason = .expressionFailed
                         }
                     }
                     if !sendArgError.isEmpty {
-                        var sendError = EventWithMetadata.platformError(ADelayedHttpSendIsPostedWhenDueEvent.errorExecution, message: sendArgError)
+                        var sendError = EventWithMetadata.platformError(ADelayedHttpSendIsPostedWhenDueEvent.errorExecution, reason: sendArgReason, message: sendArgError)
                         sendError.metadata.sendID = "dynamic"
                         engine.raise(sendError)
 
@@ -869,7 +882,7 @@ public final class ADelayedHttpSendIsPostedWhenDuePolicy: InvocablePolicy {
                         // names nothing (empty or "undefined"), is not reachable —
                         // error.communication, nothing delivered, and the error ends the block
                         // as any other would (W3C SCXML 4.9).
-                        var sendError = EventWithMetadata.platformError(ADelayedHttpSendIsPostedWhenDueEvent.errorCommunication, message: "<send> targetexpr evaluated to nothing, or to a route the send does not declare, so there is no target to reach")
+                        var sendError = EventWithMetadata.platformError(ADelayedHttpSendIsPostedWhenDueEvent.errorCommunication, reason: .targetUnreachable, message: "<send> targetexpr evaluated to nothing, or to a route the send does not declare, so there is no target to reach")
                         sendError.metadata.sendID = "dynamic"
                         engine.raise(sendError)
 
@@ -892,7 +905,7 @@ public final class ADelayedHttpSendIsPostedWhenDuePolicy: InvocablePolicy {
                     // goes. BasicHTTP posts to a URL, so any other value names nothing this processor
                     // can reach: error.communication, and the error ends the block (4.9).
                     if !isHTTPURL(sendTarget) {
-                        var sendError = EventWithMetadata.platformError(ADelayedHttpSendIsPostedWhenDueEvent.errorCommunication, message: "<send> over BasicHTTP resolved a target that is not an http(s) URL")
+                        var sendError = EventWithMetadata.platformError(ADelayedHttpSendIsPostedWhenDueEvent.errorCommunication, reason: .httpTargetInvalid, message: "<send> over BasicHTTP resolved a target that is not an http(s) URL")
                         sendError.metadata.sendID = "dynamic"
                         engine.raise(sendError)
 

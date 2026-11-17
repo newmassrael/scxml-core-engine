@@ -31,6 +31,7 @@ import (
 	"time"
 
 	sce "github.com/newmassrael/sce-go-runtime"
+	sceerrorreason "github.com/newmassrael/sce-go-runtime/generated/error_reason"
 )
 
 // Ensure imports are used
@@ -39,6 +40,9 @@ var (
 	_ = filepath.Join
 	_ = strings.HasPrefix
 	_ = time.Duration(0)
+	// Why an error.* event is raised (sce:std/engine/error_reason,
+	// docs/adr/0106 #111); a machine that raises none still imports it.
+	_ = sceerrorreason.ErrorReasonExpressionFailed
 )
 
 // ======================================================================
@@ -326,7 +330,7 @@ func (p *AHostNamesItsOriginInItsOwnTermsPolicy) InitializeDataModel(eng *sce.En
 		if err == nil {
 			_ = engine.SetVariable(sessionID, "hostNamed", result)
 		} else {
-			eng.Raise(sce.NewPlatformError(AHostNamesItsOriginInItsOwnTermsEventErrorExecution, "<data id='hostNamed'> expr failed to evaluate"))
+			eng.Raise(sce.NewPlatformError(AHostNamesItsOriginInItsOwnTermsEventErrorExecution, sceerrorreason.ErrorReasonExpressionFailed, "<data id='hostNamed'> expr failed to evaluate"))
 			_ = engine.SetVariable(sessionID, "hostNamed", nil)
 		}
 	}
@@ -358,12 +362,12 @@ func (p *AHostNamesItsOriginInItsOwnTermsPolicy) evaluateIfCond(guard string, en
 // evaluateGuardRaising evaluates a cond, raising error.execution when it cannot
 // be evaluated (W3C SCXML 5.9.1); ok is false then, where a bare false could
 // not say so.
-func (p *AHostNamesItsOriginInItsOwnTermsPolicy) evaluateGuardRaising(guard string, eng *sce.Engine[AHostNamesItsOriginInItsOwnTermsState, AHostNamesItsOriginInItsOwnTermsEvent], reason string) (value bool, ok bool) {
+func (p *AHostNamesItsOriginInItsOwnTermsPolicy) evaluateGuardRaising(guard string, eng *sce.Engine[AHostNamesItsOriginInItsOwnTermsState, AHostNamesItsOriginInItsOwnTermsEvent], detail string) (value bool, ok bool) {
 	p.assertScriptSession()
 	engine := p.ScriptEngine
 	result, err := engine.EvaluateExpression(p.SessionID, guard)
 	if err != nil {
-		eng.Raise(sce.NewPlatformError(AHostNamesItsOriginInItsOwnTermsEventErrorExecution, reason))
+		eng.Raise(sce.NewPlatformError(AHostNamesItsOriginInItsOwnTermsEventErrorExecution, sceerrorreason.ErrorReasonExpressionFailed, detail))
 		return false, false
 	}
 	return sce.ScriptToBool(result), true
@@ -466,7 +470,7 @@ func (p *AHostNamesItsOriginInItsOwnTermsPolicy) SetParamValueInScriptEngine(nam
 // failed is left (docs/adr/0098).
 func (p *AHostNamesItsOriginInItsOwnTermsPolicy) declareHandedValue(eng *sce.Engine[AHostNamesItsOriginInItsOwnTermsState, AHostNamesItsOriginInItsOwnTermsEvent], engine sce.IScriptEngine, sessionID, name string, value interface{}) {
 	if err := engine.SetVariable(sessionID, name, value); err != nil {
-		eng.Raise(sce.NewPlatformError(AHostNamesItsOriginInItsOwnTermsEventErrorExecution, "<data id='"+name+"'> could not hold the value its invoking session handed it"))
+		eng.Raise(sce.NewPlatformError(AHostNamesItsOriginInItsOwnTermsEventErrorExecution, sceerrorreason.ErrorReasonDataInitFailed, "<data id='"+name+"'> could not hold the value its invoking session handed it"))
 		_ = engine.SetVariable(sessionID, name, nil)
 	}
 }
@@ -518,7 +522,7 @@ func (p *AHostNamesItsOriginInItsOwnTermsPolicy) ExecutePendingInvokes(engine *s
 				// document asked for a process to be run and none was, which
 				// is the same fact as an unsupported type — so the same
 				// event, rather than a silence that reads as started.
-				engine.Raise(sce.NewPlatformError(AHostNamesItsOriginInItsOwnTermsEventErrorExecution, "<invoke> names an invoker the host declared but never registered"))
+				engine.Raise(sce.NewPlatformError(AHostNamesItsOriginInItsOwnTermsEventErrorExecution, sceerrorreason.ErrorReasonProcessorUnregistered, "<invoke> names an invoker the host declared but never registered"))
 			}
 			continue
 		}
@@ -954,7 +958,7 @@ func (p *AHostNamesItsOriginInItsOwnTermsPolicy) ExecuteTransitionContent(source
 
 	// W3C SCXML 5.3: <assign location="hostNamed" expr="1">
 	if err := p.assignVariable(`hostNamed`, `1`); err != nil {
-		engine.Raise(sce.NewPlatformError(AHostNamesItsOriginInItsOwnTermsEventErrorExecution, "<assign> to 'hostNamed' failed"))
+		engine.Raise(sce.NewPlatformError(AHostNamesItsOriginInItsOwnTermsEventErrorExecution, sceerrorreason.ErrorReasonAssignmentFailed, "<assign> to 'hostNamed' failed"))
 		return  // W3C SCXML 4.9: the error ends the block
 	}
 

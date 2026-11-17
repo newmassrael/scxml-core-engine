@@ -31,6 +31,7 @@ import (
 	"time"
 
 	sce "github.com/newmassrael/sce-go-runtime"
+	sceerrorreason "github.com/newmassrael/sce-go-runtime/generated/error_reason"
 )
 
 // Ensure imports are used
@@ -39,6 +40,9 @@ var (
 	_ = filepath.Join
 	_ = strings.HasPrefix
 	_ = time.Duration(0)
+	// Why an error.* event is raised (sce:std/engine/error_reason,
+	// docs/adr/0106 #111); a machine that raises none still imports it.
+	_ = sceerrorreason.ErrorReasonExpressionFailed
 )
 
 // ======================================================================
@@ -345,7 +349,7 @@ func (p *AChildTakesAHandedValueInPlaceOfItsDataSceSynthInvokeLateBoundPolicy) I
 		if err == nil {
 			_ = engine.SetVariable(sessionID, "handed", result)
 		} else {
-			eng.Raise(sce.NewPlatformError(AChildTakesAHandedValueInPlaceOfItsDataSceSynthInvokeLateBoundEventErrorExecution, "<data id='handed'> expr failed to evaluate"))
+			eng.Raise(sce.NewPlatformError(AChildTakesAHandedValueInPlaceOfItsDataSceSynthInvokeLateBoundEventErrorExecution, sceerrorreason.ErrorReasonExpressionFailed, "<data id='handed'> expr failed to evaluate"))
 			_ = engine.SetVariable(sessionID, "handed", nil)
 		}
 	}
@@ -369,7 +373,7 @@ func (p *AChildTakesAHandedValueInPlaceOfItsDataSceSynthInvokeLateBoundPolicy) b
 		if err == nil {
 			_ = engine.SetVariable(sessionID, "kept", result)
 		} else {
-			eng.Raise(sce.NewPlatformError(AChildTakesAHandedValueInPlaceOfItsDataSceSynthInvokeLateBoundEventErrorExecution, "<data id='kept'> expr failed to evaluate"))
+			eng.Raise(sce.NewPlatformError(AChildTakesAHandedValueInPlaceOfItsDataSceSynthInvokeLateBoundEventErrorExecution, sceerrorreason.ErrorReasonExpressionFailed, "<data id='kept'> expr failed to evaluate"))
 			_ = engine.SetVariable(sessionID, "kept", nil)
 		}
 	}
@@ -400,12 +404,12 @@ func (p *AChildTakesAHandedValueInPlaceOfItsDataSceSynthInvokeLateBoundPolicy) e
 // evaluateGuardRaising evaluates a cond, raising error.execution when it cannot
 // be evaluated (W3C SCXML 5.9.1); ok is false then, where a bare false could
 // not say so.
-func (p *AChildTakesAHandedValueInPlaceOfItsDataSceSynthInvokeLateBoundPolicy) evaluateGuardRaising(guard string, eng *sce.Engine[AChildTakesAHandedValueInPlaceOfItsDataSceSynthInvokeLateBoundState, AChildTakesAHandedValueInPlaceOfItsDataSceSynthInvokeLateBoundEvent], reason string) (value bool, ok bool) {
+func (p *AChildTakesAHandedValueInPlaceOfItsDataSceSynthInvokeLateBoundPolicy) evaluateGuardRaising(guard string, eng *sce.Engine[AChildTakesAHandedValueInPlaceOfItsDataSceSynthInvokeLateBoundState, AChildTakesAHandedValueInPlaceOfItsDataSceSynthInvokeLateBoundEvent], detail string) (value bool, ok bool) {
 	p.assertScriptSession()
 	engine := p.ScriptEngine
 	result, err := engine.EvaluateExpression(p.SessionID, guard)
 	if err != nil {
-		eng.Raise(sce.NewPlatformError(AChildTakesAHandedValueInPlaceOfItsDataSceSynthInvokeLateBoundEventErrorExecution, reason))
+		eng.Raise(sce.NewPlatformError(AChildTakesAHandedValueInPlaceOfItsDataSceSynthInvokeLateBoundEventErrorExecution, sceerrorreason.ErrorReasonExpressionFailed, detail))
 		return false, false
 	}
 	return sce.ScriptToBool(result), true
@@ -508,7 +512,7 @@ func (p *AChildTakesAHandedValueInPlaceOfItsDataSceSynthInvokeLateBoundPolicy) S
 // failed is left (docs/adr/0098).
 func (p *AChildTakesAHandedValueInPlaceOfItsDataSceSynthInvokeLateBoundPolicy) declareHandedValue(eng *sce.Engine[AChildTakesAHandedValueInPlaceOfItsDataSceSynthInvokeLateBoundState, AChildTakesAHandedValueInPlaceOfItsDataSceSynthInvokeLateBoundEvent], engine sce.IScriptEngine, sessionID, name string, value interface{}) {
 	if err := engine.SetVariable(sessionID, name, value); err != nil {
-		eng.Raise(sce.NewPlatformError(AChildTakesAHandedValueInPlaceOfItsDataSceSynthInvokeLateBoundEventErrorExecution, "<data id='"+name+"'> could not hold the value its invoking session handed it"))
+		eng.Raise(sce.NewPlatformError(AChildTakesAHandedValueInPlaceOfItsDataSceSynthInvokeLateBoundEventErrorExecution, sceerrorreason.ErrorReasonDataInitFailed, "<data id='"+name+"'> could not hold the value its invoking session handed it"))
 		_ = engine.SetVariable(sessionID, name, nil)
 	}
 }
@@ -899,7 +903,7 @@ func (p *AChildTakesAHandedValueInPlaceOfItsDataSceSynthInvokeLateBoundPolicy) E
 		// W3C SCXML C.1: this session was started by its host, not by an
 		// `<invoke>`, so `#_parent` reaches nobody — error.communication,
 		// nothing delivered, and the block ends (4.9).
-		errEvt := sce.NewPlatformError(AChildTakesAHandedValueInPlaceOfItsDataSceSynthInvokeLateBoundEventErrorCommunication, "<send target='#_parent'> has no parent session to reach")
+		errEvt := sce.NewPlatformError(AChildTakesAHandedValueInPlaceOfItsDataSceSynthInvokeLateBoundEventErrorCommunication, sceerrorreason.ErrorReasonTargetUnreachable, "<send target='#_parent'> has no parent session to reach")
 		errEvt.Metadata.SendID = "__send_0"
 		engine.Raise(errEvt)
 		return  // W3C SCXML 4.9: the error ends the block
@@ -924,7 +928,7 @@ func (p *AChildTakesAHandedValueInPlaceOfItsDataSceSynthInvokeLateBoundPolicy) E
 		// W3C SCXML C.1: this session was started by its host, not by an
 		// `<invoke>`, so `#_parent` reaches nobody — error.communication,
 		// nothing delivered, and the block ends (4.9).
-		errEvt := sce.NewPlatformError(AChildTakesAHandedValueInPlaceOfItsDataSceSynthInvokeLateBoundEventErrorCommunication, "<send target='#_parent'> has no parent session to reach")
+		errEvt := sce.NewPlatformError(AChildTakesAHandedValueInPlaceOfItsDataSceSynthInvokeLateBoundEventErrorCommunication, sceerrorreason.ErrorReasonTargetUnreachable, "<send target='#_parent'> has no parent session to reach")
 		errEvt.Metadata.SendID = "__send_1"
 		engine.Raise(errEvt)
 		return  // W3C SCXML 4.9: the error ends the block
@@ -949,7 +953,7 @@ func (p *AChildTakesAHandedValueInPlaceOfItsDataSceSynthInvokeLateBoundPolicy) E
 		// W3C SCXML C.1: this session was started by its host, not by an
 		// `<invoke>`, so `#_parent` reaches nobody — error.communication,
 		// nothing delivered, and the block ends (4.9).
-		errEvt := sce.NewPlatformError(AChildTakesAHandedValueInPlaceOfItsDataSceSynthInvokeLateBoundEventErrorCommunication, "<send target='#_parent'> has no parent session to reach")
+		errEvt := sce.NewPlatformError(AChildTakesAHandedValueInPlaceOfItsDataSceSynthInvokeLateBoundEventErrorCommunication, sceerrorreason.ErrorReasonTargetUnreachable, "<send target='#_parent'> has no parent session to reach")
 		errEvt.Metadata.SendID = "__send_2"
 		engine.Raise(errEvt)
 		return  // W3C SCXML 4.9: the error ends the block

@@ -396,7 +396,7 @@ class StaticInvokeEndingOrderSceSynthInvokeWorkerStateMachine(
                             // be run and none was, which is the same fact as
                             // an unsupported type — so the same event, rather
                             // than a silence that reads as started.
-                            raisePlatformError(StaticInvokeEndingOrderSceSynthInvokeWorkerEvent.Error.Execution, "<invoke> names an invoker the host declared but never registered")
+                            raisePlatformError(StaticInvokeEndingOrderSceSynthInvokeWorkerEvent.Error.Execution, ErrorReason.PROCESSOR_UNREGISTERED, "<invoke> names an invoker the host declared but never registered")
                         }
                     }
                 }
@@ -458,7 +458,7 @@ class StaticInvokeEndingOrderSceSynthInvokeWorkerStateMachine(
             // no parent — error.communication, nothing delivered, the block ended.
             val toParent = onSendToParent
             if (toParent == null) {
-                raisePlatformError(StaticInvokeEndingOrderSceSynthInvokeWorkerEvent.Error.Communication, "<send target='#_parent'> has no parent session to reach", "__send_0")
+                raisePlatformError(StaticInvokeEndingOrderSceSynthInvokeWorkerEvent.Error.Communication, ErrorReason.TARGET_UNREACHABLE, "<send target='#_parent'> has no parent session to reach", "__send_0")
                 return@send true
             }
             toParent("stamped", sendData)
@@ -481,7 +481,7 @@ class StaticInvokeEndingOrderSceSynthInvokeWorkerStateMachine(
             // no parent — error.communication, nothing delivered, the block ended.
             val toParent = onSendToParent
             if (toParent == null) {
-                raisePlatformError(StaticInvokeEndingOrderSceSynthInvokeWorkerEvent.Error.Communication, "<send target='#_parent'> has no parent session to reach", "__send_1")
+                raisePlatformError(StaticInvokeEndingOrderSceSynthInvokeWorkerEvent.Error.Communication, ErrorReason.TARGET_UNREACHABLE, "<send target='#_parent'> has no parent session to reach", "__send_1")
                 return@send true
             }
             toParent("answer", sendData)

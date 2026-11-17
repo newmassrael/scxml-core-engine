@@ -31,6 +31,7 @@ import (
 	"time"
 
 	sce "github.com/newmassrael/sce-go-runtime"
+	sceerrorreason "github.com/newmassrael/sce-go-runtime/generated/error_reason"
 	scealgorithm "github.com/newmassrael/sce-forge-runtime/algorithm"
 )
 
@@ -40,6 +41,9 @@ var (
 	_ = filepath.Join
 	_ = strings.HasPrefix
 	_ = time.Duration(0)
+	// Why an error.* event is raised (sce:std/engine/error_reason,
+	// docs/adr/0106 #111); a machine that raises none still imports it.
+	_ = sceerrorreason.ErrorReasonExpressionFailed
 	_ scealgorithm.Failure
 )
 
@@ -1154,7 +1158,7 @@ func (p *StaticInvokeHybridPolicy) ExecutePendingInvokes(engine *sce.Engine[Stat
 			switch __sceSelected {
 			case "static_hybrid_first", "static_hybrid_second":
 			default:
-				engine.Raise(sce.NewPlatformError(StaticInvokeHybridEventErrorExecution, "<invoke srcexpr> evaluated to a document it did not declare"))
+				engine.Raise(sce.NewPlatformError(StaticInvokeHybridEventErrorExecution, sceerrorreason.ErrorReasonInvokeSrcNotFound, "<invoke srcexpr> evaluated to a document it did not declare"))
 				continue
 			}
 
@@ -1201,7 +1205,7 @@ func (p *StaticInvokeHybridPolicy) ExecutePendingInvokes(engine *sce.Engine[Stat
 				var sceFailure scealgorithm.Failure
 				_ = int64(scealgorithm.SubUint32(&sceFailure, p.vBase, 4))
 				if sceFailure.Failed() {
-					engine.Raise(sce.NewPlatformError(StaticInvokeHybridEventErrorExecution, "<invoke> <param name='extra'> could not be read"))
+					engine.Raise(sce.NewPlatformError(StaticInvokeHybridEventErrorExecution, sceerrorreason.ErrorReasonLocationInvalid, "<invoke> <param name='extra'> could not be read"))
 				}
 			}
 
@@ -1236,7 +1240,7 @@ func (p *StaticInvokeHybridPolicy) ExecutePendingInvokes(engine *sce.Engine[Stat
 			if refused := childEngine.Initialize(); refused != nil {
 				childEngine.DetachMesh()
 				delete(p.activeInvokes, "first_run")
-				engine.Raise(sce.NewPlatformError(StaticInvokeHybridEventErrorExecution, sce.ChildStartRefusal("first_run", refused)))
+				engine.Raise(sce.NewPlatformError(StaticInvokeHybridEventErrorExecution, sceerrorreason.ErrorReasonInvokeChildInitFailed, sce.ChildStartRefusal("first_run", refused)))
 				continue
 			}
 
@@ -1291,7 +1295,7 @@ func (p *StaticInvokeHybridPolicy) ExecutePendingInvokes(engine *sce.Engine[Stat
 						seed.VExtra = &sceValue					} else {
 						// §scxml-5.7.1: a value that failed is reported and the
 						// child still starts, one value short.
-						engine.Raise(sce.NewPlatformError(StaticInvokeHybridEventErrorExecution, "<invoke> <param name='extra'> could not be read"))
+						engine.Raise(sce.NewPlatformError(StaticInvokeHybridEventErrorExecution, sceerrorreason.ErrorReasonLocationInvalid, "<invoke> <param name='extra'> could not be read"))
 					}
 				}
 				childPolicy.AcceptParams(seed)
@@ -1328,7 +1332,7 @@ func (p *StaticInvokeHybridPolicy) ExecutePendingInvokes(engine *sce.Engine[Stat
 			if refused := childEngine.Initialize(); refused != nil {
 				childEngine.DetachMesh()
 				delete(p.activeInvokes, "first_run")
-				engine.Raise(sce.NewPlatformError(StaticInvokeHybridEventErrorExecution, sce.ChildStartRefusal("first_run", refused)))
+				engine.Raise(sce.NewPlatformError(StaticInvokeHybridEventErrorExecution, sceerrorreason.ErrorReasonInvokeChildInitFailed, sce.ChildStartRefusal("first_run", refused)))
 				continue
 			}
 
@@ -1364,7 +1368,7 @@ func (p *StaticInvokeHybridPolicy) ExecutePendingInvokes(engine *sce.Engine[Stat
 			switch __sceSelected {
 			case "static_hybrid_first", "static_hybrid_second":
 			default:
-				engine.Raise(sce.NewPlatformError(StaticInvokeHybridEventErrorExecution, "<invoke srcexpr> evaluated to a document it did not declare"))
+				engine.Raise(sce.NewPlatformError(StaticInvokeHybridEventErrorExecution, sceerrorreason.ErrorReasonInvokeSrcNotFound, "<invoke srcexpr> evaluated to a document it did not declare"))
 				continue
 			}
 
@@ -1411,7 +1415,7 @@ func (p *StaticInvokeHybridPolicy) ExecutePendingInvokes(engine *sce.Engine[Stat
 				var sceFailure scealgorithm.Failure
 				_ = int64(scealgorithm.MulUint32(&sceFailure, p.vBase, 2000000000))
 				if sceFailure.Failed() {
-					engine.Raise(sce.NewPlatformError(StaticInvokeHybridEventErrorExecution, "<invoke> <param name='extra'> could not be read"))
+					engine.Raise(sce.NewPlatformError(StaticInvokeHybridEventErrorExecution, sceerrorreason.ErrorReasonLocationInvalid, "<invoke> <param name='extra'> could not be read"))
 				}
 			}
 
@@ -1446,7 +1450,7 @@ func (p *StaticInvokeHybridPolicy) ExecutePendingInvokes(engine *sce.Engine[Stat
 			if refused := childEngine.Initialize(); refused != nil {
 				childEngine.DetachMesh()
 				delete(p.activeInvokes, "lossy_run")
-				engine.Raise(sce.NewPlatformError(StaticInvokeHybridEventErrorExecution, sce.ChildStartRefusal("lossy_run", refused)))
+				engine.Raise(sce.NewPlatformError(StaticInvokeHybridEventErrorExecution, sceerrorreason.ErrorReasonInvokeChildInitFailed, sce.ChildStartRefusal("lossy_run", refused)))
 				continue
 			}
 
@@ -1501,7 +1505,7 @@ func (p *StaticInvokeHybridPolicy) ExecutePendingInvokes(engine *sce.Engine[Stat
 						seed.VExtra = &sceValue					} else {
 						// §scxml-5.7.1: a value that failed is reported and the
 						// child still starts, one value short.
-						engine.Raise(sce.NewPlatformError(StaticInvokeHybridEventErrorExecution, "<invoke> <param name='extra'> could not be read"))
+						engine.Raise(sce.NewPlatformError(StaticInvokeHybridEventErrorExecution, sceerrorreason.ErrorReasonLocationInvalid, "<invoke> <param name='extra'> could not be read"))
 					}
 				}
 				childPolicy.AcceptParams(seed)
@@ -1538,7 +1542,7 @@ func (p *StaticInvokeHybridPolicy) ExecutePendingInvokes(engine *sce.Engine[Stat
 			if refused := childEngine.Initialize(); refused != nil {
 				childEngine.DetachMesh()
 				delete(p.activeInvokes, "lossy_run")
-				engine.Raise(sce.NewPlatformError(StaticInvokeHybridEventErrorExecution, sce.ChildStartRefusal("lossy_run", refused)))
+				engine.Raise(sce.NewPlatformError(StaticInvokeHybridEventErrorExecution, sceerrorreason.ErrorReasonInvokeChildInitFailed, sce.ChildStartRefusal("lossy_run", refused)))
 				continue
 			}
 
@@ -1574,7 +1578,7 @@ func (p *StaticInvokeHybridPolicy) ExecutePendingInvokes(engine *sce.Engine[Stat
 			switch __sceSelected {
 			case "static_hybrid_first", "static_hybrid_second":
 			default:
-				engine.Raise(sce.NewPlatformError(StaticInvokeHybridEventErrorExecution, "<invoke srcexpr> evaluated to a document it did not declare"))
+				engine.Raise(sce.NewPlatformError(StaticInvokeHybridEventErrorExecution, sceerrorreason.ErrorReasonInvokeSrcNotFound, "<invoke srcexpr> evaluated to a document it did not declare"))
 				continue
 			}
 
@@ -1646,7 +1650,7 @@ func (p *StaticInvokeHybridPolicy) ExecutePendingInvokes(engine *sce.Engine[Stat
 			if refused := childEngine.Initialize(); refused != nil {
 				childEngine.DetachMesh()
 				delete(p.activeInvokes, "missing_run")
-				engine.Raise(sce.NewPlatformError(StaticInvokeHybridEventErrorExecution, sce.ChildStartRefusal("missing_run", refused)))
+				engine.Raise(sce.NewPlatformError(StaticInvokeHybridEventErrorExecution, sceerrorreason.ErrorReasonInvokeChildInitFailed, sce.ChildStartRefusal("missing_run", refused)))
 				continue
 			}
 
@@ -1728,7 +1732,7 @@ func (p *StaticInvokeHybridPolicy) ExecutePendingInvokes(engine *sce.Engine[Stat
 			if refused := childEngine.Initialize(); refused != nil {
 				childEngine.DetachMesh()
 				delete(p.activeInvokes, "missing_run")
-				engine.Raise(sce.NewPlatformError(StaticInvokeHybridEventErrorExecution, sce.ChildStartRefusal("missing_run", refused)))
+				engine.Raise(sce.NewPlatformError(StaticInvokeHybridEventErrorExecution, sceerrorreason.ErrorReasonInvokeChildInitFailed, sce.ChildStartRefusal("missing_run", refused)))
 				continue
 			}
 
@@ -1764,7 +1768,7 @@ func (p *StaticInvokeHybridPolicy) ExecutePendingInvokes(engine *sce.Engine[Stat
 			switch __sceSelected {
 			case "static_hybrid_first", "static_hybrid_second":
 			default:
-				engine.Raise(sce.NewPlatformError(StaticInvokeHybridEventErrorExecution, "<invoke srcexpr> evaluated to a document it did not declare"))
+				engine.Raise(sce.NewPlatformError(StaticInvokeHybridEventErrorExecution, sceerrorreason.ErrorReasonInvokeSrcNotFound, "<invoke srcexpr> evaluated to a document it did not declare"))
 				continue
 			}
 
@@ -1811,7 +1815,7 @@ func (p *StaticInvokeHybridPolicy) ExecutePendingInvokes(engine *sce.Engine[Stat
 				var sceFailure scealgorithm.Failure
 				_ = int64(scealgorithm.SubUint32(&sceFailure, p.vBase, 4))
 				if sceFailure.Failed() {
-					engine.Raise(sce.NewPlatformError(StaticInvokeHybridEventErrorExecution, "<invoke> <param name='extra'> could not be read"))
+					engine.Raise(sce.NewPlatformError(StaticInvokeHybridEventErrorExecution, sceerrorreason.ErrorReasonLocationInvalid, "<invoke> <param name='extra'> could not be read"))
 				}
 			}
 
@@ -1846,7 +1850,7 @@ func (p *StaticInvokeHybridPolicy) ExecutePendingInvokes(engine *sce.Engine[Stat
 			if refused := childEngine.Initialize(); refused != nil {
 				childEngine.DetachMesh()
 				delete(p.activeInvokes, "second_run")
-				engine.Raise(sce.NewPlatformError(StaticInvokeHybridEventErrorExecution, sce.ChildStartRefusal("second_run", refused)))
+				engine.Raise(sce.NewPlatformError(StaticInvokeHybridEventErrorExecution, sceerrorreason.ErrorReasonInvokeChildInitFailed, sce.ChildStartRefusal("second_run", refused)))
 				continue
 			}
 
@@ -1901,7 +1905,7 @@ func (p *StaticInvokeHybridPolicy) ExecutePendingInvokes(engine *sce.Engine[Stat
 						seed.VExtra = &sceValue					} else {
 						// §scxml-5.7.1: a value that failed is reported and the
 						// child still starts, one value short.
-						engine.Raise(sce.NewPlatformError(StaticInvokeHybridEventErrorExecution, "<invoke> <param name='extra'> could not be read"))
+						engine.Raise(sce.NewPlatformError(StaticInvokeHybridEventErrorExecution, sceerrorreason.ErrorReasonLocationInvalid, "<invoke> <param name='extra'> could not be read"))
 					}
 				}
 				childPolicy.AcceptParams(seed)
@@ -1938,7 +1942,7 @@ func (p *StaticInvokeHybridPolicy) ExecutePendingInvokes(engine *sce.Engine[Stat
 			if refused := childEngine.Initialize(); refused != nil {
 				childEngine.DetachMesh()
 				delete(p.activeInvokes, "second_run")
-				engine.Raise(sce.NewPlatformError(StaticInvokeHybridEventErrorExecution, sce.ChildStartRefusal("second_run", refused)))
+				engine.Raise(sce.NewPlatformError(StaticInvokeHybridEventErrorExecution, sceerrorreason.ErrorReasonInvokeChildInitFailed, sce.ChildStartRefusal("second_run", refused)))
 				continue
 			}
 
@@ -2652,7 +2656,7 @@ func (p *StaticInvokeHybridPolicy) ExecuteEntryActions(state StaticInvokeHybridS
 		func() {
 
 
-	if func() bool { var sceFailure scealgorithm.Failure; sceValue := scealgorithm.AddUint32(&sceFailure, p.vBase, 3); if sceFailure.Failed() { engine.Raise(sce.NewPlatformError(StaticInvokeHybridEventErrorExecution, "<assign location='base'>: an integer operation overflowed or failed")); return true }; p.vBase = sceValue; return false }() {
+	if func() bool { var sceFailure scealgorithm.Failure; sceValue := scealgorithm.AddUint32(&sceFailure, p.vBase, 3); if sceFailure.Failed() { engine.Raise(sce.NewPlatformError(StaticInvokeHybridEventErrorExecution, sceerrorreason.ErrorReasonExpressionFailed, "<assign location='base'>: an integer operation overflowed or failed")); return true }; p.vBase = sceValue; return false }() {
 		return  // W3C SCXML 4.9: the error ends the block
 	}
 
@@ -2674,7 +2678,7 @@ func (p *StaticInvokeHybridPolicy) ExecuteEntryActions(state StaticInvokeHybridS
 		func() {
 
 
-	if func() bool { var sceFailure scealgorithm.Failure; sceValue := scealgorithm.Bounded(&sceFailure, "./static_hybrid_first.scxml", 48); if sceFailure.Failed() { engine.Raise(sce.NewPlatformError(StaticInvokeHybridEventErrorExecution, "<assign location='pick'>: an integer operation overflowed or failed")); return true }; p.vPick = sceValue; return false }() {
+	if func() bool { var sceFailure scealgorithm.Failure; sceValue := scealgorithm.Bounded(&sceFailure, "./static_hybrid_first.scxml", 48); if sceFailure.Failed() { engine.Raise(sce.NewPlatformError(StaticInvokeHybridEventErrorExecution, sceerrorreason.ErrorReasonExpressionFailed, "<assign location='pick'>: an integer operation overflowed or failed")); return true }; p.vPick = sceValue; return false }() {
 		return  // W3C SCXML 4.9: the error ends the block
 	}
 
@@ -2696,7 +2700,7 @@ func (p *StaticInvokeHybridPolicy) ExecuteEntryActions(state StaticInvokeHybridS
 		func() {
 
 
-	if func() bool { var sceFailure scealgorithm.Failure; sceValue := scealgorithm.Bounded(&sceFailure, "static_hybrid_missing.scxml", 48); if sceFailure.Failed() { engine.Raise(sce.NewPlatformError(StaticInvokeHybridEventErrorExecution, "<assign location='pick'>: an integer operation overflowed or failed")); return true }; p.vPick = sceValue; return false }() {
+	if func() bool { var sceFailure scealgorithm.Failure; sceValue := scealgorithm.Bounded(&sceFailure, "static_hybrid_missing.scxml", 48); if sceFailure.Failed() { engine.Raise(sce.NewPlatformError(StaticInvokeHybridEventErrorExecution, sceerrorreason.ErrorReasonExpressionFailed, "<assign location='pick'>: an integer operation overflowed or failed")); return true }; p.vPick = sceValue; return false }() {
 		return  // W3C SCXML 4.9: the error ends the block
 	}
 
@@ -2718,7 +2722,7 @@ func (p *StaticInvokeHybridPolicy) ExecuteEntryActions(state StaticInvokeHybridS
 		func() {
 
 
-	if func() bool { var sceFailure scealgorithm.Failure; sceValue := scealgorithm.Bounded(&sceFailure, "/opt/charts/static_hybrid_second.scxml", 48); if sceFailure.Failed() { engine.Raise(sce.NewPlatformError(StaticInvokeHybridEventErrorExecution, "<assign location='pick'>: an integer operation overflowed or failed")); return true }; p.vPick = sceValue; return false }() {
+	if func() bool { var sceFailure scealgorithm.Failure; sceValue := scealgorithm.Bounded(&sceFailure, "/opt/charts/static_hybrid_second.scxml", 48); if sceFailure.Failed() { engine.Raise(sce.NewPlatformError(StaticInvokeHybridEventErrorExecution, sceerrorreason.ErrorReasonExpressionFailed, "<assign location='pick'>: an integer operation overflowed or failed")); return true }; p.vPick = sceValue; return false }() {
 		return  // W3C SCXML 4.9: the error ends the block
 	}
 
@@ -2962,7 +2966,7 @@ func (p *StaticInvokeHybridPolicy) ExecuteTransitionContent(source StaticInvokeH
 			func() {
 
 
-	if func() bool { var sceFailure scealgorithm.Failure; sceValue := scealgorithm.AddUint32(&sceFailure, p.vCompleted, 1); if sceFailure.Failed() { engine.Raise(sce.NewPlatformError(StaticInvokeHybridEventErrorExecution, "<assign location='completed'>: an integer operation overflowed or failed")); return true }; p.vCompleted = sceValue; return false }() {
+	if func() bool { var sceFailure scealgorithm.Failure; sceValue := scealgorithm.AddUint32(&sceFailure, p.vCompleted, 1); if sceFailure.Failed() { engine.Raise(sce.NewPlatformError(StaticInvokeHybridEventErrorExecution, sceerrorreason.ErrorReasonExpressionFailed, "<assign location='completed'>: an integer operation overflowed or failed")); return true }; p.vCompleted = sceValue; return false }() {
 		return  // W3C SCXML 4.9: the error ends the block
 	}
 
@@ -2976,7 +2980,7 @@ func (p *StaticInvokeHybridPolicy) ExecuteTransitionContent(source StaticInvokeH
 			func() {
 
 
-	if func() bool { var sceFailure scealgorithm.Failure; sceValue := scealgorithm.AddUint32(&sceFailure, p.vCompleted, 100); if sceFailure.Failed() { engine.Raise(sce.NewPlatformError(StaticInvokeHybridEventErrorExecution, "<assign location='completed'>: an integer operation overflowed or failed")); return true }; p.vCompleted = sceValue; return false }() {
+	if func() bool { var sceFailure scealgorithm.Failure; sceValue := scealgorithm.AddUint32(&sceFailure, p.vCompleted, 100); if sceFailure.Failed() { engine.Raise(sce.NewPlatformError(StaticInvokeHybridEventErrorExecution, sceerrorreason.ErrorReasonExpressionFailed, "<assign location='completed'>: an integer operation overflowed or failed")); return true }; p.vCompleted = sceValue; return false }() {
 		return  // W3C SCXML 4.9: the error ends the block
 	}
 
@@ -2990,7 +2994,7 @@ func (p *StaticInvokeHybridPolicy) ExecuteTransitionContent(source StaticInvokeH
 			func() {
 
 
-	if func() bool { var sceFailure scealgorithm.Failure; sceValue := scealgorithm.AddUint32(&sceFailure, p.vCompleted, 1000); if sceFailure.Failed() { engine.Raise(sce.NewPlatformError(StaticInvokeHybridEventErrorExecution, "<assign location='completed'>: an integer operation overflowed or failed")); return true }; p.vCompleted = sceValue; return false }() {
+	if func() bool { var sceFailure scealgorithm.Failure; sceValue := scealgorithm.AddUint32(&sceFailure, p.vCompleted, 1000); if sceFailure.Failed() { engine.Raise(sce.NewPlatformError(StaticInvokeHybridEventErrorExecution, sceerrorreason.ErrorReasonExpressionFailed, "<assign location='completed'>: an integer operation overflowed or failed")); return true }; p.vCompleted = sceValue; return false }() {
 		return  // W3C SCXML 4.9: the error ends the block
 	}
 
@@ -3001,7 +3005,7 @@ func (p *StaticInvokeHybridPolicy) ExecuteTransitionContent(source StaticInvokeH
 			func() {
 
 
-	if func() bool { var sceFailure scealgorithm.Failure; sceValue := scealgorithm.AddUint32(&sceFailure, p.vErrors, 1); if sceFailure.Failed() { engine.Raise(sce.NewPlatformError(StaticInvokeHybridEventErrorExecution, "<assign location='errors'>: an integer operation overflowed or failed")); return true }; p.vErrors = sceValue; return false }() {
+	if func() bool { var sceFailure scealgorithm.Failure; sceValue := scealgorithm.AddUint32(&sceFailure, p.vErrors, 1); if sceFailure.Failed() { engine.Raise(sce.NewPlatformError(StaticInvokeHybridEventErrorExecution, sceerrorreason.ErrorReasonExpressionFailed, "<assign location='errors'>: an integer operation overflowed or failed")); return true }; p.vErrors = sceValue; return false }() {
 		return  // W3C SCXML 4.9: the error ends the block
 	}
 
@@ -3015,7 +3019,7 @@ func (p *StaticInvokeHybridPolicy) ExecuteTransitionContent(source StaticInvokeH
 			func() {
 
 
-	if func() bool { var sceFailure scealgorithm.Failure; sceValue := scealgorithm.AddUint32(&sceFailure, p.vErrors, 1); if sceFailure.Failed() { engine.Raise(sce.NewPlatformError(StaticInvokeHybridEventErrorExecution, "<assign location='errors'>: an integer operation overflowed or failed")); return true }; p.vErrors = sceValue; return false }() {
+	if func() bool { var sceFailure scealgorithm.Failure; sceValue := scealgorithm.AddUint32(&sceFailure, p.vErrors, 1); if sceFailure.Failed() { engine.Raise(sce.NewPlatformError(StaticInvokeHybridEventErrorExecution, sceerrorreason.ErrorReasonExpressionFailed, "<assign location='errors'>: an integer operation overflowed or failed")); return true }; p.vErrors = sceValue; return false }() {
 		return  // W3C SCXML 4.9: the error ends the block
 	}
 
@@ -3029,7 +3033,7 @@ func (p *StaticInvokeHybridPolicy) ExecuteTransitionContent(source StaticInvokeH
 			func() {
 
 
-	if func() bool { var sceFailure scealgorithm.Failure; sceValue := scealgorithm.AddUint32(&sceFailure, p.vCompleted, 10); if sceFailure.Failed() { engine.Raise(sce.NewPlatformError(StaticInvokeHybridEventErrorExecution, "<assign location='completed'>: an integer operation overflowed or failed")); return true }; p.vCompleted = sceValue; return false }() {
+	if func() bool { var sceFailure scealgorithm.Failure; sceValue := scealgorithm.AddUint32(&sceFailure, p.vCompleted, 10); if sceFailure.Failed() { engine.Raise(sce.NewPlatformError(StaticInvokeHybridEventErrorExecution, sceerrorreason.ErrorReasonExpressionFailed, "<assign location='completed'>: an integer operation overflowed or failed")); return true }; p.vCompleted = sceValue; return false }() {
 		return  // W3C SCXML 4.9: the error ends the block
 	}
 

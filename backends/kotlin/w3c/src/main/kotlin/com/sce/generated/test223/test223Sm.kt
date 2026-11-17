@@ -226,14 +226,14 @@ class Test223StateMachine(
 
     // W3C SCXML 5.9.1: a cond that cannot be evaluated raises error.execution;
     // `null` says so, where a bare `false` could not.
-    private fun evaluateGuardRaising(guardExpr: com.sce.runtime.ScriptSource, reason: String): Boolean? {
+    private fun evaluateGuardRaising(guardExpr: com.sce.runtime.ScriptSource, detail: String): Boolean? {
         assertScriptSession()
         val engine = scriptEngine ?: error("scriptEngine is required (codegen invariant: needs_script_engine == true)")
         val sid = scriptSessionId ?: error("scriptSessionId is established by the start (codegen invariant)")
         return try {
             engine.evaluateCondition(sid, guardExpr)
         } catch (e: Exception) {
-            raisePlatformError(Test223Event.Error.Execution, reason)
+            raisePlatformError(Test223Event.Error.Execution, ErrorReason.EXPRESSION_FAILED, detail)
             null
         }
     }
@@ -274,7 +274,7 @@ class Test223StateMachine(
         return try {
             engine.evaluateExpr(sid, serialized)?.toString() ?: ""
         } catch (e: Exception) {
-            raisePlatformError(Test223Event.Error.Execution, "an expression could not be serialised to JSON")
+            raisePlatformError(Test223Event.Error.Execution, ErrorReason.EXPRESSION_FAILED, "an expression could not be serialised to JSON")
             ""
         }
     }
@@ -295,7 +295,7 @@ class Test223StateMachine(
             engine.assign(sid, location, expr)
             true
         } catch (e: Exception) {
-            raisePlatformError(Test223Event.Error.Execution, "<assign> failed")
+            raisePlatformError(Test223Event.Error.Execution, ErrorReason.ASSIGNMENT_FAILED, "<assign> failed")
             false
         }
     }
@@ -315,7 +315,7 @@ class Test223StateMachine(
             engine.assign(sid, location, com.sce.runtime.ScriptSource.stringLiteral(id, location.language))
             true
         } catch (e: Exception) {
-            raisePlatformError(Test223Event.Error.Execution, "$element idlocation could not take the id")
+            raisePlatformError(Test223Event.Error.Execution, ErrorReason.LOCATION_INVALID, "$element idlocation could not take the id")
             false
         }
     }
@@ -331,7 +331,7 @@ class Test223StateMachine(
             engine.executeScript(sid, script)
             true
         } catch (e: Exception) {
-            raisePlatformError(Test223Event.Error.Execution, "<script> failed to execute")
+            raisePlatformError(Test223Event.Error.Execution, ErrorReason.SCRIPT_FAILED, "<script> failed to execute")
             false
         }
     }

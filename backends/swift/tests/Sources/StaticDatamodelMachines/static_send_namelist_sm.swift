@@ -675,7 +675,7 @@ public final class StaticSendNamelistPolicy: InvocablePolicy {
                         let sceValue: WireValue = .integer(Int64((try Checked.add(self.vZoom, 1))))
                         sendParts.append(PayloadPair("zoom", sceValue))
                     } catch {
-                            engine.raise(EventWithMetadata.platformError(StaticSendNamelistEvent.errorExecution, message: "<send> <param name=zoom> failed to evaluate"))
+                            engine.raise(EventWithMetadata.platformError(StaticSendNamelistEvent.errorExecution, reason: .expressionFailed, message: "<send> <param name=zoom> failed to evaluate"))
                             paramFailed = true
                     }
                     do {
@@ -716,7 +716,7 @@ public final class StaticSendNamelistPolicy: InvocablePolicy {
 
 
 
-                if ({ () -> Bool in do { let sceValue: UInt32 = (try Checked.add(self.vDeliveries, 1)); self.vDeliveries = sceValue } catch { engine.raise(EventWithMetadata.platformError(StaticSendNamelistEvent.errorExecution, message: "<assign location='deliveries'>: an integer operation overflowed or failed")); return true }; return false }()) {
+                if ({ () -> Bool in do { let sceValue: UInt32 = (try Checked.add(self.vDeliveries, 1)); self.vDeliveries = sceValue } catch { engine.raise(EventWithMetadata.platformError(StaticSendNamelistEvent.errorExecution, reason: .expressionFailed, message: "<assign location='deliveries'>: an integer operation overflowed or failed")); return true }; return false }()) {
                     break sceBlock  // W3C SCXML 4.9: the error ends the block
                 }
 

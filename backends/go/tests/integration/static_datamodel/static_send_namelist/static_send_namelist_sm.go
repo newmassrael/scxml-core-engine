@@ -31,6 +31,7 @@ import (
 	"time"
 
 	sce "github.com/newmassrael/sce-go-runtime"
+	sceerrorreason "github.com/newmassrael/sce-go-runtime/generated/error_reason"
 	scealgorithm "github.com/newmassrael/sce-forge-runtime/algorithm"
 	"github.com/newmassrael/sce-forge-runtime/optional"
 )
@@ -41,6 +42,9 @@ var (
 	_ = filepath.Join
 	_ = strings.HasPrefix
 	_ = time.Duration(0)
+	// Why an error.* event is raised (sce:std/engine/error_reason,
+	// docs/adr/0106 #111); a machine that raises none still imports it.
+	_ = sceerrorreason.ErrorReasonExpressionFailed
 	_ scealgorithm.Failure
 )
 
@@ -1140,7 +1144,7 @@ func (p *StaticSendNamelistPolicy) ExecuteTransitionContent(source StaticSendNam
 			if !sceFailure.Failed() {
 				parts = append(parts, sce.EventDataParam{Name: "zoom", Value: sceValue})
 			} else {
-				engine.Raise(sce.NewPlatformError(StaticSendNamelistEventErrorExecution, "<send> <param name='zoom'> failed to evaluate"))
+				engine.Raise(sce.NewPlatformError(StaticSendNamelistEventErrorExecution, sceerrorreason.ErrorReasonExpressionFailed, "<send> <param name='zoom'> failed to evaluate"))
 				paramFailed = true
 			}
 		}
@@ -1182,7 +1186,7 @@ func (p *StaticSendNamelistPolicy) ExecuteTransitionContent(source StaticSendNam
 
 
 
-	if func() bool { var sceFailure scealgorithm.Failure; sceValue := scealgorithm.AddUint32(&sceFailure, p.vDeliveries, 1); if sceFailure.Failed() { engine.Raise(sce.NewPlatformError(StaticSendNamelistEventErrorExecution, "<assign location='deliveries'>: an integer operation overflowed or failed")); return true }; p.vDeliveries = sceValue; return false }() {
+	if func() bool { var sceFailure scealgorithm.Failure; sceValue := scealgorithm.AddUint32(&sceFailure, p.vDeliveries, 1); if sceFailure.Failed() { engine.Raise(sce.NewPlatformError(StaticSendNamelistEventErrorExecution, sceerrorreason.ErrorReasonExpressionFailed, "<assign location='deliveries'>: an integer operation overflowed or failed")); return true }; p.vDeliveries = sceValue; return false }() {
 		return  // W3C SCXML 4.9: the error ends the block
 	}
 

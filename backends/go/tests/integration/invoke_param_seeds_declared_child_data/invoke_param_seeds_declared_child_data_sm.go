@@ -31,6 +31,7 @@ import (
 	"time"
 
 	sce "github.com/newmassrael/sce-go-runtime"
+	sceerrorreason "github.com/newmassrael/sce-go-runtime/generated/error_reason"
 )
 
 // Ensure imports are used
@@ -39,6 +40,9 @@ var (
 	_ = filepath.Join
 	_ = strings.HasPrefix
 	_ = time.Duration(0)
+	// Why an error.* event is raised (sce:std/engine/error_reason,
+	// docs/adr/0106 #111); a machine that raises none still imports it.
+	_ = sceerrorreason.ErrorReasonExpressionFailed
 )
 
 // ======================================================================
@@ -477,7 +481,7 @@ func (p *InvokeParamSeedsDeclaredChildDataPolicy) InitializeDataModel(eng *sce.E
 		if err == nil {
 			_ = engine.SetVariable(sessionID, "token", result)
 		} else {
-			eng.Raise(sce.NewPlatformError(InvokeParamSeedsDeclaredChildDataEventErrorExecution, "<data id='token'> expr failed to evaluate"))
+			eng.Raise(sce.NewPlatformError(InvokeParamSeedsDeclaredChildDataEventErrorExecution, sceerrorreason.ErrorReasonExpressionFailed, "<data id='token'> expr failed to evaluate"))
 			_ = engine.SetVariable(sessionID, "token", nil)
 		}
 	}
@@ -491,7 +495,7 @@ func (p *InvokeParamSeedsDeclaredChildDataPolicy) InitializeDataModel(eng *sce.E
 		if err == nil {
 			_ = engine.SetVariable(sessionID, "only_here", result)
 		} else {
-			eng.Raise(sce.NewPlatformError(InvokeParamSeedsDeclaredChildDataEventErrorExecution, "<data id='only_here'> expr failed to evaluate"))
+			eng.Raise(sce.NewPlatformError(InvokeParamSeedsDeclaredChildDataEventErrorExecution, sceerrorreason.ErrorReasonExpressionFailed, "<data id='only_here'> expr failed to evaluate"))
 			_ = engine.SetVariable(sessionID, "only_here", nil)
 		}
 	}
@@ -523,12 +527,12 @@ func (p *InvokeParamSeedsDeclaredChildDataPolicy) evaluateIfCond(guard string, e
 // evaluateGuardRaising evaluates a cond, raising error.execution when it cannot
 // be evaluated (W3C SCXML 5.9.1); ok is false then, where a bare false could
 // not say so.
-func (p *InvokeParamSeedsDeclaredChildDataPolicy) evaluateGuardRaising(guard string, eng *sce.Engine[InvokeParamSeedsDeclaredChildDataState, InvokeParamSeedsDeclaredChildDataEvent], reason string) (value bool, ok bool) {
+func (p *InvokeParamSeedsDeclaredChildDataPolicy) evaluateGuardRaising(guard string, eng *sce.Engine[InvokeParamSeedsDeclaredChildDataState, InvokeParamSeedsDeclaredChildDataEvent], detail string) (value bool, ok bool) {
 	p.assertScriptSession()
 	engine := p.ScriptEngine
 	result, err := engine.EvaluateExpression(p.SessionID, guard)
 	if err != nil {
-		eng.Raise(sce.NewPlatformError(InvokeParamSeedsDeclaredChildDataEventErrorExecution, reason))
+		eng.Raise(sce.NewPlatformError(InvokeParamSeedsDeclaredChildDataEventErrorExecution, sceerrorreason.ErrorReasonExpressionFailed, detail))
 		return false, false
 	}
 	return sce.ScriptToBool(result), true
@@ -631,7 +635,7 @@ func (p *InvokeParamSeedsDeclaredChildDataPolicy) SetParamValueInScriptEngine(na
 // failed is left (docs/adr/0098).
 func (p *InvokeParamSeedsDeclaredChildDataPolicy) declareHandedValue(eng *sce.Engine[InvokeParamSeedsDeclaredChildDataState, InvokeParamSeedsDeclaredChildDataEvent], engine sce.IScriptEngine, sessionID, name string, value interface{}) {
 	if err := engine.SetVariable(sessionID, name, value); err != nil {
-		eng.Raise(sce.NewPlatformError(InvokeParamSeedsDeclaredChildDataEventErrorExecution, "<data id='"+name+"'> could not hold the value its invoking session handed it"))
+		eng.Raise(sce.NewPlatformError(InvokeParamSeedsDeclaredChildDataEventErrorExecution, sceerrorreason.ErrorReasonDataInitFailed, "<data id='"+name+"'> could not hold the value its invoking session handed it"))
 		_ = engine.SetVariable(sessionID, name, nil)
 	}
 }
@@ -691,7 +695,7 @@ func (p *InvokeParamSeedsDeclaredChildDataPolicy) ExecutePendingInvokes(engine *
 					// "terminate the processing of the element" is not what a
 					// failing `<param>` costs: the child still starts, one pair
 					// short.
-					engine.Raise(sce.NewPlatformError(InvokeParamSeedsDeclaredChildDataEventErrorExecution, "<invoke> <param name='seen'> could not be read"))
+					engine.Raise(sce.NewPlatformError(InvokeParamSeedsDeclaredChildDataEventErrorExecution, sceerrorreason.ErrorReasonLocationInvalid, "<invoke> <param name='seen'> could not be read"))
 				}
 			}
 
@@ -727,7 +731,7 @@ func (p *InvokeParamSeedsDeclaredChildDataPolicy) ExecutePendingInvokes(engine *
 			if refused := childEngine.Initialize(); refused != nil {
 				childEngine.DetachMesh()
 				delete(p.activeInvokes, "inv_infinite")
-				engine.Raise(sce.NewPlatformError(InvokeParamSeedsDeclaredChildDataEventErrorExecution, sce.ChildStartRefusal("inv_infinite", refused)))
+				engine.Raise(sce.NewPlatformError(InvokeParamSeedsDeclaredChildDataEventErrorExecution, sceerrorreason.ErrorReasonInvokeChildInitFailed, sce.ChildStartRefusal("inv_infinite", refused)))
 				continue
 			}
 
@@ -760,7 +764,7 @@ func (p *InvokeParamSeedsDeclaredChildDataPolicy) ExecutePendingInvokes(engine *
 					namelistValid = false
 				}
 				if !namelistValid {
-					engine.Raise(sce.NewPlatformError(InvokeParamSeedsDeclaredChildDataEventErrorExecution, "<invoke> namelist names a location that cannot be read"))
+					engine.Raise(sce.NewPlatformError(InvokeParamSeedsDeclaredChildDataEventErrorExecution, sceerrorreason.ErrorReasonLocationInvalid, "<invoke> namelist names a location that cannot be read"))
 					continue
 				}
 			}
@@ -830,7 +834,7 @@ func (p *InvokeParamSeedsDeclaredChildDataPolicy) ExecutePendingInvokes(engine *
 			if refused := childEngine.Initialize(); refused != nil {
 				childEngine.DetachMesh()
 				delete(p.activeInvokes, "inv_namelist")
-				engine.Raise(sce.NewPlatformError(InvokeParamSeedsDeclaredChildDataEventErrorExecution, sce.ChildStartRefusal("inv_namelist", refused)))
+				engine.Raise(sce.NewPlatformError(InvokeParamSeedsDeclaredChildDataEventErrorExecution, sceerrorreason.ErrorReasonInvokeChildInitFailed, sce.ChildStartRefusal("inv_namelist", refused)))
 				continue
 			}
 
@@ -895,7 +899,7 @@ func (p *InvokeParamSeedsDeclaredChildDataPolicy) ExecutePendingInvokes(engine *
 					// "terminate the processing of the element" is not what a
 					// failing `<param>` costs: the child still starts, one pair
 					// short.
-					engine.Raise(sce.NewPlatformError(InvokeParamSeedsDeclaredChildDataEventErrorExecution, "<invoke> <param name='seen'> could not be read"))
+					engine.Raise(sce.NewPlatformError(InvokeParamSeedsDeclaredChildDataEventErrorExecution, sceerrorreason.ErrorReasonLocationInvalid, "<invoke> <param name='seen'> could not be read"))
 				}
 			}
 
@@ -931,7 +935,7 @@ func (p *InvokeParamSeedsDeclaredChildDataPolicy) ExecutePendingInvokes(engine *
 			if refused := childEngine.Initialize(); refused != nil {
 				childEngine.DetachMesh()
 				delete(p.activeInvokes, "inv_shadow")
-				engine.Raise(sce.NewPlatformError(InvokeParamSeedsDeclaredChildDataEventErrorExecution, sce.ChildStartRefusal("inv_shadow", refused)))
+				engine.Raise(sce.NewPlatformError(InvokeParamSeedsDeclaredChildDataEventErrorExecution, sceerrorreason.ErrorReasonInvokeChildInitFailed, sce.ChildStartRefusal("inv_shadow", refused)))
 				continue
 			}
 
@@ -996,7 +1000,7 @@ func (p *InvokeParamSeedsDeclaredChildDataPolicy) ExecutePendingInvokes(engine *
 					// "terminate the processing of the element" is not what a
 					// failing `<param>` costs: the child still starts, one pair
 					// short.
-					engine.Raise(sce.NewPlatformError(InvokeParamSeedsDeclaredChildDataEventErrorExecution, "<invoke> <param name='seen'> could not be read"))
+					engine.Raise(sce.NewPlatformError(InvokeParamSeedsDeclaredChildDataEventErrorExecution, sceerrorreason.ErrorReasonLocationInvalid, "<invoke> <param name='seen'> could not be read"))
 				}
 			}
 
@@ -1032,7 +1036,7 @@ func (p *InvokeParamSeedsDeclaredChildDataPolicy) ExecutePendingInvokes(engine *
 			if refused := childEngine.Initialize(); refused != nil {
 				childEngine.DetachMesh()
 				delete(p.activeInvokes, "inv_sole")
-				engine.Raise(sce.NewPlatformError(InvokeParamSeedsDeclaredChildDataEventErrorExecution, sce.ChildStartRefusal("inv_sole", refused)))
+				engine.Raise(sce.NewPlatformError(InvokeParamSeedsDeclaredChildDataEventErrorExecution, sceerrorreason.ErrorReasonInvokeChildInitFailed, sce.ChildStartRefusal("inv_sole", refused)))
 				continue
 			}
 
@@ -1097,7 +1101,7 @@ func (p *InvokeParamSeedsDeclaredChildDataPolicy) ExecutePendingInvokes(engine *
 					// "terminate the processing of the element" is not what a
 					// failing `<param>` costs: the child still starts, one pair
 					// short.
-					engine.Raise(sce.NewPlatformError(InvokeParamSeedsDeclaredChildDataEventErrorExecution, "<invoke> <param name='declared'> could not be read"))
+					engine.Raise(sce.NewPlatformError(InvokeParamSeedsDeclaredChildDataEventErrorExecution, sceerrorreason.ErrorReasonLocationInvalid, "<invoke> <param name='declared'> could not be read"))
 				}
 				if val, err := se.EvaluateExpression(p.SessionID, `"leaked"`); err == nil {
 					// §scxml-6.4.3: the VALUE of the param element becomes the
@@ -1111,7 +1115,7 @@ func (p *InvokeParamSeedsDeclaredChildDataPolicy) ExecutePendingInvokes(engine *
 					// "terminate the processing of the element" is not what a
 					// failing `<param>` costs: the child still starts, one pair
 					// short.
-					engine.Raise(sce.NewPlatformError(InvokeParamSeedsDeclaredChildDataEventErrorExecution, "<invoke> <param name='nowhere'> could not be read"))
+					engine.Raise(sce.NewPlatformError(InvokeParamSeedsDeclaredChildDataEventErrorExecution, sceerrorreason.ErrorReasonLocationInvalid, "<invoke> <param name='nowhere'> could not be read"))
 				}
 			}
 
@@ -1147,7 +1151,7 @@ func (p *InvokeParamSeedsDeclaredChildDataPolicy) ExecutePendingInvokes(engine *
 			if refused := childEngine.Initialize(); refused != nil {
 				childEngine.DetachMesh()
 				delete(p.activeInvokes, "inv_unmatched")
-				engine.Raise(sce.NewPlatformError(InvokeParamSeedsDeclaredChildDataEventErrorExecution, sce.ChildStartRefusal("inv_unmatched", refused)))
+				engine.Raise(sce.NewPlatformError(InvokeParamSeedsDeclaredChildDataEventErrorExecution, sceerrorreason.ErrorReasonInvokeChildInitFailed, sce.ChildStartRefusal("inv_unmatched", refused)))
 				continue
 			}
 

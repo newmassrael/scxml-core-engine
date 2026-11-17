@@ -31,6 +31,7 @@ import (
 	"time"
 
 	sce "github.com/newmassrael/sce-go-runtime"
+	sceerrorreason "github.com/newmassrael/sce-go-runtime/generated/error_reason"
 	scealgorithm "github.com/newmassrael/sce-forge-runtime/algorithm"
 )
 
@@ -40,6 +41,9 @@ var (
 	_ = filepath.Join
 	_ = strings.HasPrefix
 	_ = time.Duration(0)
+	// Why an error.* event is raised (sce:std/engine/error_reason,
+	// docs/adr/0106 #111); a machine that raises none still imports it.
+	_ = sceerrorreason.ErrorReasonExpressionFailed
 	_ scealgorithm.Failure
 )
 
@@ -733,7 +737,7 @@ func (p *StaticInvokeTreePolicy) ExecutePendingInvokes(engine *sce.Engine[Static
 			if refused := childEngine.Initialize(); refused != nil {
 				childEngine.DetachMesh()
 				delete(p.activeInvokes, "worker")
-				engine.Raise(sce.NewPlatformError(StaticInvokeTreeEventErrorExecution, sce.ChildStartRefusal("worker", refused)))
+				engine.Raise(sce.NewPlatformError(StaticInvokeTreeEventErrorExecution, sceerrorreason.ErrorReasonInvokeChildInitFailed, sce.ChildStartRefusal("worker", refused)))
 				continue
 			}
 
@@ -1417,7 +1421,7 @@ func (p *StaticInvokeTreePolicy) ExecuteTransitionContent(source StaticInvokeTre
 	} else {
 		// W3C SCXML C.1: the invocation is not running, so the session the
 		// target names is not there to reach.
-		errEvt := sce.NewPlatformError(StaticInvokeTreeEventErrorCommunication, "<send target='#_worker'> names an invocation that is not running")
+		errEvt := sce.NewPlatformError(StaticInvokeTreeEventErrorCommunication, sceerrorreason.ErrorReasonTargetUnreachable, "<send target='#_worker'> names an invocation that is not running")
 		errEvt.Metadata.SendID = "__send_0"
 		engine.Raise(errEvt)
 		return
@@ -1447,7 +1451,7 @@ func (p *StaticInvokeTreePolicy) ExecuteTransitionContent(source StaticInvokeTre
 	} else {
 		// W3C SCXML C.1: the invocation is not running, so the session the
 		// target names is not there to reach.
-		errEvt := sce.NewPlatformError(StaticInvokeTreeEventErrorCommunication, "<send target='#_worker'> names an invocation that is not running")
+		errEvt := sce.NewPlatformError(StaticInvokeTreeEventErrorCommunication, sceerrorreason.ErrorReasonTargetUnreachable, "<send target='#_worker'> names an invocation that is not running")
 		errEvt.Metadata.SendID = "poke"
 		engine.Raise(errEvt)
 		return
@@ -1461,7 +1465,7 @@ func (p *StaticInvokeTreePolicy) ExecuteTransitionContent(source StaticInvokeTre
 			func() {
 
 
-	if func() bool { var sceFailure scealgorithm.Failure; sceValue := scealgorithm.AddUint32(&sceFailure, p.vAnswers, 1); if sceFailure.Failed() { engine.Raise(sce.NewPlatformError(StaticInvokeTreeEventErrorExecution, "<assign location='answers'>: an integer operation overflowed or failed")); return true }; p.vAnswers = sceValue; return false }() {
+	if func() bool { var sceFailure scealgorithm.Failure; sceValue := scealgorithm.AddUint32(&sceFailure, p.vAnswers, 1); if sceFailure.Failed() { engine.Raise(sce.NewPlatformError(StaticInvokeTreeEventErrorExecution, sceerrorreason.ErrorReasonExpressionFailed, "<assign location='answers'>: an integer operation overflowed or failed")); return true }; p.vAnswers = sceValue; return false }() {
 		return  // W3C SCXML 4.9: the error ends the block
 	}
 
@@ -1472,7 +1476,7 @@ func (p *StaticInvokeTreePolicy) ExecuteTransitionContent(source StaticInvokeTre
 			func() {
 
 
-	if func() bool { var sceFailure scealgorithm.Failure; sceValue := scealgorithm.AddUint32(&sceFailure, p.vReports, 1); if sceFailure.Failed() { engine.Raise(sce.NewPlatformError(StaticInvokeTreeEventErrorExecution, "<assign location='reports'>: an integer operation overflowed or failed")); return true }; p.vReports = sceValue; return false }() {
+	if func() bool { var sceFailure scealgorithm.Failure; sceValue := scealgorithm.AddUint32(&sceFailure, p.vReports, 1); if sceFailure.Failed() { engine.Raise(sce.NewPlatformError(StaticInvokeTreeEventErrorExecution, sceerrorreason.ErrorReasonExpressionFailed, "<assign location='reports'>: an integer operation overflowed or failed")); return true }; p.vReports = sceValue; return false }() {
 		return  // W3C SCXML 4.9: the error ends the block
 	}
 
@@ -1483,7 +1487,7 @@ func (p *StaticInvokeTreePolicy) ExecuteTransitionContent(source StaticInvokeTre
 			func() {
 
 
-	if func() bool { var sceFailure scealgorithm.Failure; sceValue := scealgorithm.AddUint32(&sceFailure, p.vStamps, 1); if sceFailure.Failed() { engine.Raise(sce.NewPlatformError(StaticInvokeTreeEventErrorExecution, "<assign location='stamps'>: an integer operation overflowed or failed")); return true }; p.vStamps = sceValue; return false }() {
+	if func() bool { var sceFailure scealgorithm.Failure; sceValue := scealgorithm.AddUint32(&sceFailure, p.vStamps, 1); if sceFailure.Failed() { engine.Raise(sce.NewPlatformError(StaticInvokeTreeEventErrorExecution, sceerrorreason.ErrorReasonExpressionFailed, "<assign location='stamps'>: an integer operation overflowed or failed")); return true }; p.vStamps = sceValue; return false }() {
 		return  // W3C SCXML 4.9: the error ends the block
 	}
 

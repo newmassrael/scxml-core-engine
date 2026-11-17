@@ -31,6 +31,7 @@ import (
 	"time"
 
 	sce "github.com/newmassrael/sce-go-runtime"
+	sceerrorreason "github.com/newmassrael/sce-go-runtime/generated/error_reason"
 )
 
 // Ensure imports are used
@@ -39,6 +40,9 @@ var (
 	_ = filepath.Join
 	_ = strings.HasPrefix
 	_ = time.Duration(0)
+	// Why an error.* event is raised (sce:std/engine/error_reason,
+	// docs/adr/0106 #111); a machine that raises none still imports it.
+	_ = sceerrorreason.ErrorReasonExpressionFailed
 )
 
 // ======================================================================
@@ -385,7 +389,7 @@ func (p *ErrorCascadeIsBoundedPolicy) InitializeDataModel(eng *sce.Engine[ErrorC
 		if err == nil {
 			_ = engine.SetVariable(sessionID, "pokes", result)
 		} else {
-			eng.Raise(sce.NewPlatformError(ErrorCascadeIsBoundedEventErrorExecution, "<data id='pokes'> expr failed to evaluate"))
+			eng.Raise(sce.NewPlatformError(ErrorCascadeIsBoundedEventErrorExecution, sceerrorreason.ErrorReasonExpressionFailed, "<data id='pokes'> expr failed to evaluate"))
 			_ = engine.SetVariable(sessionID, "pokes", nil)
 		}
 	}
@@ -399,7 +403,7 @@ func (p *ErrorCascadeIsBoundedPolicy) InitializeDataModel(eng *sce.Engine[ErrorC
 		if err == nil {
 			_ = engine.SetVariable(sessionID, "repairs", result)
 		} else {
-			eng.Raise(sce.NewPlatformError(ErrorCascadeIsBoundedEventErrorExecution, "<data id='repairs'> expr failed to evaluate"))
+			eng.Raise(sce.NewPlatformError(ErrorCascadeIsBoundedEventErrorExecution, sceerrorreason.ErrorReasonExpressionFailed, "<data id='repairs'> expr failed to evaluate"))
 			_ = engine.SetVariable(sessionID, "repairs", nil)
 		}
 	}
@@ -413,7 +417,7 @@ func (p *ErrorCascadeIsBoundedPolicy) InitializeDataModel(eng *sce.Engine[ErrorC
 		if err == nil {
 			_ = engine.SetVariable(sessionID, "runs", result)
 		} else {
-			eng.Raise(sce.NewPlatformError(ErrorCascadeIsBoundedEventErrorExecution, "<data id='runs'> expr failed to evaluate"))
+			eng.Raise(sce.NewPlatformError(ErrorCascadeIsBoundedEventErrorExecution, sceerrorreason.ErrorReasonExpressionFailed, "<data id='runs'> expr failed to evaluate"))
 			_ = engine.SetVariable(sessionID, "runs", nil)
 		}
 	}
@@ -427,7 +431,7 @@ func (p *ErrorCascadeIsBoundedPolicy) InitializeDataModel(eng *sce.Engine[ErrorC
 		if err == nil {
 			_ = engine.SetVariable(sessionID, "ticks", result)
 		} else {
-			eng.Raise(sce.NewPlatformError(ErrorCascadeIsBoundedEventErrorExecution, "<data id='ticks'> expr failed to evaluate"))
+			eng.Raise(sce.NewPlatformError(ErrorCascadeIsBoundedEventErrorExecution, sceerrorreason.ErrorReasonExpressionFailed, "<data id='ticks'> expr failed to evaluate"))
 			_ = engine.SetVariable(sessionID, "ticks", nil)
 		}
 	}
@@ -459,12 +463,12 @@ func (p *ErrorCascadeIsBoundedPolicy) evaluateIfCond(guard string, eng *sce.Engi
 // evaluateGuardRaising evaluates a cond, raising error.execution when it cannot
 // be evaluated (W3C SCXML 5.9.1); ok is false then, where a bare false could
 // not say so.
-func (p *ErrorCascadeIsBoundedPolicy) evaluateGuardRaising(guard string, eng *sce.Engine[ErrorCascadeIsBoundedState, ErrorCascadeIsBoundedEvent], reason string) (value bool, ok bool) {
+func (p *ErrorCascadeIsBoundedPolicy) evaluateGuardRaising(guard string, eng *sce.Engine[ErrorCascadeIsBoundedState, ErrorCascadeIsBoundedEvent], detail string) (value bool, ok bool) {
 	p.assertScriptSession()
 	engine := p.ScriptEngine
 	result, err := engine.EvaluateExpression(p.SessionID, guard)
 	if err != nil {
-		eng.Raise(sce.NewPlatformError(ErrorCascadeIsBoundedEventErrorExecution, reason))
+		eng.Raise(sce.NewPlatformError(ErrorCascadeIsBoundedEventErrorExecution, sceerrorreason.ErrorReasonExpressionFailed, detail))
 		return false, false
 	}
 	return sce.ScriptToBool(result), true
@@ -567,7 +571,7 @@ func (p *ErrorCascadeIsBoundedPolicy) SetParamValueInScriptEngine(name string, v
 // failed is left (docs/adr/0098).
 func (p *ErrorCascadeIsBoundedPolicy) declareHandedValue(eng *sce.Engine[ErrorCascadeIsBoundedState, ErrorCascadeIsBoundedEvent], engine sce.IScriptEngine, sessionID, name string, value interface{}) {
 	if err := engine.SetVariable(sessionID, name, value); err != nil {
-		eng.Raise(sce.NewPlatformError(ErrorCascadeIsBoundedEventErrorExecution, "<data id='"+name+"'> could not hold the value its invoking session handed it"))
+		eng.Raise(sce.NewPlatformError(ErrorCascadeIsBoundedEventErrorExecution, sceerrorreason.ErrorReasonDataInitFailed, "<data id='"+name+"'> could not hold the value its invoking session handed it"))
 		_ = engine.SetVariable(sessionID, name, nil)
 	}
 }
@@ -828,7 +832,7 @@ func (p *ErrorCascadeIsBoundedPolicy) ExecuteEntryActions(state ErrorCascadeIsBo
 		func() {
 
 	// W3C SCXML 5.3/B.2: Invalid or read-only location ""
-	engine.Raise(sce.NewPlatformError(ErrorCascadeIsBoundedEventErrorExecution, "<assign> has an invalid or read-only location ''"))
+	engine.Raise(sce.NewPlatformError(ErrorCascadeIsBoundedEventErrorExecution, sceerrorreason.ErrorReasonLocationInvalid, "<assign> has an invalid or read-only location ''"))
 	return  // W3C SCXML 4.9: the error ends the block
 
 		}()
@@ -839,7 +843,7 @@ func (p *ErrorCascadeIsBoundedPolicy) ExecuteEntryActions(state ErrorCascadeIsBo
 		func() {
 
 	// W3C SCXML 5.3/B.2: Invalid or read-only location ""
-	engine.Raise(sce.NewPlatformError(ErrorCascadeIsBoundedEventErrorExecution, "<assign> has an invalid or read-only location ''"))
+	engine.Raise(sce.NewPlatformError(ErrorCascadeIsBoundedEventErrorExecution, sceerrorreason.ErrorReasonLocationInvalid, "<assign> has an invalid or read-only location ''"))
 	return  // W3C SCXML 4.9: the error ends the block
 
 		}()
@@ -1043,7 +1047,7 @@ func (p *ErrorCascadeIsBoundedPolicy) ExecuteTransitionContent(source ErrorCasca
 
 	// W3C SCXML 5.3: <assign location="pokes" expr="pokes + 1">
 	if err := p.assignVariable(`pokes`, `_scxml_add(pokes, 1)`); err != nil {
-		engine.Raise(sce.NewPlatformError(ErrorCascadeIsBoundedEventErrorExecution, "<assign> to 'pokes' failed"))
+		engine.Raise(sce.NewPlatformError(ErrorCascadeIsBoundedEventErrorExecution, sceerrorreason.ErrorReasonAssignmentFailed, "<assign> to 'pokes' failed"))
 		return  // W3C SCXML 4.9: the error ends the block
 	}
 
@@ -1054,7 +1058,7 @@ func (p *ErrorCascadeIsBoundedPolicy) ExecuteTransitionContent(source ErrorCasca
 			func() {
 
 	// W3C SCXML 5.3/B.2: Invalid or read-only location ""
-	engine.Raise(sce.NewPlatformError(ErrorCascadeIsBoundedEventErrorExecution, "<assign> has an invalid or read-only location ''"))
+	engine.Raise(sce.NewPlatformError(ErrorCascadeIsBoundedEventErrorExecution, sceerrorreason.ErrorReasonLocationInvalid, "<assign> has an invalid or read-only location ''"))
 	return  // W3C SCXML 4.9: the error ends the block
 
 			}()
@@ -1068,7 +1072,7 @@ func (p *ErrorCascadeIsBoundedPolicy) ExecuteTransitionContent(source ErrorCasca
 
 	// W3C SCXML 5.3: <assign location="runs" expr="runs + 1">
 	if err := p.assignVariable(`runs`, `_scxml_add(runs, 1)`); err != nil {
-		engine.Raise(sce.NewPlatformError(ErrorCascadeIsBoundedEventErrorExecution, "<assign> to 'runs' failed"))
+		engine.Raise(sce.NewPlatformError(ErrorCascadeIsBoundedEventErrorExecution, sceerrorreason.ErrorReasonAssignmentFailed, "<assign> to 'runs' failed"))
 		return  // W3C SCXML 4.9: the error ends the block
 	}
 
@@ -1077,7 +1081,7 @@ func (p *ErrorCascadeIsBoundedPolicy) ExecuteTransitionContent(source ErrorCasca
 
 
 	// W3C SCXML 5.3/B.2: Invalid or read-only location ""
-	engine.Raise(sce.NewPlatformError(ErrorCascadeIsBoundedEventErrorExecution, "<assign> has an invalid or read-only location ''"))
+	engine.Raise(sce.NewPlatformError(ErrorCascadeIsBoundedEventErrorExecution, sceerrorreason.ErrorReasonLocationInvalid, "<assign> has an invalid or read-only location ''"))
 	return  // W3C SCXML 4.9: the error ends the block
 
 			}()
@@ -1088,7 +1092,7 @@ func (p *ErrorCascadeIsBoundedPolicy) ExecuteTransitionContent(source ErrorCasca
 
 	// W3C SCXML 5.3: <assign location="ticks" expr="ticks + 1">
 	if err := p.assignVariable(`ticks`, `_scxml_add(ticks, 1)`); err != nil {
-		engine.Raise(sce.NewPlatformError(ErrorCascadeIsBoundedEventErrorExecution, "<assign> to 'ticks' failed"))
+		engine.Raise(sce.NewPlatformError(ErrorCascadeIsBoundedEventErrorExecution, sceerrorreason.ErrorReasonAssignmentFailed, "<assign> to 'ticks' failed"))
 		return  // W3C SCXML 4.9: the error ends the block
 	}
 
@@ -1100,7 +1104,7 @@ func (p *ErrorCascadeIsBoundedPolicy) ExecuteTransitionContent(source ErrorCasca
 
 	// W3C SCXML 5.3: <assign location="pokes" expr="pokes + 1">
 	if err := p.assignVariable(`pokes`, `_scxml_add(pokes, 1)`); err != nil {
-		engine.Raise(sce.NewPlatformError(ErrorCascadeIsBoundedEventErrorExecution, "<assign> to 'pokes' failed"))
+		engine.Raise(sce.NewPlatformError(ErrorCascadeIsBoundedEventErrorExecution, sceerrorreason.ErrorReasonAssignmentFailed, "<assign> to 'pokes' failed"))
 		return  // W3C SCXML 4.9: the error ends the block
 	}
 
@@ -1115,13 +1119,13 @@ func (p *ErrorCascadeIsBoundedPolicy) ExecuteTransitionContent(source ErrorCasca
 
 	// W3C SCXML 5.3: <assign location="repairs" expr="repairs + 1">
 	if err := p.assignVariable(`repairs`, `_scxml_add(repairs, 1)`); err != nil {
-		engine.Raise(sce.NewPlatformError(ErrorCascadeIsBoundedEventErrorExecution, "<assign> to 'repairs' failed"))
+		engine.Raise(sce.NewPlatformError(ErrorCascadeIsBoundedEventErrorExecution, sceerrorreason.ErrorReasonAssignmentFailed, "<assign> to 'repairs' failed"))
 		return  // W3C SCXML 4.9: the error ends the block
 	}
 
 
 	// W3C SCXML 5.3/B.2: Invalid or read-only location ""
-	engine.Raise(sce.NewPlatformError(ErrorCascadeIsBoundedEventErrorExecution, "<assign> has an invalid or read-only location ''"))
+	engine.Raise(sce.NewPlatformError(ErrorCascadeIsBoundedEventErrorExecution, sceerrorreason.ErrorReasonLocationInvalid, "<assign> has an invalid or read-only location ''"))
 	return  // W3C SCXML 4.9: the error ends the block
 
 			}()
@@ -1132,7 +1136,7 @@ func (p *ErrorCascadeIsBoundedPolicy) ExecuteTransitionContent(source ErrorCasca
 
 	// W3C SCXML 5.3: <assign location="pokes" expr="pokes + 1">
 	if err := p.assignVariable(`pokes`, `_scxml_add(pokes, 1)`); err != nil {
-		engine.Raise(sce.NewPlatformError(ErrorCascadeIsBoundedEventErrorExecution, "<assign> to 'pokes' failed"))
+		engine.Raise(sce.NewPlatformError(ErrorCascadeIsBoundedEventErrorExecution, sceerrorreason.ErrorReasonAssignmentFailed, "<assign> to 'pokes' failed"))
 		return  // W3C SCXML 4.9: the error ends the block
 	}
 

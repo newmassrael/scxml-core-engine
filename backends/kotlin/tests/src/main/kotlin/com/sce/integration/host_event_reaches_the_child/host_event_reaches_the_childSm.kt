@@ -407,7 +407,7 @@ class HostEventReachesTheChildStateMachine(
             // refused a target naming no invocation above; one that is not
             // running is not there to reach (W3C SCXML C.1).
             if (!sendToChild("inv_probe", "marker", sendData)) {
-                raisePlatformError(HostEventReachesTheChildEvent.Error.Communication, "<send target='#_inv_probe'> names an invocation that is not running", "__send_0")
+                raisePlatformError(HostEventReachesTheChildEvent.Error.Communication, ErrorReason.TARGET_UNREACHABLE, "<send target='#_inv_probe'> names an invocation that is not running", "__send_0")
                 return@send true
             }
             false

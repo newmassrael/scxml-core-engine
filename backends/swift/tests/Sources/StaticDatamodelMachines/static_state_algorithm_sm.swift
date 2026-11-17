@@ -673,13 +673,13 @@ public final class StaticStateAlgorithmPolicy: InvocablePolicy {
                     }
 
 
-                if ({ () -> Bool in do { let sceValue = (try Checked.within((try call_AddEntry__v(self.vEntries, self.pendingLedgerEntryPayload.id, self.pendingLedgerEntryPayload.amount)), capacity: 8)); self.vEntries = sceValue } catch { engine.raise(EventWithMetadata.platformError(StaticStateAlgorithmEvent.errorExecution, message: "<assign location='entries'>: an integer operation overflowed or failed")); return true }; return false }()) {
+                if ({ () -> Bool in do { let sceValue = (try Checked.within((try call_AddEntry__v(self.vEntries, self.pendingLedgerEntryPayload.id, self.pendingLedgerEntryPayload.amount)), capacity: 8)); self.vEntries = sceValue } catch { engine.raise(EventWithMetadata.platformError(StaticStateAlgorithmEvent.errorExecution, reason: .expressionFailed, message: "<assign location='entries'>: an integer operation overflowed or failed")); return true }; return false }()) {
                     break sceBlock  // W3C SCXML 4.9: the error ends the block
                 }
 
 
 
-                if ({ () -> Bool in do { let sceValue: StaticStateAlgorithmTotalRecord = (try call_TotalOf__v(self.vEntries)); self.vTotal = sceValue } catch { engine.raise(EventWithMetadata.platformError(StaticStateAlgorithmEvent.errorExecution, message: "<assign location='total'>: an integer operation overflowed or failed")); return true }; return false }()) {
+                if ({ () -> Bool in do { let sceValue: StaticStateAlgorithmTotalRecord = (try call_TotalOf__v(self.vEntries)); self.vTotal = sceValue } catch { engine.raise(EventWithMetadata.platformError(StaticStateAlgorithmEvent.errorExecution, reason: .expressionFailed, message: "<assign location='total'>: an integer operation overflowed or failed")); return true }; return false }()) {
                     break sceBlock  // W3C SCXML 4.9: the error ends the block
                 }
 
@@ -691,7 +691,7 @@ public final class StaticStateAlgorithmPolicy: InvocablePolicy {
                 if (call_AmountOf__p(self.pendingLedgerEntryPayload) > 100) {
 
 
-                if ({ () -> Bool in do { let sceValue: UInt32 = (try Checked.add(self.vLarge, 1)); self.vLarge = sceValue } catch { engine.raise(EventWithMetadata.platformError(StaticStateAlgorithmEvent.errorExecution, message: "<assign location='large'>: an integer operation overflowed or failed")); return true }; return false }()) {
+                if ({ () -> Bool in do { let sceValue: UInt32 = (try Checked.add(self.vLarge, 1)); self.vLarge = sceValue } catch { engine.raise(EventWithMetadata.platformError(StaticStateAlgorithmEvent.errorExecution, reason: .expressionFailed, message: "<assign location='large'>: an integer operation overflowed or failed")); return true }; return false }()) {
                     break sceBlock  // W3C SCXML 4.9: the error ends the block
                 }
 
@@ -703,7 +703,7 @@ public final class StaticStateAlgorithmPolicy: InvocablePolicy {
                 sceBlock: do {
 
 
-                if ({ () -> Bool in do { let sceValue: StaticStateAlgorithmTotalRecord = (try call_Bump__v(self.vTotal, 1)); self.vTotal = sceValue } catch { engine.raise(EventWithMetadata.platformError(StaticStateAlgorithmEvent.errorExecution, message: "<assign location='total'>: an integer operation overflowed or failed")); return true }; return false }()) {
+                if ({ () -> Bool in do { let sceValue: StaticStateAlgorithmTotalRecord = (try call_Bump__v(self.vTotal, 1)); self.vTotal = sceValue } catch { engine.raise(EventWithMetadata.platformError(StaticStateAlgorithmEvent.errorExecution, reason: .expressionFailed, message: "<assign location='total'>: an integer operation overflowed or failed")); return true }; return false }()) {
                     break sceBlock  // W3C SCXML 4.9: the error ends the block
                 }
 
@@ -714,13 +714,13 @@ public final class StaticStateAlgorithmPolicy: InvocablePolicy {
 
                 // SCE Accepted Subset §2.15: <sce:append target="ids">
 
-                if ({ () -> Bool in if self.vIds.count >= 8 { engine.raise(EventWithMetadata.platformError(StaticStateAlgorithmEvent.errorExecution, message: "<sce:append target='ids'>: the list already holds its capacity of 8")); return true }; let sceValue = Checked.element(of: self.vIds, self.vLast.id); self.vIds.append(sceValue); return false }()) {
+                if ({ () -> Bool in if self.vIds.count >= 8 { engine.raise(EventWithMetadata.platformError(StaticStateAlgorithmEvent.errorExecution, reason: .assignmentFailed, message: "<sce:append target='ids'>: the list already holds its capacity of 8")); return true }; let sceValue = Checked.element(of: self.vIds, self.vLast.id); self.vIds.append(sceValue); return false }()) {
                     break sceBlock  // W3C SCXML 4.9: the error ends the block
                 }
 
 
 
-                if ({ () -> Bool in do { let sceValue: UInt32 = (try call_IdSum__v(self.vIds)); self.vIdsum = sceValue } catch { engine.raise(EventWithMetadata.platformError(StaticStateAlgorithmEvent.errorExecution, message: "<assign location='idsum'>: an integer operation overflowed or failed")); return true }; return false }()) {
+                if ({ () -> Bool in do { let sceValue: UInt32 = (try call_IdSum__v(self.vIds)); self.vIdsum = sceValue } catch { engine.raise(EventWithMetadata.platformError(StaticStateAlgorithmEvent.errorExecution, reason: .expressionFailed, message: "<assign location='idsum'>: an integer operation overflowed or failed")); return true }; return false }()) {
                     break sceBlock  // W3C SCXML 4.9: the error ends the block
                 }
 
@@ -730,7 +730,7 @@ public final class StaticStateAlgorithmPolicy: InvocablePolicy {
                 sceBlock: do {
 
 
-                if ({ () -> Bool in do { let sceValue: UInt32 = (try Checked.add(self.vRefusals, 1)); self.vRefusals = sceValue } catch { engine.raise(EventWithMetadata.platformError(StaticStateAlgorithmEvent.errorExecution, message: "<assign location='refusals'>: an integer operation overflowed or failed")); return true }; return false }()) {
+                if ({ () -> Bool in do { let sceValue: UInt32 = (try Checked.add(self.vRefusals, 1)); self.vRefusals = sceValue } catch { engine.raise(EventWithMetadata.platformError(StaticStateAlgorithmEvent.errorExecution, reason: .expressionFailed, message: "<assign location='refusals'>: an integer operation overflowed or failed")); return true }; return false }()) {
                     break sceBlock  // W3C SCXML 4.9: the error ends the block
                 }
 

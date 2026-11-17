@@ -193,7 +193,7 @@ class InvokeParamSeedsDeclaredChildDataSceSynthInvokeInvSoleStateMachine(
             try {
                 engine.setVariable(sid, "seen", engine.evaluateExpr(sid, com.sce.runtime.ScriptSource.lua("\"unset\"", "'unset'")))
             } catch (e: Exception) {
-                raisePlatformError(InvokeParamSeedsDeclaredChildDataSceSynthInvokeInvSoleEvent.Error.Execution, "<data id='seen'> expr failed to evaluate")
+                raisePlatformError(InvokeParamSeedsDeclaredChildDataSceSynthInvokeInvSoleEvent.Error.Execution, ErrorReason.EXPRESSION_FAILED, "<data id='seen'> expr failed to evaluate")
             }
         }
     }
@@ -223,14 +223,14 @@ class InvokeParamSeedsDeclaredChildDataSceSynthInvokeInvSoleStateMachine(
 
     // W3C SCXML 5.9.1: a cond that cannot be evaluated raises error.execution;
     // `null` says so, where a bare `false` could not.
-    private fun evaluateGuardRaising(guardExpr: com.sce.runtime.ScriptSource, reason: String): Boolean? {
+    private fun evaluateGuardRaising(guardExpr: com.sce.runtime.ScriptSource, detail: String): Boolean? {
         assertScriptSession()
         val engine = scriptEngine ?: error("scriptEngine is required (codegen invariant: needs_script_engine == true)")
         val sid = scriptSessionId ?: error("scriptSessionId is established by the start (codegen invariant)")
         return try {
             engine.evaluateCondition(sid, guardExpr)
         } catch (e: Exception) {
-            raisePlatformError(InvokeParamSeedsDeclaredChildDataSceSynthInvokeInvSoleEvent.Error.Execution, reason)
+            raisePlatformError(InvokeParamSeedsDeclaredChildDataSceSynthInvokeInvSoleEvent.Error.Execution, ErrorReason.EXPRESSION_FAILED, detail)
             null
         }
     }
@@ -271,7 +271,7 @@ class InvokeParamSeedsDeclaredChildDataSceSynthInvokeInvSoleStateMachine(
         return try {
             engine.evaluateExpr(sid, serialized)?.toString() ?: ""
         } catch (e: Exception) {
-            raisePlatformError(InvokeParamSeedsDeclaredChildDataSceSynthInvokeInvSoleEvent.Error.Execution, "an expression could not be serialised to JSON")
+            raisePlatformError(InvokeParamSeedsDeclaredChildDataSceSynthInvokeInvSoleEvent.Error.Execution, ErrorReason.EXPRESSION_FAILED, "an expression could not be serialised to JSON")
             ""
         }
     }
@@ -292,7 +292,7 @@ class InvokeParamSeedsDeclaredChildDataSceSynthInvokeInvSoleStateMachine(
             engine.assign(sid, location, expr)
             true
         } catch (e: Exception) {
-            raisePlatformError(InvokeParamSeedsDeclaredChildDataSceSynthInvokeInvSoleEvent.Error.Execution, "<assign> failed")
+            raisePlatformError(InvokeParamSeedsDeclaredChildDataSceSynthInvokeInvSoleEvent.Error.Execution, ErrorReason.ASSIGNMENT_FAILED, "<assign> failed")
             false
         }
     }
@@ -308,7 +308,7 @@ class InvokeParamSeedsDeclaredChildDataSceSynthInvokeInvSoleStateMachine(
             engine.executeScript(sid, script)
             true
         } catch (e: Exception) {
-            raisePlatformError(InvokeParamSeedsDeclaredChildDataSceSynthInvokeInvSoleEvent.Error.Execution, "<script> failed to execute")
+            raisePlatformError(InvokeParamSeedsDeclaredChildDataSceSynthInvokeInvSoleEvent.Error.Execution, ErrorReason.SCRIPT_FAILED, "<script> failed to execute")
             false
         }
     }
@@ -472,7 +472,7 @@ class InvokeParamSeedsDeclaredChildDataSceSynthInvokeInvSoleStateMachine(
             // no parent — error.communication, nothing delivered, the block ended.
             val toParent = onSendToParent
             if (toParent == null) {
-                raisePlatformError(InvokeParamSeedsDeclaredChildDataSceSynthInvokeInvSoleEvent.Error.Communication, "<send target='#_parent'> has no parent session to reach", "__send_0")
+                raisePlatformError(InvokeParamSeedsDeclaredChildDataSceSynthInvokeInvSoleEvent.Error.Communication, ErrorReason.TARGET_UNREACHABLE, "<send target='#_parent'> has no parent session to reach", "__send_0")
                 return@send true
             }
             toParent("seed.ok", sendData)
@@ -495,7 +495,7 @@ class InvokeParamSeedsDeclaredChildDataSceSynthInvokeInvSoleStateMachine(
             // no parent — error.communication, nothing delivered, the block ended.
             val toParent = onSendToParent
             if (toParent == null) {
-                raisePlatformError(InvokeParamSeedsDeclaredChildDataSceSynthInvokeInvSoleEvent.Error.Communication, "<send target='#_parent'> has no parent session to reach", "__send_1")
+                raisePlatformError(InvokeParamSeedsDeclaredChildDataSceSynthInvokeInvSoleEvent.Error.Communication, ErrorReason.TARGET_UNREACHABLE, "<send target='#_parent'> has no parent session to reach", "__send_1")
                 return@send true
             }
             toParent("seed.missing", sendData)

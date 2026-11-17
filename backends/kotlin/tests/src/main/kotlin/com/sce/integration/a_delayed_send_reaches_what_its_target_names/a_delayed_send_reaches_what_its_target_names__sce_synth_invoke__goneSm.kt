@@ -185,7 +185,7 @@ class ADelayedSendReachesWhatItsTargetNamesSceSynthInvokeGoneStateMachine(
             // no parent — error.communication, nothing delivered, the block ended.
             val toParent = onSendToParent
             if (toParent == null) {
-                raisePlatformError(ADelayedSendReachesWhatItsTargetNamesSceSynthInvokeGoneEvent.Error.Communication, "<send target='#_parent'> has no parent session to reach", "__send_1")
+                raisePlatformError(ADelayedSendReachesWhatItsTargetNamesSceSynthInvokeGoneEvent.Error.Communication, ErrorReason.TARGET_UNREACHABLE, "<send target='#_parent'> has no parent session to reach", "__send_1")
                 return@send true
             }
             toParent("hello", sendData)
@@ -258,7 +258,7 @@ class ADelayedSendReachesWhatItsTargetNamesSceSynthInvokeGoneStateMachine(
             // no parent — error.communication, nothing delivered, the block ended.
             val toParent = onSendToParent
             if (toParent == null) {
-                raisePlatformError(ADelayedSendReachesWhatItsTargetNamesSceSynthInvokeGoneEvent.Error.Communication, "<send target='#_parent'> has no parent session to reach", "__send_0")
+                raisePlatformError(ADelayedSendReachesWhatItsTargetNamesSceSynthInvokeGoneEvent.Error.Communication, ErrorReason.TARGET_UNREACHABLE, "<send target='#_parent'> has no parent session to reach", "__send_0")
                 return@send true
             }
             toParent("lostReached", sendData)

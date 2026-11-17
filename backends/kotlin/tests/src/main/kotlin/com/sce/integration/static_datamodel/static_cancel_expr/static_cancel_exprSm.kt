@@ -554,7 +554,7 @@ class StaticCancelExprStateMachine(
                     null
                 }
                 if (sendidToCancel == null) {
-                    raisePlatformError(StaticCancelExprEvent.Error.Execution, "<cancel> sendidexpr failed to evaluate")
+                    raisePlatformError(StaticCancelExprEvent.Error.Execution, ErrorReason.EXPRESSION_FAILED, "<cancel> sendidexpr failed to evaluate")
                     true
                 } else {
                     cancelSend(sendidToCancel)
@@ -568,7 +568,7 @@ class StaticCancelExprStateMachine(
     private fun transitionContentOfIdleAt3() {
                 // SCE-MAP: static_cancel_expr.scxml:39 :: idle :: _transition_3
 
-            if (try { vWhich = com.sce.forge.runtime.SceChecked.bounded("b", 8); false } catch (_: com.sce.forge.runtime.AlgorithmFailure) { raisePlatformError(StaticCancelExprEvent.Error.Execution, "<assign location='which'>: an integer operation overflowed or failed"); true }) {
+            if (try { vWhich = com.sce.forge.runtime.SceChecked.bounded("b", 8); false } catch (_: com.sce.forge.runtime.AlgorithmFailure) { raisePlatformError(StaticCancelExprEvent.Error.Execution, ErrorReason.EXPRESSION_FAILED, "<assign location='which'>: an integer operation overflowed or failed"); true }) {
                 return
             }
     }
@@ -576,7 +576,7 @@ class StaticCancelExprStateMachine(
     private fun transitionContentOfIdleAt4() {
                 // SCE-MAP: static_cancel_expr.scxml:42 :: idle :: _transition_4
 
-            if (try { vWhich = com.sce.forge.runtime.SceChecked.bounded("", 8); false } catch (_: com.sce.forge.runtime.AlgorithmFailure) { raisePlatformError(StaticCancelExprEvent.Error.Execution, "<assign location='which'>: an integer operation overflowed or failed"); true }) {
+            if (try { vWhich = com.sce.forge.runtime.SceChecked.bounded("", 8); false } catch (_: com.sce.forge.runtime.AlgorithmFailure) { raisePlatformError(StaticCancelExprEvent.Error.Execution, ErrorReason.EXPRESSION_FAILED, "<assign location='which'>: an integer operation overflowed or failed"); true }) {
                 return
             }
     }
@@ -584,7 +584,7 @@ class StaticCancelExprStateMachine(
     private fun transitionContentOfIdleAt5() {
                 // SCE-MAP: static_cancel_expr.scxml:45 :: idle :: _transition_5
 
-            if (try { vAFired = com.sce.forge.runtime.SceChecked.add(vAFired, 1.toUInt()); false } catch (_: com.sce.forge.runtime.AlgorithmFailure) { raisePlatformError(StaticCancelExprEvent.Error.Execution, "<assign location='a_fired'>: an integer operation overflowed or failed"); true }) {
+            if (try { vAFired = com.sce.forge.runtime.SceChecked.add(vAFired, 1.toUInt()); false } catch (_: com.sce.forge.runtime.AlgorithmFailure) { raisePlatformError(StaticCancelExprEvent.Error.Execution, ErrorReason.EXPRESSION_FAILED, "<assign location='a_fired'>: an integer operation overflowed or failed"); true }) {
                 return
             }
     }
@@ -592,7 +592,7 @@ class StaticCancelExprStateMachine(
     private fun transitionContentOfIdleAt6() {
                 // SCE-MAP: static_cancel_expr.scxml:48 :: idle :: _transition_6
 
-            if (try { vBFired = com.sce.forge.runtime.SceChecked.add(vBFired, 1.toUInt()); false } catch (_: com.sce.forge.runtime.AlgorithmFailure) { raisePlatformError(StaticCancelExprEvent.Error.Execution, "<assign location='b_fired'>: an integer operation overflowed or failed"); true }) {
+            if (try { vBFired = com.sce.forge.runtime.SceChecked.add(vBFired, 1.toUInt()); false } catch (_: com.sce.forge.runtime.AlgorithmFailure) { raisePlatformError(StaticCancelExprEvent.Error.Execution, ErrorReason.EXPRESSION_FAILED, "<assign location='b_fired'>: an integer operation overflowed or failed"); true }) {
                 return
             }
     }
@@ -600,7 +600,7 @@ class StaticCancelExprStateMachine(
     private fun transitionContentOfIdleAt7() {
                 // SCE-MAP: static_cancel_expr.scxml:51 :: idle :: _transition_7
 
-            if (try { vRefusals = com.sce.forge.runtime.SceChecked.add(vRefusals, 1.toUInt()); false } catch (_: com.sce.forge.runtime.AlgorithmFailure) { raisePlatformError(StaticCancelExprEvent.Error.Execution, "<assign location='refusals'>: an integer operation overflowed or failed"); true }) {
+            if (try { vRefusals = com.sce.forge.runtime.SceChecked.add(vRefusals, 1.toUInt()); false } catch (_: com.sce.forge.runtime.AlgorithmFailure) { raisePlatformError(StaticCancelExprEvent.Error.Execution, ErrorReason.EXPRESSION_FAILED, "<assign location='refusals'>: an integer operation overflowed or failed"); true }) {
                 return
             }
     }

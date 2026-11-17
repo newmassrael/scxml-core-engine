@@ -371,7 +371,7 @@ public final class InvokePrecedesExternalDequeueSceSynthInvokeInvWatchPolicy: In
                         // W3C SCXML C.1: this session was started by its host, not by an
                         // `<invoke>`, so `#_parent` reaches nobody — error.communication,
                         // nothing delivered, and the block ends (4.9).
-                        var sendError = EventWithMetadata.platformError(InvokePrecedesExternalDequeueSceSynthInvokeInvWatchEvent.errorCommunication, message: "<send target=#_parent> has no parent session to reach")
+                        var sendError = EventWithMetadata.platformError(InvokePrecedesExternalDequeueSceSynthInvokeInvWatchEvent.errorCommunication, reason: .targetUnreachable, message: "<send target=#_parent> has no parent session to reach")
                         sendError.metadata.sendID = "__send_1"
                         engine.raise(sendError)
 
@@ -479,7 +479,7 @@ public final class InvokePrecedesExternalDequeueSceSynthInvokeInvWatchPolicy: In
                         // W3C SCXML C.1: this session was started by its host, not by an
                         // `<invoke>`, so `#_parent` reaches nobody — error.communication,
                         // nothing delivered, and the block ends (4.9).
-                        var sendError = EventWithMetadata.platformError(InvokePrecedesExternalDequeueSceSynthInvokeInvWatchEvent.errorCommunication, message: "<send target=#_parent> has no parent session to reach")
+                        var sendError = EventWithMetadata.platformError(InvokePrecedesExternalDequeueSceSynthInvokeInvWatchEvent.errorCommunication, reason: .targetUnreachable, message: "<send target=#_parent> has no parent session to reach")
                         sendError.metadata.sendID = "__send_2"
                         engine.raise(sendError)
 
@@ -504,7 +504,7 @@ public final class InvokePrecedesExternalDequeueSceSynthInvokeInvWatchPolicy: In
                         // W3C SCXML C.1: this session was started by its host, not by an
                         // `<invoke>`, so `#_parent` reaches nobody — error.communication,
                         // nothing delivered, and the block ends (4.9).
-                        var sendError = EventWithMetadata.platformError(InvokePrecedesExternalDequeueSceSynthInvokeInvWatchEvent.errorCommunication, message: "<send target=#_parent> has no parent session to reach")
+                        var sendError = EventWithMetadata.platformError(InvokePrecedesExternalDequeueSceSynthInvokeInvWatchEvent.errorCommunication, reason: .targetUnreachable, message: "<send target=#_parent> has no parent session to reach")
                         sendError.metadata.sendID = "__send_0"
                         engine.raise(sendError)
 

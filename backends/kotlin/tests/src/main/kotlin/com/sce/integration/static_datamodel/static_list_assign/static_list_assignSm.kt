@@ -506,7 +506,7 @@ class StaticListAssignStateMachine(
     private fun transitionContentOfShowingAt0() {
                 // SCE-MAP: static_list_assign.scxml:34 :: showing :: _transition_0
 
-            if (try { vShown = com.sce.forge.runtime.SceChecked.within((com.sce.forge.runtime.SceChecked.take(dayRun(vFirst, 3.toUByte()))).toList(), 8); false } catch (_: com.sce.forge.runtime.AlgorithmFailure) { raisePlatformError(StaticListAssignEvent.Error.Execution, "<assign location='shown'>: an integer operation overflowed or failed"); true }) {
+            if (try { vShown = com.sce.forge.runtime.SceChecked.within((com.sce.forge.runtime.SceChecked.take(dayRun(vFirst, 3.toUByte()))).toList(), 8); false } catch (_: com.sce.forge.runtime.AlgorithmFailure) { raisePlatformError(StaticListAssignEvent.Error.Execution, ErrorReason.EXPRESSION_FAILED, "<assign location='shown'>: an integer operation overflowed or failed"); true }) {
                 return
             }
 
@@ -516,7 +516,7 @@ class StaticListAssignStateMachine(
     private fun transitionContentOfShowingAt1() {
                 // SCE-MAP: static_list_assign.scxml:38 :: showing :: _transition_1
 
-            if (try { vShown = com.sce.forge.runtime.SceChecked.within((com.sce.forge.runtime.SceChecked.take(dayRun(vFirst, 8.toUByte()))).toList(), 8); false } catch (_: com.sce.forge.runtime.AlgorithmFailure) { raisePlatformError(StaticListAssignEvent.Error.Execution, "<assign location='shown'>: an integer operation overflowed or failed"); true }) {
+            if (try { vShown = com.sce.forge.runtime.SceChecked.within((com.sce.forge.runtime.SceChecked.take(dayRun(vFirst, 8.toUByte()))).toList(), 8); false } catch (_: com.sce.forge.runtime.AlgorithmFailure) { raisePlatformError(StaticListAssignEvent.Error.Execution, ErrorReason.EXPRESSION_FAILED, "<assign location='shown'>: an integer operation overflowed or failed"); true }) {
                 return
             }
 
@@ -526,7 +526,7 @@ class StaticListAssignStateMachine(
     private fun transitionContentOfShowingAt2() {
                 // SCE-MAP: static_list_assign.scxml:42 :: showing :: _transition_2
 
-            if (try { vShown = com.sce.forge.runtime.SceChecked.within((com.sce.forge.runtime.SceChecked.take(dayRun(vFirst, 0.toUByte()))).toList(), 8); false } catch (_: com.sce.forge.runtime.AlgorithmFailure) { raisePlatformError(StaticListAssignEvent.Error.Execution, "<assign location='shown'>: an integer operation overflowed or failed"); true }) {
+            if (try { vShown = com.sce.forge.runtime.SceChecked.within((com.sce.forge.runtime.SceChecked.take(dayRun(vFirst, 0.toUByte()))).toList(), 8); false } catch (_: com.sce.forge.runtime.AlgorithmFailure) { raisePlatformError(StaticListAssignEvent.Error.Execution, ErrorReason.EXPRESSION_FAILED, "<assign location='shown'>: an integer operation overflowed or failed"); true }) {
                 return
             }
 
@@ -536,7 +536,7 @@ class StaticListAssignStateMachine(
     private fun transitionContentOfShowingAt3() {
                 // SCE-MAP: static_list_assign.scxml:46 :: showing :: _transition_3
 
-            if (try { vFew = com.sce.forge.runtime.SceChecked.within((com.sce.forge.runtime.SceChecked.take(dayRepeat(vFirst, 3.toUByte()))).toList(), 4); false } catch (_: com.sce.forge.runtime.AlgorithmFailure) { raisePlatformError(StaticListAssignEvent.Error.Execution, "<assign location='few'>: an integer operation overflowed or failed"); true }) {
+            if (try { vFew = com.sce.forge.runtime.SceChecked.within((com.sce.forge.runtime.SceChecked.take(dayRepeat(vFirst, 3.toUByte()))).toList(), 4); false } catch (_: com.sce.forge.runtime.AlgorithmFailure) { raisePlatformError(StaticListAssignEvent.Error.Execution, ErrorReason.EXPRESSION_FAILED, "<assign location='few'>: an integer operation overflowed or failed"); true }) {
                 return
             }
 
@@ -546,7 +546,7 @@ class StaticListAssignStateMachine(
     private fun transitionContentOfShowingAt4() {
                 // SCE-MAP: static_list_assign.scxml:50 :: showing :: _transition_4
 
-            if (try { vFew = com.sce.forge.runtime.SceChecked.within((com.sce.forge.runtime.SceChecked.take(dayRepeat(vFirst, 5.toUByte()))).toList(), 4); false } catch (_: com.sce.forge.runtime.AlgorithmFailure) { raisePlatformError(StaticListAssignEvent.Error.Execution, "<assign location='few'>: an integer operation overflowed or failed"); true }) {
+            if (try { vFew = com.sce.forge.runtime.SceChecked.within((com.sce.forge.runtime.SceChecked.take(dayRepeat(vFirst, 5.toUByte()))).toList(), 4); false } catch (_: com.sce.forge.runtime.AlgorithmFailure) { raisePlatformError(StaticListAssignEvent.Error.Execution, ErrorReason.EXPRESSION_FAILED, "<assign location='few'>: an integer operation overflowed or failed"); true }) {
                 return
             }
 
@@ -562,7 +562,7 @@ class StaticListAssignStateMachine(
     private fun transitionContentOfShowingAt6() {
                 // SCE-MAP: static_list_assign.scxml:57 :: showing :: _transition_6
 
-            if (try { vRefusals = com.sce.forge.runtime.SceChecked.add(vRefusals, 1.toUInt()); false } catch (_: com.sce.forge.runtime.AlgorithmFailure) { raisePlatformError(StaticListAssignEvent.Error.Execution, "<assign location='refusals'>: an integer operation overflowed or failed"); true }) {
+            if (try { vRefusals = com.sce.forge.runtime.SceChecked.add(vRefusals, 1.toUInt()); false } catch (_: com.sce.forge.runtime.AlgorithmFailure) { raisePlatformError(StaticListAssignEvent.Error.Execution, ErrorReason.EXPRESSION_FAILED, "<assign location='refusals'>: an integer operation overflowed or failed"); true }) {
                 return
             }
     }

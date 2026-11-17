@@ -257,14 +257,14 @@ class Test527StateMachine(
 
     // W3C SCXML 5.9.1: a cond that cannot be evaluated raises error.execution;
     // `null` says so, where a bare `false` could not.
-    private fun evaluateGuardRaising(guardExpr: com.sce.runtime.ScriptSource, reason: String): Boolean? {
+    private fun evaluateGuardRaising(guardExpr: com.sce.runtime.ScriptSource, detail: String): Boolean? {
         assertScriptSession()
         val engine = scriptEngine ?: error("scriptEngine is required (codegen invariant: needs_script_engine == true)")
         val sid = scriptSessionId ?: error("scriptSessionId is established by the start (codegen invariant)")
         return try {
             engine.evaluateCondition(sid, guardExpr)
         } catch (e: Exception) {
-            raisePlatformError(Test527Event.Error.Execution, reason)
+            raisePlatformError(Test527Event.Error.Execution, ErrorReason.EXPRESSION_FAILED, detail)
             null
         }
     }
@@ -305,7 +305,7 @@ class Test527StateMachine(
         return try {
             engine.evaluateExpr(sid, serialized)?.toString() ?: ""
         } catch (e: Exception) {
-            raisePlatformError(Test527Event.Error.Execution, "an expression could not be serialised to JSON")
+            raisePlatformError(Test527Event.Error.Execution, ErrorReason.EXPRESSION_FAILED, "an expression could not be serialised to JSON")
             ""
         }
     }
@@ -326,7 +326,7 @@ class Test527StateMachine(
             engine.assign(sid, location, expr)
             true
         } catch (e: Exception) {
-            raisePlatformError(Test527Event.Error.Execution, "<assign> failed")
+            raisePlatformError(Test527Event.Error.Execution, ErrorReason.ASSIGNMENT_FAILED, "<assign> failed")
             false
         }
     }
@@ -342,7 +342,7 @@ class Test527StateMachine(
             engine.executeScript(sid, script)
             true
         } catch (e: Exception) {
-            raisePlatformError(Test527Event.Error.Execution, "<script> failed to execute")
+            raisePlatformError(Test527Event.Error.Execution, ErrorReason.SCRIPT_FAILED, "<script> failed to execute")
             false
         }
     }
@@ -486,7 +486,7 @@ class Test527StateMachine(
                         // C++ DoneDataHelper::evaluateContent: EventDataHelper::scriptValueToJsonString
                         doneEventData = if (contentResult != null) valueToJson(contentResult) else ""
                     } catch (_: Exception) {
-                        raisePlatformError(Test527Event.Error.Execution, "<donedata> <content expr> failed to evaluate")
+                        raisePlatformError(Test527Event.Error.Execution, ErrorReason.EXPRESSION_FAILED, "<donedata> <content expr> failed to evaluate")
                     }
                     // W3C SCXML 3.7: Final child state reached, raise done.state with data
                     raiseInternal(Test527Event.Done.State.S0, EventMetadata.platform(doneEventData))

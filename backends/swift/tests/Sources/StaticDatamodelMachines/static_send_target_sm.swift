@@ -530,6 +530,10 @@ public final class StaticSendTargetPolicy: InvocablePolicy {
                 // W3C SCXML 6.2: send id="__send_0"
                 do {
                     var sendArgError = ""
+                    // Why the argument failed, a code of sce:std/engine/error_reason
+                    // (docs/adr/0106 #111), set with every sentence below.
+                    var sendArgReason = ErrorReason.expressionFailed
+                    _ = sendArgReason
                     // docs/adr/0005, decision 3: the target is a string computed from the
                     // machine's fields now, and the send goes only by a route the document
                     // declared as `sce:targets`. A value in none of them names no route this
@@ -549,7 +553,7 @@ public final class StaticSendTargetPolicy: InvocablePolicy {
                         }
                     }
                     if !sendArgError.isEmpty {
-                        var sendError = EventWithMetadata.platformError(StaticSendTargetEvent.errorExecution, message: sendArgError)
+                        var sendError = EventWithMetadata.platformError(StaticSendTargetEvent.errorExecution, reason: sendArgReason, message: sendArgError)
                         sendError.metadata.sendID = "__send_0"
                         engine.raise(sendError)
 
@@ -560,7 +564,7 @@ public final class StaticSendTargetPolicy: InvocablePolicy {
                         // names nothing (empty or "undefined"), is not reachable —
                         // error.communication, nothing delivered, and the error ends the block
                         // as any other would (W3C SCXML 4.9).
-                        var sendError = EventWithMetadata.platformError(StaticSendTargetEvent.errorCommunication, message: "<send> targetexpr evaluated to nothing, or to a route the send does not declare, so there is no target to reach")
+                        var sendError = EventWithMetadata.platformError(StaticSendTargetEvent.errorCommunication, reason: .targetUnreachable, message: "<send> targetexpr evaluated to nothing, or to a route the send does not declare, so there is no target to reach")
                         sendError.metadata.sendID = "__send_0"
                         engine.raise(sendError)
 
@@ -582,14 +586,14 @@ public final class StaticSendTargetPolicy: InvocablePolicy {
                         sender: self.sessionID
                     )
                     if sendRouted == .notSupported {
-                        var sendError = EventWithMetadata.platformError(StaticSendTargetEvent.errorExecution, message: "<send> targetexpr produced a value that is not a target")
+                        var sendError = EventWithMetadata.platformError(StaticSendTargetEvent.errorExecution, reason: .sendTargetInvalid, message: "<send> targetexpr produced a value that is not a target")
                         sendError.metadata.sendID = "__send_0"
                         engine.raise(sendError)
 
                         break sceBlock  // W3C SCXML 4.9: the error ends the block
                     }
                     if sendRouted == .notReachable {
-                        var sendError = EventWithMetadata.platformError(StaticSendTargetEvent.errorCommunication, message: "<send> targetexpr names a session this processor cannot reach")
+                        var sendError = EventWithMetadata.platformError(StaticSendTargetEvent.errorCommunication, reason: .targetUnreachable, message: "<send> targetexpr names a session this processor cannot reach")
                         sendError.metadata.sendID = "__send_0"
                         engine.raise(sendError)
 
@@ -604,6 +608,10 @@ public final class StaticSendTargetPolicy: InvocablePolicy {
                 // W3C SCXML 6.2: send id="__send_1"
                 do {
                     var sendArgError = ""
+                    // Why the argument failed, a code of sce:std/engine/error_reason
+                    // (docs/adr/0106 #111), set with every sentence below.
+                    var sendArgReason = ErrorReason.expressionFailed
+                    _ = sendArgReason
                     // docs/adr/0005, decision 3: the target is a string computed from the
                     // machine's fields now, and the send goes only by a route the document
                     // declared as `sce:targets`. A value in none of them names no route this
@@ -623,7 +631,7 @@ public final class StaticSendTargetPolicy: InvocablePolicy {
                         }
                     }
                     if !sendArgError.isEmpty {
-                        var sendError = EventWithMetadata.platformError(StaticSendTargetEvent.errorExecution, message: sendArgError)
+                        var sendError = EventWithMetadata.platformError(StaticSendTargetEvent.errorExecution, reason: sendArgReason, message: sendArgError)
                         sendError.metadata.sendID = "__send_1"
                         engine.raise(sendError)
 
@@ -634,7 +642,7 @@ public final class StaticSendTargetPolicy: InvocablePolicy {
                         // names nothing (empty or "undefined"), is not reachable —
                         // error.communication, nothing delivered, and the error ends the block
                         // as any other would (W3C SCXML 4.9).
-                        var sendError = EventWithMetadata.platformError(StaticSendTargetEvent.errorCommunication, message: "<send> targetexpr evaluated to nothing, or to a route the send does not declare, so there is no target to reach")
+                        var sendError = EventWithMetadata.platformError(StaticSendTargetEvent.errorCommunication, reason: .targetUnreachable, message: "<send> targetexpr evaluated to nothing, or to a route the send does not declare, so there is no target to reach")
                         sendError.metadata.sendID = "__send_1"
                         engine.raise(sendError)
 
@@ -656,14 +664,14 @@ public final class StaticSendTargetPolicy: InvocablePolicy {
                         sender: self.sessionID
                     )
                     if sendRouted == .notSupported {
-                        var sendError = EventWithMetadata.platformError(StaticSendTargetEvent.errorExecution, message: "<send> targetexpr produced a value that is not a target")
+                        var sendError = EventWithMetadata.platformError(StaticSendTargetEvent.errorExecution, reason: .sendTargetInvalid, message: "<send> targetexpr produced a value that is not a target")
                         sendError.metadata.sendID = "__send_1"
                         engine.raise(sendError)
 
                         break sceBlock  // W3C SCXML 4.9: the error ends the block
                     }
                     if sendRouted == .notReachable {
-                        var sendError = EventWithMetadata.platformError(StaticSendTargetEvent.errorCommunication, message: "<send> targetexpr names a session this processor cannot reach")
+                        var sendError = EventWithMetadata.platformError(StaticSendTargetEvent.errorCommunication, reason: .targetUnreachable, message: "<send> targetexpr names a session this processor cannot reach")
                         sendError.metadata.sendID = "__send_1"
                         engine.raise(sendError)
 
@@ -676,7 +684,7 @@ public final class StaticSendTargetPolicy: InvocablePolicy {
                 sceBlock: do {
 
 
-                if ({ () -> Bool in do { let sceValue: String = (try Checked.bounded("#_internal", capacity: 24)); self.vRoute = sceValue } catch { engine.raise(EventWithMetadata.platformError(StaticSendTargetEvent.errorExecution, message: "<assign location='route'>: an integer operation overflowed or failed")); return true }; return false }()) {
+                if ({ () -> Bool in do { let sceValue: String = (try Checked.bounded("#_internal", capacity: 24)); self.vRoute = sceValue } catch { engine.raise(EventWithMetadata.platformError(StaticSendTargetEvent.errorExecution, reason: .expressionFailed, message: "<assign location='route'>: an integer operation overflowed or failed")); return true }; return false }()) {
                     break sceBlock  // W3C SCXML 4.9: the error ends the block
                 }
 
@@ -686,7 +694,7 @@ public final class StaticSendTargetPolicy: InvocablePolicy {
                 sceBlock: do {
 
 
-                if ({ () -> Bool in do { let sceValue: String = (try Checked.bounded("#_parent", capacity: 24)); self.vRoute = sceValue } catch { engine.raise(EventWithMetadata.platformError(StaticSendTargetEvent.errorExecution, message: "<assign location='route'>: an integer operation overflowed or failed")); return true }; return false }()) {
+                if ({ () -> Bool in do { let sceValue: String = (try Checked.bounded("#_parent", capacity: 24)); self.vRoute = sceValue } catch { engine.raise(EventWithMetadata.platformError(StaticSendTargetEvent.errorExecution, reason: .expressionFailed, message: "<assign location='route'>: an integer operation overflowed or failed")); return true }; return false }()) {
                     break sceBlock  // W3C SCXML 4.9: the error ends the block
                 }
 
@@ -696,7 +704,7 @@ public final class StaticSendTargetPolicy: InvocablePolicy {
                 sceBlock: do {
 
 
-                if ({ () -> Bool in do { let sceValue: String = (try Checked.bounded("#_scxml_stranger", capacity: 24)); self.vRoute = sceValue } catch { engine.raise(EventWithMetadata.platformError(StaticSendTargetEvent.errorExecution, message: "<assign location='route'>: an integer operation overflowed or failed")); return true }; return false }()) {
+                if ({ () -> Bool in do { let sceValue: String = (try Checked.bounded("#_scxml_stranger", capacity: 24)); self.vRoute = sceValue } catch { engine.raise(EventWithMetadata.platformError(StaticSendTargetEvent.errorExecution, reason: .expressionFailed, message: "<assign location='route'>: an integer operation overflowed or failed")); return true }; return false }()) {
                     break sceBlock  // W3C SCXML 4.9: the error ends the block
                 }
 
@@ -706,7 +714,7 @@ public final class StaticSendTargetPolicy: InvocablePolicy {
                 sceBlock: do {
 
 
-                if ({ () -> Bool in do { let sceValue: UInt32 = (try Checked.add(self.vLanded, 1)); self.vLanded = sceValue } catch { engine.raise(EventWithMetadata.platformError(StaticSendTargetEvent.errorExecution, message: "<assign location='landed'>: an integer operation overflowed or failed")); return true }; return false }()) {
+                if ({ () -> Bool in do { let sceValue: UInt32 = (try Checked.add(self.vLanded, 1)); self.vLanded = sceValue } catch { engine.raise(EventWithMetadata.platformError(StaticSendTargetEvent.errorExecution, reason: .expressionFailed, message: "<assign location='landed'>: an integer operation overflowed or failed")); return true }; return false }()) {
                     break sceBlock  // W3C SCXML 4.9: the error ends the block
                 }
 
@@ -716,7 +724,7 @@ public final class StaticSendTargetPolicy: InvocablePolicy {
                 sceBlock: do {
 
 
-                if ({ () -> Bool in do { let sceValue: UInt32 = (try Checked.add(self.vRefused, 1)); self.vRefused = sceValue } catch { engine.raise(EventWithMetadata.platformError(StaticSendTargetEvent.errorExecution, message: "<assign location='refused'>: an integer operation overflowed or failed")); return true }; return false }()) {
+                if ({ () -> Bool in do { let sceValue: UInt32 = (try Checked.add(self.vRefused, 1)); self.vRefused = sceValue } catch { engine.raise(EventWithMetadata.platformError(StaticSendTargetEvent.errorExecution, reason: .expressionFailed, message: "<assign location='refused'>: an integer operation overflowed or failed")); return true }; return false }()) {
                     break sceBlock  // W3C SCXML 4.9: the error ends the block
                 }
 

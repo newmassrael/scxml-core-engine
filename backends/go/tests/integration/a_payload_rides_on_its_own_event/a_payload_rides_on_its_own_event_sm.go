@@ -31,6 +31,7 @@ import (
 	"time"
 
 	sce "github.com/newmassrael/sce-go-runtime"
+	sceerrorreason "github.com/newmassrael/sce-go-runtime/generated/error_reason"
 )
 
 // Ensure imports are used
@@ -39,6 +40,9 @@ var (
 	_ = filepath.Join
 	_ = strings.HasPrefix
 	_ = time.Duration(0)
+	// Why an error.* event is raised (sce:std/engine/error_reason,
+	// docs/adr/0106 #111); a machine that raises none still imports it.
+	_ = sceerrorreason.ErrorReasonExpressionFailed
 )
 
 // ======================================================================
@@ -379,7 +383,7 @@ func (p *APayloadRidesOnItsOwnEventPolicy) InitializeDataModel(eng *sce.Engine[A
 		if err == nil {
 			_ = engine.SetVariable(sessionID, "got", result)
 		} else {
-			eng.Raise(sce.NewPlatformError(APayloadRidesOnItsOwnEventEventErrorExecution, "<data id='got'> expr failed to evaluate"))
+			eng.Raise(sce.NewPlatformError(APayloadRidesOnItsOwnEventEventErrorExecution, sceerrorreason.ErrorReasonExpressionFailed, "<data id='got'> expr failed to evaluate"))
 			_ = engine.SetVariable(sessionID, "got", nil)
 		}
 	}
@@ -393,7 +397,7 @@ func (p *APayloadRidesOnItsOwnEventPolicy) InitializeDataModel(eng *sce.Engine[A
 		if err == nil {
 			_ = engine.SetVariable(sessionID, "stolen", result)
 		} else {
-			eng.Raise(sce.NewPlatformError(APayloadRidesOnItsOwnEventEventErrorExecution, "<data id='stolen'> expr failed to evaluate"))
+			eng.Raise(sce.NewPlatformError(APayloadRidesOnItsOwnEventEventErrorExecution, sceerrorreason.ErrorReasonExpressionFailed, "<data id='stolen'> expr failed to evaluate"))
 			_ = engine.SetVariable(sessionID, "stolen", nil)
 		}
 	}
@@ -407,7 +411,7 @@ func (p *APayloadRidesOnItsOwnEventPolicy) InitializeDataModel(eng *sce.Engine[A
 		if err == nil {
 			_ = engine.SetVariable(sessionID, "plains", result)
 		} else {
-			eng.Raise(sce.NewPlatformError(APayloadRidesOnItsOwnEventEventErrorExecution, "<data id='plains'> expr failed to evaluate"))
+			eng.Raise(sce.NewPlatformError(APayloadRidesOnItsOwnEventEventErrorExecution, sceerrorreason.ErrorReasonExpressionFailed, "<data id='plains'> expr failed to evaluate"))
 			_ = engine.SetVariable(sessionID, "plains", nil)
 		}
 	}
@@ -421,7 +425,7 @@ func (p *APayloadRidesOnItsOwnEventPolicy) InitializeDataModel(eng *sce.Engine[A
 		if err == nil {
 			_ = engine.SetVariable(sessionID, "v9", result)
 		} else {
-			eng.Raise(sce.NewPlatformError(APayloadRidesOnItsOwnEventEventErrorExecution, "<data id='v9'> expr failed to evaluate"))
+			eng.Raise(sce.NewPlatformError(APayloadRidesOnItsOwnEventEventErrorExecution, sceerrorreason.ErrorReasonExpressionFailed, "<data id='v9'> expr failed to evaluate"))
 			_ = engine.SetVariable(sessionID, "v9", nil)
 		}
 	}
@@ -453,12 +457,12 @@ func (p *APayloadRidesOnItsOwnEventPolicy) evaluateIfCond(guard string, eng *sce
 // evaluateGuardRaising evaluates a cond, raising error.execution when it cannot
 // be evaluated (W3C SCXML 5.9.1); ok is false then, where a bare false could
 // not say so.
-func (p *APayloadRidesOnItsOwnEventPolicy) evaluateGuardRaising(guard string, eng *sce.Engine[APayloadRidesOnItsOwnEventState, APayloadRidesOnItsOwnEventEvent], reason string) (value bool, ok bool) {
+func (p *APayloadRidesOnItsOwnEventPolicy) evaluateGuardRaising(guard string, eng *sce.Engine[APayloadRidesOnItsOwnEventState, APayloadRidesOnItsOwnEventEvent], detail string) (value bool, ok bool) {
 	p.assertScriptSession()
 	engine := p.ScriptEngine
 	result, err := engine.EvaluateExpression(p.SessionID, guard)
 	if err != nil {
-		eng.Raise(sce.NewPlatformError(APayloadRidesOnItsOwnEventEventErrorExecution, reason))
+		eng.Raise(sce.NewPlatformError(APayloadRidesOnItsOwnEventEventErrorExecution, sceerrorreason.ErrorReasonExpressionFailed, detail))
 		return false, false
 	}
 	return sce.ScriptToBool(result), true
@@ -561,7 +565,7 @@ func (p *APayloadRidesOnItsOwnEventPolicy) SetParamValueInScriptEngine(name stri
 // failed is left (docs/adr/0098).
 func (p *APayloadRidesOnItsOwnEventPolicy) declareHandedValue(eng *sce.Engine[APayloadRidesOnItsOwnEventState, APayloadRidesOnItsOwnEventEvent], engine sce.IScriptEngine, sessionID, name string, value interface{}) {
 	if err := engine.SetVariable(sessionID, name, value); err != nil {
-		eng.Raise(sce.NewPlatformError(APayloadRidesOnItsOwnEventEventErrorExecution, "<data id='"+name+"'> could not hold the value its invoking session handed it"))
+		eng.Raise(sce.NewPlatformError(APayloadRidesOnItsOwnEventEventErrorExecution, sceerrorreason.ErrorReasonDataInitFailed, "<data id='"+name+"'> could not hold the value its invoking session handed it"))
 		_ = engine.SetVariable(sessionID, name, nil)
 	}
 }
@@ -848,7 +852,7 @@ func (p *APayloadRidesOnItsOwnEventPolicy) ExecuteEntryActions(state APayloadRid
 		if paramVal, paramErr := se.EvaluateExpression(p.SessionID, `7`); paramErr == nil {
 			parts = append(parts, sce.EventDataParam{Name: "v", Value: paramVal})
 		} else {
-			engine.Raise(sce.NewPlatformError(APayloadRidesOnItsOwnEventEventErrorExecution, "<send> <param name='v'> expr failed to evaluate"))
+			engine.Raise(sce.NewPlatformError(APayloadRidesOnItsOwnEventEventErrorExecution, sceerrorreason.ErrorReasonExpressionFailed, "<send> <param name='v'> expr failed to evaluate"))
 			paramFailed = true
 		}
 		eventDataStr := sce.BuildJSONFromTypedParams(parts)
@@ -890,7 +894,7 @@ func (p *APayloadRidesOnItsOwnEventPolicy) ExecuteEntryActions(state APayloadRid
 		if paramVal, paramErr := se.EvaluateExpression(p.SessionID, `8`); paramErr == nil {
 			parts = append(parts, sce.EventDataParam{Name: "v", Value: paramVal})
 		} else {
-			engine.Raise(sce.NewPlatformError(APayloadRidesOnItsOwnEventEventErrorExecution, "<send> <param name='v'> expr failed to evaluate"))
+			engine.Raise(sce.NewPlatformError(APayloadRidesOnItsOwnEventEventErrorExecution, sceerrorreason.ErrorReasonExpressionFailed, "<send> <param name='v'> expr failed to evaluate"))
 			paramFailed = true
 		}
 		eventDataStr := sce.BuildJSONFromTypedParams(parts)
@@ -921,21 +925,25 @@ func (p *APayloadRidesOnItsOwnEventPolicy) ExecuteEntryActions(state APayloadRid
 	{
 	p.assertScriptSession()
 	sendArgError := ""
+	// Why the argument failed, a code of sce:std/engine/error_reason
+	// (docs/adr/0106 #111), set with every sentence below.
+	var sendArgReason sce.ErrorReason
+	_ = sendArgReason
 	// W3C SCXML 6.2 + B.2: a namelist names locations, and one that is not
 	// declared is an argument that cannot be evaluated — one error however
 	// many of its names are bad.
 	namelistParts := make([]sce.EventDataParam, 0)
 	if sendArgError == "" {
 		if !p.ScriptEngine.HasVariable(p.SessionID, "v9") {
-			sendArgError = "<send> namelist names 'v9', which is not declared"
+			sendArgError, sendArgReason = "<send> namelist names 'v9', which is not declared", sceerrorreason.ErrorReasonLocationInvalid
 		} else if nlVal, nlErr := p.ScriptEngine.EvaluateExpression(p.SessionID, `v9`); nlErr == nil {
 			namelistParts = append(namelistParts, sce.EventDataParam{Name: "v9", Value: nlVal})
 		} else {
-			sendArgError = "<send> namelist entry 'v9' could not be read"
+			sendArgError, sendArgReason = "<send> namelist entry 'v9' could not be read", sceerrorreason.ErrorReasonLocationInvalid
 		}
 	}
 	if sendArgError != "" {
-		errEvt := sce.NewPlatformError(APayloadRidesOnItsOwnEventEventErrorExecution, sendArgError)
+		errEvt := sce.NewPlatformError(APayloadRidesOnItsOwnEventEventErrorExecution, sendArgReason, sendArgError)
 		errEvt.Metadata.SendID = "__send_2"
 		engine.Raise(errEvt)
 		return  // W3C SCXML 4.9: the error ends the block
@@ -1147,7 +1155,7 @@ func (p *APayloadRidesOnItsOwnEventPolicy) ExecuteTransitionContent(source APayl
 
 	// W3C SCXML 5.3: <assign location="stolen" expr="stolen + 1">
 	if err := p.assignVariable(`stolen`, `_scxml_add(stolen, 1)`); err != nil {
-		engine.Raise(sce.NewPlatformError(APayloadRidesOnItsOwnEventEventErrorExecution, "<assign> to 'stolen' failed"))
+		engine.Raise(sce.NewPlatformError(APayloadRidesOnItsOwnEventEventErrorExecution, sceerrorreason.ErrorReasonAssignmentFailed, "<assign> to 'stolen' failed"))
 		return  // W3C SCXML 4.9: the error ends the block
 	}
 
@@ -1159,7 +1167,7 @@ func (p *APayloadRidesOnItsOwnEventPolicy) ExecuteTransitionContent(source APayl
 
 	// W3C SCXML 5.3: <assign location="plains" expr="plains + 1">
 	if err := p.assignVariable(`plains`, `_scxml_add(plains, 1)`); err != nil {
-		engine.Raise(sce.NewPlatformError(APayloadRidesOnItsOwnEventEventErrorExecution, "<assign> to 'plains' failed"))
+		engine.Raise(sce.NewPlatformError(APayloadRidesOnItsOwnEventEventErrorExecution, sceerrorreason.ErrorReasonAssignmentFailed, "<assign> to 'plains' failed"))
 		return  // W3C SCXML 4.9: the error ends the block
 	}
 
@@ -1171,7 +1179,7 @@ func (p *APayloadRidesOnItsOwnEventPolicy) ExecuteTransitionContent(source APayl
 
 	// W3C SCXML 5.3: <assign location="got" expr="got + 1">
 	if err := p.assignVariable(`got`, `_scxml_add(got, 1)`); err != nil {
-		engine.Raise(sce.NewPlatformError(APayloadRidesOnItsOwnEventEventErrorExecution, "<assign> to 'got' failed"))
+		engine.Raise(sce.NewPlatformError(APayloadRidesOnItsOwnEventEventErrorExecution, sceerrorreason.ErrorReasonAssignmentFailed, "<assign> to 'got' failed"))
 		return  // W3C SCXML 4.9: the error ends the block
 	}
 
@@ -1183,7 +1191,7 @@ func (p *APayloadRidesOnItsOwnEventPolicy) ExecuteTransitionContent(source APayl
 
 	// W3C SCXML 5.3: <assign location="got" expr="got + 1">
 	if err := p.assignVariable(`got`, `_scxml_add(got, 1)`); err != nil {
-		engine.Raise(sce.NewPlatformError(APayloadRidesOnItsOwnEventEventErrorExecution, "<assign> to 'got' failed"))
+		engine.Raise(sce.NewPlatformError(APayloadRidesOnItsOwnEventEventErrorExecution, sceerrorreason.ErrorReasonAssignmentFailed, "<assign> to 'got' failed"))
 		return  // W3C SCXML 4.9: the error ends the block
 	}
 
@@ -1195,7 +1203,7 @@ func (p *APayloadRidesOnItsOwnEventPolicy) ExecuteTransitionContent(source APayl
 
 	// W3C SCXML 5.3: <assign location="got" expr="got + 1">
 	if err := p.assignVariable(`got`, `_scxml_add(got, 1)`); err != nil {
-		engine.Raise(sce.NewPlatformError(APayloadRidesOnItsOwnEventEventErrorExecution, "<assign> to 'got' failed"))
+		engine.Raise(sce.NewPlatformError(APayloadRidesOnItsOwnEventEventErrorExecution, sceerrorreason.ErrorReasonAssignmentFailed, "<assign> to 'got' failed"))
 		return  // W3C SCXML 4.9: the error ends the block
 	}
 
@@ -1207,7 +1215,7 @@ func (p *APayloadRidesOnItsOwnEventPolicy) ExecuteTransitionContent(source APayl
 
 	// W3C SCXML 5.3: <assign location="got" expr="got + 1">
 	if err := p.assignVariable(`got`, `_scxml_add(got, 1)`); err != nil {
-		engine.Raise(sce.NewPlatformError(APayloadRidesOnItsOwnEventEventErrorExecution, "<assign> to 'got' failed"))
+		engine.Raise(sce.NewPlatformError(APayloadRidesOnItsOwnEventEventErrorExecution, sceerrorreason.ErrorReasonAssignmentFailed, "<assign> to 'got' failed"))
 		return  // W3C SCXML 4.9: the error ends the block
 	}
 

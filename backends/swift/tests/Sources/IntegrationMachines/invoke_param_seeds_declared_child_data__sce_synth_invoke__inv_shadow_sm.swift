@@ -432,8 +432,12 @@ public final class InvokeParamSeedsDeclaredChildDataSceSynthInvokeInvShadowPolic
 
     /// Says what went wrong where the document can see it: `error.execution` on the internal
     /// queue (§scxml-5.9.1, 5.3).
-    private func raiseExecutionError(_ message: String, engine: Engine<InvokeParamSeedsDeclaredChildDataSceSynthInvokeInvShadowPolicy>) {
-        engine.raise(EventWithMetadata.platformError(InvokeParamSeedsDeclaredChildDataSceSynthInvokeInvShadowEvent.errorExecution, message: message))
+    /// `reason` is the code of sce:std/engine/error_reason the record carries
+    /// (docs/adr/0106 #111).
+    private func raiseExecutionError(
+        _ reason: ErrorReason, _ message: String, engine: Engine<InvokeParamSeedsDeclaredChildDataSceSynthInvokeInvShadowPolicy>
+    ) {
+        engine.raise(EventWithMetadata.platformError(InvokeParamSeedsDeclaredChildDataSceSynthInvokeInvShadowEvent.errorExecution, reason: reason, message: message))
     }
 
     /// W3C SCXML 5.3: the `<data id>` `id` takes the value of the lowered expression, or nil when it
@@ -490,6 +494,7 @@ public final class InvokeParamSeedsDeclaredChildDataSceSynthInvokeInvShadowPolic
             }
         } catch {
             raiseExecutionError(
+                handed == nil ? .expressionFailed : .paramUnfit,
                 handed == nil
                     ? "<data id='\(id)'> expr failed to evaluate"
                     : "<data id='\(id)'> could not hold the value its parent handed it",
@@ -652,7 +657,7 @@ public final class InvokeParamSeedsDeclaredChildDataSceSynthInvokeInvShadowPolic
             // this call the payload is lost to the document and to the host alike.
             engine.notePayloadReading(event, reading: Self.payloadReading(of: reading))
         } catch {
-            raiseExecutionError("_event could not be bound for '\(name)'", engine: engine)
+            raiseExecutionError(.payloadRefused, "_event could not be bound for '\(name)'", engine: engine)
         }
     }
 
@@ -689,7 +694,7 @@ public final class InvokeParamSeedsDeclaredChildDataSceSynthInvokeInvShadowPolic
         do {
             return try scriptSession.evaluateCondition(condition, chunkName: "=cond")
         } catch {
-            raiseExecutionError("a \(element) cond failed to evaluate", engine: engine)
+            raiseExecutionError(.expressionFailed, "a \(element) cond failed to evaluate", engine: engine)
             failed = true
             return false
         }
@@ -803,7 +808,7 @@ public final class InvokeParamSeedsDeclaredChildDataSceSynthInvokeInvShadowPolic
                         // W3C SCXML C.1: this session was started by its host, not by an
                         // `<invoke>`, so `#_parent` reaches nobody — error.communication,
                         // nothing delivered, and the block ends (4.9).
-                        var sendError = EventWithMetadata.platformError(InvokeParamSeedsDeclaredChildDataSceSynthInvokeInvShadowEvent.errorCommunication, message: "<send target=#_parent> has no parent session to reach")
+                        var sendError = EventWithMetadata.platformError(InvokeParamSeedsDeclaredChildDataSceSynthInvokeInvShadowEvent.errorCommunication, reason: .targetUnreachable, message: "<send target=#_parent> has no parent session to reach")
                         sendError.metadata.sendID = "__send_0"
                         engine.raise(sendError)
 
@@ -823,7 +828,7 @@ public final class InvokeParamSeedsDeclaredChildDataSceSynthInvokeInvShadowPolic
                         // W3C SCXML C.1: this session was started by its host, not by an
                         // `<invoke>`, so `#_parent` reaches nobody — error.communication,
                         // nothing delivered, and the block ends (4.9).
-                        var sendError = EventWithMetadata.platformError(InvokeParamSeedsDeclaredChildDataSceSynthInvokeInvShadowEvent.errorCommunication, message: "<send target=#_parent> has no parent session to reach")
+                        var sendError = EventWithMetadata.platformError(InvokeParamSeedsDeclaredChildDataSceSynthInvokeInvShadowEvent.errorCommunication, reason: .targetUnreachable, message: "<send target=#_parent> has no parent session to reach")
                         sendError.metadata.sendID = "__send_1"
                         engine.raise(sendError)
 
@@ -843,7 +848,7 @@ public final class InvokeParamSeedsDeclaredChildDataSceSynthInvokeInvShadowPolic
                         // W3C SCXML C.1: this session was started by its host, not by an
                         // `<invoke>`, so `#_parent` reaches nobody — error.communication,
                         // nothing delivered, and the block ends (4.9).
-                        var sendError = EventWithMetadata.platformError(InvokeParamSeedsDeclaredChildDataSceSynthInvokeInvShadowEvent.errorCommunication, message: "<send target=#_parent> has no parent session to reach")
+                        var sendError = EventWithMetadata.platformError(InvokeParamSeedsDeclaredChildDataSceSynthInvokeInvShadowEvent.errorCommunication, reason: .targetUnreachable, message: "<send target=#_parent> has no parent session to reach")
                         sendError.metadata.sendID = "__send_2"
                         engine.raise(sendError)
 

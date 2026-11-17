@@ -379,7 +379,7 @@ class ADelayedSendReachesWhatItsTargetNamesStateMachine(
             try {
                 engine.setVariable(sid, "order", engine.evaluateExpr(sid, com.sce.runtime.ScriptSource.lua("0", "0")))
             } catch (e: Exception) {
-                raisePlatformError(ADelayedSendReachesWhatItsTargetNamesEvent.Error.Execution, "<data id='order'> expr failed to evaluate")
+                raisePlatformError(ADelayedSendReachesWhatItsTargetNamesEvent.Error.Execution, ErrorReason.EXPRESSION_FAILED, "<data id='order'> expr failed to evaluate")
             }
         }
         // §scxml-6.4: 'innerInternal' takes a value its invoke handed it, in place of its own
@@ -388,7 +388,7 @@ class ADelayedSendReachesWhatItsTargetNamesStateMachine(
             try {
                 engine.setVariable(sid, "innerInternal", engine.evaluateExpr(sid, com.sce.runtime.ScriptSource.lua("0", "0")))
             } catch (e: Exception) {
-                raisePlatformError(ADelayedSendReachesWhatItsTargetNamesEvent.Error.Execution, "<data id='innerInternal'> expr failed to evaluate")
+                raisePlatformError(ADelayedSendReachesWhatItsTargetNamesEvent.Error.Execution, ErrorReason.EXPRESSION_FAILED, "<data id='innerInternal'> expr failed to evaluate")
             }
         }
         // §scxml-6.4: 'lateOk' takes a value its invoke handed it, in place of its own
@@ -397,7 +397,7 @@ class ADelayedSendReachesWhatItsTargetNamesStateMachine(
             try {
                 engine.setVariable(sid, "lateOk", engine.evaluateExpr(sid, com.sce.runtime.ScriptSource.lua("0", "0")))
             } catch (e: Exception) {
-                raisePlatformError(ADelayedSendReachesWhatItsTargetNamesEvent.Error.Execution, "<data id='lateOk'> expr failed to evaluate")
+                raisePlatformError(ADelayedSendReachesWhatItsTargetNamesEvent.Error.Execution, ErrorReason.EXPRESSION_FAILED, "<data id='lateOk'> expr failed to evaluate")
             }
         }
         // §scxml-6.4: 'lateCount' takes a value its invoke handed it, in place of its own
@@ -406,7 +406,7 @@ class ADelayedSendReachesWhatItsTargetNamesStateMachine(
             try {
                 engine.setVariable(sid, "lateCount", engine.evaluateExpr(sid, com.sce.runtime.ScriptSource.lua("0", "0")))
             } catch (e: Exception) {
-                raisePlatformError(ADelayedSendReachesWhatItsTargetNamesEvent.Error.Execution, "<data id='lateCount'> expr failed to evaluate")
+                raisePlatformError(ADelayedSendReachesWhatItsTargetNamesEvent.Error.Execution, ErrorReason.EXPRESSION_FAILED, "<data id='lateCount'> expr failed to evaluate")
             }
         }
         // §scxml-6.4: 'pongOk' takes a value its invoke handed it, in place of its own
@@ -415,7 +415,7 @@ class ADelayedSendReachesWhatItsTargetNamesStateMachine(
             try {
                 engine.setVariable(sid, "pongOk", engine.evaluateExpr(sid, com.sce.runtime.ScriptSource.lua("0", "0")))
             } catch (e: Exception) {
-                raisePlatformError(ADelayedSendReachesWhatItsTargetNamesEvent.Error.Execution, "<data id='pongOk'> expr failed to evaluate")
+                raisePlatformError(ADelayedSendReachesWhatItsTargetNamesEvent.Error.Execution, ErrorReason.EXPRESSION_FAILED, "<data id='pongOk'> expr failed to evaluate")
             }
         }
         // §scxml-6.4: 'commErrors' takes a value its invoke handed it, in place of its own
@@ -424,7 +424,7 @@ class ADelayedSendReachesWhatItsTargetNamesStateMachine(
             try {
                 engine.setVariable(sid, "commErrors", engine.evaluateExpr(sid, com.sce.runtime.ScriptSource.lua("0", "0")))
             } catch (e: Exception) {
-                raisePlatformError(ADelayedSendReachesWhatItsTargetNamesEvent.Error.Execution, "<data id='commErrors'> expr failed to evaluate")
+                raisePlatformError(ADelayedSendReachesWhatItsTargetNamesEvent.Error.Execution, ErrorReason.EXPRESSION_FAILED, "<data id='commErrors'> expr failed to evaluate")
             }
         }
         // §scxml-6.4: 'lostArrived' takes a value its invoke handed it, in place of its own
@@ -433,7 +433,7 @@ class ADelayedSendReachesWhatItsTargetNamesStateMachine(
             try {
                 engine.setVariable(sid, "lostArrived", engine.evaluateExpr(sid, com.sce.runtime.ScriptSource.lua("0", "0")))
             } catch (e: Exception) {
-                raisePlatformError(ADelayedSendReachesWhatItsTargetNamesEvent.Error.Execution, "<data id='lostArrived'> expr failed to evaluate")
+                raisePlatformError(ADelayedSendReachesWhatItsTargetNamesEvent.Error.Execution, ErrorReason.EXPRESSION_FAILED, "<data id='lostArrived'> expr failed to evaluate")
             }
         }
         // §scxml-6.4: 'afterStranger' takes a value its invoke handed it, in place of its own
@@ -442,7 +442,7 @@ class ADelayedSendReachesWhatItsTargetNamesStateMachine(
             try {
                 engine.setVariable(sid, "afterStranger", engine.evaluateExpr(sid, com.sce.runtime.ScriptSource.lua("0", "0")))
             } catch (e: Exception) {
-                raisePlatformError(ADelayedSendReachesWhatItsTargetNamesEvent.Error.Execution, "<data id='afterStranger'> expr failed to evaluate")
+                raisePlatformError(ADelayedSendReachesWhatItsTargetNamesEvent.Error.Execution, ErrorReason.EXPRESSION_FAILED, "<data id='afterStranger'> expr failed to evaluate")
             }
         }
         // §scxml-6.4: 'hellos' takes a value its invoke handed it, in place of its own
@@ -451,7 +451,7 @@ class ADelayedSendReachesWhatItsTargetNamesStateMachine(
             try {
                 engine.setVariable(sid, "hellos", engine.evaluateExpr(sid, com.sce.runtime.ScriptSource.lua("0", "0")))
             } catch (e: Exception) {
-                raisePlatformError(ADelayedSendReachesWhatItsTargetNamesEvent.Error.Execution, "<data id='hellos'> expr failed to evaluate")
+                raisePlatformError(ADelayedSendReachesWhatItsTargetNamesEvent.Error.Execution, ErrorReason.EXPRESSION_FAILED, "<data id='hellos'> expr failed to evaluate")
             }
         }
     }
@@ -481,14 +481,14 @@ class ADelayedSendReachesWhatItsTargetNamesStateMachine(
 
     // W3C SCXML 5.9.1: a cond that cannot be evaluated raises error.execution;
     // `null` says so, where a bare `false` could not.
-    private fun evaluateGuardRaising(guardExpr: com.sce.runtime.ScriptSource, reason: String): Boolean? {
+    private fun evaluateGuardRaising(guardExpr: com.sce.runtime.ScriptSource, detail: String): Boolean? {
         assertScriptSession()
         val engine = scriptEngine ?: error("scriptEngine is required (codegen invariant: needs_script_engine == true)")
         val sid = scriptSessionId ?: error("scriptSessionId is established by the start (codegen invariant)")
         return try {
             engine.evaluateCondition(sid, guardExpr)
         } catch (e: Exception) {
-            raisePlatformError(ADelayedSendReachesWhatItsTargetNamesEvent.Error.Execution, reason)
+            raisePlatformError(ADelayedSendReachesWhatItsTargetNamesEvent.Error.Execution, ErrorReason.EXPRESSION_FAILED, detail)
             null
         }
     }
@@ -529,7 +529,7 @@ class ADelayedSendReachesWhatItsTargetNamesStateMachine(
         return try {
             engine.evaluateExpr(sid, serialized)?.toString() ?: ""
         } catch (e: Exception) {
-            raisePlatformError(ADelayedSendReachesWhatItsTargetNamesEvent.Error.Execution, "an expression could not be serialised to JSON")
+            raisePlatformError(ADelayedSendReachesWhatItsTargetNamesEvent.Error.Execution, ErrorReason.EXPRESSION_FAILED, "an expression could not be serialised to JSON")
             ""
         }
     }
@@ -550,7 +550,7 @@ class ADelayedSendReachesWhatItsTargetNamesStateMachine(
             engine.assign(sid, location, expr)
             true
         } catch (e: Exception) {
-            raisePlatformError(ADelayedSendReachesWhatItsTargetNamesEvent.Error.Execution, "<assign> failed")
+            raisePlatformError(ADelayedSendReachesWhatItsTargetNamesEvent.Error.Execution, ErrorReason.ASSIGNMENT_FAILED, "<assign> failed")
             false
         }
     }
@@ -566,7 +566,7 @@ class ADelayedSendReachesWhatItsTargetNamesStateMachine(
             engine.executeScript(sid, script)
             true
         } catch (e: Exception) {
-            raisePlatformError(ADelayedSendReachesWhatItsTargetNamesEvent.Error.Execution, "<script> failed to execute")
+            raisePlatformError(ADelayedSendReachesWhatItsTargetNamesEvent.Error.Execution, ErrorReason.SCRIPT_FAILED, "<script> failed to execute")
             false
         }
     }
@@ -721,7 +721,7 @@ class ADelayedSendReachesWhatItsTargetNamesStateMachine(
             // prefix names it too (test 190). Any other is not reachable:
             // error.communication, nothing delivered, the block ended (4.9).
             if (scriptSessionId != "stranger") {
-                raisePlatformError(ADelayedSendReachesWhatItsTargetNamesEvent.Error.Communication, "<send target='#_scxml_stranger'> names a session this processor cannot reach", "__send_6")
+                raisePlatformError(ADelayedSendReachesWhatItsTargetNamesEvent.Error.Communication, ErrorReason.TARGET_UNREACHABLE, "<send target='#_scxml_stranger'> names a session this processor cannot reach", "__send_6")
                 return@send true
             }
             // W3C SCXML 6.2.4: this session's own external queue, when due.
@@ -936,7 +936,7 @@ class ADelayedSendReachesWhatItsTargetNamesStateMachine(
                     .evaluateExpr(scriptSessionId ?: error("scriptSessionId is established by the start (codegen invariant)"), com.sce.runtime.ScriptSource.lua("7", "7"))
                 if (sendContentValue != null) valueToJson(sendContentValue) else ""
             } catch (_: Exception) {
-                raisePlatformError(ADelayedSendReachesWhatItsTargetNamesEvent.Error.Execution, "<send> contentexpr failed to evaluate", "__send_0")
+                raisePlatformError(ADelayedSendReachesWhatItsTargetNamesEvent.Error.Execution, ErrorReason.EXPRESSION_FAILED, "<send> contentexpr failed to evaluate", "__send_0")
                 paramFailed = true
                 valueToJson("")
             }
@@ -972,7 +972,7 @@ class ADelayedSendReachesWhatItsTargetNamesStateMachine(
             // refused a target naming no invocation above; one that is not
             // running is not there to reach (W3C SCXML C.1).
             if (!sendToChild("gone", "stop", sendData)) {
-                raisePlatformError(ADelayedSendReachesWhatItsTargetNamesEvent.Error.Communication, "<send target='#_gone'> names an invocation that is not running", "__send_2")
+                raisePlatformError(ADelayedSendReachesWhatItsTargetNamesEvent.Error.Communication, ErrorReason.TARGET_UNREACHABLE, "<send target='#_gone'> names an invocation that is not running", "__send_2")
                 return@send true
             }
             false
