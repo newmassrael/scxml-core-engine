@@ -66,6 +66,11 @@ pub(crate) use cpp_source::source_case::{
     source_case as cpp_source_case, CodecPath as CppCodecPath,
 };
 
+/// What a reader in another document knows of a codec the C++ backend prints
+/// from its plan (docs/adr/0081 step 4), which [`ImportContext::cpp_printed`]
+/// holds. See [`cpp_source::CppPrinted`].
+pub use cpp_source::CppPrinted;
+
 /// A byte case of the Python conformance harness, its source a value the
 /// printed dataclass's constructor makes (docs/adr/0081 §5). See
 /// [`python_source::source_case::source_case`].
@@ -439,13 +444,16 @@ pub struct ImportContext {
     #[serde(skip)]
     pub codec_lent_holds: bool,
 
-    /// docs/adr/0081 step 4: `true` when the C++ backend prints the imported
-    /// codec from its plan, so its value presents its elements through
-    /// accessors and a parent reads them by call (`entry.kind()`), not as
-    /// members. `false` on every other backend, for non-codec imports, and
-    /// for a codec the C++ backend refuses ([`Self::cpp_unlowered`]).
+    /// docs/adr/0081 step 4: what a reader knows of the imported codec where
+    /// the C++ backend prints it from its plan, so its value presents its
+    /// elements through accessors and a parent reads them by call
+    /// (`entry.kind()`), not as members, reads a number its encode derives
+    /// through the function of its namespace that derives it, and makes a
+    /// value again by its constructor ([`CppPrinted`]). `None` on every other
+    /// backend, for non-codec imports, and for a codec the C++ backend refuses
+    /// ([`Self::cpp_unlowered`]).
     #[serde(skip)]
-    pub cpp_printed: bool,
+    pub cpp_printed: Option<CppPrinted>,
 
     /// For a codec import, when the generation is for C++: what of the codec
     /// the C++ printer does not lower (`forge::generator::cpp_codec_unlowered`,
@@ -1535,7 +1543,7 @@ fn resolve_single_import(
         codec_is_borrowed: false,
         codec_inline_holds: false,
         codec_lent_holds: false,
-        cpp_printed: false,
+        cpp_printed: None,
         cpp_unlowered: None,
         python_printed: false,
         codec_may_exceed_capacity: false,
@@ -10614,6 +10622,20 @@ pub(crate) fn cpp_codec_unlowered(m: &CodecModel, imports: &[ImportContext]) -> 
     )
 }
 
+/// What a reader in another document knows of `m` where the C++ backend
+/// prints it from its plan ([`cpp_codec_printed`]): what its constructor
+/// takes, and the numbers its encode derives that a function of its namespace
+/// answers. `None` for a codec the C++ backend refuses.
+pub(crate) fn cpp_codec_printed_reads(
+    m: &CodecModel,
+    imports: &[ImportContext],
+) -> Option<CppPrinted> {
+    let plan = crate::forge::encode_plan::CodecPlan::of(m, imports);
+    cpp_source::unlowered(&plan, imports)
+        .is_none()
+        .then(|| CppPrinted::of(&plan))
+}
+
 /// The refusal of the codec `m` for the form `form` of its plan the C++
 /// printer does not lower ([`cpp_codec_unlowered`]): the sentence `generate`
 /// answers the codec with, as `generate/unsupported-feature`.
@@ -17251,7 +17273,7 @@ pub(crate) fn chain_identifier_masks(
             .tlv_chain_body_alias
             .as_deref()
             .and_then(|alias| imports.iter().find(|i| i.alias == alias))
-            .is_some_and(|entry| entry.cpp_printed)
+            .is_some_and(|entry| entry.cpp_printed.is_some())
         {
             masks.accessors.insert(chain.id.clone());
         }
@@ -35200,14 +35222,23 @@ fn stateful_import_field_renames(
             };
             let expansion = match language {
                 // A codec the C++ printer prints presents each element through
-                // its accessor (docs/adr/0081 step 4); an assign to one is a
-                // rebuild ([`cpp_rebuilt_element_assign`]), not this read.
-                generator::Language::Cpp if imp.cpp_printed => {
-                    format!("{}.{}()", imp.member_name, field)
-                }
-                generator::Language::Cpp => {
-                    format!("{}.{}", imp.member_name, field)
-                }
+                // its accessor and holds no number its encode derives, which a
+                // function of its namespace derives as the encode does
+                // (docs/adr/0081 step 4, §3); an assign to an element is a
+                // rebuild ([`cpp_rebuilt_element_assign`]), not this read. A
+                // field the value does not present alone, a member of a group,
+                // is no member a reader names (`validate_and_enrich_imports`).
+                generator::Language::Cpp => match &imp.cpp_printed {
+                    Some(printed) => {
+                        let Some(read) =
+                            printed.read(&imp.member_name, cpp_namespace_of(imp), field)
+                        else {
+                            continue;
+                        };
+                        read
+                    }
+                    None => format!("{}.{}", imp.member_name, field),
+                },
                 generator::Language::Kotlin => {
                     format!("{}.{}", imp.member_name, field)
                 }
@@ -35695,17 +35726,26 @@ fn build_procedure_states_with_assigns(
                             let is_bytes_with_cap = cap_check_target
                                 && slot_cap.is_some()
                                 && matches!(lhs_ty, crate::forge::types::InferredType::Bytes);
-                            let (location_emitted, wrapped) = match cpp_rebuilt_element_assign(
-                                cpp_imports,
-                                &a.location,
-                                &wrapped,
-                            ) {
-                                Some(rebuild) => rebuild,
-                                None => (location_emitted, wrapped),
+                            let rebuilt =
+                                cpp_rebuilt_element_assign(cpp_imports, &a.location, &wrapped)
+                                    .map_err(|refusal| location.place(refusal))?;
+                            let (location_emitted, wrapped, made) = match rebuilt {
+                                Some(rebuilt) => (rebuilt.location, rebuilt.value, rebuilt.made),
+                                None => (location_emitted, wrapped, None),
                             };
+                            // A byte string or a text of a printed codec is
+                            // made into its bounded value first, held as the
+                            // local the rebuild reads; a refusal raises
+                            // `error.execution`, as a value over a bytes
+                            // slot's cap does.
+                            let (made, made_from) = made.unzip();
                             Ok(serde_json::json!({
                                 "location": location_emitted,
                                 "expr": wrapped,
+                                "made": made,
+                                "made_from": made_from,
+                                "made_local": cpp_source::CPP_REBUILT_ELEMENT,
+                                "made_from_local": cpp_source::CPP_REBUILT_VALUE,
                                 "is_bytes_with_cap": is_bytes_with_cap,
                                 "cap": slot_cap.unwrap_or(0),
                             }))
@@ -35725,43 +35765,73 @@ fn build_procedure_states_with_assigns(
         .collect()
 }
 
+/// An assign to an element of a printed codec, made a rebuild of the value
+/// that holds it ([`cpp_rebuilt_element_assign`]).
+struct RebuiltAssign {
+    /// The place the value is held in, which the rebuilt value is assigned to.
+    location: String,
+    /// The value made again.
+    value: String,
+    /// For a byte string or a text, the fallible call that makes its bounded
+    /// value, and the value assigned, which the call views
+    /// ([`cpp_source::CppRebuild::made`]); a refusal of the call raises
+    /// `error.execution`, as a value over a bytes slot's cap does. `None`
+    /// where the element is handed as the expression gives it.
+    made: Option<(String, String)>,
+}
+
 /// The C++ statement that assigns `value` to the element `location` names
-/// (`alias.element`) of an imported codec the C++ printer prints, as
-/// `(member, rebuilt value)`; `None` where `location` names no such element.
+/// (`alias.element`) of an imported codec the C++ printer prints; `None` where
+/// `location` names no field of such a codec.
 ///
 /// A printed codec's value is made only by its constructor (docs/adr/0081
-/// step 4), so an element is not assigned in place: the value is made again,
-/// the assigned element from `value` and every other from its accessor, in
-/// the constructor's order, which is the codec's declaration order. The call
-/// is the parenthesised form, which converts each argument as the assignment
-/// it replaces did. `cpp_imports` is empty for every other backend.
+/// step 4), so an element is not assigned in place: the value is made again
+/// by the constructor, which takes the elements the value presents in their
+/// declaration order, each group and the arm of the variant whole, the
+/// assigned element from `value` and everything else from its accessor
+/// ([`cpp_source::CppPrinted::rebuilt`]). A byte string or a text is first
+/// made into its bounded value, which can fail. A number the encode derives
+/// is no element of the value, so an assign to one is refused, as is an
+/// assign to a body or a list, which no expression gives. `cpp_imports` is
+/// empty for every other backend.
 fn cpp_rebuilt_element_assign(
     cpp_imports: &[ImportContext],
     location: &str,
     value: &str,
-) -> Option<(String, String)> {
-    let (alias, element) = location.trim().split_once('.')?;
-    let imp = cpp_imports
-        .iter()
-        .find(|imp| imp.cpp_printed && imp.is_stateful && imp.alias == alias)?;
+) -> Result<Option<RebuiltAssign>, crate::forge::expr::Refusal> {
+    let Some((alias, element)) = location.trim().split_once('.') else {
+        return Ok(None);
+    };
+    let Some((imp, printed)) = cpp_imports.iter().find_map(|imp| match &imp.cpp_printed {
+        Some(printed) if imp.is_stateful && imp.alias == alias => Some((imp, printed)),
+        _ => None,
+    }) else {
+        return Ok(None);
+    };
     if !imp.codec_fields.iter().any(|f| f.id == element) {
-        return None;
+        return Ok(None);
     }
-    let arguments: Vec<String> = imp
-        .codec_fields
-        .iter()
-        .map(|f| {
-            if f.id == element {
-                value.to_string()
-            } else {
-                format!("{}.{}()", imp.member_name, f.id)
-            }
-        })
-        .collect();
-    Some((
-        imp.member_name.clone(),
-        format!("{}({})", imp.member_type, arguments.join(", ")),
-    ))
+    match printed.rebuilt(&imp.member_name, &imp.member_type, element, value) {
+        Ok(rebuilt) => Ok(Some(RebuiltAssign {
+            location: imp.member_name.clone(),
+            value: rebuilt.value,
+            made: rebuilt.made,
+        })),
+        Err(detail) => Err(crate::forge::error::ExprError::InvalidLvalue {
+            location: location.trim().to_string(),
+            detail,
+        }
+        .at(None)),
+    }
+}
+
+/// The namespace a C++ import's member type is declared in: `member_type`
+/// less its last `::` segment (`::SCE::Generated::CodecX::CodecX` is declared
+/// in `::SCE::Generated::CodecX`).
+fn cpp_namespace_of(imp: &ImportContext) -> &str {
+    imp.member_type
+        .rsplit_once("::")
+        .map_or(imp.member_type.as_str(), |(namespace, _)| namespace)
 }
 
 /// Language-specific wrapping for `_event.data` assignment to a Bytes-typed
@@ -48559,7 +48629,7 @@ mod tests {
             codec_is_borrowed: false,
             codec_inline_holds: false,
             codec_lent_holds: false,
-            cpp_printed: false,
+            cpp_printed: None,
             cpp_unlowered: None,
             python_printed: false,
             codec_may_exceed_capacity: false,
@@ -49488,7 +49558,7 @@ mod tests {
                 codec_is_borrowed: false,
                 codec_inline_holds: false,
                 codec_lent_holds: false,
-                cpp_printed: false,
+                cpp_printed: None,
                 cpp_unlowered: None,
                 python_printed: false,
                 codec_may_exceed_capacity: false,
@@ -49560,7 +49630,7 @@ mod tests {
                 codec_is_borrowed: false,
                 codec_inline_holds: false,
                 codec_lent_holds: false,
-                cpp_printed: false,
+                cpp_printed: None,
                 cpp_unlowered: None,
                 python_printed: false,
                 codec_may_exceed_capacity: false,

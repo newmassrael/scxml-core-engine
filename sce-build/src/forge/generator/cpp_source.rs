@@ -18,9 +18,9 @@ use crate::forge::bit_layout::BitSpan;
 use crate::forge::codec_roles::{ElementId, GateGroup, GateVar, GroupArm, InputSource, InputValue};
 use crate::forge::codec_totality::RefusalKind;
 use crate::forge::encode_plan::{
-    list_law, Absent, Against, Automaton, Bound, CheckSite, Clause, CodecPlan, Derive, EncodePlan,
-    EntryId, Guard, HandedFrom, Measured, Narrow, Number, NumberInto, Offset, Presence, Value,
-    Write,
+    list_law, Absent, Against, Automaton, Bound, CheckSite, Clause, CodecPlan, Derive, Derived,
+    EncodePlan, EntryId, Guard, HandedFrom, Measure, Measured, Narrow, Number, NumberInto, Offset,
+    Presence, Value, Write,
 };
 
 pub(super) mod cbor;
@@ -297,7 +297,7 @@ fn override_member(l: &LangCtx, carrier: &str, flag: &str) -> String {
 /// generates it says nothing of the codec, and is refused for that.
 fn held_refused(imports: &[ImportContext], alias: &str) -> Option<String> {
     match imports.iter().find(|import| import.alias == alias) {
-        Some(import) if import.cpp_printed => None,
+        Some(import) if import.cpp_printed.is_some() => None,
         Some(import) => Some(
             import
                 .cpp_unlowered
@@ -417,6 +417,548 @@ fn derived_number(plan: &EncodePlan<'_>, id: &str) -> bool {
         matches!(&derived.element, ElementId::Field(element) if element == id)
             && matches!(derived.by, Derive::Number(_) | Derive::VariantTag)
     })
+}
+
+/// The field a number the plan derives into a field of the codec's own goes
+/// into: the field of a length, a count or an encoded length, or of the tag of
+/// the arm the value holds; `None` for anything else the plan derives.
+fn number_field<'m>(plan: &EncodePlan<'m>, derived: &Derived<'m>) -> Option<&'m CodecField> {
+    let ElementId::Field(id) = &derived.element else {
+        return None;
+    };
+    match &derived.by {
+        Derive::Number(Number {
+            into: NumberInto::Field { field, .. },
+            ..
+        }) => Some(*field),
+        Derive::VariantTag => plan.model.fields.iter().find(|f| f.id == *id),
+        _ => None,
+    }
+}
+
+/// Whether the bits `width` wide at `bit` of `carrier` go onto the wire as the
+/// value presents them: the carrier is an element the value presents alone and
+/// always, holding no number the encode derives, and no flag the encode derives
+/// or a parent sets lies in the bits. A flag of the carrier the encode derives
+/// that the carrier does not declare is taken to lie in them.
+fn carrier_bits_presented(
+    plan: &EncodePlan<'_>,
+    carrier: &CodecField,
+    bit: u32,
+    width: u32,
+) -> bool {
+    let alone = plan
+        .elements
+        .iter()
+        .any(|e| e.field.id == carrier.id && !e.presence.optional());
+    let lies_in = |name: &str| match carrier.flags.iter().find(|d| d.name == name) {
+        Some(def) => def.bit < bit + width && bit < def.bit + def.width,
+        None => true,
+    };
+    let derived = plan.derivations.iter().any(|d| {
+        matches!(&d.element, ElementId::Flag { field, flag } if *field == carrier.id && lies_in(flag))
+    });
+    let overridden = plan
+        .overridable
+        .iter()
+        .any(|(c, def)| c.id == carrier.id && lies_in(&def.name));
+    alone && !derived_number(plan, &carrier.id) && !derived && !overridden
+}
+
+/// Whether a source of the codec `plan` says all of what `measure` measures,
+/// so that a read of the source answers it as the encode derives it: the bytes
+/// of a byte string or a text, the entries of a list, or the encoded length of
+/// a body each of whose inputs the codec hands it from bits of a carrier that
+/// go onto the wire as the value presents them ([`carrier_bits_presented`]).
+/// A body handed an input the encode is handed, or one the value says, is
+/// counted with what the source alone does not say.
+fn source_says(plan: &EncodePlan<'_>, measure: &Measure<'_>) -> bool {
+    match &measure.of {
+        Measured::Bytes { .. } | Measured::Entries { .. } => true,
+        Measured::Encoded { codec, .. } => {
+            plan.handed
+                .get(*codec)
+                .into_iter()
+                .flatten()
+                .all(|handed| match &handed.from {
+                    Some(HandedFrom::Carrier {
+                        carrier,
+                        bit,
+                        width,
+                    }) => carrier_bits_presented(plan, carrier, *bit, *width),
+                    _ => false,
+                })
+        }
+        _ => false,
+    }
+}
+
+/// Each number the encode of `plan` derives into a field that a read of any
+/// source answers as the encode derives it ([`wire_function`]), each field
+/// once, in the order of the derivations: a length, a count or an encoded
+/// length whose every measure a source says ([`source_says`]), and the tag of
+/// the arm the value holds. The value holds no field for any of them
+/// (docs/adr/0081 §3), so a reader of a value reads the number its frame
+/// carries through this.
+fn answered_numbers<'p, 'm>(plan: &'p EncodePlan<'m>) -> Vec<&'p Derived<'m>> {
+    let mut seen: Vec<&'m str> = Vec::new();
+    let mut out = Vec::new();
+    for derived in &plan.derivations {
+        let Some(field) = number_field(plan, derived) else {
+            continue;
+        };
+        let answered = match &derived.by {
+            Derive::Number(number) => number.measures.iter().all(|m| source_says(plan, m)),
+            _ => true,
+        };
+        if answered && !seen.contains(&field.id.as_str()) {
+            seen.push(field.id.as_str());
+            out.push(derived);
+        }
+    }
+    out
+}
+
+/// The name of the function of a printed codec's namespace that answers the
+/// number its encode derives into the field `id`, read off any source
+/// ([`wire_function`]): `wire_` and the field's accessor name. A length the
+/// value states while its content is absent is presented by the accessor of
+/// the field's own name, so the number the frame carries is a function of
+/// another name.
+fn wire_name(l: &LangCtx, id: &str) -> String {
+    format!("wire_{}", l.codec_field_id(id))
+}
+
+/// The function of the codec's namespace that answers the number `derived`
+/// goes into a field as, read off any source of the codec `struct_name` as
+/// its encode derives it (docs/adr/0081 §3), one of [`answered_numbers`]: each
+/// element and group that holds what the number measures is read as the
+/// encode reads it, and the number combined from the measures there as the
+/// encode combines them. Where nothing it measures is there, it is zero, what
+/// the value states, or what the group that holds the field holds on that
+/// side; where the field is gated beside its content, the function answers
+/// none. A value the encode refuses, whose measures disagree, is answered by
+/// its first measure there.
+fn wire_function<'m, 'p>(
+    plan: &EncodePlan<'m>,
+    l: &LangCtx,
+    elements: &[Presented<'p>],
+    groups: &[GroupPart<'p>],
+    variant: Option<&VariantPart>,
+    struct_name: &str,
+    derived: &Derived<'m>,
+) -> String {
+    let field = number_field(plan, derived).expect("an answered number goes into a field");
+    let element = |f: &CodecField| {
+        elements
+            .iter()
+            .chain(groups.iter().flat_map(|g| g.members.iter()))
+            .find(|e| e.field.id == f.id)
+    };
+    // The fields read off the source: what the number measures, and, where
+    // nothing it measures is there and the field holds what the value states
+    // or what its group holds, the field itself.
+    let mut held: Vec<&CodecField> = Vec::new();
+    let mut body = String::new();
+    let (size, present, absent) = match &derived.by {
+        Derive::Number(number) => {
+            let NumberInto::Field { absent, .. } = &number.into else {
+                unreachable!("{}", NUMBER_INTO_ITS_KIND);
+            };
+            if matches!(absent, Absent::Stated | Absent::Group) {
+                held.push(field);
+            }
+            let mut counts = String::new();
+            let mut measured: Vec<MeasureText> = Vec::new();
+            for measure in &number.measures {
+                match &measure.of {
+                    Measured::Encoded {
+                        body: counted,
+                        codec,
+                        ..
+                    } => {
+                        held.push(*counted);
+                        let presented = element(counted)
+                            .expect("an encoded length measures a body the value presents");
+                        measured.push(encoded_measure(
+                            presented,
+                            &handed_off_source(plan, l, codec),
+                            false,
+                            measure,
+                            &mut counts,
+                        ));
+                    }
+                    Measured::Bytes { field: content, .. }
+                    | Measured::Entries { list: content } => {
+                        held.push(*content);
+                        let (size, present) = content_measure(l, &element, measure)
+                            .expect("a measure of bytes or of entries is of content");
+                        measured.push(MeasureText {
+                            size,
+                            present,
+                            gated: measure.gated,
+                        });
+                    }
+                    _ => unreachable!("an answered number measures what a source says"),
+                }
+            }
+            let (size, present) = combine(plan, l, &derived.element, &measured, false, &mut counts);
+            // Each element and group is read before anything is counted.
+            let mut bound: Vec<&str> = Vec::new();
+            for f in &held {
+                if let Some(e) = elements.iter().find(|e| e.field.id == f.id) {
+                    if !bound.contains(&e.name.as_str()) {
+                        bound.push(e.name.as_str());
+                        body.push_str(&e.read_once());
+                    }
+                } else if let Some(g) = groups.iter().find(|g| g.member(&f.id).is_some()) {
+                    if !bound.contains(&g.name.as_str()) {
+                        bound.push(g.name.as_str());
+                        body.push_str(&g.bind_members());
+                    }
+                }
+            }
+            body.push_str(&counts);
+            (size, present, *absent)
+        }
+        Derive::VariantTag => {
+            let variant = variant.expect("a variant's tag is derived only where the codec has one");
+            body.push_str("        const auto& _r_body = source::body(src);\n");
+            body.push_str(&variant.tag_switch());
+            ("_t_body".to_string(), None, Absent::Never)
+        }
+        _ => unreachable!("an answered number is a number or a variant's tag"),
+    };
+    if body.is_empty() {
+        body.push_str("        (void)src;\n");
+    }
+    let ty = l.type_name(&field.sce_type);
+    let name = l.codec_field_id(&field.id);
+    let number = format!("static_cast<{ty}>({size})");
+    let (returned, answer, absent_said) = match (present, absent) {
+        (None, Absent::Zero) => (
+            format!("std::optional<{ty}>"),
+            format!("        return {number};\n"),
+            ", and none where the content it is gated beside is absent",
+        ),
+        (None, _) => (ty.to_string(), format!("        return {number};\n"), ""),
+        (Some(there), Absent::Zero) => (
+            format!("std::optional<{ty}>"),
+            format!(
+                "        if (!({there})) {{\n\
+                 \x20           return std::nullopt;\n\
+                 \x20       }}\n\
+                 \x20       return {number};\n"
+            ),
+            ", and none where the content it is gated beside is absent",
+        ),
+        (Some(there), Absent::Never) => (
+            ty.to_string(),
+            format!("        return ({there}) ? {number} : {ty}{{0}};\n"),
+            ", zero where nothing it measures is there",
+        ),
+        (Some(there), Absent::Stated | Absent::Group) => (
+            ty.to_string(),
+            format!("        return ({there}) ? {number} : _e_{name}.value_or({ty}{{0}});\n"),
+            ", and what the value holds of the field where nothing it measures is there",
+        ),
+    };
+    body.push_str(&answer);
+    // The statements are written as the encode's are, inside `Wire`; a
+    // function of the namespace holds them one level out.
+    let mut dedented = String::new();
+    for line in body.lines() {
+        dedented.push_str(line.strip_prefix("    ").unwrap_or(line));
+        dedented.push('\n');
+    }
+    let body = dedented;
+    format!(
+        "/// The `{id}` the frame of a source of `{struct_name}` carries, which its encode\n\
+         /// derives from what it measures and no value holds (docs/adr/0081 §3){absent_said}.\n\
+         template <class S>\n\
+         [[nodiscard]] {returned} {function}(const S& src) noexcept(is_nothrow_source<S>::value) {{\n\
+         \x20   static_assert(is_source<S>::value, \"S presents every element of {struct_name}\");\n\
+         {body}\
+         }}\n\n",
+        id = field.id,
+        function = wire_name(l, &field.id)
+    )
+}
+
+/// What the body of the codec imported as `alias` is handed for each input
+/// it takes, as the trailing arguments of its encode, read off the source
+/// `src`: the bits of a carrier the value presents, which go onto the wire as
+/// it presents them ([`source_says`]).
+fn handed_off_source(plan: &EncodePlan<'_>, l: &LangCtx, alias: &str) -> String {
+    plan.handed
+        .get(alias)
+        .into_iter()
+        .flatten()
+        .map(|handed| match &handed.from {
+            Some(HandedFrom::Carrier {
+                carrier,
+                bit,
+                width,
+            }) => {
+                let mask = if *width >= 64 {
+                    u64::MAX
+                } else {
+                    (1u64 << width) - 1
+                };
+                let read = l.codec_carrier_expr(
+                    &carrier.sce_type,
+                    &format!("source::{}(src)", l.codec_field_id(&carrier.id)),
+                );
+                format!(
+                    ", static_cast<std::uint8_t>((static_cast<std::uint64_t>({read}) >> {bit}) & 0x{mask:X}ull)"
+                )
+            }
+            _ => unreachable!("an answered number's body is handed bits of a carrier alone"),
+        })
+        .collect()
+}
+
+/// What a reader in another document knows of a codec the C++ backend prints
+/// from its plan (docs/adr/0081 step 4): what its constructor takes, in its
+/// order, and the numbers its encode derives into a field that a function of
+/// its namespace answers ([`wire_function`]). A procedure and a validator that
+/// hold a value of the codec read it and make it again through this
+/// ([`CppPrinted::read`], [`CppPrinted::rebuilt`]), so neither spells a
+/// printed codec's interface of its own.
+#[derive(Clone, Debug, Default, PartialEq, Eq)]
+pub struct CppPrinted {
+    /// What the constructor takes, in its order.
+    parts: Vec<CppPart>,
+    /// Each number the encode derives into a field that a function of the
+    /// codec's namespace answers: the field's id and the function's name.
+    answered: Vec<(String, String)>,
+}
+
+/// One thing a printed C++ value's constructor takes.
+#[derive(Clone, Debug, PartialEq, Eq)]
+enum CppPart {
+    /// An element the value presents by an accessor of its own.
+    Element {
+        /// The field id.
+        id: String,
+        /// The accessor's name, which is the constructor parameter's.
+        accessor: String,
+        /// How a value of it is made of what an expression gives.
+        made: CppMade,
+    },
+    /// A group of elements one gate decides, or the arm of the variant: the
+    /// value presents it whole by the accessor `accessor`, and no member of it
+    /// is an element of its own.
+    Whole { accessor: String },
+}
+
+/// How a printed C++ value's element is made of what an expression gives.
+#[derive(Clone, Debug, PartialEq, Eq)]
+enum CppMade {
+    /// Handed as the expression gives it: an integer, a flag set or an enum,
+    /// or the optional type of one.
+    AsGiven,
+    /// A byte string or a text, made by `make` of the bounded type the
+    /// accessor presents it as, which refuses one past its bound or a text
+    /// that is not UTF-8; `optional` where a gate decides it, and the
+    /// accessor presents it as the optional type of that bounded type.
+    Bounded { optional: bool },
+    /// A body or a list, which no expression gives: `why` says what it is.
+    Unmade { why: &'static str },
+}
+
+/// A rebuild of a printed C++ codec's value with one element assigned.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub(crate) struct CppRebuild {
+    /// The call of the constructor.
+    pub(crate) value: String,
+    /// For a byte string or a text, the call that makes the bounded value of
+    /// what is assigned, which `value` reads as [`CPP_REBUILT_ELEMENT`] and
+    /// which can fail, and the value it is made of, which is held as
+    /// [`CPP_REBUILT_VALUE`] first, as the bounded value views it; `None`
+    /// where the element is handed as the expression gives it.
+    pub(crate) made: Option<(String, String)>,
+}
+
+/// The local a rebuild holds the value assigned to a byte string or a text
+/// in, which the bounded value made of it views ([`CppRebuild::made`]).
+pub(crate) const CPP_REBUILT_VALUE: &str = "_sce_value";
+
+/// The local a rebuild reads the bounded value it made of the value assigned
+/// from ([`CppRebuild::made`]), an optional the call leaves empty where it
+/// refuses.
+pub(crate) const CPP_REBUILT_ELEMENT: &str = "_sce_made";
+
+impl CppPrinted {
+    /// What a reader in another document knows of the codec `plan`, which the
+    /// C++ backend prints ([`unlowered`] answers `None` for it). A CBOR or a
+    /// content-line codec presents no field of the codec's own a reader names
+    /// as a record's, so it is known by nothing.
+    pub(crate) fn of(plan: &CodecPlan<'_>) -> Self {
+        let CodecPlan::Positional(plan) = plan else {
+            return CppPrinted::default();
+        };
+        let l = LangCtx::new(crate::generator::Language::Cpp, &[]);
+        let mut parts: Vec<CppPart> = declared_parts(plan)
+            .into_iter()
+            .map(|part| match part {
+                Part::Element(index) => {
+                    let element = &plan.elements[index];
+                    let made = match &element.value {
+                        Value::Bytes(_) | Value::Text(_) => CppMade::Bounded {
+                            optional: element.presence.optional(),
+                        },
+                        Value::Body { .. } => CppMade::Unmade {
+                            why: "the body of a codec it holds",
+                        },
+                        Value::List { .. } => CppMade::Unmade {
+                            why: "a list of the entries of a codec it holds",
+                        },
+                        _ => CppMade::AsGiven,
+                    };
+                    CppPart::Element {
+                        id: element.field.id.clone(),
+                        accessor: l.codec_field_id(&element.field.id),
+                        made,
+                    }
+                }
+                Part::Group(index) => CppPart::Whole {
+                    accessor: super::rust_source::group_accessor(&plan.groups()[index]),
+                },
+            })
+            .collect();
+        // The arm a variant holds comes last, after the fields before it.
+        if plan.model.variant.is_some() {
+            parts.push(CppPart::Whole {
+                accessor: "body".to_string(),
+            });
+        }
+        let answered = answered_numbers(plan)
+            .into_iter()
+            .filter_map(|derived| number_field(plan, derived))
+            .map(|field| (field.id.clone(), wire_name(&l, &field.id)))
+            .collect();
+        CppPrinted { parts, answered }
+    }
+
+    /// Whether a reader may name the field `id` of a value of the codec: an
+    /// element the value presents by an accessor of its own, or a number the
+    /// encode derives that a function of the codec's namespace answers. A
+    /// member of a group, which the value presents whole, is not, nor is a
+    /// number whose measures a source does not say ([`source_says`]).
+    pub(crate) fn reads(&self, id: &str) -> bool {
+        self.answered.iter().any(|(field, _)| field == id) || self.element(id).is_some()
+    }
+
+    /// The read of the field `id` of the value `held`, whose codec's namespace
+    /// is `namespace`: a number the encode derives by the function of the
+    /// namespace that derives it as the encode does, since the value holds no
+    /// field for it (docs/adr/0081 §3), and a length the value states while its
+    /// content is absent as the number the frame carries, which that function
+    /// answers too; an element by its accessor. `None` where a reader may not
+    /// name the field ([`CppPrinted::reads`]).
+    pub(crate) fn read(&self, held: &str, namespace: &str, id: &str) -> Option<String> {
+        if let Some((_, function)) = self.answered.iter().find(|(field, _)| field == id) {
+            return Some(format!("{namespace}::{function}({held})"));
+        }
+        let (accessor, _) = self.element(id)?;
+        Some(format!("{held}.{accessor}()"))
+    }
+
+    /// The rebuild of the value `held`, made by the constructor of `class`,
+    /// with the element `element` assigned `value` and everything else the
+    /// constructor takes read by its accessor, in the constructor's order: a
+    /// group and the arm of the variant whole. A byte string or a text is
+    /// assigned as the expression gives it, made into its bounded value by
+    /// `make` of the type the accessor presents it as, which refuses one past
+    /// its bound or a text that is not UTF-8 ([`CppRebuild::made`]); one a gate
+    /// decides, by `make` of the type its optional holds. Any other element is
+    /// handed as the expression gives it, which the parenthesised call converts
+    /// as the assignment it replaces did. Refused, with why, where the value
+    /// presents no `element` of its own: a number the encode derives, which no
+    /// value holds, a member of a group, and a body or a list, which no
+    /// expression gives.
+    pub(crate) fn rebuilt(
+        &self,
+        held: &str,
+        class: &str,
+        element: &str,
+        value: &str,
+    ) -> Result<CppRebuild, String> {
+        let Some((accessor, made)) = self.element(element) else {
+            return Err(if self.answered.iter().any(|(field, _)| field == element) {
+                format!(
+                    "the encode derives `{element}` from what it measures (docs/adr/0081 §3), \
+                     so its value holds no `{element}` to assign"
+                )
+            } else {
+                format!(
+                    "`{element}` is a member of a group the value presents whole, so it is \
+                     not assigned alone"
+                )
+            });
+        };
+        let made = match made {
+            CppMade::AsGiven => None,
+            CppMade::Bounded { optional } => {
+                let presented = format!("std::decay_t<decltype({held}.{accessor}())>");
+                let bounded = if *optional {
+                    format!("{presented}::value_type")
+                } else {
+                    presented
+                };
+                Some((
+                    format!("{bounded}::make({CPP_REBUILT_VALUE})"),
+                    value.to_string(),
+                ))
+            }
+            CppMade::Unmade { why } => {
+                return Err(format!(
+                    "`{element}` is {why}, which the value is made of whole and no expression \
+                     gives"
+                ))
+            }
+        };
+        let arguments: Vec<String> = self
+            .parts
+            .iter()
+            .map(|part| match part {
+                // The optional `make` answers is the optional type the
+                // constructor takes, holding a value once it is tested.
+                CppPart::Element {
+                    id,
+                    made: CppMade::Bounded { optional: true },
+                    ..
+                } if id == element => CPP_REBUILT_ELEMENT.to_string(),
+                CppPart::Element {
+                    id,
+                    made: CppMade::Bounded { optional: false },
+                    ..
+                } if id == element => format!("*{CPP_REBUILT_ELEMENT}"),
+                CppPart::Element { id, .. } if id == element => value.to_string(),
+                CppPart::Element { accessor, .. } | CppPart::Whole { accessor } => {
+                    format!("{held}.{accessor}()")
+                }
+            })
+            .collect();
+        Ok(CppRebuild {
+            value: format!("{class}({})", arguments.join(", ")),
+            made,
+        })
+    }
+
+    /// The accessor of the element the value presents as `id`, and how it is
+    /// made; `None` where it presents no such element of its own.
+    fn element(&self, id: &str) -> Option<(&str, &CppMade)> {
+        self.parts.iter().find_map(|part| match part {
+            CppPart::Element {
+                id: element,
+                accessor,
+                made,
+            } if element == id => Some((accessor.as_str(), made)),
+            _ => None,
+        })
+    }
 }
 
 /// The text the C++ printer gives the codec's header.
@@ -1154,6 +1696,32 @@ impl VariantPart {
     /// where it has one.
     fn guarded(&self, i: usize, lines: &str) -> String {
         self.alternatives.guarded(i, lines)
+    }
+
+    /// The statements that set `_t_body` to the tag of the arm the body read
+    /// once as `_r_body` holds: the value the document gives a named arm, and
+    /// the tag the catch-all holds.
+    fn tag_switch(&self) -> String {
+        let mut cases = String::new();
+        for (i, (_, tag)) in self.arms.iter().enumerate() {
+            let index = self.index(i);
+            cases.push_str(&self.guarded(
+                i,
+                &match tag {
+                    Some(tag) => format!("            case {index}: _t_body = {tag}ull; break;\n"),
+                    None => format!(
+                        "            case {index}: _t_body = static_cast<std::uint64_t>(std::get_if<{index}>(&_r_body)->tag); break;\n"
+                    ),
+                },
+            ));
+        }
+        format!(
+            "        std::uint64_t _t_body = 0;\n\
+             \x20       switch (_r_body.index()) {{\n\
+             {cases}\
+             \x20           default: break;\n\
+             \x20       }}\n"
+        )
     }
 
     /// The trait, of the codec's namespace, that says whether what a source
@@ -2670,6 +3238,30 @@ impl<'p> Presented<'p> {
         }
     }
 
+    /// The statements that read it once off the source `src` into its local
+    /// ([`Presented::local`]), where it is read before it is written: a body
+    /// or a list kept as the source presents it, and a byte string, a text or
+    /// an optional value read and taken as what it is presented as; none for
+    /// any other element, which is read where it is written. What a read of
+    /// what the value derives from it reads it by too ([`wire_function`]).
+    fn read_once(&self) -> String {
+        if self.body.is_some() || self.list.is_some() {
+            format!(
+                "        const auto& _r_{name} = source::{name}(src);\n",
+                name = self.name
+            )
+        } else if self.kept() {
+            format!(
+                "        const auto& _r_{name} = source::{name}(src);\n\
+                 \x20       const {presented} _e_{name} = _r_{name};\n",
+                name = self.name,
+                presented = self.presented()
+            )
+        } else {
+            String::new()
+        }
+    }
+
     /// The trait, of the codec's namespace, that says whether what a source
     /// presents for a body a gate decides is a `std::optional` of a source of
     /// the body's codec; `None` for an element that is no such body.
@@ -3279,19 +3871,7 @@ pub(super) fn render(
     // body is read once, as the source of its codec it is, and kept as read; a
     // list likewise, as the bounded list of entry sources it is.
     for e in &elements {
-        if e.body.is_some() || e.list.is_some() {
-            before.push_str(&format!(
-                "        const auto& _r_{name} = source::{name}(src);\n",
-                name = e.name
-            ));
-        } else if e.kept() {
-            before.push_str(&format!(
-                "        const auto& _r_{name} = source::{name}(src);\n\
-                 \x20       const {presented} _e_{name} = _r_{name};\n",
-                name = e.name,
-                presented = e.presented()
-            ));
-        }
+        before.push_str(&e.read_once());
     }
     // A group is read once, and each of its members bound to an optional local
     // from the arm the value holds where that arm holds it, so each statement
@@ -3377,29 +3957,11 @@ pub(super) fn render(
                 let mut measured: Vec<MeasureText> = Vec::new();
                 for measure in &number.measures {
                     let (size, present) = match &measure.of {
-                        Measured::Bytes {
-                            field: bytes,
-                            offset,
-                        } => {
-                            let name = l.codec_field_id(&bytes.id);
-                            let arith = match offset {
-                                Offset::None => String::new(),
-                                Offset::More { by } => format!(" + {by}u"),
-                                Offset::Less { by, .. } => format!(" - {by}u"),
-                            };
-                            // The content is never shorter than what the wire's
-                            // length takes off ([`LESS_IS_HELD`]).
-                            if let Offset::Less { held: false, .. } = offset {
-                                unreachable!("`{}`: {}", bytes.id, LESS_IS_HELD);
-                            }
-                            if measure.gated {
-                                (
-                                    format!("_e_{name}->size(){arith}"),
-                                    Some(format!("_e_{name}.has_value()")),
-                                )
-                            } else {
-                                (format!("_e_{name}.size(){arith}"), None)
-                            }
+                        // The bytes of a byte string or a text, and the entries
+                        // of a list, read off what the encode read once.
+                        Measured::Bytes { .. } | Measured::Entries { .. } => {
+                            content_measure(l, &element, measure)
+                                .expect("a measure of bytes or of entries is of content")
                         }
                         // The input a body always there says, read off the source
                         // the value presents it by (docs/adr/0065 §6 R4a).
@@ -3430,22 +3992,6 @@ pub(super) fn render(
                                 )
                             } else {
                                 (says(&local), None)
-                            }
-                        }
-                        // How many entries the list holds, as the source presents
-                        // it, within its bound; where a gate leaves the list out, a
-                        // field beside it holds zero and a flag keeps its bits.
-                        Measured::Entries { list } => {
-                            let counted = element(list)
-                                .filter(|e| e.list.is_some())
-                                .expect("a count of entries counts a list the value presents");
-                            if counted.optional {
-                                (
-                                    format!("{}.size()", counted.entries()),
-                                    Some(format!("{}.has_value()", counted.local())),
-                                )
-                            } else {
-                                (format!("{}.size()", counted.entries()), None)
                             }
                         }
                         // The input the arm the value holds says, read through
@@ -3558,28 +4104,7 @@ pub(super) fn render(
                 let variant = variant
                     .as_ref()
                     .expect("a variant's tag is derived only where the codec has one");
-                let mut cases = String::new();
-                for (i, (_, tag)) in variant.arms.iter().enumerate() {
-                    let index = variant.index(i);
-                    cases.push_str(&variant.guarded(
-                        i,
-                        &match tag {
-                            Some(tag) => format!(
-                                "            case {index}: _t_body = {tag}ull; break;\n"
-                            ),
-                            None => format!(
-                                "            case {index}: _t_body = static_cast<std::uint64_t>(std::get_if<{index}>(&_r_body)->tag); break;\n"
-                            ),
-                        },
-                    ));
-                }
-                before.push_str(&format!(
-                    "        std::uint64_t _t_body = 0;\n\
-                     \x20       switch (_r_body.index()) {{\n\
-                     {cases}\
-                     \x20           default: break;\n\
-                     \x20       }}\n"
-                ));
+                before.push_str(&variant.tag_switch());
                 match element_id {
                     // The catch-all's tag is held in a whole byte, so it is
                     // masked to the flag's bits, which leave the carrier's other
@@ -4097,35 +4622,13 @@ pub(super) fn render(
                 .body
                 .as_ref()
                 .expect("an encoded length measures a body the value presents");
-            let name = l.codec_field_id(&body.id);
-            let call = format!(
-                "{}::Wire::encode_source({}, _k_{name}{})",
-                held.namespace,
-                if counted.optional {
-                    format!("*_r_{name}")
-                } else {
-                    format!("_r_{name}")
-                },
-                handed(&held.alias)
-            );
-            let count = if *refuses {
-                format!("if (auto _e = {call}; _e) return _e;")
-            } else {
-                format!("(void){call};")
-            };
-            before.push_str(&format!("        ::SCE::Forge::CountingSink _k_{name};\n"));
-            before.push_str(&if counted.optional {
-                format!("        if (_r_{name}) {{\n            {count}\n        }}\n")
-            } else {
-                format!("        {count}\n")
-            });
-            measured.push(MeasureText {
-                size: format!("_k_{name}.position()"),
-                present: counted
-                    .optional
-                    .then(|| format!("{}.has_value()", counted.local())),
-                gated: measure.gated,
-            });
+            measured.push(encoded_measure(
+                counted,
+                &handed(&held.alias),
+                *refuses,
+                measure,
+                &mut before,
+            ));
         }
         if derive_number(plan, l, element_id, &number.into, &measured, &mut before).is_some() {
             unreachable!("{}", ENCODED_INTO_FIELD);
@@ -4485,6 +4988,20 @@ pub(super) fn render(
                 &said.input.name,
                 Read::Source
             )
+        ));
+    }
+    // Each number the encode derives into a field, read off any source as the
+    // encode derives it: what a reader of a value, which holds no field for it
+    // (docs/adr/0081 §3), reads the number the frame carries by.
+    for derived in answered_numbers(plan) {
+        before.push_str(&wire_function(
+            plan,
+            l,
+            &elements,
+            &groups,
+            variant.as_ref(),
+            struct_name,
+            derived,
         ));
     }
 
@@ -4914,6 +5431,109 @@ struct MeasureText {
     gated: bool,
 }
 
+/// The number `measure` gives where it measures the bytes of a byte string or
+/// a text, less or more its `sce:length-arith`, or the entries of a list, read
+/// off the local `element` finds the content's ([`Presented::local`]), and,
+/// where the content may be absent, the test that it is there; `None` for a
+/// measure of anything else. Where a gate leaves the content out, a field
+/// beside it holds zero and a flag keeps its bits.
+fn content_measure<'a, 'p: 'a>(
+    l: &LangCtx,
+    element: impl Fn(&CodecField) -> Option<&'a Presented<'p>>,
+    measure: &Measure<'_>,
+) -> Option<(String, Option<String>)> {
+    match &measure.of {
+        Measured::Bytes {
+            field: bytes,
+            offset,
+        } => {
+            let name = l.codec_field_id(&bytes.id);
+            let arith = match offset {
+                Offset::None => String::new(),
+                Offset::More { by } => format!(" + {by}u"),
+                Offset::Less { by, .. } => format!(" - {by}u"),
+            };
+            // The content is never shorter than what the wire's length takes
+            // off ([`LESS_IS_HELD`]).
+            if let Offset::Less { held: false, .. } = offset {
+                unreachable!("`{}`: {}", bytes.id, LESS_IS_HELD);
+            }
+            Some(if measure.gated {
+                (
+                    format!("_e_{name}->size(){arith}"),
+                    Some(format!("_e_{name}.has_value()")),
+                )
+            } else {
+                (format!("_e_{name}.size(){arith}"), None)
+            })
+        }
+        // How many entries the list holds, as the source presents it, within
+        // its bound.
+        Measured::Entries { list } => {
+            let counted = element(list)
+                .filter(|e| e.list.is_some())
+                .expect("a count of entries counts a list the value presents");
+            Some(if counted.optional {
+                (
+                    format!("{}.size()", counted.entries()),
+                    Some(format!("{}.has_value()", counted.local())),
+                )
+            } else {
+                (format!("{}.size()", counted.entries()), None)
+            })
+        }
+        _ => None,
+    }
+}
+
+/// The number `measure`, an encoded length of the body `counted`, gives: the
+/// bytes the body's codec encodes it to over a sink that keeps none, handed
+/// `handed` (each input it takes, as the call's trailing arguments), counted
+/// by the statements written into `out`. A body a gate leaves out is not
+/// counted and measures nothing. Where `refusing`, a refusal of the body's
+/// encode is passed on, as its write would pass it on; otherwise the count is
+/// of what the body's encode wrote before it refused.
+fn encoded_measure(
+    counted: &Presented<'_>,
+    handed: &str,
+    refusing: bool,
+    measure: &Measure<'_>,
+    out: &mut String,
+) -> MeasureText {
+    let held = counted
+        .body
+        .as_ref()
+        .expect("an encoded length measures a body the value presents");
+    let name = &counted.name;
+    let call = format!(
+        "{}::Wire::encode_source({}, _k_{name}{handed})",
+        held.namespace,
+        if counted.optional {
+            format!("*_r_{name}")
+        } else {
+            format!("_r_{name}")
+        }
+    );
+    let count = if refusing {
+        format!("if (auto _e = {call}; _e) return _e;")
+    } else {
+        format!("(void){call};")
+    };
+    out.push_str(&format!("        ::SCE::Forge::CountingSink _k_{name};\n"));
+    out.push_str(&if counted.optional {
+        format!("        if (_r_{name}) {{\n            {count}\n        }}\n")
+    } else {
+        format!("        {count}\n")
+    });
+    MeasureText {
+        size: format!("_k_{name}.position()"),
+        present: counted
+            .optional
+            .then(|| format!("{}.has_value()", counted.local())),
+        gated: measure.gated,
+    }
+}
+
 /// The statement that returns the refusal of `kind` at `at`, which the totality
 /// analysis names (`Totality::require`, docs/adr/0065 §2).
 fn refusal(plan: &EncodePlan<'_>, kind: RefusalKind, at: &str) -> String {
@@ -4944,28 +5564,25 @@ fn derived_local(l: &LangCtx, element: &ElementId) -> String {
     }
 }
 
-/// The statements, written into `out`, that make the derived number of
-/// `element` from what it measures, as the Rust encode's `combine` makes it
-/// (docs/adr/0081 §1): the first measure always there fixes it, and every
-/// other one there must say the same, or the value is refused as
-/// `InconsistentSource`; where every measure may be absent, it is the first
-/// one there. A field holds it as `_d_<field>`, refused as `LengthOutOfRange`
-/// where it may not fit; where nothing it measures is there, the field holds
-/// zero, what the group that holds it holds on that side, or what the value
-/// states, which must then be what the content says where there is content.
-/// A flag's number is answered as the fold of it into its carrier.
-fn derive_number(
+/// The number `measures` give the derived `element`, as the Rust encode's
+/// `combine` gives it (docs/adr/0081 §1), and, where it may not be there, the
+/// test that it is, with the statements written into `out` that it needs: the
+/// first measure always there fixes it; where every measure may be absent, it
+/// is the first one there, and none where none is. Where `refusing`, every
+/// other measure there must say the same, or the value is refused as
+/// `InconsistentSource`; otherwise the number is the first measure whatever
+/// the others say, as a read of a value the encode would refuse answers it.
+fn combine(
     plan: &EncodePlan<'_>,
     l: &LangCtx,
     element: &ElementId,
-    into: &NumberInto<'_>,
     measures: &[MeasureText],
+    refusing: bool,
     out: &mut String,
-) -> Option<Fold> {
+) -> (String, Option<String>) {
     let named = element.to_string();
     let disagree = || refusal(plan, RefusalKind::InconsistentSource, &named);
-    // The number, and where it may not be there, the test that it is.
-    let (size, present) = match measures {
+    match measures {
         // Nothing measured: zero, as the Rust encode's `combine` holds it.
         [] => ("0".to_string(), None),
         [one] => (one.size.clone(), one.present.clone()),
@@ -4974,22 +5591,24 @@ fn derive_number(
             let always: Vec<&MeasureText> = measures.iter().filter(|m| !m.gated).collect();
             let gated: Vec<&MeasureText> = measures.iter().filter(|m| m.gated).collect();
             if let Some((anchor, others)) = always.split_first() {
-                for other in others {
-                    out.push_str(&format!(
-                        "        if (static_cast<std::size_t>({}) != static_cast<std::size_t>({})) {}\n",
-                        other.size,
-                        anchor.size,
-                        disagree()
-                    ));
-                }
-                for g in &gated {
-                    out.push_str(&format!(
-                        "        if (({}) && static_cast<std::size_t>({}) != static_cast<std::size_t>({})) {}\n",
-                        there(g),
-                        g.size,
-                        anchor.size,
-                        disagree()
-                    ));
+                if refusing {
+                    for other in others {
+                        out.push_str(&format!(
+                            "        if (static_cast<std::size_t>({}) != static_cast<std::size_t>({})) {}\n",
+                            other.size,
+                            anchor.size,
+                            disagree()
+                        ));
+                    }
+                    for g in &gated {
+                        out.push_str(&format!(
+                            "        if (({}) && static_cast<std::size_t>({}) != static_cast<std::size_t>({})) {}\n",
+                            there(g),
+                            g.size,
+                            anchor.size,
+                            disagree()
+                        ));
+                    }
                 }
                 (anchor.size.clone(), None)
             } else {
@@ -5004,18 +5623,41 @@ fn derive_number(
                     ));
                 }
                 out.push_str("        }\n");
-                for g in gated.iter().skip(1) {
-                    out.push_str(&format!(
-                        "        if (({}) && static_cast<std::size_t>({}) != *{first}) {}\n",
-                        there(g),
-                        g.size,
-                        disagree()
-                    ));
+                if refusing {
+                    for g in gated.iter().skip(1) {
+                        out.push_str(&format!(
+                            "        if (({}) && static_cast<std::size_t>({}) != *{first}) {}\n",
+                            there(g),
+                            g.size,
+                            disagree()
+                        ));
+                    }
                 }
                 (format!("*{first}"), Some(format!("{first}.has_value()")))
             }
         }
-    };
+    }
+}
+
+/// The statements, written into `out`, that make the derived number of
+/// `element` from what it measures ([`combine`], refusing measures that
+/// disagree as `InconsistentSource`). A field holds it as `_d_<field>`,
+/// refused as `LengthOutOfRange` where it may not fit; where nothing it
+/// measures is there, the field holds
+/// zero, what the group that holds it holds on that side, or what the value
+/// states, which must then be what the content says where there is content.
+/// A flag's number is answered as the fold of it into its carrier.
+fn derive_number(
+    plan: &EncodePlan<'_>,
+    l: &LangCtx,
+    element: &ElementId,
+    into: &NumberInto<'_>,
+    measures: &[MeasureText],
+    out: &mut String,
+) -> Option<Fold> {
+    let named = element.to_string();
+    let disagree = || refusal(plan, RefusalKind::InconsistentSource, &named);
+    let (size, present) = combine(plan, l, element, measures, true, out);
     match (element, into) {
         (
             ElementId::Field(_),

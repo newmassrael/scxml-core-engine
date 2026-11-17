@@ -253,6 +253,15 @@ public:
                     }
                     {{ a.location }} = std::move(_scope_tmp);
                 }
+{% elif a.made %}
+                {
+                    const auto {{ a.made_from_local }} = {{ a.made_from }};
+                    const auto {{ a.made_local }} = {{ a.made }};
+                    if (!{{ a.made_local }}.has_value()) {
+                        return Event::ErrorExecution;
+                    }
+                    {{ a.location }} = {{ a.expr }};
+                }
 {% else %}
                 {{ a.location }} = {{ a.expr }};
 {% endif %}

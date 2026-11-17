@@ -7407,13 +7407,33 @@ fn validate_and_enrich_imports(
                     &mut view_visited,
                 );
                 // docs/adr/0081 step 4: whether the C++ backend prints the
-                // import from its plan, so a parent reads its elements through
-                // accessors, or refuses it, and for what, so the parent is
+                // import from its plan, so a parent, a procedure or a
+                // validator reads its elements through accessors, reads a
+                // number its encode derives through the function of its
+                // namespace that derives it, and makes a value of it by its
+                // constructor; or refuses it, and for what, so the parent is
                 // refused for it too. Read as the import is generated, its own
                 // imports resolved, which carries a refusal of a codec it holds.
                 if matches!(language, generator::Language::Cpp) {
-                    let unlowered = cpp_codec_unlowered_file(&source.path, &[], options)?;
-                    ctx.cpp_printed = unlowered.as_ref().is_some_and(Vec::is_empty);
+                    let read = read_codec_file_as(
+                        &source.path,
+                        &[],
+                        options,
+                        generator::Language::Cpp,
+                        |model, imports, _| {
+                            (
+                                forge::generator::cpp_codec_unlowered(&model, imports),
+                                forge::generator::cpp_codec_printed_reads(&model, imports),
+                            )
+                        },
+                    )?;
+                    // What a reader knows of the codec is `None` exactly where
+                    // some form of it is refused (`cpp_codec_printed_reads`).
+                    let (unlowered, printed) = match read {
+                        Some((unlowered, printed)) => (Some(unlowered), printed),
+                        None => (None, None),
+                    };
+                    ctx.cpp_printed = printed;
                     ctx.cpp_unlowered = unlowered.and_then(|forms| forms.into_iter().next());
                 }
                 // docs/adr/0081 step 4: whether the Python backend prints the
@@ -7861,10 +7881,20 @@ fn validate_and_enrich_imports(
                 // Unqualified bare field names would collide with the
                 // enclosing kind's own inputs/internals that happen to share
                 // a name, silently producing wrong type inference.
+                //
+                // A codec the C++ backend prints presents a group of fields one
+                // gate decides whole (docs/adr/0081 step 4), so a member of the
+                // group is no member of the value a reader names alone, nor is
+                // a number its encode derives that a source does not say all of
+                // what it measures; an expression that names one is refused as
+                // naming no member of the import.
                 ctx.member_field_types = doc
                     .record_fields()
                     .unwrap_or_default()
                     .into_iter()
+                    .filter(|(field, _)| {
+                        !matches!(&ctx.cpp_printed, Some(printed) if !printed.reads(field))
+                    })
                     .map(|(field, ty)| (format!("{}.{}", ctx.alias, field), ty))
                     .collect();
                 ctx.member_method_sigs = discover_stateful_member_methods(&doc)
