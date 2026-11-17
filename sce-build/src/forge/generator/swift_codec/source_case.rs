@@ -16,7 +16,7 @@ use super::super::rust_source::{
     lawful_parts, source_members, variant_choice, ChosenGroupArm, HeldCodecs, CALLER_TAG_LABEL,
     VARIANT_MEMBER,
 };
-use super::source::{presented_order, Presented};
+use super::source::{presented_order, ArmMember, Presented};
 use super::*;
 use crate::forge::codec_roles::GateGroup;
 use crate::forge::encode_plan::{EncodePlan, Law, Value};
@@ -240,7 +240,8 @@ fn group_literal(
     else {
         return Ok("nil".to_string());
     };
-    let mut members = Vec::new();
+    // Each field the arm holds, as the source states it.
+    let mut spelled: Vec<(&str, String)> = Vec::new();
     for id in &arm.fields {
         let field = plan
             .model
@@ -252,7 +253,7 @@ fn group_literal(
             .get(id)
             .ok_or_else(|| format!("the arm states no `{id}`"))?;
         let value = plan.value(field);
-        let spelled = match (
+        let literal = match (
             super::source::bounded_field_type(type_name, plan, field),
             &value,
         ) {
@@ -267,7 +268,33 @@ fn group_literal(
             (None, _) => number_literal(&value, stated, &*held),
         }
         .map_err(|e| format!("`{id}`: {e}"))?;
-        members.push(format!("{id}: {spelled}"));
+        spelled.push((id.as_str(), literal));
+    }
+    let spelled_of = |id: &str| -> String {
+        spelled
+            .iter()
+            .find(|(field, _)| *field == id)
+            .map(|(_, literal)| literal.clone())
+            .expect("every field the arm holds is spelled")
+    };
+    // Each member of the arm by its name: two lists of one count as one value, made through its
+    // one door (docs/adr/0065 §6 R5) and bound first in `bindings`, which the harness requires to
+    // answer.
+    let mut members = Vec::new();
+    for member in super::source::arm_members(group, arm) {
+        let made = match member {
+            ArmMember::One(id) => spelled_of(id),
+            ArmMember::Aligned { first, second } => {
+                let local = format!("bound{}", bindings.len());
+                bindings.push(format!(
+                    "let {local} = try #require(Aligned({}, {}))",
+                    spelled_of(first),
+                    spelled_of(second)
+                ));
+                local
+            }
+        };
+        members.push(format!("{}: {made}", member.name()));
     }
     let group_type = super::source::group_type_name(type_name, group);
     Ok(match (group.is_sum(), members.is_empty()) {

@@ -1444,6 +1444,16 @@ old encode, the old encode and its templates are removed in the same landing.
    entries took for checks at a list are held to a law (`codec_repeat_flag_carrier`, `codec_chain_prev_carrier`),
    and their tests now hold the law; a list a flag of another declaration derives keeps the check, which a test
    holds on a document of its own. An input a list in a group's arm says stays refused by name.
+   *Two lists of one count, 2026-11-17:* a gate group whose arm holds two lists of one count (docs/adr/0065 §6 R5)
+   is printed. The Swift runtime gains `Aligned<First: Collection, Second: Collection>`, whose failable
+   initializer makes a value only of two lists of one count and whose `init(decoding:_:)` throws
+   `inconsistentSource`, as the Rust, C++ and Kotlin `Aligned` are. Kotlin's runtime needed `Counted` for what a
+   list answers its count by; in Swift that is `Collection.count`, which `BoundedList` and `Lawful` have, so the
+   runtime declares no protocol of its own for it. The arm that holds both holds them as one member named as
+   every printer names it (`aligned_name`), the other arm the first list alone; the encode reads each list out of
+   the pair into its member's local and derives the count from the first, which every arm holds; the decode
+   pairs the two lists it read through the decode's door. A pair one list of which is held to its law stays
+   refused by name, as the C++ printer refuses it.
 
 ## Consequences
 

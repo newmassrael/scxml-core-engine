@@ -2271,4 +2271,10 @@ Landing: the commit that adds this section, and each later one that names a form
   `CodecRepeatFlagCarrier(head: 0x01, count: 1, entries: [e])` to
   `CodecRepeatFlagCarrier(head: 0, entries: Lawful(start: true, list: BoundedList([e])!)!)`, whose door answers
   `nil` where an entry says other than the start.
+- Two lists of one count (ADR 0065 §6 R5) are printed: the value holds the group of the flag that gates the
+  second, whose arm that holds both holds them as one runtime `Aligned` (`Aligned(first, second)` answers `nil`
+  for two counts), and whose other arm holds the first alone; the count and the flag are derived. A call site
+  moves from `CodecRepeatUnconditionalCount(options: 1, links_len: 2, links: l, weights: w)` to
+  `CodecRepeatUnconditionalCount(options: 0, options_h: .h(links_weights: Aligned(l, w)!))`, with `l` and `w`
+  each a `BoundedList` of its field's bound.
 

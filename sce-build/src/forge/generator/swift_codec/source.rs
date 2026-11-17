@@ -185,13 +185,14 @@ pub(super) fn group_of(plan: &EncodePlan<'_>, id: &str) -> Option<usize> {
 }
 
 /// The first gate group of `plan` the Swift printer does not print, described for a reader: one of
-/// a chain's memberships (docs/adr/0065 §6 R6), one whose arm holds two lists of one count (R5),
-/// and one that holds a value of a type no number is, or a body or the entries of a codec the
-/// Swift printer does not print. A group the printer prints holds numbers, byte strings, texts,
-/// bodies and lists, each list held to its law where its entries say inputs it hands them (R8),
-/// and the lengths and counts the value states on the side where what they measure is absent,
-/// decided by flags of the codec's carriers and by flag inputs (R4b, R4c). `imports` says which
-/// codec each import is and whether the Swift printer prints it.
+/// a chain's memberships (docs/adr/0065 §6 R6), one whose arm holds two lists of one count of
+/// which one is held to its law (R5, R8), and one that holds a value of a type no number is, or a
+/// body or the entries of a codec the Swift printer does not print. A group the printer prints
+/// holds numbers, byte strings, texts, bodies and lists, each list held to its law where its
+/// entries say inputs it hands them (R8), two lists of one count as one value (R5), and the
+/// lengths and counts the value states on the side where what they measure is absent, decided by
+/// flags of the codec's carriers and by flag inputs (R4b, R4c). `imports` says which codec each
+/// import is and whether the Swift printer prints it.
 fn group_unlowered(plan: &EncodePlan<'_>, imports: &[ImportContext]) -> Option<String> {
     for group in plan.groups() {
         let label = super::super::rust_source::gates_label(group);
@@ -200,10 +201,20 @@ fn group_unlowered(plan: &EncodePlan<'_>, imports: &[ImportContext]) -> Option<S
                 "the gate group `{label}` of the entries a chain holds"
             ));
         }
-        if group.aligned.is_some() {
-            return Some(format!(
-                "the gate group `{label}`, whose arm holds two lists of one count"
-            ));
+        // Two lists of one count are held as one `Aligned` (docs/adr/0065 §6 R5), each a list
+        // within its bound; one held to its law besides waits for the form that holds the law in
+        // the pair.
+        if let Some((first, second)) = &group.aligned {
+            let lawful = |id: &str| match plan.value(field_named(plan, id)) {
+                Value::List { law, .. } => !law.is_none(),
+                _ => false,
+            };
+            if lawful(first) || lawful(second) {
+                return Some(format!(
+                    "the gate group `{label}`, whose arm holds two lists of one count, one held to \
+                     the law of the inputs its entries say"
+                ));
+            }
         }
         for id in group.fields() {
             let what = match plan.value(field_named(plan, id)) {
@@ -520,6 +531,53 @@ fn presented_read(plan: &EncodePlan<'_>, id: &str) -> String {
 /// type of the codec's protocol.
 const OF_SOURCE: &str = "Source.";
 
+/// One member of an arm of a gate group as a value holds it: a field, or two lists of one count
+/// held as one value (docs/adr/0065 §6 R5).
+pub(super) enum ArmMember<'g> {
+    One(&'g str),
+    Aligned { first: &'g str, second: &'g str },
+}
+
+impl ArmMember<'_> {
+    /// The name the arm holds the member by: the field's, or the two lists' joined, as every
+    /// printer names them (`rust_source::aligned_name`).
+    pub(super) fn name(&self) -> String {
+        match self {
+            ArmMember::One(id) => (*id).to_string(),
+            ArmMember::Aligned { first, second } => {
+                super::super::rust_source::aligned_name(first, second)
+            }
+        }
+    }
+}
+
+/// The members `arm` of `group` holds, in the order of its fields: each field, less the second of
+/// two lists of one count, which the first holds with it (docs/adr/0065 §6 R5).
+pub(super) fn arm_members<'g>(group: &'g GateGroup, arm: &'g GroupArm) -> Vec<ArmMember<'g>> {
+    arm.fields
+        .iter()
+        .filter(|id| !group.is_second_in(arm, id))
+        .map(|id| match group.second_of(arm, id) {
+            Some(second) => ArmMember::Aligned { first: id, second },
+            None => ArmMember::One(id),
+        })
+        .collect()
+}
+
+/// The Swift type the member `member` of an arm of a gate group of `plan` is held as, its sources
+/// reached through `of` ([`member_type`]): two lists of one count as the runtime's `Aligned` of the
+/// two (docs/adr/0065 §6 R5).
+fn arm_member_type(l: &LangCtx, plan: &EncodePlan<'_>, member: &ArmMember<'_>, of: &str) -> String {
+    match member {
+        ArmMember::One(id) => member_type(l, plan, field_named(plan, id), of),
+        ArmMember::Aligned { first, second } => format!(
+            "Aligned<{}, {}>",
+            member_type(l, plan, field_named(plan, first), of),
+            member_type(l, plan, field_named(plan, second), of)
+        ),
+    }
+}
+
 /// The statements that read each member of the gate group `group` off the arm a source of the
 /// codec of `plan` holds into the member's local ([`member_local`]), `nil` where that arm does not
 /// hold it: a switch over the arms of a sum, each arm's members bound by their names, or the one
@@ -538,11 +596,21 @@ fn group_member_lines(l: &LangCtx, plan: &EncodePlan<'_>, group: &GateGroup) -> 
             )
         })
         .collect();
-    // The members of `arm` set from `from`, each the expression of one by its id.
+    // The members of `arm` set from `from`, each the expression of one by its name: two lists of
+    // one count each read out of the pair (docs/adr/0065 §6 R5).
     let assign = |arm: &GroupArm, from: &dyn Fn(&str) -> String| -> String {
-        arm.fields
+        arm_members(group, arm)
             .iter()
-            .map(|id| format!("{} = {}", member_local(id), from(id)))
+            .flat_map(|member| match member {
+                ArmMember::One(id) => vec![format!("{} = {}", member_local(id), from(id))],
+                ArmMember::Aligned { first, second } => {
+                    let pair = from(&member.name());
+                    vec![
+                        format!("{} = {pair}.first", member_local(first)),
+                        format!("{} = {pair}.second", member_local(second)),
+                    ]
+                }
+            })
             .collect::<Vec<_>>()
             .join("; ")
     };
@@ -551,11 +619,14 @@ fn group_member_lines(l: &LangCtx, plan: &EncodePlan<'_>, group: &GateGroup) -> 
         lines.push(format!("switch {held} {{"));
         for arm in &group.arms {
             let case = group_case(group, arm);
-            let set = assign(arm, &|id: &str| id.to_string());
+            let set = assign(arm, &|name: &str| name.to_string());
             let line = if arm.fields.is_empty() {
                 format!("case .{case}{optional}: break")
             } else {
-                let bound: Vec<String> = arm.fields.iter().map(|id| format!("let {id}")).collect();
+                let bound: Vec<String> = arm_members(group, arm)
+                    .iter()
+                    .map(|member| format!("let {}", member.name()))
+                    .collect();
                 format!("case .{case}({}){optional}: {set}", bound.join(", "))
             };
             lines.push(line);
@@ -598,12 +669,24 @@ fn group_context(
         .into_iter()
         .map(|(name, protocol)| serde_json::json!({ "name": name, "protocol": protocol }))
         .collect();
-    // The arm `arm` holding the members `value` gives each, by its id.
-    let make = |arm: &GroupArm, value: &dyn Fn(&CodecField) -> String| -> String {
-        let members: Vec<String> = arm
-            .fields
+    // The arm `arm` holding the members `value` gives each field, by its name, and two lists of one
+    // count as one value of what `value` gives each, made by `pair` (docs/adr/0065 §6 R5).
+    let make = |arm: &GroupArm,
+                value: &dyn Fn(&CodecField) -> String,
+                pair: &dyn Fn(String, String) -> String|
+     -> String {
+        let members: Vec<String> = arm_members(group, arm)
             .iter()
-            .map(|id| format!("{id}: {}", value(field_named(plan, id))))
+            .map(|member| {
+                let made = match member {
+                    ArmMember::One(id) => value(field_named(plan, id)),
+                    ArmMember::Aligned { first, second } => pair(
+                        value(field_named(plan, first)),
+                        value(field_named(plan, second)),
+                    ),
+                };
+                format!("{}: {made}", member.name())
+            })
             .collect();
         match (group.is_sum(), members.is_empty()) {
             (true, true) => format!(".{}", group_case(group, arm)),
@@ -621,6 +704,9 @@ fn group_context(
             super::decoded(&f.id)
         }
     };
+    // Two lists read by one count are of one count, which the decode's door holds them to.
+    let read_pair =
+        |first: String, second: String| format!("try Aligned(decoding: {first}, {second})");
     let local = group_local(group);
     let holds = group_holds(plan, group, held);
     let mut decode = vec![format!("let {local}: {holds}")];
@@ -633,7 +719,7 @@ fn group_context(
             (_, false) => "} else {".to_string(),
         };
         decode.push(opening);
-        decode.push(format!("    {local} = {}", make(arm, &read)));
+        decode.push(format!("    {local} = {}", make(arm, &read, &read_pair)));
     }
     if group.absent.is_some() {
         decode.push("} else {".to_string());
@@ -667,7 +753,8 @@ fn group_context(
             .iter()
             .find(|arm| arm.values.iter().all(|value| !value))
             .expect("a group a value always holds an arm of has an arm for every gate clear");
-        make(zeros, &start)
+        let pair = |first: String, second: String| format!(".init(defaultOf: {first}, {second})");
+        make(zeros, &start, &pair)
     };
     let arms: Vec<serde_json::Value> = group
         .arms
@@ -684,12 +771,11 @@ fn group_context(
                 "case": group_case(group, arm),
                 "index": index,
                 "when": when.join(", "),
-                "members": arm
-                    .fields
+                "members": arm_members(group, arm)
                     .iter()
-                    .map(|id| serde_json::json!({
-                        "name": id,
-                        "type": member_type(l, plan, field_named(plan, id), ""),
+                    .map(|member| serde_json::json!({
+                        "name": member.name(),
+                        "type": arm_member_type(l, plan, member, ""),
                     }))
                     .collect::<Vec<_>>(),
             })
@@ -1836,6 +1922,15 @@ pub(super) fn context(
                             size: format!("({content}?.count ?? 0)"),
                             present: Some(format!("{content} != nil")),
                             gated: true,
+                        }
+                    } else if group_of(plan, &list.id).is_some() {
+                        // A list every arm of a group holds (the first of two lists of one count,
+                        // docs/adr/0065 §6 R5) is read off the arm into a local that the arm
+                        // always sets.
+                        MeasureText {
+                            size: format!("({content}?.count ?? 0)"),
+                            present: None,
+                            gated: false,
                         }
                     } else {
                         MeasureText {

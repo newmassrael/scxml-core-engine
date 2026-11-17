@@ -17,29 +17,52 @@ final class CodecListUnitTests: XCTestCase {
         CodecRepeatElem(seq: seq)
     }
 
+    // docs/adr/0065 §6 R5: `links` and the gated `weights` share one count, so the value holds the
+    // arm of `options.H`: the first list alone where it is clear, both as one `Aligned` where it is
+    // set.
+
     func testAListIsAsManyEntriesAsItsCountSays() throws {
         var cursor = SceCursor([0x00, 0x02, 0xCA, 0xFE, 0xBE, 0xEF, 0x77])
         let frame = try CodecRepeatUnconditionalCount.decode(&cursor)
-        XCTAssertEqual(frame.links, [entry(0xCAFE), entry(0xBEEF)])
-        XCTAssertNil(frame.weights, "a closed gate leaves the gated list absent")
+        guard case .notH(let links) = frame.options_h else {
+            return XCTFail("a closed gate leaves the gated list absent")
+        }
+        XCTAssertEqual(links.entries, [entry(0xCAFE), entry(0xBEEF)])
         XCTAssertEqual(cursor.remaining, 1, "what follows the list is the caller's")
     }
 
     func testAGatedListBorrowsTheCountOfAnUngatedField() throws {
         var cursor = SceCursor([0x01, 0x02, 0xCA, 0xFE, 0xBE, 0xEF, 0x11, 0x11, 0x22, 0x22])
         let frame = try CodecRepeatUnconditionalCount.decode(&cursor)
-        XCTAssertEqual(frame.weights, [entry(0x1111), entry(0x2222)])
+        guard case .h(let both) = frame.options_h else {
+            return XCTFail("an open gate holds both lists")
+        }
+        XCTAssertEqual(both.second.entries, [entry(0x1111), entry(0x2222)])
         XCTAssertEqual(cursor.remaining, 0)
     }
 
     func testAnEncodeWritesEachEntryInTurn() throws {
-        let frame = CodecRepeatUnconditionalCount(
-            options: 0x01, links_len: 2, links: [entry(0xCAFE), entry(0xBEEF)],
-            weights: [entry(0x1111), entry(0x2222)])
+        let links = try XCTUnwrap(
+            BoundedList<CodecRepeatElem, CodecRepeatUnconditionalCount.LinksBound>(
+                [entry(0xCAFE), entry(0xBEEF)]))
+        let weights = try XCTUnwrap(
+            BoundedList<CodecRepeatElem, CodecRepeatUnconditionalCount.WeightsBound>(
+                [entry(0x1111), entry(0x2222)]))
+        let both = try XCTUnwrap(Aligned(links, weights), "two lists of one count")
+        // The flag and the count are derived: from the arm, and from the first list.
+        let frame = CodecRepeatUnconditionalCount(options: 0, options_h: .h(links_weights: both))
         var sink = BytesSink()
         try frame.encode(into: &sink)
         XCTAssertEqual(
             sink.bytes, [0x01, 0x02, 0xCA, 0xFE, 0xBE, 0xEF, 0x11, 0x11, 0x22, 0x22])
+    }
+
+    func testTwoListsOfDifferentCountsAreNoValue() throws {
+        let links = try XCTUnwrap(
+            BoundedList<CodecRepeatElem, CodecRepeatUnconditionalCount.LinksBound>([entry(1)]))
+        let weights = try XCTUnwrap(
+            BoundedList<CodecRepeatElem, CodecRepeatUnconditionalCount.WeightsBound>([]))
+        XCTAssertNil(Aligned(links, weights), "one count cannot say both")
     }
 
     func testAnEntryCutShortRefusesTheFrameAndConsumesNothing() {

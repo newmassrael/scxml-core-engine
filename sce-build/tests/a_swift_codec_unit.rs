@@ -274,6 +274,7 @@ fn a_codec_is_printed_from_its_plan_where_the_printer_lowers_every_form_and_else
         "tests/forge/resources/codec_repeat_flag_group.scxml",
         "tests/forge/resources/codec_chain_prev_carrier.scxml",
         "tests/forge/resources/codec_chain_flag_forward.scxml",
+        "tests/forge/resources/codec_repeat_unconditional_count.scxml",
     ] {
         let code = swift_of(printed).expect("a codec is written");
         assert!(
@@ -1675,33 +1676,52 @@ fn a_chain_closed_by_an_entry_flag_is_read_until_an_entry_clears_it() {
 }
 
 #[test]
-fn a_list_is_an_array_of_the_struct_its_entry_codec_is_written_as() {
+fn two_lists_of_one_count_are_one_value_in_the_arm_that_holds_both() {
+    // docs/adr/0065 §6 R5: `links` is always there and `weights` where `options.H` is set, both
+    // of the count `links_len`; the arm of `H` set holds the two as one `Aligned`, which the
+    // runtime makes only of two lists of one count, and the count is derived from the first.
     let code = swift_of("tests/forge/resources/codec_repeat_unconditional_count.scxml")
-        .expect("a list is written");
-    assert!(
-        code.contains("public var links: [CodecRepeatElem] = []"),
-        "{code}"
-    );
-    assert!(
-        code.contains("public var weights: [CodecRepeatElem]? = nil"),
-        "a gated list is optional: {code}"
-    );
-    assert!(
-        code.contains(
-            "for _ in 0..<Int(clamping: links_len) {\n            links_items.append(try CodecRepeatElem.decode(&reader))\n        }\n        let links = links_items"
+        .expect("two lists of one count are written");
+    for (expected, why) in [
+        (
+            "public enum CodecRepeatUnconditionalCountOptionsH<Links_Entry: CodecRepeatElemSource, Weights_Entry: CodecRepeatElemSource> {\n",
+            "the group is generic over the source of each list's entries",
         ),
-        "a decode reads as many entries as the count says, into a local set when whole: {code}"
-    );
-    assert!(
-        code.contains(
-            "for entry in self.links {\n            var piece = BytesSink()\n            try entry.encode(into: &piece)\n            frame += piece.bytes\n        }"
+        (
+            "    case h(links_weights: Aligned<BoundedList<Links_Entry, CodecRepeatUnconditionalCount.LinksBound>, BoundedList<Weights_Entry, CodecRepeatUnconditionalCount.WeightsBound>>)\n",
+            "the arm that holds both holds them as one value of one count",
         ),
-        "an encode writes each entry in turn: {code}"
-    );
-    assert!(
-        code.contains("public static let frameLength = 2"),
-        "a list adds nothing to the fewest bytes: {code}"
-    );
+        (
+            "    case notH(links: BoundedList<Links_Entry, CodecRepeatUnconditionalCount.LinksBound>)\n",
+            "the other arm holds the first alone",
+        ),
+        (
+            "case .h(let links_weights): links_member = links_weights.first; weights_member = links_weights.second",
+            "the encode reads each list out of the pair",
+        ),
+        (
+            "UInt8((links_member?.count ?? 0))",
+            "the count is the first list's, which every arm holds",
+        ),
+        (
+            "for _ in 0..<Int(clamping: links_len) {\n            links_items.append(try CodecRepeatElem.decode(&reader))\n        }\n        let links = try BoundedList<CodecRepeatElem, CodecRepeatUnconditionalCount.LinksBound>(decoding: links_items)",
+            "a decode reads as many entries as the count says, into a local set when whole",
+        ),
+        (
+            "options_h_group = .h(links_weights: try Aligned(decoding: links, weights!))",
+            "a decode pairs the two lists it read by the one count",
+        ),
+        (
+            "    public var options_h: CodecRepeatUnconditionalCountOptionsH<Links_Entry, Weights_Entry> = .notH(links: .fewest(of: CodecRepeatElem()))\n",
+            "a frame of zeros holds the first list alone",
+        ),
+        (
+            "public static let frameLength = 2",
+            "a list adds nothing to the fewest bytes",
+        ),
+    ] {
+        assert!(code.contains(expected), "{why}: {expected} in {code}");
+    }
 }
 
 #[test]
