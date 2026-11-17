@@ -27,6 +27,7 @@
 mutation_tests -p sce-build --test a_parent_writes_the_tag_its_catch_all_holds
 mutation_targets sce-build/src/forge/generator.rs
 mutation_targets sce-build/src/forge/generator/cpp_source.rs
+mutation_targets sce-build/src/forge/generator/python_source.rs
 mutation_oracles sce-build/tests/a_parent_writes_the_tag_its_catch_all_holds.rs
 
 mutation_case "the derivation forgets the embedded variant's catch-all" <<'PY'
@@ -85,12 +86,16 @@ PY
 
 # ── The Python, Go and Kotlin parents ──
 
-mutation_case "a Python parent leaves the catch-all out of its term" <<'PY'
-edit("sce-build/src/forge/generator.rs",
-     r'''    if d.catch_all {
-        inner = format!(''',
-     r'''    if d.catch_all && d.bit == u32::MAX {
-        inner = format!(''')
+mutation_case "a Python child's tag answers no catch-all" <<'PY'
+edit("sce-build/src/forge/generator/python_source.rs",
+     r'''    let mut cases = String::new();
+    for arm in &arms {
+        cases.push_str(&format!(
+            "    if isinstance(_v, {}):\n        return {}\n",''',
+     r'''    let mut cases = String::new();
+    for arm in arms.iter().filter(|arm| arm.tag.is_some()) {
+        cases.push_str(&format!(
+            "    if isinstance(_v, {}):\n        return {}\n",''')
 PY
 
 mutation_case "a Go parent has no case for a catch-all body" <<'PY'
@@ -137,7 +142,13 @@ edit("sce-build/src/forge/generator/cpp_source.rs",
      r'''            let set = format!("{bits} = {bits} | {placed}; // 0x{mask:X}");''')
 PY
 
-mutation_case "a Python and Go carrier write keeps the stored flag" <<'PY'
+mutation_case "a Python carrier write keeps the stored flag" <<'PY'
+edit("sce-build/src/forge/generator/python_source.rs",
+     r'''                    "{c} = ({c} & ~0x{mask:X}) | (({local} & 0x{width_mask:X}) << {bit})\n"''',
+     r'''                    "{c} = {c} | (({local} & 0x{width_mask:X}) << {bit})  # 0x{mask:X}\n"''')
+PY
+
+mutation_case "a Go carrier write keeps the stored flag" <<'PY'
 edit("sce-build/src/forge/generator.rs",
      r'''            format!("({stored} & 0x{keep:02X}) | {local}")''',
      r'''            format!("{stored} | {local}")''')

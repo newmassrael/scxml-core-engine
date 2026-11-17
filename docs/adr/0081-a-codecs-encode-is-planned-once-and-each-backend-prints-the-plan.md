@@ -1221,6 +1221,16 @@ old encode, the old encode and its templates are removed in the same landing.
    census pins the printed codecs of the resources (`PRINTED`) and each refused codec of the resources and of the
    rest of the repository with its clause (`REFUSED`, `REFUSED_ELSEWHERE`, both empty), and holds the refusal of a
    float, of a codec that embeds one, and of a validator that imports one.
+
+   *Amendment of 2026-11-17: the template's encode helpers refuse Python by name.* The helpers that wrote the
+   template's encode of a field one by one (the streamed list, chain and body blocks, gated or not, the gated
+   field's writes of each width, the derivation of a parent's tag and its carrier write, and the prologue's
+   presence checks) refuse Python by name (`PYTHON_ENCODE_IS_PRINTED`), as they refuse Rust and C++, so a call
+   site that lets a Python codec through fails where it is made and not in the text it writes. The helpers only
+   Python's template called are gone: the term a parent read a dispatcher's arm by, and the byte writes of a gated
+   fixed field. A printed Python value holds each bound in a class, so the template's check of a bound at the
+   encode is written for Kotlin, Go and Swift alone (`encode_bound_guard_lines`). The helpers the printer calls,
+   a whole field's bytes, a byte of pieces, a multibyte field's bytes and the VLE writer, keep their Python arms.
 5. Swift, when its codec lowers what the plan holds.
    *Swift lowers what the plan holds, 2026-11-16:* its codec writes every codec of the repository Rust writes,
    but the one only an MCU-class backend writes (`a_swift_codec_is_written_wherever_rust_writes_one.rs`): an

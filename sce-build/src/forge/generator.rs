@@ -18688,6 +18688,15 @@ fn repeat_streaming_decode_stmt(ctx: RepeatDecode<'_>) -> String {
 const CPP_ENCODE_IS_PRINTED: &str =
     "a C++ codec's encode is printed from its plan (docs/adr/0081 step 4)";
 
+/// Why no helper that writes the template's encode of a field is handed
+/// Python: a Python codec's encode is printed from its plan, or the codec is
+/// refused by the form the printer does not lower (docs/adr/0081 step 4,
+/// `python_source`), and `render_codec` asks no Python codec for the
+/// template's encode blocks, its encode expressions or its prologue. A helper
+/// handed Python is a call site that let it through.
+const PYTHON_ENCODE_IS_PRINTED: &str =
+    "a Python codec's encode is printed from its plan (docs/adr/0081 step 4)";
+
 /// RFC §synth-5-B B2 repeat primitive — pre-rendered streaming encode block
 /// for one repeat field. Iterates the host-language list and appends
 /// each element's encode() bytes onto the parent's `r` buffer.
@@ -18719,6 +18728,7 @@ fn repeat_streaming_encode_block(
         Language::Swift => no_swift_emitter("repeat_streaming_encode_block"),
         Language::Rust => unreachable!("a Rust codec's encode is its source's (ADR 0058)"),
         Language::Cpp => unreachable!("{}", CPP_ENCODE_IS_PRINTED),
+        Language::Python => unreachable!("{}", PYTHON_ENCODE_IS_PRINTED),
         // Kotlin: `for (_e in this.<id>) { _e.encode(w)?.let { return it } }`.
         // Nested encode threads the parent sink — no intermediate
         // toList()/toByteArray splice. The `?.let { return it }` is
@@ -18761,15 +18771,6 @@ fn repeat_streaming_encode_block(
                      SCE_FORGE_TRY_WRITE({body_encoder}(&self->{id_snake}[_ri], w{encode_arg}));\n    \
                  }}",
                 body_encoder = body_encoder,
-            )
-        }
-        // Python: iterate `self.<id>` and extend the bytearray with
-        // each element's encode threads the parent sink directly.
-        Language::Python => {
-            let py_id = filters::to_snake_case(id.to_string());
-            format!(
-                "        for _e in self.{py_id}:\n            \
-                     _e.encode(w{encode_arg})"
             )
         }
     }
@@ -19188,6 +19189,7 @@ fn embed_streaming_encode_block(
         Language::Swift => no_swift_emitter("embed_streaming_encode_block"),
         Language::Rust => unreachable!("a Rust codec's encode is its source's (ADR 0058)"),
         Language::Cpp => unreachable!("{}", CPP_ENCODE_IS_PRINTED),
+        Language::Python => unreachable!("{}", PYTHON_ENCODE_IS_PRINTED),
         Language::Kotlin => {
             // Embed encode threads the parent sink through the nested
             // codec (no intermediate ByteArray splice).
@@ -19257,24 +19259,6 @@ fn embed_streaming_encode_block(
             } else {
                 format!(
                     "    SCE_FORGE_TRY_WRITE({body_encoder}(&self->{id_snake}, w{thread_arg}));"
-                )
-            }
-        }
-        Language::Python => {
-            let py_id = filters::to_snake_case(id.to_string());
-            // Embed encode threads the parent sink through the nested
-            // codec (no intermediate bytes splice).
-            let comma_thread = if thread_arg_norm.is_empty() {
-                String::new()
-            } else {
-                format!(", {thread_arg_norm}")
-            };
-            if !has_present_if {
-                format!("        self.{py_id}.encode(w{comma_thread})")
-            } else {
-                format!(
-                    "        if self.{py_id} is not None:\n            \
-                         self.{py_id}.encode(w{comma_thread})"
                 )
             }
         }
@@ -20216,6 +20200,7 @@ fn repeat_streaming_encode_block_gated(
         Language::Swift => no_swift_emitter("repeat_streaming_encode_block_gated"),
         Language::Rust => unreachable!("a Rust codec's encode is its source's (ADR 0058)"),
         Language::Cpp => unreachable!("{}", CPP_ENCODE_IS_PRINTED),
+        Language::Python => unreachable!("{}", PYTHON_ENCODE_IS_PRINTED),
         Language::Kotlin => format!(
             "        this.{id}?.let {{ _list ->\n            \
                  for (_e in _list) {{\n                \
@@ -20252,14 +20237,6 @@ fn repeat_streaming_encode_block_gated(
                          SCE_FORGE_TRY_WRITE({body_encoder}(&self->{id_snake}.value.data[_ri], w{encode_arg}));\n        \
                      }}\n    \
                  }}"
-            )
-        }
-        Language::Python => {
-            let py_id = filters::to_snake_case(id.to_string());
-            format!(
-                "        if self.{py_id} is not None:\n            \
-                     for _e in self.{py_id}:\n                \
-                         _e.encode(w{encode_arg})"
             )
         }
     }
@@ -21170,7 +21147,8 @@ fn tlv_chain_streaming_encode_block(
             )
         }
         Language::Cpp => unreachable!("{}", CPP_ENCODE_IS_PRINTED),
-        // Kotlin / Go / Python encode is identical to repeat: walk the
+        Language::Python => unreachable!("{}", PYTHON_ENCODE_IS_PRINTED),
+        // Kotlin / Go encode is identical to repeat: walk the
         // host-language list and append each element's encoded bytes onto
         // the parent's `r` buffer. Repeat already extends to every backend
         // (item B2 closures); TLV chain encode mirrors that shape with no
@@ -21197,15 +21175,6 @@ fn tlv_chain_streaming_encode_block(
                          return err\n\t\t\
                      }}{updates}\n\t\
                  }}"
-            )
-        }
-        Language::Python => {
-            let py_id = filters::to_snake_case(id.to_string());
-            let decls = entry_binds.decls(lang, "        ");
-            let updates = chain_encode_updates(entry_binds, field, "_e", lang, "            ");
-            format!(
-                "        {decls}for _e in self.{py_id}:\n            \
-                     _e.encode(w{encode_arg}){updates}"
             )
         }
     }
@@ -21600,6 +21569,7 @@ fn tlv_chain_streaming_encode_block_gated(
         Language::Swift => no_swift_emitter("tlv_chain_streaming_encode_block_gated"),
         Language::Rust => unreachable!("a Rust codec's encode is its source's (ADR 0058)"),
         Language::Cpp => unreachable!("{}", CPP_ENCODE_IS_PRINTED),
+        Language::Python => unreachable!("{}", PYTHON_ENCODE_IS_PRINTED),
         Language::Kotlin => {
             let decls = entry_binds.decls(lang, "            ");
             let updates = chain_encode_updates(entry_binds, field, "_e", lang, "                ");
@@ -21642,16 +21612,6 @@ fn tlv_chain_streaming_encode_block_gated(
                          SCE_FORGE_TRY_WRITE({body_encoder}(&{entry}, w{encode_arg}));{updates}\n        \
                      }}\n    \
                  }}"
-            )
-        }
-        Language::Python => {
-            let py_id = filters::to_snake_case(id.to_string());
-            let decls = entry_binds.decls(lang, "            ");
-            let updates = chain_encode_updates(entry_binds, field, "_e", lang, "                ");
-            format!(
-                "        if self.{py_id} is not None:\n            \
-                     {decls}for _e in self.{py_id}:\n                \
-                         _e.encode(w{encode_arg}){updates}"
             )
         }
     }
@@ -23974,6 +23934,7 @@ fn present_if_encode_fixed(
         (Language::Swift, _) => no_swift_emitter("present_if_encode_fixed"),
         (Language::Rust, _) => unreachable!("a Rust codec's encode is its source's (ADR 0058)"),
         (Language::Cpp, _) => unreachable!("{}", CPP_ENCODE_IS_PRINTED),
+        (Language::Python, _) => unreachable!("{}", PYTHON_ENCODE_IS_PRINTED),
         (Language::Kotlin, false) => {
             streaming_fixed_field_encode_kotlin(l, field, default_endian, n)
         }
@@ -24018,22 +23979,6 @@ fn present_if_encode_fixed(
                  \n    }}"
             )
         }
-        (Language::Python, false) => {
-            streaming_fixed_field_encode_python(l, field, default_endian, n)
-        }
-        (Language::Python, true) => {
-            // Python: `is not None` discriminates the optional. Inner
-            // body is one indent deeper (12 cols) so it sits inside
-            // the gate; reads stay on `self.<id>` (same as the non-
-            // gated form — Python's optional only changes the
-            // surrounding test, not the byte-extraction expression).
-            let py_id = filters::to_snake_case(field.id.clone());
-            let inner = streaming_fixed_field_encode_python_inner(l, field, default_endian, n);
-            format!(
-                "        if self.{py_id} is not None:\n\
-                 {inner}"
-            )
-        }
     }
 }
 
@@ -24048,6 +23993,7 @@ fn present_if_encode_tail(field: &CodecField, lang: crate::generator::Language) 
         (Language::Swift, _) => no_swift_emitter("present_if_encode_tail"),
         (Language::Rust, _) => unreachable!("a Rust codec's encode is its source's (ADR 0058)"),
         (Language::Cpp, _) => unreachable!("{}", CPP_ENCODE_IS_PRINTED),
+        (Language::Python, _) => unreachable!("{}", PYTHON_ENCODE_IS_PRINTED),
         // Kotlin: writer-based emit threads the parent sink directly.
         (Language::Kotlin, false) => {
             format!("        w.writeBytes(this.{id})?.let {{ return it }}")
@@ -24094,17 +24040,6 @@ fn present_if_encode_tail(field: &CodecField, lang: crate::generator::Language) 
                  }}"
             )
         }
-        (Language::Python, false) => {
-            let py_id = filters::to_snake_case(id.to_string());
-            format!("        w.write_bytes(self.{py_id})")
-        }
-        (Language::Python, true) => {
-            let py_id = filters::to_snake_case(id.to_string());
-            format!(
-                "        if self.{py_id} is not None:\n            \
-                     w.write_bytes(self.{py_id})"
-            )
-        }
     }
 }
 
@@ -24126,6 +24061,7 @@ fn present_if_encode_string_length_ref(
         (Language::Swift, _) => no_swift_emitter("present_if_encode_string_length_ref"),
         (Language::Rust, _) => unreachable!("a Rust codec's encode is its source's (ADR 0058)"),
         (Language::Cpp, _) => unreachable!("{}", CPP_ENCODE_IS_PRINTED),
+        (Language::Python, _) => unreachable!("{}", PYTHON_ENCODE_IS_PRINTED),
         // Kotlin `String.toByteArray(charset)` is the standard library
         // call for charset-encoded byte serialization; UTF-8 is total
         // on String (Kotlin's String is UTF-16 internally but
@@ -24162,21 +24098,6 @@ fn present_if_encode_string_length_ref(
                          return err\n\t\t\
                      }}\n\t\
                  }}"
-            )
-        }
-        // Python `str.encode('utf-8')` materializes a `bytes` object
-        // from the str's internal Unicode representation.
-        (Language::Python, None) => {
-            let py_id = filters::to_snake_case(id.to_string());
-            format!("        w.write_bytes(self.{py_id}.encode('utf-8'))")
-        }
-        // Gated String encode on Python:
-        // `Optional[str]` + `is not None` + same `.encode('utf-8')`.
-        (Language::Python, Some(_)) => {
-            let py_id = filters::to_snake_case(id.to_string());
-            format!(
-                "        if self.{py_id} is not None:\n            \
-                     w.write_bytes(self.{py_id}.encode('utf-8'))"
             )
         }
         // RFC §synth-5-B string-field C11 closure: append the codec
@@ -24245,6 +24166,7 @@ fn present_if_encode_length_ref(
         (Language::Swift, _) => no_swift_emitter("present_if_encode_length_ref"),
         (Language::Rust, _) => unreachable!("a Rust codec's encode is its source's (ADR 0058)"),
         (Language::Cpp, _) => unreachable!("{}", CPP_ENCODE_IS_PRINTED),
+        (Language::Python, _) => unreachable!("{}", PYTHON_ENCODE_IS_PRINTED),
         (Language::Kotlin, false) => {
             format!("        w.writeBytes(this.{id})?.let {{ return it }}")
         }
@@ -24304,17 +24226,6 @@ fn present_if_encode_length_ref(
                  }}"
             )
         }
-        (Language::Python, false) => {
-            let py_id = filters::to_snake_case(id.to_string());
-            format!("        w.write_bytes(self.{py_id})")
-        }
-        (Language::Python, true) => {
-            let py_id = filters::to_snake_case(id.to_string());
-            format!(
-                "        if self.{py_id} is not None:\n            \
-                     w.write_bytes(self.{py_id})"
-            )
-        }
     }
 }
 
@@ -24340,9 +24251,6 @@ fn present_if_encode_vle(
         // bare local-name read that doesn't resolve to the struct
         // member).
         let value_expr = match lang {
-            Language::Python => {
-                format!("self.{}", filters::to_snake_case(id.to_string()))
-            }
             Language::Rust => unreachable!("a Rust codec's encode is its source's (ADR 0058)"),
             Language::Go => {
                 format!("s.{}", filters::to_pascal_case(id.to_string()))
@@ -24354,6 +24262,7 @@ fn present_if_encode_vle(
             // access resolves implicitly without a prefix.
             Language::Kotlin => id.to_string(),
             Language::Cpp => unreachable!("{}", CPP_ENCODE_IS_PRINTED),
+            Language::Python => unreachable!("{}", PYTHON_ENCODE_IS_PRINTED),
             Language::Swift => no_swift_emitter("present_if_encode_vle"),
         };
         return vle_encode_block(&value_expr, width_bits, lang);
@@ -24362,6 +24271,7 @@ fn present_if_encode_vle(
         Language::Swift => no_swift_emitter("present_if_encode_vle"),
         Language::Rust => unreachable!("a Rust codec's encode is its source's (ADR 0058)"),
         Language::Cpp => unreachable!("{}", CPP_ENCODE_IS_PRINTED),
+        Language::Python => unreachable!("{}", PYTHON_ENCODE_IS_PRINTED),
         Language::Kotlin => {
             let inner = vle_encode_block("_v", width_bits, lang);
             format!(
@@ -24390,21 +24300,6 @@ fn present_if_encode_vle(
                 "    if (self->{id_snake}.present) {{\n\
                  {inner}\n    \
                  }}"
-            )
-        }
-        Language::Python => {
-            // Gated VLE encode on Python: the runtime's writer of the
-            // field's width, called inside the gate. Python is the one
-            // backend whose indentation is structure, so the call stands
-            // at the gate's body indent. The writer is the one ZInt
-            // encode every Python codec uses (eight continuation bytes,
-            // a ninth of eight data bits), so a gated VLE writes the same
-            // bytes as an ungated one; an inline loop here once wrote ten
-            // bytes for a u64 from 2^63, which every decoder refuses.
-            let py_id = filters::to_snake_case(id.to_string());
-            format!(
-                "        if self.{py_id} is not None:\n            \
-                     w.write_vle_u{width_bits}(int(self.{py_id}))"
             )
         }
     }
@@ -24627,54 +24522,6 @@ fn streaming_fixed_field_encode_c11_inner(
     encode_multibyte_unified(&source, n, endian, crate::generator::Language::C11)
         .into_iter()
         .map(|e| format!("        SCE_FORGE_TRY_WRITE(sce_forge_writer_write_u8(w, {e}));"))
-        .collect::<Vec<_>>()
-        .join("\n")
-}
-
-/// Python encode counterpart — non-gated. Mirrors `encode_single_field_unified`
-/// for Python: every byte append goes through `self.<id> & 0xFF` /
-/// `(self.<id> >> shift) & 0xFF` (Python ints are unbounded so the
-/// `& 0xFF` is the canonical narrow). Inside the codec's `encode()`
-/// method body (8-space indent).
-fn streaming_fixed_field_encode_python(
-    l: &LangCtx,
-    field: &CodecField,
-    default_endian: Endian,
-    n: u32,
-) -> String {
-    let py_id = filters::to_snake_case(field.id.clone());
-    let endian = field.effective_endian(default_endian);
-    let source = l.codec_carrier_expr(&field.sce_type, &format!("self.{py_id}"));
-    if n == 1 {
-        return format!("        w.write_u8({source} & 0xFF)");
-    }
-    encode_multibyte_unified(&source, n, endian, crate::generator::Language::Python)
-        .into_iter()
-        .map(|e| format!("        w.write_u8({e})"))
-        .collect::<Vec<_>>()
-        .join("\n")
-}
-
-/// Python encode counterpart — gated, indented one level deeper so
-/// the byte appends sit inside the `if self.<id> is not None:` gate.
-/// Python's optional changes only the surrounding test, not the byte
-/// extraction expression — `self.<id>` is still the correct read,
-/// because the `is not None` check has narrowed the type to `int`.
-fn streaming_fixed_field_encode_python_inner(
-    l: &LangCtx,
-    field: &CodecField,
-    default_endian: Endian,
-    n: u32,
-) -> String {
-    let py_id = filters::to_snake_case(field.id.clone());
-    let endian = field.effective_endian(default_endian);
-    let source = l.codec_carrier_expr(&field.sce_type, &format!("self.{py_id}"));
-    if n == 1 {
-        return format!("            w.write_u8({source} & 0xFF)");
-    }
-    encode_multibyte_unified(&source, n, endian, crate::generator::Language::Python)
-        .into_iter()
-        .map(|e| format!("            w.write_u8({e})"))
         .collect::<Vec<_>>()
         .join("\n")
 }
@@ -24980,14 +24827,13 @@ fn present_if_test_literal_clause(
         // than `!=` so disambiguation isn't necessary either.
         Language::Python => {
             let py_id = match (&carrier, site) {
-                // The encode site reads the attribute the type carries; the
-                // decode site reads the local the carrier was bound to.
-                (PresentIfCarrier::Local(_), PresentIfSite::Encode) => {
-                    format!("self.{}", filters::to_snake_case(id.to_string()))
-                }
+                (_, PresentIfSite::Encode) => unreachable!("{}", PYTHON_ENCODE_IS_PRINTED),
+                // The decode site reads the local the carrier was bound to.
                 (PresentIfCarrier::Local(_), PresentIfSite::Decode) => python_field_local(id),
-                // A flag-input is a function parameter on both sites.
-                (PresentIfCarrier::Input, _) => filters::to_snake_case(id.to_string()),
+                // A flag-input is a parameter of the decode.
+                (PresentIfCarrier::Input, PresentIfSite::Decode) => {
+                    filters::to_snake_case(id.to_string())
+                }
             };
             format!("({py_id} & 0x{mask:0width$X}) {op} 0", width = hex_digits)
         }
@@ -25505,13 +25351,9 @@ fn chain_has_decl_lines(
             lines
         }
         Language::Python => {
-            // The decode site reads the local the chain was bound to; the
-            // encode site, the attribute the type carries.
-            let list = if encode {
-                format!("self.{id}")
-            } else {
-                python_field_local(&chain.id)
-            };
+            assert!(!encode, "{}", PYTHON_ENCODE_IS_PRINTED);
+            // The decode site reads the local the chain was bound to.
+            let list = python_field_local(&chain.id);
             let found = test("_e");
             vec![if gated {
                 format!("{has} = {list} is not None and any({found} for _e in {list})")
@@ -25601,10 +25443,7 @@ fn gated_field_presence(field: &CodecField, lang: crate::generator::Language) ->
             format!("s.{id}.IsPresent()"),
             format!("!s.{id}.IsPresent()"),
         ),
-        Language::Python => (
-            format!("self.{id} is not None"),
-            format!("self.{id} is None"),
-        ),
+        Language::Python => unreachable!("{}", PYTHON_ENCODE_IS_PRINTED),
         Language::C11 => (
             format!("self->{id}.present"),
             format!("!self->{id}.present"),
@@ -25649,13 +25488,7 @@ fn present_if_mismatch_check(
             format!("\t{refuse}"),
             "}".to_string(),
         ],
-        Language::Python => vec![
-            format!("if {test}:"),
-            format!("    if {absent}:"),
-            format!("        {refuse}"),
-            format!("elif {given}:"),
-            format!("    {refuse}"),
-        ],
+        Language::Python => unreachable!("{}", PYTHON_ENCODE_IS_PRINTED),
         Language::C11 => vec![
             format!("if ({test}) {{"),
             format!("    if ({absent}) {refuse}"),
@@ -25667,14 +25500,14 @@ fn present_if_mismatch_check(
 
 /// The statements of an encoder's refusal when a field's presence and the
 /// predicate gating it disagree, indented to the enclosing `if`'s body.
-fn present_if_mismatch_stmt(field_id: &str, lang: crate::generator::Language) -> String {
+fn present_if_mismatch_stmt(lang: crate::generator::Language) -> String {
     use crate::generator::Language;
     match lang {
         Language::Rust => "return Err(CodecError::PresentIfMismatch);".to_string(),
         Language::Cpp => unreachable!("{}", CPP_ENCODE_IS_PRINTED),
         Language::Kotlin => "return CodecError.PresentIfMismatch".to_string(),
         Language::Go => "return codec.ErrPresentIfMismatch".to_string(),
-        Language::Python => format!("raise PresentIfMismatch(\"{field_id}\")"),
+        Language::Python => unreachable!("{}", PYTHON_ENCODE_IS_PRINTED),
         Language::C11 => "return SCE_FORGE_CODEC_PRESENT_IF_MISMATCH;".to_string(),
         Language::Swift => no_swift_emitter("present_if_mismatch_stmt"),
     }
@@ -25737,7 +25570,7 @@ fn present_if_chain_encode_prologue(
         refuses = true;
         let test = present_if_test_literal_encode(fields, pred, lang);
         let (given, absent) = gated_field_presence(field, lang);
-        let refuse = present_if_mismatch_stmt(&field.id, lang);
+        let refuse = present_if_mismatch_stmt(lang);
         lines.extend(present_if_mismatch_check(
             &test, &given, &absent, &refuse, lang,
         ));
@@ -25752,18 +25585,18 @@ fn present_if_chain_encode_prologue(
     (text, true)
 }
 
-/// The refusals at the top of a Kotlin, Go, Python or Swift encode of a value
-/// whose byte string, text, list or chain lies outside its bound, each before
-/// the first byte is written (docs/adr/0077 §3), and the failures they raise.
+/// The refusals at the top of a Kotlin, Go or Swift encode of a value whose
+/// byte string, text, list or chain lies outside its bound, each before the
+/// first byte is written (docs/adr/0077 §3), and the failures they raise.
 ///
 /// These backends hold the value in a container any length fits (a vector, a
-/// `ByteArray`, a slice, `bytes`), so the bound is checked where the value is
-/// encoded, with the error a decode of the frame gives. A text is measured in
-/// the UTF-8 bytes the wire carries. A gated field is checked where it is
-/// present. Rust holds the bound in the field's type and refuses nothing here,
-/// and so does C++, whose value, printed from its plan, presents each element
-/// through a type that holds its bound (docs/adr/0081 step 4); C11 holds the
-/// value in an array of the bound and checks its length beside it
+/// `ByteArray`, a slice), so the bound is checked where the value is encoded,
+/// with the error a decode of the frame gives. A text is measured in the UTF-8
+/// bytes the wire carries. A gated field is checked where it is present. Rust
+/// holds the bound in the field's type and refuses nothing here, and so do C++
+/// and Python, whose value, printed from its plan, presents each element
+/// through a type or a class that holds its bound (docs/adr/0081 step 4); C11
+/// holds the value in an array of the bound and checks its length beside it
 /// (`c_over_bound_cond`).
 fn encode_bound_guard_lines(
     fields: &[CodecField],
@@ -25772,10 +25605,7 @@ fn encode_bound_guard_lines(
     use crate::forge::codec_failure::{BoundKind, CodecFailure};
     use crate::forge::codec_totality;
     use crate::generator::Language;
-    if !matches!(
-        lang,
-        Language::Kotlin | Language::Go | Language::Python | Language::Swift
-    ) {
+    if !matches!(lang, Language::Kotlin | Language::Go | Language::Swift) {
         return (Vec::new(), Vec::new());
     }
     let mut lines = Vec::new();
@@ -25811,32 +25641,29 @@ fn encode_bound_guard_lines(
         // text of variable length (`swift_codec::variable_field_unlowered`).
         let id = match lang {
             Language::Swift => field.id.clone(),
-            Language::Rust
-            | Language::Cpp
-            | Language::Kotlin
-            | Language::Go
-            | Language::Python
-            | Language::C11 => codec_field_local_name(&field.id, lang),
+            Language::Kotlin | Language::Go => codec_field_local_name(&field.id, lang),
+            Language::Rust | Language::Cpp | Language::Python | Language::C11 => {
+                bound_held_elsewhere(lang)
+            }
         };
         // The size of the value `v`, in what the wire counts.
         let size = |v: &str| match lang {
             Language::Kotlin if text => format!("{v}.encodeToByteArray().size"),
             Language::Kotlin => format!("{v}.size"),
             Language::Go => format!("len({v})"),
-            Language::Python if text => format!("len({v}.encode(\"utf-8\"))"),
-            Language::Python => format!("len({v})"),
             // A text is measured in the UTF-8 bytes the wire carries.
             Language::Swift if text => format!("{v}.utf8.count"),
             Language::Swift => format!("{v}.count"),
-            Language::Rust | Language::Cpp | Language::C11 => bound_held_elsewhere(lang),
+            Language::Rust | Language::Cpp | Language::Python | Language::C11 => {
+                bound_held_elsewhere(lang)
+            }
         };
         // A Kotlin size is an `Int`, which no larger bound can be passed by.
         let most = most.filter(|most| !(lang == Language::Kotlin && *most > i32::MAX as u64));
         let outside = |v: &str| {
             let n = size(v);
-            let or = if lang == Language::Python { "or" } else { "||" };
             match (least > 0, most) {
-                (true, Some(most)) => format!("{n} < {least} {or} {n} > {most}"),
+                (true, Some(most)) => format!("{n} < {least} || {n} > {most}"),
                 (true, None) => format!("{n} < {least}"),
                 (false, Some(most)) => format!("{n} > {most}"),
                 (false, None) => String::new(),
@@ -25853,17 +25680,12 @@ fn encode_bound_guard_lines(
                     outside(&format!("s.{id}.Proven()"))
                 )
             }
-            (Language::Python, false) => outside(&format!("self.{id}")),
-            (Language::Python, true) => {
-                format!(
-                    "self.{id} is not None and ({})",
-                    outside(&format!("self.{id}"))
-                )
-            }
             // A gated field is an optional, bound to `value` where it is given.
             (Language::Swift, false) => outside(&format!("self.{id}")),
             (Language::Swift, true) => format!("let value = self.{id}, {}", outside("value")),
-            (Language::Rust | Language::Cpp | Language::C11, _) => bound_held_elsewhere(lang),
+            (Language::Rust | Language::Cpp | Language::Python | Language::C11, _) => {
+                bound_held_elsewhere(lang)
+            }
         };
         if outside("v").is_empty() {
             continue;
@@ -25878,16 +25700,14 @@ fn encode_bound_guard_lines(
                 lines.push(format!("\t{refuse}"));
                 lines.push("}".to_string());
             }
-            Language::Python => {
-                lines.push(format!("if {condition}:"));
-                lines.push(format!("    {refuse}"));
-            }
             Language::Swift => {
                 lines.push(format!("if {condition} {{"));
                 lines.push(format!("    {refuse}"));
                 lines.push("}".to_string());
             }
-            Language::Rust | Language::Cpp | Language::C11 => bound_held_elsewhere(lang),
+            Language::Rust | Language::Cpp | Language::Python | Language::C11 => {
+                bound_held_elsewhere(lang)
+            }
         }
     }
     (lines, failures)
@@ -26641,14 +26461,7 @@ fn parent_tag_derivation_local_for_carrier(
             }
             block
         }
-        Language::Python => {
-            let terms: Vec<String> = items
-                .iter()
-                .map(|d| parent_tag_match_term_python(d, imports))
-                .collect();
-            let joined = terms.join(" | ");
-            format!("        {local_snake} = {joined}\n")
-        }
+        Language::Python => unreachable!("{}", PYTHON_ENCODE_IS_PRINTED),
         Language::C11 => {
             // C11 has no expression-form switch; emit a switch per embed
             // that ORs into a pre-declared local. uint8_t carrier per
@@ -26722,66 +26535,6 @@ fn parent_tag_match_term_kotlin(d: &ParentTagDerivation, imports: &[ImportContex
         format!("(when (val {held} = this.{snake}.body) {{ {arms_str} }})")
     } else {
         format!("(when (this.{snake}.body) {{ {arms_str} }})")
-    }
-}
-
-/// Single-embed match-expression term for Python. Discriminates the
-/// active arm via the variant body's `kind` string attribute (Python
-/// codec template's actual representation — see lines 28-50 and 154
-/// of `tools/codegen/templates/forge/python/codec.py.jinja2` where
-/// `body.kind` is set at decode time and matched at encode time).
-/// Optional embeds add an `is not None` guard with 0 in the absent
-/// branch.
-///
-/// Earlier `isinstance` shape (atomic `11287248`) was structurally
-/// incorrect — Python's variant body is NOT a class hierarchy; there
-/// is no nested arm class on the variant to isinstance-check against.
-/// The `.kind` string dispatch matches the existing Python variant
-/// encode template.
-fn parent_tag_match_term_python(d: &ParentTagDerivation, imports: &[ImportContext]) -> String {
-    let snake = filters::to_snake_case(d.embed_field_id.clone());
-    let mask: u64 = (1u64 << d.width) - 1;
-    // A dispatcher printed from its plan (docs/adr/0081 step 4) holds the
-    // arm itself, with no `kind`: its value answers the tag of the arm it
-    // holds, the default arm's the one it keeps, through `tag()`.
-    if parent_tag_embed_import(d, imports).python_printed {
-        let term = format!("(((self.{snake}.tag() & 0x{mask:X}) << {}) & 0xFF)", d.bit);
-        return if d.present_if.is_some() {
-            format!("({term} if self.{snake} is not None else 0)")
-        } else {
-            term
-        };
-    }
-    let mut chain = String::new();
-    for (idx, arm) in d.arms.iter().enumerate() {
-        let variant = filters::to_pascal_case(arm.body_alias.clone());
-        let shifted = ((arm.value & mask) << d.bit) & 0xFF;
-        let literal = format!("0x{shifted:02X}");
-        if idx + 1 == d.arms.len() {
-            chain.push_str(&literal);
-        } else {
-            chain.push_str(&format!(
-                "({literal} if self.{snake}.body.kind == \"{variant}\" else "
-            ));
-        }
-    }
-    for _ in 0..d.arms.len().saturating_sub(1) {
-        chain.push(')');
-    }
-    let mut inner = format!("({chain})");
-    // A catch-all body fills the carrier with the tag it holds (ADR 0058),
-    // which the dispatcher keeps in `default_tag`; it is tested ahead of the
-    // arms, whose last one is the fallthrough.
-    if d.catch_all {
-        inner = format!(
-            "(((self.{snake}.body.default_tag & 0x{mask:X}) << {}) if self.{snake}.body.kind == \"Default\" else {inner})",
-            d.bit
-        );
-    }
-    if d.present_if.is_some() {
-        format!("({inner} if self.{snake} is not None else 0)")
-    } else {
-        inner
     }
 }
 
@@ -26952,11 +26705,12 @@ fn parent_tag_carrier_value(
     use crate::generator::Language;
     let ParentTagCarrier { local, keep } = carrier;
     match lang {
-        Language::Rust | Language::Python | Language::Go => {
+        Language::Rust | Language::Go => {
             format!("({stored} & 0x{keep:02X}) | {local}")
         }
         Language::C11 => format!("({stored} & 0x{keep:02X}u) | {local}"),
         Language::Cpp => unreachable!("{}", CPP_ENCODE_IS_PRINTED),
+        Language::Python => unreachable!("{}", PYTHON_ENCODE_IS_PRINTED),
         Language::Kotlin => format!("(({stored} and 0x{keep:02X}u.toUByte()) or {local})"),
         Language::Swift => no_swift_emitter("parent_tag_carrier_value"),
     }
@@ -27015,15 +26769,7 @@ fn inject_parent_tag_carrier_suffix(
             let value = parent_tag_carrier_value(&stored, carrier, lang);
             block.replace(&needle, &format!("sce_forge_writer_write_u8(w, {value}));"))
         }
-        Language::Python => {
-            // Sink-based emit: `w.write_u8(self.<snake> & 0xFF)` →
-            // `w.write_u8((<value>) & 0xFF)`.
-            let snake = filters::to_snake_case(field_id.to_string());
-            let stored = format!("self.{snake}");
-            let needle = format!("w.write_u8({stored} & 0xFF)");
-            let value = parent_tag_carrier_value(&stored, carrier, lang);
-            block.replace(&needle, &format!("w.write_u8(({value}) & 0xFF)"))
-        }
+        Language::Python => unreachable!("{}", PYTHON_ENCODE_IS_PRINTED),
         Language::Swift => no_swift_emitter("inject_parent_tag_carrier_suffix"),
     }
 }
@@ -27066,10 +26812,11 @@ fn parent_tag_apply_simple_path_suffix(
             Some(stem) => format!("{}.toByte()", parent_tag_carrier_value(stem, carrier, lang)),
             None => parent_tag_carrier_value(expr, carrier, lang),
         },
-        Language::Rust | Language::Go | Language::Python | Language::C11 => {
+        Language::Rust | Language::Go | Language::C11 => {
             parent_tag_carrier_value(expr, carrier, lang)
         }
         Language::Cpp => unreachable!("{}", CPP_ENCODE_IS_PRINTED),
+        Language::Python => unreachable!("{}", PYTHON_ENCODE_IS_PRINTED),
         Language::Swift => no_swift_emitter("parent_tag_apply_simple_path_suffix"),
     }
 }
