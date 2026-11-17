@@ -1428,10 +1428,16 @@ fn law_start_read(plan: &EncodePlan<'_>, field: &CodecField) -> String {
 /// The starts `starts` of a list's law, in its order, as the start the list holds: one alone, or
 /// the first and the rest (`SceStarts`).
 pub(super) fn nested_starts(starts: &[String]) -> String {
-    match starts {
+    nested(starts, "SceStarts(", ")")
+}
+
+/// The parts `parts` of a list's law, one for each input in its order, run together as the
+/// runtime nests them: one alone, or `open`, the first, the rest nested so, and `close`.
+fn nested(parts: &[String], open: &str, close: &str) -> String {
+    match parts {
         [] => unreachable!("a list's law holds an automaton for each input"),
         [one] => one.clone(),
-        [first, rest @ ..] => format!("SceStarts({first}, {})", nested_starts(rest)),
+        [first, rest @ ..] => format!("{open}{first}, {}{close}", nested(rest, open, close)),
     }
 }
 
@@ -1507,20 +1513,11 @@ fn law_context(
                 "field": field.id,
                 "protocol": format!("{child}Source"),
                 "readers": readers,
-                "law": nested_laws(&automata),
+                // The automata run together: one alone, or the first and the rest (`SceLaws`).
+                "law": nested(&automata, "SceLaws<", ">"),
             }))
         })
         .collect()
-}
-
-/// The automata `automata` of a list's law, in its order, run together: one alone, or the first
-/// and the rest (`SceLaws`).
-fn nested_laws(automata: &[String]) -> String {
-    match automata {
-        [] => unreachable!("a list's law holds an automaton for each input"),
-        [one] => one.clone(),
-        [first, rest @ ..] => format!("SceLaws<{first}, {}>", nested_laws(rest)),
-    }
 }
 
 /// The Swift type the protocol of `plan` presents `element` as: its number, its bounded byte string
