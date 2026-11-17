@@ -24,8 +24,8 @@
 //
 // Fixture: examples/ai_loop/ai_loop.scxml
 //
-// Regeneration (after example or template edit):
-//   scripts/materialize.sh rust-integration
+// Regeneration: none by hand. The crate's build script (build.rs) writes the
+//   `rust-integration` tree into OUT_DIR again when an example or template changes.
 
 use sce_rust_runtime::{Engine, StatePolicy};
 use sce_rust_tests::integration::ai_loop::{AiLoopEvent, AiLoopPolicy, AiLoopState};

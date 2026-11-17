@@ -6,8 +6,8 @@
 // `sce_rust_runtime::test::run_suite`. The suite, its test cases and their
 // configurations are the tables sce-codegen writes from the fixtures under
 // `sce-build/tests/fixtures/test_profile/runtime/` into
-// `src/integration/static_datamodel/` (regen:
-// `scripts/materialize.sh rust-static-datamodel`), and the components are the
+// `src/integration/static_datamodel/` (the crate's build script, build.rs, tree
+// `rust-static-datamodel`), and the components are the
 // machines it writes from the components there. Only the system adapter, which
 // plays the system under test, is written here.
 //

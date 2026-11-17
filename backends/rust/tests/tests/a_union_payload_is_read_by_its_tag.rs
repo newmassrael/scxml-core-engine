@@ -2,10 +2,10 @@
 // SPDX-FileCopyrightText: Copyright (c) 2026 newmassrael
 //
 // A Rust machine reads a payload that holds a union by testing its tag
-// (docs/adr/0092, section 6.1), run with no script engine. The committed
+// (docs/adr/0092, section 6.1), run with no script engine. The
 // machine under `src/integration/static_datamodel/` is generated from
-// `sce-build/tests/fixtures/static_datamodel/static_union.scxml` (regen:
-// `scripts/materialize.sh rust-static-datamodel`).
+// `sce-build/tests/fixtures/static_datamodel/static_union.scxml` by the
+// crate's build script (build.rs, tree `rust-static-datamodel`).
 //
 // A delivery is lifted tag first into the machine's own sum (section 4), each
 // branch the tag's test proves reads the fields of its case, a field two cases

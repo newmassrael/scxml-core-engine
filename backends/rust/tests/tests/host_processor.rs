@@ -13,9 +13,9 @@
 // accepted the document, then failed at run time with nothing before that
 // saying it would.
 //
-// The committed SM under `src/integration/host_processor/` is generated from
+// The SM under `src/integration/host_processor/` is generated from
 // `sce-build/tests/fixtures/host_processor/statechart_host_processor.scxml`
-// WITH the declaration (regen: `scripts/materialize.sh rust-integration`).
+// WITH the declaration, by the crate's build script (build.rs, tree `rust-integration`).
 // Because the tree is part of the crate it is really type-checked; these tests
 // drive that one binary twice, so what they measure is the registration and
 // not the build.
