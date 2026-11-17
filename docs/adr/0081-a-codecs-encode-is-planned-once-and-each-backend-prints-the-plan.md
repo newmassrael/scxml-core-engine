@@ -1504,6 +1504,25 @@ old encode, the old encode and its templates are removed in the same landing.
    too. An `Aligned` made by default pairs the fewest of two lists of one count; only a chain has a least past
    zero, and a chain has no count, so the two fewest are always of one count. Considered and refused: an empty
    list by default with `of` alone checking the least, which would make a value of the class no frame carries.
+
+   *The sixteenth Kotlin landing, 2026-11-17:* a group the gates on a chain's entries decide, and the flags joined
+   with them (§6 R6b), and a gate on a chain's kinds no group holds. Each arm holds the chain in a value class of
+   the kinds it says the chain holds an entry of and of none (`group::chain_class`, named after those kinds, so
+   arms that say the same share one), whose `of` makes a value only of entries within the chain's bound that hold
+   each kind it holds and none it lacks, each told apart by the chain's `entry-id` as the walk tells it; every
+   such class implements `Counted` and holds `entries`. An arm that says the gated chain holds no kind holds it as
+   the optional of its class, as the Rust and C++ arms do, `null` by default. An arm that says the chain holds a
+   kind has no chain made by default, so a value made by default holds the arm where no gate holds, whose chain is
+   the fewest entries its bound holds, each made by default and held by `of` to no kind it lacks. The encode reads
+   the one list every class holds off the arm the value holds, so every statement that reads the chain reads a
+   list of entry sources whichever arm it is; a gate on a membership the group holds is what the arm says
+   (`group::gate_holds`), and any other a scan of the chain's entries. The decode selects the arm by the kinds the
+   chain it read holds, the locals its template declares after the chain for each kind a gate asks of it, and
+   makes the arm's class of what it read. The case printer states the chain as its arm's class made of its
+   entries. Considered and refused: a class per arm parameterised by its kinds, which Kotlin, having no const
+   generics, cannot hold a set of kinds in; and one class of the chain whose kinds the arm's constructor checks,
+   which would leave a value of the class that holds kinds the arm denies. A chain that holds a bare entry's
+   place (R6a) stays unlowered.
 5. Swift, when its codec lowers what the plan holds.
    *Swift lowers what the plan holds, 2026-11-16:* its codec writes every codec of the repository Rust writes,
    but the one only an MCU-class backend writes (`a_swift_codec_is_written_wherever_rust_writes_one.rs`): an

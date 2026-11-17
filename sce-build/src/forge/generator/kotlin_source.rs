@@ -49,8 +49,9 @@ pub(super) fn unlowered(plan: &CodecPlan<'_>, imports: &[ImportContext]) -> Opti
 ///
 /// It prints a positional codec whose elements are integers, flag sets, enums,
 /// byte strings, texts, and bodies and lists of codecs it prints, each always
-/// there, decided by a gate on a flag of the codec's own or an input, or held
-/// by a group of such gates (docs/adr/0065 §6 R4b, R4c), and whose variant's
+/// there, decided by a gate on a flag of the codec's own, an input or a
+/// chain's kinds, or held by a group of such gates (docs/adr/0065 §6 R4b,
+/// R4c, R6b), and whose variant's
 /// arms are codecs it prints; whose every derived element is either a length,
 /// a count or an encoded length of the elements it measures, held in a field
 /// of its own and gated beside its content where its content is, a flag set
@@ -138,24 +139,16 @@ fn positional_forms(plan: &EncodePlan<'_>, imports: &[ImportContext]) -> Vec<Str
             &element.field.id,
             &element.value,
         ));
-        // A number the value states while its content is absent is `null`
-        // where any of its content is there.
-        match element.presence {
-            Presence::Always | Presence::Stated => {}
-            Presence::Gated => forms.extend(gate_form(plan, element.field)),
-        }
     }
     // A group (docs/adr/0065 §6 R4b, R4c) is presented as the sealed class of
     // a data class for each of its arms, or the data class of its one arm,
     // `null` where the gates allow no arm; its gates are flags of the codec's
-    // own or flag inputs, derived from the arm the value holds, and its
-    // members are held as an element alone is, always there in the arm that
-    // holds them, and two lists of one count (R5) as one `Aligned` of the two.
+    // own or flag inputs, derived from the arm the value holds, or a chain's
+    // memberships, which the arm says (R6b), and its members are held as an
+    // element alone is, always there in the arm that holds them, two lists of
+    // one count (R5) as one `Aligned` of the two, and the chain in a class of
+    // the kinds the arm says of it.
     for group in plan.groups() {
-        let label = super::rust_source::gates_label(group);
-        if group.chain().is_some() {
-            forms.push(format!("group '{label}': a group of a chain's memberships"));
-        }
         for id in group.fields() {
             let member = m
                 .fields
@@ -203,10 +196,8 @@ fn positional_forms(plan: &EncodePlan<'_>, imports: &[ImportContext]) -> Vec<Str
     }
     // A gate the encode cannot derive the presence from is a check the value
     // is held to before the first byte, tested on the carriers as the encode
-    // writes them.
-    for field in &plan.gate_checks {
-        forms.extend(gate_form(plan, field));
-    }
+    // writes them; a clause on a chain's entries is what the arm of the group
+    // of its memberships says, or a scan of the chain's entries.
     let derived = derived_fields(plan);
     for write in &plan.program {
         match write {
@@ -218,7 +209,7 @@ fn positional_forms(plan: &EncodePlan<'_>, imports: &[ImportContext]) -> Vec<Str
                     forms.extend(unread_form(plan, &derived, field));
                 }
             }
-            Write::Streamed { field, guard, list } => {
+            Write::Streamed { field, list, .. } => {
                 forms.extend(unread_form(plan, &derived, field));
                 // A walk of each entry in turn, which sets on each entry but
                 // the last the flag the chain ends on and hands each entry
@@ -232,9 +223,6 @@ fn positional_forms(plan: &EncodePlan<'_>, imports: &[ImportContext]) -> Vec<Str
                         "field '{}': a chain that holds a bare entry's place or is held to a law",
                         field.id
                     ));
-                }
-                if *guard == Guard::Gate {
-                    forms.extend(gate_form(plan, field));
                 }
                 match &field.bit_size {
                     BitSize::Fixed { .. } => {
@@ -368,17 +356,6 @@ fn presence_form(element: &ElementId, presence: &PresenceFlag<'_>) -> Option<Str
         .then(|| format!("element '{element}': a flag the presence of several fields decides"))
 }
 
-/// What of the gate of `field`, a field a gate decides, the printer does not
-/// print: it tests a flag of the codec's own carriers or an input the encode
-/// is handed.
-fn gate_form(plan: &EncodePlan<'_>, field: &CodecField) -> Option<String> {
-    let gate = field.present_if.as_ref()?;
-    plan.clauses(gate)
-        .iter()
-        .any(|clause| matches!(clause, Clause::Member { .. }))
-        .then(|| format!("field '{}': a gate on a chain's entries", field.id))
-}
-
 /// What of the inputs the codec imported as `codec`, held by the element `id`,
 /// is handed that the printer does not print: it hands a carrier's bits, an
 /// input of the codec's own, or, to each entry of a chain, what the entry
@@ -470,7 +447,47 @@ fn read_optional(plan: &EncodePlan<'_>, id: &str) -> bool {
         None => plan
             .roles
             .group_of(id)
-            .is_some_and(|group| group::member_optional(group, id)),
+            .is_some_and(|group| group::member_optional(group, model_field(plan, id))),
+    }
+}
+
+/// The field `id` of `plan`.
+fn model_field<'m>(plan: &EncodePlan<'m>, id: &str) -> &'m CodecField {
+    plan.model
+        .fields
+        .iter()
+        .find(|f| f.id == id)
+        .expect("the plan names a field of the codec")
+}
+
+/// Whether the encode reads the list `id` of `plan` as the list of its
+/// entries: the chain a group of its memberships holds, each arm in a class
+/// of the kinds it says of it (docs/adr/0065 §6 R6b), so the encode keeps the
+/// one list every such class holds. Any other list it reads as the class of
+/// its bound, whose `entries` the list is.
+fn kept_list(plan: &EncodePlan<'_>, id: &str) -> bool {
+    plan.roles
+        .group_of(id)
+        .is_some_and(|group| group.chain() == Some(id))
+}
+
+/// The entries of the list `id` of `plan`, read into `local`, which holds the
+/// list here.
+fn list_entries(plan: &EncodePlan<'_>, id: &str, local: &str) -> String {
+    if kept_list(plan, id) {
+        local.to_string()
+    } else {
+        format!("{local}.entries")
+    }
+}
+
+/// The entries of the list `id` of `plan`, read into `local`, which may hold
+/// no list: none where it holds none.
+fn entries_or_none(plan: &EncodePlan<'_>, id: &str, local: &str) -> String {
+    if kept_list(plan, id) {
+        format!("({local} ?: emptyList())")
+    } else {
+        format!("({local}?.entries ?: emptyList())")
     }
 }
 
@@ -753,17 +770,28 @@ pub(super) fn render(
     }
 
     // Each group, its arms' classes and the classes of its members' bounds,
-    // each member held once though several arms may hold it.
+    // each member held once though several arms may hold it; the chain whose
+    // memberships are gates of the group in the class of the kinds each arm
+    // says of it (docs/adr/0065 §6 R6b), which the group declares.
     let mut groups = Vec::new();
     for gate_group in plan.groups() {
         let mut members = BTreeMap::new();
+        let mut chain = None;
         for id in gate_group.fields() {
-            let field = plan
-                .model
-                .fields
-                .iter()
-                .find(|f| f.id == id)
-                .expect("a group's member is a field of the codec");
+            let field = model_field(plan, id);
+            if gate_group.chain() == Some(id) {
+                let Value::List { codec, bound, .. } = plan.value(field) else {
+                    unreachable!("the chain whose memberships are gates is a list")
+                };
+                let import = printed_import(imports, codec)
+                    .expect("`unlowered` prints a chain of a printed codec only");
+                chain = Some(group::HeldChain {
+                    field,
+                    entry: body_type(import).to_string(),
+                    bound,
+                });
+                continue;
+            }
             members.insert(
                 id.to_string(),
                 member_of(
@@ -783,6 +811,7 @@ pub(super) fn render(
             struct_name,
             gate_group,
             &members,
+            chain.as_ref(),
             &mut before,
         ));
     }
@@ -1418,7 +1447,7 @@ fn encode_source(
                     present: measure.gated.then(|| format!("{content} != null")),
                 }
             }
-            _ => plain_measure(&element, measure),
+            _ => plain_measure(plan, &element, measure),
         }
     };
     // Each flag the encode derives, by its carrier: the statements that fold it
@@ -1635,8 +1664,43 @@ fn encode_source(
                     input(name),
                     if *negate { "==" } else { "!=" }
                 ),
-                Clause::Member { .. } => {
-                    unreachable!("`unlowered` prints no gate on a chain's entries")
+                // A membership a group's gate is: what the arm the value holds
+                // says of it (docs/adr/0065 §6 R6b).
+                Clause::Member {
+                    held: Some((at, Some(gate))),
+                    negate,
+                    ..
+                } => {
+                    let holds = group::gate_holds(
+                        struct_name,
+                        &plan.groups()[*at],
+                        *gate,
+                        &group_local(*at),
+                    );
+                    if *negate {
+                        format!("!({holds})")
+                    } else {
+                        holds
+                    }
+                }
+                // Any other membership: whether the chain the value holds has
+                // an entry of the kind, each entry told apart as the chain's
+                // walk tells it (docs/adr/0065 §6 R6). A chain a gate leaves
+                // out, or an arm does not hold, has none.
+                Clause::Member {
+                    chain, id, negate, ..
+                } => {
+                    let content = element(&chain.id);
+                    let entries = if read_optional(plan, &chain.id) {
+                        entries_or_none(plan, &chain.id, &content)
+                    } else {
+                        list_entries(plan, &chain.id, &content)
+                    };
+                    format!(
+                        "{}{entries}.any {{ _x -> {} == 0x{id:X}uL }}",
+                        if *negate { "!" } else { "" },
+                        entry_identifier(plan, l, &chain.id, "_x")
+                    )
                 }
             })
             .collect::<Vec<_>>()
@@ -1794,9 +1858,9 @@ fn encode_source(
                 let content = element(&list.id);
                 // A list a gate leaves out holds no entry to check.
                 let entries = if read_optional(plan, &list.id) {
-                    format!("({content}?.entries ?: emptyList())")
+                    entries_or_none(plan, &list.id, &content)
                 } else {
-                    format!("{content}.entries")
+                    list_entries(plan, &list.id, &content)
                 };
                 // Held to the entry before: the walk keeps whether the entry
                 // it checked last is of the kind, as the chain's own walk
@@ -1901,7 +1965,7 @@ fn encode_source(
                     // entry before, whether that entry was of the kind the
                     // input waits for, clear for the first.
                     BitSize::Repeat { .. } | BitSize::TlvChain { .. } => {
-                        let entries = format!("{}.entries", read(field));
+                        let entries = list_entries(plan, &field.id, &read(field));
                         let mut before = String::new();
                         let mut left = String::new();
                         let mut ends = String::new();
@@ -2010,7 +2074,13 @@ fn encode_source(
                 members.push_str(&format!(
                     "val _e_{} = {}\n",
                     l.codec_field_id(id),
-                    group::member_read(l, struct_name, gate_group, id, &group_local(at))
+                    group::member_read(
+                        l,
+                        struct_name,
+                        gate_group,
+                        model_field(plan, id),
+                        &group_local(at)
+                    )
                 ));
             }
         }
@@ -2468,11 +2538,15 @@ struct MeasureText {
     present: Option<String>,
 }
 
-/// A measure of a derived number that reads the source alone: the bytes of a
-/// byte string or a text, less or more its `sce:length-arith`, or the entries
-/// of a list, each tested present where a gate may leave it out. `element`
-/// names the local each element is read into.
-fn plain_measure(element: &dyn Fn(&str) -> String, measure: &Measure<'_>) -> MeasureText {
+/// A measure of a derived number of `plan` that reads the source alone: the
+/// bytes of a byte string or a text, less or more its `sce:length-arith`, or
+/// the entries of a list, each tested present where a gate may leave it out.
+/// `element` names the local each element is read into.
+fn plain_measure(
+    plan: &EncodePlan<'_>,
+    element: &dyn Fn(&str) -> String,
+    measure: &Measure<'_>,
+) -> MeasureText {
     let (content, size) = match &measure.of {
         Measured::Bytes { field, offset } => {
             let arith = match offset {
@@ -2493,7 +2567,7 @@ fn plain_measure(element: &dyn Fn(&str) -> String, measure: &Measure<'_>) -> Mea
         // How many entries the list holds, within its bound.
         Measured::Entries { list } => {
             let content = element(&list.id);
-            let size = format!("{content}.entries.size");
+            let size = format!("{}.size", list_entries(plan, &list.id, &content));
             (content, size)
         }
         _ => unreachable!("`unlowered` prints a length or a count only"),

@@ -2497,3 +2497,15 @@ codecs that hold a chain closed by its entries' flag, which holds one entry or m
   at least, as every frame of it does.
 - A value made by default holds `LEAST` entries, each its entry codec's value made by default, where it held none.
 
+## A printed Kotlin codec holds a chain in the class of the kinds its gates say (ADR 0081 step 4)
+
+Landing: the commit that adds this section; every Kotlin tree is regenerated after it. The printed set grows by the
+codecs whose fields a gate on a chain's entries decides.
+
+- The chain and the fields its kinds decide are one property, the group named after the chain and its gates, as a
+  flag's group is; the arm you hold says which kinds the chain holds.
+- Each arm holds the chain as `{Codec}{Chain}Has..Lacks..Chain`, made by `of` of entries that hold an entry of each
+  kind the arm names after `Has` and of none after `Lacks`; `of` answers `null` for any other list. Read its entries
+  by `.entries`.
+- A value made by default holds the arm where no gate holds, where it held the fields with no chain kind.
+

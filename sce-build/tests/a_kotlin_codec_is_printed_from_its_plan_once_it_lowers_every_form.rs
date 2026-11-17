@@ -884,19 +884,128 @@ fn an_input_the_arms_say_is_read_off_the_arm_the_value_holds() {
     );
 }
 
-/// A codec whose plan uses a form the Kotlin printer does not lower keeps the
-/// template's encode whole: a CBOR map and a group of a chain's memberships
-/// each name their form.
+/// A group of a chain's memberships (docs/adr/0065 §6 R6b) holds the chain in
+/// every arm, each in the class of the kinds the arm says it holds an entry of
+/// and none of, made only of entries that do; an arm that says it holds no
+/// kind of a gated chain may hold none. The encode reads the one list of
+/// entries every class holds and tests a gate on a membership by the arm the
+/// value holds; the decode selects the arm by the kinds of the chain it read.
 ///
-/// Turns red where `kotlin_source::positional_forms` stops naming a group of a
-/// chain's memberships, or `unlowered_forms` a CBOR map.
+/// Turns red where `kotlin_source::positional_forms` names a group of a
+/// chain's memberships unlowered, `group::chain_declaration` stops testing a
+/// kind the arm holds or lacks, `group::declare` types the chain of an arm
+/// that holds no kind of a gated chain as always there, `group::member_read`
+/// reads the chain other than as its entries, `gate_test` stops reading a
+/// membership off the arm the value holds, or `group::decoded_test` stops
+/// testing the chain the decode read.
+#[test]
+fn a_group_of_a_chains_memberships_holds_the_chain_in_the_class_of_its_kinds() {
+    let name = "codec_chain_has_envelope";
+    assert!(unlowered(name).is_empty(), "{name}: {:?}", unlowered(name));
+    let text = resource_file(name);
+    holds(
+        name,
+        &text,
+        &[
+            "value class CodecChainHasEnvelopeExtensionsHas2Chain private constructor(\
+             val entries: List<CodecZenohExtEntrySource>) : com.sce.forge.runtime.Counted {\n",
+            "        private fun kind(entry: CodecZenohExtEntrySource): ULong = \
+             ((entry.header.toULong() shr 0) and 0xFuL)\n",
+            "if (entries.size in LEAST..MOST && entries.any { kind(it) == 0x2uL }) \
+             CodecChainHasEnvelopeExtensionsHas2Chain(entries.toList()) else null\n",
+            "if (entries.size in LEAST..MOST && entries.none { kind(it) == 0x2uL }) \
+             CodecChainHasEnvelopeExtensionsLacks2Chain(entries.toList()) else null\n",
+            "        val extensions: CodecChainHasEnvelopeExtensionsHas2Chain,\n",
+            "        val extensions: CodecChainHasEnvelopeExtensionsLacks2Chain? = null,\n",
+            " -> _g.extensions.entries; is ",
+            " -> _g.extensions?.entries }\n",
+            "if (!(_g_extensions_has_0x2 is CodecChainHasEnvelopeExtensionsHas0x2.Has0x2)) {\n",
+            "if (_has_extensions_2) CodecChainHasEnvelopeExtensionsHas0x2.Has0x2(extensions = \
+             CodecChainHasEnvelopeExtensionsHas2Chain.of(extensions!!) ?: return null",
+            "extensions = extensions?.let { CodecChainHasEnvelopeExtensionsLacks2Chain.of(it) \
+             ?: return null }",
+        ],
+    );
+    // An arm that says the chain holds a kind has no chain made by default.
+    holds_none(
+        name,
+        &text,
+        &["fun fewest(): CodecChainHasEnvelopeExtensionsHas2Chain"],
+    );
+}
+
+/// A value made by default holds the arm of a group of a chain's memberships
+/// where no gate holds, whose chain is made of the fewest entries its bound
+/// holds, each of no kind it lacks, and a flag joined with the memberships is
+/// derived from the arm the value holds.
+///
+/// Turns red where `group::declare` makes the first arm the default, where
+/// `group::chain_declaration` gives a class whose arm holds a kind a `fewest`,
+/// or where `encode_source` stops folding a flag of the group from its arm.
+#[test]
+fn a_value_made_by_default_holds_the_arm_where_no_membership_holds() {
+    let name = "codec_chain_has_tagged";
+    assert!(unlowered(name).is_empty(), "{name}: {:?}", unlowered(name));
+    let text = resource_file(name);
+    holds(
+        name,
+        &text,
+        &[
+            "    override var entries_has_0x7_has_0x9_header_wide: \
+             CodecChainHasTaggedEntriesHas0x7Has0x9HeaderWide = \
+             CodecChainHasTaggedEntriesHas0x7Has0x9HeaderWide.Neither()",
+            "        val entries: CodecChainHasTaggedEntriesLacks7Lacks9Chain = \
+             CodecChainHasTaggedEntriesLacks7Lacks9Chain.fewest(),\n",
+            "        fun fewest(): CodecChainHasTaggedEntriesLacks7Lacks9Chain =\n            \
+             checkNotNull(of(List(LEAST) { CodecChainHasTaggedEntry() })) \
+             { \"a value-made entry is of no kind the chain lacks\" }\n",
+            "        private fun kind(entry: CodecChainHasTaggedEntrySource): ULong = \
+             entry.entry_type.toULong()\n",
+            "entries.any { kind(it) == 0x7uL } && entries.any { kind(it) == 0x9uL }",
+            "_u_header = (_u_header and 0x1u.inv()) or (if ((_g_entries_has_0x7_has_0x9_header_wide \
+             is CodecChainHasTaggedEntriesHas0x7Has0x9HeaderWide.Has0x7Has0x9Wide",
+        ],
+    );
+    holds_none(
+        name,
+        &text,
+        &["fun fewest(): CodecChainHasTaggedEntriesHas7Has9Chain"],
+    );
+}
+
+/// A gate on a chain's kinds joined with a flag input is a check (docs/adr/0065
+/// §6 R4c, R6): the value is held to it before the first byte, the membership
+/// a scan of the chain's entries, each told apart by the chain's `entry-id`.
+///
+/// Turns red where `kotlin_source::encode_source`'s `gate_test` stops scanning
+/// the entries for a membership no group holds.
+#[test]
+fn a_membership_no_group_holds_is_a_scan_of_the_chains_entries() {
+    let name = "codec_chain_has_input";
+    assert!(unlowered(name).is_empty(), "{name}: {:?}", unlowered(name));
+    let text = resource_file(name);
+    holds(
+        name,
+        &text,
+        &["            if ((_e_entries.entries.any { _x -> _x.entry_type.toULong() == 0x7uL } || \
+           urgent.toUInt() != 0u) != (_e_priority != null)) {\n\
+           \x20               return CodecError.PresentIfMismatch\n"],
+    );
+}
+
+/// A codec whose plan uses a form the Kotlin printer does not lower keeps the
+/// template's encode whole: a CBOR map and a chain that holds a bare entry's
+/// place each name their form.
+///
+/// Turns red where `kotlin_source::positional_forms` stops naming a chain of
+/// slots, or `unlowered_forms` a CBOR map.
 #[test]
 fn a_codec_of_a_form_the_printer_does_not_lower_keeps_the_template_encode() {
     for (name, form) in [
         ("codec_cbor_map", "a CBOR map"),
         (
-            "codec_chain_has_envelope",
-            "a group of a chain's memberships",
+            "codec_chain_has_marker",
+            "a chain that holds a bare entry's place",
         ),
     ] {
         let forms = unlowered(name);

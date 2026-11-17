@@ -12,13 +12,20 @@
 //! from the arm the value holds, and reads each member off that arm, `null`
 //! where the arm does not hold it, so each statement that reads a member reads
 //! it as it reads an element a gate decides.
+//!
+//! A group of a chain's memberships (docs/adr/0065 §6 R6b) holds the chain in
+//! every arm, each in a class of the kinds the arm says it holds an entry of
+//! and none of ([`chain_class`]), and the encode reads the one list of entries
+//! every such class holds.
 
-use super::super::rust_source::{group_accessor, group_arm_name, group_type};
+use super::super::rust_source::{
+    chain_optional_in, group_accessor, group_arm_name, group_type, holds_chain,
+};
 use super::super::*;
-use super::{input_name, CarrierBits, Member};
+use super::{entry_identifier, input_name, CarrierBits, ListBound, Member};
 use crate::forge::codec_roles::{GateGroup, GateVar, GroupArm};
-use crate::forge::encode_plan::EncodePlan;
-use std::collections::BTreeMap;
+use crate::forge::encode_plan::{Bound, EncodePlan};
+use std::collections::{BTreeMap, BTreeSet};
 
 /// The class the Kotlin value of the codec whose data class is `struct_name`
 /// holds `group` in, named as every printer names it ([`group_type`]): the
@@ -56,32 +63,159 @@ pub(crate) struct GroupField {
     /// no arm.
     pub(crate) ty: String,
     /// The value it holds by default: its first arm made of each member's
-    /// default, or `null` where the gates allow no arm.
+    /// default, or for a group of a chain's memberships the arm where no gate
+    /// holds, or `null` where the gates allow no arm.
     pub(crate) default: String,
     /// What the decode makes it of: the arm the gates it read select, made of
     /// the locals it read each member into, or `null` where they select none.
     pub(crate) made: String,
 }
 
-/// Whether the encode's local of the member `id` of `group` may be `null`: an
-/// arm holds no `id`, or the gates allow no arm.
-pub(crate) fn member_optional(group: &GateGroup, id: &str) -> bool {
+/// Whether the encode's local of the member `field` of `group` may be `null`:
+/// an arm holds no `field`, the gates allow no arm, or `field` is the chain
+/// whose memberships are the group's gates and an arm may hold none of it
+/// (docs/adr/0065 §6 R6b).
+pub(crate) fn member_optional(group: &GateGroup, field: &CodecField) -> bool {
+    let chain = holds_chain(group, field);
     group.absent.is_some()
-        || group
-            .arms
+        || group.arms.iter().any(|arm| {
+            !arm.fields.iter().any(|f| *f == field.id)
+                || (chain && chain_optional_in(group, field, arm))
+        })
+}
+
+/// The chain whose memberships are gates of a group (docs/adr/0065 §6 R6b),
+/// which every arm of the group holds, each in the class of the kinds it says.
+pub(super) struct HeldChain<'f> {
+    /// The chain.
+    pub(super) field: &'f CodecField,
+    /// The data class of the entries' codec, whose source interface is
+    /// `{entry}Source`.
+    pub(super) entry: String,
+    /// How many entries the chain holds.
+    pub(super) bound: Bound,
+}
+
+/// The class the Kotlin value of the codec whose data class is `struct_name`
+/// holds its chain `chain` in, in an arm of a group of its memberships that
+/// says the chain holds an entry of each kind of `holds` and of no kind of
+/// `lacks` (docs/adr/0065 §6 R6b): the codec, the chain, each kind after `Has`
+/// or `Lacks`, then `Chain`, as a list's class ends in `List`. Arms that say
+/// the same of the chain hold it in one class. The one place the name is made:
+/// the printer declares the class by it and the conformance harness makes a
+/// value of it.
+pub(crate) fn chain_class(struct_name: &str, chain: &str, holds: &[u64], lacks: &[u64]) -> String {
+    let kinds = |word: &str, keys: &[u64]| -> String {
+        keys.iter().map(|key| format!("{word}{key:X}")).collect()
+    };
+    format!(
+        "{struct_name}{}{}{}Chain",
+        filters::to_pascal_case(chain.to_string()),
+        kinds("Has", holds),
+        kinds("Lacks", lacks)
+    )
+}
+
+/// The value class `class` the chain of `plan` an arm holds is held in: a
+/// private constructor over the entries, and `of`, which makes a value only of
+/// entries within the chain's bound that hold an entry of each kind of `holds`
+/// and of no kind of `lacks`, each told apart by the chain's `entry-id`, copied
+/// into a list of its own. Where the arm says the chain holds no kind, a value
+/// made by default holds the fewest entries the bound holds, each made by
+/// default, which hold no kind it lacks, as the C++ `Chain` asserts of its own.
+fn chain_declaration(
+    plan: &EncodePlan<'_>,
+    l: &LangCtx,
+    struct_name: &str,
+    chain: &HeldChain<'_>,
+    class: &str,
+    holds: &[u64],
+    lacks: &[u64],
+) -> String {
+    let id = &chain.field.id;
+    let bound = ListBound::of(&chain.bound);
+    let source = format!("{}Source", chain.entry);
+    let kinds = |keys: &[u64]| -> String {
+        keys.iter()
+            .map(|key| format!("0x{key:X}"))
+            .collect::<Vec<_>>()
+            .join(", ")
+    };
+    let mut said = Vec::new();
+    if !holds.is_empty() {
+        said.push(format!("an entry of each kind of {}", kinds(holds)));
+    }
+    if !lacks.is_empty() {
+        said.push(format!("no entry of a kind of {}", kinds(lacks)));
+    }
+    let mut tests: Vec<String> = bound.test.iter().cloned().collect();
+    tests.extend(
+        holds
             .iter()
-            .any(|arm| !arm.fields.iter().any(|f| f == id))
+            .map(|key| format!("entries.any {{ kind(it) == 0x{key:X}uL }}")),
+    );
+    tests.extend(
+        lacks
+            .iter()
+            .map(|key| format!("entries.none {{ kind(it) == 0x{key:X}uL }}")),
+    );
+    let fewest = if holds.is_empty() {
+        format!(
+            "\n\n\
+             \x20       /// {}, which hold no kind the chain\n\
+             \x20       /// lacks: what a value made by default holds.\n\
+             \x20       fun fewest(): {class} =\n\
+             \x20           checkNotNull(of({})) {{ \"a value-made entry is of no kind the chain lacks\" }}",
+            bound.fewest_words(),
+            bound.fewest(&chain.entry)
+        )
+    } else {
+        String::new()
+    };
+    format!(
+        "/// The `{id}` chain of [{struct_name}] where it holds {said}, {held}, held\n\
+         /// to that where a value of it is made (docs/adr/0065 §6 R6b, docs/adr/0081 §2):\n\
+         /// its constructor is private and [of] makes a value only of entries within the\n\
+         /// bound that hold those kinds, which it copies, so no list it was made of can\n\
+         /// change it after.\n\
+         @JvmInline\n\
+         value class {class} private constructor(val entries: List<{source}>) : \
+         com.sce.forge.runtime.Counted {{\n\
+         \x20   /// How many entries the chain holds.\n\
+         \x20   override val size: Int\n\
+         \x20       get() = entries.size\n\
+         \n\
+         \x20   companion object {{{consts}\n\
+         \x20       /// The kind of `entry`: the identifier the chain tells its entries apart by.\n\
+         \x20       private fun kind(entry: {source}): ULong = {identifier}\n\
+         \n\
+         \x20       /// `entries` as a value of the chain, or `null` where they lie outside its\n\
+         \x20       /// bound, lack a kind it holds or hold one it lacks.\n\
+         \x20       fun of(entries: List<{source}>): {class}? =\n\
+         \x20           if ({tests}) {class}(entries.toList()) else null{fewest}\n\
+         \x20   }}\n\
+         }}\n\n",
+        said = said.join(" and "),
+        held = bound.held,
+        consts = bound.consts,
+        identifier = entry_identifier(plan, l, id, "entry"),
+        tests = tests.join(" && "),
+    )
 }
 
 /// The classes of `group` into `before`, and the property the value of the
 /// codec `plan`, whose data class is `struct_name`, holds it in. Each member is
-/// held as `members` says, always there in the arm that holds it.
+/// held as `members` says, always there in the arm that holds it, but for the
+/// chain whose memberships are gates of the group (docs/adr/0065 §6 R6b),
+/// which each arm holds in the class of the kinds it says of it, `null` where
+/// it is gated and the arm says it holds no kind.
 pub(super) fn declare(
     plan: &EncodePlan<'_>,
     l: &LangCtx,
     struct_name: &str,
     group: &GateGroup,
     members: &BTreeMap<String, Member>,
+    chain: Option<&HeldChain<'_>>,
     before: &mut String,
 ) -> GroupField {
     let name = group_property(group);
@@ -101,16 +235,71 @@ pub(super) fn declare(
             .collect::<Vec<_>>()
             .join(" and ")
     };
+    // The arm a value made by default holds: the first, but in a group of a
+    // chain's memberships, whose arms that say the chain holds a kind have no
+    // chain made by default, the arm where no gate holds.
+    let default_at = if group.chain().is_some() {
+        group
+            .arms
+            .iter()
+            .position(|arm| arm.values.iter().all(|value| !value))
+            .expect("a group of a chain's memberships has an arm for every assignment of its gates")
+    } else {
+        0
+    };
     // Each arm, its members as the constructor's parameters, and how a decode
     // makes it of what it read.
     let mut arms = String::new();
     let mut made: Vec<(String, String)> = Vec::new();
     let mut first_default = String::new();
+    // The classes of the chain each arm holds, each declared once.
+    let mut chains: BTreeSet<String> = BTreeSet::new();
     for (i, arm) in group.arms.iter().enumerate() {
         let arm_class = group_arm_class(struct_name, group, arm);
         let mut params = Vec::new();
         let mut args = Vec::new();
         for id in &arm.fields {
+            // The chain, in the class of the kinds the arm says of it.
+            if let Some(chain) = chain.filter(|chain| chain.field.id == *id) {
+                let (holds, lacks) = group.kinds_in(arm);
+                let kinds = chain_class(struct_name, id, &holds, &lacks);
+                if chains.insert(kinds.clone()) {
+                    before.push_str(&chain_declaration(
+                        plan,
+                        l,
+                        struct_name,
+                        chain,
+                        &kinds,
+                        &holds,
+                        &lacks,
+                    ));
+                }
+                let property = l.codec_field_id(id);
+                let local = l.codec_field_decode_local(id);
+                if chain_optional_in(group, chain.field, arm) {
+                    // Gated, and the arm says it holds no kind: absent by
+                    // default, and absent where the decode read none.
+                    params.push(format!("val {property}: {kinds}? = null"));
+                    args.push(format!(
+                        "{property} = {local}?.let {{ {kinds}.of(it) ?: return null }}"
+                    ));
+                } else {
+                    // Where the arm says it holds a kind, the decode read it,
+                    // as the gate that selects the arm says.
+                    let read = if chain.field.present_if.is_some() {
+                        format!("{local}!!")
+                    } else {
+                        local
+                    };
+                    params.push(if holds.is_empty() {
+                        format!("val {property}: {kinds} = {kinds}.fewest()")
+                    } else {
+                        format!("val {property}: {kinds}")
+                    });
+                    args.push(format!("{property} = {kinds}.of({read}) ?: return null"));
+                }
+                continue;
+            }
             // Two lists of one count are one member of an arm that holds both
             // (docs/adr/0065 §6 R5), where the first is: an `Aligned` of the
             // two, each in the class of its bound, made only where they hold
@@ -153,7 +342,7 @@ pub(super) fn declare(
                 format!("{arm_class}({})", args.join(", ")),
             )
         };
-        if i == 0 {
+        if i == default_at {
             first_default = if params.is_empty() {
                 arm_class.clone()
             } else {
@@ -261,8 +450,16 @@ fn decoded_test(plan: &EncodePlan<'_>, l: &LangCtx, group: &GateGroup, values: &
                     )
                 }
                 GateVar::Input(name) => format!("{}.toUInt() {compare} 0u", input_name(name)),
-                GateVar::Member { .. } => {
-                    unreachable!("`unlowered` prints no group of a chain's memberships")
+                // Whether the chain the decode read holds an entry of the
+                // kind: the local the decode declares after the chain for
+                // each kind a gate asks of it, read off every entry it read.
+                GateVar::Member { chain, key, .. } => {
+                    let has = chain_has_local(chain, *key, crate::generator::Language::Kotlin);
+                    if *value {
+                        has
+                    } else {
+                        format!("!{has}")
+                    }
                 }
             }
         })
@@ -293,31 +490,42 @@ pub(crate) fn gate_holds(struct_name: &str, group: &GateGroup, gate: usize, held
     }
 }
 
-/// The expression the encode binds the member `id` of `group`, a group of the
-/// codec whose data class is `struct_name`, to, off `held`, the group as the
-/// value holds it: what the arm the value holds holds of it, `null` where that
-/// arm holds none or the value holds no arm. Each arm is its own case, as a
-/// case of several classes narrows to none of them.
+/// The expression the encode binds the member `field` of `group`, a group of
+/// the codec whose data class is `struct_name`, to, off `held`, the group as
+/// the value holds it: what the arm the value holds holds of it, `null` where
+/// that arm holds none or the value holds no arm. Each arm is its own case, as
+/// a case of several classes narrows to none of them. The chain whose
+/// memberships are gates of the group is read as the list of its entries,
+/// which every arm's class of it holds (docs/adr/0065 §6 R6b).
 pub(crate) fn member_read(
     l: &LangCtx,
     struct_name: &str,
     group: &GateGroup,
-    id: &str,
+    field: &CodecField,
     held: &str,
 ) -> String {
+    let id = field.id.as_str();
     let property = l.codec_field_id(id);
+    let chain = holds_chain(group, field);
     if !group.is_sum() {
+        let entries = if chain { ".entries" } else { "" };
         return if group.absent.is_some() {
-            format!("{held}?.{property}")
+            format!("{held}?.{property}{entries}")
         } else {
-            format!("{held}.{property}")
+            format!("{held}.{property}{entries}")
         };
     }
     // What an arm that holds the member reads it by: its property, or one of
     // the two lists of one count it holds as one `Aligned` (docs/adr/0065 §6
-    // R5).
+    // R5), or the entries of the chain it holds, where it may hold none.
     let read = |arm: &GroupArm| -> String {
-        if let Some(second) = group.second_of(arm, id) {
+        if chain {
+            if chain_optional_in(group, field, arm) {
+                format!("_g.{property}?.entries")
+            } else {
+                format!("_g.{property}.entries")
+            }
+        } else if let Some(second) = group.second_of(arm, id) {
             format!("_g.{}.first", aligned_property(l, id, second))
         } else if group.is_second_in(arm, id) {
             let (first, _) = group
@@ -341,7 +549,15 @@ pub(crate) fn member_read(
             )
         })
         .collect();
-    if member_optional(group, id) {
+    // No member where the value holds no arm, or an arm that holds none. The
+    // chain every arm holds, so an arm that may hold none of it reads `null`
+    // off its own case.
+    if group.absent.is_some()
+        || group
+            .arms
+            .iter()
+            .any(|arm| !arm.fields.iter().any(|f| f == id))
+    {
         cases.push("else -> null".to_string());
     }
     format!("when (val _g = {held}) {{ {} }}", cases.join("; "))

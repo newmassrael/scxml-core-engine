@@ -16,12 +16,12 @@
 //! the Rust case refuses what it does not spell.
 
 use super::super::rust_source::{
-    byte_values, case_inputs, case_tag, enum_variant, gates_label, group_choice, integer_value,
-    source_members, variant_choice, CodecPath as RustCodecPath, HeldCodecs, CALLER_TAG_LABEL,
-    VARIANT_MEMBER,
+    byte_values, case_inputs, case_tag, chain_optional_in, entry_rows, enum_variant, gates_label,
+    group_choice, holds_chain, integer_value, source_members, variant_choice, ChainInArm,
+    CodecPath as RustCodecPath, HeldCodecs, CALLER_TAG_LABEL, VARIANT_MEMBER,
 };
 use super::super::*;
-use super::group::{aligned_property, group_arm_class, group_property, ALIGNED};
+use super::group::{aligned_property, chain_class, group_arm_class, group_property, ALIGNED};
 use super::{arm_class, list_class, refinement_class, unknown_tag_class};
 use crate::forge::codec_roles::{GateGroup, GroupArm};
 use crate::forge::encode_plan::{EncodePlan, Value};
@@ -305,11 +305,14 @@ fn group_holds(
                 }
                 continue;
             }
+            // The chain whose memberships are the group's gates is compared
+            // by its entries, both sides absent alike where the arm may hold
+            // none of it (docs/adr/0065 §6 R6b).
             let field = member_field(plan, id);
             same.extend(member_holds(
                 field,
                 &plan.value(field),
-                false,
+                holds_chain(group, field) && chain_optional_in(group, field, arm),
                 &x,
                 &y,
                 depth + 1,
@@ -374,6 +377,21 @@ fn group_literal(
     let class = path.qualified(&group_arm_class(&path.type_name, group, chosen.arm));
     let spell = |id: &str, held: &mut dyn HeldCodecs| -> Result<String, String> {
         let field = member_field(plan, id);
+        // The chain whose memberships are the group's gates, in the class of
+        // the kinds the arm says of it (docs/adr/0065 §6 R6b).
+        if holds_chain(group, field) {
+            let chain = ChainInArm {
+                group,
+                arm: chosen.arm,
+                field,
+            };
+            let json = chosen
+                .members
+                .get(id)
+                .ok_or_else(|| format!("the arm holds `{id}`, and the source states none"))?;
+            return chain_literal(plan, path, &chain, json, held)
+                .map_err(|e| format!("`{id}`: {e}"));
+        }
         let member = chosen
             .members
             .get(id)
@@ -599,28 +617,74 @@ fn member_literal(
         }),
         // Each entry its codec's data class, reached as a body's is, in the
         // value class of the list's bound, made by its factory.
-        Value::List { codec, law, .. } if law.is_none() => {
-            let entries = json
-                .as_array()
-                .ok_or_else(|| "a list is an array of its entries".to_string())?;
-            let mut items = Vec::new();
-            for entry in entries {
-                items.push(held.read(codec, &mut |plan, held_path, held| {
-                    value_literal(plan, &held_codec(held_path), entry, held)
-                })?);
-            }
-            Ok(format!(
-                "{}.of(listOf({}))!!",
-                path.qualified(&list_class(&path.type_name, &field.id)),
-                items.join(", ")
-            ))
-        }
+        Value::List { codec, law, .. } if law.is_none() => Ok(format!(
+            "{}.of(listOf({}))!!",
+            path.qualified(&list_class(&path.type_name, &field.id)),
+            entry_literals(codec, json, held)?.join(", ")
+        )),
         Value::List { .. } => Err(
             "a list held to a law is not spelled as a Kotlin literal yet: the Kotlin printer \
              prints no codec that holds one"
                 .into(),
         ),
     }
+}
+
+/// Each entry of the list or chain `json` states, of the codec imported as
+/// `codec`, as that codec's data class, reached by its document's package.
+fn entry_literals(
+    codec: &str,
+    json: &serde_json::Value,
+    held: &mut dyn HeldCodecs,
+) -> Result<Vec<String>, String> {
+    let mut items = Vec::new();
+    for entry in entry_rows(json)? {
+        items.push(held.read(codec, &mut |plan, held_path, held| {
+            value_literal(plan, &held_codec(held_path), entry, held)
+        })?);
+    }
+    Ok(items)
+}
+
+/// The chain an arm of a group of its kinds holds (docs/adr/0081 §5): its
+/// entries whole, in the class of the kinds the arm says of it, made by that
+/// class's factory, which holds them to those kinds; `null` where the arm may
+/// hold none of it.
+fn chain_literal(
+    plan: &EncodePlan<'_>,
+    path: &CodecPath,
+    chain: &ChainInArm<'_>,
+    json: &serde_json::Value,
+    held: &mut dyn HeldCodecs,
+) -> Result<String, String> {
+    let Value::List { codec, .. } = plan.value(chain.field) else {
+        return Err(format!("`{}` is no chain", chain.field.id));
+    };
+    if chain.placed() {
+        return Err(
+            "a bare entry's place is not spelled as a Kotlin literal yet: the Kotlin printer \
+             prints no codec that holds one"
+                .into(),
+        );
+    }
+    if json.is_null() {
+        return if chain.optional() {
+            Ok("null".to_string())
+        } else {
+            Err("the arm holds the chain always".to_string())
+        };
+    }
+    let (holds, lacks) = chain.group.kinds_in(chain.arm);
+    Ok(format!(
+        "{}.of(listOf({}))!!",
+        path.qualified(&chain_class(
+            &path.type_name,
+            &chain.field.id,
+            &holds,
+            &lacks
+        )),
+        entry_literals(codec, json, held)?.join(", ")
+    ))
 }
 
 /// A Kotlin `Boolean` expression that holds when the lists `decoded` and
