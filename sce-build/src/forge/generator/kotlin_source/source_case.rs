@@ -21,7 +21,7 @@ use super::super::rust_source::{
     VARIANT_MEMBER,
 };
 use super::super::*;
-use super::group::{group_arm_class, group_property};
+use super::group::{aligned_property, group_arm_class, group_property, ALIGNED};
 use super::{arm_class, list_class, refinement_class, unknown_tag_class};
 use crate::forge::codec_roles::{GateGroup, GroupArm};
 use crate::forge::encode_plan::{EncodePlan, Value};
@@ -280,9 +280,31 @@ fn group_holds(
     let property = group_property(group);
     let (x, y) = (format!("gx{depth}"), format!("gy{depth}"));
     // Each member of `arm` the same on both sides, `true` where it holds none.
+    let l = LangCtx::new(crate::generator::Language::Kotlin, &[]);
     let members = |arm: &GroupArm, held: &mut dyn HeldCodecs| -> Result<String, String> {
         let mut same = Vec::new();
         for id in &arm.fields {
+            // Two lists of one count, each compared by its entries out of the
+            // `Aligned` the arm holds them in (docs/adr/0065 §6 R5).
+            if group.is_second_in(arm, id) {
+                continue;
+            }
+            if let Some(second) = group.second_of(arm, id) {
+                let pair = aligned_property(&l, id, second);
+                for (part, list) in [("first", id.as_str()), ("second", second)] {
+                    let Value::List { codec, .. } = plan.value(member_field(plan, list)) else {
+                        unreachable!("two lists of one count are lists")
+                    };
+                    same.push(list_holds(
+                        codec,
+                        &format!("{x}.{pair}.{part}.entries"),
+                        &format!("{y}.{pair}.{part}.entries"),
+                        depth + 1,
+                        held,
+                    )?);
+                }
+                continue;
+            }
             let field = member_field(plan, id);
             same.extend(member_holds(
                 field,
@@ -350,17 +372,37 @@ fn group_literal(
     };
     let l = LangCtx::new(crate::generator::Language::Kotlin, &[]);
     let class = path.qualified(&group_arm_class(&path.type_name, group, chosen.arm));
-    let mut args = Vec::new();
-    for id in &chosen.arm.fields {
+    let spell = |id: &str, held: &mut dyn HeldCodecs| -> Result<String, String> {
         let field = member_field(plan, id);
         let member = chosen
             .members
             .get(id)
             .filter(|json| !json.is_null())
             .ok_or_else(|| format!("the arm holds `{id}`, and the source states none"))?;
-        let literal = member_literal(field, &plan.value(field), path, member, held)
-            .map_err(|e| format!("`{id}`: {e}"))?;
-        args.push(format!("{} = {literal}", l.codec_field_id(id)));
+        member_literal(field, &plan.value(field), path, member, held)
+            .map_err(|e| format!("`{id}`: {e}"))
+    };
+    let mut args = Vec::new();
+    for id in &chosen.arm.fields {
+        // Two lists of one count are one member of the arm, an `Aligned` of
+        // the two (docs/adr/0065 §6 R5), each stated by its own id; the case
+        // states them of one count.
+        if group.is_second_in(chosen.arm, id) {
+            continue;
+        }
+        if let Some(second) = group.second_of(chosen.arm, id) {
+            let (first_list, second_list) = (spell(id, &mut *held)?, spell(second, &mut *held)?);
+            args.push(format!(
+                "{} = {ALIGNED}.of({first_list}, {second_list})!!",
+                aligned_property(&l, id, second)
+            ));
+            continue;
+        }
+        args.push(format!(
+            "{} = {}",
+            l.codec_field_id(id),
+            spell(id, &mut *held)?
+        ));
     }
     Ok(if args.is_empty() {
         class

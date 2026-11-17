@@ -110,16 +110,34 @@ pub(super) fn declare(
         let arm_class = group_arm_class(struct_name, group, arm);
         let mut params = Vec::new();
         let mut args = Vec::new();
-        let mut defaults = Vec::new();
         for id in &arm.fields {
+            // Two lists of one count are one member of an arm that holds both
+            // (docs/adr/0065 §6 R5), where the first is: an `Aligned` of the
+            // two, each in the class of its bound, made only where they hold
+            // as many entries as each other.
+            if group.is_second_in(arm, id) {
+                continue;
+            }
             let member = &members[id.as_str()];
+            if let Some(second) = group.second_of(arm, id) {
+                let paired = &members[second];
+                let property = aligned_property(l, id, second);
+                params.push(format!(
+                    "val {property}: {ALIGNED}<{}, {}> = {ALIGNED}.of({}, {})!!",
+                    member.ty, paired.ty, member.default, paired.default
+                ));
+                args.push(format!(
+                    "{property} = {ALIGNED}.of({}, {}) ?: return null",
+                    member.made, paired.made
+                ));
+                continue;
+            }
             let property = l.codec_field_id(id);
             params.push(format!(
                 "val {property}: {} = {}",
                 member.ty, member.default
             ));
             args.push(format!("{property} = {}", member.made));
-            defaults.push(member.default.clone());
         }
         // An arm of no member is one value, an object.
         let simple = if group.is_sum() {
@@ -295,14 +313,31 @@ pub(crate) fn member_read(
             format!("{held}.{property}")
         };
     }
+    // What an arm that holds the member reads it by: its property, or one of
+    // the two lists of one count it holds as one `Aligned` (docs/adr/0065 §6
+    // R5).
+    let read = |arm: &GroupArm| -> String {
+        if let Some(second) = group.second_of(arm, id) {
+            format!("_g.{}.first", aligned_property(l, id, second))
+        } else if group.is_second_in(arm, id) {
+            let (first, _) = group
+                .aligned
+                .as_ref()
+                .expect("the second of two lists of one count is aligned");
+            format!("_g.{}.second", aligned_property(l, first, id))
+        } else {
+            format!("_g.{property}")
+        }
+    };
     let mut cases: Vec<String> = group
         .arms
         .iter()
         .filter(|arm| arm.fields.iter().any(|f| f == id))
         .map(|arm| {
             format!(
-                "is {} -> _g.{property}",
-                group_arm_class(struct_name, group, arm)
+                "is {} -> {}",
+                group_arm_class(struct_name, group, arm),
+                read(arm)
             )
         })
         .collect();
@@ -310,4 +345,14 @@ pub(crate) fn member_read(
         cases.push("else -> null".to_string());
     }
     format!("when (val _g = {held}) {{ {} }}", cases.join("; "))
+}
+
+/// The runtime's class of two lists of one count (docs/adr/0065 §6 R5),
+/// written whole so the codec's file imports nothing for it.
+pub(crate) const ALIGNED: &str = "com.sce.forge.runtime.Aligned";
+
+/// The property an arm holds the two lists `first` and `second` of one count
+/// in, as one [`ALIGNED`], named as every printer names it (`aligned_name`).
+pub(crate) fn aligned_property(l: &LangCtx, first: &str, second: &str) -> String {
+    super::super::rust_source::aligned_name(&l.codec_field_id(first), &l.codec_field_id(second))
 }

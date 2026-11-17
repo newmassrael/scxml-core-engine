@@ -315,7 +315,8 @@ fn a_list_derives_its_count_and_writes_each_entry_by_its_codec() {
         &text,
         &[
             "value class CodecRepeatBasicFragsList private constructor(\
-             val entries: List<CodecRepeatElemSource>) {\n",
+             val entries: List<CodecRepeatElemSource>) : com.sce.forge.runtime.Counted {\n",
+            "    override val size: Int\n        get() = entries.size\n",
             "        const val MOST: Int = 32\n",
             "if (entries.size <= MOST) CodecRepeatBasicFragsList(entries.toList()) else null\n",
             "    val frags: CodecRepeatBasicFragsList\n",
@@ -570,6 +571,40 @@ fn a_disjunctions_flags_are_derived_from_the_arm_the_value_holds() {
             " else null\n",
         ],
     );
+}
+
+/// Two lists of one count (docs/adr/0065 §6 R5) are one member of the arm that
+/// holds both, the runtime's `Aligned` of the two, which makes no value of two
+/// lists of different counts; the encode derives the count from the first and
+/// reads each list out of the pair, and the decode pairs what it read.
+///
+/// Turns red where `kotlin_source::positional_forms` names two lists of one
+/// count unlowered, `group::declare` holds the second list as a member of its
+/// own, `group::member_read` reads a list other than out of the pair, or
+/// `bounded_list_class` stops implementing the runtime's `Counted`.
+#[test]
+fn two_lists_of_one_count_are_one_aligned_member_of_their_arm() {
+    let name = "codec_repeat_unconditional_count";
+    assert!(unlowered(name).is_empty(), "{name}: {:?}", unlowered(name));
+    let text = resource_file(name);
+    holds(
+        name,
+        &text,
+        &[
+            "        val links_weights: com.sce.forge.runtime.Aligned<\
+             CodecRepeatUnconditionalCountLinksList, CodecRepeatUnconditionalCountWeightsList> \
+             = com.sce.forge.runtime.Aligned.of(CodecRepeatUnconditionalCountLinksList.fewest(), \
+             CodecRepeatUnconditionalCountWeightsList.fewest())!!\n",
+            " -> _g.links_weights.first; ",
+            " -> _g.links_weights.second; else -> null }\n",
+            "            val _d_links_len = _e_links.entries.size",
+            "links_weights = com.sce.forge.runtime.Aligned.of(\
+             CodecRepeatUnconditionalCountLinksList.of(links) ?: return null, \
+             CodecRepeatUnconditionalCountWeightsList.of(weights!!) ?: return null) \
+             ?: return null",
+        ],
+    );
+    holds_none(name, &text, &["var weights: ", "var links: "]);
 }
 
 /// An input a group decides (docs/adr/0065 §6 R4b) is said by the value: set
@@ -890,6 +925,7 @@ fn every_printed_kotlin_codec_compiles_under_werror() {
         .join("../backends/kotlin/forge-runtime/src/commonMain/kotlin/com/sce/forge/runtime");
     sources.push(runtime.join("Codec.kt"));
     sources.push(runtime.join("Utf8.kt"));
+    sources.push(runtime.join("Aligned.kt"));
     let out = std::process::Command::new(&kotlinc)
         .arg("-Werror")
         .arg("-d")
@@ -978,6 +1014,7 @@ fn the_kotlin_backend_prints_each_codec_of_the_resources_whose_forms_it_lowers()
         "codec_present_if_length_ref",
         "codec_present_if_disjunction",
         "codec_zenoh_init_body",
+        "codec_repeat_unconditional_count",
     ] {
         assert!(
             printed.iter().any(|stem| stem == name),

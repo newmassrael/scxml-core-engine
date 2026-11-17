@@ -1470,6 +1470,17 @@ old encode, the old encode and its templates are removed in the same landing.
    Considered and refused: arms of `var` properties, which would let a value change one member of an arm in place
    where §2 makes an arm a value; and a flat class of optional members, which is the struct the group replaces.
    Two lists of one count and a group of a chain's memberships stay unlowered.
+
+   *The thirteenth Kotlin landing, 2026-11-17:* two lists of one count (§6 R5). The Kotlin runtime gains
+   `Counted`, what a list class answers its count by, which every printed list class implements, and
+   `Aligned<A : Counted, B : Counted>`, a class whose constructor is private and whose `of` makes a value only of
+   two lists of one count, so the encode that writes the one count of both refuses nothing, as §2 gives Kotlin a
+   refinement. The arm that holds both lists holds them as one member named as every printer names it
+   (`aligned_name`); the encode reads each list out of the pair and derives the count from the first, the plan
+   measuring the second not at all (`counted_with_another`); the decode pairs the two lists it read. Considered and
+   refused: a class generated for each pair, which would spell one check once per codec where the runtime spells
+   it once; and a generic `of` handed a counting function, which a list class that answers its own count makes
+   needless.
 5. Swift, when its codec lowers what the plan holds.
    *Swift lowers what the plan holds, 2026-11-16:* its codec writes every codec of the repository Rust writes,
    but the one only an MCU-class backend writes (`a_swift_codec_is_written_wherever_rust_writes_one.rs`): an

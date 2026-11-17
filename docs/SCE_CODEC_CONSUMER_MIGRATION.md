@@ -2464,3 +2464,14 @@ decides, a length stated on the side without its content, and a disjunction of f
   over. A flag input a group decides is said by the value (`{Codec}.input<Name>(src)`) and no longer handed to the
   encode over a source.
 
+## A printed Kotlin codec holds two lists of one count as one `Aligned` (ADR 0081 step 4)
+
+Landing: the commit that adds this section; every Kotlin tree is regenerated after it. The printed set grows by the
+codecs that write one count for a list always there and a list one flag gates (ADR 0065 §6 R5).
+
+- The arm of the group that holds both lists holds them as one member, `{first}_{second}` (`links_weights`), a
+  `com.sce.forge.runtime.Aligned<{First}List, {Second}List>`, which only `Aligned.of(first, second)` makes,
+  answering `null` for two lists of different counts. Read the lists as `.first` and `.second`. The arm that holds
+  the first list alone holds it as a member of its own name.
+- Every printed list class implements `com.sce.forge.runtime.Counted`: `.size` is how many entries it holds.
+

@@ -146,16 +146,11 @@ fn positional_forms(plan: &EncodePlan<'_>, imports: &[ImportContext]) -> Vec<Str
     // `null` where the gates allow no arm; its gates are flags of the codec's
     // own or flag inputs, derived from the arm the value holds, and its
     // members are held as an element alone is, always there in the arm that
-    // holds them.
+    // holds them, and two lists of one count (R5) as one `Aligned` of the two.
     for group in plan.groups() {
         let label = super::rust_source::gates_label(group);
         if group.chain().is_some() {
             forms.push(format!("group '{label}': a group of a chain's memberships"));
-        }
-        if group.aligned.is_some() {
-            forms.push(format!(
-                "group '{label}': a group of two lists of one count"
-            ));
         }
         for id in group.fields() {
             let member = m
@@ -985,7 +980,12 @@ fn bounded_list_class(
          /// private and [of] makes a value only of entries within the bound, which it\n\
          /// copies, so no list it was made of can grow it past its bound after.\n\
          @JvmInline\n\
-         value class {class} private constructor(val entries: List<{entry}>) {{\n\
+         value class {class} private constructor(val entries: List<{entry}>) : \
+         com.sce.forge.runtime.Counted {{\n\
+         \x20   /// How many entries the list holds, the count a frame writes of it.\n\
+         \x20   override val size: Int\n\
+         \x20       get() = entries.size\n\
+         \n\
          \x20   companion object {{{most}\n\
          \x20       /// `entries` as a value of the bound, or `null` where they lie outside it.\n\
          \x20       fun of(entries: List<{entry}>): {class}?{of}\n\
