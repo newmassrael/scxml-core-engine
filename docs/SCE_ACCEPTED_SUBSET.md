@@ -4093,7 +4093,15 @@ in the header, since a struct names a type only after it is declared.
 `static_payload_enum` holds every backend to it, `a_payload_holds_an_enum_field.rs`
 holds what the judge knows of it, and
 `a_payload_enum_field_is_held_in_the_machines_own_enum_on_every_backend_that_lowers_it`
-reads the generated machines. Measured 2026-10-04, Rust, Go, Kotlin, Python and C++
+reads the generated machines. The field is the same value of its enum beside a field
+that holds a list, a record or a union, of the payload, of a record variable and of a
+loop's record item alike: the judge reads the enum fields from the schema whole, not
+from its view of one entry per field, which a schema that holds a composition has none
+of. Measured 2026-11-17, a comparison of such a field with a variant of its own enum
+was refused as one with another enum's value. `static_payload_enum_grown` holds every
+backend to it, through a list of records a later revision added, and
+`an_enum_field_beside_a_composed_field_is_a_value_of_its_enum.rs` the judge and the
+lowering. Measured 2026-10-04, Rust, Go, Kotlin, Python and C++
 had stopped on such a read with a panic (exit 101, "reached a context built by
 `LangCtx::primitive`") and only C refused; the payload structs of a machine that
 holds an enum derive no `Default` in Rust, since the enum has no value to start from.
