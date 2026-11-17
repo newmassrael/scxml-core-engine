@@ -933,20 +933,88 @@ fn an_input_the_arms_say_is_read_through_the_arm_the_source_presents() {
     );
 }
 
-/// A codec whose plan uses a form the C11 printer does not lower keeps the
-/// template's encode whole: a group of fields and a CBOR map each name their
-/// form, and neither has an encode over a source.
+/// A group of fields one flag decides is held as one member of the value, the
+/// struct of its arm, absent where the flag allows no arm: the source presents
+/// it as the value holds it, the encode binds each member off the arm to the
+/// optional value a gated element is read into and derives the flag from it,
+/// and the decode reads each member into a local and makes the arm the flag
+/// it read selects. No member of the group is a member of the value's own.
 ///
-/// Turns red where `c11_source::positional_forms` stops naming a group, or
-/// `unlowered_forms` a CBOR map, or where the template prints the encode over
-/// a source for a codec it keeps.
+/// Turns red where `c11_source::positional_forms` names a group of numbers
+/// again, where `group::Group::declare` stops holding the members in the
+/// arm's struct, where `member_read` binds a member off anything but the arm,
+/// or where `Group::decoded` makes the arm of other than the decode's locals.
+#[test]
+fn a_group_is_held_as_the_struct_of_its_arm() {
+    assert!(unlowered("codec_group_enum").is_empty());
+    let text = resource_header("codec_group_enum");
+    holds(
+        "codec_group_enum",
+        &text,
+        &[
+            "    uint8_t attempts;\n} codec_group_enum_flags_has_session_t;\n",
+            "SCE_OPTIONAL_DECLARE_NAMED(codec_group_enum_flags_has_session_optional, \
+             codec_group_enum_flags_has_session_t)\n",
+            "    codec_group_enum_flags_has_session_optional_t flags_has_session;\n",
+            "    codec_group_enum_flags_has_session_optional_t (*flags_has_session)(const void *ctx);\n",
+            "    const codec_group_enum_flags_has_session_optional_t _e_flags_has_session = \
+             src->flags_has_session(ctx);\n",
+            "    const sce_optional_uint8_t _e_attempts = (_e_flags_has_session.present ? \
+             sce_optional_uint8_some(_e_flags_has_session.value.attempts) : \
+             sce_optional_uint8_none());\n",
+            "uint8_t _d_attempts = 0;\n    if (",
+            "    memset(&out->flags_has_session, 0, sizeof out->flags_has_session);\n    \
+             if (((((uint64_t)out->flags >> 0) & 1u) != 0)) {\n        \
+             out->flags_has_session.present = true;\n",
+            "        out->flags_has_session.value.attempts = _d_attempts;\n",
+        ],
+    );
+    holds_none(
+        "codec_group_enum",
+        &text,
+        &["out->attempts", "self->attempts", "src->attempts"],
+    );
+}
+
+/// A group of fields a flag input decides says the input: set exactly where
+/// the value holds the group's arm, which the input's own function answers
+/// for a parent, and the decode tests the input it is handed to make the arm.
+///
+/// Turns red where `c11_source::said_input` stops reading an input a group
+/// decides off the group, or where `Group::decoded` tests an input other than
+/// as the decode is handed it.
+#[test]
+fn an_input_a_group_decides_is_said_by_the_arm_the_value_holds() {
+    assert!(unlowered("codec_init_syn_body").is_empty());
+    let text = resource_header("codec_init_syn_body");
+    holds(
+        "codec_init_syn_body",
+        &text,
+        &[
+            "static inline uint8_t codec_init_syn_body_input_s(\
+             const codec_init_syn_body_source_t *src, const void *ctx) {\n    \
+             return (uint8_t)((src->s(ctx).present) ? 1u : 0u);\n}\n",
+            "    if ((s != 0)) {\n        out->s.present = true;\n",
+        ],
+    );
+    holds_none(
+        "codec_init_syn_body",
+        &text,
+        &["sce_forge_writer_t *w, uint8_t s)"],
+    );
+}
+
+/// A codec whose plan uses a form the C11 printer does not lower keeps the
+/// template's encode whole: a group of a chain's memberships and a CBOR map
+/// each name their form, and neither has an encode over a source.
+///
+/// Turns red where `c11_source::positional_forms` stops naming a group of a
+/// chain's memberships, or `unlowered_forms` a CBOR map, or where the
+/// template prints the encode over a source for a codec it keeps.
 #[test]
 fn a_codec_of_a_form_the_printer_does_not_lower_keeps_the_template_encode() {
     for (name, form) in [
-        (
-            "codec_group_enum",
-            "a group of fields a gate decides together",
-        ),
+        ("codec_chain_has_marker", "a group of a chain's memberships"),
         ("codec_cbor_map", "a CBOR map"),
     ] {
         let forms = unlowered(name);
@@ -1058,6 +1126,9 @@ fn the_c11_backend_prints_each_codec_of_the_resources_whose_forms_it_lowers() {
         "codec_some_arms_say",
         "codec_some_arms_say_parent",
         "codec_some_arms_say_forward",
+        "codec_group_enum",
+        "codec_init_syn_body",
+        "codec_init_syn_envelope",
     ] {
         assert!(
             printed.iter().any(|stem| stem == name),
