@@ -2028,6 +2028,23 @@ old encode, the old encode and its templates are removed in the same landing.
    entry (R7) with `SCE_FORGE_CODEC_LENGTH_OUT_OF_RANGE`, which the runtime's declaration now names for a list below
    its fewest. Lowering the overrides also prints the codecs of one-bit flags the value presents whole
    (`codec_flags_basic`), which the fourth landing had left on the template by naming every overridable flag a form.
+
+   *The ninth C11 landing, 2026-11-17:* flag inputs. An input the value does not say (`EncodePlan::given`) is a
+   parameter of the encode, `uint8_t <name>` after the writer and before the overrides, named as the decode names it,
+   and the value's `encode` and `encode_to_buf` take the same ones (the template's `encode_params_after_first_arg`,
+   which on the template's encode is every input). An input the value says (`EncodePlan::said`), off the one field
+   gated on it or off a body always there that says it, is read off the source into a local of its name where a gate,
+   a check or a held codec reads it, and `{codec}_input_<name>(src, ctx)` answers it for a parent, a
+   `sce_optional_uint8_t` where the value says it in some of its values only (§6 R4e). A body and a list's entries are
+   handed what their import binds, a carrier's bits as the encode writes them or an input passed on, so a body's
+   encoded length is counted once the carriers are folded. A flag a held body says is derived through the body's
+   function of it (`Measured::Says`). A gate is tested on the carriers and the inputs alike; the gates the encode
+   holds a field to rather than derives (`gate_checks`) and the inputs a held codec says beside what it is handed
+   (`input_checks`) are refused with `SCE_FORGE_CODEC_PRESENT_IF_MISMATCH` before the first byte. A parent on the
+   template hands a printed codec only the inputs it does not say, and a broadcast log over a printed element reads
+   the flags the element says off it, as the C++ log does (`ForgeCompileOptions::element_type_c11_printed`). An input
+   an arm, a group or a list's start says, a gate of a chain's membership, and an input a chain's entry says of the
+   entry before stay unlowered with the forms that hold them.
 5. Swift, when its codec lowers what the plan holds.
    *Swift lowers what the plan holds, 2026-11-16:* its codec writes every codec of the repository Rust writes,
    but the one only an MCU-class backend writes (`a_swift_codec_is_written_wherever_rust_writes_one.rs`): an
