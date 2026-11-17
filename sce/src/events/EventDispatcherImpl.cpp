@@ -39,11 +39,11 @@ public:
         // A target found and not reached (a BasicHTTP POST that never reached
         // its server) is reported as a missing one is, by the one reading of
         // why a send failed (UndeliveredSendReport.h).
-        const char *report = delivered.isSuccess ? nullptr : errorEventForFailedSend(delivered.errorType);
-        if (report != nullptr) {
+        const std::optional<Common::ErrorReason> reason =
+            delivered.isSuccess ? std::optional<Common::ErrorReason>{} : errorReasonForFailedSend(delivered.errorType);
+        if (reason) {
             if (auto sender = EventRaiserService::getInstance().getEventRaiser(event.sessionId)) {
-                sender->raiseEvent(report, delivered.errorMessage, event.sendId,
-                                   false /* overload discriminator for sendId variant */);
+                sender->raiseError(*reason, delivered.errorMessage, event.sendId);
             }
         }
         std::promise<SendResult> reported;

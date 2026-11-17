@@ -94,7 +94,7 @@ bool ActionExecutorImpl::executeScript(const std::string &script) {
             // false ends the block (§scxml-4.9).
             handleJSError("script execution", "Script execution failed");
             if (eventRaiser_ && eventRaiser_->isReady()) {
-                eventRaiser_->raiseEvent("error.execution", "<script> failed to execute");
+                eventRaiser_->raiseError(Common::ErrorReason::ScriptFailed, "<script> failed to execute");
             }
             return false;
         }
@@ -105,7 +105,7 @@ bool ActionExecutorImpl::executeScript(const std::string &script) {
     } catch (const std::exception &e) {
         handleJSError("script execution", e.what());
         if (eventRaiser_ && eventRaiser_->isReady()) {
-            eventRaiser_->raiseEvent("error.execution", "<script> failed to execute");
+            eventRaiser_->raiseError(Common::ErrorReason::ScriptFailed, "<script> failed to execute");
         }
         return false;
     }
@@ -122,7 +122,8 @@ bool ActionExecutorImpl::assignVariable(const std::string &location, const Scrip
         SCE_LOG_ERROR("W3C SCXML 5.4/B.2: {}", AssignHelper::getInvalidLocationErrorMessage(location));
         // §scxml-5.4: Raise error.execution for invalid location
         if (eventRaiser_) {
-            eventRaiser_->raiseEvent("error.execution", AssignHelper::getInvalidLocationErrorMessage(location));
+            eventRaiser_->raiseError(Common::ErrorReason::LocationInvalid,
+                                     AssignHelper::getInvalidLocationErrorMessage(location));
         }
         return false;
     }
@@ -137,7 +138,7 @@ bool ActionExecutorImpl::assignVariable(const std::string &location, const Scrip
         SCE_LOG_ERROR("Invalid variable location: {}", location);
         // §scxml-5.4: Raise error.execution for invalid location
         if (eventRaiser_) {
-            eventRaiser_->raiseEvent("error.execution", "Invalid assignment location: " + location);
+            eventRaiser_->raiseError(Common::ErrorReason::LocationInvalid, "Invalid assignment location: " + location);
         }
         return false;
     }
@@ -146,7 +147,7 @@ bool ActionExecutorImpl::assignVariable(const std::string &location, const Scrip
         SCE_LOG_ERROR("Session {} not ready for variable assignment", sessionId_);
         // §scxml-5.9: Raise error.execution for session not ready
         if (eventRaiser_) {
-            eventRaiser_->raiseEvent("error.execution", "Session not ready for assignment");
+            eventRaiser_->raiseError(Common::ErrorReason::AssignmentFailed, "Session not ready for assignment");
         }
         return false;
     }
@@ -176,7 +177,7 @@ bool ActionExecutorImpl::assignVariable(const std::string &location, const Scrip
                 // §scxml-5.9.3: the value expression did not return a legal data
                 // value, so error.execution goes on the internal queue
                 if (eventRaiser_) {
-                    eventRaiser_->raiseEvent("error.execution",
+                    eventRaiser_->raiseError(Common::ErrorReason::AssignmentFailed,
                                              "Assignment failed - location: " + location + ", expr: " + expr.source());
                 }
             });
@@ -193,7 +194,8 @@ bool ActionExecutorImpl::assignVariable(const std::string &location, const Scrip
         // §scxml-5.9.3: an expression that threw returned no legal data value
         // either, and the same error is owed
         if (eventRaiser_) {
-            eventRaiser_->raiseEvent("error.execution", std::string("Assignment exception: ") + e.what());
+            eventRaiser_->raiseError(Common::ErrorReason::AssignmentFailed,
+                                     std::string("Assignment exception: ") + e.what());
         }
         return false;
     }
@@ -596,7 +598,8 @@ bool ActionExecutorImpl::executeLogAction(const LogAction &action) {
 
         // §scxml-5.9: Raise error.execution event for expression evaluation failure
         if (eventRaiser_) {
-            eventRaiser_->raiseEvent("error.execution", std::string("Log action failed: ") + e.what());
+            eventRaiser_->raiseError(Common::ErrorReason::ExpressionFailed,
+                                     std::string("Log action failed: ") + e.what());
         }
 
         return false;
@@ -717,7 +720,7 @@ std::optional<bool> ActionExecutorImpl::evaluateConditionReportingFailure(const 
         SCE_LOG_ERROR("W3C SCXML 5.9: Guard evaluation failed: '{}'", condition);
 
         if (eventRaiser_) {
-            eventRaiser_->raiseEvent("error.execution", "Guard evaluation failed: " + condition);
+            eventRaiser_->raiseError(Common::ErrorReason::ExpressionFailed, "Guard evaluation failed: " + condition);
         }
         return std::nullopt;
     }
@@ -762,8 +765,8 @@ bool ActionExecutorImpl::executeSendAction(const SendAction &action) {
         if (!action.getDelay().empty() && !SendSchedulingHelper::parseDelayString(action.getDelay())) {
             SCE_LOG_ERROR("ActionExecutorImpl: <send> delay '{}' is not a CSS2 time", action.getDelay());
             if (eventRaiser_) {
-                eventRaiser_->raiseEvent("error.execution", "<send> delay is not a CSS2 time", sendId,
-                                         false /* overload discriminator for sendId variant */);
+                eventRaiser_->raiseError(Common::ErrorReason::SendDelayInvalid, "<send> delay is not a CSS2 time",
+                                         sendId);
             }
             return false;
         }
@@ -808,9 +811,9 @@ bool ActionExecutorImpl::executeSendAction(const SendAction &action) {
                 SCE_LOG_ERROR("Send action eventexpr evaluated to empty: {}", action.getEventExpr());
                 // §scxml-5.10: Generate error.execution event with sendid for failed send
                 if (eventRaiser_) {
-                    eventRaiser_->raiseEvent("error.execution",
+                    eventRaiser_->raiseError(Common::ErrorReason::ExpressionFailed,
                                              "Send action eventexpr evaluated to empty: " + action.getEventExpr(),
-                                             sendId, false /* overload discriminator for sendId variant */);
+                                             sendId);
                 }
                 return false;
             }
@@ -823,8 +826,8 @@ bool ActionExecutorImpl::executeSendAction(const SendAction &action) {
                 SCE_LOG_ERROR("Send action has no event or eventexpr");
                 // §scxml-5.10: Generate error.execution event with sendid for failed send
                 if (eventRaiser_) {
-                    eventRaiser_->raiseEvent("error.execution", "Send action has no event or eventexpr", sendId,
-                                             false /* overload discriminator for sendId variant */);
+                    eventRaiser_->raiseError(Common::ErrorReason::ExpressionFailed,
+                                             "Send action has no event or eventexpr", sendId);
                 }
                 return false;
             }
@@ -845,8 +848,7 @@ bool ActionExecutorImpl::executeSendAction(const SendAction &action) {
         if (!SendHelper::validateTarget(sendType, target, targetErrorMsg)) {
             SCE_LOG_ERROR("ActionExecutorImpl: {}", targetErrorMsg);
             if (eventRaiser_) {
-                eventRaiser_->raiseEvent("error.execution", targetErrorMsg, sendId,
-                                         false /* overload discriminator for sendId variant */);
+                eventRaiser_->raiseError(Common::ErrorReason::SendTargetInvalid, targetErrorMsg, sendId);
             }
             return false;
         }
@@ -856,9 +858,9 @@ bool ActionExecutorImpl::executeSendAction(const SendAction &action) {
         if (!action.getTargetExpr().empty() && SendHelper::isUnreachableTarget(target)) {
             SCE_LOG_ERROR("ActionExecutorImpl: Send target evaluation resulted in invalid target: '{}'", target);
             if (eventRaiser_) {
-                eventRaiser_->raiseEvent("error.communication",
+                eventRaiser_->raiseError(Common::ErrorReason::TargetUnreachable,
                                          "Target session does not exist or is inaccessible: " + action.getTargetExpr(),
-                                         sendId, false /* overload discriminator for sendId variant */);
+                                         sendId);
             }
             return false;
         }
@@ -868,7 +870,7 @@ bool ActionExecutorImpl::executeSendAction(const SendAction &action) {
         if (!SendHelper::validateBasicHttpSend(sendType, target, action.getTargetExpr(), errorMsg)) {
             SCE_LOG_ERROR("ActionExecutorImpl: {}", errorMsg);
             if (eventRaiser_) {
-                eventRaiser_->raiseEvent("error.communication", errorMsg, sendId, false);
+                eventRaiser_->raiseError(Common::ErrorReason::HttpTargetInvalid, errorMsg, sendId);
             }
             return false;
         }
@@ -884,8 +886,8 @@ bool ActionExecutorImpl::executeSendAction(const SendAction &action) {
             SCE_LOG_ERROR("ActionExecutorImpl: Unsupported send type: {}", sendType);
             // §scxml-5.10: Generate error.execution event with sendid for failed send
             if (eventRaiser_) {
-                eventRaiser_->raiseEvent("error.execution", "Unsupported send type: " + sendType, sendId,
-                                         false /* overload discriminator for sendId variant */);
+                eventRaiser_->raiseError(Common::ErrorReason::SendTypeUnsupported, "Unsupported send type: " + sendType,
+                                         sendId);
             }
             return false;
         }
@@ -931,7 +933,7 @@ bool ActionExecutorImpl::executeSendAction(const SendAction &action) {
                     // produces an error, the Processor MUST discard the
                     // message without attempting to deliver it (test 553)
                     if (eventRaiser_) {
-                        eventRaiser_->raiseEvent("error.execution", errorMsg, sendId, false);
+                        eventRaiser_->raiseError(Common::ErrorReason::LocationInvalid, errorMsg, sendId);
                     }
                 },
                 &typedParams);
@@ -966,7 +968,7 @@ bool ActionExecutorImpl::executeSendAction(const SendAction &action) {
                 if (paramValueExpr.empty()) {
                     SCE_LOG_ERROR("ActionExecutorImpl: <send> <param name='{}'> names no location", param.name);
                     if (eventRaiser_) {
-                        eventRaiser_->raiseEvent("error.execution",
+                        eventRaiser_->raiseError(Common::ErrorReason::LocationInvalid,
                                                  "<send> <param name='" + param.name + "'> names no location");
                     }
                     aParamFailed = true;
@@ -990,8 +992,10 @@ bool ActionExecutorImpl::executeSendAction(const SendAction &action) {
                         SCE_LOG_ERROR("ActionExecutorImpl: Failed to evaluate param '{}' expr '{}'", param.name,
                                       paramValueExpr);
                         if (eventRaiser_) {
-                            eventRaiser_->raiseEvent("error.execution", "<send> <param name='" + param.name +
-                                                                            "'> expr failed to evaluate");
+                            eventRaiser_->raiseError(param.expr.empty() ? Common::ErrorReason::LocationInvalid
+                                                                        : Common::ErrorReason::ExpressionFailed,
+                                                     "<send> <param name='" + param.name +
+                                                         "'> expr failed to evaluate");
                         }
                         aParamFailed = true;
                         continue;
@@ -1010,7 +1014,8 @@ bool ActionExecutorImpl::executeSendAction(const SendAction &action) {
                     // §scxml-5.7.1: a throwing engine is the same failure as a
                     // result that reports one — same two halves, same answer.
                     if (eventRaiser_) {
-                        eventRaiser_->raiseEvent("error.execution",
+                        eventRaiser_->raiseError(param.expr.empty() ? Common::ErrorReason::LocationInvalid
+                                                                    : Common::ErrorReason::ExpressionFailed,
                                                  "<send> <param name='" + param.name + "'> expr failed to evaluate");
                     }
                     aParamFailed = true;
@@ -1036,7 +1041,7 @@ bool ActionExecutorImpl::executeSendAction(const SendAction &action) {
                                             contentData, [this, &contentFailed](const std::string &msg) {
                                                 SCE_LOG_ERROR("ActionExecutorImpl: <send> contentexpr: {}", msg);
                                                 if (eventRaiser_) {
-                                                    eventRaiser_->raiseEvent("error.execution",
+                                                    eventRaiser_->raiseError(Common::ErrorReason::ExpressionFailed,
                                                                              "<send> contentexpr failed to evaluate");
                                                 }
                                                 contentFailed = true;
@@ -1082,8 +1087,8 @@ bool ActionExecutorImpl::executeSendAction(const SendAction &action) {
             if (!parsed) {
                 SCE_LOG_ERROR("ActionExecutorImpl: <send> delayexpr value '{}' is not a CSS2 time", delayStr);
                 if (eventRaiser_) {
-                    eventRaiser_->raiseEvent("error.execution", "<send> delayexpr is not a CSS2 time", sendId,
-                                             false /* overload discriminator for sendId variant */);
+                    eventRaiser_->raiseError(Common::ErrorReason::SendDelayInvalid,
+                                             "<send> delayexpr is not a CSS2 time", sendId);
                 }
                 return false;
             }
@@ -1114,9 +1119,8 @@ bool ActionExecutorImpl::executeSendAction(const SendAction &action) {
             request.eventData = delivery.payload();
             request.invokeId = currentInvokeId_;
             if (!performHostServedSend(request, delay) && eventRaiser_) {
-                eventRaiser_->raiseEvent("error.execution",
-                                         "<send type='" + sendType + "' delay> could not wait on a scheduler", sendId,
-                                         false /* overload discriminator for sendId variant */);
+                eventRaiser_->raiseError(Common::ErrorReason::SendDelayInvalid,
+                                         "<send type='" + sendType + "' delay> could not wait on a scheduler", sendId);
                 return false;
             }
             return !aParamFailed && !contentFailed;
@@ -1130,9 +1134,9 @@ bool ActionExecutorImpl::executeSendAction(const SendAction &action) {
         if (!isAddressedSessionReachable(target)) {
             SCE_LOG_ERROR("ActionExecutorImpl: <send> target '{}' names a session this processor cannot reach", target);
             if (eventRaiser_) {
-                eventRaiser_->raiseEvent("error.communication",
+                eventRaiser_->raiseError(Common::ErrorReason::TargetUnreachable,
                                          "<send target='" + target + "'> names a session this processor cannot reach",
-                                         sendId, false /* overload discriminator for sendId variant */);
+                                         sendId);
             }
             return false;
         }
@@ -1195,10 +1199,9 @@ bool ActionExecutorImpl::executeSendAction(const SendAction &action) {
                     // (SCE_MESH.md, Errors): error.execution, as every other
                     // backend raises it. One reading of why a send failed for
                     // this and the delayed delivery (UndeliveredSendReport.h).
-                    const char *report = errorEventForFailedSend(result.errorType);
-                    if (report != nullptr && eventRaiser_) {
-                        eventRaiser_->raiseEvent(report, result.errorMessage, sendId,
-                                                 false /* overload discriminator for sendId variant */);
+                    const auto reason = errorReasonForFailedSend(result.errorType);
+                    if (reason && eventRaiser_) {
+                        eventRaiser_->raiseError(*reason, result.errorMessage, sendId);
                     }
                 }
             } catch (const std::exception &e) {
@@ -1213,8 +1216,8 @@ bool ActionExecutorImpl::executeSendAction(const SendAction &action) {
 
             // §scxml-5.10: Generate error.execution event with sendid for failed send
             if (eventRaiser_) {
-                eventRaiser_->raiseEvent("error.execution", "EventDispatcher not available for send action", sendId,
-                                         false /* overload discriminator for sendId variant */);
+                eventRaiser_->raiseError(Common::ErrorReason::ProcessorUnregistered,
+                                         "EventDispatcher not available for send action", sendId);
             }
 
             // SCXML send actions should follow fire-and-forget - infrastructure failures don't affect action success
@@ -1228,7 +1231,7 @@ bool ActionExecutorImpl::executeSendAction(const SendAction &action) {
         // the block (§scxml-4.9).
         SCE_LOG_ERROR("Failed to execute send action: {}", e.what());
         if (eventRaiser_ && eventRaiser_->isReady()) {
-            eventRaiser_->raiseEvent("error.execution", "<send> argument failed to evaluate");
+            eventRaiser_->raiseError(Common::ErrorReason::ExpressionFailed, "<send> argument failed to evaluate");
         }
         return false;
     }
@@ -1278,7 +1281,7 @@ bool ActionExecutorImpl::executeCancelAction(const CancelAction &action) {
         // false ends the block (§scxml-4.9).
         SCE_LOG_ERROR("Failed to execute cancel action: {}", e.what());
         if (eventRaiser_ && eventRaiser_->isReady()) {
-            eventRaiser_->raiseEvent("error.execution", "<cancel> sendidexpr failed to evaluate");
+            eventRaiser_->raiseError(Common::ErrorReason::ExpressionFailed, "<cancel> sendidexpr failed to evaluate");
         }
         return false;
     }
@@ -1365,19 +1368,23 @@ bool ActionExecutorImpl::executeNativeAction(const NativeAction &action) {
     // implement `error.execution`, and the same rule applies to this one.
     SCE_LOG_DEBUG("Executing native action: {}", action.getOperation());
 
-    auto fail = [&](const std::string &reason) {
+    // `code` is the record's reason (docs/adr/0106, #111): an argument that
+    // does not evaluate is `expressionFailed`, one no host operation takes is
+    // `paramUnfit`, and an operation no installed host performs is
+    // `processorUnregistered`, the host's declared part never registered.
+    auto fail = [&](Common::ErrorReason code, const std::string &reason) {
         SCE_LOG_ERROR("Native action '{}' failed: {}", action.getOperation(), reason);
         if (eventRaiser_ && eventRaiser_->isReady()) {
-            eventRaiser_->raiseEvent("error.execution", "<sce:action name='" + action.getOperation() + "'>: " + reason);
+            eventRaiser_->raiseError(code, "<sce:action name='" + action.getOperation() + "'>: " + reason);
         }
         return false;
     };
 
     if (!isSessionReady()) {
-        return fail("the session is not ready");
+        return fail(Common::ErrorReason::ScriptFailed, "the session is not ready");
     }
     if (!nativeActionHost_) {
-        return fail("no host is installed to perform it");
+        return fail(Common::ErrorReason::ProcessorUnregistered, "no host is installed to perform it");
     }
 
     // Every argument is computed before the host is called: a value that cannot
@@ -1390,7 +1397,8 @@ bool ActionExecutorImpl::executeNativeAction(const NativeAction &action) {
         for (const auto &argument : action.getArguments()) {
             auto result = scriptEngine_.evaluateExpression(sessionId_, argument.expr).get();
             if (!result.isSuccess()) {
-                return fail("the argument `" + argument.expr + "` could not be evaluated: " + result.getErrorMessage());
+                return fail(Common::ErrorReason::ExpressionFailed,
+                            "the argument `" + argument.expr + "` could not be evaluated: " + result.getErrorMessage());
             }
             const ScriptValue &value = result.getInternalValue();
             // `null` is the absent value of an argument declared `optional<T>`
@@ -1401,17 +1409,19 @@ bool ActionExecutorImpl::executeNativeAction(const NativeAction &action) {
                                       std::holds_alternative<std::string>(value) ||
                                       std::holds_alternative<ScriptNull>(value);
             if (!takenByAHost) {
-                return fail("the argument `" + argument.expr +
-                            "` is not a bool, a number, a string or null, which is what a host operation takes");
+                return fail(Common::ErrorReason::ParamUnfit,
+                            "the argument `" + argument.expr +
+                                "` is not a bool, a number, a string or null, which is what a host operation takes");
             }
             values.push_back(value);
         }
     } catch (const std::exception &e) {
-        return fail(std::string("an argument could not be evaluated: ") + e.what());
+        return fail(Common::ErrorReason::ExpressionFailed,
+                    std::string("an argument could not be evaluated: ") + e.what());
     }
 
     if (!nativeActionHost_->performNativeAction(action.getOperation(), values)) {
-        return fail("the host provides no such operation");
+        return fail(Common::ErrorReason::ProcessorUnregistered, "the host provides no such operation");
     }
     return true;
 }
@@ -1424,7 +1434,7 @@ bool ActionExecutorImpl::executeForeachAction(const ForeachAction &action) {
     if (!isSessionReady()) {
         SCE_LOG_ERROR("Session {} not ready for foreach action execution", sessionId_);
         if (eventRaiser_ && eventRaiser_->isReady()) {
-            eventRaiser_->raiseEvent("error.execution", "Session not ready");
+            eventRaiser_->raiseError(Common::ErrorReason::ForeachInvalid, "Session not ready");
         }
         return false;
     }
@@ -1439,7 +1449,7 @@ bool ActionExecutorImpl::executeForeachAction(const ForeachAction &action) {
     if (!SCE::Validation::validateForeachAttributes(arrayExpr, itemVar, validationError)) {
         SCE_LOG_ERROR("Foreach validation failed: {}", validationError);
         if (eventRaiser_ && eventRaiser_->isReady()) {
-            eventRaiser_->raiseEvent("error.execution", validationError);
+            eventRaiser_->raiseError(Common::ErrorReason::ForeachInvalid, validationError);
         }
         return false;
     }
@@ -1471,7 +1481,7 @@ bool ActionExecutorImpl::executeForeachAction(const ForeachAction &action) {
     if (outcome == Core::ForeachOutcome::CollectionRejected) {
         SCE_LOG_ERROR("Foreach action execution failed for array expression: {}", arrayExpr);
         if (eventRaiser_ && eventRaiser_->isReady()) {
-            eventRaiser_->raiseEvent("error.execution", "Foreach execution failed");
+            eventRaiser_->raiseError(Common::ErrorReason::ForeachInvalid, "Foreach execution failed");
         }
     }
 

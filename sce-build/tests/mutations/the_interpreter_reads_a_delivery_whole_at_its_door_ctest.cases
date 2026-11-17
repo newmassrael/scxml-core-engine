@@ -43,14 +43,14 @@ PY
 
 mutation_case "the engine takes the refused delivery after all" <<'PY'
 edit("sce/src/runtime/StateMachine.cpp",
-     "    if (!refusal.empty()) {\n        EventMetadata replacement(\"error.execution\", refusal, \"platform\");",
-     "    if (false) {\n        EventMetadata replacement(\"error.execution\", refusal, \"platform\");")
+     "    if (!refusal.empty()) {\n        // Its data is the engine's error record (docs/adr/0106, #111), the\n",
+     "    if (false) {\n        // Its data is the engine's error record (docs/adr/0106, #111), the\n")
 PY
 
 mutation_case "the engine answers the refusal by raising it and goes on with the delivery" <<'PY'
 edit("sce/src/runtime/StateMachine.cpp",
-     "    if (!refusal.empty()) {\n        EventMetadata replacement(\"error.execution\", refusal, \"platform\");",
-     "    if (!refusal.empty() && eventRaiser_) {\n        eventRaiser_->raiseEvent(\"error.execution\", refusal);\n    }\n    if (false) {\n        EventMetadata replacement(\"error.execution\", refusal, \"platform\");")
+     "    if (!refusal.empty()) {\n        // Its data is the engine's error record (docs/adr/0106, #111), the\n",
+     "    if (!refusal.empty() && eventRaiser_) {\n        eventRaiser_->raiseError(Common::ErrorReason::PayloadRefused, refusal);\n    }\n    if (false) {\n        // Its data is the engine's error record (docs/adr/0106, #111), the\n")
 PY
 
 mutation_case "the library lets a refused delivery in" <<'PY'

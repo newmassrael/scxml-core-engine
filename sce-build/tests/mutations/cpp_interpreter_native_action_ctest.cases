@@ -38,7 +38,7 @@ PY
 # An action with no host to perform it returns without a word.
 mutation_case "an action with no host is not an error" <<'PY'
 edit("sce/src/runtime/ActionExecutorImpl.cpp",
-     "        return fail(\"no host is installed to perform it\");\n",
+     "        return fail(Common::ErrorReason::ProcessorUnregistered, \"no host is installed to perform it\");\n",
      "        return true;\n")
 PY
 
@@ -46,7 +46,7 @@ PY
 # success.
 mutation_case "a host's refusal is not an error" <<'PY'
 edit("sce/src/runtime/ActionExecutorImpl.cpp",
-     "        return fail(\"the host provides no such operation\");\n",
+     "        return fail(Common::ErrorReason::ProcessorUnregistered, \"the host provides no such operation\");\n",
      "        return true;\n")
 PY
 
@@ -61,8 +61,8 @@ PY
 # with a value the document never computed.
 mutation_case "an argument that cannot be evaluated is passed on" <<'PY'
 edit("sce/src/runtime/ActionExecutorImpl.cpp",
-     "            if (!result.isSuccess()) {\n                return fail(\"the argument `\"",
-     "            if (false && !result.isSuccess()) {\n                return fail(\"the argument `\"")
+     "            if (!result.isSuccess()) {\n                return fail(Common::ErrorReason::ExpressionFailed,\n",
+     "            if (false && !result.isSuccess()) {\n                return fail(Common::ErrorReason::ExpressionFailed,\n")
 PY
 
 # The host installed before start is not given to the executor the machine

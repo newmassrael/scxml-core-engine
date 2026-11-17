@@ -220,11 +220,11 @@ std::string SCXMLInvokeHandler::startInvokeInternal(const std::shared_ptr<IInvok
     // the state it was in — which is what
     // `integration_resources/invoke_expression_failure_is_reported/`
     // measured on the day it was added.
-    const auto raiseExecutionError = [&](const std::string &detail) {
+    const auto raiseExecutionError = [&](Common::ErrorReason reason, const std::string &detail) {
         SCE_LOG_ERROR("SCXMLInvokeHandler: {}", detail);
         auto eventRaiser = EventRaiserService::getInstance().getEventRaiser(parentSessionId);
         if (eventRaiser) {
-            eventRaiser->raiseEvent("error.execution", detail);
+            eventRaiser->raiseError(reason, detail);
         } else {
             SCE_LOG_ERROR("SCXMLInvokeHandler: No EventRaiser for session '{}' - error.execution dropped",
                           parentSessionId);
@@ -253,7 +253,8 @@ std::string SCXMLInvokeHandler::startInvokeInternal(const std::shared_ptr<IInvok
             SCE_LOG_DEBUG("SCXMLInvokeHandler: contentexpr '{}' evaluated to content of length {}",
                           invoke->getContentExpr(), scxmlContent.length());
         } else {
-            raiseExecutionError("<invoke contentexpr='" + invoke->getContentExpr() + "'> could not be evaluated");
+            raiseExecutionError(Common::ErrorReason::ExpressionFailed,
+                                "<invoke contentexpr='" + invoke->getContentExpr() + "'> could not be evaluated");
             return "";
         }
     }
@@ -290,11 +291,13 @@ std::string SCXMLInvokeHandler::startInvokeInternal(const std::shared_ptr<IInvok
                 // subsection instead and the citation gate refused it: the
                 // sentence being attributed is not in that subsection, which
                 // is the defect this comment would otherwise have been.
-                raiseExecutionError("<invoke> could not load '" + evaluatedSrc + "'");
+                raiseExecutionError(Common::ErrorReason::InvokeSrcNotFound,
+                                    "<invoke> could not load '" + evaluatedSrc + "'");
                 return "";
             }
         } else {
-            raiseExecutionError("<invoke srcexpr='" + invoke->getSrcExpr() + "'> could not be evaluated");
+            raiseExecutionError(Common::ErrorReason::ExpressionFailed,
+                                "<invoke srcexpr='" + invoke->getSrcExpr() + "'> could not be evaluated");
             return "";
         }
     }
@@ -308,7 +311,8 @@ std::string SCXMLInvokeHandler::startInvokeInternal(const std::shared_ptr<IInvok
             // wording for both: what the author needs is which document did
             // not load, and the attribute it came from is already in their
             // source.
-            raiseExecutionError("<invoke> could not load '" + invoke->getSrc() + "'");
+            raiseExecutionError(Common::ErrorReason::InvokeSrcNotFound,
+                                "<invoke> could not load '" + invoke->getSrc() + "'");
             return "";
         }
     }
@@ -325,7 +329,10 @@ std::string SCXMLInvokeHandler::startInvokeInternal(const std::shared_ptr<IInvok
     // is why this runs before the child session exists.
     if (!invoke->getIdLocation().empty()) {
         if (!AssignmentExecutionHelper::storeIdInLocation(scriptEngine_, parentSessionId, invoke->getIdLocation(),
-                                                          invokeid, raiseExecutionError)) {
+                                                          invokeid, [&raiseExecutionError](const std::string &detail) {
+                                                              raiseExecutionError(Common::ErrorReason::LocationInvalid,
+                                                                                  detail);
+                                                          })) {
             return "";
         }
         SCE_LOG_DEBUG("SCXMLInvokeHandler: Set idlocation '{}' = '{}' in parent session '{}'", invoke->getIdLocation(),
@@ -633,10 +640,10 @@ std::string SCXMLInvokeHandler::startInvokeInternal(const std::shared_ptr<IInvok
 
     // §scxml-6.4: an argument of this <invoke> that cannot be read costs
     // error.execution on the parent's internal queue.
-    const auto raiseArgumentError = [&parentSessionId](const std::string &message) {
+    const auto raiseArgumentError = [&parentSessionId](Common::ErrorReason reason, const std::string &message) {
         auto raiser = EventRaiserService::getInstance().getEventRaiser(parentSessionId);
         if (raiser) {
-            raiser->raiseEvent("error.execution", message);
+            raiser->raiseError(reason, message);
         } else {
             SCE_LOG_ERROR("SCXMLInvokeHandler: No EventRaiser for session '{}' - error.execution dropped",
                           parentSessionId);
@@ -660,7 +667,8 @@ std::string SCXMLInvokeHandler::startInvokeInternal(const std::shared_ptr<IInvok
                 SCE_LOG_ERROR(
                     "SCXMLInvokeHandler: Namelist variable '{}' not defined in parent session: invoke cancelled",
                     varName);
-                raiseArgumentError("<invoke> namelist names '" + varName + "', which is not a readable location");
+                raiseArgumentError(Common::ErrorReason::LocationInvalid,
+                                   "<invoke> namelist names '" + varName + "', which is not a readable location");
                 scriptEngine_.destroySession(childSessionId);
                 return "";
             }
@@ -673,7 +681,8 @@ std::string SCXMLInvokeHandler::startInvokeInternal(const std::shared_ptr<IInvok
                 SCE_LOG_ERROR(
                     "SCXMLInvokeHandler: Failed to evaluate namelist variable '{}' in parent session: invoke cancelled",
                     varName);
-                raiseArgumentError("<invoke> namelist names '" + varName + "', which is not a readable location");
+                raiseArgumentError(Common::ErrorReason::LocationInvalid,
+                                   "<invoke> namelist names '" + varName + "', which is not a readable location");
                 scriptEngine_.destroySession(childSessionId);
                 return "";
             }
@@ -697,7 +706,8 @@ std::string SCXMLInvokeHandler::startInvokeInternal(const std::shared_ptr<IInvok
                 SCE_LOG_ERROR("SCXMLInvokeHandler: param '{}' names no location: raising error.execution and "
                               "omitting the pair",
                               name);
-                raiseArgumentError("<invoke> <param name='" + name + "'> names no location");
+                raiseArgumentError(Common::ErrorReason::LocationInvalid,
+                                   "<invoke> <param name='" + name + "'> names no location");
                 continue;
             }
 
@@ -727,7 +737,9 @@ std::string SCXMLInvokeHandler::startInvokeInternal(const std::shared_ptr<IInvok
                 SCE_LOG_ERROR("SCXMLInvokeHandler: Failed to evaluate param expression '{}' in parent session: "
                               "raising error.execution and omitting the pair",
                               valueSource);
-                raiseArgumentError("<invoke> <param name='" + name + "'> could not be read");
+                raiseArgumentError(expr.empty() ? Common::ErrorReason::LocationInvalid
+                                                : Common::ErrorReason::ExpressionFailed,
+                                   "<invoke> <param name='" + name + "'> could not be read");
                 continue;
             }
 
@@ -975,27 +987,34 @@ std::string SCXMLInvokeHandler::generateInvokeId(const std::string &stateId) con
  * as. A request with no `_mesh_event`, a field given twice, or a deadline that is
  * not a whole number of milliseconds starts nothing.
  *
- * @param raise Raises `error.execution` with its argument as the event's data
+ * @param raise Raises the `error.*` its code names, with its sentence as the
+ *        record's `detail` (docs/adr/0106, #111)
  * @return the request, or nothing when the element starts nothing
  */
 static std::optional<HostInvokeRequest>
 evaluateHostInvokeRequest(IScriptEngine &scriptEngine, const IInvokeNode &invoke, const std::string &type,
                           const std::string &invokeid, const std::string &sessionId,
-                          const std::function<void(const std::string &)> &raise) {
+                          const std::function<void(Common::ErrorReason, const std::string &)> &raise) {
     HostInvokeRequest request;
     request.processorType = type;
     request.invokeId = invokeid;
     request.src = invoke.getSrc();
     request.content = invoke.getContent();
 
-    if (!invoke.getIdLocation().empty() && !AssignmentExecutionHelper::storeIdInLocation(
-                                               scriptEngine, sessionId, invoke.getIdLocation(), invokeid, raise)) {
+    // The shared helpers report a location that cannot be read or written.
+    const auto raiseLocationInvalid = [&raise](const std::string &detail) {
+        raise(Common::ErrorReason::LocationInvalid, detail);
+    };
+    if (!invoke.getIdLocation().empty() &&
+        !AssignmentExecutionHelper::storeIdInLocation(scriptEngine, sessionId, invoke.getIdLocation(), invokeid,
+                                                      raiseLocationInvalid)) {
         return std::nullopt;
     }
     if (!invoke.getSrcExpr().empty()) {
         const auto src = scriptEngine.evaluateExpression(sessionId, invoke.getSrcExpr()).get();
         if (!ScriptResultUtils::isSuccess(src)) {
-            raise("<invoke srcexpr='" + invoke.getSrcExpr() + "'> could not be evaluated");
+            raise(Common::ErrorReason::ExpressionFailed,
+                  "<invoke srcexpr='" + invoke.getSrcExpr() + "'> could not be evaluated");
             return std::nullopt;
         }
         request.src = ScriptResultUtils::resultToString(src);
@@ -1003,7 +1022,8 @@ evaluateHostInvokeRequest(IScriptEngine &scriptEngine, const IInvokeNode &invoke
     if (!invoke.getContentExpr().empty()) {
         const auto content = scriptEngine.evaluateExpression(sessionId, invoke.getContentExpr()).get();
         if (!ScriptResultUtils::isSuccess(content)) {
-            raise("<invoke contentexpr='" + invoke.getContentExpr() + "'> could not be evaluated");
+            raise(Common::ErrorReason::ExpressionFailed,
+                  "<invoke contentexpr='" + invoke.getContentExpr() + "'> could not be evaluated");
             return std::nullopt;
         }
         request.content = ScriptResultUtils::resultToString(content);
@@ -1015,8 +1035,8 @@ evaluateHostInvokeRequest(IScriptEngine &scriptEngine, const IInvokeNode &invoke
     std::map<std::string, std::vector<ScriptValue>> payloadTyped;
     if (!invoke.getNamelist().empty()) {
         std::map<std::string, std::vector<std::string>> namelistValues;
-        if (!NamelistHelper::evaluateNamelist(scriptEngine, sessionId, invoke.getNamelist(), namelistValues, raise,
-                                              &payloadTyped)) {
+        if (!NamelistHelper::evaluateNamelist(scriptEngine, sessionId, invoke.getNamelist(), namelistValues,
+                                              raiseLocationInvalid, &payloadTyped)) {
             return std::nullopt;
         }
         for (const auto &[name, values] : namelistValues) {
@@ -1039,21 +1059,24 @@ evaluateHostInvokeRequest(IScriptEngine &scriptEngine, const IInvokeNode &invoke
         const std::string &valueSource = expr.empty() ? location : expr;
         if (valueSource.empty()) {
             if (requiredField) {
-                raise("<invoke> <param name='" + name + "'> cannot be its request field: it names no location");
+                raise(Common::ErrorReason::LocationInvalid,
+                      "<invoke> <param name='" + name + "'> cannot be its request field: it names no location");
                 return std::nullopt;
             }
-            raise("<invoke> <param name='" + name + "'> names no location");
+            raise(Common::ErrorReason::LocationInvalid, "<invoke> <param name='" + name + "'> names no location");
             continue;
         }
         const auto value = scriptEngine.evaluateExpression(sessionId, valueSource).get();
         if (!ScriptResultUtils::isSuccess(value)) {
+            const Common::ErrorReason unread =
+                expr.empty() ? Common::ErrorReason::LocationInvalid : Common::ErrorReason::ExpressionFailed;
             if (requiredField) {
-                raise("<invoke> <param name='" + name +
-                      "'> cannot be its request field: the value could not be evaluated");
+                raise(unread, "<invoke> <param name='" + name +
+                                  "'> cannot be its request field: the value could not be evaluated");
                 return std::nullopt;
             }
-            raise("<invoke> <param name='" + name + "'> " +
-                  (expr.empty() ? "location could not be read" : "expr failed to evaluate"));
+            raise(unread, "<invoke> <param name='" + name + "'> " +
+                              (expr.empty() ? "location could not be read" : "expr failed to evaluate"));
             continue;
         }
         const std::string text = ScriptResultUtils::resultToString(value);
@@ -1061,7 +1084,8 @@ evaluateHostInvokeRequest(IScriptEngine &scriptEngine, const IInvokeNode &invoke
         if (meshRequest && (name == MESH_EVENT_PARAM || deadline)) {
             const std::string field(deadline ? MESH_DEADLINE_PARAM : MESH_EVENT_PARAM);
             if (request.params.count(field) > 0) {
-                raise("<invoke type='" + type + "' id='" + invokeid + "'>: " + field + " is given more than once");
+                raise(Common::ErrorReason::ParamUnfit,
+                      "<invoke type='" + type + "' id='" + invokeid + "'>: " + field + " is given more than once");
                 envelopeRefused = true;
                 continue;
             }
@@ -1071,8 +1095,8 @@ evaluateHostInvokeRequest(IScriptEngine &scriptEngine, const IInvokeNode &invoke
             }
             const auto ms = parseHostInvokeDeadlineMs(text);
             if (!ms.has_value()) {
-                raise("<invoke type='" + type + "' id='" + invokeid + "'>: " + field + "='" + text +
-                      "' is not a whole number of milliseconds");
+                raise(Common::ErrorReason::ParamUnfit, "<invoke type='" + type + "' id='" + invokeid + "'>: " + field +
+                                                           "='" + text + "' is not a whole number of milliseconds");
                 envelopeRefused = true;
                 continue;
             }
@@ -1084,7 +1108,8 @@ evaluateHostInvokeRequest(IScriptEngine &scriptEngine, const IInvokeNode &invoke
         payloadTyped[name].push_back(value.getInternalValue());
     }
     if (meshRequest && !envelopeRefused && request.params.count(std::string(MESH_EVENT_PARAM)) == 0) {
-        raise("<invoke type='" + type + "' id='" + invokeid + "'> names no " + std::string(MESH_EVENT_PARAM));
+        raise(Common::ErrorReason::ParamUnfit,
+              "<invoke type='" + type + "' id='" + invokeid + "'> names no " + std::string(MESH_EVENT_PARAM));
         envelopeRefused = true;
     }
     if (envelopeRefused) {
@@ -1105,10 +1130,10 @@ std::string HostRunInvokeHandler::startInvoke(const std::shared_ptr<IInvokeNode>
     if (!invoke) {
         return "";
     }
-    const auto raise = [&parentSessionId](const std::string &detail) {
+    const auto raise = [&parentSessionId](Common::ErrorReason reason, const std::string &detail) {
         SCE_LOG_ERROR("HostRunInvokeHandler: {}", detail);
         if (auto eventRaiser = EventRaiserService::getInstance().getEventRaiser(parentSessionId)) {
-            eventRaiser->raiseEvent("error.execution", detail);
+            eventRaiser->raiseError(reason, detail);
         }
     };
     // The executor gave an `<invoke>` with no id its generated one before this.
@@ -1118,7 +1143,8 @@ std::string HostRunInvokeHandler::startInvoke(const std::shared_ptr<IInvokeNode>
         return "";
     }
     if (!owner_.performHostInvoke(*request)) {
-        raise("<invoke type='" + type_ + "'> names an external service this platform does not support");
+        raise(Common::ErrorReason::InvokeTypeUnsupported,
+              "<invoke type='" + type_ + "'> names an external service this platform does not support");
         return "";
     }
     startedId_ = invokeid;
@@ -1299,7 +1325,7 @@ std::string InvokeExecutor::executeInvoke(const std::shared_ptr<IInvokeNode> &in
             // three spellings of this one fact — this site named the offending
             // type but nothing else, and the five newer backends named
             // everything but the type.
-            eventRaiser->raiseEvent("error.execution",
+            eventRaiser->raiseError(Common::ErrorReason::InvokeTypeUnsupported,
                                     "<invoke type='" + invokeType +
                                         "'> names an external service this platform does not support");
         } else {

@@ -9,6 +9,7 @@
 
 #include "common/DataModelInitHelper.h"
 #include "common/DoneDataHelper.h"
+#include "common/ErrorData.h"
 #include "common/EventDataHelper.h"
 #include "common/LogToLogger.h"
 #include "common/SCXMLConstants.h"
@@ -1102,9 +1103,12 @@ StateMachine::TransitionResult StateMachine::processTakenEvent(const EventMetada
     // it, and an error raised while it is answered is a link in its chain.
     const std::string refusal = readAtTheDoor(scriptEngine_, sessionId_, model_.get());
     if (!refusal.empty()) {
-        EventMetadata replacement("error.execution", refusal, "platform");
+        // Its data is the engine's error record (docs/adr/0106, #111), the
+        // refusal its `detail`.
+        EventMetadata replacement(Common::errorEventName(Common::ErrorReason::PayloadRefused),
+                                  Common::errorData(Common::ErrorReason::PayloadRefused, refusal), "platform");
         // Its data read as the raiser reads the data of every event it queues.
-        replacement.typedData = EventDataHelper::jsonStringToScriptValue(refusal);
+        replacement.typedData = EventDataHelper::jsonStringToScriptValue(replacement.data);
         bindCurrentEvent(replacement);
         if (!eventRaiser_) {
             return selectAndTake(replacement.name);
@@ -2060,7 +2064,8 @@ bool StateMachine::evaluateCondition(const std::string &condition) {
             SCE_LOG_ERROR("W3C SCXML 5.9: Failed to evaluate condition '{}': {}", condition, result.getErrorMessage());
 
             if (eventRaiser_) {
-                eventRaiser_->raiseEvent("error.execution", "Failed to evaluate condition: " + condition);
+                eventRaiser_->raiseError(Common::ErrorReason::ExpressionFailed,
+                                         "Failed to evaluate condition: " + condition);
             }
             return false;
         }
@@ -2076,7 +2081,8 @@ bool StateMachine::evaluateCondition(const std::string &condition) {
         SCE_LOG_ERROR("W3C SCXML 5.9: Exception evaluating condition '{}': {}", condition, e.what());
 
         if (eventRaiser_) {
-            eventRaiser_->raiseEvent("error.execution", "Exception evaluating condition: " + condition);
+            eventRaiser_->raiseError(Common::ErrorReason::ExpressionFailed,
+                                     "Exception evaluating condition: " + condition);
         }
         return false;
     }
@@ -3061,7 +3067,7 @@ void StateMachine::evaluateDoneData(const std::string &finalStateId, std::string
             [this](const std::string &msg) {
                 SCE_LOG_ERROR("W3C SCXML 5.5: Failed to evaluate donedata content: {}", msg);
                 if (eventRaiser_) {
-                    eventRaiser_->raiseEvent("error.execution", msg);
+                    eventRaiser_->raiseError(Common::ErrorReason::ExpressionFailed, msg);
                 }
             },
             &outTypedData);
@@ -3103,7 +3109,7 @@ void StateMachine::evaluateDoneData(const std::string &finalStateId, std::string
             [this](const std::string &msg) {
                 SCE_LOG_ERROR("W3C SCXML 5.7: {}", msg);
                 if (eventRaiser_) {
-                    eventRaiser_->raiseEvent("error.execution", msg);
+                    eventRaiser_->raiseError(Common::ErrorReason::ExpressionFailed, msg);
                 }
             },
             &outTypedData);

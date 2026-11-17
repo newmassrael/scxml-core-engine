@@ -9938,7 +9938,7 @@
         },
         {
           "file": "sce/src/events/UndeliveredSendReport.h",
-          "symbol": "errorEventForFailedSend",
+          "symbol": "errorReasonForFailedSend",
           "kind": "implements"
         }
       ],
@@ -22748,6 +22748,12 @@
       "target_kind": "section",
       "target_id": "scxml-6.5",
       "reason": "The Kotlin coroutine mode's external step is folded into processNextExternalEvent; processMicrostep is removed"
+    },
+    {
+      "primitive": "remove_section_binding",
+      "target_kind": "section",
+      "target_id": "scxml-6.2.4",
+      "reason": "renamed to errorReasonForFailedSend: the failed send's reading now answers its 10.7.1 code (docs/adr/0106 #111)"
     }
   ],
   "frames": {},

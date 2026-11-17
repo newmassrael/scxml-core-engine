@@ -45,8 +45,10 @@ mutation_oracles tests/integration/SendParamPayloadTest.cpp tests/integration/Se
 mutation_case "the cpp interpreter drops the failed param without reporting it" <<'PY'
 edit("sce/src/runtime/ActionExecutorImpl.cpp",
      """                        if (eventRaiser_) {
-                            eventRaiser_->raiseEvent("error.execution", "<send> <param name='" + param.name +
-                                                                            "'> expr failed to evaluate");
+                            eventRaiser_->raiseError(param.expr.empty() ? Common::ErrorReason::LocationInvalid
+                                                                        : Common::ErrorReason::ExpressionFailed,
+                                                     "<send> <param name='" + param.name +
+                                                         "'> expr failed to evaluate");
                         }
                         aParamFailed = true;
                         continue;""",
@@ -78,8 +80,8 @@ PY
 
 mutation_case "the cpp aot template logs the failed param instead of reporting it" <<'PY'
 edit("tools/codegen/templates/actions/send.jinja2",
-     """{{ indent }}engine.raise(typename Engine::EventWithMetadata(
-{{ indent }}    Event::Error_execution,
+     """{{ indent }}engine.raise(Engine::EventWithMetadata::platformError(
+{{ indent }}    Event::Error_execution, ::SCE::Common::ErrorReason::{{ 'ExpressionFailed' if param.expr else 'LocationInvalid' }},
 {{ indent }}    "<send> <param name='{{ param.name | escape_cpp }}'> could not be read"));""",
      """{{ indent }}(void)0;""")
 PY
