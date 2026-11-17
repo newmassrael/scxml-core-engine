@@ -12,6 +12,8 @@ package com.sce.mesh
 import com.sce.forge.runtime.SceCursor
 import com.sce.generated.causal_entry.CausalEntryPayload
 import com.sce.generated.envelope.Envelope
+import com.sce.generated.envelope.EnvelopeIdBytes
+import com.sce.generated.envelope.EnvelopeSourceText
 import com.sce.generated.pattern_kind.PatternKind
 import com.sce.generated.payload_codec.PayloadCodec
 import kotlin.test.Test
@@ -333,9 +335,8 @@ class CausalLayerTest {
     }
 
     private fun plainEnvelope(): Envelope = Envelope(
-        id = ByteArray(16) { 7 },
-        source = "list",
-        event_type = "",
+        id = EnvelopeIdBytes.of(ByteArray(16) { 7 })!!,
+        source = EnvelopeSourceText.of("list")!!,
         pattern = PatternKind.CAUSAL_VECTOR,
         datacontenttype = PayloadCodec.NONE,
     )
@@ -350,7 +351,7 @@ class CausalLayerTest {
     @Test
     fun aTagIsWrittenAsKeys19And20AndReadBack() {
         val tag = CausalTag(0uL, listOf(CausalEntryPayload(hi = 1uL, lo = 2uL, seq = 3uL)))
-        val bytes = stamp(plainEnvelope(), tag).encodeToByteArray() ?: fail("a vector within its bound encodes")
+        val bytes = stamp(plainEnvelope(), tag)?.encodeToByteArray() ?: fail("a vector within its bound encodes")
         val tail = listOf(
             0x13, 0x00, // key 19, epoch 0
             0x14, 0x81, // key 20, an array of one

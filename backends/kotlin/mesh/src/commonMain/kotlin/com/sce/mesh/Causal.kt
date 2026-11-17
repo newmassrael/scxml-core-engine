@@ -42,6 +42,7 @@ import com.sce.generated.causal_known.CausalKnownPayload
 import com.sce.generated.causal_lacks.causalLacks
 import com.sce.generated.causal_raise.causalRaise
 import com.sce.generated.envelope.Envelope
+import com.sce.generated.envelope.EnvelopeCausalVectorList
 
 /**
  * The most entries a vector holds: the bound of a view, of the envelope's
@@ -460,17 +461,20 @@ fun envelopeTag(envelope: Envelope): EnvelopeTag {
     val vector = envelope.causal_vector
     return when {
         epoch == null && vector == null -> EnvelopeTag.Untagged
-        epoch != null && vector != null -> EnvelopeTag.Tagged(CausalTag(epoch, vector))
+        epoch != null && vector != null -> EnvelopeTag.Tagged(CausalTag(epoch, vector.entries))
         else -> EnvelopeTag.HalfTagged
     }
 }
 
 /**
- * [envelope] with [tag] in keys 19 and 20. A vector past its 64 entries is
- * refused when the envelope is written, as every entry past its bound is.
+ * [envelope] with [tag] in keys 19 and 20, or `null` where the vector is past
+ * its 64 entries, which no envelope holds: the vector is made in the class of
+ * its bound (docs/adr/0081 §2), as every entry past its bound is refused.
  */
-fun stamp(envelope: Envelope, tag: CausalTag): Envelope =
-    envelope.copy(causal_epoch = tag.epoch, causal_vector = tag.vector)
+fun stamp(envelope: Envelope, tag: CausalTag): Envelope? =
+    EnvelopeCausalVectorList.of(tag.vector)?.let { vector ->
+        envelope.copy(causal_epoch = tag.epoch, causal_vector = vector)
+    }
 
 /** The number [vector] gives [replica], 0 when it names none. */
 private fun seen(vector: List<CausalEntryPayload>, replica: Replica): ULong =

@@ -303,9 +303,9 @@ class EndpointTest {
         assertEquals("people", peer)
         val vector = Envelope.decode(SceCursor(bytes)).valueOr { fail("the vector is an envelope: ${it.error}") }
         assertEquals(PatternKind.CAUSAL_VECTOR, vector.pattern)
-        assertEquals(listOf(phone.entry(1uL)), vector.causal_vector)
+        assertEquals(listOf(phone.entry(1uL)), vector.causal_vector?.entries)
         // Each send drew an id, the refused one too; the vector drew the third.
-        assertTrue(vector.id.contentEquals(ByteArray(16) { 3 }))
+        assertTrue(vector.id.bytes.contentEquals(ByteArray(16) { 3 }))
     }
 
     @Test

@@ -10,6 +10,9 @@
 package com.sce.mesh
 
 import com.sce.generated.envelope.Envelope
+import com.sce.generated.envelope.EnvelopeEventTypeText
+import com.sce.generated.envelope.EnvelopeIdBytes
+import com.sce.generated.envelope.EnvelopeSourceText
 import com.sce.generated.pattern_kind.PatternKind
 import com.sce.generated.payload_codec.PayloadCodec
 import com.sce.runtime.StateMachineEngine
@@ -180,14 +183,14 @@ class CausalRouteTest {
     fun aChangeOfAnotherViewIsRaisedAndNotDelivered() {
         val laptop = copy(2)
         val envelope = Envelope(
-            id = id(5),
-            source = "list",
-            event_type = "edit",
+            id = EnvelopeIdBytes.of(id(5))!!,
+            source = EnvelopeSourceText.of("list")!!,
+            event_type = EnvelopeEventTypeText.of("edit")!!,
             pattern = PatternKind.FIRE_FORGET,
             datacontenttype = PayloadCodec.NONE,
         )
         val tag = CausalTag(1uL, listOf(Replica.fromBytes(id(1)).entry(1uL)))
-        val bytes = stamp(envelope, tag).encodeToByteArray() ?: fail("encodes")
+        val bytes = stamp(envelope, tag)?.encodeToByteArray() ?: fail("encodes")
         assertEquals(
             listOf(Effect.Raise("people", Signal.CausalViewMismatch("list", 1uL, "01010101-0101-0101-0101-010101010101"))),
             done(laptop.receive("people", bytes, 0)),
@@ -199,9 +202,9 @@ class CausalRouteTest {
     fun anUntaggedEnvelopeOnACausalRouteIsCorrupt() {
         val laptop = copy(2)
         val bytes = Envelope(
-            id = id(5),
-            source = "list",
-            event_type = "edit",
+            id = EnvelopeIdBytes.of(id(5))!!,
+            source = EnvelopeSourceText.of("list")!!,
+            event_type = EnvelopeEventTypeText.of("edit")!!,
             pattern = PatternKind.FIRE_FORGET,
             datacontenttype = PayloadCodec.NONE,
         ).encodeToByteArray() ?: fail("encodes")

@@ -145,9 +145,9 @@ class WssClientTest {
         // Client to server: the core's envelope, as the socket carried it.
         endpoint.send(request("go"))
         val sent = Envelope.decode(SceCursor(serverReceived.next())).valueOr { fail("not an envelope: ${it.error}") }
-        assertEquals("go", sent.event_type)
-        assertEquals("client", sent.source)
-        assertEquals("s-1", sent.subject)
+        assertEquals("go", sent.event_type.text)
+        assertEquals("client", sent.source.text)
+        assertEquals("s-1", sent.subject?.text)
 
         // Server to client: an envelope the server machine's core wrote.
         val serverRouter = router("server", "client")

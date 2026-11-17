@@ -135,16 +135,16 @@ class Inbound(private val dedupWindow: UInt, private val gapTimeoutMs: Long) {
 
     private fun admitDecoded(envelope: Envelope, sequence: ULong?, delivery: Delivery, nowMs: Long): Outcome {
         val out = Outcome()
-        val sender = senders.getOrPut(envelope.source) { Sender() }
+        val sender = senders.getOrPut(envelope.source.text) { Sender() }
         if (delivery.dedup) {
-            val id = envelopeId(envelope.id)
+            val id = envelopeId(envelope.id.bytes)
             if (dedupHolds(sender.window, id)) {
                 return out
             }
             val full = sender.window.size >= dedupWindow.toInt()
             sender.window = dedupAdmit(sender.window, id, dedupWindow).value()
             if (full) {
-                out.signals += Signal.DedupWindowOverflow(envelope.source, dedupWindow)
+                out.signals += Signal.DedupWindowOverflow(envelope.source.text, dedupWindow)
             }
         }
         if (!delivery.ordered || sequence == null) {

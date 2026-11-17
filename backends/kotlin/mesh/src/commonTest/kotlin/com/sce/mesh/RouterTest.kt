@@ -7,6 +7,12 @@ package com.sce.mesh
 
 import com.sce.forge.runtime.SceCursor
 import com.sce.generated.envelope.Envelope
+import com.sce.generated.envelope.EnvelopeDataBytes
+import com.sce.generated.envelope.EnvelopeEventTypeText
+import com.sce.generated.envelope.EnvelopeIdBytes
+import com.sce.generated.envelope.EnvelopeInvokeIdBytes
+import com.sce.generated.envelope.EnvelopeRpcErrorMessageText
+import com.sce.generated.envelope.EnvelopeSourceText
 import com.sce.generated.pattern_kind.PatternKind
 import com.sce.generated.payload_codec.PayloadCodec
 import com.sce.generated.rpc_status.RpcStatus
@@ -189,12 +195,12 @@ class RouterTest {
         for ((i, case) in cases.withIndex()) {
             val (codec, name) = case
             val bytes = Envelope(
-                id = id(i + 1),
-                source = "ecu",
-                event_type = "a",
+                id = EnvelopeIdBytes.of(id(i + 1))!!,
+                source = EnvelopeSourceText.of("ecu")!!,
+                event_type = EnvelopeEventTypeText.of("a")!!,
                 pattern = PatternKind.FIRE_FORGET,
                 datacontenttype = codec,
-                data = byteArrayOf(1),
+                data = EnvelopeDataBytes.of(byteArrayOf(1))!!,
             ).encodeToByteArray() ?: fail("encodes")
             assertEquals(
                 listOf(Effect.Raise("ecu", Signal.EnvelopeCorrupt("ecu", name))),
@@ -210,12 +216,10 @@ class RouterTest {
         val hmi = Router("hmi", 8u, 50)
         hmi.addPeer("ecu", unordered)
         val bytes = Envelope(
-            id = id(1),
-            source = "ecu",
-            event_type = "",
+            id = EnvelopeIdBytes.of(id(1))!!,
+            source = EnvelopeSourceText.of("ecu")!!,
             pattern = PatternKind.CAUSAL_VECTOR,
             datacontenttype = PayloadCodec.NONE,
-            data = byteArrayOf(),
         ).encodeToByteArray() ?: fail("encodes")
         assertEquals(emptyList(), done(hmi.receive("ecu", bytes, 0)))
     }
@@ -282,26 +286,26 @@ class RouterTest {
 
     private fun reply(n: Int, status: RpcStatus?, message: String?, data: String): ByteArray =
         Envelope(
-            id = id(n),
-            source = "hmi",
-            event_type = "service.response.force",
+            id = EnvelopeIdBytes.of(id(n))!!,
+            source = EnvelopeSourceText.of("hmi")!!,
+            event_type = EnvelopeEventTypeText.of("service.response.force")!!,
             pattern = PatternKind.RPC_REPLY,
             datacontenttype = if (data.isEmpty()) PayloadCodec.NONE else PayloadCodec.JSON,
-            data = data.encodeToByteArray(),
-            invoke_id = wire,
+            data = EnvelopeDataBytes.of(data.encodeToByteArray())!!,
+            invoke_id = EnvelopeInvokeIdBytes.of(wire)!!,
             rpc_status = status,
-            rpc_error_message = message,
+            rpc_error_message = message?.let { EnvelopeRpcErrorMessageText.of(it)!! },
         ).encodeToByteArray() ?: fail("reply did not encode")
 
     @Test
     fun aRequestCarriesItsEventPayloadAndWireIds() {
         val envelope = decode(started(requester(500), null))
         assertEquals(PatternKind.RPC_REQUEST, envelope.pattern)
-        assertEquals("service.request.force", envelope.event_type)
-        assertEquals("""{"n":3}""", envelope.data.decodeToString())
+        assertEquals("service.request.force", envelope.event_type.text)
+        assertEquals("""{"n":3}""", envelope.data.bytes.decodeToString())
         assertEquals(PayloadCodec.JSON, envelope.datacontenttype)
-        assertTrue(wire.contentEquals(envelope.invoke_id))
-        assertTrue(id(1).contentEquals(envelope.id))
+        assertTrue(wire.contentEquals(envelope.invoke_id?.bytes))
+        assertTrue(id(1).contentEquals(envelope.id.bytes))
         // §mesh-9.5 precedence: the binding's deadline when the invoke gives none.
         assertEquals(1500uL, envelope.deadline_unix_ms)
     }
@@ -407,13 +411,13 @@ class RouterTest {
         val ecu = requester(null)
         started(ecu, null)
         val raw = Envelope(
-            id = id(2),
-            source = "hmi",
-            event_type = "service.response.force",
+            id = EnvelopeIdBytes.of(id(2))!!,
+            source = EnvelopeSourceText.of("hmi")!!,
+            event_type = EnvelopeEventTypeText.of("service.response.force")!!,
             pattern = PatternKind.RPC_REPLY,
             datacontenttype = PayloadCodec.RAW,
-            data = byteArrayOf(0xFF.toByte()),
-            invoke_id = wire,
+            data = EnvelopeDataBytes.of(byteArrayOf(0xFF.toByte()))!!,
+            invoke_id = EnvelopeInvokeIdBytes.of(wire)!!,
         ).encodeToByteArray() ?: fail("reply did not encode")
         assertEquals(
             listOf(Effect.Raise("hmi", Signal.EnvelopeCorrupt("hmi", "raw"))),

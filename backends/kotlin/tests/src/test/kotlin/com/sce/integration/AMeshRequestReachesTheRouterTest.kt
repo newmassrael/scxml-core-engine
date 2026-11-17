@@ -14,6 +14,10 @@ package com.sce.integration
 
 import com.sce.forge.runtime.SceCursor
 import com.sce.generated.envelope.Envelope
+import com.sce.generated.envelope.EnvelopeDataBytes
+import com.sce.generated.envelope.EnvelopeEventTypeText
+import com.sce.generated.envelope.EnvelopeIdBytes
+import com.sce.generated.envelope.EnvelopeSourceText
 import com.sce.generated.pattern_kind.PatternKind
 import com.sce.generated.payload_codec.PayloadCodec
 import com.sce.generated.rpc_status.RpcStatus
@@ -184,18 +188,18 @@ class AMeshRequestReachesTheRouterTest {
             assertEquals("motor", peer)
             val request = Envelope.decode(SceCursor(bytes)).valueOr { error("not an envelope: ${it.error}") }
             assertEquals(PatternKind.RPC_REQUEST, request.pattern)
-            assertEquals("service.request.force", request.event_type)
-            assertEquals("""{"force":3,"speed":"3"}""", request.data.decodeToString())
+            assertEquals("service.request.force", request.event_type.text)
+            assertEquals("""{"force":3,"speed":"3"}""", request.data.bytes.decodeToString())
             // The document's own deadline, on the wall clock.
             assertEquals(1_000_250uL, request.deadline_unix_ms)
 
             val reply = Envelope(
-                id = ByteArray(16) { 0xAA.toByte() },
-                source = "motor",
-                event_type = "service.response.force",
+                id = EnvelopeIdBytes.of(ByteArray(16) { 0xAA.toByte() })!!,
+                source = EnvelopeSourceText.of("motor")!!,
+                event_type = EnvelopeEventTypeText.of("service.response.force")!!,
                 pattern = PatternKind.RPC_REPLY,
                 datacontenttype = PayloadCodec.JSON,
-                data = "\"ok\"".encodeToByteArray(),
+                data = EnvelopeDataBytes.of("\"ok\"".encodeToByteArray())!!,
                 invoke_id = request.invoke_id,
                 rpc_status = RpcStatus.OK,
             ).encodeToByteArray() ?: error("reply did not encode")

@@ -16,6 +16,12 @@ import com.sce.forge.runtime.AlgorithmError
 import com.sce.forge.runtime.AlgorithmResult
 import com.sce.forge.runtime.SceCursor
 import com.sce.generated.envelope.Envelope
+import com.sce.generated.envelope.EnvelopeDataBytes
+import com.sce.generated.envelope.EnvelopeEventTypeText
+import com.sce.generated.envelope.EnvelopeIdBytes
+import com.sce.generated.envelope.EnvelopeInvokeIdBytes
+import com.sce.generated.envelope.EnvelopeSourceText
+import com.sce.generated.envelope.EnvelopeSubjectText
 import com.sce.generated.pattern_kind.PatternKind
 import com.sce.generated.payload_codec.PayloadCodec
 import com.sce.generated.rpc_status.RpcStatus
@@ -244,14 +250,17 @@ class Router(val machine: String, dedupWindow: UInt, gapTimeoutMs: Long) {
         val causal = bound.causal ?: return Routed.Refused(notStarted(peer, bound))
         val tag = causal.layer.summary()
         causal.announcedMs = nowMs
+        // Each entry is made in the class of its bound (docs/adr/0081 §2): one
+        // past it is an envelope that cannot be written.
         val envelope = Envelope(
-            id = id,
-            source = machine,
-            event_type = "",
+            id = EnvelopeIdBytes.of(id) ?: return Routed.Refused(RouterError.Encode),
+            source = EnvelopeSourceText.of(machine) ?: return Routed.Refused(RouterError.Encode),
+            // A `causalVector` names no event: the empty text.
+            event_type = EnvelopeEventTypeText.fewest(),
             pattern = PatternKind.CAUSAL_VECTOR,
             datacontenttype = PayloadCodec.NONE,
         )
-        val bytes = stamp(envelope, tag).encodeToByteArray() ?: return Routed.Refused(RouterError.Encode)
+        val bytes = stamp(envelope, tag)?.encodeToByteArray() ?: return Routed.Refused(RouterError.Encode)
         return Routed.Done(dispatch(peer, bound, bytes, nowMs))
     }
 
@@ -285,16 +294,23 @@ class Router(val machine: String, dedupWindow: UInt, gapTimeoutMs: Long) {
         // trip. A reply sent with no request current carries none, and the
         // requester delivers it as the event it names.
         val reply = request.eventName in peer.config.replyEvents
+        // Each entry is made in the class of its bound (docs/adr/0081 §2): one
+        // past it is an envelope that cannot be written.
+        val unwritable = Routed.Refused(RouterError.Encode)
         val envelope = Envelope(
-            id = id,
-            source = machine,
-            event_type = request.eventName,
+            id = EnvelopeIdBytes.of(id) ?: return unwritable,
+            source = EnvelopeSourceText.of(machine) ?: return unwritable,
+            event_type = EnvelopeEventTypeText.of(request.eventName) ?: return unwritable,
             pattern = if (reply) PatternKind.RPC_REPLY else PatternKind.FIRE_FORGET,
             datacontenttype = payloadCodec(request.eventData),
-            data = request.eventData.encodeToByteArray(),
+            data = EnvelopeDataBytes.of(request.eventData.encodeToByteArray()) ?: return unwritable,
             // §mesh-10.7: the receiver's `_event.sendid` is the envelope's `subject`.
-            subject = request.sendId.ifEmpty { null },
-            invoke_id = if (reply) parseUuidText(request.invokeId) else null,
+            subject = request.sendId.ifEmpty { null }?.let { EnvelopeSubjectText.of(it) ?: return unwritable },
+            invoke_id = if (reply) {
+                parseUuidText(request.invokeId)?.let { EnvelopeInvokeIdBytes.of(it) ?: return unwritable }
+            } else {
+                null
+            },
             rpc_status = if (reply) RpcStatus.OK else null,
         )
         if (peer.config.causal != null) return offer(peerName, peer, envelope)
@@ -310,7 +326,7 @@ class Router(val machine: String, dedupWindow: UInt, gapTimeoutMs: Long) {
      */
     private fun offer(peerName: String, peer: Peer, envelope: Envelope): Routed {
         val causal = peer.causal ?: return Routed.Refused(notStarted(peerName, peer))
-        val verdict = when (val offered = causal.layer.offer { tag -> stamp(envelope, tag).encodeToByteArray() }) {
+        val verdict = when (val offered = causal.layer.offer { tag -> stamp(envelope, tag)?.encodeToByteArray() }) {
             Offered.Unbuilt -> return Routed.Refused(RouterError.Encode)
             is Offered.Answered -> offered.verdict
         }
@@ -355,14 +371,17 @@ class Router(val machine: String, dedupWindow: UInt, gapTimeoutMs: Long) {
             else -> text.toULongOrNull()?.let { minOf(it, Long.MAX_VALUE.toULong()).toLong() }
                 ?: return Invoked.Failed(RouterError.BadParam(MESH_DEADLINE_PARAM, text))
         }
+        // Each entry is made in the class of its bound (docs/adr/0081 §2): one
+        // past it is an envelope that cannot be written.
+        val unwritable = Invoked.Failed(RouterError.Encode)
         val envelope = Envelope(
-            id = id,
-            source = machine,
-            event_type = event,
+            id = EnvelopeIdBytes.of(id) ?: return unwritable,
+            source = EnvelopeSourceText.of(machine) ?: return unwritable,
+            event_type = EnvelopeEventTypeText.of(event) ?: return unwritable,
             pattern = PatternKind.RPC_REQUEST,
             datacontenttype = payloadCodec(request.eventData),
-            data = request.eventData.encodeToByteArray(),
-            invoke_id = wireId,
+            data = EnvelopeDataBytes.of(request.eventData.encodeToByteArray()) ?: return unwritable,
+            invoke_id = EnvelopeInvokeIdBytes.of(wireId) ?: return unwritable,
             deadline_unix_ms = deadlineMs?.let { saturatingAdd(nowUnixMs, it).toULong() },
         )
         val effects = transmit(peerName, peer, envelope, nowMs) ?: return Invoked.Failed(RouterError.Encode)
@@ -520,7 +539,7 @@ class Router(val machine: String, dedupWindow: UInt, gapTimeoutMs: Long) {
             // An envelope on a causal route carries its tag; one without it,
             // or with half of it, cannot be placed, and is not delivered.
             EnvelopeTag.Untagged, EnvelopeTag.HalfTagged ->
-                return raise(Signal.EnvelopeCorrupt(envelope.source, "cbor"))
+                return raise(Signal.EnvelopeCorrupt(envelope.source.text, "cbor"))
         }
         val causal = peer.causal ?: return Routed.Refused(notStarted(peerName, peer))
         val summary = envelope.pattern == PatternKind.CAUSAL_VECTOR
@@ -529,9 +548,9 @@ class Router(val machine: String, dedupWindow: UInt, gapTimeoutMs: Long) {
             is CausalReceived.Messages -> received.messages
             is CausalReceived.Rejected -> return when (val rejection = received.rejection) {
                 is Rejection.OtherEpoch ->
-                    raise(viewMismatch(envelope.source, rejection.epoch, tag.vector.firstOrNull()?.let { Replica.of(it) }))
-                is Rejection.NotInView -> raise(viewMismatch(envelope.source, tag.epoch, rejection.replica))
-                Rejection.Malformed -> raise(Signal.EnvelopeCorrupt(envelope.source, "cbor"))
+                    raise(viewMismatch(envelope.source.text, rejection.epoch, tag.vector.firstOrNull()?.let { Replica.of(it) }))
+                is Rejection.NotInView -> raise(viewMismatch(envelope.source.text, tag.epoch, rejection.replica))
+                Rejection.Malformed -> raise(Signal.EnvelopeCorrupt(envelope.source.text, "cbor"))
                 is Rejection.Rule -> Routed.Refused(RouterError.Rule(rejection.error))
             }
         }
@@ -554,7 +573,7 @@ class Router(val machine: String, dedupWindow: UInt, gapTimeoutMs: Long) {
         val envelope = Envelope.decode(SceCursor(bytes)).valueOrNull() ?: return null
         val wireId = replyTo(envelope) ?: return null
         return when (requests.check(wireId, peer)) {
-            Answer.UNDECLARED -> Signal.RpcReplyFromUndeclaredPeer(envelope.source, uuidText(wireId))
+            Answer.UNDECLARED -> Signal.RpcReplyFromUndeclaredPeer(envelope.source.text, uuidText(wireId))
             Answer.ADMITTED, Answer.UNKNOWN -> null
         }
     }
@@ -592,20 +611,20 @@ class Router(val machine: String, dedupWindow: UInt, gapTimeoutMs: Long) {
             val data = payloadText(envelope)
             if (data is PayloadText.Unreadable) {
                 return if (requests.isWaiting(wireId)) {
-                    Effect.Raise(peer, Signal.EnvelopeCorrupt(envelope.source, data.codec))
+                    Effect.Raise(peer, Signal.EnvelopeCorrupt(envelope.source.text, data.codec))
                 } else {
                     null
                 }
             }
             val pending = requests.retire(wireId) ?: return null
-            return Effect.Complete(pending.invokeId, pending.token, (data as PayloadText.Text).text, envelope.source)
+            return Effect.Complete(pending.invokeId, pending.token, (data as PayloadText.Text).text, envelope.source.text)
         }
         val pending = requests.retire(wireId) ?: return null
         return Effect.Fail(
             pending.invokeId,
             pending.token,
-            invokeErrorData(status, envelope.rpc_error_message, envelope.source, uuidText(wireId)),
-            envelope.source,
+            invokeErrorData(status, envelope.rpc_error_message?.text, envelope.source.text, uuidText(wireId)),
+            envelope.source.text,
         )
     }
 }
@@ -617,7 +636,7 @@ class Router(val machine: String, dedupWindow: UInt, gapTimeoutMs: Long) {
  * request with an `invoke_id`, so nothing else can be waiting for it.
  */
 private fun replyTo(envelope: Envelope): ByteArray? =
-    envelope.invoke_id?.takeIf { envelope.pattern == PatternKind.RPC_REPLY && it.size == 16 }
+    envelope.invoke_id?.bytes?.takeIf { envelope.pattern == PatternKind.RPC_REPLY }
 
 /**
  * The codec a payload of the sending engine's own `_event.data` text travels
@@ -642,7 +661,7 @@ private sealed class PayloadText {
 private fun payloadText(envelope: Envelope): PayloadText =
     when (envelope.datacontenttype) {
         PayloadCodec.NONE -> PayloadText.Text("")
-        PayloadCodec.JSON -> envelope.data.decodeToStringOrNull()?.let { PayloadText.Text(it) }
+        PayloadCodec.JSON -> envelope.data.bytes.decodeToStringOrNull()?.let { PayloadText.Text(it) }
             ?: PayloadText.Unreadable("json")
         PayloadCodec.CBOR -> PayloadText.Unreadable("cbor")
         PayloadCodec.TYPED -> PayloadText.Unreadable("typed")
@@ -682,14 +701,14 @@ private fun viewMismatch(source: String, epoch: ULong, replica: Replica?): Signa
 private fun deliver(envelope: Envelope, peer: String?): Effect =
     when (val data = payloadText(envelope)) {
         is PayloadText.Text -> Effect.Deliver(
-            envelope.event_type,
+            envelope.event_type.text,
             data.text,
-            envelope.source,
-            envelope.subject,
+            envelope.source.text,
+            envelope.subject?.text,
             // §mesh-10.7: `_event.invokeid` of an inbound request is its wire invokeid, as RFC 4122 text.
-            envelope.invoke_id?.takeIf { envelope.pattern == PatternKind.RPC_REQUEST && it.size == 16 }?.let(::uuidText),
+            envelope.invoke_id?.bytes?.takeIf { envelope.pattern == PatternKind.RPC_REQUEST }?.let(::uuidText),
         )
-        is PayloadText.Unreadable -> Effect.Raise(peer, Signal.EnvelopeCorrupt(envelope.source, data.codec))
+        is PayloadText.Unreadable -> Effect.Raise(peer, Signal.EnvelopeCorrupt(envelope.source.text, data.codec))
     }
 
 /** The bytes as UTF-8 text, or `null` when they are not UTF-8. */
