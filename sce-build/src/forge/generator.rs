@@ -13673,9 +13673,14 @@ fn render_codec(
     // filled flags cleared and `_derived_<carrier>` added. The locals block
     // lives in the codec emit ctx (rendered at `encode()` entry); the carrier
     // write lives per-field encode block via `inject_parent_tag_carrier_suffix`
-    // below.
+    // below. A backend whose encode is no template's writes no carrier
+    // (`field_encode_blocks`), so it is handed none.
     let parent_tag_derivations = collect_parent_tag_derivations(m, imports);
-    let parent_tag_carriers = parent_tag_carrier_or_suffix_map(&parent_tag_derivations, lang);
+    let parent_tag_carriers = if field_encode_blocks {
+        parent_tag_carrier_or_suffix_map(&parent_tag_derivations, lang)
+    } else {
+        std::collections::HashMap::new()
+    };
 
     let fields: Vec<serde_json::Value> = m
         .fields
@@ -26677,9 +26682,10 @@ fn parent_tag_carrier_or_suffix_map(
         let snake = filters::to_snake_case(d.carrier_field_id.clone());
         let pascal = filters::to_pascal_case(d.carrier_field_id.clone());
         let local = match lang {
-            Language::Rust | Language::Cpp | Language::C11 | Language::Python => {
-                format!("_derived_{snake}")
-            }
+            Language::C11 => format!("_derived_{snake}"),
+            Language::Rust => unreachable!("a Rust codec's encode is its source's (ADR 0058)"),
+            Language::Cpp => unreachable!("{}", CPP_ENCODE_IS_PRINTED),
+            Language::Python => unreachable!("{}", PYTHON_ENCODE_IS_PRINTED),
             Language::Kotlin | Language::Go => format!("_derived{pascal}"),
             Language::Swift => no_swift_emitter("parent_tag_carrier_or_suffix_map"),
         };

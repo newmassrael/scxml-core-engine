@@ -1231,6 +1231,8 @@ old encode, the old encode and its templates are removed in the same landing.
    fixed field. A printed Python value holds each bound in a class, so the template's check of a bound at the
    encode is written for Kotlin, Go and Swift alone (`encode_bound_guard_lines`). The helpers the printer calls,
    a whole field's bytes, a byte of pieces, a multibyte field's bytes and the VLE writer, keep their Python arms.
+   The carriers a parent's tag fills, and the local each gathers its bits in, are formed only where the template
+   writes the encode (`field_encode_blocks`), so their naming refuses Rust, C++ and Python as the writes do.
 5. Swift, when its codec lowers what the plan holds.
    *Swift lowers what the plan holds, 2026-11-16:* its codec writes every codec of the repository Rust writes,
    but the one only an MCU-class backend writes (`a_swift_codec_is_written_wherever_rust_writes_one.rs`): an
