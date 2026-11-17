@@ -6182,7 +6182,7 @@ fn composed_record_start(
     let mut fields = Vec::with_capacity(record.schema.fields.len());
     for field in &record.schema.fields {
         let value = match field.start() {
-            FieldStart::Given(_) => given
+            FieldStart::Given => given
                 .next()
                 .ok_or_else(|| refused(format!("no <sce:set> gives `{}`", field.id)))?,
             FieldStart::Absent => {

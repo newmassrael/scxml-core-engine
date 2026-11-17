@@ -1116,17 +1116,6 @@ impl ComposedSpelling for C11Composed<'_> {
             )
         }))
     }
-    // A compound literal of the machine's struct, each field designated by
-    // its id, as the machine's struct names it (`StaticTarget::record_field`)
-    // and an adapter builds a record across a call: C hands a value no
-    // initializer list.
-    fn record_of(&self, ty: &str, fields: &[(String, String)]) -> Option<String> {
-        let fields: Vec<String> = fields
-            .iter()
-            .map(|(id, value)| format!(".{id} = {value}"))
-            .collect();
-        Some(format!("({ty}){{ {} }}", fields.join(", ")))
-    }
     // C has no expression that binds the record of a case, so the union is
     // made by a function of the machine, one arm per case binding a pointer
     // to the unit's record of the case, as an adapter maps a union across a

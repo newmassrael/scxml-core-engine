@@ -591,7 +591,7 @@ fn wire_function<'m, 'p>(
                     Measured::Bytes { field: content, .. }
                     | Measured::Entries { list: content } => {
                         held.push(*content);
-                        let (size, present) = content_measure(l, &element, measure)
+                        let (size, present) = content_measure(l, element, measure)
                             .expect("a measure of bytes or of entries is of content");
                         measured.push(MeasureText {
                             size,
@@ -3960,7 +3960,7 @@ pub(super) fn render(
                         // The bytes of a byte string or a text, and the entries
                         // of a list, read off what the encode read once.
                         Measured::Bytes { .. } | Measured::Entries { .. } => {
-                            content_measure(l, &element, measure)
+                            content_measure(l, element, measure)
                                 .expect("a measure of bytes or of entries is of content")
                         }
                         // The input a body always there says, read off the source

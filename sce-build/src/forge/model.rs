@@ -1337,8 +1337,8 @@ impl SchemaField {
     /// the lowering that spells each start cannot disagree.
     pub fn start(&self) -> FieldStart {
         use crate::forge::value_type::ValueType;
-        if let Ok(entry) = self.entry_field() {
-            return FieldStart::Given(entry);
+        if self.entry_field().is_ok() {
+            return FieldStart::Given;
         }
         match &self.sce_type {
             ValueType::Optional { .. } => FieldStart::Absent,
@@ -1363,8 +1363,9 @@ impl SchemaField {
 #[derive(Debug, Clone)]
 pub enum FieldStart {
     /// A field of one entry, a scalar or an optional scalar: given by one
-    /// `<sce:set>`, judged as a field of a record of entries is.
-    Given(EntryField),
+    /// `<sce:set>`, judged as a field of a record of entries is
+    /// ([`EventSchemaModel::given_fields`]).
+    Given,
     /// `optional<T>` over a composition: it starts absent.
     Absent,
     /// A list whose type states no lower count, or one of 0: it starts empty.

@@ -421,6 +421,20 @@ impl<B> TypeOf<B> {
             | Self::Union { .. } => 1,
         }
     }
+
+    /// The element of an optional value, or `None` for any other type. A
+    /// written type and a resolved one answer alike: the bound plays no part.
+    pub fn optional_elem(&self) -> Option<&Self> {
+        match self {
+            Self::Optional { elem } => Some(elem),
+            Self::Scalar(_)
+            | Self::Text { .. }
+            | Self::Bytes { .. }
+            | Self::List { .. }
+            | Self::Record { .. }
+            | Self::Union { .. } => None,
+        }
+    }
 }
 
 /// Why a type's text is refused: what it breaks, and where in the type.
@@ -1308,19 +1322,6 @@ impl WrittenType {
             | Self::Record { .. }
             | Self::List { .. }
             | Self::Optional { .. } => None,
-        }
-    }
-
-    /// The element of an optional value, or `None` for any other type.
-    pub fn optional_elem(&self) -> Option<&Self> {
-        match self {
-            Self::Optional { elem } => Some(elem),
-            Self::Scalar(_)
-            | Self::Text { .. }
-            | Self::Bytes { .. }
-            | Self::List { .. }
-            | Self::Record { .. }
-            | Self::Union { .. } => None,
         }
     }
 

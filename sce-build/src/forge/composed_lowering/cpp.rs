@@ -839,12 +839,6 @@ impl ComposedSpelling for CppComposed<'_> {
             held.text
         ))
     }
-    // The struct by position, its fields in the schema's order
-    // ([`ComposedSpelling::record_def`]).
-    fn record_of(&self, ty: &str, fields: &[(String, String)]) -> Option<String> {
-        let values: Vec<&str> = fields.iter().map(|(_, value)| value.as_str()).collect();
-        Some(format!("{ty}{{{}}}", values.join(", ")))
-    }
 
     // A record that holds a composition carries its saved form in two
     // functions beside its struct, the names a record of entries' saved form

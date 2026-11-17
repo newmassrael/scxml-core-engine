@@ -827,15 +827,6 @@ impl ComposedSpelling for SwiftComposed<'_> {
             arms.join("; ")
         ))
     }
-    // The struct's initializer, each field labelled by its id as the
-    // declaration names it ([`ComposedSpelling::record_def`]).
-    fn record_of(&self, ty: &str, fields: &[(String, String)]) -> Option<String> {
-        let members: Vec<String> = fields
-            .iter()
-            .map(|(id, value)| format!("{id}: {value}"))
-            .collect();
-        Some(format!("{ty}({})", members.join(", ")))
-    }
 
     // The record's saved form, an object of its fields keyed by their ids in the
     // schema's order, each written and read as its type says

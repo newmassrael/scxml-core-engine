@@ -2401,7 +2401,7 @@ impl<'a> Judge<'a> {
                 continue;
             };
             let starts = match field.start() {
-                FieldStart::Given(_) | FieldStart::Unstarted(_) => continue,
+                FieldStart::Given | FieldStart::Unstarted(_) => continue,
                 FieldStart::Absent => "absent",
                 FieldStart::Empty => "empty",
             };
@@ -2424,7 +2424,7 @@ impl<'a> Judge<'a> {
         // nothing to start at: no type has a zero (docs/adr/0099).
         if let Some((field, what)) = schema.fields.iter().find_map(|field| match field.start() {
             FieldStart::Unstarted(what) => Some((field, what)),
-            FieldStart::Given(_) | FieldStart::Absent | FieldStart::Empty => None,
+            FieldStart::Given | FieldStart::Absent | FieldStart::Empty => None,
         }) {
             let spelling = var.value_type_spelling.as_ref();
             return Err(self.rule_at(

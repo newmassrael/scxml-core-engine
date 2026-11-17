@@ -4070,7 +4070,11 @@ impl<P: StatePolicy> Engine<P> {
     #[cfg(feature = "http-send")]
     fn raise_undelivered_http_send(&mut self, send_id: &str, reason: &str) {
         if let Some(communication_error) = P::get_event_from_name("error.communication") {
-            let mut err = EventWithMetadata::platform_error(communication_error, reason);
+            let mut err = EventWithMetadata::platform_error(
+                communication_error,
+                crate::ErrorReason::TargetUnreachable,
+                reason,
+            );
             err.metadata.send_id = crate::sce_string_from_str(send_id);
             self.raise(err);
         }

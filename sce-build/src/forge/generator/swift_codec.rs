@@ -70,7 +70,7 @@ impl Carrier {
     /// one `try` that covers every call in it: the integer itself, or the enum's value of it, which
     /// a closed enum refuses with `undeclaredEnumValue` for a number none of its variants declares
     /// (the runtime's `declaredEnumValue`), as the other backends refuse it.
-    fn from_wire(&self, wire: &str) -> String {
+    fn read_wire(&self, wire: &str) -> String {
         match &self.enumeration {
             None => format!("try {wire}"),
             Some(e) if e.open => format!("try {}({wire})", e.from_underlying),
@@ -1477,7 +1477,7 @@ pub(super) fn render(
                 .filter(|s| !f.is_vle() && 8 * s.bytes != carrier.width)
                 .map(|s| s.bytes);
             // The decode of the field from the cursor at its place in a frame read field by field.
-            let read = carrier.from_wire(&if f.is_vle() {
+            let read = carrier.read_wire(&if f.is_vle() {
                 format!("reader.readVle({}.self)", carrier.integer)
             } else if let Some(bytes) = narrow_bytes {
                 format!(
@@ -1541,7 +1541,7 @@ pub(super) fn render(
                 "read": read,
                 "append": append(&format!("self.{}", f.id)),
                 "append_held": append(&f.id),
-                "peek": word.as_deref().map(|word| carrier.from_wire(word)),
+                "peek": word.as_deref().map(|word| carrier.read_wire(word)),
                 // Where its bits lie in the word its bytes make, for a field that is bits of a
                 // word: `null` for a field that is the whole of its carrier.
                 "bits": positional.filter(|s| !whole_of_its_type(s, carrier.width)).map(|s| {

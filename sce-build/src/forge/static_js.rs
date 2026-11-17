@@ -1140,7 +1140,7 @@ impl StaticTarget for JsTarget {
         );
         Some(self.script_element(&script))
     }
-    fn raise_execution_error(&self, _machine: &str, _message: &str) -> String {
+    fn raise_execution_error(&self, _machine: &str, _reason: &str, _message: &str) -> String {
         String::new()
     }
     // The script engine's own channel: a library call that throws stops the

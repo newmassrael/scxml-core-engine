@@ -792,15 +792,6 @@ impl ComposedSpelling for KotlinComposed<'_> {
             arms.join("; ")
         ))
     }
-    // The data class, each member named by its id as the declaration names it
-    // ([`ComposedSpelling::record_def`]).
-    fn record_of(&self, ty: &str, fields: &[(String, String)]) -> Option<String> {
-        let members: Vec<String> = fields
-            .iter()
-            .map(|(id, value)| format!("{id} = {value}"))
-            .collect();
-        Some(format!("{ty}({})", members.join(", ")))
-    }
 
     // The machine's own sum, beside its records (docs/adr/0092, section 7, the
     // Kotlin row): named by the union's document, so one union is one type of
