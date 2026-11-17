@@ -1006,6 +1006,21 @@ impl ComposedSpelling for GoComposed<'_> {
         )))
     }
 
+    // The struct's composite literal, each field keyed as its declaration names
+    // it ([`ComposedSpelling::record_def`]).
+    fn record_of(&self, ty: &str, fields: &[(String, String)]) -> Option<String> {
+        let members: Vec<String> = fields
+            .iter()
+            .map(|(id, value)| format!("{id}: {value}"))
+            .collect();
+        Some(format!("{ty}{{{}}}", members.join(", ")))
+    }
+    // An empty slice of the list's type, not `nil`: a value the record holds
+    // is one a saved state and a host read as a list that holds nothing.
+    fn empty_list(&self, ty: &str) -> Option<String> {
+        Some(format!("{ty}{{}}"))
+    }
+
     // The machine's own value struct, beside its records (docs/adr/0092,
     // section 7, the Go row): named by the union's document, so one union is
     // one type of the machine whichever alias names it.
@@ -1259,6 +1274,29 @@ mod tests {
         machine: "M",
         carrier: GoCarrier::Json,
     };
+
+    /// A `record:R` variable of a record that holds a composition starts at the
+    /// struct's composite literal keyed by its fields, a list of no lower count
+    /// at an empty slice of its type (docs/adr/0087, "Decided while landing
+    /// item 8", decision 10).
+    #[test]
+    fn a_record_is_built_from_its_fields_and_a_list_starts_empty() {
+        assert_eq!(
+            GO.record_of(
+                "MBoardRecord",
+                &[
+                    ("title".to_string(), "t".to_string()),
+                    ("rects".to_string(), "l".to_string()),
+                ],
+            )
+            .as_deref(),
+            Some("MBoardRecord{title: t, rects: l}")
+        );
+        assert_eq!(
+            GO.empty_list(&GO.list_type("MRectRecord", 3)).as_deref(),
+            Some("[]MRectRecord{}")
+        );
+    }
 
     /// The Go row of the one table of what each backend lowers of a composed
     /// value: a payload read at any depth, a list taken whole and a composed
