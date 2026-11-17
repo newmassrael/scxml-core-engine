@@ -766,6 +766,21 @@ impl ComposedSpelling for PythonComposed<'_> {
         )))
     }
 
+    // The frozen dataclass called by keyword, each field named as the class
+    // declares it ([`ComposedSpelling::record_def`]); its `__post_init__` holds
+    // each value to its type as a record read whole is.
+    fn record_of(&self, ty: &str, fields: &[(String, String)]) -> Option<String> {
+        let args: Vec<String> = fields
+            .iter()
+            .map(|(id, value)| format!("{id}={value}"))
+            .collect();
+        Some(format!("{ty}({})", args.join(", ")))
+    }
+    // A new empty `list`, as a list variable starts (`StaticTarget::list_empty`).
+    fn empty_list(&self, _ty: &str) -> Option<String> {
+        Some("[]".to_string())
+    }
+
     // The machine's own class, beside its records (docs/adr/0092, section 7,
     // the Python row): named by the union's document, so one union is one type
     // of the machine whichever alias names it.
@@ -1040,6 +1055,31 @@ mod tests {
         machine: "M",
         carrier: PythonCarrier::Json,
     };
+
+    /// A `record:R` variable of a record that holds a composition starts at the
+    /// dataclass called by keyword, a list of no lower count at an empty `list`
+    /// (docs/adr/0087, "Decided while landing item 8", decision 10).
+    #[test]
+    fn a_record_is_built_from_its_fields_and_a_list_starts_empty() {
+        assert_eq!(
+            PYTHON
+                .record_of(
+                    "MBoardRecord",
+                    &[
+                        ("title".to_string(), "t".to_string()),
+                        ("rects".to_string(), "l".to_string()),
+                    ],
+                )
+                .as_deref(),
+            Some("MBoardRecord(title=t, rects=l)")
+        );
+        assert_eq!(
+            PYTHON
+                .empty_list(&PYTHON.list_type("MRectRecord", 3))
+                .as_deref(),
+            Some("[]")
+        );
+    }
 
     /// The Python row of the one table of what each backend lowers of a
     /// composed value: a payload read at any depth, a list taken whole and a
