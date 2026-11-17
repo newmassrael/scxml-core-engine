@@ -759,6 +759,11 @@ impl ComposedSpelling for RustComposed<'_> {
             .collect();
         Some(format!("{ty} {{ {} }}", members.join(", ")))
     }
+    // The portable list's own empty value, its element and bound inferred from
+    // the place it starts (`BoundedList<T, N>`), as a list variable's is.
+    fn empty_list(&self, _ty: &str) -> Option<String> {
+        Some(RUST_EMPTY_LIST.to_string())
+    }
 
     // The machine's own sum, beside its records (docs/adr/0092, section 7, the
     // Rust row): named by the union's document, so one union is one type of
@@ -991,6 +996,30 @@ mod tests {
                 records: true,
                 sends: true,
             }
+        );
+    }
+
+    /// A `record:R` variable of a record that holds a composition starts at the
+    /// record's struct built from its fields, a list of no lower count at the
+    /// portable list's empty value (docs/adr/0087, "Decided while landing item
+    /// 8", decision 10).
+    #[test]
+    fn a_record_is_built_from_its_fields_and_a_list_starts_empty() {
+        assert_eq!(
+            RUST.record_of(
+                "MBoardRecord",
+                &[
+                    ("title".to_string(), "t".to_string()),
+                    ("rects".to_string(), "l".to_string()),
+                ],
+            )
+            .as_deref(),
+            Some("MBoardRecord { title: t, rects: l }")
+        );
+        assert_eq!(
+            RUST.empty_list(&RUST.list_type("MRectRecord", 3))
+                .as_deref(),
+            Some("::sce_rust_runtime::portable::BoundedList::new()")
         );
     }
 
