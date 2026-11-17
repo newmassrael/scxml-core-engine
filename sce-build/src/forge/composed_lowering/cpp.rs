@@ -954,6 +954,21 @@ impl ComposedSpelling for CppComposed<'_> {
         )))
     }
 
+    // The aggregate built by position, every member given in the schema's order
+    // its declaration stands in ([`ComposedSpelling::record_def`]), each named
+    // beside its value as a record of entries' is.
+    fn record_of(&self, ty: &str, fields: &[(String, String)]) -> Option<String> {
+        Some(format!(
+            "{ty}{{{}}}",
+            crate::forge::generator::cpp_positional_init(fields)
+        ))
+    }
+    // The list's type value-initialized: the forge runtime's `OwnedList` that
+    // holds nothing.
+    fn empty_list(&self, ty: &str) -> Option<String> {
+        Some(format!("{ty}{{}}"))
+    }
+
     // The machine's own struct, beside its records (docs/adr/0092, section 7,
     // the C++ row): named by the union's document, so one union is one type of
     // the machine whichever alias names it.
@@ -1316,6 +1331,29 @@ mod tests {
         machine: "M",
         carrier: CppCarrier::Json,
     };
+
+    /// A `record:R` variable of a record that holds a composition starts at the
+    /// aggregate built by position, a list of no lower count at its type
+    /// value-initialized (docs/adr/0087, "Decided while landing item 8",
+    /// decision 10).
+    #[test]
+    fn a_record_is_built_from_its_fields_and_a_list_starts_empty() {
+        assert_eq!(
+            CPP.record_of(
+                "MBoardRecord",
+                &[
+                    ("title".to_string(), "t".to_string()),
+                    ("rects".to_string(), "l".to_string()),
+                ],
+            )
+            .as_deref(),
+            Some("MBoardRecord{/*title=*/t, /*rects=*/l}")
+        );
+        assert_eq!(
+            CPP.empty_list(&CPP.list_type("MRectRecord", 3)).as_deref(),
+            Some("::SCE::Forge::OwnedList<MRectRecord, 3>{}")
+        );
+    }
 
     /// The C++ row of the one table of what each backend lowers of a composed
     /// value: a payload read at any depth, a list taken whole and a composed
