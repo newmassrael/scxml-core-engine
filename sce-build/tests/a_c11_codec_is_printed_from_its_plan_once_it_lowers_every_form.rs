@@ -777,17 +777,176 @@ fn an_input_a_body_says_is_read_through_the_bodys_codec() {
     );
 }
 
-/// A codec whose plan uses a form the C11 printer does not lower keeps the
-/// template's encode whole: a variant and a CBOR map each name their form, and
-/// neither has an encode over a source.
+/// A variant whose tag is a field of its own: the source presents the arm it
+/// holds as its kind beside the source of the arm's body, the encode derives
+/// the tag from that kind, a known arm's the document's and the catch-all's
+/// the one it holds, and writes the arm by its codec's encode over the arm's
+/// body. The value holds no member of the tag, which the decode reads into a
+/// local and dispatches on, and its check holds the arm's body to its codec.
 ///
-/// Turns red where `c11_source::positional_forms` stops naming a variant, or
+/// Turns red where `c11_source::positional_forms` names a variant again,
+/// where `declare_body_ref` stops holding the arm's source in the member its
+/// kind names, where `encode_source` reads the tag off anything but the arm
+/// or writes the arm other than by its codec's encode, where `check_value`
+/// stops checking the arm, or where `render_codec` dispatches the decode on a
+/// member the value no longer holds.
+#[test]
+fn a_variant_derives_its_tag_from_the_arm_a_source_presents() {
+    assert!(unlowered("codec_variant_dispatch").is_empty());
+    let text = resource_header("codec_variant_dispatch");
+    holds(
+        "codec_variant_dispatch",
+        &text,
+        &[
+            "typedef struct {\n    codec_variant_dispatch_body_kind_t kind;\n    \
+             uint8_t default_tag;  /* the catch-all's */\n    union {\n        \
+             codec_variant_session_open_source_ref_t codec_variant_session_open;\n        \
+             codec_variant_session_close_source_ref_t codec_variant_session_close;\n        \
+             codec_variant_session_close_source_ref_t default_body;\n    } arm;\n\
+             } codec_variant_dispatch_body_ref_t;\n",
+            "typedef struct {\n    codec_variant_dispatch_body_ref_t (*body)(const void *ctx);\n\
+             } codec_variant_dispatch_source_t;\n",
+            "    ref.kind = self->body.kind;\n    ref.default_tag = self->body.default_tag;\n    \
+             switch (self->body.kind) {\n        \
+             case CODEC_VARIANT_DISPATCH_BODY_KIND_CODEC_VARIANT_SESSION_OPEN:\n            \
+             ref.arm.codec_variant_session_open.table = \
+             codec_variant_session_open_value_source();\n            \
+             ref.arm.codec_variant_session_open.ctx = \
+             &self->body.arm.codec_variant_session_open;\n            break;\n",
+            "    const codec_variant_dispatch_body_ref_t _e_body = src->body(ctx);\n    \
+             uint64_t _t_body = 0;\n    switch (_e_body.kind) {\n        \
+             case CODEC_VARIANT_DISPATCH_BODY_KIND_CODEC_VARIANT_SESSION_OPEN:\n            \
+             _t_body = 0x1ull;\n            break;\n        \
+             case CODEC_VARIANT_DISPATCH_BODY_KIND_CODEC_VARIANT_SESSION_CLOSE:\n            \
+             _t_body = 0x2ull;\n            break;\n        \
+             case CODEC_VARIANT_DISPATCH_BODY_KIND_DEFAULT:\n            \
+             _t_body = (uint64_t)_e_body.default_tag;\n            break;\n        \
+             default:\n            break;\n    }\n    \
+             const uint8_t _d_msg_id = (uint8_t)_t_body;\n",
+            "            SCE_FORGE_TRY_WRITE(codec_variant_session_close_encode_source(\
+             _e_body.arm.default_body.table, _e_body.arm.default_body.ctx, w));\n",
+            "            SCE_FORGE_TRY_WRITE(codec_variant_session_open_check_value(\
+             &self->body.arm.codec_variant_session_open));\n",
+            "    switch (_d_msg_id) {\n",
+            "out->body.default_tag = _d_msg_id;",
+        ],
+    );
+    holds_none(
+        "codec_variant_dispatch",
+        &text,
+        &["    uint8_t msg_id;\n", "out->msg_id", "self->msg_id"],
+    );
+}
+
+/// A variant whose arm's own first byte holds its tag derives no tag: the
+/// encode writes the arm the source presents and nothing of its own.
+///
+/// Turns red where `encode_source` derives a tag for a variant with none of
+/// its own, or stops writing the arm by its codec's encode.
+#[test]
+fn a_peeked_variant_writes_its_arm_alone() {
+    assert!(unlowered("codec_variant_peek_basic").is_empty());
+    let text = resource_header("codec_variant_peek_basic");
+    holds(
+        "codec_variant_peek_basic",
+        &text,
+        &["    switch (_e_body.kind) {\n        \
+           case CODEC_VARIANT_PEEK_BASIC_BODY_KIND_CODEC_PEEK_ARM_A:\n            \
+           SCE_FORGE_TRY_WRITE(codec_peek_arm_a_encode_source(_e_body.arm.codec_peek_arm_a.table, \
+           _e_body.arm.codec_peek_arm_a.ctx, w));\n            break;\n"],
+    );
+    holds_none("codec_variant_peek_basic", &text, &["_t_body", "_d_peek"]);
+}
+
+/// A parent whose flag holds the tag of the variant of a body it embeds
+/// derives the flag from the arm the body holds, read off the source the
+/// body is presented as through the function of its codec's table that
+/// presents the arm, and folds it into its carrier in place of the bits the
+/// value presents there.
+///
+/// Turns red where `c11_source::parent_tag` reads the arm off anything but
+/// the body's source, or names a kind other than the body's codec's, or where
+/// `positional_forms` names a parent's tag as unlowered.
+#[test]
+fn a_parent_derives_the_flag_it_dispatches_on_from_the_arm_its_body_holds() {
+    assert!(unlowered("codec_source_leaf").is_empty());
+    assert!(unlowered("codec_source_parent_tag").is_empty());
+    let text = resource_header("codec_source_parent_tag");
+    holds(
+        "codec_source_parent_tag",
+        &text,
+        &[
+            "    uint64_t _p_hdr_kind = 0;\n    {\n        \
+             const codec_source_leaf_body_ref_t _v = _e_body.table->body(_e_body.ctx);\n        \
+             switch (_v.kind) {\n            \
+             case CODEC_SOURCE_LEAF_BODY_KIND_CODEC_VARIANT_SESSION_OPEN:\n                \
+             _p_hdr_kind |= 0x0ull;\n                break;\n            \
+             case CODEC_SOURCE_LEAF_BODY_KIND_CODEC_VARIANT_SESSION_CLOSE:\n                \
+             _p_hdr_kind |= 0x1ull;\n                break;\n            \
+             default:\n                break;\n        }\n    }\n",
+            "    _f_hdr = (_f_hdr & ~0x1ull) | _p_hdr_kind;\n",
+        ],
+    );
+}
+
+/// An input every arm of a variant says is what the arm the source presents
+/// says, through its codec's own function of it; one some arm does not read
+/// is the optional value, absent for that arm (docs/adr/0065 §6 R4d, R4e).
+///
+/// Turns red where `c11_source::arm_inputs` stops switching on the arm's kind,
+/// reads an arm that does not bind the input, or answers a number where an
+/// arm says nothing, or where `positional_forms` names such an input again.
+#[test]
+fn an_input_the_arms_say_is_read_through_the_arm_the_source_presents() {
+    assert!(unlowered("codec_every_arm_says").is_empty());
+    let every = resource_header("codec_every_arm_says");
+    holds(
+        "codec_every_arm_says",
+        &every,
+        &[
+            "static inline uint8_t codec_every_arm_says_arm_input_n(\
+             codec_every_arm_says_body_ref_t arm) {\n    switch (arm.kind) {\n",
+            "            return codec_every_arm_says_far_input_bare(\
+             arm.arm.codec_every_arm_says_far.table, arm.arm.codec_every_arm_says_far.ctx);\n",
+            "static inline uint8_t codec_every_arm_says_input_n(\
+             const codec_every_arm_says_source_t *src, const void *ctx) {\n    \
+             return codec_every_arm_says_arm_input_n(src->body(ctx));\n}\n",
+        ],
+    );
+    assert!(unlowered("codec_some_arms_say").is_empty());
+    let some = resource_header("codec_some_arms_say");
+    holds(
+        "codec_some_arms_say",
+        &some,
+        &[
+            "static inline sce_optional_uint8_t codec_some_arms_say_arm_input_n(\
+             codec_some_arms_say_body_ref_t arm) {\n",
+            "            return sce_optional_uint8_some(codec_every_arm_says_near_input_n(\
+             arm.arm.codec_every_arm_says_near.table, arm.arm.codec_every_arm_says_near.ctx));\n",
+            "    return sce_optional_uint8_none();\n}\n",
+        ],
+    );
+    holds_none(
+        "codec_some_arms_say",
+        &some,
+        &["codec_some_arms_say_plain_input_n("],
+    );
+}
+
+/// A codec whose plan uses a form the C11 printer does not lower keeps the
+/// template's encode whole: a group of fields and a CBOR map each name their
+/// form, and neither has an encode over a source.
+///
+/// Turns red where `c11_source::positional_forms` stops naming a group, or
 /// `unlowered_forms` a CBOR map, or where the template prints the encode over
 /// a source for a codec it keeps.
 #[test]
 fn a_codec_of_a_form_the_printer_does_not_lower_keeps_the_template_encode() {
     for (name, form) in [
-        ("codec_variant_default_marker", "a variant"),
+        (
+            "codec_group_enum",
+            "a group of fields a gate decides together",
+        ),
         ("codec_cbor_map", "a CBOR map"),
     ] {
         let forms = unlowered(name);
@@ -888,6 +1047,17 @@ fn the_c11_backend_prints_each_codec_of_the_resources_whose_forms_it_lowers() {
         "codec_zenoh_wireexpr",
         "codec_zenoh_decl_kexpr",
         "codec_init_cookie_body",
+        "codec_variant_dispatch",
+        "codec_origin_choice",
+        "codec_variant_peek_basic",
+        "codec_variant_default_marker",
+        "codec_source_leaf",
+        "codec_source_parent_tag",
+        "codec_every_arm_says",
+        "codec_every_arm_says_parent",
+        "codec_some_arms_say",
+        "codec_some_arms_say_parent",
+        "codec_some_arms_say_forward",
     ] {
         assert!(
             printed.iter().any(|stem| stem == name),
@@ -905,6 +1075,7 @@ const DRIVER: &str = r#"
 #include "codec_length_ref.h"
 #include "codec_repeat_basic.h"
 #include "codec_simple_frame.h"
+#include "codec_variant_dispatch.h"
 
 /* A record the codec does not know, holding the elements in its own types. */
 struct reading {
@@ -990,6 +1161,33 @@ static codec_repeat_basic_frags_list_t batch_frags(const void *ctx) {
 
 static const codec_repeat_basic_source_t batch_source = {
     batch_frags,
+};
+
+/* An opening of its own, presented as the open arm of the dispatch: the arm's
+ * kind beside a source of the arm's codec, by a table of its own. */
+struct opening {
+    unsigned version;
+};
+
+static uint16_t opening_version(const void *ctx) {
+    return (uint16_t)((const struct opening *)ctx)->version;
+}
+
+static const codec_variant_session_open_source_t opening_source = {
+    opening_version,
+};
+
+static codec_variant_dispatch_body_ref_t opening_body(const void *ctx) {
+    codec_variant_dispatch_body_ref_t ref;
+    memset(&ref, 0, sizeof ref);
+    ref.kind = CODEC_VARIANT_DISPATCH_BODY_KIND_CODEC_VARIANT_SESSION_OPEN;
+    ref.arm.codec_variant_session_open.table = &opening_source;
+    ref.arm.codec_variant_session_open.ctx = ctx;
+    return ref;
+}
+
+static const codec_variant_dispatch_source_t dispatch_source = {
+    opening_body,
 };
 
 static int failures = 0;
@@ -1087,6 +1285,37 @@ int main(void) {
               SCE_FORGE_CODEC_TOO_MANY_ELEMENTS,
           "a walk past the bound is refused");
 
+    /* The arm a record of its own presents decides the tag the frame holds,
+     * and the arm's body is written through the arm's table. */
+    const struct opening o = {0x0102u};
+    static const uint8_t opened[] = {0x01, 0x01, 0x02};
+    uint8_t by_opening[CODEC_VARIANT_DISPATCH_MAX_BYTES];
+    sce_forge_writer_t ow = sce_forge_writer_init_buf(by_opening, sizeof by_opening);
+    CHECK(codec_variant_dispatch_encode_source(&dispatch_source, &o, &ow) == SCE_FORGE_CODEC_OK,
+          "the opening encodes");
+    CHECK(ow.pos == sizeof opened && memcmp(by_opening, opened, sizeof opened) == 0,
+          "the opening writes the tag of its arm, then the arm");
+
+    /* A value of the struct holding the catch-all writes the tag it holds. */
+    static codec_variant_dispatch_t dv;
+    memset(&dv, 0, sizeof dv);
+    dv.body.kind = CODEC_VARIANT_DISPATCH_BODY_KIND_DEFAULT;
+    dv.body.default_tag = 0x7Fu;
+    dv.body.arm.default_body.reason = 0x09u;
+    static const uint8_t unknown[] = {0x7F, 0x09};
+    uint8_t by_default[CODEC_VARIANT_DISPATCH_MAX_BYTES];
+    size_t dn = 0;
+    CHECK(codec_variant_dispatch_encode_to_buf(&dv, by_default, sizeof by_default, &dn) == SCE_FORGE_CODEC_OK &&
+              dn == sizeof unknown && memcmp(by_default, unknown, dn) == 0,
+          "the catch-all writes the tag it holds");
+    static codec_variant_dispatch_t dback;
+    memset(&dback, 0, sizeof dback);
+    sce_forge_cursor_t dc = sce_forge_cursor_init(unknown, sizeof unknown);
+    CHECK(codec_variant_dispatch_decode(&dc, &dback) == SCE_FORGE_CODEC_OK &&
+              dback.body.kind == CODEC_VARIANT_DISPATCH_BODY_KIND_DEFAULT && dback.body.default_tag == 0x7Fu &&
+              dback.body.arm.default_body.reason == 0x09u,
+          "the decode dispatches on the tag it read into a local");
+
     return failures == 0 ? 0 : 1;
 }
 "#;
@@ -1106,6 +1335,9 @@ fn a_record_of_its_own_is_encoded_through_a_table_of_its_own() {
         "codec_length_ref",
         "codec_repeat_elem",
         "codec_repeat_basic",
+        "codec_variant_session_open",
+        "codec_variant_session_close",
+        "codec_variant_dispatch",
     ] {
         for (file, text) in generated(&resources().join(format!("{name}.scxml")))
             .unwrap_or_else(|e| panic!("{name} generates on C11: {e}"))

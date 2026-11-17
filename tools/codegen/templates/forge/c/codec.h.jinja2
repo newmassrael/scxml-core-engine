@@ -325,6 +325,11 @@ static inline sce_forge_codec_status_t {{ c_decode_func }}(sce_forge_cursor_t *c
             return SCE_FORGE_CODEC_NEED_MORE_BYTES;
 {% endif %}
     }
+{# docs/adr/0058 §1: a number the value states while its content is absent,
+   set once the decode knows whether the content is there. #}
+{% if c11_source and c11_source.decoded %}
+    {{ c11_source.decoded }}
+{% endif %}
 {% if c11_over %}
     if (_over) return SCE_FORGE_CODEC_CAPACITY_EXCEEDED;
 {% endif %}
