@@ -14203,6 +14203,14 @@ fn render_codec(
                     .is_some_and(|(plan, _)| c11_source::derived_field(plan, &f.id))
                     .into(),
             );
+            // The opening of a group whose members the C11 decode reads in
+            // place, before the first of them (docs/adr/0065 §6 R4).
+            if let Some(opened) = c11_printed
+                .as_ref()
+                .and_then(|(_, printed)| printed.before_decode.get(&f.id))
+            {
+                obj.insert("c11_before_decode".into(), opened.clone().into());
+            }
             obj.insert("is_repeat".into(), serde_json::Value::Bool(f.is_repeat()));
             obj.insert(
                 "is_tlv_chain".into(),
@@ -19665,20 +19673,47 @@ fn embed_streaming_decode_stmt(ctx: EmbedDecode<'_>) -> String {
             // struct before decode (existing cpp/kt behaviour
             // with the all-zeros default constructor).
             // A body that can answer a capacity is noted and read on past
-            // (docs/adr/0077 §7, [`c11_body_call`]).
-            let call = |cursor: &str, value: &str| {
+            // (docs/adr/0077 §7, [`c11_body_call`]). `place` is the address
+            // the body is decoded into.
+            let call = |cursor: &str, place: &str| {
                 c11_body_call(
                     c11_over,
-                    &format!("{body_decoder}({cursor}, &out->{id_snake}{value}{thread_arg})"),
+                    &format!("{body_decoder}({cursor}, {place}{thread_arg})"),
                     "        ",
                 )
             };
+            let member = format!("&out->{id_snake}");
+            let present = format!("&out->{id_snake}.value");
+            // A body a group holds is read in place, into the arm of the group
+            // the decode opened before it, where its gate holds: the arm says
+            // it is there (docs/adr/0065 §6 R4).
+            if let (Some(test), Some(place)) = (&test_lit, derived.held_at(&field.id)) {
+                return match len_expr(Language::C11) {
+                    None => format!(
+                        "if ({test}) {{\n        \
+                             {call}\n    \
+                         }}",
+                        call = call("cursor", place)
+                    ),
+                    Some(sibling) => format!(
+                        "if ({test}) {{\n        \
+                             size_t _len = (size_t)({sibling});\n        \
+                             const uint8_t *_raw = sce_forge_cursor_peek(cursor, _len);\n        \
+                             if (_raw == NULL) return SCE_FORGE_CODEC_NEED_MORE_BYTES;\n        \
+                             sce_forge_cursor_t _inner = sce_forge_cursor_init(_raw, _len);\n        \
+                             {call}\n        \
+                             if (!sce_forge_cursor_advance(cursor, _len)) return SCE_FORGE_CODEC_NEED_MORE_BYTES;\n    \
+                         }}",
+                        call = call("&_inner", place)
+                    ),
+                };
+            }
             match (&test_lit, len_expr(Language::C11)) {
                 (None, None) => format!(
                     "{{\n        \
                          {call}\n    \
                      }}",
-                    call = call("cursor", "")
+                    call = call("cursor", &member)
                 ),
                 // A gated embed is the optional value of the body: present
                 // under the gate, with the body decoded into its `value`, and
@@ -19689,7 +19724,7 @@ fn embed_streaming_decode_stmt(ctx: EmbedDecode<'_>) -> String {
                          {call}\n        \
                          out->{id_snake}.present = true;\n    \
                      }}",
-                    call = call("cursor", ".value")
+                    call = call("cursor", &present)
                 ),
                 (None, Some(sibling)) => format!(
                     "{{\n        \
@@ -19700,7 +19735,7 @@ fn embed_streaming_decode_stmt(ctx: EmbedDecode<'_>) -> String {
                          {call}\n        \
                          if (!sce_forge_cursor_advance(cursor, _len)) return SCE_FORGE_CODEC_NEED_MORE_BYTES;\n    \
                      }}",
-                    call = call("&_inner", "")
+                    call = call("&_inner", &member)
                 ),
                 (Some(test), Some(sibling)) => format!(
                     "memset(&out->{id_snake}, 0, sizeof out->{id_snake});\n    \
@@ -19713,7 +19748,7 @@ fn embed_streaming_decode_stmt(ctx: EmbedDecode<'_>) -> String {
                          if (!sce_forge_cursor_advance(cursor, _len)) return SCE_FORGE_CODEC_NEED_MORE_BYTES;\n        \
                          out->{id_snake}.present = true;\n    \
                      }}",
-                    call = call("&_inner", ".value")
+                    call = call("&_inner", &present)
                 ),
             }
         }
@@ -20708,6 +20743,29 @@ fn repeat_streaming_decode_stmt_gated(ctx: RepeatDecodeGated<'_>) -> String {
             let id_snake = filters::to_snake_case(id.to_string());
             let count = carried_length(len_field, fields, count_is_gated, lang, derived);
             let guard = repeat_count_guard(field, fields, &count, lang, "        ");
+            // A list a group holds is read in place, into the arm of the
+            // group the decode opened before it: the arm says it is there
+            // (docs/adr/0065 §6 R4).
+            if let Some(place) = derived.held_at(&field.id) {
+                let data = format!("{place}->data");
+                let len = format!("{place}->len");
+                let entries = c11_list_loop(C11ListLoop {
+                    field,
+                    fields,
+                    count: Some("_n"),
+                    data: &data,
+                    len: &len,
+                    body_decoder,
+                    decode_arg,
+                    c11_over,
+                });
+                return format!(
+                    "if ({test}) {{\n        \
+                         {guard}size_t _n = (size_t){count};\n        \
+                         {entries}\n    \
+                     }}"
+                );
+            }
             let data = format!("out->{id_snake}.value.data");
             let len = format!("out->{id_snake}.value.len");
             let entries = c11_list_loop(C11ListLoop {
@@ -20733,6 +20791,27 @@ fn repeat_streaming_decode_stmt_gated(ctx: RepeatDecodeGated<'_>) -> String {
         }
         (Language::C11, CountRef::UntilEof) => {
             let id_snake = filters::to_snake_case(id.to_string());
+            // A list a group holds is read in place, into the arm of the
+            // group the decode opened before it (docs/adr/0065 §6 R4).
+            if let Some(place) = derived.held_at(&field.id) {
+                let data = format!("{place}->data");
+                let len = format!("{place}->len");
+                let entries = c11_list_loop(C11ListLoop {
+                    field,
+                    fields,
+                    count: None,
+                    data: &data,
+                    len: &len,
+                    body_decoder,
+                    decode_arg,
+                    c11_over,
+                });
+                return format!(
+                    "if ({test}) {{\n        \
+                         {entries}\n    \
+                     }}"
+                );
+            }
             let data = format!("out->{id_snake}.value.data");
             let len = format!("out->{id_snake}.value.len");
             let entries = c11_list_loop(C11ListLoop {
@@ -22575,7 +22654,7 @@ fn present_if_streaming_decode_stmt(
         BitSize::Fixed { bits } => {
             present_if_decode_fixed(l, field, fields, default_endian, *bits, derived)
         }
-        BitSize::Tail => present_if_decode_tail(field, fields, lang),
+        BitSize::Tail => present_if_decode_tail(field, fields, lang, derived),
         BitSize::LengthRef => present_if_decode_length_ref(field, fields, lang, derived),
         BitSize::Vle { width_bits } => {
             present_if_decode_vle(field, fields, lang, *width_bits, derived)
@@ -22948,11 +23027,13 @@ fn present_if_decode_fixed(
 /// clear. The non-gated form (Tail field appearing in a codec that
 /// has *some* present-if'd field elsewhere) reads remaining bytes
 /// unconditionally — the streaming branch path requires per-field
-/// cursor advance to stay sequential.
+/// cursor advance to stay sequential. A C11 tail a group holds is read in
+/// place, into the arm of the group the decode opened (`derived`).
 fn present_if_decode_tail(
     field: &CodecField,
     fields: &[CodecField],
     lang: crate::generator::Language,
+    derived: &c11_source::Derived,
 ) -> String {
     use crate::generator::Language;
     let id_owned = codec_field_decode_local(&field.id, lang);
@@ -23093,6 +23174,30 @@ fn present_if_decode_tail(
             );
             format!(
                 "{{\n        \
+                     size_t _n = sce_forge_cursor_remaining(cursor);\n        \
+                     {guard}const uint8_t *raw = sce_forge_cursor_peek(cursor, _n);\n        \
+                     if (raw == NULL) return SCE_FORGE_CODEC_NEED_MORE_BYTES;\n        \
+                     {hold}\n        \
+                     if (!sce_forge_cursor_advance(cursor, _n)) return SCE_FORGE_CODEC_NEED_MORE_BYTES;\n    \
+                 }}"
+            )
+        }
+        // A tail a group holds is read in place, into the buffer of the arm
+        // of the group the decode opened before it: the arm says it is there
+        // (docs/adr/0065 §6 R4).
+        (Language::C11, Some(p)) if derived.held_at(&field.id).is_some() => {
+            let place = derived.held_at(&field.id).unwrap_or_default();
+            let hold = c11_hold_bytes(
+                field,
+                fields,
+                &format!("{place}->data"),
+                &format!("{place}->len"),
+                "raw",
+                "        ",
+            );
+            let test = present_if_test_literal(fields, p, lang);
+            format!(
+                "if ({test}) {{\n        \
                      size_t _n = sce_forge_cursor_remaining(cursor);\n        \
                      {guard}const uint8_t *raw = sce_forge_cursor_peek(cursor, _n);\n        \
                      if (raw == NULL) return SCE_FORGE_CODEC_NEED_MORE_BYTES;\n        \
@@ -23353,6 +23458,23 @@ fn present_if_decode_length_ref(
             let hold = c11_hold(&format!("out->{id_snake}"), &format!("out->{id_snake}_len"));
             format!(
                 "{{\n        \
+                     {count}\n        \
+                     const uint8_t *raw = sce_forge_cursor_peek(cursor, _n);\n        \
+                     if (raw == NULL) return SCE_FORGE_CODEC_NEED_MORE_BYTES;\n        \
+                     {hold}\n        \
+                     if (!sce_forge_cursor_advance(cursor, _n)) return SCE_FORGE_CODEC_NEED_MORE_BYTES;\n    \
+                 }}"
+            )
+        }
+        // Bytes a group holds are read in place, into the buffer of the arm of
+        // the group the decode opened before them: the arm says they are there
+        // (docs/adr/0065 §6 R4).
+        (Language::C11, Some(p)) if derived.held_at(&field.id).is_some() => {
+            let place = derived.held_at(&field.id).unwrap_or_default();
+            let test = present_if_test_literal(fields, p, lang);
+            let hold = c11_hold(&format!("{place}->data"), &format!("{place}->len"));
+            format!(
+                "if ({test}) {{\n        \
                      {count}\n        \
                      const uint8_t *raw = sce_forge_cursor_peek(cursor, _n);\n        \
                      if (raw == NULL) return SCE_FORGE_CODEC_NEED_MORE_BYTES;\n        \
@@ -23640,6 +23762,31 @@ fn present_if_decode_string_length_ref(
             );
             format!(
                 "{{\n        \
+                     {count}\n        \
+                     const uint8_t *raw = sce_forge_cursor_peek(cursor, _n);\n        \
+                     if (raw == NULL) return SCE_FORGE_CODEC_NEED_MORE_BYTES;\n        \
+                     if (!sce_forge_is_valid_utf8(raw, _n)) return SCE_FORGE_CODEC_INVALID_UTF8;\n        \
+                     {hold}\n        \
+                     if (!sce_forge_cursor_advance(cursor, _n)) return SCE_FORGE_CODEC_NEED_MORE_BYTES;\n    \
+                 }}"
+            )
+        }
+        // A text a group holds is read in place, into the buffer of the arm of
+        // the group the decode opened before it, validated before it is
+        // copied (docs/adr/0065 §6 R4).
+        (Language::C11, Some(p)) if derived.held_at(&field.id).is_some() => {
+            let place = derived.held_at(&field.id).unwrap_or_default();
+            let hold = c11_hold_bytes(
+                field,
+                fields,
+                &format!("{place}->data"),
+                &format!("{place}->len"),
+                "raw",
+                "        ",
+            );
+            let test = present_if_test_literal(fields, p, lang);
+            format!(
+                "if ({test}) {{\n        \
                      {count}\n        \
                      const uint8_t *raw = sce_forge_cursor_peek(cursor, _n);\n        \
                      if (raw == NULL) return SCE_FORGE_CODEC_NEED_MORE_BYTES;\n        \
