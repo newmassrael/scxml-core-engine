@@ -2045,6 +2045,39 @@ old encode, the old encode and its templates are removed in the same landing.
    the flags the element says off it, as the C++ log does (`ForgeCompileOptions::element_type_c11_printed`). An input
    an arm, a group or a list's start says, a gate of a chain's membership, and an input a chain's entry says of the
    entry before stay unlowered with the forms that hold them.
+
+   *The tenth C11 landing, 2026-11-17:* variants, of arms of codecs the C11 backend prints, whatever holds the tag: a
+   field of the codec's own, a flag of its carrier, the arm's own first byte (a peek byte), or the caller. The C
+   spelling of a source's arm is the one C holds a sum in, a tagged union, and it is the shape the value's struct
+   already holds its arm in (`{codec}_variant_t`): `{codec}_body_ref_t` is the arm's kind, one constant of the
+   struct's own `{codec}_body_kind_t`, the tag the catch-all holds, and in the union's member of the arm the pair a
+   body of the arm's codec is presented as (`{arm}_source_ref_t`), so an arm is presented where it is held, by two
+   pointers. The table gains `body`, after the elements; the value's reader points the arm's pair at the union's
+   member by the arm's own value table. The decision was the tagged union over one table function for each arm
+   (`as_<arm>(ctx)`, answering `NULL` for an arm the value does not hold), which leaves which arm a source holds to
+   the order the encode asks in and lets a source answer two, and over a kind beside an untyped context, which loses
+   each arm's table type. The encode derives the tag from the kind (`Derive::VariantTag`), a known arm's the
+   document's and the catch-all's the tag it holds, into the tag's field, whole, which leaves the value's struct
+   (§3) and which the decode reads into a local (`_d_<field>`) and dispatches on, or into its flag, folded into the
+   carrier as any derived flag is; a peek-byte or a caller-tag variant derives none. The arm is written by its
+   codec's `{arm}_encode_source` over its pair, handed what its import binds, and `{codec}_check_value` holds the
+   arm's body to its codec's check. A parent whose flag holds the tag of a body's variant (`Derive::ParentTag`)
+   reads the body's arm off the source it presents the body as, through the function of the body codec's table that
+   presents the arm, and folds each arm's tag, masked, into the flag, the catch-all's the tag it holds, nothing from
+   a body a gate leaves out, as the C++ and Rust printers do. An input the arms say (§6 R4d, R4e) is what
+   `{codec}_arm_input_<name>(arm)` answers, a switch over the arm's kind through each arm codec's own function of
+   the input, a `sce_optional_uint8_t` where some arm does not read it; a flag bound to one is derived from it
+   (`Measured::ArmSays`) and an input an arm says beside what it is handed is held to it (`CheckSite::Arm`). Every
+   line that names an arm a build feature decides is inside the guard of its macro (docs/adr/0072), as the struct's
+   are. The kind constants and the union's members are named once, by the printer (`c11_source::arm_kind`,
+   `arm_member`), and the template's struct reads them there. The catch-all's tag is held as the tag's type and not
+   refined (§6 R3): the C++ printer holds it so, and the refinement lands in both with one decision. The decode of a
+   variant now sets a number the value states once every field is read (`C11Source::decoded`). The C11 case states
+   the arm as the struct holds it, the kind, the catch-all's tag and the arm's body in its member, and hands a
+   caller-tag variant's decode the arm's tag after the inputs, holding both values to answering it
+   (`{codec}_tag`). Two tests that read the template's C text of a parent deriving a body's tag now read the printed
+   text, and the C census of a gated arm counts seven items of each gated arm where the codec is printed. A group
+   and an input a group or a list's start says stay unlowered.
 5. Swift, when its codec lowers what the plan holds.
    *Swift lowers what the plan holds, 2026-11-16:* its codec writes every codec of the repository Rust writes,
    but the one only an MCU-class backend writes (`a_swift_codec_is_written_wherever_rust_writes_one.rs`): an
