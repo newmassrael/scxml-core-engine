@@ -479,18 +479,30 @@ fn every_c_item_of_a_gated_arm_is_inside_its_macro() {
             || t.contains("CODEC_ZENOH_MSG_DEL")
             || t.starts_with("codec_zenoh_msg_put_t ")
             || t.starts_with("codec_zenoh_msg_del_t ")
+            || t.starts_with("codec_zenoh_msg_put_source_ref_t ")
+            || t.starts_with("codec_zenoh_msg_del_source_ref_t ")
             || t == "case 1:"
             || t == "case 2:"
     };
-    // The kind constant, the union member, the decode's case and the encode's,
-    // for each of the two arms; the default initializer names the query arm.
+    // The kind constant, the union member and the decode's case of each of the
+    // two arms, and the encode's case. An encode printed from the codec's plan
+    // (docs/adr/0081 step 4) names each arm in the member of the arm a source
+    // presents, in the case of the value's reader of it, of the encode and of
+    // the value's check; the template's encode names it in its case alone. The
+    // default initializer names the query arm.
+    let printed = code.contains("codec_zenoh_request_encode_source(const ");
+    let items = if printed { 7 } else { 4 };
     let guards: Vec<usize> = lines
         .iter()
         .enumerate()
         .filter(|(_, l)| l.trim() == guard)
         .map(|(at, _)| at)
         .collect();
-    assert_eq!(guards.len(), 8, "four items of each gated arm:\n{code}");
+    assert_eq!(
+        guards.len(),
+        2 * items,
+        "{items} items of each gated arm (printed from its plan: {printed}):\n{code}"
+    );
     for at in guards {
         assert!(
             gated_item(lines[at + 1]),

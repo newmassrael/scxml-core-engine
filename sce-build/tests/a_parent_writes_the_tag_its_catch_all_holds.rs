@@ -193,19 +193,31 @@ fn the_rust_parent_writes_the_tag_its_catch_all_holds() {
     );
 }
 
-/// The C parent's switch on the embedded body's kind has a case for the
-/// catch-all, which adds the tag the body keeps in `default_tag`, before the
+/// The C parent, printed from its plan (docs/adr/0081 step 4), reads the arm
+/// the embedded body holds off the source it presents the body as, and
+/// switches on its kind: each arm fills `K` with its own tag, and the
+/// catch-all with the tag it holds, masked to the flag's two bits, before the
 /// `default` that adds nothing.
 #[test]
 fn the_c_parent_writes_the_tag_its_catch_all_holds() {
     let code = parent_code(false, Language::C11);
     let switch = [
-        "    uint8_t _derived_header = 0u;",
-        "    switch (self->key.body.kind) {",
-        "    case CA_CHILD_BODY_KIND_CA_LOCAL: _derived_header |= 0x00u; break;",
-        "    case CA_CHILD_BODY_KIND_CA_WIDE: _derived_header |= 0x20u; break;",
-        "    case CA_CHILD_BODY_KIND_DEFAULT: _derived_header |= (uint8_t)((self->key.body.default_tag & 0x3u) << 5); break;",
-        "    default: break;",
+        "    uint64_t _p_header_k = 0;",
+        "    {",
+        "        const ca_child_body_ref_t _v = _e_key.table->body(_e_key.ctx);",
+        "        switch (_v.kind) {",
+        "            case CA_CHILD_BODY_KIND_CA_LOCAL:",
+        "                _p_header_k |= 0x0ull;",
+        "                break;",
+        "            case CA_CHILD_BODY_KIND_CA_WIDE:",
+        "                _p_header_k |= 0x1ull;",
+        "                break;",
+        "            case CA_CHILD_BODY_KIND_DEFAULT:",
+        "                _p_header_k |= (uint64_t)_v.default_tag & 0x3ull;",
+        "                break;",
+        "            default:",
+        "                break;",
+        "        }",
         "    }",
     ]
     .join("\n");
@@ -213,6 +225,29 @@ fn the_c_parent_writes_the_tag_its_catch_all_holds() {
         &code,
         &switch,
         "the C parent does not derive K from the catch-all's tag",
+    );
+}
+
+/// Over a variant with an arm under a build feature (docs/adr/0072) the C
+/// parent's case of the gated arm is inside the guard of its macro, which the
+/// embedded body's header defines, and the catch-all's is outside every
+/// guard.
+#[test]
+fn the_c_parent_of_a_gated_variant_writes_the_tag_its_catch_all_holds() {
+    let code = parent_code(true, Language::C11);
+    let derived = [
+        "#if SCE_FEATURE_LOCAL_ARM",
+        "            case CA_CHILD_BODY_KIND_CA_LOCAL:",
+        "                _p_header_k |= 0x0ull;",
+        "                break;",
+        "#endif",
+        "            case CA_CHILD_BODY_KIND_CA_WIDE:",
+    ]
+    .join("\n");
+    assert_holds(
+        &code,
+        &derived,
+        "the C parent of a gated variant does not guard the gated arm's case",
     );
 }
 
@@ -331,13 +366,15 @@ fn the_kotlin_parent_writes_the_tag_its_catch_all_holds() {
 
 // ── the carrier: the stored flag cleared, the derived bits written ──────
 
-/// The C parent clears K in the stored header before it adds the derived bits.
+/// The C parent, printed from its plan, replaces K in the header the source
+/// presents with the derived bits, and writes the header it folded.
 #[test]
 fn the_c_parent_writes_k_from_the_body_alone() {
     let code = parent_code(false, Language::C11);
     assert_holds(
         &code,
-        "sce_forge_writer_write_u8(w, (self->header & 0x9Fu) | _derived_header)",
+        "    _f_header = (_f_header & ~0x60ull) | (_p_header_k << 5);\n    \
+         const uint8_t _c_header = (uint8_t)_f_header;\n",
         "the C parent writes the stored K bits with the derived ones",
     );
 }

@@ -16,9 +16,10 @@
 
 use super::super::rust_source::{
     byte_values, case_inputs, case_tag, entry_rows, enum_variant, integer_value, source_members,
-    HeldCodecs,
+    variant_choice, HeldCodecs, CALLER_TAG_LABEL, VARIANT_MEMBER,
 };
 use super::super::*;
+use super::{arm_kind, arm_member, BODY};
 use crate::forge::encode_plan::{EncodePlan, Value};
 
 /// The name the harness gives the value a case makes.
@@ -65,10 +66,12 @@ impl SourceCase {
 /// not say to the encode too, and the value is held to saying each other one
 /// through the input's own function (`{codec}_input_<name>`, docs/adr/0065 §6
 /// R4a), which answers an absent value where the value says nothing of it. A
-/// codec whose case hands it a caller's tag (`tag`), or that holds a group or
-/// a variant, is one the C11 printer does not print, and its case is refused
-/// by name; so is a source that states an element the value does not present
-/// or leaves out one it does.
+/// variant with no tag of its own is handed the tag of the arm the source
+/// holds (`tag`, [`case_tag`]) after the inputs, and the value made and the
+/// value decoded are held to answering it (`{codec}_tag`). A codec that holds
+/// a group is one the C11 printer does not print, and its case is refused by
+/// name; so is a source that states an element the value does not present or
+/// leaves out one it does.
 pub(crate) fn source_case(
     plan: &EncodePlan<'_>,
     source: &serde_json::Value,
@@ -97,15 +100,17 @@ pub(crate) fn source_case(
         };
         said.push((format!("flag input {}", input.name), holds));
     }
-    if case_tag(plan, source, tag)?.is_some() || plan.model.variant.is_some() {
-        return Err("a C11 case states no variant yet: the C11 printer \
-                    prints no codec that holds one"
-            .to_string());
-    }
     if !plan.groups().is_empty() {
         return Err("a C11 case states no group yet: the C11 printer \
                     prints no codec that holds one"
             .to_string());
+    }
+    // The decode of a variant with no tag of its own is handed the tag of the
+    // arm the source holds after the flag inputs, and the value made and the
+    // value decoded both answer it (`{codec}_tag`).
+    let tag = case_tag(plan, source, tag)?;
+    if let Some(tag) = tag {
+        args.push(format!("{tag}u"));
     }
     let mut case = SourceCase {
         inputs: args,
@@ -114,15 +119,22 @@ pub(crate) fn source_case(
     };
     members(plan, source, "", "", held, &mut case)?;
     case.checks.extend(said);
+    if let Some(tag) = tag {
+        case.checks.push((
+            CALLER_TAG_LABEL.to_string(),
+            format!("{snake}_tag(&{DECODED}) == {tag}u && {snake}_tag(&{VALUE}) == {tag}u"),
+        ));
+    }
     Ok(case)
 }
 
 /// Into `case`, the statements that set each element of `source`, a value of
 /// the codec `plan` held at the member path `at` of the case's value (`""`
 /// for the value itself, `"body."` or `"body.value."` for a body it holds,
-/// `"list[0]."` or `"list.value.data[0]."` for an entry of a list it holds),
-/// and the check of each, by its id after `id_at`. A body and each entry of a
-/// list are set member by member in turn, as the struct holds them.
+/// `"list[0]."` or `"list.value.data[0]."` for an entry of a list it holds,
+/// `"body.arm.<arm>."` for the body of its variant's arm), and the check of
+/// each, by its id after `id_at`. A body, each entry of a list and the arm of
+/// a variant are set member by member in turn, as the struct holds them.
 fn members(
     plan: &EncodePlan<'_>,
     source: &serde_json::Value,
@@ -269,6 +281,42 @@ fn members(
                 ));
             }
         }
+    }
+    // The arm of the variant, held in the struct's variant: its kind, the tag
+    // the catch-all holds, and the members of its body in the union's member
+    // of the arm, as its codec's own case sets them.
+    if plan.model.variant.is_some() {
+        let id = format!("{id_at}{VARIANT_MEMBER}");
+        let json = object
+            .get(VARIANT_MEMBER)
+            .ok_or_else(|| format!("the source states no `{id}`, the variant's arm"))?;
+        let (chosen, body) = variant_choice(plan, json).map_err(|e| format!("`{id}`: {e}"))?;
+        let named = chosen.default_tag.is_none().then_some(chosen.codec);
+        let variant = format!("{at}{BODY}");
+        statements.push(format!(
+            "{VALUE}.{variant}.kind = {};",
+            arm_kind(&plan.model.name, named)
+        ));
+        checks.push((
+            id.clone(),
+            format!("{DECODED}.{variant}.kind == {VALUE}.{variant}.kind"),
+        ));
+        if let Some(tag) = chosen.default_tag {
+            statements.push(format!("{VALUE}.{variant}.default_tag = {tag}u;"));
+            checks.push((
+                format!("{id} tag"),
+                format!("{DECODED}.{variant}.default_tag == {VALUE}.{variant}.default_tag"),
+            ));
+        }
+        let inner_at = format!("{variant}.arm.{}.", arm_member(named));
+        let inner_id = format!("{id}.");
+        let mut arm = SourceCase::empty();
+        held.read(chosen.codec, &mut |arm_plan, _path, held| {
+            members(arm_plan, body, &inner_at, &inner_id, held, &mut arm).map(|()| String::new())
+        })
+        .map_err(|e| format!("`{id}`: {e}"))?;
+        statements.extend(arm.statements);
+        checks.extend(arm.checks);
     }
     Ok(())
 }
