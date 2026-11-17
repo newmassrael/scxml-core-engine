@@ -85,8 +85,9 @@ final class CodecChainUnitTests: XCTestCase {
         let frame = try CodecZenohErr.decode(&cursor)
         let first = CodecZenohExtEntry(header: 0x81, body: .codecZenohExtUnit(CodecZenohExtUnit()))
         let last = CodecZenohExtEntry(header: 0x02, body: .codecZenohExtUnit(CodecZenohExtUnit()))
-        XCTAssertEqual(frame.extensions, [first, last], "the first says another follows, the second does not")
-        XCTAssertEqual(frame.payload, [])
+        XCTAssertEqual(
+            frame.extensions?.entries, [first, last], "the first says another follows, the second does not")
+        XCTAssertEqual(frame.payload.bytes, [])
         XCTAssertEqual(cursor.remaining, 0)
     }
 
@@ -94,7 +95,7 @@ final class CodecChainUnitTests: XCTestCase {
         var cursor = SceCursor([0x05, 0x02, 0xAA, 0xBB])
         let frame = try CodecZenohErr.decode(&cursor)
         XCTAssertNil(frame.extensions)
-        XCTAssertEqual(frame.payload, [0xAA, 0xBB])
+        XCTAssertEqual(frame.payload.bytes, [0xAA, 0xBB])
     }
 
     func testAnEntryThatPromisesAnotherTheFrameLacksLeavesTheFrameShort() {
@@ -132,14 +133,21 @@ final class CodecChainUnitTests: XCTestCase {
         XCTAssertEqual(cursor.remaining, 0)
     }
 
+    // docs/adr/0065 §6 R7: a chain closed by a flag holds at least one entry, so an empty one is no
+    // value of its type and no encode is ever handed one.
     func testAChainClosedByAFlagHoldsAtLeastOneEntryWhenItIsPresent() {
+        XCTAssertNil(BoundedList<CodecZenohExtEntry, CodecZenohErr.ExtensionsBound>([]))
+    }
+
+    // The encode sets the flag the chain ends on, on every entry but the last, whatever the entry
+    // presents, and derives the header's `Z` from the chain being there (docs/adr/0081 §3).
+    func testAnEncodeClearsTheFlagOfTheLastEntryWhateverItPresents() throws {
+        let entry = CodecZenohExtEntry(header: 0x81, body: .codecZenohExtUnit(CodecZenohExtUnit()))
+        let extensions = try XCTUnwrap(
+            BoundedList<CodecZenohExtEntry, CodecZenohErr.ExtensionsBound>([entry]))
         var sink = BytesSink()
-        XCTAssertThrowsError(
-            try CodecZenohErr(header: 0x85, encoding: nil, extensions: [], payload_len: 0, payload: [])
-                .encode(into: &sink)
-        ) { error in
-            XCTAssertEqual(error as? CodecError, .tooManyElements)
-        }
-        XCTAssertEqual(sink.bytes, [])
+        try CodecZenohErr(header: 0x05, encoding: nil, extensions: extensions, payload: .fewest)
+            .encode(into: &sink)
+        XCTAssertEqual(sink.bytes, [0x85, 0x01, 0x00])
     }
 }

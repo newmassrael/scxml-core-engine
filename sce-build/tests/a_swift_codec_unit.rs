@@ -275,6 +275,7 @@ fn a_codec_is_printed_from_its_plan_where_the_printer_lowers_every_form_and_else
         "tests/forge/resources/codec_chain_prev_carrier.scxml",
         "tests/forge/resources/codec_chain_flag_forward.scxml",
         "tests/forge/resources/codec_repeat_unconditional_count.scxml",
+        "tests/forge/resources/codec_zenoh_err.scxml",
     ] {
         let code = swift_of(printed).expect("a codec is written");
         assert!(
@@ -1654,8 +1655,12 @@ fn a_chain_to_the_end_of_the_frame_is_read_while_bytes_are_left_to_its_depth() {
 fn a_chain_closed_by_an_entry_flag_is_read_until_an_entry_clears_it() {
     let code = swift_of("tests/forge/resources/codec_zenoh_err.scxml")
         .expect("a chain closed by an entry flag is written");
+    // The codec is printed from its plan: its chain is a bounded list of entries, optional where
+    // its gate leaves it out (docs/adr/0065 §6 R2).
     assert!(
-        code.contains("public var extensions: [CodecZenohExtEntry]? = nil"),
+        code.contains(
+            "public var extensions: BoundedList<CodecZenohExtEntry, CodecZenohErr.ExtensionsBound>? = nil"
+        ),
         "a gated chain is optional: {code}"
     );
     // The protocol states no depth for the extensions, so the walk is not counted: it ends on the
@@ -1669,9 +1674,23 @@ fn a_chain_closed_by_an_entry_flag_is_read_until_an_entry_clears_it() {
         !code.contains("0..<none") && !code.contains("if extensions_more {"),
         "a chain with no depth states no bound to count to or to refuse past: {code}"
     );
+    // docs/adr/0065 §6 R7: a chain closed by a flag holds at least one entry, which its count bound
+    // states and its type holds, so the encode counts nothing; the protocol states no depth.
     assert!(
-        code.contains("if let value = self.extensions, value.count < 1 {"),
+        code.contains("public enum ExtensionsBound: SceCountBound {\n        public static let least = 1\n        public static let most: Int? = nil\n"),
         "a chain closed by a flag holds at least one entry: {code}"
+    );
+    assert!(
+        !code.contains("value.count < 1"),
+        "an encode does not count a chain its type bounds: {code}"
+    );
+    // The walk sets the flag on every entry but the last, whatever the entry presents.
+    assert!(
+        code.contains("var extensions_left = held.count")
+            && code.contains(
+                "try CodecZenohExtEntry.encodeSource(entry, into: &extensions_entries, overrides: CodecZenohExtEntry.Overrides(headerZ: extensions_left != 0))"
+            ),
+        "{code}"
     );
 }
 
