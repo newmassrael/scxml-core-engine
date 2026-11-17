@@ -20,7 +20,9 @@
 //! uses that it does not print, and such a codec keeps the template's encode
 //! whole, so no codec has two encodes.
 
+use super::rust_source::{gates_label, group_accessor};
 use super::*;
+use crate::forge::codec_roles::GateVar;
 use crate::forge::codec_roles::{ElementId, InputSource};
 use crate::forge::codec_totality::RefusalKind;
 use crate::forge::encode_failure::EncodeFailure;
@@ -31,6 +33,7 @@ use crate::forge::encode_plan::{
 };
 use std::collections::{BTreeMap, BTreeSet};
 
+mod group;
 pub(super) mod source_case;
 
 /// The member the codec's struct holds its variant's arm in, and the function
@@ -190,17 +193,20 @@ pub(super) fn unlowered(plan: &CodecPlan<'_>, imports: &[ImportContext]) -> Opti
 /// byte strings, texts, and bodies and lists of codecs it prints that are
 /// handed no flag input and held to no law, always there, decided by a gate of
 /// a carrier's flags, or a number the value states while the content it
-/// measures is absent, and a variant of arms of codecs it prints, whatever
-/// holds its tag, an arm under a build feature inside the guard of its macro;
-/// whose every derived element is a number measured off byte strings, texts,
-/// lists and bodies or read off what a body or the arm the value holds says,
-/// in a field or in a flag of a carrier, a flag set where the elements it
-/// gates are there, the tag of the arm the value holds, or the tag of the arm
+/// measures is absent, a group of numbers and enums a gate of a flag or an
+/// input decides, held as the struct of its arm ([`group`]), and a variant of
+/// arms of codecs it prints, whatever holds its tag, an arm under a build
+/// feature inside the guard of its macro; whose every derived element is a
+/// number measured off byte strings, texts, lists and bodies or read off what
+/// a body or the arm the value holds says, in a field or in a flag of a
+/// carrier, a flag set where the elements it gates are there, a flag a
+/// group's arm sets, the tag of the arm the value holds, or the tag of the arm
 /// a body holds. A flag input the value does not say is a parameter of the
-/// encode, and one it says, off a field gated on it alone, a body or the arm
-/// the value holds, is read off the source; a body, an arm and a list's
-/// entries are handed each input their import binds. Its encode refuses, before its first byte, a
-/// number past what holds it, measures of one number that disagree, a number
+/// encode, and one it says, off a field gated on it alone, a group, a body or
+/// the arm the value holds, is read off the source; a body, an arm and a
+/// list's entries are handed each input their import binds. Its encode
+/// refuses, before its first byte, a number past what holds it, measures of
+/// one number that disagree, a number
 /// the value states beside content that says another, a gate it cannot derive
 /// that disagrees with the element it gates, an input a held codec says that
 /// disagrees with what it is handed, and what a body or an entry it holds
@@ -335,9 +341,12 @@ fn positional_forms(plan: &EncodePlan<'_>, imports: &[ImportContext]) -> Vec<Str
     }
     for said in &plan.said {
         match plan.roles.inputs.get(&said.input.name) {
+            // Said by the field gated on it, the body it hands it to, the arm
+            // of the group it decides the value holds, or the arms that say it.
             Some(
                 InputSource::Gate { .. }
                 | InputSource::Forward { .. }
+                | InputSource::Group
                 | InputSource::SomeArms { .. },
             ) => {}
             // Said by the arm the value holds through its codec's own function
@@ -355,7 +364,7 @@ fn positional_forms(plan: &EncodePlan<'_>, imports: &[ImportContext]) -> Vec<Str
                 }
             }
             _ => forms.push(format!(
-                "flag input '{}': an input a group or a list's start says",
+                "flag input '{}': an input a list's start says",
                 said.input.name
             )),
         }
@@ -440,8 +449,56 @@ fn positional_forms(plan: &EncodePlan<'_>, imports: &[ImportContext]) -> Vec<Str
         // content is absent, are presented as the optional value of what they
         // hold.
     }
-    if !plan.groups().is_empty() {
-        forms.push("a group of fields a gate decides together".to_string());
+    // A group of fields a gate of a flag or an input decides is held as a
+    // tagged struct of its arms ([`group`]), each member a number or an enum.
+    for group in plan.groups() {
+        let label = gates_label(group);
+        if group
+            .gates
+            .iter()
+            .any(|g| matches!(g, GateVar::Member { .. }))
+        {
+            forms.push(format!("group `{label}`: a group of a chain's memberships"));
+        }
+        if group.aligned.is_some() {
+            forms.push(format!("group `{label}`: two lists of one count"));
+        }
+        // The decode tests each flag on the carrier it read into the value.
+        for gate in &group.gates {
+            if let GateVar::Flag { carrier, .. } = gate {
+                if !element_of(plan, carrier).is_some_and(|e| e.presence == Presence::Always) {
+                    forms.push(format!(
+                        "group `{label}`: a gate of a carrier the value does not always present"
+                    ));
+                }
+            }
+        }
+        let name = group_accessor(group);
+        if m.fields
+            .iter()
+            .any(|f| filters::to_snake_case(f.id.clone()) == name)
+        {
+            forms.push(format!(
+                "group `{label}`: a group named as a field of the codec is"
+            ));
+        }
+        for id in group.fields() {
+            let field = m.fields.iter().find(|f| f.id == id);
+            let number = field.is_some_and(|f| {
+                matches!(plan.value(f), Value::Scalar(t)
+                    if t.int_bit_width().is_some() || matches!(t, SceType::Enum(_)))
+            });
+            if !number {
+                forms.push(format!(
+                    "group `{label}`: a member `{id}` other than a number or an enum"
+                ));
+            }
+            if field.is_some_and(|f| f.quantity.is_some()) {
+                forms.push(format!(
+                    "group `{label}`: a member `{id}` of a physical quantity"
+                ));
+            }
+        }
     }
     // A flag a parent may set in place of the value's is an override the
     // encode folds in last (`{codec}_overrides_t`, [`declare_overrides`]), and
@@ -461,17 +518,22 @@ fn positional_forms(plan: &EncodePlan<'_>, imports: &[ImportContext]) -> Vec<Str
                 // Set where the elements it gates are there, each read off
                 // whether the source holds it; elements the flag gates apart
                 // that disagree are refused. A group presents the fields it
-                // holds together.
-                if presence
-                    .of
-                    .iter()
-                    .any(|(gated, _)| element_of(plan, &gated.id).is_none())
-                {
+                // holds together, each bound off the arm the source presents
+                // as an element a gate decides is.
+                if presence.of.iter().any(|(gated, _)| {
+                    element_of(plan, &gated.id).is_none()
+                        && plan.roles.group_of(&gated.id).is_none()
+                }) {
                     forms.push(format!(
-                        "element '{}': a presence flag of fields a group holds",
+                        "element '{}': a presence flag of a field the value does not present",
                         derived.element
                     ));
                 }
+            }
+            // What the arm of the group the value holds gives the flag of the
+            // disjunction that decides it (docs/adr/0065 §6 R4c).
+            (ElementId::Flag { field, .. }, Derive::ArmFlag { .. }) => {
+                forms.extend(carrier_form(plan, &derived.element, field));
             }
             // The tag of the arm the value holds, into its field or a flag of
             // its carrier.
@@ -668,7 +730,19 @@ fn derived_whole(plan: &EncodePlan<'_>) -> BTreeSet<String> {
 /// local of its own. A number the value states while its content is absent is
 /// a member, the optional value of its type.
 pub(super) fn derived_field(plan: &EncodePlan<'_>, id: &str) -> bool {
-    derived_whole(plan).contains(id) && element_of(plan, id).is_none()
+    read_apart(plan).contains(id) && element_of(plan, id).is_none()
+}
+
+/// The fields of `plan` the value holds no member of its own for, which the
+/// decode reads into a local of its own ([`derived_local`]): what the encode
+/// derives whole, and each member of a group, which the value holds in the
+/// group's arm (docs/adr/0065 §6 R4).
+fn read_apart(plan: &EncodePlan<'_>) -> BTreeSet<String> {
+    let mut apart = derived_whole(plan);
+    for group in plan.groups() {
+        apart.extend(group.fields().into_iter().map(str::to_string));
+    }
+    apart
 }
 
 /// The fields a codec's C11 decode reads into a local of its own,
@@ -677,16 +751,17 @@ pub(super) fn derived_field(plan: &EncodePlan<'_>, id: &str) -> bool {
 /// (docs/adr/0081 §3), so the value holds no member of it, or, for a number
 /// the value states while its content is absent, a member the decode sets from
 /// the local once it knows whether the content is there
-/// ([`C11Source::decoded`]). Empty for a codec on the template's encode, whose
-/// value holds every field, and for every language whose decode binds every
-/// field to a local anyway.
+/// ([`C11Source::decoded`]); and each member of a group, which the decode sets
+/// in the arm of the group the gates it read select. Empty for a codec on the
+/// template's encode, whose value holds every field, and for every language
+/// whose decode binds every field to a local anyway.
 #[derive(Default)]
 pub(crate) struct Derived(BTreeSet<String>);
 
 impl Derived {
     /// The fields of `plan`, a plan [`unlowered`] answers `None` for.
     pub(super) fn of(plan: &EncodePlan<'_>) -> Self {
-        Derived(derived_whole(plan))
+        Derived(read_apart(plan))
     }
 
     /// Whether the value holds no member `id`.
@@ -696,13 +771,17 @@ impl Derived {
 }
 
 /// Whether the printer cannot read `field` as a write reads it: the value does
-/// not present it, and the encode does not derive it whole.
+/// not present it, alone or in a group, and the encode does not derive it
+/// whole.
 fn unread_form(
     plan: &EncodePlan<'_>,
     numbers: &BTreeSet<String>,
     field: &CodecField,
 ) -> Option<String> {
-    (element_of(plan, &field.id).is_none() && !numbers.contains(&field.id)).then(|| {
+    (element_of(plan, &field.id).is_none()
+        && plan.roles.group_of(&field.id).is_none()
+        && !numbers.contains(&field.id))
+    .then(|| {
         format!(
             "field '{}': a field the value neither presents nor the encode derives",
             field.id
@@ -985,6 +1064,13 @@ pub(crate) fn derived_local(id: &str) -> String {
 
 /// The C11 text the printer gives a codec's header.
 pub(super) struct C11Source {
+    /// Before the value's struct: the types of each group the value holds
+    /// (docs/adr/0065 §6 R4). Empty where it holds none.
+    pub(super) before_struct: String,
+    /// At the end of the value's struct's members, before its variant: a
+    /// member for each group, which the value holds in place of the fields the
+    /// group holds. Empty where it holds none.
+    pub(super) members: String,
     /// After the value's struct and its decode, before the value's encode: the
     /// view of each byte string and text, the list of each list and chain and
     /// the walk of the value's array of it, the table of a source and the pair a
@@ -999,8 +1085,10 @@ pub(super) struct C11Source {
     /// At the end of the streamed decode, once every field is read: each
     /// number the value states while its content is absent set from the local
     /// the decode read it into, present where none of that content was there
-    /// and absent where some was, as the frame then says it of the content.
-    /// Empty where the value states none.
+    /// and absent where some was, as the frame then says it of the content;
+    /// and each group made of the locals its members were read into, the arm
+    /// the gates the decode read select. Empty where the value states none and
+    /// holds no group.
     pub(super) decoded: String,
 }
 
@@ -1017,10 +1105,16 @@ pub(super) fn render(
     imports: &[ImportContext],
     snake: &str,
 ) -> C11Source {
+    let groups = group::groups(plan, snake);
     let printed = C11Source {
+        before_struct: groups.iter().map(|g| g.declare(plan, l, snake)).collect(),
+        members: groups
+            .iter()
+            .map(|g| format!("    {} {};\n", g.held, g.name))
+            .collect(),
         before_encode: before_encode(plan, l, imports, snake),
         encode_body: encode_body(plan, snake),
-        decoded: decoded(plan, l),
+        decoded: decoded(plan, l, snake),
     };
     // Every refusal the totality analysis names is one the encode writes.
     plan.totality.assert_all_written(&plan.model.name);
@@ -1028,10 +1122,15 @@ pub(super) fn render(
 }
 
 /// [`C11Source::decoded`]. A number the value states measures content a gate
-/// decides, so a codec that states one has gated fields, and its decode is
-/// the streamed one (`fields_lay_out_by_byte`).
-fn decoded(plan: &EncodePlan<'_>, l: &LangCtx) -> String {
+/// decides, and a group holds fields a gate decides, so a codec that states
+/// one or holds one has gated fields, and its decode is the streamed one
+/// (`fields_lay_out_by_byte`). Each statement after the first is indented as
+/// the decode's own; the template indents the first.
+fn decoded(plan: &EncodePlan<'_>, l: &LangCtx, snake: &str) -> String {
     let mut out = Vec::new();
+    for group in group::groups(plan, snake) {
+        out.push(group.decoded(plan).trim_end().to_string());
+    }
     for element in &plan.elements {
         if element.presence != Presence::Stated {
             continue;
@@ -1121,7 +1220,8 @@ fn before_encode(
          * derives every other element of the frame. */\n\
          typedef struct {{\n"
     ));
-    if plan.elements.is_empty() && !variant {
+    let groups = group::groups(plan, snake);
+    if plan.elements.is_empty() && groups.is_empty() && !variant {
         out.push_str(
             "    /* A C struct declares at least one member; the codec presents no\n     \
              * element, so the table has no function. */\n    \
@@ -1134,6 +1234,11 @@ fn before_encode(
             presented_type(l, snake, element),
             l.codec_field_id(&element.field.id)
         ));
+    }
+    // Each group, as the value holds it, after the elements, as the value's
+    // struct holds it after its fields.
+    for g in &groups {
+        out.push_str(&format!("    {} (*{})(const void *ctx);\n", g.held, g.name));
     }
     // The arm of the variant, after the elements, as the value's struct holds
     // it after its fields.
@@ -1285,6 +1390,17 @@ fn before_encode(
              }}\n\n"
         ));
     }
+    // Each group, as the struct holds it.
+    for g in &groups {
+        out.push_str(&format!(
+            "/* The `{name}` group of the {value} at `ctx`. */\n\
+             static inline {held} {snake}_value_{name}(const void *ctx) {{\n    \
+             return ((const {value} *)ctx)->{name};\n\
+             }}\n\n",
+            name = g.name,
+            held = g.held
+        ));
+    }
     // The arm the struct holds, its body a source of the arm's codec by the
     // table that presents a value of it, pointed at the body the union holds.
     if variant {
@@ -1314,6 +1430,7 @@ fn before_encode(
         .iter()
         .map(|element| format!("{snake}_value_{}", l.codec_field_id(&element.field.id)))
         .collect();
+    entries.extend(groups.iter().map(|g| format!("{snake}_value_{}", g.name)));
     if variant {
         entries.push(format!("{snake}_value_{BODY}"));
     }
@@ -1499,7 +1616,8 @@ fn encode_source(plan: &EncodePlan<'_>, l: &LangCtx, snake: &str) -> String {
         ));
     }
     let variant = plan.model.variant.is_some();
-    if plan.elements.is_empty() && !variant {
+    let groups = group::groups(plan, snake);
+    if plan.elements.is_empty() && groups.is_empty() && !variant {
         out.push_str("    (void)src;\n    (void)ctx;\n");
     }
     if plan.program.is_empty() {
@@ -1512,6 +1630,31 @@ fn encode_source(plan: &EncodePlan<'_>, l: &LangCtx, snake: &str) -> String {
             element_local(l, &element.field.id),
             l.codec_field_id(&element.field.id)
         ));
+    }
+    // Each group, read once, and each of its members bound off the arm it
+    // holds to the optional value an element a gate decides is read into, so
+    // every statement below reads a member as it reads such an element
+    // (docs/adr/0065 §6 R4).
+    for g in &groups {
+        let held = element_local(l, &g.name);
+        out.push_str(&format!(
+            "    const {} {held} = src->{}(ctx);\n",
+            g.held, g.name
+        ));
+        for id in g.group.fields() {
+            let field = plan
+                .model
+                .fields
+                .iter()
+                .find(|f| f.id == id)
+                .expect("a member of a group is a field of the codec");
+            out.push_str(&format!(
+                "    const {} {} = {};\n",
+                l.c11_codec_optional(&field.sce_type, None).type_name,
+                element_local(l, id),
+                g.member_read(l, id, &field.sce_type, &held)
+            ));
+        }
     }
     // The arm of the variant, read once as the elements are.
     let arms = Arms::of(plan);
@@ -1669,11 +1812,25 @@ fn encode_source(plan: &EncodePlan<'_>, l: &LangCtx, snake: &str) -> String {
                     present: None,
                 });
             }
+            // A flag of a disjunction that decides a group: what the arm of the
+            // group the source presents gives it, or what it has while the
+            // value holds no arm (docs/adr/0065 §6 R4c).
+            (ElementId::Flag { field, flag }, Derive::ArmFlag { group, gate }) => {
+                let g = &groups[*group];
+                let value = g.gate_value(*gate, &element_local(l, &g.name));
+                folds.entry(field.as_str()).or_default().push(Fold {
+                    flag: flag.clone(),
+                    named: derived.element.to_string(),
+                    bits: format!("(uint64_t){value}"),
+                    count: None,
+                    present: None,
+                });
+            }
             // Set by the walk of the chain that holds the entry, not here.
             (ElementId::Flag { .. }, Derive::ChainContinuation) => {}
             _ => unreachable!(
-                "`unlowered` prints a derived number, a presence flag, a variant's tag, a \
-                 parent's tag or a chain's flag only"
+                "`unlowered` prints a derived number, a presence flag, a group's flag, a \
+                 variant's tag, a parent's tag or a chain's flag only"
             ),
         }
     }
@@ -2048,7 +2205,29 @@ fn said_input(plan: &EncodePlan<'_>, l: &LangCtx, snake: &str, input: &str, at: 
         Some(InputSource::EveryArm { .. } | InputSource::SomeArms { .. }) => {
             format!("{snake}_arm_input_{}({})", input_name(input), source(BODY))
         }
-        _ => unreachable!("`unlowered` prints an input a field's gate, a body or an arm says only"),
+        // Set exactly where the arm of the group it decides the value holds
+        // sets it (docs/adr/0065 §6 R4b).
+        Some(InputSource::Group) => {
+            let groups = group::groups(plan, snake);
+            let gate = GateVar::Input(input.to_string());
+            let (g, at) = groups
+                .iter()
+                .find_map(|g| {
+                    g.group
+                        .gates
+                        .iter()
+                        .position(|v| *v == gate)
+                        .map(|at| (g, at))
+                })
+                .expect("an input a group says has its group");
+            format!(
+                "(uint8_t)({} ? 1u : 0u)",
+                g.gate_value(at, &source(&g.name))
+            )
+        }
+        _ => unreachable!(
+            "`unlowered` prints an input a field's gate, a body, a group or an arm says only"
+        ),
     }
 }
 
