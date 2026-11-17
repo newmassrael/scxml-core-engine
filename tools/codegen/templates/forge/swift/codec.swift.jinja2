@@ -233,6 +233,16 @@ public struct {{ struct_name }}: Equatable, Sendable{% if printed %}, {{ printed
     /// over any source of their codec: its type holds every entry to it where a value of it is made.
     public typealias {{ w.name }}<Entry: {{ w.protocol }}> = {{ w.law }}
 {% endfor %}
+{% for k in printed.kinds %}
+
+    /// Whether an entry of `{{ k.field }}` is of the kind {{ k.key }} a gate asks the chain for (docs/adr/0065
+    /// §6 R6), read off any source of its codec: what the arms of the chain's kinds are held to.
+    public enum {{ k.name }}<Entry: {{ k.protocol }}>: SceKind {
+        public static func matches(_ entry: Entry) -> Bool {
+            {{ k.body }}
+        }
+    }
+{% endfor %}
 {% for b in printed.bodies %}
 
     /// The value presents `{{ b.field }}` as a value of its own codec.

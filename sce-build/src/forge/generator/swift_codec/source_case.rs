@@ -12,13 +12,13 @@
 //! lower, as a case of a shape no printer spells is refused by name.
 
 use super::super::rust_source::{
-    case_inputs, case_tag, enum_variant, gates_label, group_choice, integer_value, law_start_bits,
-    lawful_parts, source_members, variant_choice, ChosenGroupArm, HeldCodecs, CALLER_TAG_LABEL,
-    VARIANT_MEMBER,
+    case_inputs, case_tag, chain_optional_in, enum_variant, gates_label, group_choice,
+    integer_value, law_start_bits, lawful_parts, placed_parts, source_members, variant_choice,
+    ChosenGroupArm, HeldCodecs, CALLER_TAG_LABEL, VARIANT_MEMBER,
 };
 use super::source::{presented_order, ArmMember, Presented};
 use super::*;
-use crate::forge::codec_roles::GateGroup;
+use crate::forge::codec_roles::{GateGroup, GroupArm};
 use crate::forge::encode_plan::{EncodePlan, Law, Value};
 
 /// The name the harness gives the value a case makes.
@@ -252,6 +252,14 @@ fn group_literal(
         let stated = object
             .get(id)
             .ok_or_else(|| format!("the arm states no `{id}`"))?;
+        // The chain whose memberships are the group's gates, in the type of the kinds the arm says
+        // (docs/adr/0065 §6 R6).
+        if super::source::is_group_chain(group, id) {
+            let literal = chain_literal(plan, type_name, group, arm, stated, held, bindings)
+                .map_err(|e| format!("`{id}`: {e}"))?;
+            spelled.push((id.as_str(), literal));
+            continue;
+        }
         let value = plan.value(field);
         let literal = match (
             super::source::bounded_field_type(type_name, plan, field),
@@ -362,22 +370,8 @@ fn list_literal(
         let (start, entries) = lawful_parts(json)?;
         (Some(law_start_literal(law, start)?), entries)
     };
-    let stated = json
-        .as_array()
-        .ok_or_else(|| "a list is an array of its entries".to_string())?;
-    let mut entries = Vec::new();
-    for (i, entry) in stated.iter().enumerate() {
-        let literal = held
-            .read(codec, &mut |plan, _, held| {
-                let type_name = filters::to_pascal_case(plan.model.name.clone());
-                value_literal(plan, &type_name, entry, held, bindings)
-            })
-            .map_err(|e| format!("entry {i}: {e}"))?;
-        entries.push(literal);
-    }
-    let entry_type = held.read(codec, &mut |plan, _, _| {
-        Ok(filters::to_pascal_case(plan.model.name.clone()))
-    })?;
+    let entries = entry_literals(codec, json, held, bindings)?;
+    let entry_type = entry_type_of(codec, held)?;
     // The entries within the count bound, which a law, where there is one, holds in turn.
     let list = super::source::list_type(type_name, id, &entry_type, &Law::default());
     // Numbered, as a byte string's door is bound.
@@ -395,6 +389,93 @@ fn list_literal(
         "let {held_to_law} = try #require({lawful}(start: {start}, list: {local}))"
     ));
     Ok(held_to_law)
+}
+
+/// The entries of a list or a chain of the codec imported as `codec` that `json` states as an
+/// array of them, each made by its own codec's initializer, in order.
+fn entry_literals(
+    codec: &str,
+    json: &serde_json::Value,
+    held: &mut dyn HeldCodecs,
+    bindings: &mut Vec<String>,
+) -> Result<Vec<String>, String> {
+    let stated = json
+        .as_array()
+        .ok_or_else(|| "a list is an array of its entries".to_string())?;
+    let mut entries = Vec::new();
+    for (i, entry) in stated.iter().enumerate() {
+        let literal = held
+            .read(codec, &mut |plan, _, held| {
+                let type_name = filters::to_pascal_case(plan.model.name.clone());
+                value_literal(plan, &type_name, entry, held, bindings)
+            })
+            .map_err(|e| format!("entry {i}: {e}"))?;
+        entries.push(literal);
+    }
+    Ok(entries)
+}
+
+/// The Swift struct of the codec imported as `codec`.
+fn entry_type_of(codec: &str, held: &mut dyn HeldCodecs) -> Result<String, String> {
+    held.read(codec, &mut |plan, _, _| {
+        Ok(filters::to_pascal_case(plan.model.name.clone()))
+    })
+}
+
+/// The chain whose memberships are the gates of `group`, a group of the codec `plan` whose Swift
+/// type is `type_name`, as `arm` holds it and `json` states it (docs/adr/0065 §6 R6, docs/adr/0081
+/// §5): where the arm holds a bare entry's place, `{"rest": [..], "place": n}`, the others and the
+/// place through `ScePlaced`'s one door; else the entries, through the count bound's door and then
+/// `SceChain`'s, which holds them to the kinds the arm says; `nil` where the arm may hold none and
+/// the source states none. Each door is bound in `bindings`, which the harness requires to answer.
+fn chain_literal(
+    plan: &EncodePlan<'_>,
+    type_name: &str,
+    group: &GateGroup,
+    arm: &GroupArm,
+    json: &serde_json::Value,
+    held: &mut dyn HeldCodecs,
+    bindings: &mut Vec<String>,
+) -> Result<String, String> {
+    let id = group
+        .chain()
+        .ok_or_else(|| "the group holds no chain".to_string())?;
+    let field = plan
+        .model
+        .fields
+        .iter()
+        .find(|f| f.id == id)
+        .ok_or_else(|| format!("the codec has no field `{id}`"))?;
+    let Value::List { codec, .. } = plan.value(field) else {
+        return Err(format!("`{id}` is no chain"));
+    };
+    let entry_type = entry_type_of(codec, held)?;
+    let ty = super::source::chain_arm_type(type_name, group, arm, field, &entry_type);
+    if super::source::holds_place(group, arm) {
+        let (rest, place) = placed_parts(json)?;
+        let others = entry_literals(codec, rest, held, bindings)?;
+        // Numbered, as a byte string's door is bound.
+        let local = format!("bound{}", bindings.len());
+        bindings.push(format!(
+            "let {local} = try #require({ty}(rest: [{}], place: {place}))",
+            others.join(", ")
+        ));
+        return Ok(local);
+    }
+    if json.is_null() {
+        return if chain_optional_in(group, field, arm) {
+            Ok("nil".to_string())
+        } else {
+            Err("the arm holds the chain always".to_string())
+        };
+    }
+    let list = list_literal(type_name, id, codec, &Law::default(), json, held, bindings)?;
+    let local = format!("bound{}", bindings.len());
+    bindings.push(format!(
+        "let {local} = try #require({}({list}))",
+        ty.trim_end_matches('?')
+    ));
+    Ok(local)
 }
 
 /// The start of a list's law a source states, `{input: 0|1}` (docs/adr/0065 §6 R8,

@@ -1454,6 +1454,34 @@ old encode, the old encode and its templates are removed in the same landing.
    the pair into its member's local and derives the count from the first, which every arm holds; the decode
    pairs the two lists it read through the decode's door. A pair one list of which is held to its law stays
    refused by name, as the C++ printer refuses it.
+   *Chains of kinds, 2026-11-17:* a group the gates on a chain's entries decide, and the flags joined with them
+   (docs/adr/0065 §6 R6b), the one gate on a bare entry (R6a), and a gate on a chain's kinds no group holds are
+   printed. The Swift runtime gains `Membership.swift`: `SceKinds`, a set of kinds over the existing `SceKind`,
+   nested as the laws are (`SceNoKinds`, `SceKindsOf<First, Rest>`); `SceChain<Element, Bound, Has, Lacks>`,
+   a `BoundedList` that holds an entry of each kind of `Has` and of none of `Lacks`, whose failable initializer
+   is the one door, whose `init(decoding:)` throws `presentIfMismatch` and which reads as its entries; and
+   `ScePlaced<Element, Bound, Kind>`, the other entries and the place of the first entry of the kind, made only
+   where the chain they make is within the bound and no entry before the place is of the kind, whose
+   `init(decoding:)` takes that entry out of the chain a decode read. Three decisions are recorded here. First,
+   the kinds are types and not values: Swift's generics carry a set of kinds as Rust's tuples of keys and C++'s
+   template parameters do, so arms that say the same of the chain hold one type and a value of it cannot hold
+   a kind its arm denies, which Kotlin, having no such generics, holds in a class per arm. The codec declares
+   each kind a gate names (`{Chain}Kind{K}<Entry>`), told apart by the chain's `entry-id` as the walk tells
+   it; the sets and the chains stay the runtime's. Second, the encode reads every arm's chain as the one list
+   of entry sources each type holds (`entries`, or `rest` and `place`), so the walk, a check and a scan read
+   one local whatever the arm; a membership a group's gate is, is what the arm says (`gate_value`), and any
+   other a scan of the entries. A chain of a bare entry's place is walked as slots: the others in order and
+   the named entry where the value holds its place, made by the entry codec's initializer of its identifier
+   and, where it has a variant, the arm the identifier's tag selects, whose codec presents nothing, made of a
+   frame of zeros (`.init()`), the flag the chain ends on set on every slot but the last. Third, a decode
+   selects the arm by the locals the template binds after the chain for each kind a gate asks of it, and
+   makes the arm's chain through the door of its type; where the arm may hold none, it makes it before the
+   arm is made, since no throwing closure is mapped over an optional in a decode that throws one error type.
+   The template's chain locals read a printed value's bounded list as an array, gated by `?.` and not by
+   `?? []`, which no `BoundedList` is. A chain of a bare entry's place whose entries a check holds to an input
+   stays refused by name, as the C++ and Kotlin printers refuse it: the check would see the others alone. The
+   Zenoh error envelope, which its tests took for a template codec, was printed since lists and chains landed;
+   its tests now hold the printed encode.
 
 ## Consequences
 

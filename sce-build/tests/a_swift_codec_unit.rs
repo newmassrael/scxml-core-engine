@@ -276,6 +276,10 @@ fn a_codec_is_printed_from_its_plan_where_the_printer_lowers_every_form_and_else
         "tests/forge/resources/codec_chain_flag_forward.scxml",
         "tests/forge/resources/codec_repeat_unconditional_count.scxml",
         "tests/forge/resources/codec_zenoh_err.scxml",
+        "tests/forge/resources/codec_chain_has_tagged.scxml",
+        "tests/forge/resources/codec_chain_has_envelope.scxml",
+        "tests/forge/resources/codec_chain_has_marker.scxml",
+        "tests/forge/resources/codec_chain_has_input.scxml",
     ] {
         let code = swift_of(printed).expect("a codec is written");
         assert!(
@@ -287,16 +291,6 @@ fn a_codec_is_printed_from_its_plan_where_the_printer_lowers_every_form_and_else
             code.matches("public func encode<Sink: SceSink>").count(),
             1,
             "{printed} has one encode: {code}"
-        );
-    }
-    for (template, why) in [(
-        "tests/forge/resources/codec_chain_has_tagged.scxml",
-        "a gate on the entries of a chain",
-    )] {
-        let code = swift_of(template).expect("a codec is written");
-        assert!(
-            !code.contains("encodeSource"),
-            "{template} keeps its template's encode until the printer lowers {why}: {code}"
         );
     }
 }
@@ -1546,17 +1540,148 @@ fn a_gate_on_the_entries_of_a_chain_reads_a_boolean_bound_where_the_chain_is_rea
 
 #[test]
 fn an_encode_asks_the_value_what_the_decode_asked_the_frame() {
-    let code = swift_of("tests/forge/resources/codec_chain_has_tagged.scxml")
+    // `priority` is on the wire under `entries.has(7) || urgent`, and the caller hands `urgent`, so
+    // no group derives the gate: the encode holds the value to it before the first byte, asking the
+    // chain the value holds for an entry of the kind as the decode asked the frame (docs/adr/0065
+    // §6 R6).
+    let code = swift_of("tests/forge/resources/codec_chain_has_input.scxml")
         .expect("a gate on the entries of a chain is written");
-    // The encode is given the entries and the field the gate holds, and refuses a value where the two
-    // disagree, so the chain is asked here as it was asked of the frame.
     let encode = code
-        .split("public func encode")
+        .split("public static func encodeSource")
         .nth(1)
-        .expect("the codec has an encode");
+        .expect("the codec's encode is printed");
     assert!(
-        encode.contains("let _has_entries_7 = self.entries.contains(where:"),
+        encode.contains(
+            "if (source.entries.contains(where: { _e in chainIdentifier(_e.entry_type) == 0x7 }) || urgent != 0) != (source.priority != nil) { throw CodecError.presentIfMismatch }"
+        ),
         "{code}"
+    );
+}
+
+#[test]
+fn a_group_of_a_chains_kinds_holds_the_chain_in_a_type_of_the_kinds_each_arm_says() {
+    // docs/adr/0065 §6 R6b: `entries.has(7)`, `entries.has(9)` and `header.wide` decide `priority`
+    // and `checksum` together, so the value holds one arm of eight, each holding the chain in a
+    // type of the kinds it holds an entry of and of none, which a host's entries are made into
+    // once and the encode reads as the entries every such type holds.
+    let code = swift_of("tests/forge/resources/codec_chain_has_tagged.scxml")
+        .expect("a group of a chain's kinds is written");
+    for (expected, why) in [
+        (
+            "    public enum EntriesKind7<Entry: CodecChainHasTaggedEntrySource>: SceKind {\n        public static func matches(_ entry: Entry) -> Bool {\n            chainIdentifier(entry.entry_type) == 0x7\n        }\n    }\n",
+            "a kind the gates name is the codec's own, told apart by the chain's entry-id",
+        ),
+        (
+            "entries: SceChain<Entries_Entry, CodecChainHasTagged.EntriesBound, SceKindsOf<CodecChainHasTagged.EntriesKind7<Entries_Entry>, SceNoKinds<Entries_Entry>>, SceKindsOf<CodecChainHasTagged.EntriesKind9<Entries_Entry>, SceNoKinds<Entries_Entry>>>",
+            "the arm that holds a 7 and no 9 holds the chain in the type that says so",
+        ),
+        (
+            "<Entries_Entry> = .neither(entries: .init(defaultOf: .fewest(of: CodecChainHasTaggedEntry())), checksum: 0)\n",
+            "a frame of zeros holds the arm of no kind, its chain the fewest entries of none",
+        ),
+        (
+            "var entries_member: [Source.Entries_Entry]? = nil",
+            "the encode reads the one list of entries every arm's type holds",
+        ),
+        (
+            "entries_member = entries.entries",
+            "an arm's chain is read as its entries",
+        ),
+        (
+            "try SceChain(decoding: entries)",
+            "a decode makes the arm's chain of the chain it read",
+        ),
+        (
+            "if _has_entries_7 && _has_entries_9 && ",
+            "a decode selects the arm by the kinds of the chain it read",
+        ),
+    ] {
+        assert!(code.contains(expected), "{why}: {expected} in {code}");
+    }
+}
+
+#[test]
+fn a_bare_entrys_chain_holds_the_others_and_its_place_and_the_walk_writes_it_there() {
+    // docs/adr/0065 §6 R6a: the entry of kind 0x12 holds nothing but its identifier, so the arm
+    // where `extensions.has(0x12)` holds keeps the other entries and the place of that one, and the
+    // encode writes it at its place, made of its kind.
+    let code = swift_of("tests/forge/resources/codec_chain_has_marker.scxml")
+        .expect("a group of a bare entry's membership is written");
+    for (expected, why) in [
+        (
+            "extensions: ScePlaced<Extensions_Entry, CodecChainHasMarker.ExtensionsBound, CodecChainHasMarker.ExtensionsKind12<Extensions_Entry>>",
+            "the arm where the gate holds holds the others and the place",
+        ),
+        (
+            "extensions: SceChain<Extensions_Entry, CodecChainHasMarker.ExtensionsBound, SceNoKinds<Extensions_Entry>, SceKindsOf<CodecChainHasMarker.ExtensionsKind12<Extensions_Entry>, SceNoKinds<Extensions_Entry>>>?",
+            "the other arm holds a gated chain of no such entry, or none",
+        ),
+        (
+            "var extensions_place: Int? = nil",
+            "the encode keeps where the entry stands",
+        ),
+        (
+            "extensions_member = extensions.rest; extensions_place = extensions.place",
+            "the arm that holds the place is read as the others and the place",
+        ),
+        (
+            "let extensions_slots = held.count + (extensions_place != nil ? 1 : 0)",
+            "the walk counts the entry of the kind among the others",
+        ),
+        (
+            "if extensions_at == extensions_place {\n                    try CodecZenohExtEntry.encodeSource(CodecZenohExtEntry(header: 0x12, body: .codecZenohExtUnit(.init())), into: &extensions_entries, overrides: CodecZenohExtEntry.Overrides(headerZ: extensions_at + 1 < extensions_slots))\n",
+            "the entry of the kind is written at its place, made of its identifier",
+        ),
+        (
+            "try ScePlaced(decoding: extensions!)",
+            "a decode takes the first entry of the kind out of the chain it read",
+        ),
+        (
+            "if let extensions_read = extensions { extensions_chain = try SceChain<Extensions_Entry, CodecChainHasMarker.ExtensionsBound, SceNoKinds<Extensions_Entry>, SceKindsOf<CodecChainHasMarker.ExtensionsKind12<Extensions_Entry>, SceNoKinds<Extensions_Entry>>>(decoding: extensions_read) }",
+            "a decode makes the chain of the other arm where the frame held one",
+        ),
+    ] {
+        assert!(code.contains(expected), "{why}: {expected} in {code}");
+    }
+}
+
+#[test]
+fn a_chain_a_group_holds_is_checked_against_the_entry_before_where_its_entries_say_it() {
+    // docs/adr/0065 §6 R8b: each entry says `after_marker`, which the chain hands it as whether the
+    // entry before is of the kind 4; a chain whose kinds a group refines is held to that by a check
+    // before the first byte (`Against::PreviousEntry`), not by a law, and the check walks the chain
+    // the arm holds as the encode will.
+    let code = swift_of_beside(
+        "codec_chain_prev_has",
+        r#"<scxml xmlns="http://www.w3.org/2005/07/scxml" xmlns:sce="http://sce.dev/ext"
+       sce:kind="codec" sce:default-endian="big" name="codec_chain_prev_has">
+  <sce:import src="codec_chain_prev_entry.scxml" kind="codec" as="codec_chain_prev_entry">
+    <sce:flag-bind input="tagged" source="head.T"/>
+  </sce:import>
+  <datamodel>
+    <sce:flags id="head" sce:type="uint8" sce:byte="0" sce:bit-size="8">
+      <sce:flag name="T" bit="0"/>
+    </sce:flags>
+    <sce:tlv-chain id="entries" type="codec_chain_prev_entry" sce:byte="1" max-depth="4"
+                   terminate-on="entry-flag" entry-flag-name="Z" entry-id="header.ext_id">
+      <sce:entry-flag-bind input="after_marker" previous-entry-id="0x4"/>
+    </sce:tlv-chain>
+    <sce:field id="extra" sce:type="uint8" sce:byte="2" sce:bit-size="8"
+               sce:present-if="entries.has(0x4)"/>
+  </datamodel>
+</scxml>"#,
+        &["codec_chain_prev_entry.scxml"],
+    )
+    .expect("a chain a group holds whose entries say the entry before is written");
+    let encode = code
+        .split("public static func encodeSource")
+        .nth(1)
+        .expect("the codec's encode is printed");
+    assert!(
+        encode.contains(
+            "    do {\n            var entries_before: UInt64? = nil\n            if let held = entries_member {\n                for entry in held {\n                    let handed: Bool = entries_before == 0x4\n                    if ((CodecChainPrevEntry.inputAfterMarker(entry) != 0) != handed) { throw CodecError.presentIfMismatch }\n                    entries_before = ((chainIdentifier(entry.header) >> 0) & 0xF)\n"
+        ),
+        "the check walks the arm's chain, the first entry after none: {code}"
     );
 }
 

@@ -25431,22 +25431,19 @@ fn chain_has_decl_lines(
         }
         Language::Swift => {
             // The chain is the local the decode read it into, or a member of the value being
-            // encoded; a gated one is `nil` when it was not on the wire, and an absent chain has no
-            // entries.
+            // encoded, an array or the bounded list a printed value holds it in; a gated one is
+            // `nil` when it was not on the wire, and an absent chain has no entries.
             let held = if encode {
                 format!("self.{id}")
             } else {
                 swift_codec::decoded(&id)
             };
-            let list = if gated {
-                format!("({held} ?? [])")
-            } else {
-                held
-            };
             let found = test("_e");
-            vec![format!(
-                "let {has} = {list}.contains(where: {{ _e in {found} }})"
-            )]
+            vec![if gated {
+                format!("let {has} = {held}?.contains(where: {{ _e in {found} }}) ?? false")
+            } else {
+                format!("let {has} = {held}.contains(where: {{ _e in {found} }})")
+            }]
         }
     }
 }

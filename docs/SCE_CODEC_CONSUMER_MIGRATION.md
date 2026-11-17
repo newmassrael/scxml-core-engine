@@ -2277,4 +2277,17 @@ Landing: the commit that adds this section, and each later one that names a form
   moves from `CodecRepeatUnconditionalCount(options: 1, links_len: 2, links: l, weights: w)` to
   `CodecRepeatUnconditionalCount(options: 0, options_h: .h(links_weights: Aligned(l, w)!))`, with `l` and `w`
   each a `BoundedList` of its field's bound.
+- A chain whose kinds of entry gates ask for (ADR 0065 §6 R6) is printed. The chain and the fields its kinds
+  decide are one property, the group named after the chain and its gates, whose arm says which kinds the chain
+  holds; each arm holds the chain as the runtime's `SceChain<Entry, {Codec}.{Chain}Bound, Has, Lacks>`, made by
+  its door of a `BoundedList` that holds an entry of each kind of `Has` and of none of `Lacks` (`nil` for any
+  other), each kind the codec's `{Codec}.{Chain}Kind{K}<Entry>`. Where the one gate names an entry whose
+  identifier is all it is, the arm where it holds holds `ScePlaced(rest:place:)`: the other entries, and where
+  that entry stands; do not put it in `rest`, the encode writes it at `place`. A call site moves from
+  `CodecChainHasTagged(header: 0, entries: [e7], priority: 1, checksum: 2)` to
+  `CodecChainHasTagged(header: 0, entries_has_0x7_has_0x9_header_wide: .has0x7(entries: SceChain(BoundedList([e7])!)!, priority: 1, checksum: 2))`,
+  and from `CodecChainHasMarker(header: 0x80, extensions: [m, e], slice_count: 0, slices: [], ..)` to
+  `CodecChainHasMarker(header: 0x80, extensions_has_0x12: .has0x12(extensions: ScePlaced(rest: [e], place: 0)!, slices: s))`.
+- `CodecZenohErr` is printed: its extensions are a `BoundedList` of one entry or more, its payload a
+  `BoundedBytes`, and `payload_len` and the header's `E` and `Z` are derived.
 
