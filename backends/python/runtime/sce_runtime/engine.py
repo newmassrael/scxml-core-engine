@@ -1508,7 +1508,10 @@ class Engine(Generic[S, E]):
         was not delivered, and a machine given no callback at all, which has
         no way to dispatch it: neither is dropped unsaid."""
         if self._http_send_callback is None:
-            self._raise_undelivered_http_send(send_id)
+            self._raise_undelivered_http_send(
+                send_id,
+                "no BasicHTTP transport is registered (set_http_send_callback)",
+            )
             return
         request = HttpSendRequest(
             target=target,
@@ -1519,8 +1522,11 @@ class Engine(Generic[S, E]):
         )
         try:
             response = self._http_send_callback(request)
-        except HttpSendFailure:
-            self._raise_undelivered_http_send(send_id)
+        except HttpSendFailure as failure:
+            self._raise_undelivered_http_send(
+                send_id,
+                f"the BasicHTTP request to {target} was not delivered: {failure}",
+            )
             return
         if response is None or not response.event_name:
             return
@@ -1530,16 +1536,17 @@ class Engine(Generic[S, E]):
             sendid=send_id,
         )
 
-    def _raise_undelivered_http_send(self, send_id: str) -> None:
+    def _raise_undelivered_http_send(self, send_id: str, detail: str) -> None:
         """§scxml-6.2.4 — report a BasicHTTP send this processor was unable
-        to dispatch: `error.communication` carrying the send id, on the
-        internal queue. A document that declares no `error.communication`
-        resolves nothing, and nothing is raised."""
+        to dispatch: `error.communication` carrying the send id and the
+        `targetUnreachable` record (docs/adr/0106 #111), on the internal
+        queue. A document that declares no `error.communication` resolves
+        nothing, and nothing is raised."""
         communication_error = self._policy.get_event_from_name("error.communication")
         if communication_error is not None:
             self.raise_internal(
                 communication_error,
-                EventMetadata(send_id=send_id, event_type="platform"),
+                platform_error(ErrorReason.TARGET_UNREACHABLE, detail, send_id=send_id),
             )
 
     # ── Host-served Event I/O Processors (§scxml-6.2.5) ────────

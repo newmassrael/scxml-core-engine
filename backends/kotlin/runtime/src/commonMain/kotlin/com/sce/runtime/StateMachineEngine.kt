@@ -1254,7 +1254,7 @@ abstract class StateMachineEngine<S : State, E : Event>(
      */
     private fun raiseUndeliveredHttpSend(sendId: String, reason: String) {
         val communicationError = resolveEventByName("error.communication") ?: return
-        raisePlatformError(communicationError, reason, sendId)
+        raisePlatformError(communicationError, ErrorReason.TARGET_UNREACHABLE, reason, sendId)
     }
 
     /**

@@ -1841,7 +1841,8 @@ public final class Engine<Policy: StatePolicy> {
     /// no `error.communication` resolves nothing, and nothing is raised.
     private func raiseUndeliveredHTTPSend(sendID: String, reason: String) {
         if let communicationError = policy.getEventFromName("error.communication") {
-            var failure = EventWithMetadata.platformError(communicationError, message: reason)
+            var failure = EventWithMetadata.platformError(
+                communicationError, reason: .targetUnreachable, message: reason)
             failure.metadata.sendID = sendID
             raise(failure)
         }

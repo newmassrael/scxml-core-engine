@@ -2132,7 +2132,7 @@ func (e *Engine[S, E]) PerformHTTPSend(target, eventName, content string, params
 // nothing, and nothing is raised.
 func (e *Engine[S, E]) raiseUndeliveredHTTPSend(sendID, reason string) {
 	if communicationError, ok := e.policy.GetEventFromName("error.communication"); ok {
-		errEvt := NewPlatformError(communicationError, reason)
+		errEvt := NewPlatformError(communicationError, errorreason.ErrorReasonTargetUnreachable, reason)
 		errEvt.Metadata.SendID = sendID
 		e.Raise(errEvt)
 	}
