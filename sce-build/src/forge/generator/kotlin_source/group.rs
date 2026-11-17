@@ -22,7 +22,7 @@ use super::super::rust_source::{
     chain_optional_in, group_accessor, group_arm_name, group_type, holds_chain,
 };
 use super::super::*;
-use super::{entry_identifier, input_name, CarrierBits, ListBound, Member};
+use super::{input_name, CarrierBits, ListBound, Member};
 use crate::forge::codec_roles::{GateGroup, GateVar, GroupArm};
 use crate::forge::encode_plan::{Bound, EncodePlan};
 use std::collections::{BTreeMap, BTreeSet};
@@ -94,6 +94,9 @@ pub(super) struct HeldChain<'f> {
     pub(super) entry: String,
     /// How many entries the chain holds.
     pub(super) bound: Bound,
+    /// The kind of an entry `entry`, the identifier the chain tells its entries
+    /// apart by, as a `ULong` (`kotlin_source::entry_identifier`).
+    pub(super) kind: String,
     /// Where the group's one gate is a membership of a bare entry (docs/adr/0065
     /// §6 R6a), the entry of that kind, whose identifier is all of its value,
     /// as an expression of the entries' codec's data class.
@@ -112,7 +115,7 @@ pub(crate) fn placed_class(struct_name: &str, chain: &str, key: u64) -> String {
     )
 }
 
-/// The class `class` the chain of `plan` the arm where its bare entry's gate
+/// The class `class` the chain `chain` the arm where its bare entry's gate
 /// holds is held in (docs/adr/0065 §6 R6a): the entries other than the named
 /// one and the place it stands at among them, as the Rust and C++ runtimes'
 /// `Placed` holds them. `of` makes a value only of others that make, with the
@@ -121,14 +124,7 @@ pub(crate) fn placed_class(struct_name: &str, chain: &str, key: u64) -> String {
 /// the first of its kind, which is the entry a decode takes out of the chain
 /// it read (`placing`). `named` is the entry of the kind, which the encode
 /// writes at the place.
-fn placed_declaration(
-    plan: &EncodePlan<'_>,
-    l: &LangCtx,
-    struct_name: &str,
-    chain: &HeldChain<'_>,
-    class: &str,
-    key: u64,
-) -> String {
+fn placed_declaration(struct_name: &str, chain: &HeldChain<'_>, class: &str, key: u64) -> String {
     let id = &chain.field.id;
     let bound = ListBound::of(&chain.bound);
     let source = format!("{}Source", chain.entry);
@@ -194,7 +190,7 @@ fn placed_declaration(
          }}\n\n",
         held = bound.held,
         consts = bound.consts,
-        identifier = entry_identifier(plan, l, id, "entry"),
+        identifier = chain.kind,
         tests = tests.join(" && "),
         entry = chain.entry,
     )
@@ -220,7 +216,7 @@ pub(crate) fn chain_class(struct_name: &str, chain: &str, holds: &[u64], lacks: 
     )
 }
 
-/// The value class `class` the chain of `plan` an arm holds is held in: a
+/// The value class `class` the chain `chain` an arm holds is held in: a
 /// private constructor over the entries, and `of`, which makes a value only of
 /// entries within the chain's bound that hold an entry of each kind of `holds`
 /// and of no kind of `lacks`, each told apart by the chain's `entry-id`, copied
@@ -228,8 +224,6 @@ pub(crate) fn chain_class(struct_name: &str, chain: &str, holds: &[u64], lacks: 
 /// made by default holds the fewest entries the bound holds, each made by
 /// default, which hold no kind it lacks, as the C++ `Chain` asserts of its own.
 fn chain_declaration(
-    plan: &EncodePlan<'_>,
-    l: &LangCtx,
     struct_name: &str,
     chain: &HeldChain<'_>,
     class: &str,
@@ -302,7 +296,7 @@ fn chain_declaration(
         said = said.join(" and "),
         held = bound.held,
         consts = bound.consts,
-        identifier = entry_identifier(plan, l, id, "entry"),
+        identifier = chain.kind,
         tests = tests.join(" && "),
     )
 }
@@ -376,14 +370,7 @@ pub(super) fn declare(
                     let key = holds[0];
                     let placed = placed_class(struct_name, id, key);
                     if chains.insert(placed.clone()) {
-                        before.push_str(&placed_declaration(
-                            plan,
-                            l,
-                            struct_name,
-                            chain,
-                            &placed,
-                            key,
-                        ));
+                        before.push_str(&placed_declaration(struct_name, chain, &placed, key));
                     }
                     let read = if chain.field.present_if.is_some() {
                         format!("{local}!!")
@@ -399,8 +386,6 @@ pub(super) fn declare(
                 let kinds = chain_class(struct_name, id, &holds, &lacks);
                 if chains.insert(kinds.clone()) {
                     before.push_str(&chain_declaration(
-                        plan,
-                        l,
                         struct_name,
                         chain,
                         &kinds,

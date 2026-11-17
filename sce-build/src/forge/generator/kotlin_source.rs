@@ -841,6 +841,7 @@ pub(super) fn render(
                     field,
                     entry: body_type(import).to_string(),
                     bound,
+                    kind: entry_identifier(plan, l, imports, id, "entry"),
                     named,
                 });
                 continue;
@@ -1303,7 +1304,7 @@ fn lawful_declaration(
             "\n\
              \x20       /// The kind of `entry`: the identifier the chain tells its entries apart by.\n\
              \x20       private fun kind(entry: {source}): ULong = {}\n",
-            entry_identifier(plan, l, id, "entry")
+            entry_identifier(plan, l, imports, id, "entry")
         )
     };
     let properties: String = uniform
@@ -1998,7 +1999,7 @@ fn encode_source(
                     format!(
                         "{}{entries}.any {{ _x -> {} == 0x{id:X}uL }}",
                         if *negate { "!" } else { "" },
-                        entry_identifier(plan, l, &chain.id, "_x")
+                        entry_identifier(plan, l, imports, &chain.id, "_x")
                     )
                 }
             })
@@ -2169,7 +2170,7 @@ fn encode_source(
                         format!("var {against} = 0u\n"),
                         format!(
                             "    {against} = if ({} == 0x{id:X}uL) 1u else 0u\n",
-                            entry_identifier(plan, l, &list.id, "_entry")
+                            entry_identifier(plan, l, imports, &list.id, "_entry")
                         ),
                     ),
                     _ => (String::new(), String::new()),
@@ -2269,6 +2270,7 @@ fn encode_source(
                         slots_walk(
                             plan,
                             l,
+                            imports,
                             struct_name,
                             field,
                             list.as_ref().expect("a chain of slots is walked"),
@@ -2290,7 +2292,7 @@ fn encode_source(
                                 before.push_str(&format!("var {local}: UByte = 0u\n"));
                                 kept.push_str(&format!(
                                     "    {local} = (if ({} == 0x{kind:X}uL) 1 else 0).toUByte()\n",
-                                    entry_identifier(plan, l, &field.id, "_entry")
+                                    entry_identifier(plan, l, imports, &field.id, "_entry")
                                 ));
                             }
                             if let Some((carrier, flag)) = &walk.ends {
@@ -2784,6 +2786,7 @@ fn previous_local(input: &str) -> String {
 fn slots_walk(
     plan: &EncodePlan<'_>,
     l: &LangCtx,
+    imports: &[ImportContext],
     struct_name: &str,
     field: &CodecField,
     walk: &ListWrite,
@@ -2814,7 +2817,7 @@ fn slots_walk(
         ));
         entry_kept.push_str(&format!(
             "        {local} = (if ({} == 0x{waits:X}uL) 1 else 0).toUByte()\n",
-            entry_identifier(plan, l, &field.id, "_entry")
+            entry_identifier(plan, l, imports, &field.id, "_entry")
         ));
     }
     let overrides = walk
@@ -2857,27 +2860,50 @@ fn slots_walk(
 
 /// The identifier of `entry`, a source of the entry codec of the chain `chain`
 /// of `plan`, as a `ULong`: the flag or field the chain's `entry-id` names,
-/// read off the entry, less the flags it leaves out.
-fn entry_identifier(plan: &EncodePlan<'_>, l: &LangCtx, chain: &str, entry: &str) -> String {
+/// read off the entry, less the flags it leaves out. A field of an enum's type
+/// is read as the number it carries, by the enum's own conversion, which the
+/// entry codec's fields among `imports` say.
+fn entry_identifier(
+    plan: &EncodePlan<'_>,
+    l: &LangCtx,
+    imports: &[ImportContext],
+    chain: &str,
+    entry: &str,
+) -> String {
+    // The field `field` of the entry, as a number.
+    let number = |field: &str| -> String {
+        let read = format!("{entry}.{}", l.codec_field_id(field));
+        let enumerated = plan
+            .model
+            .fields
+            .iter()
+            .find(|f| f.id == chain)
+            .and_then(|f| match plan.value(f) {
+                Value::List { codec, .. } => imports.iter().find(|i| i.alias == codec),
+                _ => None,
+            })
+            .and_then(|import| import.codec_fields.iter().find(|f| f.id == field))
+            .is_some_and(|f| matches!(f.sce_type, SceType::Enum(_)));
+        if enumerated {
+            format!("{read}.toUnderlying()")
+        } else {
+            read
+        }
+    };
     match plan
         .entry_ids
         .get(chain)
         .expect("a chain whose entries a gate or a law tells apart declares entry-id")
     {
         EntryId::Flag { carrier, bit, mask } => format!(
-            "(({entry}.{}.toULong() shr {bit}) and 0x{mask:X}uL)",
-            l.codec_field_id(carrier)
+            "(({}.toULong() shr {bit}) and 0x{mask:X}uL)",
+            number(carrier)
         ),
         EntryId::Whole {
             field,
             mask: Some(mask),
-        } => format!(
-            "({entry}.{}.toULong() and 0x{mask:X}uL)",
-            l.codec_field_id(field)
-        ),
-        EntryId::Whole { field, mask: None } => {
-            format!("{entry}.{}.toULong()", l.codec_field_id(field))
-        }
+        } => format!("({}.toULong() and 0x{mask:X}uL)", number(field)),
+        EntryId::Whole { field, mask: None } => format!("{}.toULong()", number(field)),
     }
 }
 

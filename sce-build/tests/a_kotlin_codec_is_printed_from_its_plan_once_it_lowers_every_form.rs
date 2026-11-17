@@ -1079,6 +1079,55 @@ fn a_list_held_to_a_law_is_held_in_the_class_of_its_law() {
     );
 }
 
+/// A chain whose entries are told apart by a field of an enum's type reads the
+/// kind of an entry as the number the enum carries, by the enum's own
+/// conversion: an enum is no number Kotlin converts.
+///
+/// Turns red where `kotlin_source::entry_identifier` reads an enum-typed
+/// identifier without `toUnderlying()`.
+#[test]
+fn an_identifier_of_an_enums_type_is_read_as_the_number_it_carries() {
+    const ENTRY: &str = r#"<?xml version="1.0" encoding="UTF-8"?>
+<scxml xmlns="http://www.w3.org/2005/07/scxml" xmlns:sce="http://sce.dev/ext"
+       sce:kind="codec" sce:default-endian="big" name="kind_entry" version="1.0">
+  <sce:import src="enum_session_state.scxml" kind="enum" as="session"/>
+  <datamodel>
+    <sce:field id="kind" sce:type="enum:session" sce:byte="0" sce:bit-size="8"/>
+    <sce:flags id="ctl" sce:type="uint8" sce:byte="1" sce:bit-size="8">
+      <sce:flag name="more" bit="0"/>
+    </sce:flags>
+  </datamodel>
+</scxml>"#;
+    const CHAIN: &str = r#"<?xml version="1.0" encoding="UTF-8"?>
+<scxml xmlns="http://www.w3.org/2005/07/scxml" xmlns:sce="http://sce.dev/ext"
+       sce:kind="codec" sce:default-endian="big" name="kind_chain" version="1.0">
+  <sce:import src="kind_entry.scxml" kind="codec" as="kind_entry"/>
+  <datamodel>
+    <sce:tlv-chain id="entries" type="kind_entry" sce:byte="0"
+                   max-depth="3" terminate-on="entry-flag" entry-flag-name="more"
+                   entry-id="kind"/>
+    <sce:field id="priority" sce:type="uint8" sce:byte="1" sce:bit-size="8"
+               sce:present-if="entries.has(2)"/>
+  </datamodel>
+</scxml>"#;
+    let dir = tempfile::tempdir().expect("a scratch directory");
+    std::fs::copy(
+        resources().join("enum_session_state.scxml"),
+        dir.path().join("enum_session_state.scxml"),
+    )
+    .expect("the enum resource copies");
+    std::fs::write(dir.path().join("kind_entry.scxml"), ENTRY).expect("write the entry");
+    let chain = dir.path().join("kind_chain.scxml");
+    std::fs::write(&chain, CHAIN).expect("write the chain");
+    let text = file_of(&chain).unwrap_or_else(|e| panic!("kind_chain generates on Kotlin: {e}"));
+    holds(
+        "kind_chain",
+        &text,
+        &["        private fun kind(entry: KindEntrySource): ULong = \
+           entry.kind.toUnderlying().toULong()\n"],
+    );
+}
+
 /// A codec whose plan uses a form the Kotlin printer does not lower keeps the
 /// template's encode whole: a CBOR map and a list on one side of a gate held
 /// to a law each name their form.

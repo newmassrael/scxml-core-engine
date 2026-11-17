@@ -1562,6 +1562,11 @@ old encode, the old encode and its templates are removed in the same landing.
    as a closure every value carries, where a class of the law spells it once; and the start held in the
    list's own class, which would make every list a class of two properties. A list on one side of a gate
    held to a law, whose start the arm would hold, and a chain of slots held to a law stay refused by name.
+
+   A chain whose `entry-id` names a field of an enum's type tells its entries apart by the number the enum
+   carries, read by the enum's own `toUnderlying()`, as the C++ printer reads it by `static_cast`: the printer
+   reads the field's type off the entry codec's fields the import carries (`kotlin_source::entry_identifier`).
+   No resource holds such a chain; a test document does.
 5. Swift, when its codec lowers what the plan holds.
    *Swift lowers what the plan holds, 2026-11-16:* its codec writes every codec of the repository Rust writes,
    but the one only an MCU-class backend writes (`a_swift_codec_is_written_wherever_rust_writes_one.rs`): an
