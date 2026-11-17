@@ -627,8 +627,9 @@ run = 'ctest --test-dir build --output-on-failure; c=$?; log=$(mktemp); node tes
 #   - The native-action and host-processor scripts each wrote the Rust, Go and Kotlin trees of one
 #     document, and belonged to no step. They were split by language, each run by its language's step;
 #     the Rust, Go and Kotlin halves are now generations of those languages' integration manifests.
-#   Every other step owns one tree alone: the Kotlin method-size module, the forge round-trip Go tree,
-#   each Mesh tree, the specs machines, the forge goldens and the embed manifest.
+#   Every other step owns one tree alone: the Rust runtime's engine documents, the Kotlin method-size
+#   module, the forge round-trip Go tree, each Mesh tree, the specs machines, the forge goldens and
+#   the embed manifest.
 #
 # WHAT LOOKS LIKE A READ-AFTER-WRITE AND IS NOT ONE:
 #   - The forge goldens (`UPDATE_GOLDEN=1 cargo test --test forge_conformance`) compile against the
@@ -646,6 +647,14 @@ run = 'ctest --test-dir build --output-on-failure; c=$?; log=$(mktemp); node tes
 #     name the source directories one by one, the mesh one left out, for that reason alone.
 #   - integration_resources was an output of the single action and is none now: the generator writes
 #     nothing beside a document it reads, and `regen-reproduces` fails on any untracked file a run leaves.
+#   - Every action that builds the generator compiles the Rust runtime, a dependency of sce-build, and
+#     with it backends/rust/runtime/generated, which regen-runtime-rust writes. Those bytes are a
+#     function of what each such action reads already (the standard library, sce-build, the
+#     templates), and no byte another step writes depends on them. So the inputs name the runtime's
+#     hand-written sources (backends/rust/runtime/src/**), kept apart from the generated directory for
+#     this reason, and leave that directory out: naming it would put every step in that action's chain.
+#     The tree is the generator's bootstrap, committed (ADR 0097, amendment of 2026-11-17); a traced
+#     run reports the read, and that read is the bootstrap, not an input left out.
 #
 # INPUTS are directories wherever that is honest, so that a new fixture in a directory a step reads
 # is never outside them. The first block of each action that runs the generator is the generator:
@@ -668,10 +677,51 @@ run = 'ctest --test-dir build --output-on-failure; c=$?; log=$(mktemp); node tes
 # AddressSanitizer, fails until bx's trace turns leak detection off (the `trace-sanitizers` branch,
 # RFC 0003 section 9a): measured 2026-11-07, five of 1299 such runs failed only for being traced.
 # Turn it on per action once that bx is installed and `bx-fleet action learn` agrees with the inputs
-# below. Two actions need more first, because a cached action may not read what it writes and its
-# outputs are replaced whole: regen-rust-tests reads the crate it writes into (the format pass), and
-# a directory output that also holds hand-written files (src/integration/mod.rs, the Go `*_test.go`
-# beside the machines) has to name the generated files instead.
+# below. Three actions need more first, because a cached action may not read what it writes and its
+# outputs are replaced whole: regen-rust-tests reads the crate it writes into (the format pass),
+# regen-runtime-rust runs a generator compiled from the tree it writes, and a directory output that
+# also holds hand-written files (src/integration/mod.rs, the Go `*_test.go` beside the machines) has
+# to name the generated files instead.
+[actions.regen-runtime-rust]
+run = 'scripts/regen_all_committed_trees.sh runtime-rust'
+inputs = [
+    ".cargo/**",
+    "Cargo.toml",
+    "Cargo.lock",
+    "rust-toolchain.toml",
+    "backends/rust/*/Cargo.toml",
+    "sce-build-wasm/Cargo.toml",
+    "sce-revision/Cargo.toml",
+    "sce-specs/Cargo.toml",
+    "sce-ttcn3-validator/Cargo.toml",
+    "sce-build/**",
+    "tools/codegen/**",
+    "stdlib/**",
+    "schemas/**",
+    "apis/**",
+    "kind-examples/**",
+    "docs/SCE_ACCEPTED_SUBSET.md",
+    "SCE_ERROR_CONTRACT.md",
+    "SCE_MESH.md",
+    "sce/include/**",
+    "backends/c/forge-runtime/include/**",
+    "backends/rust/runtime/src/**",
+    "backends/python/runtime/**",
+    "backends/rust/tests/src/harness.rs",
+    "backends/go/tests/harness/**",
+    "backends/go/tests/go.sum",
+    "backends/python/tests/conftest.py",
+    "backends/kotlin/tests/src/test/kotlin/com/sce/w3c/VirtualDrive.kt",
+    "backends/kotlin/tests/src/test/kotlin/com/sce/w3c/W3CHttpTestBase.kt",
+    "backends/kotlin/tests/src/test/kotlin/com/sce/w3c/W3CTestBase.kt",
+    "tests/fixtures/**",
+    "tests/forge/resources/**",
+    "tests/mesh/**",
+    "scripts/lib/**",
+    "scripts/regen_all_committed_trees.sh",
+]
+outputs = ["backends/rust/runtime/generated/**"]
+
 [actions.regen-rust-tests]
 run = 'scripts/regen_all_committed_trees.sh rust-tests'
 inputs = [
@@ -695,7 +745,7 @@ inputs = [
     "SCE_MESH.md",
     "sce/include/**",
     "backends/c/forge-runtime/include/**",
-    "backends/rust/runtime/**",
+    "backends/rust/runtime/src/**",
     "backends/python/runtime/**",
     "backends/rust/tests/src/harness.rs",
     "backends/go/tests/harness/**",
@@ -744,7 +794,7 @@ inputs = [
     "SCE_MESH.md",
     "sce/include/**",
     "backends/c/forge-runtime/include/**",
-    "backends/rust/runtime/**",
+    "backends/rust/runtime/src/**",
     "backends/python/runtime/**",
     "backends/rust/tests/src/harness.rs",
     "backends/go/tests/harness/**",
@@ -794,7 +844,7 @@ inputs = [
     "SCE_MESH.md",
     "sce/include/**",
     "backends/c/forge-runtime/include/**",
-    "backends/rust/runtime/**",
+    "backends/rust/runtime/src/**",
     "backends/python/runtime/**",
     "backends/rust/tests/src/harness.rs",
     "backends/go/tests/harness/**",
@@ -834,7 +884,7 @@ inputs = [
     "SCE_MESH.md",
     "sce/include/**",
     "backends/c/forge-runtime/include/**",
-    "backends/rust/runtime/**",
+    "backends/rust/runtime/src/**",
     "backends/python/runtime/**",
     "backends/rust/tests/src/harness.rs",
     "backends/go/tests/harness/**",
@@ -874,7 +924,7 @@ inputs = [
     "SCE_MESH.md",
     "sce/include/**",
     "backends/c/forge-runtime/include/**",
-    "backends/rust/runtime/**",
+    "backends/rust/runtime/src/**",
     "backends/python/runtime/**",
     "backends/rust/tests/src/harness.rs",
     "backends/go/tests/harness/**",
@@ -917,7 +967,7 @@ inputs = [
     "SCE_MESH.md",
     "sce/include/**",
     "backends/c/forge-runtime/include/**",
-    "backends/rust/runtime/**",
+    "backends/rust/runtime/src/**",
     "backends/python/runtime/**",
     "backends/rust/tests/src/harness.rs",
     "backends/go/tests/harness/**",
@@ -957,7 +1007,7 @@ inputs = [
     "SCE_MESH.md",
     "sce/include/**",
     "backends/c/forge-runtime/include/**",
-    "backends/rust/runtime/**",
+    "backends/rust/runtime/src/**",
     "backends/python/runtime/**",
     "backends/rust/tests/src/harness.rs",
     "backends/go/tests/harness/**",
@@ -999,7 +1049,7 @@ inputs = [
     "SCE_MESH.md",
     "sce/include/**",
     "backends/c/forge-runtime/include/**",
-    "backends/rust/runtime/**",
+    "backends/rust/runtime/src/**",
     "backends/python/runtime/**",
     "backends/rust/tests/src/harness.rs",
     "backends/go/tests/harness/**",
@@ -1051,7 +1101,7 @@ inputs = [
     "SCE_MESH.md",
     "sce/include/**",
     "backends/c/forge-runtime/include/**",
-    "backends/rust/runtime/**",
+    "backends/rust/runtime/src/**",
     "backends/python/runtime/**",
     "backends/rust/tests/src/harness.rs",
     "backends/go/tests/harness/**",
@@ -1091,7 +1141,7 @@ inputs = [
     "SCE_MESH.md",
     "sce/include/**",
     "backends/c/forge-runtime/include/**",
-    "backends/rust/runtime/**",
+    "backends/rust/runtime/src/**",
     "backends/python/runtime/**",
     "backends/rust/tests/src/harness.rs",
     "backends/go/tests/harness/**",
@@ -1134,7 +1184,7 @@ inputs = [
     "SCE_MESH.md",
     "sce/include/**",
     "backends/c/forge-runtime/include/**",
-    "backends/rust/runtime/**",
+    "backends/rust/runtime/src/**",
     "backends/python/runtime/**",
     "backends/rust/tests/src/harness.rs",
     "backends/go/tests/harness/**",
@@ -1173,7 +1223,7 @@ inputs = [
     "SCE_MESH.md",
     "sce/include/**",
     "backends/c/forge-runtime/include/**",
-    "backends/rust/runtime/**",
+    "backends/rust/runtime/src/**",
     "backends/python/runtime/**",
     "backends/rust/tests/src/harness.rs",
     "backends/go/tests/harness/**",
@@ -1215,7 +1265,7 @@ inputs = [
     "SCE_MESH.md",
     "sce/include/**",
     "backends/c/forge-runtime/include/**",
-    "backends/rust/runtime/**",
+    "backends/rust/runtime/src/**",
     "backends/python/runtime/**",
     "backends/rust/tests/src/harness.rs",
     "backends/go/tests/harness/**",
@@ -1254,7 +1304,7 @@ inputs = [
     "SCE_MESH.md",
     "sce/include/**",
     "backends/c/forge-runtime/include/**",
-    "backends/rust/runtime/**",
+    "backends/rust/runtime/src/**",
     "backends/python/runtime/**",
     "backends/rust/tests/src/harness.rs",
     "backends/go/tests/harness/**",
@@ -1293,7 +1343,7 @@ inputs = [
     "SCE_MESH.md",
     "sce/include/**",
     "backends/c/forge-runtime/include/**",
-    "backends/rust/runtime/**",
+    "backends/rust/runtime/src/**",
     "backends/python/runtime/**",
     "backends/rust/tests/src/harness.rs",
     "backends/go/tests/harness/**",
@@ -1332,7 +1382,7 @@ inputs = [
     "SCE_MESH.md",
     "sce/include/**",
     "backends/c/forge-runtime/include/**",
-    "backends/rust/runtime/**",
+    "backends/rust/runtime/src/**",
     "backends/python/runtime/**",
     "backends/rust/tests/src/harness.rs",
     "backends/go/tests/harness/**",

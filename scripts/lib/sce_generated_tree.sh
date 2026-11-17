@@ -133,8 +133,14 @@ sce_generated_tree_clear() {
 # `[actions.regen-<step>]` in bx.toml, whose `run` is the script given that
 # step (`a_regeneration_removes_what_it_no_longer_writes` holds the two lists
 # to each other).
+#
+# `runtime-rust` comes first. Its tree is the one the generator is compiled
+# from (the Rust runtime is a dependency of sce-build), so a step after it that
+# builds the generator, or a run that began by deleting a sample of generated
+# files (`regen-reproduces`), needs it written before anything compiles.
 sce_regen_steps() {
     printf '%s\n' \
+        runtime-rust \
         rust-tests \
         kotlin-tests \
         kotlin-method-size \
@@ -167,6 +173,15 @@ sce_regen_steps() {
 # route_rests_on_a_question, static_datamodel). Its modules are gitignored, so
 # nothing committed is at stake; each of its regen scripts clears its own
 # directory before it copies.
+#
+# `backends/rust/runtime/generated` (step `runtime-rust`) is not here either,
+# though its step writes it whole: the generator is compiled from it, and a
+# stash taken before the step resolves the generator would take away a module
+# the generator's build compiles whenever the binary is stale. Its step is one
+# `materialize --replace`, which removes what no action writes any more after
+# the generator has run, inside the outputs of the step's action
+# (`a_regeneration_removes_what_it_no_longer_writes` holds every declared
+# tree's files to an action's outputs).
 #
 # The settle is per step for the same reason the trees are: each step's trees
 # are declared outputs of that step's own bx action, which is what lets a
@@ -239,7 +254,7 @@ sce_generated_trees() {
             # A glob: one tree for each machine of the specs crate.
             printf '%s\n' sce-specs/src/*/generated
             ;;
-        python-integration | forge-goldens | embed-manifest)
+        runtime-rust | python-integration | forge-goldens | embed-manifest)
             ;;
         *)
             echo "sce_generated_trees: no step named '$1'" >&2

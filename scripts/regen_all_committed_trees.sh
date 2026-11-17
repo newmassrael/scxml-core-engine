@@ -70,6 +70,21 @@ require_codegen() {
     fi
 }
 
+# ── runtime-rust: the standard engine documents of the Rust runtime ─────
+#
+# A declared tree (tools/codegen/trees/runtime-rust.toml): every document of
+# stdlib/engine generated for Rust into backends/rust/runtime/generated, and
+# its module index. It stays committed because the generator is compiled from
+# it (ADR 0097, amendment of 2026-11-17), so it is not set aside before the
+# generator is resolved; `materialize --replace` removes, after the generator
+# has run, a file no action writes any more.
+step_runtime_rust() {
+    require_codegen
+
+    stage "Rust runtime's standard engine tree"
+    "$CODEGEN" materialize runtime-rust --into "$REPO_ROOT" --replace
+}
+
 # ── rust-tests: the committed trees of backends/rust/tests ──────────────
 #
 # The W3C and integration trees are declared (ADR 0097): every document, flag

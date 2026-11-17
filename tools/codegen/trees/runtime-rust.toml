@@ -2,26 +2,37 @@
 # SPDX-FileCopyrightText: Copyright (c) 2026 newmassrael
 #
 # The standard documents the Rust engine runtime is built on, generated for
-# Rust into backends/rust/runtime/src/generated (ADR 0097): the reasons an
+# Rust into backends/rust/runtime/generated (ADR 0097): the reasons an
 # engine raises `error.execution` and `error.communication` for
 # (sce:std/engine/error_reason.scxml, docs/adr/0106 #111). The runtime writes
 # each reason by the enum's declared-name accessor, so the document is the one
 # spelling of it. Named by its path under stdlib/engine, so it carries the
 # source hash of that directory.
+#
+# The tree is committed and written by the regeneration step `runtime-rust`
+# (`[actions.regen-runtime-rust]` in bx.toml), not by a build script of the
+# runtime crate: the generator depends on the runtime crate, so it is compiled
+# from this tree, and a build-dependency of the runtime on the generator would
+# be a cycle (ADR 0097, amendment of 2026-11-17). It sits beside the crate's
+# `src`, which `lib.rs` names by `#[path]`, so that the actions which build the
+# generator read the hand-written sources without reading what this step writes.
 
 [tree]
 name = "runtime-rust"
-roots = ["backends/rust/runtime/src/generated"]
+roots = ["backends/rust/runtime/generated"]
 
 [[generation]]
 each = { files = "stdlib/engine/*.scxml", as = "document" }
 arguments = ["generate", "stdlib/engine/{document}.scxml", "--language", "rust", "--output-dir", "{out}"]
-place = "backends/rust/runtime/src/generated"
+place = "backends/rust/runtime/generated"
 keep = ["*.rs"]
 
+# `mod.rs` in the directory, not `{dir}.rs` beside it: `lib.rs` reaches the
+# directory by `#[path]`, and a module file named by `#[path]` resolves its own
+# modules as a `mod.rs` does, in the directory that holds it.
 [[index]]
-directories = "backends/rust/runtime/src/generated"
-file = "{dir}.rs"
+directories = "backends/rust/runtime/generated"
+file = "mod.rs"
 header = """// SPDX-License-Identifier: AGPL-3.0-only WITH LicenseRef-SCE-Linking-Exception OR LicenseRef-SCE-Commercial
 // SPDX-FileCopyrightText: Copyright (c) 2026 newmassrael
 
@@ -35,4 +46,4 @@ entries = [{ files = "*.rs", line = "pub mod {module};\n" }]
 
 [[format]]
 tool = "rustfmt"
-directories = ["backends/rust/runtime/src/generated"]
+directories = ["backends/rust/runtime/generated"]

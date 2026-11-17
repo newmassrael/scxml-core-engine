@@ -727,6 +727,29 @@ fn verify_passes_on_real_committed_mesh_rust_tree() {
     );
 }
 
+/// The Rust runtime's standard engine documents, the one committed tree the
+/// generator is itself compiled from (ADR 0097, amendment of 2026-11-17). Turns
+/// red when a `stdlib/engine/*.scxml` changes and the tree is not regenerated.
+#[test]
+fn verify_passes_on_real_committed_runtime_rust_tree() {
+    let workspace = workspace_root();
+    let target = workspace
+        .join("backends")
+        .join("rust")
+        .join("runtime")
+        .join("generated");
+    let input_root = workspace.join("stdlib").join("engine");
+    let (code, stderr) = run_verify_real_tree(&target, &input_root);
+    assert_eq!(
+        code, 0,
+        "verify must pass on the committed Rust runtime engine tree. A failure \
+         here means a stdlib/engine/*.scxml changed without refreshing \
+         backends/rust/runtime/generated/. Run \
+         `scripts/regen_all_committed_trees.sh runtime-rust` and commit the \
+         result. stderr:\n{stderr}"
+    );
+}
+
 #[test]
 fn verify_passes_on_real_committed_mesh_kotlin_tree() {
     let workspace = workspace_root();
