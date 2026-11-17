@@ -11,7 +11,14 @@
 package com.sce.forge.runtime
 
 import com.sce.generated.codec_cbor_map.CodecCborMap
+import com.sce.generated.codec_cbor_map.CodecCborMapIdBytes
+import com.sce.generated.codec_cbor_map.CodecCborMapPayloadBytes
+import com.sce.generated.codec_cbor_map.CodecCborMapSourceText
 import com.sce.generated.envelope.Envelope
+import com.sce.generated.envelope.EnvelopeDataBytes
+import com.sce.generated.envelope.EnvelopeEventTypeText
+import com.sce.generated.envelope.EnvelopeIdBytes
+import com.sce.generated.envelope.EnvelopeSourceText
 import com.sce.generated.pattern_kind.PatternKind
 import com.sce.generated.payload_codec.PayloadCodec
 import kotlin.test.Test
@@ -24,10 +31,10 @@ class CborCodecTest {
     private val id = ByteArray(16) { it.toByte() }
 
     private fun value() = CodecCborMap(
-        source = "node-a",
-        id = id,
+        source = CodecCborMapSourceText.of("node-a")!!,
+        id = CodecCborMapIdBytes.of(id)!!,
         pattern = 3.toUByte(),
-        payload = byteArrayOf(0xde.toByte(), 0xad.toByte()),
+        payload = CodecCborMapPayloadBytes.of(byteArrayOf(0xde.toByte(), 0xad.toByte()))!!,
         deadline = null,
         urgent = true,
     )
@@ -42,9 +49,9 @@ class CborCodecTest {
     private fun assertSame(want: CodecCborMap, decoded: Decoded<CodecCborMap>) {
         val got = decoded.valueOr { fail("the map is refused as ${it.error}") }
         assertEquals(want.source, got.source)
-        assertContentEquals(want.id, got.id)
+        assertContentEquals(want.id.bytes, got.id.bytes)
         assertEquals(want.pattern, got.pattern)
-        assertContentEquals(want.payload, got.payload)
+        assertContentEquals(want.payload.bytes, got.payload.bytes)
         assertEquals(want.deadline, got.deadline)
         assertEquals(want.urgent, got.urgent)
     }
@@ -143,12 +150,12 @@ class CborCodecTest {
             0x01, 0x82, 0xb1, 0x4d, 0xa3, 0x5c, 0x70, 0x12, 0xb4, 0xde, 0xf0, 0x42, 0x9a, 0x88, 0x77, 0x66,
         )
         val envelope = Envelope(
-            id = sampleId,
-            source = "ecu",
-            event_type = "evt",
+            id = EnvelopeIdBytes.of(sampleId)!!,
+            source = EnvelopeSourceText.of("ecu")!!,
+            event_type = EnvelopeEventTypeText.of("evt")!!,
             pattern = PatternKind.FIRE_FORGET,
             datacontenttype = PayloadCodec.JSON,
-            data = bytes(0xAA, 0xBB),
+            data = EnvelopeDataBytes.of(bytes(0xAA, 0xBB))!!,
         )
         val golden = bytes(0xA6, 0x00, 0x50) + sampleId +
             bytes(0x01, 0x63, 'e'.code, 'c'.code, 'u'.code) +
@@ -157,12 +164,12 @@ class CborCodecTest {
 
         assertContentEquals(golden, envelope.encodeToByteArray())
         val decoded = Envelope.decode(SceCursor(golden)).valueOr { fail("the envelope is refused as ${it.error}") }
-        assertContentEquals(sampleId, decoded.id)
-        assertEquals("ecu", decoded.source)
-        assertEquals("evt", decoded.event_type)
+        assertContentEquals(sampleId, decoded.id.bytes)
+        assertEquals("ecu", decoded.source.text)
+        assertEquals("evt", decoded.event_type.text)
         assertEquals(PatternKind.FIRE_FORGET, decoded.pattern)
         assertEquals(PayloadCodec.JSON, decoded.datacontenttype)
-        assertContentEquals(bytes(0xAA, 0xBB), decoded.data)
+        assertContentEquals(bytes(0xAA, 0xBB), decoded.data.bytes)
         assertNull(decoded.deadline_unix_ms)
 
         // 11 is in the reserved Stream range, not a value of the closed set.
@@ -172,14 +179,15 @@ class CborCodecTest {
         assertEquals(Decoded.Refused(CodecError.UndeclaredEnumValue), Envelope.decode(SceCursor(reserved)))
     }
 
+    /**
+     * A value past its bound is no value of the entry's class (docs/adr/0081
+     * §2): the class's factory answers `null`, so no map holds one to write.
+     */
     @Test
-    fun aValueThatBreaksItsBoundIsNotWritten() {
-        val sink = MutableListSink(mutableListOf())
-        assertEquals(CodecError.CborWrongLength, value().copy(id = id.copyOfRange(0, 15)).encode(sink))
-        assertEquals(
-            CodecError.CborOutOfRange,
-            value().copy(source = "x".repeat(65)).encode(MutableListSink(mutableListOf())),
-        )
+    fun aValueThatBreaksItsBoundIsNotMade() {
+        assertNull(CodecCborMapIdBytes.of(id.copyOfRange(0, 15)))
+        assertNull(CodecCborMapSourceText.of("x".repeat(65)))
+        assertNull(CodecCborMapPayloadBytes.of(ByteArray(257)))
     }
 
     @Test

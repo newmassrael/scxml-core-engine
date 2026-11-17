@@ -86,6 +86,7 @@ pub(crate) use python_source::source_case::{
 /// declares, by the module that prints it.
 pub(crate) use cpp_source::cbor::source_case as cpp_cbor_source_case;
 pub(crate) use cpp_source::content_line::source_case as cpp_content_line_source_case;
+pub(crate) use kotlin_source::cbor::source_case as kotlin_cbor_source_case;
 pub(crate) use python_source::cbor::source_case as python_cbor_source_case;
 pub(crate) use python_source::content_line::source_case as python_content_line_source_case;
 pub(crate) use rust_source::cbor::source_case as rust_cbor_source_case;
@@ -10822,6 +10823,36 @@ pub(crate) fn kotlin_codec_unlowered(m: &CodecModel, imports: &[ImportContext]) 
         &crate::forge::encode_plan::CodecPlan::of(m, imports),
         imports,
     )
+}
+
+/// For each entry of a printed Kotlin CBOR map, by its id, the type its
+/// property is declared as, the default it takes, and what the decode makes it
+/// of from the local it read the entry into.
+pub(crate) type KotlinDeclared = std::collections::BTreeMap<String, (String, String, String)>;
+
+/// What the Kotlin backend prints the CBOR codec `m` as from its plan
+/// (docs/adr/0081 step 4): the template's `kotlin_source`, and for each entry,
+/// by its id, how the value's property is declared and made. Every CBOR map is
+/// printed.
+pub(crate) fn kotlin_cbor_printed(
+    m: &CodecModel,
+    imports: &[ImportContext],
+) -> (serde_json::Value, KotlinDeclared) {
+    let plan = crate::forge::encode_plan::CborPlan::of(m, imports);
+    let l = LangCtx::new(crate::generator::Language::Kotlin, imports);
+    let printed =
+        kotlin_source::cbor::render(&plan, &l, imports, &filters::to_pascal_case(m.name.clone()));
+    let context = serde_json::json!({
+        "before": printed.before,
+        "encode": printed.encode,
+        "inline": printed.inline,
+    });
+    let declared = printed
+        .declared
+        .into_iter()
+        .map(|(id, d)| (id, (d.ty, d.default, d.made)))
+        .collect();
+    (context, declared)
 }
 
 /// The text the C++ backend prints the CBOR codec `m` as from its plan, inside

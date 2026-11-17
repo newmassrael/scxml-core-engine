@@ -2531,3 +2531,17 @@ codecs that hold a list whose entries say a flag input the list hands them.
 - The flag the codec writes for such an input is the start: stop setting it on the value. Read the entries by
   `.entries` and the start by `.start{Input}`.
 
+## A printed Kotlin CBOR map holds each entry in the class of its bound (ADR 0081 step 4)
+
+Landing: the commit that adds this section; every Kotlin tree is regenerated after it. Every CBOR map is printed.
+
+- A text entry is `{Codec}{Entry}Text`, a byte string `{Codec}{Entry}Bytes` (an exact `sce:length` its least and its
+  most) and a list of records `{Codec}{Entry}List`, each made by `of(..)`, which answers `null` past the bound. Write
+  `Envelope(id = EnvelopeIdBytes.of(id) ?: .., source = EnvelopeSourceText.of(machine) ?: .., ..)`; read `.text`,
+  `.bytes` or `.entries`. Before, the encode refused such a value with `CborOutOfRange` or `CborWrongLength`.
+- `Envelope()` now holds a 16-byte zero id, so it encodes; before, its empty id was refused.
+- The encode is the companion's `encodeSource(src, w)`; `encode` and `encodeToByteArray` call it and keep their
+  signatures. It answers `CborOutOfRange` before the first byte for a negative value of a signed enum, a list short
+  of its lower count, and a record whose text or byte string is past its bound.
+- The mesh's `stamp(envelope, tag)` answers `null` for a vector past its 64 entries.
+

@@ -614,8 +614,8 @@ fn render_kotlin(
     imports: &[ImportContext],
 ) -> Result<String, ForgeError> {
     let l = LangCtx::new(Language::Kotlin, imports);
-    // A list of records is a `List` of the schema's payload, which carries no
-    // bound: the encode refuses a count past it.
+    // What the decode reads each entry into before the value holds it: a list
+    // of records a `List` of the schema's payload.
     let mut ctx = common_context(&l, m, imports, |e| match e.leaf_type() {
         Some(present) => l.type_name(present).into_owned(),
         None => format!("List<{}>", record_type_of(&l, imports, e)),
@@ -625,19 +625,22 @@ fn render_kotlin(
     insert_cbor_records(&l, m, imports, &mut ctx, &|ty| {
         scalar_record_field_type(&l, ty)
     })?;
-    // A required entry starts at its type's own default — for an enum the
-    // first declared variant, for a list of records the empty list — and is
-    // filled in by decode; an optional one starts absent.
+    // docs/adr/0081 step 4: the map is printed from its plan, each text, byte
+    // string and list of records held in the value class of its bound and
+    // encoded over any source; the value's property is declared as the
+    // printer holds it, a required entry at its class's default and an
+    // optional one absent (`null`), and the decode makes it as the printer
+    // says.
+    let (printed, declared) = crate::forge::generator::kotlin_cbor_printed(m, imports);
     if let Some(serde_json::Value::Array(entries)) = ctx.get_mut("entries") {
         for (entry, e) in entries.iter_mut().zip(&m.cbor_entries) {
-            entry["default"] = match (e.is_required(), e.leaf_type()) {
-                (false, _) => "null".to_string(),
-                (true, Some(present)) => l.default_expr(present),
-                (true, None) => "emptyList()".to_string(),
-            }
-            .into();
+            let (ty, default, made) = &declared[&e.id];
+            entry["field_type"] = ty.clone().into();
+            entry["default"] = default.clone().into();
+            entry["made"] = made.clone().into();
         }
     }
+    ctx.insert("kotlin_source".into(), printed);
     render_in_key_order(&l, env, ctx)
 }
 

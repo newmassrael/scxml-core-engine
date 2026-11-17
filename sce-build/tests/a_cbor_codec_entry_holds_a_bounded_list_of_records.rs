@@ -433,6 +433,15 @@ fn the_cpp_envelope_is_printed_with_its_vector_as_a_view_of_the_schemas_payload(
     assert!(!cpp_encodes(&code).contains("CborOutOfRange"), "{code}");
 }
 
+/// docs/adr/0081 step 4: the Kotlin map is printed from its plan. Each list is
+/// held in the value class of its most (`{Codec}{Entry}List`), and the payload
+/// type of the schema's Kotlin unit holds a record's text in a bare `String`,
+/// so the encode refuses a record whose text is past its bound before the map
+/// head, as it refuses one past a byte string's.
+///
+/// Turns red where `kotlin_source::cbor::checks` checks a record after the
+/// first byte or drops the check of a record's text, or where `held` holds a
+/// list in a bare `List`.
 #[test]
 fn the_kotlin_map_holds_each_list_in_a_list_of_the_schemas_payload() {
     holds(
@@ -440,19 +449,33 @@ fn the_kotlin_map_holds_each_list_in_a_list_of_the_schemas_payload() {
         &generated_fixture(Language::Kotlin),
         &[
             "import com.sce.generated.cbor_causal_entry.*",
-            "var seen: List<CborCausalEntryPayload> = emptyList(),",
-            "var context: List<CborCausalEntryPayload>? = null,",
+            "value class CodecCborRecordListSeenList private constructor(\
+             val entries: List<CborCausalEntryPayload>) : com.sce.forge.runtime.Counted {",
+            "        const val MOST: Int = 2\n",
+            "override var seen: CodecCborRecordListSeenList = CodecCborRecordListSeenList.fewest(),",
+            "override var context: CodecCborRecordListContextList? = null,",
             // A read past the bound is refused before any record is read.
             "if (len > 2UL) return Decoded.Refused(CodecError.CborOutOfRange)",
             "if (len > 3UL) return Decoded.Refused(CodecError.CborOutOfRange)",
             "list.add(decodeRecordCausalEntry(c).valueOr { _refused -> return _refused })",
             "held_author = Cbor.readText(c, 16).valueOr { _refused -> return _refused }",
-            // The list carries no bound, so the encode refuses past it.
-            "if (v.size > 2) return CodecError.CborOutOfRange",
-            "Cbor.writeArrayHead(w, v.size.toULong())?.let { return it }",
-            "encodeRecordCausalEntry(w, record)?.let { return it }",
-            "if (record.author.encodeToByteArray().size > 16) return CodecError.CborOutOfRange",
+            // A required list the map lacks is refused by its kind, and one
+            // its class does not hold as the reader refuses it.
+            "seen = CodecCborRecordListSeenList.of(seen ?: return \
+             Decoded.Refused(CodecError.CborRequiredKeyMissing)) ?: return \
+             Decoded.Refused(CodecError.CborOutOfRange),",
+            // Each record is held to the bound its payload does not hold
+            // before the map head is written.
+            "            for (_record in _e_seen.entries) {\n                \
+             if ((com.sce.forge.runtime.Utf8.size(_record.author) ?: return \
+             CodecError.CborOutOfRange) > 16) return CodecError.CborOutOfRange\n            }\n",
+            "            if (_e_context != null) {\n                \
+             for (_record in _e_context.entries) {\n",
+            "            var count = 3UL\n            if (_e_context != null) count++\n",
+            "Cbor.writeArrayHead(w, _e_seen.size.toULong())?.let { return it }",
+            "                encodeRecordCausalEntry(w, _record)?.let { return it }\n",
             "Cbor.writeMapHead(w, 2UL)?.let { return it }",
+            "Cbor.writeUint(w, record.seq)?.let { return it }",
         ],
         "private fun encodeRecordCausalEntry(",
         [

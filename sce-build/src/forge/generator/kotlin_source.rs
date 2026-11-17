@@ -35,6 +35,7 @@ use crate::forge::encode_plan::{
 use std::cell::{Cell, RefCell};
 use std::collections::{BTreeMap, BTreeSet};
 
+pub(super) mod cbor;
 pub(super) mod group;
 pub(super) mod source_case;
 
@@ -61,14 +62,14 @@ pub(super) fn unlowered(plan: &CodecPlan<'_>, imports: &[ImportContext]) -> Opti
 /// refuses
 /// only what it answers itself, before the first byte: a gate it cannot
 /// derive, measures that disagree, a number past its field, or what a codec
-/// it holds refuses. A CBOR map and a content-line component keep their own
-/// templates' encodes.
+/// it holds refuses. Every CBOR map is printed ([`cbor`]); a content-line
+/// component keeps its template's encode.
 /// `imports` are the codec's own, which say whether a codec it holds is printed
 /// ([`ImportContext::kotlin_printed`]).
 pub(super) fn unlowered_forms(plan: &CodecPlan<'_>, imports: &[ImportContext]) -> Vec<String> {
     match plan {
         CodecPlan::Positional(plan) => positional_forms(plan, imports),
-        CodecPlan::Cbor(_) => vec!["a CBOR map".to_string()],
+        CodecPlan::Cbor(_) => Vec::new(),
         CodecPlan::ContentLine(_) => vec!["a content-line component".to_string()],
     }
 }
@@ -1144,8 +1145,30 @@ fn bounded_list_class(
     bound: &Bound,
     entry: &str,
 ) -> String {
+    bounded_list_of(
+        struct_name,
+        id,
+        class,
+        bound,
+        &format!("{entry}Source"),
+        entry,
+    )
+}
+
+/// The value class [`bounded_list_class`] declares, of entries of the type
+/// `source`, a value made by default holding the fewest entries the bound
+/// holds, each `entry()`: the one declaration of a list held within its bound,
+/// whether its entries are sources of a codec or the records a CBOR map holds
+/// (docs/adr/0085, Landing order step 3a).
+fn bounded_list_of(
+    struct_name: &str,
+    id: &str,
+    class: &str,
+    bound: &Bound,
+    source: &str,
+    entry: &str,
+) -> String {
     let bound = ListBound::of(bound);
-    let source = format!("{entry}Source");
     let of = match &bound.test {
         Some(test) => format!(" =\n            if ({test}) {class}(entries.toList()) else null"),
         None => format!(" = {class}(entries.toList())"),

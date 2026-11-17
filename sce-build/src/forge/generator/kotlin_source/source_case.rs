@@ -777,6 +777,97 @@ fn list_holds(
     })
 }
 
+/// How the value of a printed CBOR map or content-line component holds one
+/// element a case states, which its literal and its comparison are spelled by.
+pub(super) enum Holds<'t> {
+    /// A boolean.
+    Bool,
+    /// An integer of the type.
+    Int(&'t SceType),
+    /// A text or a byte string in the value class of its bound, named by the
+    /// codec's file, made by its factory.
+    Classed(String),
+}
+
+/// The case of a CBOR map or of a content-line component made of `elements`
+/// (`source_notation`), each beside how the value holds it, a value of the
+/// codec at `path`: its data class made by its constructor, each element by
+/// its name, `null` where the case states none. A byte string is compared by
+/// its content, as a value class over an array compares the array by
+/// identity, and any other element whole. A map and a component take no flag
+/// input and no caller's tag.
+pub(super) fn map_or_line_case(
+    path: &CodecPath,
+    elements: Vec<(super::super::source_notation::StatedElement, Holds<'_>)>,
+) -> Result<SourceCase, String> {
+    use super::super::source_notation::{Scalar, Stated};
+    let l = LangCtx::new(crate::generator::Language::Kotlin, &[]);
+    let mut args = Vec::new();
+    let mut checks = Vec::new();
+    for (element, holds) in elements {
+        let property = l.codec_field_id(&element.id);
+        let (decoded, value) = (
+            format!("{DECODED}.{property}"),
+            format!("{VALUE}.{property}"),
+        );
+        let literal = |scalar: &Scalar| -> Result<String, String> {
+            match (scalar, &holds) {
+                (Scalar::Bool(b), Holds::Bool) => Ok(b.to_string()),
+                (Scalar::Int(n), Holds::Int(ty)) => integer_literal(*n, ty),
+                (Scalar::Text(text), Holds::Classed(class)) => Ok(format!(
+                    "{}.of({})!!",
+                    path.qualified(class),
+                    string_literal(text)
+                )),
+                // A byte as the signed number of its bits, which `byteArrayOf`
+                // takes.
+                (Scalar::Bytes(bytes), Holds::Classed(class)) => Ok(format!(
+                    "{}.of(byteArrayOf({}))!!",
+                    path.qualified(class),
+                    bytes
+                        .iter()
+                        .map(|b| (*b as i8).to_string())
+                        .collect::<Vec<_>>()
+                        .join(", ")
+                )),
+                _ => Err(format!(
+                    "`{}`: the case states a value the element does not hold",
+                    element.id
+                )),
+            }
+        };
+        let (argument, check) = match &element.stated {
+            Stated::Absent => ("null".to_string(), format!("{decoded} == {value}")),
+            Stated::One(scalar) => {
+                let check = match (scalar, element.optional) {
+                    (Scalar::Bytes(_), true) => {
+                        format!("{decoded}?.bytes.contentEquals({value}?.bytes)")
+                    }
+                    (Scalar::Bytes(_), false) => {
+                        format!("{decoded}.bytes.contentEquals({value}.bytes)")
+                    }
+                    _ => format!("{decoded} == {value}"),
+                };
+                (literal(scalar)?, check)
+            }
+            Stated::List(_) => {
+                return Err(format!(
+                    "`{}`: a Kotlin case does not state the values of a repeated property yet",
+                    element.id
+                ))
+            }
+        };
+        args.push(format!("{property} = {argument}"));
+        checks.push((element.id.clone(), check));
+    }
+    Ok(SourceCase {
+        literal: format!("{}({})", path.qualified(&path.type_name), args.join(", ")),
+        checks,
+        inputs: Vec::new(),
+        encode_inputs: Vec::new(),
+    })
+}
+
 /// `text` as a Kotlin string literal of the same text: a quote, a backslash and
 /// a `$`, which would start a template, escaped, and every control character
 /// written as its UTF-16 unit, as Kotlin has no escape for most of them.

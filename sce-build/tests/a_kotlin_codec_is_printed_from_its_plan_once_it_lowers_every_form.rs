@@ -1128,33 +1128,101 @@ fn an_identifier_of_an_enums_type_is_read_as_the_number_it_carries() {
     );
 }
 
+/// A CBOR map is printed from its own plan: each text and byte string in the
+/// value class of its bound (an exact length a least equal to its most), an
+/// integer as the unsigned type of its width, every entry a property of the
+/// source interface, `null` for one the map may lack; the encode over any
+/// source reads each entry once, counts the optional entries present, and
+/// writes the head and each entry present in ascending key order.
+///
+/// Turns red where `kotlin_source::cbor::render` writes the entries in
+/// declaration order rather than by `by_key`, counts an optional entry the
+/// value lacks, holds a byte string in a bare `ByteArray`, refuses a decoded
+/// entry with a kind other than `past_bound` names, or where `unlowered_forms`
+/// names a CBOR map again.
+#[test]
+fn a_cbor_map_holds_each_entry_in_the_class_of_its_bound_and_writes_it_by_key() {
+    assert!(unlowered("codec_cbor_map").is_empty());
+    let text = resource_file("codec_cbor_map");
+    holds(
+        "codec_cbor_map",
+        &text,
+        &[
+            "import kotlin.jvm.JvmInline\n",
+            "@JvmInline\nvalue class CodecCborMapIdBytes private constructor(val bytes: ByteArray) {\n",
+            "        const val LEAST: Int = 16\n",
+            "        fun of(bytes: ByteArray): CodecCborMapIdBytes? =\n            \
+             if (bytes.size in LEAST..MOST) CodecCborMapIdBytes(bytes) else null\n",
+            "@JvmInline\nvalue class CodecCborMapSourceText private constructor(val text: String) {\n",
+            "interface CodecCborMapSource {\n    val source: CodecCborMapSourceText\n    \
+             val id: CodecCborMapIdBytes\n    val pattern: UByte\n    \
+             val payload: CodecCborMapPayloadBytes\n    val deadline: ULong?\n    \
+             val urgent: Boolean?\n}\n",
+            "    override var id: CodecCborMapIdBytes = CodecCborMapIdBytes.fewest(),\n",
+            "    override var deadline: ULong? = null,\n",
+            ") : CodecCborMapSource {\n",
+            "    fun encode(w: SceSink): CodecError? = encodeSource(this, w)\n",
+            "        fun encodeSource(src: CodecCborMapSource, w: SceSink): CodecError? {\n",
+            "            var count = 4UL\n            if (_e_deadline != null) count++\n            \
+             if (_e_urgent != null) count++\n            \
+             Cbor.writeMapHead(w, count)?.let { return it }\n            \
+             Cbor.writeUint(w, 0UL)?.let { return it }\n            \
+             Cbor.writeBytes(w, _e_id.bytes)?.let { return it }\n            \
+             Cbor.writeUint(w, 1UL)?.let { return it }\n            \
+             Cbor.writeText(w, _e_source.text)?.let { return it }\n            \
+             Cbor.writeUint(w, 3UL)?.let { return it }\n            \
+             Cbor.writeUint(w, _e_pattern.toULong())?.let { return it }\n",
+            "            if (_e_urgent != null) {\n                \
+             Cbor.writeUint(w, 7UL)?.let { return it }\n                \
+             Cbor.writeBool(w, _e_urgent)?.let { return it }\n            }\n            \
+             if (_e_deadline != null) {\n                \
+             Cbor.writeUint(w, 12UL)?.let { return it }\n                \
+             Cbor.writeUint(w, _e_deadline)?.let { return it }\n            }\n",
+            // A required entry the map lacks is refused as a missing key, and
+            // bytes of another length than the class holds as the reader
+            // refuses them (docs/adr/0099, amendment of 2026-11-16).
+            "                    id = CodecCborMapIdBytes.of(id ?: return \
+             Decoded.Refused(CodecError.CborRequiredKeyMissing)) ?: return \
+             Decoded.Refused(CodecError.CborWrongLength),\n",
+            "                    payload = CodecCborMapPayloadBytes.of(payload ?: return \
+             Decoded.Refused(CodecError.CborRequiredKeyMissing)) ?: return \
+             Decoded.Refused(CodecError.CborOutOfRange),\n",
+        ],
+    );
+    // The template's checks are gone: the classes hold every bound, and the
+    // map refuses nothing.
+    holds_none(
+        "codec_cbor_map",
+        &text,
+        &[
+            "return CodecError.CborWrongLength",
+            "return CodecError.CborOutOfRange",
+            "var id: ByteArray",
+        ],
+    );
+}
+
 /// A codec whose plan uses a form the Kotlin printer does not lower keeps the
-/// template's encode whole: a CBOR map and a list on one side of a gate held
-/// to a law each name their form.
+/// template's encode whole: a list on one side of a gate held to a law names
+/// its form.
 ///
 /// Turns red where `kotlin_source::positional_forms` stops naming a list a
-/// group holds held to a law, or `unlowered_forms` a CBOR map.
+/// group holds held to a law.
 #[test]
 fn a_codec_of_a_form_the_printer_does_not_lower_keeps_the_template_encode() {
-    for (name, form) in [
-        ("codec_cbor_map", "a CBOR map"),
-        (
-            "codec_repeat_flag_group",
-            "a list on one side of a gate held to a law",
-        ),
-    ] {
-        let forms = unlowered(name);
-        assert!(
-            forms.iter().any(|f| f.contains(form)),
-            "{name}: the printer names `{form}` among {forms:?}"
-        );
-        let text = resource_file(name);
-        holds_none(
-            name,
-            &text,
-            &["fun encodeSource(", "Source {\n", "@JvmInline"],
-        );
-    }
+    let name = "codec_repeat_flag_group";
+    let form = "a list on one side of a gate held to a law";
+    let forms = unlowered(name);
+    assert!(
+        forms.iter().any(|f| f.contains(form)),
+        "{name}: the printer names `{form}` among {forms:?}"
+    );
+    let text = resource_file(name);
+    holds_none(
+        name,
+        &text,
+        &["fun encodeSource(", "Source {\n", "@JvmInline"],
+    );
 }
 
 /// The documents `stem` imports, by stem, as its `<sce:import src=...>` names
@@ -1246,6 +1314,7 @@ fn every_printed_kotlin_codec_compiles_under_werror() {
     sources.push(runtime.join("Codec.kt"));
     sources.push(runtime.join("Utf8.kt"));
     sources.push(runtime.join("Aligned.kt"));
+    sources.push(runtime.join("Cbor.kt"));
     let out = std::process::Command::new(&kotlinc)
         .arg("-Werror")
         .arg("-d")
@@ -1336,6 +1405,7 @@ fn the_kotlin_backend_prints_each_codec_of_the_resources_whose_forms_it_lowers()
         "codec_zenoh_init_body",
         "codec_repeat_unconditional_count",
         "codec_chain_handed",
+        "codec_cbor_map",
     ] {
         assert!(
             printed.iter().any(|stem| stem == name),

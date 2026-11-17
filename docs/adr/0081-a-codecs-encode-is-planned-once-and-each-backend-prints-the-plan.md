@@ -1567,6 +1567,24 @@ old encode, the old encode and its templates are removed in the same landing.
    carries, read by the enum's own `toUnderlying()`, as the C++ printer reads it by `static_cast`: the printer
    reads the field's type off the entry codec's fields the import carries (`kotlin_source::entry_identifier`).
    No resource holds such a chain; a test document does.
+
+   *The nineteenth Kotlin landing, 2026-11-17:* a CBOR map, printed from its own plan (`kotlin_source::cbor`), as
+   the C++ and Python printers print it. Every entry is a property of `{Codec}Source`, nullable for one the map may
+   lack: a text or a byte string in the value class of its bound (`bounded_class`, an exact length a least equal to
+   its most, so the encode refuses no `CborWrongLength`), a list of records in the value class of its most
+   (`bounded_list_of`, the one declaration a list of a codec's entries also takes, its least 0 as Rust's
+   `BoundedList` holds it), an unsigned integer as the Kotlin unsigned type of its width. The encode reads each
+   entry once and refuses, before the first byte, with `CborOutOfRange`: the refusals the totality names, and a
+   record's text past its bound or not UTF-8, which the payload type of a record's Kotlin unit holds in a bare
+   `String`, a refusal no Rust or C++ value reaches. It then writes the map head, counting the optional entries
+   present, and each entry present in ascending key order (`by_key`), a list of records as an array of one map per
+   record, each written by the companion's `encodeRecord{Alias}`, which refuses nothing a sink does not. The
+   template's encode of a map and its record writes are gone: every CBOR plan is printed. The value keeps
+   `encode` and `encodeToByteArray` as they were, `encodeSource`'s answer. The engine's mesh envelope is such a
+   map: the Kotlin router makes each entry by its class's `of`, one past its bound being the `RouterError.Encode`
+   the encode answered before, and `stamp` answers no envelope for a vector past its 64 entries. Considered and
+   refused: an encode that answers no error where the map refuses nothing, which would give a map two signatures
+   by its entries and move every consumer when an entry is added.
 5. Swift, when its codec lowers what the plan holds.
    *Swift lowers what the plan holds, 2026-11-16:* its codec writes every codec of the repository Rust writes,
    but the one only an MCU-class backend writes (`a_swift_codec_is_written_wherever_rust_writes_one.rs`): an

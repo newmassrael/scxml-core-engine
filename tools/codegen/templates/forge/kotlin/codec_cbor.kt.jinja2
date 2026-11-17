@@ -51,52 +51,6 @@ Cbor.readUint(c).valueOr { _refused -> return _refused }
 (Cbor.readUintUpto(c, {{ f.int_max }}UL).valueOr { _refused -> return _refused }).to{{ f.value_type }}()
 {%- endif -%}
 {%- endmacro %}
-{#- The write of one field of `record`, its key already written. The
-    language's string and array carry no bound, so a text or a byte string
-    past its bound is refused, not written. #}
-{% macro encode_record_field(f) -%}
-{%- if f.kind == "bool" -%}
-Cbor.writeBool(w, record.{{ f.name }})?.let { return it }
-{%- elif f.kind == "text" -%}
-if (record.{{ f.name }}.encodeToByteArray().size > {{ f.max }}) return CodecError.CborOutOfRange
-            Cbor.writeText(w, record.{{ f.name }})?.let { return it }
-{%- elif f.kind == "bytes" -%}
-if (record.{{ f.name }}.size > {{ f.max }}) return CodecError.CborOutOfRange
-            Cbor.writeBytes(w, record.{{ f.name }})?.let { return it }
-{%- else -%}
-Cbor.writeUint(w, record.{{ f.name }}.toULong())?.let { return it }
-{%- endif -%}
-{%- endmacro %}
-{#- The write of one entry's value `v`, key already written. #}
-{% macro encode_value(e, indent) -%}
-{%- if e.kind == "bool" -%}
-Cbor.writeBool(w, v)?.let { return it }
-{%- elif e.kind == "text" -%}
-{% if e.max_size is not none %}if (v.encodeToByteArray().size > {{ e.max_size }}) return CodecError.CborOutOfRange
-{{ indent }}{% endif %}Cbor.writeText(w, v)?.let { return it }
-{%- elif e.kind == "bytes" -%}
-{% if e.max_size is not none %}if (v.size > {{ e.max_size }}) return CodecError.CborOutOfRange
-{{ indent }}{% endif %}Cbor.writeBytes(w, v)?.let { return it }
-{%- elif e.kind == "bytes_exact" -%}
-if (v.size != {{ e.length }}) return CodecError.CborWrongLength
-{{ indent }}Cbor.writeBytes(w, v)?.let { return it }
-{%- elif e.kind == "enum" -%}
-{#- A signed carrier's negative number is no CBOR unsigned integer, and
-    `toULong()` would wrap it; refused as the Rust backend refuses it. #}
-{% if e.carrier_signed %}if (({{ e.enum_to_underlying }}) < 0) return CodecError.CborOutOfRange
-{{ indent }}{% endif %}Cbor.writeUint(w, ({{ e.enum_to_underlying }}).toULong())?.let { return it }
-{%- elif e.kind == "record_list" -%}
-{#- The language's list carries no bound, so a count past the list's bound,
-    or short of its lower count, is refused before anything of it is written. -#}
-if (v.size > {{ e.list_max }}{% if e.list_min > 0 %} || v.size < {{ e.list_min }}{% endif %}) return CodecError.CborOutOfRange
-{{ indent }}Cbor.writeArrayHead(w, v.size.toULong())?.let { return it }
-{{ indent }}for (record in v) {
-{{ indent }}    {{ e.record_encode_fn }}(w, record)?.let { return it }
-{{ indent }}}
-{%- else -%}
-Cbor.writeUint(w, v.toULong())?.let { return it }
-{%- endif -%}
-{%- endmacro %}
 {{ sce_map.source_marker(source_location, "kotlin", module_level=true, symbol_artifact=sce_artifact.forge_body) }}
 
 // SCE Forge: Auto-generated from Extended SCXML (sce:kind="codec" sce:encoding="cbor")
@@ -116,6 +70,15 @@ import com.sce.forge.runtime.SceSink
 {{ imp.include_stmt }}
 {% endif %}
 {% endfor %}
+{% if kotlin_source.inline %}
+import kotlin.jvm.JvmInline
+{% endif %}
+
+{# docs/adr/0081 step 4: every map is printed from its plan, which names the
+   value class of each text's, byte string's and list's bound and the interface
+   a source of the map implements before the value's class, which implements
+   it too. #}
+{{ kotlin_source.before }}
 
 /**
  * One CBOR map (SCE_FORGE.md §4.6.1). Decode takes the keys in any order and
@@ -127,40 +90,15 @@ import com.sce.forge.runtime.SceSink
 data class {{ struct_name }}(
 {% for e in entries %}
     /** Map key {{ e.key }}{% if e.required %}, required{% endif %}. */
-    var {{ e.name }}: {{ e.value_type }}{% if not e.required %}?{% endif %} = {{ e.default }},
+    override var {{ e.name }}: {{ e.field_type }} = {{ e.default }},
 {% endfor %}
-) {
+) : {{ struct_name }}Source {
     /**
-     * Encode this map into [w]; `null` on success. An entry whose value breaks
-     * its declared bound — an exact length, a maximum size — is refused, not
-     * written.
+     * Encode this map into [w]; `null` on success. The encode over any source
+     * ([encodeSource]) refuses, before the first byte, what no class of an
+     * entry holds that the map cannot carry.
      */
-    fun encode(w: SceSink): CodecError? {
-{% if optional_count %}
-        var count = {{ required_count }}UL
-{% for e in entries if not e.required %}
-        if ({{ e.name }} != null) count++
-{% endfor %}
-{% else %}
-        val count = {{ required_count }}UL
-{% endif %}
-        Cbor.writeMapHead(w, count)?.let { return it }
-{% for e in entries_by_key %}
-{% if e.required %}
-        run {
-            val v = {{ e.name }}
-            Cbor.writeUint(w, {{ e.key }}UL)?.let { return it }
-            {{ encode_value(e, "            ") }}
-        }
-{% else %}
-        {{ e.name }}?.let { v ->
-            Cbor.writeUint(w, {{ e.key }}UL)?.let { return it }
-            {{ encode_value(e, "            ") }}
-        }
-{% endif %}
-{% endfor %}
-        return null
-    }
+    fun encode(w: SceSink): CodecError? = encodeSource(this, w)
 
     /** [encode] into a new array; `null` when encode refuses the value. */
     fun encodeToByteArray(): ByteArray? {
@@ -170,6 +108,8 @@ data class {{ struct_name }}(
     }
 
     companion object {
+{{ kotlin_source.encode }}
+
         /**
          * Decode one map from [cursor]. On success the cursor advances past
          * it; a refusal answers the [CodecError] that refused the map
@@ -205,7 +145,7 @@ data class {{ struct_name }}(
             return Decoded.Ok(
                 {{ struct_name }}(
 {% for e in entries %}
-                    {{ e.name }} = {{ e.name }}{% if e.required %} ?: return Decoded.Refused(CodecError.CborRequiredKeyMissing){% endif %},
+                    {{ e.name }} = {{ e.made }},
 {% endfor %}
                 ),
             )
@@ -247,20 +187,6 @@ data class {{ struct_name }}(
 {% endfor %}
                 ),
             )
-        }
-
-        /**
-         * Write one record of `{{ r.schema }}` into [w] as one map of every field,
-         * the keys in the order RFC 8949 §4.2.1 sorts their encodings: a shorter
-         * key first. `null` on success.
-         */
-        private fun {{ r.encode_fn }}(w: SceSink, record: {{ r.type_name }}): CodecError? {
-            Cbor.writeMapHead(w, {{ r.field_count }}UL)?.let { return it }
-{% for f in r.fields_by_key %}
-            Cbor.writeText(w, {{ f.key_literal }})?.let { return it }
-            {{ encode_record_field(f) }}
-{% endfor %}
-            return null
         }
 {% endfor %}
     }

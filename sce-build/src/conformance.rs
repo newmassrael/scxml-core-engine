@@ -4251,14 +4251,14 @@ fn fold_case_rows(
                                      value of it is made from a case"
                                 ))
                             }
-                            // The Kotlin printer prints positional codecs only,
-                            // so `CasePrinter::of` answers it for no map.
-                            CasePrinter::Kotlin => {
-                                return Err(format!(
-                                    "{at}: the Kotlin printer prints no CBOR map, so no \
-                                     value of it is made from a case"
-                                ))
-                            }
+                            CasePrinter::Kotlin => PrintedCase::from(
+                                crate::forge::generator::kotlin_cbor_source_case(
+                                    plan,
+                                    &kotlin_path,
+                                    source,
+                                )
+                                .map_err(|e| format!("{at}: {e}"))?,
+                            ),
                         },
                         CodecPlan::ContentLine(plan) => match printer {
                             CasePrinter::Cpp => PrintedCase::from(
@@ -4719,27 +4719,6 @@ pub fn render_harness(
                                 &model.fields,
                                 language,
                             );
-                        // A Kotlin codec printed from its plan holds each byte
-                        // string and text it presents in the class of its
-                        // bound, made only by its checked factory, which a
-                        // fragment makes the element through (docs/adr/0081
-                        // §2); the class is named where the printer names it.
-                        if *printed && matches!(language, Language::Kotlin) {
-                            let struct_name = crate::filters::to_pascal_case(fixture_name.clone());
-                            for field in fields.iter_mut().filter(|field| !field.derived) {
-                                let ty = match field.ty {
-                                    CanonicalType::Bytes => crate::forge::model::SceType::Bytes,
-                                    CanonicalType::String => crate::forge::model::SceType::String,
-                                    _ => continue,
-                                };
-                                field.refined =
-                                    Some(crate::forge::generator::kotlin_refinement_class(
-                                        &struct_name,
-                                        &field.name,
-                                        &ty,
-                                    ));
-                            }
-                        }
                         // A positional codec has an eager form at the default
                         // profile only where `Inline` holds every list of it
                         // and of what it holds; otherwise a fragment names the
@@ -4751,6 +4730,27 @@ pub fn render_harness(
                         )
                         .map_err(|e| format!("{}: {e:?}", scxml_path.display()))?
                         .unwrap_or(true);
+                    }
+                    // A Kotlin codec printed from its plan, positional or a
+                    // CBOR map, holds each byte string and text it presents in
+                    // the class of its bound, made only by its checked
+                    // factory, which a fragment makes the element through
+                    // (docs/adr/0081 §2); the class is named where the printer
+                    // names it.
+                    if *printed && !*content_line && matches!(language, Language::Kotlin) {
+                        let struct_name = crate::filters::to_pascal_case(fixture_name.clone());
+                        for field in fields.iter_mut().filter(|field| !field.derived) {
+                            let ty = match field.ty {
+                                CanonicalType::Bytes => crate::forge::model::SceType::Bytes,
+                                CanonicalType::String => crate::forge::model::SceType::String,
+                                _ => continue,
+                            };
+                            field.refined = Some(crate::forge::generator::kotlin_refinement_class(
+                                &struct_name,
+                                &field.name,
+                                &ty,
+                            ));
+                        }
                     }
                 }
                 // RFC §synth-5-B test-vector: enrich the manifest with the
@@ -5699,13 +5699,16 @@ mod tests {
     /// (docs/adr/0081 §5), and each printer makes it as its encoding's printer
     /// declares the value: Rust the map itself, a text and a byte string through
     /// `Bounded::new`, C++ by its constructor, a text and a byte string by `make`
-    /// of the view its accessor presents, and Python by its dataclass's
-    /// constructor. Each entry is compared through what the value presents.
+    /// of the view its accessor presents, Python by its dataclass's
+    /// constructor, and Kotlin by its data class's constructor, a text and a
+    /// byte string by the factory of the value class of its bound. Each entry
+    /// is compared through what the value presents.
     ///
     /// Turns red where `source_notation::cbor_elements` reads an entry
     /// otherwise, or `rust_source::cbor::source_case`,
-    /// `cpp_source::source_case::map_or_line_case` with `Texts::Bounded` or
-    /// `python_source::source_case::map_or_line_case` spells one otherwise.
+    /// `cpp_source::source_case::map_or_line_case` with `Texts::Bounded`,
+    /// `python_source::source_case::map_or_line_case` or
+    /// `kotlin_source::source_case::map_or_line_case` spells one otherwise.
     #[test]
     fn a_source_case_of_a_cbor_map_is_the_map_each_printer_makes() {
         let mut encoded: Vec<u64> = vec![165, 0, 80];
@@ -5765,7 +5768,7 @@ mod tests {
             serde_json::json!({ "element": "source", "holds": "(*decoded).source() == value.source()" })
         );
 
-        let python = folded_source("codec_cbor_map", case, Language::Python)
+        let python = folded_source("codec_cbor_map", case.clone(), Language::Python)
             .expect("the Python harness states it");
         assert_eq!(
             python["literal"],
@@ -5777,6 +5780,36 @@ mod tests {
             python["checks"][4],
             serde_json::json!({ "element": "deadline", "holds": "decoded.deadline == value.deadline" })
         );
+
+        // Kotlin makes its data class by its constructor, a text and a byte
+        // string by the factory of the value class of its bound, every name
+        // written by the document's package, and compares a byte string by its
+        // content (`kotlin_source::source_case::map_or_line_case`).
+        let kotlin = folded_source("codec_cbor_map", case, Language::Kotlin)
+            .expect("the Kotlin harness states it");
+        let package = "com.sce.generated.codec_cbor_map";
+        assert_eq!(
+            kotlin["literal"],
+            format!(
+                "{package}.CodecCborMap(source = {package}.CodecCborMapSourceText.of(\"node-a\")!!, \
+                 id = {package}.CodecCborMapIdBytes.of(byteArrayOf(0, 1, 2, 3, 4, 5, 6, 7, 8, 9, \
+                 10, 11, 12, 13, 14, 15))!!, pattern = 3u, payload = \
+                 {package}.CodecCborMapPayloadBytes.of(byteArrayOf(-34, -83))!!, deadline = null, \
+                 urgent = true)"
+            )
+        );
+        assert_eq!(
+            kotlin["checks"][1],
+            serde_json::json!({
+                "element": "id",
+                "holds": "decoded.id.bytes.contentEquals(value.id.bytes)"
+            })
+        );
+        assert_eq!(
+            kotlin["checks"][5],
+            serde_json::json!({ "element": "urgent", "holds": "decoded.urgent == value.urgent" })
+        );
+        assert_eq!(kotlin["inputs"], serde_json::json!([]));
     }
 
     /// A byte case of a content-line component states the component whole,
