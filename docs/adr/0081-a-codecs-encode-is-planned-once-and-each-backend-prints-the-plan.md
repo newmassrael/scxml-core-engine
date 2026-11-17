@@ -2116,6 +2116,28 @@ old encode, the old encode and its templates are removed in the same landing.
    element of the member's type. A number the arm states where its content is absent is taken where none of the
    content is there, and zero where the arm holds none; it is never said twice, as the two sides of a group are apart.
    A list held to a law, a chain, and two lists of one count in a group stay unlowered.
+
+   *The thirteenth C11 landing, 2026-11-17:* lists held to the law their entries say the inputs they are handed by
+   (docs/adr/0065 §6 R8), and chains that hand an entry whether the entry before it was of a kind
+   (`ListWrite::previous`). The refinement of R8 is the list's own: `{codec}_{element}_list_t` holds, after its
+   count, the start of each input every entry says alike (`Automaton::Uniform`), `start_<input>`, and its maker takes
+   the start after the entry's table and holds each entry, as it walks the list once, to saying what the law asks of
+   its place, through the entry codec's function of the input: the start, or whether the entry before is of the kind
+   the input waits for (`Automaton::AfterKey`), read off the entry's source by the chain's `entry-id`, the first
+   entry's clear. An entry that says an input in some of its values only agrees with any place where it says nothing
+   (R8b). The maker refuses an entry that says otherwise with `SCE_FORGE_CODEC_PRESENT_IF_MISMATCH`, the status an
+   input a held codec says beside what it is handed is refused with. The walk presents the same entries each time it
+   is run (`sce_forge_walk_t`), so a list its maker made holds its law for as long as it is presented, and the encode
+   walks it as any list (`ListWrite::lawful`); the Rust runtime's walk asserts the same contract by a panic, which C
+   has no counterpart of. The value's struct holds the start beside the list, `{list}_start_<input>`, as the start is
+   the value's even where the list holds no entry; the decode sets it from what it handed the entries, the bit of a
+   carrier it read or an input it was handed, and the value's check holds the entries to the law by the list's own
+   maker over the value's walk of them. A flag bound to the input is derived from the start (`Measured::Start`), and
+   an input of the codec's own that the list's start says (`InputSource::List`) is read off it, an optional value
+   where a gate may leave the list out. A chain hands each entry an input nothing binds as whether the entry before
+   it was of the kind the bind waits for, a local of the walk set from the kind of each entry it writes. A list a
+   group holds stays held to no law, and a chain whose memberships a group holds, which a check of each entry reads
+   apart from its law, stays unlowered.
 5. Swift, when its codec lowers what the plan holds.
    *Swift lowers what the plan holds, 2026-11-16:* its codec writes every codec of the repository Rust writes,
    but the one only an MCU-class backend writes (`a_swift_codec_is_written_wherever_rust_writes_one.rs`): an
