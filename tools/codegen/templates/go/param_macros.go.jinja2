@@ -54,7 +54,7 @@
 {% if param.native_fails %}
 				} else {
 {% if 'error.execution' in model.events %}
-					engine.Raise(sce.NewPlatformError({{ machine_name }}Event{{ 'error.execution' | to_event_variant }}, "{{ element }} <param name='{{ param.name | escape_go }}'> failed to evaluate"))
+					engine.Raise(sce.NewPlatformError({{ machine_name }}Event{{ 'error.execution' | to_event_variant }}, sceerrorreason.ErrorReasonExpressionFailed, "{{ element }} <param name='{{ param.name | escape_go }}'> failed to evaluate"))
 {% endif %}
 				}
 {% endif %}
@@ -72,7 +72,7 @@
 				// W3C SCXML 5.7.1: the pair is dropped AND the failure is
 				// reported.
 {% if 'error.execution' in model.events %}
-				engine.Raise(sce.NewPlatformError({{ machine_name }}Event{{ 'error.execution' | to_event_variant }}, "{{ element }} <param name='{{ param.name | escape_go }}'> expr failed to evaluate"))
+				engine.Raise(sce.NewPlatformError({{ machine_name }}Event{{ 'error.execution' | to_event_variant }}, sceerrorreason.ErrorReasonExpressionFailed, "{{ element }} <param name='{{ param.name | escape_go }}'> expr failed to evaluate"))
 {% endif %}
 			}
 {% elif param.location and model.needs_script_engine %}
@@ -83,14 +83,14 @@
 {% endif %}
 			} else {
 {% if 'error.execution' in model.events %}
-				engine.Raise(sce.NewPlatformError({{ machine_name }}Event{{ 'error.execution' | to_event_variant }}, "{{ element }} <param name='{{ param.name | escape_go }}'> location could not be read"))
+				engine.Raise(sce.NewPlatformError({{ machine_name }}Event{{ 'error.execution' | to_event_variant }}, sceerrorreason.ErrorReasonLocationInvalid, "{{ element }} <param name='{{ param.name | escape_go }}'> location could not be read"))
 {% endif %}
 			}
 {% elif model.needs_script_engine %}
 			// W3C SCXML 5.7.1: `location=""` names no location — the same failure
 			// as an expression that will not evaluate: report it and omit the pair.
 {% if 'error.execution' in model.events %}
-			engine.Raise(sce.NewPlatformError({{ machine_name }}Event{{ 'error.execution' | to_event_variant }}, "{{ element }} <param name='{{ param.name | escape_go }}'> names no location"))
+			engine.Raise(sce.NewPlatformError({{ machine_name }}Event{{ 'error.execution' | to_event_variant }}, sceerrorreason.ErrorReasonLocationInvalid, "{{ element }} <param name='{{ param.name | escape_go }}'> names no location"))
 {% endif %}
 {% endif %}
 {% endfor %}
@@ -127,7 +127,7 @@
 {% if param.native_fails %}
 				if sceFailure.Failed() {
 {% if 'error.execution' in model.events %}
-					engine.Raise(sce.NewPlatformError({{ machine_name }}Event{{ 'error.execution' | to_event_variant }}, "<invoke> <param name='{{ param.name | escape_go }}'> cannot be its request field: it failed to evaluate"))
+					engine.Raise(sce.NewPlatformError({{ machine_name }}Event{{ 'error.execution' | to_event_variant }}, sceerrorreason.ErrorReasonExpressionFailed, "<invoke> <param name='{{ param.name | escape_go }}'> cannot be its request field: it failed to evaluate"))
 {% endif %}
 					requestRefused = true
 				} else {
@@ -158,7 +158,7 @@
 {% endif %}
 				} else {
 {% if 'error.execution' in model.events %}
-					engine.Raise(sce.NewPlatformError({{ machine_name }}Event{{ 'error.execution' | to_event_variant }}, "<invoke> <param name='{{ param.name | escape_go }}'> cannot be its request field: "+paramErr.Error()))
+					engine.Raise(sce.NewPlatformError({{ machine_name }}Event{{ 'error.execution' | to_event_variant }}, sceerrorreason.ErrorReasonParamUnfit, "<invoke> <param name='{{ param.name | escape_go }}'> cannot be its request field: "+paramErr.Error()))
 {% endif %}
 					requestRefused = true
 				}

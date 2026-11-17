@@ -11,6 +11,8 @@ import (
 	"sort"
 	"strings"
 	"time"
+
+	errorreason "github.com/newmassrael/sce-go-runtime/generated/error_reason"
 )
 
 // eventOutcome is what the engine did with one event it offered to the active
@@ -848,7 +850,7 @@ func (e *Engine[S, E]) liftTypedPayload(eventWithMeta EventWithMetadata[E]) (Eve
 		e.policy.ClearEventMetadata()
 		return eventWithMeta, refusedWhole
 	}
-	replacement := NewPlatformError(errorEvent, fmt.Sprintf(
+	replacement := NewPlatformError(errorEvent, errorreason.ErrorReasonPayloadRefused, fmt.Sprintf(
 		"`%s` payload: %s", e.policy.GetEventName(eventWithMeta.Event), err.Error()))
 	// The replacement carries no typed payload, so binding it clears the view
 	// the refused delivery left half read.
@@ -1521,7 +1523,7 @@ func (e *Engine[S, E]) deliverRouted(act ReadyAct[E]) {
 		return
 	}
 	if communicationError, ok := e.policy.GetEventFromName("error.communication"); ok {
-		errEvt := NewPlatformError(communicationError, "<send> named a target that was no longer there when its delay elapsed")
+		errEvt := NewPlatformError(communicationError, errorreason.ErrorReasonTargetUnreachable, "<send> named a target that was no longer there when its delay elapsed")
 		errEvt.Metadata.SendID = act.SendID
 		e.Raise(errEvt)
 	}

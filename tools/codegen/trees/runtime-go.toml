@@ -1,0 +1,22 @@
+# SPDX-License-Identifier: AGPL-3.0-only WITH LicenseRef-SCE-Linking-Exception OR LicenseRef-SCE-Commercial
+# SPDX-FileCopyrightText: Copyright (c) 2026 newmassrael
+#
+# The standard documents the Go engine runtime is built on, generated for Go
+# into backends/go/runtime/generated (ADR 0097), one package each: the
+# reasons an engine raises `error.execution` and `error.communication` for
+# (sce:std/engine/error_reason.scxml, docs/adr/0106 #111), imported as
+# `github.com/newmassrael/sce-go-runtime/generated/error_reason`. The runtime
+# writes each reason by the enum's declared-name accessor, so the document is
+# the one spelling of it. Named by its path under stdlib/engine, so it carries
+# the source hash of that directory. The generated enum reads the forge
+# runtime's `optional`, which backends/go/runtime/go.mod requires.
+
+[tree]
+name = "runtime-go"
+roots = ["backends/go/runtime/generated"]
+
+[[generation]]
+each = { files = "stdlib/engine/*.scxml", as = "document" }
+arguments = ["generate", "stdlib/engine/{document}.scxml", "--language", "go", "--output-dir", "{out}"]
+place = "backends/go/runtime/generated/{document}"
+keep = ["*.go"]

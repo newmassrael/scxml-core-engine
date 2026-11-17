@@ -6,7 +6,7 @@
 	// W3C SCXML 5.8: <script>
 	if err := p.executeScript(`{{ action.content | to_lua_script }}`); err != nil {
 {% if 'error.execution' in model.events %}
-		engine.Raise(sce.NewPlatformError({{ machine_name }}Event{{ 'error.execution' | to_event_variant }}, "<script> failed to execute"))
+		engine.Raise(sce.NewPlatformError({{ machine_name }}Event{{ 'error.execution' | to_event_variant }}, sceerrorreason.ErrorReasonScriptFailed, "<script> failed to execute"))
 {% endif %}
 {% if in_action_block is defined and in_action_block %}
 		return  // W3C SCXML 4.9: the error ends the block

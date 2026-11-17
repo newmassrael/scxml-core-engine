@@ -11318,9 +11318,13 @@ impl GoBackend {
              \tgithub.com/newmassrael/sce-go-runtime v0.0.0\n\
              )\n\
              \n\
-             require github.com/Shopify/go-lua v0.0.0-20221004153744-91867de107cf // indirect\n\
+             require (\n\
+             \tgithub.com/Shopify/go-lua v0.0.0-20221004153744-91867de107cf // indirect\n\
+             \tgithub.com/newmassrael/sce-forge-runtime v0.0.0 // indirect\n\
+             )\n\
              \n\
              replace (\n\
+             \tgithub.com/newmassrael/sce-forge-runtime => {sce}/backends/go/forge-runtime\n\
              \tgithub.com/newmassrael/sce-go-lua => {sce}/backends/go/lua\n\
              \tgithub.com/newmassrael/sce-go-runtime => {sce}/backends/go/runtime\n\
              )\n",

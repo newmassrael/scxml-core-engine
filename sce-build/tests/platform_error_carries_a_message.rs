@@ -97,7 +97,7 @@ const BACKENDS: &[Backend] = &[
             "NewPlatformEvent({{ machine_name }}Event{{ 'error.execution'",
             "NewPlatformEvent({{ machine_name }}Event{{ 'error.communication'",
         ],
-        entry_point: "sce.NewPlatformError(event, message)",
+        entry_point: "sce.NewPlatformError(event, reason, detail)",
     },
     Backend {
         dir: "kotlin",

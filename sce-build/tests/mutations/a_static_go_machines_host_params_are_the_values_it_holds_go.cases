@@ -45,6 +45,6 @@ PY
 
 mutation_case "a value that failed is left out without a word" <<'PY'
 edit("tools/codegen/templates/go/param_macros.go.jinja2",
-     "{% if 'error.execution' in model.events %}\n\t\t\t\t\tengine.Raise(sce.NewPlatformError({{ machine_name }}Event{{ 'error.execution' | to_event_variant }}, \"{{ element }} <param name='{{ param.name | escape_go }}'> failed to evaluate\"))",
-     "{% if false %}\n\t\t\t\t\tengine.Raise(sce.NewPlatformError({{ machine_name }}Event{{ 'error.execution' | to_event_variant }}, \"{{ element }} <param name='{{ param.name | escape_go }}'> failed to evaluate\"))")
+     "{% if 'error.execution' in model.events %}\n\t\t\t\t\tengine.Raise(sce.NewPlatformError({{ machine_name }}Event{{ 'error.execution' | to_event_variant }}, sceerrorreason.ErrorReasonExpressionFailed, \"{{ element }} <param name='{{ param.name | escape_go }}'> failed to evaluate\"))",
+     "{% if false %}\n\t\t\t\t\tengine.Raise(sce.NewPlatformError({{ machine_name }}Event{{ 'error.execution' | to_event_variant }}, sceerrorreason.ErrorReasonExpressionFailed, \"{{ element }} <param name='{{ param.name | escape_go }}'> failed to evaluate\"))")
 PY

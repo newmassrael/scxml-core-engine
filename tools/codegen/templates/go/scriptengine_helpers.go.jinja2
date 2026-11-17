@@ -92,7 +92,7 @@ func (p *{{ machine_name }}Policy) establishScriptSession() *sce.ScriptSessionFa
 {% if is_function_expr %}
 	if err := engine.ExecuteScript(sessionID, `{{ var.id }} = {{ var.expr | to_lua_expr }}`); err != nil {
 {% if 'error.execution' in model.events %}
-		eng.Raise(sce.NewPlatformError({{ machine_name }}Event{{ 'error.execution' | to_event_variant }}, "<data id='{{ var.id }}'> function expression failed"))
+		eng.Raise(sce.NewPlatformError({{ machine_name }}Event{{ 'error.execution' | to_event_variant }}, sceerrorreason.ErrorReasonExpressionFailed, "<data id='{{ var.id }}'> function expression failed"))
 {% endif %}
 	}
 {% else %}
@@ -102,7 +102,7 @@ func (p *{{ machine_name }}Policy) establishScriptSession() *sce.ScriptSessionFa
 			_ = engine.SetVariable(sessionID, "{{ var.id }}", result)
 		} else {
 {% if 'error.execution' in model.events %}
-			eng.Raise(sce.NewPlatformError({{ machine_name }}Event{{ 'error.execution' | to_event_variant }}, "<data id='{{ var.id }}'> expr failed to evaluate"))
+			eng.Raise(sce.NewPlatformError({{ machine_name }}Event{{ 'error.execution' | to_event_variant }}, sceerrorreason.ErrorReasonExpressionFailed, "<data id='{{ var.id }}'> expr failed to evaluate"))
 {% endif %}
 			_ = engine.SetVariable(sessionID, "{{ var.id }}", nil)
 		}
@@ -191,7 +191,7 @@ func (p *{{ machine_name }}Policy) InitializeDataModel(eng *sce.Engine[{{ machin
 		// W3C SCXML B.2: Function expression for {{ var.id }}
 		if err := engine.ExecuteScript(sessionID, `{{ var.id }} = {{ var.expr | to_lua_expr }}`); err != nil {
 {% if 'error.execution' in model.events %}
-			eng.Raise(sce.NewPlatformError({{ machine_name }}Event{{ 'error.execution' | to_event_variant }}, "<data id='{{ var.id }}'> function expression failed"))
+			eng.Raise(sce.NewPlatformError({{ machine_name }}Event{{ 'error.execution' | to_event_variant }}, sceerrorreason.ErrorReasonExpressionFailed, "<data id='{{ var.id }}'> function expression failed"))
 {% endif %}
 		}
 {% else %}
@@ -201,7 +201,7 @@ func (p *{{ machine_name }}Policy) InitializeDataModel(eng *sce.Engine[{{ machin
 			_ = engine.SetVariable(sessionID, "{{ var.id }}", result)
 		} else {
 {% if 'error.execution' in model.events %}
-			eng.Raise(sce.NewPlatformError({{ machine_name }}Event{{ 'error.execution' | to_event_variant }}, "<data id='{{ var.id }}'> expr failed to evaluate"))
+			eng.Raise(sce.NewPlatformError({{ machine_name }}Event{{ 'error.execution' | to_event_variant }}, sceerrorreason.ErrorReasonExpressionFailed, "<data id='{{ var.id }}'> expr failed to evaluate"))
 {% endif %}
 			_ = engine.SetVariable(sessionID, "{{ var.id }}", nil)
 		}
@@ -242,7 +242,7 @@ func (p *{{ machine_name }}Policy) InitializeDataModel(eng *sce.Engine[{{ machin
 {% for script in model.global_scripts %}
 	if err := engine.ExecuteScript(sessionID, `{{ script.content | to_lua_script }}`); err != nil {
 {% if 'error.execution' in model.events %}
-		eng.Raise(sce.NewPlatformError({{ machine_name }}Event{{ 'error.execution' | to_event_variant }}, "a top-level <script> failed to execute"))
+		eng.Raise(sce.NewPlatformError({{ machine_name }}Event{{ 'error.execution' | to_event_variant }}, sceerrorreason.ErrorReasonScriptFailed, "a top-level <script> failed to execute"))
 {% endif %}
 	}
 {% endfor %}
@@ -297,13 +297,13 @@ func (p *{{ machine_name }}Policy) evaluateIfCond(guard string, eng *sce.Engine[
 // evaluateGuardRaising evaluates a cond, raising error.execution when it cannot
 // be evaluated (W3C SCXML 5.9.1); ok is false then, where a bare false could
 // not say so.
-func (p *{{ machine_name }}Policy) evaluateGuardRaising(guard string, eng *sce.Engine[{{ machine_name }}State, {{ machine_name }}Event], reason string) (value bool, ok bool) {
+func (p *{{ machine_name }}Policy) evaluateGuardRaising(guard string, eng *sce.Engine[{{ machine_name }}State, {{ machine_name }}Event], detail string) (value bool, ok bool) {
 	p.assertScriptSession()
 	engine := p.ScriptEngine
 	result, err := engine.EvaluateExpression(p.SessionID, guard)
 	if err != nil {
 {% if 'error.execution' in model.events %}
-		eng.Raise(sce.NewPlatformError({{ machine_name }}Event{{ 'error.execution' | to_event_variant }}, reason))
+		eng.Raise(sce.NewPlatformError({{ machine_name }}Event{{ 'error.execution' | to_event_variant }}, sceerrorreason.ErrorReasonExpressionFailed, detail))
 {% endif %}
 		return false, false
 	}

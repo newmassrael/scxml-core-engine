@@ -1906,7 +1906,8 @@ fn guard_payload(
             let otherwise = if raises_error {
                 format!(
                     " else {{\n\t\tengine.Raise(sce.NewPlatformError(\
-                     {machine_name}EventErrorExecution, \"{msg}\"))\n\t}}"
+                     {machine_name}EventErrorExecution, \
+                     sceerrorreason.ErrorReasonPayloadRefused, \"{msg}\"))\n\t}}"
                 )
             } else {
                 String::new()

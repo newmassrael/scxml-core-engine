@@ -9,6 +9,8 @@ import (
 	"slices"
 	"strconv"
 	"strings"
+
+	errorreason "github.com/newmassrael/sce-go-runtime/generated/error_reason"
 )
 
 // Host-supplied Event I/O Processors — the payload types a host registers a
@@ -320,7 +322,7 @@ func (e *Engine[S, E]) performDeferredHostSend(request HostSendRequest) {
 	// The same sentence the immediate site emits. One wording for one fact: a
 	// consumer matching on the message must not have to know whether the send
 	// it wrote carried a delay.
-	meta := NewPlatformError(evt,
+	meta := NewPlatformError(evt, errorreason.ErrorReasonProcessorUnregistered,
 		"<send type='"+request.ProcessorType+"'> names a processor the host declared but never registered")
 	// §scxml-6.2.4 + §scxml-5.10 (test 332): the error event MUST carry the sendid, and
 	// a deferred send always has one — the scheduler needed it to be
@@ -513,7 +515,7 @@ func (e *Engine[S, E]) PerformHostInvoke(request HostInvokeRequest) bool {
 	deadlineMs, hasDeadline, err := takeHostInvokeDeadline(&request)
 	if err != nil {
 		if evt, known := e.policy.GetEventFromName("error.execution"); known {
-			e.Raise(NewPlatformError(evt, fmt.Sprintf(
+			e.Raise(NewPlatformError(evt, errorreason.ErrorReasonParamUnfit, fmt.Sprintf(
 				"<invoke type='%s' id='%s'>: %v", request.ProcessorType, request.InvokeID, err)))
 		}
 		return true
@@ -566,7 +568,13 @@ func (e *Engine[S, E]) startHostInvoke(handler HostInvokeHandler, request HostIn
 		delete(e.startedHostInvokes, hostInvokeKey{request.ProcessorType, request.InvokeID})
 		e.scheduler.DropHostInvokeDeadline(token)
 		if evt, known := e.policy.GetEventFromName("error.execution"); known {
-			e.Raise(NewPlatformError(evt, *response.Refusal))
+			// The host's refusal is the event's data as the host wrote it: the
+			// host owns the shape of what it refuses with, as a peer owns the
+			// status of its reply (docs/adr/0106 #111), so it is not wrapped in
+			// a code of the engine's vocabulary.
+			refused := NewPlatformEvent(evt)
+			refused.Metadata.Data = *response.Refusal
+			e.Raise(refused)
 		}
 		return
 	}

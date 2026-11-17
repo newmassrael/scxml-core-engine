@@ -7,4 +7,9 @@ go 1.22
 
 require github.com/newmassrael/sce-go-runtime v0.0.0
 
-replace github.com/newmassrael/sce-go-runtime => ../runtime
+require github.com/newmassrael/sce-forge-runtime v0.0.0 // indirect
+
+replace (
+	github.com/newmassrael/sce-forge-runtime => ../forge-runtime
+	github.com/newmassrael/sce-go-runtime => ../runtime
+)

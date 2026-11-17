@@ -45,7 +45,7 @@
 {%- elif invoke_info.idlocation %}
 			if err := p.storeIDInLocation(`{{ invoke_info.idlocation | to_lua_location }}`, generatedInvokeID); err != nil {
 {% if 'error.execution' in model.events %}
-				engine.Raise(sce.NewPlatformError({{ machine_name }}Event{{ 'error.execution' | to_event_variant }}, "<invoke idlocation='{{ invoke_info.idlocation | escape_go }}'> could not take the invoke id"))
+				engine.Raise(sce.NewPlatformError({{ machine_name }}Event{{ 'error.execution' | to_event_variant }}, sceerrorreason.ErrorReasonLocationInvalid, "<invoke idlocation='{{ invoke_info.idlocation | escape_go }}'> could not take the invoke id"))
 {% endif %}
 			} else {
 				sce.DeferInvoke(&p.pendingInvokes, sce.PendingInvoke[{{ machine_name }}State]{
@@ -184,7 +184,7 @@ func (p *{{ machine_name }}Policy) ExecuteEntryActions(state {{ machine_name }}S
 						jsonParts = append(jsonParts, "\"{{ param.name | escape_json_string | escape_go }}\":" + sce.ScriptValueToJSON(sceValue))
 {% if param.native_fails and 'error.execution' in model.events %}
 					} else {
-						engine.Raise(sce.NewPlatformError({{ machine_name }}Event{{ 'error.execution' | to_event_variant }}, "<donedata> <param name='{{ param.name | escape_go }}'> failed to evaluate"))
+						engine.Raise(sce.NewPlatformError({{ machine_name }}Event{{ 'error.execution' | to_event_variant }}, sceerrorreason.ErrorReasonExpressionFailed, "<donedata> <param name='{{ param.name | escape_go }}'> failed to evaluate"))
 {% endif %}
 					}
 				}
@@ -192,7 +192,7 @@ func (p *{{ machine_name }}Policy) ExecuteEntryActions(state {{ machine_name }}S
 				// §scxml-5.7: an empty location names no location —
 				// error.execution, and this pair is ignored.
 {% if 'error.execution' in model.events %}
-				engine.Raise(sce.NewPlatformError({{ machine_name }}Event{{ 'error.execution' | to_event_variant }}, "<donedata> <param name='{{ param.name | escape_go }}'> has an empty location"))
+				engine.Raise(sce.NewPlatformError({{ machine_name }}Event{{ 'error.execution' | to_event_variant }}, sceerrorreason.ErrorReasonLocationInvalid, "<donedata> <param name='{{ param.name | escape_go }}'> has an empty location"))
 {% endif %}
 {% else %}
 {# A Go raw string cannot escape its own terminator, so author text in
@@ -206,7 +206,7 @@ func (p *{{ machine_name }}Policy) ExecuteEntryActions(state {{ machine_name }}S
 					jsonParts = append(jsonParts, "\"{{ param.name | escape_json_string | escape_go }}\":" + sce.ScriptValueToJSON(val))
 				} else {
 {% if 'error.execution' in model.events %}
-					engine.Raise(sce.NewPlatformError({{ machine_name }}Event{{ 'error.execution' | to_event_variant }}, "<donedata> <param name='{{ param.name | escape_go }}'> failed to evaluate"))
+					engine.Raise(sce.NewPlatformError({{ machine_name }}Event{{ 'error.execution' | to_event_variant }}, sceerrorreason.ErrorReasonExpressionFailed, "<donedata> <param name='{{ param.name | escape_go }}'> failed to evaluate"))
 {% endif %}
 				}
 {% endif %}
@@ -238,7 +238,7 @@ func (p *{{ machine_name }}Policy) ExecuteEntryActions(state {{ machine_name }}S
 			var contentValue interface{} = {{ state.donedata.native_content_value }}
 			if sceFailure.Failed() {
 {% if 'error.execution' in model.events %}
-				engine.Raise(sce.NewPlatformError({{ machine_name }}Event{{ 'error.execution' | to_event_variant }}, "<donedata> <content expr> failed to evaluate"))
+				engine.Raise(sce.NewPlatformError({{ machine_name }}Event{{ 'error.execution' | to_event_variant }}, sceerrorreason.ErrorReasonExpressionFailed, "<donedata> <content expr> failed to evaluate"))
 {% endif %}
 				contentValue = ""
 			}
@@ -281,7 +281,7 @@ func (p *{{ machine_name }}Policy) ExecuteEntryActions(state {{ machine_name }}S
 					doneEventData = sce.ScriptValueToJSON(val)
 				} else {
 {% if 'error.execution' in model.events %}
-					engine.Raise(sce.NewPlatformError({{ machine_name }}Event{{ 'error.execution' | to_event_variant }}, "<donedata> <content expr> failed to evaluate"))
+					engine.Raise(sce.NewPlatformError({{ machine_name }}Event{{ 'error.execution' | to_event_variant }}, sceerrorreason.ErrorReasonExpressionFailed, "<donedata> <content expr> failed to evaluate"))
 {% endif %}
 				}
 			}

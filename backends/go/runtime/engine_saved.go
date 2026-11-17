@@ -7,6 +7,8 @@ import (
 	"fmt"
 	"slices"
 	"sort"
+
+	errorreason "github.com/newmassrael/sce-go-runtime/generated/error_reason"
 )
 
 // Saving a `datamodel="sce-static"` machine and restoring it (SCE Accepted
@@ -156,7 +158,7 @@ func (e *Engine[S, E]) startRestoredHostInvokes() {
 			handler, registered := e.invokerFor(host.request.ProcessorType)
 			if !registered {
 				if evt, known := e.policy.GetEventFromName("error.execution"); known {
-					e.Raise(NewPlatformError(evt, "<invoke> names an invoker the host declared but never registered"))
+					e.Raise(NewPlatformError(evt, errorreason.ErrorReasonProcessorUnregistered, "<invoke> names an invoker the host declared but never registered"))
 				}
 				continue
 			}

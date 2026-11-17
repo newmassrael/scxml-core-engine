@@ -12,7 +12,7 @@
 {% if not loc or loc is read_only_location %}
 	// W3C SCXML 5.3/B.2: Invalid or read-only location "{{ loc }}"
 {% if 'error.execution' in model.events %}
-	engine.Raise(sce.NewPlatformError({{ machine_name }}Event{{ 'error.execution' | to_event_variant }}, "<assign> has an invalid or read-only location '{{ loc }}'"))
+	engine.Raise(sce.NewPlatformError({{ machine_name }}Event{{ 'error.execution' | to_event_variant }}, sceerrorreason.ErrorReasonLocationInvalid, "<assign> has an invalid or read-only location '{{ loc }}'"))
 {% endif %}
 {% if in_action_block is defined and in_action_block %}
 	return  // W3C SCXML 4.9: the error ends the block
@@ -38,7 +38,7 @@
 	   `go/actions/send.go.jinja2`, for the same reason. #}
 	if err := p.assignVariable(`{{ loc | to_lua_location }}`, "{{ action.content | to_lua_assign_content | escape_go }}"); err != nil {
 {% if 'error.execution' in model.events %}
-		engine.Raise(sce.NewPlatformError({{ machine_name }}Event{{ 'error.execution' | to_event_variant }}, "<assign> to '{{ loc }}' failed"))
+		engine.Raise(sce.NewPlatformError({{ machine_name }}Event{{ 'error.execution' | to_event_variant }}, sceerrorreason.ErrorReasonAssignmentFailed, "<assign> to '{{ loc }}' failed"))
 {% endif %}
 {% if in_action_block is defined and in_action_block %}
 		return  // W3C SCXML 4.9: the error ends the block
@@ -51,7 +51,7 @@
 	   whichever side of the `=` it is written on. #}
 	if err := p.assignVariable(`{{ loc | to_lua_location }}`, `{{ action.expr | to_lua_expr }}`); err != nil {
 {% if 'error.execution' in model.events %}
-		engine.Raise(sce.NewPlatformError({{ machine_name }}Event{{ 'error.execution' | to_event_variant }}, "<assign> to '{{ loc }}' failed"))
+		engine.Raise(sce.NewPlatformError({{ machine_name }}Event{{ 'error.execution' | to_event_variant }}, sceerrorreason.ErrorReasonAssignmentFailed, "<assign> to '{{ loc }}' failed"))
 {% endif %}
 {% if in_action_block is defined and in_action_block %}
 		return  // W3C SCXML 4.9: the error ends the block

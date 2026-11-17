@@ -1524,8 +1524,11 @@ fn the_go_table_compiles_and_holds_the_export() {
         project.join("go.mod"),
         format!(
             "module example.com/ttemitcheck\n\ngo 1.22\n\nrequire github.com/newmassrael/sce-go-runtime v0.0.0\n\n\
-             replace github.com/newmassrael/sce-go-runtime => {}\n",
-            repo_root().join("backends/go/runtime").to_str().unwrap()
+             require github.com/newmassrael/sce-forge-runtime v0.0.0 // indirect\n\n\
+             replace github.com/newmassrael/sce-go-runtime => {}\n\n\
+             replace github.com/newmassrael/sce-forge-runtime => {}\n",
+            repo_root().join("backends/go/runtime").to_str().unwrap(),
+            repo_root().join("backends/go/forge-runtime").to_str().unwrap()
         ),
     )
     .expect("write go.mod");

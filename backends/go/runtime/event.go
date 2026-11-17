@@ -239,16 +239,22 @@ func NewPlatformEvent[E any](event E) EventWithMetadata[E] {
 // same repository has passed the failing construct all along — measured
 // 2026-08-19, five of six generated backends passed nothing.
 //
-// message describes the failing construct and is a literal formed at generation
+// The data is the record SCE_MESH.md section 10.7.1 pins for an error.* event
+// (docs/adr/0106, #111): errorName (the event, read from the code by
+// ErrorName), reason (the code, by the vocabulary's declared name) and detail,
+// so a document that answers error.execution reads the code without parsing a
+// sentence (ErrorData).
+//
+// detail describes the failing construct and is a literal formed at generation
 // time, not the engine's own error text. The dynamic detail stays on the log
 // line beside the call, which is where it can afford to be built.
-func NewPlatformError[E any](event E, message string) EventWithMetadata[E] {
+func NewPlatformError[E any](event E, reason ErrorReason, detail string) EventWithMetadata[E] {
 	// §scxml-3.12.2: the processor signals its own failures as error.*, and
 	// "platforms MAY include additional information about the nature of the
 	// error in the 'data' field". Cited in the body rather than the doc comment
 	// so the ledger binds it to this symbol.
 	meta := PlatformMetadata()
-	meta.Data = message
+	meta.Data = ErrorData(reason, detail)
 	return EventWithMetadata[E]{
 		Event:    event,
 		Metadata: meta,

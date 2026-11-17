@@ -42,7 +42,7 @@
 		foreachItemName := "{{ action.item | default("") | to_lua_location | escape_go }}"
 		if foreachItemName == "" || !sce.IsValidIdentifier(foreachItemName) {
 {% if 'error.execution' in model.events %}
-			engine.Raise(sce.NewPlatformError({{ machine_name }}Event{{ 'error.execution' | to_event_variant }}, "<foreach item='{{ action.item | default("") }}'> is missing or not a legal variable name"))
+			engine.Raise(sce.NewPlatformError({{ machine_name }}Event{{ 'error.execution' | to_event_variant }}, sceerrorreason.ErrorReasonForeachInvalid, "<foreach item='{{ action.item | default("") }}'> is missing or not a legal variable name"))
 {% endif %}
 {% if foreach_exit %}
 			{{ foreach_exit }}
@@ -51,7 +51,7 @@
 			foreachArrVal, foreachErr := p.ScriptEngine.EvaluateExpression(p.SessionID, `{{ action.array | to_lua_expr }}`)
 			if foreachErr != nil {
 {% if 'error.execution' in model.events %}
-				engine.Raise(sce.NewPlatformError({{ machine_name }}Event{{ 'error.execution' | to_event_variant }}, "<foreach array='{{ action.array }}'> failed to evaluate"))
+				engine.Raise(sce.NewPlatformError({{ machine_name }}Event{{ 'error.execution' | to_event_variant }}, sceerrorreason.ErrorReasonExpressionFailed, "<foreach array='{{ action.array }}'> failed to evaluate"))
 {% endif %}
 {% if foreach_exit %}
 				{{ foreach_exit }}
@@ -89,7 +89,7 @@
 				}
 				if !foreachSuccess {
 {% if 'error.execution' in model.events %}
-					engine.Raise(sce.NewPlatformError({{ machine_name }}Event{{ 'error.execution' | to_event_variant }}, "<foreach> could not set its loop variable"))
+					engine.Raise(sce.NewPlatformError({{ machine_name }}Event{{ 'error.execution' | to_event_variant }}, sceerrorreason.ErrorReasonForeachInvalid, "<foreach> could not set its loop variable"))
 {% endif %}
 {% if foreach_exit %}
 					{{ foreach_exit }}
@@ -98,7 +98,7 @@
 			} else {
 				// Not an array — raise error.execution (W3C SCXML 4.6)
 {% if 'error.execution' in model.events %}
-				engine.Raise(sce.NewPlatformError({{ machine_name }}Event{{ 'error.execution' | to_event_variant }}, "<foreach array='{{ action.array }}'> is not an array"))
+				engine.Raise(sce.NewPlatformError({{ machine_name }}Event{{ 'error.execution' | to_event_variant }}, sceerrorreason.ErrorReasonForeachInvalid, "<foreach array='{{ action.array }}'> is not an array"))
 {% endif %}
 {% if foreach_exit %}
 				{{ foreach_exit }}

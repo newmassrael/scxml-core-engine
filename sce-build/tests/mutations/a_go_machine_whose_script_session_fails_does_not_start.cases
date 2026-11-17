@@ -125,6 +125,6 @@ PY
 
 mutation_case "the child whose start was refused raises no error.execution" <<'PY'
 edit("tools/codegen/templates/go/invoke_methods.go.jinja2",
-     "\t\t\t\tengine.Raise(sce.NewPlatformError({{ machine_name }}Event{{ 'error.execution' | to_event_variant }}, sce.ChildStartRefusal({{ invoke_named }}, refused)))\n",
+     "\t\t\t\tengine.Raise(sce.NewPlatformError({{ machine_name }}Event{{ 'error.execution' | to_event_variant }}, sceerrorreason.ErrorReasonInvokeChildInitFailed, sce.ChildStartRefusal({{ invoke_named }}, refused)))\n",
      "\t\t\t\t_ = refused\n")
 PY

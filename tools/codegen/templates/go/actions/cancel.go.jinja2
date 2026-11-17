@@ -21,7 +21,7 @@
 {% if action.native_sendid_fails %}
 		if sceFailure.Failed() {
 {% if 'error.execution' in model.events %}
-			engine.Raise(sce.NewPlatformError({{ machine_name }}Event{{ 'error.execution' | to_event_variant }}, "<cancel> sendidexpr failed to evaluate"))
+			engine.Raise(sce.NewPlatformError({{ machine_name }}Event{{ 'error.execution' | to_event_variant }}, sceerrorreason.ErrorReasonExpressionFailed, "<cancel> sendidexpr failed to evaluate"))
 {% endif %}
 {% if in_action_block is defined and in_action_block %}
 			return
@@ -40,7 +40,7 @@
 			// W3C SCXML 5.9: a sendidexpr that fails raises error.execution,
 			// and (W3C SCXML 4.9) the error ends the block.
 {% if 'error.execution' in model.events %}
-			engine.Raise(sce.NewPlatformError({{ machine_name }}Event{{ 'error.execution' | to_event_variant }}, "<cancel> sendidexpr failed to evaluate"))
+			engine.Raise(sce.NewPlatformError({{ machine_name }}Event{{ 'error.execution' | to_event_variant }}, sceerrorreason.ErrorReasonExpressionFailed, "<cancel> sendidexpr failed to evaluate"))
 {% endif %}
 {% if in_action_block is defined and in_action_block %}
 			return

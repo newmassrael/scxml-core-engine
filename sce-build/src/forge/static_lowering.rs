@@ -12908,10 +12908,17 @@ impl StaticTarget for GoTarget<'_> {
             ),
         })
     }
-    fn raise_execution_error(&self, machine: &str, _reason: &str, message: &str) -> String {
+    fn raise_execution_error(&self, machine: &str, reason: &str, message: &str) -> String {
+        // The machine imports the vocabulary's package as `sceerrorreason`
+        // (go/state_machine.go.jinja2).
         format!(
-            "engine.Raise(sce.NewPlatformError({machine}Event{}, \"{}\"))",
+            "engine.Raise(sce.NewPlatformError({machine}Event{}, sceerrorreason.{}, \"{}\"))",
             filters::to_event_variant("error.execution".to_string()),
+            crate::forge::enum_naming::variant_ident(
+                crate::generator::Language::Go,
+                ERROR_REASON_ENUM,
+                reason
+            ),
             filters::escape_go(message.to_string())
         )
     }

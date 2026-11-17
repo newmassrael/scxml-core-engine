@@ -25,7 +25,7 @@
 {% endfor %}
 				if !namelistValid {
 {% if 'error.execution' in model.events %}
-					engine.Raise(sce.NewPlatformError({{ machine_name }}Event{{ 'error.execution' | to_event_variant }}, "<invoke> namelist names a location that cannot be read"))
+					engine.Raise(sce.NewPlatformError({{ machine_name }}Event{{ 'error.execution' | to_event_variant }}, sceerrorreason.ErrorReasonLocationInvalid, "<invoke> namelist names a location that cannot be read"))
 {% endif %}
 					continue
 				}
@@ -65,7 +65,7 @@
 						// §scxml-5.7.1: a value that failed is reported and the
 						// child still starts, one value short.
 {% if 'error.execution' in model.events %}
-						engine.Raise(sce.NewPlatformError({{ machine_name }}Event{{ 'error.execution' | to_event_variant }}, "<invoke> <param name='{{ param.name | escape_go }}'> could not be read"))
+						engine.Raise(sce.NewPlatformError({{ machine_name }}Event{{ 'error.execution' | to_event_variant }}, sceerrorreason.ErrorReasonLocationInvalid, "<invoke> <param name='{{ param.name | escape_go }}'> could not be read"))
 {% endif %}
 					}
 {% else %}
@@ -87,7 +87,7 @@
 				_ = {{ param.native_value }}
 				if sceFailure.Failed() {
 {% if 'error.execution' in model.events %}
-					engine.Raise(sce.NewPlatformError({{ machine_name }}Event{{ 'error.execution' | to_event_variant }}, "<invoke> <param name='{{ param.name | escape_go }}'> could not be read"))
+					engine.Raise(sce.NewPlatformError({{ machine_name }}Event{{ 'error.execution' | to_event_variant }}, sceerrorreason.ErrorReasonLocationInvalid, "<invoke> <param name='{{ param.name | escape_go }}'> could not be read"))
 {% endif %}
 				}
 			}
@@ -146,7 +146,7 @@
 {% set param_source = param.expr or param.location %}
 {% if not param_source %}
 {% if 'error.execution' in model.events %}
-				engine.Raise(sce.NewPlatformError({{ machine_name }}Event{{ 'error.execution' | to_event_variant }}, "<invoke> <param name='{{ param.name | escape_go }}'> names no location"))
+				engine.Raise(sce.NewPlatformError({{ machine_name }}Event{{ 'error.execution' | to_event_variant }}, sceerrorreason.ErrorReasonLocationInvalid, "<invoke> <param name='{{ param.name | escape_go }}'> names no location"))
 {% endif %}
 {% else %}
 				{# Raw string: no escaping. See entry_exit_actions.go.jinja2. #}
@@ -167,7 +167,7 @@
 					// failing `<param>` costs: the child still starts, one pair
 					// short.
 {% if 'error.execution' in model.events %}
-					engine.Raise(sce.NewPlatformError({{ machine_name }}Event{{ 'error.execution' | to_event_variant }}, "<invoke> <param name='{{ param.name | escape_go }}'> could not be read"))
+					engine.Raise(sce.NewPlatformError({{ machine_name }}Event{{ 'error.execution' | to_event_variant }}, sceerrorreason.ErrorReasonLocationInvalid, "<invoke> <param name='{{ param.name | escape_go }}'> could not be read"))
 {% endif %}
 				}
 {% endif %}
@@ -197,7 +197,7 @@
 				childEngine.DetachMesh()
 				delete(p.activeInvokes, "{{ invoke_info.invoke_id }}")
 {% if 'error.execution' in model.events %}
-				engine.Raise(sce.NewPlatformError({{ machine_name }}Event{{ 'error.execution' | to_event_variant }}, sce.ChildStartRefusal({{ invoke_named }}, refused)))
+				engine.Raise(sce.NewPlatformError({{ machine_name }}Event{{ 'error.execution' | to_event_variant }}, sceerrorreason.ErrorReasonInvokeChildInitFailed, sce.ChildStartRefusal({{ invoke_named }}, refused)))
 {% endif %}
 				continue
 			}
@@ -414,7 +414,7 @@ func (p *{{ machine_name }}Policy) ExecutePendingInvokes(engine *sce.Engine[{{ m
 		if pending.DocumentID == "{{ invoke_info.invoke_id }}" {
 			// W3C SCXML 6.4.1: unsupported `type` — place error.execution on
 			// the internal queue and start nothing.
-			engine.Raise(sce.NewPlatformError({{ machine_name }}Event{{ 'error.execution' | to_event_variant }}, "<invoke type='{{ invoke_info.invoke_type | escape_go }}'> names an external service this platform does not support"))
+			engine.Raise(sce.NewPlatformError({{ machine_name }}Event{{ 'error.execution' | to_event_variant }}, sceerrorreason.ErrorReasonInvokeTypeUnsupported, "<invoke type='{{ invoke_info.invoke_type | escape_go }}'> names an external service this platform does not support"))
 			continue
 		}
 {% endfor %}
@@ -449,7 +449,7 @@ func (p *{{ machine_name }}Policy) ExecutePendingInvokes(engine *sce.Engine[{{ m
 			// 5.9.2), like any argument that cannot be evaluated.
 			if err := p.storeIDInLocation(`{{ invoke_info.idlocation | to_lua_location }}`, "{{ invoke_info.invoke_id | escape_go }}"); err != nil {
 {% if 'error.execution' in model.events %}
-				engine.Raise(sce.NewPlatformError({{ machine_name }}Event{{ 'error.execution' | to_event_variant }}, "<invoke idlocation='{{ invoke_info.idlocation | escape_go }}'> could not take the invoke id"))
+				engine.Raise(sce.NewPlatformError({{ machine_name }}Event{{ 'error.execution' | to_event_variant }}, sceerrorreason.ErrorReasonLocationInvalid, "<invoke idlocation='{{ invoke_info.idlocation | escape_go }}'> could not take the invoke id"))
 {% endif %}
 				continue
 			}
@@ -465,7 +465,7 @@ func (p *{{ machine_name }}Policy) ExecutePendingInvokes(engine *sce.Engine[{{ m
 				computedSrc := {{ invoke_info.native_src }}
 				if sceFailure.Failed() {
 {% if 'error.execution' in model.events %}
-					engine.Raise(sce.NewPlatformError({{ machine_name }}Event{{ 'error.execution' | to_event_variant }}, "<invoke srcexpr> could not be evaluated"))
+					engine.Raise(sce.NewPlatformError({{ machine_name }}Event{{ 'error.execution' | to_event_variant }}, sceerrorreason.ErrorReasonExpressionFailed, "<invoke srcexpr> could not be evaluated"))
 {% endif %}
 					continue
 				}
@@ -487,7 +487,7 @@ func (p *{{ machine_name }}Policy) ExecutePendingInvokes(engine *sce.Engine[{{ m
 				computedContent := {{ invoke_info.native_content }}
 				if sceFailure.Failed() {
 {% if 'error.execution' in model.events %}
-					engine.Raise(sce.NewPlatformError({{ machine_name }}Event{{ 'error.execution' | to_event_variant }}, "<invoke> content expr could not be evaluated"))
+					engine.Raise(sce.NewPlatformError({{ machine_name }}Event{{ 'error.execution' | to_event_variant }}, sceerrorreason.ErrorReasonExpressionFailed, "<invoke> content expr could not be evaluated"))
 {% endif %}
 					continue
 				}
@@ -503,7 +503,7 @@ func (p *{{ machine_name }}Policy) ExecutePendingInvokes(engine *sce.Engine[{{ m
 				{{ var }} = sce.ToWireString(val)
 			} else {
 {% if 'error.execution' in model.events %}
-				engine.Raise(sce.NewPlatformError({{ machine_name }}Event{{ 'error.execution' | to_event_variant }}, "<invoke {{ attr }}expr='{{ expr | escape_go }}'> could not be evaluated"))
+				engine.Raise(sce.NewPlatformError({{ machine_name }}Event{{ 'error.execution' | to_event_variant }}, sceerrorreason.ErrorReasonExpressionFailed, "<invoke {{ attr }}expr='{{ expr | escape_go }}'> could not be evaluated"))
 {% endif %}
 				continue
 			}
@@ -533,7 +533,7 @@ func (p *{{ machine_name }}Policy) ExecutePendingInvokes(engine *sce.Engine[{{ m
 {% endfor %}
 			if namelistFailed {
 {% if 'error.execution' in model.events %}
-				engine.Raise(sce.NewPlatformError({{ machine_name }}Event{{ 'error.execution' | to_event_variant }}, "<invoke> namelist names a location that could not be read"))
+				engine.Raise(sce.NewPlatformError({{ machine_name }}Event{{ 'error.execution' | to_event_variant }}, sceerrorreason.ErrorReasonLocationInvalid, "<invoke> namelist names a location that could not be read"))
 {% endif %}
 				continue
 			}
@@ -573,7 +573,7 @@ func (p *{{ machine_name }}Policy) ExecutePendingInvokes(engine *sce.Engine[{{ m
 				// document asked for a process to be run and none was, which
 				// is the same fact as an unsupported type — so the same
 				// event, rather than a silence that reads as started.
-				engine.Raise(sce.NewPlatformError({{ machine_name }}Event{{ 'error.execution' | to_event_variant }}, "<invoke> names an invoker the host declared but never registered"))
+				engine.Raise(sce.NewPlatformError({{ machine_name }}Event{{ 'error.execution' | to_event_variant }}, sceerrorreason.ErrorReasonProcessorUnregistered, "<invoke> names an invoker the host declared but never registered"))
 			}
 			continue
 		}
@@ -601,7 +601,7 @@ func (p *{{ machine_name }}Policy) ExecutePendingInvokes(engine *sce.Engine[{{ m
 				__sceValue := {{ invoke_info.native_src }}
 				if sceFailure.Failed() {
 {% if 'error.execution' in model.events %}
-					engine.Raise(sce.NewPlatformError({{ machine_name }}Event{{ 'error.execution' | to_event_variant }}, "<invoke srcexpr> could not be evaluated"))
+					engine.Raise(sce.NewPlatformError({{ machine_name }}Event{{ 'error.execution' | to_event_variant }}, sceerrorreason.ErrorReasonExpressionFailed, "<invoke srcexpr> could not be evaluated"))
 {% endif %}
 					continue
 				}
@@ -630,7 +630,7 @@ func (p *{{ machine_name }}Policy) ExecutePendingInvokes(engine *sce.Engine[{{ m
 				if _, err := se.EvaluateExpression(p.SessionID, `{{ invoke_info.srcexpr | to_lua_expr }}`); err != nil {
 {% endif %}
 {% if 'error.execution' in model.events %}
-					engine.Raise(sce.NewPlatformError({{ machine_name }}Event{{ 'error.execution' | to_event_variant }}, "<invoke srcexpr='{{ invoke_info.srcexpr }}'> could not be evaluated"))
+					engine.Raise(sce.NewPlatformError({{ machine_name }}Event{{ 'error.execution' | to_event_variant }}, sceerrorreason.ErrorReasonExpressionFailed, "<invoke srcexpr='{{ invoke_info.srcexpr }}'> could not be evaluated"))
 {% endif %}
 					continue
 {% if invoke_info.candidates %}
@@ -646,7 +646,7 @@ func (p *{{ machine_name }}Policy) ExecutePendingInvokes(engine *sce.Engine[{{ m
 				se := p.ScriptEngine
 				if _, err := se.EvaluateExpression(p.SessionID, `{{ invoke_info.contentexpr | to_lua_expr }}`); err != nil {
 {% if 'error.execution' in model.events %}
-					engine.Raise(sce.NewPlatformError({{ machine_name }}Event{{ 'error.execution' | to_event_variant }}, "<invoke contentexpr='{{ invoke_info.contentexpr }}'> could not be evaluated"))
+					engine.Raise(sce.NewPlatformError({{ machine_name }}Event{{ 'error.execution' | to_event_variant }}, sceerrorreason.ErrorReasonExpressionFailed, "<invoke contentexpr='{{ invoke_info.contentexpr }}'> could not be evaluated"))
 {% endif %}
 					continue
 				}
@@ -661,7 +661,7 @@ func (p *{{ machine_name }}Policy) ExecutePendingInvokes(engine *sce.Engine[{{ m
 			case {% for candidate in invoke_info.candidates %}"{{ candidate.stem }}"{{ ", " if not loop.last }}{% endfor %}:
 			default:
 {% if 'error.execution' in model.events %}
-				engine.Raise(sce.NewPlatformError({{ machine_name }}Event{{ 'error.execution' | to_event_variant }}, "<invoke srcexpr{% if invoke_info.srcexpr %}='{{ invoke_info.srcexpr }}'{% endif %}> evaluated to a document it did not declare"))
+				engine.Raise(sce.NewPlatformError({{ machine_name }}Event{{ 'error.execution' | to_event_variant }}, sceerrorreason.ErrorReasonInvokeSrcNotFound, "<invoke srcexpr{% if invoke_info.srcexpr %}='{{ invoke_info.srcexpr }}'{% endif %}> evaluated to a document it did not declare"))
 {% endif %}
 				continue
 			}
