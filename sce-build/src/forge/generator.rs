@@ -15285,6 +15285,7 @@ fn render_codec(
             // makes in a local of its own before the value's literal.
             if let Some((plan, printed)) = &go_printed {
                 obj.insert("derived".into(), go_source::derived_field(plan, &f.id).into());
+                obj.insert("grouped".into(), go_source::grouped_field(plan, &f.id).into());
                 if let Some(held) = printed.held.get(&f.id) {
                     obj.insert(type_key.into(), held.clone().into());
                 }
@@ -15382,6 +15383,7 @@ fn render_codec(
                 "decoded": printed.decoded,
                 "arm_made": printed.arm_made,
                 "catch_all_made": printed.catch_all_made,
+                "groups": printed.groups,
             }),
         );
     }

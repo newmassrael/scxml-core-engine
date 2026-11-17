@@ -48,6 +48,14 @@
 //! and writes the arm by its codec's `EncodeSource`; a parent derives the
 //! bits of its carrier the arm of an embedded body's variant fills.
 //!
+//! A group of fields one flag of the codec's own decides, or a disjunction of
+//! such flags (docs/adr/0065 §6 R4b, R4c), is presented whole: the struct of
+//! its one arm, or an interface its arm types satisfy, as the optional type
+//! of it where the gates allow no arm. The encode binds each member to a
+//! local of its own from the arm the source presents and derives every gate
+//! from it; two lists of one count are the runtime's `codec.Aligned` of them
+//! in the arm that holds both (R5).
+//!
 //! An encode that can refuse returns the refusal the plan's totality names,
 //! the runtime's sentinel of its name (`codec.ErrPresentIfMismatch`,
 //! `codec.ErrInconsistentSource`, `codec.ErrLengthOutOfRange`), before it
@@ -59,7 +67,7 @@
 //! whole, so no codec has two encodes.
 
 use super::*;
-use crate::forge::codec_roles::ElementId;
+use crate::forge::codec_roles::{ElementId, GateGroup, GateVar, GroupArm};
 use crate::forge::codec_totality::RefusalKind;
 use crate::forge::encode_plan::{
     Absent, Arm, Clause, CodecPlan, Derive, Element, EncodePlan, EntryId, Guard, HandedFrom,
@@ -87,13 +95,16 @@ pub(super) fn unlowered(plan: &CodecPlan<'_>, imports: &[ImportContext]) -> Opti
 /// the byte strings and texts written to the end of the frame or by a length,
 /// and a body handed each flag input it does not say from a carrier or an
 /// input of this codec's, and whose variant's arms are codecs it prints,
-/// handed as a body is; whose every derived element is a length of byte
+/// handed as a body is; whose groups of fields one flag of its own, or a
+/// disjunction of such flags, decides hold members of those kinds, two lists
+/// of one count as one pair; whose every derived element is a length of byte
 /// strings or texts, the count of a list, or the encoded length of a body,
 /// held in a field or in a
 /// flag of a carrier the value presents, its `sce:length-arith` never taking
-/// it below zero, a flag the presence of one element says, the tag of the
-/// arm the value holds, or the bits of a carrier the arm of an embedded
-/// body's variant fills; and whose
+/// it below zero, a flag the presence of one element or of one group says, a
+/// flag of a disjunction a group's arm gives, the tag of the arm the value
+/// holds, or the bits of a carrier the arm of an embedded body's variant
+/// fills; and whose
 /// encode refuses what its totality names of these, a refusal of a body it
 /// holds among them. A CBOR map and a content-line component keep their own
 /// templates' encodes. `imports` are the codec's own, which say whether a
@@ -154,70 +165,33 @@ fn positional_forms(plan: &EncodePlan<'_>, imports: &[ImportContext]) -> Vec<Str
     // content is absent, are presented as the optional type of what they
     // hold, whatever they hold.
     for element in &plan.elements {
-        let id = &element.field.id;
-        match &element.value {
-            Value::Scalar(t) if t.int_bit_width().is_some() => {}
-            Value::Scalar(SceType::Enum(_)) => {}
-            Value::Scalar(t) => forms.push(format!("field '{id}': a `{}` field", t.as_attr())),
-            // Written whole, to the end of the frame or by its length.
-            Value::Bytes(_) | Value::Text(_) => {
-                if !matches!(element.field.bit_size, BitSize::Tail | BitSize::LengthRef) {
-                    forms.push(format!(
-                        "field '{id}': a byte string or a text of a fixed size"
-                    ));
-                }
-            }
-            // Written by its codec's own `EncodeSource`, which a codec the Go
-            // backend prints has, handed each input it takes and does not say
-            // from a carrier or an input of this codec's.
-            Value::Body { codec } => {
-                if printed_import(imports, codec).is_none() {
-                    forms.push(format!(
-                        "field '{id}': a body of `{codec}`, which the Go backend does not print"
-                    ));
-                }
-                if plan
-                    .handed
-                    .get(*codec)
-                    .is_some_and(|handed| handed.iter().any(|h| h.from.is_none()))
-                {
-                    forms.push(format!(
-                        "field '{id}': a body handed an input its parent binds nothing to"
-                    ));
-                }
-            }
-            // Walked, each entry written by its codec's own `EncodeSource`,
-            // handed as a body is.
-            Value::List { codec, law, .. } => {
-                if printed_import(imports, codec).is_none() {
-                    forms.push(format!(
-                        "field '{id}': a list of `{codec}`, which the Go backend does not print"
-                    ));
-                }
-                if !law.is_none() {
-                    forms.push(format!("field '{id}': a list held to a law"));
-                }
-                // An input its parent binds nothing to is one the walk of a
-                // chain hands each entry from the entry before.
-                let supplied = |input: &str| {
-                    list_walk(plan, id)
-                        .is_some_and(|walk| walk.previous.iter().any(|(i, _)| i == input))
-                };
-                if plan.handed.get(*codec).is_some_and(|handed| {
-                    handed
-                        .iter()
-                        .any(|h| h.from.is_none() && !supplied(&h.input))
-                }) {
-                    forms.push(format!(
-                        "field '{id}': a list handed an input neither its parent nor its walk \
-                         binds"
-                    ));
+        forms.extend(value_forms(plan, imports, element.field, &element.value));
+    }
+    // A group of fields a flag of the codec's own decides, or a disjunction
+    // of such flags, is presented whole, each arm holding its members as an
+    // element holds what it holds (docs/adr/0065 §6 R4b, R4c). A group an
+    // input decides is one of an input the value says; one a chain's entries
+    // decide is not printed yet.
+    for group in plan.groups() {
+        for gate in &group.gates {
+            match gate {
+                GateVar::Flag { .. } => {}
+                GateVar::Input(name) => forms.push(format!(
+                    "a group the flag input '{name}' decides, which the value says"
+                )),
+                GateVar::Member { chain, .. } => {
+                    forms.push(format!("field '{chain}': a group a chain's entries decide"))
                 }
             }
         }
-    }
-    if !plan.groups().is_empty() {
-        forms.push("a group of fields a gate decides together".to_string());
+        for id in group.fields() {
+            let field = m
+                .fields
+                .iter()
+                .find(|f| f.id == id)
+                .expect("a member of a group is a field of the codec");
+            forms.extend(value_forms(plan, imports, field, &plan.value(field)));
+        }
     }
     let folded = folded_carriers(plan);
     for derived in &plan.derivations {
@@ -250,6 +224,9 @@ fn positional_forms(plan: &EncodePlan<'_>, imports: &[ImportContext]) -> Vec<Str
                 }
             }
             (ElementId::Flag { .. }, Derive::VariantTag | Derive::ParentTag(_)) => {}
+            // A flag of a disjunction that decides a group: what the arm the
+            // value holds gives it (docs/adr/0065 §6 R4c).
+            (ElementId::Flag { .. }, Derive::ArmFlag { .. }) => {}
             (element, _) => forms.push(format!(
                 "element '{element}': an element the encode derives other than a length, \
                  a presence flag, a chain's end flag or a variant's tag"
@@ -337,13 +314,87 @@ fn positional_forms(plan: &EncodePlan<'_>, imports: &[ImportContext]) -> Vec<Str
     forms
 }
 
+/// What of `field`, an element the value presents or a member of a group,
+/// which holds `value`, the printer does not print.
+fn value_forms(
+    plan: &EncodePlan<'_>,
+    imports: &[ImportContext],
+    field: &CodecField,
+    value: &Value<'_>,
+) -> Vec<String> {
+    let id = &field.id;
+    let mut forms = Vec::new();
+    match value {
+        Value::Scalar(t) if t.int_bit_width().is_some() => {}
+        Value::Scalar(SceType::Enum(_)) => {}
+        Value::Scalar(t) => forms.push(format!("field '{id}': a `{}` field", t.as_attr())),
+        // Written whole, to the end of the frame or by its length.
+        Value::Bytes(_) | Value::Text(_) => {
+            if !matches!(field.bit_size, BitSize::Tail | BitSize::LengthRef) {
+                forms.push(format!(
+                    "field '{id}': a byte string or a text of a fixed size"
+                ));
+            }
+        }
+        // Written by its codec's own `EncodeSource`, which a codec the Go
+        // backend prints has, handed each input it takes and does not say
+        // from a carrier or an input of this codec's.
+        Value::Body { codec } => {
+            if printed_import(imports, codec).is_none() {
+                forms.push(format!(
+                    "field '{id}': a body of `{codec}`, which the Go backend does not print"
+                ));
+            }
+            if plan
+                .handed
+                .get(*codec)
+                .is_some_and(|handed| handed.iter().any(|h| h.from.is_none()))
+            {
+                forms.push(format!(
+                    "field '{id}': a body handed an input its parent binds nothing to"
+                ));
+            }
+        }
+        // Walked, each entry written by its codec's own `EncodeSource`,
+        // handed as a body is.
+        Value::List { codec, law, .. } => {
+            if printed_import(imports, codec).is_none() {
+                forms.push(format!(
+                    "field '{id}': a list of `{codec}`, which the Go backend does not print"
+                ));
+            }
+            if !law.is_none() {
+                forms.push(format!("field '{id}': a list held to a law"));
+            }
+            // An input its parent binds nothing to is one the walk of a
+            // chain hands each entry from the entry before.
+            let supplied = |input: &str| {
+                list_walk(plan, id)
+                    .is_some_and(|walk| walk.previous.iter().any(|(i, _)| i == input))
+            };
+            if plan.handed.get(*codec).is_some_and(|handed| {
+                handed
+                    .iter()
+                    .any(|h| h.from.is_none() && !supplied(&h.input))
+            }) {
+                forms.push(format!(
+                    "field '{id}': a list handed an input neither its parent nor its walk \
+                     binds"
+                ));
+            }
+        }
+    }
+    forms
+}
+
 /// What of the derived number of `element` the printer does not print: it
 /// prints a length of the byte strings and texts it measures, each of which
 /// that is there says the same number or the value is refused, its
 /// `sce:length-arith` never taking the number below zero, into a field that
 /// holds nothing else, refused where it may not fit, or into a flag of a
 /// carrier; where nothing it measures is there the field holds zero, gated
-/// beside its content, or what the value states.
+/// beside its content, what the value states, or what the arm of a group
+/// without the content holds (docs/adr/0065 §6 R4b).
 fn number_form(element: &ElementId, number: &Number<'_>) -> Vec<String> {
     let mut forms = Vec::new();
     for measure in &number.measures {
@@ -363,22 +414,14 @@ fn number_form(element: &ElementId, number: &Number<'_>) -> Vec<String> {
             }
         }
     }
-    if let NumberInto::Field {
-        absent: Absent::Group,
-        ..
-    } = &number.into
-    {
-        forms.push(format!(
-            "element '{element}': a length a group holds on the side without its content"
-        ));
-    }
     forms
 }
 
 /// What of the presence flag `element` the printer does not print: it prints
-/// a flag the presence of one element decides.
+/// a flag the presence of one element decides, or of the members one group
+/// holds together, the first of which says it.
 fn presence_form(element: &ElementId, presence: &PresenceFlag<'_>) -> Option<String> {
-    (presence.of.len() != 1)
+    (presence.of.len() != 1 && !presence.together)
         .then(|| format!("element '{element}': a flag the presence of several fields decides"))
 }
 
@@ -403,7 +446,11 @@ fn folded_carriers<'p>(plan: &'p EncodePlan<'_>) -> BTreeSet<&'p str> {
         .filter_map(|derived| match (&derived.element, &derived.by) {
             (
                 ElementId::Flag { field, .. },
-                Derive::Presence(_) | Derive::Number(_) | Derive::VariantTag | Derive::ParentTag(_),
+                Derive::Presence(_)
+                | Derive::Number(_)
+                | Derive::VariantTag
+                | Derive::ParentTag(_)
+                | Derive::ArmFlag { .. },
             ) => Some(field.as_str()),
             _ => None,
         })
@@ -436,13 +483,16 @@ fn derived_numbers(plan: &EncodePlan<'_>) -> BTreeSet<String> {
 }
 
 /// Whether the printer cannot read `field` as a write reads it: the value
-/// presents it alone, or the encode derives it whole.
+/// presents it alone or in a group, or the encode derives it whole.
 fn unread_form(
     plan: &EncodePlan<'_>,
     wholes: &BTreeSet<String>,
     field: &CodecField,
 ) -> Option<String> {
-    (element_of(plan, &field.id).is_none() && !wholes.contains(&field.id)).then(|| {
+    (element_of(plan, &field.id).is_none()
+        && !wholes.contains(&field.id)
+        && !grouped_field(plan, &field.id))
+    .then(|| {
         format!(
             "field '{}': a field the value neither presents nor the encode derives whole",
             field.id
@@ -460,6 +510,13 @@ fn element_of<'p, 'm>(plan: &'p EncodePlan<'m>, id: &str) -> Option<&'p Element<
 /// value does not state it while its content is absent.
 pub(super) fn derived_field(plan: &EncodePlan<'_>, id: &str) -> bool {
     derived_fields(plan).contains(id) && element_of(plan, id).is_none()
+}
+
+/// Whether the field `id` of `plan`, a plan [`unlowered`] answers `None` for,
+/// is a member of a gate group, which the Go value holds whole in a field of
+/// the group's own ([`GoSource::groups`]) and not in a field of its own.
+pub(super) fn grouped_field(plan: &EncodePlan<'_>, id: &str) -> bool {
+    plan.groups().iter().any(|group| group.contains(id))
 }
 
 /// The unexported field a Go value printed from its plan holds the element
@@ -499,14 +556,25 @@ pub(crate) fn element_read(call: &str, ty: &SceType) -> String {
 /// codec's interface of its own.
 #[derive(Clone, Debug, Default, PartialEq, Eq)]
 pub struct GoPrinted {
-    /// Each element the value presents, in declaration order.
-    presented: Vec<GoPresented>,
+    /// What `Make{Codec}` takes, in its order.
+    parts: Vec<GoPart>,
     /// Each number the encode derives into a field, and the tag of the arm
     /// the value holds where a field holds it.
     derived: Vec<GoDerived>,
-    /// Whether the value holds the arm of a variant, which `Make{Codec}`
-    /// takes after the elements and the value presents by `Body()`.
-    variant: bool,
+}
+
+/// One thing a printed Go value's `Make{Codec}` takes.
+#[derive(Clone, Debug, PartialEq, Eq)]
+enum GoPart {
+    /// An element the value presents by a method of its own.
+    Element(GoPresented),
+    /// A group of elements one gate decides, or the arm of the variant: the
+    /// value presents it whole by the method `method`, and no member of it is
+    /// an element of its own.
+    Whole {
+        /// The method.
+        method: String,
+    },
 }
 
 /// One number a printed Go value answers by its [`wire_method`].
@@ -562,23 +630,37 @@ impl GoPrinted {
     /// value's struct is `struct_name`; the plan is one [`unlowered`]
     /// answers `None` for.
     pub(crate) fn of(plan: &EncodePlan<'_>, struct_name: &str) -> Self {
-        let presented = plan
-            .elements
-            .iter()
-            .map(|element| {
-                let id = element.field.id.clone();
+        // In declaration order, each group where its first member is
+        // declared, then the arm of the variant, as `render` declares them.
+        let groups = go_groups(plan, struct_name);
+        let mut held_groups: BTreeSet<usize> = BTreeSet::new();
+        let mut parts: Vec<GoPart> = Vec::new();
+        for field in &plan.model.fields {
+            let id = field.id.clone();
+            if let Some(element) = element_of(plan, &id) {
                 let bounded = match &element.value {
                     Value::Bytes(_) => Some(("Bytes", bound_type(struct_name, &id))),
                     Value::Text(_) => Some(("Text", bound_type(struct_name, &id))),
                     _ => None,
                 };
-                GoPresented {
+                parts.push(GoPart::Element(GoPresented {
                     id,
                     bounded,
                     optional: element.presence.optional(),
+                }));
+            } else if let Some(at) = groups.iter().position(|g| g.group.contains(&id)) {
+                if held_groups.insert(at) {
+                    parts.push(GoPart::Whole {
+                        method: groups[at].method.clone(),
+                    });
                 }
-            })
-            .collect();
+            }
+        }
+        if !plan.arms.is_empty() {
+            parts.push(GoPart::Whole {
+                method: VARIANT_METHOD.to_string(),
+            });
+        }
         let mut derived: Vec<GoDerived> = wire_numbers(plan)
             .into_iter()
             .map(|(id, number)| GoDerived {
@@ -593,23 +675,30 @@ impl GoPrinted {
             id: id.to_string(),
             inputs: Vec::new(),
         }));
-        GoPrinted {
-            presented,
-            derived,
-            variant: !plan.arms.is_empty(),
-        }
+        GoPrinted { parts, derived }
+    }
+
+    /// The element the value presents as `id` by a method of its own.
+    fn element(&self, id: &str) -> Option<&GoPresented> {
+        self.parts.iter().find_map(|part| match part {
+            GoPart::Element(presented) if presented.id == id => Some(presented),
+            _ => None,
+        })
     }
 
     /// Whether a reader that holds a value, and none of the inputs its encode
-    /// is handed, can read the element `id` through [`GoPrinted::read`]: every
-    /// element but a number whose method takes the inputs a body it counts is
-    /// handed. A reader is not offered the others as members, so an
-    /// expression that reads one is refused where it is generated.
+    /// is handed, can read the element `id` through [`GoPrinted::read`]: an
+    /// element the value presents by a method of its own, or a number the
+    /// encode derives whose method takes no input. A member of a group, which
+    /// the value presents whole, and a number whose method takes the inputs a
+    /// body it counts is handed are not: a reader is not offered them as
+    /// members, so an expression that reads one is refused where it is
+    /// generated.
     pub(crate) fn answers(&self, id: &str) -> bool {
-        !self
-            .derived
-            .iter()
-            .any(|derived| derived.id == id && !derived.inputs.is_empty())
+        match self.derived.iter().find(|derived| derived.id == id) {
+            Some(derived) => derived.inputs.is_empty(),
+            None => self.element(id).is_some(),
+        }
     }
 
     /// The read of the element `id`, of the type `ty`, of the value `held`:
@@ -635,7 +724,7 @@ impl GoPrinted {
             return format!("{held}.{}()", wire_method(id));
         }
         let call = format!("{held}.{}()", filters::to_pascal_case(id.to_string()));
-        match self.presented.iter().find(|p| p.id == id) {
+        match self.element(id) {
             Some(GoPresented {
                 bounded: Some((kind, _)),
                 optional: true,
@@ -647,10 +736,11 @@ impl GoPrinted {
 
     /// The rebuild of the value `held`, made by `make` (the qualified
     /// `Make{Codec}`) in the package `package` names, with the element
-    /// `element` assigned `value` and every other element the value presents
-    /// read by its method, the arm of its variant last; `None` where the
-    /// value presents no `element`, as for a length the encode derives, which
-    /// no value holds.
+    /// `element` assigned `value` and everything else `Make{Codec}` takes read
+    /// by its method, in its order: a group and the arm of the variant whole;
+    /// `None` where the value presents no `element` of its own, as for a
+    /// length the encode derives, which no value holds, or a member of a
+    /// group.
     ///
     /// A byte string or a text is assigned as the slice or the string the
     /// expression gives, made into its bounded value by the runtime's
@@ -667,7 +757,7 @@ impl GoPrinted {
         element: &str,
         value: &str,
     ) -> Option<GoRebuild> {
-        let assigned = self.presented.iter().find(|p| p.id == element)?;
+        let assigned = self.element(element)?;
         let made = assigned.bounded.as_ref().map(|(kind, bound)| {
             let bound = match package {
                 Some(package) => format!("{package}.{bound}"),
@@ -679,23 +769,23 @@ impl GoPrinted {
                 value.to_string(),
             )
         });
-        let mut arguments: Vec<String> = self
-            .presented
+        let arguments: Vec<String> = self
+            .parts
             .iter()
-            .map(|p| {
-                if p.id != element {
-                    format!("{held}.{}()", filters::to_pascal_case(p.id.clone()))
-                } else if made.is_some() {
-                    GO_REBUILT_ELEMENT.to_string()
-                } else {
-                    value.to_string()
+            .map(|part| match part {
+                GoPart::Element(p) if p.id == element => {
+                    if made.is_some() {
+                        GO_REBUILT_ELEMENT.to_string()
+                    } else {
+                        value.to_string()
+                    }
                 }
+                GoPart::Element(p) => {
+                    format!("{held}.{}()", filters::to_pascal_case(p.id.clone()))
+                }
+                GoPart::Whole { method } => format!("{held}.{method}()"),
             })
             .collect();
-        // The arm of the variant the value holds, as it holds it.
-        if self.variant {
-            arguments.push(format!("{held}.{VARIANT_METHOD}()"));
-        }
         Some(GoRebuild {
             value: format!("{make}({})", arguments.join(", ")),
             made,
@@ -951,6 +1041,9 @@ fn wire_methods(
     };
     // The carriers whose method a counted body reads, each once.
     let mut carriers: BTreeSet<&str> = BTreeSet::new();
+    let groups = go_groups(plan, struct_name);
+    let member_types = member_types(plan, imports, l, struct_name);
+    let reads = value_reads(plan, l, &groups);
     for (id, number) in wire_numbers(plan) {
         let NumberInto::Field { field, absent, .. } = &number.into else {
             unreachable!("`wire_numbers` keeps a number into a field");
@@ -989,10 +1082,25 @@ fn wire_methods(
         let measured = |measure: &Measure<'_>, held: &str, indent: &str| {
             held_measure(plan, imports, &carrier, measure, held, indent)
         };
-        let mut body = String::new();
+        // The members of groups the number reads, bound off the value first:
+        // what it measures, and what the arm without its content holds.
+        let mut read_ids: BTreeSet<&str> = number
+            .measures
+            .iter()
+            .map(|measure| held_content(measure).id.as_str())
+            .collect();
+        read_ids.insert(id);
+        let mut body = bind_needed(
+            l,
+            &groups,
+            &member_types,
+            &|member| read_ids.contains(member),
+            &BTreeSet::new(),
+        );
         match number.measures.iter().find(|measure| !measure.gated) {
             Some(anchor) => {
-                let (counted, size) = measured(anchor, &held_element(l, anchor), "\t");
+                let held = reads.value(&held_content(anchor).id);
+                let (counted, size) = measured(anchor, &held, "\t");
                 body.push_str(&counted);
                 body.push_str(&format!("\treturn {}\n", wrap(&size)));
             }
@@ -1001,18 +1109,20 @@ fn wire_methods(
                     let (counted, size) = measured(measure, "_v", "\t\t");
                     body.push_str(&format!(
                         "\tif _v, ok := {}.Get(); ok {{\n{counted}\t\treturn {}\n\t}}\n",
-                        held_element(l, measure),
+                        reads.call(&held_content(measure).id),
                         wrap(&size)
                     ));
                 }
                 body.push_str(&match absent {
                     Absent::Zero => format!("\treturn optional.None[{ty}]()\n"),
-                    Absent::Stated => format!(
-                        "\tif _s, ok := s.{}().Get(); ok {{\n\t\treturn _s\n\t}}\n\treturn 0\n",
-                        l.codec_field_id(id)
+                    // What the value states, or what the arm of the group it
+                    // holds without the content holds, zero where it holds
+                    // neither (docs/adr/0065 §6 R4b).
+                    Absent::Stated | Absent::Group => format!(
+                        "\tif _s, ok := {}.Get(); ok {{\n\t\treturn _s\n\t}}\n\treturn 0\n",
+                        reads.call(id)
                     ),
                     Absent::Never => "\treturn 0\n".to_string(),
-                    Absent::Group => unreachable!("`unlowered` prints no length a group holds"),
                 });
             }
         }
@@ -1082,7 +1192,46 @@ fn wire_carrier(
     // A number held in a flag counts bytes or entries, never a body's frame
     // (`sce:length-from` names a field), so no body is handed a carrier here.
     let presented = |c: &CodecField| format!("s.{}()", l.codec_field_id(&c.id));
-    let mut body = format!("\t_c := s.{}()\n", l.codec_field_id(id));
+    let groups = go_groups(plan, struct_name);
+    let member_types = member_types(plan, imports, l, struct_name);
+    let reads = value_reads(plan, l, &groups);
+    // The members of groups the folds read, and the groups whose arm a flag
+    // of a disjunction is read from, bound off the value first.
+    let mut read_ids: BTreeSet<&str> = BTreeSet::new();
+    let mut read_groups: BTreeSet<usize> = BTreeSet::new();
+    for derived in &plan.derivations {
+        let ElementId::Flag { field: carrier, .. } = &derived.element else {
+            continue;
+        };
+        if carrier != id {
+            continue;
+        }
+        match &derived.by {
+            Derive::Presence(presence) => {
+                read_ids.extend(presence.of.first().map(|(gated, _)| gated.id.as_str()));
+            }
+            Derive::Number(number) => {
+                read_ids.extend(
+                    number
+                        .measures
+                        .iter()
+                        .map(|measure| held_content(measure).id.as_str()),
+                );
+            }
+            Derive::ArmFlag { group, .. } => {
+                read_groups.insert(*group);
+            }
+            _ => {}
+        }
+    }
+    let mut body = bind_needed(
+        l,
+        &groups,
+        &member_types,
+        &|member| read_ids.contains(member),
+        &read_groups,
+    );
+    body.push_str(&format!("\t_c := s.{}()\n", l.codec_field_id(id)));
     for derived in &plan.derivations {
         let ElementId::Flag {
             field: carrier,
@@ -1100,7 +1249,7 @@ fn wire_carrier(
             Derive::Presence(presence) => {
                 let (gated, when_clear) =
                     presence.of.first().expect("a presence flag gates a field");
-                let there = format!("s.{}().IsPresent()", l.codec_field_id(&gated.id));
+                let there = format!("{}.IsPresent()", reads.call(&gated.id));
                 let test = if *when_clear {
                     format!("!{there}")
                 } else {
@@ -1127,7 +1276,7 @@ fn wire_carrier(
                             imports,
                             &presented,
                             anchor,
-                            &held_element(l, anchor),
+                            &reads.value(&held_content(anchor).id),
                             "\t",
                         );
                         body.push_str(&counted);
@@ -1140,7 +1289,7 @@ fn wire_carrier(
                             let keyword = if i == 0 { "\tif" } else { " else if" };
                             body.push_str(&format!(
                                 "{keyword} _v, ok := {}.Get(); ok {{\n{counted}{}\t}}",
-                                held_element(l, measure),
+                                reads.call(&held_content(measure).id),
                                 set(&size, "\t\t")
                             ));
                         }
@@ -1172,12 +1321,16 @@ fn wire_carrier(
                 )));
                 body.push_str(&indented(&fold_bits(plan, l, carrier, flag, &local, "_c")));
             }
+            // What the arm of the group the value holds gives a flag of the
+            // disjunction that decides it.
+            Derive::ArmFlag { group, gate } => {
+                let local = format!("_a{}", derived_local(l, &derived.element));
+                body.push_str(&indented(&group_gate_bit(&groups[*group], *gate, &local)));
+                body.push_str(&indented(&fold_bits(plan, l, carrier, flag, &local, "_c")));
+            }
             // Set by the chain that holds the entry; a frame of the entry
             // alone carries the bit the value presents.
             Derive::ChainContinuation => {}
-            _ => unreachable!(
-                "`unlowered` folds a presence, a number or a variant's tag into a carrier only"
-            ),
         }
     }
     format!(
@@ -1188,16 +1341,82 @@ fn wire_carrier(
     )
 }
 
-/// The read of the content `measure` measures off the value, by the method
-/// that presents it.
-fn held_element(l: &LangCtx, measure: &Measure<'_>) -> String {
-    let content = match &measure.of {
+/// The content `measure` measures.
+fn held_content<'m>(measure: &Measure<'m>) -> &'m CodecField {
+    match &measure.of {
         Measured::Bytes { field, .. } => field,
         Measured::Entries { list } => list,
         Measured::Encoded { body, .. } => body,
         _ => unreachable!("`unlowered` prints a length or a count of content only"),
-    };
-    format!("s.{}()", l.codec_field_id(&content.id))
+    }
+}
+
+/// How the value's own methods read its elements: off the value, each member
+/// of a group off the local [`bind_needed`] binds it to.
+fn value_reads<'p, 'm>(
+    plan: &'p EncodePlan<'m>,
+    l: &'p LangCtx,
+    groups: &[GoGroup<'_>],
+) -> SourceReads<'p, 'm> {
+    SourceReads {
+        plan,
+        l,
+        owner: "s",
+        members: groups
+            .iter()
+            .flat_map(|g| g.group.fields())
+            .map(str::to_string)
+            .collect(),
+    }
+}
+
+/// The bare Go type of each member of a group of `plan`, whose value's
+/// struct is `struct_name`, by its id.
+fn member_types(
+    plan: &EncodePlan<'_>,
+    imports: &[ImportContext],
+    l: &LangCtx,
+    struct_name: &str,
+) -> BTreeMap<String, String> {
+    plan.groups()
+        .iter()
+        .flat_map(|g| g.fields())
+        .map(|id| {
+            let field = plan
+                .model
+                .fields
+                .iter()
+                .find(|f| f.id == id)
+                .expect("a member of a group is a field of the codec");
+            let held = held_value(
+                imports,
+                l,
+                struct_name,
+                field,
+                &plan.value(field),
+                Presence::Always,
+            );
+            (id.to_string(), held.bare)
+        })
+        .collect()
+}
+
+/// The statements, one tab in, that bind off the value each member of a
+/// group `needed` names ([`bind_group`]), and read each group `whole` names.
+fn bind_needed(
+    l: &LangCtx,
+    groups: &[GoGroup<'_>],
+    member_types: &BTreeMap<String, String>,
+    needed: &dyn Fn(&str) -> bool,
+    whole: &BTreeSet<usize>,
+) -> String {
+    let mut out = String::new();
+    for (at, g) in groups.iter().enumerate() {
+        if whole.contains(&at) || g.group.fields().into_iter().any(needed) {
+            out.push_str(&indented(&bind_group(l, g, member_types, "s", needed)));
+        }
+    }
+    out
 }
 
 /// The number `measure` gives of the content `held` holds, an `int`, and the
@@ -1469,7 +1688,7 @@ fn count_body(
         format!("if err := {call}; err != nil {{\n\treturn err\n}}\n")
     };
     out.push_str(&format!("\tvar {k} codec.CountingSink\n"));
-    if element_of(plan, &body.id).is_some_and(|e| e.presence.optional()) {
+    if reads.optional(&body.id) {
         out.push_str(&format!(
             "\tif {} {{\n{}\t}}\n",
             reads.present(&body.id),
@@ -1543,6 +1762,11 @@ pub(super) struct GoSource {
     /// arm names that the bits hold, so the tag is one of its type
     /// (docs/adr/0065 §6 R3) and is made without a check.
     pub(super) catch_all_made: Option<String>,
+    /// Each gate group the value holds whole, in the order `Make{Codec}` takes
+    /// them: the template declares its field and its decode's literal holds
+    /// what the decode made of it. No member of a group is a field of the
+    /// value's own.
+    pub(super) groups: Vec<GoGroupField>,
 }
 
 /// The Go text of the codec `plan`, whose value's struct is `struct_name`; the
@@ -1562,169 +1786,53 @@ pub(super) fn render(
     // The value a method presents where the value holds no element of it: a
     // body the zero value holds none of presents its codec's zero value.
     let mut zero: BTreeMap<String, String> = BTreeMap::new();
-    for element in &plan.elements {
-        let id = &element.field.id;
-        let method = l.codec_field_id(id);
-        let optional = element.presence.optional();
-        // A body is presented as its codec's source interface, and held as
-        // one, so a value is made of any source of the body; the decode holds
-        // the value it read in it (docs/adr/0081 §2).
-        if let Value::Body { codec } = &element.value {
-            let (source, value) = body_source(imports, codec);
-            let ty = if optional {
-                made.insert(
-                    id.clone(),
-                    format!("optional.Convert({method}, func(b {value}) {source} {{ return &b }})"),
-                );
-                format!("optional.Of[{source}]")
-            } else {
-                made.insert(id.clone(), format!("&{method}"));
-                zero.insert(method.clone(), format!("&{value}{{}}"));
-                source
-            };
-            held.insert(id.clone(), ty.clone());
-            elements.push((method, member(id), ty));
-            continue;
-        }
-        // A list or a chain is presented as the runtime's `codec.List` of its
-        // entries' source interface, held to the bound type the codec names
-        // for it (docs/adr/0065 §6 R2) and read through an `iter.Seq`. The
-        // decode read the entries as values of their codec; the list holds
-        // their addresses, made within the bound or refused as the runtime
-        // refuses it.
-        if let Value::List { codec, bound, .. } = &element.value {
-            let (source, value) = body_source(imports, codec);
-            let bound_name = bound_type(struct_name, id);
-            let (held_as, most) = match bound.most {
-                Some(most) => (
-                    format!("{} to {most} entries", bound.least),
-                    most.to_string(),
-                ),
-                None => (
-                    format!(
-                        "{} or more entries, the protocol stating no most",
-                        bound.least
-                    ),
-                    "codec.Unbounded".to_string(),
-                ),
-            };
-            before.push_str(&format!(
-                "// {bound_name} is the bound of the {id} element of {struct_name}: {held_as}\n\
-                 // (docs/adr/0065 §6 R2). A List of it is made only within it.\n\
-                 type {bound_name} struct{{}}\n\
-                 \n\
-                 // Least is the fewest entries the element holds.\n\
-                 func ({bound_name}) Least() int {{ return {least} }}\n\
-                 \n\
-                 // Most is the most entries the element holds.\n\
-                 func ({bound_name}) Most() int {{ return {most} }}\n\n",
-                least = bound.least
-            ));
-            let list = format!("codec.List[{bound_name}, {source}]");
-            let address = format!("func(e *{value}) {source} {{ return e }}");
-            let (ty, make) = if optional {
-                (
-                    format!("optional.Of[{list}]"),
-                    format!(
-                        "codec.MakeOptionalList[{bound_name}](codec.OptionalSourcesOf({method}, \
-                         {address}))"
-                    ),
-                )
-            } else {
-                (
-                    list,
-                    format!("codec.MakeList[{bound_name}](codec.SourcesOf({method}, {address}))"),
-                )
-            };
-            let local = format!("_l{method}");
-            decoded.push_str(&format!(
-                "\t{local}, err := {make}\n\
-                 \tif err != nil {{\n\
-                 \t\treturn nil, err\n\
-                 \t}}\n"
-            ));
-            made.insert(id.clone(), local);
-            held.insert(id.clone(), ty.clone());
-            elements.push((method, member(id), ty));
-            continue;
-        }
-        let (Value::Bytes(bound) | Value::Text(bound)) = &element.value else {
-            let scalar = l.type_name(&element.field.sce_type).into_owned();
-            let ty = if optional {
-                format!("optional.Of[{scalar}]")
-            } else {
-                scalar
-            };
-            // A length the value states while its content is absent is on the
-            // wire whether or not the content is there: the decode read it
-            // as a number, which the value states.
-            if element.presence == Presence::Stated {
-                made.insert(id.clone(), format!("optional.Some({method})"));
+    // The gate groups, each held whole where its first member is declared.
+    let groups = go_groups(plan, struct_name);
+    let mut group_fields: Vec<GoGroupField> = Vec::new();
+    let mut held_groups: BTreeSet<usize> = BTreeSet::new();
+    for field in &plan.model.fields {
+        let id = &field.id;
+        if let Some(element) = element_of(plan, id) {
+            let method = l.codec_field_id(id);
+            let value = held_value(
+                imports,
+                l,
+                struct_name,
+                field,
+                &element.value,
+                element.presence,
+            );
+            before.push_str(&value.declared);
+            decoded.push_str(&value.decoded);
+            if let Some(local) = value.made {
+                made.insert(id.clone(), local);
             }
-            held.insert(id.clone(), ty.clone());
-            elements.push((method, member(id), ty));
+            if let Some(fallback) = value.zero {
+                zero.insert(method.clone(), fallback);
+            }
+            held.insert(id.clone(), value.ty.clone());
+            elements.push((method, member(id), value.ty));
+            continue;
+        }
+        let Some(at) = groups.iter().position(|g| g.group.contains(id)) else {
             continue;
         };
-        let text = matches!(element.value, Value::Text(_));
-        let (kind, unit) = if text {
-            ("Text", "UTF-8 bytes")
-        } else {
-            ("Bytes", "bytes")
-        };
-        let bound_name = bound_type(struct_name, id);
-        let (held_as, most) = match bound.most {
-            Some(most) => (
-                format!("{} to {most} {unit}", bound.least),
-                most.to_string(),
-            ),
-            None => (
-                format!(
-                    "{} or more {unit}, the protocol stating no most",
-                    bound.least
-                ),
-                "codec.Unbounded".to_string(),
-            ),
-        };
-        before.push_str(&format!(
-            "// {bound_name} is the bound of the {id} element of {struct_name}: {held_as}\n\
-             // (docs/adr/0077 §3). A {kind} of it is made only within it.\n\
-             type {bound_name} struct{{}}\n\
-             \n\
-             // Least is the fewest {unit} the element holds.\n\
-             func ({bound_name}) Least() int {{ return {least} }}\n\
-             \n\
-             // Most is the most {unit} the element holds.\n\
-             func ({bound_name}) Most() int {{ return {most} }}\n\n",
-            least = bound.least
-        ));
-        let bounded = format!("codec.{kind}[{bound_name}]");
-        // The decode read the element as a slice or a string, or as the
-        // optional type of one where a gate decides it; the bounded value is
-        // made of it, a slice made a string for a text, and refused as the
-        // runtime refuses it.
-        let local = format!("_b{method}");
-        let (ty, make) = if optional {
-            (
-                format!("optional.Of[{bounded}]"),
-                format!("codec.MakeOptional{kind}[{bound_name}]({method})"),
-            )
-        } else if text {
-            (
-                bounded,
-                format!("codec.Make{kind}[{bound_name}](string({method}))"),
-            )
-        } else {
-            (bounded, format!("codec.Make{kind}[{bound_name}]({method})"))
-        };
-        decoded.push_str(&format!(
-            "\t{local}, err := {make}\n\
-             \tif err != nil {{\n\
-             \t\treturn nil, err\n\
-             \t}}\n"
-        ));
-        made.insert(id.clone(), local);
-        held.insert(id.clone(), ty.clone());
-        elements.push((method, member(id), ty));
+        if !held_groups.insert(at) {
+            continue;
+        }
+        let printed = group_declarations(plan, imports, l, struct_name, &groups[at]);
+        before.push_str(&printed.declared);
+        decoded.push_str(&printed.decoded);
+        let g = &groups[at];
+        if let Some(fallback) = printed.zero {
+            zero.insert(g.method.clone(), fallback);
+        }
+        elements.push((g.method.clone(), g.member.clone(), g.held()));
+        group_fields.push(GoGroupField {
+            member: g.member.clone(),
+            held: g.held(),
+            made: printed.made,
+        });
     }
 
     // The arm of the variant the value holds: a sum of the arm types, each a
@@ -1830,7 +1938,684 @@ pub(super) fn render(
         decoded: decoded.trim_end_matches('\n').to_string(),
         arm_made,
         catch_all_made,
+        groups: group_fields,
     }
+}
+
+/// How a printed Go value holds one element, or one member of a group.
+struct HeldValue {
+    /// The Go type it is presented as: the optional type of what it holds
+    /// where it may be absent.
+    ty: String,
+    /// The Go type of what it holds where it is there.
+    bare: String,
+    /// What the codec declares for it before the value: the bound type of a
+    /// byte string, a text or a list.
+    declared: String,
+    /// The statements the decode runs before the value's literal to make it.
+    decoded: String,
+    /// What the value's literal holds in place of what the decode read, an
+    /// optional where the decode read an optional; `None` where it holds the
+    /// read itself.
+    made: Option<String>,
+    /// What its method presents where the value holds none: the zero value of
+    /// a body's codec.
+    zero: Option<String>,
+}
+
+/// How a printed Go value of the codec whose struct is `struct_name` holds
+/// `field`, which holds `value` and whose presence is `presence`.
+///
+/// A body is presented as its codec's source interface, and held as one, so
+/// a value is made of any source of the body; the decode holds the value it
+/// read in it (docs/adr/0081 §2). A list or a chain is presented as the
+/// runtime's `codec.List` of its entries' source interface, held to the
+/// bound type the codec names for it (docs/adr/0065 §6 R2) and read through
+/// an `iter.Seq`; the decode read the entries as values of their codec, and
+/// the list holds their addresses, made within the bound or refused as the
+/// runtime refuses it. A byte string or a text is the runtime's `codec.Bytes`
+/// or `codec.Text` of its bound type (docs/adr/0077 §3), made of the slice or
+/// the string the decode read, a slice made a string for a text.
+fn held_value(
+    imports: &[ImportContext],
+    l: &LangCtx,
+    struct_name: &str,
+    field: &CodecField,
+    value: &Value<'_>,
+    presence: Presence,
+) -> HeldValue {
+    let id = &field.id;
+    let method = l.codec_field_id(id);
+    let optional = presence.optional();
+    let wrap = |bare: &str| {
+        if optional {
+            format!("optional.Of[{bare}]")
+        } else {
+            bare.to_string()
+        }
+    };
+    let made_in = |local: &str, make: &str| {
+        format!(
+            "\t{local}, err := {make}\n\
+             \tif err != nil {{\n\
+             \t\treturn nil, err\n\
+             \t}}\n"
+        )
+    };
+    match value {
+        Value::Body { codec } => {
+            let (source, held) = body_source(imports, codec);
+            let (made, zero) = if optional {
+                (
+                    format!("optional.Convert({method}, func(b {held}) {source} {{ return &b }})"),
+                    None,
+                )
+            } else {
+                (format!("&{method}"), Some(format!("&{held}{{}}")))
+            };
+            HeldValue {
+                ty: wrap(&source),
+                bare: source,
+                declared: String::new(),
+                decoded: String::new(),
+                made: Some(made),
+                zero,
+            }
+        }
+        Value::List { codec, bound, .. } => {
+            let (source, held) = body_source(imports, codec);
+            let bound_name = bound_type(struct_name, id);
+            let (held_as, most) = match bound.most {
+                Some(most) => (
+                    format!("{} to {most} entries", bound.least),
+                    most.to_string(),
+                ),
+                None => (
+                    format!(
+                        "{} or more entries, the protocol stating no most",
+                        bound.least
+                    ),
+                    "codec.Unbounded".to_string(),
+                ),
+            };
+            let declared = format!(
+                "// {bound_name} is the bound of the {id} element of {struct_name}: {held_as}\n\
+                 // (docs/adr/0065 §6 R2). A List of it is made only within it.\n\
+                 type {bound_name} struct{{}}\n\
+                 \n\
+                 // Least is the fewest entries the element holds.\n\
+                 func ({bound_name}) Least() int {{ return {least} }}\n\
+                 \n\
+                 // Most is the most entries the element holds.\n\
+                 func ({bound_name}) Most() int {{ return {most} }}\n\n",
+                least = bound.least
+            );
+            let list = format!("codec.List[{bound_name}, {source}]");
+            let address = format!("func(e *{held}) {source} {{ return e }}");
+            let make = if optional {
+                format!(
+                    "codec.MakeOptionalList[{bound_name}](codec.OptionalSourcesOf({method}, \
+                     {address}))"
+                )
+            } else {
+                format!("codec.MakeList[{bound_name}](codec.SourcesOf({method}, {address}))")
+            };
+            let local = format!("_l{method}");
+            HeldValue {
+                ty: wrap(&list),
+                bare: list,
+                declared,
+                decoded: made_in(&local, &make),
+                made: Some(local),
+                zero: None,
+            }
+        }
+        Value::Bytes(bound) | Value::Text(bound) => {
+            let text = matches!(value, Value::Text(_));
+            let (kind, unit) = if text {
+                ("Text", "UTF-8 bytes")
+            } else {
+                ("Bytes", "bytes")
+            };
+            let bound_name = bound_type(struct_name, id);
+            let (held_as, most) = match bound.most {
+                Some(most) => (
+                    format!("{} to {most} {unit}", bound.least),
+                    most.to_string(),
+                ),
+                None => (
+                    format!(
+                        "{} or more {unit}, the protocol stating no most",
+                        bound.least
+                    ),
+                    "codec.Unbounded".to_string(),
+                ),
+            };
+            let declared = format!(
+                "// {bound_name} is the bound of the {id} element of {struct_name}: {held_as}\n\
+                 // (docs/adr/0077 §3). A {kind} of it is made only within it.\n\
+                 type {bound_name} struct{{}}\n\
+                 \n\
+                 // Least is the fewest {unit} the element holds.\n\
+                 func ({bound_name}) Least() int {{ return {least} }}\n\
+                 \n\
+                 // Most is the most {unit} the element holds.\n\
+                 func ({bound_name}) Most() int {{ return {most} }}\n\n",
+                least = bound.least
+            );
+            let bounded = format!("codec.{kind}[{bound_name}]");
+            let make = if optional {
+                format!("codec.MakeOptional{kind}[{bound_name}]({method})")
+            } else if text {
+                format!("codec.Make{kind}[{bound_name}](string({method}))")
+            } else {
+                format!("codec.Make{kind}[{bound_name}]({method})")
+            };
+            let local = format!("_b{method}");
+            HeldValue {
+                ty: wrap(&bounded),
+                bare: bounded,
+                declared,
+                decoded: made_in(&local, &make),
+                made: Some(local),
+                zero: None,
+            }
+        }
+        Value::Scalar(_) => {
+            let scalar = l.type_name(&field.sce_type).into_owned();
+            // A length the value states while its content is absent is on the
+            // wire whether or not the content is there: the decode read it
+            // as a number, which the value states.
+            let made = (presence == Presence::Stated).then(|| format!("optional.Some({method})"));
+            HeldValue {
+                ty: wrap(&scalar),
+                bare: scalar,
+                declared: String::new(),
+                decoded: String::new(),
+                made,
+                zero: None,
+            }
+        }
+    }
+}
+
+/// A gate group of a printed Go codec as the printer spells it
+/// (docs/adr/0065 §6 R4b, R4c).
+struct GoGroup<'p> {
+    /// The group.
+    group: &'p GateGroup,
+    /// The type the value holds it as: the interface its arm types satisfy
+    /// where it has several arms, the struct of its one arm where it has one,
+    /// named as every printer names it (`rust_source::group_type`).
+    ty: String,
+    /// The method that presents it, the source's and the value's.
+    method: String,
+    /// The field the value holds it in.
+    member: String,
+}
+
+impl GoGroup<'_> {
+    /// The Go type the value presents it as: the optional type of its type
+    /// where the gates allow no arm.
+    fn held(&self) -> String {
+        if self.group.absent.is_some() {
+            format!("optional.Of[{}]", self.ty)
+        } else {
+            self.ty.clone()
+        }
+    }
+
+    /// The type of `arm`: a struct of its own named after the gates it holds
+    /// (`rust_source::group_arm_name`) where the group has several arms, and
+    /// the group's own type where it has one.
+    fn arm_type(&self, arm: &GroupArm) -> String {
+        if self.group.is_sum() {
+            format!(
+                "{}{}",
+                self.ty,
+                super::rust_source::group_arm_name(self.group, arm)
+            )
+        } else {
+            self.ty.clone()
+        }
+    }
+
+    /// The local the encode reads the group off its source into.
+    fn read_local(&self) -> String {
+        format!("_r{}", self.method)
+    }
+}
+
+/// The gate groups of `plan`, whose value's struct is `struct_name`, in the
+/// order of the plan.
+fn go_groups<'p>(plan: &'p EncodePlan<'_>, struct_name: &str) -> Vec<GoGroup<'p>> {
+    plan.groups()
+        .iter()
+        .map(|group| {
+            let accessor = super::rust_source::group_accessor(group);
+            GoGroup {
+                group,
+                ty: super::rust_source::group_type(struct_name, group),
+                method: filters::to_pascal_case(accessor.clone()),
+                member: member(&accessor),
+            }
+        })
+        .collect()
+}
+
+/// The method and the field an arm holds the two lists `first` and `second`
+/// of one count by (docs/adr/0065 §6 R5), named as every printer names it
+/// (`rust_source::aligned_name`).
+fn aligned_names(first: &str, second: &str) -> (String, String) {
+    let name = super::rust_source::aligned_name(first, second);
+    (filters::to_pascal_case(name.clone()), member(&name))
+}
+
+/// The local the encode binds the member `id` of a group to: an optional of
+/// what it holds, there where the arm the value holds holds it.
+fn member_local(l: &LangCtx, id: &str) -> String {
+    format!("_m{}", l.codec_field_id(id))
+}
+
+/// A gate group as the template holds it in the value: the field, its type,
+/// and what the decode's literal holds in it.
+#[derive(serde::Serialize)]
+pub(super) struct GoGroupField {
+    /// The field.
+    pub(super) member: String,
+    /// Its Go type.
+    pub(super) held: String,
+    /// The local the decode made it in.
+    pub(super) made: String,
+}
+
+/// What [`group_declarations`] prints of a group.
+struct GroupDeclarations {
+    /// Before the value's struct: the bound types of its members, and its
+    /// types.
+    declared: String,
+    /// The statements the decode makes the group with, from the members it
+    /// read, into the local `made` names.
+    decoded: String,
+    /// The local the decode makes the group in.
+    made: String,
+    /// What the value's method presents where it holds no group that must
+    /// hold an arm: the first arm, made by default.
+    zero: Option<String>,
+}
+
+/// The types of the group `g` of `plan`, whose value's struct is
+/// `struct_name`: for each arm a struct that holds the members present while
+/// the gates hold its values, each behind a method, made by its constructor;
+/// where the group has several arms, the interface only they satisfy. Two
+/// lists of one count are one member of the arm that holds both, the
+/// runtime's `codec.Aligned` of them (docs/adr/0065 §6 R5). The decode makes
+/// the arm the gates it read select, of the members it read, or none where
+/// they select none.
+fn group_declarations(
+    plan: &EncodePlan<'_>,
+    imports: &[ImportContext],
+    l: &LangCtx,
+    struct_name: &str,
+    g: &GoGroup<'_>,
+) -> GroupDeclarations {
+    let group = g.group;
+    let field_of = |id: &str| {
+        plan.model
+            .fields
+            .iter()
+            .find(|f| f.id == id)
+            .expect("a member of a group is a field of the codec")
+    };
+    // How each member is held, as the decode read it: the optional type of
+    // what it holds where a gate of its own decides it.
+    let mut members: BTreeMap<&str, HeldValue> = BTreeMap::new();
+    let mut declared = String::new();
+    let mut decoded = String::new();
+    for id in group.fields() {
+        let field = field_of(id);
+        let presence = if field.present_if.is_some() {
+            Presence::Gated
+        } else {
+            Presence::Always
+        };
+        let value = held_value(imports, l, struct_name, field, &plan.value(field), presence);
+        declared.push_str(&value.declared);
+        decoded.push_str(&value.decoded);
+        members.insert(id, value);
+    }
+    // What the decode read of a member, as it is there.
+    let read = |id: &str| -> String {
+        let field = field_of(id);
+        let local = members[id]
+            .made
+            .clone()
+            .unwrap_or_else(|| l.codec_field_id(id));
+        if field.present_if.is_some() {
+            format!("{local}.Proven()")
+        } else {
+            local
+        }
+    };
+    let when = |arm: &GroupArm| -> String {
+        group
+            .gates
+            .iter()
+            .zip(&arm.values)
+            .map(|(gate, value)| {
+                if *value {
+                    format!("`{gate}` holds")
+                } else {
+                    format!("`{gate}` does not hold")
+                }
+            })
+            .collect::<Vec<_>>()
+            .join(" and ")
+    };
+    let marker = format!("is{}", g.ty);
+    let local = format!("_g{}", g.method);
+    let mut branches: Vec<(String, String)> = Vec::new();
+    for arm in &group.arms {
+        let ty = g.arm_type(arm);
+        let mut fields = String::new();
+        let mut parameters = Vec::new();
+        let mut values = Vec::new();
+        let mut methods = String::new();
+        let mut arguments = Vec::new();
+        let mut pairs = String::new();
+        for id in &arm.fields {
+            if group.is_second_in(arm, id) {
+                continue;
+            }
+            let (method, name, member_ty, argument) = if let Some(second) = group.second_of(arm, id)
+            {
+                let (method, name) = aligned_names(id, second);
+                let ty = format!(
+                    "codec.Aligned[{}, {}]",
+                    members[id.as_str()].bare,
+                    members[second].bare
+                );
+                let pair = format!("_a{method}");
+                // The decode read both lists by the one count, so they hold
+                // as many entries as each other.
+                pairs.push_str(&format!(
+                    "\t{pair}, ok := codec.MakeAligned({}, {})\n\
+                     \tif !ok {{\n\
+                     \t\treturn nil, codec.ErrInconsistentSource\n\
+                     \t}}\n",
+                    read(id.as_str()),
+                    read(second)
+                ));
+                (method, name, ty, pair)
+            } else {
+                (
+                    l.codec_field_id(id),
+                    member(id),
+                    members[id.as_str()].bare.clone(),
+                    read(id.as_str()),
+                )
+            };
+            let held_none = match &members[id.as_str()].zero {
+                Some(fallback) if group.second_of(arm, id).is_none() => format!(
+                    "\tif a.{name} == nil {{\n\
+                     \t\treturn {fallback}\n\
+                     \t}}\n"
+                ),
+                _ => String::new(),
+            };
+            fields.push_str(&format!("\t{name} {member_ty}\n"));
+            parameters.push(format!("{name} {member_ty}"));
+            values.push(format!("{name}: {name}"));
+            methods.push_str(&format!(
+                "// {method} returns the member the arm presents as {method}.\n\
+                 func (a {ty}) {method}() {member_ty} {{\n\
+                 {held_none}\
+                 \treturn a.{name}\n\
+                 }}\n\n"
+            ));
+            arguments.push(argument);
+        }
+        declared.push_str(&format!(
+            "// {ty} is the {} group of {struct_name} where {} (docs/adr/0065 §6 R4): the\n\
+             // members present then.\n\
+             type {ty} struct {{\n{fields}}}\n\n\
+             // Make{ty} returns the arm that holds each member it is handed.\n\
+             func Make{ty}({}) {ty} {{\n\
+             \treturn {ty}{{{}}}\n\
+             }}\n\n\
+             {methods}",
+            g.method,
+            when(arm),
+            parameters.join(", "),
+            values.join(", ")
+        ));
+        if group.is_sum() {
+            declared.push_str(&format!("func ({ty}) {marker}() {{}}\n\n"));
+        }
+        let made = format!("Make{ty}({})", arguments.join(", "));
+        let made = if group.absent.is_some() {
+            format!("optional.Some({made})")
+        } else {
+            made
+        };
+        branches.push((
+            decoded_test(plan, l, group, &arm.values),
+            format!("{pairs}\t{local} = {made}\n"),
+        ));
+    }
+    if group.is_sum() {
+        let names: Vec<String> = group.arms.iter().map(|arm| g.arm_type(arm)).collect();
+        declared.push_str(&format!(
+            "// {} is the {} group of {struct_name}: the arm the value holds, each the\n\
+             // members present while the gates hold its values (docs/adr/0065 §6 R4),\n\
+             // one of {}, which only this package declares.\n\
+             type {} interface {{\n\
+             \t{marker}()\n\
+             }}\n\n",
+            g.ty,
+            g.method,
+            names.join(", "),
+            g.ty
+        ));
+    }
+    // The arm the gates the decode read select, in turn; where the gates may
+    // select none, the value holds no arm, and the last arm is otherwise the
+    // one they select.
+    decoded.push_str(&format!("\tvar {local} {}\n", g.held()));
+    let last = branches.len() - 1;
+    for (i, (test, made)) in branches.iter().enumerate() {
+        let keyword = if i == 0 { "\tif" } else { " else if" };
+        if i == last && group.absent.is_none() && i > 0 {
+            decoded.push_str(&format!(" else {{\n{}\t}}", indented(made)));
+        } else if i == last && group.absent.is_none() {
+            decoded.push_str(made);
+        } else {
+            decoded.push_str(&format!("{keyword} {test} {{\n{}\t}}", indented(made)));
+        }
+    }
+    if !decoded.ends_with('\n') {
+        decoded.push('\n');
+    }
+    let zero = (group.absent.is_none() && group.is_sum())
+        .then(|| format!("{}{{}}", g.arm_type(&group.arms[0])));
+    GroupDeclarations {
+        declared,
+        decoded,
+        made: local,
+        zero,
+    }
+}
+
+/// Whether the gates of `group`, as the decode of the codec `plan` read them,
+/// hold `values`: each flag tested on the local its carrier was read into.
+fn decoded_test(plan: &EncodePlan<'_>, l: &LangCtx, group: &GateGroup, values: &[bool]) -> String {
+    group
+        .gates
+        .iter()
+        .zip(values)
+        .map(|(gate, value)| {
+            let compare = if *value { "!=" } else { "==" };
+            match gate {
+                GateVar::Flag { carrier, flag } => format!(
+                    "(({} >> {}) & 1) {compare} 0",
+                    l.codec_field_id(carrier),
+                    flag_def(plan, carrier, flag).bit
+                ),
+                GateVar::Input(_) | GateVar::Member { .. } => {
+                    unreachable!("`unlowered` prints a group of the codec's own flags only")
+                }
+            }
+        })
+        .collect::<Vec<_>>()
+        .join(" && ")
+}
+
+/// The statements, unindented, that bind each member of the group `g` of
+/// `plan` the encode reads, read off `owner` (`src` or the value), to its
+/// local ([`member_local`]): what the arm the value holds holds of it, absent
+/// where that arm holds none or the value holds no arm. `needed` names the
+/// members bound, each of which the statements after read. The group is read
+/// into [`GoGroup::read_local`] first.
+fn bind_group(
+    l: &LangCtx,
+    g: &GoGroup<'_>,
+    member_types: &BTreeMap<String, String>,
+    owner: &str,
+    needed: &dyn Fn(&str) -> bool,
+) -> String {
+    let group = g.group;
+    let read = g.read_local();
+    let mut out = format!("{read} := {owner}.{}()\n", g.method);
+    for id in group.fields() {
+        if needed(id) {
+            out.push_str(&format!(
+                "var {} optional.Of[{}]\n",
+                member_local(l, id),
+                member_types[id]
+            ));
+        }
+    }
+    // What each arm holds of the members read.
+    let assignments = |arm: &GroupArm| -> String {
+        let mut out = String::new();
+        for id in &arm.fields {
+            if !needed(id) {
+                continue;
+            }
+            let value = if let Some(second) = group.second_of(arm, id) {
+                format!("_g.{}().First()", aligned_names(id, second).0)
+            } else if group.is_second_in(arm, id) {
+                let (first, _) = group
+                    .aligned
+                    .as_ref()
+                    .expect("the second of two lists of one count is aligned");
+                format!("_g.{}().Second()", aligned_names(first, id).0)
+            } else {
+                format!("_g.{}()", l.codec_field_id(id))
+            };
+            out.push_str(&format!(
+                "{} = optional.Some({value})\n",
+                member_local(l, id)
+            ));
+        }
+        out
+    };
+    let held = if group.absent.is_some() {
+        "_h"
+    } else {
+        read.as_str()
+    };
+    let body = if group.is_sum() {
+        let mut cases = String::new();
+        for arm in &group.arms {
+            let set = assignments(arm);
+            if !set.is_empty() {
+                cases.push_str(&format!("case {}:\n{}", g.arm_type(arm), indented(&set)));
+            }
+        }
+        if cases.is_empty() {
+            String::new()
+        } else {
+            format!("switch _g := {held}.(type) {{\n{cases}}}\n")
+        }
+    } else {
+        let set = assignments(&group.arms[0]);
+        if set.is_empty() {
+            String::new()
+        } else {
+            format!("_g := {held}\n{set}")
+        }
+    };
+    if body.is_empty() {
+        out
+    } else if group.absent.is_some() {
+        format!(
+            "{out}if _h, ok := {read}.Get(); ok {{\n{}}}\n",
+            indented(&body)
+        )
+    } else if group.is_sum() {
+        format!("{out}{body}")
+    } else {
+        format!("{out}{{\n{}}}\n", indented(&body))
+    }
+}
+
+/// The statements, unindented, that derive into `local`, a `uint64`, the
+/// value the gate at `gate` among those of the group `g` has where the value
+/// holds what [`GoGroup::read_local`] read: 1 where it holds an arm that sets
+/// the gate, or no arm while the gates then set it.
+fn group_gate_bit(g: &GoGroup<'_>, gate: usize, local: &str) -> String {
+    let group = g.group;
+    let read = g.read_local();
+    let mut out = format!("var {local} uint64\n");
+    let set: Vec<String> = group
+        .arms
+        .iter()
+        .filter(|arm| arm.values[gate])
+        .map(|arm| g.arm_type(arm))
+        .collect();
+    let when_absent = group.absent.as_ref().is_some_and(|absent| absent[gate]);
+    let held = if group.absent.is_some() {
+        "_h"
+    } else {
+        read.as_str()
+    };
+    let in_arm = if group.is_sum() {
+        if set.is_empty() {
+            String::new()
+        } else {
+            format!(
+                "switch {held}.(type) {{\ncase {}:\n\t{local} = 1\n}}\n",
+                set.join(", ")
+            )
+        }
+    } else if set.is_empty() {
+        String::new()
+    } else {
+        format!("{local} = 1\n")
+    };
+    match (&group.absent, group.is_sum()) {
+        // No arm sets the gate: it is set only while the value holds none.
+        (Some(_), _) if in_arm.is_empty() => {
+            if when_absent {
+                out.push_str(&format!("if !{read}.IsPresent() {{\n\t{local} = 1\n}}\n"));
+            }
+        }
+        (Some(_), sum) => {
+            let present = if sum {
+                format!("if _h, ok := {read}.Get(); ok {{\n{}}}", indented(&in_arm))
+            } else {
+                format!("if {read}.IsPresent() {{\n{}}}", indented(&in_arm))
+            };
+            out.push_str(&present);
+            if when_absent {
+                out.push_str(&format!(" else {{\n\t{local} = 1\n}}"));
+            }
+            out.push('\n');
+        }
+        (None, _) => out.push_str(&in_arm),
+    }
+    out
 }
 
 /// The field a printed Go value holds the arm of its variant in.
@@ -2084,23 +2869,42 @@ struct SourceReads<'p, 'm> {
     plan: &'p EncodePlan<'m>,
     /// The Go spelling of the codec's names.
     l: &'p LangCtx,
+    /// What reads the source: `src`, or the value.
+    owner: &'p str,
+    /// The members of the gate groups, each by the local the arm the value
+    /// holds is read into ([`bind_group`]), an optional.
+    members: BTreeSet<String>,
 }
 
 impl SourceReads<'_, '_> {
-    /// The call of the method that presents the element `id`.
+    /// The call of the method that presents the element `id`, or the local a
+    /// member of a group is bound to, the optional type of what it holds.
     fn call(&self, id: &str) -> String {
-        format!("src.{}()", self.l.codec_field_id(id))
+        if self.members.contains(id) {
+            member_local(self.l, id)
+        } else {
+            format!("{}.{}()", self.owner, self.l.codec_field_id(id))
+        }
     }
 
     /// The element `id` as the encode reads it where it is there: the call,
     /// or what the optional type the call returns holds, read where a test
     /// has proven it present.
     fn value(&self, id: &str) -> String {
-        if element_of(self.plan, id).is_some_and(|e| e.presence.optional()) {
+        if self.members.contains(id)
+            || element_of(self.plan, id).is_some_and(|e| e.presence.optional())
+        {
             format!("{}.Proven()", self.call(id))
         } else {
             self.call(id)
         }
+    }
+
+    /// Whether the element `id` may be absent where the encode reads it: an
+    /// element a gate decides or the value states, or a member of a group.
+    fn optional(&self, id: &str) -> bool {
+        self.members.contains(id)
+            || element_of(self.plan, id).is_some_and(|e| e.presence.optional())
     }
 
     /// The test that the element `id`, which may be absent, is there.
@@ -2276,11 +3080,30 @@ fn encode_source(
              overrides {struct_name}Overrides) error {{\n"
         );
     }
-    let reads = SourceReads { plan, l };
+    let groups = go_groups(plan, struct_name);
+    let reads = SourceReads {
+        plan,
+        l,
+        owner: "src",
+        members: groups
+            .iter()
+            .flat_map(|g| g.group.fields())
+            .map(str::to_string)
+            .collect(),
+    };
     // The arm of the variant the source presents, read once: the tag the
     // encode derives and the arm it writes are of the one arm.
     if !plan.arms.is_empty() {
         out.push_str(&format!("\t{VARIANT_LOCAL} := src.{VARIANT_METHOD}()\n"));
+    }
+    // Each group the source presents, read once, each member bound to a local
+    // of its own from the arm it holds, so each statement that writes a
+    // member is the one that writes an element a gate decides.
+    let member_types = member_types(plan, imports, l, struct_name);
+    for g in &groups {
+        out.push_str(&indented(&bind_group(l, g, &member_types, "src", &|_| {
+            true
+        })));
     }
     // Each flag the encode derives, by its carrier: the statements that fold
     // it into the carrier's local in place of the bits the value presents.
@@ -2376,6 +3199,18 @@ fn encode_source(
                 out.push_str(&indented(&parent_tag_bits(
                     plan, l, imports, tag, &local, "src",
                 )));
+                let c = carrier_local(l, field);
+                folds
+                    .entry(field.clone())
+                    .or_default()
+                    .push(format!("\t{}", fold_bits(plan, l, field, flag, &local, &c)));
+            }
+            // A flag of a disjunction that decides a group: what the arm the
+            // value holds gives it, or what the gates hold while it holds none
+            // (docs/adr/0065 §6 R4c).
+            (ElementId::Flag { field, flag }, Derive::ArmFlag { group, gate }) => {
+                let local = format!("_a{}", derived_local(l, &derived.element));
+                out.push_str(&indented(&group_gate_bit(&groups[*group], *gate, &local)));
                 let c = carrier_local(l, field);
                 folds
                     .entry(field.clone())
@@ -2487,18 +3322,17 @@ fn encode_source(
     // A body whose encode can refuse, which no length counted, and each entry
     // of a list whose entries' encode can, is encoded over a sink that keeps
     // nothing before the first byte, so its refusal leaves w as it was.
-    for element in &plan.elements {
-        if let Value::Body { codec } | Value::List { codec, .. } = &element.value {
-            if plan.totality.refuses(RefusalKind::Child, &element.field.id) {
-                count_body(
-                    imports,
-                    &reads,
-                    element.field,
-                    codec,
-                    &read,
-                    &mut counted,
-                    &mut out,
-                );
+    // A member of a group likewise, where the arm the value holds holds it.
+    let held_fields = plan.elements.iter().map(|element| element.field).chain(
+        groups
+            .iter()
+            .flat_map(|g| g.group.fields())
+            .filter_map(|id| plan.model.fields.iter().find(|f| f.id == id)),
+    );
+    for field in held_fields {
+        if let Value::Body { codec } | Value::List { codec, .. } = plan.value(field) {
+            if plan.totality.refuses(RefusalKind::Child, &field.id) {
+                count_body(imports, &reads, field, codec, &read, &mut counted, &mut out);
             }
         }
     }
@@ -2854,12 +3688,14 @@ fn derive_number(
     match &present {
         None => out.push_str(&format!("\t{d} := {ty}({size})\n")),
         // Where the content is not, zero, the field gated beside it and not
-        // written, or what the value states.
+        // written, what the value states, or what the arm of the group the
+        // value holds without the content holds (docs/adr/0065 §6 R4b), zero
+        // where it holds neither.
         Some(there) => {
             out.push_str(&format!(
                 "\tvar {d} {ty}\n\tif {there} {{\n\t\t{d} = {ty}({size})\n\t}}"
             ));
-            if *absent == Absent::Stated {
+            if matches!(absent, Absent::Stated | Absent::Group) {
                 out.push_str(&format!(
                     " else if _s, ok := {}.Get(); ok {{\n\t\t{d} = _s\n\t}}",
                     reads.call(&field.id)

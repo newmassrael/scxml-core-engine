@@ -94,12 +94,19 @@ type {{ struct_name }}Variant struct {
 {% endif %}
 {# A value printed from its plan holds no element its encode derives
    (`field.derived`, docs/adr/0081 §3): its decode reads such an element to
-   cut the bytes it measures and makes the value without it. #}
+   cut the bytes it measures and makes the value without it. It holds a group
+   of elements one gate decides whole (`go_source.groups`, docs/adr/0065 §6
+   R4), and no member of it alone (`field.grouped`). #}
 // {{ struct_name }} represents the codec frame layout.
 type {{ struct_name }} struct {
-{% for field in fields if not field.derived %}
+{% for field in fields if not field.derived and not field.grouped %}
 	{{ field.member }} {{ field.go_type }}
 {% endfor %}
+{% if go_source %}
+{% for group in go_source.groups %}
+	{{ group.member }} {{ group.held }}
+{% endfor %}
+{% endif %}
 {% if has_variant and go_source %}
 	body {{ struct_name }}Variant
 {% elif has_variant %}
@@ -239,10 +246,13 @@ func Decode{{ struct_name }}(cursor *codec.SceCursor{{ params_after_first_arg }}
 {% endif %}
 	}
 	return &{{ struct_name }}{
-{% for field in fields if not field.derived %}
+{% for field in fields if not field.derived and not field.grouped %}
 		{{ field.member }}: {{ field.made | default(field.id) }},
 {% endfor %}
 {% if go_source %}
+{% for group in go_source.groups %}
+		{{ group.member }}: {{ group.made }},
+{% endfor %}
 		body: body,
 {% else %}
 		Body: body,
@@ -275,9 +285,14 @@ func Decode{{ struct_name }}(cursor *codec.SceCursor{{ params_after_first_arg }}
 {{ go_source.decoded }}
 {% endif %}
 	return &{{ struct_name }}{
-{% for field in fields if not field.derived %}
+{% for field in fields if not field.derived and not field.grouped %}
 		{{ field.member }}: {{ field.made | default(field.id) }},
 {% endfor %}
+{% if go_source %}
+{% for group in go_source.groups %}
+		{{ group.member }}: {{ group.made }},
+{% endfor %}
+{% endif %}
 	}, nil
 {% elif has_variable_fields %}
 	frameLen := cursor.Remaining()
@@ -297,9 +312,14 @@ func Decode{{ struct_name }}(cursor *codec.SceCursor{{ params_after_first_arg }}
 {{ go_source.decoded }}
 {% endif %}
 	value := &{{ struct_name }}{
-{% for field in fields if not field.derived %}
+{% for field in fields if not field.derived and not field.grouped %}
 		{{ field.member }}: {{ field.made | default(field.id) }},
 {% endfor %}
+{% if go_source %}
+{% for group in go_source.groups %}
+		{{ group.member }}: {{ group.made }},
+{% endfor %}
+{% endif %}
 	}
 	if err := cursor.Advance(frameLen); err != nil {
 		return nil, err
@@ -317,9 +337,14 @@ func Decode{{ struct_name }}(cursor *codec.SceCursor{{ params_after_first_arg }}
 {{ go_source.decoded }}
 {% endif %}
 	value := &{{ struct_name }}{
-{% for field in fields if not field.derived %}
+{% for field in fields if not field.derived and not field.grouped %}
 		{{ field.member }}: {{ field.made | default(field.id) }},
 {% endfor %}
+{% if go_source %}
+{% for group in go_source.groups %}
+		{{ group.member }}: {{ group.made }},
+{% endfor %}
+{% endif %}
 	}
 	if err := cursor.Advance({{ min_bytes }}); err != nil {
 		return nil, err

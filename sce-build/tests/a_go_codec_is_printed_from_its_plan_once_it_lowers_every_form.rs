@@ -1151,16 +1151,143 @@ fn a_variant_of_an_arm_the_printer_does_not_print_keeps_the_template_encode() {
     );
 }
 
+/// The fields one flag decides on one side are presented whole, as the
+/// optional type of a struct of them; the encode binds each member to a local
+/// of its own from the group the source presents, derives the flag from it,
+/// and the decode makes the group of what it read where the flag holds.
+///
+/// Turns red where `positional_forms` names a group of the codec's own flag
+/// again, where `bind_group` reads a member off anything but the group, where
+/// the presence fold reads the source instead of the member's local, or where
+/// the template holds a member in a field of its own (`field.grouped`).
+#[test]
+fn a_group_of_one_flag_is_presented_whole_and_its_flag_derived() {
+    assert!(unlowered("codec_group_enum").is_empty());
+    let text = resource_go("codec_group_enum");
+    holds(
+        "codec_group_enum",
+        &text,
+        &[
+            "func MakeCodecGroupEnumFlagsHasSession(",
+            "\treturn CodecGroupEnumFlagsHasSession{state: state, attempts: attempts}\n",
+            "func (a CodecGroupEnumFlagsHasSession) Attempts() uint8 {\n\treturn a.attempts\n}\n",
+            "\tFlagsHasSession() optional.Of[CodecGroupEnumFlagsHasSession]\n",
+            "\tflagsHasSession optional.Of[CodecGroupEnumFlagsHasSession]\n",
+            "\t_rFlagsHasSession := src.FlagsHasSession()\n",
+            "\tvar _mAttempts optional.Of[uint8]\n",
+            "\tif _h, ok := _rFlagsHasSession.Get(); ok {\n\t\t_g := _h\n",
+            "\t\t_mAttempts = optional.Some(_g.Attempts())\n",
+            "\t_cFlags &^= 0x1\n\tif _mState.IsPresent() {\n\t\t_cFlags |= 0x1\n\t}\n",
+            "\tif _mAttempts.IsPresent() {\n",
+            "\tvar _gFlagsHasSession optional.Of[CodecGroupEnumFlagsHasSession]\n\
+             \tif ((Flags >> 0) & 1) != 0 {\n\
+             \t\t_gFlagsHasSession = optional.Some(MakeCodecGroupEnumFlagsHasSession(\
+             State.Proven(), Attempts.Proven()))\n\
+             \t}\n",
+            "\t\tflagsHasSession: _gFlagsHasSession,\n",
+        ],
+    );
+    holds_none(
+        "codec_group_enum",
+        &text,
+        &[
+            "src.Attempts()",
+            "\tattempts optional.Of[uint8]\n",
+            "src.State()",
+        ],
+    );
+}
+
+/// Two lists of one count are one member of the arm that holds both, the
+/// runtime's `codec.Aligned` of them, made only of two lists of one count
+/// (docs/adr/0065 §6 R5); the count is derived from the first, read off
+/// whichever arm the value holds.
+///
+/// Turns red where `bind_group` reads either list other than out of the pair
+/// in the arm that holds both, or where the decode pairs them without
+/// `codec.MakeAligned`.
+#[test]
+fn two_lists_of_one_count_are_held_as_one_aligned_pair() {
+    assert!(unlowered("codec_repeat_unconditional_count").is_empty());
+    let text = resource_go("codec_repeat_unconditional_count");
+    holds(
+        "codec_repeat_unconditional_count",
+        &text,
+        &[
+            "\t_rOptionsH := src.OptionsH()\n",
+            "\t\t_mLinks = optional.Some(_g.LinksWeights().First())\n\
+             \t\t_mWeights = optional.Some(_g.LinksWeights().Second())\n",
+            "\t\t_mLinks = optional.Some(_g.Links())\n",
+            "\t_dLinksLen := uint8(_mLinks.Proven().Len())\n",
+            "_aLinksWeights, ok := codec.MakeAligned(_lLinks, _lWeights.Proven())\n",
+            "\tlinksWeights codec.Aligned[codec.List[CodecRepeatUnconditionalCountLinksBound, \
+             codec_repeat_elem.CodecRepeatElemSource], codec.List[\
+             CodecRepeatUnconditionalCountWeightsBound, codec_repeat_elem.CodecRepeatElemSource]]\n",
+        ],
+    );
+    holds_none(
+        "codec_repeat_unconditional_count",
+        &text,
+        &["src.Links()", "src.Weights()"],
+    );
+}
+
+/// The fields a disjunction of the codec's own flags decides are presented
+/// as the arm of a sum the value holds, none where no flag is set, and each
+/// flag of the disjunction is derived from the arm (docs/adr/0065 §6 R4c).
+///
+/// Turns red where `positional_forms` names a flag of a disjunction again, or
+/// where `group_gate_bit` sets a flag for an arm that clears it or for the
+/// value that holds no arm.
+#[test]
+fn a_disjunction_derives_each_flag_from_the_arm_the_value_holds() {
+    let name = "go_group_of_a_disjunction";
+    let document = r#"<?xml version="1.0" encoding="UTF-8"?>
+<scxml xmlns="http://www.w3.org/2005/07/scxml"
+       xmlns:sce="http://sce.dev/ext"
+       sce:kind="codec" sce:default-endian="big" name="go_group_of_a_disjunction">
+  <datamodel>
+    <sce:flags id="flags" sce:type="uint8" sce:byte="0" sce:bit-size="8">
+      <sce:flag name="wants_a" bit="0"/>
+      <sce:flag name="wants_b" bit="1"/>
+    </sce:flags>
+    <sce:field id="seq" sce:type="uint16" sce:byte="1" sce:bit-size="16"
+               sce:present-if="flags.wants_a || flags.wants_b"/>
+    <sce:field id="ack" sce:type="uint8" sce:byte="3" sce:bit-size="8"
+               sce:present-if="flags.wants_a || flags.wants_b"/>
+  </datamodel>
+</scxml>
+"#;
+    let text =
+        go_of_document(name, document).unwrap_or_else(|e| panic!("{name} generates on Go: {e}"));
+    holds(
+        name,
+        &text,
+        &[
+            "\tFlagsWantsAOrWantsB() optional.Of[GoGroupOfADisjunctionFlagsWantsAOrWantsB]\n",
+            "type GoGroupOfADisjunctionFlagsWantsAOrWantsB interface {\n",
+            "\tvar _aFlagsWantsA uint64\n\
+             \tif _h, ok := _rFlagsWantsAOrWantsB.Get(); ok {\n\
+             \t\tswitch _h.(type) {\n",
+            "\t\t\t_aFlagsWantsA = 1\n",
+            "\t_cFlags = (_cFlags &^ 0x1) | (uint8(_aFlagsWantsA & 0x1) << 0)\n",
+            "\t_cFlags = (_cFlags &^ 0x2) | (uint8(_aFlagsWantsB & 0x1) << 1)\n",
+        ],
+    );
+    holds_none(name, &text, &["src.Seq()", "src.Ack()"]);
+}
+
 /// A codec of a form the Go printer does not lower keeps the template's
 /// encode whole: its fields stay exported, and it has no source, constructor
 /// or encode over a source.
 ///
-/// Turns red where `go_source::positional_forms` stops naming a group or a
-/// CBOR map, or where `render_codec` prints a codec it names a form of.
+/// Turns red where `go_source::positional_forms` stops naming a group a
+/// chain's entries decide or a CBOR map, or where `render_codec` prints a
+/// codec it names a form of.
 #[test]
 fn a_codec_of_a_form_the_printer_does_not_lower_keeps_the_template_encode() {
     for (name, form) in [
-        ("codec_chain_has_marker", "a group of fields"),
+        ("codec_chain_has_marker", "a group a chain's entries decide"),
         ("codec_cbor_map", "a CBOR map"),
     ] {
         let forms = unlowered(name);
@@ -1261,6 +1388,8 @@ fn the_go_backend_prints_each_codec_of_the_resources_whose_forms_it_lowers() {
         "codec_variant_default_marker",
         "codec_source_leaf",
         "codec_source_parent_tag",
+        "codec_group_enum",
+        "codec_repeat_unconditional_count",
     ] {
         assert!(
             printed.iter().any(|stem| stem == name),
