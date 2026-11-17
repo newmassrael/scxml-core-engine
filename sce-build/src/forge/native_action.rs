@@ -1920,8 +1920,9 @@ fn guard_payload(
         Language::Cpp => {
             let otherwise = if raises_error {
                 format!(
-                    " else {{\n    engine.raise(typename Engine::EventWithMetadata(\
-                     Event::Error_execution, \"{msg}\"));\n}}"
+                    " else {{\n    engine.raise(Engine::EventWithMetadata::platformError(\
+                     Event::Error_execution, ::SCE::Common::ErrorReason::PayloadRefused, \
+                     \"{msg}\"));\n}}"
                 )
             } else {
                 String::new()

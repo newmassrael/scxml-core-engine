@@ -11177,9 +11177,18 @@ impl StaticTarget for CppTarget {
             ),
         })
     }
-    fn raise_execution_error(&self, _machine: &str, _reason: &str, message: &str) -> String {
+    // The record's code is a member of the enum generated into the embedded
+    // header directory (tools/codegen/trees/runtime-cpp.toml), which
+    // common/ErrorData.h names `SCE::Common::ErrorReason`.
+    fn raise_execution_error(&self, _machine: &str, reason: &str, message: &str) -> String {
         format!(
-            "engine.raise(typename Engine::EventWithMetadata(Event::Error_execution, \"{}\"));",
+            "engine.raise(Engine::EventWithMetadata::platformError(Event::Error_execution, \
+             ::SCE::Common::ErrorReason::{}, \"{}\"));",
+            crate::forge::enum_naming::variant_ident(
+                crate::generator::Language::Cpp,
+                ERROR_REASON_ENUM,
+                reason
+            ),
             filters::escape_cpp(message.to_string())
         )
     }

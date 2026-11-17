@@ -20,7 +20,7 @@
                 ::SCE::DataModelInitHelper::initializeVariableFromExpr(
                     scriptEngine, sessionId_.value(), "{{ var.id }}", {{ var.expr | to_script_source_expr }},
                     [&engine](const ::std::string& msg) {
-                        engine.raise(typename Engine::EventWithMetadata(Event::Error_execution, msg));
+                        engine.raise(Engine::EventWithMetadata::platformError(Event::Error_execution, ::SCE::Common::ErrorReason::ExpressionFailed, msg));
                     });
                 AOT_DEBUG("{{ log_prefix }}: Initialized state {{ state_id }} variable '{{ var.id }}' from expr");
 {% elif var.content %}
@@ -28,7 +28,7 @@
                 ::SCE::DataModelInitHelper::initializeVariable(
                     scriptEngine, sessionId_.value(), "{{ var.id }}", {{ var.content | to_script_source_data_content }},
                     [&engine](const ::std::string& msg) {
-                        engine.raise(typename Engine::EventWithMetadata(Event::Error_execution, msg));
+                        engine.raise(Engine::EventWithMetadata::platformError(Event::Error_execution, ::SCE::Common::ErrorReason::DataInitFailed, msg));
                     });
                 AOT_DEBUG("{{ log_prefix }}: Initialized state {{ state_id }} variable '{{ var.id }}' from content");
 {% elif var.src %}
@@ -37,7 +37,7 @@
                     scriptEngine, sessionId_.value(), "{{ var.id }}", "{{ var.src }}",
                     ::SCE::DataModelInitHelper::resolveExecutableBasePath("{{ base_path }}"),
                     [&engine](const ::std::string& msg) {
-                        engine.raise(typename Engine::EventWithMetadata(Event::Error_execution, msg));
+                        engine.raise(Engine::EventWithMetadata::platformError(Event::Error_execution, ::SCE::Common::ErrorReason::DataInitFailed, msg));
                     });
                 AOT_DEBUG("{{ log_prefix }}: Initialized state {{ state_id }} variable '{{ var.id }}' from src");
 {% endif %}

@@ -26,8 +26,8 @@
 {% macro param_eval_failed(param, indent) %}
 {{ indent }}// W3C SCXML 5.7.1: report the failure and omit the name and value.
 {{ indent }}SCE_LOG_ERROR("<send> <param name='{{ param.name | escape_cpp }}'> could not be read");
-{{ indent }}engine.raise(typename Engine::EventWithMetadata(
-{{ indent }}    Event::Error_execution,
+{{ indent }}engine.raise(Engine::EventWithMetadata::platformError(
+{{ indent }}    Event::Error_execution, ::SCE::Common::ErrorReason::{{ 'ExpressionFailed' if param.expr else 'LocationInvalid' }},
 {{ indent }}    "<send> <param name='{{ param.name | escape_cpp }}'> could not be read"));
 {{ indent }}paramFailed = true;
 {% endmacro %}
@@ -36,10 +36,11 @@
    message without attempting to deliver it. Furthermore, it MUST place the
    error 'error.execution' on the internal event queue." The error carries the
    send id (W3C SCXML 5.10.1, test332), and — raised while the element was
-   processed — it ends the block (W3C SCXML 4.9). #}
-{% macro send_arg_error(message, block_end, indent) %}
+   processed — it ends the block (W3C SCXML 4.9). `reason` is the member of
+   `SCE::Common::ErrorReason` the record carries (docs/adr/0106 #111). #}
+{% macro send_arg_error(reason, message, block_end, indent) %}
 {{ indent }}SCE_LOG_ERROR("{{ message | escape_cpp_format }}");
-{{ indent }}engine.raise(typename Engine::EventWithMetadata(Event::Error_execution, "{{ message | escape_cpp }}", std::nullopt, sendId));
+{{ indent }}engine.raise(Engine::EventWithMetadata::platformError(Event::Error_execution, ::SCE::Common::ErrorReason::{{ reason }}, "{{ message | escape_cpp }}", sendId));
 {{ indent }}{{ block_end or 'return;' }}  // W3C SCXML 4.9: the error ends the block
 {% endmacro %}
 {# W3C SCXML 5.10 / B.2: what `_event.data` is for this <send>, computed in ONE
@@ -74,8 +75,8 @@ std::string contentText;  // the `<content expr>` value as the text a host takes
         params,
         [&engine, &sendId](const std::string& msg) {
             SCE_LOG_ERROR("Namelist evaluation failed: {}", msg);
-            engine.raise(typename Engine::EventWithMetadata(
-                Event::Error_execution, "<send> namelist: " + msg, std::nullopt, sendId));
+            engine.raise(Engine::EventWithMetadata::platformError(
+                Event::Error_execution, ::SCE::Common::ErrorReason::LocationInvalid, "<send> namelist: " + msg, sendId));
         },
         &typedParams
     );
@@ -122,7 +123,7 @@ typedParams["{{ param.name | escape_cpp }}"].push_back(ScriptValue(std::string({
    one error carrying the send id, nothing delivered, the block ended. #}
         // docs/adr/0086, section 15.6: the list is short of its field's lower
         // count, so the event is refused whole (W3C SCXML 6.2.3, 4.9).
-{{ send_arg_error("<send> <param name='" ~ param.name ~ "'> holds fewer elements than the " ~ param.native_send_least ~ " its field's type declares, so the event is not sent", block_end, '        ') }}
+{{ send_arg_error('ParamUnfit', "<send> <param name='" ~ param.name ~ "'> holds fewer elements than the " ~ param.native_send_least ~ " its field's type declares, so the event is not sent", block_end, '        ') }}
 {% else %}
 {{ param_eval_failed(param, '        ') }}
 {% endif %}
@@ -188,7 +189,7 @@ eventData = contentData;
         eventData,
         [&engine](const std::string& msg) {
             SCE_LOG_WARN("send content evaluation failed: {}", msg);
-            engine.raise(typename Engine::EventWithMetadata(Event::Error_execution, msg));
+            engine.raise(Engine::EventWithMetadata::platformError(Event::Error_execution, ::SCE::Common::ErrorReason::ExpressionFailed, msg));
         },
         &typedData);
 }
@@ -226,8 +227,8 @@ typedData = ::SCE::EventDataHelper::jsonStringToScriptValue(eventData);
 {% if action.native_content_value_fails %}
     if (SCE_EXPECT_FALSE(sce_failure_.failed())) {
         SCE_LOG_ERROR("<send> contentexpr failed to evaluate");
-        engine.raise(typename Engine::EventWithMetadata(Event::Error_execution,
-                                                        "<send> contentexpr failed to evaluate"));
+        engine.raise(Engine::EventWithMetadata::platformError(Event::Error_execution, ::SCE::Common::ErrorReason::ExpressionFailed,
+                                                              "<send> contentexpr failed to evaluate"));
         paramFailed = true;
         contentValue = ScriptValue(std::string());
     }
@@ -254,8 +255,8 @@ typedData = ::SCE::EventDataHelper::jsonStringToScriptValue(eventData);
         eventData,
         [&engine, &contentFailed](const std::string& msg) {
             SCE_LOG_ERROR("<send> contentexpr failed to evaluate: {}", msg);
-            engine.raise(typename Engine::EventWithMetadata(Event::Error_execution,
-                                                            "<send> contentexpr failed to evaluate"));
+            engine.raise(Engine::EventWithMetadata::platformError(Event::Error_execution, ::SCE::Common::ErrorReason::ExpressionFailed,
+                                                                  "<send> contentexpr failed to evaluate"));
             contentFailed = true;
         },
         &typedData);
@@ -392,7 +393,7 @@ ensureSessionId();
 // "Durations"; the build decided it once). It is known before anything is
 // evaluated, so the send ends here with the argument error, as it does on
 // every engine — and nothing after it is emitted.
-{{ send_arg_error("<send> delay is not a CSS2 time", block_end, '') }}
+{{ send_arg_error('SendDelayInvalid', "<send> delay is not a CSS2 time", block_end, '') }}
 {# The exit is unconditional: the action list emits nothing after this
    element (`block_flow`, entry_exit_actions.jinja2). #}
 {% set block_flow.ended = true %}
@@ -402,7 +403,7 @@ ensureSessionId();
    evaluated". #}
 {% if action.native_idlocation %}
 if (sendIdRefused) {
-{{ send_arg_error("<send idlocation='" ~ action.idlocation ~ "'> could not take the send id", block_end, '    ') }}
+{{ send_arg_error('LocationInvalid', "<send idlocation='" ~ action.idlocation ~ "'> could not take the send id", block_end, '    ') }}
 }
 {% endif %}
 {% if action.idlocation and not action.native_idlocation %}
@@ -417,7 +418,7 @@ if (sendIdRefused) {
     if (!::SCE::AssignmentExecutionHelper::storeIdInLocation(
             scriptEngine, sessionId_.value(), {{ action.idlocation | to_script_source_location }}, sendId,
             [&engine](const std::string &error) {
-                engine.raise(typename Engine::EventWithMetadata(Event::Error_execution, error));
+                engine.raise(Engine::EventWithMetadata::platformError(Event::Error_execution, ::SCE::Common::ErrorReason::LocationInvalid, error));
             })) {
         {{ block_end or 'return;' }}  // W3C SCXML 6.2 + 4.9: discarded, and the block ends
     }
@@ -436,14 +437,14 @@ std::string dynamicType;
     auto& scriptEngine = getScriptEngine();
     auto typeResult = scriptEngine.evaluateExpression(sessionId_.value(), {{ action.typeexpr | to_script_source_expr }}).get();
     if (!::SCE::ScriptResultUtils::isSuccess(typeResult)) {
-{{ send_arg_error("<send> typeexpr could not be evaluated", block_end, '        ') }}
+{{ send_arg_error('ExpressionFailed', "<send> typeexpr could not be evaluated", block_end, '        ') }}
     }
     // docs/adr/0090, section 4: a processor's alias is read as its type URI
     // where the type is resolved, as a written `type` is by the build.
     dynamicType = ::SCE::IOProcessorHelper::canonicalProcessorType(::SCE::ScriptResultUtils::resultToString(typeResult, &scriptEngine, sessionId_.value(), {{ action.typeexpr | to_script_source_expr }}));
 }
 if (!::SCE::SendHelper::isSupportedSendType(dynamicType)) {
-{{ send_arg_error("<send> typeexpr names a processor this platform does not support", block_end, '    ') }}
+{{ send_arg_error('SendTypeUnsupported', "<send> typeexpr names a processor this platform does not support", block_end, '    ') }}
 }
 {% else %}
 #error "SCE codegen drift: `<send typeexpr=>` is a dynamic attribute, yet this machine emits no script engine. script_engine_analyzer::send_has_dynamic_attr must raise SendDynamicAttr for it."
@@ -471,7 +472,7 @@ std::string eventName;
 {% endif %}
 }
 if (eventName.empty()) {
-{{ send_arg_error("<send> eventexpr could not be evaluated to an event name", block_end, '    ') }}
+{{ send_arg_error('ExpressionFailed', "<send> eventexpr could not be evaluated to an event name", block_end, '    ') }}
 }
 {% elif has_script %}
 {
@@ -483,7 +484,7 @@ if (eventName.empty()) {
     }
 }
 if (eventName.empty()) {
-{{ send_arg_error("<send> eventexpr could not be evaluated to an event name", block_end, '    ') }}
+{{ send_arg_error('ExpressionFailed', "<send> eventexpr could not be evaluated to an event name", block_end, '    ') }}
 }
 {% else %}
 #error "SCE codegen drift: `<send eventexpr=>` is a dynamic attribute, yet this machine emits no script engine. script_engine_analyzer::send_has_dynamic_attr must raise SendDynamicAttr for it."
@@ -514,7 +515,7 @@ std::string dynamicTarget;
     std::string sceRoute = {{ action.native_target }};
 {% if action.native_target_fails %}
     if (SCE_EXPECT_FALSE(sce_failure_.failed())) {
-{{ send_arg_error("<send> targetexpr could not be evaluated", block_end, '        ') }}
+{{ send_arg_error('ExpressionFailed', "<send> targetexpr could not be evaluated", block_end, '        ') }}
     }
 {% endif %}
     if ({% for entry in action.targets %}sceRoute == "{{ entry | escape_cpp }}"{% if not loop.last %} || {% endif %}{% endfor %}) {
@@ -527,7 +528,7 @@ std::string dynamicTarget;
     auto& scriptEngine = getScriptEngine();
     auto targetResult = scriptEngine.evaluateExpression(sessionId_.value(), {{ action.targetexpr | to_script_source_expr }}).get();
     if (!::SCE::ScriptResultUtils::isSuccess(targetResult)) {
-{{ send_arg_error("<send> targetexpr could not be evaluated", block_end, '        ') }}
+{{ send_arg_error('ExpressionFailed', "<send> targetexpr could not be evaluated", block_end, '        ') }}
     }
     dynamicTarget = ::SCE::ScriptResultUtils::resultToString(targetResult, &scriptEngine, sessionId_.value(), {{ action.targetexpr | to_script_source_expr }});
 }
@@ -543,15 +544,15 @@ dynamicTarget = ::SCE::Core::originAddressOf(pendingEventOrigin_);
 // W3C SCXML 6.2 (test 159, 194): a target this processor cannot address is
 // refused as a static one is.
 if (::SCE::SendHelper::isInvalidTarget(dynamicTarget)) {
-{{ send_arg_error("<send> targetexpr produced a target this processor cannot address", block_end, '    ') }}
+{{ send_arg_error('SendTargetInvalid', "<send> targetexpr produced a target this processor cannot address", block_end, '    ') }}
 }
 // W3C SCXML C.1 (test 496): a target that names nothing is not reachable —
 // error.communication, nothing delivered, and the error ends the block as
 // any other would (W3C SCXML 4.9).
 if (::SCE::SendHelper::isUnreachableTarget(dynamicTarget)) {
     SCE_LOG_ERROR("Send target evaluation resulted in invalid target: '{}'", dynamicTarget);
-    engine.raise(typename Engine::EventWithMetadata(
-        Event::Error_communication, "<send> targetexpr resolved to a target that cannot be reached{% if action.native_target %}, or to a route the send does not declare{% endif %}", std::nullopt, sendId));
+    engine.raise(Engine::EventWithMetadata::platformError(
+        Event::Error_communication, ::SCE::Common::ErrorReason::TargetUnreachable, "<send> targetexpr resolved to a target that cannot be reached{% if action.native_target %}, or to a route the send does not declare{% endif %}", sendId));
     {{ block_end or 'return;' }}
 }
 {% endif %}
@@ -573,12 +574,12 @@ if (::SCE::SendHelper::isUnreachableTarget(dynamicTarget)) {
     const std::string delayText = {{ action.native_delay }};
 {% if action.native_delay_fails %}
     if (SCE_EXPECT_FALSE(sce_failure_.failed())) {
-{{ send_arg_error("<send> delayexpr could not be evaluated", block_end, '        ') }}
+{{ send_arg_error('ExpressionFailed', "<send> delayexpr could not be evaluated", block_end, '        ') }}
     }
 {% endif %}
     const auto parsedDelay = ::SCE::SendSchedulingHelper::parseDelayString(delayText);
     if (!parsedDelay) {
-{{ send_arg_error("<send> delayexpr is not a CSS2 time", block_end, '        ') }}
+{{ send_arg_error('SendDelayInvalid', "<send> delayexpr is not a CSS2 time", block_end, '        ') }}
     }
     delayMs = *parsedDelay;
 }
@@ -588,11 +589,11 @@ if (::SCE::SendHelper::isUnreachableTarget(dynamicTarget)) {
     auto& scriptEngine = getScriptEngine();
     auto delayResult = scriptEngine.evaluateExpression(sessionId_.value(), {{ action.delayexpr | to_script_source_expr }}).get();
     if (!::SCE::ScriptResultUtils::isSuccess(delayResult)) {
-{{ send_arg_error("<send> delayexpr could not be evaluated", block_end, '        ') }}
+{{ send_arg_error('ExpressionFailed', "<send> delayexpr could not be evaluated", block_end, '        ') }}
     }
     const auto parsedDelay = ::SCE::SendSchedulingHelper::parseDelayString(::SCE::ScriptResultUtils::resultToString(delayResult));
     if (!parsedDelay) {
-{{ send_arg_error("<send> delayexpr is not a CSS2 time", block_end, '        ') }}
+{{ send_arg_error('SendDelayInvalid', "<send> delayexpr is not a CSS2 time", block_end, '        ') }}
     }
     delayMs = *parsedDelay;
 }
@@ -607,9 +608,9 @@ if (::SCE::SendHelper::isUnreachableTarget(dynamicTarget)) {
 {% if is_http and action.targetexpr %}
 // W3C SCXML C.2: Validate dynamic target is HTTP URL (error.communication if not)
 if (!::SCE::SendHelper::isHttpTarget(dynamicTarget)) {
-    engine.raise(typename Engine::EventWithMetadata(
-        Event::Error_communication,
-        "<send> over BasicHTTPEventProcessor resolved a target that is not an http(s) URL", std::nullopt, sendId));
+    engine.raise(Engine::EventWithMetadata::platformError(
+        Event::Error_communication, ::SCE::Common::ErrorReason::HttpTargetInvalid,
+        "<send> over BasicHTTPEventProcessor resolved a target that is not an http(s) URL", sendId));
     {{ block_end or 'return;' }}
 }
 {% endif %}
@@ -627,19 +628,19 @@ if (!::SCE::SendHelper::isHttpTarget(dynamicTarget)) {
 // every backend renders from — and it is also what a `--host-processor`
 // declaration MOVES, so a runtime re-derivation would refuse a type the
 // build had already promised to dispatch.
-{{ send_arg_error("<send type='" ~ action.send_type ~ "'> names a processor this platform does not support", block_end, '') }}
+{{ send_arg_error('SendTypeUnsupported', "<send type='" ~ action.send_type ~ "'> names a processor this platform does not support", block_end, '') }}
 {# Each refusal arm's exit is unconditional: the action list emits nothing
    after this element (`block_flow`, entry_exit_actions.jinja2). #}
 {% set block_flow.ended = true %}
 {% elif action.target_unsupported %}
 // W3C SCXML 6.2.4 (tests 159, 194): a target this processor cannot address —
 // `Action::target_unsupported`, decided once at build time for every backend.
-{{ send_arg_error("<send target='" ~ action.target ~ "'> is not a target this processor can address", block_end, '') }}
+{{ send_arg_error('SendTargetInvalid', "<send target='" ~ action.target ~ "'> is not a target this processor can address", block_end, '') }}
 {% set block_flow.ended = true %}
 {% elif is_http and not action.target and not action.targetexpr %}
 // W3C SCXML C.2 (test 577): BasicHTTP names no target to post to.
-engine.raise(typename Engine::EventWithMetadata(
-    Event::Error_communication, "<send> over BasicHTTPEventProcessor has no target to post to", std::nullopt, sendId));
+engine.raise(Engine::EventWithMetadata::platformError(
+    Event::Error_communication, ::SCE::Common::ErrorReason::HttpTargetInvalid, "<send> over BasicHTTPEventProcessor has no target to post to", sendId));
 {{ block_end or 'return;' }}  // W3C SCXML 4.9: the error ends the block
 {% set block_flow.ended = true %}
 {% else %}
@@ -655,8 +656,8 @@ if (sessionId_.value_or("") != "{{ action.target | slice_from(8) | escape_cpp }}
 {% else %}
 {
 {% endif %}
-    engine.raise(typename Engine::EventWithMetadata(
-        Event::Error_communication, "<send target='{{ action.target | escape_cpp }}'> names a session this processor cannot reach", std::nullopt, sendId));
+    engine.raise(Engine::EventWithMetadata::platformError(
+        Event::Error_communication, ::SCE::Common::ErrorReason::TargetUnreachable, "<send target='{{ action.target | escape_cpp }}'> names a session this processor cannot reach", sendId));
     {{ block_end or 'return;' }}
 }
 {# With no script engine there is no session id to compare, so the block
@@ -683,7 +684,7 @@ if (sessionId_.value_or("") != "{{ action.target | slice_from(8) | escape_cpp }}
 // has no wire-level mesh path (no envelope carries a deadline for the
 // parent's macrostep selection). Emit error.execution so authors notice
 // rather than silently dropping the delay.
-{{ send_arg_error("<send target='#_parent'> with a delay has no mesh path to the parent", block_end, '') }}
+{{ send_arg_error('SendTargetInvalid', "<send target='#_parent'> with a delay has no mesh path to the parent", block_end, '') }}
 {% set block_flow.ended = true %}
 {% else %}
 // W3C SCXML 6.2 + SCE_MESH.md §9.6.2 wire-16: Immediate send to parent via
@@ -716,8 +717,8 @@ if (!engine.getPolicy().deliverToParent(::SCE::Common::ForwardedEvent{
     // W3C SCXML C.1: this session was started by its host, not by an
     // `<invoke>`, so `#_parent` reaches nobody — error.communication, nothing
     // delivered, the block ended (4.9).
-    engine.raise(typename Engine::EventWithMetadata(
-        Event::Error_communication, "<send target='#_parent'> has no parent session to reach", std::nullopt, sendId));
+    engine.raise(Engine::EventWithMetadata::platformError(
+        Event::Error_communication, ::SCE::Common::ErrorReason::TargetUnreachable, "<send target='#_parent'> has no parent session to reach", sendId));
     {{ block_end or 'return;' }}
 }
 {% endif %}
@@ -769,16 +770,16 @@ if (!engine.getPolicy().deliverToParent(::SCE::Common::ForwardedEvent{
 } else {
     // W3C SCXML C.1: the invocation is not running, so the session the target
     // names is not there to reach.
-    engine.raise(typename Engine::EventWithMetadata(
-        Event::Error_communication, "<send target='{{ action.target | escape_cpp }}'> names an invocation that is not running", std::nullopt, sendId));
+    engine.raise(Engine::EventWithMetadata::platformError(
+        Event::Error_communication, ::SCE::Common::ErrorReason::TargetUnreachable, "<send target='{{ action.target | escape_cpp }}'> names an invocation that is not running", sendId));
     {{ block_end or 'return;' }}
 }
 {% else %}
 // W3C SCXML C.1 + 6.4: no invocation of this document is called
 // "{{ action.target | slice_from(2) }}", so the target reaches
 // nobody: error.communication, nothing delivered, the block ended.
-engine.raise(typename Engine::EventWithMetadata(
-    Event::Error_communication, "<send target='{{ action.target | escape_cpp }}'> names no invocation of this session", std::nullopt, sendId));
+engine.raise(Engine::EventWithMetadata::platformError(
+    Event::Error_communication, ::SCE::Common::ErrorReason::TargetUnreachable, "<send target='{{ action.target | escape_cpp }}'> names no invocation of this session", sendId));
 {{ block_end or 'return;' }}
 {% set block_flow.ended = true %}
 {% endif %}
@@ -835,9 +836,9 @@ engine.raise(typename Engine::EventWithMetadata(
     // asked for was performed by nobody. Same event as an undeclared type, so
     // a wiring mistake cannot read as success.
     if (!hostServed.has_value() && !engine.hasEventProcessor("{{ action.send_type | escape_cpp }}")) {
-        engine.raise(typename Engine::EventWithMetadata(
-            Event::Error_execution,
-            "<send type='{{ action.send_type }}'> names a processor the host declared but never registered", std::nullopt, sendId));
+        engine.raise(Engine::EventWithMetadata::platformError(
+            Event::Error_execution, ::SCE::Common::ErrorReason::ProcessorUnregistered,
+            "<send type='{{ action.send_type }}'> names a processor the host declared but never registered", sendId));
     }
 {% endif %}
 }
@@ -866,11 +867,11 @@ if (sendEvent) {
                                             {% if has_delay %}delayMs{% else %}std::chrono::milliseconds{0}{% endif %},
                                             sendId, eventData, {% if has_script %}sessionId_.value_or(""){% else %}""{% endif %});
     if (routed == Engine::TargetSendOutcome::Unsupported) {
-{{ send_arg_error("<send> targetexpr produced a value that is not a target", block_end, '        ') }}
+{{ send_arg_error('SendTargetInvalid', "<send> targetexpr produced a value that is not a target", block_end, '        ') }}
     }
     if (routed == Engine::TargetSendOutcome::Unreachable) {
-        engine.raise(typename Engine::EventWithMetadata(
-            Event::Error_communication, "<send> targetexpr names a session this processor cannot reach", std::nullopt, sendId));
+        engine.raise(Engine::EventWithMetadata::platformError(
+            Event::Error_communication, ::SCE::Common::ErrorReason::TargetUnreachable, "<send> targetexpr names a session this processor cannot reach", sendId));
         {{ block_end or 'return;' }}
     }
 }

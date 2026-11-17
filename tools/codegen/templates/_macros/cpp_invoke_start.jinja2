@@ -22,7 +22,7 @@
 {{ indent }}    {{ flag }} = ::SCE::AssignmentExecutionHelper::storeIdInLocation(
 {{ indent }}        getScriptEngine(), sessionId_.value(), {{ invoke_info.idlocation | to_script_source_location }}, {{ id_expr }},
 {{ indent }}        [&engine](const std::string &error) {
-{{ indent }}            engine.raise(typename Engine::EventWithMetadata(Event::Error_execution, error));
+{{ indent }}            engine.raise(Engine::EventWithMetadata::platformError(Event::Error_execution, ::SCE::Common::ErrorReason::LocationInvalid, error));
 {{ indent }}        });
 {{ indent }}}
 {%- endif %}
@@ -46,7 +46,7 @@
 {{ indent }}    // `native_idlocation` answers whether the variable refused the id.
 {{ indent }}    if ({{ inv.native_idlocation }}) {
 {% if raises_error %}
-{{ indent }}        engine.raise(typename Engine::EventWithMetadata(Event::Error_execution, "<invoke idlocation='{{ inv.idlocation | escape_cpp }}'> could not take the invoke id"));
+{{ indent }}        engine.raise(Engine::EventWithMetadata::platformError(Event::Error_execution, ::SCE::Common::ErrorReason::LocationInvalid, "<invoke idlocation='{{ inv.idlocation | escape_cpp }}'> could not take the invoke id"));
 {% endif %}
 {{ indent }}    } else {
 {{ indent }}        ::SCE::Core::InvokeHelper::deferInvoke(pendingInvokes_,

@@ -171,7 +171,7 @@ fn expectations() -> Vec<Expectation> {
             host_seam: "private val actions: StatechartNativeActionActions,",
             receiver: "actions.",
             payload_guard: "pendingFragmentReceivedPayload?.let {",
-            error_arm: "?: run { raiseInternal(StatechartNativeActionEvent.Error.Execution,",
+            error_arm: "?: run { raisePlatformError(StatechartNativeActionEvent.Error.Execution,",
             method: camel,
         },
         Expectation {
@@ -195,7 +195,9 @@ fn expectations() -> Vec<Expectation> {
             receiver: "actions_->",
             payload_guard:
                 "pendingPayloadTag_ == StatechartNativeActionPayloadTag::FragmentReceived",
-            error_arm: "engine.raise(typename Engine::EventWithMetadata(Event::Error_execution,",
+            // clang-format wraps the call after its first argument, so the
+            // code is the next line's and is not part of what is matched.
+            error_arm: "engine.raise(Engine::EventWithMetadata::platformError(Event::Error_execution,",
             method: camel,
         },
         Expectation {

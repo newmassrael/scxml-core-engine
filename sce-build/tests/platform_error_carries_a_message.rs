@@ -115,14 +115,16 @@ const BACKENDS: &[Backend] = &[
         entry_point: "<machine>_raise_platform_error(sm, event, message)",
     },
     Backend {
-        // The C++ tree is the top level plus `actions/`; `Event::Error_x)`
-        // with nothing before the paren is the no-message constructor.
+        // The C++ tree is the top level plus `actions/`. The constructor
+        // takes the event and any data, so a raise through it carries no
+        // record, whether it is handed a sentence or nothing
+        // (docs/adr/0106 #111).
         dir: "",
         bypass: &[
-            "EventWithMetadata(Event::Error_execution)",
-            "EventWithMetadata(Event::Error_communication)",
+            "EventWithMetadata(Event::Error_execution",
+            "EventWithMetadata(Event::Error_communication",
         ],
-        entry_point: "EventWithMetadata(event, message)",
+        entry_point: "EventWithMetadata::platformError(event, reason, detail)",
     },
 ];
 

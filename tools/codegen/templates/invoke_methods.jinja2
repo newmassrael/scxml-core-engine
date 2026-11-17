@@ -37,7 +37,7 @@
                                 [&engine](const std::string& errorMsg) {
                                     SCE_LOG_ERROR("Namelist evaluation failed for invoke {{ invoke_info.invoke_id }}: {}", errorMsg);
                                     // W3C SCXML 6.4.1: Raise error.execution on namelist error
-                                    engine.raise(typename Engine::EventWithMetadata(Event::Error_execution, errorMsg));
+                                    engine.raise(Engine::EventWithMetadata::platformError(Event::Error_execution, ::SCE::Common::ErrorReason::LocationInvalid, errorMsg));
                                 },
                                 &namelistTypedParams
                             );
@@ -106,7 +106,7 @@
                                 if (SCE_EXPECT_FALSE(sce_failure_.failed())) {
                                     SCE_LOG_ERROR("Invoke param '{{ param.name | escape_cpp }}' overflowed or failed");
                                     {% if 'error.execution' in model.events %}
-                                    engine.raise(typename Engine::EventWithMetadata(Event::Error_execution, "<invoke> <param name='{{ param.name | escape_cpp }}'> could not be read"));
+                                    engine.raise(Engine::EventWithMetadata::platformError(Event::Error_execution, ::SCE::Common::ErrorReason::ExpressionFailed, "<invoke> <param name='{{ param.name | escape_cpp }}'> could not be read"));
                                     {% endif %}
                                 } else {
                                     seed.v_{{ param.name | to_snake_case }} = seedValue;
@@ -132,7 +132,7 @@
                             if (SCE_EXPECT_FALSE(sce_failure_.failed())) {
                                 SCE_LOG_ERROR("Invoke param '{{ param.name | escape_cpp }}' overflowed or failed");
                                 {% if 'error.execution' in model.events %}
-                                engine.raise(typename Engine::EventWithMetadata(Event::Error_execution, "<invoke> <param name='{{ param.name | escape_cpp }}'> could not be read"));
+                                engine.raise(Engine::EventWithMetadata::platformError(Event::Error_execution, ::SCE::Common::ErrorReason::ExpressionFailed, "<invoke> <param name='{{ param.name | escape_cpp }}'> could not be read"));
                                 {% endif %}
                             }
                         }
@@ -195,7 +195,7 @@
                            bound to a name first, so the migration scan reads
                            the site as the filter call it is. #}
                         {% if not (param.expr or param.location) %}
-                        engine.raise(typename Engine::EventWithMetadata(Event::Error_execution, "<invoke> <param name='{{ param.name | escape_cpp }}'> names no location"));
+                        engine.raise(Engine::EventWithMetadata::platformError(Event::Error_execution, ::SCE::Common::ErrorReason::LocationInvalid, "<invoke> <param name='{{ param.name | escape_cpp }}'> names no location"));
                         {% else %}
                         {
                             assertScriptSession();
@@ -227,7 +227,7 @@
                                 // element" is not what a failing `<param>` costs:
                                 // the child still starts, one pair short.
                                 SCE_LOG_ERROR("Failed to evaluate <invoke> param expression for {}: {}", "{{ param.name | escape_cpp }}", "{{ (param.expr if param.expr else param.location) | escape_cpp }}");
-                                engine.raise(typename Engine::EventWithMetadata(Event::Error_execution, "<invoke> <param name='{{ param.name | escape_cpp }}'> could not be read"));
+                                engine.raise(Engine::EventWithMetadata::platformError(Event::Error_execution, ::SCE::Common::ErrorReason::{{ 'ExpressionFailed' if param.expr else 'LocationInvalid' }}, "<invoke> <param name='{{ param.name | escape_cpp }}'> could not be read"));
                             }
                         }
                         {% endif %}
@@ -274,7 +274,7 @@
                             activeInvokes_.erase("{{ invoke_info.invoke_id }}");
                             {{ slot }}.reset();
 {% if 'error.execution' in model.events %}
-                            engine.raise(typename Engine::EventWithMetadata(Event::Error_execution,
+                            engine.raise(Engine::EventWithMetadata::platformError(Event::Error_execution, ::SCE::Common::ErrorReason::InvokeChildInitFailed,
                                 std::string("<invoke id='") + {{ invoke_named }} +
                                 "'> did not start: its child's script session failed at step '" +
                                 ::SCE::scriptSessionStageName(refused->stage) + "'"));
@@ -528,7 +528,7 @@
 {% if invoke_info.native_src_fails %}
                             if (SCE_EXPECT_FALSE(sce_failure_.failed())) {
 {% if 'error.execution' in model.events %}
-                                engine.raise(typename Engine::EventWithMetadata(Event::Error_execution, "<invoke srcexpr> could not be evaluated"));
+                                engine.raise(Engine::EventWithMetadata::platformError(Event::Error_execution, ::SCE::Common::ErrorReason::ExpressionFailed, "<invoke srcexpr> could not be evaluated"));
 {% endif %}
                                 return;
                             }
@@ -544,7 +544,7 @@
                             if (!::SCE::ScriptResultUtils::isSuccess(pathResult)) {
                                 SCE_LOG_ERROR("Hybrid invoke: srcexpr '{{ invoke_info.srcexpr | escape_cpp_format }}' evaluation failed");
 {% if 'error.execution' in model.events %}
-                                engine.raise(typename Engine::EventWithMetadata(Event::Error_execution, "<invoke srcexpr='{{ invoke_info.srcexpr | escape_cpp }}'> could not be evaluated"));
+                                engine.raise(Engine::EventWithMetadata::platformError(Event::Error_execution, ::SCE::Common::ErrorReason::ExpressionFailed, "<invoke srcexpr='{{ invoke_info.srcexpr | escape_cpp }}'> could not be evaluated"));
 {% endif %}
                                 return;
                             }
@@ -577,7 +577,7 @@
                             if (!::SCE::ScriptResultUtils::isSuccess(contentResult)) {
                                 SCE_LOG_ERROR("Hybrid invoke: contentexpr '{{ invoke_info.contentexpr | escape_cpp_format }}' evaluation failed");
 {% if 'error.execution' in model.events %}
-                                engine.raise(typename Engine::EventWithMetadata(Event::Error_execution, "<invoke contentexpr='{{ invoke_info.contentexpr | escape_cpp }}'> could not be evaluated"));
+                                engine.raise(Engine::EventWithMetadata::platformError(Event::Error_execution, ::SCE::Common::ErrorReason::ExpressionFailed, "<invoke contentexpr='{{ invoke_info.contentexpr | escape_cpp }}'> could not be evaluated"));
 {% endif %}
                                 return;
                             }
@@ -594,7 +594,7 @@
                         if ({% for candidate in invoke_info.candidates %}__sce_selected_{{ invoke_info.field_suffix }} != "{{ candidate.stem | escape_cpp }}"{{ " && " if not loop.last }}{% endfor %}) {
                             SCE_LOG_ERROR("Hybrid invoke: '{}' names no declared candidate", __sce_selected_{{ invoke_info.field_suffix }});
 {% if 'error.execution' in model.events %}
-                            engine.raise(typename Engine::EventWithMetadata(Event::Error_execution,
+                            engine.raise(Engine::EventWithMetadata::platformError(Event::Error_execution, ::SCE::Common::ErrorReason::InvokeSrcNotFound,
                                 "<invoke srcexpr{% if invoke_info.srcexpr %}='{{ invoke_info.srcexpr | escape_cpp }}'{% endif %}> evaluated to a document it did not declare"));
 {% endif %}
                             return;
@@ -668,7 +668,7 @@
                                 hostScript, sessionId_.value(), {{ invoke_info.idlocation | to_script_source_location }},
                                 "{{ invoke_info.invoke_id | escape_cpp }}",
                                 [&engine](const std::string &error) {
-                                    engine.raise(typename Engine::EventWithMetadata(Event::Error_execution, error));
+                                    engine.raise(Engine::EventWithMetadata::platformError(Event::Error_execution, ::SCE::Common::ErrorReason::LocationInvalid, error));
                                 })) {
                             return;
                         }
@@ -685,7 +685,7 @@
                             std::string computedSrc = {{ invoke_info.native_src }};
 {% if invoke_info.native_src_fails %}
                             if (SCE_EXPECT_FALSE(sce_failure_.failed())) {
-                                engine.raise(typename Engine::EventWithMetadata(Event::Error_execution, "<invoke srcexpr> could not be evaluated"));
+                                engine.raise(Engine::EventWithMetadata::platformError(Event::Error_execution, ::SCE::Common::ErrorReason::ExpressionFailed, "<invoke srcexpr> could not be evaluated"));
                                 return;
                             }
 {% endif %}
@@ -705,7 +705,7 @@
                             std::string computedContent = {{ invoke_info.native_content }};
 {% if invoke_info.native_content_fails %}
                             if (SCE_EXPECT_FALSE(sce_failure_.failed())) {
-                                engine.raise(typename Engine::EventWithMetadata(Event::Error_execution, "<invoke> content expr could not be evaluated"));
+                                engine.raise(Engine::EventWithMetadata::platformError(Event::Error_execution, ::SCE::Common::ErrorReason::ExpressionFailed, "<invoke> content expr could not be evaluated"));
                                 return;
                             }
 {% endif %}
@@ -716,7 +716,7 @@
                         {
                             auto srcResult = hostScript.evaluateExpression(sessionId_.value(), {{ invoke_info.srcexpr | to_script_source_expr }}).get();
                             if (!::SCE::ScriptResultUtils::isSuccess(srcResult)) {
-                                engine.raise(typename Engine::EventWithMetadata(Event::Error_execution, "<invoke srcexpr='{{ invoke_info.srcexpr | escape_cpp }}'> could not be evaluated"));
+                                engine.raise(Engine::EventWithMetadata::platformError(Event::Error_execution, ::SCE::Common::ErrorReason::ExpressionFailed, "<invoke srcexpr='{{ invoke_info.srcexpr | escape_cpp }}'> could not be evaluated"));
                                 return;
                             }
                             hostInvoke.src = ::SCE::ScriptResultUtils::resultToString(srcResult);
@@ -726,7 +726,7 @@
                         {
                             auto contentResult = hostScript.evaluateExpression(sessionId_.value(), {{ invoke_info.contentexpr | to_script_source_expr }}).get();
                             if (!::SCE::ScriptResultUtils::isSuccess(contentResult)) {
-                                engine.raise(typename Engine::EventWithMetadata(Event::Error_execution, "<invoke contentexpr='{{ invoke_info.contentexpr | escape_cpp }}'> could not be evaluated"));
+                                engine.raise(Engine::EventWithMetadata::platformError(Event::Error_execution, ::SCE::Common::ErrorReason::ExpressionFailed, "<invoke contentexpr='{{ invoke_info.contentexpr | escape_cpp }}'> could not be evaluated"));
                                 return;
                             }
                             hostInvoke.content = ::SCE::ScriptResultUtils::resultToString(contentResult);
@@ -741,7 +741,7 @@
                             const bool namelistValid = ::SCE::NamelistHelper::evaluateNamelist(
                                 hostScript, sessionId_.value(), "{{ invoke_info.namelist | escape_cpp }}", namelistValues,
                                 [&engine](const std::string& errorMsg) {
-                                    engine.raise(typename Engine::EventWithMetadata(Event::Error_execution, errorMsg));
+                                    engine.raise(Engine::EventWithMetadata::platformError(Event::Error_execution, ::SCE::Common::ErrorReason::LocationInvalid, errorMsg));
                                 },
                                 &payloadTyped);
                             if (!namelistValid) {
@@ -781,13 +781,13 @@
                             {% if param.native_fails %}
                             if (SCE_EXPECT_FALSE(sce_failure_.failed())) {
                                 {% if request_checks and param.name in request_checks %}
-                                engine.raise(typename Engine::EventWithMetadata(
-                                    Event::Error_execution,
+                                engine.raise(Engine::EventWithMetadata::platformError(
+                                    Event::Error_execution, ::SCE::Common::ErrorReason::ExpressionFailed,
                                     "<invoke> <param name='{{ param.name | escape_cpp }}'> cannot be its request field: it failed to evaluate"));
                                 return;
                                 {% else %}
-                                engine.raise(typename Engine::EventWithMetadata(
-                                    Event::Error_execution,
+                                engine.raise(Engine::EventWithMetadata::platformError(
+                                    Event::Error_execution, ::SCE::Common::ErrorReason::ExpressionFailed,
                                     "<invoke> <param name='{{ param.name | escape_cpp }}'> failed to evaluate"));
                                 {% endif %}
                             } else
@@ -820,8 +820,8 @@
                                     refusal);
                             }
                             if (!text) {
-                                engine.raise(typename Engine::EventWithMetadata(
-                                    Event::Error_execution,
+                                engine.raise(Engine::EventWithMetadata::platformError(
+                                    Event::Error_execution, ::SCE::Common::ErrorReason::ParamUnfit,
                                     "<invoke> <param name='{{ param.name | escape_cpp }}'> cannot be its request field: " + refusal));
                                 return;
                             }
@@ -835,8 +835,8 @@
                         // W3C SCXML 5.7.1: `location=""` names no location — the same
                         // failure as an expression that will not evaluate: reported,
                         // and the pair left out.
-                        engine.raise(typename Engine::EventWithMetadata(
-                            Event::Error_execution,
+                        engine.raise(Engine::EventWithMetadata::platformError(
+                            Event::Error_execution, ::SCE::Common::ErrorReason::LocationInvalid,
                             "<invoke> <param name='{{ param.name | escape_cpp }}'> names no location"));
                         {% else %}
                         {
@@ -850,8 +850,8 @@
                                 payloadTyped["{{ param.name | escape_cpp }}"].push_back(paramResult.getInternalValue());
                                 {% endif %}
                             } else {
-                                engine.raise(typename Engine::EventWithMetadata(
-                                    Event::Error_execution,
+                                engine.raise(Engine::EventWithMetadata::platformError(
+                                    Event::Error_execution, ::SCE::Common::ErrorReason::{{ 'ExpressionFailed' if param.expr else 'LocationInvalid' }},
                                     "<invoke> <param name='{{ param.name | escape_cpp }}'> {% if param.expr %}expr failed to evaluate{% else %}location could not be read{% endif %}"));
                             }
                         }
@@ -866,8 +866,8 @@
                             // be run and none was, which is the same fact as
                             // an unsupported type — so the same event, rather
                             // than a silence that reads as started.
-                            engine.raise(typename Engine::EventWithMetadata(
-                                Event::Error_execution,
+                            engine.raise(Engine::EventWithMetadata::platformError(
+                                Event::Error_execution, ::SCE::Common::ErrorReason::ProcessorUnregistered,
                                 "<invoke> names an invoker the host declared but never registered"));
                         }
                         return;
@@ -888,8 +888,8 @@
                         // the macrostep settles, so the author sees the error
                         // on the next iteration exactly as a real processor
                         // failure would arrive.
-                        engine.raise(typename Engine::EventWithMetadata(
-                            Event::Error_execution,
+                        engine.raise(Engine::EventWithMetadata::platformError(
+                            Event::Error_execution, ::SCE::Common::ErrorReason::InvokeTypeUnsupported,
                             "<invoke type='{{ invoke_info.invoke_type }}'> names an external service this platform does not support"));
                         return;
                     }

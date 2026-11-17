@@ -25,8 +25,8 @@
         // W3C SCXML 5.9: an expression that fails raises error.execution, and
         // (W3C SCXML 4.9) the error ends the block.
         SCE_LOG_ERROR("Failed to evaluate log expression: {}", {{ action.expr | cpp_text_expr }});
-        engine.raise(typename Engine::EventWithMetadata(Event::Error_execution,
-                                                        "<log> expr failed to evaluate"));
+        engine.raise(Engine::EventWithMetadata::platformError(Event::Error_execution, ::SCE::Common::ErrorReason::ExpressionFailed,
+                                                              "<log> expr failed to evaluate"));
 {% if block_exit is defined and block_exit %}
         {{ block_exit }}
 {% endif %}

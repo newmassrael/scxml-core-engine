@@ -123,9 +123,9 @@ PY
 mutation_case "the child whose start was refused raises no error.execution" <<'PY'
 edit("tools/codegen/templates/invoke_methods.jinja2",
      """{% if 'error.execution' in model.events %}
-                            engine.raise(typename Engine::EventWithMetadata(Event::Error_execution,
+                            engine.raise(Engine::EventWithMetadata::platformError(Event::Error_execution, ::SCE::Common::ErrorReason::InvokeChildInitFailed,
                                 std::string("<invoke id='") + {{ invoke_named }} +""",
      """{% if false %}
-                            engine.raise(typename Engine::EventWithMetadata(Event::Error_execution,
+                            engine.raise(Engine::EventWithMetadata::platformError(Event::Error_execution, ::SCE::Common::ErrorReason::InvokeChildInitFailed,
                                 std::string("<invoke id='") + {{ invoke_named }} +""")
 PY

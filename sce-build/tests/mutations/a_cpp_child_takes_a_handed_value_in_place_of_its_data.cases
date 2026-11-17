@@ -139,7 +139,7 @@ PY
 mutation_case "the cpp aot child raises nothing for a handed value it cannot hold" <<'PY'
 edit("tools/codegen/templates/scriptengine_helpers.jinja2",
      """            SCE_LOG_ERROR("AOT initializeDataModel: {}", errorMsg);
-            engine.raise(typename Engine::EventWithMetadata(Event::Error_execution, errorMsg));
+            engine.raise(Engine::EventWithMetadata::platformError(Event::Error_execution, ::SCE::Common::ErrorReason::DataInitFailed, errorMsg));
         }
     }""",
      """            SCE_LOG_ERROR("AOT initializeDataModel: {}", errorMsg);
@@ -211,7 +211,7 @@ mutation_case "the interpreter child raises nothing for a handed value it cannot
 edit("sce/src/runtime/DataModelInitializer.cpp",
      """        SCE_LOG_ERROR("DataModelInitializer: {}", message);
         if (eventRaiser_) {
-            eventRaiser_->raiseEvent("error.execution", message);
+            eventRaiser_->raiseError(Common::ErrorReason::DataInitFailed, message);
         }
         return;""",
      """        SCE_LOG_ERROR("DataModelInitializer: {}", message);

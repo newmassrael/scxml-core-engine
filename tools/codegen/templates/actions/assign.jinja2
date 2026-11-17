@@ -39,7 +39,7 @@
 {
     // W3C SCXML 5.3/B.2: the build refused this location as invalid or read-only
     SCE_LOG_ERROR("W3C SCXML 5.3: Invalid assign location '{{ action.location | escape_cpp_format }}'");
-    engine.raise(typename Engine::EventWithMetadata(Event::Error_execution, "<assign> has an invalid or read-only location '{{ action.location | escape_cpp }}'"));
+    engine.raise(Engine::EventWithMetadata::platformError(Event::Error_execution, ::SCE::Common::ErrorReason::LocationInvalid, "<assign> has an invalid or read-only location '{{ action.location | escape_cpp }}'"));
     {{ assign_exit }}  // W3C SCXML 4.9: the error ends the block
 }
 {# The exit is unconditional: the action list emits nothing after this
@@ -74,7 +74,7 @@
         scriptEngine, sessionId_.value(), {{ action.location | to_script_source_location }}, expr,
         [&engine](const std::string& error) {
             SCE_LOG_ERROR("AOT assign: {}", error);
-            engine.raise(typename Engine::EventWithMetadata(Event::Error_execution, error));
+            engine.raise(Engine::EventWithMetadata::platformError(Event::Error_execution, ::SCE::Common::ErrorReason::AssignmentFailed, error));
         }
     );
 

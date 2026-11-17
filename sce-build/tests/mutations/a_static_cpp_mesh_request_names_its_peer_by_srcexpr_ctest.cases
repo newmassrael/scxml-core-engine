@@ -48,6 +48,6 @@ PY
 
 mutation_case "a peer that cannot be computed is not reported" <<'PY'
 edit("tools/codegen/templates/entry_exit_actions.jinja2",
-     "                        if (!_srcexpr_read_{{ invoke_info.invoke_id }}) {\n                            engine.raise(typename Engine::EventWithMetadata(\n                                Event::Error_execution,\n                                \"mesh-rpc invoke '{{ invoke_info.invoke_id }}' srcexpr evaluation failed: {{ invoke_info.srcexpr | escape_cpp }}\"));",
+     "                        if (!_srcexpr_read_{{ invoke_info.invoke_id }}) {\n                            engine.raise(Engine::EventWithMetadata::platformError(\n                                Event::Error_execution, ::SCE::Common::ErrorReason::ExpressionFailed,\n                                \"mesh-rpc invoke '{{ invoke_info.invoke_id }}' srcexpr evaluation failed: {{ invoke_info.srcexpr | escape_cpp }}\"));",
      "                        if (!_srcexpr_read_{{ invoke_info.invoke_id }}) {\n                            (void)engine;")
 PY

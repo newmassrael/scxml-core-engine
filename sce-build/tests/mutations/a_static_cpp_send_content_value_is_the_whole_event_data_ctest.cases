@@ -45,7 +45,7 @@ PY
 
 mutation_case "a content value that failed is replaced by the empty string without a word" <<'PY'
 edit("tools/codegen/templates/actions/send.jinja2",
-     "        engine.raise(typename Engine::EventWithMetadata(Event::Error_execution,\n                                                        \"<send> contentexpr failed to evaluate\"));\n        paramFailed = true;\n        contentValue = ScriptValue(std::string());",
+     "        engine.raise(Engine::EventWithMetadata::platformError(Event::Error_execution, ::SCE::Common::ErrorReason::ExpressionFailed,\n                                                              \"<send> contentexpr failed to evaluate\"));\n        paramFailed = true;\n        contentValue = ScriptValue(std::string());",
      "        paramFailed = true;\n        contentValue = ScriptValue(std::string());")
 PY
 

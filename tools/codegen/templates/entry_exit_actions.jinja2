@@ -212,8 +212,8 @@
                         // Transport-absent deployment — raise locally with
                         // the canonical reason text so authors observe the
                         // same `error.execution` shape as the wire-20 path.
-                        engine.raise(typename Engine::EventWithMetadata(
-                            Event::Error_execution,
+                        engine.raise(Engine::EventWithMetadata::platformError(
+                            Event::Error_execution, ::SCE::Common::ErrorReason::SessionTransportUnavailable,
                             "scxml invoke '{{ invoke_info.invoke_id }}' to '#{{ invoke_info.remote_mesh_target }}': SESSION_F_TRANSPORT_UNAVAILABLE per SCE_MESH.md §9.6/§10.7.1 — no mesh transport binding to peer device"));
                     }
                 }
@@ -275,7 +275,7 @@
                         ScriptValue paramValue = {{ param.native_value }};
 {% if param.native_fails %}
                         if (SCE_EXPECT_FALSE(sce_failure_.failed())) {
-                            engine.raise(typename Engine::EventWithMetadata(Event::Error_execution,
+                            engine.raise(Engine::EventWithMetadata::platformError(Event::Error_execution, ::SCE::Common::ErrorReason::ExpressionFailed,
                                 "<invoke type='sce:mesh-rpc'> <param name='{{ param.name | escape_cpp }}'> could not be read"));
                         } else
 {% endif %}
@@ -288,7 +288,7 @@
 {% elif not (param.expr or param.location) %}
                     // §scxml-5.7.1: an empty location names no location in the
                     // data model — reported, and the pair left out.
-                    engine.raise(typename Engine::EventWithMetadata(Event::Error_execution,
+                    engine.raise(Engine::EventWithMetadata::platformError(Event::Error_execution, ::SCE::Common::ErrorReason::LocationInvalid,
                         "<invoke type='sce:mesh-rpc'> <param name='{{ param.name | escape_cpp }}'> names no location"));
 {% else %}
                     {
@@ -308,7 +308,7 @@
                             // string under the name and raised nothing, so the
                             // server received a field the document never
                             // computed and the document had no event to act on.
-                            engine.raise(typename Engine::EventWithMetadata(Event::Error_execution,
+                            engine.raise(Engine::EventWithMetadata::platformError(Event::Error_execution, ::SCE::Common::ErrorReason::{{ 'ExpressionFailed' if param.expr else 'LocationInvalid' }},
                                 "<invoke type='sce:mesh-rpc'> <param name='{{ param.name | escape_cpp }}'> could not be read"));
                         }
                     }
@@ -354,8 +354,8 @@
 {% endif %}
                         }
                         if (!_srcexpr_read_{{ invoke_info.invoke_id }}) {
-                            engine.raise(typename Engine::EventWithMetadata(
-                                Event::Error_execution,
+                            engine.raise(Engine::EventWithMetadata::platformError(
+                                Event::Error_execution, ::SCE::Common::ErrorReason::ExpressionFailed,
                                 "mesh-rpc invoke '{{ invoke_info.invoke_id }}' srcexpr evaluation failed: {{ invoke_info.srcexpr | escape_cpp }}"));
                             this->_mesh_resolved_src_{{ invoke_info.field_suffix }}_.clear();
                         } else {
@@ -367,8 +367,8 @@
                                 sessionId_.value(),
                                 {{ invoke_info.srcexpr | to_script_source_expr }}).get();
                         if (!::SCE::ScriptResultUtils::isSuccess(_srcexpr_result_{{ invoke_info.invoke_id }})) {
-                            engine.raise(typename Engine::EventWithMetadata(
-                                Event::Error_execution,
+                            engine.raise(Engine::EventWithMetadata::platformError(
+                                Event::Error_execution, ::SCE::Common::ErrorReason::ExpressionFailed,
                                 "mesh-rpc invoke '{{ invoke_info.invoke_id }}' srcexpr evaluation failed: {{ invoke_info.srcexpr | escape_cpp }}"));
                             this->_mesh_resolved_src_{{ invoke_info.field_suffix }}_.clear();
                         } else {
@@ -379,8 +379,8 @@
                                 R"(^#[A-Za-z_][A-Za-z0-9_]*$)");
                             if (!std::regex_match(_resolved_src_{{ invoke_info.invoke_id }},
                                                    _srcexpr_shape_{{ invoke_info.invoke_id }})) {
-                                engine.raise(typename Engine::EventWithMetadata(
-                                    Event::Error_execution,
+                                engine.raise(Engine::EventWithMetadata::platformError(
+                                    Event::Error_execution, ::SCE::Common::ErrorReason::InvokeSrcNotFound,
                                     "mesh-rpc invoke '{{ invoke_info.invoke_id }}' srcexpr produced invalid shape (must match '#<machine_name>'): " + _resolved_src_{{ invoke_info.invoke_id }}));
                                 this->_mesh_resolved_src_{{ invoke_info.field_suffix }}_.clear();
                             } else {
@@ -390,8 +390,8 @@
                                                                "{{ invoke_info.field_suffix }}",
                                                                _mesh_invoke_id_{{ invoke_info.invoke_id }},
                                                                _mesh_data_{{ invoke_info.invoke_id }})) {
-                                    engine.raise(typename Engine::EventWithMetadata(
-                                        Event::Error_execution,
+                                    engine.raise(Engine::EventWithMetadata::platformError(
+                                        Event::Error_execution, ::SCE::Common::ErrorReason::InvokeSrcNotFound,
                                         std::string("mesh-rpc invoke '{{ invoke_info.invoke_id }}' srcexpr resolved to '") +
                                         this->_mesh_resolved_src_{{ invoke_info.field_suffix }}_ +
                                         "' which has no matching deploy.yaml binding (or no transport router is wired)"));
@@ -412,8 +412,8 @@
                         // while constructing the KeyExpr). Per §10.7.1
                         // this is INVOKE_SRC_NOT_FOUND — no envelope
                         // reached the wire.
-                        engine.raise(typename Engine::EventWithMetadata(
-                            Event::Error_execution,
+                        engine.raise(Engine::EventWithMetadata::platformError(
+                            Event::Error_execution, ::SCE::Common::ErrorReason::InvokeSrcNotFound,
                             "mesh-rpc invoke '{{ invoke_info.invoke_id }}' to '{{ invoke_info.src }}' failed: setup fault (INVOKE_SRC_NOT_FOUND per SCE_MESH.md §9.5/§10.7.1 — no transport wired, pool instance out-of-set, or key-substitution miss)"));
                     }
 {% endif %}
@@ -543,7 +543,7 @@
 {% if param.native_fails %}
                         if (SCE_EXPECT_FALSE(sce_failure_.failed())) {
                             SCE_LOG_WARN("Donedata param '{{ param.name | escape_cpp }}' overflowed or failed");
-                            engine.raise(typename Engine::EventWithMetadata(Event::Error_execution, "<donedata> <param name='{{ param.name | escape_cpp }}'> failed to evaluate"));
+                            engine.raise(Engine::EventWithMetadata::platformError(Event::Error_execution, ::SCE::Common::ErrorReason::ExpressionFailed, "<donedata> <param name='{{ param.name | escape_cpp }}'> failed to evaluate"));
                         } else {
                             doneValues.emplace_back("{{ param.name | escape_cpp }}", std::move(doneValue));
                         }
@@ -554,7 +554,7 @@
 {% else %}
                     // §scxml-5.7: an empty location names no location —
                     // error.execution, and this pair is ignored.
-                    engine.raise(typename Engine::EventWithMetadata(Event::Error_execution, "<donedata> <param name='{{ param.name | escape_cpp }}'> has an empty location"));
+                    engine.raise(Engine::EventWithMetadata::platformError(Event::Error_execution, ::SCE::Common::ErrorReason::LocationInvalid, "<donedata> <param name='{{ param.name | escape_cpp }}'> has an empty location"));
 {% endif %}
 {% endfor %}
                     ::SCE::DoneDataHelper::collectParams(doneValues, eventData, &typedData);
@@ -591,7 +591,7 @@
                         eventData,
                         [&engine](const std::string& msg) {
                             SCE_LOG_WARN("Donedata param evaluation failed: {}", msg);
-                            engine.raise(typename Engine::EventWithMetadata(Event::Error_execution, msg));
+                            engine.raise(Engine::EventWithMetadata::platformError(Event::Error_execution, ::SCE::Common::ErrorReason::ExpressionFailed, msg));
                         },
                         &typedData
                     );
@@ -621,7 +621,7 @@
 {% if state.donedata.native_content_value_fails %}
                         if (SCE_EXPECT_FALSE(sce_failure_.failed())) {
                             SCE_LOG_WARN("Donedata content expr overflowed or failed");
-                            engine.raise(typename Engine::EventWithMetadata(Event::Error_execution, "<donedata> <content expr> failed to evaluate"));
+                            engine.raise(Engine::EventWithMetadata::platformError(Event::Error_execution, ::SCE::Common::ErrorReason::ExpressionFailed, "<donedata> <content expr> failed to evaluate"));
                             contentValue = ScriptValue(std::string());
                         }
 {% endif %}
@@ -662,7 +662,7 @@
                         eventData,
                         [&engine](const std::string& msg) {
                             SCE_LOG_WARN("Donedata content evaluation failed: {}", msg);
-                            engine.raise(typename Engine::EventWithMetadata(Event::Error_execution, msg));
+                            engine.raise(Engine::EventWithMetadata::platformError(Event::Error_execution, ::SCE::Common::ErrorReason::ExpressionFailed, msg));
                         },
                         &typedData
                     );

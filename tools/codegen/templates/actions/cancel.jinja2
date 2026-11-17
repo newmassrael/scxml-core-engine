@@ -19,8 +19,8 @@
     std::string sendidToCancel = {{ action.native_sendid }};
 {% if action.native_sendid_fails %}
     if (SCE_EXPECT_FALSE(sce_failure_.failed())) {
-        engine.raise(typename Engine::EventWithMetadata(Event::Error_execution,
-                                                        "<cancel> sendidexpr failed to evaluate"));
+        engine.raise(Engine::EventWithMetadata::platformError(Event::Error_execution, ::SCE::Common::ErrorReason::ExpressionFailed,
+                                                              "<cancel> sendidexpr failed to evaluate"));
 {% if block_exit is defined and block_exit %}
         {{ block_exit }}
 {% endif %}
@@ -42,8 +42,8 @@
     } else {
         // W3C SCXML 5.9: a sendidexpr that fails raises error.execution, and
         // (W3C SCXML 4.9) the error ends the block.
-        engine.raise(typename Engine::EventWithMetadata(Event::Error_execution,
-                                                        "<cancel> sendidexpr failed to evaluate"));
+        engine.raise(Engine::EventWithMetadata::platformError(Event::Error_execution, ::SCE::Common::ErrorReason::ExpressionFailed,
+                                                              "<cancel> sendidexpr failed to evaluate"));
 {% if block_exit is defined and block_exit %}
         {{ block_exit }}
 {% endif %}

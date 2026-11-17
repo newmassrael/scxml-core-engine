@@ -37,7 +37,7 @@
         if (!result.has_value()) {
             // W3C SCXML 5.9: Evaluation failed → raise error.execution AND return false
             SCE_LOG_ERROR("W3C SCXML 5.9: Guard evaluation failed: '{}'", guardExpr.source());
-            engine.raise(typename Engine::EventWithMetadata(Event::Error_execution, "Guard evaluation failed"));
+            engine.raise(Engine::EventWithMetadata::platformError(Event::Error_execution, ::SCE::Common::ErrorReason::ExpressionFailed, "Guard evaluation failed"));
             return std::nullopt;
         }
 
