@@ -1482,6 +1482,19 @@ old encode, the old encode and its templates are removed in the same landing.
    stays refused by name, as the C++ and Kotlin printers refuse it: the check would see the others alone. The
    Zenoh error envelope, which its tests took for a template codec, was printed since lists and chains landed;
    its tests now hold the printed encode.
+   *Three shapes left by name, 2026-11-17:* an input a list in the arm of a gate group says, two lists of one
+   count one of which is held to its law, and a number the value states where what it measures is absent
+   (`Presence::Stated`) are printed. The input is read off the arm the value holds: the encode reads it off
+   the member's local the group already binds, and the codec's reader switches over the arms, the start of the
+   list where the arm holds it and `nil` where it holds another (docs/adr/0065 §6 R4e, R8). The pair needs no
+   new type: `Aligned` is over two collections, and `Lawful` is one that reads as its list, so the arm holds
+   `Aligned<Lawful<..>, BoundedList<..>>`, the count derived from the first and a flag bound to its input from
+   its start. The C++ printer still refuses this pair by name; Swift's `Aligned` asks of each list only
+   `Collection.count`, which `Lawful` answers, so nothing in Swift is left to refuse it for. A stated
+   number is an optional element, as every printer presents it: the encode derives it where what it measures
+   is there, writes what the value states, zero where it states nothing, where none of it is, and refuses as
+   `inconsistentSource` a value that states another number beside what it measures; a decode presents it only
+   where none of what it measures was in the frame, as the C++ decode does.
 
 ## Consequences
 

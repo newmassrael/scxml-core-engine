@@ -1688,9 +1688,16 @@ pub(super) fn render(
             });
             // The value before anything is read into it: for an enum the first variant its document
             // declares, and for an integer the bits the document's `<sce:flag value=>` declarations
-            // set, zero where it declares none.
+            // set, zero where it declares none. A number a printed value states where what it
+            // measures is absent is an optional of its own (docs/adr/0058 §1), `nil` until a frame
+            // is read; the decode reads it always.
+            let stated = prints
+                && plan.elements.iter().any(|e| {
+                    e.field.id == f.id && e.presence == crate::forge::encode_plan::Presence::Stated
+                });
+            let optional = if stated { "?" } else { optional };
             let default = match (&f.sce_type, flag_default_carrier_value(f)) {
-                _ if present.is_some() => "nil".to_string(),
+                _ if present.is_some() || stated => "nil".to_string(),
                 (SceType::Enum(r), _) => l.enum_default_expr(&r.alias),
                 (_, 0) => "0".to_string(),
                 (_, bits) => format!("0x{bits:X}"),

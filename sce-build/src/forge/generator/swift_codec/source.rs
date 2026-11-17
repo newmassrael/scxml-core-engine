@@ -232,10 +232,9 @@ pub(super) fn group_of(plan: &EncodePlan<'_>, id: &str) -> Option<usize> {
 
 /// The first gate group of `plan` the Swift printer does not print, described for a reader: one of
 /// a bare entry's membership whose entry the printer cannot make of its kind, or whose entries a
-/// check holds to an input (docs/adr/0065 §6 R6a), one whose arm holds two lists of one count of
-/// which one is held to its law (R5, R8), and one that holds a value of a type no number is, or a
-/// body or the entries of a codec the Swift printer does not print. A group the printer prints
-/// holds numbers, byte strings, texts, bodies and lists, each list held to its law where its
+/// check holds to an input (docs/adr/0065 §6 R6a), and one that holds a value of a type no number
+/// is, or a body or the entries of a codec the Swift printer does not print. A group the printer
+/// prints holds numbers, byte strings, texts, bodies and lists, each list held to its law where its
 /// entries say inputs it hands them (R8), two lists of one count as one value (R5), and the
 /// lengths and counts the value states on the side where what they measure is absent, decided by
 /// flags of the codec's carriers, by flag inputs (R4b, R4c), and by the kinds of a chain's
@@ -272,21 +271,9 @@ fn group_unlowered(plan: &EncodePlan<'_>, imports: &[ImportContext]) -> Option<S
                 ));
             }
         }
-        // Two lists of one count are held as one `Aligned` (docs/adr/0065 §6 R5), each a list
-        // within its bound; one held to its law besides waits for the form that holds the law in
-        // the pair.
-        if let Some((first, second)) = &group.aligned {
-            let lawful = |id: &str| match plan.value(field_named(plan, id)) {
-                Value::List { law, .. } => !law.is_none(),
-                _ => false,
-            };
-            if lawful(first) || lawful(second) {
-                return Some(format!(
-                    "the gate group `{label}`, whose arm holds two lists of one count, one held to \
-                     the law of the inputs its entries say"
-                ));
-            }
-        }
+        // Two lists of one count are held as one `Aligned` (docs/adr/0065 §6 R5) of two
+        // collections, each a list within its bound and, where its entries say inputs it hands
+        // them, held to its law (R8): a `Lawful` reads as its list, so the pair holds it as any.
         for id in group.fields() {
             let what = match plan.value(field_named(plan, id)) {
                 Value::Scalar(t) if is_number(t) => None,
@@ -1008,13 +995,9 @@ pub(crate) fn unlowered_positional(
                     "a list of `{codec}`, which the Swift printer does not print"
                 )),
             },
-        }
-        .or_else(|| match element.presence {
-            Presence::Always | Presence::Gated => None,
-            Presence::Stated => {
-                Some("a number stated where what it measures is absent".to_string())
-            }
-        });
+        };
+        // A number the value states where what it measures is absent (`Presence::Stated`) is
+        // presented as an optional and derived where what it measures is there (docs/adr/0058 §1).
         if let Some(what) = what {
             return Some(format!("field '{id}': {what}"));
         }
@@ -1100,10 +1083,10 @@ pub(crate) fn unlowered_positional(
     // An input the value says is read off the field gated on it alone, off the arm the gate group
     // it decides holds, off the body always there that it hands it on to and that says it in every
     // value, off the arm of the variant the value holds, or off the start of the list it hands it
-    // on to, held to its law (docs/adr/0065 §6 R8), where the value presents that list as an
-    // element of its own; one a list a gate group holds says waits for the form that reads it off
-    // the arm. One some arms say only is said in some values only, and no encode reads it
-    // (docs/adr/0065 §6 R4e): only a parent asks for it.
+    // on to, held to its law (docs/adr/0065 §6 R8), as an element of its own or in the arm of the
+    // gate group that holds it, where an arm that does not hold it says nothing (§6 R4e). One some
+    // arms say only is said in some values only, and no encode reads it (docs/adr/0065 §6 R4e):
+    // only a parent asks for it.
     if let Some(said) = plan
         .said
         .iter()
@@ -1111,8 +1094,8 @@ pub(crate) fn unlowered_positional(
             InputSource::Gate { .. }
             | InputSource::Group
             | InputSource::Forward { partly: false, .. }
-            | InputSource::EveryArm { .. } => false,
-            InputSource::List { list, .. } => group_of(plan, list).is_some(),
+            | InputSource::EveryArm { .. }
+            | InputSource::List { .. } => false,
             InputSource::SomeArms { .. } => said.read || handed_on(plan, &said.input.name),
             InputSource::Forward { partly: true, .. } => true,
         })
@@ -1177,9 +1160,9 @@ pub(crate) fn unlowered_positional(
 /// strings and texts it measures, of the entries of the lists it counts, of the inputs the bodies
 /// it measures say, of the start of the lists held to a law it is bound to (docs/adr/0065 §6 R8),
 /// or of the bytes the bodies it measures encode to, into a field of its own
-/// (zero where a gate leaves every one of them out, beside which the field is gated too, or what
-/// the arm of the gate group that holds the field states there, docs/adr/0065 §6 R4b) or, but for
-/// an encoded length, into a flag of a carrier.
+/// (zero where a gate leaves every one of them out, beside which the field is gated too, what the
+/// arm of the gate group that holds the field states there, docs/adr/0065 §6 R4b, or what the value
+/// states there, docs/adr/0058 §1) or, but for an encoded length, into a flag of a carrier.
 fn printed_number<'d, 'm>(element: &'d ElementId, by: &'d Derive<'m>) -> Option<&'d Number<'m>> {
     let Derive::Number(number) = by else {
         return None;
@@ -1201,13 +1184,11 @@ fn printed_number<'d, 'm>(element: &'d ElementId, by: &'d Derive<'m>) -> Option<
     let counted = !number.measures.iter().any(|m| encoded(&m.of))
         || (matches!(element, ElementId::Field(_))
             && number.measures.iter().all(|m| encoded(&m.of)));
-    let into = match (element, &number.into) {
-        (ElementId::Field(_), NumberInto::Field { absent, .. }) => {
-            matches!(absent, Absent::Never | Absent::Zero | Absent::Group)
-        }
-        (ElementId::Flag { .. }, NumberInto::Flag) => true,
-        _ => false,
-    };
+    let into = matches!(
+        (element, &number.into),
+        (ElementId::Field(_), NumberInto::Field { .. })
+            | (ElementId::Flag { .. }, NumberInto::Flag)
+    );
     (measures && counted && into).then_some(number)
 }
 
@@ -1235,8 +1216,9 @@ fn presence_flag<'d, 'm>(
 
 /// Whether the printer writes the refusal of `kind` at `element`: the presence of a field held to a
 /// gate the encode cannot derive, or an input a body or the entries of a list say held to what the
-/// parent hands them; fields that each say one flag, or measures that each say one number, and may
-/// disagree; a length past the field that holds it where the plan checks it, past the bits of the
+/// parent hands them; fields that each say one flag, measures that each say one number, or a number
+/// the value states beside what it measures, and may disagree; a length past the field that holds
+/// it where the plan checks it, past the bits of the
 /// flag that holds it, or below what its arithmetic takes off; and the refusal of a body or an
 /// entry whose codec refuses, which its encode throws.
 fn writes_refusal(plan: &EncodePlan<'_>, kind: RefusalKind, element: &str) -> bool {
@@ -1250,8 +1232,16 @@ fn writes_refusal(plan: &EncodePlan<'_>, kind: RefusalKind, element: &str) -> bo
         RefusalKind::InconsistentSource => {
             plan.derivations.iter().filter(derived_at).any(|derived| {
                 presence_flag(&derived.element, &derived.by).is_some()
-                    || printed_number(&derived.element, &derived.by)
-                        .is_some_and(|number| number.measures.len() > 1)
+                    || printed_number(&derived.element, &derived.by).is_some_and(|number| {
+                        number.measures.len() > 1
+                            || matches!(
+                                number.into,
+                                NumberInto::Field {
+                                    absent: Absent::Stated,
+                                    ..
+                                }
+                            )
+                    })
             })
         }
         RefusalKind::LengthOutOfRange => plan.derivations.iter().any(|derived| {
@@ -1364,7 +1354,14 @@ fn said_input(plan: &EncodePlan<'_>, held: &HeldTypes, input: &str, source: &str
             ..
         } => {
             let path = law_start_path(plan, field_named(plan, list), entry_input);
-            if *partly {
+            if group_of(plan, list).is_some() {
+                // A list a gate group holds, read off the arm the value holds into its member's
+                // local, which the encode binds before it reads any input.
+                format!(
+                    "({}.map {{ $0.start{path} ? 1 : 0 }} ?? 0)",
+                    member_local(list)
+                )
+            } else if *partly {
                 format!("({source}.{list}.map {{ $0.start{path} ? 1 : 0 }} ?? 0)")
             } else {
                 format!("{source}.{list}.start{path} ? 1 : 0")
@@ -1389,6 +1386,15 @@ fn said_lines(
     let (bound, every) = match &plan.roles.inputs[input] {
         InputSource::EveryArm { arms } => (arms, true),
         InputSource::SomeArms { arms } => (arms, false),
+        // A list a gate group holds says the input by its start where the arm the value holds holds
+        // it, and nothing where it does not (docs/adr/0065 §6 R4e, R8).
+        InputSource::List {
+            list,
+            input: entry_input,
+            ..
+        } if group_of(plan, list).is_some() => {
+            return group_list_said(plan, list, entry_input);
+        }
         // A list a gate leaves out says nothing of the input (docs/adr/0065 §6 R4e).
         InputSource::List {
             list,
@@ -1414,6 +1420,65 @@ fn said_lines(
             None => format!("case {}: return nil", text.bare()),
         };
         lines.extend(text.guarded(vec![line]));
+    }
+    lines.push("}".to_string());
+    lines
+}
+
+/// The statements of the function that reads, off a source of the codec of `plan`, the flag input
+/// the list `list` says by its start (docs/adr/0065 §6 R8), where a gate group holds the list: the
+/// start of the input `input` of its law as 1 or 0 where the arm the value holds holds the list,
+/// `nil` where it holds another arm or none (§6 R4e).
+fn group_list_said(plan: &EncodePlan<'_>, list: &str, input: &str) -> Vec<String> {
+    let group = &plan.groups()[group_of(plan, list).expect("the list is a member of a group")];
+    let path = law_start_path(plan, field_named(plan, list), input);
+    let said = |held: &str| format!("return {held}.start{path} ? 1 : 0");
+    let held = format!("{SOURCE}.{}", group_name(group));
+    if !group.is_sum() {
+        let arm = &group.arms[0];
+        if group.absent.is_none() {
+            return vec![said(&format!("{held}.{list}"))];
+        }
+        let holds = arm.fields.iter().any(|f| f == list);
+        return if holds {
+            vec![
+                format!(
+                    "if let {HELD} = {held} {{ {} }}",
+                    said(&format!("{HELD}.{list}"))
+                ),
+                "return nil".to_string(),
+            ]
+        } else {
+            vec!["return nil".to_string()]
+        };
+    }
+    let optional = if group.absent.is_some() { "?" } else { "" };
+    let mut lines = vec![format!("switch {held} {{")];
+    for arm in &group.arms {
+        let case = group_case(group, arm);
+        let members = arm_members(group, arm);
+        let holds = members
+            .iter()
+            .any(|member| matches!(member, ArmMember::One(id) if *id == list));
+        lines.push(if holds {
+            let binds: Vec<&str> = members
+                .iter()
+                .map(|member| match member {
+                    ArmMember::One(id) if *id == list => "let held",
+                    _ => "_",
+                })
+                .collect();
+            format!(
+                "case .{case}({}){optional}: {}",
+                binds.join(", "),
+                said(HELD)
+            )
+        } else {
+            format!("case .{case}{optional}: return nil")
+        });
+    }
+    if group.absent.is_some() {
+        lines.push("case nil: return nil".to_string());
     }
     lines.push("}".to_string());
     lines
@@ -1757,6 +1822,43 @@ fn presented_type(l: &LangCtx, plan: &EncodePlan<'_>, element: &Element<'_>) -> 
     }
 }
 
+/// What a decode makes the element `element` of `plan` of, once the frame is read: the local it
+/// read the field into, and for a number the value states where what it measures is absent
+/// (docs/adr/0058 §1, `Presence::Stated`), that number only where none of what it measures was in
+/// the frame, `nil` where some was, as the C++ printer's decode presents it.
+fn element_decoded(plan: &EncodePlan<'_>, element: &Element<'_>) -> String {
+    let id = &element.field.id;
+    if element.presence != Presence::Stated {
+        return super::decoded(id);
+    }
+    let absent: Vec<String> = stated_contents(plan, id)
+        .iter()
+        .map(|content| format!("{} == nil", super::decoded(&content.id)))
+        .collect();
+    format!("({}) ? {} : nil", absent.join(" && "), super::decoded(id))
+}
+
+/// The fields the number the value states as the field `id` of `plan` measures, each gated: the
+/// byte strings and texts it is the length of, the lists it counts, the bodies it is the encoded
+/// length of.
+fn stated_contents<'m>(plan: &EncodePlan<'m>, id: &str) -> Vec<&'m CodecField> {
+    plan.derivations
+        .iter()
+        .filter(|derived| matches!(&derived.element, ElementId::Field(field) if field == id))
+        .filter_map(|derived| match &derived.by {
+            Derive::Number(number) => Some(number),
+            _ => None,
+        })
+        .flat_map(|number| number.measures.iter())
+        .map(|measure| match &measure.of {
+            Measured::Bytes { field, .. } => *field,
+            Measured::Entries { list } => *list,
+            Measured::Encoded { body, .. } => *body,
+            _ => unreachable!("a number the value states is a length or a count of gated content"),
+        })
+        .collect()
+}
+
 /// One measure of a derived number as the encode reads it.
 struct MeasureText {
     /// The number, an `Int`, which is read only where the measure is there.
@@ -1861,8 +1963,11 @@ fn combine(
 /// The derived number `size` (there where `present` holds, if it may not be), held in the local of
 /// the field `id` it goes `into`, of that field's type: refused where it may not fit (docs/adr/0065
 /// §5); where nothing it measures is there, zero, beside which the field is gated and no write
-/// reads it, or what the arm the value holds of the gate group that holds the field states, zero
-/// where the arm states nothing (§6 R4b, `Absent::Group`), as every printer reads it.
+/// reads it, what the arm the value holds of the gate group that holds the field states, zero where
+/// the arm states nothing (§6 R4b, `Absent::Group`), or what the value states, zero where it states
+/// nothing (docs/adr/0058 §1, `Absent::Stated`), as every printer reads it. A value that states the
+/// number where something it measures is there says it twice, and is refused as
+/// `inconsistentSource` where it says another number than the one derived.
 fn field_number(
     l: &LangCtx,
     plan: &EncodePlan<'_>,
@@ -1882,8 +1987,8 @@ fn field_number(
     };
     let otherwise = match absent {
         Absent::Group => format!("({} ?? 0)", member_local(id)),
+        Absent::Stated => format!("({SOURCE}.{id} ?? 0)"),
         Absent::Never | Absent::Zero => "0".to_string(),
-        Absent::Stated => unreachable!("`unlowered` refuses a number an element states alone"),
     };
     let ty = l.type_name(&field.sce_type).into_owned();
     if *narrow == Narrow::Checked {
@@ -1903,10 +2008,16 @@ fn field_number(
         None => format!("{ty}({size})"),
         Some(there) => format!("{there} ? {ty}({size}) : {otherwise}"),
     };
-    body.push(format!(
-        "let {}: {ty} = {value}",
-        derived_local(&ElementId::Field(id.to_string()))
-    ));
+    let local = derived_local(&ElementId::Field(id.to_string()));
+    body.push(format!("let {local}: {ty} = {value}"));
+    if *absent == Absent::Stated {
+        let there =
+            present.expect("a number the value states is free: every measure may be absent");
+        body.push(format!(
+            "if {there}, let stated = {SOURCE}.{id}, stated != {local} {{ {} }}",
+            refusal(plan, RefusalKind::InconsistentSource, id)
+        ));
+    }
 }
 
 /// What the template writes for the codec of `plan`, which [`unlowered`] has found nothing to
@@ -1936,7 +2047,7 @@ pub(super) fn context(
             Presented::Element(element) => serde_json::json!({
                 "name": element.field.id,
                 "type": presented_type(l, plan, element),
-                "local": super::decoded(&element.field.id),
+                "local": element_decoded(plan, element),
             }),
             Presented::Group(index) => {
                 let group = &plan.groups()[index];
@@ -2204,7 +2315,16 @@ pub(super) fn context(
                 Measured::Start { list, input } => {
                     let content = presented_read(plan, &list.id);
                     let path = law_start_path(plan, list, input);
-                    if measure.gated {
+                    if !measure.gated && group_of(plan, &list.id).is_some() {
+                        // A list every arm of a group holds (the first of two lists of one count,
+                        // docs/adr/0065 §6 R5) is read off the arm into a local that the arm always
+                        // sets.
+                        MeasureText {
+                            size: format!("({content}.map {{ $0.start{path} ? 1 : 0 }} ?? 0)"),
+                            present: None,
+                            gated: false,
+                        }
+                    } else if measure.gated {
                         MeasureText {
                             size: format!("({content}.map {{ $0.start{path} ? 1 : 0 }} ?? 0)"),
                             present: Some(format!("{content} != nil")),

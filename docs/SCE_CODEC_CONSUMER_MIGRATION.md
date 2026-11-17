@@ -2290,4 +2290,8 @@ Landing: the commit that adds this section, and each later one that names a form
   `CodecChainHasMarker(header: 0x80, extensions_has_0x12: .has0x12(extensions: ScePlaced(rest: [e], place: 0)!, slices: s))`.
 - `CodecZenohErr` is printed: its extensions are a `BoundedList` of one entry or more, its payload a
   `BoundedBytes`, and `payload_len` and the header's `E` and `Z` are derived.
+- A length or a count of content under gates of its own (ADR 0058 §1, `CodecLengthStated.span_len`) is an
+  optional of a printed value: state it only where none of the content is there, `nil` otherwise; a decoded
+  value holds `nil` where some of the content was in the frame. Stating another number beside the content is
+  refused with `inconsistentSource`.
 

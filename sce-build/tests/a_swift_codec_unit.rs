@@ -1499,6 +1499,133 @@ fn an_input_a_list_held_to_its_law_says_is_read_off_its_start() {
 }
 
 #[test]
+fn an_input_a_list_in_a_groups_arm_says_is_read_off_the_arm_that_holds_it() {
+    // docs/adr/0065 §6 R8, R4e: the codec hands its own `wide_in` on to every entry of `entries`,
+    // which the arm of `head.L` holds and whose entries say it, so the value says `wide_in` by the
+    // list's start where the arm holds the list, and nothing where it holds the other arm.
+    let code = swift_of_beside(
+        "codec_group_list_says",
+        r#"<scxml xmlns="http://www.w3.org/2005/07/scxml" xmlns:sce="http://sce.dev/ext"
+       sce:kind="codec" sce:default-endian="big" name="codec_group_list_says">
+  <sce:import src="codec_chain_flag_entry.scxml" kind="codec" as="codec_chain_flag_entry">
+    <sce:flag-bind input="wide" source="wide_in"/>
+  </sce:import>
+  <sce:flag-inputs>
+    <sce:flag-input name="wide_in" width="1"/>
+  </sce:flag-inputs>
+  <datamodel>
+    <sce:flags id="head" sce:type="uint8" sce:byte="0" sce:bit-size="8">
+      <sce:flag name="L" bit="1"/>
+    </sce:flags>
+    <sce:field id="level" sce:type="uint8" sce:byte="1" sce:bit-size="8"
+               sce:present-if="head.L"/>
+    <sce:field id="count" sce:type="uint8" sce:byte="2" sce:bit-size="8"
+               sce:present-if="head.L"/>
+    <sce:repeat id="entries" type="codec_chain_flag_entry" sce:byte="3"
+                count="count" max-count="4"
+                sce:present-if="head.L"/>
+    <sce:field id="note" sce:type="uint8" sce:byte="4" sce:bit-size="8"
+               sce:present-if="!head.L"/>
+  </datamodel>
+</scxml>"#,
+        &["codec_chain_flag_entry.scxml"],
+    )
+    .expect("a list in a group's arm that says its holder's input is written");
+    for (expected, why) in [
+        (
+            "public static func inputWideIn<Source: CodecGroupListSaysSource>(_ source: Source) -> UInt8? {\n",
+            "the value says the input in some of its values only",
+        ),
+        (
+            "        case .l(_, let held): return held.start ? 1 : 0\n        case .notL: return nil\n",
+            "the input is the start of the list where the arm holds it, none where it does not",
+        ),
+        (
+            "(decoding: entries_items), start: (wide_in & 0x01) != 0)",
+            "a decode holds the list from the input it is handed",
+        ),
+    ] {
+        assert!(code.contains(expected), "{why}: {expected} in {code}");
+    }
+}
+
+#[test]
+fn two_lists_of_one_count_hold_one_to_its_law_in_the_pair() {
+    // docs/adr/0065 §6 R5, R8: `links` and `weights` share `links_len`, and the entries of `links`
+    // say the `wide` the codec binds to `options.W`, so the pair holds `links` held to its law, the
+    // flag is derived from its start, and the count from it.
+    let code = swift_of_beside(
+        "codec_aligned_lawful",
+        r#"<scxml xmlns="http://www.w3.org/2005/07/scxml" xmlns:sce="http://sce.dev/ext"
+       sce:kind="codec" sce:default-endian="big" name="codec_aligned_lawful">
+  <sce:import src="codec_chain_flag_entry.scxml" kind="codec" as="codec_chain_flag_entry">
+    <sce:flag-bind input="wide" source="options.W"/>
+  </sce:import>
+  <sce:import src="codec_repeat_elem.scxml" kind="codec" as="codec_repeat_elem"/>
+  <datamodel>
+    <sce:flags id="options" sce:type="uint8" sce:byte="0" sce:bit-size="8">
+      <sce:flag name="H" bit="0"/>
+      <sce:flag name="W" bit="1"/>
+    </sce:flags>
+    <sce:field id="links_len" sce:type="uint8" sce:byte="1" sce:bit-size="8"/>
+    <sce:repeat id="links" type="codec_chain_flag_entry" sce:byte="2"
+                count="links_len" max-count="8"/>
+    <sce:repeat id="weights" type="codec_repeat_elem" sce:byte="3"
+                count="links_len" max-count="8"
+                sce:present-if="options.H"/>
+  </datamodel>
+</scxml>"#,
+        &["codec_chain_flag_entry.scxml", "codec_repeat_elem.scxml"],
+    )
+    .expect("two lists of one count, one held to its law, are written");
+    for (expected, why) in [
+        (
+            "    case h(links_weights: Aligned<Lawful<BoundedList<Links_Entry, CodecAlignedLawful.LinksBound>, CodecAlignedLawful.LinksLaw<Links_Entry>>, BoundedList<Weights_Entry, CodecAlignedLawful.WeightsBound>>)\n",
+            "the pair holds the list held to its law beside the other",
+        ),
+        (
+            "(links_member.map { $0.start ? 1 : 0 } ?? 0)",
+            "the flag is derived from the start of the list every arm holds",
+        ),
+        (
+            "= .notH(links: .init(defaultOf: .fewest(of: CodecChainFlagEntry())))\n",
+            "a frame of zeros holds the list alone, held to its law from the start it says",
+        ),
+    ] {
+        assert!(code.contains(expected), "{why}: {expected} in {code}");
+    }
+}
+
+#[test]
+fn a_number_the_value_states_where_what_it_measures_is_absent_is_an_optional_it_derives_else() {
+    // docs/adr/0058 §1: `span_len` is the length of `alpha` and of `beta`, each under a gate of its
+    // own, so the value states it where both are absent and the encode derives it where either is
+    // there, refusing a value that states another number beside them.
+    let code = swift_of("tests/forge/resources/codec_length_stated.scxml")
+        .expect("a stated length is written");
+    for (expected, why) in [
+        (
+            "    public var span_len: UInt8? = nil\n",
+            "the value states the number as an optional",
+        ),
+        (
+            "let span_len_derived: UInt8 = span_len_derived_first != nil ? UInt8((span_len_derived_first ?? 0)) : (source.span_len ?? 0)",
+            "the number is derived where what it measures is there, else what the value states",
+        ),
+        (
+            "if span_len_derived_first != nil, let stated = source.span_len, stated != span_len_derived { throw CodecError.inconsistentSource }",
+            "a value that states another number beside what it measures is refused",
+        ),
+        (
+            "span_len: (alpha == nil && beta == nil) ? span_len : nil",
+            "a decode presents the number only where none of what it measures was in the frame",
+        ),
+    ] {
+        assert!(code.contains(expected), "{why}: {expected} in {code}");
+    }
+}
+
+#[test]
 fn a_gated_variable_length_field_is_an_optional_that_reads_and_writes_as_an_ungated_one() {
     let tail = swift_of("tests/forge/resources/codec_present_if_tail.scxml")
         .expect("a gated tail is written");
