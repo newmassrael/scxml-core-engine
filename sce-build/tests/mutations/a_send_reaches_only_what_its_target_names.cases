@@ -64,10 +64,10 @@ PY
 
 mutation_case "the C++ AOT runs the rest of the block after a target naming no invocation" <<'PY'
 edit("tools/codegen/templates/actions/send.jinja2",
-     """    Event::Error_communication, "<send target='{{ action.target | escape_cpp }}'> names no invocation of this session", std::nullopt, sendId));
+     """    Event::Error_communication, ::SCE::Common::ErrorReason::TargetUnreachable, "<send target='{{ action.target | escape_cpp }}'> names no invocation of this session", sendId));
 {{ block_end or 'return;' }}
 {% set block_flow.ended = true %}""",
-     """    Event::Error_communication, "<send target='{{ action.target | escape_cpp }}'> names no invocation of this session", std::nullopt, sendId));""")
+     """    Event::Error_communication, ::SCE::Common::ErrorReason::TargetUnreachable, "<send target='{{ action.target | escape_cpp }}'> names no invocation of this session", sendId));""")
 PY
 
 # ── C++ AOT: any session id reads as this one ──────────────────────
