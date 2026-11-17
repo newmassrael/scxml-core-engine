@@ -679,6 +679,21 @@ fn read_value(l: &LangCtx, imports: &[ImportContext], entry: &Entry<'_>) -> Stri
     }
 }
 
+/// The byte case of `source`, a value of the CBOR codec `plan` at `path`
+/// (docs/adr/0081 §5): the value made by its constructor, which takes the
+/// entries in declaration order (`value_class`), a text and a byte string each
+/// made within its bound by `make` of the view its accessor presents it as, and
+/// each entry compared through its accessor. A map takes no flag input and no
+/// caller's tag.
+pub(crate) fn source_case(
+    plan: &CborPlan<'_>,
+    path: &super::source_case::CodecPath,
+    source: &serde_json::Value,
+) -> Result<super::source_case::SourceCase, String> {
+    let elements = super::super::source_notation::cbor_elements(plan, source)?;
+    super::source_case::map_or_line_case(path, elements, super::source_case::Texts::Bounded)
+}
+
 /// The text of the printed CBOR codec `plan` inside its namespace: the
 /// readers of its entries, the trait a source meets, the encode over any
 /// source, and the value, made by its constructor and read by its accessors.

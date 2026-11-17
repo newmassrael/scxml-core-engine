@@ -1233,6 +1233,30 @@ old encode, the old encode and its templates are removed in the same landing.
    a whole field's bytes, a byte of pieces, a multibyte field's bytes and the VLE writer, keep their Python arms.
    The carriers a parent's tag fills, and the local each gathers its bits in, are formed only where the template
    writes the encode (`field_encode_blocks`), so their naming refuses Rust, C++ and Python as the writes do.
+
+   *Amendment of 2026-11-17: byte cases of a CBOR map and of a content-line component (§5).* The conformance
+   generator refused `sources` of any codec but a positional one, so the CBOR and content-line encodes every printer
+   prints were held only by the `cases` of the builder's fields the catalog lists by hand. Decided: a map and a
+   component derive nothing a value says, so a case's `source` is the value whole, each entry keyed by its id as the
+   plan presents it: a boolean, an integer within its type, a text within its bound in UTF-8 bytes, a byte string of
+   a length its entry admits, `null` for an entry the value may lack, and an array for the values of a repeated
+   property, `[]` for none. It is the notation the `decoded` objects of these codecs already write, so one object
+   states one value in both. The notation is read once, against the plan (`generator::source_notation`), into the
+   elements in the order the value presents them, a property's parameters after it, which is the order the C++
+   constructor takes them; each printer spells the reading in the module that prints the encoding
+   (`{rust,cpp,python}_source::{cbor,content_line}::source_case`), since the literal must agree with the value that
+   module declares. Rust makes the map by its fields, a text and a byte string through `Bounded::new`, and the
+   component by `new` and the entries set, a text by `SceStr::from_view` and each value of a list by
+   `SceList::try_push`; C++ hands the constructor each element, a map's text and byte string by `make` of the view
+   its accessor presents and a list as a vector bound first; Python makes the dataclass. A decode is compared with
+   the value element by element, and structurally where the value holds a sequence: in C++ a span by its size and
+   each value, in Python a list as the `list` of its values, whatever sequence class a decode builds. A value of an
+   enum, a list of records, a line of a list of values and lines that are records are refused by name until a case
+   needs them, and so are `inputs` and a `tag`, which neither codec takes. The bytes are the models': for a map, a
+   reading of §4.6.1 and RFC 8949's deterministic encoding in `gen_cases.py`, held first to the fixture's
+   hand-written `cases`, which writes six sources of `codec_cbor_map`; for a component, the content-line model, whose
+   twelve hand-chosen values become the sources of `codec_content_line_event`. Each is read back by its model before
+   it is written.
 5. Swift, when its codec lowers what the plan holds.
    *Swift lowers what the plan holds, 2026-11-16:* its codec writes every codec of the repository Rust writes,
    but the one only an MCU-class backend writes (`a_swift_codec_is_written_wherever_rust_writes_one.rs`): an

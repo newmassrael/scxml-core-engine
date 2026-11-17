@@ -42,6 +42,7 @@ mod rust_source;
 mod rust_test_tables;
 mod rust_test_template;
 mod rust_view;
+mod source_notation;
 mod swift_codec;
 mod swift_test_tables;
 mod swift_test_template;
@@ -55,7 +56,7 @@ pub(crate) mod test_template_walk;
 /// codec's ready-made source (docs/adr/0081 §5). See [`rust_source::source_case`].
 pub(crate) use rust_source::{
     source_case as rust_source_case, CodecPath as RustCodecPath, HeldCodecs as RustHeldCodecs,
-    HeldEnum as RustHeldEnum, ReadHeld as RustReadHeld,
+    HeldEnum as RustHeldEnum, ReadHeld as RustReadHeld, SourceCase as RustSourceCase,
 };
 
 /// A byte case of the C++ conformance harness, its source a value the printed
@@ -63,7 +64,7 @@ pub(crate) use rust_source::{
 /// [`cpp_source::source_case::source_case`]; it reads the codecs a codec holds
 /// through the same [`RustHeldCodecs`] the Rust case does.
 pub(crate) use cpp_source::source_case::{
-    source_case as cpp_source_case, CodecPath as CppCodecPath,
+    source_case as cpp_source_case, CodecPath as CppCodecPath, SourceCase as CppSourceCase,
 };
 
 /// What a reader in another document knows of a codec the C++ backend prints
@@ -75,8 +76,19 @@ pub use cpp_source::CppPrinted;
 /// printed dataclass's constructor makes (docs/adr/0081 §5). See
 /// [`python_source::source_case::source_case`].
 pub(crate) use python_source::source_case::{
-    source_case as python_source_case, CodecPath as PythonCodecPath,
+    source_case as python_source_case, CodecPath as PythonCodecPath, SourceCase as PythonSourceCase,
 };
+
+/// A byte case of a CBOR map or of a content-line component, for each harness
+/// whose printer prints the plan (docs/adr/0081 §5): its source read once
+/// (`source_notation`) and spelled as the value the encoding's printer
+/// declares, by the module that prints it.
+pub(crate) use cpp_source::cbor::source_case as cpp_cbor_source_case;
+pub(crate) use cpp_source::content_line::source_case as cpp_content_line_source_case;
+pub(crate) use python_source::cbor::source_case as python_cbor_source_case;
+pub(crate) use python_source::content_line::source_case as python_content_line_source_case;
+pub(crate) use rust_source::cbor::source_case as rust_cbor_source_case;
+pub(crate) use rust_source::content_line::source_case as rust_content_line_source_case;
 
 /// Whether a codec has a source interface (ADR 0058), given whether each codec
 /// it imports has one. See [`rust_source::supported_with`].

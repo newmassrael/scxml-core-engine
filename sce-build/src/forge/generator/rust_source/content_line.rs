@@ -517,6 +517,76 @@ impl Printer<'_> {
     }
 }
 
+/// The byte case of `source`, a value of the content-line codec `plan` at
+/// `path` (docs/adr/0081 §5): the component at the build's default profile,
+/// which is its own source, made by `new` with every optional entry absent and
+/// every list empty, then each entry the case states set, a text copied into
+/// what the profile holds it in (`SceStr::from_view`) and each value of a
+/// repeated property pushed in order (`SceList::try_push`); and for each entry
+/// an expression that holds when the decode of the case's bytes holds what the
+/// value does, the two compared field by field as the value's derived equality
+/// compares them, a list whole and in order. A component takes no flag input
+/// and no caller's tag. One the default profile does not hold has no value of
+/// that name, and is refused by name.
+pub(crate) fn source_case(
+    plan: &ContentLinePlan<'_>,
+    path: &super::CodecPath,
+    source: &serde_json::Value,
+) -> Result<super::SourceCase, String> {
+    use super::super::source_notation::{content_line_elements, Scalar, Stated};
+    if !plan.model.inline_holds_with(|_| true) {
+        return Err(format!(
+            "`{}` holds a text or a list the protocol bounds by nothing, so no value of it \
+             stands at the build's default profile for a case to make (docs/adr/0077 §7)",
+            plan.model.name
+        ));
+    }
+    let l = LangCtx::new(Language::Rust, &[]);
+    let held = |scalar: &Scalar| match scalar {
+        Scalar::Bool(b) => b.to_string(),
+        Scalar::Int(n) => n.to_string(),
+        Scalar::Text(text) => {
+            format!("{RT}::SceStr::from_view({text:?}).expect(\"the case is within its bound\")")
+        }
+        Scalar::Bytes(_) => unreachable!("a content line holds no byte string"),
+    };
+    let mut sets = Vec::new();
+    let mut checks = Vec::new();
+    for element in content_line_elements(plan, source)? {
+        let field = l.codec_field_id(&element.id);
+        match &element.stated {
+            Stated::Absent => {}
+            Stated::One(scalar) if element.optional => {
+                sets.push(format!("v.{field} = Some({});", held(scalar)));
+            }
+            Stated::One(scalar) => sets.push(format!("v.{field} = {};", held(scalar))),
+            Stated::List(items) => {
+                for scalar in items {
+                    sets.push(format!(
+                        "{RT}::SceList::try_push(&mut v.{field}, {}).expect(\"the case is within \
+                         its bound\");",
+                        held(scalar)
+                    ));
+                }
+            }
+        }
+        checks.push((element.id, format!("decoded.{field} == parts.{field}")));
+    }
+    let new = format!("{}::{}::new()", path.module, path.type_name);
+    let literal = if sets.is_empty() {
+        new
+    } else {
+        format!("{{ let mut v = {new}; {} v }}", sets.join(" "))
+    };
+    Ok(super::SourceCase {
+        bindings: Vec::new(),
+        literal,
+        checks,
+        inputs: Vec::new(),
+        encode_inputs: Vec::new(),
+    })
+}
+
 /// The source interface of a content-line codec, as the text its file holds.
 pub(in super::super) fn render(input: &Input<'_>) -> String {
     let printer = Printer {

@@ -1155,6 +1155,21 @@ impl Printer<'_> {
     }
 }
 
+/// The byte case of `source`, a value of the content-line codec `plan` at
+/// `path` (docs/adr/0081 §5): the value made by its constructor, which takes a
+/// property's value and then each parameter of it (`Printer::elements`), a text
+/// as a `std::string_view` and the values of a repeated property as the span of
+/// a vector bound first, and each entry compared through its accessor. A
+/// component takes no flag input and no caller's tag.
+pub(crate) fn source_case(
+    plan: &ContentLinePlan<'_>,
+    path: &super::source_case::CodecPath,
+    source: &serde_json::Value,
+) -> Result<super::source_case::SourceCase, String> {
+    let elements = super::super::source_notation::content_line_elements(plan, source)?;
+    super::source_case::map_or_line_case(path, elements, super::source_case::Texts::Views)
+}
+
 /// The text of the printed content-line codec `m` inside its namespace: the
 /// source interface and class of each line record, the source interface of the
 /// value, its encode over any source, and the value, made by its constructor
@@ -1168,4 +1183,55 @@ pub(in super::super) fn render(m: &CodecModel, l: &LangCtx, struct_name: &str) -
     let text = printer.text();
     printer.plan.totality.assert_all_written(&m.name);
     text
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::forge::generator::source_notation::content_line_elements;
+    use crate::forge::model::ForgeDocument;
+
+    /// A byte case states a component's elements in the order the printed
+    /// constructor takes them (docs/adr/0081 §5): each property's value, then
+    /// each parameter of it, so the C++ case, which hands them to the
+    /// constructor by place, hands each where its parameter is.
+    ///
+    /// Turns red where `source_notation::content_line_elements` reads the
+    /// parameters apart from their property, or `Printer::elements` moves one.
+    #[test]
+    fn a_case_states_the_elements_in_the_order_the_constructor_takes_them() {
+        let stem = "codec_content_line_event";
+        let path = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
+            .join(format!("../tests/forge/resources/{stem}.scxml"));
+        let text = std::fs::read_to_string(&path).expect("the fixture document reads");
+        let Ok(Some(ForgeDocument::Codec(m))) =
+            crate::forge::parser::parse_forge(&text, crate::DocumentLabel::symmetric(stem))
+        else {
+            panic!("{stem} is a codec");
+        };
+        let l = LangCtx::new(Language::Cpp, &[]);
+        let printer = Printer {
+            l: &l,
+            name: "CodecContentLineEvent",
+            plan: ContentLinePlan::of(&m),
+        };
+        let constructor: Vec<String> = printer.elements().into_iter().map(|e| e.name).collect();
+        let source = serde_json::json!({
+            "uid": "u", "dtstart": "d", "dtstartTzid": "z", "summary": null,
+            "description": null, "organizer": null, "organizerCn": null, "rrule": null,
+            "exdate": [], "sequence": null, "priority": null, "allDay": null
+        });
+        let stated: Vec<String> = content_line_elements(&printer.plan, &source)
+            .expect("the source states every element")
+            .into_iter()
+            .map(|e| l.codec_field_id(&e.id))
+            .collect();
+        assert_eq!(stated, constructor);
+        assert!(
+            constructor
+                .windows(2)
+                .any(|w| w == ["dtstart", "dtstartTzid"]),
+            "a parameter follows its property: {constructor:?}"
+        );
+    }
 }

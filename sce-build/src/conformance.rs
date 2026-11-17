@@ -3732,7 +3732,10 @@ impl crate::forge::generator::RustHeldCodecs for HeldFrom<'_> {
 /// bytes presents what the literal does. Rust prints the plan as `{Codec}Parts`
 /// (docs/adr/0058 §4), and C++ as the printed value its constructor makes
 /// (docs/adr/0081 step 4); the others are handed nothing, and run their `cases`
-/// as before.
+/// as before. A CBOR map and a content-line component derive nothing, so their
+/// source is the value itself, every entry stated (`source_notation`): Rust
+/// makes the map or the component, C++ its constructor and Python its
+/// dataclass's.
 ///
 /// Answers whether anything was folded, as [`fold_reject_vectors`] does.
 fn fold_source_cases(
@@ -3831,7 +3834,7 @@ fn fold_refused_cases(
         "refused",
         &where_,
         resource_dir,
-        |plan, at, row, case| {
+        |totality, at, row, case| {
             let error = row
                 .get("error")
                 .and_then(|v| v.as_str())
@@ -3839,7 +3842,7 @@ fn fold_refused_cases(
             let failure = EncodeFailure::parse(error).map_err(|e| format!("{at}: {e}"))?;
             // The encode answers its own refusals, and a held codec's, which
             // may be of any kind.
-            let answers = plan.totality.refusals().iter().any(|r| {
+            let answers = totality.refusals().iter().any(|r| {
                 r.kind == failure.refusal_kind()
                     || r.kind == crate::forge::codec_totality::RefusalKind::Child
             });
@@ -3972,6 +3975,69 @@ struct PrintedCase {
     note: String,
 }
 
+impl PrintedCase {
+    /// The case as `printer`'s harness inlines it, its note `note`: the C++
+    /// fragment hands the note and each label to a `printf` as a string
+    /// literal's text, and the others inline them as they are.
+    fn noted(self, printer: CasePrinter, note: &str) -> Self {
+        match printer {
+            CasePrinter::Cpp => PrintedCase {
+                checks: self
+                    .checks
+                    .into_iter()
+                    .map(|(element, holds)| (crate::filters::escape_cpp(element), holds))
+                    .collect(),
+                note: crate::filters::escape_cpp(note.to_string()),
+                ..self
+            },
+            CasePrinter::Rust | CasePrinter::Python => PrintedCase {
+                note: note.to_string(),
+                ..self
+            },
+        }
+    }
+}
+
+impl From<crate::forge::generator::RustSourceCase> for PrintedCase {
+    fn from(case: crate::forge::generator::RustSourceCase) -> Self {
+        PrintedCase {
+            bindings: case.bindings,
+            literal: case.literal,
+            checks: case.checks,
+            inputs: case.inputs,
+            encode_inputs: case.encode_inputs,
+            note: String::new(),
+        }
+    }
+}
+
+impl From<crate::forge::generator::CppSourceCase> for PrintedCase {
+    fn from(case: crate::forge::generator::CppSourceCase) -> Self {
+        PrintedCase {
+            bindings: case.bindings,
+            literal: case.literal,
+            checks: case.checks,
+            inputs: case.inputs,
+            encode_inputs: case.encode_inputs,
+            note: String::new(),
+        }
+    }
+}
+
+impl From<crate::forge::generator::PythonSourceCase> for PrintedCase {
+    /// The value is one expression, so it needs no binding.
+    fn from(case: crate::forge::generator::PythonSourceCase) -> Self {
+        PrintedCase {
+            bindings: Vec::new(),
+            literal: case.literal,
+            checks: case.checks,
+            inputs: case.inputs,
+            encode_inputs: case.encode_inputs,
+            note: String::new(),
+        }
+    }
+}
+
 /// Each row of a codec fixture's byte cases under `key`, its `source` made into
 /// the value `printer` spells (after the bindings it reads, with its checks and
 /// inputs), read from the codec's plan, and handed with its row and its place
@@ -3986,24 +4052,20 @@ fn fold_case_rows(
     where_: &str,
     resource_dir: &Path,
     mut fold_row: impl FnMut(
-        &crate::forge::encode_plan::EncodePlan<'_>,
+        &crate::forge::codec_totality::Totality,
         &str,
         &serde_json::Value,
         PrintedCase,
     ) -> Result<serde_json::Value, String>,
 ) -> Result<Vec<serde_json::Value>, String> {
+    use crate::forge::encode_plan::CodecPlan;
     let document = fixture.document_path(resource_dir);
     let include = [resource_dir.to_path_buf()];
     crate::encode_plan_file_with_imports(
         &document,
         &include,
         &crate::ForgeCompileOptions::default(),
-        |plan, imported| -> Result<Vec<serde_json::Value>, String> {
-            let crate::forge::encode_plan::CodecPlan::Positional(plan) = plan else {
-                return Err(format!(
-                    "{where_}: '{key}' are written for a positional codec"
-                ));
-            };
+        |codec_plan, imported| -> Result<Vec<serde_json::Value>, String> {
             let type_name = crate::filters::to_pascal_case(fixture.name.clone());
             let rust_path = crate::forge::generator::RustCodecPath {
                 module: format!("{HARNESS_FIXTURES}::{}", fixture.name),
@@ -4025,74 +4087,99 @@ fn fold_case_rows(
                             "{at}: 'note' holds a character a literal does not keep"
                         ));
                     }
-                    let mut held = HeldFrom {
-                        imported,
-                        include: &include,
-                    };
                     let inputs = row.get("inputs").unwrap_or(&serde_json::Value::Null);
                     // The tag a caller hands the decode of a variant with no
                     // tag of its own, which such a case states.
                     let tag = row.get("tag").unwrap_or(&serde_json::Value::Null);
-                    let case = match printer {
-                        CasePrinter::Cpp => {
-                            let case = crate::forge::generator::cpp_source_case(
-                                plan, &cpp_path, source, inputs, tag, &mut held,
-                            )
-                            .map_err(|e| format!("{at}: {e}"))?;
-                            // The C++ fragment hands the note and each label to
-                            // a `printf` as a string literal's text.
-                            PrintedCase {
-                                bindings: case.bindings,
-                                literal: case.literal,
-                                checks: case
-                                    .checks
-                                    .into_iter()
-                                    .map(|(element, holds)| {
-                                        (crate::filters::escape_cpp(element), holds)
-                                    })
-                                    .collect(),
-                                inputs: case.inputs,
-                                encode_inputs: case.encode_inputs,
-                                note: crate::filters::escape_cpp(note.to_string()),
+                    let case = match codec_plan {
+                        CodecPlan::Positional(plan) => {
+                            let mut held = HeldFrom {
+                                imported,
+                                include: &include,
+                            };
+                            match printer {
+                                CasePrinter::Cpp => PrintedCase::from(
+                                    crate::forge::generator::cpp_source_case(
+                                        plan, &cpp_path, source, inputs, tag, &mut held,
+                                    )
+                                    .map_err(|e| format!("{at}: {e}"))?,
+                                ),
+                                CasePrinter::Python => PrintedCase::from(
+                                    crate::forge::generator::python_source_case(
+                                        plan,
+                                        &python_path,
+                                        source,
+                                        inputs,
+                                        tag,
+                                        &mut held,
+                                    )
+                                    .map_err(|e| format!("{at}: {e}"))?,
+                                ),
+                                CasePrinter::Rust => PrintedCase::from(
+                                    crate::forge::generator::rust_source_case(
+                                        plan, &rust_path, source, inputs, tag, &mut held,
+                                    )
+                                    .map_err(|e| format!("{at}: {e}"))?,
+                                ),
                             }
                         }
-                        CasePrinter::Python => {
-                            let case = crate::forge::generator::python_source_case(
-                                plan,
-                                &python_path,
-                                source,
-                                inputs,
-                                tag,
-                                &mut held,
-                            )
-                            .map_err(|e| format!("{at}: {e}"))?;
-                            // The value is one expression, so it needs no
-                            // binding.
-                            PrintedCase {
-                                bindings: Vec::new(),
-                                literal: case.literal,
-                                checks: case.checks,
-                                inputs: case.inputs,
-                                encode_inputs: case.encode_inputs,
-                                note: note.to_string(),
-                            }
+                        // A map and a component take no flag input and no
+                        // caller's tag: a case that states one is of another
+                        // codec.
+                        CodecPlan::Cbor(_) | CodecPlan::ContentLine(_)
+                            if !inputs.is_null() || !tag.is_null() =>
+                        {
+                            return Err(format!(
+                                "{at}: a CBOR map or a content-line component takes no \
+                                 'inputs' and no 'tag'"
+                            ));
                         }
-                        CasePrinter::Rust => {
-                            let case = crate::forge::generator::rust_source_case(
-                                plan, &rust_path, source, inputs, tag, &mut held,
-                            )
-                            .map_err(|e| format!("{at}: {e}"))?;
-                            PrintedCase {
-                                bindings: case.bindings,
-                                literal: case.literal,
-                                checks: case.checks,
-                                inputs: case.inputs,
-                                encode_inputs: case.encode_inputs,
-                                note: note.to_string(),
-                            }
-                        }
+                        CodecPlan::Cbor(plan) => match printer {
+                            CasePrinter::Cpp => PrintedCase::from(
+                                crate::forge::generator::cpp_cbor_source_case(
+                                    plan, &cpp_path, source,
+                                )
+                                .map_err(|e| format!("{at}: {e}"))?,
+                            ),
+                            CasePrinter::Python => PrintedCase::from(
+                                crate::forge::generator::python_cbor_source_case(
+                                    plan,
+                                    &python_path,
+                                    source,
+                                )
+                                .map_err(|e| format!("{at}: {e}"))?,
+                            ),
+                            CasePrinter::Rust => PrintedCase::from(
+                                crate::forge::generator::rust_cbor_source_case(
+                                    plan, &rust_path, source,
+                                )
+                                .map_err(|e| format!("{at}: {e}"))?,
+                            ),
+                        },
+                        CodecPlan::ContentLine(plan) => match printer {
+                            CasePrinter::Cpp => PrintedCase::from(
+                                crate::forge::generator::cpp_content_line_source_case(
+                                    plan, &cpp_path, source,
+                                )
+                                .map_err(|e| format!("{at}: {e}"))?,
+                            ),
+                            CasePrinter::Python => PrintedCase::from(
+                                crate::forge::generator::python_content_line_source_case(
+                                    plan,
+                                    &python_path,
+                                    source,
+                                )
+                                .map_err(|e| format!("{at}: {e}"))?,
+                            ),
+                            CasePrinter::Rust => PrintedCase::from(
+                                crate::forge::generator::rust_content_line_source_case(
+                                    plan, &rust_path, source,
+                                )
+                                .map_err(|e| format!("{at}: {e}"))?,
+                            ),
+                        },
                     };
-                    fold_row(plan, &at, row, case)
+                    fold_row(codec_plan.totality(), &at, row, case.noted(printer, note))
                 })
                 .collect()
         },
@@ -5352,6 +5439,266 @@ mod tests {
 
         let (folded, value) = fold(false).expect("a codec on the template is handed nothing");
         assert!(!folded && value.get("sources").is_none());
+    }
+
+    /// The byte case `case` of the codec fixture `name`, folded for the
+    /// harness of `language` as a codec its backend prints, as the render would
+    /// fold it: what the fragment renders the case from.
+    fn folded_source(
+        name: &str,
+        case: serde_json::Value,
+        language: Language,
+    ) -> Result<serde_json::Value, String> {
+        let manifest_path =
+            Path::new(env!("CARGO_MANIFEST_DIR")).join("../tests/forge/conformance/fixtures.json");
+        let manifest = Manifest::load(&manifest_path).expect("manifest must load and validate");
+        let resource_dir = Path::new(env!("CARGO_MANIFEST_DIR")).join("../tests/forge/resources");
+        let reference_path = Path::new(env!("CARGO_MANIFEST_DIR"))
+            .join("../tests/forge/conformance/numerical_reference.json");
+        let mut fixture = manifest
+            .fixtures
+            .iter()
+            .find(|f| f.name == name)
+            .unwrap_or_else(|| panic!("the catalog holds {name}"))
+            .clone();
+        if let FixtureSpec::Codec { printed, .. } = &mut fixture.spec {
+            *printed = true;
+        }
+        let reference = serde_json::json!({ "codecs": { name: { "sources": [case] } } });
+        let mut value = serde_json::to_value(&fixture).expect("a fixture serializes");
+        fold_source_cases(
+            &mut value,
+            &reference,
+            &fixture,
+            language,
+            &resource_dir,
+            &reference_path,
+        )?;
+        Ok(value["sources"][0].clone())
+    }
+
+    /// A byte case of a CBOR map states the map whole, every entry by its id
+    /// (docs/adr/0081 §5), and each printer makes it as its encoding's printer
+    /// declares the value: Rust the map itself, a text and a byte string through
+    /// `Bounded::new`, C++ by its constructor, a text and a byte string by `make`
+    /// of the view its accessor presents, and Python by its dataclass's
+    /// constructor. Each entry is compared through what the value presents.
+    ///
+    /// Turns red where `source_notation::cbor_elements` reads an entry
+    /// otherwise, or `rust_source::cbor::source_case`,
+    /// `cpp_source::source_case::map_or_line_case` with `Texts::Bounded` or
+    /// `python_source::source_case::map_or_line_case` spells one otherwise.
+    #[test]
+    fn a_source_case_of_a_cbor_map_is_the_map_each_printer_makes() {
+        let mut encoded: Vec<u64> = vec![165, 0, 80];
+        encoded.extend(0..16);
+        encoded.extend([
+            1, 102, 110, 111, 100, 101, 45, 97, 3, 3, 5, 66, 222, 173, 7, 245,
+        ]);
+        let case = serde_json::json!({
+            "source": {
+                "source": "node-a", "id": (0..16).collect::<Vec<u8>>(), "pattern": 3,
+                "payload": [222, 173], "deadline": null, "urgent": true
+            },
+            "encoded": encoded,
+            "note": "five entries"
+        });
+
+        let rust = folded_source("codec_cbor_map", case.clone(), Language::Rust)
+            .expect("the Rust harness states it");
+        let literal = rust["literal"].as_str().expect("a literal");
+        for fragment in [
+            "fixtures::codec_cbor_map::CodecCborMap { source: \
+             ::sce_forge_runtime::codec::Bounded::new(\"node-a\").expect(\"the case is within \
+             its bound\"), id: ::sce_forge_runtime::codec::Bounded::new(&[0, 1, 2, 3, 4, 5, 6, \
+             7, 8, 9, 10, 11, 12, 13, 14, 15][..])",
+            "pattern: 3, payload: ::sce_forge_runtime::codec::Bounded::new(&[222, 173][..])",
+            "deadline: None, urgent: Some(true) }",
+        ] {
+            assert!(literal.contains(fragment), "{literal} lacks {fragment}");
+        }
+        assert_eq!(
+            rust["checks"][5],
+            serde_json::json!({ "element": "urgent", "holds": "decoded.urgent == parts.urgent" })
+        );
+        assert_eq!(rust["inputs"], serde_json::json!([]));
+
+        let cpp = folded_source("codec_cbor_map", case.clone(), Language::Cpp)
+            .expect("the C++ harness states it");
+        let class = "::SCE::Generated::CodecCborMap::CodecCborMap";
+        assert_eq!(
+            cpp["literal"],
+            format!(
+                "{class}{{decltype(std::declval<const {class}&>().source())::make(\
+                 std::string_view(\"node-a\", 6)).value(), decltype(std::declval<const \
+                 {class}&>().id())::make(held_0).value(), 3u, decltype(std::declval<const \
+                 {class}&>().payload())::make(held_1).value(), std::nullopt, true}}"
+            )
+        );
+        assert_eq!(
+            cpp["bindings"],
+            serde_json::json!([
+                "const std::vector<std::uint8_t> held_0{0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15};",
+                "const std::vector<std::uint8_t> held_1{222, 173};",
+            ])
+        );
+        assert_eq!(
+            cpp["checks"][0],
+            serde_json::json!({ "element": "source", "holds": "(*decoded).source() == value.source()" })
+        );
+
+        let python = folded_source("codec_cbor_map", case, Language::Python)
+            .expect("the Python harness states it");
+        assert_eq!(
+            python["literal"],
+            "codec_cbor_map.CodecCborMap(source=\"node-a\", id=bytes([0, 1, 2, 3, 4, 5, 6, 7, 8, \
+             9, 10, 11, 12, 13, 14, 15]), pattern=3, payload=bytes([222, 173]), deadline=None, \
+             urgent=True)"
+        );
+        assert_eq!(
+            python["checks"][4],
+            serde_json::json!({ "element": "deadline", "holds": "decoded.deadline == value.deadline" })
+        );
+    }
+
+    /// A byte case of a content-line component states the component whole,
+    /// each property and parameter by its id and a repeated property's values
+    /// in order (docs/adr/0081 §5): Rust makes it by `new` and sets each entry
+    /// stated, C++ hands its constructor each property's value and then its
+    /// parameters, the values of a repeated property as a vector bound first,
+    /// and Python makes its dataclass. A list is compared structurally: in C++
+    /// by its size and each value, in Python as the `list` of its values.
+    ///
+    /// Turns red where `source_notation::content_line_elements` reads an entry
+    /// otherwise, or `rust_source::content_line::source_case`,
+    /// `cpp_source::source_case::map_or_line_case` with `Texts::Views` or
+    /// `python_source::source_case::map_or_line_case` spells one otherwise.
+    #[test]
+    fn a_source_case_of_a_content_line_component_is_the_component_each_printer_makes() {
+        let case = serde_json::json!({
+            "source": {
+                "uid": "evt-1", "dtstart": "20261008T090000", "dtstartTzid": "Asia/Seoul",
+                "summary": null, "description": null, "organizer": null, "organizerCn": null,
+                "rrule": null, "exdate": ["20261015T090000"], "sequence": 65535,
+                "priority": -2, "allDay": true
+            },
+            "encoded": [66, 69, 71, 73, 78],
+            "note": "a list of one value"
+        });
+
+        let rust = folded_source("codec_content_line_event", case.clone(), Language::Rust)
+            .expect("the Rust harness states it");
+        let text = |t: &str| {
+            format!(
+                "::sce_forge_runtime::codec::SceStr::from_view(\"{t}\").expect(\"the case is \
+                 within its bound\")"
+            )
+        };
+        assert_eq!(
+            rust["literal"],
+            format!(
+                "{{ let mut v = fixtures::codec_content_line_event::CodecContentLineEvent::new(); \
+                 v.uid = {}; v.dtstart = {}; v.dtstart_tzid = {}; \
+                 ::sce_forge_runtime::codec::SceList::try_push(&mut v.exdate, {}).expect(\"the \
+                 case is within its bound\"); v.sequence = Some(65535); v.priority = Some(-2); \
+                 v.all_day = Some(true); v }}",
+                text("evt-1"),
+                text("20261008T090000"),
+                text("Asia/Seoul"),
+                text("20261015T090000")
+            )
+        );
+        assert_eq!(
+            rust["checks"][8],
+            serde_json::json!({ "element": "exdate", "holds": "decoded.exdate == parts.exdate" })
+        );
+
+        let cpp = folded_source("codec_content_line_event", case.clone(), Language::Cpp)
+            .expect("the C++ harness states it");
+        let class = "::SCE::Generated::CodecContentLineEvent::CodecContentLineEvent";
+        assert_eq!(
+            cpp["literal"],
+            format!(
+                "{class}{{std::string_view(\"evt-1\", 5), std::string_view(\"20261008T090000\", \
+                 15), std::string_view(\"Asia/Seoul\", 10), std::nullopt, std::nullopt, \
+                 std::nullopt, std::nullopt, std::nullopt, held_0, 65535u, -2, true}}"
+            )
+        );
+        assert_eq!(
+            cpp["bindings"],
+            serde_json::json!([format!(
+                "const std::vector<decltype(std::declval<const {class}&>().exdate())::value_type> \
+                 held_0{{std::string(\"20261015T090000\", 15)}};"
+            )])
+        );
+        assert_eq!(
+            cpp["checks"][8]["holds"],
+            "[&](const auto& xs, const auto& ys) { if (xs.size() != ys.size()) { return false; } \
+             for (std::size_t i = 0; i < xs.size(); ++i) { if (!(xs[i] == ys[i])) { return \
+             false; } } return true; }((*decoded).exdate(), value.exdate())"
+        );
+
+        let python = folded_source("codec_content_line_event", case, Language::Python)
+            .expect("the Python harness states it");
+        assert_eq!(
+            python["literal"],
+            "codec_content_line_event.CodecContentLineEvent(uid=\"evt-1\", \
+             dtstart=\"20261008T090000\", dtstart_tzid=\"Asia/Seoul\", summary=None, \
+             description=None, organizer=None, organizer_cn=None, rrule=None, \
+             exdate=[\"20261015T090000\"], sequence=65535, priority=-2, all_day=True)"
+        );
+        assert_eq!(
+            python["checks"][8],
+            serde_json::json!({
+                "element": "exdate",
+                "holds": "list(decoded.exdate) == list(value.exdate)"
+            })
+        );
+    }
+
+    /// A source of a map or a component that is no value of it is refused by
+    /// name, never left out: an entry the value does not present, a required
+    /// entry stated absent, a number past its type, and a flag input, which
+    /// neither takes.
+    ///
+    /// Turns red where `source_notation` lets one of them through, or
+    /// `fold_case_rows` reads `inputs` of a codec that takes none.
+    #[test]
+    fn a_source_that_is_no_value_of_a_map_or_a_component_is_refused_by_name() {
+        let cbor = |source: serde_json::Value| {
+            let mut case = serde_json::json!({ "encoded": [160], "note": "refused" });
+            case["source"] = source;
+            case
+        };
+        let base = || {
+            serde_json::json!({
+                "source": "node-a", "id": (0..16).collect::<Vec<u8>>(), "pattern": 3,
+                "payload": [], "deadline": null, "urgent": null
+            })
+        };
+        let mut extra = base();
+        extra["colour"] = serde_json::json!(1);
+        let mut absent = base();
+        absent["source"] = serde_json::Value::Null;
+        let mut wide = base();
+        wide["pattern"] = serde_json::json!(256);
+        let mut short = base();
+        short["id"] = serde_json::json!([0, 1]);
+        for (source, why) in [
+            (extra, "`colour`, which the value does not present"),
+            (absent, "`source` is always there"),
+            (wide, "outside the type of the element"),
+            (short, "`id`: 2 bytes"),
+        ] {
+            let refused = folded_source("codec_cbor_map", cbor(source), Language::Rust)
+                .expect_err("no value of the map");
+            assert!(refused.contains(why), "{refused}");
+        }
+        let mut handed = cbor(base());
+        handed["inputs"] = serde_json::json!({ "x": 1 });
+        let refused = folded_source("codec_cbor_map", handed, Language::Python)
+            .expect_err("a map takes no flag input");
+        assert!(refused.contains("takes no 'inputs'"), "{refused}");
     }
 
     /// A refused case (docs/adr/0081 §5) reaches the Rust and the C++ harness

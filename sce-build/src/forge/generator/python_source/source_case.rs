@@ -417,6 +417,75 @@ fn member_literal(
     }
 }
 
+/// One value a case of a CBOR map or of a content-line component states
+/// (`source_notation`), as the Python expression its dataclass's constructor
+/// takes: a boolean and an integer as literals, a text as the string literal of
+/// the same text, and a byte string as `bytes`. The value holds each in the
+/// class of its bound or its width where it is made.
+fn scalar_literal(scalar: &super::super::source_notation::Scalar) -> Result<String, String> {
+    use super::super::source_notation::Scalar;
+    Ok(match scalar {
+        Scalar::Bool(true) => "True".to_string(),
+        Scalar::Bool(false) => "False".to_string(),
+        Scalar::Int(n) => n.to_string(),
+        // A JSON string is a Python string literal of the same text: its
+        // escapes are ones Python reads alike.
+        Scalar::Text(text) => serde_json::to_string(text).map_err(|e| e.to_string())?,
+        Scalar::Bytes(bytes) => {
+            let bytes: Vec<String> = bytes.iter().map(u8::to_string).collect();
+            format!("bytes([{}])", bytes.join(", "))
+        }
+    })
+}
+
+/// The case of a CBOR map or of a content-line component made of `elements`
+/// (`source_notation`), a value of the codec at `path`: its dataclass made by
+/// its constructor, each element by its keyword, `None` where the case states
+/// none and a `list` of the values of a repeated property. Each element is
+/// compared as a value: a list structurally, as the `list` of its values in
+/// order, whatever sequence a value holds it in, and any other whole.
+pub(super) fn map_or_line_case(
+    path: &CodecPath,
+    elements: Vec<super::super::source_notation::StatedElement>,
+) -> Result<SourceCase, String> {
+    use super::super::source_notation::Stated;
+    let l = LangCtx::new(crate::generator::Language::Python, &[]);
+    let mut args = Vec::new();
+    let mut checks = Vec::new();
+    for element in elements {
+        let attribute = l.codec_field_id(&element.id);
+        let (value, holds) = match &element.stated {
+            Stated::Absent => (
+                "None".to_string(),
+                format!("{DECODED}.{attribute} == {VALUE}.{attribute}"),
+            ),
+            Stated::One(scalar) => (
+                scalar_literal(scalar)?,
+                format!("{DECODED}.{attribute} == {VALUE}.{attribute}"),
+            ),
+            Stated::List(items) => (
+                format!(
+                    "[{}]",
+                    items
+                        .iter()
+                        .map(scalar_literal)
+                        .collect::<Result<Vec<_>, _>>()?
+                        .join(", ")
+                ),
+                format!("list({DECODED}.{attribute}) == list({VALUE}.{attribute})"),
+            ),
+        };
+        args.push(format!("{attribute}={value}"));
+        checks.push((element.id, holds));
+    }
+    Ok(SourceCase {
+        literal: format!("{}({})", path.class(), args.join(", ")),
+        checks,
+        inputs: Vec::new(),
+        encode_inputs: Vec::new(),
+    })
+}
+
 /// The entries `json` states, each a value of the codec imported as `codec`,
 /// its dataclass reached as a body's is, joined for a list's literal.
 fn entry_literals(

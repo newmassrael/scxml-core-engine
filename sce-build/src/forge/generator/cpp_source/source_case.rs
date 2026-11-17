@@ -344,15 +344,7 @@ fn member_literal(
             let text = json
                 .as_str()
                 .ok_or_else(|| "text is a JSON string".to_string())?;
-            // The length is stated, so a text that holds a zero byte is whole.
-            Ok(made(
-                ty,
-                &format!(
-                    "std::string_view(\"{}\", {})",
-                    filters::escape_cpp(text.to_string()),
-                    text.len()
-                ),
-            ))
+            Ok(made(ty, &format!("std::string_view({})", text_args(text))))
         }
         // The variant the value holds, by the type the C++ tree declares the
         // enum as.
@@ -371,6 +363,117 @@ fn member_literal(
         }
         Value::Scalar(_) => Err("a float is not spelled as a literal yet".to_string()),
     }
+}
+
+/// The arguments a text is made of, its characters as a string literal and its
+/// length in UTF-8 bytes: the length is stated, so a text that holds a zero
+/// byte is whole.
+fn text_args(text: &str) -> String {
+    format!(
+        "\"{}\", {}",
+        filters::escape_cpp(text.to_string()),
+        text.len()
+    )
+}
+
+/// How a value of a CBOR map or of a content-line component presents a text and
+/// a byte string, as the encoding's printer declares it.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub(super) enum Texts {
+    /// Each within its bound, as the view of it the accessor presents, made by
+    /// that view's `make` (`cpp_source::cbor`).
+    Bounded,
+    /// A text as a `std::string_view`, which no bound refines: a line refuses a
+    /// text by its content as well as its size (`cpp_source::content_line`).
+    Views,
+}
+
+/// The case of a CBOR map or of a content-line component made of `elements`
+/// (`source_notation`), a value of the codec at `path`, whose texts and byte
+/// strings are presented as `texts` says: the class made by its constructor,
+/// each element in the order it takes them, which is the order the notation
+/// reads them in, `std::nullopt` where the case states none; the values of a
+/// repeated property bound first as the vector the span the value presents
+/// them as views. Each element is compared through its accessor, a span
+/// structurally by its size and each value in order, any other whole.
+pub(super) fn map_or_line_case(
+    path: &CodecPath,
+    elements: Vec<super::super::source_notation::StatedElement>,
+    texts: Texts,
+) -> Result<SourceCase, String> {
+    use super::super::source_notation::{Scalar, Stated};
+    let class = path.class();
+    let mut bindings = Vec::new();
+    let mut args = Vec::new();
+    let mut checks = Vec::new();
+    for element in elements {
+        let name = accessor(&element.id);
+        let (left, right) = (format!("{DECODED}.{name}()"), format!("{VALUE}.{name}()"));
+        let (arg, holds) = match &element.stated {
+            Stated::Absent => ("std::nullopt".to_string(), format!("{left} == {right}")),
+            Stated::One(scalar) => {
+                let ty = presented_type(&class, &name, element.optional);
+                let arg = match (scalar, texts) {
+                    (Scalar::Bool(b), _) => b.to_string(),
+                    (Scalar::Int(n), _) => integer_literal(*n),
+                    (Scalar::Text(text), Texts::Bounded) => {
+                        made(&ty, &format!("std::string_view({})", text_args(text)))
+                    }
+                    (Scalar::Text(text), Texts::Views) => {
+                        format!("std::string_view({})", text_args(text))
+                    }
+                    (Scalar::Bytes(bytes), Texts::Bounded) => {
+                        let bytes: Vec<String> = bytes.iter().map(u8::to_string).collect();
+                        let held = bind(&mut bindings, "std::uint8_t", &bytes);
+                        made(&ty, &held)
+                    }
+                    (Scalar::Bytes(_), Texts::Views) => {
+                        return Err(format!(
+                            "`{}`: a byte string is presented within its bound, and this \
+                             value presents its texts as views",
+                            element.id
+                        ))
+                    }
+                };
+                (arg, format!("{left} == {right}"))
+            }
+            Stated::List(items) => {
+                let value_type = format!("{}::value_type", presented_type(&class, &name, false));
+                let mut held = Vec::new();
+                for scalar in items {
+                    held.push(match scalar {
+                        Scalar::Bool(b) => b.to_string(),
+                        Scalar::Int(n) => integer_literal(*n),
+                        Scalar::Text(text) => format!("std::string({})", text_args(text)),
+                        Scalar::Bytes(_) => {
+                            return Err(format!(
+                                "`{}`: a case does not state a list of byte strings",
+                                element.id
+                            ))
+                        }
+                    });
+                }
+                (
+                    bind(&mut bindings, &value_type, &held),
+                    format!(
+                        "[&](const auto& xs, const auto& ys) {{ if (xs.size() != ys.size()) {{ \
+                         return false; }} for (std::size_t i = 0; i < xs.size(); ++i) {{ if \
+                         (!(xs[i] == ys[i])) {{ return false; }} }} return true; }}({left}, \
+                         {right})"
+                    ),
+                )
+            }
+        };
+        args.push(arg);
+        checks.push((element.id, holds));
+    }
+    Ok(SourceCase {
+        bindings,
+        literal: format!("{class}{{{}}}", args.join(", ")),
+        checks,
+        inputs: Vec::new(),
+        encode_inputs: Vec::new(),
+    })
 }
 
 /// An integer as a C++ literal of the type it initializes: unsigned where it is

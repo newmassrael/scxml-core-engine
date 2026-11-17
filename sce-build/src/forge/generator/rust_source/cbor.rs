@@ -177,6 +177,60 @@ fn write_value(input: &Input<'_>, plan: &CborPlan<'_>, item: &CborItem<'_>) -> S
     }
 }
 
+/// The byte case of `source`, a value of the CBOR codec `plan` at `path`
+/// (docs/adr/0081 §5): the map itself, which is its own source, made of its
+/// fields, a text and a byte string through `Bounded::new`, the one door of the
+/// bound its type holds, an entry the map may lack as an `Option`; and for each
+/// entry an expression that holds when the decode of the case's bytes holds what
+/// the value does, the two compared field by field as the map's derived
+/// equality compares them. A map takes no flag input and no caller's tag.
+pub(crate) fn source_case(
+    plan: &CborPlan<'_>,
+    path: &super::CodecPath,
+    source: &serde_json::Value,
+) -> Result<super::SourceCase, String> {
+    use super::super::source_notation::{cbor_elements, Scalar, Stated};
+    let l = LangCtx::new(crate::generator::Language::Rust, &[]);
+    let runtime = cbor_codec::RUST_RUNTIME_CODEC;
+    let bounded = |inner: String| {
+        format!("{runtime}::Bounded::new({inner}).expect(\"the case is within its bound\")")
+    };
+    let held = |scalar: &Scalar| match scalar {
+        Scalar::Bool(b) => b.to_string(),
+        Scalar::Int(n) => n.to_string(),
+        Scalar::Text(text) => bounded(format!("{text:?}")),
+        Scalar::Bytes(bytes) => {
+            let bytes: Vec<String> = bytes.iter().map(u8::to_string).collect();
+            bounded(format!("&[{}][..]", bytes.join(", ")))
+        }
+    };
+    let mut members = Vec::new();
+    let mut checks = Vec::new();
+    for element in cbor_elements(plan, source)? {
+        let field = l.codec_field_id(&element.id);
+        let value = match &element.stated {
+            Stated::Absent => "None".to_string(),
+            Stated::One(scalar) if element.optional => format!("Some({})", held(scalar)),
+            Stated::One(scalar) => held(scalar),
+            Stated::List(_) => unreachable!("an entry of a map is one value"),
+        };
+        members.push(format!("{field}: {value}"));
+        checks.push((element.id, format!("decoded.{field} == parts.{field}")));
+    }
+    Ok(super::SourceCase {
+        bindings: Vec::new(),
+        literal: format!(
+            "{}::{} {{ {} }}",
+            path.module,
+            path.type_name,
+            members.join(", ")
+        ),
+        checks,
+        inputs: Vec::new(),
+        encode_inputs: Vec::new(),
+    })
+}
+
 /// The source interface of a CBOR codec, as the text its file holds.
 pub(in super::super) fn render(input: &Input<'_>) -> String {
     let m = input.m;

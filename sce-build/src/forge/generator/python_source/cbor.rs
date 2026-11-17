@@ -396,6 +396,19 @@ fn record_writers(plan: &CborPlan<'_>, imports: &[ImportContext]) -> String {
     out
 }
 
+/// The byte case of `source`, a value of the CBOR codec `plan` at `path`
+/// (docs/adr/0081 §5): its dataclass made by its constructor, which holds each
+/// entry in the class of its bound or its width, and each entry compared as the
+/// value holds it. A map takes no flag input and no caller's tag.
+pub(crate) fn source_case(
+    plan: &CborPlan<'_>,
+    path: &super::source_case::CodecPath,
+    source: &serde_json::Value,
+) -> Result<super::source_case::SourceCase, String> {
+    let elements = super::super::source_notation::cbor_elements(plan, source)?;
+    super::source_case::map_or_line_case(path, elements)
+}
+
 /// The Python text of the CBOR codec `plan`, whose value's class is
 /// `struct_name`.
 pub(in super::super) fn render(

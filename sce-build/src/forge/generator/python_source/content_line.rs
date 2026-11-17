@@ -548,6 +548,20 @@ impl Printer<'_> {
     }
 }
 
+/// The byte case of `source`, a value of the content-line codec `plan` at
+/// `path` (docs/adr/0081 §5): its dataclass made by its constructor, the values
+/// of a repeated property a `list`, and each entry compared as the value holds
+/// it, a list by its values in order. A component takes no flag input and no
+/// caller's tag.
+pub(crate) fn source_case(
+    plan: &ContentLinePlan<'_>,
+    path: &super::source_case::CodecPath,
+    source: &serde_json::Value,
+) -> Result<super::source_case::SourceCase, String> {
+    let elements = super::super::source_notation::content_line_elements(plan, source)?;
+    super::source_case::map_or_line_case(path, elements)
+}
+
 /// The Python text of the content-line codec `m`, whose value's class is
 /// `struct_name`: the class of each integer's width, the `Protocol` of each
 /// line record and of the value, the encode over any source, and how the value

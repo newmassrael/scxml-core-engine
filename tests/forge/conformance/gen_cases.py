@@ -187,6 +187,7 @@ import math
 import re
 import sys
 import unicodedata
+import xml.etree.ElementTree as ET
 from pathlib import Path
 
 import binary_model
@@ -5631,6 +5632,251 @@ def regenerate(text: str):
     return text, report
 
 
+# ── Byte cases of a CBOR map and of a content-line component (docs/adr/0081 §5) ──
+#
+# A CBOR map and a content-line component derive nothing a value says: every
+# entry is presented, so a case's `source` is the value whole, each entry keyed
+# by its id as the codec's interface presents it, `null` for one the value
+# lacks and an array for the values of a repeated property. It is the notation
+# the `decoded` objects of these codecs already write. Each source's bytes are
+# written by an independent reading of the page and read back by it before they
+# are written into the file: the content-line model of content_line_model.py,
+# and for a CBOR map the model below, which is held first to the fixture's
+# hand-written cases.
+
+CBOR_FIXTURE = "codec_cbor_map"
+CBOR_RESOURCE = Path("tests/forge/resources/codec_cbor_map.scxml")
+SCE_NS = "{http://sce.dev/ext}"
+
+CBOR_UINT_BITS = {"uint8": 8, "uint16": 16, "uint32": 32, "uint64": 64}
+
+
+class CborMap:
+    """SCE_FORGE.md §4.6.1 read for one codec document, from the page and the
+    document alone: one CBOR map (RFC 8949) of the document's entries, each
+    under its integer key, written in the deterministic encoding (§4.2.1:
+    every head in its shortest form, the keys ascending) with an entry the
+    value lacks not written. It reads a boolean, an unsigned integer, a text
+    and a byte string, and refuses by name any other entry the document
+    declares, so a case is never written for a rule the model does not read."""
+
+    def __init__(self, path: Path):
+        root = ET.parse(path).getroot()
+        self.entries = []
+        for data in root.iter("{http://www.w3.org/2005/07/scxml}data"):
+            key = data.get(f"{SCE_NS}key")
+            if key is None:
+                continue
+            ty = data.get(f"{SCE_NS}type")
+            optional = ty.startswith("optional<")
+            if optional:
+                ty = ty[len("optional<") : -1]
+            if ty not in ("bool", "string", "bytes") and ty not in CBOR_UINT_BITS:
+                raise SystemExit(f"{path}: the CBOR model reads no entry of type {ty}")
+            length = data.get(f"{SCE_NS}length")
+            most = data.get(f"{SCE_NS}max-size")
+            self.entries.append(
+                {
+                    "id": data.get("id"),
+                    "key": int(key),
+                    "type": ty,
+                    "optional": optional,
+                    "length": None if length is None else int(length),
+                    "most": None if most is None else int(most),
+                }
+            )
+        self.by_key = sorted(self.entries, key=lambda e: e["key"])
+
+    @staticmethod
+    def head(major: int, n: int) -> bytes:
+        if n < 24:
+            return bytes([major << 5 | n])
+        for extra, width in ((24, 1), (25, 2), (26, 4), (27, 8)):
+            if n < 1 << (8 * width):
+                return bytes([major << 5 | extra]) + n.to_bytes(width, "big")
+        raise ValueError(f"{n} is past every head")
+
+    def held(self, entry: dict, value) -> bytes:
+        ty, name = entry["type"], entry["id"]
+        if ty == "bool":
+            if not isinstance(value, bool):
+                raise ValueError(f"{name}: a boolean")
+            return bytes([0xF5 if value else 0xF4])
+        if ty in CBOR_UINT_BITS:
+            if isinstance(value, bool) or not 0 <= value < 1 << CBOR_UINT_BITS[ty]:
+                raise ValueError(f"{name}: {value} is no {ty}")
+            return self.head(0, value)
+        raw = value.encode("utf-8") if ty == "string" else bytes(value)
+        if entry["length"] is not None and len(raw) != entry["length"]:
+            raise ValueError(f"{name}: {len(raw)} bytes, and its length is {entry['length']}")
+        if entry["most"] is not None and len(raw) > entry["most"]:
+            raise ValueError(f"{name}: {len(raw)} bytes, past {entry['most']}")
+        return self.head(3 if ty == "string" else 2, len(raw)) + raw
+
+    def encode(self, source: dict) -> bytes:
+        if set(source) != {e["id"] for e in self.entries}:
+            raise ValueError(f"a source states every entry and no other: {sorted(source)}")
+        present = [e for e in self.by_key if source[e["id"]] is not None]
+        for e in self.entries:
+            if source[e["id"]] is None and not e["optional"]:
+                raise ValueError(f"{e['id']} is required")
+        out = bytearray(self.head(5, len(present)))
+        for e in present:
+            out += self.head(0, e["key"]) + self.held(e, source[e["id"]])
+        return bytes(out)
+
+    @staticmethod
+    def read_head(data: bytes, at: int):
+        first = data[at]
+        major, n = first >> 5, first & 0x1F
+        if n < 24:
+            return major, n, at + 1
+        width = {24: 1, 25: 2, 26: 4, 27: 8}[n]
+        return major, int.from_bytes(data[at + 1 : at + 1 + width], "big"), at + 1 + width
+
+    def decode(self, data: bytes) -> dict:
+        major, count, at = self.read_head(data, 0)
+        if major != 5:
+            raise ValueError("a map")
+        by_key = {e["key"]: e for e in self.entries}
+        out = {e["id"]: None for e in self.entries}
+        seen = set()
+        for _ in range(count):
+            _, key, at = self.read_head(data, at)
+            entry = by_key[key]
+            if key in seen:
+                raise ValueError(f"key {key} twice")
+            seen.add(key)
+            if entry["type"] == "bool":
+                if data[at] not in (0xF4, 0xF5):
+                    raise ValueError(f"{entry['id']}: a boolean is false or true")
+                out[entry["id"]] = data[at] == 0xF5
+                at += 1
+                continue
+            major, n, at = self.read_head(data, at)
+            if entry["type"] in CBOR_UINT_BITS:
+                out[entry["id"]] = n
+            elif entry["type"] == "string":
+                out[entry["id"]] = data[at : at + n].decode("utf-8")
+                at += n
+            else:
+                out[entry["id"]] = list(data[at : at + n])
+                at += n
+        if at != len(data):
+            raise ValueError("bytes after the map")
+        for e in self.entries:
+            if out[e["id"]] is None and not e["optional"]:
+                raise ValueError(f"{e['id']} is required")
+        return out
+
+
+CBOR_ID = list(range(16))
+
+
+def cbor_source(**fields) -> dict:
+    """A source of codec_cbor_map: the head of the fixture's cases, each entry
+    named, an absent one `null`."""
+    out = {
+        "source": "node-a",
+        "id": CBOR_ID,
+        "pattern": 3,
+        "payload": [0xDE, 0xAD],
+        "deadline": None,
+        "urgent": None,
+    }
+    out.update(fields)
+    return out
+
+
+#: (note, source) — each is written by the model and read back.
+CBOR_SOURCES = [
+    ("five entries, the absent deadline not written", cbor_source(urgent=True)),
+    (
+        "deadline 2^32 needs the 8-byte head, and key 12 follows key 7",
+        cbor_source(deadline=2**32, urgent=True),
+    ),
+    ("only the four required entries", cbor_source()),
+    (
+        "a present false and a present zero are written, and are not absence",
+        cbor_source(deadline=0, urgent=False),
+    ),
+    (
+        "a number past 23 takes a head of one more byte, and 2^16 one of four",
+        cbor_source(pattern=255, deadline=2**16),
+    ),
+    (
+        "the widest deadline, an empty payload and a text at its bound",
+        cbor_source(source="n" * 64, payload=[], deadline=2**64 - 1),
+    ),
+]
+
+
+def cbor_sources(text: str) -> tuple[list[dict], int]:
+    """The `sources` of codec_cbor_map, each held by the model, and how many of
+    the fixture's hand-written cases the model was held to first."""
+    model = CborMap(CBOR_RESOURCE)
+    cases = json.loads(text)["codecs"][CBOR_FIXTURE]["cases"]
+    for case in cases:
+        if list(model.encode(case["decoded"])) != case["encoded"]:
+            raise SystemExit(
+                f"{CBOR_FIXTURE}: the model writes {case['decoded']} otherwise than the hand "
+                "case does; the model is wrong, since every backend holds the case"
+            )
+        if model.decode(bytes(case["encoded"])) != case["decoded"]:
+            raise SystemExit(f"{CBOR_FIXTURE}: the model reads {case['encoded']} otherwise")
+    out = []
+    for note, source in CBOR_SOURCES:
+        frame = model.encode(source)
+        if model.decode(frame) != source:
+            raise SystemExit(f"{CBOR_FIXTURE}: {source} reads back as {model.decode(frame)}")
+        out.append({"source": source, "encoded": list(frame), "note": note})
+    return out, len(cases)
+
+
+def content_line_sources() -> list[dict]:
+    """The `sources` of codec_content_line_event: each hand-chosen value of the
+    content-line model's, written by the model and read back by it."""
+    component, entries = content_line_model.load(content_line_model.RESOURCE)
+    model = content_line_model.Model(component, entries)
+    out = []
+    for note, decoded in content_line_model.HAND_CASES:
+        written = model.encode(decoded)
+        if written[0] != "ok":
+            raise SystemExit(f"{content_line_model.FIXTURE}: {note}: encode answers {written}")
+        if model.decode(written[1]) != ("ok", decoded):
+            raise SystemExit(f"{content_line_model.FIXTURE}: {note}: does not read back")
+        out.append({"source": decoded, "encoded": list(written[1]), "note": note})
+    return out
+
+
+#: Each fixture whose `sources` this section writes, with their description
+#: where the model writes the entry itself.
+MAP_AND_LINE_ABOUT = (
+    "every entry is presented, so a source states the value whole, each entry by its id, "
+    "null where the value lacks it; its bytes are written by an independent model "
+    "(tests/forge/conformance/gen_cases.py), which reads each back before writing it."
+)
+
+
+def regenerate_map_and_line(text: str) -> tuple[str, str]:
+    """`text` with the `sources` of the CBOR map and the content-line component
+    written, and a report."""
+    cbor, held_to = cbor_sources(text)
+    written = (
+        (CBOR_FIXTURE, cbor),
+        (content_line_model.FIXTURE, content_line_sources()),
+    )
+    for fixture, sources in written:
+        text = binary_model.ensure_sources(text, fixture, MAP_AND_LINE_ABOUT)
+        start, end = binary_model.span(text, fixture, "sources")
+        body = "\n" + ",\n".join(binary_model.case_text(item) for item in sources)
+        text = text[:start] + body + text[end:]
+    return text, (
+        f"{CBOR_FIXTURE}: the model agrees with {held_to} hand cases; {len(cbor)} sources\n"
+        f"{content_line_model.FIXTURE}: {len(written[1][1])} sources; the model holds each"
+    )
+
+
 def main(argv) -> int:
     check = "--check" in argv
     validate_calendar()
@@ -5649,6 +5895,9 @@ def main(argv) -> int:
     # A positional codec's byte cases state the value as its interface presents
     # it (docs/adr/0081 §5); their model writes each fixture's `sources`.
     text, binary_report = binary_model.regenerate(text)
+    # A CBOR map's and a content-line component's byte cases state the value
+    # whole (docs/adr/0081 §5); the section above writes them.
+    text, map_and_line_report = regenerate_map_and_line(text)
     json.loads(text)
     for fixture, checked, dropped, made, kinds in report:
         print(
@@ -5657,6 +5906,7 @@ def main(argv) -> int:
         )
     print(content_line_report)
     print(binary_report)
+    print(map_and_line_report)
     if text == original:
         print("numerical_reference.json: unchanged")
         return 0
