@@ -173,7 +173,7 @@ int run_test() {
         MESH_TEST_REQUIRE(sender_received(sender, "error.communication"),
                           "tickOrdering must raise error.communication on gap timeout");
         const std::string payload = last_data_for_type(sender, "error.communication");
-        MESH_TEST_REQUIRE(payload.find("\"reason\":\"ORDERING_GAP\"") != std::string::npos,
+        MESH_TEST_REQUIRE(payload.find("\"reason\":\"orderingGap\"") != std::string::npos,
                           "error.communication reason must be ORDERING_GAP");
         MESH_TEST_REQUIRE(payload.find("\"lost_seq_lo\":2") != std::string::npos,
                           "lost_seq_lo must pin the missing sequence low bound");
@@ -239,7 +239,7 @@ int run_test() {
         MESH_TEST_REQUIRE(sender_received(sender, "error.communication"),
                           "unstamped envelope on ordered route must raise error.communication");
         const std::string payload = last_data_for_type(sender, "error.communication");
-        MESH_TEST_REQUIRE(payload.find("\"reason\":\"MISSING_SEQUENCE\"") != std::string::npos,
+        MESH_TEST_REQUIRE(payload.find("\"reason\":\"missingSequence\"") != std::string::npos,
                           "error.communication reason must be MISSING_SEQUENCE");
         MESH_TEST_REQUIRE(payload.find("\"source\":\"motor\"") != std::string::npos,
                           "error.communication must carry the offending sender name");
@@ -284,7 +284,7 @@ int run_test() {
         MESH_TEST_REQUIRE(sender_received(sender, "error.communication"),
                           "periodic tick must raise error.communication on stream-end gap");
         const std::string payload = last_data_for_type(sender, "error.communication");
-        MESH_TEST_REQUIRE(payload.find("\"reason\":\"ORDERING_GAP\"") != std::string::npos,
+        MESH_TEST_REQUIRE(payload.find("\"reason\":\"orderingGap\"") != std::string::npos,
                           "periodic tick reason must be ORDERING_GAP");
         MESH_TEST_REQUIRE(payload.find("\"lost_seq_lo\":2") != std::string::npos,
                           "periodic tick lost_seq_lo must pin the missing sequence");

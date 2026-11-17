@@ -296,9 +296,13 @@ the vocabulary's codes names that, and `payloadRefused` names a value that is no
 door's question and not this one, so the vocabulary gains `capacityExceeded` (18, `error.execution`). It is additive;
 an engine that bounds nothing never raises it.
 
-Left, each its own commit: the Mesh runtimes' move to the generated enum and its spellings, with SCE_MESH.md sections
-10.7.1 and 16.7 and the two sheet-peer scenarios; the scenarios and expected logs that read a reason on the C++ and
-C11 lanes.
+Implemented (2026-11-17), the Mesh runtimes: every core names a §16.7 row by its code (Rust `Signal::code`, Kotlin
+`Signal.code`, Swift `Signal.code`; the C++ `SCE::Mesh::ReasonCode` is the vocabulary's enum, `kReasonCodeTable` its 18
+rows in order), and the wire string is the code's declared name (`transportUnavailable`), so SCE_MESH.md sections
+10.7.1 and 16.7 spell each code as the vocabulary does.
+
+Left: the comments of the Mesh headers, transports and end-to-end fixtures that still name a row in its upper-case
+label (a label, not a wire string); the scenarios and expected logs that read a reason on the C++ and C11 lanes.
 
 ## Consequences
 

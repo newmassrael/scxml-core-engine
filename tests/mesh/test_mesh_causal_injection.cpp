@@ -241,7 +241,7 @@ int run_test() {
     foreign.type = "motor.foreign";
     foreign.causal_epoch = 1;
     MESH_TEST_REQUIRE(deliver(foreign), "the envelope of another epoch reaches the router");
-    MESH_TEST_REQUIRE(raised(sender, "CAUSAL_VIEW_MISMATCH"), "another epoch raises row 18");
+    MESH_TEST_REQUIRE(raised(sender, "causalViewMismatch"), "another epoch raises row 18");
     for (const auto &type : received(sender)) {
         MESH_TEST_REQUIRE(type != "motor.foreign", "an envelope of another epoch is not delivered");
     }

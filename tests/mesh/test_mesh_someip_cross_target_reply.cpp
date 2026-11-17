@@ -243,7 +243,7 @@ int run_test() {
             // event name) keeps an unrelated error.communication —
             // TRANSPORT_UNAVAILABLE from a flaky leg, say — from
             // satisfying this.
-            if (e.type == "error.communication" && e.data.find("RPC_REPLY_FROM_UNDECLARED_PEER") != std::string::npos) {
+            if (e.type == "error.communication" && e.data.find("rpcReplyFromUndeclaredPeer") != std::string::npos) {
                 undeclared_raised = true;
             }
         }

@@ -40,7 +40,7 @@ bool received_region_partitioned(const auto &events_log) {
         if (ev.type != "error.communication") {
             continue;
         }
-        if (ev.data.find("\"reason\":\"REGION_PARTITIONED\"") != std::string::npos) {
+        if (ev.data.find("\"reason\":\"regionPartitioned\"") != std::string::npos) {
             return true;
         }
     }
@@ -52,7 +52,7 @@ bool received_peer_partitioned(const auto &events_log) {
         if (ev.type != "error.communication") {
             continue;
         }
-        if (ev.data.find("\"reason\":\"PEER_PARTITIONED\"") != std::string::npos) {
+        if (ev.data.find("\"reason\":\"peerPartitioned\"") != std::string::npos) {
             return true;
         }
     }
@@ -105,8 +105,7 @@ int main() {
     std::lock_guard<std::mutex> lk(sender.received_.m);
     const ReceivedEvent *hit = nullptr;
     for (const auto &ev : sender.received_.events) {
-        if (ev.type == "error.communication" &&
-            ev.data.find("\"reason\":\"REGION_PARTITIONED\"") != std::string::npos) {
+        if (ev.type == "error.communication" && ev.data.find("\"reason\":\"regionPartitioned\"") != std::string::npos) {
             hit = &ev;
         }
     }

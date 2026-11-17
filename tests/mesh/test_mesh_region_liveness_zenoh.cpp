@@ -119,7 +119,7 @@ int run_test() {
                 if (ev.type != "error.communication") {
                     continue;
                 }
-                if (ev.data.find("\"reason\":\"REGION_PARTITIONED\"") != std::string::npos) {
+                if (ev.data.find("\"reason\":\"regionPartitioned\"") != std::string::npos) {
                     return true;
                 }
             }
@@ -136,8 +136,7 @@ int run_test() {
     std::lock_guard<std::mutex> lk(sender.received_.m);
     const ReceivedEvent *hit = nullptr;
     for (const auto &ev : sender.received_.events) {
-        if (ev.type == "error.communication" &&
-            ev.data.find("\"reason\":\"REGION_PARTITIONED\"") != std::string::npos) {
+        if (ev.type == "error.communication" && ev.data.find("\"reason\":\"regionPartitioned\"") != std::string::npos) {
             hit = &ev;
         }
     }
@@ -157,7 +156,7 @@ int run_test() {
     // discrimination is broken — row 13 would be masquerading as
     // row 8 or the self-filter is off.
     for (const auto &ev : sender.received_.events) {
-        MESH_TEST_REQUIRE(ev.data.find("\"reason\":\"PEER_PARTITIONED\"") == std::string::npos,
+        MESH_TEST_REQUIRE(ev.data.find("\"reason\":\"peerPartitioned\"") == std::string::npos,
                           "PEER_PARTITIONED fired on a region-partition trace — "
                           "segment-count discrimination regression");
     }

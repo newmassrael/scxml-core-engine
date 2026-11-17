@@ -16,7 +16,7 @@
 //   1. The matching `activeInvokes_` entry is erased, on the owner.
 //   2. Exactly one `error.communication` event is raised into the
 //      parent's external queue carrying
-//      `{"reason":"INVOKE_CHILD_LOST","invoke_id":"remote_inv",
+//      `{"reason":"invokeChildLost","invoke_id":"remote_inv",
 //        "target":"worker_session_f_peer_drop"}`.
 //   3. The parent's `<transition event="error.communication" target="lost"/>`
 //      fires on the next macrostep — observable via

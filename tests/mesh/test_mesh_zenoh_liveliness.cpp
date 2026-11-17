@@ -92,7 +92,7 @@ int run_test() {
                 // reason field check is the definitive signal; the
                 // other extras are asserted below only when the
                 // PEER_PARTITIONED envelope is in hand.
-                if (ev.data.find("\"reason\":\"PEER_PARTITIONED\"") != std::string::npos) {
+                if (ev.data.find("\"reason\":\"peerPartitioned\"") != std::string::npos) {
                     return true;
                 }
             }
@@ -109,7 +109,7 @@ int run_test() {
     std::lock_guard<std::mutex> lk(sender.received_.m);
     const auto *hit = static_cast<const ReceivedEvent *>(nullptr);
     for (const auto &ev : sender.received_.events) {
-        if (ev.type == "error.communication" && ev.data.find("\"reason\":\"PEER_PARTITIONED\"") != std::string::npos) {
+        if (ev.type == "error.communication" && ev.data.find("\"reason\":\"peerPartitioned\"") != std::string::npos) {
             hit = &ev;
         }
     }
