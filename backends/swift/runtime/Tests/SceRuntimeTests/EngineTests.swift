@@ -212,7 +212,7 @@ import Testing
     let (engine, policy, _) = makeEngine { policy in
         policy.onEntry[.idle] = { engine in
             engine.raise(
-                .platformError(.errorExecution, message: "first failure")
+                .platformError(.errorExecution, reason: .scriptFailed, message: "first failure")
             )
         }
         policy.transitions[.idle] = [
@@ -220,7 +220,7 @@ import Testing
                 event: .errorExecution,
                 target: nil,
                 content: { engine in
-                    engine.raise(.platformError(.errorExecution, message: "the handler failed too"))
+                    engine.raise(.platformError(.errorExecution, reason: .scriptFailed, message: "the handler failed too"))
                 }
             )
         ]
@@ -235,7 +235,7 @@ import Testing
 
 @Test func anErrorNoTransitionAnswersIsCountedAsUnhandled() throws {
     let (engine, _, _) = makeEngine { policy in
-        policy.onEntry[.idle] = { $0.raise(.platformError(.errorCommunication, message: "nobody there")) }
+        policy.onEntry[.idle] = { $0.raise(.platformError(.errorCommunication, reason: .targetUnreachable, message: "nobody there")) }
     }
     try engine.initialize()
     #expect(engine.unhandledErrorEvents == 1)

@@ -222,16 +222,24 @@ public struct EventWithMetadata<Event> {
     /// handed a document that answers `error.execution` an undefined
     /// `_event.data`: it could see that something failed and never what.
     ///
+    /// The data is the record SCE_MESH.md section 10.7.1 pins for an `error.*`
+    /// event (docs/adr/0106, #111): `errorName` (the event, read from the code by
+    /// `errorName(_:)`), `reason` (the code, by the vocabulary's declared name)
+    /// and `detail` (`message`), so a document that answers `error.execution`
+    /// reads the code without parsing a sentence (`errorData(_:detail:)`).
+    ///
     /// `message` describes the failing construct and is a literal formed at
     /// generation time, not the engine's own error text. The dynamic detail stays
     /// on the log line beside the call, which is where it can afford to be built.
-    public static func platformError(_ event: Event, message: String) -> EventWithMetadata<Event> {
+    public static func platformError(
+        _ event: Event, reason: ErrorReason, message: String
+    ) -> EventWithMetadata<Event> {
         // §scxml-3.12.2: the processor signals its own failures as error.*, and
         // "platforms MAY include additional information about the nature of the
         // error in the 'data' field". Cited in the body rather than the doc
         // comment so the ledger binds it to this symbol.
         var metadata = EventMetadata.platform()
-        metadata.data = message
+        metadata.data = errorData(reason, detail: message)
         return EventWithMetadata(event, metadata: metadata)
     }
 

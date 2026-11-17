@@ -220,6 +220,7 @@ extension Engine {
                 // it does not have to know which engine ran the send or whether it carried a delay.
                 var unserved = EventWithMetadata.platformError(
                     errorEvent,
+                    reason: .processorUnregistered,
                     message: unregisteredHostProcessorMessage(request.processorType)
                 )
                 unserved.metadata.sendID = request.sendID

@@ -28,7 +28,7 @@
 {% set foreach_slot = (foreach_depth | default(0)) + 1 %}
 {% if not action.array or not action.item %}
                 // W3C SCXML 4.6: a <foreach> with no `array` or no `item` has nothing to walk
-                raiseExecutionError("<foreach> is missing its 'array' or 'item' attribute", engine: engine)
+                raiseExecutionError(.foreachInvalid, "<foreach> is missing its 'array' or 'item' attribute", engine: engine)
 {% if in_block %}
                 break sceBlock  // W3C SCXML 4.9: the error ends the block
 {% endif %}
@@ -37,7 +37,7 @@
                 if let foreachCount{{ foreach_slot }} = beginForeach({{ foreach_slot }}, "{{ action.array | to_lua_expr | escape_swift }}") {
                     for foreachPosition{{ foreach_slot }} in 0..<foreachCount{{ foreach_slot }} {
                         if !bindForeach({{ foreach_slot }}, at: foreachPosition{{ foreach_slot }}, item: "{{ action.item | to_lua_location | escape_swift }}", index: {% if action.index %}"{{ action.index | to_lua_location | escape_swift }}"{% else %}nil{% endif %}) {
-                            raiseExecutionError("<foreach> cannot set its item or index", engine: engine)
+                            raiseExecutionError(.foreachInvalid, "<foreach> cannot set its item or index", engine: engine)
 {% if in_block %}
                             break sceBlock  // W3C SCXML 4.9: the error ends the block
 {% else %}
@@ -50,7 +50,7 @@
 {% endfor %}
                     }
                 } else {
-                    raiseExecutionError("<foreach array='{{ action.array | escape_swift }}'> is not an array it can walk", engine: engine)
+                    raiseExecutionError(.foreachInvalid, "<foreach array='{{ action.array | escape_swift }}'> is not an array it can walk", engine: engine)
 {% if in_block %}
                     break sceBlock  // W3C SCXML 4.9: the error ends the block
 {% endif %}

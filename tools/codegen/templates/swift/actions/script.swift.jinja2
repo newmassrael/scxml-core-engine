@@ -8,7 +8,7 @@
 {% set in_block = in_action_block is defined and in_action_block %}
                 // W3C SCXML 5.8: <script>
                 if !executeScript("{{ action.content | to_lua_script | escape_swift }}", name: "=script") {
-                    raiseExecutionError("<script> failed to execute", engine: engine)
+                    raiseExecutionError(.scriptFailed, "<script> failed to execute", engine: engine)
 {% if in_block %}
                     break sceBlock  // W3C SCXML 4.9: the error ends the block
 {% endif %}

@@ -7,9 +7,11 @@
    lowered are refused by name before this template runs (`SwiftTarget::unlowered_send` for a
    `sce-static` document, `swift_send_unlowered` for the others), so none is read here. #}
 {# The error an element raises, with the id of the send it names (W3C SCXML 6.2.4). #}
-{% macro send_error(code, message, send_id) %}
+{# `reason` is the Swift spelling of a code of sce:std/engine/error_reason
+   (docs/adr/0106 #111): a member (`.targetUnreachable`) or a value that holds one. #}
+{% macro send_error(code, reason, message, send_id) %}
 {% if code in model.events %}
-                        var sendError = EventWithMetadata.platformError({{ machine_name }}Event.{{ code | to_event_variant }}, message: {{ message }})
+                        var sendError = EventWithMetadata.platformError({{ machine_name }}Event.{{ code | to_event_variant }}, reason: {{ reason }}, message: {{ message }})
                         sendError.metadata.sendID = {{ send_id }}
                         engine.raise(sendError)
 {% endif %}
@@ -107,7 +109,7 @@
                     } else {
 {% endif %}
 {% if 'error.execution' in model.events %}
-                        engine.raise(EventWithMetadata.platformError({{ machine_name }}Event.{{ 'error.execution' | to_event_variant }}, message: "<send> <param name={{ name | escape_swift }}> failed to evaluate"))
+                        engine.raise(EventWithMetadata.platformError({{ machine_name }}Event.{{ 'error.execution' | to_event_variant }}, reason: .expressionFailed, message: "<send> <param name={{ name | escape_swift }}> failed to evaluate"))
 {% endif %}
                         paramFailed = true
                     }
@@ -174,7 +176,7 @@
                     // the id the send is known by.
                     let sendID = generateSendID()
                     if !assignData("{{ action.idlocation | to_lua_location | escape_swift }}", "\"\(sendID)\"") {
-{{ send_error('error.execution', '"<send> idlocation could not be written"', 'sendID') }}
+{{ send_error('error.execution', '.locationInvalid', '"<send> idlocation could not be written"', 'sendID') }}
 {% if in_block %}
                         break sceBlock  // W3C SCXML 4.9: the error ends the block
 {% endif %}
@@ -184,7 +186,7 @@
                     // W3C SCXML 6.2: the written delay is not a CSS2 time (ARCHITECTURE.md,
                     // "Durations"; the build decided it once). It is known before anything
                     // is evaluated, so the send ends here with the argument error.
-{{ send_error('error.execution', '"<send> delay is not a CSS2 time"', send_id_swift) }}
+{{ send_error('error.execution', '.sendDelayInvalid', '"<send> delay is not a CSS2 time"', send_id_swift) }}
 {% if in_block %}
                     break sceBlock  // W3C SCXML 4.9: the error ends the block
 {% endif %}
@@ -192,14 +194,14 @@
                     // W3C SCXML 6.2: Unsupported send type raises error.execution — the build
                     // decided it once, as it decides the choice a computed `typeexpr` makes
                     // when its value is none of the declared types.
-{{ send_error('error.execution', '"<send type=' ~ (action.send_type | escape_swift) ~ '> names a processor this platform does not support"', send_id_swift) }}
+{{ send_error('error.execution', '.sendTypeUnsupported', '"<send type=' ~ (action.send_type | escape_swift) ~ '> names a processor this platform does not support"', send_id_swift) }}
 {% if in_block %}
                     break sceBlock  // W3C SCXML 4.9: the error ends the block
 {% endif %}
 {% elif action.target_unsupported %}
                     // W3C SCXML 6.2.4: the target is not one this processor can address
                     // (`Action::target_unsupported`, decided once at build time).
-{{ send_error('error.execution', '"<send target=' ~ (action.target | escape_swift) ~ '> is not a target this processor can address"', send_id_swift) }}
+{{ send_error('error.execution', '.sendTargetInvalid', '"<send target=' ~ (action.target | escape_swift) ~ '> is not a target this processor can address"', send_id_swift) }}
 {% if in_block %}
                     break sceBlock  // W3C SCXML 4.9: the error ends the block
 {% endif %}
@@ -214,9 +216,13 @@
    was processed — the block ends (W3C SCXML 4.9). #}
 {% if send_prologue %}
                     var sendArgError = ""
+                    // Why the argument failed, a code of sce:std/engine/error_reason
+                    // (docs/adr/0106 #111), set with every sentence below.
+                    var sendArgReason = ErrorReason.expressionFailed
+                    _ = sendArgReason
 {% endif %}
 {% if namelist_bad.name %}
-                    sendArgError = "<send> namelist names '{{ namelist_bad.name | escape_swift }}', which is not declared"
+                    sendArgError = "<send> namelist names '{{ namelist_bad.name | escape_swift }}', which is not declared"; sendArgReason = .locationInvalid
 {% endif %}
 {% if event_value %}
                     // The event's name is a string computed from the machine's fields now. A
@@ -235,7 +241,7 @@
                         sendEventName = {{ event_value }}
 {% endif %}
                         if sendEventName.isEmpty {
-                            sendArgError = "<send> eventexpr could not be evaluated to an event name"
+                            sendArgError = "<send> eventexpr could not be evaluated to an event name"; sendArgReason = .expressionFailed
                         }
                     }
 {% endif %}
@@ -260,7 +266,7 @@
                                 break
                             }
                         } catch {
-                            sendArgError = "<send> targetexpr could not be evaluated"
+                            sendArgError = "<send> targetexpr could not be evaluated"; sendArgReason = .expressionFailed
                         }
 {% else %}
                         let sceRoute = {{ action.native_target }}
@@ -285,7 +291,7 @@
                             sendTarget = routed
                             sendTargetKnown = true
                         } else {
-                            sendArgError = "<send> targetexpr could not be evaluated"
+                            sendArgError = "<send> targetexpr could not be evaluated"; sendArgReason = .expressionFailed
                         }
                     }
 {% endif %}
@@ -300,12 +306,12 @@
                     if sendArgError.isEmpty {
                         if let sendType = evaluateText("{{ action.typeexpr | to_lua_expr | escape_swift }}") {
                             if !isSupportedSendType(sendType) {
-                                sendArgError = "<send> typeexpr names a processor this platform does not support"
+                                sendArgError = "<send> typeexpr names a processor this platform does not support"; sendArgReason = .sendTypeUnsupported
                             } else if sendType.utf8.elementsEqual(basicHTTPEventProcessorType.utf8) {
-                                sendArgError = "<send> typeexpr names the BasicHTTP processor, which a computed type cannot select"
+                                sendArgError = "<send> typeexpr names the BasicHTTP processor, which a computed type cannot select"; sendArgReason = .sendTypeUnsupported
                             }
                         } else {
-                            sendArgError = "<send> typeexpr could not be evaluated"
+                            sendArgError = "<send> typeexpr could not be evaluated"; sendArgReason = .expressionFailed
                         }
                     }
 {% endif %}
@@ -322,24 +328,24 @@
                             if let ms = parseDelayToMs(sceDelay) {
                                 sendDelayMs = ms
                             } else {
-                                sendArgError = "<send> delayexpr is not a CSS2 time"
+                                sendArgError = "<send> delayexpr is not a CSS2 time"; sendArgReason = .sendDelayInvalid
                             }
                         } catch {
-                            sendArgError = "<send> delayexpr could not be evaluated"
+                            sendArgError = "<send> delayexpr could not be evaluated"; sendArgReason = .expressionFailed
                         }
 {% else %}
                         let sceDelay = {{ delay_value }}
                         if let ms = parseDelayToMs(sceDelay) {
                             sendDelayMs = ms
                         } else {
-                            sendArgError = "<send> delayexpr is not a CSS2 time"
+                            sendArgError = "<send> delayexpr is not a CSS2 time"; sendArgReason = .sendDelayInvalid
                         }
 {% endif %}
                     }
 {% endif %}
 {% if send_prologue %}
                     if !sendArgError.isEmpty {
-{{ send_error('error.execution', 'sendArgError', send_id_swift) }}
+{{ send_error('error.execution', 'sendArgReason', 'sendArgError', send_id_swift) }}
 {% if in_block %}
                         break sceBlock  // W3C SCXML 4.9: the error ends the block
 {% endif %}
@@ -351,7 +357,7 @@
                         // names nothing (empty or "undefined"), is not reachable —
                         // error.communication, nothing delivered, and the error ends the block
                         // as any other would (W3C SCXML 4.9).
-{{ send_error('error.communication', '"<send> targetexpr evaluated to nothing, or to a route the send does not declare, so there is no target to reach"', send_id_swift) }}
+{{ send_error('error.communication', '.targetUnreachable', '"<send> targetexpr evaluated to nothing, or to a route the send does not declare, so there is no target to reach"', send_id_swift) }}
 {% if in_block %}
                         break sceBlock
 {% else %}
@@ -418,11 +424,11 @@
                             // lower count, so the event is refused whole: one error, nothing
                             // delivered, and the error ends the block (W3C SCXML 6.2.3, 4.9).
 {% set short_list_message = '"<send> <param name=' ~ (param.name | escape_swift) ~ "> holds fewer elements than the " ~ param.native_send_least ~ " its field's type declares, so the event is not sent" ~ '"' %}
-{{ send_error('error.execution', short_list_message, send_id_swift) -}}
+{{ send_error('error.execution', '.paramUnfit', short_list_message, send_id_swift) -}}
                             break sceBlock
 {% else %}
 {% if 'error.execution' in model.events %}
-                            engine.raise(EventWithMetadata.platformError({{ machine_name }}Event.{{ 'error.execution' | to_event_variant }}, message: "<send> <param name={{ param.name | escape_swift }}> failed to evaluate"))
+                            engine.raise(EventWithMetadata.platformError({{ machine_name }}Event.{{ 'error.execution' | to_event_variant }}, reason: .expressionFailed, message: "<send> <param name={{ param.name | escape_swift }}> failed to evaluate"))
 {% endif %}
                             paramFailed = true
 {% endif %}
@@ -435,7 +441,7 @@
                     // empty `location`, names no location: error.execution, this pair is left out,
                     // and the error ends the block (4.9).
 {% if 'error.execution' in model.events %}
-                    engine.raise(EventWithMetadata.platformError({{ machine_name }}Event.{{ 'error.execution' | to_event_variant }}, message: "<send> <param name={{ param.name | escape_swift }}> names no location"))
+                    engine.raise(EventWithMetadata.platformError({{ machine_name }}Event.{{ 'error.execution' | to_event_variant }}, reason: .locationInvalid, message: "<send> <param name={{ param.name | escape_swift }}> names no location"))
 {% endif %}
                     paramFailed = true
 {% endif %}
@@ -468,7 +474,7 @@
                         sendEventData = contentJSON
                     } else {
 {% if 'error.execution' in model.events %}
-                        engine.raise(EventWithMetadata.platformError({{ machine_name }}Event.{{ 'error.execution' | to_event_variant }}, message: "<send> <content> failed to evaluate"))
+                        engine.raise(EventWithMetadata.platformError({{ machine_name }}Event.{{ 'error.execution' | to_event_variant }}, reason: .expressionFailed, message: "<send> <content> failed to evaluate"))
 {% endif %}
                         paramFailed = true
                     }
@@ -490,7 +496,7 @@
                         sendEventData = contentJSON
                     } else {
 {% if 'error.execution' in model.events %}
-                        engine.raise(EventWithMetadata.platformError({{ machine_name }}Event.{{ 'error.execution' | to_event_variant }}, message: "<send> contentexpr failed to evaluate"))
+                        engine.raise(EventWithMetadata.platformError({{ machine_name }}Event.{{ 'error.execution' | to_event_variant }}, reason: .expressionFailed, message: "<send> contentexpr failed to evaluate"))
 {% endif %}
                         paramFailed = true
                     }
@@ -508,7 +514,7 @@
                         contentValue = {{ action.native_content_value }}
                     } catch {
 {% if 'error.execution' in model.events %}
-                        engine.raise(EventWithMetadata.platformError({{ machine_name }}Event.{{ 'error.execution' | to_event_variant }}, message: "<send> contentexpr failed to evaluate"))
+                        engine.raise(EventWithMetadata.platformError({{ machine_name }}Event.{{ 'error.execution' | to_event_variant }}, reason: .expressionFailed, message: "<send> contentexpr failed to evaluate"))
 {% endif %}
                         paramFailed = true
                         contentValue = .text("")
@@ -553,13 +559,13 @@
                         sender: self.sessionID
                     )
                     if sendRouted == .notSupported {
-{{ send_error('error.execution', '"<send> ' ~ ('targetexpr produced a value that is' if computed_target else 'target is') ~ ' not a target"', send_id_swift) }}
+{{ send_error('error.execution', '.sendTargetInvalid', '"<send> ' ~ ('targetexpr produced a value that is' if computed_target else 'target is') ~ ' not a target"', send_id_swift) }}
 {% if in_block %}
                         break sceBlock  // W3C SCXML 4.9: the error ends the block
 {% endif %}
                     }
                     if sendRouted == .notReachable {
-{{ send_error('error.communication', '"<send> ' ~ ('targetexpr' if computed_target else 'target') ~ ' names a session this processor cannot reach"', send_id_swift) }}
+{{ send_error('error.communication', '.targetUnreachable', '"<send> ' ~ ('targetexpr' if computed_target else 'target') ~ ' names a session this processor cannot reach"', send_id_swift) }}
 {% if in_block %}
                         break sceBlock  // W3C SCXML 4.9: the error ends the block
 {% endif %}
@@ -571,7 +577,7 @@
                     // W3C SCXML C.2: a BasicHTTP send names where it goes with its `target`, and one
                     // that names none has nowhere to go: the build decided it once, and the send is
                     // an error.communication on the internal queue, handed to no transport.
-{{ send_error('error.communication', '"<send> over BasicHTTP names no target"', send_id_swift) }}
+{{ send_error('error.communication', '.httpTargetInvalid', '"<send> over BasicHTTP names no target"', send_id_swift) }}
 {% if in_block %}
                     break sceBlock  // W3C SCXML 4.9: the error ends the block
 {% endif %}
@@ -585,7 +591,7 @@
                     // goes. BasicHTTP posts to a URL, so any other value names nothing this processor
                     // can reach: error.communication, and the error ends the block (4.9).
                     if !isHTTPURL(sendTarget) {
-{{ send_error('error.communication', '"<send> over BasicHTTP resolved a target that is not an http(s) URL"', send_id_swift) }}
+{{ send_error('error.communication', '.httpTargetInvalid', '"<send> over BasicHTTP resolved a target that is not an http(s) URL"', send_id_swift) }}
 {% if in_block %}
                         break sceBlock  // W3C SCXML 4.9: the error ends the block
 {% endif %}
@@ -662,7 +668,7 @@
                         // W3C SCXML C.1: this session was started by its host, not by an
                         // `<invoke>`, so `#_parent` reaches nobody — error.communication,
                         // nothing delivered, and the block ends (4.9).
-{{ send_error('error.communication', '"<send target=#_parent> has no parent session to reach"', send_id_swift) }}
+{{ send_error('error.communication', '.targetUnreachable', '"<send target=#_parent> has no parent session to reach"', send_id_swift) }}
 {% if in_block %}
                         break sceBlock  // W3C SCXML 4.9: the error ends the block
 {% endif %}
@@ -676,7 +682,7 @@
                     if self.sessionID != "{{ static_target | slice_from(8) | escape_swift }}" {
                         // W3C SCXML C.1: `#_scxml_<sessionid>` names a session this processor
                         // cannot reach — error.communication, nothing delivered, the block ended.
-{{ send_error('error.communication', '"<send target=' ~ (static_target | escape_swift) ~ '> names a session this processor cannot reach"', send_id_swift) }}
+{{ send_error('error.communication', '.targetUnreachable', '"<send target=' ~ (static_target | escape_swift) ~ '> names a session this processor cannot reach"', send_id_swift) }}
 {% if in_block %}
                         break sceBlock  // W3C SCXML 4.9: the error ends the block
 {% endif %}

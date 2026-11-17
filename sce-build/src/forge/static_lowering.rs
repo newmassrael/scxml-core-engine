@@ -19017,10 +19017,16 @@ impl StaticTarget for SwiftTarget {
             ),
         })
     }
-    fn raise_execution_error(&self, machine: &str, _reason: &str, message: &str) -> String {
+    fn raise_execution_error(&self, machine: &str, reason: &str, message: &str) -> String {
         format!(
-            "engine.raise(EventWithMetadata.platformError({machine}Event.{}, message: \"{}\"))",
+            "engine.raise(EventWithMetadata.platformError({machine}Event.{}, reason: .{}, \
+             message: \"{}\"))",
             filters::to_swift_variant("error.execution".to_string()),
+            crate::forge::enum_naming::variant_ident(
+                crate::generator::Language::Swift,
+                ERROR_REASON_ENUM,
+                reason
+            ),
             filters::escape_swift(message.to_string())
         )
     }

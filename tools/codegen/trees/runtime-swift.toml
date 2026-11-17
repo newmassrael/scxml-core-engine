@@ -1,0 +1,22 @@
+# SPDX-License-Identifier: AGPL-3.0-only WITH LicenseRef-SCE-Linking-Exception OR LicenseRef-SCE-Commercial
+# SPDX-FileCopyrightText: Copyright (c) 2026 newmassrael
+#
+# The standard documents the Swift engine runtime is built on, generated for
+# Swift into backends/swift/runtime/Sources/SceRuntime/Generated (ADR 0097), a
+# directory of the SceRuntime target: the reasons an engine raises
+# `error.execution` and `error.communication` for
+# (sce:std/engine/error_reason.scxml, docs/adr/0106 #111), the type
+# `ErrorReason` of the module. The runtime writes each reason by the enum's
+# declared-name accessor, so the document is the one spelling of it. Named by
+# its path under stdlib/engine, so it carries the source hash of that
+# directory.
+
+[tree]
+name = "runtime-swift"
+roots = ["backends/swift/runtime/Sources/SceRuntime/Generated"]
+
+[[generation]]
+each = { files = "stdlib/engine/*.scxml", as = "document" }
+arguments = ["generate", "stdlib/engine/{document}.scxml", "--language", "swift", "--output-dir", "{out}"]
+place = "backends/swift/runtime/Sources/SceRuntime/Generated"
+keep = ["*.swift"]

@@ -143,9 +143,15 @@
 
     /// Says what went wrong where the document can see it: `error.execution` on the internal
     /// queue (§scxml-5.9.1, 5.3).
-    private func raiseExecutionError(_ message: String, engine: Engine<{{ machine_name }}Policy>) {
+    /// `reason` is the code of sce:std/engine/error_reason the record carries
+    /// (docs/adr/0106 #111).
+    private func raiseExecutionError(
+        _ reason: ErrorReason, _ message: String, engine: Engine<{{ machine_name }}Policy>
+    ) {
 {% if 'error.execution' in model.events %}
-        engine.raise(EventWithMetadata.platformError({{ machine_name }}Event.{{ 'error.execution' | to_event_variant }}, message: message))
+        engine.raise(EventWithMetadata.platformError({{ machine_name }}Event.{{ 'error.execution' | to_event_variant }}, reason: reason, message: message))
+{% else %}
+        _ = (reason, message)
 {% endif %}
     }
 
@@ -204,6 +210,7 @@
             }
         } catch {
             raiseExecutionError(
+                handed == nil ? .expressionFailed : .paramUnfit,
                 handed == nil
                     ? "<data id='\(id)'> expr failed to evaluate"
                     : "<data id='\(id)'> could not hold the value its parent handed it",
@@ -371,7 +378,7 @@
         // W3C SCXML 5.8: the top-level scripts run at document load, after the data is declared
 {% for script in model.global_scripts %}
         if !executeScript("{{ script.content | to_lua_script | escape_swift }}", name: "=script") {
-            raiseExecutionError("a top-level <script> failed to execute", engine: engine)
+            raiseExecutionError(.scriptFailed, "a top-level <script> failed to execute", engine: engine)
         }
 {% endfor %}
 {% endif %}
@@ -414,7 +421,7 @@
             // this call the payload is lost to the document and to the host alike.
             engine.notePayloadReading(event, reading: Self.payloadReading(of: reading))
         } catch {
-            raiseExecutionError("_event could not be bound for '\(name)'", engine: engine)
+            raiseExecutionError(.payloadRefused, "_event could not be bound for '\(name)'", engine: engine)
         }
     }
 
@@ -451,7 +458,7 @@
         do {
             return try scriptSession.evaluateCondition(condition, chunkName: "=cond")
         } catch {
-            raiseExecutionError("a \(element) cond failed to evaluate", engine: engine)
+            raiseExecutionError(.expressionFailed, "a \(element) cond failed to evaluate", engine: engine)
             failed = true
             return false
         }

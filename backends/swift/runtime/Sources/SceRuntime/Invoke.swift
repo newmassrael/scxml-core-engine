@@ -239,7 +239,9 @@ public func startChildSession<Policy: StatePolicy>(
     } catch let failure as ScriptSessionFailure {
         child.detachMesh()
         if let error = engine.policy.getEventFromName("error.execution") {
-            engine.raise(EventWithMetadata.platformError(error, message: failure.childStartRefusal(invokeID: invokeID)))
+            engine.raise(
+                EventWithMetadata.platformError(
+                    error, reason: .invokeChildInitFailed, message: failure.childStartRefusal(invokeID: invokeID)))
         }
         return false
     } catch {

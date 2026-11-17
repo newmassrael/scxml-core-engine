@@ -46,7 +46,7 @@
 {{ indent }}    seed.v{{ param.name | to_pascal_case }} = sceValue
 {{ indent }}} catch {
 {% if 'error.execution' in model.events %}
-{{ indent }}    engine.raise(EventWithMetadata.platformError({{ machine_name }}Event.{{ 'error.execution' | to_event_variant }}, message: "<invoke> <param name='{{ param.name | escape_swift }}'> could not be read"))
+{{ indent }}    engine.raise(EventWithMetadata.platformError({{ machine_name }}Event.{{ 'error.execution' | to_event_variant }}, reason: .locationInvalid, message: "<invoke> <param name='{{ param.name | escape_swift }}'> could not be read"))
 {% endif %}
 {% else %}
 {{ indent }}    seed.v{{ param.name | to_pascal_case }} = {{ param.native_seed }}
@@ -61,7 +61,7 @@
 {{ indent }}    let _: WireValue = {{ param.native_value }}
 {{ indent }}} catch {
 {% if 'error.execution' in model.events %}
-{{ indent }}    engine.raise(EventWithMetadata.platformError({{ machine_name }}Event.{{ 'error.execution' | to_event_variant }}, message: "<invoke> <param name='{{ param.name | escape_swift }}'> could not be read"))
+{{ indent }}    engine.raise(EventWithMetadata.platformError({{ machine_name }}Event.{{ 'error.execution' | to_event_variant }}, reason: .locationInvalid, message: "<invoke> <param name='{{ param.name | escape_swift }}'> could not be read"))
 {% endif %}
 {{ indent }}}
 {% endif %}
@@ -114,10 +114,10 @@
 {{ indent }}    _ = seedValue
 {% endif %}
 {{ indent }}} else {
-{{ indent }}    raiseExecutionError("<invoke> <param name='{{ param.name | escape_swift }}'> could not be read", engine: engine)
+{{ indent }}    raiseExecutionError(.locationInvalid, "<invoke> <param name='{{ param.name | escape_swift }}'> could not be read", engine: engine)
 {{ indent }}}
 {% else %}
-{{ indent }}raiseExecutionError("<invoke> <param name='{{ param.name | escape_swift }}'> names no location", engine: engine)
+{{ indent }}raiseExecutionError(.locationInvalid, "<invoke> <param name='{{ param.name | escape_swift }}'> names no location", engine: engine)
 {% endif %}
 {% endfor %}
 {% for namelist_id in (invoke_info.namelist or '') | split %}
@@ -128,7 +128,7 @@
 {{ indent }}    _ = seedValue
 {% endif %}
 {{ indent }}} else {
-{{ indent }}    raiseExecutionError("<invoke> namelist entry '{{ namelist_id | escape_swift }}' could not be read", engine: engine)
+{{ indent }}    raiseExecutionError(.locationInvalid, "<invoke> namelist entry '{{ namelist_id | escape_swift }}' could not be read", engine: engine)
 {{ indent }}}
 {% endfor %}
 {% if takes %}
@@ -221,7 +221,7 @@
                 // `done.invoke.<id>` never fires: the platform places error.execution on the
                 // internal queue, and that is all.
 {% if 'error.execution' in model.events %}
-                engine.raise(EventWithMetadata.platformError({{ machine_name }}Event.{{ 'error.execution' | to_event_variant }}, message: "<invoke type=\"{{ invoke_info.invoke_type | escape_swift }}\"> names a processor this platform does not implement"))
+                engine.raise(EventWithMetadata.platformError({{ machine_name }}Event.{{ 'error.execution' | to_event_variant }}, reason: .invokeTypeUnsupported, message: "<invoke type=\"{{ invoke_info.invoke_type | escape_swift }}\"> names a processor this platform does not implement"))
 {% endif %}
                 return
             }
@@ -244,7 +244,7 @@
 {% if namelist_bad.name %}
         // W3C SCXML 6.4: the namelist names a location that cannot be read, so the element ends
         // here: one error.execution, and no session starts.
-        raiseExecutionError("<invoke> namelist names a location that cannot be read", engine: engine)
+        raiseExecutionError(.locationInvalid, "<invoke> namelist names a location that cannot be read", engine: engine)
 {% else %}
         // W3C SCXML C.1: the child is known by the id its parent mints for it and
         // keys the invocation on, so the sender of what it sends is the id it
@@ -264,7 +264,7 @@
         // W3C SCXML 6.4.1: the id of the invocation goes to the location `idlocation` names, the id
         // every event of the child carries as `_event.invokeid`, before the child starts.
         if !assignData("{{ invoke_info.idlocation | to_lua_location | escape_swift }}", "\"{{ invoke_info.invoke_id | escape_swift }}\"") {
-            raiseExecutionError("<invoke> idlocation could not be written", engine: engine)
+            raiseExecutionError(.locationInvalid, "<invoke> idlocation could not be written", engine: engine)
         }
 {% elif invoke_info.native_idlocation %}
         // docs/adr/0045: under `datamodel="sce-static"` the id this start is started under, the
@@ -324,7 +324,7 @@
         // W3C SCXML 6.4: the namelist names a location that cannot be read, so the element ends
         // here, whatever the `srcexpr` would have named: one error.execution however many names are
         // bad, no session starts, and no `<param>` is read.
-        raiseExecutionError("<invoke> namelist names a location that cannot be read", engine: engine)
+        raiseExecutionError(.locationInvalid, "<invoke> namelist names a location that cannot be read", engine: engine)
 {% else %}
         // §scxml-6.4: the `srcexpr` is read now, as the invocation starts, so what the
         // entry actions of the state left is what it names. One that cannot be
@@ -340,7 +340,7 @@
         guard evaluateText("{{ invoke_info.srcexpr | to_lua_expr | escape_swift }}") != nil else {
 {% endif %}
 {% if 'error.execution' in model.events %}
-            engine.raise(EventWithMetadata.platformError({{ machine_name }}Event.{{ 'error.execution' | to_event_variant }}, message: "<invoke srcexpr> could not be evaluated"))
+            engine.raise(EventWithMetadata.platformError({{ machine_name }}Event.{{ 'error.execution' | to_event_variant }}, reason: .expressionFailed, message: "<invoke srcexpr> could not be evaluated"))
 {% endif %}
             return
         }
@@ -354,7 +354,7 @@
             sceSelected = documentStem(sceValue)
         } catch {
 {% if 'error.execution' in model.events %}
-            engine.raise(EventWithMetadata.platformError({{ machine_name }}Event.{{ 'error.execution' | to_event_variant }}, message: "<invoke srcexpr> could not be evaluated"))
+            engine.raise(EventWithMetadata.platformError({{ machine_name }}Event.{{ 'error.execution' | to_event_variant }}, reason: .expressionFailed, message: "<invoke srcexpr> could not be evaluated"))
 {% endif %}
             return
         }
@@ -372,7 +372,7 @@
         // W3C SCXML 6.4.1: the id of the invocation goes to the location `idlocation` names
         // before the child starts.
         if !assignData("{{ invoke_info.idlocation | to_lua_location | escape_swift }}", "\"{{ invoke_info.invoke_id | escape_swift }}\"") {
-            raiseExecutionError("<invoke> idlocation could not be written", engine: engine)
+            raiseExecutionError(.locationInvalid, "<invoke> idlocation could not be written", engine: engine)
         }
 {% endif %}
 {{ ecma_seed_child(invoke_info, model, machine_name, '        ', false) }}
@@ -403,7 +403,7 @@
             // W3C SCXML 6.4.1: the id of the invocation goes to the location `idlocation` names
             // before the child starts.
             if !assignData("{{ invoke_info.idlocation | to_lua_location | escape_swift }}", "\"{{ invoke_info.invoke_id | escape_swift }}\"") {
-                raiseExecutionError("<invoke> idlocation could not be written", engine: engine)
+                raiseExecutionError(.locationInvalid, "<invoke> idlocation could not be written", engine: engine)
             }
 {% endif %}
 {{ ecma_seed_child(invoke_info, model, machine_name, '            ', candidate.child_needs_script_engine) }}
@@ -432,7 +432,7 @@
             // Interpreter reports when a document will not load: nothing is created,
             // and, as there, the arguments are not read.
 {% if 'error.execution' in model.events %}
-            engine.raise(EventWithMetadata.platformError({{ machine_name }}Event.{{ 'error.execution' | to_event_variant }}, message: "<invoke srcexpr> evaluated to a document it did not declare"))
+            engine.raise(EventWithMetadata.platformError({{ machine_name }}Event.{{ 'error.execution' | to_event_variant }}, reason: .invokeSrcNotFound, message: "<invoke srcexpr> evaluated to a document it did not declare"))
 {% endif %}
             return
         }
@@ -495,7 +495,7 @@
 {% if host_namelist_bad %}
         // W3C SCXML 6.4: the namelist names a location that cannot be read, so the element ends here: one
         // error.execution however many names are bad, no request is made and no invoker is asked.
-        raiseExecutionError("<invoke> namelist names a location that cannot be read", engine: engine)
+        raiseExecutionError(.locationInvalid, "<invoke> namelist names a location that cannot be read", engine: engine)
 {% else %}
 {% if ecmascript_datamodel %}
         // W3C SCXML 6.4.1: what the request says is evaluated now, when the invocation starts, by the engine
@@ -507,18 +507,18 @@
         // W3C SCXML 6.4.1: the id of the invocation goes to the location `idlocation` names before the
         // request is read.
         if !assignData("{{ invoke_info.idlocation | to_lua_location | escape_swift }}", "\"{{ invoke_info.invoke_id | escape_swift }}\"") {
-            raiseExecutionError("<invoke> idlocation could not be written", engine: engine)
+            raiseExecutionError(.locationInvalid, "<invoke> idlocation could not be written", engine: engine)
         }
 {% endif %}
 {% if invoke_info.srcexpr %}
         guard let hostSrc = evaluateText("{{ invoke_info.srcexpr | to_lua_expr | escape_swift }}") else {
-            raiseExecutionError("<invoke> srcexpr failed to evaluate", engine: engine)
+            raiseExecutionError(.expressionFailed, "<invoke> srcexpr failed to evaluate", engine: engine)
             return
         }
 {% endif %}
 {% if invoke_info.contentexpr %}
         guard let hostContent = evaluateText("{{ invoke_info.contentexpr | to_lua_expr | escape_swift }}") else {
-            raiseExecutionError("<invoke> content expr failed to evaluate", engine: engine)
+            raiseExecutionError(.expressionFailed, "<invoke> content expr failed to evaluate", engine: engine)
             return
         }
 {% endif %}
@@ -536,7 +536,7 @@
             hostParams["{{ namelist_id | escape_swift }}", default: []].append(wire.text)
             hostParts.append(PayloadPair.json("{{ namelist_id | escape_swift }}", rawJSON: wire.json))
         } else {
-            raiseExecutionError("<invoke> namelist entry '{{ namelist_id | escape_swift }}' failed to evaluate", engine: engine)
+            raiseExecutionError(.locationInvalid, "<invoke> namelist entry '{{ namelist_id | escape_swift }}' failed to evaluate", engine: engine)
             return
         }
 {% endfor %}
@@ -553,11 +553,11 @@
             hostParts.append(PayloadPair.json("{{ param.name | escape_swift }}", rawJSON: wire.json))
 {% endif %}
         } else {
-            raiseExecutionError("<invoke> <param name='{{ param.name | escape_swift }}'> failed to evaluate", engine: engine)
+            raiseExecutionError(.expressionFailed, "<invoke> <param name='{{ param.name | escape_swift }}'> failed to evaluate", engine: engine)
             return
         }
 {% else %}
-        raiseExecutionError("<invoke> <param name='{{ param.name | escape_swift }}'> names no location", engine: engine)
+        raiseExecutionError(.locationInvalid, "<invoke> <param name='{{ param.name | escape_swift }}'> names no location", engine: engine)
         requestRefused = true
 {% endif %}
 {% endfor %}
@@ -597,7 +597,7 @@
 {% if param.native_fails %}
         } catch {
 {% if 'error.execution' in model.events %}
-            engine.raise(EventWithMetadata.platformError({{ machine_name }}Event.{{ 'error.execution' | to_event_variant }}, message: "<invoke> <param name='{{ param.name | escape_swift }}'> cannot be its request field: it failed to evaluate"))
+            engine.raise(EventWithMetadata.platformError({{ machine_name }}Event.{{ 'error.execution' | to_event_variant }}, reason: .expressionFailed, message: "<invoke> <param name='{{ param.name | escape_swift }}'> cannot be its request field: it failed to evaluate"))
 {% endif %}
             requestRefused = true
 {% endif %}
@@ -624,7 +624,7 @@
             {{ variable }} = sceValue
         } catch {
 {% if 'error.execution' in model.events %}
-            engine.raise(EventWithMetadata.platformError({{ machine_name }}Event.{{ 'error.execution' | to_event_variant }}, message: "<invoke> {{ attribute }} failed to evaluate"))
+            engine.raise(EventWithMetadata.platformError({{ machine_name }}Event.{{ 'error.execution' | to_event_variant }}, reason: .expressionFailed, message: "<invoke> {{ attribute }} failed to evaluate"))
 {% endif %}
             return
 {% else %}
@@ -654,7 +654,7 @@
         )
         if !engine.performHostInvoke(request) {
 {% if 'error.execution' in model.events %}
-            engine.raise(EventWithMetadata.platformError({{ machine_name }}Event.{{ 'error.execution' | to_event_variant }}, message: "<invoke> names an invoker the host declared but never registered"))
+            engine.raise(EventWithMetadata.platformError({{ machine_name }}Event.{{ 'error.execution' | to_event_variant }}, reason: .processorUnregistered, message: "<invoke> names an invoker the host declared but never registered"))
 {% endif %}
         }
 {% endif %}
@@ -736,7 +736,7 @@
         populateEventMetadata(event.metadata)
         bindCurrentEvent(event.event, engine: engine)
         if !executeScript(child.finalizeScript, name: "=finalize") {
-            raiseExecutionError("<finalize> failed to execute", engine: engine)
+            raiseExecutionError(.scriptFailed, "<finalize> failed to execute", engine: engine)
         }
     }
 {% endif %}

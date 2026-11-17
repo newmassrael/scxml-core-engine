@@ -17,7 +17,7 @@
 {# docs/adr/0099: the id that failed is thrown before anything is cancelled. #}
                 } catch {
 {% if 'error.execution' in model.events %}
-                    engine.raise(EventWithMetadata.platformError({{ machine_name }}Event.{{ 'error.execution' | to_event_variant }}, message: "<cancel> sendidexpr failed to evaluate"))
+                    engine.raise(EventWithMetadata.platformError({{ machine_name }}Event.{{ 'error.execution' | to_event_variant }}, reason: .expressionFailed, message: "<cancel> sendidexpr failed to evaluate"))
 {% endif %}
 {% if in_action_block is defined and in_action_block %}
                     break sceBlock  // W3C SCXML 4.9: the error ends the block
@@ -34,7 +34,7 @@
                         _ = engine.cancelEvent(sendID: cancelSendID)
                     } else {
 {% if 'error.execution' in model.events %}
-                        engine.raise(EventWithMetadata.platformError({{ machine_name }}Event.{{ 'error.execution' | to_event_variant }}, message: "<cancel> sendidexpr failed to evaluate"))
+                        engine.raise(EventWithMetadata.platformError({{ machine_name }}Event.{{ 'error.execution' | to_event_variant }}, reason: .expressionFailed, message: "<cancel> sendidexpr failed to evaluate"))
 {% endif %}
 {% if in_action_block is defined and in_action_block %}
                         break sceBlock  // W3C SCXML 4.9: the error ends the block

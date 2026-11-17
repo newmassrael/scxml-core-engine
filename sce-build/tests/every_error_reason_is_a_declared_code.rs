@@ -216,6 +216,20 @@ const SPELLINGS: &[Spelling] = &[
         ],
         suffixes: &[".jinja2", ".py", ".rs"],
     },
+    Spelling {
+        language: Language::Swift,
+        // A member is written with the leading dot where the parameter's type
+        // names it: `reason: .x`, `raiseExecutionError(.x, …)`, a `send_error`
+        // macro's second argument `'.x'`, and `sendArgReason = .x`.
+        member: r"(?:reason: |raiseExecutionError\(|', '|sendArgReason = )\.([a-z][A-Za-z0-9]*)",
+        communication: &["'error.communication'", "errorCommunication"],
+        execution: &["'error.execution'", "raiseExecutionError("],
+        dirs: &[
+            "tools/codegen/templates/swift",
+            "backends/swift/runtime/Sources/SceRuntime",
+        ],
+        suffixes: &[".jinja2", ".swift"],
+    },
 ];
 
 #[test]

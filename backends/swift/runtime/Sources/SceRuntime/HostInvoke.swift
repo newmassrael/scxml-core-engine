@@ -310,6 +310,7 @@ extension Engine {
                     raise(
                         .platformError(
                             errorEvent,
+                            reason: .paramUnfit,
                             message:
                                 "<invoke type='\(request.processorType)' id='\(request.invokeID)'>: \(hostInvokeDeadlineParam)=\(values.joined(separator: ",").debugDescription) is not a whole number of milliseconds"
                         )
@@ -357,7 +358,13 @@ extension Engine {
             hostInvokes.finish(key)
             dropHostInvokeDeadline(token: token)
             if let errorEvent = policy.getEventFromName("error.execution") {
-                raise(.platformError(errorEvent, message: refusal))
+                // The host's refusal is the event's data as the host wrote it: the
+                // host owns the shape of what it refuses with, as a peer owns the
+                // status of its reply (docs/adr/0106 #111), so it is not wrapped in a
+                // code of the engine's vocabulary.
+                var refused = EventWithMetadata.platform(errorEvent)
+                refused.metadata.data = refusal
+                raise(refused)
             }
             return true
         }
@@ -563,7 +570,8 @@ extension Engine {
                 if let errorEvent = policy.getEventFromName("error.execution") {
                     raise(
                         .platformError(
-                            errorEvent, message: "<invoke> names an invoker the host declared but never registered"))
+                            errorEvent, reason: .processorUnregistered,
+                            message: "<invoke> names an invoker the host declared but never registered"))
                 }
                 continue
             }

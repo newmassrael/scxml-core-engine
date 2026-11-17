@@ -760,6 +760,7 @@ public final class Engine<Policy: StatePolicy> {
             }
             let replacement = EventWithMetadata<Event>.platformError(
                 errorEvent,
+                reason: .payloadRefused,
                 message: "`\(policy.getEventName(eventWithMeta.event))` payload: \(error)"
             )
             // The replacement carries no typed payload, so binding it clears the view
@@ -1394,6 +1395,7 @@ public final class Engine<Policy: StatePolicy> {
         if let communicationError = policy.getEventFromName("error.communication") {
             var failure = EventWithMetadata.platformError(
                 communicationError,
+                reason: .targetUnreachable,
                 message: "<send> named a target that was no longer there when its delay elapsed"
             )
             failure.metadata.sendID = act.sendID

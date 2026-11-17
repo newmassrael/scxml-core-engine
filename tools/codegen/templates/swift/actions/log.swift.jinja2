@@ -17,7 +17,7 @@
                 if let logged = evaluateText("{{ action.expr | to_lua_expr | escape_swift }}") {
                     print({% if label %}"{{ label | escape_swift }}: " + {% endif %}logged)
                 } else {
-                    raiseExecutionError("<log> expr failed to evaluate", engine: engine)
+                    raiseExecutionError(.expressionFailed, "<log> expr failed to evaluate", engine: engine)
 {% if in_block %}
                     break sceBlock  // W3C SCXML 4.9: the error ends the block
 {% endif %}
