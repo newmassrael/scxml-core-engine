@@ -901,6 +901,38 @@ old encode, the old encode and its templates are removed in the same landing.
    whose cases are `sources` alone, and Swift where its generator writes it; the codec joins
    `entries_that_take_a_flag_compile_on_every_backend`.
 
+   *Amendment of 2026-11-17: what a procedure or a validator reads of a printed C++ value, and how it makes one
+   again.* The first landing gave a procedure's `<assign>` to one element a rebuild of the value by its constructor,
+   and every later landing narrowed what the constructor takes without the rebuild following: it still handed the
+   constructor every field of the codec, each read by an accessor of its name, so a length, a count or an encoded
+   length the encode derives (§3), and each member of a group, was read by an accessor the value does not have, and
+   a byte string or a text was handed as the expression gave it where the constructor takes its bounded view. A read
+   of a derived number called the same missing accessor. No document of the repository reached either, so nothing
+   failed. The C++ reader is now written from the value's interface, through one record of what a reader knows of a
+   printed codec (`cpp_source::CppPrinted`, held by the import as `ImportContext::cpp_printed`):
+   - the rebuild hands the constructor exactly what it takes, in its order: each element the value presents alone
+     by its accessor, each group and the arm of the variant whole. A byte string or a text assigned is held first and
+     made by `make` of the type the accessor presents it as, read with `decltype`, which views it; a refusal of the
+     bound or of UTF-8 raises `error.execution`, as a value over a bytes slot's cap does, before the value is made
+     again. An assign to a number the encode derives is refused (`InvalidLvalue`), as no value holds it, and so is an
+     assign to a body or a list, which no expression gives;
+   - each number the encode derives into a field is answered by a function of the codec's namespace,
+     `wire_<field>(src)`, over any source as `input_<name>(src)` is: it reads what the number measures as the encode
+     reads it and combines the measures as the encode combines them (the same helpers print both), answering the
+     first measure there for a value the encode would refuse, what the value states or what the group holds where
+     nothing it measures is there, and none where the field is gated beside its content. `wire_` names it apart
+     from a length the value states while its content is absent, which keeps the accessor of its own name. A number
+     whose body is handed an input the encode is handed, one the value says, or bits of a carrier the encode derives
+     is not answered, as the source alone does not say it; no codec of the repository has one;
+   - a member of a group, presented only through its group, and a number no function answers are no members of the
+     import a C++ expression names: the expression is refused as naming no member, rather than generating a call of
+     an accessor the value lacks.
+   The decision was between a function over any source and a member function of the value. The first was chosen
+   because the encode is already a function over any source and its readers are the encode's own, so the number a
+   reader gets is the one the encode writes by construction, for the value and for any consumer type alike, as the
+   inputs a value says already are. `printed_codec_reader_generated_test` compiles and runs a procedure and a
+   validator over `codec_origin_envelope`, whose `note_len` and `m` are derived and whose `optional` body is gated.
+
    *Amendment of 2026-11-16: Python before Go.* The order of the four after C++ is not structural, since each
    printer reads the same plan. Go, Kotlin, Python and C11 all took every derived element from the value, which is
    the defect this step closes, so the first of them to land is the one whose printer moves the derived elements
