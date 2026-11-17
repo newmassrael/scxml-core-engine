@@ -61,7 +61,7 @@ TEST(CommunicationErrorTest, MissingSequenceMinimalShape) {
 
     const auto out = bytes_to_string(err.toJsonBytes());
     EXPECT_EQ(out, "{\"errorName\":\"communication\","
-                   "\"reason\":\"MISSING_SEQUENCE\","
+                   "\"reason\":\"missingSequence\","
                    "\"source\":\"motor\","
                    "\"envelope_id\":\"01820bc0-dead-7e50-81ab-cafebabebeef\"}");
 }
@@ -78,7 +78,7 @@ TEST(CommunicationErrorTest, OrderingGapFullShape) {
 
     const auto out = bytes_to_string(err.toJsonBytes());
     EXPECT_EQ(out, "{\"errorName\":\"communication\","
-                   "\"reason\":\"ORDERING_GAP\","
+                   "\"reason\":\"orderingGap\","
                    "\"source\":\"motor\","
                    "\"lost_seq_lo\":2,"
                    "\"lost_seq_hi\":5}");
@@ -96,7 +96,7 @@ TEST(CommunicationErrorTest, PeerPartitionedShape) {
 
     const auto out = bytes_to_string(err.toJsonBytes());
     EXPECT_EQ(out, "{\"errorName\":\"communication\","
-                   "\"reason\":\"PEER_PARTITIONED\","
+                   "\"reason\":\"peerPartitioned\","
                    "\"target\":\"motor\","
                    "\"last_seen_ms_ago\":142}");
 }
@@ -119,7 +119,7 @@ TEST(CommunicationErrorTest, BarrierTimeoutShape) {
 
     const auto out = bytes_to_string(err.toJsonBytes());
     EXPECT_EQ(out, "{\"errorName\":\"communication\","
-                   "\"reason\":\"PARALLEL_BARRIER_TIMEOUT\","
+                   "\"reason\":\"parallelBarrierTimeout\","
                    "\"parallel_id\":\"root\","
                    "\"missing_regions\":[\"right\"],"
                    "\"timeout_ms\":150}");
@@ -144,7 +144,7 @@ TEST(CommunicationErrorTest, RegionPartitionedShape) {
 
     const auto out = bytes_to_string(err.toJsonBytes());
     EXPECT_EQ(out, "{\"errorName\":\"communication\","
-                   "\"reason\":\"REGION_PARTITIONED\","
+                   "\"reason\":\"regionPartitioned\","
                    "\"last_seen_ms_ago\":142,"
                    "\"machine\":\"motor\","
                    "\"partition\":\"motor_right\"}");
@@ -169,7 +169,7 @@ TEST(CommunicationErrorTest, BackpressureDropShape) {
 
     const auto out = bytes_to_string(err.toJsonBytes());
     EXPECT_EQ(out, "{\"errorName\":\"communication\","
-                   "\"reason\":\"BACKPRESSURE_DROP\","
+                   "\"reason\":\"backpressureDrop\","
                    "\"target\":\"motor\","
                    "\"transport\":\"someip\","
                    "\"queue_depth\":1024}");
@@ -193,7 +193,7 @@ TEST(CommunicationErrorTest, EnvelopeCorruptShape) {
 
     const auto out = bytes_to_string(err.toJsonBytes());
     EXPECT_EQ(out, "{\"errorName\":\"communication\","
-                   "\"reason\":\"ENVELOPE_CORRUPT\","
+                   "\"reason\":\"envelopeCorrupt\","
                    "\"transport\":\"someip\","
                    "\"codec\":\"cbor\"}");
 }
@@ -211,7 +211,7 @@ TEST(CommunicationErrorTest, EnvelopeCorruptShapeWithPosition) {
 
     const auto out = bytes_to_string(err.toJsonBytes());
     EXPECT_EQ(out, "{\"errorName\":\"communication\","
-                   "\"reason\":\"ENVELOPE_CORRUPT\","
+                   "\"reason\":\"envelopeCorrupt\","
                    "\"transport\":\"zenoh_keyexpr\","
                    "\"codec\":\"cbor\","
                    "\"position\":42}");
@@ -246,7 +246,7 @@ TEST(CommunicationErrorTest, InvokeChildLostShapeMeshRpc) {
 
     const auto out = bytes_to_string(err.toJsonBytes());
     EXPECT_EQ(out, "{\"errorName\":\"communication\","
-                   "\"reason\":\"INVOKE_CHILD_LOST\","
+                   "\"reason\":\"invokeChildLost\","
                    "\"invoke_id\":\"01820bc0-dead-7e50-81ab-cafebabebeef\","
                    "\"target\":\"motor\"}");
 }
@@ -267,7 +267,7 @@ TEST(CommunicationErrorTest, InvokeChildLostShapeScxmlInvoke) {
 
     const auto out = bytes_to_string(err.toJsonBytes());
     EXPECT_EQ(out, "{\"errorName\":\"communication\","
-                   "\"reason\":\"INVOKE_CHILD_LOST\","
+                   "\"reason\":\"invokeChildLost\","
                    "\"invoke_id\":\"myInvoke\","
                    "\"target\":\"worker\"}");
 }
@@ -301,7 +301,7 @@ TEST(CommunicationErrorTest, SendFailedShape) {
 
     const auto out = bytes_to_string(err.toJsonBytes());
     EXPECT_EQ(out, "{\"errorName\":\"communication\","
-                   "\"reason\":\"SEND_FAILED\","
+                   "\"reason\":\"sendFailed\","
                    "\"target\":\"motor\","
                    "\"transport\":\"someip\"}");
 }
@@ -326,7 +326,7 @@ TEST(CommunicationErrorTest, SendFailedShapeWithTransportError) {
 
     const auto out = bytes_to_string(err.toJsonBytes());
     EXPECT_EQ(out, "{\"errorName\":\"communication\","
-                   "\"reason\":\"SEND_FAILED\","
+                   "\"reason\":\"sendFailed\","
                    "\"target\":\"motor\","
                    "\"transport\":\"zenoh_keyexpr\","
                    "\"transport_error\":\"ZException: closed session\"}");
@@ -354,7 +354,7 @@ TEST(CommunicationErrorTest, DeliveryExhaustedShapeAfterRetries) {
 
     const auto out = bytes_to_string(err.toJsonBytes());
     EXPECT_EQ(out, "{\"errorName\":\"communication\","
-                   "\"reason\":\"DELIVERY_EXHAUSTED\","
+                   "\"reason\":\"deliveryExhausted\","
                    "\"target\":\"motor\","
                    "\"transport\":\"zenoh_keyexpr\","
                    "\"transport_error\":\"ZException: closed session\","
@@ -384,7 +384,7 @@ TEST(CommunicationErrorTest, UnauthorizedShape) {
 
     const auto out = bytes_to_string(err.toJsonBytes());
     EXPECT_EQ(out, "{\"errorName\":\"communication\","
-                   "\"reason\":\"UNAUTHORIZED\","
+                   "\"reason\":\"unauthorized\","
                    "\"target\":\"motor\","
                    "\"transport\":\"zenoh_keyexpr\","
                    "\"transport_status\":\"TLS: peer certificate fingerprint mismatch\"}");
@@ -409,7 +409,7 @@ TEST(CommunicationErrorTest, DeliveryExhaustedShapeTerminalFastFail) {
 
     const auto out = bytes_to_string(err.toJsonBytes());
     EXPECT_EQ(out, "{\"errorName\":\"communication\","
-                   "\"reason\":\"DELIVERY_EXHAUSTED\","
+                   "\"reason\":\"deliveryExhausted\","
                    "\"target\":\"motor\","
                    "\"transport\":\"someip\","
                    "\"transport_error\":\"vsomeip app not initialized\","
@@ -439,7 +439,7 @@ TEST(CommunicationErrorTest, TransportUnavailableShape) {
 
     const auto out = bytes_to_string(err.toJsonBytes());
     EXPECT_EQ(out, "{\"errorName\":\"communication\","
-                   "\"reason\":\"TRANSPORT_UNAVAILABLE\","
+                   "\"reason\":\"transportUnavailable\","
                    "\"target\":\"motor\","
                    "\"transport\":\"someip\"}");
 }
@@ -461,7 +461,7 @@ TEST(CommunicationErrorTest, DedupWindowOverflowShape) {
 
     const auto out = bytes_to_string(err.toJsonBytes());
     EXPECT_EQ(out, "{\"errorName\":\"communication\","
-                   "\"reason\":\"DEDUP_WINDOW_OVERFLOW\","
+                   "\"reason\":\"dedupWindowOverflow\","
                    "\"source\":\"motor\","
                    "\"window_size\":256}");
 }
@@ -486,7 +486,7 @@ TEST(CommunicationErrorTest, OutboundStaleDropShape) {
 
     const auto out = bytes_to_string(err.toJsonBytes());
     EXPECT_EQ(out, "{\"errorName\":\"communication\","
-                   "\"reason\":\"OUTBOUND_STALE_DROP\","
+                   "\"reason\":\"outboundStaleDrop\","
                    "\"target\":\"motor\","
                    "\"transport\":\"someip\","
                    "\"age_ms\":5000,"
@@ -513,7 +513,7 @@ TEST(CommunicationErrorTest, NotificationDeadlineMissedShape) {
 
     const auto out = bytes_to_string(err.toJsonBytes());
     EXPECT_EQ(out, "{\"errorName\":\"communication\","
-                   "\"reason\":\"NOTIFICATION_DEADLINE_MISSED\","
+                   "\"reason\":\"notificationDeadlineMissed\","
                    "\"target\":\"motor\","
                    "\"transport\":\"dds\","
                    "\"deadline_ms\":250,"
@@ -527,7 +527,7 @@ TEST(CommunicationErrorTest, OptionalFieldsAbsentAreSkipped) {
     err.reason = ReasonCode::MissingSequence;
 
     const auto out = bytes_to_string(err.toJsonBytes());
-    EXPECT_EQ(out, "{\"errorName\":\"communication\",\"reason\":\"MISSING_SEQUENCE\"}");
+    EXPECT_EQ(out, "{\"errorName\":\"communication\",\"reason\":\"missingSequence\"}");
 }
 
 TEST(CommunicationErrorTest, EnvelopeIdRendersAsCanonicalUuidString) {
@@ -569,7 +569,7 @@ TEST(CommunicationErrorTest, RpcReplyFromUndeclaredPeerShape) {
 
     const auto out = bytes_to_string(err.toJsonBytes());
     EXPECT_EQ(out, "{\"errorName\":\"communication\","
-                   "\"reason\":\"RPC_REPLY_FROM_UNDECLARED_PEER\","
+                   "\"reason\":\"rpcReplyFromUndeclaredPeer\","
                    "\"source\":\"mallory\","
                    "\"invoke_id\":\"01920000-0000-7000-8000-0000000000ab\"}");
 }
@@ -584,7 +584,7 @@ TEST(CommunicationErrorTest, CausalViewMismatchShape) {
 
     const auto out = bytes_to_string(err.toJsonBytes());
     EXPECT_EQ(out, "{\"errorName\":\"communication\","
-                   "\"reason\":\"CAUSAL_VIEW_MISMATCH\","
+                   "\"reason\":\"causalViewMismatch\","
                    "\"source\":\"list\","
                    "\"epoch\":1,"
                    "\"replica\":\"01010101-0101-0101-0101-010101010101\"}");

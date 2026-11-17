@@ -76,7 +76,7 @@ std::string slurp(const std::string &path) {
 // fails the test loudly rather than silently skipping.
 std::vector<std::string> parse_16_7_row_codes(const std::string &md) {
     std::vector<std::string> rows;
-    const std::regex row_re{R"(^\s*\|\s*\d+\s*\|[^|]+\|\s*`([A-Z_]+)`\s*\|)",
+    const std::regex row_re{R"(^\s*\|\s*\d+\s*\|[^|]+\|\s*`([a-z][A-Za-z0-9]*)`\s*\|)",
                             std::regex_constants::ECMAScript | std::regex_constants::multiline};
     auto begin = std::sregex_iterator(md.begin(), md.end(), row_re);
     auto end = std::sregex_iterator();
@@ -94,22 +94,26 @@ TEST(ReasonCodeCatalogTest, EveryEnumVariantHasUniqueWireString) {
     // raise site's intended reason.
     std::unordered_set<std::string_view> seen_wire;
     std::unordered_set<std::uint8_t> seen_variant;
-    for (const auto &[code, wire] : ::SCE::Mesh::kReasonCodeTable) {
+    for (const auto code : ::SCE::Mesh::kReasonCodeTable) {
+        const std::string_view wire = ::SCE::Mesh::reasonCodeString(code);
         EXPECT_TRUE(seen_wire.insert(wire).second) << "duplicate wire string in kReasonCodeTable: " << wire;
         EXPECT_TRUE(seen_variant.insert(static_cast<std::uint8_t>(code)).second)
             << "duplicate enum variant in kReasonCodeTable: " << static_cast<int>(code);
     }
 }
 
-TEST(ReasonCodeCatalogTest, ReasonCodeStringRoundTripsEveryTableEntry) {
-    // `reasonCodeString()` must agree with `kReasonCodeTable` for every
-    // variant — guards a future edit that adds an enum variant but
-    // forgets to extend the table (the linear-search fallback's
-    // `"UNKNOWN_REASON"` would otherwise mask the gap).
-    for (const auto &[code, wire] : ::SCE::Mesh::kReasonCodeTable) {
-        EXPECT_EQ(::SCE::Mesh::reasonCodeString(code), wire)
-            << "reasonCodeString mismatch for variant " << static_cast<int>(code);
+TEST(ReasonCodeCatalogTest, EveryRowIsACommunicationCodeOfTheVocabulary) {
+    // docs/adr/0106 #111: a row of §16.7 is a code of the engines' one
+    // vocabulary, raised as `error.communication` (64 to 127), whose wire
+    // string is the name the vocabulary declares. A value no member names
+    // reads as the empty string, which no row may be.
+    for (const auto code : ::SCE::Mesh::kReasonCodeTable) {
+        EXPECT_GE(static_cast<std::uint8_t>(code), 64U)
+            << "variant " << static_cast<int>(code) << " is an execution code";
+        EXPECT_FALSE(::SCE::Mesh::reasonCodeString(code).empty())
+            << "variant " << static_cast<int>(code) << " names no declared code";
     }
+    EXPECT_EQ(::SCE::Mesh::reasonCodeString(::SCE::Mesh::ReasonCode::TransportUnavailable), "transportUnavailable");
 }
 
 TEST(ReasonCodeCatalogTest, EnumMatchesSpecCatalogBidirectionally) {
@@ -132,7 +136,8 @@ TEST(ReasonCodeCatalogTest, EnumMatchesSpecCatalogBidirectionally) {
 
     // Every wire string from the C++ table must appear in §16.7.
     std::unordered_set<std::string> spec_set(spec_codes.begin(), spec_codes.end());
-    for (const auto &[code, wire] : ::SCE::Mesh::kReasonCodeTable) {
+    for (const auto code : ::SCE::Mesh::kReasonCodeTable) {
+        const std::string_view wire = ::SCE::Mesh::reasonCodeString(code);
         EXPECT_TRUE(spec_set.count(std::string(wire)) > 0)
             << "wire string '" << wire
             << "' from kReasonCodeTable is missing from SCE_MESH.md §16.7 "
@@ -142,8 +147,8 @@ TEST(ReasonCodeCatalogTest, EnumMatchesSpecCatalogBidirectionally) {
 
     // Every §16.7 row code must appear in the C++ table.
     std::unordered_set<std::string_view> table_set;
-    for (const auto &[code, wire] : ::SCE::Mesh::kReasonCodeTable) {
-        table_set.insert(wire);
+    for (const auto code : ::SCE::Mesh::kReasonCodeTable) {
+        table_set.insert(::SCE::Mesh::reasonCodeString(code));
     }
     for (const auto &row_code : spec_codes) {
         EXPECT_TRUE(table_set.count(std::string_view(row_code)) > 0)

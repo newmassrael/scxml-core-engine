@@ -114,7 +114,7 @@
   invocation that cannot be started is an error of the element): `refusing`
   runs `gate`, and the host answers its start with a refusal whose data is
   `{"reason":"NOT_HERE"}` — the shape a Mesh router gives an unbound peer
-  (SCE_MESH.md §mesh-10.7.1's INVOKE_SRC_NOT_FOUND).
+  (SCE_MESH.md §mesh-10.7.1's invokeSrcNotFound).
 
     unstarted   — error.execution arrived with `_event.data.reason` NOT_HERE.
     revived     — a completion the host reports for the refused start is

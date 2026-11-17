@@ -799,7 +799,7 @@ TEST(MeshDispatchTest, ChildInitFailureReachesParentAsErrorExecution) {
     EXPECT_TRUE((dispatchEnvelope<RecordingEngine::Policy, RecordingEngine>(env, engine)));
     ASSERT_EQ(engine.events.size(), 1u);
     EXPECT_EQ(engine.events[0].event, RecordingEngine::Event::ErrorExecution);
-    EXPECT_NE(engine.events[0].data.find("INVOKE_CHILD_INIT_FAILED"), std::string::npos)
+    EXPECT_NE(engine.events[0].data.find("invokeChildInitFailed"), std::string::npos)
         << "the §9.3 reason code must survive to _event.data; got: " << engine.events[0].data;
     // The originating detail rides along so a diagnosis does not require
     // correlating worker logs by timestamp.
