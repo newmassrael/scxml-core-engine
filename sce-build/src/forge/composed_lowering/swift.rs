@@ -938,6 +938,21 @@ impl ComposedSpelling for SwiftComposed<'_> {
             ty = def.ty,
         )))
     }
+    // The struct's memberwise initializer, each argument labelled as its
+    // declaration names it, in the schema's order its parameters stand in
+    // ([`ComposedSpelling::record_def`]).
+    fn record_of(&self, ty: &str, fields: &[(String, String)]) -> Option<String> {
+        let args: Vec<String> = fields
+            .iter()
+            .map(|(id, value)| format!("{id}: {value}"))
+            .collect();
+        Some(format!("{ty}({})", args.join(", ")))
+    }
+    // The empty array literal, its element inferred from the parameter it is
+    // handed to, as a list variable starts (`StaticTarget::list_empty`).
+    fn empty_list(&self, _ty: &str) -> Option<String> {
+        Some("[]".to_string())
+    }
     // The machine's own sum, beside its records (docs/adr/0092, section 7, the
     // Swift row): named by the union's document, so one union is one type of the
     // machine whichever alias names it.
@@ -1177,6 +1192,31 @@ mod tests {
         machine: "M",
         carrier: SwiftCarrier::Json,
     };
+
+    /// A `record:R` variable of a record that holds a composition starts at the
+    /// struct's memberwise initializer, a list of no lower count at the empty
+    /// array (docs/adr/0087, "Decided while landing item 8", decision 10).
+    #[test]
+    fn a_record_is_built_from_its_fields_and_a_list_starts_empty() {
+        assert_eq!(
+            SWIFT
+                .record_of(
+                    "MBoardRecord",
+                    &[
+                        ("title".to_string(), "t".to_string()),
+                        ("rects".to_string(), "l".to_string()),
+                    ],
+                )
+                .as_deref(),
+            Some("MBoardRecord(title: t, rects: l)")
+        );
+        assert_eq!(
+            SWIFT
+                .empty_list(&SWIFT.list_type("MRectRecord", 3))
+                .as_deref(),
+            Some("[]")
+        );
+    }
 
     /// The Swift row of the one table of what each backend lowers of a
     /// composed value: a payload read at any depth, a list taken whole and a
