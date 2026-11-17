@@ -37,6 +37,7 @@ use super::super::rust_source::{group_accessor, group_arm_name};
 use super::super::*;
 use super::{
     body_prefix, derived_local, guarded, input_name, length_outside, BoundedList, BoundedView,
+    LawText,
 };
 use crate::forge::codec_roles::{GateGroup, GateVar};
 use crate::forge::encode_plan::{EncodePlan, Value};
@@ -367,9 +368,11 @@ impl<'g> Group<'g> {
                     out.push_str(&view.declare(id, &value_ty));
                     out.push_str(&view.declare_optional());
                 }
+                // A list a group holds is held to no law
+                // (`c11_source::positional_forms`).
                 Value::List { .. } => {
                     let list = BoundedList::of(l, snake, field, &value);
-                    out.push_str(&list.declare(id, &value_ty));
+                    out.push_str(&list.declare(id, &value_ty, &LawText::default()));
                     out.push_str(&list.declare_optional());
                 }
                 Value::Scalar(_) | Value::Body { .. } => {}

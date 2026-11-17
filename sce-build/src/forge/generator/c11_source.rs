@@ -20,16 +20,16 @@
 //! uses that it does not print, and such a codec keeps the template's encode
 //! whole, so no codec has two encodes.
 
-use super::rust_source::{gates_label, group_accessor};
+use super::rust_source::{gates_label, group_accessor, list_laws};
 use super::*;
 use crate::forge::codec_roles::GateVar;
-use crate::forge::codec_roles::{ElementId, InputSource};
+use crate::forge::codec_roles::{ElementId, InputSource, InputValue};
 use crate::forge::codec_totality::RefusalKind;
 use crate::forge::encode_failure::EncodeFailure;
 use crate::forge::encode_plan::{
-    Absent, Against, Bound, CheckSite, Clause, CodecPlan, Derive, Element, EncodePlan, Guard,
-    HandedFrom, InputCheck, Measure, Measured, Narrow, Number, NumberInto, Offset, ParentTag,
-    Presence, Value, Write,
+    Absent, Against, Automaton, Bound, CheckSite, Clause, CodecPlan, Derive, Element, EncodePlan,
+    EntryId, Guard, HandedFrom, InputCheck, Law, Measure, Measured, Narrow, Number, NumberInto,
+    Offset, ParentTag, Presence, Value, Write,
 };
 use std::collections::{BTreeMap, BTreeSet};
 
@@ -190,23 +190,25 @@ pub(super) fn unlowered(plan: &CodecPlan<'_>, imports: &[ImportContext]) -> Opti
 /// [`unlowered`] meets them; empty where it prints the codec whole.
 ///
 /// It prints a positional codec whose elements are integers, flag sets, enums,
-/// byte strings, texts, and bodies and lists of codecs it prints that are
-/// handed no flag input and held to no law, always there, decided by a gate of
-/// a carrier's flags, or a number the value states while the content it
-/// measures is absent, a group a gate of a flag or an input decides, of
-/// numbers, enums, byte strings, texts, a number the arm states where its
-/// content is absent, and bodies and lists of codecs it prints, held as the
-/// struct of its arm ([`group`]), and a variant of
-/// arms of codecs it prints, whatever holds its tag, an arm under a build
-/// feature inside the guard of its macro; whose every derived element is a
-/// number measured off byte strings, texts, lists and bodies or read off what
-/// a body or the arm the value holds says, in a field or in a flag of a
-/// carrier, a flag set where the elements it gates are there, a flag a
-/// group's arm sets, the tag of the arm the value holds, or the tag of the arm
-/// a body holds. A flag input the value does not say is a parameter of the
-/// encode, and one it says, off a field gated on it alone, a group, a body or
-/// the arm the value holds, is read off the source; a body, an arm and a
-/// list's entries are handed each input their import binds. Its encode
+/// byte strings, texts, and bodies and lists of codecs it prints, a list held
+/// to the law its entries say the inputs it hands them by ([`law_text`]),
+/// always there, decided by a gate of a carrier's flags, or a number the value
+/// states while the content it measures is absent, a group a gate of a flag or
+/// an input decides, of numbers, enums, byte strings, texts, a number the arm
+/// states where its content is absent, and bodies and lists of codecs it
+/// prints held to no law, held as the struct of its arm ([`group`]), and a
+/// variant of arms of codecs it prints, whatever holds its tag, an arm under a
+/// build feature inside the guard of its macro; whose every derived element
+/// is a number measured off byte strings, texts, lists and bodies or read off
+/// what a body, the arm the value holds or a list's start says, in a field or
+/// in a flag of a carrier, a flag set where the elements it gates are there, a
+/// flag a group's arm sets, the tag of the arm the value holds, or the tag of
+/// the arm a body holds. A flag input the value does not say is a parameter of
+/// the encode, and one it says, off a field gated on it alone, a group, a
+/// body, the arm the value holds or a list's start, is read off the source; a
+/// body, an arm and a list's entries are handed each input their import binds,
+/// and a chain's entries each input nothing binds as whether the entry before
+/// was of the kind it waits for. Its encode
 /// refuses, before its first byte, a number past what holds it, measures of
 /// one number that disagree, a number
 /// the value states beside content that says another, a gate it cannot derive
@@ -263,6 +265,32 @@ fn unbound_handed(plan: &EncodePlan<'_>, alias: &str) -> bool {
     plan.handed
         .get(alias)
         .is_some_and(|inputs| inputs.iter().any(|handed| handed.from.is_none()))
+}
+
+/// Whether the walk of the chain `field`, of entries of the codec imported as
+/// `alias`, hands each entry every input its import binds nothing to: each is
+/// one the chain supplies from the entry before (`ListWrite::previous`).
+fn walk_supplies(plan: &EncodePlan<'_>, field: &CodecField, alias: &str) -> bool {
+    let Some(walk) = plan.program.iter().find_map(|write| match write {
+        Write::Streamed {
+            field: f,
+            list: Some(walk),
+            ..
+        } if f.id == field.id => Some(walk),
+        _ => None,
+    }) else {
+        return false;
+    };
+    plan.handed.get(alias).is_some_and(|inputs| {
+        inputs
+            .iter()
+            .filter(|handed| handed.from.is_none())
+            .all(|handed| {
+                walk.previous
+                    .iter()
+                    .any(|(input, _)| *input == handed.input)
+            })
+    })
 }
 
 /// What of the gate of `field` the encode does not test: it tests a bit of a
@@ -365,8 +393,23 @@ fn positional_forms(plan: &EncodePlan<'_>, imports: &[ImportContext]) -> Vec<Str
                     }
                 }
             }
-            _ => forms.push(format!(
-                "flag input '{}': an input a list's start says",
+            // Said by the start of the list it is handed on to, which the
+            // list its maker made holds (docs/adr/0065 §6 R8): a list the
+            // value presents alone, which says nothing only where a gate
+            // leaves it out.
+            Some(InputSource::List { list, .. }) => {
+                let gated = element_of(plan, list).map(|e| e.presence == Presence::Gated);
+                let partly = plan.roles.says_input_partly(&said.input.name);
+                if gated.is_none() || (gated == Some(true) && !partly) {
+                    forms.push(format!(
+                        "flag input '{}': an input the start of a list the value does not \
+                         present alone says",
+                        said.input.name
+                    ));
+                }
+            }
+            None => forms.push(format!(
+                "flag input '{}': an input nothing the value holds says",
                 said.input.name
             )),
         }
@@ -417,25 +460,32 @@ fn positional_forms(plan: &EncodePlan<'_>, imports: &[ImportContext]) -> Vec<Str
             // an array beside the length member `{id}_len`, which its walk
             // `{codec}_value_{id}_begin` and `_next` read, names no element
             // of its own may take.
+            // A list held to a law is made by a maker that holds each entry to
+            // it, the start of each input it gives every entry alike a member
+            // of the list and of the value beside it ([`law_text`],
+            // [`start_member`]). A chain hands an entry an input nothing binds
+            // from the entry before it, as its walk says.
             Value::List { codec, law, .. } => {
                 if printed_body(imports, codec).is_none() {
                     forms.push(format!(
                         "field '{id}': a list of `{codec}`, which the C11 backend does not print"
                     ));
                 }
-                if unbound_handed(plan, codec) {
+                if unbound_handed(plan, codec) && !walk_supplies(plan, element.field, codec) {
                     forms.push(format!(
                         "field '{id}': a codec handed an input its import binds nothing to"
                     ));
                 }
-                if !law.is_none() {
-                    forms.push(format!("field '{id}': a list held to a law"));
-                }
-                let taken = [
+                let mut taken = vec![
                     format!("{id}_len"),
                     format!("{id}_begin"),
                     format!("{id}_next"),
                 ];
+                taken.extend(
+                    law.inputs
+                        .iter()
+                        .map(|i| start_member(id, &input_name(&i.input))),
+                );
                 if plan
                     .elements
                     .iter()
@@ -564,8 +614,10 @@ fn positional_forms(plan: &EncodePlan<'_>, imports: &[ImportContext]) -> Vec<Str
     for derived in &plan.derivations {
         match (&derived.element, &derived.by) {
             (ElementId::Flag { .. }, Derive::ChainContinuation) => {}
-            (ElementId::Field(_) | ElementId::Flag { .. }, Derive::Number(number)) => {
-                forms.extend(number_form(&derived.element, number));
+            // A number of any measure, held to what its measures say together
+            // ([`derive_number`]), in a field or a flag of a carrier the value
+            // always presents.
+            (ElementId::Field(_) | ElementId::Flag { .. }, Derive::Number(_)) => {
                 if let ElementId::Flag { field, .. } = &derived.element {
                     forms.extend(carrier_form(plan, &derived.element, field));
                 }
@@ -662,14 +714,14 @@ fn positional_forms(plan: &EncodePlan<'_>, imports: &[ImportContext]) -> Vec<Str
             Write::Streamed { field, guard, list } => {
                 forms.extend(unread_form(plan, &numbers, field));
                 // A walk of each entry in turn, setting on each but the last
-                // the flag a chain's entries end on; a chain that hands an
-                // entry what the one before it was, holds a bare entry's place
-                // or is held to a law is not printed yet.
-                if list.as_ref().is_some_and(|walk| {
-                    !walk.previous.is_empty() || walk.slots.is_some() || walk.lawful
-                }) {
+                // the flag a chain's entries end on and handing each whether
+                // the one before it was of a kind; a list held to a law is
+                // walked as any list, as its maker held its entries to the
+                // law. A chain that holds a bare entry's place is not printed
+                // yet.
+                if list.as_ref().is_some_and(|walk| walk.slots.is_some()) {
                     forms.push(format!(
-                        "field '{}': a chain whose walk hands its entries a flag",
+                        "field '{}': a chain whose walk holds a bare entry's place",
                         field.id
                     ));
                 }
@@ -708,41 +760,6 @@ fn positional_forms(plan: &EncodePlan<'_>, imports: &[ImportContext]) -> Vec<Str
             Write::Variant => {}
         }
     }
-    forms.dedup();
-    forms
-}
-
-/// What of the derived number of `element` the printer does not print: it
-/// prints a number measured off byte strings, texts, lists and the encoded
-/// lengths of bodies, in a field or in a flag of a carrier, held to what its
-/// measures say together ([`derive_number`]).
-fn number_form(element: &ElementId, number: &Number<'_>) -> Vec<String> {
-    let mut forms = Vec::new();
-    for measure in &number.measures {
-        match &measure.of {
-            // The bytes the view holds, less or more its arithmetic, refused
-            // where the arithmetic takes them below zero.
-            Measured::Bytes { .. } => {}
-            // Counted by its codec's encode into a counting sink, which
-            // passes on what the body refuses.
-            Measured::Encoded { .. } => {}
-            // The entries the list's maker counted as it walked them.
-            Measured::Entries { .. } => {}
-            // What the body says, read through its codec's own function of
-            // the input over the source the value presents the body as.
-            Measured::Says { .. } => {}
-            // What the arm the value holds says, read through its codec's
-            // own function of the input over the source the arm's body is.
-            Measured::ArmSays { .. } => {}
-            Measured::Start { .. } => {
-                forms.push(format!("element '{element}': the start of a list's law"));
-            }
-        }
-    }
-    // Zero where a gate leaves the content out, as the field is then gated
-    // beside it, what the value states where it states one, and what the arm
-    // of the group the value holds holds where the group holds it on the side
-    // where its content is absent (docs/adr/0065 §6 R4b).
     forms.dedup();
     forms
 }
@@ -945,9 +962,18 @@ impl BoundedList {
         )
     }
 
-    /// Its type and its maker, for the element `id` of `value`.
-    fn declare(&self, id: &str, value: &str) -> String {
+    /// Its type and its maker, for the element `id` of `value`, held to the
+    /// law `law` spells ([`LawText`], empty for a list held to none).
+    fn declare(&self, id: &str, value: &str, law: &LawText) -> String {
         let (ty, base, entry) = (self.ty(), &self.base, &self.entry);
+        let LawText {
+            members,
+            params,
+            locals,
+            checks,
+            sets,
+            note,
+        } = law;
         let least = self.bound.least;
         let held = match self.bound.most {
             Some(most) => format!("{least} to {most} entries"),
@@ -978,20 +1004,178 @@ impl BoundedList {
              * encode over a source writes its `count` entries, refusing nothing of\n \
              * the count. */\n\
              typedef struct {{\n    const sce_forge_walk_t *walk;\n    const void *ctx;\n    \
-             const {entry}_source_t *entry;\n    size_t count;\n}} {ty};\n\n\
+             const {entry}_source_t *entry;\n    size_t count;\n{members}}} {ty};\n\n\
              /* Make `*out` the list `walk` presents over `ctx`, each entry a source of\n \
              * {entry}_t by `entry`: SCE_FORGE_CODEC_OK, or the refusal of a list\n \
-             * outside its bound, `*out` then as it was. */\n\
+             * outside its bound, `*out` then as it was.{note} */\n\
              static inline sce_forge_codec_status_t {base}_make({ty} *out, \
-             const sce_forge_walk_t *walk, const void *ctx, const {entry}_source_t *entry) {{\n    \
-             size_t count = 0;\n    \
+             const sce_forge_walk_t *walk, const void *ctx, const {entry}_source_t *entry\
+             {params}) {{\n    \
+             size_t count = 0;\n\
+             {locals}    \
              for (const void *at = walk->begin(ctx); at != NULL; at = walk->next(ctx, at)) {{\n        \
              ++count;\n\
-             {past}    }}\n\
+             {past}{checks}    }}\n\
              {fewest}    out->walk = walk;\n    out->ctx = ctx;\n    out->entry = entry;\n    \
-             out->count = count;\n    return SCE_FORGE_CODEC_OK;\n\
+             out->count = count;\n{sets}    return SCE_FORGE_CODEC_OK;\n\
              }}\n\n"
         )
+    }
+}
+
+/// What the law a list is held to (docs/adr/0065 §6 R8) adds to its
+/// refinement in C11, each piece empty for a list held to none: the start of
+/// each input every entry says alike (`Automaton::Uniform`), a member of the
+/// list and a parameter of its maker; and the maker's hold of each entry, as
+/// it walks the list once, to saying what the law asks of its place, the
+/// start, or whether the entry before is of the kind the input waits for
+/// (`Automaton::AfterKey`), the first entry's clear. An entry that says an
+/// input in some of its values only agrees with any place where it says
+/// nothing (R8b). The walk presents the same entries each time it is run
+/// (`sce_forge_walk_t`), so a list its maker made holds its law for as long
+/// as it is presented, and the encode over a source walks it as any list.
+#[derive(Default)]
+struct LawText {
+    /// The members of the list's type, after its count.
+    members: String,
+    /// The parameters of its maker, after the entry's table.
+    params: String,
+    /// The maker's locals, before its walk.
+    locals: String,
+    /// The maker's hold of each entry `at`, inside its walk.
+    checks: String,
+    /// The maker's statements that set the members on `*out`.
+    sets: String,
+    /// What the maker's comment says of the law.
+    note: String,
+}
+
+/// [`LawText`] of the list `field` of `plan`, of entries of the codec imported
+/// as `codec`, held to `law`. `imports` say which inputs the entry codec says
+/// in some of its values only.
+fn law_text(
+    plan: &EncodePlan<'_>,
+    imports: &[ImportContext],
+    field: &CodecField,
+    codec: &str,
+    law: &Law,
+) -> LawText {
+    let mut text = LawText::default();
+    if law.is_none() {
+        return text;
+    }
+    let entry = body_prefix(codec);
+    let mut updates = String::new();
+    for law_input in &law.inputs {
+        let name = input_name(&law_input.input);
+        let said = format!("{entry}_input_{name}(entry, at)");
+        let expected = match law_input.automaton {
+            Automaton::Uniform => {
+                text.members
+                    .push_str(&format!("    uint8_t start_{name};\n"));
+                text.params.push_str(&format!(", uint8_t start_{name}"));
+                text.sets
+                    .push_str(&format!("    out->start_{name} = start_{name};\n"));
+                format!("start_{name}")
+            }
+            Automaton::AfterKey { id } => {
+                let after = format!("_after_{name}");
+                text.locals.push_str(&format!("    uint8_t {after} = 0;\n"));
+                updates.push_str(&format!(
+                    "        {after} = (uint8_t)({} == 0x{id:X}ull);\n",
+                    entry_kind(plan, field, "entry", "at")
+                ));
+                after
+            }
+        };
+        let refused = "SCE_FORGE_CODEC_PRESENT_IF_MISMATCH";
+        if says_partly(imports, codec, &law_input.input) {
+            text.checks.push_str(&format!(
+                "        {{\n            \
+                 const sce_optional_uint8_t _s = {said};\n            \
+                 if (_s.present && ((_s.value != 0) != ({expected} != 0))) {{\n                \
+                 return {refused};\n            }}\n        }}\n"
+            ));
+        } else {
+            text.checks.push_str(&format!(
+                "        if ((({said}) != 0) != ({expected} != 0)) {{\n            \
+                 return {refused};\n        }}\n"
+            ));
+        }
+    }
+    // The kind of the entry is what the next entry's place asks of it.
+    text.checks.push_str(&updates);
+    text.note = "\n * Each entry says the inputs its law asks of its place (docs/adr/0065\n \
+                 * §6 R8), or the list is refused with\n \
+                 * SCE_FORGE_CODEC_PRESENT_IF_MISMATCH."
+        .to_string();
+    text
+}
+
+/// The inputs of the law of `value`, a list, that every entry says alike
+/// (`Automaton::Uniform`), each as its C name: the inputs its start holds, in
+/// the law's order. Empty for a list held to no law, and for any other value.
+fn law_starts(value: &Value<'_>) -> Vec<String> {
+    match value {
+        Value::List { law, .. } => law
+            .inputs
+            .iter()
+            .filter(|i| matches!(i.automaton, Automaton::Uniform))
+            .map(|i| input_name(&i.input))
+            .collect(),
+        _ => Vec::new(),
+    }
+}
+
+/// The member of the value's struct that holds the start of the input `input`
+/// of the law of its list `list` (both C names): the value states it beside
+/// the list, as the start is the value's even where the list holds no entry
+/// (docs/adr/0065 §6 R8).
+fn start_member(list: &str, input: &str) -> String {
+    format!("{list}_start_{input}")
+}
+
+/// The members of the value's struct that hold the starts of the laws of its
+/// lists ([`start_member`]), after its fields.
+fn start_members(plan: &EncodePlan<'_>, l: &LangCtx) -> String {
+    let mut out = String::new();
+    for element in &plan.elements {
+        let list = l.codec_field_id(&element.field.id);
+        for input in law_starts(&element.value) {
+            out.push_str(&format!(
+                "    /* The `{input}` every entry of `{list}` says (docs/adr/0065 §6 R8). */\n    \
+                 uint8_t {};\n",
+                start_member(&list, &input)
+            ));
+        }
+    }
+    out
+}
+
+/// The kind of the entry of the chain `chain` of `plan` that the table
+/// `table` presents over `at`, as a `uint64_t`: the identifier `entry-id`
+/// names, read off the entry's source, less the flags `entry-id-except` leaves
+/// out (`EncodePlan::entry_ids`).
+fn entry_kind(plan: &EncodePlan<'_>, chain: &CodecField, table: &str, at: &str) -> String {
+    let read = |field: &str| {
+        format!(
+            "(uint64_t){table}->{}({at})",
+            filters::to_snake_case(field.to_string())
+        )
+    };
+    match plan
+        .entry_ids
+        .get(&chain.id)
+        .expect("a chain whose entries an input tells apart declares entry-id")
+    {
+        EntryId::Flag { carrier, bit, mask } => {
+            format!("((({}) >> {bit}) & 0x{mask:X}ull)", read(carrier))
+        }
+        EntryId::Whole {
+            field,
+            mask: Some(mask),
+        } => format!("(({}) & 0x{mask:X}ull)", read(field)),
+        EntryId::Whole { field, mask: None } => format!("({})", read(field)),
     }
 }
 
@@ -1144,7 +1328,8 @@ pub(super) struct C11Source {
     pub(super) before_struct: String,
     /// At the end of the value's struct's members, before its variant: a
     /// member for each group, which the value holds in place of the fields the
-    /// group holds. Empty where it holds none.
+    /// group holds, and one for the start of each input a list's law gives its
+    /// entries alike ([`start_member`]). Empty where it holds neither.
     pub(super) members: String,
     /// After the value's struct and its decode, before the value's encode: the
     /// view of each byte string and text, the list of each list and chain and
@@ -1164,7 +1349,9 @@ pub(super) struct C11Source {
     /// and each group made of the locals its members were read into, the arm
     /// the gates the decode read select, or, for a group whose byte strings,
     /// texts, bodies or lists the decode read in place, its numbers set in the
-    /// arm it opened. Empty where the value states none and holds no group.
+    /// arm it opened; and the start of each list's law, what the decode handed
+    /// its entries. Empty where the value states none and holds no group and
+    /// no list held to a law.
     pub(super) decoded: String,
     /// Before the decode of a field, by its id: the opening of each group the
     /// decode reads some member of in place, before the first such member
@@ -1191,6 +1378,7 @@ pub(super) fn render(
         members: groups
             .iter()
             .map(|g| format!("    {} {};\n", g.held, g.name))
+            .chain(std::iter::once(start_members(plan, l)))
             .collect(),
         before_encode: before_encode(plan, l, imports, snake),
         encode_body: encode_body(plan, snake),
@@ -1235,6 +1423,36 @@ fn decoded(plan: &EncodePlan<'_>, l: &LangCtx, snake: &str) -> String {
             held.some(&local),
             held.none()
         ));
+    }
+    // The start of each input a list's law gives its entries alike: what the
+    // decode handed every entry it read, the bit of a carrier it read or an
+    // input it was handed (docs/adr/0065 §6 R8).
+    for element in &plan.elements {
+        let list = l.codec_field_id(&element.field.id);
+        for law in list_laws(&plan.roles, &element.field.id) {
+            let handed = match &law.against {
+                InputValue::Carrier { carrier, flag } => {
+                    let bit = plan
+                        .model
+                        .fields
+                        .iter()
+                        .find(|f| &f.id == carrier)
+                        .and_then(|f| f.flags.iter().find(|d| &d.name == flag))
+                        .map(|d| d.bit)
+                        .expect("the parser found the flag a bind names");
+                    format!(
+                        "((((uint64_t)out->{} >> {bit}) & 1u) != 0)",
+                        l.codec_field_id(carrier)
+                    )
+                }
+                InputValue::Input { name } => format!("({} != 0)", input_name(name)),
+                InputValue::PreviousEntry { .. } => continue,
+            };
+            out.push(format!(
+                "out->{} = (uint8_t)({handed} ? 1u : 0u);",
+                start_member(&list, &input_name(&law.binder.input))
+            ));
+        }
     }
     out.join("\n    ")
 }
@@ -1281,9 +1499,10 @@ fn before_encode(
                     out.push_str(&view.declare_optional());
                 }
             }
-            Value::List { .. } => {
+            Value::List { codec, law, .. } => {
                 let list = BoundedList::of(l, snake, element.field, &element.value);
-                out.push_str(&list.declare(&element.field.id, &value));
+                let law = law_text(plan, imports, element.field, codec, law);
+                out.push_str(&list.declare(&element.field.id, &value, &law));
                 if gated {
                     out.push_str(&list.declare_optional());
                 }
@@ -1460,6 +1679,17 @@ fn before_encode(
                 } else {
                     (String::new(), "list".to_string())
                 };
+                // The start of each input its law gives every entry alike,
+                // which the value holds beside the list (docs/adr/0065 §6 R8).
+                let starts: String = law_starts(&element.value)
+                    .iter()
+                    .map(|input| {
+                        format!(
+                            "    list.start_{input} = self->{};\n",
+                            start_member(&name, input)
+                        )
+                    })
+                    .collect();
                 format!(
                     "    static const sce_forge_walk_t walk = {{\n        \
                      {snake}_value_{name}_begin,\n        \
@@ -1469,7 +1699,8 @@ fn before_encode(
                      list.walk = &walk;\n    \
                      list.ctx = ctx;\n    \
                      list.entry = {entry}_value_source();\n    \
-                     list.count = {len};\n    \
+                     list.count = {len};\n\
+                     {starts}    \
                      return {ret};\n"
                 )
             }
@@ -2109,12 +2340,30 @@ fn encode_source(plan: &EncodePlan<'_>, l: &LangCtx, snake: &str) -> String {
                         let held = read(field);
                         let entry = body_prefix(codec);
                         let args = handed(codec);
-                        let ends = match step {
+                        let walk = match step {
                             Write::Streamed {
                                 list: Some(walk), ..
-                            } => walk.ends.as_ref(),
+                            } => Some(walk),
                             _ => None,
                         };
+                        let ends = walk.and_then(|walk| walk.ends.as_ref());
+                        // A chain hands each entry, for an input nothing binds,
+                        // whether the entry before it was of the kind the
+                        // input waits for, the first entry's clear
+                        // (docs/adr/0065 §6 R8b), as [`handed_args`] names it.
+                        let mut before = String::new();
+                        let mut after = String::new();
+                        for (input, id) in walk
+                            .map(|walk| walk.previous.as_slice())
+                            .unwrap_or_default()
+                        {
+                            let local = previous_local(input);
+                            before.push_str(&format!("        uint8_t {local} = 0;\n"));
+                            after.push_str(&format!(
+                                "            {local} = (uint8_t)({} == 0x{id:X}ull);\n",
+                                entry_kind(plan, field, &format!("{held}.entry"), "_at")
+                            ));
+                        }
                         // A chain sets on each entry but the last the flag its
                         // entries end on, in place of the one the entry
                         // presents (docs/adr/0058 §1), by the entry's codec's
@@ -2134,9 +2383,10 @@ fn encode_source(plan: &EncodePlan<'_>, l: &LangCtx, snake: &str) -> String {
                         };
                         body.push_str(&format!(
                             "    {{\n        \
-                             const void *_at = {held}.walk->begin({held}.ctx);\n        \
+                             const void *_at = {held}.walk->begin({held}.ctx);\n\
+                             {before}        \
                              for (size_t _i = 0; _i < {held}.count && _at != NULL; ++_i) {{\n\
-                             {write}            \
+                             {write}{after}            \
                              _at = {held}.walk->next({held}.ctx, _at);\n        \
                              }}\n    \
                              }}\n"
@@ -2301,8 +2551,34 @@ fn said_input(plan: &EncodePlan<'_>, l: &LangCtx, snake: &str, input: &str, at: 
                 g.gate_value(at, &source(&g.name))
             )
         }
+        // The start of the list the codec hands it on to, which every entry
+        // says (docs/adr/0065 §6 R8); a gated list says nothing while it is
+        // absent, and the input's function answers an optional value then.
+        Some(InputSource::List {
+            list,
+            input: entry_input,
+            ..
+        }) => {
+            let held = source(list);
+            let start = format!("start_{}", input_name(entry_input));
+            let gated = plan
+                .model
+                .fields
+                .iter()
+                .find(|f| &f.id == list)
+                .is_some_and(|f| plan.presence(f) == Presence::Gated);
+            match (plan.roles.says_input_partly(input), gated) {
+                (true, true) => format!(
+                    "({held}.present ? sce_optional_uint8_some({held}.value.{start}) : \
+                     sce_optional_uint8_none())"
+                ),
+                (true, false) => format!("sce_optional_uint8_some({held}.{start})"),
+                (false, _) => format!("{held}.{start}"),
+            }
+        }
         _ => unreachable!(
-            "`unlowered` prints an input a field's gate, a body, a group or an arm says only"
+            "`unlowered` prints an input a field's gate, a body, a group, an arm or a list's \
+             start says only"
         ),
     }
 }
@@ -2365,9 +2641,18 @@ fn handed_args(plan: &EncodePlan<'_>, alias: &str, read: &dyn Fn(&CodecField) ->
                 )
             }
             Some(HandedFrom::Input { name }) => format!(", {}", input_name(name)),
-            None => unreachable!("`unlowered` prints a codec handed only inputs its import binds"),
+            // An input nothing binds, which only a chain hands its entries,
+            // from the entry before ([`walk_supplies`]).
+            None => format!(", {}", previous_local(&handed.input)),
         })
         .collect()
+}
+
+/// The local the walk of a chain holds, for the input `input` of its entries
+/// nothing binds, whether the entry before the one it writes was of the kind
+/// the input waits for (`ListWrite::previous`).
+fn previous_local(input: &str) -> String {
+    format!("_p_{}", input_name(input))
 }
 
 /// Whether the gate of `field` holds over the carriers the encode writes,
@@ -2853,8 +3138,26 @@ fn measure_text(
                 gated: measure.gated,
             }
         }
-        Measured::Start { .. } => {
-            unreachable!("`unlowered` prints no start of a list's law")
+        // The start the list's law gives every entry, which the list its
+        // maker made holds (docs/adr/0065 §6 R8). Where a gate leaves the list
+        // out it says nothing: a field beside it holds zero and a flag keeps
+        // the bits the value presents.
+        Measured::Start { list, input } => {
+            let local = element_local(l, &list.id);
+            let name = input_name(input);
+            if measure.gated {
+                MeasureText {
+                    size: format!("(size_t){local}.value.start_{name}"),
+                    present: Some(format!("{local}.present")),
+                    gated: true,
+                }
+            } else {
+                MeasureText {
+                    size: format!("(size_t){local}.start_{name}"),
+                    present: None,
+                    gated: false,
+                }
+            }
         }
     }
 }
@@ -3079,7 +3382,7 @@ fn check_value(plan: &EncodePlan<'_>, l: &LangCtx, snake: &str) -> String {
         // The array of a list within the most its list holds, and each entry
         // it holds a value of its codec, by that codec's own check; where a
         // gate decides the list, only where it is present.
-        if let Value::List { codec, .. } = &element.value {
+        if let Value::List { codec, law, .. } = &element.value {
             let list = BoundedList::of(l, snake, element.field, &element.value);
             let name = l.codec_field_id(&element.field.id);
             let held = u64::from(c11_held_entries(element.field, &plan.model.fields));
@@ -3108,6 +3411,28 @@ fn check_value(plan: &EncodePlan<'_>, l: &LangCtx, snake: &str) -> String {
                  SCE_FORGE_TRY_WRITE({}_check_value(&{data}[_i]));\n    }}\n",
                 body_prefix(codec)
             ));
+            // The entries held to the list's law from the start the value
+            // holds beside it, by the list's own maker over the value's walk
+            // of them (docs/adr/0065 §6 R8).
+            if !law.is_none() {
+                let made = if element.presence == Presence::Gated {
+                    format!("{snake}_value_{name}(self).value")
+                } else {
+                    format!("{snake}_value_{name}(self)")
+                };
+                let starts: String = law_starts(&element.value)
+                    .iter()
+                    .map(|input| format!(", _l.start_{input}"))
+                    .collect();
+                let (ty, base) = (list.ty(), &list.base);
+                checks.push_str(&format!(
+                    "    {{\n        \
+                     const {ty} _l = {made};\n        \
+                     {ty} _made;\n        \
+                     SCE_FORGE_TRY_WRITE({base}_make(&_made, _l.walk, _l.ctx, _l.entry{starts}));\n    \
+                     }}\n"
+                ));
+            }
             out.push_str(&if element.presence == Presence::Gated {
                 guarded(&format!("self->{name}.present"), &checks)
             } else {
