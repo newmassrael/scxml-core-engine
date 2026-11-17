@@ -555,6 +555,15 @@ fn the_go_map_holds_each_list_in_a_slice_of_the_schemas_payload() {
     );
 }
 
+/// docs/adr/0081 step 4: the Python map is printed from its plan. Each list is
+/// held in the class of its most (`BoundedTuple`), and the payload type of the
+/// schema's Python unit holds a record's text and integer in a bare `str` and
+/// `int`, so the encode refuses a record past either bound before the map
+/// head, as it refuses one past a byte string's.
+///
+/// Turns red where `python_source::cbor::checks` checks a record after the
+/// first byte, or drops the check of a record's text, or where `held` holds a
+/// list in a bare `list`.
 #[test]
 fn the_python_map_holds_each_list_in_a_list_of_the_schemas_payload() {
     holds(
@@ -562,18 +571,26 @@ fn the_python_map_holds_each_list_in_a_list_of_the_schemas_payload() {
         &generated_fixture(Language::Python),
         &[
             "from . import cbor_causal_entry as ",
-            "import dataclasses\n",
-            ".CborCausalEntryPayload] = dataclasses.field(default_factory=list)",
+            "from sce_forge_runtime.bounded import BoundedBytes, BoundedText, BoundedTuple\n",
+            "class CodecCborRecordListSeenList(BoundedTuple):\n    \"\"\"",
+            "    LEAST = 0\n    MOST = 2\n",
+            "    seen: CodecCborRecordListSeenList = CodecCborRecordListSeenList()\n",
+            "    context: Optional[CodecCborRecordListContextList] = None\n",
             // A read past the bound is refused before any record is read.
             "if n > 2:",
             "if n > 3:",
             "v = [CodecCborRecordList._decode_record_causal_entry(c) for _ in range(n)]",
             "held_author = cbor.read_text(c, 16)",
-            // The list carries no bound, so the encode refuses past it.
-            "if len(v) > 2:",
+            // Each record is held to the bounds its payload does not hold
+            // before the map head is written.
+            "    v = src.seen\n    for _record in v:\n        \
+             if not 0 <= _record.seq <= 0xFFFFFFFFFFFFFFFF:\n            \
+             raise cbor.CborOutOfRange()\n        \
+             if len(_record.author.encode(\"utf-8\")) > 16:\n            \
+             raise cbor.CborOutOfRange()\n",
+            "                raise cbor.CborOutOfRange()\n    count = 3\n",
             "cbor.write_array_head(w, len(v))",
-            "CodecCborRecordList._encode_record_causal_entry(w, record)",
-            "if len(record.author.encode(\"utf-8\")) > 16:",
+            "    for _record in v:\n        _encode_record_causal_entry(w, _record)\n",
             "cbor.write_map_head(w, 2)",
         ],
         "def _encode_record_causal_entry(",

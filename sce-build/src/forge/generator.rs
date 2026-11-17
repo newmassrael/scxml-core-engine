@@ -10694,6 +10694,25 @@ pub(crate) fn cpp_cbor_printed(m: &CodecModel, imports: &[ImportContext]) -> Str
     cpp_source::cbor::render(&plan, &l, imports, &filters::to_pascal_case(m.name.clone()))
 }
 
+/// For each element of a printed Python value, by its id, the type its field
+/// is declared as and the default it takes.
+pub(crate) type PythonDeclared = std::collections::BTreeMap<String, (String, String)>;
+
+/// What the Python backend prints the CBOR codec `m` as from its plan
+/// (docs/adr/0081 step 4): the template's `python_source`, and for each entry,
+/// by its id, the type and the default the value's field is declared with.
+/// Every CBOR map is printed.
+pub(crate) fn python_cbor_printed(
+    m: &CodecModel,
+    imports: &[ImportContext],
+) -> (serde_json::Value, PythonDeclared) {
+    let plan = crate::forge::encode_plan::CborPlan::of(m, imports);
+    let l = LangCtx::new(crate::generator::Language::Python, imports);
+    let printed =
+        python_source::cbor::render(&plan, &l, imports, &filters::to_pascal_case(m.name.clone()));
+    (printed.context(), printed.declared)
+}
+
 /// The text the C++ backend prints the content-line codec `m` as from its plan,
 /// inside its namespace (docs/adr/0081 step 4). Every content-line codec is
 /// printed: its plan uses no form the C++ printer does not lower.

@@ -980,26 +980,19 @@ fn render_python(
     insert_cbor_records(&l, m, imports, &mut ctx, &|ty| {
         scalar_record_field_type(&l, ty)
     })?;
-    // A required entry starts at its type's own default — an enum at its
-    // first declared variant, a list of records a new empty list — and an
-    // optional one absent (`None`).
+    // docs/adr/0081 step 4: the map is printed from its plan, each entry held
+    // in the class of its bound or width and encoded over any source; the
+    // value's field is declared as the printer holds it, a required entry at
+    // its class's default and an optional one absent (`None`).
+    let (printed, declared) = crate::forge::generator::python_cbor_printed(m, imports);
     if let Some(serde_json::Value::Array(entries)) = ctx.get_mut("entries") {
         for (entry, e) in entries.iter_mut().zip(&m.cbor_entries) {
-            let value_type = entry["value_type"].as_str().unwrap_or_default().to_string();
-            entry["field_type"] = if e.is_required() {
-                value_type
-            } else {
-                l.codec_optional_of(&value_type)
-            }
-            .into();
-            entry["default"] = match (e.is_required(), e.leaf_type()) {
-                (false, _) => "None".to_string(),
-                (true, Some(present)) => l.default_expr(present),
-                (true, None) => "dataclasses.field(default_factory=list)".to_string(),
-            }
-            .into();
+            let (ty, default) = &declared[&e.id];
+            entry["field_type"] = ty.clone().into();
+            entry["default"] = default.clone().into();
         }
     }
+    ctx.insert("python_source".into(), printed);
     ctx.insert(
         "has_closed_enum".into(),
         m.cbor_entries

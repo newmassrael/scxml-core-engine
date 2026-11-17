@@ -930,24 +930,75 @@ fn an_input_the_entry_before_decides_is_checked_where_no_law_holds_it() {
     );
 }
 
-/// A codec whose plan uses a form the Python printer does not lower keeps the
-/// template's encode whole: a CBOR map names its form.
+/// A CBOR map is printed from its plan: every entry is presented, each held in
+/// the class of its bound or width (an exact byte string a least equal to its
+/// most), and the encode over any source writes the map head, counting the
+/// optional entries present, then each entry present in ascending key order.
+/// No bound is checked in the encode, which the classes hold.
 ///
-/// Turns red where `python_source::unlowered_forms` stops naming a CBOR map.
+/// Turns red where `python_source::cbor::render` writes the entries in
+/// declaration order rather than `by_key`, drops an optional entry from the
+/// count, holds an exact byte string to its most alone, or checks a bound the
+/// class holds.
 #[test]
-fn a_codec_of_a_form_the_printer_does_not_lower_keeps_the_template_encode() {
+fn a_cbor_map_is_printed_from_its_plan_in_ascending_key_order() {
     let name = "codec_cbor_map";
-    let forms = unlowered(name);
-    assert!(
-        forms.iter().any(|f| f.contains("a CBOR map")),
-        "{name}: the printer names a CBOR map among {forms:?}"
-    );
+    assert!(unlowered(name).is_empty());
     let text = resource_module(name);
+    holds(
+        name,
+        &text,
+        &[
+            "from typing import Optional, Protocol\n",
+            "class CodecCborMapIdBytes(BoundedBytes):\n",
+            "    LEAST = 16\n    MOST = 16\n",
+            "class CodecCborMapSourceText(BoundedText):\n",
+            "    LEAST = 0\n    MOST = 64\n",
+            "class CodecCborMapPatternInt(BoundedInt):\n",
+            "    BITS = 8\n    SIGNED = False\n",
+            "class CodecCborMapSource(Protocol):\n",
+            "    @property\n    def deadline(self) -> Optional[CodecCborMapDeadlineInt]: ...\n",
+            "    @property\n    def urgent(self) -> Optional[bool]: ...\n",
+            "    id: CodecCborMapIdBytes = CodecCborMapIdBytes(b\"\\x00\" * 16)\n",
+            "        elif name == \"deadline\":\n            \
+             value = None if value is None else CodecCborMapDeadlineInt(value)\n",
+            "    count = 4\n    if src.deadline is not None:\n        count += 1\n    \
+             if src.urgent is not None:\n        count += 1\n    cbor.write_map_head(w, count)\n    \
+             v = src.id\n    cbor.write_uint(w, 0)\n    cbor.write_bytes(w, v)\n    \
+             v = src.source\n    cbor.write_uint(w, 1)\n    cbor.write_text(w, v)\n",
+            "    v = src.urgent\n    if v is not None:\n        cbor.write_uint(w, 7)\n        \
+             cbor.write_bool(w, v)\n    v = src.deadline\n    if v is not None:\n        \
+             cbor.write_uint(w, 12)\n",
+            "        encode_source(self, w)\n",
+        ],
+    );
     holds_none(
         name,
         &text,
-        &["def encode_source(", "(Protocol):", "BoundedBytes"],
+        &[
+            "CborWrongLength()",
+            "if not 0 <=",
+            "> 256:",
+            "dataclasses.field",
+        ],
     );
+}
+
+/// A codec whose plan uses a form the Python printer does not lower keeps the
+/// template's encode whole: a content-line component names its form.
+///
+/// Turns red where `python_source::unlowered_forms` stops naming a
+/// content-line component.
+#[test]
+fn a_codec_of_a_form_the_printer_does_not_lower_keeps_the_template_encode() {
+    let name = "codec_content_line_event";
+    let forms = unlowered(name);
+    assert!(
+        forms.iter().any(|f| f.contains("a content-line component")),
+        "{name}: the printer names a content-line component among {forms:?}"
+    );
+    let text = resource_module(name);
+    holds_none(name, &text, &["def encode_source(", "(Protocol):"]);
 }
 
 /// Every codec of the resources is printed exactly where the printer lowers

@@ -2107,3 +2107,18 @@ printed set.
   it read as `251`.
 - A source handed to `encode_source` presents each integer as that class, as the module's `Protocol` says.
 
+## A printed Python CBOR map holds each entry in the class of its bound (ADR 0081 step 4)
+
+Landing: the commit that adds this section; every Python tree is regenerated after it. Every CBOR map is printed.
+
+- An unsigned integer entry is held in `{Codec}{Entry}Int` (`BoundedInt`), a text in `{Codec}{Entry}Text`
+  (`BoundedText`), a byte string in `{Codec}{Entry}Bytes` (`BoundedBytes`, an exact `sce:length` its least and its
+  most), and a list of records in `{Codec}{Entry}List` (`BoundedTuple`), each made where the entry is set, so
+  `Map(source="x", id=bytes(16))` is unchanged. A value past its bound raises where it is set: `LengthOutOfRange`
+  for a text or byte string, `TooManyElements` for a list, `OverflowError` for an integer; before, the encode raised
+  `CborOutOfRange` or `CborWrongLength` for it.
+- A list of records reads as a tuple: compare it with a tuple, or `list(map.entries)`.
+- The encode is the module's `encode_source(src, w)`; `encode` calls it. It raises `CborOutOfRange` before the first
+  byte for a negative value of a signed enum, a list short of its lower count, and a record whose text, byte string
+  or integer is past its bound. The class's `_encode_record_<alias>` staticmethods are now module functions.
+

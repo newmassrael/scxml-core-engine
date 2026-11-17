@@ -46,72 +46,6 @@
                 held_{{ f.name }} = cbor.read_uint_upto(c, {{ f.int_max }})
 {% endif %}
 {% endmacro %}
-{#- The write of one field of `record`, its key already written. A Python
-    string, byte string and int carry no bound, so a text or a byte string past
-    its bound, and a number past its width, are refused, not written. #}
-{% macro encode_record_field(f) %}
-{% if f.kind == "bool" %}
-        cbor.write_bool(w, record.{{ f.name }})
-{% elif f.kind == "text" %}
-        if len(record.{{ f.name }}.encode("utf-8")) > {{ f.max }}:
-            raise cbor.CborOutOfRange()
-        cbor.write_text(w, record.{{ f.name }})
-{% elif f.kind == "bytes" %}
-        if len(record.{{ f.name }}) > {{ f.max }}:
-            raise cbor.CborOutOfRange()
-        cbor.write_bytes(w, record.{{ f.name }})
-{% else %}
-        if not 0 <= record.{{ f.name }} <= {{ f.int_max }}:
-            raise cbor.CborOutOfRange()
-        cbor.write_uint(w, record.{{ f.name }})
-{% endif %}
-{% endmacro %}
-{#- The write of one entry — its key, then its value `v` — at indent `i`. #}
-{% macro encode_entry(e, i) %}
-{{ i }}cbor.write_uint(w, {{ e.key }})
-{% if e.kind == "bool" %}
-{{ i }}cbor.write_bool(w, v)
-{% elif e.kind == "text" %}
-{% if e.max_size is not none %}
-{{ i }}if len(v.encode("utf-8")) > {{ e.max_size }}:
-{{ i }}    raise cbor.CborOutOfRange()
-{% endif %}
-{{ i }}cbor.write_text(w, v)
-{% elif e.kind == "bytes" %}
-{% if e.max_size is not none %}
-{{ i }}if len(v) > {{ e.max_size }}:
-{{ i }}    raise cbor.CborOutOfRange()
-{% endif %}
-{{ i }}cbor.write_bytes(w, v)
-{% elif e.kind == "bytes_exact" %}
-{{ i }}if len(v) != {{ e.length }}:
-{{ i }}    raise cbor.CborWrongLength()
-{{ i }}cbor.write_bytes(w, v)
-{% elif e.kind == "enum" %}
-{{ i }}u = {{ e.enum_to_underlying }}
-{% if e.carrier_signed %}
-{#- A signed carrier's negative number is no CBOR unsigned integer; refused
-    as the Rust backend refuses it. #}
-{{ i }}if u < 0:
-{{ i }}    raise cbor.CborOutOfRange()
-{% endif %}
-{{ i }}cbor.write_uint(w, u)
-{% elif e.kind == "record_list" %}
-{#- A Python list carries no bound, so a count past the list's bound, or
-    short of its lower count, is refused before any record is written. #}
-{{ i }}if len(v) > {{ e.list_max }}{% if e.list_min > 0 %} or len(v) < {{ e.list_min }}{% endif %}:
-{{ i }}    raise cbor.CborOutOfRange()
-{{ i }}cbor.write_array_head(w, len(v))
-{{ i }}for record in v:
-{{ i }}    {{ struct_name }}.{{ e.record_encode_fn }}(w, record)
-{% else %}
-{#- A Python int is unbounded, so the declared width is held here rather
-    than by the type. #}
-{{ i }}if not 0 <= v <= {{ e.max }}:
-{{ i }}    raise cbor.CborOutOfRange()
-{{ i }}cbor.write_uint(w, v)
-{% endif %}
-{% endmacro %}
 {{ sce_map.source_marker(source_location, "python", module_level=true, symbol_artifact=sce_artifact.forge_body) }}
 
 # SCE Forge: Auto-generated from Extended SCXML (sce:kind="codec" sce:encoding="cbor")
@@ -122,17 +56,24 @@ from __future__ import annotations
 
 from sce_forge_runtime import cbor
 from sce_forge_runtime.codec import BytearraySink, CodecError, SceCursor, SceSink{{ ", UndeclaredEnumValue" if has_closed_enum else "" }}
+{% if python_source.runtime %}
+{{ python_source.runtime }}
+{% endif %}
 {% for imp in all_imports %}
 {% if imp.include_stmt %}
 {{ imp.include_stmt }}
 {% endif %}
 {% endfor %}
 
-{% if cbor_records %}
-import dataclasses
-{% endif %}
 from dataclasses import dataclass
-from typing import Optional
+from typing import Optional, Protocol
+
+
+{# docs/adr/0081 step 4: the map is printed from its plan. The printer names
+   the class of each entry's bound or width, the Protocol a source of it
+   satisfies, the write of each record and the encode over any source, before
+   the value's class. #}
+{{ python_source.before }}
 
 
 @dataclass
@@ -142,12 +83,17 @@ class {{ struct_name }}:
     present in ascending key order, every head in its shortest form. A
     required entry starts at its type's default and an optional one absent
     (``None``), so ``{{ struct_name }}()`` is the infallible constructor every
-    codec offers."""
+    codec offers. Each entry is held in the class of its bound or width
+    wherever it is set."""
 
 {% for e in entries %}
     #: Map key {{ e.key }}{% if e.required %}, required{% endif %}.
     {{ e.name }}: {{ e.field_type }} = {{ e.default }}
 {% endfor %}
+{% if python_source.hold %}
+
+{{ python_source.hold }}
+{% endif %}
 
     @classmethod
     def decode(cls, cursor: SceCursor) -> {{ struct_name }}:
@@ -194,24 +140,10 @@ class {{ struct_name }}:
         )
 
     def encode(self, w: SceSink) -> None:
-        """Encode this map into ``w``. An entry whose value breaks its
-        declared bound — an exact length, a maximum size, its integer width
-        — raises :class:`sce_forge_runtime.cbor.CborOutOfRange` or
-        :class:`~sce_forge_runtime.cbor.CborWrongLength` rather than being
-        written."""
-        count = {{ required_count }}
-{% for e in entries if not e.required %}
-        if self.{{ e.name }} is not None:
-            count += 1
-{% endfor %}
-        cbor.write_map_head(w, count)
-{% for e in entries_by_key %}
-        v = self.{{ e.name }}
-{% if e.required %}
-{{ encode_entry(e, "        ") }}{% else %}
-        if v is not None:
-{{ encode_entry(e, "            ") }}{% endif %}
-{% endfor %}
+        """Encode this map into ``w`` by the module's :func:`encode_source`,
+        which raises :class:`sce_forge_runtime.cbor.CborOutOfRange` before the
+        first byte for a value the map cannot carry."""
+        encode_source(self, w)
 
     def encode_to_bytes(self) -> bytes:
         """:meth:`encode` into a new ``bytes``; raises as :meth:`encode`
@@ -256,14 +188,4 @@ class {{ struct_name }}:
             {{ f.name }}=held_{{ f.name }},
 {% endfor %}
         )
-
-    @staticmethod
-    def {{ r.encode_fn }}(w: SceSink, record: {{ r.type_name }}) -> None:
-        """Write one record of ``{{ r.schema }}`` as one map of every field,
-        the keys in the order RFC 8949 §4.2.1 sorts their encodings: a shorter
-        key first."""
-        cbor.write_map_head(w, {{ r.field_count }})
-{% for f in r.fields_by_key %}
-        cbor.write_text(w, {{ f.key_literal }})
-{{ encode_record_field(f) }}{% endfor %}
 {% endfor %}

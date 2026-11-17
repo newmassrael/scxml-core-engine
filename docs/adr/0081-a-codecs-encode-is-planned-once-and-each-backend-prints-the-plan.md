@@ -1164,6 +1164,21 @@ old encode, the old encode and its templates are removed in the same landing.
    is, and one runtime class per width shared by every codec: the first was taken, for the one spelling of every
    refinement of a printed module. Each element is `{Codec}{Element}Int`, held by the value's `__setattr__` as a
    byte string is, a group's member and a length the value states among them.
+
+   *The sixteenth Python landing, 2026-11-17:* a CBOR map, printed from its own plan (`python_source::cbor`), as
+   the C++ printer prints it. Every entry is presented, a member of `{Codec}Source` each, `Optional` for one the map
+   may lack: an unsigned integer as the class of its width (`BoundedInt`), a text or a byte string as the class of
+   its bound (`BoundedText`, `BoundedBytes`, an exact length a least equal to its most, so the encode refuses no
+   `CborWrongLength`), a list of records as the class of its most (`BoundedTuple`, its least 0, as Rust's
+   `BoundedList` holds it). The value's `__setattr__` makes each class wherever an entry is set. What no class
+   holds the encode refuses before the first byte with `CborOutOfRange`: the refusals the totality names (a negative
+   value of an enum whose carrier is signed, a list of fewer records than its lower count, a record whose byte
+   string is past its bound) and, since the payload type of a Python event schema's unit holds a record's text and
+   integer in a bare `str` and `int`, a record's text past its bound and its integer past its width, a refusal no
+   Rust or C++ value reaches. The encode then writes the map head, counting the optional entries present, and each
+   entry present in ascending key order (`by_key`), a list of records as an array of one map per record, each
+   written by the module's `_encode_record_<alias>`. The template's encode of a map, its checks and the record writes
+   of its class are gone: every CBOR plan is printed.
 5. Swift, when its codec lowers what the plan holds.
    *Swift lowers what the plan holds, 2026-11-16:* its codec writes every codec of the repository Rust writes,
    but the one only an MCU-class backend writes (`a_swift_codec_is_written_wherever_rust_writes_one.rs`): an
