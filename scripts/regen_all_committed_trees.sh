@@ -362,8 +362,18 @@ step_forge_goldens() {
 # the compiler) change with every run, so where the rest of it is unchanged the
 # committed bytes are kept, as every other step keeps a file it writes with
 # the same content; the stamp holds no label and is taken as emitted.
+#
+# The C++ engines' standard engine tree (tools/codegen/trees/runtime-cpp.toml)
+# is written first, by this step: it is a public header directory the static
+# engine and the Interpreter include, so the manifest is read from it, and a
+# step reads nothing another step writes (ADR 0097, amendment of 2026-11-17,
+# "The C++ engines' tree").
 step_embed_manifest() {
     local scratch
+    require_codegen
+    stage "C++ engines' standard engine tree"
+    "$CODEGEN" materialize runtime-cpp --into "$REPO_ROOT" --replace
+
     stage "Emitting the embed manifest and its stamp (clang-19)"
     scratch="$(mktemp -d --suffix=.embed)"
     "$REPO_ROOT/scripts/package_embed.sh" -o "$scratch" --skip-manifest >/dev/null

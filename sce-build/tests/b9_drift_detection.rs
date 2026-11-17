@@ -771,6 +771,9 @@ fn verify_passes_on_real_committed_runtime_engine_trees() {
             "runtime-swift",
             "backends/swift/runtime/Sources/SceRuntime/Generated",
         ),
+        // The C++ engines' tree is written by the step that emits the embed
+        // manifest, which reads it.
+        ("embed-manifest", "sce/include/generated"),
     ] {
         let (code, stderr) = run_verify_real_tree(&workspace.join(tree), &input_root);
         assert_eq!(

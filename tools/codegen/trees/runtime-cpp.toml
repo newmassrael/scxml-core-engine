@@ -1,0 +1,32 @@
+# SPDX-License-Identifier: AGPL-3.0-only WITH LicenseRef-SCE-Linking-Exception OR LicenseRef-SCE-Commercial
+# SPDX-FileCopyrightText: Copyright (c) 2026 newmassrael
+#
+# The standard documents the C++ engines are built on, generated for C++ into
+# sce/include/generated (ADR 0097): the reasons the AOT engine and the
+# Interpreter raise `error.execution` and `error.communication` for
+# (sce:std/engine/error_reason.scxml, docs/adr/0106 #111), the type
+# `SCE::Generated::ErrorReason::ErrorReason`, which common/ErrorData.h names
+# `SCE::Common::ErrorReason`. Both engines write each reason by the enum's
+# declared-name accessor, so the document is the one spelling of it. Named by
+# its path under stdlib/engine, so it carries the source hash of that
+# directory.
+#
+# The directory is one of the public header directories the embed package
+# carries (`SCE_BASE_INCLUDE_DIRS` in sce/sce_base_sources.cmake), since every
+# generated C++ machine includes the static engine, which includes it. So the
+# embed manifest reads it, and the step that writes it is the one that emits
+# the manifest, `embed-manifest` (ADR 0097, amendment of 2026-11-17).
+#
+# The generator formats C++ with clang-format of its pinned major, and each
+# run says so (`--reads` lists `!clang-format`), so the formatter's version is
+# part of every one of these actions.
+
+[tree]
+name = "runtime-cpp"
+roots = ["sce/include/generated"]
+
+[[generation]]
+each = { files = "stdlib/engine/*.scxml", as = "document" }
+arguments = ["generate", "stdlib/engine/{document}.scxml", "--language", "cpp", "--output-dir", "{out}"]
+place = "sce/include/generated"
+keep = ["*.h"]

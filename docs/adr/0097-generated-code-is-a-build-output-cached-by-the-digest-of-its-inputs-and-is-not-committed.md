@@ -338,7 +338,7 @@ when a compiler or interpreter reads it as **source** of a target. Applied:
 
 | Leaves | Why |
 |---|---|
-| Every tree of the steps `rust-tests`, `kotlin-tests`, `kotlin-method-size`, `go-integration`, `swift-tests`, `go-round-trip`, `mesh-rust`, `mesh-cpp`, `mesh-kotlin`, `mesh-swift`, `mesh-swift-wss`, `specs`, `runtime-kotlin`, `runtime-go`, `runtime-python`, `runtime-swift` (and `go-w3c`, `python-w3c`, `python-integration`, gitignored already) | Read by a compiler as source. |
+| Every tree of the steps `rust-tests`, `kotlin-tests`, `kotlin-method-size`, `go-integration`, `swift-tests`, `go-round-trip`, `mesh-rust`, `mesh-cpp`, `mesh-kotlin`, `mesh-swift`, `mesh-swift-wss`, `specs`, `runtime-kotlin`, `runtime-go`, `runtime-python`, `runtime-swift`, and the tree `runtime-cpp` of the step `embed-manifest` (and `go-w3c`, `python-w3c`, `python-integration`, gitignored already) | Read by a compiler as source. |
 | The sourcemaps, payload schema instances, transition tables and stubs inside those trees | Outputs of the same actions. Their schemas stay committed (row above). |
 
 A file that is both, an oracle and compiled, is committed as the oracle; the compiled copy comes from the action. A
@@ -372,7 +372,8 @@ landing is judged by the lanes it touches running the same tests with the same c
    commit pin with the generator (ADR 0078 section 1). *Rollback*: the pipeline publishes nothing a consumer already
    takes.
 7. **The Mesh libraries** (`mesh-rust`, `mesh-kotlin`, `mesh-swift`, `mesh-swift-wss`, `mesh-cpp`), **and the engine
-   runtimes' trees** (`runtime-kotlin`, `runtime-go`, `runtime-python`, `runtime-swift`; amendment of 2026-11-17),
+   runtimes' trees** (`runtime-kotlin`, `runtime-go`, `runtime-python`, `runtime-swift`, `runtime-cpp`; amendments of
+   2026-11-17),
    each by its language's hook of section 4. The Rust crate by
    `build.rs`, Kotlin by its Gradle task, Swift by its plugin, the C++ envelope by `sce_codegen_generation` in
    `sce/CMakeLists.txt`. The consumer-guide gate reads the rendered diff. *Rollback*: revert; consumers on a release
@@ -633,6 +634,38 @@ special: no generator is compiled from it, so none of the bootstrap of the previ
 **What it costs.** Four more steps and actions, each a generator run over one document. A new hand-written subpackage
 of the Python runtime is outside the actions' inputs until it is named there; the generator compiles in none of it
 today.
+
+## Amendment (2026-11-17): the C++ engines' tree
+
+Decided under the owner's standing rule (the most long-term correct structure, without asking).
+
+**What was wrong.** ADR 0106 (#111) moves the C++ AOT engine and the Interpreter to the same vocabulary, so the C++
+engines need `sce:std/engine/error_reason.scxml` generated for C++ as the other runtimes have it. Both engines are
+header surfaces a consumer compiles (every generated machine includes the static engine; the Interpreter's raiser
+interface is public), so the tree is a public header directory, and the embed package, which a consumer builds with
+only a C++17 compiler, has to carry it.
+
+**Decision.**
+
+1. The tree `runtime-cpp` (`tools/codegen/trees/runtime-cpp.toml`) is written into `sce/include/generated`, named in
+   `SCE_BASE_INCLUDE_DIRS`, so the static engine and the Interpreter include it as `generated/error_reason.h` from the
+   include directory they already use, and the embed package and its manifest carry it. `common/ErrorData.h` names its
+   enum `SCE::Common::ErrorReason` and builds the record both engines raise.
+2. It is written by the step that emits the embed manifest, `embed-manifest`, before the emit, and not by a step of
+   its own: the manifest is read from the public headers, this tree among them, and a step reads nothing another step
+   writes. `[actions.regen-embed-manifest]` therefore reads the generator's block and has `sce/include/generated/**`
+   among its outputs, and `sce_generated_trees embed-manifest` names the tree, so it is set aside and settled as every
+   other tree is.
+3. Every other regen action read `sce/include/**` and so would read that output. Each names the hand-written parts of
+   `sce/include` instead (its top-level headers and each of its directories), as the Python runtime's inputs name its
+   hand-written parts. A new directory of `sce/include` is outside those inputs until it is named there.
+4. It stays committed, as the other runtimes' trees do, until landing 7 moves it into the C++ build
+   (`sce_codegen_generation`) and the embed package carries it as the release pipeline's output (section 7).
+   `b9_drift_detection::verify_passes_on_real_committed_runtime_engine_trees` holds its `source-hash`. Since it is an
+   embed input, it is committed with the manifest emitted from it.
+
+**What it costs.** The embed manifest's action now builds the generator, and a regeneration of the tree is a change
+of the public header surface, reviewed in the manifest's diff like any other.
 
 ## References
 

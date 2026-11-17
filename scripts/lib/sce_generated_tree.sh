@@ -174,8 +174,10 @@ sce_regen_steps() {
 # line; with no STEP, the trees of every step. Every generated file under them
 # is set aside when the step starts and has to be written again by that step,
 # so a tree belongs to a step only when every file of it that is generated is
-# written by that step. A step that writes none whole (the forge goldens, the
-# embed manifest) has no tree here.
+# written by that step. A step that writes none whole (the forge goldens) has
+# no tree here. The embed manifest's step writes the C++ engines' standard
+# engine tree before it emits: the tree is a public header directory, so the
+# manifest reads it, and a step reads nothing another step writes.
 #
 # `backends/python/tests/integration` is the tree that is NOT here, for that
 # reason: four of its directories are written by scripts the w3c-python gate
@@ -276,7 +278,12 @@ sce_generated_trees() {
             # A glob: one tree for each machine of the specs crate.
             printf '%s\n' sce-specs/src/*/generated
             ;;
-        runtime-rust | python-integration | forge-goldens | embed-manifest)
+        embed-manifest)
+            # The C++ engines' standard engine tree (runtime-cpp.toml), a
+            # public header directory the manifest reads.
+            printf '%s\n' sce/include/generated
+            ;;
+        runtime-rust | python-integration | forge-goldens)
             ;;
         *)
             echo "sce_generated_trees: no step named '$1'" >&2
