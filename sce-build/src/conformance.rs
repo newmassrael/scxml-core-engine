@@ -5971,6 +5971,73 @@ mod tests {
         );
     }
 
+    /// The arm of a variant of a byte case of a printed C11 codec is set as the
+    /// struct holds it: its kind, for the catch-all the tag it holds, and the
+    /// members of its body in the union's member of the arm, as its codec's own
+    /// case sets them; the tag the encode derives is set nowhere (docs/adr/0081
+    /// §3, §5).
+    ///
+    /// Turns red where `c11_source::source_case` refuses a variant, names a
+    /// kind or a member of the union other than the struct's, or leaves out
+    /// the tag the catch-all holds.
+    #[test]
+    fn a_variant_of_a_c11_source_case_is_set_as_the_struct_holds_its_arm() {
+        let manifest_path =
+            Path::new(env!("CARGO_MANIFEST_DIR")).join("../tests/forge/conformance/fixtures.json");
+        let manifest = Manifest::load(&manifest_path).expect("manifest must load and validate");
+        let resource_dir = Path::new(env!("CARGO_MANIFEST_DIR")).join("../tests/forge/resources");
+        let reference_path = Path::new(env!("CARGO_MANIFEST_DIR"))
+            .join("../tests/forge/conformance/numerical_reference.json");
+        let mut fixture = manifest
+            .fixtures
+            .iter()
+            .find(|f| f.name == "codec_variant_dispatch")
+            .expect("the catalog holds codec_variant_dispatch")
+            .clone();
+        if let FixtureSpec::Codec { printed, .. } = &mut fixture.spec {
+            *printed = true;
+        }
+        let reference = serde_json::json!({ "codecs": { "codec_variant_dispatch": { "sources": [{
+            "source": { "body": { "tag": 127, "body": { "reason": 9 } } },
+            "encoded": [127, 9],
+            "note": "a tag no arm names"
+        }] } } });
+        let mut value = serde_json::to_value(&fixture).expect("a fixture serializes");
+        let folded = fold_source_cases(
+            &mut value,
+            &reference,
+            &fixture,
+            Language::C11,
+            &resource_dir,
+            &reference_path,
+        )
+        .expect("C11 states a variant");
+        assert!(folded);
+        assert_eq!(
+            value["sources"][0]["bindings"],
+            serde_json::json!([
+                "value.body.kind = CODEC_VARIANT_DISPATCH_BODY_KIND_DEFAULT;",
+                "value.body.default_tag = 127u;",
+                "value.body.arm.default_body.reason = 9u;",
+            ])
+        );
+        assert_eq!(
+            value["sources"][0]["checks"],
+            serde_json::json!([
+                { "element": "body", "holds": "decoded.body.kind == value.body.kind" },
+                {
+                    "element": "body tag",
+                    "holds": "decoded.body.default_tag == value.body.default_tag"
+                },
+                {
+                    "element": "body.reason",
+                    "holds": "decoded.body.arm.default_body.reason == \
+                              value.body.arm.default_body.reason"
+                },
+            ])
+        );
+    }
+
     /// The byte case `case` of the codec fixture `name`, folded for the
     /// harness of `language` as a codec its backend prints, as the render would
     /// fold it: what the fragment renders the case from.

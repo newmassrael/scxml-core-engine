@@ -26,12 +26,156 @@ use crate::forge::codec_totality::RefusalKind;
 use crate::forge::encode_failure::EncodeFailure;
 use crate::forge::encode_plan::{
     Absent, Against, Bound, CheckSite, Clause, CodecPlan, Derive, Element, EncodePlan, Guard,
-    HandedFrom, InputCheck, Measure, Measured, Narrow, Number, NumberInto, Offset, Presence, Value,
-    Write,
+    HandedFrom, InputCheck, Measure, Measured, Narrow, Number, NumberInto, Offset, ParentTag,
+    Presence, Value, Write,
 };
 use std::collections::{BTreeMap, BTreeSet};
 
 pub(super) mod source_case;
+
+/// The member the codec's struct holds its variant's arm in, and the function
+/// of the table of a source that presents the arm (`{snake}_body_ref_t`).
+const BODY: &str = "body";
+
+/// The constant of `{codec}_body_kind_t` that names the arm whose codec is
+/// imported as `arm`, or the catch-all where `arm` is `None`: the kind the
+/// struct of the codec named `codec` holds its variant's arm by, and the kind
+/// a source presents the arm by. A known arm and the catch-all are apart even
+/// where one codec is both, as the struct holds them apart.
+pub(super) fn arm_kind(codec: &str, arm: Option<&str>) -> String {
+    match arm {
+        Some(alias) => format!(
+            "{}_BODY_KIND_{}",
+            to_upper_snake(codec),
+            to_upper_snake(alias)
+        ),
+        None => format!("{}_BODY_KIND_DEFAULT", to_upper_snake(codec)),
+    }
+}
+
+/// The member of the variant's union that holds the body of the arm whose
+/// codec is imported as `arm`, or of the catch-all where `arm` is `None`,
+/// which no alias names.
+pub(super) fn arm_member(arm: Option<&str>) -> String {
+    match arm {
+        Some(alias) => filters::to_snake_case(alias.to_string()),
+        None => "default_body".to_string(),
+    }
+}
+
+/// The type of the kinds of the arms of the variant of the codec `snake`.
+pub(super) fn kind_type(snake: &str) -> String {
+    format!("{snake}_body_kind_t")
+}
+
+/// `text`, whole lines, inside the guard of the build feature macro `feature`
+/// where it has one (docs/adr/0072), so a build without the feature holds
+/// nothing of it.
+fn feature_guarded(feature: Option<&str>, text: &str) -> String {
+    match feature {
+        Some(feature) => format!("#if {feature}\n{text}#endif\n"),
+        None => text.to_string(),
+    }
+}
+
+/// The arms of a codec's variant as the C11 printer names them, in the plan's
+/// order, the catch-all last. The codec's struct holds the arm in
+/// `{snake}_variant_t`: its `kind`, the tag the catch-all holds and the arm's
+/// body in a member of a union. A source presents it as `{snake}_body_ref_t`,
+/// the same `kind` and tag beside the source of the arm's body, in a member of
+/// the same name.
+struct Arms {
+    arms: Vec<ArmName>,
+}
+
+/// One arm of [`Arms`].
+struct ArmName {
+    /// The prefix of the symbols of its codec ([`body_prefix`]).
+    prefix: String,
+    /// The import alias of its codec.
+    alias: String,
+    /// Its constant of `{snake}_body_kind_t` ([`arm_kind`]).
+    kind: String,
+    /// The member of the union that holds its body ([`arm_member`]).
+    member: String,
+    /// The tag it is chosen by, or `None` for the catch-all, which holds the
+    /// tag it was read with.
+    tag: Option<u64>,
+    /// The macro of the build feature it is compiled under (docs/adr/0072).
+    feature: Option<String>,
+}
+
+impl Arms {
+    /// The arms of the variant of `plan`.
+    fn of(plan: &EncodePlan<'_>) -> Self {
+        Arms {
+            arms: plan
+                .arms
+                .iter()
+                .map(|arm| {
+                    let named = arm.tag.map(|_| arm.codec);
+                    ArmName {
+                        prefix: body_prefix(arm.codec),
+                        alias: arm.codec.to_string(),
+                        kind: arm_kind(&plan.model.name, named),
+                        member: arm_member(named),
+                        tag: arm.tag,
+                        feature: arm.feature.map(c_feature_macro),
+                    }
+                })
+                .collect(),
+        }
+    }
+
+    /// `text`, whole lines, as a build holds arm `i`: inside the guard of its
+    /// feature where it has one.
+    fn guarded(&self, i: usize, text: &str) -> String {
+        feature_guarded(self.arms[i].feature.as_deref(), text)
+    }
+
+    /// The `case` of each arm of `arms`, by their places, at the indentation
+    /// of a `switch` inside an encode's own block, each running `body` of the
+    /// arm and then `break`, and a `default` that does nothing: `kind` is the
+    /// kind switched on.
+    fn switch(&self, kind: &str, arms: &[usize], body: impl Fn(&ArmName) -> String) -> String {
+        let mut cases = String::new();
+        for &i in arms {
+            let arm = &self.arms[i];
+            cases.push_str(&self.guarded(
+                i,
+                &format!(
+                    "        case {}:\n{}            break;\n",
+                    arm.kind,
+                    body(arm)
+                ),
+            ));
+        }
+        format!("    switch ({kind}) {{\n{cases}        default:\n            break;\n    }}\n")
+    }
+
+    /// The places of every arm.
+    fn all(&self) -> Vec<usize> {
+        (0..self.arms.len()).collect()
+    }
+}
+
+/// The source of the body of `arm` as `held`, a `{snake}_body_ref_t`, presents
+/// it: its table and its context.
+fn arm_source(held: &str, arm: &ArmName) -> (String, String) {
+    (
+        format!("{held}.arm.{}.table", arm.member),
+        format!("{held}.arm.{}.ctx", arm.member),
+    )
+}
+
+/// Whether the codec imported as `alias` says its flag input `input` in some
+/// of its values only (docs/adr/0065 §6 R4e), so that its function of it
+/// answers an optional value.
+fn says_partly(imports: &[ImportContext], alias: &str, input: &str) -> bool {
+    imports.iter().any(|import| {
+        import.alias == alias && import.codec_partly_says_inputs.iter().any(|s| s == input)
+    })
+}
 
 /// The first form of `plan` the C11 printer does not print, as the clause
 /// that names it, or `None` where it prints the codec whole.
@@ -46,13 +190,16 @@ pub(super) fn unlowered(plan: &CodecPlan<'_>, imports: &[ImportContext]) -> Opti
 /// byte strings, texts, and bodies and lists of codecs it prints that are
 /// handed no flag input and held to no law, always there, decided by a gate of
 /// a carrier's flags, or a number the value states while the content it
-/// measures is absent; whose every derived element is a number measured off
-/// byte strings, texts, lists and bodies or read off what a body says, in a
-/// field or in a flag of a carrier, or a flag set where the elements it gates
-/// are there. A flag input the value does not say is a parameter of the
-/// encode, and one it says, off a field gated on it alone or a body that says
-/// it, is read off the source; a body and a list's entries are handed each
-/// input their import binds. Its encode refuses, before its first byte, a
+/// measures is absent, and a variant of arms of codecs it prints, whatever
+/// holds its tag, an arm under a build feature inside the guard of its macro;
+/// whose every derived element is a number measured off byte strings, texts,
+/// lists and bodies or read off what a body or the arm the value holds says,
+/// in a field or in a flag of a carrier, a flag set where the elements it
+/// gates are there, the tag of the arm the value holds, or the tag of the arm
+/// a body holds. A flag input the value does not say is a parameter of the
+/// encode, and one it says, off a field gated on it alone, a body or the arm
+/// the value holds, is read off the source; a body, an arm and a list's
+/// entries are handed each input their import binds. Its encode refuses, before its first byte, a
 /// number past what holds it, measures of one number that disagree, a number
 /// the value states beside content that says another, a gate it cannot derive
 /// that disagrees with the element it gates, an input a held codec says that
@@ -61,9 +208,9 @@ pub(super) fn unlowered(plan: &CodecPlan<'_>, imports: &[ImportContext]) -> Opti
 /// positional layout and, of a streamed one, whole fixed fields,
 /// variable-length integers, byte strings, bodies, and lists and chains,
 /// walked entry by entry, a chain closed by an entry flag setting it on each
-/// entry but the last through the entry's overrides; and the one-bit flags a
-/// parent may set in place of the value's are overrides it folds in last. A
-/// CBOR map and a
+/// entry but the last through the entry's overrides, then the arm the value
+/// holds; and the one-bit flags a parent may set in place of the value's are
+/// overrides it folds in last. A CBOR map and a
 /// content-line component keep their own templates' encodes. `imports` are the
 /// codec's own, which say whether a codec it holds is printed
 /// ([`ImportContext::c11_printed`]).
@@ -147,8 +294,31 @@ fn encode_reads(plan: &EncodePlan<'_>, name: &str) -> bool {
 fn positional_forms(plan: &EncodePlan<'_>, imports: &[ImportContext]) -> Vec<String> {
     let m = plan.model;
     let mut forms = Vec::new();
+    // The arm the value holds is presented as `{snake}_body_ref_t`, its kind
+    // beside the source of its body, and written by the arm's codec's own
+    // encode over that source, which a codec the C11 backend prints has,
+    // handed each input its import binds ([`Arms`]). An arm a build feature
+    // decides is inside the guard of its macro wherever it is named.
     if m.variant.is_some() {
-        forms.push("a variant".to_string());
+        if plan.elements.iter().any(|e| e.field.id == BODY) {
+            forms.push(format!(
+                "field '{BODY}': an element named as the variant's arm is presented"
+            ));
+        }
+        for arm in &plan.arms {
+            if printed_body(imports, arm.codec).is_none() {
+                forms.push(format!(
+                    "arm `{}`: a codec the C11 backend does not print",
+                    arm.codec
+                ));
+            }
+            if unbound_handed(plan, arm.codec) {
+                forms.push(format!(
+                    "arm `{}`: a codec handed an input its import binds nothing to",
+                    arm.codec
+                ));
+            }
+        }
     }
     // A flag input the encode is handed is a parameter of it, named as the
     // decode names it, after the sink and before the overrides; one the value
@@ -165,9 +335,27 @@ fn positional_forms(plan: &EncodePlan<'_>, imports: &[ImportContext]) -> Vec<Str
     }
     for said in &plan.said {
         match plan.roles.inputs.get(&said.input.name) {
-            Some(InputSource::Gate { .. } | InputSource::Forward { .. }) => {}
+            Some(
+                InputSource::Gate { .. }
+                | InputSource::Forward { .. }
+                | InputSource::SomeArms { .. },
+            ) => {}
+            // Said by the arm the value holds through its codec's own function
+            // of it ([`arm_inputs`]); every arm says a number, which an arm
+            // that says it in some of its values only does not.
+            Some(InputSource::EveryArm { arms }) => {
+                for (alias, input) in arms {
+                    if says_partly(imports, alias, input) {
+                        forms.push(format!(
+                            "flag input '{}': an input every arm says, `{alias}` in some of its \
+                             values only",
+                            said.input.name
+                        ));
+                    }
+                }
+            }
             _ => forms.push(format!(
-                "flag input '{}': an input a group, an arm or a list's start says",
+                "flag input '{}': an input a group or a list's start says",
                 said.input.name
             )),
         }
@@ -285,6 +473,28 @@ fn positional_forms(plan: &EncodePlan<'_>, imports: &[ImportContext]) -> Vec<Str
                     ));
                 }
             }
+            // The tag of the arm the value holds, into its field or a flag of
+            // its carrier.
+            (ElementId::Field(_), Derive::VariantTag) => {}
+            (ElementId::Flag { field, .. }, Derive::VariantTag) => {
+                forms.extend(carrier_form(plan, &derived.element, field));
+            }
+            // The tag of the arm each body that fills the flag holds, read
+            // off the source the value presents the body as.
+            (ElementId::Flag { field, .. }, Derive::ParentTag(tag)) => {
+                forms.extend(carrier_form(plan, &derived.element, field));
+                if tag.terms.iter().any(|term| {
+                    !matches!(
+                        element_of(plan, &term.body.id).map(|e| &e.value),
+                        Some(Value::Body { .. })
+                    )
+                }) {
+                    forms.push(format!(
+                        "element '{}': a tag of a body the value does not present",
+                        derived.element
+                    ));
+                }
+            }
             (element, _) => forms.push(format!(
                 "element '{element}': an element the encode derives other than a number \
                  or a presence flag"
@@ -313,18 +523,14 @@ fn positional_forms(plan: &EncodePlan<'_>, imports: &[ImportContext]) -> Vec<Str
         forms.extend(gate_form(plan, field));
     }
     for check in &plan.input_checks {
-        match (&check.site, &check.against) {
-            (CheckSite::Arm { .. }, _) => {
-                forms.push(format!("element '{}': an input an arm says", check.at))
-            }
-            (_, Against::PreviousEntry { .. }) => forms.push(format!(
+        if let Against::PreviousEntry { .. } = &check.against {
+            forms.push(format!(
                 "element '{}': an input a chain's entry says of the entry before",
                 check.at
-            )),
-            _ => {}
+            ));
         }
     }
-    let numbers = derived_numbers(plan);
+    let numbers = derived_whole(plan);
     for write in &plan.program {
         match write {
             Write::Whole(field) => forms.extend(unread_form(plan, &numbers, field)),
@@ -378,7 +584,8 @@ fn positional_forms(plan: &EncodePlan<'_>, imports: &[ImportContext]) -> Vec<Str
                     BitSize::Embed | BitSize::Repeat { .. } | BitSize::TlvChain { .. } => {}
                 }
             }
-            // The variant above names it.
+            // The arm the value holds, by its codec's encode; the arms above
+            // name what of it is not printed.
             Write::Variant => {}
         }
     }
@@ -405,11 +612,11 @@ fn number_form(element: &ElementId, number: &Number<'_>) -> Vec<String> {
             // What the body says, read through its codec's own function of
             // the input over the source the value presents the body as.
             Measured::Says { .. } => {}
+            // What the arm the value holds says, read through its codec's
+            // own function of the input over the source the arm's body is.
+            Measured::ArmSays { .. } => {}
             Measured::Start { .. } => {
                 forms.push(format!("element '{element}': the start of a list's law"));
-            }
-            Measured::ArmSays { .. } => {
-                forms.push(format!("element '{element}': a flag an arm says"));
             }
         }
     }
@@ -442,11 +649,12 @@ fn carrier_form(plan: &EncodePlan<'_>, element: &ElementId, carrier: &str) -> Op
     })
 }
 
-/// The fields of `plan` whose value the encode derives as a number.
-fn derived_numbers(plan: &EncodePlan<'_>) -> BTreeSet<String> {
+/// The fields of `plan` whose value the encode derives whole: a number, or the
+/// tag of the arm of the variant the value holds.
+fn derived_whole(plan: &EncodePlan<'_>) -> BTreeSet<String> {
     plan.derivations
         .iter()
-        .filter(|derived| matches!(derived.by, Derive::Number(_)))
+        .filter(|derived| matches!(derived.by, Derive::Number(_) | Derive::VariantTag))
         .filter_map(|derived| match &derived.element {
             ElementId::Field(id) => Some(id.clone()),
             _ => None,
@@ -455,29 +663,30 @@ fn derived_numbers(plan: &EncodePlan<'_>) -> BTreeSet<String> {
 }
 
 /// Whether the C11 value of `plan`, a plan [`unlowered`] answers `None` for,
-/// holds no member `id`: the encode derives it (docs/adr/0081 §3), the value
-/// never states it, and the decode reads it into a local of its own. A number
-/// the value states while its content is absent is a member, the optional
-/// value of its type.
+/// holds no member `id`: the encode derives it (docs/adr/0081 §3), a number or
+/// a variant's tag, the value never states it, and the decode reads it into a
+/// local of its own. A number the value states while its content is absent is
+/// a member, the optional value of its type.
 pub(super) fn derived_field(plan: &EncodePlan<'_>, id: &str) -> bool {
-    derived_numbers(plan).contains(id) && element_of(plan, id).is_none()
+    derived_whole(plan).contains(id) && element_of(plan, id).is_none()
 }
 
-/// The numbers a codec's C11 decode reads into a local of its own,
-/// [`derived_local`], and reads a length or a count off where it would read
-/// the member: the encode printed from its plan derives each (docs/adr/0081
-/// §3), so the value holds no member of it, or, for a number the value states
-/// while its content is absent, a member the decode sets from the local once
-/// it knows whether the content is there ([`C11Source::decoded`]). Empty for a
-/// codec on the template's encode, whose value holds every field, and for
-/// every language whose decode binds every field to a local anyway.
+/// The fields a codec's C11 decode reads into a local of its own,
+/// [`derived_local`], and reads a length, a count or a variant's tag off where
+/// it would read the member: the encode printed from its plan derives each
+/// (docs/adr/0081 §3), so the value holds no member of it, or, for a number
+/// the value states while its content is absent, a member the decode sets from
+/// the local once it knows whether the content is there
+/// ([`C11Source::decoded`]). Empty for a codec on the template's encode, whose
+/// value holds every field, and for every language whose decode binds every
+/// field to a local anyway.
 #[derive(Default)]
 pub(crate) struct Derived(BTreeSet<String>);
 
 impl Derived {
-    /// The numbers of `plan`, a plan [`unlowered`] answers `None` for.
+    /// The fields of `plan`, a plan [`unlowered`] answers `None` for.
     pub(super) fn of(plan: &EncodePlan<'_>) -> Self {
-        Derived(derived_numbers(plan))
+        Derived(derived_whole(plan))
     }
 
     /// Whether the value holds no member `id`.
@@ -487,7 +696,7 @@ impl Derived {
 }
 
 /// Whether the printer cannot read `field` as a write reads it: the value does
-/// not present it, and the encode does not derive it as a number.
+/// not present it, and the encode does not derive it whole.
 fn unread_form(
     plan: &EncodePlan<'_>,
     numbers: &BTreeSet<String>,
@@ -802,9 +1011,14 @@ pub(super) struct C11Source {
 ///
 /// Where the encode it prints writes no refusal the plan's totality names, or
 /// one it does not (docs/adr/0065 §2): a defect of the printer.
-pub(super) fn render(plan: &EncodePlan<'_>, l: &LangCtx, snake: &str) -> C11Source {
+pub(super) fn render(
+    plan: &EncodePlan<'_>,
+    l: &LangCtx,
+    imports: &[ImportContext],
+    snake: &str,
+) -> C11Source {
     let printed = C11Source {
-        before_encode: before_encode(plan, l, snake),
+        before_encode: before_encode(plan, l, imports, snake),
         encode_body: encode_body(plan, snake),
         decoded: decoded(plan, l),
     };
@@ -864,9 +1078,15 @@ fn stated_contents<'m>(plan: &EncodePlan<'m>, id: &str) -> Vec<&'m CodecField> {
 }
 
 /// [`C11Source::before_encode`].
-fn before_encode(plan: &EncodePlan<'_>, l: &LangCtx, snake: &str) -> String {
+fn before_encode(
+    plan: &EncodePlan<'_>,
+    l: &LangCtx,
+    imports: &[ImportContext],
+    snake: &str,
+) -> String {
     let value = format!("{snake}_t");
     let table = format!("{snake}_source_t");
+    let variant = plan.model.variant.is_some();
     let mut out = String::new();
     for element in &plan.elements {
         let gated = element.presence == Presence::Gated;
@@ -888,6 +1108,10 @@ fn before_encode(plan: &EncodePlan<'_>, l: &LangCtx, snake: &str) -> String {
             _ => {}
         }
     }
+    let arms = Arms::of(plan);
+    if variant {
+        out.push_str(&declare_body_ref(plan, l, snake, &arms));
+    }
     out.push_str(&format!(
         "/* The elements a value of {value} presents, which its encode reads\n \
          * (docs/adr/0081 §2): one function for each, handed the context the\n \
@@ -897,7 +1121,7 @@ fn before_encode(plan: &EncodePlan<'_>, l: &LangCtx, snake: &str) -> String {
          * derives every other element of the frame. */\n\
          typedef struct {{\n"
     ));
-    if plan.elements.is_empty() {
+    if plan.elements.is_empty() && !variant {
         out.push_str(
             "    /* A C struct declares at least one member; the codec presents no\n     \
              * element, so the table has no function. */\n    \
@@ -909,6 +1133,13 @@ fn before_encode(plan: &EncodePlan<'_>, l: &LangCtx, snake: &str) -> String {
             "    {} (*{})(const void *ctx);\n",
             presented_type(l, snake, element),
             l.codec_field_id(&element.field.id)
+        ));
+    }
+    // The arm of the variant, after the elements, as the value's struct holds
+    // it after its fields.
+    if variant {
+        out.push_str(&format!(
+            "    {snake}_body_ref_t (*{BODY})(const void *ctx);\n"
         ));
     }
     out.push_str(&format!("}} {table};\n\n"));
@@ -1054,14 +1285,42 @@ fn before_encode(plan: &EncodePlan<'_>, l: &LangCtx, snake: &str) -> String {
              }}\n\n"
         ));
     }
-    let entries = if plan.elements.is_empty() {
+    // The arm the struct holds, its body a source of the arm's codec by the
+    // table that presents a value of it, pointed at the body the union holds.
+    if variant {
+        let cases = arms.switch(&format!("self->{BODY}.kind"), &arms.all(), |arm| {
+            let (table, ctx) = arm_source("ref", arm);
+            format!(
+                "            {table} = {}_value_source();\n            \
+                 {ctx} = &self->{BODY}.arm.{};\n",
+                arm.prefix, arm.member
+            )
+        });
+        out.push_str(&format!(
+            "/* The arm of the variant of the {value} at `ctx`: its kind, the tag the\n \
+             * catch-all holds, and its body as a source of the arm's codec. */\n\
+             static inline {snake}_body_ref_t {snake}_value_{BODY}(const void *ctx) {{\n    \
+             const {value} *self = (const {value} *)ctx;\n    \
+             {snake}_body_ref_t ref;\n    \
+             memset(&ref, 0, sizeof ref);\n    \
+             ref.kind = self->{BODY}.kind;\n    \
+             ref.default_tag = self->{BODY}.default_tag;\n\
+             {cases}    return ref;\n\
+             }}\n\n"
+        ));
+    }
+    let mut entries: Vec<String> = plan
+        .elements
+        .iter()
+        .map(|element| format!("{snake}_value_{}", l.codec_field_id(&element.field.id)))
+        .collect();
+    if variant {
+        entries.push(format!("{snake}_value_{BODY}"));
+    }
+    let entries = if entries.is_empty() {
         "0".to_string()
     } else {
-        plan.elements
-            .iter()
-            .map(|element| format!("{snake}_value_{}", l.codec_field_id(&element.field.id)))
-            .collect::<Vec<_>>()
-            .join(",\n        ")
+        entries.join(",\n        ")
     };
     out.push_str(&format!(
         "/* The table that presents a value of {value} as a source of it, its\n \
@@ -1072,9 +1331,96 @@ fn before_encode(plan: &EncodePlan<'_>, l: &LangCtx, snake: &str) -> String {
          return &table;\n\
          }}\n\n"
     ));
+    out.push_str(&arm_inputs(plan, imports, snake, &arms));
     out.push_str(&encode_source(plan, l, snake));
     out.push('\n');
     out.push_str(&check_value(plan, l, snake));
+    out
+}
+
+/// `{snake}_body_ref_t`: the arm of the variant a source presents, as the
+/// value's struct holds its own (`{snake}_variant_t`), its kind and the tag the
+/// catch-all holds beside the source of the arm's body in a member of the same
+/// name, each arm a build feature decides inside the guard of its macro. A
+/// body is presented where it is held, by two pointers, with no copy.
+fn declare_body_ref(plan: &EncodePlan<'_>, l: &LangCtx, snake: &str, arms: &Arms) -> String {
+    let tag = l.type_name(&crate::forge::codec_totality::tag_type(plan.model));
+    let mut members = String::new();
+    for (i, arm) in arms.arms.iter().enumerate() {
+        members.push_str(&arms.guarded(
+            i,
+            &format!("        {}_source_ref_t {};\n", arm.prefix, arm.member),
+        ));
+    }
+    format!(
+        "/* The arm of the variant a source of {snake}_t presents (docs/adr/0081\n \
+         * §2): which arm it is, the tag the catch-all holds, and the arm's body,\n \
+         * a source of the arm's codec in the member `kind` names. */\n\
+         typedef struct {{\n    {} kind;\n    {tag} default_tag;  /* the catch-all's */\n    \
+         union {{\n{members}    }} arm;\n}} {snake}_body_ref_t;\n\n",
+        kind_type(snake)
+    )
+}
+
+/// The function `{snake}_arm_input_<name>` of each flag input the arms of the
+/// variant say (docs/adr/0065 §6 R4d, R4e): what the arm a source presents
+/// says, through its codec's own function of the input over the arm's body. A
+/// `uint8_t` where every arm says it; where some arm does not read it, the
+/// optional value, absent for such an arm, as an arm that says the input in
+/// some of its values only answers it.
+fn arm_inputs(
+    plan: &EncodePlan<'_>,
+    imports: &[ImportContext],
+    snake: &str,
+    arms: &Arms,
+) -> String {
+    let mut out = String::new();
+    for said in &plan.said {
+        let (bound, partly) = match plan.roles.inputs.get(&said.input.name) {
+            Some(InputSource::EveryArm { arms: bound }) => (bound, false),
+            Some(InputSource::SomeArms { arms: bound }) => (bound, true),
+            _ => continue,
+        };
+        let name = input_name(&said.input.name);
+        let mut cases = String::new();
+        for (i, arm) in arms.arms.iter().enumerate() {
+            let Some(input) = bound.get(&arm.alias) else {
+                continue;
+            };
+            let (table, ctx) = arm_source("arm", arm);
+            let read = format!("{}_input_{}({table}, {ctx})", arm.prefix, input_name(input));
+            let answer = if partly && !says_partly(imports, &arm.alias, input) {
+                format!("sce_optional_uint8_some({read})")
+            } else {
+                read
+            };
+            cases.push_str(&arms.guarded(
+                i,
+                &format!("        case {}:\n            return {answer};\n", arm.kind),
+            ));
+        }
+        let cases = format!(
+            "    switch (arm.kind) {{\n{cases}        default:\n            break;\n    }}\n"
+        );
+        let (ty, nothing) = if partly {
+            ("sce_optional_uint8_t", "sce_optional_uint8_none()")
+        } else {
+            ("uint8_t", "0")
+        };
+        out.push_str(&format!(
+            "/* The flag input `{}` the arm `arm` presents says (docs/adr/0065 §6\n \
+             * R4d), through the arm's codec's own function of it{}. */\n\
+             static inline {ty} {snake}_arm_input_{name}({snake}_body_ref_t arm) {{\n\
+             {cases}    return {nothing};\n\
+             }}\n\n",
+            said.input.name,
+            if partly {
+                "; nothing where\n * the arm does not read it (R4e)"
+            } else {
+                ""
+            }
+        ));
+    }
     out
 }
 
@@ -1152,7 +1498,8 @@ fn encode_source(plan: &EncodePlan<'_>, l: &LangCtx, snake: &str) -> String {
             signature(encode)
         ));
     }
-    if plan.elements.is_empty() {
+    let variant = plan.model.variant.is_some();
+    if plan.elements.is_empty() && !variant {
         out.push_str("    (void)src;\n    (void)ctx;\n");
     }
     if plan.program.is_empty() {
@@ -1164,6 +1511,14 @@ fn encode_source(plan: &EncodePlan<'_>, l: &LangCtx, snake: &str) -> String {
             presented_type(l, snake, element),
             element_local(l, &element.field.id),
             l.codec_field_id(&element.field.id)
+        ));
+    }
+    // The arm of the variant, read once as the elements are.
+    let arms = Arms::of(plan);
+    if variant {
+        out.push_str(&format!(
+            "    const {snake}_body_ref_t {} = src->{BODY}(ctx);\n",
+            element_local(l, BODY)
         ));
     }
     // An input is read where a gate, a check or a held codec needs it, which
@@ -1183,7 +1538,7 @@ fn encode_source(plan: &EncodePlan<'_>, l: &LangCtx, snake: &str) -> String {
         let name = input_name(&said.input.name);
         out.push_str(&format!(
             "    const uint8_t {name} = {};\n    (void){name};\n",
-            said_input(plan, l, &said.input.name, Read::Encode)
+            said_input(plan, l, snake, &said.input.name, Read::Encode)
         ));
     }
     // What the encode derives (docs/adr/0081 §3), each refusal of it before
@@ -1249,7 +1604,9 @@ fn encode_source(plan: &EncodePlan<'_>, l: &LangCtx, snake: &str) -> String {
                 let measures: Vec<MeasureText> = number
                     .measures
                     .iter()
-                    .map(|measure| measure_text(plan, l, measure, None, &mut counted, &mut out))
+                    .map(|measure| {
+                        measure_text(plan, l, element, measure, None, &mut counted, &mut out)
+                    })
                     .collect();
                 if let Some((carrier, fold)) =
                     derive_number(plan, l, element, &number.into, &measures, &mut out)
@@ -1257,10 +1614,66 @@ fn encode_source(plan: &EncodePlan<'_>, l: &LangCtx, snake: &str) -> String {
                     folds.entry(carrier).or_default().push(fold);
                 }
             }
+            // The tag of the arm the value holds: the one the document gives a
+            // known arm, and the one the catch-all holds, into the tag's field
+            // whole or into its flag, masked to the flag's bits.
+            (element, Derive::VariantTag) => {
+                let held = element_local(l, BODY);
+                let cases =
+                    arms.switch(&format!("{held}.kind"), &arms.all(), |arm| match arm.tag {
+                        Some(tag) => format!("            _t_body = 0x{tag:X}ull;\n"),
+                        None => format!("            _t_body = (uint64_t){held}.default_tag;\n"),
+                    });
+                out.push_str(&format!("    uint64_t _t_body = 0;\n{cases}"));
+                match element {
+                    ElementId::Field(id) => {
+                        let field = plan
+                            .model
+                            .fields
+                            .iter()
+                            .find(|f| f.id == *id)
+                            .expect("a tag is derived into a field of the codec");
+                        let ty = l.type_name(&field.sce_type);
+                        out.push_str(&format!(
+                            "    const {ty} {} = ({ty})_t_body;\n",
+                            derived_local(id)
+                        ));
+                    }
+                    ElementId::Flag { field, flag } => {
+                        let mask = flag_mask(plan, field, flag);
+                        folds.entry(field.as_str()).or_default().push(Fold {
+                            flag: flag.clone(),
+                            named: element.to_string(),
+                            bits: format!("(_t_body & 0x{mask:X}ull)"),
+                            count: None,
+                            present: None,
+                        });
+                    }
+                    ElementId::Variant => {
+                        unreachable!("a variant's tag is derived into a field or a flag")
+                    }
+                }
+            }
+            // The tag of the arm each body that fills the flag holds, masked
+            // to the flag's bits, the catch-all's the tag it holds; nothing
+            // from a body a gate leaves out.
+            (ElementId::Flag { field, flag }, Derive::ParentTag(tag)) => {
+                let local = format!("_p_{}", override_member(l, field, flag));
+                out.push_str(&format!("    uint64_t {local} = 0;\n"));
+                out.push_str(&parent_tag(plan, l, tag, &local));
+                folds.entry(field.as_str()).or_default().push(Fold {
+                    flag: flag.clone(),
+                    named: derived.element.to_string(),
+                    bits: local,
+                    count: None,
+                    present: None,
+                });
+            }
             // Set by the walk of the chain that holds the entry, not here.
             (ElementId::Flag { .. }, Derive::ChainContinuation) => {}
             _ => unreachable!(
-                "`unlowered` prints a derived number, a presence flag or a chain's flag only"
+                "`unlowered` prints a derived number, a presence flag, a variant's tag, a \
+                 parent's tag or a chain's flag only"
             ),
         }
     }
@@ -1336,11 +1749,11 @@ fn encode_source(plan: &EncodePlan<'_>, l: &LangCtx, snake: &str) -> String {
         }
         out.push_str(&format!("    const {ty} _c_{name} = ({ty}){bits};\n"));
     }
-    // The value a field is written as: the number the encode derived, the
-    // carrier with its derived flags, the present value of an element a gate
-    // decides (read only where it is tested present), or what the source
-    // presents.
-    let numbers = derived_numbers(plan);
+    // The value a field is written as: the number or the tag the encode
+    // derived, the carrier with its derived flags, the present value of an
+    // element a gate decides (read only where it is tested present), or what
+    // the source presents.
+    let numbers = derived_whole(plan);
     let read = |field: &CodecField| {
         if numbers.contains(&field.id) {
             derived_local(&field.id)
@@ -1377,7 +1790,17 @@ fn encode_source(plan: &EncodePlan<'_>, l: &LangCtx, snake: &str) -> String {
         let measures: Vec<MeasureText> = number
             .measures
             .iter()
-            .map(|measure| measure_text(plan, l, measure, Some(handed), &mut counted, &mut out))
+            .map(|measure| {
+                measure_text(
+                    plan,
+                    l,
+                    element,
+                    measure,
+                    Some(handed),
+                    &mut counted,
+                    &mut out,
+                )
+            })
             .collect();
         if derive_number(plan, l, element, &number.into, &measures, &mut out).is_some() {
             unreachable!("a number of encoded lengths goes into a field");
@@ -1510,7 +1933,19 @@ fn encode_source(plan: &EncodePlan<'_>, l: &LangCtx, snake: &str) -> String {
                 }
                 out.push_str(&view_bytes(field));
             }
-            Write::Variant => unreachable!("`unlowered` prints no variant"),
+            // The arm the value holds, by its codec's encode over the source
+            // of its body, handed what its import binds.
+            Write::Variant => {
+                let held = element_local(l, BODY);
+                out.push_str(&arms.switch(&format!("{held}.kind"), &arms.all(), |arm| {
+                    let (table, ctx) = arm_source(&held, arm);
+                    format!(
+                        "            SCE_FORGE_TRY_WRITE({}_encode_source({table}, {ctx}, w{}));\n",
+                        arm.prefix,
+                        handed(&arm.alias)
+                    )
+                }));
+            }
         }
     }
     out.push_str("    return SCE_FORGE_CODEC_OK;\n}\n");
@@ -1578,8 +2013,10 @@ enum Read {
 /// field gated on its clear state), or what the body that hands it on says,
 /// read through that body's codec's own function of it, which answers an
 /// optional value where the body says it in some of its values only.
-/// [`unlowered`] names every other way a value says one.
-fn said_input(plan: &EncodePlan<'_>, l: &LangCtx, input: &str, at: Read) -> String {
+/// What the arm of the variant says, the arm the source presents, is what the
+/// variant's own function of it answers ([`arm_inputs`]). [`unlowered`] names
+/// every other way a value says one.
+fn said_input(plan: &EncodePlan<'_>, l: &LangCtx, snake: &str, input: &str, at: Read) -> String {
     let source = |id: &str| match at {
         Read::Encode => element_local(l, id),
         Read::Source => format!("src->{}(ctx)", l.codec_field_id(id)),
@@ -1608,7 +2045,10 @@ fn said_input(plan: &EncodePlan<'_>, l: &LangCtx, input: &str, at: Read) -> Stri
                 Read::Source => format!("{said}({}.table, {}.ctx)", source(embed), source(embed)),
             }
         }
-        _ => unreachable!("`unlowered` prints an input a field's gate or a body says only"),
+        Some(InputSource::EveryArm { .. } | InputSource::SomeArms { .. }) => {
+            format!("{snake}_arm_input_{}({})", input_name(input), source(BODY))
+        }
+        _ => unreachable!("`unlowered` prints an input a field's gate, a body or an arm says only"),
     }
 }
 
@@ -1637,7 +2077,7 @@ fn said_inputs(plan: &EncodePlan<'_>, l: &LangCtx, snake: &str) -> String {
              return {};\n\
              }}\n",
             said.input.name,
-            said_input(plan, l, &said.input.name, Read::Source)
+            said_input(plan, l, snake, &said.input.name, Read::Source)
         ));
     }
     out
@@ -1793,7 +2233,32 @@ fn input_check(
                 gated.then(|| format!("{local}.present")),
             )
         }
-        CheckSite::Arm { .. } => unreachable!("`unlowered` prints no variant"),
+        // The arm the value holds, where it is one of the arms whose codec
+        // says the input.
+        CheckSite::Arm { arms: saying } => {
+            let arms = Arms::of(plan);
+            let held = element_local(l, BODY);
+            let mut cases = String::new();
+            for &i in saying {
+                let arm = &arms.arms[i];
+                let (table, ctx) = arm_source(&held, arm);
+                cases.push_str(&arms.guarded(
+                    i,
+                    &format!(
+                        "            case {}:\n{}                break;\n",
+                        arm.kind,
+                        otherwise(&table, &ctx, "                ")
+                    ),
+                ));
+            }
+            (
+                format!(
+                    "        switch ({held}.kind) {{\n{cases}            default:\n                \
+                     break;\n        }}\n"
+                ),
+                None,
+            )
+        }
     };
     let test = match present {
         Some(there) => {
@@ -1821,6 +2286,74 @@ fn override_member(l: &LangCtx, carrier: &str, flag: &str) -> String {
             flag: flag.to_string(),
         },
     )
+}
+
+/// The bits of the flag `flag` of the carrier `carrier`, below its lowest.
+fn flag_mask(plan: &EncodePlan<'_>, carrier: &str, flag: &str) -> u64 {
+    let width = plan
+        .model
+        .fields
+        .iter()
+        .find(|f| f.id == carrier)
+        .and_then(|c| c.flags.iter().find(|d| d.name == flag))
+        .map(|d| d.width.max(1))
+        .expect("a flag the encode derives is a flag of a carrier of the codec");
+    if width >= 64 {
+        u64::MAX
+    } else {
+        (1u64 << width) - 1
+    }
+}
+
+/// The statements that or into `local` the bits the arm of each body of `tag`
+/// fills (docs/adr/0081 §1, the parent's tag): the arm's tag the body's own
+/// document gives, masked to the flag's bits, and for its catch-all the tag
+/// it holds, masked. The arm is read off the source the value presents the
+/// body as, through the function of its codec's table that presents the arm;
+/// a body a gate leaves out fills nothing. An arm the body's codec compiles
+/// under a build feature is a case inside the guard of its macro.
+fn parent_tag(plan: &EncodePlan<'_>, l: &LangCtx, tag: &ParentTag<'_>, local: &str) -> String {
+    let mut out = String::new();
+    for term in &tag.terms {
+        let prefix = body_prefix(&term.codec);
+        let body = element_local(l, &term.body.id);
+        let gated = plan.presence(term.body) == Presence::Gated;
+        let open = if gated {
+            format!("    if ({body}.present) {{\n")
+        } else {
+            "    {\n".to_string()
+        };
+        let held = if gated { format!("{body}.value") } else { body };
+        let mut cases = String::new();
+        for arm in &term.arms {
+            let feature = arm.feature.as_deref().map(c_feature_macro);
+            cases.push_str(&feature_guarded(
+                feature.as_deref(),
+                &format!(
+                    "            case {}:\n                {local} |= 0x{:X}ull;\n                \
+                     break;\n",
+                    arm_kind(&prefix, Some(&arm.codec)),
+                    arm.tag
+                ),
+            ));
+        }
+        if term.catch_all {
+            cases.push_str(&format!(
+                "            case {}:\n                {local} |= (uint64_t)_v.default_tag & \
+                 0x{:X}ull;\n                break;\n",
+                arm_kind(&prefix, None),
+                term.mask
+            ));
+        }
+        out.push_str(&format!(
+            "{open}        const {prefix}_body_ref_t _v = {held}.table->{BODY}({held}.ctx);\n        \
+             switch (_v.kind) {{\n\
+             {cases}            default:\n                break;\n        \
+             }}\n    \
+             }}\n"
+        ));
+    }
+    out
 }
 
 /// `{snake}_overrides_t`, the one-bit flags of the codec a parent may set in
@@ -1910,11 +2443,14 @@ fn refuse_if(test: &str, refused: &str) -> String {
 /// §3) and passes on what the body refuses, handed what `handed` answers for
 /// the body's codec, which the encode answers once the carriers are written.
 /// A body is counted once into
-/// `_k_<body>`, which `counted` keeps, and only where it is there. The
-/// statements that count or refuse go into `out`.
+/// `_k_<body>`, which `counted` keeps, and only where it is there. The input
+/// the arm the value holds says is read into `_s_<element>`, `element` the
+/// number the measure is of. The statements that count, read or refuse go
+/// into `out`.
 fn measure_text(
     plan: &EncodePlan<'_>,
     l: &LangCtx,
+    element: &ElementId,
     measure: &Measure<'_>,
     handed: Option<&dyn Fn(&str) -> String>,
     counted: &mut BTreeSet<String>,
@@ -2024,10 +2560,47 @@ fn measure_text(
                 gated: measure.gated,
             }
         }
-        Measured::Start { .. } | Measured::ArmSays { .. } => unreachable!(
-            "`unlowered` prints a number of byte strings, texts, lists, bodies and what a body \
-             says only"
-        ),
+        // The input the arm the value holds says, read through its codec's
+        // own function of it off the source of the arm's body (docs/adr/0065
+        // §6 R4a): the roles derive a flag only from arms that say it in every
+        // value, so the function answers a number. Where the value holds an
+        // arm that does not say it, a field beside it holds zero and a flag
+        // keeps the bits the value presents.
+        Measured::ArmSays { arms: saying } => {
+            let arms = Arms::of(plan);
+            let held = element_local(l, BODY);
+            let local = format!("_s_{}", number_name(l, element));
+            let there = measure.gated.then(|| format!("{local}_there"));
+            out.push_str(&format!("    size_t {local} = 0;\n"));
+            if let Some(there) = &there {
+                out.push_str(&format!("    bool {there} = false;\n"));
+            }
+            let places: Vec<usize> = saying.iter().map(|said| said.arm).collect();
+            out.push_str(&arms.switch(&format!("{held}.kind"), &places, |arm| {
+                let input = saying
+                    .iter()
+                    .find(|said| arms.arms[said.arm].member == arm.member)
+                    .map(|said| input_name(&said.input))
+                    .expect("an arm the switch names says the input");
+                let (table, ctx) = arm_source(&held, arm);
+                let mark = there
+                    .as_ref()
+                    .map(|there| format!("            {there} = true;\n"))
+                    .unwrap_or_default();
+                format!(
+                    "            {local} = (size_t){}_input_{input}({table}, {ctx});\n{mark}",
+                    arm.prefix
+                )
+            }));
+            MeasureText {
+                size: local,
+                present: there,
+                gated: measure.gated,
+            }
+        }
+        Measured::Start { .. } => {
+            unreachable!("`unlowered` prints no start of a list's law")
+        }
     }
 }
 
@@ -2336,6 +2909,19 @@ fn check_value(plan: &EncodePlan<'_>, l: &LangCtx, snake: &str) -> String {
                 "    if ({refused}) {{\n        return {status};\n    }}\n"
             ));
         }
+    }
+    // The body of the arm the value holds, a value of the arm's codec by that
+    // codec's own check.
+    if plan.model.variant.is_some() {
+        let arms = Arms::of(plan);
+        out.push_str(
+            &arms.switch(&format!("self->{BODY}.kind"), &arms.all(), |arm| {
+                format!(
+                    "            SCE_FORGE_TRY_WRITE({}_check_value(&self->{BODY}.arm.{}));\n",
+                    arm.prefix, arm.member
+                )
+            }),
+        );
     }
     if out.is_empty() {
         out.push_str("    (void)self;\n");
