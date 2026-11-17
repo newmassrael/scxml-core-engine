@@ -750,6 +750,39 @@ fn verify_passes_on_real_committed_runtime_rust_tree() {
     );
 }
 
+/// The other runtimes' standard engine documents, each a committed tree of
+/// its runtime (ADR 0097, amendment of 2026-11-17). Turns red when a
+/// `stdlib/engine/*.scxml` changes and one of them is not regenerated.
+#[test]
+fn verify_passes_on_real_committed_runtime_engine_trees() {
+    let workspace = workspace_root();
+    let input_root = workspace.join("stdlib").join("engine");
+    for (step, tree) in [
+        (
+            "runtime-kotlin",
+            "backends/kotlin/runtime/src/commonMain/kotlin/generated",
+        ),
+        ("runtime-go", "backends/go/runtime/generated"),
+        (
+            "runtime-python",
+            "backends/python/runtime/sce_runtime/generated",
+        ),
+        (
+            "runtime-swift",
+            "backends/swift/runtime/Sources/SceRuntime/Generated",
+        ),
+    ] {
+        let (code, stderr) = run_verify_real_tree(&workspace.join(tree), &input_root);
+        assert_eq!(
+            code, 0,
+            "verify must pass on the committed engine tree {tree}. A failure \
+             here means a stdlib/engine/*.scxml changed without refreshing it. \
+             Run `scripts/regen_all_committed_trees.sh {step}` and commit the \
+             result. stderr:\n{stderr}"
+        );
+    }
+}
+
 #[test]
 fn verify_passes_on_real_committed_mesh_kotlin_tree() {
     let workspace = workspace_root();

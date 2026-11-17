@@ -16,9 +16,11 @@
 # every one of them, which is "regenerate everything" on the build machines.
 # bx.toml says why the steps are grouped as they are.
 #
-# Build-time backends (cpp / c11 / Python) are intentionally absent
-# — their generated trees materialise at CMake / CI time without a
-# committed §synth-6.2.6 header to refresh.
+# The test trees of the build-time backends (cpp / c11 / Python) are
+# intentionally absent — they materialise at CMake / CI time without a
+# committed §synth-6.2.6 header to refresh. A runtime's engine tree is not a
+# test tree: a consumer builds the runtime without the generator, so it is
+# committed and has a step here whatever its language.
 #
 # Use after any edit that can change generated output — a template, the
 # generator's own code, an input document. Regenerate and expect no diff
@@ -83,6 +85,39 @@ step_runtime_rust() {
 
     stage "Rust runtime's standard engine tree"
     "$CODEGEN" materialize runtime-rust --into "$REPO_ROOT" --replace
+}
+
+# ── runtime-kotlin / -go / -python / -swift: the other runtimes' trees ──
+#
+# Declared trees (tools/codegen/trees/runtime-<language>.toml): every document
+# of stdlib/engine generated into the engine runtime of that language, which
+# names the enum's declared names as the reasons it raises `error.*` for. No
+# generator is compiled from them, so they are set aside and settled as every
+# other tree is (`sce_generated_trees`). They stay committed until the landing
+# that makes a runtime's package carry its generated sources (ADR 0097,
+# amendment of 2026-11-17, "The other runtimes' engine trees").
+step_runtime_kotlin() {
+    require_codegen
+    stage "Kotlin runtime's standard engine tree"
+    "$CODEGEN" materialize runtime-kotlin --into "$REPO_ROOT" --replace
+}
+
+step_runtime_go() {
+    require_codegen
+    stage "Go runtime's standard engine tree"
+    "$CODEGEN" materialize runtime-go --into "$REPO_ROOT" --replace
+}
+
+step_runtime_python() {
+    require_codegen
+    stage "Python runtime's standard engine tree"
+    "$CODEGEN" materialize runtime-python --into "$REPO_ROOT" --replace
+}
+
+step_runtime_swift() {
+    require_codegen
+    stage "Swift runtime's standard engine tree"
+    "$CODEGEN" materialize runtime-swift --into "$REPO_ROOT" --replace
 }
 
 # ── rust-tests: the committed trees of backends/rust/tests ──────────────

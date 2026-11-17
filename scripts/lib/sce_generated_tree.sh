@@ -138,9 +138,19 @@ sce_generated_tree_clear() {
 # from (the Rust runtime is a dependency of sce-build), so a step after it that
 # builds the generator, or a run that began by deleting a sample of generated
 # files (`regen-reproduces`), needs it written before anything compiles.
+#
+# The other runtimes' engine trees (`runtime-kotlin`, `runtime-go`,
+# `runtime-python`, `runtime-swift`) follow it. Nothing the generator is built
+# from is among them, so each is set aside and settled like any other tree; they
+# are steps of their own because each runtime is a library of its own, which no
+# other step writes into.
 sce_regen_steps() {
     printf '%s\n' \
         runtime-rust \
+        runtime-kotlin \
+        runtime-go \
+        runtime-python \
+        runtime-swift \
         rust-tests \
         kotlin-tests \
         kotlin-method-size \
@@ -198,6 +208,18 @@ sce_generated_trees() {
         return 0
     fi
     case "$1" in
+        runtime-kotlin)
+            printf '%s\n' backends/kotlin/runtime/src/commonMain/kotlin/generated
+            ;;
+        runtime-go)
+            printf '%s\n' backends/go/runtime/generated
+            ;;
+        runtime-python)
+            printf '%s\n' backends/python/runtime/sce_runtime/generated
+            ;;
+        runtime-swift)
+            printf '%s\n' backends/swift/runtime/Sources/SceRuntime/Generated
+            ;;
         rust-tests)
             printf '%s\n' \
                 backends/rust/tests/src/generated \

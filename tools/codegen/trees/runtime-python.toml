@@ -7,9 +7,12 @@
 # (sce:std/engine/error_reason.scxml, docs/adr/0106 #111), imported as
 # `sce_runtime.generated.error_reason`. The runtime writes each reason by the
 # enum's declared-name accessor, so the document is the one spelling of it.
-# The package's `__init__.py` is written by hand and stays beside the tree.
 # Named by its path under stdlib/engine, so it carries the source hash of
 # that directory.
+#
+# The package's `__init__.py` is the tree's index, written with it, so the
+# directory holds nothing written by hand and the whole of it is the output of
+# the step `runtime-python` (`[actions.regen-runtime-python]` in bx.toml).
 
 [tree]
 name = "runtime-python"
@@ -20,3 +23,19 @@ each = { files = "stdlib/engine/*.scxml", as = "document" }
 arguments = ["generate", "stdlib/engine/{document}.scxml", "--language", "python", "--output-dir", "{out}"]
 place = "backends/python/runtime/sce_runtime/generated"
 keep = ["*.py"]
+
+# A package needs no line for its modules: each is imported by its own name
+# (`sce_runtime.generated.error_reason`).
+[[index]]
+directories = "backends/python/runtime/sce_runtime/generated"
+file = "__init__.py"
+header = '''
+# SPDX-License-Identifier: AGPL-3.0-only WITH LicenseRef-SCE-Linking-Exception OR LicenseRef-SCE-Commercial
+# SPDX-FileCopyrightText: Copyright (c) 2026 newmassrael
+"""The standard engine documents (`sce:std/engine`), generated.
+
+GENERATED -- DO NOT EDIT (tools/codegen/trees/runtime-python.toml).
+The reasons an engine raises `error.execution` and `error.communication` for
+(docs/adr/0106 #111). Each module is one document."""
+'''
+entries = []
