@@ -16,11 +16,12 @@
 
 use super::super::rust_source::{
     byte_values, case_inputs, case_tag, entry_rows, enum_variant, gates_label, group_choice,
-    integer_value, source_members, variant_choice, HeldCodecs, CALLER_TAG_LABEL, VARIANT_MEMBER,
+    integer_value, law_start_bits, lawful_parts, source_members, variant_choice, HeldCodecs,
+    CALLER_TAG_LABEL, VARIANT_MEMBER,
 };
 use super::super::*;
 use super::group::groups;
-use super::{arm_kind, arm_member, BODY};
+use super::{arm_kind, arm_member, input_name, start_member, BODY};
 use crate::forge::encode_plan::{EncodePlan, Value};
 
 /// The name the harness gives the value a case makes.
@@ -211,9 +212,30 @@ fn members(
             // Each entry into the array that holds them and their count
             // beside it, the length member the C11 struct names
             // `{member}_len`, or the value of the optional one a gate decides.
+            // A list held to a law is stated with its start, each input it
+            // gives every entry alike into the member the struct holds it in
+            // beside the list (docs/adr/0065 §6 R8).
             Value::List { codec, law, .. } => {
-                let (count, holds, entries) =
-                    list_stated(codec, law.is_none(), json, &id, &data, &len, held)?;
+                let rows = if law.is_none() {
+                    json
+                } else {
+                    let (start, entries) =
+                        lawful_parts(json).map_err(|e| format!("`{id}`: {e}"))?;
+                    let bits = law_start_bits(law, start).map_err(|e| format!("`{id}`: {e}"))?;
+                    for (law_input, bit) in law.inputs.iter().zip(bits) {
+                        let Some(bit) = bit else {
+                            continue;
+                        };
+                        let start = start_member(&member, &input_name(&law_input.input));
+                        statements.push(format!("{VALUE}.{start} = {}u;", u8::from(bit)));
+                        checks.push((
+                            format!("{id} start {}", law_input.input),
+                            format!("{DECODED}.{start} == {VALUE}.{start}"),
+                        ));
+                    }
+                    entries
+                };
+                let (count, holds, entries) = list_stated(codec, rows, &id, &data, &len, held)?;
                 statements.push(count);
                 checks.push((id.clone(), check(holds)));
                 statements.extend(entries.statements);
@@ -280,11 +302,17 @@ fn members(
                     statements.extend(body.statements);
                     checks.extend(body.checks);
                 }
-                // Each entry into the list the arm holds, and its count.
+                // Each entry into the list the arm holds, and its count. A list
+                // a group holds is held to no law (`c11_source::positional_forms`).
                 Value::List { codec, law, .. } => {
+                    if !law.is_none() {
+                        return Err(format!(
+                            "`{member_id}`: a list a group holds held to a law is not stated \
+                             as a C11 value: the C11 printer prints no codec that holds one"
+                        ));
+                    }
                     let (count, holds, entries) = list_stated(
                         codec,
-                        law.is_none(),
                         stated,
                         &member_id,
                         &format!("{path}.data"),
@@ -401,28 +429,19 @@ fn body_stated(
     Ok(body)
 }
 
-/// A list of entries of the codec imported as `codec` a source states as
-/// `json`: the statement that sets its count into `len`, what holds when a
+/// The entries of a list of the codec imported as `codec` a source states as
+/// `json`: the statement that sets their count into `len`, what holds when a
 /// decode reads the same count, and each entry set into the array at the
 /// member path `data`, member by member as its codec's own case sets them,
-/// each checked by its id after the element `id` and its place. A list held to
-/// a law (`lawless` false) is stated with its start, which no C11 list holds
-/// yet.
+/// each checked by its id after the element `id` and its place.
 fn list_stated(
     codec: &str,
-    lawless: bool,
     json: &serde_json::Value,
     id: &str,
     data: &str,
     len: &str,
     held: &mut dyn HeldCodecs,
 ) -> Result<(String, String, SourceCase), String> {
-    if !lawless {
-        return Err(format!(
-            "`{id}`: a list held to a law is not stated as a C11 value yet: the C11 printer \
-             prints no codec that holds one"
-        ));
-    }
     let rows = entry_rows(json).map_err(|e| format!("`{id}`: {e}"))?;
     let mut entries = SourceCase::empty();
     for (i, row) in rows.iter().enumerate() {
