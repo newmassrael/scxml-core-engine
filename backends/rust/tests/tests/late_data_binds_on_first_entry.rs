@@ -11,8 +11,8 @@
 // Fixture: integration_resources/late_data_binds_on_first_entry/late_data_binds_on_first_entry.scxml
 // (canonical, shared with the C++ / C11 / Go / Kotlin / Python channels).
 //
-// Regeneration (after fixture or template edit):
-//   scripts/materialize.sh rust-integration
+// Regeneration: none by hand. The crate's build script (build.rs) writes the
+//   `rust-integration` tree into OUT_DIR again when a fixture or template changes.
 
 use sce_rust_tests::integration::late_data_binds_on_first_entry::{
     LateDataBindsOnFirstEntryEvent as Event, LateDataBindsOnFirstEntryPolicy as Policy,

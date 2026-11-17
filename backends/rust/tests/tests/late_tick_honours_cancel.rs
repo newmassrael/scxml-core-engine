@@ -19,8 +19,8 @@
 // Fixture: integration_resources/late_tick_honours_cancel/late_tick_honours_cancel.scxml
 // (canonical, shared with the C++ / C11 / Go / Kotlin / Python channels).
 //
-// Regeneration (after fixture or template edit):
-//   scripts/materialize.sh rust-integration
+// Regeneration: none by hand. The crate's build script (build.rs) writes the
+//   `rust-integration` tree into OUT_DIR again when a fixture or template changes.
 
 use std::cell::Cell;
 use std::time::{Duration, Instant};

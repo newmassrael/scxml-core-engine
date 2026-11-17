@@ -14,8 +14,8 @@
 // Fixture: integration_resources/onexit_runs_before_the_state_leaves/onexit_runs_before_the_state_leaves.scxml
 // (canonical, shared with the C++ / C11 / Go / Kotlin / Python channels).
 //
-// Regeneration (after fixture or template edit):
-//   scripts/materialize.sh rust-integration
+// Regeneration: none by hand. The crate's build script (build.rs) writes the
+//   `rust-integration` tree into OUT_DIR again when a fixture or template changes.
 
 use sce_rust_tests::integration::onexit_runs_before_the_state_leaves::{
     OnexitRunsBeforeTheStateLeavesEvent as Event, OnexitRunsBeforeTheStateLeavesPolicy as Policy,

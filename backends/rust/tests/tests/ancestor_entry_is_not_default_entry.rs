@@ -26,8 +26,8 @@
 // Fixture: integration_resources/ancestor_entry_is_not_default_entry/ancestor_entry_is_not_default_entry.scxml
 // (canonical, shared with the C++ / C11 / Go / Kotlin / Python channels).
 //
-// Regeneration (after fixture or template edit):
-//   scripts/materialize.sh rust-integration
+// Regeneration: none by hand. The crate's build script (build.rs) writes the
+//   `rust-integration` tree into OUT_DIR again when a fixture or template changes.
 
 use sce_rust_tests::integration::ancestor_entry_is_not_default_entry::{
     AncestorEntryIsNotDefaultEntryEvent as Event, AncestorEntryIsNotDefaultEntryPolicy as Policy,
