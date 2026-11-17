@@ -2078,6 +2078,44 @@ old encode, the old encode and its templates are removed in the same landing.
    (`{codec}_tag`). Two tests that read the template's C text of a parent deriving a body's tag now read the printed
    text, and the C census of a gated arm counts seven items of each gated arm where the codec is printed. A group
    and an input a group or a list's start says stay unlowered.
+
+   *The eleventh C11 landing, 2026-11-17:* groups (docs/adr/0065 §6 R4b, R4c) of numbers and enums that a gate of a
+   flag or of a flag input decides. A value holds a group as one member, named as every printer names it
+   (`group_accessor`): the tagged struct of its arms, `{codec}_{group}_t`, of the kind `{codec}_{group}_kind_t` and
+   a union of a struct for each arm, each holding the members present while the gates hold the arm's values, or the
+   one arm's struct where the group has one, and the optional value of it where the gates allow no arm. It is the
+   shape the struct already holds its variant in, so no value says a member is there that its gates leave out, and
+   the struct holds no member of the group outside it. A source presents the group as the value holds it, a function
+   of the table after the elements. The encode reads the group once and binds each member to the optional value a
+   gated element is read into, present where the arm holds it, so every statement that reads a member reads it as it
+   reads a gated element; the flags of the group's gates are derived from the arm (`Derive::Presence` of fields one
+   group holds, `Derive::ArmFlag`), and an input a group decides (`InputSource::Group`) is what the arm says. The
+   decode reads each member into a local, `_d_<field>`, as it reads a number the encode derives, and makes the group
+   once every field is read (`C11Source::decoded`): the arm the flags it read and the inputs it was handed select.
+   A group of a chain's memberships, two lists of one count, and a group holding a byte string, a body or a list stay
+   unlowered.
+
+   *The twelfth C11 landing, 2026-11-17:* groups that hold byte strings, texts, bodies and lists, and the number a
+   group states on the side where its content is absent (`Absent::Group`). An arm holds a byte string or a text in
+   the runtime's buffer of its bound (`sce_static_bytes_<N>_t`, the buffer a value holds one a gate decides in), a
+   body as its codec's struct, and a list as the runtime's list of its entries (`{entry}_list_<N>_t`, declared once by
+   `c11_list_def` whoever holds one of its shape), so a member is one object of one named type whichever arm holds
+   it. A source presents a group with such a member as `{codec}_{group}_ref_t`: the same kind and arms, each member
+   presented as an element of its type is, a view, the pair of a body's source or a list over a walk, so a body or a
+   list is presented where it is held, by pointers; a group of numbers alone is still presented as the value holds
+   it, as each of its members is. The value's function of the group points each member at the arm the value holds, a
+   list walked by a begin and next over that arm. The decode reads such a member in place. Before the first of them
+   it opens the group (`c11_source::group::Group::opened`): zeroed, the arm the gates it has read select set, and a
+   pointer to each member it reads in place pointed at the member's place in that arm, left null where the arm holds
+   none; the member's own decode, where its gate holds, reads through that pointer (`c11_source::Derived::held_at`).
+   A number of the group is read into its local and set in the arm the decode opened once every field is read. Every
+   gate of such a group is a flag of a carrier read before the member or an input the decode is handed, so the arm is
+   known when the member is read. The decision was the read in place over a read into a local copied into the arm
+   after, which holds a second copy of a body or a list on the stack, more than the stack of an MCU of docs/adr/0057
+   holds for a list of its most. The value's check holds each member of the arm the value holds as it holds an
+   element of the member's type. A number the arm states where its content is absent is taken where none of the
+   content is there, and zero where the arm holds none; it is never said twice, as the two sides of a group are apart.
+   A list held to a law, a chain, and two lists of one count in a group stay unlowered.
 5. Swift, when its codec lowers what the plan holds.
    *Swift lowers what the plan holds, 2026-11-16:* its codec writes every codec of the repository Rust writes,
    but the one only an MCU-class backend writes (`a_swift_codec_is_written_wherever_rust_writes_one.rs`): an
