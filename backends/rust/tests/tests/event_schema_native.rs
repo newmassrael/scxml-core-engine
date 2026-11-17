@@ -5,9 +5,9 @@
 // — Rust compile+run gate, the twin of the C11
 // `c11_integration_event_schema_native` test.
 //
-// The committed SM under `src/integration/event_schema_native/` is
+// The SM under `src/integration/event_schema_native/` is
 // generated from `sce-build/tests/fixtures/event_schema/statechart_minimal.scxml`
-// (regen: `scripts/materialize.sh rust-integration`). Because this file is
+// by the crate's build script (build.rs, tree `rust-integration`). Because this file is
 // part of the crate, it is REALLY type-checked — unlike the
 // `forge_codegen_event_schema_smoke.rs` gate, which uses `syn::parse_file`
 // (syntax only) and therefore cannot catch a Rust semantic error such as

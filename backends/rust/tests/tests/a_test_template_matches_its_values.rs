@@ -5,10 +5,10 @@
 // §11.4, §12.6 slice 6), matched against concrete values: each mechanism of
 // ES 201 873-1 Annex B.1 the profile holds, true and false, the value of each
 // specific template matching its own template, and a union matched by the
-// variant of its case (docs/adr/0092). The committed units under
+// variant of its case (docs/adr/0092). The units under
 // `src/integration/static_datamodel/` are generated from the fixtures under
 // `sce-build/tests/fixtures/test_profile/` and `sce-build/tests/fixtures/union/`
-// (regen: `scripts/materialize.sh rust-static-datamodel`); the C++ suite holds the
+// by the crate's build script (build.rs, tree `rust-static-datamodel`); the C++ suite holds the
 // same templates to the same values (`tests/integration/ATestTemplateMatchesItsValuesTest.cpp`).
 
 use sce_portable_bytes::{BoundedList, SceString};

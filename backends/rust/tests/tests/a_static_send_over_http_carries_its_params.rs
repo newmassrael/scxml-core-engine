@@ -8,8 +8,8 @@
 //
 // Fixture: sce-build/tests/fixtures/static_datamodel/static_send_http.scxml
 //
-// Regeneration (after fixture or template edit):
-//   scripts/materialize.sh rust-static-datamodel
+// Regeneration: none by hand. The crate's build script (build.rs) writes the
+//   `rust-static-datamodel` tree into OUT_DIR again when a fixture or template changes.
 
 use std::collections::HashMap;
 use std::sync::{Arc, Mutex};

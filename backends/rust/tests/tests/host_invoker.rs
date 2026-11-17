@@ -12,9 +12,9 @@
 // would leave the teardown untested, and a host told to start work and
 // never told to stop is worse than one never asked.
 //
-// The committed SM under `src/integration/host_processor/` is generated
+// The SM under `src/integration/host_processor/` is generated
 // from `sce-build/tests/fixtures/host_processor/statechart_host_invoker.scxml`
-// WITH the declaration (regen: `scripts/materialize.sh rust-integration`).
+// WITH the declaration, by the crate's build script (build.rs, tree `rust-integration`).
 // One binary, driven three ways, so what these measure is the registration
 // and not the build.
 //

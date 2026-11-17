@@ -4,9 +4,9 @@
 // W3C SCXML G.7 `<sce:action>` — Rust compile+run gate for native
 // host-trait action dispatch.
 //
-// The committed SM under `src/integration/native_action/` is generated from
+// The SM under `src/integration/native_action/` is generated from
 // `sce-build/tests/fixtures/event_schema/statechart_native_action.scxml`
-// (regen: `scripts/materialize.sh rust-integration`). Because the tree is part
+// by the crate's build script (build.rs, tree `rust-integration`). Because the tree is part
 // of the crate it is REALLY type-checked: the generated `Policy` is generic
 // over a host `Actions` impl and carries NO `IScriptEngine`, so this gate
 // proves the engine-free dispatch surface compiles AND that the side effects

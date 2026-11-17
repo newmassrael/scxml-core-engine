@@ -5,9 +5,9 @@
 // whose `sce:result` record holds values that may be absent. Rust compile+run
 // gate.
 //
-// The committed machine under `src/integration/host_processor/` is generated
+// The machine under `src/integration/host_processor/` is generated
 // from `sce-build/tests/fixtures/host_processor/statechart_host_invoker_optional.scxml`
-// (regen: `scripts/materialize.sh rust-integration`) and is constructed with
+// by the crate's build script (build.rs, tree `rust-integration`) and is constructed with
 // NO script engine: a `datamodel="sce-static"` machine holds its variables as
 // fields.
 //

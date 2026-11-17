@@ -2,10 +2,10 @@
 // SPDX-FileCopyrightText: Copyright (c) 2026 newmassrael
 //
 // A Rust machine reads a composed payload at any depth (docs/adr/0086,
-// section 6), run with no script engine. The committed machine under
+// section 6), run with no script engine. The machine under
 // `src/integration/static_datamodel/` is generated from
 // `sce-build/tests/fixtures/static_datamodel/static_composed_payload.scxml`
-// (regen: `scripts/materialize.sh rust-static-datamodel`).
+// by the crate's build script (build.rs, tree `rust-static-datamodel`).
 //
 // A delivery whose every list is full is lifted into the machine's own types,
 // and each read at depths 1 to 3 is what a host reads back. A delivery one

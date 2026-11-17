@@ -7,9 +7,9 @@
 // invoke happens. Rust compile+run gate; the Kotlin twin is
 // `StaticHostParamsTest`.
 //
-// The committed machine under `src/integration/host_processor/` is generated
+// The machine under `src/integration/host_processor/` is generated
 // from `sce-build/tests/fixtures/host_processor/statechart_static_host_params.scxml`
-// (regen: `scripts/materialize.sh rust-integration`) and constructed with NO
+// by the crate's build script (build.rs, tree `rust-integration`) and constructed with NO
 // script engine: its variables are fields, and a `<param>` that needed an
 // engine to be read would not have one to ask.
 //

@@ -5,9 +5,9 @@
 // compile+run gate, the twin of the Kotlin `StaticDatamodelTest` over the same
 // fixtures.
 //
-// The committed SMs under `src/integration/static_datamodel/` are generated
-// from `sce-build/tests/fixtures/static_datamodel/<machine>.scxml` (regen:
-// `scripts/materialize.sh rust-static-datamodel`). Their variables are fields of
+// The SMs under `src/integration/static_datamodel/` are generated
+// from `sce-build/tests/fixtures/static_datamodel/<machine>.scxml` by the crate's
+// build script (build.rs, tree `rust-static-datamodel`). Their variables are fields of
 // the policy and every expression — the guard reading `count` and `In()`, the
 // `<assign>`s, the `<if>` / `<elseif>` pair, a record's field updates, a
 // bounded list — was lowered to Rust, so each machine is constructed with NO

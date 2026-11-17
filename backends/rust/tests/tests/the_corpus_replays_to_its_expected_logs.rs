@@ -5,8 +5,8 @@
 // its suite's runner program, to its expected log, byte for byte. Each suite's
 // runner is the `main` of its generated unit (§4), made a program by a target of
 // one line under `src/bin/`; the suites are the ones sce-codegen writes into
-// `src/integration/static_datamodel/` (regen:
-// `scripts/materialize.sh rust-static-datamodel`). runtime_suite's own traces are
+// `src/integration/static_datamodel/` (the crate's build script, build.rs, tree
+// `rust-static-datamodel`). runtime_suite's own traces are
 // replayed by `a_test_suite_runs_through_its_runner.rs`, beside the rest of what
 // that suite is held to.
 //

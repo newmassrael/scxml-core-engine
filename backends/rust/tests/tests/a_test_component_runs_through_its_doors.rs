@@ -5,8 +5,8 @@
 // slice 6), run end to end by the profile's runtime, `TestCaseRun`. The
 // machines are the statecharts sce-codegen writes from the fixtures under
 // `sce-build/tests/fixtures/test_profile/runtime/` into
-// `src/integration/static_datamodel/` (regen:
-// `scripts/materialize.sh rust-static-datamodel`), driven only through the doors of
+// `src/integration/static_datamodel/` (the crate's build script, build.rs, tree
+// `rust-static-datamodel`), driven only through the doors of
 // §12.3; the configuration, the factory of machines and the system adapter are
 // written here, so that each component is held apart from the generated
 // tables, which `a_test_suite_runs_through_its_runner.rs` runs.

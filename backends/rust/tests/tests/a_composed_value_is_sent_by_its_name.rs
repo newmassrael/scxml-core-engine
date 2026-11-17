@@ -2,10 +2,10 @@
 // SPDX-FileCopyrightText: Copyright (c) 2026 newmassrael
 //
 // A Rust machine sends a composed value by its name (docs/adr/0086, section
-// 5.2), run with no script engine. The committed machine under
+// 5.2), run with no script engine. The machine under
 // `src/integration/static_datamodel/` is generated from
 // `sce-build/tests/fixtures/static_datamodel/static_composed_send.scxml`
-// (regen: `scripts/materialize.sh rust-static-datamodel`).
+// by the crate's build script (build.rs), tree `rust-static-datamodel`.
 //
 // The first delivery of `batch.sent` is forwarded to the machine itself: four
 // lists and an optional list named as the parts of the payload they are, and a
