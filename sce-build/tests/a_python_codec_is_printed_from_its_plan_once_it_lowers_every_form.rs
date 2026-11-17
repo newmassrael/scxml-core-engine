@@ -1222,6 +1222,39 @@ fn a_vle_of_eight_bits_is_refused_before_the_printer() {
     );
 }
 
+/// A field of part of its bytes in a frame written field by field never
+/// reaches the printer: the parser refuses it, since each field there has bytes
+/// of its own and the bits it leaves no other field can use. So the printer
+/// writes every fixed field of such a frame whole and names no form for it, and
+/// what it refuses beside the C++ printer is no codec of the repository's: the
+/// two census lists of the codecs each prints are one.
+///
+/// Turns red where `bit_layout::refusal` admits a field of part of its bytes in
+/// a streamed frame, which the printer's `STREAMED_WHOLE` invariant then no
+/// longer holds.
+#[test]
+fn a_streamed_field_of_part_of_its_bytes_is_refused_before_the_printer() {
+    let dir = tempfile::tempdir().expect("tempdir");
+    let path = dir.path().join("nibble.scxml");
+    std::fs::write(
+        &path,
+        r#"<scxml xmlns="http://www.w3.org/2005/07/scxml" xmlns:sce="http://sce.dev/ext"
+       sce:kind="codec" sce:default-endian="big" name="nibble">
+  <datamodel>
+    <sce:field id="head" sce:type="uint8" sce:byte="0" sce:bit-offset="4" sce:bit-size="4"/>
+    <sce:field id="n" sce:type="uint16" sce:byte="1" sce:bit-size="vle"/>
+  </datamodel>
+</scxml>"#,
+    )
+    .expect("write the nibble codec");
+    let refused = python_codec_unlowered_file(&path, &[], &ForgeCompileOptions::default())
+        .expect_err("the parser refuses a field of part of its bytes in a streamed frame");
+    assert!(
+        format!("{refused:?}").contains("a frame written field by field gives each field bytes"),
+        "{refused:?}"
+    );
+}
+
 /// The codecs of `tests/forge/resources` the Python backend prints, by
 /// document stem, in order: every one of them.
 const PRINTED: &[&str] = &[

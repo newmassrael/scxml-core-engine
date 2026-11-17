@@ -1257,6 +1257,18 @@ old encode, the old encode and its templates are removed in the same landing.
    hand-written `cases`, which writes six sources of `codec_cbor_map`; for a component, the content-line model, whose
    twelve hand-chosen values become the sources of `codec_content_line_event`. Each is read back by its model before
    it is written.
+
+   *Amendment of 2026-11-17: a streamed field of part of its bytes is no form.* The amendment on what the Python
+   printer refuses, and the eighteenth landing after it, named a streamed field of part of its bytes a form the
+   printer refuses until a byte case holds it. Read again: no such field reaches a printer. The parser refuses a field
+   of part of its bytes in a frame written field by field, whose every field has bytes of its own, so the bits it
+   leaves no other field can use (`bit_layout::refusal`, "give it whole bytes, or lay the codec out by byte"); a field
+   of part of its bytes is one of a frame laid out by byte, written as a piece of its byte (`Write::Byte`), which the
+   printer writes. Decided: it is an invariant of the analysis, as a VLE of eight bits is, and the printer asserts it
+   where it writes a streamed fixed field (`STREAMED_WHOLE`). With it, what the Python printer refuses beside the C++
+   printer is two named arms of one class, which no variant of the repository has (each arm of every variant imports
+   a document of its own, read 2026-11-17), so the census of the codecs the Python backend prints is the C++ census,
+   one list of 167 codecs of the resources, and neither refuses a codec of the repository.
 5. Swift, when its codec lowers what the plan holds.
    *Swift lowers what the plan holds, 2026-11-16:* its codec writes every codec of the repository Rust writes,
    but the one only an MCU-class backend writes (`a_swift_codec_is_written_wherever_rust_writes_one.rs`): an

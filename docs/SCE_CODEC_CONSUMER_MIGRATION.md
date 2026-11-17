@@ -2144,8 +2144,9 @@ moves: each was printed already.
 
 - A codec whose plan uses a form the Python printer does not lower is no longer generated with the template's
   encode: `generate` refuses it as `generate/unsupported-feature`, naming the form (a `float32`, `float64` or
-  `bool` field, two arms whose codecs are one Python class, a streamed field of part of its bytes), and so is a
-  codec or a document that imports it. Such a codec is held in an integer, or its arms in codecs of their own.
+  `bool` field, or two arms whose codecs are one Python class), and so is a codec or a document that imports it.
+  Such a codec is held in an integer, or its arms in codecs of their own. A field of part of its bytes in a frame
+  written field by field is no such form: the parser refuses it on every backend.
 - A value with a variant holds the arm itself in `body`, as every printed codec has since ADR 0081's twelfth
   Python landing: read the arm by `isinstance(value.body, ArmCodec)`, not by `value.body.kind`.
 

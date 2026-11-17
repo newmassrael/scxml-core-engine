@@ -42,6 +42,13 @@ pub(super) mod source_case;
 const EVERY_VLE_WRITTEN: &str =
     "the parser makes a VLE only of uint16, uint32 or uint64, which the runtime writes";
 
+/// Why a fixed field of a frame written field by field is of whole bytes: the
+/// parser refuses one of part of its bytes there, which leaves bits no other
+/// field can use (`bit_layout::refusal`); a field of part of its bytes is one
+/// of a frame laid out by byte, written as a piece of its byte.
+const STREAMED_WHOLE: &str = "the parser refuses a field of part of its bytes in a frame \
+     written field by field (bit_layout::refusal)";
+
 /// Why a flag the presence of several fields decides is one of fields held
 /// together: two or more fields gated on one flag alone are the sides of one
 /// group of it (`codec_roles::gate_groups`), as the C++ printer holds it.
@@ -258,36 +265,21 @@ fn positional_forms(plan: &EncodePlan<'_>, imports: &[ImportContext]) -> Vec<Str
                     forms.extend(unread_form(plan, &numbers, field));
                 }
             }
+            // A field is written always, where the value holds it, or where its
+            // gate holds, tested on the carriers as the encode writes them, on
+            // the inputs it is handed, on the arm the value holds of a group
+            // whose gate is a chain's membership, and on the entries of a chain
+            // for any other membership. A fixed field is of whole bytes
+            // ([`STREAMED_WHOLE`]) and a VLE of a width the runtime writes
+            // ([`EVERY_VLE_WRITTEN`]); a body or a list is named by the
+            // elements above. A list is walked entry by entry, setting on each
+            // entry but the last the flag the chain ends on and handing each
+            // entry what the one before it was; a list held to a law through
+            // its `Lawful`, and a bare entry's chain through its `Placed`, each
+            // of which reads as its entries, the named entry made at its place
+            // (docs/adr/0065 §6 R6a).
             Write::Streamed { field, .. } => {
                 forms.extend(unread_form(plan, &numbers, field));
-                // A field is written always, where the value holds it, or where
-                // its gate holds, tested on the carriers as the encode writes
-                // them, on the inputs it is handed, on the arm the value holds
-                // of a group whose gate is a chain's membership, and on the
-                // entries of a chain for any other membership. A list is
-                // walked entry by entry, setting on each entry but the last the
-                // flag the chain ends on and handing each entry what the one
-                // before it was; a list held to a law through its `Lawful`,
-                // and a bare entry's chain through its `Placed`, each of which
-                // reads as its entries, the named entry made at its place
-                // (docs/adr/0065 §6 R6a).
-                match &field.bit_size {
-                    BitSize::Fixed { .. } => {
-                        let whole =
-                            BitSpan::of(field, m.default_endian).is_some_and(|span| span.whole());
-                        if !whole {
-                            forms.push(format!(
-                                "field '{}': a streamed field of part of its bytes",
-                                field.id
-                            ));
-                        }
-                    }
-                    // A VLE is of a width the runtime writes
-                    // ([`EVERY_VLE_WRITTEN`]).
-                    BitSize::Vle { .. } | BitSize::Tail | BitSize::LengthRef => {}
-                    // A body or a list, which the elements above name.
-                    BitSize::Embed | BitSize::Repeat { .. } | BitSize::TlvChain { .. } => {}
-                }
             }
             // The variant above names it.
             Write::Variant => {}
@@ -2558,6 +2550,12 @@ fn encode_source(
             Write::Streamed { field, guard, list } => {
                 let body = match &field.bit_size {
                     BitSize::Fixed { .. } => {
+                        assert!(
+                            BitSpan::of(field, endian).is_some_and(|span| span.whole()),
+                            "`{}`: {}",
+                            field.id,
+                            STREAMED_WHOLE
+                        );
                         encode_whole_field_read_as(field, endian, &read(field), l)
                             .iter()
                             .map(|byte| format!("    w.write_u8({byte})\n"))
