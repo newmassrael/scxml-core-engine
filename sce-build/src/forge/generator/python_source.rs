@@ -154,7 +154,8 @@ fn positional_forms(plan: &EncodePlan<'_>, imports: &[ImportContext]) -> Vec<Str
     // of the variant the value holds, through that body's or arm's codec's
     // own function, which a codec the Python backend prints has, or by the
     // start of the list held to it (docs/adr/0065 §6 R8), which the value
-    // presents alone ([`grouped_law_forms`] names a group's).
+    // presents alone or a group holds, read off the arm the value holds
+    // ([`said_input`]).
     for element in &plan.elements {
         forms.extend(value_forms(imports, &element.field.id, &element.value));
     }
@@ -164,7 +165,12 @@ fn positional_forms(plan: &EncodePlan<'_>, imports: &[ImportContext]) -> Vec<Str
     // of the codec's own or flag inputs, derived from the arm the value holds.
     // Its members are held as an element alone is, two lists of one count
     // (R5) as one `Aligned` of the two, and a list held to a law as a
-    // `Lawful` of it, as one alone is ([`grouped_law_forms`]).
+    // `Lawful` of it, as one alone is, in that `Aligned` too, whichever of
+    // the two it is: a flag of the codec's own bound to every entry is
+    // derived from the start of the list the arm the value holds keeps, and
+    // is the bits the value presents where it holds another arm or none; an
+    // input of the codec's own is said by that start, read off the arm
+    // ([`said_input`]), and by nothing where the value holds another arm.
     // The chain whose memberships are gates of a group (R6b) is held in each
     // arm as a `Chain` of the kinds the arm says, optionally where a gate of
     // its own may leave it out, and where the one gate on a bare entry holds as
@@ -180,13 +186,12 @@ fn positional_forms(plan: &EncodePlan<'_>, imports: &[ImportContext]) -> Vec<Str
                 .expect("a group's member is a field of the codec");
             let value = plan.value(member);
             forms.extend(value_forms(imports, id, &value));
-            if matches!(&value, Value::List { law, .. } if !law.is_none()) {
-                if group.chain() == Some(id) {
-                    forms.push(format!(
-                        "group '{label}': a chain whose memberships are gates, held to a law"
-                    ));
-                }
-                forms.extend(grouped_law_forms(plan, group, id));
+            if matches!(&value, Value::List { law, .. } if !law.is_none())
+                && group.chain() == Some(id)
+            {
+                forms.push(format!(
+                    "group '{label}': a chain whose memberships are gates, held to a law"
+                ));
             }
         }
     }
@@ -322,42 +327,6 @@ fn value_forms(imports: &[ImportContext], id: &str, value: &Value<'_>) -> Vec<St
                     "field '{id}': a list of `{codec}`, a codec the Python backend refuses ({why})"
                 ));
             }
-        }
-    }
-    forms
-}
-
-/// What of `id`, a list `group` holds whose entries say the inputs it hands
-/// them, the printer does not print (docs/adr/0065 §6 R8).
-///
-/// Each arm that holds such a list holds it as the value holds one alone, a
-/// `Lawful` of its law: a flag of the codec's own bound to every entry is
-/// derived from the start of the list the arm the value holds keeps, and is
-/// the bits the value presents where it holds another arm or none; an input a
-/// chain supplies from the entry before starts fixed. As in C++, the printer
-/// does not hold to a law a list that shares its count with another (R5),
-/// which an arm holds as one `Aligned` of the two lists, nor a list whose law
-/// is over an input of the codec's own, which the value says by the list's
-/// start ([`said_input`]) and which a parent reads off the value's own
-/// element.
-fn grouped_law_forms(plan: &EncodePlan<'_>, group: &GateGroup, id: &str) -> Vec<String> {
-    let mut forms = Vec::new();
-    if group
-        .aligned
-        .as_ref()
-        .is_some_and(|(first, second)| first == id || second == id)
-    {
-        forms.push(format!(
-            "field '{id}': a list held to the law its entries say their inputs by, sharing \
-             its count with another list a gate decides"
-        ));
-    }
-    for law in super::rust_source::list_laws(&plan.roles, id) {
-        if let InputValue::Input { name } = &law.against {
-            forms.push(format!(
-                "field '{id}': a list on one side of a gate, held to the law its entries say \
-                 the codec's own input `{name}` by"
-            ));
         }
     }
     forms
@@ -962,6 +931,31 @@ struct Held {
     hold: Option<String>,
     /// The class of its bound, where it has one.
     class: Option<String>,
+    /// For a list always there, the expression that makes its default anew,
+    /// and whether that value may be shared as a class's default: a tuple or a
+    /// `Lawful` of no entries, which cannot change, may; one that holds entries
+    /// made by default, each a dataclass a caller can change, may not.
+    fresh: Option<(String, bool)>,
+    /// Whether it is a list held as the `Lawful` of its law, which is made of
+    /// a start and entries where a list alone is made of its entries.
+    lawful: bool,
+}
+
+impl Held {
+    /// What a class makes of `list`, a list of the element as a value sets
+    /// it: the class of its bound made of it, or the `Lawful` made of the
+    /// start and the entries it holds.
+    fn remade(&self, list: &str) -> String {
+        let class = self
+            .class
+            .as_ref()
+            .expect("a list is held in the class of its bound or its law");
+        if self.lawful {
+            format!("{class}({list}.start, {list}.entries)")
+        } else {
+            format!("{class}({list})")
+        }
+    }
 }
 
 /// How a class holds `field`, of the abstract type `value`, `Optional` where
@@ -1009,6 +1003,8 @@ fn held_as(
                 default,
                 hold: None,
                 class: None,
+                fresh: None,
+                lawful: false,
             };
         }
         // An integer is held in the class of its field's width and
@@ -1031,6 +1027,8 @@ fn held_as(
                     format!("{class}(value)")
                 }),
                 class: Some(class),
+                fresh: None,
+                lawful: false,
             };
         }
         Value::Scalar(ty) => {
@@ -1045,6 +1043,8 @@ fn held_as(
                 },
                 hold: None,
                 class: None,
+                fresh: None,
+                lawful: false,
             };
         }
         Value::Bytes(bound) | Value::Text(bound) => (bound, None),
@@ -1102,6 +1102,19 @@ fn held_as(
     } else {
         format!("{class}({fewest})")
     };
+    // The fewest entries of a list always there, each its codec's value made
+    // by default, of the class `of` makes them into, and whether the value it
+    // makes may be shared: one of no entries holds nothing a caller can change.
+    let made_anew = |of: &str, entry: &str| {
+        if bound.least == 0 {
+            (format!("{of}()"), true)
+        } else {
+            (
+                format!("{of}({entry}() for _ in range({}))", bound.least),
+                false,
+            )
+        }
+    };
     // A list held to the law its entries say their inputs by is held as the
     // `Lawful` of it, its entries in the class of their bound: made of the
     // start and the entries wherever it is set, and by default from the start
@@ -1117,9 +1130,8 @@ fn held_as(
     {
         if !law.is_none() {
             let lawful = law_part(gathered, codec, id, entries, law, &class);
-            let made = format!("{lawful}(value.start, value.entries)");
             gathered.factory |= !gated;
-            return Held {
+            let mut held = Held {
                 presented: optional(&lawful),
                 ty: optional(&lawful),
                 default: if gated {
@@ -1132,21 +1144,32 @@ fn held_as(
                         bound.least
                     )
                 },
-                hold: Some(if gated {
-                    format!("None if value is None else {made}")
-                } else {
-                    made
-                }),
+                hold: None,
+                fresh: (!gated).then(|| made_anew(&format!("{lawful}.of"), entry)),
                 class: Some(lawful),
+                lawful: true,
             };
+            let made = held.remade("value");
+            held.hold = Some(if gated {
+                format!("None if value is None else {made}")
+            } else {
+                made
+            });
+            return held;
         }
     }
+    let fresh = match &entry {
+        Some(entry) if !gated => Some(made_anew(&class, entry)),
+        _ => None,
+    };
     Held {
         presented: optional(&class),
         ty: optional(&class),
         default,
         hold: Some(made),
         class: Some(class),
+        fresh,
+        lawful: false,
     }
 }
 
@@ -1499,6 +1522,11 @@ fn group_part(
             if group.is_second_in(arm, id) {
                 continue;
             }
+            // A list held to the law its entries say their inputs by is the
+            // `Lawful` of it in the pair, as it is alone (R8): set as the
+            // `Lawful` of the start and the entries the pair is handed, and
+            // decoded as the `Lawful` of the start the frame gave, which
+            // refuses entries that break the law before the two are paired.
             if let Some(second) = group.second_of(arm, id) {
                 let (one, two) = (&helds[id.as_str()], &helds[second]);
                 let bound_of = |held: &Held| {
@@ -1506,22 +1534,46 @@ fn group_part(
                         .clone()
                         .expect("two lists of one count are each held in the class of its bound")
                 };
+                let fresh_of = |held: &Held| {
+                    held.fresh
+                        .clone()
+                        .expect("two lists of one count are each always there in the arm")
+                };
                 let (first_class, second_class) = (bound_of(one), bound_of(two));
+                let ((first_made, first_shared), (second_made, second_shared)) =
+                    (fresh_of(one), fresh_of(two));
                 let pair = aligned_member(l, id, second);
                 gathered.runtime("bounded", "Aligned");
+                // A pair of lists of no entries holds nothing a caller can
+                // change, so every value may share it; one of entries made by
+                // default is made anew for every value.
+                let paired = format!("Aligned({first_made}, {second_made})");
+                let default = if first_shared && second_shared {
+                    paired
+                } else {
+                    gathered.factory = true;
+                    format!("field(default_factory=lambda: {paired})")
+                };
                 members.push_str(&format!(
-                    "    {pair}: Aligned[{first_class}, {second_class}] = Aligned({}, {})\n",
-                    one.default, two.default
+                    "    {pair}: Aligned[{first_class}, {second_class}] = {default}\n"
                 ));
                 hold.push_str(&hold_line(
                     &hold,
                     &pair,
-                    &format!("Aligned({first_class}(value.first), {second_class}(value.second))"),
+                    &format!(
+                        "Aligned({}, {})",
+                        one.remade("value.first"),
+                        two.remade("value.second")
+                    ),
                 ));
+                let decoded = |list: &str| {
+                    decoded_lawful(plan, l, struct_name, list)
+                        .unwrap_or_else(|| l.codec_field_decode_local(list))
+                };
                 args.push(format!(
                     "{pair}=Aligned({}, {})",
-                    l.codec_field_decode_local(id),
-                    l.codec_field_decode_local(second)
+                    decoded(id),
+                    decoded(second)
                 ));
                 continue;
             }
@@ -1834,6 +1886,87 @@ fn gate_holds(struct_name: &str, group: &GateGroup, gate: usize, held: &str) -> 
     }
 }
 
+/// A Python expression that is `each` of the member `id` of `group`, read off
+/// `held`, the group as the value holds it, where the arm it holds holds the
+/// member, and `otherwise` where it holds another arm or none. Each arm reads
+/// the member as its attribute, or as one of the two lists of one count it
+/// holds as one `Aligned` (docs/adr/0065 §6 R5), and the arms that read it
+/// alike are tested together. `otherwise` is `None` only for a member every
+/// arm holds of a group the value always holds an arm of
+/// ([`EVERY_ARM_HOLDS_IT`]), which the last arm tested then holds untested.
+fn off_arm(
+    l: &LangCtx,
+    struct_name: &str,
+    group: &GateGroup,
+    id: &str,
+    held: &str,
+    each: &dyn Fn(&str) -> String,
+    otherwise: Option<&str>,
+) -> String {
+    let classes = arm_classes(struct_name, group);
+    let mut reads: Vec<(String, Vec<&str>)> = Vec::new();
+    for (class, arm) in classes.iter().zip(&group.arms) {
+        if !arm.fields.iter().any(|f| f == id) {
+            continue;
+        }
+        let read = if let Some(second) = group.second_of(arm, id) {
+            format!("{held}.{}.first", aligned_member(l, id, second))
+        } else if group.is_second_in(arm, id) {
+            let (first, _) = group
+                .aligned
+                .as_ref()
+                .expect("the second of two lists of one count is aligned");
+            format!("{held}.{}.second", aligned_member(l, first, id))
+        } else {
+            format!("{held}.{}", l.codec_field_id(id))
+        };
+        match reads.iter_mut().find(|(r, _)| *r == read) {
+            Some((_, arms)) => arms.push(class.as_str()),
+            None => reads.push((read, vec![class.as_str()])),
+        }
+    }
+    let held_by: usize = reads.iter().map(|(_, arms)| arms.len()).sum();
+    let always = held_by == group.arms.len() && group.absent.is_none();
+    if otherwise.is_none() {
+        assert!(always, "`{id}`: {}", EVERY_ARM_HOLDS_IT);
+    }
+    match (reads.as_slice(), otherwise) {
+        ([(read, _)], _) if always => each(read),
+        ([(read, arms)], Some(otherwise)) if arms.len() == group.arms.len() => {
+            format!("{otherwise} if {held} is None else {}", each(read))
+        }
+        _ => {
+            let mut chain = String::new();
+            for (i, (read, arms)) in reads.iter().enumerate() {
+                if otherwise.is_none() && i + 1 == reads.len() {
+                    chain.push_str(&each(read));
+                    continue;
+                }
+                let tested = match arms.as_slice() {
+                    [one] => one.to_string(),
+                    many => format!("({})", many.join(", ")),
+                };
+                chain.push_str(&format!(
+                    "{} if isinstance({held}, {tested}) else ",
+                    each(read)
+                ));
+            }
+            if let Some(otherwise) = otherwise {
+                chain.push_str(otherwise);
+            }
+            chain
+        }
+    }
+}
+
+/// Why a member read off the arm the value holds with nothing to answer where
+/// it holds none is in every arm: such a read is of a list no gate decides,
+/// which the roles put into every arm of the group it shares its count with
+/// (docs/adr/0065 §6 R5), a group of one flag whose two values are each an arm.
+const EVERY_ARM_HOLDS_IT: &str = "a member read with no answer for another arm is a list no \
+     gate decides, held by every arm of a group the value always holds one of \
+     (codec_roles::gate_groups)";
+
 /// The classes of the variant of `plan`, into `gathered`, and how the value
 /// holds it, where the codec has one: the arm a value holds is a value of the
 /// arm's codec's class, imported whole as a body's is, or a `{Codec}Default`
@@ -2093,50 +2226,16 @@ fn encode_source(
         let name = super::rust_source::group_accessor(group);
         let held = format!("_g_{name}");
         out.push_str(&format!("    {held} = src.{name}\n"));
-        let classes = arm_classes(struct_name, group);
         for id in group.fields() {
-            // How each arm that holds the member reads it off the arm: as its
-            // attribute, or as one of the two lists of one count it holds as
-            // one `Aligned` (docs/adr/0065 §6 R5); the arms that read it alike
-            // are tested together.
-            let mut reads: Vec<(String, Vec<&str>)> = Vec::new();
-            for (class, arm) in classes.iter().zip(&group.arms) {
-                if !arm.fields.iter().any(|f| f == id) {
-                    continue;
-                }
-                let read = if let Some(second) = group.second_of(arm, id) {
-                    format!("{held}.{}.first", aligned_member(l, id, second))
-                } else if group.is_second_in(arm, id) {
-                    let (first, _) = group
-                        .aligned
-                        .as_ref()
-                        .expect("the second of two lists of one count is aligned");
-                    format!("{held}.{}.second", aligned_member(l, first, id))
-                } else {
-                    format!("{held}.{}", l.codec_field_id(id))
-                };
-                match reads.iter_mut().find(|(r, _)| *r == read) {
-                    Some((_, arms)) => arms.push(class.as_str()),
-                    None => reads.push((read, vec![class.as_str()])),
-                }
-            }
-            let every = reads.len() == 1 && reads[0].1.len() == group.arms.len();
-            let bound = if every && group.absent.is_none() {
-                reads.remove(0).0
-            } else if every {
-                format!("None if {held} is None else {}", reads[0].0)
-            } else {
-                let mut bound = String::new();
-                for (read, arms) in &reads {
-                    let tested = match arms.as_slice() {
-                        [one] => one.to_string(),
-                        many => format!("({})", many.join(", ")),
-                    };
-                    bound.push_str(&format!("{read} if isinstance({held}, {tested}) else "));
-                }
-                bound.push_str("None");
-                bound
-            };
+            let bound = off_arm(
+                l,
+                struct_name,
+                group,
+                id,
+                &held,
+                &|read: &str| read.to_string(),
+                Some("None"),
+            );
             out.push_str(&format!("    {} = {bound}\n", source(id)));
         }
     }
@@ -2161,19 +2260,24 @@ fn encode_source(
     for said in plan.said.iter().filter(|said| said.read) {
         let name = &said.input.name;
         let value = match &plan.roles.inputs[name] {
-            // A list a gate leaves out says nothing of the input, and its gate
-            // reads it clear, as every printer reads it (docs/adr/0065 §6 R8).
+            // The start of the list, read off the local it is bound to: the
+            // source's element, or for a member of a group the local bound off
+            // the arm the value holds (docs/adr/0065 §6 R4b). A list a gate
+            // leaves out says nothing of the input, and its gate reads it
+            // clear, as every printer reads it (R8).
             InputSource::List {
                 list,
                 input,
-                partly: true,
+                partly,
                 ..
             } => {
-                let held = format!("src.{}", l.codec_field_id(list));
-                format!(
-                    "(0 if {held} is None else int({}))",
-                    law_start(plan, list, input, &held)
-                )
+                let held = element_read(plan, l, list);
+                let start = format!("int({})", law_start(plan, list, input, &held));
+                if *partly {
+                    format!("(0 if {held} is None else {start})")
+                } else {
+                    start
+                }
             }
             _ if plan.roles.says_input_partly(name) => {
                 unreachable!("`{name}`: {}", FORWARD_READ_BY_NO_GATE)
@@ -2699,16 +2803,35 @@ fn input_functions(
         } else {
             ("int", "")
         };
+        // An input the start of a list a group holds says is read off the
+        // group, read once, as the encode reads it.
+        let group = said_group(plan, name)
+            .map(|group| {
+                let accessor = super::rust_source::group_accessor(group);
+                format!("    _g_{accessor} = src.{accessor}\n")
+            })
+            .unwrap_or_default();
         out.push_str(&format!(
             "\n\n\ndef input_{snake}(src: {struct_name}Source) -> {answer}:\n\
              \x20   \"\"\"The flag input ``{name}`` a source of :class:`{struct_name}` says, which\n\
              \x20   its encode is not handed (docs/adr/0065 §6 R4a){nothing}.\"\"\"\n\
+             {group}\
              \x20   return {}\n",
             said_input(plan, l, imports, struct_name, name),
             snake = input_name(name),
         ));
     }
     out.trim_end_matches('\n').to_string()
+}
+
+/// The group that holds the list whose start says the flag input `input` of
+/// `plan` (docs/adr/0065 §6 R4b, R8), which [`said_input`] reads the list off
+/// as `_g_<group>`; `None` where no list a group holds says it.
+fn said_group<'p>(plan: &'p EncodePlan<'_>, input: &str) -> Option<&'p GateGroup> {
+    match &plan.roles.inputs[input] {
+        InputSource::List { list, .. } => plan.roles.group_of(list),
+        _ => None,
+    }
 }
 
 /// The value of the flag input `input` the value says (docs/adr/0065 §6 R4a),
@@ -2803,12 +2926,31 @@ fn said_input(
             partly,
             ..
         } => {
+            let start = |held: &str| format!("int({})", law_start(plan, list, entry_input, held));
+            // A list a group holds is read off the arm the value holds that
+            // holds it (docs/adr/0065 §6 R4b), off the group read once as
+            // `_g_<group>` ([`said_group`]); it says nothing where the value
+            // holds another arm or none.
+            if let Some(group) = plan.roles.group_of(list) {
+                let held = format!("_g_{}", super::rust_source::group_accessor(group));
+                return format!(
+                    "({})",
+                    off_arm(
+                        l,
+                        struct_name,
+                        group,
+                        list,
+                        &held,
+                        &start,
+                        partly.then_some("None")
+                    )
+                );
+            }
             let held = format!("src.{}", l.codec_field_id(list));
-            let start = format!("int({})", law_start(plan, list, entry_input, &held));
             if *partly {
-                format!("(None if {held} is None else {start})")
+                format!("(None if {held} is None else {})", start(&held))
             } else {
-                start
+                start(&held)
             }
         }
     }

@@ -804,6 +804,124 @@ fn a_list_held_to_a_law_is_a_lawful_whose_start_derives_its_bound_flag() {
     );
 }
 
+/// A list a group holds whose entries say the codec's own input it hands them
+/// says that input by its start, read off the arm the value holds
+/// (docs/adr/0065 §6 R4b, R8): the input's own function reads the group once
+/// and answers the start of the list where the value holds the arm that holds
+/// it and `None` otherwise, the encode is not handed the input, and the decode
+/// holds the list it read to the law from the input it is handed.
+///
+/// Turns red where `python_source::positional_forms` names such a list
+/// unlowered again, `said_input` reads the list off the source as an element
+/// of its own (`src.entries`) rather than off the arm, or `input_functions`
+/// stops binding the group before it reads it.
+#[test]
+fn an_input_a_list_a_group_holds_says_is_read_off_the_arm() {
+    let name = "codec_repeat_flag_forward_group";
+    assert!(unlowered(name).is_empty(), "{:?}", unlowered(name));
+    let text = resource_module(name);
+    holds(
+        name,
+        &text,
+        &[
+            "\ndef input_wide(src: CodecRepeatFlagForwardGroupSource) -> Optional[int]:\n",
+            "    _g_head_l = src.head_l\n    return (int(_g_head_l.entries.start) if \
+             isinstance(_g_head_l, CodecRepeatFlagForwardGroupHeadLL) else None)",
+            "\ndef encode_source(src: CodecRepeatFlagForwardGroupSource, w: SceSink",
+            "entries=CodecRepeatFlagForwardGroupEntriesLawful((wide != 0), f_entries)",
+        ],
+    );
+    holds_none(name, &text, &["src.entries", "w: SceSink, wide: int"]);
+}
+
+/// A list a gate decides that shares its count with a list always there, and
+/// whose entries say the flag it hands them, is held to its law in the
+/// `Aligned` of the two the arm holds (docs/adr/0065 §6 R5, R8): the pair's
+/// second list is the `Lawful` of the law, made of the start and the entries of
+/// the list the pair is handed, the flag is derived from the start of the list
+/// the encode bound off that arm, and the decode holds the list it read to the
+/// law from the flag the frame gave before it pairs the two.
+///
+/// Turns red where `python_source::positional_forms` names such a pair
+/// unlowered again, `group_part` makes the pair's lawful list of the list
+/// alone (`Held::remade`), defaults it to other than a `Lawful` of no entries,
+/// or pairs the list the decode read unheld to its law.
+#[test]
+fn a_list_held_to_its_law_is_paired_with_the_list_it_shares_its_count_with() {
+    let name = "codec_repeat_flag_aligned_group";
+    assert!(unlowered(name).is_empty(), "{:?}", unlowered(name));
+    let text = resource_module(name);
+    holds(
+        name,
+        &text,
+        &[
+            "class CodecRepeatFlagAlignedGroupWeightsLawful(Lawful):\n",
+            "    links_weights: Aligned[CodecRepeatFlagAlignedGroupLinksList, \
+             CodecRepeatFlagAlignedGroupWeightsLawful] = \
+             Aligned(CodecRepeatFlagAlignedGroupLinksList(), \
+             CodecRepeatFlagAlignedGroupWeightsLawful.of())\n",
+            "            value = Aligned(CodecRepeatFlagAlignedGroupLinksList(value.first), \
+             CodecRepeatFlagAlignedGroupWeightsLawful(value.second.start, value.second.entries))\n",
+            "_c_head = (_c_head & ~0x1) | ((int(_e_weights.start)) << 0)\n",
+            "links_weights=Aligned(f_links, CodecRepeatFlagAlignedGroupWeightsLawful(\
+             (((f_head >> 0) & 1) != 0), f_weights))",
+        ],
+    );
+    holds_none(
+        name,
+        &text,
+        &[
+            "CodecRepeatFlagAlignedGroupWeightsLawful(value.second)",
+            "links_weights=Aligned(f_links, f_weights)",
+        ],
+    );
+}
+
+/// A list always there that shares its count with a list a gate decides, and
+/// whose entries say the flag it hands them, is held to its law in every arm
+/// (docs/adr/0065 §6 R5, R8): as the first list of the `Aligned` the arm where
+/// the gate holds holds, and alone in the other. The flag is derived from the
+/// start of the list the encode bound off whichever arm the value holds, and
+/// the decode holds the list it read to the law from the flag the frame gave in
+/// both arms.
+///
+/// Turns red where `python_source::group_part` makes the pair's first list of
+/// the list alone, `held_as` stops holding the list alone as its `Lawful`, or
+/// the decode pairs the list it read unheld to its law.
+#[test]
+fn a_list_always_there_held_to_its_law_is_paired_with_a_gated_list() {
+    let name = "codec_repeat_flag_aligned_always";
+    assert!(unlowered(name).is_empty(), "{:?}", unlowered(name));
+    let text = resource_module(name);
+    let lawful = "CodecRepeatFlagAlignedAlwaysLinksLawful((((f_head >> 0) & 1) != 0), f_links)";
+    holds(
+        name,
+        &text,
+        &[
+            "class CodecRepeatFlagAlignedAlwaysLinksLawful(Lawful):\n",
+            "    links_weights: Aligned[CodecRepeatFlagAlignedAlwaysLinksLawful, \
+             CodecRepeatFlagAlignedAlwaysWeightsList] = \
+             Aligned(CodecRepeatFlagAlignedAlwaysLinksLawful.of(), \
+             CodecRepeatFlagAlignedAlwaysWeightsList())\n",
+            "            value = Aligned(CodecRepeatFlagAlignedAlwaysLinksLawful(value.first.start, \
+             value.first.entries), CodecRepeatFlagAlignedAlwaysWeightsList(value.second))\n",
+            "    links: CodecRepeatFlagAlignedAlwaysLinksLawful = \
+             field(default_factory=CodecRepeatFlagAlignedAlwaysLinksLawful.of)\n",
+            "_c_head = (_c_head & ~0x1) | ((int(_e_links.start)) << 0)\n",
+            &format!("links_weights=Aligned({lawful}, f_weights)"),
+            &format!("links={lawful}"),
+        ],
+    );
+    holds_none(
+        name,
+        &text,
+        &[
+            "CodecRepeatFlagAlignedAlwaysLinksLawful(value.first)",
+            "links_weights=Aligned(f_links, f_weights)",
+        ],
+    );
+}
+
 /// A chain a chain supplies an input from the entry before, held to a law,
 /// reads each entry's input through the entry codec's own `input_<name>` by an
 /// `AfterKey` that waits for the kind a class of the codec tells.
@@ -1340,7 +1458,10 @@ const PRINTED: &[&str] = &[
     "codec_quantity_temperature",
     "codec_repeat_basic",
     "codec_repeat_elem",
+    "codec_repeat_flag_aligned_always",
+    "codec_repeat_flag_aligned_group",
     "codec_repeat_flag_carrier",
+    "codec_repeat_flag_forward_group",
     "codec_repeat_flag_gated",
     "codec_repeat_flag_group",
     "codec_repeat_present_if_basic",
