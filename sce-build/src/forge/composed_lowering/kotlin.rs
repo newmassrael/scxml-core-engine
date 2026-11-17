@@ -721,6 +721,21 @@ impl ComposedSpelling for KotlinComposed<'_> {
     fn copy_list(&self, held: &Held, elem: &str, _elem_ty: &str) -> String {
         format!("({}).map {{ {elem} }}", held.text)
     }
+    // The data class's constructor, each field named as its declaration names
+    // its parameter ([`ComposedSpelling::record_def`]), so the call reads as
+    // the schema's fields do whatever their order.
+    fn record_of(&self, ty: &str, fields: &[(String, String)]) -> Option<String> {
+        let args: Vec<String> = fields
+            .iter()
+            .map(|(id, value)| format!("{id} = {value}"))
+            .collect();
+        Some(format!("{ty}({})", args.join(", ")))
+    }
+    // The empty `List`, its element inferred from the parameter it is handed
+    // to, as a list variable starts (`StaticTarget::list_empty`).
+    fn empty_list(&self, _ty: &str) -> Option<String> {
+        Some("emptyList()".to_string())
+    }
 
     // A record's unit names its fields as the schema does
     // ([`crate::forge::generator::event_schema_field_ident`]), and holds a
@@ -1089,6 +1104,32 @@ mod tests {
         machine: "M",
         carrier: KotlinCarrier::Json,
     };
+
+    /// A `record:R` variable of a record that holds a composition starts at the
+    /// data class built from its fields by name, a list of no lower count at
+    /// the empty `List` (docs/adr/0087, "Decided while landing item 8",
+    /// decision 10).
+    #[test]
+    fn a_record_is_built_from_its_fields_and_a_list_starts_empty() {
+        assert_eq!(
+            KOTLIN
+                .record_of(
+                    "MBoardRecord",
+                    &[
+                        ("title".to_string(), "t".to_string()),
+                        ("rects".to_string(), "l".to_string()),
+                    ],
+                )
+                .as_deref(),
+            Some("MBoardRecord(title = t, rects = l)")
+        );
+        assert_eq!(
+            KOTLIN
+                .empty_list(&KOTLIN.list_type("MRectRecord", 3))
+                .as_deref(),
+            Some("emptyList()")
+        );
+    }
 
     /// The Kotlin row of the one table of what each backend lowers of a
     /// composed value: a payload read at any depth, a list taken whole and a
