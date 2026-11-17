@@ -224,8 +224,10 @@ class JvmMethodSizeTest {
         } finally {
             sm.cleanup()
         }
+        // A saved 64-bit integer is its decimal text (SavedValues.of), which no
+        // reader holding JSON numbers as doubles can round.
         for ((index, id) in kept.withIndex()) {
-            assertEquals(index + 1L, saved.variable(id), "entering `paused` added one to `$id`")
+            assertEquals((index + 1L).toString(), saved.variable(id), "entering `paused` added one to `$id`")
         }
 
         val restored = JvmMethodSizeStaticStateMachine()
