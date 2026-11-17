@@ -21,12 +21,13 @@
 //! whole, so no codec has two encodes.
 
 use super::*;
-use crate::forge::codec_roles::ElementId;
+use crate::forge::codec_roles::{ElementId, InputSource};
 use crate::forge::codec_totality::RefusalKind;
 use crate::forge::encode_failure::EncodeFailure;
 use crate::forge::encode_plan::{
-    Absent, Bound, Clause, CodecPlan, Derive, Element, EncodePlan, Guard, Measure, Measured,
-    Narrow, Number, NumberInto, Offset, Presence, Value, Write,
+    Absent, Against, Bound, CheckSite, Clause, CodecPlan, Derive, Element, EncodePlan, Guard,
+    HandedFrom, InputCheck, Measure, Measured, Narrow, Number, NumberInto, Offset, Presence, Value,
+    Write,
 };
 use std::collections::{BTreeMap, BTreeSet};
 
@@ -46,12 +47,17 @@ pub(super) fn unlowered(plan: &CodecPlan<'_>, imports: &[ImportContext]) -> Opti
 /// handed no flag input and held to no law, always there, decided by a gate of
 /// a carrier's flags, or a number the value states while the content it
 /// measures is absent; whose every derived element is a number measured off
-/// byte strings, texts, lists and bodies, in a field or in a flag of a
-/// carrier, or a flag set where the elements it gates are there; and that
-/// takes no flag input. Its encode refuses, before its first byte, a number
-/// past what holds it, measures of one number that disagree, a number the
-/// value states beside content that says another, and what a body or an entry
-/// it holds refuses. Its writes are the fixed bytes and the byte strings of a
+/// byte strings, texts, lists and bodies or read off what a body says, in a
+/// field or in a flag of a carrier, or a flag set where the elements it gates
+/// are there. A flag input the value does not say is a parameter of the
+/// encode, and one it says, off a field gated on it alone or a body that says
+/// it, is read off the source; a body and a list's entries are handed each
+/// input their import binds. Its encode refuses, before its first byte, a
+/// number past what holds it, measures of one number that disagree, a number
+/// the value states beside content that says another, a gate it cannot derive
+/// that disagrees with the element it gates, an input a held codec says that
+/// disagrees with what it is handed, and what a body or an entry it holds
+/// refuses. Its writes are the fixed bytes and the byte strings of a
 /// positional layout and, of a streamed one, whole fixed fields,
 /// variable-length integers, byte strings, bodies, and lists and chains,
 /// walked entry by entry, a chain closed by an entry flag setting it on each
@@ -86,6 +92,57 @@ fn body_prefix(alias: &str) -> String {
     filters::to_snake_case(alias.to_string())
 }
 
+/// The names of the parameters an encode over a source takes besides its flag
+/// inputs, which no input may take.
+const ENCODE_PARAMETERS: [&str; 4] = ["src", "ctx", "w", "overrides"];
+
+/// The C name of the flag input `name`: a parameter of the encode and of the
+/// decode, and the local an input the value says is read into.
+fn input_name(name: &str) -> String {
+    filters::to_snake_case(name.to_string())
+}
+
+/// Whether the codec imported as `alias` is handed an input its import binds
+/// nothing to, which only a chain supplying it from the entry before hands.
+fn unbound_handed(plan: &EncodePlan<'_>, alias: &str) -> bool {
+    plan.handed
+        .get(alias)
+        .is_some_and(|inputs| inputs.iter().any(|handed| handed.from.is_none()))
+}
+
+/// What of the gate of `field` the encode does not test: it tests a bit of a
+/// carrier as the encode writes it and a flag input ([`gate_test`]).
+fn gate_form(plan: &EncodePlan<'_>, field: &CodecField) -> Option<String> {
+    let gate = field.present_if.as_ref()?;
+    plan.clauses(gate)
+        .iter()
+        .any(|clause| matches!(clause, Clause::Member { .. }))
+        .then(|| format!("field '{}': a gate of a chain's membership", field.id))
+}
+
+/// Whether the encode reads the flag input `name` the value says, so that it
+/// reads it off the elements first: a gate or a check of the plan reads it
+/// (`Said::read`), a gate the encode holds a field to tests it, or a codec the
+/// value holds is handed it.
+fn encode_reads(plan: &EncodePlan<'_>, name: &str) -> bool {
+    let tested = |field: &CodecField| {
+        field.present_if.as_ref().is_some_and(|gate| {
+            plan.clauses(gate)
+                .iter()
+                .any(|clause| matches!(clause, Clause::Input { name: n, .. } if n == name))
+        })
+    };
+    plan.said
+        .iter()
+        .any(|said| said.input.name == name && said.read)
+        || plan.gate_checks.iter().copied().any(tested)
+        || plan
+            .handed
+            .values()
+            .flatten()
+            .any(|handed| matches!(&handed.from, Some(HandedFrom::Input { name: n }) if n == name))
+}
+
 /// [`unlowered_forms`] of a positional codec.
 fn positional_forms(plan: &EncodePlan<'_>, imports: &[ImportContext]) -> Vec<String> {
     let m = plan.model;
@@ -93,8 +150,35 @@ fn positional_forms(plan: &EncodePlan<'_>, imports: &[ImportContext]) -> Vec<Str
     if m.variant.is_some() {
         forms.push("a variant".to_string());
     }
-    if !m.flag_inputs.is_empty() {
-        forms.push("a flag input".to_string());
+    // A flag input the encode is handed is a parameter of it, named as the
+    // decode names it, after the sink and before the overrides; one the value
+    // says is read off the source ([`said_input`]), as the input's own
+    // function `{codec}_input_<name>` reads it for a parent.
+    for input in &m.flag_inputs {
+        let name = input_name(&input.name);
+        if ENCODE_PARAMETERS.contains(&name.as_str()) || name.starts_with('_') {
+            forms.push(format!(
+                "flag input '{}': a name the encode's own parameters or locals take",
+                input.name
+            ));
+        }
+    }
+    for said in &plan.said {
+        match plan.roles.inputs.get(&said.input.name) {
+            Some(InputSource::Gate { .. } | InputSource::Forward { .. }) => {}
+            _ => forms.push(format!(
+                "flag input '{}': an input a group, an arm or a list's start says",
+                said.input.name
+            )),
+        }
+        // A value that says it in some of its values only answers no number
+        // the encode could test or hand on.
+        if plan.roles.says_input_partly(&said.input.name) && encode_reads(plan, &said.input.name) {
+            forms.push(format!(
+                "flag input '{}': an input the value says in part that the encode reads",
+                said.input.name
+            ));
+        }
     }
     for element in &plan.elements {
         let id = &element.field.id;
@@ -114,15 +198,18 @@ fn positional_forms(plan: &EncodePlan<'_>, imports: &[ImportContext]) -> Vec<Str
             }
             // Presented as the table and the context of its codec's source,
             // and written by that codec's own encode over it, which a codec
-            // the C11 backend prints has, handed nothing.
+            // the C11 backend prints has, handed each input its import binds
+            // ([`handed_args`]).
             Value::Body { codec } => {
                 if printed_body(imports, codec).is_none() {
                     forms.push(format!(
                         "field '{id}': a body of `{codec}`, which the C11 backend does not print"
                     ));
                 }
-                if plan.handed.get(*codec).is_some_and(|h| !h.is_empty()) {
-                    forms.push(format!("field '{id}': a body handed flag inputs"));
+                if unbound_handed(plan, codec) {
+                    forms.push(format!(
+                        "field '{id}': a codec handed an input its import binds nothing to"
+                    ));
                 }
             }
             // Presented as a walk of its entries, each a source of its codec,
@@ -137,9 +224,9 @@ fn positional_forms(plan: &EncodePlan<'_>, imports: &[ImportContext]) -> Vec<Str
                         "field '{id}': a list of `{codec}`, which the C11 backend does not print"
                     ));
                 }
-                if plan.handed.get(*codec).is_some_and(|h| !h.is_empty()) {
+                if unbound_handed(plan, codec) {
                     forms.push(format!(
-                        "field '{id}': a list whose entries are handed flag inputs"
+                        "field '{id}': a codec handed an input its import binds nothing to"
                     ));
                 }
                 if !law.is_none() {
@@ -213,12 +300,29 @@ fn positional_forms(plan: &EncodePlan<'_>, imports: &[ImportContext]) -> Vec<Str
     }
     // The encode refuses what the derivations above refuse, and what a body
     // it holds refuses, which a count of its writes finds first; a gate it
-    // cannot derive and an input a held codec says are checks of their own.
-    if !plan.gate_checks.is_empty() {
-        forms.push("a gate whose field the encode holds to it rather than derives".to_string());
+    // cannot derive is held to the element it gates, tested on the carriers
+    // as the encode writes them and on the inputs, and an input a held codec
+    // says to what the encode hands it, a bit of a carrier or an input.
+    for field in &plan.gate_checks {
+        if element_of(plan, &field.id).is_none() {
+            forms.push(format!(
+                "field '{}': a gate held to a field the value does not present alone",
+                field.id
+            ));
+        }
+        forms.extend(gate_form(plan, field));
     }
-    if !plan.input_checks.is_empty() {
-        forms.push("an input a held codec says that the encode hands it as well".to_string());
+    for check in &plan.input_checks {
+        match (&check.site, &check.against) {
+            (CheckSite::Arm { .. }, _) => {
+                forms.push(format!("element '{}': an input an arm says", check.at))
+            }
+            (_, Against::PreviousEntry { .. }) => forms.push(format!(
+                "element '{}': an input a chain's entry says of the entry before",
+                check.at
+            )),
+            _ => {}
+        }
     }
     let numbers = derived_numbers(plan);
     for write in &plan.program {
@@ -245,23 +349,10 @@ fn positional_forms(plan: &EncodePlan<'_>, imports: &[ImportContext]) -> Vec<Str
                     ));
                 }
                 // Written where its gate holds over the carriers the encode
-                // writes: a gate of a flag input or of a chain's membership
-                // reads what this printer does not hold.
+                // writes and the inputs: a gate of a chain's membership reads
+                // what this printer does not hold.
                 if *guard == Guard::Gate {
-                    let gate = field
-                        .present_if
-                        .as_ref()
-                        .expect("a field written where its gate holds is gated");
-                    if plan
-                        .clauses(gate)
-                        .iter()
-                        .any(|clause| !matches!(clause, Clause::Flag { .. }))
-                    {
-                        forms.push(format!(
-                            "field '{}': a gate of other than a carrier's flags",
-                            field.id
-                        ));
-                    }
+                    forms.extend(gate_form(plan, field));
                 }
                 match &field.bit_size {
                     BitSize::Fixed { .. } => {
@@ -311,8 +402,14 @@ fn number_form(element: &ElementId, number: &Number<'_>) -> Vec<String> {
             Measured::Encoded { .. } => {}
             // The entries the list's maker counted as it walked them.
             Measured::Entries { .. } => {}
-            Measured::Says { .. } | Measured::Start { .. } | Measured::ArmSays { .. } => {
-                forms.push(format!("element '{element}': a flag a held codec says"));
+            // What the body says, read through its codec's own function of
+            // the input over the source the value presents the body as.
+            Measured::Says { .. } => {}
+            Measured::Start { .. } => {
+                forms.push(format!("element '{element}': the start of a list's law"));
+            }
+            Measured::ArmSays { .. } => {
+                forms.push(format!("element '{element}': a flag an arm says"));
             }
         }
     }
@@ -708,7 +805,7 @@ pub(super) struct C11Source {
 pub(super) fn render(plan: &EncodePlan<'_>, l: &LangCtx, snake: &str) -> C11Source {
     let printed = C11Source {
         before_encode: before_encode(plan, l, snake),
-        encode_body: encode_body(snake),
+        encode_body: encode_body(plan, snake),
         decoded: decoded(plan, l),
     };
     // Every refusal the totality analysis names is one the encode writes.
@@ -1009,15 +1106,18 @@ fn encode_source(plan: &EncodePlan<'_>, l: &LangCtx, snake: &str) -> String {
     // `{snake}_encode_source_overriding`, handed the flags the parent sets
     // (`{snake}_overrides_t`), and `{snake}_encode_source` is that encode
     // handed none, so every other caller calls it as it calls any codec's.
+    // The flag inputs the value does not say are handed to the encode after
+    // the sink (docs/adr/0065 §6 R4a), one byte each, in the order the codec
+    // declares them, then the overrides.
     let overriding = !plan.overridable.is_empty();
-    let (params, args, encode) = if overriding {
-        (
-            format!(", {snake}_overrides_t overrides"),
-            ", overrides",
-            "encode_source_overriding",
-        )
+    let mut params = given_params(plan);
+    let mut args = given_args(plan);
+    let encode = if overriding {
+        params.push_str(&format!(", {snake}_overrides_t overrides"));
+        args.push_str(", overrides");
+        "encode_source_overriding"
     } else {
-        (String::new(), "", "encode_source")
+        "encode_source"
     };
     let signature = |name: &str| {
         format!(
@@ -1066,6 +1166,26 @@ fn encode_source(plan: &EncodePlan<'_>, l: &LangCtx, snake: &str) -> String {
             l.codec_field_id(&element.field.id)
         ));
     }
+    // An input is read where a gate, a check or a held codec needs it, which
+    // some layouts never do.
+    for input in &plan.given {
+        out.push_str(&format!("    (void){};\n", input_name(&input.name)));
+    }
+    // Each input the value says that a gate or a check of the codec reads,
+    // read off the elements under the name the gate reads it by; one no gate
+    // reads is left to the parent that asks for it, through the input's own
+    // function ([`said_inputs`]).
+    for said in plan
+        .said
+        .iter()
+        .filter(|said| encode_reads(plan, &said.input.name))
+    {
+        let name = input_name(&said.input.name);
+        out.push_str(&format!(
+            "    const uint8_t {name} = {};\n    (void){name};\n",
+            said_input(plan, l, &said.input.name, Read::Encode)
+        ));
+    }
     // What the encode derives (docs/adr/0081 §3), each refusal of it before
     // the first byte: a number from what it measures ([`derive_number`]),
     // held whole in a field as the local `_d_<field>`; and the flags of a
@@ -1074,9 +1194,21 @@ fn encode_source(plan: &EncodePlan<'_>, l: &LangCtx, snake: &str) -> String {
     // clear state), refused where two of them disagree, and a number its
     // bit-range holds.
     let mut folds: BTreeMap<&str, Vec<Fold>> = BTreeMap::new();
+    // A number of encoded lengths is counted once the carriers its bodies
+    // may be handed are as the encode writes them, below; such a number goes
+    // into a field, never into a flag a carrier holds.
+    let mut encoded: Vec<(&ElementId, &Number<'_>)> = Vec::new();
     let mut counted = BTreeSet::new();
     for derived in &plan.derivations {
         match (&derived.element, &derived.by) {
+            (element, Derive::Number(number))
+                if number
+                    .measures
+                    .iter()
+                    .any(|m| matches!(m.of, Measured::Encoded { .. })) =>
+            {
+                encoded.push((element, number));
+            }
             (ElementId::Flag { field, flag }, Derive::Presence(presence)) => {
                 let tests: Vec<String> = presence
                     .of
@@ -1117,7 +1249,7 @@ fn encode_source(plan: &EncodePlan<'_>, l: &LangCtx, snake: &str) -> String {
                 let measures: Vec<MeasureText> = number
                     .measures
                     .iter()
-                    .map(|measure| measure_text(plan, l, measure, &mut counted, &mut out))
+                    .map(|measure| measure_text(plan, l, measure, None, &mut counted, &mut out))
                     .collect();
                 if let Some((carrier, fold)) =
                     derive_number(plan, l, element, &number.into, &measures, &mut out)
@@ -1220,31 +1352,37 @@ fn encode_source(plan: &EncodePlan<'_>, l: &LangCtx, snake: &str) -> String {
             element_local(l, &field.id)
         }
     };
-    // Whether the gate of `field` holds over the carriers the encode writes:
-    // its clauses, each a bit of a carrier, joined by "or".
-    let gate_test = |field: &CodecField| {
-        let gate = field
-            .present_if
-            .as_ref()
-            .expect("a field written where its gate holds is gated");
-        plan.clauses(gate)
+    // Whether the gate of a field holds over the carriers the encode writes
+    // and the inputs, and what a held codec is handed.
+    let gate_holds = |field: &CodecField| gate_test(plan, field, &read);
+    let handed: &dyn Fn(&str) -> String = &|alias| handed_args(plan, alias, &read);
+
+    // What a value is held to before the first byte is written (docs/adr/0065
+    // §2), so a refusal leaves the writer at its start: each input a held
+    // codec says, to what this codec hands it, and each gate the encode
+    // cannot derive the presence from, to the element it gates.
+    for check in &plan.input_checks {
+        out.push_str(&input_check(plan, l, check, &read));
+    }
+    for field in &plan.gate_checks {
+        let present = format!("{}.present", element_local(l, &field.id));
+        out.push_str(&refuse_if(
+            &format!("({}) != {present}", gate_holds(field)),
+            &refusal(plan, RefusalKind::PresentIfMismatch, &field.id),
+        ));
+    }
+    // How many bytes each body encodes to, counted by its encode, handed what
+    // it is handed where it is written, over a counting sink.
+    for (element, number) in encoded {
+        let measures: Vec<MeasureText> = number
+            .measures
             .iter()
-            .map(|clause| match clause {
-                Clause::Flag {
-                    carrier,
-                    bit,
-                    negate,
-                } => format!(
-                    "(((uint64_t){} & 0x{:X}ull) {} 0)",
-                    read(carrier),
-                    1u64 << *bit,
-                    if *negate { "==" } else { "!=" }
-                ),
-                _ => unreachable!("`unlowered` prints a gate of a carrier's flags only"),
-            })
-            .collect::<Vec<_>>()
-            .join(" || ")
-    };
+            .map(|measure| measure_text(plan, l, measure, Some(handed), &mut counted, &mut out))
+            .collect();
+        if derive_number(plan, l, element, &number.into, &measures, &mut out).is_some() {
+            unreachable!("a number of encoded lengths goes into a field");
+        }
+    }
     let write =
         |byte: &str| format!("    SCE_FORGE_TRY_WRITE(sce_forge_writer_write_u8(w, {byte}));\n");
     // A byte string or a text, whole, from the view the source presents: a
@@ -1296,8 +1434,9 @@ fn encode_source(plan: &EncodePlan<'_>, l: &LangCtx, snake: &str) -> String {
                         };
                         let held = read(field);
                         body.push_str(&format!(
-                            "    SCE_FORGE_TRY_WRITE({}_encode_source({held}.table, {held}.ctx, w));\n",
-                            body_prefix(codec)
+                            "    SCE_FORGE_TRY_WRITE({}_encode_source({held}.table, {held}.ctx, w{}));\n",
+                            body_prefix(codec),
+                            handed(codec)
                         ));
                     }
                     // A list or a chain that ends with its scope, its entries
@@ -1313,6 +1452,7 @@ fn encode_source(plan: &EncodePlan<'_>, l: &LangCtx, snake: &str) -> String {
                         };
                         let held = read(field);
                         let entry = body_prefix(codec);
+                        let args = handed(codec);
                         let ends = match step {
                             Write::Streamed {
                                 list: Some(walk), ..
@@ -1328,12 +1468,12 @@ fn encode_source(plan: &EncodePlan<'_>, l: &LangCtx, snake: &str) -> String {
                                 "            {entry}_overrides_t _o = {entry}_overrides_none();\n            \
                                  _o.{member} = sce_optional_bool_some(_i + 1u < {held}.count);\n            \
                                  SCE_FORGE_TRY_WRITE({entry}_encode_source_overriding({held}.entry, \
-                                 _at, w, _o));\n",
+                                 _at, w{args}, _o));\n",
                                 member = override_member(l, carrier, flag)
                             ),
                             None => format!(
                                 "            SCE_FORGE_TRY_WRITE({entry}_encode_source({held}.entry, \
-                                 _at, w));\n"
+                                 _at, w{args}));\n"
                             ),
                         };
                         body.push_str(&format!(
@@ -1355,7 +1495,7 @@ fn encode_source(plan: &EncodePlan<'_>, l: &LangCtx, snake: &str) -> String {
                     }
                     // Derived whole and gated: where its gate holds, as the
                     // carriers the encode writes say.
-                    Guard::Gate => guarded(&gate_test(field), &body),
+                    Guard::Gate => guarded(&gate_holds(field), &body),
                 });
             }
             // A byte string or a text of a positional layout, whole, after
@@ -1391,16 +1531,283 @@ fn encode_source(plan: &EncodePlan<'_>, l: &LangCtx, snake: &str) -> String {
         ));
     }
     if overriding {
+        let (given, passed) = (given_params(plan), given_args(plan));
         out.push_str(&format!(
             "\n/* {snake}_encode_source_overriding with no flag set in place of the\n \
              * value's: the encode every caller but a parent that sets one calls. */\n\
              static inline sce_forge_codec_status_t {snake}_encode_source(\
-             const {snake}_source_t *src, const void *ctx, sce_forge_writer_t *w) {{\n    \
-             return {snake}_encode_source_overriding(src, ctx, w, {snake}_overrides_none());\n\
+             const {snake}_source_t *src, const void *ctx, sce_forge_writer_t *w{given}) {{\n    \
+             return {snake}_encode_source_overriding(src, ctx, w{passed}, \
+             {snake}_overrides_none());\n\
              }}\n"
         ));
     }
+    out.push_str(&said_inputs(plan, l, snake));
     out
+}
+
+/// The parameters of an encode over a source that the flag inputs the value
+/// does not say take, after the sink: `, uint8_t <name>` each, in the order
+/// the codec declares them, as the decode names them.
+fn given_params(plan: &EncodePlan<'_>) -> String {
+    plan.given
+        .iter()
+        .map(|input| format!(", uint8_t {}", input_name(&input.name)))
+        .collect()
+}
+
+/// The arguments [`given_params`] names, passed on as they are.
+fn given_args(plan: &EncodePlan<'_>) -> String {
+    plan.given
+        .iter()
+        .map(|input| format!(", {}", input_name(&input.name)))
+        .collect()
+}
+
+/// Where an input the value says is read: in the encode, off the locals each
+/// element was read into once, or in the input's own function a parent calls,
+/// off the source it is handed.
+#[derive(Clone, Copy)]
+enum Read {
+    Encode,
+    Source,
+}
+
+/// The `uint8_t` the input `input` the value says holds (docs/adr/0065 §6
+/// R4a): 1 exactly where the field gated on it alone is there (absent, for a
+/// field gated on its clear state), or what the body that hands it on says,
+/// read through that body's codec's own function of it, which answers an
+/// optional value where the body says it in some of its values only.
+/// [`unlowered`] names every other way a value says one.
+fn said_input(plan: &EncodePlan<'_>, l: &LangCtx, input: &str, at: Read) -> String {
+    let source = |id: &str| match at {
+        Read::Encode => element_local(l, id),
+        Read::Source => format!("src->{}(ctx)", l.codec_field_id(id)),
+    };
+    match plan.roles.inputs.get(input) {
+        Some(InputSource::Gate { field, when_clear }) => {
+            let (set, clear) = if *when_clear { (0, 1) } else { (1, 0) };
+            format!("(uint8_t)({}.present ? {set}u : {clear}u)", source(field))
+        }
+        // The body is always there: an input is handed on only from a body no
+        // gate decides (`codec_roles::said_inputs`).
+        Some(InputSource::Forward {
+            embed,
+            alias,
+            input,
+            ..
+        }) => {
+            let said = format!("{}_input_{}", body_prefix(alias), input_name(input));
+            match at {
+                Read::Encode => {
+                    let held = element_local(l, embed);
+                    format!("{said}({held}.table, {held}.ctx)")
+                }
+                // The pair the source presents the body as, its table and its
+                // context, each read through the source's function of it.
+                Read::Source => format!("{said}({}.table, {}.ctx)", source(embed), source(embed)),
+            }
+        }
+        _ => unreachable!("`unlowered` prints an input a field's gate or a body says only"),
+    }
+}
+
+/// `{snake}_input_<name>` for each input the value says, read off any source of
+/// it: what a parent that holds the codec derives the flag it binds to the
+/// input from, and holds what it hands the codec to (docs/adr/0065 §6 R4a). A
+/// value that can say nothing of the input answers an absent value then (§6
+/// R4e).
+fn said_inputs(plan: &EncodePlan<'_>, l: &LangCtx, snake: &str) -> String {
+    let mut out = String::new();
+    for said in &plan.said {
+        let name = input_name(&said.input.name);
+        let (answer, nothing) = if plan.roles.says_input_partly(&said.input.name) {
+            (
+                "sce_optional_uint8_t",
+                ",\n * and an absent value where the value says nothing of it",
+            )
+        } else {
+            ("uint8_t", "")
+        };
+        out.push_str(&format!(
+            "\n/* The flag input `{}` a source of {snake}_t says, which its encode is\n \
+             * not handed (docs/adr/0065 §6 R4a){nothing}. */\n\
+             static inline {answer} {snake}_input_{name}(const {snake}_source_t *src, \
+             const void *ctx) {{\n    \
+             return {};\n\
+             }}\n",
+            said.input.name,
+            said_input(plan, l, &said.input.name, Read::Source)
+        ));
+    }
+    out
+}
+
+/// The arguments the codec imported as `alias` is handed after the sink, one
+/// for each input it takes and does not say, in the order it declares them
+/// (docs/adr/0065 §6 R4a): the bits of a carrier as the encode writes it,
+/// read by `read`, or an input of this codec's own, passed on.
+fn handed_args(plan: &EncodePlan<'_>, alias: &str, read: &dyn Fn(&CodecField) -> String) -> String {
+    let Some(inputs) = plan.handed.get(alias) else {
+        return String::new();
+    };
+    inputs
+        .iter()
+        .map(|handed| match &handed.from {
+            Some(HandedFrom::Carrier {
+                carrier,
+                bit,
+                width,
+            }) => {
+                let mask = if *width >= 64 {
+                    u64::MAX
+                } else {
+                    (1u64 << width) - 1
+                };
+                format!(
+                    ", (uint8_t)(((uint64_t){} >> {bit}) & 0x{mask:X}ull)",
+                    read(carrier)
+                )
+            }
+            Some(HandedFrom::Input { name }) => format!(", {}", input_name(name)),
+            None => unreachable!("`unlowered` prints a codec handed only inputs its import binds"),
+        })
+        .collect()
+}
+
+/// Whether the gate of `field` holds over the carriers the encode writes,
+/// each read by `read`, and the flag inputs: its clauses joined by "or".
+fn gate_test(
+    plan: &EncodePlan<'_>,
+    field: &CodecField,
+    read: &dyn Fn(&CodecField) -> String,
+) -> String {
+    let gate = field
+        .present_if
+        .as_ref()
+        .expect("a field whose gate is tested is gated");
+    let bit = |value: String, mask: u64, negate: bool| {
+        format!(
+            "(((uint64_t){value} & 0x{mask:X}ull) {} 0)",
+            if negate { "==" } else { "!=" }
+        )
+    };
+    plan.clauses(gate)
+        .iter()
+        .map(|clause| match clause {
+            Clause::Flag {
+                carrier,
+                bit: at,
+                negate,
+            } => bit(read(carrier), 1u64 << *at, *negate),
+            Clause::Input { name, negate } => bit(input_name(name), 1, *negate),
+            Clause::Member { .. } => {
+                unreachable!("`unlowered` prints no gate of a chain's membership")
+            }
+        })
+        .collect::<Vec<_>>()
+        .join(" || ")
+}
+
+/// The statements that hold the input a held codec says to what this codec
+/// hands it (`check`), refused as a gate that disagrees with what it gates is
+/// (docs/adr/0065 §6 R4a): the bits of a carrier as the encode writes it, read
+/// by `read`, or an input of this codec's own. A value that says nothing of
+/// the input disagrees with nothing (§6 R4e); a body or a list a gate leaves
+/// out holds nothing that could disagree.
+fn input_check(
+    plan: &EncodePlan<'_>,
+    l: &LangCtx,
+    check: &InputCheck<'_>,
+    read: &dyn Fn(&CodecField) -> String,
+) -> String {
+    let fail = refusal(plan, RefusalKind::PresentIfMismatch, &check.at);
+    let handed = match &check.against {
+        Against::Carrier { carrier, bit } => {
+            format!("((((uint64_t){} >> {bit}) & 1u) != 0)", read(carrier))
+        }
+        Against::Input { name } => format!("({} != 0)", input_name(name)),
+        Against::PreviousEntry { .. } => {
+            unreachable!("`unlowered` prints no input a chain's entry says of the entry before")
+        }
+    };
+    let said = format!(
+        "{}_input_{}",
+        body_prefix(&check.codec),
+        input_name(&check.input)
+    );
+    // Whether the source `table` presents over `ctx` says the input otherwise
+    // than it is handed, at the indentation `pad`.
+    let otherwise = |table: &str, ctx: &str, pad: &str| {
+        if check.partly {
+            format!(
+                "{pad}{{\n\
+                 {pad}    const sce_optional_uint8_t _s = {said}({table}, {ctx});\n\
+                 {pad}    if (_s.present && ((_s.value != 0) != _h)) {{\n\
+                 {pad}        {fail}\n\
+                 {pad}    }}\n\
+                 {pad}}}\n"
+            )
+        } else {
+            format!(
+                "{pad}if ((({said}({table}, {ctx})) != 0) != _h) {{\n\
+                 {pad}    {fail}\n\
+                 {pad}}}\n"
+            )
+        }
+    };
+    let (test, present) = match &check.site {
+        CheckSite::Embed { body } => {
+            let local = element_local(l, &body.id);
+            let gated = plan.presence(body) == Presence::Gated;
+            let held = if gated {
+                format!("{local}.value")
+            } else {
+                local.clone()
+            };
+            (
+                otherwise(&format!("{held}.table"), &format!("{held}.ctx"), "        "),
+                gated.then(|| format!("{local}.present")),
+            )
+        }
+        // Every entry of the list, walked from the first.
+        CheckSite::List { list } => {
+            let local = element_local(l, &list.id);
+            let gated = plan.presence(list) == Presence::Gated;
+            let held = if gated {
+                format!("{local}.value")
+            } else {
+                local.clone()
+            };
+            (
+                format!(
+                    "        {{\n            \
+                     const void *_at = {held}.walk->begin({held}.ctx);\n            \
+                     for (size_t _i = 0; _i < {held}.count && _at != NULL; ++_i) {{\n\
+                     {}            \
+                     _at = {held}.walk->next({held}.ctx, _at);\n            \
+                     }}\n        \
+                     }}\n",
+                    otherwise(&format!("{held}.entry"), "_at", "                ")
+                ),
+                gated.then(|| format!("{local}.present")),
+            )
+        }
+        CheckSite::Arm { .. } => unreachable!("`unlowered` prints no variant"),
+    };
+    let test = match present {
+        Some(there) => {
+            let mut inner = String::new();
+            for line in test.lines() {
+                inner.push_str("    ");
+                inner.push_str(line);
+                inner.push('\n');
+            }
+            format!("        if ({there}) {{\n{inner}        }}\n")
+        }
+        None => test,
+    };
+    format!("    {{\n        const bool _h = {handed};\n{test}    }}\n")
 }
 
 /// The member of `{codec}_overrides_t` that sets `flag` of the carrier
@@ -1496,16 +1903,20 @@ fn refuse_if(test: &str, refused: &str) -> String {
 /// `measure` as the encode reads it, off the local the source's element was
 /// read into: the bytes a view holds, less or more its `sce:length-arith`, a
 /// length less a number the bytes may be shorter than refused; the entries a
-/// list's maker counted; or the bytes a
+/// list's maker counted; the input a body says, read through its codec's own
+/// function of it; or the bytes a
 /// body encodes to, counted by its codec's encode over the source the value
 /// presents it as into a counting sink, which stores nothing (docs/adr/0058
-/// §3) and passes on what the body refuses. A body is counted once into
+/// §3) and passes on what the body refuses, handed what `handed` answers for
+/// the body's codec, which the encode answers once the carriers are written.
+/// A body is counted once into
 /// `_k_<body>`, which `counted` keeps, and only where it is there. The
 /// statements that count or refuse go into `out`.
 fn measure_text(
     plan: &EncodePlan<'_>,
     l: &LangCtx,
     measure: &Measure<'_>,
+    handed: Option<&dyn Fn(&str) -> String>,
     counted: &mut BTreeSet<String>,
     out: &mut String,
 ) -> MeasureText {
@@ -1552,9 +1963,12 @@ fn measure_text(
             };
             let present = measure.gated.then(|| format!("{local}.present"));
             if counted.insert(body.id.clone()) {
+                let handed =
+                    handed.expect("an encoded length is counted once the carriers are written");
                 let count = format!(
-                    "    SCE_FORGE_TRY_WRITE({}_encode_source({held}.table, {held}.ctx, &{sink}));\n",
-                    body_prefix(codec)
+                    "    SCE_FORGE_TRY_WRITE({}_encode_source({held}.table, {held}.ctx, &{sink}{}));\n",
+                    body_prefix(codec),
+                    handed(codec)
                 );
                 out.push_str(&format!(
                     "    sce_forge_writer_t {sink} = sce_forge_writer_init_counting();\n"
@@ -1587,8 +2001,32 @@ fn measure_text(
                 }
             }
         }
-        _ => unreachable!(
-            "`unlowered` prints a number of byte strings, texts, lists and bodies only"
+        // The input the body says, read through its codec's own function of
+        // it off the source the value presents the body as (docs/adr/0065 §6
+        // R4a): the roles derive a flag only from a body that says it in every
+        // value, so the function answers a number. Where a gate leaves the
+        // body out it says nothing: a field beside it holds zero and a flag
+        // keeps the bits the value presents.
+        Measured::Says { body, codec, input } => {
+            let local = element_local(l, &body.id);
+            let held = if measure.gated {
+                format!("{local}.value")
+            } else {
+                local.clone()
+            };
+            MeasureText {
+                size: format!(
+                    "(size_t){}_input_{}({held}.table, {held}.ctx)",
+                    body_prefix(codec),
+                    input_name(input)
+                ),
+                present: measure.gated.then(|| format!("{local}.present")),
+                gated: measure.gated,
+            }
+        }
+        Measured::Start { .. } | Measured::ArmSays { .. } => unreachable!(
+            "`unlowered` prints a number of byte strings, texts, lists, bodies and what a body \
+             says only"
         ),
     }
 }
@@ -1780,12 +2218,14 @@ fn guarded(test: &str, body: &str) -> String {
 }
 
 /// [`C11Source::encode_body`]: the value checked by [`check_value`] before the
-/// first byte, then encoded over the value's table.
-fn encode_body(snake: &str) -> String {
+/// first byte, then encoded over the value's table, handed the flag inputs the
+/// value does not say, which the value's encode takes as its own parameters.
+fn encode_body(plan: &EncodePlan<'_>, snake: &str) -> String {
     format!(
         "    /* The value within its bounds before the first byte (docs/adr/0081 §2). */\n    \
          SCE_FORGE_TRY_WRITE({snake}_check_value(self));\n    \
-         return {snake}_encode_source({snake}_value_source(), self, w);\n"
+         return {snake}_encode_source({snake}_value_source(), self, w{});\n",
+        given_args(plan)
     )
 }
 

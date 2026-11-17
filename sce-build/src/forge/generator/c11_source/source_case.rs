@@ -32,18 +32,43 @@ pub(crate) struct SourceCase {
     /// The statements that set each element the value presents, in order, on
     /// a value the harness has zeroed.
     pub statements: Vec<String>,
-    /// Each element by its id, with a C expression over `decoded` and `value`
-    /// that holds when the two present the same.
+    /// Each element by its id, and each input the value says, with a C
+    /// expression over `decoded` and `value` that holds when the two present
+    /// the same, or when the value says the input the case hands it.
     pub checks: Vec<(String, String)>,
+    /// The arguments of the decode after the value it writes: the flag inputs
+    /// the case hands the codec, in the order the codec declares them.
+    pub inputs: Vec<String>,
+    /// The flag inputs the encode is handed after the sink: those the value
+    /// does not say, in the order the codec declares them.
+    pub encode_inputs: Vec<String>,
 }
 
-/// The byte case of `source`, a value of the codec `plan`. The case names no
-/// symbol of the codec: the harness holds the value in the codec's struct, and
-/// each statement sets a member of it. A codec whose case hands it flag inputs
-/// (`inputs`) or a caller's tag (`tag`), or that holds a group or a variant, is
-/// one the C11 printer does not print, and its case is refused by name; so is a
-/// source that states an element the value does not present or leaves out one
-/// it does.
+impl SourceCase {
+    /// A case that sets nothing and hands nothing, which the members of a
+    /// value, a body or the entries of a list are written into.
+    fn empty() -> Self {
+        SourceCase {
+            statements: Vec::new(),
+            checks: Vec::new(),
+            inputs: Vec::new(),
+            encode_inputs: Vec::new(),
+        }
+    }
+}
+
+/// The byte case of `source`, a value of the codec `plan`, its parent handing
+/// it `inputs` (`{"name": 0 | 1}`, or `null` for a codec that takes none). The
+/// case names no symbol of the codec but the function of an input the value
+/// says: the harness holds the value in the codec's struct, and each statement
+/// sets a member of it. Each input is handed to the decode, one the value does
+/// not say to the encode too, and the value is held to saying each other one
+/// through the input's own function (`{codec}_input_<name>`, docs/adr/0065 §6
+/// R4a), which answers an absent value where the value says nothing of it. A
+/// codec whose case hands it a caller's tag (`tag`), or that holds a group or
+/// a variant, is one the C11 printer does not print, and its case is refused
+/// by name; so is a source that states an element the value does not present
+/// or leaves out one it does.
 pub(crate) fn source_case(
     plan: &EncodePlan<'_>,
     source: &serde_json::Value,
@@ -51,10 +76,26 @@ pub(crate) fn source_case(
     tag: &serde_json::Value,
     held: &mut dyn HeldCodecs,
 ) -> Result<SourceCase, String> {
-    if !case_inputs(plan, inputs)?.is_empty() {
-        return Err("a C11 case hands no flag input yet: the C11 printer \
-                    prints no codec that takes one"
-            .to_string());
+    let snake = filters::to_snake_case(plan.model.name.clone());
+    let mut args = Vec::new();
+    let mut given = Vec::new();
+    let mut said = Vec::new();
+    for (input, value, to_encode) in case_inputs(plan, inputs)? {
+        args.push(format!("{value}u"));
+        if to_encode {
+            given.push(format!("{value}u"));
+            continue;
+        }
+        let says = format!(
+            "{snake}_input_{}({snake}_value_source(), &{VALUE})",
+            filters::to_snake_case(input.name.clone())
+        );
+        let holds = if plan.roles.says_input_partly(&input.name) {
+            format!("(!{says}.present || {says}.value == {value}u)")
+        } else {
+            format!("{says} == {value}u")
+        };
+        said.push((format!("flag input {}", input.name), holds));
     }
     if case_tag(plan, source, tag)?.is_some() || plan.model.variant.is_some() {
         return Err("a C11 case states no variant yet: the C11 printer \
@@ -67,10 +108,12 @@ pub(crate) fn source_case(
             .to_string());
     }
     let mut case = SourceCase {
-        statements: Vec::new(),
-        checks: Vec::new(),
+        inputs: args,
+        encode_inputs: given,
+        ..SourceCase::empty()
     };
     members(plan, source, "", "", held, &mut case)?;
+    case.checks.extend(said);
     Ok(case)
 }
 
@@ -90,7 +133,9 @@ fn members(
 ) -> Result<(), String> {
     let object = source_members(plan, source)?;
     let l = LangCtx::new(crate::generator::Language::C11, &[]);
-    let SourceCase { statements, checks } = case;
+    let SourceCase {
+        statements, checks, ..
+    } = case;
     for element in &plan.elements {
         let declared = &element.field.id;
         let id = format!("{id_at}{declared}");
@@ -171,10 +216,7 @@ fn members(
                     format!("{member}.")
                 };
                 let inner_id = format!("{id}.");
-                let mut body = SourceCase {
-                    statements: Vec::new(),
-                    checks: Vec::new(),
-                };
+                let mut body = SourceCase::empty();
                 held.read(codec, &mut |body_plan, _path, held| {
                     members(body_plan, json, &inner_at, &inner_id, held, &mut body)
                         .map(|()| String::new())
@@ -199,10 +241,7 @@ fn members(
                     ));
                 }
                 let rows = entry_rows(json).map_err(|e| format!("`{id}`: {e}"))?;
-                let mut entries = SourceCase {
-                    statements: Vec::new(),
-                    checks: Vec::new(),
-                };
+                let mut entries = SourceCase::empty();
                 for (i, row) in rows.iter().enumerate() {
                     let inner_at = format!("{data}[{i}].");
                     let inner_id = format!("{id}[{i}].");

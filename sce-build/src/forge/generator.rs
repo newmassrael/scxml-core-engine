@@ -15800,8 +15800,8 @@ fn render_codec(
         "params_first_arg_with_comma".into(),
         flag_input_call_args_with_comma.into(),
     );
-    // The Rust encode, and that of a C++, a Python or a Kotlin codec printed
-    // from its plan, is handed only the inputs its value does not say
+    // The Rust encode, and that of a C++, a Python, a Kotlin or a C11 codec
+    // printed from its plan, is handed only the inputs its value does not say
     // (docs/adr/0065 §6 R4a); the decode is handed every input. Another encode
     // is handed every input until it takes the source interface. A printed
     // Kotlin value's own `encode` keeps every input its template's callers
@@ -15810,6 +15810,7 @@ fn render_codec(
         || cpp_printed.is_some()
         || python_printed.is_some()
         || kotlin_printed.is_some()
+        || c11_printed.is_some()
     {
         let roles = crate::forge::codec_roles::classify(m, imports);
         m.flag_inputs
@@ -19994,15 +19995,16 @@ fn embed_flag_bind_thread_args_supplying(
     let mut encode_out = String::new();
     let mut inputs: Vec<ThreadInput> = Vec::new();
     for input in &imp.codec_flag_inputs {
-        // A C++ codec is printed from its plan, and so is a Python or a Swift
-        // codec its language's printer lowers; none is handed, on encode, an
-        // input its value says (docs/adr/0065 §6 R4a): its encode reads it off
-        // the value. Its decode is handed every input.
+        // A C++ codec is printed from its plan, and so is a Python, a Swift or
+        // a C11 codec its language's printer lowers; none is handed, on encode,
+        // an input its value says (docs/adr/0065 §6 R4a): its encode reads it
+        // off the value. Its decode is handed every input.
         let printed = match lang {
             Language::Cpp => true,
             Language::Python => imp.python_printed,
             Language::Swift => imp.swift_printed,
-            Language::Rust | Language::Kotlin | Language::Go | Language::C11 => false,
+            Language::C11 => imp.c11_printed,
+            Language::Rust | Language::Kotlin | Language::Go => false,
         };
         let encode_hands = !(printed && imp.codec_says_inputs.contains(&input.name));
         if let Some(arg) = supplied(&input.name) {
@@ -30036,8 +30038,8 @@ struct BroadcastLogRenderInputs {
 ///   relative to the first context word, so the slot index is `1 + word`;
 ///   `said` is whether the element's value says it, ADR 0065 §6 R4a, and the
 ///   language's encode of the element reads it off the value,
-///   `encode_reads_said`: the Rust encode always does, a C++, a Python or a
-///   Swift one once the element is printed from its plan (docs/adr/0081 §6),
+///   `encode_reads_said`: the Rust encode always does, a C++, a Python, a Swift
+///   or a C11 one once the element is printed from its plan (docs/adr/0081 §6),
 ///   and every other encode takes each flag from its caller; `partly` is
 ///   whether, so read, the value says it in some of its values only, R4e, so
 ///   that the caller still gives it for the others and the encode does not
@@ -30824,6 +30826,12 @@ fn render_broadcast_log_c(
     })?;
     let upper_name = to_upper_snake(&m.name);
     let guard = format!("SCE_FORGE_{upper_name}_H");
+    // A printed element's encode reads the flags its value says off the value
+    // (docs/adr/0081 §6), so `publish` derives those and hands the codec the rest.
+    let element_printed = options
+        .element_type_c11_printed
+        .as_ref()
+        .is_some_and(|printed| printed.contains(&filters::to_snake_case(m.element_type.clone())));
     let ctx = minijinja::context! {
         snake => filters::to_snake_case(m.name.clone()),
         guard => guard,
@@ -30838,7 +30846,7 @@ fn render_broadcast_log_c(
         } else {
             "sce/forge/broadcast_log.h"
         },
-        context => broadcast_log_context_value(&inputs.element, word_bits, false),
+        context => broadcast_log_context_value(&inputs.element, word_bits, element_printed),
         ownership_only => row == (RustBroadcastLogRow::Narrow { ownership_only: true }),
         stamp_bits => crate::forge::model::BROADCAST_LOG_NARROW_STAMP_BITS,
         log_name => &m.name,

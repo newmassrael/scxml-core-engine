@@ -714,6 +714,69 @@ fn a_chain_closed_by_an_entry_flag_sets_it_on_each_entry_but_the_last() {
     );
 }
 
+/// A flag input the value says by the one field gated on it is read off the
+/// source, not handed to the encode (docs/adr/0065 §6 R4a): the encode reads it
+/// off whether the field is there, a length gated on it is written where that
+/// holds, and the input's own function answers it for a parent. The value's
+/// `encode` takes no argument for it; the decode still takes it.
+///
+/// Turns red where `positional_forms` names a flag input again, where
+/// `encode_source` takes a said input as a parameter or stops reading it off
+/// the element, where `gate_test` stops testing an input clause, or where
+/// `said_inputs` stops printing the input's function.
+#[test]
+fn an_input_the_value_says_is_read_off_the_field_gated_on_it() {
+    assert!(unlowered("codec_zenoh_wireexpr").is_empty());
+    let text = resource_header("codec_zenoh_wireexpr");
+    holds(
+        "codec_zenoh_wireexpr",
+        &text,
+        &[
+            "static inline sce_forge_codec_status_t codec_zenoh_wireexpr_encode_source(\
+             const codec_zenoh_wireexpr_source_t *src, const void *ctx, sce_forge_writer_t *w) {\n",
+            "    const uint8_t n = (uint8_t)(_e_suffix.present ? 1u : 0u);\n",
+            "(((uint64_t)n & 0x1ull) != 0)",
+            "static inline uint8_t codec_zenoh_wireexpr_input_n(\
+             const codec_zenoh_wireexpr_source_t *src, const void *ctx) {\n    \
+             return (uint8_t)(src->suffix(ctx).present ? 1u : 0u);\n}\n",
+            "static inline sce_forge_codec_status_t codec_zenoh_wireexpr_encode(\
+             const codec_zenoh_wireexpr_t *self, sce_forge_writer_t *w) {\n",
+            "    return codec_zenoh_wireexpr_encode_source(codec_zenoh_wireexpr_value_source(), \
+             self, w);\n",
+        ],
+    );
+    holds_none(
+        "codec_zenoh_wireexpr",
+        &text,
+        &["sce_forge_writer_t *w, uint8_t n)"],
+    );
+}
+
+/// An input a body says is said by the codec that holds the body and hands it
+/// on: the holder's own function of it reads the body's, and the body is
+/// written handed nothing for it.
+///
+/// Turns red where `said_input` stops reading a forwarded input through the
+/// body's codec's function, or where `handed_args` hands a body an input it
+/// says.
+#[test]
+fn an_input_a_body_says_is_read_through_the_bodys_codec() {
+    assert!(unlowered("codec_zenoh_decl_kexpr").is_empty());
+    let text = resource_header("codec_zenoh_decl_kexpr");
+    holds(
+        "codec_zenoh_decl_kexpr",
+        &text,
+        &[
+            "static inline uint8_t codec_zenoh_decl_kexpr_input_n(\
+             const codec_zenoh_decl_kexpr_source_t *src, const void *ctx) {\n    \
+             return codec_zenoh_wireexpr_input_n(src->wireexpr(ctx).table, \
+             src->wireexpr(ctx).ctx);\n}\n",
+            "    SCE_FORGE_TRY_WRITE(codec_zenoh_wireexpr_encode_source(_e_wireexpr.table, \
+             _e_wireexpr.ctx, w));\n",
+        ],
+    );
+}
+
 /// A codec whose plan uses a form the C11 printer does not lower keeps the
 /// template's encode whole: a variant and a CBOR map each name their form, and
 /// neither has an encode over a source.
@@ -822,6 +885,9 @@ fn the_c11_backend_prints_each_codec_of_the_resources_whose_forms_it_lowers() {
         "codec_chain_depth_entry",
         "codec_chain_depth_plain",
         "codec_chain_depth_gated",
+        "codec_zenoh_wireexpr",
+        "codec_zenoh_decl_kexpr",
+        "codec_init_cookie_body",
     ] {
         assert!(
             printed.iter().any(|stem| stem == name),
