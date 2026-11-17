@@ -626,7 +626,7 @@ impl InputImports for Contexts<'_> {
             .map(|i| EntryShape {
                 fields: i.codec_fields.clone(),
                 variant: i.codec_variant.clone(),
-                empty_arm_tags: i.codec_empty_arm_tags.clone(),
+                empty_arm_tags: i.codec_empty_arms.iter().map(|arm| arm.value).collect(),
             })
     }
 }

@@ -17,11 +17,14 @@
 
 use super::super::rust_source::{
     byte_values, case_inputs, case_tag, chain_optional_in, entry_rows, enum_variant, gates_label,
-    group_choice, holds_chain, integer_value, source_members, variant_choice, ChainInArm,
-    CodecPath as RustCodecPath, HeldCodecs, CALLER_TAG_LABEL, VARIANT_MEMBER,
+    group_choice, holds_chain, integer_value, placed_parts, source_members, variant_choice,
+    ChainInArm, CodecPath as RustCodecPath, HeldCodecs, CALLER_TAG_LABEL, VARIANT_MEMBER,
 };
 use super::super::*;
-use super::group::{aligned_property, chain_class, group_arm_class, group_property, ALIGNED};
+use super::group::{
+    aligned_property, chain_class, group_arm_class, group_property, placed_class, placed_in,
+    ALIGNED,
+};
 use super::{arm_class, list_class, refinement_class, unknown_tag_class};
 use crate::forge::codec_roles::{GateGroup, GroupArm};
 use crate::forge::encode_plan::{EncodePlan, Value};
@@ -307,8 +310,24 @@ fn group_holds(
             }
             // The chain whose memberships are the group's gates is compared
             // by its entries, both sides absent alike where the arm may hold
-            // none of it (docs/adr/0065 §6 R6b).
+            // none of it (docs/adr/0065 §6 R6b), and where it holds a bare
+            // entry's place, by the place and the others (R6a).
             let field = member_field(plan, id);
+            if holds_chain(group, field) && placed_in(group, arm) {
+                let Value::List { codec, .. } = plan.value(field) else {
+                    unreachable!("the chain whose memberships are gates is a list")
+                };
+                let property = l.codec_field_id(id);
+                same.push(format!("{x}.{property}.place == {y}.{property}.place"));
+                same.push(list_holds(
+                    codec,
+                    &format!("{x}.{property}.rest"),
+                    &format!("{y}.{property}.rest"),
+                    depth + 1,
+                    held,
+                )?);
+                continue;
+            }
             same.extend(member_holds(
                 field,
                 &plan.value(field),
@@ -660,12 +679,20 @@ fn chain_literal(
     let Value::List { codec, .. } = plan.value(chain.field) else {
         return Err(format!("`{}` is no chain", chain.field.id));
     };
+    // A bare entry's arm holds the others and the named entry's place,
+    // `{"rest": [..], "place": n}` (docs/adr/0065 §6 R6a), made by its class's
+    // factory, which holds the place to the first of its kind.
     if chain.placed() {
-        return Err(
-            "a bare entry's place is not spelled as a Kotlin literal yet: the Kotlin printer \
-             prints no codec that holds one"
-                .into(),
-        );
+        let (rest, place) = placed_parts(json)?;
+        let (holds, _) = chain.group.kinds_in(chain.arm);
+        let key = holds
+            .first()
+            .ok_or_else(|| "a bare entry's arm holds its kind".to_string())?;
+        return Ok(format!(
+            "{}.of(listOf({}), {place})!!",
+            path.qualified(&placed_class(&path.type_name, &chain.field.id, *key)),
+            entry_literals(codec, rest, held)?.join(", ")
+        ));
     }
     if json.is_null() {
         return if chain.optional() {

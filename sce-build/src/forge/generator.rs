@@ -157,6 +157,19 @@ pub struct EnumText {
     pub value: i128,
 }
 
+/// An arm of an imported codec's variant whose body codec presents nothing, no
+/// field and no variant of its own (docs/adr/0065 §6 R6a): the tag that
+/// selects it, and the name of the body codec's document, which every backend
+/// names the codec's types after, so a printer can make the entry a gate on a
+/// chain names, whose identifier is all of its value.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct EmptyArm {
+    /// The tag the arm is chosen by.
+    pub value: u64,
+    /// The name of the document of the arm's body codec.
+    pub document_name: String,
+}
+
 /// One `<sce:arm>` of an imported variant codec, as the codec that imports
 /// it reads it: to derive the bits of its own carrier from the arm a value
 /// holds, and to name the arm a decode takes when no tag is given.
@@ -430,15 +443,16 @@ pub struct ImportContext {
     #[serde(skip)]
     pub codec_fields: Vec<CodecField>,
 
-    /// The imported codec's variant, and the values of its arms whose body
-    /// presents nothing: with `codec_fields`, what tells whether the entry a
-    /// gate on a chain of it names holds nothing but its identifier
-    /// (`codec_roles::named_entry_is_bare`, docs/adr/0065 §6 R6). `None` and
-    /// empty for a codec with no variant and for non-codec imports.
+    /// The imported codec's variant, and its arms whose body presents
+    /// nothing: with `codec_fields`, what tells whether the entry a gate on a
+    /// chain of it names holds nothing but its identifier
+    /// (`codec_roles::named_entry_is_bare`, docs/adr/0065 §6 R6), and what a
+    /// printer makes that entry of. `None` and empty for a codec with no
+    /// variant and for non-codec imports.
     #[serde(skip)]
     pub codec_variant: Option<crate::forge::model::CodecVariant>,
     #[serde(skip)]
-    pub codec_empty_arm_tags: Vec<u64>,
+    pub codec_empty_arms: Vec<EmptyArm>,
 
     /// RFC variant-default-uniformity Go `NewT()` contract: `true` when
     /// the imported codec emits a `NewT()` constructor — either because
@@ -1621,7 +1635,7 @@ fn resolve_single_import(
         codec_first_flags: None,
         codec_fields: Vec::new(),
         codec_variant: None,
-        codec_empty_arm_tags: Vec::new(),
+        codec_empty_arms: Vec::new(),
         codec_emits_default_ctor: false,
         codec_is_borrowed: false,
         codec_inline_holds: false,
@@ -48712,7 +48726,7 @@ mod tests {
             codec_first_flags: None,
             codec_fields: Vec::new(),
             codec_variant: None,
-            codec_empty_arm_tags: Vec::new(),
+            codec_empty_arms: Vec::new(),
             codec_emits_default_ctor: false,
             codec_is_borrowed: false,
             codec_inline_holds: false,
@@ -49644,7 +49658,7 @@ mod tests {
                 codec_first_flags: None,
                 codec_fields: Vec::new(),
                 codec_variant: None,
-                codec_empty_arm_tags: Vec::new(),
+                codec_empty_arms: Vec::new(),
                 codec_emits_default_ctor: false,
                 codec_is_borrowed: false,
                 codec_inline_holds: false,
@@ -49719,7 +49733,7 @@ mod tests {
                 codec_first_flags: None,
                 codec_fields: Vec::new(),
                 codec_variant: None,
-                codec_empty_arm_tags: Vec::new(),
+                codec_empty_arms: Vec::new(),
                 codec_emits_default_ctor: false,
                 codec_is_borrowed: false,
                 codec_inline_holds: false,

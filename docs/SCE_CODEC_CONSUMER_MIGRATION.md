@@ -2509,3 +2509,14 @@ codecs whose fields a gate on a chain's entries decides.
   by `.entries`.
 - A value made by default holds the arm where no gate holds, where it held the fields with no chain kind.
 
+## A printed Kotlin codec holds a bare entry's place, not the entry (ADR 0081 step 4)
+
+Landing: the commit that adds this section; every Kotlin tree is regenerated after it. The printed set grows by the
+codecs whose one gate names an entry of a chain whose identifier is all it is.
+
+- In the arm where that gate holds, the chain is `{Codec}{Chain}Has{Kind}Placed`, made by `of(rest, place)`: the other
+  entries, and where the entry of the kind stands among them. Do not put that entry in `rest`: the encode writes it
+  at `place`. `of` answers `null` where an entry before the place is of the kind.
+- A decoded value takes the first entry of the kind out of the chain it read; read the others by `.rest` and where
+  it stood by `.place`.
+

@@ -29,7 +29,7 @@ use crate::forge::codec_roles::{ElementId, GateVar, InputSource};
 use crate::forge::codec_totality::RefusalKind;
 use crate::forge::encode_plan::{
     Absent, Against, Bound, CheckSite, Clause, CodecPlan, Derive, Element, EncodePlan, EntryId,
-    Guard, HandedFrom, Measure, Measured, Narrow, Number, NumberInto, Offset, Presence,
+    Guard, HandedFrom, ListWrite, Measure, Measured, Narrow, Number, NumberInto, Offset, Presence,
     PresenceFlag, Value, Write,
 };
 use std::cell::{Cell, RefCell};
@@ -212,15 +212,23 @@ fn positional_forms(plan: &EncodePlan<'_>, imports: &[ImportContext]) -> Vec<Str
             Write::Streamed { field, list, .. } => {
                 forms.extend(unread_form(plan, &derived, field));
                 // A walk of each entry in turn, which sets on each entry but
-                // the last the flag the chain ends on and hands each entry
-                // what the one before it was; a chain that holds a bare
-                // entry's place or is held to a law is not printed yet.
-                if list
-                    .as_ref()
-                    .is_some_and(|walk| walk.slots.is_some() || walk.lawful)
-                {
+                // the last the flag the chain ends on, hands each entry what
+                // the one before it was, and writes a bare entry where the
+                // value holds its place (docs/adr/0065 §6 R6a); a chain held
+                // to a law is not printed yet.
+                if list.as_ref().is_some_and(|walk| walk.lawful) {
+                    forms.push(format!("field '{}': a chain held to a law", field.id));
+                }
+                // The entries of a chain of slots a check holds to an input
+                // would be the others alone, the named entry left out, as the
+                // C++ printer refuses them.
+                let slots = list.as_ref().is_some_and(|walk| walk.slots.is_some());
+                let checked = plan.input_checks.iter().any(
+                    |check| matches!(&check.site, CheckSite::List { list: held } if held.id == field.id),
+                );
+                if slots && checked {
                     forms.push(format!(
-                        "field '{}': a chain that holds a bare entry's place or is held to a law",
+                        "field '{}': a chain of slots whose entries are held to an input",
                         field.id
                     ));
                 }
@@ -785,10 +793,20 @@ pub(super) fn render(
                 };
                 let import = printed_import(imports, codec)
                     .expect("`unlowered` prints a chain of a printed codec only");
+                // The entry of the kind the one gate on a bare entry names.
+                let named = if gate_group.member_is_bare() {
+                    gate_group
+                        .members()
+                        .next()
+                        .map(|(_, key)| named_entry(l, import, key))
+                } else {
+                    None
+                };
                 chain = Some(group::HeldChain {
                     field,
                     entry: body_type(import).to_string(),
                     bound,
+                    named,
                 });
                 continue;
             }
@@ -1927,7 +1945,7 @@ fn encode_source(
                     wire_bytes(&read(field), is_text(field))
                 )));
             }
-            Write::Streamed { field, guard, .. } => {
+            Write::Streamed { field, guard, list } => {
                 let write = match &field.bit_size {
                     BitSize::Fixed { .. } => {
                         encode_whole_field_read_as(field, endian, &read(field), l)
@@ -1964,6 +1982,21 @@ fn encode_source(
                     // and hands each entry, for each input it takes from the
                     // entry before, whether that entry was of the kind the
                     // input waits for, clear for the first.
+                    BitSize::Repeat { .. } | BitSize::TlvChain { .. }
+                        if list.as_ref().is_some_and(|walk| walk.slots.is_some()) =>
+                    {
+                        slots_walk(
+                            plan,
+                            l,
+                            struct_name,
+                            field,
+                            list.as_ref().expect("a chain of slots is walked"),
+                            &list_entries(plan, &field.id, &read(field)),
+                            &body_writer(field),
+                            &handed(held_alias(plan, field)),
+                            sink,
+                        )
+                    }
                     BitSize::Repeat { .. } | BitSize::TlvChain { .. } => {
                         let entries = list_entries(plan, &field.id, &read(field));
                         let mut before = String::new();
@@ -2082,6 +2115,21 @@ fn encode_source(
                         &group_local(at)
                     )
                 ));
+                // Where the named entry of a bare entry's chain stands, which
+                // the walk of the chain as slots reads.
+                if gate_group.member_is_bare() && gate_group.chain() == Some(id) {
+                    members.push_str(&format!(
+                        "val _p_{} = {}\n",
+                        l.codec_field_id(id),
+                        group::place_read(
+                            l,
+                            struct_name,
+                            gate_group,
+                            model_field(plan, id),
+                            &group_local(at)
+                        )
+                    ));
+                }
             }
         }
     }
@@ -2427,6 +2475,89 @@ fn previous_local(input: &str) -> String {
     format!("_prev_{}", input_name(input))
 }
 
+/// The walk of the chain `field` of `plan`, whose data class is
+/// `struct_name`, as slots (docs/adr/0065 §6 R6a), into `sink`: the entries
+/// `entries`, the others of the bare entry's place where the value holds it,
+/// in order, and the named entry where the value holds its place (`_p_<chain>`,
+/// `null` where it holds none), each written by `writer`'s encode handed
+/// `handed`. A chain that ends on its entries' flag sets it on each slot but
+/// the last, and one that hands an entry what the entry before was keeps it,
+/// the named entry being of its kind.
+#[allow(clippy::too_many_arguments)]
+fn slots_walk(
+    plan: &EncodePlan<'_>,
+    l: &LangCtx,
+    struct_name: &str,
+    field: &CodecField,
+    walk: &ListWrite,
+    entries: &str,
+    writer: &str,
+    handed: &str,
+    sink: &str,
+) -> String {
+    let kind = walk
+        .slots
+        .expect("a chain walked as slots names its bare entry's kind");
+    let name = l.codec_field_id(&field.id);
+    let (count, place, next) = (
+        format!("_k_{name}"),
+        format!("_p_{name}"),
+        format!("_n_{name}"),
+    );
+    let mut declared = String::new();
+    let mut named_kept = String::new();
+    let mut entry_kept = String::new();
+    for (input, waits) in &walk.previous {
+        let local = previous_local(input);
+        declared.push_str(&format!("var {local}: UByte = 0u\n"));
+        // The named entry's identifier is its kind.
+        named_kept.push_str(&format!(
+            "        {local} = {}u\n",
+            u8::from(kind == *waits)
+        ));
+        entry_kept.push_str(&format!(
+            "        {local} = (if ({} == 0x{waits:X}uL) 1 else 0).toUByte()\n",
+            entry_identifier(plan, l, &field.id, "_entry")
+        ));
+    }
+    let overrides = walk
+        .ends
+        .as_ref()
+        .map(|(carrier, flag)| {
+            format!(
+                ", {}({} = _i + 1 < {count})",
+                overrides_class(writer),
+                override_property(l, carrier, flag)
+            )
+        })
+        .unwrap_or_default();
+    let named = format!(
+        "{}.named()",
+        group::placed_class(struct_name, &field.id, kind)
+    );
+    format!(
+        "{declared}val {count} = {entries}.size + (if ({place} != null) 1 else 0)\n\
+         var {next} = 0\n\
+         for (_i in 0 until {count}) {{\n\
+         \x20   if (_i == {place}) {{\n\
+         \x20       {}\
+         {named_kept}\
+         \x20   }} else {{\n\
+         \x20       val _entry = {entries}[{next}]\n\
+         \x20       {next} += 1\n\
+         \x20       {}\
+         {entry_kept}\
+         \x20   }}\n\
+         }}\n",
+        written(&format!(
+            "{writer}.encodeSource({named}, {sink}{handed}{overrides})"
+        )),
+        written(&format!(
+            "{writer}.encodeSource(_entry, {sink}{handed}{overrides})"
+        )),
+    )
+}
+
 /// The identifier of `entry`, a source of the entry codec of the chain `chain`
 /// of `plan`, as a `ULong`: the flag or field the chain's `entry-id` names,
 /// read off the entry, less the flags it leaves out.
@@ -2451,6 +2582,60 @@ fn entry_identifier(plan: &EncodePlan<'_>, l: &LangCtx, chain: &str, entry: &str
             format!("{entry}.{}.toULong()", l.codec_field_id(field))
         }
     }
+}
+
+/// The entry of the kind `key` of a chain of a bare entry, of the codec
+/// `import` holds (docs/adr/0065 §6 R6a), as an expression of that codec's
+/// data class: its carrier the identifier, and where the codec has a variant,
+/// the arm the identifier's tag bits select, whose codec presents nothing,
+/// made by default, as the C++ key's `named()` makes it. The rest of the
+/// carrier is what the entry's own encode derives: a bare entry's
+/// identifier is all of its value (`codec_roles::named_entry_is_bare`).
+fn named_entry(l: &LangCtx, import: &ImportContext, key: u64) -> String {
+    let entry = body_type(import);
+    let carrier = import
+        .codec_fields
+        .first()
+        .expect("a bare entry is its carrier");
+    let body = match &import.codec_variant {
+        None => String::new(),
+        Some(variant) => {
+            let flag = carrier
+                .flags
+                .iter()
+                .find(|f| variant.tag_flag.as_deref() == Some(f.name.as_str()))
+                .expect("a bare entry's tag is a flag of its carrier");
+            let mask = if flag.width >= 64 {
+                u64::MAX
+            } else {
+                (1u64 << flag.width) - 1
+            };
+            let tag = key.checked_shr(flag.bit).unwrap_or(0) & mask;
+            let arm = variant
+                .arms
+                .iter()
+                .find(|a| a.value == tag)
+                .expect("a bare entry's tag selects an arm");
+            let empty = import
+                .codec_empty_arms
+                .iter()
+                .find(|empty| empty.value == tag)
+                .expect("a bare entry's arm presents nothing (named_entry_is_bare)");
+            format!(
+                ", {VARIANT_PROPERTY} = {}({}())",
+                arm_class(entry, Some(arm.body_alias.as_str())),
+                kotlin_qualified(
+                    &empty.document_name,
+                    &filters::to_pascal_case(empty.document_name.clone())
+                )
+            )
+        }
+    };
+    format!(
+        "{entry}({} = {}{body})",
+        l.codec_field_id(&carrier.id),
+        kotlin_literal(&format!("0x{key:X}"), &carrier.sce_type)
+    )
 }
 
 /// The class of the one-bit flags a parent may set in place of the ones a

@@ -7007,29 +7007,33 @@ fn codec_says_inputs_by_extent(
     )
 }
 
-/// The values of `cm`'s variant arms whose body codec presents nothing, no
-/// field and no variant of its own: what a parent's gate on a chain of `cm`
-/// needs to tell an entry that holds nothing but its identifier
-/// (`codec_roles::named_entry_is_bare`, docs/adr/0065 §6 R6).
-fn codec_empty_arm_tags(
+/// `cm`'s variant arms whose body codec presents nothing, no field and no
+/// variant of its own, each with the name of that codec's document: what a
+/// parent's gate on a chain of `cm` needs to tell an entry that holds nothing
+/// but its identifier (`codec_roles::named_entry_is_bare`, docs/adr/0065 §6
+/// R6), and what a printer makes that entry of.
+fn codec_empty_arms(
     cm: &forge::model::CodecModel,
     imports: &[forge::model::ForgeImport],
     base_dir: &Path,
     visited: &mut HashSet<PathBuf>,
-) -> Vec<u64> {
+) -> Vec<forge::generator::EmptyArm> {
     let Some(variant) = &cm.variant else {
         return Vec::new();
     };
     variant
         .arms
         .iter()
-        .filter(|arm| {
+        .filter_map(|arm| {
             with_resolved_import_codec(&arm.body_alias, imports, base_dir, visited, |body| {
-                Some(body.model.fields.is_empty() && body.model.variant.is_none())
+                (body.model.fields.is_empty() && body.model.variant.is_none()).then(|| {
+                    forge::generator::EmptyArm {
+                        value: arm.value,
+                        document_name: body.model.name.clone(),
+                    }
+                })
             })
-            .unwrap_or(false)
         })
-        .map(|arm| arm.value)
         .collect()
 }
 
@@ -7084,12 +7088,15 @@ impl forge::codec_roles::InputImports for UnresolvedImports<'_> {
             Some(forge::codec_roles::EntryShape {
                 fields: inner.model.fields.clone(),
                 variant: inner.model.variant.clone(),
-                empty_arm_tags: codec_empty_arm_tags(
+                empty_arm_tags: codec_empty_arms(
                     inner.model,
                     inner.imports,
                     inner.base_dir,
                     inner.visited,
-                ),
+                )
+                .into_iter()
+                .map(|arm| arm.value)
+                .collect(),
             })
         })
     }
@@ -7651,8 +7658,8 @@ fn validate_and_enrich_imports(
                 ctx.codec_variant = cm.variant.clone();
                 let mut arms_visited: HashSet<PathBuf> = HashSet::new();
                 arms_visited.insert(source.path.clone());
-                ctx.codec_empty_arm_tags =
-                    codec_empty_arm_tags(cm, &parsed.imports, &inner_base, &mut arms_visited);
+                ctx.codec_empty_arms =
+                    codec_empty_arms(cm, &parsed.imports, &inner_base, &mut arms_visited);
                 // Variant-default uniformity (Go): the
                 // imported codec emits a `NewT()` constructor iff its
                 // own constructor gate fires — either any field declares a

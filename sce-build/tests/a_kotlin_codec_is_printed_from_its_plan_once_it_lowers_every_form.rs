@@ -993,20 +993,62 @@ fn a_membership_no_group_holds_is_a_scan_of_the_chains_entries() {
     );
 }
 
-/// A codec whose plan uses a form the Kotlin printer does not lower keeps the
-/// template's encode whole: a CBOR map and a chain that holds a bare entry's
-/// place each name their form.
+/// The arm where the one gate on a bare entry holds (docs/adr/0065 §6 R6a)
+/// holds the other entries and the named entry's place, made only where no
+/// other entry before the place is of the kind. The encode walks the chain as
+/// slots, writing the entry of the kind, made of its identifier and the empty
+/// arm its tag selects, where the value holds its place; the decode takes the
+/// first entry of the kind out of the chain it read.
 ///
-/// Turns red where `kotlin_source::positional_forms` stops naming a chain of
-/// slots, or `unlowered_forms` a CBOR map.
+/// Turns red where `kotlin_source::positional_forms` refuses a chain of slots,
+/// `slots_walk` stops writing the named entry at its place, `named_entry`
+/// makes the entry other than of its identifier and the arm its tag selects,
+/// `group::placed_declaration` stops holding the place to the first of its
+/// kind, `group::member_read` reads other than the others of the place, or
+/// the decode stops taking the place by `placing`.
+#[test]
+fn a_bare_entrys_arm_holds_the_others_and_the_named_entrys_place() {
+    let name = "codec_chain_has_marker";
+    assert!(unlowered(name).is_empty(), "{name}: {:?}", unlowered(name));
+    let text = resource_file(name);
+    holds(
+        name,
+        &text,
+        &[
+            "class CodecChainHasMarkerExtensionsHas12Placed private constructor(\n",
+            "    val rest: List<CodecZenohExtEntrySource>,\n",
+            "if (rest.size < MOST && place in 0..rest.size && \
+             rest.take(place).none { kind(it) == 0x12uL }) \
+             CodecChainHasMarkerExtensionsHas12Placed(rest.toList(), place) else null\n",
+            "        fun named(): CodecZenohExtEntry = CodecZenohExtEntry(header = \
+             0x12u.toUByte(), body = CodecZenohExtEntryVariant.CodecZenohExtUnit(\
+             com.sce.generated.codec_zenoh_ext_unit.CodecZenohExtUnit()))\n",
+            "        val extensions: CodecChainHasMarkerExtensionsHas12Placed,\n",
+            " -> _g.extensions.rest; is ",
+            "val _p_extensions = when (val _g = _g_extensions_has_0x12) { \
+             is CodecChainHasMarkerExtensionsHas0x12.Has0x12 -> _g.extensions.place; \
+             else -> null }\n",
+            "val _k_extensions = _e_extensions.size + (if (_p_extensions != null) 1 else 0)\n",
+            "if (_i == _p_extensions) {\n",
+            "encodeSource(CodecChainHasMarkerExtensionsHas12Placed.named(), ",
+            "CodecZenohExtEntryOverrides(header_Z = _i + 1 < _k_extensions))?.let { return it }\n",
+            "extensions = CodecChainHasMarkerExtensionsHas12Placed.placing(extensions!!) \
+             ?: return null",
+        ],
+    );
+}
+
+/// A codec whose plan uses a form the Kotlin printer does not lower keeps the
+/// template's encode whole: a CBOR map and a chain held to a law each name
+/// their form.
+///
+/// Turns red where `kotlin_source::positional_forms` stops naming a list held
+/// to a law, or `unlowered_forms` a CBOR map.
 #[test]
 fn a_codec_of_a_form_the_printer_does_not_lower_keeps_the_template_encode() {
     for (name, form) in [
         ("codec_cbor_map", "a CBOR map"),
-        (
-            "codec_chain_has_marker",
-            "a chain that holds a bare entry's place",
-        ),
+        ("codec_chain_prev_tail", "held to a law"),
     ] {
         let forms = unlowered(name);
         assert!(

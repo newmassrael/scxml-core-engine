@@ -1523,6 +1523,25 @@ old encode, the old encode and its templates are removed in the same landing.
    generics, cannot hold a set of kinds in; and one class of the chain whose kinds the arm's constructor checks,
    which would leave a value of the class that holds kinds the arm denies. A chain that holds a bare entry's
    place (R6a) stays unlowered.
+
+   *The seventeenth Kotlin landing, 2026-11-17:* the one gate on a bare entry (§6 R6a). The arm where it holds
+   holds the chain as `{Codec}{Chain}Has{Kind}Placed` (`group::placed_class`), a class of the other entries and
+   the named entry's place, as the Rust and C++ runtimes' `Placed` holds them: its constructor is private, and
+   `of` makes a value only of others that make, with the named entry, a chain within the bound, of a place at
+   most past the last of them, and of others before the place none of the kind, so the named entry is the
+   first of its kind. A class and not a value class, as it holds two properties; it compares by both. Its
+   `placing` takes the first entry of the kind out of a chain read whole, which is how the decode makes the arm,
+   and its `named` makes the entry of the kind: its carrier the identifier, and the arm of its variant the
+   identifier's tag selects, whose codec presents nothing, made by default, as the C++ key's `named()` makes it.
+   Naming that arm's codec needs its document, so the import's arms whose codec presents nothing carry their
+   document's name (`ImportContext::codec_empty_arms`, where they carried their tags), which the roles read as
+   before. The encode reads the others off the arm and the place beside them, `null` from the other arm, and
+   walks the chain as slots (`ListWrite.slots`): the others in order and the named entry where the value holds
+   its place, each but the last handed the flag the chain ends on, the entry before handed on with the named
+   entry of its kind. A chain of slots whose entries are held to an input stays refused by name, as the C++
+   printer refuses it: a check would see the others alone. The case printer states the arm's chain by
+   `placed_parts` as the class made of the others and the place. The same landing binds the walk's
+   `ListWrite` in the encode, which the fourteenth landing read and did not bind.
 5. Swift, when its codec lowers what the plan holds.
    *Swift lowers what the plan holds, 2026-11-16:* its codec writes every codec of the repository Rust writes,
    but the one only an MCU-class backend writes (`a_swift_codec_is_written_wherever_rust_writes_one.rs`): an
