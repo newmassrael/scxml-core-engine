@@ -544,6 +544,33 @@ fn a_chain_sets_the_flag_its_entries_end_on_and_hands_on_the_entry_before() {
     );
 }
 
+/// A chain closed by its entries' flag holds one entry at least (docs/adr/0065
+/// §6 R7): the class of its bound names `LEAST`, makes no value of fewer
+/// entries, and a value made by default holds that many entries, each its
+/// entry codec's value made by default.
+///
+/// Turns red where `kotlin_source::value_forms` refuses a list of a least past
+/// zero again, `ListBound::of` leaves the least out of the test, or
+/// `ListBound::fewest` makes an empty list for a least past zero.
+#[test]
+fn a_chain_closed_by_its_entries_flag_holds_one_entry_at_least() {
+    let name = "codec_chain_handed";
+    assert!(unlowered(name).is_empty(), "{name}: {:?}", unlowered(name));
+    let text = resource_file(name);
+    holds(
+        name,
+        &text,
+        &[
+            "        const val LEAST: Int = 1\n",
+            "if (entries.size in LEAST..MOST) CodecChainHandedEntriesList(entries.toList()) \
+             else null\n",
+            "        fun fewest(): CodecChainHandedEntriesList = \
+             CodecChainHandedEntriesList(List(LEAST) { CodecChainHandedEntry() })\n",
+        ],
+    );
+    holds_none(name, &text, &["CodecChainHandedEntriesList(emptyList())"]);
+}
+
 /// A gate group (docs/adr/0065 §6 R4b) is one property of the value: a sealed
 /// class of a data class for each arm, each holding the members present while
 /// the gate holds its value, the stated length in the arm without its content.

@@ -1494,6 +1494,16 @@ old encode, the old encode and its templates are removed in the same landing.
    entry that says such an input walks the chain the same way before the first byte. Considered and refused: a
    parameter for each flag, which would grow every codec's signature by its flags; and an entry's own flag the
    chain reads back and checks, which would leave a caller to set where each entry stands.
+
+   *The fifteenth Kotlin landing, 2026-11-17:* a list of a least past zero, which a chain closed by its entries'
+   flag is (§6 R7): every such chain holds one entry at least, so the fourteenth landing's chains were refused by
+   the form it did not yet print. The class of the list's bound names `LEAST` beside `MOST`, `of` makes no value
+   of fewer entries, and `fewest`, what a value made by default holds, holds `LEAST` entries each made by default
+   by the entries' codec's data class, as the C++ `Chain` makes its fewest of value-made entries. The bound's
+   words, constants, test and fewest are read once (`ListBound`), which a chain an arm of a group holds reads
+   too. An `Aligned` made by default pairs the fewest of two lists of one count; only a chain has a least past
+   zero, and a chain has no count, so the two fewest are always of one count. Considered and refused: an empty
+   list by default with `of` alone checking the least, which would make a value of the class no frame carries.
 5. Swift, when its codec lowers what the plan holds.
    *Swift lowers what the plan holds, 2026-11-16:* its codec writes every codec of the repository Rust writes,
    but the one only an MCU-class backend writes (`a_swift_codec_is_written_wherever_rust_writes_one.rs`): an

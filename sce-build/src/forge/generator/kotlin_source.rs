@@ -298,10 +298,7 @@ fn value_forms(
         }
         // A list is walked, each entry written by its codec's own
         // `encodeSource`, which a codec the Kotlin backend prints has.
-        Value::List { codec, law, bound } => {
-            if bound.least > 0 {
-                forms.push(format!("field '{id}': a list of a least past zero"));
-            }
+        Value::List { codec, law, .. } => {
             if printed_import(imports, codec).is_none() {
                 forms.push(format!(
                     "field '{id}': a list of `{codec}`, which the Kotlin backend does not print"
@@ -619,7 +616,7 @@ fn member_of(
                 id,
                 &class,
                 bound,
-                &format!("{}Source", body_type(import)),
+                body_type(import),
             ));
             *inline = true;
             Member {
@@ -702,7 +699,7 @@ pub(super) fn render(
                     id,
                     &class,
                     bound,
-                    &format!("{}Source", body_type(import)),
+                    body_type(import),
                 ));
                 class
             }
@@ -974,12 +971,89 @@ pub(crate) fn list_class(struct_name: &str, id: &str) -> String {
     )
 }
 
+/// What the class of a list held within a bound says of it (docs/adr/0065 §6
+/// R2, R7): the bound in words, the constants of its companion that name it,
+/// the test of `entries.size` it makes, and how many entries a value made by
+/// default holds.
+struct ListBound {
+    /// The bound in words.
+    held: String,
+    /// The companion's `LEAST` and `MOST`, each where the bound names it.
+    consts: String,
+    /// The test of `entries.size`, `None` where the bound holds every count.
+    test: Option<String>,
+    /// The fewest entries the bound holds.
+    least: u64,
+}
+
+impl ListBound {
+    fn of(bound: &Bound) -> Self {
+        let least = bound.least;
+        let held = match (least, bound.most) {
+            (0, Some(most)) => format!("0 to {most} entries"),
+            (_, Some(most)) => format!("{least} to {most} entries"),
+            (0, None) => "any number of entries, the protocol stating no most".to_string(),
+            (_, None) => format!("{least} or more entries, the protocol stating no most"),
+        };
+        let mut consts = String::new();
+        if least > 0 {
+            consts.push_str(&format!(
+                "\n\
+                 \x20       /// The fewest entries a value holds.\n\
+                 \x20       const val LEAST: Int = {least}\n"
+            ));
+        }
+        if let Some(most) = bound.most {
+            consts.push_str(&format!(
+                "\n\
+                 \x20       /// The most entries a value holds.\n\
+                 \x20       const val MOST: Int = {most}\n"
+            ));
+        }
+        // Only the comparisons the bound makes: a least of zero holds every
+        // count, and no most none above it.
+        let test = match (least, bound.most) {
+            (0, None) => None,
+            (0, Some(_)) => Some("entries.size <= MOST".to_string()),
+            (_, None) => Some("entries.size >= LEAST".to_string()),
+            (_, Some(_)) => Some("entries.size in LEAST..MOST".to_string()),
+        };
+        ListBound {
+            held,
+            consts,
+            test,
+            least,
+        }
+    }
+
+    /// The fewest entries the bound holds, each `entry`, a value made by
+    /// default of the entries' codec's data class: no entry where the least is
+    /// zero.
+    fn fewest(&self, entry: &str) -> String {
+        if self.least == 0 {
+            "emptyList()".to_string()
+        } else {
+            format!("List(LEAST) {{ {entry}() }}")
+        }
+    }
+
+    /// What `fewest` holds, in words.
+    fn fewest_words(&self) -> &'static str {
+        if self.least == 0 {
+            "No entry"
+        } else {
+            "The fewest entries the bound holds, each made by default"
+        }
+    }
+}
+
 /// The value class a list `id` of `struct_name` is held in, `class`, within
-/// `bound`, of sources of its entries' codec, `entry`: a private constructor,
-/// and `of`, which makes a value only of entries within the bound, copied into
-/// a list of its own, so no list it was made of can grow it past its bound
-/// after. A list of a least past zero is not printed, so a value made by
-/// default holds no entry.
+/// `bound`, of sources of its entries' codec, whose data class is `entry`: a
+/// private constructor, and `of`, which makes a value only of entries within
+/// the bound, copied into a list of its own, so no list it was made of can
+/// grow it past its bound after. A value made by default holds the fewest
+/// entries the bound holds, each made by default: a chain closed by its
+/// entries' flag holds one at least (docs/adr/0065 §6 R7).
 fn bounded_list_class(
     struct_name: &str,
     id: &str,
@@ -987,23 +1061,11 @@ fn bounded_list_class(
     bound: &Bound,
     entry: &str,
 ) -> String {
-    let (held, most, of) = match bound.most {
-        Some(most) => (
-            format!("0 to {most} entries"),
-            format!(
-                "\n\
-                 \x20       /// The most entries a value holds.\n\
-                 \x20       const val MOST: Int = {most}\n"
-            ),
-            format!(
-                " =\n            if (entries.size <= MOST) {class}(entries.toList()) else null"
-            ),
-        ),
-        None => (
-            "any number of entries, the protocol stating no most".to_string(),
-            String::new(),
-            format!(" = {class}(entries.toList())"),
-        ),
+    let bound = ListBound::of(bound);
+    let source = format!("{entry}Source");
+    let of = match &bound.test {
+        Some(test) => format!(" =\n            if ({test}) {class}(entries.toList()) else null"),
+        None => format!(" = {class}(entries.toList())"),
     };
     format!(
         "/// The `{id}` element of [{struct_name}], {held}, held to that bound where a\n\
@@ -1011,20 +1073,24 @@ fn bounded_list_class(
          /// private and [of] makes a value only of entries within the bound, which it\n\
          /// copies, so no list it was made of can grow it past its bound after.\n\
          @JvmInline\n\
-         value class {class} private constructor(val entries: List<{entry}>) : \
+         value class {class} private constructor(val entries: List<{source}>) : \
          com.sce.forge.runtime.Counted {{\n\
          \x20   /// How many entries the list holds, the count a frame writes of it.\n\
          \x20   override val size: Int\n\
          \x20       get() = entries.size\n\
          \n\
-         \x20   companion object {{{most}\n\
+         \x20   companion object {{{consts}\n\
          \x20       /// `entries` as a value of the bound, or `null` where they lie outside it.\n\
-         \x20       fun of(entries: List<{entry}>): {class}?{of}\n\
+         \x20       fun of(entries: List<{source}>): {class}?{of}\n\
          \n\
-         \x20       /// No entry: what a value made by default holds.\n\
-         \x20       fun fewest(): {class} = {class}(emptyList())\n\
+         \x20       /// {words}: what a value made by default holds.\n\
+         \x20       fun fewest(): {class} = {class}({fewest})\n\
          \x20   }}\n\
-         }}\n\n"
+         }}\n\n",
+        held = bound.held,
+        consts = bound.consts,
+        words = bound.fewest_words(),
+        fewest = bound.fewest(entry),
     )
 }
 

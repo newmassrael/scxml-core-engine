@@ -2488,3 +2488,12 @@ chains that end on an entry's flag and that hand each entry what the entry befor
 - An entry handed what the entry before it was is handed it by the chain's walk; an entry that says such an input
   is refused with `CodecError.PresentIfMismatch` where it says otherwise than the entry before it is.
 
+## A printed Kotlin chain closed by its entries' flag holds one entry at least (ADR 0081 step 4)
+
+Landing: the commit that adds this section; every Kotlin tree is regenerated after it. The printed set grows by the
+codecs that hold a chain closed by its entries' flag, which holds one entry or more.
+
+- The chain's class names `LEAST`, and its `of` answers `null` for fewer entries: a chain you build holds one entry
+  at least, as every frame of it does.
+- A value made by default holds `LEAST` entries, each its entry codec's value made by default, where it held none.
+
