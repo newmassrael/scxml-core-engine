@@ -44,25 +44,25 @@ const BODY: &str = "body";
 /// imported as `arm`, or the catch-all where `arm` is `None`: the kind the
 /// struct of the codec named `codec` holds its variant's arm by, and the kind
 /// a source presents the arm by. A known arm and the catch-all are apart even
-/// where one codec is both, as the struct holds them apart.
+/// where one codec is both, as the struct holds them apart. The arm is named
+/// by [`variant_arm_name`], as every backend names it, in upper snake case.
 pub(super) fn arm_kind(codec: &str, arm: Option<&str>) -> String {
-    match arm {
-        Some(alias) => format!(
-            "{}_BODY_KIND_{}",
-            to_upper_snake(codec),
-            to_upper_snake(alias)
-        ),
-        None => format!("{}_BODY_KIND_DEFAULT", to_upper_snake(codec)),
-    }
+    format!(
+        "{}_BODY_KIND_{}",
+        to_upper_snake(codec),
+        to_upper_snake(&variant_arm_name(arm))
+    )
 }
 
 /// The member of the variant's union that holds the body of the arm whose
-/// codec is imported as `arm`, or of the catch-all where `arm` is `None`,
-/// which no alias names.
+/// codec is imported as `arm`, or of the catch-all where `arm` is `None`: the
+/// arm's [`variant_arm_name`] in snake case, the catch-all's with `_body`
+/// after it, so that no alias names it.
 pub(super) fn arm_member(arm: Option<&str>) -> String {
+    let name = filters::to_snake_case(variant_arm_name(arm));
     match arm {
-        Some(alias) => filters::to_snake_case(alias.to_string()),
-        None => "default_body".to_string(),
+        Some(_) => name,
+        None => format!("{name}_body"),
     }
 }
 
@@ -3526,4 +3526,29 @@ fn check_value(plan: &EncodePlan<'_>, l: &LangCtx, snake: &str) -> String {
          {out}    return SCE_FORGE_CODEC_OK;\n\
          }}\n"
     )
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// The kind and the union member of an arm are the arm's name every
+    /// backend declares it by, in C's cases, and the catch-all's member keeps
+    /// apart from an arm named `Default`.
+    ///
+    /// Turns red where `arm_kind` or `arm_member` spells the alias itself and
+    /// not `variant_arm_name` of it, which differ for `x_2` (`X2`).
+    #[test]
+    fn an_arm_is_named_in_c_by_the_name_every_backend_gives_it() {
+        assert_eq!(variant_arm_name(Some("x_2")), "X2");
+        assert_eq!(arm_kind("codec_a", Some("x_2")), "CODEC_A_BODY_KIND_X2");
+        assert_eq!(arm_member(Some("x_2")), "x2");
+        assert_eq!(
+            arm_kind("codec_a", Some("codec_variant_session_open")),
+            "CODEC_A_BODY_KIND_CODEC_VARIANT_SESSION_OPEN"
+        );
+        assert_eq!(arm_kind("CodecA", None), "CODEC_A_BODY_KIND_DEFAULT");
+        assert_eq!(arm_member(None), "default_body");
+        assert_eq!(arm_member(Some("default")), "default");
+    }
 }

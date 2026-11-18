@@ -27760,10 +27760,10 @@ fn parent_tag_switch_block_c11(
     let embed_pascal = parent_tag_embed_pascal(d, imports);
     let snake = filters::to_snake_case(d.embed_field_id.clone());
     let mask: u64 = (1u64 << d.width) - 1;
-    let embed_upper = to_upper_snake(embed_pascal);
     let mut switch_block = format!("    switch (self->{snake}.body.kind) {{\n");
     for arm in &d.arms {
-        let arm_upper = to_upper_snake(&arm.body_alias);
+        // The kind is named as the embedded codec's struct names it.
+        let kind = c11_source::arm_kind(embed_pascal, Some(&arm.body_alias));
         let shifted = ((arm.value & mask) << d.bit) & 0xFF;
         // An arm the embedded codec compiles under a build feature
         // (docs/adr/0072) has no kind constant in a build without it, so
@@ -27773,7 +27773,7 @@ fn parent_tag_switch_block_c11(
             switch_block.push_str(&format!("#if {name}\n"));
         }
         switch_block.push_str(&format!(
-            "    case {embed_upper}_BODY_KIND_{arm_upper}: {local} |= 0x{shifted:02X}u; break;\n"
+            "    case {kind}: {local} |= 0x{shifted:02X}u; break;\n"
         ));
         if feature_macro.is_some() {
             switch_block.push_str("#endif\n");
@@ -27783,7 +27783,8 @@ fn parent_tag_switch_block_c11(
     // which the dispatcher keeps in `default_tag` (`forge/c/codec.h.jinja2`).
     if d.catch_all {
         switch_block.push_str(&format!(
-            "    case {embed_upper}_BODY_KIND_DEFAULT: {local} |= (uint8_t)((self->{snake}.body.default_tag & 0x{mask:X}u) << {}); break;\n",
+            "    case {}: {local} |= (uint8_t)((self->{snake}.body.default_tag & 0x{mask:X}u) << {}); break;\n",
+            c11_source::arm_kind(embed_pascal, None),
             d.bit
         ));
     }
