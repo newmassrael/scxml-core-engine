@@ -893,13 +893,30 @@ fn a_list_held_to_a_flag_another_declaration_derives_is_checked_entry_by_entry()
 fn a_gated_byte_string_is_checked_where_it_is_given() {
     let code = swift_of("tests/forge/resources/codec_present_if_tail.scxml")
         .expect("a gated tail is written");
+    // A value past the bound is no value of the field's type (docs/adr/0065 §6 R1), so a gated
+    // byte string is held to its bound where a value of it is given, by its type's door, and the
+    // encode writes what the source holds with nothing of it to refuse.
     assert!(
-        code.contains("if let value = self.payload, value.count > "),
-        "an encode checks a gated field only when it is given: {code}"
+        code.contains("    var payload: BoundedBytes<CodecPresentIfTail.PayloadBound>? { get }\n"),
+        "the source presents the gated field within its bound, or nothing: {code}"
+    );
+    let encode = code
+        .split("public static func encodeSource")
+        .nth(1)
+        .expect("the codec's encode is printed");
+    assert!(
+        encode.contains(
+            "        if let held = source.payload {\n            held.append(to: &frame)\n        }\n"
+        ),
+        "an encode writes a gated field where the source gives it: {code}"
     );
     assert!(
-        code.contains("            if reader.remaining > "),
-        "a decode checks it inside the gate: {code}"
+        !encode.contains("throw CodecError."),
+        "an encode refuses no bound its type holds: {code}"
+    );
+    assert!(
+        code.contains("            if reader.remaining > 64 {\n                throw CodecError.lengthOutOfRange\n            }\n            payload = try BoundedBytes<CodecPresentIfTail.PayloadBound>(decoding: "),
+        "a decode checks it inside the gate, before the door makes the value: {code}"
     );
 }
 
