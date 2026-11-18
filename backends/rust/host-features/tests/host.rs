@@ -68,6 +68,24 @@ fn a_key_with_a_nul_is_refused() {
     ));
 }
 
+/// A put-if is refused for a key with U+0000 as a get is, and writes nothing,
+/// which a scenario cannot say, since a C string cannot hold the key.
+#[test]
+fn a_put_if_with_a_nul_in_its_key_is_refused() {
+    let mut host = ReferenceHost::new(Box::new(ScriptedClock::new()), Unreachable);
+    let params: Params = [
+        ("key".to_string(), "a\0b".to_string()),
+        ("value".to_string(), "v".to_string()),
+        ("expected_version".to_string(), "0".to_string()),
+    ]
+    .into();
+    assert!(matches!(
+        host.start("sce-host-kv-put-if", "putif", &params),
+        Some(Outcome::Refuse(_))
+    ));
+    assert!(host.store_entries().is_empty());
+}
+
 /// Keys are ordered by their UTF-8 bytes.
 #[test]
 fn keys_are_ordered_by_their_utf8_bytes() {

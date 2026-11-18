@@ -40,11 +40,12 @@ pub type Params = BTreeMap<String, String>;
 
 /// Every operation type of the standard host features, in the order the
 /// specification lists them.
-pub const TYPES: [&str; 12] = [
+pub const TYPES: [&str; 13] = [
     "sce-host-clock-now",
     "sce-host-clock-zone",
     "sce-host-kv-get",
     "sce-host-kv-put",
+    "sce-host-kv-put-if",
     "sce-host-kv-delete",
     "sce-host-kv-next-key",
     "sce-host-notify-permission",
@@ -219,6 +220,9 @@ impl<T: Transport> ReferenceHost<T> {
         let refused = match operation {
             "sce-host-kv-get" | "sce-host-kv-delete" => !kv::valid_key(argument("key")),
             "sce-host-kv-put" => !kv::valid_key(argument("key")),
+            "sce-host-kv-put-if" => {
+                !kv::valid_key(argument("key")) || !kv::valid_version(argument("expected_version"))
+            }
             "sce-host-notify-post" | "sce-host-notify-cancel" => argument("id").is_empty(),
             "sce-host-http-fetch" => {
                 !http::acceptable(argument("method"), argument("url"), argument("headers"))
@@ -238,6 +242,12 @@ impl<T: Transport> ReferenceHost<T> {
             "sce-host-clock-zone" => clock::zone(self),
             "sce-host-kv-get" => kv::get(self, argument("key")),
             "sce-host-kv-put" => kv::put(self, argument("key"), argument("value")),
+            "sce-host-kv-put-if" => kv::put_if(
+                self,
+                argument("key"),
+                argument("value"),
+                argument("expected_version"),
+            ),
             "sce-host-kv-delete" => kv::delete(self, argument("key")),
             "sce-host-kv-next-key" => kv::next_key(self, argument("after"), argument("prefix")),
             "sce-host-notify-permission" => notify::permission(self),
@@ -292,8 +302,9 @@ pub(crate) fn failure(operation: &str, code: &str) -> Outcome {
     let zero = match operation {
         "sce-host-clock-now" => serde_json::json!({ "utc_ms": "0", "monotonic_ms": "0" }),
         "sce-host-clock-zone" => serde_json::json!({ "zone_id": "", "utc_offset_s": 0 }),
-        "sce-host-kv-get" => serde_json::json!({ "found": false, "value": "" }),
+        "sce-host-kv-get" => serde_json::json!({ "found": false, "value": "", "version": "0" }),
         "sce-host-kv-put" => serde_json::json!({ "replaced": false }),
+        "sce-host-kv-put-if" => serde_json::json!({ "written": false, "version": "0" }),
         "sce-host-kv-delete" | "sce-host-notify-cancel" => serde_json::json!({ "existed": false }),
         "sce-host-kv-next-key" => serde_json::json!({ "found": false, "key": "" }),
         "sce-host-notify-permission" | "sce-host-notify-request-permission" => {
