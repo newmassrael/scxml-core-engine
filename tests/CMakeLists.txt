@@ -1229,7 +1229,7 @@ add_test(NAME JsonText COMMAND json_text_test)
 
 # ============================================================================
 # The saved-state model (SCE Accepted Subset §2.15, docs/adr/0045, docs/adr/0090): the
-# ordered JSON reader and writer, the model of formats 1, 2 and 3, the value readers and
+# ordered JSON reader and writer, the model of formats 1 to 4, the value readers and
 # writers, and the session id, held to the shared texts under
 # sce-build/tests/fixtures/static_datamodel/saved/. Linked against googletest and sce_base
 # alone: the model reads and writes an event's origin through the SCXML processor's address
