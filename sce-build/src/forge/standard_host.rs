@@ -11,26 +11,32 @@
 //! describes, and a machine that read some other result would be reading what
 //! no standard host answers.
 //!
-//! Two things follow from a type being standard:
+//! Three things follow from a type being standard:
 //!
-//! - **It is served without a declaration.** Every host serves the standard
-//!   types, so a build needs no `--host-invoker` for them
+//! - **It is served without a declaration.** The host of every lane that
+//!   serves the type serves it, so a build needs no `--host-invoker` for it
 //!   ([`types_used_by`], read by
 //!   [`crate::host_processor_analyzer::declare_host_surfaces`]).
 //! - **Its interface is the library's** ([`validate`]): `sce:request` and
 //!   `sce:result` are imported from `sce:std/host/...` by name, and an
 //!   operation the table says takes no request takes no argument at all.
+//! - **It is served on the lanes the table names** ([`refuse_unserved`],
+//!   docs/adr/0107, D8): a build for a lane whose reference host does not
+//!   serve the type refuses a machine that runs it, naming the lanes that do.
+//!   That every lane serves every type stays the goal; it is not a
+//!   precondition of adding one.
 
 use std::path::Path;
 
-use crate::forge::error::{ForgeError, Located, SourceLocation, ValidationError};
+use crate::forge::error::{ForgeError, GenerateError, Located, SourceLocation, ValidationError};
 use crate::forge::model::ForgeKind;
+use crate::generator::Language;
 use crate::host_processor_analyzer::HOST_INVOKE_DEADLINE_PARAM;
 use crate::model::{Invoke, SCXMLModel, UnsupportedInvokeInfo};
 
-/// One standard host operation: the `<invoke type>` that names it and the
+/// One standard host operation: the `<invoke type>` that names it, the
 /// library documents of its records, by their name under `sce:std/host/`
-/// without the extension.
+/// without the extension, and the lanes that serve it.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct StandardHostType {
     /// The `type` of the `<invoke>`.
@@ -39,74 +45,113 @@ pub struct StandardHostType {
     pub request: Option<&'static str>,
     /// The result record the completion carries.
     pub result: &'static str,
+    /// The lanes whose reference host serves the operation
+    /// (docs/SCE_HOST_FEATURES.md, section 8), in the order of
+    /// [`Language::ALL`]. A build for a lane not listed refuses a machine that
+    /// runs the operation ([`refuse_unserved`]). A lane joins the list in the
+    /// change that lands its reference host's support for the operation and
+    /// its driver's scenarios.
+    pub served_by: &'static [Language],
 }
+
+/// The lanes whose reference host serves every operation of the clock, the
+/// key-value store, notifications, HTTP and generated text
+/// (docs/SCE_HOST_FEATURES.md, sections 2 to 6): every lane today, each with
+/// the reference host and driver section 8 lists. Written out rather than
+/// taken from [`Language::ALL`], so that a backend added to [`Language`] is
+/// refused these operations until its reference host serves them: a lane
+/// joins this list in the change that lands that host and its scenarios, and
+/// in no other change. An operation added later names its own lanes
+/// (docs/adr/0107, D8).
+pub const EVERY_REFERENCE_HOST: &[Language] = &[
+    Language::Rust,
+    Language::Cpp,
+    Language::Kotlin,
+    Language::Go,
+    Language::Python,
+    Language::C11,
+    Language::Swift,
+];
 
 /// The directory of the standard library the records live in.
 const LIBRARY_DIRECTORY: &str = "sce:std/host/";
 
 /// Every standard host operation. The type names are one spelling in this
 /// table, the document that specifies them and the reference hosts, and a
-/// test holds this table to the library and the specification.
+/// test holds this table to the library and the specification. Every
+/// operation here is served on every lane ([`EVERY_REFERENCE_HOST`]).
 pub const TYPES: &[StandardHostType] = &[
     StandardHostType {
         invoke_type: "sce-host-clock-now",
         request: None,
         result: "clock_now_result",
+        served_by: EVERY_REFERENCE_HOST,
     },
     StandardHostType {
         invoke_type: "sce-host-clock-zone",
         request: None,
         result: "clock_zone_result",
+        served_by: EVERY_REFERENCE_HOST,
     },
     StandardHostType {
         invoke_type: "sce-host-kv-get",
         request: Some("kv_get_request"),
         result: "kv_get_result",
+        served_by: EVERY_REFERENCE_HOST,
     },
     StandardHostType {
         invoke_type: "sce-host-kv-put",
         request: Some("kv_put_request"),
         result: "kv_put_result",
+        served_by: EVERY_REFERENCE_HOST,
     },
     StandardHostType {
         invoke_type: "sce-host-kv-delete",
         request: Some("kv_delete_request"),
         result: "kv_delete_result",
+        served_by: EVERY_REFERENCE_HOST,
     },
     StandardHostType {
         invoke_type: "sce-host-kv-next-key",
         request: Some("kv_next_key_request"),
         result: "kv_next_key_result",
+        served_by: EVERY_REFERENCE_HOST,
     },
     StandardHostType {
         invoke_type: "sce-host-notify-permission",
         request: None,
         result: "notify_permission_result",
+        served_by: EVERY_REFERENCE_HOST,
     },
     StandardHostType {
         invoke_type: "sce-host-notify-request-permission",
         request: None,
         result: "notify_permission_result",
+        served_by: EVERY_REFERENCE_HOST,
     },
     StandardHostType {
         invoke_type: "sce-host-notify-post",
         request: Some("notify_post_request"),
         result: "notify_post_result",
+        served_by: EVERY_REFERENCE_HOST,
     },
     StandardHostType {
         invoke_type: "sce-host-notify-cancel",
         request: Some("notify_cancel_request"),
         result: "notify_cancel_result",
+        served_by: EVERY_REFERENCE_HOST,
     },
     StandardHostType {
         invoke_type: "sce-host-http-fetch",
         request: Some("http_fetch_request"),
         result: "http_fetch_result",
+        served_by: EVERY_REFERENCE_HOST,
     },
     StandardHostType {
         invoke_type: crate::forge::model_answer::MODEL_GENERATE,
         request: Some("model_generate_request"),
         result: "model_generate_result",
+        served_by: EVERY_REFERENCE_HOST,
     },
 ];
 
@@ -155,6 +200,57 @@ pub fn types_used_by(model: &SCXMLModel) -> Vec<String> {
         }
     }
     used
+}
+
+/// The entry of `table` that names `invoke_type` and does not list `language`
+/// among the lanes that serve it, if there is one: the decision
+/// [`refuse_unserved`] takes for each `<invoke>`, against the table it is
+/// given. A type `table` does not name is no standard type, and is `None`.
+pub fn unserved<'t>(
+    invoke_type: &str,
+    language: Language,
+    table: &'t [StandardHostType],
+) -> Option<&'t StandardHostType> {
+    table
+        .iter()
+        .find(|standard| standard.invoke_type == invoke_type)
+        .filter(|standard| !standard.served_by.contains(&language))
+}
+
+/// [`refuse_unserved`] against `table`: the first `<invoke>` of `model`, in
+/// document order, of a type `table` says `language` does not serve is refused
+/// as `codegen/standard-host-type-not-served`, naming the invoke, its type,
+/// the lane and the lanes that serve it.
+pub fn refuse_unserved_in(
+    model: &SCXMLModel,
+    language: Language,
+    table: &[StandardHostType],
+) -> Result<(), GenerateError> {
+    for info in host_invokes(model) {
+        if let Some(standard) = unserved(&info.invoke_type, language, table) {
+            return Err(GenerateError::CodegenStandardHostTypeNotServed {
+                invoke_id: info.base.invoke_id.clone(),
+                invoke_type: info.invoke_type.clone(),
+                language: crate::forge::codegen_matrix::language_wire_name(language).to_string(),
+                served_by: standard
+                    .served_by
+                    .iter()
+                    .map(|lane| crate::forge::codegen_matrix::language_wire_name(*lane).to_string())
+                    .collect(),
+                at: info.base.source_location.clone(),
+            });
+        }
+    }
+    Ok(())
+}
+
+/// Refuse `model` for `language` when it runs an `<invoke>` of a standard type
+/// whose entry in [`TYPES`] does not list that lane (docs/adr/0107, D8). Asked
+/// where a machine is written for a lane
+/// ([`crate::emit_model_artifacts`]), since the parse that runs [`validate`]
+/// does not know the lane.
+pub fn refuse_unserved(model: &SCXMLModel, language: Language) -> Result<(), GenerateError> {
+    refuse_unserved_in(model, language, TYPES)
 }
 
 /// Hold every `<invoke>` of a standard type to the interface the library gives
@@ -291,4 +387,135 @@ fn located(
         at.and_then(|l| l.line),
         at.and_then(|l| l.col),
     )
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::parser::SCXMLParser;
+
+    /// A table in which the one operation is served by two lanes, as an
+    /// operation added after the first features is (docs/adr/0107, D8).
+    const PARTLY_SERVED: &[StandardHostType] = &[StandardHostType {
+        invoke_type: "x-probe-op",
+        request: None,
+        result: "probe_result",
+        served_by: &[Language::Rust, Language::Cpp],
+    }];
+
+    /// A machine that runs a type the table does not name, then the table's
+    /// operation, on rows 3 and 4.
+    fn machine() -> SCXMLModel {
+        SCXMLParser::new()
+            .parse_string(
+                r#"<scxml xmlns="http://www.w3.org/2005/07/scxml" version="1.0" initial="s">
+  <state id="s">
+    <invoke type="x-other" id="other"/>
+    <invoke type="x-probe-op" id="op"/>
+  </state>
+</scxml>"#,
+                "probe",
+            )
+            .expect("the probe parses")
+    }
+
+    #[test]
+    fn a_lane_the_table_does_not_list_is_unserved() {
+        let entry = unserved("x-probe-op", Language::Go, PARTLY_SERVED)
+            .expect("go is not among the lanes that serve the operation");
+        assert_eq!(entry.invoke_type, "x-probe-op");
+        assert!(unserved("x-probe-op", Language::Rust, PARTLY_SERVED).is_none());
+        assert!(unserved("x-probe-op", Language::Cpp, PARTLY_SERVED).is_none());
+        assert!(
+            unserved("x-other", Language::Go, PARTLY_SERVED).is_none(),
+            "a type the table does not name is no standard type, and is never refused here"
+        );
+    }
+
+    #[test]
+    fn a_machine_that_runs_an_unserved_type_is_refused_naming_the_lanes_that_serve_it() {
+        let refused = refuse_unserved_in(&machine(), Language::Go, PARTLY_SERVED)
+            .expect_err("go does not serve x-probe-op, and the machine was not refused");
+        let GenerateError::CodegenStandardHostTypeNotServed {
+            invoke_id,
+            invoke_type,
+            language,
+            served_by,
+            at,
+        } = refused
+        else {
+            panic!("the machine was refused as another error");
+        };
+        assert_eq!(invoke_id, "op");
+        assert_eq!(invoke_type, "x-probe-op");
+        assert_eq!(language, "go");
+        assert_eq!(served_by, ["rust", "cpp"]);
+        assert_eq!(
+            at.and_then(|at| at.line),
+            Some(4),
+            "the refusal is placed on the <invoke> that runs the type"
+        );
+    }
+
+    #[test]
+    fn a_machine_is_generated_for_a_lane_that_serves_what_it_runs() {
+        for lane in [Language::Rust, Language::Cpp] {
+            assert!(
+                refuse_unserved_in(&machine(), lane, PARTLY_SERVED).is_ok(),
+                "{lane:?} serves x-probe-op and was refused"
+            );
+        }
+    }
+
+    /// Every operation of the table is served on every lane today, so the
+    /// refusal refuses nothing yet. A backend added to [`Language`] reds this
+    /// until it is decided: [`EVERY_REFERENCE_HOST`] gains it in the change
+    /// that lands its reference host, and not before.
+    #[test]
+    fn the_standard_table_refuses_no_operation_on_any_lane() {
+        let mut judged = 0;
+        for standard in TYPES {
+            for &lane in Language::ALL {
+                assert!(
+                    unserved(standard.invoke_type, lane, TYPES).is_none(),
+                    "{} is not served on {lane:?}",
+                    standard.invoke_type
+                );
+                judged += 1;
+            }
+        }
+        assert!(
+            judged >= 12 * Language::ALL.len(),
+            "judged {judged} pairs of an operation and a lane: a test that read none would pass"
+        );
+    }
+
+    /// Each entry lists at least one lane, each once, in the order of
+    /// [`Language::ALL`], which is the order a refusal names them in.
+    #[test]
+    fn each_operation_names_its_lanes_once_in_the_order_of_every_lane() {
+        for standard in TYPES.iter().chain(PARTLY_SERVED) {
+            assert!(
+                !standard.served_by.is_empty(),
+                "{} is served on no lane",
+                standard.invoke_type
+            );
+            let positions: Vec<usize> = standard
+                .served_by
+                .iter()
+                .map(|lane| {
+                    Language::ALL
+                        .iter()
+                        .position(|every| every == lane)
+                        .expect("a lane of Language::ALL")
+                })
+                .collect();
+            assert!(
+                positions.windows(2).all(|pair| pair[0] < pair[1]),
+                "{} names its lanes out of order or twice: {:?}",
+                standard.invoke_type,
+                standard.served_by
+            );
+        }
+    }
 }

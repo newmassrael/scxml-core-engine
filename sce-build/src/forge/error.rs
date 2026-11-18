@@ -6639,6 +6639,27 @@ pub enum GenerateError {
         difference: String,
     },
 
+    /// A machine runs an `<invoke>` of a standard host type
+    /// (docs/SCE_HOST_FEATURES.md) whose entry in the table of standard types
+    /// does not list the lane the machine is generated for among the lanes
+    /// whose reference host serves it (docs/adr/0107, D8). Generating it would
+    /// write a machine whose request no host of that lane answers. Producer:
+    /// [`crate::forge::standard_host::refuse_unserved`], asked where a machine
+    /// is written for a lane. `language` and each of `served_by` are wire
+    /// names, `served_by` in the table's order; `at` is the `<invoke>`.
+    #[error(
+        "<invoke id=\"{invoke_id}\"> runs the standard host type '{invoke_type}', which the \
+         {language} lane does not serve: it is served on {}",
+        served_by.join(", ")
+    )]
+    CodegenStandardHostTypeNotServed {
+        invoke_id: String,
+        invoke_type: String,
+        language: String,
+        served_by: Vec<String>,
+        at: Option<SourceLocation>,
+    },
+
     /// SCE Protocol-Synthesis RFC §synth-5-P (`queue/storage-runtime-missing`)
     /// — a queue document whose storage mode the target language's forge
     /// runtime does not implement yet. The kind is specified for three

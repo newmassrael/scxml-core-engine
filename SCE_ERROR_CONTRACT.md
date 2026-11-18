@@ -822,6 +822,7 @@ references against a real document and drift silently.
 | `codegen/no-std-http-not-supported` | `generate` | no | SCE Protocol-Synthesis RFC §5.J.2 |
 | `codegen/no-std-invoke-not-supported` | `generate` | no | SCE Protocol-Synthesis RFC §5.J.2 |
 | `codegen/no-std-script-not-supported` | `generate` | no | SCE Protocol-Synthesis RFC §5.J.2 |
+| `codegen/standard-host-type-not-served` | `generate` | no |  |
 | `collection/capacity-unresolved` | `validation` | `replace_one_of` | SCE Protocol-Synthesis RFC §5.L |
 | `collection/element-type-not-a-kind` | `validation` | `replace_one_of` | SCE Protocol-Synthesis RFC §5.L |
 | `collection/index-by-field-missing` | `validation` | `replace_one_of` | SCE Protocol-Synthesis RFC §5.L |

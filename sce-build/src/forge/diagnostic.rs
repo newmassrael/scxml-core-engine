@@ -1597,6 +1597,11 @@ pub enum DiagnosticCode {
     /// [`GenerateError::CodegenFeatureLiftingMismatch`].
     #[serde(rename = "codegen/feature-lifting-mismatch")]
     CodegenFeatureLiftingMismatch,
+    /// A machine runs a standard host type the lane it is generated for does
+    /// not serve (docs/adr/0107, D8) — see
+    /// [`GenerateError::CodegenStandardHostTypeNotServed`].
+    #[serde(rename = "codegen/standard-host-type-not-served")]
+    CodegenStandardHostTypeNotServed,
 
     // ── §synth-5-P Queue (the `queue` kind). Four document-level codes the
     //    selection table decides, and one codegen refusal for a storage mode a
@@ -4181,6 +4186,8 @@ pub const ALL_DIAGNOSTIC_CODES: &[DiagnosticCode] = {
         CodegenFeatureSelectionRequired,
         // ADR 0057 §9: a lifted machine some build's variant is not
         CodegenFeatureLiftingMismatch,
+        // ADR 0107, D8: a standard host type the target lane does not serve
+        CodegenStandardHostTypeNotServed,
         // Queue kind (SCE Protocol-Synthesis RFC §synth-5-P)
         QueueStorageNotExactlyOne,
         QueueAllocatorProgressMissing,
@@ -5453,6 +5460,7 @@ impl DiagnosticCode {
             | CodegenGenericKindBackendEmitMissing
             | CodegenFeatureSelectionRequired
             | CodegenFeatureLiftingMismatch
+            | CodegenStandardHostTypeNotServed
             | IoFilesystem
             | CliUnknownLanguage
             | CliUnsupportedLanguage
@@ -5882,6 +5890,7 @@ impl DiagnosticCode {
             | GenerateInlineChildUnreturnable
             | CodegenMcuClassKindOnNonMcuLanguage
             | CodegenGenericKindBackendEmitMissing
+            | CodegenStandardHostTypeNotServed
             | QueueStorageNotExactlyOne
             | QueueAllocatorProgressMissing
             | QueueProgressUnreachable
@@ -6435,6 +6444,7 @@ impl DiagnosticCode {
             CodegenGenericKindBackendEmitMissing => "codegen/generic-kind-backend-emit-missing",
             CodegenFeatureSelectionRequired => "codegen/feature-selection-required",
             CodegenFeatureLiftingMismatch => "codegen/feature-lifting-mismatch",
+            CodegenStandardHostTypeNotServed => "codegen/standard-host-type-not-served",
             CodegenNoStdScriptNotSupported => "codegen/no-std-script-not-supported",
             CodegenNoStdHttpNotSupported => "codegen/no-std-http-not-supported",
             CodegenNoStdFsLoadNotSupported => "codegen/no-std-fs-load-not-supported",
@@ -12227,6 +12237,25 @@ fn generate_fields(e: &GenerateError) -> DiagnosticPayload {
             fix: None,
             key_fragments: vec![model.clone(), language.clone(), features.join(",")],
         },
+        // The `type` the document wrote may sit on a row after the one the
+        // `<invoke>` opens on, so it is not an `actual`
+        // (SCE_ERROR_CONTRACT §3.1.1); the message names it. The lanes that
+        // serve the type are not a key fragment: a lane joining them leaves
+        // the refusal the same.
+        GenerateError::CodegenStandardHostTypeNotServed {
+            invoke_id,
+            invoke_type,
+            language,
+            served_by: _,
+            at: _,
+        } => DiagnosticPayload {
+            code: DiagnosticCode::CodegenStandardHostTypeNotServed,
+            stage: Stage::Generate,
+            expected: None,
+            actual: None,
+            fix: None,
+            key_fragments: vec![invoke_id.clone(), invoke_type.clone(), language.clone()],
+        },
         GenerateError::QueueStorageRuntimeMissing {
             queue_name,
             storage,
@@ -16786,6 +16815,18 @@ mod tests {
                 .into(),
                 r#"{"v":1,"id":"fnv1a:71766cc87b1bc038","code":"codegen/feature-lifting-mismatch","stage":"generate","message":"the rust machine generated for every build of the feature model 'session_features' is not, with the features [session-unicast] on, the machine that variant generates on its own (in enum `MachineState`: the lifted machine has `Accepting , Idle` where the variant has `Idle`): this is a defect of the generator; generate the variant with --features"}"#,
             ),
+            (
+                "codegen/standard-host-type-not-served",
+                GenerateError::CodegenStandardHostTypeNotServed {
+                    invoke_id: "op".into(),
+                    invoke_type: "x-probe-op".into(),
+                    language: "go".into(),
+                    served_by: vec!["rust".into(), "cpp".into()],
+                    at: None,
+                }
+                .into(),
+                r#"{"v":1,"id":"fnv1a:e4cf0e49db723672","code":"codegen/standard-host-type-not-served","stage":"generate","message":"<invoke id=\"op\"> runs the standard host type 'x-probe-op', which the go lane does not serve: it is served on rust, cpp"}"#,
+            ),
             // ── §synth-5-P Queue kind ──
             (
                 "forge/queue-storage-not-exactly-one",
@@ -21135,6 +21176,9 @@ mod tests {
             | CodegenFeatureSelectionRequired
             // ADR 0057 §9: the repair is the generator's, not the author's.
             | CodegenFeatureLiftingMismatch
+            // ADR 0107, D8: the repair is the build's choice of lane or the
+            // document's choice of operation, not a closed candidate set.
+            | CodegenStandardHostTypeNotServed
             // Queue (RFC §synth-5-P) document-level checks: the repair is
             // the author's choice among documents the selection table
             // allows (a storage element, an allocator's progress, a
@@ -21994,6 +22038,7 @@ mod tests {
                 | CodegenGenericKindBackendEmitMissing
                 | CodegenFeatureSelectionRequired
                 | CodegenFeatureLiftingMismatch
+                | CodegenStandardHostTypeNotServed
                 | CodegenNoStdScriptNotSupported
                 | CodegenNoStdHttpNotSupported
                 | CodegenNoStdFsLoadNotSupported
@@ -22309,9 +22354,9 @@ mod tests {
         }
         assert_eq!(
             ALL_DIAGNOSTIC_CODES.len(),
-            538,
+            539,
             "ALL_DIAGNOSTIC_CODES has duplicates or missing entries — \
-             expected 538 distinct variants to match the DiagnosticCode \
+             expected 539 distinct variants to match the DiagnosticCode \
              enum. When a commit adds or removes a variant, update this \
              count in the same commit and follow the variant checklist: \
              SCE_ERROR_CONTRACT.md plus the acceptance-doc appendix \
@@ -23090,6 +23135,10 @@ pub fn anchor_carriage(code: DiagnosticCode, pipeline: Pipeline) -> AnchorCarria
             | CodegenGenericKindBackendEmitMissing
             | CodegenFeatureSelectionRequired
             | CodegenFeatureLiftingMismatch
+            // Located on the `<invoke>` and resolved through
+            // `locate_codegen_error`, but no lane is refused a standard type
+            // yet, so no scenario has raised it.
+            | CodegenStandardHostTypeNotServed
             | AlgorithmConstNotFoldable
             | AlgorithmConstFoldBudgetExceeded
             | AlgorithmConstYieldTypeMismatch

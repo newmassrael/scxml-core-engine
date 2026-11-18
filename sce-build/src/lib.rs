@@ -1545,7 +1545,8 @@ fn locate_codegen_error<E: Into<forge::error::ForgeError>>(
         ForgeError::Generate(generate) => match generate.as_ref() {
             GenerateError::UnsupportedFeature { at, .. }
             | GenerateError::SourceHashUnavailable { at, .. }
-            | GenerateError::InlineChildUnreturnable { at, .. } => at.clone(),
+            | GenerateError::InlineChildUnreturnable { at, .. }
+            | GenerateError::CodegenStandardHostTypeNotServed { at, .. } => at.clone(),
             _ => None,
         },
         _ => None,
@@ -2113,6 +2114,14 @@ pub fn emit_model_artifacts(
     language: generator::Language,
     options: &ModelEmitOptions<'_>,
 ) -> Result<generator::GeneratedOutput, CompileError> {
+    // docs/adr/0107, D8: a standard host type is served on the lanes its
+    // entry names, and a machine that runs one is refused for any other lane,
+    // on the `<invoke>` that runs it. Here because every route that writes a
+    // machine for a lane comes through here (`generate`, `check`, the
+    // document set and each child a document carries), and the parse that
+    // holds the type to its records does not know the lane.
+    forge::standard_host::refuse_unserved(model, language)
+        .map_err(|refused| locate_codegen_error(refused, source_name, model))?;
     // docs/SCE_TEST_PROFILE.md §11.9: a `test-component` is read and checked
     // on every backend, and a backend generates one only once the profile's
     // runtime lands there (`codegen_matrix::TEST_COMPONENT_BACKENDS`); every
@@ -12180,6 +12189,42 @@ mod tests {
             .iter()
             .map(|record| record.error.to_diagnostics()[0].code.as_str())
             .collect()
+    }
+
+    /// A machine that runs a standard host type its lane does not serve is
+    /// refused on the `<invoke>` that runs it (docs/adr/0107, D8): the row the
+    /// refusal carries is the row it reaches the wire with.
+    #[test]
+    fn a_standard_type_a_lane_does_not_serve_is_refused_on_its_invoke() {
+        use forge::standard_host::{refuse_unserved_in, StandardHostType};
+        const PARTLY_SERVED: &[StandardHostType] = &[StandardHostType {
+            invoke_type: "x-probe-op",
+            request: None,
+            result: "probe_result",
+            served_by: &[generator::Language::Rust],
+        }];
+        let model = parser::SCXMLParser::new()
+            .parse_string(
+                r#"<scxml xmlns="http://www.w3.org/2005/07/scxml" version="1.0" initial="s">
+  <state id="s">
+    <invoke type="x-probe-op" id="op"/>
+  </state>
+</scxml>"#,
+                "probe",
+            )
+            .expect("the probe parses");
+        let refused = refuse_unserved_in(&model, generator::Language::Kotlin, PARTLY_SERVED)
+            .expect_err("kotlin does not serve x-probe-op");
+        let located = locate_codegen_error(refused, "probe.scxml", &model);
+        assert_eq!(
+            codes_of(std::slice::from_ref(&located)),
+            ["codegen/standard-host-type-not-served"]
+        );
+        assert_eq!(
+            located.location.line,
+            Some(3),
+            "the refusal is placed on the <invoke>, not on the document"
+        );
     }
 
     /// What the library hands out is the producer's table of the document, the

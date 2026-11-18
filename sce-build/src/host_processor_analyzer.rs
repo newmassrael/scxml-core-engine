@@ -433,9 +433,11 @@ pub fn parse_deadline_ms(written: &str) -> Option<u64> {
 /// untouched when it refuses.
 ///
 /// The standard host features' invoke types
-/// ([`crate::forge::standard_host`]) are served by every host, so a document
-/// that runs one needs no declaration: they join the declared list here, after
-/// it, in the order the document first names them.
+/// ([`crate::forge::standard_host`]) are served by the host of every lane the
+/// table lists for them, so a document that runs one needs no declaration:
+/// they join the declared list here, after it, in the order the document first
+/// names them. A build for a lane the table does not list refuses the machine
+/// where it is written ([`crate::forge::standard_host::refuse_unserved`]).
 pub fn declare_host_surfaces(
     model: &mut SCXMLModel,
     send_types: &[String],
