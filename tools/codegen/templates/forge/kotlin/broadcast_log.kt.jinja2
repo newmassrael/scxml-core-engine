@@ -181,10 +181,12 @@ sealed interface {{ pascal }}Read {
 
     /**
      * The entry [seq] was copied whole, and is not a value this log wrote: its
-     * stored length is above [MAX_ENCODED_BYTES], or its bytes do not decode as
-     * a `{{ element_pascal }}`. The reader has moved past it either way.
+     * stored length is above [MAX_ENCODED_BYTES]
+     * ([CodecError.LengthOutOfRange]), or its bytes do not decode as a
+     * `{{ element_pascal }}` ([error] is the kind the decode refused them with).
+     * The reader has moved past it either way.
      */
-    data class Unreadable(val seq: Long, val why: String) : {{ pascal }}Read
+    data class Unreadable(val seq: Long, val error: CodecError) : {{ pascal }}Read
 }
 
 /**
@@ -242,7 +244,9 @@ fun publish(publisher: {{ pascal }}Publisher, element: {{ element_pascal }}{% if
  * decoding it safe: a torn copy is a lag and is never decoded.
  *
  * A stored length above [MAX_ENCODED_BYTES] is not a length this log wrote, and
- * is [{{ pascal }}Read.Unreadable] and never an index out of range.
+ * is [{{ pascal }}Read.Unreadable] with [CodecError.LengthOutOfRange], never an
+ * index out of range; bytes the element's decode refuses are
+ * [{{ pascal }}Read.Unreadable] with the kind it refused them with.
  */
 fun read(log: {{ pascal }}, reader: Reader): {{ pascal }}Read {
     val entry = LongArray(WORDS)
@@ -264,7 +268,7 @@ private fun decodeEntry(seq: Long, entry: LongArray): {{ pascal }}Read {
     // The word is a signed Long here and an unsigned length in the contract, so a
     // negative one is a length above the bound.
     if (stored < 0L || stored > MAX_ENCODED_BYTES.toLong()) {
-        return {{ pascal }}Read.Unreadable(seq, "the stored length $stored is above the $MAX_ENCODED_BYTES bytes this log holds")
+        return {{ pascal }}Read.Unreadable(seq, CodecError.LengthOutOfRange)
     }
     val length = stored.toInt()
     val bytes = ByteArray(length)
@@ -284,9 +288,7 @@ private fun decodeEntry(seq: Long, entry: LongArray): {{ pascal }}Read {
     val tag = entry[1 + {{ context.tag_word }}].toUByte()
 {% endif %}
     val element = {{ element_pascal }}.decode(SceCursor(bytes){% for flag in context.flags %}, flagInput(flags.{{ flag.camel }}){% endfor %}{% if context.has_tag %}, tag{% endif %})
-        .valueOr { refused ->
-            return {{ pascal }}Read.Unreadable(seq, "the stored bytes do not decode as a {{ element_pascal }}: ${refused.error}")
-        }
+        .valueOr { refused -> return {{ pascal }}Read.Unreadable(seq, refused.error) }
 {% if context.present %}
     return {{ pascal }}Read.Item(
         seq,

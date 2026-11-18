@@ -2770,3 +2770,13 @@ A group an input or a chain's entries decide is unchanged.
 - A validator, a procedure or an algorithm does not name a member of a group alone; an expression that does is
   refused when it is generated.
 
+## A Kotlin broadcast log's unreadable entry holds the kind that refused it (ADR 0099, amendment of 2026-11-16)
+
+Landing: the commit that adds this section. No generated tree is committed for a Kotlin broadcast log; a consumer
+regenerates its logs.
+
+- A generated broadcast log's `<Log>Read.Unreadable` is `Unreadable(seq, error: CodecError)`, where it was
+  `Unreadable(seq, why: String)` with the kind inside a message. `error` is `CodecError.LengthOutOfRange` for a
+  stored length past `MAX_ENCODED_BYTES` and the element decode's kind otherwise, as a C++ log's `<Log>Malformed`
+  holds it. Code that read `unreadable.why` matches `unreadable.error`.
+

@@ -19,6 +19,7 @@
 
 package com.sce.forge.runtime.broadcastlog
 
+import com.sce.forge.runtime.CodecError
 import com.sce.generated.broadcast_log_conformance_event.BroadcastLogConformanceEvent
 import com.sce.generated.broadcast_log_conformance_literal.BroadcastLogConformanceLiteral
 import com.sce.generated.broadcast_log_conformance_literal.BroadcastLogConformanceLiteralPublish
@@ -51,7 +52,6 @@ import kotlin.test.assertEquals
 import kotlin.test.assertIs
 import kotlin.test.assertNotNull
 import kotlin.test.assertNull
-import kotlin.test.assertTrue
 
 // The generated aliases are the runtime's types: these accept the alias and
 // hand back the runtime's type, and do not compile otherwise. They are named
@@ -268,11 +268,11 @@ class BroadcastLogGeneratedTest {
         publisher.publish(longArrayOf(-1L, 0L))
         val tooLong = assertIs<BroadcastLogConformanceLiteralRead.Unreadable>(readEvent(log, reader))
         assertEquals(0L, tooLong.seq)
-        assertEquals("the stored length 1000 is above the 3 bytes this log holds", tooLong.why)
+        assertEquals(CodecError.LengthOutOfRange, tooLong.error, "a length past the bound is refused as one")
         // A length is unsigned in the contract, so a word with its top bit set is above the bound too.
         val negative = assertIs<BroadcastLogConformanceLiteralRead.Unreadable>(readEvent(log, reader))
         assertEquals(1L, negative.seq)
-        assertEquals("the stored length -1 is above the 3 bytes this log holds", negative.why)
+        assertEquals(CodecError.LengthOutOfRange, negative.error, "a negative word is a length past the bound")
         assertEquals(2L, reader.cursor, "the reader has moved past each unreadable entry")
     }
 
@@ -285,7 +285,7 @@ class BroadcastLogGeneratedTest {
         publisher.publish(longArrayOf(2L, 0x0201L))
         val unreadable = assertIs<BroadcastLogConformanceLiteralRead.Unreadable>(readEvent(log, reader))
         assertEquals(0L, unreadable.seq)
-        assertTrue(unreadable.why.contains("do not decode"), unreadable.why)
+        assertEquals(CodecError.NeedMoreBytes, unreadable.error, "the element's decode names the frame cut short")
         assertEquals(1L, reader.cursor)
     }
 }

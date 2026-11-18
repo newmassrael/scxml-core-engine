@@ -5358,7 +5358,7 @@ fn kotlin_generates_a_log_over_the_runtime_sized_from_its_element() {
             "data class Item(val seq: Long, val element: EventRecord) : EventRingRead",
             "data object Empty : EventRingRead",
             "data class Lagged(val skipped: Long) : EventRingRead",
-            "data class Unreadable(val seq: Long, val why: String) : EventRingRead",
+            "data class Unreadable(val seq: Long, val error: CodecError) : EventRingRead",
             "fun publish(publisher: EventRingPublisher, element: EventRecord): EventRingPublish {",
             "val refused = element.encode(sink)",
             "fun read(log: EventRing, reader: Reader): EventRingRead {",
@@ -5366,6 +5366,9 @@ fn kotlin_generates_a_log_over_the_runtime_sized_from_its_element() {
             "RuntimeRead.Empty -> EventRingRead.Empty",
             "is RuntimeRead.Lagged -> EventRingRead.Lagged(found.skipped)",
             "val element = EventRecord.decode(SceCursor(bytes))",
+            // A frame the element's decode refuses is unreadable with the kind
+            // that refused it, as a C++ log's `Malformed` holds it.
+            ".valueOr { refused -> return EventRingRead.Unreadable(seq, refused.error) }",
         ],
     );
     // The length is the first word and the bytes follow it, eight to a word,
@@ -5386,8 +5389,8 @@ fn kotlin_generates_a_log_over_the_runtime_sized_from_its_element() {
         .find("if (stored < 0L || stored > MAX_ENCODED_BYTES.toLong()) {")
         .expect("the stored length is checked against the bound, as a signed word");
     let refusal = code[length_check..]
-        .find("return EventRingRead.Unreadable(seq, \"the stored length")
-        .expect("a length above the bound is an unreadable entry");
+        .find("return EventRingRead.Unreadable(seq, CodecError.LengthOutOfRange)")
+        .expect("a length above the bound is an unreadable entry, refused as LengthOutOfRange");
     let buffer = code[length_check..]
         .find("ByteArray(length)")
         .expect("the entry's bytes are held in a buffer the length sizes");
