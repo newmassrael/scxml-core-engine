@@ -105,8 +105,8 @@ dc7ca2fa2bc975e117d47e912ef63494ac67ec8c sce/include/core/ExternalEventBudget.h
 6e28fdece236b93495bd016187eaa0852ec9986b sce/include/core/ForeachHelper.h
 2f9d634413680281f3b85ba9b1009ec9b5cdae2e sce/include/core/HierarchicalStateHelper.h
 8626865235b8a37fc3f97e3b8a1023d32715ebcd sce/include/core/HistoryHelper.h
-b9deb313431bbeeeed771eb6639af5f101bd92b5 sce/include/core/HostInvokeLedger.h
-773b8a379cbd17a8aa29c8127f5da8fbf4a5e33f sce/include/core/HostProcessor.h
+2868e7f095d6bc0366a19fd019e24a6f178cf8d9 sce/include/core/HostInvokeLedger.h
+396427ecaf2b9000df16009a34d6d1a293b4d7ca sce/include/core/HostProcessor.h
 e27194ebe89e0e2b73935f83a830afb2edb3c1bb sce/include/core/InvokeHelper.h
 c421580553a2e6886266194d06643115c6a160b9 sce/include/core/LogMacros.h
 f67ff26d33c168aac917958b04fb975238446def sce/include/core/MacrostepCeilings.h

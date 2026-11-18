@@ -214,6 +214,17 @@ struct HostInvokeRequest {
     /// the one that saved. What the host does with that is its business; a host
     /// that cannot tell a second start from a first does not see it.
     bool restarted = false;
+    /// Which start of this `<invoke>` in its session this is, counted from 1
+    /// (docs/SCE_HOST_FEATURES.md, section 1, "Identity"). The engine assigns it,
+    /// and a saved state carries it with the invocation and the count of each
+    /// `<invoke>`'s starts.
+    ///
+    /// With `sessionId` and `invokeId` it names the invocation across a save and a
+    /// restore, which `token` does not: a restore starts a running invocation
+    /// again under the number it had, so a host that kept what it answered under
+    /// that identity answers the repeat with it (docs/adr/0107, D4). A start the
+    /// document makes after the earlier one ended takes the next number.
+    uint64_t start = 0;
 };
 
 /**

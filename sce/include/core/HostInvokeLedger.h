@@ -432,6 +432,18 @@ public:
         nextToken_ = next;
     }
 
+    /// How many times each host-run `<invoke>` has started in this session, by its id
+    /// and ordered by the id's bytes: a save writes it, so a restored machine numbers
+    /// its starts on from it (docs/adr/0107, D4).
+    const std::map<std::string, uint64_t> &starts() const {
+        return starts_;
+    }
+
+    /// Number starts on from @p starts, the counts a saved state holds.
+    void continueStartsFrom(std::map<std::string, uint64_t> starts) {
+        starts_ = std::move(starts);
+    }
+
 private:
     using Key = std::pair<std::string, std::string>;
 
@@ -453,6 +465,11 @@ private:
      * A completion the host reports now is handed back (`HostInvokeCompletedAtOnce`) for
      * the engine to end through the door a later one takes. A restore starts an
      * invocation again through here, with the deadline it had left.
+     *
+     * A start the document makes is numbered on from the count of its `<invoke>`; a
+     * restart keeps the number the saved state gave it, whose count the restore
+     * carried on, since it repeats that start rather than making another
+     * (docs/adr/0107, D4).
      */
     template <typename Deadlines>
     HostInvokeReport startRun(const ::SCE::HostInvokeHandler &handler, ::SCE::HostInvokeRequest request,
@@ -464,6 +481,9 @@ private:
         // host registered for it.
         const uint64_t token = nextToken_++;
         request.token = token;
+        if (!request.restarted) {
+            request.start = ++starts_[request.invokeId];
+        }
         // docs/adr/0045: the session that starts it, which the host may serve or refuse
         // it by, and names again to end it.
         request.sessionId = sessionId;
@@ -518,6 +538,9 @@ private:
     std::map<Key, StartedHostInvoke> started_;
     // The token the next start receives.
     uint64_t nextToken_ = 0;
+    // docs/adr/0107, D4: how many times each `<invoke>` has started in this session, by
+    // its id, which numbers a start (`HostInvokeRequest::start`).
+    std::map<std::string, uint64_t> starts_;
     // docs/adr/0045: the invocations a restore re-armed, which start at the top of the
     // first macrostep the host drives (`startRestored`), and until then are neither
     // running nor gone.
