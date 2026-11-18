@@ -9,8 +9,8 @@ b3714fc5eb802de049e503e6f9896d5ab50f656c backends/cpp/forge-runtime/include/sce/
 1e1ee298d0f54622c88c06e9efad2a82a134d8cb backends/cpp/forge-runtime/include/sce/forge/bounded.h
 af0a10b9f2ae3cb8206baf2c3768071fd70b9c39 backends/cpp/forge-runtime/include/sce/forge/broadcast_log.h
 c89db24e1b5a3ae9d1137faa7c51f453c6c5259e backends/cpp/forge-runtime/include/sce/forge/broadcast_log_narrow.h
-2ba9ad0282e0e9eec93cc61677397d1899a88bc1 backends/cpp/forge-runtime/include/sce/forge/cbor.h
-df49cb315049afd47c680a21357b52dd0f2727fc backends/cpp/forge-runtime/include/sce/forge/codec.h
+6365b27ea6e8cbe3814b6e10d0bb6a44c91c939d backends/cpp/forge-runtime/include/sce/forge/cbor.h
+c8323d1f36c7ea884c0441c20bb9520eb6ade0be backends/cpp/forge-runtime/include/sce/forge/codec.h
 08ab6c0575ff13911cc6289749c2ce70be41d419 backends/cpp/forge-runtime/include/sce/forge/content_line.h
 f90a6703548dfa558d7559f82b5001233ab27405 backends/cpp/forge-runtime/include/sce/forge/filter.h
 6683e655359f8961350c44f99a8168755da9e95f backends/cpp/forge-runtime/include/sce/forge/interpolation.h
@@ -105,8 +105,8 @@ dc7ca2fa2bc975e117d47e912ef63494ac67ec8c sce/include/core/ExternalEventBudget.h
 6e28fdece236b93495bd016187eaa0852ec9986b sce/include/core/ForeachHelper.h
 2f9d634413680281f3b85ba9b1009ec9b5cdae2e sce/include/core/HierarchicalStateHelper.h
 8626865235b8a37fc3f97e3b8a1023d32715ebcd sce/include/core/HistoryHelper.h
-2868e7f095d6bc0366a19fd019e24a6f178cf8d9 sce/include/core/HostInvokeLedger.h
-396427ecaf2b9000df16009a34d6d1a293b4d7ca sce/include/core/HostProcessor.h
+b9deb313431bbeeeed771eb6639af5f101bd92b5 sce/include/core/HostInvokeLedger.h
+773b8a379cbd17a8aa29c8127f5da8fbf4a5e33f sce/include/core/HostProcessor.h
 e27194ebe89e0e2b73935f83a830afb2edb3c1bb sce/include/core/InvokeHelper.h
 c421580553a2e6886266194d06643115c6a160b9 sce/include/core/LogMacros.h
 f67ff26d33c168aac917958b04fb975238446def sce/include/core/MacrostepCeilings.h
@@ -207,8 +207,8 @@ f57837b886a94c405c0fdb72c9e8476edcf931de sce/include/scripting/ecma_semantics.lu
 83ab4d35f3baefa006351c781a4ac3fc2336e681 sce/include/static/StaticExecutionEngine.h
 91380dfbe084a5fadde4f8ece93b297029677e60 sce/include/types.h
 579628eb9adfc6a3b5eb5e8a11fec6bd0de99ae6 sce/sce_base_sources.cmake
-c2606626637a2ce8bb3543be692448466653df42 scripts/_embed_manifest_filter.py
-8e78397101cde6f104744195d2fba21f5f8a551f scripts/embed_manifest.py
+d6009c6e0048d50a78d6739330cb4a775148c746 scripts/_embed_manifest_filter.py
+b551a20eeb572df20f57bce9642d0c35b9a07fff scripts/embed_manifest.py
 792b743785ea4d1ad872b7cbce32e60d2ec00c5f scripts/emit_embed_manifest.sh
 312e3de080cf7d81aff7270628e1a7e050a6d0ef scripts/package_embed.sh
 6e52d0a0574d02ec0aaabe8610aff89b03da336b third_party/cpp-httplib

@@ -255,6 +255,11 @@ def canon(path: str) -> str:
 
 
 def main() -> int:
+    # What this prints is read by bash and compared byte for byte (the include
+    # directories a loop copies, the stamp the manifest records), so a line
+    # ends in LF on every platform: a Windows Python's text mode wrote CRLF,
+    # and `common\r` named no directory to package_embed.sh.
+    sys.stdout.reconfigure(newline="\n")
     parser = argparse.ArgumentParser(description=__doc__.splitlines()[0])
     sub = parser.add_subparsers(dest="command", required=True)
     sub.add_parser("include-dirs")
