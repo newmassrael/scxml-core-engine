@@ -1914,6 +1914,8 @@ Every transport implementation must honour the following lifecycle phases. The g
 | `supports_cross_target_reply` | `bool` | An RpcReply for a request sent to target A can arrive from a different target B, because correlation goes through a lookup table keyed on a sender-minted identifier. `false` where the reply path is bound to the request at the protocol layer (Zenoh `session.get`) or where there is no `RequestReply` capability. Gates a `reply_from:` set wider than the binding's own target (§14.6). |
 | `server_deadline_notice` | `Unsupported \| DropSilently \| ActiveError` | What the requesting peer observes when `server.response_deadline_ms` elapses (§9.5.1). Deliberately **not** a boolean: whether the deadline can be armed and what the peer learns when it fires are different questions, and the second is author-visible — it decides which `RpcStatus` the requester's failure carries, and therefore what the client document can branch on. `ActiveError` where an answer has somewhere to go — a reserved protocol slot (SOME/IP `MT_ERROR` / `E_TIMEOUT`), the request's own return stream (custom_tcp), or the paired reply topic (DDS); `DropSilently` where releasing the parked handle is the only signal available (Zenoh `Query`); `Unsupported` where no server arm parks anything a deadline could bound, which makes the knob a parse-time reject rather than a silent no-op. The parse-time rejection enumerates the realising transports from this registry rather than from prose, so a new arm reaches the diagnostic with its descriptor. |
 
+`https` (§22) is the one transport both cores serve: the generated C++ `TransportRouter` carries its client side as an arm, and the host core carries both sides, so neither emitter refuses it. Which host cores have an adapter for it is still per language (§19, "What a host core refuses"): the Rust core's alone so far.
+
 Adding a transport touches more than the registry entry and the template: typed topology state, codegen inputs, the runtime, tests and this document's §8.2 matrix follow. §6.4 is the single step-by-step list; the template's `#error` fallback still catches a missing template arm at C++ compile time.
 
 **Future extensions**: `conformance_level: Complete | Degraded` (validated against deploy.yaml declarations), `max_payload_bytes: Option<usize>` (envelope size validation at build time).
@@ -4026,7 +4028,7 @@ Runtime conditions that raise `error.communication`. Each condition pins a machi
 | 6 | Parallel barrier timeout (§16.5) | `parallelBarrierTimeout` | `parallel_id: string`, `missing_regions: [string]`, `timeout_ms: int` |
 | 7 | Envelope dedup window overflow (sustained rate exceeds window capacity) | `dedupWindowOverflow` | `source: string`, `window_size: int` |
 | 8 | Peer machine's liveness signal observed lost. Transport-portable manifestation — Zenoh: `sce/live/<machine>` 2-segment token DELETE; SOME/IP: vsomeip `register_availability_handler` fires `available=false` on the machine-level liveness service in `[0x8280, 0x82FF]` (RFC F.X-4); DDS: a matched writer's LIVELINESS lease expires and the notification reader's `on_liveliness_changed` reports a decreased alive count (requires `transports.dds.qos.liveliness_lease_ms`, §8.2); custom_tcp: the stream to the peer closes — a FIN, a reset, or a keepalive timeout — which is the most direct form of the signal, since a connection-oriented transport holds the liveness evidence rather than inferring it. `transports.custom_tcp.keepalive:` is what extends that from "peer exited" to "peer is unreachable", §16.8.3.) | `peerPartitioned` | `target: string`, `last_seen_ms_ago: int?` |
-| 9 | Transport backpressure queue full, outbound envelope dropped (§10.10 `OutboundBuffer` at `max_pending_per_target`) | `backpressureDrop` | `transport: string`, `target: string`, `queue_depth: int` |
+| 9 | Transport backpressure queue full, outbound envelope dropped (§10.10 `OutboundBuffer` at `max_pending_per_target`, or the §22.3 mailbox of an HTTPS client at `mailbox`) | `backpressureDrop` | `transport: string`, `target: string`, `queue_depth: int` |
 | 10 | Peer rejected envelope due to authorization failure | `unauthorized` | `target: string`, `transport_status?: string` |
 | 11 | Inbound envelope reached an active `OrderingBuffer` without `sequence_no` (§10.6.3) | `missingSequence` | *(baseline only — `source`, `envelope_id` carry the diagnosis)* |
 | 12 | `OrderingBuffer` fast-forwarded past a missing sequence range after `gap_timeout` expired (§10.6.4) | `orderingGap` | `lost_seq_lo: uint64`, `lost_seq_hi: uint64` (inclusive range of skipped sequence numbers) |
@@ -4429,7 +4431,7 @@ How a machine generated for a backend other than C++ reaches a Mesh core. C++ ke
 - **Reservation.** The `sce:` prefix is SCE's own: a host may not declare a type under it to the build (`cli/reserved-host-type`), and the general registrations — `register_event_processor` / `register_invoker` and their spellings — refuse one at run time. A router is therefore only ever installed by a call that names itself one; a handler registered as `sce:mesh` or `sce:mesh-rpc` by accident would otherwise take every Mesh send or request with nothing on the wire saying so. Every copy of the rule reads `sce-build/tests/fixtures/host_processor/reserved_type_cases.json`.
 - **Errors.** The two ways a Mesh send can fail before a peer answers are different faults and raise different events. No router registered is a configuration fault of the host and raises `error.execution`, as any host-served send with no handler does (W3C SCXML §6.2.5). A registered router that cannot reach the peer raises `error.communication` itself, with the §16.7 row that says why. The two engines with a route of their own say the same: the generated C++ engine when no mesh send callback is set, and the Interpreter when its target factory holds no router under the Mesh scheme (`SendHelper::MESH_TARGET_SCHEME`, which a host registers with `registerTargetType`). Neither hands the event back to the machine that sent it, which would take a peer's event for its own.
 - **Peer table.** For a backend with a host core (`--lang rust`, `--lang kotlin`, `--language swift`), `sce-codegen generate --deploy` emits the machine's peer table instead of a transport header: `<document>_mesh_peers.rs` (a `sce_rust_mesh::peers::Machine` const), `<Document>MeshPeers.kt` (a `com.sce.mesh.MeshMachine`) or `<Document>MeshPeers.swift` (a `SceMesh.MeshMachine`). It holds the machine's name as deploy.yaml keys it — the `source` its envelopes carry — its §10.5 window and §10.6.1 gap timeout, and one entry per bound peer. Each entry has the peer's `PeerConfig` and a `PeerLink` saying whether this side dials the peer's `url` or accepts it (§18.1), or, for a `zenoh_inbox` peer, that the host's one Zenoh session reaches it (§20). The `PeerConfig` is decided from the binding by the same function the C++ router's per-target members are decided by: dedup, ordering and its sequence stamps, the §10.10 buffer when the machine declares one and the transport has a readiness edge, and the retry policy. The two cores therefore cannot read one binding two ways. A host builds its router with `router()` and opens one connection per `PeerLink`. The table is data only; every rule stays in the core. The templates live under `templates/mesh_router/<lang>/`, not `templates/mesh/<lang>/`, because the latter is what gives a backend a generated router (§9.5's `generated` route), and a backend has one route for a request, not two.
-- **What a host core refuses.** Every transport the machine is bound over must be one the §10.4.2 registry marks `served_by: HostCore` (`mesh/codegen-unsupported-transport`, offering the ones that are). A deployment feature only the generated C++ router has is refused by name (`mesh/codegen-host-core-unsupported`) rather than left out of a table that would still build: a `server:` block, a device `transports.custom_tcp.listen:` endpoint, `partitions:` routes, or a remote `<invoke type="scxml">` peer. So is a transport the registry marks `served_by: HostCore` that the backend's own core has no adapter for: the adapter is the hand-written part of a core (§18.4, §20.4), and the cores do not carry the same ones, so `zenoh_inbox` is refused for `--lang kotlin` and `--language swift` rather than emitted as a peer table their cores have no `PeerLink` to read.
+- **What a host core refuses.** Every transport the machine is bound over must be one the §10.4.2 registry marks `served_by: HostCore` (`mesh/codegen-unsupported-transport`, offering the ones that are). A deployment feature only the generated C++ router has is refused by name (`mesh/codegen-host-core-unsupported`) rather than left out of a table that would still build: a `server:` block, a device `transports.custom_tcp.listen:` endpoint, `partitions:` routes, or a remote `<invoke type="scxml">` peer. So is a transport the registry marks `served_by: HostCore` that the backend's own core has no adapter for: the adapter is the hand-written part of a core (§18.4, §20.4), and the cores do not carry the same ones, so `zenoh_inbox` is refused for `--lang kotlin` and `--language swift` rather than emitted as a peer table their cores have no `PeerLink` to read, and `https` (§22) for every host core but Rust's.
 - **Checkpoint and durable receipt.** A host core is where §10.11 lives: it checkpoints a machine the deploy declares `persistence: checkpoint` (the saved tree and every endpoint of it, in one document the host writes durably), holds each envelope until the checkpoint that produced it is durable, raises `RESTORED` after a restore (§16.7 row 17), and carries `receipt: durable` over the transports it has adapters for (`sce-rust-mesh`: `wss`, `zenoh_inbox`; `sce-kotlin-mesh`: `wss`). A host with a router of its own is told by the manifest which of its bindings are durable and carries the contract itself. Specified by ADR 0045 and not yet built (§10.11, "Status").
 
 ## 20. Zenoh Binding
@@ -4538,4 +4540,118 @@ The first five are read off the deployment alone; the last three need the parent
 | C11 | `sce_host_registry_register_child_mesh_routers`, or the machine's `_register_child_mesh_routers` | the generated parent, `_apply_mesh_calls` | a child of `datamodel="sce-static"` only; the build gives the parent the `sce:mesh` processor when a child needs a router |
 | C++ (generated) | `registerChildMeshRouters` | the generated parent, `applyMeshCalls` | a child's `<invoke type="sce:mesh-rpc">` has no invoker and raises `error.execution` |
 | Interpreter | `StateMachine::registerChildMeshRouters` | the child's own event loop | the child is built with a dispatcher of its own, which reaches a peer only through `IChildMeshRouter::createTarget` |
+
+## 22. HTTPS Binding
+
+Added by docs/adr/0107 (D2). The binding a machine on a network it does not know uses to reach a server machine: every exchange is one HTTP request the client makes and its response, so a client behind an explicit proxy, behind a proxy that inspects TLS, or on a network that passes nothing but HTTPS reaches its server as long as its platform can make an HTTPS request. It is defined on HTTP semantics (RFC 9110) and not on one version of HTTP, so HTTP/1.1, HTTP/2 and HTTP/3 carry it unchanged. It complements §18 and §20 and replaces neither: a server's send waits for the client's next exchange, or for the one the client holds open, rather than being pushed down a connection that stays up.
+
+Two cores carry it: the host core (`sce-rust-mesh`, client and server) and the generated C++ `TransportRouter` (the client side, as an arm that takes its adapter from the host). The §10.4.2 registry therefore lists `https` as served by both, and each emitter accepts it; the host cores other than Rust's have no adapter for it yet and refuse it as §19 says. What this section fixes is the wire and the port, so that any client and any server of it interoperate, and any HTTP stack can carry it.
+
+A binding names it as `transport: https`. The side that posts the exchanges carries `url`; the side that keeps the mailbox carries `listen`; which side dials is read from which of the two the binding has, as §18 reads it from `url`, and a binding with both or neither is refused at deploy validation. Both sides carry `authenticator` (§22.5). The keys and their defaults:
+
+| Side | Key | Meaning | Default |
+|---|---|---|---|
+| dialing | `url` | `https://<host>[:<port>][<base>]`, before the §22.1 path, with no query or fragment; `http://` only for a loopback host | required |
+| dialing | `authenticator` | `bearer`, `install` or `mtls` (§22.5) | required |
+| dialing | `hold_ms` | how long a poll asks the server to hold it while the mailbox is empty | 25000 |
+| dialing | the retry keys every binding spells | §10.10; a request that failed is sent again under them (§22.4) | none |
+| accepting | `listen` | `<host>:<port>` the server accepts on | required |
+| accepting | `authenticator` | as on the dialing side; a binding without one is refused | required |
+| accepting | `max_hold_ms` | the longest an exchange is held | 30000 |
+| accepting | `max_body_bytes` | the largest request body taken in | 1048576 |
+| accepting | `absence_ms` | how long a client may go without an exchange and stay ready (§22.4) | 120000 |
+| accepting | `mailbox` | how many envelopes wait for the client at most (§22.3) | 1024 |
+
+What the cores route over it is what they route over §18: a `<send>` and its delivery (`FireForget`) and a request with its reply (`RequestReply`); a pattern that needs a subscription or a field is refused at build time.
+
+### 22.1 Exchange and Peer Identity
+
+- Only the client opens an exchange. It POSTs to `<base>/sce-mesh/1/<client>`, where `<client>` is its machine name, the `source` its envelopes carry, and `1` the version of this binding: §18.1's path, with §18.1's rule that a name a path segment cannot carry as it stands cannot use this binding. The server never dials, because a client on an unknown network has no address to dial.
+- The server learns the client's name from the path and nothing else; the client knows the server's from its own binding. Neither sends a name in-band, and who may claim a name is §22.5.
+- A request carries `Content-Type: application/cbor-seq`, `Sce-Mesh-Ack: <n>` (§22.3), `Sce-Mesh-Hold-Ms: <ms>` (§22.3; `0` or absent answers at once) and the credential of §22.5.
+- `http://` without TLS is for a loopback test only.
+
+### 22.2 Framing
+
+- A request body is zero or more envelopes, each its CBOR bytes (§7.5), one after another: a CBOR sequence (RFC 8742), media type `application/cbor-seq`. An empty body is a poll.
+- A response body is the same, and the response carries `Sce-Mesh-First: <n>`, the mailbox number of its first envelope; the others follow it in order. The header is absent when the body is empty.
+- A receiver splits a body by reading one CBOR data item after another. Bytes from which no item can be read are handed to the core as one last envelope, which it reports as §16.7 row 4 (`codec: "cbor"`); the exchange is still taken in, and nothing is dropped unseen.
+
+### 22.3 Mailbox, Acknowledgement and Hold
+
+- **What the server holds for a client.** Everything the server machine sends the client, replies included, goes to the client's mailbox: a queue in arrival order, bounded by `mailbox`, whose envelopes are numbered 1, 2, 3 and on, per client. A send that finds the mailbox full is dropped as §16.7 row 9 (`backpressureDrop`, `queue_depth` the bound), as a full §10.10 buffer drops one.
+- **An exchange**, on the server, in this order: refuse it if §22.4 says so; drop from the mailbox every envelope numbered at or below `Sce-Mesh-Ack`; take in the request's envelopes and run the macrosteps they cause; then answer with what the mailbox holds, every envelope numbered above the acknowledgement. While the mailbox holds nothing the exchange is held, for at most the smaller of `Sce-Mesh-Hold-Ms` and `max_hold_ms`, and answered as soon as an envelope arrives: long polling, so a server's send reaches a waiting client without a second channel, and an exchange's own request is answered with the replies its macrosteps made.
+- **At least once, effect once.** An envelope leaves the mailbox only when a later request acknowledges it, so what a lost response carried is carried again; the client's §10.5 window drops what it already took in.
+- **Numbering across a restart.** A mailbox numbers from 1 in each run of its server. The acknowledgement of a client's first exchange in a run names a mailbox of an earlier run and drops nothing, and so does one above every number the mailbox has given. A client that receives a response whose first number is not one past the acknowledgement its request sent takes the response as a new numbering: all of it is new, and its acknowledgement follows the new numbers.
+- **The client's exchanges.** A client keeps at most two exchanges in flight: one held poll, which carries nothing, and one that carries what the core transmitted as soon as it was transmitted, asking for no hold. Each acknowledges the highest number the client has handed to its core; an envelope whose number the other exchange's response already handed on is passed over.
+
+### 22.4 Status Codes, Readiness and Faults
+
+| Status | Meaning | What the client does |
+|---|---|---|
+| `200` | taken in, as §22.3 says | takes the response in |
+| `404` | a version the server does not speak, or a name it has no binding for (§18.1) | the request's envelopes are not sent: row 2, or row 3 under the retry policy |
+| `401` | the authenticator refused the credential; the response names the scheme in `WWW-Authenticate` | as `404` |
+| `413` | the body is larger than `max_body_bytes` | as `404` |
+| `429`, `503` | the server sheds load, for this client (`429`) or for all (`503`), with `Retry-After` | waits at least what `Retry-After` asks (delay-seconds or an HTTP date), then sends what the request carried again; neither a failure nor a lost server |
+| any other | `400` for a binding header that is not a number, `405` for a method other than `POST`, `415` for a body of another media type, or anything a server or an intermediary answers | as `404` |
+
+- **A failure at the transport** (no connection, a TLS handshake that failed, a proxy that refused the tunnel, an exchange past its bound, a connection that closed before the response was whole) hands the request's envelopes back to the core as not sent: §16.7 row 2 (`sendFailed`), or under the binding's retry policy sent again and at worst row 3 (`deliveryExhausted`). The server may have taken them in before the response was lost; a copy sent again is dropped by its §10.5 window, and what its machine answered waits in the mailbox for the next exchange.
+- **Readiness** (§10.10). The client is ready toward the server from the first exchange answered `200` until an exchange fails at the transport, then ready again at the next `200`; a refusal the server answered does not end readiness, since the server is there. The server holds a client ready from an exchange it took in while the gap since the client's last exchange stays under `absence_ms`, an exchange still in flight counting as presence; a client absent longer is §16.7 row 1 (`transportUnavailable`) once per ready-to-not-ready edge, and its mailbox stays.
+- After a failure the client polls again on its own backoff (250 ms doubling to 30 s by default).
+
+### 22.5 Authentication
+
+A mailbox is read only by the name that owns it, so a binding of this transport requires an authenticator, chosen per deployment with `authenticator:`; a binding without one is refused at deploy validation. The three:
+
+- **`bearer`**: `Authorization: Bearer <token>`, a token the server's host issued and verifies against the name.
+- **`install`**: the client draws a 256-bit secret from the operating system's random source at its first run, keeps it, and sends `Authorization: SCE-Install <secret>`, the secret in base64url (RFC 4648 section 5) without padding; a server reads it with or without. The server pins the name to the secret's SHA-256 at the first exchange it answers `200` and refuses any other secret for the name with `401` from then on: trust on first use, the rule of SSH host keys. The pins are the server host's to keep; a server that keeps them in memory pins again after a restart. This is the authenticator of a public server with anonymous clients, whose application decides what a name may do from what the client proves in its payloads.
+- **`mtls`**: a TLS client certificate, which the server's TLS requires and verifies against the deployment's client authorities, and which the server's host checks names the client. No header is sent.
+
+### 22.6 Port, Adapters and Platform Policy
+
+The binding is three layers, and the dependency points from the adapter to the port, never from SCE to a network library:
+
+- **The semantics** of §22.1 to §22.5, which are SCE's and the same in every language.
+- **The port**: one public contract that carries a single exchange at the level of HTTP semantics. A request is a URL, its headers, its body and a bound on the wait; the answer is a response (a status, its headers, its body), whatever the status, or a failure of a named kind: `Connect`, `Tls`, `Proxy`, `Timeout`, or `Other` with words. In Rust it is the trait `sce_rust_mesh::https::HttpsTransport` (`fn exchange(&self, request: HttpsRequest) -> Result<HttpsResponse, HttpsFailure>`), in C++ the interface `SCE::Mesh::HttpsTransport` with the same members, as the standard host's `SCE::Transport` and the Zenoh binding's `ZenohClient` (§20.4) are. An adapter blocks until the exchange ends and takes concurrent calls, since a client has two exchanges in flight (§22.3).
+- **The adapters**: any implementation of the port, SCE's or the embedding's. A program that has an HTTP stack of its own implements the port on it and links none of SCE's, so it brings no second TLS library and its own proxy and trust configuration applies. The binding's core links none of them.
+
+**Platform policy.** Every adapter takes its platform's network policy. It believes the authorities the operating system believes, so a network that inspects TLS with its own authority is honoured where the user's machine trusts that authority and refused where it does not, as `Tls`. It reaches the server through the proxy the platform's settings name, at least `HTTPS_PROXY`, `https_proxy` and `NO_PROXY`, tunnelling with `CONNECT`, and reports a refused tunnel as `Proxy`. A server key pin is not a key of this version of the binding.
+
+**Reference adapters** use the platform's HTTP stack, and where a platform has none, its de facto system client, because only a platform's stack follows its policy completely (an automatic proxy configuration script, WPAD, a certificate an administrator deploys). Each is a separate, optional target whose libraries are found, not vendored.
+
+| Platform | Reference adapter | Where |
+|---|---|---|
+| Rust, every OS | hyper over rustls, `rustls-platform-verifier` for the operating system's trust, hyper-util's proxy matcher for the proxy variables and the system's own settings on macOS and Windows; HTTP/2 when the server offers it | `sce_rust_mesh::https::adapter::HyperTransport`, feature `https` |
+| Linux | the system's libcurl: the distribution's CA bundle and TLS library, the proxy variables, `CONNECT`, HTTP/2 | the C++ client, docs/adr/0107 step 8 |
+| Windows | WinHTTP: the Windows certificate store, the system's proxy configuration with its script and WPAD | the C++ client, docs/adr/0107 step 8 |
+| Apple | URLSession | the step that brings the binding to the Swift host core |
+| Android | the platform's HTTP stack | the step that brings the binding to the Kotlin host core |
+
+The Rust adapter runs its own runtime and is called from threads that are not a tokio runtime's. On Android the host initialises `rustls-platform-verifier` with the application's context before the first exchange, and an additional authority cannot be added there. cpp-httplib, which SCE vendors, is not an adapter of this binding: it takes a proxy only as `set_proxy(host, port)` written in code, reads no proxy variable and speaks HTTP/1.1 only.
+
+### 22.7 Conformance Kit
+
+One kit per language holds every adapter, SCE's in SCE's lanes and an embedding's in the embedding's own tests. It runs a client machine on the adapter under test against a server machine on SCE's server, each server and proxy on a loopback port of its own under a test authority the kit makes, which the adapter is told to believe as an operating system is told to believe an authority its administrator installs:
+
+- an envelope reaches the server's machine once and the reply it sends reaches the client's;
+- a server under an authority the adapter was not told to believe is refused as `Tls`;
+- the exchange goes through an explicit proxy, by `CONNECT`;
+- through a proxy that inspects TLS: an adapter that believes its authority reaches the server and the proxy reads the exchange in the clear, and one that does not is refused as `Tls`;
+- a response lost after the server acted: the proxy drops the response to the exchange that carried an envelope; the client sends it again under its retry policy, the server's machine sees it once, and the reply it made reaches the client once, from the mailbox;
+- an exchange the server holds past the request's bound is answered as `Timeout`, in about the bound.
+
+In Rust the kit is `sce_rust_mesh::https::conformance` behind the feature `https-conformance`: a `Harness` makes the adapter under test, told which authorities to believe and which proxy to use, and each item above is a function over it. The test target `https_conformance` runs it against `HyperTransport`.
+
+### 22.8 Implementations
+
+| Core | Server | Client | Adapter |
+|------|--------|--------|---------|
+| Rust `sce-rust-mesh`, feature `https` | `https::server::HttpsServer`: hyper 1 on tokio, HTTP/1.1 and HTTP/2 on one listener, rustls (`server_tls`), the mailbox as the endpoint's transport (`MailboxTransport`) | `https::client::HttpsClient` over the port, the core's transport `HttpsClientTransport` | `HyperTransport` |
+| C++ (generated `TransportRouter`) | — | the router's `https` arm over `SCE::Mesh::HttpsTransport`, given by the host at construction | libcurl, WinHTTP |
+| Kotlin `sce-kotlin-mesh`, Swift `SceMesh` | — | — | — |
+
+The peer table of §19 names the binding with `PeerLink::HttpsDial` (the URL, the authenticator, the hold) on the side that posts and `PeerLink::HttpsAccept` (the address, the authenticator and the bounds) on the side that keeps the mailbox. The server tells its host what the binding observes through one call that returns once the macrosteps it caused have run, which is what lets an exchange answer with the replies its own request made; everything else a host feeds its endpoint is the `LinkEvent`s every binding gives (§18.4, §20.4), and every decision stays in the core.
+
+A duplicate of a request is answered with the reply the first copy produced once the §10.5 window keeps replies (docs/adr/0107, D4), and `receipt: durable` over this binding (the server answers an exchange only after the checkpoint that took in its envelopes is durable) lands with §10.11 in the host core; until then a request sent again is dropped as a duplicate, and its reply reaches the client from the mailbox as §22.4 says.
 
