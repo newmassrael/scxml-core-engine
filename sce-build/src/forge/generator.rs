@@ -13967,6 +13967,7 @@ fn render_codec(
                     lang,
                     &m.fields,
                     l.codec_carrier_bits(&f.sce_type),
+                    l.codec_carrier_signed(&f.sce_type),
                 )
                 .into(),
             );
@@ -22399,7 +22400,13 @@ fn present_if_decode_fixed(
     // field's value as `_v` typed as the field's natural carrier — for
     // an enum, through the conversion whose statements each arm places
     // at its own indent.
-    let carrier_read = streaming_fixed_field_body(field, default_endian, n, lang);
+    let carrier_read = streaming_fixed_field_body(
+        field,
+        default_endian,
+        n,
+        lang,
+        l.codec_carrier_signed(&field.sce_type),
+    );
     let (conv12, body12) = streaming_fixed_enum_conversion(l, field, &carrier_read, "            ");
     let (conv16, body16) =
         streaming_fixed_enum_conversion(l, field, &carrier_read, "                ");
@@ -24653,17 +24660,19 @@ fn streaming_fixed_field_body(
     default_endian: Endian,
     n: u32,
     lang: crate::generator::Language,
+    signed: bool,
 ) -> String {
     use crate::generator::Language;
     let endian = field.effective_endian(default_endian);
 
     // Single-byte fields read the peeked byte directly. Kotlin's
-    // `ByteArray[i]` yields a signed `Byte`, so it narrows to the
-    // unsigned carrier through `toUByte()`; every other backend assigns
-    // `raw[0]` straight into its carrier.
+    // `ByteArray[i]` yields a signed `Byte`, which is the carrier of a
+    // signed field and is otherwise narrowed to the unsigned carrier
+    // (`kotlin_byte_read`); every other backend assigns `raw[0]` straight
+    // into its carrier.
     if n == 1 {
         return match lang {
-            Language::Kotlin => "raw[0].toUByte()".into(),
+            Language::Kotlin => kotlin_byte_read("raw[0]", signed),
             Language::Rust | Language::Cpp | Language::Go | Language::Python | Language::C11 => {
                 "raw[0]".into()
             }
@@ -24676,7 +24685,18 @@ fn streaming_fixed_field_body(
     // `byte_offset`. Delegate to the SSOT so the per-language shift /
     // cast / integer-promotion rules live in exactly one place
     // (`decode_multibyte_unified`) rather than being mirrored here.
-    decode_multibyte_unified(0, n, endian, lang)
+    decode_multibyte_unified(0, n, endian, lang, signed)
+}
+
+/// The Kotlin read of the byte `byte`, an element of a `ByteArray`, as the
+/// carrier of a one-byte field: the `Byte` it is where the carrier is signed,
+/// and otherwise the `UByte` of its bits.
+fn kotlin_byte_read(byte: &str, signed: bool) -> String {
+    if signed {
+        byte.to_string()
+    } else {
+        format!("{byte}.toUByte()")
+    }
 }
 
 /// Encode-side SSOT for multi-byte byte-extraction — the mirror of
@@ -26203,6 +26223,7 @@ fn generate_decode_expr(
     lang: crate::generator::Language,
     fields: &[CodecField],
     carrier_bits: Option<u32>,
+    signed: bool,
 ) -> String {
     use crate::generator::Language;
     let byte_off = field.byte_offset;
@@ -26239,7 +26260,7 @@ fn generate_decode_expr(
             } else {
                 match bits {
                     8 => match lang {
-                        Language::Kotlin => format!("raw[{byte_off}].toUByte()"),
+                        Language::Kotlin => kotlin_byte_read(&format!("raw[{byte_off}]"), signed),
                         Language::Rust
                         | Language::Cpp
                         | Language::Go
@@ -26248,7 +26269,7 @@ fn generate_decode_expr(
                         Language::Swift => no_swift_emitter("generate_decode_expr"),
                     },
                     // A whole word of two bytes or more.
-                    _ => decode_multibyte_unified(byte_off, span.bytes, endian, lang),
+                    _ => decode_multibyte_unified(byte_off, span.bytes, endian, lang, signed),
                 }
             }
         }
@@ -26470,7 +26491,8 @@ fn decode_bits_of_word(
             parts.join(" or ")
         );
     }
-    let word = decode_multibyte_unified(span.byte, span.bytes, span.endian, lang);
+    // The word is read unsigned, whatever its bits are taken as after.
+    let word = decode_multibyte_unified(span.byte, span.bytes, span.endian, lang, false);
     // The word's own integer in Rust, which `decode_multibyte_unified` reads
     // the bytes into.
     let word_bits = match span.bytes {
@@ -26497,6 +26519,7 @@ fn decode_multibyte_unified(
     byte_count: u32,
     endian: Endian,
     lang: crate::generator::Language,
+    signed: bool,
 ) -> String {
     use crate::generator::Language;
 
@@ -26588,14 +26611,20 @@ fn decode_multibyte_unified(
 
     let joined = shifts.join(sep);
 
-    // Kotlin wraps in conversion call.
+    // Kotlin wraps in a conversion call to the carrier of the width: the
+    // unsigned type, or for a signed carrier the signed type of that width,
+    // which the bits of the fold are, two's complement. The fold of four
+    // bytes is an `Int` already.
     if matches!(lang, Language::Kotlin) {
-        let to_type = match byte_count {
-            2 => "toUShort",
-            3 | 4 => "toUInt",
-            _ => "toULong",
+        let to_type = match (byte_count, signed) {
+            (2, false) => ".toUShort()",
+            (3 | 4, false) => ".toUInt()",
+            (_, false) => ".toULong()",
+            (2, true) => ".toShort()",
+            (3 | 4, true) => "",
+            (_, true) => ".toLong()",
         };
-        format!("({joined}).{to_type}()")
+        format!("({joined}){to_type}")
     } else if matches!(lang, Language::Cpp) {
         // C++ integer promotion: `<<` and `|` promote operands narrower
         // than `int` to `int`, so a 2-byte fold like
@@ -38170,6 +38199,21 @@ impl LangCtx {
                 .as_ref()
                 .and_then(SceType::int_bit_width),
             other => other.int_bit_width(),
+        }
+    }
+
+    /// Whether the carrier of a codec field of type `ty` is a signed integer:
+    /// the integer itself, or an enum's carrier. A backend whose bytes read as
+    /// an unsigned number reinterprets the number as the signed type of its
+    /// width where this holds.
+    pub(crate) fn codec_carrier_signed(&self, ty: &SceType) -> bool {
+        match ty {
+            SceType::Enum(r) => self
+                .enum_import(&r.alias)
+                .carrier
+                .as_ref()
+                .is_some_and(SceType::is_signed),
+            other => other.is_signed(),
         }
     }
 

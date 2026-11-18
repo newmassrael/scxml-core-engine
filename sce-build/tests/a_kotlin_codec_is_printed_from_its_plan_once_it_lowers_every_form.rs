@@ -332,6 +332,75 @@ fn a_decode_consumes_its_own_bytes_and_a_tail_the_rest_of_the_frame() {
     holds_none("codec_tail", &tail, &["_consumed"]);
 }
 
+/// The Kotlin file `name`, the codec document `scxml` generates.
+fn generated_file(name: &str, scxml: &str) -> String {
+    sce_build::compile_forge_from_string(
+        scxml,
+        sce_build::DocumentLabel::symmetric(name),
+        Language::Kotlin,
+    )
+    .unwrap_or_else(|e| panic!("{name} generates on Kotlin: {e:?}"))
+    .files
+    .into_iter()
+    .find(|(file, _)| file.ends_with(".kt"))
+    .map(|(_, text)| text)
+    .unwrap_or_else(|| panic!("{name} generates a Kotlin file"))
+}
+
+/// A signed field is decoded as the signed type of its width, the type its
+/// property is: a byte as the `Byte` a `ByteArray` holds, a word as its bits
+/// taken two's complement, and not the unsigned number of its bits, which
+/// kotlinc refuses where the property is signed. This holds where the frame is
+/// read at fixed places and where it is read field by field.
+///
+/// Turns red where `generate_decode_expr` or `streaming_fixed_field_body`
+/// reads a signed byte through `toUByte()`, or `decode_multibyte_unified`
+/// converts a signed word to its unsigned type.
+#[test]
+fn a_signed_field_is_decoded_as_the_signed_type_of_its_width() {
+    const PLACED: &str = r#"<?xml version="1.0" encoding="UTF-8"?>
+<scxml xmlns="http://www.w3.org/2005/07/scxml" xmlns:sce="http://sce.dev/ext"
+       sce:kind="codec" sce:default-endian="big" name="signed_placed" version="1.0">
+  <datamodel>
+    <sce:field id="small" sce:type="int8" sce:byte="0" sce:bit-size="8"/>
+    <sce:field id="wide" sce:type="int16" sce:byte="1" sce:bit-size="16"/>
+  </datamodel>
+</scxml>"#;
+    let placed = generated_file("signed_placed", PLACED);
+    holds(
+        "signed_placed",
+        &placed,
+        &[
+            "            val small = raw[0]\n",
+            "            val wide = (((raw[1].toInt() and 0xFF) shl 8) or \
+             (raw[2].toInt() and 0xFF)).toShort()\n",
+        ],
+    );
+    holds_none("signed_placed", &placed, &["raw[0].toUByte()"]);
+    const STREAMED: &str = r#"<?xml version="1.0" encoding="UTF-8"?>
+<scxml xmlns="http://www.w3.org/2005/07/scxml" xmlns:sce="http://sce.dev/ext"
+       sce:kind="codec" sce:default-endian="big" name="signed_streamed" version="1.0">
+  <datamodel>
+    <sce:flags id="flags" sce:type="uint8" sce:byte="0" sce:bit-size="8">
+      <sce:flag name="has_late" bit="0"/>
+    </sce:flags>
+    <sce:field id="small" sce:type="int8" sce:byte="1" sce:bit-size="8"/>
+    <sce:field id="late" sce:type="int16" sce:byte="2" sce:bit-size="16"
+               sce:present-if="flags.has_late"/>
+  </datamodel>
+</scxml>"#;
+    let streamed = generated_file("signed_streamed", STREAMED);
+    holds(
+        "signed_streamed",
+        &streamed,
+        &[
+            "val _v = raw[0]\n",
+            "val _v = (((raw[0].toInt() and 0xFF) shl 8) or \
+             (raw[1].toInt() and 0xFF)).toShort()\n",
+        ],
+    );
+}
+
 /// A bound past what an `Int` holds, the 2^32 - 1 bytes a Zenoh slice is
 /// bounded by, is named by a `Long`, which kotlinc takes the literal as, and a
 /// size is compared with it as with any other; a bound an `Int` holds is still
