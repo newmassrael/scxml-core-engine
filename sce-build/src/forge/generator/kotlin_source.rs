@@ -2175,11 +2175,19 @@ fn encode_source(
         let against = match &check.against {
             Against::Carrier { carrier, bit } => {
                 let bits = CarrierBits::of(&carrier.sce_type);
-                format!(
-                    "(({} shr {bit}) and {}).toUInt()",
+                let flag = format!(
+                    "(({} shr {bit}) and {})",
                     bits.viewed(&read(carrier)),
                     bits.literal(1)
-                )
+                );
+                // The flag is a `UInt` already, but of a carrier worked on as
+                // a `ULong`: converting a `UInt` again is a call kotlinc
+                // calls redundant, which `-Werror` refuses.
+                if bits.wide {
+                    format!("{flag}.toUInt()")
+                } else {
+                    flag
+                }
             }
             Against::Input { name } => format!("{}.toUInt()", input(name)),
             // Whether the entry before is of the kind, which the walk of the

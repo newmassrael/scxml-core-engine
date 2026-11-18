@@ -1054,8 +1054,9 @@ fn a_parent_tag_is_derived_from_the_arm_its_body_holds() {
 /// Turns red where `kotlin_source::said_value` reads an arm's input other than
 /// off the arm, answers a number from an arm that does not read it, the said
 /// function is typed `UByte` where the value may say nothing, `render` refuses
-/// a handed input a value that says nothing of it, or the check of a body that
-/// says it in some values only refuses one that says nothing.
+/// a handed input a value that says nothing of it, the check of a body that
+/// says it in some values only refuses one that says nothing, or the check
+/// converts the `UInt` flag of a byte's carrier to `UInt` again.
 #[test]
 fn an_input_the_arms_say_is_read_off_the_arm_the_value_holds() {
     for name in [
@@ -1102,7 +1103,17 @@ fn an_input_the_arms_say_is_read_off_the_arm_the_value_holds() {
     holds(
         "codec_some_arms_say_parent",
         &parent,
-        &["            if (CodecSomeArmsSay.inputN(_e_body).let { it != null && it.toUInt() != "],
+        &[
+            "            if (CodecSomeArmsSay.inputN(_e_body).let { it != null && it.toUInt() != ",
+            // The flag of a byte's carrier is a `UInt` already, which a
+            // second `toUInt()` kotlinc calls redundant would only repeat.
+            "it.toUInt() != ((_c_header.toUInt() shr 5) and 0x1u) }) {\n",
+        ],
+    );
+    holds_none(
+        "codec_some_arms_say_parent",
+        &parent,
+        &["and 0x1u).toUInt()"],
     );
 }
 
