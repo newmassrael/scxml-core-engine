@@ -129,6 +129,83 @@ TEST(AStandardHostScenario, AMachineAsksTheKeyValueStoreOfItsHost) {
                                 });
 }
 
+// docs/adr/0107, D4: a put-if the host carried out, saved before its answer was taken, is
+// started again by the restore under the identity it had, and the host answers it with the first
+// result rather than judging the store a second time; a start the document makes afterwards takes
+// the next number and is an operation of its own.
+TEST(AStandardHostScenario, ARestoredPutIfIsAnsweredWithTheFirstResultOfItsInvocation) {
+    using M = SCE::Generated::static_host_kv::static_host_kv;
+    ScriptTransport transport;
+    host::ScriptedClock clock;
+    host::ReferenceHost reference(clock, transport);
+    const auto settle = [](M &machine) {
+        if constexpr (::SCE::Core::NeedsEventSchedulerTrait<typename M::PolicyType>::value) {
+            for (int round = 0; round < kSettleTicks; ++round) {
+                machine.tick();
+            }
+        } else {
+            machine.step();
+        }
+    };
+
+    // The first process: the host writes, and its answer is lost with the process before the
+    // machine takes it.
+    M first;
+    host::serve(first, reference);
+    first.registerInvoker(
+        "sce-host-kv-put-if",
+        [&reference](const SCE::HostInvokeEvent &event) -> std::optional<SCE::HostInvokeResponse> {
+            if (event.start.has_value()) {
+                host::Params params;
+                for (const auto &[name, values] : event.start->params) {
+                    if (!values.empty()) {
+                        params[name] = values.front();
+                    }
+                }
+                static_cast<void>(reference.start(
+                    "sce-host-kv-put-if",
+                    host::Invocation{event.start->sessionId, event.start->invokeId, event.start->start}, params));
+            }
+            return std::nullopt;
+        });
+    first.setClock(std::make_shared<SCE::ManualClock>(0));
+    EXPECT_EQ(first.initialize(), std::nullopt);
+    settle(first);
+    first.raiseExternal("host.kv.put_if.request", R"({"key":"k","value":"a","expected_version":"0"})");
+    settle(first);
+    const SCE::Saved::SavedState saved = first.saveAt(0);
+    ASSERT_EQ(saved.hostInvokes.size(), 1u) << "the put-if is running";
+    EXPECT_EQ(saved.hostInvokes[0].invokeId, "putif");
+    EXPECT_EQ(saved.hostInvokes[0].start, 1);
+    const std::map<std::string, std::string> once = {{"k", "a"}};
+    EXPECT_EQ(reference.storeEntries(), once) << "the host wrote once";
+
+    // The second process: the restore starts it again, and the host answers it as it answered
+    // the first time, where the store alone would now answer `written` false at version 1.
+    M second;
+    second.setClock(std::make_shared<SCE::ManualClock>(0));
+    second.restoreAt(SCE::Saved::SavedState::fromJson(saved.toJson()), 0);
+    host::serve(second, reference);
+    settle(second);
+    EXPECT_EQ(json(second.outcome()), json("done"));
+    EXPECT_EQ(json(second.written()), json(true)) << "the first result";
+    EXPECT_EQ(json(second.put_version()), json("1"));
+    EXPECT_EQ(reference.storeEntries(), once) << "nothing written twice";
+
+    // A start the document makes now is the second start of `putif`.
+    second.raiseExternal("host.kv.put_if.request", R"({"key":"k","value":"b","expected_version":"0"})");
+    settle(second);
+    EXPECT_EQ(json(second.written()), json(false)) << "judged against the store as it is";
+    EXPECT_EQ(json(second.put_version()), json("1"));
+    const std::vector<host::Start> starts = reference.takeStarts();
+    ASSERT_EQ(starts.size(), 3u);
+    for (std::size_t at = 0; at < starts.size(); ++at) {
+        EXPECT_EQ(starts[at].id, "putif");
+        EXPECT_EQ(starts[at].sessionId, saved.sessionId);
+        EXPECT_EQ(starts[at].number, at < 2 ? 1u : 2u) << "start " << at;
+    }
+}
+
 TEST(AStandardHostScenario, AMachineReadsTheClockOfItsHost) {
     using M = SCE::Generated::static_host_clock::static_host_clock;
     replay<M>("static_host_clock", {
@@ -596,7 +673,7 @@ TEST(AStandardHostScenario, TheReferenceHostJudgesAGenerationBeforeItsProvider) 
     reference.setAnswerSchemas(schemas);
     const auto ask = [&reference](const std::string &prompt, const std::string &schema, const std::string &maxTokens,
                                   const std::string &temperature) {
-        return reference.start(host::MODEL_GENERATE, "gen",
+        return reference.start(host::MODEL_GENERATE, host::Invocation{"session", "gen", 1},
                                {{"prompt", prompt},
                                 {"answer_schema", schema},
                                 {"max_tokens", maxTokens},
@@ -681,7 +758,7 @@ TEST(AStandardHostScenario, TheSystemClockAnswersAMonotonicReadingThatDoesNotDec
     host::ReferenceHost system(clock, transport);
     int64_t last = -1;
     for (int i = 0; i < 50; ++i) {
-        const auto outcome = system.start("sce-host-clock-now", "now", {});
+        const auto outcome = system.start("sce-host-clock-now", host::Invocation{"session", "now", 1}, {});
         ASSERT_TRUE(outcome && outcome->kind == host::Outcome::Kind::Done);
         const json fields = json::parse(outcome->data);
         EXPECT_EQ(fields.at("error"), "");
@@ -689,7 +766,7 @@ TEST(AStandardHostScenario, TheSystemClockAnswersAMonotonicReadingThatDoesNotDec
         EXPECT_GE(mono, last);
         last = mono;
     }
-    const auto zone = system.start("sce-host-clock-zone", "zone", {});
+    const auto zone = system.start("sce-host-clock-zone", host::Invocation{"session", "zone", 1}, {});
     ASSERT_TRUE(zone && zone->kind == host::Outcome::Kind::Done);
     EXPECT_EQ(json::parse(zone->data).at("error"), "");
 }
@@ -698,8 +775,9 @@ TEST(AStandardHostScenario, AnOperationOutsideTheStandardSetIsNotServedAndANulKe
     host::ScriptedClock clock;
     ScriptTransport transport;
     host::ReferenceHost reference(clock, transport);
-    EXPECT_FALSE(reference.start("x-app-host", "id", {}).has_value());
-    const auto nul = reference.start("sce-host-kv-get", "id", {{"key", std::string("a\0b", 3)}});
+    EXPECT_FALSE(reference.start("x-app-host", host::Invocation{"session", "id", 1}, {}).has_value());
+    const auto nul =
+        reference.start("sce-host-kv-get", host::Invocation{"session", "id", 2}, {{"key", std::string("a\0b", 3)}});
     ASSERT_TRUE(nul.has_value());
     EXPECT_EQ(nul->kind, host::Outcome::Kind::Refuse);
 }
@@ -709,7 +787,7 @@ TEST(AStandardHostScenario, APutIfWithANulInItsKeyIsRefused) {
     host::ScriptedClock clock;
     ScriptTransport transport;
     host::ReferenceHost reference(clock, transport);
-    const auto nul = reference.start("sce-host-kv-put-if", "putif",
+    const auto nul = reference.start("sce-host-kv-put-if", host::Invocation{"session", "putif", 1},
                                      {{"key", std::string("a\0b", 3)}, {"value", "v"}, {"expected_version", "0"}});
     ASSERT_TRUE(nul.has_value());
     EXPECT_EQ(nul->kind, host::Outcome::Kind::Refuse);
@@ -722,9 +800,10 @@ TEST(AStandardHostScenario, KeysAreOrderedByTheirUtf8Bytes) {
     ScriptTransport transport;
     host::ReferenceHost reference(clock, transport);
     for (const char *key : {"\xF0\x9F\x98\x80", "\xEF\xBD\x9E"}) {
-        reference.start("sce-host-kv-put", "put", {{"key", key}, {"value", "v"}});
+        reference.start("sce-host-kv-put", host::Invocation{"session", "put", 1}, {{"key", key}, {"value", "v"}});
     }
-    const auto walk = reference.start("sce-host-kv-next-key", "walk", {{"after", ""}, {"prefix", ""}});
+    const auto walk = reference.start("sce-host-kv-next-key", host::Invocation{"session", "walk", 1},
+                                      {{"after", ""}, {"prefix", ""}});
     ASSERT_TRUE(walk.has_value());
     EXPECT_EQ(json::parse(walk->data).at("key"), "\xEF\xBD\x9E");
 }

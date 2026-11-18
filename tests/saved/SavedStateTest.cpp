@@ -93,8 +93,8 @@ std::string refusalOf(const std::string &text) {
 
 const std::string kMinimal =
     R"("shape":"s","sessionid":"root","configuration":["a"],"current":"a","variables":{},)"
-    R"("history":{},"pending":[],"invokes":[],"invokestarts":{},"hostinvokes":[],"hostinvoketoken":"0",)"
-    R"("sendseq":"0","external":[])";
+    R"("history":{},"pending":[],"invokes":[],"invokestarts":{},"hostinvokes":[],"hostinvokestarts":{},)"
+    R"("hostinvoketoken":"0","sendseq":"0","external":[])";
 
 }  // namespace
 
@@ -118,11 +118,44 @@ TEST(SavedState, AFormatOneTextIsOfFormatOneAndHoldsNoSession) {
 TEST(SavedState, ATreeTextHoldsEveryChildWithItsSession) {
     const std::filesystem::path root = SCE_SAVED_FIXTURES_DIR;
     const SavedState saved = SavedState::fromJson(readTrimmed(root / "static_invoke_tree_working.json"));
-    ASSERT_EQ(saved.format(), kSavedFormat3);
+    ASSERT_EQ(saved.format(), kSavedFormat4);
     ASSERT_FALSE(saved.invokes.children.empty());
     const SavedChild &child = saved.invokes.children[0];
     EXPECT_EQ(child.session->sessionId, saved.sessionId + "." + child.invokeId);
     EXPECT_EQ(saved.invokeStart(child.id), child.start);
+}
+
+// docs/adr/0107, D4: a format-3 host-run invocation is read as the first start of its `<invoke>`
+// and counted so, and written back as format 4 with the number after its id and the count after
+// `hostinvokes`; a format-4 text keeps each start number and each count, one of an `<invoke>`
+// not running among them, as written.
+TEST(SavedState, AHostInvocationsStartNumberIsReadAndWrittenBack) {
+    const std::string host = R"({"type":"x-host","id":"h","src":"","params":{},"data":"","content":"","due":null})";
+    const std::string format3 = R"({"format":3,)" +
+                                replaceFirst(replaceFirst(kMinimal, R"("hostinvokestarts":{},)", ""),
+                                             R"("hostinvokes":[])", R"("hostinvokes":[)" + host + "]") +
+                                "}";
+    const SavedState saved = SavedState::fromJson(format3);
+    ASSERT_EQ(saved.hostInvokes.size(), 1U);
+    EXPECT_EQ(saved.hostInvokes[0].start, 1);
+    EXPECT_EQ(saved.hostInvokeStart("h"), 1);
+    const std::string want =
+        R"({"format":4,)" +
+        replaceFirst(
+            replaceFirst(kMinimal, R"("hostinvokes":[])",
+                         R"("hostinvokes":[)" + replaceFirst(host, R"("id":"h",)", R"("id":"h","start":"1",)") + "]"),
+            R"("hostinvokestarts":{})", R"("hostinvokestarts":{"h":"1"})") +
+        "}";
+    EXPECT_EQ(saved.toJson(), want);
+
+    const std::string format4 =
+        replaceFirst(replaceFirst(want, R"("start":"1")", R"("start":"3")"), R"("hostinvokestarts":{"h":"1"})",
+                     R"("hostinvokestarts":{"done":"2","h":"3"})");
+    const SavedState again = SavedState::fromJson(format4);
+    EXPECT_EQ(again.hostInvokes[0].start, 3);
+    EXPECT_EQ(again.hostInvokeStart("h"), 3);
+    EXPECT_EQ(again.hostInvokeStart("done"), 2);
+    EXPECT_EQ(again.toJson(), format4);
 }
 
 TEST(SavedState, ATextTheFormatsDoNotCarryIsRefusedForTheMemberThatBreaksIt) {
@@ -130,8 +163,20 @@ TEST(SavedState, ATextTheFormatsDoNotCarryIsRefusedForTheMemberThatBreaksIt) {
         {R"({"format":)", "the saved state is not JSON (it ends where a value was expected)"},
         {"[]", "the saved state is not an object"},
         {"{}", "the saved state has no 'format'"},
-        {R"({"format":4})", "the saved state is format 4, and this runtime reads formats 1, 2 and 3"},
-        {R"({"format":"3"})", R"(the saved state is format "3", and this runtime reads formats 1, 2 and 3)"},
+        {R"({"format":5})", "the saved state is format 5, and this runtime reads formats 1, 2, 3 and 4"},
+        {R"({"format":"3"})", R"(the saved state is format "3", and this runtime reads formats 1, 2, 3 and 4)"},
+        // docs/adr/0107, D4: format 4's start number and count of starts.
+        {R"({"format":4,)" +
+             replaceFirst(
+                 kMinimal, R"("hostinvokes":[])",
+                 R"("hostinvokes":[{"type":"x","id":"h","src":"","params":{},"data":"","content":"","due":null}])") +
+             "}",
+         "'hostinvokes[0]' has no 'start'"},
+        {R"({"format":4,)" + replaceFirst(kMinimal, R"("hostinvokestarts":{})", R"("hostinvokestarts":{"h":"0"})") +
+             "}",
+         "'hostinvokestarts.h' (0) is not a count of starts, a whole number from 1"},
+        {R"({"format":4,)" + replaceFirst(kMinimal, R"("hostinvokestarts":{},)", "") + "}",
+         "the saved state has no 'hostinvokestarts'"},
         {R"({"format":2,)" + replaceFirst(kMinimal, R"("root")", R"("a b")") + "}",
          "'sessionid' (a b) is not an XML Nmtoken, which a session id is"},
         {R"({"format":2,)" + replaceFirst(kMinimal, R"("invokestarts":{})", R"("invokestarts":{"w":"01"})") + "}",
@@ -181,7 +226,7 @@ const std::string kScxmlType = SCE::Constants::SCXML_EVENT_PROCESSOR_TYPE;
 /// A format-3 text of the minimal session whose external queue holds one event whose origin
 /// members are `origin`, the members between `sendid` and `invokeid`.
 std::string format3Queuing(const std::string &origin) {
-    return R"({"format":3,)" +
+    return R"({"format":4,)" +
            replaceFirst(kMinimal, R"("external":[])",
                         R"("external":[{"name":"e","data":"","type":"external","sendid":"",)" + origin +
                             R"(,"invokeid":"","hostinvoketoken":null}])") +
@@ -192,7 +237,7 @@ std::string format3Queuing(const std::string &origin) {
 /// `sendid` are `origin`.
 std::string format3Waiting(const std::string &act, const std::string &origin) {
     const std::string head = act == "child" ? R"("act":"child","invokeid":"w",)" : R"("act":")" + act + R"(",)";
-    return R"({"format":3,)" +
+    return R"({"format":4,)" +
            replaceFirst(kMinimal, R"("pending":[])",
                         R"("pending":[{"due":"5",)" + head + R"("event":"e","data":"","sendid":"",)" + origin + "}]") +
            "}";
@@ -317,7 +362,7 @@ TEST(SavedState, AFormatThreeActThatNamesAnotherSessionIsRefused) {
     const std::string child =
         R"({"id":"w","start":"1","invokeid":"w","document":"w","session":{)" + childSession + "}}";
     EXPECT_EQ(
-        refusalOf(R"({"format":3,)" + replaceFirst(kMinimal, R"("invokes":[])", R"("invokes":[)" + child + "]") + "}"),
+        refusalOf(R"({"format":4,)" + replaceFirst(kMinimal, R"("invokes":[])", R"("invokes":[)" + child + "]") + "}"),
         "the session at invokes[0].session: 'pending[0].sender' is 'other', and this session is 'root.w': a "
         "parent act is this session's own send");
 
@@ -345,7 +390,7 @@ TEST(SavedState, AnInternalActIsWrittenWithNoOriginAndNoSender) {
     send.act.sender = "root";
     state.pending.push_back(send);
     const std::string text = state.toJson();
-    EXPECT_EQ(text.rfind(R"({"format":3,)", 0), 0U) << text;
+    EXPECT_EQ(text.rfind(R"({"format":4,)", 0), 0U) << text;
     EXPECT_NE(
         text.find(R"({"due":"5","act":"internal","event":"e","data":"","sendid":"s","origin":null,"sender":null})"),
         std::string::npos)

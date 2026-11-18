@@ -126,7 +126,7 @@ struct CoseRig {
     }
 
     host::Outcome start(const std::string &operation, const host::Params &params) {
-        const auto outcome = reference.start(operation, "op", params);
+        const auto outcome = reference.start(operation, host::Invocation{"session", "op", 1}, params);
         EXPECT_TRUE(outcome.has_value()) << operation << " is not served";
         return outcome.value_or(host::Outcome{});
     }

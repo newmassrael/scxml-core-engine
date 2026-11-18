@@ -18,10 +18,11 @@
 //
 // Driven entirely on the engine's manual clock: no case sleeps, and none can be decided by
 // how loaded the build machine is. The shared instance
-// `saved/statechart_static_host_invoke_running.json` is the format-3 text every backend
-// writes (docs/adr/0045, docs/adr/0090); the format-1 text of the same run, under `saved/format1/`, still
-// restores. This is a machine with no `error.execution` event, so a restart nobody can run
-// raises nothing a document could answer, which the Python half's last case needs.
+// `saved/statechart_static_host_invoke_running.json` is the format-4 text every backend
+// writes (docs/adr/0045, docs/adr/0090, docs/adr/0107); the format-3 text of the same run, under
+// `saved/format3/`, and the format-1 text, under `saved/format1/`, still restore, and a restarted
+// invocation keeps the start number it had. This is a machine with no `error.execution` event, so a restart nobody can
+// run raises nothing a document could answer, which the Python half's last case needs.
 
 #include "common/SceClock.h"
 #include "core/HostProcessor.h"
@@ -37,6 +38,7 @@
 #include <set>
 #include <sstream>
 #include <string>
+#include <utility>
 #include <vector>
 
 #ifndef SCE_PROJECT_ROOT
@@ -59,8 +61,11 @@ constexpr std::int64_t kSavedAtMs = 1'700'000'000'000;
 const std::filesystem::path kSaved =
     std::filesystem::path(SCE_PROJECT_ROOT) / "sce-build" / "tests" / "fixtures" / "host_processor" / "saved";
 
-std::string shared(bool format1 = false) {
-    std::ifstream in((format1 ? kSaved / "format1" : kSaved) / "statechart_static_host_invoke_running.json");
+/// The shared text of the run, of format 4, or of `format` 1 or 3 from the reading directories.
+std::string shared(int format = 4) {
+    const std::filesystem::path directory =
+        format == 1 ? kSaved / "format1" : (format == 3 ? kSaved / "format3" : kSaved);
+    std::ifstream in(directory / "statechart_static_host_invoke_running.json");
     std::stringstream held;
     held << in.rdbuf();
     std::string text = held.str();
@@ -151,10 +156,13 @@ TEST(ASavedHostInvocationIsStartedAgainAfterARestore, AMachineIsSavedWithTheRequ
     EXPECT_FALSE(first.restarted) << "the document's own start is not a restart";
     EXPECT_EQ(first.token, 0u);
     EXPECT_EQ(first.sessionId, "fixture-root");
+    EXPECT_EQ(first.start, 1u) << "the first start of `h` in this session";
 
     const ::SCE::Saved::SavedState saved = machine->saveAt(kSavedAtMs);
     ASSERT_EQ(saved.hostInvokes.size(), 1u) << "one running invocation";
     const auto &entry = saved.hostInvokes[0];
+    EXPECT_EQ(entry.start, 1);
+    EXPECT_EQ(saved.hostInvokeStart("h"), 1);
     EXPECT_EQ(entry.processorType, kHostType);
     EXPECT_EQ(entry.invokeId, "h");
     EXPECT_EQ(entry.src, first.src);
@@ -170,11 +178,11 @@ TEST(ASavedHostInvocationIsStartedAgainAfterARestore, AMachineIsSavedWithTheRequ
 }
 
 TEST(ASavedHostInvocationIsStartedAgainAfterARestore, ARestoreAsksNothingOfTheHostUntilTheMachineIsDriven) {
-    // From the format-3 text, and from the format-1 text of the same run.
-    for (const bool format1 : {false, true}) {
-        SCOPED_TRACE(format1 ? "format 1" : "format 3");
+    // From the format-4 text, and from the format-3 and format-1 texts of the same run.
+    for (const int format : {4, 3, 1}) {
+        SCOPED_TRACE("format " + std::to_string(format));
         Host host;
-        auto machine = restored(host, shared(format1), 1000);
+        auto machine = restored(host, shared(format), 1000);
         EXPECT_TRUE(host.log.empty()) << "the restore itself calls nobody";
         EXPECT_EQ(standingIn(*machine), std::set<State>({State::Working}));
         // The first macrostep starts it, where an invocation the document entered would
@@ -202,6 +210,62 @@ TEST(ASavedHostInvocationIsStartedAgainAfterARestore, ARestoredInvocationIsStart
     EXPECT_EQ(again.params, firstRequest.params);
     EXPECT_EQ(again.eventData, firstRequest.eventData);
     EXPECT_EQ(again.content, firstRequest.content) << "the same request, not one evaluated again";
+    // docs/adr/0107, D4: the same invocation, under the identity it had.
+    EXPECT_EQ(again.start, firstRequest.start) << "the start it repeats";
+    EXPECT_EQ(again.sessionId, firstRequest.sessionId);
+}
+
+// docs/adr/0107, D4: a restore repeats a running start under its number, and a start the
+// document makes afterwards is numbered on from the count the saved state carried, from the
+// format-4 text and from the format-3 text alike.
+TEST(ASavedHostInvocationIsStartedAgainAfterARestore, AStartAfterTheRestoredOneTakesTheNextNumber) {
+    for (const int format : {4, 3}) {
+        SCOPED_TRACE("format " + std::to_string(format));
+        Host host;
+        auto machine = restored(host, shared(format), 1000);
+        machine->advanceTimeMs(0);
+        // Leaving cancels the restarted invocation; starting again is a new start.
+        machine->raiseExternal("leave");
+        machine->advanceTimeMs(0);
+        machine->raiseExternal("start");
+        machine->advanceTimeMs(0);
+        const auto starts = host.starts();
+        ASSERT_EQ(starts.size(), 2u);
+        EXPECT_TRUE(starts[0].restarted);
+        EXPECT_EQ(starts[0].start, 1u);
+        EXPECT_FALSE(starts[1].restarted);
+        EXPECT_EQ(starts[1].start, 2u);
+        const ::SCE::Saved::SavedState saved = machine->saveAt(kSavedAtMs);
+        ASSERT_EQ(saved.hostInvokes.size(), 1u);
+        EXPECT_EQ(saved.hostInvokes[0].start, 2);
+        EXPECT_EQ(saved.hostInvokeStart("h"), 2);
+    }
+}
+
+// docs/adr/0107, D4: the start number is judged before anything is built: a running invocation
+// is the latest start its session counts, and a count names an `<invoke>` the document hands a
+// host.
+TEST(ASavedHostInvocationIsStartedAgainAfterARestore, AStartNumberTheSavedSessionCouldNotHaveGivenIsRefused) {
+    const std::string text = shared();
+    const std::string counted = "\"hostinvokestarts\":{\"h\":\"1\"}";
+    const auto at = text.find(counted);
+    ASSERT_NE(at, std::string::npos);
+    const std::vector<std::pair<std::string, std::string>> cases = {
+        {"\"hostinvokestarts\":{\"h\":\"2\"}",
+         "hostinvokes[0] is start 1 of 'h', and the session counts 2 starts of it"},
+        {"\"hostinvokestarts\":{\"h\":\"1\",\"stranger\":\"1\"}",
+         "hostinvokestarts counts 'stranger', which the document does not have a host invoker run"},
+    };
+    for (const auto &[replacement, expected] : cases) {
+        std::string changed = text;
+        changed.replace(at, counted.size(), replacement);
+        try {
+            static_cast<void>(tryRestore(changed, 0));
+            ADD_FAILURE() << "the restore was not refused: " << replacement;
+        } catch (const ::SCE::Saved::StateRefusal &refused) {
+            EXPECT_NE(std::string(refused.what()).find(expected), std::string::npos) << refused.what();
+        }
+    }
 }
 
 TEST(ASavedHostInvocationIsStartedAgainAfterARestore, ARestoredInvocationKeepsTheDeadlineItHadLeft) {
@@ -386,7 +450,7 @@ TEST(ASavedHostInvocationIsStartedAgainAfterARestore, AnInvocationNamedTwiceIsRe
     const std::string text = shared();
     const std::string open = "\"hostinvokes\":[";
     const auto start = text.find(open) + open.size();
-    const auto end = text.find("],\"hostinvoketoken\"", start);
+    const auto end = text.find("],\"hostinvokestarts\"", start);
     ASSERT_NE(end, std::string::npos);
     const std::string one = text.substr(start, end - start);
     const std::string twice = text.substr(0, start) + one + "," + one + text.substr(end);

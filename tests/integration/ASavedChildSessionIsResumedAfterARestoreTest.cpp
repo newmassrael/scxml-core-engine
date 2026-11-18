@@ -207,8 +207,8 @@ TEST(ASavedChildSessionIsResumedAfterARestore, AnEventSavedInTheChildsQueueIsTak
     const std::string text = shared();
     const std::string empty =
         "\"configuration\":[\"first\"],\"current\":\"first\",\"variables\":{},\"history\":{},\"pending\":[],"
-        "\"invokes\":[],\"invokestarts\":{},\"hostinvokes\":[],\"hostinvoketoken\":\"0\",\"sendseq\":\"0\","
-        "\"external\":[]";
+        "\"invokes\":[],\"invokestarts\":{},\"hostinvokes\":[],\"hostinvokestarts\":{},\"hostinvoketoken\":\"0\","
+        "\"sendseq\":\"0\",\"external\":[]";
     const std::string queued =
         replaced(empty, "\"external\":[]",
                  "\"external\":[{\"name\":\"a\",\"data\":\"\",\"type\":\"external\",\"sendid\":\"\",\"origin\":null,"

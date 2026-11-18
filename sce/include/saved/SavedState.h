@@ -58,13 +58,18 @@ inline constexpr int kSavedFormat2 = 2;
 /// Format 2's tree with an event's origin held as one pair and the sending session's id
 /// beside it (docs/adr/0090, section 7).
 inline constexpr int kSavedFormat3 = 3;
-/// The newest format version this runtime writes; it reads this one and formats 1 and 2.
-inline constexpr int kSavedFormat = kSavedFormat3;
+/// Format 3's tree with each running host-run invocation's start number, which start of its
+/// `<invoke>` in its session it is, and each session's count of those starts (docs/adr/0107,
+/// D4): a restore starts a running invocation again under the number it had.
+inline constexpr int kSavedFormat4 = 4;
+/// The newest format version this runtime writes; it reads this one and formats 1, 2 and 3.
+inline constexpr int kSavedFormat = kSavedFormat4;
 
 /// The stability status of the saved-state wire surface, held in lockstep with
 /// `x-sce-schema-status` in `schemas/sce-saved-state.v1.schema.json`,
-/// `schemas/sce-saved-state.v2.schema.json` and `schemas/sce-saved-state.v3.schema.json`
-/// (SCE_WIRE_CONTRACTS.md). A flip to "stable" changes all four in one commit.
+/// `schemas/sce-saved-state.v2.schema.json`, `schemas/sce-saved-state.v3.schema.json` and
+/// `schemas/sce-saved-state.v4.schema.json` (SCE_WIRE_CONTRACTS.md). A flip to "stable"
+/// changes all five in one commit.
 inline constexpr const char *kSavedSchemaStatus = "pre-release";
 
 /// Why a saved state cannot be restored, or a machine cannot be saved.
@@ -198,6 +203,11 @@ struct SavedEvent {
 struct SavedHostInvoke {
     std::string processorType;
     std::string invokeId;
+    /// Which start of that `<invoke>` in this session it is, counted from 1: the count
+    /// `hostInvokeStarts` holds for it, under which a restore starts it again (docs/adr/0107,
+    /// D4). One read from a state of format 1, 2 or 3, which holds none, is start 1: no host
+    /// keyed a start by its number before format 4.
+    std::int64_t start = 1;
     std::string src;
     SavedParams params;
     std::string data;
@@ -399,6 +409,11 @@ struct SavedState {
     SavedInvokes invokes;
     /// The `<invoke>`s a declared host invoker is running (§scxml-6.4.1), by `(type, id)`.
     std::vector<SavedHostInvoke> hostInvokes;
+    /// How many times each host-run `<invoke>` of the document has started in this session,
+    /// for each started at least once, ordered by the id's bytes: a start after a restore is
+    /// numbered on from it (docs/adr/0107, D4). Read from a state of format 1, 2 or 3, which
+    /// counted none, as 1 for each invocation `hostInvokes` lists.
+    std::vector<SavedInvokeStart> hostInvokeStarts;
     /// The token the next host-run start receives.
     std::int64_t hostInvokeToken = 0;
     /// How many ids the machine has generated for a `<send idlocation>`.
@@ -432,8 +447,9 @@ struct SavedState {
 
     /// The format this state is written in: kSavedFormat for a tree of sessions, kSavedFormat1
     /// for a state that names its running children by id alone. A tree read from a format-2
-    /// text holds the pairs its origins are read as, and is written as format 3
-    /// (docs/adr/0090, section 7).
+    /// text holds the pairs its origins are read as (docs/adr/0090, section 7), one read from a
+    /// format-2 or format-3 text the start numbers its host-run invocations are read as
+    /// (docs/adr/0107, D4), and each is written as format 4.
     [[nodiscard]] int format() const {
         return invokes.resumed ? kSavedFormat : kSavedFormat1;
     }
@@ -453,6 +469,17 @@ struct SavedState {
     /// for one that had not, and for every one of a format-1 state, which holds no count.
     [[nodiscard]] std::int64_t invokeStart(const std::string &id) const {
         for (const SavedInvokeStart &started : invokeStarts) {
+            if (started.id == id) {
+                return started.count;
+            }
+        }
+        return 0;
+    }
+
+    /// How many times the host-run `<invoke>` `id` had started in this session when it was
+    /// saved: 0 for one that had not.
+    [[nodiscard]] std::int64_t hostInvokeStart(const std::string &id) const {
+        for (const SavedInvokeStart &started : hostInvokeStarts) {
             if (started.id == id) {
                 return started.count;
             }
@@ -597,10 +624,15 @@ inline JsonValue eventToJson(const SavedEvent &event, bool tree) {
     return JsonValue(std::move(members));
 }
 
-inline JsonValue hostInvokeToJson(const SavedHostInvoke &host) {
+/// `host` as a text writes it: a tree (format 4) writes its start after its id; format 1 holds
+/// none.
+inline JsonValue hostInvokeToJson(const SavedHostInvoke &host, bool tree) {
     JsonObject members;
     members.set("type", host.processorType);
     members.set("id", host.invokeId);
+    if (tree) {
+        members.set("start", countText(host.start));
+    }
     members.set("src", host.src);
     members.set("params", paramsToJson(host.params));
     members.set("data", host.data);
@@ -652,9 +684,17 @@ inline JsonObject SavedState::sessionMembers() const {
     }
     JsonArray hosts;
     for (const SavedHostInvoke &host : hostInvokes) {
-        hosts.push_back(detail::hostInvokeToJson(host));
+        hosts.push_back(detail::hostInvokeToJson(host, invokes.resumed));
     }
     members.set("hostinvokes", std::move(hosts));
+    // docs/adr/0107, D4: a tree's count of host-run starts, after the invocations.
+    if (invokes.resumed) {
+        JsonObject hostStarts;
+        for (const SavedInvokeStart &started : hostInvokeStarts) {
+            hostStarts.set(started.id, detail::countText(started.count));
+        }
+        members.set("hostinvokestarts", std::move(hostStarts));
+    }
     members.set("hostinvoketoken", detail::countText(hostInvokeToken));
     members.set("sendseq", detail::countText(autoSendSeq));
     JsonArray queued;
@@ -939,7 +979,7 @@ inline SavedEvent savedEventFromJson(const JsonValue &value, const std::string &
     event.type = memberText(members, what, "type");
     event.sendId = memberText(members, what, "sendid");
     StoredOrigin read;
-    if (format == kSavedFormat3) {
+    if (format >= kSavedFormat3) {
         read = savedOriginPairFromJson(members, what);
         // The sender is the session that sent the event and the origin the reply address the
         // processor that carried it wrote, two fields no rule ties together: a Mesh remote
@@ -959,9 +999,14 @@ inline SavedEvent savedEventFromJson(const JsonValue &value, const std::string &
     return event;
 }
 
-inline SavedHostInvoke savedHostInvokeFromJson(const JsonValue &value, const std::string &what) {
+/// The host-run invocation `value` of a state of `format`; one of format 1, 2 or 3 is its
+/// `<invoke>`'s first start (docs/adr/0107, D4).
+inline SavedHostInvoke savedHostInvokeFromJson(const JsonValue &value, const std::string &what, int format) {
     const JsonObject &members = memberObject(value, what);
     SavedHostInvoke host;
+    if (format >= kSavedFormat4) {
+        host.start = readSavedCount(memberText(members, what, "start"), what + ".start");
+    }
     host.due = optionalMember(members, what, "due", readSavedMoment);
     host.processorType = memberText(members, what, "type");
     host.invokeId = memberText(members, what, "id");
@@ -988,7 +1033,7 @@ inline SavedHostInvoke savedHostInvokeFromJson(const JsonValue &value, const std
 /// a format-1 text names no session, so the machine that restores it arms it as its own.
 inline void savedActOriginFromJson(const JsonObject &members, const std::string &what, int format, SavedAct &act) {
     const bool internal = act.kind == SavedActKind::Internal;
-    if (format != kSavedFormat3) {
+    if (format < kSavedFormat3) {
         const std::string stored = memberText(members, what, "origin");
         if (internal || stored.empty()) {
             return;
@@ -1201,7 +1246,7 @@ inline SavedState savedSessionFromJson(const JsonObject &members, int format) {
         // docs/adr/0090, section 7: a format-3 raise, parent or child act carries this session's
         // pair and this session's id, so one that names another session is no act this session
         // saved. Judged here, once the session's id is read, for the root and every child.
-        if (format == kSavedFormat3) {
+        if (format >= kSavedFormat3) {
             for (std::size_t at = 0; at < state.pending.size(); ++at) {
                 const SavedAct &act = state.pending[at].act;
                 if (savedActIsOwnSend(act.kind) && act.sender != sessionId) {
@@ -1228,7 +1273,35 @@ inline SavedState savedSessionFromJson(const JsonObject &members, int format) {
 
     const JsonArray &hosts = fieldArray("hostinvokes");
     for (std::size_t at = 0; at < hosts.size(); ++at) {
-        state.hostInvokes.push_back(savedHostInvokeFromJson(hosts[at], "hostinvokes[" + std::to_string(at) + "]"));
+        state.hostInvokes.push_back(
+            savedHostInvokeFromJson(hosts[at], "hostinvokes[" + std::to_string(at) + "]", format));
+    }
+    // docs/adr/0107, D4: format 4's count of host-run starts. A state of an earlier format
+    // counted none: each invocation it lists is its `<invoke>`'s first start, as
+    // savedHostInvokeFromJson read it.
+    if (format >= kSavedFormat4) {
+        const JsonValue &hostCounted = field("hostinvokestarts");
+        if (!hostCounted.isObject()) {
+            refuse("'hostinvokestarts' is not an object");
+        }
+        const JsonObject &hostCountedMembers = hostCounted.asObject();
+        for (std::size_t at = 0; at < hostCountedMembers.size(); ++at) {
+            const std::string &id = hostCountedMembers.keys()[at];
+            const JsonValue &count = hostCountedMembers.valueAt(at);
+            if (!count.isString()) {
+                refuse("'hostinvokestarts." + id + "' is not a text");
+            }
+            state.hostInvokeStarts.push_back(
+                SavedInvokeStart{id, readSavedCount(count.asString(), "hostinvokestarts." + id)});
+        }
+    } else {
+        std::map<std::string, std::int64_t> listed;
+        for (const SavedHostInvoke &host : state.hostInvokes) {
+            listed[host.invokeId] = host.start;
+        }
+        for (const auto &[id, count] : listed) {
+            state.hostInvokeStarts.push_back(SavedInvokeStart{id, count});
+        }
     }
 
     for (const std::string name : {"hostinvoketoken", "sendseq"}) {
@@ -1308,10 +1381,12 @@ inline SavedState SavedState::fromJson(std::string_view text) {
         format = kSavedFormat2;
     } else if (written->isNumber() && written->asNumber().text == "3") {
         format = kSavedFormat3;
+    } else if (written->isNumber() && written->asNumber().text == "4") {
+        format = kSavedFormat4;
     } else {
         throw StateRefusal("the saved state is format " + writeJson(*written) + ", and this runtime reads formats " +
-                           std::to_string(kSavedFormat1) + ", " + std::to_string(kSavedFormat2) + " and " +
-                           std::to_string(kSavedFormat3));
+                           std::to_string(kSavedFormat1) + ", " + std::to_string(kSavedFormat2) + ", " +
+                           std::to_string(kSavedFormat3) + " and " + std::to_string(kSavedFormat4));
     }
     return detail::savedSessionFromJson(members, format);
 }

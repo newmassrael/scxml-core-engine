@@ -137,16 +137,16 @@ TEST(AStateAnotherBackendSavedIsRestored, AFormatThreeStateIsRestoredAndSavedAsI
 }
 
 TEST(AStateAnotherBackendSavedIsRestored, EveryFormatThreeTextOfADocumentIsHeldToItsMachine) {
-    EXPECT_GE(textsOf(kSaved).size(), 8u) << "the shared format-3 texts lost instances";
+    EXPECT_GE(textsOf(kSaved).size(), 8u) << "the shared format-4 texts lost instances";
 }
 
 TEST(AStateAnotherBackendSavedIsRestored, AFormatOneStateIsRestoredAndTakesTheMachinesOwnSession) {
     for (const auto &[name, text] : textsOf(kSaved / "format1")) {
         SCOPED_TRACE(name);
         // What a format-1 text holds is what a restore reads; saving it again writes
-        // format 3, with the machine's own session id.
+        // format 4, with the machine's own session id.
         const std::string again = machines().at(machineOf(name))(text);
-        EXPECT_EQ(again.rfind("{\"format\":3,", 0), 0u) << again;
+        EXPECT_EQ(again.rfind("{\"format\":4,", 0), 0u) << again;
     }
 }
 

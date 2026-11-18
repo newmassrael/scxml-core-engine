@@ -29,6 +29,7 @@
 #include <optional>
 #include <string>
 #include <string_view>
+#include <tuple>
 #include <utility>
 #include <vector>
 
@@ -66,11 +67,28 @@ struct Outcome {
     std::string data;
 };
 
-/// A start the host was given: the operation, the invocation's id and the request's parameters.
+/// The identity of a host-run invocation (docs/SCE_HOST_FEATURES.md, section 1, "Identity"): the session
+/// that started it, the `<invoke>`'s id, and which start of that `<invoke>` in that session it is. A restore
+/// starts a running invocation again under the identity it had, so two starts with one identity are one
+/// operation asked twice.
+struct Invocation {
+    std::string sessionId;
+    std::string id;
+    uint64_t start = 0;
+
+    bool operator<(const Invocation &other) const {
+        return std::tie(sessionId, id, start) < std::tie(other.sessionId, other.id, other.start);
+    }
+};
+
+/// A start the host was given: the operation, the invocation's id and the request's parameters, with the
+/// rest of the invocation's identity: the session that started it and which start of its `<invoke>` it is.
 struct Start {
     std::string operation;
     std::string id;
     Params params;
+    std::string sessionId;
+    uint64_t number = 0;
 };
 
 /// Both readings of one instant.
@@ -700,21 +718,52 @@ public:
         return served;
     }
 
-    /// Start the operation of invocation `id` with `params`.
+    /// Start the operation of `invocation` with `params`.
     ///
     /// Nothing for a type the host does not serve: neither one of TYPES nor one of an added feature's.
     /// Otherwise the arguments are judged first (a refusal starts nothing), then a failure the embedding
     /// injected, then the operation itself.
-    std::optional<Outcome> start(const std::string &operation, const std::string &id, const Params &params) {
+    ///
+    /// A put-if whose invocation was answered before is answered with that first result, a failure
+    /// included, and changes nothing: the engine starts a running invocation again under the same identity
+    /// when it restores a state saved before the answer was taken (docs/adr/0107, D4), and the write it
+    /// asked for was made once.
+    std::optional<Outcome> start(const std::string &operation, const Invocation &invocation, const Params &params) {
+        const std::string &id = invocation.id;
         if (std::find(TYPES.begin(), TYPES.end(), operation) == TYPES.end()) {
             Feature *feature = featureServing(operation);
             if (feature == nullptr) {
                 return std::nullopt;
             }
-            starts_.push_back({operation, id, params});
+            starts_.push_back({operation, id, params, invocation.sessionId, invocation.start});
             return startFeature(*feature, operation, id, params);
         }
-        starts_.push_back({operation, id, params});
+        starts_.push_back({operation, id, params, invocation.sessionId, invocation.start});
+        const bool keepsFirst = operation == "sce-host-kv-put-if";
+        if (keepsFirst) {
+            if (const auto first = firstResults_.find(invocation); first != firstResults_.end()) {
+                SCE_LOG_INFO("{} {}: start {} of session {} repeated, answered as first", operation, id,
+                             invocation.start, invocation.sessionId);
+                return first->second;
+            }
+        }
+        Outcome outcome = perform(operation, id, params);
+        if (keepsFirst && outcome.kind == Outcome::Kind::Done) {
+            firstResults_[invocation] = outcome;
+        }
+        return outcome;
+    }
+
+    /// The host is told to stop invocation `id`, because its state exited or its deadline passed. What it
+    /// held for it is dropped.
+    void cancel(const std::string &id) {
+        held_.erase(std::remove(held_.begin(), held_.end(), id), held_.end());
+        cancelled_.push_back(id);
+    }
+
+private:
+    /// The operation itself, as `start` describes it, for a standard type and a start that is not a repeat.
+    Outcome perform(const std::string &operation, const std::string &id, const Params &params) {
         const auto argument = [&params](const char *name) {
             const auto found = params.find(name);
             return found == params.end() ? std::string() : found->second;
@@ -789,14 +838,6 @@ public:
         return httpFetch(id, argument("method"), argument("url"), argument("headers"), argument("body"));
     }
 
-    /// The host is told to stop invocation `id`, because its state exited or its deadline passed. What it
-    /// held for it is dropped.
-    void cancel(const std::string &id) {
-        held_.erase(std::remove(held_.begin(), held_.end(), id), held_.end());
-        cancelled_.push_back(id);
-    }
-
-private:
     /// The added feature that serves `operation`, or none.
     Feature *featureServing(const std::string &operation) const {
         for (Feature *feature : features_) {
@@ -1073,6 +1114,9 @@ private:
     std::vector<std::string> cancelled_;
     std::optional<int64_t> monotonicFloor_;
     std::vector<Start> starts_;
+    /// The first result of each put-if, by the identity of its invocation: what a repeat of that identity
+    /// is answered with (docs/adr/0107, D4).
+    std::map<Invocation, Outcome> firstResults_;
     /// The features the embedding added, in the order added; each outlives the host.
     std::vector<Feature *> features_;
 };
@@ -1102,7 +1146,9 @@ template <typename Machine> void serve(Machine &machine, ReferenceHost &host) {
                         params[name] = values.front();
                     }
                 }
-                const auto outcome = host.start(operation, event.start->invokeId, params);
+                // docs/adr/0107, D4: the invocation's identity, which a restore starts it again under.
+                const Invocation invocation{event.start->sessionId, event.start->invokeId, event.start->start};
+                const auto outcome = host.start(operation, invocation, params);
                 if (!outcome) {
                     return std::nullopt;
                 }

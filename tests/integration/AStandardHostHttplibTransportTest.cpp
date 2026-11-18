@@ -57,7 +57,7 @@ TEST(AStandardHostScenario, TheHttplibTransportCarriesAnExchangeToALocalServer) 
     host::ReferenceHost reference(clock, transport);
     const auto fetch = [&reference](const std::string &method, const std::string &url, const std::string &headers = "",
                                     const std::string &body = "") {
-        const auto outcome = reference.start("sce-host-http-fetch", "fetch",
+        const auto outcome = reference.start("sce-host-http-fetch", host::Invocation{"session", "fetch", 1},
                                              {{"method", method}, {"url", url}, {"headers", headers}, {"body", body}});
         EXPECT_TRUE(outcome && outcome->kind == host::Outcome::Kind::Done);
         return json::parse(outcome->data);

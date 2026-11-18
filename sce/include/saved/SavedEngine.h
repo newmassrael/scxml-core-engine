@@ -308,6 +308,11 @@ struct EngineAccess {
         state.sessionId = sessionId;
         state.invokeStarts = policy.invokeStarts();
         state.hostInvokes = saveHostInvokes(engine, wallNowMs);
+        // docs/adr/0107, D4: the ledger's map is ordered by the id's bytes, the order every
+        // backend writes.
+        for (const auto &[id, count] : engine.hostInvokes_.starts()) {
+            state.hostInvokeStarts.push_back(SavedInvokeStart{id, static_cast<std::int64_t>(count)});
+        }
         state.hostInvokeToken = static_cast<std::int64_t>(engine.hostInvokes_.nextToken());
         state.autoSendSeq = static_cast<std::int64_t>(engine.autoSendSeq_);
         for (const auto &queued : engine.externalQueue_.snapshot()) {
@@ -376,6 +381,11 @@ struct EngineAccess {
         }
         armPending(engine, judged.pending, wallNowMs);
         rearmHostInvokes(engine, saved.hostInvokes, wallNowMs);
+        std::map<std::string, std::uint64_t> hostInvokeStarts;
+        for (const SavedInvokeStart &started : saved.hostInvokeStarts) {
+            hostInvokeStarts[started.id] = static_cast<std::uint64_t>(started.count);
+        }
+        engine.hostInvokes_.continueStartsFrom(std::move(hostInvokeStarts));
         engine.hostInvokes_.continueTokensFrom(static_cast<std::uint64_t>(saved.hostInvokeToken));
         engine.autoSendSeq_ = static_cast<std::uint64_t>(saved.autoSendSeq);
         if (saved.invokes.resumed) {
@@ -413,6 +423,7 @@ private:
             host.params = detail::cloneParams(request->params);
             host.data = request->eventData;
             host.content = request->content;
+            host.start = static_cast<std::int64_t>(request->start);
             if (dueAt.has_value()) {
                 host.due = detail::dueOn(wallNowMs, now, *dueAt);
             }
@@ -628,6 +639,28 @@ private:
                                        "', which an earlier entry already names");
                 }
             }
+            // docs/adr/0107, D4: a running invocation is the latest start of its `<invoke>`,
+            // since a state re-entered cancels the earlier one first.
+            const std::int64_t count = saved.hostInvokeStart(host.invokeId);
+            if (host.start != count) {
+                throw StateRefusal("hostinvokes[" + std::to_string(at) + "] is start " + std::to_string(host.start) +
+                                   " of '" + host.invokeId + "', and the session counts " + std::to_string(count) +
+                                   " starts of it: a state re-entered cancels the earlier start before it makes "
+                                   "the next one");
+            }
+        }
+        // A count of host-run starts names an `<invoke>` the document hands a host.
+        for (const SavedInvokeStart &started : saved.hostInvokeStarts) {
+            bool handed = false;
+            if constexpr (::SCE::Core::HasHostInvokeIdsTrait<Policy>::value) {
+                for (const auto &known : Policy::HOST_INVOKE_IDS) {
+                    handed = handed || known == started.id;
+                }
+            }
+            if (!handed) {
+                throw StateRefusal("hostinvokestarts counts '" + started.id +
+                                   "', which the document does not have a host invoker run");
+            }
         }
         return judged;
     }
@@ -703,6 +736,8 @@ private:
             restored.request.eventData = host.data;
             restored.request.content = host.content;
             restored.request.restarted = true;
+            // docs/adr/0107, D4: the start it repeats, not a new one.
+            restored.request.start = static_cast<std::uint64_t>(host.start);
             if (host.due.has_value()) {
                 if (*host.due <= wallNowMs) {
                     restored.deadline = Ledger::RestoredDeadline::Passed;
