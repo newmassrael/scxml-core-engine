@@ -4791,7 +4791,9 @@ fn an_identifier_of_an_enums_type_is_refused_on_every_backend() {
             sce_build::DocumentLabel::symmetric("kind_chain"),
             language,
             dir.path(),
-            &sce_build::ForgeCompileOptions::default(),
+            // Go resolves an `<sce:import>` under a module prefix, which it is
+            // refused without before any document is read.
+            &golden_options(language),
         ) {
             Ok(_) => panic!("{language:?}: a chain told apart by an enum field must be refused"),
             Err(e) => e.error.to_string(),
