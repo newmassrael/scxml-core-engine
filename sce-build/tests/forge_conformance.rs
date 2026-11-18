@@ -4851,6 +4851,108 @@ fn a_signed_field_of_part_of_its_bytes_is_refused_on_every_backend() {
     }
 }
 
+/// A field of part of its bytes holds an unsigned number of its bits, and an
+/// enum's value is the variant that declares its carrier's number, so an enum
+/// there has an unsigned carrier: one whose carrier is signed is refused once
+/// the codec's imports name the carrier, before any language is rendered, with
+/// the rule the parse gives a signed integer type and the carrier named. The
+/// same field of an enum whose carrier is unsigned is not refused for its bits.
+///
+/// Turns red where `bit_layout::refusal` takes every enum as unsigned, or
+/// `refuse_codec_bits_by_carrier` is not asked once the imports are resolved.
+#[test]
+fn an_enum_of_a_signed_carrier_in_part_of_its_bytes_is_refused_on_every_backend() {
+    const SIGNED_ENUM: &str = r#"<?xml version="1.0" encoding="UTF-8"?>
+<scxml xmlns="http://www.w3.org/2005/07/scxml" xmlns:sce="http://sce.dev/ext"
+       version="1.0" sce:kind="enum" name="enum_signed_nibble" sce:underlying-type="int8">
+  <datamodel>
+    <data id="variants">
+      <sce:variant name="low" value="-1"/>
+      <sce:variant name="high" value="1"/>
+    </data>
+  </datamodel>
+</scxml>"#;
+    const UNSIGNED_ENUM: &str = r#"<?xml version="1.0" encoding="UTF-8"?>
+<scxml xmlns="http://www.w3.org/2005/07/scxml" xmlns:sce="http://sce.dev/ext"
+       version="1.0" sce:kind="enum" name="enum_unsigned_nibble" sce:underlying-type="uint8">
+  <datamodel>
+    <data id="variants">
+      <sce:variant name="low" value="1"/>
+      <sce:variant name="high" value="2"/>
+    </data>
+  </datamodel>
+</scxml>"#;
+    // The codec holding a nibble of the enum `src` names, beside a nibble of
+    // an unsigned integer in the same byte.
+    let nibble = |src: &str| {
+        format!(
+            r#"<?xml version="1.0" encoding="UTF-8"?>
+<scxml xmlns="http://www.w3.org/2005/07/scxml" xmlns:sce="http://sce.dev/ext"
+       sce:kind="codec" sce:default-endian="big" name="codec_enum_nibble" version="1.0">
+  <sce:import src="{src}" kind="enum" as="mode"/>
+  <datamodel>
+    <sce:field id="low" sce:type="enum:mode" sce:byte="0" sce:bit-size="4"/>
+    <sce:field id="high" sce:type="uint8" sce:byte="0" sce:bit-offset="4" sce:bit-size="4"/>
+  </datamodel>
+</scxml>"#
+        )
+    };
+    let dir = tempfile::tempdir().expect("a scratch directory");
+    std::fs::write(dir.path().join("enum_signed_nibble.scxml"), SIGNED_ENUM)
+        .expect("write the signed enum");
+    std::fs::write(dir.path().join("enum_unsigned_nibble.scxml"), UNSIGNED_ENUM)
+        .expect("write the unsigned enum");
+    let signed = nibble("enum_signed_nibble.scxml");
+    let unsigned = nibble("enum_unsigned_nibble.scxml");
+    for language in [
+        sce_build::generator::Language::Rust,
+        sce_build::generator::Language::Cpp,
+        sce_build::generator::Language::Kotlin,
+        sce_build::generator::Language::Go,
+        sce_build::generator::Language::Python,
+        sce_build::generator::Language::C11,
+        sce_build::generator::Language::Swift,
+    ] {
+        let compile = |source: &str| {
+            sce_build::compile_forge_with_imports(
+                source,
+                sce_build::DocumentLabel::symmetric("codec_enum_nibble"),
+                language,
+                dir.path(),
+                &golden_options(language),
+            )
+        };
+        let error = match compile(signed.as_str()) {
+            Ok(_) => {
+                panic!("{language:?}: an enum of a signed carrier in four bits must be refused")
+            }
+            Err(e) => e,
+        };
+        let text = error.error.to_string();
+        assert!(
+            text.contains("holds an unsigned number of its bits")
+                && text.contains("an enum whose carrier is unsigned")
+                && text.contains("not `enum:mode`, whose carrier is `int8`"),
+            "{language:?}: the refusal must say a part of a byte is unsigned and name the \
+             carrier; got: {text}"
+        );
+        assert_eq!(
+            error.location.line,
+            Some(6),
+            "{language:?}: the refusal stands on the row the field is declared on"
+        );
+        // Whatever else a backend says of the codec, its bits are not refused.
+        if let Err(e) = compile(unsigned.as_str()) {
+            let text = e.error.to_string();
+            assert!(
+                !text.contains("holds an unsigned number of its bits"),
+                "{language:?}: an enum of an unsigned carrier in four bits holds an unsigned \
+                 number; got: {text}"
+            );
+        }
+    }
+}
+
 // ── A signed field is the signed type of its width ──────────────────
 //
 // A field of a signed integer type, or of an enum whose carrier is signed, is

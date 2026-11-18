@@ -209,8 +209,19 @@ fn type_bits(ty: &SceType) -> Option<u32> {
 
 /// The first field of `fields` whose bits break a rule of docs/adr/0095 §3,
 /// where `positional` says whether the codec lays its fields out by byte
-/// (rather than writing them in turn).
-pub fn refusal(fields: &[CodecField], default: Endian, positional: bool) -> Option<Refusal> {
+/// (rather than writing them in turn), and `carrier` answers the carrier of the
+/// enum an alias names.
+///
+/// An enum's carrier is resolved with the codec's imports, after the parse,
+/// which judges every rule with no carrier known (`carrier` answers `None`).
+/// Once the imports are resolved the rules are judged again with the carriers,
+/// and only the rule that reads a carrier can refuse what the parse took.
+pub fn refusal(
+    fields: &[CodecField],
+    default: Endian,
+    positional: bool,
+    carrier: impl Fn(&str) -> Option<SceType>,
+) -> Option<Refusal> {
     let spans = spans(fields, default);
     for (field, span) in &spans {
         let refuse = |attr: &'static str, value: u32, rule: String| Refusal {
@@ -244,15 +255,32 @@ pub fn refusal(fields: &[CodecField], default: Endian, positional: bool) -> Opti
         if span.whole() {
             continue;
         }
-        let unsigned = field.sce_type.is_unsigned() || matches!(field.sce_type, SceType::Enum(_));
+        // The value of an enum is the variant that declares its carrier's
+        // number, so the number its bits hold is the carrier's: an enum whose
+        // carrier is signed would need the sign its bits do not have.
+        let enum_carrier = match &field.sce_type {
+            SceType::Enum(r) => carrier(r.alias.as_str()),
+            _ => None,
+        };
+        let unsigned = match &field.sce_type {
+            SceType::Enum(_) => !enum_carrier.as_ref().is_some_and(SceType::is_signed),
+            ty => ty.is_unsigned(),
+        };
         if !unsigned {
+            let held = match &enum_carrier {
+                Some(c) => format!(
+                    "`{}`, whose carrier is `{}`",
+                    field.sce_type.as_attr(),
+                    c.as_attr()
+                ),
+                None => format!("`{}`", field.sce_type.as_attr()),
+            };
             return Some(refuse(
                 "sce:bit-size",
                 span.bits,
                 format!(
                     "a field of part of its bytes holds an unsigned number of its bits, so its type \
-                     is an unsigned integer or an enum, not `{}`",
-                    field.sce_type.as_attr()
+                     is an unsigned integer or an enum whose carrier is unsigned, not {held}"
                 ),
             ));
         }

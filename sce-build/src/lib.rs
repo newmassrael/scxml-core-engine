@@ -5190,6 +5190,11 @@ pub fn compile_forge_from_parsed(
     // The refusals are those of the entries a chain's identifier tells apart,
     // so an identifier that names nothing of its entry codec is refused first.
     if let forge::model::ForgeDocument::Codec(m) = &parsed.document {
+        // The bits of a field are judged by its enum's carrier only now that
+        // the imports name it (docs/adr/0095 §3): the parse could not.
+        forge::parser::refuse_codec_bits_by_carrier(m, label, |alias| {
+            forge::cbor_codec::enum_carrier(&import_ctx, alias)
+        })?;
         forge::generator::validate_cross_codec_chain_entry_id(m, &import_ctx)
             .map_err(|e| Located::in_file(e, label.diagnostic_label))?;
         forge::codec_totality::check(m, &import_ctx)

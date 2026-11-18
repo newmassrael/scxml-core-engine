@@ -7592,7 +7592,9 @@ fn validate_codec_tail_is_last(
 
 /// The bits of every fixed field are bits a backend can read, of a type that
 /// holds them, and no two fields of a frame laid out by byte share one
-/// (docs/adr/0095 §3). `bit_layout::refusal` states the rules once.
+/// (docs/adr/0095 §3). `bit_layout::refusal` states the rules once. An enum's
+/// carrier is not known here: the rule that reads it is judged again once the
+/// imports are resolved (`refuse_codec_bits_by_carrier`).
 fn validate_codec_bit_layout(
     fields: &[CodecField],
     default_endian: Endian,
@@ -7600,13 +7602,48 @@ fn validate_codec_bit_layout(
     datamodel: &roxmltree::Node,
 ) -> Result<(), Located<ForgeError>> {
     let positional = crate::forge::model::fields_lay_out_by_byte(fields);
-    let Some(refusal) = crate::forge::bit_layout::refusal(fields, default_endian, positional)
+    let Some(refusal) =
+        crate::forge::bit_layout::refusal(fields, default_endian, positional, |_: &str| None)
     else {
         return Ok(());
     };
     Err(located(
         &field_element(datamodel, &refusal.field),
         label.diagnostic_label,
+        ValidationError::AttributeRuleViolated {
+            element: format!("field '{}' in codec '{}'", refusal.field, label.identifier),
+            attr: refusal.attr.into(),
+            value: refusal.value,
+            rule: refusal.rule,
+        },
+    ))
+}
+
+/// [`validate_codec_bit_layout`] once the codec's imports are resolved, with
+/// the carrier of each enum it imports, which `carrier` answers by alias: a
+/// field of part of its bytes holds an unsigned number, so an enum there has
+/// an unsigned carrier (docs/adr/0095 §3). The refusal is the one the parse
+/// gives, on the row the field is declared on, before any language is
+/// rendered.
+pub(crate) fn refuse_codec_bits_by_carrier(
+    m: &CodecModel,
+    label: DocumentLabel<'_>,
+    carrier: impl Fn(&str) -> Option<SceType>,
+) -> Result<(), Located<ForgeError>> {
+    let positional = crate::forge::model::fields_lay_out_by_byte(&m.fields);
+    let Some(refusal) =
+        crate::forge::bit_layout::refusal(&m.fields, m.default_endian, positional, carrier)
+    else {
+        return Ok(());
+    };
+    let line = m
+        .fields
+        .iter()
+        .find(|f| f.id == refusal.field)
+        .and_then(|f| f.line);
+    Err(located_at_line(
+        label.diagnostic_label,
+        line,
         ValidationError::AttributeRuleViolated {
             element: format!("field '{}' in codec '{}'", refusal.field, label.identifier),
             attr: refusal.attr.into(),

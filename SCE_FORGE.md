@@ -974,7 +974,10 @@ is ignored by the decode, and counts in the frame's size. The parser refuses as
 
 - a word wider than 64 bits (`O + N > 64`);
 - more bits than the field's type holds;
-- a field that is not whole (`O = 0` and `N` a multiple of 8) whose type is not an unsigned integer or an enum;
+- a field that is not whole (`O = 0` and `N` a multiple of 8) whose type is not an unsigned integer or an enum whose
+  carrier (`sce:underlying-type`) is unsigned: the field holds an unsigned number of its bits, and an enum's value
+  is the variant that declares its carrier's number, which a signed carrier would need a sign for (an enum's
+  carrier is judged once the codec's imports are resolved, before any language is rendered);
 - in a positional layout, two fields that hold the same bit of the frame;
 - in a streamed layout, which writes each field in turn in bytes of its own, a field that is not whole.
 

@@ -347,7 +347,8 @@ fn field_unlowered(
     }
     // A field that is not the whole of its integer is an unsigned number of its bits
     // (docs/adr/0095 §1), which a signed type would need a sign for. An enum's value is the one
-    // its variants declare for that number, whatever its carrier's sign.
+    // its variants declare for that number, and an enum of part of its bytes has an unsigned
+    // carrier: a signed one is refused once the imports are resolved (`bit_layout::refusal`).
     if let Some((swift_type, width)) = integer_type {
         if !whole_of_its_type(&span, width) && !f.sce_type.is_unsigned() {
             return what(&format!(
