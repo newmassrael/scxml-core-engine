@@ -2780,3 +2780,31 @@ regenerates its logs.
   stored length past `MAX_ENCODED_BYTES` and the element decode's kind otherwise, as a C++ log's `<Log>Malformed`
   holds it. Code that read `unreadable.why` matches `unreadable.error`.
 
+## A CBOR codec entry holds any value type, states its bound in its type, and names its refusal (ADR 0101)
+
+Landing: the commits that add this section; the Mesh trees, the Swift test tree and the Go round-trip tree are
+regenerated after them. A consumer regenerates every CBOR codec it owns.
+
+- A decode that `CborMalformed` refused for a reason other than a malformed head now answers the kind that names
+  it. Every runtime has four new kinds: `CborWrongType` (an item of a major type, simple value or tag its place
+  does not take, a key of the wrong major type among them), `CborDuplicateKey` (a declared key given twice),
+  `CborUnknownVariant` (a union's key names no case) and `CborUnionEntries` (a union's map holds no entry or more
+  than one). Rust and Kotlin spell them `CodecError::CborWrongType` and `CodecError.CborWrongType`, C++
+  `CodecError::CborWrongType`, Go `codec.ErrCborWrongType`, Python `CborWrongType`, Swift `.cborWrongType`, C11
+  `SCE_FORGE_CODEC_CBOR_WRONG_TYPE`, and the other three alike. `CborMalformed` is left to an item that is not
+  well-formed CBOR or is of indefinite length. A `match` or `switch` over the codec error that must be exhaustive
+  names the four, and code that tested for `CborMalformed` to catch a duplicate key or a wrong type tests for the
+  kind that names it. In the conformance reference (`tests/forge/conformance/numerical_reference.json`), a refusal
+  of those reasons is spelled `cbor-duplicate-key` or `cbor-wrong-type`.
+- A CBOR entry's `sce:type` takes any type of the language: signed integers, floats, enums, records, lists,
+  `optional<T>` and `union:<alias>` (with `<sce:import kind="union">`). A backend whose generator does not lower
+  such an entry yet refuses the document by name when it generates; `check -l <language>` says which. A text, byte
+  string or list at any depth
+  states its bound in its type (`string[64]`, `bytes[32]`, `list<record:R>[2]`), and a text or byte string with no
+  bound is refused (`validation/attribute-rule-violated`); bound each one. A byte string's exact `sce:length` is
+  its bound and stays as it is written.
+- `sce:max-size` on a top-level text or byte string entry is still read as the bracket of its type, and `check`
+  reports it as `validation/bound-attribute-superseded`. `sce-codegen bound-spelling <document>` prints the
+  document with each such bound moved into its type, and the rewritten document generates the same code. A codec's
+  input frame (`sce:direction="in"`) takes no `sce:max-size`.
+
