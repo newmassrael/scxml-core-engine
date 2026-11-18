@@ -1,11 +1,13 @@
 # ADR 0107 — A server keeps a durable session per key, and a client reaches it by Mesh over HTTP
 
-- Status: Proposed (2026-11-18). Written at the owner's order of that day, under the standing rule of 2026-10-26 and
+- Status: Accepted (2026-11-18). Written at the owner's order of that day, under the standing rule of 2026-10-26 and
   2026-10-27: the most long-term correct structure, textbook in its foundations, cost ignored. The owner chose the
   structure in conversation the same day: the programming model is Mesh, the transport that reaches a client on an
   unknown network is HTTP request and response, and every part is a general facility of SCE, not one shaped for the
-  application that asked for it ("제너럴한 형태로 받아서 구현해야해"). Nothing of it has landed; "Order of work" lists
-  the steps, each with the test that holds it.
+  application that asked for it ("제너럴한 형태로 받아서 구현해야해"). On review the same day the owner had the
+  binding's transport made a port with adapters that follow each platform's HTTP stack (D2), and then ordered the
+  work started, which accepts this record with the recommendation of each open question. Nothing of it has landed;
+  "Order of work" lists the steps, each with the test that holds it.
 - Date: 2026-11-18
 - Amends, once accepted (each amended document gains an "Amended by: ADR 0107" line in the landing that moves it):
   - `SCE_MESH.md` §10.5 (a duplicate of a request is answered with the reply the first one produced, D4), §10.11
@@ -115,30 +117,42 @@ HTTP/3 carry it unchanged.
   inspects TLS with its own authority is honoured where the user's machine trusts that authority, and the
   platform's proxy settings, tunnelling through an explicit proxy with `CONNECT`. A deployment may pin the server's
   key instead; pinning and inspection then exclude each other, and the client reports which refused.
-- **Where the platform has an HTTP stack that carries its policy, the client uses it.** On Windows that is WinHTTP:
-  it reads the Windows certificate store (an authority an administrator deploys by group policy included) and the
-  system's proxy configuration (a fixed proxy, an automatic configuration script, WPAD discovery) as every other
-  program of the machine does, so the client does not re-implement either. Linux has no such stack: the client uses
-  the distribution's CA bundle through OpenSSL's default paths and the `HTTPS_PROXY`, `https_proxy` and `NO_PROXY`
-  variables.
-- **The transport is a public contract the embedding may implement.** The binding's semantics (framing,
-  acknowledgement, holding, readiness, status codes, authentication) are SCE's and sit above one interface that
-  carries a single exchange: a POST with its headers and body, a bound on the wait, and an answer that is a response
-  or a failure of a named kind, as the standard host's `SCE::Transport` (`sce/include/host/StandardHost.h`) and the
-  Zenoh binding's `ZenohClient` (SCE_MESH.md §20.4) already are. A program that has a network stack of its own (a
-  GUI toolkit's, a platform's) implements the interface on it and links no transport of SCE's, so it brings no
-  second TLS library and its own proxy and trust configuration applies. The platform-policy rules above are
-  requirements on every transport, SCE's or the embedding's. SCE publishes a transport conformance kit (a local
-  server, an explicit proxy, a proxy that inspects TLS with a test authority, a response dropped after the server
-  acted) that any implementation runs; the reference transports are held to it, and an embedding's transport is held
-  to it by the embedding's own tests.
-- **SCE's reference transports are separate, optional targets.** `WinHttpTransport` on Windows; on Linux a
-  cpp-httplib transport over OpenSSL, which is found (`find_package(OpenSSL)`, a Bazel label), not vendored, for the
-  reason D7 gives for libsodium. The binding's core links neither.
+- **The binding is three layers: semantics, a port, adapters** (ports and adapters; the dependency points from the
+  adapter to the port, never from SCE to a network library). The semantics (framing, acknowledgement, holding,
+  readiness, status codes, authentication) are SCE's and the same in every language. The port is one public contract
+  that carries a single exchange at the level of HTTP semantics, the level the binding is defined on: a POST with its
+  headers and body, a bound on the wait, and an answer that is a response or a failure of a named kind. Every
+  language that carries the binding declares it: a C++ interface, a Rust trait, a Kotlin interface, a Swift protocol,
+  as the standard host's `SCE::Transport` (`sce/include/host/StandardHost.h`) and the Zenoh binding's `ZenohClient`
+  (SCE_MESH.md §20.4) already are. An adapter is any implementation of the port, SCE's or the embedding's. A program
+  that has a network stack of its own implements the port on it and links no adapter of SCE's, so it brings no
+  second TLS library and its own proxy and trust configuration applies.
+- **One conformance kit holds every adapter.** SCE publishes, per language, a kit: a local server, an explicit
+  proxy, a proxy that inspects TLS with a test authority the test installs as trusted, a response dropped after the
+  server acted, a server that holds an exchange past the bound. The platform-policy rules above are requirements on
+  every adapter. SCE's adapters are held to the kit in SCE's lanes; an embedding's adapter is held to it by the
+  embedding's tests.
+- **SCE's reference adapters use the platform's HTTP stack, and where a platform has none, its de facto system
+  client.** Only a platform's stack follows its policy completely (an automatic proxy configuration script, WPAD, a
+  certificate an administrator deploys); an adapter that re-implements them follows them partly. Each adapter is a
+  separate, optional target, and its libraries are found, not vendored, for the reason D7 gives for libsodium. The
+  binding's core links none of them.
 
-Implementations: the server in `sce-rust-mesh` (feature `https`); clients in `sce-rust-mesh`, as an arm of the
-generated C++ `TransportRouter` that takes the transport from the host at construction (with the two reference
-transports above), then in the Kotlin and Swift host cores.
+  | Platform | Reference adapter | Lands |
+  |---|---|---|
+  | Windows | WinHTTP (the Windows certificate store, the system's proxy configuration with its script and WPAD) | this record, step 8 |
+  | Linux | the system's libcurl (`find_package(CURL)`, a Bazel label): the distribution's CA bundle and TLS library, `HTTPS_PROXY`, `https_proxy`, `NO_PROXY`, `CONNECT`, HTTP/2 | this record, step 8 |
+  | Rust, every OS | hyper over rustls with the operating system's verifier (`rustls-platform-verifier`) and the proxy variables | this record, step 8 |
+  | Apple | URLSession | the step that brings the binding to the Swift host core |
+  | Android | the platform's HTTP stack | the step that brings the binding to the Kotlin host core |
+
+  cpp-httplib, which SCE vendors (`third_party/cpp-httplib`, v0.26), is not an adapter of this binding: it takes a
+  proxy only as `set_proxy(host, port)` written in code, reads no proxy variable and speaks HTTP/1.1 only, so it
+  cannot meet the platform-policy rule.
+
+Implementations: the server in `sce-rust-mesh` (feature `https`); clients in `sce-rust-mesh` and as an arm of the
+generated C++ `TransportRouter` that takes its adapter from the host at construction, then in the Kotlin and Swift
+host cores.
 
 ### D3. A host core serves a machine as a pool of sessions, one per key
 
@@ -294,6 +308,9 @@ other routes beside it, which are the downstream's.
   payloads.
 - New diagnostic codes (the unserved standard feature, the binding without an authenticator, keyed-pool deploy
   errors) each land with their appendix row.
+- The standard host's HTTP operation (SCE_HOST_FEATURES.md section 5) has the C++ adapter D2 refuses for this
+  binding, `HttplibTransport`, with the same limits. Its port (`SCE::Transport`) is already public, so the repair is
+  a libcurl and a WinHTTP adapter for it; it is debt recorded by this record and repaid by a record of its own.
 - The WebSocket binding's client keeps its compiled-in roots; giving it D2's trust store and proxy is right and is
   left to a record of its own, so this one does not change a landed binding.
 
@@ -337,8 +354,9 @@ other routes beside it, which are the downstream's.
    Rust host core. SCE_MESH.md §10.5 and §10.11 amended.
 7. D3: the keyed pool in the Rust host core, its deploy schema and refusals. SCE_MESH.md §14 and §19 amended.
 8. D2: the `https` binding section of SCE_MESH.md with the transport contract, the conformance kit, the Rust server
-   and client, the generated C++ client arm, and the WinHTTP and cpp-httplib reference transports, held on the Linux
-   lanes and the Windows lane, with a test transport outside SCE's two run through the same kit.
+   and client, the generated C++ client arm, the port and kit in C++ and Rust, and the WinHTTP, libcurl and Rust
+   reference adapters, held on the Linux lanes and the Windows lane, with a test adapter outside SCE's run through the
+   same kit.
 9. D10: the suite.
 10. `docs/SCE_HOST_FEATURES.md` section 9 updated, and a server runbook beside `docs/SCE_RELAY_DEPLOY.md`.
 11. The COSE operations and the `https` client on the remaining lanes, one step per lane.
@@ -346,6 +364,8 @@ other routes beside it, which are the downstream's.
 Steps 3 and 4 do not depend on the Mesh steps and may land in parallel with them.
 
 ## Open questions
+
+Decided as recommended by the owner's acceptance (2026-11-18); each is kept here with its reason.
 
 1. How a document gets the bytes of a record it signs or seals, and a record from bytes it verified or opened.
    Recommended: the typed form `sce-host-model-generate` already uses for its answer schema. `<invoke
