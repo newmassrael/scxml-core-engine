@@ -353,11 +353,16 @@ fn generated_file(name: &str, scxml: &str) -> String {
 /// property is: a byte as the `Byte` a `ByteArray` holds, a word as its bits
 /// taken two's complement, and not the unsigned number of its bits, which
 /// kotlinc refuses where the property is signed. This holds where the frame is
-/// read at fixed places and where it is read field by field.
+/// read at fixed places and where it is read field by field. The encode writes
+/// a signed byte as the `Byte` it is, and takes the bytes of a signed word of
+/// four bytes off the `Int` it is: a conversion to the type a value has is one
+/// kotlinc calls redundant, which `-Werror` refuses.
 ///
 /// Turns red where `generate_decode_expr` or `streaming_fixed_field_body`
-/// reads a signed byte through `toUByte()`, or `decode_multibyte_unified`
-/// converts a signed word to its unsigned type.
+/// reads a signed byte through `toUByte()`, `decode_multibyte_unified`
+/// converts a signed word to its unsigned type, `kotlin_byte_written`
+/// converts a signed byte to `Byte`, or `encode_multibyte_unified` converts an
+/// `Int` to `Int`.
 #[test]
 fn a_signed_field_is_decoded_as_the_signed_type_of_its_width() {
     const PLACED: &str = r#"<?xml version="1.0" encoding="UTF-8"?>
@@ -366,6 +371,7 @@ fn a_signed_field_is_decoded_as_the_signed_type_of_its_width() {
   <datamodel>
     <sce:field id="small" sce:type="int8" sce:byte="0" sce:bit-size="8"/>
     <sce:field id="wide" sce:type="int16" sce:byte="1" sce:bit-size="16"/>
+    <sce:field id="word" sce:type="int32" sce:byte="3" sce:bit-size="32"/>
   </datamodel>
 </scxml>"#;
     let placed = generated_file("signed_placed", PLACED);
@@ -376,9 +382,17 @@ fn a_signed_field_is_decoded_as_the_signed_type_of_its_width() {
             "            val small = raw[0]\n",
             "            val wide = (((raw[1].toInt() and 0xFF) shl 8) or \
              (raw[2].toInt() and 0xFF)).toShort()\n",
+            "w.writeU8(_e_small)?.let { return it }\n",
+            // A `Short` has no shift: its bytes are taken off its `Int`.
+            "w.writeU8((_e_wide.toInt() ushr 8 and 0xFF).toByte())?.let { return it }\n",
+            "w.writeU8((_e_word ushr 24 and 0xFF).toByte())?.let { return it }\n",
         ],
     );
-    holds_none("signed_placed", &placed, &["raw[0].toUByte()"]);
+    holds_none(
+        "signed_placed",
+        &placed,
+        &["raw[0].toUByte()", "_e_small.toByte()", "_e_word.toInt()"],
+    );
     const STREAMED: &str = r#"<?xml version="1.0" encoding="UTF-8"?>
 <scxml xmlns="http://www.w3.org/2005/07/scxml" xmlns:sce="http://sce.dev/ext"
        sce:kind="codec" sce:default-endian="big" name="signed_streamed" version="1.0">

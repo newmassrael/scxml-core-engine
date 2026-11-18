@@ -24723,6 +24723,18 @@ fn streaming_fixed_field_body(
     decode_multibyte_unified(0, n, endian, lang, signed)
 }
 
+/// The Kotlin byte a sink writes of `value`, the carrier of a one-byte field:
+/// the value itself where the carrier is signed, a `Byte` already, which a
+/// conversion kotlinc calls redundant would only repeat, and otherwise the
+/// `Byte` of the `UByte`'s bits.
+fn kotlin_byte_written(value: &str, signed: bool) -> String {
+    if signed {
+        value.to_string()
+    } else {
+        format!("{value}.toByte()")
+    }
+}
+
 /// The Kotlin read of the byte `byte`, an element of a `ByteArray`, as the
 /// carrier of a one-byte field: the `Byte` it is where the carrier is signed,
 /// and otherwise the `UByte` of its bits.
@@ -24750,11 +24762,17 @@ fn kotlin_byte_read(byte: &str, signed: bool) -> String {
 /// Python (unbounded ints, no truncating cast). Keeping the one masked form
 /// across both paths is what makes the streaming wrappers' "delegates to the
 /// encode SSOT" contract enforceable instead of drift-prone.
+///
+/// `signed` says the value is of the signed type of its width, which Kotlin
+/// shifts as it is where that type is already the `Int` or `Long` its bytes
+/// are taken from: a conversion to it is one kotlinc calls redundant, and
+/// `-Werror` refuses.
 fn encode_multibyte_unified(
     value_ref: &str,
     n: u32,
     endian: Endian,
     lang: crate::generator::Language,
+    signed: bool,
 ) -> Vec<String> {
     use crate::generator::Language;
 
@@ -24798,14 +24816,21 @@ fn encode_multibyte_unified(
                         // they read through Long; <= 4 stays on Int to match the
                         // positional path (which never exceeds a 32-bit field).
                         let (view, mask) = if n > 4 {
-                            ("toLong", "0xFFL")
+                            (".toLong()", "0xFFL")
                         } else {
-                            ("toInt", "0xFF")
+                            (".toInt()", "0xFF")
+                        };
+                        // A signed value of four or eight bytes is the `Int`
+                        // or `Long` itself.
+                        let view = if signed && (n == 4 || n == 8) {
+                            ""
+                        } else {
+                            view
                         };
                         if shift == 0 {
-                            format!("({value_ref}.{view}() and {mask}).toByte()")
+                            format!("({value_ref}{view} and {mask}).toByte()")
                         } else {
-                            format!("({value_ref}.{view}() ushr {shift} and {mask}).toByte()")
+                            format!("({value_ref}{view} ushr {shift} and {mask}).toByte()")
                         }
                     }
                 }
@@ -24833,16 +24858,26 @@ fn streaming_fixed_field_encode_kotlin(
     let id = field.id.as_str();
     let endian = field.effective_endian(default_endian);
     let source = l.codec_carrier_expr(&field.sce_type, &format!("this.{id}"));
+    let signed = l.codec_carrier_signed(&field.sce_type);
     if n == 1 {
         // Bare carrier path — Kotlin Byte fits write_u8 directly.
         // Keeps parent-tag injection needle simple (`writeU8(this.<id>.toByte())`).
-        return format!("        w.writeU8({source}.toByte())?.let {{ return it }}");
+        return format!(
+            "        w.writeU8({})?.let {{ return it }}",
+            kotlin_byte_written(&source, signed)
+        );
     }
-    encode_multibyte_unified(&source, n, endian, crate::generator::Language::Kotlin)
-        .into_iter()
-        .map(|e| format!("        w.writeU8({e})?.let {{ return it }}"))
-        .collect::<Vec<_>>()
-        .join("\n")
+    encode_multibyte_unified(
+        &source,
+        n,
+        endian,
+        crate::generator::Language::Kotlin,
+        signed,
+    )
+    .into_iter()
+    .map(|e| format!("        w.writeU8({e})?.let {{ return it }}"))
+    .collect::<Vec<_>>()
+    .join("\n")
 }
 
 /// Go encode counterpart — non-gated. Mirrors `encode_single_field_unified`
@@ -24865,7 +24900,8 @@ fn streaming_fixed_field_encode_go(
         // Bare carrier path keeps parent-tag injection needle simple.
         return emit(&source);
     }
-    encode_multibyte_unified(&source, n, endian, crate::generator::Language::Go)
+    let signed = l.codec_carrier_signed(&field.sce_type);
+    encode_multibyte_unified(&source, n, endian, crate::generator::Language::Go, signed)
         .into_iter()
         .map(|e| emit(&e))
         .collect::<Vec<_>>()
@@ -24889,7 +24925,8 @@ fn streaming_fixed_field_encode_c11(
     if n == 1 {
         return format!("    SCE_FORGE_TRY_WRITE(sce_forge_writer_write_u8(w, {source}));");
     }
-    encode_multibyte_unified(&source, n, endian, crate::generator::Language::C11)
+    let signed = l.codec_carrier_signed(&field.sce_type);
+    encode_multibyte_unified(&source, n, endian, crate::generator::Language::C11, signed)
         .into_iter()
         .map(|e| format!("    SCE_FORGE_TRY_WRITE(sce_forge_writer_write_u8(w, {e}));"))
         .collect::<Vec<_>>()
@@ -24911,7 +24948,8 @@ fn streaming_fixed_field_encode_c11_inner(
     if n == 1 {
         return format!("        SCE_FORGE_TRY_WRITE(sce_forge_writer_write_u8(w, {source}));");
     }
-    encode_multibyte_unified(&source, n, endian, crate::generator::Language::C11)
+    let signed = l.codec_carrier_signed(&field.sce_type);
+    encode_multibyte_unified(&source, n, endian, crate::generator::Language::C11, signed)
         .into_iter()
         .map(|e| format!("        SCE_FORGE_TRY_WRITE(sce_forge_writer_write_u8(w, {e}));"))
         .collect::<Vec<_>>()
@@ -24935,7 +24973,8 @@ fn streaming_fixed_field_encode_go_from_local(
     if n == 1 {
         return emit(&source);
     }
-    encode_multibyte_unified(&source, n, endian, crate::generator::Language::Go)
+    let signed = l.codec_carrier_signed(&field.sce_type);
+    encode_multibyte_unified(&source, n, endian, crate::generator::Language::Go, signed)
         .into_iter()
         .map(|e| emit(&e))
         .collect::<Vec<_>>()
@@ -24953,14 +24992,24 @@ fn streaming_fixed_field_encode_kotlin_from_local(
 ) -> String {
     let endian = field.effective_endian(default_endian);
     let source = l.codec_carrier_expr(&field.sce_type, "_v");
+    let signed = l.codec_carrier_signed(&field.sce_type);
     if n == 1 {
-        return format!("            w.writeU8({source}.toByte())?.let {{ return it }}");
+        return format!(
+            "            w.writeU8({})?.let {{ return it }}",
+            kotlin_byte_written(&source, signed)
+        );
     }
-    encode_multibyte_unified(&source, n, endian, crate::generator::Language::Kotlin)
-        .into_iter()
-        .map(|e| format!("            w.writeU8({e})?.let {{ return it }}"))
-        .collect::<Vec<_>>()
-        .join("\n")
+    encode_multibyte_unified(
+        &source,
+        n,
+        endian,
+        crate::generator::Language::Kotlin,
+        signed,
+    )
+    .into_iter()
+    .map(|e| format!("            w.writeU8({e})?.let {{ return it }}"))
+    .collect::<Vec<_>>()
+    .join("\n")
 }
 
 /// Resolves a present-if predicate into a build-time literal bit-test
@@ -27438,11 +27487,12 @@ fn encode_whole_field_read_as(
     // `LangCtx::codec_carrier_expr`.
     let field_ref = l.codec_carrier_expr(&field.sce_type, value);
     let span = BitSpan::of(field, default_endian).expect("a whole write is of a fixed field");
+    let signed = l.codec_carrier_signed(&field.sce_type);
 
     match span.bytes {
         1 => vec![match lang {
             Language::Cpp => unreachable!("{}", CPP_ENCODE_IS_PRINTED),
-            Language::Kotlin => format!("{field_ref}.toByte()"),
+            Language::Kotlin => kotlin_byte_written(&field_ref, signed),
             Language::Rust => field_ref,
             Language::Go => format!("byte({field_ref})"),
             Language::Python => format!("{field_ref} & 0xFF"),
@@ -27456,7 +27506,7 @@ fn encode_whole_field_read_as(
         // already carries the per-language receiver prefix, so the same
         // shift / mask / narrow rules serve both this positional path and
         // the streaming `streaming_fixed_field_encode_*` wrappers.
-        bytes => encode_multibyte_unified(&field_ref, bytes, span.endian, lang),
+        bytes => encode_multibyte_unified(&field_ref, bytes, span.endian, lang, signed),
     }
 }
 

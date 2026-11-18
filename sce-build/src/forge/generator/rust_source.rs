@@ -5499,6 +5499,7 @@ impl<'a> Plan<'a> {
             span.bytes,
             span.endian,
             crate::generator::Language::Rust,
+            self.l().codec_carrier_signed(&field.sce_type),
         ) {
             lines.push(format!("w.write_u8({e})?;"));
         }
@@ -5536,6 +5537,7 @@ impl<'a> Plan<'a> {
                         n,
                         endian,
                         crate::generator::Language::Rust,
+                        self.l().codec_carrier_signed(&field.sce_type),
                     ) {
                         body.push(format!("w.write_u8({e})?;"));
                     }
