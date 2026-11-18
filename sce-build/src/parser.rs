@@ -12117,16 +12117,17 @@ mod tests {
         // row — parameterised over `{$id}` so the same value is
         // spliced twice, producing duplicate invoke ids after
         // expansion. parse_impl's §scxml-3.14 duplicate-id
-        // check fires at the second `<invoke>` element's range —
-        // bytes that came 1:1 from t.xml, so Origin::File routes
-        // the diagnostic back to t.xml's row, not to the expanded
-        // document's row. If `parse_file` were to drop template's
-        // map and keep feeding `xinclude_map` into
-        // `AuthoredPositions::authored`, the lookup would resolve the
-        // expanded offset against the post-xinclude document
-        // (identity over main.scxml here) and point at some
-        // unrelated main.scxml row — the assertion below would
-        // then fail.
+        // check stands where its actual, the duplicated id, begins
+        // (SCE_ERROR_CONTRACT.md §2.2): on the second `<invoke>`, at
+        // the `dup` the call site spliced in, so Origin::CallSite
+        // routes the diagnostic back to the `<sce:use>` row of
+        // main.scxml that wrote it, not to the expanded document's
+        // row. If `parse_file` were to drop template's map and keep
+        // feeding `xinclude_map` into `AuthoredPositions::authored`,
+        // the lookup would resolve the expanded offset against the
+        // post-xinclude document (identity over main.scxml here) and
+        // point at the expanded row of the second `<invoke>`, past
+        // the `<sce:use>` row — the assertion below would then fail.
         //
         // This is the template-half analogue of
         // `parse_file_remaps_post_expansion_error_into_included_fragment`;
@@ -12143,8 +12144,8 @@ mod tests {
 
         // Template file — two `<invoke>` declarations share the
         // same `{$id}` param so one call-site binding produces a
-        // duplicate. The second `<invoke>` line is the position
-        // the remap must resolve to.
+        // duplicate. The second `<invoke>` is the element refused;
+        // its id is the value the call site supplied.
         //
         // Lines:
         //   1: <sce:template ...>
@@ -12187,23 +12188,24 @@ mod tests {
             other => panic!("expected DuplicateId, got: {other:?}"),
         }
 
-        // Location must be remapped to the template file — the
-        // duplicate invoke's element bytes came from t.xml, not
-        // from main.scxml.
+        // Location must be remapped to the call site — the
+        // duplicated id's bytes were substituted from the
+        // `<sce:use id="dup">` binding in main.scxml, not copied
+        // from t.xml.
         assert!(
-            err.location.file.ends_with("t.xml"),
-            "expected location.file to end with 't.xml' (got {:?})",
+            err.location.file.ends_with("main.scxml"),
+            "expected location.file to end with 'main.scxml' (got {:?})",
             err.location.file,
         );
-        // The second `<invoke id="{$id}">` lives on line 4 of the
-        // template file. Without the template-map thread, the
-        // reported line would be whatever row this expanded byte
-        // lands at in the in-memory post-template document — which
-        // is ≠ 4 because splicing always shifts line numbers.
+        // The `<sce:use>` that binds `id` lives on line 5 of
+        // main.scxml. Without the template-map thread, the reported
+        // line would be the row the second `<invoke>` lands at in
+        // the in-memory post-template document — which is past 5,
+        // because the spliced body puts a line break before it.
         assert_eq!(
             err.location.line,
-            Some(4),
-            "expected t.xml line 4 for the second <invoke>",
+            Some(5),
+            "expected main.scxml line 5, the <sce:use> that wrote the id",
         );
     }
 
