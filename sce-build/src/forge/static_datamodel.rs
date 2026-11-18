@@ -788,19 +788,20 @@ pub(crate) fn enum_fields(
         .collect()
 }
 
-/// The alias the statechart names the enum of a union's tag by, where `path`
-/// (`when.kind`, `_event.data.shapes[].kind`) reads that tag (docs/adr/0092,
-/// section 6.1): the tag is a value of its enum wherever the union is, and is
-/// compared with a variant of it as a value of the enum is. `None` for a path
-/// that reads no union's tag, or whose enum the statechart does not import.
-fn union_tag_enum(ctx: &TypeCtx<'_>, path: &str) -> Option<String> {
-    let (object, tag) = path.rsplit_once('.')?;
-    let place = ctx.value_of(object)?;
-    let (union, _) = crate::forge::value_path::union_of(ctx.value_scope, &place)?;
-    if union.tag != tag {
-        return None;
-    }
-    crate::forge::value_path::tag_enum_alias(ctx.value_scope?, union)
+/// The alias the statechart names the enum of the value at `path` by, where
+/// `path` is a place the walk of the one value type reaches (docs/adr/0086,
+/// section 6.2): an enum field of a record, of an element of a list or of a
+/// union's case at any depth (`_event.data.lines[].color`), and a union's tag
+/// (`when.kind`, `_event.data.shapes[].kind`, docs/adr/0092, section 6.1), each
+/// a value of its enum wherever it is, compared with a variant of it and
+/// assigned to a variable of it as a value of the enum is. The places a
+/// variable's record of entries and a loop's record item hold are answered
+/// before this by the paths [`enum_variables`] and the loop register. `None`
+/// for a path no place starts, one that holds no value of an enum, or one
+/// whose enum the statechart does not import.
+fn place_enum(ctx: &TypeCtx<'_>, path: &str) -> Option<String> {
+    let place = ctx.value_of(path)?;
+    crate::forge::value_path::enum_alias(ctx.value_scope?, &place)
 }
 
 /// The names one statechart gives the records and enums it imports: two are
@@ -1482,7 +1483,7 @@ impl<'a> Judge<'a> {
             expr,
             ctx,
             &crate::forge::static_enum::EnumReading {
-                var_alias: &|name| self.enum_of(name).or_else(|| union_tag_enum(ctx, name)),
+                var_alias: &|name| self.enum_of(name).or_else(|| place_enum(ctx, name)),
                 calls: &|name| self.scope.call_enums(name),
             },
         )

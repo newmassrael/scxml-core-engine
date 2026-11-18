@@ -312,9 +312,10 @@ fn class_of(
                         return Ok(Some(held));
                     }
                 }
-                // A union's tag read through an element of any list
-                // (`_event.data.shapes[i].kind`, docs/adr/0092, section 6.1):
-                // the place the read writes, every index an element.
+                // An enum field or a union's tag read through an element of any
+                // list (`_event.data.lines[i].color`, `_event.data.shapes[i].kind`,
+                // docs/adr/0092, section 6.1): the place the read writes, every
+                // index an element.
                 if let Some(held) =
                     crate::forge::expr::place_path(node).and_then(|path| (reading.var_alias)(&path))
                 {

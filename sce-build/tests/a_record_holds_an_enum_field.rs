@@ -67,6 +67,45 @@ const GEAR: &str = r##"<?xml version="1.0"?>
 </scxml>
 "##;
 
+/// A schema that holds a composition: a list of `Gear` records, each holding
+/// the enum field `speed`.
+const FLEET: &str = r##"<?xml version="1.0"?>
+<scxml xmlns="http://www.w3.org/2005/07/scxml" xmlns:sce="http://sce.dev/ext"
+       version="1.0" sce:kind="event-schema" name="schema_fleet" sce:event-name="fleet.set">
+  <sce:import kind="event-schema" src="schema_gear.scxml" as="Gear"/>
+  <datamodel>
+    <data id="gears" sce:type="list&lt;record:Gear&gt;[2]" sce:direction="in"/>
+  </datamodel>
+</scxml>
+"##;
+
+/// A statechart taking `fleet.set`, whose payload is a `Fleet`, with a `Mode`
+/// variable `first`, a `Unit` variable `scale`, a `uint32` `total` and the given
+/// transition `body`.
+fn fleet_machine(body: &str) -> String {
+    format!(
+        r##"<?xml version="1.0"?>
+<scxml xmlns="http://www.w3.org/2005/07/scxml" xmlns:sce="http://sce.dev/ext"
+       version="1.0" initial="s" datamodel="sce-static">
+  <sce:import kind="event-schema" src="schema_fleet.scxml" as="Fleet"/>
+  <sce:import kind="event-schema" src="schema_gear.scxml" as="Gear"/>
+  <sce:import kind="enum" src="mode.scxml" as="Mode"/>
+  <sce:import kind="enum" src="unit.scxml" as="Unit"/>
+  <datamodel>
+    <data id="first" sce:type="enum:Mode" expr="Mode.fast"/>
+    <data id="scale" sce:type="enum:Unit" expr="Unit.metric"/>
+    <data id="total" sce:type="uint32" expr="0"/>
+  </datamodel>
+  <state id="s">
+    <transition event="fleet.set" type="internal">
+      {body}
+    </transition>
+  </state>
+</scxml>
+"##
+    )
+}
+
 /// A statechart importing the schema as `Gear` and, when `import_mode`, the
 /// enum as `Mode`, with `gear` and `other` records, a list `all` of them, a
 /// `uint32` `total` and the given transition `body`.
@@ -110,6 +149,7 @@ fn run(args: &[&str], doc: &str) -> (bool, String) {
         ("mode_copy.scxml", mode_copy.as_str()),
         ("unit.scxml", UNIT),
         ("schema_gear.scxml", GEAR),
+        ("schema_fleet.scxml", FLEET),
     ] {
         std::fs::write(dir.path().join(name), text).expect("write sibling");
     }
@@ -319,4 +359,46 @@ fn a_list_of_records_holds_an_enum_field_the_document_does_not_import() {
             "{language}: a list of records whose enum is not imported:\n{out}"
         );
     }
+}
+
+#[test]
+fn an_enum_field_of_a_payload_lists_element_is_a_value_of_its_enum() {
+    // The payload holds a composition, so it has no record of entries: the
+    // field of an element read through its index is typed by walking the
+    // payload's type, and is a value of the enum the statechart imports the
+    // schema's enum document under. It is assigned to a variable of that enum
+    // and compared with its variant, by the judge and by every backend.
+    let body = r#"
+      <if cond="len(_event.data.gears) &gt; 0">
+        <assign location="first" expr="_event.data.gears[0].speed"/>
+      </if>
+      <if cond="len(_event.data.gears) &gt; 1 &amp;&amp; _event.data.gears[1].speed === Mode.slow">
+        <assign location="total" expr="total + _event.data.gears[1].count"/>
+      </if>"#;
+    let doc = fleet_machine(body);
+    let (ok, out) = run(&["check"], &doc);
+    assert!(ok, "an enum field of a payload list's element:\n{out}");
+    for language in emitting(ForgeKind::Statechart).map(|language| language.canonical_name()) {
+        let (ok, out) = run(&["check", "-l", language], &doc);
+        assert!(
+            ok,
+            "{language}: an enum field of a payload list's element:\n{out}"
+        );
+    }
+}
+
+#[test]
+fn an_enum_field_of_a_payload_lists_element_is_held_to_its_enum() {
+    // Typed as the value of its enum it is, it is no value of another enum and
+    // is compared with no number.
+    refused(
+        &fleet_machine(r#"<assign location="scale" expr="_event.data.gears[0].speed"/>"#),
+        "not of the enum `Unit`",
+    );
+    refused(
+        &fleet_machine(
+            r#"<if cond="_event.data.gears[0].speed === 0"><assign location="total" expr="1"/></if>"#,
+        ),
+        "a comparison of an enum value with anything but a value of the same enum",
+    );
 }

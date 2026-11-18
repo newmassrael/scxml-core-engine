@@ -25,7 +25,9 @@
 //! ([`union_read_refusal`]); the walk types it.
 
 use crate::forge::narrowing::Facts;
-use crate::forge::value_type::{ScopedCase, ScopedRecord, ScopedUnion, TypeScope, ValueType};
+use crate::forge::value_type::{
+    ScopedCase, ScopedEnum, ScopedRecord, ScopedUnion, TypeScope, ValueType,
+};
 
 /// What a place writes for one element of a list, whatever its index.
 pub const ELEMENT: &str = "[]";
@@ -159,10 +161,37 @@ pub fn union_of<'s>(base: Option<&'s TypeScope>, at: &Place) -> Option<(&'s Scop
 /// `None` where the statechart imports no such enum, so writes no test of the
 /// tag.
 pub fn tag_enum_alias(base: &TypeScope, union: &ScopedUnion) -> Option<String> {
-    let tag = union.scope.enums.get(&union.tag_enum)?;
+    statechart_enum_alias(base, union.scope.enums.get(&union.tag_enum)?)
+}
+
+/// The alias the statechart's own scope `base` names the enum the place `at`
+/// holds a value of by, the enum a test of it writes a variant of
+/// (`Color.blue` for `_event.data.lines[i].color`): a field of a record, of an
+/// element of a list or of a union's case at any depth, or a union's tag, each
+/// read in the scope of the document that declares it, and named by the first
+/// of the statechart's enums of the same variants, numbers and underlying type
+/// (docs/adr/0086, section 5.1). `None` for a place that holds no value of an
+/// enum (an optional one among them: its present value, `<place>.value`, is the
+/// value of the enum), or whose enum the statechart imports no document of.
+pub fn enum_alias(base: &TypeScope, at: &Place) -> Option<String> {
+    let ValueType::Scalar(crate::forge::model::SceType::Enum(reference)) = &at.ty else {
+        return None;
+    };
+    let held = scope_at(base, &at.scope)?.enums.get(&reference.alias)?;
+    // A place of the statechart's own scope names the enum by its own alias.
+    if at.scope.is_empty() {
+        return Some(reference.alias.clone());
+    }
+    statechart_enum_alias(base, held)
+}
+
+/// The first alias `base` imports an enum equal to `held` under: two enums of
+/// the same variants, numbers and underlying type are one type across
+/// documents (docs/adr/0086, section 5.1).
+fn statechart_enum_alias(base: &TypeScope, held: &ScopedEnum) -> Option<String> {
     base.enums
         .iter()
-        .find(|(_, held)| *held == tag)
+        .find(|(_, imported)| *imported == held)
         .map(|(alias, _)| alias.clone())
 }
 
@@ -701,5 +730,90 @@ mod tests {
             Some(5)
         );
         assert_eq!(Place::of(ty("uint8")).list_bound(), None);
+    }
+
+    /// The enum `variants` names, numbered in order, as the document `name`
+    /// declares it.
+    fn colors(name: &str, variants: &[&str]) -> crate::forge::value_type::ScopedEnum {
+        crate::forge::value_type::ScopedEnum {
+            name: name.into(),
+            variants: variants
+                .iter()
+                .zip(0i128..)
+                .map(|(variant, value)| crate::forge::value_type::ScopedVariant {
+                    name: variant.to_string(),
+                    value,
+                })
+                .collect(),
+            underlying: SceType::Uint8,
+            strict: true,
+        }
+    }
+
+    fn enum_of(alias: &str) -> ValueType {
+        ValueType::Scalar(SceType::Enum(crate::forge::model::EnumRef {
+            alias: alias.into(),
+        }))
+    }
+
+    /// An enum field of an element of a payload list is a value of the enum the
+    /// statechart imports the same document under, whatever alias the record's
+    /// own document gives it; an optional one is not, its present value is; a
+    /// number is no enum value, and an enum the statechart imports no document
+    /// of is named by none of its aliases.
+    #[test]
+    fn an_enum_field_at_any_depth_is_named_by_the_statechart_alias() {
+        let mut line_scope = TypeScope::default();
+        line_scope
+            .enums
+            .insert("Paint".into(), colors("paint_color", &["red", "blue"]));
+        line_scope
+            .enums
+            .insert("Size".into(), colors("size", &["small", "large"]));
+        let line = ScopedRecord {
+            identity: "order_line".into(),
+            name: "order_line".into(),
+            fields: vec![
+                ("color".into(), enum_of("Paint")),
+                ("size".into(), enum_of("Size")),
+                (
+                    "trim".into(),
+                    ValueType::Optional {
+                        elem: Box::new(enum_of("Paint")),
+                    },
+                ),
+                ("quantity".into(), ty("uint16")),
+            ],
+            scope: line_scope,
+        };
+        let mut parts_scope = TypeScope::default();
+        parts_scope.records.insert("Line".into(), line);
+        let parts = ScopedRecord {
+            identity: "received_parts".into(),
+            name: "received_parts".into(),
+            fields: vec![("lines".into(), ty("list<record:Line>[2]"))],
+            scope: parts_scope,
+        };
+        let mut base = TypeScope::default();
+        base.records.insert("Parts".into(), parts);
+        base.enums
+            .insert("Color".into(), colors("paint_color", &["red", "blue"]));
+        let roots = HashMap::from([
+            ("_event.data", Place::of(ty("record:Parts"))),
+            ("first", Place::of(enum_of("Color"))),
+        ]);
+        let named = |path: &str| {
+            resolve(Some(&base), |name| roots.get(name), path)
+                .and_then(|place| enum_alias(&base, &place))
+        };
+        assert_eq!(named("_event.data.lines[].color"), Some("Color".into()));
+        assert_eq!(
+            named("_event.data.lines[].trim.value"),
+            Some("Color".into())
+        );
+        assert_eq!(named("_event.data.lines[].trim"), None);
+        assert_eq!(named("_event.data.lines[].quantity"), None);
+        assert_eq!(named("_event.data.lines[].size"), None);
+        assert_eq!(named("first"), Some("Color".into()));
     }
 }

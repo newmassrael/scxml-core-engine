@@ -5461,7 +5461,11 @@ A statechart reads a composed payload as it reads a variable of the same type, a
 any depth (docs/adr/0086, section 6): every place, a variable, `_event.data` or a
 loop's item and the fields, elements and present values read after it
 (`_event.data.items[i].tags[j]`), is typed by walking the one value type, each
-record's fields in the scope of the document that declares it. `check` judges
+record's fields in the scope of the document that declares it. An enum field so
+reached (`_event.data.lines[i].color`) is a value of the enum the statechart
+imports that field's enum document under, whatever alias the declaring document
+gives it, and is held as a record variable's enum field is: stored in a variable
+of that enum, or compared with `===` and `!==` to a value of it. `check` judges
 `len(x)` of any list, an index into a list of any element, a field of a record
 element, a `<foreach>` over any list the payload, a variable or an enclosing
 loop's item holds, and `<assign location="kept" expr="_event.data.items"/>`, a
