@@ -178,9 +178,9 @@ PY
 # `#define EVENT_RING_CONTEXT_WORDS ((uint32_t)3u)`.
 mutation_case "the C11 narrow row lays its context out for 64-bit words" <<'PY'
 edit("sce-build/src/forge/generator.rs",
-     r'''        context => broadcast_log_context_value(&inputs.element, word_bits, false),
+     r'''        context => broadcast_log_context_value(&inputs.element, word_bits, element_printed),
         ownership_only =>''',
-     r'''        context => broadcast_log_context_value(&inputs.element, 64, false),
+     r'''        context => broadcast_log_context_value(&inputs.element, 64, element_printed),
         ownership_only =>''')
 PY
 
