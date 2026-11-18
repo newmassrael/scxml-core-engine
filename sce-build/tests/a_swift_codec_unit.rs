@@ -2086,10 +2086,12 @@ fn a_count_of_entries_is_derived_from_the_list_and_is_no_member_of_the_value() {
         .find("        var frags_entries = BytesSink()\n")
         .unwrap_or_else(|| panic!("the entries are written after the count: {code}"));
     assert!(counted < written, "{code}");
+    // The value is made of what its protocol requires, spelled as the protocol spells it: the
+    // entries as the associated type the value binds to the entry codec's own value.
     assert!(
-        code.contains(
-            "public init(frags: BoundedList<CodecRepeatElem, CodecRepeatBasic.FragsBound>)"
-        ) && !code.contains("public var num_frags"),
+        code.contains("public init(frags: BoundedList<Frags_Entry, CodecRepeatBasic.FragsBound>)")
+            && code.contains("    public typealias Frags_Entry = CodecRepeatElem\n")
+            && !code.contains("public var num_frags"),
         "the value holds the list and not its count: {code}"
     );
 }
