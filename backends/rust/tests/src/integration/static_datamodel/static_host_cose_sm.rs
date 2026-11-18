@@ -2080,6 +2080,9 @@ impl StaticHostCosePolicy {
                     // §scxml-6.4: which start this is belongs to the engine,
                     // which assigns it when the invocation starts.
                     token: 0,
+                    // docs/adr/0107, D4: the engine numbers the start of this
+                    // `<invoke>` in its session as it starts it.
+                    start: 0,
                     // A start the document makes is never a restart.
                     restarted: false,
                     // docs/adr/0045: the engine names the session that starts it.
@@ -2198,6 +2201,9 @@ impl StaticHostCosePolicy {
                     // §scxml-6.4: which start this is belongs to the engine,
                     // which assigns it when the invocation starts.
                     token: 0,
+                    // docs/adr/0107, D4: the engine numbers the start of this
+                    // `<invoke>` in its session as it starts it.
+                    start: 0,
                     // A start the document makes is never a restart.
                     restarted: false,
                     // docs/adr/0045: the engine names the session that starts it.
@@ -2316,6 +2322,9 @@ impl StaticHostCosePolicy {
                     // §scxml-6.4: which start this is belongs to the engine,
                     // which assigns it when the invocation starts.
                     token: 0,
+                    // docs/adr/0107, D4: the engine numbers the start of this
+                    // `<invoke>` in its session as it starts it.
+                    start: 0,
                     // A start the document makes is never a restart.
                     restarted: false,
                     // docs/adr/0045: the engine names the session that starts it.
@@ -2434,6 +2443,9 @@ impl StaticHostCosePolicy {
                     // §scxml-6.4: which start this is belongs to the engine,
                     // which assigns it when the invocation starts.
                     token: 0,
+                    // docs/adr/0107, D4: the engine numbers the start of this
+                    // `<invoke>` in its session as it starts it.
+                    start: 0,
                     // A start the document makes is never a restart.
                     restarted: false,
                     // docs/adr/0045: the engine names the session that starts it.
@@ -2552,6 +2564,9 @@ impl StaticHostCosePolicy {
                     // §scxml-6.4: which start this is belongs to the engine,
                     // which assigns it when the invocation starts.
                     token: 0,
+                    // docs/adr/0107, D4: the engine numbers the start of this
+                    // `<invoke>` in its session as it starts it.
+                    start: 0,
                     // A start the document makes is never a restart.
                     restarted: false,
                     // docs/adr/0045: the engine names the session that starts it.
