@@ -236,6 +236,9 @@ scan_exclusions = [
     "backends/rust/relay/",
     "backends/rust/relay-transport/",
     "backends/rust/relay-server/",
+    # Where a server keeps the saved sessions of a keyed pool (`sce-rust-session-store`, ADR 0107):
+    # it implements no clause of the Recommendation and carries no `§` citation.
+    "backends/rust/session-store/",
     # The group key agreement of a shared list (`sce-rust-mls`): it implements no clause of the
     # Recommendation and carries no `§` citation.
     "backends/rust/mls/",

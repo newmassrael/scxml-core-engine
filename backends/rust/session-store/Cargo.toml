@@ -1,0 +1,41 @@
+# SPDX-License-Identifier: AGPL-3.0-only WITH AdditionRef-SCE-Linking-Exception OR LicenseRef-SCE-Commercial
+# SPDX-FileCopyrightText: Copyright (c) 2026 newmassrael
+
+[package]
+name = "sce-rust-session-store"
+version.workspace = true
+edition.workspace = true
+# `rusqlite` 0.37 and `libsqlite3-sys` 0.35 declare none, and their bindings are written as
+# `unsafe extern "C"` blocks, which need 1.82; 1.87 is the release the other server-side crates of
+# the workspace (`sce-rust-relay`, `sce-rust-mesh`) are already held to.
+rust-version = "1.87"
+license.workspace = true
+repository.workspace = true
+authors.workspace = true
+description = "Where a server keeps the saved sessions of a keyed pool: a saved state with its version and its earliest due, a lease whose fence every write carries, and an index of sessions by when they come due"
+publish = false
+
+# The session store of ADR 0107 decision D6. The contract (`SessionStore`) is this crate's root, with
+# an in-memory implementation for the tests of other crates and the kit every implementation is held
+# to (`conformance`). The reference implementation on SQLite is the default feature `sqlite`; a
+# crate that only takes the contract (the host core, which is given a store by its program) depends
+# on this one with `default-features = false` and links no SQLite.
+
+[features]
+default = ["sqlite"]
+# The reference store (`SqliteStore`) on the system's SQLite. Not the `bundled` feature of
+# `rusqlite`: a library a security fix must reach is found where the system keeps it, not compiled
+# into the program (ADR 0107, D2 and D7). The crate documentation says how to build where no SQLite
+# is installed.
+sqlite = ["dep:rusqlite"]
+
+[dependencies]
+rusqlite = { version = "0.37", optional = true }
+
+[[test]]
+name = "a_sqlite_session_store_survives_its_process"
+path = "tests/a_sqlite_session_store_survives_its_process.rs"
+required-features = ["sqlite"]
+
+[lints]
+workspace = true
