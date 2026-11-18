@@ -42,6 +42,8 @@
 //! * Where the target toolchain is present, the generated code is RUN and the
 //!   value it returns is `E7301`, not merely well formed.
 
+mod common;
+
 use std::path::{Path, PathBuf};
 use std::process::Command;
 
@@ -600,7 +602,7 @@ fn the_generated_kotlin_compiles_and_returns_the_identifier() {
         ),
     )
     .expect("write the driver");
-    let mut compile = Command::new("kotlinc");
+    let mut compile = common::kotlin::kotlinc("kotlinc");
     compile
         .args(["Probe.kt", "Main.kt", "-include-runtime", "-d", "probe.jar"])
         .current_dir(&dir);

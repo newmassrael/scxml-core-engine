@@ -20,8 +20,9 @@
 //! A case whose Kotlin class would be another's, and a case that holds a
 //! record no unit declares a class for, are refused by name.
 
+mod common;
+
 use std::path::{Path, PathBuf};
-use std::process::Command;
 
 use sce_build::forge::diagnostic::{DiagnosticCode, ToDiagnostics};
 use sce_build::forge::error::{ForgeError, GenerateError, Located};
@@ -186,7 +187,7 @@ fn the_kotlin_of_a_union_and_the_payload_that_holds_it_compiles_under_werror() {
     let probe = dir.path().join("Probe.kt");
     std::fs::write(&probe, PROBE).expect("write the probe");
     sources.push(probe);
-    let out = Command::new(&kotlinc)
+    let out = common::kotlin::kotlinc(&kotlinc)
         .arg("-Werror")
         .arg("-d")
         .arg(dir.path().join("classes"))

@@ -26,7 +26,6 @@
 mod common;
 
 use std::path::{Path, PathBuf};
-use std::process::Command;
 
 use common::native_oracle::{run, Batch, Native};
 use common::source_lexing::Lang;
@@ -113,7 +112,7 @@ fn runtime_jar(kotlinc: &Path, scratch: &Path) -> PathBuf {
         "implausibly few runtime sources ({sources:?}); the scan broke"
     );
     let jar = scratch.join("forge-runtime.jar");
-    let out = Command::new(kotlinc)
+    let out = common::kotlin::kotlinc(kotlinc)
         .arg("-d")
         .arg(&jar)
         .args(&sources)
@@ -151,7 +150,10 @@ fn an_authors_name_never_decides_whether_the_generated_kotlin_of_a_kind_builds()
         compile_flags: &["-Werror"],
         include_dirs: Vec::new(),
         include_flag: None,
-        extra_flags: vec!["-cp".to_string(), jar.display().to_string()],
+        extra_flags: common::kotlin::jvm_target_args()
+            .into_iter()
+            .chain(["-cp".to_string(), jar.display().to_string()])
+            .collect(),
         unit_suffix: ".kt",
         sibling_pattern: r"(?m)^import com\.sce\.generated\.([a-z0-9_]+)\.\*",
         file_name: Some(file_name),

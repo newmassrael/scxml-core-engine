@@ -19,6 +19,8 @@
 //! message text: the code is what a consumer dispatches on, and the row is
 //! what lets an author find the line.
 
+mod common;
+
 use std::path::{Path, PathBuf};
 use std::process::Command;
 
@@ -901,9 +903,12 @@ fn a_retained_field_starts_from_what_the_host_stored() {
     if let Some(kotlinc) = toolchain::require_or_skip("kotlinc", "compile a restored holder") {
         let out = t.dir("kt");
         let file = generated(&doc, &out, "kotlin").artifact(".kt");
+        let [target_flag, target] = common::kotlin::jvm_target_args();
         run_ok(
             &kotlinc,
             &[
+                target_flag.as_str(),
+                target.as_str(),
                 "-Werror",
                 file.file_name().unwrap().to_str().unwrap(),
                 "-d",

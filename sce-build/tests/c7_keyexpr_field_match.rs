@@ -554,7 +554,7 @@ fn kotlin_cross_doc_algorithm_compiles() {
         }
     }
 
-    let output = Command::new(&kotlinc)
+    let output = common::kotlin::kotlinc(&kotlinc)
         .args(&sources)
         .arg("-d")
         .arg(out_dir.join("xdoc.jar"))
@@ -983,7 +983,7 @@ fn kotlin_field_match_multi_file_compiles() {
         "backends/kotlin/forge-runtime/src/commonMain/kotlin/com/sce/forge/runtime/Codec.kt",
     ));
 
-    let output = Command::new(&kotlinc)
+    let output = common::kotlin::kotlinc(&kotlinc)
         .args(&sources)
         .arg("-d")
         .arg(out_dir.join("field_match.jar"))

@@ -19,8 +19,9 @@
 //! * Both compile under `kotlinc -Werror` beside the union's unit and the units
 //!   it names, with a file that calls each.
 
+mod common;
+
 use std::path::{Path, PathBuf};
-use std::process::Command;
 
 use sce_build::forge::error::{ForgeError, Located};
 use sce_build::generator::{GeneratedOutput, Language};
@@ -183,7 +184,7 @@ fn the_kotlin_of_an_algorithm_over_a_union_compiles_under_werror() {
     let probe = dir.path().join("Probe.kt");
     std::fs::write(&probe, PROBE).expect("write the probe");
     sources.push(probe);
-    let out = Command::new(&kotlinc)
+    let out = common::kotlin::kotlinc(&kotlinc)
         .arg("-Werror")
         .arg("-d")
         .arg(dir.path().join("classes"))

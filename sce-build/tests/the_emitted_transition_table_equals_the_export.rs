@@ -1598,7 +1598,7 @@ fn the_kotlin_table_compiles_and_holds_the_export() {
     std::fs::write(&main_path, program).expect("write the program");
 
     let jar = work.join("check.jar");
-    let mut compile = Command::new(&kotlinc);
+    let mut compile = common::kotlin::kotlinc(&kotlinc);
     compile
         .arg("-nowarn")
         .arg("-cp")

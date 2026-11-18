@@ -1202,7 +1202,7 @@ fn the_kotlin_function_compiles_alone_and_answers_as_the_producer() {
         )
         .expect("write the program");
         let jar = work.join("check.jar");
-        let mut compile = Command::new(&kotlinc);
+        let mut compile = common::kotlin::kotlinc(&kotlinc);
         compile
             .arg("-nowarn")
             .arg(&source)
@@ -2209,7 +2209,7 @@ fn the_kotlin_machine_and_the_kotlin_function_agree_on_every_pair() {
         )
         .expect("write the program");
         let jar = work.join("check.jar");
-        let mut compile = Command::new(&kotlinc);
+        let mut compile = common::kotlin::kotlinc(&kotlinc);
         compile
             .arg("-nowarn")
             .arg("-cp")

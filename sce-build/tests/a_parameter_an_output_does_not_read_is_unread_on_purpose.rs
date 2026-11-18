@@ -17,6 +17,8 @@
 //! outputs each read one input, and a third reads a sibling, which forwards
 //! every parameter and so reads them all.
 
+mod common;
+
 use std::path::{Path, PathBuf};
 use std::process::Command;
 
@@ -206,9 +208,12 @@ fn kotlin_compiles_under_werror() {
     else {
         return;
     };
+    let [target_flag, target] = common::kotlin::jvm_target_args();
     compile(
         &kotlinc,
         &[
+            target_flag.as_str(),
+            target.as_str(),
             "-Werror",
             file.file_name().unwrap().to_str().unwrap(),
             "-d",

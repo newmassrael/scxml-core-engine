@@ -22,6 +22,8 @@
 //! present, decode a frame, store stale bits in the flag, and hold the encode
 //! to the frame: once for a catch-all body, once for an arm's.
 
+mod common;
+
 use std::path::{Path, PathBuf};
 use std::process::Command;
 
@@ -882,7 +884,7 @@ fn the_kotlin_parent_writes_back_each_frame() {
         .filter_map(|entry| entry.file_name().into_string().ok())
         .filter(|name| name.ends_with(".kt"))
         .collect();
-    let mut build = Command::new(kotlinc);
+    let mut build = common::kotlin::kotlinc(kotlinc);
     build
         .args(["-Werror", "-include-runtime", "-d", "driver.jar", "-cp"])
         .arg(&jar)

@@ -21300,7 +21300,7 @@ fn compile_generated_set_kotlin(
     let class_out = proj_dir.join("classes");
     std::fs::create_dir_all(&class_out).map_err(|e| format!("mkdir classes: {e}"))?;
 
-    let output = std::process::Command::new("kotlinc")
+    let output = common::kotlin::kotlinc("kotlinc")
         .arg("-Werror")
         .arg("-cp")
         .arg(&jar_path)
@@ -21778,7 +21778,7 @@ fn run_cobs_vectors_kotlin(dir: &std::path::Path, test_id: &str) -> Result<(), S
     // package and the runner image. The forge runtime jar is a separate
     // classpath entry because `-include-runtime` bundles only the stdlib.
     let app_jar = proj_dir.join("driver.jar");
-    let mut build = std::process::Command::new("kotlinc");
+    let mut build = common::kotlin::kotlinc("kotlinc");
     build
         .arg("-Werror")
         .arg("-cp")
@@ -22441,7 +22441,7 @@ fn forge_kotlin_enum_record_layer_runtime() {
     // see `run_cobs_vectors_kotlin`. This emit imports nothing of the forge
     // runtime, so no runtime jar is needed.
     let app_jar = proj_dir.join("driver.jar");
-    let mut build = std::process::Command::new("kotlinc");
+    let mut build = common::kotlin::kotlinc("kotlinc");
     build
         .arg("-Werror")
         .arg("-include-runtime")
@@ -22913,7 +22913,7 @@ fn forge_kotlin_enum_validator_runtime() {
     std::fs::write(proj_dir.join("Driver.kt"), driver).expect("write Driver.kt");
 
     let app_jar = proj_dir.join("driver.jar");
-    let mut build = std::process::Command::new("kotlinc");
+    let mut build = common::kotlin::kotlinc("kotlinc");
     build
         .arg("-Werror")
         .arg("-include-runtime")

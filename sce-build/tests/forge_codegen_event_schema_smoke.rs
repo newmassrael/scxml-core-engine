@@ -1796,7 +1796,7 @@ fn statechart_native_lowering_kotlin_emits_engine_free_typed_guard() {
     };
     let classes = scratch.join("classes");
     std::fs::create_dir_all(&classes).expect("create classes dir");
-    let output = Command::new(&kotlinc)
+    let output = common::kotlin::kotlinc(&kotlinc)
         .args(["-cp"])
         .arg(&jar)
         .args(["-d"])
@@ -2222,7 +2222,7 @@ fn smoke_kotlin() {
     let classes = scratch.join("classes");
     std::fs::create_dir_all(&classes).expect("create classes dir");
 
-    let mut cmd = Command::new(&kotlinc);
+    let mut cmd = common::kotlin::kotlinc(&kotlinc);
     cmd.args(["-cp"]).arg(&jar);
     cmd.args(["-d"]).arg(&classes);
     cmd.arg("-nowarn");

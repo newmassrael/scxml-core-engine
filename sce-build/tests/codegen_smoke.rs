@@ -798,7 +798,7 @@ fn smoke_kotlin() {
     let classes = scratch.join("classes");
     std::fs::create_dir_all(&classes).expect("create classes dir");
 
-    let mut cmd = Command::new(&kotlinc);
+    let mut cmd = common::kotlin::kotlinc(&kotlinc);
     cmd.args(["-cp"]).arg(&jar);
     cmd.args(["-d"]).arg(&classes);
     cmd.arg("-nowarn");

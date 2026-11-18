@@ -17,6 +17,8 @@
 // expected to install every backend's toolchain; local dev machines
 // without one toolchain should not be blocked.
 
+mod common;
+
 use sce_build::toolchain;
 use std::path::{Path, PathBuf};
 use std::process::{Command, Stdio};
@@ -262,7 +264,7 @@ fn smoke_kotlin() {
     let classes = scratch.join("classes");
     std::fs::create_dir_all(&classes).expect("create classes dir");
 
-    let mut cmd = Command::new(&kotlinc);
+    let mut cmd = common::kotlin::kotlinc(&kotlinc);
     cmd.args(["-cp"]).arg(&jar);
     cmd.args(["-d"]).arg(&classes);
     cmd.arg("-nowarn");

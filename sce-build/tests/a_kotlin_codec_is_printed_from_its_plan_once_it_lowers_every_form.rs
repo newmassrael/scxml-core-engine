@@ -13,6 +13,8 @@
 //! only by a checked factory. Every other codec keeps the template's encode
 //! whole, and the printer names the first form it does not lower.
 
+mod common;
+
 use std::path::{Path, PathBuf};
 
 use sce_build::forge::error::{ForgeError, GenerateError};
@@ -1536,7 +1538,7 @@ fn every_printed_kotlin_codec_compiles_under_werror() {
     sources.push(runtime.join("Aligned.kt"));
     sources.push(runtime.join("Cbor.kt"));
     sources.push(runtime.join("ContentLine.kt"));
-    let out = std::process::Command::new(&kotlinc)
+    let out = common::kotlin::kotlinc(&kotlinc)
         .arg("-Werror")
         .arg("-d")
         .arg(dir.path().join("classes"))

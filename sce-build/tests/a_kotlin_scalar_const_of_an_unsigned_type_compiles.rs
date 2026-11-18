@@ -12,8 +12,9 @@
 //! committed output held the fixture, so nothing compiled it; the Kotlin name
 //! oracle found it as a control that did not build.
 
+mod common;
+
 use std::path::Path;
-use std::process::Command;
 
 use sce_build::generator::Language;
 use sce_build::{compile_forge_with_imports, DocumentLabel, ForgeCompileOptions};
@@ -61,7 +62,7 @@ fn the_kotlin_of_a_scalar_const_compiles_under_werror() {
     let dir = tempfile::tempdir().expect("a scratch directory");
     let file = dir.path().join("AlgorithmConstScalarInit.kt");
     std::fs::write(&file, kotlin_for_the_fixture()).expect("write the unit");
-    let out = Command::new(&kotlinc)
+    let out = common::kotlin::kotlinc(&kotlinc)
         .arg("-Werror")
         .arg("-d")
         .arg(dir.path().join("classes"))
