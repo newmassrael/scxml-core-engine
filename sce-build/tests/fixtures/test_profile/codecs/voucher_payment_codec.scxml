@@ -11,6 +11,6 @@
        sce:kind="codec" sce:encoding="cbor" sce:codec-format="2" name="voucher_payment_codec" version="1.0">
   <datamodel>
     <data id="raw" sce:type="bytes" sce:direction="in"/>
-    <data id="voucher_code" sce:type="bytes" sce:key="0" sce:max-size="4" sce:direction="out"/>
+    <data id="voucher_code" sce:type="bytes[4]" sce:key="0" sce:direction="out"/>
   </datamodel>
 </scxml>

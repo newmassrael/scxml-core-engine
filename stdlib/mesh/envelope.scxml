@@ -30,26 +30,26 @@
     <!-- The envelope's own id: a UUID. -->
     <data id="id" sce:type="bytes" sce:key="0" sce:length="16" sce:direction="out"/>
     <!-- The sending machine. -->
-    <data id="source" sce:type="string" sce:key="1" sce:max-size="262144" sce:direction="out"/>
+    <data id="source" sce:type="string[262144]" sce:key="1" sce:direction="out"/>
     <!-- The event name — the C++ struct's `type`, named so every backend can
          spell it (`type` is reserved in Rust and Kotlin); the wire carries
          the key, never the name. -->
-    <data id="event_type" sce:type="string" sce:key="2" sce:max-size="262144" sce:direction="out"/>
+    <data id="event_type" sce:type="string[262144]" sce:key="2" sce:direction="out"/>
     <data id="pattern" sce:type="enum:PatternKind" sce:key="3" sce:direction="out"/>
     <data id="datacontenttype" sce:type="enum:PayloadCodec" sce:key="4" sce:direction="out"/>
-    <data id="data" sce:type="bytes" sce:key="5" sce:max-size="16777216" sce:direction="out"/>
-    <data id="subject" sce:type="optional&lt;string&gt;" sce:key="6" sce:max-size="262144" sce:direction="out"/>
+    <data id="data" sce:type="bytes[16777216]" sce:key="5" sce:direction="out"/>
+    <data id="subject" sce:type="optional&lt;string[262144]&gt;" sce:key="6" sce:direction="out"/>
     <data id="correlation_id" sce:type="optional&lt;bytes&gt;" sce:key="7" sce:length="16" sce:direction="out"/>
-    <data id="reply_to" sce:type="optional&lt;string&gt;" sce:key="8" sce:max-size="262144" sce:direction="out"/>
+    <data id="reply_to" sce:type="optional&lt;string[262144]&gt;" sce:key="8" sce:direction="out"/>
     <data id="invoke_id" sce:type="optional&lt;bytes&gt;" sce:key="9" sce:length="16" sce:direction="out"/>
     <data id="rpc_status" sce:type="optional&lt;enum:RpcStatus&gt;" sce:key="10" sce:direction="out"/>
-    <data id="rpc_error_message" sce:type="optional&lt;string&gt;" sce:key="11" sce:max-size="262144" sce:direction="out"/>
+    <data id="rpc_error_message" sce:type="optional&lt;string[262144]&gt;" sce:key="11" sce:direction="out"/>
     <data id="deadline_unix_ms" sce:type="optional&lt;uint64&gt;" sce:key="12" sce:direction="out"/>
     <data id="sequence_no" sce:type="optional&lt;uint64&gt;" sce:key="14" sce:direction="out"/>
     <data id="routing_id" sce:type="optional&lt;bytes&gt;" sce:key="15" sce:length="16" sce:direction="out"/>
-    <data id="parallel_id" sce:type="optional&lt;string&gt;" sce:key="16" sce:max-size="262144" sce:direction="out"/>
-    <data id="region_id" sce:type="optional&lt;string&gt;" sce:key="17" sce:max-size="262144" sce:direction="out"/>
-    <data id="child_session_id" sce:type="optional&lt;string&gt;" sce:key="18" sce:max-size="262144" sce:direction="out"/>
+    <data id="parallel_id" sce:type="optional&lt;string[262144]&gt;" sce:key="16" sce:direction="out"/>
+    <data id="region_id" sce:type="optional&lt;string[262144]&gt;" sce:key="17" sce:direction="out"/>
+    <data id="child_session_id" sce:type="optional&lt;string[262144]&gt;" sce:key="18" sce:direction="out"/>
     <!-- A causal route's tag (docs/adr/0085, section 3.2): the view's epoch,
          and a vector of at most 64 entries, one per replica of the view, the
          sender's own first. On a change that entry is its dot and the rest its

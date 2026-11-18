@@ -20,7 +20,7 @@
   <datamodel>
     <data id="raw" sce:type="bytes" sce:direction="in"/>
     <data id="id" sce:type="bytes" sce:key="0" sce:length="16" sce:direction="out"/>
-    <data id="source" sce:type="string" sce:key="1" sce:max-size="64" sce:direction="out"/>
+    <data id="source" sce:type="string[64]" sce:key="1" sce:direction="out"/>
     <data id="seen" sce:type="list&lt;record:CausalEntry&gt;[2]" sce:key="3" sce:direction="out"/>
     <data id="context" sce:type="optional&lt;list&lt;record:CausalEntry&gt;[3]&gt;" sce:key="4" sce:direction="out"/>
   </datamodel>

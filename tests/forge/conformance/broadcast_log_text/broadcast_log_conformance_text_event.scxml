@@ -12,8 +12,8 @@
        sce:kind="codec" sce:encoding="cbor" sce:codec-format="2" name="broadcast_log_conformance_text_event" version="1.0">
   <datamodel>
     <data id="raw" sce:type="bytes" sce:direction="in"/>
-    <data id="label" sce:type="string" sce:key="1" sce:max-size="8" sce:direction="out"/>
-    <data id="blob" sce:type="bytes" sce:key="2" sce:max-size="8" sce:direction="out"/>
-    <data id="note" sce:type="optional&lt;string&gt;" sce:key="3" sce:max-size="4" sce:direction="out"/>
+    <data id="label" sce:type="string[8]" sce:key="1" sce:direction="out"/>
+    <data id="blob" sce:type="bytes[8]" sce:key="2" sce:direction="out"/>
+    <data id="note" sce:type="optional&lt;string[4]&gt;" sce:key="3" sce:direction="out"/>
   </datamodel>
 </scxml>
