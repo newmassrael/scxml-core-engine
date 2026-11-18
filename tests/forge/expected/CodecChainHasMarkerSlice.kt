@@ -11,6 +11,39 @@ import com.sce.forge.runtime.Decoded
 import com.sce.forge.runtime.MutableListSink
 import com.sce.forge.runtime.SceCursor
 import com.sce.forge.runtime.SceSink
+import kotlin.jvm.JvmInline
+
+/// The `data` element of [CodecChainHasMarkerSlice], 0 to 256 bytes, held to that bound where a
+/// value of it is made (docs/adr/0077 §3, docs/adr/0081 §2): its constructor is
+/// private and [of] makes a value only of bytes within the bound. The value it
+/// holds cannot change after, so a value holds its bound for as long as it lives.
+@JvmInline
+value class CodecChainHasMarkerSliceDataBytes private constructor(val bytes: ByteArray) {
+    companion object {
+        /// The fewest bytes a value holds.
+        const val LEAST: Int = 0
+
+        /// The most bytes a value holds.
+        const val MOST: Int = 256
+
+        /// `bytes` as a value of the bound, or `null` where it lies outside it.
+        fun of(bytes: ByteArray): CodecChainHasMarkerSliceDataBytes? =
+            if (bytes.size <= MOST) CodecChainHasMarkerSliceDataBytes(bytes) else null
+
+        /// The fewest bytes the bound holds, each zero: what a value made by
+        /// default holds.
+        fun fewest(): CodecChainHasMarkerSliceDataBytes = CodecChainHasMarkerSliceDataBytes(ByteArray(LEAST))
+    }
+}
+
+/// The elements a value of [CodecChainHasMarkerSlice] presents, which its encode reads
+/// (docs/adr/0081 §2): any object that presents them is a source of it, which
+/// [CodecChainHasMarkerSlice.encodeSource] writes. The encode derives every other element
+/// of the frame.
+interface CodecChainHasMarkerSliceSource {
+    val kind: UShort
+    val data: CodecChainHasMarkerSliceDataBytes
+}
 
 // Default-valued primary constructor: the generated procedure_l2 code
 // holds codec instances as owned members and initializes them with
@@ -20,47 +53,49 @@ import com.sce.forge.runtime.SceSink
 // variant its document declares, since a closed set does not hold a
 // value it never declared.
 data class CodecChainHasMarkerSlice(
-    var kind: UShort = 0.toUShort(),
-    var size: ULong = 0uL,
-    var data: ByteArray = byteArrayOf()
-) {
+    override var kind: UShort = 0.toUShort(),
+    override var data: CodecChainHasMarkerSliceDataBytes = CodecChainHasMarkerSliceDataBytes.fewest()
+) : CodecChainHasMarkerSliceSource {
     /// RFC §synth-5-B encode-side primary: write `self` into the
     /// caller-owned `w` sink. Returns `null` on success;
     /// `CodecError.BufferOverflow` from a bounded sink when the
     /// destination has insufficient remaining capacity; growable
     /// sinks (e.g. `MutableListSink`) are effectively infallible.
     fun encode(w: SceSink): CodecError? {
-        if (this.data.size > 256) return CodecError.LengthOutOfRange
-        // Streaming cursor encode (SSOT selection: `needs_streaming`).
-        // Mirrors the streaming decode: every field appends its own bytes
-        // in declaration order through the per-field encode blocks, so a
-        // gated field skips its append when null, and a fixed field after
-        // a variable-length payload lands after the payload (the positional
-        // path appends variable fields last, placing it ahead on the wire).
-        // Per-field `is_repeat` / `is_tlv_chain` / `is_embed` route to their
-        // dedicated helpers; everything else uses `present_if_encode_block`.
-        w.writeVleU16(kind)?.let { return it }
-        w.writeVleU64(size)?.let { return it }
-        w.writeBytes(this.data)?.let { return it }
-        return null
+        // docs/adr/0081 step 4: the encode over any source, which derives
+        // every element the value does not present. It is handed the flag
+        // inputs the value does not say; one the value says is read off it,
+        // and what a caller hands this `encode` for it is held to that
+        // (docs/adr/0065 §6 R4a).
+        return encodeSource(this, w)
     }
 
     /// Heap-backed convenience facade. Runs `encode` over a
-    /// `MutableListSink` and returns the freshly-encoded ByteArray, or
-    /// `null` when `encode` refuses the value before its first byte: a
-    /// gated field and the `sce:present-if` that gates it contradict each
-    /// other (`CodecError.PresentIfMismatch`), or a byte string, text or
-    /// list lies outside its bound (`CodecError.LengthOutOfRange`,
-    /// `CodecError.TooManyElements`). Callers that need the reason, and
-    /// zero-alloc hot paths, call `encode` directly against a caller-owned
-    /// sink (e.g. `ByteArraySink`).
-    fun encodeToByteArray(): ByteArray? {
+    /// `MutableListSink` and returns the freshly-encoded ByteArray.
+    /// Callers targeting zero-alloc hot paths should call `encode`
+    /// directly against a caller-owned sink (e.g. `ByteArraySink`).
+    fun encodeToByteArray(): ByteArray {
         val _list = mutableListOf<Byte>()
-        if (encode(MutableListSink(_list)) != null) return null
+        encode(MutableListSink(_list))
         return _list.toByteArray()
     }
 
     companion object {
+        /// Write any source of [CodecChainHasMarkerSlice] into `w`: each element read once off
+        /// `src` and written where the codec's encode plan lays it out
+        /// (docs/adr/0081). It derives `size` from what each measures, and never reads it off the
+        /// source. It refuses no value: it answers `null`, or
+        /// [CodecError.BufferOverflow] from a bounded sink with no room left.
+        fun encodeSource(src: CodecChainHasMarkerSliceSource, w: SceSink): CodecError? {
+            val _e_kind = src.kind
+            val _e_data = src.data
+            val _d_size = _e_data.bytes.size.toULong()
+            w.writeVleU16(_e_kind)?.let { return it }
+            w.writeVleU64(_d_size)?.let { return it }
+            w.writeBytes(_e_data.bytes)?.let { return it }
+            return null
+        }
+
         /// Decode the next frame from `cursor`. On success the cursor
         /// advances past the consumed bytes and the value is `Decoded.Ok`;
         /// a refused frame is `Decoded.Refused` with the kind that refused
@@ -97,8 +132,7 @@ data class CodecChainHasMarkerSlice(
             return Decoded.Ok(
                 CodecChainHasMarkerSlice(
                     kind = kind,
-                    size = size,
-                    data = data
+                    data = CodecChainHasMarkerSliceDataBytes.of(data) ?: return Decoded.Refused(CodecError.LengthOutOfRange)
                 )
             )
         }

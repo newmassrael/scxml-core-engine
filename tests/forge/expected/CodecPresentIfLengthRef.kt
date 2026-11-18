@@ -11,6 +11,54 @@ import com.sce.forge.runtime.Decoded
 import com.sce.forge.runtime.MutableListSink
 import com.sce.forge.runtime.SceCursor
 import com.sce.forge.runtime.SceSink
+import kotlin.jvm.JvmInline
+
+/// The `payload` element of [CodecPresentIfLengthRef], 0 to 32 bytes, held to that bound where a
+/// value of it is made (docs/adr/0077 §3, docs/adr/0081 §2): its constructor is
+/// private and [of] makes a value only of bytes within the bound. The value it
+/// holds cannot change after, so a value holds its bound for as long as it lives.
+@JvmInline
+value class CodecPresentIfLengthRefPayloadBytes private constructor(val bytes: ByteArray) {
+    companion object {
+        /// The fewest bytes a value holds.
+        const val LEAST: Int = 0
+
+        /// The most bytes a value holds.
+        const val MOST: Int = 32
+
+        /// `bytes` as a value of the bound, or `null` where it lies outside it.
+        fun of(bytes: ByteArray): CodecPresentIfLengthRefPayloadBytes? =
+            if (bytes.size <= MOST) CodecPresentIfLengthRefPayloadBytes(bytes) else null
+
+        /// The fewest bytes the bound holds, each zero: what a value made by
+        /// default holds.
+        fun fewest(): CodecPresentIfLengthRefPayloadBytes = CodecPresentIfLengthRefPayloadBytes(ByteArray(LEAST))
+    }
+}
+
+/// The `flags_has_payload` group of [CodecPresentIfLengthRef]: the arm the value holds, each the
+/// members present while the gates hold its values (docs/adr/0065 §6 R4).
+sealed class CodecPresentIfLengthRefFlagsHasPayload {
+    /// The `flags_has_payload` group of [CodecPresentIfLengthRef] where `flags.has_payload` holds (docs/adr/0065 §6 R4): the
+    /// members present then.
+    data class HasPayload(
+        val payload: CodecPresentIfLengthRefPayloadBytes = CodecPresentIfLengthRefPayloadBytes.fewest()
+    ) : CodecPresentIfLengthRefFlagsHasPayload()
+    /// The `flags_has_payload` group of [CodecPresentIfLengthRef] where `flags.has_payload` does not hold (docs/adr/0065 §6 R4): the
+    /// members present then.
+    data class NotHasPayload(
+        val payload_size: UByte = 0.toUByte()
+    ) : CodecPresentIfLengthRefFlagsHasPayload()
+}
+
+/// The elements a value of [CodecPresentIfLengthRef] presents, which its encode reads
+/// (docs/adr/0081 §2): any object that presents them is a source of it, which
+/// [CodecPresentIfLengthRef.encodeSource] writes. The encode derives every other element
+/// of the frame.
+interface CodecPresentIfLengthRefSource {
+    val flags: UByte
+    val flags_has_payload: CodecPresentIfLengthRefFlagsHasPayload
+}
 
 // Default-valued primary constructor: the generated procedure_l2 code
 // holds codec instances as owned members and initializes them with
@@ -20,10 +68,9 @@ import com.sce.forge.runtime.SceSink
 // variant its document declares, since a closed set does not hold a
 // value it never declared.
 data class CodecPresentIfLengthRef(
-    var flags: UByte = 0.toUByte(),
-    var payload_size: UByte = 0.toUByte(),
-    var payload: ByteArray? = null
-) {
+    override var flags: UByte = 0.toUByte(),
+    override var flags_has_payload: CodecPresentIfLengthRefFlagsHasPayload = CodecPresentIfLengthRefFlagsHasPayload.HasPayload()
+) : CodecPresentIfLengthRefSource {
     // RFC §synth-5-B flags primitive: per-bit-range accessors over
     // the carrier field. Single-bit (width=1) reads as Boolean; multi-
     // bit (width>=2) reads as the smallest unsigned Kotlin type that
@@ -46,39 +93,47 @@ data class CodecPresentIfLengthRef(
     /// destination has insufficient remaining capacity; growable
     /// sinks (e.g. `MutableListSink`) are effectively infallible.
     fun encode(w: SceSink): CodecError? {
-        this.payload?.let { if (it.size > 32) return CodecError.LengthOutOfRange }
-        // Streaming cursor encode (SSOT selection: `needs_streaming`).
-        // Mirrors the streaming decode: every field appends its own bytes
-        // in declaration order through the per-field encode blocks, so a
-        // gated field skips its append when null, and a fixed field after
-        // a variable-length payload lands after the payload (the positional
-        // path appends variable fields last, placing it ahead on the wire).
-        // Per-field `is_repeat` / `is_tlv_chain` / `is_embed` route to their
-        // dedicated helpers; everything else uses `present_if_encode_block`.
-        w.writeU8(this.flags.toByte())?.let { return it }
-        w.writeU8(this.payload_size.toByte())?.let { return it }
-        this.payload?.let { _v ->
-            w.writeBytes(_v)?.let { return it }
-        }
-        return null
+        // docs/adr/0081 step 4: the encode over any source, which derives
+        // every element the value does not present. It is handed the flag
+        // inputs the value does not say; one the value says is read off it,
+        // and what a caller hands this `encode` for it is held to that
+        // (docs/adr/0065 §6 R4a).
+        return encodeSource(this, w)
     }
 
     /// Heap-backed convenience facade. Runs `encode` over a
-    /// `MutableListSink` and returns the freshly-encoded ByteArray, or
-    /// `null` when `encode` refuses the value before its first byte: a
-    /// gated field and the `sce:present-if` that gates it contradict each
-    /// other (`CodecError.PresentIfMismatch`), or a byte string, text or
-    /// list lies outside its bound (`CodecError.LengthOutOfRange`,
-    /// `CodecError.TooManyElements`). Callers that need the reason, and
-    /// zero-alloc hot paths, call `encode` directly against a caller-owned
-    /// sink (e.g. `ByteArraySink`).
-    fun encodeToByteArray(): ByteArray? {
+    /// `MutableListSink` and returns the freshly-encoded ByteArray.
+    /// Callers targeting zero-alloc hot paths should call `encode`
+    /// directly against a caller-owned sink (e.g. `ByteArraySink`).
+    fun encodeToByteArray(): ByteArray {
         val _list = mutableListOf<Byte>()
-        if (encode(MutableListSink(_list)) != null) return null
+        encode(MutableListSink(_list))
         return _list.toByteArray()
     }
 
     companion object {
+        /// Write any source of [CodecPresentIfLengthRef] into `w`: each element read once off
+        /// `src` and written where the codec's encode plan lays it out
+        /// (docs/adr/0081). It derives `payload_size` where what it measures is there, and reads what
+        /// the source states where none is. It refuses no value: it answers `null`, or
+        /// [CodecError.BufferOverflow] from a bounded sink with no room left.
+        fun encodeSource(src: CodecPresentIfLengthRefSource, w: SceSink): CodecError? {
+            val _e_flags = src.flags
+            val _g_flags_has_payload = src.flags_has_payload
+            val _e_payload = when (val _g = _g_flags_has_payload) { is CodecPresentIfLengthRefFlagsHasPayload.HasPayload -> _g.payload; else -> null }
+            val _e_payload_size = when (val _g = _g_flags_has_payload) { is CodecPresentIfLengthRefFlagsHasPayload.NotHasPayload -> _g.payload_size; else -> null }
+            val _d_payload_size = if (_e_payload != null) _e_payload.bytes.size.toUByte() else (_e_payload_size ?: 0.toUByte())
+            var _u_flags = _e_flags.toUInt()
+            _u_flags = (_u_flags and 0x1u.inv()) or (if (_e_payload != null) 0x1u else 0x0u)
+            val _c_flags = _u_flags.toUByte()
+            w.writeU8(_c_flags.toByte())?.let { return it }
+            w.writeU8(_d_payload_size.toByte())?.let { return it }
+            if (_e_payload != null) {
+                w.writeBytes(_e_payload.bytes)?.let { return it }
+            }
+            return null
+        }
+
         /// Decode the next frame from `cursor`. On success the cursor
         /// advances past the consumed bytes and the value is `Decoded.Ok`;
         /// a refused frame is `Decoded.Refused` with the kind that refused
@@ -127,8 +182,7 @@ data class CodecPresentIfLengthRef(
             return Decoded.Ok(
                 CodecPresentIfLengthRef(
                     flags = flags,
-                    payload_size = payload_size,
-                    payload = payload
+                    flags_has_payload = if (((flags.toUInt() shr 0) and 0x1u) != 0x0u) CodecPresentIfLengthRefFlagsHasPayload.HasPayload(payload = CodecPresentIfLengthRefPayloadBytes.of(payload!!) ?: return Decoded.Refused(CodecError.LengthOutOfRange)) else CodecPresentIfLengthRefFlagsHasPayload.NotHasPayload(payload_size = payload_size)
                 )
             )
         }

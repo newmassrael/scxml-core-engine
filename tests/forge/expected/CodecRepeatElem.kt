@@ -12,6 +12,14 @@ import com.sce.forge.runtime.MutableListSink
 import com.sce.forge.runtime.SceCursor
 import com.sce.forge.runtime.SceSink
 
+/// The elements a value of [CodecRepeatElem] presents, which its encode reads
+/// (docs/adr/0081 §2): any object that presents them is a source of it, which
+/// [CodecRepeatElem.encodeSource] writes. The encode derives every other element
+/// of the frame.
+interface CodecRepeatElemSource {
+    val seq: UShort
+}
+
 // Default-valued primary constructor: the generated procedure_l2 code
 // holds codec instances as owned members and initializes them with
 // `CodecRepeatElem()` before any encode()/decode() call. Each default
@@ -20,17 +28,20 @@ import com.sce.forge.runtime.SceSink
 // variant its document declares, since a closed set does not hold a
 // value it never declared.
 data class CodecRepeatElem(
-    var seq: UShort = 0.toUShort()
-) {
+    override var seq: UShort = 0.toUShort()
+) : CodecRepeatElemSource {
     /// RFC §synth-5-B encode-side primary: write `self` into the
     /// caller-owned `w` sink. Returns `null` on success;
     /// `CodecError.BufferOverflow` from a bounded sink when the
     /// destination has insufficient remaining capacity; growable
     /// sinks (e.g. `MutableListSink`) are effectively infallible.
     fun encode(w: SceSink): CodecError? {
-        w.writeU8((seq.toInt() ushr 8 and 0xFF).toByte())?.let { return it }
-        w.writeU8((seq.toInt() and 0xFF).toByte())?.let { return it }
-        return null
+        // docs/adr/0081 step 4: the encode over any source, which derives
+        // every element the value does not present. It is handed the flag
+        // inputs the value does not say; one the value says is read off it,
+        // and what a caller hands this `encode` for it is held to that
+        // (docs/adr/0065 §6 R4a).
+        return encodeSource(this, w)
     }
 
     /// Heap-backed convenience facade. Runs `encode` over a
@@ -44,6 +55,17 @@ data class CodecRepeatElem(
     }
 
     companion object {
+        /// Write any source of [CodecRepeatElem] into `w`: each element read once off
+        /// `src` and written where the codec's encode plan lays it out
+        /// (docs/adr/0081). It refuses no value: it answers `null`, or
+        /// [CodecError.BufferOverflow] from a bounded sink with no room left.
+        fun encodeSource(src: CodecRepeatElemSource, w: SceSink): CodecError? {
+            val _e_seq = src.seq
+            w.writeU8((_e_seq.toInt() ushr 8 and 0xFF).toByte())?.let { return it }
+            w.writeU8((_e_seq.toInt() and 0xFF).toByte())?.let { return it }
+            return null
+        }
+
         /// Decode the next frame from `cursor`. On success the cursor
         /// advances past the consumed bytes and the value is `Decoded.Ok`;
         /// a refused frame is `Decoded.Refused` with the kind that refused

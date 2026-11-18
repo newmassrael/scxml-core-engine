@@ -12,6 +12,67 @@ import com.sce.forge.runtime.MutableListSink
 import com.sce.forge.runtime.SceCursor
 import com.sce.forge.runtime.SceSink
 import com.sce.generated.codec_origin_leaf.*
+import kotlin.jvm.JvmInline
+
+/// The `note` element of [CodecOriginEnvelope], 0 to 16 UTF-8 bytes, held to that bound where a
+/// value of it is made (docs/adr/0077 §3, docs/adr/0081 §2): its constructor is
+/// private and [of] makes a value only of a text within the bound. The value it
+/// holds cannot change after, so a value holds its bound for as long as it lives.
+@JvmInline
+value class CodecOriginEnvelopeNoteText private constructor(val text: String) {
+    companion object {
+        /// The fewest UTF-8 bytes a value holds.
+        const val LEAST: Int = 0
+
+        /// The most UTF-8 bytes a value holds.
+        const val MOST: Int = 16
+
+        /// `text` as a value of the bound, or `null` where it lies outside it.
+        fun of(text: String): CodecOriginEnvelopeNoteText? {
+            val size = com.sce.forge.runtime.Utf8.size(text) ?: return null
+            return if (size <= MOST) CodecOriginEnvelopeNoteText(text) else null
+        }
+
+        /// The fewest UTF-8 bytes the bound holds, each zero: what a value made by
+        /// default holds.
+        fun fewest(): CodecOriginEnvelopeNoteText = CodecOriginEnvelopeNoteText("\u0000".repeat(LEAST))
+    }
+}
+
+/// The `items` element of [CodecOriginEnvelope], 0 to 3 entries, held to that bound where a
+/// value of it is made (docs/adr/0065 §6 R2, docs/adr/0081 §2): its constructor is
+/// private and [of] makes a value only of entries within the bound, which it
+/// copies, so no list it was made of can grow it past its bound after.
+@JvmInline
+value class CodecOriginEnvelopeItemsList private constructor(val entries: List<CodecOriginLeafSource>) : com.sce.forge.runtime.Counted {
+    /// How many entries the list holds, the count a frame writes of it.
+    override val size: Int
+        get() = entries.size
+
+    companion object {
+        /// The most entries a value holds.
+        const val MOST: Int = 3
+
+        /// `entries` as a value of the bound, or `null` where they lie outside it.
+        fun of(entries: List<CodecOriginLeafSource>): CodecOriginEnvelopeItemsList? =
+            if (entries.size <= MOST) CodecOriginEnvelopeItemsList(entries.toList()) else null
+
+        /// No entry: what a value made by default holds.
+        fun fewest(): CodecOriginEnvelopeItemsList = CodecOriginEnvelopeItemsList(emptyList())
+    }
+}
+
+/// The elements a value of [CodecOriginEnvelope] presents, which its encode reads
+/// (docs/adr/0081 §2): any object that presents them is a source of it, which
+/// [CodecOriginEnvelope.encodeSource] writes. The encode derives every other element
+/// of the frame.
+interface CodecOriginEnvelopeSource {
+    val hdr: UByte
+    val note: CodecOriginEnvelopeNoteText
+    val required: CodecOriginLeafSource
+    val optional: CodecOriginLeafSource?
+    val items: CodecOriginEnvelopeItemsList
+}
 
 // Default-valued primary constructor: the generated procedure_l2 code
 // holds codec instances as owned members and initializes them with
@@ -21,14 +82,12 @@ import com.sce.generated.codec_origin_leaf.*
 // variant its document declares, since a closed set does not hold a
 // value it never declared.
 data class CodecOriginEnvelope(
-    var hdr: UByte = 0.toUByte(),
-    var note_len: UByte = 0.toUByte(),
-    var note: String = "",
-    var m: UByte = 0.toUByte(),
-    var required: CodecOriginLeaf = CodecOriginLeaf(),
-    var optional: CodecOriginLeaf? = null,
-    var items: MutableList<CodecOriginLeaf> = mutableListOf()
-) {
+    override var hdr: UByte = 0.toUByte(),
+    override var note: CodecOriginEnvelopeNoteText = CodecOriginEnvelopeNoteText.fewest(),
+    override var required: CodecOriginLeaf = CodecOriginLeaf(),
+    override var optional: CodecOriginLeaf? = null,
+    override var items: CodecOriginEnvelopeItemsList = CodecOriginEnvelopeItemsList.fewest()
+) : CodecOriginEnvelopeSource {
     // RFC §synth-5-B flags primitive: per-bit-range accessors over
     // the carrier field. Single-bit (width=1) reads as Boolean; multi-
     // bit (width>=2) reads as the smallest unsigned Kotlin type that
@@ -51,46 +110,55 @@ data class CodecOriginEnvelope(
     /// destination has insufficient remaining capacity; growable
     /// sinks (e.g. `MutableListSink`) are effectively infallible.
     fun encode(w: SceSink): CodecError? {
-        if (this.note.encodeToByteArray().size > 16) return CodecError.LengthOutOfRange
-        if (this.items.size > 3) return CodecError.TooManyElements
-        // Streaming cursor encode (SSOT selection: `needs_streaming`).
-        // Mirrors the streaming decode: every field appends its own bytes
-        // in declaration order through the per-field encode blocks, so a
-        // gated field skips its append when null, and a fixed field after
-        // a variable-length payload lands after the payload (the positional
-        // path appends variable fields last, placing it ahead on the wire).
-        // Per-field `is_repeat` / `is_tlv_chain` / `is_embed` route to their
-        // dedicated helpers; everything else uses `present_if_encode_block`.
-        w.writeU8(this.hdr.toByte())?.let { return it }
-        w.writeU8(this.note_len.toByte())?.let { return it }
-        w.writeBytes(this.note.toByteArray(Charsets.UTF_8))?.let { return it }
-        w.writeU8(this.m.toByte())?.let { return it }
-        this.required.encode(w)?.let { return it }
-        this.optional?.let { _v ->
-            _v.encode(w)?.let { return it }
-        }
-        for (_e in this.items) {
-            _e.encode(w)?.let { return it }
-        }
-        return null
+        // docs/adr/0081 step 4: the encode over any source, which derives
+        // every element the value does not present. It is handed the flag
+        // inputs the value does not say; one the value says is read off it,
+        // and what a caller hands this `encode` for it is held to that
+        // (docs/adr/0065 §6 R4a).
+        return encodeSource(this, w)
     }
 
     /// Heap-backed convenience facade. Runs `encode` over a
-    /// `MutableListSink` and returns the freshly-encoded ByteArray, or
-    /// `null` when `encode` refuses the value before its first byte: a
-    /// gated field and the `sce:present-if` that gates it contradict each
-    /// other (`CodecError.PresentIfMismatch`), or a byte string, text or
-    /// list lies outside its bound (`CodecError.LengthOutOfRange`,
-    /// `CodecError.TooManyElements`). Callers that need the reason, and
-    /// zero-alloc hot paths, call `encode` directly against a caller-owned
-    /// sink (e.g. `ByteArraySink`).
-    fun encodeToByteArray(): ByteArray? {
+    /// `MutableListSink` and returns the freshly-encoded ByteArray.
+    /// Callers targeting zero-alloc hot paths should call `encode`
+    /// directly against a caller-owned sink (e.g. `ByteArraySink`).
+    fun encodeToByteArray(): ByteArray {
         val _list = mutableListOf<Byte>()
-        if (encode(MutableListSink(_list)) != null) return null
+        encode(MutableListSink(_list))
         return _list.toByteArray()
     }
 
     companion object {
+        /// Write any source of [CodecOriginEnvelope] into `w`: each element read once off
+        /// `src` and written where the codec's encode plan lays it out
+        /// (docs/adr/0081). It derives `m`, `note_len` from what each measures, and never reads it off the
+        /// source. It refuses no value: it answers `null`, or
+        /// [CodecError.BufferOverflow] from a bounded sink with no room left.
+        fun encodeSource(src: CodecOriginEnvelopeSource, w: SceSink): CodecError? {
+            val _e_hdr = src.hdr
+            val _e_note = src.note
+            val _e_required = src.required
+            val _e_optional = src.optional
+            val _e_items = src.items
+            val _d_note_len = _e_note.text.encodeToByteArray().size.toUByte()
+            val _d_m = _e_items.entries.size.toUByte()
+            var _u_hdr = _e_hdr.toUInt()
+            _u_hdr = (_u_hdr and 0x1u.inv()) or (if (_e_optional != null) 0x1u else 0x0u)
+            val _c_hdr = _u_hdr.toUByte()
+            w.writeU8(_c_hdr.toByte())?.let { return it }
+            w.writeU8(_d_note_len.toByte())?.let { return it }
+            w.writeBytes(_e_note.text.encodeToByteArray())?.let { return it }
+            w.writeU8(_d_m.toByte())?.let { return it }
+            CodecOriginLeaf.encodeSource(_e_required, w)?.let { return it }
+            if (_e_optional != null) {
+                CodecOriginLeaf.encodeSource(_e_optional, w)?.let { return it }
+            }
+            for (_entry in _e_items.entries) {
+                CodecOriginLeaf.encodeSource(_entry, w)?.let { return it }
+            }
+            return null
+        }
+
         /// Decode the next frame from `cursor`. On success the cursor
         /// advances past the consumed bytes and the value is `Decoded.Ok`;
         /// a refused frame is `Decoded.Refused` with the kind that refused
@@ -160,12 +228,10 @@ data class CodecOriginEnvelope(
             return Decoded.Ok(
                 CodecOriginEnvelope(
                     hdr = hdr,
-                    note_len = note_len,
-                    note = note,
-                    m = m,
+                    note = CodecOriginEnvelopeNoteText.of(note) ?: return Decoded.Refused(CodecError.LengthOutOfRange),
                     required = required,
                     optional = optional,
-                    items = items
+                    items = CodecOriginEnvelopeItemsList.of(items) ?: return Decoded.Refused(CodecError.TooManyElements)
                 )
             )
         }

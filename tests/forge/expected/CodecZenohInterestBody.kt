@@ -13,6 +13,33 @@ import com.sce.forge.runtime.SceCursor
 import com.sce.forge.runtime.SceSink
 import com.sce.generated.codec_zenoh_wireexpr.*
 
+/// One-bit flags of [CodecZenohInterestBody] a parent may set in place of the ones a value
+/// presents, such as the flag a chain whose entries are [CodecZenohInterestBody] ends them
+/// on, which the chain derives from where each entry stands.
+class CodecZenohInterestBodyOverrides(
+    /// The `keyexprs` flag of `header`, where a parent sets it.
+    val header_keyexprs: Boolean? = null,
+    /// The `subscribers` flag of `header`, where a parent sets it.
+    val header_subscribers: Boolean? = null,
+    /// The `queryables` flag of `header`, where a parent sets it.
+    val header_queryables: Boolean? = null,
+    /// The `tokens` flag of `header`, where a parent sets it.
+    val header_tokens: Boolean? = null,
+    /// The `M` flag of `header`, where a parent sets it.
+    val header_M: Boolean? = null,
+    /// The `aggregate` flag of `header`, where a parent sets it.
+    val header_aggregate: Boolean? = null,
+)
+
+/// The elements a value of [CodecZenohInterestBody] presents, which its encode reads
+/// (docs/adr/0081 §2): any object that presents them is a source of it, which
+/// [CodecZenohInterestBody.encodeSource] writes. The encode derives every other element
+/// of the frame.
+interface CodecZenohInterestBodySource {
+    val header: UByte
+    val keyexpr: CodecZenohWireexprSource?
+}
+
 // Default-valued primary constructor: the generated procedure_l2 code
 // holds codec instances as owned members and initializes them with
 // `CodecZenohInterestBody()` before any encode()/decode() call. Each default
@@ -21,9 +48,9 @@ import com.sce.generated.codec_zenoh_wireexpr.*
 // variant its document declares, since a closed set does not hold a
 // value it never declared.
 data class CodecZenohInterestBody(
-    var header: UByte = 0.toUByte(),
-    var keyexpr: CodecZenohWireexpr? = null
-) {
+    override var header: UByte = 0.toUByte(),
+    override var keyexpr: CodecZenohWireexpr? = null
+) : CodecZenohInterestBodySource {
     // RFC §synth-5-B flags primitive: per-bit-range accessors over
     // the carrier field. Single-bit (width=1) reads as Boolean; multi-
     // bit (width>=2) reads as the smallest unsigned Kotlin type that
@@ -116,19 +143,12 @@ data class CodecZenohInterestBody(
     /// destination has insufficient remaining capacity; growable
     /// sinks (e.g. `MutableListSink`) are effectively infallible.
     fun encode(w: SceSink): CodecError? {
-        // Streaming cursor encode (SSOT selection: `needs_streaming`).
-        // Mirrors the streaming decode: every field appends its own bytes
-        // in declaration order through the per-field encode blocks, so a
-        // gated field skips its append when null, and a fixed field after
-        // a variable-length payload lands after the payload (the positional
-        // path appends variable fields last, placing it ahead on the wire).
-        // Per-field `is_repeat` / `is_tlv_chain` / `is_embed` route to their
-        // dedicated helpers; everything else uses `present_if_encode_block`.
-        w.writeU8(this.header.toByte())?.let { return it }
-        this.keyexpr?.let { _v ->
-            _v.encode(w, (((this.header.toInt() shr 5) and 0x1).toUByte()))?.let { return it }
-        }
-        return null
+        // docs/adr/0081 step 4: the encode over any source, which derives
+        // every element the value does not present. It is handed the flag
+        // inputs the value does not say; one the value says is read off it,
+        // and what a caller hands this `encode` for it is held to that
+        // (docs/adr/0065 §6 R4a).
+        return encodeSource(this, w)
     }
 
     /// Heap-backed convenience facade. Runs `encode` over a
@@ -142,6 +162,33 @@ data class CodecZenohInterestBody(
     }
 
     companion object {
+        /// Write any source of [CodecZenohInterestBody] into `w`: each element read once off
+        /// `src` and written where the codec's encode plan lays it out
+        /// (docs/adr/0081). A chain that holds it
+        /// sets the flag its entries end on by `overrides`, in place of the value's. It refuses no value: it answers `null`, or
+        /// [CodecError.BufferOverflow] from a bounded sink with no room left.
+        fun encodeSource(src: CodecZenohInterestBodySource, w: SceSink, overrides: CodecZenohInterestBodyOverrides? = null): CodecError? {
+            val _e_header = src.header
+            val _e_keyexpr = src.keyexpr
+            var _u_header = _e_header.toUInt()
+            _u_header = (_u_header and 0x10u.inv()) or (if (_e_keyexpr != null) 0x10u else 0x0u)
+            if (_e_keyexpr != null) {
+                _u_header = (_u_header and 0x20u.inv()) or ((CodecZenohWireexpr.inputN(_e_keyexpr).toInt()).toUInt() shl 5)
+            }
+            overrides?.header_keyexprs?.let { _u_header = (_u_header and 0x1u.inv()) or (if (it) 0x1u else 0x0u) }
+            overrides?.header_subscribers?.let { _u_header = (_u_header and 0x2u.inv()) or (if (it) 0x2u else 0x0u) }
+            overrides?.header_queryables?.let { _u_header = (_u_header and 0x4u.inv()) or (if (it) 0x4u else 0x0u) }
+            overrides?.header_tokens?.let { _u_header = (_u_header and 0x8u.inv()) or (if (it) 0x8u else 0x0u) }
+            overrides?.header_M?.let { _u_header = (_u_header and 0x40u.inv()) or (if (it) 0x40u else 0x0u) }
+            overrides?.header_aggregate?.let { _u_header = (_u_header and 0x80u.inv()) or (if (it) 0x80u else 0x0u) }
+            val _c_header = _u_header.toUByte()
+            w.writeU8(_c_header.toByte())?.let { return it }
+            if (_e_keyexpr != null) {
+                CodecZenohWireexpr.encodeSource(_e_keyexpr, w)?.let { return it }
+            }
+            return null
+        }
+
         /// Decode the next frame from `cursor`. On success the cursor
         /// advances past the consumed bytes and the value is `Decoded.Ok`;
         /// a refused frame is `Decoded.Refused` with the kind that refused

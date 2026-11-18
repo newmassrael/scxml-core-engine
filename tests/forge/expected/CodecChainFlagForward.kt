@@ -12,6 +12,89 @@ import com.sce.forge.runtime.MutableListSink
 import com.sce.forge.runtime.SceCursor
 import com.sce.forge.runtime.SceSink
 import com.sce.generated.codec_chain_flag_entry.*
+import kotlin.jvm.JvmInline
+
+/// The `entries` element of [CodecChainFlagForward], 1 to 4 entries, held to that bound where a
+/// value of it is made (docs/adr/0065 §6 R2, docs/adr/0081 §2): its constructor is
+/// private and [of] makes a value only of entries within the bound, which it
+/// copies, so no list it was made of can grow it past its bound after.
+@JvmInline
+value class CodecChainFlagForwardEntriesList private constructor(val entries: List<CodecChainFlagEntrySource>) : com.sce.forge.runtime.Counted {
+    /// How many entries the list holds, the count a frame writes of it.
+    override val size: Int
+        get() = entries.size
+
+    companion object {
+        /// The fewest entries a value holds.
+        const val LEAST: Int = 1
+
+        /// The most entries a value holds.
+        const val MOST: Int = 4
+
+        /// `entries` as a value of the bound, or `null` where they lie outside it.
+        fun of(entries: List<CodecChainFlagEntrySource>): CodecChainFlagForwardEntriesList? =
+            if (entries.size in LEAST..MOST) CodecChainFlagForwardEntriesList(entries.toList()) else null
+
+        /// The fewest entries the bound holds, each made by default: what a value made by default holds.
+        fun fewest(): CodecChainFlagForwardEntriesList = CodecChainFlagForwardEntriesList(List(LEAST) { CodecChainFlagEntry() })
+    }
+}
+
+/// The `entries` element of [CodecChainFlagForward], its entries held to the law they say
+/// their inputs by (docs/adr/0065 §6 R8, docs/adr/0081 §2): its constructor is
+/// private and [of] makes a value only of a list whose entries follow the law
+/// from the start the value gives it, so the encode, which writes the flags the
+/// list hands its entries from the start, refuses nothing of it.
+class CodecChainFlagForwardEntriesLawful private constructor(
+    /// The list, within its bound.
+    val list: CodecChainFlagForwardEntriesList,
+    /// The value of the input `wide` the list hands every entry: where its
+    /// law starts.
+    val startWide: Boolean,
+) : com.sce.forge.runtime.Counted {
+    /// The entries the list holds.
+    val entries: List<CodecChainFlagEntrySource>
+        get() = list.entries
+
+    /// How many entries the list holds, the count a frame writes of it.
+    override val size: Int
+        get() = list.size
+
+    override fun equals(other: Any?): Boolean =
+        other is CodecChainFlagForwardEntriesLawful && other.list == list && other.startWide == startWide
+
+    override fun hashCode(): Int = 31 * (list.hashCode()) + startWide.hashCode()
+
+    override fun toString(): String = "CodecChainFlagForwardEntriesLawful(list=$list, startWide=$startWide)"
+
+    companion object {
+        /// `list` as a value of the law from the start given, or `null` where an
+        /// entry says a value other than the one its place asks of it.
+        fun of(list: CodecChainFlagForwardEntriesList, startWide: Boolean): CodecChainFlagForwardEntriesLawful? {
+            for (entry in list.entries) {
+                if ((CodecChainFlagEntry.inputWide(entry).toUInt() != 0u) != startWide) return null
+            }
+            return CodecChainFlagForwardEntriesLawful(list, startWide)
+        }
+
+        /// The fewest entries of the bound, each made by default, from the start
+        /// the first of them says: what a value made by default holds.
+        fun fewest(): CodecChainFlagForwardEntriesLawful {
+            val list = CodecChainFlagForwardEntriesList.fewest()
+            val first = list.entries.firstOrNull()
+            return checkNotNull(of(list, (first?.let { CodecChainFlagEntry.inputWide(it) }?.toUInt() ?: 0u) != 0u)) { "the entries made by default follow the law" }
+        }
+    }
+}
+
+/// The elements a value of [CodecChainFlagForward] presents, which its encode reads
+/// (docs/adr/0081 §2): any object that presents them is a source of it, which
+/// [CodecChainFlagForward.encodeSource] writes. The encode derives every other element
+/// of the frame.
+interface CodecChainFlagForwardSource {
+    val head: UByte
+    val entries: CodecChainFlagForwardEntriesLawful?
+}
 
 // Default-valued primary constructor: the generated procedure_l2 code
 // holds codec instances as owned members and initializes them with
@@ -21,9 +104,9 @@ import com.sce.generated.codec_chain_flag_entry.*
 // variant its document declares, since a closed set does not hold a
 // value it never declared.
 data class CodecChainFlagForward(
-    var head: UByte = 0.toUByte(),
-    var entries: MutableList<CodecChainFlagEntry>? = null
-) {
+    override var head: UByte = 0.toUByte(),
+    override var entries: CodecChainFlagForwardEntriesLawful? = null
+) : CodecChainFlagForwardSource {
     // RFC §synth-5-B flags primitive: per-bit-range accessors over
     // the carrier field. Single-bit (width=1) reads as Boolean; multi-
     // bit (width>=2) reads as the smallest unsigned Kotlin type that
@@ -47,22 +130,13 @@ data class CodecChainFlagForward(
     /// sinks (e.g. `MutableListSink`) are effectively infallible.
     @Suppress("UNUSED_PARAMETER")
     fun encode(w: SceSink, wide: UByte): CodecError? {
-        this.entries?.let { if (it.size < 1 || it.size > 4) return CodecError.TooManyElements }
-        // Streaming cursor encode (SSOT selection: `needs_streaming`).
-        // Mirrors the streaming decode: every field appends its own bytes
-        // in declaration order through the per-field encode blocks, so a
-        // gated field skips its append when null, and a fixed field after
-        // a variable-length payload lands after the payload (the positional
-        // path appends variable fields last, placing it ahead on the wire).
-        // Per-field `is_repeat` / `is_tlv_chain` / `is_embed` route to their
-        // dedicated helpers; everything else uses `present_if_encode_block`.
-        w.writeU8(this.head.toByte())?.let { return it }
-        this.entries?.let { _list ->
-            for (_e in _list) {
-                _e.encode(w, wide)?.let { return it }
-            }
-        }
-        return null
+        // docs/adr/0081 step 4: the encode over any source, which derives
+        // every element the value does not present. It is handed the flag
+        // inputs the value does not say; one the value says is read off it,
+        // and what a caller hands this `encode` for it is held to that
+        // (docs/adr/0065 §6 R4a).
+        if (inputWide(this).let { it != null && it != wide }) return CodecError.PresentIfMismatch
+        return encodeSource(this, w)
     }
 
     /// Heap-backed convenience facade. Runs `encode` over a
@@ -81,6 +155,32 @@ data class CodecChainFlagForward(
     }
 
     companion object {
+        /// Write any source of [CodecChainFlagForward] into `w`: each element read once off
+        /// `src` and written where the codec's encode plan lays it out
+        /// (docs/adr/0081). It refuses no value: it answers `null`, or
+        /// [CodecError.BufferOverflow] from a bounded sink with no room left.
+        fun encodeSource(src: CodecChainFlagForwardSource, w: SceSink): CodecError? {
+            val _e_head = src.head
+            val _e_entries = src.entries
+            var _u_head = _e_head.toUInt()
+            _u_head = (_u_head and 0x1u.inv()) or (if (_e_entries != null) 0x1u else 0x0u)
+            val _c_head = _u_head.toUByte()
+            w.writeU8(_c_head.toByte())?.let { return it }
+            if (_e_entries != null) {
+                var _left_entries = _e_entries.entries.size
+                for (_entry in _e_entries.entries) {
+                    _left_entries -= 1
+                    CodecChainFlagEntry.encodeSource(_entry, w, CodecChainFlagEntryOverrides(header_Z = _left_entries != 0))?.let { return it }
+                }
+            }
+            return null
+        }
+
+        /// The flag input `wide` a source of [CodecChainFlagForward] says, which its encode
+        /// is not handed (docs/adr/0065 §6 R4a), and `null` where the value says nothing of it.
+        fun inputWide(src: CodecChainFlagForwardSource): UByte? =
+            src.entries?.let { (if (it.startWide) 1 else 0).toUByte() }
+
         /// Decode the next frame from `cursor`. On success the cursor
         /// advances past the consumed bytes and the value is `Decoded.Ok`;
         /// a refused frame is `Decoded.Refused` with the kind that refused
@@ -126,7 +226,7 @@ data class CodecChainFlagForward(
             return Decoded.Ok(
                 CodecChainFlagForward(
                     head = head,
-                    entries = entries
+                    entries = entries?.let { CodecChainFlagForwardEntriesLawful.of(CodecChainFlagForwardEntriesList.of(it) ?: return Decoded.Refused(CodecError.TooManyElements), startWide = wide.toUInt() != 0u) ?: return Decoded.Refused(CodecError.PresentIfMismatch) }
                 )
             )
         }

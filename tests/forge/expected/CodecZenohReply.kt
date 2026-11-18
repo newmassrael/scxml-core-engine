@@ -13,6 +13,49 @@ import com.sce.forge.runtime.SceCursor
 import com.sce.forge.runtime.SceSink
 import com.sce.generated.codec_zenoh_ext_entry.*
 import com.sce.generated.codec_zenoh_push_body.*
+import kotlin.jvm.JvmInline
+
+/// The `extensions` element of [CodecZenohReply], 1 or more entries, the protocol stating no most, held to that bound where a
+/// value of it is made (docs/adr/0065 §6 R2, docs/adr/0081 §2): its constructor is
+/// private and [of] makes a value only of entries within the bound, which it
+/// copies, so no list it was made of can grow it past its bound after.
+@JvmInline
+value class CodecZenohReplyExtensionsList private constructor(val entries: List<CodecZenohExtEntrySource>) : com.sce.forge.runtime.Counted {
+    /// How many entries the list holds, the count a frame writes of it.
+    override val size: Int
+        get() = entries.size
+
+    companion object {
+        /// The fewest entries a value holds.
+        const val LEAST: Int = 1
+
+        /// `entries` as a value of the bound, or `null` where they lie outside it.
+        fun of(entries: List<CodecZenohExtEntrySource>): CodecZenohReplyExtensionsList? =
+            if (entries.size >= LEAST) CodecZenohReplyExtensionsList(entries.toList()) else null
+
+        /// The fewest entries the bound holds, each made by default: what a value made by default holds.
+        fun fewest(): CodecZenohReplyExtensionsList = CodecZenohReplyExtensionsList(List(LEAST) { CodecZenohExtEntry() })
+    }
+}
+
+/// One-bit flags of [CodecZenohReply] a parent may set in place of the ones a value
+/// presents, such as the flag a chain whose entries are [CodecZenohReply] ends them
+/// on, which the chain derives from where each entry stands.
+class CodecZenohReplyOverrides(
+    /// The `X` flag of `header`, where a parent sets it.
+    val header_X: Boolean? = null,
+)
+
+/// The elements a value of [CodecZenohReply] presents, which its encode reads
+/// (docs/adr/0081 §2): any object that presents them is a source of it, which
+/// [CodecZenohReply.encodeSource] writes. The encode derives every other element
+/// of the frame.
+interface CodecZenohReplySource {
+    val header: UByte
+    val consolidation: UByte?
+    val extensions: CodecZenohReplyExtensionsList?
+    val body: CodecZenohPushBodySource
+}
 
 // Default-valued primary constructor: the generated procedure_l2 code
 // holds codec instances as owned members and initializes them with
@@ -22,11 +65,11 @@ import com.sce.generated.codec_zenoh_push_body.*
 // variant its document declares, since a closed set does not hold a
 // value it never declared.
 data class CodecZenohReply(
-    var header: UByte = 0x04.toUByte(),
-    var consolidation: UByte? = null,
-    var extensions: MutableList<CodecZenohExtEntry>? = null,
-    var body: CodecZenohPushBody = CodecZenohPushBody()
-) {
+    override var header: UByte = 0x04.toUByte(),
+    override var consolidation: UByte? = null,
+    override var extensions: CodecZenohReplyExtensionsList? = null,
+    override var body: CodecZenohPushBody = CodecZenohPushBody()
+) : CodecZenohReplySource {
     // RFC §synth-5-B flags primitive: per-bit-range accessors over
     // the carrier field. Single-bit (width=1) reads as Boolean; multi-
     // bit (width>=2) reads as the smallest unsigned Kotlin type that
@@ -81,44 +124,55 @@ data class CodecZenohReply(
     /// destination has insufficient remaining capacity; growable
     /// sinks (e.g. `MutableListSink`) are effectively infallible.
     fun encode(w: SceSink): CodecError? {
-        this.extensions?.let { if (it.size < 1) return CodecError.TooManyElements }
-        // Streaming cursor encode (SSOT selection: `needs_streaming`).
-        // Mirrors the streaming decode: every field appends its own bytes
-        // in declaration order through the per-field encode blocks, so a
-        // gated field skips its append when null, and a fixed field after
-        // a variable-length payload lands after the payload (the positional
-        // path appends variable fields last, placing it ahead on the wire).
-        // Per-field `is_repeat` / `is_tlv_chain` / `is_embed` route to their
-        // dedicated helpers; everything else uses `present_if_encode_block`.
-        w.writeU8(this.header.toByte())?.let { return it }
-        this.consolidation?.let { _v ->
-            w.writeU8(_v.toByte())?.let { return it }
-        }
-        this.extensions?.let { _list ->
-            for (_e in _list) {
-                _e.encode(w)?.let { return it }
-            }
-        }
-        this.body.encode(w)?.let { return it }
-        return null
+        // docs/adr/0081 step 4: the encode over any source, which derives
+        // every element the value does not present. It is handed the flag
+        // inputs the value does not say; one the value says is read off it,
+        // and what a caller hands this `encode` for it is held to that
+        // (docs/adr/0065 §6 R4a).
+        return encodeSource(this, w)
     }
 
     /// Heap-backed convenience facade. Runs `encode` over a
-    /// `MutableListSink` and returns the freshly-encoded ByteArray, or
-    /// `null` when `encode` refuses the value before its first byte: a
-    /// gated field and the `sce:present-if` that gates it contradict each
-    /// other (`CodecError.PresentIfMismatch`), or a byte string, text or
-    /// list lies outside its bound (`CodecError.LengthOutOfRange`,
-    /// `CodecError.TooManyElements`). Callers that need the reason, and
-    /// zero-alloc hot paths, call `encode` directly against a caller-owned
-    /// sink (e.g. `ByteArraySink`).
-    fun encodeToByteArray(): ByteArray? {
+    /// `MutableListSink` and returns the freshly-encoded ByteArray.
+    /// Callers targeting zero-alloc hot paths should call `encode`
+    /// directly against a caller-owned sink (e.g. `ByteArraySink`).
+    fun encodeToByteArray(): ByteArray {
         val _list = mutableListOf<Byte>()
-        if (encode(MutableListSink(_list)) != null) return null
+        encode(MutableListSink(_list))
         return _list.toByteArray()
     }
 
     companion object {
+        /// Write any source of [CodecZenohReply] into `w`: each element read once off
+        /// `src` and written where the codec's encode plan lays it out
+        /// (docs/adr/0081). A chain that holds it
+        /// sets the flag its entries end on by `overrides`, in place of the value's. It refuses no value: it answers `null`, or
+        /// [CodecError.BufferOverflow] from a bounded sink with no room left.
+        fun encodeSource(src: CodecZenohReplySource, w: SceSink, overrides: CodecZenohReplyOverrides? = null): CodecError? {
+            val _e_header = src.header
+            val _e_consolidation = src.consolidation
+            val _e_extensions = src.extensions
+            val _e_body = src.body
+            var _u_header = _e_header.toUInt()
+            _u_header = (_u_header and 0x20u.inv()) or (if (_e_consolidation != null) 0x20u else 0x0u)
+            _u_header = (_u_header and 0x80u.inv()) or (if (_e_extensions != null) 0x80u else 0x0u)
+            overrides?.header_X?.let { _u_header = (_u_header and 0x40u.inv()) or (if (it) 0x40u else 0x0u) }
+            val _c_header = _u_header.toUByte()
+            w.writeU8(_c_header.toByte())?.let { return it }
+            if (_e_consolidation != null) {
+                w.writeU8(_e_consolidation.toByte())?.let { return it }
+            }
+            if (_e_extensions != null) {
+                var _left_extensions = _e_extensions.entries.size
+                for (_entry in _e_extensions.entries) {
+                    _left_extensions -= 1
+                    CodecZenohExtEntry.encodeSource(_entry, w, CodecZenohExtEntryOverrides(header_Z = _left_extensions != 0))?.let { return it }
+                }
+            }
+            CodecZenohPushBody.encodeSource(_e_body, w)?.let { return it }
+            return null
+        }
+
         /// Decode the next frame from `cursor`. On success the cursor
         /// advances past the consumed bytes and the value is `Decoded.Ok`;
         /// a refused frame is `Decoded.Refused` with the kind that refused
@@ -172,7 +226,7 @@ data class CodecZenohReply(
                 CodecZenohReply(
                     header = header,
                     consolidation = consolidation,
-                    extensions = extensions,
+                    extensions = extensions?.let { CodecZenohReplyExtensionsList.of(it) ?: return Decoded.Refused(CodecError.TooManyElements) },
                     body = body
                 )
             )

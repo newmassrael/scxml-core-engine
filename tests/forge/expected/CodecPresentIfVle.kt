@@ -12,6 +12,15 @@ import com.sce.forge.runtime.MutableListSink
 import com.sce.forge.runtime.SceCursor
 import com.sce.forge.runtime.SceSink
 
+/// The elements a value of [CodecPresentIfVle] presents, which its encode reads
+/// (docs/adr/0081 §2): any object that presents them is a source of it, which
+/// [CodecPresentIfVle.encodeSource] writes. The encode derives every other element
+/// of the frame.
+interface CodecPresentIfVleSource {
+    val flags: UByte
+    val optional_id: ULong?
+}
+
 // Default-valued primary constructor: the generated procedure_l2 code
 // holds codec instances as owned members and initializes them with
 // `CodecPresentIfVle()` before any encode()/decode() call. Each default
@@ -20,9 +29,9 @@ import com.sce.forge.runtime.SceSink
 // variant its document declares, since a closed set does not hold a
 // value it never declared.
 data class CodecPresentIfVle(
-    var flags: UByte = 0.toUByte(),
-    var optional_id: ULong? = null
-) {
+    override var flags: UByte = 0.toUByte(),
+    override var optional_id: ULong? = null
+) : CodecPresentIfVleSource {
     // RFC §synth-5-B flags primitive: per-bit-range accessors over
     // the carrier field. Single-bit (width=1) reads as Boolean; multi-
     // bit (width>=2) reads as the smallest unsigned Kotlin type that
@@ -45,19 +54,12 @@ data class CodecPresentIfVle(
     /// destination has insufficient remaining capacity; growable
     /// sinks (e.g. `MutableListSink`) are effectively infallible.
     fun encode(w: SceSink): CodecError? {
-        // Streaming cursor encode (SSOT selection: `needs_streaming`).
-        // Mirrors the streaming decode: every field appends its own bytes
-        // in declaration order through the per-field encode blocks, so a
-        // gated field skips its append when null, and a fixed field after
-        // a variable-length payload lands after the payload (the positional
-        // path appends variable fields last, placing it ahead on the wire).
-        // Per-field `is_repeat` / `is_tlv_chain` / `is_embed` route to their
-        // dedicated helpers; everything else uses `present_if_encode_block`.
-        w.writeU8(this.flags.toByte())?.let { return it }
-        this.optional_id?.let { _v ->
-        w.writeVleU64(_v)?.let { return it }
-        }
-        return null
+        // docs/adr/0081 step 4: the encode over any source, which derives
+        // every element the value does not present. It is handed the flag
+        // inputs the value does not say; one the value says is read off it,
+        // and what a caller hands this `encode` for it is held to that
+        // (docs/adr/0065 §6 R4a).
+        return encodeSource(this, w)
     }
 
     /// Heap-backed convenience facade. Runs `encode` over a
@@ -71,6 +73,23 @@ data class CodecPresentIfVle(
     }
 
     companion object {
+        /// Write any source of [CodecPresentIfVle] into `w`: each element read once off
+        /// `src` and written where the codec's encode plan lays it out
+        /// (docs/adr/0081). It refuses no value: it answers `null`, or
+        /// [CodecError.BufferOverflow] from a bounded sink with no room left.
+        fun encodeSource(src: CodecPresentIfVleSource, w: SceSink): CodecError? {
+            val _e_flags = src.flags
+            val _e_optional_id = src.optional_id
+            var _u_flags = _e_flags.toUInt()
+            _u_flags = (_u_flags and 0x1u.inv()) or (if (_e_optional_id != null) 0x1u else 0x0u)
+            val _c_flags = _u_flags.toUByte()
+            w.writeU8(_c_flags.toByte())?.let { return it }
+            if (_e_optional_id != null) {
+                w.writeVleU64(_e_optional_id)?.let { return it }
+            }
+            return null
+        }
+
         /// Decode the next frame from `cursor`. On success the cursor
         /// advances past the consumed bytes and the value is `Decoded.Ok`;
         /// a refused frame is `Decoded.Refused` with the kind that refused

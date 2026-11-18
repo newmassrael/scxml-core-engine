@@ -18,6 +18,7 @@ import com.sce.generated.codec_zenoh_keep_alive.*
 import com.sce.generated.codec_zenoh_frame.*
 import com.sce.generated.codec_zenoh_fragment.*
 import com.sce.generated.codec_zenoh_join.*
+import kotlin.jvm.JvmInline
 
 // RFC §synth-5-B variant primitive: discriminated-union body for the
 // codec's tag-field suffix. Each arm wraps an imported codec's decoded
@@ -26,14 +27,55 @@ import com.sce.generated.codec_zenoh_join.*
 // (defensive — wildcard imports could otherwise surface an ambiguity if
 // two imported codecs declare same-named inner classes).
 sealed class CodecTransportEnvelopeVariant {
-    data class CodecZenohInitBody(val body: com.sce.generated.codec_zenoh_init_body.CodecZenohInitBody) : CodecTransportEnvelopeVariant()
-    data class CodecZenohOpenBody(val body: com.sce.generated.codec_zenoh_open_body.CodecZenohOpenBody) : CodecTransportEnvelopeVariant()
-    data class CodecZenohClose(val body: com.sce.generated.codec_zenoh_close.CodecZenohClose) : CodecTransportEnvelopeVariant()
-    data class CodecZenohKeepAlive(val body: com.sce.generated.codec_zenoh_keep_alive.CodecZenohKeepAlive) : CodecTransportEnvelopeVariant()
-    data class CodecZenohFrame(val body: com.sce.generated.codec_zenoh_frame.CodecZenohFrame) : CodecTransportEnvelopeVariant()
-    data class CodecZenohFragment(val body: com.sce.generated.codec_zenoh_fragment.CodecZenohFragment) : CodecTransportEnvelopeVariant()
-    data class CodecZenohJoin(val body: com.sce.generated.codec_zenoh_join.CodecZenohJoin) : CodecTransportEnvelopeVariant()
-    data class Default(val tag: UByte, val body: com.sce.generated.codec_zenoh_close.CodecZenohClose) : CodecTransportEnvelopeVariant()
+    data class CodecZenohInitBody(val body: com.sce.generated.codec_zenoh_init_body.CodecZenohInitBodySource) : CodecTransportEnvelopeVariant()
+    data class CodecZenohOpenBody(val body: com.sce.generated.codec_zenoh_open_body.CodecZenohOpenBodySource) : CodecTransportEnvelopeVariant()
+    data class CodecZenohClose(val body: com.sce.generated.codec_zenoh_close.CodecZenohCloseSource) : CodecTransportEnvelopeVariant()
+    data class CodecZenohKeepAlive(val body: com.sce.generated.codec_zenoh_keep_alive.CodecZenohKeepAliveSource) : CodecTransportEnvelopeVariant()
+    data class CodecZenohFrame(val body: com.sce.generated.codec_zenoh_frame.CodecZenohFrameSource) : CodecTransportEnvelopeVariant()
+    data class CodecZenohFragment(val body: com.sce.generated.codec_zenoh_fragment.CodecZenohFragmentSource) : CodecTransportEnvelopeVariant()
+    data class CodecZenohJoin(val body: com.sce.generated.codec_zenoh_join.CodecZenohJoinSource) : CodecTransportEnvelopeVariant()
+    data class Default(val tag: CodecTransportEnvelopeUnknownTag, val body: com.sce.generated.codec_zenoh_close.CodecZenohCloseSource) : CodecTransportEnvelopeVariant()
+}
+
+/// The tag the catch-all arm of [CodecTransportEnvelope]'s variant holds: one the bits
+/// the tag is read from hold and no arm names, held to that where a value of
+/// it is made (docs/adr/0065 §6 R3, docs/adr/0081 §2), so the catch-all a value
+/// holds is written and read back as the catch-all.
+@JvmInline
+value class CodecTransportEnvelopeUnknownTag private constructor(val tag: UByte) {
+    /// The tag as a `ULong`, the type an encode derives a tag in.
+    val wide: ULong
+        get() = tag.toULong()
+
+    companion object {
+        /// `tag` as a value of the catch-all, or `null` where an arm names it or the
+        /// bits the tag is read from do not hold it.
+        fun of(tag: UByte): CodecTransportEnvelopeUnknownTag? =
+            when (tag.toUInt()) {
+                in 0x1u..0x7u -> null
+                else -> if (tag.toUInt() <= 0x1Fu) CodecTransportEnvelopeUnknownTag(tag) else null
+            }
+
+        /// The least tag no arm names: what a catch-all made by default holds.
+        fun fewest(): CodecTransportEnvelopeUnknownTag = CodecTransportEnvelopeUnknownTag(0x0u.toUByte())
+    }
+}
+
+/// One-bit flags of [CodecTransportEnvelope] a parent may set in place of the ones a value
+/// presents, such as the flag a chain whose entries are [CodecTransportEnvelope] ends them
+/// on, which the chain derives from where each entry stands.
+class CodecTransportEnvelopeOverrides(
+    /// The `Z` flag of `header`, where a parent sets it.
+    val header_Z: Boolean? = null,
+)
+
+/// The elements a value of [CodecTransportEnvelope] presents, which its encode reads
+/// (docs/adr/0081 §2): any object that presents them is a source of it, which
+/// [CodecTransportEnvelope.encodeSource] writes. The encode derives every other element
+/// of the frame.
+interface CodecTransportEnvelopeSource {
+    val header: UByte
+    val body: CodecTransportEnvelopeVariant
 }
 
 // Default-valued primary constructor: the generated procedure_l2 code
@@ -44,14 +86,14 @@ sealed class CodecTransportEnvelopeVariant {
 // variant its document declares, since a closed set does not hold a
 // value it never declared.
 data class CodecTransportEnvelope(
-    var header: UByte = 0.toUByte(),
+    override var header: UByte = 0.toUByte(),
     // RFC variant-default-uniformity (Kotlin): pick the declared
     // default arm (`<sce:arm default="true"/>`) instead of the first
     // alternative so a freshly-constructed envelope round-trips byte-
     // exactly through `encode() -> decode()`. Paired with the inner
     // codec's `<sce:flag value=>`-baked default fields above.
-    var body: CodecTransportEnvelopeVariant = CodecTransportEnvelopeVariant.CodecZenohClose(com.sce.generated.codec_zenoh_close.CodecZenohClose())
-) {
+    override var body: CodecTransportEnvelopeVariant = CodecTransportEnvelopeVariant.CodecZenohClose(com.sce.generated.codec_zenoh_close.CodecZenohClose())
+) : CodecTransportEnvelopeSource {
     // RFC §synth-5-B flags primitive: per-bit-range accessors over
     // the carrier field. Single-bit (width=1) reads as Boolean; multi-
     // bit (width>=2) reads as the smallest unsigned Kotlin type that
@@ -106,23 +148,12 @@ data class CodecTransportEnvelope(
     /// destination has insufficient remaining capacity; growable
     /// sinks (e.g. `MutableListSink`) are effectively infallible.
     fun encode(w: SceSink): CodecError? {
-        // Encode fixed prefix (tag field bytes are part of the prefix).
-        // The tag value is read from the struct field, NOT derived from
-        // the body discriminant — keeping author-set tag / body in sync
-        // is the caller's responsibility (v1 keeps the layout simple).
-        w.writeU8(header.toByte())?.let { return it }
-        // Append the active arm body's encoded bytes via the same sink.
-        when (val _b = this.body) {
-            is CodecTransportEnvelopeVariant.CodecZenohInitBody -> _b.body.encode(w, (((this.header.toInt() shr 6) and 0x1).toUByte()), (((this.header.toInt() shr 5) and 0x1).toUByte()))?.let { return it }
-            is CodecTransportEnvelopeVariant.CodecZenohOpenBody -> _b.body.encode(w, (((this.header.toInt() shr 5) and 0x1).toUByte()))?.let { return it }
-            is CodecTransportEnvelopeVariant.CodecZenohClose -> _b.body.encode(w)?.let { return it }
-            is CodecTransportEnvelopeVariant.CodecZenohKeepAlive -> _b.body.encode(w)?.let { return it }
-            is CodecTransportEnvelopeVariant.CodecZenohFrame -> _b.body.encode(w)?.let { return it }
-            is CodecTransportEnvelopeVariant.CodecZenohFragment -> _b.body.encode(w)?.let { return it }
-            is CodecTransportEnvelopeVariant.CodecZenohJoin -> _b.body.encode(w, (((this.header.toInt() shr 6) and 0x1).toUByte()))?.let { return it }
-            is CodecTransportEnvelopeVariant.Default -> _b.body.encode(w)?.let { return it }
-        }
-        return null
+        // docs/adr/0081 step 4: the encode over any source, which derives
+        // every element the value does not present. It is handed the flag
+        // inputs the value does not say; one the value says is read off it,
+        // and what a caller hands this `encode` for it is held to that
+        // (docs/adr/0065 §6 R4a).
+        return encodeSource(this, w)
     }
 
     /// Heap-backed convenience facade. Runs `encode` over a
@@ -136,6 +167,48 @@ data class CodecTransportEnvelope(
     }
 
     companion object {
+        /// Write any source of [CodecTransportEnvelope] into `w`: each element read once off
+        /// `src` and written where the codec's encode plan lays it out
+        /// (docs/adr/0081). A chain that holds it
+        /// sets the flag its entries end on by `overrides`, in place of the value's. It refuses no value: it answers `null`, or
+        /// [CodecError.BufferOverflow] from a bounded sink with no room left.
+        fun encodeSource(src: CodecTransportEnvelopeSource, w: SceSink, overrides: CodecTransportEnvelopeOverrides? = null): CodecError? {
+            val _e_header = src.header
+            val _r_body = src.body
+            val _t_body: ULong = when (val _b = _r_body) {
+                is CodecTransportEnvelopeVariant.CodecZenohInitBody -> 0x1uL
+                is CodecTransportEnvelopeVariant.CodecZenohOpenBody -> 0x2uL
+                is CodecTransportEnvelopeVariant.CodecZenohClose -> 0x3uL
+                is CodecTransportEnvelopeVariant.CodecZenohKeepAlive -> 0x4uL
+                is CodecTransportEnvelopeVariant.CodecZenohFrame -> 0x5uL
+                is CodecTransportEnvelopeVariant.CodecZenohFragment -> 0x6uL
+                is CodecTransportEnvelopeVariant.CodecZenohJoin -> 0x7uL
+                is CodecTransportEnvelopeVariant.Default -> _b.tag.wide
+            }
+            var _u_header = _e_header.toUInt()
+            _u_header = (_u_header and 0x1Fu.inv()) or ((_t_body and 0x1FuL).toUInt() shl 0)
+            if ((_r_body is CodecTransportEnvelopeVariant.CodecZenohInitBody || _r_body is CodecTransportEnvelopeVariant.CodecZenohOpenBody)) {
+                _u_header = (_u_header and 0x20u.inv()) or (((when (val _b = _r_body) { is CodecTransportEnvelopeVariant.CodecZenohInitBody -> CodecZenohInitBody.inputA(_b.body).toInt(); is CodecTransportEnvelopeVariant.CodecZenohOpenBody -> CodecZenohOpenBody.inputA(_b.body).toInt(); is CodecTransportEnvelopeVariant.CodecZenohClose -> 0; is CodecTransportEnvelopeVariant.CodecZenohKeepAlive -> 0; is CodecTransportEnvelopeVariant.CodecZenohFrame -> 0; is CodecTransportEnvelopeVariant.CodecZenohFragment -> 0; is CodecTransportEnvelopeVariant.CodecZenohJoin -> 0; is CodecTransportEnvelopeVariant.Default -> 0 })).toUInt() shl 5)
+            }
+            if ((_r_body is CodecTransportEnvelopeVariant.CodecZenohInitBody || _r_body is CodecTransportEnvelopeVariant.CodecZenohJoin)) {
+                _u_header = (_u_header and 0x40u.inv()) or (((when (val _b = _r_body) { is CodecTransportEnvelopeVariant.CodecZenohInitBody -> CodecZenohInitBody.inputS(_b.body).toInt(); is CodecTransportEnvelopeVariant.CodecZenohOpenBody -> 0; is CodecTransportEnvelopeVariant.CodecZenohClose -> 0; is CodecTransportEnvelopeVariant.CodecZenohKeepAlive -> 0; is CodecTransportEnvelopeVariant.CodecZenohFrame -> 0; is CodecTransportEnvelopeVariant.CodecZenohFragment -> 0; is CodecTransportEnvelopeVariant.CodecZenohJoin -> CodecZenohJoin.inputS(_b.body).toInt(); is CodecTransportEnvelopeVariant.Default -> 0 })).toUInt() shl 6)
+            }
+            overrides?.header_Z?.let { _u_header = (_u_header and 0x80u.inv()) or (if (it) 0x80u else 0x0u) }
+            val _c_header = _u_header.toUByte()
+            w.writeU8(_c_header.toByte())?.let { return it }
+            when (val _b = _r_body) {
+                is CodecTransportEnvelopeVariant.CodecZenohInitBody -> CodecZenohInitBody.encodeSource(_b.body, w)?.let { return it }
+                is CodecTransportEnvelopeVariant.CodecZenohOpenBody -> CodecZenohOpenBody.encodeSource(_b.body, w)?.let { return it }
+                is CodecTransportEnvelopeVariant.CodecZenohClose -> CodecZenohClose.encodeSource(_b.body, w)?.let { return it }
+                is CodecTransportEnvelopeVariant.CodecZenohKeepAlive -> CodecZenohKeepAlive.encodeSource(_b.body, w)?.let { return it }
+                is CodecTransportEnvelopeVariant.CodecZenohFrame -> CodecZenohFrame.encodeSource(_b.body, w)?.let { return it }
+                is CodecTransportEnvelopeVariant.CodecZenohFragment -> CodecZenohFragment.encodeSource(_b.body, w)?.let { return it }
+                is CodecTransportEnvelopeVariant.CodecZenohJoin -> CodecZenohJoin.encodeSource(_b.body, w)?.let { return it }
+                is CodecTransportEnvelopeVariant.Default -> CodecZenohClose.encodeSource(_b.body, w)?.let { return it }
+            }
+            return null
+        }
+
         /// Decode the next frame from `cursor`. On success the cursor
         /// advances past the consumed bytes and the value is `Decoded.Ok`;
         /// a refused frame is `Decoded.Refused` with the kind that refused
@@ -183,7 +256,7 @@ data class CodecTransportEnvelope(
                 }
                 else -> {
                     val _arm = com.sce.generated.codec_zenoh_close.CodecZenohClose.decode(cursor).valueOr { _refused -> return _refused }
-                    CodecTransportEnvelopeVariant.Default(tag = ((header.toInt() shr 0) and 0x1F).toUByte(), body = _arm)
+                    CodecTransportEnvelopeVariant.Default(tag = CodecTransportEnvelopeUnknownTag.of(((header.toInt() shr 0) and 0x1F).toUByte()) ?: error("a tag no arm names is one CodecTransportEnvelopeUnknownTag holds"), body = _arm)
                 }
             }
             return Decoded.Ok(

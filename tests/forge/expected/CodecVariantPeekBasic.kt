@@ -21,8 +21,16 @@ import com.sce.generated.codec_peek_arm_b.*
 // (defensive — wildcard imports could otherwise surface an ambiguity if
 // two imported codecs declare same-named inner classes).
 sealed class CodecVariantPeekBasicVariant {
-    data class CodecPeekArmA(val body: com.sce.generated.codec_peek_arm_a.CodecPeekArmA) : CodecVariantPeekBasicVariant()
-    data class CodecPeekArmB(val body: com.sce.generated.codec_peek_arm_b.CodecPeekArmB) : CodecVariantPeekBasicVariant()
+    data class CodecPeekArmA(val body: com.sce.generated.codec_peek_arm_a.CodecPeekArmASource) : CodecVariantPeekBasicVariant()
+    data class CodecPeekArmB(val body: com.sce.generated.codec_peek_arm_b.CodecPeekArmBSource) : CodecVariantPeekBasicVariant()
+}
+
+/// The elements a value of [CodecVariantPeekBasic] presents, which its encode reads
+/// (docs/adr/0081 §2): any object that presents them is a source of it, which
+/// [CodecVariantPeekBasic.encodeSource] writes. The encode derives every other element
+/// of the frame.
+interface CodecVariantPeekBasicSource {
+    val body: CodecVariantPeekBasicVariant
 }
 
 // Default-valued primary constructor: the generated procedure_l2 code
@@ -38,26 +46,20 @@ data class CodecVariantPeekBasic(
     // alternative so a freshly-constructed envelope round-trips byte-
     // exactly through `encode() -> decode()`. Paired with the inner
     // codec's `<sce:flag value=>`-baked default fields above.
-    var body: CodecVariantPeekBasicVariant = CodecVariantPeekBasicVariant.CodecPeekArmA(com.sce.generated.codec_peek_arm_a.CodecPeekArmA())
-) {
+    override var body: CodecVariantPeekBasicVariant = CodecVariantPeekBasicVariant.CodecPeekArmA(com.sce.generated.codec_peek_arm_a.CodecPeekArmA())
+) : CodecVariantPeekBasicSource {
     /// RFC §synth-5-B encode-side primary: write `self` into the
     /// caller-owned `w` sink. Returns `null` on success;
     /// `CodecError.BufferOverflow` from a bounded sink when the
     /// destination has insufficient remaining capacity; growable
     /// sinks (e.g. `MutableListSink`) are effectively infallible.
     fun encode(w: SceSink): CodecError? {
-        // RFC §synth-5-B peek-byte / streaming-prefix:
-        // streaming prefix encode. Peek-byte mode: arm body's encode
-        // prepends its own header byte (which the decoder peeked); no
-        // separate tag byte here. Streaming-prefix mode (own-field):
-        // carrier is part of the prefix fields and emits via the same
-        // per-field path.
-        // Append the active arm body's encoded bytes via the same sink.
-        when (val _b = this.body) {
-            is CodecVariantPeekBasicVariant.CodecPeekArmA -> _b.body.encode(w)?.let { return it }
-            is CodecVariantPeekBasicVariant.CodecPeekArmB -> _b.body.encode(w)?.let { return it }
-        }
-        return null
+        // docs/adr/0081 step 4: the encode over any source, which derives
+        // every element the value does not present. It is handed the flag
+        // inputs the value does not say; one the value says is read off it,
+        // and what a caller hands this `encode` for it is held to that
+        // (docs/adr/0065 §6 R4a).
+        return encodeSource(this, w)
     }
 
     /// Heap-backed convenience facade. Runs `encode` over a
@@ -71,6 +73,19 @@ data class CodecVariantPeekBasic(
     }
 
     companion object {
+        /// Write any source of [CodecVariantPeekBasic] into `w`: each element read once off
+        /// `src` and written where the codec's encode plan lays it out
+        /// (docs/adr/0081). It refuses no value: it answers `null`, or
+        /// [CodecError.BufferOverflow] from a bounded sink with no room left.
+        fun encodeSource(src: CodecVariantPeekBasicSource, w: SceSink): CodecError? {
+            val _r_body = src.body
+            when (val _b = _r_body) {
+                is CodecVariantPeekBasicVariant.CodecPeekArmA -> CodecPeekArmA.encodeSource(_b.body, w)?.let { return it }
+                is CodecVariantPeekBasicVariant.CodecPeekArmB -> CodecPeekArmB.encodeSource(_b.body, w)?.let { return it }
+            }
+            return null
+        }
+
         /// Decode the next frame from `cursor`. On success the cursor
         /// advances past the consumed bytes and the value is `Decoded.Ok`;
         /// a refused frame is `Decoded.Refused` with the kind that refused

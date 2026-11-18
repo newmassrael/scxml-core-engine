@@ -11,6 +11,41 @@ import com.sce.forge.runtime.Decoded
 import com.sce.forge.runtime.MutableListSink
 import com.sce.forge.runtime.SceCursor
 import com.sce.forge.runtime.SceSink
+import kotlin.jvm.JvmInline
+
+/// The `zid` element of [CodecZenohSourceInfo], 1 to 16 bytes, held to that bound where a
+/// value of it is made (docs/adr/0077 §3, docs/adr/0081 §2): its constructor is
+/// private and [of] makes a value only of bytes within the bound. The value it
+/// holds cannot change after, so a value holds its bound for as long as it lives.
+@JvmInline
+value class CodecZenohSourceInfoZidBytes private constructor(val bytes: ByteArray) {
+    companion object {
+        /// The fewest bytes a value holds.
+        const val LEAST: Int = 1
+
+        /// The most bytes a value holds.
+        const val MOST: Int = 16
+
+        /// `bytes` as a value of the bound, or `null` where it lies outside it.
+        fun of(bytes: ByteArray): CodecZenohSourceInfoZidBytes? =
+            if (bytes.size in LEAST..MOST) CodecZenohSourceInfoZidBytes(bytes) else null
+
+        /// The fewest bytes the bound holds, each zero: what a value made by
+        /// default holds.
+        fun fewest(): CodecZenohSourceInfoZidBytes = CodecZenohSourceInfoZidBytes(ByteArray(LEAST))
+    }
+}
+
+/// The elements a value of [CodecZenohSourceInfo] presents, which its encode reads
+/// (docs/adr/0081 §2): any object that presents them is a source of it, which
+/// [CodecZenohSourceInfo.encodeSource] writes. The encode derives every other element
+/// of the frame.
+interface CodecZenohSourceInfoSource {
+    val header: UByte
+    val zid: CodecZenohSourceInfoZidBytes
+    val eid: UInt
+    val sn: UInt
+}
 
 // Default-valued primary constructor: the generated procedure_l2 code
 // holds codec instances as owned members and initializes them with
@@ -20,11 +55,11 @@ import com.sce.forge.runtime.SceSink
 // variant its document declares, since a closed set does not hold a
 // value it never declared.
 data class CodecZenohSourceInfo(
-    var header: UByte = 0.toUByte(),
-    var zid: ByteArray = byteArrayOf(),
-    var eid: UInt = 0u,
-    var sn: UInt = 0u
-) {
+    override var header: UByte = 0.toUByte(),
+    override var zid: CodecZenohSourceInfoZidBytes = CodecZenohSourceInfoZidBytes.fewest(),
+    override var eid: UInt = 0u,
+    override var sn: UInt = 0u
+) : CodecZenohSourceInfoSource {
     // RFC §synth-5-B flags primitive: per-bit-range accessors over
     // the carrier field. Single-bit (width=1) reads as Boolean; multi-
     // bit (width>=2) reads as the smallest unsigned Kotlin type that
@@ -49,38 +84,44 @@ data class CodecZenohSourceInfo(
     /// destination has insufficient remaining capacity; growable
     /// sinks (e.g. `MutableListSink`) are effectively infallible.
     fun encode(w: SceSink): CodecError? {
-        if (this.zid.size < 1 || this.zid.size > 16) return CodecError.LengthOutOfRange
-        // Streaming cursor encode (SSOT selection: `needs_streaming`).
-        // Mirrors the streaming decode: every field appends its own bytes
-        // in declaration order through the per-field encode blocks, so a
-        // gated field skips its append when null, and a fixed field after
-        // a variable-length payload lands after the payload (the positional
-        // path appends variable fields last, placing it ahead on the wire).
-        // Per-field `is_repeat` / `is_tlv_chain` / `is_embed` route to their
-        // dedicated helpers; everything else uses `present_if_encode_block`.
-        w.writeU8(this.header.toByte())?.let { return it }
-        w.writeBytes(this.zid)?.let { return it }
-        w.writeVleU32(eid)?.let { return it }
-        w.writeVleU32(sn)?.let { return it }
-        return null
+        // docs/adr/0081 step 4: the encode over any source, which derives
+        // every element the value does not present. It is handed the flag
+        // inputs the value does not say; one the value says is read off it,
+        // and what a caller hands this `encode` for it is held to that
+        // (docs/adr/0065 §6 R4a).
+        return encodeSource(this, w)
     }
 
     /// Heap-backed convenience facade. Runs `encode` over a
-    /// `MutableListSink` and returns the freshly-encoded ByteArray, or
-    /// `null` when `encode` refuses the value before its first byte: a
-    /// gated field and the `sce:present-if` that gates it contradict each
-    /// other (`CodecError.PresentIfMismatch`), or a byte string, text or
-    /// list lies outside its bound (`CodecError.LengthOutOfRange`,
-    /// `CodecError.TooManyElements`). Callers that need the reason, and
-    /// zero-alloc hot paths, call `encode` directly against a caller-owned
-    /// sink (e.g. `ByteArraySink`).
-    fun encodeToByteArray(): ByteArray? {
+    /// `MutableListSink` and returns the freshly-encoded ByteArray.
+    /// Callers targeting zero-alloc hot paths should call `encode`
+    /// directly against a caller-owned sink (e.g. `ByteArraySink`).
+    fun encodeToByteArray(): ByteArray {
         val _list = mutableListOf<Byte>()
-        if (encode(MutableListSink(_list)) != null) return null
+        encode(MutableListSink(_list))
         return _list.toByteArray()
     }
 
     companion object {
+        /// Write any source of [CodecZenohSourceInfo] into `w`: each element read once off
+        /// `src` and written where the codec's encode plan lays it out
+        /// (docs/adr/0081). It refuses no value: it answers `null`, or
+        /// [CodecError.BufferOverflow] from a bounded sink with no room left.
+        fun encodeSource(src: CodecZenohSourceInfoSource, w: SceSink): CodecError? {
+            val _e_header = src.header
+            val _e_zid = src.zid
+            val _e_eid = src.eid
+            val _e_sn = src.sn
+            var _u_header = _e_header.toUInt()
+            _u_header = (_u_header and 0xF0u.inv()) or ((_e_zid.bytes.size - 1).toUInt() shl 4)
+            val _c_header = _u_header.toUByte()
+            w.writeU8(_c_header.toByte())?.let { return it }
+            w.writeBytes(_e_zid.bytes)?.let { return it }
+            w.writeVleU32(_e_eid)?.let { return it }
+            w.writeVleU32(_e_sn)?.let { return it }
+            return null
+        }
+
         /// Decode the next frame from `cursor`. On success the cursor
         /// advances past the consumed bytes and the value is `Decoded.Ok`;
         /// a refused frame is `Decoded.Refused` with the kind that refused
@@ -120,7 +161,7 @@ data class CodecZenohSourceInfo(
             return Decoded.Ok(
                 CodecZenohSourceInfo(
                     header = header,
-                    zid = zid,
+                    zid = CodecZenohSourceInfoZidBytes.of(zid) ?: return Decoded.Refused(CodecError.LengthOutOfRange),
                     eid = eid,
                     sn = sn
                 )

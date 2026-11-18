@@ -11,6 +11,51 @@ import com.sce.forge.runtime.Decoded
 import com.sce.forge.runtime.MutableListSink
 import com.sce.forge.runtime.SceCursor
 import com.sce.forge.runtime.SceSink
+import kotlin.jvm.JvmInline
+
+/// The `zid` element of [CodecZenohJoin], 1 to 16 bytes, held to that bound where a
+/// value of it is made (docs/adr/0077 §3, docs/adr/0081 §2): its constructor is
+/// private and [of] makes a value only of bytes within the bound. The value it
+/// holds cannot change after, so a value holds its bound for as long as it lives.
+@JvmInline
+value class CodecZenohJoinZidBytes private constructor(val bytes: ByteArray) {
+    companion object {
+        /// The fewest bytes a value holds.
+        const val LEAST: Int = 1
+
+        /// The most bytes a value holds.
+        const val MOST: Int = 16
+
+        /// `bytes` as a value of the bound, or `null` where it lies outside it.
+        fun of(bytes: ByteArray): CodecZenohJoinZidBytes? =
+            if (bytes.size in LEAST..MOST) CodecZenohJoinZidBytes(bytes) else null
+
+        /// The fewest bytes the bound holds, each zero: what a value made by
+        /// default holds.
+        fun fewest(): CodecZenohJoinZidBytes = CodecZenohJoinZidBytes(ByteArray(LEAST))
+    }
+}
+
+/// The `s` group of [CodecZenohJoin] where `S` holds (docs/adr/0065 §6 R4): the
+/// members present then.
+data class CodecZenohJoinS(
+    val sn_res: UByte = 0.toUByte(),
+    val batch_size: UShort = 0.toUShort()
+)
+
+/// The elements a value of [CodecZenohJoin] presents, which its encode reads
+/// (docs/adr/0081 §2): any object that presents them is a source of it, which
+/// [CodecZenohJoin.encodeSource] writes. The encode derives every other element
+/// of the frame.
+interface CodecZenohJoinSource {
+    val version: UByte
+    val cbyte: UByte
+    val zid: CodecZenohJoinZidBytes
+    val lease: ULong
+    val next_sn_reliable: ULong
+    val next_sn_best_effort: ULong
+    val s: CodecZenohJoinS?
+}
 
 // Default-valued primary constructor: the generated procedure_l2 code
 // holds codec instances as owned members and initializes them with
@@ -20,15 +65,14 @@ import com.sce.forge.runtime.SceSink
 // variant its document declares, since a closed set does not hold a
 // value it never declared.
 data class CodecZenohJoin(
-    var version: UByte = 0.toUByte(),
-    var cbyte: UByte = 0.toUByte(),
-    var zid: ByteArray = byteArrayOf(),
-    var sn_res: UByte? = null,
-    var batch_size: UShort? = null,
-    var lease: ULong = 0uL,
-    var next_sn_reliable: ULong = 0uL,
-    var next_sn_best_effort: ULong = 0uL
-) {
+    override var version: UByte = 0.toUByte(),
+    override var cbyte: UByte = 0.toUByte(),
+    override var zid: CodecZenohJoinZidBytes = CodecZenohJoinZidBytes.fewest(),
+    override var lease: ULong = 0uL,
+    override var next_sn_reliable: ULong = 0uL,
+    override var next_sn_best_effort: ULong = 0uL,
+    override var s: CodecZenohJoinS? = null
+) : CodecZenohJoinSource {
     // RFC §synth-5-B flags primitive: per-bit-range accessors over
     // the carrier field. Single-bit (width=1) reads as Boolean; multi-
     // bit (width>=2) reads as the smallest unsigned Kotlin type that
@@ -66,35 +110,13 @@ data class CodecZenohJoin(
     /// sinks (e.g. `MutableListSink`) are effectively infallible.
     @Suppress("UNUSED_PARAMETER")
     fun encode(w: SceSink, S: UByte): CodecError? {
-        if ((S.toInt() and 0x01) != 0) {
-            if (this.sn_res == null) return CodecError.PresentIfMismatch
-        } else if (this.sn_res != null) return CodecError.PresentIfMismatch
-        if ((S.toInt() and 0x01) != 0) {
-            if (this.batch_size == null) return CodecError.PresentIfMismatch
-        } else if (this.batch_size != null) return CodecError.PresentIfMismatch
-        if (this.zid.size < 1 || this.zid.size > 16) return CodecError.LengthOutOfRange
-        // Streaming cursor encode (SSOT selection: `needs_streaming`).
-        // Mirrors the streaming decode: every field appends its own bytes
-        // in declaration order through the per-field encode blocks, so a
-        // gated field skips its append when null, and a fixed field after
-        // a variable-length payload lands after the payload (the positional
-        // path appends variable fields last, placing it ahead on the wire).
-        // Per-field `is_repeat` / `is_tlv_chain` / `is_embed` route to their
-        // dedicated helpers; everything else uses `present_if_encode_block`.
-        w.writeU8(this.version.toByte())?.let { return it }
-        w.writeU8(this.cbyte.toByte())?.let { return it }
-        w.writeBytes(this.zid)?.let { return it }
-        this.sn_res?.let { _v ->
-            w.writeU8(_v.toByte())?.let { return it }
-        }
-        this.batch_size?.let { _v ->
-            w.writeU8((_v.toInt() and 0xFF).toByte())?.let { return it }
-            w.writeU8((_v.toInt() ushr 8 and 0xFF).toByte())?.let { return it }
-        }
-        w.writeVleU64(lease)?.let { return it }
-        w.writeVleU64(next_sn_reliable)?.let { return it }
-        w.writeVleU64(next_sn_best_effort)?.let { return it }
-        return null
+        // docs/adr/0081 step 4: the encode over any source, which derives
+        // every element the value does not present. It is handed the flag
+        // inputs the value does not say; one the value says is read off it,
+        // and what a caller hands this `encode` for it is held to that
+        // (docs/adr/0065 §6 R4a).
+        if (S != inputS(this)) return CodecError.PresentIfMismatch
+        return encodeSource(this, w)
     }
 
     /// Heap-backed convenience facade. Runs `encode` over a
@@ -113,6 +135,44 @@ data class CodecZenohJoin(
     }
 
     companion object {
+        /// Write any source of [CodecZenohJoin] into `w`: each element read once off
+        /// `src` and written where the codec's encode plan lays it out
+        /// (docs/adr/0081). It refuses no value: it answers `null`, or
+        /// [CodecError.BufferOverflow] from a bounded sink with no room left.
+        fun encodeSource(src: CodecZenohJoinSource, w: SceSink): CodecError? {
+            val _e_version = src.version
+            val _e_cbyte = src.cbyte
+            val _e_zid = src.zid
+            val _e_lease = src.lease
+            val _e_next_sn_reliable = src.next_sn_reliable
+            val _e_next_sn_best_effort = src.next_sn_best_effort
+            val _g_s = src.s
+            val _e_sn_res = _g_s?.sn_res
+            val _e_batch_size = _g_s?.batch_size
+            var _u_cbyte = _e_cbyte.toUInt()
+            _u_cbyte = (_u_cbyte and 0xF0u.inv()) or ((_e_zid.bytes.size - 1).toUInt() shl 4)
+            val _c_cbyte = _u_cbyte.toUByte()
+            w.writeU8(_e_version.toByte())?.let { return it }
+            w.writeU8(_c_cbyte.toByte())?.let { return it }
+            w.writeBytes(_e_zid.bytes)?.let { return it }
+            if (_e_sn_res != null) {
+                w.writeU8(_e_sn_res.toByte())?.let { return it }
+            }
+            if (_e_batch_size != null) {
+                w.writeU8((_e_batch_size.toInt() and 0xFF).toByte())?.let { return it }
+                w.writeU8((_e_batch_size.toInt() ushr 8 and 0xFF).toByte())?.let { return it }
+            }
+            w.writeVleU64(_e_lease)?.let { return it }
+            w.writeVleU64(_e_next_sn_reliable)?.let { return it }
+            w.writeVleU64(_e_next_sn_best_effort)?.let { return it }
+            return null
+        }
+
+        /// The flag input `S` a source of [CodecZenohJoin] says, which its encode
+        /// is not handed (docs/adr/0065 §6 R4a).
+        fun inputS(src: CodecZenohJoinSource): UByte =
+            (if (src.s != null) 1 else 0).toUByte()
+
         /// Decode the next frame from `cursor`. On success the cursor
         /// advances past the consumed bytes and the value is `Decoded.Ok`;
         /// a refused frame is `Decoded.Refused` with the kind that refused
@@ -177,12 +237,11 @@ data class CodecZenohJoin(
                 CodecZenohJoin(
                     version = version,
                     cbyte = cbyte,
-                    zid = zid,
-                    sn_res = sn_res,
-                    batch_size = batch_size,
+                    zid = CodecZenohJoinZidBytes.of(zid) ?: return Decoded.Refused(CodecError.LengthOutOfRange),
                     lease = lease,
                     next_sn_reliable = next_sn_reliable,
-                    next_sn_best_effort = next_sn_best_effort
+                    next_sn_best_effort = next_sn_best_effort,
+                    s = if (S.toUInt() != 0u) CodecZenohJoinS(sn_res = sn_res!!, batch_size = batch_size!!) else null
                 )
             )
         }

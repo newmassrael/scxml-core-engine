@@ -13,6 +13,25 @@ import com.sce.forge.runtime.SceCursor
 import com.sce.forge.runtime.SceSink
 import com.sce.generated.codec_zenoh_decl_ext_keyexpr_inner.*
 
+/// One-bit flags of [CodecZenohDeclExtKeyexpr] a parent may set in place of the ones a value
+/// presents, such as the flag a chain whose entries are [CodecZenohDeclExtKeyexpr] ends them
+/// on, which the chain derives from where each entry stands.
+class CodecZenohDeclExtKeyexprOverrides(
+    /// The `M` flag of `outer_header`, where a parent sets it.
+    val outer_header_M: Boolean? = null,
+    /// The `Z` flag of `outer_header`, where a parent sets it.
+    val outer_header_Z: Boolean? = null,
+)
+
+/// The elements a value of [CodecZenohDeclExtKeyexpr] presents, which its encode reads
+/// (docs/adr/0081 §2): any object that presents them is a source of it, which
+/// [CodecZenohDeclExtKeyexpr.encodeSource] writes. The encode derives every other element
+/// of the frame.
+interface CodecZenohDeclExtKeyexprSource {
+    val outer_header: UByte
+    val inner: CodecZenohDeclExtKeyexprInnerSource
+}
+
 // Default-valued primary constructor: the generated procedure_l2 code
 // holds codec instances as owned members and initializes them with
 // `CodecZenohDeclExtKeyexpr()` before any encode()/decode() call. Each default
@@ -21,10 +40,9 @@ import com.sce.generated.codec_zenoh_decl_ext_keyexpr_inner.*
 // variant its document declares, since a closed set does not hold a
 // value it never declared.
 data class CodecZenohDeclExtKeyexpr(
-    var outer_header: UByte = 0.toUByte(),
-    var total_length: ULong = 0uL,
-    var inner: CodecZenohDeclExtKeyexprInner = CodecZenohDeclExtKeyexprInner()
-) {
+    override var outer_header: UByte = 0.toUByte(),
+    override var inner: CodecZenohDeclExtKeyexprInner = CodecZenohDeclExtKeyexprInner()
+) : CodecZenohDeclExtKeyexprSource {
     // RFC §synth-5-B flags primitive: per-bit-range accessors over
     // the carrier field. Single-bit (width=1) reads as Boolean; multi-
     // bit (width>=2) reads as the smallest unsigned Kotlin type that
@@ -81,18 +99,12 @@ data class CodecZenohDeclExtKeyexpr(
     /// destination has insufficient remaining capacity; growable
     /// sinks (e.g. `MutableListSink`) are effectively infallible.
     fun encode(w: SceSink): CodecError? {
-        // Streaming cursor encode (SSOT selection: `needs_streaming`).
-        // Mirrors the streaming decode: every field appends its own bytes
-        // in declaration order through the per-field encode blocks, so a
-        // gated field skips its append when null, and a fixed field after
-        // a variable-length payload lands after the payload (the positional
-        // path appends variable fields last, placing it ahead on the wire).
-        // Per-field `is_repeat` / `is_tlv_chain` / `is_embed` route to their
-        // dedicated helpers; everything else uses `present_if_encode_block`.
-        w.writeU8(this.outer_header.toByte())?.let { return it }
-        w.writeVleU64(total_length)?.let { return it }
-        this.inner.encode(w)?.let { return it }
-        return null
+        // docs/adr/0081 step 4: the encode over any source, which derives
+        // every element the value does not present. It is handed the flag
+        // inputs the value does not say; one the value says is read off it,
+        // and what a caller hands this `encode` for it is held to that
+        // (docs/adr/0065 §6 R4a).
+        return encodeSource(this, w)
     }
 
     /// Heap-backed convenience facade. Runs `encode` over a
@@ -106,6 +118,29 @@ data class CodecZenohDeclExtKeyexpr(
     }
 
     companion object {
+        /// Write any source of [CodecZenohDeclExtKeyexpr] into `w`: each element read once off
+        /// `src` and written where the codec's encode plan lays it out
+        /// (docs/adr/0081). It derives `total_length` from what each measures, and never reads it off the
+        /// source. A chain that holds it
+        /// sets the flag its entries end on by `overrides`, in place of the value's. It refuses no value: it answers `null`, or
+        /// [CodecError.BufferOverflow] from a bounded sink with no room left.
+        fun encodeSource(src: CodecZenohDeclExtKeyexprSource, w: SceSink, overrides: CodecZenohDeclExtKeyexprOverrides? = null): CodecError? {
+            val _e_outer_header = src.outer_header
+            val _e_inner = src.inner
+            var _u_outer_header = _e_outer_header.toUInt()
+            overrides?.outer_header_M?.let { _u_outer_header = (_u_outer_header and 0x10u.inv()) or (if (it) 0x10u else 0x0u) }
+            overrides?.outer_header_Z?.let { _u_outer_header = (_u_outer_header and 0x80u.inv()) or (if (it) 0x80u else 0x0u) }
+            val _c_outer_header = _u_outer_header.toUByte()
+            val _l_inner = mutableListOf<Byte>()
+            CodecZenohDeclExtKeyexprInner.encodeSource(_e_inner, MutableListSink(_l_inner))?.let { return it }
+            val _b_inner = _l_inner.toByteArray()
+            val _d_total_length = _b_inner.size.toULong()
+            w.writeU8(_c_outer_header.toByte())?.let { return it }
+            w.writeVleU64(_d_total_length)?.let { return it }
+            w.writeBytes(_b_inner)?.let { return it }
+            return null
+        }
+
         /// Decode the next frame from `cursor`. On success the cursor
         /// advances past the consumed bytes and the value is `Decoded.Ok`;
         /// a refused frame is `Decoded.Refused` with the kind that refused
@@ -144,7 +179,6 @@ data class CodecZenohDeclExtKeyexpr(
             return Decoded.Ok(
                 CodecZenohDeclExtKeyexpr(
                     outer_header = outer_header,
-                    total_length = total_length,
                     inner = inner
                 )
             )

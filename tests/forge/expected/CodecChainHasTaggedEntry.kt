@@ -12,6 +12,24 @@ import com.sce.forge.runtime.MutableListSink
 import com.sce.forge.runtime.SceCursor
 import com.sce.forge.runtime.SceSink
 
+/// One-bit flags of [CodecChainHasTaggedEntry] a parent may set in place of the ones a value
+/// presents, such as the flag a chain whose entries are [CodecChainHasTaggedEntry] ends them
+/// on, which the chain derives from where each entry stands.
+class CodecChainHasTaggedEntryOverrides(
+    /// The `more` flag of `ctl`, where a parent sets it.
+    val ctl_more: Boolean? = null,
+)
+
+/// The elements a value of [CodecChainHasTaggedEntry] presents, which its encode reads
+/// (docs/adr/0081 §2): any object that presents them is a source of it, which
+/// [CodecChainHasTaggedEntry.encodeSource] writes. The encode derives every other element
+/// of the frame.
+interface CodecChainHasTaggedEntrySource {
+    val entry_type: UByte
+    val ctl: UByte
+    val body: UByte
+}
+
 // Default-valued primary constructor: the generated procedure_l2 code
 // holds codec instances as owned members and initializes them with
 // `CodecChainHasTaggedEntry()` before any encode()/decode() call. Each default
@@ -20,10 +38,10 @@ import com.sce.forge.runtime.SceSink
 // variant its document declares, since a closed set does not hold a
 // value it never declared.
 data class CodecChainHasTaggedEntry(
-    var entry_type: UByte = 0.toUByte(),
-    var ctl: UByte = 0.toUByte(),
-    var body: UByte = 0.toUByte()
-) {
+    override var entry_type: UByte = 0.toUByte(),
+    override var ctl: UByte = 0.toUByte(),
+    override var body: UByte = 0.toUByte()
+) : CodecChainHasTaggedEntrySource {
     // RFC §synth-5-B flags primitive: per-bit-range accessors over
     // the carrier field. Single-bit (width=1) reads as Boolean; multi-
     // bit (width>=2) reads as the smallest unsigned Kotlin type that
@@ -46,10 +64,12 @@ data class CodecChainHasTaggedEntry(
     /// destination has insufficient remaining capacity; growable
     /// sinks (e.g. `MutableListSink`) are effectively infallible.
     fun encode(w: SceSink): CodecError? {
-        w.writeU8(entry_type.toByte())?.let { return it }
-        w.writeU8(ctl.toByte())?.let { return it }
-        w.writeU8(body.toByte())?.let { return it }
-        return null
+        // docs/adr/0081 step 4: the encode over any source, which derives
+        // every element the value does not present. It is handed the flag
+        // inputs the value does not say; one the value says is read off it,
+        // and what a caller hands this `encode` for it is held to that
+        // (docs/adr/0065 §6 R4a).
+        return encodeSource(this, w)
     }
 
     /// Heap-backed convenience facade. Runs `encode` over a
@@ -63,6 +83,24 @@ data class CodecChainHasTaggedEntry(
     }
 
     companion object {
+        /// Write any source of [CodecChainHasTaggedEntry] into `w`: each element read once off
+        /// `src` and written where the codec's encode plan lays it out
+        /// (docs/adr/0081). A chain that holds it
+        /// sets the flag its entries end on by `overrides`, in place of the value's. It refuses no value: it answers `null`, or
+        /// [CodecError.BufferOverflow] from a bounded sink with no room left.
+        fun encodeSource(src: CodecChainHasTaggedEntrySource, w: SceSink, overrides: CodecChainHasTaggedEntryOverrides? = null): CodecError? {
+            val _e_entry_type = src.entry_type
+            val _e_ctl = src.ctl
+            val _e_body = src.body
+            var _u_ctl = _e_ctl.toUInt()
+            overrides?.ctl_more?.let { _u_ctl = (_u_ctl and 0x1u.inv()) or (if (it) 0x1u else 0x0u) }
+            val _c_ctl = _u_ctl.toUByte()
+            w.writeU8(_e_entry_type.toByte())?.let { return it }
+            w.writeU8(_c_ctl.toByte())?.let { return it }
+            w.writeU8(_e_body.toByte())?.let { return it }
+            return null
+        }
+
         /// Decode the next frame from `cursor`. On success the cursor
         /// advances past the consumed bytes and the value is `Decoded.Ok`;
         /// a refused frame is `Decoded.Refused` with the kind that refused

@@ -12,6 +12,56 @@ import com.sce.forge.runtime.MutableListSink
 import com.sce.forge.runtime.SceCursor
 import com.sce.forge.runtime.SceSink
 import com.sce.generated.codec_zenoh_ext_entry.*
+import kotlin.jvm.JvmInline
+
+/// The `parameters` element of [CodecZenohQuery], 0 or more bytes, the protocol stating no most, held to that bound where a
+/// value of it is made (docs/adr/0077 §3, docs/adr/0081 §2): its constructor is
+/// private and [of] makes a value only of bytes within the bound. The value it
+/// holds cannot change after, so a value holds its bound for as long as it lives.
+@JvmInline
+value class CodecZenohQueryParametersBytes private constructor(val bytes: ByteArray) {
+    companion object {
+        /// The fewest bytes a value holds.
+        const val LEAST: Int = 0
+
+        /// `bytes` as a value of the bound, or `null` where it lies outside it.
+        fun of(bytes: ByteArray): CodecZenohQueryParametersBytes? = CodecZenohQueryParametersBytes(bytes)
+
+        /// The fewest bytes the bound holds, each zero: what a value made by
+        /// default holds.
+        fun fewest(): CodecZenohQueryParametersBytes = CodecZenohQueryParametersBytes(ByteArray(LEAST))
+    }
+}
+
+/// The `extensions` element of [CodecZenohQuery], any number of entries, the protocol stating no most, held to that bound where a
+/// value of it is made (docs/adr/0065 §6 R2, docs/adr/0081 §2): its constructor is
+/// private and [of] makes a value only of entries within the bound, which it
+/// copies, so no list it was made of can grow it past its bound after.
+@JvmInline
+value class CodecZenohQueryExtensionsList private constructor(val entries: List<CodecZenohExtEntrySource>) : com.sce.forge.runtime.Counted {
+    /// How many entries the list holds, the count a frame writes of it.
+    override val size: Int
+        get() = entries.size
+
+    companion object {
+        /// `entries` as a value of the bound, or `null` where they lie outside it.
+        fun of(entries: List<CodecZenohExtEntrySource>): CodecZenohQueryExtensionsList? = CodecZenohQueryExtensionsList(entries.toList())
+
+        /// No entry: what a value made by default holds.
+        fun fewest(): CodecZenohQueryExtensionsList = CodecZenohQueryExtensionsList(emptyList())
+    }
+}
+
+/// The elements a value of [CodecZenohQuery] presents, which its encode reads
+/// (docs/adr/0081 §2): any object that presents them is a source of it, which
+/// [CodecZenohQuery.encodeSource] writes. The encode derives every other element
+/// of the frame.
+interface CodecZenohQuerySource {
+    val header: UByte
+    val consolidation: UByte?
+    val parameters: CodecZenohQueryParametersBytes?
+    val extensions: CodecZenohQueryExtensionsList?
+}
 
 // Default-valued primary constructor: the generated procedure_l2 code
 // holds codec instances as owned members and initializes them with
@@ -21,12 +71,11 @@ import com.sce.generated.codec_zenoh_ext_entry.*
 // variant its document declares, since a closed set does not hold a
 // value it never declared.
 data class CodecZenohQuery(
-    var header: UByte = 0x03.toUByte(),
-    var consolidation: UByte? = null,
-    var parameters_len: ULong? = null,
-    var parameters: ByteArray? = null,
-    var extensions: MutableList<CodecZenohExtEntry>? = null
-) {
+    override var header: UByte = 0x03.toUByte(),
+    override var consolidation: UByte? = null,
+    override var parameters: CodecZenohQueryParametersBytes? = null,
+    override var extensions: CodecZenohQueryExtensionsList? = null
+) : CodecZenohQuerySource {
     // RFC §synth-5-B flags primitive: per-bit-range accessors over
     // the carrier field. Single-bit (width=1) reads as Boolean; multi-
     // bit (width>=2) reads as the smallest unsigned Kotlin type that
@@ -81,30 +130,12 @@ data class CodecZenohQuery(
     /// destination has insufficient remaining capacity; growable
     /// sinks (e.g. `MutableListSink`) are effectively infallible.
     fun encode(w: SceSink): CodecError? {
-        // Streaming cursor encode (SSOT selection: `needs_streaming`).
-        // Mirrors the streaming decode: every field appends its own bytes
-        // in declaration order through the per-field encode blocks, so a
-        // gated field skips its append when null, and a fixed field after
-        // a variable-length payload lands after the payload (the positional
-        // path appends variable fields last, placing it ahead on the wire).
-        // Per-field `is_repeat` / `is_tlv_chain` / `is_embed` route to their
-        // dedicated helpers; everything else uses `present_if_encode_block`.
-        w.writeU8(this.header.toByte())?.let { return it }
-        this.consolidation?.let { _v ->
-            w.writeU8(_v.toByte())?.let { return it }
-        }
-        this.parameters_len?.let { _v ->
-        w.writeVleU64(_v)?.let { return it }
-        }
-        this.parameters?.let { _v ->
-            w.writeBytes(_v)?.let { return it }
-        }
-        this.extensions?.let { _list ->
-            for (_e in _list) {
-                _e.encode(w)?.let { return it }
-            }
-        }
-        return null
+        // docs/adr/0081 step 4: the encode over any source, which derives
+        // every element the value does not present. It is handed the flag
+        // inputs the value does not say; one the value says is read off it,
+        // and what a caller hands this `encode` for it is held to that
+        // (docs/adr/0065 §6 R4a).
+        return encodeSource(this, w)
     }
 
     /// Heap-backed convenience facade. Runs `encode` over a
@@ -118,6 +149,40 @@ data class CodecZenohQuery(
     }
 
     companion object {
+        /// Write any source of [CodecZenohQuery] into `w`: each element read once off
+        /// `src` and written where the codec's encode plan lays it out
+        /// (docs/adr/0081). It derives `parameters_len` from what each measures, and never reads it off the
+        /// source. It refuses no value: it answers `null`, or
+        /// [CodecError.BufferOverflow] from a bounded sink with no room left.
+        fun encodeSource(src: CodecZenohQuerySource, w: SceSink): CodecError? {
+            val _e_header = src.header
+            val _e_consolidation = src.consolidation
+            val _e_parameters = src.parameters
+            val _e_extensions = src.extensions
+            val _d_parameters_len = if (_e_parameters != null) _e_parameters.bytes.size.toULong() else 0.toULong()
+            var _u_header = _e_header.toUInt()
+            _u_header = (_u_header and 0x20u.inv()) or (if (_e_consolidation != null) 0x20u else 0x0u)
+            _u_header = (_u_header and 0x40u.inv()) or (if (_e_parameters != null) 0x40u else 0x0u)
+            _u_header = (_u_header and 0x80u.inv()) or (if (_e_extensions != null) 0x80u else 0x0u)
+            val _c_header = _u_header.toUByte()
+            w.writeU8(_c_header.toByte())?.let { return it }
+            if (_e_consolidation != null) {
+                w.writeU8(_e_consolidation.toByte())?.let { return it }
+            }
+            if (((_c_header.toUInt() shr 6) and 0x1u) != 0x0u) {
+                w.writeVleU64(_d_parameters_len)?.let { return it }
+            }
+            if (_e_parameters != null) {
+                w.writeBytes(_e_parameters.bytes)?.let { return it }
+            }
+            if (_e_extensions != null) {
+                for (_entry in _e_extensions.entries) {
+                    CodecZenohExtEntry.encodeSource(_entry, w)?.let { return it }
+                }
+            }
+            return null
+        }
+
         /// Decode the next frame from `cursor`. On success the cursor
         /// advances past the consumed bytes and the value is `Decoded.Ok`;
         /// a refused frame is `Decoded.Refused` with the kind that refused
@@ -183,9 +248,8 @@ data class CodecZenohQuery(
                 CodecZenohQuery(
                     header = header,
                     consolidation = consolidation,
-                    parameters_len = parameters_len,
-                    parameters = parameters,
-                    extensions = extensions
+                    parameters = parameters?.let { CodecZenohQueryParametersBytes.of(it) ?: return Decoded.Refused(CodecError.LengthOutOfRange) },
+                    extensions = extensions?.let { CodecZenohQueryExtensionsList.of(it) ?: return Decoded.Refused(CodecError.TooManyElements) }
                 )
             )
         }

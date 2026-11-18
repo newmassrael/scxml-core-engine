@@ -12,6 +12,39 @@ import com.sce.forge.runtime.MutableListSink
 import com.sce.forge.runtime.SceCursor
 import com.sce.forge.runtime.SceSink
 import com.sce.generated.codec_tlv_entry.*
+import kotlin.jvm.JvmInline
+
+/// The `entries` element of [CodecTlvChainPresentIfBasic], 0 to 4 entries, held to that bound where a
+/// value of it is made (docs/adr/0065 §6 R2, docs/adr/0081 §2): its constructor is
+/// private and [of] makes a value only of entries within the bound, which it
+/// copies, so no list it was made of can grow it past its bound after.
+@JvmInline
+value class CodecTlvChainPresentIfBasicEntriesList private constructor(val entries: List<CodecTlvEntrySource>) : com.sce.forge.runtime.Counted {
+    /// How many entries the list holds, the count a frame writes of it.
+    override val size: Int
+        get() = entries.size
+
+    companion object {
+        /// The most entries a value holds.
+        const val MOST: Int = 4
+
+        /// `entries` as a value of the bound, or `null` where they lie outside it.
+        fun of(entries: List<CodecTlvEntrySource>): CodecTlvChainPresentIfBasicEntriesList? =
+            if (entries.size <= MOST) CodecTlvChainPresentIfBasicEntriesList(entries.toList()) else null
+
+        /// No entry: what a value made by default holds.
+        fun fewest(): CodecTlvChainPresentIfBasicEntriesList = CodecTlvChainPresentIfBasicEntriesList(emptyList())
+    }
+}
+
+/// The elements a value of [CodecTlvChainPresentIfBasic] presents, which its encode reads
+/// (docs/adr/0081 §2): any object that presents them is a source of it, which
+/// [CodecTlvChainPresentIfBasic.encodeSource] writes. The encode derives every other element
+/// of the frame.
+interface CodecTlvChainPresentIfBasicSource {
+    val carrier: UByte
+    val entries: CodecTlvChainPresentIfBasicEntriesList?
+}
 
 // Default-valued primary constructor: the generated procedure_l2 code
 // holds codec instances as owned members and initializes them with
@@ -21,9 +54,9 @@ import com.sce.generated.codec_tlv_entry.*
 // variant its document declares, since a closed set does not hold a
 // value it never declared.
 data class CodecTlvChainPresentIfBasic(
-    var carrier: UByte = 0.toUByte(),
-    var entries: MutableList<CodecTlvEntry>? = null
-) {
+    override var carrier: UByte = 0.toUByte(),
+    override var entries: CodecTlvChainPresentIfBasicEntriesList? = null
+) : CodecTlvChainPresentIfBasicSource {
     // RFC §synth-5-B flags primitive: per-bit-range accessors over
     // the carrier field. Single-bit (width=1) reads as Boolean; multi-
     // bit (width>=2) reads as the smallest unsigned Kotlin type that
@@ -46,40 +79,44 @@ data class CodecTlvChainPresentIfBasic(
     /// destination has insufficient remaining capacity; growable
     /// sinks (e.g. `MutableListSink`) are effectively infallible.
     fun encode(w: SceSink): CodecError? {
-        this.entries?.let { if (it.size > 4) return CodecError.TooManyElements }
-        // Streaming cursor encode (SSOT selection: `needs_streaming`).
-        // Mirrors the streaming decode: every field appends its own bytes
-        // in declaration order through the per-field encode blocks, so a
-        // gated field skips its append when null, and a fixed field after
-        // a variable-length payload lands after the payload (the positional
-        // path appends variable fields last, placing it ahead on the wire).
-        // Per-field `is_repeat` / `is_tlv_chain` / `is_embed` route to their
-        // dedicated helpers; everything else uses `present_if_encode_block`.
-        w.writeU8(this.carrier.toByte())?.let { return it }
-        this.entries?.let { _list ->
-            for (_e in _list) {
-                _e.encode(w)?.let { return it }
-            }
-        }
-        return null
+        // docs/adr/0081 step 4: the encode over any source, which derives
+        // every element the value does not present. It is handed the flag
+        // inputs the value does not say; one the value says is read off it,
+        // and what a caller hands this `encode` for it is held to that
+        // (docs/adr/0065 §6 R4a).
+        return encodeSource(this, w)
     }
 
     /// Heap-backed convenience facade. Runs `encode` over a
-    /// `MutableListSink` and returns the freshly-encoded ByteArray, or
-    /// `null` when `encode` refuses the value before its first byte: a
-    /// gated field and the `sce:present-if` that gates it contradict each
-    /// other (`CodecError.PresentIfMismatch`), or a byte string, text or
-    /// list lies outside its bound (`CodecError.LengthOutOfRange`,
-    /// `CodecError.TooManyElements`). Callers that need the reason, and
-    /// zero-alloc hot paths, call `encode` directly against a caller-owned
-    /// sink (e.g. `ByteArraySink`).
-    fun encodeToByteArray(): ByteArray? {
+    /// `MutableListSink` and returns the freshly-encoded ByteArray.
+    /// Callers targeting zero-alloc hot paths should call `encode`
+    /// directly against a caller-owned sink (e.g. `ByteArraySink`).
+    fun encodeToByteArray(): ByteArray {
         val _list = mutableListOf<Byte>()
-        if (encode(MutableListSink(_list)) != null) return null
+        encode(MutableListSink(_list))
         return _list.toByteArray()
     }
 
     companion object {
+        /// Write any source of [CodecTlvChainPresentIfBasic] into `w`: each element read once off
+        /// `src` and written where the codec's encode plan lays it out
+        /// (docs/adr/0081). It refuses no value: it answers `null`, or
+        /// [CodecError.BufferOverflow] from a bounded sink with no room left.
+        fun encodeSource(src: CodecTlvChainPresentIfBasicSource, w: SceSink): CodecError? {
+            val _e_carrier = src.carrier
+            val _e_entries = src.entries
+            var _u_carrier = _e_carrier.toUInt()
+            _u_carrier = (_u_carrier and 0x1u.inv()) or (if (_e_entries != null) 0x1u else 0x0u)
+            val _c_carrier = _u_carrier.toUByte()
+            w.writeU8(_c_carrier.toByte())?.let { return it }
+            if (_e_entries != null) {
+                for (_entry in _e_entries.entries) {
+                    CodecTlvEntry.encodeSource(_entry, w)?.let { return it }
+                }
+            }
+            return null
+        }
+
         /// Decode the next frame from `cursor`. On success the cursor
         /// advances past the consumed bytes and the value is `Decoded.Ok`;
         /// a refused frame is `Decoded.Refused` with the kind that refused
@@ -120,7 +157,7 @@ data class CodecTlvChainPresentIfBasic(
             return Decoded.Ok(
                 CodecTlvChainPresentIfBasic(
                     carrier = carrier,
-                    entries = entries
+                    entries = entries?.let { CodecTlvChainPresentIfBasicEntriesList.of(it) ?: return Decoded.Refused(CodecError.TooManyElements) }
                 )
             )
         }

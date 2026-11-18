@@ -13,6 +13,23 @@ import com.sce.forge.runtime.SceCursor
 import com.sce.forge.runtime.SceSink
 import com.sce.generated.codec_zenoh_wireexpr.*
 
+/// The `z` group of [CodecZenohDeclQueryable] where `Z` holds (docs/adr/0065 §6 R4): the
+/// members present then.
+data class CodecZenohDeclQueryableZ(
+    val ext_type: UByte = 0.toUByte(),
+    val ext_value: ULong = 0uL
+)
+
+/// The elements a value of [CodecZenohDeclQueryable] presents, which its encode reads
+/// (docs/adr/0081 §2): any object that presents them is a source of it, which
+/// [CodecZenohDeclQueryable.encodeSource] writes. The encode derives every other element
+/// of the frame.
+interface CodecZenohDeclQueryableSource {
+    val id: UInt
+    val wireexpr: CodecZenohWireexprSource
+    val z: CodecZenohDeclQueryableZ?
+}
+
 // Default-valued primary constructor: the generated procedure_l2 code
 // holds codec instances as owned members and initializes them with
 // `CodecZenohDeclQueryable()` before any encode()/decode() call. Each default
@@ -21,11 +38,10 @@ import com.sce.generated.codec_zenoh_wireexpr.*
 // variant its document declares, since a closed set does not hold a
 // value it never declared.
 data class CodecZenohDeclQueryable(
-    var id: UInt = 0u,
-    var wireexpr: CodecZenohWireexpr = CodecZenohWireexpr(),
-    var ext_type: UByte? = null,
-    var ext_value: ULong? = null
-) {
+    override var id: UInt = 0u,
+    override var wireexpr: CodecZenohWireexpr = CodecZenohWireexpr(),
+    override var z: CodecZenohDeclQueryableZ? = null
+) : CodecZenohDeclQueryableSource {
     /// RFC §synth-5-B encode-side primary: write `self` into the
     /// caller-owned `w` sink. Returns `null` on success;
     /// `CodecError.BufferOverflow` from a bounded sink when the
@@ -33,29 +49,14 @@ data class CodecZenohDeclQueryable(
     /// sinks (e.g. `MutableListSink`) are effectively infallible.
     @Suppress("UNUSED_PARAMETER")
     fun encode(w: SceSink, N: UByte, Z: UByte): CodecError? {
-        if ((Z.toInt() and 0x01) != 0) {
-            if (this.ext_type == null) return CodecError.PresentIfMismatch
-        } else if (this.ext_type != null) return CodecError.PresentIfMismatch
-        if ((Z.toInt() and 0x01) != 0) {
-            if (this.ext_value == null) return CodecError.PresentIfMismatch
-        } else if (this.ext_value != null) return CodecError.PresentIfMismatch
-        // Streaming cursor encode (SSOT selection: `needs_streaming`).
-        // Mirrors the streaming decode: every field appends its own bytes
-        // in declaration order through the per-field encode blocks, so a
-        // gated field skips its append when null, and a fixed field after
-        // a variable-length payload lands after the payload (the positional
-        // path appends variable fields last, placing it ahead on the wire).
-        // Per-field `is_repeat` / `is_tlv_chain` / `is_embed` route to their
-        // dedicated helpers; everything else uses `present_if_encode_block`.
-        w.writeVleU32(id)?.let { return it }
-        this.wireexpr.encode(w, N)?.let { return it }
-        this.ext_type?.let { _v ->
-            w.writeU8(_v.toByte())?.let { return it }
-        }
-        this.ext_value?.let { _v ->
-        w.writeVleU64(_v)?.let { return it }
-        }
-        return null
+        // docs/adr/0081 step 4: the encode over any source, which derives
+        // every element the value does not present. It is handed the flag
+        // inputs the value does not say; one the value says is read off it,
+        // and what a caller hands this `encode` for it is held to that
+        // (docs/adr/0065 §6 R4a).
+        if (N != inputN(this)) return CodecError.PresentIfMismatch
+        if (Z != inputZ(this)) return CodecError.PresentIfMismatch
+        return encodeSource(this, w)
     }
 
     /// Heap-backed convenience facade. Runs `encode` over a
@@ -74,6 +75,37 @@ data class CodecZenohDeclQueryable(
     }
 
     companion object {
+        /// Write any source of [CodecZenohDeclQueryable] into `w`: each element read once off
+        /// `src` and written where the codec's encode plan lays it out
+        /// (docs/adr/0081). It refuses no value: it answers `null`, or
+        /// [CodecError.BufferOverflow] from a bounded sink with no room left.
+        fun encodeSource(src: CodecZenohDeclQueryableSource, w: SceSink): CodecError? {
+            val _e_id = src.id
+            val _e_wireexpr = src.wireexpr
+            val _g_z = src.z
+            val _e_ext_type = _g_z?.ext_type
+            val _e_ext_value = _g_z?.ext_value
+            w.writeVleU32(_e_id)?.let { return it }
+            CodecZenohWireexpr.encodeSource(_e_wireexpr, w)?.let { return it }
+            if (_e_ext_type != null) {
+                w.writeU8(_e_ext_type.toByte())?.let { return it }
+            }
+            if (_e_ext_value != null) {
+                w.writeVleU64(_e_ext_value)?.let { return it }
+            }
+            return null
+        }
+
+        /// The flag input `N` a source of [CodecZenohDeclQueryable] says, which its encode
+        /// is not handed (docs/adr/0065 §6 R4a).
+        fun inputN(src: CodecZenohDeclQueryableSource): UByte =
+            CodecZenohWireexpr.inputN(src.wireexpr)
+
+        /// The flag input `Z` a source of [CodecZenohDeclQueryable] says, which its encode
+        /// is not handed (docs/adr/0065 §6 R4a).
+        fun inputZ(src: CodecZenohDeclQueryableSource): UByte =
+            (if (src.z != null) 1 else 0).toUByte()
+
         /// Decode the next frame from `cursor`. On success the cursor
         /// advances past the consumed bytes and the value is `Decoded.Ok`;
         /// a refused frame is `Decoded.Refused` with the kind that refused
@@ -115,8 +147,7 @@ data class CodecZenohDeclQueryable(
                 CodecZenohDeclQueryable(
                     id = id,
                     wireexpr = wireexpr,
-                    ext_type = ext_type,
-                    ext_value = ext_value
+                    z = if (Z.toUInt() != 0u) CodecZenohDeclQueryableZ(ext_type = ext_type!!, ext_value = ext_value!!) else null
                 )
             )
         }

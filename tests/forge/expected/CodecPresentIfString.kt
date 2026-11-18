@@ -11,6 +11,41 @@ import com.sce.forge.runtime.Decoded
 import com.sce.forge.runtime.MutableListSink
 import com.sce.forge.runtime.SceCursor
 import com.sce.forge.runtime.SceSink
+import kotlin.jvm.JvmInline
+
+/// The `text` element of [CodecPresentIfString], 0 to 32 UTF-8 bytes, held to that bound where a
+/// value of it is made (docs/adr/0077 §3, docs/adr/0081 §2): its constructor is
+/// private and [of] makes a value only of a text within the bound. The value it
+/// holds cannot change after, so a value holds its bound for as long as it lives.
+@JvmInline
+value class CodecPresentIfStringTextText private constructor(val text: String) {
+    companion object {
+        /// The fewest UTF-8 bytes a value holds.
+        const val LEAST: Int = 0
+
+        /// The most UTF-8 bytes a value holds.
+        const val MOST: Int = 32
+
+        /// `text` as a value of the bound, or `null` where it lies outside it.
+        fun of(text: String): CodecPresentIfStringTextText? {
+            val size = com.sce.forge.runtime.Utf8.size(text) ?: return null
+            return if (size <= MOST) CodecPresentIfStringTextText(text) else null
+        }
+
+        /// The fewest UTF-8 bytes the bound holds, each zero: what a value made by
+        /// default holds.
+        fun fewest(): CodecPresentIfStringTextText = CodecPresentIfStringTextText("\u0000".repeat(LEAST))
+    }
+}
+
+/// The elements a value of [CodecPresentIfString] presents, which its encode reads
+/// (docs/adr/0081 §2): any object that presents them is a source of it, which
+/// [CodecPresentIfString.encodeSource] writes. The encode derives every other element
+/// of the frame.
+interface CodecPresentIfStringSource {
+    val carrier: UByte
+    val text: CodecPresentIfStringTextText?
+}
 
 // Default-valued primary constructor: the generated procedure_l2 code
 // holds codec instances as owned members and initializes them with
@@ -20,10 +55,9 @@ import com.sce.forge.runtime.SceSink
 // variant its document declares, since a closed set does not hold a
 // value it never declared.
 data class CodecPresentIfString(
-    var carrier: UByte = 0.toUByte(),
-    var text_len: UByte? = null,
-    var text: String? = null
-) {
+    override var carrier: UByte = 0.toUByte(),
+    override var text: CodecPresentIfStringTextText? = null
+) : CodecPresentIfStringSource {
     // RFC §synth-5-B flags primitive: per-bit-range accessors over
     // the carrier field. Single-bit (width=1) reads as Boolean; multi-
     // bit (width>=2) reads as the smallest unsigned Kotlin type that
@@ -46,41 +80,47 @@ data class CodecPresentIfString(
     /// destination has insufficient remaining capacity; growable
     /// sinks (e.g. `MutableListSink`) are effectively infallible.
     fun encode(w: SceSink): CodecError? {
-        this.text?.let { if (it.encodeToByteArray().size > 32) return CodecError.LengthOutOfRange }
-        // Streaming cursor encode (SSOT selection: `needs_streaming`).
-        // Mirrors the streaming decode: every field appends its own bytes
-        // in declaration order through the per-field encode blocks, so a
-        // gated field skips its append when null, and a fixed field after
-        // a variable-length payload lands after the payload (the positional
-        // path appends variable fields last, placing it ahead on the wire).
-        // Per-field `is_repeat` / `is_tlv_chain` / `is_embed` route to their
-        // dedicated helpers; everything else uses `present_if_encode_block`.
-        w.writeU8(this.carrier.toByte())?.let { return it }
-        this.text_len?.let { _v ->
-            w.writeU8(_v.toByte())?.let { return it }
-        }
-        this.text?.let { _v ->
-            w.writeBytes(_v.toByteArray(Charsets.UTF_8))?.let { return it }
-        }
-        return null
+        // docs/adr/0081 step 4: the encode over any source, which derives
+        // every element the value does not present. It is handed the flag
+        // inputs the value does not say; one the value says is read off it,
+        // and what a caller hands this `encode` for it is held to that
+        // (docs/adr/0065 §6 R4a).
+        return encodeSource(this, w)
     }
 
     /// Heap-backed convenience facade. Runs `encode` over a
-    /// `MutableListSink` and returns the freshly-encoded ByteArray, or
-    /// `null` when `encode` refuses the value before its first byte: a
-    /// gated field and the `sce:present-if` that gates it contradict each
-    /// other (`CodecError.PresentIfMismatch`), or a byte string, text or
-    /// list lies outside its bound (`CodecError.LengthOutOfRange`,
-    /// `CodecError.TooManyElements`). Callers that need the reason, and
-    /// zero-alloc hot paths, call `encode` directly against a caller-owned
-    /// sink (e.g. `ByteArraySink`).
-    fun encodeToByteArray(): ByteArray? {
+    /// `MutableListSink` and returns the freshly-encoded ByteArray.
+    /// Callers targeting zero-alloc hot paths should call `encode`
+    /// directly against a caller-owned sink (e.g. `ByteArraySink`).
+    fun encodeToByteArray(): ByteArray {
         val _list = mutableListOf<Byte>()
-        if (encode(MutableListSink(_list)) != null) return null
+        encode(MutableListSink(_list))
         return _list.toByteArray()
     }
 
     companion object {
+        /// Write any source of [CodecPresentIfString] into `w`: each element read once off
+        /// `src` and written where the codec's encode plan lays it out
+        /// (docs/adr/0081). It derives `text_len` from what each measures, and never reads it off the
+        /// source. It refuses no value: it answers `null`, or
+        /// [CodecError.BufferOverflow] from a bounded sink with no room left.
+        fun encodeSource(src: CodecPresentIfStringSource, w: SceSink): CodecError? {
+            val _e_carrier = src.carrier
+            val _e_text = src.text
+            val _d_text_len = if (_e_text != null) _e_text.text.encodeToByteArray().size.toUByte() else 0.toUByte()
+            var _u_carrier = _e_carrier.toUInt()
+            _u_carrier = (_u_carrier and 0x1u.inv()) or (if (_e_text != null) 0x1u else 0x0u)
+            val _c_carrier = _u_carrier.toUByte()
+            w.writeU8(_c_carrier.toByte())?.let { return it }
+            if (((_c_carrier.toUInt() shr 0) and 0x1u) != 0x0u) {
+                w.writeU8(_d_text_len.toByte())?.let { return it }
+            }
+            if (_e_text != null) {
+                w.writeBytes(_e_text.text.encodeToByteArray())?.let { return it }
+            }
+            return null
+        }
+
         /// Decode the next frame from `cursor`. On success the cursor
         /// advances past the consumed bytes and the value is `Decoded.Ok`;
         /// a refused frame is `Decoded.Refused` with the kind that refused
@@ -134,8 +174,7 @@ data class CodecPresentIfString(
             return Decoded.Ok(
                 CodecPresentIfString(
                     carrier = carrier,
-                    text_len = text_len,
-                    text = text
+                    text = text?.let { CodecPresentIfStringTextText.of(it) ?: return Decoded.Refused(CodecError.LengthOutOfRange) }
                 )
             )
         }

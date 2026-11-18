@@ -18,6 +18,371 @@ import com.sce.generated.pattern_kind.*
 import com.sce.generated.payload_codec.*
 import com.sce.generated.rpc_status.*
 import com.sce.generated.causal_entry.*
+import kotlin.jvm.JvmInline
+
+/// The `id` element of [Envelope], 16 to 16 bytes, held to that bound where a
+/// value of it is made (docs/adr/0077 §3, docs/adr/0081 §2): its constructor is
+/// private and [of] makes a value only of bytes within the bound. The value it
+/// holds cannot change after, so a value holds its bound for as long as it lives.
+@JvmInline
+value class EnvelopeIdBytes private constructor(val bytes: ByteArray) {
+    companion object {
+        /// The fewest bytes a value holds.
+        const val LEAST: Int = 16
+
+        /// The most bytes a value holds.
+        const val MOST: Int = 16
+
+        /// `bytes` as a value of the bound, or `null` where it lies outside it.
+        fun of(bytes: ByteArray): EnvelopeIdBytes? =
+            if (bytes.size in LEAST..MOST) EnvelopeIdBytes(bytes) else null
+
+        /// The fewest bytes the bound holds, each zero: what a value made by
+        /// default holds.
+        fun fewest(): EnvelopeIdBytes = EnvelopeIdBytes(ByteArray(LEAST))
+    }
+}
+
+/// The `source` element of [Envelope], 0 to 262144 UTF-8 bytes, held to that bound where a
+/// value of it is made (docs/adr/0077 §3, docs/adr/0081 §2): its constructor is
+/// private and [of] makes a value only of a text within the bound. The value it
+/// holds cannot change after, so a value holds its bound for as long as it lives.
+@JvmInline
+value class EnvelopeSourceText private constructor(val text: String) {
+    companion object {
+        /// The fewest UTF-8 bytes a value holds.
+        const val LEAST: Int = 0
+
+        /// The most UTF-8 bytes a value holds.
+        const val MOST: Int = 262144
+
+        /// `text` as a value of the bound, or `null` where it lies outside it.
+        fun of(text: String): EnvelopeSourceText? {
+            val size = com.sce.forge.runtime.Utf8.size(text) ?: return null
+            return if (size <= MOST) EnvelopeSourceText(text) else null
+        }
+
+        /// The fewest UTF-8 bytes the bound holds, each zero: what a value made by
+        /// default holds.
+        fun fewest(): EnvelopeSourceText = EnvelopeSourceText("\u0000".repeat(LEAST))
+    }
+}
+
+/// The `event_type` element of [Envelope], 0 to 262144 UTF-8 bytes, held to that bound where a
+/// value of it is made (docs/adr/0077 §3, docs/adr/0081 §2): its constructor is
+/// private and [of] makes a value only of a text within the bound. The value it
+/// holds cannot change after, so a value holds its bound for as long as it lives.
+@JvmInline
+value class EnvelopeEventTypeText private constructor(val text: String) {
+    companion object {
+        /// The fewest UTF-8 bytes a value holds.
+        const val LEAST: Int = 0
+
+        /// The most UTF-8 bytes a value holds.
+        const val MOST: Int = 262144
+
+        /// `text` as a value of the bound, or `null` where it lies outside it.
+        fun of(text: String): EnvelopeEventTypeText? {
+            val size = com.sce.forge.runtime.Utf8.size(text) ?: return null
+            return if (size <= MOST) EnvelopeEventTypeText(text) else null
+        }
+
+        /// The fewest UTF-8 bytes the bound holds, each zero: what a value made by
+        /// default holds.
+        fun fewest(): EnvelopeEventTypeText = EnvelopeEventTypeText("\u0000".repeat(LEAST))
+    }
+}
+
+/// The `data` element of [Envelope], 0 to 16777216 bytes, held to that bound where a
+/// value of it is made (docs/adr/0077 §3, docs/adr/0081 §2): its constructor is
+/// private and [of] makes a value only of bytes within the bound. The value it
+/// holds cannot change after, so a value holds its bound for as long as it lives.
+@JvmInline
+value class EnvelopeDataBytes private constructor(val bytes: ByteArray) {
+    companion object {
+        /// The fewest bytes a value holds.
+        const val LEAST: Int = 0
+
+        /// The most bytes a value holds.
+        const val MOST: Int = 16777216
+
+        /// `bytes` as a value of the bound, or `null` where it lies outside it.
+        fun of(bytes: ByteArray): EnvelopeDataBytes? =
+            if (bytes.size <= MOST) EnvelopeDataBytes(bytes) else null
+
+        /// The fewest bytes the bound holds, each zero: what a value made by
+        /// default holds.
+        fun fewest(): EnvelopeDataBytes = EnvelopeDataBytes(ByteArray(LEAST))
+    }
+}
+
+/// The `subject` element of [Envelope], 0 to 262144 UTF-8 bytes, held to that bound where a
+/// value of it is made (docs/adr/0077 §3, docs/adr/0081 §2): its constructor is
+/// private and [of] makes a value only of a text within the bound. The value it
+/// holds cannot change after, so a value holds its bound for as long as it lives.
+@JvmInline
+value class EnvelopeSubjectText private constructor(val text: String) {
+    companion object {
+        /// The fewest UTF-8 bytes a value holds.
+        const val LEAST: Int = 0
+
+        /// The most UTF-8 bytes a value holds.
+        const val MOST: Int = 262144
+
+        /// `text` as a value of the bound, or `null` where it lies outside it.
+        fun of(text: String): EnvelopeSubjectText? {
+            val size = com.sce.forge.runtime.Utf8.size(text) ?: return null
+            return if (size <= MOST) EnvelopeSubjectText(text) else null
+        }
+
+        /// The fewest UTF-8 bytes the bound holds, each zero: what a value made by
+        /// default holds.
+        fun fewest(): EnvelopeSubjectText = EnvelopeSubjectText("\u0000".repeat(LEAST))
+    }
+}
+
+/// The `correlation_id` element of [Envelope], 16 to 16 bytes, held to that bound where a
+/// value of it is made (docs/adr/0077 §3, docs/adr/0081 §2): its constructor is
+/// private and [of] makes a value only of bytes within the bound. The value it
+/// holds cannot change after, so a value holds its bound for as long as it lives.
+@JvmInline
+value class EnvelopeCorrelationIdBytes private constructor(val bytes: ByteArray) {
+    companion object {
+        /// The fewest bytes a value holds.
+        const val LEAST: Int = 16
+
+        /// The most bytes a value holds.
+        const val MOST: Int = 16
+
+        /// `bytes` as a value of the bound, or `null` where it lies outside it.
+        fun of(bytes: ByteArray): EnvelopeCorrelationIdBytes? =
+            if (bytes.size in LEAST..MOST) EnvelopeCorrelationIdBytes(bytes) else null
+
+        /// The fewest bytes the bound holds, each zero: what a value made by
+        /// default holds.
+        fun fewest(): EnvelopeCorrelationIdBytes = EnvelopeCorrelationIdBytes(ByteArray(LEAST))
+    }
+}
+
+/// The `reply_to` element of [Envelope], 0 to 262144 UTF-8 bytes, held to that bound where a
+/// value of it is made (docs/adr/0077 §3, docs/adr/0081 §2): its constructor is
+/// private and [of] makes a value only of a text within the bound. The value it
+/// holds cannot change after, so a value holds its bound for as long as it lives.
+@JvmInline
+value class EnvelopeReplyToText private constructor(val text: String) {
+    companion object {
+        /// The fewest UTF-8 bytes a value holds.
+        const val LEAST: Int = 0
+
+        /// The most UTF-8 bytes a value holds.
+        const val MOST: Int = 262144
+
+        /// `text` as a value of the bound, or `null` where it lies outside it.
+        fun of(text: String): EnvelopeReplyToText? {
+            val size = com.sce.forge.runtime.Utf8.size(text) ?: return null
+            return if (size <= MOST) EnvelopeReplyToText(text) else null
+        }
+
+        /// The fewest UTF-8 bytes the bound holds, each zero: what a value made by
+        /// default holds.
+        fun fewest(): EnvelopeReplyToText = EnvelopeReplyToText("\u0000".repeat(LEAST))
+    }
+}
+
+/// The `invoke_id` element of [Envelope], 16 to 16 bytes, held to that bound where a
+/// value of it is made (docs/adr/0077 §3, docs/adr/0081 §2): its constructor is
+/// private and [of] makes a value only of bytes within the bound. The value it
+/// holds cannot change after, so a value holds its bound for as long as it lives.
+@JvmInline
+value class EnvelopeInvokeIdBytes private constructor(val bytes: ByteArray) {
+    companion object {
+        /// The fewest bytes a value holds.
+        const val LEAST: Int = 16
+
+        /// The most bytes a value holds.
+        const val MOST: Int = 16
+
+        /// `bytes` as a value of the bound, or `null` where it lies outside it.
+        fun of(bytes: ByteArray): EnvelopeInvokeIdBytes? =
+            if (bytes.size in LEAST..MOST) EnvelopeInvokeIdBytes(bytes) else null
+
+        /// The fewest bytes the bound holds, each zero: what a value made by
+        /// default holds.
+        fun fewest(): EnvelopeInvokeIdBytes = EnvelopeInvokeIdBytes(ByteArray(LEAST))
+    }
+}
+
+/// The `rpc_error_message` element of [Envelope], 0 to 262144 UTF-8 bytes, held to that bound where a
+/// value of it is made (docs/adr/0077 §3, docs/adr/0081 §2): its constructor is
+/// private and [of] makes a value only of a text within the bound. The value it
+/// holds cannot change after, so a value holds its bound for as long as it lives.
+@JvmInline
+value class EnvelopeRpcErrorMessageText private constructor(val text: String) {
+    companion object {
+        /// The fewest UTF-8 bytes a value holds.
+        const val LEAST: Int = 0
+
+        /// The most UTF-8 bytes a value holds.
+        const val MOST: Int = 262144
+
+        /// `text` as a value of the bound, or `null` where it lies outside it.
+        fun of(text: String): EnvelopeRpcErrorMessageText? {
+            val size = com.sce.forge.runtime.Utf8.size(text) ?: return null
+            return if (size <= MOST) EnvelopeRpcErrorMessageText(text) else null
+        }
+
+        /// The fewest UTF-8 bytes the bound holds, each zero: what a value made by
+        /// default holds.
+        fun fewest(): EnvelopeRpcErrorMessageText = EnvelopeRpcErrorMessageText("\u0000".repeat(LEAST))
+    }
+}
+
+/// The `routing_id` element of [Envelope], 16 to 16 bytes, held to that bound where a
+/// value of it is made (docs/adr/0077 §3, docs/adr/0081 §2): its constructor is
+/// private and [of] makes a value only of bytes within the bound. The value it
+/// holds cannot change after, so a value holds its bound for as long as it lives.
+@JvmInline
+value class EnvelopeRoutingIdBytes private constructor(val bytes: ByteArray) {
+    companion object {
+        /// The fewest bytes a value holds.
+        const val LEAST: Int = 16
+
+        /// The most bytes a value holds.
+        const val MOST: Int = 16
+
+        /// `bytes` as a value of the bound, or `null` where it lies outside it.
+        fun of(bytes: ByteArray): EnvelopeRoutingIdBytes? =
+            if (bytes.size in LEAST..MOST) EnvelopeRoutingIdBytes(bytes) else null
+
+        /// The fewest bytes the bound holds, each zero: what a value made by
+        /// default holds.
+        fun fewest(): EnvelopeRoutingIdBytes = EnvelopeRoutingIdBytes(ByteArray(LEAST))
+    }
+}
+
+/// The `parallel_id` element of [Envelope], 0 to 262144 UTF-8 bytes, held to that bound where a
+/// value of it is made (docs/adr/0077 §3, docs/adr/0081 §2): its constructor is
+/// private and [of] makes a value only of a text within the bound. The value it
+/// holds cannot change after, so a value holds its bound for as long as it lives.
+@JvmInline
+value class EnvelopeParallelIdText private constructor(val text: String) {
+    companion object {
+        /// The fewest UTF-8 bytes a value holds.
+        const val LEAST: Int = 0
+
+        /// The most UTF-8 bytes a value holds.
+        const val MOST: Int = 262144
+
+        /// `text` as a value of the bound, or `null` where it lies outside it.
+        fun of(text: String): EnvelopeParallelIdText? {
+            val size = com.sce.forge.runtime.Utf8.size(text) ?: return null
+            return if (size <= MOST) EnvelopeParallelIdText(text) else null
+        }
+
+        /// The fewest UTF-8 bytes the bound holds, each zero: what a value made by
+        /// default holds.
+        fun fewest(): EnvelopeParallelIdText = EnvelopeParallelIdText("\u0000".repeat(LEAST))
+    }
+}
+
+/// The `region_id` element of [Envelope], 0 to 262144 UTF-8 bytes, held to that bound where a
+/// value of it is made (docs/adr/0077 §3, docs/adr/0081 §2): its constructor is
+/// private and [of] makes a value only of a text within the bound. The value it
+/// holds cannot change after, so a value holds its bound for as long as it lives.
+@JvmInline
+value class EnvelopeRegionIdText private constructor(val text: String) {
+    companion object {
+        /// The fewest UTF-8 bytes a value holds.
+        const val LEAST: Int = 0
+
+        /// The most UTF-8 bytes a value holds.
+        const val MOST: Int = 262144
+
+        /// `text` as a value of the bound, or `null` where it lies outside it.
+        fun of(text: String): EnvelopeRegionIdText? {
+            val size = com.sce.forge.runtime.Utf8.size(text) ?: return null
+            return if (size <= MOST) EnvelopeRegionIdText(text) else null
+        }
+
+        /// The fewest UTF-8 bytes the bound holds, each zero: what a value made by
+        /// default holds.
+        fun fewest(): EnvelopeRegionIdText = EnvelopeRegionIdText("\u0000".repeat(LEAST))
+    }
+}
+
+/// The `child_session_id` element of [Envelope], 0 to 262144 UTF-8 bytes, held to that bound where a
+/// value of it is made (docs/adr/0077 §3, docs/adr/0081 §2): its constructor is
+/// private and [of] makes a value only of a text within the bound. The value it
+/// holds cannot change after, so a value holds its bound for as long as it lives.
+@JvmInline
+value class EnvelopeChildSessionIdText private constructor(val text: String) {
+    companion object {
+        /// The fewest UTF-8 bytes a value holds.
+        const val LEAST: Int = 0
+
+        /// The most UTF-8 bytes a value holds.
+        const val MOST: Int = 262144
+
+        /// `text` as a value of the bound, or `null` where it lies outside it.
+        fun of(text: String): EnvelopeChildSessionIdText? {
+            val size = com.sce.forge.runtime.Utf8.size(text) ?: return null
+            return if (size <= MOST) EnvelopeChildSessionIdText(text) else null
+        }
+
+        /// The fewest UTF-8 bytes the bound holds, each zero: what a value made by
+        /// default holds.
+        fun fewest(): EnvelopeChildSessionIdText = EnvelopeChildSessionIdText("\u0000".repeat(LEAST))
+    }
+}
+
+/// The `causal_vector` element of [Envelope], 0 to 64 entries, held to that bound where a
+/// value of it is made (docs/adr/0065 §6 R2, docs/adr/0081 §2): its constructor is
+/// private and [of] makes a value only of entries within the bound, which it
+/// copies, so no list it was made of can grow it past its bound after.
+@JvmInline
+value class EnvelopeCausalVectorList private constructor(val entries: List<CausalEntryPayload>) : com.sce.forge.runtime.Counted {
+    /// How many entries the list holds, the count a frame writes of it.
+    override val size: Int
+        get() = entries.size
+
+    companion object {
+        /// The most entries a value holds.
+        const val MOST: Int = 64
+
+        /// `entries` as a value of the bound, or `null` where they lie outside it.
+        fun of(entries: List<CausalEntryPayload>): EnvelopeCausalVectorList? =
+            if (entries.size <= MOST) EnvelopeCausalVectorList(entries.toList()) else null
+
+        /// No entry: what a value made by default holds.
+        fun fewest(): EnvelopeCausalVectorList = EnvelopeCausalVectorList(emptyList())
+    }
+}
+
+/// The entries a value of [Envelope] presents, which its encode reads
+/// (docs/adr/0081 §2): any object that presents them is a source of it, which
+/// [Envelope.encodeSource] writes.
+interface EnvelopeSource {
+    val id: EnvelopeIdBytes
+    val source: EnvelopeSourceText
+    val event_type: EnvelopeEventTypeText
+    val pattern: PatternKind
+    val datacontenttype: PayloadCodec
+    val data: EnvelopeDataBytes
+    val subject: EnvelopeSubjectText?
+    val correlation_id: EnvelopeCorrelationIdBytes?
+    val reply_to: EnvelopeReplyToText?
+    val invoke_id: EnvelopeInvokeIdBytes?
+    val rpc_status: RpcStatus?
+    val rpc_error_message: EnvelopeRpcErrorMessageText?
+    val deadline_unix_ms: ULong?
+    val sequence_no: ULong?
+    val routing_id: EnvelopeRoutingIdBytes?
+    val parallel_id: EnvelopeParallelIdText?
+    val region_id: EnvelopeRegionIdText?
+    val child_session_id: EnvelopeChildSessionIdText?
+    val causal_epoch: ULong?
+    val causal_vector: EnvelopeCausalVectorList?
+}
 
 /**
  * One CBOR map (SCE_FORGE.md §4.6.1). Decode takes the keys in any order and
@@ -28,173 +393,52 @@ import com.sce.generated.causal_entry.*
  */
 data class Envelope(
     /** Map key 0, required. */
-    var id: ByteArray = byteArrayOf(),
+    override var id: EnvelopeIdBytes = EnvelopeIdBytes.fewest(),
     /** Map key 1, required. */
-    var source: String = "",
+    override var source: EnvelopeSourceText = EnvelopeSourceText.fewest(),
     /** Map key 2, required. */
-    var event_type: String = "",
+    override var event_type: EnvelopeEventTypeText = EnvelopeEventTypeText.fewest(),
     /** Map key 3, required. */
-    var pattern: PatternKind = PatternKind.FIRE_FORGET,
+    override var pattern: PatternKind = PatternKind.FIRE_FORGET,
     /** Map key 4, required. */
-    var datacontenttype: PayloadCodec = PayloadCodec.NONE,
+    override var datacontenttype: PayloadCodec = PayloadCodec.NONE,
     /** Map key 5, required. */
-    var data: ByteArray = byteArrayOf(),
+    override var data: EnvelopeDataBytes = EnvelopeDataBytes.fewest(),
     /** Map key 6. */
-    var subject: String? = null,
+    override var subject: EnvelopeSubjectText? = null,
     /** Map key 7. */
-    var correlation_id: ByteArray? = null,
+    override var correlation_id: EnvelopeCorrelationIdBytes? = null,
     /** Map key 8. */
-    var reply_to: String? = null,
+    override var reply_to: EnvelopeReplyToText? = null,
     /** Map key 9. */
-    var invoke_id: ByteArray? = null,
+    override var invoke_id: EnvelopeInvokeIdBytes? = null,
     /** Map key 10. */
-    var rpc_status: RpcStatus? = null,
+    override var rpc_status: RpcStatus? = null,
     /** Map key 11. */
-    var rpc_error_message: String? = null,
+    override var rpc_error_message: EnvelopeRpcErrorMessageText? = null,
     /** Map key 12. */
-    var deadline_unix_ms: ULong? = null,
+    override var deadline_unix_ms: ULong? = null,
     /** Map key 14. */
-    var sequence_no: ULong? = null,
+    override var sequence_no: ULong? = null,
     /** Map key 15. */
-    var routing_id: ByteArray? = null,
+    override var routing_id: EnvelopeRoutingIdBytes? = null,
     /** Map key 16. */
-    var parallel_id: String? = null,
+    override var parallel_id: EnvelopeParallelIdText? = null,
     /** Map key 17. */
-    var region_id: String? = null,
+    override var region_id: EnvelopeRegionIdText? = null,
     /** Map key 18. */
-    var child_session_id: String? = null,
+    override var child_session_id: EnvelopeChildSessionIdText? = null,
     /** Map key 19. */
-    var causal_epoch: ULong? = null,
+    override var causal_epoch: ULong? = null,
     /** Map key 20. */
-    var causal_vector: List<CausalEntryPayload>? = null,
-) {
+    override var causal_vector: EnvelopeCausalVectorList? = null,
+) : EnvelopeSource {
     /**
-     * Encode this map into [w]; `null` on success. An entry whose value breaks
-     * its declared bound — an exact length, a maximum size — is refused, not
-     * written.
+     * Encode this map into [w]; `null` on success. The encode over any source
+     * ([encodeSource]) refuses, before the first byte, what no class of an
+     * entry holds that the map cannot carry.
      */
-    fun encode(w: SceSink): CodecError? {
-        var count = 6UL
-        if (subject != null) count++
-        if (correlation_id != null) count++
-        if (reply_to != null) count++
-        if (invoke_id != null) count++
-        if (rpc_status != null) count++
-        if (rpc_error_message != null) count++
-        if (deadline_unix_ms != null) count++
-        if (sequence_no != null) count++
-        if (routing_id != null) count++
-        if (parallel_id != null) count++
-        if (region_id != null) count++
-        if (child_session_id != null) count++
-        if (causal_epoch != null) count++
-        if (causal_vector != null) count++
-        Cbor.writeMapHead(w, count)?.let { return it }
-        run {
-            val v = id
-            Cbor.writeUint(w, 0UL)?.let { return it }
-            if (v.size != 16) return CodecError.CborWrongLength
-            Cbor.writeBytes(w, v)?.let { return it }
-        }
-        run {
-            val v = source
-            Cbor.writeUint(w, 1UL)?.let { return it }
-            if (v.encodeToByteArray().size > 262144) return CodecError.CborOutOfRange
-            Cbor.writeText(w, v)?.let { return it }
-        }
-        run {
-            val v = event_type
-            Cbor.writeUint(w, 2UL)?.let { return it }
-            if (v.encodeToByteArray().size > 262144) return CodecError.CborOutOfRange
-            Cbor.writeText(w, v)?.let { return it }
-        }
-        run {
-            val v = pattern
-            Cbor.writeUint(w, 3UL)?.let { return it }
-            Cbor.writeUint(w, (v.toUnderlying()).toULong())?.let { return it }
-        }
-        run {
-            val v = datacontenttype
-            Cbor.writeUint(w, 4UL)?.let { return it }
-            Cbor.writeUint(w, (v.toUnderlying()).toULong())?.let { return it }
-        }
-        run {
-            val v = data
-            Cbor.writeUint(w, 5UL)?.let { return it }
-            if (v.size > 16777216) return CodecError.CborOutOfRange
-            Cbor.writeBytes(w, v)?.let { return it }
-        }
-        subject?.let { v ->
-            Cbor.writeUint(w, 6UL)?.let { return it }
-            if (v.encodeToByteArray().size > 262144) return CodecError.CborOutOfRange
-            Cbor.writeText(w, v)?.let { return it }
-        }
-        correlation_id?.let { v ->
-            Cbor.writeUint(w, 7UL)?.let { return it }
-            if (v.size != 16) return CodecError.CborWrongLength
-            Cbor.writeBytes(w, v)?.let { return it }
-        }
-        reply_to?.let { v ->
-            Cbor.writeUint(w, 8UL)?.let { return it }
-            if (v.encodeToByteArray().size > 262144) return CodecError.CborOutOfRange
-            Cbor.writeText(w, v)?.let { return it }
-        }
-        invoke_id?.let { v ->
-            Cbor.writeUint(w, 9UL)?.let { return it }
-            if (v.size != 16) return CodecError.CborWrongLength
-            Cbor.writeBytes(w, v)?.let { return it }
-        }
-        rpc_status?.let { v ->
-            Cbor.writeUint(w, 10UL)?.let { return it }
-            Cbor.writeUint(w, (v.toUnderlying()).toULong())?.let { return it }
-        }
-        rpc_error_message?.let { v ->
-            Cbor.writeUint(w, 11UL)?.let { return it }
-            if (v.encodeToByteArray().size > 262144) return CodecError.CborOutOfRange
-            Cbor.writeText(w, v)?.let { return it }
-        }
-        deadline_unix_ms?.let { v ->
-            Cbor.writeUint(w, 12UL)?.let { return it }
-            Cbor.writeUint(w, v.toULong())?.let { return it }
-        }
-        sequence_no?.let { v ->
-            Cbor.writeUint(w, 14UL)?.let { return it }
-            Cbor.writeUint(w, v.toULong())?.let { return it }
-        }
-        routing_id?.let { v ->
-            Cbor.writeUint(w, 15UL)?.let { return it }
-            if (v.size != 16) return CodecError.CborWrongLength
-            Cbor.writeBytes(w, v)?.let { return it }
-        }
-        parallel_id?.let { v ->
-            Cbor.writeUint(w, 16UL)?.let { return it }
-            if (v.encodeToByteArray().size > 262144) return CodecError.CborOutOfRange
-            Cbor.writeText(w, v)?.let { return it }
-        }
-        region_id?.let { v ->
-            Cbor.writeUint(w, 17UL)?.let { return it }
-            if (v.encodeToByteArray().size > 262144) return CodecError.CborOutOfRange
-            Cbor.writeText(w, v)?.let { return it }
-        }
-        child_session_id?.let { v ->
-            Cbor.writeUint(w, 18UL)?.let { return it }
-            if (v.encodeToByteArray().size > 262144) return CodecError.CborOutOfRange
-            Cbor.writeText(w, v)?.let { return it }
-        }
-        causal_epoch?.let { v ->
-            Cbor.writeUint(w, 19UL)?.let { return it }
-            Cbor.writeUint(w, v.toULong())?.let { return it }
-        }
-        causal_vector?.let { v ->
-            Cbor.writeUint(w, 20UL)?.let { return it }
-            if (v.size > 64) return CodecError.CborOutOfRange
-            Cbor.writeArrayHead(w, v.size.toULong())?.let { return it }
-            for (record in v) {
-                encodeRecordCausalEntry(w, record)?.let { return it }
-            }
-        }
-        return null
-    }
+    fun encode(w: SceSink): CodecError? = encodeSource(this, w)
 
     /** [encode] into a new array; `null` when encode refuses the value. */
     fun encodeToByteArray(): ByteArray? {
@@ -204,6 +448,136 @@ data class Envelope(
     }
 
     companion object {
+        /// Write the map [src] presents into [w]: the entries present in ascending key
+        /// order, every head in its shortest form (RFC 8949 §4.2.1). `null` on
+        /// success; a value no class of an entry holds that the map cannot carry is
+        /// refused with [CodecError.CborOutOfRange] before the first byte.
+        fun encodeSource(src: EnvelopeSource, w: SceSink): CodecError? {
+            val _e_id = src.id
+            val _e_source = src.source
+            val _e_event_type = src.event_type
+            val _e_pattern = src.pattern
+            val _e_datacontenttype = src.datacontenttype
+            val _e_data = src.data
+            val _e_subject = src.subject
+            val _e_correlation_id = src.correlation_id
+            val _e_reply_to = src.reply_to
+            val _e_invoke_id = src.invoke_id
+            val _e_rpc_status = src.rpc_status
+            val _e_rpc_error_message = src.rpc_error_message
+            val _e_deadline_unix_ms = src.deadline_unix_ms
+            val _e_sequence_no = src.sequence_no
+            val _e_routing_id = src.routing_id
+            val _e_parallel_id = src.parallel_id
+            val _e_region_id = src.region_id
+            val _e_child_session_id = src.child_session_id
+            val _e_causal_epoch = src.causal_epoch
+            val _e_causal_vector = src.causal_vector
+            var count = 6UL
+            if (_e_subject != null) count++
+            if (_e_correlation_id != null) count++
+            if (_e_reply_to != null) count++
+            if (_e_invoke_id != null) count++
+            if (_e_rpc_status != null) count++
+            if (_e_rpc_error_message != null) count++
+            if (_e_deadline_unix_ms != null) count++
+            if (_e_sequence_no != null) count++
+            if (_e_routing_id != null) count++
+            if (_e_parallel_id != null) count++
+            if (_e_region_id != null) count++
+            if (_e_child_session_id != null) count++
+            if (_e_causal_epoch != null) count++
+            if (_e_causal_vector != null) count++
+            Cbor.writeMapHead(w, count)?.let { return it }
+            Cbor.writeUint(w, 0UL)?.let { return it }
+            Cbor.writeBytes(w, _e_id.bytes)?.let { return it }
+            Cbor.writeUint(w, 1UL)?.let { return it }
+            Cbor.writeText(w, _e_source.text)?.let { return it }
+            Cbor.writeUint(w, 2UL)?.let { return it }
+            Cbor.writeText(w, _e_event_type.text)?.let { return it }
+            Cbor.writeUint(w, 3UL)?.let { return it }
+            Cbor.writeUint(w, _e_pattern.toUnderlying().toULong())?.let { return it }
+            Cbor.writeUint(w, 4UL)?.let { return it }
+            Cbor.writeUint(w, _e_datacontenttype.toUnderlying().toULong())?.let { return it }
+            Cbor.writeUint(w, 5UL)?.let { return it }
+            Cbor.writeBytes(w, _e_data.bytes)?.let { return it }
+            if (_e_subject != null) {
+                Cbor.writeUint(w, 6UL)?.let { return it }
+                Cbor.writeText(w, _e_subject.text)?.let { return it }
+            }
+            if (_e_correlation_id != null) {
+                Cbor.writeUint(w, 7UL)?.let { return it }
+                Cbor.writeBytes(w, _e_correlation_id.bytes)?.let { return it }
+            }
+            if (_e_reply_to != null) {
+                Cbor.writeUint(w, 8UL)?.let { return it }
+                Cbor.writeText(w, _e_reply_to.text)?.let { return it }
+            }
+            if (_e_invoke_id != null) {
+                Cbor.writeUint(w, 9UL)?.let { return it }
+                Cbor.writeBytes(w, _e_invoke_id.bytes)?.let { return it }
+            }
+            if (_e_rpc_status != null) {
+                Cbor.writeUint(w, 10UL)?.let { return it }
+                Cbor.writeUint(w, _e_rpc_status.toUnderlying().toULong())?.let { return it }
+            }
+            if (_e_rpc_error_message != null) {
+                Cbor.writeUint(w, 11UL)?.let { return it }
+                Cbor.writeText(w, _e_rpc_error_message.text)?.let { return it }
+            }
+            if (_e_deadline_unix_ms != null) {
+                Cbor.writeUint(w, 12UL)?.let { return it }
+                Cbor.writeUint(w, _e_deadline_unix_ms)?.let { return it }
+            }
+            if (_e_sequence_no != null) {
+                Cbor.writeUint(w, 14UL)?.let { return it }
+                Cbor.writeUint(w, _e_sequence_no)?.let { return it }
+            }
+            if (_e_routing_id != null) {
+                Cbor.writeUint(w, 15UL)?.let { return it }
+                Cbor.writeBytes(w, _e_routing_id.bytes)?.let { return it }
+            }
+            if (_e_parallel_id != null) {
+                Cbor.writeUint(w, 16UL)?.let { return it }
+                Cbor.writeText(w, _e_parallel_id.text)?.let { return it }
+            }
+            if (_e_region_id != null) {
+                Cbor.writeUint(w, 17UL)?.let { return it }
+                Cbor.writeText(w, _e_region_id.text)?.let { return it }
+            }
+            if (_e_child_session_id != null) {
+                Cbor.writeUint(w, 18UL)?.let { return it }
+                Cbor.writeText(w, _e_child_session_id.text)?.let { return it }
+            }
+            if (_e_causal_epoch != null) {
+                Cbor.writeUint(w, 19UL)?.let { return it }
+                Cbor.writeUint(w, _e_causal_epoch)?.let { return it }
+            }
+            if (_e_causal_vector != null) {
+                Cbor.writeUint(w, 20UL)?.let { return it }
+                Cbor.writeArrayHead(w, _e_causal_vector.size.toULong())?.let { return it }
+                for (_record in _e_causal_vector.entries) {
+                    encodeRecordCausalEntry(w, _record)?.let { return it }
+                }
+            }
+            return null
+        }
+
+        /// Write one record of `causal_entry` (`record:CausalEntry`) into [w] as one map of
+        /// every field, the keys in the order RFC 8949 §4.2.1 sorts their encodings: a
+        /// shorter key first. The encode held the record to its bounds before the
+        /// first byte.
+        private fun encodeRecordCausalEntry(w: SceSink, record: CausalEntryPayload): CodecError? {
+            Cbor.writeMapHead(w, 3UL)?.let { return it }
+            Cbor.writeText(w, "hi")?.let { return it }
+            Cbor.writeUint(w, record.hi)?.let { return it }
+            Cbor.writeText(w, "lo")?.let { return it }
+            Cbor.writeUint(w, record.lo)?.let { return it }
+            Cbor.writeText(w, "seq")?.let { return it }
+            Cbor.writeUint(w, record.seq)?.let { return it }
+            return null
+        }
+
         /**
          * Decode one map from [cursor]. On success the cursor advances past
          * it; a refusal answers the [CodecError] that refused the map
@@ -360,26 +734,26 @@ data class Envelope(
             }
             return Decoded.Ok(
                 Envelope(
-                    id = id ?: return Decoded.Refused(CodecError.CborRequiredKeyMissing),
-                    source = source ?: return Decoded.Refused(CodecError.CborRequiredKeyMissing),
-                    event_type = event_type ?: return Decoded.Refused(CodecError.CborRequiredKeyMissing),
+                    id = EnvelopeIdBytes.of(id ?: return Decoded.Refused(CodecError.CborRequiredKeyMissing)) ?: return Decoded.Refused(CodecError.CborWrongLength),
+                    source = EnvelopeSourceText.of(source ?: return Decoded.Refused(CodecError.CborRequiredKeyMissing)) ?: return Decoded.Refused(CodecError.CborOutOfRange),
+                    event_type = EnvelopeEventTypeText.of(event_type ?: return Decoded.Refused(CodecError.CborRequiredKeyMissing)) ?: return Decoded.Refused(CodecError.CborOutOfRange),
                     pattern = pattern ?: return Decoded.Refused(CodecError.CborRequiredKeyMissing),
                     datacontenttype = datacontenttype ?: return Decoded.Refused(CodecError.CborRequiredKeyMissing),
-                    data = data ?: return Decoded.Refused(CodecError.CborRequiredKeyMissing),
-                    subject = subject,
-                    correlation_id = correlation_id,
-                    reply_to = reply_to,
-                    invoke_id = invoke_id,
+                    data = EnvelopeDataBytes.of(data ?: return Decoded.Refused(CodecError.CborRequiredKeyMissing)) ?: return Decoded.Refused(CodecError.CborOutOfRange),
+                    subject = subject?.let { EnvelopeSubjectText.of(it) ?: return Decoded.Refused(CodecError.CborOutOfRange) },
+                    correlation_id = correlation_id?.let { EnvelopeCorrelationIdBytes.of(it) ?: return Decoded.Refused(CodecError.CborWrongLength) },
+                    reply_to = reply_to?.let { EnvelopeReplyToText.of(it) ?: return Decoded.Refused(CodecError.CborOutOfRange) },
+                    invoke_id = invoke_id?.let { EnvelopeInvokeIdBytes.of(it) ?: return Decoded.Refused(CodecError.CborWrongLength) },
                     rpc_status = rpc_status,
-                    rpc_error_message = rpc_error_message,
+                    rpc_error_message = rpc_error_message?.let { EnvelopeRpcErrorMessageText.of(it) ?: return Decoded.Refused(CodecError.CborOutOfRange) },
                     deadline_unix_ms = deadline_unix_ms,
                     sequence_no = sequence_no,
-                    routing_id = routing_id,
-                    parallel_id = parallel_id,
-                    region_id = region_id,
-                    child_session_id = child_session_id,
+                    routing_id = routing_id?.let { EnvelopeRoutingIdBytes.of(it) ?: return Decoded.Refused(CodecError.CborWrongLength) },
+                    parallel_id = parallel_id?.let { EnvelopeParallelIdText.of(it) ?: return Decoded.Refused(CodecError.CborOutOfRange) },
+                    region_id = region_id?.let { EnvelopeRegionIdText.of(it) ?: return Decoded.Refused(CodecError.CborOutOfRange) },
+                    child_session_id = child_session_id?.let { EnvelopeChildSessionIdText.of(it) ?: return Decoded.Refused(CodecError.CborOutOfRange) },
                     causal_epoch = causal_epoch,
-                    causal_vector = causal_vector,
+                    causal_vector = causal_vector?.let { EnvelopeCausalVectorList.of(it) ?: return Decoded.Refused(CodecError.CborOutOfRange) },
                 ),
             )
         }
@@ -427,22 +801,6 @@ data class Envelope(
                     seq = held_seq ?: return Decoded.Refused(CodecError.CborRequiredKeyMissing),
                 ),
             )
-        }
-
-        /**
-         * Write one record of `causal_entry` into [w] as one map of every field,
-         * the keys in the order RFC 8949 §4.2.1 sorts their encodings: a shorter
-         * key first. `null` on success.
-         */
-        private fun encodeRecordCausalEntry(w: SceSink, record: CausalEntryPayload): CodecError? {
-            Cbor.writeMapHead(w, 3UL)?.let { return it }
-            Cbor.writeText(w, "hi")?.let { return it }
-            Cbor.writeUint(w, record.hi.toULong())?.let { return it }
-            Cbor.writeText(w, "lo")?.let { return it }
-            Cbor.writeUint(w, record.lo.toULong())?.let { return it }
-            Cbor.writeText(w, "seq")?.let { return it }
-            Cbor.writeUint(w, record.seq.toULong())?.let { return it }
-            return null
         }
     }
 }

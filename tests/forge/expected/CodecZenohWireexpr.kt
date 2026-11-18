@@ -11,6 +11,41 @@ import com.sce.forge.runtime.Decoded
 import com.sce.forge.runtime.MutableListSink
 import com.sce.forge.runtime.SceCursor
 import com.sce.forge.runtime.SceSink
+import kotlin.jvm.JvmInline
+
+/// The `suffix` element of [CodecZenohWireexpr], 0 to 65535 UTF-8 bytes, held to that bound where a
+/// value of it is made (docs/adr/0077 §3, docs/adr/0081 §2): its constructor is
+/// private and [of] makes a value only of a text within the bound. The value it
+/// holds cannot change after, so a value holds its bound for as long as it lives.
+@JvmInline
+value class CodecZenohWireexprSuffixText private constructor(val text: String) {
+    companion object {
+        /// The fewest UTF-8 bytes a value holds.
+        const val LEAST: Int = 0
+
+        /// The most UTF-8 bytes a value holds.
+        const val MOST: Int = 65535
+
+        /// `text` as a value of the bound, or `null` where it lies outside it.
+        fun of(text: String): CodecZenohWireexprSuffixText? {
+            val size = com.sce.forge.runtime.Utf8.size(text) ?: return null
+            return if (size <= MOST) CodecZenohWireexprSuffixText(text) else null
+        }
+
+        /// The fewest UTF-8 bytes the bound holds, each zero: what a value made by
+        /// default holds.
+        fun fewest(): CodecZenohWireexprSuffixText = CodecZenohWireexprSuffixText("\u0000".repeat(LEAST))
+    }
+}
+
+/// The elements a value of [CodecZenohWireexpr] presents, which its encode reads
+/// (docs/adr/0081 §2): any object that presents them is a source of it, which
+/// [CodecZenohWireexpr.encodeSource] writes. The encode derives every other element
+/// of the frame.
+interface CodecZenohWireexprSource {
+    val id: ULong
+    val suffix: CodecZenohWireexprSuffixText?
+}
 
 // Default-valued primary constructor: the generated procedure_l2 code
 // holds codec instances as owned members and initializes them with
@@ -20,10 +55,9 @@ import com.sce.forge.runtime.SceSink
 // variant its document declares, since a closed set does not hold a
 // value it never declared.
 data class CodecZenohWireexpr(
-    var id: ULong = 0uL,
-    var suffix_len: ULong? = null,
-    var suffix: String? = null
-) {
+    override var id: ULong = 0uL,
+    override var suffix: CodecZenohWireexprSuffixText? = null
+) : CodecZenohWireexprSource {
     /// RFC §synth-5-B encode-side primary: write `self` into the
     /// caller-owned `w` sink. Returns `null` on success;
     /// `CodecError.BufferOverflow` from a bounded sink when the
@@ -31,26 +65,13 @@ data class CodecZenohWireexpr(
     /// sinks (e.g. `MutableListSink`) are effectively infallible.
     @Suppress("UNUSED_PARAMETER")
     fun encode(w: SceSink, N: UByte): CodecError? {
-        if ((N.toInt() and 0x01) != 0) {
-            if (this.suffix == null) return CodecError.PresentIfMismatch
-        } else if (this.suffix != null) return CodecError.PresentIfMismatch
-        this.suffix?.let { if (it.encodeToByteArray().size > 65535) return CodecError.LengthOutOfRange }
-        // Streaming cursor encode (SSOT selection: `needs_streaming`).
-        // Mirrors the streaming decode: every field appends its own bytes
-        // in declaration order through the per-field encode blocks, so a
-        // gated field skips its append when null, and a fixed field after
-        // a variable-length payload lands after the payload (the positional
-        // path appends variable fields last, placing it ahead on the wire).
-        // Per-field `is_repeat` / `is_tlv_chain` / `is_embed` route to their
-        // dedicated helpers; everything else uses `present_if_encode_block`.
-        w.writeVleU64(id)?.let { return it }
-        this.suffix_len?.let { _v ->
-        w.writeVleU64(_v)?.let { return it }
-        }
-        this.suffix?.let { _v ->
-            w.writeBytes(_v.toByteArray(Charsets.UTF_8))?.let { return it }
-        }
-        return null
+        // docs/adr/0081 step 4: the encode over any source, which derives
+        // every element the value does not present. It is handed the flag
+        // inputs the value does not say; one the value says is read off it,
+        // and what a caller hands this `encode` for it is held to that
+        // (docs/adr/0065 §6 R4a).
+        if (N != inputN(this)) return CodecError.PresentIfMismatch
+        return encodeSource(this, w)
     }
 
     /// Heap-backed convenience facade. Runs `encode` over a
@@ -69,6 +90,31 @@ data class CodecZenohWireexpr(
     }
 
     companion object {
+        /// Write any source of [CodecZenohWireexpr] into `w`: each element read once off
+        /// `src` and written where the codec's encode plan lays it out
+        /// (docs/adr/0081). It derives `suffix_len` from what each measures, and never reads it off the
+        /// source. It refuses no value: it answers `null`, or
+        /// [CodecError.BufferOverflow] from a bounded sink with no room left.
+        fun encodeSource(src: CodecZenohWireexprSource, w: SceSink): CodecError? {
+            val _e_id = src.id
+            val _e_suffix = src.suffix
+            val N = (if (_e_suffix != null) 1 else 0).toUByte()
+            val _d_suffix_len = if (_e_suffix != null) _e_suffix.text.encodeToByteArray().size.toULong() else 0.toULong()
+            w.writeVleU64(_e_id)?.let { return it }
+            if (N.toUInt() != 0u) {
+                w.writeVleU64(_d_suffix_len)?.let { return it }
+            }
+            if (_e_suffix != null) {
+                w.writeBytes(_e_suffix.text.encodeToByteArray())?.let { return it }
+            }
+            return null
+        }
+
+        /// The flag input `N` a source of [CodecZenohWireexpr] says, which its encode
+        /// is not handed (docs/adr/0065 §6 R4a).
+        fun inputN(src: CodecZenohWireexprSource): UByte =
+            (if (src.suffix != null) 1 else 0).toUByte()
+
         /// Decode the next frame from `cursor`. On success the cursor
         /// advances past the consumed bytes and the value is `Decoded.Ok`;
         /// a refused frame is `Decoded.Refused` with the kind that refused
@@ -116,8 +162,7 @@ data class CodecZenohWireexpr(
             return Decoded.Ok(
                 CodecZenohWireexpr(
                     id = id,
-                    suffix_len = suffix_len,
-                    suffix = suffix
+                    suffix = suffix?.let { CodecZenohWireexprSuffixText.of(it) ?: return Decoded.Refused(CodecError.LengthOutOfRange) }
                 )
             )
         }

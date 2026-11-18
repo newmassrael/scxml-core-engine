@@ -13,6 +13,72 @@ import com.sce.forge.runtime.SceCursor
 import com.sce.forge.runtime.SceSink
 import com.sce.generated.codec_zenoh_encoding.*
 import com.sce.generated.codec_zenoh_ext_entry.*
+import kotlin.jvm.JvmInline
+
+/// The `extensions` element of [CodecZenohErr], 1 or more entries, the protocol stating no most, held to that bound where a
+/// value of it is made (docs/adr/0065 §6 R2, docs/adr/0081 §2): its constructor is
+/// private and [of] makes a value only of entries within the bound, which it
+/// copies, so no list it was made of can grow it past its bound after.
+@JvmInline
+value class CodecZenohErrExtensionsList private constructor(val entries: List<CodecZenohExtEntrySource>) : com.sce.forge.runtime.Counted {
+    /// How many entries the list holds, the count a frame writes of it.
+    override val size: Int
+        get() = entries.size
+
+    companion object {
+        /// The fewest entries a value holds.
+        const val LEAST: Int = 1
+
+        /// `entries` as a value of the bound, or `null` where they lie outside it.
+        fun of(entries: List<CodecZenohExtEntrySource>): CodecZenohErrExtensionsList? =
+            if (entries.size >= LEAST) CodecZenohErrExtensionsList(entries.toList()) else null
+
+        /// The fewest entries the bound holds, each made by default: what a value made by default holds.
+        fun fewest(): CodecZenohErrExtensionsList = CodecZenohErrExtensionsList(List(LEAST) { CodecZenohExtEntry() })
+    }
+}
+
+/// The `payload` element of [CodecZenohErr], 0 to 4294967295 bytes, held to that bound where a
+/// value of it is made (docs/adr/0077 §3, docs/adr/0081 §2): its constructor is
+/// private and [of] makes a value only of bytes within the bound. The value it
+/// holds cannot change after, so a value holds its bound for as long as it lives.
+@JvmInline
+value class CodecZenohErrPayloadBytes private constructor(val bytes: ByteArray) {
+    companion object {
+        /// The fewest bytes a value holds.
+        const val LEAST: Int = 0
+
+        /// The most bytes a value holds.
+        const val MOST: Int = 4294967295
+
+        /// `bytes` as a value of the bound, or `null` where it lies outside it.
+        fun of(bytes: ByteArray): CodecZenohErrPayloadBytes? =
+            if (bytes.size <= MOST) CodecZenohErrPayloadBytes(bytes) else null
+
+        /// The fewest bytes the bound holds, each zero: what a value made by
+        /// default holds.
+        fun fewest(): CodecZenohErrPayloadBytes = CodecZenohErrPayloadBytes(ByteArray(LEAST))
+    }
+}
+
+/// One-bit flags of [CodecZenohErr] a parent may set in place of the ones a value
+/// presents, such as the flag a chain whose entries are [CodecZenohErr] ends them
+/// on, which the chain derives from where each entry stands.
+class CodecZenohErrOverrides(
+    /// The `X` flag of `header`, where a parent sets it.
+    val header_X: Boolean? = null,
+)
+
+/// The elements a value of [CodecZenohErr] presents, which its encode reads
+/// (docs/adr/0081 §2): any object that presents them is a source of it, which
+/// [CodecZenohErr.encodeSource] writes. The encode derives every other element
+/// of the frame.
+interface CodecZenohErrSource {
+    val header: UByte
+    val encoding: CodecZenohEncodingSource?
+    val extensions: CodecZenohErrExtensionsList?
+    val payload: CodecZenohErrPayloadBytes
+}
 
 // Default-valued primary constructor: the generated procedure_l2 code
 // holds codec instances as owned members and initializes them with
@@ -22,12 +88,11 @@ import com.sce.generated.codec_zenoh_ext_entry.*
 // variant its document declares, since a closed set does not hold a
 // value it never declared.
 data class CodecZenohErr(
-    var header: UByte = 0x05.toUByte(),
-    var encoding: CodecZenohEncoding? = null,
-    var extensions: MutableList<CodecZenohExtEntry>? = null,
-    var payload_len: ULong = 0uL,
-    var payload: ByteArray = byteArrayOf()
-) {
+    override var header: UByte = 0x05.toUByte(),
+    override var encoding: CodecZenohEncoding? = null,
+    override var extensions: CodecZenohErrExtensionsList? = null,
+    override var payload: CodecZenohErrPayloadBytes = CodecZenohErrPayloadBytes.fewest()
+) : CodecZenohErrSource {
     // RFC §synth-5-B flags primitive: per-bit-range accessors over
     // the carrier field. Single-bit (width=1) reads as Boolean; multi-
     // bit (width>=2) reads as the smallest unsigned Kotlin type that
@@ -82,45 +147,58 @@ data class CodecZenohErr(
     /// destination has insufficient remaining capacity; growable
     /// sinks (e.g. `MutableListSink`) are effectively infallible.
     fun encode(w: SceSink): CodecError? {
-        this.extensions?.let { if (it.size < 1) return CodecError.TooManyElements }
-        // Streaming cursor encode (SSOT selection: `needs_streaming`).
-        // Mirrors the streaming decode: every field appends its own bytes
-        // in declaration order through the per-field encode blocks, so a
-        // gated field skips its append when null, and a fixed field after
-        // a variable-length payload lands after the payload (the positional
-        // path appends variable fields last, placing it ahead on the wire).
-        // Per-field `is_repeat` / `is_tlv_chain` / `is_embed` route to their
-        // dedicated helpers; everything else uses `present_if_encode_block`.
-        w.writeU8(this.header.toByte())?.let { return it }
-        this.encoding?.let { _v ->
-            _v.encode(w)?.let { return it }
-        }
-        this.extensions?.let { _list ->
-            for (_e in _list) {
-                _e.encode(w)?.let { return it }
-            }
-        }
-        w.writeVleU64(payload_len)?.let { return it }
-        w.writeBytes(this.payload)?.let { return it }
-        return null
+        // docs/adr/0081 step 4: the encode over any source, which derives
+        // every element the value does not present. It is handed the flag
+        // inputs the value does not say; one the value says is read off it,
+        // and what a caller hands this `encode` for it is held to that
+        // (docs/adr/0065 §6 R4a).
+        return encodeSource(this, w)
     }
 
     /// Heap-backed convenience facade. Runs `encode` over a
-    /// `MutableListSink` and returns the freshly-encoded ByteArray, or
-    /// `null` when `encode` refuses the value before its first byte: a
-    /// gated field and the `sce:present-if` that gates it contradict each
-    /// other (`CodecError.PresentIfMismatch`), or a byte string, text or
-    /// list lies outside its bound (`CodecError.LengthOutOfRange`,
-    /// `CodecError.TooManyElements`). Callers that need the reason, and
-    /// zero-alloc hot paths, call `encode` directly against a caller-owned
-    /// sink (e.g. `ByteArraySink`).
-    fun encodeToByteArray(): ByteArray? {
+    /// `MutableListSink` and returns the freshly-encoded ByteArray.
+    /// Callers targeting zero-alloc hot paths should call `encode`
+    /// directly against a caller-owned sink (e.g. `ByteArraySink`).
+    fun encodeToByteArray(): ByteArray {
         val _list = mutableListOf<Byte>()
-        if (encode(MutableListSink(_list)) != null) return null
+        encode(MutableListSink(_list))
         return _list.toByteArray()
     }
 
     companion object {
+        /// Write any source of [CodecZenohErr] into `w`: each element read once off
+        /// `src` and written where the codec's encode plan lays it out
+        /// (docs/adr/0081). It derives `payload_len` from what each measures, and never reads it off the
+        /// source. A chain that holds it
+        /// sets the flag its entries end on by `overrides`, in place of the value's. It refuses no value: it answers `null`, or
+        /// [CodecError.BufferOverflow] from a bounded sink with no room left.
+        fun encodeSource(src: CodecZenohErrSource, w: SceSink, overrides: CodecZenohErrOverrides? = null): CodecError? {
+            val _e_header = src.header
+            val _e_encoding = src.encoding
+            val _e_extensions = src.extensions
+            val _e_payload = src.payload
+            val _d_payload_len = _e_payload.bytes.size.toULong()
+            var _u_header = _e_header.toUInt()
+            _u_header = (_u_header and 0x40u.inv()) or (if (_e_encoding != null) 0x40u else 0x0u)
+            _u_header = (_u_header and 0x80u.inv()) or (if (_e_extensions != null) 0x80u else 0x0u)
+            overrides?.header_X?.let { _u_header = (_u_header and 0x20u.inv()) or (if (it) 0x20u else 0x0u) }
+            val _c_header = _u_header.toUByte()
+            w.writeU8(_c_header.toByte())?.let { return it }
+            if (_e_encoding != null) {
+                CodecZenohEncoding.encodeSource(_e_encoding, w)?.let { return it }
+            }
+            if (_e_extensions != null) {
+                var _left_extensions = _e_extensions.entries.size
+                for (_entry in _e_extensions.entries) {
+                    _left_extensions -= 1
+                    CodecZenohExtEntry.encodeSource(_entry, w, CodecZenohExtEntryOverrides(header_Z = _left_extensions != 0))?.let { return it }
+                }
+            }
+            w.writeVleU64(_d_payload_len)?.let { return it }
+            w.writeBytes(_e_payload.bytes)?.let { return it }
+            return null
+        }
+
         /// Decode the next frame from `cursor`. On success the cursor
         /// advances past the consumed bytes and the value is `Decoded.Ok`;
         /// a refused frame is `Decoded.Refused` with the kind that refused
@@ -183,9 +261,8 @@ data class CodecZenohErr(
                 CodecZenohErr(
                     header = header,
                     encoding = encoding,
-                    extensions = extensions,
-                    payload_len = payload_len,
-                    payload = payload
+                    extensions = extensions?.let { CodecZenohErrExtensionsList.of(it) ?: return Decoded.Refused(CodecError.TooManyElements) },
+                    payload = CodecZenohErrPayloadBytes.of(payload) ?: return Decoded.Refused(CodecError.LengthOutOfRange)
                 )
             )
         }
