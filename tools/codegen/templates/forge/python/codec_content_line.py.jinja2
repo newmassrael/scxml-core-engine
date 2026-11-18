@@ -3,10 +3,10 @@
 
 {%- import '_macros/sce_map_marker.jinja2' as sce_map %}
 {#- The read of one property's value, as the expression bound to it; a refusal
-    raises the runtime's typed error, which `decode` turns into `None`, this
-    backend's decode convention. The line grammar — unfolding, TEXT escapes,
-    quoting — is the runtime's (`sce_forge_runtime.content_line`); this spells
-    none of it. #}
+    raises the runtime's typed error, which `decode` raises on after it returns
+    the cursor to where it was (docs/adr/0099, amendment of 2026-11-16). The
+    line grammar — unfolding, TEXT escapes, quoting — is the runtime's
+    (`sce_forge_runtime.content_line`); this spells none of it. #}
 {% macro read_value(e) -%}
 {%- if e.separator -%}
 line.read_strings("{{ e.separator }}", {{ e.max_values_lit }}, {{ e.max_size_lit }}, {{ "True" if e.text else "False" }})

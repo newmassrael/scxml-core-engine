@@ -43,7 +43,7 @@ from typing import Any, Optional
 
 import _sce_codegen
 from sce_forge_runtime.broadcast_log import BroadcastLog, Empty, Lagged
-from sce_forge_runtime.codec import CodecError, LengthOutOfRange, PresentIfMismatch
+from sce_forge_runtime.codec import LengthOutOfRange, NeedMoreBytes, PresentIfMismatch
 
 REPO_ROOT = _sce_codegen.REPO_ROOT
 RESOURCE_DIR = REPO_ROOT / "tests" / "forge" / "resources"
@@ -312,12 +312,12 @@ class TestGeneratedBroadcastLogs(unittest.TestCase):
         log = module.new_broadcast_log_conformance_literal()
         publisher = log.publisher()
         # Two bytes are within the bound and too few for the three the element
-        # takes, so the codec's decode returns nothing.
+        # takes, so the element's decode refuses them as a frame cut short, and
+        # the read raises that kind and not the bound's.
         publisher.publish([2, 0x0102])
         reader = log.reader_oldest()
-        with self.assertRaises(CodecError) as raised:
+        with self.assertRaises(NeedMoreBytes):
             module.read(log, reader)
-        self.assertIs(CodecError, type(raised.exception), "the length was within the bound, so it is not that error")
         self.assertEqual(1, reader.cursor, "the reader moved past the entry")
 
     def test_a_document_declaring_more_than_blocking_is_refused_for_python_by_name(self) -> None:

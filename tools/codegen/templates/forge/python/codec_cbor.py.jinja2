@@ -3,9 +3,9 @@
 
 {%- import '_macros/sce_map_marker.jinja2' as sce_map %}
 {#- The read of one entry's value, bound to `v`; a refusal raises the
-    runtime's typed error, which `decode` turns into `None`, this backend's
-    decode convention. Every CBOR item is the runtime's
-    (`sce_forge_runtime.cbor`). #}
+    runtime's typed error, which `decode` raises on after it returns the
+    cursor to where it was (docs/adr/0099, amendment of 2026-11-16). Every
+    CBOR item is the runtime's (`sce_forge_runtime.cbor`). #}
 {% macro decode_value(e) %}
 {% if e.kind == "bool" %}
                 v = cbor.read_bool(c)

@@ -1746,7 +1746,9 @@ unwrapped, and leaves the cursor where it was.
 
 Python generates it as a dataclass of `str`, `List[str]` for a list and `None`
 for an absent optional entry, over `sce_forge_runtime.content_line`. Its decode
-is `None` on every refusal and leaves the cursor where it was; its encode raises
+raises the `CodecError` subclass of the rule that refused (`LineMalformed`,
+`LineRequiredMissing`, `LineTooMany`, `LineTooLong`, `LineBadEscape`,
+`LineBadValue`, or `NeedMoreBytes`) and leaves the cursor where it was; its encode raises
 the typed error of the rule (`LineTooLong`, `LineBadValue`, ...), and holds an
 integer to its declared width, which a Python `int` does not carry itself.
 
