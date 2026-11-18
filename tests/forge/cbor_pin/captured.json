@@ -70,28 +70,6 @@
    "encoded": "a200000100",
    "equals_input": true
   },
-  "codec_cbor_signed_enum/status-negative": {
-   "refused": {
-    "rust": "decode CborWrongType",
-    "cpp": "decode CodecError 23",
-    "c11": "decode status 23",
-    "go": "decode sce/codec: cbor wrong type",
-    "kotlin": "decode CborWrongType",
-    "python": "decode CborWrongType",
-    "swift": "decode cborWrongType"
-   }
-  },
-  "codec_cbor_signed_enum/detail-negative": {
-   "refused": {
-    "rust": "decode CborWrongType",
-    "cpp": "decode CodecError 23",
-    "c11": "decode status 23",
-    "go": "decode sce/codec: cbor wrong type",
-    "kotlin": "decode CborWrongType",
-    "python": "decode CborWrongType",
-    "swift": "decode cborWrongType"
-   }
-  },
   "codec_cbor_record_list/smallest": {
    "encoded": "a300500000000000000000000000000000000001600380",
    "equals_input": true
