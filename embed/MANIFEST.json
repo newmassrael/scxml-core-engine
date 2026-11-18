@@ -1,9 +1,9 @@
 {
   "clang_version": "Ubuntu clang version 19.1.1 (1ubuntu1~24.04.2)",
-  "embed_version": "35505a5",
+  "embed_version": "51b3409",
   "non_self_contained_headers": [],
   "schema": "sce-embed-manifest.v1",
-  "symbol_count": 615,
+  "symbol_count": 629,
   "symbols": [
     {
       "header": "GuardUtils.h",
@@ -3587,8 +3587,44 @@
     {
       "header": "sce/forge/cbor.h",
       "kind": "function",
+      "name": "SCE::Forge::Cbor::detail::bits_of",
+      "signature": "std::uint32_t SCE::Forge::Cbor::detail::bits_of(float) noexcept"
+    },
+    {
+      "header": "sce/forge/cbor.h",
+      "kind": "function",
+      "name": "SCE::Forge::Cbor::detail::bits_of",
+      "signature": "std::uint64_t SCE::Forge::Cbor::detail::bits_of(double) noexcept"
+    },
+    {
+      "header": "sce/forge/cbor.h",
+      "kind": "function",
+      "name": "SCE::Forge::Cbor::detail::double_of",
+      "signature": "double SCE::Forge::Cbor::detail::double_of(std::uint64_t) noexcept"
+    },
+    {
+      "header": "sce/forge/cbor.h",
+      "kind": "function",
       "name": "SCE::Forge::Cbor::detail::expect",
       "signature": "Decoded<std::uint64_t> SCE::Forge::Cbor::detail::expect(SceCursor &, std::uint8_t) noexcept"
+    },
+    {
+      "header": "sce/forge/cbor.h",
+      "kind": "function",
+      "name": "SCE::Forge::Cbor::detail::float_of",
+      "signature": "float SCE::Forge::Cbor::detail::float_of(std::uint32_t) noexcept"
+    },
+    {
+      "header": "sce/forge/cbor.h",
+      "kind": "function",
+      "name": "SCE::Forge::Cbor::detail::half_of",
+      "signature": "std::optional<std::uint16_t> SCE::Forge::Cbor::detail::half_of(double) noexcept"
+    },
+    {
+      "header": "sce/forge/cbor.h",
+      "kind": "function",
+      "name": "SCE::Forge::Cbor::detail::half_value",
+      "signature": "double SCE::Forge::Cbor::detail::half_value(std::uint16_t) noexcept"
     },
     {
       "header": "sce/forge/cbor.h",
@@ -3601,6 +3637,12 @@
       "kind": "function",
       "name": "SCE::Forge::Cbor::detail::read_payload",
       "signature": "Decoded<const std::uint8_t *> SCE::Forge::Cbor::detail::read_payload(SceCursor &, std::uint64_t) noexcept"
+    },
+    {
+      "header": "sce/forge/cbor.h",
+      "kind": "function",
+      "name": "SCE::Forge::Cbor::detail::single_of",
+      "signature": "std::optional<float> SCE::Forge::Cbor::detail::single_of(double) noexcept"
     },
     {
       "header": "sce/forge/cbor.h",
@@ -3635,8 +3677,26 @@
     {
       "header": "sce/forge/cbor.h",
       "kind": "function",
+      "name": "SCE::Forge::Cbor::read_float",
+      "signature": "Decoded<double> SCE::Forge::Cbor::read_float(SceCursor &) noexcept"
+    },
+    {
+      "header": "sce/forge/cbor.h",
+      "kind": "function",
+      "name": "SCE::Forge::Cbor::read_float32",
+      "signature": "Decoded<float> SCE::Forge::Cbor::read_float32(SceCursor &) noexcept"
+    },
+    {
+      "header": "sce/forge/cbor.h",
+      "kind": "function",
       "name": "SCE::Forge::Cbor::read_head",
       "signature": "Decoded<Head> SCE::Forge::Cbor::read_head(SceCursor &) noexcept"
+    },
+    {
+      "header": "sce/forge/cbor.h",
+      "kind": "function",
+      "name": "SCE::Forge::Cbor::read_int_within",
+      "signature": "Decoded<std::int64_t> SCE::Forge::Cbor::read_int_within(SceCursor &, std::int64_t, std::int64_t) noexcept"
     },
     {
       "header": "sce/forge/cbor.h",
@@ -3665,6 +3725,12 @@
     {
       "header": "sce/forge/cbor.h",
       "kind": "function",
+      "name": "SCE::Forge::Cbor::read_variant",
+      "signature": "Decoded<std::size_t> SCE::Forge::Cbor::read_variant(SceCursor &, Span<const std::string_view>) noexcept"
+    },
+    {
+      "header": "sce/forge/cbor.h",
+      "kind": "function",
       "name": "SCE::Forge::Cbor::skip",
       "signature": "Decoded<Skipped> SCE::Forge::Cbor::skip(SceCursor &) noexcept"
     },
@@ -3689,8 +3755,20 @@
     {
       "header": "sce/forge/cbor.h",
       "kind": "function",
+      "name": "SCE::Forge::Cbor::write_float",
+      "signature": "std::optional<CodecError> SCE::Forge::Cbor::write_float(SceSink &, double) noexcept"
+    },
+    {
+      "header": "sce/forge/cbor.h",
+      "kind": "function",
       "name": "SCE::Forge::Cbor::write_head",
       "signature": "std::optional<CodecError> SCE::Forge::Cbor::write_head(SceSink &, std::uint8_t, std::uint64_t) noexcept"
+    },
+    {
+      "header": "sce/forge/cbor.h",
+      "kind": "function",
+      "name": "SCE::Forge::Cbor::write_int",
+      "signature": "std::optional<CodecError> SCE::Forge::Cbor::write_int(SceSink &, std::int64_t) noexcept"
     },
     {
       "header": "sce/forge/cbor.h",
@@ -3712,9 +3790,16 @@
     },
     {
       "header": "sce/forge/cbor.h",
+      "kind": "function",
+      "name": "SCE::Forge::Cbor::write_variant",
+      "signature": "std::optional<CodecError> SCE::Forge::Cbor::write_variant(SceSink &, std::string_view) noexcept"
+    },
+    {
+      "header": "sce/forge/cbor.h",
       "kind": "struct",
       "members": [
         "field std::uint64_t value",
+        "field std::uint8_t info",
         "field std::uint8_t major",
         "method Head &(Head &&) noexcept operator=",
         "method Head &(const Head &) noexcept operator=",
@@ -3800,7 +3885,11 @@
         "CborMalformed",
         "CborRequiredKeyMissing",
         "CborTooDeep",
-        "CapacityExceeded"
+        "CapacityExceeded",
+        "CborWrongType",
+        "CborDuplicateKey",
+        "CborUnknownVariant",
+        "CborUnionEntries"
       ]
     },
     {
