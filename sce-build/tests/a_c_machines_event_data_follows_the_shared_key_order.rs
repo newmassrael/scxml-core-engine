@@ -22,9 +22,12 @@
 // `backends/c/tests/unit/forge_wire_repeat_test.c` holds the writer to the table's
 // case. An object or array value is not a value a `sce-static` variable holds.
 
+mod common;
+
 use std::path::{Path, PathBuf};
 use std::process::Command;
 
+use common::string_literal::{literal_value, Escapes};
 use tempfile::tempdir;
 
 fn sce_codegen_bin() -> PathBuf {
@@ -98,44 +101,12 @@ fn written_keys(source: &str) -> Vec<String> {
         .filter_map(|line| {
             let at = line.find(CALL)? + CALL.len();
             let rest = &line[at..];
-            Some(c_literal_value(&rest[..rest.find("\\\"\"")?]))
+            Some(literal_value(
+                Escapes::CFamily,
+                &rest[..rest.find("\\\"\"")?],
+            ))
         })
         .collect()
-}
-
-/// The text a C string literal's body compiles to, for the escapes
-/// `escape_c` writes: `\\`, `\"`, `\n`, `\r`, `\t`, `\?` and a three-digit
-/// octal byte. Any other escape is a body this reader was not written for, and
-/// it panics rather than guess.
-fn c_literal_value(body: &str) -> String {
-    let mut bytes = Vec::with_capacity(body.len());
-    let mut chars = body.chars();
-    while let Some(ch) = chars.next() {
-        if ch != '\\' {
-            let mut utf8 = [0u8; 4];
-            bytes.extend_from_slice(ch.encode_utf8(&mut utf8).as_bytes());
-            continue;
-        }
-        match chars.next() {
-            Some('\\') => bytes.push(b'\\'),
-            Some('"') => bytes.push(b'"'),
-            Some('n') => bytes.push(b'\n'),
-            Some('r') => bytes.push(b'\r'),
-            Some('t') => bytes.push(b'\t'),
-            Some('?') => bytes.push(b'?'),
-            Some(first @ '0'..='7') => {
-                let digits: String = std::iter::once(first)
-                    .chain(chars.by_ref().take(2))
-                    .collect();
-                let byte = u8::from_str_radix(&digits, 8).unwrap_or_else(|_| {
-                    panic!("an octal escape of three digits, not `\\{digits}`")
-                });
-                bytes.push(byte);
-            }
-            other => panic!("an escape escape_c does not write: `\\{other:?}` in `{body}`"),
-        }
-    }
-    String::from_utf8(bytes).unwrap_or_else(|_| panic!("a key whose bytes are UTF-8: `{body}`"))
 }
 
 /// The keys of an object the table writes out, in the order it writes them.

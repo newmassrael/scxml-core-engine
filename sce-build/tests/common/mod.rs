@@ -43,6 +43,7 @@ pub mod routes;
 pub mod row_oracle;
 pub mod rust_source;
 pub mod source_lexing;
+pub mod string_literal;
 pub mod template_registration;
 pub mod wire_site;
 pub mod workflow;

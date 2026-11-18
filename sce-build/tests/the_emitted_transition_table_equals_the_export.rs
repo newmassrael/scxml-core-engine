@@ -28,6 +28,7 @@
 mod common;
 
 use common::routes::{directory_holding, route_args, W3cSuite};
+use common::string_literal::{literal_value, Escapes};
 use std::collections::BTreeMap;
 use std::path::{Path, PathBuf};
 use std::process::{Command, Output, Stdio};
@@ -213,30 +214,6 @@ fn kotlin_branch_events(events: &[String]) -> std::collections::HashSet<String> 
     sce_build::kotlin::collect_branch_events(&tree, "")
 }
 
-/// Undo the escapes the backends' literal filters write.
-fn unescape(literal: &str) -> String {
-    let mut out = String::new();
-    let mut chars = literal.chars();
-    while let Some(c) = chars.next() {
-        if c != '\\' {
-            out.push(c);
-            continue;
-        }
-        match chars.next() {
-            Some('n') => out.push('\n'),
-            Some('r') => out.push('\r'),
-            Some('t') => out.push('\t'),
-            Some('x') => {
-                let hex: String = chars.by_ref().take(2).collect();
-                out.push(char::from_u32(u32::from_str_radix(&hex, 16).unwrap()).unwrap());
-            }
-            Some(other) => out.push(other),
-            None => panic!("a literal ends inside an escape: {literal}"),
-        }
-    }
-    out
-}
-
 const LITERAL: &str = r#""((?:[^"\\]|\\.)*)""#;
 
 fn opt(captures: &regex::Captures, group: usize) -> Option<String> {
@@ -309,14 +286,18 @@ fn read_table(lang: &str, source: &str, machine: &str) -> Vec<Entry> {
     } else {
         BTreeMap::new()
     };
+    // Each literal is read through the escapes its own language's escaper
+    // writes: C and C++ write a character past ASCII as the octal escapes of
+    // its UTF-8 bytes, the others as itself.
+    let escapes = Escapes::of(lang);
     let text = |captured: &str| -> String {
         if lang == "c11" {
             let literal = strings
                 .get(captured)
                 .unwrap_or_else(|| panic!("c11: no string object named {captured}"));
-            unescape(literal)
+            literal_value(escapes, literal)
         } else {
-            unescape(captured)
+            literal_value(escapes, captured)
         }
     };
     let re = Regex::new(&pattern).unwrap_or_else(|e| panic!("{lang}: {e}"));
@@ -687,6 +668,59 @@ const DOC_WITHOUT_TRANSITIONS: &str = r#"<scxml xmlns="http://www.w3.org/2005/07
   <final id="only"/>
 </scxml>
 "#;
+
+/// A table is read back through the escapes of its own language: the body each
+/// escaper writes reads back as the text it was handed, and the octal escapes C
+/// and C++ write a character past ASCII in are the bytes of its UTF-8.
+///
+/// Turns red where `read_table` reads every backend through one grammar again,
+/// or where the C family's octal escape is read as a character and not a byte.
+#[test]
+fn a_literal_is_read_through_the_escapes_of_its_own_language() {
+    let text = "caf\u{e9} \"q\" a\\b\n\t\u{1}$";
+    assert_eq!(
+        literal_value(Escapes::CFamily, &filters::escape_c(text.to_string())),
+        text
+    );
+    assert_eq!(
+        literal_value(Escapes::Rust, &filters::escape_rust(text.to_string())),
+        text
+    );
+    assert_eq!(
+        literal_value(Escapes::Python, &filters::escape_python(text.to_string())),
+        text
+    );
+    // Go, Kotlin and Swift by the bodies their escapers write for the same text.
+    assert_eq!(
+        literal_value(Escapes::Go, "caf\u{e9} \\\"q\\\" a\\\\b\\n\\t\\u0001$"),
+        text
+    );
+    assert_eq!(
+        literal_value(
+            Escapes::Kotlin,
+            "caf\u{e9} \\\"q\\\" a\\\\b\\n\\t\\u0001\\$"
+        ),
+        text
+    );
+    assert_eq!(
+        literal_value(Escapes::Swift, "caf\u{e9} \\\"q\\\" a\\\\b\\n\\t\\u{1}$"),
+        text
+    );
+    assert_eq!(
+        literal_value(Escapes::CFamily, "caf\\303\\251"),
+        "caf\u{e9}"
+    );
+    assert_eq!(literal_value(Escapes::Rust, "\\0"), "\0");
+}
+
+/// An octal escape is C's and C++'s alone: a Rust literal holds none, and a
+/// reader that took one there would hand the comparison a text no compiler
+/// builds.
+#[test]
+#[should_panic(expected = "does not write")]
+fn an_escape_of_another_language_is_refused() {
+    literal_value(Escapes::Rust, "caf\\303\\251");
+}
 
 /// A machine with no transition has a table, and it is empty.
 #[test]
