@@ -1038,9 +1038,12 @@ mod tests {
 
     /// Two links under one root may resolve to the same directory without
     /// either being a cycle: neither is on the other's descent path, and
-    /// each names a distinct set of root-relative paths. The W3C tree does
-    /// exactly this — `resources/403a`, `403b` and `403c` all name
-    /// `resources/403`.
+    /// each names a distinct set of root-relative paths. A build sandbox
+    /// does this when it materialises two declared inputs as links into one
+    /// directory of the real tree. The W3C corpus (`resources/`) holds no
+    /// such link: a checkout without symbolic links holds a text file in its
+    /// place, and would hash a different input set than the same commit
+    /// checked out with them.
     ///
     /// Suppressing the second and later ones leaks `fs::read_dir` ordering
     /// into the digest: whichever name the filesystem happens to yield

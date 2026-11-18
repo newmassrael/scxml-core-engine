@@ -36,6 +36,36 @@ sce-codegen generate resources/XXX/testXXX.scxml -o /tmp/test_verify/ -l cpp
 
 **Do NOT** test against `build/tests/w3c_static_generated/testXXX.scxml` — it doesn't exist until registered.
 
+### A variant fixture lives in its test number's directory
+
+Some IRP tests ship several documents under one number: test 403 is `test403a`, `test403b` and
+`test403c`, and its `metadata.txt` says `variants: 3`. Each document is a fixture of its own, with
+the id `403a`, `403b`, `403c`, and every one of them lives in the directory of the number it begins
+with:
+
+```
+resources/403/metadata.txt        the test's metadata, shared by its variants
+resources/403/test403a.scxml      fixture 403a (and test403a.txml beside it)
+resources/403/test403b.scxml      fixture 403b
+resources/403/test403c.scxml      fixture 403c
+```
+
+The rule is: a fixture id is the test number followed, for a variant, by one lowercase letter
+(`^[0-9]+[a-z]?$`, which `W3cRegistry::load` and `fixtures.schema.json` both hold an id to); its
+documents are `resources/<number>/test<id>.scxml`, and its metadata is
+`resources/<number>/metadata.txt`. Create no `resources/403a/` directory and no link to one. Every
+reader resolves a fixture by this rule, each in one place: `w3c_registry::fixture_dir` and
+`fixture_document` in Rust (which `sce-codegen generate-w3c` and the Rust suites call),
+`sce_w3c_fixture_dir` in CMake (`cmake/SCEW3CRegistry.cmake`, which both conformance routes call),
+`getFixtureDirectory` in the visualizer (`web/visualizer/utils.js`), and the C++ runner's discovery
+of `test<number><letter>.txml` inside the number's directory (`tests/w3c/W3CTestRunner.cpp`).
+
+The tree used to give each variant a directory of its own as a symbolic link to `resources/403`.
+Git for Windows checks a symbolic link out as a text file naming its target when `core.symlinks` is
+false, its default, so on such a checkout `resources/403a` was a file and the CMake configure
+stopped on a registered fixture whose document was not there. A layout that needs no link reads
+the same on every checkout.
+
 ## Step 2: Register the test
 
 1. **Conformance registry** — `tests/w3c/conformance/fixtures.json`. This
@@ -85,8 +115,8 @@ sce-codegen generate resources/XXX/testXXX.scxml -o /tmp/test_verify/ -l cpp
    declaration adds, such as the header of a declared transition function,
    then the generation of every child document the fixture's generation
    writes or stages, each declared from the plan that answer holds for it. A
-   sub-fixture the author wrote beside the fixture is staged from
-   `resources/<id>/`; a hybrid invoke's stub is written by the fixture's
+   sub-fixture the author wrote beside the fixture is staged from the
+   fixture's directory, `resources/<number>/`; a hybrid invoke's stub is written by the fixture's
    generation and planned from the text it would write, so nothing of it is
    tracked (`hybrid_stubs_are_written_only_by_the_generator`).
 

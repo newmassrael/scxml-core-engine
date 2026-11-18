@@ -70,11 +70,9 @@ const SCXML_ROOTS: &[&str] = &[
 /// Paths git tracks, as repo-relative strings.
 ///
 /// The index is built from tracked files only. `resources/` also holds
-/// build products — a W3C case with child machines materialises
-/// `resources/<n>a/test<n>a.scxml` next to the tracked
-/// `resources/<n>/test<n>a.scxml`, gitignored and identical in
-/// basename. Indexing the working tree instead of the tracked set
-/// makes those names ambiguous and, worse, lets the gate regenerate
+/// build products — the stub a hybrid invoke's generation writes beside
+/// its fixture (`resources/**/*_hybrid<n>.scxml`, gitignored). Indexing
+/// the working tree instead of the tracked set lets the gate regenerate
 /// from a build product rather than from a source document.
 fn tracked_paths() -> std::collections::BTreeSet<String> {
     common::repository::paths_git_tracks(&[])

@@ -82,13 +82,10 @@ use sce_build::DocumentLabel;
 /// [`common::repository::files_with_extension`] — not whatever lies
 /// under the root.
 ///
-/// ⚠ This note used to say symlinked directories had to be followed or
-/// `resources/403a`, `403b` and `403c` would silently drop a fixture.
-/// Measured 2026-09-22 they are the repository's only three directory
-/// links and all three point at `resources/403/`, which is tracked and
-/// holds `test403a/b/c.scxml`. Git lists those once, under their own
-/// directory; following the links read the same three documents four
-/// times each. Nothing was being protected.
+/// The W3C variants `403a`, `403b` and `403c` are documents of
+/// `resources/403/` (`w3c_registry::fixture_document`), and git lists each
+/// once there. The tree keeps no directory of their own and no link to one,
+/// so there is nothing a sweep could fail to follow.
 fn fixture_files() -> Vec<PathBuf> {
     common::repository::files_with_extension("scxml")
 }

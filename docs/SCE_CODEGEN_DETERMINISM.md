@@ -164,8 +164,13 @@ Two consequences worth planning around:
   them.** The set is keyed by root-relative path, so two links naming one
   directory are two sets of paths, not a duplicate to collapse. Removing
   one of them therefore moves the hash — which is the point: it changed the
-  input set. This repository's own tree relies on it (`resources/403a`,
-  `403b` and `403c` all name `resources/403`).
+  input set. A committed tree should not rely on it: a checkout without
+  symbolic links (Git for Windows' default, `core.symlinks=false`) holds
+  each link as a text file naming its target, so the same commit hashes to
+  a different value there. The W3C corpus (`resources/`) holds no link: the
+  variants `403a`, `403b` and `403c`, which once had directories linked to
+  `resources/403`, are documents of `resources/403`
+  (`docs/SCE_W3C_TEST_REGISTRATION.md`).
 - **A link onto a directory already being descended contributes nothing.**
   Every file it reaches is one the walk is already collecting, reachable
   under unboundedly many spellings; cutting there is what terminates a

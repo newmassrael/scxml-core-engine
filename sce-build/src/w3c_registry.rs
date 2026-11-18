@@ -928,4 +928,28 @@ mod tests {
         }
         assert!(misplaced.is_empty(), "{}", misplaced.join("\n"));
     }
+
+    /// No variant has a directory of its own beside its test number's: not a
+    /// directory, not a symbolic link, and not the text file a checkout
+    /// without symbolic links writes in a link's place. A second name for a
+    /// test's directory is a path some reader would join an id into, and on
+    /// such a checkout it names no directory at all.
+    #[test]
+    fn no_variant_has_a_directory_of_its_own() {
+        let resources = repo_root().join("resources");
+        let second_names: Vec<String> = load_committed()
+            .fixtures()
+            .iter()
+            .map(|fixture| fixture.id.as_str())
+            .filter(|id| *id != test_number(id))
+            .map(|id| resources.join(id))
+            .filter(|own| std::fs::symlink_metadata(own).is_ok())
+            .map(|own| own.display().to_string())
+            .collect();
+        assert!(
+            second_names.is_empty(),
+            "a variant fixture has a path of its own beside its test number's directory: \
+             {second_names:?}. Its documents are resources/<number>/test<id>.scxml; remove it",
+        );
+    }
 }
