@@ -2090,10 +2090,11 @@ mod tests {
     /// docs/SCE_TEST_PROFILE.md §12.3: the machine's value of a message is
     /// made from the value its record's unit holds, each field read by its id.
     /// A list of records is widened element by element into the machine's
-    /// structs, built by position, an enum chosen by the declared name of the
-    /// unit's variant, a byte string that is one entry of its record made into
-    /// the `OwnedBytes` of its bound, and every other value, one runtime type in
-    /// the unit and the machine, copied whole.
+    /// structs, built by position with each member's name in a comment beside
+    /// its value (docs/adr/0059, section 5), an enum chosen by the declared
+    /// name of the unit's variant, a byte string that is one entry of its
+    /// record made into the `OwnedBytes` of its bound, and every other value,
+    /// one runtime type in the unit and the machine, copied whole.
     #[test]
     fn a_cpp_message_is_made_from_its_units_value_field_by_field() {
         let held = held();
@@ -2113,10 +2114,11 @@ mod tests {
         assert_eq!(ids, ["items", "grid", "late"]);
         for needle in [
             "::SCE::Forge::widenedMap<MItemRecord>(sceValue.items, [&](const auto &sceCopied) \
-             -> MItemRecord { return MItemRecord{sceCopied.id, [&](const ",
+             -> MItemRecord { return MItemRecord{/*id=*/sceCopied.id, /*level=*/[&](const ",
             " &sceEnum) -> MLevelEnum { return sceEnum == ",
-            " ? MLevelEnum::Low : MLevelEnum::High; }(sceCopied.level), sceCopied.due, \
-             ::SCE::Forge::OwnedBytes<4>::make(sceCopied.blob).value(), sceCopied.tags}; })",
+            " ? MLevelEnum::Low : MLevelEnum::High; }(sceCopied.level), /*due=*/sceCopied.due, \
+             /*blob=*/::SCE::Forge::OwnedBytes<4>::make(sceCopied.blob).value(), \
+             /*tags=*/sceCopied.tags}; })",
         ] {
             assert!(fields[0].1.contains(needle), "{needle} in {}", fields[0].1);
         }
@@ -2144,7 +2146,7 @@ mod tests {
             "[&]() -> MShapeUnion { struct sceArms { MShapeUnion operator()(const \
              SCE::Generated::Shape::Shape::",
             " &sceCase) const { const auto &sceCopied = sceCase.value; return MShapeUnion{",
-            "MRadiusRecord{sceCopied.radius}",
+            "MRadiusRecord{/*radius=*/sceCopied.radius}",
             "return ::std::visit(sceArms{}, (sceValue.shape).cases); }()",
         ] {
             assert!(made.contains(needle), "{needle} in {made}");
