@@ -516,9 +516,12 @@ mod tests {
         assert_eq!(rewritten_document(&text, "m.scxml").unwrap(), text);
     }
 
+    /// A CBOR codec over `entries`. Its input frame states no bound: the
+    /// parser reads only its type, since its length means nothing in a map,
+    /// and refuses an `sce:max-size` there as unread.
     fn cbor_codec(entries: &str) -> String {
         format!(
-            "<scxml {NS} sce:kind=\"codec\" sce:encoding=\"cbor\" sce:codec-format=\"2\" name=\"c\" version=\"1.0\">\n  <datamodel>\n    <data id=\"raw\" sce:type=\"bytes\" sce:max-size=\"64\" sce:direction=\"in\"/>\n{entries}\n  </datamodel>\n</scxml>\n"
+            "<scxml {NS} sce:kind=\"codec\" sce:encoding=\"cbor\" sce:codec-format=\"2\" name=\"c\" version=\"1.0\">\n  <datamodel>\n    <data id=\"raw\" sce:type=\"bytes\" sce:direction=\"in\"/>\n{entries}\n  </datamodel>\n</scxml>\n"
         )
     }
 
@@ -535,7 +538,8 @@ mod tests {
     fn a_cbor_entry_text_bound_moves_into_its_type() {
         // docs/adr/0101, section 1.3: a CBOR entry is a value of the language,
         // and its `sce:max-size` the bracket of its text or byte string. The
-        // input frame is no entry, and an exact length is no legacy bound.
+        // input frame is no entry and stays as written, and an exact length
+        // is no legacy bound.
         let text = cbor_codec(
             r#"    <data id="label" sce:type="optional&lt;string&gt;" sce:key="0" sce:max-size="4" sce:limit="label_text" sce:direction="out"/>
     <data id="blob" sce:type="bytes" sce:key="1" sce:max-size="0x20" sce:direction="out"/>
@@ -575,8 +579,7 @@ mod tests {
         assert!(rewritten.contains(
             r#"<data id="id" sce:type="bytes" sce:key="2" sce:length="16" sce:direction="out"/>"#
         ));
-        assert!(rewritten
-            .contains(r#"<data id="raw" sce:type="bytes" sce:max-size="64" sce:direction="in"/>"#));
+        assert!(rewritten.contains(r#"<data id="raw" sce:type="bytes" sce:direction="in"/>"#));
         assert!(superseded(&rewritten, "c.scxml").is_empty());
     }
 
