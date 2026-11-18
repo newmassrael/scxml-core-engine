@@ -541,6 +541,30 @@ These are not built, and nothing here stands in for them:
   header), or for a negative algorithm (`-8`). The reference hosts write and
   read the structures themselves, through their language's CBOR heads, and are
   held to one encoding by the shared scenario's bytes.
+- **A record signed or sealed by name** (docs/adr/0107, Open question 1, decided:
+  `<invoke type="sce-host-cose-sign1" sce:payload="DeviceFile">` encodes a record
+  of the schema it names into the request's `payload`, `sce-host-cose-encrypt0`
+  into its `plaintext`, and on `sce-host-cose-verify1` and
+  `sce-host-cose-decrypt0` reads the result's bytes back into that record,
+  refusing bytes that are no value of it). The build reads no `sce:payload`, so a
+  document signs and seals bytes it holds. No machine of any lane can yet write
+  a record it holds as CBOR or read one from CBOR: a CBOR codec document
+  (SCE_FORGE.md section 4.6.1) writes and reads a map of its own entries, and
+  reads a record only as an entry of its own list, in the schema unit's type, not
+  in the record type a machine declares. The mechanism needs, on Rust and C++
+  first: one deterministic CBOR form of a record, docs/adr/0101 section 2's (a
+  field keyed by its id, an absent optional left out), which has not landed (the
+  one record encoder that exists, `sce_rust_trust::cbor::encode`, writes
+  docs/adr/0086 section 9.2's form, an absent optional `null` under its key,
+  encodes only, and is no dependency of a generated machine); a writer of a
+  machine's record in that form beside the JSON and wire writers of the composed
+  lowering (`RustCarrier`, `CppCarrier`), so the build writes the request's field
+  at the invoke site as it writes `answer_schema` from `sce:answer`; a reader of
+  that form into the machine's record that refuses with the lift's codes
+  (docs/adr/0087, section 2.3), where each runtime's reader reads JSON only
+  (Rust `sce_rust_runtime::event_payload`, C++ `common/EventPayloadLift.h`); and
+  a completion that carries the record read or its refusal, a result record the
+  build derives from the library's.
 - **A key store.** The Rust reference host keeps the keys it is given and those
   it derives in memory, for its own life rather than a session's, and zeroes none
   of them when it drops them.
@@ -638,3 +662,19 @@ group's examples for these algorithms (`eddsa-examples/eddsa-sig-01.json`,
 output, which opens under `Encrypt0`), to the bytes of a signature as the
 deterministic encoding writes them, and to keys derived by HKDF opening objects
 sealed under the same keys elsewhere.
+
+**The two hosts agree byte for byte.** Each writes every object of
+`tests/host_features/cose_cross_language.json` through its operations, from the
+keys the file gives and, for a seal, the nonce its case fixes, and verifies and
+opens every object of it: Rust in
+`backends/rust/host-features/tests/cose_cross_language.rs`, C++ in
+`AStandardHostCose.ACoseObjectCrossesBetweenTheHosts`
+(`tests/integration/AStandardHostCoseTest.cpp`). An object either host signs or
+seals is then one the other verifies or opens, in either direction. The file's
+objects were computed by an implementation that shares nothing with either
+host. A seal's nonce comes from the host's random source, the operating system's
+unless the embedding gives another, which is how a test fixes it: Rust's
+`ReferenceHost::set_nonce_source` (a `NonceSource`; `SystemNonces` is the
+operating system's), C++'s `CoseCrypto::random`. A source that gives one nonce
+twice under one key gives both plaintexts away, so one that is not random is for
+such a test.
