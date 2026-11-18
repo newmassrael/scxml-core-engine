@@ -1,10 +1,19 @@
 # SCEBuildLoweringRun.cmake — script mode helper for SCEBuildLowering.cmake.
 #
-# Runs cargo, parses the JSON message stream for the `.a` cargo actually
-# wrote, and leaves that path in SCE_LOWERING_PATHFILE. It is a separate
-# file because `execute_process` cannot both stream a build's output to
-# the developer and capture it, and because parsing belongs somewhere a
-# reader can open rather than inside a quoted COMMAND line.
+# Runs cargo, reads its JSON message stream for the static library cargo
+# actually wrote and for the native libraries rustc says that library needs,
+# and leaves the path in SCE_LOWERING_PATHFILE and the libraries in
+# SCE_LOWERING_NATIVELIBSFILE. It is a separate file because
+# `execute_process` cannot both stream a build's output to the developer and
+# capture it, and because parsing belongs somewhere a reader can open rather
+# than inside a quoted COMMAND line.
+#
+# The stream is read with CMake's JSON parser, not a pattern: a path in it is
+# a JSON string, so on Windows its backslashes arrive escaped, and only a
+# parser gives the path back as the file system spells it. The static
+# library is recognised by SCE_LOWERING_STATICLIB_SUFFIX, the suffix the
+# including tree's toolchain gives one (`.a` for GNU and emscripten, `.lib`
+# for MSVC), so no platform's spelling is written here.
 #
 # The path comes from cargo, never from a spelled profile directory —
 # see the header of SCEBuildLowering.cmake for what that rule cost once.
@@ -33,6 +42,11 @@ set(_cargo_args rustc -p sce-build --lib --release
 if(SCE_LOWERING_TARGET)
     list(APPEND _cargo_args --target "${SCE_LOWERING_TARGET}")
 endif()
+# What a Rust static library needs linked beside it differs by target (the
+# C library, threads and the unwinder on Linux; kernel32, ws2_32, bcrypt and
+# the rest on Windows), and rustc is the one that knows. It reports the list
+# for the target it built; a list written here would be one platform's.
+list(APPEND _cargo_args -- --print native-static-libs)
 if(SCE_LOWERING_TARGET_DIR)
     list(APPEND _cargo_env "CARGO_TARGET_DIR=${SCE_LOWERING_TARGET_DIR}")
 endif()
@@ -54,25 +68,73 @@ if(NOT _rc EQUAL 0)
     message(FATAL_ERROR "cargo rustc exited ${_rc}")
 endif()
 
-# One JSON object per line; the artifact is whichever `filenames` entry
-# ends in `.a`. Take the LAST, because cargo emits an entry per crate in
-# the graph and sce-build's own is the one that closes the build.
+if(SCE_LOWERING_STATICLIB_SUFFIX STREQUAL "")
+    message(FATAL_ERROR "SCE_LOWERING_STATICLIB_SUFFIX was not passed")
+endif()
+
+# One JSON object per line. The artifact is whichever `filenames` entry of a
+# `compiler-artifact` ends in the static library suffix; take the LAST,
+# because cargo emits an entry per crate in the graph and sce-build's own is
+# the one that closes the build. rustc's list of native libraries arrives as
+# a `compiler-message` whose text starts `native-static-libs:`.
 string(REPLACE "\n" ";" _lines "${_messages}")
 set(_found "")
+set(_native "")
+set(_native_seen FALSE)
+set(_native_prefix "native-static-libs:")
+string(LENGTH "${_native_prefix}" _native_prefix_len)
+string(LENGTH "${SCE_LOWERING_STATICLIB_SUFFIX}" _suffix_len)
 foreach(_line IN LISTS _lines)
-    if(_line MATCHES "\"filenames\"")
-        string(REGEX MATCHALL "\"[^\"]*\\.a\"" _hits "${_line}")
-        foreach(_hit IN LISTS _hits)
-            string(REGEX REPLACE "^\"|\"$" "" _hit "${_hit}")
-            set(_found "${_hit}")
+    if(NOT _line MATCHES "^{")
+        continue()
+    endif()
+    string(JSON _reason ERROR_VARIABLE _err GET "${_line}" reason)
+    if(_err)
+        continue()
+    endif()
+    if(_reason STREQUAL "compiler-artifact")
+        string(JSON _count ERROR_VARIABLE _err LENGTH "${_line}" filenames)
+        if(_err OR _count EQUAL 0)
+            continue()
+        endif()
+        math(EXPR _last "${_count} - 1")
+        foreach(_i RANGE 0 ${_last})
+            string(JSON _file GET "${_line}" filenames ${_i})
+            string(LENGTH "${_file}" _file_len)
+            if(_file_len GREATER _suffix_len)
+                math(EXPR _at "${_file_len} - ${_suffix_len}")
+                string(SUBSTRING "${_file}" ${_at} -1 _tail)
+                if(_tail STREQUAL SCE_LOWERING_STATICLIB_SUFFIX)
+                    set(_found "${_file}")
+                endif()
+            endif()
         endforeach()
+    elseif(_reason STREQUAL "compiler-message")
+        string(JSON _text ERROR_VARIABLE _err GET "${_line}" message message)
+        if(_err)
+            continue()
+        endif()
+        string(FIND "${_text}" "${_native_prefix}" _at)
+        if(_at EQUAL 0)
+            string(SUBSTRING "${_text}" ${_native_prefix_len} -1 _native)
+            string(STRIP "${_native}" _native)
+            set(_native_seen TRUE)
+        endif()
     endif()
 endforeach()
 
 if(_found STREQUAL "")
     message(FATAL_ERROR
-        "cargo reported no staticlib. It builds, but nothing in its JSON "
-        "named a `.a` — the crate-type or the message format has moved.")
+        "cargo reported no staticlib. It builds, but nothing in its JSON named "
+        "a file ending in `${SCE_LOWERING_STATICLIB_SUFFIX}`: the crate-type or "
+        "the message format has moved.")
+endif()
+if(NOT _native_seen)
+    message(FATAL_ERROR
+        "rustc reported no `native-static-libs` for the staticlib, so what it "
+        "needs linked beside it is unknown: `--print native-static-libs` or "
+        "its message has moved.")
 endif()
 
 file(WRITE "${SCE_LOWERING_PATHFILE}" "${_found}")
+file(WRITE "${SCE_LOWERING_NATIVELIBSFILE}" "${_native}")

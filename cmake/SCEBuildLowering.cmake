@@ -75,6 +75,7 @@ endif()
 # comparison meaningless.
 set(_SCE_LOWERING_STAMP "${CMAKE_BINARY_DIR}/sce_lowering_build.stamp")
 set(_SCE_LOWERING_PATHFILE "${CMAKE_BINARY_DIR}/sce_lowering_path.txt")
+set(_SCE_LOWERING_NATIVELIBSFILE "${CMAKE_BINARY_DIR}/sce_lowering_native_libs.txt")
 
 # `--no-default-features` drops `xsd`, whose libxml2 the lowering entry
 # points cannot reach. Keeping it would make every C++ consumer inherit a
@@ -123,6 +124,8 @@ execute_process(
             -DSCE_CARGO=${SCE_CARGO}
             -DSCE_LOWERING_ROOT=${_SCE_LOWERING_ROOT}
             -DSCE_LOWERING_PATHFILE=${_SCE_LOWERING_PATHFILE}
+            -DSCE_LOWERING_NATIVELIBSFILE=${_SCE_LOWERING_NATIVELIBSFILE}
+            -DSCE_LOWERING_STATICLIB_SUFFIX=${CMAKE_STATIC_LIBRARY_SUFFIX}
             -DSCE_LOWERING_TARGET=${_SCE_LOWERING_TARGET}
             -DSCE_LOWERING_TARGET_DIR=${_SCE_LOWERING_TARGET_DIR}
             -DSCE_LOWERING_NIGHTLY_BIN=${_SCE_LOWERING_NIGHTLY_BIN}
@@ -158,12 +161,41 @@ set_target_properties(SCE::Lowering PROPERTIES
     IMPORTED_LOCATION "${SCE_LOWERING_LIB}"
     INTERFACE_INCLUDE_DIRECTORIES "${_SCE_LOWERING_ROOT}/sce/include"
 )
-# What a Rust staticlib needs from the platform. Rust's std uses threads,
-# `dlsym` for backtrace symbolisation, and libm. An emscripten link has
-# those in its own libc, and `-ldl` names a library emcc does not ship.
+# What a Rust staticlib needs from the platform is what rustc reported for
+# it (`native-static-libs`, read by SCEBuildLoweringRun.cmake): on Linux the
+# C library, threads, `dlsym` and libm; on Windows kernel32, ws2_32, bcrypt and
+# the CRT it was built against. A list written here would be one platform's,
+# which is how a Windows link came to be asked for `pthread dl m`. A `-l<name>`
+# is the library `<name>`, a `-framework <name>` pair is kept whole, any other
+# switch (a `/defaultlib:` of MSVC, a `-pthread`) is a link option, and the
+# rest are library files the linker finds by name (`kernel32.lib`). An
+# emscripten link takes none: its libc has them, and `-ldl` names a library
+# emcc does not ship.
 if(NOT EMSCRIPTEN)
+    file(READ "${_SCE_LOWERING_NATIVELIBSFILE}" _sce_lowering_native)
+    separate_arguments(_sce_lowering_native UNIX_COMMAND "${_sce_lowering_native}")
+    set(_sce_lowering_libs "")
+    set(_sce_lowering_options "")
+    set(_sce_lowering_framework FALSE)
+    foreach(_item IN LISTS _sce_lowering_native)
+        if(_sce_lowering_framework)
+            list(APPEND _sce_lowering_libs "-framework ${_item}")
+            set(_sce_lowering_framework FALSE)
+        elseif(_item STREQUAL "-framework")
+            set(_sce_lowering_framework TRUE)
+        elseif(_item MATCHES "^-l(.+)$")
+            list(APPEND _sce_lowering_libs "${CMAKE_MATCH_1}")
+        elseif(_item MATCHES "^[-/]")
+            list(APPEND _sce_lowering_options "${_item}")
+        else()
+            list(APPEND _sce_lowering_libs "${_item}")
+        endif()
+    endforeach()
     set_property(TARGET SCE::Lowering PROPERTY
-        INTERFACE_LINK_LIBRARIES pthread dl m)
+        INTERFACE_LINK_LIBRARIES "${_sce_lowering_libs}")
+    set_property(TARGET SCE::Lowering PROPERTY
+        INTERFACE_LINK_OPTIONS "${_sce_lowering_options}")
+    message(STATUS "SCE: lowering surface links ${_sce_lowering_libs} ${_sce_lowering_options}")
 endif()
 
 message(STATUS "SCE: lowering surface -> ${SCE_LOWERING_LIB}")
