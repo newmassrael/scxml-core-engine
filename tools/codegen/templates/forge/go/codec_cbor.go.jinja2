@@ -237,7 +237,7 @@ func decode{{ struct_name }}At(c *codec.SceCursor) (*{{ struct_name }}, error) {
 		case {{ e.key }}:
 			// A key given twice is not one map entry.
 			if {{ e.name | lower }}Held.IsPresent() {
-				return nil, codec.ErrCborMalformed
+				return nil, codec.ErrCborDuplicateKey
 			}
 {{ decode_value(e) }}			{{ e.name | lower }}Held = optional.Some(v)
 {% endfor %}
@@ -304,7 +304,7 @@ func (s *{{ struct_name }}) EncodeToBytes() ([]byte, error) {
 // Landing order step 3a), into the payload type the schema's own unit
 // declares: one CBOR map of every field, each under its id as text
 // (docs/adr/0086, section 9.2). Its keys in any order, a key the schema does
-// not declare skipped whole; a key given twice is ErrCborMalformed, a field
+// not declare skipped whole; a key given twice is ErrCborDuplicateKey, a field
 // missing ErrCborRequiredKeyMissing, a text or byte string past its bound
 // ErrCborOutOfRange.
 func {{ r.decode_fn }}(c *codec.SceCursor) ({{ r.type_name }}, error) {
@@ -326,7 +326,7 @@ func {{ r.decode_fn }}(c *codec.SceCursor) ({{ r.type_name }}, error) {
 		case {{ f.key_literal }}:
 			// A key given twice is not one map entry.
 			if seen{{ f.name }} {
-				return record, codec.ErrCborMalformed
+				return record, codec.ErrCborDuplicateKey
 			}
 			seen{{ f.name }} = true
 {{ decode_record_field(f) }}{% endfor %}
