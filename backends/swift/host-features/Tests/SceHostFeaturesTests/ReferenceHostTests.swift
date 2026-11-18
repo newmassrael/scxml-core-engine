@@ -256,6 +256,41 @@ private func put(_ host: ReferenceHost, _ key: String, _ value: String) throws -
     #expect(host.storeEntries().isEmpty)
 }
 
+private func putIf(_ host: ReferenceHost, _ key: String, _ value: String, _ expected: String) -> HostOutcome? {
+    host.start(
+        operation: "sce-host-kv-put-if",
+        id: "putif",
+        params: ["key": key, "value": value, "expected_version": expected]
+    )
+}
+
+@Test func aPutIfWritesOnlyAtTheVersionAReadAnswered() throws {
+    let (host, _) = hostOn()
+    let created = try record(putIf(host, "a", "1", "0"))
+    #expect(created.member("written") == .bool(true))
+    #expect(created.member("version") == .text("1"))
+    let read = try record(host.start(operation: "sce-host-kv-get", id: "get", params: ["key": "a"]))
+    #expect(read.member("version") == .text("1"))
+    let stale = try record(putIf(host, "a", "2", "0"))
+    #expect(stale.member("written") == .bool(false))
+    #expect(stale.member("version") == .text("1"))
+    _ = try record(host.start(operation: "sce-host-kv-delete", id: "del", params: ["key": "a"]))
+    // The delete took the number 2, so the key written again is past it.
+    let again = try record(putIf(host, "a", "3", "0"))
+    #expect(again.member("version") == .text("3"))
+    #expect(host.storeEntries().map(\.value) == ["3"])
+}
+
+@Test func aPutIfWithANulKeyOrADigitOfAnotherScriptIsRefused() {
+    let (host, _) = hostOn()
+    let refusal = HostOutcome.refuse(#"{"reason":"invalid_argument"}"#)
+    #expect(putIf(host, "a\u{0}b", "v", "0") == refusal)
+    // U+0661, ARABIC-INDIC DIGIT ONE, is a number to `Character.isNumber` and not one of
+    // the digits 0 to 9 an expected version is written in.
+    #expect(putIf(host, "k", "v", "\u{661}") == refusal)
+    #expect(host.storeEntries().isEmpty)
+}
+
 @Test func theStoreOrdersKeysByTheirUtf8BytesAndWalksThemFromAfterByPrefix() throws {
     let (host, _) = hostOn()
     for key in ["b", "ab", "a", "\u{e9}", "z"] {

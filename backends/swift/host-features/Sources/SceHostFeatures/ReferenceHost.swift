@@ -69,6 +69,12 @@ private struct StoreKey: Hashable, Comparable {
     }
 }
 
+/// A stored value and the version its write gave the key.
+private struct StoredValue {
+    let value: String
+    let version: UInt64
+}
+
 /// One notification the host holds. What was posted is held as it was given: the host
 /// shows text as written.
 private struct PostedNotification {
@@ -85,6 +91,7 @@ public final class ReferenceHost {
         "sce-host-clock-zone",
         "sce-host-kv-get",
         "sce-host-kv-put",
+        "sce-host-kv-put-if",
         "sce-host-kv-delete",
         "sce-host-kv-next-key",
         "sce-host-notify-permission",
@@ -124,8 +131,12 @@ public final class ReferenceHost {
     private var starts: [HostStart] = []
 
     // The key-value store, in memory, with the quota the embedding set.
-    private var store: [StoreKey: String] = [:]
+    private var store: [StoreKey: StoredValue] = [:]
     private var quota: Int?
+    /// The last number a write or a removal took: versions are numbered from this one
+    /// counter of the store (docs/SCE_HOST_FEATURES.md, section 8), so a key is never given
+    /// a version it had, even after it was removed.
+    private var lastVersion: UInt64 = 0
 
     // The platform's tray, as two lists, and what it says about permission.
     private var permission = "undetermined"
@@ -180,7 +191,7 @@ public final class ReferenceHost {
 
     /// The store's keys and values, in key order.
     public func storeEntries() -> [(key: String, value: String)] {
-        store.keys.sorted().map { (key: $0.text, value: store[$0] ?? "") }
+        store.keys.sorted().map { (key: $0.text, value: store[$0]?.value ?? "") }
     }
 
     /// The ids of the waiting notifications, in the order posted.
@@ -214,6 +225,8 @@ public final class ReferenceHost {
         switch operation {
         case "sce-host-kv-get", "sce-host-kv-delete", "sce-host-kv-put":
             refused = !validKey(params["key"] ?? "")
+        case "sce-host-kv-put-if":
+            refused = !validKey(params["key"] ?? "") || !validVersion(params["expected_version"] ?? "")
         case "sce-host-notify-post", "sce-host-notify-cancel":
             refused = (params["id"] ?? "").isEmpty
         case "sce-host-http-fetch":
@@ -249,6 +262,8 @@ public final class ReferenceHost {
             return kvGet(params["key"] ?? "")
         case "sce-host-kv-put":
             return kvPut(params["key"] ?? "", params["value"] ?? "")
+        case "sce-host-kv-put-if":
+            return kvPutIf(params["key"] ?? "", params["value"] ?? "", expected: params["expected_version"] ?? "")
         case "sce-host-kv-delete":
             return kvDelete(params["key"] ?? "")
         case "sce-host-kv-next-key":
@@ -303,9 +318,11 @@ public final class ReferenceHost {
         case "sce-host-clock-zone":
             zero = [.text("zone_id", ""), .integer("utc_offset_s", Int32(0))]
         case "sce-host-kv-get":
-            zero = [.truth("found", false), .text("value", "")]
+            zero = [.truth("found", false), .text("value", ""), .text("version", "0")]
         case "sce-host-kv-put":
             zero = [.truth("replaced", false)]
+        case "sce-host-kv-put-if":
+            zero = [.truth("written", false), .text("version", "0")]
         case "sce-host-kv-delete", "sce-host-notify-cancel":
             zero = [.truth("existed", false)]
         case "sce-host-kv-next-key":
@@ -421,25 +438,68 @@ public final class ReferenceHost {
         !key.isEmpty && !key.utf8.contains(0)
     }
 
-    private func kvGet(_ key: String) -> HostOutcome {
-        if let value = store[StoreKey(text: key)] {
-            return record(.truth("found", true), .text("value", value))
+    /// An expected version is one or more of the digits 0 to 9, and nothing else: not
+    /// `Character.isNumber`, which takes the digits of other scripts too.
+    private func validVersion(_ text: String) -> Bool {
+        !text.isEmpty && text.utf8.allSatisfy { $0 >= UInt8(ascii: "0") && $0 <= UInt8(ascii: "9") }
+    }
+
+    /// Whether writing `slot` would hold one key more than the quota allows.
+    private func overQuota(_ slot: StoreKey) -> Bool {
+        guard store[slot] == nil, let quota else {
+            return false
         }
-        return record(.truth("found", false), .text("value", ""))
+        return store.count >= quota
+    }
+
+    /// Keeps `value` under `slot` at the counter's next number, and answers that number.
+    private func write(_ slot: StoreKey, _ value: String) -> UInt64 {
+        lastVersion += 1
+        store[slot] = StoredValue(value: value, version: lastVersion)
+        return lastVersion
+    }
+
+    private func kvGet(_ key: String) -> HostOutcome {
+        if let stored = store[StoreKey(text: key)] {
+            return record(
+                .truth("found", true),
+                .text("value", stored.value),
+                .text("version", String(stored.version))
+            )
+        }
+        return record(.truth("found", false), .text("value", ""), .text("version", "0"))
     }
 
     private func kvPut(_ key: String, _ value: String) -> HostOutcome {
         let slot = StoreKey(text: key)
-        let replaced = store[slot] != nil
-        if !replaced, let quota, store.count >= quota {
+        if overQuota(slot) {
             return failure("sce-host-kv-put", code: "quota_exceeded")
         }
-        store[slot] = value
+        let replaced = store[slot] != nil
+        _ = write(slot, value)
         return record(.truth("replaced", replaced))
+    }
+
+    /// Writes `value` under `key` only when the key is at `expected`, a text of digits the
+    /// refusal already judged. It is compared as a number, so leading zeros do not count,
+    /// and one past `UInt64.max` names no version.
+    private func kvPutIf(_ key: String, _ value: String, expected: String) -> HostOutcome {
+        let slot = StoreKey(text: key)
+        let current = store[slot]?.version ?? 0
+        guard UInt64(expected) == current else {
+            return record(.truth("written", false), .text("version", String(current)))
+        }
+        if overQuota(slot) {
+            return failure("sce-host-kv-put-if", code: "quota_exceeded")
+        }
+        return record(.truth("written", true), .text("version", String(write(slot, value))))
     }
 
     private func kvDelete(_ key: String) -> HostOutcome {
         let existed = store.removeValue(forKey: StoreKey(text: key)) != nil
+        if existed {
+            lastVersion += 1
+        }
         return record(.truth("existed", existed))
     }
 
