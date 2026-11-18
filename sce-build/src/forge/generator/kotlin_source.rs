@@ -25,6 +25,7 @@
 //! whole, so no codec has two encodes.
 
 use super::*;
+use crate::forge::codec_failure::{BoundKind, CodecFailure};
 use crate::forge::codec_roles::{BindSite, ElementId, GateVar, InputSource, InputValue};
 use crate::forge::codec_totality::RefusalKind;
 use crate::forge::encode_plan::{
@@ -584,6 +585,25 @@ pub(super) struct KotlinSource {
     pub(super) groups: Vec<group::GroupField>,
 }
 
+/// The statement a printed decode refuses its frame with where the factory of
+/// the class of a byte string's, a text's or a list's bound refuses what the
+/// decode read (docs/adr/0099, amendment of 2026-11-16): a length outside its
+/// bound `LengthOutOfRange` and a count past it `TooManyElements`
+/// ([`CodecFailure::over_bound`]), the kinds the decode's own guards refuse
+/// such a frame with before the factory is reached.
+fn past_bound(kind: BoundKind) -> String {
+    CodecFailure::over_bound(kind).raise_stmt(crate::generator::Language::Kotlin)
+}
+
+/// The statement a printed decode refuses its frame with where what it read
+/// disagrees with what a gate of the frame says of it: a list whose entries
+/// break the law they say from the start the frame gave (docs/adr/0065 §6 R8),
+/// or a chain that lacks a kind its membership flag says it holds, or holds
+/// one the flag says it lacks (R6a, R6b). A gate given where its predicate
+/// does not hold is `CodecError.PresentIfMismatch`, the kind the Rust decode
+/// answers for a list that breaks its law.
+pub(super) const GATE_DISAGREES: &str = "return Decoded.Refused(CodecError.PresentIfMismatch)";
+
 /// How an arm of a group holds a member, always there in it: the type of its
 /// property, the value it holds by default, and what the decode makes it of
 /// from the local it read.
@@ -627,7 +647,7 @@ fn member_of(
             Member {
                 ty: class.clone(),
                 default: format!("{class}.fewest()"),
-                made: format!("{class}.of({local}) ?: return null"),
+                made: format!("{class}.of({local}) ?: {}", past_bound(BoundKind::Length)),
             }
         }
         Value::List { codec, bound, .. } => {
@@ -645,7 +665,7 @@ fn member_of(
             Member {
                 ty: class.clone(),
                 default: format!("{class}.fewest()"),
-                made: format!("{class}.of({local}) ?: return null"),
+                made: format!("{class}.of({local}) ?: {}", past_bound(BoundKind::Count)),
             }
         }
         Value::Body { codec } => {
@@ -705,12 +725,14 @@ pub(super) fn render(
             presented.insert(id.clone(), optional(format!("{}Source", body_type(import))));
             continue;
         }
-        let class = match &element.value {
+        // The class of the element's bound, and what its factory refusing a
+        // value the decode read is refused as.
+        let (class, past) = match &element.value {
             Value::Bytes(bound) | Value::Text(bound) => {
                 let class = refinement_class(struct_name, id, &element.field.sce_type);
                 let text = matches!(element.value, Value::Text(_));
                 before.push_str(&bounded_class(struct_name, id, &class, bound, text));
-                class
+                (class, past_bound(BoundKind::Length))
             }
             // A list of sources of its entries' codec, held to its bound.
             Value::List { codec, bound, law } => {
@@ -725,7 +747,7 @@ pub(super) fn render(
                     body_type(import),
                 ));
                 if law.is_none() {
-                    class
+                    (class, past_bound(BoundKind::Count))
                 } else {
                     // Held to the law its entries say their inputs by, from the
                     // start the value gives it (docs/adr/0065 §6 R8); the
@@ -747,7 +769,8 @@ pub(super) fn render(
                     let starts = decoded_starts(plan, l, id, law);
                     let make = |list: &str| {
                         format!(
-                            "{lawful}.of({class}.of({list}) ?: return null{starts}) ?: return null"
+                            "{lawful}.of({class}.of({list}) ?: {}{starts}) ?: {GATE_DISAGREES}",
+                            past_bound(BoundKind::Count)
                         )
                     };
                     let (default, made) = if gated {
@@ -800,12 +823,12 @@ pub(super) fn render(
         let (default, made) = if gated {
             (
                 "null".to_string(),
-                format!("{local}?.let {{ {class}.of(it) ?: return null }}"),
+                format!("{local}?.let {{ {class}.of(it) ?: {past} }}"),
             )
         } else {
             (
                 format!("{class}.fewest()"),
-                format!("{class}.of({local}) ?: return null"),
+                format!("{class}.of({local}) ?: {past}"),
             )
         };
         let ty = optional(class);

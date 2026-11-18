@@ -1604,6 +1604,23 @@ old encode, the old encode and its templates are removed in the same landing.
    field out of the value class of its bound (`element_kotlin_printed` beside `element_cpp_printed` in the
    collection's resolution), as the C++ collection reads the field through its accessor; a byte string is compared
    by its content, printed or not, since a `ByteArray`'s `==` compares identity.
+
+   *The Kotlin printer under the decode of docs/adr/0099, 2026-11-18:* the landings above were written while a
+   Kotlin decode answered `null`; they landed after it answers `Decoded`, the value or the kind that refused the
+   frame (docs/adr/0099, amendment of 2026-11-16). What the decode makes by a class's `of` is refused, where the
+   factory makes no value of what it read, with the kind a guard of the decode refuses that frame with: a byte
+   string or a text outside its bound `LengthOutOfRange`, a list past it `TooManyElements`
+   (`CodecFailure::over_bound`), a CBOR entry the map lacks `CborRequiredKeyMissing`, and one its class does not
+   hold `CborWrongLength` for a byte string of a stated length and `CborOutOfRange` otherwise, as the Rust map is
+   refused. A list whose entries break their law from the start the frame gave, and a chain that holds a kind the
+   gates of its arm say it lacks or lacks one they say it holds, is `PresentIfMismatch`, a gate given where its
+   predicate does not hold, the kind the Rust decode answers for a law broken. Two lists read under one count and
+   a catch-all's tag read where no arm names it are no refusal: the decode cannot reach a factory that refuses
+   them, and an `error` names the invariant, as the template's unreachable arm does. The content-line encode
+   answers its refusal itself, the runtime's `ContentLine.fail` being gone. The Kotlin case printer states the
+   `sources` of a CBOR map and of a content-line component (`kotlin_source::cbor::source_case`,
+   `kotlin_source::content_line::source_case`), reading the notation where every printer reads it
+   (`source_notation`), so every harness of a printed map folds its byte cases.
 5. Swift, when its codec lowers what the plan holds.
    *Swift lowers what the plan holds, 2026-11-16:* its codec writes every codec of the repository Rust writes,
    but the one only an MCU-class backend writes (`a_swift_codec_is_written_wherever_rust_writes_one.rs`): an

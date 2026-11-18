@@ -2320,6 +2320,10 @@ element is the length of one byte string held in a field of its own, and whose e
   `{Codec}.encodeSource(src, w)` of its companion object encodes any implementation of it: the data class is one,
   and so is any class of yours that presents those properties. Each element's property is read by the name it had,
   so a read `msg.msgId` is unchanged.
+- `decode` answers `Decoded` as every Kotlin decode does (ADR 0099, amendment of 2026-11-16). Where it read bytes
+  its element's class does not hold, it answers `Decoded.Refused(CodecError.LengthOutOfRange)`, the kind its guard
+  refuses such a frame with; a list's class answers `TooManyElements`, and a printed CBOR map's entries their CBOR
+  kinds. Match on the kind as you match on any refusal.
 
 ## A printed Kotlin codec holds text to its bound and derives the flag of a gated element (ADR 0081 step 4)
 

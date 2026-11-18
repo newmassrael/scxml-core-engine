@@ -112,7 +112,11 @@ fn a_length_is_derived_from_the_bytes_it_measures_and_is_no_field_of_the_value()
             "            val _d_len = _e_payload.bytes.size.toUByte()\n",
             "            w.writeU8(_d_len.toByte())?.let { return it }\n",
             "            w.writeBytes(_e_payload.bytes)?.let { return it }\n",
-            "                payload = CodecLengthRefPayloadBytes.of(payload) ?: return null\n",
+            // The decode makes the bytes it read by the factory, a length its
+            // class does not hold refused by the kind its guard refuses it
+            // with (docs/adr/0099, amendment of 2026-11-16).
+            "                    payload = CodecLengthRefPayloadBytes.of(payload) ?: return \
+             Decoded.Refused(CodecError.LengthOutOfRange)\n",
             "    fun encodeToByteArray(): ByteArray {\n",
         ],
     );
@@ -209,7 +213,8 @@ fn a_text_is_held_to_its_bound_in_utf8_bytes_and_its_length_derived_from_them() 
             "val _d_locator_len = _e_locator.text.encodeToByteArray().size.toULong()\n",
             "w.writeVleU64(_d_locator_len)?.let { return it }\n",
             "w.writeBytes(_e_locator.text.encodeToByteArray())?.let { return it }\n",
-            "                locator = CodecZenohLocatorLocatorText.of(locator) ?: return null",
+            "                    locator = CodecZenohLocatorLocatorText.of(locator) ?: return \
+             Decoded.Refused(CodecError.LengthOutOfRange)",
         ],
     );
     holds_none(
@@ -324,7 +329,8 @@ fn a_list_derives_its_count_and_writes_each_entry_by_its_codec() {
             "val _d_num_frags = _e_frags.entries.size.toUByte()\n",
             "for (_entry in _e_frags.entries) {\n",
             "CodecRepeatElem.encodeSource(_entry, w)?.let { return it }\n",
-            "frags = CodecRepeatBasicFragsList.of(frags) ?: return null",
+            "frags = CodecRepeatBasicFragsList.of(frags) ?: return \
+             Decoded.Refused(CodecError.TooManyElements)",
         ],
     );
     holds_none(
@@ -610,9 +616,10 @@ fn a_group_is_one_property_whose_arms_hold_its_members() {
              else -> null }\n",
             "            val _d_payload_size = if (_e_payload != null) \
              _e_payload.bytes.size.toUByte() else (_e_payload_size ?: 0.toUByte())\n",
-            "                flags_has_payload = if (((flags.toUInt() shr 0) and 0x1u) != 0x0u) \
+            "                    flags_has_payload = if (((flags.toUInt() shr 0) and 0x1u) != 0x0u) \
              CodecPresentIfLengthRefFlagsHasPayload.HasPayload(payload = \
-             CodecPresentIfLengthRefPayloadBytes.of(payload!!) ?: return null) else \
+             CodecPresentIfLengthRefPayloadBytes.of(payload!!) ?: return \
+             Decoded.Refused(CodecError.LengthOutOfRange)) else \
              CodecPresentIfLengthRefFlagsHasPayload.NotHasPayload(payload_size = payload_size)\n",
         ],
     );
@@ -674,10 +681,14 @@ fn two_lists_of_one_count_are_one_aligned_member_of_their_arm() {
             " -> _g.links_weights.first; ",
             " -> _g.links_weights.second; else -> null }\n",
             "            val _d_links_len = _e_links.entries.size",
+            // Each list past its bound is refused by its kind; two lists read
+            // under one count always pair.
             "links_weights = com.sce.forge.runtime.Aligned.of(\
-             CodecRepeatUnconditionalCountLinksList.of(links) ?: return null, \
-             CodecRepeatUnconditionalCountWeightsList.of(weights!!) ?: return null) \
-             ?: return null",
+             CodecRepeatUnconditionalCountLinksList.of(links) ?: return \
+             Decoded.Refused(CodecError.TooManyElements), \
+             CodecRepeatUnconditionalCountWeightsList.of(weights!!) ?: return \
+             Decoded.Refused(CodecError.TooManyElements)) \
+             ?: error(\"two lists read under one count hold as many entries\")",
         ],
     );
     holds_none(name, &text, &["var weights: ", "var links: "]);
@@ -790,7 +801,10 @@ fn a_variant_derives_its_tag_from_the_arm_and_writes_the_arm_by_its_codec() {
             "            val _d_msg_id = _t_body.toUByte()\n",
             "                is CodecVariantDispatchVariant.CodecVariantSessionOpen -> \
              CodecVariantSessionOpen.encodeSource(_b.body, w)?.let { return it }\n",
-            "CodecVariantDispatchUnknownTag.of(msg_id) ?: return null",
+            // The catch-all is reached only under a tag no arm names, which
+            // its class holds: no frame is refused there.
+            "CodecVariantDispatchUnknownTag.of(msg_id) ?: error(\"a tag no arm names is one \
+             CodecVariantDispatchUnknownTag holds\")",
             "    override var body: CodecVariantDispatchVariant = ",
         ],
     );
@@ -920,10 +934,13 @@ fn a_group_of_a_chains_memberships_holds_the_chain_in_the_class_of_its_kinds() {
             " -> _g.extensions.entries; is ",
             " -> _g.extensions?.entries }\n",
             "if (!(_g_extensions_has_0x2 is CodecChainHasEnvelopeExtensionsHas0x2.Has0x2)) {\n",
+            // A chain read that disagrees with the gate that selects the arm
+            // is refused as a gate given where its predicate does not hold.
             "if (_has_extensions_2) CodecChainHasEnvelopeExtensionsHas0x2.Has0x2(extensions = \
-             CodecChainHasEnvelopeExtensionsHas2Chain.of(extensions!!) ?: return null",
+             CodecChainHasEnvelopeExtensionsHas2Chain.of(extensions!!) ?: return \
+             Decoded.Refused(CodecError.PresentIfMismatch)",
             "extensions = extensions?.let { CodecChainHasEnvelopeExtensionsLacks2Chain.of(it) \
-             ?: return null }",
+             ?: return Decoded.Refused(CodecError.PresentIfMismatch) }",
         ],
     );
     // An arm that says the chain holds a kind has no chain made by default.
@@ -1033,7 +1050,7 @@ fn a_bare_entrys_arm_holds_the_others_and_the_named_entrys_place() {
             "encodeSource(CodecChainHasMarkerExtensionsHas12Placed.named(), ",
             "CodecZenohExtEntryOverrides(header_Z = _i + 1 < _k_extensions))?.let { return it }\n",
             "extensions = CodecChainHasMarkerExtensionsHas12Placed.placing(extensions!!) \
-             ?: return null",
+             ?: return Decoded.Refused(CodecError.PresentIfMismatch)",
         ],
     );
 }
@@ -1072,9 +1089,14 @@ fn a_list_held_to_a_law_is_held_in_the_class_of_its_law() {
             "    val entries: CodecChainPrevCarrierEntriesLawful\n",
             "_u_head = (_u_head and 0x1u.inv()) or \
              (((if (_e_entries.startTagged) 1 else 0)).toUInt() shl 0)\n",
+            // A list past its bound is refused by its kind, and entries that
+            // break the law from the start the frame gave as the Rust decode
+            // refuses them.
             "entries = CodecChainPrevCarrierEntriesLawful.of(\
-             CodecChainPrevCarrierEntriesList.of(entries) ?: return null, \
-             startTagged = ((head.toUInt() shr 0) and 0x1u) != 0x0u) ?: return null",
+             CodecChainPrevCarrierEntriesList.of(entries) ?: return \
+             Decoded.Refused(CodecError.TooManyElements), \
+             startTagged = ((head.toUInt() shr 0) and 0x1u) != 0x0u) ?: return \
+             Decoded.Refused(CodecError.PresentIfMismatch)",
         ],
     );
 }

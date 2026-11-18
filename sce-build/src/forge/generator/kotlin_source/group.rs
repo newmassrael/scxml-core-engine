@@ -22,7 +22,7 @@ use super::super::rust_source::{
     chain_optional_in, group_accessor, group_arm_name, group_type, holds_chain,
 };
 use super::super::*;
-use super::{input_name, CarrierBits, ListBound, Member};
+use super::{input_name, CarrierBits, ListBound, Member, GATE_DISAGREES};
 use crate::forge::codec_roles::{GateGroup, GateVar, GroupArm};
 use crate::forge::encode_plan::{Bound, EncodePlan};
 use std::collections::{BTreeMap, BTreeSet};
@@ -377,9 +377,11 @@ pub(super) fn declare(
                     } else {
                         local
                     };
+                    // A chain the gate says holds the bare entry, read without
+                    // one of its kind, says two things of one frame.
                     params.push(format!("val {property}: {placed}"));
                     args.push(format!(
-                        "{property} = {placed}.placing({read}) ?: return null"
+                        "{property} = {placed}.placing({read}) ?: {GATE_DISAGREES}"
                     ));
                     continue;
                 }
@@ -393,12 +395,15 @@ pub(super) fn declare(
                         &lacks,
                     ));
                 }
+                // A chain read that holds a kind the arm's gates say it lacks,
+                // or lacks one they say it holds, is refused as a gate the
+                // frame gave where its predicate does not hold.
                 if chain_optional_in(group, chain.field, arm) {
                     // Gated, and the arm says it holds no kind: absent by
                     // default, and absent where the decode read none.
                     params.push(format!("val {property}: {kinds}? = null"));
                     args.push(format!(
-                        "{property} = {local}?.let {{ {kinds}.of(it) ?: return null }}"
+                        "{property} = {local}?.let {{ {kinds}.of(it) ?: {GATE_DISAGREES} }}"
                     ));
                 } else {
                     // Where the arm says it holds a kind, the decode read it,
@@ -413,7 +418,9 @@ pub(super) fn declare(
                     } else {
                         format!("val {property}: {kinds}")
                     });
-                    args.push(format!("{property} = {kinds}.of({read}) ?: return null"));
+                    args.push(format!(
+                        "{property} = {kinds}.of({read}) ?: {GATE_DISAGREES}"
+                    ));
                 }
                 continue;
             }
@@ -432,8 +439,12 @@ pub(super) fn declare(
                     "val {property}: {ALIGNED}<{}, {}> = {ALIGNED}.of({}, {})!!",
                     member.ty, paired.ty, member.default, paired.default
                 ));
+                // The decode read both lists under the one count the frame
+                // wrote, so they hold as many entries as each other and the
+                // factory answers a value for every frame that reaches it.
                 args.push(format!(
-                    "{property} = {ALIGNED}.of({}, {}) ?: return null",
+                    "{property} = {ALIGNED}.of({}, {}) ?: \
+                     error(\"two lists read under one count hold as many entries\")",
                     member.made, paired.made
                 ));
                 continue;
