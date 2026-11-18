@@ -44,7 +44,7 @@ value class CodecZenohValueZbufValueBytes private constructor(val bytes: ByteArr
         const val LEAST: Int = 0
 
         /// The most bytes a value holds.
-        const val MOST: Int = 4294967295
+        const val MOST: Long = 4294967295L
 
         /// `bytes` as a value of the bound, or `null` where it lies outside it.
         fun of(bytes: ByteArray): CodecZenohValueZbufValueBytes? =

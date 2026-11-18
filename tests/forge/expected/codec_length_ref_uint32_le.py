@@ -80,7 +80,14 @@ class CodecLengthRefUint32Le:
         value = cls(
             payload=f_payload,
         )
-        cursor.advance(_frame_len)
+        # The bytes it read and no more (RFC §synth-5-B B3, as the Rust decode
+        # does): the end of the last length-ref field, at least the fixed
+        # fields' bytes, so that a codec holding this one as a body, an entry
+        # or an arm decodes on after it.
+        _consumed = 4
+        if 4 + f_payload_len > _consumed:
+            _consumed = 4 + f_payload_len
+        cursor.advance(_consumed)
         return value
 
     def encode(self, w: SceSink) -> None:

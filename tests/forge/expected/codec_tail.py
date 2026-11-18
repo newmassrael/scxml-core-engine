@@ -105,6 +105,7 @@ class CodecTail:
             status=f_status,
             payload=f_payload,
         )
+        # A tail field runs to the end of the frame, so the frame is consumed whole.
         cursor.advance(_frame_len)
         return value
 

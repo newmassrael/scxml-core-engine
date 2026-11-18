@@ -98,7 +98,14 @@ func DecodeCodecOriginLeaf(cursor *codec.SceCursor) (*CodecOriginLeaf, error) {
 	value := &CodecOriginLeaf{
 		data: _bData,
 	}
-	if err := cursor.Advance(frameLen); err != nil {
+	// The bytes it read and no more (RFC §synth-5-B B3, as the Rust decode
+	// does): the end of the last length-ref field, at least the fixed fields'
+	// bytes, so that a codec holding this one as a body, an entry or an arm
+	// decodes on after it. Each end is an argument of `max`, where gofmt
+	// spells it as the guard above does.
+	consumed := 1
+	consumed = max(consumed, 1+int(Len))
+	if err := cursor.Advance(consumed); err != nil {
 		return nil, err
 	}
 	return value, nil

@@ -77,7 +77,14 @@ class CodecOriginLeaf:
         value = cls(
             data=f_data,
         )
-        cursor.advance(_frame_len)
+        # The bytes it read and no more (RFC §synth-5-B B3, as the Rust decode
+        # does): the end of the last length-ref field, at least the fixed
+        # fields' bytes, so that a codec holding this one as a body, an entry
+        # or an arm decodes on after it.
+        _consumed = 1
+        if 1 + f_len > _consumed:
+            _consumed = 1 + f_len
+        cursor.advance(_consumed)
         return value
 
     def encode(self, w: SceSink) -> None:

@@ -114,6 +114,7 @@ data class CodecTail(
                 return Decoded.Refused(CodecError.LengthOutOfRange)
             }
             val payload = raw.copyOfRange(2, raw.size)
+            // A tail field runs to the end of the frame, so the frame is consumed whole.
             if (!cursor.advance(frameLen)) return Decoded.Refused(CodecError.NeedMoreBytes)
             // Construct in the `return` (no intermediate local) so a field
             // literally named `value` cannot shadow a result-struct local.

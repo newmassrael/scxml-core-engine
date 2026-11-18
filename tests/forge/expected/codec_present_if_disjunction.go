@@ -193,11 +193,11 @@ func DecodeCodecPresentIfDisjunction(cursor *codec.SceCursor) (*CodecPresentIfDi
 	}
 	var _gFlagsWantsAOrWantsB optional.Of[CodecPresentIfDisjunctionFlagsWantsAOrWantsB]
 	if ((Flags >> 0) & 1) != 0 && ((Flags >> 1) & 1) == 0 {
-		_gFlagsWantsAOrWantsB = optional.Some(MakeCodecPresentIfDisjunctionFlagsWantsAOrWantsBWantsA(Seq.Proven()))
+		_gFlagsWantsAOrWantsB = optional.Some[CodecPresentIfDisjunctionFlagsWantsAOrWantsB](MakeCodecPresentIfDisjunctionFlagsWantsAOrWantsBWantsA(Seq.Proven()))
 	} else if ((Flags >> 0) & 1) == 0 && ((Flags >> 1) & 1) != 0 {
-		_gFlagsWantsAOrWantsB = optional.Some(MakeCodecPresentIfDisjunctionFlagsWantsAOrWantsBWantsB(Seq.Proven()))
+		_gFlagsWantsAOrWantsB = optional.Some[CodecPresentIfDisjunctionFlagsWantsAOrWantsB](MakeCodecPresentIfDisjunctionFlagsWantsAOrWantsBWantsB(Seq.Proven()))
 	} else if ((Flags >> 0) & 1) != 0 && ((Flags >> 1) & 1) != 0 {
-		_gFlagsWantsAOrWantsB = optional.Some(MakeCodecPresentIfDisjunctionFlagsWantsAOrWantsBWantsAWantsB(Seq.Proven()))
+		_gFlagsWantsAOrWantsB = optional.Some[CodecPresentIfDisjunctionFlagsWantsAOrWantsB](MakeCodecPresentIfDisjunctionFlagsWantsAOrWantsBWantsAWantsB(Seq.Proven()))
 	}
 	return &CodecPresentIfDisjunction{
 		flags: Flags,

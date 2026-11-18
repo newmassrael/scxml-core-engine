@@ -90,7 +90,14 @@ class CodecLengthRefDottedBasic:
             carrier=f_carrier,
             payload=f_payload,
         )
-        cursor.advance(_frame_len)
+        # The bytes it read and no more (RFC §synth-5-B B3, as the Rust decode
+        # does): the end of the last length-ref field, at least the fixed
+        # fields' bytes, so that a codec holding this one as a body, an entry
+        # or an arm decodes on after it.
+        _consumed = 1
+        if 1 + ((f_carrier >> 4) & 0xF) > _consumed:
+            _consumed = 1 + ((f_carrier >> 4) & 0xF)
+        cursor.advance(_consumed)
         return value
 
     # RFC §synth-5-B flags primitive: per-bit-range accessors over

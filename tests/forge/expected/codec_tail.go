@@ -107,6 +107,7 @@ func DecodeCodecTail(cursor *codec.SceCursor) (*CodecTail, error) {
 		status: Status,
 		payload: _bPayload,
 	}
+	// A tail field runs to the end of the frame, so the frame is consumed whole.
 	if err := cursor.Advance(frameLen); err != nil {
 		return nil, err
 	}

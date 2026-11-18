@@ -109,7 +109,13 @@ data class CodecExtAttachment(
             }
             if (frameLen < 1 + length.toInt()) return Decoded.Refused(CodecError.NeedMoreBytes)
             val body = raw.copyOfRange(1, 1 + length.toInt())
-            if (!cursor.advance(frameLen)) return Decoded.Refused(CodecError.NeedMoreBytes)
+            // The bytes it read and no more (RFC §synth-5-B B3, as the Rust decode
+            // does): the end of the last length-ref field, at least the fixed
+            // fields' bytes, so that a codec holding this one as a body, an entry
+            // or an arm decodes on after it.
+            var _consumed = 1
+            if (1 + length.toInt() > _consumed) _consumed = 1 + length.toInt()
+            if (!cursor.advance(_consumed)) return Decoded.Refused(CodecError.NeedMoreBytes)
             // Construct in the `return` (no intermediate local) so a field
             // literally named `value` cannot shadow a result-struct local.
             return Decoded.Ok(

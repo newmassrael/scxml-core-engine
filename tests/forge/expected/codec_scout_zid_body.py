@@ -77,7 +77,14 @@ class CodecScoutZidBody:
         value = cls(
             zid=f_zid,
         )
-        cursor.advance(_frame_len)
+        # The bytes it read and no more (RFC §synth-5-B B3, as the Rust decode
+        # does): the end of the last length-ref field, at least the fixed
+        # fields' bytes, so that a codec holding this one as a body, an entry
+        # or an arm decodes on after it.
+        _consumed = 1
+        if 1 + f_zid_len_m1 + 1 > _consumed:
+            _consumed = 1 + f_zid_len_m1 + 1
+        cursor.advance(_consumed)
         return value
 
     def encode(self, w: SceSink) -> None:
