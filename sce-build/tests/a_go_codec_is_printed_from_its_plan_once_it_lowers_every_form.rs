@@ -26,6 +26,15 @@ fn resources() -> PathBuf {
     Path::new(env!("CARGO_MANIFEST_DIR")).join("../tests/forge/resources")
 }
 
+/// The options every Go generation and reading here runs with: a module
+/// prefix, without which a codec that imports another is no Go document.
+fn options() -> ForgeCompileOptions {
+    ForgeCompileOptions {
+        go_module_prefix: Some("example.com/sce-forge".to_string()),
+        ..ForgeCompileOptions::default()
+    }
+}
+
 /// The Go file the resource `name` generates as its own, or why it does not.
 fn go_of(name: &str) -> Result<String, String> {
     let text = std::fs::read_to_string(resources().join(format!("{name}.scxml")))
@@ -36,16 +45,12 @@ fn go_of(name: &str) -> Result<String, String> {
 /// The Go file the document `text`, named `name` and importing from the
 /// resources, generates as its own, or why it does not.
 fn go_of_document(name: &str, text: &str) -> Result<String, String> {
-    let options = ForgeCompileOptions {
-        go_module_prefix: Some("example.com/sce-forge".to_string()),
-        ..ForgeCompileOptions::default()
-    };
     let output = compile_forge_with_imports(
         text,
         DocumentLabel::symmetric(name),
         Language::Go,
         &resources(),
-        &options,
+        &options(),
     )
     .map_err(|e| format!("{:?}", e.error))?;
     output
@@ -65,13 +70,9 @@ fn resource_go(name: &str) -> String {
 
 /// The forms of the resource `name` the Go printer does not lower.
 fn unlowered(name: &str) -> Vec<String> {
-    go_codec_unlowered_file(
-        &resources().join(format!("{name}.scxml")),
-        &[],
-        &ForgeCompileOptions::default(),
-    )
-    .unwrap_or_else(|e| panic!("{name} reads: {e:?}"))
-    .expect("the resource is a codec")
+    go_codec_unlowered_file(&resources().join(format!("{name}.scxml")), &[], &options())
+        .unwrap_or_else(|e| panic!("{name} reads: {e:?}"))
+        .expect("the resource is a codec")
 }
 
 /// Whether `text` holds each of `needles`, with `text` in the failure.
@@ -152,7 +153,14 @@ fn a_flag_of_a_printed_codec_reads_the_carrier_its_value_holds() {
             "func (s *CodecFlagsBasic) Header() uint8 {\n\treturn s.header\n}",
         ],
     );
-    holds_none("codec_flags_basic", &text, &["s.Header"]);
+    // The accessors' reads and writes of the carrier, spelled whole: a bare
+    // `s.Header` is also part of `overrides.HeaderReliable`, which the encode
+    // over the source reads.
+    holds_none(
+        "codec_flags_basic",
+        &text,
+        &["(s.Header &", "s.Header |=", "s.Header &^="],
+    );
 }
 
 /// A byte string is presented as the runtime's `codec.Bytes` of a bound type
@@ -321,15 +329,19 @@ fn a_gated_element_derives_its_flag_and_a_checked_gate_refuses_a_disagreement() 
     holds_none(
         "codec_present_if_checked",
         &text,
-        &["s.Flags", "src.Flags() >>"],
+        // A bare `s.Flags` is also part of `overrides.FlagsWantsTrailer`.
+        &["(s.Flags &", "s.Flags |=", "s.Flags &^=", "src.Flags() >>"],
     );
 }
 
 /// A length two byte strings share is derived from the first, the second
-/// held to say the same, and refused where it does not fit its field.
+/// held to say the same. Neither can pass what the field holds: the width of
+/// the length bounds each byte string's type (docs/adr/0077 §1), so the
+/// encode has no length of its field to refuse.
 ///
 /// Turns red where `derive_number` stops comparing every measure always there
-/// with the first, or stops checking a length its field may not hold.
+/// with the first, or where a byte string's bound stops being the most its
+/// length field holds (a check the bound makes dead is then printed again).
 #[test]
 fn a_shared_length_is_derived_once_and_two_that_disagree_are_refused() {
     assert!(unlowered("codec_length_shared").is_empty());
@@ -339,7 +351,8 @@ fn a_shared_length_is_derived_once_and_two_that_disagree_are_refused() {
         &text,
         &[
             "\tif src.Beta().Len() != src.Alpha().Len() {\n\t\treturn codec.ErrInconsistentSource\n\t}\n",
-            "\tif src.Alpha().Len() > 0xFF {\n\t\treturn codec.ErrLengthOutOfRange\n\t}\n",
+            "func (CodecLengthSharedAlphaBound) Most() int { return 255 }\n",
+            "func (CodecLengthSharedBetaBound) Most() int { return 255 }\n",
             "\t_dSpanLen := uint8(src.Alpha().Len())\n",
             "func (s *CodecLengthShared) WireSpanLen() uint8 {\n\treturn uint8(s.Alpha().Len())\n}\n",
         ],
@@ -347,7 +360,11 @@ fn a_shared_length_is_derived_once_and_two_that_disagree_are_refused() {
     holds_none(
         "codec_length_shared",
         &text,
-        &["\tSpanLen() uint8", "\tspanLen uint8\n"],
+        &[
+            "\tSpanLen() uint8",
+            "\tspanLen uint8\n",
+            "\tif src.Alpha().Len() > 0xFF {\n",
+        ],
     );
 }
 
@@ -823,10 +840,7 @@ fn a_reader_is_not_offered_a_length_that_takes_the_encodes_inputs() {
 "#
         )
     };
-    let options = ForgeCompileOptions {
-        go_module_prefix: Some("example.com/sce-forge".to_string()),
-        ..ForgeCompileOptions::default()
-    };
+    let options = options();
     let compile = |plausibility: &str| {
         compile_forge_with_imports(
             &validator(plausibility),
@@ -1142,7 +1156,7 @@ fn a_variant_of_an_arm_the_printer_does_not_print_keeps_the_template_encode() {
 "#,
     )
     .expect("the variant is written");
-    let forms = go_codec_unlowered_file(&variant, &[], &ForgeCompileOptions::default())
+    let forms = go_codec_unlowered_file(&variant, &[], &options())
         .expect("the variant reads")
         .expect("the document is a codec");
     assert!(
@@ -1332,12 +1346,11 @@ fn the_go_backend_prints_each_codec_of_the_resources_whose_forms_it_lowers() {
             .to_string_lossy()
             .into_owned();
         // A document that does not read, or is no codec, has no encode.
-        let Ok(Some(forms)) = go_codec_unlowered_file(path, &[], &ForgeCompileOptions::default())
-        else {
+        let Ok(Some(forms)) = go_codec_unlowered_file(path, &[], &options()) else {
             continue;
         };
         assert_eq!(
-            go_codec_printed_file(path, &[], &ForgeCompileOptions::default()).ok(),
+            go_codec_printed_file(path, &[], &options()).ok(),
             Some(Some(forms.is_empty())),
             "{stem}: printed exactly where no form is unlowered"
         );
