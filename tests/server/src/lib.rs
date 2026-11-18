@@ -17,8 +17,9 @@
 //! * `two_servers_never_both_write_a_session`: two server processes on one store, one paused past
 //!   its lease, never both write a session.
 //! * `the_https_binding_reaches_a_pool`: a pool reached over the HTTPS binding through an explicit
-//!   proxy, through a proxy that inspects TLS under an authority the client trusts, and with a
-//!   response lost on purpose.
+//!   proxy, through a proxy that inspects TLS under an authority the client trusts, with a
+//!   response lost on purpose, and with the store refusing a checkpoint, which no `200`
+//!   acknowledges before a later one is durable.
 //!
 //! This library is what they share:
 //!

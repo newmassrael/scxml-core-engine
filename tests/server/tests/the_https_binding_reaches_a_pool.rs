@@ -3,20 +3,22 @@
 
 //! A keyed pool reached over the HTTPS binding (docs/adr/0107, decision D10, its fifth bullet;
 //! D2 with D3, D4 and D5): through an explicit proxy, through a proxy that inspects TLS under an
-//! authority the client's platform trusts, and with a response lost on purpose.
+//! authority the client's platform trusts, with a response lost on purpose, and with the store
+//! refusing the checkpoint that would hold a request.
 //!
 //! The server is the binding's server (`HttpsServer`) in front of the ledger served as a keyed
 //! pool on the reference store, its host handing the pool each envelope an exchange carried and
-//! running the session it names before the exchange is answered; the client is a machine's
-//! endpoint on the binding's client and its reference adapter (`HyperTransport`). The proxies and
-//! the test authorities are the conformance kit's (SCE_MESH.md section 22.7), so the pool is
-//! reached through the very intermediaries every adapter is held to. An authority the client is
-//! told to believe beside the operating system's stands for one the platform trusts: the adapter
-//! believes both alike.
+//! running the session it names before the exchange is answered, and answering `200` only once a
+//! durable checkpoint holds every envelope the exchange carried (the envelopes' receipts,
+//! SCE_MESH.md section 10.11); the client is a machine's endpoint on the binding's client and its
+//! reference adapter (`HyperTransport`). The proxies and the test authorities are the conformance
+//! kit's (SCE_MESH.md section 22.7), so the pool is reached through the very intermediaries every
+//! adapter is held to. An authority the client is told to believe beside the operating system's
+//! stands for one the platform trusts: the adapter believes both alike.
 
 use std::collections::{BTreeMap, HashMap};
 use std::net::SocketAddr;
-use std::sync::atomic::{AtomicUsize, Ordering};
+use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
 use std::sync::{mpsc, Arc, Mutex, OnceLock};
 use std::time::{Duration, Instant};
 
@@ -27,19 +29,22 @@ use sce_rust_mesh::https::conformance::{
     inspecting_proxy, tunnelling_proxy, ProxyLog, TestAuthority,
 };
 use sce_rust_mesh::https::server::{
-    server_tls, Authenticator, HttpsServer, MailboxTransport, ServerSettings,
+    server_tls, Authenticator, Durability, HttpsServer, MailboxTransport, ServerHost,
+    ServerSettings,
 };
-use sce_rust_mesh::https::Credential;
+use sce_rust_mesh::https::{Credential, HttpsFailure, HttpsRequest, HttpsResponse, HttpsTransport};
 use sce_rust_mesh::inbound::Delivery;
 use sce_rust_mesh::link::{deliver, LinkEvent};
 use sce_rust_mesh::outbound::RetryPolicy;
-use sce_rust_mesh::pool::{Pool, PoolConfig};
+use sce_rust_mesh::pool::{Fate, Pool, PoolConfig};
 use sce_rust_mesh::reconnect::Backoff;
 use sce_rust_mesh::router::{PeerConfig, Router};
 use sce_rust_mesh::rpc::MESH_EVENT_PARAM;
 use sce_rust_runtime::json::{self, Value};
 use sce_rust_runtime::HostInvokeRequest;
-use sce_rust_session_store::{SessionStore, SqliteStore};
+use sce_rust_session_store::{
+    AcquireError, Due, Failure, Lease, LeaseError, SessionStore, SqliteStore, Stored, WriteError,
+};
 use sce_server_suite::clock::WallClock;
 use sce_server_suite::ledger::{self, take_data, taken_by_key, Ledgers, CLIENT, HTTPS, TAKE};
 use sce_server_suite::scratch::Scratch;
@@ -55,6 +60,111 @@ const PATIENCE: Duration = Duration::from_secs(30);
 /// The pool behind the binding.
 type HttpsPool = Pool<Ledgers, MailboxTransport, WallClock>;
 
+/// The reference store, made to refuse its writes on demand as a medium that is down refuses
+/// them: while `refusing` is set, every checkpoint the pool writes fails and nothing is written.
+struct Refusing {
+    inner: SqliteStore,
+    refusing: AtomicBool,
+    /// How many writes it refused.
+    refused: AtomicUsize,
+}
+
+impl SessionStore for Refusing {
+    fn get(&self, key: &str) -> Result<Option<Stored>, Failure> {
+        self.inner.get(key)
+    }
+
+    fn put(
+        &self,
+        key: &str,
+        state: &[u8],
+        earliest_due: Option<u64>,
+        expected_version: u64,
+        fence: u64,
+    ) -> Result<u64, WriteError> {
+        if self.refusing.load(Ordering::SeqCst) {
+            self.refused.fetch_add(1, Ordering::SeqCst);
+            return Err(WriteError::Failed(Failure::new("the medium is down")));
+        }
+        self.inner
+            .put(key, state, earliest_due, expected_version, fence)
+    }
+
+    fn delete(&self, key: &str, expected_version: u64, fence: u64) -> Result<(), WriteError> {
+        self.inner.delete(key, expected_version, fence)
+    }
+
+    fn due_before(&self, ms: u64, limit: usize) -> Result<Vec<Due>, Failure> {
+        self.inner.due_before(ms, limit)
+    }
+
+    fn acquire(
+        &self,
+        key: &str,
+        owner: &str,
+        ttl_ms: u64,
+        now_ms: u64,
+    ) -> Result<Lease, AcquireError> {
+        self.inner.acquire(key, owner, ttl_ms, now_ms)
+    }
+
+    fn renew(&self, key: &str, fence: u64, ttl_ms: u64, now_ms: u64) -> Result<Lease, LeaseError> {
+        self.inner.renew(key, fence, ttl_ms, now_ms)
+    }
+
+    fn release(&self, key: &str, fence: u64) -> Result<(), LeaseError> {
+        self.inner.release(key, fence)
+    }
+}
+
+/// The host the binding tells what an exchange carried: it hands each envelope to the pool and
+/// runs the session it names, which saves it, before the exchange is answered, and lets a `200`
+/// acknowledge the envelopes only once each is settled, a durable checkpoint holding what its
+/// session made of it (SCE_MESH.md section 10.11).
+struct PoolHost {
+    pool: Arc<OnceLock<HttpsPool>>,
+    /// How many envelopes the binding handed the pool.
+    received: Arc<AtomicUsize>,
+}
+
+impl ServerHost for PoolHost {
+    fn deliver(&self, events: Vec<LinkEvent>) -> Durability {
+        let Some(pool) = self.pool.get() else {
+            // No pool took anything in.
+            return Durability::NotDurable;
+        };
+        let mut receipts = Vec::new();
+        for event in events {
+            let run = match event {
+                LinkEvent::Ready(peer) => pool.peer_ready(&peer),
+                LinkEvent::Lost(peer, _) => pool.peer_not_ready(&peer),
+                LinkEvent::Received(peer, bytes) => {
+                    self.received.fetch_add(1, Ordering::SeqCst);
+                    let (key, receipt) = pool.receive_with_receipt(&peer, bytes);
+                    receipts.push(receipt);
+                    key.into_iter().collect()
+                }
+                // The accepting side hands back nothing it could not write: what the pool sends
+                // waits in the client's mailbox.
+                LinkEvent::Unsent(..) => Vec::new(),
+            };
+            for key in run {
+                pool.run(&key);
+            }
+        }
+        // Each session the envelopes named has run, and its run settled what it took in: held by
+        // a durable checkpoint, or lost or still unwritten, which no `200` may acknowledge.
+        if receipts
+            .iter()
+            .all(|receipt| receipt.fate() == Fate::Settled)
+        {
+            Durability::Now
+        } else {
+            Durability::NotDurable
+        }
+    }
+}
+
 /// A server on a loopback port, under a certificate a test authority issued, with the ledger
 /// behind it as a keyed pool.
 struct Served {
@@ -63,7 +173,7 @@ struct Served {
     address: SocketAddr,
     /// How many envelopes the binding handed the pool.
     received: Arc<AtomicUsize>,
-    store: Arc<SqliteStore>,
+    store: Arc<Refusing>,
     // Last, so that the store's directory is removed after everything that holds the store.
     _scratch: Scratch,
 }
@@ -71,7 +181,11 @@ struct Served {
 impl Served {
     fn start(name: &str) -> Served {
         let scratch = Scratch::new(name);
-        let store = Arc::new(SqliteStore::open(scratch.store()).expect("the reference store"));
+        let store = Arc::new(Refusing {
+            inner: SqliteStore::open(scratch.store()).expect("the reference store"),
+            refusing: AtomicBool::new(false),
+            refused: AtomicUsize::new(0),
+        });
         let runtime = tokio::runtime::Builder::new_multi_thread()
             .worker_threads(2)
             .enable_all()
@@ -81,34 +195,11 @@ impl Served {
         let (chain, key) = authority.issue("127.0.0.1");
         let tls = server_tls(chain, key, None).expect("the server's TLS");
 
-        // The host the binding tells what an exchange carried: it hands each envelope to the pool
-        // and runs the session it names, which saves it, before the exchange is answered.
         let pool: Arc<OnceLock<HttpsPool>> = Arc::new(OnceLock::new());
         let received = Arc::new(AtomicUsize::new(0));
-        let host = {
-            let pool = Arc::clone(&pool);
-            let received = Arc::clone(&received);
-            move |events: Vec<LinkEvent>| {
-                let Some(pool) = pool.get() else {
-                    return;
-                };
-                for event in events {
-                    let run = match event {
-                        LinkEvent::Ready(peer) => pool.peer_ready(&peer),
-                        LinkEvent::Lost(peer, _) => pool.peer_not_ready(&peer),
-                        LinkEvent::Received(peer, bytes) => {
-                            received.fetch_add(1, Ordering::SeqCst);
-                            pool.receive(&peer, bytes).into_iter().collect()
-                        }
-                        // The accepting side hands back nothing it could not write: what the pool
-                        // sends waits in the client's mailbox.
-                        LinkEvent::Unsent(..) => Vec::new(),
-                    };
-                    for key in run {
-                        pool.run(&key);
-                    }
-                }
-            }
+        let host = PoolHost {
+            pool: Arc::clone(&pool),
+            received: Arc::clone(&received),
         };
         let server = HttpsServer::new(
             ServerSettings {
@@ -162,6 +253,16 @@ impl Served {
         self.received.load(Ordering::SeqCst)
     }
 
+    /// Make the store refuse every write from now on, or write again.
+    fn refuse_writes(&self, refusing: bool) {
+        self.store.refusing.store(refusing, Ordering::SeqCst);
+    }
+
+    /// How many writes the store refused.
+    fn refused(&self) -> usize {
+        self.store.refused.load(Ordering::SeqCst)
+    }
+
     /// The tags each of `keys` holds, read from the store.
     fn taken(&self, keys: &[&str]) -> BTreeMap<String, Vec<String>> {
         taken_by_key(&*self.store, keys.iter().map(|key| key.to_string())).expect("the store reads")
@@ -177,6 +278,37 @@ fn adapter(authorities: &[Vec<u8>], proxy: SocketAddr) -> HyperTransport {
         client_identity: None,
     })
     .expect("the reference adapter")
+}
+
+/// What the server answered one exchange that carried envelopes: its status, and whether the
+/// store held the watched tag when the answer arrived.
+type Answer = (u16, bool);
+
+/// A port that carries each exchange on the reference adapter, and notes for each that carried
+/// envelopes what the server answered and whether the store held `tag` under `key` by then.
+struct Watched {
+    inner: HyperTransport,
+    store: Arc<Refusing>,
+    key: &'static str,
+    tag: &'static str,
+    answers: Arc<Mutex<Vec<Answer>>>,
+}
+
+impl HttpsTransport for Watched {
+    fn exchange(&self, request: HttpsRequest) -> Result<HttpsResponse, HttpsFailure> {
+        let carried = !request.body.is_empty();
+        let outcome = self.inner.exchange(request);
+        if let (true, Ok(response)) = (carried, &outcome) {
+            let taken =
+                taken_by_key(&*self.store, [self.key.to_string()]).expect("the store reads");
+            let held = taken[self.key].iter().any(|tag| tag == self.tag);
+            self.answers
+                .lock()
+                .expect("the answers")
+                .push((response.status, held));
+        }
+        outcome
+    }
 }
 
 /// How a request the client asked ended.
@@ -199,7 +331,11 @@ struct Client {
 }
 
 impl Client {
-    fn start(base: String, port: HyperTransport, retry: Option<RetryPolicy>) -> Client {
+    fn start(
+        base: String,
+        port: impl HttpsTransport + 'static,
+        retry: Option<RetryPolicy>,
+    ) -> Client {
         let (tx, events) = mpsc::channel();
         let settings = ClientSettings {
             hold: Duration::from_secs(1),
@@ -465,6 +601,71 @@ fn a_response_lost_after_the_pool_took_its_request_is_answered_once() {
     assert!(
         log.lock().expect("the proxy's log").dropped,
         "no response was dropped"
+    );
+    each_answered_once_where_the_store_holds_it(&served, &asked, &ended);
+}
+
+/// The store refuses the checkpoints of the session that takes a request in. The server answers
+/// no exchange that carried the request `200` while no durable checkpoint holds it (SCE_MESH.md
+/// section 10.11, docs/adr/0107 D5): it sheds each as `503`, and the client carries the request
+/// again after the wait the server asked for. Once the store writes again, the next copy, which
+/// the session's duplicate window drops, drives the checkpoint that holds the first, and that
+/// exchange is answered `200`; the request is answered once, and taken in once.
+#[test]
+fn a_request_whose_checkpoint_the_store_refused_is_answered_once_it_is_durable() {
+    let served = Served::start("refused-checkpoint");
+    let log = Arc::new(Mutex::new(ProxyLog::default()));
+    let proxy = tunnelling_proxy(&served.runtime, Arc::clone(&log));
+    let asked = [("k1", "k1.refused")];
+    let answers: Arc<Mutex<Vec<Answer>>> = Arc::new(Mutex::new(Vec::new()));
+    let port = Watched {
+        inner: adapter(&[served.authority.der()], proxy),
+        store: Arc::clone(&served.store),
+        key: asked[0].0,
+        tag: asked[0].1,
+        answers: Arc::clone(&answers),
+    };
+    let mut client = Client::start(served.base(), port, None);
+    client.until("the server to be ready", |client| client.ready);
+
+    served.refuse_writes(true);
+    client.ask(asked[0].0, asked[0].1);
+    client.until("two exchanges carrying the request to be shed", |_| {
+        let answers = answers.lock().expect("the answers");
+        answers.iter().filter(|(status, _)| *status == 503).count() >= 2
+    });
+    assert!(
+        served.refused() >= 2,
+        "the store refused {} writes",
+        served.refused()
+    );
+    assert!(
+        served.taken(&["k1"])["k1"].is_empty(),
+        "the store holds nothing while it refuses"
+    );
+    served.refuse_writes(false);
+    client.until("the answer", |client| !client.ended.is_empty());
+    client.settle(Duration::from_millis(500));
+    let ended = client.stop();
+
+    let answers = answers.lock().expect("the answers").clone();
+    let Some((last, shed)) = answers.split_last() else {
+        panic!("no exchange carried the request");
+    };
+    assert_eq!(
+        *last,
+        (200, true),
+        "the request is acknowledged once, after a durable checkpoint held it: {answers:?}"
+    );
+    assert!(
+        shed.len() >= 2 && shed.iter().all(|(status, _)| *status == 503),
+        "every exchange before it was shed: {answers:?}"
+    );
+    assert!(
+        served.received() >= answers.len(),
+        "each copy reached the pool: {} of {}",
+        served.received(),
+        answers.len()
     );
     each_answered_once_where_the_store_holds_it(&served, &asked, &ended);
 }
