@@ -304,6 +304,35 @@ fn push_transport(name: &str, state: &TransportState, out: &mut Vec<Fact>) {
             }
             push_optional_scalar(&at("keepalive-ms"), keepalive_ms.as_ref(), out);
         }
+        TransportState::Https {
+            url,
+            listen,
+            authenticator,
+            hold_ms,
+            max_hold_ms,
+            max_body_bytes,
+            absence_ms,
+            mailbox,
+        } => {
+            // Which side this is: exactly one of `url` and `listen` is set
+            // (ADR 0107, D2), and an absent one is not a default.
+            match url {
+                Some(url) => out.push(Fact::new(at("url"), url)),
+                None => out.push(Fact::new(at("url"), "(accepts)")),
+            }
+            match listen {
+                Some(listen) => out.push(Fact::new(at("listen"), listen)),
+                None => out.push(Fact::new(at("listen"), "(dials)")),
+            }
+            out.push(Fact::new(at("authenticator"), authenticator.as_str()));
+            // Every number is resolved, its default applied in topology, so
+            // each is the value in force.
+            out.push(Fact::new(at("hold-ms"), hold_ms.to_string()));
+            out.push(Fact::new(at("max-hold-ms"), max_hold_ms.to_string()));
+            out.push(Fact::new(at("max-body-bytes"), max_body_bytes.to_string()));
+            out.push(Fact::new(at("absence-ms"), absence_ms.to_string()));
+            out.push(Fact::new(at("mailbox"), mailbox.to_string()));
+        }
         // Nothing to settle: the binding names the peer and no more (the key
         // is derived from the two machine names, and the router endpoints
         // are the host's own client configuration), so the transport fact

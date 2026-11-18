@@ -56,47 +56,85 @@ pub struct TransportShape {
     pub has_shared_session: bool,
 }
 
-/// Which Mesh core carries a transport's envelopes (SCE_MESH.md §mesh-10.4.2).
+/// Which Mesh cores carry a transport's envelopes (SCE_MESH.md §mesh-10.4.2).
 ///
-/// Two cores exist and they are built differently, so a transport is served
-/// by exactly one of them. The generated C++ `TransportRouter` has an arm per
-/// transport in `mesh_transport.h.jinja2`, laid out by the transport's
-/// [`TransportShape`]. A host-level core — `sce-rust-mesh`, `sce-kotlin-mesh`
-/// (§mesh-18, §mesh-19) — is one library for every transport it speaks: the
-/// build emits only the machine's peer table for it, and a hand-written
-/// adapter moves bytes between a socket and the core.
+/// Two cores exist and they are built differently. The generated C++
+/// `TransportRouter` has an arm per transport in `mesh_transport.h.jinja2`,
+/// laid out by the transport's [`TransportShape`]. A host-level core —
+/// `sce-rust-mesh`, `sce-kotlin-mesh` (§mesh-18, §mesh-19) — is one library
+/// for every transport it speaks: the build emits only the machine's peer
+/// table for it, and a hand-written adapter moves bytes between a socket and
+/// the core.
 ///
-/// The shape lives inside the C++ arm because it is a statement about C++
-/// router fields and means nothing for a host core; a host-served transport
-/// carrying one would be a layout no template reads.
+/// A transport is served by one core or by both. The set is a value of its
+/// own rather than an enum of the two because the `https` binding (ADR 0107,
+/// D2) is carried by a host core and by an arm of the C++ router at once, and
+/// every question asked of it ("does this core carry it?") is a membership
+/// test, never "which one core is it".
+///
+/// The shape lives inside the C++ member because it is a statement about C++
+/// router fields and means nothing for a host core; a transport only a host
+/// core serves carries none, so there is no layout no template reads.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum TransportService {
-    /// The generated C++ `TransportRouter` has an arm for this transport.
-    CppTemplate(TransportShape),
-    /// A host-level Mesh core speaks this transport; no C++ arm exists.
-    HostCore,
+pub struct TransportService {
+    /// The C++ `TransportRouter` arm's layout, or `None` when the generated
+    /// router has no arm for the transport.
+    cpp: Option<TransportShape>,
+    /// Whether a host-level core speaks the transport. Which host cores do is
+    /// [`host_core_languages`], because the adapter is written per language.
+    host_core: bool,
 }
 
 impl TransportService {
-    /// The C++ field layout, or `None` for a host-served transport.
+    /// Served by an arm of the generated C++ router only.
+    pub const fn cpp_template(shape: TransportShape) -> Self {
+        Self {
+            cpp: Some(shape),
+            host_core: false,
+        }
+    }
+
+    /// Served by the host cores only; the C++ router has no arm.
+    pub const HOST_CORE: Self = Self {
+        cpp: None,
+        host_core: true,
+    };
+
+    /// Served by an arm of the generated C++ router and by the host cores.
+    pub const fn cpp_template_and_host_core(shape: TransportShape) -> Self {
+        Self {
+            cpp: Some(shape),
+            host_core: true,
+        }
+    }
+
+    /// The C++ field layout, or `None` when no C++ arm exists.
     pub fn cpp_shape(self) -> Option<TransportShape> {
-        match self {
-            Self::CppTemplate(shape) => Some(shape),
-            Self::HostCore => None,
-        }
+        self.cpp
     }
 
-    /// Whether this is the core named by `kind`.
+    /// Whether the core named by `kind` carries the transport.
     pub fn is(self, kind: ServiceKind) -> bool {
-        self.kind() == kind
+        match kind {
+            ServiceKind::CppTemplate => self.cpp.is_some(),
+            ServiceKind::HostCore => self.host_core,
+        }
     }
 
-    /// The core, without the layout.
-    pub fn kind(self) -> ServiceKind {
-        match self {
-            Self::CppTemplate(_) => ServiceKind::CppTemplate,
-            Self::HostCore => ServiceKind::HostCore,
-        }
+    /// The cores that carry the transport, the C++ router first.
+    pub fn kinds(self) -> Vec<ServiceKind> {
+        [ServiceKind::CppTemplate, ServiceKind::HostCore]
+            .into_iter()
+            .filter(|kind| self.is(*kind))
+            .collect()
+    }
+}
+
+impl fmt::Display for TransportService {
+    /// The cores by name, joined with `, ` (the §8.2 matrix's "Core" cell).
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        let names: Vec<String> = self.kinds().iter().map(ToString::to_string).collect();
+        write!(f, "{}", names.join(", "))
     }
 }
 
@@ -834,7 +872,7 @@ pub fn lookup(transport: &str) -> Option<&'static TransportDescriptor> {
     use TransportCapability::*;
 
     static LOCAL: TransportDescriptor = TransportDescriptor {
-        served_by: TransportService::CppTemplate(TransportShape {
+        served_by: TransportService::cpp_template(TransportShape {
             has_per_target_field: true,
             has_shared_session: false,
         }),
@@ -879,7 +917,7 @@ pub fn lookup(transport: &str) -> Option<&'static TransportDescriptor> {
         server_deadline_notice: ServerDeadlineNotice::Unsupported,
     };
     static SHM: TransportDescriptor = TransportDescriptor {
-        served_by: TransportService::CppTemplate(TransportShape {
+        served_by: TransportService::cpp_template(TransportShape {
             has_per_target_field: true,
             has_shared_session: false,
         }),
@@ -931,7 +969,7 @@ pub fn lookup(transport: &str) -> Option<&'static TransportDescriptor> {
         server_deadline_notice: ServerDeadlineNotice::Unsupported,
     };
     static SOMEIP: TransportDescriptor = TransportDescriptor {
-        served_by: TransportService::CppTemplate(TransportShape {
+        served_by: TransportService::cpp_template(TransportShape {
             has_per_target_field: true,
             has_shared_session: false,
         }),
@@ -1017,7 +1055,7 @@ pub fn lookup(transport: &str) -> Option<&'static TransportDescriptor> {
         server_deadline_notice: ServerDeadlineNotice::ActiveError,
     };
     static ZENOH: TransportDescriptor = TransportDescriptor {
-        served_by: TransportService::CppTemplate(TransportShape {
+        served_by: TransportService::cpp_template(TransportShape {
             has_per_target_field: false,
             has_shared_session: true,
         }),
@@ -1092,7 +1130,7 @@ pub fn lookup(transport: &str) -> Option<&'static TransportDescriptor> {
     // or the subscribe, so no pattern needs a reversed connection to a peer
     // that may have dialed from an ephemeral port, and none needs a broker.
     static CUSTOM_TCP: TransportDescriptor = TransportDescriptor {
-        served_by: TransportService::CppTemplate(TransportShape {
+        served_by: TransportService::cpp_template(TransportShape {
             has_per_target_field: true,
             has_shared_session: true,
         }),
@@ -1150,7 +1188,7 @@ pub fn lookup(transport: &str) -> Option<&'static TransportDescriptor> {
         server_deadline_notice: ServerDeadlineNotice::ActiveError,
     };
     static DDS: TransportDescriptor = TransportDescriptor {
-        served_by: TransportService::CppTemplate(TransportShape {
+        served_by: TransportService::cpp_template(TransportShape {
             has_per_target_field: true,
             has_shared_session: false,
         }),
@@ -1228,7 +1266,7 @@ pub fn lookup(transport: &str) -> Option<&'static TransportDescriptor> {
         server_deadline_notice: ServerDeadlineNotice::ActiveError,
     };
     static CAN: TransportDescriptor = TransportDescriptor {
-        served_by: TransportService::CppTemplate(TransportShape {
+        served_by: TransportService::cpp_template(TransportShape {
             has_per_target_field: true,
             has_shared_session: false,
         }),
@@ -1269,7 +1307,7 @@ pub fn lookup(transport: &str) -> Option<&'static TransportDescriptor> {
     // SCE_MESH.md §mesh-18: one WebSocket connection per (client, server)
     // pair, spoken by the host cores and by no C++ arm.
     static WSS: TransportDescriptor = TransportDescriptor {
-        served_by: TransportService::HostCore,
+        served_by: TransportService::HOST_CORE,
         // What the host cores route: a `<send>` to a peer and its delivery,
         // and a request with its reply — `<invoke type="sce:mesh-rpc">` is
         // lowered to their mesh-rpc door, kept by wire invokeid until its
@@ -1323,7 +1361,7 @@ pub fn lookup(transport: &str) -> Option<&'static TransportDescriptor> {
     // `sce-mesh/1/to/<receiver>/<sender>`, which is what the name says, and
     // the two cannot reach one another.
     static ZENOH_INBOX: TransportDescriptor = TransportDescriptor {
-        served_by: TransportService::HostCore,
+        served_by: TransportService::HOST_CORE,
         // The set `wss` has, for the same reason: the host core routes a
         // `<send>` and its delivery and a request with its reply, and keeps no
         // subscription or field state, so a pattern needing one is refused at
@@ -1369,6 +1407,73 @@ pub fn lookup(transport: &str) -> Option<&'static TransportDescriptor> {
         // No server arm holds a request handle.
         server_deadline_notice: ServerDeadlineNotice::Unsupported,
     };
+    // ADR 0107, D2: the Mesh binding over HTTP request and response. Only the
+    // client opens an exchange; the server holds what it sends a client in that
+    // client's mailbox until an exchange carries it. The Rust host core serves
+    // both sides, and the generated C++ router carries the client (the side
+    // whose binding names `url`); a C++ machine on the accepting side is
+    // refused by name (`mesh/codegen-cpp-router-unsupported`).
+    static HTTPS: TransportDescriptor = TransportDescriptor {
+        // One client per bound peer, built in `init()` from the adapter the
+        // host hands the router at construction: a per-target field and no
+        // device-shared session.
+        served_by: TransportService::cpp_template_and_host_core(TransportShape {
+            has_per_target_field: true,
+            has_shared_session: false,
+        }),
+        // A `<send>` and its delivery, and a request with its reply, as the
+        // other bindings a host core carries: the cores keep no subscription
+        // or field state for a peer they reach by exchanges.
+        capabilities: &[FireForget, RequestReply],
+        implemented: true,
+        // `authenticator` is required on both sides, but its absence is its
+        // own refusal (`mesh/topology-binding-without-authenticator`): a
+        // binding that lets any caller claim a name is a security defect,
+        // not a missing setting. Which side dials is the presence of `url`.
+        required_binding_fields: &[],
+        // Dialing side: `url`, `hold_ms`. Accepting side: `listen`,
+        // `max_hold_ms`, `max_body_bytes`, `absence_ms`, `mailbox`. Both:
+        // `authenticator`. `topology::validate_https_extras_partial` refuses a
+        // key of one side on the other.
+        optional_binding_fields: &[
+            "url",
+            "listen",
+            "authenticator",
+            "hold_ms",
+            "max_hold_ms",
+            "max_body_bytes",
+            "absence_ms",
+            "mailbox",
+        ],
+        // What a lost response carried is carried again, and a request whose
+        // exchange failed is sent again under a retry policy: the core's
+        // window drops the copies.
+        supplies_dedup: false,
+        // The client holds one exchange for the server's sends while another
+        // carries its own, and a retry can land behind a later envelope.
+        supplies_ordering: false,
+        // Point to point: each (client, server) pair is its own sequence
+        // domain.
+        ordering_representable: true,
+        // A binding names one server; there is no discovery.
+        pool_shape: PoolShape::None,
+        pool_member_carrier: PoolMemberCarrier::None,
+        // No pub/sub capability; machine-lifetime path does not apply.
+        supports_machine_lifetime_subscribe: false,
+        // The first exchange answered `200` is the ready edge and a failed one
+        // ends it, the signal a §10.10 buffer gates on.
+        buffers_outbound: true,
+        // The server learns one client per name from the path; it hosts one
+        // identity per machine.
+        supports_multi_instance_server: false,
+        // Inter-machine by design: a client on an unknown network.
+        supports_inter_partition_ipc: false,
+        // A reply reaches the client in the mailbox of the binding it asked
+        // over; the wider `reply_from:` stays refused as it does for `wss`.
+        supports_cross_target_reply: false,
+        // No server arm holds a request handle a deadline could bound.
+        server_deadline_notice: ServerDeadlineNotice::Unsupported,
+    };
 
     match transport {
         "local" => Some(&LOCAL),
@@ -1380,6 +1485,7 @@ pub fn lookup(transport: &str) -> Option<&'static TransportDescriptor> {
         "can" => Some(&CAN),
         "wss" => Some(&WSS),
         "zenoh_inbox" => Some(&ZENOH_INBOX),
+        "https" => Some(&HTTPS),
         _ => None,
     }
 }
@@ -1436,27 +1542,30 @@ pub fn known_names() -> &'static [&'static str] {
         "can",
         "wss",
         "zenoh_inbox",
+        "https",
     ]
 }
 
 /// The backends whose host core carries a host-served transport's adapter.
 ///
-/// [`ServiceKind::HostCore`] says a transport needs no C++ arm; it does not
-/// say which host core speaks it, because the adapter is the one piece of a
+/// [`ServiceKind::HostCore`] says a host core speaks a transport; it does not
+/// say which host core, because the adapter is the one piece of a
 /// host core written by hand per language (SCE_MESH.md sections 18.4 and
 /// 20.4) and the cores do not have the same set. `wss` is in the Rust, the Kotlin and the
 /// Swift core; the Zenoh binding is in the Rust and the Swift one (the Swift core carries it
 /// over a client the host supplies, `ZenohClient`, and the Kotlin core has none), so a
 /// Kotlin peer table naming it is refused instead of emitted for a core with no `PeerLink`
-/// for it.
+/// for it. The `https` binding is in the Rust core; the Kotlin and Swift cores gain it in
+/// later steps of ADR 0107.
 ///
-/// Empty for a transport no host core carries (every C++-served one, and an
-/// unknown name).
+/// Empty for a transport no host core carries (every transport only the C++
+/// router serves, and an unknown name).
 pub fn host_core_languages(transport: &str) -> &'static [crate::generator::Language] {
     use crate::generator::Language::{Kotlin, Rust, Swift};
     match transport {
         "wss" => &[Rust, Kotlin, Swift],
         "zenoh_inbox" => &[Rust, Swift],
+        "https" => &[Rust],
         _ => &[],
     }
 }
@@ -1534,11 +1643,11 @@ mod tests {
         // §mesh-18: `mesh_transport.h.jinja2` has no arm for it, so a C++
         // layout here would be one no template reads.
         let d = lookup("wss").expect("known");
-        assert_eq!(d.served_by, TransportService::HostCore);
+        assert_eq!(d.served_by, TransportService::HOST_CORE);
         assert!(d.implemented);
         assert_eq!(
             implemented_names_served_by(ServiceKind::HostCore),
-            ["wss", "zenoh_inbox"]
+            ["wss", "zenoh_inbox", "https"]
         );
         assert!(!implemented_names_served_by(ServiceKind::CppTemplate).contains(&"wss"));
         // What the host cores route (§mesh-9.5, §mesh-10.7), and no more:
@@ -1556,7 +1665,7 @@ mod tests {
         // against a queryable), so it is served by a host core and the C++ router
         // has no arm for it.
         let d = lookup("zenoh_inbox").expect("known");
-        assert_eq!(d.served_by, TransportService::HostCore);
+        assert_eq!(d.served_by, TransportService::HOST_CORE);
         assert!(d.implemented);
         assert!(d.served_by.cpp_shape().is_none());
         assert!(!implemented_names_served_by(ServiceKind::CppTemplate).contains(&"zenoh_inbox"));
@@ -1581,6 +1690,58 @@ mod tests {
     }
 
     #[test]
+    fn https_is_served_by_both_cores_with_a_per_target_cpp_client() {
+        // ADR 0107, D2: the Rust host core serves both sides of the binding
+        // and the C++ router carries its client, one per bound peer.
+        let d = lookup("https").expect("known");
+        assert!(d.implemented);
+        assert!(d.served_by.is(ServiceKind::CppTemplate));
+        assert!(d.served_by.is(ServiceKind::HostCore));
+        assert_eq!(
+            d.served_by.kinds(),
+            [ServiceKind::CppTemplate, ServiceKind::HostCore]
+        );
+        assert_eq!(d.served_by.to_string(), "C++ template, host core");
+        assert!(shape(d).has_per_target_field);
+        assert!(!shape(d).has_shared_session);
+        assert!(implemented_names_served_by(ServiceKind::CppTemplate).contains(&"https"));
+        // What both cores route, and no more.
+        assert_eq!(d.capabilities, lookup("wss").expect("known").capabilities);
+        // The authenticator's absence is its own refusal, not a missing field.
+        assert!(d.required_binding_fields.is_empty());
+        assert_eq!(
+            d.known_binding_fields().collect::<Vec<_>>(),
+            [
+                "url",
+                "listen",
+                "authenticator",
+                "hold_ms",
+                "max_hold_ms",
+                "max_body_bytes",
+                "absence_ms",
+                "mailbox"
+            ]
+        );
+        // The first answered exchange is the ready edge.
+        assert!(d.buffers_outbound);
+        assert!(!d.supplies_dedup);
+        assert!(!d.supplies_ordering);
+        assert_eq!(d.pool_shape, PoolShape::None);
+    }
+
+    #[test]
+    fn a_one_core_service_names_that_core_alone() {
+        let cpp = lookup("custom_tcp").expect("known").served_by;
+        assert_eq!(cpp.kinds(), [ServiceKind::CppTemplate]);
+        assert!(!cpp.is(ServiceKind::HostCore));
+        assert_eq!(cpp.to_string(), "C++ template");
+        let host = lookup("wss").expect("known").served_by;
+        assert_eq!(host.kinds(), [ServiceKind::HostCore]);
+        assert!(!host.is(ServiceKind::CppTemplate));
+        assert_eq!(host.to_string(), "host core");
+    }
+
+    #[test]
     fn a_host_core_carries_only_the_transports_its_adapter_speaks() {
         use crate::generator::Language::{Cpp, Kotlin, Rust, Swift};
         // The set is asked per language because the adapter is written per
@@ -1588,8 +1749,17 @@ mod tests {
         // binding, so it must not be offered a peer table naming one.
         assert_eq!(host_core_languages("wss"), [Rust, Kotlin, Swift]);
         assert_eq!(host_core_languages("zenoh_inbox"), [Rust, Swift]);
-        // A C++-served transport and an unknown name belong to no host core.
+        assert_eq!(host_core_languages("https"), [Rust]);
+        // A transport only the C++ router serves and an unknown name belong to
+        // no host core.
         for name in implemented_names_served_by(ServiceKind::CppTemplate) {
+            if lookup(name)
+                .expect("known")
+                .served_by
+                .is(ServiceKind::HostCore)
+            {
+                continue;
+            }
             assert!(
                 host_core_languages(name).is_empty(),
                 "{name} is not host-served"
@@ -1724,6 +1894,9 @@ mod tests {
         //   someip → `mesh_transport.h.jinja2` reliability flag
         //   zenoh_keyexpr/custom_tcp/dds → the address each arm bakes in
         //   wss    → the host core's peer table (`templates/mesh_router/`)
+        //   https  → `topology::build_transport_state` (TransportState::Https),
+        //            which the C++ client arm and the host core's peer table
+        //            read
         //
         // `zenoh_inbox` is absent on purpose: the peer is named by `#peer`
         // alone and the router endpoints are the host's client configuration,
@@ -1744,6 +1917,19 @@ mod tests {
                 ("custom_tcp", vec!["connect"]),
                 ("dds", vec!["topic"]),
                 ("wss", vec!["url", "keepalive_ms"]),
+                (
+                    "https",
+                    vec![
+                        "url",
+                        "listen",
+                        "authenticator",
+                        "hold_ms",
+                        "max_hold_ms",
+                        "max_body_bytes",
+                        "absence_ms",
+                        "mailbox"
+                    ]
+                ),
             ]
         );
     }
@@ -1950,11 +2136,11 @@ mod tests {
     }
 
     #[test]
-    fn exactly_five_implemented_transports_require_runtime_ordering() {
+    fn exactly_six_implemented_transports_require_runtime_ordering() {
         // Regression guard mirroring the dedup counterpart below: today
-        // SOME/IP, zenoh_keyexpr, DDS, wss and zenoh_inbox are the implemented
-        // transports that may reorder. local/shm/custom_tcp preserve order
-        // by construction.
+        // SOME/IP, zenoh_keyexpr, DDS, wss, zenoh_inbox and https are the
+        // implemented transports that may reorder. local/shm/custom_tcp
+        // preserve order by construction.
         // If this set changes, the classification table in
         // supplies_ordering comments MUST be updated in the same commit.
         let unordered_impls: Vec<&str> = implemented_names()
@@ -1963,7 +2149,14 @@ mod tests {
             .collect();
         assert_eq!(
             unordered_impls,
-            ["someip", "zenoh_keyexpr", "dds", "wss", "zenoh_inbox"]
+            [
+                "someip",
+                "zenoh_keyexpr",
+                "dds",
+                "wss",
+                "zenoh_inbox",
+                "https"
+            ]
         );
     }
 
@@ -2023,9 +2216,9 @@ mod tests {
     }
 
     #[test]
-    fn exactly_five_implemented_transports_require_runtime_dedup() {
-        // Regression guard: today SOME/IP, zenoh_keyexpr, DDS, wss and zenoh_inbox
-        // are the implemented transports that admit duplicates. local/shm/
+    fn exactly_six_implemented_transports_require_runtime_dedup() {
+        // Regression guard: today SOME/IP, zenoh_keyexpr, DDS, wss, zenoh_inbox
+        // and https are the implemented transports that admit duplicates. local/shm/
         // custom_tcp are duplicate-free by construction. If this set
         // changes, the classification table in supplies_dedup comments
         // MUST be updated in the same commit — this test fails loudly
@@ -2036,7 +2229,14 @@ mod tests {
             .collect();
         assert_eq!(
             undeduped_impls,
-            ["someip", "zenoh_keyexpr", "dds", "wss", "zenoh_inbox"]
+            [
+                "someip",
+                "zenoh_keyexpr",
+                "dds",
+                "wss",
+                "zenoh_inbox",
+                "https"
+            ]
         );
     }
 
@@ -2185,7 +2385,7 @@ mod tests {
 
         // Author-facing order: the three that need no middleware, then the
         // three that route through one, then the unimplemented bus, then
-        // the two the host cores serve.
+        // the two only the host cores serve, then the one both cores serve.
         const ORDER: &[&str] = &[
             "local",
             "shm",
@@ -2196,6 +2396,7 @@ mod tests {
             "can",
             "wss",
             "zenoh_inbox",
+            "https",
         ];
         assert_eq!(
             ORDER.len(),
@@ -2217,7 +2418,7 @@ mod tests {
             let d = lookup(name).unwrap_or_else(|| panic!("{name} is not in the registry"));
             rendered.push_str(&format!(
                 "| `{name}` | {} | {} | {} | {} | {} | {} | {} | {:?} | {:?} | {} | {} | {} | {} | {} | {:?} |\n",
-                d.served_by.kind(),
+                d.served_by,
                 yn(d.implemented),
                 patterns(d),
                 fields(d.required_binding_fields),

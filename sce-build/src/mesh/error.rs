@@ -3411,6 +3411,24 @@ pub enum TopologyError {
         reason: String,
     },
 
+    /// A binding on a transport whose server keeps a mailbox per client name
+    /// names no `authenticator` (ADR 0107, D2). A mailbox is read only by the
+    /// name that owns it, so a binding that lets any caller claim a name
+    /// would hand one client another's envelopes. Its own code rather than
+    /// [`Self::MissingBindingField`]: what is missing is the rule that keeps
+    /// clients apart, not a setting with a default.
+    #[error(
+        "machine '{machine}': binding '{target}' (transport: {transport}) names no \
+             authenticator, so any caller could claim a name and read its mailbox. \
+             Add 'authenticator:' with one of bearer, install, mtls to the binding in \
+             deploy.yaml."
+    )]
+    BindingWithoutAuthenticator {
+        machine: String,
+        target: super::target::TargetId,
+        transport: String,
+    },
+
     /// A binding's `events:` table declares an entry for an SCXML event
     /// that the sender never `<send>`s to this target. Detecting this
     /// here (instead of at runtime where the event would silently route
@@ -3633,6 +3651,70 @@ pub enum CodegenError {
         machine: String,
         feature: HostCoreGap,
     },
+
+    /// The converse of [`Self::HostCoreUnsupported`]: a deployment feature a
+    /// host core carries and the generated C++ `TransportRouter` does not.
+    /// The router would build without it, and the feature would never
+    /// happen.
+    #[error("machine '{machine}' declares {feature}, {}", .feature.refusal())]
+    CppRouterUnsupported {
+        machine: String,
+        feature: CppRouterGap,
+    },
+}
+
+/// What a [`CodegenError::CppRouterUnsupported`] refused: a deployment feature
+/// a host core has and the generated C++ `TransportRouter` does not.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum CppRouterGap {
+    /// The accepting side of a binding whose C++ arm carries only the side
+    /// that dials: the `https` binding's server holds a mailbox per client
+    /// and answers its exchanges, which the C++ router has no arm for
+    /// (ADR 0107, D2).
+    AcceptingSide { transport: String },
+}
+
+impl std::fmt::Display for CppRouterGap {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Self::AcceptingSide { transport } => {
+                write!(
+                    f,
+                    "a binding that accepts (`listen:`) on transport '{transport}'"
+                )
+            }
+        }
+    }
+}
+
+impl CppRouterGap {
+    /// Stable short tag for `key_fragments`. Never rendered to users.
+    fn tag(&self) -> &'static str {
+        match self {
+            Self::AcceptingSide { .. } => "accepting-side",
+        }
+    }
+
+    /// Why the C++ router refuses it and what repairs it: the tail of the
+    /// [`CodegenError::CppRouterUnsupported`] message. The backends offered
+    /// are read from the registry, so a host core that gains the transport is
+    /// offered here without a second edit.
+    fn refusal(&self) -> String {
+        match self {
+            Self::AcceptingSide { transport } => {
+                let carriers = super::transport::host_core_languages(transport)
+                    .iter()
+                    .map(|language| format!("`--lang {}`", language.canonical_name()))
+                    .collect::<Vec<_>>()
+                    .join(" or ");
+                format!(
+                    "which the generated C++ router does not carry: its arm for \
+                     '{transport}' is the side that dials (`url:`). Generate this \
+                     machine with {carriers}, or make it the side that dials."
+                )
+            }
+        }
+    }
 }
 
 /// What a [`CodegenError::HostCoreUnsupported`] refused: a deployment
@@ -5701,6 +5783,28 @@ fn topology_fields(e: &TopologyError) -> DiagnosticPayload {
                 reason.clone(),
             ],
         },
+        TopologyError::BindingWithoutAuthenticator {
+            machine,
+            target,
+            transport,
+        } => DiagnosticPayload {
+            code: DiagnosticCode::MeshTopologyBindingWithoutAuthenticator,
+            stage: Stage::MeshTopology,
+            actual: None,
+            // The repair is to add one key, and which authenticator is the
+            // deployment's choice among a closed set: the key is the fix, and
+            // the values are named in the message.
+            expected: None,
+            fix: Some(Fix::AddAttribute {
+                element: format!("machines.{machine}.bindings.{}", target.as_str()),
+                attr: "authenticator".to_string(),
+            }),
+            key_fragments: vec![
+                machine.clone(),
+                target.as_str().to_string(),
+                transport.clone(),
+            ],
+        },
         TopologyError::EventBindingUnused {
             machine,
             target,
@@ -5910,6 +6014,17 @@ fn codegen_fields(e: &CodegenError) -> DiagnosticPayload {
             // Two repairs — another backend, or drop the feature — and
             // which is right depends on what the machine is for, so
             // neither is offered as the fix.
+            expected: None,
+            fix: None,
+            key_fragments: vec![machine.clone(), feature.tag().to_string()],
+        },
+        CodegenError::CppRouterUnsupported { machine, feature } => DiagnosticPayload {
+            code: DiagnosticCode::MeshCodegenCppRouterUnsupported,
+            stage: Stage::MeshCodegen,
+            actual: Some(machine.clone()),
+            // Two repairs — a host-core backend, or the other side of the
+            // binding — and which is right depends on what the machine is
+            // for, so neither is offered as the fix.
             expected: None,
             fix: None,
             key_fragments: vec![machine.clone(), feature.tag().to_string()],

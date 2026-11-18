@@ -10118,7 +10118,7 @@ document map's symbol of the same node; that map carries no condition.
 
 ---
 
-## Appendix — `DiagnosticCode` index (539 codes)
+## Appendix — `DiagnosticCode` index (541 codes)
 
 This appendix is the **drift-guarded coverage target** for the
 `acceptance_doc_covers_every_code` test. Every slash-path string in
@@ -10624,6 +10624,7 @@ Codes that the author can avoid by writing a better SCXML /
 | `mesh/topology-pattern-capability-violation` | Mesh Topology |
 | `mesh/topology-missing-binding-field` | Mesh Topology |
 | `mesh/topology-invalid-binding-field` | Mesh Topology |
+| `mesh/topology-binding-without-authenticator` | Mesh Topology |
 | `mesh/topology-event-binding-unused` | Mesh Topology |
 | `mesh/topology-ordering-cannot-be-guaranteed` | Mesh Topology |
 | `mesh/topology-pool-param-name-missing` | Mesh Topology |
@@ -10634,6 +10635,7 @@ Codes that the author can avoid by writing a better SCXML /
 | `mesh/codegen-event-name-collision` | Mesh Codegen |
 | `mesh/codegen-pool-with-rpc-client-unsupported` | Mesh Codegen |
 | `mesh/codegen-host-core-unsupported` | Mesh Codegen |
+| `mesh/codegen-cpp-router-unsupported` | Mesh Codegen |
 
 ### Diagnostic-only
 

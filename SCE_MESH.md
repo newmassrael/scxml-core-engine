@@ -1254,6 +1254,7 @@ question from whether the transport *supplies* ordering.
 | `can` | C++ template | no | FA | — | no | no | no | None | None | no | no | no | no | no | Unsupported |
 | `wss` | host core | yes | RF | — | no | no | yes | None | None | no | yes | no | no | no | Unsupported |
 | `zenoh_inbox` | host core | yes | RF | — | no | no | yes | None | None | no | yes | no | no | no | Unsupported |
+| `https` | C++ template, host core | yes | RF | — | no | no | yes | None | None | no | yes | no | no | no | Unsupported |
 <!-- END transport-capability-matrix -->
 
 If SCXML uses a pattern that the bound transport does not support, sce-build emits a **build error** with the specific pattern/transport mismatch. The same holds for every other column: a deploy.yaml asking for something the row does not offer is rejected at parse or codegen time, never silently degraded.

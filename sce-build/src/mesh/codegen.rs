@@ -379,6 +379,36 @@ enum TargetStateView {
         topic: String,
         extra: HashMap<String, serde_yaml_ng::Value>,
     },
+    /// The client of an `https` binding (ADR 0107, D2): the C++ router
+    /// carries only the side that dials, so `url` is always present here.
+    Https {
+        /// The base URL the client POSTs under, pre-escaped as a complete
+        /// C++ string literal; the client appends `/sce-mesh/1/<client>`.
+        url: String,
+        /// The `SCE::Mesh::Https::Authenticator` enumerator the binding names.
+        authenticator: &'static str,
+        /// The hold the client asks for on a poll, in milliseconds.
+        hold_ms: u32,
+        /// The binding's §16.7 row 3 retry policy, carried by the client
+        /// rather than by the router's `RetryingDispatcher`: an https send is
+        /// confirmed when an exchange that carried it is answered, after
+        /// `route_send` has returned, so the retry belongs where the answer
+        /// is seen. Moved here from [`TargetContext::retry`] where the target
+        /// context is built.
+        #[serde(skip_serializing_if = "Option::is_none")]
+        retry: Option<RetryPolicyContext>,
+    },
+}
+
+/// The `SCE::Mesh::Https::Authenticator` enumerator for a binding's
+/// authenticator (`sce/include/mesh/transports/HttpsClient.h`).
+fn https_authenticator_enumerator(a: crate::mesh::topology::HttpsAuthenticator) -> &'static str {
+    use crate::mesh::topology::HttpsAuthenticator;
+    match a {
+        HttpsAuthenticator::Bearer => "Bearer",
+        HttpsAuthenticator::Install => "Install",
+        HttpsAuthenticator::Mtls => "Mtls",
+    }
 }
 
 impl TargetStateView {
@@ -416,6 +446,21 @@ impl TargetStateView {
                 topic: cpp_string_literal(topic),
                 extra: extra.clone(),
             },
+            TransportState::Https {
+                url: Some(url),
+                authenticator,
+                hold_ms,
+                ..
+            } => Self::Https {
+                url: cpp_string_literal(url),
+                authenticator: https_authenticator_enumerator(*authenticator),
+                hold_ms: *hold_ms,
+                retry: None,
+            },
+            TransportState::Https { url: None, .. } => unreachable!(
+                "TargetStateView::from_topology: the accepting side of an https binding \
+                 should have been refused by refuse_what_the_cpp_router_lacks in generate_cpp_mesh"
+            ),
             TransportState::Unimplemented { transport_name } => unreachable!(
                 "TargetStateView::from_topology: unimplemented transport '{transport_name}' \
                  should have been rejected by the registry-lookup stage in generate_cpp_mesh"
@@ -1446,12 +1491,36 @@ fn refuse_transports_not_served_by(
     Ok(())
 }
 
+/// Refuse the first target whose binding asks the C++ router for a side of a
+/// transport its arm does not carry. The registry says a core serves a
+/// transport; the `https` binding's C++ arm is its client only, so a C++
+/// machine on the accepting side would build a router that never answers
+/// an exchange (ADR 0107, D2).
+fn refuse_what_the_cpp_router_lacks(
+    targets: &[ResolvedTarget],
+    deploy_machine_name: &str,
+) -> Result<(), CodegenError> {
+    use crate::mesh::topology::TransportState;
+    for t in targets {
+        if let TransportState::Https { url: None, .. } = &t.state {
+            return Err(CodegenError::CppRouterUnsupported {
+                machine: deploy_machine_name.to_string(),
+                feature: super::error::CppRouterGap::AcceptingSide {
+                    transport: t.state.transport_name().to_string(),
+                },
+            });
+        }
+    }
+    Ok(())
+}
+
 fn generate_cpp_mesh(inputs: MeshCodegenInputs<'_>) -> Result<GeneratedOutput, CodegenError> {
     let MeshCodegenInputs {
         machine_name,
         // The C++ router is emitted and named per document; the deploy
-        // key reaches it through the resolved targets and the topology.
-        deploy_machine_name: _,
+        // key reaches it through the resolved targets and the topology,
+        // and names the machine in a refusal.
+        deploy_machine_name,
         device_name,
         targets,
         server,
@@ -1484,6 +1553,7 @@ fn generate_cpp_mesh(inputs: MeshCodegenInputs<'_>) -> Result<GeneratedOutput, C
     // what makes the §mesh-6.4 add-a-transport procedure enforceable: a
     // registry entry missing or half-finished is rejected before codegen.
     refuse_transports_not_served_by(targets, transport::ServiceKind::CppTemplate)?;
+    refuse_what_the_cpp_router_lacks(targets, deploy_machine_name)?;
 
     // Fail fast on event-name collisions: two SCXML events on the same
     // target that collapse to the same C++ constant suffix would emit
@@ -1639,6 +1709,27 @@ fn generate_cpp_mesh(inputs: MeshCodegenInputs<'_>) -> Result<GeneratedOutput, C
                 buffers_outbound,
                 retry,
             } = peer_policy(t, desc);
+            // An https client confirms a send when an exchange that carried it
+            // is answered, after `route_send` returned, so its retry policy is
+            // the client's and the router wraps no `RetryingDispatcher` around
+            // a send that only queues.
+            let (state, retry) = match TargetStateView::from_topology(&t.state) {
+                TargetStateView::Https {
+                    url,
+                    authenticator,
+                    hold_ms,
+                    ..
+                } => (
+                    TargetStateView::Https {
+                        url,
+                        authenticator,
+                        hold_ms,
+                        retry,
+                    },
+                    None,
+                ),
+                other => (other, retry),
+            };
 
             TargetContext {
                 target: t.target.clone(),
@@ -1646,7 +1737,7 @@ fn generate_cpp_mesh(inputs: MeshCodegenInputs<'_>) -> Result<GeneratedOutput, C
                 target_snake: filters::to_snake_case(stripped.to_string()),
                 target_pascal: filters::to_pascal_case(stripped.to_string()),
                 events: t.events.clone(),
-                state: TargetStateView::from_topology(&t.state),
+                state,
                 has_per_target_field: desc
                     .served_by
                     .cpp_shape()

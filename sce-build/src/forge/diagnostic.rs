@@ -3610,6 +3610,10 @@ pub enum DiagnosticCode {
     MeshTopologyMissingBindingField,
     #[serde(rename = "mesh/topology-invalid-binding-field")]
     MeshTopologyInvalidBindingField,
+    /// A binding whose server keeps a mailbox per client name names no
+    /// authenticator (docs/adr/0107, D2).
+    #[serde(rename = "mesh/topology-binding-without-authenticator")]
+    MeshTopologyBindingWithoutAuthenticator,
     #[serde(rename = "mesh/topology-event-binding-unused")]
     MeshTopologyEventBindingUnused,
     #[serde(rename = "mesh/topology-ordering-cannot-be-guaranteed")]
@@ -3635,6 +3639,11 @@ pub enum DiagnosticCode {
     MeshCodegenPoolWithRpcClientUnsupported,
     #[serde(rename = "mesh/codegen-host-core-unsupported")]
     MeshCodegenHostCoreUnsupported,
+    /// A deployment feature a host core carries and the generated C++ router
+    /// does not, such as the accepting side of an `https` binding
+    /// (docs/adr/0107, D2).
+    #[serde(rename = "mesh/codegen-cpp-router-unsupported")]
+    MeshCodegenCppRouterUnsupported,
     // Mesh I/O
     #[serde(rename = "mesh/io")]
     MeshIo,
@@ -4511,6 +4520,8 @@ pub const ALL_DIAGNOSTIC_CODES: &[DiagnosticCode] = {
         MeshTopologyPatternCapabilityViolation,
         MeshTopologyMissingBindingField,
         MeshTopologyInvalidBindingField,
+        // ADR 0107, D2: a mailbox binding that names no authenticator
+        MeshTopologyBindingWithoutAuthenticator,
         MeshTopologyEventBindingUnused,
         MeshTopologyOrderingCannotBeGuaranteed,
         MeshTopologyPoolParamNameMissing,
@@ -4524,6 +4535,8 @@ pub const ALL_DIAGNOSTIC_CODES: &[DiagnosticCode] = {
         MeshCodegenEventNameCollision,
         MeshCodegenPoolWithRpcClientUnsupported,
         MeshCodegenHostCoreUnsupported,
+        // ADR 0107, D2: what a host core carries and the C++ router does not
+        MeshCodegenCppRouterUnsupported,
         // Mesh Io
         MeshIo,
         // Forge generated-source drift detection (SCE Protocol-Synthesis RFC §synth-6.2.6)
@@ -4764,6 +4777,7 @@ impl DiagnosticCode {
             | MeshTopologyMachineNotFound
             | MeshTopologyMissingBindingField
             | MeshTopologyInvalidBindingField
+            | MeshTopologyBindingWithoutAuthenticator
             | MeshDeployUnknownBindingField
             | MeshTopologyEventBindingUnused => Some("SCE Mesh §14"),
 
@@ -5186,6 +5200,10 @@ impl DiagnosticCode {
 
             // ── Host Mesh Router (SCE_MESH.md §19) ───────────────
             MeshCodegenHostCoreUnsupported => Some("SCE Mesh §19"),
+
+            // ── Transport descriptor: which cores serve a transport
+            //    (SCE_MESH.md §10.4) ──
+            MeshCodegenCppRouterUnsupported => Some("SCE Mesh §10.4"),
 
             // ── Mesh sequence ordering (SCE_MESH.md §10.6) ──────
             MeshTopologyOrderingCannotBeGuaranteed => Some("SCE Mesh §10.6"),
@@ -6159,6 +6177,7 @@ impl DiagnosticCode {
             | MeshTopologyPatternCapabilityViolation
             | MeshTopologyMissingBindingField
             | MeshTopologyInvalidBindingField
+            | MeshTopologyBindingWithoutAuthenticator
             | MeshTopologyEventBindingUnused
             | MeshTopologyOrderingCannotBeGuaranteed
             | MeshTopologyPoolParamNameMissing
@@ -6171,6 +6190,7 @@ impl DiagnosticCode {
             | MeshCodegenEventNameCollision
             | MeshCodegenPoolWithRpcClientUnsupported
             | MeshCodegenHostCoreUnsupported
+            | MeshCodegenCppRouterUnsupported
             | MeshIo
             | ForgeSourceHashMismatch
             | ForgeSourceHashInputUncovered
@@ -6823,6 +6843,9 @@ impl DiagnosticCode {
             MeshTopologyPatternCapabilityViolation => "mesh/topology-pattern-capability-violation",
             MeshTopologyMissingBindingField => "mesh/topology-missing-binding-field",
             MeshTopologyInvalidBindingField => "mesh/topology-invalid-binding-field",
+            MeshTopologyBindingWithoutAuthenticator => {
+                "mesh/topology-binding-without-authenticator"
+            }
             MeshTopologyEventBindingUnused => "mesh/topology-event-binding-unused",
             MeshTopologyOrderingCannotBeGuaranteed => "mesh/topology-ordering-cannot-be-guaranteed",
             MeshTopologyPoolParamNameMissing => "mesh/topology-pool-param-name-missing",
@@ -6839,6 +6862,7 @@ impl DiagnosticCode {
                 "mesh/codegen-pool-with-rpc-client-unsupported"
             }
             MeshCodegenHostCoreUnsupported => "mesh/codegen-host-core-unsupported",
+            MeshCodegenCppRouterUnsupported => "mesh/codegen-cpp-router-unsupported",
             MeshIo => "mesh/io",
             ForgeSourceHashMismatch => "forge/source-hash-mismatch",
             ForgeSourceHashInputUncovered => "forge/source-hash-input-uncovered",
@@ -19660,6 +19684,16 @@ mod tests {
                 r#"{"v":1,"id":"fnv1a:17263f5574103176","code":"mesh/topology-invalid-binding-field","stage":"mesh-topology","spec":"SCE Mesh §14","message":"machine 'ecu_a': binding '#motor' (transport: shm) has invalid 'size': must be a power of two"}"#,
             ),
             (
+                "mesh/topology-binding-without-authenticator",
+                TopologyError::BindingWithoutAuthenticator {
+                    machine: "ecu_a".into(),
+                    target: TargetId::new("#motor").unwrap(),
+                    transport: "https".into(),
+                }
+                .into(),
+                r#"{"v":1,"id":"fnv1a:ab88acfe148a4c4b","code":"mesh/topology-binding-without-authenticator","stage":"mesh-topology","spec":"SCE Mesh §14","message":"machine 'ecu_a': binding '#motor' (transport: https) names no authenticator, so any caller could claim a name and read its mailbox. Add 'authenticator:' with one of bearer, install, mtls to the binding in deploy.yaml.","fix":{"kind":"add_attribute","element":"machines.ecu_a.bindings.#motor","attr":"authenticator"}}"#,
+            ),
+            (
                 "mesh/event-binding-unused",
                 TopologyError::EventBindingUnused {
                     machine: "ecu_a".into(),
@@ -19793,6 +19827,17 @@ mod tests {
                 }
                 .into(),
                 r#"{"v":1,"id":"fnv1a:b7033381df436a0b","code":"mesh/codegen-host-core-unsupported","stage":"mesh-codegen","spec":"SCE Mesh §19","message":"machine 'calendar' declares a `server:` block on transport 'zenoh_keyexpr', which the host Mesh cores do not carry (SCE_MESH.md §mesh-19). Generate this machine with `--lang cpp`, or remove it from deploy.yaml.","actual":"calendar"}"#,
+            ),
+            (
+                "mesh/codegen-cpp-router-unsupported",
+                CodegenError::CppRouterUnsupported {
+                    machine: "calendar".into(),
+                    feature: crate::mesh::error::CppRouterGap::AcceptingSide {
+                        transport: "https".into(),
+                    },
+                }
+                .into(),
+                r#"{"v":1,"id":"fnv1a:5c231b0547bb72c5","code":"mesh/codegen-cpp-router-unsupported","stage":"mesh-codegen","spec":"SCE Mesh §10.4","message":"machine 'calendar' declares a binding that accepts (`listen:`) on transport 'https', which the generated C++ router does not carry: its arm for 'https' is the side that dials (`url:`). Generate this machine with `--lang rust`, or make it the side that dials.","actual":"calendar"}"#,
             ),
             (
                 "mesh/io",
@@ -21421,6 +21466,9 @@ mod tests {
             | MeshTopologyPatternCapabilityViolation
             | MeshTopologyMissingBindingField
             | MeshTopologyInvalidBindingField
+            // ADR 0107, D2: the fix adds the key; the value is the
+            // deployment's choice, named in the message.
+            | MeshTopologyBindingWithoutAuthenticator
             | MeshTopologyEventBindingUnused
             | MeshTopologyOrderingCannotBeGuaranteed
             | MeshTopologyPoolParamNameMissing
@@ -21430,6 +21478,7 @@ mod tests {
             | MeshCodegenEventNameCollision
             | MeshCodegenPoolWithRpcClientUnsupported
             | MeshCodegenHostCoreUnsupported
+            | MeshCodegenCppRouterUnsupported
             | MeshIo
             // ── §synth-6.2.6 generated-source drift (B9). Repair is the
             //    deterministic `sce-codegen <regen-command>` — no
@@ -22278,6 +22327,7 @@ mod tests {
                 | MeshTopologyReceiverSourceParse | MeshTopologyUncoveredEvents
                 | MeshTopologyPatternCapabilityViolation
                 | MeshTopologyMissingBindingField | MeshTopologyInvalidBindingField
+                | MeshTopologyBindingWithoutAuthenticator
                 | MeshTopologyEventBindingUnused | MeshTopologyOrderingCannotBeGuaranteed
                 | MeshTopologyPoolParamNameMissing
                 | MeshTopologySubscriptionSourceUnbound
@@ -22287,6 +22337,7 @@ mod tests {
                 | MeshCodegenTemplateRender | MeshCodegenEventNameCollision
                 | MeshCodegenPoolWithRpcClientUnsupported
                 | MeshCodegenHostCoreUnsupported
+                | MeshCodegenCppRouterUnsupported
                 | MeshIo
                 // B9 §synth-6.2.6 generated-source drift detection
                 | ForgeSourceHashMismatch
@@ -22361,9 +22412,9 @@ mod tests {
         }
         assert_eq!(
             ALL_DIAGNOSTIC_CODES.len(),
-            539,
+            541,
             "ALL_DIAGNOSTIC_CODES has duplicates or missing entries — \
-             expected 539 distinct variants to match the DiagnosticCode \
+             expected 541 distinct variants to match the DiagnosticCode \
              enum. When a commit adds or removes a variant, update this \
              count in the same commit and follow the variant checklist: \
              SCE_ERROR_CONTRACT.md plus the acceptance-doc appendix \
@@ -23379,6 +23430,7 @@ pub fn anchor_carriage(code: DiagnosticCode, pipeline: Pipeline) -> AnchorCarria
             | MeshTopologyPatternCapabilityViolation
             | MeshTopologyMissingBindingField
             | MeshTopologyInvalidBindingField
+            | MeshTopologyBindingWithoutAuthenticator
             | MeshTopologyEventBindingUnused
             | MeshTopologyOrderingCannotBeGuaranteed
             | MeshTopologyPoolParamNameMissing
@@ -23391,6 +23443,7 @@ pub fn anchor_carriage(code: DiagnosticCode, pipeline: Pipeline) -> AnchorCarria
             | MeshCodegenEventNameCollision
             | MeshCodegenPoolWithRpcClientUnsupported
             | MeshCodegenHostCoreUnsupported
+            | MeshCodegenCppRouterUnsupported
             | MeshIo
             | ForgeSourceHashMismatch
             | ForgeSourceHashInputUncovered

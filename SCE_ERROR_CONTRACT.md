@@ -1204,6 +1204,7 @@ references against a real document and drift silently.
 | `deploy/worker-stack-budget-missing` | `mesh-deploy` | no | SCE Protocol-Synthesis RFC §5.K |
 | `link/concurrent-count-exceeds-scheduler-slots` | `mesh-deploy` | no | SCE Protocol-Synthesis RFC §5.N |
 | `link/per-link-budget-exceeds-tick-period` | `mesh-deploy` | no | SCE Protocol-Synthesis RFC §5.N |
+| `mesh/codegen-cpp-router-unsupported` | `mesh-codegen` | no | SCE Mesh §10.4 |
 | `mesh/codegen-event-name-collision` | `mesh-codegen` | no |  |
 | `mesh/codegen-host-core-unsupported` | `mesh-codegen` | no | SCE Mesh §19 |
 | `mesh/codegen-pool-with-rpc-client-unsupported` | `mesh-codegen` | no |  |
@@ -1293,6 +1294,7 @@ references against a real document and drift silently.
 | `mesh/partition-parallel-root-undesignated` | `mesh-deploy` | no | SCE Mesh §14 rule 12 |
 | `mesh/partition-wire21-custom-tcp-unimplemented` | `mesh-deploy` | no | SCE Mesh §16.5 |
 | `mesh/topology-absolute-source-path` | `mesh-topology` | no |  |
+| `mesh/topology-binding-without-authenticator` | `mesh-topology` | `add_attribute` | SCE Mesh §14 |
 | `mesh/topology-event-binding-unused` | `mesh-topology` | `remove_fields` | SCE Mesh §14 |
 | `mesh/topology-invalid-binding-field` | `mesh-topology` | no | SCE Mesh §14 |
 | `mesh/topology-machine-lifetime-subscription-unsupported` | `mesh-topology` | no | SCE Mesh §13 |

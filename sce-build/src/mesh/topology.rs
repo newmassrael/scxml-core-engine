@@ -335,6 +335,36 @@ pub enum TransportState {
         #[serde(skip_serializing_if = "Option::is_none")]
         keepalive_ms: Option<u32>,
     },
+    /// The Mesh binding over HTTP request and response (ADR 0107, D2). The
+    /// side holding `url` dials and the side holding `listen` accepts;
+    /// exactly one of the two is present, which
+    /// `validate_https_extras_partial` proved. Every number is resolved here,
+    /// its default applied once, so no reader carries a second default.
+    Https {
+        /// `https://<host>[:<port>][<base>]` the client POSTs its exchanges
+        /// under (`<base>/sce-mesh/1/<client>`); `http://` only to a loopback
+        /// host. `None` on the accepting side.
+        #[serde(skip_serializing_if = "Option::is_none")]
+        url: Option<String>,
+        /// `host:port` the server listens on. `None` on the dialing side.
+        #[serde(skip_serializing_if = "Option::is_none")]
+        listen: Option<String>,
+        /// Who may claim a name, on both sides.
+        authenticator: HttpsAuthenticator,
+        /// How long the client asks the server to hold an exchange that has
+        /// nothing to answer yet (`Sce-Mesh-Hold-Ms`). Read by the client.
+        hold_ms: u32,
+        /// The longest hold the server grants. Read by the server.
+        max_hold_ms: u32,
+        /// The largest request body the server takes in before `413`.
+        max_body_bytes: u64,
+        /// How long a client may go without an exchange before the server
+        /// holds it not ready.
+        absence_ms: u32,
+        /// How many envelopes the server keeps for one client before a send
+        /// to it is dropped as backpressure.
+        mailbox: u32,
+    },
     /// Zenoh binding of the host Mesh cores (§mesh-20). The
     /// binding carries no field: the peer is the `#peer` it is keyed by, the
     /// key is derived from the two machine names, and the router endpoints
@@ -365,11 +395,63 @@ impl TransportState {
             Self::CustomTcp { .. } => "custom_tcp",
             Self::Dds { .. } => "dds",
             Self::Wss { .. } => "wss",
+            Self::Https { .. } => "https",
             Self::ZenohInbox => "zenoh_inbox",
             Self::Unimplemented { transport_name } => transport_name,
         }
     }
 }
+
+/// Who may claim a name on an `https` binding (ADR 0107, D2). A mailbox is
+/// read only by the name that owns it, so a binding names one of these on
+/// both sides and a binding with none is refused.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
+#[serde(rename_all = "snake_case")]
+pub enum HttpsAuthenticator {
+    /// `Authorization: Bearer <token>`: a token the host gives the client and
+    /// the server's host verifies.
+    Bearer,
+    /// `Authorization: SCE-Install <base64url secret>`: a 256-bit secret the
+    /// client draws once from the operating system's random source and keeps
+    /// where its host says; the server pins the name to the secret's hash at
+    /// the first exchange and refuses any other secret for it.
+    Install,
+    /// A TLS client certificate the host configures on its HTTP stack.
+    Mtls,
+}
+
+impl HttpsAuthenticator {
+    /// Every authenticator, in the order a diagnostic lists them.
+    pub const ALL: [Self; 3] = [Self::Bearer, Self::Install, Self::Mtls];
+
+    /// The deploy.yaml spelling.
+    pub fn as_str(self) -> &'static str {
+        match self {
+            Self::Bearer => "bearer",
+            Self::Install => "install",
+            Self::Mtls => "mtls",
+        }
+    }
+
+    /// The authenticator a deploy.yaml value names, if any.
+    pub fn parse(value: &str) -> Option<Self> {
+        Self::ALL.into_iter().find(|a| a.as_str() == value)
+    }
+}
+
+/// The hold a client asks for when its binding sets no `hold_ms`.
+pub const HTTPS_DEFAULT_HOLD_MS: u32 = 25_000;
+/// The longest hold a server grants when its binding sets no `max_hold_ms`.
+pub const HTTPS_DEFAULT_MAX_HOLD_MS: u32 = 30_000;
+/// The request body a server takes in when its binding sets no
+/// `max_body_bytes` (1 MiB).
+pub const HTTPS_DEFAULT_MAX_BODY_BYTES: u64 = 1_048_576;
+/// The absence after which a server holds a client not ready, when its
+/// binding sets no `absence_ms`.
+pub const HTTPS_DEFAULT_ABSENCE_MS: u32 = 120_000;
+/// The envelopes a server keeps for one client when its binding sets no
+/// `mailbox`.
+pub const HTTPS_DEFAULT_MAILBOX: u32 = 1024;
 
 /// A resolved send target: SCXML <send> target matched to a deploy.yaml binding.
 ///
@@ -2063,6 +2145,9 @@ pub(crate) fn contribute_send_partials(
         if pt.transport == "wss" {
             validate_wss_extras_partial(machine_name, pt)?;
         }
+        if pt.transport == "https" {
+            validate_https_extras_partial(machine_name, pt)?;
+        }
 
         // SCE_MESH.md §mesh-10.6.2: `ordering: required` on a transport whose
         // broadcast semantics leave no per-(sender, receiver) sequence
@@ -2665,78 +2750,316 @@ fn validate_wss_extras_partial(
     };
 
     if let Some(v) = pt.extra.get("url") {
-        let url = v.as_str().ok_or_else(|| {
-            invalid(
-                "url",
-                format!("must be a string (got {})", render_yaml_value(v)),
-            )
-        })?;
-        let (tls, rest) = if let Some(rest) = url.strip_prefix("wss://") {
-            (true, rest)
-        } else if let Some(rest) = url.strip_prefix("ws://") {
-            (false, rest)
-        } else {
-            return Err(invalid(
-                "url",
-                format!("must start with `wss://` (got '{url}')"),
-            ));
-        };
-        if rest.contains(['?', '#']) {
-            return Err(invalid(
-                "url",
-                format!(
-                    "must carry no query or fragment: the core appends \
-                     `/sce-mesh/1/<client>` after it (got '{url}')"
-                ),
-            ));
-        }
-        let authority = rest.split('/').next().unwrap_or_default();
-        let host = match authority.strip_prefix('[') {
-            Some(bracketed) => bracketed.split(']').next().unwrap_or_default(),
-            None => authority.rsplit_once(':').map_or(authority, |(h, _)| h),
-        };
-        if host.is_empty() {
-            return Err(invalid("url", format!("names no host (got '{url}')")));
-        }
-        if !tls && !matches!(host, "localhost" | "127.0.0.1" | "::1") {
-            return Err(invalid(
-                "url",
-                format!(
-                    "`ws://` without TLS is for a loopback test only (§mesh-18.1); \
-                     use `wss://` for host '{host}'"
-                ),
-            ));
-        }
-        let segment_safe = machine_name
-            .bytes()
-            .all(|b| b.is_ascii_alphanumeric() || matches!(b, b'-' | b'.' | b'_' | b'~'));
-        if !segment_safe {
-            return Err(invalid(
-                "url",
-                format!(
-                    "machine '{machine_name}' dials as `/sce-mesh/1/{machine_name}`, \
-                     and a name outside A-Z a-z 0-9 - . _ ~ is not one path segment \
-                     (§mesh-18.1)"
-                ),
-            ));
-        }
+        check_dial_url(machine_name, v, &WSS_DIAL_URL).map_err(|reason| invalid("url", reason))?;
     }
 
     if let Some(v) = pt.extra.get("keepalive_ms") {
-        let n = v.as_u64().ok_or_else(|| {
-            invalid(
-                "keepalive_ms",
-                format!("must be a positive integer (got {})", render_yaml_value(v)),
-            )
-        })?;
-        if n == 0 || n > u64::from(u32::MAX) {
+        check_positive_u32(v).map_err(|reason| invalid("keepalive_ms", reason))?;
+    }
+    Ok(())
+}
+
+/// What a dialing binding's `url` may be, for a binding whose core appends
+/// `/sce-mesh/1/<client>` to it: the WebSocket binding (section 18.1) and the
+/// `https` binding (ADR 0107, D2) share the rule and differ in their schemes
+/// and the section a refusal names.
+struct DialUrlRule {
+    /// The scheme with TLS (`wss://`).
+    secure: &'static str,
+    /// The scheme without TLS, accepted only for a loopback host (`ws://`).
+    plain: &'static str,
+    /// Where the rule is stated, for the refusal's text.
+    section: &'static str,
+}
+
+const WSS_DIAL_URL: DialUrlRule = DialUrlRule {
+    secure: "wss://",
+    plain: "ws://",
+    section: "§mesh-18.1",
+};
+
+const HTTPS_DIAL_URL: DialUrlRule = DialUrlRule {
+    secure: "https://",
+    plain: "http://",
+    section: "ADR 0107, D2",
+};
+
+/// Check a dialing `url`, answering why it is refused:
+///
+///   - it starts with the rule's TLS scheme, or with its plain scheme for a
+///     loopback host only;
+///   - it carries no query or fragment, which would land after the path the
+///     core appends;
+///   - the dialing machine's name is one path segment of unreserved characters
+///     (RFC 3986 section 2.3), since it IS the path's last segment.
+fn check_dial_url(
+    machine_name: &str,
+    value: &serde_yaml_ng::Value,
+    rule: &DialUrlRule,
+) -> Result<(), String> {
+    let url = value
+        .as_str()
+        .ok_or_else(|| format!("must be a string (got {})", render_yaml_value(value)))?;
+    let (tls, rest) = if let Some(rest) = url.strip_prefix(rule.secure) {
+        (true, rest)
+    } else if let Some(rest) = url.strip_prefix(rule.plain) {
+        (false, rest)
+    } else {
+        return Err(format!("must start with `{}` (got '{url}')", rule.secure));
+    };
+    if rest.contains(['?', '#']) {
+        return Err(format!(
+            "must carry no query or fragment: the core appends \
+             `/sce-mesh/1/<client>` after it (got '{url}')"
+        ));
+    }
+    let authority = rest.split('/').next().unwrap_or_default();
+    let host = match authority.strip_prefix('[') {
+        Some(bracketed) => bracketed.split(']').next().unwrap_or_default(),
+        None => authority.rsplit_once(':').map_or(authority, |(h, _)| h),
+    };
+    if host.is_empty() {
+        return Err(format!("names no host (got '{url}')"));
+    }
+    if !tls && !matches!(host, "localhost" | "127.0.0.1" | "::1") {
+        return Err(format!(
+            "`{}` without TLS is for a loopback test only ({}); \
+             use `{}` for host '{host}'",
+            rule.plain, rule.section, rule.secure
+        ));
+    }
+    let segment_safe = machine_name
+        .bytes()
+        .all(|b| b.is_ascii_alphanumeric() || matches!(b, b'-' | b'.' | b'_' | b'~'));
+    if !segment_safe {
+        return Err(format!(
+            "machine '{machine_name}' dials as `/sce-mesh/1/{machine_name}`, \
+             and a name outside A-Z a-z 0-9 - . _ ~ is not one path segment \
+             ({})",
+            rule.section
+        ));
+    }
+    Ok(())
+}
+
+/// Check a positive integer that fits a u32.
+fn check_positive_u32(value: &serde_yaml_ng::Value) -> Result<(), String> {
+    let n = value.as_u64().ok_or_else(|| {
+        format!(
+            "must be a positive integer (got {})",
+            render_yaml_value(value)
+        )
+    })?;
+    if n == 0 || n > u64::from(u32::MAX) {
+        return Err(format!("must be between 1 and {} (got {n})", u32::MAX));
+    }
+    Ok(())
+}
+
+/// The keys only the dialing side of an `https` binding reads.
+const HTTPS_DIAL_KEYS: [&str; 2] = ["url", "hold_ms"];
+/// The keys only the accepting side of an `https` binding reads.
+const HTTPS_ACCEPT_KEYS: [&str; 5] = [
+    "listen",
+    "max_hold_ms",
+    "max_body_bytes",
+    "absence_ms",
+    "mailbox",
+];
+
+/// Validate an `https` binding's fields (ADR 0107, D2).
+///
+///   - exactly one of `url` (the side that dials) and `listen` (the side that
+///     accepts), and no key of the other side beside it;
+///   - `url`: `https://<host>[:<port>][<base>]`, or `http://` to a loopback
+///     host, under the rule the WebSocket binding's `url` follows;
+///   - `listen`: `host:port`, the port a number from 1 to 65535;
+///   - `authenticator`: present, and one of `bearer`, `install`, `mtls`;
+///     a binding without one is refused by name
+///     ([`TopologyError::BindingWithoutAuthenticator`]);
+///   - the numbers: positive integers that fit a u32 (`max_body_bytes`, a
+///     u64).
+///
+/// The closed key set itself is the registry's (`optional_binding_fields`),
+/// held at parse time; this checks the values and which side a key belongs to.
+fn validate_https_extras_partial(
+    machine_name: &str,
+    pt: &PartialTarget,
+) -> Result<(), TopologyError> {
+    let invalid = |field: &str, reason: String| TopologyError::InvalidBindingField {
+        machine: machine_name.to_string(),
+        target: pt.target.clone(),
+        transport: pt.transport.clone(),
+        field: field.to_string(),
+        reason,
+    };
+
+    let dials = pt.extra.contains_key("url");
+    let accepts = pt.extra.contains_key("listen");
+    match (dials, accepts) {
+        (true, true) => {
             return Err(invalid(
-                "keepalive_ms",
-                format!("must be between 1 and {} (got {n})", u32::MAX),
-            ));
+                "listen",
+                "a binding names `url` on the side that dials or `listen` on the side \
+                 that accepts, never both"
+                    .to_string(),
+            ))
+        }
+        (false, false) => {
+            return Err(invalid(
+                "url",
+                "a binding names `url` on the side that dials or `listen` on the side \
+                 that accepts, and this one names neither"
+                    .to_string(),
+            ))
+        }
+        _ => {}
+    }
+    let (own, other, side) = if dials {
+        (
+            &HTTPS_DIAL_KEYS[..],
+            &HTTPS_ACCEPT_KEYS[..],
+            "dials (`url`)",
+        )
+    } else {
+        (
+            &HTTPS_ACCEPT_KEYS[..],
+            &HTTPS_DIAL_KEYS[..],
+            "accepts (`listen`)",
+        )
+    };
+    // Sorted so the refusal names the same key on every run.
+    let mut foreign: Vec<&str> = other
+        .iter()
+        .copied()
+        .filter(|key| pt.extra.contains_key(*key))
+        .collect();
+    foreign.sort_unstable();
+    if let Some(&key) = foreign.first() {
+        return Err(invalid(
+            key,
+            format!(
+                "is read only by the other side of the binding, and this side {side}; \
+                 its keys are {}",
+                own.iter()
+                    .map(|k| format!("`{k}`"))
+                    .collect::<Vec<_>>()
+                    .join(", ")
+            ),
+        ));
+    }
+
+    match pt.extra.get("authenticator") {
+        None => {
+            return Err(TopologyError::BindingWithoutAuthenticator {
+                machine: machine_name.to_string(),
+                target: pt.target.clone(),
+                transport: pt.transport.clone(),
+            })
+        }
+        Some(v) => {
+            let known = || {
+                HttpsAuthenticator::ALL
+                    .iter()
+                    .map(|a| format!("`{}`", a.as_str()))
+                    .collect::<Vec<_>>()
+                    .join(", ")
+            };
+            let named = v.as_str().ok_or_else(|| {
+                invalid(
+                    "authenticator",
+                    format!("must be one of {} (got {})", known(), render_yaml_value(v)),
+                )
+            })?;
+            if HttpsAuthenticator::parse(named).is_none() {
+                return Err(invalid(
+                    "authenticator",
+                    format!("must be one of {} (got '{named}')", known()),
+                ));
+            }
+        }
+    }
+
+    if let Some(v) = pt.extra.get("url") {
+        check_dial_url(machine_name, v, &HTTPS_DIAL_URL)
+            .map_err(|reason| invalid("url", reason))?;
+    }
+    if let Some(v) = pt.extra.get("listen") {
+        check_listen_endpoint(v).map_err(|reason| invalid("listen", reason))?;
+    }
+    for key in ["hold_ms", "max_hold_ms", "absence_ms", "mailbox"] {
+        if let Some(v) = pt.extra.get(key) {
+            check_positive_u32(v).map_err(|reason| invalid(key, reason))?;
+        }
+    }
+    if let Some(v) = pt.extra.get("max_body_bytes") {
+        match v.as_u64() {
+            Some(n) if n > 0 => {}
+            _ => {
+                return Err(invalid(
+                    "max_body_bytes",
+                    format!("must be a positive integer (got {})", render_yaml_value(v)),
+                ))
+            }
         }
     }
     Ok(())
+}
+
+/// Check a `host:port` listen endpoint: a host, and a port from 1 to 65535.
+/// An IPv6 host is bracketed (`[::1]:8443`).
+fn check_listen_endpoint(value: &serde_yaml_ng::Value) -> Result<(), String> {
+    let endpoint = value.as_str().ok_or_else(|| {
+        format!(
+            "must be a `host:port` string (got {})",
+            render_yaml_value(value)
+        )
+    })?;
+    let (host, port) = endpoint
+        .rsplit_once(':')
+        .ok_or_else(|| format!("must be `host:port` (got '{endpoint}')"))?;
+    let host = host
+        .strip_prefix('[')
+        .and_then(|h| h.strip_suffix(']'))
+        .unwrap_or(host);
+    if host.is_empty() {
+        return Err(format!("names no host (got '{endpoint}')"));
+    }
+    match port.parse::<u16>() {
+        Ok(p) if p > 0 => Ok(()),
+        _ => Err(format!(
+            "must end in a port from 1 to 65535 (got '{endpoint}')"
+        )),
+    }
+}
+
+/// The resolved state of an `https` binding whose fields
+/// [`validate_https_extras_partial`] proved, each default applied here.
+fn https_state(extra: &std::collections::HashMap<String, serde_yaml_ng::Value>) -> TransportState {
+    let text = |key: &str| extra.get(key).and_then(|v| v.as_str()).map(str::to_string);
+    let number = |key: &str, default: u32| {
+        extra
+            .get(key)
+            .and_then(|v| v.as_u64())
+            .and_then(|n| u32::try_from(n).ok())
+            .unwrap_or(default)
+    };
+    TransportState::Https {
+        url: text("url"),
+        listen: text("listen"),
+        authenticator: text("authenticator")
+            .as_deref()
+            .and_then(HttpsAuthenticator::parse)
+            .expect("validate_https_extras_partial proved the authenticator"),
+        hold_ms: number("hold_ms", HTTPS_DEFAULT_HOLD_MS),
+        max_hold_ms: number("max_hold_ms", HTTPS_DEFAULT_MAX_HOLD_MS),
+        max_body_bytes: extra
+            .get("max_body_bytes")
+            .and_then(|v| v.as_u64())
+            .unwrap_or(HTTPS_DEFAULT_MAX_BODY_BYTES),
+        absence_ms: number("absence_ms", HTTPS_DEFAULT_ABSENCE_MS),
+        mailbox: number("mailbox", HTTPS_DEFAULT_MAILBOX),
+    }
 }
 
 /// Validate optional shm binding fields (partial stage — runs before
@@ -3156,6 +3479,8 @@ fn build_transport_state(
                 .and_then(|v| v.as_u64())
                 .and_then(|n| u32::try_from(n).ok()),
         },
+        // Every field was proven by `validate_https_extras_partial`.
+        "https" => https_state(&pt.extra),
         // The registry lists no binding key for it, so `pt.extra` is empty
         // here: an unknown key was rejected at parse time.
         "zenoh_inbox" => TransportState::ZenohInbox,
@@ -5198,9 +5523,19 @@ topology:
     /// A `sender` machine with one wss binding to `#receiver` carrying
     /// `fields` (YAML flow-map entries, possibly empty).
     fn resolve_wss(sender: &str, fields: &str) -> Result<Vec<ResolvedTarget>, TopologyError> {
+        resolve_on("wss", sender, fields)
+    }
+
+    /// A `sender` machine with one binding on `transport` to `#receiver`
+    /// carrying `fields` (YAML flow-map entries, possibly empty).
+    fn resolve_on(
+        transport: &str,
+        sender: &str,
+        fields: &str,
+    ) -> Result<Vec<ResolvedTarget>, TopologyError> {
         let yaml = format!(
             "version: \"1.0\"\ntopology:\n  ecu1:\n    machines:\n      {sender}:\n        \
-             source: s.scxml\n        bindings:\n          \"#receiver\": {{ transport: wss{fields} }}\n      \
+             source: s.scxml\n        bindings:\n          \"#receiver\": {{ transport: {transport}{fields} }}\n      \
              receiver: {{ source: r.scxml }}\n"
         );
         let deploy = parse_deploy_str(&yaml).unwrap();
@@ -5288,6 +5623,228 @@ topology:
         ];
         for (machine, fields, field, why) in cases {
             match resolve_wss(machine, fields) {
+                Err(TopologyError::InvalidBindingField {
+                    field: refused,
+                    reason,
+                    ..
+                }) => {
+                    assert_eq!(refused, field, "{fields}");
+                    assert!(reason.contains(why), "{fields}: {reason}");
+                }
+                other => panic!("{fields}: expected InvalidBindingField, got {other:?}"),
+            }
+        }
+    }
+
+    #[test]
+    fn an_https_binding_resolves_its_side_and_every_default() {
+        // ADR 0107, D2: `url` dials and `listen` accepts; each number is
+        // resolved once here, so a reader never applies a second default.
+        let dial = resolve_on(
+            "https",
+            "sender",
+            ", url: \"https://cal.example:8443/api\", authenticator: bearer",
+        )
+        .expect("a well-formed client binding");
+        match &dial[0].state {
+            TransportState::Https {
+                url,
+                listen,
+                authenticator,
+                hold_ms,
+                max_hold_ms,
+                max_body_bytes,
+                absence_ms,
+                mailbox,
+            } => {
+                assert_eq!(url.as_deref(), Some("https://cal.example:8443/api"));
+                assert_eq!(*listen, None);
+                assert_eq!(*authenticator, HttpsAuthenticator::Bearer);
+                assert_eq!(*hold_ms, HTTPS_DEFAULT_HOLD_MS);
+                assert_eq!(*max_hold_ms, HTTPS_DEFAULT_MAX_HOLD_MS);
+                assert_eq!(*max_body_bytes, HTTPS_DEFAULT_MAX_BODY_BYTES);
+                assert_eq!(*absence_ms, HTTPS_DEFAULT_ABSENCE_MS);
+                assert_eq!(*mailbox, HTTPS_DEFAULT_MAILBOX);
+            }
+            other => panic!("expected TransportState::Https, got {other:?}"),
+        }
+        assert_eq!(dial[0].state.transport_name(), "https");
+
+        let held = resolve_on(
+            "https",
+            "sender",
+            ", url: \"http://127.0.0.1:9000\", authenticator: install, hold_ms: 5000",
+        )
+        .expect("http:// to loopback is the test carve-out");
+        assert!(
+            matches!(
+                held[0].state,
+                TransportState::Https {
+                    hold_ms: 5000,
+                    authenticator: HttpsAuthenticator::Install,
+                    ..
+                }
+            ),
+            "{:?}",
+            held[0].state
+        );
+
+        let accept = resolve_on(
+            "https",
+            "sender",
+            ", listen: \"0.0.0.0:8443\", authenticator: mtls, max_hold_ms: 10000, \
+             max_body_bytes: 65536, absence_ms: 60000, mailbox: 16",
+        )
+        .expect("a well-formed server binding");
+        match &accept[0].state {
+            TransportState::Https {
+                url,
+                listen,
+                authenticator,
+                max_hold_ms,
+                max_body_bytes,
+                absence_ms,
+                mailbox,
+                ..
+            } => {
+                assert_eq!(*url, None);
+                assert_eq!(listen.as_deref(), Some("0.0.0.0:8443"));
+                assert_eq!(*authenticator, HttpsAuthenticator::Mtls);
+                assert_eq!(*max_hold_ms, 10_000);
+                assert_eq!(*max_body_bytes, 65_536);
+                assert_eq!(*absence_ms, 60_000);
+                assert_eq!(*mailbox, 16);
+            }
+            other => panic!("expected TransportState::Https, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn an_https_binding_without_an_authenticator_is_refused_by_its_own_code() {
+        // Either side: a mailbox is read only by the name that owns it.
+        for fields in [
+            ", url: \"https://cal.example\"",
+            ", listen: \"0.0.0.0:8443\"",
+        ] {
+            match resolve_on("https", "sender", fields) {
+                Err(TopologyError::BindingWithoutAuthenticator {
+                    machine,
+                    target,
+                    transport,
+                }) => {
+                    assert_eq!(machine, "sender");
+                    assert_eq!(target.as_str(), "#receiver");
+                    assert_eq!(transport, "https");
+                }
+                other => panic!("{fields}: expected BindingWithoutAuthenticator, got {other:?}"),
+            }
+        }
+    }
+
+    #[test]
+    fn an_https_binding_no_core_could_carry_is_refused() {
+        // (machine, fields, the field refused, a fragment of why)
+        let cases = [
+            // Exactly one side.
+            (
+                "sender",
+                ", url: \"https://cal.example\", listen: \"0.0.0.0:1\", authenticator: bearer",
+                "listen",
+                "never both",
+            ),
+            ("sender", ", authenticator: bearer", "url", "names neither"),
+            // A key of the other side.
+            (
+                "sender",
+                ", url: \"https://cal.example\", authenticator: bearer, mailbox: 4",
+                "mailbox",
+                "other side",
+            ),
+            (
+                "sender",
+                ", listen: \"0.0.0.0:8443\", authenticator: bearer, hold_ms: 4",
+                "hold_ms",
+                "other side",
+            ),
+            // The authenticator's value.
+            (
+                "sender",
+                ", url: \"https://cal.example\", authenticator: password",
+                "authenticator",
+                "`bearer`, `install`, `mtls`",
+            ),
+            (
+                "sender",
+                ", url: \"https://cal.example\", authenticator: 3",
+                "authenticator",
+                "must be one of",
+            ),
+            // The url.
+            (
+                "sender",
+                ", url: \"wss://cal.example\", authenticator: bearer",
+                "url",
+                "https://",
+            ),
+            (
+                "sender",
+                ", url: \"http://cal.example\", authenticator: bearer",
+                "url",
+                "loopback",
+            ),
+            (
+                "sender",
+                ", url: \"https://cal.example/api#x\", authenticator: bearer",
+                "url",
+                "query or fragment",
+            ),
+            (
+                "cal:app",
+                ", url: \"https://cal.example\", authenticator: bearer",
+                "url",
+                "path segment",
+            ),
+            // The listen endpoint.
+            (
+                "sender",
+                ", listen: \"0.0.0.0\", authenticator: bearer",
+                "listen",
+                "host:port",
+            ),
+            (
+                "sender",
+                ", listen: \"0.0.0.0:70000\", authenticator: bearer",
+                "listen",
+                "port from 1 to 65535",
+            ),
+            (
+                "sender",
+                ", listen: \":8443\", authenticator: bearer",
+                "listen",
+                "no host",
+            ),
+            // The numbers.
+            (
+                "sender",
+                ", url: \"https://cal.example\", authenticator: bearer, hold_ms: 0",
+                "hold_ms",
+                "between 1",
+            ),
+            (
+                "sender",
+                ", listen: \"0.0.0.0:8443\", authenticator: bearer, max_body_bytes: 0",
+                "max_body_bytes",
+                "positive integer",
+            ),
+            (
+                "sender",
+                ", listen: \"0.0.0.0:8443\", authenticator: bearer, mailbox: 4294967296",
+                "mailbox",
+                "between 1",
+            ),
+        ];
+        for (machine, fields, field, why) in cases {
+            match resolve_on("https", machine, fields) {
                 Err(TopologyError::InvalidBindingField {
                     field: refused,
                     reason,

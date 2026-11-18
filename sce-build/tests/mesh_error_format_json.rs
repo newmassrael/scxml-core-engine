@@ -304,7 +304,7 @@ topology:
     );
     assert_eq!(
         rec["fix"]["candidates"],
-        serde_json::json!(["wss", "zenoh_inbox"]),
+        serde_json::json!(["wss", "zenoh_inbox", "https"]),
         "record: {rec}"
     );
 }

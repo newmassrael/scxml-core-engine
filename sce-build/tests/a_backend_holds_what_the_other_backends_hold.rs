@@ -430,6 +430,38 @@ const ACCEPTED: &[(Language, &str, Why)] = &[
         "host Mesh core over `zenoh_inbox`",
         Why::NotYet("no host Mesh core for this backend; the E5 extension opened Rust and Kotlin"),
     ),
+    // docs/adr/0107, D2: the `https` binding lands on the Rust host core first;
+    // C++ carries its client as an arm of the generated router.
+    (
+        Language::Cpp,
+        "host Mesh core over `https`",
+        Why::Design("C++ routes Mesh through its generated TransportRouter, not a host core"),
+    ),
+    (
+        Language::Kotlin,
+        "host Mesh core over `https`",
+        Why::NotYet("the Kotlin core gains the https client in a later step of docs/adr/0107"),
+    ),
+    (
+        Language::Swift,
+        "host Mesh core over `https`",
+        Why::NotYet("the Swift core gains the https client in a later step of docs/adr/0107"),
+    ),
+    (
+        Language::Go,
+        "host Mesh core over `https`",
+        Why::NotYet("no host Mesh core for this backend; the E5 extension opened Rust and Kotlin"),
+    ),
+    (
+        Language::Python,
+        "host Mesh core over `https`",
+        Why::NotYet("no host Mesh core for this backend; the E5 extension opened Rust and Kotlin"),
+    ),
+    (
+        Language::C11,
+        "host Mesh core over `https`",
+        Why::NotYet("no host Mesh core for this backend; the E5 extension opened Rust and Kotlin"),
+    ),
     // Swift, which is decided at every site that decides per backend and writes a
     // statechart in part. Every entry below closes as its emitter grows, and the
     // stale check removes it then; the list is what is left of the backend.
