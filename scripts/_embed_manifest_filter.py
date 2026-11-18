@@ -57,6 +57,15 @@ def _public_members(record_node):
             # AccessSpecDecl mutations are reflected in each FieldDecl/MethodDecl
             # via child["access"]; the bare decl itself carries no signal.
             continue
+        if child.get("isImplicit"):
+            # A special member the compiler declared, not the header: clang
+            # declares one only where a use in the translation unit asks for
+            # it, and works out its exception specification lazily, so whether
+            # it appears, and whether it is `noexcept`, differs between clang
+            # builds (19.1.1 and 19.1.7 disagreed on `SCE::Forge::Cbor::Head`'s
+            # default constructor). It follows from the fields, which are
+            # recorded; an explicitly defaulted member is written and stays.
+            continue
         access = child.get("access", default_access)
         if access != "public":
             continue
