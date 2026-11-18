@@ -25,8 +25,9 @@ INVALID_ARGUMENT = '{"reason":"invalid_argument"}'
 _ZERO: Dict[str, dict] = {
     "sce-host-clock-now": {"utc_ms": "0", "monotonic_ms": "0"},
     "sce-host-clock-zone": {"zone_id": "", "utc_offset_s": 0},
-    "sce-host-kv-get": {"found": False, "value": ""},
+    "sce-host-kv-get": {"found": False, "value": "", "version": "0"},
     "sce-host-kv-put": {"replaced": False},
+    "sce-host-kv-put-if": {"written": False, "version": "0"},
     "sce-host-kv-delete": {"existed": False},
     "sce-host-notify-cancel": {"existed": False},
     "sce-host-kv-next-key": {"found": False, "key": ""},

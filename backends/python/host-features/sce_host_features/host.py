@@ -22,6 +22,7 @@ TYPES: Tuple[str, ...] = (
     "sce-host-clock-zone",
     "sce-host-kv-get",
     "sce-host-kv-put",
+    "sce-host-kv-put-if",
     "sce-host-kv-delete",
     "sce-host-kv-next-key",
     "sce-host-notify-permission",
@@ -130,6 +131,10 @@ class ReferenceHost:
 
         if operation in ("sce-host-kv-get", "sce-host-kv-delete", "sce-host-kv-put"):
             refused = not kv.valid_key(argument("key"))
+        elif operation == "sce-host-kv-put-if":
+            refused = not kv.valid_key(argument("key")) or not kv.valid_version(
+                argument("expected_version")
+            )
         elif operation in ("sce-host-notify-post", "sce-host-notify-cancel"):
             refused = argument("id") == ""
         elif operation == "sce-host-http-fetch":
@@ -150,6 +155,8 @@ class ReferenceHost:
             return kv.get(self, argument("key"))
         if operation == "sce-host-kv-put":
             return kv.put(self, argument("key"), argument("value"))
+        if operation == "sce-host-kv-put-if":
+            return kv.put_if(self, argument("key"), argument("value"), argument("expected_version"))
         if operation == "sce-host-kv-delete":
             return kv.delete(self, argument("key"))
         if operation == "sce-host-kv-next-key":

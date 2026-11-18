@@ -635,6 +635,19 @@ def test_an_operation_outside_the_standard_set_is_not_served_and_a_nul_key_is_re
     assert refused is not None and refused.kind == REFUSE
 
 
+def test_a_put_if_is_refused_for_a_nul_key_and_for_a_digit_of_another_script() -> None:
+    from sce_host_features import REFUSE
+
+    host = ReferenceHost(ScriptedClock(), _ScriptTransport())
+    nul = host.start("sce-host-kv-put-if", "putif", {"key": "a\x00b", "value": "v", "expected_version": "0"})
+    assert nul is not None and nul.kind == REFUSE
+    # U+0661, ARABIC-INDIC DIGIT ONE, is a digit to `str.isdigit` and to `int`, and
+    # not one of the digits 0 to 9 an expected version is written in.
+    other = host.start("sce-host-kv-put-if", "putif", {"key": "k", "value": "v", "expected_version": "١"})
+    assert other is not None and other.kind == REFUSE
+    assert host.store_entries() == []
+
+
 def test_keys_are_ordered_by_their_utf8_bytes() -> None:
     host = ReferenceHost(ScriptedClock(), _ScriptTransport())
     for key in ("～", "\U0001f600"):
