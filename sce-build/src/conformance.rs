@@ -5897,8 +5897,39 @@ mod tests {
             value["sources"][1]["literal"],
             serde_json::json!("CodecUntilEofBasic(msgs: bound0)")
         );
-        // A variant is a form the printer does not lower yet.
-        let template = fixture("codec_variant_dispatch");
+        // A variant whose arms the printer prints is printed: its tag is derived from the arm the
+        // value holds, which is made of the arm's own value, and the catch-all's tag through its
+        // type's one door (docs/adr/0065 §6 R3).
+        let variant = fixture("codec_variant_dispatch");
+        let mut value = serde_json::to_value(variant).expect("a fixture serializes");
+        let folded = fold_source_cases(
+            &mut value,
+            &reference,
+            variant,
+            Language::Swift,
+            &resource_dir,
+            &reference_path,
+        )
+        .expect("the Swift printer prints a variant of printed arms");
+        assert!(folded, "the sources of a printed codec are folded");
+        assert_eq!(
+            value["sources"][0]["literal"],
+            serde_json::json!(
+                "CodecVariantDispatch(body: .codecVariantSessionOpen(CodecVariantSessionOpen(version: 258)))"
+            )
+        );
+        assert_eq!(
+            value["sources"][2]["bindings"][0],
+            serde_json::json!("let bound0 = try #require(CodecVariantDispatchUnknownTag(0x7F))")
+        );
+        assert_eq!(
+            value["sources"][2]["literal"],
+            serde_json::json!(
+                "CodecVariantDispatch(body: .default(tag: bound0, body: CodecVariantSessionClose(reason: 9)))"
+            )
+        );
+        // A CBOR map is a form the printer does not lower.
+        let template = fixture("codec_cbor_map");
         let mut value = serde_json::to_value(template).expect("a fixture serializes");
         let folded = fold_source_cases(
             &mut value,
