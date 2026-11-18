@@ -113,7 +113,10 @@ TEST(AStandardHostScenario, AMachineAsksTheKeyValueStoreOfItsHost) {
                                     {"outcome", [](const M &m) { return json(m.outcome()); }},
                                     {"found", [](const M &m) { return json(m.found()); }},
                                     {"got", [](const M &m) { return json(m.got()); }},
+                                    {"got_version", [](const M &m) { return json(m.got_version()); }},
                                     {"replaced", [](const M &m) { return json(m.replaced()); }},
+                                    {"written", [](const M &m) { return json(m.written()); }},
+                                    {"put_version", [](const M &m) { return json(m.put_version()); }},
                                     {"existed", [](const M &m) { return json(m.existed()); }},
                                     {"next_found", [](const M &m) { return json(m.next_found()); }},
                                     {"next", [](const M &m) { return json(m.next()); }},
@@ -648,6 +651,18 @@ TEST(AStandardHostScenario, AnOperationOutsideTheStandardSetIsNotServedAndANulKe
     const auto nul = reference.start("sce-host-kv-get", "id", {{"key", std::string("a\0b", 3)}});
     ASSERT_TRUE(nul.has_value());
     EXPECT_EQ(nul->kind, host::Outcome::Kind::Refuse);
+}
+
+/// A put-if is refused for a key with U+0000 as a get is, and writes nothing.
+TEST(AStandardHostScenario, APutIfWithANulInItsKeyIsRefused) {
+    host::ScriptedClock clock;
+    ScriptTransport transport;
+    host::ReferenceHost reference(clock, transport);
+    const auto nul = reference.start("sce-host-kv-put-if", "putif",
+                                     {{"key", std::string("a\0b", 3)}, {"value", "v"}, {"expected_version", "0"}});
+    ASSERT_TRUE(nul.has_value());
+    EXPECT_EQ(nul->kind, host::Outcome::Kind::Refuse);
+    EXPECT_TRUE(reference.storeEntries().empty());
 }
 
 /// Keys are ordered by their UTF-8 bytes.

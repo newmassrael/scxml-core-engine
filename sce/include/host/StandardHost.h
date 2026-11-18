@@ -39,18 +39,11 @@
 namespace SCE::StandardHost {
 
 /// Every operation type of the standard host features, in the order the specification lists them.
-inline constexpr std::array<const char *, 12> TYPES = {
-    "sce-host-clock-now",
-    "sce-host-clock-zone",
-    "sce-host-kv-get",
-    "sce-host-kv-put",
-    "sce-host-kv-delete",
-    "sce-host-kv-next-key",
-    "sce-host-notify-permission",
-    "sce-host-notify-request-permission",
-    "sce-host-notify-post",
-    "sce-host-notify-cancel",
-    "sce-host-http-fetch",
+inline constexpr std::array<const char *, 13> TYPES = {
+    "sce-host-clock-now",      "sce-host-clock-zone",        "sce-host-kv-get",
+    "sce-host-kv-put",         "sce-host-kv-put-if",         "sce-host-kv-delete",
+    "sce-host-kv-next-key",    "sce-host-notify-permission", "sce-host-notify-request-permission",
+    "sce-host-notify-post",    "sce-host-notify-cancel",     "sce-host-http-fetch",
     "sce-host-model-generate",
 };
 
@@ -427,9 +420,11 @@ inline Outcome failure(const std::string &operation, const std::string &code) {
     } else if (operation == "sce-host-clock-zone") {
         zero = {text("zone_id", ""), number("utc_offset_s", 0)};
     } else if (operation == "sce-host-kv-get") {
-        zero = {boolean("found", false), text("value", "")};
+        zero = {boolean("found", false), text("value", ""), text("version", "0")};
     } else if (operation == "sce-host-kv-put") {
         zero = {boolean("replaced", false)};
+    } else if (operation == "sce-host-kv-put-if") {
+        zero = {boolean("written", false), text("version", "0")};
     } else if (operation == "sce-host-kv-delete" || operation == "sce-host-notify-cancel") {
         zero = {boolean("existed", false)};
     } else if (operation == "sce-host-kv-next-key") {
@@ -559,6 +554,30 @@ inline bool isHttpUrl(const std::string &url) {
     });
 }
 
+/// A key is not empty and holds no U+0000 (its 256-byte bound is the record's own).
+inline bool validKey(const std::string &key) {
+    return !key.empty() && key.find('\0') == std::string::npos;
+}
+
+/// An expected version is one or more of the digits 0 to 9, and nothing else.
+inline bool validVersion(const std::string &text) {
+    return !text.empty() && std::all_of(text.begin(), text.end(), [](char c) { return c >= '0' && c <= '9'; });
+}
+
+/// The number `digits`, a text of the digits 0 to 9, writes; nothing when it is past the largest 64-bit
+/// unsigned integer, which names no version. Leading zeros do not count.
+inline std::optional<uint64_t> versionNumber(const std::string &digits) {
+    uint64_t value = 0;
+    for (const char c : digits) {
+        const auto digit = static_cast<uint64_t>(c - '0');
+        if (value > (UINT64_MAX - digit) / 10) {
+            return std::nullopt;
+        }
+        value = value * 10 + digit;
+    }
+    return value;
+}
+
 }  // namespace detail
 
 /// The standard host features' semantics, over a clock and a transport.
@@ -588,8 +607,12 @@ public:
     }
 
     /// The store's keys and values, in key order.
-    const std::map<std::string, std::string> &storeEntries() const {
-        return store_;
+    std::map<std::string, std::string> storeEntries() const {
+        std::map<std::string, std::string> entries;
+        for (const auto &[key, entry] : store_) {
+            entries.emplace(key, entry.value);
+        }
+        return entries;
     }
 
     /// The ids of the waiting notifications, in the order posted.
@@ -644,8 +667,9 @@ public:
         };
         bool refused = false;
         if (operation == "sce-host-kv-get" || operation == "sce-host-kv-delete" || operation == "sce-host-kv-put") {
-            const std::string key = argument("key");
-            refused = key.empty() || key.find('\0') != std::string::npos;
+            refused = !detail::validKey(argument("key"));
+        } else if (operation == "sce-host-kv-put-if") {
+            refused = !detail::validKey(argument("key")) || !detail::validVersion(argument("expected_version"));
         } else if (operation == "sce-host-notify-post" || operation == "sce-host-notify-cancel") {
             refused = argument("id").empty();
         } else if (operation == "sce-host-http-fetch") {
@@ -683,8 +707,11 @@ public:
         if (operation == "sce-host-kv-put") {
             return kvPut(argument("key"), argument("value"));
         }
+        if (operation == "sce-host-kv-put-if") {
+            return kvPutIf(argument("key"), argument("value"), argument("expected_version"));
+        }
         if (operation == "sce-host-kv-delete") {
-            return detail::record({detail::boolean("existed", store_.erase(argument("key")) != 0)});
+            return kvDelete(argument("key"));
         }
         if (operation == "sce-host-kv-next-key") {
             return kvNextKey(argument("after"), argument("prefix"));
@@ -740,26 +767,65 @@ private:
     Outcome kvGet(const std::string &key) {
         const auto found = store_.find(key);
         if (found == store_.end()) {
-            return detail::record({detail::boolean("found", false), detail::text("value", "")});
+            return detail::record(
+                {detail::boolean("found", false), detail::text("value", ""), detail::text("version", "0")});
         }
-        return detail::record({detail::boolean("found", true), detail::text("value", found->second)});
+        return detail::record({detail::boolean("found", true), detail::text("value", found->second.value),
+                               detail::text("version", std::to_string(found->second.version))});
     }
 
     Outcome kvPut(const std::string &key, const std::string &value) {
-        const bool replaced = store_.count(key) != 0;
-        if (!replaced && quota_ && store_.size() >= *quota_) {
+        if (overQuota(key)) {
             return detail::failure("sce-host-kv-put", "quota_exceeded");
         }
-        store_[key] = value;
+        const bool replaced = store_.count(key) != 0;
+        write(key, value);
         return detail::record({detail::boolean("replaced", replaced)});
+    }
+
+    /// Write `value` under `key` only when the key is at `expected`, a text of digits the refusal already
+    /// judged. It is compared as a number, so leading zeros do not count, and one past the largest 64-bit
+    /// unsigned integer names no version.
+    Outcome kvPutIf(const std::string &key, const std::string &value, const std::string &expected) {
+        const auto found = store_.find(key);
+        const uint64_t current = found == store_.end() ? 0 : found->second.version;
+        if (detail::versionNumber(expected) != current) {
+            return detail::record(
+                {detail::boolean("written", false), detail::text("version", std::to_string(current))});
+        }
+        if (overQuota(key)) {
+            return detail::failure("sce-host-kv-put-if", "quota_exceeded");
+        }
+        const uint64_t version = write(key, value);
+        return detail::record({detail::boolean("written", true), detail::text("version", std::to_string(version))});
+    }
+
+    Outcome kvDelete(const std::string &key) {
+        const bool existed = store_.erase(key) != 0;
+        if (existed) {
+            ++lastVersion_;
+        }
+        return detail::record({detail::boolean("existed", existed)});
+    }
+
+    /// Whether writing `key` would hold one key more than the quota allows.
+    bool overQuota(const std::string &key) const {
+        return store_.count(key) == 0 && quota_ && store_.size() >= *quota_;
+    }
+
+    /// Keep `value` under `key` at the counter's next number; that number.
+    uint64_t write(const std::string &key, const std::string &value) {
+        const uint64_t version = ++lastVersion_;
+        store_[key] = StoredValue{value, version};
+        return version;
     }
 
     /// The first key, in ascending order of UTF-8 bytes, that is greater than `after` and begins with
     /// `prefix`; `after` is excluded, and an empty `after` starts at the least key. A `std::string` compares
     /// by its bytes, as unsigned characters, which for UTF-8 is that order.
     Outcome kvNextKey(const std::string &after, const std::string &prefix) {
-        for (const auto &entry : store_) {
-            const std::string &key = entry.first;
+        for (const auto &stored : store_) {
+            const std::string &key = stored.first;
             if ((after.empty() || key > after) && key.compare(0, prefix.size(), prefix) == 0) {
                 return detail::record({detail::boolean("found", true), detail::text("key", key)});
             }
@@ -904,7 +970,18 @@ private:
     ModelProvider *provider_ = nullptr;
     /// The machine's table of answer schemas, which a generation's `answer_schema` is resolved through.
     std::vector<SCE::AnswerSchema> answerSchemas_;
-    std::map<std::string, std::string> store_;
+
+    /// A stored value and the version its write gave the key.
+    struct StoredValue {
+        std::string value;
+        uint64_t version = 0;
+    };
+
+    std::map<std::string, StoredValue> store_;
+    /// The last number a write or a removal took: versions are numbered from this one counter of the store
+    /// (docs/SCE_HOST_FEATURES.md, section 8), so a key is never given a version it had, even after it was
+    /// removed.
+    uint64_t lastVersion_ = 0;
     std::optional<size_t> quota_;
     std::string permission_ = "undetermined";
     std::string userDecision_ = "none";
