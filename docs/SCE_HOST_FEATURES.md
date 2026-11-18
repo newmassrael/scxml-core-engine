@@ -10,6 +10,10 @@
 - Amended by: ADR 0107 (D7): section 10, signing and sealing as COSE operations,
   served by the Rust and C++ reference hosts; sections 7 to 9 name them where
   they list the types, the scenarios and what is not provided.
+- Amended by: ADR 0107 (D4): section 1, the identity of an invocation, which a
+  restore keeps and every runtime hands a host; section 3, a put-if repeated
+  under one identity is answered with its first result; section 8, the
+  reference hosts keep that result; section 9 no longer lists it.
 
 A statechart that runs under `datamodel="sce-static"` has no operating system to
 call. What it needs of one (the time, a place to keep a small value, a
@@ -86,6 +90,22 @@ is the order of the starts.
 **Idempotency.** Each operation says whether repeating it is the same as doing it
 once. A host does not repeat an operation by itself: an HTTP request that failed
 is not sent again unless the document sends it again.
+
+**Identity** (ADR 0107, D4). An invocation is named by three things, and every
+runtime hands all three to the host with the request: the id of the session that
+started it, the `<invoke>`'s id, and its start number, which start of that
+`<invoke>` in that session it is, counted from 1. The engine counts the starts of
+each host-run `<invoke>` of a session, and a state entered again makes the next
+start, after it cancelled the one before. A saved state holds each running
+invocation with its start number and each session's count of starts (the
+`sce-saved-state` format 4, SCE Accepted Subset §2.15), and a restore starts a
+running invocation again under the number it had, with `restarted` set: the same
+invocation asked a second time, which a host may answer as it answered the first.
+A start the document makes after a restore is numbered on from the saved count.
+The `token` a request carries is not part of the identity: it is distinct for
+every start within one engine and given anew to a start a restore makes, so a
+report from the process that saved the state cannot complete the one that
+restored it.
 
 **Deadlines.** Any operation may carry `<param name="_sce_deadline_ms" expr="N"/>`.
 It is the engine's, not a field of the request, and a host does not receive it.
@@ -173,9 +193,13 @@ to `9`. A `prefix` and an `after` may be empty.
   number, so leading zeros do not count, and a number past 2^64 - 1 names no
   version and is never matched. The quota is judged only for a write that would be
   made: a put-if whose version does not match answers `written` false whatever
-  the quota. Not idempotent by itself: repeated after it wrote, it finds the
-  version it gave and answers `written` false (section 9 says what a repeat of one
-  invocation is answered with).
+  the quota. Not idempotent by itself: asked again by another invocation after
+  it wrote, it finds the version it gave and answers `written` false. A put-if
+  started again under the identity of one already answered (section 1, a restore
+  of a state saved before the machine took the answer) is that invocation asked
+  twice: the host answers it with the first result, a failure included, and
+  changes nothing. A refusal is no result, and a refused start asked again is
+  judged again.
 - **Delete** answers `existed` false for a key that was not there, which is not a
   failure. Idempotent in effect.
 - **Next-key** answers the first key, in ascending order of UTF-8 bytes, that is
@@ -472,6 +496,15 @@ hold U+0000 (a C string cannot), to refusing a key with one. Every lane is held 
 the order of the keys' UTF-8 bytes by a pair of keys that sort differently by
 UTF-16 code unit, which is the order a Kotlin or JVM string compares in.
 
+Each lane's host keeps the first result of each put-if by the identity of its
+invocation (section 1) and answers a repeat with it (section 3). Each lane's
+driver holds that against the machine: a put-if the host carried out whose answer
+the machine did not take before the state was saved is answered, after the
+restore, with the first result and writes nothing, and a put-if the document
+starts afterwards is the next start, judged against the store as it is. The
+starts the host records carry the session's id and the start number beside the
+`<invoke>`'s id.
+
 Three things differ by lane and are not hidden:
 
 - **The order of a response's fields.** The Python transport gives them in the
@@ -503,24 +536,6 @@ These are not built, and nothing here stands in for them:
   with a trust policy, and no notification delivery.
 - **A durable store.** The reference stores are in memory. Durability is left to
   the host (section 3).
-- **A repeat of one invocation answered with its first result** (ADR 0107, D4).
-  A put-if the engine starts again after a restore, when the saved state was
-  taken before its completion was, is the same operation, and D4 has the host
-  answer it with the result it gave first. A host can do that only by an identity
-  of the invocation that a restore keeps, and none of the seven runtimes hands
-  one to a host. Each hands the `<invoke>`'s id, the session's id, a `token` and
-  a `restarted` flag. The token is distinct for every start within one engine but
-  is given anew when a restore starts the invocation again, so a repeat never
-  carries the token of the start it repeats; the id and the session's id are the
-  same for every start of one `<invoke>` (a state entered again starts it again
-  under them); and `invokestarts`, the saved count that numbers starts across a
-  restore (ADR 0045), counts the starts of an SCXML child (a static or a hybrid
-  `<invoke>`) only, not of a host-run one. What is missing is a start number of a host-run invocation:
-  counted per `<invoke>` by the engine, carried in the saved state's entry of each
-  running host invocation and restored with it, and handed to the host in the
-  request beside the token. Until it lands, a reference host keys nothing by
-  invocation, and a put-if repeated after a restore answers what the store holds
-  then (section 3).
 - **A network HTTP transport for Rust and C.** Their reference hosts are the full
   semantics over a transport the embedding supplies, driven by a scripted one. The
   Rust runtime links no HTTP client, and the C runtime's client posts a form for a
