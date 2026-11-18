@@ -4,17 +4,44 @@
 # A Bazel consumer of SCE, built by scripts/smoke_bazel_consumer.sh against both
 # Bazel channels: the packaged embed/ module and a checkout through
 # scripts/sce_repo.bzl. It links what a consumer is told to link and compiles at
-# the interface standard (docs/adr/0059).
+# the interface standard (docs/adr/0059), with warnings as errors, each in the
+# spelling of the compiler the toolchain selects: MSVC's and clang-cl's (cl's
+# command line), or GCC's and Clang's.
 
 load("@rules_cc//cc:defs.bzl", "cc_binary")
 
-cc_binary(
-    name = "probe",
-    srcs = ["probe.cpp"],
-    copts = [
+_CL_COPTS = [
+    "/std:c++17",
+    "/utf-8",
+    "/W4",
+    "/WX",
+]
+
+_COPTS = select({
+    "@rules_cc//cc/compiler:msvc-cl": _CL_COPTS,
+    "@rules_cc//cc/compiler:clang-cl": _CL_COPTS,
+    "//conditions:default": [
         "-std=c++17",
         "-Wall",
         "-Werror",
     ],
+})
+
+cc_binary(
+    name = "probe",
+    srcs = ["probe.cpp"],
+    copts = _COPTS,
     deps = ["@sce//:sce_base"],
+)
+
+# The COSE operations of the C++ reference host, which the checkout's channel
+# provides when the consumer names its libsodium (`sodium` of
+# sce_local_repository). `manual`: a channel without one has no such target, and
+# a wildcard build there must not ask for it.
+cc_binary(
+    name = "cose_probe",
+    srcs = ["cose_probe.cpp"],
+    copts = _COPTS,
+    tags = ["manual"],
+    deps = ["@sce//:sce_host_cose"],
 )
