@@ -825,7 +825,7 @@ fn the_go_parent_writes_back_each_frame() {
         dir.join("go.mod"),
         format!(
             "module {GO_MODULE}\n\n\
-             go 1.23\n\n\
+             go 1.23.0\n\n\
              require github.com/newmassrael/sce-forge-runtime v0.0.0\n\n\
              replace github.com/newmassrael/sce-forge-runtime => {}\n",
             backend("backends/go/forge-runtime").display()

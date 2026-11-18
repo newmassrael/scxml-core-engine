@@ -1,6 +1,6 @@
 module github.com/newmassrael/sce-go-runtime
 
-go 1.23
+go 1.23.0
 
 // The generated vocabulary of generated/error_reason reads the forge
 // runtime's optional values (tools/codegen/trees/runtime-go.toml).

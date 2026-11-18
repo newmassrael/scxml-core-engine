@@ -1523,7 +1523,7 @@ fn the_go_table_compiles_and_holds_the_export() {
     std::fs::write(
         project.join("go.mod"),
         format!(
-            "module example.com/ttemitcheck\n\ngo 1.23\n\nrequire github.com/newmassrael/sce-go-runtime v0.0.0\n\n\
+            "module example.com/ttemitcheck\n\ngo 1.23.0\n\nrequire github.com/newmassrael/sce-go-runtime v0.0.0\n\n\
              require github.com/newmassrael/sce-forge-runtime v0.0.0 // indirect\n\n\
              replace github.com/newmassrael/sce-go-runtime => {}\n\n\
              replace github.com/newmassrael/sce-forge-runtime => {}\n",

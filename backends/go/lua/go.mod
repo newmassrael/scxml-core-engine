@@ -1,6 +1,6 @@
 module github.com/newmassrael/sce-go-lua
 
-go 1.23
+go 1.23.0
 
 require github.com/newmassrael/sce-go-runtime v0.0.0
 

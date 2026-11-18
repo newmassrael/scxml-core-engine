@@ -269,7 +269,7 @@ fn the_go_of_a_union_and_the_payload_that_holds_it_builds_and_reads_its_cases() 
     std::fs::write(
         dir.path().join("go.mod"),
         format!(
-            "module {PREFIX}\n\ngo 1.23\n\n\
+            "module {PREFIX}\n\ngo 1.23.0\n\n\
              require github.com/newmassrael/sce-forge-runtime v0.0.0\n\n\
              replace github.com/newmassrael/sce-forge-runtime => {}\n",
             go_runtime()

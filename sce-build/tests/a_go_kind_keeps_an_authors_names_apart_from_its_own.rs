@@ -427,7 +427,7 @@ fn an_authors_name_never_decides_whether_the_generated_go_of_a_kind_builds() {
     std::fs::write(
         proj.join("go.mod"),
         format!(
-            "module {GO_MODULE_PREFIX}\n\ngo 1.23\n\n\
+            "module {GO_MODULE_PREFIX}\n\ngo 1.23.0\n\n\
              require github.com/newmassrael/sce-forge-runtime v0.0.0\n\n\
              replace github.com/newmassrael/sce-forge-runtime => {}\n",
             go_runtime()

@@ -17587,7 +17587,7 @@ fn compile_generated_set_go(all_files: Vec<(String, String)>, test_id: &str) -> 
     let go_mod = format!(
         "module {GOLDEN_GO_MODULE_PREFIX}\n\
          \n\
-         go 1.23\n\
+         go 1.23.0\n\
          \n\
          require github.com/newmassrael/sce-forge-runtime v0.0.0\n\
          \n\
@@ -17861,7 +17861,7 @@ fn run_go_program(
     std::fs::write(
         proj.join("go.mod"),
         format!(
-            "module {GOLDEN_GO_MODULE_PREFIX}\n\ngo 1.23\n\n\
+            "module {GOLDEN_GO_MODULE_PREFIX}\n\ngo 1.23.0\n\n\
              require github.com/newmassrael/sce-forge-runtime v0.0.0\n\n\
              replace github.com/newmassrael/sce-forge-runtime => {}\n",
             runtime.display()
@@ -21551,7 +21551,7 @@ fn run_cobs_vectors_go(dir: &std::path::Path, test_id: &str) -> Result<(), Strin
     let go_mod = format!(
         "module {GOLDEN_GO_MODULE_PREFIX}\n\
          \n\
-         go 1.23\n\
+         go 1.23.0\n\
          \n\
          require github.com/newmassrael/sce-forge-runtime v0.0.0\n\
          \n\
@@ -22162,7 +22162,7 @@ fn forge_go_enum_record_layer_runtime() {
     let go_mod = format!(
         "module {GOLDEN_GO_MODULE_PREFIX}\n\
          \n\
-         go 1.23\n\
+         go 1.23.0\n\
          \n\
          require github.com/newmassrael/sce-forge-runtime v0.0.0\n\
          \n\
@@ -22668,7 +22668,7 @@ fn forge_go_enum_validator_runtime() {
         format!(
             "module {GOLDEN_GO_MODULE_PREFIX}\n\
              \n\
-             go 1.23\n\
+             go 1.23.0\n\
              \n\
              require github.com/newmassrael/sce-forge-runtime v0.0.0\n\
              \n\

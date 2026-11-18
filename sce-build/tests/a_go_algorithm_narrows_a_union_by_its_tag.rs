@@ -281,7 +281,7 @@ fn the_go_of_an_algorithm_over_a_union_builds_and_answers_each_case() {
     std::fs::write(
         dir.path().join("go.mod"),
         format!(
-            "module {PREFIX}\n\ngo 1.23\n\n\
+            "module {PREFIX}\n\ngo 1.23.0\n\n\
              require github.com/newmassrael/sce-forge-runtime v0.0.0\n\n\
              replace github.com/newmassrael/sce-forge-runtime => {}\n",
             go_runtime()
