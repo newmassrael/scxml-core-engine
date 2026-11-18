@@ -28,6 +28,27 @@ function getResourcesPath() {
 }
 
 /**
+ * The directory holding a W3C fixture's documents and its test's metadata,
+ * under the resources path.
+ *
+ * The directory is the IRP test number the fixture id begins with: a variant
+ * fixture (`403a`) is one of the documents the IRP ships for one test, so it
+ * is `resources/403/test403a.scxml` and has no directory of its own. Every
+ * other fixture's number is its whole id. The generator resolves a fixture
+ * by the same rule (`w3c_registry::fixture_dir`).
+ *
+ * @param {string} testId - The fixture id, as the registry lists it
+ * @returns {string} The fixture's directory, without a trailing slash
+ */
+function getFixtureDirectory(testId) {
+    const number = /^[0-9]+/.exec(String(testId));
+    if (number === null) {
+        throw new Error(`"${testId}" is no W3C fixture id: an id begins with its test number`);
+    }
+    return `${getResourcesPath()}/${number[0]}`;
+}
+
+/**
  * Get environment name for logging
  *
  * @returns {string} Environment name
