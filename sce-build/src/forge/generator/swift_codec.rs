@@ -71,6 +71,19 @@ impl Carrier {
         }
     }
 
+    /// `word`, the unsigned number of the `bits` bits a field holds in this carrier, as the
+    /// field's number: itself where the carrier is unsigned or has no more bits than the field,
+    /// and where a signed carrier is wider, the two's complement of the bits, sign-extended from
+    /// the top one (SCE_FORGE.md, "Where a fixed field's bits lie"). No operation of it
+    /// overflows: the word lies below the top bit of the carrier.
+    fn extended(&self, word: &str, bits: u32) -> String {
+        if !self.integer.starts_with("Int") || bits >= self.width {
+            return word.to_string();
+        }
+        let top = 1u64 << (bits - 1);
+        format!("({word} ^ 0x{top:X}) - 0x{top:X}")
+    }
+
     /// The value of the field that the integer `wire` stands for, as a decode reads it, with the
     /// one `try` that covers every call in it: the integer itself, or the enum's value of it, which
     /// a closed enum refuses with `undeclaredEnumValue` for a number none of its variants declares
@@ -345,18 +358,10 @@ fn field_unlowered(
             span.bits
         ));
     }
-    // A field that is not the whole of its integer is an unsigned number of its bits
-    // (docs/adr/0095 §1), which a signed type would need a sign for. An enum's value is the one
-    // its variants declare for that number, and an enum of part of its bytes has an unsigned
-    // carrier: a signed one is refused once the imports are resolved (`bit_layout::refusal`).
-    if let Some((swift_type, width)) = integer_type {
-        if !whole_of_its_type(&span, width) && !f.sce_type.is_unsigned() {
-            return what(&format!(
-                "{} bits where its type {swift_type} holds {width}",
-                span.bits
-            ));
-        }
-    }
+    // A field of whole bytes fewer than its integer has is the number of its bits, sign-extended
+    // where the integer is signed ([`Carrier::extended`]); a field of part of its bytes is an
+    // unsigned number, of an unsigned integer or an enum whose carrier is unsigned, which
+    // `bit_layout::refusal` holds every backend to.
     // A word in the native byte order is read and written as a big-endian one, as every backend
     // reads it (`bit_layout::BitSpan::endian`, [`order_of`]), and a flags carrier is never gated:
     // the parser refuses `sce:present-if` on one for every backend.
@@ -1663,9 +1668,12 @@ pub(super) fn render(
             let read = carrier.read_wire(&if f.is_vle() {
                 format!("reader.readVle({}.self)", carrier.integer)
             } else if let Some(bytes) = narrow_bytes {
-                format!(
-                    "reader.readInteger({}.self, bytes: {bytes}, .{order})",
-                    carrier.integer
+                carrier.extended(
+                    &format!(
+                        "reader.readInteger({}.self, bytes: {bytes}, .{order})",
+                        carrier.integer
+                    ),
+                    8 * bytes,
                 )
             } else {
                 format!("reader.readInteger({}.self, .{order})", carrier.integer)
@@ -1691,7 +1699,7 @@ pub(super) fn render(
                         carrier.integer, f.byte_offset
                     )
                 } else {
-                    bits_of_word(&s, carrier.integer)
+                    carrier.extended(&bits_of_word(&s, carrier.integer), s.bits)
                 }
             });
             // The value before anything is read into it: for an enum the first variant its document

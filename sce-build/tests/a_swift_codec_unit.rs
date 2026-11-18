@@ -1091,25 +1091,67 @@ fn a_field_that_is_not_the_whole_of_its_integer_is_converted_to_its_type() {
     }
 }
 
+/// A signed field of whole bytes fewer than its type has is the two's complement of its bits,
+/// sign-extended into its type, in a frame laid out by byte and in one read field by field; it
+/// is written as the low bytes of its value.
+///
+/// Turns red where `swift_codec::unlowered` refuses a signed field narrower than its type again,
+/// or `Carrier::extended` reads its bits as an unsigned number.
 #[test]
-fn bits_a_swift_codec_cannot_lay_out_are_refused_by_name() {
-    for (field, what) in [
+fn a_signed_field_narrower_than_its_type_is_sign_extended_into_it() {
+    let placed = swift_of_datamodel(
+        r#"<sce:field id="small" sce:type="int16" sce:byte="0" sce:bit-size="8"/>
+    <sce:field id="mid" sce:type="int32" sce:byte="1" sce:bit-size="24"/>"#,
+    )
+    .expect("a signed field narrower than its type is written");
+    for (expected, why) in [
         (
-            r#"<sce:field id="small" sce:type="int16" sce:byte="0" sce:bit-size="8"/>"#,
-            "8 bits where its type Int16 holds 16",
+            "small: try (Int16(truncatingIfNeeded: (cursor.peekInteger(UInt8.self, at: 0, .big) >> 0) & 0xFF) ^ 0x80) - 0x80",
+            "a byte is sign-extended into an Int16",
         ),
         (
-            r#"<sce:field id="n" sce:type="uint16" sce:byte="0" sce:bit-size="12"/>
-               <sce:field id="body" sce:type="bytes" sce:byte="2" sce:bit-size="tail" sce:max-size="8"/>"#,
-            "12 bits that are not whole bytes, in a frame whose layout depends on what it holds",
+            "mid: try (Int32(truncatingIfNeeded: (cursor.peekInteger(UInt32.self, bytes: 3, at: 1, .big) >> 0) & 0xFFFFFF) ^ 0x800000) - 0x800000",
+            "three bytes are sign-extended into an Int32",
+        ),
+        (
+            "frame[0] |= UInt8(truncatingIfNeeded: source.small & 0xFF) << 0",
+            "the low byte of the value is written",
         ),
     ] {
-        let refusal = swift_of_datamodel(field).expect_err(&format!("{field} is not lowered"));
+        assert!(placed.contains(expected), "{why}: {expected} in {placed}");
+    }
+    let streamed = swift_of_datamodel(
+        r#"<sce:field id="small" sce:type="int16" sce:byte="0" sce:bit-size="8"/>
+    <sce:field id="body" sce:type="bytes" sce:byte="1" sce:bit-size="tail" sce:max-size="8"/>"#,
+    )
+    .expect("a signed field narrower than its type is written field by field");
+    for (expected, why) in [
+        (
+            "try (reader.readInteger(Int16.self, bytes: 1, .big) ^ 0x80) - 0x80",
+            "a byte read field by field is sign-extended",
+        ),
+        (
+            "small, bytes: 1, to: &frame, .big)",
+            "and written as its low byte",
+        ),
+    ] {
         assert!(
-            refusal.contains("has no Swift lowering yet") && refusal.contains(what),
-            "{field}: {refusal}"
+            streamed.contains(expected),
+            "{why}: {expected} in {streamed}"
         );
     }
+}
+
+#[test]
+fn bits_a_swift_codec_cannot_lay_out_are_refused_by_name() {
+    let field = r#"<sce:field id="n" sce:type="uint16" sce:byte="0" sce:bit-size="12"/>
+               <sce:field id="body" sce:type="bytes" sce:byte="2" sce:bit-size="tail" sce:max-size="8"/>"#;
+    let what = "12 bits that are not whole bytes, in a frame whose layout depends on what it holds";
+    let refusal = swift_of_datamodel(field).expect_err(&format!("{field} is not lowered"));
+    assert!(
+        refusal.contains("has no Swift lowering yet") && refusal.contains(what),
+        "{field}: {refusal}"
+    );
 }
 
 #[test]
