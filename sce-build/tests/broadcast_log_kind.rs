@@ -6471,6 +6471,38 @@ fn swift_stores_a_flag_the_element_says_in_some_values_as_said_and_else_as_given
 }
 
 #[test]
+fn swift_derives_each_flag_of_several_on_a_line_of_its_own() {
+    // `S` is said by every value of the element, `T` by some (ADR 0065 §6 R4e) and `U` by none,
+    // so `publish` reads `S` off the element, `T` off it where it says it and else from the
+    // caller, and takes `U` from the caller. Each argument of `Flags` ends its own line, the
+    // comma that parts it from the next included, whichever of the three it is.
+    let facts = BroadcastLogElementFacts {
+        caller_flag_inputs: vec!["S".to_string(), "T".to_string(), "U".to_string()],
+        said_flag_inputs: vec!["S".to_string()],
+        partly_said_flag_inputs: vec!["T".to_string()],
+        ..BroadcastLogElementFacts::default()
+    };
+    let options = ForgeCompileOptions {
+        element_type_swift_printed: Some(std::collections::HashSet::from([
+            "event_record".to_string()
+        ])),
+        ..resolution_options(None, 4, facts)
+    };
+    let code = compile_single_as(Language::Swift, "EventRing.swift", &event_ring(), &options)
+        .expect("a log over an element that says some of its flags is generated");
+    assert_holds(
+        &code,
+        &[concat!(
+            "        let flags = Flags(\n",
+            "            S: EventRecord.inputS(element) != 0,\n",
+            "            T: EventRecord.inputT(element).map { $0 != 0 } ?? given.T,\n",
+            "            U: given.U\n",
+            "        )\n",
+        )],
+    );
+}
+
+#[test]
 fn swift_stores_the_flag_inputs_an_element_asks_its_caller_for() {
     // The codec `event_record` takes the flag input `S` from its caller on `decode`, and its
     // value says it (ADR 0065 §6 R4a), which the encode Swift prints from its plan reads off the

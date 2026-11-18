@@ -58,6 +58,24 @@ fn a_table_that_errors_on_a_miss_answers_an_optional_read_by_the_runtime() {
     assert!(code.contains("import SceForgeRuntime"), "{code}");
 }
 
+/// The header comment ends with a blank line, on either side of the sentence that a table
+/// which errors on a miss adds: the block tag that closes that sentence takes no line break
+/// of the code that follows.
+#[test]
+fn a_tables_header_comment_is_set_apart_from_its_code() {
+    let errs = swift_of(&format!("{FIXTURES}/forge_call_code.scxml")).expect("a lookup is written");
+    assert!(
+        errs.contains("the function answers `nil`.\n\nimport SceForgeRuntime\n"),
+        "{errs}"
+    );
+    let defaults =
+        swift_of(&format!("{FIXTURES}/forge_call_ratio.scxml")).expect("a lookup is written");
+    assert!(
+        defaults.contains("of the same name.\n\nimport SceForgeRuntime\n"),
+        "{defaults}"
+    );
+}
+
 #[test]
 fn a_table_with_a_default_answers_it_for_a_miss() {
     let code =

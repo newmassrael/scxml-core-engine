@@ -213,12 +213,15 @@ public enum {{ pascal }} {
 {% for flag in context.flags %}
 {% if flag.said %}
             {{ flag.camel }}: {{ element_pascal }}.input{{ flag.pascal }}(element) != 0{% if not loop.last %},{% endif %}
+
 {# A flag the value says in some of its values only (docs/adr/0065 §6 R4e) is what it says where
    it says it, and what the caller gives where it says nothing (`nil`). #}
 {% elif flag.partly %}
             {{ flag.camel }}: {{ element_pascal }}.input{{ flag.pascal }}(element).map { $0 != 0 } ?? given.{{ flag.camel }}{% if not loop.last %},{% endif %}
+
 {% else %}
             {{ flag.camel }}: given.{{ flag.camel }}{% if not loop.last %},{% endif %}
+
 {% endif %}
 {% endfor %}
         )
