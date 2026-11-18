@@ -34,7 +34,9 @@
 //! core's timer fires, and [`wake_due`] loads what is due, earliest first. A restored machine
 //! arms a send already due as due now (saved-state format 3), so its delivery and the checkpoint
 //! that removes it from the saved state are one write: a crash before it delivers the send after
-//! the restart, and a crash after it finds the send gone and its envelope held by the checkpoint.
+//! the restart, and a crash after it finds the send gone and its envelope held by the checkpoint,
+//! which is therefore due at once ([`DUE_AT_ONCE`]): the session is loaded at the restart, and its
+//! restore releases the envelope, though its machine waits for nothing.
 //!
 //! What a checkpoint never holds: keys, credentials and trust state, which are the host's; a
 //! request this machine has in flight, which a restore interrupts (`docs/SCE_ACCEPTED_SUBSET.md`
@@ -275,12 +277,24 @@ impl Checkpoint {
             .find(|section| section.machine == machine)
     }
 
-    /// The earliest moment something the tree waits for comes due, in milliseconds since the Unix
-    /// epoch, or `None` when nothing waits: a delayed send or a host-run invocation's deadline, of
-    /// any session of the tree ([`SavedState::earliest_due`]). What a session store keeps beside
-    /// the checkpoint, so a server wakes the session when it comes due.
+    /// The earliest moment the checkpoint acts on its own once it is restored, in milliseconds
+    /// since the Unix epoch, or `None` when it waits for nothing: what the tree waits for (a
+    /// delayed send or a host-run invocation's deadline, of any session of it,
+    /// [`SavedState::earliest_due`]), and what each endpoint section holds that its restore acts on
+    /// ([`EndpointSection::earliest_due`]). What a session store keeps beside the checkpoint, so a
+    /// server loads the session when it comes due.
+    ///
+    /// The endpoint's part is what makes this the checkpoint's due and not only its machine's: a
+    /// send that came due leaves in the checkpoint that removes it from the saved state, so a
+    /// process that fails after that checkpoint is durable and before it released the send leaves
+    /// a session whose machine waits for nothing and whose checkpoint still holds the send. Only
+    /// a restore releases it, and only a due loads a session nobody asks of.
     pub fn earliest_due(&self) -> Option<u64> {
-        self.state.earliest_due()
+        self.endpoints
+            .iter()
+            .filter_map(EndpointSection::earliest_due)
+            .chain(self.state.earliest_due())
+            .min()
     }
 
     /// The checkpoint as `sce-mesh-checkpoint` JSON.
@@ -468,6 +482,34 @@ pub fn next_wake<S: SessionStore + ?Sized>(store: &S) -> Result<Option<u64>, Fai
         .due_before(LATEST_MOMENT, 1)?
         .first()
         .map(|due| due.due))
+}
+
+/// The due of a checkpoint whose restore acts at once: the Unix epoch, which every moment a host
+/// reads its clock at is past, so the session is loaded at the first look at what came due.
+pub const DUE_AT_ONCE: u64 = 0;
+
+impl EndpointSection {
+    /// The earliest moment what this section holds acts once it is restored, without an input:
+    /// [`DUE_AT_ONCE`] when it holds an envelope a checkpoint produced and did not release, an
+    /// event released for the machine and not applied, an envelope waiting for its link, or one
+    /// waiting for its receiver's acknowledgement, each of which the restore hands on; otherwise
+    /// the due of the earliest transmission waiting out its backoff; `None` when it holds none of
+    /// them. These are what keep an endpoint from being quiet (`Endpoint::is_quiet`), so a
+    /// checkpoint taken of a quiet endpoint, as a session dropped from memory is kept, waits for
+    /// nothing here.
+    pub fn earliest_due(&self) -> Option<u64> {
+        let at_once = !self.router.unreleased.is_empty()
+            || !self.calls.is_empty()
+            || self
+                .router
+                .peers
+                .iter()
+                .any(|peer| !peer.queued.is_empty() || !peer.unacked.is_empty());
+        if at_once {
+            return Some(DUE_AT_ONCE);
+        }
+        self.retries.iter().map(|retry| retry.due).min()
+    }
 }
 
 // ── The document ────────────────────────────────────────────────────────
@@ -1610,11 +1652,65 @@ mod tests {
             );
             let last = load(&store, "timer").unwrap().unwrap();
             assert_eq!(
-                last.checkpoint.earliest_due(),
+                last.checkpoint.state.earliest_due(),
                 None,
                 "{kill:?}: the send is gone from the saved state"
             );
         }
+    }
+
+    /// A checkpoint that holds a send it has not released is due at once, though its machine
+    /// waits for nothing: a process that fails after writing it and before releasing the send
+    /// leaves the session to its store's index of dues alone, and the next process loads it there
+    /// and its restore releases the send. Once a checkpoint taken after the release is written,
+    /// the session waits for nothing.
+    #[test]
+    fn a_checkpoint_holding_a_send_it_has_not_released_is_due_at_once() {
+        let store = MemoryStore::new();
+        let initial = saved(&[], vec![tick_at(1_000_100)]);
+        let mut first = timing(0, 0);
+        let mut writer = sink(&store, "timer", 0);
+        writer
+            .write(&first.checkpoint(1, initial.clone(), false).unwrap())
+            .unwrap();
+        first.durable(1);
+        assert_eq!(next_wake(&store).unwrap(), Some(1_000_100));
+
+        first.environment_mut().now = 100;
+        let after = fire(&mut first, &initial, 1_000_100);
+        let holding = first.checkpoint(2, after, false).unwrap();
+        assert_eq!(
+            holding.state.earliest_due(),
+            None,
+            "the send left the state"
+        );
+        assert_eq!(holding.earliest_due(), Some(DUE_AT_ONCE));
+        writer.write(&holding).unwrap();
+        // The process fails here: the checkpoint is durable, the send never left.
+        assert!(sent(&mut first).is_empty());
+        drop(first);
+
+        assert_eq!(next_wake(&store).unwrap(), Some(DUE_AT_ONCE));
+        let woken = wake_due(&store, 1_000_200, 10).unwrap();
+        let [loaded] = woken.as_slice() else {
+            panic!("the session holding the send is not woken: {woken:?}");
+        };
+        let mut hub = host("hub", "timer", &[], 0, 0, true, |_| {});
+        let mut second = timing(1, 200);
+        second.restore(&loaded.checkpoint).unwrap();
+        assert_eq!(deliver(&mut second, &mut hub), 1, "the restore releases it");
+        // The host applies what the restore queued for the machine before it saves it again.
+        second.take_calls();
+
+        let mut writer = sink(&store, "timer", 200);
+        let next = loaded.checkpoint.sequence + 1;
+        let released = second
+            .checkpoint(next, loaded.checkpoint.state.clone(), false)
+            .unwrap();
+        assert_eq!(released.earliest_due(), None);
+        writer.write(&released).unwrap();
+        second.durable(next);
+        assert_eq!(next_wake(&store).unwrap(), None);
     }
 
     // ── Durable receipt ──────────────────────────────────────────────────

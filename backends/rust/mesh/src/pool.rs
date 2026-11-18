@@ -297,7 +297,9 @@ struct Live<M, T, E> {
     /// The number of the last checkpoint the endpoint was sealed or restored
     /// with, `0` before the first: the next is sealed with one above it.
     sequence: u64,
-    /// The earliest wait of the state last saved.
+    /// The earliest wait of the machine's state last saved. Not the checkpoint's due, which the
+    /// store keeps: what the endpoint held when it was sealed (a send not yet released) is due at
+    /// once for a process that restores it, and this one released it when the write answered.
     earliest_due: Option<u64>,
     /// When it last had an event: an envelope, or a macrostep a wait ran.
     last_active_ms: u64,
@@ -915,7 +917,8 @@ where
             (
                 loaded.version,
                 loaded.checkpoint.sequence,
-                loaded.checkpoint.earliest_due(),
+                // The restore just released what the endpoint held.
+                loaded.checkpoint.state.earliest_due(),
             )
         });
         Ok(Live {
@@ -1112,7 +1115,7 @@ where
         match sink.write(&taken) {
             Ok(()) => {
                 session.version = sink.version();
-                session.earliest_due = taken.earliest_due();
+                session.earliest_due = taken.state.earliest_due();
                 session.dirty = false;
                 let mut endpoint = lock(&session.endpoint);
                 endpoint.durable(sequence);
@@ -2239,14 +2242,151 @@ mod tests {
         assert_eq!(reminded.pattern, PatternKind::FireForget);
         assert_eq!(reminded.data, r#"{"room":"r1"}"#);
         assert_eq!(probe.restored.load(Ordering::SeqCst), 1);
+        let loaded = checkpoint::load(&store, "r1")
+            .expect("read")
+            .expect("saved");
         assert_eq!(
-            store.get("r1").expect("read").expect("saved").earliest_due,
+            loaded.checkpoint.state.earliest_due(),
             None,
             "the reminder left the saved state as it was delivered"
         );
-        assert!(pool.due().is_empty());
+        assert!(pool.due().is_empty(), "the session in memory released it");
         pool.run("r1");
         assert!(wire.take().is_empty(), "delivered once");
+
+        // Saved and dropped once idle, the session waits for nothing in the store either.
+        clock.advance(1_000);
+        assert_eq!(pool.evict_idle(), vec!["r1".to_string()]);
+        assert_eq!(
+            store.get("r1").expect("read").expect("saved").earliest_due,
+            None
+        );
+        assert!(pool.due().is_empty());
+    }
+
+    /// A store that, once armed, takes one write and then fails its process: the write is
+    /// durable, and the pool never hears it answered, so it releases nothing the write held.
+    struct DiesAfterWrite {
+        inner: MemoryStore,
+        armed: AtomicBool,
+    }
+
+    impl SessionStore for DiesAfterWrite {
+        fn get(&self, key: &str) -> Result<Option<Stored>, Failure> {
+            self.inner.get(key)
+        }
+
+        fn put(
+            &self,
+            key: &str,
+            state: &[u8],
+            earliest_due: Option<u64>,
+            expected_version: u64,
+            fence: u64,
+        ) -> Result<u64, WriteError> {
+            let written = self
+                .inner
+                .put(key, state, earliest_due, expected_version, fence);
+            if written.is_ok() && self.armed.swap(false, Ordering::SeqCst) {
+                panic!("the process fails after the write landed");
+            }
+            written
+        }
+
+        fn delete(&self, key: &str, expected_version: u64, fence: u64) -> Result<(), WriteError> {
+            self.inner.delete(key, expected_version, fence)
+        }
+
+        fn due_before(&self, ms: u64, limit: usize) -> Result<Vec<Due>, Failure> {
+            self.inner.due_before(ms, limit)
+        }
+
+        fn acquire(
+            &self,
+            key: &str,
+            owner: &str,
+            ttl_ms: u64,
+            now_ms: u64,
+        ) -> Result<Lease, AcquireError> {
+            self.inner.acquire(key, owner, ttl_ms, now_ms)
+        }
+
+        fn renew(
+            &self,
+            key: &str,
+            fence: u64,
+            ttl_ms: u64,
+            now_ms: u64,
+        ) -> Result<Lease, LeaseError> {
+            self.inner.renew(key, fence, ttl_ms, now_ms)
+        }
+
+        fn release(&self, key: &str, fence: u64) -> Result<(), LeaseError> {
+            self.inner.release(key, fence)
+        }
+    }
+
+    /// A process that fails after the checkpoint that delivers a session's last delayed send is
+    /// durable, and before the send left, leaves a session whose machine waits for nothing and
+    /// whose checkpoint holds the send. The store lists it as due at once, so the next process
+    /// loads it at its first look at what came due, and the restore delivers the send, once.
+    #[test]
+    fn a_send_held_by_a_durable_checkpoint_leaves_after_its_process_failed() {
+        let (clock, probe) = (Clock::new(), Arc::new(Probe::default()));
+        let store = Arc::new(DiesAfterWrite {
+            inner: MemoryStore::new(),
+            armed: AtomicBool::new(false),
+        });
+        let shared: Arc<dyn SessionStore> = Arc::clone(&store) as Arc<dyn SessionStore>;
+        let (first, first_wire) = pool_over("p1", Arc::clone(&shared), &clock, &probe);
+        deliver(
+            &first,
+            from_client("remind", r#"{"room":"r1","after_ms":5000}"#, 1, false),
+        );
+        clock.advance(5_000);
+        assert_eq!(first.due(), vec!["r1".to_string()]);
+        store.armed.store(true, Ordering::SeqCst);
+        let failed =
+            std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| first.run("r1"))).is_err();
+        assert!(failed, "the store did not fail the process");
+        assert!(first_wire.take().is_empty(), "the reminder never left");
+        drop(first);
+        assert_eq!(
+            store
+                .inner
+                .get("r1")
+                .expect("read")
+                .expect("saved")
+                .earliest_due,
+            Some(checkpoint::DUE_AT_ONCE),
+            "the checkpoint holding the reminder is due at once"
+        );
+
+        let (second, second_wire) = pool_over("p1", shared, &clock, &probe);
+        assert_eq!(second.due(), vec!["r1".to_string()]);
+        second.run("r1");
+        let sent = second_wire.take();
+        let [reminded] = sent.as_slice() else {
+            panic!("one reminder, got {sent:?}");
+        };
+        assert_eq!(reminded.event, "reminded");
+        assert_eq!(reminded.peer, "client");
+        assert!(second.due().is_empty());
+        second.run("r1");
+        assert!(second_wire.take().is_empty(), "delivered once");
+        clock.advance(1_000);
+        assert_eq!(second.evict_idle(), vec!["r1".to_string()]);
+        assert_eq!(
+            store
+                .inner
+                .get("r1")
+                .expect("read")
+                .expect("saved")
+                .earliest_due,
+            None,
+            "saved once it released the reminder, the session waits for nothing"
+        );
+        assert!(second.due().is_empty());
     }
 
     /// An envelope whose key cannot be read names no session: a request is
