@@ -3447,15 +3447,37 @@ mod tests {
         // 7 fits uint8 width (passes width narrowing) but is not declared.
         let err = run_with_enums(s, "_event.data.status === 7", enums)
             .expect_err("7 must be rejected by the strict variant-membership check");
+        // Its own refusal, not a cross-kind mismatch: the declared values are
+        // a closed set the record carries as candidates.
+        let ForgeError::Validation(v) = &err.error else {
+            panic!("expected Validation, got {err:?}");
+        };
+        let ValidationError::EnumValueNotDeclared {
+            enum_alias,
+            value,
+            variants,
+            ..
+        } = &**v
+        else {
+            panic!("expected EnumValueNotDeclared, got {v:?}");
+        };
+        assert_eq!(enum_alias, "Result");
+        assert_eq!(*value, 7);
+        // The declared set, in declaration order.
+        let declared: Vec<(&str, i128)> = variants
+            .iter()
+            .map(|(name, at)| (name.as_str(), *at))
+            .collect();
+        assert_eq!(declared, [("ok", 0), ("error", 1), ("timeout", 2)]);
         let msg = format!("{err}");
         assert!(
-            msg.contains("not a declared variant") && msg.contains("Result"),
+            msg.contains("is the value of none of its variants") && msg.contains("'Result'"),
             "{msg}"
         );
-        // Diagnostic must enumerate the declared set in declaration order.
-        assert!(msg.contains("ok=0"), "{msg}");
-        assert!(msg.contains("error=1"), "{msg}");
-        assert!(msg.contains("timeout=2"), "{msg}");
+        assert!(
+            msg.contains("(declared: ok=0, error=1, timeout=2)"),
+            "{msg}"
+        );
     }
 
     #[test]
@@ -3485,7 +3507,7 @@ mod tests {
             .expect_err("256 must overflow uint8 (width diagnostic wins)");
         let msg = format!("{err}");
         assert!(msg.contains("overflows"), "{msg}");
-        assert!(!msg.contains("not a declared variant"), "{msg}");
+        assert!(!msg.contains("none of its variants"), "{msg}");
     }
 
     #[test]
