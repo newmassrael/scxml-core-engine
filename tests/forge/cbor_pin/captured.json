@@ -1,0 +1,212 @@
+{
+ "description": "What each backend's CBOR encode wrote for the values of cases.json, captured before any step of docs/adr/0101 (its step 0, section 8.3) and held by every later capture: an entry the seven agree on keeps the bytes once, one they disagree on keeps each backend's under by_backend and is named under disagreements. Bytes past 4096 are kept as their length and SHA-256. equals_input says whether the bytes are the deterministic form of the value (pin.py's model), which the drivers decoded. Written by tests/forge/cbor_pin/pin.py merge; never edited by hand.",
+ "backends": [
+  "rust",
+  "cpp",
+  "c11",
+  "go",
+  "kotlin",
+  "python",
+  "swift"
+ ],
+ "cases": {
+  "codec_cbor_map/smallest": {
+   "encoded": "a4005000000000000000000000000000000000016003000540",
+   "equals_input": true
+  },
+  "codec_cbor_map/largest": {
+   "encoded": "a60050ffffffffffffffffffffffffffffffff017840616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161610318ff05590100ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff07f50c1bffffffffffffffff",
+   "equals_input": true
+  },
+  "codec_cbor_map/deadline-present": {
+   "encoded": "a50050000000000000000000000000000000000160030005400c00",
+   "equals_input": true
+  },
+  "codec_cbor_map/urgent-present": {
+   "encoded": "a500500000000000000000000000000000000001600300054007f4",
+   "equals_input": true
+  },
+  "codec_cbor_map/corpus-value": {
+   "encoded": "a60050000102030405060708090a0b0c0d0e0f01666e6f64652d6103030542dead07f50c1b0000000100000000",
+   "equals_input": true
+  },
+  "broadcast_log_conformance_text_event/smallest": {
+   "encoded": "a201600240",
+   "equals_input": true
+  },
+  "broadcast_log_conformance_text_event/largest": {
+   "encoded": "a3016861616161616161610248ffffffffffffffff036461616161",
+   "equals_input": true
+  },
+  "broadcast_log_conformance_text_event/note-present": {
+   "encoded": "a3016002400360",
+   "equals_input": true
+  },
+  "codec_cbor_open_enum/smallest": {
+   "encoded": "a10100",
+   "equals_input": true
+  },
+  "codec_cbor_open_enum/largest": {
+   "encoded": "a20118ff0218ff",
+   "equals_input": true
+  },
+  "codec_cbor_open_enum/detail-present": {
+   "encoded": "a201000210",
+   "equals_input": true
+  },
+  "codec_cbor_open_enum/declared-variant": {
+   "encoded": "a1011878",
+   "equals_input": true
+  },
+  "codec_cbor_signed_enum/smallest": {
+   "encoded": "a10000",
+   "equals_input": true
+  },
+  "codec_cbor_signed_enum/largest": {
+   "encoded": "a200050105",
+   "equals_input": true
+  },
+  "codec_cbor_signed_enum/detail-present": {
+   "encoded": "a200000100",
+   "equals_input": true
+  },
+  "codec_cbor_signed_enum/status-negative": {
+   "refused": {
+    "rust": "decode CborMalformed",
+    "cpp": "decode CodecError 19",
+    "c11": "decode status 7",
+    "go": "decode sce/codec: cbor malformed",
+    "kotlin": "decode CborMalformed",
+    "python": "decode CborMalformed",
+    "swift": "decode cborMalformed"
+   }
+  },
+  "codec_cbor_signed_enum/detail-negative": {
+   "refused": {
+    "rust": "decode CborMalformed",
+    "cpp": "decode CodecError 19",
+    "c11": "decode status 7",
+    "go": "decode sce/codec: cbor malformed",
+    "kotlin": "decode CborMalformed",
+    "python": "decode CborMalformed",
+    "swift": "decode cborMalformed"
+   }
+  },
+  "codec_cbor_record_list/smallest": {
+   "encoded": "a300500000000000000000000000000000000001600380",
+   "equals_input": true
+  },
+  "codec_cbor_record_list/largest": {
+   "encoded": "a40050ffffffffffffffffffffffffffffffff017840616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161610382a2637365711bffffffffffffffff66617574686f727061616161616161616161616161616161a2637365711bffffffffffffffff66617574686f7270616161616161616161616161616161610483a2637365711bffffffffffffffff66617574686f727061616161616161616161616161616161a2637365711bffffffffffffffff66617574686f727061616161616161616161616161616161a2637365711bffffffffffffffff66617574686f727061616161616161616161616161616161",
+   "equals_input": true
+  },
+  "codec_cbor_record_list/context-present": {
+   "encoded": "a4005000000000000000000000000000000000016003800480",
+   "equals_input": true
+  },
+  "codec_cbor_record_list/test-value": {
+   "encoded": "a40050000102030405060708090a0b0c0d0e0f01616e0381a2637365710166617574686f72666e6f64652d610482a2637365710266617574686f72666e6f64652d61a26373657119012c66617574686f72666e6f64652d62",
+   "equals_input": true
+  },
+  "codec_cbor_record_list_bytes/smallest": {
+   "encoded": "a10080",
+   "equals_input": true
+  },
+  "codec_cbor_record_list_bytes/largest": {
+   "encoded": "a20082a2637365711bffffffffffffffff6664696765737444ffffffffa2637365711bffffffffffffffff6664696765737444ffffffff0183a2637365711bffffffffffffffff6664696765737444ffffffffa2637365711bffffffffffffffff6664696765737444ffffffffa2637365711bffffffffffffffff6664696765737444ffffffff",
+   "equals_input": true
+  },
+  "codec_cbor_record_list_bytes/pending-present": {
+   "encoded": "a200800180",
+   "equals_input": true
+  },
+  "codec_cbor_record_list_bytes/short-digest": {
+   "encoded": "a10082a263736571176664696765737440a26373657118186664696765737441ab",
+   "equals_input": true
+  },
+  "codec_cbor_record_list_least/smallest": {
+   "encoded": "a10081a2637365710066617574686f7260",
+   "equals_input": true
+  },
+  "codec_cbor_record_list_least/largest": {
+   "encoded": "a20082a2637365711bffffffffffffffff66617574686f727061616161616161616161616161616161a2637365711bffffffffffffffff66617574686f7270616161616161616161616161616161610183a2637365711bffffffffffffffff66617574686f727061616161616161616161616161616161a2637365711bffffffffffffffff66617574686f727061616161616161616161616161616161a2637365711bffffffffffffffff66617574686f727061616161616161616161616161616161",
+   "equals_input": true
+  },
+  "codec_cbor_record_list_least/context-present": {
+   "encoded": "a20081a2637365710066617574686f72600181a2637365710066617574686f7260",
+   "equals_input": true
+  },
+  "envelope/smallest": {
+   "encoded": "a600500000000000000000000000000000000001600260030104000540",
+   "equals_input": true
+  },
+  "envelope/largest": {
+   "encoded": {
+    "length": 18876966,
+    "sha256": "7a7dbb317fe458273138fe94fff5f093209864b3313ebebe78e9a68fcc924f36"
+   },
+   "equals_input": true
+  },
+  "envelope/subject-present": {
+   "encoded": "a7005000000000000000000000000000000000016002600301040005400660",
+   "equals_input": true
+  },
+  "envelope/correlation_id-present": {
+   "encoded": "a700500000000000000000000000000000000001600260030104000540075000000000000000000000000000000000",
+   "equals_input": true
+  },
+  "envelope/reply_to-present": {
+   "encoded": "a7005000000000000000000000000000000000016002600301040005400860",
+   "equals_input": true
+  },
+  "envelope/invoke_id-present": {
+   "encoded": "a700500000000000000000000000000000000001600260030104000540095000000000000000000000000000000000",
+   "equals_input": true
+  },
+  "envelope/rpc_status-present": {
+   "encoded": "a7005000000000000000000000000000000000016002600301040005400a00",
+   "equals_input": true
+  },
+  "envelope/rpc_error_message-present": {
+   "encoded": "a7005000000000000000000000000000000000016002600301040005400b60",
+   "equals_input": true
+  },
+  "envelope/deadline_unix_ms-present": {
+   "encoded": "a7005000000000000000000000000000000000016002600301040005400c00",
+   "equals_input": true
+  },
+  "envelope/sequence_no-present": {
+   "encoded": "a7005000000000000000000000000000000000016002600301040005400e00",
+   "equals_input": true
+  },
+  "envelope/routing_id-present": {
+   "encoded": "a7005000000000000000000000000000000000016002600301040005400f5000000000000000000000000000000000",
+   "equals_input": true
+  },
+  "envelope/parallel_id-present": {
+   "encoded": "a7005000000000000000000000000000000000016002600301040005401060",
+   "equals_input": true
+  },
+  "envelope/region_id-present": {
+   "encoded": "a7005000000000000000000000000000000000016002600301040005401160",
+   "equals_input": true
+  },
+  "envelope/child_session_id-present": {
+   "encoded": "a7005000000000000000000000000000000000016002600301040005401260",
+   "equals_input": true
+  },
+  "envelope/causal_epoch-present": {
+   "encoded": "a7005000000000000000000000000000000000016002600301040005401300",
+   "equals_input": true
+  },
+  "envelope/causal_vector-present": {
+   "encoded": "a7005000000000000000000000000000000000016002600301040005401480",
+   "equals_input": true
+  },
+  "envelope/causal-route": {
+   "encoded": "a80050000000000000000000000000000000000160026003170400054013071482a362686901626c6f026373657103a362686919012c626c6f1a00010000637365711b0000000100000000",
+   "equals_input": true
+  }
+ },
+ "disagreements": []
+}
