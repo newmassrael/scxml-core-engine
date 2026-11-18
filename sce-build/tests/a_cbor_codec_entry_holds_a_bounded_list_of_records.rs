@@ -112,30 +112,40 @@ fn a_list_of_records_is_read_by_the_one_type_grammar() {
             .find(|e| e.id == id)
             .unwrap_or_else(|| panic!("no entry '{id}'"))
     };
-    let seen = entry("seen").record_list().expect("`seen` holds records");
+    let seen = cbor_codec::record_list(entry("seen")).expect("`seen` holds records");
     assert_eq!((seen.record, seen.max, seen.min), ("CausalEntry", 2, 0));
     assert!(entry("seen").is_required());
     assert_eq!(entry("seen").leaf_type(), None);
 
-    let context = entry("context")
-        .record_list()
-        .expect("`context` holds records");
+    let context = cbor_codec::record_list(entry("context")).expect("`context` holds records");
     assert_eq!((context.record, context.max), ("CausalEntry", 3));
     assert!(!entry("context").is_required());
 
     // A leaf beside them is the entry it always was.
-    assert!(entry("source").record_list().is_none());
+    assert!(cbor_codec::record_list(entry("source")).is_none());
     assert!(entry("source").leaf_type().is_some());
 }
 
 #[test]
-fn a_list_of_anything_but_a_record_is_refused_with_the_kinds_an_entry_holds() {
-    let why = refusal(&document(
+fn a_list_of_anything_but_a_record_is_read_and_refused_by_name_where_it_is_generated() {
+    // docs/adr/0101, section 1: a list of integers is a value of the language,
+    // and the printers of docs/adr/0085 step 3a do not lower it yet (section
+    // 5.4), so every backend refuses the codec naming the entry and the list.
+    let text = document(
         "",
         CAUSAL_IMPORT,
         r#"    <data id="n" sce:type="list&lt;uint8&gt;[4]" sce:key="0" sce:direction="out"/>"#,
-    ));
-    assert!(why.contains("a bounded list of records"), "{why}");
+    );
+    let m = codec(&text);
+    assert!(cbor_codec::record_list(&m.cbor_entries[0]).is_none());
+    for &lang in Language::ALL {
+        let why = generated(&text, "probe_list", lang)
+            .expect_err("no backend lowers a list of integers in a CBOR codec yet");
+        assert!(
+            why.contains("CBOR entry 'n'") && why.contains("`list<uint8>[4]`"),
+            "{lang:?}: {why}"
+        );
+    }
 }
 
 #[test]

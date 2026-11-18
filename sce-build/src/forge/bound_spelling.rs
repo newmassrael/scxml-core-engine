@@ -9,16 +9,20 @@
 //! outermost bound before: `sce:max-size` and `sce:max-count` on an event
 //! schema's field, `sce:capacity` on a `sce-static` statechart's variable, and
 //! an algorithm's `capacity=` on a local and `returns-max-size=` on its return,
-//! each with the `sce:limit` that names it. They are synonyms of the bracket on
+//! each with the `sce:limit` that names it; and `sce:max-size` on a text or a
+//! byte string entry of a CBOR codec, whose entry is a value of the language
+//! (docs/adr/0101, section 1.3). They are synonyms of the bracket on
 //! the outermost type they bound, read so by the parser
 //! ([`crate::forge::value_type::WrittenType::with_outer_bound`]), and each is
 //! reported here with the rewrite: `validation/bound-attribute-superseded`,
 //! whose record does not stop the run unless `--lint` makes it.
 //!
 //! The attributes that are not bounds of a value type are none of this: a
-//! binary codec field's `sce:max-size` and a `<sce:repeat max-count>` describe a
-//! foreign frame (docs/adr/0077), a content-line entry's `sce:max-count` belongs
-//! to its codec, and `sce:capacity` on `<scxml>` is the depth of the event queue.
+//! positional codec field's `sce:max-size` and a `<sce:repeat max-count>`
+//! describe a foreign frame (docs/adr/0077), a content-line entry's
+//! `sce:max-size` and `sce:max-count` belong to its codec, a CBOR entry's
+//! `sce:length` is the exact length of its byte string, and `sce:capacity` on
+//! `<scxml>` is the depth of the event queue.
 //! A position is therefore found by what declares it, not by the attribute's
 //! name.
 //!
@@ -44,13 +48,18 @@ enum Site {
     Local,
     /// An algorithm's signature `<sce:return>`: `returns-max-size`.
     Return,
+    /// A `<data sce:key>` entry of a `sce:encoding="cbor"` codec, a document
+    /// of its own or one declared in place: `sce:max-size` on a text or a
+    /// byte string (docs/adr/0101, section 1.3). Its `sce:length` is the exact
+    /// length of a byte string, a fact of the codec and no legacy bound.
+    CborEntry,
 }
 
 impl Site {
     /// The attribute that carries the type: `(namespace, local name)`.
     fn type_attr(self) -> (Option<&'static str>, &'static str) {
         match self {
-            Self::SchemaField | Self::Variable => (Some(SCE_NAMESPACE), "type"),
+            Self::SchemaField | Self::Variable | Self::CborEntry => (Some(SCE_NAMESPACE), "type"),
             Self::Local | Self::Return => (None, "type"),
         }
     }
@@ -66,6 +75,14 @@ impl Site {
             Self::Variable => Some((Some(SCE_NAMESPACE), "capacity")),
             Self::Local => Some((None, "capacity")),
             Self::Return => Some((None, "returns-max-size")),
+            // A list's bound has no legacy attribute on a CBOR entry: the
+            // parser refuses `sce:max-size` beside one.
+            Self::CborEntry => match ty.outermost_bounded()? {
+                WrittenType::Text { .. } | WrittenType::Bytes { .. } => {
+                    Some((Some(SCE_NAMESPACE), "max-size"))
+                }
+                _ => None,
+            },
         }
     }
 }
@@ -119,6 +136,31 @@ fn is_scxml(node: &roxmltree::Node, name: &str) -> bool {
         && node.tag_name().name() == name
 }
 
+/// The entries of `codec` where it is a `sce:encoding="cbor"` codec, a root or
+/// a `<data sce:kind="codec">` declared in place: each `<data>` of its
+/// `<datamodel>` but the input frame (`sce:direction="in"`), which is no
+/// entry. Empty for a codec of any other encoding, whose `sce:max-size`
+/// describes a foreign frame (docs/adr/0077).
+fn cbor_entries<'a, 'input>(
+    codec: &roxmltree::Node<'a, 'input>,
+) -> Vec<(roxmltree::Node<'a, 'input>, Site)> {
+    let value =
+        |local: &str| attribute(codec, (Some(SCE_NAMESPACE), local)).map(|a| a.value().trim());
+    if value("kind") != Some("codec") || value("encoding") != Some("cbor") {
+        return Vec::new();
+    }
+    codec
+        .children()
+        .filter(|n| is_scxml(n, "datamodel"))
+        .flat_map(|datamodel| datamodel.children().filter(|n| is_scxml(n, "data")))
+        .filter(|data| {
+            attribute(data, (Some(SCE_NAMESPACE), "direction")).map(|a| a.value().trim())
+                != Some("in")
+        })
+        .map(|data| (data, Site::CborEntry))
+        .collect()
+}
+
 /// Every declaration of the document whose bound an attribute may state, in
 /// document order, with the position it is.
 fn sites<'a, 'input>(
@@ -126,6 +168,7 @@ fn sites<'a, 'input>(
 ) -> Vec<(roxmltree::Node<'a, 'input>, Site)> {
     let kind = attribute(root, (Some(SCE_NAMESPACE), "kind")).map(|a| a.value().trim());
     match kind {
+        Some("codec") => cbor_entries(root),
         Some("event-schema") => root
             .children()
             .filter(|n| is_scxml(n, "datamodel"))
@@ -147,9 +190,12 @@ fn sites<'a, 'input>(
             })
             .collect(),
         Some(_) => Vec::new(),
-        None if root.attribute("datamodel").map(str::trim) == Some("sce-static") => {
-            // Every variable at any depth, and nothing inside a kind declared
-            // in place, whose fields are that kind's and no variable.
+        None => {
+            // Every variable at any depth of a `sce-static` statechart, and
+            // nothing inside a kind declared in place, whose fields are that
+            // kind's and no variable, but for the entries of a CBOR codec
+            // declared in place, whatever the data model.
+            let statics = root.attribute("datamodel").map(str::trim) == Some("sce-static");
             let mut out = Vec::new();
             let mut stack: Vec<roxmltree::Node> =
                 root.children().filter(|n| n.is_element()).collect();
@@ -162,7 +208,11 @@ fn sites<'a, 'input>(
                 }
                 if is_scxml(&node, "data") {
                     if attribute(&node, (Some(SCE_NAMESPACE), "kind")).is_none() {
-                        out.push((node, Site::Variable));
+                        if statics {
+                            out.push((node, Site::Variable));
+                        }
+                    } else {
+                        out.extend(cbor_entries(&node));
                     }
                     continue;
                 }
@@ -173,7 +223,6 @@ fn sites<'a, 'input>(
             }
             out
         }
-        None => Vec::new(),
     }
 }
 
@@ -467,13 +516,125 @@ mod tests {
         assert_eq!(rewritten_document(&text, "m.scxml").unwrap(), text);
     }
 
+    fn cbor_codec(entries: &str) -> String {
+        format!(
+            "<scxml {NS} sce:kind=\"codec\" sce:encoding=\"cbor\" sce:codec-format=\"2\" name=\"c\" version=\"1.0\">\n  <datamodel>\n    <data id=\"raw\" sce:type=\"bytes\" sce:max-size=\"64\" sce:direction=\"in\"/>\n{entries}\n  </datamodel>\n</scxml>\n"
+        )
+    }
+
     #[test]
-    fn a_codec_field_bound_describes_a_frame_and_stays() {
+    fn a_positional_codec_field_bound_describes_a_frame_and_stays() {
         let text = format!(
-            "<scxml {NS} sce:kind=\"codec\" sce:encoding=\"cbor\" sce:codec-format=\"2\" name=\"c\" version=\"1.0\">\n  <datamodel>\n    <data id=\"label\" sce:type=\"string\" sce:key=\"0\" sce:max-size=\"4\" sce:direction=\"out\"/>\n  </datamodel>\n</scxml>\n"
+            "<scxml {NS} sce:kind=\"codec\" sce:codec-format=\"2\" name=\"c\" version=\"1.0\">\n  <datamodel>\n    <data id=\"label\" sce:type=\"string\" sce:byte=\"0\" sce:max-size=\"4\" sce:direction=\"out\"/>\n  </datamodel>\n</scxml>\n"
         );
         assert!(superseded(&text, "c.scxml").is_empty());
         assert_eq!(rewritten_document(&text, "c.scxml").unwrap(), text);
+    }
+
+    #[test]
+    fn a_cbor_entry_text_bound_moves_into_its_type() {
+        // docs/adr/0101, section 1.3: a CBOR entry is a value of the language,
+        // and its `sce:max-size` the bracket of its text or byte string. The
+        // input frame is no entry, and an exact length is no legacy bound.
+        let text = cbor_codec(
+            r#"    <data id="label" sce:type="optional&lt;string&gt;" sce:key="0" sce:max-size="4" sce:limit="label_text" sce:direction="out"/>
+    <data id="blob" sce:type="bytes" sce:key="1" sce:max-size="0x20" sce:direction="out"/>
+    <data id="id" sce:type="bytes" sce:key="2" sce:length="16" sce:direction="out"/>
+    <data id="n" sce:type="uint8" sce:key="3" sce:direction="out"/>"#,
+        );
+        let records = superseded(&text, "c.scxml");
+        let found: Vec<(String, Vec<String>, String)> = records.iter().map(fix_of).collect();
+        assert_eq!(
+            found,
+            [
+                (
+                    "<data id=\"label\">".to_string(),
+                    vec!["sce:max-size".to_string(), "sce:limit".to_string()],
+                    "optional<string[label_text=4]>".to_string()
+                ),
+                (
+                    "<data id=\"blob\">".to_string(),
+                    vec!["sce:max-size".to_string()],
+                    "bytes[32]".to_string()
+                ),
+            ]
+        );
+        let rewritten = rewritten_document(&text, "c.scxml").unwrap();
+        assert!(
+            rewritten.contains(
+                r#"<data id="label" sce:type="optional&lt;string[label_text=4]&gt;" sce:key="0" sce:direction="out"/>"#
+            ),
+            "{rewritten}"
+        );
+        assert!(
+            rewritten.contains(
+                r#"<data id="blob" sce:type="bytes[32]" sce:key="1" sce:direction="out"/>"#
+            ),
+            "{rewritten}"
+        );
+        assert!(rewritten.contains(
+            r#"<data id="id" sce:type="bytes" sce:key="2" sce:length="16" sce:direction="out"/>"#
+        ));
+        assert!(rewritten
+            .contains(r#"<data id="raw" sce:type="bytes" sce:max-size="64" sce:direction="in"/>"#));
+        assert!(superseded(&rewritten, "c.scxml").is_empty());
+    }
+
+    #[test]
+    fn a_cbor_entry_rewritten_is_read_as_the_entry_it_was() {
+        // The rewrite moves a bound and nothing else: the codec it prints is
+        // the codec the parser read before it, entry for entry.
+        let text = cbor_codec(
+            r#"    <data id="label" sce:type="string" sce:key="0" sce:max-size="4" sce:direction="out"/>
+    <data id="blob" sce:type="optional&lt;bytes&gt;" sce:key="1" sce:max-size="8" sce:direction="out"/>
+    <data id="id" sce:type="bytes" sce:key="2" sce:length="16" sce:direction="out"/>"#,
+        );
+        let rewritten = rewritten_document(&text, "c.scxml").unwrap();
+        assert_ne!(rewritten, text);
+        let read = |source: &str| {
+            let label = crate::DocumentLabel {
+                identifier: "c",
+                diagnostic_label: "c.scxml",
+            };
+            match crate::forge::parser::parse_forge(source, label) {
+                Ok(Some(crate::forge::model::ForgeDocument::Codec(m))) => m.cbor_entries,
+                other => panic!("expected a codec, got {other:?}"),
+            }
+        };
+        let (before, after) = (read(&text), read(&rewritten));
+        assert_eq!(
+            before
+                .iter()
+                .map(|e| (&e.id, &e.sce_type, e.length))
+                .collect::<Vec<_>>(),
+            after
+                .iter()
+                .map(|e| (&e.id, &e.sce_type, e.length))
+                .collect::<Vec<_>>()
+        );
+    }
+
+    #[test]
+    fn a_cbor_codec_declared_in_place_is_rewritten_and_a_positional_one_is_not() {
+        let text = statechart(
+            "ecmascript",
+            r#"    <data id="conv" sce:kind="codec" sce:encoding="cbor" sce:codec-format="2">
+      <datamodel>
+        <data id="raw" sce:type="bytes" sce:max-size="8" sce:direction="in"/>
+        <data id="label" sce:type="string" sce:key="0" sce:max-size="8" sce:direction="out"/>
+      </datamodel>
+    </data>
+    <data id="frame" sce:kind="codec">
+      <datamodel>
+        <data id="body" sce:type="bytes" sce:max-size="8" sce:direction="in"/>
+      </datamodel>
+    </data>"#,
+        );
+        let found: Vec<String> = superseded(&text, "m.scxml")
+            .iter()
+            .map(|r| fix_of(r).2)
+            .collect();
+        assert_eq!(found, ["string[8]"]);
     }
 
     #[test]

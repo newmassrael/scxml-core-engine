@@ -173,10 +173,12 @@
        text, byte string or list with no bound, an alias the document does not
        import. Only a character outside the alphabet is the schema's to refuse.
 
-       What each position holds of the grammar is its reader's to say: a codec's
-       entry stays a scalar or an optional scalar (`read_entry_type`), or on a
-       CBOR codec a bounded list of records (`read_cbor_record_list`), and a
-       composition no backend lowers in a position yet is refused there by name
+       What each position holds of the grammar is its reader's to say: a
+       content-line codec's entry stays a scalar or an optional scalar
+       (`read_entry_type`), a CBOR codec's entry is any type of the grammar at
+       any depth, a union of a `&lt;sce:import kind="union"&gt;` among them
+       (`read_cbor_entry_type`, docs/adr/0101 section 1), and a composition no
+       backend lowers in a position yet is refused there by name
        (`generate/unsupported-feature`), never by this declaration. -->
   <xs:simpleType name="valueTypeExpression">
     <xs:restriction base="xs:string">
@@ -658,14 +660,19 @@
   <xs:attribute name="bit-offset" type="xs:nonNegativeInteger"/>
   <xs:attribute name="bit-size" type="sce:bitSizeType"/>
   <xs:attribute name="endian" type="sce:endianType"/>
-  <!-- A codec field's bound, which describes a foreign frame's layout (ADR
-       0077) and stays. On an event schema's text or byte string field it is
-       the legacy spelling of the bracket on the outermost type it bounds
-       (`string[N]`, `optional&lt;bytes[N]&gt;`, docs/adr/0086 section 1.3):
-       read as that bracket, reported with
+  <!-- A positional or content-line codec field's bound, which describes a
+       foreign frame's layout (ADR 0077) and stays. On an event schema's text
+       or byte string field, and on a CBOR codec's text or byte string entry
+       (docs/adr/0101 section 1.3), it is the legacy spelling of the bracket on
+       the outermost type it bounds (`string[N]`, `optional&lt;bytes[N]&gt;`,
+       docs/adr/0086 section 1.3): read as that bracket, reported with
        `validation/bound-attribute-superseded`, and refused beside a bracket
        that states the same bound. -->
   <xs:attribute name="max-size" type="xs:nonNegativeInteger"/>
+  <!-- A codec field's exact length. On a CBOR codec's `bytes` or
+       `optional&lt;bytes&gt;` entry that writes no bracket it is the byte string's
+       exact length and its bound (`bytes[L]`, docs/adr/0101 section 1.2);
+       beside a bracket it is `validation/incompatible-attributes`. -->
   <xs:attribute name="length" type="xs:nonNegativeInteger"/>
   <xs:attribute name="length-field" type="xs:string"/>
 

@@ -11,10 +11,12 @@
 //! accepts, and its entries are the record's fields, each of the type the field
 //! has, so the binding reads a field by the entry of its id.
 //!
-//! A record a field of which no format holds, a list of integers, a record
-//! within the record or a union, has no codec document; it is named below with
-//! that field, and the test holds the field to have no form, so a record that
-//! could have a codec cannot be left without one.
+//! A CBOR entry is a value of the language (docs/adr/0101, section 1), so the
+//! type of an entry and the type of its field are one type, compared whole. A
+//! record whose codec document lands with the composed codecs of ADR 0101
+//! (its Landing order step 6) is named below with its first field that is a
+//! composition, and the test holds it to have no codec document yet, so a
+//! record cannot stay on the list once its document exists.
 
 mod common;
 
@@ -22,78 +24,68 @@ use std::collections::BTreeSet;
 use std::path::Path;
 
 use common::lane_corpus::{codecs_dir, fields, mapped_types, read, CORPUS};
-use sce_build::forge::model::{CborEntryType, CodecEncoding, EntryType, ForgeDocument, SceType};
+use sce_build::forge::model::{CodecEncoding, ContentLineEntry, EntryType, ForgeDocument, SceType};
 use sce_build::forge::parser::parse_forge;
+use sce_build::forge::value_type::{Bound, ValueType, WrittenType};
 use sce_build::DocumentLabel;
 
-/// The records a mapped port of the corpus carries that no codec format holds,
-/// each with the first field that has no form in either: CBOR holds no list but
-/// a list of records whose fields are scalars, texts and byte strings, and no
-/// record within the record or union; content-line holds neither, nor a byte
-/// string (docs/SCE_TTCN3_LANE.md §12.4).
+/// The records a mapped port of the corpus carries whose codec documents land
+/// with docs/adr/0101 Landing order step 6, each with its first field that is a
+/// composition (a list, a record or a union): a CBOR entry holds it (section 1),
+/// and no backend generates such an entry yet (section 5.4).
 const NO_CODEC_FORM: &[(&str, &str)] = &[("job_status", "codes"), ("order_placed", "lines")];
 
-/// The entry a field of type `ty` is in a codec document, outside its
-/// `optional<..>`: its type and the bound its `sce:max-size` states; `None` for
-/// a type no entry of either format holds.
-fn entry_form(ty: &str) -> Option<(SceType, Option<u32>)> {
-    let bounded =
-        |prefix: &str| -> Option<u32> { ty.strip_prefix(prefix)?.strip_suffix(']')?.parse().ok() };
-    if let Some(bound) = bounded("string[") {
-        return Some((SceType::String, Some(bound)));
-    }
-    if let Some(bound) = bounded("bytes[") {
-        return Some((SceType::Bytes, Some(bound)));
-    }
-    let scalar = match ty {
-        "uint8" => SceType::Uint8,
-        "uint16" => SceType::Uint16,
-        "uint32" => SceType::Uint32,
-        "uint64" => SceType::Uint64,
-        "int8" => SceType::Int8,
-        "int16" => SceType::Int16,
-        "int32" => SceType::Int32,
-        "int64" => SceType::Int64,
-        "bool" => SceType::Bool,
-        _ => return None,
+/// The type a field written `ty` is, every bound inside it: the one type
+/// grammar's reading (docs/adr/0086, section 1); `None` for a text the grammar
+/// does not read whole.
+fn field_type(ty: &str) -> Option<ValueType> {
+    WrittenType::read(ty).ok()?.bounded().ok()
+}
+
+/// The value type of a content-line entry: its scalar, a text at its
+/// `sce:max-size`, `optional<T>` for one that may be absent; `None` for a text
+/// that states no bound.
+fn content_line_type(entry: &ContentLineEntry) -> Option<ValueType> {
+    let leaf = |scalar: &SceType| -> Option<ValueType> {
+        Some(match scalar {
+            SceType::String => ValueType::Text {
+                max: Bound::of(entry.max_size?),
+            },
+            SceType::Bytes => ValueType::Bytes {
+                max: Bound::of(entry.max_size?),
+            },
+            other => ValueType::Scalar(other.clone()),
+        })
     };
-    Some((scalar, None))
-}
-
-/// The entry type and bound of a field written `ty`: `optional<T>` is an entry
-/// that may be absent, as an optional field is (docs/adr/0055, section 8).
-fn expected_entry(ty: &str) -> Option<(EntryType, Option<u32>)> {
-    match ty
-        .strip_prefix("optional<")
-        .and_then(|inner| inner.strip_suffix('>'))
-    {
-        Some(inner) => entry_form(inner).map(|(elem, bound)| (EntryType::Optional { elem }, bound)),
-        None => entry_form(ty).map(|(scalar, bound)| (EntryType::Scalar(scalar), bound)),
+    match &entry.sce_type {
+        EntryType::Scalar(scalar) => leaf(scalar),
+        EntryType::Optional { elem } => Some(ValueType::Optional {
+            elem: Box::new(leaf(elem)?),
+        }),
     }
 }
 
-/// Whether a format holds a value of `ty`: CBOR holds an unsigned integer,
-/// a truth value, a text and a byte string, and content-line a signed integer
-/// beside them but no byte string.
-fn held_by(encoding: CodecEncoding, ty: &SceType) -> bool {
+/// Whether a format holds a value of `ty`: CBOR holds every type of the
+/// language (docs/adr/0101, section 1), and content-line a leaf, a scalar or a
+/// text, bare or optional, but no byte string (docs/adr/0101, section 1.4).
+fn held_by(encoding: CodecEncoding, ty: &ValueType) -> bool {
     match encoding {
-        CodecEncoding::Cbor => !matches!(
-            ty,
-            SceType::Int8 | SceType::Int16 | SceType::Int32 | SceType::Int64
-        ),
-        CodecEncoding::ContentLine => !matches!(ty, SceType::Bytes),
+        CodecEncoding::Cbor => true,
+        CodecEncoding::ContentLine => match ty.entry() {
+            Ok((entry, _)) => !matches!(entry.present_type(), SceType::Bytes),
+            Err(_) => false,
+        },
         CodecEncoding::Positional => false,
     }
 }
 
-/// One entry of a codec document as the binding reads it: its id, its type and
-/// the bound its `sce:max-size` states.
-type Entry = (String, EntryType, Option<u32>);
+/// One entry of a codec document as the binding reads it: its id and its type.
+type Entry = (String, ValueType);
 
 /// The entries of the codec document at `path`, or why it is no codec document
 /// of the corpus: one the parser refuses, a positional codec, or an entry of a
-/// shape a field is not (a list, an exact length, a parameter, a repeated
-/// property).
+/// shape a field is not (an exact length, a parameter, a repeated property, a
+/// text that states no bound).
 fn codec_entries(path: &Path) -> Result<(CodecEncoding, Vec<Entry>), String> {
     let text = read(path);
     let stem = path
@@ -110,11 +102,9 @@ fn codec_entries(path: &Path) -> Result<(CodecEncoding, Vec<Entry>), String> {
         CodecEncoding::Cbor => model
             .cbor_entries
             .iter()
-            .map(|entry| match (&entry.sce_type, entry.length) {
-                (CborEntryType::Leaf(ty), None) => {
-                    Ok((entry.id.clone(), ty.clone(), entry.max_size))
-                }
-                _ => Err(format!(
+            .map(|entry| match entry.length {
+                None => Ok((entry.id.clone(), entry.sce_type.clone())),
+                Some(_) => Err(format!(
                     "its entry {} is of no shape a field is: {entry:?}",
                     entry.id
                 )),
@@ -128,13 +118,13 @@ fn codec_entries(path: &Path) -> Result<(CodecEncoding, Vec<Entry>), String> {
             .entries
             .iter()
             .map(|entry| {
-                if entry.param.is_some() || entry.repeated || entry.separator.is_some() {
-                    Err(format!(
+                let shaped = entry.param.is_none() && !entry.repeated && entry.separator.is_none();
+                match content_line_type(entry).filter(|_| shaped) {
+                    Some(ty) => Ok((entry.id.clone(), ty)),
+                    None => Err(format!(
                         "its entry {} is of no shape a field is: {entry:?}",
                         entry.id
-                    ))
-                } else {
-                    Ok((entry.id.clone(), entry.sce_type.clone(), entry.max_size))
+                    )),
                 }
             })
             .collect::<Result<_, _>>()
@@ -153,31 +143,27 @@ fn mismatches(codec: &Path, schema: &Path) -> Vec<String> {
     let mut wrong = Vec::new();
     let record = fields(schema);
     for (id, ty) in &record {
-        let Some((want, bound)) = expected_entry(ty) else {
-            wrong.push(format!("the field {id}, of type {ty}, has no codec form"));
+        let Some(want) = field_type(ty) else {
+            wrong.push(format!(
+                "the field {id}, of type {ty}, is no type of the grammar"
+            ));
             continue;
         };
-        let scalar = match &want {
-            EntryType::Scalar(scalar) | EntryType::Optional { elem: scalar } => scalar,
-        };
-        if !held_by(encoding, scalar) {
+        if !held_by(encoding, &want) {
             wrong.push(format!(
                 "the field {id}, of type {ty}, has no form in {encoding:?}"
             ));
         }
-        match entries.iter().find(|(entry, _, _)| entry == id) {
+        match entries.iter().find(|(entry, _)| entry == id) {
             None => wrong.push(format!("no entry encodes the field {id}")),
-            Some((_, got, got_bound)) if (got, *got_bound) != (&want, bound) => {
-                wrong.push(format!(
-                    "the entry {id} is {got:?} bounded by {got_bound:?}, and the field {ty} is \
-                 {want:?} bounded by {bound:?}"
-                ))
-            }
+            Some((_, got)) if *got != want => wrong.push(format!(
+                "the entry {id} is `{got}`, and the field is `{want}`"
+            )),
             Some(_) => {}
         }
     }
     let ids: BTreeSet<&str> = record.iter().map(|(id, _)| id.as_str()).collect();
-    for (entry, _, _) in &entries {
+    for (entry, _) in &entries {
         if !ids.contains(entry.as_str()) {
             wrong.push(format!("the entry {entry} encodes no field of the record"));
         }
@@ -187,28 +173,37 @@ fn mismatches(codec: &Path, schema: &Path) -> Vec<String> {
 
 /// docs/SCE_TTCN3_LANE.md §12.4: each record a mapped port of a suite of the
 /// corpus carries has a codec document whose entries are its fields, or is a
-/// record of NO_CODEC_FORM whose named field no format holds.
+/// record of NO_CODEC_FORM whose named field is a composition and which has no
+/// codec document yet.
 #[test]
 fn every_mapped_message_type_has_its_codec_document() {
     let mut wrong = Vec::new();
     for suite in CORPUS {
         for (record, schema) in mapped_types(&suite.path()) {
+            let codec = codecs_dir().join(format!("{record}_codec.scxml"));
             if let Some((_, field)) = NO_CODEC_FORM.iter().find(|(name, _)| *name == record) {
                 let ty = fields(&schema)
                     .into_iter()
                     .find(|(id, _)| id == field)
                     .map(|(_, ty)| ty)
                     .unwrap_or_else(|| panic!("the record {record} has a field {field}"));
-                if expected_entry(&ty).is_some() {
+                if field_type(&ty).is_some_and(|ty| ty.entry().is_ok()) {
                     wrong.push(format!(
-                        "{}: {record} is named as a record with no codec form, but its field \
-                         {field}, of type {ty}, has one",
+                        "{}: {record} is named as a record whose codec document waits for a \
+                         composed entry, but its field {field}, of type {ty}, is no composition",
                         suite.name()
+                    ));
+                }
+                if codec.exists() {
+                    wrong.push(format!(
+                        "{}: {record} is named as a record with no codec document, and it has \
+                         {}",
+                        suite.name(),
+                        codec.display()
                     ));
                 }
                 continue;
             }
-            let codec = codecs_dir().join(format!("{record}_codec.scxml"));
             if !codec.exists() {
                 wrong.push(format!(
                     "{}: the mapped type {record} has no codec document {}",
@@ -257,9 +252,10 @@ fn every_codec_document_is_of_a_mapped_type() {
 }
 
 /// The comparison a codec document is held to is the one its reasons name: a
-/// record of a text and an integer whose entries are of another bound, of
-/// another type and of a field the record does not have is refused for each,
-/// and the CBOR codec of a signed field for its format.
+/// record whose entries are of another bound, of another width, of another
+/// sign and of a field the record does not have is refused for each; a CBOR
+/// entry holds a signed field (docs/adr/0101, section 1), and a content-line
+/// codec holds no byte string.
 #[test]
 fn a_codec_document_that_does_not_encode_its_record_is_named_why() {
     let dir = std::env::temp_dir().join(format!("sce-lane-codec-{}", std::process::id()));
@@ -273,6 +269,7 @@ fn a_codec_document_that_does_not_encode_its_record_is_named_why() {
     <data id="label" sce:type="string[8]" sce:direction="in"/>
     <data id="count" sce:type="uint16" sce:direction="in"/>
     <data id="delta" sce:type="int8" sce:direction="in"/>
+    <data id="blob" sce:type="bytes[4]" sce:direction="in"/>
   </datamodel>
 </scxml>
 "#,
@@ -285,25 +282,56 @@ fn a_codec_document_that_does_not_encode_its_record_is_named_why() {
        sce:kind="codec" sce:encoding="cbor" sce:codec-format="2" name="probe_record_codec" version="1.0">
   <datamodel>
     <data id="raw" sce:type="bytes" sce:direction="in"/>
-    <data id="label" sce:type="string" sce:key="0" sce:max-size="16" sce:direction="out"/>
+    <data id="label" sce:type="string[16]" sce:key="0" sce:direction="out"/>
     <data id="count" sce:type="uint32" sce:key="1" sce:direction="out"/>
     <data id="delta" sce:type="uint8" sce:key="2" sce:direction="out"/>
-    <data id="spare" sce:type="bool" sce:key="3" sce:direction="out"/>
+    <data id="blob" sce:type="bytes[4]" sce:key="3" sce:direction="out"/>
+    <data id="spare" sce:type="bool" sce:key="4" sce:direction="out"/>
   </datamodel>
 </scxml>
 "#,
     )
     .expect("the codec is written");
+    let lines = dir.join("probe_record_lines.scxml");
+    std::fs::write(
+        &lines,
+        r#"<scxml xmlns="http://www.w3.org/2005/07/scxml" xmlns:sce="http://sce.dev/ext"
+       sce:kind="codec" sce:encoding="content-line" sce:codec-format="2" sce:component="VEVENT" name="probe_record_lines" version="1.0">
+  <datamodel>
+    <data id="raw" sce:type="bytes" sce:direction="in"/>
+    <data id="label" sce:type="string" sce:property="LABEL" sce:max-size="8"/>
+    <data id="count" sce:type="uint16" sce:property="COUNT"/>
+    <data id="delta" sce:type="int8" sce:property="DELTA"/>
+  </datamodel>
+</scxml>
+"#,
+    )
+    .expect("the content-line codec is written");
     let wrong = mismatches(&codec, &schema);
+    let wrong_lines = mismatches(&lines, &schema);
     std::fs::remove_dir_all(&dir).expect("the directory is removed");
-    let starts = |prefix: &str| wrong.iter().any(|why| why.starts_with(prefix));
-    assert!(starts("the entry label is"), "{wrong:?}");
-    assert!(starts("the entry count is"), "{wrong:?}");
+    let starts = |wrong: &[String], prefix: &str| wrong.iter().any(|why| why.starts_with(prefix));
+    assert!(starts(&wrong, "the entry label is"), "{wrong:?}");
+    assert!(starts(&wrong, "the entry count is"), "{wrong:?}");
+    assert!(starts(&wrong, "the entry delta is"), "{wrong:?}");
     assert!(
-        starts("the field delta, of type int8, has no form in Cbor"),
+        starts(&wrong, "the entry spare encodes no field"),
         "{wrong:?}"
     );
-    assert!(starts("the entry delta is"), "{wrong:?}");
-    assert!(starts("the entry spare encodes no field"), "{wrong:?}");
-    assert_eq!(wrong.len(), 5, "{wrong:?}");
+    // A signed field and a byte string each have their CBOR form.
+    assert!(
+        !wrong.iter().any(|why| why.contains("has no form")),
+        "{wrong:?}"
+    );
+    assert_eq!(wrong.len(), 4, "{wrong:?}");
+    // The content-line codec encodes the record but for its byte string,
+    // which no content line holds.
+    assert_eq!(
+        wrong_lines,
+        [
+            "the field blob, of type bytes[4], has no form in ContentLine".to_string(),
+            "no entry encodes the field blob".to_string(),
+        ],
+        "{wrong_lines:?}"
+    );
 }

@@ -121,9 +121,7 @@ struct Record {
 
 /// The record the list entry `e` holds.
 fn record(plan: &CborPlan<'_>, imports: &[ImportContext], e: &CborEntry) -> Record {
-    let list = e
-        .record_list()
-        .expect("a list entry holds a list of records");
+    let list = cbor_codec::record_list(e).expect("a list entry holds a list of records");
     let scope = crate::forge::generator::import_type_scope(imports);
     let scoped = scope
         .records
@@ -191,7 +189,7 @@ fn held(
             let class = refinement_class(struct_name, &e.id, &SceType::String);
             let bound = Bound {
                 least: 0,
-                most: e.max_size.map(u64::from),
+                most: e.size_bound().map(u64::from),
             };
             before.push_str(&bounded_class(struct_name, &e.id, &class, &bound, true));
             classed(class)
@@ -205,16 +203,14 @@ fn held(
                 },
                 _ => Bound {
                     least: 0,
-                    most: e.max_size.map(u64::from),
+                    most: e.size_bound().map(u64::from),
                 },
             };
             before.push_str(&bounded_class(struct_name, &e.id, &class, &bound, false));
             classed(class)
         }
         CborValue::RecordList { .. } => {
-            let list = e
-                .record_list()
-                .expect("a list entry holds a list of records");
+            let list = cbor_codec::record_list(e).expect("a list entry holds a list of records");
             let payload = record(plan, imports, e).payload;
             let class = list_class(struct_name, &e.id);
             // The least is 0, as Rust's `BoundedList` holds it, so a value of
@@ -233,6 +229,10 @@ fn held(
             ));
             classed(class)
         }
+        CborValue::Unlowered => unreachable!(
+            "a codec of an entry no printer lowers is refused before it renders \
+             (`cbor_codec::unlowered_forms`)"
+        ),
     }
 }
 
@@ -357,6 +357,10 @@ fn write_value(
             ));
             out
         }
+        CborValue::Unlowered => unreachable!(
+            "a codec of an entry no printer lowers is refused before it renders \
+             (`cbor_codec::unlowered_forms`)"
+        ),
     }
 }
 
@@ -437,10 +441,12 @@ pub(crate) fn source_case(
             CborValue::Bytes { .. } => {
                 Holds::Classed(refinement_class(&path.type_name, &e.id, &SceType::Bytes))
             }
-            CborValue::Enum { .. } | CborValue::RecordList { .. } => unreachable!(
-                "the notation refuses a value of an enum and a list of records \
-                 (`source_notation::cbor_elements`)"
-            ),
+            CborValue::Enum { .. } | CborValue::RecordList { .. } | CborValue::Unlowered => {
+                unreachable!(
+                    "the notation refuses a value of an enum, a list of records and a type \
+                     no printer lowers (`source_notation::cbor_elements`)"
+                )
+            }
         }
     });
     super::source_case::map_or_line_case(path, elements.into_iter().zip(holds).collect())

@@ -1618,6 +1618,13 @@ pub enum CborValue {
         /// The list's lower count.
         min: u32,
     },
+    /// A value of a type no printer lowers yet (docs/adr/0101, section 5.4):
+    /// a signed integer, a float, a record, a union, or a list whose element
+    /// is no record ([`crate::forge::cbor_codec::unlowered_part`]). A backend
+    /// refuses the codec by name before it prints it
+    /// ([`crate::forge::cbor_codec::refusal`]), and a printer that asks which
+    /// forms of a plan it lowers names this one among them.
+    Unlowered,
 }
 
 /// The carrier of an enum a CBOR entry holds.
@@ -1647,8 +1654,12 @@ impl<'m> CborPlan<'m> {
                 entry,
                 required: entry.is_required(),
                 value: match entry.leaf_type() {
+                    _ if crate::forge::cbor_codec::unlowered_part(entry).is_some() => {
+                        CborValue::Unlowered
+                    }
                     None => CborValue::RecordList {
-                        min: entry.record_list().map_or(0, |list| list.min),
+                        min: crate::forge::cbor_codec::record_list(entry)
+                            .map_or(0, |list| list.min),
                     },
                     Some(SceType::Bool) => CborValue::Bool,
                     Some(SceType::String) => CborValue::Text,

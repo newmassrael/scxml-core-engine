@@ -145,40 +145,40 @@ pub fn largest_encoded_bytes(codec: &SizedCodec) -> Result<u64, Unbounded> {
     }
 }
 
-/// A CBOR map: the arithmetic of the C11 renderer, once every string and byte
-/// string entry has a bound to take and every list of records has a record the
-/// codec's imports resolve ([`SizedCodec::scope`]), sized by the one type
-/// grammar's calculus (docs/adr/0086, section 2.1).
+/// A CBOR map: the arithmetic of the C11 renderer, once every record and union
+/// an entry's type names resolves in the codec's imports
+/// ([`SizedCodec::scope`]), sized by the one type grammar's calculus
+/// (docs/adr/0086, section 2.1). Every text and byte string states its bound
+/// (docs/adr/0101, section 1.3). A size past 2^64 - 1 bytes, which a compile of
+/// the codec refuses (`validation/encoded-size-overflow`), is held at the
+/// largest `u64`, as every size this pass computes is.
 fn cbor_codec(codec: &SizedCodec) -> Result<u64, Unbounded> {
+    use crate::forge::value_type::SizeError;
     let m = &codec.model;
-    for entry in &m.cbor_entries {
-        if let Some(list) = entry.record_list() {
-            if crate::forge::cbor_codec::record_list_max_bytes(entry, &codec.scope).is_err() {
-                return Err(Unbounded::Unresolved {
-                    site: format!("entry '{}'", entry.id),
-                    alias: list.record.to_string(),
-                });
+    let unresolved = |site: String, why: SizeError| match why {
+        SizeError::Unresolved { alias } => Some(Unbounded::Unresolved { site, alias }),
+        SizeError::ContainsItself { cycle } => Some(Unbounded::Unresolved {
+            site,
+            alias: cycle.first().cloned().unwrap_or_default(),
+        }),
+        SizeError::Overflow => None,
+    };
+    for entry in m.cbor_entries.iter().filter(|e| e.leaf_type().is_none()) {
+        if let Err(why) = crate::forge::value_type::cbor_max_len(entry.present_type(), &codec.scope)
+        {
+            if let Some(refusal) = unresolved(format!("entry '{}'", entry.id), why) {
+                return Err(refusal);
             }
-            continue;
-        }
-        let shape = match entry.leaf_type() {
-            Some(SceType::String) => "string",
-            Some(SceType::Bytes) => "bytes",
-            _ => continue,
-        };
-        if entry.length.or(entry.max_size).is_none() {
-            return Err(Unbounded::Missing {
-                subject: format!("entry '{}' (a {shape} entry)", entry.id),
-                declaration: "sce:length or sce:max-size",
-            });
         }
     }
-    Ok(crate::forge::cbor_codec::max_encoded_bytes(
+    match crate::forge::cbor_codec::max_encoded_bytes(
         m,
         crate::forge::model::Measured::Bound,
         &codec.scope,
-    )
-    .expect("every string entry has its bound and every list its record, found above"))
+    ) {
+        Ok(bytes) => Ok(bytes),
+        Err(why) => unresolved(format!("codec '{}'", m.name), why).map_or(Ok(u64::MAX), Err),
+    }
 }
 
 /// A content-line component: the arithmetic of the C11 renderer, over the
@@ -796,28 +796,34 @@ mod tests {
                 crate::forge::model::Measured::Bound,
                 &codec.scope
             ),
-            Some(368)
+            Ok(368)
         );
     }
 
     #[test]
-    fn a_cbor_byte_string_with_no_bound_is_refused() {
+    fn a_cbor_map_past_the_largest_size_is_held_at_it() {
+        // `list<list<list<record:Entry>[N]>[N]>[N]` at N = 2^32 - 1: each
+        // record is 38 bytes, so the outer list is past 2^64 - 1 bytes. The
+        // compile refuses it (`validation/encoded-size-overflow`); this pass
+        // holds it at the largest `u64`, never at a wrapped, smaller number.
         let xml = codec_xml(
             CBOR_ATTRS,
-            "",
+            r#"  <sce:import kind="event-schema" src="entry.scxml" as="Entry"/>"#,
             r#"    <data id="raw" sce:type="bytes" sce:direction="in"/>
-    <data id="payload" sce:type="bytes" sce:key="5" sce:direction="out"/>"#,
+    <data id="huge" sce:type="list&lt;list&lt;list&lt;record:Entry&gt;[4294967295]&gt;[4294967295]&gt;[4294967295]" sce:key="0" sce:direction="out"/>"#,
         );
-        match refusal(&xml) {
-            Unbounded::Missing {
-                subject,
-                declaration,
-            } => {
-                assert!(subject.contains("'payload'"), "{subject}");
-                assert_eq!(declaration, "sce:length or sce:max-size");
-            }
-            other => panic!("expected Missing, got {other:?}"),
-        }
+        let codec = SizedCodec {
+            scope: entry_scope(),
+            ..sized(&xml, Vec::new())
+        };
+        assert_eq!(largest_encoded_bytes(&codec), Ok(u64::MAX));
+        assert_eq!(
+            crate::forge::cbor_codec::entry_past_encoded_size(&codec.model, &codec.scope),
+            Some((
+                "huge".to_string(),
+                "list<list<list<record:Entry>[4294967295]>[4294967295]>[4294967295]".to_string()
+            ))
+        );
     }
 
     /// A map of an exact id and a list of at most three records of `author`

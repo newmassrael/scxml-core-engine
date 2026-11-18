@@ -19,14 +19,14 @@ mutation_oracles sce-build/tests/a_rust_cbor_codec_with_text_or_bytes_has_an_own
 
 mutation_case "a string's bound does not reach its type" <<'PY'
 edit("sce-build/src/forge/cbor_codec.rs",
-     r'''        "text" | "bytes" => Some(''',
-     r'''        "bytes" => Some(''')
+     r'''        "text" | "bytes" => e.size_bound()''',
+     r'''        "bytes" => e.size_bound()''')
 PY
 
 mutation_case "a byte string's bound does not reach its type" <<'PY'
 edit("sce-build/src/forge/cbor_codec.rs",
-     r'''        "text" | "bytes" => Some(''',
-     r'''        "text" => Some(''')
+     r'''        "text" | "bytes" => e.size_bound()''',
+     r'''        "text" => e.size_bound()''')
 PY
 
 mutation_case "an exact byte string admits any shorter length" <<'PY'

@@ -29,13 +29,13 @@
 //! * The owned form is re-encoded exactly as the view is, through the codec's
 //!   source interface: it implements `{Name}Source`, `as_borrowed` reads through it,
 //!   and `encode` is `encode_source`.
-//! * A map with a string or byte string that states no bound has a mirror as
-//!   every other map does, the entry held at `{ usize::MAX }` in what the profile
-//!   answers for its tag, which `Inline` does not answer for (docs/adr/0077 §7);
-//!   a map of scalars borrows nothing and has none: one predicate
-//!   (`cbor_codec::rust_owned_mirror`) says it for the codec and the answer a
-//!   container is given for the element, and another
-//!   (`cbor_codec::has_unbounded_text_or_bytes`) the fact a log is judged by.
+//! * A string or byte string that states no bound is no CBOR entry: it is refused
+//!   at its type (docs/adr/0101, section 1.3), so every map that borrows has a
+//!   mirror `Inline` holds; a map of scalars borrows nothing and has none: one
+//!   predicate (`cbor_codec::rust_owned_mirror`) says it for the codec and the
+//!   answer a container is given for the element, and another
+//!   (`cbor_codec::has_unbounded_text_or_bytes`) the fact a log is judged by,
+//!   which no map read from a document sets.
 //! * With `generate --owned-origin` the mirror gains `try_into_owned_in_origin`, as
 //!   every other generated owned form does: a string is built by what the profile
 //!   answers for the entry's tag, `OriginStr<Tag>::str_from`, and a byte string by
@@ -49,6 +49,7 @@
 use std::path::Path;
 
 use sce_build::forge::cbor_codec::{has_unbounded_text_or_bytes, rust_owned_mirror};
+use sce_build::forge::diagnostic::ToDiagnostics;
 use sce_build::forge::model::{CodecModel, ForgeDocument};
 use sce_build::forge::parser::parse_forge;
 use sce_build::generator::Language;
@@ -85,11 +86,11 @@ const BOUNDED: &str = r#"    <data id="note" sce:type="string" sce:key="1" sce:m
     <data id="level" sce:type="uint8" sce:key="6" sce:direction="out"/>
     <data id="urgent" sce:type="optional&lt;bool&gt;" sce:key="7" sce:direction="out"/>"#;
 
-/// A text with no bound, among entries that all state theirs.
+/// A text with no bound, among entries that all state theirs: refused.
 const ONE_UNBOUNDED: &str = r#"    <data id="note" sce:type="string" sce:key="1" sce:max-size="8" sce:direction="out"/>
     <data id="free" sce:type="string" sce:key="2" sce:direction="out"/>"#;
 
-/// A byte string with no bound and nothing else.
+/// A byte string with no bound and nothing else: refused.
 const ONLY_UNBOUNDED: &str =
     r#"    <data id="free" sce:type="bytes" sce:key="1" sce:direction="out"/>"#;
 
@@ -149,17 +150,32 @@ fn assert_holds(code: &str, needles: &[&str]) {
 
 #[test]
 fn one_predicate_says_which_map_has_a_mirror() {
-    // Every map that borrows has a mirror, a string that states no bound among
-    // them, and the map that borrows nothing has none.
-    for (entries, mirror, unbounded) in [
-        (BOUNDED, true, false),
-        (ONE_UNBOUNDED, true, true),
-        (ONLY_UNBOUNDED, true, true),
-        (SCALARS, false, false),
-    ] {
+    // Every map that borrows has a mirror, and the map that borrows nothing has
+    // none; no map read from a document holds a text with no bound.
+    for (entries, mirror) in [(BOUNDED, true), (SCALARS, false)] {
         let m = codec(&document(entries));
         assert_eq!(rust_owned_mirror(&m), mirror, "{entries}");
-        assert_eq!(has_unbounded_text_or_bytes(&m), unbounded, "{entries}");
+        assert!(!has_unbounded_text_or_bytes(&m), "{entries}");
+    }
+}
+
+#[test]
+fn an_entry_with_no_bound_is_refused_at_its_type() {
+    // docs/adr/0101, section 1.3: a CBOR entry is a value of the language, and a
+    // text or byte string with no bound is no type of it, on every backend.
+    for entries in [ONE_UNBOUNDED, ONLY_UNBOUNDED] {
+        let refusal = match parse_forge(&document(entries), label()) {
+            Err(refusal) => refusal,
+            Ok(other) => panic!("a text with no bound is refused, got {other:?}"),
+        };
+        let code = serde_json::to_value(refusal.error.to_diagnostics()[0].code)
+            .expect("a code serialises");
+        assert_eq!(code, "validation/attribute-rule-violated", "{entries}");
+        let why = refusal.error.to_string();
+        assert!(
+            why.contains("entry 'free'") && why.contains("has no bound"),
+            "{entries}: {why}"
+        );
     }
 }
 
@@ -204,28 +220,6 @@ fn the_view_holds_each_entry_within_its_bound_and_made_through_the_one_door() {
             "blob = Some(::sce_forge_runtime::codec::Bounded::new(cbor::read_bytes(&mut c, Some(12))?).ok_or(CodecError::CborOutOfRange)?);",
             "tag = Some(::sce_forge_runtime::codec::Bounded::new(cbor::read_bytes_exact(&mut c, 4)?).ok_or(CodecError::CborWrongLength)?);",
         ],
-    );
-}
-
-#[test]
-fn an_entry_with_no_bound_is_held_at_no_bound_in_one_shape() {
-    let code = generated(&document(ONE_UNBOUNDED));
-    assert_holds(
-        &code,
-        &[
-            "pub note: ::sce_forge_runtime::codec::Text<'a, 8>,",
-            "pub free: ::sce_forge_runtime::codec::Text<'a, { usize::MAX }>,",
-            "free = Some(::sce_forge_runtime::codec::Bounded::new(cbor::read_text(&mut c, None)?).ok_or(CodecError::CborOutOfRange)?);",
-            // The mirror holds it in what the profile answers for its tag, and
-            // `Inline` answers only for the entry that states its bound.
-            "    pub free: ::sce_forge_runtime::codec::Bounded<<S as ::sce_forge_runtime::codec::HoldsStr<ProbeCborFreeField>>::Str, { usize::MAX }>,",
-            "impl ::sce_forge_runtime::codec::HoldsStr<ProbeCborNoteField> for ::sce_forge_runtime::codec::Inline {",
-            "// `Inline` does not answer for `free`",
-        ],
-    );
-    assert!(
-        !code.contains("HoldsStr<ProbeCborFreeField> for ::sce_forge_runtime::codec::Inline"),
-        "{code}"
     );
 }
 
@@ -284,27 +278,6 @@ fn a_map_that_borrows_nothing_has_no_mirror() {
     assert!(!code.contains("transcode_in"), "{code}");
     // What every map has is still there: the source interface.
     assert_holds(&code, &["pub trait ProbeCborSource {"]);
-}
-
-#[test]
-fn a_map_with_an_entry_of_no_bound_has_a_mirror_at_the_profiles_that_hold_it() {
-    for entries in [ONE_UNBOUNDED, ONLY_UNBOUNDED] {
-        let code = generated(&document(entries));
-        assert_holds(
-            &code,
-            &[
-                "pub struct ProbeCbor<'a> {",
-                "pub fn try_into_owned_in<S: ProbeCborFrom<'a>>(self) -> Result<ProbeCborOwned<S>, CodecError> {",
-                // The default profile of the heap-free tier is `Inline`, which
-                // does not hold the map, so no item names the map there.
-                "// No projection at the build's default profile",
-            ],
-        );
-        assert!(
-            !code.contains("pub fn try_into_owned(self)"),
-            "{entries}\n{code}"
-        );
-    }
 }
 
 #[test]
@@ -411,7 +384,7 @@ fn the_default_output_has_no_origin_projection() {
 
 #[test]
 fn the_option_only_appends_the_projection_to_a_map_with_a_mirror() {
-    for entries in [BOUNDED, ONE_UNBOUNDED, ONLY_UNBOUNDED, SCALARS] {
+    for entries in [BOUNDED, SCALARS] {
         let text = document(entries);
         let off = generated_with_origin(&text, false);
         let on = generated_with_origin(&text, true);

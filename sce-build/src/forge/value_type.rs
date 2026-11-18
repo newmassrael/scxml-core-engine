@@ -422,6 +422,23 @@ impl<B> TypeOf<B> {
         }
     }
 
+    /// The type as one scalar: a fixed-width number, `bool` or an enum, or a
+    /// text or a byte string read as `string` or `bytes`; `None` for a list,
+    /// a record, a union or an optional value. An optional scalar is not a
+    /// scalar: a value of it may be absent. A written type and a resolved one
+    /// answer alike: the bound plays no part.
+    pub fn scalar(&self) -> Option<&SceType> {
+        match self {
+            Self::Scalar(t) => Some(t),
+            Self::Text { .. } => Some(&TEXT_SCALAR),
+            Self::Bytes { .. } => Some(&BYTES_SCALAR),
+            Self::List { .. }
+            | Self::Record { .. }
+            | Self::Union { .. }
+            | Self::Optional { .. } => None,
+        }
+    }
+
     /// The element of an optional value, or `None` for any other type. A
     /// written type and a resolved one answer alike: the bound plays no part.
     pub fn optional_elem(&self) -> Option<&Self> {
@@ -1265,22 +1282,6 @@ impl WrittenType {
             SceType::String => Self::Text { max: None },
             SceType::Bytes => Self::Bytes { max: None },
             other => Self::Scalar(other),
-        }
-    }
-
-    /// The type as one scalar: a fixed-width number, `bool` or an enum, or a
-    /// text or a byte string read as `string` or `bytes`; `None` for a list,
-    /// a record, a union or an optional value. An optional scalar is not a
-    /// scalar: a value of it may be absent.
-    pub fn scalar(&self) -> Option<&SceType> {
-        match self {
-            Self::Scalar(t) => Some(t),
-            Self::Text { .. } => Some(&TEXT_SCALAR),
-            Self::Bytes { .. } => Some(&BYTES_SCALAR),
-            Self::List { .. }
-            | Self::Record { .. }
-            | Self::Union { .. }
-            | Self::Optional { .. } => None,
         }
     }
 

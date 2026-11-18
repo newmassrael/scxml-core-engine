@@ -250,8 +250,10 @@ union with one case per date kind, so the rule of which numbers a kind reads is 
    Three positions refuse it, each for a reason that is not the union's:
    - an event's payload as a whole is a record, its event schema; a union is a field's type. An event whose payload
      is one of several shapes holds one union field, or is several events, as SCXML dispatches by event name;
-   - a CBOR or content-line codec's entry is an `EntryType` (ADR 0086 section 1.7) and describes a foreign frame,
-     which says its alternatives with `<sce:variant>`: `validation/invalid-attribute`, with the entry types;
+   - a content-line codec's entry is an `EntryType` (ADR 0086 section 1.7) and describes a foreign frame, which
+     says its alternatives with `<sce:variant>`: `validation/invalid-attribute`, with the entry types. (Amended by
+     ADR 0101 section 1: a CBOR codec's entry is a value of the language and holds a union, imported by
+     `<sce:import kind="union">`.);
    - a `sce:request` schema of a host-run invocation is read back from the `params` carrier, which has no object, so
      a union field there is refused as an optional one is (ADR 0055 section 2, `validation/typed-invoke-schema`). A
      `sce:result`, which the host completes with JSON, may hold one.

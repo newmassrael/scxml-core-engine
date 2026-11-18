@@ -4591,13 +4591,26 @@ fn render_event_schema(
     // section 2.2). What a host sizes a buffer the event's data is written into
     // by, and a C11 machine its slot.
     let scope = import_type_scope(imports);
+    // A size past 2^64 - 1 bytes is the fact `validation/encoded-size-overflow`
+    // states (docs/adr/0101, section 4.4); a record the scope does not resolve,
+    // or one that holds itself, is refused by name.
     let data_max_len =
         crate::forge::value_type::payload_json_max_len(&typed, &scope).map_err(|refusal| {
-            ForgeError::from(GenerateError::unsupported(format!(
-                "{}: the largest payload of the event has no size the build can compute: \
-                 {refusal}",
-                m.name
-            )))
+            match refusal {
+                crate::forge::value_type::SizeError::Overflow => {
+                    let fields: Vec<String> =
+                        typed.iter().map(|(id, ty)| format!("{id}: {ty}")).collect();
+                    ForgeError::from(crate::forge::error::ValidationError::EncodedSizeOverflow {
+                        ty: format!("{{ {} }}", fields.join(", ")),
+                        place: format!("the payload of the event schema '{}'", m.name),
+                    })
+                }
+                other => ForgeError::from(GenerateError::unsupported(format!(
+                    "{}: the largest payload of the event has no size the build can compute: \
+                     {other}",
+                    m.name
+                ))),
+            }
         })?;
     ctx.insert("data_max_len".into(), data_max_len.into());
     // The payload's JSON Schema, every bound as this build resolved it, and
@@ -4846,10 +4859,22 @@ impl<'i> UnionUnit<'i> {
             },
             &root,
         )
-        .map_err(|why| {
-            refused(format!(
-                "its largest value has no size the build can compute: {why}"
-            ))
+        .map_err(|why| match why {
+            // docs/adr/0101, section 4.4: one fact, one code.
+            crate::forge::value_type::SizeError::Overflow => {
+                ForgeError::from(crate::forge::error::ValidationError::EncodedSizeOverflow {
+                    ty: format!("union:{}", m.name),
+                    place: format!("the union document '{}'", m.name),
+                })
+                .at_line(
+                    m.source_location
+                        .as_ref()
+                        .and_then(|location| location.line),
+                )
+            }
+            other => refused(format!(
+                "its largest value has no size the build can compute: {other}"
+            )),
         })?;
         Ok(Self {
             tag,
@@ -13598,6 +13623,15 @@ fn render_codec(
     // SCE_FORGE.md §4.6: a CBOR codec has no positional field for anything
     // below to read, so it is rendered by its own module before any of it runs.
     if m.encoding == CodecEncoding::Cbor {
+        // docs/adr/0101 section 5.4: an entry of a type the backend does not
+        // print yet is refused by the one sentence the conformance schedule
+        // reads, before any printer asks the plan for its forms.
+        if let Some(why) = crate::forge::cbor_codec::refusal(lang, m) {
+            return Err(ForgeError::from(GenerateError::unsupported_at(
+                why,
+                m.source_location.clone(),
+            )));
+        }
         // docs/adr/0081 step 4: a C++ or a Python map is printed from its
         // plan, or refused by the form the printer does not lower, as a
         // positional codec is.
@@ -38361,7 +38395,7 @@ impl LangCtx {
         let mut alias = String::new();
         let held = match present {
             SceType::String => lowering::c_string_storage_type(
-                bound.expect("a C11 text entry carries its bound: `cbor_codec::refusal` saw to it"),
+                bound.expect("a C11 text entry carries its bound: its type or codec states one"),
             ),
             SceType::Bytes => lowering::c_bytes_storage_type(
                 bound.expect("a C11 byte string entry carries its bound, as a text does"),

@@ -234,7 +234,9 @@ pub(super) fn cbor_elements(
                     e.leaf_type()
                         .expect("an unsigned integer entry is a leaf entry"),
                 ),
-                CborValue::Text => Kind::Text { most: e.max_size },
+                CborValue::Text => Kind::Text {
+                    most: e.size_bound(),
+                },
                 CborValue::Bytes { exact: true } => {
                     let length = e.length.expect("an exact byte string states its length");
                     Kind::Bytes {
@@ -244,7 +246,7 @@ pub(super) fn cbor_elements(
                 }
                 CborValue::Bytes { exact: false } => Kind::Bytes {
                     least: 0,
-                    most: e.max_size,
+                    most: e.size_bound(),
                 },
                 CborValue::Enum { .. } => {
                     return Err(format!(
@@ -256,6 +258,12 @@ pub(super) fn cbor_elements(
                     return Err(format!(
                         "`{}`: a case does not state a list of records yet",
                         e.id
+                    ))
+                }
+                CborValue::Unlowered => {
+                    return Err(format!(
+                        "`{}`: a case does not state a value of `{}` yet",
+                        e.id, e.sce_type
                     ))
                 }
             };

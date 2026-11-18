@@ -34,17 +34,18 @@ use crate::forge::value_type::ValueType;
 use crate::generator::Language;
 
 /// Every form of the CBOR codec `plan` the C++ printer does not print, each a
-/// clause the codec's refusal names it by: none, since every CBOR plan is
-/// printed. An encode that can refuse is
+/// clause the codec's refusal names it by: an entry of a type docs/adr/0085
+/// Landing order step 3a did not lower ([`cbor_codec::unlowered_forms`]),
+/// and nothing else. An encode that can refuse is
 /// printed with its checks before the first byte (`refusal_checks`), and a
 /// record's byte string is held in the `std::vector` of the schema's unit and
 /// held to its bound by those checks. The caller asks every plan alike, as it
 /// asks a positional one, so a form a later plan adds is named here.
 pub(in super::super) fn unlowered_forms(
-    _plan: &CborPlan<'_>,
+    plan: &CborPlan<'_>,
     _imports: &[ImportContext],
 ) -> Vec<String> {
-    Vec::new()
+    cbor_codec::unlowered_forms(plan)
 }
 
 /// The type a present value of the leaf entry `e` is, asked of an entry that
@@ -151,7 +152,7 @@ fn records(plan: &CborPlan<'_>, l: &LangCtx, imports: &[ImportContext]) -> Vec<R
     };
     let mut out: Vec<Record> = Vec::new();
     for item in &plan.entries {
-        let Some(list) = item.entry.record_list() else {
+        let Some(list) = cbor_codec::record_list(item.entry) else {
             continue;
         };
         if out.iter().any(|r| r.alias == list.record) {
@@ -380,12 +381,16 @@ impl Entry<'_> {
     }
 }
 
-/// The bound a text or a byte string of `e` is held to, as `Max` or `Max, Min`.
+/// The bound a text or a byte string of `e` is held to, as `Max` or `Max, Min`:
+/// the bound its type states (docs/adr/0101, section 1.3), and an exact
+/// length as both.
 fn bound_args(e: &CborEntry, exact: bool) -> String {
-    match (exact, e.length, e.max_size) {
-        (true, Some(length), _) => format!("{length}, {length}"),
-        (_, _, Some(max)) => max.to_string(),
-        _ => "::SCE::Forge::kUnbounded".to_string(),
+    match (exact, e.length) {
+        (true, Some(length)) => format!("{length}, {length}"),
+        _ => e
+            .size_bound()
+            .expect("a text or byte string entry states its bound")
+            .to_string(),
     }
 }
 
@@ -396,7 +401,7 @@ fn entry<'p>(
     item: &'p CborItem<'p>,
 ) -> Entry<'p> {
     let e = item.entry;
-    if let Some(list) = e.record_list() {
+    if let Some(list) = cbor_codec::record_list(e) {
         // A view of the schema's payload within the list's count, held in the
         // owning list of the same bound (docs/adr/0065 §6 R2, docs/adr/0081
         // step 4), as a positional codec holds a list of entries. Only the
@@ -492,6 +497,10 @@ fn write_value(l: &LangCtx, entry: &Entry<'_>) -> String {
              \x20           }}",
             record_fns(entry).1
         ),
+        CborValue::Unlowered => unreachable!(
+            "a codec of an entry no printer lowers is refused before it renders \
+             ([`unlowered_forms`])"
+        ),
     }
 }
 
@@ -545,8 +554,7 @@ fn refusal_checks(
             if min > 0 {
                 checks.push(format!("if (v.size() < {min}) {}", refuse()));
             }
-            let alias = e
-                .record_list()
+            let alias = cbor_codec::record_list(e)
                 .map(|list| list.record)
                 .expect("a list entry holds a list of records");
             let unbounded = crate::forge::generator::import_type_scope(imports)
@@ -596,8 +604,10 @@ fn refusal_checks(
 fn read_value(l: &LangCtx, imports: &[ImportContext], entry: &Entry<'_>) -> String {
     let e = entry.item.entry;
     let name = &entry.name;
-    let limit =
-        |max: Option<u32>| max.map_or_else(|| "std::nullopt".to_string(), |m| m.to_string());
+    let limit = |max: Option<u32>| {
+        max.expect("a text or byte string entry states its bound")
+            .to_string()
+    };
     // A read whose `Decoded` holds the value as the local holds it.
     let whole = |read: String| {
         format!(
@@ -608,13 +618,13 @@ fn read_value(l: &LangCtx, imports: &[ImportContext], entry: &Entry<'_>) -> Stri
     };
     match entry.item.value {
         CborValue::Bool => whole("cbor::read_bool(c)".to_string()),
-        CborValue::Text => whole(format!("cbor::read_text(c, {})", limit(e.max_size))),
+        CborValue::Text => whole(format!("cbor::read_text(c, {})", limit(e.size_bound()))),
         CborValue::Bytes { exact: true } => whole(format!(
             "cbor::read_bytes_exact(c, {})",
             e.length.expect("an exact byte string states its length")
         )),
         CborValue::Bytes { exact: false } => {
-            whole(format!("cbor::read_bytes(c, {})", limit(e.max_size)))
+            whole(format!("cbor::read_bytes(c, {})", limit(e.size_bound())))
         }
         CborValue::Uint { wide: true } => whole("cbor::read_uint(c)".to_string()),
         CborValue::Enum { .. } => {
@@ -652,8 +662,7 @@ fn read_value(l: &LangCtx, imports: &[ImportContext], entry: &Entry<'_>) -> Stri
         // A definite-length array within the list's count, refused before any
         // record is read where it is past it, each item one record's map.
         CborValue::RecordList { min } => {
-            let list = e
-                .record_list()
+            let list = cbor_codec::record_list(e)
                 .expect("a list of records entry holds a list of records");
             let short = if min > 0 {
                 format!(" || *_len < {min}")
@@ -676,6 +685,10 @@ fn read_value(l: &LangCtx, imports: &[ImportContext], entry: &Entry<'_>) -> Stri
                 decode = record_fns(entry).0
             )
         }
+        CborValue::Unlowered => unreachable!(
+            "a codec of an entry no printer lowers is refused before it renders \
+             ([`unlowered_forms`])"
+        ),
     }
 }
 

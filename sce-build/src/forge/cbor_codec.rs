@@ -22,7 +22,8 @@ use crate::forge::generator::{
 };
 use crate::forge::model::{CborEntry, CodecModel, Measured, SceType};
 use crate::forge::value_type::{
-    cbor_max_len, ScopedRecord, SizeError, TypeEnv, TypeScope, ValueType,
+    cbor_head_len, cbor_max_len, Composition, ScopedRecord, SizeError, TypeEnv, TypeScope,
+    ValueType,
 };
 
 // ⚠ An entry's `name` is the backend's field identifier
@@ -65,19 +66,109 @@ pub fn lowers_record_list(lang: Language) -> bool {
     }
 }
 
+/// Whether `lang` prints a CBOR entry of every type of the language
+/// (docs/adr/0101, section 2.1): the one answer the generator's refusal
+/// ([`refusal`]) and the conformance schedule read, so a fixture is run exactly
+/// where it generates. A backend that does not prints the shapes of
+/// docs/adr/0085 Landing order step 3a and refuses every other by name
+/// ([`unlowered_part`]). One arm per backend, so a backend's landing flips its
+/// own line (docs/adr/0101, section 5.4).
+#[allow(clippy::match_like_matches_macro)]
+pub fn lowers_every_entry_type(lang: Language) -> bool {
+    match lang {
+        Language::Rust => false,
+        Language::Kotlin => false,
+        Language::Cpp => false,
+        Language::Go => false,
+        Language::Python => false,
+        Language::C11 => false,
+        Language::Swift => false,
+    }
+}
+
+/// The part of the type of `e` the printers of docs/adr/0085 Landing order
+/// step 3a do not lower, or `None` for an entry they print. They print an
+/// unsigned integer, a `bool`, a text, a byte string, a value of an enum and a
+/// bounded list of records, each one bare or `optional<T>` (a record of the
+/// list is judged apart, [`record_list_unlowered`]). Of any other type the part
+/// is the entry's present type: a signed integer or a float itself, a record,
+/// a union, or a list whose element is no record.
+pub fn unlowered_part(e: &CborEntry) -> Option<&ValueType> {
+    let present = e.present_type();
+    let printed = match present {
+        ValueType::Scalar(t) => t.is_unsigned() || matches!(t, SceType::Bool | SceType::Enum(_)),
+        ValueType::Text { .. } | ValueType::Bytes { .. } => true,
+        ValueType::List { elem, .. } => matches!(**elem, ValueType::Record { .. }),
+        ValueType::Optional { .. } | ValueType::Record { .. } | ValueType::Union { .. } => false,
+    };
+    (!printed).then_some(present)
+}
+
+/// Each entry of `plan` of a type the printers do not lower ([`unlowered_part`]),
+/// as the clause a printer's list of the forms it does not print names it by
+/// (docs/adr/0101, section 5.4), in declaration order; empty for a codec whose
+/// every entry they print.
+pub(crate) fn unlowered_forms(plan: &crate::forge::encode_plan::CborPlan<'_>) -> Vec<String> {
+    plan.entries
+        .iter()
+        .filter_map(|item| {
+            let composition = Composition::of(unlowered_part(item.entry)?);
+            Some(format!(
+                "CBOR entry '{}' holds `{}`, a type of the language whose {} the printer does \
+                 not lower in a CBOR codec yet",
+                item.entry.id, composition.place, composition.constructor
+            ))
+        })
+        .collect()
+}
+
+/// The list of records a CBOR codec's entry holds (docs/adr/0085, Landing
+/// order step 3a): the alias of the event schema each record is, its bounds,
+/// and the list's type outside any `optional<…>`, which its size is computed
+/// from. The view the printers of that step read an entry through.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct RecordList<'a> {
+    /// The alias the codec imports the record's event schema under.
+    pub record: &'a str,
+    /// The most records the list holds.
+    pub max: u32,
+    /// The fewest records the list holds, its lower count (docs/adr/0086,
+    /// section 15); 0 where it states none.
+    pub min: u32,
+    /// `list<record:R>[N]` itself.
+    pub list: &'a ValueType,
+}
+
+/// The list of records `e` holds, bare or `optional<…>`, or `None` for an
+/// entry of any other type.
+pub fn record_list(e: &CborEntry) -> Option<RecordList<'_>> {
+    let list = e.present_type();
+    let ValueType::List { elem, max } = list else {
+        return None;
+    };
+    let ValueType::Record { alias } = &**elem else {
+        return None;
+    };
+    Some(RecordList {
+        record: alias,
+        max: max.max,
+        min: max.min,
+        list,
+    })
+}
+
 /// The first entry of `m` that holds a list of records, if any.
 pub fn first_record_list(m: &CodecModel) -> Option<&CborEntry> {
-    m.cbor_entries.iter().find(|e| e.record_list().is_some())
+    m.cbor_entries.iter().find(|e| record_list(e).is_some())
 }
 
 /// Why `lang` does not generate the CBOR codec `m`, or `None` when it does —
 /// the one answer the generator's refusal and the conformance harness's
 /// schedule both read, so a fixture is run exactly where it generates.
 ///
-/// Beyond the language: C11 holds a text or byte string in a fixed array
-/// the size of its bound, so an entry with neither `sce:max-size` nor
-/// `sce:length` has no C11 storage — every other backend's string grows. A
-/// list of records is generated where [`lowers_record_list`] says so.
+/// Beyond the language: an entry of a type the backend does not print yet is
+/// refused naming the entry and the constructor ([`lowers_every_entry_type`]),
+/// and a list of records is generated where [`lowers_record_list`] says so.
 pub fn refusal(lang: Language, m: &CodecModel) -> Option<String> {
     if !lowers(lang) {
         return Some(format!(
@@ -85,14 +176,26 @@ pub fn refusal(lang: Language, m: &CodecModel) -> Option<String> {
             m.name
         ));
     }
+    if !lowers_every_entry_type(lang) {
+        if let Some((e, part)) = m
+            .cbor_entries
+            .iter()
+            .find_map(|e| unlowered_part(e).map(|part| (e, part)))
+        {
+            let composition = Composition::of(part);
+            return Some(format!(
+                "codec '{}': CBOR entry '{}' holds `{}`, a type of the language whose {} has no \
+                 {lang:?} lowering in a CBOR codec yet",
+                m.name, e.id, composition.place, composition.constructor
+            ));
+        }
+    }
     if !lowers_record_list(lang) {
         if let Some(e) = first_record_list(m) {
             return Some(format!(
                 "codec '{}': CBOR entry '{}' holds a list of records ({}), which has no \
                  {lang:?} lowering yet",
-                m.name,
-                e.id,
-                e.sce_type.as_attr()
+                m.name, e.id, e.sce_type
             ));
         }
     }
@@ -101,19 +204,6 @@ pub fn refusal(lang: Language, m: &CodecModel) -> Option<String> {
             return Some(format!(
                 "codec '{}': {what} has no Swift lowering yet",
                 m.name
-            ));
-        }
-    }
-    if lang == Language::C11 {
-        if let Some(e) = m.cbor_entries.iter().find(|e| {
-            matches!(e.leaf_type(), Some(SceType::String | SceType::Bytes))
-                && e.storage_bytes().is_none()
-        }) {
-            return Some(format!(
-                "codec '{}': CBOR entry '{}' declares neither sce:max-size nor sce:length \
-                 and the deployment gives it no capacity, and C11 holds a string in a fixed \
-                 array of its capacity",
-                m.name, e.id
             ));
         }
     }
@@ -158,7 +248,7 @@ pub fn render(
 /// the field named; the grammar takes them, and no codec lowers them here.
 pub(crate) fn record_list_unlowered(m: &CodecModel, scope: &TypeScope) -> Option<String> {
     for e in &m.cbor_entries {
-        let Some(list) = e.record_list() else {
+        let Some(list) = record_list(e) else {
             continue;
         };
         let Some(record) = scope.records.get(list.record) else {
@@ -232,10 +322,15 @@ pub(crate) fn record_fields_by_key(record: &ScopedRecord) -> Vec<&(String, Value
     fields
 }
 
-/// What an entry is on the wire, as the templates branch on it: a leaf by the
-/// kind of its value, and a list of records as `record_list`.
-pub(crate) fn kind(entry: &CborEntry) -> &'static str {
-    match entry.leaf_type() {
+/// What an entry the printers lower is on the wire, as the templates branch on
+/// it: a leaf by the kind of its value, and a list of records as
+/// `record_list`; `None` for an entry of a type they do not print
+/// ([`unlowered_part`]), which has no wire kind of theirs.
+pub(crate) fn lowered_kind(entry: &CborEntry) -> Option<&'static str> {
+    if unlowered_part(entry).is_some() {
+        return None;
+    }
+    Some(match entry.leaf_type() {
         None => "record_list",
         Some(SceType::Bool) => "bool",
         Some(SceType::String) => "text",
@@ -243,7 +338,14 @@ pub(crate) fn kind(entry: &CborEntry) -> &'static str {
         Some(SceType::Bytes) => "bytes",
         Some(SceType::Enum(_)) => "enum",
         Some(_) => "uint",
-    }
+    })
+}
+
+/// [`lowered_kind`], asked where the entry is printed: a codec that holds an
+/// entry of any other type was refused by name before it renders
+/// ([`refusal`]).
+pub(crate) fn kind(entry: &CborEntry) -> &'static str {
+    lowered_kind(entry).expect("a codec of an entry no printer lowers is refused before it renders")
 }
 
 /// The type a present value of the leaf entry `e` is, asked where `e` is known
@@ -273,12 +375,12 @@ fn int_max(ty: &SceType) -> Option<u64> {
 }
 
 /// Whether a string or byte-string entry of the CBOR codec `m` has neither a
-/// bound nor a capacity: the protocol states no `sce:max-size` or `sce:length`
-/// of it and the deployment gives it none, so no container of a fixed size holds
-/// it (docs/adr/0077 §7).
+/// bound nor a capacity, so no container of a fixed size holds it
+/// (docs/adr/0077 §7). The parser refuses a CBOR text or byte string that
+/// states no bound (docs/adr/0101, section 1.3), so a codec read from a
+/// document answers `false`.
 ///
-/// What a backend that stores in fixed containers reads to refuse the codec,
-/// and what the broadcast-log fact
+/// What the broadcast-log fact
 /// [`crate::BroadcastLogElementFacts::cbor_entry_unbounded`] is read from: a
 /// log's Rust slot holds its element at `Inline`.
 pub fn has_unbounded_text_or_bytes(m: &CodecModel) -> bool {
@@ -315,16 +417,12 @@ pub(crate) const RUST_RUNTIME_CODEC: &str = "::sce_forge_runtime::codec";
 
 /// The bounds a string or byte string entry's value is held to by its Rust type
 /// (docs/adr/0065 §6 R1, docs/adr/0077 §3), as the const arguments of `Bytes`
-/// or `Text` after the lifetime: `sce:max-size` for a string or byte string
-/// that states one, `{ usize::MAX }` for one that states none, so every string
-/// has one shape as a positional field's does (§7), and `sce:length` as both
-/// the most and the fewest for an exact byte string. `None` for any other entry.
+/// or `Text` after the lifetime: the bound its type states for a string or
+/// byte string (docs/adr/0101, section 1.3), and `sce:length` as both the most
+/// and the fewest for an exact byte string. `None` for any other entry.
 pub(crate) fn rust_bound_args(e: &CborEntry) -> Option<String> {
-    match kind(e) {
-        "text" | "bytes" => Some(
-            e.max_size
-                .map_or_else(|| "{ usize::MAX }".to_string(), |max| max.to_string()),
-        ),
+    match lowered_kind(e)? {
+        "text" | "bytes" => e.size_bound().map(|max| max.to_string()),
         "bytes_exact" => e.length.map(|n| format!("{n}, {n}")),
         _ => None,
     }
@@ -418,7 +516,7 @@ pub(crate) fn record_codec_fns(lang: Language, codec: &str, alias: &str) -> (Str
 /// it and its encode refuses nothing for its count. Empty for a leaf entry,
 /// which no caller asks.
 pub(crate) fn rust_record_list_type(imports: &[ImportContext], e: &CborEntry) -> String {
-    e.record_list().map_or_else(String::new, |list| {
+    record_list(e).map_or_else(String::new, |list| {
         format!(
             "{RUST_RUNTIME_CODEC}::BoundedList<{}, {}>",
             record_payload_type(Language::Rust, imports, list.record),
@@ -539,12 +637,12 @@ fn common_context(
             "kind": kind(e),
             "value_type": value_type(e),
             "length": e.length,
-            "max_size": e.max_size,
+            "max_size": e.size_bound(),
             "max": e.leaf_type().and_then(int_max),
         });
         // A list of records is read as an array of at least its lower count
         // and at most its bound, each record by the codec's own read of it.
-        if let Some(list) = e.record_list() {
+        if let Some(list) = record_list(e) {
             let (decode, encode) = record_codec_fns(l.language(), &m.name, list.record);
             entry["record_type"] = record_payload_type(l.language(), imports, list.record).into();
             entry["record_decode_fn"] = decode.into();
@@ -647,7 +745,7 @@ fn render_kotlin(
 /// The type of a record the list entry `e` holds, as `l`'s language names it
 /// ([`record_payload_type`]); empty for a leaf entry, which no caller asks.
 fn record_type_of(l: &LangCtx, imports: &[ImportContext], e: &CborEntry) -> String {
-    e.record_list()
+    record_list(e)
         .map(|list| record_payload_type(l.language(), imports, list.record))
         .unwrap_or_default()
 }
@@ -816,11 +914,12 @@ fn render_c(
     })?;
     crate::forge::generator::insert_c_codec_symbols(&mut ctx, &m.name);
     // A required text or byte string is a fixed array of its capacity beside
-    // its length (the capacity is the deployment's or the bound, and present:
-    // `refusal` saw to it), an exact-length one an array of that length alone.
-    // A read refuses a length past the bound as a frame of no protocol and one
-    // past the capacity as one this node cannot hold (docs/adr/0077 §7), so the
-    // bound is written apart, `SIZE_MAX` where the protocol states none. An entry that may be
+    // its length (the capacity is the deployment's or the bound its type
+    // states, docs/adr/0101 section 1.3), an exact-length one an array of that
+    // length alone. A read refuses a length past the bound as a frame of no
+    // protocol and one past the capacity as one this node cannot hold
+    // (docs/adr/0077 §7), so the bound is written apart, `SIZE_MAX` for an
+    // exact byte string, whose length is its bound. An entry that may be
     // absent is the struct `sce/forge/optional.h` declares for its element
     // (docs/adr/0055, section 5), the one a statechart's variable of the same
     // type is held in: its value is the member `value`, a text the buffer of
@@ -834,14 +933,14 @@ fn render_c(
             let capacity = e.storage_bytes();
             entry["capacity"] = capacity.into();
             entry["bound"] = e
-                .max_size
+                .size_bound()
                 .map_or_else(|| "SIZE_MAX".to_string(), |max| format!("{max}U"))
                 .into();
             let optional = !e.is_required();
             // A list of records is its length beside a fixed array of its
             // bound, each item the schema's payload; one that may be absent
             // carries `present` beside them.
-            if let Some(list) = e.record_list() {
+            if let Some(list) = record_list(e) {
                 entry["field_type"] = format!(
                     "struct {{\n        {}uint32_t len;\n        {} items[{}];\n    }}",
                     if optional {
@@ -895,7 +994,10 @@ fn render_c(
         Measured::Held,
         &crate::forge::generator::import_type_scope(imports),
     )
-    .expect("C11 refuses a CBOR string it holds no number of before it renders");
+    .expect(
+        "a compile refuses a CBOR codec whose record does not resolve or whose size is past \
+         2^64 - 1 bytes before any language renders it",
+    );
     ctx.insert("max_encoded_bytes".into(), max_encoded_bytes.into());
     render_in_key_order(&l, env, ctx)
 }
@@ -903,67 +1005,114 @@ fn render_c(
 /// The most bytes `m` encodes to: its map head and, for every entry, its key
 /// and the longest value it admits, measured as `measured` says — at the
 /// bound, the largest frame of the language; held, a size C11 callers size an
-/// `encode_to_buf` buffer by.
+/// `encode_to_buf` buffer by. Every text and byte string states its bound
+/// (docs/adr/0101, section 1.3), so each has a number to be measured at.
 ///
-/// A list of records is measured by the size calculus of the one type grammar
-/// (docs/adr/0086, section 2.1), `C(list<record:R>[N])`, the record read in
-/// `env`: the array's head and its bound times the largest map of the record,
-/// which is what its encode writes at most, a held list being held at its bound.
+/// An entry that is no leaf (a list of records, and every type of the language
+/// docs/adr/0101 section 1 admits beside it) is measured by the size calculus of
+/// the one type grammar (docs/adr/0086, section 2.1), `C` of its present type,
+/// every record and union read in `env`: what its encode writes at most, a held
+/// list being held at its bound.
 ///
-/// `None` where a string or byte string has nothing to measure it at: no bound
-/// and, held, no capacity; and where a list's record is not in `env` or holds
-/// itself. The build-wide pass that judges a broadcast log's element
-/// ([`crate::forge::codec_size`]) refuses such an entry by name before it asks,
-/// and C11 refuses it before it renders. A size past `u64::MAX` is held at
-/// `u64::MAX`, a bound and never a wrapped, smaller one.
+/// The refusal of a record or union `env` does not hold or that holds itself,
+/// and [`SizeError::Overflow`] for a size past 2^64 - 1 bytes, which a compile
+/// refuses as `validation/encoded-size-overflow` (docs/adr/0101, section 4.4).
 pub(crate) fn max_encoded_bytes(
     m: &CodecModel,
     measured: Measured,
     env: &dyn TypeEnv,
-) -> Option<u64> {
-    // The length of a head carrying `value`, in its shortest form.
-    fn head(value: u64) -> u64 {
-        match value {
-            0..=23 => 1,
-            24..=0xFF => 2,
-            0x100..=0xFFFF => 3,
-            0x1_0000..=0xFFFF_FFFF => 5,
-            _ => 9,
-        }
-    }
-    let mut total = head(m.cbor_entries.len() as u64);
+) -> Result<u64, SizeError> {
+    let mut total = cbor_head_len(m.cbor_entries.len() as u64);
     for e in &m.cbor_entries {
-        let key = head(u64::from(e.key));
+        let key = cbor_head_len(u64::from(e.key));
         let value = match e.leaf_type() {
-            None => record_list_max_bytes(e, env).ok()?,
+            None => cbor_max_len(e.present_type(), env)?,
             Some(SceType::Bool) => 1,
             Some(SceType::String | SceType::Bytes) => {
-                let n = u64::from(match measured {
-                    Measured::Bound => e.length.or(e.max_size),
+                let held = match measured {
+                    Measured::Bound => e.text_bound(),
                     Measured::Held => e.storage_bytes(),
-                }?);
-                head(n) + n
+                };
+                let n = u64::from(held.expect("a text or byte string entry states its bound"));
+                cbor_head_len(n) + n
             }
             Some(_) => 9,
         };
-        total = total.saturating_add(key).saturating_add(value);
+        total = total
+            .checked_add(key)
+            .and_then(|sum| sum.checked_add(value))
+            .ok_or(SizeError::Overflow)?;
     }
-    Some(total)
+    Ok(total)
 }
 
-/// The most bytes the list of records of the entry `e` encodes to, its record
-/// read in `env` (docs/adr/0086, section 2.1): `u64::MAX` for a size past it,
-/// and the refusal of a record `env` does not hold or that holds itself.
-pub(crate) fn record_list_max_bytes(e: &CborEntry, env: &dyn TypeEnv) -> Result<u64, SizeError> {
-    let Some(list) = e.record_list() else {
-        return Err(SizeError::Unresolved {
-            alias: e.id.clone(),
-        });
-    };
-    match cbor_max_len(list.list, env) {
-        Err(SizeError::Overflow) => Ok(u64::MAX),
-        other => other,
+/// The first entry of `m` whose largest encoding is past 2^64 - 1 bytes, its
+/// types read in `env` (docs/adr/0101, section 4.4): the entry and its type as
+/// the grammar spells it. `None` where every entry has a size, or where one
+/// names a record or union `env` does not resolve, which is refused by its
+/// own name ([`record_list_unlowered`]).
+pub fn entry_past_encoded_size(m: &CodecModel, env: &dyn TypeEnv) -> Option<(String, String)> {
+    m.cbor_entries.iter().find_map(|e| {
+        matches!(
+            cbor_max_len(e.present_type(), env),
+            Err(SizeError::Overflow)
+        )
+        .then(|| (e.id.clone(), e.sce_type.to_string()))
+    })
+}
+
+/// The refusal of the CBOR codec `m` whose largest encoding is past 2^64 - 1
+/// bytes, its types read in `env` (docs/adr/0101, section 4.4,
+/// `validation/encoded-size-overflow`): at the first entry whose own largest
+/// encoding is, placed on its row; else at the codec's root, its map spelled
+/// as section 2.6 spells it (`{ 0 => T0, ? 1 => T1 }`), where each entry has a
+/// size and their sum has none. `None` for a codec of any other encoding and
+/// for one the build sizes.
+pub fn size_overflow(m: &CodecModel, env: &dyn TypeEnv) -> Option<ForgeError> {
+    use crate::forge::error::ValidationError;
+    if m.encoding != crate::forge::model::CodecEncoding::Cbor {
+        return None;
     }
+    if let Some((id, ty)) = entry_past_encoded_size(m, env) {
+        let line = m
+            .cbor_entries
+            .iter()
+            .find(|e| e.id == id)
+            .and_then(|e| e.line);
+        return Some(
+            ForgeError::from(ValidationError::EncodedSizeOverflow {
+                ty,
+                place: format!("entry '{id}' of codec '{}'", m.name),
+            })
+            .at_line(line),
+        );
+    }
+    if !matches!(
+        max_encoded_bytes(m, Measured::Bound, env),
+        Err(SizeError::Overflow)
+    ) {
+        return None;
+    }
+    let mut by_key: Vec<&CborEntry> = m.cbor_entries.iter().collect();
+    by_key.sort_by_key(|e| e.key);
+    let members: Vec<String> = by_key
+        .iter()
+        .map(|e| {
+            let optional = if e.is_required() { "" } else { "? " };
+            format!("{optional}{} => {}", e.key, e.present_type())
+        })
+        .collect();
+    Some(
+        ForgeError::from(ValidationError::EncodedSizeOverflow {
+            ty: format!("{{ {} }}", members.join(", ")),
+            place: format!("codec '{}'", m.name),
+        })
+        .at_line(
+            m.source_location
+                .as_ref()
+                .and_then(|location| location.line),
+        ),
+    )
 }
 
 fn render_python(
@@ -1259,7 +1408,7 @@ fn record_contexts(
     let mut seen: Vec<&str> = Vec::new();
     let mut out = Vec::new();
     for e in &m.cbor_entries {
-        let Some(list) = e.record_list() else {
+        let Some(list) = record_list(e) else {
             continue;
         };
         if seen.contains(&list.record) {

@@ -3918,165 +3918,136 @@ fn parse_cbor_entry(
             attr: "sce:type".into(),
         })
     })?;
-    // A bounded list of records (docs/adr/0085, Landing order step 3a) is read by
-    // the one type grammar, its bound written in its type; every other entry is
-    // one value of a leaf type, bounded by the codec's `sce:max-size` or
-    // `sce:length`.
-    if names_a_list(&type_text) {
-        let sce_type = read_cbor_record_list(node, doc, &id, &type_text)?;
-        refuse_required_attribute(node, doc, &element, &type_text)?;
-        if let Some(attr) = ["length", "max-size"]
-            .into_iter()
-            .find(|a| sce_attr(node, a).is_some())
-        {
-            return Err(refuse(ValidationError::AttributeRuleViolated {
-                element,
-                attr: format!("sce:{attr}"),
-                value: sce_attr(node, attr).unwrap_or_default(),
-                rule: "no size attribute on a list of records: its bound is written in its \
-                       type, as `list<record:R>[N]`"
-                    .into(),
-            }));
-        }
-        return Ok(CborEntry {
-            id,
-            line: Some(row_of(node)),
-            key,
-            sce_type,
-            length: None,
-            max_size: None,
-            capacity: None,
-        });
-    }
-    // A bare type is an entry that must be present and `optional<T>` one that may
-    // be absent (docs/adr/0055, section 8); `sce_type` is the type a present value
-    // is, which every rule below is held to.
-    let field_type = read_entry_type(node, doc, format!("entry '{id}'"), "sce:type", &type_text)?;
-    let sce_type = field_type.present_type().clone();
-    let admitted = sce_type.is_unsigned()
-        || matches!(
-            sce_type,
-            SceType::Bool | SceType::String | SceType::Bytes | SceType::Enum(_)
-        );
-    if !admitted {
-        return Err(refuse(ValidationError::AttributeRuleViolated {
-            element,
-            attr: "sce:type".into(),
-            value: value_as_written(node, "sce:type", &type_text),
-            rule: CBOR_ENTRY_KINDS.into(),
-        }));
-    }
-    refuse_required_attribute(node, doc, &element, &type_text)?;
-    let positive = |attr: &str| -> Result<Option<u32>, Located<ForgeError>> {
-        let Some(text) = sce_attr(node, attr) else {
-            return Ok(None);
-        };
-        parse_int(&text)
-            .filter(|n| *n > 0)
-            .map(Some)
-            .ok_or_else(|| {
-                refuse(ValidationError::AttributeRuleViolated {
-                    element: element.clone(),
-                    attr: format!("sce:{attr}"),
-                    value: text,
-                    rule: "a positive integer".into(),
-                })
-            })
-    };
-    let length = positive("length")?;
-    let max_size = positive("max-size")?;
-    if length.is_some() && sce_type != SceType::Bytes {
-        return Err(refuse(ValidationError::AttributeRuleViolated {
-            element,
-            attr: "sce:length".into(),
-            value: length.unwrap_or_default().to_string(),
-            rule: "an exact length on a bytes entry only".into(),
-        }));
-    }
-    if max_size.is_some() && !matches!(sce_type, SceType::String | SceType::Bytes) {
-        return Err(refuse(ValidationError::AttributeRuleViolated {
-            element,
-            attr: "sce:max-size".into(),
-            value: max_size.unwrap_or_default().to_string(),
-            rule: "a size bound on a string or bytes entry only".into(),
-        }));
-    }
-    if length.is_some() && max_size.is_some() {
-        return Err(refuse(ValidationError::AttributeRuleViolated {
-            element,
-            attr: "sce:max-size".into(),
-            value: max_size.unwrap_or_default().to_string(),
-            rule: "sce:length or sce:max-size, not both: an exact length is its own bound".into(),
-        }));
-    }
-
+    let (sce_type, length) = read_cbor_entry_type(node, doc, &id, &element, &type_text)?;
     Ok(CborEntry {
         id,
         line: Some(row_of(node)),
         key,
-        sce_type: CborEntryType::Leaf(field_type),
+        sce_type,
         length,
-        max_size,
         capacity: None,
     })
 }
 
-/// The kinds a CBOR codec's entry holds, as a refusal of any other states them.
-const CBOR_ENTRY_KINDS: &str = "an unsigned integer, bool, string, bytes or enum:<alias>, a \
-                                bounded list of records list<record:R>[N], or optional<T> of \
-                                one — the kinds a sce:encoding=\"cbor\" codec writes";
-
-/// Whether `type_text`, seen through `optional<…>`, is written as a list: the
-/// one entry of a CBOR codec read by the one type grammar.
-fn names_a_list(type_text: &str) -> bool {
-    let bare = AlgorithmValueType::optional_inner(type_text)
-        .unwrap_or(type_text)
-        .trim();
-    bare.strip_prefix("list")
-        .is_some_and(|rest| rest.trim_start().starts_with('<'))
-}
-
-/// The bounded list of records `text` spells as the type of the CBOR codec
-/// entry `id` (docs/adr/0085, Landing order step 3a): `list<record:R>[N]`, or
-/// `optional<…>` over one, `R` an event schema the document imports. It is
-/// read by the one type grammar (docs/adr/0086, section 1), every named bound
-/// at the number the build gives its name, so a list with no bound, a lower
-/// count past its bound and an alias no import declares are refused as they
-/// are in every other position. A list of anything but a record is refused
-/// with the kinds an entry holds.
-fn read_cbor_record_list(
+/// The type of the CBOR codec entry `id`, declared by `element`, and its exact
+/// length where `sce:length` states one (docs/adr/0101, section 1).
+///
+/// `text` is read by the one type grammar (docs/adr/0086, section 1, with
+/// docs/adr/0092's `union:<alias>`): any type of the language at any depth,
+/// every alias judged against the document's enum, event-schema and union
+/// imports, every named bound at the number the build gives its name. A bare
+/// type is an entry a decode of a map without its key refuses, and
+/// `optional<T>` one that may be absent (docs/adr/0055, section 8).
+///
+/// Every bound is in the type. On a top-level text or byte string,
+/// `sce:max-size` (with the `sce:limit` beside it) is the legacy spelling of
+/// the bracket on its outermost type (docs/adr/0101, section 1.3), read as it
+/// is on an event schema's field; on any other type it is refused. A
+/// `sce:length` on a `bytes` or `optional<bytes>` entry that writes no bracket
+/// is its exact length and its bound (`bytes[L]`, section 1.2): beside a
+/// bracket it is refused as `validation/incompatible-attributes`, and on any
+/// other type as no byte string. A text, byte string or list that states no
+/// bound, at any depth, is refused naming it (`validation/attribute-rule-violated`).
+fn read_cbor_entry_type(
     node: &roxmltree::Node,
     doc: &str,
     id: &str,
+    element: &str,
     text: &str,
-) -> Result<CborEntryType, Located<ForgeError>> {
-    let element = format!("entry '{id}'");
+) -> Result<(ValueType, Option<u32>), Located<ForgeError>> {
+    let refuse = |error: ValidationError| located(node, doc, error);
+    let type_element = format!("entry '{id}'");
     let written = read_written_type(
         node,
         doc,
-        &element,
+        &type_element,
         "sce:type",
         text,
         OptionalElems::OrRecord,
-    )?
-    .resolve_limits(&mut crate::limits::resolve);
-    let ty = written
-        .bounded()
-        .map_err(|refusal| type_rule_refusal(node, doc, &element, "sce:type", text, &refusal))?;
-    let entry = CborEntryType::RecordList(ty);
-    if entry.record_list().is_none() {
-        return Err(located(
-            node,
-            doc,
-            ValidationError::AttributeRuleViolated {
-                element,
-                attr: "sce:type".into(),
-                value: type_as_written(node, "sce:type", text),
-                rule: CBOR_ENTRY_KINDS.into(),
-            },
-        ));
+    )?;
+    refuse_required_attribute(node, doc, element, text)?;
+    let length = match sce_attr(node, "length") {
+        None => None,
+        Some(value) => Some(parse_int(&value).filter(|n| *n > 0).ok_or_else(|| {
+            refuse(ValidationError::AttributeRuleViolated {
+                element: element.to_string(),
+                attr: "sce:length".into(),
+                value,
+                rule: "a positive integer".into(),
+            })
+        })?),
+    };
+    let legacy = match sce_attr(node, "max-size") {
+        None => None,
+        Some(value) => {
+            if length.is_some() {
+                return Err(refuse(ValidationError::AttributeRuleViolated {
+                    element: element.to_string(),
+                    attr: "sce:max-size".into(),
+                    value,
+                    rule: "sce:length or sce:max-size, not both: an exact length is its own bound"
+                        .into(),
+                }));
+            }
+            let rule = match written.outermost_bounded() {
+                Some(WrittenType::Text { .. } | WrittenType::Bytes { .. }) => None,
+                Some(_) => Some(
+                    "no size attribute on a list: its bound is written in its type, as \
+                     `list<T>[N]`",
+                ),
+                None => Some("a size bound on a string or bytes entry only"),
+            };
+            if let Some(rule) = rule {
+                return Err(refuse(ValidationError::AttributeRuleViolated {
+                    element: element.to_string(),
+                    attr: "sce:max-size".into(),
+                    value,
+                    rule: rule.into(),
+                }));
+            }
+            Some(LegacyBound {
+                max: legacy_number(node, doc, element, "sce:max-size", &value)?,
+                attr: "sce:max-size".into(),
+                limit: sce_attr(node, "limit").map(|name| name.trim().to_string()),
+            })
+        }
+    };
+    // A legacy bound beside a text or byte string always has a place, so
+    // nothing is handed back unplaced.
+    let (mut written, _) =
+        fold_legacy_bound(node, doc, element, ("sce:type", text), written, legacy)?;
+    if let Some(length) = length {
+        let present = written.optional_elem().unwrap_or(&written);
+        match present {
+            WrittenType::Bytes { max: None } => {}
+            WrittenType::Bytes { max: Some(_) } => {
+                return Err(refuse(ValidationError::IncompatibleAttributes {
+                    element: element.to_string(),
+                    detail: format!(
+                        "sce:length and the bracket of `{present}` in sce:type=\"{text}\" each \
+                         state the bound of one byte string: one bound, one spelling; keep \
+                         sce:length and write `bytes`, or keep the bracket and remove \
+                         sce:length"
+                    ),
+                }));
+            }
+            _ => {
+                return Err(refuse(ValidationError::AttributeRuleViolated {
+                    element: element.to_string(),
+                    attr: "sce:length".into(),
+                    value: length.to_string(),
+                    rule: "an exact length on a bytes entry only".into(),
+                }));
+            }
+        }
+        written = written
+            .with_outer_bound(Bound::of(length))
+            .expect("a byte string that writes no bracket takes its exact length as its bound");
     }
-    Ok(entry)
+    let sce_type = written.bounded().map_err(|refusal| {
+        type_rule_refusal(node, doc, &type_element, "sce:type", text, &refusal)
+    })?;
+    Ok((sce_type, length))
 }
 
 /// The refusal of `sce:required` on an entry of a codec in format 2
@@ -14287,12 +14258,14 @@ pub(crate) fn read_type_attr(
     })
 }
 
-/// Read a CBOR or content-line codec entry's `sce:type` ([`EntryType`]): what
+/// Read a content-line codec entry's `sce:type` ([`EntryType`]): what
 /// [`read_type_attr`] reads in [`TypeGrammar::ScalarOrEnumRef`], and
 /// `optional<T>` (docs/adr/0055) over a scalar or a value of an imported enum.
 ///
-/// An entry describes a field of a foreign protocol's frame, not a value of the
-/// language (docs/adr/0086, section 1.7): it takes no record, no list and no
+/// An entry describes a field of a foreign protocol's frame, RFC 5545's, not a
+/// value of the language (docs/adr/0086, section 1.7, which docs/adr/0101
+/// section 1.4 keeps for a content-line codec alone; a CBOR codec's entry is
+/// read by [`read_cbor_entry_type`]): it takes no record, no list and no
 /// bracket, and its bound is its codec's `sce:max-size`. Anything else written
 /// there is refused with the closed set of entry types as its candidates.
 pub(crate) fn read_entry_type(

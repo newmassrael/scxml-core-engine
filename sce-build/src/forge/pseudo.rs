@@ -3799,10 +3799,11 @@ fn render_codec(m: &CodecModel) -> Vec<Node> {
 }
 
 /// `codec <name> encoding cbor [encode-may-fail]`, then one line per map entry:
-/// `entry <id>: <type> key <n> [length <n>] [max-size <n>]`, where `<type>` is
-/// the bare type of an entry that must be present and `optional<T>` that of one
-/// that may be absent (docs/adr/0055, section 8). A list of records is spelled
-/// as the one type grammar writes it, its bound in it (`list<record:R>[8]`).
+/// `entry <id>: <type> key <n> [length <n>]`, where `<type>` is the bare type
+/// of an entry that must be present and `optional<T>` that of one that may be
+/// absent (docs/adr/0055, section 8), spelled as the one type grammar writes
+/// it, every bound in it (`string[64]`, `list<record:R>[8]`), but for an exact
+/// byte string, whose bound is its `length` (docs/adr/0101, section 1.2).
 fn render_cbor_codec(m: &CodecModel) -> Vec<Node> {
     let mut out = Out::new();
     let mut head = vec![
@@ -3817,17 +3818,16 @@ fn render_cbor_codec(m: &CodecModel) -> Vec<Node> {
     out.line_of(head);
     out.nested(|out| {
         for e in &m.cbor_entries {
-            let mut line = format!(
-                "entry {}: {} key {}",
-                text(&e.id),
-                e.sce_type.as_attr(),
-                e.key
-            );
+            // An exact length is the bound of its byte string: the page writes
+            // it once, as `length`, over the type with no bracket, as a
+            // document does (docs/adr/0101, section 1.2).
+            let ty = match e.length {
+                Some(_) => e.sce_type.written().without_outer_bound().to_string(),
+                None => e.sce_type.to_string(),
+            };
+            let mut line = format!("entry {}: {ty} key {}", text(&e.id), e.key);
             if let Some(n) = e.length {
                 let _ = write!(line, " length {n}");
-            }
-            if let Some(n) = e.max_size {
-                let _ = write!(line, " max-size {n}");
             }
             out.line(&line);
         }

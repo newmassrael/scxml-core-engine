@@ -5208,6 +5208,12 @@ pub fn compile_forge_from_parsed(
                 label.diagnostic_label,
             ));
         }
+        // A CBOR entry, or the map of them, whose largest encoding is past
+        // 2^64 - 1 bytes has no number to size an encode by (docs/adr/0101,
+        // section 4.4): refused here, alike for every language.
+        if let Some(overflow) = forge::cbor_codec::size_overflow(m, &record_scope) {
+            return Err(Located::in_file(overflow, label.diagnostic_label));
+        }
         // A list a bound does not end is held to its walk moving
         // (docs/adr/0077 §7). Only such a list needs its imports read again.
         if m.fields.iter().any(|f| {

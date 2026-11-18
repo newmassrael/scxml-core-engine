@@ -6662,7 +6662,9 @@ fn a_gated_byte_string_with_no_bound_generates_on_every_backend_that_grows() {
     );
 }
 
-/// A CBOR map whose text states no bound (docs/adr/0077 §7).
+/// A CBOR map whose text states no bound: no type of the language, since a CBOR
+/// entry is a value of it (docs/adr/0101, section 1.3), so it is refused at its
+/// type.
 const OPEN_MAP: &str = r#"<?xml version="1.0" encoding="UTF-8"?>
 <scxml xmlns="http://www.w3.org/2005/07/scxml" xmlns:sce="http://sce.dev/ext"
        sce:kind="codec" sce:encoding="cbor" sce:codec-format="2" name="codec_open_map" version="1.0">
@@ -6674,8 +6676,8 @@ const OPEN_MAP: &str = r#"<?xml version="1.0" encoding="UTF-8"?>
 "#;
 
 /// The deployment of the documents with no bound: two entries of each list, four
-/// bytes of the payload, eight of the map's text, and of the content-line
-/// component eight bytes of the description, two attendees and two categories.
+/// bytes of the payload, and of the content-line component eight bytes of the
+/// description, two attendees and two categories.
 fn narrow_deployment() -> sce_build::forge::deployment::RustDeployment {
     let capacities = [
         (
@@ -6689,10 +6691,6 @@ fn narrow_deployment() -> sce_build::forge::deployment::RustDeployment {
         (
             "codec_open_bytes".to_string(),
             [("payload".to_string(), 4)].into(),
-        ),
-        (
-            "codec_open_map".to_string(),
-            [("note".to_string(), 8)].into(),
         ),
         (
             "codec_open_line".to_string(),
@@ -6714,51 +6712,105 @@ fn narrow_deployment() -> sce_build::forge::deployment::RustDeployment {
     }
 }
 
-/// A map's text the protocol states no bound of has none: the decoded map holds
-/// it as `Text<'a, { usize::MAX }>`, the owned mirror holds what the frame holds
-/// on a growing profile, and a deployment holds it at the capacity it gives and
-/// refuses past it with `CapacityExceeded` (docs/adr/0077 §7).
+/// A CBOR map whose text states its bound, 64 bytes, which a deployment holds at
+/// a smaller capacity (docs/adr/0077 §7).
+const CAPPED_MAP: &str = r#"<?xml version="1.0" encoding="UTF-8"?>
+<scxml xmlns="http://www.w3.org/2005/07/scxml" xmlns:sce="http://sce.dev/ext"
+       sce:kind="codec" sce:encoding="cbor" sce:codec-format="2" name="codec_capped_map" version="1.0">
+  <datamodel>
+    <data id="raw" sce:type="bytes" sce:direction="in"/>
+    <data id="note" sce:type="string[64]" sce:key="1" sce:direction="out"/>
+  </datamodel>
+</scxml>
+"#;
+
+/// The deployment of [`CAPPED_MAP`]: eight bytes of its text.
+fn capped_map_deployment() -> sce_build::forge::deployment::RustDeployment {
+    sce_build::forge::deployment::RustDeployment {
+        name: "Narrow".to_string(),
+        capacities: [(
+            "codec_capped_map".to_string(),
+            [("note".to_string(), 8)].into(),
+        )]
+        .into(),
+        storage: Default::default(),
+        gates: Default::default(),
+        source: "deploy.yaml".to_string(),
+    }
+}
+
+/// A CBOR text that states no bound is no type of the language (docs/adr/0101,
+/// section 1.3): every backend refuses the map at the entry's type, where it
+/// once held the text at no bound on six backends and refused it on C11 alone.
 #[test]
-fn a_cbor_text_with_no_bound_reads_what_its_frame_holds() {
-    const HARNESS: &str = r#"// Injected by a_cbor_text_with_no_bound_reads_what_its_frame_holds.
+fn a_cbor_text_with_no_bound_is_refused_at_its_type_on_every_backend() {
+    use sce_build::generator::Language;
+    let dir = tempfile::tempdir().expect("a scratch directory");
+    for &language in Language::ALL {
+        let refused = sce_build::compile_forge_with_imports(
+            OPEN_MAP,
+            sce_build::DocumentLabel::symmetric("codec_open_map"),
+            language,
+            dir.path(),
+            &golden_options(language),
+        )
+        .err()
+        .unwrap_or_else(|| panic!("{language:?} refuses a CBOR text with no bound"));
+        let why = refused.to_string();
+        assert!(
+            why.contains("entry 'note'") && why.contains("has no bound"),
+            "{language:?}: {why}"
+        );
+    }
+}
+
+/// A map's text is held within the bound its type states: the decoded map and a
+/// growing profile hold up to it, a frame past it is refused on decode, and a
+/// deployment holds the text at the smaller capacity it gives and refuses past
+/// it with `CapacityExceeded` (docs/adr/0077 §7).
+#[test]
+fn a_cbor_text_is_held_within_its_bound_and_a_deployment_capacity() {
+    const HARNESS: &str = r#"// Injected by a_cbor_text_is_held_within_its_bound_and_a_deployment_capacity.
 #[cfg(test)]
 mod tests {
-    use crate::codec_open_map::{CodecOpenMap, CodecOpenMapOwned};
+    use crate::codec_capped_map::{CodecCappedMap, CodecCappedMapOwned};
     use crate::narrow::Narrow;
     use ::sce_forge_runtime::codec::{CodecError, Heap, SceCursor};
 
     // `{1: "nnn..."}` with a text of `len` bytes, its length in the shortest
-    // head that holds it; 300 is past the 256 a default once held a string with
-    // no bound to.
+    // head that holds it.
     fn frame(len: usize) -> Vec<u8> {
         let mut frame = vec![0xa1, 0x01];
         match len {
             0..=23 => frame.push(0x60 | len as u8),
-            24..=255 => frame.extend_from_slice(&[0x78, len as u8]),
-            _ => frame.extend_from_slice(&[0x79, (len >> 8) as u8, len as u8]),
+            _ => frame.extend_from_slice(&[0x78, len as u8]),
         }
         frame.extend(std::iter::repeat_n(b'n', len));
         frame
     }
 
     #[test]
-    fn the_map_and_a_growing_profile_hold_every_byte() {
-        let frame = frame(300);
-        let map = CodecOpenMap::decode(&mut SceCursor::new(&frame)).expect("map");
-        assert_eq!(map.note.len(), 300);
-        let held: CodecOpenMapOwned<Heap> = map.try_into_owned_in().expect("held");
-        assert_eq!(held.note.as_text().len(), 300);
+    fn the_map_and_a_growing_profile_hold_up_to_the_bound() {
+        let frame = frame(64);
+        let map = CodecCappedMap::decode(&mut SceCursor::new(&frame)).expect("map");
+        assert_eq!(map.note.len(), 64);
+        let held: CodecCappedMapOwned<Heap> = map.try_into_owned_in().expect("held");
+        assert_eq!(held.note.as_text().len(), 64);
         assert_eq!(held.encode_to_vec(), frame);
+        assert_eq!(
+            CodecCappedMap::decode(&mut SceCursor::new(&self::frame(65))).err(),
+            Some(CodecError::CborOutOfRange)
+        );
     }
 
     #[test]
     fn a_deployment_holds_its_capacity_and_refuses_past_it() {
         let frame8 = frame(8);
-        let map = CodecOpenMap::decode(&mut SceCursor::new(&frame8)).expect("eight");
-        let held: CodecOpenMapOwned<Narrow> = map.try_into_owned_in().expect("held");
+        let map = CodecCappedMap::decode(&mut SceCursor::new(&frame8)).expect("eight");
+        let held: CodecCappedMapOwned<Narrow> = map.try_into_owned_in().expect("held");
         assert_eq!(held.note.as_text().len(), 8);
         let frame9 = frame(9);
-        let map = CodecOpenMap::decode(&mut SceCursor::new(&frame9)).expect("nine");
+        let map = CodecCappedMap::decode(&mut SceCursor::new(&frame9)).expect("nine");
         assert_eq!(
             map.try_into_owned_in::<Narrow>().err(),
             Some(CodecError::CapacityExceeded)
@@ -6768,29 +6820,25 @@ mod tests {
 "#;
     use sce_build::generator::Language;
     let dir = tempfile::tempdir().expect("a scratch directory");
-    let path = dir.path().join("codec_open_map.scxml");
-    std::fs::write(&path, OPEN_MAP).expect("write");
+    let path = dir.path().join("codec_capped_map.scxml");
+    std::fs::write(&path, CAPPED_MAP).expect("write");
     let mut files = generate_files_for_codec_set_with(
         dir.path(),
-        &["codec_open_map.scxml"],
+        &["codec_capped_map.scxml"],
         Language::Rust,
         golden_options(Language::Rust),
     )
-    .expect("a map with a text of no bound generates");
-    let mut deployment = narrow_deployment();
-    deployment
-        .capacities
-        .retain(|codec, _| codec == "codec_open_map");
+    .expect("a map with a bounded text generates");
     let output = sce_build::compile_rust_deployment(
         &[path.as_path()],
-        &deployment,
+        &capped_map_deployment(),
         &golden_options(Language::Rust),
     )
     .expect("the deployment generates");
     files.extend(output.files);
-    files.push(("open_map.rs".to_string(), HARNESS.to_string()));
-    rustc_run_generated_set(files, "open_map", "test", RustcProfile::Alloc)
-        .expect("a CBOR text with no bound reads what its frame holds");
+    files.push(("capped_map.rs".to_string(), HARNESS.to_string()));
+    rustc_run_generated_set(files, "capped_map", "test", RustcProfile::Alloc)
+        .expect("a CBOR text is held within its bound and a deployment's capacity");
 }
 
 /// A content-line codec whose text, repeated property and line of values the
@@ -7197,9 +7245,6 @@ mod tests {
     let mut deployment = narrow_deployment();
     deployment.name = "Policy".to_string();
     deployment.storage = NodeStorage::Heap;
-    deployment
-        .capacities
-        .retain(|codec, _| codec != "codec_open_map");
     if let Some(line) = deployment.capacities.get_mut("codec_open_line") {
         line.remove("attendee");
     }
@@ -7509,14 +7554,14 @@ fn run_c_driver(dir: &std::path::Path, header_name: &str, header: &str, driver: 
     );
 }
 
-/// A driver of the C11 form of [`OPEN_MAP`] held at eight bytes of its text: a
+/// A driver of the C11 form of [`CAPPED_MAP`] held at eight bytes of its text: a
 /// map past the capacity is read whole, so the refusals the map's own rules make
 /// come first and `CAPACITY_EXCEEDED` last, as Rust's projection answers it
 /// after its decode (docs/adr/0077 §7).
-const OPEN_MAP_C_DRIVER: &str = r#"#include <stdio.h>
+const CAPPED_MAP_C_DRIVER: &str = r#"#include <stdio.h>
 #include <string.h>
 
-#include "codec_open_map.h"
+#include "codec_capped_map.h"
 
 static int failures = 0;
 #define CHECK(cond, what)                                                              \
@@ -7527,11 +7572,11 @@ static int failures = 0;
         }                                                                              \
     } while (0)
 
-static codec_open_map_t v;
+static codec_capped_map_t v;
 
 static sce_forge_codec_status_t decode(const uint8_t *frame, size_t len) {
     sce_forge_cursor_t c = sce_forge_cursor_init(frame, len);
-    return codec_open_map_decode(&c, &v);
+    return codec_capped_map_decode(&c, &v);
 }
 
 int main(void) {
@@ -7557,34 +7602,32 @@ int main(void) {
 }
 "#;
 
-/// What cannot hold a map's text the protocol states no bound of says so,
-/// naming the entry (docs/adr/0077 §7): C11 with no capacity for it, and a
-/// deployment that gives it none. C11 given a capacity holds the text in an
-/// array of it, and refuses a text past the capacity apart from one past the
-/// bound.
+/// C11 holds a map's text in an array of the bound its type states, or of the
+/// smaller capacity it is given, and refuses a text past the capacity apart from
+/// one past the bound (docs/adr/0077 §7). A deployment that gives the text no
+/// capacity holds it at its bound.
 #[test]
-fn what_cannot_hold_a_cbor_text_with_no_bound_refuses_it() {
+fn c11_holds_a_cbor_text_at_its_bound_or_the_capacity_it_is_given() {
     use sce_build::generator::Language;
     let dir = tempfile::tempdir().expect("a scratch directory");
-    let path = dir.path().join("codec_open_map.scxml");
-    std::fs::write(&path, OPEN_MAP).expect("write");
+    let path = dir.path().join("codec_capped_map.scxml");
+    std::fs::write(&path, CAPPED_MAP).expect("write");
     let compile = |language: Language, opts: sce_build::ForgeCompileOptions| {
         sce_build::compile_forge_with_imports(
-            OPEN_MAP,
-            sce_build::DocumentLabel::symmetric("codec_open_map"),
+            CAPPED_MAP,
+            sce_build::DocumentLabel::symmetric("codec_capped_map"),
             language,
             dir.path(),
             &opts,
         )
     };
-    let refused = compile(Language::C11, golden_options(Language::C11))
-        .err()
-        .expect("C11 refuses a text it holds no number of");
-    assert!(refused.to_string().contains("'note'"), "{refused}");
-    assert!(refused.to_string().contains("no capacity"), "{refused}");
+    let at_bound = compile(Language::C11, golden_options(Language::C11))
+        .expect("C11 holds a text at the bound its type states");
+    let at_bound = &at_bound.files[0].1;
+    assert!(at_bound.contains("char note[64];"), "{at_bound}");
     let mut held = golden_options(Language::C11);
     held.codec_capacities = [(
-        "codec_open_map".to_string(),
+        "codec_capped_map".to_string(),
         [("note".to_string(), 8)].into(),
     )]
     .into();
@@ -7594,34 +7637,33 @@ fn what_cannot_hold_a_cbor_text_with_no_bound_refuses_it() {
     // The largest frame this node writes holds the text at its capacity: the
     // map head, the key, and a text of eight bytes behind its one-byte head.
     assert!(
-        header.contains("#define CODEC_OPEN_MAP_MAX_BYTES 11U"),
+        header.contains("#define CODEC_CAPPED_MAP_MAX_BYTES 11U"),
         "{header}"
     );
     assert!(
         header.contains(
-            "sce_forge_codec_note_capacity(sce_forge_cbor_read_text(&c, SIZE_MAX, 8, v->note, &v->note_len), &over);"
+            "sce_forge_codec_note_capacity(sce_forge_cbor_read_text(&c, 64U, 8, v->note, &v->note_len), &over);"
         ),
         "{header}"
     );
-    run_c_driver(dir.path(), "codec_open_map.h", header, OPEN_MAP_C_DRIVER);
+    run_c_driver(
+        dir.path(),
+        "codec_capped_map.h",
+        header,
+        CAPPED_MAP_C_DRIVER,
+    );
 
     let deployment = sce_build::forge::deployment::RustDeployment {
         name: "Bare".to_string(),
         source: "deploy.yaml".to_string(),
         ..Default::default()
     };
-    match sce_build::compile_rust_deployment(
+    sce_build::compile_rust_deployment(
         &[path.as_path()],
         &deployment,
         &golden_options(Language::Rust),
-    ) {
-        Err(sce_build::forge::deployment::RustDeploymentError::Refused(e)) => {
-            assert!(e.to_string().contains("'codec_open_map.note'"), "{e}");
-            assert!(e.to_string().contains("needs a capacity"), "{e}");
-        }
-        Err(other) => panic!("a deployment with no capacity for an open text: {other}"),
-        Ok(_) => panic!("a deployment with no capacity for an open text is refused"),
-    }
+    )
+    .unwrap_or_else(|e| panic!("a deployment holds a bounded text at its bound: {e}"));
 }
 
 /// What has no bound compiles on the heap-free tier (docs/adr/0077 §7): with no
@@ -7636,7 +7678,6 @@ use crate::codec_open_bytes::{CodecOpenBytes, CodecOpenBytesIn};
 use crate::codec_open_chain::CodecOpenChainIn;
 use crate::codec_open_list::CodecOpenListIn;
 use crate::codec_open_line::CodecOpenLineIn;
-use crate::codec_open_map::{CodecOpenMap, CodecOpenMapOwned};
 use crate::narrow::Narrow;
 use ::sce_forge_runtime::codec::SceCursor;
 
@@ -7649,28 +7690,19 @@ pub fn probe(frame: &[u8]) -> usize {
         .map_or(0, |v| v.extensions.len());
     let list = CodecOpenListIn::<Narrow>::decode(&mut SceCursor::new(frame))
         .map_or(0, |v| v.frags.len());
-    let map = CodecOpenMap::decode(&mut SceCursor::new(frame))
-        .ok()
-        .and_then(|v| v.try_into_owned_in::<Narrow>().ok())
-        .map_or(0, |v: CodecOpenMapOwned<Narrow>| v.note.as_text().len());
     let line = CodecOpenLineIn::<Narrow>::decode(&mut SceCursor::new(frame))
         .map_or(0, |v| v.description.as_str().len() + v.attendee.as_slice().len());
-    lent + held + chain + list + map + line
+    lent + held + chain + list + line
 }
 "#;
     use sce_build::generator::Language;
     let (dir, lists) = open_lists();
     std::fs::write(dir.path().join("codec_open_bytes.scxml"), OPEN_BYTES).expect("write");
-    std::fs::write(dir.path().join("codec_open_map.scxml"), OPEN_MAP).expect("write");
     std::fs::write(dir.path().join("codec_open_line.scxml"), OPEN_LINE).expect("write");
     let set: Vec<&str> = lists
         .iter()
         .copied()
-        .chain([
-            "codec_open_bytes.scxml",
-            "codec_open_map.scxml",
-            "codec_open_line.scxml",
-        ])
+        .chain(["codec_open_bytes.scxml", "codec_open_line.scxml"])
         .collect();
     let mut opts = golden_options(Language::Rust);
     opts.views = true;

@@ -190,13 +190,20 @@ pub(super) fn unlowered(
 /// has. An entry that is an enumeration is read as its carrier and converted by the enum's own
 /// `fromUnderlying`, which for an open enum is total ([`crate::forge::cbor_codec`]). A list of records
 /// is written where `cbor_codec::lowers_record_list` says, which `cbor_codec::refusal` answers before
-/// this is asked.
+/// this is asked. An entry of a type docs/adr/0085 Landing order step 3a did not lower
+/// (`cbor_codec::unlowered_part`) is named with its type, as `cbor_codec::refusal` names it.
 pub(super) fn cbor_unlowered(m: &CodecModel) -> Option<String> {
     for e in &m.cbor_entries {
         if MEMBERS.contains(&e.id.as_str()) {
             return Some(format!(
                 "the CBOR entry '{}', named for a member of the struct",
                 e.id
+            ));
+        }
+        if crate::forge::cbor_codec::unlowered_part(e).is_some() {
+            return Some(format!(
+                "the CBOR entry '{}' of type `{}`",
+                e.id, e.sce_type
             ));
         }
     }

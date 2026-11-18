@@ -204,16 +204,11 @@ impl Names {
         if let Some(variant) = &m.variant {
             self.codec_variant(variant, arms);
         }
-        // A CBOR codec's entries are its fields (SCE_FORGE.md §4.6.1);
-        // an enum one names its import like any positional field, and a list
-        // of records names the event schema of its record.
+        // A CBOR codec's entries are its fields (SCE_FORGE.md §4.6.1), each a
+        // value of the language (docs/adr/0101, section 1): it names every
+        // enum, record and union its type names, at every depth.
         for entry in &m.cbor_entries {
-            if let Some(present) = entry.leaf_type() {
-                self.ty(present);
-            }
-            if let Some(list) = entry.record_list() {
-                self.name(list.record);
-            }
+            self.value_type_aliases(&entry.sce_type);
         }
         // A content-line codec's entries likewise (SCE_FORGE.md §4.6.4).
         if let Some(content) = &m.content_line {

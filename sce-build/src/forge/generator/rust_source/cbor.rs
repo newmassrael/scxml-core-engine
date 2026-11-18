@@ -45,7 +45,7 @@ pub(in super::super) struct Input<'a> {
 /// type holds no more records than its bound.
 fn value_type(input: &Input<'_>, e: &CborEntry) -> String {
     let value = cbor_codec::rust_view_value_type(input.l, input.imports, e, "'_");
-    if e.record_list().is_some() {
+    if cbor_codec::record_list(e).is_some() {
         format!("&{value}")
     } else {
         value
@@ -96,8 +96,9 @@ fn owned_read(item: &CborItem<'_>, acc: &str) -> String {
 /// is written where the plan's totality names one, and only there.
 fn write_value(input: &Input<'_>, plan: &CborPlan<'_>, item: &CborItem<'_>) -> String {
     // A string or byte string is held within its bounds by its type
-    // (docs/adr/0077 §3, `{ usize::MAX }` where it has none, §7), so there is
-    // nothing to check; the value written is the `str` or slice it holds.
+    // (docs/adr/0077 §3; every one states its bound, docs/adr/0101 section
+    // 1.3), so there is nothing to check; the value written is the `str` or
+    // slice it holds.
     let held = "v.into_inner()";
     match item.value {
         CborValue::Bool => "cbor::write_bool(w, v)?;".to_string(),
@@ -128,9 +129,7 @@ fn write_value(input: &Input<'_>, plan: &CborPlan<'_>, item: &CborItem<'_>) -> S
         // string of a record past its bound, are refused where the plan names
         // them, before anything of the list is written.
         CborValue::RecordList { min } => {
-            let alias = item
-                .entry
-                .record_list()
+            let alias = cbor_codec::record_list(item.entry)
                 .map(|list| list.record)
                 .expect("a list entry holds a list of records");
             // The length is bound first and compared bound, so no comparison of
@@ -174,6 +173,10 @@ fn write_value(input: &Input<'_>, plan: &CborPlan<'_>, item: &CborItem<'_>) -> S
             ));
             write
         }
+        CborValue::Unlowered => unreachable!(
+            "a codec of an entry no printer lowers is refused before it renders \
+             (`cbor_codec::refusal`)"
+        ),
     }
 }
 

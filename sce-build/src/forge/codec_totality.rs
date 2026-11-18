@@ -243,8 +243,16 @@ pub fn may_fail(m: &CodecModel, imports: &[ImportContext]) -> bool {
 /// the refusals the encode has (docs/adr/0065 §3): a codec that states it is
 /// total and refuses somewhere is refused at the first place it refuses, and
 /// one that states it may fail and refuses nowhere is refused at its root.
+///
+/// A CBOR entry of a type no printer lowers yet has no encode whose refusals
+/// the analysis names (docs/adr/0101, section 5.4): a codec that holds one and
+/// states that its encode may fail is not refused for naming no refusal.
 pub fn check(m: &CodecModel, imports: &[ImportContext]) -> Result<(), ForgeError> {
     let totality = analyse(m, &mut Resolved(imports));
+    let unjudged = m
+        .cbor_entries
+        .iter()
+        .any(|e| crate::forge::cbor_codec::unlowered_part(e).is_some());
     match (m.encode_may_fail, totality.refusals().first()) {
         (false, Some(r)) => Err(
             ForgeError::from(ValidationError::CodecUndeclaredEncodeRefusal {
@@ -255,12 +263,12 @@ pub fn check(m: &CodecModel, imports: &[ImportContext]) -> Result<(), ForgeError
             })
             .at_line(element_line(m, &r.element)),
         ),
-        (true, None) => Err(
-            ForgeError::from(ValidationError::CodecEncodeMayFailWithoutRefusal {
+        (true, None) if !unjudged => Err(ForgeError::from(
+            ValidationError::CodecEncodeMayFailWithoutRefusal {
                 codec: m.name.clone(),
-            })
-            .at_line(m.source_location.as_ref().and_then(|l| l.line)),
-        ),
+            },
+        )
+        .at_line(m.source_location.as_ref().and_then(|l| l.line))),
         _ => Ok(()),
     }
 }
@@ -913,11 +921,16 @@ fn flag_width(m: &CodecModel, id: &ElementId) -> u32 {
 
 fn cbor(entries: &[CborEntry], imports: &mut dyn Imports, out: &mut Vec<Refusal>) {
     for e in entries {
-        // A string or byte string with a `sce:max-size`, and an exact byte
-        // string, are presented within their bounds (`Text`, `Bytes`;
-        // docs/adr/0065 §6 R1, docs/adr/0077 §3), so neither is refused; one
-        // with no bound has none to break.
-        let refusal = match crate::forge::cbor_codec::kind(e) {
+        // A string or byte string, each of the bound its type states, and an
+        // exact byte string, are presented within their bounds (`Text`,
+        // `Bytes`; docs/adr/0065 §6 R1, docs/adr/0077 §3), so neither is
+        // refused. An entry of a type no printer lowers yet has no encode on
+        // any backend, which refuses the codec by name before it renders
+        // (docs/adr/0101, section 5.4), so it names no refusal of one.
+        let Some(kind) = crate::forge::cbor_codec::lowered_kind(e) else {
+            continue;
+        };
+        let refusal = match kind {
             // A list of records is presented in the language's list of its
             // bound, which holds no more than the bound (docs/adr/0086, section
             // 7.4), each record in the payload type of its event schema's unit,
@@ -925,7 +938,7 @@ fn cbor(entries: &[CborEntry], imports: &mut dyn Imports, out: &mut Vec<Refusal>
             // language's own vector. What neither holds is the list's lower
             // count and a byte string's bound, so a value of fewer records, or
             // with a byte string past its bound, is refused.
-            "record_list" => e.record_list().and_then(|list| {
+            "record_list" => crate::forge::cbor_codec::record_list(e).and_then(|list| {
                 if list.min > 0 {
                     return Some((
                         RefusalKind::CborOutOfRange,
@@ -1085,8 +1098,9 @@ mod tests {
     #[test]
     fn a_cbor_map_of_strings_and_byte_strings_within_their_bounds_is_total() {
         // Each is presented as a `Text` or `Bytes` of its bounds (docs/adr/0065
-        // §6 R1), and one with no bound has none to break, so no size is left
-        // for the encode to refuse.
+        // §6 R1), each bound written in its type or as its legacy attribute
+        // (docs/adr/0101, section 1.3), so no size is left for the encode to
+        // refuse.
         let m = model(
             r#"<scxml xmlns="http://www.w3.org/2005/07/scxml" xmlns:sce="http://sce.dev/ext"
                        sce:kind="codec" sce:encoding="cbor" sce:codec-format="2" name="t">
@@ -1095,10 +1109,41 @@ mod tests {
                  <data id="note" sce:type="string" sce:key="1" sce:max-size="8" sce:direction="out"/>
                  <data id="blob" sce:type="bytes" sce:key="2" sce:max-size="12" sce:direction="out"/>
                  <data id="tag" sce:type="bytes" sce:key="3" sce:length="4" sce:direction="out"/>
-                 <data id="free" sce:type="string" sce:key="4" sce:direction="out"/>
+                 <data id="free" sce:type="optional&lt;string[16]&gt;" sce:key="4" sce:direction="out"/>
                </datamodel></scxml>"#,
         );
         assert!(analyse(&m, &mut NoImports).is_total(), "{:?}", kinds(&m));
+    }
+
+    /// A CBOR codec of `entries` whose root carries `root_attrs`.
+    fn cbor_model(root_attrs: &str, entries: &str) -> CodecModel {
+        model(&format!(
+            r#"<scxml xmlns="http://www.w3.org/2005/07/scxml" xmlns:sce="http://sce.dev/ext"
+                       sce:kind="codec" sce:encoding="cbor" sce:codec-format="2"{root_attrs} name="t">
+                 <datamodel>
+                 <data id="raw" sce:type="bytes" sce:direction="in"/>
+{entries}
+               </datamodel></scxml>"#
+        ))
+    }
+
+    #[test]
+    fn an_entry_no_printer_lowers_names_no_refusal_and_leaves_a_statement_unjudged() {
+        // docs/adr/0101, section 5.4: a list below its lower count has no
+        // encode on any backend yet, so the analysis names none, and a codec
+        // that states its encode may fail is not refused for naming none.
+        let entries = r#"                 <data id="n" sce:type="list&lt;uint8&gt;[1..4]" sce:key="0" sce:direction="out"/>"#;
+        let m = cbor_model("", entries);
+        assert!(analyse(&m, &mut NoImports).is_total(), "{:?}", kinds(&m));
+        assert!(check(&m, &[]).is_ok());
+        let m = cbor_model(r#" sce:encode-may-fail="true""#, entries);
+        assert!(check(&m, &[]).is_ok());
+        // A codec of lowered entries alone is still held to its statement.
+        let m = cbor_model(
+            r#" sce:encode-may-fail="true""#,
+            r#"                 <data id="n" sce:type="uint8" sce:key="0" sce:direction="out"/>"#,
+        );
+        assert!(check(&m, &[]).is_err());
     }
 
     #[test]

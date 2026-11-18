@@ -156,7 +156,7 @@ fn held(
             let class = class_of(
                 "Text",
                 "BoundedText",
-                bounded(0, e.max_size),
+                bounded(0, e.size_bound()),
                 "a text within its bound in UTF-8 bytes",
             );
             Held {
@@ -168,7 +168,7 @@ fn held(
         CborValue::Bytes { exact } => {
             let (least, most) = match (exact, e.length) {
                 (true, Some(length)) => (length, Some(length)),
-                _ => (0, e.max_size),
+                _ => (0, e.size_bound()),
             };
             let what = if exact {
                 format!("a byte string of exactly {least} bytes")
@@ -183,9 +183,7 @@ fn held(
             }
         }
         CborValue::RecordList { .. } => {
-            let list = e
-                .record_list()
-                .expect("a list entry holds a list of records");
+            let list = cbor_codec::record_list(e).expect("a list entry holds a list of records");
             // The least is 0, as Rust's `BoundedList` holds it, so a value of
             // fewer records than the lower count is one the encode refuses.
             let class = class_of(
@@ -200,6 +198,10 @@ fn held(
                 class: Some(class),
             }
         }
+        CborValue::Unlowered => unreachable!(
+            "a codec of an entry no printer lowers is refused before it renders \
+             (`cbor_codec::unlowered_forms`)"
+        ),
     }
 }
 
@@ -229,9 +231,7 @@ struct Record {
 
 /// The record the list entry `e` holds.
 fn record(plan: &CborPlan<'_>, imports: &[ImportContext], e: &CborEntry) -> Record {
-    let list = e
-        .record_list()
-        .expect("a list entry holds a list of records");
+    let list = cbor_codec::record_list(e).expect("a list entry holds a list of records");
     let scope = crate::forge::generator::import_type_scope(imports);
     let scoped = scope
         .records
@@ -353,6 +353,10 @@ fn write_value(
                 record.encode_fn
             )
         }
+        CborValue::Unlowered => unreachable!(
+            "a codec of an entry no printer lowers is refused before it renders \
+             (`cbor_codec::unlowered_forms`)"
+        ),
     }
 }
 

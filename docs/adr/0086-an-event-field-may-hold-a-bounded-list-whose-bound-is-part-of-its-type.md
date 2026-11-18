@@ -257,7 +257,8 @@ the encoder, and ADR 0085's domain bump starts signing with it.**
    a composition says so where it lowers it (section 7.3), never in the grammar.
 7. **A codec entry keeps a type of its own.** A CBOR or content-line codec describes a foreign protocol's frame, not
    a value of the language; its entries move from `FieldType` to `EntryType` (a scalar or an optional scalar), and
-   its list stays `sce:repeated`.
+   its list stays `sce:repeated`. Amended by ADR 0101 section 1: this holds for a content-line codec alone; a CBOR
+   codec's entry is a value of the language, typed by `ValueType` at any depth.
 8. **An event schema may import an event schema** (`<sce:import kind="event-schema">`) to name a record anywhere in
    a field's type.
 
@@ -1147,7 +1148,7 @@ the encoder, and ADR 0085's domain bump starts signing with it.**
 | an alias the document does not import | `validation/invalid-attribute`, with the candidates | parse |
 | a type that contains itself | `validation/cross-kind-circular-dependency` | import resolution |
 | `sce:default` on a list | `validation/attribute-rule-violated` | parse |
-| a composed type on a CBOR or content-line entry | `validation/invalid-attribute`, with the entry types | parse |
+| a composed type on a content-line entry (a CBOR entry holds one since ADR 0101 section 1) | `validation/invalid-attribute`, with the entry types | parse |
 | a value sent, forwarded or assigned whole where its type does not fit | `scxml/static-datamodel-rule`, naming the path | check |
 | a composed value as an operand, or compared | `expression/unsupported-construct` | check |
 | two machines whose fields are not one field | `mesh/event-schema-mismatch` | deploy |

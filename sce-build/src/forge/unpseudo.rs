@@ -40,13 +40,12 @@ use crate::comment_text;
 use crate::forge::model::{
     AlgorithmConst, AlgorithmConstType, AlgorithmModel, AlgorithmParam, AlgorithmSignature,
     AlgorithmStmt, AlgorithmValueType, BackpressurePolicy, BitSize, BoundedCollectionModel,
-    BufferPoolModel, BufferPoolVariant, CachePolicy, CallArg, CborEntry, CborEntryType,
-    CodecEncoding, CodecField, CodecModel, CodecTestVector, CodecVariant, ContentLineEntry,
-    ContentLineModel, CountRef, DecodedField, DecodedFieldValue, DecodedValue, Endian, FlagDef,
-    FlagInput, FoldBody, PeekByteSpec, PresentIfPredicate, PresentIfScope, ProcedureAssign,
-    ProcedureDoneParam, ProcedureHelper, ProcedureModel, ProcedureSendAction, ProcedureState,
-    ProcedureTransition, TestVector, TestVectorValue, TlvEntryFlagBind, TlvEntryId,
-    TlvTerminateStrategy, VariantArm,
+    BufferPoolModel, BufferPoolVariant, CachePolicy, CallArg, CborEntry, CodecEncoding, CodecField,
+    CodecModel, CodecTestVector, CodecVariant, ContentLineEntry, ContentLineModel, CountRef,
+    DecodedField, DecodedFieldValue, DecodedValue, Endian, FlagDef, FlagInput, FoldBody,
+    PeekByteSpec, PresentIfPredicate, PresentIfScope, ProcedureAssign, ProcedureDoneParam,
+    ProcedureHelper, ProcedureModel, ProcedureSendAction, ProcedureState, ProcedureTransition,
+    TestVector, TestVectorValue, TlvEntryFlagBind, TlvEntryId, TlvTerminateStrategy, VariantArm,
 };
 use crate::forge::model::{
     CapacitySource, CollectionOrdering, ConcurrencyMode, ConditionModel, Direction, EntryType,
@@ -2379,9 +2378,10 @@ fn parse_bit_size(w: &[&str], line: usize) -> Result<BitSize, ParseError> {
 }
 
 /// `codec <name> encoding cbor [encode-may-fail]`, then `entry <id>: <type> key <n>
-/// [length <n>] [max-size <n>]` lines, `<type>` being a bare type, a list of
-/// records (`list<record:R>[N]`), or `optional<T>` of one (docs/adr/0055,
-/// section 8).
+/// [length <n>]` lines, `<type>` being any type of the one type grammar, every
+/// bound in it (docs/adr/0101, section 1), a bare type or `optional<T>`
+/// (docs/adr/0055, section 8); a byte string of an exact `length` writes no
+/// bracket, its length being its bound.
 fn parse_cbor_codec(head: &Line<'_>, body: &[&Line<'_>]) -> Result<CodecModel, ParseError> {
     let w: Vec<&str> = head.text.split_whitespace().collect();
     let mut entries = Vec::new();
@@ -2402,8 +2402,8 @@ fn parse_cbor_codec(head: &Line<'_>, body: &[&Line<'_>]) -> Result<CodecModel, P
             .and_then(|v| v.strip_suffix(':'))
             .ok_or_else(|| fail("a cbor entry needs `<id>:`".to_string()))?;
         let type_word = lw.get(2).copied().unwrap_or("");
-        let sce_type = CborEntryType::from_attr(type_word)
-            .ok_or_else(|| fail(format!("`{type_word}` is not an sce:type")))?;
+        let written = crate::forge::value_type::WrittenType::read(type_word)
+            .map_err(|_| fail(format!("`{type_word}` is not an sce:type")))?;
         if lw.get(3).copied() != Some("key") {
             return Err(fail(
                 "a cbor entry's type is followed by `key <n>`".to_string(),
@@ -2413,15 +2413,7 @@ fn parse_cbor_codec(head: &Line<'_>, body: &[&Line<'_>]) -> Result<CodecModel, P
             .get(4)
             .and_then(|v| v.parse::<u8>().ok())
             .ok_or_else(|| fail("a cbor entry's key is not a number".to_string()))?;
-        let mut entry = CborEntry {
-            id: undo(id, line.number)?,
-            line: None,
-            key,
-            sce_type,
-            length: None,
-            max_size: None,
-            capacity: None,
-        };
+        let mut length = None;
         let mut rest = lw[5..].iter();
         while let Some(word) = rest.next() {
             let mut number = |what: &str| {
@@ -2430,12 +2422,29 @@ fn parse_cbor_codec(head: &Line<'_>, body: &[&Line<'_>]) -> Result<CodecModel, P
                     .ok_or_else(|| fail(format!("`{what}` needs a number")))
             };
             match *word {
-                "length" => entry.length = Some(number("length")?),
-                "max-size" => entry.max_size = Some(number("max-size")?),
+                "length" => length = Some(number("length")?),
                 other => return Err(fail(format!("`{other}` is not a cbor entry clause"))),
             }
         }
-        entries.push(entry);
+        // An exact length is the bound of its byte string, written once as
+        // `length` (docs/adr/0101, section 1.2).
+        let written = match length {
+            Some(n) => written
+                .with_outer_bound(crate::forge::value_type::Bound::of(n))
+                .map_err(|why| fail(why.rule()))?,
+            None => written,
+        };
+        let sce_type = written
+            .bounded()
+            .map_err(|why| fail(format!("`{type_word}`: {}", why.rule())))?;
+        entries.push(CborEntry {
+            id: undo(id, line.number)?,
+            line: None,
+            key,
+            sce_type,
+            length,
+            capacity: None,
+        });
     }
     Ok(CodecModel {
         name: undo(w.get(1).copied().unwrap_or(""), head.number)?,

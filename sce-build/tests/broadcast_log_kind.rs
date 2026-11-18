@@ -844,9 +844,9 @@ fn event_ring() -> String {
 /// A positional payload the protocol states no bound of is a codec the parser
 /// takes (docs/adr/0077 §7), and an element with no largest encoded size: a
 /// slot holds the element's wire bytes in a fixed number of words, so the log
-/// refuses it on the element-type row, naming the payload, as it refuses a CBOR
-/// element whose string states none
-/// (`a_cbor_element_with_a_string_that_states_no_bound_is_refused_for_its_size`).
+/// refuses it on the element-type row, naming the payload. A CBOR element's
+/// string states its bound in its type, and one that states none is refused at
+/// it (`a_cbor_element_with_a_string_that_states_no_bound_is_refused_at_its_type`).
 #[test]
 fn an_element_with_a_payload_no_declaration_bounds_is_refused_for_its_size() {
     let xml = event_ring();
@@ -1638,25 +1638,46 @@ fn a_cbor_element_with_text_or_bytes_is_stored_as_its_owned_form() {
 }
 
 #[test]
-fn a_cbor_element_with_a_string_that_states_no_bound_is_refused_for_its_size() {
-    // A string with no `sce:max-size` has no capacity to declare an owned container
-    // at, and no largest encoded size to size a slot from: the set is refused on the
-    // element-type row before the template is read, as a positional codec's payload
-    // with no bound is, and in every language.
+fn a_cbor_element_with_a_string_that_states_no_bound_is_refused_at_its_type() {
+    // A CBOR entry is a value of the language (docs/adr/0101, section 1.3): a
+    // string that states no bound is no type of it, so the element's own document
+    // is refused where its entry is read, and a set that holds it is refused in
+    // every language before any log is sized over it.
     let xml = event_ring();
     let codec =
         cbor_codec_with(r#"<data id="note" sce:type="string" sce:key="1" sce:direction="out"/>"#);
+    let refusal = match parse_forge(&codec, label("event_record")) {
+        Err(refusal) => refusal,
+        Ok(other) => panic!("a CBOR string with no bound is refused, got {other:?}"),
+    };
+    let codes: Vec<DiagnosticCode> = refusal
+        .error
+        .to_diagnostics()
+        .iter()
+        .map(|d| d.code)
+        .collect();
+    assert!(
+        matches!(
+            codes.as_slice(),
+            [DiagnosticCode::ValidationAttributeRuleViolated]
+        ),
+        "{codes:?}"
+    );
+    let why = refusal.error.to_string();
+    assert!(
+        why.contains("entry 'note'") && why.contains("has no bound"),
+        "{why}"
+    );
     for language in set_languages() {
         let wire = language_wire_name(language);
-        let located = compile_documents(
-            language,
-            &[("event_ring.scxml", &xml), ("event_record.scxml", &codec)],
-        )
-        .err()
-        .unwrap_or_else(|| panic!("{wire}: the string has no bound, so the set is refused"));
-        let reason = unbounded_reason(located, &xml, "event_record", "codec");
-        assert!(reason.contains("'note'"), "{wire}: {reason}");
-        assert!(reason.contains("sce:max-size"), "{wire}: {reason}");
+        assert!(
+            compile_documents(
+                language,
+                &[("event_ring.scxml", &xml), ("event_record.scxml", &codec)],
+            )
+            .is_err(),
+            "{wire}: the string has no bound, so the set is refused"
+        );
     }
 }
 

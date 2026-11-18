@@ -7,10 +7,9 @@
 //! file holds the declaration — what the parser reads, what it refuses, and
 //! that the page shows a CBOR codec and reads it back.
 
-use sce_build::forge::model::{
-    CborEntry, CborEntryType, CodecEncoding, CodecModel, EntryType, ForgeDocument, SceType,
-};
+use sce_build::forge::model::{CborEntry, CodecEncoding, CodecModel, ForgeDocument, SceType};
 use sce_build::forge::parser::parse_forge;
+use sce_build::forge::value_type::{Bound, ValueType};
 use sce_build::forge::{pseudo, unpseudo};
 use sce_build::DocumentLabel;
 
@@ -82,29 +81,37 @@ fn every_entry_is_read_with_its_key_and_its_bounds() {
         ),
         (0, true, Some(16))
     );
-    assert_eq!(entry("source").max_size, Some(256));
+    // An exact length is the bound of its byte string (docs/adr/0101, section
+    // 1.2), and `sce:max-size` the bracket of a text (section 1.3).
+    assert_eq!(
+        entry("id").sce_type,
+        ValueType::Bytes { max: Bound::of(16) }
+    );
+    assert_eq!(
+        entry("source").sce_type,
+        ValueType::Text {
+            max: Bound::of(256)
+        }
+    );
     assert_eq!(
         (
             entry("deadline").sce_type.clone(),
             entry("deadline").is_required()
         ),
         (
-            CborEntryType::Leaf(EntryType::Optional {
-                elem: SceType::Uint64
-            }),
+            ValueType::Optional {
+                elem: Box::new(ValueType::Scalar(SceType::Uint64))
+            },
             false
         )
     );
     assert_eq!(
         entry("urgent").sce_type,
-        CborEntryType::Leaf(EntryType::Optional {
-            elem: SceType::Bool
-        })
+        ValueType::Optional {
+            elem: Box::new(ValueType::Scalar(SceType::Bool))
+        }
     );
-    assert_eq!(
-        entry("pattern").sce_type,
-        CborEntryType::Leaf(EntryType::Scalar(SceType::Uint8))
-    );
+    assert_eq!(entry("pattern").sce_type, ValueType::Scalar(SceType::Uint8));
 }
 
 #[test]
@@ -113,6 +120,7 @@ fn the_page_shows_a_cbor_codec_and_reads_it_back() {
     let page = pseudo::render(&doc).expect("a CBOR codec renders");
     assert!(page.contains("encoding cbor"), "{page}");
     assert!(page.contains("entry id: bytes key 0 length 16"), "{page}");
+    assert!(page.contains("entry source: string[256] key 1"), "{page}");
     assert!(
         page.contains("entry deadline: optional<uint64> key 12"),
         "{page}"
@@ -166,17 +174,6 @@ fn a_key_is_one_byte_and_names_one_entry() {
         r#"    <data id="n" sce:type="uint8" sce:direction="out"/>"#,
     ));
     assert!(why.contains("sce:key"), "{why}");
-}
-
-#[test]
-fn a_kind_the_map_does_not_write_is_refused() {
-    for ty in ["int32", "float64"] {
-        let why = refusal(&document(
-            "",
-            &format!(r#"    <data id="n" sce:type="{ty}" sce:key="0" sce:direction="out"/>"#),
-        ));
-        assert!(why.contains(ty), "{ty}: {why}");
-    }
 }
 
 #[test]
