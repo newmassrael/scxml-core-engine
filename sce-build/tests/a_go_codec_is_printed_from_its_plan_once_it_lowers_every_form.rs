@@ -1196,7 +1196,8 @@ fn a_group_of_one_flag_is_presented_whole_and_its_flag_derived() {
             "\tif _mAttempts.IsPresent() {\n",
             "\tvar _gFlagsHasSession optional.Of[CodecGroupEnumFlagsHasSession]\n\
              \tif ((Flags >> 0) & 1) != 0 {\n\
-             \t\t_gFlagsHasSession = optional.Some(MakeCodecGroupEnumFlagsHasSession(\
+             \t\t_gFlagsHasSession = optional.Some[CodecGroupEnumFlagsHasSession](\
+             MakeCodecGroupEnumFlagsHasSession(\
              State.Proven(), Attempts.Proven()))\n\
              \t}\n",
             "\t\tflagsHasSession: _gFlagsHasSession,\n",
@@ -1210,6 +1211,35 @@ fn a_group_of_one_flag_is_presented_whole_and_its_flag_derived() {
             "\tattempts optional.Of[uint8]\n",
             "src.State()",
         ],
+    );
+}
+
+/// A group of several arms that may hold none is decoded into the optional of
+/// the group's type, each arm handed to `optional.Some` under that type: Go
+/// infers the type of an arm from its argument, and an optional of an arm is
+/// not an optional of the group.
+///
+/// Turns red where the decode hands an arm to `optional.Some` without the
+/// group's type, which `go build` refuses.
+#[test]
+fn an_arm_of_a_group_that_may_hold_none_is_decoded_as_the_groups_optional() {
+    assert!(unlowered("codec_present_if_disjunction").is_empty());
+    let text = resource_go("codec_present_if_disjunction");
+    holds(
+        "codec_present_if_disjunction",
+        &text,
+        &[
+            "\tvar _gFlagsWantsAOrWantsB optional.Of[CodecPresentIfDisjunctionFlagsWantsAOrWantsB]\n",
+            "\t\t_gFlagsWantsAOrWantsB = optional.Some[CodecPresentIfDisjunctionFlagsWantsAOrWantsB](\
+             MakeCodecPresentIfDisjunctionFlagsWantsAOrWantsBWantsA(Seq.Proven()))\n",
+            "\t\t_gFlagsWantsAOrWantsB = optional.Some[CodecPresentIfDisjunctionFlagsWantsAOrWantsB](\
+             MakeCodecPresentIfDisjunctionFlagsWantsAOrWantsBWantsAWantsB(Seq.Proven()))\n",
+        ],
+    );
+    holds_none(
+        "codec_present_if_disjunction",
+        &text,
+        &["optional.Some(MakeCodecPresentIfDisjunction"],
     );
 }
 

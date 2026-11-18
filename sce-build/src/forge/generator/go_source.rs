@@ -2269,8 +2269,10 @@ fn group_declarations(
             declared.push_str(&format!("func ({ty}) {marker}() {{}}\n\n"));
         }
         let made = format!("Make{ty}({})", arguments.join(", "));
+        // The optional is of the group's type, which Go does not infer from an
+        // arm of a sum: `optional.Some` is handed it by name.
         let made = if group.absent.is_some() {
-            format!("optional.Some({made})")
+            format!("optional.Some[{}]({made})", g.ty)
         } else {
             made
         };
