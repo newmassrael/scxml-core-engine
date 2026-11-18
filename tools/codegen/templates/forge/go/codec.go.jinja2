@@ -321,9 +321,28 @@ func Decode{{ struct_name }}(cursor *codec.SceCursor{{ params_after_first_arg }}
 {% endfor %}
 {% endif %}
 	}
+{% if has_tail_fields %}
+	// A tail field runs to the end of the frame, so the frame is consumed whole.
 	if err := cursor.Advance(frameLen); err != nil {
 		return nil, err
 	}
+{% else %}
+	// The bytes it read and no more (RFC §synth-5-B B3, as the Rust decode
+	// does): the end of the last length-ref field, at least the fixed fields'
+	// bytes, so that a codec holding this one as a body, an entry or an arm
+	// decodes on after it.
+	consumed := {{ min_bytes }}
+{% for field in fields %}
+{% if field.length_ref_end is defined %}
+	if {{ field.length_ref_end }} > consumed {
+		consumed = {{ field.length_ref_end }}
+	}
+{% endif %}
+{% endfor %}
+	if err := cursor.Advance(consumed); err != nil {
+		return nil, err
+	}
+{% endif %}
 	return value, nil
 {% else %}
 	raw, err := cursor.PeekSlice({{ min_bytes }})

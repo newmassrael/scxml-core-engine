@@ -303,6 +303,34 @@ fn a_bodys_encoded_length_is_measured_over_the_frame_it_writes() {
     );
 }
 
+/// A decode of a codec whose byte string ends where its length says advances
+/// the cursor past those bytes and no further, so a codec holding it as a body
+/// or a chain's entry decodes on after it (`codec_origin_envelope`,
+/// `codec_tlv_chain_basic`); a codec with a tail field consumes the frame
+/// whole, the tail running to its end.
+///
+/// Turns red where the positional decode of `codec.kt.jinja2` advances by the
+/// cursor's whole remainder without a tail field, or by less than it with one.
+#[test]
+fn a_decode_consumes_its_own_bytes_and_a_tail_the_rest_of_the_frame() {
+    let leaf = resource_file("codec_origin_leaf");
+    holds(
+        "codec_origin_leaf",
+        &leaf,
+        &["            var _consumed = 1\n\
+           \x20           if (1 + len.toInt() > _consumed) _consumed = 1 + len.toInt()\n\
+           \x20           if (!cursor.advance(_consumed)) return Decoded.Refused(CodecError.NeedMoreBytes)\n"],
+    );
+    holds_none("codec_origin_leaf", &leaf, &["cursor.advance(frameLen)"]);
+    let tail = resource_file("codec_tail");
+    holds(
+        "codec_tail",
+        &tail,
+        &["            if (!cursor.advance(frameLen)) return Decoded.Refused(CodecError.NeedMoreBytes)\n"],
+    );
+    holds_none("codec_tail", &tail, &["_consumed"]);
+}
+
 /// A list of a printed codec is held to its bound in a value class over a list
 /// of sources of the entries' codec, copied where it is made; its count is
 /// derived from how many entries it holds, and each entry is written by its

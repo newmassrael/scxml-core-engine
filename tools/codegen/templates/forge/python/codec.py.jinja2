@@ -230,7 +230,23 @@ class {{ struct_name }}:
             {{ group.name }}={{ group.decoded }},
 {% endfor %}
         )
+{% if has_tail_fields %}
+        # A tail field runs to the end of the frame, so the frame is consumed whole.
         cursor.advance(_frame_len)
+{% else %}
+        # The bytes it read and no more (RFC §synth-5-B B3, as the Rust decode
+        # does): the end of the last length-ref field, at least the fixed
+        # fields' bytes, so that a codec holding this one as a body, an entry
+        # or an arm decodes on after it.
+        _consumed = {{ min_bytes }}
+{% for field in fields %}
+{% if field.length_ref_end is defined %}
+        if {{ field.length_ref_end }} > _consumed:
+            _consumed = {{ field.length_ref_end }}
+{% endif %}
+{% endfor %}
+        cursor.advance(_consumed)
+{% endif %}
         return value
 {% else %}
         raw = cursor.peek_slice({{ min_bytes }})

@@ -478,7 +478,22 @@ data class {{ struct_name }}(
 {% for field in fields %}
 {{ decode_field(field) }}
 {% endfor %}
+{% if has_tail_fields %}
+            // A tail field runs to the end of the frame, so the frame is consumed whole.
             if (!cursor.advance(frameLen)) return Decoded.Refused(CodecError.NeedMoreBytes)
+{% else %}
+            // The bytes it read and no more (RFC §synth-5-B B3, as the Rust decode
+            // does): the end of the last length-ref field, at least the fixed
+            // fields' bytes, so that a codec holding this one as a body, an entry
+            // or an arm decodes on after it.
+            var _consumed = {{ min_bytes }}
+{% for field in fields %}
+{% if field.length_ref_end is defined %}
+            if ({{ field.length_ref_end }} > _consumed) _consumed = {{ field.length_ref_end }}
+{% endif %}
+{% endfor %}
+            if (!cursor.advance(_consumed)) return Decoded.Refused(CodecError.NeedMoreBytes)
+{% endif %}
             // Construct in the `return` (no intermediate local) so a field
             // literally named `value` cannot shadow a result-struct local.
             return Decoded.Ok(

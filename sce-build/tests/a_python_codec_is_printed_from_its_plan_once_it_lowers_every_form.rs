@@ -81,6 +81,35 @@ fn holds_none(name: &str, text: &str, needles: &[&str]) {
     }
 }
 
+/// A decode of a codec whose byte string ends where its length says advances
+/// the cursor past those bytes and no further, so a codec holding it as a body
+/// or a chain's entry decodes on after it (`codec_origin_envelope`,
+/// `codec_tlv_chain_basic`); a codec with a tail field consumes the frame
+/// whole, the tail running to its end.
+///
+/// Turns red where the positional decode of `codec.py.jinja2` advances by the
+/// cursor's whole remainder without a tail field, or by less than it with one.
+#[test]
+fn a_decode_consumes_its_own_bytes_and_a_tail_the_rest_of_the_frame() {
+    let leaf = resource_module("codec_origin_leaf");
+    holds(
+        "codec_origin_leaf",
+        &leaf,
+        &["        _consumed = 1\n\
+           \x20       if 1 + f_len > _consumed:\n\
+           \x20           _consumed = 1 + f_len\n\
+           \x20       cursor.advance(_consumed)\n"],
+    );
+    holds_none("codec_origin_leaf", &leaf, &["cursor.advance(_frame_len)"]);
+    let tail = resource_module("codec_tail");
+    holds(
+        "codec_tail",
+        &tail,
+        &["        cursor.advance(_frame_len)\n"],
+    );
+    holds_none("codec_tail", &tail, &["_consumed"]);
+}
+
 /// A length of a byte string is derived on encode from the bytes the source
 /// presents, and is no field of the value; the byte string is presented in the
 /// class of its bound, which the value's constructor holds it to.

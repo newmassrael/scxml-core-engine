@@ -95,6 +95,36 @@ fn holds_none(name: &str, text: &str, needles: &[&str]) {
     }
 }
 
+/// A decode of a codec whose byte string ends where its length says advances
+/// the cursor past those bytes and no further, so a codec holding it as a body
+/// or a chain's entry decodes on after it (`codec_origin_envelope`,
+/// `codec_tlv_chain_basic`); a codec with a tail field consumes the frame
+/// whole, the tail running to its end.
+///
+/// Turns red where the positional decode of `codec.go.jinja2` advances by the
+/// cursor's whole remainder without a tail field, or by less than it with one.
+#[test]
+fn a_decode_consumes_its_own_bytes_and_a_tail_the_rest_of_the_frame() {
+    let leaf = resource_go("codec_origin_leaf");
+    holds(
+        "codec_origin_leaf",
+        &leaf,
+        &["\tconsumed := 1\n\
+           \tif 1+int(Len) > consumed {\n\
+           \t\tconsumed = 1+int(Len)\n\
+           \t}\n\
+           \tif err := cursor.Advance(consumed); err != nil {\n"],
+    );
+    holds_none("codec_origin_leaf", &leaf, &["cursor.Advance(frameLen)"]);
+    let tail = resource_go("codec_tail");
+    holds(
+        "codec_tail",
+        &tail,
+        &["\tif err := cursor.Advance(frameLen); err != nil {\n"],
+    );
+    holds_none("codec_tail", &tail, &["consumed :="]);
+}
+
 /// A codec of integers is read through the interface of its source, holds
 /// each element in an unexported field behind its method, is made by its
 /// constructor, and is encoded over any source, each byte read off the source.
