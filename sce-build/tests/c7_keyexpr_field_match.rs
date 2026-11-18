@@ -1012,6 +1012,9 @@ fn python_field_match_multi_file_imports_and_calls() {
     // lives inside the function body. To exercise it, insert one entry and
     // *call* `keyexpr_field_match`: a bad cross-doc symbol or a miscompiled
     // BC/codec surfaces as an AttributeError / assertion at the call.
+    // The element is made of `pattern` alone: `keyexpr_entry` is printed
+    // from its plan, so `pattern_len` is derived on encode from the text's
+    // UTF-8 bytes and is no member of the value (docs/adr/0081 §3).
     let out_dir = dir.path().join("py_out");
     let pkg_dir = out_dir.join("fmpkg");
     fs::create_dir_all(&pkg_dir).expect("create pkg dir");
@@ -1032,7 +1035,7 @@ from fmpkg import keyexpr_field_match as m\n\
 from fmpkg.local_keyexpr_table import LocalKeyexprTable\n\
 from fmpkg.keyexpr_entry import KeyexprEntry\n\
 t = LocalKeyexprTable()\n\
-t.insert(KeyexprEntry(pattern_len=1, pattern='x'))\n\
+t.insert(KeyexprEntry(pattern='x'))\n\
 assert m.keyexpr_field_match(b'x', t) == 0, 'expected match hit'\n\
 assert m.keyexpr_field_match(b'zz', t) == 0xFFFF, 'expected miss sentinel'\n";
 
