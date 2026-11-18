@@ -313,8 +313,6 @@ else()
     add_compile_options(-Wall -Wextra -pedantic -Werror)  # -Werror: treat warnings as errors
 endif()
 
-find_package(PkgConfig REQUIRED)
-
 # Modular Architecture - Add subdirectories
 add_subdirectory(backends/cpp/forge-runtime)  # sce_forge_runtime: headers generated C++ includes
 add_subdirectory(sce)                 # Unified SCE library with integrated parsing
