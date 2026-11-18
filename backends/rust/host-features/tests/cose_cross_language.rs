@@ -13,7 +13,7 @@ use std::path::Path;
 
 use sce_rust_host_features::cose::{public_key_of, IV_BYTES};
 use sce_rust_host_features::{
-    CoseKeys, HttpRequest, HttpResponse, NonceSource, Outcome, Params, ReferenceHost,
+    CoseKeys, HttpRequest, HttpResponse, Invocation, NonceSource, Outcome, Params, ReferenceHost,
     ScriptedClock, Transport, TransportFailure, TrustedKey,
 };
 use serde_json::Value;
@@ -110,6 +110,12 @@ fn params(pairs: &[(&str, String)]) -> Params {
         .collect()
 }
 
+/// The first start of the `<invoke>` `id` in one session: a COSE operation
+/// keeps no first result, so every case may reuse an identity.
+fn invocation(id: &str) -> Invocation {
+    Invocation::new("session", id, 1)
+}
+
 /// The result record of a completion.
 fn done(outcome: Option<Outcome>) -> Value {
     match outcome.expect("a standard type is served") {
@@ -126,7 +132,7 @@ fn the_host_signs_each_object_byte_for_byte() {
         let name = member(case, "name");
         let fields = done(host.start(
             "sce-host-cose-sign1",
-            "sign",
+            &invocation("sign"),
             &params(&[
                 ("key_id", member(case, "key_id").to_string()),
                 ("payload", text(&hex(member(case, "payload")))),
@@ -154,7 +160,7 @@ fn the_host_seals_each_object_byte_for_byte_under_its_nonce() {
         host.set_nonce_source(Box::new(Fixed(nonce)));
         let fields = done(host.start(
             "sce-host-cose-encrypt0",
-            "seal",
+            &invocation("seal"),
             &params(&[
                 ("key_id", member(case, "key_id").to_string()),
                 ("plaintext", text(&hex(member(case, "plaintext")))),
@@ -181,7 +187,7 @@ fn the_host_verifies_each_object_and_not_over_other_external_data() {
         let verify = |host: &mut ReferenceHost<Unreachable>, aad: &[u8]| {
             done(host.start(
                 "sce-host-cose-verify1",
-                "verify",
+                &invocation("verify"),
                 &params(&[
                     ("trust_set", TRUST_SET.to_string()),
                     ("cose", cose.clone()),
@@ -219,7 +225,7 @@ fn the_host_opens_each_object_and_not_one_changed_by_a_bit() {
         let open = |host: &mut ReferenceHost<Unreachable>, object: &[u8]| {
             done(host.start(
                 "sce-host-cose-decrypt0",
-                "open",
+                &invocation("open"),
                 &params(&[
                     ("key_id", member(case, "key_id").to_string()),
                     ("cose", text(object)),

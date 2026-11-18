@@ -417,7 +417,7 @@ impl NonceSource for Nonces {
 fn seal_content(host: &mut ReferenceHost<Unreachable>) -> serde_json::Value {
     done(host.start(
         "sce-host-cose-encrypt0",
-        "seal",
+        &invocation("seal"),
         &params(&[
             ("key_id", "sec-256"),
             ("plaintext", "This is the content."),

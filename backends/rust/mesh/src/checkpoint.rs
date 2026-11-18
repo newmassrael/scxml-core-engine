@@ -1155,6 +1155,7 @@ mod tests {
             session_id: "ledger-1".to_string(),
             invoke_starts: Vec::new(),
             host_invokes: Vec::new(),
+            host_invoke_starts: Vec::new(),
             host_invoke_token: 0,
             auto_send_seq: 0,
             external: Vec::new(),
