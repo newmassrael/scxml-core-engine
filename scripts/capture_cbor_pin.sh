@@ -102,7 +102,8 @@ capture_go() {
     # The Go release is the forge runtime's own `go` line, read from its go.mod.
     # Go chooses the toolchain by the main module's line: one older than the
     # runtime's ran the machine's go 1.22.2 and stopped at "requires go >=
-    # 1.23.0", where the runtime's line lets go fetch the release it names.
+    # 1.23.0". The runtime's line asks for the release sce_go_select put first
+    # on PATH, and where that tool is absent, for the one go fetches.
     local go_release
     go_release="$(sed -n 's/^go \([0-9][0-9.]*\)$/\1/p' "$REPO_ROOT/backends/go/forge-runtime/go.mod")"
     [ -n "$go_release" ] || {
