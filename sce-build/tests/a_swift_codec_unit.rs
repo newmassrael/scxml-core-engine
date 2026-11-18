@@ -419,7 +419,7 @@ fn a_variable_length_integer_is_read_and_written_as_a_chain() {
         "{code}"
     );
     assert!(
-        code.contains("return VleZintU64(value: value)"),
+        code.contains("return CodecVleZintU64(value: value)"),
         "the value is made of the locals the frame was read into: {code}"
     );
     // A number written in turn is printed from the plan (docs/adr/0081 §6): the frame grows as
