@@ -564,12 +564,15 @@ fn a_flag_input_the_value_says_is_read_off_the_value_and_not_handed() {
 /// for each side; the encode binds each member off the arm the value holds,
 /// derives the length from the bytes where the arm holds them and reads it off
 /// the other arm otherwise, and the decode makes the arm the flag it read
-/// selects. The members are no fields of the value of their own.
+/// selects. The members are no fields of the value of their own. A value made
+/// by default holds the arm present while no gate holds, as the Rust and C++
+/// values do (docs/adr/0081, the fifteenth Python landing).
 ///
 /// Turns red where `python_source::group_part` stops printing an arm's class or
-/// the `Union`, `encode_source` reads a member off the source rather than the
-/// arm, `derive_number` reads an `Absent::Group` number other than off the arm,
-/// or `derived_field` declares a member as a field of the value.
+/// the `Union`, or starts a value in another arm than the one no gate holds,
+/// `encode_source` reads a member off the source rather than the arm,
+/// `derive_number` reads an `Absent::Group` number other than off the arm, or
+/// `derived_field` declares a member as a field of the value.
 #[test]
 fn a_group_is_one_field_whose_arms_hold_its_members() {
     assert!(unlowered("codec_present_if_length_ref").is_empty());
@@ -588,7 +591,7 @@ fn a_group_is_one_field_whose_arms_hold_its_members() {
              CodecPresentIfLengthRefFlagsHasPayloadNotHasPayload]\n",
             "    def flags_has_payload(self) -> CodecPresentIfLengthRefFlagsHasPayload: ...\n",
             "    flags_has_payload: CodecPresentIfLengthRefFlagsHasPayload = \
-             field(default_factory=CodecPresentIfLengthRefFlagsHasPayloadHasPayload)\n",
+             field(default_factory=CodecPresentIfLengthRefFlagsHasPayloadNotHasPayload)\n",
             "    _g_flags_has_payload = src.flags_has_payload\n",
             "    _e_payload = _g_flags_has_payload.payload if isinstance(_g_flags_has_payload, \
              CodecPresentIfLengthRefFlagsHasPayloadHasPayload) else None\n",
