@@ -7557,7 +7557,10 @@ fn run_c_driver(dir: &std::path::Path, header_name: &str, header: &str, driver: 
 /// A driver of the C11 form of [`CAPPED_MAP`] held at eight bytes of its text: a
 /// map past the capacity is read whole, so the refusals the map's own rules make
 /// come first and `CAPACITY_EXCEEDED` last, as Rust's projection answers it
-/// after its decode (docs/adr/0077 §7).
+/// after its decode (docs/adr/0077 §7). A key given twice after a text past the
+/// capacity is therefore the map's own refusal, `CBOR_DUPLICATE_KEY`
+/// (docs/adr/0101, section 3.3), as every other lane's decode answers it before
+/// a capacity is judged.
 const CAPPED_MAP_C_DRIVER: &str = r#"#include <stdio.h>
 #include <string.h>
 
@@ -7593,7 +7596,7 @@ int main(void) {
     CHECK(decode(nine, sizeof nine) == SCE_FORGE_CODEC_CAPACITY_EXCEEDED, "a text past its capacity");
     CHECK(decode(nine_bad, sizeof nine_bad) == SCE_FORGE_CODEC_INVALID_UTF8,
           "a text past its capacity that is no UTF-8 text");
-    CHECK(decode(twice, sizeof twice) == SCE_FORGE_CODEC_CBOR_MALFORMED,
+    CHECK(decode(twice, sizeof twice) == SCE_FORGE_CODEC_CBOR_DUPLICATE_KEY,
           "a key given twice, after a text past its capacity");
     CHECK(decode(absent, sizeof absent) == SCE_FORGE_CODEC_CBOR_REQUIRED_KEY_MISSING, "the text's key absent");
     CHECK(decode(nine, sizeof nine - 1U) == SCE_FORGE_CODEC_NEED_MORE_BYTES,
