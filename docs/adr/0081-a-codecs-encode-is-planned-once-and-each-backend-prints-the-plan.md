@@ -1862,6 +1862,7 @@ old encode, the old encode and its templates are removed in the same landing.
    C++ one is, since no expression gives one, and an assignment to a member of a group is refused for that reason
    rather than as a derived number. The arm of a variant is named by one function, `variant_arm_name`, which the
    template's `variant_name`, the Rust and Go printers and the Kotlin and Go parents read.
+
    *The C11 interface, decided 2026-11-16 under the rule of 2026-10-26 (the textbook structure, decided without
    asking).* A C11 value presents its elements to its encode through a table of functions, `{codec}_source_t`, one
    member `T (*element)(const void *ctx)` for each element the value presents, in declaration order, each handed
@@ -2138,6 +2139,18 @@ old encode, the old encode and its templates are removed in the same landing.
    it was of the kind the bind waits for, a local of the walk set from the kind of each entry it writes. A list a
    group holds stays held to no law, and a chain whose memberships a group holds, which a check of each entry reads
    apart from its law, stays unlowered.
+
+   *The C11 printer beside the other printers, 2026-11-18:* the C11 landings above were written before the Python,
+   Swift, Kotlin and Go printers landed, and are carried onto them. A C11 decode already answered the status that
+   names the kind that refused the frame (docs/adr/0099, amendment of 2026-11-16), so its contract is unchanged:
+   no maker of a view or a list writes `*out` where it refuses, and no encode writes a byte before its refusal.
+   The runtime declares `SCE_FORGE_CODEC_INCONSISTENT_SOURCE`, so `EncodeFailure::symbol` names every refusal on
+   C11 as on every other backend, and the C11 harness states every refused case. The kind and the union member of
+   a variant's arm are named by `variant_arm_name` (`c11_source::arm_kind`, `arm_member`), as every backend names
+   the arm, and a parent's switch over an embedded body's kind reads them there. What a reader knows of a printed
+   C11 codec is not a `PrintedCodec`: a C11 value is a struct, set and read member by member, with no constructor
+   and no accessor, so an import holds only whether the C11 backend prints it (`ImportContext::c11_printed`), as
+   it does on Python, Swift and Kotlin.
 5. Swift, when its codec lowers what the plan holds.
    *Swift lowers what the plan holds, 2026-11-16:* its codec writes every codec of the repository Rust writes,
    but the one only an MCU-class backend writes (`a_swift_codec_is_written_wherever_rust_writes_one.rs`): an
