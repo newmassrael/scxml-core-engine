@@ -9,7 +9,7 @@
 // (`the_shared_instance_is_what_this_core_writes` in
 // `backends/rust/mesh/src/checkpoint.rs`), so what this test accepts is what the
 // producer writes. Each is held to the checkpoint schema, and the saved tree it
-// holds to the format-3 saved-state schema. The directory is swept, so an
+// holds to the schema of format 4, the saved state every backend writes. The directory is swept, so an
 // instance added later is held without an edit here.
 
 use std::path::{Path, PathBuf};
@@ -36,7 +36,7 @@ fn checkpoint_schema() -> jsonschema::JSONSchema {
 }
 
 fn saved_state_schema() -> jsonschema::JSONSchema {
-    compile(include_str!("../../schemas/sce-saved-state.v3.schema.json"))
+    compile(include_str!("../../schemas/sce-saved-state.v4.schema.json"))
 }
 
 fn errors(validator: &jsonschema::JSONSchema, instance: &serde_json::Value) -> Vec<String> {
@@ -84,7 +84,7 @@ fn every_shared_checkpoint_is_a_checkpoint() {
         let found = errors(&saved, &instance["state"]);
         assert!(
             found.is_empty(),
-            "{} holds a state that is not a format-3 saved state:\n{}",
+            "{} holds a state that is not a format-4 saved state:\n{}",
             path.display(),
             found.join("\n")
         );

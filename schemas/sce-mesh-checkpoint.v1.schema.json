@@ -3,7 +3,7 @@
   "$id": "https://github.com/newmassrael/scxml-core-engine/blob/main/schemas/sce-mesh-checkpoint.v1.schema.json",
   "x-sce-schema-status": "pre-release",
   "title": "SCE Mesh checkpoint (wire schema v1)",
-  "description": "A machine's checkpoint on a Mesh host core (SCE_MESH.md section 10.11; docs/adr/0045, section 4; docs/adr/0107, D5): the machine's saved tree and the state of every endpoint in it, one document a host writes in one durable write and a restore reads back. The saved tree is an sce-saved-state text (sce-saved-state.v3.schema.json), held as its JSON value. Every 64-bit number is the text of its digits, every envelope and id the lowercase hexadecimal of its bytes, and every moment milliseconds since the Unix epoch. A checkpoint holds no key, credential or trust state; a host stores it encrypted at rest. The producer and reader is sce-rust-mesh (backends/rust/mesh/src/checkpoint.rs). The stability status of this surface lives in this header alone — see SCE_WIRE_CONTRACTS.md.",
+  "description": "A machine's checkpoint on a Mesh host core (SCE_MESH.md section 10.11; docs/adr/0045, section 4; docs/adr/0107, D5): the machine's saved tree and the state of every endpoint in it, one document a host writes in one durable write and a restore reads back. The saved tree is an sce-saved-state text (sce-saved-state.v4.schema.json), held as its JSON value. Every 64-bit number is the text of its digits, every envelope and id the lowercase hexadecimal of its bytes, and every moment milliseconds since the Unix epoch. A checkpoint holds no key, credential or trust state; a host stores it encrypted at rest. The producer and reader is sce-rust-mesh (backends/rust/mesh/src/checkpoint.rs). The stability status of this surface lives in this header alone — see SCE_WIRE_CONTRACTS.md.",
   "type": "object",
   "required": ["format", "checkpoint", "clean", "state", "endpoints"],
   "additionalProperties": false,
@@ -21,7 +21,7 @@
       "type": "boolean"
     },
     "state": {
-      "description": "The machine's saved state, an sce-saved-state document of format 3 (sce-saved-state.v3.schema.json).",
+      "description": "The machine's saved state, an sce-saved-state document of format 4 (sce-saved-state.v4.schema.json), the format every backend writes. A restore reads the tree with the saved state's own reader, so a checkpoint written before format 4 holds a tree of format 3 and is read as that format is.",
       "type": "object",
       "required": ["format"]
     },
