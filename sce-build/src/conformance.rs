@@ -3762,8 +3762,8 @@ impl crate::forge::generator::RustHeldCodecs for HeldFrom<'_> {
 /// (docs/adr/0058 §4), C++ as the printed value its constructor makes
 /// (docs/adr/0081 step 4), and C11 as statements that set the members of its
 /// struct, for a codec its printer prints; the others are handed nothing, and
-/// run their `cases` as before. A CBOR map and a content-line component derive nothing, so their
-/// source is the value itself, every entry stated (`source_notation`): Rust
+/// run their `cases` as before. A CBOR map and a content-line component derive
+/// nothing, so their source is the value itself, every entry stated (`source_notation`): Rust
 /// makes the map or the component, C++ its constructor and Python its
 /// dataclass's.
 ///
