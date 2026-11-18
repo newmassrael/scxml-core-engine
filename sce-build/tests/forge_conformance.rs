@@ -9333,9 +9333,11 @@ fn forge_codec_variant_default_marker_outer_emits_declared_arm_python() {
 
 /// RFC variant-default-uniformity (Go): the inner arm body
 /// codec with `<sce:flag value="0x02"/>` must emit a `NewT()`
-/// constructor returning a struct literal with `Header: uint8(0x02)`
-/// baked in. Go has no Default trait, so round-trip safety requires
-/// callers use `NewT()` instead of `T{}` (the zero-value).
+/// constructor returning a struct literal with `header: uint8(0x02)`
+/// baked in, the element the printed value holds unexported and
+/// presents through `Header()` (docs/adr/0081 §3). Go has no Default
+/// trait, so round-trip safety requires callers use `NewT()` instead
+/// of `T{}` (the zero-value).
 #[test]
 fn forge_codec_default_marker_arm_b_emits_baked_default_go() {
     let scxml_path = resource_dir().join("codec_default_marker_arm_b.scxml");
@@ -9360,17 +9362,19 @@ fn forge_codec_default_marker_arm_b_emits_baked_default_go() {
          Generated source:\n{generated}"
     );
     assert!(
-        generated.contains("Header: uint8(0x02),"),
-        "NewCodecDefaultMarkerArmB must bake `Header: uint8(0x02)` \
+        generated.contains("header: uint8(0x02),"),
+        "NewCodecDefaultMarkerArmB must bake `header: uint8(0x02)` \
          (value=\"0x02\" shifted by bit=0). Generated source:\n{generated}"
     );
 }
 
-/// RFC variant-default-uniformity (Go): the outer codec
-/// must emit a `NewT()` constructor whose returned struct's `Body`
-/// is a Variant with the declared default arm's pointer populated
-/// via the inner codec's `New<Arm>()`. The bare `T{}` zero-value
-/// would leave every Variant pointer nil and break round-trip.
+/// RFC variant-default-uniformity (Go): the outer codec, printed
+/// from its plan (docs/adr/0081 §3), must present the declared
+/// default arm for a value handed none: its `Body()` answers that
+/// arm, and the arm's own `Body()` answers the inner codec's
+/// `New<Arm>()`, so `NewT().Encode()` writes the declared arm with
+/// its baked header and round-trips. The first declared arm is
+/// never the one a value made by default holds.
 #[test]
 fn forge_codec_variant_default_marker_outer_emits_declared_arm_go() {
     let scxml_path = resource_dir().join("codec_variant_default_marker.scxml");
@@ -9396,15 +9400,24 @@ fn forge_codec_variant_default_marker_outer_emits_declared_arm_go() {
     );
     assert!(
         generated.contains(
-            "CodecDefaultMarkerArmB: codec_default_marker_arm_b.NewCodecDefaultMarkerArmB(),"
+            "\tif s.body == nil {\n\t\treturn CodecVariantDefaultMarkerVariantCodecDefaultMarkerArmB{}\n"
         ),
-        "outer ctor must populate the declared default arm \
-         (CodecDefaultMarkerArmB) via its own NewT() call. Generated \
-         source:\n{generated}"
+        "a value handed no arm must present the declared default arm \
+         (CodecDefaultMarkerArmB). Generated source:\n{generated}"
     );
     assert!(
-        !generated.contains("CodecDefaultMarkerArmA: codec_default_marker_arm_a"),
-        "outer ctor must NOT populate the first declared arm \
+        generated.contains(
+            "func (a CodecVariantDefaultMarkerVariantCodecDefaultMarkerArmB) Body() \
+             codec_default_marker_arm_b.CodecDefaultMarkerArmBSource {\n\
+             \tif a.body == nil {\n\
+             \t\treturn codec_default_marker_arm_b.NewCodecDefaultMarkerArmB()\n"
+        ),
+        "the declared default arm must present its body made by the \
+         inner codec's own NewT(). Generated source:\n{generated}"
+    );
+    assert!(
+        !generated.contains("return CodecVariantDefaultMarkerVariantCodecDefaultMarkerArmA{}"),
+        "a value handed no arm must NOT present the first declared arm \
          (CodecDefaultMarkerArmA) when another arm is marked default. \
          Generated source:\n{generated}"
     );
