@@ -72,24 +72,24 @@
   },
   "codec_cbor_signed_enum/status-negative": {
    "refused": {
-    "rust": "decode CborMalformed",
-    "cpp": "decode CodecError 19",
-    "c11": "decode status 7",
-    "go": "decode sce/codec: cbor malformed",
-    "kotlin": "decode CborMalformed",
-    "python": "decode CborMalformed",
-    "swift": "decode cborMalformed"
+    "rust": "decode CborWrongType",
+    "cpp": "decode CodecError 23",
+    "c11": "decode status 23",
+    "go": "decode sce/codec: cbor wrong type",
+    "kotlin": "decode CborWrongType",
+    "python": "decode CborWrongType",
+    "swift": "decode cborWrongType"
    }
   },
   "codec_cbor_signed_enum/detail-negative": {
    "refused": {
-    "rust": "decode CborMalformed",
-    "cpp": "decode CodecError 19",
-    "c11": "decode status 7",
-    "go": "decode sce/codec: cbor malformed",
-    "kotlin": "decode CborMalformed",
-    "python": "decode CborMalformed",
-    "swift": "decode cborMalformed"
+    "rust": "decode CborWrongType",
+    "cpp": "decode CodecError 23",
+    "c11": "decode status 23",
+    "go": "decode sce/codec: cbor wrong type",
+    "kotlin": "decode CborWrongType",
+    "python": "decode CborWrongType",
+    "swift": "decode cborWrongType"
    }
   },
   "codec_cbor_record_list/smallest": {
