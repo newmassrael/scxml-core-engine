@@ -1032,7 +1032,9 @@ fn a_chains_memberships_are_a_group_whose_arms_hold_the_chain_by_its_kinds() {
 /// An input a chain's entry says, which the chain supplies from the entry
 /// before, is held entry by entry to whether the entry before was of the kind
 /// where the chain's memberships hold it to no law (docs/adr/0065 §6 R8b): the
-/// encode refuses an entry that says otherwise before the first byte.
+/// encode refuses an entry that says otherwise before the first byte, as it
+/// refuses one that says `tagged` otherwise than `head.T`, so the codec states
+/// that its encode may fail (docs/adr/0065 §3).
 ///
 /// Turns red where `python_source::input_check` stops walking the chain with
 /// the entry before's kind, or `positional_forms` names such a check unlowered.
@@ -1047,7 +1049,8 @@ fn an_input_the_entry_before_decides_is_checked_where_no_law_holds_it() {
         r#"<?xml version="1.0" encoding="UTF-8"?>
 <scxml xmlns="http://www.w3.org/2005/07/scxml"
        xmlns:sce="http://sce.dev/ext"
-       sce:kind="codec" sce:default-endian="big" name="codec_prev_checked">
+       sce:kind="codec" sce:encode-may-fail="true" sce:default-endian="big"
+       name="codec_prev_checked">
   <sce:import src="codec_chain_prev_entry.scxml" kind="codec" as="codec_chain_prev_entry">
     <sce:flag-bind input="tagged" source="head.T"/>
   </sce:import>
