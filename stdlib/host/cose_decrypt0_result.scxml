@@ -1,0 +1,22 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- SPDX-License-Identifier: AGPL-3.0-only WITH AdditionRef-SCE-Linking-Exception OR LicenseRef-SCE-Commercial -->
+<!-- SPDX-FileCopyrightText: Copyright (c) 2026 newmassrael -->
+<!--
+  sce:std/host/cose_decrypt0_result.scxml — the answer of
+  `sce-host-cose-decrypt0` (docs/SCE_HOST_FEATURES.md, "Signing and sealing").
+  `opened` is true when the key opened the object, and `plaintext` is then what
+  was sealed. An object that does not open is an answer, `opened` false, with
+  `plaintext` empty.
+-->
+<scxml xmlns="http://www.w3.org/2005/07/scxml"
+       xmlns:sce="http://sce.dev/ext"
+       version="1.0"
+       sce:kind="event-schema"
+       name="cose_decrypt0_result"
+       sce:event-name="host.cose.decrypt0.result">
+  <datamodel>
+    <data id="error" sce:type="string[24]" sce:direction="in"/>
+    <data id="opened" sce:type="bool" sce:direction="in"/>
+    <data id="plaintext" sce:type="bytes[4352]" sce:direction="in"/>
+  </datamodel>
+</scxml>

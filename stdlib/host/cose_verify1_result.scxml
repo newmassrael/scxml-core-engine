@@ -1,0 +1,23 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- SPDX-License-Identifier: AGPL-3.0-only WITH AdditionRef-SCE-Linking-Exception OR LicenseRef-SCE-Commercial -->
+<!-- SPDX-FileCopyrightText: Copyright (c) 2026 newmassrael -->
+<!--
+  sce:std/host/cose_verify1_result.scxml — the answer of
+  `sce-host-cose-verify1` (docs/SCE_HOST_FEATURES.md, "Signing and sealing").
+  `valid` is true when a key of the trust set signed the object: `key_id` is
+  that key's id and `payload` what it signed. An object that does not verify
+  is an answer, `valid` false, with `key_id` and `payload` empty.
+-->
+<scxml xmlns="http://www.w3.org/2005/07/scxml"
+       xmlns:sce="http://sce.dev/ext"
+       version="1.0"
+       sce:kind="event-schema"
+       name="cose_verify1_result"
+       sce:event-name="host.cose.verify1.result">
+  <datamodel>
+    <data id="error" sce:type="string[24]" sce:direction="in"/>
+    <data id="valid" sce:type="bool" sce:direction="in"/>
+    <data id="key_id" sce:type="string[64]" sce:direction="in"/>
+    <data id="payload" sce:type="bytes[4096]" sce:direction="in"/>
+  </datamodel>
+</scxml>

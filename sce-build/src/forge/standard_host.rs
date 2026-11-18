@@ -73,13 +73,22 @@ pub const EVERY_REFERENCE_HOST: &[Language] = &[
     Language::Swift,
 ];
 
+/// The lanes whose reference host serves signing and sealing
+/// (docs/SCE_HOST_FEATURES.md, section 10; docs/adr/0107, D7): Rust on the
+/// RustCrypto crates and C++ on libsodium. Every other lane is a later step of
+/// docs/adr/0107, which adds the lane here in the change that lands its host and
+/// its driver's replay of the scenario.
+pub const COSE_REFERENCE_HOSTS: &[Language] = &[Language::Rust, Language::Cpp];
+
 /// The directory of the standard library the records live in.
 const LIBRARY_DIRECTORY: &str = "sce:std/host/";
 
 /// Every standard host operation. The type names are one spelling in this
 /// table, the document that specifies them and the reference hosts, and a
-/// test holds this table to the library and the specification. Every
-/// operation here is served on every lane ([`EVERY_REFERENCE_HOST`]).
+/// test holds this table to the library and the specification. Each names
+/// the lanes that serve it: those of sections 2 to 6 every lane
+/// ([`EVERY_REFERENCE_HOST`]), signing and sealing Rust and C++
+/// ([`COSE_REFERENCE_HOSTS`]).
 pub const TYPES: &[StandardHostType] = &[
     StandardHostType {
         invoke_type: "sce-host-clock-now",
@@ -158,6 +167,36 @@ pub const TYPES: &[StandardHostType] = &[
         request: Some("model_generate_request"),
         result: "model_generate_result",
         served_by: EVERY_REFERENCE_HOST,
+    },
+    StandardHostType {
+        invoke_type: "sce-host-cose-sign1",
+        request: Some("cose_sign1_request"),
+        result: "cose_sign1_result",
+        served_by: COSE_REFERENCE_HOSTS,
+    },
+    StandardHostType {
+        invoke_type: "sce-host-cose-verify1",
+        request: Some("cose_verify1_request"),
+        result: "cose_verify1_result",
+        served_by: COSE_REFERENCE_HOSTS,
+    },
+    StandardHostType {
+        invoke_type: "sce-host-cose-encrypt0",
+        request: Some("cose_encrypt0_request"),
+        result: "cose_encrypt0_result",
+        served_by: COSE_REFERENCE_HOSTS,
+    },
+    StandardHostType {
+        invoke_type: "sce-host-cose-decrypt0",
+        request: Some("cose_decrypt0_request"),
+        result: "cose_decrypt0_result",
+        served_by: COSE_REFERENCE_HOSTS,
+    },
+    StandardHostType {
+        invoke_type: "sce-host-key-derive",
+        request: Some("key_derive_request"),
+        result: "key_derive_result",
+        served_by: COSE_REFERENCE_HOSTS,
     },
 ];
 
@@ -474,14 +513,17 @@ mod tests {
         }
     }
 
-    /// Every operation of the table is served on every lane today, so the
-    /// refusal refuses nothing yet. A backend added to [`Language`] reds this
-    /// until it is decided: [`EVERY_REFERENCE_HOST`] gains it in the change
-    /// that lands its reference host, and not before.
+    /// Every operation of [`EVERY_REFERENCE_HOST`] is served on every lane, so
+    /// the refusal refuses none of them. A backend added to [`Language`] reds
+    /// this until it is decided: [`EVERY_REFERENCE_HOST`] gains it in the
+    /// change that lands its reference host, and not before.
     #[test]
-    fn the_standard_table_refuses_no_operation_on_any_lane() {
+    fn the_standard_table_refuses_no_operation_of_every_reference_host_on_any_lane() {
         let mut judged = 0;
-        for standard in TYPES {
+        for standard in TYPES
+            .iter()
+            .filter(|standard| standard.served_by == EVERY_REFERENCE_HOST)
+        {
             for &lane in Language::ALL {
                 assert!(
                     unserved(standard.invoke_type, lane, TYPES).is_none(),
@@ -495,6 +537,46 @@ mod tests {
             judged >= 12 * Language::ALL.len(),
             "judged {judged} pairs of an operation and a lane: a test that read none would pass"
         );
+    }
+
+    /// Signing and sealing are served by the Rust and C++ reference hosts and
+    /// refused on every other lane, naming those two (docs/adr/0107, D7, D8).
+    #[test]
+    fn signing_and_sealing_are_served_on_rust_and_cpp_and_refused_elsewhere() {
+        let cose: Vec<&StandardHostType> = TYPES
+            .iter()
+            .filter(|standard| standard.served_by == COSE_REFERENCE_HOSTS)
+            .collect();
+        let names: Vec<&str> = cose.iter().map(|standard| standard.invoke_type).collect();
+        assert_eq!(
+            names,
+            [
+                "sce-host-cose-sign1",
+                "sce-host-cose-verify1",
+                "sce-host-cose-encrypt0",
+                "sce-host-cose-decrypt0",
+                "sce-host-key-derive",
+            ]
+        );
+        for standard in cose {
+            for &lane in Language::ALL {
+                let refused = unserved(standard.invoke_type, lane, TYPES);
+                if matches!(lane, Language::Rust | Language::Cpp) {
+                    assert!(
+                        refused.is_none(),
+                        "{} is refused on {lane:?}",
+                        standard.invoke_type
+                    );
+                } else {
+                    assert_eq!(
+                        refused.map(|entry| entry.served_by),
+                        Some(&[Language::Rust, Language::Cpp][..]),
+                        "{} is served on {lane:?}",
+                        standard.invoke_type
+                    );
+                }
+            }
+        }
     }
 
     /// Each entry lists at least one lane, each once, in the order of

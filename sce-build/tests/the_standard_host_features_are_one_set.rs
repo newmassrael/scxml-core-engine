@@ -256,6 +256,72 @@ fn a_value_the_machine_computes_is_held_to_the_field_it_supplies() {
     assert!(text.contains("scxml/static-datamodel-rule"), "{text}");
 }
 
+// ── Signing and sealing (docs/SCE_HOST_FEATURES.md, section 10) ──
+
+/// A `sce-static` statechart that signs the bytes it holds with the key its
+/// host names `k`, and keeps the signed object.
+const SIGN: &str = r#"<?xml version="1.0"?>
+<scxml xmlns="http://www.w3.org/2005/07/scxml" xmlns:sce="http://sce.dev/ext"
+       version="1.0" initial="idle" datamodel="sce-static" name="probe">
+  <sce:import kind="event-schema" src="sce:std/host/cose_sign1_request.scxml" as="Sign1Request"/>
+  <sce:import kind="event-schema" src="sce:std/host/cose_sign1_result.scxml" as="Sign1Result"/>
+  <datamodel>
+    <data id="key_id" sce:type="string[64]" expr="'k'"/>
+    <data id="payload" sce:type="bytes[4096]" expr="'ab'"/>
+    <data id="aad" sce:type="bytes[256]" expr="''"/>
+    <data id="signed" sce:type="bytes[4352]" expr="''" sce:direction="out"/>
+  </datamodel>
+  <state id="idle">
+    <transition event="go" target="signing"/>
+  </state>
+  <state id="signing">
+    <invoke type="sce-host-cose-sign1" id="sign" sce:request="Sign1Request" sce:result="Sign1Result">
+      <param name="key_id" expr="key_id"/>
+      <param name="payload" expr="payload"/>
+      <param name="external_aad" expr="aad"/>
+    </invoke>
+    <transition event="done.invoke.sign" target="idle">
+      <assign location="signed" expr="_event.data.cose"/>
+    </transition>
+  </state>
+</scxml>
+"#;
+
+/// The signing and sealing operations are served on the lanes whose reference
+/// host serves them, Rust and C++, and a build for any other lane refuses the
+/// machine on its `<invoke>`, naming the lanes that serve it (docs/adr/0107,
+/// D7 and D8).
+#[test]
+fn signing_is_served_on_rust_and_cpp_and_refused_on_every_other_lane() {
+    let mut refused_on = 0;
+    for language in languages() {
+        let (ok, text) = run(&["check", "-l", language], SIGN, &[]);
+        if matches!(language, "rust" | "cpp") {
+            assert!(ok, "{language} refused a machine that signs: {text}");
+            assert!(
+                text.contains(r#""host_invoker_types":["sce-host-cose-sign1"]"#),
+                "{language}: the type was not served: {text}"
+            );
+        } else {
+            assert!(
+                !ok,
+                "{language} took a machine its host cannot sign for: {text}"
+            );
+            assert!(
+                text.contains("codegen/standard-host-type-not-served")
+                    && text.contains("sce-host-cose-sign1")
+                    && text.contains("rust, cpp"),
+                "{language}: {text}"
+            );
+            refused_on += 1;
+        }
+    }
+    assert!(
+        refused_on >= 5,
+        "refused on {refused_on} lanes: every lane but Rust and C++ is held"
+    );
+}
+
 // ── A model's generation and its answer schema (docs/adr/0087, section 4) ──
 
 /// The answer schema the probes below name: a title and a slot.

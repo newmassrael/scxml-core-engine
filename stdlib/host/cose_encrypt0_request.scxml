@@ -1,0 +1,23 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- SPDX-License-Identifier: AGPL-3.0-only WITH AdditionRef-SCE-Linking-Exception OR LicenseRef-SCE-Commercial -->
+<!-- SPDX-FileCopyrightText: Copyright (c) 2026 newmassrael -->
+<!--
+  sce:std/host/cose_encrypt0_request.scxml — the request of
+  `sce-host-cose-encrypt0` (docs/SCE_HOST_FEATURES.md, "Signing and sealing").
+
+  `key_id` names a symmetric key of the host: one of its configuration, or one
+  `sce-host-key-derive` derived. `plaintext` is the bytes sealed, and
+  `external_aad` the bytes the seal authenticates without carrying them.
+-->
+<scxml xmlns="http://www.w3.org/2005/07/scxml"
+       xmlns:sce="http://sce.dev/ext"
+       version="1.0"
+       sce:kind="event-schema"
+       name="cose_encrypt0_request"
+       sce:event-name="host.cose.encrypt0.request">
+  <datamodel>
+    <data id="key_id" sce:type="string[64]" sce:direction="in"/>
+    <data id="plaintext" sce:type="bytes[4352]" sce:direction="in"/>
+    <data id="external_aad" sce:type="bytes[256]" sce:direction="in"/>
+  </datamodel>
+</scxml>

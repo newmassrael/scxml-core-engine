@@ -1,0 +1,23 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- SPDX-License-Identifier: AGPL-3.0-only WITH AdditionRef-SCE-Linking-Exception OR LicenseRef-SCE-Commercial -->
+<!-- SPDX-FileCopyrightText: Copyright (c) 2026 newmassrael -->
+<!--
+  sce:std/host/cose_decrypt0_request.scxml — the request of
+  `sce-host-cose-decrypt0` (docs/SCE_HOST_FEATURES.md, "Signing and sealing").
+
+  `key_id` names the symmetric key to open with, whatever key id the object
+  carries. `cose` is the tagged COSE_Encrypt0 to open, and `external_aad` the
+  bytes it was sealed over beside its plaintext.
+-->
+<scxml xmlns="http://www.w3.org/2005/07/scxml"
+       xmlns:sce="http://sce.dev/ext"
+       version="1.0"
+       sce:kind="event-schema"
+       name="cose_decrypt0_request"
+       sce:event-name="host.cose.decrypt0.request">
+  <datamodel>
+    <data id="key_id" sce:type="string[64]" sce:direction="in"/>
+    <data id="cose" sce:type="bytes[4480]" sce:direction="in"/>
+    <data id="external_aad" sce:type="bytes[256]" sce:direction="in"/>
+  </datamodel>
+</scxml>

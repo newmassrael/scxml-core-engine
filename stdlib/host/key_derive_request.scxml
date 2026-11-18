@@ -1,0 +1,25 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- SPDX-License-Identifier: AGPL-3.0-only WITH AdditionRef-SCE-Linking-Exception OR LicenseRef-SCE-Commercial -->
+<!-- SPDX-FileCopyrightText: Copyright (c) 2026 newmassrael -->
+<!--
+  sce:std/host/key_derive_request.scxml — the request of `sce-host-key-derive`
+  (docs/SCE_HOST_FEATURES.md, "Signing and sealing").
+
+  The input keying material is exactly one of `secret` (bytes the statechart
+  holds) or `input_key_id` (a symmetric key of the host, by its id); the other
+  is empty. `salt` and `info` are HKDF's (RFC 5869), each empty when there is
+  none.
+-->
+<scxml xmlns="http://www.w3.org/2005/07/scxml"
+       xmlns:sce="http://sce.dev/ext"
+       version="1.0"
+       sce:kind="event-schema"
+       name="key_derive_request"
+       sce:event-name="host.key.derive.request">
+  <datamodel>
+    <data id="secret" sce:type="bytes[256]" sce:direction="in"/>
+    <data id="input_key_id" sce:type="string[64]" sce:direction="in"/>
+    <data id="salt" sce:type="bytes[64]" sce:direction="in"/>
+    <data id="info" sce:type="bytes[256]" sce:direction="in"/>
+  </datamodel>
+</scxml>

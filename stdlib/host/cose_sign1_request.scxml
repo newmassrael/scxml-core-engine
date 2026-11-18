@@ -1,0 +1,24 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- SPDX-License-Identifier: AGPL-3.0-only WITH AdditionRef-SCE-Linking-Exception OR LicenseRef-SCE-Commercial -->
+<!-- SPDX-FileCopyrightText: Copyright (c) 2026 newmassrael -->
+<!--
+  sce:std/host/cose_sign1_request.scxml — the request of `sce-host-cose-sign1`
+  (docs/SCE_HOST_FEATURES.md, "Signing and sealing").
+
+  `key_id` names a signing key of the host's configuration; the key itself
+  never reaches the statechart. `payload` is the bytes signed, and
+  `external_aad` the bytes the signature covers without carrying them: empty
+  when there are none.
+-->
+<scxml xmlns="http://www.w3.org/2005/07/scxml"
+       xmlns:sce="http://sce.dev/ext"
+       version="1.0"
+       sce:kind="event-schema"
+       name="cose_sign1_request"
+       sce:event-name="host.cose.sign1.request">
+  <datamodel>
+    <data id="key_id" sce:type="string[64]" sce:direction="in"/>
+    <data id="payload" sce:type="bytes[4096]" sce:direction="in"/>
+    <data id="external_aad" sce:type="bytes[256]" sce:direction="in"/>
+  </datamodel>
+</scxml>
