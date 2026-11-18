@@ -1617,13 +1617,7 @@ fn every_printed_kotlin_codec_compiles_under_werror() {
             sources.push(path);
         }
     }
-    let runtime = Path::new(env!("CARGO_MANIFEST_DIR"))
-        .join("../backends/kotlin/forge-runtime/src/commonMain/kotlin/com/sce/forge/runtime");
-    sources.push(runtime.join("Codec.kt"));
-    sources.push(runtime.join("Utf8.kt"));
-    sources.push(runtime.join("Aligned.kt"));
-    sources.push(runtime.join("Cbor.kt"));
-    sources.push(runtime.join("ContentLine.kt"));
+    sources.extend(common::kotlin::forge_runtime_sources());
     let out = common::kotlin::kotlinc(&kotlinc)
         .arg("-Werror")
         .arg("-d")

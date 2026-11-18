@@ -85,28 +85,11 @@ fn file_name(stem: &str) -> String {
     )
 }
 
-/// Every Kotlin source under `dir`.
-fn kotlin_sources(dir: &Path, found: &mut Vec<PathBuf>) {
-    for entry in std::fs::read_dir(dir).expect("read the runtime sources") {
-        let path = entry.expect("directory entry").path();
-        if path.is_dir() {
-            kotlin_sources(&path, found);
-        } else if path.extension().is_some_and(|e| e == "kt") {
-            found.push(path);
-        }
-    }
-    found.sort();
-}
-
 /// Build the forge runtime a generated file imports (`com.sce.forge.runtime`)
 /// into a jar, once. Its common sources import nothing but the standard library,
 /// so the compiler needs nothing else.
 fn runtime_jar(kotlinc: &Path, scratch: &Path) -> PathBuf {
-    let mut sources = Vec::new();
-    kotlin_sources(
-        &repo_root().join("backends/kotlin/forge-runtime/src/commonMain"),
-        &mut sources,
-    );
+    let sources = common::kotlin::forge_runtime_sources();
     assert!(
         sources.len() >= 8,
         "implausibly few runtime sources ({sources:?}); the scan broke"

@@ -962,10 +962,9 @@ fn kotlin_field_match_multi_file_compiles() {
         return;
     };
 
-    // The element codec imports `com.sce.forge.runtime.{SceCursor, SceSink,
-    // CodecError, MutableListSink}`, all defined in the runtime's single
-    // `Codec.kt`; compile it alongside the generated sources. Skip any
-    // `*TestVectors.kt` sidecar (it needs the kotlin-test dependency).
+    // The element codec names the forge runtime (`com.sce.forge.runtime`):
+    // compile its common sources, all of them, alongside the generated ones.
+    // Skip any `*TestVectors.kt` sidecar (it needs the kotlin-test dependency).
     let out_dir = dir.path().join("kt_out");
     fs::create_dir_all(&out_dir).expect("create out dir");
     let mut sources = Vec::new();
@@ -979,9 +978,7 @@ fn kotlin_field_match_multi_file_compiles() {
             sources.push(path);
         }
     }
-    sources.push(repo_root().join(
-        "backends/kotlin/forge-runtime/src/commonMain/kotlin/com/sce/forge/runtime/Codec.kt",
-    ));
+    sources.extend(common::kotlin::forge_runtime_sources());
 
     let output = common::kotlin::kotlinc(&kotlinc)
         .args(&sources)

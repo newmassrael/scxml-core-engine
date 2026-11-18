@@ -34,10 +34,7 @@ const RUNTIME_BUILDS: [&str; 2] = [
 /// declare different targets have no one target a file compiled against both
 /// can take, so that is a failure here and not a choice.
 pub fn jvm_target() -> String {
-    let root = PathBuf::from(env!("CARGO_MANIFEST_DIR"))
-        .parent()
-        .expect("sce-build's parent is the repository root")
-        .to_path_buf();
+    let root = repository_root();
     let targets: Vec<(&str, String)> = RUNTIME_BUILDS
         .iter()
         .map(|build| {
@@ -54,6 +51,44 @@ pub fn jvm_target() -> String {
         "the Kotlin runtimes are built for different JVM targets: {targets:?}"
     );
     first
+}
+
+/// The repository root: `sce-build`'s parent.
+fn repository_root() -> PathBuf {
+    PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+        .parent()
+        .expect("sce-build's parent is the repository root")
+        .to_path_buf()
+}
+
+/// The common sources of the Kotlin forge runtime, relative to the repository
+/// root: `com.sce.forge.runtime` as every platform has it.
+const FORGE_RUNTIME_COMMON: &str = "backends/kotlin/forge-runtime/src/commonMain";
+
+/// Every source of the Kotlin forge runtime's common code, sorted: the whole of
+/// what a generated file can name of `com.sce.forge.runtime`. It imports
+/// nothing but the standard library, so kotlinc compiles it beside the
+/// generated files with nothing else. A suite compiles all of it rather than
+/// the files it knows a generated file names today: a list falls behind the
+/// first time the printer names another part of the runtime, as one that held
+/// `Codec.kt` alone did when a bounded text began to measure itself by `Utf8`.
+pub fn forge_runtime_sources() -> Vec<PathBuf> {
+    let mut found = Vec::new();
+    kotlin_files(&repository_root().join(FORGE_RUNTIME_COMMON), &mut found);
+    found.sort();
+    found
+}
+
+/// Every `.kt` file under `dir`, into `found`.
+fn kotlin_files(dir: &Path, found: &mut Vec<PathBuf>) {
+    for entry in std::fs::read_dir(dir).unwrap_or_else(|e| panic!("read {}: {e}", dir.display())) {
+        let path = entry.expect("a directory entry").path();
+        if path.is_dir() {
+            kotlin_files(&path, found);
+        } else if path.extension().is_some_and(|e| e == "kt") {
+            found.push(path);
+        }
+    }
 }
 
 /// The `N` of the first `jvmToolchain(N)` in the Gradle build `text`, where
