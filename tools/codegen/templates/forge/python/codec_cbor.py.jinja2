@@ -120,7 +120,7 @@ class {{ struct_name }}:
 {% if loop.first %}            if{% else %}            elif{% endif %} key == {{ e.key }}:
                 # A key given twice is not one map entry.
                 if held_{{ e.name }} is not None:
-                    raise cbor.CborMalformed()
+                    raise cbor.CborDuplicateKey()
 {{ decode_value(e) }}                held_{{ e.name }} = v
 {% endfor %}
 {% if entries_by_key %}
@@ -161,7 +161,7 @@ class {{ struct_name }}:
         schema's own unit declares: one CBOR map of every field, each under its
         id as text (docs/adr/0086, section 9.2). Its keys in any order, a key
         the schema does not declare skipped whole; a key given twice raises
-        :class:`~sce_forge_runtime.cbor.CborMalformed`, a field missing
+        :class:`~sce_forge_runtime.cbor.CborDuplicateKey`, a field missing
         :class:`~sce_forge_runtime.cbor.CborRequiredKeyMissing`, and a text or
         byte string past its bound
         :class:`~sce_forge_runtime.cbor.CborOutOfRange`."""
@@ -175,7 +175,7 @@ class {{ struct_name }}:
 {% if loop.first %}            if{% else %}            elif{% endif %} key == {{ f.key_literal }}:
                 # A key given twice is not one map entry.
                 if held_{{ f.name }} is not None:
-                    raise cbor.CborMalformed()
+                    raise cbor.CborDuplicateKey()
 {{ decode_record_field(f) }}{% endfor %}
             else:
                 cbor.skip(c)
