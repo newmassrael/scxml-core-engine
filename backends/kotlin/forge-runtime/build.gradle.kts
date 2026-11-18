@@ -220,9 +220,16 @@ abstract class GenerateFixtures : DefaultTask() {
 // and every document they import, generated together (`generate --with-imports`)
 // for the Kotlin driver, CborPinCaptureTest. Only scripts/capture_cbor_pin.sh asks
 // for it, by setting SCE_CBOR_PIN_INPUTS, and it hands the documents over in
-// SCE_CBOR_PIN_DOCUMENTS, one path under the repository root a line, as
-// tests/forge/cbor_pin/pin.py lists them; without the first variable neither the
-// generated sources nor the driver are compiled into jvmTest.
+// SCE_CBOR_PIN_DOCUMENTS, one absolute path a line, as tests/forge/cbor_pin/pin.py
+// lists them. Without the first variable none of it is configured: no compilation,
+// no task that runs the driver.
+//
+// THE DRIVER IS A COMPILATION OF ITS OWN (`cborPin`, below the `kotlin` block), not
+// a part of jvmTest. The conformance catalog generates some of the same documents
+// into jvmTest (the Mesh envelope and its enums, `sce:std/mesh/...`), into the same
+// packages, so one compilation of both would declare every one of their classes
+// twice. The `cborPin` compilation is associated with `main`, sees the runtime as
+// jvmTest does, and compiles only the pin's generated sources and its driver.
 abstract class GenerateCborPinFixtures : DefaultTask() {
     @get:InputFile
     @get:PathSensitive(PathSensitivity.ABSOLUTE)
@@ -265,16 +272,15 @@ abstract class GenerateCborPinFixtures : DefaultTask() {
 
 val cborPinRequested = providers.environmentVariable("SCE_CBOR_PIN_INPUTS").isPresent
 
-val generateCborPinFixtures by tasks.registering(GenerateCborPinFixtures::class) {
-    dependsOn(":buildSceCodegen")
-    sceCodegen.set(rootProject.layout.projectDirectory.file(sceCodegenRelative))
-    documents.set(
-        providers.environmentVariable("SCE_CBOR_PIN_DOCUMENTS").map { text ->
-            text.lines().filter { it.isNotBlank() }.map { rootProject.file(it.trim()).absolutePath }
-        }.orElse(emptyList()),
-    )
-    outputDir.set(layout.buildDirectory.dir("generated/cbor_pin/kotlin"))
-}
+// The document list is read once, here, into a plain list of strings: a provider
+// whose transform names anything of this script would be a reference the
+// configuration cache cannot store.
+val cborPinDocuments: List<String> =
+    providers.environmentVariable("SCE_CBOR_PIN_DOCUMENTS").orNull
+        ?.lines()
+        ?.map { it.trim() }
+        ?.filter { it.isNotEmpty() }
+        ?: emptyList()
 
 val generateRoundTripFixtures by tasks.registering(GenerateFixtures::class) {
     dependsOn(":buildSceCodegen")
@@ -436,11 +442,47 @@ kotlin {
             kotlin.srcDir(generateQueueFixtures.map { it.outputDir })
             kotlin.srcDir(generateBroadcastLogFixtures.map { it.outputDir })
             kotlin.srcDir(generateBroadcastLogContextFixtures.map { it.outputDir })
-            if (cborPinRequested) {
-                kotlin.srcDir(generateCborPinFixtures.map { it.outputDir })
-                kotlin.srcDir("src/cborPinTest/kotlin")
+        }
+    }
+}
+
+// The CBOR pin's compilation and the task that runs its driver,
+// `cborPinCapture`, configured only when the capture asks (see
+// GenerateCborPinFixtures above for why the compilation is its own).
+if (cborPinRequested) {
+    val generateCborPinFixtures by tasks.registering(GenerateCborPinFixtures::class) {
+        dependsOn(":buildSceCodegen")
+        sceCodegen.set(rootProject.layout.projectDirectory.file(sceCodegenRelative))
+        documents.set(cborPinDocuments)
+        outputDir.set(layout.buildDirectory.dir("generated/cbor_pin/kotlin"))
+    }
+
+    val jvmCompilations = kotlin.jvm().compilations
+    val jvmMainCompilation = jvmCompilations.getByName("main")
+    val cborPinCompilation = jvmCompilations.create("cborPin") {
+        associateWith(jvmMainCompilation)
+        defaultSourceSet {
+            kotlin.srcDir(generateCborPinFixtures.map { it.outputDir })
+            kotlin.srcDir("src/cborPinTest/kotlin")
+            dependencies {
+                implementation(kotlin("test-junit"))
             }
         }
+    }
+
+    tasks.register<Test>("cborPinCapture") {
+        description = "Captures what the Kotlin CBOR encode writes for the pinned values (docs/adr/0101 step 0)."
+        testClassesDirs = cborPinCompilation.output.classesDirs
+        classpath = files(
+            listOfNotNull(cborPinCompilation.runtimeDependencyFiles),
+            cborPinCompilation.output.allOutputs,
+        )
+        useJUnit()
+        // A capture always runs, and its largest envelope (some nineteen million
+        // bytes, twice that as hexadecimal) needs more heap than a test worker is
+        // given by default.
+        outputs.upToDateWhen { false }
+        maxHeapSize = "2g"
     }
 }
 
@@ -458,13 +500,6 @@ tasks.withType<Test>().configureEach {
         providers.environmentVariable("SCE_BROADCAST_HISTORY_DIR").isPresent
     ) {
         outputs.upToDateWhen { false }
-    }
-    // A capture of the CBOR pin always runs, and its largest envelope (some
-    // nineteen million bytes, twice that as hexadecimal) needs more heap than a
-    // test worker is given by default.
-    if (cborPinRequested) {
-        outputs.upToDateWhen { false }
-        maxHeapSize = "2g"
     }
     // The queue contract is read at run time by path, so it is an input like
     // the numerical reference below.

@@ -14,19 +14,23 @@
 #
 #   - Rust: backends/rust/forge-conformance/tests/forge_cbor_pin.rs, built for the
 #     crate's `cbor-pin` feature, whose build.rs generates the codecs;
-#   - Kotlin: backends/kotlin/forge-runtime/src/cborPinTest, compiled into jvmTest
-#     with the codecs when SCE_CBOR_PIN_INPUTS is set (build.gradle.kts);
+#   - Kotlin: backends/kotlin/forge-runtime/src/cborPinTest, the compilation
+#     `cborPin` of that module, run by its task `cborPinCapture`, both configured
+#     only when SCE_CBOR_PIN_INPUTS is set (build.gradle.kts);
 #   - C++, C11, Go, Python and Swift: tests/forge/cbor_pin/drivers/<backend>, each
 #     built here against `sce-codegen generate --with-imports` of the codecs and the
 #     backend's forge runtime, in a directory of this run's own outside the tree.
 #
-# Every driver writes one line a case into the run's directory, and `pin.py merge`
-# folds the seven into tests/forge/cbor_pin/captured.json: the bytes once where the
-# backends agree, each backend's where they do not (named under `disagreements`).
-# A case captured.json already pins is held, not rewritten: a capture whose bytes
-# for it moved on any backend fails and leaves the file as it was, which is how
-# every later step of ADR 0101 shows it moved no pinned byte. So a run before the
-# pin exists writes it, and every run after checks it.
+# Every backend runs, whichever failed before it, so one run names every backend
+# that failed, each by name with its status; a run with any failure stops before
+# the pin and leaves it as it was. Otherwise every driver has written one line a
+# case into the run's directory, and `pin.py merge` folds the seven into
+# tests/forge/cbor_pin/captured.json: the bytes once where the backends agree, each
+# backend's where they do not (named under `disagreements`). A case captured.json
+# already pins is held, not rewritten: a capture whose bytes for it moved on any
+# backend fails and leaves the file as it was, which is how every later step of
+# ADR 0101 shows it moved no pinned byte. So a run before the pin exists writes it,
+# and every run after checks it.
 
 set -euo pipefail
 
@@ -52,7 +56,8 @@ step() {
 
 step "the cases are values of their documents"
 python3 "$PIN/pin.py" check
-mapfile -t DOCUMENTS < <(python3 "$PIN/pin.py" codecs)
+# Absolute paths: the Kotlin build reads them from the environment as they are.
+mapfile -t DOCUMENTS < <(python3 "$PIN/pin.py" codecs | sed "s|^|$REPO_ROOT/|")
 python3 "$PIN/pin.py" inputs "$INPUTS"
 
 CODEGEN="$(sce_codegen_require "$REPO_ROOT")"
@@ -65,29 +70,32 @@ generate() {
     "$CODEGEN" generate --with-imports "${DOCUMENTS[@]}" --language "$language" --output-dir "$out" "$@" >/dev/null
 }
 
-step "Rust"
-SCE_CBOR_PIN_INPUTS="$INPUTS" SCE_CBOR_PIN_OUTPUT="$CAPTURE/rust.txt" \
-    cargo test --jobs "$JOBS" -p sce-forge-conformance --features cbor-pin --test forge_cbor_pin
+capture_rust() {
+    SCE_CBOR_PIN_INPUTS="$INPUTS" SCE_CBOR_PIN_OUTPUT="$CAPTURE/rust.txt" \
+        cargo test --jobs "$JOBS" -p sce-forge-conformance --features cbor-pin --test forge_cbor_pin
+}
 
-step "C++"
-generate cpp "$WORK/cpp/generated"
-"${CXX:-c++}" -std=c++17 -O2 -Wall -Wextra \
-    -I "$WORK/cpp/generated" -I backends/cpp/forge-runtime/include \
-    "$PIN/drivers/cpp/capture.cpp" -o "$WORK/cpp/capture"
-"$WORK/cpp/capture" "$INPUTS" "$CAPTURE/cpp.txt"
+capture_cpp() {
+    generate cpp "$WORK/cpp/generated"
+    "${CXX:-c++}" -std=c++17 -O2 -Wall -Wextra \
+        -I "$WORK/cpp/generated" -I backends/cpp/forge-runtime/include \
+        "$PIN/drivers/cpp/capture.cpp" -o "$WORK/cpp/capture"
+    "$WORK/cpp/capture" "$INPUTS" "$CAPTURE/cpp.txt"
+}
 
-step "C11"
-generate c11 "$WORK/c11/generated"
-"${CC:-cc}" -std=c11 -O2 -Wall -Wextra \
-    -I "$WORK/c11/generated" -I backends/c/forge-runtime/include -I backends/c/runtime/include \
-    "$PIN/drivers/c11/capture.c" -o "$WORK/c11/capture"
-"$WORK/c11/capture" "$INPUTS" "$CAPTURE/c11.txt"
+capture_c11() {
+    generate c11 "$WORK/c11/generated"
+    "${CC:-cc}" -std=c11 -O2 -Wall -Wextra \
+        -I "$WORK/c11/generated" -I backends/c/forge-runtime/include -I backends/c/runtime/include \
+        "$PIN/drivers/c11/capture.c" -o "$WORK/c11/capture"
+    "$WORK/c11/capture" "$INPUTS" "$CAPTURE/c11.txt"
+}
 
-step "Go"
-# A module of the run's own, whose generated packages are imported as
-# sce.dev/cborpin/gen/<document>, over the forge runtime's module in the tree.
-generate go "$WORK/go/gen" --go-module-prefix sce.dev/cborpin/gen
-cat >"$WORK/go/go.mod" <<EOF
+capture_go() {
+    # A module of the run's own, whose generated packages are imported as
+    # sce.dev/cborpin/gen/<document>, over the forge runtime's module in the tree.
+    generate go "$WORK/go/gen" --go-module-prefix sce.dev/cborpin/gen
+    cat >"$WORK/go/go.mod" <<EOF
 module sce.dev/cborpin
 
 go 1.22
@@ -96,36 +104,38 @@ require github.com/newmassrael/sce-forge-runtime v0.0.0
 
 replace github.com/newmassrael/sce-forge-runtime => $REPO_ROOT/backends/go/forge-runtime
 EOF
-cp "$PIN/drivers/go/main.go" "$WORK/go/main.go"
-(cd "$WORK/go" && GOFLAGS=-mod=mod go run . "$INPUTS" "$CAPTURE/go.txt")
+    cp "$PIN/drivers/go/main.go" "$WORK/go/main.go"
+    (cd "$WORK/go" && GOFLAGS=-mod=mod go run . "$INPUTS" "$CAPTURE/go.txt")
+}
 
-step "Kotlin"
-SCE_CBOR_PIN_INPUTS="$INPUTS" SCE_CBOR_PIN_OUTPUT="$CAPTURE/kotlin.txt" \
-    SCE_CBOR_PIN_DOCUMENTS="$(printf '%s\n' "${DOCUMENTS[@]}")" \
-    scripts/gradlew-on-ci-jdk.sh :sce-forge-runtime-kotlin:jvmTest \
-    --tests 'com.sce.forge.cborpin.CborPinCaptureTest' --console=plain
+capture_kotlin() {
+    SCE_CBOR_PIN_INPUTS="$INPUTS" SCE_CBOR_PIN_OUTPUT="$CAPTURE/kotlin.txt" \
+        SCE_CBOR_PIN_DOCUMENTS="$(printf '%s\n' "${DOCUMENTS[@]}")" \
+        scripts/gradlew-on-ci-jdk.sh :sce-forge-runtime-kotlin:cborPinCapture --console=plain
+}
 
-step "Python"
-generate python "$WORK/python/generated"
-python3 "$PIN/drivers/python/capture.py" "$WORK/python/generated" "$INPUTS" "$CAPTURE/python.txt"
+capture_python() {
+    generate python "$WORK/python/generated"
+    python3 "$PIN/drivers/python/capture.py" "$WORK/python/generated" "$INPUTS" "$CAPTURE/python.txt"
+}
 
-step "Swift"
-# The toolchain bx.toml pins, where provision installs it; a `swift` on PATH
-# otherwise, as on a machine that installed the same release by hand.
-SWIFT="$HOME/.local/share/swift/$(sce_swift_pin_version)/bin/swift"
-if [ ! -x "$SWIFT" ]; then
-    SWIFT="$(command -v swift)" || {
-        echo "capture-cbor-pin: no Swift toolchain at $SWIFT nor on PATH" >&2
-        exit 1
-    }
-fi
-SWIFT_PACKAGE="$WORK/swift"
-SWIFT_SOURCES="$SWIFT_PACKAGE/Sources/CborPinCapture"
-generate swift "$WORK/swift-generated"
-mkdir -p "$SWIFT_SOURCES"
-find "$WORK/swift-generated" -name '*.swift' -exec cp {} "$SWIFT_SOURCES/" \;
-cp "$PIN/drivers/swift/main.swift" "$SWIFT_SOURCES/main.swift"
-cat >"$SWIFT_PACKAGE/Package.swift" <<EOF
+capture_swift() {
+    # The toolchain bx.toml pins, where provision installs it; a `swift` on PATH
+    # otherwise, as on a machine that installed the same release by hand.
+    local swift="$HOME/.local/share/swift/$(sce_swift_pin_version)/bin/swift"
+    if [ ! -x "$swift" ]; then
+        swift="$(command -v swift)" || {
+            echo "capture-cbor-pin: no Swift toolchain at $swift nor on PATH" >&2
+            return 1
+        }
+    fi
+    local package="$WORK/swift"
+    local sources="$package/Sources/CborPinCapture"
+    generate swift "$WORK/swift-generated"
+    mkdir -p "$sources"
+    find "$WORK/swift-generated" -name '*.swift' -exec cp {} "$sources/" \;
+    cp "$PIN/drivers/swift/main.swift" "$sources/main.swift"
+    cat >"$package/Package.swift" <<EOF
 // swift-tools-version:6.0
 import PackageDescription
 
@@ -141,8 +151,31 @@ let package = Package(
     ]
 )
 EOF
-"$SWIFT" build --package-path "$SWIFT_PACKAGE" -c release --jobs "$JOBS"
-"$SWIFT_PACKAGE/.build/release/CborPinCapture" "$INPUTS" "$CAPTURE/swift.txt"
+    "$swift" build --package-path "$package" -c release --jobs "$JOBS"
+    "$package/.build/release/CborPinCapture" "$INPUTS" "$CAPTURE/swift.txt"
+}
+
+# Each backend in a subshell of its own that stops at its first failing command
+# (not in a condition, where bash would not stop it), its status kept by name.
+FAILED=()
+for backend in rust cpp c11 go kotlin python swift; do
+    step "$backend"
+    set +e
+    (
+        set -e
+        "capture_$backend"
+    )
+    status=$?
+    set -e
+    if [ "$status" -ne 0 ]; then
+        echo "capture-cbor-pin: the $backend driver failed (status $status); its output is above" >&2
+        FAILED+=("$backend")
+    fi
+done
+if [ "${#FAILED[@]}" -ne 0 ]; then
+    echo "capture-cbor-pin: ${#FAILED[@]} backend(s) failed: ${FAILED[*]}; the pin is left as it was" >&2
+    exit 1
+fi
 
 step "pin"
 python3 "$PIN/pin.py" merge "$CAPTURE"

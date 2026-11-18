@@ -4,10 +4,11 @@
 // The Kotlin driver of the CBOR pin (tests/forge/cbor_pin/pin.py, docs/adr/0101
 // step 0).
 //
-// Compiled into jvmTest only when scripts/capture_cbor_pin.sh asks for it by
-// setting SCE_CBOR_PIN_INPUTS (build.gradle.kts, `generateCborPinFixtures`), beside
-// the Kotlin the generator wrote for the pinned codecs and every document they
-// import. Each line of the file SCE_CBOR_PIN_INPUTS names, `<codec>/<case> <hex>`,
+// Compiled by the module's compilation `cborPin` and run by its task
+// `cborPinCapture`, both configured only when scripts/capture_cbor_pin.sh asks for
+// them by setting SCE_CBOR_PIN_INPUTS (build.gradle.kts), beside the Kotlin the
+// generator wrote for the pinned codecs and every document they import. Not a part
+// of jvmTest, whose conformance fixtures declare some of the same classes. Each line of the file SCE_CBOR_PIN_INPUTS names, `<codec>/<case> <hex>`,
 // is decoded by that codec and the value it read encoded again; the file
 // SCE_CBOR_PIN_OUTPUT names gets `<id> ok <hex>` with what the encode wrote, or
 // `<id> refused <words>` naming the CodecError the decode or the encode answered.
