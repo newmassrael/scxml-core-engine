@@ -14,9 +14,12 @@ import SceForgeRuntime
 /// from which arm it is, and a decode makes the arm the gates of the frame name.
 public enum CodecPresentIfDisjunctionFlagsWantsAOrWantsB: Equatable, Sendable {
     /// While flags.wants_a set, flags.wants_b clear.
-    case wantsA(seq: UInt16)    /// While flags.wants_a clear, flags.wants_b set.
-    case wantsB(seq: UInt16)    /// While flags.wants_a set, flags.wants_b set.
+    case wantsA(seq: UInt16)
+    /// While flags.wants_a clear, flags.wants_b set.
+    case wantsB(seq: UInt16)
+    /// While flags.wants_a set, flags.wants_b set.
     case wantsAWantsB(seq: UInt16)
+
     /// The place of the arm among the arms, in the order the document's gates make them: what the
     /// encode derives each gate from.
     public var arm: Int {

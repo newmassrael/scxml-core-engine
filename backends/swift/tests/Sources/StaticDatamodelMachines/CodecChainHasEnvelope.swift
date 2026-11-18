@@ -15,8 +15,10 @@ import SceForgeRuntime
 /// Each body and list is a source of its codec, so a host's type is presented with no copy.
 public enum CodecChainHasEnvelopeExtensionsHas0x2<Extensions_Entry: CodecZenohExtEntrySource, Slices_Entry: CodecChainHasSliceSource> {
     /// While extensions.has(0x2) set.
-    case has0x2(extensions: SceChain<Extensions_Entry, CodecChainHasEnvelope.ExtensionsBound, SceKindsOf<CodecChainHasEnvelope.ExtensionsKind2<Extensions_Entry>, SceNoKinds<Extensions_Entry>>, SceNoKinds<Extensions_Entry>>, slices: BoundedList<Slices_Entry, CodecChainHasEnvelope.SlicesBound>)    /// While extensions.has(0x2) clear.
+    case has0x2(extensions: SceChain<Extensions_Entry, CodecChainHasEnvelope.ExtensionsBound, SceKindsOf<CodecChainHasEnvelope.ExtensionsKind2<Extensions_Entry>, SceNoKinds<Extensions_Entry>>, SceNoKinds<Extensions_Entry>>, slices: BoundedList<Slices_Entry, CodecChainHasEnvelope.SlicesBound>)
+    /// While extensions.has(0x2) clear.
     case notHas0x2(extensions: SceChain<Extensions_Entry, CodecChainHasEnvelope.ExtensionsBound, SceNoKinds<Extensions_Entry>, SceKindsOf<CodecChainHasEnvelope.ExtensionsKind2<Extensions_Entry>, SceNoKinds<Extensions_Entry>>>?, payload: BoundedBytes<CodecChainHasEnvelope.PayloadBound>)
+
     /// The place of the arm among the arms, in the order the document's gates make them: what the
     /// encode derives each gate from.
     public var arm: Int {

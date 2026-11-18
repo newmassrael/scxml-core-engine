@@ -15,8 +15,10 @@ import SceForgeRuntime
 /// Each body and list is a source of its codec, so a host's type is presented with no copy.
 public enum CodecPresentIfLengthFromFlagsHasTs<Ts_Source: CodecZenohTimestampSource> {
     /// While flags.has_ts set.
-    case hasTs(ts: Ts_Source)    /// While flags.has_ts clear.
+    case hasTs(ts: Ts_Source)
+    /// While flags.has_ts clear.
     case notHasTs(ext_size: UInt64)
+
     /// The place of the arm among the arms, in the order the document's gates make them: what the
     /// encode derives each gate from.
     public var arm: Int {

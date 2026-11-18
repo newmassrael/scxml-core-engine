@@ -14,8 +14,10 @@ import SceForgeRuntime
 /// from which arm it is, and a decode makes the arm the gates of the frame name.
 public enum CodecPresentIfLengthRefFlagsHasPayload: Equatable, Sendable {
     /// While flags.has_payload set.
-    case hasPayload(payload: BoundedBytes<CodecPresentIfLengthRef.PayloadBound>)    /// While flags.has_payload clear.
+    case hasPayload(payload: BoundedBytes<CodecPresentIfLengthRef.PayloadBound>)
+    /// While flags.has_payload clear.
     case notHasPayload(payload_size: UInt8)
+
     /// The place of the arm among the arms, in the order the document's gates make them: what the
     /// encode derives each gate from.
     public var arm: Int {

@@ -14,8 +14,10 @@ import SceForgeRuntime
 /// from which arm it is, and a decode makes the arm the gates of the frame name.
 public enum CodecChainFlagEntryWide: Equatable, Sendable {
     /// While wide set.
-    case wide(long_value: UInt16)    /// While wide clear.
+    case wide(long_value: UInt16)
+    /// While wide clear.
     case notWide(short_value: UInt8)
+
     /// The place of the arm among the arms, in the order the document's gates make them: what the
     /// encode derives each gate from.
     public var arm: Int {

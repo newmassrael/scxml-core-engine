@@ -15,8 +15,10 @@ import SceForgeRuntime
 /// Each body and list is a source of its codec, so a host's type is presented with no copy.
 public enum CodecRepeatFlagAlignedAlwaysHeadH<Links_Entry: CodecChainFlagEntrySource, Weights_Entry: CodecRepeatElemSource> {
     /// While head.H set.
-    case h(links_weights: Aligned<Lawful<BoundedList<Links_Entry, CodecRepeatFlagAlignedAlways.LinksBound>, CodecRepeatFlagAlignedAlways.LinksLaw<Links_Entry>>, BoundedList<Weights_Entry, CodecRepeatFlagAlignedAlways.WeightsBound>>)    /// While head.H clear.
+    case h(links_weights: Aligned<Lawful<BoundedList<Links_Entry, CodecRepeatFlagAlignedAlways.LinksBound>, CodecRepeatFlagAlignedAlways.LinksLaw<Links_Entry>>, BoundedList<Weights_Entry, CodecRepeatFlagAlignedAlways.WeightsBound>>)
+    /// While head.H clear.
     case notH(links: Lawful<BoundedList<Links_Entry, CodecRepeatFlagAlignedAlways.LinksBound>, CodecRepeatFlagAlignedAlways.LinksLaw<Links_Entry>>)
+
     /// The place of the arm among the arms, in the order the document's gates make them: what the
     /// encode derives each gate from.
     public var arm: Int {

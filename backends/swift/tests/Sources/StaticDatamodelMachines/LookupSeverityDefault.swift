@@ -10,6 +10,7 @@
 // file of the module that calls it. A call is qualified by the enum
 // (`LookupSeverityDefault.lookupSeverity(…)`), which a member of the calling type cannot hide as
 // it would hide a free function of the same name.
+
 import SceForgeRuntime
 
 public enum LookupSeverityDefault {

@@ -14,8 +14,10 @@ import SceForgeRuntime
 /// from which arm it is, and a decode makes the arm the gates of the frame name.
 public enum CodecExtEncodingInfoCombinedIdHasSchema: Equatable, Sendable {
     /// While combined_id.has_schema set.
-    case hasSchema(schema: BoundedBytes<CodecExtEncodingInfo.SchemaBound>)    /// While combined_id.has_schema clear.
+    case hasSchema(schema: BoundedBytes<CodecExtEncodingInfo.SchemaBound>)
+    /// While combined_id.has_schema clear.
     case notHasSchema(schema_size: UInt8)
+
     /// The place of the arm among the arms, in the order the document's gates make them: what the
     /// encode derives each gate from.
     public var arm: Int {

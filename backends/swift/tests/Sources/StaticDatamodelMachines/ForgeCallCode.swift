@@ -11,6 +11,7 @@
 // (`ForgeCallCode.lookupCode(…)`), which a member of the calling type cannot hide as
 // it would hide a free function of the same name. A key the table
 // does not list answers no value: the call is an error, and the function answers `nil`.
+
 import SceForgeRuntime
 
 public enum ForgeCallCode {

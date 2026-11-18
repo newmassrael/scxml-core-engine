@@ -14,8 +14,10 @@ import SceForgeRuntime
 /// from which arm it is, and a decode makes the arm the gates of the frame name.
 public enum CodecChainPrevEntryAfterMarker: Equatable, Sendable {
     /// While after_marker set.
-    case afterMarker(long_value: UInt16)    /// While after_marker clear.
+    case afterMarker(long_value: UInt16)
+    /// While after_marker clear.
     case notAfterMarker(short_value: UInt8)
+
     /// The place of the arm among the arms, in the order the document's gates make them: what the
     /// encode derives each gate from.
     public var arm: Int {

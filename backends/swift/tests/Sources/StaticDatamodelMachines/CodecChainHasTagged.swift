@@ -15,14 +15,22 @@ import SceForgeRuntime
 /// Each body and list is a source of its codec, so a host's type is presented with no copy.
 public enum CodecChainHasTaggedEntriesHas0x7Has0x9HeaderWide<Entries_Entry: CodecChainHasTaggedEntrySource> {
     /// While entries.has(0x7) set, entries.has(0x9) set, header.wide set.
-    case has0x7Has0x9Wide(entries: SceChain<Entries_Entry, CodecChainHasTagged.EntriesBound, SceKindsOf<CodecChainHasTagged.EntriesKind7<Entries_Entry>, SceKindsOf<CodecChainHasTagged.EntriesKind9<Entries_Entry>, SceNoKinds<Entries_Entry>>>, SceNoKinds<Entries_Entry>>, priority: UInt8)    /// While entries.has(0x7) set, entries.has(0x9) set, header.wide clear.
-    case has0x7Has0x9(entries: SceChain<Entries_Entry, CodecChainHasTagged.EntriesBound, SceKindsOf<CodecChainHasTagged.EntriesKind7<Entries_Entry>, SceKindsOf<CodecChainHasTagged.EntriesKind9<Entries_Entry>, SceNoKinds<Entries_Entry>>>, SceNoKinds<Entries_Entry>>, priority: UInt8)    /// While entries.has(0x7) set, entries.has(0x9) clear, header.wide set.
-    case has0x7Wide(entries: SceChain<Entries_Entry, CodecChainHasTagged.EntriesBound, SceKindsOf<CodecChainHasTagged.EntriesKind7<Entries_Entry>, SceNoKinds<Entries_Entry>>, SceKindsOf<CodecChainHasTagged.EntriesKind9<Entries_Entry>, SceNoKinds<Entries_Entry>>>, priority: UInt8, checksum: UInt16)    /// While entries.has(0x7) clear, entries.has(0x9) set, header.wide set.
-    case has0x9Wide(entries: SceChain<Entries_Entry, CodecChainHasTagged.EntriesBound, SceKindsOf<CodecChainHasTagged.EntriesKind9<Entries_Entry>, SceNoKinds<Entries_Entry>>, SceKindsOf<CodecChainHasTagged.EntriesKind7<Entries_Entry>, SceNoKinds<Entries_Entry>>>, priority: UInt8)    /// While entries.has(0x7) set, entries.has(0x9) clear, header.wide clear.
-    case has0x7(entries: SceChain<Entries_Entry, CodecChainHasTagged.EntriesBound, SceKindsOf<CodecChainHasTagged.EntriesKind7<Entries_Entry>, SceNoKinds<Entries_Entry>>, SceKindsOf<CodecChainHasTagged.EntriesKind9<Entries_Entry>, SceNoKinds<Entries_Entry>>>, priority: UInt8, checksum: UInt16)    /// While entries.has(0x7) clear, entries.has(0x9) set, header.wide clear.
-    case has0x9(entries: SceChain<Entries_Entry, CodecChainHasTagged.EntriesBound, SceKindsOf<CodecChainHasTagged.EntriesKind9<Entries_Entry>, SceNoKinds<Entries_Entry>>, SceKindsOf<CodecChainHasTagged.EntriesKind7<Entries_Entry>, SceNoKinds<Entries_Entry>>>)    /// While entries.has(0x7) clear, entries.has(0x9) clear, header.wide set.
-    case wide(entries: SceChain<Entries_Entry, CodecChainHasTagged.EntriesBound, SceNoKinds<Entries_Entry>, SceKindsOf<CodecChainHasTagged.EntriesKind7<Entries_Entry>, SceKindsOf<CodecChainHasTagged.EntriesKind9<Entries_Entry>, SceNoKinds<Entries_Entry>>>>, priority: UInt8, checksum: UInt16)    /// While entries.has(0x7) clear, entries.has(0x9) clear, header.wide clear.
+    case has0x7Has0x9Wide(entries: SceChain<Entries_Entry, CodecChainHasTagged.EntriesBound, SceKindsOf<CodecChainHasTagged.EntriesKind7<Entries_Entry>, SceKindsOf<CodecChainHasTagged.EntriesKind9<Entries_Entry>, SceNoKinds<Entries_Entry>>>, SceNoKinds<Entries_Entry>>, priority: UInt8)
+    /// While entries.has(0x7) set, entries.has(0x9) set, header.wide clear.
+    case has0x7Has0x9(entries: SceChain<Entries_Entry, CodecChainHasTagged.EntriesBound, SceKindsOf<CodecChainHasTagged.EntriesKind7<Entries_Entry>, SceKindsOf<CodecChainHasTagged.EntriesKind9<Entries_Entry>, SceNoKinds<Entries_Entry>>>, SceNoKinds<Entries_Entry>>, priority: UInt8)
+    /// While entries.has(0x7) set, entries.has(0x9) clear, header.wide set.
+    case has0x7Wide(entries: SceChain<Entries_Entry, CodecChainHasTagged.EntriesBound, SceKindsOf<CodecChainHasTagged.EntriesKind7<Entries_Entry>, SceNoKinds<Entries_Entry>>, SceKindsOf<CodecChainHasTagged.EntriesKind9<Entries_Entry>, SceNoKinds<Entries_Entry>>>, priority: UInt8, checksum: UInt16)
+    /// While entries.has(0x7) clear, entries.has(0x9) set, header.wide set.
+    case has0x9Wide(entries: SceChain<Entries_Entry, CodecChainHasTagged.EntriesBound, SceKindsOf<CodecChainHasTagged.EntriesKind9<Entries_Entry>, SceNoKinds<Entries_Entry>>, SceKindsOf<CodecChainHasTagged.EntriesKind7<Entries_Entry>, SceNoKinds<Entries_Entry>>>, priority: UInt8)
+    /// While entries.has(0x7) set, entries.has(0x9) clear, header.wide clear.
+    case has0x7(entries: SceChain<Entries_Entry, CodecChainHasTagged.EntriesBound, SceKindsOf<CodecChainHasTagged.EntriesKind7<Entries_Entry>, SceNoKinds<Entries_Entry>>, SceKindsOf<CodecChainHasTagged.EntriesKind9<Entries_Entry>, SceNoKinds<Entries_Entry>>>, priority: UInt8, checksum: UInt16)
+    /// While entries.has(0x7) clear, entries.has(0x9) set, header.wide clear.
+    case has0x9(entries: SceChain<Entries_Entry, CodecChainHasTagged.EntriesBound, SceKindsOf<CodecChainHasTagged.EntriesKind9<Entries_Entry>, SceNoKinds<Entries_Entry>>, SceKindsOf<CodecChainHasTagged.EntriesKind7<Entries_Entry>, SceNoKinds<Entries_Entry>>>)
+    /// While entries.has(0x7) clear, entries.has(0x9) clear, header.wide set.
+    case wide(entries: SceChain<Entries_Entry, CodecChainHasTagged.EntriesBound, SceNoKinds<Entries_Entry>, SceKindsOf<CodecChainHasTagged.EntriesKind7<Entries_Entry>, SceKindsOf<CodecChainHasTagged.EntriesKind9<Entries_Entry>, SceNoKinds<Entries_Entry>>>>, priority: UInt8, checksum: UInt16)
+    /// While entries.has(0x7) clear, entries.has(0x9) clear, header.wide clear.
     case neither(entries: SceChain<Entries_Entry, CodecChainHasTagged.EntriesBound, SceNoKinds<Entries_Entry>, SceKindsOf<CodecChainHasTagged.EntriesKind7<Entries_Entry>, SceKindsOf<CodecChainHasTagged.EntriesKind9<Entries_Entry>, SceNoKinds<Entries_Entry>>>>, checksum: UInt16)
+
     /// The place of the arm among the arms, in the order the document's gates make them: what the
     /// encode derives each gate from.
     public var arm: Int {

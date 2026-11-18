@@ -15,8 +15,10 @@ import SceForgeRuntime
 /// Each body and list is a source of its codec, so a host's type is presented with no copy.
 public enum CodecRepeatFlagGroupHeadL<Entries_Entry: CodecChainFlagEntrySource> {
     /// While head.L set.
-    case l(level: UInt8, entries: Lawful<BoundedList<Entries_Entry, CodecRepeatFlagGroup.EntriesBound>, CodecRepeatFlagGroup.EntriesLaw<Entries_Entry>>)    /// While head.L clear.
+    case l(level: UInt8, entries: Lawful<BoundedList<Entries_Entry, CodecRepeatFlagGroup.EntriesBound>, CodecRepeatFlagGroup.EntriesLaw<Entries_Entry>>)
+    /// While head.L clear.
     case notL(note: UInt8)
+
     /// The place of the arm among the arms, in the order the document's gates make them: what the
     /// encode derives each gate from.
     public var arm: Int {

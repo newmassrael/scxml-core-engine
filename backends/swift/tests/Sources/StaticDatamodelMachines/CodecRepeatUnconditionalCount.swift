@@ -15,8 +15,10 @@ import SceForgeRuntime
 /// Each body and list is a source of its codec, so a host's type is presented with no copy.
 public enum CodecRepeatUnconditionalCountOptionsH<Links_Entry: CodecRepeatElemSource, Weights_Entry: CodecRepeatElemSource> {
     /// While options.H set.
-    case h(links_weights: Aligned<BoundedList<Links_Entry, CodecRepeatUnconditionalCount.LinksBound>, BoundedList<Weights_Entry, CodecRepeatUnconditionalCount.WeightsBound>>)    /// While options.H clear.
+    case h(links_weights: Aligned<BoundedList<Links_Entry, CodecRepeatUnconditionalCount.LinksBound>, BoundedList<Weights_Entry, CodecRepeatUnconditionalCount.WeightsBound>>)
+    /// While options.H clear.
     case notH(links: BoundedList<Links_Entry, CodecRepeatUnconditionalCount.LinksBound>)
+
     /// The place of the arm among the arms, in the order the document's gates make them: what the
     /// encode derives each gate from.
     public var arm: Int {

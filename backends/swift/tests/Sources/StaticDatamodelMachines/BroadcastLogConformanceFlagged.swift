@@ -131,7 +131,8 @@ public enum BroadcastLogConformanceFlagged {
         _ publisher: SceForgeRuntime.BroadcastLogPublisher, _ element: BroadcastLogConformanceFlaggedEvent
     ) -> Publish {
         let flags = Flags(
-            hasValue: BroadcastLogConformanceFlaggedEvent.inputHasValue(element) != 0        )
+            hasValue: BroadcastLogConformanceFlaggedEvent.inputHasValue(element) != 0
+        )
         var sink = BoundedSink(capacity: maxEncodedBytes)
         do throws(CodecError) {
             try element.encode(into: &sink)

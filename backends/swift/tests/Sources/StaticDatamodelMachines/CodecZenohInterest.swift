@@ -15,9 +15,12 @@ import SceForgeRuntime
 /// Each body and list is a source of its codec, so a host's type is presented with no copy.
 public enum CodecZenohInterestHeaderCurrentOrFuture<Body_Source: CodecZenohInterestBodySource> {
     /// While header.CURRENT set, header.FUTURE clear.
-    case current(body: Body_Source)    /// While header.CURRENT clear, header.FUTURE set.
-    case future(body: Body_Source)    /// While header.CURRENT set, header.FUTURE set.
+    case current(body: Body_Source)
+    /// While header.CURRENT clear, header.FUTURE set.
+    case future(body: Body_Source)
+    /// While header.CURRENT set, header.FUTURE set.
     case currentFuture(body: Body_Source)
+
     /// The place of the arm among the arms, in the order the document's gates make them: what the
     /// encode derives each gate from.
     public var arm: Int {

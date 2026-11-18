@@ -10,6 +10,7 @@
 // file of the module that calls it. A call is qualified by the enum
 // (`LookupEngineStatus.lookupStatus(…)`), which a member of the calling type cannot hide as
 // it would hide a free function of the same name.
+
 public enum LookupEngineStatus {
     /// The names the table answers, each case holding the name the document spells.
     public enum Status: String, Sendable {

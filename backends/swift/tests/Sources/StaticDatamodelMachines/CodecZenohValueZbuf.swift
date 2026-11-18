@@ -15,8 +15,10 @@ import SceForgeRuntime
 /// Each body and list is a source of its codec, so a host's type is presented with no copy.
 public enum CodecZenohValueZbufAfterShm<Slices_Entry: CodecZenohValueSliceSource> {
     /// While after_shm set.
-    case afterShm(encoding: UInt64, slices: BoundedList<Slices_Entry, CodecZenohValueZbuf.SlicesBound>, value_len: UInt64)    /// While after_shm clear.
+    case afterShm(encoding: UInt64, slices: BoundedList<Slices_Entry, CodecZenohValueZbuf.SlicesBound>, value_len: UInt64)
+    /// While after_shm clear.
     case notAfterShm(value: BoundedBytes<CodecZenohValueZbuf.ValueBound>)
+
     /// The place of the arm among the arms, in the order the document's gates make them: what the
     /// encode derives each gate from.
     public var arm: Int {
