@@ -230,13 +230,9 @@ pub fn refuse_unserved_in(
         if let Some(standard) = unserved(&info.invoke_type, language, table) {
             return Err(GenerateError::CodegenStandardHostTypeNotServed {
                 invoke_id: info.base.invoke_id.clone(),
-                invoke_type: info.invoke_type.clone(),
-                language: crate::forge::codegen_matrix::language_wire_name(language).to_string(),
-                served_by: standard
-                    .served_by
-                    .iter()
-                    .map(|lane| crate::forge::codegen_matrix::language_wire_name(*lane).to_string())
-                    .collect(),
+                invoke_type: standard.invoke_type,
+                language,
+                served_by: standard.served_by,
                 at: info.base.source_location.clone(),
             });
         }
@@ -436,6 +432,11 @@ mod tests {
     fn a_machine_that_runs_an_unserved_type_is_refused_naming_the_lanes_that_serve_it() {
         let refused = refuse_unserved_in(&machine(), Language::Go, PARTLY_SERVED)
             .expect_err("go does not serve x-probe-op, and the machine was not refused");
+        assert_eq!(
+            refused.to_string(),
+            "<invoke id=\"op\"> runs the standard host type 'x-probe-op', which the go lane \
+             does not serve: it is served on rust, cpp"
+        );
         let GenerateError::CodegenStandardHostTypeNotServed {
             invoke_id,
             invoke_type,
@@ -448,8 +449,8 @@ mod tests {
         };
         assert_eq!(invoke_id, "op");
         assert_eq!(invoke_type, "x-probe-op");
-        assert_eq!(language, "go");
-        assert_eq!(served_by, ["rust", "cpp"]);
+        assert_eq!(language, Language::Go);
+        assert_eq!(served_by, &[Language::Rust, Language::Cpp][..]);
         assert_eq!(
             at.and_then(|at| at.line),
             Some(4),

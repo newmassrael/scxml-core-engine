@@ -12254,7 +12254,11 @@ fn generate_fields(e: &GenerateError) -> DiagnosticPayload {
             expected: None,
             actual: None,
             fix: None,
-            key_fragments: vec![invoke_id.clone(), invoke_type.clone(), language.clone()],
+            key_fragments: vec![
+                invoke_id.clone(),
+                invoke_type.to_string(),
+                crate::forge::codegen_matrix::language_wire_name(*language).to_string(),
+            ],
         },
         GenerateError::QueueStorageRuntimeMissing {
             queue_name,
@@ -16819,9 +16823,12 @@ mod tests {
                 "codegen/standard-host-type-not-served",
                 GenerateError::CodegenStandardHostTypeNotServed {
                     invoke_id: "op".into(),
-                    invoke_type: "x-probe-op".into(),
-                    language: "go".into(),
-                    served_by: vec!["rust".into(), "cpp".into()],
+                    invoke_type: "x-probe-op",
+                    language: crate::generator::Language::Go,
+                    served_by: &[
+                        crate::generator::Language::Rust,
+                        crate::generator::Language::Cpp,
+                    ],
                     at: None,
                 }
                 .into(),

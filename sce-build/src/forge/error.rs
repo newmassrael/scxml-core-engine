@@ -6323,6 +6323,16 @@ fn unread_sce_summary(unread: &[crate::read_ledger::Unread]) -> String {
     }
 }
 
+/// The lanes of [`GenerateError::CodegenStandardHostTypeNotServed`] by their
+/// wire names, in the table's order.
+fn lane_names(lanes: &[crate::generator::Language]) -> String {
+    lanes
+        .iter()
+        .map(|lane| crate::forge::codegen_matrix::language_wire_name(*lane))
+        .collect::<Vec<_>>()
+        .join(", ")
+}
+
 /// The message of [`ValidationError::ExactlyOneAttribute`]: which attributes
 /// the element takes one of, and whether it carries none or one too many.
 fn atomic_width_contradiction_message(
@@ -6645,18 +6655,22 @@ pub enum GenerateError {
     /// whose reference host serves it (docs/adr/0107, D8). Generating it would
     /// write a machine whose request no host of that lane answers. Producer:
     /// [`crate::forge::standard_host::refuse_unserved`], asked where a machine
-    /// is written for a lane. `language` and each of `served_by` are wire
-    /// names, `served_by` in the table's order; `at` is the `<invoke>`.
+    /// is written for a lane. `invoke_type` and `served_by` are the table's
+    /// own, `served_by` in its order; `at` is the `<invoke>`. Borrowed from
+    /// the table and not copied into strings, so the variant stays under the
+    /// size every `Result<_, GenerateError>` is held to
+    /// (`clippy::result_large_err`, 128 bytes).
     #[error(
         "<invoke id=\"{invoke_id}\"> runs the standard host type '{invoke_type}', which the \
-         {language} lane does not serve: it is served on {}",
-        served_by.join(", ")
+         {} lane does not serve: it is served on {}",
+        crate::forge::codegen_matrix::language_wire_name(*.language),
+        lane_names(.served_by)
     )]
     CodegenStandardHostTypeNotServed {
         invoke_id: String,
-        invoke_type: String,
-        language: String,
-        served_by: Vec<String>,
+        invoke_type: &'static str,
+        language: crate::generator::Language,
+        served_by: &'static [crate::generator::Language],
         at: Option<SourceLocation>,
     },
 
