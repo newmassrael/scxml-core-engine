@@ -2380,6 +2380,36 @@ enum HostLinkContext {
     /// configuration and the key is derived from the two machine names
     /// (§mesh-20).
     ZenohInbox,
+    /// The HTTPS binding (SCE_MESH.md section 22), on the side that posts the exchanges: the
+    /// server's base URL, the deployment's `authenticator` word and the poll's hold.
+    HttpsDial {
+        url: String,
+        authenticator: &'static str,
+        hold_ms: u32,
+    },
+    /// The HTTPS binding on the side that keeps the mailbox: the address it listens on, the
+    /// `authenticator` word and the bounds of the accepting binding.
+    HttpsAccept {
+        listen: String,
+        authenticator: &'static str,
+        max_hold_ms: u32,
+        max_body_bytes: u64,
+        absence_ms: u32,
+        mailbox: u32,
+    },
+}
+
+/// deploy.yaml's word for an HTTPS binding's authenticator, which the peer-table templates map to
+/// each core's own name for it.
+fn https_authenticator_word(
+    authenticator: &crate::mesh::topology::HttpsAuthenticator,
+) -> &'static str {
+    use crate::mesh::topology::HttpsAuthenticator;
+    match authenticator {
+        HttpsAuthenticator::Bearer => "bearer",
+        HttpsAuthenticator::Install => "install",
+        HttpsAuthenticator::Mtls => "mtls",
+    }
 }
 
 /// The peer-table template for a host-core backend, under
@@ -2526,6 +2556,39 @@ fn generate_host_mesh(
                     keepalive_ms: *keepalive_ms,
                 },
                 TransportState::ZenohInbox => HostLinkContext::ZenohInbox,
+                // Which side dials is read from the binding: the side with `url` posts, the side
+                // with `listen` keeps the mailbox, and deploy validation lets no binding carry
+                // both or neither.
+                TransportState::Https {
+                    url: Some(url),
+                    authenticator,
+                    hold_ms,
+                    ..
+                } => HostLinkContext::HttpsDial {
+                    url: url.clone(),
+                    authenticator: https_authenticator_word(authenticator),
+                    hold_ms: *hold_ms,
+                },
+                TransportState::Https {
+                    listen: Some(listen),
+                    authenticator,
+                    max_hold_ms,
+                    max_body_bytes,
+                    absence_ms,
+                    mailbox,
+                    ..
+                } => HostLinkContext::HttpsAccept {
+                    listen: listen.clone(),
+                    authenticator: https_authenticator_word(authenticator),
+                    max_hold_ms: *max_hold_ms,
+                    max_body_bytes: *max_body_bytes,
+                    absence_ms: *absence_ms,
+                    mailbox: *mailbox,
+                },
+                TransportState::Https { .. } => unreachable!(
+                    "generate_host_mesh: an https binding with neither `url` nor `listen` passed \
+                     deploy validation"
+                ),
                 other => unreachable!(
                     "generate_host_mesh: '{}' passed refuse_transports_not_served_by(HostCore) \
                      but has no host binding arm",

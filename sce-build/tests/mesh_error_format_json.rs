@@ -394,6 +394,96 @@ fn zenoh_inbox_reaches_the_rust_peer_table_as_a_link_with_no_parameters() {
     );
 }
 
+/// The machine [`CLIENT_SCXML`] sends to, answering its `ping` with a `pong`: a server that sends
+/// to its client, so that its own peer table holds the client.
+const REPLYING_SERVER_SCXML: &str = r##"<?xml version="1.0" encoding="UTF-8"?>
+<scxml xmlns="http://www.w3.org/2005/07/scxml"
+       version="1.0" name="server" initial="idle">
+  <state id="idle">
+    <transition event="ping" target="idle">
+      <send target="#client" event="pong"/>
+    </transition>
+  </state>
+</scxml>
+"##;
+
+/// A client that posts its exchanges to the server and a server that keeps its mailbox, over the
+/// HTTPS binding (SCE_MESH.md section 22).
+const HTTPS_DEPLOY: &str = r##"
+version: "1.0"
+topology:
+  phone:
+    machines:
+      client:
+        source: client.scxml
+        bindings:
+          "#server": { transport: https, url: "https://cal.example/api", authenticator: install, hold_ms: 9000 }
+  cloud:
+    machines:
+      server:
+        source: server.scxml
+        bindings:
+          "#client": { transport: https, listen: "0.0.0.0:8443", authenticator: install, mailbox: 64 }
+"##;
+
+#[test]
+fn an_https_dialing_binding_reaches_the_rust_peer_table_with_its_url_and_hold() {
+    // SCE_MESH.md section 22: the side with `url` posts the exchanges, so its link carries the
+    // server's base, the authenticator the host proves its name with, and the poll's hold.
+    let dir = ScratchDir::new("mesh-https-dial-rust");
+    let scxml = dir.write("client.scxml", CLIENT_SCXML);
+    dir.write("server.scxml", REPLYING_SERVER_SCXML);
+    let deploy = dir.write("deploy.yaml", HTTPS_DEPLOY);
+    let out = run_with_deploy_for("rust", &scxml, &deploy, dir.path());
+    assert!(
+        out.status.success(),
+        "the Rust host core carries https; stderr:\n{}",
+        String::from_utf8_lossy(&out.stderr)
+    );
+    let table = generated_file_under(dir.path(), "_mesh_peers.rs");
+    for line in [
+        "transport: \"https\",",
+        "link: PeerLink::HttpsDial {",
+        "url: \"https://cal.example/api\",",
+        "authenticator: sce_rust_mesh::peers::HttpsAuthenticator::Install,",
+        "hold_ms: 9000,",
+    ] {
+        assert!(table.contains(line), "missing `{line}`:\n{table}");
+    }
+    assert!(
+        !table.contains("PeerLink::HttpsAccept") && !table.contains("PeerLink::Wss"),
+        "the dialing side is read as one link only:\n{table}"
+    );
+}
+
+#[test]
+fn an_https_accepting_binding_reaches_the_rust_peer_table_with_its_bounds() {
+    // SCE_MESH.md section 22: the side with `listen` keeps the client's mailbox, so its link
+    // carries the address and every bound, the ones the binding leaves out at their defaults.
+    let dir = ScratchDir::new("mesh-https-accept-rust");
+    dir.write("client.scxml", CLIENT_SCXML);
+    let scxml = dir.write("server.scxml", REPLYING_SERVER_SCXML);
+    let deploy = dir.write("deploy.yaml", HTTPS_DEPLOY);
+    let out = run_with_deploy_for("rust", &scxml, &deploy, dir.path());
+    assert!(
+        out.status.success(),
+        "the Rust host core carries https; stderr:\n{}",
+        String::from_utf8_lossy(&out.stderr)
+    );
+    let table = generated_file_under(dir.path(), "_mesh_peers.rs");
+    for line in [
+        "link: PeerLink::HttpsAccept {",
+        "listen: \"0.0.0.0:8443\",",
+        "authenticator: sce_rust_mesh::peers::HttpsAuthenticator::Install,",
+        "max_hold_ms: 30000,",
+        "max_body_bytes: 1048576,",
+        "absence_ms: 120000,",
+        "mailbox: 64,",
+    ] {
+        assert!(table.contains(line), "missing `{line}`:\n{table}");
+    }
+}
+
 #[test]
 fn zenoh_inbox_reaches_the_swift_peer_table_as_a_link_with_no_parameters() {
     // SCE_MESH.md §mesh-20.4: the Swift core carries the Zenoh binding over a

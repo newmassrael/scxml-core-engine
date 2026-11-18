@@ -1,6 +1,11 @@
 {# SPDX-License-Identifier: AGPL-3.0-only WITH AdditionRef-SCE-Linking-Exception OR LicenseRef-SCE-Commercial #}
 {# SPDX-FileCopyrightText: Copyright (c) 2026 newmassrael #}
 {%- import '_macros/sce_map_marker.jinja2' as sce_map %}
+{#- The core's name for deploy.yaml's `authenticator` word of an HTTPS binding (SCE_MESH.md
+    section 22.5), spelled in full so that a table without an HTTPS peer imports nothing for it. -#}
+{%- macro https_authenticator(word) -%}
+sce_rust_mesh::peers::HttpsAuthenticator::{% if word == "bearer" %}Bearer{% elif word == "install" %}Install{% else %}Mtls{% endif %}
+{%- endmacro %}
 {#- SCE_MESH.md §mesh-19: one machine's peer table for the Rust host Mesh
     core (backends/rust/mesh). Data only — every value was decided by
     `mesh::codegen::peer_policy`, the function the C++ router's context is
@@ -77,6 +82,21 @@ pub const MACHINE: Machine = Machine {
             },
 {%- elif peer.link.kind == "zenoh_inbox" %}
             link: PeerLink::ZenohInbox,
+{%- elif peer.link.kind == "https_dial" %}
+            link: PeerLink::HttpsDial {
+                url: "{{ peer.link.url | escape_rust }}",
+                authenticator: {{ https_authenticator(peer.link.authenticator) }},
+                hold_ms: {{ peer.link.hold_ms }},
+            },
+{%- elif peer.link.kind == "https_accept" %}
+            link: PeerLink::HttpsAccept {
+                listen: "{{ peer.link.listen | escape_rust }}",
+                authenticator: {{ https_authenticator(peer.link.authenticator) }},
+                max_hold_ms: {{ peer.link.max_hold_ms }},
+                max_body_bytes: {{ peer.link.max_body_bytes }},
+                absence_ms: {{ peer.link.absence_ms }},
+                mailbox: {{ peer.link.mailbox }},
+            },
 {%- else %}
             link: PeerLink::WssAccept {
                 keepalive_ms: {% if peer.link.keepalive_ms %}Some({{ peer.link.keepalive_ms }}){% else %}None{% endif %},
