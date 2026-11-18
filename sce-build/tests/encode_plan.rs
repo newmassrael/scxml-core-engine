@@ -13,8 +13,8 @@ use std::path::{Path, PathBuf};
 
 use sce_build::forge::codec_roles::ElementId;
 use sce_build::forge::encode_plan::{
-    Absent, Automaton, Bound, Carrier, CborValue, Clause, CodecPlan, Derive, EncodePlan, Guard,
-    LawInput, LineShape, Measured, Narrow, Number, NumberInto, Offset, Presence, Value, Write,
+    Absent, Automaton, Bound, CborShape, Clause, CodecPlan, Derive, EncodePlan, Guard, LawInput,
+    LineShape, Measured, Narrow, Number, NumberInto, Offset, Presence, Value, Write,
 };
 use sce_build::{encode_plan_file, ForgeCompileOptions};
 
@@ -52,8 +52,8 @@ fn resource_documents() -> Vec<PathBuf> {
     paths
 }
 
-/// A CBOR map's entries are written in ascending key order, and only an enum
-/// whose carrier is signed can be refused (SCE_FORGE.md §4.6.1).
+/// A CBOR map's entries are written in ascending key order, and a map of
+/// scalars, texts and byte strings refuses nothing (SCE_FORGE.md §4.6.1).
 #[test]
 fn a_cbor_map_is_written_in_key_order() {
     with_codec_plan("codec_cbor_map", |plan| {
@@ -70,16 +70,123 @@ fn a_cbor_map_is_written_in_key_order() {
             keys.windows(2).all(|w| w[0] < w[1]),
             "keys out of order: {keys:?}"
         );
-        assert_eq!(
-            plan.totality.is_total(),
-            !plan.entries.iter().any(|item| matches!(
-                item.value,
-                CborValue::Enum {
-                    carrier: Carrier::Signed
-                }
-            ))
-        );
+        assert!(plan.entries.iter().all(|item| matches!(
+            item.value,
+            CborShape::Int { .. }
+                | CborShape::Bool
+                | CborShape::Text { .. }
+                | CborShape::Bytes { .. }
+        )));
+        assert!(plan.totality.is_total());
     });
+}
+
+/// The plan of a CBOR map is the shape of each entry's type, in declaration
+/// order, beside the order its map writes the entries in (docs/adr/0101,
+/// section 5.1).
+#[test]
+fn the_plan_of_a_cbor_map_is_the_shape_of_each_entry() {
+    with_codec_plan("codec_cbor_map", |plan| {
+        let CodecPlan::Cbor(plan) = plan else {
+            panic!("the codec is a CBOR map");
+        };
+        let shapes: Vec<(&str, bool, CborShape)> = plan
+            .entries
+            .iter()
+            .map(|item| (item.entry.id.as_str(), item.required, item.value.clone()))
+            .collect();
+        assert_eq!(
+            shapes,
+            vec![
+                ("source", true, CborShape::Text { max: 64 }),
+                (
+                    "id",
+                    true,
+                    CborShape::Bytes {
+                        max: 16,
+                        exact: true
+                    }
+                ),
+                (
+                    "pattern",
+                    true,
+                    CborShape::Int {
+                        bits: 8,
+                        signed: false
+                    }
+                ),
+                (
+                    "payload",
+                    true,
+                    CborShape::Bytes {
+                        max: 256,
+                        exact: false
+                    }
+                ),
+                (
+                    "deadline",
+                    false,
+                    CborShape::Int {
+                        bits: 64,
+                        signed: false
+                    }
+                ),
+                ("urgent", false, CborShape::Bool),
+            ]
+        );
+        // Keys 1, 0, 3, 5, 12 and 7 in declaration order.
+        assert_eq!(plan.by_key, vec![1, 0, 2, 3, 5, 4]);
+    });
+}
+
+/// A record a list holds is planned once, its fields in the schema's order
+/// beside the order its map writes them: by the bytes of each key's encoding,
+/// so the shorter `seq` before `author` (docs/adr/0101, section 5.1).
+#[test]
+fn a_record_s_fields_are_planned_in_the_order_of_their_encoded_keys() {
+    let path = Path::new(env!("CARGO_MANIFEST_DIR"))
+        .join("tests/fixtures/cbor_codec/codec_cbor_record_list.scxml");
+    encode_plan_file(&path, &[], &ForgeCompileOptions::default(), |plan| {
+        let CodecPlan::Cbor(plan) = plan else {
+            panic!("the codec is a CBOR map");
+        };
+        let ids: Vec<&str> = plan.entries.iter().map(|i| i.entry.id.as_str()).collect();
+        assert_eq!(ids, ["id", "source", "seen", "context"]);
+        for (at, max) in [(2, 2), (3, 3)] {
+            let item = &plan.entries[at];
+            assert!(
+                matches!(&item.value, CborShape::List { max: m, min: 0, .. } if *m == max),
+                "{:?}",
+                item.value
+            );
+            let record = item
+                .value
+                .listed_record()
+                .expect("the entry is a list of records");
+            assert_eq!(record.alias, "CausalEntry");
+            assert_eq!(record.name, "cbor_causal_entry");
+            let declared: Vec<&str> = record.fields.iter().map(|f| f.id.as_str()).collect();
+            assert_eq!(declared, ["author", "seq"]);
+            let written: Vec<&str> = record.fields_by_key().map(|f| f.id.as_str()).collect();
+            assert_eq!(written, ["seq", "author"]);
+            assert_eq!(
+                record.fields[0].shape,
+                CborShape::Text { max: 16 },
+                "author"
+            );
+            assert_eq!(
+                record.fields[1].shape,
+                CborShape::Int {
+                    bits: 64,
+                    signed: false
+                },
+                "seq"
+            );
+        }
+        assert!(!plan.entries[3].required);
+    })
+    .unwrap_or_else(|err| panic!("{err:?}"))
+    .expect("the document is a codec");
 }
 
 /// Every content-line property has one shape, of many lines exactly where it is

@@ -2108,13 +2108,30 @@ pub fn json_escaped_len(text: &str) -> u64 {
         .sum()
 }
 
-/// The two sizes a type has, computed by one recursion.
+/// The sizes a type has, computed by one recursion.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 enum Measure {
     /// `J(T)`: the largest JSON text of a value.
     Json,
-    /// `C(T)`: the largest deterministic CBOR encoding of a value.
-    Cbor,
+    /// `C(T)`: the largest deterministic CBOR encoding of a value, a union
+    /// written in the form given.
+    Cbor(UnionForm),
+}
+
+/// How a CBOR encoding writes a union, the one row in which the signed form
+/// and a CBOR codec's form of a value still differ in size. docs/adr/0101
+/// section 2.5 amended the signed form to the codec's (docs/adr/0092, section
+/// 5.3); its writer moves with docs/adr/0092 step 7, and the two rows become
+/// one then.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum UnionForm {
+    /// The tag's number under the tag's key, beside the case's fields: the
+    /// signed form's row as docs/adr/0092 section 5.1 first gave it.
+    TagBeside,
+    /// A map of one entry, keyed by the case's variant name, whose value is
+    /// the case's record or the empty map (docs/adr/0101, section 2.1): a CBOR
+    /// codec's row (docs/adr/0101, section 4.1).
+    OneEntry,
 }
 
 fn add(a: u64, b: u64) -> Result<u64, SizeError> {
@@ -2143,11 +2160,11 @@ fn scalar_size(t: &SceType, measure: Measure, env: &dyn TypeEnv) -> Result<u64, 
         // spelling with an exponent is at most 24.
         (SceType::Float32 | SceType::Float64, Measure::Json) => 25,
         (SceType::Bool, Measure::Json) => 5,
-        (SceType::Uint8 | SceType::Int8, Measure::Cbor) => 2,
-        (SceType::Uint16 | SceType::Int16, Measure::Cbor) => 3,
-        (SceType::Uint32 | SceType::Int32 | SceType::Float32, Measure::Cbor) => 5,
-        (SceType::Uint64 | SceType::Int64 | SceType::Float64, Measure::Cbor) => 9,
-        (SceType::Bool, Measure::Cbor) => 1,
+        (SceType::Uint8 | SceType::Int8, Measure::Cbor(_)) => 2,
+        (SceType::Uint16 | SceType::Int16, Measure::Cbor(_)) => 3,
+        (SceType::Uint32 | SceType::Int32 | SceType::Float32, Measure::Cbor(_)) => 5,
+        (SceType::Uint64 | SceType::Int64 | SceType::Float64, Measure::Cbor(_)) => 9,
+        (SceType::Bool, Measure::Cbor(_)) => 1,
         (SceType::Enum(reference), _) => {
             let unresolved = || SizeError::Unresolved {
                 alias: reference.alias.clone(),
@@ -2165,7 +2182,7 @@ fn scalar_size(t: &SceType, measure: Measure, env: &dyn TypeEnv) -> Result<u64, 
                 // A closed enum's value is one of its declared numbers, each
                 // written with its shortest head (docs/adr/0086, section 9.2),
                 // so the longest of those heads is its size.
-                Measure::Cbor if enumeration.strict => {
+                Measure::Cbor(_) if enumeration.strict => {
                     let mut longest: Option<u64> = None;
                     for variant in &enumeration.variants {
                         let len = cbor_integer_len(variant.value).ok_or(SizeError::Overflow)?;
@@ -2176,7 +2193,7 @@ fn scalar_size(t: &SceType, measure: Measure, env: &dyn TypeEnv) -> Result<u64, 
                     longest.ok_or_else(unresolved)?
                 }
                 // An open enum holds every number of its underlying type.
-                Measure::Cbor => {
+                Measure::Cbor(_) => {
                     if matches!(enumeration.underlying, SceType::Enum(_)) {
                         return Err(unresolved());
                     }
@@ -2202,7 +2219,7 @@ fn size(
             let b = u64::from(max.max);
             match measure {
                 Measure::Json => json_string_max_len(b),
-                Measure::Cbor => add(cbor_head_len(b), b),
+                Measure::Cbor(_) => add(cbor_head_len(b), b),
             }
         }
         ValueType::Optional { elem } => {
@@ -2210,8 +2227,11 @@ fn size(
             Ok(match measure {
                 // `null`.
                 Measure::Json => inner.max(4),
-                // `0xf6`.
-                Measure::Cbor => inner.max(1),
+                // `0xf6` as a list's element. A record's field or a codec's
+                // entry left out where it is absent (docs/adr/0101, section
+                // 2.1) is counted present, which is as large: every value
+                // takes a byte at least.
+                Measure::Cbor(_) => inner.max(1),
             })
         }
         ValueType::List { elem, max } => {
@@ -2220,7 +2240,7 @@ fn size(
             match measure {
                 // The brackets, the elements and a comma between each two.
                 Measure::Json => add(add(2, mul(b, inner)?)?, b.saturating_sub(1)),
-                Measure::Cbor => add(cbor_head_len(b), mul(b, inner)?),
+                Measure::Cbor(_) => add(cbor_head_len(b), mul(b, inner)?),
             }
         }
         ValueType::Record { alias } => {
@@ -2242,13 +2262,13 @@ fn size(
             let mut total = match measure {
                 // The braces and a comma between each two members.
                 Measure::Json => 2 + n.saturating_sub(1),
-                Measure::Cbor => cbor_head_len(n),
+                Measure::Cbor(_) => cbor_head_len(n),
             };
             for (id, field) in &fields {
                 let key = match measure {
                     // The quoted key and its colon.
                     Measure::Json => 2 + json_escaped_len(id) + 1,
-                    Measure::Cbor => {
+                    Measure::Cbor(_) => {
                         let len = id.len() as u64;
                         cbor_head_len(len) + len
                     }
@@ -2258,8 +2278,9 @@ fn size(
             records.pop();
             Ok(total)
         }
-        // docs/adr/0092, section 5.1: the largest case, each counted with its
-        // own variant's name and number, so the size is tight.
+        // docs/adr/0092, section 5.1, and docs/adr/0101, section 4.1: the
+        // largest case, each counted with its own variant's name, so the size
+        // is tight.
         ValueType::Union { alias } => {
             let union = enter_union(alias, env, records)?;
             let mut largest = 0u64;
@@ -2275,17 +2296,20 @@ fn size(
     }
 }
 
-/// `J` or `C` of the case `case` of `union` (docs/adr/0092, section 5.1): one
-/// object of the tag under its key, whose value is the case's variant (its
-/// quoted name on JSON, its declared number on CBOR, as an enum's value is
-/// signed, docs/adr/0086 section 9.2), and the fields of the record the case
-/// holds, none for an empty case.
+/// `J` or `C` of the case `case` of `union` (docs/adr/0092, section 5.1): the
+/// case's variant and the fields of the record the case holds, none for an
+/// empty case.
 ///
-/// - `J`: 2 + (`J(quoted t)` + 1 + 2 + the escaped length of the variant's
-///   name) + Σ (`J(quoted id)` + 1 + `J(Tf)`) + m, a comma between each two of
-///   the m + 1 members;
-/// - `C`: h(1 + m) + `C(t)` + the head of the variant's number + Σ (`C(id)` +
-///   `C(Tf)`).
+/// - `J`: one object of the tag under its key, whose value is the variant's
+///   quoted name, beside the fields: 2 + (`J(quoted t)` + 1 + 2 + the escaped
+///   length of the variant's name) + Σ (`J(quoted id)` + 1 + `J(Tf)`) + m, a
+///   comma between each two of the m + 1 members;
+/// - `C`, the tag beside the fields ([`UnionForm::TagBeside`]): h(1 + m) +
+///   `C(t)` + the head of the variant's declared number (as an enum's value is
+///   signed, docs/adr/0086 section 9.2) + Σ (`C(id)` + `C(Tf)`);
+/// - `C`, a map of one entry ([`UnionForm::OneEntry`], docs/adr/0101 section
+///   4.1): h(1) + h(len nc) + len nc + h(m) + Σ (`C(id)` + `C(Tf)`), the case's
+///   record an empty map, one byte, where it holds none.
 fn case_size(
     union: &ScopedUnion,
     case: &ScopedCase,
@@ -2302,16 +2326,22 @@ fn case_size(
             2 + (2 + json_escaped_len(&union.tag) + 1 + 2 + json_escaped_len(&case.variant.name))
                 + m
         }
-        Measure::Cbor => {
+        Measure::Cbor(UnionForm::TagBeside) => {
             let number = cbor_integer_len(case.variant.value).ok_or(SizeError::Overflow)?;
             add(cbor_head_len(1 + m) + cbor_head_len(tag) + tag, number)?
+        }
+        // The one entry's map head, its key the variant's name as a text, and
+        // the head of the case's record as a map of its fields.
+        Measure::Cbor(UnionForm::OneEntry) => {
+            let name = case.variant.name.len() as u64;
+            cbor_head_len(1) + cbor_head_len(name) + name + cbor_head_len(m)
         }
     };
     for (id, field) in &fields {
         let key = match measure {
             // The quoted key and its colon.
             Measure::Json => 2 + json_escaped_len(id) + 1,
-            Measure::Cbor => {
+            Measure::Cbor(_) => {
                 let len = id.len() as u64;
                 cbor_head_len(len) + len
             }
@@ -2337,9 +2367,26 @@ pub fn json_max_len(ty: &ValueType, env: &dyn TypeEnv) -> Result<u64, SizeError>
 }
 
 /// `C(T)`: the length of the largest deterministic CBOR encoding of a value of
-/// `ty` (RFC 8949 section 4.2.1; docs/adr/0086, section 2.1).
+/// `ty` (RFC 8949 section 4.2.1; docs/adr/0086, section 2.1), as the signed
+/// form writes it: a union its tag beside its case's fields until docs/adr/0092
+/// step 7 writes the amended form ([`UnionForm::TagBeside`]).
 pub fn cbor_max_len(ty: &ValueType, env: &dyn TypeEnv) -> Result<u64, SizeError> {
-    size(ty, Measure::Cbor, env, &mut Vec::new())
+    size(
+        ty,
+        Measure::Cbor(UnionForm::TagBeside),
+        env,
+        &mut Vec::new(),
+    )
+}
+
+/// `C(T)` of a CBOR codec's entry (docs/adr/0101, section 4.1): the length of
+/// the largest deterministic CBOR encoding of a value of `ty` as a codec writes
+/// it, a union a map of one entry keyed by its case's variant name. Tight: a
+/// value at its largest (every list full, every text at its bound, every number
+/// at its longest head, every optional present, every union in its largest
+/// case) encodes to exactly this many bytes (docs/adr/0101, section 4.2).
+pub fn codec_cbor_max_len(ty: &ValueType, env: &dyn TypeEnv) -> Result<u64, SizeError> {
+    size(ty, Measure::Cbor(UnionForm::OneEntry), env, &mut Vec::new())
 }
 
 /// `J` of a payload: the record of `fields`, as a schema's `DATA_MAX_LEN` is.
@@ -2528,9 +2575,9 @@ fn record_not_a_key(
 /// environment those fields are read in, or the refusal of an alias no record
 /// goes by and of a record that holds itself. `records` holds each record on
 /// the way by its key ([`TypeEnv::record_key`]), which the caller pops.
-type EnteredRecord<'e> = (Vec<(String, ValueType)>, &'e dyn TypeEnv);
+pub(crate) type EnteredRecord<'e> = (Vec<(String, ValueType)>, &'e dyn TypeEnv);
 
-fn enter_record<'e>(
+pub(crate) fn enter_record<'e>(
     alias: &str,
     env: &'e dyn TypeEnv,
     records: &mut Vec<String>,
@@ -2556,7 +2603,7 @@ fn enter_record<'e>(
 /// union of no case, and of a union that holds itself through the records of
 /// its cases. `records` holds each record and union on the way by its key,
 /// which the caller pops.
-fn enter_union<'e>(
+pub(crate) fn enter_union<'e>(
     alias: &str,
     env: &'e dyn TypeEnv,
     records: &mut Vec<String>,
@@ -7181,7 +7228,23 @@ mod tests {
                 .collect()
         };
         assert_eq!(per_case(Measure::Json), [14, 32, 30, 44, 73]);
-        assert_eq!(per_case(Measure::Cbor), [7, 17, 17, 26, 31]);
+        assert_eq!(
+            per_case(Measure::Cbor(UnionForm::TagBeside)),
+            [7, 17, 17, 26, 31]
+        );
+        // As a CBOR codec writes a union (docs/adr/0101, section 4.1): one
+        // entry keyed by the variant's name, so a longer name is a longer case,
+        // and neither the tag's key nor its number is written. The dot is
+        // `a1 63 64 6f 74 a0`.
+        assert_eq!(
+            per_case(Measure::Cbor(UnionForm::OneEntry)),
+            [6, 19, 17, 26, 32]
+        );
+        assert_eq!(codec_cbor_max_len(&shape, &env), Ok(32));
+        assert_eq!(
+            codec_cbor_max_len(&ty("list<optional<union:Shape>>[2]"), &env),
+            Ok(1 + 2 * 32)
+        );
         // Tight: a maximal value is exactly as long, alone and inside a
         // composition.
         for text in [
@@ -7207,6 +7270,80 @@ mod tests {
                 alias: "Nope".into()
             })
         );
+    }
+
+    /// The worked figures of docs/adr/0101 section 4.2 and the lengths of its
+    /// vectors (section 2.8): `C` of a codec's value is the length of its
+    /// largest encoding.
+    #[test]
+    fn a_codec_s_union_and_record_are_as_large_as_their_largest_encodings() {
+        let mut env = table();
+        env.records.insert(
+            "Customer".into(),
+            vec![
+                ("full_name".into(), ty("string[24]")),
+                ("vip".into(), ty("bool")),
+            ],
+        );
+        let variants: &[(&str, i128)] = &[("card", 0), ("cash", 1), ("voucher", 2)];
+        let mut cases = TypeScope::default();
+        cases
+            .enums
+            .insert("Method".into(), closed_enum(SceType::Uint8, variants));
+        cases.records.insert(
+            "Card".into(),
+            case_record("card", &[("last4", "string[4]"), ("amount", "uint32")]),
+        );
+        cases.records.insert(
+            "Voucher".into(),
+            case_record("voucher", &[("voucher_code", "bytes[4]")]),
+        );
+        env.unions.insert(
+            "Payment".into(),
+            ScopedUnion {
+                identity: "payment".into(),
+                name: "payment".into(),
+                tag: "method".into(),
+                tag_enum: "Method".into(),
+                cases: variants
+                    .iter()
+                    .map(|(name, value)| ScopedCase {
+                        variant: ScopedVariant {
+                            name: name.to_string(),
+                            value: *value,
+                        },
+                        record: match *name {
+                            "card" => Some("Card".to_string()),
+                            "voucher" => Some("Voucher".to_string()),
+                            _ => None,
+                        },
+                    })
+                    .collect(),
+                scope: cases,
+            },
+        );
+        let payment = ty("union:Payment");
+        // `max(30, 7, 28)`, its `card` case; `cash` is `a1 64 63 61 73 68 a0`.
+        assert_eq!(codec_cbor_max_len(&payment, &env), Ok(30));
+        // The signed form still writes the tag's key and number beside the
+        // fields: `card` is h(3) + 7 + 1 + 11 + 12.
+        assert_eq!(cbor_max_len(&payment, &env), Ok(32));
+        // `{full_name: "Ann", vip: true}` is twenty bytes; at its bound of 24
+        // bytes the text takes 26 where "Ann" takes 4.
+        assert_eq!(codec_cbor_max_len(&ty("record:Customer"), &env), Ok(42));
+        // Every other row is the signed form's (docs/adr/0101, section 4.1).
+        for text in [
+            "record:Item",
+            "list<optional<uint16>>[3]",
+            "enum:Reading",
+            "enum:Code",
+        ] {
+            assert_eq!(
+                codec_cbor_max_len(&ty(text), &env),
+                cbor_max_len(&ty(text), &env),
+                "{text}"
+            );
+        }
     }
 
     #[test]

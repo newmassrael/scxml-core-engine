@@ -39,6 +39,6 @@ PY
 
 mutation_case "a codec that refuses nothing is accepted as may-fail" <<'PY'
 edit("sce-build/src/forge/codec_totality.rs",
-     r'''        (true, None) if !unjudged => Err(''',
-     r'''        (true, None) if !unjudged && m.name.is_empty() => Err(''')
+     r'''        (true, None) => Err(''',
+     r'''        (true, None) if m.name.is_empty() => Err(''')
 PY

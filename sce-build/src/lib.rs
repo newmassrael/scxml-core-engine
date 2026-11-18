@@ -7152,7 +7152,8 @@ fn codec_empty_arms(
 }
 
 /// The imports of a codec read from its document: each codec import resolved
-/// and judged in turn, each enum import read for its carrier.
+/// and judged in turn, each enum, event-schema and union import read as the one
+/// type grammar reads it.
 struct UnresolvedImports<'a> {
     imports: &'a [forge::model::ForgeImport],
     base_dir: &'a Path,
@@ -7229,22 +7230,8 @@ impl forge::codec_totality::Imports for UnresolvedImports<'_> {
         .unwrap_or(false)
     }
 
-    fn enum_carrier(&mut self, alias: &str) -> Option<forge::model::SceType> {
-        let imp = self.imports.iter().find(|i| i.alias == alias)?;
-        match forge::import_source::parse_quietly(self.base_dir, imp)?.document {
-            forge::model::ForgeDocument::Enum(em) => Some(em.underlying_type),
-            _ => None,
-        }
-    }
-
-    fn record_fields(
-        &mut self,
-        alias: &str,
-    ) -> Option<Vec<(String, forge::value_type::ValueType)>> {
+    fn type_scope(&mut self) -> forge::value_type::TypeScope {
         forge::import_source::type_scope(self.imports, self.base_dir)
-            .records
-            .get(alias)
-            .map(|record| record.fields.clone())
     }
 }
 

@@ -29,7 +29,7 @@ use super::{bounded_class, bounded_list_of, list_class, refinement_class};
 use crate::forge::cbor_codec;
 use crate::forge::codec_failure::CodecFailure;
 use crate::forge::codec_totality::RefusalKind;
-use crate::forge::encode_plan::{Bound, Carrier, CborItem, CborPlan, CborValue};
+use crate::forge::encode_plan::{Bound, CborField, CborItem, CborPlan, CborShape};
 use crate::forge::model::CborEntry;
 use crate::forge::value_type::ValueType;
 use crate::generator::Language;
@@ -114,20 +114,19 @@ struct Record {
     payload: String,
     /// The companion's write of one record.
     encode_fn: String,
-    /// Its fields in the order its map writes them
-    /// (`cbor_codec::record_fields_by_key`).
+    /// Its fields in the order its map writes them, as the plan decides it
+    /// (`CborRecord::by_key`).
     by_key: Vec<RecordField>,
 }
 
-/// The record the list entry `e` holds.
-fn record(plan: &CborPlan<'_>, imports: &[ImportContext], e: &CborEntry) -> Record {
-    let list = cbor_codec::record_list(e).expect("a list entry holds a list of records");
-    let scope = crate::forge::generator::import_type_scope(imports);
-    let scoped = scope
-        .records
-        .get(list.record)
-        .expect("the import resolved the record (`cbor_codec::record_list_unlowered`)");
-    let field = |(id, ty): &(String, ValueType)| -> RecordField {
+/// The record the list `item` holds.
+fn record(plan: &CborPlan<'_>, imports: &[ImportContext], item: &CborItem<'_>) -> Record {
+    let scoped = item
+        .value
+        .listed_record()
+        .expect("a list entry holds a list of records");
+    let field = |f: &CborField| -> RecordField {
+        let (id, ty) = (&f.id, &f.ty);
         let kind = match ty {
             ValueType::Text { max } => RecordFieldKind::Text { max: max.max },
             ValueType::Bytes { max } => RecordFieldKind::Bytes { max: max.max },
@@ -153,16 +152,13 @@ fn record(plan: &CborPlan<'_>, imports: &[ImportContext], e: &CborEntry) -> Reco
         }
     };
     let (_, encode_fn) =
-        cbor_codec::record_codec_fns(Language::Kotlin, &plan.model.name, list.record);
+        cbor_codec::record_codec_fns(Language::Kotlin, &plan.model.name, &scoped.alias);
     Record {
         schema: scoped.name.clone(),
-        alias: list.record.to_string(),
-        payload: cbor_codec::record_payload_type(Language::Kotlin, imports, list.record),
+        alias: scoped.alias.clone(),
+        payload: cbor_codec::record_payload_type(Language::Kotlin, imports, &scoped.alias),
         encode_fn,
-        by_key: cbor_codec::record_fields_by_key(scoped)
-            .into_iter()
-            .map(field)
-            .collect(),
+        by_key: scoped.fields_by_key().map(field).collect(),
     }
 }
 
@@ -179,13 +175,13 @@ fn held(
 ) -> (String, String, Option<String>) {
     let e = item.entry;
     let classed = |class: String| (class.clone(), format!("{class}.fewest()"), Some(class));
-    match item.value {
-        CborValue::Bool | CborValue::Enum { .. } | CborValue::Uint { .. } => (
+    match &item.value {
+        CborShape::Bool | CborShape::Enum(_) | CborShape::Int { signed: false, .. } => (
             l.type_name(leaf(e)).into_owned(),
             l.default_expr(leaf(e)),
             None,
         ),
-        CborValue::Text => {
+        CborShape::Text { .. } => {
             let class = refinement_class(struct_name, &e.id, &SceType::String);
             let bound = Bound {
                 least: 0,
@@ -194,9 +190,9 @@ fn held(
             before.push_str(&bounded_class(struct_name, &e.id, &class, &bound, true));
             classed(class)
         }
-        CborValue::Bytes { exact } => {
+        CborShape::Bytes { exact, .. } => {
             let class = refinement_class(struct_name, &e.id, &SceType::Bytes);
-            let bound = match (exact, e.length) {
+            let bound = match (*exact, e.length) {
                 (true, Some(length)) => Bound {
                     least: u64::from(length),
                     most: Some(u64::from(length)),
@@ -209,15 +205,14 @@ fn held(
             before.push_str(&bounded_class(struct_name, &e.id, &class, &bound, false));
             classed(class)
         }
-        CborValue::RecordList { .. } => {
-            let list = cbor_codec::record_list(e).expect("a list entry holds a list of records");
-            let payload = record(plan, imports, e).payload;
+        CborShape::List { elem, max, .. } if matches!(**elem, CborShape::Record(_)) => {
+            let payload = record(plan, imports, item).payload;
             let class = list_class(struct_name, &e.id);
             // The least is 0, as Rust's `BoundedList` holds it, so a value of
             // fewer records than the lower count is one the encode refuses.
             let bound = Bound {
                 least: 0,
-                most: Some(u64::from(list.max)),
+                most: Some(u64::from(*max)),
             };
             before.push_str(&bounded_list_of(
                 struct_name,
@@ -229,7 +224,7 @@ fn held(
             ));
             classed(class)
         }
-        CborValue::Unlowered => unreachable!(
+        _ => unreachable!(
             "a codec of an entry no printer lowers is refused before it renders \
              (`cbor_codec::unlowered_forms`)"
         ),
@@ -241,8 +236,8 @@ fn held(
 /// `CborWrongLength`, and any other value past its bound `CborOutOfRange`, the
 /// kinds the runtime's CBOR readers answer for them (SCE_FORGE.md §4.6.1).
 fn past_bound(item: &CborItem<'_>) -> CodecFailure {
-    match (item.value, item.entry.length) {
-        (CborValue::Bytes { exact: true }, Some(_)) => CodecFailure::CborWrongLength,
+    match (&item.value, item.entry.length) {
+        (CborShape::Bytes { exact: true, .. }, Some(_)) => CodecFailure::CborWrongLength,
         _ => CodecFailure::CborOutOfRange,
     }
 }
@@ -259,10 +254,8 @@ fn checks(
 ) -> String {
     let e = item.entry;
     let mut out = String::new();
-    match item.value {
-        CborValue::Enum {
-            carrier: Carrier::Signed,
-        } => {
+    match &item.value {
+        CborShape::Enum(enumeration) if enumeration.carrier.is_signed() => {
             let refuse = plan
                 .totality
                 .require(RefusalKind::CborOutOfRange, &e.id)
@@ -272,7 +265,7 @@ fn checks(
                 l.codec_carrier_expr(leaf(e), v)
             ));
         }
-        CborValue::RecordList { min } => {
+        CborShape::List { elem, min, .. } if matches!(**elem, CborShape::Record(_)) => {
             // Where the analysis names the refusal, the checks below are the
             // ones that write it: the lower count, and a byte string past its
             // bound, which no payload type holds. A Kotlin payload holds a text
@@ -285,10 +278,10 @@ fn checks(
             } else {
                 "CodecError.CborOutOfRange".to_string()
             };
-            if min > 0 {
+            if *min > 0 {
                 out.push_str(&format!("{indent}if ({v}.size < {min}) return {refuse}\n"));
             }
-            let record = record(plan, imports, e);
+            let record = record(plan, imports, item);
             let mut each = String::new();
             for f in &record.by_key {
                 match f.kind {
@@ -329,26 +322,27 @@ fn write_value(
 ) -> String {
     let e = item.entry;
     let call = |call: String| format!("{indent}{call}?.let {{ return it }}\n");
-    match item.value {
-        CborValue::Bool => call(format!("Cbor.writeBool(w, {v})")),
-        CborValue::Text => call(format!("Cbor.writeText(w, {v}.text)")),
-        CborValue::Bytes { .. } => call(format!("Cbor.writeBytes(w, {v}.bytes)")),
-        CborValue::Uint { wide: true } => call(format!("Cbor.writeUint(w, {v})")),
-        CborValue::Uint { wide: false } => call(format!("Cbor.writeUint(w, {v}.toULong())")),
+    match &item.value {
+        CborShape::Bool => call(format!("Cbor.writeBool(w, {v})")),
+        CborShape::Text { .. } => call(format!("Cbor.writeText(w, {v}.text)")),
+        CborShape::Bytes { .. } => call(format!("Cbor.writeBytes(w, {v}.bytes)")),
+        CborShape::Int {
+            bits: 64,
+            signed: false,
+        } => call(format!("Cbor.writeUint(w, {v})")),
+        CborShape::Int { signed: false, .. } => call(format!("Cbor.writeUint(w, {v}.toULong())")),
         // A signed carrier's negative value was refused before the first byte,
         // so what is left is an unsigned integer; a `ULong` carrier is one.
-        CborValue::Enum {
-            carrier: Carrier::Wide,
-        } => call(format!(
+        CborShape::Enum(enumeration) if enumeration.carrier == SceType::Uint64 => call(format!(
             "Cbor.writeUint(w, {})",
             l.codec_carrier_expr(leaf(e), v)
         )),
-        CborValue::Enum { .. } => call(format!(
+        CborShape::Enum(_) => call(format!(
             "Cbor.writeUint(w, {}.toULong())",
             l.codec_carrier_expr(leaf(e), v)
         )),
-        CborValue::RecordList { .. } => {
-            let encode_fn = record(plan, imports, e).encode_fn;
+        CborShape::List { elem, .. } if matches!(**elem, CborShape::Record(_)) => {
+            let encode_fn = record(plan, imports, item).encode_fn;
             let mut out = call(format!("Cbor.writeArrayHead(w, {v}.size.toULong())"));
             out.push_str(&format!(
                 "{indent}for (_record in {v}.entries) {{\n\
@@ -357,7 +351,7 @@ fn write_value(
             ));
             out
         }
-        CborValue::Unlowered => unreachable!(
+        _ => unreachable!(
             "a codec of an entry no printer lowers is refused before it renders \
              (`cbor_codec::unlowered_forms`)"
         ),
@@ -372,10 +366,10 @@ fn record_writers(plan: &CborPlan<'_>, imports: &[ImportContext]) -> String {
     let mut out = String::new();
     let mut done = BTreeSet::new();
     for item in &plan.entries {
-        if !matches!(item.value, CborValue::RecordList { .. }) {
+        if item.value.listed_record().is_none() {
             continue;
         }
-        let record = record(plan, imports, item.entry);
+        let record = record(plan, imports, item);
         if !done.insert(record.encode_fn.clone()) {
             continue;
         }
@@ -433,20 +427,18 @@ pub(crate) fn source_case(
     let holds = plan.entries.iter().map(|item| {
         let e = item.entry;
         match item.value {
-            CborValue::Bool => Holds::Bool,
-            CborValue::Uint { .. } => Holds::Int(leaf(e)),
-            CborValue::Text => {
+            CborShape::Bool => Holds::Bool,
+            CborShape::Int { signed: false, .. } => Holds::Int(leaf(e)),
+            CborShape::Text { .. } => {
                 Holds::Classed(refinement_class(&path.type_name, &e.id, &SceType::String))
             }
-            CborValue::Bytes { .. } => {
+            CborShape::Bytes { .. } => {
                 Holds::Classed(refinement_class(&path.type_name, &e.id, &SceType::Bytes))
             }
-            CborValue::Enum { .. } | CborValue::RecordList { .. } | CborValue::Unlowered => {
-                unreachable!(
-                    "the notation refuses a value of an enum, a list of records and a type \
-                     no printer lowers (`source_notation::cbor_elements`)"
-                )
-            }
+            _ => unreachable!(
+                "the notation refuses a value of an enum, a list of records and a type no \
+                 printer lowers (`source_notation::cbor_elements`)"
+            ),
         }
     });
     super::source_case::map_or_line_case(path, elements.into_iter().zip(holds).collect())

@@ -18,7 +18,9 @@
 //! - the arms of the codec's variant;
 //! - the derivations: each derived element and how the encode computes it
 //!   ([`Derive`]), a number by what it measures and how it goes into the
-//!   element that holds it.
+//!   element that holds it;
+//! - of a CBOR map, the tree over the type of each entry ([`CborShape`]) and
+//!   every order its maps are written in (docs/adr/0101, section 5.1).
 
 use crate::forge::bit_layout::{self, Piece, Slot};
 use crate::forge::codec_roles::{
@@ -31,6 +33,7 @@ use crate::forge::model::{
     FlagBindSource, FlagDef, FlagInput, PresentIfPredicate, PresentIfScope, SceType,
     TlvTerminateStrategy,
 };
+use crate::forge::value_type::{TypeEnv, ValueType};
 use std::collections::BTreeMap;
 
 /// The encode plan of a codec, by the encoding it declares (docs/adr/0081 §1):
@@ -1557,21 +1560,27 @@ pub fn list_law(roles: &CodecRoles, field: &str) -> Law {
     }
 }
 
-/// The encode plan of a CBOR codec (SCE_FORGE.md §4.6.1, docs/adr/0081 §1).
+/// The encode plan of a CBOR codec (SCE_FORGE.md §4.6.1, docs/adr/0081 §1):
+/// a tree over the type of each entry (docs/adr/0101, section 5.1).
 ///
 /// A CBOR map derives nothing a value says: the number of entries in the map
 /// head is what the encoding counts. Every entry is presented, required or
 /// not, and the entries are written in ascending key order with the shortest
-/// heads (RFC 8949 §4.2.1).
+/// heads (RFC 8949 §4.2.1). What an entry holds is the shape of its type
+/// ([`CborShape`]), each enum, record and union it names read in the codec's
+/// imports, so every order the encode writes in is decided here, once: the
+/// entries' ([`CborPlan::by_key`]) and each record's fields'
+/// ([`CborRecord::by_key`]). A printer walks the plan and sorts nothing.
 pub struct CborPlan<'m> {
     /// The codec the plan is of.
     pub model: &'m CodecModel,
-    /// Where the encode can refuse a value.
+    /// Where the encode can refuse a value, read from the shapes of the
+    /// entries ([`codec_totality`]).
     pub totality: Totality,
     /// Each entry, in declaration order.
     pub entries: Vec<CborItem<'m>>,
     /// The entries' places among [`CborPlan::entries`] in the order the encode
-    /// writes them: ascending key.
+    /// writes them: ascending key ([`entry_key_order`]).
     pub by_key: Vec<usize>,
 }
 
@@ -1580,116 +1589,365 @@ pub struct CborItem<'m> {
     /// The entry.
     pub entry: &'m CborEntry,
     /// Whether every value holds it; the map head counts the others only where
-    /// they are there.
+    /// they are there, and an absent one is written by leaving its key out
+    /// (docs/adr/0101, section 2.2).
     pub required: bool,
-    /// What it holds.
-    pub value: CborValue,
+    /// What a present value of it is: the shape of its type outside an
+    /// `optional<…>`.
+    pub value: CborShape,
 }
 
-/// What an entry of a CBOR map holds, as the encode writes it.
-#[derive(Clone, Copy, PartialEq, Eq, Debug)]
-pub enum CborValue {
+/// What a value of a CBOR codec's entry is, as the encode writes it
+/// (docs/adr/0101, sections 2.1 and 5.1): the shape of its type, each enum,
+/// record and union it names resolved. A printer that does not lower a shape
+/// yet refuses the codec by name before it prints it
+/// ([`crate::forge::cbor_codec::refusal`], docs/adr/0101 section 5.4).
+#[derive(Clone, PartialEq, Eq, Debug)]
+pub enum CborShape {
+    /// An integer of `bits` bits: major type 0, and major type 1 below zero.
+    Int {
+        /// 8, 16, 32 or 64.
+        bits: u32,
+        /// Whether it holds numbers below zero.
+        signed: bool,
+    },
+    /// A float, written in the shortest of half, single and double precision
+    /// that holds it exactly.
+    Float {
+        /// 32 or 64.
+        bits: u32,
+    },
     /// A boolean.
     Bool,
-    /// Text, within its bound (docs/adr/0077 §3).
-    Text,
-    /// A byte string, within its bound; `exact` where its length is fixed.
+    /// A text of at most `max` UTF-8 bytes (docs/adr/0077 §3).
+    Text {
+        /// The bound its type states.
+        max: u32,
+    },
+    /// A byte string of at most `max` bytes; of exactly `max` where `exact`,
+    /// which only a codec's entry states, by `sce:length` (docs/adr/0101,
+    /// section 1.2).
     Bytes {
-        /// Whether the entry states one length.
+        /// The bound its type states.
+        max: u32,
+        /// Whether its length is `max` and no other.
         exact: bool,
     },
-    /// An enum, written as the unsigned integer its carrier holds.
-    Enum {
-        /// The enum's carrier.
-        carrier: Carrier,
-    },
-    /// An unsigned integer; `wide` where it is 64 bits, which a CBOR integer
-    /// holds as it is.
-    Uint {
-        /// Whether it is 64 bits wide.
-        wide: bool,
-    },
-    /// A bounded list of records, written as a definite-length array of maps
-    /// (docs/adr/0085, Landing order step 3a). Its value holds no more records
-    /// than its bound; `min`, its lower count, is the fewest it may hold, and a
-    /// value of fewer is refused with [`RefusalKind::CborOutOfRange`] at the
-    /// entry where `min` is above 0.
-    RecordList {
-        /// The list's lower count.
+    /// A value of an enum, written as the integer of its declared number.
+    Enum(CborEnum),
+    /// A record, written as a map of its present fields, each keyed by its id.
+    Record(CborRecord),
+    /// A union, written as a map of one entry keyed by its case's variant name.
+    Union(CborUnion),
+    /// A list of `min` to `max` elements, written as a definite-length array
+    /// of its elements in their order.
+    List {
+        /// What each element is.
+        elem: Box<CborShape>,
+        /// The most elements it holds.
+        max: u32,
+        /// Its lower count (docs/adr/0086, section 15); 0 where it states none.
         min: u32,
     },
-    /// A value of a type no printer lowers yet (docs/adr/0101, section 5.4):
-    /// a signed integer, a float, a record, a union, or a list whose element
-    /// is no record ([`crate::forge::cbor_codec::unlowered_part`]). A backend
-    /// refuses the codec by name before it prints it
-    /// ([`crate::forge::cbor_codec::refusal`]), and a printer that asks which
-    /// forms of a plan it lowers names this one among them.
-    Unlowered,
+    /// A list's element that may be absent, written as `null` where it is
+    /// (docs/adr/0101, section 2.1). An entry or a record's field that may be
+    /// absent is written by leaving its key out, which its item or field says
+    /// ([`CborItem::required`], [`CborField::optional`]): the grammar holds an
+    /// `optional<…>` nowhere else.
+    Nullable(Box<CborShape>),
+    /// A part of the type the plan cannot say: an enum, a record or a union
+    /// the codec's imports do not resolve, a record or a union that holds
+    /// itself, or a text or a byte string with no bound. The compile refuses
+    /// each before any printer reads the plan (the import check,
+    /// [`crate::forge::cbor_codec::record_list_unlowered`], docs/adr/0101
+    /// section 1.3); the plan names what it met.
+    Unresolved {
+        /// The alias, or the type, as the document spells it.
+        what: String,
+    },
 }
 
-/// The carrier of an enum a CBOR entry holds.
-#[derive(Clone, Copy, PartialEq, Eq, Debug)]
-pub enum Carrier {
-    /// Signed: a value below zero has no unsigned integer, and the encode
-    /// refuses it with [`RefusalKind::CborOutOfRange`] at the entry.
-    Signed,
-    /// Unsigned and 64 bits wide.
-    Wide,
-    /// Unsigned and narrower than 64 bits.
-    Narrow,
+impl CborShape {
+    /// The shape of a value of `ty`, each enum, record and union it names read
+    /// in `env`. An `optional<T>` read here is a list's element
+    /// ([`CborShape::Nullable`]); an entry or a field that may be absent is
+    /// asked of its element.
+    pub fn of(ty: &ValueType, env: &dyn TypeEnv) -> Self {
+        shape_of(ty, env, &mut Vec::new())
+    }
+
+    /// The record each element of this list is, the shape docs/adr/0085
+    /// Landing order step 3a lowers; `None` for any other shape.
+    pub fn listed_record(&self) -> Option<&CborRecord> {
+        match self {
+            CborShape::List { elem, .. } => match &**elem {
+                CborShape::Record(record) => Some(record),
+                _ => None,
+            },
+            _ => None,
+        }
+    }
+}
+
+/// The enum a CBOR value is of.
+#[derive(Clone, PartialEq, Eq, Debug)]
+pub struct CborEnum {
+    /// The alias that names the enum where it stands.
+    pub alias: String,
+    /// The integer type its numbers are (`sce:underlying-type`).
+    pub carrier: SceType,
+    /// Whether a number no variant declares is refused
+    /// (`sce:strict-variants`).
+    pub closed: bool,
+}
+
+/// A record a CBOR value holds: a map of its present fields, each keyed by its
+/// id as a text string (docs/adr/0101, section 2.1).
+#[derive(Clone, PartialEq, Eq, Debug)]
+pub struct CborRecord {
+    /// The alias that names the record where it stands.
+    pub alias: String,
+    /// The name of its event schema's document (its `<scxml name>`), which
+    /// tells one record from another whatever alias names it.
+    pub name: String,
+    /// Its fields, in the schema's order.
+    pub fields: Vec<CborField>,
+    /// The fields' places among [`CborRecord::fields`] in the order the map
+    /// writes them ([`text_key_order`]).
+    pub by_key: Vec<usize>,
+}
+
+impl CborRecord {
+    /// Its fields in the order its map writes them.
+    pub fn fields_by_key(&self) -> impl Iterator<Item = &CborField> + '_ {
+        self.by_key.iter().map(|&at| &self.fields[at])
+    }
+}
+
+/// A field of a record a CBOR value holds.
+#[derive(Clone, PartialEq, Eq, Debug)]
+pub struct CborField {
+    /// The field's id, the text its key is.
+    pub id: String,
+    /// Its type, as the schema declares it.
+    pub ty: ValueType,
+    /// Whether it may be absent: an `optional<…>` field, whose key is left
+    /// out where it is.
+    pub optional: bool,
+    /// What a present value of it is.
+    pub shape: CborShape,
+}
+
+/// A union a CBOR value holds: a map of one entry, keyed by its case's variant
+/// name as a text string, whose value is the case's record or the empty map
+/// (docs/adr/0101, section 2.1).
+#[derive(Clone, PartialEq, Eq, Debug)]
+pub struct CborUnion {
+    /// The alias that names the union where it stands.
+    pub alias: String,
+    /// The name of its document.
+    pub name: String,
+    /// Its cases, in the declaration order of its tag's enum.
+    pub cases: Vec<CborCase>,
+}
+
+/// A case of a union a CBOR value holds.
+#[derive(Clone, PartialEq, Eq, Debug)]
+pub struct CborCase {
+    /// The name of the tag's variant, the text its key is.
+    pub variant: String,
+    /// The number the variant declares, which the generated type's tag holds.
+    pub number: i128,
+    /// The record it holds, or `None` for a case that holds none, written as
+    /// the empty map.
+    pub record: Option<CborRecord>,
+}
+
+/// The order a map whose keys are the texts `ids` writes them in: by the bytes
+/// of each key's encoding (RFC 8949 §4.2.1). A text's head grows with its
+/// length, so a shorter id comes first, and ids of one length are in the order
+/// of their bytes. The one rule a record's map is written by.
+pub fn text_key_order<'a>(ids: impl IntoIterator<Item = &'a str>) -> Vec<usize> {
+    let ids: Vec<&'a str> = ids.into_iter().collect();
+    let mut order: Vec<usize> = (0..ids.len()).collect();
+    order.sort_by_key(|&at| (ids[at].len(), ids[at].as_bytes()));
+    order
+}
+
+/// The order the codec's own map writes `entries` in: ascending key. Each key
+/// is an unsigned integer below 24, whose encoding is the one byte of its head,
+/// so this is the order of their encodings (docs/adr/0101, section 2.2).
+pub fn entry_key_order(entries: &[CborEntry]) -> Vec<usize> {
+    let mut order: Vec<usize> = (0..entries.len()).collect();
+    order.sort_by_key(|&at| entries[at].key);
+    order
+}
+
+/// Each entry of the CBOR codec `model`, in declaration order, the shape of
+/// its present type read in `env`: what [`CborPlan::entries`] holds, and what
+/// the totality analysis reads ([`codec_totality`]).
+pub fn cbor_items<'m>(model: &'m CodecModel, env: &dyn TypeEnv) -> Vec<CborItem<'m>> {
+    model
+        .cbor_entries
+        .iter()
+        .map(|entry| {
+            let mut value = CborShape::of(entry.present_type(), env);
+            // An exact length is the entry's own (docs/adr/0101, section 1.2).
+            if let (CborShape::Bytes { exact, .. }, Some(_)) = (&mut value, entry.length) {
+                *exact = true;
+            }
+            CborItem {
+                entry,
+                required: entry.is_required(),
+                value,
+            }
+        })
+        .collect()
+}
+
+/// [`CborShape::of`], `records` holding each record and union on the way by its
+/// key ([`TypeEnv::record_key`]), so that one that holds itself is met once.
+fn shape_of(ty: &ValueType, env: &dyn TypeEnv, records: &mut Vec<String>) -> CborShape {
+    match ty {
+        ValueType::Scalar(t) => scalar_shape(t, env),
+        ValueType::Text { max } => CborShape::Text { max: max.max },
+        ValueType::Bytes { max } => CborShape::Bytes {
+            max: max.max,
+            exact: false,
+        },
+        ValueType::Optional { elem } => CborShape::Nullable(Box::new(shape_of(elem, env, records))),
+        ValueType::List { elem, max } => CborShape::List {
+            elem: Box::new(shape_of(elem, env, records)),
+            max: max.max,
+            min: max.min,
+        },
+        ValueType::Record { alias } => record_shape(alias, env, records)
+            .map_or_else(|what| CborShape::Unresolved { what }, CborShape::Record),
+        ValueType::Union { alias } => union_shape(alias, env, records)
+            .map_or_else(|what| CborShape::Unresolved { what }, CborShape::Union),
+    }
+}
+
+/// The shape of a scalar of the type grammar.
+fn scalar_shape(t: &SceType, env: &dyn TypeEnv) -> CborShape {
+    match t {
+        SceType::Bool => CborShape::Bool,
+        SceType::Float32 => CborShape::Float { bits: 32 },
+        SceType::Float64 => CborShape::Float { bits: 64 },
+        SceType::Enum(reference) => match env.enum_type(&reference.alias) {
+            Some(enumeration) => CborShape::Enum(CborEnum {
+                alias: reference.alias.clone(),
+                carrier: enumeration.underlying.clone(),
+                closed: enumeration.strict,
+            }),
+            None => CborShape::Unresolved {
+                what: reference.alias.clone(),
+            },
+        },
+        // The grammar reads a text and a byte string with their bound
+        // (`ValueType::Text`, `ValueType::Bytes`); a scalar one has none.
+        SceType::String => CborShape::Unresolved {
+            what: "string".to_string(),
+        },
+        SceType::Bytes => CborShape::Unresolved {
+            what: "bytes".to_string(),
+        },
+        SceType::Uint8
+        | SceType::Uint16
+        | SceType::Uint32
+        | SceType::Uint64
+        | SceType::Int8
+        | SceType::Int16
+        | SceType::Int32
+        | SceType::Int64 => CborShape::Int {
+            bits: t.int_bit_width().unwrap_or(64),
+            signed: t.is_signed(),
+        },
+    }
+}
+
+/// The record `alias` names in `env`, its fields read in its own document's
+/// scope; the alias where it does not resolve or holds itself.
+fn record_shape(
+    alias: &str,
+    env: &dyn TypeEnv,
+    records: &mut Vec<String>,
+) -> Result<CborRecord, String> {
+    let (fields, inner) = crate::forge::value_type::enter_record(alias, env, records)
+        .map_err(|_| alias.to_string())?;
+    let fields: Vec<CborField> = fields
+        .into_iter()
+        .map(|(id, ty)| {
+            let present = ty.optional_elem().unwrap_or(&ty);
+            let shape = shape_of(present, inner, records);
+            CborField {
+                optional: ty.optional_elem().is_some(),
+                shape,
+                id,
+                ty,
+            }
+        })
+        .collect();
+    records.pop();
+    Ok(CborRecord {
+        alias: alias.to_string(),
+        name: env.record_name(alias),
+        by_key: text_key_order(fields.iter().map(|f| f.id.as_str())),
+        fields,
+    })
+}
+
+/// The union `alias` names in `env`, each case's record read in the union's
+/// own document's scope; the alias of what does not resolve or holds itself.
+fn union_shape(
+    alias: &str,
+    env: &dyn TypeEnv,
+    records: &mut Vec<String>,
+) -> Result<CborUnion, String> {
+    let union = crate::forge::value_type::enter_union(alias, env, records)
+        .map_err(|_| alias.to_string())?;
+    let mut cases = Vec::with_capacity(union.cases.len());
+    let mut unresolved = None;
+    for case in &union.cases {
+        let record = match &case.record {
+            None => None,
+            Some(record) => match record_shape(record, &union.scope, records) {
+                Ok(record) => Some(record),
+                Err(what) => {
+                    unresolved = Some(what);
+                    break;
+                }
+            },
+        };
+        cases.push(CborCase {
+            variant: case.variant.name.clone(),
+            number: case.variant.value,
+            record,
+        });
+    }
+    records.pop();
+    match unresolved {
+        Some(what) => Err(what),
+        None => Ok(CborUnion {
+            alias: alias.to_string(),
+            name: union.name.clone(),
+            cases,
+        }),
+    }
 }
 
 impl<'m> CborPlan<'m> {
-    /// The plan of the CBOR codec `model`, given what its imports are.
-    ///
-    /// # Panics
-    ///
-    /// Where an enum entry names an enum whose carrier the imports do not
-    /// resolve, which the import resolution refuses.
+    /// The plan of the CBOR codec `model`, given what its imports are: each
+    /// entry's shape read in the types they name
+    /// ([`crate::forge::generator::import_type_scope`]).
     pub fn of(model: &'m CodecModel, imports: &[ImportContext]) -> Self {
-        let entries: Vec<CborItem<'m>> = model
-            .cbor_entries
-            .iter()
-            .map(|entry| CborItem {
-                entry,
-                required: entry.is_required(),
-                value: match entry.leaf_type() {
-                    _ if crate::forge::cbor_codec::unlowered_part(entry).is_some() => {
-                        CborValue::Unlowered
-                    }
-                    None => CborValue::RecordList {
-                        min: crate::forge::cbor_codec::record_list(entry)
-                            .map_or(0, |list| list.min),
-                    },
-                    Some(SceType::Bool) => CborValue::Bool,
-                    Some(SceType::String) => CborValue::Text,
-                    Some(SceType::Bytes) => CborValue::Bytes {
-                        exact: entry.length.is_some(),
-                    },
-                    Some(SceType::Enum(r)) => CborValue::Enum {
-                        carrier: match crate::forge::cbor_codec::enum_carrier(imports, &r.alias)
-                            .expect("the import resolved the enum's carrier")
-                        {
-                            SceType::Int8 | SceType::Int16 | SceType::Int32 | SceType::Int64 => {
-                                Carrier::Signed
-                            }
-                            SceType::Uint64 => Carrier::Wide,
-                            _ => Carrier::Narrow,
-                        },
-                    },
-                    Some(other) => CborValue::Uint {
-                        wide: *other == SceType::Uint64,
-                    },
-                },
-            })
-            .collect();
-        let mut by_key: Vec<usize> = (0..entries.len()).collect();
-        by_key.sort_by_key(|&index| entries[index].entry.key);
+        let scope = crate::forge::generator::import_type_scope(imports);
+        let entries = cbor_items(model, &scope);
         CborPlan {
             model,
-            totality: codec_totality::analyse(model, &mut codec_totality::Resolved(imports)),
+            totality: codec_totality::cbor_totality(&entries),
+            by_key: entry_key_order(&model.cbor_entries),
             entries,
-            by_key,
         }
     }
 
@@ -1916,5 +2174,384 @@ fn line_value(entry: &ContentLineEntry) -> LineValue {
         SceType::Int64 => LineValue::Int { wide: true },
         ty if ty.is_signed() => LineValue::Int { wide: false },
         _ => LineValue::Uint { wide: false },
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::forge::value_type::{
+        ScopedCase, ScopedEnum, ScopedRecord, ScopedUnion, ScopedVariant, TypeScope, WrittenType,
+    };
+
+    fn ty(text: &str) -> ValueType {
+        WrittenType::read(text)
+            .and_then(WrittenType::bounded)
+            .unwrap_or_else(|why| panic!("`{text}` is a type: {why:?}"))
+    }
+
+    fn variant(name: &str, value: i128) -> ScopedVariant {
+        ScopedVariant {
+            name: name.to_string(),
+            value,
+        }
+    }
+
+    fn record(name: &str, fields: &[(&str, &str)], scope: TypeScope) -> ScopedRecord {
+        ScopedRecord {
+            identity: name.to_string(),
+            name: name.to_string(),
+            fields: fields
+                .iter()
+                .map(|(id, text)| (id.to_string(), ty(text)))
+                .collect(),
+            scope,
+        }
+    }
+
+    /// The types of docs/adr/0101 section 2.7: the enum `Color`, the records
+    /// `Customer` and `Line`, and the union `Payment` of `card`, `cash` and
+    /// `voucher`, each case's record named in the union's own document.
+    fn order_scope() -> TypeScope {
+        let mut colors = TypeScope::default();
+        colors.enums.insert(
+            "Color".to_string(),
+            ScopedEnum {
+                name: "paint_color".to_string(),
+                variants: vec![variant("red", 0), variant("green", 1), variant("blue", 2)],
+                underlying: SceType::Uint8,
+                strict: true,
+            },
+        );
+        let mut cases = TypeScope::default();
+        cases.records.insert(
+            "Card".to_string(),
+            record(
+                "order_card",
+                &[("last4", "string[4]"), ("amount", "uint32")],
+                TypeScope::default(),
+            ),
+        );
+        cases.records.insert(
+            "Voucher".to_string(),
+            record(
+                "order_voucher",
+                &[("voucher_code", "bytes[4]")],
+                TypeScope::default(),
+            ),
+        );
+        let mut scope = colors.clone();
+        scope.records.insert(
+            "Customer".to_string(),
+            record(
+                "order_customer",
+                &[("full_name", "string[24]"), ("vip", "bool")],
+                TypeScope::default(),
+            ),
+        );
+        scope.records.insert(
+            "Line".to_string(),
+            record(
+                "order_line",
+                &[
+                    ("sku", "string[16]"),
+                    ("quantity", "uint16"),
+                    ("color", "enum:Color"),
+                    ("note", "optional<string[8]>"),
+                ],
+                colors,
+            ),
+        );
+        scope.unions.insert(
+            "Payment".to_string(),
+            ScopedUnion {
+                identity: "order_payment".to_string(),
+                name: "order_payment".to_string(),
+                tag: "method".to_string(),
+                tag_enum: "Method".to_string(),
+                cases: vec![
+                    ScopedCase {
+                        variant: variant("card", 0),
+                        record: Some("Card".to_string()),
+                    },
+                    ScopedCase {
+                        variant: variant("cash", 1),
+                        record: None,
+                    },
+                    ScopedCase {
+                        variant: variant("voucher", 2),
+                        record: Some("Voucher".to_string()),
+                    },
+                ],
+                scope: cases,
+            },
+        );
+        scope
+    }
+
+    fn shape(text: &str) -> CborShape {
+        CborShape::of(&ty(text), &order_scope())
+    }
+
+    fn uint(bits: u32) -> CborShape {
+        CborShape::Int {
+            bits,
+            signed: false,
+        }
+    }
+
+    #[test]
+    fn a_number_a_text_and_a_list_are_planned_as_their_type_states() {
+        assert_eq!(
+            shape("int8"),
+            CborShape::Int {
+                bits: 8,
+                signed: true
+            }
+        );
+        assert_eq!(shape("uint64"), uint(64));
+        assert_eq!(shape("float32"), CborShape::Float { bits: 32 });
+        assert_eq!(shape("bool"), CborShape::Bool);
+        assert_eq!(shape("string[8]"), CborShape::Text { max: 8 });
+        // An exact length is an entry's own, never a type's.
+        assert_eq!(
+            shape("bytes[4]"),
+            CborShape::Bytes {
+                max: 4,
+                exact: false
+            }
+        );
+        // An absent element of a list is written as `null`.
+        assert_eq!(
+            shape("list<optional<uint16>>[3]"),
+            CborShape::List {
+                elem: Box::new(CborShape::Nullable(Box::new(uint(16)))),
+                max: 3,
+                min: 0,
+            }
+        );
+        assert_eq!(
+            shape("list<list<uint8>[2]>[1..2]"),
+            CborShape::List {
+                elem: Box::new(CborShape::List {
+                    elem: Box::new(uint(8)),
+                    max: 2,
+                    min: 0,
+                }),
+                max: 2,
+                min: 1,
+            }
+        );
+        assert_eq!(
+            shape("enum:Color"),
+            CborShape::Enum(CborEnum {
+                alias: "Color".to_string(),
+                carrier: SceType::Uint8,
+                closed: true,
+            })
+        );
+        assert_eq!(shape("list<uint8>[4]").listed_record(), None);
+    }
+
+    #[test]
+    fn a_record_is_planned_with_its_fields_in_the_order_of_their_encoded_keys() {
+        let CborShape::Record(customer) = shape("record:Customer") else {
+            panic!("a record")
+        };
+        assert_eq!(
+            customer,
+            CborRecord {
+                alias: "Customer".to_string(),
+                name: "order_customer".to_string(),
+                fields: vec![
+                    CborField {
+                        id: "full_name".to_string(),
+                        ty: ty("string[24]"),
+                        optional: false,
+                        shape: CborShape::Text { max: 24 },
+                    },
+                    CborField {
+                        id: "vip".to_string(),
+                        ty: ty("bool"),
+                        optional: false,
+                        shape: CborShape::Bool,
+                    },
+                ],
+                // `vip` first: its encoding is shorter (docs/adr/0101, section
+                // 2.8).
+                by_key: vec![1, 0],
+            }
+        );
+        // A field's enum is read in the record's own document, and an optional
+        // field is planned as its element, its key left out where it is absent.
+        let line = shape("list<record:Line>[4]");
+        let line = line.listed_record().expect("a list of records");
+        let written: Vec<&str> = line.fields_by_key().map(|f| f.id.as_str()).collect();
+        assert_eq!(written, ["sku", "note", "color", "quantity"]);
+        let color = &line.fields[2];
+        assert!(matches!(&color.shape, CborShape::Enum(e) if e.alias == "Color"));
+        let note = &line.fields[3];
+        assert!(note.optional);
+        assert_eq!(note.ty, ty("optional<string[8]>"));
+        assert_eq!(note.shape, CborShape::Text { max: 8 });
+    }
+
+    #[test]
+    fn a_union_is_planned_with_each_case_by_its_variant_and_its_record() {
+        let CborShape::Union(payment) = shape("union:Payment") else {
+            panic!("a union")
+        };
+        assert_eq!(payment.alias, "Payment");
+        assert_eq!(payment.name, "order_payment");
+        let cases: Vec<(&str, i128, Option<&str>)> = payment
+            .cases
+            .iter()
+            .map(|c| {
+                (
+                    c.variant.as_str(),
+                    c.number,
+                    c.record.as_ref().map(|r| r.name.as_str()),
+                )
+            })
+            .collect();
+        assert_eq!(
+            cases,
+            [
+                ("card", 0, Some("order_card")),
+                ("cash", 1, None),
+                ("voucher", 2, Some("order_voucher")),
+            ]
+        );
+        let card = payment.cases[0].record.as_ref().expect("a record");
+        let written: Vec<&str> = card.fields_by_key().map(|f| f.id.as_str()).collect();
+        assert_eq!(written, ["last4", "amount"]);
+        // An optional union, as a list's element, is the union or `null`.
+        assert_eq!(
+            shape("list<optional<union:Payment>>[2]"),
+            CborShape::List {
+                elem: Box::new(CborShape::Nullable(Box::new(CborShape::Union(payment)))),
+                max: 2,
+                min: 0,
+            }
+        );
+    }
+
+    #[test]
+    fn what_the_scope_does_not_resolve_is_named_and_a_record_that_holds_itself_ends() {
+        assert_eq!(
+            shape("record:Nope"),
+            CborShape::Unresolved {
+                what: "Nope".to_string()
+            }
+        );
+        assert_eq!(
+            shape("list<enum:Nope>[2]"),
+            CborShape::List {
+                elem: Box::new(CborShape::Unresolved {
+                    what: "Nope".to_string()
+                }),
+                max: 2,
+                min: 0,
+            }
+        );
+        // A case whose record the union's document does not resolve.
+        let mut scope = order_scope();
+        if let Some(payment) = scope.unions.get_mut("Payment") {
+            payment.scope.records.remove("Voucher");
+        }
+        assert_eq!(
+            CborShape::of(&ty("union:Payment"), &scope),
+            CborShape::Unresolved {
+                what: "Voucher".to_string()
+            }
+        );
+        // A record that holds itself through a list of itself.
+        let inner = record(
+            "node",
+            &[("next", "list<record:Node>[2]")],
+            TypeScope::default(),
+        );
+        let mut own = TypeScope::default();
+        own.records.insert("Node".to_string(), inner);
+        let mut scope = TypeScope::default();
+        scope.records.insert(
+            "Node".to_string(),
+            record("node", &[("next", "list<record:Node>[2]")], own),
+        );
+        let CborShape::Record(node) = CborShape::of(&ty("record:Node"), &scope) else {
+            panic!("a record")
+        };
+        assert_eq!(
+            node.fields[0].shape,
+            CborShape::List {
+                elem: Box::new(CborShape::Unresolved {
+                    what: "Node".to_string()
+                }),
+                max: 2,
+                min: 0,
+            }
+        );
+    }
+
+    #[test]
+    fn a_map_of_text_keys_is_written_shortest_key_first_then_by_its_bytes() {
+        assert_eq!(
+            text_key_order(["author", "seq", "id", "zz", "ab"]),
+            vec![4, 2, 3, 1, 0]
+        );
+        // Past 23 bytes a text's head is two bytes: still the shorter first.
+        let long = "a".repeat(24);
+        let short = "b".repeat(23);
+        assert_eq!(text_key_order([long.as_str(), short.as_str()]), vec![1, 0]);
+        assert!(text_key_order(std::iter::empty::<&str>()).is_empty());
+    }
+
+    #[test]
+    fn an_entry_is_planned_as_its_present_type_and_states_its_exact_length() {
+        let label = crate::DocumentLabel {
+            identifier: "t",
+            diagnostic_label: ".scxml-fixture",
+        };
+        let xml = r#"<scxml xmlns="http://www.w3.org/2005/07/scxml" xmlns:sce="http://sce.dev/ext"
+                       sce:kind="codec" sce:encoding="cbor" sce:codec-format="2" name="t">
+                 <datamodel>
+                 <data id="raw" sce:type="bytes" sce:direction="in"/>
+                 <data id="tag" sce:type="bytes" sce:key="3" sce:length="4" sce:direction="out"/>
+                 <data id="blob" sce:type="optional&lt;bytes[8]&gt;" sce:key="1" sce:direction="out"/>
+                 <data id="n" sce:type="uint16" sce:key="2" sce:direction="out"/>
+               </datamodel></scxml>"#;
+        let Ok(Some(crate::forge::model::ForgeDocument::Codec(m))) =
+            crate::forge::parser::parse_forge(xml, label)
+        else {
+            panic!("the fixture is a codec document")
+        };
+        let items = cbor_items(&m, &TypeScope::default());
+        let planned: Vec<(&str, bool, CborShape)> = items
+            .iter()
+            .map(|item| (item.entry.id.as_str(), item.required, item.value.clone()))
+            .collect();
+        assert_eq!(
+            planned,
+            vec![
+                (
+                    "tag",
+                    true,
+                    CborShape::Bytes {
+                        max: 4,
+                        exact: true
+                    }
+                ),
+                (
+                    "blob",
+                    false,
+                    CborShape::Bytes {
+                        max: 8,
+                        exact: false
+                    }
+                ),
+                ("n", true, uint(16)),
+            ]
+        );
+        assert_eq!(entry_key_order(&m.cbor_entries), vec![1, 2, 0]);
     }
 }

@@ -25,7 +25,7 @@
 //! of a repeated property that are records.
 
 use crate::forge::encode_plan::{
-    CborPlan, CborValue, ContentLinePlan, LineShape, LineValue, ParamValue,
+    CborPlan, CborShape, ContentLinePlan, LineShape, LineValue, ParamValue,
 };
 use crate::forge::model::SceType;
 
@@ -228,39 +228,39 @@ pub(super) fn cbor_elements(
         .iter()
         .map(|item| {
             let e = item.entry;
-            let kind = match item.value {
-                CborValue::Bool => Kind::Bool,
-                CborValue::Uint { .. } => Kind::Int(
+            let kind = match &item.value {
+                CborShape::Bool => Kind::Bool,
+                CborShape::Int { signed: false, .. } => Kind::Int(
                     e.leaf_type()
                         .expect("an unsigned integer entry is a leaf entry"),
                 ),
-                CborValue::Text => Kind::Text {
+                CborShape::Text { .. } => Kind::Text {
                     most: e.size_bound(),
                 },
-                CborValue::Bytes { exact: true } => {
+                CborShape::Bytes { exact: true, .. } => {
                     let length = e.length.expect("an exact byte string states its length");
                     Kind::Bytes {
                         least: length,
                         most: Some(length),
                     }
                 }
-                CborValue::Bytes { exact: false } => Kind::Bytes {
+                CborShape::Bytes { exact: false, .. } => Kind::Bytes {
                     least: 0,
                     most: e.size_bound(),
                 },
-                CborValue::Enum { .. } => {
+                CborShape::Enum(_) => {
                     return Err(format!(
                         "`{}`: a case does not state a value of an enum entry yet",
                         e.id
                     ))
                 }
-                CborValue::RecordList { .. } => {
+                shape if shape.listed_record().is_some() => {
                     return Err(format!(
                         "`{}`: a case does not state a list of records yet",
                         e.id
                     ))
                 }
-                CborValue::Unlowered => {
+                _ => {
                     return Err(format!(
                         "`{}`: a case does not state a value of `{}` yet",
                         e.id, e.sce_type

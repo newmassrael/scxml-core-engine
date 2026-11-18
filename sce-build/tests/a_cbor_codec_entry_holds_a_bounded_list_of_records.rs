@@ -689,8 +689,10 @@ fn a_record_byte_string_is_held_to_its_bound_by_the_encode() {
     )
     .err()
     .unwrap_or_else(|| panic!("an undeclared refusal generated"));
+    // The reason names the place in the type (docs/adr/0101, section 5.2):
+    // the field `digest` of each record of the list `n`.
     assert!(
-        why.contains("whose byte string `digest` is past its bound 4"),
+        why.contains("byte string `n[].digest` past its bound 4"),
         "{why}"
     );
 

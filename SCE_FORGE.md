@@ -1204,7 +1204,9 @@ count `[M..N]`), a list with no bound is refused as every unbounded type is, and
 at most `N` items, each one CBOR map of every field of `R`, keyed by the field's
 id as a text string and written in the order RFC 8949 §4.2.1 sorts the keys'
 encodings (a shorter key first), each value as docs/adr/0086 section 9.2 writes
-its type. A decode refuses an array past `N` items or below the lower count, an
+its type. That order is decided once, in the codec's encode plan, a tree over
+each entry's type (`CborPlan`, docs/adr/0101 §5.1), and every backend prints
+it as planned. A decode refuses an array past `N` items or below the lower count, an
 item that is no map, a key of a record given twice and a field absent, each as
 `CborOutOfRange`, `CborWrongType`, `CborDuplicateKey` or `CborRequiredKeyMissing`, and skips a key
 of a record its schema does not declare. A record a list holds is a map of
@@ -1402,7 +1404,12 @@ the whole map decoded, writing through `out` — never into a local copy, since
 a struct whose strings are declared large does not fit a stack — so `*out`
 holds no value to read after any status but `SCE_FORGE_CODEC_OK`, as a
 positional C11 decode; `<name>_encode` and `<name>_encode_to_buf` beside
-`<NAME>_MAX_BYTES`, the most the map encodes to. Its refusals are the statuses
+`<NAME>_MAX_BYTES`, the most the map encodes to: `C` of the codec
+(docs/adr/0101 §4.1), each number at the longest head its type takes (a
+`uint8` two bytes, a closed enum its longest declared number), each text, byte
+string and list at its bound, the deployment's capacity where it gives one, so
+the largest value encodes to exactly that many bytes, and a broadcast log's slot
+over the codec is sized by the same `C`. Its refusals are the statuses
 `SCE_FORGE_CODEC_CBOR_MALFORMED`, `_REQUIRED_KEY_MISSING`, `_WRONG_LENGTH`,
 `_TOO_DEEP` and `_OUT_OF_RANGE`, and `sce/forge/cbor.h` holds its items, the
 skip walking a fixed stack rather than recursing.

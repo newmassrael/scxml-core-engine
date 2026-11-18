@@ -145,10 +145,10 @@ pub fn largest_encoded_bytes(codec: &SizedCodec) -> Result<u64, Unbounded> {
     }
 }
 
-/// A CBOR map: the arithmetic of the C11 renderer, once every record and union
-/// an entry's type names resolves in the codec's imports
-/// ([`SizedCodec::scope`]), sized by the one type grammar's calculus
-/// (docs/adr/0086, section 2.1). Every text and byte string states its bound
+/// A CBOR map: `C` of the codec (docs/adr/0101, section 4.1), the one size its
+/// C11 renderer's `<NAME>_MAX_BYTES` states too, once every enum, record and
+/// union an entry's type names resolves in the codec's imports
+/// ([`SizedCodec::scope`]). Every text and byte string states its bound
 /// (docs/adr/0101, section 1.3). A size past 2^64 - 1 bytes, which a compile of
 /// the codec refuses (`validation/encoded-size-overflow`), is held at the
 /// largest `u64`, as every size this pass computes is.
@@ -166,8 +166,9 @@ fn cbor_codec(codec: &SizedCodec) -> Result<u64, Unbounded> {
         // (docs/adr/0108, D7); one built here has no size, and says why.
         why @ SizeError::NoWireForm { .. } => Some(Unbounded::NoWireForm(format!("{site}: {why}"))),
     };
-    for entry in m.cbor_entries.iter().filter(|e| e.leaf_type().is_none()) {
-        if let Err(why) = crate::forge::value_type::cbor_max_len(entry.present_type(), &codec.scope)
+    for entry in &m.cbor_entries {
+        if let Err(why) =
+            crate::forge::value_type::codec_cbor_max_len(entry.present_type(), &codec.scope)
         {
             if let Some(refusal) = unresolved(format!("entry '{}'", entry.id), why) {
                 return Err(refusal);
@@ -782,25 +783,114 @@ mod tests {
 
     #[test]
     fn a_cbor_map_is_the_bound_its_c11_renderer_carries() {
-        // The map head for 6 entries is 1 byte, then key + value per entry:
+        // `C` of the codec (docs/adr/0101, section 4.1): the map head for 6
+        // entries is 1 byte, then key + value per entry, each number at the
+        // longest head its width takes:
         //   source   (key 1)  1 + (head(64) = 2 + 64)   = 67
         //   id       (key 0)  1 + (head(16) = 1 + 16)   = 18
-        //   pattern  (key 3)  1 + 9                     = 10
+        //   pattern  (key 3)  1 + 2 (a uint8)           = 3
         //   payload  (key 5)  1 + (head(256) = 3 + 256) = 260
-        //   deadline (key 12) 1 + 9                     = 10
+        //   deadline (key 12) 1 + 9 (a uint64)          = 10
         //   urgent   (key 7)  1 + 1                     = 2
-        // 1 + 67 + 18 + 10 + 260 + 10 + 2 = 368.
+        // 1 + 67 + 18 + 3 + 260 + 10 + 2 = 361, where every integer counted
+        // at 9 bytes made it 368 (docs/adr/0101, section 8.4).
         let xml = codec_xml(CBOR_ATTRS, "", CBOR_ENTRIES);
         let codec = sized(&xml, Vec::new());
-        assert_eq!(largest_encoded_bytes(&codec), Ok(368));
+        assert_eq!(largest_encoded_bytes(&codec), Ok(361));
         assert_eq!(
             crate::forge::cbor_codec::max_encoded_bytes(
                 &codec.model,
                 crate::forge::model::Measured::Bound,
                 &codec.scope
             ),
-            Ok(368)
+            Ok(361)
         );
+    }
+
+    /// The scope of a closed enum `Level` of `uint8` numbers 0 to 2, a closed
+    /// enum `Status` of `int8` whose longest number, -25, takes a two-byte head,
+    /// and an open enum `Nrc` over `uint16`.
+    fn enum_scope() -> crate::forge::value_type::TypeScope {
+        use crate::forge::value_type::{ScopedEnum, ScopedVariant, TypeScope};
+        let enumeration = |underlying: SceType, strict: bool, values: &[i128]| ScopedEnum {
+            name: "e".to_string(),
+            variants: values
+                .iter()
+                .map(|&value| ScopedVariant {
+                    name: format!("v{value}"),
+                    value,
+                })
+                .collect(),
+            underlying,
+            strict,
+        };
+        let mut scope = TypeScope::default();
+        scope.enums.insert(
+            "Level".to_string(),
+            enumeration(SceType::Uint8, true, &[0, 1, 2]),
+        );
+        scope.enums.insert(
+            "Status".to_string(),
+            enumeration(SceType::Int8, true, &[0, 5, -25]),
+        );
+        scope.enums.insert(
+            "Nrc".to_string(),
+            enumeration(SceType::Uint16, false, &[0, 16]),
+        );
+        scope
+    }
+
+    #[test]
+    fn a_cbor_enum_and_a_narrow_integer_are_their_longest_heads() {
+        // docs/adr/0101, section 4.1: a closed enum is the longest head of its
+        // declared numbers, -25 being major type 1 of 24, two bytes; an open
+        // enum is its carrier's; a narrow integer its width's. The map head is
+        // 1 and every key 1.
+        let xml = codec_xml(
+            CBOR_ATTRS,
+            r#"  <sce:import kind="enum" src="level.scxml" as="Level"/>
+  <sce:import kind="enum" src="status.scxml" as="Status"/>
+  <sce:import kind="enum" src="nrc.scxml" as="Nrc"/>"#,
+            r#"    <data id="raw" sce:type="bytes" sce:direction="in"/>
+    <data id="level" sce:type="enum:Level" sce:key="0" sce:direction="out"/>
+    <data id="status" sce:type="optional&lt;enum:Status&gt;" sce:key="1" sce:direction="out"/>
+    <data id="nrc" sce:type="enum:Nrc" sce:key="2" sce:direction="out"/>
+    <data id="small" sce:type="int16" sce:key="3" sce:direction="out"/>"#,
+        );
+        let codec = SizedCodec {
+            scope: enum_scope(),
+            ..sized(&xml, Vec::new())
+        };
+        // 1 + (1 + 1) + (1 + 2) + (1 + 3) + (1 + 3) = 14.
+        assert_eq!(largest_encoded_bytes(&codec), Ok(14));
+        // An enum the imports do not resolve has no size, and is named at its
+        // entry.
+        let unresolved = sized(&xml, Vec::new());
+        assert_eq!(
+            largest_encoded_bytes(&unresolved),
+            Err(Unbounded::Unresolved {
+                site: "entry 'level'".to_string(),
+                alias: "Level".to_string(),
+            })
+        );
+    }
+
+    #[test]
+    fn the_job_status_codec_is_the_size_docs_adr_0101_works_out() {
+        // docs/adr/0101, section 4.2: 1 + (1 + 5) + (1 + 34) + (1 + 9) +
+        // (1 + 2) + (1 + 2) + (1 + 5) = 64.
+        let xml = codec_xml(
+            CBOR_ATTRS,
+            "",
+            r#"    <data id="raw" sce:type="bytes" sce:direction="in"/>
+    <data id="elapsed_ms" sce:type="uint32" sce:key="0" sce:direction="out"/>
+    <data id="note" sce:type="optional&lt;string[32]&gt;" sce:key="1" sce:direction="out"/>
+    <data id="codes" sce:type="list&lt;uint8&gt;[4]" sce:key="2" sce:direction="out"/>
+    <data id="tag" sce:type="optional&lt;uint8&gt;" sce:key="3" sce:direction="out"/>
+    <data id="retry" sce:type="optional&lt;uint8&gt;" sce:key="4" sce:direction="out"/>
+    <data id="count" sce:type="uint32" sce:key="5" sce:direction="out"/>"#,
+        );
+        assert_eq!(largest_encoded_bytes(&sized(&xml, Vec::new())), Ok(64));
     }
 
     #[test]
