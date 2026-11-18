@@ -2359,14 +2359,10 @@ fn the_python_machine_and_the_python_function_agree_on_every_pair() {
     // The runtime every generated machine runs on needs the Lua binding, and
     // a host without it can run no machine at all: a missing tool, not a
     // function that disagrees.
-    let has_lupa = Command::new(&python)
-        .args(["-I", "-c", "import lupa"])
-        .output()
-        .map(|o| o.status.success())
-        .unwrap_or(false);
-    if !has_lupa {
+    if !common::python_runtime::runs_the_runtime(&python) {
         toolchain::skipped(&format!(
-            "{what}: lupa is not importable (`python3 -m pip install lupa`)"
+            "{what}: lupa.lua54 is not importable (the sce-python tool, \
+             scripts/install_sce_python.sh)"
         ));
         return;
     }

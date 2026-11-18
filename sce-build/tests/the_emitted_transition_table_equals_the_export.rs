@@ -1166,15 +1166,10 @@ fn the_python_table_imports_and_holds_the_export() {
     // The runtime every generated machine imports needs the Lua binding, and a host
     // without it cannot import any machine at all: that is a missing tool, not a
     // table that is wrong.
-    let has_lupa = Command::new(&python)
-        .args(["-I", "-c", "import lupa"])
-        .output()
-        .map(|o| o.status.success())
-        .unwrap_or(false);
-    if !has_lupa {
+    if !common::python_runtime::runs_the_runtime(&python) {
         toolchain::skipped(
-            "the_python_table_imports_and_holds_the_export: lupa is not importable \
-             (`python3 -m pip install lupa`)",
+            "the_python_table_imports_and_holds_the_export: lupa.lua54 is not importable \
+             (the sce-python tool, scripts/install_sce_python.sh)",
         );
         return;
     }
