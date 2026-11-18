@@ -286,6 +286,8 @@ void a_stored_length_above_the_bound_is_malformed_and_never_a_copy_out_of_bounds
         const Read got = literal::read(log, reader);
         const Malformed *bad = std::get_if<Malformed>(&got);
         CHECK(bad != nullptr && bad->seq == 0, "a length above the bound is malformed");
+        CHECK(bad != nullptr && bad->error == ::SCE::Forge::CodecError::LengthOutOfRange,
+              "a length above the bound is refused as LengthOutOfRange");
         CHECK(reader.cursor() == 1, "the reader moved past the entry");
     }
 }
@@ -304,6 +306,8 @@ void an_entry_whose_bytes_are_no_element_is_malformed() {
     const Read got = literal::read(log, reader);
     const Malformed *bad = std::get_if<Malformed>(&got);
     CHECK(bad != nullptr && bad->seq == 0, "bytes the codec cannot decode are malformed");
+    CHECK(bad != nullptr && bad->error == ::SCE::Forge::CodecError::NeedMoreBytes,
+          "the entry holds the kind the element's decode refused its bytes with");
     CHECK(reader.cursor() == 1, "the reader moved past the entry");
 }
 

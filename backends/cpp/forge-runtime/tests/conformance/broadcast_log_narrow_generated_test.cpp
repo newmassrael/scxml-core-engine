@@ -313,6 +313,8 @@ void a_stored_length_above_the_bound_is_refused_and_never_copied() {
         const OwnershipRead got = ownership::read(log, reader);
         const OwnershipMalformed *bad = std::get_if<OwnershipMalformed>(&got);
         CHECK(bad != nullptr && bad->seq == seq, "a length above the bound is refused by its entry");
+        CHECK(bad != nullptr && bad->error == ::SCE::Forge::CodecError::LengthOutOfRange,
+              "a length above the bound is refused as LengthOutOfRange");
     }
 
     // A length of exactly the bound, three bytes 0x0A 0xE8 0x03, is the element sensor 10 and
@@ -331,6 +333,8 @@ void a_stored_length_above_the_bound_is_refused_and_never_copied() {
     const OwnershipRead got = ownership::read(log, reader);
     const OwnershipMalformed *bad = std::get_if<OwnershipMalformed>(&got);
     CHECK(bad != nullptr && bad->seq == short_seq, "a frame the codec refuses is not an item");
+    CHECK(bad != nullptr && bad->error == ::SCE::Forge::CodecError::NeedMoreBytes,
+          "the entry holds the kind the element's decode refused its byte with");
 }
 
 }  // namespace

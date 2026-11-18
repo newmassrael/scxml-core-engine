@@ -272,9 +272,10 @@ struct CommunicationError {
     /// §mesh-16.7 row 4 (ENVELOPE_CORRUPT): byte offset within the
     /// envelope at which deserialization failed, when the codec
     /// reports one. The generated envelope codec answers a refusal
-    /// with `std::nullopt` and leaves its cursor where it began, so
-    /// `decodeEnvelope`'s bool return carries no post-failure offset
-    /// and current raise sites leave this absent — preserving the
+    /// with the `CodecError` kind that refused it and leaves its
+    /// cursor where it began, so `decodeEnvelope`'s bool return
+    /// carries no post-failure offset and current raise sites leave
+    /// this absent — preserving the
     /// optional contract documented in §mesh-16.7. A future codec
     /// upgrade that surfaces fault position populates this without
     /// touching the catalog row.

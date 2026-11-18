@@ -542,7 +542,9 @@ void a_text_is_made_of_utf8_within_its_bound_and_its_length_is_derived() {
 
     const std::vector<std::uint8_t> frame{0x02, 0xC3, 0x28};
     ::SCE::Forge::SceCursor cursor(frame.data(), frame.size());
-    CHECK(!Locator::CodecZenohLocator::decode(cursor).has_value(), "a frame whose text is not UTF-8 is refused");
+    const auto refused = Locator::CodecZenohLocator::decode(cursor);
+    CHECK(!refused.has_value() && refused.error() == ::SCE::Forge::CodecError::InvalidUtf8,
+          "a frame whose text is not UTF-8 is refused as InvalidUtf8");
 }
 
 namespace Embed = ::SCE::Generated::CodecEmbedBasic;
