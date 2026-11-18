@@ -526,7 +526,13 @@ fn an_enum_field_of_a_received_lists_element_is_a_value_of_its_enum() {
     let (ok, out) = run_line_reader(&["check"], body);
     assert!(ok, "an enum field of a received list's element:\n{out}");
     for language in emitting(ForgeKind::TestComponent).map(|language| language.canonical_name()) {
-        let (ok, out) = run_line_reader(&["check", "-l", language], body);
+        // A Go unit imports the documents it names by module path, so its
+        // check is given the module the generated packages live in.
+        let mut args = vec!["check", "-l", language];
+        if language == "go" {
+            args.extend(["--go-module-prefix", "example.test/generated"]);
+        }
+        let (ok, out) = run_line_reader(&args, body);
         assert!(
             ok,
             "{language}: an enum field of a received list's element:\n{out}"
