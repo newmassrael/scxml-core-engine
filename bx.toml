@@ -566,8 +566,10 @@ needed_by = ["w3c-python", "authoring-core", " targets", "workspace-tests"]
 # `needed_by` names the units that start go, and the registry's self-test holds it to them both
 # ways: `forge-go` and `w3c-go` run it; `workspace-tests` runs the sce-build tests and the C ABI
 # suites that build, vet and run Go; `mutation-rounds` builds a Go casefile's tests;
-# `regen-reproduces` runs every regeneration step; and three actions, the CBOR pin and the two
-# regeneration steps that build Go (`forge-go` names the second's run line too).
+# `regen-reproduces` runs every regeneration step; three actions, the CBOR pin and the two
+# regeneration steps that build Go (`forge-go` names the second's run line too); and
+# `sce_go_select`, any command whose own line chooses the release (`[commands.verify]`, whose
+# workspace run starts go).
 [platform.linux.tools.go]
 version_file = "backends/go/forge-runtime/go.mod"
 version_pattern = '^go ([0-9.]+)$'
@@ -576,7 +578,7 @@ check = "go version go{version} linux"
 prefix_link = "~/.local/share/go/{version}"
 install = "GO_ROOT={prefix} bash scripts/install_go.sh {version}"
 install_inputs = ["scripts/install_go.sh"]
-needed_by = ["forge-go", "w3c-go", "workspace-tests", "mutation-rounds", "regen-reproduces", "scripts/capture_cbor_pin.sh", "scripts/regen_all_committed_trees.sh go-round-trip", "scripts/regen_all_committed_trees.sh forge-goldens"]
+needed_by = ["forge-go", "w3c-go", "workspace-tests", "mutation-rounds", "regen-reproduces", "scripts/capture_cbor_pin.sh", "scripts/regen_all_committed_trees.sh go-round-trip", "scripts/regen_all_committed_trees.sh forge-goldens", "sce_go_select"]
 
 # The two named commands, each a table of its own: in platform tables a command
 # is `[commands.<name>]` with `run`, and with one platform it runs there. Until
@@ -633,8 +635,18 @@ run = "cargo build --bin sce-codegen --features cli -p sce-build && cmake -S . -
 # C11 suite's CMake fixture does too and hands it to its runners through a port
 # file. Both statuses are OR'd so a red ctest cannot be hidden by a green cargo
 # run.
+#
+# The workspace run starts go: the sce-build tests and the C ABI suites build,
+# vet and run Go. So the command chooses the declared Go release first, as the
+# gate runner does for every gate (`sce_go_select` of scripts/lib/go_toolchain.sh:
+# its `bin/` first on PATH with GOTOOLCHAIN=local where it is installed, else the
+# go on PATH, said either way), and `[platform.linux.tools.go]` names it by that
+# call in `needed_by`, so bx places it only where the release is installed. Both
+# halves, because either alone leaves the failure the table's comment describes:
+# placed where the release is, the command would still run the go on PATH, and
+# choosing it where it is absent falls back to that go.
 [commands.verify]
-run = 'ctest --test-dir build --output-on-failure; c=$?; log=$(mktemp); node tests/w3c/standalone_http_server.js 0 >"$log" 2>&1 & srv=$!; port=; i=0; while [ -z "$port" ] && [ $i -lt 150 ] && kill -0 $srv 2>/dev/null; do sleep 0.2; port=$(sed -n "s/^\[READY\] port=\([0-9][0-9]*\)$/\1/p" "$log"); i=$((i+1)); done; if [ -z "$port" ]; then cat "$log" >&2; echo "verify: the W3C BasicHTTP echo server never reported [READY]; its log is above" >&2; kill $srv 2>/dev/null; rm -f "$log"; exit 1; fi; SCE_W3C_HTTP_PORT=$port cargo test --workspace --features cli --no-fail-fast; r=$?; kill $srv 2>/dev/null; rm -f "$log"; exit $(( c | r ))'
+run = '. scripts/lib/go_toolchain.sh || exit 2; sce_go_select verify || true; ctest --test-dir build --output-on-failure; c=$?; log=$(mktemp); node tests/w3c/standalone_http_server.js 0 >"$log" 2>&1 & srv=$!; port=; i=0; while [ -z "$port" ] && [ $i -lt 150 ] && kill -0 $srv 2>/dev/null; do sleep 0.2; port=$(sed -n "s/^\[READY\] port=\([0-9][0-9]*\)$/\1/p" "$log"); i=$((i+1)); done; if [ -z "$port" ]; then cat "$log" >&2; echo "verify: the W3C BasicHTTP echo server never reported [READY]; its log is above" >&2; kill $srv 2>/dev/null; rm -f "$log"; exit 1; fi; SCE_W3C_HTTP_PORT=$port cargo test --workspace --features cli --no-fail-fast; r=$?; kill $srv 2>/dev/null; rm -f "$log"; exit $(( c | r ))'
 
 # THE REGENERATION OF THE COMMITTED GENERATED TREES, AS ONE ACTION PER STEP (2026-11-07). A step
 # writes into the tree; declared as an action it runs on a build machine and only the files it

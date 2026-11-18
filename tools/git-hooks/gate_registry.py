@@ -4330,14 +4330,22 @@ GO_ACTIONS = {
     "regen-go-round-trip": "round_trip/generate.sh runs `go build`",
     "regen-forge-goldens": "`forge_conformance` builds and vets the Go it writes",
 }
+# The named commands of bx.toml whose run starts go, each with how. Such a
+# command chooses the release on its own line (`sce_go_select`), which is what
+# needed_by names it by.
+GO_COMMANDS = {
+    "verify": "`cargo test --workspace` runs the sce-build tests and the C ABI "
+              "suites that build, vet and run Go",
+}
 # A go command in a script's code: a subcommand that builds or runs Go, or gofmt.
 GO_COMMAND = re.compile(
     r"(?:^|[\s;&|(])go\s+(?:build|test|run|vet|generate|install|tool)\b|\bgofmt\b",
     re.M)
 
 
-def bx_action_runs(repo_root: Path) -> dict[str, str]:
-    """The `run` line of each `[actions.<name>]` table of bx.toml, by name.
+def bx_action_runs(repo_root: Path, kind: str = "actions") -> dict[str, str]:
+    """The `run` line of each `[<kind>.<name>]` table of bx.toml, by name:
+    the actions, or with `kind="commands"` the named commands.
 
     Read by its lines, as `bx_tool_tables` reads the tool tables: a run is one
     quoted string on one line.
@@ -4349,7 +4357,7 @@ def bx_action_runs(repo_root: Path) -> dict[str, str]:
         if not line or line.startswith("#"):
             continue
         if line.startswith("["):
-            header = re.fullmatch(r"\[actions\.([A-Za-z0-9_.-]+)\]", line)
+            header = re.fullmatch(rf"\[{re.escape(kind)}\.([A-Za-z0-9_.-]+)\]", line)
             current = header.group(1) if header else None
             continue
         pair = re.fullmatch(r"run\s*=\s*(['\"])(.*)\1", line)
@@ -4396,14 +4404,17 @@ def setup_go_failures(lines: list[str], where: str) -> list[str]:
     return failures
 
 
-def go_toolchain_failures(repo_root: Path, tables=None, actions=None) -> list[str]:
+def go_toolchain_failures(repo_root: Path, tables=None, actions=None,
+                          commands=None) -> list[str]:
     """What is wrong with the Go release bx.toml declares, as sentences.
 
-    `tables` and `actions` replace bx.toml's tool tables and action run lines,
-    so the self-test can show a drifted declaration refused.
+    `tables`, `actions` and `commands` replace bx.toml's tool tables, action
+    run lines and named commands' run lines, so the self-test can show a
+    drifted declaration refused.
     """
     tables = bx_tool_tables(repo_root) if tables is None else tables
     actions = bx_action_runs(repo_root) if actions is None else actions
+    commands = bx_action_runs(repo_root, "commands") if commands is None else commands
     declared = {name: spec for name, spec in tables.items()
                 if GO_TOOLCHAIN_INSTALL in spec.get("install", "")}
     if len(declared) != 1:
@@ -4503,6 +4514,20 @@ def go_toolchain_failures(repo_root: Path, tables=None, actions=None) -> list[st
         if not needs and named(run):
             failures.append(f"needed_by {spec.get('needed_by')} names the run `{run}` "
                             f"of `{action}`, which starts no go")
+    for command in sorted(set(GO_COMMANDS) - set(commands)):
+        failures.append(f"GO_COMMANDS names `{command}`, which bx.toml does not declare")
+    for command, run in sorted(commands.items()):
+        needs = command in GO_COMMANDS
+        if needs and "sce_go_select" not in run:
+            failures.append(f"[commands.{command}] starts go and does not choose the "
+                            f"declared release on its line (`sce_go_select` of "
+                            f"{GO_TOOLCHAIN_LIB})")
+        if needs and not named(run):
+            failures.append(f"[commands.{command}] starts go and needed_by "
+                            f"{spec.get('needed_by')} does not name its run")
+        if not needs and named(run):
+            failures.append(f"needed_by {spec.get('needed_by')} names the run of "
+                            f"[commands.{command}], which starts no go")
     if named("bash scripts/gate --plan --all"):
         failures.append(f"needed_by {spec.get('needed_by')} names the plan command, "
                         f"which runs no go")
@@ -6029,6 +6054,14 @@ def self_test(repo_root: Path) -> int:
         if refused != want_refused:
             failures.append(f"go-toolchain-refuses: the table {label} was "
                             f"{'refused' if refused else 'passed'}")
+    go_commands = bx_action_runs(repo_root, "commands")
+    unchosen = {name: (run.replace("sce_go_select verify || true; ", "")
+                       if name in GO_COMMANDS else run)
+                for name, run in go_commands.items()}
+    if unchosen == go_commands \
+            or not go_toolchain_failures(repo_root, commands=unchosen):
+        failures.append("go-toolchain-refuses: a [commands.verify] that does not "
+                        "choose the declared Go on its line was passed")
     absent = {n: s for n, s in go_tables.items() if n not in go_names}
     if not go_toolchain_failures(repo_root, tables=absent):
         failures.append("go-toolchain-refuses: no Go table was passed")
