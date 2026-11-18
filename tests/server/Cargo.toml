@@ -1,0 +1,51 @@
+# SPDX-License-Identifier: AGPL-3.0-only WITH AdditionRef-SCE-Linking-Exception OR LicenseRef-SCE-Commercial
+# SPDX-FileCopyrightText: Copyright (c) 2026 newmassrael
+
+[package]
+name = "sce-server-suite"
+version.workspace = true
+edition.workspace = true
+# The host core it serves sessions with (`sce-rust-mesh`) and the store it keeps them in
+# (`sce-rust-session-store`) declare 1.87. The HTTPS binding and the conformance kit's test
+# authority, whose `time` needs 1.88, are dev-dependencies: the build a dependent gets has neither.
+rust-version = "1.87"
+license.workspace = true
+repository.workspace = true
+authors.workspace = true
+description = "The suite that holds a server's durability and scale (docs/adr/0107, decision D10): keyed sessions on the Rust host core and the reference store, killed and restarted, raced, fenced, and reached over HTTPS"
+publish = false
+
+# The library is the suite's harness: the machine the sessions run, the server process's line
+# protocol and the parent's handle on it, and the drivers the scenarios share. The binary is the
+# server process a scenario starts, kills with SIGKILL and starts again; each scenario is a test
+# target of its own under `tests/`.
+
+[lib]
+path = "src/lib.rs"
+
+[[bin]]
+name = "sce-suite-server"
+path = "src/main.rs"
+
+[dependencies]
+# The keyed session pool, its checkpoint and the envelope codec.
+sce-rust-mesh = { path = "../../backends/rust/mesh" }
+# The reference store, SQLite in WAL mode, which every scenario keeps its sessions in.
+sce-rust-session-store = { path = "../../backends/rust/session-store" }
+# The saved state a session is kept as, and the host-processor shapes a machine sends with.
+sce-rust-runtime = { path = "../../backends/rust/runtime", default-features = false, features = ["std"] }
+# The reference host whose key-value store guards the value the sessions share
+# (`sce-host-kv-put-if`).
+sce-rust-host-features = { path = "../../backends/rust/host-features" }
+# The bounded fields an envelope the client sends is built from, and the cursor a reply is read with.
+sce-forge-runtime = { path = "../../backends/rust/forge-runtime", default-features = false, features = ["alloc"] }
+
+[dev-dependencies]
+# The HTTPS binding's server, client and reference adapter, and the conformance kit's test
+# authority and proxies, for the scenario that reaches a pool over HTTPS.
+sce-rust-mesh = { path = "../../backends/rust/mesh", features = ["https-conformance"] }
+# The runtime the HTTPS server and the kit's proxies run on.
+tokio = { version = "1", default-features = false, features = ["net", "rt", "rt-multi-thread", "time"] }
+
+[lints]
+workspace = true

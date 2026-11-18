@@ -4234,6 +4234,18 @@ dependencies = [
 ]
 
 [[package]]
+name = "sce-server-suite"
+version = "0.1.0"
+dependencies = [
+ "sce-forge-runtime",
+ "sce-rust-host-features",
+ "sce-rust-mesh",
+ "sce-rust-runtime",
+ "sce-rust-session-store",
+ "tokio",
+]
+
+[[package]]
 name = "sce-specs"
 version = "0.1.0"
 dependencies = [

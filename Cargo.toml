@@ -35,6 +35,8 @@ members = [
     "backends/rust/peer",
     "backends/rust/peer-capi",
     "backends/rust/assurance",
+    # The suite that holds a server's durability and scale (docs/adr/0107, decision D10).
+    "tests/server",
     "sce-revision",
     "sce-specs",
     "sce-ttcn3-validator",

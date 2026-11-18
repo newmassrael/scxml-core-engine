@@ -129,6 +129,9 @@ on:
       # The shared table every copy of the Mesh-target predicate reads; the
       # build's copy `include_str!`s it.
       - 'tests/mesh/**'
+      # The server suite (docs/adr/0107, D10): a workspace member outside
+      # `backends/rust/**`, so an edit of it alone starts the suite that runs it.
+      - 'tests/server/**'
       # The policy documents `forge_conformance` compiles into its per-language
       # run tests: an edit to one changes what those tests assert.
       - 'tests/forge/resources/**'
@@ -283,6 +286,9 @@ on:
       # The shared table every copy of the Mesh-target predicate reads; the
       # build's copy `include_str!`s it.
       - 'tests/mesh/**'
+      # The server suite (docs/adr/0107, D10): a workspace member outside
+      # `backends/rust/**`, so an edit of it alone starts the suite that runs it.
+      - 'tests/server/**'
       # The policy documents `forge_conformance` compiles into its per-language
       # run tests: an edit to one changes what those tests assert.
       - 'tests/forge/resources/**'

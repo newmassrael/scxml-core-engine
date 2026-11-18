@@ -974,6 +974,9 @@ GATES: dict[str, dict] = {
             "tests/scripting/**",
             # The shared Mesh-target predicate table the build reads.
             "tests/mesh/**",
+            # The server suite (docs/adr/0107, D10), a workspace member outside
+            # `backends/rust/**`.
+            "tests/server/**",
             # The policy documents `forge_conformance` compiles into its
             # per-language run tests.
             "tests/forge/resources/**",
