@@ -12,11 +12,11 @@
   - `docs/SCE_ACCEPTED_SUBSET.md` §2.15: a paragraph for each of the map variable, its reads, its statements, its
     loop, its saved form and its algorithm slot, and the paragraph that refuses an algorithm's loop over a
     bounded-collection import, whose "reopened by the change that lets a statechart hold a bounded-collection" no
-    longer names the change that reopens it (D8);
-  - `docs/SCE_ACCEPTED_SUBSET.md`'s appendix: the diagnostic codes D10 adds.
+    longer names the change that reopens it (D9);
+  - `docs/SCE_ACCEPTED_SUBSET.md`'s appendix: the diagnostic codes D11 adds.
 - Scope: the type grammar and its judgment, the `sce-static` statechart parser and checker, the standard library
   (`stdlib/collection`), the Interpreter's lowering, the Rust and C11 runtimes and machine lowerings first, and the
-  other five lanes after them (D9); the algorithm kind's slots, locals, returns and `<sce:foreach>`.
+  other five lanes after them (D10); the algorithm kind's slots, locals, returns and `<sce:foreach>`.
 
 ## Context
 
@@ -45,9 +45,11 @@ The consumer answered two questions on 2026-11-19 that shape the decision:
 1. **Capacity is chosen in two ways.** The microcontroller and session-core tables (the subscription table, the
    reassembly slots) take theirs from build constants of the deployment. The access-point tables (the face table,
    the pending queries of each face, the multicast member table) take theirs from zenoh's configuration read at
-   start (`transport/unicast/max_sessions`, `transport/multicast/max_sessions`), and a face is shed when that limit
-   is reached. Those tables are on the heap today, with the configured value as their limit, and hold thousands of
-   faces.
+   start (`transport/unicast/max_sessions`, `transport/multicast/max_sessions`). When that limit is reached a new
+   unicast session is refused with a close reason, and a multicast join is ignored. Those tables are on the heap
+   today, with the configured value as their limit, and hold thousands of faces. Separately, a capacity control
+   closes the newest admitted session when keepalives fall behind; that is a decision about load, not about the
+   table's limit.
 2. **Both key shapes occur.** The key is a field of the element in the subscription table (a subscriber's id), the
    reassembly slots (a chain's key) and the routing graph (a node's zid, with a second index by zid). It stands
    apart from the element in the alias tables (an expression id to a key expression, and a set of ids), the
@@ -73,7 +75,14 @@ for a variable today).
 A key is a type whose equality is exact and whose every value is bounded: the fixed-width integers, `bool`, an enum,
 a bounded text or byte string compared byte by byte, and a record whose every field is a key, compared field by
 field. That record is the composite key the reassembly slots need, declared as an event-schema record as every
-statechart record is. A zid is `bytes[16]`. A float is not a key, because `NaN` is not equal to itself and `-0.0`
+statechart record is.
+
+A `bytes[N]` key is compared by its length and its bytes, as a byte string is everywhere: `[0x01]` and
+`[0x01, 0x00]` are two keys. A 128-bit identifier whose wire form drops trailing zero bytes but whose equality is
+that of the integer (zenoh's zid) is therefore not a `bytes[16]` key as received. It is a record key of two
+`uint64` fields, the integer's low and high halves, which a codec fills from the wire form. Equality is then the
+integer's, and every key has one form. A fixed-length byte string type would also serve, but the grammar has none
+(a byte string takes no lower count, docs/adr/0086 section 15), and adding one is not this record's decision. A float is not a key, because `NaN` is not equal to itself and `-0.0`
 equals `0.0`. An optional, a union, a list, a map and a set are not keys. A key of any other type is refused at the
 type as `validation/map-key-type`, naming the type and the field of a record key that is not a key.
 
@@ -107,15 +116,16 @@ Reads, in any expression:
 Statements, each naming the map by `target` as `<sce:append>` names a list:
 
 ```xml
-<sce:put    target="faces" key="_event.data.zid" expr="face" outcome="putResult"/>
-<sce:remove target="faces" key="_event.data.zid" outcome="removeResult"/>
+<sce:put    target="faces" key="zid" expr="face" outcome="putResult"/>   <!-- zid: a record key, D1 -->
+<sce:remove target="faces" key="zid" outcome="removeResult"/>
 <sce:clear  target="faces"/>
-<sce:put    target="aliases" key="_event.data.id"/>          <!-- a set: no expr -->
+<sce:put    target="aliases" key="_event.data.id"/>                       <!-- a set: no expr -->
 ```
 
 `<sce:put>` sets the value at `key` to `expr`, putting the key if it is absent. Its `expr` is a scalar expression
 for a scalar value, and the name of a record variable or loop item for a record value, as `<sce:append>` takes a
-record. On a set it takes no `expr`, and on a map it requires one.
+record. On a set it takes no `expr`, and on a map it requires one. A `key` is read the same way: a scalar
+expression for a scalar key, and the name of a record variable or loop item for a record key.
 
 ### D4. A full map answers `full` as a value; a limit set at run time is a value of the machine
 
@@ -135,12 +145,14 @@ read at start is a decision the machine makes on each put. So the document holds
 
 ```xml
 <data id="maxSessions" sce:type="uint32"/>                      <!-- delivered at start: an event or an invoke param -->
-<data id="faces" sce:type="map&lt;bytes[16], record:Face&gt;[ap_max_faces=4096]"/>
+<data id="faces" sce:type="map&lt;record:Zid, record:Face&gt;[ap_max_faces=4096]"/>
 …
 <transition event="face.open" cond="len(faces) &lt; maxSessions">
-  <sce:put target="faces" key="_event.data.zid" expr="incoming" outcome="putResult"/>
+  <sce:put target="faces" key="peer" expr="incoming" outcome="putResult"/>
 </transition>
-<transition event="face.open" target="shedding"/>               <!-- the limit was reached: shed -->
+<transition event="face.open">                                   <!-- the limit was reached: refuse it -->
+  <send event="face.refuse" target="#_parent" namelist="…"/>
+</transition>
 ```
 
 The host delivers the configured value as the payload of an event, or as an invoke `<param>` (docs/adr/0098). The
@@ -167,10 +179,40 @@ section "State an algorithm takes and gives back". It walks the slot with `<sce:
 reads it with `len`, `has` and `m[k]`, and may declare a map local and a map return. It writes them with the same
 `<sce:put>`, `<sce:remove>` and `<sce:clear>`, with the same outcomes. A map return declares `may-fail`, and the
 variable it is assigned to must hold its bound, as a list return must. It is also the
-loop the Interpreter's algorithm lowering refuses today for a bounded-collection import (D8), now over a slot a
+loop the Interpreter's algorithm lowering refuses today for a bounded-collection import (D9), now over a slot a
 statechart fills.
 
-### D6. Where a map may stand
+### D6. A read never copies a map, and a write in place is given only to an algorithm that cannot fail
+
+A map is a value, but a table of thousands of entries read on every packet cannot be copied on every read. These
+are lowering rules: what a document means is D2's value meaning in every case, and the rules say when a lane must
+not copy to reach it.
+
+1. **A read-only slot is a view.** A parameter is already a view of its argument (docs/adr/0086, section 1), and an
+   algorithm cannot write a parameter. So a map slot is lowered as a borrow (Rust `&BoundedMap<…>`, C11 a `const`
+   pointer) and the call copies nothing. Nothing else runs while the call runs, so the view cannot change under it.
+2. **A slot written in place is declared `inout`, and only an algorithm that does not declare `may-fail` has
+   one.** `<sce:param name="faces" type="map<…>[…]" inout="true"/>` is a map the algorithm writes with
+   `<sce:put>`, `<sce:remove>` and `<sce:clear>`, and the caller sees each write when the call returns. A failure
+   ends a statechart's statement with its state as it was (§scxml-4.9 and `error.execution`), and a call that had
+   already written half a table could not keep that promise without a copy or a journal. An algorithm that does not
+   declare `may-fail` is proven never to fail (`algorithm/undeclared-integer-failure` refuses any operation the
+   analysis cannot prove), so its writes are never left half done. In such an algorithm every `<sce:put>` names an
+   `outcome`, because a put without one fails on a full map. An `inout` slot on a `may-fail` algorithm is refused
+   as `algorithm/inout-on-may-fail`, and a `may-fail` algorithm that changes a map returns the new map (D5).
+
+   A statechart calls an algorithm with an `inout` slot by a statement, `<sce:call expr="Expire(faces, now)"/>`,
+   never in an expression, because an expression has no effect. The `inout` argument is the name of a map variable
+   of the same type. It is not the map a `<foreach>` around the call walks, and no map is named twice in one call.
+   Each of these is refused as `scxml/static-datamodel-rule`. The call has no value; an algorithm with an `inout`
+   slot returns nothing.
+3. **A loop copies only a map its body writes.** `<foreach>` walks the map as it was when the loop began (D5).
+   When nothing in the body writes that map at any depth (no `<sce:put>`, `<sce:remove>`, `<sce:clear>` or
+   `<assign>` naming it, and no `<sce:call>` with it as an `inout` argument), the walk and the map are the same, and
+   the lane walks the map without a copy. Only a body that writes the map pays for the copy. The same holds for an
+   algorithm's `<sce:foreach>` over an `inout` slot.
+
+### D7. Where a map may stand
 
 A map and a set may be a `sce-static` variable, an algorithm's parameter, local or return, and the value of a map
 or the element of a list. An event schema's field, and therefore a codec's, a lift's answer and a payload, is
@@ -178,15 +220,36 @@ refused for now as `validation/map-in-wire-position`, naming this record. The wi
 the order D2 gives, a JSON array of pairs because a JSON object's key is only a text) is its own decision (Open
 questions, 1).
 
-### D7. Each lane holds a map in one runtime type with a hash index; the hash is never observable
+### D8. Each lane holds a map in one runtime type with a hash index; the hash is never observable
 
 Each lane holds a map in one runtime type: Rust `sce_rust_runtime::BoundedMap<K, V, N>` and `BoundedSet<K, N>`,
 and C11 a pair of macros in the runtime header that declare a map type for a key, a value and a bound, used by
-the generated machine. Each type is a dense array of entries in D2's order with an open-addressing index over a
-hash of the key's canonical bytes, sized to the next power of two at or above twice the bound. A lookup takes
-expected constant time, a remove shifts the entries after it to keep the order, and the hash appears in no output,
-order or saved form. A table of thousands of faces cannot be scanned linearly on every packet, which rules out the
-`bounded-collection` kind's `find_by_index`.
+the generated machine. Several tables put and remove on every query or every chain, so a remove must not cost the
+size of the table. Each type is therefore:
+
+- **an array of `B` entry slots**, each holding a key and a value, with a free list of the unused slots, so a put
+  takes a free slot and a remove gives it back;
+- **a doubly linked order through the slots** (a previous and a next slot index in each, a head and a tail), which
+  is D2's order: a put links its slot at the tail, a replace leaves the links alone, and a remove unlinks its slot;
+- **an open-addressing index** from a hash of the key to a slot, sized to the next power of two at or above twice
+  the bound, with tombstones that a put reuses and a rebuild clears when they outnumber the live entries.
+
+Lookup, put and remove take expected constant time, and no operation moves an entry. Iteration follows the links,
+so the observable order, the saved form and the snapshot are D2's whatever slots the entries sit in. A table of
+thousands of faces cannot be scanned linearly on every packet, which rules out the `bounded-collection` kind's
+`find_by_index`.
+
+**The hash is keyed per map, because a peer chooses the keys.** A zid or a wire id is chosen by the other end of a
+connection. With a fixed unkeyed hash, a peer can send keys that all land in one chain of the index and turn every
+lookup into a scan of the table. The index therefore hashes a key's canonical bytes (D1's equality) with SipHash-1-3
+under a 128-bit key drawn for each map when it is built. The hash appears in no output, order or saved form, so a
+seed that differs between runs, engines or a save and its restore changes nothing a document or a scenario sees.
+A restored map rebuilds its index under its own seed. The seed comes from the host: Rust with `std` draws it from
+the operating system, as `std::collections::hash_map::RandomState` does, and a lane without an entropy source (Rust
+without `std`, C11) takes it as an argument of the machine's construction. A host that has no entropy passes a
+fixed seed, and the generated header states the residue: such a map can be flooded by a peer that knows the seed,
+so a deployment that faces untrusted peers must supply entropy. The Interpreter's JavaScript `Map` hashes as its
+engine does and is a reference, not a deployment.
 
 **The saved form** (`docs/SCE_ACCEPTED_SUBSET.md` §2.15, "Saving and restoring") is an array of `[key, value]`
 pairs in D2's order, and a set's is an array of keys. Each key and value is written in the form its type already
@@ -196,7 +259,7 @@ with a key twice, is refused as a saved list with too many elements is.
 **The snapshot** gives the host a read-only view in D2's order: Rust an iterator of `(&K, &V)` with `get(&K)`, C11
 a pointer to the entry array and its length.
 
-### D8. The bounded-collection kind is unchanged, and §2.15's refusal names a different reopening
+### D9. The bounded-collection kind is unchanged, and §2.15's refusal names a different reopening
 
 `bounded-collection` stays what it is: a slot table a host or a forge kind holds by handle. A statechart does not
 hold one, because a handle is an identity, not a value (Alternatives rejected, 2). §2.15's paragraph that refuses an
@@ -204,7 +267,7 @@ algorithm's `<sce:foreach in="<bc-alias>">` in the Interpreter's lowering keeps 
 nothing can reach such an algorithm under the Interpreter, and changes its last sentence to say that the table a
 statechart holds is a map (this record) and that an algorithm walks it through a map slot (D5).
 
-### D9. Lanes
+### D10. Lanes
 
 The Interpreter (whose lowered ECMAScript holds a map as a JavaScript `Map` of canonical key text, which keeps
 insertion order as D2 does), Rust and C11 land first, in that order, because the consumer's targets are Rust and C11 and the
@@ -212,10 +275,11 @@ Interpreter is the reference every scenario is compared with. C++, Kotlin, Go, P
 lands, a document that declares a map refuses to generate for that lane as `generate/unsupported-feature`, naming
 the type and this record, as ADR 0092's union did on the Swift lane (ADR 0099).
 
-### D10. Diagnostic codes
+### D11. Diagnostic codes
 
 - `validation/map-key-type`: a key type D1 does not admit.
-- `validation/map-in-wire-position`: a map or set in an event schema's field (D6).
+- `validation/map-in-wire-position`: a map or set in an event schema's field (D7).
+- `algorithm/inout-on-may-fail`: an `inout` slot on an algorithm that declares `may-fail` (D6).
 - `scxml/static-datamodel-rule` (existing): a `target` that names no map, an `expr` on a set's put or none on a
   map's, an `outcome` whose variable is not of the standard outcome enum, `sce:key` on a set's loop.
 - `expression/unsupported-construct` (existing): a map as an operand, two maps compared, a whole-map assignment
@@ -226,7 +290,7 @@ Each new code lands in the acceptance-doc appendix with its first emitter (`acce
 ### Not in scope
 
 - A second index kept by the map itself (a routing graph that finds a node by its zid beside its id). The document keeps a second
-  `map<bytes[16], uint32>` and writes both maps in the same transition. A declared secondary index is a later
+  `map<record:Zid, uint32>` and writes both maps in the same transition. A declared secondary index is a later
   decision once the rows show how many need one (Open questions, 2).
 - Ordered range queries (the first key at or above a value).
 - Matching a string key beyond equality.
@@ -235,7 +299,10 @@ Each new code lands in the acceptance-doc appendix with its first emitter (`acce
 
 - The consumer's keyed tables have a construct to move to. The session-core and MCU rows take a bound from `--limit`, and the
   access-point rows take a large bound and a limit the document holds.
-- A map costs a hash index beside its entries, about two index slots per bound, on every lane.
+- A map costs, beside its entries, two link indices per slot and about two index slots per bound, on every lane,
+  and a SipHash of each key it looks up.
+- A machine on a lane without an entropy source takes a seed at construction, and its host decides where the
+  seed comes from.
 - Every lane gains a runtime type, a lowering, a saved form and a snapshot view. That is five lanes after the first
   three, each with the scenarios the first three established.
 - An algorithm can now take and give back keyed state, so a rule over a table is written once and runs on every
@@ -247,7 +314,7 @@ Each new code lands in the acceptance-doc appendix with its first emitter (`acce
    is part of the type so that one value means one thing on every build and engine (docs/adr/0086). A run-time
    capacity would make two copies of one machine disagree on what a put does with nothing in the saved state to say
    so, and a no-heap lane would still have to reserve a build-time maximum. A limit attribute on the map would also
-   hide the decision from the document: "the configured limit was reached" (shed a session) and "storage is
+   hide the decision from the document: "the configured limit was reached" (refuse a new session) and "storage is
    exhausted" would both be `full`, and the trace would not show which.
 2. **Let a statechart hold the `bounded-collection` kind.** That kind is addressed by handles. A handle is an
    identity, not a value: it means nothing after save and restore or in a child session, it cannot be compared, and
@@ -267,24 +334,28 @@ Each new code lands in the acceptance-doc appendix with its first emitter (`acce
 ## Order of work
 
 1. This record, reviewed against the consumer's tables, accepted.
-2. The grammar: `map` and `set` in `value_type.rs`, the key judgment, the positions of D6. Tests:
+2. The grammar: `map` and `set` in `value_type.rs`, the key judgment, the positions of D7. Tests:
    `a_map_key_is_a_type_with_exact_equality`, `a_map_is_refused_in_a_wire_position`.
 3. The `sce-static` checker: the statements, reads and loop of D3–D5, the standard outcome enums in
-   `stdlib/collection`, the codes of D10 in the appendix.
+   `stdlib/collection`, the codes of D11 in the appendix.
 4. The Interpreter's lowering, with `scenarios/static_map.json`, `static_map_full.json` (outcome and
    `error.execution`), `static_map_record.json`, `static_map_composite_key.json`, `static_set.json` and
    `static_map_order.json` (replace in place, remove and put again goes last).
-5. Rust: `BoundedMap` and `BoundedSet` in the runtime, the machine lowering, the saved form and the snapshot. The
-   scenarios of step 4 run on the Rust lane.
-6. C11: the runtime macros, storage in the machine, the lowering, the saved form and the snapshot. The same scenarios
-   run, and `no_c11_frame_grows_with_a_list_bound` is extended to a map.
-7. Algorithms: map slots, locals and returns, `<sce:foreach in>` with `key`, on the Interpreter, Rust and C11, held by
-   the numerical reference (`tests/forge/conformance/numerical_reference.json`). §2.15's bounded-collection paragraph
-   is rewritten (D8).
+5. Rust: `BoundedMap` and `BoundedSet` in the runtime (slots, links, keyed index, D8), the machine lowering, the saved
+   form and the snapshot. The scenarios of step 4 run on the Rust lane. Unit tests hold that a remove moves no
+   entry, that order survives any sequence of puts and removes (a property test against a reference list), and that
+   keys chosen to collide under one seed spread under another.
+6. C11: the runtime macros, storage in the machine, the seed argument, the lowering, the saved form and the
+   snapshot. The same scenarios and unit tests run, and `no_c11_frame_grows_with_a_list_bound` is extended to a map.
+7. Algorithms: map slots as views, `inout` slots, locals and returns, `<sce:foreach in>` with `key`, `<sce:call>` in a
+   statechart, on the Interpreter, Rust and C11, held by the numerical reference
+   (`tests/forge/conformance/numerical_reference.json`). A test holds the copies of D6: a read-only slot and a loop
+   whose body does not write the map copy nothing in the generated Rust and C11. §2.15's bounded-collection
+   paragraph is rewritten (D9).
 8. C++, Kotlin, Go, Python, Swift, one landing each, each removing its `generate/unsupported-feature`.
 
 ## Open questions
 
-1. The wire form of a map in an event schema's field (D6): a CBOR map in D2's order and a JSON array of pairs is the
+1. The wire form of a map in an event schema's field (D7): a CBOR map in D2's order and a JSON array of pairs is the
    likely answer, and it waits for a row that sends a table whole.
 2. A declared secondary index, decided once it is known how many tables are read by two keys.
