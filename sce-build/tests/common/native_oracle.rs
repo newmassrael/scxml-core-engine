@@ -334,15 +334,16 @@ fn compile_probes_together(
             lines.concat(),
         )
         .expect("write a probe of many cases");
-        if compile(native, cc, proj, &probe).is_none() {
-            return None;
-        }
-        for plan in group {
-            if let Some(why) = compile(native, cc, proj, &format!("probe_{}", plan.unique)) {
-                answers
-                    .lock()
-                    .expect("no compile panics while holding the lock")
-                    .insert(plan.unique.clone(), why);
+        // A probe that builds answers for every case in it; one that does not
+        // has each case compiled alone.
+        if compile(native, cc, proj, &probe).is_some() {
+            for plan in group {
+                if let Some(why) = compile(native, cc, proj, &format!("probe_{}", plan.unique)) {
+                    answers
+                        .lock()
+                        .expect("no compile panics while holding the lock")
+                        .insert(plan.unique.clone(), why);
+                }
             }
         }
         None
