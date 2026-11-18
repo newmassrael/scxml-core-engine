@@ -116,8 +116,9 @@ pub const HOST_FEATURE_EXPECT: &[&str] = &["state", "variables", "host_invokes",
 /// The directives a step's `host` may give the reference host
 /// (docs/SCE_HOST_FEATURES.md): what its clock reads, what the platform and the
 /// user say of a permission, the store's quota, the operations it fails, what
-/// its transport answers, and what its scripted model provider is like
-/// (docs/adr/0087, section 9.1 item 7).
+/// its transport answers, what its scripted model provider is like
+/// (docs/adr/0087, section 9.1 item 7), and the keys it signs and seals with
+/// (docs/SCE_HOST_FEATURES.md, section 10).
 pub const HOST_DIRECTIVES: &[&str] = &[
     "clock",
     "permission",
@@ -126,6 +127,7 @@ pub const HOST_DIRECTIVES: &[&str] = &[
     "fail",
     "http",
     "model",
+    "cose_keys",
 ];
 
 /// Which drivers replay a scenario, and so which members it may carry.

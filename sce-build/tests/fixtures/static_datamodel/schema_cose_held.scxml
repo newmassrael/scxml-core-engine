@@ -1,0 +1,20 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- SPDX-License-Identifier: AGPL-3.0-only WITH AdditionRef-SCE-Linking-Exception OR LicenseRef-SCE-Commercial -->
+<!-- SPDX-FileCopyrightText: Copyright (c) 2026 newmassrael -->
+<!--
+  The event `static_host_cose.scxml` is told to open the object it sealed last
+  with: the key to open it with and the external data it was sealed over. The
+  object itself stays in the machine, since a seal draws a nonce no scenario
+  knows in advance.
+-->
+<scxml xmlns="http://www.w3.org/2005/07/scxml"
+       xmlns:sce="http://sce.dev/ext"
+       version="1.0"
+       sce:kind="event-schema"
+       name="schema_cose_held"
+       sce:event-name="cose.held.open">
+  <datamodel>
+    <data id="key_id" sce:type="string[64]" sce:direction="in"/>
+    <data id="external_aad" sce:type="bytes[256]" sce:direction="in"/>
+  </datamodel>
+</scxml>

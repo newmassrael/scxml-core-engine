@@ -631,7 +631,7 @@ class HostFeaturesTest {
         val replayed =
             listOf("static_host_clock", "static_host_http", "static_host_kv", "static_host_model", "static_host_notify") +
                 HARNESS_SCENARIOS
-        assertEquals(replayed.sorted(), names)
+        assertEquals((replayed + NOT_SERVED_HERE).sorted(), names)
     }
 
     private companion object {
@@ -650,6 +650,13 @@ class HostFeaturesTest {
             "static_model_harness_repaired",
             "static_model_harness_timeout",
         )
+
+        /**
+         * The scenarios of operations this lane's reference host does not serve: the build
+         * refuses their machines for Kotlin (docs/adr/0107, D8), so they are not replayed here.
+         * Signing and sealing (docs/SCE_HOST_FEATURES.md, section 10) is served by Rust and C++.
+         */
+        val NOT_SERVED_HERE = listOf("static_host_cose")
 
         /**
          * The codes of the application's own checks, after the fourteen of the lift its enum

@@ -17,14 +17,15 @@ use std::path::Path;
 use std::sync::{Arc, Mutex};
 
 use sce_rust_host_features::{
-    serve, AnswerSchema, ClockSource, ExhaustiveProvider, HttpRequest, HttpResponse, OutcomeClass,
-    Reading, ReferenceHost, ScriptedAnswer, ScriptedClock, ScriptedProvider, Shared, Transport,
-    TransportFailure, Zone,
+    cose, serve, AnswerSchema, ClockSource, CoseKeys, ExhaustiveProvider, HttpRequest,
+    HttpResponse, OutcomeClass, Reading, ReferenceHost, ScriptedAnswer, ScriptedClock,
+    ScriptedProvider, Shared, Transport, TransportFailure, TrustedKey, Zone,
 };
 use sce_rust_runtime::saved_state::SavedState;
 use sce_rust_runtime::{Engine, SceClock, StatePolicy, TransitionTaken};
 use sce_rust_scenarios::integration::static_datamodel::{
     static_host_clock_sm::{StaticHostClockPersist, StaticHostClockPolicy},
+    static_host_cose_sm::{StaticHostCosePersist, StaticHostCosePolicy},
     static_host_http_sm::{StaticHostHttpPersist, StaticHostHttpPolicy},
     static_host_kv_sm::{StaticHostKvPersist, StaticHostKvPolicy},
     static_host_model_sm::{StaticHostModelPersist, StaticHostModelPolicy, ANSWER_SCHEMAS},
@@ -152,6 +153,65 @@ fn script_model(provider: &mut ScriptedProvider, directive: &Value) {
     }
 }
 
+/// A key a `cose_keys` directive writes: 32 bytes in hexadecimal.
+fn key_of(hex: &Value) -> [u8; 32] {
+    let hex = hex.as_str().expect("a key is hexadecimal text");
+    let bytes: Vec<u8> = (0..hex.len() / 2)
+        .map(|i| u8::from_str_radix(&hex[2 * i..2 * i + 2], 16).expect("hex"))
+        .collect();
+    bytes.try_into().expect("a key is 32 bytes")
+}
+
+/// The keys a `cose_keys` directive gives the host: `sign` (key id to an Ed25519
+/// seed), `aead` (key id to a ChaCha20/Poly1305 key) and `trust` (a set's name to
+/// the ids of the signing keys whose public keys it holds), a table it does not
+/// name empty.
+fn cose_keys(directive: &Value) -> CoseKeys {
+    let table = |name: &str| -> Vec<(String, [u8; 32])> {
+        directive
+            .get(name)
+            .and_then(Value::as_object)
+            .map(|keys| {
+                keys.iter()
+                    .map(|(id, hex)| (id.clone(), key_of(hex)))
+                    .collect()
+            })
+            .unwrap_or_default()
+    };
+    let signing: std::collections::BTreeMap<String, [u8; 32]> = table("sign").into_iter().collect();
+    let trust = directive
+        .get("trust")
+        .and_then(Value::as_object)
+        .map(|sets| {
+            sets.iter()
+                .map(|(set, ids)| {
+                    let signers = ids
+                        .as_array()
+                        .expect("a trust set lists key ids")
+                        .iter()
+                        .map(|id| {
+                            let id = id.as_str().expect("a key id");
+                            let seed = signing.get(id).unwrap_or_else(|| {
+                                panic!("`{id}` is no signing key of the directive")
+                            });
+                            TrustedKey {
+                                id: id.to_string(),
+                                public_key: cose::public_key_of(seed),
+                            }
+                        })
+                        .collect();
+                    (set.clone(), signers)
+                })
+                .collect()
+        })
+        .unwrap_or_default();
+    CoseKeys {
+        symmetric: table("aead").into_iter().collect(),
+        trust,
+        signing,
+    }
+}
+
 /// The request fields a scenario writes as numbers; every other is text.
 const INTEGER_FIELDS: [&str; 3] = ["at_ms", "max_tokens", "temperature_milli"];
 
@@ -213,6 +273,9 @@ impl Rig {
                 ),
                 "http" => self.script.lock().expect("the script").answer = Some(answer(value)),
                 "model" => script_model(&mut self.model.lock().expect("the provider"), value),
+                "cose_keys" => host
+                    .set_cose_keys(cose_keys(value))
+                    .expect("a scenario configures no id of a derived key"),
                 other => panic!("`{other}` is not a host directive"),
             }
         }
@@ -448,6 +511,16 @@ fn a_machine_asks_its_host_for_a_text_under_an_answer_schema() {
         |engine| engine.save_at(0).expect("saves"),
         "static_host_model",
         ANSWER_SCHEMAS,
+    );
+}
+
+#[test]
+fn a_machine_signs_verifies_seals_and_opens_through_its_host() {
+    replay(
+        Engine::new(StaticHostCosePolicy::new()),
+        |engine| engine.save_at(0).expect("saves"),
+        "static_host_cose",
+        &[],
     );
 }
 
@@ -950,6 +1023,7 @@ fn every_scenario_of_the_directory_is_replayed_here() {
     on_disk.sort();
     let mut replayed = vec![
         "static_host_clock",
+        "static_host_cose",
         "static_host_http",
         "static_host_kv",
         "static_host_model",

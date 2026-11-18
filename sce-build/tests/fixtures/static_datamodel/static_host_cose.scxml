@@ -1,0 +1,203 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- SPDX-License-Identifier: AGPL-3.0-only WITH AdditionRef-SCE-Linking-Exception OR LicenseRef-SCE-Commercial -->
+<!-- SPDX-FileCopyrightText: Copyright (c) 2026 newmassrael -->
+<!--
+  datamodel="sce-static" (docs/SCE_ACCEPTED_SUBSET.md §2.12, §2.15; the
+  standard host features, docs/SCE_HOST_FEATURES.md, "Signing and sealing"):
+  one machine that asks its host to sign, verify, seal and open COSE objects
+  and to derive keys, one operation at a time, and publishes each answer. No
+  key enters the machine: it names each by the id its host gave it.
+
+  Each request record of the library is also the event that asks for it
+  (`host.cose.sign1.request`, ...). `cose.held.open` opens the object the
+  machine sealed last, which it keeps in `sealed_object`, since a seal draws a nonce
+  no scenario knows in advance.
+
+    outcome    `done` when the host answered (a signature that does not
+               verify and an object that does not open included), the failure
+               code (`unknown_key`, `unavailable`) when its answer is a
+               failure, `refused` when it declined to start
+    signed_object   the object the last signing gave
+    valid, signer, payload       the last verification's answer
+    sealed_object   the object the last seal gave
+    opened, plaintext            the last opening's answer
+    derived    the id of the key the last derivation gave
+
+  Only `outcome` is written by a failure or a refusal; what an earlier
+  operation published stays.
+
+  The operations are served by the Rust and C++ reference hosts
+  (docs/adr/0107, D7 and D8), and a build for any other lane refuses this
+  machine on its first `<invoke>`.
+-->
+<scxml xmlns="http://www.w3.org/2005/07/scxml" xmlns:sce="http://sce.dev/ext"
+       version="1.0" initial="idle" datamodel="sce-static" name="static_host_cose">
+  <sce:import kind="event-schema" src="sce:std/host/cose_sign1_request.scxml" as="Sign1Request"/>
+  <sce:import kind="event-schema" src="sce:std/host/cose_sign1_result.scxml" as="Sign1Result"/>
+  <sce:import kind="event-schema" src="sce:std/host/cose_verify1_request.scxml" as="Verify1Request"/>
+  <sce:import kind="event-schema" src="sce:std/host/cose_verify1_result.scxml" as="Verify1Result"/>
+  <sce:import kind="event-schema" src="sce:std/host/cose_encrypt0_request.scxml" as="Encrypt0Request"/>
+  <sce:import kind="event-schema" src="sce:std/host/cose_encrypt0_result.scxml" as="Encrypt0Result"/>
+  <sce:import kind="event-schema" src="sce:std/host/cose_decrypt0_request.scxml" as="Decrypt0Request"/>
+  <sce:import kind="event-schema" src="sce:std/host/cose_decrypt0_result.scxml" as="Decrypt0Result"/>
+  <sce:import kind="event-schema" src="sce:std/host/key_derive_request.scxml" as="KeyDeriveRequest"/>
+  <sce:import kind="event-schema" src="sce:std/host/key_derive_result.scxml" as="KeyDeriveResult"/>
+  <sce:import kind="event-schema" src="schema_cose_held.scxml" as="HeldOpen"/>
+  <datamodel>
+    <!-- The arguments of the operation the machine is asking for. -->
+    <data id="sign_key" sce:type="string[64]" expr="''"/>
+    <data id="sign_payload" sce:type="bytes[4096]" expr="''"/>
+    <data id="sign_aad" sce:type="bytes[256]" expr="''"/>
+    <data id="trust_set" sce:type="string[64]" expr="''"/>
+    <data id="verify_cose" sce:type="bytes[4352]" expr="''"/>
+    <data id="verify_aad" sce:type="bytes[256]" expr="''"/>
+    <data id="seal_key" sce:type="string[64]" expr="''"/>
+    <data id="seal_plaintext" sce:type="bytes[4352]" expr="''"/>
+    <data id="seal_aad" sce:type="bytes[256]" expr="''"/>
+    <data id="open_key" sce:type="string[64]" expr="''"/>
+    <data id="open_cose" sce:type="bytes[4480]" expr="''"/>
+    <data id="open_aad" sce:type="bytes[256]" expr="''"/>
+    <data id="secret" sce:type="bytes[256]" expr="''"/>
+    <data id="input_key" sce:type="string[64]" expr="''"/>
+    <data id="salt" sce:type="bytes[64]" expr="''"/>
+    <data id="info" sce:type="bytes[256]" expr="''"/>
+    <!-- What the machine publishes. -->
+    <data id="outcome" sce:type="string[24]" expr="''" sce:direction="out"/>
+    <data id="signed_object" sce:type="bytes[4352]" expr="''" sce:direction="out"/>
+    <data id="valid" sce:type="bool" expr="false" sce:direction="out"/>
+    <data id="signer" sce:type="string[64]" expr="''" sce:direction="out"/>
+    <data id="payload" sce:type="bytes[4096]" expr="''" sce:direction="out"/>
+    <data id="sealed_object" sce:type="bytes[4480]" expr="''" sce:direction="out"/>
+    <data id="opened" sce:type="bool" expr="false" sce:direction="out"/>
+    <data id="plaintext" sce:type="bytes[4352]" expr="''" sce:direction="out"/>
+    <data id="derived" sce:type="string[64]" expr="''" sce:direction="out"/>
+  </datamodel>
+
+  <state id="idle">
+    <transition event="host.cose.sign1.request" target="signing">
+      <assign location="sign_key" expr="_event.data.key_id"/>
+      <assign location="sign_payload" expr="_event.data.payload"/>
+      <assign location="sign_aad" expr="_event.data.external_aad"/>
+    </transition>
+    <transition event="host.cose.verify1.request" target="verifying">
+      <assign location="trust_set" expr="_event.data.trust_set"/>
+      <assign location="verify_cose" expr="_event.data.cose"/>
+      <assign location="verify_aad" expr="_event.data.external_aad"/>
+    </transition>
+    <transition event="host.cose.encrypt0.request" target="sealing">
+      <assign location="seal_key" expr="_event.data.key_id"/>
+      <assign location="seal_plaintext" expr="_event.data.plaintext"/>
+      <assign location="seal_aad" expr="_event.data.external_aad"/>
+    </transition>
+    <transition event="host.cose.decrypt0.request" target="opening">
+      <assign location="open_key" expr="_event.data.key_id"/>
+      <assign location="open_cose" expr="_event.data.cose"/>
+      <assign location="open_aad" expr="_event.data.external_aad"/>
+    </transition>
+    <transition event="cose.held.open" target="opening">
+      <assign location="open_key" expr="_event.data.key_id"/>
+      <assign location="open_cose" expr="sealed_object"/>
+      <assign location="open_aad" expr="_event.data.external_aad"/>
+    </transition>
+    <transition event="host.key.derive.request" target="deriving">
+      <assign location="secret" expr="_event.data.secret"/>
+      <assign location="input_key" expr="_event.data.input_key_id"/>
+      <assign location="salt" expr="_event.data.salt"/>
+      <assign location="info" expr="_event.data.info"/>
+    </transition>
+  </state>
+
+  <state id="signing">
+    <invoke type="sce-host-cose-sign1" id="sign" sce:request="Sign1Request" sce:result="Sign1Result">
+      <param name="key_id" expr="sign_key"/>
+      <param name="payload" expr="sign_payload"/>
+      <param name="external_aad" expr="sign_aad"/>
+    </invoke>
+    <transition event="done.invoke.sign" cond="_event.data.error === ''" target="idle">
+      <assign location="signed_object" expr="_event.data.cose"/>
+      <assign location="outcome" expr="'done'"/>
+    </transition>
+    <transition event="done.invoke.sign" target="idle">
+      <assign location="outcome" expr="_event.data.error"/>
+    </transition>
+    <transition event="error.execution" target="idle">
+      <assign location="outcome" expr="'refused'"/>
+    </transition>
+  </state>
+
+  <state id="verifying">
+    <invoke type="sce-host-cose-verify1" id="verify" sce:request="Verify1Request" sce:result="Verify1Result">
+      <param name="trust_set" expr="trust_set"/>
+      <param name="cose" expr="verify_cose"/>
+      <param name="external_aad" expr="verify_aad"/>
+    </invoke>
+    <transition event="done.invoke.verify" cond="_event.data.error === ''" target="idle">
+      <assign location="valid" expr="_event.data.valid"/>
+      <assign location="signer" expr="_event.data.key_id"/>
+      <assign location="payload" expr="_event.data.payload"/>
+      <assign location="outcome" expr="'done'"/>
+    </transition>
+    <transition event="done.invoke.verify" target="idle">
+      <assign location="outcome" expr="_event.data.error"/>
+    </transition>
+    <transition event="error.execution" target="idle">
+      <assign location="outcome" expr="'refused'"/>
+    </transition>
+  </state>
+
+  <state id="sealing">
+    <invoke type="sce-host-cose-encrypt0" id="seal" sce:request="Encrypt0Request" sce:result="Encrypt0Result">
+      <param name="key_id" expr="seal_key"/>
+      <param name="plaintext" expr="seal_plaintext"/>
+      <param name="external_aad" expr="seal_aad"/>
+    </invoke>
+    <transition event="done.invoke.seal" cond="_event.data.error === ''" target="idle">
+      <assign location="sealed_object" expr="_event.data.cose"/>
+      <assign location="outcome" expr="'done'"/>
+    </transition>
+    <transition event="done.invoke.seal" target="idle">
+      <assign location="outcome" expr="_event.data.error"/>
+    </transition>
+    <transition event="error.execution" target="idle">
+      <assign location="outcome" expr="'refused'"/>
+    </transition>
+  </state>
+
+  <state id="opening">
+    <invoke type="sce-host-cose-decrypt0" id="open" sce:request="Decrypt0Request" sce:result="Decrypt0Result">
+      <param name="key_id" expr="open_key"/>
+      <param name="cose" expr="open_cose"/>
+      <param name="external_aad" expr="open_aad"/>
+    </invoke>
+    <transition event="done.invoke.open" cond="_event.data.error === ''" target="idle">
+      <assign location="opened" expr="_event.data.opened"/>
+      <assign location="plaintext" expr="_event.data.plaintext"/>
+      <assign location="outcome" expr="'done'"/>
+    </transition>
+    <transition event="done.invoke.open" target="idle">
+      <assign location="outcome" expr="_event.data.error"/>
+    </transition>
+    <transition event="error.execution" target="idle">
+      <assign location="outcome" expr="'refused'"/>
+    </transition>
+  </state>
+
+  <state id="deriving">
+    <invoke type="sce-host-key-derive" id="derive" sce:request="KeyDeriveRequest" sce:result="KeyDeriveResult">
+      <param name="secret" expr="secret"/>
+      <param name="input_key_id" expr="input_key"/>
+      <param name="salt" expr="salt"/>
+      <param name="info" expr="info"/>
+    </invoke>
+    <transition event="done.invoke.derive" cond="_event.data.error === ''" target="idle">
+      <assign location="derived" expr="_event.data.key_id"/>
+      <assign location="outcome" expr="'done'"/>
+    </transition>
+    <transition event="done.invoke.derive" target="idle">
+      <assign location="outcome" expr="_event.data.error"/>
+    </transition>
+    <transition event="error.execution" target="idle">
+      <assign location="outcome" expr="'refused'"/>
+    </transition>
+  </state>
+</scxml>

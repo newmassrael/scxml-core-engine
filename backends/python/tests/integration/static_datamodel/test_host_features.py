@@ -318,6 +318,11 @@ _HARNESS_SCENARIOS = (
     "static_model_harness_timeout",
 )
 
+# The scenarios of operations this lane's reference host does not serve: the build
+# refuses their machines for Python (docs/adr/0107, D8), so they are not replayed here.
+# Signing and sealing (docs/SCE_HOST_FEATURES.md, section 10) is served by Rust and C++.
+_NOT_SERVED_HERE = ("static_host_cose",)
+
 
 def test_the_reference_harness_runs_each_case_of_its_scenario() -> None:
     for stem in _HARNESS_SCENARIOS:
@@ -606,6 +611,7 @@ def test_every_scenario_of_the_directory_is_replayed_here() -> None:
             "static_host_model",
             "static_host_notify",
             *_HARNESS_SCENARIOS,
+            *_NOT_SERVED_HERE,
         ]
     )
 
