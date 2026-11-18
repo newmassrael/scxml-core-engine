@@ -5,6 +5,7 @@
 #include "common/IOProcessorHelper.h"
 #include "common/LogToLogger.h"
 #include "common/SendHelper.h"
+#include "common/StringUtils.h"
 #include "events/EventRaiserService.h"
 #include "events/InternalEventTarget.h"
 #include "events/InvokeEventTarget.h"
@@ -250,7 +251,7 @@ std::string EventTargetFactoryImpl::extractScheme(const std::string &targetUri) 
     std::string scheme = targetUri.substr(0, colonPos);
 
     // Convert to lowercase for case-insensitive matching
-    std::transform(scheme.begin(), scheme.end(), scheme.begin(), ::tolower);
+    lowerAsciiInPlace(scheme);
 
     return scheme;
 }

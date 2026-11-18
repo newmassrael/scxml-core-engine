@@ -14,6 +14,7 @@
 // Full terms: https://github.com/newmassrael/scxml-core-engine/blob/main/LICENSE
 
 #include "backends/SpdlogBackend.h"
+#include "common/StringUtils.h"
 #include <algorithm>
 #include <cstdlib>
 #include <filesystem>
@@ -62,7 +63,7 @@ SpdlogBackend::SpdlogBackend(const std::string &logDir, bool logToFile) {
     const char *env_level = std::getenv("SPDLOG_LEVEL");
     if (env_level) {
         std::string level_str(env_level);
-        std::transform(level_str.begin(), level_str.end(), level_str.begin(), ::tolower);
+        lowerAsciiInPlace(level_str);
 
         if (level_str == "trace") {
             logger_->set_level(spdlog::level::trace);

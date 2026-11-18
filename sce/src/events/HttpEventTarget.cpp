@@ -5,6 +5,7 @@
 #include "common/JsonText.h"
 #include "common/LogToLogger.h"
 #include "common/SendHelper.h"
+#include "common/StringUtils.h"
 #include "common/ThreadSupport.h"
 #include "common/UrlEncodingHelper.h"
 #include <algorithm>
@@ -177,7 +178,7 @@ bool HttpEventTarget::canHandle(const std::string &targetUri) const {
     if (schemeEnd != std::string::npos) {
         targetScheme = targetUri.substr(0, schemeEnd);
         // Convert to lowercase for comparison
-        std::transform(targetScheme.begin(), targetScheme.end(), targetScheme.begin(), ::tolower);
+        lowerAsciiInPlace(targetScheme);
     }
 
     // Only handle URLs that match our specific scheme
@@ -256,7 +257,7 @@ bool HttpEventTarget::parseTargetUri() {
     }
 
     scheme_ = match[1].str();
-    std::transform(scheme_.begin(), scheme_.end(), scheme_.begin(), ::tolower);
+    lowerAsciiInPlace(scheme_);
 
     host_ = match[2].str();
 

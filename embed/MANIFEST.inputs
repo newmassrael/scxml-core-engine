@@ -82,7 +82,7 @@ d24d11832c736e652a9f62d4827ae953763a21c5 sce/include/common/ScriptValueJson.h
 a40d32e77e7d7aa24d30a40e2302a1cc5d8b59f9 sce/include/common/SendHelper.h
 6711744a6b6b13e73e3568763c6f2fe718ed2e85 sce/include/common/SendSchedulingHelper.h
 4510786ce4035389e5e3e8ca8a7444e500e10528 sce/include/common/SourceLocation.h
-9fa17b54fa7eff380f90373f1e00b35c1f3ab246 sce/include/common/StringUtils.h
+03a31f00745e470bfc13e01ad3642c29137ce941 sce/include/common/StringUtils.h
 53b252bcb28987db3592b7e4de7da0a191d0b246 sce/include/common/ThreadSupport.h
 8b072ddedc971c21f847acef1e72bd39a508784f sce/include/common/UniqueIdGenerator.h
 e0f61986754578ee2b7eff6083140dbd317c9c4d sce/include/common/UrlEncodingHelper.h

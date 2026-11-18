@@ -4,6 +4,7 @@
 #include "runtime/TypeRegistry.h"
 #include "common/LogToLogger.h"
 #include "common/SCXMLConstants.h"
+#include "common/StringUtils.h"
 #include <algorithm>
 #include <cctype>
 #include <mutex>
@@ -192,8 +193,7 @@ std::string TypeRegistry::normalizeUri(const std::string &uri) {
     std::string normalized = uri;
 
     // Convert to lowercase
-    std::transform(normalized.begin(), normalized.end(), normalized.begin(),
-                   [](unsigned char c) { return std::tolower(c); });
+    lowerAsciiInPlace(normalized);
 
     // Remove trailing slash
     if (!normalized.empty() && normalized.back() == '/') {

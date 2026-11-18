@@ -14,6 +14,7 @@
 // Full terms: https://github.com/newmassrael/scxml-core-engine/blob/main/LICENSE
 
 #include "backends/DefaultBackend.h"
+#include "common/StringUtils.h"
 #include <algorithm>
 #include <cstdio>
 #include <cstdlib>
@@ -39,7 +40,7 @@ DefaultBackend::DefaultBackend() : currentLevel_(LogLevel::Debug) {
     const char *env_level = std::getenv("SPDLOG_LEVEL");
     if (env_level) {
         std::string level_str(env_level);
-        std::transform(level_str.begin(), level_str.end(), level_str.begin(), ::tolower);
+        lowerAsciiInPlace(level_str);
 
         if (level_str == "trace") {
             currentLevel_ = LogLevel::Trace;

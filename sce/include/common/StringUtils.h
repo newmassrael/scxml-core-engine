@@ -36,4 +36,21 @@ inline bool isPlatformEvent(const std::string &eventName) {
     return false;
 }
 
+/**
+ * @brief Make every ASCII capital letter of a text small, in place, and keep every other byte.
+ *
+ * The texts this is for are ASCII by their grammars: a URI scheme (RFC 3986 section 3.1 compares
+ * it case-insensitively), a type URI, a log level's name. `std::tolower` is the wrong tool for
+ * them twice over: it answers by the C locale, and a `char` past 0x7F is negative, which it
+ * takes as undefined behaviour; and its `int` answer narrowed back into the `char` is the
+ * conversion MSVC reports as data loss (C4244).
+ */
+inline void lowerAsciiInPlace(std::string &text) {
+    for (char &c : text) {
+        if (c >= 'A' && c <= 'Z') {
+            c = static_cast<char>(c - 'A' + 'a');
+        }
+    }
+}
+
 }  // namespace SCE

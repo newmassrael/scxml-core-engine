@@ -5,6 +5,7 @@
 
 #include "events/CppHttplibClient.h"
 #include "common/LogToLogger.h"
+#include "common/StringUtils.h"
 #include <algorithm>
 #include <httplib.h>
 
@@ -31,7 +32,7 @@ std::future<HttpClient::Response> CppHttplibClient::sendRequest(const HttpClient
             }
 
             std::string scheme = match[1].str();
-            std::transform(scheme.begin(), scheme.end(), scheme.begin(), ::tolower);
+            lowerAsciiInPlace(scheme);
 
             std::string host = match[2].str();
 
@@ -149,7 +150,7 @@ std::tuple<std::string, std::string, int, std::string> CppHttplibClient::parseUr
     }
 
     std::string scheme = match[1].str();
-    std::transform(scheme.begin(), scheme.end(), scheme.begin(), ::tolower);
+    lowerAsciiInPlace(scheme);
 
     std::string host = match[2].str();
 

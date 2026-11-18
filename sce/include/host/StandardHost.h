@@ -33,6 +33,7 @@
 #include <utility>
 #include <vector>
 
+#include "common/StringUtils.h"
 #include "core/HostProcessor.h"
 #include "core/LogMacros.h"
 #include "core/TypedHostInvokeRequest.h"
@@ -1064,7 +1065,8 @@ private:
         std::string joined;
         for (const auto &header : exchange.response.headers) {
             std::string name = header.name;
-            std::transform(name.begin(), name.end(), name.begin(), [](unsigned char c) { return std::tolower(c); });
+            // A field name is an RFC 9110 token, ASCII, and its case is not significant.
+            ::SCE::lowerAsciiInPlace(name);
             joined += (joined.empty() ? "" : "\n") + name + ": " + detail::trimBlanks(header.value);
         }
         // A response to HEAD has no body, whatever the transport carried.
