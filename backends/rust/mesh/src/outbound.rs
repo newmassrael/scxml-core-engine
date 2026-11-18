@@ -141,6 +141,30 @@ impl Outbound {
         // The queue never exceeds `max_pending`, a u32.
         self.queue.len() as u32
     }
+
+    /// Whether the target is ready: something said it is, and nothing since
+    /// said it stopped.
+    pub fn is_ready(&self) -> bool {
+        self.ready
+    }
+
+    /// What waits for the target, oldest first, each with when it was
+    /// admitted on the host's monotonic clock: what a checkpoint holds of it.
+    pub(crate) fn queued(&self) -> impl Iterator<Item = (&[u8], i64)> + '_ {
+        self.queue
+            .iter()
+            .map(|queued| (queued.bytes.as_slice(), queued.enqueued_at_ms))
+    }
+
+    /// Put an envelope a checkpoint held as waiting back behind what waits,
+    /// admitted at `enqueued_at_ms`, so its age bound still runs from when it
+    /// was first admitted.
+    pub(crate) fn requeue(&mut self, bytes: Vec<u8>, enqueued_at_ms: i64) {
+        self.queue.push_back(Queued {
+            bytes,
+            enqueued_at_ms,
+        });
+    }
 }
 
 /// deploy.yaml's `retry` block (§mesh-10.10). A target without one gives up
@@ -206,6 +230,20 @@ impl Attempts {
     /// Sends made so far.
     pub fn made(&self) -> u32 {
         self.made
+    }
+
+    /// The wait last chosen before jitter, `None` before the first.
+    pub(crate) fn last_backoff_ms(&self) -> Option<i64> {
+        self.last_backoff_ms
+    }
+
+    /// The history a checkpoint held: `made` sends, the last wait chosen
+    /// `last_backoff_ms`.
+    pub(crate) fn resumed(made: u32, last_backoff_ms: Option<i64>) -> Self {
+        Self {
+            made,
+            last_backoff_ms,
+        }
     }
 }
 

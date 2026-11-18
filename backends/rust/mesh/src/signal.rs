@@ -79,6 +79,10 @@ pub enum Signal {
         epoch: u64,
         replica: String,
     },
+    /// `restored` (row 17): the machine was restored from a checkpoint, and
+    /// what `source` sent it after that checkpoint was durable may have been
+    /// admitted and lost with the process (SCE_MESH.md section 10.11).
+    Restored { source: String },
 }
 
 /// The deployment binding a row is observed on: the peer it names and the
@@ -108,6 +112,7 @@ impl Signal {
             Signal::RpcReplyFromUndeclaredPeer { .. } => ErrorReason::RpcReplyFromUndeclaredPeer,
             Signal::InvokeChildLost { .. } => ErrorReason::InvokeChildLost,
             Signal::CausalViewMismatch { .. } => ErrorReason::CausalViewMismatch,
+            Signal::Restored { .. } => ErrorReason::Restored,
         }
     }
 
@@ -136,7 +141,8 @@ impl Signal {
             | Signal::DedupWindowOverflow { source, .. }
             | Signal::MissingSequence { source }
             | Signal::RpcReplyFromUndeclaredPeer { source, .. }
-            | Signal::CausalViewMismatch { source, .. } => (Some(source.as_str()), false, false),
+            | Signal::CausalViewMismatch { source, .. }
+            | Signal::Restored { source } => (Some(source.as_str()), false, false),
             Signal::EnvelopeCorrupt { source, .. } => (source.as_deref(), false, true),
             Signal::BackpressureDrop { .. }
             | Signal::OutboundStaleDrop { .. }
@@ -204,7 +210,9 @@ impl Signal {
                 json.number("epoch", *epoch);
                 json.string("replica", replica);
             }
-            Signal::MissingSequence { .. } | Signal::TransportUnavailable => {}
+            Signal::MissingSequence { .. }
+            | Signal::TransportUnavailable
+            | Signal::Restored { .. } => {}
         }
         json.finish()
     }
@@ -363,6 +371,19 @@ mod tests {
             }
             .event_data(WSS_TO_HMI),
             r#"{"errorName":"communication","reason":"invokeChildLost","invoke_id":"01920000-0000-7000-8000-0000000000ab","target":"hmi"}"#
+        );
+    }
+
+    /// Row 17 names the source whose envelopes a restore may have lost, and
+    /// nothing of the binding.
+    #[test]
+    fn a_restore_names_the_source_it_may_have_lost_envelopes_of() {
+        assert_eq!(
+            Signal::Restored {
+                source: "ecu".to_string()
+            }
+            .event_data(WSS_TO_HMI),
+            r#"{"errorName":"communication","reason":"restored","source":"ecu"}"#
         );
     }
 

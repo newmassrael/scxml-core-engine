@@ -24,12 +24,14 @@ use alloc::string::{String, ToString};
 use alloc::vec::Vec;
 use std::sync::{Arc, Mutex};
 
+use sce_rust_runtime::saved_state::SavedState;
 use sce_rust_runtime::{
     Engine, EventMetadata, HostInvokeEvent, HostInvokeRequest, HostInvokeResponse, HostSendRequest,
     MeshCall, StatePolicy,
 };
 
 use crate::causal::{CausalLayer, Dot, Refusal, Start};
+use crate::checkpoint::{Checkpoint, CheckpointError, Clocks, EndpointSection, RetryState};
 use crate::outbound::{AfterFailure, Attempts};
 use crate::router::{Effect, Invoked, Router, RouterError};
 use crate::signal::Signal;
@@ -134,6 +136,65 @@ impl From<EngineCall> for MeshCall {
     }
 }
 
+/// What the endpoint has to tell its engine, kept as what makes the call, so
+/// that a checkpoint can hold it (SCE_MESH.md section 10.11); the call is built
+/// when the host takes it ([`Endpoint::take_calls`]).
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub(crate) enum Told {
+    /// An event that arrived from `source`, or a row this machine raises as
+    /// `source`, with the `_event` fields a Mesh event carries.
+    Event {
+        name: String,
+        data: String,
+        source: String,
+        send_id: String,
+        invoke_id: String,
+    },
+    /// The end of the start `token` of the Mesh request `invoke_id`.
+    End {
+        invoke_id: String,
+        token: u64,
+        failed: bool,
+        data: String,
+        source: Option<String>,
+    },
+}
+
+impl Told {
+    fn call(self) -> EngineCall {
+        match self {
+            Told::Event {
+                name,
+                data,
+                source,
+                send_id,
+                invoke_id,
+            } => EngineCall::Raise(EngineEvent {
+                name,
+                metadata: EventMetadata {
+                    // §mesh-10.7: an inbound request's invokeid, which a
+                    // reply sent while it is handled carries back.
+                    invoke_id,
+                    ..mesh_metadata(data, &source, send_id)
+                },
+            }),
+            Told::End {
+                invoke_id,
+                token,
+                failed,
+                data,
+                source,
+            } => EngineCall::EndInvoke {
+                invoke_id,
+                token,
+                failed,
+                data,
+                source,
+            },
+        }
+    }
+}
+
 /// A transmission waiting out its backoff.
 struct Retry {
     peer: String,
@@ -148,7 +209,7 @@ pub struct Endpoint<T, E> {
     transport: T,
     environment: E,
     retries: Vec<Retry>,
-    to_engine: Vec<EngineCall>,
+    to_engine: Vec<Told>,
     host_errors: Vec<RouterError>,
     /// The events a link may not deliver to the machine, by link
     /// ([`Self::forbid_events_from`]).
@@ -464,7 +525,124 @@ impl<T: Transport, E: Environment> Endpoint<T, E> {
     /// which is what lets a host that owns time (a simulation) sleep until the
     /// next thing happens and not poll.
     pub fn next_retry_due_ms(&self) -> Option<i64> {
-        self.retries.iter().map(|retry| retry.due_ms).min()
+        self.retries
+            .iter()
+            .map(|retry| retry.due_ms)
+            .chain(self.router.next_resend_due_ms())
+            .min()
+    }
+
+    /// Seal the checkpoint `sequence` of the machine this endpoint serves
+    /// (SCE_MESH.md section 10.11): what the machine produced since the last
+    /// seal belongs to it, and is released when the host reports it durable
+    /// ([`Self::durable`]). Called between two drives of the machine, when the
+    /// host saved it; `sequence` is above every number this endpoint was
+    /// sealed or restored with. Answers what the checkpoint holds of this
+    /// endpoint: its router's state, what waits out a backoff, and what was
+    /// released for the machine that the host has not yet applied, every
+    /// moment on the environment's wall clock.
+    pub fn seal(&mut self, sequence: u64) -> Result<EndpointSection, CheckpointError> {
+        let clocks = self.clocks();
+        let router = self
+            .router
+            .seal(sequence, clocks)
+            .map_err(CheckpointError::Router)?;
+        Ok(EndpointSection {
+            machine: self.router.machine().to_string(),
+            router,
+            retries: self
+                .retries
+                .iter()
+                .map(|retry| RetryState {
+                    peer: retry.peer.clone(),
+                    envelope: retry.bytes.clone(),
+                    made: retry.attempts.made(),
+                    backoff: retry.attempts.last_backoff_ms(),
+                    due: clocks.to_wall(retry.due_ms),
+                })
+                .collect(),
+            calls: self.to_engine.clone(),
+        })
+    }
+
+    /// The checkpoint `sequence` of a machine whose tree has this one
+    /// endpoint: `state`, the machine's saved state, and this endpoint sealed
+    /// with `sequence` ([`Self::seal`]). `clean` when the host stopped
+    /// admitting before it (an orderly shutdown, its links closed first).
+    pub fn checkpoint(
+        &mut self,
+        sequence: u64,
+        state: SavedState,
+        clean: bool,
+    ) -> Result<Checkpoint, CheckpointError> {
+        Ok(Checkpoint {
+            sequence,
+            clean,
+            state,
+            endpoints: alloc::vec![self.seal(sequence)?],
+        })
+    }
+
+    /// The host wrote the checkpoint `sequence` durably: release what it, and
+    /// every checkpoint before it, holds (SCE_MESH.md section 10.11).
+    pub fn durable(&mut self, sequence: u64) {
+        let now = self.environment.now_ms();
+        let effects = self.router.durable(sequence, now);
+        self.apply(effects);
+    }
+
+    /// Take this endpoint back to what `checkpoint`, the last durable
+    /// checkpoint of its machine, holds of it (SCE_MESH.md section 10.11): the
+    /// endpoint is the one the host built from the deployment, checkpointing
+    /// and with its durable receipt declared, before anything was sent or
+    /// received through it. What the checkpoint held unreleased leaves; what
+    /// was released for the machine and not applied is queued for it again,
+    /// followed, unless the checkpoint is clean, by a `restored` row (§mesh-16.7
+    /// row 17) for each peer source the endpoint holds state for whose binding
+    /// is not durable. A refused restore leaves the endpoint in no state to
+    /// use.
+    pub fn restore(&mut self, checkpoint: &Checkpoint) -> Result<(), CheckpointError> {
+        let clocks = self.clocks();
+        let section = checkpoint
+            .endpoint(self.router.machine())
+            .ok_or_else(|| CheckpointError::NoSection(self.router.machine().to_string()))?;
+        let effects = self.router.restore(
+            &section.router,
+            checkpoint.sequence,
+            checkpoint.clean,
+            clocks,
+        )?;
+        self.retries = section
+            .retries
+            .iter()
+            .map(|retry| Retry {
+                peer: retry.peer.clone(),
+                bytes: retry.envelope.clone(),
+                attempts: Attempts::resumed(retry.made, retry.backoff),
+                due_ms: clocks.to_monotonic(retry.due),
+            })
+            .collect();
+        self.to_engine = section.calls.clone();
+        self.apply(Ok(effects));
+        Ok(())
+    }
+
+    /// The last checkpoint this endpoint was sealed with ([`Router::sealed_through`]).
+    pub fn sealed_through(&self) -> u64 {
+        self.router.sealed_through()
+    }
+
+    /// The last checkpoint reported durable ([`Router::durable_through`]).
+    pub fn durable_through(&self) -> u64 {
+        self.router.durable_through()
+    }
+
+    /// The environment's two clocks now.
+    fn clocks(&mut self) -> Clocks {
+        Clocks {
+            monotonic_ms: self.environment.now_ms(),
+            wall_ms: self.environment.now_unix_ms(),
+        }
     }
 
     /// A transmission the transport accepted and then could not complete —
@@ -478,6 +656,9 @@ impl<T: Transport, E: Environment> Endpoint<T, E> {
     /// What the engine must now be told, in the order it arose.
     pub fn take_calls(&mut self) -> Vec<EngineCall> {
         core::mem::take(&mut self.to_engine)
+            .into_iter()
+            .map(Told::call)
+            .collect()
     }
 
     /// What went wrong that only the host can act on — a peer it never
@@ -501,22 +682,20 @@ impl<T: Transport, E: Environment> Endpoint<T, E> {
                     source,
                     send_id,
                     invoke_id,
-                } => self.to_engine.push(EngineCall::Raise(EngineEvent {
+                } => self.to_engine.push(Told::Event {
                     name: event,
-                    metadata: EventMetadata {
-                        // §mesh-10.7: an inbound request's invokeid, which a
-                        // reply sent while it is handled carries back.
-                        invoke_id: invoke_id.unwrap_or_default(),
-                        ..mesh_metadata(data, &source, send_id.unwrap_or_default())
-                    },
-                })),
+                    data,
+                    source,
+                    send_id: send_id.unwrap_or_default(),
+                    invoke_id: invoke_id.unwrap_or_default(),
+                }),
                 Effect::Raise { peer, signal } => self.raise(peer.as_deref(), &signal),
                 Effect::Complete {
                     invoke_id,
                     token,
                     data,
                     source,
-                } => self.to_engine.push(EngineCall::EndInvoke {
+                } => self.to_engine.push(Told::End {
                     invoke_id,
                     token,
                     failed: false,
@@ -528,13 +707,25 @@ impl<T: Transport, E: Environment> Endpoint<T, E> {
                     token,
                     data,
                     source,
-                } => self.to_engine.push(EngineCall::EndInvoke {
+                } => self.to_engine.push(Told::End {
                     invoke_id,
                     token,
                     failed: true,
                     data,
                     source,
                 }),
+                Effect::AcknowledgeDue { peer } => {
+                    let id = self.environment.envelope_id();
+                    match self.router.acknowledge(&peer, id) {
+                        // A lost acknowledgement is repaired by the next one
+                        // (SCE_MESH.md section 10.11), so a failed send of one
+                        // is neither retried nor raised.
+                        Ok(bytes) => {
+                            let _ = self.transport.transmit(&peer, &bytes);
+                        }
+                        Err(error) => self.host_errors.push(error),
+                    }
+                }
                 Effect::Accepted { peer, dot } => {
                     self.verdicts.push(CausalVerdict::Accepted { peer, dot })
                 }
@@ -569,6 +760,13 @@ impl<T: Transport, E: Environment> Endpoint<T, E> {
         mut attempts: Attempts,
         failure: TransportFailure,
     ) {
+        // SCE_MESH.md section 10.11: what a binding with durable receipt sends
+        // is held until acknowledged and sent again by the router, so a failed
+        // send of it is neither retried here nor given up, nor dropped when the
+        // transport's queue is full.
+        if self.router.holds_until_acknowledged(&peer) {
+            return;
+        }
         if let Some(depth) = failure.queue_full {
             return self.raise(Some(&peer), &Signal::BackpressureDrop { depth });
         }
@@ -594,10 +792,13 @@ impl<T: Transport, E: Environment> Endpoint<T, E> {
     fn raise(&mut self, peer: Option<&str>, signal: &Signal) {
         let data = signal.event_data(self.router.binding(peer));
         let machine = self.router.machine().to_string();
-        self.to_engine.push(EngineCall::Raise(EngineEvent {
+        self.to_engine.push(Told::Event {
             name: "error.communication".to_string(),
-            metadata: mesh_metadata(data, &machine, String::new()),
-        }));
+            data,
+            source: machine,
+            send_id: String::new(),
+            invoke_id: String::new(),
+        });
     }
 }
 
@@ -609,6 +810,19 @@ impl<T: Transport, E: Environment> Endpoint<T, E> {
 /// is also what a child session's event is built by.
 fn mesh_metadata(data: String, source: &str, send_id: String) -> EventMetadata {
     sce_rust_runtime::mesh_event_metadata(data, source, send_id)
+}
+
+#[cfg(test)]
+impl<T, E> Endpoint<T, E> {
+    /// The transport, for a test that reads what it was handed.
+    pub(crate) fn transport_mut(&mut self) -> &mut T {
+        &mut self.transport
+    }
+
+    /// The environment, for a test that moves its clock.
+    pub(crate) fn environment_mut(&mut self) -> &mut E {
+        &mut self.environment
+    }
 }
 
 /// Tell `engine` what `calls` say, in order. An event name the machine does
@@ -669,52 +883,10 @@ mod tests {
     use crate::inbound::Delivery;
     use crate::outbound::RetryPolicy;
     use crate::router::PeerConfig;
-    use alloc::collections::VecDeque;
+    use crate::testing::{Fixed, Recorder};
     use alloc::vec;
     use sce_rust_runtime::helpers::scxml_constants::SCXML_EVENT_PROCESSOR_TYPE;
     use sce_rust_runtime::EventType;
-
-    /// A transport that records what it sent and fails as told.
-    #[derive(Default)]
-    struct Recorder {
-        sent: Vec<(String, Vec<u8>)>,
-        failures: VecDeque<TransportFailure>,
-    }
-
-    impl Transport for Recorder {
-        fn transmit(&mut self, peer: &str, bytes: &[u8]) -> Result<(), TransportFailure> {
-            if let Some(failure) = self.failures.pop_front() {
-                return Err(failure);
-            }
-            self.sent.push((peer.to_string(), bytes.to_vec()));
-            Ok(())
-        }
-    }
-
-    /// A clock the test moves, ids that count, and no jitter.
-    #[derive(Default)]
-    struct Fixed {
-        now: i64,
-        ids: u8,
-    }
-
-    impl Environment for Fixed {
-        fn now_ms(&mut self) -> i64 {
-            self.now
-        }
-        /// The wall clock a fixed distance ahead of the monotonic one, so a
-        /// wire deadline and a kept one can be told apart.
-        fn now_unix_ms(&mut self) -> u64 {
-            1_000_000 + self.now as u64
-        }
-        fn envelope_id(&mut self) -> [u8; 16] {
-            self.ids += 1;
-            [self.ids; 16]
-        }
-        fn jitter_draw(&mut self) -> i64 {
-            0
-        }
-    }
 
     /// The events `endpoint` queued, which in these tests are all it queued.
     fn raised(endpoint: &mut Endpoint<Recorder, Fixed>) -> Vec<EngineEvent> {

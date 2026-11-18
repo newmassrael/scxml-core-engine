@@ -21,7 +21,9 @@
 //! a host supplies them — a transport, a clock, randomness — and where the
 //! core meets an engine. [`peers`] is what the build generates from
 //! deploy.yaml for one machine: its peers, each one's configuration and how
-//! it is reached.
+//! it is reached. [`checkpoint`] is what a machine whose deployment persists
+//! it is kept as: its saved tree and its endpoints in one durable write, and
+//! the session store a server keeps them in.
 
 #![forbid(unsafe_code)]
 
@@ -34,6 +36,7 @@ compile_error!(
 extern crate alloc;
 
 pub mod causal;
+pub mod checkpoint;
 #[cfg(feature = "conformance")]
 pub mod conformance;
 pub mod endpoint;
@@ -49,6 +52,8 @@ pub mod reconnect;
 pub mod router;
 pub mod rpc;
 pub mod signal;
+#[cfg(test)]
+mod testing;
 #[cfg(feature = "tls")]
 pub mod tls;
 #[cfg(feature = "wss")]

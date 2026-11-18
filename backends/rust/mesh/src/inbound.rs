@@ -36,6 +36,7 @@ use sce_forge_runtime::algorithm::AlgorithmError;
 use sce_forge_runtime::codec::{CodecError, SceCursor};
 use sce_portable_bytes::SceOwnedList;
 
+use crate::checkpoint::{CheckpointError, Clocks, HeldState, ReplyState, SenderState};
 use crate::generated::dedup_admit::dedup_admit;
 use crate::generated::dedup_holds::dedup_holds;
 use crate::generated::envelope::Envelope;
@@ -100,6 +101,10 @@ pub(crate) enum Kept {
     /// No reply has left for it: a duplicate is dropped, and the reply goes
     /// once, when it is made.
     Handling,
+    /// The reply was made and is held until the checkpoint that holds it is
+    /// durable (SCE_MESH.md section 10.11): `sealed` is that checkpoint, `None`
+    /// until one sealed it. A duplicate is dropped; the reply leaves once.
+    Held { reply: Vec<u8>, sealed: Option<u64> },
     /// The reply left, as these bytes: a duplicate is answered with them.
     Sent(Vec<u8>),
 }
@@ -155,6 +160,10 @@ struct Sender {
     /// The reply cache: each request of this sender's window that carries a
     /// wire `invoke_id`, by the request's envelope id (§mesh-10.5).
     replies: BTreeMap<[u8; 16], Cached>,
+    /// Whether this sender's stream has durable receipt (SCE_MESH.md section
+    /// 10.11): a gap in it is an envelope its sender still holds and will send
+    /// again, so it never times out.
+    durable: bool,
 }
 
 /// Replace `list` with what `rule` writes from it, or leave it as it was when
@@ -185,6 +194,7 @@ impl Sender {
             pending_next: SceOwnedList::new(),
             held: BTreeMap::new(),
             replies: BTreeMap::new(),
+            durable: false,
         }
     }
 
@@ -245,6 +255,21 @@ impl Inbound {
         delivery: Delivery,
         now_ms: i64,
     ) -> Result<Outcome, AdmitError> {
+        self.admit_from(bytes, delivery, None, now_ms)
+    }
+
+    /// [`Self::admit`], for a stream that is durable when `durable_from` is
+    /// the sequence it is expected to send first (SCE_MESH.md section 10.11):
+    /// an ordered durable stream is anchored there rather than at the first
+    /// envelope that arrives, since what came before is still held by its
+    /// sender and will be sent again, and none of its gaps times out.
+    pub(crate) fn admit_from(
+        &mut self,
+        bytes: Vec<u8>,
+        delivery: Delivery,
+        durable_from: Option<u64>,
+        now_ms: i64,
+    ) -> Result<Outcome, AdmitError> {
         let (source, raw_id, sequence, request) = {
             let envelope =
                 Envelope::decode(&mut SceCursor::new(&bytes)).map_err(AdmitError::Malformed)?;
@@ -271,6 +296,9 @@ impl Inbound {
             .senders
             .entry(source.clone())
             .or_insert_with(Sender::new);
+        if durable_from.is_some() {
+            sender.durable = true;
+        }
 
         if delivery.dedup {
             if dedup_holds(sender.window.as_slice(), id) {
@@ -326,7 +354,7 @@ impl Inbound {
             out.released.push(Received { bytes });
             return Ok(out);
         };
-        let next = *sender.next.get_or_insert(seq);
+        let next = *sender.next.get_or_insert(durable_from.unwrap_or(seq));
         if seq < next {
             return Ok(out);
         }
@@ -366,8 +394,10 @@ impl Inbound {
     /// that request's window entry, so a duplicate of the request is answered
     /// with it (§mesh-10.5). Only the first reply is kept; a request no entry
     /// holds (its sender's binding suppresses no duplicates, or the window let
-    /// it go) keeps nothing.
-    pub(crate) fn answered(&mut self, invoke: &[u8; 16], reply: &[u8]) {
+    /// it go) keeps nothing. `held` when the router holds what it produces
+    /// until a checkpoint that holds it is durable (SCE_MESH.md section
+    /// 10.11): the reply has not left, so a duplicate is still dropped.
+    pub(crate) fn answered(&mut self, invoke: &[u8; 16], reply: &[u8], held: bool) {
         let Some((source, request)) = self.answering.get(invoke) else {
             return;
         };
@@ -379,8 +409,153 @@ impl Inbound {
             return;
         };
         if cached.kept == Kept::Handling {
-            cached.kept = Kept::Sent(reply.to_vec());
+            cached.kept = if held {
+                Kept::Held {
+                    reply: reply.to_vec(),
+                    sealed: None,
+                }
+            } else {
+                Kept::Sent(reply.to_vec())
+            };
         }
+    }
+
+    /// The checkpoint `sequence` was sealed: it holds every reply made since
+    /// the one before.
+    pub(crate) fn seal(&mut self, sequence: u64) {
+        for cached in self
+            .senders
+            .values_mut()
+            .flat_map(|sender| sender.replies.values_mut())
+        {
+            if let Kept::Held { sealed, .. } = &mut cached.kept {
+                if sealed.is_none() {
+                    *sealed = Some(sequence);
+                }
+            }
+        }
+    }
+
+    /// The checkpoint `sequence` is durable: every reply it and the ones
+    /// before it hold has left, and answers a duplicate from now on.
+    pub(crate) fn released_through(&mut self, sequence: u64) {
+        for cached in self
+            .senders
+            .values_mut()
+            .flat_map(|sender| sender.replies.values_mut())
+        {
+            let left = match &mut cached.kept {
+                Kept::Held {
+                    reply,
+                    sealed: Some(at),
+                } if *at <= sequence => Some(core::mem::take(reply)),
+                _ => None,
+            };
+            if let Some(reply) = left {
+                cached.kept = Kept::Sent(reply);
+            }
+        }
+    }
+
+    /// Every sender's receive state, as a checkpoint holds it; `clocks` say
+    /// what the monotonic moments an envelope arrived at are on the wall.
+    pub(crate) fn states(&self, clocks: Clocks) -> Vec<SenderState> {
+        self.senders
+            .iter()
+            .map(|(source, sender)| SenderState {
+                source: source.clone(),
+                window: sender.window.as_slice().iter().map(id_bytes).collect(),
+                next: sender.next,
+                held: sender
+                    .pending
+                    .as_slice()
+                    .iter()
+                    .filter_map(|slot| {
+                        sender.held.get(&slot.seq).map(|received| HeldState {
+                            sequence: slot.seq,
+                            arrived: clocks.to_wall(slot.arrived_at_ms),
+                            envelope: received.bytes.clone(),
+                        })
+                    })
+                    .collect(),
+                replies: sender
+                    .replies
+                    .iter()
+                    .map(|(request, cached)| ReplyState {
+                        request: *request,
+                        invoke: cached.invoke,
+                        reply: match &cached.kept {
+                            Kept::Handling => None,
+                            Kept::Held { reply, .. } | Kept::Sent(reply) => Some(reply.clone()),
+                        },
+                    })
+                    .collect(),
+                durable: sender.durable,
+            })
+            .collect()
+    }
+
+    /// Take back the receive state a checkpoint holds, in place of what this
+    /// half holds. A window wider than this receiver's keeps its newest ids,
+    /// and a cached reply whose request it no longer holds is let go with it.
+    pub(crate) fn restore(
+        &mut self,
+        states: &[SenderState],
+        clocks: Clocks,
+    ) -> Result<(), CheckpointError> {
+        let full = |what: &str| {
+            CheckpointError::Malformed(format!("a sender's {what} holds more than a list carries"))
+        };
+        self.senders.clear();
+        self.answering.clear();
+        for state in states {
+            let mut sender = Sender::new();
+            sender.next = state.next;
+            sender.durable = state.durable;
+            let skip = state
+                .window
+                .len()
+                .saturating_sub(self.dedup_window as usize);
+            for id in &state.window[skip..] {
+                sender
+                    .window
+                    .push(envelope_id(id))
+                    .map_err(|_| full("window"))?;
+            }
+            for held in &state.held {
+                sender
+                    .pending
+                    .push(OrderingSlotPayload {
+                        seq: held.sequence,
+                        arrived_at_ms: clocks.to_monotonic(held.arrived),
+                    })
+                    .map_err(|_| full("held envelopes"))?;
+                sender.held.insert(
+                    held.sequence,
+                    Received {
+                        bytes: held.envelope.clone(),
+                    },
+                );
+            }
+            for reply in &state.replies {
+                if !dedup_holds(sender.window.as_slice(), envelope_id(&reply.request)) {
+                    continue;
+                }
+                // A reply the checkpoint holds is released by its restore.
+                let kept = reply.reply.clone().map_or(Kept::Handling, Kept::Sent);
+                sender.replies.insert(
+                    reply.request,
+                    Cached {
+                        invoke: reply.invoke,
+                        kept,
+                    },
+                );
+                self.answering
+                    .insert(reply.invoke, (state.source.clone(), reply.request));
+            }
+            self.senders.insert(state.source.clone(), sender);
+        }
+        Ok(())
     }
 
     /// End every gap that has waited `gap_timeout_ms` by `now_ms`: signal the
@@ -390,6 +565,10 @@ impl Inbound {
     pub fn tick(&mut self, now_ms: i64) -> Result<Outcome, AdmitError> {
         let mut out = Outcome::default();
         for (source, sender) in &mut self.senders {
+            // A durable stream's gap is an envelope its sender still holds.
+            if sender.durable {
+                continue;
+            }
             let Some(next) = sender.next else {
                 continue;
             };
@@ -408,6 +587,14 @@ impl Inbound {
         }
         Ok(out)
     }
+}
+
+/// The 16 bytes of an id as the rules hold it: [`envelope_id`] read back.
+fn id_bytes(id: &EnvelopeIdPayload) -> [u8; 16] {
+    let mut out = [0u8; 16];
+    out[..8].copy_from_slice(&id.hi.to_be_bytes());
+    out[8..].copy_from_slice(&id.lo.to_be_bytes());
+    out
 }
 
 /// An envelope id as the rules hold it: its first eight bytes and its last

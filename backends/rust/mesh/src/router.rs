@@ -16,8 +16,16 @@
 //! envelope id needs. That is what lets the same core run under a test, a
 //! WebSocket or an in-process loopback, and it is the shape SCE_MESH.md
 //! §mesh-6.4 gives a transport: the transport moves bytes, the core decides.
+//!
+//! A router whose deployment checkpoints it ([`Router::enable_checkpoints`],
+//! SCE_MESH.md section 10.11) holds every envelope it produces until the host
+//! reports durable a checkpoint that holds it ([`Router::durable`]), and a
+//! binding with durable receipt ([`Router::send_durably`],
+//! [`Router::receive_durably`]) keeps what it sent until its receiver
+//! acknowledges it, and acknowledges what it received once a durable checkpoint
+//! holds it.
 
-use alloc::collections::BTreeMap;
+use alloc::collections::{BTreeMap, BTreeSet, VecDeque};
 use alloc::string::{String, ToString};
 use alloc::vec::Vec;
 
@@ -28,6 +36,10 @@ use sce_rust_runtime::{HostInvokeRequest, HostSendRequest};
 use crate::causal::{
     envelope_tag, stamp, CausalGroup, CausalLayer, Dot, OfferError, Refusal, Rejected, Replica,
     Start, Verdict,
+};
+use crate::checkpoint::{
+    CheckpointError, Clocks, PeerState, QueuedState, ReceivedState, RouterState, UnackedState,
+    Unreleased,
 };
 use crate::generated::envelope::Envelope;
 use crate::generated::pattern_kind::PatternKind;
@@ -131,6 +143,35 @@ pub enum Effect {
     /// having come back or its period having passed. The host draws an
     /// envelope id and calls [`Router::announce`].
     AnnounceDue { peer: String },
+    /// The peer `peer`, which sends to this machine with durable receipt, is
+    /// owed this machine's acknowledgement (SCE_MESH.md section 10.11): a
+    /// checkpoint that holds more of its stream became durable, or it sent
+    /// again what one already holds. The host draws an envelope id and calls
+    /// [`Router::acknowledge`], and sends what it answers once: a lost
+    /// acknowledgement is repaired by the next.
+    AcknowledgeDue { peer: String },
+}
+
+/// How a binding with durable receipt sends (SCE_MESH.md section 10.11): the
+/// deployment's `receipt:` block of the sending machine.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct DurableSend {
+    /// `window`: the envelopes held unacknowledged for the peer, at least 1. A
+    /// send while it is full is refused as `backpressureDrop`.
+    pub window: usize,
+    /// `retry_ms`: how long a sent envelope waits for its acknowledgement
+    /// before it is sent again, at least 1.
+    pub retry_ms: i64,
+}
+
+impl Default for DurableSend {
+    /// The deployment's defaults when the block is absent: 256 and 1000.
+    fn default() -> Self {
+        Self {
+            window: 256,
+            retry_ms: 1000,
+        }
+    }
 }
 
 /// What became of a request [`Router::invoke`] was handed.
@@ -152,6 +193,85 @@ struct Peer {
     next_sequence: u64,
     /// The causal layer of a causal peer, once the host started it.
     causal: Option<Causal>,
+    /// What this machine holds for the peer when it sends to it with durable
+    /// receipt ([`Router::send_durably`]).
+    durable_out: Option<DurableOut>,
+    /// What it keeps of the peer's stream when the peer sends to it with
+    /// durable receipt ([`Router::receive_durably`]).
+    durable_in: Option<DurableIn>,
+}
+
+/// A sender's side of durable receipt for one peer.
+struct DurableOut {
+    send: DurableSend,
+    /// Produced for the peer and held for the checkpoint that holds them.
+    waiting: usize,
+    /// Released and not yet acknowledged, by sequence number.
+    unacked: BTreeMap<u64, Unacked>,
+}
+
+impl DurableOut {
+    /// What counts against the window: produced and not yet acknowledged.
+    fn held(&self) -> usize {
+        self.waiting + self.unacked.len()
+    }
+}
+
+/// An envelope sent with durable receipt, kept until its acknowledgement.
+struct Unacked {
+    bytes: Vec<u8>,
+    /// When it was last sent, on the host's monotonic clock; `None` while it
+    /// has not been, its link not being ready.
+    sent_ms: Option<i64>,
+}
+
+/// A receiver's side of durable receipt for one peer's stream.
+#[derive(Default)]
+struct DurableIn {
+    /// Every envelope numbered at most this was admitted.
+    held: u64,
+    /// Admitted past a gap above `held`.
+    above: BTreeSet<u64>,
+    /// `held` as of the last durable checkpoint: what an acknowledgement
+    /// reports.
+    durable: u64,
+}
+
+impl DurableIn {
+    /// Whether the envelope numbered `sequence` was admitted already.
+    fn holds(&self, sequence: u64) -> bool {
+        sequence <= self.held || self.above.contains(&sequence)
+    }
+
+    /// The envelope numbered `sequence` was admitted.
+    fn admitted(&mut self, sequence: u64) {
+        if self.holds(sequence) {
+            return;
+        }
+        self.above.insert(sequence);
+        while let Some(next) = self
+            .held
+            .checked_add(1)
+            .filter(|next| self.above.remove(next))
+        {
+            self.held = next;
+        }
+    }
+}
+
+/// What a checkpointing router holds back (SCE_MESH.md section 10.11).
+#[derive(Default)]
+struct Persist {
+    /// Produced since the last seal, in order.
+    open: Vec<Unreleased>,
+    /// Sealed into a checkpoint not yet durable, by its number.
+    sealed: VecDeque<(u64, Vec<Unreleased>)>,
+    /// Each durable receiver's `held` when each checkpoint not yet durable
+    /// was sealed, by its number.
+    marks: VecDeque<(u64, Vec<(String, u64)>)>,
+    /// The last checkpoint sealed, and the last reported durable.
+    sealed_through: u64,
+    durable_through: u64,
 }
 
 /// A causal peer's layer and when it last announced its vector.
@@ -167,6 +287,8 @@ pub struct Router {
     inbound: Inbound,
     peers: BTreeMap<String, Peer>,
     requests: Correlation,
+    /// `Some` when the router checkpoints ([`Router::enable_checkpoints`]).
+    persist: Option<Persist>,
 }
 
 impl Router {
@@ -178,10 +300,13 @@ impl Router {
             inbound: Inbound::new(dedup_window, gap_timeout_ms)?,
             peers: BTreeMap::new(),
             requests: Correlation::default(),
+            persist: None,
         })
     }
 
-    /// Bind `peer` — the name a document writes as `#peer`.
+    /// Bind `peer` — the name a document writes as `#peer`. A binding that
+    /// replaces one has none of its durable receipt: the host declares it
+    /// again ([`Self::send_durably`], [`Self::receive_durably`]).
     pub fn add_peer(&mut self, peer: &str, config: PeerConfig) {
         self.peers.insert(
             peer.to_string(),
@@ -190,8 +315,386 @@ impl Router {
                 config,
                 next_sequence: 1,
                 causal: None,
+                durable_out: None,
+                durable_in: None,
             },
         );
+    }
+
+    /// Checkpoint this machine: its deployment says `persistence: checkpoint`
+    /// (SCE_MESH.md section 10.11). From now on every envelope the machine
+    /// produces, a reply included, is held until the host reports durable a
+    /// checkpoint that holds it ([`Self::durable`]), so a peer never holds an
+    /// envelope a restored machine does not know it sent. Envelopes the router
+    /// sends again (a resend, a retry, a reply a duplicate request is answered
+    /// with, a causal repair) left once already and are not held again.
+    pub fn enable_checkpoints(&mut self) {
+        if self.persist.is_none() {
+            self.persist = Some(Persist::default());
+        }
+    }
+
+    /// Whether the router checkpoints.
+    pub fn is_checkpointed(&self) -> bool {
+        self.persist.is_some()
+    }
+
+    /// The binding to `peer` sends with durable receipt (SCE_MESH.md section
+    /// 10.11): every envelope to it is stamped with a sequence number, kept
+    /// once released until `peer` acknowledges a durable checkpoint holds it,
+    /// and sent again after `send.retry_ms` without one and at once on each
+    /// readiness edge of the link. A failed send of one is neither retried by
+    /// the binding's retry policy nor given up: it is held. Needs the router to
+    /// checkpoint, since a sender that forgets what it holds when its process
+    /// dies keeps no promise; refused for a causal peer, whose route repairs
+    /// what it loses by its own vectors.
+    pub fn send_durably(&mut self, peer: &str, send: DurableSend) -> Result<(), RouterError> {
+        if send.window == 0 || send.retry_ms < 1 {
+            return Err(RouterError::BadReceipt {
+                peer: peer.to_string(),
+                window: send.window,
+                retry_ms: send.retry_ms,
+            });
+        }
+        self.durable_peer(peer)?.durable_out = Some(DurableOut {
+            send,
+            waiting: 0,
+            unacked: BTreeMap::new(),
+        });
+        Ok(())
+    }
+
+    /// The binding from `peer` receives with durable receipt (SCE_MESH.md
+    /// section 10.11): every envelope from it carries a sequence number, a
+    /// repeat of one admitted is dropped by that number and answered with this
+    /// machine's acknowledgement, a gap is never timed out (the envelope is
+    /// still held by its sender), and each checkpoint that becomes durable
+    /// acknowledges what it holds. Needs the router to checkpoint; refused for
+    /// a causal peer.
+    pub fn receive_durably(&mut self, peer: &str) -> Result<(), RouterError> {
+        self.durable_peer(peer)?.durable_in = Some(DurableIn::default());
+        Ok(())
+    }
+
+    /// The bound peer `peer`, which may take durable receipt.
+    fn durable_peer(&mut self, peer: &str) -> Result<&mut Peer, RouterError> {
+        if self.persist.is_none() {
+            return Err(RouterError::NotCheckpointed);
+        }
+        let bound = self
+            .peers
+            .get_mut(peer)
+            .ok_or_else(|| RouterError::UnknownPeer(peer.to_string()))?;
+        if bound.config.causal.is_some() {
+            return Err(RouterError::DurableOnCausal(peer.to_string()));
+        }
+        Ok(bound)
+    }
+
+    /// Whether what this machine sends to `peer` is held until acknowledged,
+    /// so a failed send of it is sent again by the router and not given up.
+    pub fn holds_until_acknowledged(&self, peer: &str) -> bool {
+        self.peers
+            .get(peer)
+            .is_some_and(|bound| bound.durable_out.is_some())
+    }
+
+    /// The last checkpoint the router was sealed with, `0` before the first.
+    /// What a binding that answers only after a durable checkpoint (the `https`
+    /// binding's `receipt: durable`) waits past: an envelope admitted now is
+    /// held by the next checkpoint sealed, and by none before.
+    pub fn sealed_through(&self) -> u64 {
+        self.persist
+            .as_ref()
+            .map_or(0, |persist| persist.sealed_through)
+    }
+
+    /// The last checkpoint the host reported durable, `0` before the first.
+    pub fn durable_through(&self) -> u64 {
+        self.persist
+            .as_ref()
+            .map_or(0, |persist| persist.durable_through)
+    }
+
+    /// Seal the checkpoint `sequence`: what was produced since the last seal
+    /// belongs to it, and so do the replies made and each durable receiver's
+    /// mark. Answers the router's part of the checkpoint, every moment written
+    /// on the wall clock `clocks` read. `sequence` is above every number the
+    /// router was sealed or restored with.
+    pub(crate) fn seal(
+        &mut self,
+        sequence: u64,
+        clocks: Clocks,
+    ) -> Result<RouterState, RouterError> {
+        let marks: Vec<(String, u64)> = self
+            .peers
+            .iter()
+            .filter_map(|(name, bound)| {
+                bound
+                    .durable_in
+                    .as_ref()
+                    .map(|input| (name.clone(), input.held))
+            })
+            .collect();
+        let persist = self.persist.as_mut().ok_or(RouterError::NotCheckpointed)?;
+        if sequence <= persist.sealed_through {
+            return Err(RouterError::CheckpointOutOfOrder {
+                sealed: persist.sealed_through,
+                given: sequence,
+            });
+        }
+        let open = core::mem::take(&mut persist.open);
+        persist.sealed.push_back((sequence, open));
+        persist.marks.push_back((sequence, marks));
+        persist.sealed_through = sequence;
+        // Every envelope a checkpoint not yet durable holds is this one's too:
+        // a restore from it releases them all.
+        let unreleased = persist
+            .sealed
+            .iter()
+            .flat_map(|(_, batch)| batch.iter().cloned())
+            .collect();
+        self.inbound.seal(sequence);
+        Ok(RouterState {
+            peers: self
+                .peers
+                .iter()
+                .map(|(name, bound)| peer_state(name, bound, clocks))
+                .collect(),
+            senders: self.inbound.states(clocks),
+            unreleased,
+        })
+    }
+
+    /// The host wrote the checkpoint `sequence` durably: release what it and
+    /// every checkpoint before it hold, at `now_ms`. The envelopes go to their
+    /// peers in the order they were produced, the replies they hold now answer
+    /// a duplicate request, and each peer whose durable stream a released
+    /// checkpoint holds more of is owed an acknowledgement
+    /// ([`Effect::AcknowledgeDue`]).
+    pub fn durable(&mut self, sequence: u64, now_ms: i64) -> Result<Vec<Effect>, RouterError> {
+        let persist = self.persist.as_mut().ok_or(RouterError::NotCheckpointed)?;
+        if sequence > persist.sealed_through {
+            return Err(RouterError::NotSealed {
+                sequence,
+                sealed: persist.sealed_through,
+            });
+        }
+        let covered = persist
+            .sealed
+            .iter()
+            .take_while(|(at, _)| *at <= sequence)
+            .count();
+        let released: Vec<Unreleased> = persist
+            .sealed
+            .drain(..covered)
+            .flat_map(|(_, batch)| batch)
+            .collect();
+        // The latest mark a released checkpoint holds is the one to report.
+        let marked = persist
+            .marks
+            .iter()
+            .take_while(|(at, _)| *at <= sequence)
+            .count();
+        let marks = persist
+            .marks
+            .drain(..marked)
+            .next_back()
+            .map(|(_, marks)| marks)
+            .unwrap_or_default();
+        persist.durable_through = persist.durable_through.max(sequence);
+        self.inbound.released_through(sequence);
+
+        let mut effects = Vec::new();
+        for unreleased in released {
+            // A peer unbound since took what was produced for it.
+            let Some(bound) = self.peers.get_mut(&unreleased.peer) else {
+                continue;
+            };
+            if let Some(out) = bound.durable_out.as_mut() {
+                out.waiting = out.waiting.saturating_sub(1);
+            }
+            effects.extend(release(
+                &unreleased.peer,
+                bound,
+                unreleased.envelope,
+                unreleased.sequence,
+                now_ms,
+            ));
+        }
+        for (name, mark) in marks {
+            let Some(input) = self
+                .peers
+                .get_mut(&name)
+                .and_then(|bound| bound.durable_in.as_mut())
+            else {
+                continue;
+            };
+            if mark > input.durable {
+                input.durable = mark;
+                effects.push(Effect::AcknowledgeDue { peer: name });
+            }
+        }
+        Ok(effects)
+    }
+
+    /// Take back the router's part of the checkpoint `sequence`, which the
+    /// host read as the last durable one, at `clocks`. What it holds unreleased
+    /// is released, since it is durable; a binding with durable receipt keeps
+    /// what it holds unacknowledged and sends it again when its link is ready.
+    /// Unless the checkpoint is `clean`, each source this machine holds
+    /// receive state for, and whose binding does not receive durably, is told
+    /// that what it sent after the checkpoint may be lost (`restored`,
+    /// SCE_MESH.md section 16.7, row 17).
+    ///
+    /// The router is the one the host built from its deployment, checkpointing
+    /// and with its durable receipt declared, before anything was sent or
+    /// received through it. A refused restore leaves it in no state to use.
+    pub(crate) fn restore(
+        &mut self,
+        state: &RouterState,
+        sequence: u64,
+        clean: bool,
+        clocks: Clocks,
+    ) -> Result<Vec<Effect>, CheckpointError> {
+        let persist = self
+            .persist
+            .as_mut()
+            .ok_or(CheckpointError::Router(RouterError::NotCheckpointed))?;
+        *persist = Persist {
+            sealed_through: sequence,
+            durable_through: sequence,
+            ..Persist::default()
+        };
+        for saved in &state.peers {
+            let bound = self.peers.get_mut(&saved.peer).ok_or_else(|| {
+                CheckpointError::Unbound(format!(
+                    "it holds state for the peer '{}', which this router does not bind",
+                    saved.peer
+                ))
+            })?;
+            bound.next_sequence = saved.next_sequence;
+            for queued in &saved.queued {
+                bound
+                    .outbound
+                    .requeue(queued.envelope.clone(), clocks.to_monotonic(queued.since));
+            }
+            match bound.durable_out.as_mut() {
+                Some(out) => {
+                    out.waiting = 0;
+                    out.unacked = saved
+                        .unacked
+                        .iter()
+                        .map(|held| {
+                            (
+                                held.sequence,
+                                Unacked {
+                                    bytes: held.envelope.clone(),
+                                    sent_ms: None,
+                                },
+                            )
+                        })
+                        .collect();
+                }
+                None if saved.unacked.is_empty() => {}
+                None => {
+                    return Err(CheckpointError::Unbound(format!(
+                        "it holds envelopes for '{}' until they are acknowledged, and this \
+                         router does not send to it durably",
+                        saved.peer
+                    )))
+                }
+            }
+            // A receiver that is no longer durable has nothing to keep of the
+            // marks: they promise nothing it holds.
+            if let (Some(input), Some(received)) = (bound.durable_in.as_mut(), &saved.received) {
+                input.held = received.held;
+                input.durable = received.held;
+                input.above = received.above.iter().copied().collect();
+            }
+        }
+        self.inbound.restore(&state.senders, clocks)?;
+
+        let mut effects = Vec::new();
+        if !clean {
+            for saved in &state.senders {
+                let durable = self
+                    .peers
+                    .get(&saved.source)
+                    .is_some_and(|bound| bound.durable_in.is_some());
+                if !durable {
+                    effects.push(Effect::Raise {
+                        peer: None,
+                        signal: Signal::Restored {
+                            source: saved.source.clone(),
+                        },
+                    });
+                }
+            }
+        }
+        for unreleased in &state.unreleased {
+            let bound = self.peers.get_mut(&unreleased.peer).ok_or_else(|| {
+                CheckpointError::Unbound(format!(
+                    "it holds an envelope for the peer '{}', which this router does not bind",
+                    unreleased.peer
+                ))
+            })?;
+            effects.extend(release(
+                &unreleased.peer,
+                bound,
+                unreleased.envelope.clone(),
+                unreleased.sequence,
+                clocks.monotonic_ms,
+            ));
+        }
+        Ok(effects)
+    }
+
+    /// The acknowledgement this machine owes `peer`, which sends to it with
+    /// durable receipt (SCE_MESH.md section 10.11): pattern `durableReceipt`,
+    /// `id` the envelope id the host drew, and `sequence_no` the mark of the
+    /// last durable checkpoint, every envelope of `peer`'s stream numbered at
+    /// most it being held by one. Cumulative and idempotent, so it needs no
+    /// acknowledgement, sequence number or duplicate suppression of its own.
+    pub fn acknowledge(&mut self, peer: &str, id: [u8; 16]) -> Result<Vec<u8>, RouterError> {
+        let machine = within(self.machine.as_str())?;
+        let mark = self
+            .peers
+            .get(peer)
+            .ok_or_else(|| RouterError::UnknownPeer(peer.to_string()))?
+            .durable_in
+            .as_ref()
+            .ok_or_else(|| RouterError::NotDurable(peer.to_string()))?
+            .durable;
+        Ok(Envelope {
+            id: (&id).into(),
+            source: machine,
+            event_type: within("")?,
+            pattern: PatternKind::DurableReceipt,
+            datacontenttype: PayloadCodec::None,
+            sequence_no: Some(mark),
+            ..Envelope::new()
+        }
+        .encode_to_vec())
+    }
+
+    /// When the next envelope held for an acknowledgement is due to be sent
+    /// again, on the host's monotonic clock: with the endpoint's retries, the
+    /// time a host that owns time sleeps until before its next
+    /// [`tick`](Self::tick). Only a peer whose link is ready counts; one that
+    /// is not is sent to at its readiness edge.
+    pub fn next_resend_due_ms(&self) -> Option<i64> {
+        self.peers
+            .values()
+            .filter(|bound| bound.outbound.is_ready())
+            .filter_map(|bound| bound.durable_out.as_ref())
+            .flat_map(|out| {
+                out.unacked.values().map(move |held| {
+                    held.sent_ms
+                        .map_or(i64::MIN, |at| at.saturating_add(out.send.retry_ms))
+                })
+            })
+            .min()
     }
 
     /// Start the causal layer of the causal peer `peer` (docs/adr/0085,
@@ -309,7 +812,8 @@ impl Router {
 
     /// Perform a `<send target="#peer">` the engine handed the host. `id` is
     /// the envelope id the host drew (a UUID v7), `now_ms` its monotonic
-    /// clock.
+    /// clock. A router that checkpoints holds the envelope for the next
+    /// checkpoint ([`Self::enable_checkpoints`]).
     ///
     /// A Mesh target this router has no binding for is unreachable, and says
     /// so as §mesh-16.7 row 1: the router is registered, so this is not the
@@ -365,13 +869,29 @@ impl Router {
         if peer.config.causal.is_some() {
             return offer(peer_name, peer, envelope);
         }
-        let bytes = write_envelope(peer, envelope);
+        let (bytes, sequence) = match write_envelope(peer, envelope) {
+            Ok(written) => written,
+            Err(signal) => {
+                return Ok(alloc::vec![Effect::Raise {
+                    peer: Some(peer_name.to_string()),
+                    signal,
+                }])
+            }
+        };
         // §mesh-10.5: the request's window entry keeps its first reply, which
         // answers a duplicate of the request.
         if let Some(invoke) = answering {
-            self.inbound.answered(&invoke, &bytes);
+            self.inbound
+                .answered(&invoke, &bytes, self.persist.is_some());
         }
-        Ok(dispatch(peer_name, peer, bytes, now_ms))
+        Ok(hand_over(
+            self.persist.as_mut(),
+            peer_name,
+            peer,
+            bytes,
+            sequence,
+            now_ms,
+        ))
     }
 
     /// Start an `<invoke type="sce:mesh-rpc">` the engine handed the host
@@ -428,7 +948,38 @@ impl Router {
             ..Envelope::new()
         };
         let responders = peer.config.responders;
-        let effects = transmit(peer_name, peer, envelope, now_ms)?;
+        let (bytes, sequence) = match write_envelope(peer, envelope) {
+            Ok(written) => written,
+            // A request a binding with durable receipt has no room for never
+            // leaves, and its invocation ends at once, told why.
+            Err(signal) => {
+                return Ok(Invoked::Started(alloc::vec![
+                    Effect::Raise {
+                        peer: Some(peer_name.to_string()),
+                        signal,
+                    },
+                    Effect::Fail {
+                        invoke_id: request.invoke_id.clone(),
+                        token: request.token,
+                        data: rpc::invoke_error_data(
+                            RpcStatus::Unavailable,
+                            Some("backpressureDrop"),
+                            None,
+                            &wire_id,
+                        ),
+                        source: None,
+                    },
+                ]))
+            }
+        };
+        let effects = hand_over(
+            self.persist.as_mut(),
+            peer_name,
+            peer,
+            bytes,
+            sequence,
+            now_ms,
+        );
         self.requests.register(
             wire_id,
             Pending {
@@ -472,6 +1023,17 @@ impl Router {
             peer: Some(peer.to_string()),
             signal,
         }));
+        // SCE_MESH.md section 10.11: what a binding with durable receipt holds
+        // unacknowledged is sent again at once on each readiness edge.
+        if let Some(out) = bound.durable_out.as_mut() {
+            for held in out.unacked.values_mut() {
+                held.sent_ms = Some(now_ms);
+                effects.push(Effect::Transmit {
+                    peer: peer.to_string(),
+                    bytes: held.bytes.clone(),
+                });
+            }
+        }
         // docs/adr/0085, section 3.2: a link that comes back carries this
         // copy's vector at once, so what was lost while it was down is
         // repaired without waiting for the period.
@@ -589,11 +1151,71 @@ impl Router {
         // ordered binding may hold it and release it on a later tick. One
         // from outside the set is refused before the dedup window or the
         // ordering hold sees it, so it takes no slot in either.
+        let head = Envelope::decode(&mut SceCursor::new(&bytes))
+            .ok()
+            .map(|envelope| (envelope.pattern, envelope.sequence_no));
+        // SCE_MESH.md section 10.11: an acknowledgement releases what this
+        // machine held for `peer` up to its mark, and reaches no engine. One
+        // without a mark acknowledges nothing.
+        if let Some((PatternKind::DurableReceipt, mark)) = head {
+            if let (Some(mark), Some(out)) = (
+                mark,
+                self.peers
+                    .get_mut(peer)
+                    .and_then(|bound| bound.durable_out.as_mut()),
+            ) {
+                out.unacked = out.unacked.split_off(&mark.saturating_add(1));
+            }
+            return Ok(Vec::new());
+        }
         if let Some(signal) = self.undeclared_reply(&bytes, peer) {
             return raise(signal);
         }
-        match self.inbound.admit(bytes, delivery, now_ms) {
-            Ok(outcome) => Ok(self.effects_of(outcome, Some(peer), now_ms)),
+        // SCE_MESH.md section 10.11: on a durable stream a repeat is told by
+        // its sequence number, exactly, and is answered with the
+        // acknowledgement this machine can give, so a sender whose
+        // acknowledgement was lost is answered.
+        let durable = match (
+            self.peers
+                .get(peer)
+                .and_then(|bound| bound.durable_in.as_ref()),
+            head,
+        ) {
+            (Some(input), Some((_, Some(sequence)))) => {
+                if input.holds(sequence) {
+                    return Ok(if input.durable > 0 {
+                        alloc::vec![Effect::AcknowledgeDue {
+                            peer: peer.to_string(),
+                        }]
+                    } else {
+                        Vec::new()
+                    });
+                }
+                Some((sequence, input.held.saturating_add(1)))
+            }
+            (Some(_), Some((_, None))) => {
+                return raise(Signal::MissingSequence {
+                    source: peer.to_string(),
+                })
+            }
+            _ => None,
+        };
+        match self
+            .inbound
+            .admit_from(bytes, delivery, durable.map(|(_, from)| from), now_ms)
+        {
+            Ok(outcome) => {
+                if let Some((sequence, _)) = durable {
+                    if let Some(input) = self
+                        .peers
+                        .get_mut(peer)
+                        .and_then(|bound| bound.durable_in.as_mut())
+                    {
+                        input.admitted(sequence);
+                    }
+                }
+                Ok(self.effects_of(outcome, Some(peer), now_ms))
+            }
             // The bytes are the envelope's CBOR (§mesh-7.5); nothing in
             // them can be trusted to name a source.
             Err(AdmitError::Malformed(_)) => raise(Signal::EnvelopeCorrupt {
@@ -613,7 +1235,8 @@ impl Router {
     /// End every ordering gap that has waited out its timeout by `now_ms`,
     /// then every request whose deadline has passed: each ends in
     /// `error.invoke` with `deadlineExceeded`, the same shape a peer's
-    /// `DeadlineExceeded` reply takes (§mesh-10.7.1).
+    /// `DeadlineExceeded` reply takes (§mesh-10.7.1). Then send again what a
+    /// binding with durable receipt holds past its `retry_ms`.
     pub fn tick(&mut self, now_ms: i64) -> Result<Vec<Effect>, RouterError> {
         let mut effects = match self.inbound.tick(now_ms) {
             Ok(outcome) => self.effects_of(outcome, None, now_ms),
@@ -635,6 +1258,30 @@ impl Router {
                     source: None,
                 }),
         );
+        // SCE_MESH.md section 10.11: an envelope held for an acknowledgement
+        // that has not come within `retry_ms` is sent again, with its id,
+        // sequence number and data, while its link is ready.
+        for (name, bound) in &mut self.peers {
+            if !bound.outbound.is_ready() {
+                continue;
+            }
+            let Some(out) = bound.durable_out.as_mut() else {
+                continue;
+            };
+            let retry_ms = out.send.retry_ms;
+            for held in out.unacked.values_mut() {
+                if held
+                    .sent_ms
+                    .is_none_or(|at| now_ms.saturating_sub(at) >= retry_ms)
+                {
+                    held.sent_ms = Some(now_ms);
+                    effects.push(Effect::Transmit {
+                        peer: name.clone(),
+                        bytes: held.bytes.clone(),
+                    });
+                }
+            }
+        }
         // docs/adr/0085, section 3.2: each causal peer is owed this copy's
         // vector on its period, which repairs a loss no link edge reports.
         for (name, bound) in &self.peers {
@@ -915,6 +1562,26 @@ pub enum RouterError {
         event: String,
         reason: String,
     },
+    /// The host asked for what only a router that checkpoints does (a seal, a durable report,
+    /// durable receipt) of one that does not ([`Router::enable_checkpoints`]).
+    NotCheckpointed,
+    /// The host sealed a checkpoint whose number `given` is not above `sealed`, the last the
+    /// router was sealed or restored with.
+    CheckpointOutOfOrder { sealed: u64, given: u64 },
+    /// The host reported durable the checkpoint `sequence`, which the router was never sealed
+    /// with: the last it was is `sealed`.
+    NotSealed { sequence: u64, sealed: u64 },
+    /// Durable receipt was asked of a causal peer's binding, whose route repairs what it loses
+    /// by its own vectors (SCE_MESH.md section 10.12).
+    DurableOnCausal(String),
+    /// An acknowledgement was asked for a peer this machine does not receive from durably.
+    NotDurable(String),
+    /// A `receipt:` block with a field below 1.
+    BadReceipt {
+        peer: String,
+        window: usize,
+        retry_ms: i64,
+    },
 }
 
 /// The peer a `<send target>` names, when it names one — the runtime's
@@ -922,30 +1589,134 @@ pub enum RouterError {
 /// are one answer rather than two copies of it.
 pub use sce_rust_runtime::helpers::send::mesh_peer;
 
-/// Write `envelope` for `peer` and hand it to that peer's send half: what
-/// [`Router::send`] and [`Router::invoke`] share once they know what to say.
-fn transmit(
-    peer_name: &str,
+/// `envelope` as the bytes that go to `peer`, with the sequence number it is
+/// stamped with: the peer's next, when its binding stamps one (§mesh-10.6.3)
+/// or sends with durable receipt, which numbers every envelope (SCE_MESH.md
+/// section 10.11). What [`Router::send`] and [`Router::invoke`] share once they
+/// know what to say.
+///
+/// Refused, as `backpressureDrop` (§mesh-16.7 row 9), when a binding with
+/// durable receipt already holds its window of envelopes: a send that was
+/// never accepted is told, and nothing accepted is dropped.
+fn write_envelope(
     peer: &mut Peer,
-    envelope: Envelope<'_>,
-    now_ms: i64,
-) -> Result<Vec<Effect>, RouterError> {
-    let bytes = write_envelope(peer, envelope);
-    Ok(dispatch(peer_name, peer, bytes, now_ms))
-}
-
-/// `envelope` as the bytes that go to `peer`, stamped with the peer's next
-/// sequence number when its binding stamps one (§mesh-10.6.3).
-fn write_envelope(peer: &mut Peer, mut envelope: Envelope<'_>) -> Vec<u8> {
-    envelope.sequence_no = peer.config.stamp_sequence.then_some(peer.next_sequence);
+    mut envelope: Envelope<'_>,
+) -> Result<(Vec<u8>, Option<u64>), Signal> {
+    if let Some(out) = &peer.durable_out {
+        let held = out.held();
+        if held >= out.send.window {
+            return Err(Signal::BackpressureDrop {
+                depth: u32::try_from(held).unwrap_or(u32::MAX),
+            });
+        }
+    }
+    let stamps = peer.config.stamp_sequence || peer.durable_out.is_some();
+    let sequence = stamps.then_some(peer.next_sequence);
+    envelope.sequence_no = sequence;
     let bytes = envelope.encode_to_vec();
     // §mesh-10.6.3: the counter advances once per envelope written, so one
     // that could not be written leaves no hole; and it has no wrap guard,
     // 2^64 sends being beyond any deployment's lifetime.
-    if peer.config.stamp_sequence {
+    if stamps {
         peer.next_sequence = peer.next_sequence.wrapping_add(1);
     }
-    bytes
+    Ok((bytes, sequence))
+}
+
+/// Hand `bytes`, written for `peer` with `sequence`, on: held for the next
+/// checkpoint when the router checkpoints (`persist`, SCE_MESH.md section
+/// 10.11), released at once otherwise.
+fn hand_over(
+    persist: Option<&mut Persist>,
+    peer_name: &str,
+    peer: &mut Peer,
+    bytes: Vec<u8>,
+    sequence: Option<u64>,
+    now_ms: i64,
+) -> Vec<Effect> {
+    let Some(persist) = persist else {
+        return release(peer_name, peer, bytes, sequence, now_ms);
+    };
+    if let Some(out) = peer.durable_out.as_mut() {
+        out.waiting += 1;
+    }
+    persist.open.push(Unreleased {
+        peer: peer_name.to_string(),
+        sequence,
+        envelope: bytes,
+    });
+    Vec::new()
+}
+
+/// Release `bytes`, written for `peer` with `sequence`: a binding with durable
+/// receipt keeps it until it is acknowledged and sends it now if its link is
+/// ready, at its readiness edge otherwise (SCE_MESH.md section 10.11); any
+/// other hands it to the peer's send half (§mesh-10.10).
+fn release(
+    peer_name: &str,
+    peer: &mut Peer,
+    bytes: Vec<u8>,
+    sequence: Option<u64>,
+    now_ms: i64,
+) -> Vec<Effect> {
+    if let (Some(out), Some(sequence)) = (peer.durable_out.as_mut(), sequence) {
+        if !peer.outbound.is_ready() {
+            out.unacked.insert(
+                sequence,
+                Unacked {
+                    bytes,
+                    sent_ms: None,
+                },
+            );
+            return Vec::new();
+        }
+        out.unacked.insert(
+            sequence,
+            Unacked {
+                bytes: bytes.clone(),
+                sent_ms: Some(now_ms),
+            },
+        );
+        return alloc::vec![Effect::Transmit {
+            peer: peer_name.to_string(),
+            bytes,
+        }];
+    }
+    dispatch(peer_name, peer, bytes, now_ms)
+}
+
+/// What a checkpoint holds of the bound peer `name`, its moments on the wall
+/// clock `clocks` read.
+fn peer_state(name: &str, bound: &Peer, clocks: Clocks) -> PeerState {
+    PeerState {
+        peer: name.to_string(),
+        next_sequence: bound.next_sequence,
+        queued: bound
+            .outbound
+            .queued()
+            .map(|(bytes, at)| QueuedState {
+                envelope: bytes.to_vec(),
+                since: clocks.to_wall(at),
+            })
+            .collect(),
+        unacked: bound
+            .durable_out
+            .as_ref()
+            .map(|out| {
+                out.unacked
+                    .iter()
+                    .map(|(sequence, held)| UnackedState {
+                        sequence: *sequence,
+                        envelope: held.bytes.clone(),
+                    })
+                    .collect()
+            })
+            .unwrap_or_default(),
+        received: bound.durable_in.as_ref().map(|input| ReceivedState {
+            held: input.held,
+            above: input.above.iter().copied().collect(),
+        }),
+    }
 }
 
 /// Hand written envelope `bytes` to `peer`'s send half.
@@ -2020,6 +2791,68 @@ mod tests {
             router.start_causal("hmi", Start::NewIncarnation(Replica([1; 16])), 8, 100),
             Err(RouterError::NotCausal("hmi".to_string()))
         );
+    }
+
+    /// Durable receipt is a promise only a router that checkpoints can keep,
+    /// on a binding that is not a causal route, with a window and a resend
+    /// period of at least 1; an acknowledgement is owed only on a durable
+    /// stream; and a durable report names a checkpoint that was sealed.
+    #[test]
+    fn durable_receipt_is_refused_where_it_cannot_be_kept() {
+        let send = DurableSend::default();
+        assert_eq!(
+            send,
+            DurableSend {
+                window: 256,
+                retry_ms: 1000
+            }
+        );
+        let mut router = Router::new("list", 8, 50).unwrap();
+        router.add_peer("people", PEOPLE);
+        router.add_peer("hmi", UNORDERED);
+        assert_eq!(
+            router.send_durably("hmi", send),
+            Err(RouterError::NotCheckpointed)
+        );
+        assert_eq!(
+            router.receive_durably("hmi"),
+            Err(RouterError::NotCheckpointed)
+        );
+        assert_eq!(router.durable(1, 0), Err(RouterError::NotCheckpointed));
+
+        router.enable_checkpoints();
+        assert_eq!(
+            router.send_durably("nobody", send),
+            Err(RouterError::UnknownPeer("nobody".to_string()))
+        );
+        assert_eq!(
+            router.receive_durably("people"),
+            Err(RouterError::DurableOnCausal("people".to_string()))
+        );
+        for (window, retry_ms) in [(0, 100), (1, 0)] {
+            assert_eq!(
+                router.send_durably("hmi", DurableSend { window, retry_ms }),
+                Err(RouterError::BadReceipt {
+                    peer: "hmi".to_string(),
+                    window,
+                    retry_ms
+                })
+            );
+        }
+        assert_eq!(
+            router.acknowledge("hmi", [1; 16]),
+            Err(RouterError::NotDurable("hmi".to_string()))
+        );
+        assert_eq!(
+            router.durable(1, 0),
+            Err(RouterError::NotSealed {
+                sequence: 1,
+                sealed: 0
+            })
+        );
+        assert!(!router.holds_until_acknowledged("hmi"));
+        router.send_durably("hmi", send).unwrap();
+        assert!(router.holds_until_acknowledged("hmi"));
     }
 
     /// Repair, on a link that comes back. Red if a peer that becomes ready
