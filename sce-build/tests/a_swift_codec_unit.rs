@@ -2565,12 +2565,14 @@ fn a_gated_field_of_an_enum_is_read_and_written_in_turn_where_its_flag_is_set() 
             "if (flags & 0x1) != 0 {\n            state = try declaredEnumValue(EnumSessionState.fromUnderlying(reader.readInteger(UInt8.self, .big)))\n        }",
             "the gated field is read where its flag is set, and refused for an undeclared number",
         ),
+        // The encode is printed from the plan (docs/adr/0081 §6): it reads each field off the
+        // source it is handed, and a gated one where the source holds it.
         (
-            "appendInteger(EnumUdsNrc.toUnderlying(self.code), to: &frame, .big)",
+            "appendInteger(EnumUdsNrc.toUnderlying(source.code), to: &frame, .big)",
             "an encode appends the number",
         ),
         (
-            "if let state = self.state {\n            appendInteger(EnumSessionState.toUnderlying(state), to: &frame, .big)\n        }",
+            "if let held = source.state {\n            appendInteger(EnumSessionState.toUnderlying(held), to: &frame, .big)\n        }",
             "a gated enum field is appended where it is held",
         ),
     ] {
