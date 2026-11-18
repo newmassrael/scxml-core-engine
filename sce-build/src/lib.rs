@@ -4643,13 +4643,13 @@ pub struct ForgeCompileOptions {
     /// docs/adr/0081 step 4: the element-type candidates the Go backend
     /// prints from their encode plan, by the snake element name of
     /// [`Self::element_type_field_schemas`], each with what a reader knows of
-    /// it (`GoPrinted`). Such an element presents each field through its
+    /// it (`PrintedCodec`). Such an element presents each field through its
     /// method, so an algorithm iterating a collection of it reads each field
     /// as the codec presents it, a byte string or a text as what its bounded
     /// value holds and a number the encode derives by the method that derives
     /// it. Populated with the schemas, on a Go compile only; `None` elsewhere.
     pub element_type_go_printed:
-        Option<std::collections::HashMap<String, forge::generator::GoPrinted>>,
+        Option<std::collections::HashMap<String, forge::generator::PrintedCodec>>,
 
     /// Whether each element-type candidate emits a `{Codec}Owned` mirror,
     /// keyed by the snake element name. Decided by the same predicate the
@@ -5699,7 +5699,7 @@ fn compile_document_set(
     // of such an element reads each field through its method.
     let mut element_type_go_printed: std::collections::HashMap<
         String,
-        forge::generator::GoPrinted,
+        forge::generator::PrintedCodec,
     > = std::collections::HashMap::new();
     let mut element_import_sources: std::collections::HashMap<
         String,
@@ -7655,7 +7655,7 @@ fn validate_and_enrich_imports(
                         Some((unlowered, printed)) => (Some(unlowered), printed),
                         None => (None, None),
                     };
-                    ctx.cpp_printed = printed;
+                    ctx.printed = printed;
                     ctx.cpp_unlowered = unlowered.and_then(|forms| forms.into_iter().next());
                 }
                 // docs/adr/0081 step 4: whether the Python backend prints the
@@ -7690,7 +7690,7 @@ fn validate_and_enrich_imports(
                 // a value of it by its `Make{Codec}`. Read as the import is
                 // generated, its own imports resolved.
                 if matches!(language, generator::Language::Go) {
-                    ctx.go_printed = read_codec_file_as(
+                    ctx.printed = read_codec_file_as(
                         &source.path,
                         &[],
                         options,
@@ -8139,22 +8139,20 @@ fn validate_and_enrich_imports(
                 // enclosing kind's own inputs/internals that happen to share
                 // a name, silently producing wrong type inference.
                 //
-                // A codec the C++ backend prints presents a group of fields one
-                // gate decides whole (docs/adr/0081 step 4), so a member of the
-                // group is no member of the value a reader names alone, nor is
-                // a number its encode derives that a source does not say all of
-                // what it measures; an expression that names one is refused as
-                // naming no member of the import. A number a printed Go value
-                // answers only with the inputs its encode is handed is no
-                // member a reader holding the value can read either
-                // (`GoPrinted::answers`).
+                // A codec the C++ or the Go backend prints presents a group of
+                // fields one gate decides whole (docs/adr/0081 step 4), so a
+                // member of the group is no member of the value a reader names
+                // alone, nor is a number its encode derives that no reader
+                // holding the value is answered, as one whose measures a source
+                // does not say all of or whose answer takes the inputs the
+                // encode is handed (`PrintedCodec::reads`); an expression that
+                // names one is refused as naming no member of the import.
                 ctx.member_field_types = doc
                     .record_fields()
                     .unwrap_or_default()
                     .into_iter()
                     .filter(|(field, _)| {
-                        !matches!(&ctx.cpp_printed, Some(printed) if !printed.reads(field))
-                            && !matches!(&ctx.go_printed, Some(printed) if !printed.answers(field))
+                        !matches!(&ctx.printed, Some(printed) if !printed.reads(field))
                     })
                     .map(|(field, ty)| (format!("{}.{}", ctx.alias, field), ty))
                     .collect();

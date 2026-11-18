@@ -66,6 +66,7 @@
 //! uses that it does not print, and such a codec keeps the template's encode
 //! whole, so no codec has two encodes.
 
+use super::printed_codec::{DerivedNumber, PrintedMade, PrintedPart, PrintedRebuild, Reading};
 use super::*;
 use crate::forge::codec_roles::{ElementId, GateGroup, GateVar, GroupArm};
 use crate::forge::codec_totality::RefusalKind;
@@ -108,7 +109,7 @@ pub(super) fn unlowered(plan: &CodecPlan<'_>, imports: &[ImportContext]) -> Opti
 /// encode refuses what its totality names of these, a refusal of a body it
 /// holds among them. A CBOR map and a content-line component keep their own
 /// templates' encodes. `imports` are the codec's own, which say whether a
-/// codec it holds is printed ([`ImportContext::go_printed`]).
+/// codec it holds is printed ([`ImportContext::printed`]).
 pub(super) fn unlowered_forms(plan: &CodecPlan<'_>, imports: &[ImportContext]) -> Vec<String> {
     match plan {
         CodecPlan::Positional(plan) => positional_forms(plan, imports),
@@ -118,11 +119,12 @@ pub(super) fn unlowered_forms(plan: &CodecPlan<'_>, imports: &[ImportContext]) -
 }
 
 /// The import of the codec `plan` holds as `alias`, where the Go backend
-/// prints it from its plan.
+/// prints it from its plan: an import read as the Go backend generates it
+/// says so by what a reader knows of it.
 fn printed_import<'i>(imports: &'i [ImportContext], alias: &str) -> Option<&'i ImportContext> {
     imports
         .iter()
-        .find(|import| import.alias == alias && import.go_printed.is_some())
+        .find(|import| import.alias == alias && import.printed.is_some())
 }
 
 /// [`unlowered_forms`] of a positional codec.
@@ -533,262 +535,143 @@ pub(super) fn member(id: &str) -> String {
     }
 }
 
-/// What a read of an element a printed Go codec presents as `call` (a call of
-/// its method) is as a Go value of the element's type `ty`: a byte string's
-/// bytes and a text's string, which the runtime's `codec.Bytes` and
-/// `codec.Text` hold, and any other element as the method returns it. A reader
-/// of a printed codec's element in an expression, a procedure, a validator or
-/// an algorithm reads it through this, so it is spelled in one place.
-pub(crate) fn element_read(call: &str, ty: &SceType) -> String {
-    match ty {
-        SceType::Bytes => format!("{call}.Bytes()"),
-        SceType::String => format!("{call}.String()"),
-        _ => call.to_string(),
-    }
-}
-
-/// What a reader in another package knows of a codec the Go backend prints:
-/// the elements its value presents, in the order `Make{Codec}` takes them, and
-/// the numbers its encode derives into a field, which the value answers by
-/// the method [`wire_method`] names. A procedure, a validator and an
-/// algorithm that hold a value of the codec read and make it through this
-/// ([`GoPrinted::read`], [`GoPrinted::rebuilt`]), so none spells a printed
-/// codec's interface of its own.
-#[derive(Clone, Debug, Default, PartialEq, Eq)]
-pub struct GoPrinted {
-    /// What `Make{Codec}` takes, in its order.
-    parts: Vec<GoPart>,
-    /// Each number the encode derives into a field, and the tag of the arm
-    /// the value holds where a field holds it.
-    derived: Vec<GoDerived>,
-}
-
-/// One thing a printed Go value's `Make{Codec}` takes.
-#[derive(Clone, Debug, PartialEq, Eq)]
-enum GoPart {
-    /// An element the value presents by a method of its own.
-    Element(GoPresented),
-    /// A group of elements one gate decides, or the arm of the variant: the
-    /// value presents it whole by the method `method`, and no member of it is
-    /// an element of its own.
-    Whole {
-        /// The method.
-        method: String,
-    },
-}
-
-/// One number a printed Go value answers by its [`wire_method`].
-#[derive(Clone, Debug, PartialEq, Eq)]
-struct GoDerived {
-    /// The field id.
-    id: String,
-    /// The flag inputs of the codec's own the method takes: those a body the
-    /// number counts is handed, which the encode is handed and the value
-    /// does not hold. Empty where the value answers the number alone.
-    inputs: Vec<String>,
-}
-
-/// One element a printed Go value presents.
-#[derive(Clone, Debug, PartialEq, Eq)]
-struct GoPresented {
-    /// The field id.
-    id: String,
-    /// For a byte string or a text, the runtime's bounded type of it (`Bytes`
-    /// or `Text`) and the bound type the codec's package names for it; `None`
-    /// for any other element.
-    bounded: Option<(&'static str, String)>,
-    /// Whether the value presents it as the optional type of what it holds: a
-    /// gate decides it, or the value states it only while its content is
-    /// absent.
-    optional: bool,
-}
-
-/// A rebuild of a printed Go codec's value with one element assigned: the
-/// expression that makes the value again, and, for a byte string or a text,
-/// the call that makes the bounded value of what is assigned, which can fail.
-#[derive(Clone, Debug, PartialEq, Eq)]
-pub(crate) struct GoRebuild {
-    /// The call of `Make{Codec}`.
-    pub(crate) value: String,
-    /// The fallible call that makes the assigned element's bounded value,
-    /// which `value` reads as [`GO_REBUILT_ELEMENT`], and the value assigned,
-    /// which is held as [`GO_REBUILT_VALUE`] first and which the call reads
-    /// there; `None` where the element is handed as it is.
-    pub(crate) made: Option<(String, String)>,
-}
-
 /// The local a rebuild reads a bounded element it made through
-/// [`GoRebuild::made`] from.
+/// [`PrintedRebuild::made`] from.
 pub(crate) const GO_REBUILT_ELEMENT: &str = "sceMade";
 
 /// The local a rebuild holds the value assigned to a byte string or a text
-/// in, which the call of [`GoRebuild::made`] makes the bounded value of.
+/// in, which the call of [`PrintedRebuild::made`] makes the bounded value of.
 pub(crate) const GO_REBUILT_VALUE: &str = "sceValue";
 
-impl GoPrinted {
-    /// What a reader outside its package knows of the codec `plan`, whose
-    /// value's struct is `struct_name`; the plan is one [`unlowered`]
-    /// answers `None` for.
-    pub(crate) fn of(plan: &EncodePlan<'_>, struct_name: &str) -> Self {
-        // In declaration order, each group where its first member is
-        // declared, then the arm of the variant, as `render` declares them.
-        let groups = go_groups(plan, struct_name);
-        let mut held_groups: BTreeSet<usize> = BTreeSet::new();
-        let mut parts: Vec<GoPart> = Vec::new();
-        for field in &plan.model.fields {
-            let id = field.id.clone();
-            if let Some(element) = element_of(plan, &id) {
-                let bounded = match &element.value {
-                    Value::Bytes(_) => Some(("Bytes", bound_type(struct_name, &id))),
-                    Value::Text(_) => Some(("Text", bound_type(struct_name, &id))),
-                    _ => None,
-                };
-                parts.push(GoPart::Element(GoPresented {
-                    id,
-                    bounded,
-                    optional: element.presence.optional(),
-                }));
-            } else if let Some(at) = groups.iter().position(|g| g.group.contains(&id)) {
-                if held_groups.insert(at) {
-                    parts.push(GoPart::Whole {
-                        method: groups[at].method.clone(),
-                    });
-                }
+/// The runtime's bounded type of a byte string or, where `text`, a text:
+/// `codec.Bytes` or `codec.Text`, and the stem of the runtime's functions over
+/// it (`codec.MakeBytes`, `codec.OptionalText`).
+fn bounded_kind(text: bool) -> &'static str {
+    if text {
+        "Text"
+    } else {
+        "Bytes"
+    }
+}
+
+/// What a reader in another package knows of the codec `plan`, whose value's
+/// struct is `struct_name`, which the Go backend prints ([`unlowered`] answers
+/// `None` for it), in the shape every printer gives it (docs/adr/0081 step 4):
+/// the elements its value presents, each by its method, in the order
+/// `Make{Codec}` takes them, a group and the arm of the variant whole; and
+/// each number its encode derives into a field, the tag of the arm the value
+/// holds among them, by the method of the value that answers it
+/// ([`wire_method`]), answered to a reader where the method takes none of the
+/// inputs the encode is handed. A procedure, a validator and an algorithm that
+/// hold a value of the codec read and make it through this
+/// ([`PrintedCodec::go_read`], [`PrintedCodec::go_rebuilt`]), so none spells a
+/// printed codec's interface of its own.
+pub(crate) fn printed_codec(plan: &EncodePlan<'_>, struct_name: &str) -> PrintedCodec {
+    // In declaration order, each group where its first member is declared,
+    // then the arm of the variant, as `render` declares them.
+    let groups = go_groups(plan, struct_name);
+    let mut held_groups: BTreeSet<usize> = BTreeSet::new();
+    let mut parts: Vec<PrintedPart> = Vec::new();
+    for field in &plan.model.fields {
+        let id = field.id.clone();
+        if let Some(element) = element_of(plan, &id) {
+            parts.push(PrintedPart::Element {
+                accessor: filters::to_pascal_case(id.clone()),
+                made: PrintedMade::of(&element.value, element.presence.optional()),
+                id,
+            });
+        } else if let Some(at) = groups.iter().position(|g| g.group.contains(&id)) {
+            if held_groups.insert(at) {
+                parts.push(PrintedPart::Whole {
+                    accessor: groups[at].method.clone(),
+                });
             }
         }
-        if !plan.arms.is_empty() {
-            parts.push(GoPart::Whole {
-                method: VARIANT_METHOD.to_string(),
-            });
-        }
-        let mut derived: Vec<GoDerived> = wire_numbers(plan)
-            .into_iter()
-            .map(|(id, number)| GoDerived {
-                id: id.to_string(),
-                inputs: wire_inputs(plan, number)
-                    .into_iter()
-                    .map(str::to_string)
-                    .collect(),
-            })
-            .collect();
-        derived.extend(wire_tags(plan).into_iter().map(|id| GoDerived {
-            id: id.to_string(),
-            inputs: Vec::new(),
-        }));
-        GoPrinted { parts, derived }
     }
+    if !plan.arms.is_empty() {
+        parts.push(PrintedPart::Whole {
+            accessor: VARIANT_METHOD.to_string(),
+        });
+    }
+    let mut numbers: Vec<DerivedNumber> = wire_numbers(plan)
+        .into_iter()
+        .map(|(id, number)| DerivedNumber {
+            id: id.to_string(),
+            by: wire_method(id),
+            answered: wire_inputs(plan, number).is_empty(),
+        })
+        .collect();
+    numbers.extend(wire_tags(plan).into_iter().map(|id| DerivedNumber {
+        id: id.to_string(),
+        by: wire_method(id),
+        answered: true,
+    }));
+    PrintedCodec { parts, numbers }
+}
 
-    /// The element the value presents as `id` by a method of its own.
-    fn element(&self, id: &str) -> Option<&GoPresented> {
-        self.parts.iter().find_map(|part| match part {
-            GoPart::Element(presented) if presented.id == id => Some(presented),
-            _ => None,
+impl PrintedCodec {
+    /// The Go read of the field `id` of the value `held`: an element the
+    /// value presents by its method, a byte string or a text as the slice or
+    /// the string its bounded value holds, the optional type of them where a
+    /// gate decides it, as the template's value held it; a number the encode
+    /// derives into a field by the method that derives it as the encode does
+    /// ([`wire_method`]), since the value holds no field for it (docs/adr/0081
+    /// §3), and a length the value states while its content is absent as the
+    /// number the frame carries, which that method answers too. `None` where a
+    /// reader may not name the field ([`PrintedCodec::reads`]).
+    pub(crate) fn go_read(&self, held: &str, id: &str) -> Option<String> {
+        Some(match self.reading(id)? {
+            Reading::Number(method) => format!("{held}.{method}()"),
+            Reading::Element { accessor, made } => {
+                let call = format!("{held}.{accessor}()");
+                match made {
+                    PrintedMade::Bounded {
+                        text,
+                        optional: true,
+                    } => format!("codec.Optional{}({call})", bounded_kind(text)),
+                    PrintedMade::Bounded { text: true, .. } => format!("{call}.String()"),
+                    PrintedMade::Bounded { text: false, .. } => format!("{call}.Bytes()"),
+                    PrintedMade::AsGiven | PrintedMade::Unmade { .. } => call,
+                }
+            }
         })
     }
 
-    /// Whether a reader that holds a value, and none of the inputs its encode
-    /// is handed, can read the element `id` through [`GoPrinted::read`]: an
-    /// element the value presents by a method of its own, or a number the
-    /// encode derives whose method takes no input. A member of a group, which
-    /// the value presents whole, and a number whose method takes the inputs a
-    /// body it counts is handed are not: a reader is not offered them as
-    /// members, so an expression that reads one is refused where it is
-    /// generated.
-    pub(crate) fn answers(&self, id: &str) -> bool {
-        match self.derived.iter().find(|derived| derived.id == id) {
-            Some(derived) => derived.inputs.is_empty(),
-            None => self.element(id).is_some(),
-        }
-    }
-
-    /// The read of the element `id`, of the type `ty`, of the value `held`:
-    /// an element the value presents by its method, a byte string or a text
-    /// as the slice or the string it holds ([`element_read`]); a number the
-    /// encode derives into a field by the method that derives it as the
-    /// encode does ([`wire_method`]), since the value holds no field for it
-    /// (docs/adr/0081 §3), and a length the value states while its content is
-    /// absent as the number the frame carries, which that method answers too.
-    /// A byte string or a text a gate decides is read as the optional type of
-    /// the slice or the string, as the template's value held it.
-    ///
-    /// # Panics
-    ///
-    /// Where the value does not answer `id` alone ([`GoPrinted::answers`]),
-    /// which no reader is offered.
-    pub(crate) fn read(&self, held: &str, id: &str, ty: &SceType) -> String {
-        if let Some(derived) = self.derived.iter().find(|derived| derived.id == id) {
-            assert!(
-                derived.inputs.is_empty(),
-                "`{id}` is offered to no reader: its method takes the inputs the encode is handed"
-            );
-            return format!("{held}.{}()", wire_method(id));
-        }
-        let call = format!("{held}.{}()", filters::to_pascal_case(id.to_string()));
-        match self.element(id) {
-            Some(GoPresented {
-                bounded: Some((kind, _)),
-                optional: true,
-                ..
-            }) => format!("codec.Optional{kind}({call})"),
-            _ => element_read(&call, ty),
-        }
-    }
-
-    /// The rebuild of the value `held`, made by `make` (the qualified
-    /// `Make{Codec}`) in the package `package` names, with the element
-    /// `element` assigned `value` and everything else `Make{Codec}` takes read
-    /// by its method, in its order: a group and the arm of the variant whole;
-    /// `None` where the value presents no `element` of its own, as for a
-    /// length the encode derives, which no value holds, or a member of a
-    /// group.
-    ///
-    /// A byte string or a text is assigned as the slice or the string the
-    /// expression gives, made into its bounded value by the runtime's
-    /// constructor, which refuses one outside the bound or a text that is not
-    /// UTF-8 ([`GoRebuild::made`]); one a gate decides, as the optional type
-    /// of them, by the constructor over that type. Any other element is
-    /// handed as the expression gives it, which is the type the template's
-    /// value held it as, the optional type where a gate decides it.
-    pub(crate) fn rebuilt(
+    /// The Go rebuild of the value `held`, made by `make` (the qualified
+    /// `Make{Codec}` of the codec whose struct is `struct_name`) in the
+    /// package `package` names, with the element `element` assigned `value`
+    /// and everything else `Make{Codec}` takes read by its method
+    /// ([`PrintedCodec::rebuilt_by`]). A byte string or a text is assigned as
+    /// the slice or the string the expression gives, made into its bounded
+    /// value by the runtime's constructor over the bound type the codec's
+    /// package names for it, which refuses one outside the bound or a text that
+    /// is not UTF-8 ([`PrintedRebuild::made`]); one a gate decides, as the
+    /// optional type of them, by the constructor over that type. Any other
+    /// element is handed as the expression gives it, which is the type the
+    /// template's value held it as, the optional type where a gate decides it.
+    pub(crate) fn go_rebuilt(
         &self,
         held: &str,
         make: &str,
         package: Option<&str>,
+        struct_name: &str,
         element: &str,
         value: &str,
-    ) -> Option<GoRebuild> {
-        let assigned = self.element(element)?;
-        let made = assigned.bounded.as_ref().map(|(kind, bound)| {
+    ) -> Result<PrintedRebuild, String> {
+        self.rebuilt_by(held, make, element, value, |_, text, optional| {
+            let bound = bound_type(struct_name, element);
             let bound = match package {
                 Some(package) => format!("{package}.{bound}"),
-                None => bound.clone(),
+                None => bound,
             };
-            let optional = if assigned.optional { "Optional" } else { "" };
+            let optional = if optional { "Optional" } else { "" };
             (
-                format!("codec.Make{optional}{kind}[{bound}]({GO_REBUILT_VALUE})"),
-                value.to_string(),
+                format!(
+                    "codec.Make{optional}{}[{bound}]({GO_REBUILT_VALUE})",
+                    bounded_kind(text)
+                ),
+                GO_REBUILT_ELEMENT.to_string(),
             )
-        });
-        let arguments: Vec<String> = self
-            .parts
-            .iter()
-            .map(|part| match part {
-                GoPart::Element(p) if p.id == element => {
-                    if made.is_some() {
-                        GO_REBUILT_ELEMENT.to_string()
-                    } else {
-                        value.to_string()
-                    }
-                }
-                GoPart::Element(p) => {
-                    format!("{held}.{}()", filters::to_pascal_case(p.id.clone()))
-                }
-                GoPart::Whole { method } => format!("{held}.{method}()"),
-            })
-            .collect();
-        Some(GoRebuild {
-            value: format!("{make}({})", arguments.join(", ")),
-            made,
         })
     }
 }

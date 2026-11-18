@@ -1845,6 +1845,19 @@ old encode, the old encode and its templates are removed in the same landing.
    printer named the kind in its place, so every constructor of the runtime names its own refusal as
    `codec.MakeBytes` and `codec.MakeList` do, and as the Python runtime's `Aligned` raises `InconsistentSource`.
    A decode reads both lists by one count and is never refused there.
+
+   *One shape of what a reader knows of a printed codec, 2026-11-18:* `cpp_source::CppPrinted` and
+   `go_source::GoPrinted` held the same facts, what the constructor takes in its order, how each element is made
+   of what an expression gives, and each number the encode derives with whether a reader holding the value is
+   answered it, so they are one `printed_codec::PrintedCodec`, and an import holds it as `ImportContext::printed`
+   on a C++ and a Go generation alike. Each printer builds it, spelling its accessors and the function or method
+   that answers a number (`cpp_source::printed_codec`, `go_source::printed_codec`); which field a reader may name,
+   which assignment is a rebuild and which is refused, and the order of the constructor's arguments are decided
+   once (`PrintedCodec::reading`, `PrintedCodec::rebuilt_by`), and each backend spells the read and the call
+   (`cpp_read`, `go_read`, `cpp_rebuilt`, `go_rebuilt`). A Go assignment to a body or a list is now refused as the
+   C++ one is, since no expression gives one, and an assignment to a member of a group is refused for that reason
+   rather than as a derived number. The arm of a variant is named by one function, `variant_arm_name`, which the
+   template's `variant_name`, the Rust and Go printers and the Kotlin and Go parents read.
 5. Swift, when its codec lowers what the plan holds.
    *Swift lowers what the plan holds, 2026-11-16:* its codec writes every codec of the repository Rust writes,
    but the one only an MCU-class backend writes (`a_swift_codec_is_written_wherever_rust_writes_one.rs`): an

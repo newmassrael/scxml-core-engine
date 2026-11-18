@@ -13,6 +13,7 @@
 //! it does not print, and the generator refuses such a codec by that name
 //! (`generate/unsupported-feature`), as it refuses each codec that holds it.
 
+use super::printed_codec::{DerivedNumber, PrintedMade, PrintedPart, PrintedRebuild, Reading};
 use super::*;
 use crate::forge::bit_layout::BitSpan;
 use crate::forge::codec_roles::{ElementId, GateGroup, GateVar, GroupArm, InputSource, InputValue};
@@ -297,7 +298,7 @@ fn override_member(l: &LangCtx, carrier: &str, flag: &str) -> String {
 /// generates it says nothing of the codec, and is refused for that.
 fn held_refused(imports: &[ImportContext], alias: &str) -> Option<String> {
     match imports.iter().find(|import| import.alias == alias) {
-        Some(import) if import.cpp_printed.is_some() => None,
+        Some(import) if import.printed.is_some() => None,
         Some(import) => Some(
             import
                 .cpp_unlowered
@@ -718,245 +719,123 @@ fn handed_off_source(plan: &EncodePlan<'_>, l: &LangCtx, alias: &str) -> String 
         .collect()
 }
 
-/// What a reader in another document knows of a codec the C++ backend prints
-/// from its plan (docs/adr/0081 step 4): what its constructor takes, in its
-/// order, and the numbers its encode derives into a field that a function of
-/// its namespace answers ([`wire_function`]). A procedure and a validator that
-/// hold a value of the codec read it and make it again through this
-/// ([`CppPrinted::read`], [`CppPrinted::rebuilt`]), so neither spells a
-/// printed codec's interface of its own.
-#[derive(Clone, Debug, Default, PartialEq, Eq)]
-pub struct CppPrinted {
-    /// What the constructor takes, in its order.
-    parts: Vec<CppPart>,
-    /// Each number the encode derives into a field that a function of the
-    /// codec's namespace answers: the field's id and the function's name.
-    answered: Vec<(String, String)>,
-}
-
-/// One thing a printed C++ value's constructor takes.
-#[derive(Clone, Debug, PartialEq, Eq)]
-enum CppPart {
-    /// An element the value presents by an accessor of its own.
-    Element {
-        /// The field id.
-        id: String,
-        /// The accessor's name, which is the constructor parameter's.
-        accessor: String,
-        /// How a value of it is made of what an expression gives.
-        made: CppMade,
-    },
-    /// A group of elements one gate decides, or the arm of the variant: the
-    /// value presents it whole by the accessor `accessor`, and no member of it
-    /// is an element of its own.
-    Whole { accessor: String },
-}
-
-/// How a printed C++ value's element is made of what an expression gives.
-#[derive(Clone, Debug, PartialEq, Eq)]
-enum CppMade {
-    /// Handed as the expression gives it: an integer, a flag set or an enum,
-    /// or the optional type of one.
-    AsGiven,
-    /// A byte string or a text, made by `make` of the bounded type the
-    /// accessor presents it as, which refuses one past its bound or a text
-    /// that is not UTF-8; `optional` where a gate decides it, and the
-    /// accessor presents it as the optional type of that bounded type.
-    Bounded { optional: bool },
-    /// A body or a list, which no expression gives: `why` says what it is.
-    Unmade { why: &'static str },
-}
-
-/// A rebuild of a printed C++ codec's value with one element assigned.
-#[derive(Clone, Debug, PartialEq, Eq)]
-pub(crate) struct CppRebuild {
-    /// The call of the constructor.
-    pub(crate) value: String,
-    /// For a byte string or a text, the call that makes the bounded value of
-    /// what is assigned, which `value` reads as [`CPP_REBUILT_ELEMENT`] and
-    /// which can fail, and the value it is made of, which is held as
-    /// [`CPP_REBUILT_VALUE`] first, as the bounded value views it; `None`
-    /// where the element is handed as the expression gives it.
-    pub(crate) made: Option<(String, String)>,
-}
-
 /// The local a rebuild holds the value assigned to a byte string or a text
-/// in, which the bounded value made of it views ([`CppRebuild::made`]).
+/// in, which the bounded value made of it views ([`PrintedRebuild::made`]).
 pub(crate) const CPP_REBUILT_VALUE: &str = "_sce_value";
 
 /// The local a rebuild reads the bounded value it made of the value assigned
-/// from ([`CppRebuild::made`]), an optional the call leaves empty where it
+/// from ([`PrintedRebuild::made`]), an optional the call leaves empty where it
 /// refuses.
 pub(crate) const CPP_REBUILT_ELEMENT: &str = "_sce_made";
 
-impl CppPrinted {
-    /// What a reader in another document knows of the codec `plan`, which the
-    /// C++ backend prints ([`unlowered`] answers `None` for it). A CBOR or a
-    /// content-line codec presents no field of the codec's own a reader names
-    /// as a record's, so it is known by nothing.
-    pub(crate) fn of(plan: &CodecPlan<'_>) -> Self {
-        let CodecPlan::Positional(plan) = plan else {
-            return CppPrinted::default();
-        };
-        let l = LangCtx::new(crate::generator::Language::Cpp, &[]);
-        let mut parts: Vec<CppPart> = declared_parts(plan)
-            .into_iter()
-            .map(|part| match part {
-                Part::Element(index) => {
-                    let element = &plan.elements[index];
-                    let made = match &element.value {
-                        Value::Bytes(_) | Value::Text(_) => CppMade::Bounded {
-                            optional: element.presence.optional(),
-                        },
-                        Value::Body { .. } => CppMade::Unmade {
-                            why: "the body of a codec it holds",
-                        },
-                        Value::List { .. } => CppMade::Unmade {
-                            why: "a list of the entries of a codec it holds",
-                        },
-                        _ => CppMade::AsGiven,
-                    };
-                    CppPart::Element {
-                        id: element.field.id.clone(),
-                        accessor: l.codec_field_id(&element.field.id),
-                        made,
-                    }
+/// What a reader in another document knows of the codec `plan`, which the C++
+/// backend prints ([`unlowered`] answers `None` for it), in the shape every
+/// printer gives it (docs/adr/0081 step 4): what its constructor takes, in its
+/// order, each element by its accessor, and each number its encode derives
+/// into a field by the function of its namespace that answers it
+/// ([`wire_function`]), answered to a reader where a source says all of what
+/// it measures ([`source_says`]). A procedure and a validator that hold a
+/// value of the codec read it and make it again through this
+/// ([`PrintedCodec::cpp_read`], [`PrintedCodec::cpp_rebuilt`]), so neither
+/// spells a printed codec's interface of its own. A CBOR or a content-line
+/// codec presents no field of the codec's own a reader names as a record's, so
+/// it is known by nothing.
+pub(crate) fn printed_codec(plan: &CodecPlan<'_>) -> PrintedCodec {
+    let CodecPlan::Positional(plan) = plan else {
+        return PrintedCodec::default();
+    };
+    let l = LangCtx::new(crate::generator::Language::Cpp, &[]);
+    let mut parts: Vec<PrintedPart> = declared_parts(plan)
+        .into_iter()
+        .map(|part| match part {
+            Part::Element(index) => {
+                let element = &plan.elements[index];
+                PrintedPart::Element {
+                    id: element.field.id.clone(),
+                    accessor: l.codec_field_id(&element.field.id),
+                    made: PrintedMade::of(&element.value, element.presence.optional()),
                 }
-                Part::Group(index) => CppPart::Whole {
-                    accessor: super::rust_source::group_accessor(&plan.groups()[index]),
-                },
-            })
-            .collect();
-        // The arm a variant holds comes last, after the fields before it.
-        if plan.model.variant.is_some() {
-            parts.push(CppPart::Whole {
-                accessor: "body".to_string(),
-            });
+            }
+            Part::Group(index) => PrintedPart::Whole {
+                accessor: super::rust_source::group_accessor(&plan.groups()[index]),
+            },
+        })
+        .collect();
+    // The arm a variant holds comes last, after the fields before it.
+    if plan.model.variant.is_some() {
+        parts.push(PrintedPart::Whole {
+            accessor: "body".to_string(),
+        });
+    }
+    let answered: Vec<&str> = answered_numbers(plan)
+        .into_iter()
+        .filter_map(|derived| number_field(plan, derived))
+        .map(|field| field.id.as_str())
+        .collect();
+    let mut numbers: Vec<DerivedNumber> = Vec::new();
+    for derived in &plan.derivations {
+        let Some(field) = number_field(plan, derived) else {
+            continue;
+        };
+        if numbers.iter().any(|number| number.id == field.id) {
+            continue;
         }
-        let answered = answered_numbers(plan)
-            .into_iter()
-            .filter_map(|derived| number_field(plan, derived))
-            .map(|field| (field.id.clone(), wire_name(&l, &field.id)))
-            .collect();
-        CppPrinted { parts, answered }
+        numbers.push(DerivedNumber {
+            id: field.id.clone(),
+            by: wire_name(&l, &field.id),
+            answered: answered.contains(&field.id.as_str()),
+        });
+    }
+    PrintedCodec { parts, numbers }
+}
+
+impl PrintedCodec {
+    /// The C++ read of the field `id` of the value `held`, whose codec's
+    /// namespace is `namespace`: a number the encode derives by the function
+    /// of the namespace that derives it as the encode does, since the value
+    /// holds no field for it (docs/adr/0081 §3), and a length the value states
+    /// while its content is absent as the number the frame carries, which that
+    /// function answers too; an element by its accessor. `None` where a reader
+    /// may not name the field ([`PrintedCodec::reads`]).
+    pub(crate) fn cpp_read(&self, held: &str, namespace: &str, id: &str) -> Option<String> {
+        Some(match self.reading(id)? {
+            Reading::Number(function) => format!("{namespace}::{function}({held})"),
+            Reading::Element { accessor, .. } => format!("{held}.{accessor}()"),
+        })
     }
 
-    /// Whether a reader may name the field `id` of a value of the codec: an
-    /// element the value presents by an accessor of its own, or a number the
-    /// encode derives that a function of the codec's namespace answers. A
-    /// member of a group, which the value presents whole, is not, nor is a
-    /// number whose measures a source does not say ([`source_says`]).
-    pub(crate) fn reads(&self, id: &str) -> bool {
-        self.answered.iter().any(|(field, _)| field == id) || self.element(id).is_some()
-    }
-
-    /// The read of the field `id` of the value `held`, whose codec's namespace
-    /// is `namespace`: a number the encode derives by the function of the
-    /// namespace that derives it as the encode does, since the value holds no
-    /// field for it (docs/adr/0081 §3), and a length the value states while its
-    /// content is absent as the number the frame carries, which that function
-    /// answers too; an element by its accessor. `None` where a reader may not
-    /// name the field ([`CppPrinted::reads`]).
-    pub(crate) fn read(&self, held: &str, namespace: &str, id: &str) -> Option<String> {
-        if let Some((_, function)) = self.answered.iter().find(|(field, _)| field == id) {
-            return Some(format!("{namespace}::{function}({held})"));
-        }
-        let (accessor, _) = self.element(id)?;
-        Some(format!("{held}.{accessor}()"))
-    }
-
-    /// The rebuild of the value `held`, made by the constructor of `class`,
-    /// with the element `element` assigned `value` and everything else the
-    /// constructor takes read by its accessor, in the constructor's order: a
-    /// group and the arm of the variant whole. A byte string or a text is
-    /// assigned as the expression gives it, made into its bounded value by
-    /// `make` of the type the accessor presents it as, which refuses one past
-    /// its bound or a text that is not UTF-8 ([`CppRebuild::made`]); one a gate
-    /// decides, by `make` of the type its optional holds. Any other element is
-    /// handed as the expression gives it, which the parenthesised call converts
-    /// as the assignment it replaces did. Refused, with why, where the value
-    /// presents no `element` of its own: a number the encode derives, which no
-    /// value holds, a member of a group, and a body or a list, which no
-    /// expression gives.
-    pub(crate) fn rebuilt(
+    /// The C++ rebuild of the value `held`, made by the constructor of
+    /// `class`, with the element `element` assigned `value` and everything
+    /// else the constructor takes read by its accessor
+    /// ([`PrintedCodec::rebuilt_by`]). A byte string or a text is made into
+    /// its bounded value by `make` of the type the accessor presents it as,
+    /// which refuses one past its bound or a text that is not UTF-8
+    /// ([`PrintedRebuild::made`]); one a gate decides, by `make` of the type
+    /// its optional holds. Any other element is handed as the expression gives
+    /// it, which the parenthesised call converts as the assignment it replaces
+    /// did.
+    pub(crate) fn cpp_rebuilt(
         &self,
         held: &str,
         class: &str,
         element: &str,
         value: &str,
-    ) -> Result<CppRebuild, String> {
-        let Some((accessor, made)) = self.element(element) else {
-            return Err(if self.answered.iter().any(|(field, _)| field == element) {
-                format!(
-                    "the encode derives `{element}` from what it measures (docs/adr/0081 §3), \
-                     so its value holds no `{element}` to assign"
+    ) -> Result<PrintedRebuild, String> {
+        self.rebuilt_by(held, class, element, value, |accessor, _, optional| {
+            let presented = format!("std::decay_t<decltype({held}.{accessor}())>");
+            // The optional `make` answers is the optional type the
+            // constructor takes, holding a value once it is tested.
+            if optional {
+                (
+                    format!("{presented}::value_type::make({CPP_REBUILT_VALUE})"),
+                    CPP_REBUILT_ELEMENT.to_string(),
                 )
             } else {
-                format!(
-                    "`{element}` is a member of a group the value presents whole, so it is \
-                     not assigned alone"
+                (
+                    format!("{presented}::make({CPP_REBUILT_VALUE})"),
+                    format!("*{CPP_REBUILT_ELEMENT}"),
                 )
-            });
-        };
-        let made = match made {
-            CppMade::AsGiven => None,
-            CppMade::Bounded { optional } => {
-                let presented = format!("std::decay_t<decltype({held}.{accessor}())>");
-                let bounded = if *optional {
-                    format!("{presented}::value_type")
-                } else {
-                    presented
-                };
-                Some((
-                    format!("{bounded}::make({CPP_REBUILT_VALUE})"),
-                    value.to_string(),
-                ))
             }
-            CppMade::Unmade { why } => {
-                return Err(format!(
-                    "`{element}` is {why}, which the value is made of whole and no expression \
-                     gives"
-                ))
-            }
-        };
-        let arguments: Vec<String> = self
-            .parts
-            .iter()
-            .map(|part| match part {
-                // The optional `make` answers is the optional type the
-                // constructor takes, holding a value once it is tested.
-                CppPart::Element {
-                    id,
-                    made: CppMade::Bounded { optional: true },
-                    ..
-                } if id == element => CPP_REBUILT_ELEMENT.to_string(),
-                CppPart::Element {
-                    id,
-                    made: CppMade::Bounded { optional: false },
-                    ..
-                } if id == element => format!("*{CPP_REBUILT_ELEMENT}"),
-                CppPart::Element { id, .. } if id == element => value.to_string(),
-                CppPart::Element { accessor, .. } | CppPart::Whole { accessor } => {
-                    format!("{held}.{accessor}()")
-                }
-            })
-            .collect();
-        Ok(CppRebuild {
-            value: format!("{class}({})", arguments.join(", ")),
-            made,
-        })
-    }
-
-    /// The accessor of the element the value presents as `id`, and how it is
-    /// made; `None` where it presents no such element of its own.
-    fn element(&self, id: &str) -> Option<(&str, &CppMade)> {
-        self.parts.iter().find_map(|part| match part {
-            CppPart::Element {
-                id: element,
-                accessor,
-                made,
-            } if element == id => Some((accessor.as_str(), made)),
-            _ => None,
         })
     }
 }

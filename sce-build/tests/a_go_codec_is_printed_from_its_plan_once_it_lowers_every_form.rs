@@ -241,9 +241,9 @@ fn a_text_is_held_to_its_bound_and_read_as_its_string() {
 /// A chain reads the identifier of an entry the Go backend prints through the
 /// entry's method, as the entry holds it in an unexported field.
 ///
-/// Turns red where `chain_identifier_masks` asks only `cpp_printed` of the
-/// entry's import, or where `lib.rs` stops setting `go_printed` on a Go
-/// compile.
+/// Turns red where `chain_identifier_masks` stops asking the entry's import
+/// what a reader knows of it, or where `lib.rs` stops setting
+/// `ImportContext::printed` on a Go compile.
 #[test]
 fn a_chain_reads_the_identifier_of_a_printed_entry_through_its_method() {
     assert!(unlowered("codec_chain_has_tagged_entry").is_empty());
@@ -618,7 +618,7 @@ fn length_ref_procedure(location: &str, expr: &str) -> String {
 /// again from the elements it presents alone: the length the encode derives
 /// is no argument of `Make{Codec}`.
 ///
-/// Turns red where `go_source::GoPrinted::rebuilt` hands `Make{Codec}` every
+/// Turns red where `PrintedCodec::go_rebuilt` hands `Make{Codec}` every
 /// field the codec declares (the length among them), where it hands the
 /// assigned slice without `codec.MakeBytes`, where the template drops the
 /// `a.made` branch, or where `render_procedure_go` stops setting
@@ -651,7 +651,7 @@ fn a_procedure_makes_a_byte_string_of_a_printed_codec_within_its_bound() {
 /// no byte string it assigns hands the integer as it is and imports no
 /// `codec` package.
 ///
-/// Turns red where `go_source::GoPrinted::rebuilt` makes a bounded value of
+/// Turns red where `PrintedCodec::go_rebuilt` makes a bounded value of
 /// an element that is no byte string or text, or where `uses_forge_codec` is
 /// set without a rebuild that makes one.
 #[test]
@@ -680,7 +680,7 @@ fn a_procedure_hands_an_integer_of_a_printed_codec_as_it_is() {
 /// it measures (docs/adr/0081 §3).
 ///
 /// Turns red where `rebuilt_element_assign` answers `None` for an element
-/// `GoPrinted::rebuilt` does not find, which leaves the assign as a write of
+/// `PrintedCodec::go_rebuilt` does not find, which leaves the assign as a write of
 /// a field the value does not have.
 #[test]
 fn a_procedure_cannot_assign_a_length_a_printed_codec_derives() {
@@ -697,10 +697,10 @@ fn a_procedure_cannot_assign_a_length_a_printed_codec_derives() {
 /// method of the value that derives it as the encode does
 /// (`go_source::wire_method`), as the value holds no field for it.
 ///
-/// Turns red where `GoPrinted::read` reads a derived element by a method of
+/// Turns red where `PrintedCodec::go_read` reads a derived element by a method of
 /// the field's own name, which the value does not have, or where
 /// `stateful_import_field_renames` stops reading a printed codec's element
-/// through `GoPrinted::read`.
+/// through `PrintedCodec::go_read`.
 #[test]
 fn a_validator_reads_a_derived_length_of_a_printed_codec_from_what_it_measures() {
     let name = "go_validator_reads_printed_length";
@@ -789,9 +789,10 @@ fn the_length_of_a_body_handed_an_input_is_answered_by_a_method_taking_it() {
 /// encode is handed, is not offered a number the value answers only with
 /// them: a validator that reads it is refused where it is generated.
 ///
-/// Turns red where `GoPrinted::answers` answers every element, where
+/// Turns red where `PrintedCodec::reads` answers every element, where
 /// `validate_and_enrich_imports` offers every field of a printed Go codec as
-/// a member, or where `GoPrinted::read` reads the number without the inputs.
+/// a member, or where `PrintedCodec::go_read` reads the number without the
+/// inputs.
 #[test]
 fn a_reader_is_not_offered_a_length_that_takes_the_encodes_inputs() {
     let dir = tempfile::tempdir().expect("a directory for the documents");
