@@ -73,10 +73,12 @@ typedef enum {
      * `CodecError::UndeclaredEnumValue` every other runtime's decode
      * answers. */
     SCE_FORGE_CODEC_UNDECLARED_ENUM_VALUE = 6,
-    /* An `sce:encoding="cbor"` map is not one the codec reads
-     * (SCE_FORGE.md §4.6.1): not a definite-length map, a key given twice,
-     * or an entry of the wrong major type. The five CBOR statuses mirror
-     * the typed `CodecError::Cbor*` of Rust and `codec.ErrCbor*` of Go. */
+    /* An `sce:encoding="cbor"` codec (SCE_FORGE.md §4.6.1) read an item that
+     * is not well-formed (RFC 8949 Appendix F: a reserved head, a break code
+     * where an item stands, a two-byte simple value below 32), or one of
+     * indefinite length, which the codec's profile of definite lengths does
+     * not hold (docs/adr/0101 §3.1). The CBOR statuses mirror the typed
+     * `CodecError::Cbor*` of Rust and `codec.ErrCbor*` of Go. */
     SCE_FORGE_CODEC_CBOR_MALFORMED = 7,
     /* A CBOR map lacks an entry of a bare type, one that is not `optional<T>`. */
     SCE_FORGE_CODEC_CBOR_REQUIRED_KEY_MISSING = 8,
@@ -144,6 +146,19 @@ typedef enum {
      * `CodecError::CapacityExceeded` of Rust; the backends whose containers
      * grow have no such refusal. */
     SCE_FORGE_CODEC_CAPACITY_EXCEEDED = 22,
+    /* A CBOR codec read an item of a major type, a simple value or a tag the
+     * type at that place does not take: a text where a number stands, a
+     * negative integer where an unsigned type stands, `null` where no list's
+     * optional element stands, a tagged item, a top-level key that is not an
+     * unsigned integer, a record's or a union's key that is not a text
+     * (docs/adr/0101 §3.3). */
+    SCE_FORGE_CODEC_CBOR_WRONG_TYPE = 23,
+    /* A CBOR map held one of its declared keys twice (RFC 8949 §5.6). */
+    SCE_FORGE_CODEC_CBOR_DUPLICATE_KEY = 24,
+    /* A CBOR union's one key names none of its cases. */
+    SCE_FORGE_CODEC_CBOR_UNKNOWN_VARIANT = 25,
+    /* A CBOR union's map held no entry, or more than one. */
+    SCE_FORGE_CODEC_CBOR_UNION_ENTRIES = 26,
 } sce_forge_codec_status_t;
 
 /* A refusal of a node's capacity, noted in `*over`, and every other status as

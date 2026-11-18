@@ -193,7 +193,7 @@ typedef struct {
  * order step 3a), the payload type the schema's own unit declares: one CBOR map
  * of every field, each under its id as text (docs/adr/0086, section 9.2). Its
  * keys in any order, a key the schema does not declare skipped whole; a key
- * given twice is SCE_FORGE_CODEC_CBOR_MALFORMED, a field missing
+ * given twice is SCE_FORGE_CODEC_CBOR_DUPLICATE_KEY, a field missing
  * SCE_FORGE_CODEC_CBOR_REQUIRED_KEY_MISSING, and a text or a byte string past
  * its bound, or a text that carries the byte its terminator is,
  * SCE_FORGE_CODEC_CBOR_OUT_OF_RANGE. A byte string is read into the buffer the
@@ -224,7 +224,7 @@ static inline sce_forge_codec_status_t {{ r.decode_fn }}(sce_forge_cursor_t *c, 
         {{ "} else " if not loop.first else "" }}if (key_len == {{ f.key_len }}U && memcmp(key, {{ f.key_literal }}, {{ f.key_len }}U) == 0) {
             /* A key given twice is not one map entry. */
             if (seen_{{ f.name }}) {
-                return SCE_FORGE_CODEC_CBOR_MALFORMED;
+                return SCE_FORGE_CODEC_CBOR_DUPLICATE_KEY;
             }
             seen_{{ f.name }} = true;
 {% if f.kind == "bool" %}
@@ -337,7 +337,7 @@ static inline sce_forge_codec_status_t {{ c_decode_func }}(sce_forge_cursor_t *c
         case {{ e.key }}U:
             /* A key given twice is not one map entry. */
             if (seen_{{ e.name }}) {
-                return SCE_FORGE_CODEC_CBOR_MALFORMED;
+                return SCE_FORGE_CODEC_CBOR_DUPLICATE_KEY;
             }
             seen_{{ e.name }} = true;
 {{ decode_value(e) }}{% if not e.required %}
