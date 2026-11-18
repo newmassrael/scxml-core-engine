@@ -77,7 +77,7 @@ func DecodeCodecChainHasMarker(cursor *codec.SceCursor) (*CodecChainHasMarker, e
 	_has_Extensions_18 := false
 	if Extensions.IsPresent() {
 		for _, _e := range Extensions.Proven() {
-			if (uint64(_e.Header) & 127) == 18 {
+			if (uint64(_e.Header()) & 127) == 18 {
 				_has_Extensions_18 = true
 				break
 			}
@@ -173,7 +173,7 @@ func (s *CodecChainHasMarker) Encode(w codec.SceSink) error {
 	_has_Extensions_18 := false
 	if s.Extensions.IsPresent() {
 		for _, _e := range s.Extensions.Proven() {
-			if (uint64(_e.Header) & 127) == 18 {
+			if (uint64(_e.Header()) & 127) == 18 {
 				_has_Extensions_18 = true
 				break
 			}

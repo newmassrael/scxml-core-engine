@@ -11,10 +11,59 @@ import (
 	"github.com/newmassrael/sce-forge-runtime/optional"
 )
 
+// CodecPresentIfNegationSource is what the encode of CodecPresentIfNegation reads: one method
+// for each element a value presents (docs/adr/0081 §2). CodecPresentIfNegation is one,
+// and so is any value with these methods. The encode derives every other
+// element of the frame.
+type CodecPresentIfNegationSource interface {
+	Flags() uint8
+	Seq() optional.Of[uint16]
+}
+
 // CodecPresentIfNegation represents the codec frame layout.
 type CodecPresentIfNegation struct {
-	Flags uint8
-	Seq optional.Of[uint16]
+	flags uint8
+	seq optional.Of[uint16]
+}
+
+// MakeCodecPresentIfNegation returns the CodecPresentIfNegation that presents each element it
+// is handed, in declaration order (docs/adr/0081 §2). Its fields are
+// unexported: outside this package a value is made here, by
+// DecodeCodecPresentIfNegation, or as its zero value, and is read through its methods.
+func MakeCodecPresentIfNegation(flags uint8, seq optional.Of[uint16]) CodecPresentIfNegation {
+	return CodecPresentIfNegation{flags: flags, seq: seq}
+}
+
+// Flags returns the element the value presents as Flags.
+func (s *CodecPresentIfNegation) Flags() uint8 {
+	return s.flags
+}
+
+// Seq returns the element the value presents as Seq.
+func (s *CodecPresentIfNegation) Seq() optional.Of[uint16] {
+	return s.seq
+}
+
+// EncodeSource writes any source of CodecPresentIfNegation into w, each element read
+// off src and written where the codec's encode plan lays it out
+// (docs/adr/0081). It refuses no value: it returns only the
+// error of w, codec.ErrBufferOverflow from a bounded sink
+// that has no room left.
+func EncodeSource(src CodecPresentIfNegationSource, w codec.SceSink) error {
+	_cFlags := src.Flags()
+	_cFlags &^= 0x1
+	if !src.Seq().IsPresent() {
+		_cFlags |= 0x1
+	}
+	if err := w.WriteBytes([]byte{byte(_cFlags)}); err != nil {
+		return err
+	}
+	if src.Seq().IsPresent() {
+		if err := w.WriteBytes([]byte{byte(src.Seq().Proven() >> 8 & 0xFF), byte(src.Seq().Proven() & 0xFF)}); err != nil {
+			return err
+		}
+	}
+	return nil
 }
 
 // DecodeCodecPresentIfNegation decodes the next frame from cursor.
@@ -58,8 +107,8 @@ func DecodeCodecPresentIfNegation(cursor *codec.SceCursor) (*CodecPresentIfNegat
 		Seq = optional.Some(_v)
 	}
 	return &CodecPresentIfNegation{
-		Flags: Flags,
-		Seq: Seq,
+		flags: Flags,
+		seq: Seq,
 	}, nil
 }
 
@@ -70,14 +119,14 @@ func DecodeCodecPresentIfNegation(cursor *codec.SceCursor) (*CodecPresentIfNegat
 // sibling bits. Wire layout is unchanged — the carrier still occupies
 // its declared bytes.
 func (s *CodecPresentIfNegation) AbsentSeq() bool {
-	return (s.Flags & 0x01) != 0
+	return (s.flags & 0x01) != 0
 }
 
 func (s *CodecPresentIfNegation) SetAbsentSeq(v bool) {
 	if v {
-		s.Flags |= 0x01
+		s.flags |= 0x01
 	} else {
-		s.Flags &^= 0x01
+		s.flags &^= 0x01
 	}
 }
 
@@ -86,27 +135,7 @@ func (s *CodecPresentIfNegation) SetAbsentSeq(v bool) {
 // when the destination has insufficient remaining capacity; growable
 // sinks (e.g. BytesSink) are effectively infallible.
 func (s *CodecPresentIfNegation) Encode(w codec.SceSink) error {
-	// Streaming cursor encode (SSOT selection: `needs_streaming`).
-	// Mirrors the streaming decode: every field appends its own bytes in
-	// declaration order through the per-field encode blocks, so a gated
-	// field skips its append when absent, and a fixed field after a
-	// variable-length payload lands after the payload (the positional path
-	// appends variable fields last, placing it ahead on the wire).
-	// Per-field `is_repeat` / `is_tlv_chain` / `is_embed` route to their
-	// dedicated helpers; everything else uses `present_if_encode_block`.
-	if err := w.WriteBytes([]byte{ s.Flags }); err != nil {
-		return err
-	}
-	if s.Seq.IsPresent() {
-		_v := s.Seq.Proven()
-		if err := w.WriteBytes([]byte{ byte(_v >> 8 & 0xFF) }); err != nil {
-			return err
-		}
-		if err := w.WriteBytes([]byte{ byte(_v & 0xFF) }); err != nil {
-			return err
-		}
-	}
-	return nil
+	return EncodeSource(s, w)
 }
 
 // EncodeToBytes is the heap-backed convenience facade. Runs Encode

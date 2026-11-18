@@ -69,14 +69,14 @@ func DecodeCodecChainHasTagged(cursor *codec.SceCursor) (*CodecChainHasTagged, e
 	}
 	_has_Entries_7 := false
 	for _, _e := range Entries {
-		if uint64(_e.EntryType) == 7 {
+		if uint64(_e.EntryType()) == 7 {
 			_has_Entries_7 = true
 			break
 		}
 	}
 	_has_Entries_9 := false
 	for _, _e := range Entries {
-		if uint64(_e.EntryType) == 9 {
+		if uint64(_e.EntryType()) == 9 {
 			_has_Entries_9 = true
 			break
 		}
@@ -138,14 +138,14 @@ func (s *CodecChainHasTagged) SetWide(v bool) {
 func (s *CodecChainHasTagged) Encode(w codec.SceSink) error {
 	_has_Entries_7 := false
 	for _, _e := range s.Entries {
-		if uint64(_e.EntryType) == 7 {
+		if uint64(_e.EntryType()) == 7 {
 			_has_Entries_7 = true
 			break
 		}
 	}
 	_has_Entries_9 := false
 	for _, _e := range s.Entries {
-		if uint64(_e.EntryType) == 9 {
+		if uint64(_e.EntryType()) == 9 {
 			_has_Entries_9 = true
 			break
 		}

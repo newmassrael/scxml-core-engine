@@ -10,10 +10,63 @@ import (
 	"github.com/newmassrael/sce-forge-runtime/codec"
 )
 
+// CodecOriginLeafDataBound is the bound of the data element of CodecOriginLeaf: 0 to 16 bytes
+// (docs/adr/0077 §3). A Bytes of it is made only within it.
+type CodecOriginLeafDataBound struct{}
+
+// Least is the fewest bytes the element holds.
+func (CodecOriginLeafDataBound) Least() int { return 0 }
+
+// Most is the most bytes the element holds.
+func (CodecOriginLeafDataBound) Most() int { return 16 }
+
+// CodecOriginLeafSource is what the encode of CodecOriginLeaf reads: one method
+// for each element a value presents (docs/adr/0081 §2). CodecOriginLeaf is one,
+// and so is any value with these methods. The encode derives every other
+// element of the frame.
+type CodecOriginLeafSource interface {
+	Data() codec.Bytes[CodecOriginLeafDataBound]
+}
+
 // CodecOriginLeaf represents the codec frame layout.
 type CodecOriginLeaf struct {
-	Len uint8
-	Data []byte
+	data codec.Bytes[CodecOriginLeafDataBound]
+}
+
+// MakeCodecOriginLeaf returns the CodecOriginLeaf that presents each element it
+// is handed, in declaration order (docs/adr/0081 §2). Its fields are
+// unexported: outside this package a value is made here, by
+// DecodeCodecOriginLeaf, or as its zero value, and is read through its methods.
+func MakeCodecOriginLeaf(data codec.Bytes[CodecOriginLeafDataBound]) CodecOriginLeaf {
+	return CodecOriginLeaf{data: data}
+}
+
+// Data returns the element the value presents as Data.
+func (s *CodecOriginLeaf) Data() codec.Bytes[CodecOriginLeafDataBound] {
+	return s.data
+}
+
+// WireLen returns the len the frame of the value carries, which the
+// encode derives from what it measures (docs/adr/0081 §3).
+func (s *CodecOriginLeaf) WireLen() uint8 {
+	return uint8(s.Data().Len())
+}
+
+// EncodeSource writes any source of CodecOriginLeaf into w, each element read
+// off src and written where the codec's encode plan lays it out
+// (docs/adr/0081). It derives len from
+// what each measures, and never reads it off the source. It refuses no value: it returns only the
+// error of w, codec.ErrBufferOverflow from a bounded sink
+// that has no room left.
+func EncodeSource(src CodecOriginLeafSource, w codec.SceSink) error {
+	_dLen := uint8(src.Data().Len())
+	if err := w.WriteBytes([]byte{byte(_dLen)}); err != nil {
+		return err
+	}
+	if err := w.WriteBytes(src.Data().Bytes()); err != nil {
+		return err
+	}
+	return nil
 }
 
 // DecodeCodecOriginLeaf decodes the next frame from cursor.
@@ -38,9 +91,12 @@ func DecodeCodecOriginLeaf(cursor *codec.SceCursor) (*CodecOriginLeaf, error) {
 		return nil, codec.ErrNeedMoreBytes
 	}
 	Data := raw[1:1+int(Len)]
+	_bData, err := codec.MakeBytes[CodecOriginLeafDataBound](Data)
+	if err != nil {
+		return nil, err
+	}
 	value := &CodecOriginLeaf{
-		Len: Len,
-		Data: Data,
+		data: _bData,
 	}
 	if err := cursor.Advance(frameLen); err != nil {
 		return nil, err
@@ -53,30 +109,15 @@ func DecodeCodecOriginLeaf(cursor *codec.SceCursor) (*CodecOriginLeaf, error) {
 // when the destination has insufficient remaining capacity; growable
 // sinks (e.g. BytesSink) are effectively infallible.
 func (s *CodecOriginLeaf) Encode(w codec.SceSink) error {
-	if len(s.Data) > 16 {
-		return codec.ErrLengthOutOfRange
-	}
-	if err := w.WriteBytes([]byte{ byte(s.Len) }); err != nil {
-		return err
-	}
-	if err := w.WriteBytes(s.Data); err != nil {
-		return err
-	}
-	return nil
+	return EncodeSource(s, w)
 }
 
 // EncodeToBytes is the heap-backed convenience facade. Runs Encode
-// over a BytesSink and returns the freshly-encoded byte slice, or the
-// error Encode refuses the value with before its first byte: a field's
-// presence disagrees with the `sce:present-if` that gates it
-// (codec.ErrPresentIfMismatch), or a byte string, text, list or chain lies
-// outside its bound (codec.ErrLengthOutOfRange, codec.ErrTooManyElements).
-// Callers targeting zero-alloc hot paths should call Encode directly against a caller-owned sink (e.g.
-// BoundedSink over a stack buffer).
-func (s *CodecOriginLeaf) EncodeToBytes() ([]byte, error) {
+// over a BytesSink and returns the freshly-encoded byte slice.
+// Callers targeting zero-alloc hot paths should call Encode directly
+// against a caller-owned sink (e.g. BoundedSink over a stack buffer).
+func (s *CodecOriginLeaf) EncodeToBytes() []byte {
 	_dst := make([]byte, 0, 17)
-	if err := s.Encode(codec.NewBytesSink(&_dst)); err != nil {
-		return nil, err
-	}
-	return _dst, nil
+	_ = s.Encode(codec.NewBytesSink(&_dst))
+	return _dst
 }

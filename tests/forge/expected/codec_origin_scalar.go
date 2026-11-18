@@ -10,9 +10,42 @@ import (
 	"github.com/newmassrael/sce-forge-runtime/codec"
 )
 
+// CodecOriginScalarSource is what the encode of CodecOriginScalar reads: one method
+// for each element a value presents (docs/adr/0081 §2). CodecOriginScalar is one,
+// and so is any value with these methods. The encode derives every other
+// element of the frame.
+type CodecOriginScalarSource interface {
+	Value() uint8
+}
+
 // CodecOriginScalar represents the codec frame layout.
 type CodecOriginScalar struct {
-	Value uint8
+	value uint8
+}
+
+// MakeCodecOriginScalar returns the CodecOriginScalar that presents each element it
+// is handed, in declaration order (docs/adr/0081 §2). Its fields are
+// unexported: outside this package a value is made here, by
+// DecodeCodecOriginScalar, or as its zero value, and is read through its methods.
+func MakeCodecOriginScalar(value uint8) CodecOriginScalar {
+	return CodecOriginScalar{value: value}
+}
+
+// Value returns the element the value presents as Value.
+func (s *CodecOriginScalar) Value() uint8 {
+	return s.value
+}
+
+// EncodeSource writes any source of CodecOriginScalar into w, each element read
+// off src and written where the codec's encode plan lays it out
+// (docs/adr/0081). It refuses no value: it returns only the
+// error of w, codec.ErrBufferOverflow from a bounded sink
+// that has no room left.
+func EncodeSource(src CodecOriginScalarSource, w codec.SceSink) error {
+	if err := w.WriteBytes([]byte{byte(src.Value())}); err != nil {
+		return err
+	}
+	return nil
 }
 
 // DecodeCodecOriginScalar decodes the next frame from cursor.
@@ -27,7 +60,7 @@ func DecodeCodecOriginScalar(cursor *codec.SceCursor) (*CodecOriginScalar, error
 	}
 	Value := raw[0]
 	value := &CodecOriginScalar{
-		Value: Value,
+		value: Value,
 	}
 	if err := cursor.Advance(1); err != nil {
 		return nil, err
@@ -40,10 +73,7 @@ func DecodeCodecOriginScalar(cursor *codec.SceCursor) (*CodecOriginScalar, error
 // when the destination has insufficient remaining capacity; growable
 // sinks (e.g. BytesSink) are effectively infallible.
 func (s *CodecOriginScalar) Encode(w codec.SceSink) error {
-	if err := w.WriteBytes([]byte{ byte(s.Value) }); err != nil {
-		return err
-	}
-	return nil
+	return EncodeSource(s, w)
 }
 
 // EncodeToBytes is the heap-backed convenience facade. Runs Encode

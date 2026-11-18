@@ -11,10 +11,65 @@ import (
 	"example.com/sce-forge/codec_repeat_elem"
 )
 
+// CodecRepeatBasicFragsBound is the bound of the frags element of CodecRepeatBasic: 0 to 32 entries
+// (docs/adr/0065 §6 R2). A List of it is made only within it.
+type CodecRepeatBasicFragsBound struct{}
+
+// Least is the fewest entries the element holds.
+func (CodecRepeatBasicFragsBound) Least() int { return 0 }
+
+// Most is the most entries the element holds.
+func (CodecRepeatBasicFragsBound) Most() int { return 32 }
+
+// CodecRepeatBasicSource is what the encode of CodecRepeatBasic reads: one method
+// for each element a value presents (docs/adr/0081 §2). CodecRepeatBasic is one,
+// and so is any value with these methods. The encode derives every other
+// element of the frame.
+type CodecRepeatBasicSource interface {
+	Frags() codec.List[CodecRepeatBasicFragsBound, codec_repeat_elem.CodecRepeatElemSource]
+}
+
 // CodecRepeatBasic represents the codec frame layout.
 type CodecRepeatBasic struct {
-	NumFrags uint8
-	Frags []codec_repeat_elem.CodecRepeatElem
+	frags codec.List[CodecRepeatBasicFragsBound, codec_repeat_elem.CodecRepeatElemSource]
+}
+
+// MakeCodecRepeatBasic returns the CodecRepeatBasic that presents each element it
+// is handed, in declaration order (docs/adr/0081 §2). Its fields are
+// unexported: outside this package a value is made here, by
+// DecodeCodecRepeatBasic, or as its zero value, and is read through its methods.
+func MakeCodecRepeatBasic(frags codec.List[CodecRepeatBasicFragsBound, codec_repeat_elem.CodecRepeatElemSource]) CodecRepeatBasic {
+	return CodecRepeatBasic{frags: frags}
+}
+
+// Frags returns the element the value presents as Frags.
+func (s *CodecRepeatBasic) Frags() codec.List[CodecRepeatBasicFragsBound, codec_repeat_elem.CodecRepeatElemSource] {
+	return s.frags
+}
+
+// WireNumFrags returns the num_frags the frame of the value carries, which the
+// encode derives from what it measures (docs/adr/0081 §3).
+func (s *CodecRepeatBasic) WireNumFrags() uint8 {
+	return uint8(s.Frags().Len())
+}
+
+// EncodeSource writes any source of CodecRepeatBasic into w, each element read
+// off src and written where the codec's encode plan lays it out
+// (docs/adr/0081). It derives num_frags from
+// what each measures, and never reads it off the source. It refuses no value: it returns only the
+// error of w, codec.ErrBufferOverflow from a bounded sink
+// that has no room left.
+func EncodeSource(src CodecRepeatBasicSource, w codec.SceSink) error {
+	_dNumFrags := uint8(src.Frags().Len())
+	if err := w.WriteBytes([]byte{byte(_dNumFrags)}); err != nil {
+		return err
+	}
+	for _e := range src.Frags().All() {
+		if err := codec_repeat_elem.EncodeSource(_e, w); err != nil {
+			return err
+		}
+	}
+	return nil
 }
 
 // DecodeCodecRepeatBasic decodes the next frame from cursor.
@@ -56,9 +111,12 @@ func DecodeCodecRepeatBasic(cursor *codec.SceCursor) (*CodecRepeatBasic, error) 
 		}
 		Frags = append(Frags, *_elem)
 	}
+	_lFrags, err := codec.MakeList[CodecRepeatBasicFragsBound](codec.SourcesOf(Frags, func(e *codec_repeat_elem.CodecRepeatElem) codec_repeat_elem.CodecRepeatElemSource { return e }))
+	if err != nil {
+		return nil, err
+	}
 	return &CodecRepeatBasic{
-		NumFrags: NumFrags,
-		Frags: Frags,
+		frags: _lFrags,
 	}, nil
 }
 
@@ -67,40 +125,15 @@ func DecodeCodecRepeatBasic(cursor *codec.SceCursor) (*CodecRepeatBasic, error) 
 // when the destination has insufficient remaining capacity; growable
 // sinks (e.g. BytesSink) are effectively infallible.
 func (s *CodecRepeatBasic) Encode(w codec.SceSink) error {
-	if len(s.Frags) > 32 {
-		return codec.ErrTooManyElements
-	}
-	// Streaming cursor encode (SSOT selection: `needs_streaming`).
-	// Mirrors the streaming decode: every field appends its own bytes in
-	// declaration order through the per-field encode blocks, so a gated
-	// field skips its append when absent, and a fixed field after a
-	// variable-length payload lands after the payload (the positional path
-	// appends variable fields last, placing it ahead on the wire).
-	// Per-field `is_repeat` / `is_tlv_chain` / `is_embed` route to their
-	// dedicated helpers; everything else uses `present_if_encode_block`.
-	if err := w.WriteBytes([]byte{ s.NumFrags }); err != nil {
-		return err
-	}
-	for _i := range s.Frags {
-		if err := s.Frags[_i].Encode(w); err != nil {
-			return err
-		}
-	}
-	return nil
+	return EncodeSource(s, w)
 }
 
 // EncodeToBytes is the heap-backed convenience facade. Runs Encode
-// over a BytesSink and returns the freshly-encoded byte slice, or the
-// error Encode refuses the value with before its first byte: a field's
-// presence disagrees with the `sce:present-if` that gates it
-// (codec.ErrPresentIfMismatch), or a byte string, text, list or chain lies
-// outside its bound (codec.ErrLengthOutOfRange, codec.ErrTooManyElements).
-// Callers targeting zero-alloc hot paths should call Encode directly against a caller-owned sink (e.g.
-// BoundedSink over a stack buffer).
-func (s *CodecRepeatBasic) EncodeToBytes() ([]byte, error) {
+// over a BytesSink and returns the freshly-encoded byte slice.
+// Callers targeting zero-alloc hot paths should call Encode directly
+// against a caller-owned sink (e.g. BoundedSink over a stack buffer).
+func (s *CodecRepeatBasic) EncodeToBytes() []byte {
 	_dst := make([]byte, 0, 65)
-	if err := s.Encode(codec.NewBytesSink(&_dst)); err != nil {
-		return nil, err
-	}
-	return _dst, nil
+	_ = s.Encode(codec.NewBytesSink(&_dst))
+	return _dst
 }

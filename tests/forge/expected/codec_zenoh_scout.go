@@ -11,11 +11,82 @@ import (
 	"github.com/newmassrael/sce-forge-runtime/optional"
 )
 
+// CodecZenohScoutZidBound is the bound of the zid element of CodecZenohScout: 1 to 16 bytes
+// (docs/adr/0077 §3). A Bytes of it is made only within it.
+type CodecZenohScoutZidBound struct{}
+
+// Least is the fewest bytes the element holds.
+func (CodecZenohScoutZidBound) Least() int { return 1 }
+
+// Most is the most bytes the element holds.
+func (CodecZenohScoutZidBound) Most() int { return 16 }
+
+// CodecZenohScoutSource is what the encode of CodecZenohScout reads: one method
+// for each element a value presents (docs/adr/0081 §2). CodecZenohScout is one,
+// and so is any value with these methods. The encode derives every other
+// element of the frame.
+type CodecZenohScoutSource interface {
+	Version() uint8
+	Cbyte() uint8
+	Zid() optional.Of[codec.Bytes[CodecZenohScoutZidBound]]
+}
+
 // CodecZenohScout represents the codec frame layout.
 type CodecZenohScout struct {
-	Version uint8
-	Cbyte uint8
-	Zid optional.Of[[]byte]
+	version uint8
+	cbyte uint8
+	zid optional.Of[codec.Bytes[CodecZenohScoutZidBound]]
+}
+
+// MakeCodecZenohScout returns the CodecZenohScout that presents each element it
+// is handed, in declaration order (docs/adr/0081 §2). Its fields are
+// unexported: outside this package a value is made here, by
+// DecodeCodecZenohScout, or as its zero value, and is read through its methods.
+func MakeCodecZenohScout(version uint8, cbyte uint8, zid optional.Of[codec.Bytes[CodecZenohScoutZidBound]]) CodecZenohScout {
+	return CodecZenohScout{version: version, cbyte: cbyte, zid: zid}
+}
+
+// Version returns the element the value presents as Version.
+func (s *CodecZenohScout) Version() uint8 {
+	return s.version
+}
+
+// Cbyte returns the element the value presents as Cbyte.
+func (s *CodecZenohScout) Cbyte() uint8 {
+	return s.cbyte
+}
+
+// Zid returns the element the value presents as Zid.
+func (s *CodecZenohScout) Zid() optional.Of[codec.Bytes[CodecZenohScoutZidBound]] {
+	return s.zid
+}
+
+// EncodeSource writes any source of CodecZenohScout into w, each element read
+// off src and written where the codec's encode plan lays it out
+// (docs/adr/0081). It refuses no value: it returns only the
+// error of w, codec.ErrBufferOverflow from a bounded sink
+// that has no room left.
+func EncodeSource(src CodecZenohScoutSource, w codec.SceSink) error {
+	_cCbyte := src.Cbyte()
+	_cCbyte &^= 0x8
+	if src.Zid().IsPresent() {
+		_cCbyte |= 0x8
+	}
+	if src.Zid().IsPresent() {
+		_cCbyte = (_cCbyte &^ 0xF0) | (uint8(src.Zid().Proven().Len() - 1) << 4)
+	}
+	if err := w.WriteBytes([]byte{byte(src.Version())}); err != nil {
+		return err
+	}
+	if err := w.WriteBytes([]byte{byte(_cCbyte)}); err != nil {
+		return err
+	}
+	if src.Zid().IsPresent() {
+		if err := w.WriteBytes(src.Zid().Proven().Bytes()); err != nil {
+			return err
+		}
+	}
+	return nil
 }
 
 // DecodeCodecZenohScout decodes the next frame from cursor.
@@ -70,10 +141,14 @@ func DecodeCodecZenohScout(cursor *codec.SceCursor) (*CodecZenohScout, error) {
 			return nil, err
 		}
 	}
+	_bZid, err := codec.MakeOptionalBytes[CodecZenohScoutZidBound](Zid)
+	if err != nil {
+		return nil, err
+	}
 	return &CodecZenohScout{
-		Version: Version,
-		Cbyte: Cbyte,
-		Zid: Zid,
+		version: Version,
+		cbyte: Cbyte,
+		zid: _bZid,
 	}, nil
 }
 
@@ -84,35 +159,35 @@ func DecodeCodecZenohScout(cursor *codec.SceCursor) (*CodecZenohScout, error) {
 // sibling bits. Wire layout is unchanged — the carrier still occupies
 // its declared bytes.
 func (s *CodecZenohScout) What() uint8 {
-	return uint8((s.Cbyte >> 0) & 0x07)
+	return uint8((s.cbyte >> 0) & 0x07)
 }
 
 func (s *CodecZenohScout) SetWhat(v uint8) {
 	const _shiftedMask uint8 = 0x07 << 0
 	_val := (uint8(v) & 0x07) << 0
-	s.Cbyte = (s.Cbyte &^ _shiftedMask) | _val
+	s.cbyte = (s.cbyte &^ _shiftedMask) | _val
 }
 
 func (s *CodecZenohScout) I() bool {
-	return (s.Cbyte & 0x08) != 0
+	return (s.cbyte & 0x08) != 0
 }
 
 func (s *CodecZenohScout) SetI(v bool) {
 	if v {
-		s.Cbyte |= 0x08
+		s.cbyte |= 0x08
 	} else {
-		s.Cbyte &^= 0x08
+		s.cbyte &^= 0x08
 	}
 }
 
 func (s *CodecZenohScout) ZidLenM1() uint8 {
-	return uint8((s.Cbyte >> 4) & 0x0F)
+	return uint8((s.cbyte >> 4) & 0x0F)
 }
 
 func (s *CodecZenohScout) SetZidLenM1(v uint8) {
 	const _shiftedMask uint8 = 0x0F << 4
 	_val := (uint8(v) & 0x0F) << 4
-	s.Cbyte = (s.Cbyte &^ _shiftedMask) | _val
+	s.cbyte = (s.cbyte &^ _shiftedMask) | _val
 }
 
 // Encode writes the CodecZenohScout into the caller-owned sink.
@@ -120,43 +195,15 @@ func (s *CodecZenohScout) SetZidLenM1(v uint8) {
 // when the destination has insufficient remaining capacity; growable
 // sinks (e.g. BytesSink) are effectively infallible.
 func (s *CodecZenohScout) Encode(w codec.SceSink) error {
-	if s.Zid.IsPresent() && (len(s.Zid.Proven()) < 1 || len(s.Zid.Proven()) > 16) {
-		return codec.ErrLengthOutOfRange
-	}
-	// Streaming cursor encode (SSOT selection: `needs_streaming`).
-	// Mirrors the streaming decode: every field appends its own bytes in
-	// declaration order through the per-field encode blocks, so a gated
-	// field skips its append when absent, and a fixed field after a
-	// variable-length payload lands after the payload (the positional path
-	// appends variable fields last, placing it ahead on the wire).
-	// Per-field `is_repeat` / `is_tlv_chain` / `is_embed` route to their
-	// dedicated helpers; everything else uses `present_if_encode_block`.
-	if err := w.WriteBytes([]byte{ s.Version }); err != nil {
-		return err
-	}
-	if err := w.WriteBytes([]byte{ s.Cbyte }); err != nil {
-		return err
-	}
-	if s.Zid.IsPresent() {
-		if err := w.WriteBytes(s.Zid.Proven()); err != nil {
-			return err
-		}
-	}
-	return nil
+	return EncodeSource(s, w)
 }
 
 // EncodeToBytes is the heap-backed convenience facade. Runs Encode
-// over a BytesSink and returns the freshly-encoded byte slice, or the
-// error Encode refuses the value with before its first byte: a field's
-// presence disagrees with the `sce:present-if` that gates it
-// (codec.ErrPresentIfMismatch), or a byte string, text, list or chain lies
-// outside its bound (codec.ErrLengthOutOfRange, codec.ErrTooManyElements).
-// Callers targeting zero-alloc hot paths should call Encode directly against a caller-owned sink (e.g.
-// BoundedSink over a stack buffer).
-func (s *CodecZenohScout) EncodeToBytes() ([]byte, error) {
+// over a BytesSink and returns the freshly-encoded byte slice.
+// Callers targeting zero-alloc hot paths should call Encode directly
+// against a caller-owned sink (e.g. BoundedSink over a stack buffer).
+func (s *CodecZenohScout) EncodeToBytes() []byte {
 	_dst := make([]byte, 0, 18)
-	if err := s.Encode(codec.NewBytesSink(&_dst)); err != nil {
-		return nil, err
-	}
-	return _dst, nil
+	_ = s.Encode(codec.NewBytesSink(&_dst))
+	return _dst
 }

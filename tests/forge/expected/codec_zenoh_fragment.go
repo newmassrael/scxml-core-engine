@@ -10,10 +10,62 @@ import (
 	"github.com/newmassrael/sce-forge-runtime/codec"
 )
 
+// CodecZenohFragmentPayloadBound is the bound of the payload element of CodecZenohFragment: 0 to 65536 bytes
+// (docs/adr/0077 §3). A Bytes of it is made only within it.
+type CodecZenohFragmentPayloadBound struct{}
+
+// Least is the fewest bytes the element holds.
+func (CodecZenohFragmentPayloadBound) Least() int { return 0 }
+
+// Most is the most bytes the element holds.
+func (CodecZenohFragmentPayloadBound) Most() int { return 65536 }
+
+// CodecZenohFragmentSource is what the encode of CodecZenohFragment reads: one method
+// for each element a value presents (docs/adr/0081 §2). CodecZenohFragment is one,
+// and so is any value with these methods. The encode derives every other
+// element of the frame.
+type CodecZenohFragmentSource interface {
+	Sn() uint64
+	Payload() codec.Bytes[CodecZenohFragmentPayloadBound]
+}
+
 // CodecZenohFragment represents the codec frame layout.
 type CodecZenohFragment struct {
-	Sn uint64
-	Payload []byte
+	sn uint64
+	payload codec.Bytes[CodecZenohFragmentPayloadBound]
+}
+
+// MakeCodecZenohFragment returns the CodecZenohFragment that presents each element it
+// is handed, in declaration order (docs/adr/0081 §2). Its fields are
+// unexported: outside this package a value is made here, by
+// DecodeCodecZenohFragment, or as its zero value, and is read through its methods.
+func MakeCodecZenohFragment(sn uint64, payload codec.Bytes[CodecZenohFragmentPayloadBound]) CodecZenohFragment {
+	return CodecZenohFragment{sn: sn, payload: payload}
+}
+
+// Sn returns the element the value presents as Sn.
+func (s *CodecZenohFragment) Sn() uint64 {
+	return s.sn
+}
+
+// Payload returns the element the value presents as Payload.
+func (s *CodecZenohFragment) Payload() codec.Bytes[CodecZenohFragmentPayloadBound] {
+	return s.payload
+}
+
+// EncodeSource writes any source of CodecZenohFragment into w, each element read
+// off src and written where the codec's encode plan lays it out
+// (docs/adr/0081). It refuses no value: it returns only the
+// error of w, codec.ErrBufferOverflow from a bounded sink
+// that has no room left.
+func EncodeSource(src CodecZenohFragmentSource, w codec.SceSink) error {
+	if err := codec.WriteVLEU64(w, uint64(src.Sn())); err != nil {
+		return err
+	}
+	if err := w.WriteBytes(src.Payload().Bytes()); err != nil {
+		return err
+	}
+	return nil
 }
 
 // DecodeCodecZenohFragment decodes the next frame from cursor.
@@ -50,9 +102,13 @@ func DecodeCodecZenohFragment(cursor *codec.SceCursor) (*CodecZenohFragment, err
 			return nil, err
 		}
 	}
+	_bPayload, err := codec.MakeBytes[CodecZenohFragmentPayloadBound](Payload)
+	if err != nil {
+		return nil, err
+	}
 	return &CodecZenohFragment{
-		Sn: Sn,
-		Payload: Payload,
+		sn: Sn,
+		payload: _bPayload,
 	}, nil
 }
 
@@ -61,38 +117,15 @@ func DecodeCodecZenohFragment(cursor *codec.SceCursor) (*CodecZenohFragment, err
 // when the destination has insufficient remaining capacity; growable
 // sinks (e.g. BytesSink) are effectively infallible.
 func (s *CodecZenohFragment) Encode(w codec.SceSink) error {
-	if len(s.Payload) > 65536 {
-		return codec.ErrLengthOutOfRange
-	}
-	// Streaming cursor encode (SSOT selection: `needs_streaming`).
-	// Mirrors the streaming decode: every field appends its own bytes in
-	// declaration order through the per-field encode blocks, so a gated
-	// field skips its append when absent, and a fixed field after a
-	// variable-length payload lands after the payload (the positional path
-	// appends variable fields last, placing it ahead on the wire).
-	// Per-field `is_repeat` / `is_tlv_chain` / `is_embed` route to their
-	// dedicated helpers; everything else uses `present_if_encode_block`.
-	if err := codec.WriteVLEU64(w, uint64(s.Sn)); err != nil {
-		return err
-	}
-	if err := w.WriteBytes(s.Payload); err != nil {
-		return err
-	}
-	return nil
+	return EncodeSource(s, w)
 }
 
 // EncodeToBytes is the heap-backed convenience facade. Runs Encode
-// over a BytesSink and returns the freshly-encoded byte slice, or the
-// error Encode refuses the value with before its first byte: a field's
-// presence disagrees with the `sce:present-if` that gates it
-// (codec.ErrPresentIfMismatch), or a byte string, text, list or chain lies
-// outside its bound (codec.ErrLengthOutOfRange, codec.ErrTooManyElements).
-// Callers targeting zero-alloc hot paths should call Encode directly against a caller-owned sink (e.g.
-// BoundedSink over a stack buffer).
-func (s *CodecZenohFragment) EncodeToBytes() ([]byte, error) {
+// over a BytesSink and returns the freshly-encoded byte slice.
+// Callers targeting zero-alloc hot paths should call Encode directly
+// against a caller-owned sink (e.g. BoundedSink over a stack buffer).
+func (s *CodecZenohFragment) EncodeToBytes() []byte {
 	_dst := make([]byte, 0, 65545)
-	if err := s.Encode(codec.NewBytesSink(&_dst)); err != nil {
-		return nil, err
-	}
-	return _dst, nil
+	_ = s.Encode(codec.NewBytesSink(&_dst))
+	return _dst
 }

@@ -10,9 +10,42 @@ import (
 	"github.com/newmassrael/sce-forge-runtime/codec"
 )
 
+// CodecVariantSessionCloseSource is what the encode of CodecVariantSessionClose reads: one method
+// for each element a value presents (docs/adr/0081 §2). CodecVariantSessionClose is one,
+// and so is any value with these methods. The encode derives every other
+// element of the frame.
+type CodecVariantSessionCloseSource interface {
+	Reason() uint8
+}
+
 // CodecVariantSessionClose represents the codec frame layout.
 type CodecVariantSessionClose struct {
-	Reason uint8
+	reason uint8
+}
+
+// MakeCodecVariantSessionClose returns the CodecVariantSessionClose that presents each element it
+// is handed, in declaration order (docs/adr/0081 §2). Its fields are
+// unexported: outside this package a value is made here, by
+// DecodeCodecVariantSessionClose, or as its zero value, and is read through its methods.
+func MakeCodecVariantSessionClose(reason uint8) CodecVariantSessionClose {
+	return CodecVariantSessionClose{reason: reason}
+}
+
+// Reason returns the element the value presents as Reason.
+func (s *CodecVariantSessionClose) Reason() uint8 {
+	return s.reason
+}
+
+// EncodeSource writes any source of CodecVariantSessionClose into w, each element read
+// off src and written where the codec's encode plan lays it out
+// (docs/adr/0081). It refuses no value: it returns only the
+// error of w, codec.ErrBufferOverflow from a bounded sink
+// that has no room left.
+func EncodeSource(src CodecVariantSessionCloseSource, w codec.SceSink) error {
+	if err := w.WriteBytes([]byte{byte(src.Reason())}); err != nil {
+		return err
+	}
+	return nil
 }
 
 // DecodeCodecVariantSessionClose decodes the next frame from cursor.
@@ -27,7 +60,7 @@ func DecodeCodecVariantSessionClose(cursor *codec.SceCursor) (*CodecVariantSessi
 	}
 	Reason := raw[0]
 	value := &CodecVariantSessionClose{
-		Reason: Reason,
+		reason: Reason,
 	}
 	if err := cursor.Advance(1); err != nil {
 		return nil, err
@@ -40,10 +73,7 @@ func DecodeCodecVariantSessionClose(cursor *codec.SceCursor) (*CodecVariantSessi
 // when the destination has insufficient remaining capacity; growable
 // sinks (e.g. BytesSink) are effectively infallible.
 func (s *CodecVariantSessionClose) Encode(w codec.SceSink) error {
-	if err := w.WriteBytes([]byte{ byte(s.Reason) }); err != nil {
-		return err
-	}
-	return nil
+	return EncodeSource(s, w)
 }
 
 // EncodeToBytes is the heap-backed convenience facade. Runs Encode

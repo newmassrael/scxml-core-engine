@@ -12,10 +12,52 @@ import (
 	"github.com/newmassrael/sce-forge-runtime/codec"
 )
 
+// CodecDefaultMarkerArmBSource is what the encode of CodecDefaultMarkerArmB reads: one method
+// for each element a value presents (docs/adr/0081 §2). CodecDefaultMarkerArmB is one,
+// and so is any value with these methods. The encode derives every other
+// element of the frame.
+type CodecDefaultMarkerArmBSource interface {
+	Header() uint8
+	Payload() uint16
+}
+
 // CodecDefaultMarkerArmB represents the codec frame layout.
 type CodecDefaultMarkerArmB struct {
-	Header uint8
-	Payload uint16
+	header uint8
+	payload uint16
+}
+
+// MakeCodecDefaultMarkerArmB returns the CodecDefaultMarkerArmB that presents each element it
+// is handed, in declaration order (docs/adr/0081 §2). Its fields are
+// unexported: outside this package a value is made here, by
+// DecodeCodecDefaultMarkerArmB, or as its zero value, and is read through its methods.
+func MakeCodecDefaultMarkerArmB(header uint8, payload uint16) CodecDefaultMarkerArmB {
+	return CodecDefaultMarkerArmB{header: header, payload: payload}
+}
+
+// Header returns the element the value presents as Header.
+func (s *CodecDefaultMarkerArmB) Header() uint8 {
+	return s.header
+}
+
+// Payload returns the element the value presents as Payload.
+func (s *CodecDefaultMarkerArmB) Payload() uint16 {
+	return s.payload
+}
+
+// EncodeSource writes any source of CodecDefaultMarkerArmB into w, each element read
+// off src and written where the codec's encode plan lays it out
+// (docs/adr/0081). It refuses no value: it returns only the
+// error of w, codec.ErrBufferOverflow from a bounded sink
+// that has no room left.
+func EncodeSource(src CodecDefaultMarkerArmBSource, w codec.SceSink) error {
+	if err := w.WriteBytes([]byte{byte(src.Header())}); err != nil {
+		return err
+	}
+	if err := w.WriteBytes([]byte{byte(src.Payload() >> 8 & 0xFF), byte(src.Payload() & 0xFF)}); err != nil {
+		return err
+	}
+	return nil
 }
 
 // NewCodecDefaultMarkerArmB returns a CodecDefaultMarkerArmB initialized with the
@@ -27,7 +69,7 @@ type CodecDefaultMarkerArmB struct {
 // RFC variant-default-uniformity (Go).
 func NewCodecDefaultMarkerArmB() *CodecDefaultMarkerArmB {
 	return &CodecDefaultMarkerArmB{
-		Header: uint8(0x02),
+		header: uint8(0x02),
 	}
 }
 
@@ -44,8 +86,8 @@ func DecodeCodecDefaultMarkerArmB(cursor *codec.SceCursor) (*CodecDefaultMarkerA
 	Header := raw[0]
 	Payload := uint16(raw[1])<<8 | uint16(raw[2])
 	value := &CodecDefaultMarkerArmB{
-		Header: Header,
-		Payload: Payload,
+		header: Header,
+		payload: Payload,
 	}
 	if err := cursor.Advance(3); err != nil {
 		return nil, err
@@ -60,13 +102,13 @@ func DecodeCodecDefaultMarkerArmB(cursor *codec.SceCursor) (*CodecDefaultMarkerA
 // sibling bits. Wire layout is unchanged — the carrier still occupies
 // its declared bytes.
 func (s *CodecDefaultMarkerArmB) Kind() uint8 {
-	return uint8((s.Header >> 0) & 0x03)
+	return uint8((s.header >> 0) & 0x03)
 }
 
 func (s *CodecDefaultMarkerArmB) SetKind(v uint8) {
 	const _shiftedMask uint8 = 0x03 << 0
 	_val := (uint8(v) & 0x03) << 0
-	s.Header = (s.Header &^ _shiftedMask) | _val
+	s.header = (s.header &^ _shiftedMask) | _val
 }
 
 // Encode writes the CodecDefaultMarkerArmB into the caller-owned sink.
@@ -74,16 +116,7 @@ func (s *CodecDefaultMarkerArmB) SetKind(v uint8) {
 // when the destination has insufficient remaining capacity; growable
 // sinks (e.g. BytesSink) are effectively infallible.
 func (s *CodecDefaultMarkerArmB) Encode(w codec.SceSink) error {
-	if err := w.WriteBytes([]byte{ byte(s.Header) }); err != nil {
-		return err
-	}
-	if err := w.WriteBytes([]byte{ byte(s.Payload >> 8 & 0xFF) }); err != nil {
-		return err
-	}
-	if err := w.WriteBytes([]byte{ byte(s.Payload & 0xFF) }); err != nil {
-		return err
-	}
-	return nil
+	return EncodeSource(s, w)
 }
 
 // EncodeToBytes is the heap-backed convenience facade. Runs Encode

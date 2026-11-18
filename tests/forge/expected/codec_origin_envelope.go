@@ -13,15 +13,135 @@ import (
 	"example.com/sce-forge/codec_origin_leaf"
 )
 
+// CodecOriginEnvelopeNoteBound is the bound of the note element of CodecOriginEnvelope: 0 to 16 UTF-8 bytes
+// (docs/adr/0077 §3). A Text of it is made only within it.
+type CodecOriginEnvelopeNoteBound struct{}
+
+// Least is the fewest UTF-8 bytes the element holds.
+func (CodecOriginEnvelopeNoteBound) Least() int { return 0 }
+
+// Most is the most UTF-8 bytes the element holds.
+func (CodecOriginEnvelopeNoteBound) Most() int { return 16 }
+
+// CodecOriginEnvelopeItemsBound is the bound of the items element of CodecOriginEnvelope: 0 to 3 entries
+// (docs/adr/0065 §6 R2). A List of it is made only within it.
+type CodecOriginEnvelopeItemsBound struct{}
+
+// Least is the fewest entries the element holds.
+func (CodecOriginEnvelopeItemsBound) Least() int { return 0 }
+
+// Most is the most entries the element holds.
+func (CodecOriginEnvelopeItemsBound) Most() int { return 3 }
+
+// CodecOriginEnvelopeSource is what the encode of CodecOriginEnvelope reads: one method
+// for each element a value presents (docs/adr/0081 §2). CodecOriginEnvelope is one,
+// and so is any value with these methods. The encode derives every other
+// element of the frame.
+type CodecOriginEnvelopeSource interface {
+	Hdr() uint8
+	Note() codec.Text[CodecOriginEnvelopeNoteBound]
+	Required() codec_origin_leaf.CodecOriginLeafSource
+	Optional() optional.Of[codec_origin_leaf.CodecOriginLeafSource]
+	Items() codec.List[CodecOriginEnvelopeItemsBound, codec_origin_leaf.CodecOriginLeafSource]
+}
+
 // CodecOriginEnvelope represents the codec frame layout.
 type CodecOriginEnvelope struct {
-	Hdr uint8
-	NoteLen uint8
-	Note string
-	M uint8
-	Required codec_origin_leaf.CodecOriginLeaf
-	Optional optional.Of[codec_origin_leaf.CodecOriginLeaf]
-	Items []codec_origin_leaf.CodecOriginLeaf
+	hdr uint8
+	note codec.Text[CodecOriginEnvelopeNoteBound]
+	required codec_origin_leaf.CodecOriginLeafSource
+	optional optional.Of[codec_origin_leaf.CodecOriginLeafSource]
+	items codec.List[CodecOriginEnvelopeItemsBound, codec_origin_leaf.CodecOriginLeafSource]
+}
+
+// MakeCodecOriginEnvelope returns the CodecOriginEnvelope that presents each element it
+// is handed, in declaration order (docs/adr/0081 §2). Its fields are
+// unexported: outside this package a value is made here, by
+// DecodeCodecOriginEnvelope, or as its zero value, and is read through its methods.
+func MakeCodecOriginEnvelope(hdr uint8, note codec.Text[CodecOriginEnvelopeNoteBound], required codec_origin_leaf.CodecOriginLeafSource, optional optional.Of[codec_origin_leaf.CodecOriginLeafSource], items codec.List[CodecOriginEnvelopeItemsBound, codec_origin_leaf.CodecOriginLeafSource]) CodecOriginEnvelope {
+	return CodecOriginEnvelope{hdr: hdr, note: note, required: required, optional: optional, items: items}
+}
+
+// Hdr returns the element the value presents as Hdr.
+func (s *CodecOriginEnvelope) Hdr() uint8 {
+	return s.hdr
+}
+
+// Note returns the element the value presents as Note.
+func (s *CodecOriginEnvelope) Note() codec.Text[CodecOriginEnvelopeNoteBound] {
+	return s.note
+}
+
+// Required returns the element the value presents as Required.
+func (s *CodecOriginEnvelope) Required() codec_origin_leaf.CodecOriginLeafSource {
+	if s.required == nil {
+		return &codec_origin_leaf.CodecOriginLeaf{}
+	}
+	return s.required
+}
+
+// Optional returns the element the value presents as Optional.
+func (s *CodecOriginEnvelope) Optional() optional.Of[codec_origin_leaf.CodecOriginLeafSource] {
+	return s.optional
+}
+
+// Items returns the element the value presents as Items.
+func (s *CodecOriginEnvelope) Items() codec.List[CodecOriginEnvelopeItemsBound, codec_origin_leaf.CodecOriginLeafSource] {
+	return s.items
+}
+
+// WireNoteLen returns the note_len the frame of the value carries, which the
+// encode derives from what it measures (docs/adr/0081 §3).
+func (s *CodecOriginEnvelope) WireNoteLen() uint8 {
+	return uint8(s.Note().Len())
+}
+
+// WireM returns the m the frame of the value carries, which the
+// encode derives from what it measures (docs/adr/0081 §3).
+func (s *CodecOriginEnvelope) WireM() uint8 {
+	return uint8(s.Items().Len())
+}
+
+// EncodeSource writes any source of CodecOriginEnvelope into w, each element read
+// off src and written where the codec's encode plan lays it out
+// (docs/adr/0081). It derives m, note_len from
+// what each measures, and never reads it off the source. It refuses no value: it returns only the
+// error of w, codec.ErrBufferOverflow from a bounded sink
+// that has no room left.
+func EncodeSource(src CodecOriginEnvelopeSource, w codec.SceSink) error {
+	_dNoteLen := uint8(src.Note().Len())
+	_dM := uint8(src.Items().Len())
+	_cHdr := src.Hdr()
+	_cHdr &^= 0x1
+	if src.Optional().IsPresent() {
+		_cHdr |= 0x1
+	}
+	if err := w.WriteBytes([]byte{byte(_cHdr)}); err != nil {
+		return err
+	}
+	if err := w.WriteBytes([]byte{byte(_dNoteLen)}); err != nil {
+		return err
+	}
+	if err := w.WriteBytes([]byte(src.Note().String())); err != nil {
+		return err
+	}
+	if err := w.WriteBytes([]byte{byte(_dM)}); err != nil {
+		return err
+	}
+	if err := codec_origin_leaf.EncodeSource(src.Required(), w); err != nil {
+		return err
+	}
+	if src.Optional().IsPresent() {
+		if err := codec_origin_leaf.EncodeSource(src.Optional().Proven(), w); err != nil {
+			return err
+		}
+	}
+	for _e := range src.Items().All() {
+		if err := codec_origin_leaf.EncodeSource(_e, w); err != nil {
+			return err
+		}
+	}
+	return nil
 }
 
 // DecodeCodecOriginEnvelope decodes the next frame from cursor.
@@ -120,14 +240,20 @@ func DecodeCodecOriginEnvelope(cursor *codec.SceCursor) (*CodecOriginEnvelope, e
 		}
 		Items = append(Items, *_elem)
 	}
+	_bNote, err := codec.MakeText[CodecOriginEnvelopeNoteBound](string(Note))
+	if err != nil {
+		return nil, err
+	}
+	_lItems, err := codec.MakeList[CodecOriginEnvelopeItemsBound](codec.SourcesOf(Items, func(e *codec_origin_leaf.CodecOriginLeaf) codec_origin_leaf.CodecOriginLeafSource { return e }))
+	if err != nil {
+		return nil, err
+	}
 	return &CodecOriginEnvelope{
-		Hdr: Hdr,
-		NoteLen: NoteLen,
-		Note: Note,
-		M: M,
-		Required: Required,
-		Optional: Optional,
-		Items: Items,
+		hdr: Hdr,
+		note: _bNote,
+		required: &Required,
+		optional: optional.Convert(Optional, func(b codec_origin_leaf.CodecOriginLeaf) codec_origin_leaf.CodecOriginLeafSource { return &b }),
+		items: _lItems,
 	}, nil
 }
 
@@ -138,14 +264,14 @@ func DecodeCodecOriginEnvelope(cursor *codec.SceCursor) (*CodecOriginEnvelope, e
 // sibling bits. Wire layout is unchanged — the carrier still occupies
 // its declared bytes.
 func (s *CodecOriginEnvelope) HasOpt() bool {
-	return (s.Hdr & 0x01) != 0
+	return (s.hdr & 0x01) != 0
 }
 
 func (s *CodecOriginEnvelope) SetHasOpt(v bool) {
 	if v {
-		s.Hdr |= 0x01
+		s.hdr |= 0x01
 	} else {
-		s.Hdr &^= 0x01
+		s.hdr &^= 0x01
 	}
 }
 
@@ -154,61 +280,15 @@ func (s *CodecOriginEnvelope) SetHasOpt(v bool) {
 // when the destination has insufficient remaining capacity; growable
 // sinks (e.g. BytesSink) are effectively infallible.
 func (s *CodecOriginEnvelope) Encode(w codec.SceSink) error {
-	if len(s.Note) > 16 {
-		return codec.ErrLengthOutOfRange
-	}
-	if len(s.Items) > 3 {
-		return codec.ErrTooManyElements
-	}
-	// Streaming cursor encode (SSOT selection: `needs_streaming`).
-	// Mirrors the streaming decode: every field appends its own bytes in
-	// declaration order through the per-field encode blocks, so a gated
-	// field skips its append when absent, and a fixed field after a
-	// variable-length payload lands after the payload (the positional path
-	// appends variable fields last, placing it ahead on the wire).
-	// Per-field `is_repeat` / `is_tlv_chain` / `is_embed` route to their
-	// dedicated helpers; everything else uses `present_if_encode_block`.
-	if err := w.WriteBytes([]byte{ s.Hdr }); err != nil {
-		return err
-	}
-	if err := w.WriteBytes([]byte{ s.NoteLen }); err != nil {
-		return err
-	}
-	if err := w.WriteBytes([]byte(s.Note)); err != nil {
-		return err
-	}
-	if err := w.WriteBytes([]byte{ s.M }); err != nil {
-		return err
-	}
-	if err := s.Required.Encode(w); err != nil {
-		return err
-	}
-	if s.Optional.IsPresent() {
-		_body := s.Optional.Proven()
-		if err := _body.Encode(w); err != nil {
-			return err
-		}
-	}
-	for _i := range s.Items {
-		if err := s.Items[_i].Encode(w); err != nil {
-			return err
-		}
-	}
-	return nil
+	return EncodeSource(s, w)
 }
 
 // EncodeToBytes is the heap-backed convenience facade. Runs Encode
-// over a BytesSink and returns the freshly-encoded byte slice, or the
-// error Encode refuses the value with before its first byte: a field's
-// presence disagrees with the `sce:present-if` that gates it
-// (codec.ErrPresentIfMismatch), or a byte string, text, list or chain lies
-// outside its bound (codec.ErrLengthOutOfRange, codec.ErrTooManyElements).
-// Callers targeting zero-alloc hot paths should call Encode directly against a caller-owned sink (e.g.
-// BoundedSink over a stack buffer).
-func (s *CodecOriginEnvelope) EncodeToBytes() ([]byte, error) {
+// over a BytesSink and returns the freshly-encoded byte slice.
+// Callers targeting zero-alloc hot paths should call Encode directly
+// against a caller-owned sink (e.g. BoundedSink over a stack buffer).
+func (s *CodecOriginEnvelope) EncodeToBytes() []byte {
 	_dst := make([]byte, 0, 105)
-	if err := s.Encode(codec.NewBytesSink(&_dst)); err != nil {
-		return nil, err
-	}
-	return _dst, nil
+	_ = s.Encode(codec.NewBytesSink(&_dst))
+	return _dst
 }

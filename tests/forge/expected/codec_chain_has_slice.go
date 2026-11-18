@@ -10,11 +10,73 @@ import (
 	"github.com/newmassrael/sce-forge-runtime/codec"
 )
 
+// CodecChainHasSliceBytesBound is the bound of the bytes element of CodecChainHasSlice: 0 to 256 bytes
+// (docs/adr/0077 §3). A Bytes of it is made only within it.
+type CodecChainHasSliceBytesBound struct{}
+
+// Least is the fewest bytes the element holds.
+func (CodecChainHasSliceBytesBound) Least() int { return 0 }
+
+// Most is the most bytes the element holds.
+func (CodecChainHasSliceBytesBound) Most() int { return 256 }
+
+// CodecChainHasSliceSource is what the encode of CodecChainHasSlice reads: one method
+// for each element a value presents (docs/adr/0081 §2). CodecChainHasSlice is one,
+// and so is any value with these methods. The encode derives every other
+// element of the frame.
+type CodecChainHasSliceSource interface {
+	Kind() uint16
+	Bytes() codec.Bytes[CodecChainHasSliceBytesBound]
+}
+
 // CodecChainHasSlice represents the codec frame layout.
 type CodecChainHasSlice struct {
-	Kind uint16
-	Len uint64
-	Bytes []byte
+	kind uint16
+	bytes codec.Bytes[CodecChainHasSliceBytesBound]
+}
+
+// MakeCodecChainHasSlice returns the CodecChainHasSlice that presents each element it
+// is handed, in declaration order (docs/adr/0081 §2). Its fields are
+// unexported: outside this package a value is made here, by
+// DecodeCodecChainHasSlice, or as its zero value, and is read through its methods.
+func MakeCodecChainHasSlice(kind uint16, bytes codec.Bytes[CodecChainHasSliceBytesBound]) CodecChainHasSlice {
+	return CodecChainHasSlice{kind: kind, bytes: bytes}
+}
+
+// Kind returns the element the value presents as Kind.
+func (s *CodecChainHasSlice) Kind() uint16 {
+	return s.kind
+}
+
+// Bytes returns the element the value presents as Bytes.
+func (s *CodecChainHasSlice) Bytes() codec.Bytes[CodecChainHasSliceBytesBound] {
+	return s.bytes
+}
+
+// WireLen returns the len the frame of the value carries, which the
+// encode derives from what it measures (docs/adr/0081 §3).
+func (s *CodecChainHasSlice) WireLen() uint64 {
+	return uint64(s.Bytes().Len())
+}
+
+// EncodeSource writes any source of CodecChainHasSlice into w, each element read
+// off src and written where the codec's encode plan lays it out
+// (docs/adr/0081). It derives len from
+// what each measures, and never reads it off the source. It refuses no value: it returns only the
+// error of w, codec.ErrBufferOverflow from a bounded sink
+// that has no room left.
+func EncodeSource(src CodecChainHasSliceSource, w codec.SceSink) error {
+	_dLen := uint64(src.Bytes().Len())
+	if err := codec.WriteVLEU16(w, uint16(src.Kind())); err != nil {
+		return err
+	}
+	if err := codec.WriteVLEU64(w, uint64(_dLen)); err != nil {
+		return err
+	}
+	if err := w.WriteBytes(src.Bytes().Bytes()); err != nil {
+		return err
+	}
+	return nil
 }
 
 // DecodeCodecChainHasSlice decodes the next frame from cursor.
@@ -54,10 +116,13 @@ func DecodeCodecChainHasSlice(cursor *codec.SceCursor) (*CodecChainHasSlice, err
 			return nil, err
 		}
 	}
+	_bBytes, err := codec.MakeBytes[CodecChainHasSliceBytesBound](Bytes)
+	if err != nil {
+		return nil, err
+	}
 	return &CodecChainHasSlice{
-		Kind: Kind,
-		Len: Len,
-		Bytes: Bytes,
+		kind: Kind,
+		bytes: _bBytes,
 	}, nil
 }
 
@@ -66,41 +131,15 @@ func DecodeCodecChainHasSlice(cursor *codec.SceCursor) (*CodecChainHasSlice, err
 // when the destination has insufficient remaining capacity; growable
 // sinks (e.g. BytesSink) are effectively infallible.
 func (s *CodecChainHasSlice) Encode(w codec.SceSink) error {
-	if len(s.Bytes) > 256 {
-		return codec.ErrLengthOutOfRange
-	}
-	// Streaming cursor encode (SSOT selection: `needs_streaming`).
-	// Mirrors the streaming decode: every field appends its own bytes in
-	// declaration order through the per-field encode blocks, so a gated
-	// field skips its append when absent, and a fixed field after a
-	// variable-length payload lands after the payload (the positional path
-	// appends variable fields last, placing it ahead on the wire).
-	// Per-field `is_repeat` / `is_tlv_chain` / `is_embed` route to their
-	// dedicated helpers; everything else uses `present_if_encode_block`.
-	if err := codec.WriteVLEU16(w, uint16(s.Kind)); err != nil {
-		return err
-	}
-	if err := codec.WriteVLEU64(w, uint64(s.Len)); err != nil {
-		return err
-	}
-	if err := w.WriteBytes(s.Bytes); err != nil {
-		return err
-	}
-	return nil
+	return EncodeSource(s, w)
 }
 
 // EncodeToBytes is the heap-backed convenience facade. Runs Encode
-// over a BytesSink and returns the freshly-encoded byte slice, or the
-// error Encode refuses the value with before its first byte: a field's
-// presence disagrees with the `sce:present-if` that gates it
-// (codec.ErrPresentIfMismatch), or a byte string, text, list or chain lies
-// outside its bound (codec.ErrLengthOutOfRange, codec.ErrTooManyElements).
-// Callers targeting zero-alloc hot paths should call Encode directly against a caller-owned sink (e.g.
-// BoundedSink over a stack buffer).
-func (s *CodecChainHasSlice) EncodeToBytes() ([]byte, error) {
+// over a BytesSink and returns the freshly-encoded byte slice.
+// Callers targeting zero-alloc hot paths should call Encode directly
+// against a caller-owned sink (e.g. BoundedSink over a stack buffer).
+func (s *CodecChainHasSlice) EncodeToBytes() []byte {
 	_dst := make([]byte, 0, 268)
-	if err := s.Encode(codec.NewBytesSink(&_dst)); err != nil {
-		return nil, err
-	}
-	return _dst, nil
+	_ = s.Encode(codec.NewBytesSink(&_dst))
+	return _dst
 }

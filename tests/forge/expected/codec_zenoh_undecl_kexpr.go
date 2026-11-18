@@ -10,9 +10,42 @@ import (
 	"github.com/newmassrael/sce-forge-runtime/codec"
 )
 
+// CodecZenohUndeclKexprSource is what the encode of CodecZenohUndeclKexpr reads: one method
+// for each element a value presents (docs/adr/0081 §2). CodecZenohUndeclKexpr is one,
+// and so is any value with these methods. The encode derives every other
+// element of the frame.
+type CodecZenohUndeclKexprSource interface {
+	Id() uint16
+}
+
 // CodecZenohUndeclKexpr represents the codec frame layout.
 type CodecZenohUndeclKexpr struct {
-	Id uint16
+	id uint16
+}
+
+// MakeCodecZenohUndeclKexpr returns the CodecZenohUndeclKexpr that presents each element it
+// is handed, in declaration order (docs/adr/0081 §2). Its fields are
+// unexported: outside this package a value is made here, by
+// DecodeCodecZenohUndeclKexpr, or as its zero value, and is read through its methods.
+func MakeCodecZenohUndeclKexpr(id uint16) CodecZenohUndeclKexpr {
+	return CodecZenohUndeclKexpr{id: id}
+}
+
+// Id returns the element the value presents as Id.
+func (s *CodecZenohUndeclKexpr) Id() uint16 {
+	return s.id
+}
+
+// EncodeSource writes any source of CodecZenohUndeclKexpr into w, each element read
+// off src and written where the codec's encode plan lays it out
+// (docs/adr/0081). It refuses no value: it returns only the
+// error of w, codec.ErrBufferOverflow from a bounded sink
+// that has no room left.
+func EncodeSource(src CodecZenohUndeclKexprSource, w codec.SceSink) error {
+	if err := codec.WriteVLEU16(w, uint16(src.Id())); err != nil {
+		return err
+	}
+	return nil
 }
 
 // DecodeCodecZenohUndeclKexpr decodes the next frame from cursor.
@@ -35,7 +68,7 @@ func DecodeCodecZenohUndeclKexpr(cursor *codec.SceCursor) (*CodecZenohUndeclKexp
 	Id, err := cursor.ReadVLEU16()
 	if err != nil { return nil, err }
 	return &CodecZenohUndeclKexpr{
-		Id: Id,
+		id: Id,
 	}, nil
 }
 
@@ -44,18 +77,7 @@ func DecodeCodecZenohUndeclKexpr(cursor *codec.SceCursor) (*CodecZenohUndeclKexp
 // when the destination has insufficient remaining capacity; growable
 // sinks (e.g. BytesSink) are effectively infallible.
 func (s *CodecZenohUndeclKexpr) Encode(w codec.SceSink) error {
-	// Streaming cursor encode (SSOT selection: `needs_streaming`).
-	// Mirrors the streaming decode: every field appends its own bytes in
-	// declaration order through the per-field encode blocks, so a gated
-	// field skips its append when absent, and a fixed field after a
-	// variable-length payload lands after the payload (the positional path
-	// appends variable fields last, placing it ahead on the wire).
-	// Per-field `is_repeat` / `is_tlv_chain` / `is_embed` route to their
-	// dedicated helpers; everything else uses `present_if_encode_block`.
-	if err := codec.WriteVLEU16(w, uint16(s.Id)); err != nil {
-		return err
-	}
-	return nil
+	return EncodeSource(s, w)
 }
 
 // EncodeToBytes is the heap-backed convenience facade. Runs Encode

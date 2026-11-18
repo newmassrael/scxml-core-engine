@@ -11,11 +11,100 @@ import (
 	"github.com/newmassrael/sce-forge-runtime/optional"
 )
 
+// CodecZenohDeclExtKeyexprInnerSuffixBound is the bound of the suffix element of CodecZenohDeclExtKeyexprInner: 0 to 65535 bytes
+// (docs/adr/0077 §3). A Bytes of it is made only within it.
+type CodecZenohDeclExtKeyexprInnerSuffixBound struct{}
+
+// Least is the fewest bytes the element holds.
+func (CodecZenohDeclExtKeyexprInnerSuffixBound) Least() int { return 0 }
+
+// Most is the most bytes the element holds.
+func (CodecZenohDeclExtKeyexprInnerSuffixBound) Most() int { return 65535 }
+
+// CodecZenohDeclExtKeyexprInnerSource is what the encode of CodecZenohDeclExtKeyexprInner reads: one method
+// for each element a value presents (docs/adr/0081 §2). CodecZenohDeclExtKeyexprInner is one,
+// and so is any value with these methods. The encode derives every other
+// element of the frame.
+type CodecZenohDeclExtKeyexprInnerSource interface {
+	InnerHeader() uint8
+	Id() uint64
+	Suffix() optional.Of[codec.Bytes[CodecZenohDeclExtKeyexprInnerSuffixBound]]
+}
+
 // CodecZenohDeclExtKeyexprInner represents the codec frame layout.
 type CodecZenohDeclExtKeyexprInner struct {
-	InnerHeader uint8
-	Id uint64
-	Suffix optional.Of[[]byte]
+	innerHeader uint8
+	id uint64
+	suffix optional.Of[codec.Bytes[CodecZenohDeclExtKeyexprInnerSuffixBound]]
+}
+
+// MakeCodecZenohDeclExtKeyexprInner returns the CodecZenohDeclExtKeyexprInner that presents each element it
+// is handed, in declaration order (docs/adr/0081 §2). Its fields are
+// unexported: outside this package a value is made here, by
+// DecodeCodecZenohDeclExtKeyexprInner, or as its zero value, and is read through its methods.
+func MakeCodecZenohDeclExtKeyexprInner(innerHeader uint8, id uint64, suffix optional.Of[codec.Bytes[CodecZenohDeclExtKeyexprInnerSuffixBound]]) CodecZenohDeclExtKeyexprInner {
+	return CodecZenohDeclExtKeyexprInner{innerHeader: innerHeader, id: id, suffix: suffix}
+}
+
+// InnerHeader returns the element the value presents as InnerHeader.
+func (s *CodecZenohDeclExtKeyexprInner) InnerHeader() uint8 {
+	return s.innerHeader
+}
+
+// Id returns the element the value presents as Id.
+func (s *CodecZenohDeclExtKeyexprInner) Id() uint64 {
+	return s.id
+}
+
+// Suffix returns the element the value presents as Suffix.
+func (s *CodecZenohDeclExtKeyexprInner) Suffix() optional.Of[codec.Bytes[CodecZenohDeclExtKeyexprInnerSuffixBound]] {
+	return s.suffix
+}
+
+// CodecZenohDeclExtKeyexprInnerOverrides holds the one-bit flags of CodecZenohDeclExtKeyexprInner a parent may
+// set in place of the ones a value presents, such as the flag a chain whose
+// entries are CodecZenohDeclExtKeyexprInner ends them on, which the chain derives from where
+// each entry stands. A flag it leaves absent is the one the value presents.
+type CodecZenohDeclExtKeyexprInnerOverrides struct {
+	// InnerHeaderM is the `M` flag of `inner_header`, where a parent sets it.
+	InnerHeaderM optional.Of[bool]
+}
+
+// EncodeSource writes any source of CodecZenohDeclExtKeyexprInner into w, each element read
+// off src and written where the codec's encode plan lays it out
+// (docs/adr/0081). It refuses no value: it returns only the
+// error of w, codec.ErrBufferOverflow from a bounded sink
+// that has no room left.
+func EncodeSource(src CodecZenohDeclExtKeyexprInnerSource, w codec.SceSink) error {
+	return EncodeSourceOverriding(src, w, CodecZenohDeclExtKeyexprInnerOverrides{})
+}
+
+// EncodeSourceOverriding is EncodeSource, each flag overrides sets written in
+// place of the one src presents.
+func EncodeSourceOverriding(src CodecZenohDeclExtKeyexprInnerSource, w codec.SceSink, overrides CodecZenohDeclExtKeyexprInnerOverrides) error {
+	_cInnerHeader := src.InnerHeader()
+	_cInnerHeader &^= 0x1
+	if src.Suffix().IsPresent() {
+		_cInnerHeader |= 0x1
+	}
+	if _o, ok := overrides.InnerHeaderM.Get(); ok {
+		_cInnerHeader &^= 0x2
+		if _o {
+			_cInnerHeader |= 0x2
+		}
+	}
+	if err := w.WriteBytes([]byte{byte(_cInnerHeader)}); err != nil {
+		return err
+	}
+	if err := codec.WriteVLEU64(w, uint64(src.Id())); err != nil {
+		return err
+	}
+	if src.Suffix().IsPresent() {
+		if err := w.WriteBytes(src.Suffix().Proven().Bytes()); err != nil {
+			return err
+		}
+	}
+	return nil
 }
 
 // DecodeCodecZenohDeclExtKeyexprInner decodes the next frame from cursor.
@@ -63,10 +152,14 @@ func DecodeCodecZenohDeclExtKeyexprInner(cursor *codec.SceCursor) (*CodecZenohDe
 			return nil, err
 		}
 	}
+	_bSuffix, err := codec.MakeOptionalBytes[CodecZenohDeclExtKeyexprInnerSuffixBound](Suffix)
+	if err != nil {
+		return nil, err
+	}
 	return &CodecZenohDeclExtKeyexprInner{
-		InnerHeader: InnerHeader,
-		Id: Id,
-		Suffix: Suffix,
+		innerHeader: InnerHeader,
+		id: Id,
+		suffix: _bSuffix,
 	}, nil
 }
 
@@ -77,26 +170,26 @@ func DecodeCodecZenohDeclExtKeyexprInner(cursor *codec.SceCursor) (*CodecZenohDe
 // sibling bits. Wire layout is unchanged — the carrier still occupies
 // its declared bytes.
 func (s *CodecZenohDeclExtKeyexprInner) N() bool {
-	return (s.InnerHeader & 0x01) != 0
+	return (s.innerHeader & 0x01) != 0
 }
 
 func (s *CodecZenohDeclExtKeyexprInner) SetN(v bool) {
 	if v {
-		s.InnerHeader |= 0x01
+		s.innerHeader |= 0x01
 	} else {
-		s.InnerHeader &^= 0x01
+		s.innerHeader &^= 0x01
 	}
 }
 
 func (s *CodecZenohDeclExtKeyexprInner) M() bool {
-	return (s.InnerHeader & 0x02) != 0
+	return (s.innerHeader & 0x02) != 0
 }
 
 func (s *CodecZenohDeclExtKeyexprInner) SetM(v bool) {
 	if v {
-		s.InnerHeader |= 0x02
+		s.innerHeader |= 0x02
 	} else {
-		s.InnerHeader &^= 0x02
+		s.innerHeader &^= 0x02
 	}
 }
 
@@ -105,43 +198,15 @@ func (s *CodecZenohDeclExtKeyexprInner) SetM(v bool) {
 // when the destination has insufficient remaining capacity; growable
 // sinks (e.g. BytesSink) are effectively infallible.
 func (s *CodecZenohDeclExtKeyexprInner) Encode(w codec.SceSink) error {
-	if s.Suffix.IsPresent() && (len(s.Suffix.Proven()) > 65535) {
-		return codec.ErrLengthOutOfRange
-	}
-	// Streaming cursor encode (SSOT selection: `needs_streaming`).
-	// Mirrors the streaming decode: every field appends its own bytes in
-	// declaration order through the per-field encode blocks, so a gated
-	// field skips its append when absent, and a fixed field after a
-	// variable-length payload lands after the payload (the positional path
-	// appends variable fields last, placing it ahead on the wire).
-	// Per-field `is_repeat` / `is_tlv_chain` / `is_embed` route to their
-	// dedicated helpers; everything else uses `present_if_encode_block`.
-	if err := w.WriteBytes([]byte{ s.InnerHeader }); err != nil {
-		return err
-	}
-	if err := codec.WriteVLEU64(w, uint64(s.Id)); err != nil {
-		return err
-	}
-	if s.Suffix.IsPresent() {
-		if err := w.WriteBytes(s.Suffix.Proven()); err != nil {
-			return err
-		}
-	}
-	return nil
+	return EncodeSource(s, w)
 }
 
 // EncodeToBytes is the heap-backed convenience facade. Runs Encode
-// over a BytesSink and returns the freshly-encoded byte slice, or the
-// error Encode refuses the value with before its first byte: a field's
-// presence disagrees with the `sce:present-if` that gates it
-// (codec.ErrPresentIfMismatch), or a byte string, text, list or chain lies
-// outside its bound (codec.ErrLengthOutOfRange, codec.ErrTooManyElements).
-// Callers targeting zero-alloc hot paths should call Encode directly against a caller-owned sink (e.g.
-// BoundedSink over a stack buffer).
-func (s *CodecZenohDeclExtKeyexprInner) EncodeToBytes() ([]byte, error) {
+// over a BytesSink and returns the freshly-encoded byte slice.
+// Callers targeting zero-alloc hot paths should call Encode directly
+// against a caller-owned sink (e.g. BoundedSink over a stack buffer).
+func (s *CodecZenohDeclExtKeyexprInner) EncodeToBytes() []byte {
 	_dst := make([]byte, 0, 65545)
-	if err := s.Encode(codec.NewBytesSink(&_dst)); err != nil {
-		return nil, err
-	}
-	return _dst, nil
+	_ = s.Encode(codec.NewBytesSink(&_dst))
+	return _dst
 }

@@ -10,9 +10,42 @@ import (
 	"github.com/newmassrael/sce-forge-runtime/codec"
 )
 
+// CodecZenohExtZintSource is what the encode of CodecZenohExtZint reads: one method
+// for each element a value presents (docs/adr/0081 §2). CodecZenohExtZint is one,
+// and so is any value with these methods. The encode derives every other
+// element of the frame.
+type CodecZenohExtZintSource interface {
+	Value() uint64
+}
+
 // CodecZenohExtZint represents the codec frame layout.
 type CodecZenohExtZint struct {
-	Value uint64
+	value uint64
+}
+
+// MakeCodecZenohExtZint returns the CodecZenohExtZint that presents each element it
+// is handed, in declaration order (docs/adr/0081 §2). Its fields are
+// unexported: outside this package a value is made here, by
+// DecodeCodecZenohExtZint, or as its zero value, and is read through its methods.
+func MakeCodecZenohExtZint(value uint64) CodecZenohExtZint {
+	return CodecZenohExtZint{value: value}
+}
+
+// Value returns the element the value presents as Value.
+func (s *CodecZenohExtZint) Value() uint64 {
+	return s.value
+}
+
+// EncodeSource writes any source of CodecZenohExtZint into w, each element read
+// off src and written where the codec's encode plan lays it out
+// (docs/adr/0081). It refuses no value: it returns only the
+// error of w, codec.ErrBufferOverflow from a bounded sink
+// that has no room left.
+func EncodeSource(src CodecZenohExtZintSource, w codec.SceSink) error {
+	if err := codec.WriteVLEU64(w, uint64(src.Value())); err != nil {
+		return err
+	}
+	return nil
 }
 
 // DecodeCodecZenohExtZint decodes the next frame from cursor.
@@ -35,7 +68,7 @@ func DecodeCodecZenohExtZint(cursor *codec.SceCursor) (*CodecZenohExtZint, error
 	Value, err := cursor.ReadVLEU64()
 	if err != nil { return nil, err }
 	return &CodecZenohExtZint{
-		Value: Value,
+		value: Value,
 	}, nil
 }
 
@@ -44,18 +77,7 @@ func DecodeCodecZenohExtZint(cursor *codec.SceCursor) (*CodecZenohExtZint, error
 // when the destination has insufficient remaining capacity; growable
 // sinks (e.g. BytesSink) are effectively infallible.
 func (s *CodecZenohExtZint) Encode(w codec.SceSink) error {
-	// Streaming cursor encode (SSOT selection: `needs_streaming`).
-	// Mirrors the streaming decode: every field appends its own bytes in
-	// declaration order through the per-field encode blocks, so a gated
-	// field skips its append when absent, and a fixed field after a
-	// variable-length payload lands after the payload (the positional path
-	// appends variable fields last, placing it ahead on the wire).
-	// Per-field `is_repeat` / `is_tlv_chain` / `is_embed` route to their
-	// dedicated helpers; everything else uses `present_if_encode_block`.
-	if err := codec.WriteVLEU64(w, uint64(s.Value)); err != nil {
-		return err
-	}
-	return nil
+	return EncodeSource(s, w)
 }
 
 // EncodeToBytes is the heap-backed convenience facade. Runs Encode

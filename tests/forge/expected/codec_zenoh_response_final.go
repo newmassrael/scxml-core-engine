@@ -12,11 +12,85 @@ import (
 	"example.com/sce-forge/codec_zenoh_ext_entry"
 )
 
+// CodecZenohResponseFinalExtensionsBound is the bound of the extensions element of CodecZenohResponseFinal: 1 or more entries, the protocol stating no most
+// (docs/adr/0065 §6 R2). A List of it is made only within it.
+type CodecZenohResponseFinalExtensionsBound struct{}
+
+// Least is the fewest entries the element holds.
+func (CodecZenohResponseFinalExtensionsBound) Least() int { return 1 }
+
+// Most is the most entries the element holds.
+func (CodecZenohResponseFinalExtensionsBound) Most() int { return codec.Unbounded }
+
+// CodecZenohResponseFinalSource is what the encode of CodecZenohResponseFinal reads: one method
+// for each element a value presents (docs/adr/0081 §2). CodecZenohResponseFinal is one,
+// and so is any value with these methods. The encode derives every other
+// element of the frame.
+type CodecZenohResponseFinalSource interface {
+	Header() uint8
+	RequestId() uint64
+	Extensions() optional.Of[codec.List[CodecZenohResponseFinalExtensionsBound, codec_zenoh_ext_entry.CodecZenohExtEntrySource]]
+}
+
 // CodecZenohResponseFinal represents the codec frame layout.
 type CodecZenohResponseFinal struct {
-	Header uint8
-	RequestId uint64
-	Extensions optional.Of[[]codec_zenoh_ext_entry.CodecZenohExtEntry]
+	header uint8
+	requestId uint64
+	extensions optional.Of[codec.List[CodecZenohResponseFinalExtensionsBound, codec_zenoh_ext_entry.CodecZenohExtEntrySource]]
+}
+
+// MakeCodecZenohResponseFinal returns the CodecZenohResponseFinal that presents each element it
+// is handed, in declaration order (docs/adr/0081 §2). Its fields are
+// unexported: outside this package a value is made here, by
+// DecodeCodecZenohResponseFinal, or as its zero value, and is read through its methods.
+func MakeCodecZenohResponseFinal(header uint8, requestId uint64, extensions optional.Of[codec.List[CodecZenohResponseFinalExtensionsBound, codec_zenoh_ext_entry.CodecZenohExtEntrySource]]) CodecZenohResponseFinal {
+	return CodecZenohResponseFinal{header: header, requestId: requestId, extensions: extensions}
+}
+
+// Header returns the element the value presents as Header.
+func (s *CodecZenohResponseFinal) Header() uint8 {
+	return s.header
+}
+
+// RequestId returns the element the value presents as RequestId.
+func (s *CodecZenohResponseFinal) RequestId() uint64 {
+	return s.requestId
+}
+
+// Extensions returns the element the value presents as Extensions.
+func (s *CodecZenohResponseFinal) Extensions() optional.Of[codec.List[CodecZenohResponseFinalExtensionsBound, codec_zenoh_ext_entry.CodecZenohExtEntrySource]] {
+	return s.extensions
+}
+
+// EncodeSource writes any source of CodecZenohResponseFinal into w, each element read
+// off src and written where the codec's encode plan lays it out
+// (docs/adr/0081). It refuses no value: it returns only the
+// error of w, codec.ErrBufferOverflow from a bounded sink
+// that has no room left.
+func EncodeSource(src CodecZenohResponseFinalSource, w codec.SceSink) error {
+	_cHeader := src.Header()
+	_cHeader &^= 0x80
+	if src.Extensions().IsPresent() {
+		_cHeader |= 0x80
+	}
+	if err := w.WriteBytes([]byte{byte(_cHeader)}); err != nil {
+		return err
+	}
+	if err := codec.WriteVLEU64(w, uint64(src.RequestId())); err != nil {
+		return err
+	}
+	if src.Extensions().IsPresent() {
+		{
+			_leftExtensions := src.Extensions().Proven().Len()
+			for _e := range src.Extensions().Proven().All() {
+				_leftExtensions--
+				if err := codec_zenoh_ext_entry.EncodeSourceOverriding(_e, w, codec_zenoh_ext_entry.CodecZenohExtEntryOverrides{HeaderZ: optional.Some(_leftExtensions != 0)}); err != nil {
+					return err
+				}
+			}
+		}
+	}
+	return nil
 }
 
 // NewCodecZenohResponseFinal returns a CodecZenohResponseFinal initialized with the
@@ -28,7 +102,7 @@ type CodecZenohResponseFinal struct {
 // RFC variant-default-uniformity (Go).
 func NewCodecZenohResponseFinal() *CodecZenohResponseFinal {
 	return &CodecZenohResponseFinal{
-		Header: uint8(0x1a),
+		header: uint8(0x1a),
 	}
 }
 
@@ -82,10 +156,14 @@ func DecodeCodecZenohResponseFinal(cursor *codec.SceCursor) (*CodecZenohResponse
 		}
 		Extensions = optional.Some(_list)
 	}
+	_lExtensions, err := codec.MakeOptionalList[CodecZenohResponseFinalExtensionsBound](codec.OptionalSourcesOf(Extensions, func(e *codec_zenoh_ext_entry.CodecZenohExtEntry) codec_zenoh_ext_entry.CodecZenohExtEntrySource { return e }))
+	if err != nil {
+		return nil, err
+	}
 	return &CodecZenohResponseFinal{
-		Header: Header,
-		RequestId: RequestId,
-		Extensions: Extensions,
+		header: Header,
+		requestId: RequestId,
+		extensions: _lExtensions,
 	}, nil
 }
 
@@ -96,24 +174,24 @@ func DecodeCodecZenohResponseFinal(cursor *codec.SceCursor) (*CodecZenohResponse
 // sibling bits. Wire layout is unchanged — the carrier still occupies
 // its declared bytes.
 func (s *CodecZenohResponseFinal) Mid() uint8 {
-	return uint8((s.Header >> 0) & 0x1F)
+	return uint8((s.header >> 0) & 0x1F)
 }
 
 func (s *CodecZenohResponseFinal) SetMid(v uint8) {
 	const _shiftedMask uint8 = 0x1F << 0
 	_val := (uint8(v) & 0x1F) << 0
-	s.Header = (s.Header &^ _shiftedMask) | _val
+	s.header = (s.header &^ _shiftedMask) | _val
 }
 
 func (s *CodecZenohResponseFinal) Z() bool {
-	return (s.Header & 0x80) != 0
+	return (s.header & 0x80) != 0
 }
 
 func (s *CodecZenohResponseFinal) SetZ(v bool) {
 	if v {
-		s.Header |= 0x80
+		s.header |= 0x80
 	} else {
-		s.Header &^= 0x80
+		s.header &^= 0x80
 	}
 }
 
@@ -122,46 +200,15 @@ func (s *CodecZenohResponseFinal) SetZ(v bool) {
 // when the destination has insufficient remaining capacity; growable
 // sinks (e.g. BytesSink) are effectively infallible.
 func (s *CodecZenohResponseFinal) Encode(w codec.SceSink) error {
-	if s.Extensions.IsPresent() && (len(s.Extensions.Proven()) < 1) {
-		return codec.ErrTooManyElements
-	}
-	// Streaming cursor encode (SSOT selection: `needs_streaming`).
-	// Mirrors the streaming decode: every field appends its own bytes in
-	// declaration order through the per-field encode blocks, so a gated
-	// field skips its append when absent, and a fixed field after a
-	// variable-length payload lands after the payload (the positional path
-	// appends variable fields last, placing it ahead on the wire).
-	// Per-field `is_repeat` / `is_tlv_chain` / `is_embed` route to their
-	// dedicated helpers; everything else uses `present_if_encode_block`.
-	if err := w.WriteBytes([]byte{ s.Header }); err != nil {
-		return err
-	}
-	if err := codec.WriteVLEU64(w, uint64(s.RequestId)); err != nil {
-		return err
-	}
-	if s.Extensions.IsPresent() {
-		_list := s.Extensions.Proven()
-		for _i := range _list {
-			if err := _list[_i].Encode(w); err != nil {
-				return err
-			}
-		}
-	}
-	return nil
+	return EncodeSource(s, w)
 }
 
 // EncodeToBytes is the heap-backed convenience facade. Runs Encode
-// over a BytesSink and returns the freshly-encoded byte slice, or the
-// error Encode refuses the value with before its first byte: a field's
-// presence disagrees with the `sce:present-if` that gates it
-// (codec.ErrPresentIfMismatch), or a byte string, text, list or chain lies
-// outside its bound (codec.ErrLengthOutOfRange, codec.ErrTooManyElements).
-// Callers targeting zero-alloc hot paths should call Encode directly against a caller-owned sink (e.g.
-// BoundedSink over a stack buffer).
-func (s *CodecZenohResponseFinal) EncodeToBytes() ([]byte, error) {
+// over a BytesSink and returns the freshly-encoded byte slice.
+// Callers targeting zero-alloc hot paths should call Encode directly
+// against a caller-owned sink (e.g. BoundedSink over a stack buffer).
+func (s *CodecZenohResponseFinal) EncodeToBytes() []byte {
 	_dst := make([]byte, 0)
-	if err := s.Encode(codec.NewBytesSink(&_dst)); err != nil {
-		return nil, err
-	}
-	return _dst, nil
+	_ = s.Encode(codec.NewBytesSink(&_dst))
+	return _dst
 }

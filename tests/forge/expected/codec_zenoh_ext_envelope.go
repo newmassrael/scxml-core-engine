@@ -8,13 +8,72 @@ package codec_zenoh_ext_envelope
 
 import (
 	"github.com/newmassrael/sce-forge-runtime/codec"
+	"github.com/newmassrael/sce-forge-runtime/optional"
 	"example.com/sce-forge/codec_zenoh_ext_entry"
 )
 
+// CodecZenohExtEnvelopeExtensionsBound is the bound of the extensions element of CodecZenohExtEnvelope: 1 or more entries, the protocol stating no most
+// (docs/adr/0065 §6 R2). A List of it is made only within it.
+type CodecZenohExtEnvelopeExtensionsBound struct{}
+
+// Least is the fewest entries the element holds.
+func (CodecZenohExtEnvelopeExtensionsBound) Least() int { return 1 }
+
+// Most is the most entries the element holds.
+func (CodecZenohExtEnvelopeExtensionsBound) Most() int { return codec.Unbounded }
+
+// CodecZenohExtEnvelopeSource is what the encode of CodecZenohExtEnvelope reads: one method
+// for each element a value presents (docs/adr/0081 §2). CodecZenohExtEnvelope is one,
+// and so is any value with these methods. The encode derives every other
+// element of the frame.
+type CodecZenohExtEnvelopeSource interface {
+	HeaderFlags() uint8
+	Extensions() codec.List[CodecZenohExtEnvelopeExtensionsBound, codec_zenoh_ext_entry.CodecZenohExtEntrySource]
+}
+
 // CodecZenohExtEnvelope represents the codec frame layout.
 type CodecZenohExtEnvelope struct {
-	HeaderFlags uint8
-	Extensions []codec_zenoh_ext_entry.CodecZenohExtEntry
+	headerFlags uint8
+	extensions codec.List[CodecZenohExtEnvelopeExtensionsBound, codec_zenoh_ext_entry.CodecZenohExtEntrySource]
+}
+
+// MakeCodecZenohExtEnvelope returns the CodecZenohExtEnvelope that presents each element it
+// is handed, in declaration order (docs/adr/0081 §2). Its fields are
+// unexported: outside this package a value is made here, by
+// DecodeCodecZenohExtEnvelope, or as its zero value, and is read through its methods.
+func MakeCodecZenohExtEnvelope(headerFlags uint8, extensions codec.List[CodecZenohExtEnvelopeExtensionsBound, codec_zenoh_ext_entry.CodecZenohExtEntrySource]) CodecZenohExtEnvelope {
+	return CodecZenohExtEnvelope{headerFlags: headerFlags, extensions: extensions}
+}
+
+// HeaderFlags returns the element the value presents as HeaderFlags.
+func (s *CodecZenohExtEnvelope) HeaderFlags() uint8 {
+	return s.headerFlags
+}
+
+// Extensions returns the element the value presents as Extensions.
+func (s *CodecZenohExtEnvelope) Extensions() codec.List[CodecZenohExtEnvelopeExtensionsBound, codec_zenoh_ext_entry.CodecZenohExtEntrySource] {
+	return s.extensions
+}
+
+// EncodeSource writes any source of CodecZenohExtEnvelope into w, each element read
+// off src and written where the codec's encode plan lays it out
+// (docs/adr/0081). It refuses no value: it returns only the
+// error of w, codec.ErrBufferOverflow from a bounded sink
+// that has no room left.
+func EncodeSource(src CodecZenohExtEnvelopeSource, w codec.SceSink) error {
+	if err := w.WriteBytes([]byte{byte(src.HeaderFlags())}); err != nil {
+		return err
+	}
+	{
+		_leftExtensions := src.Extensions().Len()
+		for _e := range src.Extensions().All() {
+			_leftExtensions--
+			if err := codec_zenoh_ext_entry.EncodeSourceOverriding(_e, w, codec_zenoh_ext_entry.CodecZenohExtEntryOverrides{HeaderZ: optional.Some(_leftExtensions != 0)}); err != nil {
+				return err
+			}
+		}
+	}
+	return nil
 }
 
 // DecodeCodecZenohExtEnvelope decodes the next frame from cursor.
@@ -61,9 +120,13 @@ func DecodeCodecZenohExtEnvelope(cursor *codec.SceCursor) (*CodecZenohExtEnvelop
 	if _more && cursor.Remaining() == 0 {
 		return nil, codec.ErrNeedMoreBytes
 	}
+	_lExtensions, err := codec.MakeList[CodecZenohExtEnvelopeExtensionsBound](codec.SourcesOf(Extensions, func(e *codec_zenoh_ext_entry.CodecZenohExtEntry) codec_zenoh_ext_entry.CodecZenohExtEntrySource { return e }))
+	if err != nil {
+		return nil, err
+	}
 	return &CodecZenohExtEnvelope{
-		HeaderFlags: HeaderFlags,
-		Extensions: Extensions,
+		headerFlags: HeaderFlags,
+		extensions: _lExtensions,
 	}, nil
 }
 
@@ -72,40 +135,15 @@ func DecodeCodecZenohExtEnvelope(cursor *codec.SceCursor) (*CodecZenohExtEnvelop
 // when the destination has insufficient remaining capacity; growable
 // sinks (e.g. BytesSink) are effectively infallible.
 func (s *CodecZenohExtEnvelope) Encode(w codec.SceSink) error {
-	if len(s.Extensions) < 1 {
-		return codec.ErrTooManyElements
-	}
-	// Streaming cursor encode (SSOT selection: `needs_streaming`).
-	// Mirrors the streaming decode: every field appends its own bytes in
-	// declaration order through the per-field encode blocks, so a gated
-	// field skips its append when absent, and a fixed field after a
-	// variable-length payload lands after the payload (the positional path
-	// appends variable fields last, placing it ahead on the wire).
-	// Per-field `is_repeat` / `is_tlv_chain` / `is_embed` route to their
-	// dedicated helpers; everything else uses `present_if_encode_block`.
-	if err := w.WriteBytes([]byte{ s.HeaderFlags }); err != nil {
-		return err
-	}
-	for _i := range s.Extensions {
-		if err := s.Extensions[_i].Encode(w); err != nil {
-			return err
-		}
-	}
-	return nil
+	return EncodeSource(s, w)
 }
 
 // EncodeToBytes is the heap-backed convenience facade. Runs Encode
-// over a BytesSink and returns the freshly-encoded byte slice, or the
-// error Encode refuses the value with before its first byte: a field's
-// presence disagrees with the `sce:present-if` that gates it
-// (codec.ErrPresentIfMismatch), or a byte string, text, list or chain lies
-// outside its bound (codec.ErrLengthOutOfRange, codec.ErrTooManyElements).
-// Callers targeting zero-alloc hot paths should call Encode directly against a caller-owned sink (e.g.
-// BoundedSink over a stack buffer).
-func (s *CodecZenohExtEnvelope) EncodeToBytes() ([]byte, error) {
+// over a BytesSink and returns the freshly-encoded byte slice.
+// Callers targeting zero-alloc hot paths should call Encode directly
+// against a caller-owned sink (e.g. BoundedSink over a stack buffer).
+func (s *CodecZenohExtEnvelope) EncodeToBytes() []byte {
 	_dst := make([]byte, 0)
-	if err := s.Encode(codec.NewBytesSink(&_dst)); err != nil {
-		return nil, err
-	}
-	return _dst, nil
+	_ = s.Encode(codec.NewBytesSink(&_dst))
+	return _dst
 }

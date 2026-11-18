@@ -12,10 +12,71 @@ import (
 	"example.com/sce-forge/codec_tlv_entry"
 )
 
+// CodecTlvChainPresentIfBasicEntriesBound is the bound of the entries element of CodecTlvChainPresentIfBasic: 0 to 4 entries
+// (docs/adr/0065 §6 R2). A List of it is made only within it.
+type CodecTlvChainPresentIfBasicEntriesBound struct{}
+
+// Least is the fewest entries the element holds.
+func (CodecTlvChainPresentIfBasicEntriesBound) Least() int { return 0 }
+
+// Most is the most entries the element holds.
+func (CodecTlvChainPresentIfBasicEntriesBound) Most() int { return 4 }
+
+// CodecTlvChainPresentIfBasicSource is what the encode of CodecTlvChainPresentIfBasic reads: one method
+// for each element a value presents (docs/adr/0081 §2). CodecTlvChainPresentIfBasic is one,
+// and so is any value with these methods. The encode derives every other
+// element of the frame.
+type CodecTlvChainPresentIfBasicSource interface {
+	Carrier() uint8
+	Entries() optional.Of[codec.List[CodecTlvChainPresentIfBasicEntriesBound, codec_tlv_entry.CodecTlvEntrySource]]
+}
+
 // CodecTlvChainPresentIfBasic represents the codec frame layout.
 type CodecTlvChainPresentIfBasic struct {
-	Carrier uint8
-	Entries optional.Of[[]codec_tlv_entry.CodecTlvEntry]
+	carrier uint8
+	entries optional.Of[codec.List[CodecTlvChainPresentIfBasicEntriesBound, codec_tlv_entry.CodecTlvEntrySource]]
+}
+
+// MakeCodecTlvChainPresentIfBasic returns the CodecTlvChainPresentIfBasic that presents each element it
+// is handed, in declaration order (docs/adr/0081 §2). Its fields are
+// unexported: outside this package a value is made here, by
+// DecodeCodecTlvChainPresentIfBasic, or as its zero value, and is read through its methods.
+func MakeCodecTlvChainPresentIfBasic(carrier uint8, entries optional.Of[codec.List[CodecTlvChainPresentIfBasicEntriesBound, codec_tlv_entry.CodecTlvEntrySource]]) CodecTlvChainPresentIfBasic {
+	return CodecTlvChainPresentIfBasic{carrier: carrier, entries: entries}
+}
+
+// Carrier returns the element the value presents as Carrier.
+func (s *CodecTlvChainPresentIfBasic) Carrier() uint8 {
+	return s.carrier
+}
+
+// Entries returns the element the value presents as Entries.
+func (s *CodecTlvChainPresentIfBasic) Entries() optional.Of[codec.List[CodecTlvChainPresentIfBasicEntriesBound, codec_tlv_entry.CodecTlvEntrySource]] {
+	return s.entries
+}
+
+// EncodeSource writes any source of CodecTlvChainPresentIfBasic into w, each element read
+// off src and written where the codec's encode plan lays it out
+// (docs/adr/0081). It refuses no value: it returns only the
+// error of w, codec.ErrBufferOverflow from a bounded sink
+// that has no room left.
+func EncodeSource(src CodecTlvChainPresentIfBasicSource, w codec.SceSink) error {
+	_cCarrier := src.Carrier()
+	_cCarrier &^= 0x1
+	if src.Entries().IsPresent() {
+		_cCarrier |= 0x1
+	}
+	if err := w.WriteBytes([]byte{byte(_cCarrier)}); err != nil {
+		return err
+	}
+	if src.Entries().IsPresent() {
+		for _e := range src.Entries().Proven().All() {
+			if err := codec_tlv_entry.EncodeSource(_e, w); err != nil {
+				return err
+			}
+		}
+	}
+	return nil
 }
 
 // DecodeCodecTlvChainPresentIfBasic decodes the next frame from cursor.
@@ -64,9 +125,13 @@ func DecodeCodecTlvChainPresentIfBasic(cursor *codec.SceCursor) (*CodecTlvChainP
 		}
 		Entries = optional.Some(_list)
 	}
+	_lEntries, err := codec.MakeOptionalList[CodecTlvChainPresentIfBasicEntriesBound](codec.OptionalSourcesOf(Entries, func(e *codec_tlv_entry.CodecTlvEntry) codec_tlv_entry.CodecTlvEntrySource { return e }))
+	if err != nil {
+		return nil, err
+	}
 	return &CodecTlvChainPresentIfBasic{
-		Carrier: Carrier,
-		Entries: Entries,
+		carrier: Carrier,
+		entries: _lEntries,
 	}, nil
 }
 
@@ -77,14 +142,14 @@ func DecodeCodecTlvChainPresentIfBasic(cursor *codec.SceCursor) (*CodecTlvChainP
 // sibling bits. Wire layout is unchanged — the carrier still occupies
 // its declared bytes.
 func (s *CodecTlvChainPresentIfBasic) HasChain() bool {
-	return (s.Carrier & 0x01) != 0
+	return (s.carrier & 0x01) != 0
 }
 
 func (s *CodecTlvChainPresentIfBasic) SetHasChain(v bool) {
 	if v {
-		s.Carrier |= 0x01
+		s.carrier |= 0x01
 	} else {
-		s.Carrier &^= 0x01
+		s.carrier &^= 0x01
 	}
 }
 
@@ -93,43 +158,15 @@ func (s *CodecTlvChainPresentIfBasic) SetHasChain(v bool) {
 // when the destination has insufficient remaining capacity; growable
 // sinks (e.g. BytesSink) are effectively infallible.
 func (s *CodecTlvChainPresentIfBasic) Encode(w codec.SceSink) error {
-	if s.Entries.IsPresent() && (len(s.Entries.Proven()) > 4) {
-		return codec.ErrTooManyElements
-	}
-	// Streaming cursor encode (SSOT selection: `needs_streaming`).
-	// Mirrors the streaming decode: every field appends its own bytes in
-	// declaration order through the per-field encode blocks, so a gated
-	// field skips its append when absent, and a fixed field after a
-	// variable-length payload lands after the payload (the positional path
-	// appends variable fields last, placing it ahead on the wire).
-	// Per-field `is_repeat` / `is_tlv_chain` / `is_embed` route to their
-	// dedicated helpers; everything else uses `present_if_encode_block`.
-	if err := w.WriteBytes([]byte{ s.Carrier }); err != nil {
-		return err
-	}
-	if s.Entries.IsPresent() {
-		_list := s.Entries.Proven()
-		for _i := range _list {
-			if err := _list[_i].Encode(w); err != nil {
-				return err
-			}
-		}
-	}
-	return nil
+	return EncodeSource(s, w)
 }
 
 // EncodeToBytes is the heap-backed convenience facade. Runs Encode
-// over a BytesSink and returns the freshly-encoded byte slice, or the
-// error Encode refuses the value with before its first byte: a field's
-// presence disagrees with the `sce:present-if` that gates it
-// (codec.ErrPresentIfMismatch), or a byte string, text, list or chain lies
-// outside its bound (codec.ErrLengthOutOfRange, codec.ErrTooManyElements).
-// Callers targeting zero-alloc hot paths should call Encode directly against a caller-owned sink (e.g.
-// BoundedSink over a stack buffer).
-func (s *CodecTlvChainPresentIfBasic) EncodeToBytes() ([]byte, error) {
+// over a BytesSink and returns the freshly-encoded byte slice.
+// Callers targeting zero-alloc hot paths should call Encode directly
+// against a caller-owned sink (e.g. BoundedSink over a stack buffer).
+func (s *CodecTlvChainPresentIfBasic) EncodeToBytes() []byte {
 	_dst := make([]byte, 0, 137)
-	if err := s.Encode(codec.NewBytesSink(&_dst)); err != nil {
-		return nil, err
-	}
-	return _dst, nil
+	_ = s.Encode(codec.NewBytesSink(&_dst))
+	return _dst
 }

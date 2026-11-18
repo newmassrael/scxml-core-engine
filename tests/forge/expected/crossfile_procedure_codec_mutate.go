@@ -125,7 +125,7 @@ func (p *policy) ExecuteTransitionActions(source int, trIndex int) (int, bool) {
 	_ = trIndex
 	if source == stateStart {
 		if trIndex == 0 {
-			p.Frame.MsgId = p.msgId
+			p.Frame = codec_simple_frame.MakeCodecSimpleFrame(p.msgId, p.Frame.Length(), p.Frame.Payload())
 		}
 	}
 	return 0, false

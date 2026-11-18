@@ -10,8 +10,32 @@ import (
 	"github.com/newmassrael/sce-forge-runtime/codec"
 )
 
+// CodecZenohExtUnitSource is what the encode of CodecZenohExtUnit reads: one method
+// for each element a value presents (docs/adr/0081 §2). CodecZenohExtUnit is one,
+// and so is any value with these methods. The encode derives every other
+// element of the frame.
+type CodecZenohExtUnitSource interface {
+}
+
 // CodecZenohExtUnit represents the codec frame layout.
 type CodecZenohExtUnit struct {
+}
+
+// MakeCodecZenohExtUnit returns the CodecZenohExtUnit that presents each element it
+// is handed, in declaration order (docs/adr/0081 §2). Its fields are
+// unexported: outside this package a value is made here, by
+// DecodeCodecZenohExtUnit, or as its zero value, and is read through its methods.
+func MakeCodecZenohExtUnit() CodecZenohExtUnit {
+	return CodecZenohExtUnit{}
+}
+
+// EncodeSource writes any source of CodecZenohExtUnit into w, each element read
+// off src and written where the codec's encode plan lays it out
+// (docs/adr/0081). It refuses no value: it returns only the
+// error of w, codec.ErrBufferOverflow from a bounded sink
+// that has no room left.
+func EncodeSource(src CodecZenohExtUnitSource, w codec.SceSink) error {
+	return nil
 }
 
 // DecodeCodecZenohExtUnit decodes the next frame from cursor.
@@ -30,9 +54,7 @@ func DecodeCodecZenohExtUnit(cursor *codec.SceCursor) (*CodecZenohExtUnit, error
 // when the destination has insufficient remaining capacity; growable
 // sinks (e.g. BytesSink) are effectively infallible.
 func (s *CodecZenohExtUnit) Encode(w codec.SceSink) error {
-	// RFC §synth-5-B empty body — zero-byte payload.
-	_ = w
-	return nil
+	return EncodeSource(s, w)
 }
 
 // EncodeToBytes is the heap-backed convenience facade. Runs Encode

@@ -10,10 +10,64 @@ import (
 	"github.com/newmassrael/sce-forge-runtime/codec"
 )
 
+// CodecLengthRefDottedBasicPayloadBound is the bound of the payload element of CodecLengthRefDottedBasic: 0 to 15 bytes
+// (docs/adr/0077 §3). A Bytes of it is made only within it.
+type CodecLengthRefDottedBasicPayloadBound struct{}
+
+// Least is the fewest bytes the element holds.
+func (CodecLengthRefDottedBasicPayloadBound) Least() int { return 0 }
+
+// Most is the most bytes the element holds.
+func (CodecLengthRefDottedBasicPayloadBound) Most() int { return 15 }
+
+// CodecLengthRefDottedBasicSource is what the encode of CodecLengthRefDottedBasic reads: one method
+// for each element a value presents (docs/adr/0081 §2). CodecLengthRefDottedBasic is one,
+// and so is any value with these methods. The encode derives every other
+// element of the frame.
+type CodecLengthRefDottedBasicSource interface {
+	Carrier() uint8
+	Payload() codec.Bytes[CodecLengthRefDottedBasicPayloadBound]
+}
+
 // CodecLengthRefDottedBasic represents the codec frame layout.
 type CodecLengthRefDottedBasic struct {
-	Carrier uint8
-	Payload []byte
+	carrier uint8
+	payload codec.Bytes[CodecLengthRefDottedBasicPayloadBound]
+}
+
+// MakeCodecLengthRefDottedBasic returns the CodecLengthRefDottedBasic that presents each element it
+// is handed, in declaration order (docs/adr/0081 §2). Its fields are
+// unexported: outside this package a value is made here, by
+// DecodeCodecLengthRefDottedBasic, or as its zero value, and is read through its methods.
+func MakeCodecLengthRefDottedBasic(carrier uint8, payload codec.Bytes[CodecLengthRefDottedBasicPayloadBound]) CodecLengthRefDottedBasic {
+	return CodecLengthRefDottedBasic{carrier: carrier, payload: payload}
+}
+
+// Carrier returns the element the value presents as Carrier.
+func (s *CodecLengthRefDottedBasic) Carrier() uint8 {
+	return s.carrier
+}
+
+// Payload returns the element the value presents as Payload.
+func (s *CodecLengthRefDottedBasic) Payload() codec.Bytes[CodecLengthRefDottedBasicPayloadBound] {
+	return s.payload
+}
+
+// EncodeSource writes any source of CodecLengthRefDottedBasic into w, each element read
+// off src and written where the codec's encode plan lays it out
+// (docs/adr/0081). It refuses no value: it returns only the
+// error of w, codec.ErrBufferOverflow from a bounded sink
+// that has no room left.
+func EncodeSource(src CodecLengthRefDottedBasicSource, w codec.SceSink) error {
+	_cCarrier := src.Carrier()
+	_cCarrier = (_cCarrier &^ 0xF0) | (uint8(src.Payload().Len()) << 4)
+	if err := w.WriteBytes([]byte{byte(_cCarrier)}); err != nil {
+		return err
+	}
+	if err := w.WriteBytes(src.Payload().Bytes()); err != nil {
+		return err
+	}
+	return nil
 }
 
 // DecodeCodecLengthRefDottedBasic decodes the next frame from cursor.
@@ -35,9 +89,13 @@ func DecodeCodecLengthRefDottedBasic(cursor *codec.SceCursor) (*CodecLengthRefDo
 		return nil, codec.ErrNeedMoreBytes
 	}
 	Payload := raw[1:1+int((Carrier >> 4) & 0xF)]
+	_bPayload, err := codec.MakeBytes[CodecLengthRefDottedBasicPayloadBound](Payload)
+	if err != nil {
+		return nil, err
+	}
 	value := &CodecLengthRefDottedBasic{
-		Carrier: Carrier,
-		Payload: Payload,
+		carrier: Carrier,
+		payload: _bPayload,
 	}
 	if err := cursor.Advance(frameLen); err != nil {
 		return nil, err
@@ -52,23 +110,23 @@ func DecodeCodecLengthRefDottedBasic(cursor *codec.SceCursor) (*CodecLengthRefDo
 // sibling bits. Wire layout is unchanged — the carrier still occupies
 // its declared bytes.
 func (s *CodecLengthRefDottedBasic) Hdr() uint8 {
-	return uint8((s.Carrier >> 0) & 0x0F)
+	return uint8((s.carrier >> 0) & 0x0F)
 }
 
 func (s *CodecLengthRefDottedBasic) SetHdr(v uint8) {
 	const _shiftedMask uint8 = 0x0F << 0
 	_val := (uint8(v) & 0x0F) << 0
-	s.Carrier = (s.Carrier &^ _shiftedMask) | _val
+	s.carrier = (s.carrier &^ _shiftedMask) | _val
 }
 
 func (s *CodecLengthRefDottedBasic) PayloadLen() uint8 {
-	return uint8((s.Carrier >> 4) & 0x0F)
+	return uint8((s.carrier >> 4) & 0x0F)
 }
 
 func (s *CodecLengthRefDottedBasic) SetPayloadLen(v uint8) {
 	const _shiftedMask uint8 = 0x0F << 4
 	_val := (uint8(v) & 0x0F) << 4
-	s.Carrier = (s.Carrier &^ _shiftedMask) | _val
+	s.carrier = (s.carrier &^ _shiftedMask) | _val
 }
 
 // Encode writes the CodecLengthRefDottedBasic into the caller-owned sink.
@@ -76,30 +134,15 @@ func (s *CodecLengthRefDottedBasic) SetPayloadLen(v uint8) {
 // when the destination has insufficient remaining capacity; growable
 // sinks (e.g. BytesSink) are effectively infallible.
 func (s *CodecLengthRefDottedBasic) Encode(w codec.SceSink) error {
-	if len(s.Payload) > 15 {
-		return codec.ErrLengthOutOfRange
-	}
-	if err := w.WriteBytes([]byte{ byte(s.Carrier) }); err != nil {
-		return err
-	}
-	if err := w.WriteBytes(s.Payload); err != nil {
-		return err
-	}
-	return nil
+	return EncodeSource(s, w)
 }
 
 // EncodeToBytes is the heap-backed convenience facade. Runs Encode
-// over a BytesSink and returns the freshly-encoded byte slice, or the
-// error Encode refuses the value with before its first byte: a field's
-// presence disagrees with the `sce:present-if` that gates it
-// (codec.ErrPresentIfMismatch), or a byte string, text, list or chain lies
-// outside its bound (codec.ErrLengthOutOfRange, codec.ErrTooManyElements).
-// Callers targeting zero-alloc hot paths should call Encode directly against a caller-owned sink (e.g.
-// BoundedSink over a stack buffer).
-func (s *CodecLengthRefDottedBasic) EncodeToBytes() ([]byte, error) {
+// over a BytesSink and returns the freshly-encoded byte slice.
+// Callers targeting zero-alloc hot paths should call Encode directly
+// against a caller-owned sink (e.g. BoundedSink over a stack buffer).
+func (s *CodecLengthRefDottedBasic) EncodeToBytes() []byte {
 	_dst := make([]byte, 0, 16)
-	if err := s.Encode(codec.NewBytesSink(&_dst)); err != nil {
-		return nil, err
-	}
-	return _dst, nil
+	_ = s.Encode(codec.NewBytesSink(&_dst))
+	return _dst
 }

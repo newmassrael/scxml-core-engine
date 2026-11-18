@@ -13,13 +13,143 @@ import (
 	"example.com/sce-forge/codec_zenoh_ext_entry"
 )
 
+// CodecZenohErrExtensionsBound is the bound of the extensions element of CodecZenohErr: 1 or more entries, the protocol stating no most
+// (docs/adr/0065 §6 R2). A List of it is made only within it.
+type CodecZenohErrExtensionsBound struct{}
+
+// Least is the fewest entries the element holds.
+func (CodecZenohErrExtensionsBound) Least() int { return 1 }
+
+// Most is the most entries the element holds.
+func (CodecZenohErrExtensionsBound) Most() int { return codec.Unbounded }
+
+// CodecZenohErrPayloadBound is the bound of the payload element of CodecZenohErr: 0 to 4294967295 bytes
+// (docs/adr/0077 §3). A Bytes of it is made only within it.
+type CodecZenohErrPayloadBound struct{}
+
+// Least is the fewest bytes the element holds.
+func (CodecZenohErrPayloadBound) Least() int { return 0 }
+
+// Most is the most bytes the element holds.
+func (CodecZenohErrPayloadBound) Most() int { return 4294967295 }
+
+// CodecZenohErrSource is what the encode of CodecZenohErr reads: one method
+// for each element a value presents (docs/adr/0081 §2). CodecZenohErr is one,
+// and so is any value with these methods. The encode derives every other
+// element of the frame.
+type CodecZenohErrSource interface {
+	Header() uint8
+	Encoding() optional.Of[codec_zenoh_encoding.CodecZenohEncodingSource]
+	Extensions() optional.Of[codec.List[CodecZenohErrExtensionsBound, codec_zenoh_ext_entry.CodecZenohExtEntrySource]]
+	Payload() codec.Bytes[CodecZenohErrPayloadBound]
+}
+
 // CodecZenohErr represents the codec frame layout.
 type CodecZenohErr struct {
-	Header uint8
-	Encoding optional.Of[codec_zenoh_encoding.CodecZenohEncoding]
-	Extensions optional.Of[[]codec_zenoh_ext_entry.CodecZenohExtEntry]
-	PayloadLen uint64
-	Payload []byte
+	header uint8
+	encoding optional.Of[codec_zenoh_encoding.CodecZenohEncodingSource]
+	extensions optional.Of[codec.List[CodecZenohErrExtensionsBound, codec_zenoh_ext_entry.CodecZenohExtEntrySource]]
+	payload codec.Bytes[CodecZenohErrPayloadBound]
+}
+
+// MakeCodecZenohErr returns the CodecZenohErr that presents each element it
+// is handed, in declaration order (docs/adr/0081 §2). Its fields are
+// unexported: outside this package a value is made here, by
+// DecodeCodecZenohErr, or as its zero value, and is read through its methods.
+func MakeCodecZenohErr(header uint8, encoding optional.Of[codec_zenoh_encoding.CodecZenohEncodingSource], extensions optional.Of[codec.List[CodecZenohErrExtensionsBound, codec_zenoh_ext_entry.CodecZenohExtEntrySource]], payload codec.Bytes[CodecZenohErrPayloadBound]) CodecZenohErr {
+	return CodecZenohErr{header: header, encoding: encoding, extensions: extensions, payload: payload}
+}
+
+// Header returns the element the value presents as Header.
+func (s *CodecZenohErr) Header() uint8 {
+	return s.header
+}
+
+// Encoding returns the element the value presents as Encoding.
+func (s *CodecZenohErr) Encoding() optional.Of[codec_zenoh_encoding.CodecZenohEncodingSource] {
+	return s.encoding
+}
+
+// Extensions returns the element the value presents as Extensions.
+func (s *CodecZenohErr) Extensions() optional.Of[codec.List[CodecZenohErrExtensionsBound, codec_zenoh_ext_entry.CodecZenohExtEntrySource]] {
+	return s.extensions
+}
+
+// Payload returns the element the value presents as Payload.
+func (s *CodecZenohErr) Payload() codec.Bytes[CodecZenohErrPayloadBound] {
+	return s.payload
+}
+
+// WirePayloadLen returns the payload_len the frame of the value carries, which the
+// encode derives from what it measures (docs/adr/0081 §3).
+func (s *CodecZenohErr) WirePayloadLen() uint64 {
+	return uint64(s.Payload().Len())
+}
+
+// CodecZenohErrOverrides holds the one-bit flags of CodecZenohErr a parent may
+// set in place of the ones a value presents, such as the flag a chain whose
+// entries are CodecZenohErr ends them on, which the chain derives from where
+// each entry stands. A flag it leaves absent is the one the value presents.
+type CodecZenohErrOverrides struct {
+	// HeaderX is the `X` flag of `header`, where a parent sets it.
+	HeaderX optional.Of[bool]
+}
+
+// EncodeSource writes any source of CodecZenohErr into w, each element read
+// off src and written where the codec's encode plan lays it out
+// (docs/adr/0081). It derives payload_len from
+// what each measures, and never reads it off the source. It refuses no value: it returns only the
+// error of w, codec.ErrBufferOverflow from a bounded sink
+// that has no room left.
+func EncodeSource(src CodecZenohErrSource, w codec.SceSink) error {
+	return EncodeSourceOverriding(src, w, CodecZenohErrOverrides{})
+}
+
+// EncodeSourceOverriding is EncodeSource, each flag overrides sets written in
+// place of the one src presents.
+func EncodeSourceOverriding(src CodecZenohErrSource, w codec.SceSink, overrides CodecZenohErrOverrides) error {
+	_dPayloadLen := uint64(src.Payload().Len())
+	_cHeader := src.Header()
+	_cHeader &^= 0x40
+	if src.Encoding().IsPresent() {
+		_cHeader |= 0x40
+	}
+	_cHeader &^= 0x80
+	if src.Extensions().IsPresent() {
+		_cHeader |= 0x80
+	}
+	if _o, ok := overrides.HeaderX.Get(); ok {
+		_cHeader &^= 0x20
+		if _o {
+			_cHeader |= 0x20
+		}
+	}
+	if err := w.WriteBytes([]byte{byte(_cHeader)}); err != nil {
+		return err
+	}
+	if src.Encoding().IsPresent() {
+		if err := codec_zenoh_encoding.EncodeSource(src.Encoding().Proven(), w); err != nil {
+			return err
+		}
+	}
+	if src.Extensions().IsPresent() {
+		{
+			_leftExtensions := src.Extensions().Proven().Len()
+			for _e := range src.Extensions().Proven().All() {
+				_leftExtensions--
+				if err := codec_zenoh_ext_entry.EncodeSourceOverriding(_e, w, codec_zenoh_ext_entry.CodecZenohExtEntryOverrides{HeaderZ: optional.Some(_leftExtensions != 0)}); err != nil {
+					return err
+				}
+			}
+		}
+	}
+	if err := codec.WriteVLEU64(w, uint64(_dPayloadLen)); err != nil {
+		return err
+	}
+	if err := w.WriteBytes(src.Payload().Bytes()); err != nil {
+		return err
+	}
+	return nil
 }
 
 // NewCodecZenohErr returns a CodecZenohErr initialized with the
@@ -31,7 +161,7 @@ type CodecZenohErr struct {
 // RFC variant-default-uniformity (Go).
 func NewCodecZenohErr() *CodecZenohErr {
 	return &CodecZenohErr{
-		Header: uint8(0x05),
+		header: uint8(0x05),
 	}
 }
 
@@ -112,12 +242,19 @@ func DecodeCodecZenohErr(cursor *codec.SceCursor) (*CodecZenohErr, error) {
 			return nil, err
 		}
 	}
+	_lExtensions, err := codec.MakeOptionalList[CodecZenohErrExtensionsBound](codec.OptionalSourcesOf(Extensions, func(e *codec_zenoh_ext_entry.CodecZenohExtEntry) codec_zenoh_ext_entry.CodecZenohExtEntrySource { return e }))
+	if err != nil {
+		return nil, err
+	}
+	_bPayload, err := codec.MakeBytes[CodecZenohErrPayloadBound](Payload)
+	if err != nil {
+		return nil, err
+	}
 	return &CodecZenohErr{
-		Header: Header,
-		Encoding: Encoding,
-		Extensions: Extensions,
-		PayloadLen: PayloadLen,
-		Payload: Payload,
+		header: Header,
+		encoding: optional.Convert(Encoding, func(b codec_zenoh_encoding.CodecZenohEncoding) codec_zenoh_encoding.CodecZenohEncodingSource { return &b }),
+		extensions: _lExtensions,
+		payload: _bPayload,
 	}, nil
 }
 
@@ -128,48 +265,48 @@ func DecodeCodecZenohErr(cursor *codec.SceCursor) (*CodecZenohErr, error) {
 // sibling bits. Wire layout is unchanged — the carrier still occupies
 // its declared bytes.
 func (s *CodecZenohErr) Mid() uint8 {
-	return uint8((s.Header >> 0) & 0x1F)
+	return uint8((s.header >> 0) & 0x1F)
 }
 
 func (s *CodecZenohErr) SetMid(v uint8) {
 	const _shiftedMask uint8 = 0x1F << 0
 	_val := (uint8(v) & 0x1F) << 0
-	s.Header = (s.Header &^ _shiftedMask) | _val
+	s.header = (s.header &^ _shiftedMask) | _val
 }
 
 func (s *CodecZenohErr) X() bool {
-	return (s.Header & 0x20) != 0
+	return (s.header & 0x20) != 0
 }
 
 func (s *CodecZenohErr) SetX(v bool) {
 	if v {
-		s.Header |= 0x20
+		s.header |= 0x20
 	} else {
-		s.Header &^= 0x20
+		s.header &^= 0x20
 	}
 }
 
 func (s *CodecZenohErr) E() bool {
-	return (s.Header & 0x40) != 0
+	return (s.header & 0x40) != 0
 }
 
 func (s *CodecZenohErr) SetE(v bool) {
 	if v {
-		s.Header |= 0x40
+		s.header |= 0x40
 	} else {
-		s.Header &^= 0x40
+		s.header &^= 0x40
 	}
 }
 
 func (s *CodecZenohErr) Z() bool {
-	return (s.Header & 0x80) != 0
+	return (s.header & 0x80) != 0
 }
 
 func (s *CodecZenohErr) SetZ(v bool) {
 	if v {
-		s.Header |= 0x80
+		s.header |= 0x80
 	} else {
-		s.Header &^= 0x80
+		s.header &^= 0x80
 	}
 }
 
@@ -178,58 +315,15 @@ func (s *CodecZenohErr) SetZ(v bool) {
 // when the destination has insufficient remaining capacity; growable
 // sinks (e.g. BytesSink) are effectively infallible.
 func (s *CodecZenohErr) Encode(w codec.SceSink) error {
-	if s.Extensions.IsPresent() && (len(s.Extensions.Proven()) < 1) {
-		return codec.ErrTooManyElements
-	}
-	if len(s.Payload) > 4294967295 {
-		return codec.ErrLengthOutOfRange
-	}
-	// Streaming cursor encode (SSOT selection: `needs_streaming`).
-	// Mirrors the streaming decode: every field appends its own bytes in
-	// declaration order through the per-field encode blocks, so a gated
-	// field skips its append when absent, and a fixed field after a
-	// variable-length payload lands after the payload (the positional path
-	// appends variable fields last, placing it ahead on the wire).
-	// Per-field `is_repeat` / `is_tlv_chain` / `is_embed` route to their
-	// dedicated helpers; everything else uses `present_if_encode_block`.
-	if err := w.WriteBytes([]byte{ s.Header }); err != nil {
-		return err
-	}
-	if s.Encoding.IsPresent() {
-		_body := s.Encoding.Proven()
-		if err := _body.Encode(w); err != nil {
-			return err
-		}
-	}
-	if s.Extensions.IsPresent() {
-		_list := s.Extensions.Proven()
-		for _i := range _list {
-			if err := _list[_i].Encode(w); err != nil {
-				return err
-			}
-		}
-	}
-	if err := codec.WriteVLEU64(w, uint64(s.PayloadLen)); err != nil {
-		return err
-	}
-	if err := w.WriteBytes(s.Payload); err != nil {
-		return err
-	}
-	return nil
+	return EncodeSource(s, w)
 }
 
 // EncodeToBytes is the heap-backed convenience facade. Runs Encode
-// over a BytesSink and returns the freshly-encoded byte slice, or the
-// error Encode refuses the value with before its first byte: a field's
-// presence disagrees with the `sce:present-if` that gates it
-// (codec.ErrPresentIfMismatch), or a byte string, text, list or chain lies
-// outside its bound (codec.ErrLengthOutOfRange, codec.ErrTooManyElements).
-// Callers targeting zero-alloc hot paths should call Encode directly against a caller-owned sink (e.g.
-// BoundedSink over a stack buffer).
-func (s *CodecZenohErr) EncodeToBytes() ([]byte, error) {
+// over a BytesSink and returns the freshly-encoded byte slice.
+// Callers targeting zero-alloc hot paths should call Encode directly
+// against a caller-owned sink (e.g. BoundedSink over a stack buffer).
+func (s *CodecZenohErr) EncodeToBytes() []byte {
 	_dst := make([]byte, 0)
-	if err := s.Encode(codec.NewBytesSink(&_dst)); err != nil {
-		return nil, err
-	}
-	return _dst, nil
+	_ = s.Encode(codec.NewBytesSink(&_dst))
+	return _dst
 }

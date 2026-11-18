@@ -12,13 +12,132 @@ import (
 	"example.com/sce-forge/codec_zenoh_ext_entry"
 )
 
+// CodecZenohQueryParametersBound is the bound of the parameters element of CodecZenohQuery: 0 or more bytes, the protocol stating no most
+// (docs/adr/0077 §3). A Bytes of it is made only within it.
+type CodecZenohQueryParametersBound struct{}
+
+// Least is the fewest bytes the element holds.
+func (CodecZenohQueryParametersBound) Least() int { return 0 }
+
+// Most is the most bytes the element holds.
+func (CodecZenohQueryParametersBound) Most() int { return codec.Unbounded }
+
+// CodecZenohQueryExtensionsBound is the bound of the extensions element of CodecZenohQuery: 0 or more entries, the protocol stating no most
+// (docs/adr/0065 §6 R2). A List of it is made only within it.
+type CodecZenohQueryExtensionsBound struct{}
+
+// Least is the fewest entries the element holds.
+func (CodecZenohQueryExtensionsBound) Least() int { return 0 }
+
+// Most is the most entries the element holds.
+func (CodecZenohQueryExtensionsBound) Most() int { return codec.Unbounded }
+
+// CodecZenohQuerySource is what the encode of CodecZenohQuery reads: one method
+// for each element a value presents (docs/adr/0081 §2). CodecZenohQuery is one,
+// and so is any value with these methods. The encode derives every other
+// element of the frame.
+type CodecZenohQuerySource interface {
+	Header() uint8
+	Consolidation() optional.Of[uint8]
+	Parameters() optional.Of[codec.Bytes[CodecZenohQueryParametersBound]]
+	Extensions() optional.Of[codec.List[CodecZenohQueryExtensionsBound, codec_zenoh_ext_entry.CodecZenohExtEntrySource]]
+}
+
 // CodecZenohQuery represents the codec frame layout.
 type CodecZenohQuery struct {
-	Header uint8
-	Consolidation optional.Of[uint8]
-	ParametersLen optional.Of[uint64]
-	Parameters optional.Of[[]byte]
-	Extensions optional.Of[[]codec_zenoh_ext_entry.CodecZenohExtEntry]
+	header uint8
+	consolidation optional.Of[uint8]
+	parameters optional.Of[codec.Bytes[CodecZenohQueryParametersBound]]
+	extensions optional.Of[codec.List[CodecZenohQueryExtensionsBound, codec_zenoh_ext_entry.CodecZenohExtEntrySource]]
+}
+
+// MakeCodecZenohQuery returns the CodecZenohQuery that presents each element it
+// is handed, in declaration order (docs/adr/0081 §2). Its fields are
+// unexported: outside this package a value is made here, by
+// DecodeCodecZenohQuery, or as its zero value, and is read through its methods.
+func MakeCodecZenohQuery(header uint8, consolidation optional.Of[uint8], parameters optional.Of[codec.Bytes[CodecZenohQueryParametersBound]], extensions optional.Of[codec.List[CodecZenohQueryExtensionsBound, codec_zenoh_ext_entry.CodecZenohExtEntrySource]]) CodecZenohQuery {
+	return CodecZenohQuery{header: header, consolidation: consolidation, parameters: parameters, extensions: extensions}
+}
+
+// Header returns the element the value presents as Header.
+func (s *CodecZenohQuery) Header() uint8 {
+	return s.header
+}
+
+// Consolidation returns the element the value presents as Consolidation.
+func (s *CodecZenohQuery) Consolidation() optional.Of[uint8] {
+	return s.consolidation
+}
+
+// Parameters returns the element the value presents as Parameters.
+func (s *CodecZenohQuery) Parameters() optional.Of[codec.Bytes[CodecZenohQueryParametersBound]] {
+	return s.parameters
+}
+
+// Extensions returns the element the value presents as Extensions.
+func (s *CodecZenohQuery) Extensions() optional.Of[codec.List[CodecZenohQueryExtensionsBound, codec_zenoh_ext_entry.CodecZenohExtEntrySource]] {
+	return s.extensions
+}
+
+// WireParametersLen returns the parameters_len the frame of the value carries, which the
+// encode derives from what it measures (docs/adr/0081 §3).
+func (s *CodecZenohQuery) WireParametersLen() optional.Of[uint64] {
+	if _v, ok := s.Parameters().Get(); ok {
+		return optional.Some(uint64(_v.Len()))
+	}
+	return optional.None[uint64]()
+}
+
+// EncodeSource writes any source of CodecZenohQuery into w, each element read
+// off src and written where the codec's encode plan lays it out
+// (docs/adr/0081). It derives parameters_len from
+// what each measures, and never reads it off the source. It refuses no value: it returns only the
+// error of w, codec.ErrBufferOverflow from a bounded sink
+// that has no room left.
+func EncodeSource(src CodecZenohQuerySource, w codec.SceSink) error {
+	var _dParametersLen uint64
+	if src.Parameters().IsPresent() {
+		_dParametersLen = uint64(src.Parameters().Proven().Len())
+	}
+	_cHeader := src.Header()
+	_cHeader &^= 0x20
+	if src.Consolidation().IsPresent() {
+		_cHeader |= 0x20
+	}
+	_cHeader &^= 0x40
+	if src.Parameters().IsPresent() {
+		_cHeader |= 0x40
+	}
+	_cHeader &^= 0x80
+	if src.Extensions().IsPresent() {
+		_cHeader |= 0x80
+	}
+	if err := w.WriteBytes([]byte{byte(_cHeader)}); err != nil {
+		return err
+	}
+	if src.Consolidation().IsPresent() {
+		if err := w.WriteBytes([]byte{byte(src.Consolidation().Proven())}); err != nil {
+			return err
+		}
+	}
+	if ((_cHeader >> 6) & 1) != 0 {
+		if err := codec.WriteVLEU64(w, uint64(_dParametersLen)); err != nil {
+			return err
+		}
+	}
+	if src.Parameters().IsPresent() {
+		if err := w.WriteBytes(src.Parameters().Proven().Bytes()); err != nil {
+			return err
+		}
+	}
+	if src.Extensions().IsPresent() {
+		for _e := range src.Extensions().Proven().All() {
+			if err := codec_zenoh_ext_entry.EncodeSource(_e, w); err != nil {
+				return err
+			}
+		}
+	}
+	return nil
 }
 
 // NewCodecZenohQuery returns a CodecZenohQuery initialized with the
@@ -30,7 +149,7 @@ type CodecZenohQuery struct {
 // RFC variant-default-uniformity (Go).
 func NewCodecZenohQuery() *CodecZenohQuery {
 	return &CodecZenohQuery{
-		Header: uint8(0x03),
+		header: uint8(0x03),
 	}
 }
 
@@ -111,12 +230,19 @@ func DecodeCodecZenohQuery(cursor *codec.SceCursor) (*CodecZenohQuery, error) {
 		}
 		Extensions = optional.Some(_list)
 	}
+	_bParameters, err := codec.MakeOptionalBytes[CodecZenohQueryParametersBound](Parameters)
+	if err != nil {
+		return nil, err
+	}
+	_lExtensions, err := codec.MakeOptionalList[CodecZenohQueryExtensionsBound](codec.OptionalSourcesOf(Extensions, func(e *codec_zenoh_ext_entry.CodecZenohExtEntry) codec_zenoh_ext_entry.CodecZenohExtEntrySource { return e }))
+	if err != nil {
+		return nil, err
+	}
 	return &CodecZenohQuery{
-		Header: Header,
-		Consolidation: Consolidation,
-		ParametersLen: ParametersLen,
-		Parameters: Parameters,
-		Extensions: Extensions,
+		header: Header,
+		consolidation: Consolidation,
+		parameters: _bParameters,
+		extensions: _lExtensions,
 	}, nil
 }
 
@@ -127,48 +253,48 @@ func DecodeCodecZenohQuery(cursor *codec.SceCursor) (*CodecZenohQuery, error) {
 // sibling bits. Wire layout is unchanged — the carrier still occupies
 // its declared bytes.
 func (s *CodecZenohQuery) Mid() uint8 {
-	return uint8((s.Header >> 0) & 0x1F)
+	return uint8((s.header >> 0) & 0x1F)
 }
 
 func (s *CodecZenohQuery) SetMid(v uint8) {
 	const _shiftedMask uint8 = 0x1F << 0
 	_val := (uint8(v) & 0x1F) << 0
-	s.Header = (s.Header &^ _shiftedMask) | _val
+	s.header = (s.header &^ _shiftedMask) | _val
 }
 
 func (s *CodecZenohQuery) C() bool {
-	return (s.Header & 0x20) != 0
+	return (s.header & 0x20) != 0
 }
 
 func (s *CodecZenohQuery) SetC(v bool) {
 	if v {
-		s.Header |= 0x20
+		s.header |= 0x20
 	} else {
-		s.Header &^= 0x20
+		s.header &^= 0x20
 	}
 }
 
 func (s *CodecZenohQuery) P() bool {
-	return (s.Header & 0x40) != 0
+	return (s.header & 0x40) != 0
 }
 
 func (s *CodecZenohQuery) SetP(v bool) {
 	if v {
-		s.Header |= 0x40
+		s.header |= 0x40
 	} else {
-		s.Header &^= 0x40
+		s.header &^= 0x40
 	}
 }
 
 func (s *CodecZenohQuery) Z() bool {
-	return (s.Header & 0x80) != 0
+	return (s.header & 0x80) != 0
 }
 
 func (s *CodecZenohQuery) SetZ(v bool) {
 	if v {
-		s.Header |= 0x80
+		s.header |= 0x80
 	} else {
-		s.Header &^= 0x80
+		s.header &^= 0x80
 	}
 }
 
@@ -177,43 +303,7 @@ func (s *CodecZenohQuery) SetZ(v bool) {
 // when the destination has insufficient remaining capacity; growable
 // sinks (e.g. BytesSink) are effectively infallible.
 func (s *CodecZenohQuery) Encode(w codec.SceSink) error {
-	// Streaming cursor encode (SSOT selection: `needs_streaming`).
-	// Mirrors the streaming decode: every field appends its own bytes in
-	// declaration order through the per-field encode blocks, so a gated
-	// field skips its append when absent, and a fixed field after a
-	// variable-length payload lands after the payload (the positional path
-	// appends variable fields last, placing it ahead on the wire).
-	// Per-field `is_repeat` / `is_tlv_chain` / `is_embed` route to their
-	// dedicated helpers; everything else uses `present_if_encode_block`.
-	if err := w.WriteBytes([]byte{ s.Header }); err != nil {
-		return err
-	}
-	if s.Consolidation.IsPresent() {
-		_v := s.Consolidation.Proven()
-		if err := w.WriteBytes([]byte{ _v }); err != nil {
-			return err
-		}
-	}
-	if s.ParametersLen.IsPresent() {
-		_v := s.ParametersLen.Proven()
-	if err := codec.WriteVLEU64(w, uint64(_v)); err != nil {
-		return err
-	}
-	}
-	if s.Parameters.IsPresent() {
-		if err := w.WriteBytes(s.Parameters.Proven()); err != nil {
-			return err
-		}
-	}
-	if s.Extensions.IsPresent() {
-		_list := s.Extensions.Proven()
-		for _i := range _list {
-			if err := _list[_i].Encode(w); err != nil {
-				return err
-			}
-		}
-	}
-	return nil
+	return EncodeSource(s, w)
 }
 
 // EncodeToBytes is the heap-backed convenience facade. Runs Encode

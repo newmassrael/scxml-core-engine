@@ -10,9 +10,42 @@ import (
 	"github.com/newmassrael/sce-forge-runtime/codec"
 )
 
+// CodecVariantSessionOpenSource is what the encode of CodecVariantSessionOpen reads: one method
+// for each element a value presents (docs/adr/0081 §2). CodecVariantSessionOpen is one,
+// and so is any value with these methods. The encode derives every other
+// element of the frame.
+type CodecVariantSessionOpenSource interface {
+	Version() uint16
+}
+
 // CodecVariantSessionOpen represents the codec frame layout.
 type CodecVariantSessionOpen struct {
-	Version uint16
+	version uint16
+}
+
+// MakeCodecVariantSessionOpen returns the CodecVariantSessionOpen that presents each element it
+// is handed, in declaration order (docs/adr/0081 §2). Its fields are
+// unexported: outside this package a value is made here, by
+// DecodeCodecVariantSessionOpen, or as its zero value, and is read through its methods.
+func MakeCodecVariantSessionOpen(version uint16) CodecVariantSessionOpen {
+	return CodecVariantSessionOpen{version: version}
+}
+
+// Version returns the element the value presents as Version.
+func (s *CodecVariantSessionOpen) Version() uint16 {
+	return s.version
+}
+
+// EncodeSource writes any source of CodecVariantSessionOpen into w, each element read
+// off src and written where the codec's encode plan lays it out
+// (docs/adr/0081). It refuses no value: it returns only the
+// error of w, codec.ErrBufferOverflow from a bounded sink
+// that has no room left.
+func EncodeSource(src CodecVariantSessionOpenSource, w codec.SceSink) error {
+	if err := w.WriteBytes([]byte{byte(src.Version() >> 8 & 0xFF), byte(src.Version() & 0xFF)}); err != nil {
+		return err
+	}
+	return nil
 }
 
 // DecodeCodecVariantSessionOpen decodes the next frame from cursor.
@@ -27,7 +60,7 @@ func DecodeCodecVariantSessionOpen(cursor *codec.SceCursor) (*CodecVariantSessio
 	}
 	Version := uint16(raw[0])<<8 | uint16(raw[1])
 	value := &CodecVariantSessionOpen{
-		Version: Version,
+		version: Version,
 	}
 	if err := cursor.Advance(2); err != nil {
 		return nil, err
@@ -40,13 +73,7 @@ func DecodeCodecVariantSessionOpen(cursor *codec.SceCursor) (*CodecVariantSessio
 // when the destination has insufficient remaining capacity; growable
 // sinks (e.g. BytesSink) are effectively infallible.
 func (s *CodecVariantSessionOpen) Encode(w codec.SceSink) error {
-	if err := w.WriteBytes([]byte{ byte(s.Version >> 8 & 0xFF) }); err != nil {
-		return err
-	}
-	if err := w.WriteBytes([]byte{ byte(s.Version & 0xFF) }); err != nil {
-		return err
-	}
-	return nil
+	return EncodeSource(s, w)
 }
 
 // EncodeToBytes is the heap-backed convenience facade. Runs Encode

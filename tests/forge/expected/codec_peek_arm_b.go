@@ -8,12 +8,77 @@ package codec_peek_arm_b
 
 import (
 	"github.com/newmassrael/sce-forge-runtime/codec"
+	"github.com/newmassrael/sce-forge-runtime/optional"
 )
+
+// CodecPeekArmBSource is what the encode of CodecPeekArmB reads: one method
+// for each element a value presents (docs/adr/0081 §2). CodecPeekArmB is one,
+// and so is any value with these methods. The encode derives every other
+// element of the frame.
+type CodecPeekArmBSource interface {
+	Header() uint8
+	Payload() uint16
+}
 
 // CodecPeekArmB represents the codec frame layout.
 type CodecPeekArmB struct {
-	Header uint8
-	Payload uint16
+	header uint8
+	payload uint16
+}
+
+// MakeCodecPeekArmB returns the CodecPeekArmB that presents each element it
+// is handed, in declaration order (docs/adr/0081 §2). Its fields are
+// unexported: outside this package a value is made here, by
+// DecodeCodecPeekArmB, or as its zero value, and is read through its methods.
+func MakeCodecPeekArmB(header uint8, payload uint16) CodecPeekArmB {
+	return CodecPeekArmB{header: header, payload: payload}
+}
+
+// Header returns the element the value presents as Header.
+func (s *CodecPeekArmB) Header() uint8 {
+	return s.header
+}
+
+// Payload returns the element the value presents as Payload.
+func (s *CodecPeekArmB) Payload() uint16 {
+	return s.payload
+}
+
+// CodecPeekArmBOverrides holds the one-bit flags of CodecPeekArmB a parent may
+// set in place of the ones a value presents, such as the flag a chain whose
+// entries are CodecPeekArmB ends them on, which the chain derives from where
+// each entry stands. A flag it leaves absent is the one the value presents.
+type CodecPeekArmBOverrides struct {
+	// HeaderKind is the `kind` flag of `header`, where a parent sets it.
+	HeaderKind optional.Of[bool]
+}
+
+// EncodeSource writes any source of CodecPeekArmB into w, each element read
+// off src and written where the codec's encode plan lays it out
+// (docs/adr/0081). It refuses no value: it returns only the
+// error of w, codec.ErrBufferOverflow from a bounded sink
+// that has no room left.
+func EncodeSource(src CodecPeekArmBSource, w codec.SceSink) error {
+	return EncodeSourceOverriding(src, w, CodecPeekArmBOverrides{})
+}
+
+// EncodeSourceOverriding is EncodeSource, each flag overrides sets written in
+// place of the one src presents.
+func EncodeSourceOverriding(src CodecPeekArmBSource, w codec.SceSink, overrides CodecPeekArmBOverrides) error {
+	_cHeader := src.Header()
+	if _o, ok := overrides.HeaderKind.Get(); ok {
+		_cHeader &^= 0x1
+		if _o {
+			_cHeader |= 0x1
+		}
+	}
+	if err := w.WriteBytes([]byte{byte(_cHeader)}); err != nil {
+		return err
+	}
+	if err := w.WriteBytes([]byte{byte(src.Payload() >> 8 & 0xFF), byte(src.Payload() & 0xFF)}); err != nil {
+		return err
+	}
+	return nil
 }
 
 // NewCodecPeekArmB returns a CodecPeekArmB initialized with the
@@ -25,7 +90,7 @@ type CodecPeekArmB struct {
 // RFC variant-default-uniformity (Go).
 func NewCodecPeekArmB() *CodecPeekArmB {
 	return &CodecPeekArmB{
-		Header: uint8(0x01),
+		header: uint8(0x01),
 	}
 }
 
@@ -42,8 +107,8 @@ func DecodeCodecPeekArmB(cursor *codec.SceCursor) (*CodecPeekArmB, error) {
 	Header := raw[0]
 	Payload := uint16(raw[1])<<8 | uint16(raw[2])
 	value := &CodecPeekArmB{
-		Header: Header,
-		Payload: Payload,
+		header: Header,
+		payload: Payload,
 	}
 	if err := cursor.Advance(3); err != nil {
 		return nil, err
@@ -58,14 +123,14 @@ func DecodeCodecPeekArmB(cursor *codec.SceCursor) (*CodecPeekArmB, error) {
 // sibling bits. Wire layout is unchanged — the carrier still occupies
 // its declared bytes.
 func (s *CodecPeekArmB) Kind() bool {
-	return (s.Header & 0x01) != 0
+	return (s.header & 0x01) != 0
 }
 
 func (s *CodecPeekArmB) SetKind(v bool) {
 	if v {
-		s.Header |= 0x01
+		s.header |= 0x01
 	} else {
-		s.Header &^= 0x01
+		s.header &^= 0x01
 	}
 }
 
@@ -74,16 +139,7 @@ func (s *CodecPeekArmB) SetKind(v bool) {
 // when the destination has insufficient remaining capacity; growable
 // sinks (e.g. BytesSink) are effectively infallible.
 func (s *CodecPeekArmB) Encode(w codec.SceSink) error {
-	if err := w.WriteBytes([]byte{ byte(s.Header) }); err != nil {
-		return err
-	}
-	if err := w.WriteBytes([]byte{ byte(s.Payload >> 8 & 0xFF) }); err != nil {
-		return err
-	}
-	if err := w.WriteBytes([]byte{ byte(s.Payload & 0xFF) }); err != nil {
-		return err
-	}
-	return nil
+	return EncodeSource(s, w)
 }
 
 // EncodeToBytes is the heap-backed convenience facade. Runs Encode

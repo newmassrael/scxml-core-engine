@@ -12,13 +12,105 @@ import (
 	"example.com/sce-forge/codec_nested_body"
 )
 
+// CodecNestedParentBodyListBound is the bound of the body_list element of CodecNestedParent: 0 to 4 entries
+// (docs/adr/0065 §6 R2). A List of it is made only within it.
+type CodecNestedParentBodyListBound struct{}
+
+// Least is the fewest entries the element holds.
+func (CodecNestedParentBodyListBound) Least() int { return 0 }
+
+// Most is the most entries the element holds.
+func (CodecNestedParentBodyListBound) Most() int { return 4 }
+
+// CodecNestedParentSource is what the encode of CodecNestedParent reads: one method
+// for each element a value presents (docs/adr/0081 §2). CodecNestedParent is one,
+// and so is any value with these methods. The encode derives every other
+// element of the frame.
+type CodecNestedParentSource interface {
+	Hdr() uint8
+	RequiredBody() codec_nested_body.CodecNestedBodySource
+	OptionalBody() optional.Of[codec_nested_body.CodecNestedBodySource]
+	BodyList() codec.List[CodecNestedParentBodyListBound, codec_nested_body.CodecNestedBodySource]
+}
+
 // CodecNestedParent represents the codec frame layout.
 type CodecNestedParent struct {
-	Hdr uint8
-	M uint8
-	RequiredBody codec_nested_body.CodecNestedBody
-	OptionalBody optional.Of[codec_nested_body.CodecNestedBody]
-	BodyList []codec_nested_body.CodecNestedBody
+	hdr uint8
+	requiredBody codec_nested_body.CodecNestedBodySource
+	optionalBody optional.Of[codec_nested_body.CodecNestedBodySource]
+	bodyList codec.List[CodecNestedParentBodyListBound, codec_nested_body.CodecNestedBodySource]
+}
+
+// MakeCodecNestedParent returns the CodecNestedParent that presents each element it
+// is handed, in declaration order (docs/adr/0081 §2). Its fields are
+// unexported: outside this package a value is made here, by
+// DecodeCodecNestedParent, or as its zero value, and is read through its methods.
+func MakeCodecNestedParent(hdr uint8, requiredBody codec_nested_body.CodecNestedBodySource, optionalBody optional.Of[codec_nested_body.CodecNestedBodySource], bodyList codec.List[CodecNestedParentBodyListBound, codec_nested_body.CodecNestedBodySource]) CodecNestedParent {
+	return CodecNestedParent{hdr: hdr, requiredBody: requiredBody, optionalBody: optionalBody, bodyList: bodyList}
+}
+
+// Hdr returns the element the value presents as Hdr.
+func (s *CodecNestedParent) Hdr() uint8 {
+	return s.hdr
+}
+
+// RequiredBody returns the element the value presents as RequiredBody.
+func (s *CodecNestedParent) RequiredBody() codec_nested_body.CodecNestedBodySource {
+	if s.requiredBody == nil {
+		return &codec_nested_body.CodecNestedBody{}
+	}
+	return s.requiredBody
+}
+
+// OptionalBody returns the element the value presents as OptionalBody.
+func (s *CodecNestedParent) OptionalBody() optional.Of[codec_nested_body.CodecNestedBodySource] {
+	return s.optionalBody
+}
+
+// BodyList returns the element the value presents as BodyList.
+func (s *CodecNestedParent) BodyList() codec.List[CodecNestedParentBodyListBound, codec_nested_body.CodecNestedBodySource] {
+	return s.bodyList
+}
+
+// WireM returns the m the frame of the value carries, which the
+// encode derives from what it measures (docs/adr/0081 §3).
+func (s *CodecNestedParent) WireM() uint8 {
+	return uint8(s.BodyList().Len())
+}
+
+// EncodeSource writes any source of CodecNestedParent into w, each element read
+// off src and written where the codec's encode plan lays it out
+// (docs/adr/0081). It derives m from
+// what each measures, and never reads it off the source. It refuses no value: it returns only the
+// error of w, codec.ErrBufferOverflow from a bounded sink
+// that has no room left.
+func EncodeSource(src CodecNestedParentSource, w codec.SceSink) error {
+	_dM := uint8(src.BodyList().Len())
+	_cHdr := src.Hdr()
+	_cHdr &^= 0x1
+	if src.OptionalBody().IsPresent() {
+		_cHdr |= 0x1
+	}
+	if err := w.WriteBytes([]byte{byte(_cHdr)}); err != nil {
+		return err
+	}
+	if err := w.WriteBytes([]byte{byte(_dM)}); err != nil {
+		return err
+	}
+	if err := codec_nested_body.EncodeSource(src.RequiredBody(), w); err != nil {
+		return err
+	}
+	if src.OptionalBody().IsPresent() {
+		if err := codec_nested_body.EncodeSource(src.OptionalBody().Proven(), w); err != nil {
+			return err
+		}
+	}
+	for _e := range src.BodyList().All() {
+		if err := codec_nested_body.EncodeSource(_e, w); err != nil {
+			return err
+		}
+	}
+	return nil
 }
 
 // DecodeCodecNestedParent decodes the next frame from cursor.
@@ -87,12 +179,15 @@ func DecodeCodecNestedParent(cursor *codec.SceCursor) (*CodecNestedParent, error
 		}
 		BodyList = append(BodyList, *_elem)
 	}
+	_lBodyList, err := codec.MakeList[CodecNestedParentBodyListBound](codec.SourcesOf(BodyList, func(e *codec_nested_body.CodecNestedBody) codec_nested_body.CodecNestedBodySource { return e }))
+	if err != nil {
+		return nil, err
+	}
 	return &CodecNestedParent{
-		Hdr: Hdr,
-		M: M,
-		RequiredBody: RequiredBody,
-		OptionalBody: OptionalBody,
-		BodyList: BodyList,
+		hdr: Hdr,
+		requiredBody: &RequiredBody,
+		optionalBody: optional.Convert(OptionalBody, func(b codec_nested_body.CodecNestedBody) codec_nested_body.CodecNestedBodySource { return &b }),
+		bodyList: _lBodyList,
 	}, nil
 }
 
@@ -103,14 +198,14 @@ func DecodeCodecNestedParent(cursor *codec.SceCursor) (*CodecNestedParent, error
 // sibling bits. Wire layout is unchanged — the carrier still occupies
 // its declared bytes.
 func (s *CodecNestedParent) HasOpt() bool {
-	return (s.Hdr & 0x01) != 0
+	return (s.hdr & 0x01) != 0
 }
 
 func (s *CodecNestedParent) SetHasOpt(v bool) {
 	if v {
-		s.Hdr |= 0x01
+		s.hdr |= 0x01
 	} else {
-		s.Hdr &^= 0x01
+		s.hdr &^= 0x01
 	}
 }
 
@@ -119,52 +214,15 @@ func (s *CodecNestedParent) SetHasOpt(v bool) {
 // when the destination has insufficient remaining capacity; growable
 // sinks (e.g. BytesSink) are effectively infallible.
 func (s *CodecNestedParent) Encode(w codec.SceSink) error {
-	if len(s.BodyList) > 4 {
-		return codec.ErrTooManyElements
-	}
-	// Streaming cursor encode (SSOT selection: `needs_streaming`).
-	// Mirrors the streaming decode: every field appends its own bytes in
-	// declaration order through the per-field encode blocks, so a gated
-	// field skips its append when absent, and a fixed field after a
-	// variable-length payload lands after the payload (the positional path
-	// appends variable fields last, placing it ahead on the wire).
-	// Per-field `is_repeat` / `is_tlv_chain` / `is_embed` route to their
-	// dedicated helpers; everything else uses `present_if_encode_block`.
-	if err := w.WriteBytes([]byte{ s.Hdr }); err != nil {
-		return err
-	}
-	if err := w.WriteBytes([]byte{ s.M }); err != nil {
-		return err
-	}
-	if err := s.RequiredBody.Encode(w); err != nil {
-		return err
-	}
-	if s.OptionalBody.IsPresent() {
-		_body := s.OptionalBody.Proven()
-		if err := _body.Encode(w); err != nil {
-			return err
-		}
-	}
-	for _i := range s.BodyList {
-		if err := s.BodyList[_i].Encode(w); err != nil {
-			return err
-		}
-	}
-	return nil
+	return EncodeSource(s, w)
 }
 
 // EncodeToBytes is the heap-backed convenience facade. Runs Encode
-// over a BytesSink and returns the freshly-encoded byte slice, or the
-// error Encode refuses the value with before its first byte: a field's
-// presence disagrees with the `sce:present-if` that gates it
-// (codec.ErrPresentIfMismatch), or a byte string, text, list or chain lies
-// outside its bound (codec.ErrLengthOutOfRange, codec.ErrTooManyElements).
-// Callers targeting zero-alloc hot paths should call Encode directly against a caller-owned sink (e.g.
-// BoundedSink over a stack buffer).
-func (s *CodecNestedParent) EncodeToBytes() ([]byte, error) {
+// over a BytesSink and returns the freshly-encoded byte slice.
+// Callers targeting zero-alloc hot paths should call Encode directly
+// against a caller-owned sink (e.g. BoundedSink over a stack buffer).
+func (s *CodecNestedParent) EncodeToBytes() []byte {
 	_dst := make([]byte, 0, 6344)
-	if err := s.Encode(codec.NewBytesSink(&_dst)); err != nil {
-		return nil, err
-	}
-	return _dst, nil
+	_ = s.Encode(codec.NewBytesSink(&_dst))
+	return _dst
 }

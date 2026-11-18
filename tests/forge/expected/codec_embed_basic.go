@@ -11,10 +11,55 @@ import (
 	"example.com/sce-forge/codec_zenoh_locator"
 )
 
+// CodecEmbedBasicSource is what the encode of CodecEmbedBasic reads: one method
+// for each element a value presents (docs/adr/0081 §2). CodecEmbedBasic is one,
+// and so is any value with these methods. The encode derives every other
+// element of the frame.
+type CodecEmbedBasicSource interface {
+	Tag() uint8
+	Locator() codec_zenoh_locator.CodecZenohLocatorSource
+}
+
 // CodecEmbedBasic represents the codec frame layout.
 type CodecEmbedBasic struct {
-	Tag uint8
-	Locator codec_zenoh_locator.CodecZenohLocator
+	tag uint8
+	locator codec_zenoh_locator.CodecZenohLocatorSource
+}
+
+// MakeCodecEmbedBasic returns the CodecEmbedBasic that presents each element it
+// is handed, in declaration order (docs/adr/0081 §2). Its fields are
+// unexported: outside this package a value is made here, by
+// DecodeCodecEmbedBasic, or as its zero value, and is read through its methods.
+func MakeCodecEmbedBasic(tag uint8, locator codec_zenoh_locator.CodecZenohLocatorSource) CodecEmbedBasic {
+	return CodecEmbedBasic{tag: tag, locator: locator}
+}
+
+// Tag returns the element the value presents as Tag.
+func (s *CodecEmbedBasic) Tag() uint8 {
+	return s.tag
+}
+
+// Locator returns the element the value presents as Locator.
+func (s *CodecEmbedBasic) Locator() codec_zenoh_locator.CodecZenohLocatorSource {
+	if s.locator == nil {
+		return &codec_zenoh_locator.CodecZenohLocator{}
+	}
+	return s.locator
+}
+
+// EncodeSource writes any source of CodecEmbedBasic into w, each element read
+// off src and written where the codec's encode plan lays it out
+// (docs/adr/0081). It refuses no value: it returns only the
+// error of w, codec.ErrBufferOverflow from a bounded sink
+// that has no room left.
+func EncodeSource(src CodecEmbedBasicSource, w codec.SceSink) error {
+	if err := w.WriteBytes([]byte{byte(src.Tag())}); err != nil {
+		return err
+	}
+	if err := codec_zenoh_locator.EncodeSource(src.Locator(), w); err != nil {
+		return err
+	}
+	return nil
 }
 
 // DecodeCodecEmbedBasic decodes the next frame from cursor.
@@ -54,8 +99,8 @@ func DecodeCodecEmbedBasic(cursor *codec.SceCursor) (*CodecEmbedBasic, error) {
 		Locator = *_emb
 	}
 	return &CodecEmbedBasic{
-		Tag: Tag,
-		Locator: Locator,
+		tag: Tag,
+		locator: &Locator,
 	}, nil
 }
 
@@ -64,21 +109,7 @@ func DecodeCodecEmbedBasic(cursor *codec.SceCursor) (*CodecEmbedBasic, error) {
 // when the destination has insufficient remaining capacity; growable
 // sinks (e.g. BytesSink) are effectively infallible.
 func (s *CodecEmbedBasic) Encode(w codec.SceSink) error {
-	// Streaming cursor encode (SSOT selection: `needs_streaming`).
-	// Mirrors the streaming decode: every field appends its own bytes in
-	// declaration order through the per-field encode blocks, so a gated
-	// field skips its append when absent, and a fixed field after a
-	// variable-length payload lands after the payload (the positional path
-	// appends variable fields last, placing it ahead on the wire).
-	// Per-field `is_repeat` / `is_tlv_chain` / `is_embed` route to their
-	// dedicated helpers; everything else uses `present_if_encode_block`.
-	if err := w.WriteBytes([]byte{ s.Tag }); err != nil {
-		return err
-	}
-	if err := s.Locator.Encode(w); err != nil {
-		return err
-	}
-	return nil
+	return EncodeSource(s, w)
 }
 
 // EncodeToBytes is the heap-backed convenience facade. Runs Encode

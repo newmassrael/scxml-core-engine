@@ -11,10 +11,59 @@ import (
 	"github.com/newmassrael/sce-forge-runtime/optional"
 )
 
+// CodecPresentIfVleSource is what the encode of CodecPresentIfVle reads: one method
+// for each element a value presents (docs/adr/0081 §2). CodecPresentIfVle is one,
+// and so is any value with these methods. The encode derives every other
+// element of the frame.
+type CodecPresentIfVleSource interface {
+	Flags() uint8
+	OptionalId() optional.Of[uint64]
+}
+
 // CodecPresentIfVle represents the codec frame layout.
 type CodecPresentIfVle struct {
-	Flags uint8
-	OptionalId optional.Of[uint64]
+	flags uint8
+	optionalId optional.Of[uint64]
+}
+
+// MakeCodecPresentIfVle returns the CodecPresentIfVle that presents each element it
+// is handed, in declaration order (docs/adr/0081 §2). Its fields are
+// unexported: outside this package a value is made here, by
+// DecodeCodecPresentIfVle, or as its zero value, and is read through its methods.
+func MakeCodecPresentIfVle(flags uint8, optionalId optional.Of[uint64]) CodecPresentIfVle {
+	return CodecPresentIfVle{flags: flags, optionalId: optionalId}
+}
+
+// Flags returns the element the value presents as Flags.
+func (s *CodecPresentIfVle) Flags() uint8 {
+	return s.flags
+}
+
+// OptionalId returns the element the value presents as OptionalId.
+func (s *CodecPresentIfVle) OptionalId() optional.Of[uint64] {
+	return s.optionalId
+}
+
+// EncodeSource writes any source of CodecPresentIfVle into w, each element read
+// off src and written where the codec's encode plan lays it out
+// (docs/adr/0081). It refuses no value: it returns only the
+// error of w, codec.ErrBufferOverflow from a bounded sink
+// that has no room left.
+func EncodeSource(src CodecPresentIfVleSource, w codec.SceSink) error {
+	_cFlags := src.Flags()
+	_cFlags &^= 0x1
+	if src.OptionalId().IsPresent() {
+		_cFlags |= 0x1
+	}
+	if err := w.WriteBytes([]byte{byte(_cFlags)}); err != nil {
+		return err
+	}
+	if src.OptionalId().IsPresent() {
+		if err := codec.WriteVLEU64(w, uint64(src.OptionalId().Proven())); err != nil {
+			return err
+		}
+	}
+	return nil
 }
 
 // DecodeCodecPresentIfVle decodes the next frame from cursor.
@@ -52,8 +101,8 @@ func DecodeCodecPresentIfVle(cursor *codec.SceCursor) (*CodecPresentIfVle, error
 		OptionalId = optional.Some(_v)
 	}
 	return &CodecPresentIfVle{
-		Flags: Flags,
-		OptionalId: OptionalId,
+		flags: Flags,
+		optionalId: OptionalId,
 	}, nil
 }
 
@@ -64,14 +113,14 @@ func DecodeCodecPresentIfVle(cursor *codec.SceCursor) (*CodecPresentIfVle, error
 // sibling bits. Wire layout is unchanged — the carrier still occupies
 // its declared bytes.
 func (s *CodecPresentIfVle) HasId() bool {
-	return (s.Flags & 0x01) != 0
+	return (s.flags & 0x01) != 0
 }
 
 func (s *CodecPresentIfVle) SetHasId(v bool) {
 	if v {
-		s.Flags |= 0x01
+		s.flags |= 0x01
 	} else {
-		s.Flags &^= 0x01
+		s.flags &^= 0x01
 	}
 }
 
@@ -80,24 +129,7 @@ func (s *CodecPresentIfVle) SetHasId(v bool) {
 // when the destination has insufficient remaining capacity; growable
 // sinks (e.g. BytesSink) are effectively infallible.
 func (s *CodecPresentIfVle) Encode(w codec.SceSink) error {
-	// Streaming cursor encode (SSOT selection: `needs_streaming`).
-	// Mirrors the streaming decode: every field appends its own bytes in
-	// declaration order through the per-field encode blocks, so a gated
-	// field skips its append when absent, and a fixed field after a
-	// variable-length payload lands after the payload (the positional path
-	// appends variable fields last, placing it ahead on the wire).
-	// Per-field `is_repeat` / `is_tlv_chain` / `is_embed` route to their
-	// dedicated helpers; everything else uses `present_if_encode_block`.
-	if err := w.WriteBytes([]byte{ s.Flags }); err != nil {
-		return err
-	}
-	if s.OptionalId.IsPresent() {
-		_v := s.OptionalId.Proven()
-	if err := codec.WriteVLEU64(w, uint64(_v)); err != nil {
-		return err
-	}
-	}
-	return nil
+	return EncodeSource(s, w)
 }
 
 // EncodeToBytes is the heap-backed convenience facade. Runs Encode

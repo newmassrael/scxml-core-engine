@@ -10,11 +10,73 @@ import (
 	"github.com/newmassrael/sce-forge-runtime/codec"
 )
 
+// CodecExtTimestampZidBound is the bound of the zid element of CodecExtTimestamp: 0 to 16 bytes
+// (docs/adr/0077 §3). A Bytes of it is made only within it.
+type CodecExtTimestampZidBound struct{}
+
+// Least is the fewest bytes the element holds.
+func (CodecExtTimestampZidBound) Least() int { return 0 }
+
+// Most is the most bytes the element holds.
+func (CodecExtTimestampZidBound) Most() int { return 16 }
+
+// CodecExtTimestampSource is what the encode of CodecExtTimestamp reads: one method
+// for each element a value presents (docs/adr/0081 §2). CodecExtTimestamp is one,
+// and so is any value with these methods. The encode derives every other
+// element of the frame.
+type CodecExtTimestampSource interface {
+	Time() uint64
+	Zid() codec.Bytes[CodecExtTimestampZidBound]
+}
+
 // CodecExtTimestamp represents the codec frame layout.
 type CodecExtTimestamp struct {
-	Time uint64
-	ZidSize uint8
-	Zid []byte
+	time uint64
+	zid codec.Bytes[CodecExtTimestampZidBound]
+}
+
+// MakeCodecExtTimestamp returns the CodecExtTimestamp that presents each element it
+// is handed, in declaration order (docs/adr/0081 §2). Its fields are
+// unexported: outside this package a value is made here, by
+// DecodeCodecExtTimestamp, or as its zero value, and is read through its methods.
+func MakeCodecExtTimestamp(time uint64, zid codec.Bytes[CodecExtTimestampZidBound]) CodecExtTimestamp {
+	return CodecExtTimestamp{time: time, zid: zid}
+}
+
+// Time returns the element the value presents as Time.
+func (s *CodecExtTimestamp) Time() uint64 {
+	return s.time
+}
+
+// Zid returns the element the value presents as Zid.
+func (s *CodecExtTimestamp) Zid() codec.Bytes[CodecExtTimestampZidBound] {
+	return s.zid
+}
+
+// WireZidSize returns the zid_size the frame of the value carries, which the
+// encode derives from what it measures (docs/adr/0081 §3).
+func (s *CodecExtTimestamp) WireZidSize() uint8 {
+	return uint8(s.Zid().Len())
+}
+
+// EncodeSource writes any source of CodecExtTimestamp into w, each element read
+// off src and written where the codec's encode plan lays it out
+// (docs/adr/0081). It derives zid_size from
+// what each measures, and never reads it off the source. It refuses no value: it returns only the
+// error of w, codec.ErrBufferOverflow from a bounded sink
+// that has no room left.
+func EncodeSource(src CodecExtTimestampSource, w codec.SceSink) error {
+	_dZidSize := uint8(src.Zid().Len())
+	if err := codec.WriteVLEU64(w, uint64(src.Time())); err != nil {
+		return err
+	}
+	if err := w.WriteBytes([]byte{byte(_dZidSize)}); err != nil {
+		return err
+	}
+	if err := w.WriteBytes(src.Zid().Bytes()); err != nil {
+		return err
+	}
+	return nil
 }
 
 // DecodeCodecExtTimestamp decodes the next frame from cursor.
@@ -63,10 +125,13 @@ func DecodeCodecExtTimestamp(cursor *codec.SceCursor) (*CodecExtTimestamp, error
 			return nil, err
 		}
 	}
+	_bZid, err := codec.MakeBytes[CodecExtTimestampZidBound](Zid)
+	if err != nil {
+		return nil, err
+	}
 	return &CodecExtTimestamp{
-		Time: Time,
-		ZidSize: ZidSize,
-		Zid: Zid,
+		time: Time,
+		zid: _bZid,
 	}, nil
 }
 
@@ -75,41 +140,15 @@ func DecodeCodecExtTimestamp(cursor *codec.SceCursor) (*CodecExtTimestamp, error
 // when the destination has insufficient remaining capacity; growable
 // sinks (e.g. BytesSink) are effectively infallible.
 func (s *CodecExtTimestamp) Encode(w codec.SceSink) error {
-	if len(s.Zid) > 16 {
-		return codec.ErrLengthOutOfRange
-	}
-	// Streaming cursor encode (SSOT selection: `needs_streaming`).
-	// Mirrors the streaming decode: every field appends its own bytes in
-	// declaration order through the per-field encode blocks, so a gated
-	// field skips its append when absent, and a fixed field after a
-	// variable-length payload lands after the payload (the positional path
-	// appends variable fields last, placing it ahead on the wire).
-	// Per-field `is_repeat` / `is_tlv_chain` / `is_embed` route to their
-	// dedicated helpers; everything else uses `present_if_encode_block`.
-	if err := codec.WriteVLEU64(w, uint64(s.Time)); err != nil {
-		return err
-	}
-	if err := w.WriteBytes([]byte{ s.ZidSize }); err != nil {
-		return err
-	}
-	if err := w.WriteBytes(s.Zid); err != nil {
-		return err
-	}
-	return nil
+	return EncodeSource(s, w)
 }
 
 // EncodeToBytes is the heap-backed convenience facade. Runs Encode
-// over a BytesSink and returns the freshly-encoded byte slice, or the
-// error Encode refuses the value with before its first byte: a field's
-// presence disagrees with the `sce:present-if` that gates it
-// (codec.ErrPresentIfMismatch), or a byte string, text, list or chain lies
-// outside its bound (codec.ErrLengthOutOfRange, codec.ErrTooManyElements).
-// Callers targeting zero-alloc hot paths should call Encode directly against a caller-owned sink (e.g.
-// BoundedSink over a stack buffer).
-func (s *CodecExtTimestamp) EncodeToBytes() ([]byte, error) {
+// over a BytesSink and returns the freshly-encoded byte slice.
+// Callers targeting zero-alloc hot paths should call Encode directly
+// against a caller-owned sink (e.g. BoundedSink over a stack buffer).
+func (s *CodecExtTimestamp) EncodeToBytes() []byte {
 	_dst := make([]byte, 0, 27)
-	if err := s.Encode(codec.NewBytesSink(&_dst)); err != nil {
-		return nil, err
-	}
-	return _dst, nil
+	_ = s.Encode(codec.NewBytesSink(&_dst))
+	return _dst
 }

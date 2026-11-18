@@ -10,12 +10,83 @@ import (
 	"github.com/newmassrael/sce-forge-runtime/codec"
 )
 
+// CodecFixedAfterLengthrefPayloadBound is the bound of the payload element of CodecFixedAfterLengthref: 0 to 1500 bytes
+// (docs/adr/0077 §3). A Bytes of it is made only within it.
+type CodecFixedAfterLengthrefPayloadBound struct{}
+
+// Least is the fewest bytes the element holds.
+func (CodecFixedAfterLengthrefPayloadBound) Least() int { return 0 }
+
+// Most is the most bytes the element holds.
+func (CodecFixedAfterLengthrefPayloadBound) Most() int { return 1500 }
+
+// CodecFixedAfterLengthrefSource is what the encode of CodecFixedAfterLengthref reads: one method
+// for each element a value presents (docs/adr/0081 §2). CodecFixedAfterLengthref is one,
+// and so is any value with these methods. The encode derives every other
+// element of the frame.
+type CodecFixedAfterLengthrefSource interface {
+	Header() uint8
+	Payload() codec.Bytes[CodecFixedAfterLengthrefPayloadBound]
+	Crc32() uint32
+}
+
 // CodecFixedAfterLengthref represents the codec frame layout.
 type CodecFixedAfterLengthref struct {
-	Header uint8
-	PayloadLen uint16
-	Payload []byte
-	Crc32 uint32
+	header uint8
+	payload codec.Bytes[CodecFixedAfterLengthrefPayloadBound]
+	crc32 uint32
+}
+
+// MakeCodecFixedAfterLengthref returns the CodecFixedAfterLengthref that presents each element it
+// is handed, in declaration order (docs/adr/0081 §2). Its fields are
+// unexported: outside this package a value is made here, by
+// DecodeCodecFixedAfterLengthref, or as its zero value, and is read through its methods.
+func MakeCodecFixedAfterLengthref(header uint8, payload codec.Bytes[CodecFixedAfterLengthrefPayloadBound], crc32 uint32) CodecFixedAfterLengthref {
+	return CodecFixedAfterLengthref{header: header, payload: payload, crc32: crc32}
+}
+
+// Header returns the element the value presents as Header.
+func (s *CodecFixedAfterLengthref) Header() uint8 {
+	return s.header
+}
+
+// Payload returns the element the value presents as Payload.
+func (s *CodecFixedAfterLengthref) Payload() codec.Bytes[CodecFixedAfterLengthrefPayloadBound] {
+	return s.payload
+}
+
+// Crc32 returns the element the value presents as Crc32.
+func (s *CodecFixedAfterLengthref) Crc32() uint32 {
+	return s.crc32
+}
+
+// WirePayloadLen returns the payload_len the frame of the value carries, which the
+// encode derives from what it measures (docs/adr/0081 §3).
+func (s *CodecFixedAfterLengthref) WirePayloadLen() uint16 {
+	return uint16(s.Payload().Len())
+}
+
+// EncodeSource writes any source of CodecFixedAfterLengthref into w, each element read
+// off src and written where the codec's encode plan lays it out
+// (docs/adr/0081). It derives payload_len from
+// what each measures, and never reads it off the source. It refuses no value: it returns only the
+// error of w, codec.ErrBufferOverflow from a bounded sink
+// that has no room left.
+func EncodeSource(src CodecFixedAfterLengthrefSource, w codec.SceSink) error {
+	_dPayloadLen := uint16(src.Payload().Len())
+	if err := w.WriteBytes([]byte{byte(src.Header())}); err != nil {
+		return err
+	}
+	if err := w.WriteBytes([]byte{byte(_dPayloadLen & 0xFF), byte(_dPayloadLen >> 8 & 0xFF)}); err != nil {
+		return err
+	}
+	if err := w.WriteBytes(src.Payload().Bytes()); err != nil {
+		return err
+	}
+	if err := w.WriteBytes([]byte{byte(src.Crc32() & 0xFF), byte(src.Crc32() >> 8 & 0xFF), byte(src.Crc32() >> 16 & 0xFF), byte(src.Crc32() >> 24 & 0xFF)}); err != nil {
+		return err
+	}
+	return nil
 }
 
 // DecodeCodecFixedAfterLengthref decodes the next frame from cursor.
@@ -84,11 +155,14 @@ func DecodeCodecFixedAfterLengthref(cursor *codec.SceCursor) (*CodecFixedAfterLe
 			return nil, err
 		}
 	}
+	_bPayload, err := codec.MakeBytes[CodecFixedAfterLengthrefPayloadBound](Payload)
+	if err != nil {
+		return nil, err
+	}
 	return &CodecFixedAfterLengthref{
-		Header: Header,
-		PayloadLen: PayloadLen,
-		Payload: Payload,
-		Crc32: Crc32,
+		header: Header,
+		payload: _bPayload,
+		crc32: Crc32,
 	}, nil
 }
 
@@ -97,56 +171,15 @@ func DecodeCodecFixedAfterLengthref(cursor *codec.SceCursor) (*CodecFixedAfterLe
 // when the destination has insufficient remaining capacity; growable
 // sinks (e.g. BytesSink) are effectively infallible.
 func (s *CodecFixedAfterLengthref) Encode(w codec.SceSink) error {
-	if len(s.Payload) > 1500 {
-		return codec.ErrLengthOutOfRange
-	}
-	// Streaming cursor encode (SSOT selection: `needs_streaming`).
-	// Mirrors the streaming decode: every field appends its own bytes in
-	// declaration order through the per-field encode blocks, so a gated
-	// field skips its append when absent, and a fixed field after a
-	// variable-length payload lands after the payload (the positional path
-	// appends variable fields last, placing it ahead on the wire).
-	// Per-field `is_repeat` / `is_tlv_chain` / `is_embed` route to their
-	// dedicated helpers; everything else uses `present_if_encode_block`.
-	if err := w.WriteBytes([]byte{ s.Header }); err != nil {
-		return err
-	}
-	if err := w.WriteBytes([]byte{ byte(s.PayloadLen & 0xFF) }); err != nil {
-		return err
-	}
-	if err := w.WriteBytes([]byte{ byte(s.PayloadLen >> 8 & 0xFF) }); err != nil {
-		return err
-	}
-	if err := w.WriteBytes(s.Payload); err != nil {
-		return err
-	}
-	if err := w.WriteBytes([]byte{ byte(s.Crc32 & 0xFF) }); err != nil {
-		return err
-	}
-	if err := w.WriteBytes([]byte{ byte(s.Crc32 >> 8 & 0xFF) }); err != nil {
-		return err
-	}
-	if err := w.WriteBytes([]byte{ byte(s.Crc32 >> 16 & 0xFF) }); err != nil {
-		return err
-	}
-	if err := w.WriteBytes([]byte{ byte(s.Crc32 >> 24 & 0xFF) }); err != nil {
-		return err
-	}
-	return nil
+	return EncodeSource(s, w)
 }
 
 // EncodeToBytes is the heap-backed convenience facade. Runs Encode
-// over a BytesSink and returns the freshly-encoded byte slice, or the
-// error Encode refuses the value with before its first byte: a field's
-// presence disagrees with the `sce:present-if` that gates it
-// (codec.ErrPresentIfMismatch), or a byte string, text, list or chain lies
-// outside its bound (codec.ErrLengthOutOfRange, codec.ErrTooManyElements).
-// Callers targeting zero-alloc hot paths should call Encode directly against a caller-owned sink (e.g.
-// BoundedSink over a stack buffer).
-func (s *CodecFixedAfterLengthref) EncodeToBytes() ([]byte, error) {
+// over a BytesSink and returns the freshly-encoded byte slice.
+// Callers targeting zero-alloc hot paths should call Encode directly
+// against a caller-owned sink (e.g. BoundedSink over a stack buffer).
+func (s *CodecFixedAfterLengthref) EncodeToBytes() []byte {
 	_dst := make([]byte, 0, 1508)
-	if err := s.Encode(codec.NewBytesSink(&_dst)); err != nil {
-		return nil, err
-	}
-	return _dst, nil
+	_ = s.Encode(codec.NewBytesSink(&_dst))
+	return _dst
 }
