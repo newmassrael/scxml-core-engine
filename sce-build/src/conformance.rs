@@ -2115,6 +2115,15 @@ pub struct HarnessLayout {
     pub template_filename: &'static str,
 }
 
+/// The Go module path each conformance fixture's package is imported under:
+/// the forge runtime's module (backends/go/forge-runtime/go.mod) and the
+/// directory backends/go/forge-runtime/conformance/generate.sh writes the
+/// packages to. The Go harness spells each fixture's import from it, and the
+/// reading of whether the Go printer prints a fixture resolves the fixture's
+/// `<sce:import>`s under it, as the generate that writes the package does.
+pub const GO_CONFORMANCE_MODULE_PREFIX: &str =
+    "github.com/newmassrael/sce-forge-runtime/conformance/generated";
+
 /// Canonical layout (output name, template directory, scaffold name) for
 /// the given language. Single source of truth: every consumer that used to
 /// call the legacy `harness_filename` / `template_subdir` / `template_filename`
@@ -4687,6 +4696,10 @@ pub fn render_harness(
                             Some(crate::kotlin_codec_printed_file(&scxml_path, &[], &options))
                         }
                         Language::Go => {
+                            let options = crate::ForgeCompileOptions {
+                                go_module_prefix: Some(GO_CONFORMANCE_MODULE_PREFIX.to_string()),
+                                ..options
+                            };
                             Some(crate::go_codec_printed_file(&scxml_path, &[], &options))
                         }
                         Language::Rust | Language::C11 => None,
@@ -5085,6 +5098,7 @@ pub fn render_harness(
         has_optional_codec_field => has_optional_codec_field,
         has_optional_algorithm_slot => has_optional_algorithm_slot,
         float_tolerance => float_tolerance,
+        go_module_prefix => GO_CONFORMANCE_MODULE_PREFIX,
     };
 
     let source = tmpl

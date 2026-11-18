@@ -44,7 +44,7 @@ import (
 	"github.com/newmassrael/sce-forge-runtime/timer"
 {% endif %}
 {% for f in fixtures %}
-	{{ f.name }} "github.com/newmassrael/sce-forge-runtime/conformance/generated/{{ f.name }}"
+	{{ f.name }} "{{ go_module_prefix }}/{{ f.name }}"
 {% endfor %}
 )
 
