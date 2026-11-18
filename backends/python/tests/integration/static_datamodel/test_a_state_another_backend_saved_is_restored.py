@@ -2,11 +2,11 @@
 # SPDX-FileCopyrightText: Copyright (c) 2026 newmassrael
 """SCE Accepted Subset §2.15, "Saving and restoring" (docs/adr/0045, section 8):
 the saved states the shared fixtures hold are the text every backend writes and
-reads, so a state saved by one backend is one another restores. Each format-3 text
+reads, so a state saved by one backend is one another restores. Each format-4 text
 is restored by the generated Python machine of its document and saved again, which
 is the same text byte for byte; each format-1 text, which every backend still reads,
 is restored. Each format-2 text of ``saved/format2/`` is restored, its origins read
-by the table of docs/adr/0090, section 7, and saved again as the format-3 text of
+by the table of docs/adr/0090, section 7, and saved again as the format-4 text of
 the same name in ``saved/format2/read_as/``.
 
 The Rust, Kotlin and Go halves are ``static_datamodel.rs``,
@@ -94,11 +94,11 @@ def test_every_format_three_text_of_a_document_is_held_to_its_machine() -> None:
 def test_a_format_one_state_is_restored_and_takes_the_machines_own_session(name: str) -> None:
     text = _texts(_SAVED / "format1")[name]
     # What a format-1 text holds is what a restore reads; saving it again writes
-    # format 3, with the machine's own session id. A waiting send whose stored
+    # format 4, with the machine's own session id. A waiting send whose stored
     # origin is empty is armed as the restoring machine's own: it is saved again
     # with that machine's pair and id (docs/adr/0090, section 7).
     again = _restored_and_saved_again(_machine_of(name), text)
-    assert again.startswith('{"format":3,'), again
+    assert again.startswith('{"format":4,'), again
     resaved = saved_state_from_json(again)
     for send in resaved.pending:
         if send.act.kind in ("raise", "parent", "child"):

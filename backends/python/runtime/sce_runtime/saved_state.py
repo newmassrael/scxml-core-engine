@@ -61,6 +61,7 @@ __all__ = [
     "SAVED_FORMAT_1",
     "SAVED_FORMAT_2",
     "SAVED_FORMAT_3",
+    "SAVED_FORMAT_4",
     "SAVED_SCHEMA_STATUS",
     "SavedAct",
     "SavedChild",
@@ -93,15 +94,21 @@ SAVED_FORMAT_2 = 2
 # processor that delivered it wrote, and its sender beside it (docs/adr/0090,
 # section 7).
 SAVED_FORMAT_3 = 3
-# The newest format version this runtime writes; it reads this one and formats 1
-# and 2.
-SAVED_FORMAT = SAVED_FORMAT_3
+# The tree of format 3, with each running host-run invocation's start number,
+# which start of its ``<invoke>`` in its session it is, and each session's count
+# of those starts (docs/adr/0107, D4): a restore starts a running invocation
+# again under the number it had.
+SAVED_FORMAT_4 = 4
+# The newest format version this runtime writes; it reads this one and formats 1,
+# 2 and 3.
+SAVED_FORMAT = SAVED_FORMAT_4
 
 # The stability status of the saved-state wire surface, held in lockstep with
 # ``x-sce-schema-status`` in ``schemas/sce-saved-state.v1.schema.json``,
-# ``schemas/sce-saved-state.v2.schema.json`` and
-# ``schemas/sce-saved-state.v3.schema.json`` (SCE_WIRE_CONTRACTS.md). A flip to
-# "stable" changes all four in one commit.
+# ``schemas/sce-saved-state.v2.schema.json``,
+# ``schemas/sce-saved-state.v3.schema.json`` and
+# ``schemas/sce-saved-state.v4.schema.json`` (SCE_WIRE_CONTRACTS.md). A flip to
+# "stable" changes all five in one commit.
 SAVED_SCHEMA_STATUS = "pre-release"
 
 # What a refusal inside a child session of a tree begins with, before the
@@ -251,10 +258,15 @@ class SavedHostInvoke:
 
     ``due`` is when its deadline comes due, in milliseconds since the Unix epoch
     on the wall clock of the host that saved it; ``None`` for an invocation that
-    has none."""
+    has none. ``start`` is which start of that ``<invoke>`` in this session it is,
+    counted from 1: the count ``host_invoke_starts`` holds for it, under which a
+    restore starts it again (docs/adr/0107, D4). One read from a state of format
+    1, 2 or 3, which holds none, is start 1: no host keyed a start by its number
+    before format 4."""
 
     processor_type: str = ""
     invoke_id: str = ""
+    start: int = 1
     src: str = ""
     params: Dict[str, List[str]] = field(default_factory=dict)
     data: str = ""
@@ -328,7 +340,11 @@ class SavedState:
     (:func:`check_saved_features`); ``session_id`` the session's own id (``_sessionid``), an XML Nmtoken in a
     tree and empty in a format-1 state, which holds none; ``invoke_starts`` how many
     times each ``<invoke>`` of the document has started in this session, for each
-    started at least once, in document order (empty in a format-1 state)."""
+    started at least once, in document order (empty in a format-1 state);
+    ``host_invoke_starts`` how many times each host-run ``<invoke>`` has started in
+    this session, ordered by the id's bytes (docs/adr/0107, D4), read from a state
+    of format 1, 2 or 3, which counted none, as 1 for each invocation
+    ``host_invokes`` lists."""
 
     shape: str = ""
     configuration: List[str] = field(default_factory=list)
@@ -338,6 +354,7 @@ class SavedState:
     pending: List[SavedSend] = field(default_factory=list)
     invokes: SavedInvokes = field(default_factory=SavedInvokes)
     host_invokes: List[SavedHostInvoke] = field(default_factory=list)
+    host_invoke_starts: List[SavedInvokeStart] = field(default_factory=list)
     host_invoke_token: int = 0
     auto_send_seq: int = 0
     external: List[SavedEvent] = field(default_factory=list)
@@ -353,11 +370,13 @@ class SavedState:
         return self.variables[id]
 
     def format(self) -> int:
-        """The format this state is written in: 3 for a tree of sessions, 1 for a
+        """The format this state is written in: 4 for a tree of sessions, 1 for a
         state that names its running children by id alone. A tree read from a
-        format-2 text holds the pairs its origins are read as, and is written back
-        as format 3 (docs/adr/0090, section 7)."""
-        return SAVED_FORMAT_3 if self.invokes.resumed else SAVED_FORMAT_1
+        format-2 text holds the pairs its origins are read as (docs/adr/0090,
+        section 7), one read from a format-2 or format-3 text the start numbers its
+        host-run invocations are read as (docs/adr/0107, D4), and each is written
+        back as format 4."""
+        return SAVED_FORMAT_4 if self.invokes.resumed else SAVED_FORMAT_1
 
     def bound_session_id(self) -> Optional[str]:
         """The id a restore binds the session to: the saved one, for a tree, since
@@ -373,6 +392,14 @@ class SavedState:
         it was saved: 0 for one that had not, and for every one of a format-1
         state, which holds no count."""
         for started in self.invoke_starts:
+            if started.id == id:
+                return started.count
+        return 0
+
+    def host_invoke_start(self, id: str) -> int:
+        """How many times the host-run ``<invoke>`` ``id`` had started in this
+        session when it was saved: 0 for one that had not."""
+        for started in self.host_invoke_starts:
             if started.id == id:
                 return started.count
         return 0
@@ -409,7 +436,13 @@ class SavedState:
             members["invokestarts"] = {started.id: str(started.count) for started in self.invoke_starts}
         else:
             members["invokes"] = list(self.invokes.ids)
-        members["hostinvokes"] = [_host_invoke_to_json(host) for host in self.host_invokes]
+        members["hostinvokes"] = [_host_invoke_to_json(host, form) for host in self.host_invokes]
+        # docs/adr/0107, D4: format 4's count of host-run starts, after the
+        # invocations.
+        if form >= SAVED_FORMAT_4:
+            members["hostinvokestarts"] = {
+                started.id: str(started.count) for started in self.host_invoke_starts
+            }
         members["hostinvoketoken"] = str(self.host_invoke_token)
         members["sendseq"] = str(self.auto_send_seq)
         members["external"] = [_event_to_json(event, form) for event in self.external]
@@ -485,16 +518,22 @@ def _event_to_json(event: SavedEvent, form: int) -> Dict[str, Any]:
     return members
 
 
-def _host_invoke_to_json(host: SavedHostInvoke) -> Dict[str, Any]:
-    return {
-        "type": host.processor_type,
-        "id": host.invoke_id,
-        "src": host.src,
-        "params": _params_to_json(host.params),
-        "data": host.data,
-        "content": host.content,
-        "due": _optional_count(host.due),
-    }
+def _host_invoke_to_json(host: SavedHostInvoke, form: int) -> Dict[str, Any]:
+    """The invocation as a text of ``form`` writes it: format 4 writes its start
+    after its id; format 1 holds none."""
+    members: Dict[str, Any] = {"type": host.processor_type, "id": host.invoke_id}
+    if form >= SAVED_FORMAT_4:
+        members["start"] = str(host.start)
+    members.update(
+        {
+            "src": host.src,
+            "params": _params_to_json(host.params),
+            "data": host.data,
+            "content": host.content,
+            "due": _optional_count(host.due),
+        }
+    )
+    return members
 
 
 def _send_to_json(send: SavedSend, form: int) -> Dict[str, Any]:
@@ -549,10 +588,12 @@ def saved_state_from_json(text: str) -> SavedState:
         form = SAVED_FORMAT_2
     elif written == JsonNumber("3"):
         form = SAVED_FORMAT_3
+    elif written == JsonNumber("4"):
+        form = SAVED_FORMAT_4
     else:
         raise StateRefusal(
             f"the saved state is format {write_json(written)}, and this runtime reads formats "
-            f"{SAVED_FORMAT_1}, {SAVED_FORMAT_2} and {SAVED_FORMAT_3}"
+            f"{SAVED_FORMAT_1}, {SAVED_FORMAT_2}, {SAVED_FORMAT_3} and {SAVED_FORMAT_4}"
         )
     return _saved_session_from_json(value, form)
 
@@ -628,7 +669,24 @@ def _saved_session_from_json(members: Dict[str, Any], form: int) -> SavedState:
             state.invoke_starts.append(SavedInvokeStart(id, _read_saved_count(count, "invokestarts." + id)))
 
     for at, item in enumerate(field_array("hostinvokes")):
-        state.host_invokes.append(_saved_host_invoke_from_json(item, f"hostinvokes[{at}]"))
+        state.host_invokes.append(_saved_host_invoke_from_json(item, f"hostinvokes[{at}]", form))
+
+    # docs/adr/0107, D4: format 4's count of host-run starts. A state of an
+    # earlier format counted none: each invocation it lists is its ``<invoke>``'s
+    # first start, as `_saved_host_invoke_from_json` read it.
+    if form >= SAVED_FORMAT_4:
+        counted = read_field("hostinvokestarts")
+        if not isinstance(counted, dict):
+            raise StateRefusal("'hostinvokestarts' is not an object")
+        for id, count in counted.items():
+            if not isinstance(count, str):
+                raise StateRefusal(f"'hostinvokestarts.{id}' is not a text")
+            state.host_invoke_starts.append(
+                SavedInvokeStart(id, _read_saved_count(count, "hostinvokestarts." + id))
+            )
+    else:
+        listed_ids = sorted({host.invoke_id for host in state.host_invokes}, key=lambda id: id.encode("utf-8"))
+        state.host_invoke_starts = [SavedInvokeStart(id, 1) for id in listed_ids]
 
     counters: List[int] = []
     for name in ("hostinvoketoken", "sendseq"):
@@ -864,7 +922,7 @@ def _saved_event_from_json(value: Any, what: str, form: int) -> SavedEvent:
     event.data = _member_text(members, what, "data")
     event.type = _member_text(members, what, "type")
     event.send_id = _member_text(members, what, "sendid")
-    if form == SAVED_FORMAT_3:
+    if form >= SAVED_FORMAT_3:
         event.origin, event.sender = _saved_origin_from_json(members, what)
     else:
         stored = _member_text(members, what, "origin")
@@ -894,9 +952,13 @@ def _saved_params_from_json(members: Dict[str, Any], what: str) -> Dict[str, Lis
     return read
 
 
-def _saved_host_invoke_from_json(value: Any, what: str) -> SavedHostInvoke:
+def _saved_host_invoke_from_json(value: Any, what: str, form: int) -> SavedHostInvoke:
+    """The invocation ``value`` of a state of ``form``; one of format 1, 2 or 3 is
+    its ``<invoke>``'s first start (docs/adr/0107, D4)."""
     members = _member_object(value, what)
     host = SavedHostInvoke()
+    if form >= SAVED_FORMAT_4:
+        host.start = _read_saved_count(_member_text(members, what, "start"), what + ".start")
     host.due = _optional_member(members, what, "due", _read_saved_moment)
     host.processor_type = _member_text(members, what, "type")
     host.invoke_id = _member_text(members, what, "id")
@@ -971,7 +1033,7 @@ def _saved_act_origin_from_json(
     whose stored origin is empty was sent by the session that holds it. A
     format-1 text holds no session id, so such an act is read with neither, and
     the machine that restores it arms it as its own send."""
-    if form == SAVED_FORMAT_3:
+    if form >= SAVED_FORMAT_3:
         origin, sender = _saved_origin_from_json(members, what)
         if kind == ACT_INTERNAL:
             if origin is not None or sender is not None:

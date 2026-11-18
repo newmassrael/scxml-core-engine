@@ -42,6 +42,7 @@ from sce_host_features import (  # noqa: E402 -- paths inserted above
     ExhaustiveProvider,
     HttpRequest,
     HttpResponse,
+    Invocation,
     OutcomeClass,
     Reading,
     ReferenceHost,
@@ -52,7 +53,7 @@ from sce_host_features import (  # noqa: E402 -- paths inserted above
     Zone,
     serve,
 )
-from sce_runtime import AnswerSchema, EventMetadata  # noqa: E402
+from sce_runtime import AnswerSchema, EventMetadata, saved_state_from_json  # noqa: E402
 
 _SCENARIOS = _HERE.parents[4] / "tests" / "host_features" / "scenarios"
 _CLASSES = _HERE.parents[4] / "tests" / "host_features" / "model_outcome_classes.json"
@@ -289,6 +290,68 @@ def replay(machine: str, stem: Optional[str] = None, saved: bool = False) -> Non
 
 def test_a_machine_asks_the_key_value_store_of_its_host() -> None:
     replay("static_host_kv")
+
+
+#: Numbers the starts `_invocation` gives, so no two of them are one invocation
+#: asked twice.
+_starts_given = itertools.count(1)
+
+
+def _invocation(invoke_id: str) -> Invocation:
+    """A start of the ``<invoke>`` `invoke_id` of one session, numbered apart from
+    every other start a test makes."""
+    return Invocation("session", invoke_id, next(_starts_given))
+
+
+def test_a_restored_put_if_is_answered_with_the_first_result_of_its_invocation() -> None:
+    """docs/adr/0107, D4: a put-if the host carried out, saved before its answer
+    was taken, is started again by the restore under the identity it had, and the
+    host answers it with the first result rather than judging the store a second
+    time; a start the document makes afterwards takes the next number and is an
+    operation of its own."""
+    module = importlib.import_module("integration.static_datamodel.static_host_kv_sm")
+    host = ReferenceHost(ScriptedClock(), _ScriptTransport())
+
+    def published(engine) -> dict:
+        return json.loads(module.save_at(engine, 0).to_json())["variables"]
+
+    # The first process: the host writes, and its answer is lost with the process
+    # before the machine takes it.
+    first = module.create_engine()
+    serve(first, host)
+
+    def carried_out(event):
+        if event.start is not None:
+            params = {name: values[0] for name, values in event.start.params.items() if values}
+            invocation = Invocation(event.start.session_id, event.start.invoke_id, event.start.start)
+            host.start("sce-host-kv-put-if", invocation, params)
+        return None
+
+    first.register_invoker("sce-host-kv-put-if", carried_out)
+    first.initialize()
+    put_if = first.policy.resolve_event_by_name("host.kv.put_if.request")
+    first.send_event(put_if, EventMetadata(data='{"key":"k","value":"a","expected_version":"0"}'))
+    saved = module.save_at(first, 0)
+    assert [(h.invoke_id, h.start) for h in saved.host_invokes] == [("putif", 1)]
+    assert host.store_entries() == [("k", "a")], "the host wrote once"
+
+    # The second process: the restore starts it again, and the host answers it as
+    # it answered the first time, where the store alone would now answer `written`
+    # false at version 1.
+    second = module.restore(saved_state_from_json(saved.to_json()), wall_now_ms=0)
+    serve(second, host)
+    second.advance_time(0)
+    variables = published(second)
+    assert (variables["outcome"], variables["written"], variables["put_version"]) == ("done", True, "1")
+    assert host.store_entries() == [("k", "a")], "nothing written twice"
+
+    # A start the document makes now is the second start of `putif`.
+    second.send_event(put_if, EventMetadata(data='{"key":"k","value":"b","expected_version":"0"}'))
+    variables = published(second)
+    assert (variables["written"], variables["put_version"]) == (False, "1")
+    starts = host.take_starts()
+    assert [(start.id, start.number) for start in starts] == [("putif", 1), ("putif", 1), ("putif", 2)]
+    assert {start.session_id for start in starts} == {saved.session_id}
 
 
 def test_a_machine_reads_the_clock_of_its_host() -> None:
@@ -564,11 +627,11 @@ def test_a_generation_the_operation_does_not_accept_is_refused_before_the_provid
         _ask("p", temperature="2001"),
         _ask("p", schema="urn:sce:schema:other:1"),
     ):
-        outcome = host.start("sce-host-model-generate", "gen", params)
+        outcome = host.start("sce-host-model-generate", _invocation("gen"), params)
         assert outcome is not None and outcome.kind == "refuse", params
-    kept = _fields(host.start("sce-host-model-generate", "gen", _ask("abc", "urn:sce:schema:answer:1")))
+    kept = _fields(host.start("sce-host-model-generate", _invocation("gen"), _ask("abc", "urn:sce:schema:answer:1")))
     assert (kept["text"], kept["constrained"], kept["prompt_tokens"]) == ("kept", True, 3)
-    none = _fields(host.start("sce-host-model-generate", "gen", _ask("p")))
+    none = _fields(host.start("sce-host-model-generate", _invocation("gen"), _ask("p")))
     assert none["error"] == "unavailable"
 
 
@@ -576,10 +639,10 @@ def test_an_answer_past_its_bound_or_its_context_fails_whole() -> None:
     provider = ScriptedProvider(context=10)
     provider.answers.extend([ScriptedAnswer("a" * 4097), ScriptedAnswer("kept")])
     host = _model_host(provider)
-    assert _fields(host.start("sce-host-model-generate", "gen", _ask("p")))["error"] == "answer_too_large"
-    past = _fields(host.start("sce-host-model-generate", "gen", _ask("abc", max_tokens="8")))
+    assert _fields(host.start("sce-host-model-generate", _invocation("gen"), _ask("p")))["error"] == "answer_too_large"
+    past = _fields(host.start("sce-host-model-generate", _invocation("gen"), _ask("abc", max_tokens="8")))
     assert past["error"] == "context_exceeded"
-    assert _fields(host.start("sce-host-model-generate", "gen", _ask("abc", max_tokens="7")))["text"] == "kept"
+    assert _fields(host.start("sce-host-model-generate", _invocation("gen"), _ask("abc", max_tokens="7")))["text"] == "kept"
 
 
 def test_the_exhaustive_provider_answers_each_class_in_turn() -> None:
@@ -593,12 +656,12 @@ def test_the_exhaustive_provider_answers_each_class_in_turn() -> None:
             ]
         )
     )
-    answer = _fields(host.start("sce-host-model-generate", "gen", _ask("p")))
+    answer = _fields(host.start("sce-host-model-generate", _invocation("gen"), _ask("p")))
     assert (answer["text"], answer["finish"], answer["model"]) == ("t", "length", "exhaustive")
-    assert _fields(host.start("sce-host-model-generate", "gen", _ask("p")))["error"] == "busy"
-    assert host.start("sce-host-model-generate", "gen", _ask("p")).kind == "refuse"
-    assert host.start("sce-host-model-generate", "gen", _ask("p")).kind == "hold"
-    assert _fields(host.start("sce-host-model-generate", "gen", _ask("p")))["error"] == "unavailable"
+    assert _fields(host.start("sce-host-model-generate", _invocation("gen"), _ask("p")))["error"] == "busy"
+    assert host.start("sce-host-model-generate", _invocation("gen"), _ask("p")).kind == "refuse"
+    assert host.start("sce-host-model-generate", _invocation("gen"), _ask("p")).kind == "hold"
+    assert _fields(host.start("sce-host-model-generate", _invocation("gen"), _ask("p")))["error"] == "unavailable"
 
 
 def test_every_scenario_of_the_directory_is_replayed_here() -> None:
@@ -622,13 +685,13 @@ def test_the_system_clock_answers_a_monotonic_reading_that_does_not_decrease() -
     host = ReferenceHost(SystemClock(), _ScriptTransport())
     last = -1
     for _ in range(50):
-        outcome = host.start("sce-host-clock-now", "now", {})
+        outcome = host.start("sce-host-clock-now", _invocation("now"), {})
         assert outcome is not None
         fields = json.loads(outcome.data)
         assert fields["error"] == ""
         assert int(fields["monotonic_ms"]) >= last
         last = int(fields["monotonic_ms"])
-    zone = host.start("sce-host-clock-zone", "zone", {})
+    zone = host.start("sce-host-clock-zone", _invocation("zone"), {})
     assert zone is not None and json.loads(zone.data)["error"] == ""
 
 
@@ -636,8 +699,8 @@ def test_an_operation_outside_the_standard_set_is_not_served_and_a_nul_key_is_re
     from sce_host_features import REFUSE
 
     host = ReferenceHost(ScriptedClock(), _ScriptTransport())
-    assert host.start("x-app-host", "id", {}) is None
-    refused = host.start("sce-host-kv-get", "id", {"key": "a\x00b"})
+    assert host.start("x-app-host", _invocation("id"), {}) is None
+    refused = host.start("sce-host-kv-get", _invocation("id"), {"key": "a\x00b"})
     assert refused is not None and refused.kind == REFUSE
 
 
@@ -645,11 +708,11 @@ def test_a_put_if_is_refused_for_a_nul_key_and_for_a_digit_of_another_script() -
     from sce_host_features import REFUSE
 
     host = ReferenceHost(ScriptedClock(), _ScriptTransport())
-    nul = host.start("sce-host-kv-put-if", "putif", {"key": "a\x00b", "value": "v", "expected_version": "0"})
+    nul = host.start("sce-host-kv-put-if", _invocation("putif"), {"key": "a\x00b", "value": "v", "expected_version": "0"})
     assert nul is not None and nul.kind == REFUSE
     # U+0661, ARABIC-INDIC DIGIT ONE, is a digit to `str.isdigit` and to `int`, and
     # not one of the digits 0 to 9 an expected version is written in.
-    other = host.start("sce-host-kv-put-if", "putif", {"key": "k", "value": "v", "expected_version": "١"})
+    other = host.start("sce-host-kv-put-if", _invocation("putif"), {"key": "k", "value": "v", "expected_version": "١"})
     assert other is not None and other.kind == REFUSE
     assert host.store_entries() == []
 
@@ -657,8 +720,8 @@ def test_a_put_if_is_refused_for_a_nul_key_and_for_a_digit_of_another_script() -
 def test_keys_are_ordered_by_their_utf8_bytes() -> None:
     host = ReferenceHost(ScriptedClock(), _ScriptTransport())
     for key in ("～", "\U0001f600"):
-        host.start("sce-host-kv-put", "put", {"key": key, "value": "v"})
-    walk = host.start("sce-host-kv-next-key", "walk", {"after": "", "prefix": ""})
+        host.start("sce-host-kv-put", _invocation("put"), {"key": key, "value": "v"})
+    walk = host.start("sce-host-kv-next-key", _invocation("walk"), {"after": "", "prefix": ""})
     assert walk is not None and json.loads(walk.data)["key"] == "～"
 
 
@@ -711,7 +774,7 @@ def test_the_http_transport_carries_an_exchange_to_a_local_server() -> None:
         def fetch(method: str, path: str, headers: str = "", body: str = "") -> dict:
             outcome = host.start(
                 "sce-host-http-fetch",
-                "fetch",
+                _invocation("fetch"),
                 {"method": method, "url": base + path, "headers": headers, "body": body},
             )
             assert outcome is not None

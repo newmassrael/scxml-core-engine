@@ -13,7 +13,7 @@ from .http import Transport
 from .model import MODEL_GENERATE, ModelProvider, ScriptedProvider
 from .records import DONE, HOLD, INVALID_ARGUMENT, REFUSE, Outcome, failure
 
-__all__ = ["DONE", "HOLD", "REFUSE", "TYPES", "Outcome", "ReferenceHost", "Start"]
+__all__ = ["DONE", "HOLD", "REFUSE", "TYPES", "Invocation", "Outcome", "ReferenceHost", "Start"]
 
 #: Every operation type of the standard host features, in the order the
 #: specification lists them.
@@ -34,14 +34,30 @@ TYPES: Tuple[str, ...] = (
 )
 
 
+@dataclass(frozen=True)
+class Invocation:
+    """The identity of a host-run invocation (docs/SCE_HOST_FEATURES.md, section 1,
+    "Identity"): the session that started it, the ``<invoke>``'s id, and which
+    start of that ``<invoke>`` in that session it is. A restore starts a running
+    invocation again under the identity it had, so two starts with one identity
+    are one operation asked twice."""
+
+    session_id: str
+    id: str
+    start: int
+
+
 @dataclass
 class Start:
     """A start the host was given: the operation, the invocation's id and the
-    request's parameters."""
+    request's parameters, with the rest of the invocation's identity: the session
+    that started it and which start of its ``<invoke>`` it is."""
 
     operation: str
     id: str
     params: Dict[str, str]
+    session_id: str = ""
+    number: int = 0
 
 
 class ReferenceHost:
@@ -67,6 +83,9 @@ class ReferenceHost:
         #: The machine's table of answer schemas, which a generation's
         #: `answer_schema` is resolved through.
         self.answer_schemas: List[Any] = []
+        #: The first result of each put-if, by the identity of its invocation: what
+        #: a repeat of that identity is answered with (docs/adr/0107, D4).
+        self._first_results: Dict[Invocation, Outcome] = {}
 
     def set_model_provider(self, provider: ModelProvider) -> None:
         """Generate texts with `provider` from here on."""
@@ -115,16 +134,35 @@ class ReferenceHost:
         taken, self._starts = self._starts, []
         return taken
 
-    def start(self, operation: str, invoke_id: str, params: Dict[str, str]) -> Optional[Outcome]:
-        """Start the operation of invocation `invoke_id` with `params`.
+    def start(self, operation: str, invocation: Invocation, params: Dict[str, str]) -> Optional[Outcome]:
+        """Start the operation of `invocation` with `params`.
 
         `None` for a type that is not one of the standard host features: the host
         serves none of it. Otherwise the arguments are judged first (a refusal
         starts nothing), then a failure the embedding injected, then the
-        operation itself."""
+        operation itself.
+
+        A put-if whose invocation was answered before is answered with that first
+        result, a failure included, and changes nothing: the engine starts a
+        running invocation again under the same identity when it restores a state
+        saved before the answer was taken (docs/adr/0107, D4), and the write it
+        asked for was made once."""
         if operation not in TYPES:
             return None
-        self._starts.append(Start(operation, invoke_id, dict(params)))
+        self._starts.append(
+            Start(operation, invocation.id, dict(params), invocation.session_id, invocation.start)
+        )
+        keeps_first = operation == "sce-host-kv-put-if"
+        if keeps_first and invocation in self._first_results:
+            return self._first_results[invocation]
+        outcome = self._perform(operation, invocation.id, params)
+        if keeps_first and outcome.kind == DONE:
+            self._first_results[invocation] = outcome
+        return outcome
+
+    def _perform(self, operation: str, invoke_id: str, params: Dict[str, str]) -> Outcome:
+        """The operation itself, as `start` describes it, for a start that is not a
+        repeat."""
 
         def argument(name: str) -> str:
             return params.get(name, "")

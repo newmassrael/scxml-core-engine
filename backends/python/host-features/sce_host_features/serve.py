@@ -8,7 +8,7 @@ from typing import Callable, Optional
 
 from sce_runtime import HostInvokeEvent, HostInvokeResponse
 
-from .host import TYPES, ReferenceHost
+from .host import TYPES, Invocation, ReferenceHost
 from .records import DONE, REFUSE
 
 
@@ -20,7 +20,10 @@ def _invoker(operation: str, host: ReferenceHost) -> Callable[[HostInvokeEvent],
         if event.start is None:
             return None
         params = {name: values[0] for name, values in event.start.params.items() if values}
-        outcome = host.start(operation, event.start.invoke_id, params)
+        # docs/adr/0107, D4: the invocation's identity, which a restore starts it
+        # again under.
+        invocation = Invocation(event.start.session_id, event.start.invoke_id, event.start.start)
+        outcome = host.start(operation, invocation, params)
         if outcome is None:
             return None
         if outcome.kind == DONE:

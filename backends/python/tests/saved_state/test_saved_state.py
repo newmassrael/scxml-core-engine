@@ -28,7 +28,7 @@ from sce_runtime.saved_state import (
     RecordLineage,
     SAVED_FORMAT,
     SAVED_FORMAT_1,
-    SAVED_FORMAT_3,
+    SAVED_FORMAT_4,
     SavedInvokes,
     SavedRevision,
     SavedShape,
@@ -67,8 +67,8 @@ _SAVED = Path(__file__).resolve().parents[4] / "sce-build" / "tests" / "fixtures
 
 def shared_saved_texts() -> Dict[Path, str]:
     """The shared saved-state texts every backend reads and writes back as they
-    are: format 3 in ``saved/`` and the unchanged format 1 in ``saved/format1/``.
-    The format-2 texts in ``saved/format2/`` are read and written back as format 3
+    are: format 4 in ``saved/`` and the unchanged format 1 in ``saved/format1/``.
+    The format-2 texts in ``saved/format2/`` are read and written back as format 4
     (:func:`format_2_readings`)."""
     texts: Dict[Path, str] = {}
     for directory in (_SAVED, _SAVED / "format1"):
@@ -94,8 +94,8 @@ def test_a_format_one_text_is_of_format_one_and_holds_no_session() -> None:
 
 def test_a_tree_text_holds_every_child_with_its_session() -> None:
     saved = saved_state_from_json(shared_saved_texts()[_SAVED / "static_invoke_tree_working.json"])
-    assert saved.format() == SAVED_FORMAT_3
-    assert SAVED_FORMAT == SAVED_FORMAT_3, "this runtime writes format 3"
+    assert saved.format() == SAVED_FORMAT_4
+    assert SAVED_FORMAT == SAVED_FORMAT_4, "this runtime writes format 4"
     assert saved.invokes.children
     child = saved.invokes.children[0]
     assert child.session.session_id == f"{saved.session_id}.{child.invoke_id}"
@@ -121,7 +121,7 @@ _READ_AS = _SAVED / "format2" / "read_as"
 
 def format_2_readings() -> Dict[str, str]:
     """The format-2 reading fixtures, by name (docs/adr/0090, section 7): each is
-    read as the format-3 text of the same name in ``saved/format2/read_as/``."""
+    read as the format-4 text of the same name in ``saved/format2/read_as/``."""
     texts = {
         path.name: path.read_text(encoding="utf-8").strip()
         for path in sorted((_SAVED / "format2").glob("*.json"))
@@ -131,10 +131,42 @@ def format_2_readings() -> Dict[str, str]:
 
 
 @pytest.mark.parametrize("name", sorted(format_2_readings()))
-def test_a_format_two_text_is_read_by_the_table_and_written_back_as_format_three(name: str) -> None:
+def test_a_format_two_text_is_read_by_the_table_and_written_back_as_format_four(name: str) -> None:
     saved = saved_state_from_json(format_2_readings()[name])
-    assert saved.format() == SAVED_FORMAT_3
+    assert saved.format() == SAVED_FORMAT_4
     assert saved.to_json() == (_READ_AS / name).read_text(encoding="utf-8").strip()
+
+
+def test_a_host_invocations_start_number_is_read_and_written_back() -> None:
+    """docs/adr/0107, D4: a format-3 host-run invocation is read as the first start of
+    its ``<invoke>`` and counted so, and written back as format 4 with the number
+    after its id and the count after ``hostinvokes``; a format-4 text keeps each
+    start number and each count, one of an ``<invoke>`` not running among them, as
+    written."""
+    host = '{"type":"x-host","id":"h","src":"","params":{},"data":"","content":"","due":null}'
+    format3 = (
+        '{"format":3,'
+        + _MINIMAL.replace('"hostinvokestarts":{},', "", 1).replace('"hostinvokes":[]', '"hostinvokes":[' + host + "]", 1)
+        + "}"
+    )
+    saved = saved_state_from_json(format3)
+    assert (saved.host_invokes[0].start, saved.host_invoke_start("h")) == (1, 1)
+    numbered = host.replace('"id":"h",', '"id":"h","start":"1",', 1)
+    want = (
+        '{"format":4,'
+        + _MINIMAL.replace('"hostinvokes":[]', '"hostinvokes":[' + numbered + "]", 1).replace(
+            '"hostinvokestarts":{}', '"hostinvokestarts":{"h":"1"}', 1
+        )
+        + "}"
+    )
+    assert saved.to_json() == want
+
+    format4 = want.replace('"start":"1"', '"start":"3"', 1).replace(
+        '"hostinvokestarts":{"h":"1"}', '"hostinvokestarts":{"done":"2","h":"3"}', 1
+    )
+    again = saved_state_from_json(format4)
+    assert (again.host_invokes[0].start, again.host_invoke_start("h"), again.host_invoke_start("done")) == (3, 3, 2)
+    assert again.to_json() == format4
 
 
 def test_a_format_two_origin_is_read_as_the_pair_the_table_gives() -> None:
@@ -214,7 +246,7 @@ def test_a_format_two_act_with_an_empty_origin_was_sent_by_the_session_that_hold
     (parent,) = saved.invokes.children[0].session.pending
     assert (parent.act.origin, parent.act.sender) == (scxml_origin("root.w"), "root.w")
     again = saved_state_from_json(saved.to_json())
-    assert again.format() == SAVED_FORMAT_3
+    assert again.format() == SAVED_FORMAT_4
     assert again.pending[0].act.sender == "root"
 
 
@@ -258,8 +290,8 @@ def test_a_format_one_text_keeps_its_origins_as_format_two_stored_them() -> None
 
 _MINIMAL = (
     '"shape":"s","sessionid":"root","configuration":["a"],"current":"a","variables":{},'
-    '"history":{},"pending":[],"invokes":[],"invokestarts":{},"hostinvokes":[],"hostinvoketoken":"0",'
-    '"sendseq":"0","external":[]'
+    '"history":{},"pending":[],"invokes":[],"invokestarts":{},"hostinvokes":[],"hostinvokestarts":{},'
+    '"hostinvoketoken":"0","sendseq":"0","external":[]'
 )
 
 
@@ -270,10 +302,29 @@ _MINIMAL = (
         ("[]", "the saved state is not an object"),
         ("{}", "the saved state has no 'format'"),
         # A format of the future is refused by its `format` before anything else.
-        ('{"format":4}', "the saved state is format 4, and this runtime reads formats 1, 2 and 3"),
-        ('{"format":"2"}', 'the saved state is format "2", and this runtime reads formats 1, 2 and 3'),
+        ('{"format":5}', "the saved state is format 5, and this runtime reads formats 1, 2, 3 and 4"),
+        ('{"format":"2"}', 'the saved state is format "2", and this runtime reads formats 1, 2, 3 and 4'),
+        # docs/adr/0107, D4: format 4's start number and count of starts.
         (
-            '{"format":3,' + _MINIMAL.replace('"root"', '"a b"', 1) + "}",
+            '{"format":4,'
+            + _MINIMAL.replace(
+                '"hostinvokes":[]',
+                '"hostinvokes":[{"type":"x","id":"h","src":"","params":{},"data":"","content":"","due":null}]',
+                1,
+            )
+            + "}",
+            "'hostinvokes[0]' has no 'start'",
+        ),
+        (
+            '{"format":4,' + _MINIMAL.replace('"hostinvokestarts":{}', '"hostinvokestarts":{"h":"0"}', 1) + "}",
+            "'hostinvokestarts.h' (0) is not a count of starts, a whole number from 1",
+        ),
+        (
+            '{"format":4,' + _MINIMAL.replace('"hostinvokestarts":{},', "", 1) + "}",
+            "the saved state has no 'hostinvokestarts'",
+        ),
+        (
+            '{"format":4,' + _MINIMAL.replace('"root"', '"a b"', 1) + "}",
             "'sessionid' (a b) is not an XML Nmtoken, which a session id is",
         ),
         # Format 2 is a tree too, held to the same members.
@@ -282,15 +333,15 @@ _MINIMAL = (
             "'sessionid' (a b) is not an XML Nmtoken, which a session id is",
         ),
         (
-            '{"format":3,' + _MINIMAL.replace('"invokestarts":{}', '"invokestarts":{"w":"01"}', 1) + "}",
+            '{"format":4,' + _MINIMAL.replace('"invokestarts":{}', '"invokestarts":{"w":"01"}', 1) + "}",
             "'invokestarts.w' (01) is not a count of starts, a whole number from 1",
         ),
         (
-            '{"format":3,' + _MINIMAL.replace('"hostinvoketoken":"0"', '"hostinvoketoken":"x"', 1) + "}",
+            '{"format":4,' + _MINIMAL.replace('"hostinvoketoken":"0"', '"hostinvoketoken":"x"', 1) + "}",
             "'hostinvoketoken' (x) is not a whole number a token can be",
         ),
         (
-            '{"format":3,' + _MINIMAL + ',"revisions":{}}',
+            '{"format":4,' + _MINIMAL + ',"revisions":{}}',
             "'revisions' names no schema; a state whose record schemas are all in their first revision leaves it out",
         ),
         (
@@ -300,7 +351,7 @@ _MINIMAL = (
             "'pending[0].act' is 'parent', which is not raise, internal or host, the acts of format 1",
         ),
         (
-            '{"format":3,' + _MINIMAL.replace('"pending":[]', '"pending":[{"due":"5","act":"fax"}]', 1) + "}",
+            '{"format":4,' + _MINIMAL.replace('"pending":[]', '"pending":[{"due":"5","act":"fax"}]', 1) + "}",
             "'pending[0].act' is 'fax', which is not raise, internal, host, parent or child",
         ),
     ],
@@ -371,7 +422,7 @@ def _event_members(origin: str, sender: str) -> str:
 
 
 def _holding_event(event: str) -> str:
-    return '{"format":3,' + _MINIMAL.replace('"external":[]', '"external":[' + event + "]", 1) + "}"
+    return '{"format":4,' + _MINIMAL.replace('"external":[]', '"external":[' + event + "]", 1) + "}"
 
 
 def _holding_act(act: str, origin: str, sender: str) -> str:
@@ -381,7 +432,7 @@ def _holding_act(act: str, origin: str, sender: str) -> str:
         '{"due":"5","act":"' + act + '","event":"e","data":"","sendid":"","origin":' + origin
         + ',"sender":' + sender + "}"
     )
-    return '{"format":3,' + _MINIMAL.replace('"pending":[]', '"pending":[' + send + "]", 1) + "}"
+    return '{"format":4,' + _MINIMAL.replace('"pending":[]', '"pending":[' + send + "]", 1) + "}"
 
 
 @pytest.mark.parametrize(
@@ -449,7 +500,7 @@ def _holding_act(act: str, origin: str, sender: str) -> str:
             "'external[0].origin' is neither null nor a pair of 'processor' and 'address'",
         ),
         (
-            '{"format":3,'
+            '{"format":4,'
             + _MINIMAL.replace(
                 '"pending":[]', '"pending":[{"due":"5","act":"raise","event":"e","data":"","sendid":""}]', 1
             )
@@ -534,7 +585,7 @@ def test_a_format_three_origin_is_read_as_written_and_written_back_as_it_was() -
         ]
     )
     text = (
-        '{"format":3,'
+        '{"format":4,'
         + _MINIMAL.replace('"external":[]', '"external":[' + events + "]", 1).replace(
             '"pending":[]', '"pending":[' + acts + "]", 1
         )
@@ -567,10 +618,10 @@ def test_a_child_session_is_refused_by_its_path() -> None:
 
     bad = with_session(_MINIMAL.replace('"configuration":["a"]', '"configuration":[1]', 1))
     with pytest.raises(StateRefusal) as refused:
-        saved_state_from_json('{"format":3,' + holding(bad) + "}")
+        saved_state_from_json('{"format":4,' + holding(bad) + "}")
     assert str(refused.value) == "the session at invokes[0].session: 'configuration' is not a text"
     with pytest.raises(StateRefusal) as grandchild:
-        saved_state_from_json('{"format":3,' + holding(with_session(holding(bad))) + "}")
+        saved_state_from_json('{"format":4,' + holding(with_session(holding(bad))) + "}")
     assert (
         str(grandchild.value)
         == "the session at invokes[0].session.invokes[0].session: 'configuration' is not a text"
@@ -578,8 +629,8 @@ def test_a_child_session_is_refused_by_its_path() -> None:
 
 
 def test_a_child_that_states_a_format_is_refused() -> None:
-    child = '{"id":"w","start":"1","invokeid":"w","document":"w","session":{"format":3,' + _MINIMAL + "}}"
-    text = '{"format":3,' + _MINIMAL.replace('"invokes":[]', '"invokes":[' + child + "]", 1) + "}"
+    child = '{"id":"w","start":"1","invokeid":"w","document":"w","session":{"format":4,' + _MINIMAL + "}}"
+    text = '{"format":4,' + _MINIMAL.replace('"invokes":[]', '"invokes":[' + child + "]", 1) + "}"
     with pytest.raises(StateRefusal) as refused:
         saved_state_from_json(text)
     assert str(refused.value) == "'invokes[0].session' states a format, which only the root of a tree does"
@@ -598,7 +649,7 @@ def test_a_child_session_is_read_in_the_format_of_its_root() -> None:
     (event,) = saved_state_from_json('{"format":2,' + holding + "}").invokes.children[0].session.external
     assert (event.origin, event.sender) == (scxml_origin("root"), "root")
     with pytest.raises(StateRefusal) as refused:
-        saved_state_from_json('{"format":3,' + holding + "}")
+        saved_state_from_json('{"format":4,' + holding + "}")
     assert str(refused.value) == (
         "the session at invokes[0].session: 'external[0].origin' is neither null nor a pair of "
         "'processor' and 'address'"
@@ -615,7 +666,7 @@ def test_a_childs_own_send_names_the_child_and_not_its_parent() -> None:
         )
         child_session = _MINIMAL.replace('"root"', '"root.w"', 1).replace('"pending":[]', '"pending":[' + send + "]", 1)
         child = '{"id":"w","start":"1","invokeid":"w","document":"w","session":{' + child_session + "}}"
-        return '{"format":3,' + _MINIMAL.replace('"invokes":[]', '"invokes":[' + child + "]", 1) + "}"
+        return '{"format":4,' + _MINIMAL.replace('"invokes":[]', '"invokes":[' + child + "]", 1) + "}"
 
     child_pair = '{"processor":"' + SCXML_EVENT_PROCESSOR_URI + '","address":"sce://scxml/root.w"}'
     (report,) = saved_state_from_json(holding_parent_act(child_pair, '"root.w"')).invokes.children[0].session.pending
@@ -635,7 +686,7 @@ def test_a_saved_state_is_read_back_as_it_was_written() -> None:
     child = '{"id":"w","start":"1","invokeid":"w","document":"w","session":{' + child_session + "}}"
     revisions = '"revisions":{"reading.taken":{"revision":3,"fields":"' + "0" * 64 + '"}}'
     text = (
-        '{"format":3,'
+        '{"format":4,'
         + _MINIMAL.replace('"invokes":[]', '"invokes":[' + child + "]", 1)
         + ","
         + revisions

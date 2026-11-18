@@ -70,6 +70,7 @@ from .saved_state import (
     SavedEvent,
     SavedHistory,
     SavedHostInvoke,
+    SavedInvokeStart,
     SavedInvokes,
     SavedRevision,
     SavedSend,
@@ -224,6 +225,13 @@ def save_session(
         session_id=session_id,
         invoke_starts=list(policy.invoke_starts()),
         host_invokes=_save_host_invokes(engine, wall_now_ms),
+        # docs/adr/0107, D4: by the id's bytes, the order every backend writes.
+        host_invoke_starts=[
+            SavedInvokeStart(invoke_id, count)
+            for invoke_id, count in sorted(
+                engine._host_invoke_starts.items(), key=lambda started: started[0].encode("utf-8")
+            )
+        ],
         host_invoke_token=engine._next_host_invoke_token,
         auto_send_seq=engine._auto_send_seq,
     )
@@ -286,6 +294,7 @@ def _save_host_invokes(engine: Any, wall_now_ms: int) -> List[SavedHostInvoke]:
             SavedHostInvoke(
                 processor_type=request.processor_type,
                 invoke_id=request.invoke_id,
+                start=request.start,
                 src=request.src,
                 params=_clone_params(request.params),
                 data=request.event_data,
@@ -607,6 +616,23 @@ def _judge(policy: Any, saved: SavedState) -> _JudgedSession:
                 raise StateRefusal(
                     f"hostinvokes[{at}] is '{host.invoke_id}', which an earlier entry already names"
                 )
+        # docs/adr/0107, D4: a running invocation is the latest start of its
+        # `<invoke>`, since a state re-entered cancels the earlier one first.
+        count = saved.host_invoke_start(host.invoke_id)
+        if host.start != count:
+            raise StateRefusal(
+                f"hostinvokes[{at}] is start {host.start} of '{host.invoke_id}', and the session "
+                f"counts {count} starts of it: a state re-entered cancels the earlier start before "
+                "it makes the next one"
+            )
+    # A count of host-run starts names an `<invoke>` the document hands a host.
+    host_invoke_ids = policy.host_invoke_ids()
+    for started in saved.host_invoke_starts:
+        if started.id not in host_invoke_ids:
+            raise StateRefusal(
+                f"hostinvokestarts counts '{started.id}', which the document does not have a host "
+                "invoker run"
+            )
     return judged
 
 
@@ -693,6 +719,7 @@ def enter_session(engine: Any, saved: SavedState, wall_now_ms: int) -> None:
         engine._external_queue.append(queued)
     _arm_pending(engine, judged.pending, wall_now_ms)
     _rearm_host_invokes(engine, saved.host_invokes, wall_now_ms)
+    engine._host_invoke_starts = {started.id: started.count for started in saved.host_invoke_starts}
     engine._next_host_invoke_token = saved.host_invoke_token
     engine._auto_send_seq = saved.auto_send_seq
     if saved.invokes.resumed:
@@ -726,6 +753,8 @@ def _rearm_host_invokes(engine: Any, hosts: Sequence[SavedHostInvoke], wall_now_
                 params=_clone_params(host.params),
                 event_data=host.data,
                 content=host.content,
+                # docs/adr/0107, D4: the start it repeats, not a new one.
+                start=host.start,
             ),
             deadline,
             at_ms,

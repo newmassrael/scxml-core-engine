@@ -511,6 +511,10 @@ class Engine(Generic[S, E]):
         self._started_host_invokes: Dict[Tuple[str, str], _StartedHostInvoke] = {}
         # The token the next host-run start receives.
         self._next_host_invoke_token: int = 0
+        # docs/adr/0107, D4 — how many times each host-run `<invoke>` has started
+        # in this session, by its id: what numbers a start
+        # (`HostInvokeRequest.start`). A save writes it and a restore carries it on.
+        self._host_invoke_starts: Dict[str, int] = {}
         # docs/adr/0045 — the host-run invocations a restore re-armed, which start
         # at the top of the first macrostep the host drives
         # (`_start_restored_host_invokes`), and until then are neither running nor
@@ -2007,10 +2011,19 @@ class Engine(Generic[S, E]):
         assigned and the run recorded before the handler is asked, so a handler
         that completes at once completes a run the engine already knows. A restore
         starts an invocation again through here, with the deadline it had left (SCE
-        Accepted Subset §2.15)."""
+        Accepted Subset §2.15).
+
+        A start the document makes is numbered on from the count of its
+        ``<invoke>``; a restart keeps the number the saved state gave it, whose
+        count the restore carried on, since it repeats that start rather than
+        making another (docs/adr/0107, D4)."""
         token = self._next_host_invoke_token
         self._next_host_invoke_token += 1
         request.token = token
+        if not request.restarted:
+            count = self._host_invoke_starts.get(request.invoke_id, 0) + 1
+            self._host_invoke_starts[request.invoke_id] = count
+            request.start = count
         # docs/adr/0045: the session that starts it, which the host may serve or
         # refuse it by, and names again to end it.
         request.session_id = self._session_id

@@ -161,7 +161,8 @@ def test_an_event_saved_in_the_childs_queue_is_taken_by_the_resumed_child() -> N
     shared = _shared()
     empty = (
         '"configuration":["first"],"current":"first","variables":{},"history":{},"pending":[],"invokes":[],'
-        '"invokestarts":{},"hostinvokes":[],"hostinvoketoken":"0","sendseq":"0","external":[]'
+        '"invokestarts":{},"hostinvokes":[],"hostinvokestarts":{},"hostinvoketoken":"0","sendseq":"0",'
+        '"external":[]'
     )
     queued = empty.replace(
         '"external":[]',

@@ -16,9 +16,10 @@ time, with ``restarted`` set, a new token and what was left of the deadline.
 
 Driven entirely on the engine's virtual clock: no case sleeps, and none can be decided
 by how loaded the build machine is. The shared instance
-``saved/statechart_static_host_invoke_running.json`` is the format-3 text every backend
-writes (docs/adr/0045); the format-1 text of the same run, under ``saved/format1/``,
-still restores.
+``saved/statechart_static_host_invoke_running.json`` is the format-4 text every backend
+writes (docs/adr/0107, D4); the format-3 text of the same run, under
+``saved/format3/``, and the format-1 text, under ``saved/format1/``, still restore. A
+restarted invocation keeps the start number it had.
 """
 from __future__ import annotations
 
@@ -47,6 +48,12 @@ _SAVED = _HERE.parents[4] / "sce-build" / "tests" / "fixtures" / "host_processor
 def _shared(format1: bool = False) -> str:
     directory = _SAVED / "format1" if format1 else _SAVED
     return (directory / "statechart_static_host_invoke_running.json").read_text(encoding="utf-8").strip()
+
+
+def _format3() -> str:
+    """The same run as format 3 wrote it, before a host-run invocation held its start
+    number."""
+    return (_SAVED / "format3" / "statechart_static_host_invoke_running.json").read_text(encoding="utf-8").strip()
 
 
 class _Host:
@@ -115,10 +122,12 @@ def test_a_machine_is_saved_with_the_request_its_invocation_was_started_with() -
     first = host.starts()[0]
     assert not first.restarted, "the document's own start is not a restart"
     assert first.token == 0
+    assert first.start == 1, "the first start of `h` in this session"
 
     saved = _sm.save_at(engine, _SAVED_AT_MS)
     assert len(saved.host_invokes) == 1, "one running invocation"
     entry = saved.host_invokes[0]
+    assert (entry.start, saved.host_invoke_start("h")) == (1, 1)
     assert (entry.processor_type, entry.invoke_id, entry.src, entry.content, entry.data) == (
         _HOST_TYPE,
         "h",
@@ -135,10 +144,11 @@ def test_a_machine_is_saved_with_the_request_its_invocation_was_started_with() -
     assert saved.to_json() == _shared()
 
 
-@pytest.mark.parametrize("format1", [False, True])
-def test_a_restore_asks_nothing_of_the_host_until_the_machine_is_driven(format1: bool) -> None:
-    # From the format-3 text, and from the format-1 text of the same run.
-    engine, host = _restored(_shared(format1), 1000)
+@pytest.mark.parametrize("written", ["format4", "format3", "format1"])
+def test_a_restore_asks_nothing_of_the_host_until_the_machine_is_driven(written: str) -> None:
+    # From the format-4 text, and from the format-3 and format-1 texts of the same run.
+    text = {"format4": _shared(), "format3": _format3(), "format1": _shared(True)}[written]
+    engine, host = _restored(text, 1000)
     assert host.log == [], "the restore itself calls nobody"
     assert _standing_in(engine) == {_State.WORKING}
     # The first macrostep starts it, where an invocation the document entered would
@@ -158,6 +168,52 @@ def test_a_restored_invocation_is_started_again_from_the_request_it_was_saved_wi
     assert again.restarted, "the host is told this is a resumption"
     assert again.token == 1, "the next token the saved state carried on"
     assert _same_request(again, first), "the same request, not one evaluated again"
+    # docs/adr/0107, D4: the same invocation, under the identity it had.
+    assert (again.start, again.session_id) == (first.start, first.session_id)
+
+
+@pytest.mark.parametrize("written", ["format4", "format3"])
+def test_a_start_after_the_restored_one_takes_the_next_number(written: str) -> None:
+    """docs/adr/0107, D4: a restore repeats a running start under its number, and a
+    start the document makes afterwards is numbered on from the count the saved
+    state carried, from the format-4 text and from the format-3 text alike."""
+    engine, host = _restored(_shared() if written == "format4" else _format3(), 1000)
+    engine.advance_time(0)
+    # Leaving cancels the restarted invocation; starting again is a new start.
+    engine.send_event(engine.policy.resolve_event_by_name("leave"))
+    engine.advance_time(0)
+    engine.send_event(engine.policy.resolve_event_by_name("start"))
+    engine.advance_time(0)
+    assert [(start.restarted, start.start) for start in host.starts()] == [(True, 1), (False, 2)]
+    saved = _sm.save_at(engine, _SAVED_AT_MS)
+    assert (saved.host_invokes[0].start, saved.host_invoke_start("h")) == (2, 2)
+
+
+@pytest.mark.parametrize(
+    "what, from_, to, expected",
+    [
+        (
+            "a running start that is not the latest",
+            '"hostinvokestarts":{"h":"1"}',
+            '"hostinvokestarts":{"h":"2"}',
+            "hostinvokes[0] is start 1 of 'h', and the session counts 2 starts of it",
+        ),
+        (
+            "a count of an invoke the document does not hand a host",
+            '"hostinvokestarts":{"h":"1"}',
+            '"hostinvokestarts":{"h":"1","stranger":"1"}',
+            "hostinvokestarts counts 'stranger', which the document does not have a host invoker run",
+        ),
+    ],
+)
+def test_a_start_number_the_saved_session_could_not_have_given_is_refused(
+    what: str, from_: str, to: str, expected: str
+) -> None:
+    text = _shared().replace(from_, to, 1)
+    assert text != _shared(), f"{what}: the change did not apply"
+    with pytest.raises(StateRefusal) as refused:
+        _try_restore(text, 0)
+    assert expected in str(refused.value), what
 
 
 def test_a_restored_invocation_keeps_the_deadline_it_had_left() -> None:
@@ -303,7 +359,7 @@ def test_a_host_invocation_whose_state_the_configuration_is_not_in_is_refused() 
 def test_an_invocation_named_twice_is_refused() -> None:
     shared = _shared()
     start = shared.index('"hostinvokes":[') + len('"hostinvokes":[')
-    end = start + shared[start:].index('],"hostinvoketoken"')
+    end = start + shared[start:].index('],"hostinvokestarts"')
     one = shared[start:end]
     twice = shared.replace(one, one + "," + one, 1)
     with pytest.raises(StateRefusal) as refused:

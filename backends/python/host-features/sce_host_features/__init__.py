@@ -13,7 +13,7 @@ a `Transport`, both the embedding's to supply.
 """
 
 from .clock import ClockSource, Reading, ScriptedClock, SystemClock, Zone
-from .host import DONE, HOLD, REFUSE, TYPES, Outcome, ReferenceHost, Start
+from .host import DONE, HOLD, REFUSE, TYPES, Invocation, Outcome, ReferenceHost, Start
 from .http import HttpRequest, HttpResponse, HttpTransport, Transport, TransportFailure
 from .model import (
     ANSWER_MAX_BYTES,
@@ -54,6 +54,7 @@ __all__ = [
     "HttpRequest",
     "HttpResponse",
     "HttpTransport",
+    "Invocation",
     "Outcome",
     "REFUSE",
     "Reading",
