@@ -288,6 +288,11 @@ local_path_override(module_name = "sce", path = "third_party/sce")
 and `deps = ["@sce//:sce_base"]` on the consumer's `cc_*` target. `@sce//:sce_core` carries the Forge C++
 runtime headers the generated C++ includes. A consumer that builds from a checkout of this repository rather than a
 packaged tree uses `scripts/sce_repo.bzl` instead (its docstring has both the Bzlmod and the WORKSPACE form).
+Both channels compile `sce_base` with the options in the spelling of the compiler the consumer's toolchain selects
+(`-include` for GCC and Clang; `/FI`, `/std:c++17` and `/utf-8` for MSVC and clang-cl), and the checkout's channel
+also provides `@sce//:sce_host_cose`, the reference host's COSE operations, when the consumer names its libsodium
+(`sodium = "@libsodium//:sodium"`; docs/adr/0107, D7). The Windows lane (`.github/workflows/windows-msvc.yml`) builds
+both with MSVC.
 
 The embed payload ships source + cmake utilities + codegen templates, but **not** the `sce-codegen` binary (platform-specific). Consumers place `sce-codegen` on `PATH`; `SCECodegen.cmake` resolves it via `find_program` and auto-detects `SCE_TEMPLATE_DIR` relative to the shipped `tools/codegen/templates/` — no manual configuration required.
 
