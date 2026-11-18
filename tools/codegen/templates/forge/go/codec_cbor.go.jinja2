@@ -27,7 +27,13 @@
 				return nil, err
 			}
 {% elif e.kind == "enum" %}
+{% if e.carrier_signed %}
+			{# A signed carrier's number is major type 1 below zero, read
+			   within the carrier's range (docs/adr/0101, section 2.1). #}
+			raw, err := codec.CborReadIntWithin(c, -{{ e.max }} - 1, {{ e.max }})
+{% else %}
 			raw, err := codec.CborReadUintUpto(c, {{ e.max }})
+{% endif %}
 			if err != nil {
 				return nil, err
 			}
@@ -133,15 +139,16 @@
 {% elif e.kind == "enum" %}
 		u := {{ e.enum_to_underlying }}
 {% if e.carrier_signed %}
-		{# A signed carrier's negative number is no CBOR unsigned integer;
-		   refused as the Rust backend refuses it. #}
-		if u < 0 {
-			return codec.ErrCborOutOfRange
+		{# The integer of the variant's declared number, major type 1 below
+		   zero (docs/adr/0101, section 2.1). #}
+		if err := codec.CborWriteInt(w, int64(u)); err != nil {
+			return err
 		}
-{% endif %}
+{% else %}
 		if err := codec.CborWriteUint(w, uint64(u)); err != nil {
 			return err
 		}
+{% endif %}
 {% elif e.kind == "record_list" %}
 		{# The language's slice carries no bound, so a count past the list's
 		   bound, or short of its lower count, is refused before anything of

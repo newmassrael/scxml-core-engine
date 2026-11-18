@@ -14,6 +14,10 @@ Cbor.readText(c, {{ e.max_size if e.max_size is not none else "null" }}).valueOr
 Cbor.readBytes(c, {{ e.max_size if e.max_size is not none else "null" }}).valueOr { _refused -> return _refused }
 {%- elif e.kind == "bytes_exact" -%}
 Cbor.readBytesExact(c, {{ e.length }}).valueOr { _refused -> return _refused }
+{%- elif e.kind == "enum" and e.carrier_signed -%}
+{#- A signed carrier's number, major type 1 below zero, read within the
+    carrier's range (docs/adr/0101, section 2.1). -#}
+{{ e.enum_from_underlying }}((Cbor.readIntWithin(c, {{ e.carrier_type }}.MIN_VALUE.toLong(), {{ e.carrier_type }}.MAX_VALUE.toLong()).valueOr { _refused -> return _refused }).to{{ e.carrier_type }}()){% if not e.enum_is_open %} ?: return Decoded.Refused(CodecError.UndeclaredEnumValue){% endif %}
 {%- elif e.kind == "enum" -%}
 {{ e.enum_from_underlying }}((Cbor.readUintUpto(c, {{ e.carrier_type }}.MAX_VALUE.toULong()).valueOr { _refused -> return _refused }).to{{ e.carrier_type }}()){% if not e.enum_is_open %} ?: return Decoded.Refused(CodecError.UndeclaredEnumValue){% endif %}
 {%- elif e.kind == "record_list" -%}

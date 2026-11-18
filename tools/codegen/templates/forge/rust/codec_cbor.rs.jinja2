@@ -14,6 +14,12 @@ cbor::read_text(&mut c, {% if e.max_size is not none %}Some({{ e.max_size }}){% 
 cbor::read_bytes(&mut c, {% if e.max_size is not none %}Some({{ e.max_size }}){% else %}None{% endif %})?
 {%- elif e.kind == "bytes_exact" -%}
 cbor::read_bytes_exact(&mut c, {{ e.length }})?
+{%- elif e.kind == "enum" and e.carrier_signed -%}
+{#- A signed carrier's number, major type 1 below zero, read within the
+    carrier's range (docs/adr/0101, section 2.1). -#}
+{%- set number = "cbor::read_int_within(&mut c, i64::MIN, i64::MAX)?" if e.carrier_type == "i64" else ("cbor::read_int_within(&mut c, i64::from(" ~ e.carrier_type ~ "::MIN), i64::from(" ~ e.carrier_type ~ "::MAX))? as " ~ e.carrier_type) -%}
+{{ e.enum_from_underlying }}({{ number }}){% if not e.enum_is_open %}
+                        .ok_or(CodecError::UndeclaredEnumValue)?{% endif %}
 {%- elif e.kind == "enum" and e.enum_is_open -%}
 {{ e.enum_from_underlying }}(cbor::read_uint(&mut c)?.try_into().map_err(|_| CodecError::CborOutOfRange)?)
 {%- elif e.kind == "enum" -%}

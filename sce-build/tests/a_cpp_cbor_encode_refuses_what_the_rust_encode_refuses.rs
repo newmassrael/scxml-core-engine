@@ -6,13 +6,15 @@
 //! `CodecError::CborOutOfRange` at the same entries, each found before the
 //! first byte is written, so a refusal leaves the sink untouched.
 //!
-//! The totality analysis names three such values (`codec_totality`, the CBOR
-//! arm): a negative value of an enum whose carrier is signed, a list of fewer
-//! records than its lower count, and a record whose byte string, which the
-//! schema's unit holds in the language's own vector, is past its bound. Each
-//! has a codec of `tests/fixtures/cbor_codec`, generated here with no
-//! toolchain; what the printed C++ does with real bytes is held by
+//! The totality analysis names two such values (`codec_totality`, the CBOR
+//! arm): a list of fewer records than its lower count, and a record whose byte
+//! string, which the schema's unit holds in the language's own vector, is past
+//! its bound. Each has a codec of `tests/fixtures/cbor_codec`, generated here
+//! with no toolchain; what the printed C++ does with real bytes is held by
 //! `backends/cpp/forge-runtime/tests/conformance/codec_source_generated_test.cpp`.
+//! A negative value of an enum whose carrier is signed is no such value: both
+//! encodes write it as the integer it is, major type 1 below zero
+//! (docs/adr/0101, section 2.1).
 
 use std::path::{Path, PathBuf};
 
@@ -109,37 +111,41 @@ fn refuses_before_the_first_byte(stem: &str, code: &str, expected: &[&str], refu
 }
 
 #[test]
-fn a_negative_value_of_a_signed_carrier_is_refused_on_cpp_as_on_rust() {
+fn a_negative_value_of_a_signed_carrier_is_written_on_cpp_as_on_rust() {
+    // docs/adr/0101, section 2.1: an enum is the integer of its declared
+    // number, major type 1 below zero, so neither encode refuses one and the
+    // value answers its bytes, not an optional of them.
     let stem = "codec_cbor_signed_enum";
     let code = printed_cpp(stem);
-    refuses_before_the_first_byte(
-        stem,
-        &code,
-        &[
-            // The required entry read in a block of its own, the optional one
-            // where the value holds it.
-            "        {\n            const auto& v = _e_status;\n            if (",
-            "        if (_e_detail) {\n            const auto& v = *_e_detail;\n            if (",
-            // What is left is no negative number, so it is the unsigned
-            // integer it is written as.
-            "if (auto _e = cbor::write_uint(w, static_cast<std::uint64_t>(",
-        ],
-        2,
-    );
-    // Both refusals are of a negative carrier value.
+    let wire = wire_of(stem, &code);
+    assert!(!wire.contains(REFUSED), "{stem}:\n{code}");
     assert_eq!(
-        code.matches("to_underlying(v) < 0) return ::SCE::Forge::CodecError::CborOutOfRange;")
+        wire.matches("if (auto _e = cbor::write_int(w, static_cast<std::int64_t>(")
+            .count(),
+        2,
+        "{stem}: both entries are written as integers of either sign:\n{code}"
+    );
+    assert!(!code.contains(REFUSING_TO_VEC), "{stem}:\n{code}");
+    // Each read takes a number of either sign within the carrier's range.
+    assert_eq!(
+        code.matches("cbor::read_int_within(c, static_cast<std::int64_t>(std::numeric_limits<")
             .count(),
         2,
         "{stem}:\n{code}"
     );
     let rust = generated(stem, Language::Rust);
     assert_eq!(
-        rust.matches(".map_err(|_| CodecError::CborOutOfRange)?)?;")
+        rust.matches("cbor::write_int(w, i64::from(").count(),
+        2,
+        "the Rust encode writes both entries as integers of either sign:\n{rust}"
+    );
+    assert_eq!(
+        rust.matches("cbor::read_int_within(&mut c, i64::from(")
             .count(),
         2,
-        "the Rust encode refuses both entries:\n{rust}"
+        "the Rust decode reads both entries within the carrier's range:\n{rust}"
     );
+    assert!(!rust.contains("u64::try_from("), "{rust}");
 }
 
 #[test]

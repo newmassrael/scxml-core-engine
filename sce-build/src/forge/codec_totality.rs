@@ -938,7 +938,9 @@ pub(crate) fn cbor_totality(items: &[CborItem<'_>]) -> Totality {
 /// schema's unit, which holds a text in the bounded text. What none of them
 /// holds is refused: a list of fewer elements than its lower count, at any
 /// depth, and a byte string below the entry's own level, which the language
-/// holds in its own vector, past its bound.
+/// holds in its own vector, past its bound. A number of any sign is a value of
+/// its type, written as major type 0 or 1, so an enum of a signed carrier
+/// refuses nothing (docs/adr/0101, sections 2.1 and 5.2).
 fn cbor(items: &[CborItem<'_>], out: &mut Vec<Refusal>) {
     for item in items {
         if let Some(reason) = out_of_range(&item.value, &item.entry.id, false) {
@@ -968,10 +970,6 @@ fn out_of_range(shape: &CborShape, place: &str, nested: bool) -> Option<String> 
         }
         CborShape::Bytes { max, .. } if nested => Some(format!(
             "a byte string `{place}` past its bound {max} has no encoding"
-        )),
-        CborShape::Enum(enumeration) if enumeration.carrier.is_signed() => Some(format!(
-            "`{place}` is a value of an enum whose carrier is signed, and a negative value has \
-             no unsigned integer"
         )),
         CborShape::Nullable(elem) => out_of_range(elem, place, nested),
         CborShape::Record(record) => fields_out_of_range(record, place),
@@ -1364,18 +1362,30 @@ mod tests {
     }
 
     #[test]
-    fn a_value_of_an_enum_of_a_signed_carrier_is_refused_below_zero() {
-        // The encode writes an enum as the unsigned integer its carrier holds.
-        assert!(scoped_refusals("enum:Plain", scope(&[])).is_empty());
-        for (ty, place) in [
-            ("enum:Signed", "`n`"),
-            ("optional<enum:Signed>", "`n`"),
-            ("record:R", "`n.level`"),
+    fn a_value_of_an_enum_of_a_signed_carrier_is_no_refusal() {
+        // docs/adr/0101, section 2.1: the integer of its declared number, major
+        // type 1 below zero, so a negative value has an encoding. A signed
+        // integer is the same (section 3.5 names no refusal of one).
+        for ty in [
+            "enum:Plain",
+            "enum:Signed",
+            "optional<enum:Signed>",
+            "record:R",
+            "list<int8>[2]",
         ] {
-            let refusals = scoped_refusals(ty, scope(&[("level", "enum:Signed")]));
-            assert_eq!(refusals.len(), 1, "{ty}: {refusals:?}");
-            assert!(refusals[0].reason.contains(place), "{ty}: {refusals:?}");
+            assert!(
+                scoped_refusals(ty, scope(&[("level", "enum:Signed")])).is_empty(),
+                "{ty}"
+            );
         }
+        // The codec of the one entry refuses nothing, so a statement that its
+        // encode may fail is untrue of it (`check`).
+        let m = cbor_importing(
+            r#" sce:encode-may-fail="true""#,
+            SCOPE_IMPORTS,
+            &one_entry("enum:Signed"),
+        );
+        assert!(analyse(&m, &mut Scoped(scope(&[]))).is_total());
     }
 
     #[test]

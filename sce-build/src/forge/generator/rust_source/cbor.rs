@@ -14,10 +14,11 @@
 //! ascending key order with the shortest heads (RFC 8949 §4.2.1). A string or
 //! byte string with a bound is presented within it (`Text`, `Bytes`;
 //! docs/adr/0077 §3), and a list of records is lent as the language's list of
-//! its bound (docs/adr/0086, section 7.4), so only an enum whose carrier is
-//! signed and a list of fewer records than its lower count can be refused,
-//! and a refusal found by writing into a
-//! sink that only counts leaves the caller's sink untouched.
+//! its bound (docs/adr/0086, section 7.4), so only a list of fewer records
+//! than its lower count, and a record whose byte string is past its bound, can
+//! be refused, and a refusal found by writing into a sink that only counts
+//! leaves the caller's sink untouched. An enum is the integer of its declared
+//! number, of either sign (docs/adr/0101, section 2.1).
 
 use super::super::*;
 use crate::forge::cbor_codec;
@@ -110,17 +111,16 @@ fn write_value(input: &Input<'_>, plan: &CborPlan<'_>, item: &CborItem<'_>) -> S
                 .leaf_type()
                 .expect("an enum entry is a leaf entry");
             let underlying = input.l.codec_carrier_expr(present, "v");
-            if enumeration.carrier.is_signed() {
-                // A signed carrier can hold a value no unsigned integer carries.
-                format!(
-                    "cbor::write_uint(w, u64::try_from({underlying}).map_err(|_| {})?)?;",
-                    plan.totality
-                        .require(RefusalKind::CborOutOfRange, &item.entry.id)
-                )
-            } else if enumeration.carrier == SceType::Uint64 {
-                format!("cbor::write_uint(w, {underlying})?;")
-            } else {
-                format!("cbor::write_uint(w, u64::from({underlying}))?;")
+            // The integer of the variant's declared number, major type 1 below
+            // zero (docs/adr/0101, section 2.1): every value of a carrier of
+            // either sign is written.
+            match &enumeration.carrier {
+                SceType::Int64 => format!("cbor::write_int(w, {underlying})?;"),
+                carrier if carrier.is_signed() => {
+                    format!("cbor::write_int(w, i64::from({underlying}))?;")
+                }
+                SceType::Uint64 => format!("cbor::write_uint(w, {underlying})?;"),
+                _ => format!("cbor::write_uint(w, u64::from({underlying}))?;"),
             }
         }
         CborShape::Int {

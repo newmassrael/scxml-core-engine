@@ -16,10 +16,13 @@
 {% elif e.kind == "bytes_exact" %}
                 v = cbor.read_bytes_exact(c, {{ e.length }})
 {% elif e.kind == "enum" %}
+{#- A signed carrier's number is major type 1 below zero, read within the
+    carrier's range (docs/adr/0101, section 2.1). -#}
+{% set number = ("cbor.read_int_within(c, -" ~ e.max ~ " - 1, " ~ e.max ~ ")") if e.carrier_signed else ("cbor.read_uint_upto(c, " ~ e.max ~ ")") %}
 {% if e.enum_is_open %}
-                v = {{ e.enum_from_underlying }}(cbor.read_uint_upto(c, {{ e.max }}))
+                v = {{ e.enum_from_underlying }}({{ number }})
 {% else %}
-                v = {{ e.enum_from_underlying }}(cbor.read_uint_upto(c, {{ e.max }}))
+                v = {{ e.enum_from_underlying }}({{ number }})
                 if v is None:
                     raise UndeclaredEnumValue()
 {% endif %}

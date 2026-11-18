@@ -19,6 +19,23 @@
 {% elif e.kind == "bytes_exact" %}
             s = sce_forge_cbor_read_bytes_exact(&c, {{ e.capacity }}, v->{{ e.data_ref }});
             v->{{ e.len_ref }} = {{ e.capacity }};
+{% elif e.kind == "enum" and e.carrier_signed %}
+{#- A signed carrier's number is major type 1 below zero, read within the
+    carrier's range (docs/adr/0101, section 2.1). #}
+            {
+                int64_t signed_raw = 0;
+                s = sce_forge_cbor_read_int_within(&c, -{{ e.max }}LL - 1, {{ e.max }}LL, &signed_raw);
+                if (s != SCE_FORGE_CODEC_OK) {
+                    return s;
+                }
+{% if e.enum_is_open %}
+                v->{{ e.value_ref }} = {{ e.enum_from_underlying }}(({{ e.carrier_type }})signed_raw);
+{% else %}
+                if (!{{ e.enum_from_underlying }}(({{ e.carrier_type }})signed_raw, &v->{{ e.value_ref }})) {
+                    return SCE_FORGE_CODEC_UNDECLARED_ENUM_VALUE;
+                }
+{% endif %}
+            }
 {% elif e.kind == "enum" %}
             s = sce_forge_cbor_read_uint_upto(&c, {{ e.max }}U, &raw);
             if (s != SCE_FORGE_CODEC_OK) {
@@ -91,13 +108,12 @@
 {{ i }}s = sce_forge_cbor_write_bytes(w, self->{{ e.data_ref }}, {{ e.capacity }});
 {% elif e.kind == "enum" %}
 {% if e.carrier_signed %}
-{#- A signed carrier's negative number is no CBOR unsigned integer; refused
-    as the Rust backend refuses it. #}
-{{ i }}if ({{ e.enum_to_underlying }} < 0) {
-{{ i }}    return SCE_FORGE_CODEC_CBOR_OUT_OF_RANGE;
-{{ i }}}
-{% endif %}
+{#- The integer of the variant's declared number, major type 1 below zero
+    (docs/adr/0101, section 2.1). #}
+{{ i }}s = sce_forge_cbor_write_int(w, (int64_t){{ e.enum_to_underlying }});
+{% else %}
 {{ i }}s = sce_forge_cbor_write_uint(w, (uint64_t){{ e.enum_to_underlying }});
+{% endif %}
 {% elif e.kind == "record_list" %}
 {#- The list's length is a number its fixed array does not bound, so one past
     the list's bound, or short of its lower count, is refused before anything
