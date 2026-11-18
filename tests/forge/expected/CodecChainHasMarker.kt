@@ -362,7 +362,7 @@ data class CodecChainHasMarker(
             return Decoded.Ok(
                 CodecChainHasMarker(
                     header = header,
-                    extensions_has_0x12 = if (_has_extensions_18) CodecChainHasMarkerExtensionsHas0x12.Has0x12(extensions = CodecChainHasMarkerExtensionsHas12Placed.placing(extensions!!) ?: return Decoded.Refused(CodecError.PresentIfMismatch), slices = CodecChainHasMarkerSlicesList.of(slices!!) ?: return Decoded.Refused(CodecError.TooManyElements)) else CodecChainHasMarkerExtensionsHas0x12.NotHas0x12(extensions = extensions?.let { CodecChainHasMarkerExtensionsLacks12Chain.of(it) ?: return Decoded.Refused(CodecError.PresentIfMismatch) }, payload = CodecChainHasMarkerPayloadBytes.of(payload!!) ?: return Decoded.Refused(CodecError.LengthOutOfRange))
+                    extensions_has_0x12 = if (_has_extensions_18) CodecChainHasMarkerExtensionsHas0x12.Has0x12(extensions = CodecChainHasMarkerExtensionsHas12Placed.placing(extensions) ?: return Decoded.Refused(CodecError.PresentIfMismatch), slices = CodecChainHasMarkerSlicesList.of(slices!!) ?: return Decoded.Refused(CodecError.TooManyElements)) else CodecChainHasMarkerExtensionsHas0x12.NotHas0x12(extensions = extensions?.let { CodecChainHasMarkerExtensionsLacks12Chain.of(it) ?: return Decoded.Refused(CodecError.PresentIfMismatch) }, payload = CodecChainHasMarkerPayloadBytes.of(payload!!) ?: return Decoded.Refused(CodecError.LengthOutOfRange))
                 )
             )
         }

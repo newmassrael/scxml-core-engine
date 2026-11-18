@@ -1130,8 +1130,10 @@ fn a_group_of_a_chains_memberships_holds_the_chain_in_the_class_of_its_kinds() {
             "if (!(_g_extensions_has_0x2 is CodecChainHasEnvelopeExtensionsHas0x2.Has0x2)) {\n",
             // A chain read that disagrees with the gate that selects the arm
             // is refused as a gate given where its predicate does not hold.
+            // The test that selects the arm proves the gated chain was read,
+            // so it is read with no assertion, which kotlinc calls needless.
             "if (_has_extensions_2) CodecChainHasEnvelopeExtensionsHas0x2.Has0x2(extensions = \
-             CodecChainHasEnvelopeExtensionsHas2Chain.of(extensions!!) ?: return \
+             CodecChainHasEnvelopeExtensionsHas2Chain.of(extensions) ?: return \
              Decoded.Refused(CodecError.PresentIfMismatch)",
             "extensions = extensions?.let { CodecChainHasEnvelopeExtensionsLacks2Chain.of(it) \
              ?: return Decoded.Refused(CodecError.PresentIfMismatch) }",
@@ -1243,7 +1245,7 @@ fn a_bare_entrys_arm_holds_the_others_and_the_named_entrys_place() {
             "if (_i == _p_extensions) {\n",
             "encodeSource(CodecChainHasMarkerExtensionsHas12Placed.named(), ",
             "CodecZenohExtEntryOverrides(header_Z = _i + 1 < _k_extensions))?.let { return it }\n",
-            "extensions = CodecChainHasMarkerExtensionsHas12Placed.placing(extensions!!) \
+            "extensions = CodecChainHasMarkerExtensionsHas12Placed.placing(extensions) \
              ?: return Decoded.Refused(CodecError.PresentIfMismatch)",
         ],
     );

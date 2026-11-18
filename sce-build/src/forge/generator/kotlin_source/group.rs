@@ -350,6 +350,10 @@ pub(super) fn declare(
     let mut chains: BTreeSet<String> = BTreeSet::new();
     for (i, arm) in group.arms.iter().enumerate() {
         let arm_class = group_arm_class(struct_name, group, arm);
+        // The decode makes every arm under the test of its gates but the
+        // last of a group the value always holds an arm of, which it makes
+        // where no test before it held.
+        let tested = !(i == group.arms.len() - 1 && group.absent.is_none());
         let mut params = Vec::new();
         let mut args = Vec::new();
         for id in &arm.fields {
@@ -368,11 +372,7 @@ pub(super) fn declare(
                     if chains.insert(placed.clone()) {
                         before.push_str(&placed_declaration(struct_name, chain, &placed, key));
                     }
-                    let read = if chain.field.present_if.is_some() {
-                        format!("{local}!!")
-                    } else {
-                        local
-                    };
+                    let read = decoded_chain(local, chain.field, tested && !holds.is_empty());
                     // A chain the gate says holds the bare entry, read without
                     // one of its kind, says two things of one frame.
                     params.push(format!("val {property}: {placed}"));
@@ -404,11 +404,7 @@ pub(super) fn declare(
                 } else {
                     // Where the arm says it holds a kind, the decode read it,
                     // as the gate that selects the arm says.
-                    let read = if chain.field.present_if.is_some() {
-                        format!("{local}!!")
-                    } else {
-                        local
-                    };
+                    let read = decoded_chain(local, chain.field, tested && !holds.is_empty());
                     params.push(if holds.is_empty() {
                         format!("val {property}: {kinds} = {kinds}.fewest()")
                     } else {
@@ -515,6 +511,21 @@ pub(super) fn declare(
         ty,
         default,
         made: decoded,
+    }
+}
+
+/// The chain `chain` the decode read into `local`, as an arm that holds it
+/// reads it: the local itself where it cannot be `null`, asserted present
+/// (`!!`) where a gate of its own may leave it unread. Where the arm is made
+/// under a test that the chain holds an entry of a kind (`proven`), that test
+/// is `local?.any { .. } ?: false` (`chain_has_decl_lines`), after which
+/// kotlinc knows the local is not `null`, and an assertion of it is a warning
+/// `-Werror` refuses.
+fn decoded_chain(local: String, chain: &CodecField, proven: bool) -> String {
+    if chain.present_if.is_some() && !proven {
+        format!("{local}!!")
+    } else {
+        local
     }
 }
 

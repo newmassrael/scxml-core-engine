@@ -334,7 +334,7 @@ data class CodecChainHasEnvelope(
             return Decoded.Ok(
                 CodecChainHasEnvelope(
                     header = header,
-                    extensions_has_0x2 = if (_has_extensions_2) CodecChainHasEnvelopeExtensionsHas0x2.Has0x2(extensions = CodecChainHasEnvelopeExtensionsHas2Chain.of(extensions!!) ?: return Decoded.Refused(CodecError.PresentIfMismatch), slices = CodecChainHasEnvelopeSlicesList.of(slices!!) ?: return Decoded.Refused(CodecError.TooManyElements)) else CodecChainHasEnvelopeExtensionsHas0x2.NotHas0x2(extensions = extensions?.let { CodecChainHasEnvelopeExtensionsLacks2Chain.of(it) ?: return Decoded.Refused(CodecError.PresentIfMismatch) }, payload = CodecChainHasEnvelopePayloadBytes.of(payload!!) ?: return Decoded.Refused(CodecError.LengthOutOfRange))
+                    extensions_has_0x2 = if (_has_extensions_2) CodecChainHasEnvelopeExtensionsHas0x2.Has0x2(extensions = CodecChainHasEnvelopeExtensionsHas2Chain.of(extensions) ?: return Decoded.Refused(CodecError.PresentIfMismatch), slices = CodecChainHasEnvelopeSlicesList.of(slices!!) ?: return Decoded.Refused(CodecError.TooManyElements)) else CodecChainHasEnvelopeExtensionsHas0x2.NotHas0x2(extensions = extensions?.let { CodecChainHasEnvelopeExtensionsLacks2Chain.of(it) ?: return Decoded.Refused(CodecError.PresentIfMismatch) }, payload = CodecChainHasEnvelopePayloadBytes.of(payload!!) ?: return Decoded.Refused(CodecError.LengthOutOfRange))
                 )
             )
         }
