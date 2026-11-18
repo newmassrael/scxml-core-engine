@@ -1,5 +1,5 @@
 // SCE-GENERATED — DO NOT EDIT
-// source-hash: 380120774f6558f75c02b77dfa951d04c7e39cb42d4bf17b1ff1c0ded2b8b8d1
+// source-hash: 2e14e61a19815f19d3d0dbb6fe1326691e48aee7d4809e1595ab8383fb1a9fb7
 // SCE-MAP: codec_cbor_map.scxml:12 :: _forge_body
 
 // SCE Forge: Auto-generated from Extended SCXML (sce:kind="codec" sce:encoding="cbor")
@@ -72,7 +72,7 @@ func decodeCodecCborMapAt(c *codec.SceCursor) (*CodecCborMap, error) {
 		case 0:
 			// A key given twice is not one map entry.
 			if idHeld.IsPresent() {
-				return nil, codec.ErrCborMalformed
+				return nil, codec.ErrCborDuplicateKey
 			}
 			v, err := codec.CborReadBytesExact(c, 16)
 			if err != nil {
@@ -82,7 +82,7 @@ func decodeCodecCborMapAt(c *codec.SceCursor) (*CodecCborMap, error) {
 		case 1:
 			// A key given twice is not one map entry.
 			if sourceHeld.IsPresent() {
-				return nil, codec.ErrCborMalformed
+				return nil, codec.ErrCborDuplicateKey
 			}
 			v, err := codec.CborReadText(c, 64)
 			if err != nil {
@@ -92,7 +92,7 @@ func decodeCodecCborMapAt(c *codec.SceCursor) (*CodecCborMap, error) {
 		case 3:
 			// A key given twice is not one map entry.
 			if patternHeld.IsPresent() {
-				return nil, codec.ErrCborMalformed
+				return nil, codec.ErrCborDuplicateKey
 			}
 			raw, err := codec.CborReadUintUpto(c, 255)
 			if err != nil {
@@ -103,7 +103,7 @@ func decodeCodecCborMapAt(c *codec.SceCursor) (*CodecCborMap, error) {
 		case 5:
 			// A key given twice is not one map entry.
 			if payloadHeld.IsPresent() {
-				return nil, codec.ErrCborMalformed
+				return nil, codec.ErrCborDuplicateKey
 			}
 			v, err := codec.CborReadBytes(c, 256)
 			if err != nil {
@@ -113,7 +113,7 @@ func decodeCodecCborMapAt(c *codec.SceCursor) (*CodecCborMap, error) {
 		case 7:
 			// A key given twice is not one map entry.
 			if urgentHeld.IsPresent() {
-				return nil, codec.ErrCborMalformed
+				return nil, codec.ErrCborDuplicateKey
 			}
 			v, err := codec.CborReadBool(c)
 			if err != nil {
@@ -123,7 +123,7 @@ func decodeCodecCborMapAt(c *codec.SceCursor) (*CodecCborMap, error) {
 		case 12:
 			// A key given twice is not one map entry.
 			if deadlineHeld.IsPresent() {
-				return nil, codec.ErrCborMalformed
+				return nil, codec.ErrCborDuplicateKey
 			}
 			raw, err := codec.CborReadUintUpto(c, 18446744073709551615)
 			if err != nil {

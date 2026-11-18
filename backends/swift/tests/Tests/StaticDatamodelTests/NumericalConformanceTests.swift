@@ -1,5 +1,5 @@
 // SCE-GENERATED — DO NOT EDIT
-// source-hash: 380120774f6558f75c02b77dfa951d04c7e39cb42d4bf17b1ff1c0ded2b8b8d1
+// source-hash: 2e14e61a19815f19d3d0dbb6fe1326691e48aee7d4809e1595ab8383fb1a9fb7
 
 // SPDX-License-Identifier: AGPL-3.0-only WITH AdditionRef-SCE-Linking-Exception OR LicenseRef-SCE-Commercial
 // SPDX-FileCopyrightText: Copyright (c) 2026 newmassrael
@@ -7394,7 +7394,7 @@ private func expectClose(_ actual: Double, _ expected: Double, _ label: String) 
     }
     do {
         var rejectCursor = SceCursor([166, 0, 80, 0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 1, 102, 110, 111, 100, 101, 45, 97, 3, 3, 5, 66, 222, 173, 7, 245, 7, 244])
-        #expect(throws: CodecError.cborMalformed, "codec_cbor_map reject 3: key 7 is given twice") {
+        #expect(throws: CodecError.cborDuplicateKey, "codec_cbor_map reject 3: key 7 is given twice") {
             try CodecCborMap.decode(&rejectCursor)
         }
         #expect(rejectCursor.remaining == 37, "codec_cbor_map reject 3: the refused decode moved the cursor")
@@ -7408,7 +7408,7 @@ private func expectClose(_ actual: Double, _ expected: Double, _ label: String) 
     }
     do {
         var rejectCursor = SceCursor([165, 0, 80, 0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 1, 102, 110, 111, 100, 101, 45, 97, 3, 3, 5, 66, 222, 173, 7, 97, 120])
-        #expect(throws: CodecError.cborMalformed, "codec_cbor_map reject 5: a text string where the urgent entry expects a truth value") {
+        #expect(throws: CodecError.cborWrongType, "codec_cbor_map reject 5: a text string where the urgent entry expects a truth value") {
             try CodecCborMap.decode(&rejectCursor)
         }
         #expect(rejectCursor.remaining == 36, "codec_cbor_map reject 5: the refused decode moved the cursor")

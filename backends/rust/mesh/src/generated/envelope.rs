@@ -1,5 +1,5 @@
 // SCE-GENERATED — DO NOT EDIT
-// source-hash: 687f4c0ae3532ecabd8fec6c87388a5c95d9c36571dc803cf9f1b82e7d19a7ab
+// source-hash: f01c184986658113c3d88b7783aaf923ed4e30d14575633fec8ae3793b107abd
 #![doc = "SCE-MAP: envelope.scxml:22 :: _forge_body"]
 // SCE-MAP: envelope.scxml:22 :: _forge_body
 
@@ -42,21 +42,21 @@ fn decode_record_causal_entry(
             "hi" => {
                 // A key given twice is not one map entry.
                 if held_hi.is_some() {
-                    return Err(CodecError::CborMalformed);
+                    return Err(CodecError::CborDuplicateKey);
                 }
                 held_hi = Some(cbor::read_uint(c)?);
             }
             "lo" => {
                 // A key given twice is not one map entry.
                 if held_lo.is_some() {
-                    return Err(CodecError::CborMalformed);
+                    return Err(CodecError::CborDuplicateKey);
                 }
                 held_lo = Some(cbor::read_uint(c)?);
             }
             "seq" => {
                 // A key given twice is not one map entry.
                 if held_seq.is_some() {
-                    return Err(CodecError::CborMalformed);
+                    return Err(CodecError::CborDuplicateKey);
                 }
                 held_seq = Some(cbor::read_uint(c)?);
             }
@@ -183,7 +183,7 @@ impl<'a> Envelope<'a> {
                 0 => {
                     // A key given twice is not one map entry.
                     if id.is_some() {
-                        return Err(CodecError::CborMalformed);
+                        return Err(CodecError::CborDuplicateKey);
                     }
                     id = Some(
                         ::sce_forge_runtime::codec::Bounded::new(cbor::read_bytes_exact(
@@ -195,7 +195,7 @@ impl<'a> Envelope<'a> {
                 1 => {
                     // A key given twice is not one map entry.
                     if source.is_some() {
-                        return Err(CodecError::CborMalformed);
+                        return Err(CodecError::CborDuplicateKey);
                     }
                     source = Some(
                         ::sce_forge_runtime::codec::Bounded::new(cbor::read_text(
@@ -208,7 +208,7 @@ impl<'a> Envelope<'a> {
                 2 => {
                     // A key given twice is not one map entry.
                     if event_type.is_some() {
-                        return Err(CodecError::CborMalformed);
+                        return Err(CodecError::CborDuplicateKey);
                     }
                     event_type = Some(
                         ::sce_forge_runtime::codec::Bounded::new(cbor::read_text(
@@ -221,7 +221,7 @@ impl<'a> Envelope<'a> {
                 3 => {
                     // A key given twice is not one map entry.
                     if pattern.is_some() {
-                        return Err(CodecError::CborMalformed);
+                        return Err(CodecError::CborDuplicateKey);
                     }
                     pattern = Some(
                         pattern_kind::PatternKind::from_underlying(
@@ -235,7 +235,7 @@ impl<'a> Envelope<'a> {
                 4 => {
                     // A key given twice is not one map entry.
                     if datacontenttype.is_some() {
-                        return Err(CodecError::CborMalformed);
+                        return Err(CodecError::CborDuplicateKey);
                     }
                     datacontenttype = Some(
                         payload_codec::PayloadCodec::from_underlying(
@@ -249,7 +249,7 @@ impl<'a> Envelope<'a> {
                 5 => {
                     // A key given twice is not one map entry.
                     if data.is_some() {
-                        return Err(CodecError::CborMalformed);
+                        return Err(CodecError::CborDuplicateKey);
                     }
                     data = Some(
                         ::sce_forge_runtime::codec::Bounded::new(cbor::read_bytes(
@@ -262,7 +262,7 @@ impl<'a> Envelope<'a> {
                 6 => {
                     // A key given twice is not one map entry.
                     if subject.is_some() {
-                        return Err(CodecError::CborMalformed);
+                        return Err(CodecError::CborDuplicateKey);
                     }
                     subject = Some(
                         ::sce_forge_runtime::codec::Bounded::new(cbor::read_text(
@@ -275,7 +275,7 @@ impl<'a> Envelope<'a> {
                 7 => {
                     // A key given twice is not one map entry.
                     if correlation_id.is_some() {
-                        return Err(CodecError::CborMalformed);
+                        return Err(CodecError::CborDuplicateKey);
                     }
                     correlation_id = Some(
                         ::sce_forge_runtime::codec::Bounded::new(cbor::read_bytes_exact(
@@ -287,7 +287,7 @@ impl<'a> Envelope<'a> {
                 8 => {
                     // A key given twice is not one map entry.
                     if reply_to.is_some() {
-                        return Err(CodecError::CborMalformed);
+                        return Err(CodecError::CborDuplicateKey);
                     }
                     reply_to = Some(
                         ::sce_forge_runtime::codec::Bounded::new(cbor::read_text(
@@ -300,7 +300,7 @@ impl<'a> Envelope<'a> {
                 9 => {
                     // A key given twice is not one map entry.
                     if invoke_id.is_some() {
-                        return Err(CodecError::CborMalformed);
+                        return Err(CodecError::CborDuplicateKey);
                     }
                     invoke_id = Some(
                         ::sce_forge_runtime::codec::Bounded::new(cbor::read_bytes_exact(
@@ -312,7 +312,7 @@ impl<'a> Envelope<'a> {
                 10 => {
                     // A key given twice is not one map entry.
                     if rpc_status.is_some() {
-                        return Err(CodecError::CborMalformed);
+                        return Err(CodecError::CborDuplicateKey);
                     }
                     rpc_status = Some(
                         rpc_status::RpcStatus::from_underlying(
@@ -326,7 +326,7 @@ impl<'a> Envelope<'a> {
                 11 => {
                     // A key given twice is not one map entry.
                     if rpc_error_message.is_some() {
-                        return Err(CodecError::CborMalformed);
+                        return Err(CodecError::CborDuplicateKey);
                     }
                     rpc_error_message = Some(
                         ::sce_forge_runtime::codec::Bounded::new(cbor::read_text(
@@ -339,21 +339,21 @@ impl<'a> Envelope<'a> {
                 12 => {
                     // A key given twice is not one map entry.
                     if deadline_unix_ms.is_some() {
-                        return Err(CodecError::CborMalformed);
+                        return Err(CodecError::CborDuplicateKey);
                     }
                     deadline_unix_ms = Some(cbor::read_uint(&mut c)?);
                 }
                 14 => {
                     // A key given twice is not one map entry.
                     if sequence_no.is_some() {
-                        return Err(CodecError::CborMalformed);
+                        return Err(CodecError::CborDuplicateKey);
                     }
                     sequence_no = Some(cbor::read_uint(&mut c)?);
                 }
                 15 => {
                     // A key given twice is not one map entry.
                     if routing_id.is_some() {
-                        return Err(CodecError::CborMalformed);
+                        return Err(CodecError::CborDuplicateKey);
                     }
                     routing_id = Some(
                         ::sce_forge_runtime::codec::Bounded::new(cbor::read_bytes_exact(
@@ -365,7 +365,7 @@ impl<'a> Envelope<'a> {
                 16 => {
                     // A key given twice is not one map entry.
                     if parallel_id.is_some() {
-                        return Err(CodecError::CborMalformed);
+                        return Err(CodecError::CborDuplicateKey);
                     }
                     parallel_id = Some(
                         ::sce_forge_runtime::codec::Bounded::new(cbor::read_text(
@@ -378,7 +378,7 @@ impl<'a> Envelope<'a> {
                 17 => {
                     // A key given twice is not one map entry.
                     if region_id.is_some() {
-                        return Err(CodecError::CborMalformed);
+                        return Err(CodecError::CborDuplicateKey);
                     }
                     region_id = Some(
                         ::sce_forge_runtime::codec::Bounded::new(cbor::read_text(
@@ -391,7 +391,7 @@ impl<'a> Envelope<'a> {
                 18 => {
                     // A key given twice is not one map entry.
                     if child_session_id.is_some() {
-                        return Err(CodecError::CborMalformed);
+                        return Err(CodecError::CborDuplicateKey);
                     }
                     child_session_id = Some(
                         ::sce_forge_runtime::codec::Bounded::new(cbor::read_text(
@@ -404,14 +404,14 @@ impl<'a> Envelope<'a> {
                 19 => {
                     // A key given twice is not one map entry.
                     if causal_epoch.is_some() {
-                        return Err(CodecError::CborMalformed);
+                        return Err(CodecError::CborDuplicateKey);
                     }
                     causal_epoch = Some(cbor::read_uint(&mut c)?);
                 }
                 20 => {
                     // A key given twice is not one map entry.
                     if causal_vector.is_some() {
-                        return Err(CodecError::CborMalformed);
+                        return Err(CodecError::CborDuplicateKey);
                     }
                     causal_vector = Some({
                         // A definite-length array within the list's counts,

@@ -1,5 +1,5 @@
 // SCE-GENERATED — DO NOT EDIT
-// source-hash: 687f4c0ae3532ecabd8fec6c87388a5c95d9c36571dc803cf9f1b82e7d19a7ab
+// source-hash: f01c184986658113c3d88b7783aaf923ed4e30d14575633fec8ae3793b107abd
 // SCE-MAP: envelope.scxml:22 :: _forge_body
 
 // SCE Forge: Auto-generated from Extended SCXML (sce:kind="codec" sce:encoding="cbor")
@@ -700,7 +700,7 @@ struct Records {
 
     /// Read one record of `causal_entry` from `c`: its keys in any order, a key the
     /// schema does not declare skipped whole; a key given twice is
-    /// `CborMalformed` and a field missing `CborRequiredKeyMissing`.
+    /// `CborDuplicateKey` and a field missing `CborRequiredKeyMissing`.
     static ::SCE::Forge::Decoded<SCE::Generated::CausalEntry::CausalEntryPayload>
     decode_record_causal_entry(::SCE::Forge::SceCursor &c) {
         namespace cbor = ::SCE::Forge::Cbor;
@@ -719,7 +719,7 @@ struct Records {
             if (*key == "hi") {
                 // A key given twice is not one map entry.
                 if (held_hi.has_value()) {
-                    return ::SCE::Forge::CodecError::CborMalformed;
+                    return ::SCE::Forge::CodecError::CborDuplicateKey;
                 }
                 auto read = cbor::read_uint(c);
                 if (!read) {
@@ -729,7 +729,7 @@ struct Records {
             } else if (*key == "lo") {
                 // A key given twice is not one map entry.
                 if (held_lo.has_value()) {
-                    return ::SCE::Forge::CodecError::CborMalformed;
+                    return ::SCE::Forge::CodecError::CborDuplicateKey;
                 }
                 auto read = cbor::read_uint(c);
                 if (!read) {
@@ -739,7 +739,7 @@ struct Records {
             } else if (*key == "seq") {
                 // A key given twice is not one map entry.
                 if (held_seq.has_value()) {
-                    return ::SCE::Forge::CodecError::CborMalformed;
+                    return ::SCE::Forge::CodecError::CborDuplicateKey;
                 }
                 auto read = cbor::read_uint(c);
                 if (!read) {
@@ -1281,7 +1281,7 @@ private:
             case 0: {
                 // A key given twice is not one map entry.
                 if (id.has_value()) {
-                    return ::SCE::Forge::CodecError::CborMalformed;
+                    return ::SCE::Forge::CodecError::CborDuplicateKey;
                 }
                 auto v = cbor::read_bytes_exact(c, 16);
                 if (!v) {
@@ -1293,7 +1293,7 @@ private:
             case 1: {
                 // A key given twice is not one map entry.
                 if (source.has_value()) {
-                    return ::SCE::Forge::CodecError::CborMalformed;
+                    return ::SCE::Forge::CodecError::CborDuplicateKey;
                 }
                 auto v = cbor::read_text(c, 262144);
                 if (!v) {
@@ -1305,7 +1305,7 @@ private:
             case 2: {
                 // A key given twice is not one map entry.
                 if (event_type.has_value()) {
-                    return ::SCE::Forge::CodecError::CborMalformed;
+                    return ::SCE::Forge::CodecError::CborDuplicateKey;
                 }
                 auto v = cbor::read_text(c, 262144);
                 if (!v) {
@@ -1317,7 +1317,7 @@ private:
             case 3: {
                 // A key given twice is not one map entry.
                 if (pattern.has_value()) {
-                    return ::SCE::Forge::CodecError::CborMalformed;
+                    return ::SCE::Forge::CodecError::CborDuplicateKey;
                 }
                 const auto raw =
                     cbor::read_uint_upto(c, static_cast<std::uint64_t>(std::numeric_limits<uint16_t>::max()));
@@ -1334,7 +1334,7 @@ private:
             case 4: {
                 // A key given twice is not one map entry.
                 if (datacontenttype.has_value()) {
-                    return ::SCE::Forge::CodecError::CborMalformed;
+                    return ::SCE::Forge::CodecError::CborDuplicateKey;
                 }
                 const auto raw =
                     cbor::read_uint_upto(c, static_cast<std::uint64_t>(std::numeric_limits<uint8_t>::max()));
@@ -1351,7 +1351,7 @@ private:
             case 5: {
                 // A key given twice is not one map entry.
                 if (data.has_value()) {
-                    return ::SCE::Forge::CodecError::CborMalformed;
+                    return ::SCE::Forge::CodecError::CborDuplicateKey;
                 }
                 auto v = cbor::read_bytes(c, 16777216);
                 if (!v) {
@@ -1363,7 +1363,7 @@ private:
             case 6: {
                 // A key given twice is not one map entry.
                 if (subject.has_value()) {
-                    return ::SCE::Forge::CodecError::CborMalformed;
+                    return ::SCE::Forge::CodecError::CborDuplicateKey;
                 }
                 auto v = cbor::read_text(c, 262144);
                 if (!v) {
@@ -1375,7 +1375,7 @@ private:
             case 7: {
                 // A key given twice is not one map entry.
                 if (correlation_id.has_value()) {
-                    return ::SCE::Forge::CodecError::CborMalformed;
+                    return ::SCE::Forge::CodecError::CborDuplicateKey;
                 }
                 auto v = cbor::read_bytes_exact(c, 16);
                 if (!v) {
@@ -1387,7 +1387,7 @@ private:
             case 8: {
                 // A key given twice is not one map entry.
                 if (reply_to.has_value()) {
-                    return ::SCE::Forge::CodecError::CborMalformed;
+                    return ::SCE::Forge::CodecError::CborDuplicateKey;
                 }
                 auto v = cbor::read_text(c, 262144);
                 if (!v) {
@@ -1399,7 +1399,7 @@ private:
             case 9: {
                 // A key given twice is not one map entry.
                 if (invoke_id.has_value()) {
-                    return ::SCE::Forge::CodecError::CborMalformed;
+                    return ::SCE::Forge::CodecError::CborDuplicateKey;
                 }
                 auto v = cbor::read_bytes_exact(c, 16);
                 if (!v) {
@@ -1411,7 +1411,7 @@ private:
             case 10: {
                 // A key given twice is not one map entry.
                 if (rpc_status.has_value()) {
-                    return ::SCE::Forge::CodecError::CborMalformed;
+                    return ::SCE::Forge::CodecError::CborDuplicateKey;
                 }
                 const auto raw =
                     cbor::read_uint_upto(c, static_cast<std::uint64_t>(std::numeric_limits<uint8_t>::max()));
@@ -1428,7 +1428,7 @@ private:
             case 11: {
                 // A key given twice is not one map entry.
                 if (rpc_error_message.has_value()) {
-                    return ::SCE::Forge::CodecError::CborMalformed;
+                    return ::SCE::Forge::CodecError::CborDuplicateKey;
                 }
                 auto v = cbor::read_text(c, 262144);
                 if (!v) {
@@ -1440,7 +1440,7 @@ private:
             case 12: {
                 // A key given twice is not one map entry.
                 if (deadline_unix_ms.has_value()) {
-                    return ::SCE::Forge::CodecError::CborMalformed;
+                    return ::SCE::Forge::CodecError::CborDuplicateKey;
                 }
                 auto v = cbor::read_uint(c);
                 if (!v) {
@@ -1452,7 +1452,7 @@ private:
             case 14: {
                 // A key given twice is not one map entry.
                 if (sequence_no.has_value()) {
-                    return ::SCE::Forge::CodecError::CborMalformed;
+                    return ::SCE::Forge::CodecError::CborDuplicateKey;
                 }
                 auto v = cbor::read_uint(c);
                 if (!v) {
@@ -1464,7 +1464,7 @@ private:
             case 15: {
                 // A key given twice is not one map entry.
                 if (routing_id.has_value()) {
-                    return ::SCE::Forge::CodecError::CborMalformed;
+                    return ::SCE::Forge::CodecError::CborDuplicateKey;
                 }
                 auto v = cbor::read_bytes_exact(c, 16);
                 if (!v) {
@@ -1476,7 +1476,7 @@ private:
             case 16: {
                 // A key given twice is not one map entry.
                 if (parallel_id.has_value()) {
-                    return ::SCE::Forge::CodecError::CborMalformed;
+                    return ::SCE::Forge::CodecError::CborDuplicateKey;
                 }
                 auto v = cbor::read_text(c, 262144);
                 if (!v) {
@@ -1488,7 +1488,7 @@ private:
             case 17: {
                 // A key given twice is not one map entry.
                 if (region_id.has_value()) {
-                    return ::SCE::Forge::CodecError::CborMalformed;
+                    return ::SCE::Forge::CodecError::CborDuplicateKey;
                 }
                 auto v = cbor::read_text(c, 262144);
                 if (!v) {
@@ -1500,7 +1500,7 @@ private:
             case 18: {
                 // A key given twice is not one map entry.
                 if (child_session_id.has_value()) {
-                    return ::SCE::Forge::CodecError::CborMalformed;
+                    return ::SCE::Forge::CodecError::CborDuplicateKey;
                 }
                 auto v = cbor::read_text(c, 262144);
                 if (!v) {
@@ -1512,7 +1512,7 @@ private:
             case 19: {
                 // A key given twice is not one map entry.
                 if (causal_epoch.has_value()) {
-                    return ::SCE::Forge::CodecError::CborMalformed;
+                    return ::SCE::Forge::CodecError::CborDuplicateKey;
                 }
                 auto v = cbor::read_uint(c);
                 if (!v) {
@@ -1524,7 +1524,7 @@ private:
             case 20: {
                 // A key given twice is not one map entry.
                 if (causal_vector.has_value()) {
-                    return ::SCE::Forge::CodecError::CborMalformed;
+                    return ::SCE::Forge::CodecError::CborDuplicateKey;
                 }
                 const auto _len = cbor::read_array_len(c);
                 if (!_len) {

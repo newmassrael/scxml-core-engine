@@ -1,5 +1,5 @@
 // SCE-GENERATED — DO NOT EDIT
-// source-hash: 6b5d890c575112121a207dfa35803ec81843970cae352a3d25af343d18ffc848
+// source-hash: 228574de0bc19d5365ce601baf2f5ab947df25fe447cdc72ac9bd281728c1abf
 // SCE-MAP: envelope.scxml:22 :: _forge_body
 
 // SCE Forge: Auto-generated from Extended SCXML (sce:kind="codec" sce:encoding="cbor")
@@ -100,8 +100,9 @@ public struct Envelope: Equatable, Sendable {
 
     /// Decodes one map at the cursor and moves the cursor past it. The map is read through a copy of
     /// the cursor, which replaces it only when the whole map was read: a map that is short answers
-    /// `needMoreBytes`, one that is not a map this codec reads `cborMalformed`, and either leaves the
-    /// cursor where it was.
+    /// `needMoreBytes`, one that is not a map this codec reads the kind that refused it
+    /// (`cborMalformed`, `cborWrongType`, `cborDuplicateKey`, ...), and either leaves the cursor where
+    /// it was.
     public static func decode(_ cursor: inout SceCursor) throws(CodecError) -> Envelope {
         var reader = cursor
         let count = try Cbor.readMapLen(&reader)
@@ -131,19 +132,19 @@ public struct Envelope: Equatable, Sendable {
             switch try Cbor.readUint(&reader) {
             case 0:
                 // A key given twice is not one map entry.
-                if id_held != nil { throw CodecError.cborMalformed }
+                if id_held != nil { throw CodecError.cborDuplicateKey }
                 id_held = try Cbor.readBytesExact(&reader, length: 16)
             case 1:
                 // A key given twice is not one map entry.
-                if source_held != nil { throw CodecError.cborMalformed }
+                if source_held != nil { throw CodecError.cborDuplicateKey }
                 source_held = try Cbor.readText(&reader, maxSize: 262144)
             case 2:
                 // A key given twice is not one map entry.
-                if event_type_held != nil { throw CodecError.cborMalformed }
+                if event_type_held != nil { throw CodecError.cborDuplicateKey }
                 event_type_held = try Cbor.readText(&reader, maxSize: 262144)
             case 3:
                 // A key given twice is not one map entry.
-                if pattern_held != nil { throw CodecError.cborMalformed }
+                if pattern_held != nil { throw CodecError.cborDuplicateKey }
                 // A closed enum holds only the numbers it declares.
                 guard let declared = PatternKind.fromUnderlying(UInt16(truncatingIfNeeded: try Cbor.readUintUpto(&reader, 65535))) else {
                     throw CodecError.cborOutOfRange
@@ -151,7 +152,7 @@ public struct Envelope: Equatable, Sendable {
                 pattern_held = declared
             case 4:
                 // A key given twice is not one map entry.
-                if datacontenttype_held != nil { throw CodecError.cborMalformed }
+                if datacontenttype_held != nil { throw CodecError.cborDuplicateKey }
                 // A closed enum holds only the numbers it declares.
                 guard let declared = PayloadCodec.fromUnderlying(UInt8(truncatingIfNeeded: try Cbor.readUintUpto(&reader, 255))) else {
                     throw CodecError.cborOutOfRange
@@ -159,27 +160,27 @@ public struct Envelope: Equatable, Sendable {
                 datacontenttype_held = declared
             case 5:
                 // A key given twice is not one map entry.
-                if data_held != nil { throw CodecError.cborMalformed }
+                if data_held != nil { throw CodecError.cborDuplicateKey }
                 data_held = try Cbor.readBytes(&reader, maxSize: 16777216)
             case 6:
                 // A key given twice is not one map entry.
-                if subject_held != nil { throw CodecError.cborMalformed }
+                if subject_held != nil { throw CodecError.cborDuplicateKey }
                 subject_held = try Cbor.readText(&reader, maxSize: 262144)
             case 7:
                 // A key given twice is not one map entry.
-                if correlation_id_held != nil { throw CodecError.cborMalformed }
+                if correlation_id_held != nil { throw CodecError.cborDuplicateKey }
                 correlation_id_held = try Cbor.readBytesExact(&reader, length: 16)
             case 8:
                 // A key given twice is not one map entry.
-                if reply_to_held != nil { throw CodecError.cborMalformed }
+                if reply_to_held != nil { throw CodecError.cborDuplicateKey }
                 reply_to_held = try Cbor.readText(&reader, maxSize: 262144)
             case 9:
                 // A key given twice is not one map entry.
-                if invoke_id_held != nil { throw CodecError.cborMalformed }
+                if invoke_id_held != nil { throw CodecError.cborDuplicateKey }
                 invoke_id_held = try Cbor.readBytesExact(&reader, length: 16)
             case 10:
                 // A key given twice is not one map entry.
-                if rpc_status_held != nil { throw CodecError.cborMalformed }
+                if rpc_status_held != nil { throw CodecError.cborDuplicateKey }
                 // A closed enum holds only the numbers it declares.
                 guard let declared = RpcStatus.fromUnderlying(UInt8(truncatingIfNeeded: try Cbor.readUintUpto(&reader, 255))) else {
                     throw CodecError.cborOutOfRange
@@ -187,39 +188,39 @@ public struct Envelope: Equatable, Sendable {
                 rpc_status_held = declared
             case 11:
                 // A key given twice is not one map entry.
-                if rpc_error_message_held != nil { throw CodecError.cborMalformed }
+                if rpc_error_message_held != nil { throw CodecError.cborDuplicateKey }
                 rpc_error_message_held = try Cbor.readText(&reader, maxSize: 262144)
             case 12:
                 // A key given twice is not one map entry.
-                if deadline_unix_ms_held != nil { throw CodecError.cborMalformed }
+                if deadline_unix_ms_held != nil { throw CodecError.cborDuplicateKey }
                 deadline_unix_ms_held = UInt64(truncatingIfNeeded: try Cbor.readUintUpto(&reader, 18446744073709551615))
             case 14:
                 // A key given twice is not one map entry.
-                if sequence_no_held != nil { throw CodecError.cborMalformed }
+                if sequence_no_held != nil { throw CodecError.cborDuplicateKey }
                 sequence_no_held = UInt64(truncatingIfNeeded: try Cbor.readUintUpto(&reader, 18446744073709551615))
             case 15:
                 // A key given twice is not one map entry.
-                if routing_id_held != nil { throw CodecError.cborMalformed }
+                if routing_id_held != nil { throw CodecError.cborDuplicateKey }
                 routing_id_held = try Cbor.readBytesExact(&reader, length: 16)
             case 16:
                 // A key given twice is not one map entry.
-                if parallel_id_held != nil { throw CodecError.cborMalformed }
+                if parallel_id_held != nil { throw CodecError.cborDuplicateKey }
                 parallel_id_held = try Cbor.readText(&reader, maxSize: 262144)
             case 17:
                 // A key given twice is not one map entry.
-                if region_id_held != nil { throw CodecError.cborMalformed }
+                if region_id_held != nil { throw CodecError.cborDuplicateKey }
                 region_id_held = try Cbor.readText(&reader, maxSize: 262144)
             case 18:
                 // A key given twice is not one map entry.
-                if child_session_id_held != nil { throw CodecError.cborMalformed }
+                if child_session_id_held != nil { throw CodecError.cborDuplicateKey }
                 child_session_id_held = try Cbor.readText(&reader, maxSize: 262144)
             case 19:
                 // A key given twice is not one map entry.
-                if causal_epoch_held != nil { throw CodecError.cborMalformed }
+                if causal_epoch_held != nil { throw CodecError.cborDuplicateKey }
                 causal_epoch_held = UInt64(truncatingIfNeeded: try Cbor.readUintUpto(&reader, 18446744073709551615))
             case 20:
                 // A key given twice is not one map entry.
-                if causal_vector_held != nil { throw CodecError.cborMalformed }
+                if causal_vector_held != nil { throw CodecError.cborDuplicateKey }
                 // A definite-length array within the list's counts, each item one record's map.
                 let len = try Cbor.readArrayLen(&reader)
                 if len > 64 { throw CodecError.cborOutOfRange }
@@ -397,7 +398,7 @@ public struct Envelope: Equatable, Sendable {
     /// holds it (docs/adr/0085, Landing order step 3a), into the payload type the schema's own unit
     /// declares: one CBOR map of every field, each under its id as text (docs/adr/0086, section 9.2). Its
     /// keys in any order, a key the schema does not declare skipped whole; a key given twice is
-    /// `cborMalformed`, a field missing `cborRequiredKeyMissing`, a text or byte string past its bound
+    /// `cborDuplicateKey`, a field missing `cborRequiredKeyMissing`, a text or byte string past its bound
     /// `cborOutOfRange`.
     private static func decodeRecordCausalEntry(_ reader: inout SceCursor) throws(CodecError) -> CausalEntryPayload {
         let count = try Cbor.readMapLen(&reader)
@@ -410,15 +411,15 @@ public struct Envelope: Equatable, Sendable {
             switch try Cbor.readText(&reader, maxSize: nil) {
             case "hi":
                 // A key given twice is not one map entry.
-                if hi_held != nil { throw CodecError.cborMalformed }
+                if hi_held != nil { throw CodecError.cborDuplicateKey }
                 hi_held = try Cbor.readUint(&reader)
             case "lo":
                 // A key given twice is not one map entry.
-                if lo_held != nil { throw CodecError.cborMalformed }
+                if lo_held != nil { throw CodecError.cborDuplicateKey }
                 lo_held = try Cbor.readUint(&reader)
             case "seq":
                 // A key given twice is not one map entry.
-                if seq_held != nil { throw CodecError.cborMalformed }
+                if seq_held != nil { throw CodecError.cborDuplicateKey }
                 seq_held = try Cbor.readUint(&reader)
             default:
                 try Cbor.skip(&reader)

@@ -28,8 +28,9 @@ public struct CodecCborOpenEnum: Equatable, Sendable {
 
     /// Decodes one map at the cursor and moves the cursor past it. The map is read through a copy of
     /// the cursor, which replaces it only when the whole map was read: a map that is short answers
-    /// `needMoreBytes`, one that is not a map this codec reads `cborMalformed`, and either leaves the
-    /// cursor where it was.
+    /// `needMoreBytes`, one that is not a map this codec reads the kind that refused it
+    /// (`cborMalformed`, `cborWrongType`, `cborDuplicateKey`, ...), and either leaves the cursor where
+    /// it was.
     public static func decode(_ cursor: inout SceCursor) throws(CodecError) -> CodecCborOpenEnum {
         var reader = cursor
         let count = try Cbor.readMapLen(&reader)
@@ -41,12 +42,12 @@ public struct CodecCborOpenEnum: Equatable, Sendable {
             switch try Cbor.readUint(&reader) {
             case 1:
                 // A key given twice is not one map entry.
-                if status_held != nil { throw CodecError.cborMalformed }
+                if status_held != nil { throw CodecError.cborDuplicateKey }
                 // An open enum holds any number its carrier does, so every number is a value.
                 status_held = EnumUdsNrc.fromUnderlying(UInt8(truncatingIfNeeded: try Cbor.readUintUpto(&reader, 255)))
             case 2:
                 // A key given twice is not one map entry.
-                if detail_held != nil { throw CodecError.cborMalformed }
+                if detail_held != nil { throw CodecError.cborDuplicateKey }
                 // An open enum holds any number its carrier does, so every number is a value.
                 detail_held = EnumUdsNrc.fromUnderlying(UInt8(truncatingIfNeeded: try Cbor.readUintUpto(&reader, 255)))
             default:
