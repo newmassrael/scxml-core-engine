@@ -18381,19 +18381,20 @@ fn a_masked_identifier_finds_the_marker_on_every_runnable_backend() {
 
 // ── A value past its bound: what the generated encode DOES ─────────────────
 //
-// Go and Kotlin hold a byte string and a list in a container any length fits,
-// so their encode refuses a value outside the field's bound before its first
-// byte, with the error a decode of that frame gives (docs/adr/0077 §3), and
-// their convenience facade answers no frame. A C++ codec printed from its plan
+// Kotlin, and a Go codec on the template's encode, hold a byte string and a
+// list in a container any length fits, so their encode refuses a value outside
+// the field's bound before its first byte, with the error a decode of that
+// frame gives (docs/adr/0077 §3), and their convenience facade answers no
+// frame. A C++ codec printed from its plan
 // presents a byte string as `Bytes<MAX>` and a list as `List<T, MAX>`, which
 // hold the bound, so such a value cannot be made and its encode refuses
 // nothing (docs/adr/0081 step 4). A printed Python codec holds them as
 // `BoundedBytes` and `BoundedTuple`, which refuse the value where it is made
 // with the same error, and derives the length and the count it writes. A Go
-// codec printed from its plan presents a byte string as `codec.Bytes` of its
-// bound, which `codec.MakeBytes` makes only within it, so it refuses there and
-// the encode does not; its list is still the template's, refused at the
-// encode. Rust cannot be handed such a value either
+// codec printed from its plan presents a byte string as `codec.Bytes` and a
+// list as `codec.List` of its bound, which `codec.MakeBytes` and
+// `codec.MakeList` make only within it, so they refuse there and the encode
+// does not. Rust cannot be handed such a value either
 // (its types hold the bounds), and C11 is held by `codec_encode_bound_test.c`.
 // `codec_length_ref` holds at most 32 bytes and `codec_repeat_basic` at most
 // 32 two-byte entries.
@@ -18459,13 +18460,27 @@ func TestAValuePastItsBoundIsRefusedBeforeItsFirstByte(t *testing.T) {{
 	if got := at.EncodeToBytes(); !bytes.Equal(got, append([]byte{{1, 32}}, make([]byte, 32)...)) {{
 		t.Fatalf("32 bytes at the bound encode, their length derived: %v", got)
 	}}
-	many := repeat.CodecRepeatBasic{{NumFrags: 33, Frags: make([]elem.CodecRepeatElem, 33)}}
-	if _, err := many.EncodeToBytes(); !errors.Is(err, codec.ErrTooManyElements) {{
+	// The list is printed from its plan too: it is a codec.List of sources of
+	// its entries' codec, held to its bound as a type, made only within it,
+	// and its count is derived.
+	entries := func(n int) []elem.CodecRepeatElemSource {{
+		sources := make([]elem.CodecRepeatElemSource, n)
+		for i := range sources {{
+			entry := elem.MakeCodecRepeatElem(uint16(i))
+			sources[i] = &entry
+		}}
+		return sources
+	}}
+	if _, err := codec.MakeList[repeat.CodecRepeatBasicFragsBound](entries(33)); !errors.Is(err, codec.ErrTooManyElements) {{
 		t.Fatalf("33 entries past a bound of 32: error %v, want codec.ErrTooManyElements", err)
 	}}
-	full := repeat.CodecRepeatBasic{{NumFrags: 32, Frags: make([]elem.CodecRepeatElem, 32)}}
-	if got, err := full.EncodeToBytes(); err != nil || len(got) != 1+32*2 {{
-		t.Fatalf("32 entries at the bound: %d bytes, %v", len(got), err)
+	frags, err := codec.MakeList[repeat.CodecRepeatBasicFragsBound](entries(32))
+	if err != nil {{
+		t.Fatalf("32 entries at the bound are made: %v", err)
+	}}
+	full := repeat.MakeCodecRepeatBasic(frags)
+	if got := full.EncodeToBytes(); len(got) != 1+32*2 || got[0] != 32 {{
+		t.Fatalf("32 entries at the bound encode, their count derived: %v", got)
 	}}
 }}
 "#
@@ -18606,7 +18621,9 @@ func TestATailPastItsBoundIsRefused(t *testing.T) {{
 	}}
 	at := codec.NewSceCursor([]byte{{0, 1, 2}})
 	v, err := gated.DecodeCodecDeclaredBoundsGated(&at)
-	if err != nil || !bytes.Equal(v.Rest, []byte{{1, 2}}) {{
+	// The codec is printed from its plan (docs/adr/0081 step 4): its tail is
+	// a codec.Bytes of its bound, read through its method.
+	if err != nil || !bytes.Equal(v.Rest().Bytes(), []byte{{1, 2}}) {{
 		t.Fatalf("two bytes at the bound: error %v value %+v", err, v)
 	}}
 }}
