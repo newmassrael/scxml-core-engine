@@ -13,6 +13,10 @@
 //! What the machine sends a client reaches the mailbox through [`MailboxTransport`], the
 //! transport the host builds its endpoint on. A full mailbox refuses the envelope as a full queue
 //! ([`TransportFailure::queue_full`]), which the core raises as SCE_MESH.md section 16.7 row 9.
+//!
+//! The mailboxes of one server number in one incarnation, drawn when the server starts with its
+//! mailboxes empty and named on every `200` (`Sce-Mesh-Epoch`), so that a client tells a mailbox
+//! that numbers anew from one it knows.
 
 use alloc::collections::VecDeque;
 use alloc::string::{String, ToString};
@@ -37,8 +41,9 @@ use tokio::net::TcpListener;
 use tokio::sync::Notify;
 
 use super::{
-    decode_install_secret, install_digest, is_path_segment, split_sequence, LinkEvent, ACK_HEADER,
-    BEARER_SCHEME, CONTENT_TYPE, FIRST_HEADER, HOLD_HEADER, INSTALL_SCHEME, PATH_ROOT, VERSION,
+    decode_install_secret, draw_epoch, install_digest, is_epoch, is_path_segment, split_sequence,
+    LinkEvent, ACK_HEADER, BEARER_SCHEME, CONTENT_TYPE, EPOCH_HEADER, FIRST_HEADER, HOLD_HEADER,
+    INSTALL_SCHEME, PATH_ROOT, VERSION,
 };
 use crate::endpoint::{Transport, TransportFailure};
 use crate::peers::{HttpsAuthenticator, Machine, PeerLink};
@@ -225,9 +230,6 @@ struct Client {
     entries: VecDeque<(u64, Vec<u8>)>,
     /// The number the next envelope gets; the first is 1.
     next: u64,
-    /// Whether the server has answered an exchange of this client since it started. The first
-    /// exchange's acknowledgement names a mailbox of an earlier run, and is not read.
-    answered: bool,
     ready: bool,
     in_flight: usize,
     last_seen: Instant,
@@ -239,7 +241,6 @@ impl Client {
         Client {
             entries: VecDeque::new(),
             next: 1,
-            answered: false,
             ready: false,
             in_flight: 0,
             last_seen: Instant::now(),
@@ -247,10 +248,12 @@ impl Client {
         }
     }
 
-    /// Drop what `ack` acknowledges (section 22.3). The first exchange's acknowledgement, and one
-    /// above any number this mailbox gave, name a mailbox of an earlier run and drop nothing.
-    fn acknowledge(&mut self, ack: u64) {
-        if !self.answered || ack >= self.next {
+    /// Drop what `ack` acknowledges (section 22.3), when `epoch`, the incarnation the request says
+    /// its acknowledgement counts in, is `current`, the incarnation this mailbox numbers in. An
+    /// acknowledgement of another incarnation, or of none, counts in a numbering this mailbox
+    /// does not hold, and drops nothing.
+    fn acknowledge(&mut self, ack: u64, epoch: Option<&str>, current: &str) {
+        if epoch != Some(current) {
             return;
         }
         while self
@@ -266,6 +269,9 @@ impl Client {
 /// Every client's mailbox, shared by the server and the transport the endpoint sends through.
 struct Mailboxes {
     capacity: usize,
+    /// The incarnation every mailbox here numbers in (section 22.3): drawn when the server started
+    /// with its mailboxes empty, and named on every `200`.
+    epoch: String,
     clients: Mutex<HashMap<String, Client>>,
 }
 
@@ -319,18 +325,21 @@ pub struct HttpsServer {
 
 impl HttpsServer {
     /// A server with `settings`, letting a client in by `authenticator` when `is_bound` names it
-    /// (the machine has a binding to it), and telling `host` what happens.
+    /// (the machine has a binding to it), and telling `host` what happens. Its mailboxes start
+    /// empty, in an incarnation drawn from the operating system's random source; refused when the
+    /// source could not be read.
     pub fn new(
         settings: ServerSettings,
         authenticator: Authenticator,
         is_bound: impl Fn(&str) -> bool + Send + Sync + 'static,
         host: impl ServerHost,
-    ) -> Self {
+    ) -> Result<Self, crate::tls::Error> {
         let mailboxes = Arc::new(Mailboxes {
             capacity: settings.mailbox,
+            epoch: draw_epoch()?,
             clients: Mutex::new(HashMap::new()),
         });
-        HttpsServer {
+        Ok(HttpsServer {
             shared: Arc::new(Shared {
                 settings,
                 authenticator,
@@ -340,7 +349,7 @@ impl HttpsServer {
                 telling: tokio::sync::Mutex::new(()),
                 exchanges: AtomicUsize::new(0),
             }),
-        }
+        })
     }
 
     /// The transport the host builds its endpoint on.
@@ -348,6 +357,11 @@ impl HttpsServer {
         MailboxTransport {
             mailboxes: Arc::clone(&self.shared.mailboxes),
         }
+    }
+
+    /// The incarnation the mailboxes number in (`Sce-Mesh-Epoch`, section 22.3).
+    pub fn epoch(&self) -> &str {
+        &self.shared.mailboxes.epoch
     }
 
     /// Accept on `listener` until it fails, with TLS from `tls` (or none, for a loopback test),
@@ -535,6 +549,18 @@ fn number_header(request: &Request<Incoming>, name: &str) -> Option<u64> {
     }
 }
 
+/// The incarnation a request's acknowledgement counts in (`Sce-Mesh-Epoch`): `Some(None)` when
+/// the request names none, `None` (a `400`) when the header is not an incarnation.
+fn epoch_header(request: &Request<Incoming>) -> Option<Option<String>> {
+    match request.headers().get(EPOCH_HEADER) {
+        None => Some(None),
+        Some(value) => {
+            let text = value.to_str().ok()?.trim();
+            is_epoch(text).then(|| Some(text.to_string()))
+        }
+    }
+}
+
 /// The credential text after `scheme` in the `Authorization` header.
 fn credential<'a>(request: &'a Request<Incoming>, scheme: &str) -> Option<&'a str> {
     let value = request.headers().get(AUTHORIZATION)?.to_str().ok()?;
@@ -613,9 +639,10 @@ async fn exchange(
         Admission::Refused => return unauthorized(&shared.authenticator),
         Admission::Admitted { pin } => pin,
     };
-    let (Some(ack), Some(hold_ms)) = (
+    let (Some(ack), Some(hold_ms), Some(acked_in)) = (
         number_header(&request, ACK_HEADER),
         number_header(&request, HOLD_HEADER),
+        epoch_header(&request),
     ) else {
         return answer(StatusCode::BAD_REQUEST);
     };
@@ -682,8 +709,7 @@ async fn exchange(
         let (became_ready, arrived) = {
             let mut clients = shared.mailboxes.lock();
             let client = clients.entry(name.clone()).or_insert_with(Client::new);
-            client.acknowledge(ack);
-            client.answered = true;
+            client.acknowledge(ack, acked_in.as_deref(), &shared.mailboxes.epoch);
             let became_ready = !client.ready;
             client.ready = true;
             (became_ready, Arc::clone(&client.arrived))
@@ -740,6 +766,9 @@ async fn exchange(
     response
         .headers_mut()
         .insert(CONTENT_TYPE_NAME, HeaderValue::from_static(CONTENT_TYPE));
+    if let Ok(value) = HeaderValue::from_str(&shared.mailboxes.epoch) {
+        response.headers_mut().insert(EPOCH_HEADER, value);
+    }
     if let Some(first) = first {
         if let Ok(value) = HeaderValue::from_str(&first.to_string()) {
             response.headers_mut().insert(FIRST_HEADER, value);
@@ -807,23 +836,30 @@ mod tests {
         );
     }
 
+    const EPOCH: &str = "00112233445566778899aabbccddeeff";
+    const EARLIER: &str = "ffeeddccbbaa99887766554433221100";
+
+    /// An acknowledgement drops what it names, and only when it counts in the incarnation the
+    /// mailbox numbers in: one of another incarnation, or of none, names a numbering the mailbox
+    /// does not hold.
     #[test]
-    fn an_acknowledgement_drops_what_it_names_and_no_more() {
+    fn an_acknowledgement_drops_what_it_names_in_this_incarnation_and_no_more() {
         let mut client = Client::new();
         for n in 0..5u8 {
             client.entries.push_back((client.next, alloc::vec![n]));
             client.next += 1;
         }
-        // The first exchange of a run reads no acknowledgement: it names an earlier mailbox.
-        client.acknowledge(3);
-        assert_eq!(client.entries.len(), 5);
-        client.answered = true;
-        client.acknowledge(3);
+        client.acknowledge(3, None, EPOCH);
+        assert_eq!(
+            client.entries.len(),
+            5,
+            "a client that has seen no incarnation"
+        );
+        client.acknowledge(3, Some(EARLIER), EPOCH);
+        assert_eq!(client.entries.len(), 5, "an earlier incarnation's numbers");
+        client.acknowledge(3, Some(EPOCH), EPOCH);
         assert_eq!(client.entries.front().map(|(n, _)| *n), Some(4));
-        // A number this mailbox never gave names an earlier run, and drops nothing.
-        client.acknowledge(6);
-        assert_eq!(client.entries.len(), 2);
-        client.acknowledge(5);
+        client.acknowledge(5, Some(EPOCH), EPOCH);
         assert!(client.entries.is_empty());
         assert_eq!(client.next, 6, "numbers go on where they were");
     }
@@ -832,6 +868,7 @@ mod tests {
     fn a_full_mailbox_refuses_as_a_full_queue_with_its_depth() {
         let mailboxes = Arc::new(Mailboxes {
             capacity: 2,
+            epoch: EPOCH.to_string(),
             clients: Mutex::new(HashMap::new()),
         });
         let mut transport = MailboxTransport {

@@ -63,6 +63,11 @@ pub const HOLD_HEADER: &str = "Sce-Mesh-Hold-Ms";
 /// the body is empty.
 pub const FIRST_HEADER: &str = "Sce-Mesh-First";
 
+/// The header naming a mailbox's incarnation (section 22.3), 32 lowercase hexadecimal digits: on
+/// every `200` response, the incarnation the response's numbers count in; on a request, the one
+/// its `Sce-Mesh-Ack` counts in, absent while the client has seen none.
+pub const EPOCH_HEADER: &str = "Sce-Mesh-Epoch";
+
 /// The authentication scheme of a bearer token (`Authorization: Bearer <token>`).
 pub const BEARER_SCHEME: &str = "Bearer";
 
@@ -221,6 +226,31 @@ pub fn draw_install_secret() -> Result<[u8; 32], crate::tls::Error> {
             crate::tls::Error::General("the random source could not be read".to_string())
         })?;
     Ok(secret)
+}
+
+/// A fresh mailbox incarnation (section 22.3): 16 bytes from the operating system's random
+/// source, through the same cryptography as [`draw_install_secret`], written as 32 lowercase
+/// hexadecimal digits.
+pub fn draw_epoch() -> Result<String, crate::tls::Error> {
+    const DIGITS: &[u8; 16] = b"0123456789abcdef";
+    let mut bytes = [0u8; 16];
+    crate::tls::provider()
+        .secure_random
+        .fill(&mut bytes)
+        .map_err(|_| {
+            crate::tls::Error::General("the random source could not be read".to_string())
+        })?;
+    let mut epoch = String::with_capacity(32);
+    for byte in bytes {
+        epoch.push(char::from(DIGITS[usize::from(byte >> 4)]));
+        epoch.push(char::from(DIGITS[usize::from(byte & 0x0f)]));
+    }
+    Ok(epoch)
+}
+
+/// Whether `text` names a mailbox incarnation: exactly 32 lowercase hexadecimal digits.
+pub fn is_epoch(text: &str) -> bool {
+    text.len() == 32 && text.bytes().all(|b| matches!(b, b'0'..=b'9' | b'a'..=b'f'))
 }
 
 /// The digest a server pins an installation secret by: its SHA-256.
@@ -408,6 +438,23 @@ mod tests {
         assert_ne!(a, b);
         assert_ne!(install_digest(&a), install_digest(&b));
         assert_eq!(install_digest(&a), install_digest(&a));
+    }
+
+    #[test]
+    fn two_epochs_drawn_are_two_and_each_names_an_incarnation() {
+        let a = draw_epoch().unwrap();
+        let b = draw_epoch().unwrap();
+        assert_ne!(a, b);
+        assert!(is_epoch(&a), "{a}");
+        assert!(is_epoch(&b), "{b}");
+        assert!(is_epoch("0123456789abcdef0123456789abcdef"));
+        assert!(
+            !is_epoch("0123456789ABCDEF0123456789abcdef"),
+            "lowercase only"
+        );
+        assert!(!is_epoch(&a[1..]), "thirty-one digits");
+        assert!(!is_epoch(&alloc::format!("{a}0")), "thirty-three digits");
+        assert!(!is_epoch("0123456789abcdef0123456789abcdeg"));
     }
 
     #[test]

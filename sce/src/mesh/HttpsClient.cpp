@@ -404,15 +404,18 @@ std::string base64url(const std::uint8_t *data, std::size_t size) {
     return out;
 }
 
-bool drawInstallSecret(InstallSecret &out) {
+namespace {
+
+/// Fill `size` bytes at `data` from the operating system's random source.
+/// False when the source could not be read.
+bool fillFromSystem(std::uint8_t *data, std::size_t size) {
 #if defined(_WIN32)
-    const NTSTATUS status =
-        BCryptGenRandom(nullptr, out.data(), static_cast<ULONG>(out.size()), BCRYPT_USE_SYSTEM_PREFERRED_RNG);
+    const NTSTATUS status = BCryptGenRandom(nullptr, data, static_cast<ULONG>(size), BCRYPT_USE_SYSTEM_PREFERRED_RNG);
     return BCRYPT_SUCCESS(status);
 #elif defined(__linux__)
     std::size_t filled = 0;
-    while (filled < out.size()) {
-        const ssize_t got = getrandom(out.data() + filled, out.size() - filled, 0);
+    while (filled < size) {
+        const ssize_t got = getrandom(data + filled, size - filled, 0);
         if (got < 0) {
             if (errno == EINTR) {
                 continue;
@@ -423,7 +426,7 @@ bool drawInstallSecret(InstallSecret &out) {
     }
     return true;
 #elif defined(__APPLE__) || defined(__FreeBSD__) || defined(__OpenBSD__) || defined(__NetBSD__)
-    arc4random_buf(out.data(), out.size());
+    arc4random_buf(data, size);
     return true;
 #else
     // Any other POSIX system: the kernel's random device.
@@ -431,10 +434,37 @@ bool drawInstallSecret(InstallSecret &out) {
     if (source == nullptr) {
         return false;
     }
-    const std::size_t got = std::fread(out.data(), 1, out.size(), source);
+    const std::size_t got = std::fread(data, 1, size, source);
     std::fclose(source);
-    return got == out.size();
+    return got == size;
 #endif
+}
+
+}  // namespace
+
+bool drawInstallSecret(InstallSecret &out) {
+    return fillFromSystem(out.data(), out.size());
+}
+
+std::optional<std::string> drawEpoch() {
+    static constexpr char kDigits[] = "0123456789abcdef";
+    std::array<std::uint8_t, kEpochBytes> bytes{};
+    if (!fillFromSystem(bytes.data(), bytes.size())) {
+        return std::nullopt;
+    }
+    std::string epoch;
+    epoch.reserve(2 * bytes.size());
+    for (const std::uint8_t byte : bytes) {
+        epoch += kDigits[byte >> 4];
+        epoch += kDigits[byte & 0x0f];
+    }
+    return epoch;
+}
+
+bool isEpoch(std::string_view text) {
+    return text.size() == 2 * kEpochBytes && std::all_of(text.begin(), text.end(), [](char c) {
+               return (c >= '0' && c <= '9') || (c >= 'a' && c <= 'f');
+           });
 }
 
 // ── The client ──
@@ -551,12 +581,20 @@ std::optional<std::string> Client::authorization() {
     return std::nullopt;
 }
 
-HttpsRequest Client::buildRequest(std::vector<std::uint8_t> body, std::chrono::milliseconds hold) {
+HttpsRequest Client::buildRequest(std::vector<std::uint8_t> body, std::chrono::milliseconds hold, Mark &sent) {
+    {
+        std::lock_guard<std::mutex> deliver(deliver_mutex_);
+        sent.ack = acknowledged_.load(std::memory_order_acquire);
+        sent.epoch = epoch_;
+    }
     HttpsRequest request;
     request.url = exchangeUrl(config_.base_url, config_.client);
     request.headers.emplace_back("Content-Type", kContentType);
     request.headers.emplace_back("Accept", kContentType);
-    request.headers.emplace_back(kAckHeader, std::to_string(acknowledged()));
+    request.headers.emplace_back(kAckHeader, std::to_string(sent.ack));
+    if (!sent.epoch.empty()) {
+        request.headers.emplace_back(kEpochHeader, sent.epoch);
+    }
     request.headers.emplace_back(kHoldHeader, std::to_string(hold.count()));
     if (auto value = authorization()) {
         request.headers.emplace_back("Authorization", std::move(*value));
@@ -598,7 +636,37 @@ Client::Verdict Client::judge(const HttpsExchange &answer) {
     return verdict;
 }
 
-void Client::takeIn(const HttpsExchange &answer) {
+void Client::takeIn(const HttpsExchange &answer, const Mark &sent) {
+    // The incarnation the response's numbers count in (section 22.3).
+    const auto epochText = headerValue(answer.headers, kEpochHeader);
+    if (!epochText || !isEpoch(*epochText)) {
+        if (!answer.body.empty()) {
+            // Without an incarnation the numbers say nothing the client can
+            // acknowledge, so the body is reported once here and not taken.
+            auto err = communicationError(ReasonCode::EnvelopeCorrupt, config_);
+            err.codec = "cbor";
+            err.detail = "a response body without a valid Sce-Mesh-Epoch";
+            raise(std::move(err));
+        }
+        return;
+    }
+
+    std::lock_guard<std::mutex> deliver(deliver_mutex_);
+    // The numbering the client knows; one it has left since the request went,
+    // because the other exchange's response named a newer one, whose numbers
+    // above what the request acknowledged are handed on and the section 10.5
+    // window drops what arrived before; or a mailbox that numbers anew (a
+    // server that started again with it empty), in which the acknowledgement
+    // starts over at 0.
+    bool current = true;
+    if (*epochText != epoch_) {
+        if (!sent.epoch.empty() && *epochText == sent.epoch) {
+            current = false;
+        } else {
+            epoch_ = *epochText;
+            acknowledged_.store(0, std::memory_order_release);
+        }
+    }
     if (answer.body.empty()) {
         return;
     }
@@ -617,10 +685,10 @@ void Client::takeIn(const HttpsExchange &answer) {
     std::size_t brokenAt = 0;
     const bool whole = splitCborSequence(answer.body.data(), answer.body.size(), items, brokenAt);
 
-    std::lock_guard<std::mutex> deliver(deliver_mutex_);
+    const std::uint64_t taken = current ? acknowledged_.load(std::memory_order_acquire) : sent.ack;
     for (std::size_t i = 0; i < items.size(); ++i) {
         const std::uint64_t number = *first + i;
-        if (number <= acknowledged_.load(std::memory_order_acquire)) {
+        if (number <= taken) {
             // Carried again because a response was lost; taken in before.
             continue;
         }
@@ -635,7 +703,9 @@ void Client::takeIn(const HttpsExchange &answer) {
             err.position = static_cast<std::int64_t>(items[i].first);
             raise(std::move(err));
         }
-        acknowledged_.store(number, std::memory_order_release);
+        if (current) {
+            acknowledged_.store(number, std::memory_order_release);
+        }
     }
     if (!whole) {
         // The item that does not parse is acknowledged with the ones before
@@ -645,7 +715,7 @@ void Client::takeIn(const HttpsExchange &answer) {
         err.position = static_cast<std::int64_t>(brokenAt);
         raise(std::move(err));
         const std::uint64_t broken = *first + items.size();
-        if (broken > acknowledged_.load(std::memory_order_acquire)) {
+        if (current && broken > acknowledged_.load(std::memory_order_acquire)) {
             acknowledged_.store(broken, std::memory_order_release);
         }
     }
@@ -747,7 +817,8 @@ void Client::pollLoop() {
                 return;
             }
         }
-        const HttpsExchange answer = host_.transport->exchange(buildRequest({}, config_.hold));
+        Mark sent;
+        const HttpsExchange answer = host_.transport->exchange(buildRequest({}, config_.hold, sent));
         if (cancellation_.requested()) {
             return;
         }
@@ -756,7 +827,7 @@ void Client::pollLoop() {
         case Verdict::Kind::Taken:
             failures = 0;
             becomeReady();
-            takeIn(answer);
+            takeIn(answer, sent);
             break;
         case Verdict::Kind::Shed:
             // A server shedding load is alive: readiness stands, and the
@@ -802,8 +873,9 @@ void Client::sendLoop() {
         for (const auto &pending : batch) {
             envelopes.push_back(pending.env);
         }
+        Mark sent;
         const HttpsExchange answer =
-            host_.transport->exchange(buildRequest(encodeBody(envelopes), std::chrono::milliseconds(0)));
+            host_.transport->exchange(buildRequest(encodeBody(envelopes), std::chrono::milliseconds(0), sent));
         if (cancellation_.requested()) {
             return;
         }
@@ -815,7 +887,7 @@ void Client::sendLoop() {
                 std::lock_guard<std::mutex> lock(mutex_);
                 batch_limit_ = kMaxBatch;
             }
-            takeIn(answer);
+            takeIn(answer, sent);
             break;
         }
         case Verdict::Kind::Shed: {

@@ -283,6 +283,20 @@ TEST(HttpsWire, TheOperatingSystemDrawsDifferentSecrets) {
     EXPECT_NE(a, b);
 }
 
+TEST(HttpsWire, AnIncarnationIsThirtyTwoLowercaseHexDigitsDrawnAfresh) {
+    const auto a = Https::drawEpoch();
+    const auto b = Https::drawEpoch();
+    ASSERT_TRUE(a.has_value());
+    ASSERT_TRUE(b.has_value());
+    EXPECT_NE(*a, *b);
+    EXPECT_TRUE(Https::isEpoch(*a)) << *a;
+    EXPECT_TRUE(Https::isEpoch("0123456789abcdef0123456789abcdef"));
+    EXPECT_FALSE(Https::isEpoch("0123456789ABCDEF0123456789abcdef"));
+    EXPECT_FALSE(Https::isEpoch("0123456789abcdef0123456789abcde"));
+    EXPECT_FALSE(Https::isEpoch("0123456789abcdef0123456789abcdef0"));
+    EXPECT_FALSE(Https::isEpoch("0123456789abcdef0123456789abcdeg"));
+}
+
 // ── The client against a mailbox ──
 
 TEST(HttpsClient, TheFirstAnsweredExchangeIsReadyAndTheMailboxArrivesOnceInOrder) {
@@ -336,6 +350,43 @@ TEST(HttpsClient, AResponseLostAfterTheServerActedIsCarriedAgainAndDeliveredOnce
     ASSERT_EQ(seen.not_ready_.size(), 1u);
     EXPECT_EQ(seen.not_ready_[0].reason, ReasonCode::TransportUnavailable);
     EXPECT_EQ(seen.not_ready_[0].target, std::optional<std::string>("#cloud"));
+}
+
+TEST(HttpsClient, ANewIncarnationStartsTheAcknowledgementOverAndDeliversOnce) {
+    Kit::Mailbox mailbox(Kit::MailboxOptions{"phone", "token", 2000ms, 1u << 20});
+    Kit::LoopbackTransport transport(mailbox);
+    MemoryCredentials credentials("token");
+    Observed seen;
+    Https::Client client(config(), Https::ClientHost{&transport, &credentials}, seen.events());
+    ASSERT_TRUE(client.start());
+    mailbox.post(envelope("service.response.before", 1));
+    ASSERT_TRUE(seen.waitFor([&] {
+        const auto acks = mailbox.acks();
+        return seen.received_.size() == 1 && !acks.empty() && acks.back() == 1;
+    }));
+    const std::string before = mailbox.epoch();
+    EXPECT_EQ(client.epoch(), before);
+
+    // The server starts again with its mailbox empty: its next envelope is
+    // number 1 again, a number the client acknowledged in the earlier
+    // incarnation, and still reaches the router once.
+    mailbox.restart();
+    ASSERT_NE(mailbox.epoch(), before);
+    mailbox.post(envelope("service.response.after", 2));
+    ASSERT_TRUE(seen.waitFor([&] { return seen.received_.size() == 2; }));
+    mailbox.post(envelope("service.response.next", 3));
+    ASSERT_TRUE(seen.waitFor([&] {
+        const auto acks = mailbox.acks();
+        return seen.received_.size() == 3 && !acks.empty() && acks.back() == 2;
+    }));
+    client.stop();
+    ASSERT_EQ(seen.received_.size(), 3u);
+    EXPECT_EQ(seen.received_[0].type, "service.response.before");
+    EXPECT_EQ(seen.received_[1].type, "service.response.after");
+    EXPECT_EQ(seen.received_[2].type, "service.response.next");
+    EXPECT_EQ(client.epoch(), mailbox.epoch());
+    EXPECT_EQ(client.acknowledged(), 2u);
+    EXPECT_TRUE(seen.faults_.empty());
 }
 
 TEST(HttpsClient, ASendIsCarriedInARequestBodyAndTakenIn) {
@@ -530,7 +581,8 @@ TEST(HttpsClient, AMailboxEnvelopeThatDoesNotDecodeIsEnvelopeCorruptAndAcknowled
     transport.onPoll = [&polls](const HttpsRequest &) {
         if (polls.fetch_add(1) == 0) {
             // A well-formed CBOR item that is no envelope.
-            return HttpsExchange::response(200, {{"Sce-Mesh-First", "1"}}, {0x01});
+            return HttpsExchange::response(
+                200, {{"Sce-Mesh-Epoch", "0123456789abcdef0123456789abcdef"}, {"Sce-Mesh-First", "1"}}, {0x01});
         }
         std::this_thread::sleep_for(10ms);
         return HttpsExchange::response(200, {}, {});

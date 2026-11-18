@@ -25,9 +25,9 @@ use std::thread::JoinHandle;
 use std::time::{Duration, SystemTime};
 
 use super::{
-    is_path_segment, retry_after, split_sequence, Credential, HttpsFailure, HttpsRequest,
-    HttpsResponse, HttpsTransport, LinkEvent, ACK_HEADER, CONTENT_TYPE, FIRST_HEADER, HOLD_HEADER,
-    PATH_PREFIX,
+    is_epoch, is_path_segment, retry_after, split_sequence, Credential, HttpsFailure, HttpsRequest,
+    HttpsResponse, HttpsTransport, LinkEvent, ACK_HEADER, CONTENT_TYPE, EPOCH_HEADER, FIRST_HEADER,
+    HOLD_HEADER, PATH_PREFIX,
 };
 use crate::endpoint::{Transport, TransportFailure};
 use crate::peers::{HttpsAuthenticator, Peer, PeerLink};
@@ -130,13 +130,22 @@ type EventSink = Box<dyn FnMut(LinkEvent) + Send>;
 struct State {
     /// What the core transmitted and no exchange has carried yet, oldest first.
     outbox: VecDeque<Vec<u8>>,
-    /// The highest mailbox number handed to the core; what every request acknowledges.
-    ack: u64,
+    /// What every request acknowledges: the highest mailbox number handed to the core, in the
+    /// mailbox incarnation the client last saw.
+    mark: Mark,
     ready: bool,
     stopped: bool,
     /// Where the host is told what happened. Called with the state held, so that what the two
     /// threads observe reaches the host in the order it was observed.
     events: EventSink,
+}
+
+/// Where an acknowledgement stands (section 22.3): the highest mailbox number handed to the core,
+/// and the incarnation of the mailbox it counts in, `None` before the first `200`.
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
+struct Mark {
+    ack: u64,
+    epoch: Option<String>,
 }
 
 const HELD: &str = "the client's state is never left mid-update: nothing in it panics while held";
@@ -146,12 +155,15 @@ impl Shared {
         self.state.lock().expect(HELD)
     }
 
-    fn request(&self, body: Vec<u8>, ack: u64, hold: Duration) -> HttpsRequest {
+    fn request(&self, body: Vec<u8>, mark: &Mark, hold: Duration) -> HttpsRequest {
         let mut headers = alloc::vec![
             ("Content-Type".to_string(), CONTENT_TYPE.to_string()),
-            (ACK_HEADER.to_string(), ack.to_string()),
+            (ACK_HEADER.to_string(), mark.ack.to_string()),
             (HOLD_HEADER.to_string(), hold.as_millis().to_string()),
         ];
+        if let Some(epoch) = &mark.epoch {
+            headers.push((EPOCH_HEADER.to_string(), epoch.clone()));
+        }
         if let Some(authorization) = &self.authorization {
             headers.push(("Authorization".to_string(), authorization.clone()));
         }
@@ -173,13 +185,13 @@ enum Then {
     Wait(Duration),
 }
 
-/// Take what an exchange returned. `carried` are the envelopes the request carried and `ack` the
+/// Take what an exchange returned. `carried` are the envelopes the request carried and `sent` the
 /// acknowledgement it sent. Returns what the thread should do next; a response the server shed
 /// puts `carried` back at the front of the outbox, to go again after the wait.
 fn take_outcome(
     shared: &Shared,
     carried: Vec<Vec<u8>>,
-    ack: u64,
+    sent: &Mark,
     outcome: Result<HttpsResponse, HttpsFailure>,
     failures: &mut u32,
 ) -> Then {
@@ -200,7 +212,7 @@ fn take_outcome(
                 state.ready = true;
                 (state.events)(LinkEvent::Ready(server.clone()));
             }
-            take_mailbox(&mut state, &server, ack, &response);
+            take_mailbox(&mut state, &server, sent, &response);
             Then::Continue
         }
         Ok(response) if matches!(response.status, 429 | 503) => {
@@ -240,14 +252,41 @@ fn take_outcome(
 }
 
 /// Hand the core the envelopes of a `200` response, in mailbox order and each once, and move the
-/// acknowledgement past them (section 22.3).
+/// acknowledgement past them (section 22.3). `sent` is what the response's request acknowledged.
 ///
-/// A response whose first number is one past the acknowledgement its request sent continues the
-/// numbering the client knows, so what is at or below the client's acknowledgement (which the
-/// other thread's response may already have handed on) is passed over. A response whose first
-/// number is any other is from a mailbox that numbers anew (a server that started again), so all
-/// of it is new to the client and the acknowledgement follows the new numbering.
-fn take_mailbox(state: &mut State, server: &str, sent_ack: u64, response: &HttpsResponse) {
+/// The response's incarnation (`Sce-Mesh-Epoch`) says which numbering its numbers count in:
+///
+/// * the one the client last saw: what is at or below the client's acknowledgement (which the
+///   other thread's response may already have handed on) is passed over;
+/// * another, which the request was sent in: an incarnation the client has left since, because
+///   the other thread's response named a newer one. What is above the request's acknowledgement is
+///   handed on, the section 10.5 window dropping what reached the core before, and the client's
+///   acknowledgement stays with the newer incarnation;
+/// * any other: a mailbox that numbers anew (a server that started again with its mailboxes
+///   empty). The acknowledgement starts over at 0 in it, so all of the response is new.
+///
+/// A response that names no incarnation says nothing of what its numbers count in, and a body
+/// without a first number cannot be acknowledged: what a server that breaks the binding sends is
+/// not taken.
+fn take_mailbox(state: &mut State, server: &str, sent: &Mark, response: &HttpsResponse) {
+    let Some(epoch) = response
+        .header(EPOCH_HEADER)
+        .map(str::trim)
+        .filter(|epoch| is_epoch(epoch))
+    else {
+        return;
+    };
+    let current = if state.mark.epoch.as_deref() == Some(epoch) {
+        true
+    } else if sent.epoch.as_deref() == Some(epoch) {
+        false
+    } else {
+        state.mark = Mark {
+            ack: 0,
+            epoch: Some(epoch.to_string()),
+        };
+        true
+    };
     let envelopes = split_sequence(&response.body);
     if envelopes.is_empty() {
         return;
@@ -256,19 +295,19 @@ fn take_mailbox(state: &mut State, server: &str, sent_ack: u64, response: &Https
         .header(FIRST_HEADER)
         .and_then(|value| value.trim().parse::<u64>().ok());
     let Some(first) = first.filter(|first| *first >= 1) else {
-        // A body without a number cannot be acknowledged, and taking it would take it again
-        // on every exchange: what a server that breaks the binding sends is not taken.
         return;
     };
-    let continues = sent_ack.checked_add(1) == Some(first);
+    let taken = if current { state.mark.ack } else { sent.ack };
     let last = first.saturating_add(envelopes.len() as u64 - 1);
     for (number, envelope) in (first..).zip(envelopes) {
-        if continues && number <= state.ack {
+        if number <= taken {
             continue;
         }
         (state.events)(LinkEvent::Received(server.to_string(), envelope));
     }
-    state.ack = if continues { state.ack.max(last) } else { last };
+    if current {
+        state.mark.ack = state.mark.ack.max(last);
+    }
 }
 
 /// The core's side of the client: what it transmits waits for the sender's next exchange.
@@ -329,7 +368,7 @@ impl HttpsClient {
             port,
             state: Mutex::new(State {
                 outbox: VecDeque::new(),
-                ack: 0,
+                mark: Mark::default(),
                 ready: false,
                 stopped: false,
                 events: Box::new(events),
@@ -450,17 +489,17 @@ fn pause(shared: &Shared, wait: Duration) -> bool {
 fn poll(shared: &Shared) {
     let mut failures = 0u32;
     loop {
-        let ack = {
+        let mark = {
             let state = shared.lock();
             if state.stopped {
                 return;
             }
-            state.ack
+            state.mark.clone()
         };
         let outcome = shared
             .port
-            .exchange(shared.request(Vec::new(), ack, shared.settings.hold));
-        if let Then::Wait(wait) = take_outcome(shared, Vec::new(), ack, outcome, &mut failures) {
+            .exchange(shared.request(Vec::new(), &mark, shared.settings.hold));
+        if let Then::Wait(wait) = take_outcome(shared, Vec::new(), &mark, outcome, &mut failures) {
             if pause(shared, wait) {
                 return;
             }
@@ -472,7 +511,7 @@ fn poll(shared: &Shared) {
 fn send(shared: &Shared) {
     let mut failures = 0u32;
     loop {
-        let (carried, ack) = {
+        let (carried, mark) = {
             let state = shared.lock();
             let mut state = shared
                 .wake
@@ -493,13 +532,13 @@ fn send(shared: &Shared) {
                     carried.push(envelope);
                 }
             }
-            (carried, state.ack)
+            (carried, state.mark.clone())
         };
         let body = super::join_sequence(carried.iter().map(Vec::as_slice));
         let outcome = shared
             .port
-            .exchange(shared.request(body, ack, Duration::ZERO));
-        if let Then::Wait(wait) = take_outcome(shared, carried, ack, outcome, &mut failures) {
+            .exchange(shared.request(body, &mark, Duration::ZERO));
+        if let Then::Wait(wait) = take_outcome(shared, carried, &mark, outcome, &mut failures) {
             if pause(shared, wait) {
                 return;
             }
@@ -544,14 +583,43 @@ mod tests {
         }
     }
 
-    fn ok(first: Option<u64>, body: Vec<u8>) -> HttpsResponse {
+    /// The incarnation the scripted server's mailbox numbers in, and one it numbered in before it
+    /// started again.
+    const EPOCH: &str = "0123456789abcdef0123456789abcdef";
+    const EARLIER: &str = "fedcba9876543210fedcba9876543210";
+
+    /// A `200` of the mailbox incarnation `epoch`, its body's first number `first`.
+    fn ok_in(epoch: &str, first: Option<u64>, body: Vec<u8>) -> HttpsResponse {
+        let mut headers = alloc::vec![(EPOCH_HEADER.to_string(), epoch.to_string())];
+        if let Some(first) = first {
+            headers.push((FIRST_HEADER.to_string(), first.to_string()));
+        }
         HttpsResponse {
             status: 200,
-            headers: first
-                .map(|first| alloc::vec![(FIRST_HEADER.to_string(), first.to_string())])
-                .unwrap_or_default(),
+            headers,
             body,
         }
+    }
+
+    fn ok(first: Option<u64>, body: Vec<u8>) -> HttpsResponse {
+        ok_in(EPOCH, first, body)
+    }
+
+    /// Where a request's acknowledgement stood, in `epoch`.
+    fn mark(ack: u64, epoch: Option<&str>) -> Mark {
+        Mark {
+            ack,
+            epoch: epoch.map(str::to_string),
+        }
+    }
+
+    /// The value of the header `name` of `request`.
+    fn header_of(request: &HttpsRequest, name: &str) -> Option<String> {
+        request
+            .headers
+            .iter()
+            .find(|(key, _)| key == name)
+            .map(|(_, value)| value.clone())
     }
 
     fn status(code: u16, headers: &[(&str, &str)]) -> HttpsResponse {
@@ -589,7 +657,7 @@ mod tests {
         (
             State {
                 outbox: VecDeque::new(),
-                ack: 0,
+                mark: Mark::default(),
                 ready: true,
                 stopped: false,
                 events: Box::new(move |event| {
@@ -620,41 +688,85 @@ mod tests {
     #[test]
     fn a_response_that_continues_the_numbering_is_taken_once() {
         let (mut state, rx) = state();
-        state.ack = 4;
+        state.mark = mark(4, Some(EPOCH));
+        let sent = state.mark.clone();
         // The request acknowledged 4; the mailbox answers 5, 6, 7.
-        take_mailbox(&mut state, "cloud", 4, &ok(Some(5), three()));
+        take_mailbox(&mut state, "cloud", &sent, &ok(Some(5), three()));
         assert_eq!(received(&rx), [[1], [2], [3]]);
-        assert_eq!(state.ack, 7);
+        assert_eq!(state.mark, mark(7, Some(EPOCH)));
         // The other thread's request also acknowledged 4 and was answered 5 to 8: only 8 is new.
         take_mailbox(
             &mut state,
             "cloud",
-            4,
+            &sent,
             &ok(Some(5), alloc::vec![0x01, 0x02, 0x03, 0x04]),
         );
         assert_eq!(received(&rx), [[4]]);
-        assert_eq!(state.ack, 8);
+        assert_eq!(state.mark, mark(8, Some(EPOCH)));
     }
 
-    /// A server that started again numbers its mailbox from 1: what it sends is all new, though
-    /// its numbers are below what the client acknowledged, and the acknowledgement follows.
+    /// A server that started again with its mailboxes empty numbers them from 1 in a new
+    /// incarnation: the acknowledgement starts over in it, so what it sends is all new though its
+    /// numbers are below what the client acknowledged. The other thread's response to a request
+    /// sent in the earlier incarnation, answered in the new one, is taken from where the new
+    /// numbering stands; one answered in the earlier incarnation is handed on above what its
+    /// request acknowledged, and leaves the acknowledgement in the new one.
     #[test]
-    fn a_response_that_numbers_anew_is_taken_whole() {
+    fn a_new_incarnation_starts_the_acknowledgement_over() {
         let (mut state, rx) = state();
-        state.ack = 57;
-        take_mailbox(&mut state, "cloud", 57, &ok(Some(1), three()));
+        state.mark = mark(57, Some(EARLIER));
+        let sent = state.mark.clone();
+        take_mailbox(&mut state, "cloud", &sent, &ok(Some(1), three()));
         assert_eq!(received(&rx), [[1], [2], [3]]);
-        assert_eq!(state.ack, 3);
+        assert_eq!(state.mark, mark(3, Some(EPOCH)));
+
+        take_mailbox(
+            &mut state,
+            "cloud",
+            &sent,
+            &ok(Some(1), alloc::vec![0x01, 0x02, 0x03, 0x04]),
+        );
+        assert_eq!(received(&rx), [[4]], "taken once in the new numbering");
+        assert_eq!(state.mark, mark(4, Some(EPOCH)));
+
+        take_mailbox(
+            &mut state,
+            "cloud",
+            &sent,
+            &ok_in(EARLIER, Some(57), alloc::vec![0x09, 0x0a]),
+        );
+        assert_eq!(
+            received(&rx),
+            [[0x0a]],
+            "above what the request acknowledged"
+        );
+        assert_eq!(
+            state.mark,
+            mark(4, Some(EPOCH)),
+            "the newer incarnation stays"
+        );
     }
 
     #[test]
-    fn a_body_without_a_number_is_not_taken() {
+    fn a_body_without_a_number_or_an_incarnation_is_not_taken() {
         let (mut state, rx) = state();
-        take_mailbox(&mut state, "cloud", 0, &ok(None, three()));
+        take_mailbox(&mut state, "cloud", &Mark::default(), &ok(None, three()));
         assert!(received(&rx).is_empty());
-        assert_eq!(state.ack, 0);
-        take_mailbox(&mut state, "cloud", 0, &ok(Some(0), three()));
+        assert_eq!(
+            state.mark,
+            mark(0, Some(EPOCH)),
+            "the incarnation is learnt"
+        );
+        take_mailbox(&mut state, "cloud", &Mark::default(), &ok(Some(0), three()));
         assert!(received(&rx).is_empty(), "mailbox numbers start at 1");
+        let unnamed = HttpsResponse {
+            status: 200,
+            headers: alloc::vec![(FIRST_HEADER.to_string(), "1".to_string())],
+            body: three(),
+        };
+        take_mailbox(&mut state, "cloud", &Mark::default(), &unnamed);
+        assert!(received(&rx).is_empty(), "no incarnation names the numbers");
+        assert_eq!(state.mark, mark(0, Some(EPOCH)));
     }
 
     fn dialed(authenticator: HttpsAuthenticator) -> Peer {
@@ -804,6 +916,65 @@ mod tests {
         assert!(asked[3..].iter().all(|request| request
             .headers
             .contains(&(ACK_HEADER.to_string(), "1".to_string()))));
+    }
+
+    /// A server that started again names a new incarnation: the client's acknowledgement starts
+    /// over in it, the first envelope of the new numbering reaches the core though its number is
+    /// one the client acknowledged before, a response that carries it again does not hand it on a
+    /// second time, and every request names the incarnation its acknowledgement counts in.
+    #[test]
+    fn a_new_incarnation_starts_the_acknowledgement_over_and_delivers_once() {
+        let port = Arc::new(Scripted::default());
+        port.polls.lock().unwrap().extend([
+            Ok(ok_in(EARLIER, Some(1), alloc::vec![0x05])),
+            Ok(ok(Some(1), alloc::vec![0x06])),
+            Ok(ok(Some(1), alloc::vec![0x06])),
+        ]);
+        let (tx, rx) = mpsc::channel();
+        let client = HttpsClient::start(settings(), port.clone(), move |event| {
+            let _ = tx.send(event);
+        })
+        .unwrap();
+        assert_eq!(next(&rx), LinkEvent::Ready("cloud".to_string()));
+        assert_eq!(
+            next(&rx),
+            LinkEvent::Received("cloud".to_string(), alloc::vec![0x05])
+        );
+        assert_eq!(
+            next(&rx),
+            LinkEvent::Received("cloud".to_string(), alloc::vec![0x06])
+        );
+        let deadline = std::time::Instant::now() + Duration::from_secs(5);
+        while port.asked.lock().unwrap().len() < 4 && std::time::Instant::now() < deadline {
+            std::thread::sleep(Duration::from_millis(5));
+        }
+        assert!(
+            rx.recv_timeout(Duration::from_millis(100)).is_err(),
+            "carried again, and handed on once"
+        );
+        client.stop();
+
+        let asked = port.asked.lock().unwrap();
+        assert!(asked.len() >= 4, "{} exchanges", asked.len());
+        let acknowledged = |at: usize| {
+            (
+                header_of(&asked[at], ACK_HEADER),
+                header_of(&asked[at], EPOCH_HEADER),
+            )
+        };
+        assert_eq!(acknowledged(0), (Some("0".to_string()), None));
+        assert_eq!(
+            acknowledged(1),
+            (Some("1".to_string()), Some(EARLIER.to_string()))
+        );
+        assert_eq!(
+            acknowledged(2),
+            (Some("1".to_string()), Some(EPOCH.to_string()))
+        );
+        assert_eq!(
+            acknowledged(3),
+            (Some("1".to_string()), Some(EPOCH.to_string()))
+        );
     }
 
     /// What the core transmits is carried by an exchange that asks for no hold; a refusal the

@@ -71,11 +71,21 @@ struct MailboxOptions {
 
 class Mailbox {
 public:
+    /// An empty mailbox, numbering from 1 in an incarnation drawn from the
+    /// operating system's random source. Throws std::runtime_error when the
+    /// source could not be read.
     explicit Mailbox(MailboxOptions options);
 
     /// A send of the server to the client: it waits in the mailbox until an
     /// acknowledged exchange carried it.
     void post(const MeshEnvelope &env);
+
+    /// The server started again with its mailbox empty: what waited is gone,
+    /// and the mailbox numbers from 1 in a new incarnation.
+    void restart();
+
+    /// The incarnation the mailbox numbers in (`Sce-Mesh-Epoch`).
+    std::string epoch() const;
 
     /// Every envelope the client's request bodies carried, in arrival order,
     /// each copy a resend carried again included.
@@ -118,6 +128,7 @@ private:
     std::condition_variable posted_;
     std::deque<Numbered> mailbox_;
     std::uint64_t next_number_ = 1;
+    std::string epoch_;
     std::vector<MeshEnvelope> received_;
     std::vector<std::uint64_t> acks_;
     std::size_t exchanges_ = 0;

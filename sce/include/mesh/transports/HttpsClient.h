@@ -14,15 +14,21 @@
 //     more envelopes (their CBOR bytes, MeshEnvelopeCodec.h) one after
 //     another (RFC 8742).
 //   * Request headers: `Sce-Mesh-Ack` the highest mailbox number received
-//     (0 for none), `Sce-Mesh-Hold-Ms` how long the server may hold an
-//     exchange that has nothing to answer yet, and the authenticator's:
-//     `Authorization: Bearer <token>`, `Authorization: SCE-Install <base64url
-//     of a 32-byte secret>`, or none with a TLS client certificate.
-//   * Response `200`, `application/cbor-seq`, `Sce-Mesh-First` the number of
-//     the first envelope in the body (absent when the body is empty); the
-//     next request acknowledges the highest number received, and the server
-//     drops what was acknowledged. What a lost response carried is carried
-//     again, and the client delivers each number once.
+//     (0 for none), `Sce-Mesh-Epoch` the mailbox incarnation that number
+//     counts in (absent before the first `200`), `Sce-Mesh-Hold-Ms` how long
+//     the server may hold an exchange that has nothing to answer yet, and the
+//     authenticator's: `Authorization: Bearer <token>`, `Authorization:
+//     SCE-Install <base64url of a 32-byte secret>`, or none with a TLS client
+//     certificate.
+//   * Response `200`, `application/cbor-seq`, `Sce-Mesh-Epoch` the mailbox's
+//     incarnation (32 lowercase hexadecimal digits) and `Sce-Mesh-First` the
+//     number of the first envelope in the body (absent when the body is
+//     empty); the next request acknowledges the highest number received, and
+//     the server drops what was acknowledged in its own incarnation. What a
+//     lost response carried is carried again, and the client delivers each
+//     number once. A server that starts again with its mailbox empty numbers
+//     it from 1 in a new incarnation, and the client's acknowledgement starts
+//     over at 0 in it.
 //   * `404` an unknown version or name, `401` an authenticator refused, `413`
 //     a body too big, `429` or `503` with `Retry-After` (the client waits at
 //     least that long).
@@ -79,6 +85,12 @@ inline constexpr const char *kAckHeader = "Sce-Mesh-Ack";
 inline constexpr const char *kHoldHeader = "Sce-Mesh-Hold-Ms";
 /// The mailbox number of the first envelope of a response body.
 inline constexpr const char *kFirstHeader = "Sce-Mesh-First";
+/// The mailbox incarnation a response's numbers, or a request's
+/// acknowledgement, count in.
+inline constexpr const char *kEpochHeader = "Sce-Mesh-Epoch";
+/// How many random bytes name an incarnation; it is written as twice as many
+/// lowercase hexadecimal digits.
+inline constexpr std::size_t kEpochBytes = 16;
 /// The transport's name in a CommunicationError.
 inline constexpr const char *kTransportName = "https";
 
@@ -210,6 +222,15 @@ std::string base64url(const std::uint8_t *data, std::size_t size);
 /// BCryptGenRandom on Windows). False when the source could not be read.
 bool drawInstallSecret(InstallSecret &out);
 
+/// A fresh mailbox incarnation, drawn from the same source as an installation
+/// secret: kEpochBytes bytes as lowercase hexadecimal digits. Empty when the
+/// source could not be read.
+std::optional<std::string> drawEpoch();
+
+/// Whether `text` names a mailbox incarnation: exactly 2 * kEpochBytes
+/// lowercase hexadecimal digits.
+bool isEpoch(std::string_view text);
+
 /// The client of one `https` binding.
 class Client {
 public:
@@ -256,8 +277,21 @@ public:
         return acknowledged_.load(std::memory_order_acquire);
     }
 
+    /// The mailbox incarnation the acknowledgement counts in: the last one a
+    /// `200` named, empty before the first.
+    std::string epoch() const {
+        std::lock_guard<std::mutex> deliver(deliver_mutex_);
+        return epoch_;
+    }
+
 private:
     enum class Readiness { Unknown, Ready, NotReady };
+
+    /// Where a request's acknowledgement stood when it was made.
+    struct Mark {
+        std::uint64_t ack = 0;
+        std::string epoch;
+    };
 
     /// One envelope waiting for a send, with the attempts made for it.
     struct Pending {
@@ -288,9 +322,9 @@ private:
 
     void pollLoop();
     void sendLoop();
-    HttpsRequest buildRequest(std::vector<std::uint8_t> body, std::chrono::milliseconds hold);
+    HttpsRequest buildRequest(std::vector<std::uint8_t> body, std::chrono::milliseconds hold, Mark &sent);
     Verdict judge(const HttpsExchange &answer);
-    void takeIn(const HttpsExchange &answer);
+    void takeIn(const HttpsExchange &answer, const Mark &sent);
     void becomeReady();
     void becomeNotReady(const std::string &why);
     void refusedName(const HttpsExchange &answer);
@@ -313,8 +347,12 @@ private:
     bool stopping_ = false;
     std::size_t batch_limit_ = kMaxBatch;
 
-    std::mutex deliver_mutex_;
+    /// Held while a response is taken in, and while a request reads where the
+    /// acknowledgement stands, so the two read and move it together.
+    mutable std::mutex deliver_mutex_;
     std::atomic<std::uint64_t> acknowledged_{0};
+    /// The incarnation acknowledged_ counts in; under deliver_mutex_.
+    std::string epoch_;
     std::atomic<Readiness> readiness_{Readiness::Unknown};
     std::atomic<bool> refused_{false};
     std::optional<InstallSecret> install_secret_;

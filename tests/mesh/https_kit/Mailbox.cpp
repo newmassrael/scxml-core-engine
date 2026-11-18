@@ -7,6 +7,7 @@
 #include "mesh/transports/HttpsClient.h"
 
 #include <algorithm>
+#include <stdexcept>
 
 namespace SCE::Mesh::HttpsKit {
 
@@ -15,14 +16,36 @@ namespace {
 /// How often a held exchange looks at its cancellation.
 constexpr std::chrono::milliseconds kCancellationPoll{50};
 
+/// A fresh incarnation, or a failure the kit cannot run without.
+std::string freshEpoch() {
+    auto epoch = Https::drawEpoch();
+    if (!epoch) {
+        throw std::runtime_error("the operating system's random source could not be read");
+    }
+    return *epoch;
+}
+
 }  // namespace
 
-Mailbox::Mailbox(MailboxOptions options) : options_(std::move(options)) {}
+Mailbox::Mailbox(MailboxOptions options) : options_(std::move(options)), epoch_(freshEpoch()) {}
 
 void Mailbox::post(const MeshEnvelope &env) {
     std::lock_guard<std::mutex> lock(mutex_);
     mailbox_.push_back(Numbered{next_number_++, env});
     posted_.notify_all();
+}
+
+void Mailbox::restart() {
+    std::string epoch = freshEpoch();
+    std::lock_guard<std::mutex> lock(mutex_);
+    mailbox_.clear();
+    next_number_ = 1;
+    epoch_ = std::move(epoch);
+}
+
+std::string Mailbox::epoch() const {
+    std::lock_guard<std::mutex> lock(mutex_);
+    return epoch_;
 }
 
 std::vector<MeshEnvelope> Mailbox::received() const {
@@ -134,14 +157,19 @@ ServerAnswer Mailbox::answer(const ServerRequest &request, const std::function<b
     }
     received_.insert(received_.end(), taken.begin(), taken.end());
 
-    // What the client acknowledges leaves the mailbox.
+    // What the client acknowledges leaves the mailbox, when it counts in the
+    // incarnation the mailbox numbers in: one of another, or of none, names a
+    // numbering this mailbox does not hold.
     std::uint64_t ack = 0;
     if (const auto value = headerValue(request.headers, kAckHeader)) {
         ack = parseUnsigned(*value).value_or(0);
     }
     acks_.push_back(ack);
-    while (!mailbox_.empty() && mailbox_.front().number <= ack) {
-        mailbox_.pop_front();
+    const auto ackedIn = headerValue(request.headers, kEpochHeader);
+    if (ackedIn && *ackedIn == epoch_) {
+        while (!mailbox_.empty() && mailbox_.front().number <= ack) {
+            mailbox_.pop_front();
+        }
     }
 
     // Hold an exchange with nothing to answer, at most the server's bound.
@@ -172,6 +200,7 @@ ServerAnswer Mailbox::answer(const ServerRequest &request, const std::function<b
     ServerAnswer answer;
     answer.status = 200;
     answer.headers.emplace_back("Content-Type", kContentType);
+    answer.headers.emplace_back(kEpochHeader, epoch_);
     if (!mailbox_.empty()) {
         answer.headers.emplace_back(kFirstHeader, std::to_string(mailbox_.front().number));
         std::vector<MeshEnvelope> carried;

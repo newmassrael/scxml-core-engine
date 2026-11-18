@@ -284,7 +284,8 @@ impl Bench {
             })),
             |name| name == "phone",
             host,
-        );
+        )
+        .expect("the server's mailbox incarnation");
         let mut router = Router::new("cloud", 64, 50).expect("a router");
         router.add_peer("phone", peer_config("phone", None));
         side.lock().expect("the server side").endpoint = Some(Endpoint::new(
