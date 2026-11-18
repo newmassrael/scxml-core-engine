@@ -52,8 +52,8 @@ PY
 # is 1) and TestAMachineRestoredAndSavedAgainBeforeItWasDrivenKeepsItsInvocation.
 mutation_case "the next token is not saved" <<'PY'
 edit("backends/go/runtime/engine_saved.go",
-     "HostInvokeToken: int64(engine.nextHostInvokeToken),",
-     "HostInvokeToken: 0,")
+     "HostInvokeToken:  int64(engine.nextHostInvokeToken),",
+     "HostInvokeToken:  0,")
 PY
 
 # Caught by TestACompletionStillQueuedWhenTheMachineWasSavedIsAcceptedAfterTheRestore
