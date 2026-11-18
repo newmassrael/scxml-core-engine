@@ -30,6 +30,7 @@ use super::{
     PATH_PREFIX,
 };
 use crate::endpoint::{Transport, TransportFailure};
+use crate::peers::{HttpsAuthenticator, Peer, PeerLink};
 use crate::reconnect::Backoff;
 
 /// How a client reaches its server.
@@ -73,6 +74,31 @@ impl ClientSettings {
             max_body_bytes: super::DEFAULT_MAX_BODY_BYTES as usize,
             backoff: Backoff::default(),
         }
+    }
+
+    /// The settings the generated peer table gives the machine `own` for `peer`, when this
+    /// machine dials it over HTTPS ([`PeerLink::HttpsDial`]), proving its name with `credential`,
+    /// which the host holds. `None` for any other link, and for a credential of another kind than
+    /// the link's `authenticator`, which the server would refuse.
+    pub fn from_peer(own: &str, peer: &Peer, credential: Credential) -> Option<ClientSettings> {
+        let PeerLink::HttpsDial {
+            url,
+            authenticator,
+            hold_ms,
+        } = peer.link
+        else {
+            return None;
+        };
+        let fits = matches!(
+            (authenticator, &credential),
+            (HttpsAuthenticator::Bearer, Credential::Bearer(_))
+                | (HttpsAuthenticator::Install, Credential::Install(_))
+                | (HttpsAuthenticator::Mtls, Credential::Mtls)
+        );
+        fits.then(|| ClientSettings {
+            hold: Duration::from_millis(u64::from(hold_ms)),
+            ..ClientSettings::new(url, own, peer.name, credential)
+        })
     }
 }
 
@@ -629,6 +655,56 @@ mod tests {
         assert_eq!(state.ack, 0);
         take_mailbox(&mut state, "cloud", 0, &ok(Some(0), three()));
         assert!(received(&rx).is_empty(), "mailbox numbers start at 1");
+    }
+
+    fn dialed(authenticator: HttpsAuthenticator) -> Peer {
+        Peer {
+            name: "cloud",
+            config: crate::router::PeerConfig {
+                transport: "https",
+                buffer: None,
+                retry: None,
+                stamp_sequence: false,
+                delivery: crate::inbound::Delivery {
+                    dedup: true,
+                    ordered: false,
+                },
+                responders: &["cloud"],
+                deadline_ms: None,
+                reply_events: &[],
+                causal: None,
+            },
+            link: PeerLink::HttpsDial {
+                url: "https://cal.example/api",
+                authenticator,
+                hold_ms: 9_000,
+            },
+        }
+    }
+
+    /// A peer table's dialing link gives the client its URL, its server's name and its hold, and
+    /// only with a credential of the kind the link's authenticator names.
+    #[test]
+    fn a_dialing_link_gives_the_settings_and_takes_only_its_own_credential() {
+        let peer = dialed(HttpsAuthenticator::Install);
+        let settings = ClientSettings::from_peer("phone", &peer, Credential::Install([1; 32]))
+            .expect("an installation secret for an `install` link");
+        assert_eq!(settings.base, "https://cal.example/api");
+        assert_eq!(settings.own, "phone");
+        assert_eq!(settings.server, "cloud");
+        assert_eq!(settings.hold, Duration::from_millis(9_000));
+        assert!(ClientSettings::from_peer("phone", &peer, Credential::Mtls).is_none());
+        let bearer = dialed(HttpsAuthenticator::Bearer);
+        assert!(
+            ClientSettings::from_peer("phone", &bearer, Credential::Bearer("t".into())).is_some()
+        );
+        let accepted = Peer {
+            link: PeerLink::ZenohInbox,
+            ..bearer
+        };
+        assert!(
+            ClientSettings::from_peer("phone", &accepted, Credential::Bearer("t".into())).is_none()
+        );
     }
 
     #[test]

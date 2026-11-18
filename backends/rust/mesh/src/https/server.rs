@@ -41,6 +41,7 @@ use super::{
     BEARER_SCHEME, CONTENT_TYPE, FIRST_HEADER, HOLD_HEADER, INSTALL_SCHEME, PATH_ROOT, VERSION,
 };
 use crate::endpoint::{Transport, TransportFailure};
+use crate::peers::{HttpsAuthenticator, Machine, PeerLink};
 
 /// The bounds a server keeps: deploy.yaml's keys of the accepting side, and two of the host's own
 /// for shedding load.
@@ -79,6 +80,68 @@ impl Default for ServerSettings {
             max_exchanges_per_client: 3,
             retry_after: Duration::from_secs(1),
         }
+    }
+}
+
+/// What a machine's peer table says of one address it listens on for the HTTPS binding.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct Listening {
+    /// The bounds: of each, the smallest any binding on the address declares, so that no binding
+    /// is given more than it declared.
+    pub settings: ServerSettings,
+    /// The authenticator every binding on the address names.
+    pub authenticator: HttpsAuthenticator,
+    /// The peers accepted on the address: the names a server built for it binds.
+    pub peers: Vec<&'static str>,
+}
+
+impl Listening {
+    /// What `machine` accepts over HTTPS on `listen` ([`PeerLink::HttpsAccept`]). `None` when no
+    /// peer is accepted there, or when the bindings there name different authenticators, which
+    /// one server cannot check by one rule.
+    pub fn on(machine: &Machine, listen: &str) -> Option<Listening> {
+        let mut found: Option<Listening> = None;
+        for peer in machine.peers {
+            let PeerLink::HttpsAccept {
+                listen: at,
+                authenticator,
+                max_hold_ms,
+                max_body_bytes,
+                absence_ms,
+                mailbox,
+            } = peer.link
+            else {
+                continue;
+            };
+            if at != listen {
+                continue;
+            }
+            let declared = ServerSettings {
+                max_hold: Duration::from_millis(u64::from(max_hold_ms)),
+                max_body_bytes: usize::try_from(max_body_bytes).unwrap_or(usize::MAX),
+                absence: Duration::from_millis(u64::from(absence_ms)),
+                mailbox: mailbox as usize,
+                ..ServerSettings::default()
+            };
+            if let Some(held) = found.as_mut() {
+                if held.authenticator != authenticator {
+                    return None;
+                }
+                let settings = &mut held.settings;
+                settings.max_hold = settings.max_hold.min(declared.max_hold);
+                settings.max_body_bytes = settings.max_body_bytes.min(declared.max_body_bytes);
+                settings.absence = settings.absence.min(declared.absence);
+                settings.mailbox = settings.mailbox.min(declared.mailbox);
+                held.peers.push(peer.name);
+            } else {
+                found = Some(Listening {
+                    settings: declared,
+                    authenticator,
+                    peers: alloc::vec![peer.name],
+                });
+            }
+        }
+        found
     }
 }
 
@@ -784,6 +847,81 @@ mod tests {
         let clients = mailboxes.lock();
         let numbers: Vec<u64> = clients["phone"].entries.iter().map(|(n, _)| *n).collect();
         assert_eq!(numbers, [1, 2]);
+    }
+
+    fn accepted(
+        name: &'static str,
+        listen: &'static str,
+        authenticator: HttpsAuthenticator,
+        mailbox: u32,
+    ) -> crate::peers::Peer {
+        crate::peers::Peer {
+            name,
+            config: crate::router::PeerConfig {
+                transport: "https",
+                buffer: None,
+                retry: None,
+                stamp_sequence: false,
+                delivery: crate::inbound::Delivery {
+                    dedup: true,
+                    ordered: false,
+                },
+                responders: &[],
+                deadline_ms: None,
+                reply_events: &[],
+                causal: None,
+            },
+            link: PeerLink::HttpsAccept {
+                listen,
+                authenticator,
+                max_hold_ms: 20_000,
+                max_body_bytes: 4096,
+                absence_ms: 60_000,
+                mailbox,
+            },
+        }
+    }
+
+    /// A server built for one address serves every peer accepted there, under the smallest bound
+    /// any of their bindings declares; peers on another address are another server's.
+    #[test]
+    fn an_address_is_served_under_the_smallest_bounds_its_bindings_declare() {
+        let peers: &'static [crate::peers::Peer] = Box::leak(Box::new([
+            accepted("phone", "0.0.0.0:8443", HttpsAuthenticator::Bearer, 64),
+            accepted("tablet", "0.0.0.0:8443", HttpsAuthenticator::Bearer, 16),
+            accepted("kiosk", "0.0.0.0:9443", HttpsAuthenticator::Mtls, 8),
+        ]));
+        let machine = Machine {
+            name: "cloud",
+            dedup_window: 8,
+            gap_timeout_ms: 50,
+            peers,
+        };
+        let listening = Listening::on(&machine, "0.0.0.0:8443").expect("two peers there");
+        assert_eq!(listening.peers, ["phone", "tablet"]);
+        assert_eq!(listening.authenticator, HttpsAuthenticator::Bearer);
+        assert_eq!(listening.settings.mailbox, 16);
+        assert_eq!(listening.settings.max_hold, Duration::from_millis(20_000));
+        assert_eq!(listening.settings.max_body_bytes, 4096);
+        assert_eq!(listening.settings.absence, Duration::from_millis(60_000));
+        assert_eq!(
+            Listening::on(&machine, "0.0.0.0:9443").map(|l| l.peers),
+            Some(alloc::vec!["kiosk"])
+        );
+        assert!(Listening::on(&machine, "0.0.0.0:1").is_none());
+
+        let mixed: &'static [crate::peers::Peer] = Box::leak(Box::new([
+            accepted("phone", "0.0.0.0:8443", HttpsAuthenticator::Bearer, 64),
+            accepted("tablet", "0.0.0.0:8443", HttpsAuthenticator::Install, 64),
+        ]));
+        let machine = Machine {
+            peers: mixed,
+            ..machine
+        };
+        assert!(
+            Listening::on(&machine, "0.0.0.0:8443").is_none(),
+            "two authenticators on one address"
+        );
     }
 
     #[test]

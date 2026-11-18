@@ -37,6 +37,42 @@ pub enum PeerLink {
     /// (the `zenoh` module's `client_config`), not a per-peer binding, and
     /// who is ready is the peer's liveliness token (section 20.3).
     ZenohInbox,
+    /// The HTTPS binding (SCE_MESH.md section 22): this machine posts its exchanges to the peer
+    /// at `url` (`https://<host>[:<port>][<base>]`, before the binding's path).
+    HttpsDial {
+        url: &'static str,
+        /// How this machine proves its name.
+        authenticator: HttpsAuthenticator,
+        /// deploy.yaml's `hold_ms`: how long a poll asks to be held.
+        hold_ms: u32,
+    },
+    /// The HTTPS binding: the peer posts its exchanges to this machine, which listens on
+    /// `listen` (`<host>:<port>`) and keeps the peer's mailbox.
+    HttpsAccept {
+        listen: &'static str,
+        /// Who may claim the peer's name.
+        authenticator: HttpsAuthenticator,
+        /// deploy.yaml's `max_hold_ms`.
+        max_hold_ms: u32,
+        /// deploy.yaml's `max_body_bytes`.
+        max_body_bytes: u64,
+        /// deploy.yaml's `absence_ms`.
+        absence_ms: u32,
+        /// deploy.yaml's `mailbox`: the envelopes that wait for the peer at most.
+        mailbox: u32,
+    },
+}
+
+/// Who may claim a name on an HTTPS binding (SCE_MESH.md section 22.5): deploy.yaml's
+/// `authenticator`. The credential or the check itself is the host's.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum HttpsAuthenticator {
+    /// `Authorization: Bearer <token>`.
+    Bearer,
+    /// `Authorization: SCE-Install <secret>`, pinned at the first exchange.
+    Install,
+    /// A TLS client certificate.
+    Mtls,
 }
 
 /// One peer: the name `#<name>` addresses, how the core treats envelopes to
@@ -155,6 +191,57 @@ mod tests {
             ZENOH_MACHINE.peer("phone").map(|p| p.link),
             Some(PeerLink::ZenohInbox)
         );
+    }
+
+    const HTTPS_SERVER: Machine = Machine {
+        name: "cloud",
+        dedup_window: 8,
+        gap_timeout_ms: 50,
+        peers: &[Peer {
+            name: "phone",
+            config: PeerConfig {
+                transport: "https",
+                buffer: None,
+                retry: None,
+                stamp_sequence: false,
+                delivery: Delivery {
+                    dedup: true,
+                    ordered: false,
+                },
+                responders: &["phone"],
+                deadline_ms: None,
+                reply_events: &[],
+                causal: None,
+            },
+            link: PeerLink::HttpsAccept {
+                listen: "0.0.0.0:8443",
+                authenticator: HttpsAuthenticator::Install,
+                max_hold_ms: 30_000,
+                max_body_bytes: 1_048_576,
+                absence_ms: 120_000,
+                mailbox: 1024,
+            },
+        }],
+    };
+
+    #[test]
+    fn an_https_peer_is_held_like_any_other_and_its_link_carries_the_binding_keys() {
+        let mut router = HTTPS_SERVER.router().expect("a valid configuration");
+        assert!(router.peer_ready("phone", 0).is_ok());
+        let Some(Peer {
+            link:
+                PeerLink::HttpsAccept {
+                    authenticator,
+                    mailbox,
+                    ..
+                },
+            ..
+        }) = HTTPS_SERVER.peer("phone")
+        else {
+            panic!("the server accepts its client");
+        };
+        assert_eq!(*authenticator, HttpsAuthenticator::Install);
+        assert_eq!(*mailbox, 1024);
     }
 
     #[test]
