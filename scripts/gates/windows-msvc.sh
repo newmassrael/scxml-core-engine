@@ -97,7 +97,15 @@ sce_gate_build "$BUILD_DIR" --config "$CONFIG" --target standard_host_scenario_t
     sce_gate_fail "standard_host_scenario_test did not build with MSVC"
 
 sce_gate_step "run standard_host_scenario"
-ctest --test-dir "$BUILD_DIR" -C "$CONFIG" -R '^standard_host_scenario$' --output-on-failure --no-tests=error ||
+# Every test of the tree requires the fixture `sce_built`, whose setup
+# (`sce_build_is_current`) builds every target of the tree before any test
+# runs. This lane holds the targets ADR 0107 D11 names and builds exactly the
+# one it runs, above; the rest of the tree (the vendored Lua and QuickJS
+# under the project's warning policy, the POSIX-only Mesh transports) is not
+# built on Windows yet, so the setup is excluded rather than left to fail on
+# what this lane does not hold.
+ctest --test-dir "$BUILD_DIR" -C "$CONFIG" -R '^standard_host_scenario$' \
+    --fixture-exclude-setup sce_built --output-on-failure --no-tests=error ||
     sce_gate_fail "standard_host_scenario failed under MSVC"
 
 sce_gate_step "Bazel consumers through both channels, the COSE probe on vcpkg's libsodium"
