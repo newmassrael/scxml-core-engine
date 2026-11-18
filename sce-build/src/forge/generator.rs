@@ -1460,8 +1460,9 @@ pub(crate) fn kotlin_forge_package(snake: &str) -> String {
 /// The name a variant's arm is declared by in every backend's template: the
 /// arm whose codec is imported as `codec` after that alias, and the catch-all,
 /// `None`, as `Default`. The one place the name is made: the templates read it
-/// as `variant_name`, and a printer that writes a match over the arms reads it
-/// here.
+/// as `variant_name`, and a printer that writes a match over the arms (the
+/// Rust, Kotlin and Go printers) and a parent's switch over an embedded body's
+/// variant read it here.
 pub(crate) fn variant_arm_name(codec: Option<&str>) -> String {
     match codec {
         Some(alias) => filters::to_pascal_case(alias.to_string()),
@@ -26866,7 +26867,7 @@ fn parent_tag_match_term_kotlin(d: &ParentTagDerivation, imports: &[ImportContex
     };
     let mut arms = Vec::with_capacity(d.arms.len() + 1);
     for arm in &d.arms {
-        let variant = filters::to_pascal_case(arm.body_alias.clone());
+        let variant = variant_arm_name(Some(arm.body_alias.as_str()));
         let shifted = ((arm.value & mask) << d.bit) & 0xFF;
         arms.push(format!(
             "is {embed_pascal}Variant.{variant} -> 0x{shifted:02X}"
@@ -26874,7 +26875,8 @@ fn parent_tag_match_term_kotlin(d: &ParentTagDerivation, imports: &[ImportContex
     }
     if d.catch_all {
         arms.push(format!(
-            "is {embed_pascal}Variant.Default -> (({held}.tag.toInt() and 0x{mask:X}) shl {})",
+            "is {embed_pascal}Variant.{} -> (({held}.tag.toInt() and 0x{mask:X}) shl {})",
+            variant_arm_name(None),
             d.bit
         ));
     }
@@ -26968,7 +26970,7 @@ fn parent_tag_field_switch_go(
 ) -> String {
     let mut switch_block = String::from("\tswitch {\n");
     for arm in &d.arms {
-        let arm_variant = filters::to_pascal_case(arm.body_alias.clone());
+        let arm_variant = variant_arm_name(Some(arm.body_alias.as_str()));
         let shifted = ((arm.value & mask) << d.bit) & 0xFF;
         switch_block.push_str(&format!(
             "\tcase {embed}.Body.{arm_variant} != nil:\n\t\t{local} |= 0x{shifted:02X}\n"
@@ -26976,8 +26978,9 @@ fn parent_tag_field_switch_go(
     }
     // A catch-all body fills the carrier with the tag it holds (ADR 0058).
     if d.catch_all {
+        let default = variant_arm_name(None);
         switch_block.push_str(&format!(
-            "\tcase {embed}.Body.Default != nil:\n\t\t{local} |= byte(({embed}.Body.Default.Tag & 0x{mask:X}) << {})\n",
+            "\tcase {embed}.Body.{default} != nil:\n\t\t{local} |= byte(({embed}.Body.{default}.Tag & 0x{mask:X}) << {})\n",
             d.bit
         ));
     }

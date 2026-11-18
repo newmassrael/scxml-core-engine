@@ -611,7 +611,7 @@ fn variant_literal(
     Ok(match arm.default_tag {
         None => format!(
             "{enum_type}::{}(&{name})",
-            filters::to_pascal_case(arm.codec.to_string())
+            variant_arm_name(Some(arm.codec))
         ),
         Some(tag) => format!(
             "{enum_type}::Default {{ tag: {}::{}::new({tag}).expect(\"the case's tag is no \
@@ -652,7 +652,7 @@ fn variant_equal(
         };
         arms.push(match arm.tag {
             Some(_) => {
-                let name = filters::to_pascal_case(arm.codec.to_string());
+                let name = variant_arm_name(Some(arm.codec));
                 format!("({source}::{name}({x}), {source}::{name}({y})) => {same}")
             }
             None => format!(
@@ -3520,7 +3520,7 @@ impl<'a> Plan<'a> {
                     ", body: super::{}::{}Variant::{}(Default::default())",
                     import.namespace,
                     import.type_name,
-                    filters::to_pascal_case(arm.body_alias.clone())
+                    variant_arm_name(Some(arm.body_alias.as_str()))
                 )
             }
         };
@@ -3982,11 +3982,7 @@ impl<'a> Plan<'a> {
                 let known = arm.tag.is_some();
                 Arm {
                     alias: arm.codec.to_string(),
-                    variant_name: if known {
-                        filters::to_pascal_case(arm.codec.to_string())
-                    } else {
-                        "Default".to_string()
-                    },
+                    variant_name: variant_arm_name(arm.tag.map(|_| arm.codec)),
                     generic: if known {
                         format!("A{i}")
                     } else {
@@ -4840,7 +4836,7 @@ impl<'a> Plan<'a> {
                             .as_deref()
                             .map(|f| format!("{} ", rust_feature_cfg(f)))
                             .unwrap_or_default(),
-                        filters::to_pascal_case(arm.codec.clone()),
+                        variant_arm_name(Some(arm.codec.as_str())),
                         arm.tag
                     )
                 })

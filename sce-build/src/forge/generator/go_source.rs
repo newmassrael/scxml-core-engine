@@ -854,16 +854,6 @@ const VARIANT_LOCAL: &str = "_rBody";
 /// `uint64`.
 const ARM_TAG_LOCAL: &str = "_tBody";
 
-/// The name the arm of a variant whose codec is imported as `codec` is
-/// declared by, and the catch-all, `None`, as `Default`: the `variant_name`
-/// the template declares each arm by.
-fn arm_name(codec: Option<&str>) -> String {
-    match codec {
-        Some(alias) => filters::to_pascal_case(alias.to_string()),
-        None => "Default".to_string(),
-    }
-}
-
 /// The interface the Go value of the codec whose struct is `struct_name`
 /// holds the arm of its variant as: a sum of the arm types
 /// ([`arm_type`]), which only the codec's package declares.
@@ -872,11 +862,12 @@ pub(crate) fn variant_type(struct_name: &str) -> String {
 }
 
 /// The type of the arm of `struct_name`'s variant whose codec is imported as
-/// `codec`, or of the catch-all where `codec` is `None`. The one place the
-/// name is made: the printer declares the arm by it, the decode makes it,
-/// and a parent of the codec, printed or not, names it in a type switch.
+/// `codec`, or of the catch-all where `codec` is `None`, its arm named as every
+/// backend names it ([`variant_arm_name`]). The one place the type is made:
+/// the printer declares the arm by it, the decode makes it, and a parent of
+/// the codec, printed or not, names it in a type switch.
 pub(crate) fn arm_type(struct_name: &str, codec: Option<&str>) -> String {
-    format!("{}{}", variant_type(struct_name), arm_name(codec))
+    format!("{}{}", variant_type(struct_name), variant_arm_name(codec))
 }
 
 /// The fields of `plan` the encode derives the tag of the arm the value holds
@@ -2718,7 +2709,9 @@ fn variant_declarations(
         ));
         match arm.tag {
             Some(_) => {
-                made.insert(arm_name(Some(arm.codec)), format!("Make{ty}(_arm)"));
+                // Keyed by the template's `variant_name` of the arm, which
+                // the decode's case of the arm reads it by.
+                made.insert(variant_arm_name(Some(arm.codec)), format!("Make{ty}(_arm)"));
             }
             None => {
                 text.push_str(&format!(
