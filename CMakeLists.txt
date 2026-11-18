@@ -320,6 +320,12 @@ endif()
 # Modular Architecture - Add subdirectories
 add_subdirectory(backends/cpp/forge-runtime)  # sce_forge_runtime: headers generated C++ includes
 add_subdirectory(sce)                 # Unified SCE library with integrated parsing
+
+# The reference adapters of the Mesh https binding's port (docs/adr/0107, D2):
+# options SCE_MESH_HTTPS_CURL and SCE_MESH_HTTPS_WINHTTP, targets
+# sce_mesh_https_curl and sce_mesh_https_winhttp. After `sce`, which declares
+# SCE_ENABLE_MESH, and after the warning options above, which they compile with.
+include(cmake/SCEMeshHttps.cmake)
 add_subdirectory(backends/c/runtime)       # C11 heapless runtime (RFC §5.J.1)
 
 # Tools - TXML conversion (code generation is handled by sce-codegen Rust binary)
@@ -573,10 +579,14 @@ if(SCE_ENABLE_MESH)
     )
     # The forge runtime's queue these headers name is installed with the rest
     # of that runtime, above, for every configuration.
+    # The https adapters' headers (transports/https) stay out: their targets
+    # are not installed (cmake/SCEMeshHttps.cmake), and a header without the
+    # archive that defines it would be a declaration nothing links.
     install(DIRECTORY sce/include/mesh
         DESTINATION ${CMAKE_INSTALL_INCLUDEDIR}
         COMPONENT Core
         FILES_MATCHING PATTERN "*.h"
+        PATTERN "https" EXCLUDE
     )
 endif()
 

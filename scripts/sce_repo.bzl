@@ -1,6 +1,9 @@
 """Bazel repository rule for consuming the SCE C++ runtime.
 
-Provides @sce//:sce_core (header-only) and @sce//:sce_base (compiled).
+Provides @sce//:sce_core (header-only) and @sce//:sce_base (compiled), and
+the Mesh https binding's reference adapters (docs/adr/0107, D2):
+@sce//:mesh_https_curl when the `curl` attribute names the consumer's libcurl,
+and @sce//:mesh_https_winhttp when the repository is fetched on Windows.
 
 sce_base_sources.cmake is the single source of truth for the file list.
 This rule parses it and generates BUILD.bazel files automatically.
@@ -143,6 +146,54 @@ alias(
 )
 '''
 
+# The reference adapters of the Mesh https binding's port (docs/adr/0107, D2;
+# sce/include/mesh/transports/HttpsTransport.h), each a target of its own and
+# each optional, as cmake/SCEMeshHttps.cmake makes them, and built only by a
+# consumer that depends on one. The libcurl one exists when the consumer
+# passes its libcurl as the `curl` label (SCE vendors none); the WinHTTP one
+# exists when the repository is fetched on Windows. Neither links the other,
+# and the rest of SCE links neither.
+_MESH_HTTPS_PORT_HDRS = '''\
+        "include/mesh/transports/HttpsTransport.h",
+'''
+
+_MESH_HTTPS_CURL_BUILD = '''\
+cc_library(
+    name = "mesh_https_curl",
+    srcs = ["src/mesh/https/CurlHttpsTransport.cpp"],
+    hdrs = [
+{port_hdrs}        "include/mesh/transports/https/CurlHttpsTransport.h",
+    ],
+    includes = ["include"],
+    defines = ["SCE_MESH_HTTPS_CURL=1"],
+    deps = ["{curl}"],
+    visibility = ["//visibility:public"],
+)
+'''
+
+_MESH_HTTPS_WINHTTP_BUILD = '''\
+cc_library(
+    name = "mesh_https_winhttp",
+    srcs = ["src/mesh/https/WinHttpHttpsTransport.cpp"],
+    hdrs = [
+{port_hdrs}        "include/mesh/transports/https/WinHttpHttpsTransport.h",
+    ],
+    includes = ["include"],
+    defines = ["SCE_MESH_HTTPS_WINHTTP=1"],
+    linkopts = ["winhttp.lib", "crypt32.lib"],
+    visibility = ["//visibility:public"],
+)
+'''
+
+_MESH_HTTPS_ALIAS = '''\
+
+alias(
+    name = "{name}",
+    actual = "//sce:{name}",
+    visibility = ["//visibility:public"],
+)
+'''
+
 # Directories to skip when symlinking the SCE source tree.
 _SKIP_DIRS = (
     "embed", "build", "build_debug", "build_debug_qjs", "build_python",
@@ -192,8 +243,23 @@ def _sce_local_repository_impl(ctx):
         "forge_runtime/include",
     )
     ctx.file("forge_runtime/BUILD.bazel", _CC_LOAD + _FORGE_RUNTIME_BUILD)
-    ctx.file("BUILD.bazel", _ROOT_BUILD)
-    ctx.file("sce/BUILD.bazel", _CC_LOAD + _SCE_BUILD_TEMPLATE.format(srcs = srcs_str))
+
+    # The Mesh https adapters (docs/adr/0107, D2), each where its platform
+    # stack is there to link.
+    sce_build = _CC_LOAD + _SCE_BUILD_TEMPLATE.format(srcs = srcs_str)
+    root_build = _ROOT_BUILD
+    if ctx.attr.curl:
+        sce_build += "\n" + _MESH_HTTPS_CURL_BUILD.format(
+            port_hdrs = _MESH_HTTPS_PORT_HDRS,
+            curl = ctx.attr.curl,
+        )
+        root_build += _MESH_HTTPS_ALIAS.format(name = "mesh_https_curl")
+    if ctx.os.name.lower().startswith("windows"):
+        sce_build += "\n" + _MESH_HTTPS_WINHTTP_BUILD.format(port_hdrs = _MESH_HTTPS_PORT_HDRS)
+        root_build += _MESH_HTTPS_ALIAS.format(name = "mesh_https_winhttp")
+
+    ctx.file("BUILD.bazel", root_build)
+    ctx.file("sce/BUILD.bazel", sce_build)
     ctx.file("third_party/BUILD.bazel", _THIRD_PARTY_BUILD)
     ctx.file("third_party/nlohmann_json/BUILD.bazel", _CC_LOAD + _NLOHMANN_BUILD)
     ctx.file("third_party/pugixml/BUILD.bazel", _CC_LOAD + _PUGIXML_BUILD)
@@ -206,6 +272,11 @@ sce_local_repository = repository_rule(
         "environ": attr.string(
             default = "SCE_ROOT",
             doc = "Environment variable holding the SCE checkout path.",
+        ),
+        "curl": attr.string(
+            default = "",
+            doc = "The consumer's libcurl, as a label (`@curl//:curl`); when given, " +
+                  "@sce//:mesh_https_curl is defined on it. SCE vendors no libcurl.",
         ),
     },
     environ = ["SCE_ROOT"],
