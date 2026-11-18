@@ -3794,6 +3794,59 @@
       "decision_status": "active",
       "coverage_expectation": "informational"
     },
+    "mesh-22": {
+      "title": "HTTPS Binding",
+      "parent_doc": "mesh",
+      "decision_status": "active"
+    },
+    "mesh-22.1": {
+      "title": "Exchange and Peer Identity",
+      "parent_doc": "mesh",
+      "parent_section": "mesh-22",
+      "decision_status": "active"
+    },
+    "mesh-22.2": {
+      "title": "Framing",
+      "parent_doc": "mesh",
+      "parent_section": "mesh-22",
+      "decision_status": "active"
+    },
+    "mesh-22.3": {
+      "title": "Mailbox, Acknowledgement and Hold",
+      "parent_doc": "mesh",
+      "parent_section": "mesh-22",
+      "decision_status": "active"
+    },
+    "mesh-22.4": {
+      "title": "Status Codes, Readiness and Faults",
+      "parent_doc": "mesh",
+      "parent_section": "mesh-22",
+      "decision_status": "active"
+    },
+    "mesh-22.5": {
+      "title": "Authentication",
+      "parent_doc": "mesh",
+      "parent_section": "mesh-22",
+      "decision_status": "active"
+    },
+    "mesh-22.6": {
+      "title": "Port, Adapters and Platform Policy",
+      "parent_doc": "mesh",
+      "parent_section": "mesh-22",
+      "decision_status": "active"
+    },
+    "mesh-22.7": {
+      "title": "Conformance Kit",
+      "parent_doc": "mesh",
+      "parent_section": "mesh-22",
+      "decision_status": "active"
+    },
+    "mesh-22.8": {
+      "title": "Implementations",
+      "parent_doc": "mesh",
+      "parent_section": "mesh-22",
+      "decision_status": "active"
+    },
     "mesh-3": {
       "title": "Three Abstraction Axes",
       "parent_doc": "mesh",
