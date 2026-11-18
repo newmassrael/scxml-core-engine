@@ -411,6 +411,13 @@ inline Outcome record(std::vector<Field> fields) {
     return {Outcome::Kind::Done, object(fields)};
 }
 
+/// A failure: the result record whose fields but `error` are `zero`, every one at its zero, and whose
+/// `error` is `code`.
+inline Outcome failed(const std::string &code, std::vector<Field> zero) {
+    zero.insert(zero.begin(), text("error", code));
+    return {Outcome::Kind::Done, object(zero)};
+}
+
 /// The failure `code` of `operation`: its result record with the fields at their zero and `error` the
 /// code, so a machine reads the failure as a typed field.
 inline Outcome failure(const std::string &operation, const std::string &code) {
@@ -439,8 +446,7 @@ inline Outcome failure(const std::string &operation, const std::string &code) {
     } else {
         zero = {number("status", 0), text("headers", ""), text("body", "")};
     }
-    zero.insert(zero.begin(), text("error", code));
-    return {Outcome::Kind::Done, object(zero)};
+    return failed(code, std::move(zero));
 }
 
 /// Whether `bytes` is well-formed UTF-8: no overlong form, no surrogate, nothing past U+10FFFF.
@@ -580,6 +586,25 @@ inline std::optional<uint64_t> versionNumber(const std::string &digits) {
 
 }  // namespace detail
 
+/// A standard feature a reference host serves beside the ones every host serves (TYPES), added by the
+/// embedding because it needs what the host's own build does not link: the COSE operations need a
+/// cryptographic library (docs/adr/0107, D7). The host keeps the contract of section 1 for it as for its
+/// own: it records the start, refuses a request the feature does not accept, fails one the embedding
+/// injected a failure for, and only then hands the feature the operation.
+class Feature {
+public:
+    virtual ~Feature() = default;
+    /// The operation types it serves, none of them one of TYPES.
+    virtual std::vector<std::string> types() const = 0;
+    /// Whether it starts the request of `operation`; one it does not start is refused
+    /// (`invalid_argument`) and nothing starts. `why` says, for the log, what it would not start.
+    virtual bool accepts(const std::string &operation, const Params &params, std::string &why) const = 0;
+    /// The failure `code` of `operation`: its result record with every field at its zero.
+    virtual Outcome failure(const std::string &operation, const std::string &code) const = 0;
+    /// Run `operation` for invocation `id`, whose request it accepted.
+    virtual Outcome run(const std::string &operation, const std::string &id, const Params &params) = 0;
+};
+
 /// The standard host features' semantics, over a clock and a transport.
 class ReferenceHost {
 public:
@@ -651,14 +676,43 @@ public:
         setAnswerSchemas(schemas, N);
     }
 
+    /// Serve the operations of `feature`, which outlives the host, from here on. False, and nothing added,
+    /// when one of its types is already served, by the host itself or by a feature added before.
+    bool addFeature(Feature &feature) {
+        const std::vector<std::string> served = types();
+        for (const std::string &type : feature.types()) {
+            if (std::find(served.begin(), served.end(), type) != served.end()) {
+                SCE_LOG_WARN("reference host: {} is served already; the feature is not added", type);
+                return false;
+            }
+        }
+        features_.push_back(&feature);
+        return true;
+    }
+
+    /// Every operation type the host serves: TYPES, then each added feature's, in the order added.
+    std::vector<std::string> types() const {
+        std::vector<std::string> served(TYPES.begin(), TYPES.end());
+        for (const Feature *feature : features_) {
+            const std::vector<std::string> own = feature->types();
+            served.insert(served.end(), own.begin(), own.end());
+        }
+        return served;
+    }
+
     /// Start the operation of invocation `id` with `params`.
     ///
-    /// Nothing for a type that is not one of the standard host features: the host serves none of it.
+    /// Nothing for a type the host does not serve: neither one of TYPES nor one of an added feature's.
     /// Otherwise the arguments are judged first (a refusal starts nothing), then a failure the embedding
     /// injected, then the operation itself.
     std::optional<Outcome> start(const std::string &operation, const std::string &id, const Params &params) {
         if (std::find(TYPES.begin(), TYPES.end(), operation) == TYPES.end()) {
-            return std::nullopt;
+            Feature *feature = featureServing(operation);
+            if (feature == nullptr) {
+                return std::nullopt;
+            }
+            starts_.push_back({operation, id, params});
+            return startFeature(*feature, operation, id, params);
         }
         starts_.push_back({operation, id, params});
         const auto argument = [&params](const char *name) {
@@ -743,6 +797,31 @@ public:
     }
 
 private:
+    /// The added feature that serves `operation`, or none.
+    Feature *featureServing(const std::string &operation) const {
+        for (Feature *feature : features_) {
+            const std::vector<std::string> own = feature->types();
+            if (std::find(own.begin(), own.end(), operation) != own.end()) {
+                return feature;
+            }
+        }
+        return nullptr;
+    }
+
+    /// Start `operation` of `feature` as the host starts its own: judged, then an injected failure, then run.
+    Outcome startFeature(Feature &feature, const std::string &operation, const std::string &id, const Params &params) {
+        std::string why;
+        if (!feature.accepts(operation, params, why)) {
+            SCE_LOG_INFO("{} {}: refused, {}", operation, id, why);
+            return Outcome{Outcome::Kind::Refuse, R"({"reason":"invalid_argument"})"};
+        }
+        if (const auto fault = faults_.find(operation); fault != faults_.end()) {
+            SCE_LOG_INFO("{} {}: fails {}, injected", operation, id, fault->second);
+            return feature.failure(operation, fault->second);
+        }
+        return feature.run(operation, id, params);
+    }
+
     Outcome clockNow() {
         const auto reading = clock_.read();
         if (!reading) {
@@ -994,17 +1073,20 @@ private:
     std::vector<std::string> cancelled_;
     std::optional<int64_t> monotonicFloor_;
     std::vector<Start> starts_;
+    /// The features the embedding added, in the order added; each outlives the host.
+    std::vector<Feature *> features_;
 };
 
 /**
- * Register `host` as the invoker of every standard type on `machine`, before it starts.
+ * Register `host` as the invoker of every type it serves on `machine`, before it starts: every standard
+ * type, and those of the features added to it before this call.
  *
  * A start is answered with its completion (a failure is a completion whose `error` is a code) or its
  * refusal, or not at all when the host holds it. The cancel the engine delivers when a state exits or a
  * deadline passes reaches the host too.
  */
 template <typename Machine> void serve(Machine &machine, ReferenceHost &host) {
-    for (const char *operation : TYPES) {
+    for (const std::string &operation : host.types()) {
         machine.registerInvoker(
             operation, [&host, operation](const SCE::HostInvokeEvent &event) -> std::optional<SCE::HostInvokeResponse> {
                 if (event.cancel.has_value()) {
