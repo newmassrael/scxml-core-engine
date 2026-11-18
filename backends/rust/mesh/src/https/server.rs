@@ -521,11 +521,14 @@ impl Drop for AbortOnDrop {
 /// the host's [`ServerHost::deliver`] said of the envelopes among them.
 async fn tell(shared: &Arc<Shared>, events: Vec<LinkEvent>) -> Durability {
     let host = Arc::clone(&shared.host);
-    // A host that panicked has left its endpoint in a state nobody can read; the exchange still
-    // answers with what the mailbox holds, and the panic is the host's to see in its own log.
+    // A host that panicked has left its endpoint in a state nobody can read, so nothing says
+    // whether the envelopes it was handed were taken, let alone made durable (SCE_MESH.md
+    // §10.11): the exchange is shed as one the host could not make durable, the sender carries
+    // the envelopes again, and the mailbox keeps what it holds for the next exchange. The panic
+    // is the host's to see in its own log.
     tokio::task::spawn_blocking(move || host.deliver(events))
         .await
-        .unwrap_or(Durability::Now)
+        .unwrap_or(Durability::NotDurable)
 }
 
 /// Wait until the host reported durable a checkpoint above `sealed`, at most `bound`. Whether it
