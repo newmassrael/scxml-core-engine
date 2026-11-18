@@ -1271,14 +1271,17 @@ fn a_cbor_map_holds_each_entry_in_the_class_of_its_bound_and_writes_it_by_key() 
         ],
     );
     // The template's checks are gone: the classes hold every bound, and the
-    // map refuses nothing.
+    // map refuses nothing. Neither the source interface nor the data class
+    // holds the byte string bare; the decode alone reads it bare, into the
+    // local its factory then judges (`id = CodecCborMapIdBytes.of(id ...)`).
     holds_none(
         "codec_cbor_map",
         &text,
         &[
             "return CodecError.CborWrongLength",
             "return CodecError.CborOutOfRange",
-            "var id: ByteArray",
+            "    val id: ByteArray",
+            "override var id: ByteArray",
         ],
     );
 }
