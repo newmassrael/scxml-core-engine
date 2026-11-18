@@ -803,7 +803,10 @@ MACHINE_COMMON(static_host_kv, PLAIN)
 TEXT_VAR(static_host_kv, outcome)
 NUMBER_VAR(static_host_kv, found)
 TEXT_VAR(static_host_kv, got)
+TEXT_VAR(static_host_kv, got_version)
 NUMBER_VAR(static_host_kv, replaced)
+NUMBER_VAR(static_host_kv, written)
+TEXT_VAR(static_host_kv, put_version)
 NUMBER_VAR(static_host_kv, existed)
 NUMBER_VAR(static_host_kv, next_found)
 TEXT_VAR(static_host_kv, next)
@@ -811,7 +814,10 @@ static const variable_t kv_variables[] = {
     TEXT_ROW(static_host_kv, outcome),
     NUMBER_ROW(static_host_kv, J_BOOL, found),
     TEXT_ROW(static_host_kv, got),
+    TEXT_ROW(static_host_kv, got_version),
     NUMBER_ROW(static_host_kv, J_BOOL, replaced),
+    NUMBER_ROW(static_host_kv, J_BOOL, written),
+    TEXT_ROW(static_host_kv, put_version),
     NUMBER_ROW(static_host_kv, J_BOOL, existed),
     NUMBER_ROW(static_host_kv, J_BOOL, next_found),
     TEXT_ROW(static_host_kv, next),

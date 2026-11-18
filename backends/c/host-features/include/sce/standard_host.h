@@ -34,7 +34,7 @@ extern "C" {
 #endif
 
 /** The number of standard operation types. */
-#define SCE_HF_TYPE_COUNT 12
+#define SCE_HF_TYPE_COUNT 13
 
 /** Every operation type of the standard host features, in the order the
     specification lists them. */

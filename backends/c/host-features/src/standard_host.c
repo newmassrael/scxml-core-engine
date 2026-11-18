@@ -17,17 +17,10 @@
 #include <time.h>
 
 const char *const sce_hf_types[SCE_HF_TYPE_COUNT] = {
-    "sce-host-clock-now",
-    "sce-host-clock-zone",
-    "sce-host-kv-get",
-    "sce-host-kv-put",
-    "sce-host-kv-delete",
-    "sce-host-kv-next-key",
-    "sce-host-notify-permission",
-    "sce-host-notify-request-permission",
-    "sce-host-notify-post",
-    "sce-host-notify-cancel",
-    "sce-host-http-fetch",
+    "sce-host-clock-now",   "sce-host-clock-zone",        "sce-host-kv-get",
+    "sce-host-kv-put",      "sce-host-kv-put-if",         "sce-host-kv-delete",
+    "sce-host-kv-next-key", "sce-host-notify-permission", "sce-host-notify-request-permission",
+    "sce-host-notify-post", "sce-host-notify-cancel",     "sce-host-http-fetch",
     SCE_HF_MODEL_GENERATE,
 };
 
@@ -147,9 +140,11 @@ static void strlist_free(strlist_t *list) {
     memset(list, 0, sizeof(*list));
 }
 
+/* A stored value and the version its write gave the key. */
 typedef struct {
     char *key;
     char *value;
+    uint64_t version;
 } entry_t;
 
 typedef struct {
@@ -173,6 +168,10 @@ struct sce_hf_host_s {
     size_t store_cap;
     bool has_quota;
     size_t quota;
+    /* The last number a write or a removal took: versions are numbered from
+       this one counter of the store (docs/SCE_HOST_FEATURES.md, section 8), so
+       a key is never given a version it had, even after it was removed. */
+    uint64_t last_version;
     char *permission;
     char *user_decision;
     strlist_t waiting;
@@ -476,8 +475,12 @@ static void failure(const char *operation, const char *code, sce_hf_outcome_t *o
     } else if (strcmp(operation, "sce-host-kv-get") == 0) {
         record_bool(&r, "found", false);
         record_text(&r, "value", "", 0u);
+        record_text(&r, "version", "0", 1u);
     } else if (strcmp(operation, "sce-host-kv-put") == 0) {
         record_bool(&r, "replaced", false);
+    } else if (strcmp(operation, "sce-host-kv-put-if") == 0) {
+        record_bool(&r, "written", false);
+        record_text(&r, "version", "0", 1u);
     } else if (strcmp(operation, "sce-host-kv-delete") == 0 || strcmp(operation, "sce-host-notify-cancel") == 0) {
         record_bool(&r, "existed", false);
     } else if (strcmp(operation, "sce-host-kv-next-key") == 0) {
@@ -554,24 +557,50 @@ static size_t store_find(const sce_hf_host_t *host, const char *key, bool *found
     return at;
 }
 
-static void kv_get(sce_hf_host_t *host, const char *key, sce_hf_outcome_t *out) {
-    bool found;
-    const size_t at = store_find(host, key, &found);
-    record_t r;
-    record_begin(&r, "");
-    record_bool(&r, "found", found);
-    record_text(&r, "value", found ? host->store[at].value : "", found ? strlen(host->store[at].value) : 0u);
-    record_end(&r, out);
+/* A version as the text of its digits, into `digits`, which holds 21 bytes. */
+static void version_text(uint64_t version, char digits[21]) {
+    (void)snprintf(digits, 21u, "%" PRIu64, version);
 }
 
-static void kv_put(sce_hf_host_t *host, const char *key, const char *value, sce_hf_outcome_t *out) {
-    bool replaced;
-    const size_t at = store_find(host, key, &replaced);
-    if (!replaced && host->has_quota && host->store_count >= host->quota) {
-        failure("sce-host-kv-put", "quota_exceeded", out);
-        return;
+/* An expected version is one or more of the digits 0 to 9, and nothing else. */
+static bool valid_version(const char *text) {
+    if (text[0] == '\0') {
+        return false;
     }
-    if (replaced) {
+    for (const char *c = text; *c != '\0'; ++c) {
+        if (*c < '0' || *c > '9') {
+            return false;
+        }
+    }
+    return true;
+}
+
+/* The number `digits`, a text of the digits 0 to 9, writes, into `out`; false
+   when it is past UINT64_MAX, which names no version. Leading zeros do not
+   count. */
+static bool version_number(const char *digits, uint64_t *out) {
+    uint64_t value = 0;
+    for (const char *c = digits; *c != '\0'; ++c) {
+        const uint64_t digit = (uint64_t)(*c - '0');
+        if (value > (UINT64_MAX - digit) / 10u) {
+            return false;
+        }
+        value = value * 10u + digit;
+    }
+    *out = value;
+    return true;
+}
+
+/* Whether writing a key not `held` would hold one key more than the quota
+   allows. */
+static bool over_quota(const sce_hf_host_t *host, bool held) {
+    return !held && host->has_quota && host->store_count >= host->quota;
+}
+
+/* Keep `value` under `key`, which `store_find` placed at `at` and found as
+   `held`, at the counter's next number; that number. */
+static uint64_t store_write(sce_hf_host_t *host, size_t at, bool held, const char *key, const char *value) {
+    if (held) {
         free(host->store[at].value);
         host->store[at].value = dup_str(value);
     } else {
@@ -584,9 +613,57 @@ static void kv_put(sce_hf_host_t *host, const char *key, const char *value, sce_
         host->store[at].value = dup_str(value);
         host->store_count++;
     }
+    host->store[at].version = ++host->last_version;
+    return host->store[at].version;
+}
+
+static void kv_get(sce_hf_host_t *host, const char *key, sce_hf_outcome_t *out) {
+    bool found;
+    const size_t at = store_find(host, key, &found);
+    char version[21];
+    version_text(found ? host->store[at].version : 0u, version);
+    record_t r;
+    record_begin(&r, "");
+    record_bool(&r, "found", found);
+    record_text(&r, "value", found ? host->store[at].value : "", found ? strlen(host->store[at].value) : 0u);
+    record_text(&r, "version", version, strlen(version));
+    record_end(&r, out);
+}
+
+static void kv_put(sce_hf_host_t *host, const char *key, const char *value, sce_hf_outcome_t *out) {
+    bool replaced;
+    const size_t at = store_find(host, key, &replaced);
+    if (over_quota(host, replaced)) {
+        failure("sce-host-kv-put", "quota_exceeded", out);
+        return;
+    }
+    (void)store_write(host, at, replaced, key, value);
     record_t r;
     record_begin(&r, "");
     record_bool(&r, "replaced", replaced);
+    record_end(&r, out);
+}
+
+/* Write `value` under `key` only when the key is at `expected`, a text of
+   digits the refusal already judged. It is compared as a number, so leading
+   zeros do not count, and one past UINT64_MAX names no version. */
+static void kv_put_if(sce_hf_host_t *host, const char *key, const char *value, const char *expected,
+                      sce_hf_outcome_t *out) {
+    bool held;
+    const size_t at = store_find(host, key, &held);
+    const uint64_t current = held ? host->store[at].version : 0u;
+    uint64_t wanted = 0;
+    const bool matches = version_number(expected, &wanted) && wanted == current;
+    if (matches && over_quota(host, held)) {
+        failure("sce-host-kv-put-if", "quota_exceeded", out);
+        return;
+    }
+    char version[21];
+    version_text(matches ? store_write(host, at, held, key, value) : current, version);
+    record_t r;
+    record_begin(&r, "");
+    record_bool(&r, "written", matches);
+    record_text(&r, "version", version, strlen(version));
     record_end(&r, out);
 }
 
@@ -598,6 +675,7 @@ static void kv_delete(sce_hf_host_t *host, const char *key, sce_hf_outcome_t *ou
         free(host->store[at].value);
         memmove(&host->store[at], &host->store[at + 1u], (host->store_count - at - 1u) * sizeof(entry_t));
         host->store_count--;
+        ++host->last_version;
     }
     record_t r;
     record_begin(&r, "");
@@ -1218,6 +1296,8 @@ bool sce_hf_start(sce_hf_host_t *host, const char *operation, const char *invoke
     if (strcmp(operation, "sce-host-kv-get") == 0 || strcmp(operation, "sce-host-kv-delete") == 0 ||
         strcmp(operation, "sce-host-kv-put") == 0) {
         refused = ARG("key")[0] == '\0';
+    } else if (strcmp(operation, "sce-host-kv-put-if") == 0) {
+        refused = ARG("key")[0] == '\0' || !valid_version(ARG("expected_version"));
     } else if (strcmp(operation, "sce-host-notify-post") == 0 || strcmp(operation, "sce-host-notify-cancel") == 0) {
         refused = ARG("id")[0] == '\0';
     } else if (strcmp(operation, "sce-host-http-fetch") == 0) {
@@ -1257,6 +1337,8 @@ bool sce_hf_start(sce_hf_host_t *host, const char *operation, const char *invoke
         kv_get(host, ARG("key"), out);
     } else if (strcmp(operation, "sce-host-kv-put") == 0) {
         kv_put(host, ARG("key"), ARG("value"), out);
+    } else if (strcmp(operation, "sce-host-kv-put-if") == 0) {
+        kv_put_if(host, ARG("key"), ARG("value"), ARG("expected_version"), out);
     } else if (strcmp(operation, "sce-host-kv-delete") == 0) {
         kv_delete(host, ARG("key"), out);
     } else if (strcmp(operation, "sce-host-kv-next-key") == 0) {
