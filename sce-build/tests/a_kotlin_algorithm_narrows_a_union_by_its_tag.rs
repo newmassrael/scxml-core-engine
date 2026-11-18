@@ -136,7 +136,17 @@ fn a_kotlin_algorithm_reads_walks_and_builds_a_list_of_unions() {
     let (_, kept) = unit("algorithm_shapes_kept.scxml");
     holds(&kept, &format!("val kept = ArrayList<{SHAPE}>(8)"));
     holds(&kept, "kept.add(shape)");
-    holds(&kept, &format!("): List<{SHAPE}>"));
+    // The fixture declares `may-fail` (the list fails `capacity-exceeded` past
+    // its eight), so the list is returned in the result a may-fail algorithm
+    // hands its caller (SCE_FORGE.md, the integer arithmetic contract).
+    holds(
+        &kept,
+        &format!("): com.sce.forge.runtime.AlgorithmResult<List<{SHAPE}>> {{\n"),
+    );
+    holds(
+        &kept,
+        "return com.sce.forge.runtime.AlgorithmResult.Ok(kept)\n",
+    );
 }
 
 /// A file that calls both algorithms, the one's union handed to the other.
