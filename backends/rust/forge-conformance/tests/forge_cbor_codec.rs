@@ -145,7 +145,7 @@ fn every_refusal_the_section_names_leaves_the_cursor_where_it_was() {
     let mut twice = expected();
     twice[0] = 0xa6;
     twice.extend_from_slice(&[0x07, 0xf4]);
-    refused(&twice, CodecError::CborMalformed);
+    refused(&twice, CodecError::CborDuplicateKey);
 
     // `pattern` holding 300, past a uint8.
     let mut wide = expected();
@@ -160,7 +160,14 @@ fn every_refusal_the_section_names_leaves_the_cursor_where_it_was() {
     let mut kind = expected();
     let last = kind.len() - 1;
     kind.splice(last..last + 1, [0x61, b'x']);
-    refused(&kind, CodecError::CborMalformed);
+    refused(&kind, CodecError::CborWrongType);
+
+    // `null` under the optional `urgent` key: an absent entry is a key not
+    // written, so `null` is an item of the wrong type there.
+    let mut null = expected();
+    let last = null.len() - 1;
+    null[last] = 0xf6;
+    refused(&null, CodecError::CborWrongType);
 
     // An indefinite-length map.
     refused(&[0xbf, 0xff], CodecError::CborMalformed);

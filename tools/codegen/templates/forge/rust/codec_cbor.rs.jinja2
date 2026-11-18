@@ -124,7 +124,7 @@ fn {{ r.decode_fn }}(c: &mut SceCursor<'_>) -> Result<{{ r.type_name }}, CodecEr
             {{ f.key_literal }} => {
                 // A key given twice is not one map entry.
                 if held_{{ f.name }}.is_some() {
-                    return Err(CodecError::CborMalformed);
+                    return Err(CodecError::CborDuplicateKey);
                 }
                 held_{{ f.name }} = Some({{ decode_record_field(f) }});
             }
@@ -193,7 +193,7 @@ impl{{ lifetime }} {{ struct_name }}{{ lifetime }} {
                 {{ e.key }} => {
                     // A key given twice is not one map entry.
                     if {{ e.name }}.is_some() {
-                        return Err(CodecError::CborMalformed);
+                        return Err(CodecError::CborDuplicateKey);
                     }
                     {{ e.name }} = Some({{ held_value(e) }});
                 }

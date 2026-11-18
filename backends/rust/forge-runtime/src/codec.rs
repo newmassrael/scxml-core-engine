@@ -87,12 +87,24 @@ pub enum CodecError {
     /// this. Every runtime's decode answers this kind by its own name
     /// (docs/adr/0099, amendment of 2026-11-16).
     UndeclaredEnumValue,
-    /// A `sce:encoding="cbor"` codec (SCE_FORGE.md §4.6.1) read bytes that
-    /// are not the CBOR it expects: a head it cannot read (reserved
-    /// additional information, an indefinite length), a value of another
-    /// major type than the entry declares, a key that is not an unsigned
-    /// integer, or a key given twice.
+    /// A `sce:encoding="cbor"` codec (SCE_FORGE.md §4.6.1) read an item that
+    /// is not well-formed CBOR (RFC 8949 Appendix F: reserved additional
+    /// information, a break code where an item stands, a two-byte simple
+    /// value below 32), or one of indefinite length, which the codec's
+    /// profile of definite lengths does not hold (docs/adr/0101 §3.1).
     CborMalformed,
+    /// A CBOR codec read an item of a major type, a simple value or a tag the
+    /// type at that place does not take: a text where a number stands, a
+    /// negative integer where an unsigned type stands, `null` where no list's
+    /// optional element stands, a tagged item, a top-level key that is not an
+    /// unsigned integer, a record's or a union's key that is not a text.
+    CborWrongType,
+    /// A CBOR map held one of its declared keys twice (RFC 8949 §5.6).
+    CborDuplicateKey,
+    /// A CBOR union's one key names none of its cases.
+    CborUnknownVariant,
+    /// A CBOR union's map held no entry, or more than one.
+    CborUnionEntries,
     /// A CBOR codec's map lacked an entry of a bare type, one that is not
     /// `optional<T>`.
     CborRequiredKeyMissing,

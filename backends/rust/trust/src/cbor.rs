@@ -38,29 +38,19 @@ use std::convert::Infallible;
 use std::fmt;
 
 use sce_forge_runtime::cbor::{
-    write_bool, write_bytes, write_head, write_map_head, write_text, MAJOR_SIMPLE, MAJOR_UNSIGNED,
+    single_of, write_bool, write_bytes, write_float, write_head, write_int, write_map_head,
+    write_text, write_uint, MAJOR_SIMPLE,
 };
 use sce_forge_runtime::codec::{widen_usize, SceSink, VecSink};
 pub use sce_forge_runtime::value_type::{
     EnumType, Field, FieldDefault, Integer, RecordType, Shape, ValueType, Variant,
 };
 
-/// Major type 1: the negative integer `-1 - n` for the argument `n` (RFC 8949 section 3.1).
-const MAJOR_NEGATIVE: u8 = 1;
-
 /// Major type 4: an array of the argument's count of items (RFC 8949 section 3.1).
 const MAJOR_ARRAY: u8 = 4;
 
 /// `null`, simple value 22 (RFC 8949 section 3.3).
 const NULL: u8 = (MAJOR_SIMPLE << 5) | 22;
-
-/// The initial byte of a half, a single and a double precision float (RFC 8949 section 3.3).
-const HALF: u8 = (MAJOR_SIMPLE << 5) | 25;
-const SINGLE: u8 = (MAJOR_SIMPLE << 5) | 26;
-const DOUBLE: u8 = (MAJOR_SIMPLE << 5) | 27;
-
-/// The one NaN written: the quiet NaN of half precision (docs/adr/0086, section 9.2).
-const NAN: [u8; 3] = [HALF, 0x7e, 0x00];
 
 /// A value of a type of the grammar.
 #[derive(Debug, Clone, PartialEq)]
@@ -231,47 +221,6 @@ fn key_of(id: &str) -> Vec<u8> {
     key
 }
 
-/// The half precision float that is `x` exactly, as its bits, or `None` when no half is (IEEE 754
-/// binary16: 5 bits of exponent, 10 of fraction, subnormal below 2^-14). `x` is not a NaN.
-fn half_of(x: f64) -> Option<u16> {
-    let bits = x.to_bits();
-    let sign = ((bits >> 48) & 0x8000) as u16;
-    let exponent = ((bits >> 52) & 0x7ff) as i32;
-    let fraction = bits & ((1 << 52) - 1);
-    if exponent == 0x7ff {
-        // An infinity; a NaN is written before this is asked.
-        return (fraction == 0).then_some(sign | 0x7c00);
-    }
-    if exponent == 0 {
-        // Zero, or a double's subnormal, which is far below a half's least.
-        return (fraction == 0).then_some(sign);
-    }
-    let power = exponent - 1023;
-    if (-14..=15).contains(&power) {
-        // A half's normal number keeps the top 10 bits of the fraction and nothing below them.
-        if (fraction & ((1 << 42) - 1)) != 0 {
-            return None;
-        }
-        return Some(sign | (((power + 15) as u16) << 10) | (fraction >> 42) as u16);
-    }
-    if (-24..=-15).contains(&power) {
-        // A half's subnormal number is k * 2^-24 for k from 1 to 1023.
-        let significand = fraction | (1 << 52);
-        let shift = (28 - power) as u32;
-        if (significand & ((1 << shift) - 1)) != 0 {
-            return None;
-        }
-        return Some(sign | (significand >> shift) as u16);
-    }
-    None
-}
-
-/// The single precision float that is `x` exactly, or `None` when no single is. `x` is not a NaN.
-fn single_of(x: f64) -> Option<f32> {
-    let single = x as f32;
-    (f64::from(single) == x).then_some(single)
-}
-
 /// One encoding in progress: the bytes written so far and the path to the value being written.
 struct Encoder<'a> {
     sink: VecSink<'a>,
@@ -371,31 +320,19 @@ impl Encoder<'_> {
         if n < least || n > greatest {
             return Err(self.refuse(Why::OutOfRange { value: n, integer }));
         }
-        let (major, argument) = if n < 0 {
-            (MAJOR_NEGATIVE, -1 - n)
+        // Within `int64` below zero and within `uint64` at zero or more, so each cast is exact.
+        if n < 0 {
+            put(write_int(&mut self.sink, n as i64));
         } else {
-            (MAJOR_UNSIGNED, n)
-        };
-        // Within `int64` and `uint64`, so the argument is below 2^64.
-        put(write_head(&mut self.sink, major, argument as u64));
+            put(write_uint(&mut self.sink, n as u64));
+        }
         Ok(())
     }
 
     /// A float in the shortest of half, single and double precision that holds it exactly, and a
-    /// NaN as `f9 7e 00` (RFC 8949 sections 4.1 and 4.2.1).
+    /// NaN as `f9 7e 00` (RFC 8949 sections 4.1 and 4.2.1), by the codecs' one float writer.
     fn float(&mut self, x: f64) {
-        if x.is_nan() {
-            put(self.sink.write_bytes(&NAN));
-        } else if let Some(half) = half_of(x) {
-            put(self.sink.write_u8(HALF));
-            put(self.sink.write_bytes(&half.to_be_bytes()));
-        } else if let Some(single) = single_of(x) {
-            put(self.sink.write_u8(SINGLE));
-            put(self.sink.write_bytes(&single.to_bits().to_be_bytes()));
-        } else {
-            put(self.sink.write_u8(DOUBLE));
-            put(self.sink.write_bytes(&x.to_bits().to_be_bytes()));
-        }
+        put(write_float(&mut self.sink, x));
     }
 
     /// A record: a map of every field its type declares, in the order of the bytes of each key's

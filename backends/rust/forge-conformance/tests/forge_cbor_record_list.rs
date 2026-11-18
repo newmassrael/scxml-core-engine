@@ -178,7 +178,7 @@ fn a_malformed_record_is_refused_and_leaves_the_cursor_where_it_was() {
     // `seq` given twice.
     let mut twice = vec![0x81, 0xa3, 0x63, b's', b'e', b'q', 0x01];
     twice.extend_from_slice(&record(A, &[0x02])[1..]);
-    refused(&twice, CodecError::CborMalformed);
+    refused(&twice, CodecError::CborDuplicateKey);
 
     // An author of seventeen bytes, past its bound of sixteen.
     let mut long = vec![0x81, 0xa2, 0x63, b's', b'e', b'q', 0x01];
@@ -186,8 +186,10 @@ fn a_malformed_record_is_refused_and_leaves_the_cursor_where_it_was() {
     long.extend_from_slice(&[b'a'; 17]);
     refused(&long, CodecError::CborOutOfRange);
 
-    // An item that is no map, and an array of indefinite length.
-    refused(&[0x81, 0x01], CodecError::CborMalformed);
+    // An item that is no map, a record's key that is no text, and an array of
+    // indefinite length, which the profile does not hold.
+    refused(&[0x81, 0x01], CodecError::CborWrongType);
+    refused(&[0x81, 0xa1, 0x01, 0x01], CodecError::CborWrongType);
     refused(&[0x9f, 0xff], CodecError::CborMalformed);
 }
 
