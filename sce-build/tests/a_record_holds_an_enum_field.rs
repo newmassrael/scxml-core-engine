@@ -155,12 +155,18 @@ fn run(args: &[&str], doc: &str) -> (bool, String) {
     }
     let path = dir.path().join("probe.scxml");
     std::fs::write(&path, doc).expect("write probe");
+    codegen(args, &path)
+}
+
+/// `sce-codegen` run with `args` on the document at `path`: whether it passed,
+/// and what it wrote.
+fn codegen(args: &[&str], path: &Path) -> (bool, String) {
     let out = Command::new(sce_codegen_bin())
         .arg("--workspace-root")
         .arg(repo_root())
         .arg("--error-format=json")
         .args(args)
-        .arg(&path)
+        .arg(path)
         .output()
         .expect("invoke sce-codegen");
     (
@@ -390,10 +396,15 @@ fn an_enum_field_of_a_payload_lists_element_is_a_value_of_its_enum() {
 #[test]
 fn an_enum_field_of_a_payload_lists_element_is_held_to_its_enum() {
     // Typed as the value of its enum it is, it is no value of another enum and
-    // is compared with no number.
+    // is compared with no number; a number read through the same element is no
+    // value of the enum either.
     refused(
         &fleet_machine(r#"<assign location="scale" expr="_event.data.gears[0].speed"/>"#),
         "not of the enum `Unit`",
+    );
+    refused(
+        &fleet_machine(r#"<assign location="first" expr="_event.data.gears[0].count"/>"#),
+        "not of the enum `Mode`",
     );
     refused(
         &fleet_machine(
@@ -401,4 +412,151 @@ fn an_enum_field_of_a_payload_lists_element_is_held_to_its_enum() {
         ),
         "a comparison of an enum value with anything but a value of the same enum",
     );
+}
+
+/// The test profile's shared imports, among them `order_line.scxml`, a record
+/// holding the enum field `color` of `paint_color.scxml`, and
+/// `payment_kind.scxml`, another enum.
+fn profile_imports() -> PathBuf {
+    Path::new(env!("CARGO_MANIFEST_DIR")).join("tests/fixtures/test_profile/imports")
+}
+
+/// A message holding a list of order lines, the records of the profile's
+/// `order_line.scxml` under `imports`.
+fn line_batch(imports: &Path) -> String {
+    format!(
+        r##"<?xml version="1.0" encoding="UTF-8"?>
+<scxml xmlns="http://www.w3.org/2005/07/scxml" xmlns:sce="http://sce.dev/ext"
+       version="1.0" sce:kind="event-schema" name="line_batch" sce:event-name="line.batch">
+  <sce:import kind="event-schema" src="{imports}/order_line.scxml" as="Line"/>
+  <datamodel>
+    <data id="lines" sce:type="list&lt;record:Line&gt;[2]" sce:direction="in"/>
+  </datamodel>
+</scxml>
+"##,
+        imports = imports.display()
+    )
+}
+
+/// A port type that takes `line_batch`.
+const LINE_BATCH_PORT: &str = r##"<?xml version="1.0" encoding="UTF-8"?>
+<scxml xmlns="http://www.w3.org/2005/07/scxml" xmlns:sce="http://sce.dev/ext"
+       version="1.0" sce:kind="test-port-type" name="line_batch_port">
+  <sce:import kind="event-schema" src="line_batch.scxml" as="LineBatch"/>
+  <sce:message type="LineBatch" direction="in"/>
+</scxml>
+"##;
+
+/// The template that matches any value of `line_batch`.
+const LINE_BATCH_ANY: &str = r##"<?xml version="1.0" encoding="UTF-8"?>
+<scxml xmlns="http://www.w3.org/2005/07/scxml" xmlns:sce="http://sce.dev/ext"
+       version="1.0" sce:kind="test-template" name="line_batch_any"
+       sce:type="record:LineBatch">
+  <sce:import kind="event-schema" src="line_batch.scxml" as="LineBatch"/>
+  <sce:record-match>
+    <sce:any-value field="lines"/>
+  </sce:record-match>
+</scxml>
+"##;
+
+/// A test component whose receive branch takes any `line_batch` on its port
+/// `sut` and runs `body`, with the `Color` variable `first_color` and the
+/// `PaymentKind` variable `paid_by`: the shape in which
+/// `test_profile/received/parts_reader.scxml` keeps the color of the first line
+/// of the message it took.
+fn line_reader(imports: &Path, body: &str) -> String {
+    format!(
+        r##"<?xml version="1.0" encoding="UTF-8"?>
+<scxml xmlns="http://www.w3.org/2005/07/scxml" xmlns:sce="http://sce.dev/ext"
+       version="1.0" sce:kind="test-component" name="line_reader"
+       datamodel="sce-static" initial="reading">
+  <sce:import kind="test-port-type" src="line_batch_port.scxml" as="BatchPort"/>
+  <sce:import kind="test-template" src="line_batch_any.scxml" as="AnyBatch"/>
+  <sce:import kind="event-schema" src="line_batch.scxml" as="Batch"/>
+  <sce:import kind="event-schema" src="{imports}/order_line.scxml" as="Line"/>
+  <sce:import kind="enum" src="{imports}/paint_color.scxml" as="Color"/>
+  <sce:import kind="enum" src="{imports}/payment_kind.scxml" as="PaymentKind"/>
+  <sce:test-port id="sut" type="BatchPort"/>
+  <datamodel>
+    <data id="first_color" sce:type="enum:Color" expr="Color.red"/>
+    <data id="paid_by" sce:type="enum:PaymentKind" expr="PaymentKind.cash"/>
+  </datamodel>
+  <state id="reading">
+    <transition sce:receive="sut" sce:test-template="AnyBatch" target="done">
+      {body}
+      <sce:setverdict value="pass"/>
+    </transition>
+  </state>
+  <final id="done"/>
+</scxml>
+"##,
+        imports = imports.display()
+    )
+}
+
+/// `sce-codegen` run with `args` on [`line_reader`] of `body`, beside the
+/// message, the port type and the template it imports.
+fn run_line_reader(args: &[&str], body: &str) -> (bool, String) {
+    let dir = tempdir().expect("tempdir");
+    let imports = profile_imports();
+    for (name, text) in [
+        ("line_batch.scxml", line_batch(&imports)),
+        ("line_batch_port.scxml", LINE_BATCH_PORT.to_string()),
+        ("line_batch_any.scxml", LINE_BATCH_ANY.to_string()),
+    ] {
+        std::fs::write(dir.path().join(name), text).expect("write sibling");
+    }
+    let path = dir.path().join("line_reader.scxml");
+    std::fs::write(&path, line_reader(&imports, body)).expect("write component");
+    codegen(args, &path)
+}
+
+#[test]
+fn an_enum_field_of_a_received_lists_element_is_a_value_of_its_enum() {
+    // A receive branch reads the message it took as `_event.data`, a record of
+    // the schema its template matches, which holds a composition: the field of
+    // an element of its list of records, read through an index, is typed by
+    // walking that record's type, and is a value of the enum the component
+    // imports the field's enum document under. It is assigned to a variable of
+    // that enum, by the judge and by every backend a test component is written
+    // on, as `test_profile/received/parts_reader.scxml` assigns it.
+    let body = r#"<if cond="len(_event.data.lines) &gt; 0">
+        <assign location="first_color" expr="_event.data.lines[0].color"/>
+      </if>"#;
+    let (ok, out) = run_line_reader(&["check"], body);
+    assert!(ok, "an enum field of a received list's element:\n{out}");
+    for language in emitting(ForgeKind::TestComponent).map(|language| language.canonical_name()) {
+        let (ok, out) = run_line_reader(&["check", "-l", language], body);
+        assert!(
+            ok,
+            "{language}: an enum field of a received list's element:\n{out}"
+        );
+    }
+}
+
+#[test]
+fn an_enum_field_of_a_received_lists_element_is_held_to_its_enum() {
+    // The same read is no value of another enum, and a number, whether read
+    // through the same element or written, is no value of the enum.
+    for (body, because) in [
+        (
+            r#"<assign location="paid_by" expr="_event.data.lines[0].color"/>"#,
+            "not of the enum `PaymentKind`",
+        ),
+        (
+            r#"<assign location="first_color" expr="_event.data.lines[0].quantity"/>"#,
+            "not of the enum `Color`",
+        ),
+        (
+            r#"<assign location="first_color" expr="2"/>"#,
+            "not of the enum `Color`",
+        ),
+    ] {
+        let (ok, out) = run_line_reader(&["check"], body);
+        assert!(!ok, "expected a refusal ({because}) of {body}, got:\n{out}");
+        assert!(
+            out.contains(because),
+            "the refusal of {body} must say {because:?}:\n{out}"
+        );
+    }
 }

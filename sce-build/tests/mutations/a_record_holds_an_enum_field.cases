@@ -69,3 +69,14 @@ edit("sce-build/src/forge/static_datamodel.rs",
      "        let held_by_a_variable = |name: &str| self.enum_of_wire_value(name);\n",
      "        let held_by_a_variable = |name: &str| self.enum_of(name).or_else(|| self.enum_of_wire_value(name));\n")
 PY
+
+# An enum field the walk of the value type reaches, and no register names, is
+# no enum value: the field of an element of a payload's list of records, read
+# through an index, is refused where a variable of its enum takes it, in a
+# statechart and in a test component's receive branch alike. The mutant keeps
+# the walk's answer in use, so a tree built under `-D warnings` still compiles.
+mutation_case "an enum field reached by the walk is no enum value" <<'PY'
+edit("sce-build/src/forge/static_datamodel.rs",
+     "                var_alias: &|name| self.enum_of(name).or_else(|| place_enum(ctx, name)),\n",
+     "                var_alias: &|name| self.enum_of(name).or_else(|| place_enum(ctx, name).filter(|_| false)),\n")
+PY
