@@ -14,10 +14,12 @@
 
 use std::collections::BTreeMap;
 
-use sce_rust_host_features::cose::{decrypt0, derive_key, encrypt0, public_key_of, sign1, verify1};
+use sce_rust_host_features::cose::{
+    decrypt0, derive_key, encrypt0, public_key_of, sign1, verify1, IV_BYTES,
+};
 use sce_rust_host_features::{
-    CoseKeys, HttpRequest, HttpResponse, Outcome, Params, ReferenceHost, ReservedKeyId,
-    ScriptedClock, Transport, TransportFailure, TrustedKey,
+    CoseKeys, HttpRequest, HttpResponse, NonceSource, Outcome, Params, ReferenceHost,
+    ReservedKeyId, ScriptedClock, Transport, TransportFailure, TrustedKey,
 };
 
 struct Unreachable;
@@ -395,6 +397,49 @@ fn a_key_the_host_does_not_hold_fails_with_every_field_at_its_zero() {
     assert_eq!(
         fields,
         serde_json::json!({ "error": "unknown_key", "cose": "" })
+    );
+}
+
+/// A nonce source the test sets: the nonce it gives each seal, or none.
+struct Nonces(Option<[u8; IV_BYTES]>);
+
+impl NonceSource for Nonces {
+    fn next_nonce(&mut self) -> Option<[u8; IV_BYTES]> {
+        self.0
+    }
+}
+
+fn seal_content(host: &mut ReferenceHost<Unreachable>) -> serde_json::Value {
+    done(host.start(
+        "sce-host-cose-encrypt0",
+        "seal",
+        &params(&[
+            ("key_id", "sec-256"),
+            ("plaintext", "This is the content."),
+            ("external_aad", ""),
+        ]),
+    ))
+}
+
+#[test]
+fn a_seal_takes_its_nonce_from_the_source_the_host_is_given() {
+    let mut host = host();
+    host.set_nonce_source(Box::new(Nonces(Some(
+        hex(IV).try_into().expect("12 bytes"),
+    ))));
+    assert_eq!(
+        seal_content(&mut host),
+        serde_json::json!({ "error": "", "cose": text(&hex(ENCRYPT0_SEC_256)) })
+    );
+}
+
+#[test]
+fn a_seal_whose_source_gives_no_nonce_fails_unavailable() {
+    let mut host = host();
+    host.set_nonce_source(Box::new(Nonces(None)));
+    assert_eq!(
+        seal_content(&mut host),
+        serde_json::json!({ "error": "unavailable", "cose": "" })
     );
 }
 

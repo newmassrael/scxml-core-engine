@@ -76,7 +76,7 @@ const KEY_BYTES: usize = 32;
 /// The bytes of an Ed25519 signature.
 const SIGNATURE_BYTES: usize = 64;
 /// The bytes of a ChaCha20/Poly1305 nonce: 96 bits.
-const IV_BYTES: usize = 12;
+pub const IV_BYTES: usize = 12;
 
 /// Major type 1: the negative integer `-1 - n` for the argument `n` (RFC 8949
 /// section 3.1).
@@ -121,6 +121,31 @@ pub struct CoseKeys {
 pub struct TrustedKey {
     pub id: String,
     pub public_key: [u8; KEY_BYTES],
+}
+
+/// Where the nonce of each seal comes from: the operating system's random
+/// source ([`SystemNonces`]) unless the embedding gives another
+/// ([`ReferenceHost::set_nonce_source`]), as the C++ reference host draws it
+/// from its primitives' `random`.
+///
+/// A nonce used twice under one key gives both plaintexts away, so a source
+/// other than the system's is for a test that holds a seal to its bytes.
+pub trait NonceSource {
+    /// The nonce of the next seal, or `None` when the source cannot give one,
+    /// which fails the seal `unavailable`.
+    fn next_nonce(&mut self) -> Option<[u8; IV_BYTES]>;
+}
+
+/// The operating system's random source, which a host draws its nonces from
+/// until it is given another.
+#[derive(Debug, Clone, Copy, Default)]
+pub struct SystemNonces;
+
+impl NonceSource for SystemNonces {
+    fn next_nonce(&mut self) -> Option<[u8; IV_BYTES]> {
+        let mut iv = [0u8; IV_BYTES];
+        getrandom::getrandom(&mut iv).ok().map(|()| iv)
+    }
 }
 
 /// A symmetric key the embedding gave under an id of the derived keys'
@@ -339,10 +364,9 @@ pub(crate) fn perform<T: Transport>(
             let Some(key) = keys.symmetric_key(key_id) else {
                 return failure(operation, UNKNOWN_KEY);
             };
-            let mut iv = [0u8; IV_BYTES];
-            if getrandom::getrandom(&mut iv).is_err() {
+            let Some(iv) = host.nonces.next_nonce() else {
                 return failure(operation, UNAVAILABLE);
-            }
+            };
             record(json!({
                 "cose": text_of(&encrypt0(&key, key_id.as_bytes(), &iv, &plaintext, &aad)),
             }))

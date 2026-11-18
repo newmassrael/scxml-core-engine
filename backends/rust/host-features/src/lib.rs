@@ -25,7 +25,7 @@ mod serve;
 use std::collections::BTreeMap;
 
 pub use clock::{ClockSource, Reading, ScriptedClock, SystemClock, Zone};
-pub use cose::{CoseKeys, ReservedKeyId, TrustedKey};
+pub use cose::{CoseKeys, NonceSource, ReservedKeyId, SystemNonces, TrustedKey};
 pub use http::{HttpRequest, HttpResponse, Transport, TransportFailure};
 pub use model::{
     ExhaustiveProvider, GenerateRequest, Generation, ModelProvider, OutcomeClass, ScriptedAnswer,
@@ -106,6 +106,9 @@ pub struct ReferenceHost<T: Transport> {
     pub(crate) answer_schemas: Vec<AnswerSchema>,
     /// The keys of signing and sealing: those configured, and those derived.
     pub(crate) cose: cose::Keys,
+    /// Where each seal's nonce comes from: the operating system until the
+    /// embedding gives another.
+    pub(crate) nonces: Box<dyn NonceSource + Send>,
 }
 
 /// A start the host was given: the operation, the invocation's id and the
@@ -135,6 +138,7 @@ impl<T: Transport> ReferenceHost<T> {
             provider: Box::new(ScriptedProvider::default()),
             answer_schemas: Vec::new(),
             cose: cose::Keys::default(),
+            nonces: Box::new(SystemNonces),
         }
     }
 
@@ -143,6 +147,14 @@ impl<T: Transport> ReferenceHost<T> {
     /// gave them; a symmetric key configured under an id of theirs is refused.
     pub fn set_cose_keys(&mut self, keys: CoseKeys) -> Result<(), ReservedKeyId> {
         self.cose.configure(keys)
+    }
+
+    /// Draw the nonce of each seal from `source` from here on, in place of the
+    /// operating system's random source. A source that gives one nonce twice
+    /// under one key gives both plaintexts away: one that is not random is for
+    /// a test that holds a seal to its bytes.
+    pub fn set_nonce_source(&mut self, source: Box<dyn NonceSource + Send>) {
+        self.nonces = source;
     }
 
     /// Generate texts with `provider` from here on.
