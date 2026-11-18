@@ -28,25 +28,30 @@ failed=0
 
 cd "$RESOURCES_DIR"
 
+# A directory is one IRP test number. Its fixtures are `test<number>.txml` and,
+# for a test the IRP ships as variants, `test<number><letter>.txml` beside it
+# (resources/403/test403a.txml is fixture 403a): a variant has no directory of
+# its own (docs/SCE_W3C_TEST_REGISTRATION.md).
 for dir in */; do
     test_num=${dir%/}
-    txml_file="$dir/test${test_num}.txml"
-    scxml_file="$dir/test${test_num}.scxml"
-    
-    if [ -f "$txml_file" ]; then
+    for txml_file in "$dir"test"${test_num}".txml "$dir"test"${test_num}"[a-z].txml; do
+        [ -f "$txml_file" ] || continue
+        fixture=$(basename "$txml_file" .txml)
+        fixture_id=${fixture#test}
+        scxml_file="$dir$fixture.scxml"
         if [ -f "$scxml_file" ]; then
-            echo "[$test_num] SCXML already exists, skipping"
+            echo "[$fixture_id] SCXML already exists, skipping"
             skipped=$((skipped + 1))
         else
-            echo "[$test_num] Converting TXML -> SCXML"
+            echo "[$fixture_id] Converting TXML -> SCXML"
             if "$TXML_CONVERTER" "$txml_file" "$scxml_file" 2>/dev/null; then
                 converted=$((converted + 1))
             else
-                echo "[$test_num] ERROR: Conversion failed"
+                echo "[$fixture_id] ERROR: Conversion failed"
                 failed=$((failed + 1))
             fi
         fi
-    fi
+    done
 done
 
 echo ""

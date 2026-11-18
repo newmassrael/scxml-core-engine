@@ -966,6 +966,7 @@ if [ -n "$unseen" ]; then
 import collections
 import json
 import pathlib
+import re
 import sys
 import xml.etree.ElementTree as ET
 
@@ -985,10 +986,16 @@ with open(census, encoding="utf-8", errors="replace") as handle:
             rows.append(parts)
 
 
+FIXTURE_ID = re.compile(r"([0-9]+)[a-z]?")
+
+
 def session_of(fixture):
     # A session's `_name` is its document's `name` attribute, or the name the
     # generator gives a document that declares none, which is its file stem.
-    document = pathlib.Path("resources") / fixture / f"test{fixture}.scxml"
+    # The document is in the directory of the test number the id begins with,
+    # which a variant (403a) shares (w3c_registry::fixture_document).
+    number = FIXTURE_ID.fullmatch(fixture).group(1)
+    document = pathlib.Path("resources") / number / f"test{fixture}.scxml"
     try:
         declared = ET.parse(document).getroot().get("name")
     except (OSError, ET.ParseError):
@@ -1006,7 +1013,7 @@ for text in unseen:
     for (outcome, kind, session), count in sorted(carrying.items()):
         print(f"  {outcome} {kind} {session} x{count}", file=sys.stderr)
     for name in producers_of.get(text, []):
-        if not name.isdigit():
+        if not FIXTURE_ID.fullmatch(name):
             print(f"  producer {name} is a test class: its sessions carry the names it binds",
                   file=sys.stderr)
             continue

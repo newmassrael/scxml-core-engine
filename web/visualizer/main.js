@@ -33,7 +33,7 @@ async function loadSCXMLContent() {
         const testId = params.test;
 
         // DRY Principle: Use shared path resolution from utils.js
-        const resourcesPrefix = getResourcesPath();
+        const fixtureDirectory = getFixtureDirectory(testId);
         const environment = getEnvironmentName();
 
         // ⚠ Said BEFORE the run, not after it. A fixture the registry marks
@@ -50,7 +50,7 @@ async function loadSCXMLContent() {
             showEnvironmentNotice(limitation);
         }
 
-        const url = `${resourcesPrefix}/${testId}/test${testId}.scxml`;
+        const url = `${fixtureDirectory}/test${testId}.scxml`;
         logger.debug(`Loading W3C test ${testId} from ${url} (${environment})`);
 
         const response = await fetch(url);
@@ -90,7 +90,7 @@ async function loadSCXMLContent() {
 function siblingFetcher(params) {
     let base = null;
     if (params.test) {
-        base = `${getResourcesPath()}/${params.test}/`;
+        base = `${getFixtureDirectory(params.test)}/`;
     } else if (params.url) {
         base = new URL('./', new URL(params.url, window.location.href)).href;
     }
@@ -267,9 +267,10 @@ async function initVisualizer(scxmlContent) {
         if (params.test) {
             const testId = params.test;
 
-            // DRY Principle: Use shared path resolution from utils.js
-            const resourcesPrefix = getResourcesPath();
-            const basePath = `${resourcesPrefix}/${testId}/`;
+            // DRY Principle: Use shared path resolution from utils.js. The
+            // documents are fetched from the fixture's directory; the virtual
+            // FS below keeps them under the id the page was opened with.
+            const basePath = `${getFixtureDirectory(testId)}/`;
             
             // Create directory in virtual FS
             try {

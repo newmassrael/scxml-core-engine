@@ -108,10 +108,9 @@ class ExecutionController {
                 logger.debug('No test ID in URL');
                 return;
             }
-            // DRY Principle: Use shared path resolution from utils.js
-            const resourcesPrefix = getResourcesPath();
-
-            const metadataUrl = `${resourcesPrefix}/${testId}/metadata.txt`;
+            // DRY Principle: Use shared path resolution from utils.js. A
+            // variant reads the metadata of its test number.
+            const metadataUrl = `${getFixtureDirectory(testId)}/metadata.txt`;
             const response = await fetch(metadataUrl);
             if (!response.ok) {
                 logger.warn(`metadata.txt not found for test ${testId}`);

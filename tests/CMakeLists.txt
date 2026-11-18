@@ -8382,7 +8382,8 @@ with -DSCE_TEST_CROSSDEV_DONEDATA_PORT=N on collision.")
     # sce_generate_distributed_w3c_test(TEST_NUM)
     #
     # Wires one §16.8 seed into the build + ctest graph:
-    #   1. Stage the committed `resources/${TEST_NUM}/test${TEST_NUM}.scxml`
+    #   1. Stage the committed `test${TEST_NUM}.scxml` from the fixture's
+    #      directory (`sce_w3c_fixture_dir`, cmake/SCEW3CRegistry.cmake)
     #      into the build tree as `.../test${TEST_NUM}/test${TEST_NUM}.scxml`
     #      and copy the seed's deploy.yaml alongside when the tree is
     #      configured, so sce-codegen's `source: test${TEST_NUM}.scxml`
@@ -8428,8 +8429,8 @@ with -DSCE_TEST_CROSSDEV_DONEDATA_PORT=N on collision.")
         # seed converted the TXML at build time instead, which no
         # generation could be planned from.
         file(MAKE_DIRECTORY "${test_out_dir}")
-        configure_file("${CMAKE_SOURCE_DIR}/resources/${TEST_NUM}/test${TEST_NUM}.scxml"
-            "${staged_scxml}" COPYONLY)
+        sce_w3c_fixture_dir(fixture_dir ${TEST_NUM})
+        configure_file("${fixture_dir}/test${TEST_NUM}.scxml" "${staged_scxml}" COPYONLY)
         configure_file("${test_src_dir}/deploy.yaml" "${staged_deploy}" COPYONLY)
 
         # Per-partition codegen. One generation per partition produces the

@@ -38,6 +38,35 @@ endif()
 # it).
 set(SCE_W3C_REGISTRY "${CMAKE_SOURCE_DIR}/tests/w3c/conformance/fixtures.json")
 
+# sce_w3c_fixture_dir(<DIR_VAR> <ID>)
+#
+#   The directory holding the documents of W3C fixture <ID> and the metadata
+#   of its test, in <DIR_VAR>: `${CMAKE_SOURCE_DIR}/resources/<number>`, where
+#   <number> is the IRP test number the id begins with. A variant fixture
+#   (`403a`) is one of the documents the IRP ships for one test, so its
+#   document is `resources/403/test403a.scxml` and it has no directory of its
+#   own; every other fixture's number is its whole id. This is the CMake
+#   reading of the registry's rule (`w3c_registry::fixture_dir`), and every
+#   route that turns a fixture id into a path asks it here.
+#
+#   The tree once gave each variant a directory of its own as a symbolic link
+#   to its number's. A checkout without symbolic links (Git for Windows'
+#   default) holds such a link as a text file, and the configure stopped on a
+#   fixture whose document was not there.
+#
+#   An id of another shape is refused rather than turned into a directory no
+#   fixture lives in; the registry's loader refuses one too
+#   (`w3c_registry::FIXTURE_ID_PATTERN`).
+function(sce_w3c_fixture_dir DIR_VAR ID)
+    if(NOT "${ID}" MATCHES "^([0-9]+)[a-z]?$")
+        message(FATAL_ERROR
+            "sce_w3c_fixture_dir: `${ID}` is no W3C fixture id. An id is the number of "
+            "the upstream test and, for a variant of it, one lowercase letter (403a); "
+            "its documents are resources/<number>/test<id>.scxml.")
+    endif()
+    set(${DIR_VAR} "${CMAKE_SOURCE_DIR}/resources/${CMAKE_MATCH_1}" PARENT_SCOPE)
+endfunction()
+
 # sce_w3c_registry_fixtures(<IDS_VAR> <HARNESS_PREFIX>)
 #
 #   Every fixture the registry lists, in registry order, in <IDS_VAR>, and the

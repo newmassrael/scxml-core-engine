@@ -790,7 +790,7 @@ row_S3() {
 
 # S4 — no header's target claim contradicts the fixture's own specnum.
 #
-# `specnum` in `resources/<id>/metadata.txt` is the derived source of truth.
+# `specnum` in `resources/<number>/metadata.txt` is the derived source of truth.
 # A claim that is FINER than it (6.2.2 against 6.2) is not a contradiction,
 # which is why this compares prefixes rather than strings.
 #
@@ -804,7 +804,8 @@ row_S3() {
 #
 # A sweep that matched no header would find no contradiction and say closed,
 # so every REGISTERED fixture must be matched to its header and a specnum
-# (a variant id such as 403a reads its stem's metadata), or the row is not
+# (a variant id such as 403a reads the metadata of its test number, 403,
+# whose directory it shares: w3c_registry::fixture_dir), or the row is not
 # measured at all.
 row_S4() {
     local rc=0
@@ -836,7 +837,7 @@ ids = [f["id"] for f in json.load(open("tests/w3c/conformance/fixtures.json"))["
 unmatched, bad = [], 0
 for tid in ids:
     header = f"tests/w3c/aot_tests/Test{tid}.h"
-    truth = spec.get(tid) or spec.get(re.sub(r"[a-z]+$", "", tid))
+    truth = spec.get(re.match(r"[0-9]*", tid).group(0))
     if not os.path.isfile(header) or not truth:
         unmatched.append(tid)
         continue

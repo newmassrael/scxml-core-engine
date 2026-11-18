@@ -16,6 +16,7 @@ Pass/fail criteria (same as C++ W3CTestRunner):
 
 import json
 import os
+import re
 import sys
 import threading
 import time
@@ -240,9 +241,12 @@ def _parse_http_event(headers, body: str) -> tuple[str, str]:
 # ---------------------------------------------------------------------------
 
 def resolve_scxml_path(test_id: str) -> str:
-    """Resolve SCXML file path for a test ID (handles variants like 403a)."""
-    # Extract directory number (e.g., "403a" -> "403")
-    dir_num = test_id.rstrip("abcdefgh")
+    """Resolve SCXML file path for a test ID (handles variants like 403a).
+
+    The directory is the test number the id begins with ("403a" -> "403"),
+    which a variant shares with its siblings (w3c_registry::fixture_dir).
+    """
+    dir_num = re.match(r"[0-9]+", test_id).group(0)
     return os.path.join(_PROJECT_ROOT, "resources", dir_num, f"test{test_id}.scxml")
 
 

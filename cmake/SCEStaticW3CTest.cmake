@@ -54,7 +54,7 @@ function(sce_generate_aot_test_header TEST_NUM TEST_TYPE)
     # Set TEST_NUMBER for template substitution (@TEST_NUMBER@ in .in files)
     set(TEST_NUMBER ${TEST_NUM})
 
-    set(RESOURCE_DIR "${CMAKE_SOURCE_DIR}/resources/${TEST_NUM}")
+    sce_w3c_fixture_dir(RESOURCE_DIR ${TEST_NUM})
     set(METADATA_FILE "${RESOURCE_DIR}/metadata.txt")
     set(AOT_TEST_HEADER "${CMAKE_SOURCE_DIR}/tests/w3c/aot_tests/Test${TEST_NUM}.h")
 
@@ -98,7 +98,9 @@ endfunction()
 # _sce_generate_w3c_fixture: generate every machine one W3C fixture needs, in
 #   one language
 #
-# A fixture is its committed document, `resources/<id>/test<id>.scxml`, and
+# A fixture is its committed document, `resources/<number>/test<id>.scxml`
+# (`sce_w3c_fixture_dir`, cmake/SCEW3CRegistry.cmake: the number is the test
+# number the id begins with, which a variant such as `403a` shares), and
 # the child documents it starts. What its generation writes is not named here:
 # it is asked of the generator (`sce_codegen_plan`), for the fixture's document
 # and, in the same answer, for the generation of every child document that
@@ -182,10 +184,18 @@ function(_sce_generate_w3c_fixture TEST_NUM OUTPUT_DIR LANGUAGE)
     # covers ~250 unrelated fixtures instead of this test's inputs, and the
     # walk reads a directory that sibling targets are concurrently writing
     # into, so `read_dir` can list a file that `fs::read` no longer finds and
-    # the build dies on a race. `resources/${TEST_NUM}/` is tracked and no
+    # the build dies on a race. The fixture's directory is tracked and no
     # build step writes to it, so the source set is quiescent by construction.
     # Same pattern as SCEStaticIntegrationFixture.cmake's FIXTURE_ROOT.
-    set(RESOURCE_DIR "${CMAKE_SOURCE_DIR}/resources/${TEST_NUM}")
+    #
+    # The directory is the test number's (`sce_w3c_fixture_dir`), so the
+    # variants of one test (403a, 403b, 403c) hash one source set: the
+    # documents of every variant and the test's metadata, all tracked in
+    # `resources/403/`. Each variant reached that directory through a
+    # symbolic link of its own name until 2026-11, and the set was the same
+    # through the link; on a checkout that holds a link as a text file there
+    # was no set at all.
+    sce_w3c_fixture_dir(RESOURCE_DIR ${TEST_NUM})
     set(_STEM "test${TEST_NUM}")
 
     # The committed document is what every backend generates from
@@ -196,7 +206,7 @@ function(_sce_generate_w3c_fixture TEST_NUM OUTPUT_DIR LANGUAGE)
     # for no fixture.
     if(NOT EXISTS "${RESOURCE_DIR}/${_STEM}.scxml")
         message(FATAL_ERROR
-            "W3C test ${TEST_NUM} is registered, and resources/${TEST_NUM}/${_STEM}.scxml "
+            "W3C test ${TEST_NUM} is registered, and ${RESOURCE_DIR}/${_STEM}.scxml "
             "is not committed. Every registered fixture is generated from its committed "
             "SCXML: convert its TXML (with any sub-fixture beside it) and commit the "
             "result, as docs/SCE_W3C_TEST_REGISTRATION.md Step 1 says.")
@@ -316,7 +326,7 @@ endfunction()
 #   Queue the request of the plan `_sce_generate_w3c_fixture` asks for one
 #   fixture, for the next `sce_codegen_plan_prefetch` to send.
 function(_sce_request_w3c_fixture TEST_NUM OUTPUT_DIR LANGUAGE)
-    set(RESOURCE_DIR "${CMAKE_SOURCE_DIR}/resources/${TEST_NUM}")
+    sce_w3c_fixture_dir(RESOURCE_DIR ${TEST_NUM})
     set(_STEM "test${TEST_NUM}")
     # `_sce_generate_w3c_fixture`'s options, word for word
     # (`the_conformance_cmake_route_declares_what_the_generator_plans`
