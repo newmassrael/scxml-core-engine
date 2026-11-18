@@ -134,11 +134,11 @@ enum class CodecError : std::uint8_t {
     /// UTF-8 (RFC 3629). Mirrors `SCE_FORGE_CODEC_INVALID_UTF8` of C and the
     /// typed `CodecError::InvalidUtf8` of Rust.
     InvalidUtf8 = 18,
-    /// An `sce:encoding="cbor"` codec (SCE_FORGE.md §4.6.1) read bytes that are
-    /// not the CBOR it expects: a head it cannot read (reserved additional
-    /// information, an indefinite length), a value of another major type than
-    /// the entry declares, a key that is not an unsigned integer, or a key
-    /// given twice.
+    /// An `sce:encoding="cbor"` codec (SCE_FORGE.md §4.6.1) read an item that
+    /// is not well-formed CBOR (reserved additional information, a break code,
+    /// a simple value in the two-byte form below 32), or one outside the
+    /// definite-length profile it reads: an indefinite-length array, map, text
+    /// or byte string, at any depth (docs/adr/0101 section 3.1).
     CborMalformed = 19,
     /// A CBOR codec's map lacked an entry of a bare type, one that is not
     /// `optional<T>`.
@@ -153,6 +153,18 @@ enum class CodecError : std::uint8_t {
     /// vocabulary of the kinds a decode is refused with (docs/adr/0099,
     /// amendment of 2026-11-16).
     CapacityExceeded = 22,
+    /// A CBOR codec read an item of a major type, a simple value or a tag the
+    /// type at its place does not take: a text where a number stands, a
+    /// negative integer where an unsigned type stands, `null` where the place
+    /// is not a list's optional element, a tagged item, or a key of the wrong
+    /// major type (docs/adr/0101 section 3.3).
+    CborWrongType = 23,
+    /// A CBOR map held one of the keys it declares twice, at any depth.
+    CborDuplicateKey = 24,
+    /// A union's one-entry CBOR map was keyed by a name no case declares.
+    CborUnknownVariant = 25,
+    /// A union's CBOR map held no entry, or more than one.
+    CborUnionEntries = 26,
 };
 
 /// What a decode answers (docs/adr/0099, amendment of 2026-11-16): the value
