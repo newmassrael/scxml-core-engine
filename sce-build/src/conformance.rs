@@ -3756,9 +3756,6 @@ fn fold_source_cases(
     };
     let where_ = format!("fixture {} in {}", fixture.name, reference_path.display());
     let (rows, printed) = codec_case_rows(fixture, sources, "sources", &where_)?;
-    if language == Language::Swift && !swift_prints(fixture, resource_dir, &where_)? {
-        return Ok(false);
-    }
     let Some(printer) = CasePrinter::of(printed, language, "sources", &where_)? else {
         return Ok(false);
     };
@@ -3828,9 +3825,6 @@ fn fold_refused_cases(
     };
     let where_ = format!("fixture {} in {}", fixture.name, reference_path.display());
     let (rows, printed) = codec_case_rows(fixture, refused, "refused", &where_)?;
-    if language == Language::Swift && !swift_prints(fixture, resource_dir, &where_)? {
-        return Ok(false);
-    }
     let Some(printer) = CasePrinter::of(printed, language, "refused", &where_)? else {
         return Ok(false);
     };
@@ -3906,18 +3900,6 @@ fn codec_case_rows<'r>(
     Ok((rows.as_slice(), *printed))
 }
 
-/// Whether the Swift backend prints the encode of the codec `fixture` from its plan
-/// (docs/adr/0081 step 5), read from the codec's plan where the generator reads it: the codecs
-/// whose byte cases the Swift harness runs. A codec it does not print yet keeps the encode of its
-/// template, whose value states what the plan derives, and runs its `cases` as before (§5).
-fn swift_prints(fixture: &Fixture, resource_dir: &Path, where_: &str) -> Result<bool, String> {
-    let document = fixture.document_path(resource_dir);
-    let include = [resource_dir.to_path_buf()];
-    crate::swift_codec_printed_file(&document, &include, &crate::ForgeCompileOptions::default())
-        .map_err(|e| format!("{where_}: {}: {e:?}", document.display()))?
-        .ok_or_else(|| format!("{where_}: {} is not a codec", document.display()))
-}
-
 /// The printer that writes a codec's byte cases into a harness: the Rust one,
 /// whose value is `{Codec}Parts` (docs/adr/0058 §4), the C++ one, whose value
 /// its constructor makes (docs/adr/0081 step 4), the Python one, whose value
@@ -3928,7 +3910,7 @@ enum CasePrinter {
     Cpp,
     Python,
     /// The Swift one, whose value its initializer makes (docs/adr/0081 step 5), for a codec the
-    /// Swift printer prints ([`swift_prints`]).
+    /// Swift printer prints (`printed`, read by `swift_codec_printed_file`).
     Swift,
 }
 
@@ -3941,8 +3923,7 @@ impl CasePrinter {
     /// constructor makes from the case. Python prints a codec one landing at a
     /// time (§6): a codec it prints runs its cases as a value of its source,
     /// and one it does not runs its `cases` on the template's encode. Swift
-    /// prints one form at a time the same way (step 5), and a fold asks only
-    /// for a codec it prints.
+    /// prints one form at a time the same way (step 5).
     fn of(
         printed: bool,
         language: Language,
@@ -3960,12 +3941,14 @@ impl CasePrinter {
                 ))
             }
             Language::Python if printed => Some(CasePrinter::Python),
-            // The Swift printer prints a codec's encode one form at a time (docs/adr/0081 §6):
-            // the fold of a codec it does not print yet has been left out before this is asked
-            // ([`swift_prints`]).
-            Language::Swift => Some(CasePrinter::Swift),
-            // Their encodes do not print the plan: they run the `cases`.
-            Language::Kotlin | Language::Go | Language::Python | Language::C11 => None,
+            Language::Swift if printed => Some(CasePrinter::Swift),
+            // Their encodes do not print the plan, or not this codec's yet:
+            // they run the `cases`.
+            Language::Kotlin
+            | Language::Go
+            | Language::Python
+            | Language::C11
+            | Language::Swift => None,
         })
     }
 
@@ -5783,19 +5766,33 @@ mod tests {
             &std::fs::read_to_string(&reference_path).expect("the reference reads"),
         )
         .expect("the reference parses");
+        // Each fixture as `render_harness` hands it to a fold for Swift: whether the Swift backend
+        // prints it read off its plan.
         let fixture = |name: &str| {
-            manifest
+            let mut fixture = manifest
                 .fixtures
                 .iter()
                 .find(|f| f.name == name)
                 .unwrap_or_else(|| panic!("the catalog holds {name}"))
+                .clone();
+            let by_plan = crate::swift_codec_printed_file(
+                &fixture.document_path(&resource_dir),
+                &[],
+                &crate::ForgeCompileOptions::default(),
+            )
+            .unwrap_or_else(|e| panic!("{name} reads: {e:?}"))
+            .unwrap_or_else(|| panic!("{name} is a codec"));
+            if let FixtureSpec::Codec { printed, .. } = &mut fixture.spec {
+                *printed = by_plan;
+            }
+            fixture
         };
-        let printed = fixture("codec_simple_frame");
-        let mut value = serde_json::to_value(printed).expect("a fixture serializes");
+        let frame = fixture("codec_simple_frame");
+        let mut value = serde_json::to_value(&frame).expect("a fixture serializes");
         let folded = fold_source_cases(
             &mut value,
             &reference,
-            printed,
+            &frame,
             Language::Swift,
             &resource_dir,
             &reference_path,
@@ -5813,11 +5810,11 @@ mod tests {
         );
         // An element a gate decides is `nil` where the source states it absent.
         let gated = fixture("codec_present_if_basic");
-        let mut value = serde_json::to_value(gated).expect("a fixture serializes");
+        let mut value = serde_json::to_value(&gated).expect("a fixture serializes");
         let folded = fold_source_cases(
             &mut value,
             &reference,
-            gated,
+            &gated,
             Language::Swift,
             &resource_dir,
             &reference_path,
@@ -5831,11 +5828,11 @@ mod tests {
         // A value the encode refuses reaches the harness with the case of the runtime's typed
         // error it throws.
         let checked = fixture("codec_present_if_checked");
-        let mut value = serde_json::to_value(checked).expect("a fixture serializes");
+        let mut value = serde_json::to_value(&checked).expect("a fixture serializes");
         let folded = fold_refused_cases(
             &mut value,
             &reference,
-            checked,
+            &checked,
             Language::Swift,
             &resource_dir,
             &reference_path,
@@ -5852,11 +5849,11 @@ mod tests {
         );
         // A byte string is made through its bound's door, and the length it says is derived.
         let bytes = fixture("codec_length_ref");
-        let mut value = serde_json::to_value(bytes).expect("a fixture serializes");
+        let mut value = serde_json::to_value(&bytes).expect("a fixture serializes");
         let folded = fold_source_cases(
             &mut value,
             &reference,
-            bytes,
+            &bytes,
             Language::Swift,
             &resource_dir,
             &reference_path,
@@ -5876,11 +5873,11 @@ mod tests {
         // A list is made of its entries, each by its own codec's initializer, through its count
         // bound's door (docs/adr/0065 §6 R2), and the count it says is derived.
         let list = fixture("codec_until_eof_basic");
-        let mut value = serde_json::to_value(list).expect("a fixture serializes");
+        let mut value = serde_json::to_value(&list).expect("a fixture serializes");
         let folded = fold_source_cases(
             &mut value,
             &reference,
-            list,
+            &list,
             Language::Swift,
             &resource_dir,
             &reference_path,
@@ -5901,11 +5898,11 @@ mod tests {
         // value holds, which is made of the arm's own value, and the catch-all's tag through its
         // type's one door (docs/adr/0065 §6 R3).
         let variant = fixture("codec_variant_dispatch");
-        let mut value = serde_json::to_value(variant).expect("a fixture serializes");
+        let mut value = serde_json::to_value(&variant).expect("a fixture serializes");
         let folded = fold_source_cases(
             &mut value,
             &reference,
-            variant,
+            &variant,
             Language::Swift,
             &resource_dir,
             &reference_path,
@@ -5930,11 +5927,11 @@ mod tests {
         );
         // A CBOR map is a form the printer does not lower.
         let template = fixture("codec_cbor_map");
-        let mut value = serde_json::to_value(template).expect("a fixture serializes");
+        let mut value = serde_json::to_value(&template).expect("a fixture serializes");
         let folded = fold_source_cases(
             &mut value,
             &reference,
-            template,
+            &template,
             Language::Swift,
             &resource_dir,
             &reference_path,
