@@ -86,15 +86,23 @@ pub const FORMAT_2: u32 = 2;
 /// Its tree is format 2's, and so is its shape.
 pub const FORMAT_3: u32 = 3;
 
+/// The format of a tree of sessions whose host-run invocations each hold which
+/// start of their `<invoke>` they are, beside each session's count of those
+/// starts (`schemas/sce-saved-state.v4.schema.json`; docs/adr/0107, D4): a
+/// restore starts a running invocation again under the start number it had.
+/// Its events, its tree and its shape are format 3's.
+pub const FORMAT_4: u32 = 4;
+
 /// The format version this runtime writes. It reads [`FORMAT_1`],
-/// [`FORMAT_2`] and [`FORMAT_3`].
-pub const FORMAT: u32 = FORMAT_3;
+/// [`FORMAT_2`], [`FORMAT_3`] and [`FORMAT_4`].
+pub const FORMAT: u32 = FORMAT_4;
 
 /// The stability status of the saved-state wire surface, held in lockstep
 /// with `x-sce-schema-status` in `schemas/sce-saved-state.v1.schema.json`,
-/// `schemas/sce-saved-state.v2.schema.json` and
-/// `schemas/sce-saved-state.v3.schema.json`, the surface's three formats
-/// (`SCE_WIRE_CONTRACTS.md`). A flip to `"stable"` changes all four in one
+/// `schemas/sce-saved-state.v2.schema.json`,
+/// `schemas/sce-saved-state.v3.schema.json` and
+/// `schemas/sce-saved-state.v4.schema.json`, the surface's four formats
+/// (`SCE_WIRE_CONTRACTS.md`). A flip to `"stable"` changes all five in one
 /// commit.
 pub const SCHEMA_STATUS: &str = "pre-release";
 
@@ -179,8 +187,16 @@ pub struct SavedState {
     /// The `<invoke>`s a declared host invoker is running (§scxml-6.4.1), by
     /// `(type, id)`. A restored machine starts each again from the request it
     /// was started with, with the deadline it had left; the host is told it is a
-    /// restart ([`crate::HostInvokeRequest::restarted`]).
+    /// restart ([`crate::HostInvokeRequest::restarted`]) under the start number
+    /// it had ([`SavedHostInvoke::start`]).
     pub host_invokes: Vec<SavedHostInvoke>,
+    /// How many times each host-run `<invoke>` of the document has started in
+    /// this session, by its id, for each started at least once, ordered by the
+    /// id's bytes: a start after a restore is numbered on from it
+    /// (docs/adr/0107, D4). Read from a state of format 1, 2 or 3, which counted
+    /// none, as 1 for each invocation [`Self::host_invokes`] lists and nothing
+    /// for any other ([`SavedHostInvoke::start`]).
+    pub host_invoke_starts: Vec<(String, u64)>,
     /// The token the next host-run start receives. Carried on, so that a start
     /// a restored machine makes is never given a token an earlier run already
     /// handed to a host that may still answer with it.
@@ -547,6 +563,14 @@ pub struct SavedHostInvoke {
     pub processor_type: String,
     /// The invoke's id, which `done.invoke.<id>` names.
     pub invoke_id: String,
+    /// Which start of that `<invoke>` in this session it is, counted from 1:
+    /// the count [`SavedState::host_invoke_starts`] holds for it, since a state
+    /// re-entered cancels the earlier start before it makes the next. A restore
+    /// starts the invocation again under this number
+    /// ([`crate::HostInvokeRequest::start`]; docs/adr/0107, D4). A state of
+    /// format 1, 2 or 3 holds none, and its invocation is read as start 1: no
+    /// host keyed a start by its number before format 4.
+    pub start: u64,
     /// `<invoke src>`, empty when the document named none.
     pub src: String,
     /// `<param>` values by name, ordered by name; a repeated name keeps every
@@ -788,11 +812,18 @@ fn check_event_sender(
 }
 
 impl SavedHostInvoke {
-    fn to_value(&self) -> Value {
+    /// The invocation as a text of `format` writes it: format 4 writes its
+    /// `start` after its `id`; format 1 holds none.
+    fn to_value(&self, format: u32) -> Value {
         let text = |s: &str| Value::Text(s.to_string());
-        Value::Object(vec![
+        let mut members = vec![
             ("type".to_string(), text(&self.processor_type)),
             ("id".to_string(), text(&self.invoke_id)),
+        ];
+        if format >= FORMAT_4 {
+            members.push(("start".to_string(), Value::Text(self.start.to_string())));
+        }
+        members.extend([
             ("src".to_string(), text(&self.src)),
             ("params".to_string(), params_to_value(&self.params)),
             ("data".to_string(), text(&self.data)),
@@ -802,14 +833,22 @@ impl SavedHostInvoke {
                 self.due
                     .map_or(Value::Null, |due| Value::Text(due.to_string())),
             ),
-        ])
+        ]);
+        Value::Object(members)
     }
 
-    fn from_value(value: &Value, what: &str) -> Result<Self, StateRefusal> {
+    /// The invocation `value` of a state of `format`; `what` names it in a
+    /// refusal. One of format 1, 2 or 3 is read as start 1 ([`Self::start`]).
+    fn from_value(value: &Value, what: &str, format: u32) -> Result<Self, StateRefusal> {
         let text = |key: &str| match value.member(key) {
             Some(Value::Text(s)) => Ok(s.clone()),
             Some(_) => Err(StateRefusal::new(format!("'{what}.{key}' is not a text"))),
             None => Err(StateRefusal::new(format!("'{what}' has no '{key}'"))),
+        };
+        let start = if format >= FORMAT_4 {
+            read_count(&text("start")?, &format!("{what}.start"))?
+        } else {
+            1
         };
         let due = match value.member("due") {
             Some(Value::Null) => None,
@@ -824,6 +863,7 @@ impl SavedHostInvoke {
         Ok(Self {
             processor_type: text("type")?,
             invoke_id: text("id")?,
+            start,
             src: text("src")?,
             params: read_params(value, what)?,
             data: text("data")?,
@@ -962,7 +1002,7 @@ impl SavedSend {
         // A format-3 act names this session as its sender, and no other: the
         // act is this session's own send, in the root and in every child.
         let sender = |act: &str| -> Result<String, StateRefusal> {
-            if format == FORMAT_3 {
+            if format >= FORMAT_3 {
                 let origin = read_origin(value, what)?;
                 let sender = read_sender(value, what)?;
                 if sender.is_empty() {
@@ -1025,7 +1065,7 @@ impl SavedSend {
                 // The event it delivers is an internal event, which has no
                 // origin (docs/adr/0090, section 2): format 3 writes none, and
                 // the `origin` formats 1 and 2 stored is not read.
-                if format == FORMAT_3 {
+                if format >= FORMAT_3 {
                     if read_origin(value, what)?.is_some() || !read_sender(value, what)?.is_empty()
                     {
                         return Err(StateRefusal::new(format!(
@@ -1167,7 +1207,7 @@ impl SavedEvent {
         // docs/adr/0090, section 7: format 3 holds the pair and the sender as
         // they are written; a format-1 or format-2 `origin` and `origintype` are
         // read by the table of that section.
-        let (origin, sender) = if format == FORMAT_3 {
+        let (origin, sender) = if format >= FORMAT_3 {
             let origin = read_origin(value, what)?;
             let sender = read_sender(value, what)?;
             check_event_sender(origin.as_ref(), &sender, what)?;
@@ -1215,15 +1255,26 @@ impl SavedState {
             .ok_or_else(|| StateRefusal::new(format!("the saved state has no variable '{id}'")))
     }
 
-    /// The format this state is written in: [`FORMAT_3`] for a tree of
+    /// The format this state is written in: [`FORMAT_4`] for a tree of
     /// sessions, [`FORMAT_1`] for a state that names its running children by id
     /// alone. A tree read from a format-2 text holds the pairs its origins are
-    /// read as, and is written as format 3 (docs/adr/0090, section 7).
+    /// read as (docs/adr/0090, section 7), and one read from a format-2 or
+    /// format-3 text the start numbers its host-run invocations are read as
+    /// ([`SavedHostInvoke::start`]), and each is written as format 4.
     pub fn format(&self) -> u32 {
         match self.invokes {
             SavedInvokes::Restarted(_) => FORMAT_1,
-            SavedInvokes::Resumed(_) => FORMAT_3,
+            SavedInvokes::Resumed(_) => FORMAT_4,
         }
+    }
+
+    /// How many times the host-run `<invoke>` `id` had started in this session
+    /// when it was saved: 0 for one that had not.
+    pub fn host_invoke_start(&self, id: &str) -> u64 {
+        self.host_invoke_starts
+            .iter()
+            .find(|(invoke, _)| invoke == id)
+            .map_or(0, |(_, count)| *count)
     }
 
     /// The id a restore binds the session to: the saved one, for a tree of
@@ -1283,9 +1334,9 @@ impl SavedState {
     }
 
     /// The members of this session, in the order every backend writes them:
-    /// format 1's, and in a tree `sessionid` after `shape` and `invokestarts`
-    /// after `invokes`, each running child's session written by the same rule
-    /// and in the format of the root.
+    /// format 1's, and in a tree `sessionid` after `shape`, `invokestarts`
+    /// after `invokes` and `hostinvokestarts` after `hostinvokes`, each running
+    /// child's session written by the same rule and in the format of the root.
     fn members(&self) -> Vec<(String, Value)> {
         let format = self.format();
         let mut members = vec![("shape".to_string(), Value::Text(self.shape.clone()))];
@@ -1356,16 +1407,27 @@ impl SavedState {
                 ));
             }
         }
-        members.extend([
-            (
-                "hostinvokes".to_string(),
-                Value::Array(
-                    self.host_invokes
+        members.push((
+            "hostinvokes".to_string(),
+            Value::Array(
+                self.host_invokes
+                    .iter()
+                    .map(|host| host.to_value(format))
+                    .collect(),
+            ),
+        ));
+        if format >= FORMAT_4 {
+            members.push((
+                "hostinvokestarts".to_string(),
+                Value::Object(
+                    self.host_invoke_starts
                         .iter()
-                        .map(SavedHostInvoke::to_value)
+                        .map(|(id, count)| (id.clone(), Value::Text(count.to_string())))
                         .collect(),
                 ),
-            ),
+            ));
+        }
+        members.extend([
             (
                 "hostinvoketoken".to_string(),
                 Value::Text(self.host_invoke_token.to_string()),
@@ -1419,7 +1481,7 @@ impl SavedState {
         members
     }
 
-    /// Read `sce-saved-state` JSON, of format 1, 2 or 3, judged by its `format`
+    /// Read `sce-saved-state` JSON, of format 1, 2, 3 or 4, judged by its `format`
     /// before anything else is read. The shape is not judged here — the machine
     /// that restores it knows its own ([`upgrade`]).
     pub fn from_json(text: &str) -> Result<Self, StateRefusal> {
@@ -1429,10 +1491,11 @@ impl SavedState {
             Some(Value::Number(n)) if n == &FORMAT_1.to_string() => FORMAT_1,
             Some(Value::Number(n)) if n == &FORMAT_2.to_string() => FORMAT_2,
             Some(Value::Number(n)) if n == &FORMAT_3.to_string() => FORMAT_3,
+            Some(Value::Number(n)) if n == &FORMAT_4.to_string() => FORMAT_4,
             Some(other) => {
                 return Err(StateRefusal::new(format!(
                     "the saved state is format {}, and this runtime reads formats {FORMAT_1}, \
-                     {FORMAT_2} and {FORMAT_3}",
+                     {FORMAT_2}, {FORMAT_3} and {FORMAT_4}",
                     json::write(other)
                 )))
             }
@@ -1540,9 +1603,37 @@ impl SavedState {
             Value::Array(items) => items
                 .iter()
                 .enumerate()
-                .map(|(i, v)| SavedHostInvoke::from_value(v, &format!("hostinvokes[{i}]")))
+                .map(|(i, v)| SavedHostInvoke::from_value(v, &format!("hostinvokes[{i}]"), format))
                 .collect::<Result<Vec<_>, _>>()?,
             _ => return Err(StateRefusal::new("'hostinvokes' is not an array")),
+        };
+        // Format 4's count of host-run starts (docs/adr/0107, D4). A state of an
+        // earlier format counted none: each invocation it lists is its
+        // `<invoke>`'s first start, as `SavedHostInvoke::from_value` read it.
+        let host_invoke_starts = if format >= FORMAT_4 {
+            match field("hostinvokestarts")? {
+                Value::Object(members) => members
+                    .iter()
+                    .map(|(id, count)| match count {
+                        Value::Text(written) => {
+                            read_count(written, &format!("hostinvokestarts.{id}"))
+                                .map(|count| (id.clone(), count))
+                        }
+                        _ => Err(StateRefusal::new(format!(
+                            "'hostinvokestarts.{id}' is not a text"
+                        ))),
+                    })
+                    .collect::<Result<Vec<_>, _>>()?,
+                _ => return Err(StateRefusal::new("'hostinvokestarts' is not an object")),
+            }
+        } else {
+            let mut counted: Vec<(String, u64)> = host_invokes
+                .iter()
+                .map(|host| (host.invoke_id.clone(), host.start))
+                .collect();
+            counted.sort();
+            counted.dedup();
+            counted
         };
         let host_invoke_token = match field("hostinvoketoken")? {
             Value::Text(written) => read_token(written, "hostinvoketoken")?,
@@ -1612,6 +1703,7 @@ impl SavedState {
             session_id,
             invoke_starts,
             host_invokes,
+            host_invoke_starts,
             host_invoke_token,
             auto_send_seq,
             external,
@@ -2200,6 +2292,7 @@ pub fn save<P: StatePolicy>(
             .map(|(id, count)| (id.to_string(), count))
             .collect(),
         host_invokes: save_host_invokes(engine, wall_now_ms),
+        host_invoke_starts: engine.host_invoke_starts(),
         host_invoke_token: engine.next_host_invoke_token(),
         auto_send_seq: engine.auto_send_seq(),
         external: engine
@@ -2243,6 +2336,7 @@ fn save_host_invokes<P: StatePolicy>(engine: &Engine<P>, wall_now_ms: u64) -> Ve
             SavedHostInvoke {
                 processor_type: request.processor_type,
                 invoke_id: request.invoke_id,
+                start: request.start,
                 src: request.src,
                 params,
                 data: request.event_data,
@@ -2929,6 +3023,7 @@ pub fn enter<P: StatePolicy>(
     }
     arm_pending(&mut engine, judged.pending, wall_now_ms);
     rearm_host_invokes(&mut engine, &saved.host_invokes, wall_now_ms);
+    engine.set_host_invoke_starts(&saved.host_invoke_starts);
     engine.set_next_host_invoke_token(saved.host_invoke_token);
     engine.set_auto_send_seq(saved.auto_send_seq);
     match &saved.invokes {
@@ -3103,6 +3198,26 @@ fn judge_session<P: StatePolicy>(saved: &SavedState) -> Result<Judged<'_, P>, St
                 "hostinvokes[{i}] is '{id}', which an earlier entry already names"
             )));
         }
+        // docs/adr/0107, D4: a running invocation is the latest start of its
+        // `<invoke>`, since a state re-entered cancels the earlier one first.
+        let count = saved.host_invoke_start(id);
+        if host.start != count {
+            return Err(StateRefusal::new(format!(
+                "hostinvokes[{i}] is start {} of '{id}', and the session counts {count} \
+                 starts of it: a state re-entered cancels the earlier start before it makes \
+                 the next one",
+                host.start
+            )));
+        }
+    }
+    // A count of host-run starts names an `<invoke>` the document hands a host.
+    for (id, _) in &saved.host_invoke_starts {
+        if !P::HOST_INVOKE_IDS.contains(&id.as_str()) {
+            return Err(StateRefusal::new(format!(
+                "hostinvokestarts counts '{id}', which the document does not have a host \
+                 invoker run"
+            )));
+        }
     }
     Ok(Judged {
         configuration,
@@ -3172,6 +3287,8 @@ fn rearm_host_invokes<P: StatePolicy>(
                 event_data: host.data.clone(),
                 content: host.content.clone(),
                 token: 0,
+                // docs/adr/0107, D4: the start it repeats, not a new one.
+                start: host.start,
                 restarted: true,
                 // The engine names the session as the invocation starts again.
                 session_id: String::new(),
@@ -3600,10 +3717,13 @@ mod tests {
             invokes: SavedInvokes::Restarted(vec!["worker".to_string(), "spare".to_string()]),
             session_id: String::new(),
             invoke_starts: Vec::new(),
+            // Format 1 holds no start number: each invocation is read as the
+            // first start of its `<invoke>`, and counted so.
             host_invokes: vec![
                 SavedHostInvoke {
                     processor_type: "x-host".to_string(),
                     invoke_id: "h".to_string(),
+                    start: 1,
                     src: "job://1".to_string(),
                     params: vec![
                         ("a".to_string(), vec!["1".to_string(), "2".to_string()]),
@@ -3616,10 +3736,12 @@ mod tests {
                 SavedHostInvoke {
                     processor_type: "x-host".to_string(),
                     invoke_id: "no_deadline".to_string(),
+                    start: 1,
                     due: None,
                     ..SavedHostInvoke::default()
                 },
             ],
+            host_invoke_starts: vec![("h".to_string(), 1), ("no_deadline".to_string(), 1)],
             host_invoke_token: i64::MAX as u64,
             auto_send_seq: 41,
             external: vec![
@@ -3664,6 +3786,10 @@ mod tests {
         };
         let text = state.to_json();
         assert!(text.starts_with(r#"{"format":1,"#), "{text}");
+        assert!(
+            !text.contains(r#""start""#) && !text.contains("hostinvokestarts"),
+            "format 1 holds no start number: {text}"
+        );
         assert!(
             text.contains(r#""sendid":"timer","origin":"s1"}"#),
             "a format-1 waiting send stores its sender's id: {text}"
@@ -3726,6 +3852,7 @@ mod tests {
             session_id: session_id.to_string(),
             invoke_starts: Vec::new(),
             host_invokes: Vec::new(),
+            host_invoke_starts: Vec::new(),
             host_invoke_token: 0,
             auto_send_seq: 0,
             external: Vec::new(),
@@ -3921,12 +4048,12 @@ mod tests {
     #[test]
     fn a_tree_of_sessions_is_read_back_as_it_was_written() {
         let tree = tree();
-        assert_eq!(tree.format(), FORMAT_3);
+        assert_eq!(tree.format(), FORMAT_4);
         let text = tree.to_json();
         // The format is stated once, at the root, and each session's id follows
         // its shape: the order every backend writes.
         let prefix = format!(
-            r#"{{"format":3,"shape":"{}","sessionid":"planner-1","#,
+            r#"{{"format":4,"shape":"{}","sessionid":"planner-1","#,
             "a".repeat(64)
         );
         assert!(text.starts_with(&prefix), "{text}");
@@ -4008,7 +4135,7 @@ mod tests {
         // A child's session states no format of its own.
         let nested = text.replacen(
             r#""session":{"shape""#,
-            r#""session":{"format":3,"shape""#,
+            r#""session":{"format":4,"shape""#,
             1,
         );
         let refusal = SavedState::from_json(&nested).expect_err("a nested format");
@@ -4017,10 +4144,12 @@ mod tests {
 
     // ── an event's origin in format 3 (docs/adr/0090, section 7) ──
 
-    /// A format-3 session holding `pending` and `external`, and nothing else.
+    /// A session of the format this runtime writes, whose events and waiting
+    /// sends hold their origin as format 3 does, holding `pending` and
+    /// `external`, and nothing else.
     fn with_origins(pending: &str, external: &str) -> String {
         format!(
-            r#"{{"format":3,"shape":"d","sessionid":"s1","configuration":[],"current":"s","variables":{{}},"history":{{}},"pending":[{pending}],"invokes":[],"invokestarts":{{}},"hostinvokes":[],"hostinvoketoken":"0","sendseq":"0","external":[{external}]}}"#
+            r#"{{"format":4,"shape":"d","sessionid":"s1","configuration":[],"current":"s","variables":{{}},"history":{{}},"pending":[{pending}],"invokes":[],"invokestarts":{{}},"hostinvokes":[],"hostinvokestarts":{{}},"hostinvoketoken":"0","sendseq":"0","external":[{external}]}}"#
         )
     }
 
@@ -4356,11 +4485,11 @@ mod tests {
     }
 
     /// docs/adr/0090, section 7: a format-2 tree is read by the table of that
-    /// section and written back as format 3, its internal send with no origin,
-    /// and a send that stored no origin as the send of the session that holds
-    /// it (`q`).
+    /// section and written back as the format this runtime writes, its
+    /// internal send with no origin, and a send that stored no origin as the
+    /// send of the session that holds it (`q`).
     #[test]
-    fn a_format_2_tree_is_read_by_the_table_and_written_as_format_3() {
+    fn a_format_2_tree_is_read_by_the_table_and_written_as_format_4() {
         let format2 = format!(
             r#"{{"format":2,"shape":"d","sessionid":"s1","configuration":[],"current":"s","variables":{{}},"history":{{}},"pending":[{{"due":"1","act":"internal","event":"i","data":"","sendid":"","origin":"s1"}},{{"due":"2","act":"raise","event":"r","data":"","sendid":"","origin":"s1"}},{{"due":"3","act":"parent","event":"p","data":"","sendid":"","origin":"sce://scxml/s1"}},{{"due":"4","act":"raise","event":"q","data":"","sendid":"","origin":""}}],"invokes":[],"invokestarts":{{}},"hostinvokes":[],"hostinvoketoken":"0","sendseq":"0","external":[{{"name":"a","data":"","type":"external","sendid":"","origin":"w","origintype":"{SCXML}","invokeid":"w","hostinvoketoken":null}},{{"name":"b","data":"","type":"external","sendid":"","origin":"","origintype":"{SCXML}","invokeid":"","hostinvoketoken":null}},{{"name":"c","data":"","type":"external","sendid":"","origin":"motor","origintype":"x-sce-host","invokeid":"","hostinvoketoken":null}}]}}"#
         );
@@ -4375,8 +4504,86 @@ mod tests {
             ),
         );
         let state = SavedState::from_json(&format2).expect("a format-2 tree reads");
-        assert_eq!(state.format(), FORMAT_3);
+        assert_eq!(state.format(), FORMAT_4);
         assert_eq!(state.to_json(), format3);
+    }
+
+    /// docs/adr/0107, D4: a format-3 tree counted no host-run start, so each
+    /// running host-run invocation is read as the first start of its
+    /// `<invoke>` and counted so, and the tree is written back as format 4
+    /// with the number after the invocation's id and the count after
+    /// `hostinvokes`.
+    #[test]
+    fn a_format_3_host_invocation_is_read_as_the_first_start_of_its_invoke() {
+        let host =
+            r#"{"type":"x-host","id":"h","src":"","params":{},"data":"","content":"","due":null}"#;
+        let format3 = format!(
+            r#"{{"format":3,"shape":"d","sessionid":"s1","configuration":[],"current":"s","variables":{{}},"history":{{}},"pending":[],"invokes":[],"invokestarts":{{}},"hostinvokes":[{host}],"hostinvoketoken":"5","sendseq":"0","external":[]}}"#
+        );
+        let state = SavedState::from_json(&format3).expect("a format-3 tree reads");
+        assert_eq!(state.host_invokes[0].start, 1);
+        assert_eq!(state.host_invoke_starts, vec![("h".to_string(), 1)]);
+        assert_eq!(
+            state.to_json(),
+            r#"{"format":4,"shape":"d","sessionid":"s1","configuration":[],"current":"s","variables":{},"history":{},"pending":[],"invokes":[],"invokestarts":{},"hostinvokes":[{"type":"x-host","id":"h","start":"1","src":"","params":{},"data":"","content":"","due":null}],"hostinvokestarts":{"h":"1"},"hostinvoketoken":"5","sendseq":"0","external":[]}"#
+        );
+    }
+
+    /// docs/adr/0107, D4: a format-4 tree keeps each host-run invocation's
+    /// start number and each `<invoke>`'s count of starts as they were written,
+    /// a count kept for an `<invoke>` that is not running among them, and
+    /// refuses a number that is no count of starts.
+    #[test]
+    fn a_host_invocations_start_number_is_read_back_as_it_was_written() {
+        let mut state = session('a', "s1", Vec::new());
+        state.host_invokes = vec![SavedHostInvoke {
+            processor_type: "x-host".to_string(),
+            invoke_id: "h".to_string(),
+            start: 3,
+            ..SavedHostInvoke::default()
+        }];
+        state.host_invoke_starts = vec![("done".to_string(), 2), ("h".to_string(), 3)];
+        let text = state.to_json();
+        assert!(
+            text.contains(r#""id":"h","start":"3","src":"""#),
+            "the number follows the invocation's id: {text}"
+        );
+        assert!(
+            text.contains(r#""hostinvokestarts":{"done":"2","h":"3"},"hostinvoketoken""#),
+            "the count follows the invocations: {text}"
+        );
+        assert_eq!(SavedState::from_json(&text), Ok(state));
+        for (what, from, to, wanted) in [
+            (
+                "a start counted from 0",
+                r#""start":"3""#,
+                r#""start":"0""#,
+                "'hostinvokes[0].start' (0) is not a count of starts",
+            ),
+            (
+                "an invocation with no start",
+                r#""start":"3","#,
+                "",
+                "'hostinvokes[0]' has no 'start'",
+            ),
+            (
+                "a count written as a number",
+                r#""done":"2""#,
+                r#""done":2"#,
+                "'hostinvokestarts.done' is not a text",
+            ),
+            (
+                "a session with no count",
+                r#""hostinvokestarts":{"done":"2","h":"3"},"#,
+                "",
+                "the saved state has no 'hostinvokestarts'",
+            ),
+        ] {
+            let changed = text.replacen(from, to, 1);
+            assert_ne!(changed, text, "{what}: the change did not apply");
+            let refusal = SavedState::from_json(&changed).expect_err(what);
+            assert!(refusal.reason().contains(wanted), "{what}: {refusal}");
+        }
     }
 
     /// docs/adr/0090, section 7: a format-1 or format-2 act's stored origin
@@ -5063,6 +5270,7 @@ mod tests {
             include_str!("../../../../schemas/sce-saved-state.v1.schema.json"),
             include_str!("../../../../schemas/sce-saved-state.v2.schema.json"),
             include_str!("../../../../schemas/sce-saved-state.v3.schema.json"),
+            include_str!("../../../../schemas/sce-saved-state.v4.schema.json"),
         ] {
             let schema = json::parse(text).expect("the schema is JSON");
             assert_eq!(
@@ -5078,17 +5286,17 @@ mod tests {
     fn another_format_is_refused() {
         // A format of the future is refused by its `format`, before anything
         // else is read: this text holds nothing else a reader could take.
-        let text = r#"{"format":4,"shape":"d","configuration":[],"current":"s","variables":{},"history":{},"external":[]}"#;
-        let refusal = SavedState::from_json(text).expect_err("format 4");
+        let text = r#"{"format":5,"shape":"d","configuration":[],"current":"s","variables":{},"history":{},"external":[]}"#;
+        let refusal = SavedState::from_json(text).expect_err("format 5");
         assert_eq!(
             refusal.reason(),
-            "the saved state is format 4, and this runtime reads formats 1, 2 and 3"
+            "the saved state is format 5, and this runtime reads formats 1, 2, 3 and 4"
         );
         // The member as it is written, a text included.
-        let refusal = SavedState::from_json(&text.replacen("4", "\"3\"", 1)).expect_err("a text");
+        let refusal = SavedState::from_json(&text.replacen("5", "\"4\"", 1)).expect_err("a text");
         assert_eq!(
             refusal.reason(),
-            "the saved state is format \"3\", and this runtime reads formats 1, 2 and 3"
+            "the saved state is format \"4\", and this runtime reads formats 1, 2, 3 and 4"
         );
     }
 

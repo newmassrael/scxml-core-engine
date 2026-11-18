@@ -416,17 +416,29 @@ pub struct HostInvokeRequest {
     /// the cancelled process sends is ignored). Distinct for every start of
     /// every invocation within one engine.
     pub token: u64,
+    /// Which start of this `<invoke>` in its session this is, counted from 1
+    /// (docs/SCE_HOST_FEATURES.md, section 1, "Identity"). The engine assigns
+    /// it, and a saved state carries it with the invocation and the count of
+    /// each `<invoke>`'s starts.
+    ///
+    /// With [`Self::session_id`] and [`Self::invoke_id`] it names the
+    /// invocation across a save and a restore, which [`Self::token`] does not:
+    /// a restore starts a running invocation again under the start number it
+    /// had, so a host that kept what it answered under that identity answers
+    /// the repeat with it (docs/adr/0107, D4). A start the document makes after
+    /// the earlier one ended takes the next number.
+    pub start: u64,
     /// Whether this start resumes an invocation a saved machine was running
     /// (SCE Accepted Subset §2.15, "Saving and restoring") and not one the
     /// document just began.
     ///
     /// The process that ran it is gone with the process that saved it, so the
     /// engine starts it again from the request it saved: the same id, the same
-    /// parameters, a new `token`, and the deadline it had left. A host with no
-    /// memory of the invocation takes it as any other start, which is the right
-    /// reading; one that kept its own record of the work under the id may pick
-    /// it up instead of beginning again. Always `false` for an invocation the
-    /// document starts.
+    /// parameters, the same [`Self::start`], a new `token`, and the deadline it
+    /// had left. A host with no memory of the invocation takes it as any other
+    /// start, which is the right reading; one that kept its own record of the
+    /// work under the invocation's identity may answer with it instead of
+    /// beginning again. Always `false` for an invocation the document starts.
     pub restarted: bool,
     /// The session that started the invocation (`_sessionid`; docs/adr/0045):
     /// the root the host built, or a child session of it, `<parent>.<invokeid>`.
@@ -634,6 +646,11 @@ pub(crate) struct HostProcessorRegistry {
     started: std::collections::BTreeMap<(String, String), StartedInvoke>,
     /// The token the next start receives.
     next_token: u64,
+    /// How many times each `<invoke>` has started in this session, by its id,
+    /// for each started at least once: what numbers a start
+    /// ([`HostInvokeRequest::start`]). Ordered by the id's bytes, the order a
+    /// saved state writes them in.
+    starts: std::collections::BTreeMap<String, u64>,
 }
 
 /// A host-run invocation that was started and has neither completed nor been
@@ -734,6 +751,11 @@ impl HostProcessorRegistry {
     /// handler that completes synchronously is completing an invocation the
     /// engine already knows is running. Returned beside the response for
     /// that synchronous completion to name.
+    ///
+    /// A start the document makes is numbered on from the count of its
+    /// `<invoke>`; a restart keeps the number the saved state gave it, whose
+    /// count the restore carried on, since it repeats that start rather than
+    /// making another (docs/adr/0107, D4).
     pub(crate) fn start_invoke(
         &mut self,
         mut request: HostInvokeRequest,
@@ -744,6 +766,11 @@ impl HostProcessorRegistry {
         let token = self.next_token;
         self.next_token = self.next_token.wrapping_add(1);
         request.token = token;
+        if !request.restarted {
+            let count = self.starts.entry(request.invoke_id.clone()).or_insert(0);
+            *count = count.saturating_add(1);
+            request.start = *count;
+        }
         let processor_type = request.processor_type.clone();
         self.started.insert(
             (request.processor_type.clone(), request.invoke_id.clone()),
@@ -773,6 +800,19 @@ impl HostProcessorRegistry {
     /// handed to a host that may still answer with it.
     pub(crate) fn set_next_token(&mut self, next: u64) {
         self.next_token = next;
+    }
+
+    /// How many times each `<invoke>` has started in this session, by its id,
+    /// ordered by the id's bytes.
+    pub(crate) fn starts(&self) -> impl Iterator<Item = (&str, u64)> {
+        self.starts.iter().map(|(id, count)| (id.as_str(), *count))
+    }
+
+    /// Number starts on from `starts`, the counts a saved state carried: what a
+    /// restore does so that a start it makes is never given the number of one
+    /// a host already saw, and a restart keeps the number it had.
+    pub(crate) fn set_starts(&mut self, starts: impl IntoIterator<Item = (String, u64)>) {
+        self.starts = starts.into_iter().collect();
     }
 
     /// Take the running invocation `(processor_type, invoke_id, token)` out of

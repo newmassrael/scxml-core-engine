@@ -6,8 +6,8 @@
 // is gone with the process that saved it. A saved state holds each running
 // host-run invocation with the request it was started with and the deadline it
 // had left, and a restore starts it again from that request — never evaluating
-// the element a second time — with `restarted` set, a new token and what was
-// left of the deadline.
+// the element a second time — with `restarted` set, a new token, the start
+// number it had (docs/adr/0107, D4) and what was left of the deadline.
 //
 // `statechart_static_host_invoke.scxml` hands a job to the host from `working`.
 // `done.invoke.h` and `error.invoke.h` each leave it and record a digit in
@@ -15,9 +15,10 @@
 //
 // Driven entirely on `SceClock::Manual`: no case sleeps, and none can be decided
 // by how loaded the build machine is. The shared instance
-// `saved/statechart_static_host_invoke_running.json` is the format-3 text every
-// backend writes (docs/adr/0090); the format-1 text of the same run, under
-// `saved/format1/`, still restores.
+// `saved/statechart_static_host_invoke_running.json` is the format-4 text every
+// backend writes (docs/adr/0107, D4); the format-3 text of the same run, under
+// `saved/format3/`, and the format-1 text, under `saved/format1/`, still
+// restore.
 
 use std::sync::{Arc, Mutex};
 
@@ -32,6 +33,12 @@ use sce_rust_tests::integration::host_processor::{
 
 const SHARED_RUNNING: &str = include_str!(
     "../../../../sce-build/tests/fixtures/host_processor/saved/statechart_static_host_invoke_running.json"
+);
+
+/// The same run as format 3 wrote it, before a host-run invocation held its
+/// start number.
+const FORMAT3_RUNNING: &str = include_str!(
+    "../../../../sce-build/tests/fixtures/host_processor/saved/format3/statechart_static_host_invoke_running.json"
 );
 
 /// The wall-clock moment the shared instance was saved at.
@@ -127,6 +134,7 @@ fn a_machine_is_saved_with_the_request_its_invocation_was_started_with() {
         "the document's own start is not a restart"
     );
     assert_eq!(first.token, 0);
+    assert_eq!(first.start, 1, "the first start of `h` in this session");
 
     let saved = engine.save_at(SAVED_AT_MS).expect("saves");
     let [entry] = saved.host_invokes.as_slice() else {
@@ -134,6 +142,8 @@ fn a_machine_is_saved_with_the_request_its_invocation_was_started_with() {
     };
     assert_eq!(entry.processor_type, "x-sce-host");
     assert_eq!(entry.invoke_id, "h");
+    assert_eq!(entry.start, 1);
+    assert_eq!(saved.host_invoke_starts, vec![("h".to_string(), 1)]);
     assert_eq!(entry.src, first.src);
     assert_eq!(entry.content, first.content);
     assert_eq!(entry.data, first.event_data);
@@ -152,8 +162,9 @@ fn a_restore_asks_nothing_of_the_host_until_the_machine_is_driven() {
     const FORMAT1_RUNNING: &str = include_str!(
         "../../../../sce-build/tests/fixtures/host_processor/saved/format1/statechart_static_host_invoke_running.json"
     );
-    // From the format-3 text, and from the format-1 text of the same run.
-    for text in [SHARED_RUNNING, FORMAT1_RUNNING] {
+    // From the format-4 text, and from the format-3 and format-1 texts of the
+    // same run.
+    for text in [SHARED_RUNNING, FORMAT3_RUNNING, FORMAT1_RUNNING] {
         let (mut engine, log) = restored(text, 1000);
         assert!(told(&log).is_empty(), "the restore itself calls nobody");
         assert_eq!(standing_in(&engine), [State::Working]);
@@ -183,6 +194,81 @@ fn a_restored_invocation_is_started_again_from_the_request_it_was_saved_with() {
         same_request(again, &first),
         "the same request, not one evaluated again:\n{again:?}\n{first:?}"
     );
+    // docs/adr/0107, D4: the same invocation, under the identity it had.
+    assert_eq!(again.start, first.start, "the start it repeats");
+    assert_eq!(again.session_id, first.session_id);
+}
+
+/// docs/adr/0107, D4: a restore repeats a running start under its number, and a
+/// start the document makes afterwards is numbered on from the count the saved
+/// state carried, from the format-4 text and from the format-3 text alike.
+#[test]
+fn a_start_after_the_restored_one_takes_the_next_number() {
+    for text in [SHARED_RUNNING, FORMAT3_RUNNING] {
+        let (mut engine, log) = restored(text, 1000);
+        engine.tick();
+        // Leaving cancels the restarted invocation; starting again is a new start.
+        engine.raise_external_by_name("leave", "");
+        engine.tick();
+        engine.raise_external_by_name("start", "");
+        engine.tick();
+        let numbers: Vec<(bool, u64)> = starts(&log)
+            .iter()
+            .map(|request| (request.restarted, request.start))
+            .collect();
+        assert_eq!(numbers, [(true, 1), (false, 2)], "{text}");
+        let saved = engine.save_at(SAVED_AT_MS).expect("saves");
+        assert_eq!(saved.host_invokes[0].start, 2);
+        assert_eq!(saved.host_invoke_starts, vec![("h".to_string(), 2)]);
+    }
+}
+
+/// docs/adr/0107, D4: an invocation that completed before the save is not
+/// running in it, and the count it leaves numbers the next start on.
+#[test]
+fn a_start_after_one_saved_as_completed_takes_the_next_number() {
+    let (mut engine, _) = working();
+    assert!(engine.complete_host_invoke("x-sce-host", "h", 0, "done"));
+    engine.tick();
+    assert_eq!(standing_in(&engine), [State::After]);
+    let saved = engine.save_at(SAVED_AT_MS).expect("saves");
+    assert!(saved.host_invokes.is_empty(), "{:?}", saved.host_invokes);
+    assert_eq!(saved.host_invoke_starts, vec![("h".to_string(), 1)]);
+    let back = SavedState::from_json(&saved.to_json()).expect("reads");
+    assert_eq!(back.host_invoke_starts, saved.host_invoke_starts);
+}
+
+/// The start number is judged before anything is built: a running invocation
+/// is the latest start its session counts, and a count names an `<invoke>` the
+/// document hands a host.
+#[test]
+fn a_start_number_the_saved_session_could_not_have_given_is_refused() {
+    let swap = |from: &str, to: &str| SHARED_RUNNING.replace(from, to);
+    for (what, text, expected) in [
+        (
+            "a running start that is not the latest",
+            swap(
+                r#""hostinvokestarts":{"h":"1"}"#,
+                r#""hostinvokestarts":{"h":"2"}"#,
+            ),
+            "hostinvokes[0] is start 1 of 'h', and the session counts 2 starts of it",
+        ),
+        (
+            "a count of an invoke the document does not hand a host",
+            swap(
+                r#""hostinvokestarts":{"h":"1"}"#,
+                r#""hostinvokestarts":{"h":"1","stranger":"1"}"#,
+            ),
+            "hostinvokestarts counts 'stranger', which the document does not have a host \
+             invoker run",
+        ),
+    ] {
+        assert_ne!(text, SHARED_RUNNING, "{what}: the change did not apply");
+        let refusal = try_restore(&text, 0)
+            .err()
+            .unwrap_or_else(|| panic!("{what} restored"));
+        assert!(refusal.reason().contains(expected), "{what}: {refusal}");
+    }
 }
 
 #[test]
@@ -359,7 +445,7 @@ fn a_saved_state_naming_a_host_invocation_the_document_cannot_have_run_is_refuse
                 let start =
                     SHARED_RUNNING.find(r#""hostinvokes":["#).unwrap() + r#""hostinvokes":["#.len();
                 let end = SHARED_RUNNING[start..]
-                    .find("],\"hostinvoketoken\"")
+                    .find("],\"hostinvokestarts\"")
                     .unwrap()
                     + start;
                 let one = &SHARED_RUNNING[start..end];
@@ -388,7 +474,7 @@ fn the_host_invoke_fields_are_required_and_must_be_what_they_say() {
             "hostinvokes that is not an array",
             {
                 let start = SHARED_RUNNING.find(r#""hostinvokes":["#).unwrap();
-                let end = SHARED_RUNNING.find(r#","hostinvoketoken""#).unwrap();
+                let end = SHARED_RUNNING.find(r#","hostinvokestarts""#).unwrap();
                 format!(
                     "{}\"hostinvokes\":\"h\"{}",
                     &SHARED_RUNNING[..start],

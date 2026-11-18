@@ -4758,6 +4758,23 @@ impl<P: StatePolicy> Engine<P> {
         self.host_processors.set_next_token(next);
     }
 
+    /// How many times each host-run `<invoke>` has started in this session, by
+    /// its id and ordered by the id's bytes, which a save writes so that a
+    /// restore numbers starts on from it (docs/adr/0107, D4).
+    #[cfg(feature = "std")]
+    pub(crate) fn host_invoke_starts(&self) -> Vec<(String, u64)> {
+        self.host_processors
+            .starts()
+            .map(|(id, count)| (id.to_string(), count))
+            .collect()
+    }
+
+    /// Number host-run starts on from `starts`, the counts a saved state held.
+    #[cfg(feature = "std")]
+    pub(crate) fn set_host_invoke_starts(&mut self, starts: &[(String, u64)]) {
+        self.host_processors.set_starts(starts.iter().cloned());
+    }
+
     /// The id for a `<send idlocation>`, which the document keeps and may name
     /// in a `<cancel>` later: `_auto_send_` and the number of ids this machine
     /// has generated, counted from one. Unique within the machine, as the send's

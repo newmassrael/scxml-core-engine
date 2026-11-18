@@ -3,13 +3,13 @@
 //
 // SCE Accepted Subset §2.15, "Saving and restoring" (docs/adr/0090, section 7): a
 // state saved in format 2 stored an event's origin as an `origin` text and an
-// `origintype`, and a reader of format 3 reads them as the pair and the sender
-// the table of that section gives. A machine restored from such a text writes
-// format 3, holding those pairs.
+// `origintype`, and a reader of format 3 or later reads them as the pair and the
+// sender the table of that section gives. A machine restored from such a text
+// writes the format this runtime writes, format 4, holding those pairs.
 //
 // Each reading fixture in sce-build/tests/fixtures/static_datamodel/saved/format2/
 // is restored at the wall-clock moment the shared fixtures were saved at, saved
-// again at once, and held byte for byte to the format-3 text of the same name in
+// again at once, and held byte for byte to the format-4 text of the same name in
 // `read_as/`, which every backend writes for it (`format2/README.md`). The trees
 // are of `static_invoke_tree.scxml`: the shared tree as the backends other than
 // C11 wrote it, the same tree with a queued event's origin stored as C11 stored
@@ -17,7 +17,7 @@
 // The timers are of `static_timers.scxml`, whose `internal` act stored a sender
 // that an internal event does not carry.
 
-use sce_rust_runtime::saved_state::{SavedState, StateRefusal, FORMAT_2, FORMAT_3};
+use sce_rust_runtime::saved_state::{SavedState, StateRefusal, FORMAT, FORMAT_2};
 use sce_rust_runtime::{Engine, SceClock};
 use sce_rust_tests::integration::static_datamodel::static_invoke_tree_sm::{
     StaticInvokeTreePersist, StaticInvokeTreePolicy,
@@ -29,11 +29,11 @@ use sce_rust_tests::integration::static_datamodel::static_timers_sm::{
 /// The wall-clock moment the shared fixtures were saved at.
 const SAVED_AT_MS: u64 = 1_700_000_000_000;
 
-/// A reading fixture: its name, its format-2 text, and the format-3 text it is
+/// A reading fixture: its name, its format-2 text, and the format-4 text it is
 /// read as.
 type ReadingFixture = (&'static str, &'static str, &'static str);
 
-/// The format-2 trees, each with the format-3 text it is read as.
+/// The format-2 trees, each with the format-4 text it is read as.
 const TREES: [ReadingFixture; 3] = [
     (
         "static_invoke_tree_working",
@@ -64,7 +64,7 @@ const TREES: [ReadingFixture; 3] = [
     ),
 ];
 
-/// The format-2 timers, with the format-3 text they are read as.
+/// The format-2 timers, with the format-4 text they are read as.
 const TIMERS: ReadingFixture = (
     "static_timers",
     include_str!(
@@ -85,8 +85,8 @@ fn read(name: &str, format2: &str) -> SavedState {
 }
 
 /// The text the machine `restored` saves at once with `save`, after the check
-/// that it is format 3. A refusal of the restore or of the save fails the case,
-/// naming the fixture `name`.
+/// that it is the format this runtime writes. A refusal of the restore or of the
+/// save fails the case, naming the fixture `name`.
 fn saved_again<M>(
     name: &str,
     restored: Result<M, StateRefusal>,
@@ -94,12 +94,12 @@ fn saved_again<M>(
 ) -> String {
     let machine = restored.unwrap_or_else(|refusal| panic!("{name} restores: {refusal}"));
     let again = save(&machine).unwrap_or_else(|refusal| panic!("{name} saves: {refusal}"));
-    assert_eq!(again.format(), FORMAT_3, "{name} is saved as format 3");
+    assert_eq!(again.format(), FORMAT, "{name} is saved as format {FORMAT}");
     again.to_json()
 }
 
 #[test]
-fn a_format_2_tree_is_saved_again_as_the_format_3_tree_it_is_read_as() {
+fn a_format_2_tree_is_saved_again_as_the_tree_it_is_read_as() {
     for (name, format2, read_as) in TREES {
         let saved = read(name, format2);
         let text = saved_again(
@@ -117,7 +117,7 @@ fn a_format_2_tree_is_saved_again_as_the_format_3_tree_it_is_read_as() {
 }
 
 #[test]
-fn format_2_timers_are_saved_again_as_the_format_3_timers_they_are_read_as() {
+fn format_2_timers_are_saved_again_as_the_timers_they_are_read_as() {
     let (name, format2, read_as) = TIMERS;
     let saved = read(name, format2);
     let text = saved_again(

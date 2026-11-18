@@ -200,8 +200,8 @@ fn an_event_saved_in_the_childs_queue_is_taken_by_the_resumed_child() {
     // tree was saved: it is in the child's `external`, and the resumed child takes
     // it, then ends on `b`.
     let text = SHARED_WORKING.trim().replacen(
-        r#""configuration":["first"],"current":"first","variables":{},"history":{},"pending":[],"invokes":[],"invokestarts":{},"hostinvokes":[],"hostinvoketoken":"0","sendseq":"0","external":[]"#,
-        r#""configuration":["first"],"current":"first","variables":{},"history":{},"pending":[],"invokes":[],"invokestarts":{},"hostinvokes":[],"hostinvoketoken":"0","sendseq":"0","external":[{"name":"a","data":"","type":"external","sendid":"","origin":null,"sender":null,"invokeid":"","hostinvoketoken":null}]"#,
+        r#""configuration":["first"],"current":"first","variables":{},"history":{},"pending":[],"invokes":[],"invokestarts":{},"hostinvokes":[],"hostinvokestarts":{},"hostinvoketoken":"0","sendseq":"0","external":[]"#,
+        r#""configuration":["first"],"current":"first","variables":{},"history":{},"pending":[],"invokes":[],"invokestarts":{},"hostinvokes":[],"hostinvokestarts":{},"hostinvoketoken":"0","sendseq":"0","external":[{"name":"a","data":"","type":"external","sendid":"","origin":null,"sender":null,"invokeid":"","hostinvoketoken":null}]"#,
         1,
     );
     assert_ne!(text, SHARED_WORKING.trim(), "the child's queue was changed");
