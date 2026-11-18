@@ -136,6 +136,7 @@ public enum {{ g.type }}{{ params }} {
 {% for a in g.arms %}
     /// While {{ a.when }}.
     case {{ a.case }}{% if a.members %}({% for m in a.members %}{{ m.name }}: {{ m.type }}{% if not loop.last %}, {% endif %}{% endfor %}){% endif %}
+
 {% endfor %}
 
     /// The place of the arm among the arms, in the order the document's gates make them: what the
