@@ -93,11 +93,20 @@ namespace detail {
 /// changes nothing about correctness.
 inline constexpr std::size_t kCacheLine = 64;
 
+// MSVC reports every padded instance (C4324, "structure was padded due to alignment specifier"), and that
+// padding is what this type is for, so the warning is turned off for this definition alone.
+#if defined(_MSC_VER)
+#pragma warning(push)
+#pragma warning(disable : 4324)
+#endif
 template <typename Atomic> struct alignas(kCacheLine) Padded {
     Atomic value;
 
     constexpr explicit Padded(typename Atomic::value_type initial) noexcept : value(initial) {}
 };
+#if defined(_MSC_VER)
+#pragma warning(pop)
+#endif
 
 /// The storage of one element. A union, so the slot holds no object until a
 /// push constructs one in it and has a `constexpr` constructor, which is what

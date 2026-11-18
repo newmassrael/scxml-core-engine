@@ -36,3 +36,17 @@
 #define SCE_EXPECT_TRUE(...) (__VA_ARGS__)
 #define SCE_EXPECT_FALSE(...) (__VA_ARGS__)
 #endif
+
+/**
+ * @brief A function the program spends its time in, written before its declaration
+ *
+ * `SCE_HOT void step();` asks GCC and Clang to optimise the function harder and
+ * place it with the other hot code (`[[gnu::hot]]`). An attribute in a namespace
+ * a compiler does not know is a warning there (MSVC's C5030, an error under
+ * /WX), so a compiler without it gets nothing; the hint changes no behaviour.
+ */
+#if defined(__GNUC__) || defined(__clang__)
+#define SCE_HOT [[gnu::hot]]
+#else
+#define SCE_HOT
+#endif
