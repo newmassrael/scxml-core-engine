@@ -745,9 +745,17 @@ fn the_overlap_rule_is_the_one_bx_applies() {
     ));
 }
 
+/// The actions bx.toml declares that are no step of the regeneration, each
+/// with its command: `bx --actions` runs them beside the steps, so each is
+/// one whose run is right there. The CBOR pin of docs/adr/0101 step 0 writes
+/// its pin once and holds it on every later run, so beside the steps it
+/// checks that a regeneration moved no pinned byte.
+const ACTIONS_BESIDE_THE_STEPS: [(&str, &str); 1] =
+    [("capture-cbor-pin", "scripts/capture_cbor_pin.sh")];
+
 /// Every step of the regeneration is the bx action `regen-<step>`, whose
 /// command is the script given that step, and bx.toml declares no other
-/// action.
+/// action but those of [`ACTIONS_BESIDE_THE_STEPS`], each with its command.
 ///
 /// The second half is what lets the bare `bx --actions`, which runs every
 /// declared action, stand for "regenerate everything". Turns red if a step is
@@ -758,13 +766,27 @@ fn the_overlap_rule_is_the_one_bx_applies() {
 fn every_step_is_the_bx_action_that_runs_it() {
     let actions = bx_actions();
     let steps = regen_steps();
-    let expected: BTreeSet<String> = steps.iter().map(|s| format!("regen-{s}")).collect();
+    let mut expected: BTreeSet<String> = steps.iter().map(|s| format!("regen-{s}")).collect();
+    expected.extend(
+        ACTIONS_BESIDE_THE_STEPS
+            .iter()
+            .map(|(name, _)| (*name).to_string()),
+    );
     let declared: BTreeSet<String> = actions.keys().cloned().collect();
     assert_eq!(
         declared, expected,
         "the actions bx.toml declares are not the steps of \
-         scripts/regen_all_committed_trees.sh, one `regen-<step>` each"
+         scripts/regen_all_committed_trees.sh, one `regen-<step>` each, and \
+         the actions beside them"
     );
+    for (name, run) in ACTIONS_BESIDE_THE_STEPS {
+        let action = &actions[name];
+        assert_eq!(action.run, run, "[actions.{name}] does not run {run}");
+        assert!(
+            !action.inputs.is_empty() && !action.outputs.is_empty(),
+            "[actions.{name}] declares no inputs or no outputs"
+        );
+    }
     for step in &steps {
         let action = &actions[&format!("regen-{step}")];
         assert_eq!(

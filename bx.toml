@@ -603,9 +603,11 @@ run = 'ctest --test-dir build --output-on-failure; c=$?; log=$(mktemp); node tes
 #
 # REGENERATE EVERYTHING: `bx --actions`. It runs every action this file declares as the units of
 # one set, spread over the build machines, and writes their results only when every one of them is
-# good (bx RFC 0004, section 12). Every action here is a step of the regeneration, which is what
-# lets the bare `bx --actions` mean "regenerate everything"; a declared action that is not one would
-# have to come with the list instead (`bx --actions -- regen-rust-tests regen-kotlin-tests ...`).
+# good (bx RFC 0004, section 12). Every action here is a step of the regeneration but one, which is
+# what lets the bare `bx --actions` mean "regenerate everything". The one is `capture-cbor-pin` (at
+# the end of the file), which writes its pin once and checks it on every later run, so that running
+# it beside the steps checks that the regeneration moved no pinned CBOR byte; any other action that
+# is not a step would have to come with the list instead (`bx --actions -- regen-rust-tests ...`).
 # One step alone: `bx --action regen-<step>`, e.g. `bx --action regen-embed-manifest` after a public
 # header edit. Measured for the single action this replaced: 341 s on a build machine with nothing
 # left to change, 956-1971 s with changes, against 40-60 min on this machine under load.
@@ -2181,6 +2183,99 @@ outputs = [
     "embed/MANIFEST.json",
     "embed/MANIFEST.inputs",
 ]
+
+# THE CBOR PIN (docs/adr/0101, Landing order step 0 and section 8.3), the one action that is no step
+# of the regeneration. It captures what the CBOR encode of each of the seven backends writes for the
+# values tests/forge/cbor_pin/cases.json states, and writes tests/forge/cbor_pin/captured.json; a
+# case that file already pins is held instead, and a capture whose bytes for it moved on any backend
+# fails and writes nothing (scripts/capture_cbor_pin.sh says how). So its first run writes the pin
+# and every later run checks it, and `bx --actions`, which runs every declared action, checks the pin
+# beside regenerating the trees: a regeneration that moves a pinned byte fails there, not later.
+#
+# Its inputs are the generator's block, as every action's that runs the generator, and what the seven
+# drivers build against: the Rust conformance crate and the forge runtime of each backend, the Gradle
+# build that compiles the Kotlin driver, the hand-written C runtime headers (not sce/generated, which
+# regen-runtime-c writes), the pin's own files and the documents it pins, which the generator's block
+# and tests/forge/conformance/** already name. Nothing a regen action writes is read or written here,
+# so it chains no step (`no_regen_action_reads_or_writes_what_another_writes`). captured.json is read
+# as well as written: the hold reads it.
+[actions.capture-cbor-pin]
+run = 'scripts/capture_cbor_pin.sh'
+inputs = [
+    ".cargo/**",
+    "Cargo.toml",
+    "Cargo.lock",
+    "rust-toolchain.toml",
+    "backends/rust/*/Cargo.toml",
+    "sce-build-wasm/Cargo.toml",
+    "sce-revision/Cargo.toml",
+    "sce-specs/Cargo.toml",
+    "sce-ttcn3-validator/Cargo.toml",
+    "sce-build/**",
+    "tools/codegen/**",
+    "stdlib/**",
+    "schemas/**",
+    "apis/**",
+    "kind-examples/**",
+    "docs/SCE_ACCEPTED_SUBSET.md",
+    "SCE_ERROR_CONTRACT.md",
+    "SCE_MESH.md",
+    "sce/include/*.h",
+    "sce/include/actions/**",
+    "sce/include/backends/**",
+    "sce/include/common/**",
+    "sce/include/core/**",
+    "sce/include/dispatchers/**",
+    "sce/include/events/**",
+    "sce/include/factory/**",
+    "sce/include/host/**",
+    "sce/include/mesh/**",
+    "sce/include/model/**",
+    "sce/include/parsing/**",
+    "sce/include/runtime/**",
+    "sce/include/saved/**",
+    "sce/include/scripting/**",
+    "sce/include/static/**",
+    "sce/include/test/**",
+    "sce/include/wrappers/**",
+    "backends/c/forge-runtime/include/**",
+    "backends/rust/runtime/src/**",
+    "backends/python/runtime/pyproject.toml",
+    "backends/python/runtime/sce_runtime/*.py",
+    "backends/python/runtime/sce_runtime/scripting/**",
+    "backends/python/runtime/sce_runtime/testprofile/**",
+    "backends/rust/tests/src/harness.rs",
+    "backends/go/tests/harness/**",
+    "backends/go/tests/go.sum",
+    "backends/python/tests/conftest.py",
+    "backends/kotlin/test-harness/src/main/**",
+    "tests/fixtures/**",
+    "tests/forge/resources/**",
+    "tests/mesh/**",
+    "scripts/lib/**",
+    "tests/forge/conformance/**",
+    "tests/forge/cbor_pin/**",
+    "scripts/capture_cbor_pin.sh",
+    "scripts/gradlew-on-ci-jdk.sh",
+    "settings.gradle.kts",
+    "build.gradle.kts",
+    "gradle.properties",
+    "gradlew",
+    "gradle/**",
+    "backends/c/runtime/include/sce/*.h",
+    "backends/c/runtime/include/sce/test/**",
+    "backends/cpp/forge-runtime/**",
+    "backends/go/forge-runtime/go.mod",
+    "backends/go/forge-runtime/*/*.go",
+    "backends/kotlin/forge-runtime/**",
+    "backends/python/forge-runtime/**",
+    "backends/rust/forge-runtime/**",
+    "backends/rust/forge-conformance/**",
+    "backends/rust/link-runtime/**",
+    "backends/rust/portable-bytes/**",
+    "backends/swift/forge-runtime/**",
+]
+outputs = ["tests/forge/cbor_pin/captured.json"]
 
 # THE PUSH'S GATES, AS A SET OF CHECKS bx SPREADS OVER THE BUILD MACHINES (bx
 # RFC 0004, section 7) AND WHOSE PASSES IT KEEPS (RFC 0020).
