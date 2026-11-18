@@ -47,6 +47,11 @@
 //!   the request's bound is answered by the adapter as [`HttpsFailure::Timeout`], in about the
 //!   bound.
 //!
+//! The test authority ([`TestAuthority`]) and the two proxies ([`tunnelling_proxy`],
+//! [`inspecting_proxy`], with what each saw in a [`ProxyLog`]) are public as well, so that a suite
+//! that puts a whole server behind the binding (`tests/server`, docs/adr/0107 decision D10) puts
+//! its client behind the same proxies the kit holds every adapter to.
+//!
 //! Every server and proxy listens on a loopback port of its own, so the functions may run in
 //! parallel. Every wait has a generous bound and the assertions are on what arrived. A failed
 //! expectation panics, as a test's does.
@@ -478,13 +483,13 @@ pub fn a_server_under_an_unknown_authority_is_refused<H: Harness>(harness: &H) {
 
 /// What a proxy saw.
 #[derive(Default)]
-struct ProxyLog {
+pub struct ProxyLog {
     /// The target of every `CONNECT`.
-    tunnels: Vec<String>,
+    pub tunnels: Vec<String>,
     /// What an inspecting proxy read from its clients, in the clear.
-    plaintext: Vec<u8>,
+    pub plaintext: Vec<u8>,
     /// Whether it dropped a response.
-    dropped: bool,
+    pub dropped: bool,
 }
 
 /// Read a `CONNECT` request's head from `stream`, a byte at a time, and return its target.
@@ -502,8 +507,9 @@ async fn read_connect(stream: &mut TcpStream) -> Option<String> {
     words.next().map(str::to_string)
 }
 
-/// A proxy that tunnels: it answers `CONNECT` and copies bytes both ways.
-fn tunnelling_proxy(runtime: &Runtime, log: Arc<Mutex<ProxyLog>>) -> SocketAddr {
+/// A proxy that tunnels: it answers `CONNECT` and copies bytes both ways. It listens on a loopback
+/// port of its own, which it answers, and runs on `runtime` until the runtime ends.
+pub fn tunnelling_proxy(runtime: &Runtime, log: Arc<Mutex<ProxyLog>>) -> SocketAddr {
     let listener = runtime
         .block_on(TcpListener::bind("127.0.0.1:0"))
         .expect("a loopback port");
@@ -551,8 +557,9 @@ fn declares_a_body(bytes: &[u8]) -> bool {
 /// certificate for the target that `authority` issues, opens its own TLS to the server believing
 /// `upstream` (DER), and copies what it reads in the clear both ways, keeping what the client
 /// wrote. With `drop_one`, it drops the first response to a request that carried a body: the
-/// server has taken the request in by then, and the client never sees what it answered.
-fn inspecting_proxy(
+/// server has taken the request in by then, and the client never sees what it answered. It listens
+/// on a loopback port of its own, which it answers, and runs on `runtime` until the runtime ends.
+pub fn inspecting_proxy(
     runtime: &Runtime,
     authority: Arc<TestAuthority>,
     upstream: Vec<u8>,
