@@ -7,16 +7,114 @@
 from __future__ import annotations
 
 from sce_forge_runtime.codec import BytearraySink, CodecError, LengthOutOfRange, NeedMoreBytes, SceCursor, SceSink
+from sce_forge_runtime.bounded import BoundedBytes, BoundedInt
 
-from dataclasses import dataclass
-from typing import Optional
+from dataclasses import dataclass, field
+from typing import Optional, Protocol, Union
+
+
+class CodecPresentIfLengthRefFlagsInt(BoundedInt):
+    """The ``flags`` element of :class:`CodecPresentIfLengthRef`, an unsigned integer of
+    8 bits, held to them where a value of it is made (docs/adr/0081 §2)."""
+
+    BITS = 8
+    SIGNED = False
+
+
+class CodecPresentIfLengthRefPayloadBytes(BoundedBytes):
+    """The ``payload`` element of :class:`CodecPresentIfLengthRef`, 0 to 32 bytes,
+    held to that bound where a value of it is made (docs/adr/0077 §3)."""
+
+    LEAST = 0
+    MOST = 32
+
+
+class CodecPresentIfLengthRefPayloadSizeInt(BoundedInt):
+    """The ``payload_size`` element of :class:`CodecPresentIfLengthRef`, an unsigned integer of
+    8 bits, held to them where a value of it is made (docs/adr/0081 §2)."""
+
+    BITS = 8
+    SIGNED = False
+
+
+@dataclass
+class CodecPresentIfLengthRefFlagsHasPayloadHasPayload:
+    """The ``flags_has_payload`` group of :class:`CodecPresentIfLengthRef` where ``flags.has_payload`` holds
+    (docs/adr/0065 §6 R4): the members present then."""
+
+    payload: CodecPresentIfLengthRefPayloadBytes = CodecPresentIfLengthRefPayloadBytes()
+
+    def __setattr__(self, name: str, value: object) -> None:
+        # Each integer, byte string and text is held to its bound
+        # wherever it is set, where the value is made and after
+        # (docs/adr/0081 §2), whatever it was handed.
+        if name == "payload":
+            value = CodecPresentIfLengthRefPayloadBytes(value)
+        object.__setattr__(self, name, value)
+
+
+@dataclass
+class CodecPresentIfLengthRefFlagsHasPayloadNotHasPayload:
+    """The ``flags_has_payload`` group of :class:`CodecPresentIfLengthRef` where ``flags.has_payload`` does not hold
+    (docs/adr/0065 §6 R4): the members present then."""
+
+    payload_size: CodecPresentIfLengthRefPayloadSizeInt = 0
+
+    def __setattr__(self, name: str, value: object) -> None:
+        # Each integer, byte string and text is held to its bound
+        # wherever it is set, where the value is made and after
+        # (docs/adr/0081 §2), whatever it was handed.
+        if name == "payload_size":
+            value = CodecPresentIfLengthRefPayloadSizeInt(value)
+        object.__setattr__(self, name, value)
+
+
+CodecPresentIfLengthRefFlagsHasPayload = Union[CodecPresentIfLengthRefFlagsHasPayloadHasPayload, CodecPresentIfLengthRefFlagsHasPayloadNotHasPayload]
+"""The ``flags_has_payload`` group of :class:`CodecPresentIfLengthRef`: the arm the value holds."""
+
+
+class CodecPresentIfLengthRefSource(Protocol):
+    """The elements a value of :class:`CodecPresentIfLengthRef` presents, which its encode
+    reads (docs/adr/0081 §2): any object that presents them is a source of it.
+    The encode derives every other element of the frame."""
+
+    @property
+    def flags(self) -> CodecPresentIfLengthRefFlagsInt: ...
+
+    @property
+    def flags_has_payload(self) -> CodecPresentIfLengthRefFlagsHasPayload: ...
+
+
+def encode_source(src: CodecPresentIfLengthRefSource, w: SceSink) -> None:
+    """Write any source of :class:`CodecPresentIfLengthRef` into ``w``, each element read
+    off ``src`` and written where the codec's encode plan lays it out
+    (docs/adr/0081). It derives ``payload_size`` where what it measures is there, and reads
+    what the source states where none is. It refuses no value; a bounded sink raises
+    :class:`BufferOverflow` where it has no room left."""
+    _g_flags_has_payload = src.flags_has_payload
+    _e_payload = _g_flags_has_payload.payload if isinstance(_g_flags_has_payload, CodecPresentIfLengthRefFlagsHasPayloadHasPayload) else None
+    _e_payload_size = _g_flags_has_payload.payload_size if isinstance(_g_flags_has_payload, CodecPresentIfLengthRefFlagsHasPayloadNotHasPayload) else None
+    _d_payload_size = (len(_e_payload)) if _e_payload is not None else (0 if _e_payload_size is None else _e_payload_size)
+    _c_flags = src.flags
+    _c_flags = (_c_flags & ~0x1) | (0x1 if _e_payload is not None else 0)
+    w.write_u8(_c_flags & 0xFF)
+    w.write_u8(_d_payload_size & 0xFF)
+    if _e_payload is not None:
+        w.write_bytes(_e_payload)
 
 
 @dataclass
 class CodecPresentIfLengthRef:
-    flags: int = 0
-    payload_size: int = 0
-    payload: Optional[bytes] = None
+    flags: CodecPresentIfLengthRefFlagsInt = 0
+    flags_has_payload: CodecPresentIfLengthRefFlagsHasPayload = field(default_factory=CodecPresentIfLengthRefFlagsHasPayloadNotHasPayload)
+
+    def __setattr__(self, name: str, value: object) -> None:
+        # Each integer, byte string and text is held to its bound
+        # wherever it is set, where the value is made and after
+        # (docs/adr/0081 §2), whatever it was handed.
+        if name == "flags":
+            value = CodecPresentIfLengthRefFlagsInt(value)
+        object.__setattr__(self, name, value)
 
     @classmethod
     def decode(cls, cursor: SceCursor) -> CodecPresentIfLengthRef:
@@ -57,8 +155,7 @@ class CodecPresentIfLengthRef:
             f_payload = None
         return cls(
             flags=f_flags,
-            payload_size=f_payload_size,
-            payload=f_payload,
+            flags_has_payload=CodecPresentIfLengthRefFlagsHasPayloadHasPayload(payload=f_payload) if (((f_flags >> 0) & 1) != 0) else CodecPresentIfLengthRefFlagsHasPayloadNotHasPayload(payload_size=f_payload_size),
         )
 
     # RFC §synth-5-B flags primitive: per-bit-range accessors over
@@ -82,24 +179,8 @@ class CodecPresentIfLengthRef:
         caller-owned ``w`` sink. Returns ``None`` on success; raises
         :class:`BufferOverflow` from a bounded sink when the destination
         has insufficient remaining capacity; growable sinks (e.g.
-        :class:`BytearraySink`) are effectively infallible. Raises,
-        before the first byte, the error a decode of the frame would give
-        for a value it cannot carry: a byte string, text or list outside its
-        bound, or a gated field its gate disagrees with."""
-        if self.payload is not None and (len(self.payload) > 32):
-            raise LengthOutOfRange()
-        # Streaming cursor encode (SSOT selection: `needs_streaming`).
-        # Mirrors the streaming decode: every field appends its own bytes
-        # in declaration order through the per-field encode blocks, so a
-        # gated field skips its append when absent, and a fixed field after
-        # a variable-length payload lands after the payload (the positional
-        # path appends variable fields last, placing it ahead on the wire).
-        # Per-field `is_repeat` / `is_tlv_chain` / `is_embed` route to their
-        # dedicated helpers; everything else uses `present_if_encode_block`.
-        w.write_u8(self.flags & 0xFF)
-        w.write_u8(self.payload_size & 0xFF)
-        if self.payload is not None:
-            w.write_bytes(self.payload)
+        :class:`BytearraySink`) are effectively infallible."""
+        encode_source(self, w)
 
     def encode_to_bytes(self) -> bytes:
         """Heap-backed convenience facade. Runs :meth:`encode` over a

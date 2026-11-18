@@ -7,10 +7,26 @@
 from __future__ import annotations
 
 from sce_forge_runtime.codec import BytearraySink, CodecError, LengthOutOfRange, NeedMoreBytes, SceCursor, SceSink
-from sce_forge_runtime.bounded import BoundedBytes
+from sce_forge_runtime.bounded import BoundedBytes, BoundedInt
 
 from dataclasses import dataclass
 from typing import Optional, Protocol
+
+
+class CodecZenohDeclExtKeyexprInnerInnerHeaderInt(BoundedInt):
+    """The ``inner_header`` element of :class:`CodecZenohDeclExtKeyexprInner`, an unsigned integer of
+    8 bits, held to them where a value of it is made (docs/adr/0081 §2)."""
+
+    BITS = 8
+    SIGNED = False
+
+
+class CodecZenohDeclExtKeyexprInnerIdInt(BoundedInt):
+    """The ``id`` element of :class:`CodecZenohDeclExtKeyexprInner`, an unsigned integer of
+    64 bits, held to them where a value of it is made (docs/adr/0081 §2)."""
+
+    BITS = 64
+    SIGNED = False
 
 
 class CodecZenohDeclExtKeyexprInnerSuffixBytes(BoundedBytes):
@@ -27,22 +43,25 @@ class CodecZenohDeclExtKeyexprInnerSource(Protocol):
     The encode derives every other element of the frame."""
 
     @property
-    def inner_header(self) -> int: ...
+    def inner_header(self) -> CodecZenohDeclExtKeyexprInnerInnerHeaderInt: ...
 
     @property
-    def id(self) -> int: ...
+    def id(self) -> CodecZenohDeclExtKeyexprInnerIdInt: ...
 
     @property
     def suffix(self) -> Optional[CodecZenohDeclExtKeyexprInnerSuffixBytes]: ...
 
 
-def encode_source(src: CodecZenohDeclExtKeyexprInnerSource, w: SceSink) -> None:
+def encode_source(src: CodecZenohDeclExtKeyexprInnerSource, w: SceSink, *, override_inner_header_m: Optional[int] = None) -> None:
     """Write any source of :class:`CodecZenohDeclExtKeyexprInner` into ``w``, each element read
     off ``src`` and written where the codec's encode plan lays it out
-    (docs/adr/0081). It refuses no value; a bounded sink raises
+    (docs/adr/0081). A chain that holds it
+    sets the flag its entries end on by its keyword, in place of the value's. It refuses no value; a bounded sink raises
     :class:`BufferOverflow` where it has no room left."""
     _c_inner_header = src.inner_header
     _c_inner_header = (_c_inner_header & ~0x1) | (0x1 if src.suffix is not None else 0)
+    if override_inner_header_m is not None:
+        _c_inner_header = (_c_inner_header & ~0x2) | ((override_inner_header_m & 0x1) << 1)
     w.write_u8(_c_inner_header & 0xFF)
     w.write_vle_u64(src.id)
     if src.suffix is not None:
@@ -51,15 +70,19 @@ def encode_source(src: CodecZenohDeclExtKeyexprInnerSource, w: SceSink) -> None:
 
 @dataclass
 class CodecZenohDeclExtKeyexprInner:
-    inner_header: int = 0
-    id: int = 0
+    inner_header: CodecZenohDeclExtKeyexprInnerInnerHeaderInt = 0
+    id: CodecZenohDeclExtKeyexprInnerIdInt = 0
     suffix: Optional[CodecZenohDeclExtKeyexprInnerSuffixBytes] = None
 
     def __setattr__(self, name: str, value: object) -> None:
-        # Each byte string and text is held to its bound wherever it is
-        # set, where the value is made and after (docs/adr/0081 §2),
-        # whatever it was handed.
-        if name == "suffix":
+        # Each integer, byte string and text is held to its bound
+        # wherever it is set, where the value is made and after
+        # (docs/adr/0081 §2), whatever it was handed.
+        if name == "inner_header":
+            value = CodecZenohDeclExtKeyexprInnerInnerHeaderInt(value)
+        elif name == "id":
+            value = CodecZenohDeclExtKeyexprInnerIdInt(value)
+        elif name == "suffix":
             value = None if value is None else CodecZenohDeclExtKeyexprInnerSuffixBytes(value)
         object.__setattr__(self, name, value)
 

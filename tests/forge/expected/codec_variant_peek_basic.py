@@ -9,33 +9,48 @@ from __future__ import annotations
 from sce_forge_runtime.codec import BytearraySink, CodecError, NeedMoreBytes, SceCursor, SceSink
 from .codec_peek_arm_a import CodecPeekArmA
 from .codec_peek_arm_b import CodecPeekArmB
+from . import codec_peek_arm_a as sce_codec_peek_arm_a
+from . import codec_peek_arm_b as sce_codec_peek_arm_b
 
 from dataclasses import dataclass, field
-from typing import Optional
+from typing import Optional, Protocol, Union
 
 
-@dataclass
-class CodecVariantPeekBasicVariant:
-    """RFC §synth-5-B variant primitive: discriminated-union body for
-    the codec's tag-field suffix. ``kind`` selects the active arm; the
-    matching ``Optional`` field carries the decoded body. ``default_tag``
-    preserves the runtime tag value when the default arm fires so encode
-    can round-trip it back onto the wire."""
-    # RFC variant-default-uniformity (Python): pick the declared
-    # default arm (``<sce:arm default="true"/>``) when present so a
-    # freshly-constructed envelope round-trips byte-exactly through
-    # ``encode() -> decode()``. The corresponding arm body field uses a
-    # default_factory so ``Variant()`` actually populates it (rather
-    # than leaving every arm field ``None`` while ``kind`` names one of
-    # them, which is the latent inconsistency this RFC closes).
-    kind: str = "CodecPeekArmA"
-    codec_peek_arm_a: Optional[CodecPeekArmA] = field(default_factory=CodecPeekArmA)
-    codec_peek_arm_b: Optional[CodecPeekArmB] = None
+CodecVariantPeekBasicVariant = Union[sce_codec_peek_arm_a.CodecPeekArmA, sce_codec_peek_arm_b.CodecPeekArmB]
+"""The arm a value of :class:`CodecVariantPeekBasic` holds: a value of the arm's codec,
+or the default arm."""
+
+
+ARM_CLASSES = {0x0: sce_codec_peek_arm_a.CodecPeekArmA, 0x1: sce_codec_peek_arm_b.CodecPeekArmB}
+"""The class of the arm of :class:`CodecVariantPeekBasic`'s variant each tag names."""
+
+
+class CodecVariantPeekBasicSource(Protocol):
+    """The elements a value of :class:`CodecVariantPeekBasic` presents, which its encode
+    reads (docs/adr/0081 §2): any object that presents them is a source of it.
+    The encode derives every other element of the frame."""
+
+    @property
+    def body(self) -> CodecVariantPeekBasicVariant: ...
+
+
+def encode_source(src: CodecVariantPeekBasicSource, w: SceSink) -> None:
+    """Write any source of :class:`CodecVariantPeekBasic` into ``w``, each element read
+    off ``src`` and written where the codec's encode plan lays it out
+    (docs/adr/0081). It refuses no value; a bounded sink raises
+    :class:`BufferOverflow` where it has no room left."""
+    _v_body = src.body
+    if not isinstance(_v_body, (sce_codec_peek_arm_a.CodecPeekArmA, sce_codec_peek_arm_b.CodecPeekArmB,)):
+        raise TypeError(f"{type(_v_body).__name__} is no arm of CodecVariantPeekBasic's variant")
+    if isinstance(_v_body, sce_codec_peek_arm_a.CodecPeekArmA):
+        sce_codec_peek_arm_a.encode_source(_v_body, w)
+    else:
+        sce_codec_peek_arm_b.encode_source(_v_body, w)
 
 
 @dataclass
 class CodecVariantPeekBasic:
-    body: CodecVariantPeekBasicVariant = field(default_factory=CodecVariantPeekBasicVariant)
+    body: CodecVariantPeekBasicVariant = field(default_factory=sce_codec_peek_arm_a.CodecPeekArmA)
 
     @classmethod
     def decode(cls, cursor: SceCursor) -> CodecVariantPeekBasic:
@@ -58,13 +73,12 @@ class CodecVariantPeekBasic:
         # from the cursor. The default arm (when declared) carries the
         # runtime tag value so encode can round-trip it back onto the
         # wire.
-        body = CodecVariantPeekBasicVariant()
         if ((_peek >> 0) & 0x01) == 0:
-            body.kind = "CodecPeekArmA"
-            body.codec_peek_arm_a = CodecPeekArmA.decode(cursor)
+            _arm = CodecPeekArmA.decode(cursor)
+            body = _arm
         elif ((_peek >> 0) & 0x01) == 1:
-            body.kind = "CodecPeekArmB"
-            body.codec_peek_arm_b = CodecPeekArmB.decode(cursor)
+            _arm = CodecPeekArmB.decode(cursor)
+            body = _arm
         else:
             # codec/variant-arm-unreachable proves every tag names an arm, so
             # no frame reaches here.
@@ -79,13 +93,7 @@ class CodecVariantPeekBasic:
         :class:`BufferOverflow` from a bounded sink when the destination
         has insufficient remaining capacity; growable sinks (e.g.
         :class:`BytearraySink`) are effectively infallible."""
-        # RFC §synth-5-B peek-byte / streaming-prefix:
-        # streaming prefix encode.
-        # Append the active arm body's encoded bytes via the same sink.
-        if self.body.kind == "CodecPeekArmA":
-            self.body.codec_peek_arm_a.encode(w)
-        elif self.body.kind == "CodecPeekArmB":
-            self.body.codec_peek_arm_b.encode(w)
+        encode_source(self, w)
 
     def encode_to_bytes(self) -> bytes:
         """Heap-backed convenience facade. Runs :meth:`encode` over a

@@ -7,10 +7,18 @@
 from __future__ import annotations
 
 from sce_forge_runtime.codec import BytearraySink, CodecError, LengthOutOfRange, NeedMoreBytes, SceCursor, SceSink
-from sce_forge_runtime.bounded import BoundedBytes
+from sce_forge_runtime.bounded import BoundedBytes, BoundedInt
 
 from dataclasses import dataclass
 from typing import Optional, Protocol
+
+
+class CodecExtTimestampTimeInt(BoundedInt):
+    """The ``time`` element of :class:`CodecExtTimestamp`, an unsigned integer of
+    64 bits, held to them where a value of it is made (docs/adr/0081 §2)."""
+
+    BITS = 64
+    SIGNED = False
 
 
 class CodecExtTimestampZidBytes(BoundedBytes):
@@ -27,7 +35,7 @@ class CodecExtTimestampSource(Protocol):
     The encode derives every other element of the frame."""
 
     @property
-    def time(self) -> int: ...
+    def time(self) -> CodecExtTimestampTimeInt: ...
 
     @property
     def zid(self) -> CodecExtTimestampZidBytes: ...
@@ -47,14 +55,16 @@ def encode_source(src: CodecExtTimestampSource, w: SceSink) -> None:
 
 @dataclass
 class CodecExtTimestamp:
-    time: int = 0
+    time: CodecExtTimestampTimeInt = 0
     zid: CodecExtTimestampZidBytes = CodecExtTimestampZidBytes()
 
     def __setattr__(self, name: str, value: object) -> None:
-        # Each byte string and text is held to its bound wherever it is
-        # set, where the value is made and after (docs/adr/0081 §2),
-        # whatever it was handed.
-        if name == "zid":
+        # Each integer, byte string and text is held to its bound
+        # wherever it is set, where the value is made and after
+        # (docs/adr/0081 §2), whatever it was handed.
+        if name == "time":
+            value = CodecExtTimestampTimeInt(value)
+        elif name == "zid":
             value = CodecExtTimestampZidBytes(value)
         object.__setattr__(self, name, value)
 

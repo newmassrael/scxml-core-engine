@@ -7,10 +7,18 @@
 from __future__ import annotations
 
 from sce_forge_runtime.codec import BytearraySink, CodecError, LengthOutOfRange, NeedMoreBytes, SceCursor, SceSink
-from sce_forge_runtime.bounded import BoundedBytes
+from sce_forge_runtime.bounded import BoundedBytes, BoundedInt
 
 from dataclasses import dataclass
 from typing import Optional, Protocol
+
+
+class CodecFixedAfterLengthrefHeaderInt(BoundedInt):
+    """The ``header`` element of :class:`CodecFixedAfterLengthref`, an unsigned integer of
+    8 bits, held to them where a value of it is made (docs/adr/0081 §2)."""
+
+    BITS = 8
+    SIGNED = False
 
 
 class CodecFixedAfterLengthrefPayloadBytes(BoundedBytes):
@@ -21,19 +29,27 @@ class CodecFixedAfterLengthrefPayloadBytes(BoundedBytes):
     MOST = 1500
 
 
+class CodecFixedAfterLengthrefCrc32Int(BoundedInt):
+    """The ``crc32`` element of :class:`CodecFixedAfterLengthref`, an unsigned integer of
+    32 bits, held to them where a value of it is made (docs/adr/0081 §2)."""
+
+    BITS = 32
+    SIGNED = False
+
+
 class CodecFixedAfterLengthrefSource(Protocol):
     """The elements a value of :class:`CodecFixedAfterLengthref` presents, which its encode
     reads (docs/adr/0081 §2): any object that presents them is a source of it.
     The encode derives every other element of the frame."""
 
     @property
-    def header(self) -> int: ...
+    def header(self) -> CodecFixedAfterLengthrefHeaderInt: ...
 
     @property
     def payload(self) -> CodecFixedAfterLengthrefPayloadBytes: ...
 
     @property
-    def crc32(self) -> int: ...
+    def crc32(self) -> CodecFixedAfterLengthrefCrc32Int: ...
 
 
 def encode_source(src: CodecFixedAfterLengthrefSource, w: SceSink) -> None:
@@ -55,16 +71,20 @@ def encode_source(src: CodecFixedAfterLengthrefSource, w: SceSink) -> None:
 
 @dataclass
 class CodecFixedAfterLengthref:
-    header: int = 0
+    header: CodecFixedAfterLengthrefHeaderInt = 0
     payload: CodecFixedAfterLengthrefPayloadBytes = CodecFixedAfterLengthrefPayloadBytes()
-    crc32: int = 0
+    crc32: CodecFixedAfterLengthrefCrc32Int = 0
 
     def __setattr__(self, name: str, value: object) -> None:
-        # Each byte string and text is held to its bound wherever it is
-        # set, where the value is made and after (docs/adr/0081 §2),
-        # whatever it was handed.
-        if name == "payload":
+        # Each integer, byte string and text is held to its bound
+        # wherever it is set, where the value is made and after
+        # (docs/adr/0081 §2), whatever it was handed.
+        if name == "header":
+            value = CodecFixedAfterLengthrefHeaderInt(value)
+        elif name == "payload":
             value = CodecFixedAfterLengthrefPayloadBytes(value)
+        elif name == "crc32":
+            value = CodecFixedAfterLengthrefCrc32Int(value)
         object.__setattr__(self, name, value)
 
     @classmethod

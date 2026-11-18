@@ -7,20 +7,101 @@
 from __future__ import annotations
 
 from sce_forge_runtime.codec import BytearraySink, CodecError, LengthOutOfRange, NeedMoreBytes, SceCursor, SceSink, TooManyElements
+from sce_forge_runtime.bounded import BoundedBytes, BoundedInt, BoundedTuple
 from .codec_zenoh_encoding import CodecZenohEncoding
 from .codec_zenoh_ext_entry import CodecZenohExtEntry
+from . import codec_zenoh_encoding as sce_codec_zenoh_encoding
+from . import codec_zenoh_ext_entry as sce_codec_zenoh_ext_entry
 
 from dataclasses import dataclass, field
-from typing import Optional, List
+from typing import Optional, List, Protocol
+
+
+class CodecZenohErrHeaderInt(BoundedInt):
+    """The ``header`` element of :class:`CodecZenohErr`, an unsigned integer of
+    8 bits, held to them where a value of it is made (docs/adr/0081 §2)."""
+
+    BITS = 8
+    SIGNED = False
+
+
+class CodecZenohErrExtensionsList(BoundedTuple):
+    """The ``extensions`` element of :class:`CodecZenohErr`, 1 or more entries, the protocol stating no most,
+    held to that bound where a value of it is made (docs/adr/0077 §3)."""
+
+    LEAST = 1
+    MOST = None
+
+
+class CodecZenohErrPayloadBytes(BoundedBytes):
+    """The ``payload`` element of :class:`CodecZenohErr`, 0 to 4294967295 bytes,
+    held to that bound where a value of it is made (docs/adr/0077 §3)."""
+
+    LEAST = 0
+    MOST = 4294967295
+
+
+class CodecZenohErrSource(Protocol):
+    """The elements a value of :class:`CodecZenohErr` presents, which its encode
+    reads (docs/adr/0081 §2): any object that presents them is a source of it.
+    The encode derives every other element of the frame."""
+
+    @property
+    def header(self) -> CodecZenohErrHeaderInt: ...
+
+    @property
+    def encoding(self) -> Optional[sce_codec_zenoh_encoding.CodecZenohEncodingSource]: ...
+
+    @property
+    def extensions(self) -> Optional[CodecZenohErrExtensionsList]: ...
+
+    @property
+    def payload(self) -> CodecZenohErrPayloadBytes: ...
+
+
+def encode_source(src: CodecZenohErrSource, w: SceSink, *, override_header_x: Optional[int] = None) -> None:
+    """Write any source of :class:`CodecZenohErr` into ``w``, each element read
+    off ``src`` and written where the codec's encode plan lays it out
+    (docs/adr/0081). It derives ``payload_len`` from what each measures, and never reads it off
+    the source. A chain that holds it
+    sets the flag its entries end on by its keyword, in place of the value's. It refuses no value; a bounded sink raises
+    :class:`BufferOverflow` where it has no room left."""
+    _d_payload_len = len(src.payload)
+    _c_header = src.header
+    _c_header = (_c_header & ~0x40) | (0x40 if src.encoding is not None else 0)
+    _c_header = (_c_header & ~0x80) | (0x80 if src.extensions is not None else 0)
+    if override_header_x is not None:
+        _c_header = (_c_header & ~0x20) | ((override_header_x & 0x1) << 5)
+    w.write_u8(_c_header & 0xFF)
+    if src.encoding is not None:
+        sce_codec_zenoh_encoding.encode_source(src.encoding, w)
+    if src.extensions is not None:
+        _left_extensions = len(src.extensions)
+        for _entry in src.extensions:
+            _left_extensions -= 1
+            sce_codec_zenoh_ext_entry.encode_source(_entry, w, override_header_z=1 if _left_extensions != 0 else 0)
+    w.write_vle_u64(_d_payload_len)
+    w.write_bytes(src.payload)
 
 
 @dataclass
 class CodecZenohErr:
-    header: int = 0x05
+    header: CodecZenohErrHeaderInt = 0x05
     encoding: Optional[CodecZenohEncoding] = None
-    extensions: Optional[List[CodecZenohExtEntry]] = b""
-    payload_len: int = 0
-    payload: bytes = b""
+    extensions: Optional[CodecZenohErrExtensionsList] = None
+    payload: CodecZenohErrPayloadBytes = CodecZenohErrPayloadBytes()
+
+    def __setattr__(self, name: str, value: object) -> None:
+        # Each integer, byte string and text is held to its bound
+        # wherever it is set, where the value is made and after
+        # (docs/adr/0081 §2), whatever it was handed.
+        if name == "header":
+            value = CodecZenohErrHeaderInt(value)
+        elif name == "extensions":
+            value = None if value is None else CodecZenohErrExtensionsList(value)
+        elif name == "payload":
+            value = CodecZenohErrPayloadBytes(value)
+        object.__setattr__(self, name, value)
 
     @classmethod
     def decode(cls, cursor: SceCursor) -> CodecZenohErr:
@@ -74,7 +155,6 @@ class CodecZenohErr:
             header=f_header,
             encoding=f_encoding,
             extensions=f_extensions,
-            payload_len=f_payload_len,
             payload=f_payload,
         )
 
@@ -125,30 +205,8 @@ class CodecZenohErr:
         caller-owned ``w`` sink. Returns ``None`` on success; raises
         :class:`BufferOverflow` from a bounded sink when the destination
         has insufficient remaining capacity; growable sinks (e.g.
-        :class:`BytearraySink`) are effectively infallible. Raises,
-        before the first byte, the error a decode of the frame would give
-        for a value it cannot carry: a byte string, text or list outside its
-        bound, or a gated field its gate disagrees with."""
-        if self.extensions is not None and (len(self.extensions) < 1):
-            raise TooManyElements()
-        if len(self.payload) > 4294967295:
-            raise LengthOutOfRange()
-        # Streaming cursor encode (SSOT selection: `needs_streaming`).
-        # Mirrors the streaming decode: every field appends its own bytes
-        # in declaration order through the per-field encode blocks, so a
-        # gated field skips its append when absent, and a fixed field after
-        # a variable-length payload lands after the payload (the positional
-        # path appends variable fields last, placing it ahead on the wire).
-        # Per-field `is_repeat` / `is_tlv_chain` / `is_embed` route to their
-        # dedicated helpers; everything else uses `present_if_encode_block`.
-        w.write_u8(self.header & 0xFF)
-        if self.encoding is not None:
-            self.encoding.encode(w)
-        if self.extensions is not None:
-            for _e in self.extensions:
-                _e.encode(w)
-        w.write_vle_u64(self.payload_len)
-        w.write_bytes(self.payload)
+        :class:`BytearraySink`) are effectively infallible."""
+        encode_source(self, w)
 
     def encode_to_bytes(self) -> bytes:
         """Heap-backed convenience facade. Runs :meth:`encode` over a

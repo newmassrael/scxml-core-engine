@@ -7,9 +7,34 @@
 from __future__ import annotations
 
 from sce_forge_runtime.codec import BytearraySink, CodecError, NeedMoreBytes, SceCursor, SceSink
+from sce_forge_runtime.bounded import BoundedInt
 
 from dataclasses import dataclass
 from typing import Optional, Protocol
+
+
+class CodecLittleEndianSensorIdInt(BoundedInt):
+    """The ``sensorId`` element of :class:`CodecLittleEndian`, an unsigned integer of
+    8 bits, held to them where a value of it is made (docs/adr/0081 §2)."""
+
+    BITS = 8
+    SIGNED = False
+
+
+class CodecLittleEndianValueInt(BoundedInt):
+    """The ``value`` element of :class:`CodecLittleEndian`, an unsigned integer of
+    16 bits, held to them where a value of it is made (docs/adr/0081 §2)."""
+
+    BITS = 16
+    SIGNED = False
+
+
+class CodecLittleEndianStatusInt(BoundedInt):
+    """The ``status`` element of :class:`CodecLittleEndian`, an unsigned integer of
+    8 bits, held to them where a value of it is made (docs/adr/0081 §2)."""
+
+    BITS = 8
+    SIGNED = False
 
 
 class CodecLittleEndianSource(Protocol):
@@ -18,13 +43,13 @@ class CodecLittleEndianSource(Protocol):
     The encode derives every other element of the frame."""
 
     @property
-    def sensor_id(self) -> int: ...
+    def sensor_id(self) -> CodecLittleEndianSensorIdInt: ...
 
     @property
-    def value(self) -> int: ...
+    def value(self) -> CodecLittleEndianValueInt: ...
 
     @property
-    def status(self) -> int: ...
+    def status(self) -> CodecLittleEndianStatusInt: ...
 
 
 def encode_source(src: CodecLittleEndianSource, w: SceSink) -> None:
@@ -40,9 +65,21 @@ def encode_source(src: CodecLittleEndianSource, w: SceSink) -> None:
 
 @dataclass
 class CodecLittleEndian:
-    sensor_id: int = 0
-    value: int = 0
-    status: int = 0
+    sensor_id: CodecLittleEndianSensorIdInt = 0
+    value: CodecLittleEndianValueInt = 0
+    status: CodecLittleEndianStatusInt = 0
+
+    def __setattr__(self, name: str, value: object) -> None:
+        # Each integer, byte string and text is held to its bound
+        # wherever it is set, where the value is made and after
+        # (docs/adr/0081 §2), whatever it was handed.
+        if name == "sensor_id":
+            value = CodecLittleEndianSensorIdInt(value)
+        elif name == "value":
+            value = CodecLittleEndianValueInt(value)
+        elif name == "status":
+            value = CodecLittleEndianStatusInt(value)
+        object.__setattr__(self, name, value)
 
     @classmethod
     def decode(cls, cursor: SceCursor) -> CodecLittleEndian:

@@ -7,16 +7,73 @@
 from __future__ import annotations
 
 from sce_forge_runtime.codec import BytearraySink, CodecError, NeedMoreBytes, SceCursor, SceSink
+from sce_forge_runtime.bounded import BoundedInt
 from .codec_zenoh_wireexpr import CodecZenohWireexpr
+from . import codec_zenoh_wireexpr as sce_codec_zenoh_wireexpr
 
 from dataclasses import dataclass
-from typing import Optional
+from typing import Optional, Protocol
+
+
+class CodecZenohInterestBodyHeaderInt(BoundedInt):
+    """The ``header`` element of :class:`CodecZenohInterestBody`, an unsigned integer of
+    8 bits, held to them where a value of it is made (docs/adr/0081 §2)."""
+
+    BITS = 8
+    SIGNED = False
+
+
+class CodecZenohInterestBodySource(Protocol):
+    """The elements a value of :class:`CodecZenohInterestBody` presents, which its encode
+    reads (docs/adr/0081 §2): any object that presents them is a source of it.
+    The encode derives every other element of the frame."""
+
+    @property
+    def header(self) -> CodecZenohInterestBodyHeaderInt: ...
+
+    @property
+    def keyexpr(self) -> Optional[sce_codec_zenoh_wireexpr.CodecZenohWireexprSource]: ...
+
+
+def encode_source(src: CodecZenohInterestBodySource, w: SceSink, *, override_header_keyexprs: Optional[int] = None, override_header_subscribers: Optional[int] = None, override_header_queryables: Optional[int] = None, override_header_tokens: Optional[int] = None, override_header_m: Optional[int] = None, override_header_aggregate: Optional[int] = None) -> None:
+    """Write any source of :class:`CodecZenohInterestBody` into ``w``, each element read
+    off ``src`` and written where the codec's encode plan lays it out
+    (docs/adr/0081). A chain that holds it
+    sets the flag its entries end on by its keyword, in place of the value's. It refuses no value; a bounded sink raises
+    :class:`BufferOverflow` where it has no room left."""
+    _c_header = src.header
+    _c_header = (_c_header & ~0x10) | (0x10 if src.keyexpr is not None else 0)
+    if src.keyexpr is not None:
+        _c_header = (_c_header & ~0x20) | ((sce_codec_zenoh_wireexpr.input_n(src.keyexpr)) << 5)
+    if override_header_keyexprs is not None:
+        _c_header = (_c_header & ~0x1) | ((override_header_keyexprs & 0x1) << 0)
+    if override_header_subscribers is not None:
+        _c_header = (_c_header & ~0x2) | ((override_header_subscribers & 0x1) << 1)
+    if override_header_queryables is not None:
+        _c_header = (_c_header & ~0x4) | ((override_header_queryables & 0x1) << 2)
+    if override_header_tokens is not None:
+        _c_header = (_c_header & ~0x8) | ((override_header_tokens & 0x1) << 3)
+    if override_header_m is not None:
+        _c_header = (_c_header & ~0x40) | ((override_header_m & 0x1) << 6)
+    if override_header_aggregate is not None:
+        _c_header = (_c_header & ~0x80) | ((override_header_aggregate & 0x1) << 7)
+    w.write_u8(_c_header & 0xFF)
+    if src.keyexpr is not None:
+        sce_codec_zenoh_wireexpr.encode_source(src.keyexpr, w)
 
 
 @dataclass
 class CodecZenohInterestBody:
-    header: int = 0
+    header: CodecZenohInterestBodyHeaderInt = 0
     keyexpr: Optional[CodecZenohWireexpr] = None
+
+    def __setattr__(self, name: str, value: object) -> None:
+        # Each integer, byte string and text is held to its bound
+        # wherever it is set, where the value is made and after
+        # (docs/adr/0081 §2), whatever it was handed.
+        if name == "header":
+            value = CodecZenohInterestBodyHeaderInt(value)
+        object.__setattr__(self, name, value)
 
     @classmethod
     def decode(cls, cursor: SceCursor) -> CodecZenohInterestBody:
@@ -135,17 +192,7 @@ class CodecZenohInterestBody:
         :class:`BufferOverflow` from a bounded sink when the destination
         has insufficient remaining capacity; growable sinks (e.g.
         :class:`BytearraySink`) are effectively infallible."""
-        # Streaming cursor encode (SSOT selection: `needs_streaming`).
-        # Mirrors the streaming decode: every field appends its own bytes
-        # in declaration order through the per-field encode blocks, so a
-        # gated field skips its append when absent, and a fixed field after
-        # a variable-length payload lands after the payload (the positional
-        # path appends variable fields last, placing it ahead on the wire).
-        # Per-field `is_repeat` / `is_tlv_chain` / `is_embed` route to their
-        # dedicated helpers; everything else uses `present_if_encode_block`.
-        w.write_u8(self.header & 0xFF)
-        if self.keyexpr is not None:
-            self.keyexpr.encode(w, ((self.header >> 5) & 0x1))
+        encode_source(self, w)
 
     def encode_to_bytes(self) -> bytes:
         """Heap-backed convenience facade. Runs :meth:`encode` over a

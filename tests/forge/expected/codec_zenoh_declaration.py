@@ -7,6 +7,7 @@
 from __future__ import annotations
 
 from sce_forge_runtime.codec import BytearraySink, CodecError, NeedMoreBytes, SceCursor, SceSink
+from sce_forge_runtime.bounded import BoundedInt, UnknownTag
 from .codec_zenoh_decl_kexpr import CodecZenohDeclKexpr
 from .codec_zenoh_undecl_kexpr import CodecZenohUndeclKexpr
 from .codec_zenoh_decl_subscriber import CodecZenohDeclSubscriber
@@ -16,43 +17,126 @@ from .codec_zenoh_undecl_queryable import CodecZenohUndeclQueryable
 from .codec_zenoh_decl_token import CodecZenohDeclToken
 from .codec_zenoh_undecl_token import CodecZenohUndeclToken
 from .codec_zenoh_decl_final import CodecZenohDeclFinal
+from . import codec_zenoh_decl_final as sce_codec_zenoh_decl_final
+from . import codec_zenoh_decl_kexpr as sce_codec_zenoh_decl_kexpr
+from . import codec_zenoh_decl_queryable as sce_codec_zenoh_decl_queryable
+from . import codec_zenoh_decl_subscriber as sce_codec_zenoh_decl_subscriber
+from . import codec_zenoh_decl_token as sce_codec_zenoh_decl_token
+from . import codec_zenoh_undecl_kexpr as sce_codec_zenoh_undecl_kexpr
+from . import codec_zenoh_undecl_queryable as sce_codec_zenoh_undecl_queryable
+from . import codec_zenoh_undecl_subscriber as sce_codec_zenoh_undecl_subscriber
+from . import codec_zenoh_undecl_token as sce_codec_zenoh_undecl_token
 
 from dataclasses import dataclass, field
-from typing import Optional
+from typing import Optional, Protocol, Union
+
+
+class CodecZenohDeclarationHeaderInt(BoundedInt):
+    """The ``header`` element of :class:`CodecZenohDeclaration`, an unsigned integer of
+    8 bits, held to them where a value of it is made (docs/adr/0081 §2)."""
+
+    BITS = 8
+    SIGNED = False
+
+
+class CodecZenohDeclarationUnknownTag(UnknownTag):
+    """The tag the default arm of :class:`CodecZenohDeclaration`'s variant keeps: at
+    most 31, and none an arm names (docs/adr/0065 §6 R3)."""
+
+    MOST = 31
+    KNOWN = frozenset({0, 1, 2, 3, 4, 5, 6, 7, 26})
 
 
 @dataclass
-class CodecZenohDeclarationVariant:
-    """RFC §synth-5-B variant primitive: discriminated-union body for
-    the codec's tag-field suffix. ``kind`` selects the active arm; the
-    matching ``Optional`` field carries the decoded body. ``default_tag``
-    preserves the runtime tag value when the default arm fires so encode
-    can round-trip it back onto the wire."""
-    # RFC variant-default-uniformity (Python): pick the declared
-    # default arm (``<sce:arm default="true"/>``) when present so a
-    # freshly-constructed envelope round-trips byte-exactly through
-    # ``encode() -> decode()``. The corresponding arm body field uses a
-    # default_factory so ``Variant()`` actually populates it (rather
-    # than leaving every arm field ``None`` while ``kind`` names one of
-    # them, which is the latent inconsistency this RFC closes).
-    kind: str = "CodecZenohDeclFinal"
-    codec_zenoh_decl_kexpr: Optional[CodecZenohDeclKexpr] = None
-    codec_zenoh_undecl_kexpr: Optional[CodecZenohUndeclKexpr] = None
-    codec_zenoh_decl_subscriber: Optional[CodecZenohDeclSubscriber] = None
-    codec_zenoh_undecl_subscriber: Optional[CodecZenohUndeclSubscriber] = None
-    codec_zenoh_decl_queryable: Optional[CodecZenohDeclQueryable] = None
-    codec_zenoh_undecl_queryable: Optional[CodecZenohUndeclQueryable] = None
-    codec_zenoh_decl_token: Optional[CodecZenohDeclToken] = None
-    codec_zenoh_undecl_token: Optional[CodecZenohUndeclToken] = None
-    codec_zenoh_decl_final: Optional[CodecZenohDeclFinal] = field(default_factory=CodecZenohDeclFinal)
-    default_body: Optional[CodecZenohDeclFinal] = None
-    default_tag: int = 0
+class CodecZenohDeclarationDefault:
+    """The default arm of :class:`CodecZenohDeclaration`'s variant: the tag no arm
+    names, which it keeps, and its body."""
+
+    tag: CodecZenohDeclarationUnknownTag = CodecZenohDeclarationUnknownTag(8)
+    body: sce_codec_zenoh_decl_final.CodecZenohDeclFinal = field(default_factory=sce_codec_zenoh_decl_final.CodecZenohDeclFinal)
+
+    def __setattr__(self, name: str, value: object) -> None:
+        # The tag is held to the tags no arm names wherever it is set,
+        # where the arm is made and after (docs/adr/0065 §6 R3).
+        if name == "tag":
+            value = CodecZenohDeclarationUnknownTag(value)
+        object.__setattr__(self, name, value)
+
+
+CodecZenohDeclarationVariant = Union[sce_codec_zenoh_decl_kexpr.CodecZenohDeclKexpr, sce_codec_zenoh_undecl_kexpr.CodecZenohUndeclKexpr, sce_codec_zenoh_decl_subscriber.CodecZenohDeclSubscriber, sce_codec_zenoh_undecl_subscriber.CodecZenohUndeclSubscriber, sce_codec_zenoh_decl_queryable.CodecZenohDeclQueryable, sce_codec_zenoh_undecl_queryable.CodecZenohUndeclQueryable, sce_codec_zenoh_decl_token.CodecZenohDeclToken, sce_codec_zenoh_undecl_token.CodecZenohUndeclToken, sce_codec_zenoh_decl_final.CodecZenohDeclFinal, CodecZenohDeclarationDefault]
+"""The arm a value of :class:`CodecZenohDeclaration` holds: a value of the arm's codec,
+or the default arm."""
+
+
+ARM_CLASSES = {0x0: sce_codec_zenoh_decl_kexpr.CodecZenohDeclKexpr, 0x1: sce_codec_zenoh_undecl_kexpr.CodecZenohUndeclKexpr, 0x2: sce_codec_zenoh_decl_subscriber.CodecZenohDeclSubscriber, 0x3: sce_codec_zenoh_undecl_subscriber.CodecZenohUndeclSubscriber, 0x4: sce_codec_zenoh_decl_queryable.CodecZenohDeclQueryable, 0x5: sce_codec_zenoh_undecl_queryable.CodecZenohUndeclQueryable, 0x6: sce_codec_zenoh_decl_token.CodecZenohDeclToken, 0x7: sce_codec_zenoh_undecl_token.CodecZenohUndeclToken, 0x1A: sce_codec_zenoh_decl_final.CodecZenohDeclFinal}
+"""The class of the arm of :class:`CodecZenohDeclaration`'s variant each tag names."""
+
+
+class CodecZenohDeclarationSource(Protocol):
+    """The elements a value of :class:`CodecZenohDeclaration` presents, which its encode
+    reads (docs/adr/0081 §2): any object that presents them is a source of it.
+    The encode derives every other element of the frame."""
+
+    @property
+    def header(self) -> CodecZenohDeclarationHeaderInt: ...
+
+    @property
+    def body(self) -> CodecZenohDeclarationVariant: ...
+
+
+def encode_source(src: CodecZenohDeclarationSource, w: SceSink, *, override_header_m: Optional[int] = None) -> None:
+    """Write any source of :class:`CodecZenohDeclaration` into ``w``, each element read
+    off ``src`` and written where the codec's encode plan lays it out
+    (docs/adr/0081). A chain that holds it
+    sets the flag its entries end on by its keyword, in place of the value's. It refuses no value; a bounded sink raises
+    :class:`BufferOverflow` where it has no room left."""
+    _v_body = src.body
+    if not isinstance(_v_body, (sce_codec_zenoh_decl_kexpr.CodecZenohDeclKexpr, sce_codec_zenoh_undecl_kexpr.CodecZenohUndeclKexpr, sce_codec_zenoh_decl_subscriber.CodecZenohDeclSubscriber, sce_codec_zenoh_undecl_subscriber.CodecZenohUndeclSubscriber, sce_codec_zenoh_decl_queryable.CodecZenohDeclQueryable, sce_codec_zenoh_undecl_queryable.CodecZenohUndeclQueryable, sce_codec_zenoh_decl_token.CodecZenohDeclToken, sce_codec_zenoh_undecl_token.CodecZenohUndeclToken, sce_codec_zenoh_decl_final.CodecZenohDeclFinal, CodecZenohDeclarationDefault,)):
+        raise TypeError(f"{type(_v_body).__name__} is no arm of CodecZenohDeclaration's variant")
+    _t_body = (0 if isinstance(_v_body, sce_codec_zenoh_decl_kexpr.CodecZenohDeclKexpr) else 1 if isinstance(_v_body, sce_codec_zenoh_undecl_kexpr.CodecZenohUndeclKexpr) else 2 if isinstance(_v_body, sce_codec_zenoh_decl_subscriber.CodecZenohDeclSubscriber) else 3 if isinstance(_v_body, sce_codec_zenoh_undecl_subscriber.CodecZenohUndeclSubscriber) else 4 if isinstance(_v_body, sce_codec_zenoh_decl_queryable.CodecZenohDeclQueryable) else 5 if isinstance(_v_body, sce_codec_zenoh_undecl_queryable.CodecZenohUndeclQueryable) else 6 if isinstance(_v_body, sce_codec_zenoh_decl_token.CodecZenohDeclToken) else 7 if isinstance(_v_body, sce_codec_zenoh_undecl_token.CodecZenohUndeclToken) else 26 if isinstance(_v_body, sce_codec_zenoh_decl_final.CodecZenohDeclFinal) else _v_body.tag)
+    _c_header = src.header
+    _c_header = (_c_header & ~0x1F) | ((_t_body & 0x1F) << 0)
+    if isinstance(_v_body, (sce_codec_zenoh_decl_kexpr.CodecZenohDeclKexpr, sce_codec_zenoh_decl_subscriber.CodecZenohDeclSubscriber, sce_codec_zenoh_decl_queryable.CodecZenohDeclQueryable, sce_codec_zenoh_decl_token.CodecZenohDeclToken,)):
+        _c_header = (_c_header & ~0x20) | (((sce_codec_zenoh_decl_kexpr.input_n(_v_body) if isinstance(_v_body, sce_codec_zenoh_decl_kexpr.CodecZenohDeclKexpr) else sce_codec_zenoh_decl_subscriber.input_n(_v_body) if isinstance(_v_body, sce_codec_zenoh_decl_subscriber.CodecZenohDeclSubscriber) else sce_codec_zenoh_decl_queryable.input_n(_v_body) if isinstance(_v_body, sce_codec_zenoh_decl_queryable.CodecZenohDeclQueryable) else sce_codec_zenoh_decl_token.input_n(_v_body) if isinstance(_v_body, sce_codec_zenoh_decl_token.CodecZenohDeclToken) else 0)) << 5)
+    if isinstance(_v_body, (sce_codec_zenoh_undecl_subscriber.CodecZenohUndeclSubscriber, sce_codec_zenoh_decl_queryable.CodecZenohDeclQueryable, sce_codec_zenoh_undecl_queryable.CodecZenohUndeclQueryable, sce_codec_zenoh_undecl_token.CodecZenohUndeclToken,)):
+        _c_header = (_c_header & ~0x80) | (((sce_codec_zenoh_undecl_subscriber.input_z(_v_body) if isinstance(_v_body, sce_codec_zenoh_undecl_subscriber.CodecZenohUndeclSubscriber) else sce_codec_zenoh_decl_queryable.input_z(_v_body) if isinstance(_v_body, sce_codec_zenoh_decl_queryable.CodecZenohDeclQueryable) else sce_codec_zenoh_undecl_queryable.input_z(_v_body) if isinstance(_v_body, sce_codec_zenoh_undecl_queryable.CodecZenohUndeclQueryable) else sce_codec_zenoh_undecl_token.input_z(_v_body) if isinstance(_v_body, sce_codec_zenoh_undecl_token.CodecZenohUndeclToken) else 0)) << 7)
+    if override_header_m is not None:
+        _c_header = (_c_header & ~0x40) | ((override_header_m & 0x1) << 6)
+    w.write_u8(_c_header & 0xFF)
+    if isinstance(_v_body, sce_codec_zenoh_decl_kexpr.CodecZenohDeclKexpr):
+        sce_codec_zenoh_decl_kexpr.encode_source(_v_body, w)
+    elif isinstance(_v_body, sce_codec_zenoh_undecl_kexpr.CodecZenohUndeclKexpr):
+        sce_codec_zenoh_undecl_kexpr.encode_source(_v_body, w)
+    elif isinstance(_v_body, sce_codec_zenoh_decl_subscriber.CodecZenohDeclSubscriber):
+        sce_codec_zenoh_decl_subscriber.encode_source(_v_body, w)
+    elif isinstance(_v_body, sce_codec_zenoh_undecl_subscriber.CodecZenohUndeclSubscriber):
+        sce_codec_zenoh_undecl_subscriber.encode_source(_v_body, w)
+    elif isinstance(_v_body, sce_codec_zenoh_decl_queryable.CodecZenohDeclQueryable):
+        sce_codec_zenoh_decl_queryable.encode_source(_v_body, w)
+    elif isinstance(_v_body, sce_codec_zenoh_undecl_queryable.CodecZenohUndeclQueryable):
+        sce_codec_zenoh_undecl_queryable.encode_source(_v_body, w)
+    elif isinstance(_v_body, sce_codec_zenoh_decl_token.CodecZenohDeclToken):
+        sce_codec_zenoh_decl_token.encode_source(_v_body, w)
+    elif isinstance(_v_body, sce_codec_zenoh_undecl_token.CodecZenohUndeclToken):
+        sce_codec_zenoh_undecl_token.encode_source(_v_body, w)
+    elif isinstance(_v_body, sce_codec_zenoh_decl_final.CodecZenohDeclFinal):
+        sce_codec_zenoh_decl_final.encode_source(_v_body, w)
+    else:
+        sce_codec_zenoh_decl_final.encode_source(_v_body.body, w)
 
 
 @dataclass
 class CodecZenohDeclaration:
-    header: int = 0
-    body: CodecZenohDeclarationVariant = field(default_factory=CodecZenohDeclarationVariant)
+    header: CodecZenohDeclarationHeaderInt = 0
+    body: CodecZenohDeclarationVariant = field(default_factory=sce_codec_zenoh_decl_final.CodecZenohDeclFinal)
+
+    def __setattr__(self, name: str, value: object) -> None:
+        # Each integer, byte string and text is held to its bound
+        # wherever it is set, where the value is made and after
+        # (docs/adr/0081 §2), whatever it was handed.
+        if name == "header":
+            value = CodecZenohDeclarationHeaderInt(value)
+        object.__setattr__(self, name, value)
 
     @classmethod
     def decode(cls, cursor: SceCursor) -> CodecZenohDeclaration:
@@ -73,38 +157,36 @@ class CodecZenohDeclaration:
         # from the cursor. The default arm (when declared) carries the
         # runtime tag value so encode can round-trip it back onto the
         # wire.
-        body = CodecZenohDeclarationVariant()
         if ((f_header >> 0) & 0x1F) == 0:
-            body.kind = "CodecZenohDeclKexpr"
-            body.codec_zenoh_decl_kexpr = CodecZenohDeclKexpr.decode(cursor, ((f_header >> 5) & 0x1))
+            _arm = CodecZenohDeclKexpr.decode(cursor, ((f_header >> 5) & 0x1))
+            body = _arm
         elif ((f_header >> 0) & 0x1F) == 1:
-            body.kind = "CodecZenohUndeclKexpr"
-            body.codec_zenoh_undecl_kexpr = CodecZenohUndeclKexpr.decode(cursor)
+            _arm = CodecZenohUndeclKexpr.decode(cursor)
+            body = _arm
         elif ((f_header >> 0) & 0x1F) == 2:
-            body.kind = "CodecZenohDeclSubscriber"
-            body.codec_zenoh_decl_subscriber = CodecZenohDeclSubscriber.decode(cursor, ((f_header >> 5) & 0x1))
+            _arm = CodecZenohDeclSubscriber.decode(cursor, ((f_header >> 5) & 0x1))
+            body = _arm
         elif ((f_header >> 0) & 0x1F) == 3:
-            body.kind = "CodecZenohUndeclSubscriber"
-            body.codec_zenoh_undecl_subscriber = CodecZenohUndeclSubscriber.decode(cursor, ((f_header >> 7) & 0x1))
+            _arm = CodecZenohUndeclSubscriber.decode(cursor, ((f_header >> 7) & 0x1))
+            body = _arm
         elif ((f_header >> 0) & 0x1F) == 4:
-            body.kind = "CodecZenohDeclQueryable"
-            body.codec_zenoh_decl_queryable = CodecZenohDeclQueryable.decode(cursor, ((f_header >> 5) & 0x1), ((f_header >> 7) & 0x1))
+            _arm = CodecZenohDeclQueryable.decode(cursor, ((f_header >> 5) & 0x1), ((f_header >> 7) & 0x1))
+            body = _arm
         elif ((f_header >> 0) & 0x1F) == 5:
-            body.kind = "CodecZenohUndeclQueryable"
-            body.codec_zenoh_undecl_queryable = CodecZenohUndeclQueryable.decode(cursor, ((f_header >> 7) & 0x1))
+            _arm = CodecZenohUndeclQueryable.decode(cursor, ((f_header >> 7) & 0x1))
+            body = _arm
         elif ((f_header >> 0) & 0x1F) == 6:
-            body.kind = "CodecZenohDeclToken"
-            body.codec_zenoh_decl_token = CodecZenohDeclToken.decode(cursor, ((f_header >> 5) & 0x1))
+            _arm = CodecZenohDeclToken.decode(cursor, ((f_header >> 5) & 0x1))
+            body = _arm
         elif ((f_header >> 0) & 0x1F) == 7:
-            body.kind = "CodecZenohUndeclToken"
-            body.codec_zenoh_undecl_token = CodecZenohUndeclToken.decode(cursor, ((f_header >> 7) & 0x1))
+            _arm = CodecZenohUndeclToken.decode(cursor, ((f_header >> 7) & 0x1))
+            body = _arm
         elif ((f_header >> 0) & 0x1F) == 26:
-            body.kind = "CodecZenohDeclFinal"
-            body.codec_zenoh_decl_final = CodecZenohDeclFinal.decode(cursor)
+            _arm = CodecZenohDeclFinal.decode(cursor)
+            body = _arm
         else:
-            body.kind = "Default"
-            body.default_tag = ((f_header >> 0) & 0x1F)
-            body.default_body = CodecZenohDeclFinal.decode(cursor)
+            _arm = CodecZenohDeclFinal.decode(cursor)
+            body = CodecZenohDeclarationDefault(tag=((f_header >> 0) & 0x1F), body=_arm)
         return cls(
             header=f_header,
             body=body,
@@ -158,29 +240,7 @@ class CodecZenohDeclaration:
         :class:`BufferOverflow` from a bounded sink when the destination
         has insufficient remaining capacity; growable sinks (e.g.
         :class:`BytearraySink`) are effectively infallible."""
-        # Encode fixed prefix (tag field bytes are part of the prefix).
-        w.write_u8(self.header & 0xFF)
-        # Append the active arm body's encoded bytes via the same sink.
-        if self.body.kind == "CodecZenohDeclKexpr":
-            self.body.codec_zenoh_decl_kexpr.encode(w, ((self.header >> 5) & 0x1))
-        elif self.body.kind == "CodecZenohUndeclKexpr":
-            self.body.codec_zenoh_undecl_kexpr.encode(w)
-        elif self.body.kind == "CodecZenohDeclSubscriber":
-            self.body.codec_zenoh_decl_subscriber.encode(w, ((self.header >> 5) & 0x1))
-        elif self.body.kind == "CodecZenohUndeclSubscriber":
-            self.body.codec_zenoh_undecl_subscriber.encode(w, ((self.header >> 7) & 0x1))
-        elif self.body.kind == "CodecZenohDeclQueryable":
-            self.body.codec_zenoh_decl_queryable.encode(w, ((self.header >> 5) & 0x1), ((self.header >> 7) & 0x1))
-        elif self.body.kind == "CodecZenohUndeclQueryable":
-            self.body.codec_zenoh_undecl_queryable.encode(w, ((self.header >> 7) & 0x1))
-        elif self.body.kind == "CodecZenohDeclToken":
-            self.body.codec_zenoh_decl_token.encode(w, ((self.header >> 5) & 0x1))
-        elif self.body.kind == "CodecZenohUndeclToken":
-            self.body.codec_zenoh_undecl_token.encode(w, ((self.header >> 7) & 0x1))
-        elif self.body.kind == "CodecZenohDeclFinal":
-            self.body.codec_zenoh_decl_final.encode(w)
-        elif self.body.kind == "Default":
-            self.body.default_body.encode(w)
+        encode_source(self, w)
 
     def encode_to_bytes(self) -> bytes:
         """Heap-backed convenience facade. Runs :meth:`encode` over a

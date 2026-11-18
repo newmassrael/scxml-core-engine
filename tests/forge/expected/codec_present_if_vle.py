@@ -7,9 +7,26 @@
 from __future__ import annotations
 
 from sce_forge_runtime.codec import BytearraySink, CodecError, NeedMoreBytes, SceCursor, SceSink
+from sce_forge_runtime.bounded import BoundedInt
 
 from dataclasses import dataclass
 from typing import Optional, Protocol
+
+
+class CodecPresentIfVleFlagsInt(BoundedInt):
+    """The ``flags`` element of :class:`CodecPresentIfVle`, an unsigned integer of
+    8 bits, held to them where a value of it is made (docs/adr/0081 §2)."""
+
+    BITS = 8
+    SIGNED = False
+
+
+class CodecPresentIfVleOptionalIdInt(BoundedInt):
+    """The ``optional_id`` element of :class:`CodecPresentIfVle`, an unsigned integer of
+    64 bits, held to them where a value of it is made (docs/adr/0081 §2)."""
+
+    BITS = 64
+    SIGNED = False
 
 
 class CodecPresentIfVleSource(Protocol):
@@ -18,10 +35,10 @@ class CodecPresentIfVleSource(Protocol):
     The encode derives every other element of the frame."""
 
     @property
-    def flags(self) -> int: ...
+    def flags(self) -> CodecPresentIfVleFlagsInt: ...
 
     @property
-    def optional_id(self) -> Optional[int]: ...
+    def optional_id(self) -> Optional[CodecPresentIfVleOptionalIdInt]: ...
 
 
 def encode_source(src: CodecPresentIfVleSource, w: SceSink) -> None:
@@ -38,8 +55,18 @@ def encode_source(src: CodecPresentIfVleSource, w: SceSink) -> None:
 
 @dataclass
 class CodecPresentIfVle:
-    flags: int = 0
-    optional_id: Optional[int] = None
+    flags: CodecPresentIfVleFlagsInt = 0
+    optional_id: Optional[CodecPresentIfVleOptionalIdInt] = None
+
+    def __setattr__(self, name: str, value: object) -> None:
+        # Each integer, byte string and text is held to its bound
+        # wherever it is set, where the value is made and after
+        # (docs/adr/0081 §2), whatever it was handed.
+        if name == "flags":
+            value = CodecPresentIfVleFlagsInt(value)
+        elif name == "optional_id":
+            value = None if value is None else CodecPresentIfVleOptionalIdInt(value)
+        object.__setattr__(self, name, value)
 
     @classmethod
     def decode(cls, cursor: SceCursor) -> CodecPresentIfVle:

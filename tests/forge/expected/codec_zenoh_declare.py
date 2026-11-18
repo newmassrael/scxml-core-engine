@@ -7,19 +7,95 @@
 from __future__ import annotations
 
 from sce_forge_runtime.codec import BytearraySink, CodecError, NeedMoreBytes, SceCursor, SceSink, TooManyElements
+from sce_forge_runtime.bounded import BoundedInt, BoundedTuple
 from .codec_zenoh_ext_entry import CodecZenohExtEntry
 from .codec_zenoh_declaration import CodecZenohDeclaration
+from . import codec_zenoh_declaration as sce_codec_zenoh_declaration
+from . import codec_zenoh_ext_entry as sce_codec_zenoh_ext_entry
 
 from dataclasses import dataclass, field
-from typing import Optional, List
+from typing import Optional, List, Protocol
+
+
+class CodecZenohDeclareHeaderInt(BoundedInt):
+    """The ``header`` element of :class:`CodecZenohDeclare`, an unsigned integer of
+    8 bits, held to them where a value of it is made (docs/adr/0081 §2)."""
+
+    BITS = 8
+    SIGNED = False
+
+
+class CodecZenohDeclareInterestIdInt(BoundedInt):
+    """The ``interest_id`` element of :class:`CodecZenohDeclare`, an unsigned integer of
+    32 bits, held to them where a value of it is made (docs/adr/0081 §2)."""
+
+    BITS = 32
+    SIGNED = False
+
+
+class CodecZenohDeclareExtensionsList(BoundedTuple):
+    """The ``extensions`` element of :class:`CodecZenohDeclare`, 1 or more entries, the protocol stating no most,
+    held to that bound where a value of it is made (docs/adr/0077 §3)."""
+
+    LEAST = 1
+    MOST = None
+
+
+class CodecZenohDeclareSource(Protocol):
+    """The elements a value of :class:`CodecZenohDeclare` presents, which its encode
+    reads (docs/adr/0081 §2): any object that presents them is a source of it.
+    The encode derives every other element of the frame."""
+
+    @property
+    def header(self) -> CodecZenohDeclareHeaderInt: ...
+
+    @property
+    def interest_id(self) -> Optional[CodecZenohDeclareInterestIdInt]: ...
+
+    @property
+    def extensions(self) -> Optional[CodecZenohDeclareExtensionsList]: ...
+
+    @property
+    def declaration(self) -> sce_codec_zenoh_declaration.CodecZenohDeclarationSource: ...
+
+
+def encode_source(src: CodecZenohDeclareSource, w: SceSink) -> None:
+    """Write any source of :class:`CodecZenohDeclare` into ``w``, each element read
+    off ``src`` and written where the codec's encode plan lays it out
+    (docs/adr/0081). It refuses no value; a bounded sink raises
+    :class:`BufferOverflow` where it has no room left."""
+    _c_header = src.header
+    _c_header = (_c_header & ~0x20) | (0x20 if src.interest_id is not None else 0)
+    _c_header = (_c_header & ~0x80) | (0x80 if src.extensions is not None else 0)
+    w.write_u8(_c_header & 0xFF)
+    if src.interest_id is not None:
+        w.write_vle_u32(src.interest_id)
+    if src.extensions is not None:
+        _left_extensions = len(src.extensions)
+        for _entry in src.extensions:
+            _left_extensions -= 1
+            sce_codec_zenoh_ext_entry.encode_source(_entry, w, override_header_z=1 if _left_extensions != 0 else 0)
+    sce_codec_zenoh_declaration.encode_source(src.declaration, w)
 
 
 @dataclass
 class CodecZenohDeclare:
-    header: int = 0x1e
-    interest_id: Optional[int] = None
-    extensions: Optional[List[CodecZenohExtEntry]] = b""
-    declaration: CodecZenohDeclaration = b""
+    header: CodecZenohDeclareHeaderInt = 0x1e
+    interest_id: Optional[CodecZenohDeclareInterestIdInt] = None
+    extensions: Optional[CodecZenohDeclareExtensionsList] = None
+    declaration: CodecZenohDeclaration = field(default_factory=CodecZenohDeclaration)
+
+    def __setattr__(self, name: str, value: object) -> None:
+        # Each integer, byte string and text is held to its bound
+        # wherever it is set, where the value is made and after
+        # (docs/adr/0081 §2), whatever it was handed.
+        if name == "header":
+            value = CodecZenohDeclareHeaderInt(value)
+        elif name == "interest_id":
+            value = None if value is None else CodecZenohDeclareInterestIdInt(value)
+        elif name == "extensions":
+            value = None if value is None else CodecZenohDeclareExtensionsList(value)
+        object.__setattr__(self, name, value)
 
     @classmethod
     def decode(cls, cursor: SceCursor) -> CodecZenohDeclare:
@@ -108,27 +184,8 @@ class CodecZenohDeclare:
         caller-owned ``w`` sink. Returns ``None`` on success; raises
         :class:`BufferOverflow` from a bounded sink when the destination
         has insufficient remaining capacity; growable sinks (e.g.
-        :class:`BytearraySink`) are effectively infallible. Raises,
-        before the first byte, the error a decode of the frame would give
-        for a value it cannot carry: a byte string, text or list outside its
-        bound, or a gated field its gate disagrees with."""
-        if self.extensions is not None and (len(self.extensions) < 1):
-            raise TooManyElements()
-        # Streaming cursor encode (SSOT selection: `needs_streaming`).
-        # Mirrors the streaming decode: every field appends its own bytes
-        # in declaration order through the per-field encode blocks, so a
-        # gated field skips its append when absent, and a fixed field after
-        # a variable-length payload lands after the payload (the positional
-        # path appends variable fields last, placing it ahead on the wire).
-        # Per-field `is_repeat` / `is_tlv_chain` / `is_embed` route to their
-        # dedicated helpers; everything else uses `present_if_encode_block`.
-        w.write_u8(self.header & 0xFF)
-        if self.interest_id is not None:
-            w.write_vle_u32(int(self.interest_id))
-        if self.extensions is not None:
-            for _e in self.extensions:
-                _e.encode(w)
-        self.declaration.encode(w)
+        :class:`BytearraySink`) are effectively infallible."""
+        encode_source(self, w)
 
     def encode_to_bytes(self) -> bytes:
         """Heap-backed convenience facade. Runs :meth:`encode` over a

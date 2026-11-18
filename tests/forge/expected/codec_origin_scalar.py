@@ -7,9 +7,18 @@
 from __future__ import annotations
 
 from sce_forge_runtime.codec import BytearraySink, CodecError, NeedMoreBytes, SceCursor, SceSink
+from sce_forge_runtime.bounded import BoundedInt
 
 from dataclasses import dataclass
 from typing import Optional, Protocol
+
+
+class CodecOriginScalarValueInt(BoundedInt):
+    """The ``value`` element of :class:`CodecOriginScalar`, an unsigned integer of
+    8 bits, held to them where a value of it is made (docs/adr/0081 §2)."""
+
+    BITS = 8
+    SIGNED = False
 
 
 class CodecOriginScalarSource(Protocol):
@@ -18,7 +27,7 @@ class CodecOriginScalarSource(Protocol):
     The encode derives every other element of the frame."""
 
     @property
-    def value(self) -> int: ...
+    def value(self) -> CodecOriginScalarValueInt: ...
 
 
 def encode_source(src: CodecOriginScalarSource, w: SceSink) -> None:
@@ -31,7 +40,15 @@ def encode_source(src: CodecOriginScalarSource, w: SceSink) -> None:
 
 @dataclass
 class CodecOriginScalar:
-    value: int = 0
+    value: CodecOriginScalarValueInt = 0
+
+    def __setattr__(self, name: str, value: object) -> None:
+        # Each integer, byte string and text is held to its bound
+        # wherever it is set, where the value is made and after
+        # (docs/adr/0081 §2), whatever it was handed.
+        if name == "value":
+            value = CodecOriginScalarValueInt(value)
+        object.__setattr__(self, name, value)
 
     @classmethod
     def decode(cls, cursor: SceCursor) -> CodecOriginScalar:

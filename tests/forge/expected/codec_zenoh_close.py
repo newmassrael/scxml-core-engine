@@ -7,9 +7,18 @@
 from __future__ import annotations
 
 from sce_forge_runtime.codec import BytearraySink, CodecError, NeedMoreBytes, SceCursor, SceSink
+from sce_forge_runtime.bounded import BoundedInt
 
 from dataclasses import dataclass
 from typing import Optional, Protocol
+
+
+class CodecZenohCloseReasonInt(BoundedInt):
+    """The ``reason`` element of :class:`CodecZenohClose`, an unsigned integer of
+    8 bits, held to them where a value of it is made (docs/adr/0081 §2)."""
+
+    BITS = 8
+    SIGNED = False
 
 
 class CodecZenohCloseSource(Protocol):
@@ -18,7 +27,7 @@ class CodecZenohCloseSource(Protocol):
     The encode derives every other element of the frame."""
 
     @property
-    def reason(self) -> int: ...
+    def reason(self) -> CodecZenohCloseReasonInt: ...
 
 
 def encode_source(src: CodecZenohCloseSource, w: SceSink) -> None:
@@ -31,7 +40,15 @@ def encode_source(src: CodecZenohCloseSource, w: SceSink) -> None:
 
 @dataclass
 class CodecZenohClose:
-    reason: int = 0
+    reason: CodecZenohCloseReasonInt = 0
+
+    def __setattr__(self, name: str, value: object) -> None:
+        # Each integer, byte string and text is held to its bound
+        # wherever it is set, where the value is made and after
+        # (docs/adr/0081 §2), whatever it was handed.
+        if name == "reason":
+            value = CodecZenohCloseReasonInt(value)
+        object.__setattr__(self, name, value)
 
     @classmethod
     def decode(cls, cursor: SceCursor) -> CodecZenohClose:

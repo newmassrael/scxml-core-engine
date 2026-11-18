@@ -6,17 +6,63 @@
 
 from __future__ import annotations
 
-from sce_forge_runtime.codec import BytearraySink, CodecError, NeedMoreBytes, PresentIfMismatch, SceCursor, SceSink
+from sce_forge_runtime.codec import BytearraySink, CodecError, NeedMoreBytes, SceCursor, SceSink
+from sce_forge_runtime.bounded import BoundedInt
 from .codec_zenoh_decl_ext_keyexpr import CodecZenohDeclExtKeyexpr
+from . import codec_zenoh_decl_ext_keyexpr as sce_codec_zenoh_decl_ext_keyexpr
 
 from dataclasses import dataclass
-from typing import Optional
+from typing import Optional, Protocol
+
+
+class CodecZenohUndeclQueryableIdInt(BoundedInt):
+    """The ``id`` element of :class:`CodecZenohUndeclQueryable`, an unsigned integer of
+    32 bits, held to them where a value of it is made (docs/adr/0081 §2)."""
+
+    BITS = 32
+    SIGNED = False
+
+
+class CodecZenohUndeclQueryableSource(Protocol):
+    """The elements a value of :class:`CodecZenohUndeclQueryable` presents, which its encode
+    reads (docs/adr/0081 §2): any object that presents them is a source of it.
+    The encode derives every other element of the frame."""
+
+    @property
+    def id(self) -> CodecZenohUndeclQueryableIdInt: ...
+
+    @property
+    def ext_keyexpr(self) -> Optional[sce_codec_zenoh_decl_ext_keyexpr.CodecZenohDeclExtKeyexprSource]: ...
+
+
+def encode_source(src: CodecZenohUndeclQueryableSource, w: SceSink) -> None:
+    """Write any source of :class:`CodecZenohUndeclQueryable` into ``w``, each element read
+    off ``src`` and written where the codec's encode plan lays it out
+    (docs/adr/0081). It refuses no value; a bounded sink raises
+    :class:`BufferOverflow` where it has no room left."""
+    w.write_vle_u32(src.id)
+    if src.ext_keyexpr is not None:
+        sce_codec_zenoh_decl_ext_keyexpr.encode_source(src.ext_keyexpr, w)
+
+
+def input_z(src: CodecZenohUndeclQueryableSource) -> int:
+    """The flag input ``Z`` a source of :class:`CodecZenohUndeclQueryable` says, which
+    its encode is not handed (docs/adr/0065 §6 R4a)."""
+    return (1 if src.ext_keyexpr is not None else 0)
 
 
 @dataclass
 class CodecZenohUndeclQueryable:
-    id: int = 0
+    id: CodecZenohUndeclQueryableIdInt = 0
     ext_keyexpr: Optional[CodecZenohDeclExtKeyexpr] = None
+
+    def __setattr__(self, name: str, value: object) -> None:
+        # Each integer, byte string and text is held to its bound
+        # wherever it is set, where the value is made and after
+        # (docs/adr/0081 §2), whatever it was handed.
+        if name == "id":
+            value = CodecZenohUndeclQueryableIdInt(value)
+        object.__setattr__(self, name, value)
 
     @classmethod
     def decode(cls, cursor: SceCursor, z: int) -> CodecZenohUndeclQueryable:
@@ -48,37 +94,19 @@ class CodecZenohUndeclQueryable:
             ext_keyexpr=f_ext_keyexpr,
         )
 
-    def encode(self, w: SceSink, z: int) -> None:
+    def encode(self, w: SceSink) -> None:
         """RFC §synth-5-B encode-side primary: write ``self`` into the
         caller-owned ``w`` sink. Returns ``None`` on success; raises
         :class:`BufferOverflow` from a bounded sink when the destination
         has insufficient remaining capacity; growable sinks (e.g.
-        :class:`BytearraySink`) are effectively infallible. Raises,
-        before the first byte, the error a decode of the frame would give
-        for a value it cannot carry: a byte string, text or list outside its
-        bound, or a gated field its gate disagrees with."""
-        if (z & 0x01) != 0:
-            if self.ext_keyexpr is None:
-                raise PresentIfMismatch("ext_keyexpr")
-        elif self.ext_keyexpr is not None:
-            raise PresentIfMismatch("ext_keyexpr")
-        # Streaming cursor encode (SSOT selection: `needs_streaming`).
-        # Mirrors the streaming decode: every field appends its own bytes
-        # in declaration order through the per-field encode blocks, so a
-        # gated field skips its append when absent, and a fixed field after
-        # a variable-length payload lands after the payload (the positional
-        # path appends variable fields last, placing it ahead on the wire).
-        # Per-field `is_repeat` / `is_tlv_chain` / `is_embed` route to their
-        # dedicated helpers; everything else uses `present_if_encode_block`.
-        w.write_vle_u32(self.id)
-        if self.ext_keyexpr is not None:
-            self.ext_keyexpr.encode(w)
+        :class:`BytearraySink`) are effectively infallible."""
+        encode_source(self, w)
 
-    def encode_to_bytes(self, z: int) -> bytes:
+    def encode_to_bytes(self) -> bytes:
         """Heap-backed convenience facade. Runs :meth:`encode` over a
         :class:`BytearraySink` and returns the freshly-encoded bytes.
         Callers targeting zero-alloc hot paths should call :meth:`encode`
         directly against a caller-owned sink."""
         _dst = bytearray()
-        self.encode(BytearraySink(_dst), z)
+        self.encode(BytearraySink(_dst))
         return bytes(_dst)

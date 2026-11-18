@@ -8,10 +8,18 @@
 from __future__ import annotations
 
 from sce_forge_runtime.codec import BytearraySink, CodecError, InvalidUtf8, LengthOutOfRange, NeedMoreBytes, SceCursor, SceSink
-from sce_forge_runtime.bounded import BoundedText
+from sce_forge_runtime.bounded import BoundedInt, BoundedText
 
 from dataclasses import dataclass
 from typing import Optional, Protocol
+
+
+class CodecZenohEncodingPackedIdInt(BoundedInt):
+    """The ``packed_id`` element of :class:`CodecZenohEncoding`, an unsigned integer of
+    32 bits, held to them where a value of it is made (docs/adr/0081 §2)."""
+
+    BITS = 32
+    SIGNED = False
 
 
 class CodecZenohEncodingSchemaText(BoundedText):
@@ -28,7 +36,7 @@ class CodecZenohEncodingSource(Protocol):
     The encode derives every other element of the frame."""
 
     @property
-    def packed_id(self) -> int: ...
+    def packed_id(self) -> CodecZenohEncodingPackedIdInt: ...
 
     @property
     def schema(self) -> Optional[CodecZenohEncodingSchemaText]: ...
@@ -52,14 +60,16 @@ def encode_source(src: CodecZenohEncodingSource, w: SceSink) -> None:
 
 @dataclass
 class CodecZenohEncoding:
-    packed_id: int = 0
+    packed_id: CodecZenohEncodingPackedIdInt = 0
     schema: Optional[CodecZenohEncodingSchemaText] = None
 
     def __setattr__(self, name: str, value: object) -> None:
-        # Each byte string and text is held to its bound wherever it is
-        # set, where the value is made and after (docs/adr/0081 §2),
-        # whatever it was handed.
-        if name == "schema":
+        # Each integer, byte string and text is held to its bound
+        # wherever it is set, where the value is made and after
+        # (docs/adr/0081 §2), whatever it was handed.
+        if name == "packed_id":
+            value = CodecZenohEncodingPackedIdInt(value)
+        elif name == "schema":
             value = None if value is None else CodecZenohEncodingSchemaText(value)
         object.__setattr__(self, name, value)
 

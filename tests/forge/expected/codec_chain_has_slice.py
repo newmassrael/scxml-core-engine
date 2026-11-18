@@ -7,10 +7,18 @@
 from __future__ import annotations
 
 from sce_forge_runtime.codec import BytearraySink, CodecError, LengthOutOfRange, NeedMoreBytes, SceCursor, SceSink
-from sce_forge_runtime.bounded import BoundedBytes
+from sce_forge_runtime.bounded import BoundedBytes, BoundedInt
 
 from dataclasses import dataclass
 from typing import Optional, Protocol
+
+
+class CodecChainHasSliceKindInt(BoundedInt):
+    """The ``kind`` element of :class:`CodecChainHasSlice`, an unsigned integer of
+    16 bits, held to them where a value of it is made (docs/adr/0081 §2)."""
+
+    BITS = 16
+    SIGNED = False
 
 
 class CodecChainHasSliceBytesBytes(BoundedBytes):
@@ -27,7 +35,7 @@ class CodecChainHasSliceSource(Protocol):
     The encode derives every other element of the frame."""
 
     @property
-    def kind(self) -> int: ...
+    def kind(self) -> CodecChainHasSliceKindInt: ...
 
     @property
     def bytes(self) -> CodecChainHasSliceBytesBytes: ...
@@ -47,14 +55,16 @@ def encode_source(src: CodecChainHasSliceSource, w: SceSink) -> None:
 
 @dataclass
 class CodecChainHasSlice:
-    kind: int = 0
+    kind: CodecChainHasSliceKindInt = 0
     bytes: CodecChainHasSliceBytesBytes = CodecChainHasSliceBytesBytes()
 
     def __setattr__(self, name: str, value: object) -> None:
-        # Each byte string and text is held to its bound wherever it is
-        # set, where the value is made and after (docs/adr/0081 §2),
-        # whatever it was handed.
-        if name == "bytes":
+        # Each integer, byte string and text is held to its bound
+        # wherever it is set, where the value is made and after
+        # (docs/adr/0081 §2), whatever it was handed.
+        if name == "kind":
+            value = CodecChainHasSliceKindInt(value)
+        elif name == "bytes":
             value = CodecChainHasSliceBytesBytes(value)
         object.__setattr__(self, name, value)
 

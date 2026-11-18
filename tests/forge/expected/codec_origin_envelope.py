@@ -7,12 +7,20 @@
 from __future__ import annotations
 
 from sce_forge_runtime.codec import BytearraySink, CodecError, InvalidUtf8, LengthOutOfRange, NeedMoreBytes, SceCursor, SceSink, TooManyElements
-from sce_forge_runtime.bounded import BoundedText, BoundedTuple
+from sce_forge_runtime.bounded import BoundedInt, BoundedText, BoundedTuple
 from .codec_origin_leaf import CodecOriginLeaf
 from . import codec_origin_leaf as sce_codec_origin_leaf
 
 from dataclasses import dataclass, field
 from typing import Optional, List, Protocol
+
+
+class CodecOriginEnvelopeHdrInt(BoundedInt):
+    """The ``hdr`` element of :class:`CodecOriginEnvelope`, an unsigned integer of
+    8 bits, held to them where a value of it is made (docs/adr/0081 §2)."""
+
+    BITS = 8
+    SIGNED = False
 
 
 class CodecOriginEnvelopeNoteText(BoundedText):
@@ -37,7 +45,7 @@ class CodecOriginEnvelopeSource(Protocol):
     The encode derives every other element of the frame."""
 
     @property
-    def hdr(self) -> int: ...
+    def hdr(self) -> CodecOriginEnvelopeHdrInt: ...
 
     @property
     def note(self) -> CodecOriginEnvelopeNoteText: ...
@@ -75,17 +83,19 @@ def encode_source(src: CodecOriginEnvelopeSource, w: SceSink) -> None:
 
 @dataclass
 class CodecOriginEnvelope:
-    hdr: int = 0
+    hdr: CodecOriginEnvelopeHdrInt = 0
     note: CodecOriginEnvelopeNoteText = CodecOriginEnvelopeNoteText()
     required: CodecOriginLeaf = field(default_factory=CodecOriginLeaf)
     optional: Optional[CodecOriginLeaf] = None
     items: CodecOriginEnvelopeItemsList = CodecOriginEnvelopeItemsList()
 
     def __setattr__(self, name: str, value: object) -> None:
-        # Each byte string and text is held to its bound wherever it is
-        # set, where the value is made and after (docs/adr/0081 §2),
-        # whatever it was handed.
-        if name == "note":
+        # Each integer, byte string and text is held to its bound
+        # wherever it is set, where the value is made and after
+        # (docs/adr/0081 §2), whatever it was handed.
+        if name == "hdr":
+            value = CodecOriginEnvelopeHdrInt(value)
+        elif name == "note":
             value = CodecOriginEnvelopeNoteText(value)
         elif name == "items":
             value = CodecOriginEnvelopeItemsList(value)

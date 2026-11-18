@@ -7,10 +7,18 @@
 from __future__ import annotations
 
 from sce_forge_runtime.codec import BytearraySink, CodecError, LengthOutOfRange, NeedMoreBytes, SceCursor, SceSink
-from sce_forge_runtime.bounded import BoundedBytes
+from sce_forge_runtime.bounded import BoundedBytes, BoundedInt
 
 from dataclasses import dataclass
 from typing import Optional, Protocol
+
+
+class CodecTlvEntryEntryTypeInt(BoundedInt):
+    """The ``entry_type`` element of :class:`CodecTlvEntry`, an unsigned integer of
+    8 bits, held to them where a value of it is made (docs/adr/0081 §2)."""
+
+    BITS = 8
+    SIGNED = False
 
 
 class CodecTlvEntryEntryBodyBytes(BoundedBytes):
@@ -27,7 +35,7 @@ class CodecTlvEntrySource(Protocol):
     The encode derives every other element of the frame."""
 
     @property
-    def entry_type(self) -> int: ...
+    def entry_type(self) -> CodecTlvEntryEntryTypeInt: ...
 
     @property
     def entry_body(self) -> CodecTlvEntryEntryBodyBytes: ...
@@ -47,14 +55,16 @@ def encode_source(src: CodecTlvEntrySource, w: SceSink) -> None:
 
 @dataclass
 class CodecTlvEntry:
-    entry_type: int = 0
+    entry_type: CodecTlvEntryEntryTypeInt = 0
     entry_body: CodecTlvEntryEntryBodyBytes = CodecTlvEntryEntryBodyBytes()
 
     def __setattr__(self, name: str, value: object) -> None:
-        # Each byte string and text is held to its bound wherever it is
-        # set, where the value is made and after (docs/adr/0081 §2),
-        # whatever it was handed.
-        if name == "entry_body":
+        # Each integer, byte string and text is held to its bound
+        # wherever it is set, where the value is made and after
+        # (docs/adr/0081 §2), whatever it was handed.
+        if name == "entry_type":
+            value = CodecTlvEntryEntryTypeInt(value)
+        elif name == "entry_body":
             value = CodecTlvEntryEntryBodyBytes(value)
         object.__setattr__(self, name, value)
 

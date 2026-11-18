@@ -6,22 +6,179 @@
 
 from __future__ import annotations
 
-from sce_forge_runtime.codec import BytearraySink, CodecError, LengthOutOfRange, NeedMoreBytes, PresentIfMismatch, SceCursor, SceSink
+from sce_forge_runtime.codec import BytearraySink, CodecError, NeedMoreBytes, SceCursor, SceSink
+from sce_forge_runtime.bounded import BoundedBytes, BoundedInt
 
 from dataclasses import dataclass
-from typing import Optional
+from typing import Optional, Protocol
+
+
+class CodecZenohJoinVersionInt(BoundedInt):
+    """The ``version`` element of :class:`CodecZenohJoin`, an unsigned integer of
+    8 bits, held to them where a value of it is made (docs/adr/0081 §2)."""
+
+    BITS = 8
+    SIGNED = False
+
+
+class CodecZenohJoinCbyteInt(BoundedInt):
+    """The ``cbyte`` element of :class:`CodecZenohJoin`, an unsigned integer of
+    8 bits, held to them where a value of it is made (docs/adr/0081 §2)."""
+
+    BITS = 8
+    SIGNED = False
+
+
+class CodecZenohJoinZidBytes(BoundedBytes):
+    """The ``zid`` element of :class:`CodecZenohJoin`, 1 to 16 bytes,
+    held to that bound where a value of it is made (docs/adr/0077 §3)."""
+
+    LEAST = 1
+    MOST = 16
+
+
+class CodecZenohJoinLeaseInt(BoundedInt):
+    """The ``lease`` element of :class:`CodecZenohJoin`, an unsigned integer of
+    64 bits, held to them where a value of it is made (docs/adr/0081 §2)."""
+
+    BITS = 64
+    SIGNED = False
+
+
+class CodecZenohJoinNextSnReliableInt(BoundedInt):
+    """The ``next_sn_reliable`` element of :class:`CodecZenohJoin`, an unsigned integer of
+    64 bits, held to them where a value of it is made (docs/adr/0081 §2)."""
+
+    BITS = 64
+    SIGNED = False
+
+
+class CodecZenohJoinNextSnBestEffortInt(BoundedInt):
+    """The ``next_sn_best_effort`` element of :class:`CodecZenohJoin`, an unsigned integer of
+    64 bits, held to them where a value of it is made (docs/adr/0081 §2)."""
+
+    BITS = 64
+    SIGNED = False
+
+
+class CodecZenohJoinSnResInt(BoundedInt):
+    """The ``sn_res`` element of :class:`CodecZenohJoin`, an unsigned integer of
+    8 bits, held to them where a value of it is made (docs/adr/0081 §2)."""
+
+    BITS = 8
+    SIGNED = False
+
+
+class CodecZenohJoinBatchSizeInt(BoundedInt):
+    """The ``batch_size`` element of :class:`CodecZenohJoin`, an unsigned integer of
+    16 bits, held to them where a value of it is made (docs/adr/0081 §2)."""
+
+    BITS = 16
+    SIGNED = False
+
+
+@dataclass
+class CodecZenohJoinS:
+    """The ``s`` group of :class:`CodecZenohJoin` where ``S`` holds
+    (docs/adr/0065 §6 R4): the members present then."""
+
+    sn_res: CodecZenohJoinSnResInt = 0
+    batch_size: CodecZenohJoinBatchSizeInt = 0
+
+    def __setattr__(self, name: str, value: object) -> None:
+        # Each integer, byte string and text is held to its bound
+        # wherever it is set, where the value is made and after
+        # (docs/adr/0081 §2), whatever it was handed.
+        if name == "sn_res":
+            value = CodecZenohJoinSnResInt(value)
+        elif name == "batch_size":
+            value = CodecZenohJoinBatchSizeInt(value)
+        object.__setattr__(self, name, value)
+
+
+class CodecZenohJoinSource(Protocol):
+    """The elements a value of :class:`CodecZenohJoin` presents, which its encode
+    reads (docs/adr/0081 §2): any object that presents them is a source of it.
+    The encode derives every other element of the frame."""
+
+    @property
+    def version(self) -> CodecZenohJoinVersionInt: ...
+
+    @property
+    def cbyte(self) -> CodecZenohJoinCbyteInt: ...
+
+    @property
+    def zid(self) -> CodecZenohJoinZidBytes: ...
+
+    @property
+    def lease(self) -> CodecZenohJoinLeaseInt: ...
+
+    @property
+    def next_sn_reliable(self) -> CodecZenohJoinNextSnReliableInt: ...
+
+    @property
+    def next_sn_best_effort(self) -> CodecZenohJoinNextSnBestEffortInt: ...
+
+    @property
+    def s(self) -> Optional[CodecZenohJoinS]: ...
+
+
+def encode_source(src: CodecZenohJoinSource, w: SceSink) -> None:
+    """Write any source of :class:`CodecZenohJoin` into ``w``, each element read
+    off ``src`` and written where the codec's encode plan lays it out
+    (docs/adr/0081). It refuses no value; a bounded sink raises
+    :class:`BufferOverflow` where it has no room left."""
+    _g_s = src.s
+    _e_sn_res = None if _g_s is None else _g_s.sn_res
+    _e_batch_size = None if _g_s is None else _g_s.batch_size
+    _c_cbyte = src.cbyte
+    _c_cbyte = (_c_cbyte & ~0xF0) | ((len(src.zid) - 1) << 4)
+    w.write_u8(src.version & 0xFF)
+    w.write_u8(_c_cbyte & 0xFF)
+    w.write_bytes(src.zid)
+    if _e_sn_res is not None:
+        w.write_u8(_e_sn_res & 0xFF)
+    if _e_batch_size is not None:
+        w.write_u8(_e_batch_size & 0xFF)
+        w.write_u8((_e_batch_size >> 8) & 0xFF)
+    w.write_vle_u64(src.lease)
+    w.write_vle_u64(src.next_sn_reliable)
+    w.write_vle_u64(src.next_sn_best_effort)
+
+
+def input_s(src: CodecZenohJoinSource) -> int:
+    """The flag input ``S`` a source of :class:`CodecZenohJoin` says, which
+    its encode is not handed (docs/adr/0065 §6 R4a)."""
+    return (1 if isinstance(src.s, CodecZenohJoinS) else 0)
 
 
 @dataclass
 class CodecZenohJoin:
-    version: int = 0
-    cbyte: int = 0
-    zid: bytes = b""
-    sn_res: Optional[int] = None
-    batch_size: Optional[int] = None
-    lease: int = 0
-    next_sn_reliable: int = 0
-    next_sn_best_effort: int = 0
+    version: CodecZenohJoinVersionInt = 0
+    cbyte: CodecZenohJoinCbyteInt = 0
+    zid: CodecZenohJoinZidBytes = CodecZenohJoinZidBytes(b"\x00" * 1)
+    lease: CodecZenohJoinLeaseInt = 0
+    next_sn_reliable: CodecZenohJoinNextSnReliableInt = 0
+    next_sn_best_effort: CodecZenohJoinNextSnBestEffortInt = 0
+    s: Optional[CodecZenohJoinS] = None
+
+    def __setattr__(self, name: str, value: object) -> None:
+        # Each integer, byte string and text is held to its bound
+        # wherever it is set, where the value is made and after
+        # (docs/adr/0081 §2), whatever it was handed.
+        if name == "version":
+            value = CodecZenohJoinVersionInt(value)
+        elif name == "cbyte":
+            value = CodecZenohJoinCbyteInt(value)
+        elif name == "zid":
+            value = CodecZenohJoinZidBytes(value)
+        elif name == "lease":
+            value = CodecZenohJoinLeaseInt(value)
+        elif name == "next_sn_reliable":
+            value = CodecZenohJoinNextSnReliableInt(value)
+        elif name == "next_sn_best_effort":
+            value = CodecZenohJoinNextSnBestEffortInt(value)
+        object.__setattr__(self, name, value)
 
     @classmethod
     def decode(cls, cursor: SceCursor, s: int) -> CodecZenohJoin:
@@ -75,11 +232,10 @@ class CodecZenohJoin:
             version=f_version,
             cbyte=f_cbyte,
             zid=f_zid,
-            sn_res=f_sn_res,
-            batch_size=f_batch_size,
             lease=f_lease,
             next_sn_reliable=f_next_sn_reliable,
             next_sn_best_effort=f_next_sn_best_effort,
+            s=CodecZenohJoinS(sn_res=f_sn_res, batch_size=f_batch_size) if (s != 0) else None,
         )
 
     # RFC §synth-5-B flags primitive: per-bit-range accessors over
@@ -105,52 +261,19 @@ class CodecZenohJoin:
         _val = (v & 0x0F) << 4
         self.cbyte = ((self.cbyte & (0xFF ^ _shifted_mask)) | _val) & 0xFF
 
-    def encode(self, w: SceSink, s: int) -> None:
+    def encode(self, w: SceSink) -> None:
         """RFC §synth-5-B encode-side primary: write ``self`` into the
         caller-owned ``w`` sink. Returns ``None`` on success; raises
         :class:`BufferOverflow` from a bounded sink when the destination
         has insufficient remaining capacity; growable sinks (e.g.
-        :class:`BytearraySink`) are effectively infallible. Raises,
-        before the first byte, the error a decode of the frame would give
-        for a value it cannot carry: a byte string, text or list outside its
-        bound, or a gated field its gate disagrees with."""
-        if (s & 0x01) != 0:
-            if self.sn_res is None:
-                raise PresentIfMismatch("sn_res")
-        elif self.sn_res is not None:
-            raise PresentIfMismatch("sn_res")
-        if (s & 0x01) != 0:
-            if self.batch_size is None:
-                raise PresentIfMismatch("batch_size")
-        elif self.batch_size is not None:
-            raise PresentIfMismatch("batch_size")
-        if len(self.zid) < 1 or len(self.zid) > 16:
-            raise LengthOutOfRange()
-        # Streaming cursor encode (SSOT selection: `needs_streaming`).
-        # Mirrors the streaming decode: every field appends its own bytes
-        # in declaration order through the per-field encode blocks, so a
-        # gated field skips its append when absent, and a fixed field after
-        # a variable-length payload lands after the payload (the positional
-        # path appends variable fields last, placing it ahead on the wire).
-        # Per-field `is_repeat` / `is_tlv_chain` / `is_embed` route to their
-        # dedicated helpers; everything else uses `present_if_encode_block`.
-        w.write_u8(self.version & 0xFF)
-        w.write_u8(self.cbyte & 0xFF)
-        w.write_bytes(self.zid)
-        if self.sn_res is not None:
-            w.write_u8(self.sn_res & 0xFF)
-        if self.batch_size is not None:
-            w.write_u8(self.batch_size & 0xFF)
-            w.write_u8((self.batch_size >> 8) & 0xFF)
-        w.write_vle_u64(self.lease)
-        w.write_vle_u64(self.next_sn_reliable)
-        w.write_vle_u64(self.next_sn_best_effort)
+        :class:`BytearraySink`) are effectively infallible."""
+        encode_source(self, w)
 
-    def encode_to_bytes(self, s: int) -> bytes:
+    def encode_to_bytes(self) -> bytes:
         """Heap-backed convenience facade. Runs :meth:`encode` over a
         :class:`BytearraySink` and returns the freshly-encoded bytes.
         Callers targeting zero-alloc hot paths should call :meth:`encode`
         directly against a caller-owned sink."""
         _dst = bytearray()
-        self.encode(BytearraySink(_dst), s)
+        self.encode(BytearraySink(_dst))
         return bytes(_dst)

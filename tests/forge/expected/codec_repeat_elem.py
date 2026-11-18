@@ -7,9 +7,18 @@
 from __future__ import annotations
 
 from sce_forge_runtime.codec import BytearraySink, CodecError, NeedMoreBytes, SceCursor, SceSink
+from sce_forge_runtime.bounded import BoundedInt
 
 from dataclasses import dataclass
 from typing import Optional, Protocol
+
+
+class CodecRepeatElemSeqInt(BoundedInt):
+    """The ``seq`` element of :class:`CodecRepeatElem`, an unsigned integer of
+    16 bits, held to them where a value of it is made (docs/adr/0081 §2)."""
+
+    BITS = 16
+    SIGNED = False
 
 
 class CodecRepeatElemSource(Protocol):
@@ -18,7 +27,7 @@ class CodecRepeatElemSource(Protocol):
     The encode derives every other element of the frame."""
 
     @property
-    def seq(self) -> int: ...
+    def seq(self) -> CodecRepeatElemSeqInt: ...
 
 
 def encode_source(src: CodecRepeatElemSource, w: SceSink) -> None:
@@ -32,7 +41,15 @@ def encode_source(src: CodecRepeatElemSource, w: SceSink) -> None:
 
 @dataclass
 class CodecRepeatElem:
-    seq: int = 0
+    seq: CodecRepeatElemSeqInt = 0
+
+    def __setattr__(self, name: str, value: object) -> None:
+        # Each integer, byte string and text is held to its bound
+        # wherever it is set, where the value is made and after
+        # (docs/adr/0081 §2), whatever it was handed.
+        if name == "seq":
+            value = CodecRepeatElemSeqInt(value)
+        object.__setattr__(self, name, value)
 
     @classmethod
     def decode(cls, cursor: SceCursor) -> CodecRepeatElem:

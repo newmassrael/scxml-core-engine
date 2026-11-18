@@ -6,20 +6,134 @@
 
 from __future__ import annotations
 
-from sce_forge_runtime.codec import BytearraySink, CodecError, LengthOutOfRange, NeedMoreBytes, PresentIfMismatch, SceCursor, SceSink
+from sce_forge_runtime.codec import BytearraySink, CodecError, LengthOutOfRange, NeedMoreBytes, SceCursor, SceSink
+from sce_forge_runtime.bounded import BoundedBytes, BoundedInt, BoundedTuple
 from .codec_zenoh_value_slice import CodecZenohValueSlice
+from . import codec_zenoh_value_slice as sce_codec_zenoh_value_slice
 
 from dataclasses import dataclass, field
-from typing import Optional, List
+from typing import Optional, List, Protocol, Union
+
+
+class CodecZenohValueZbufEncodingInt(BoundedInt):
+    """The ``encoding`` element of :class:`CodecZenohValueZbuf`, an unsigned integer of
+    64 bits, held to them where a value of it is made (docs/adr/0081 §2)."""
+
+    BITS = 64
+    SIGNED = False
+
+
+class CodecZenohValueZbufSlicesList(BoundedTuple):
+    """The ``slices`` element of :class:`CodecZenohValueZbuf`, 0 or more entries, the protocol stating no most,
+    held to that bound where a value of it is made (docs/adr/0077 §3)."""
+
+    LEAST = 0
+    MOST = None
+
+
+class CodecZenohValueZbufValueLenInt(BoundedInt):
+    """The ``value_len`` element of :class:`CodecZenohValueZbuf`, an unsigned integer of
+    64 bits, held to them where a value of it is made (docs/adr/0081 §2)."""
+
+    BITS = 64
+    SIGNED = False
+
+
+class CodecZenohValueZbufValueBytes(BoundedBytes):
+    """The ``value`` element of :class:`CodecZenohValueZbuf`, 0 to 4294967295 bytes,
+    held to that bound where a value of it is made (docs/adr/0077 §3)."""
+
+    LEAST = 0
+    MOST = 4294967295
+
+
+@dataclass
+class CodecZenohValueZbufAfterShmAfterShm:
+    """The ``after_shm`` group of :class:`CodecZenohValueZbuf` where ``after_shm`` holds
+    (docs/adr/0065 §6 R4): the members present then."""
+
+    encoding: CodecZenohValueZbufEncodingInt = 0
+    slices: CodecZenohValueZbufSlicesList = CodecZenohValueZbufSlicesList()
+    value_len: CodecZenohValueZbufValueLenInt = 0
+
+    def __setattr__(self, name: str, value: object) -> None:
+        # Each integer, byte string and text is held to its bound
+        # wherever it is set, where the value is made and after
+        # (docs/adr/0081 §2), whatever it was handed.
+        if name == "encoding":
+            value = CodecZenohValueZbufEncodingInt(value)
+        elif name == "slices":
+            value = CodecZenohValueZbufSlicesList(value)
+        elif name == "value_len":
+            value = CodecZenohValueZbufValueLenInt(value)
+        object.__setattr__(self, name, value)
+
+
+@dataclass
+class CodecZenohValueZbufAfterShmNotAfterShm:
+    """The ``after_shm`` group of :class:`CodecZenohValueZbuf` where ``after_shm`` does not hold
+    (docs/adr/0065 §6 R4): the members present then."""
+
+    value: CodecZenohValueZbufValueBytes = CodecZenohValueZbufValueBytes()
+
+    def __setattr__(self, name: str, value: object) -> None:
+        # Each integer, byte string and text is held to its bound
+        # wherever it is set, where the value is made and after
+        # (docs/adr/0081 §2), whatever it was handed.
+        if name == "value":
+            value = CodecZenohValueZbufValueBytes(value)
+        object.__setattr__(self, name, value)
+
+
+CodecZenohValueZbufAfterShm = Union[CodecZenohValueZbufAfterShmAfterShm, CodecZenohValueZbufAfterShmNotAfterShm]
+"""The ``after_shm`` group of :class:`CodecZenohValueZbuf`: the arm the value holds."""
+
+
+class CodecZenohValueZbufSource(Protocol):
+    """The elements a value of :class:`CodecZenohValueZbuf` presents, which its encode
+    reads (docs/adr/0081 §2): any object that presents them is a source of it.
+    The encode derives every other element of the frame."""
+
+    @property
+    def after_shm(self) -> CodecZenohValueZbufAfterShm: ...
+
+
+def encode_source(src: CodecZenohValueZbufSource, w: SceSink) -> None:
+    """Write any source of :class:`CodecZenohValueZbuf` into ``w``, each element read
+    off ``src`` and written where the codec's encode plan lays it out
+    (docs/adr/0081). It derives ``slice_count`` from what each measures, and never reads it off
+    the source. It derives ``value_len`` where what it measures is there, and reads
+    what the source states where none is. It refuses no value; a bounded sink raises
+    :class:`BufferOverflow` where it has no room left."""
+    _g_after_shm = src.after_shm
+    _e_encoding = _g_after_shm.encoding if isinstance(_g_after_shm, CodecZenohValueZbufAfterShmAfterShm) else None
+    _e_slices = _g_after_shm.slices if isinstance(_g_after_shm, CodecZenohValueZbufAfterShmAfterShm) else None
+    _e_value_len = _g_after_shm.value_len if isinstance(_g_after_shm, CodecZenohValueZbufAfterShmAfterShm) else None
+    _e_value = _g_after_shm.value if isinstance(_g_after_shm, CodecZenohValueZbufAfterShmNotAfterShm) else None
+    after_shm = (1 if isinstance(src.after_shm, CodecZenohValueZbufAfterShmAfterShm) else 0)
+    _d_value_len = (len(_e_value)) if _e_value is not None else (0 if _e_value_len is None else _e_value_len)
+    _d_slice_count = (len(_e_slices)) if _e_slices is not None else 0
+    w.write_vle_u64(_d_value_len)
+    if _e_value is not None:
+        w.write_bytes(_e_value)
+    if _e_encoding is not None:
+        w.write_vle_u64(_e_encoding)
+    if after_shm != 0:
+        w.write_vle_u64(_d_slice_count)
+    if _e_slices is not None:
+        for _entry in _e_slices:
+            sce_codec_zenoh_value_slice.encode_source(_entry, w)
+
+
+def input_after_shm(src: CodecZenohValueZbufSource) -> int:
+    """The flag input ``after_shm`` a source of :class:`CodecZenohValueZbuf` says, which
+    its encode is not handed (docs/adr/0065 §6 R4a)."""
+    return (1 if isinstance(src.after_shm, CodecZenohValueZbufAfterShmAfterShm) else 0)
 
 
 @dataclass
 class CodecZenohValueZbuf:
-    value_len: int = 0
-    value: Optional[bytes] = None
-    encoding: Optional[int] = None
-    slice_count: Optional[int] = None
-    slices: Optional[List[CodecZenohValueSlice]] = None
+    after_shm: CodecZenohValueZbufAfterShm = field(default_factory=CodecZenohValueZbufAfterShmNotAfterShm)
 
     @classmethod
     def decode(cls, cursor: SceCursor, after_shm: int) -> CodecZenohValueZbuf:
@@ -70,63 +184,22 @@ class CodecZenohValueZbuf:
         else:
             f_slices = None
         return cls(
-            value_len=f_value_len,
-            value=f_value,
-            encoding=f_encoding,
-            slice_count=f_slice_count,
-            slices=f_slices,
+            after_shm=CodecZenohValueZbufAfterShmAfterShm(encoding=f_encoding, slices=f_slices, value_len=f_value_len) if (after_shm != 0) else CodecZenohValueZbufAfterShmNotAfterShm(value=f_value),
         )
 
-    def encode(self, w: SceSink, after_shm: int) -> None:
+    def encode(self, w: SceSink) -> None:
         """RFC §synth-5-B encode-side primary: write ``self`` into the
         caller-owned ``w`` sink. Returns ``None`` on success; raises
         :class:`BufferOverflow` from a bounded sink when the destination
         has insufficient remaining capacity; growable sinks (e.g.
-        :class:`BytearraySink`) are effectively infallible. Raises,
-        before the first byte, the error a decode of the frame would give
-        for a value it cannot carry: a byte string, text or list outside its
-        bound, or a gated field its gate disagrees with."""
-        if (after_shm & 0x01) == 0:
-            if self.value is None:
-                raise PresentIfMismatch("value")
-        elif self.value is not None:
-            raise PresentIfMismatch("value")
-        if (after_shm & 0x01) != 0:
-            if self.encoding is None:
-                raise PresentIfMismatch("encoding")
-        elif self.encoding is not None:
-            raise PresentIfMismatch("encoding")
-        if (after_shm & 0x01) != 0:
-            if self.slices is None:
-                raise PresentIfMismatch("slices")
-        elif self.slices is not None:
-            raise PresentIfMismatch("slices")
-        if self.value is not None and (len(self.value) > 4294967295):
-            raise LengthOutOfRange()
-        # Streaming cursor encode (SSOT selection: `needs_streaming`).
-        # Mirrors the streaming decode: every field appends its own bytes
-        # in declaration order through the per-field encode blocks, so a
-        # gated field skips its append when absent, and a fixed field after
-        # a variable-length payload lands after the payload (the positional
-        # path appends variable fields last, placing it ahead on the wire).
-        # Per-field `is_repeat` / `is_tlv_chain` / `is_embed` route to their
-        # dedicated helpers; everything else uses `present_if_encode_block`.
-        w.write_vle_u64(self.value_len)
-        if self.value is not None:
-            w.write_bytes(self.value)
-        if self.encoding is not None:
-            w.write_vle_u64(int(self.encoding))
-        if self.slice_count is not None:
-            w.write_vle_u64(int(self.slice_count))
-        if self.slices is not None:
-            for _e in self.slices:
-                _e.encode(w)
+        :class:`BytearraySink`) are effectively infallible."""
+        encode_source(self, w)
 
-    def encode_to_bytes(self, after_shm: int) -> bytes:
+    def encode_to_bytes(self) -> bytes:
         """Heap-backed convenience facade. Runs :meth:`encode` over a
         :class:`BytearraySink` and returns the freshly-encoded bytes.
         Callers targeting zero-alloc hot paths should call :meth:`encode`
         directly against a caller-owned sink."""
         _dst = bytearray()
-        self.encode(BytearraySink(_dst), after_shm)
+        self.encode(BytearraySink(_dst))
         return bytes(_dst)

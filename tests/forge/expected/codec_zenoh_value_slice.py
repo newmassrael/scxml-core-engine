@@ -7,10 +7,18 @@
 from __future__ import annotations
 
 from sce_forge_runtime.codec import BytearraySink, CodecError, LengthOutOfRange, NeedMoreBytes, SceCursor, SceSink
-from sce_forge_runtime.bounded import BoundedBytes
+from sce_forge_runtime.bounded import BoundedBytes, BoundedInt
 
 from dataclasses import dataclass
 from typing import Optional, Protocol
+
+
+class CodecZenohValueSliceKindInt(BoundedInt):
+    """The ``kind`` element of :class:`CodecZenohValueSlice`, an unsigned integer of
+    8 bits, held to them where a value of it is made (docs/adr/0081 §2)."""
+
+    BITS = 8
+    SIGNED = False
 
 
 class CodecZenohValueSliceDataBytes(BoundedBytes):
@@ -27,7 +35,7 @@ class CodecZenohValueSliceSource(Protocol):
     The encode derives every other element of the frame."""
 
     @property
-    def kind(self) -> int: ...
+    def kind(self) -> CodecZenohValueSliceKindInt: ...
 
     @property
     def data(self) -> CodecZenohValueSliceDataBytes: ...
@@ -47,14 +55,16 @@ def encode_source(src: CodecZenohValueSliceSource, w: SceSink) -> None:
 
 @dataclass
 class CodecZenohValueSlice:
-    kind: int = 0
+    kind: CodecZenohValueSliceKindInt = 0
     data: CodecZenohValueSliceDataBytes = CodecZenohValueSliceDataBytes()
 
     def __setattr__(self, name: str, value: object) -> None:
-        # Each byte string and text is held to its bound wherever it is
-        # set, where the value is made and after (docs/adr/0081 §2),
-        # whatever it was handed.
-        if name == "data":
+        # Each integer, byte string and text is held to its bound
+        # wherever it is set, where the value is made and after
+        # (docs/adr/0081 §2), whatever it was handed.
+        if name == "kind":
+            value = CodecZenohValueSliceKindInt(value)
+        elif name == "data":
             value = CodecZenohValueSliceDataBytes(value)
         object.__setattr__(self, name, value)
 

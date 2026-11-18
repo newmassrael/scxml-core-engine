@@ -6,20 +6,111 @@
 
 from __future__ import annotations
 
-from sce_forge_runtime.codec import BytearraySink, CodecError, LengthOutOfRange, NeedMoreBytes, PresentIfMismatch, SceCursor, SceSink
+from sce_forge_runtime.codec import BytearraySink, CodecError, NeedMoreBytes, SceCursor, SceSink
+from sce_forge_runtime.bounded import BoundedBytes, BoundedInt, BoundedTuple
 from .codec_zenoh_locator import CodecZenohLocator
+from . import codec_zenoh_locator as sce_codec_zenoh_locator
 
 from dataclasses import dataclass, field
-from typing import Optional, List
+from typing import Optional, List, Protocol
+
+
+class CodecZenohHelloVersionInt(BoundedInt):
+    """The ``version`` element of :class:`CodecZenohHello`, an unsigned integer of
+    8 bits, held to them where a value of it is made (docs/adr/0081 §2)."""
+
+    BITS = 8
+    SIGNED = False
+
+
+class CodecZenohHelloCbyteInt(BoundedInt):
+    """The ``cbyte`` element of :class:`CodecZenohHello`, an unsigned integer of
+    8 bits, held to them where a value of it is made (docs/adr/0081 §2)."""
+
+    BITS = 8
+    SIGNED = False
+
+
+class CodecZenohHelloZidBytes(BoundedBytes):
+    """The ``zid`` element of :class:`CodecZenohHello`, 1 to 16 bytes,
+    held to that bound where a value of it is made (docs/adr/0077 §3)."""
+
+    LEAST = 1
+    MOST = 16
+
+
+class CodecZenohHelloLocatorsList(BoundedTuple):
+    """The ``locators`` element of :class:`CodecZenohHello`, 0 or more entries, the protocol stating no most,
+    held to that bound where a value of it is made (docs/adr/0077 §3)."""
+
+    LEAST = 0
+    MOST = None
+
+
+class CodecZenohHelloSource(Protocol):
+    """The elements a value of :class:`CodecZenohHello` presents, which its encode
+    reads (docs/adr/0081 §2): any object that presents them is a source of it.
+    The encode derives every other element of the frame."""
+
+    @property
+    def version(self) -> CodecZenohHelloVersionInt: ...
+
+    @property
+    def cbyte(self) -> CodecZenohHelloCbyteInt: ...
+
+    @property
+    def zid(self) -> CodecZenohHelloZidBytes: ...
+
+    @property
+    def locators(self) -> Optional[CodecZenohHelloLocatorsList]: ...
+
+
+def encode_source(src: CodecZenohHelloSource, w: SceSink) -> None:
+    """Write any source of :class:`CodecZenohHello` into ``w``, each element read
+    off ``src`` and written where the codec's encode plan lays it out
+    (docs/adr/0081). It derives ``num_locators`` from what each measures, and never reads it off
+    the source. It refuses no value; a bounded sink raises
+    :class:`BufferOverflow` where it has no room left."""
+    l = (1 if src.locators is not None else 0)
+    _d_num_locators = (len(src.locators)) if src.locators is not None else 0
+    _c_cbyte = src.cbyte
+    _c_cbyte = (_c_cbyte & ~0xF0) | ((len(src.zid) - 1) << 4)
+    w.write_u8(src.version & 0xFF)
+    w.write_u8(_c_cbyte & 0xFF)
+    w.write_bytes(src.zid)
+    if l != 0:
+        w.write_vle_u64(_d_num_locators)
+    if src.locators is not None:
+        for _entry in src.locators:
+            sce_codec_zenoh_locator.encode_source(_entry, w)
+
+
+def input_l(src: CodecZenohHelloSource) -> int:
+    """The flag input ``L`` a source of :class:`CodecZenohHello` says, which
+    its encode is not handed (docs/adr/0065 §6 R4a)."""
+    return (1 if src.locators is not None else 0)
 
 
 @dataclass
 class CodecZenohHello:
-    version: int = 0
-    cbyte: int = 0
-    zid: bytes = b""
-    num_locators: Optional[int] = None
-    locators: Optional[List[CodecZenohLocator]] = None
+    version: CodecZenohHelloVersionInt = 0
+    cbyte: CodecZenohHelloCbyteInt = 0
+    zid: CodecZenohHelloZidBytes = CodecZenohHelloZidBytes(b"\x00" * 1)
+    locators: Optional[CodecZenohHelloLocatorsList] = None
+
+    def __setattr__(self, name: str, value: object) -> None:
+        # Each integer, byte string and text is held to its bound
+        # wherever it is set, where the value is made and after
+        # (docs/adr/0081 §2), whatever it was handed.
+        if name == "version":
+            value = CodecZenohHelloVersionInt(value)
+        elif name == "cbyte":
+            value = CodecZenohHelloCbyteInt(value)
+        elif name == "zid":
+            value = CodecZenohHelloZidBytes(value)
+        elif name == "locators":
+            value = None if value is None else CodecZenohHelloLocatorsList(value)
+        object.__setattr__(self, name, value)
 
     @classmethod
     def decode(cls, cursor: SceCursor, l: int) -> CodecZenohHello:
@@ -67,7 +158,6 @@ class CodecZenohHello:
             version=f_version,
             cbyte=f_cbyte,
             zid=f_zid,
-            num_locators=f_num_locators,
             locators=f_locators,
         )
 
@@ -94,44 +184,19 @@ class CodecZenohHello:
         _val = (v & 0x0F) << 4
         self.cbyte = ((self.cbyte & (0xFF ^ _shifted_mask)) | _val) & 0xFF
 
-    def encode(self, w: SceSink, l: int) -> None:
+    def encode(self, w: SceSink) -> None:
         """RFC §synth-5-B encode-side primary: write ``self`` into the
         caller-owned ``w`` sink. Returns ``None`` on success; raises
         :class:`BufferOverflow` from a bounded sink when the destination
         has insufficient remaining capacity; growable sinks (e.g.
-        :class:`BytearraySink`) are effectively infallible. Raises,
-        before the first byte, the error a decode of the frame would give
-        for a value it cannot carry: a byte string, text or list outside its
-        bound, or a gated field its gate disagrees with."""
-        if (l & 0x01) != 0:
-            if self.locators is None:
-                raise PresentIfMismatch("locators")
-        elif self.locators is not None:
-            raise PresentIfMismatch("locators")
-        if len(self.zid) < 1 or len(self.zid) > 16:
-            raise LengthOutOfRange()
-        # Streaming cursor encode (SSOT selection: `needs_streaming`).
-        # Mirrors the streaming decode: every field appends its own bytes
-        # in declaration order through the per-field encode blocks, so a
-        # gated field skips its append when absent, and a fixed field after
-        # a variable-length payload lands after the payload (the positional
-        # path appends variable fields last, placing it ahead on the wire).
-        # Per-field `is_repeat` / `is_tlv_chain` / `is_embed` route to their
-        # dedicated helpers; everything else uses `present_if_encode_block`.
-        w.write_u8(self.version & 0xFF)
-        w.write_u8(self.cbyte & 0xFF)
-        w.write_bytes(self.zid)
-        if self.num_locators is not None:
-            w.write_vle_u64(int(self.num_locators))
-        if self.locators is not None:
-            for _e in self.locators:
-                _e.encode(w)
+        :class:`BytearraySink`) are effectively infallible."""
+        encode_source(self, w)
 
-    def encode_to_bytes(self, l: int) -> bytes:
+    def encode_to_bytes(self) -> bytes:
         """Heap-backed convenience facade. Runs :meth:`encode` over a
         :class:`BytearraySink` and returns the freshly-encoded bytes.
         Callers targeting zero-alloc hot paths should call :meth:`encode`
         directly against a caller-owned sink."""
         _dst = bytearray()
-        self.encode(BytearraySink(_dst), l)
+        self.encode(BytearraySink(_dst))
         return bytes(_dst)

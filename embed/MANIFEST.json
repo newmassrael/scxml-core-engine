@@ -1,6 +1,6 @@
 {
-  "clang_version": "Ubuntu clang version 19.1.7 (++20250804090312+cd708029e0b2-1~exp1~20250804210325.79)",
-  "embed_version": "956f2ec",
+  "clang_version": "Ubuntu clang version 19.1.1 (1ubuntu1~24.04.2)",
+  "embed_version": "b338624",
   "non_self_contained_headers": [],
   "schema": "sce-embed-manifest.v1",
   "symbol_count": 615,
@@ -3717,7 +3717,7 @@
         "field std::uint8_t major",
         "method Head &(Head &&) noexcept operator=",
         "method Head &(const Head &) noexcept operator=",
-        "method void () noexcept Head",
+        "method void () Head",
         "method void () noexcept ~Head",
         "method void (Head &&) noexcept Head",
         "method void (const Head &) noexcept Head"
@@ -3730,7 +3730,7 @@
       "members": [
         "method Skipped &(Skipped &&) noexcept operator=",
         "method Skipped &(const Skipped &) noexcept operator=",
-        "method void () noexcept Skipped",
+        "method void () Skipped",
         "method void () noexcept ~Skipped",
         "method void (Skipped &&) noexcept Skipped",
         "method void (const Skipped &) noexcept Skipped"

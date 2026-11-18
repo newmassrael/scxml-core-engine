@@ -6,17 +6,76 @@
 
 from __future__ import annotations
 
-from sce_forge_runtime.codec import BytearraySink, CodecError, LengthOutOfRange, NeedMoreBytes, PresentIfMismatch, SceCursor, SceSink
+from sce_forge_runtime.codec import BytearraySink, CodecError, LengthOutOfRange, NeedMoreBytes, SceCursor, SceSink
+from sce_forge_runtime.bounded import BoundedBytes, BoundedInt
 
 from dataclasses import dataclass
-from typing import Optional
+from typing import Optional, Protocol
+
+
+class CodecInitCookieBodyVersionInt(BoundedInt):
+    """The ``version`` element of :class:`CodecInitCookieBody`, an unsigned integer of
+    8 bits, held to them where a value of it is made (docs/adr/0081 §2)."""
+
+    BITS = 8
+    SIGNED = False
+
+
+class CodecInitCookieBodyCookieBytes(BoundedBytes):
+    """The ``cookie`` element of :class:`CodecInitCookieBody`, 0 to 64 bytes,
+    held to that bound where a value of it is made (docs/adr/0077 §3)."""
+
+    LEAST = 0
+    MOST = 64
+
+
+class CodecInitCookieBodySource(Protocol):
+    """The elements a value of :class:`CodecInitCookieBody` presents, which its encode
+    reads (docs/adr/0081 §2): any object that presents them is a source of it.
+    The encode derives every other element of the frame."""
+
+    @property
+    def version(self) -> CodecInitCookieBodyVersionInt: ...
+
+    @property
+    def cookie(self) -> Optional[CodecInitCookieBodyCookieBytes]: ...
+
+
+def encode_source(src: CodecInitCookieBodySource, w: SceSink) -> None:
+    """Write any source of :class:`CodecInitCookieBody` into ``w``, each element read
+    off ``src`` and written where the codec's encode plan lays it out
+    (docs/adr/0081). It derives ``cookie_size`` from what each measures, and never reads it off
+    the source. It refuses no value; a bounded sink raises
+    :class:`BufferOverflow` where it has no room left."""
+    a = (1 if src.cookie is not None else 0)
+    _d_cookie_size = (len(src.cookie)) if src.cookie is not None else 0
+    w.write_u8(src.version & 0xFF)
+    if a != 0:
+        w.write_vle_u16(_d_cookie_size)
+    if src.cookie is not None:
+        w.write_bytes(src.cookie)
+
+
+def input_a(src: CodecInitCookieBodySource) -> int:
+    """The flag input ``A`` a source of :class:`CodecInitCookieBody` says, which
+    its encode is not handed (docs/adr/0065 §6 R4a)."""
+    return (1 if src.cookie is not None else 0)
 
 
 @dataclass
 class CodecInitCookieBody:
-    version: int = 0
-    cookie_size: Optional[int] = None
-    cookie: Optional[bytes] = None
+    version: CodecInitCookieBodyVersionInt = 0
+    cookie: Optional[CodecInitCookieBodyCookieBytes] = None
+
+    def __setattr__(self, name: str, value: object) -> None:
+        # Each integer, byte string and text is held to its bound
+        # wherever it is set, where the value is made and after
+        # (docs/adr/0081 §2), whatever it was handed.
+        if name == "version":
+            value = CodecInitCookieBodyVersionInt(value)
+        elif name == "cookie":
+            value = None if value is None else CodecInitCookieBodyCookieBytes(value)
+        object.__setattr__(self, name, value)
 
     @classmethod
     def decode(cls, cursor: SceCursor, a: int) -> CodecInitCookieBody:
@@ -59,45 +118,22 @@ class CodecInitCookieBody:
             f_cookie = None
         return cls(
             version=f_version,
-            cookie_size=f_cookie_size,
             cookie=f_cookie,
         )
 
-    def encode(self, w: SceSink, a: int) -> None:
+    def encode(self, w: SceSink) -> None:
         """RFC §synth-5-B encode-side primary: write ``self`` into the
         caller-owned ``w`` sink. Returns ``None`` on success; raises
         :class:`BufferOverflow` from a bounded sink when the destination
         has insufficient remaining capacity; growable sinks (e.g.
-        :class:`BytearraySink`) are effectively infallible. Raises,
-        before the first byte, the error a decode of the frame would give
-        for a value it cannot carry: a byte string, text or list outside its
-        bound, or a gated field its gate disagrees with."""
-        if (a & 0x01) != 0:
-            if self.cookie is None:
-                raise PresentIfMismatch("cookie")
-        elif self.cookie is not None:
-            raise PresentIfMismatch("cookie")
-        if self.cookie is not None and (len(self.cookie) > 64):
-            raise LengthOutOfRange()
-        # Streaming cursor encode (SSOT selection: `needs_streaming`).
-        # Mirrors the streaming decode: every field appends its own bytes
-        # in declaration order through the per-field encode blocks, so a
-        # gated field skips its append when absent, and a fixed field after
-        # a variable-length payload lands after the payload (the positional
-        # path appends variable fields last, placing it ahead on the wire).
-        # Per-field `is_repeat` / `is_tlv_chain` / `is_embed` route to their
-        # dedicated helpers; everything else uses `present_if_encode_block`.
-        w.write_u8(self.version & 0xFF)
-        if self.cookie_size is not None:
-            w.write_vle_u16(int(self.cookie_size))
-        if self.cookie is not None:
-            w.write_bytes(self.cookie)
+        :class:`BytearraySink`) are effectively infallible."""
+        encode_source(self, w)
 
-    def encode_to_bytes(self, a: int) -> bytes:
+    def encode_to_bytes(self) -> bytes:
         """Heap-backed convenience facade. Runs :meth:`encode` over a
         :class:`BytearraySink` and returns the freshly-encoded bytes.
         Callers targeting zero-alloc hot paths should call :meth:`encode`
         directly against a caller-owned sink."""
         _dst = bytearray()
-        self.encode(BytearraySink(_dst), a)
+        self.encode(BytearraySink(_dst))
         return bytes(_dst)

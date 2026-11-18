@@ -6,18 +6,96 @@
 
 from __future__ import annotations
 
-from sce_forge_runtime.codec import BytearraySink, CodecError, LengthOutOfRange, NeedMoreBytes, SceCursor, SceSink
+from sce_forge_runtime.codec import BytearraySink, CodecError, NeedMoreBytes, SceCursor, SceSink
+from sce_forge_runtime.bounded import BoundedBytes, BoundedInt
 
 from dataclasses import dataclass
-from typing import Optional
+from typing import Optional, Protocol
+
+
+class CodecZenohSourceInfoHeaderInt(BoundedInt):
+    """The ``header`` element of :class:`CodecZenohSourceInfo`, an unsigned integer of
+    8 bits, held to them where a value of it is made (docs/adr/0081 §2)."""
+
+    BITS = 8
+    SIGNED = False
+
+
+class CodecZenohSourceInfoZidBytes(BoundedBytes):
+    """The ``zid`` element of :class:`CodecZenohSourceInfo`, 1 to 16 bytes,
+    held to that bound where a value of it is made (docs/adr/0077 §3)."""
+
+    LEAST = 1
+    MOST = 16
+
+
+class CodecZenohSourceInfoEidInt(BoundedInt):
+    """The ``eid`` element of :class:`CodecZenohSourceInfo`, an unsigned integer of
+    32 bits, held to them where a value of it is made (docs/adr/0081 §2)."""
+
+    BITS = 32
+    SIGNED = False
+
+
+class CodecZenohSourceInfoSnInt(BoundedInt):
+    """The ``sn`` element of :class:`CodecZenohSourceInfo`, an unsigned integer of
+    32 bits, held to them where a value of it is made (docs/adr/0081 §2)."""
+
+    BITS = 32
+    SIGNED = False
+
+
+class CodecZenohSourceInfoSource(Protocol):
+    """The elements a value of :class:`CodecZenohSourceInfo` presents, which its encode
+    reads (docs/adr/0081 §2): any object that presents them is a source of it.
+    The encode derives every other element of the frame."""
+
+    @property
+    def header(self) -> CodecZenohSourceInfoHeaderInt: ...
+
+    @property
+    def zid(self) -> CodecZenohSourceInfoZidBytes: ...
+
+    @property
+    def eid(self) -> CodecZenohSourceInfoEidInt: ...
+
+    @property
+    def sn(self) -> CodecZenohSourceInfoSnInt: ...
+
+
+def encode_source(src: CodecZenohSourceInfoSource, w: SceSink) -> None:
+    """Write any source of :class:`CodecZenohSourceInfo` into ``w``, each element read
+    off ``src`` and written where the codec's encode plan lays it out
+    (docs/adr/0081). It refuses no value; a bounded sink raises
+    :class:`BufferOverflow` where it has no room left."""
+    _c_header = src.header
+    _c_header = (_c_header & ~0xF0) | ((len(src.zid) - 1) << 4)
+    w.write_u8(_c_header & 0xFF)
+    w.write_bytes(src.zid)
+    w.write_vle_u32(src.eid)
+    w.write_vle_u32(src.sn)
 
 
 @dataclass
 class CodecZenohSourceInfo:
-    header: int = 0
-    zid: bytes = b""
-    eid: int = 0
-    sn: int = 0
+    header: CodecZenohSourceInfoHeaderInt = 0
+    zid: CodecZenohSourceInfoZidBytes = CodecZenohSourceInfoZidBytes(b"\x00" * 1)
+    eid: CodecZenohSourceInfoEidInt = 0
+    sn: CodecZenohSourceInfoSnInt = 0
+
+    def __setattr__(self, name: str, value: object) -> None:
+        # Each integer, byte string and text is held to its bound
+        # wherever it is set, where the value is made and after
+        # (docs/adr/0081 §2), whatever it was handed.
+        if name == "header":
+            value = CodecZenohSourceInfoHeaderInt(value)
+        elif name == "zid":
+            value = CodecZenohSourceInfoZidBytes(value)
+        elif name == "eid":
+            value = CodecZenohSourceInfoEidInt(value)
+        elif name == "sn":
+            value = CodecZenohSourceInfoSnInt(value)
+        object.__setattr__(self, name, value)
 
     @classmethod
     def decode(cls, cursor: SceCursor) -> CodecZenohSourceInfo:
@@ -76,24 +154,8 @@ class CodecZenohSourceInfo:
         caller-owned ``w`` sink. Returns ``None`` on success; raises
         :class:`BufferOverflow` from a bounded sink when the destination
         has insufficient remaining capacity; growable sinks (e.g.
-        :class:`BytearraySink`) are effectively infallible. Raises,
-        before the first byte, the error a decode of the frame would give
-        for a value it cannot carry: a byte string, text or list outside its
-        bound, or a gated field its gate disagrees with."""
-        if len(self.zid) < 1 or len(self.zid) > 16:
-            raise LengthOutOfRange()
-        # Streaming cursor encode (SSOT selection: `needs_streaming`).
-        # Mirrors the streaming decode: every field appends its own bytes
-        # in declaration order through the per-field encode blocks, so a
-        # gated field skips its append when absent, and a fixed field after
-        # a variable-length payload lands after the payload (the positional
-        # path appends variable fields last, placing it ahead on the wire).
-        # Per-field `is_repeat` / `is_tlv_chain` / `is_embed` route to their
-        # dedicated helpers; everything else uses `present_if_encode_block`.
-        w.write_u8(self.header & 0xFF)
-        w.write_bytes(self.zid)
-        w.write_vle_u32(self.eid)
-        w.write_vle_u32(self.sn)
+        :class:`BytearraySink`) are effectively infallible."""
+        encode_source(self, w)
 
     def encode_to_bytes(self) -> bytes:
         """Heap-backed convenience facade. Runs :meth:`encode` over a

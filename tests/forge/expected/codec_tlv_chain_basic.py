@@ -7,12 +7,20 @@
 from __future__ import annotations
 
 from sce_forge_runtime.codec import BytearraySink, CodecError, NeedMoreBytes, SceCursor, SceSink, TooManyElements
-from sce_forge_runtime.bounded import BoundedTuple
+from sce_forge_runtime.bounded import BoundedInt, BoundedTuple
 from .codec_tlv_entry import CodecTlvEntry
 from . import codec_tlv_entry as sce_codec_tlv_entry
 
 from dataclasses import dataclass, field
 from typing import Optional, List, Protocol
+
+
+class CodecTlvChainBasicHeaderFlagsInt(BoundedInt):
+    """The ``header_flags`` element of :class:`CodecTlvChainBasic`, an unsigned integer of
+    8 bits, held to them where a value of it is made (docs/adr/0081 §2)."""
+
+    BITS = 8
+    SIGNED = False
 
 
 class CodecTlvChainBasicExtensionsList(BoundedTuple):
@@ -29,7 +37,7 @@ class CodecTlvChainBasicSource(Protocol):
     The encode derives every other element of the frame."""
 
     @property
-    def header_flags(self) -> int: ...
+    def header_flags(self) -> CodecTlvChainBasicHeaderFlagsInt: ...
 
     @property
     def extensions(self) -> CodecTlvChainBasicExtensionsList: ...
@@ -47,14 +55,16 @@ def encode_source(src: CodecTlvChainBasicSource, w: SceSink) -> None:
 
 @dataclass
 class CodecTlvChainBasic:
-    header_flags: int = 0
+    header_flags: CodecTlvChainBasicHeaderFlagsInt = 0
     extensions: CodecTlvChainBasicExtensionsList = CodecTlvChainBasicExtensionsList()
 
     def __setattr__(self, name: str, value: object) -> None:
-        # Each byte string and text is held to its bound wherever it is
-        # set, where the value is made and after (docs/adr/0081 §2),
-        # whatever it was handed.
-        if name == "extensions":
+        # Each integer, byte string and text is held to its bound
+        # wherever it is set, where the value is made and after
+        # (docs/adr/0081 §2), whatever it was handed.
+        if name == "header_flags":
+            value = CodecTlvChainBasicHeaderFlagsInt(value)
+        elif name == "extensions":
             value = CodecTlvChainBasicExtensionsList(value)
         object.__setattr__(self, name, value)
 

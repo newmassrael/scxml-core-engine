@@ -7,16 +7,61 @@
 from __future__ import annotations
 
 from sce_forge_runtime.codec import BytearraySink, CodecError, NeedMoreBytes, SceCursor, SceSink
+from sce_forge_runtime.bounded import BoundedInt
 from .codec_zenoh_wireexpr import CodecZenohWireexpr
+from . import codec_zenoh_wireexpr as sce_codec_zenoh_wireexpr
 
-from dataclasses import dataclass
-from typing import Optional
+from dataclasses import dataclass, field
+from typing import Optional, Protocol
+
+
+class CodecZenohDeclSubscriberIdInt(BoundedInt):
+    """The ``id`` element of :class:`CodecZenohDeclSubscriber`, an unsigned integer of
+    32 bits, held to them where a value of it is made (docs/adr/0081 §2)."""
+
+    BITS = 32
+    SIGNED = False
+
+
+class CodecZenohDeclSubscriberSource(Protocol):
+    """The elements a value of :class:`CodecZenohDeclSubscriber` presents, which its encode
+    reads (docs/adr/0081 §2): any object that presents them is a source of it.
+    The encode derives every other element of the frame."""
+
+    @property
+    def id(self) -> CodecZenohDeclSubscriberIdInt: ...
+
+    @property
+    def wireexpr(self) -> sce_codec_zenoh_wireexpr.CodecZenohWireexprSource: ...
+
+
+def encode_source(src: CodecZenohDeclSubscriberSource, w: SceSink) -> None:
+    """Write any source of :class:`CodecZenohDeclSubscriber` into ``w``, each element read
+    off ``src`` and written where the codec's encode plan lays it out
+    (docs/adr/0081). It refuses no value; a bounded sink raises
+    :class:`BufferOverflow` where it has no room left."""
+    w.write_vle_u32(src.id)
+    sce_codec_zenoh_wireexpr.encode_source(src.wireexpr, w)
+
+
+def input_n(src: CodecZenohDeclSubscriberSource) -> int:
+    """The flag input ``N`` a source of :class:`CodecZenohDeclSubscriber` says, which
+    its encode is not handed (docs/adr/0065 §6 R4a)."""
+    return sce_codec_zenoh_wireexpr.input_n(src.wireexpr)
 
 
 @dataclass
 class CodecZenohDeclSubscriber:
-    id: int = 0
-    wireexpr: CodecZenohWireexpr = b""
+    id: CodecZenohDeclSubscriberIdInt = 0
+    wireexpr: CodecZenohWireexpr = field(default_factory=CodecZenohWireexpr)
+
+    def __setattr__(self, name: str, value: object) -> None:
+        # Each integer, byte string and text is held to its bound
+        # wherever it is set, where the value is made and after
+        # (docs/adr/0081 §2), whatever it was handed.
+        if name == "id":
+            value = CodecZenohDeclSubscriberIdInt(value)
+        object.__setattr__(self, name, value)
 
     @classmethod
     def decode(cls, cursor: SceCursor, n: int) -> CodecZenohDeclSubscriber:
@@ -45,28 +90,19 @@ class CodecZenohDeclSubscriber:
             wireexpr=f_wireexpr,
         )
 
-    def encode(self, w: SceSink, n: int) -> None:
+    def encode(self, w: SceSink) -> None:
         """RFC §synth-5-B encode-side primary: write ``self`` into the
         caller-owned ``w`` sink. Returns ``None`` on success; raises
         :class:`BufferOverflow` from a bounded sink when the destination
         has insufficient remaining capacity; growable sinks (e.g.
         :class:`BytearraySink`) are effectively infallible."""
-        # Streaming cursor encode (SSOT selection: `needs_streaming`).
-        # Mirrors the streaming decode: every field appends its own bytes
-        # in declaration order through the per-field encode blocks, so a
-        # gated field skips its append when absent, and a fixed field after
-        # a variable-length payload lands after the payload (the positional
-        # path appends variable fields last, placing it ahead on the wire).
-        # Per-field `is_repeat` / `is_tlv_chain` / `is_embed` route to their
-        # dedicated helpers; everything else uses `present_if_encode_block`.
-        w.write_vle_u32(self.id)
-        self.wireexpr.encode(w, n)
+        encode_source(self, w)
 
-    def encode_to_bytes(self, n: int) -> bytes:
+    def encode_to_bytes(self) -> bytes:
         """Heap-backed convenience facade. Runs :meth:`encode` over a
         :class:`BytearraySink` and returns the freshly-encoded bytes.
         Callers targeting zero-alloc hot paths should call :meth:`encode`
         directly against a caller-owned sink."""
         _dst = bytearray()
-        self.encode(BytearraySink(_dst), n)
+        self.encode(BytearraySink(_dst))
         return bytes(_dst)

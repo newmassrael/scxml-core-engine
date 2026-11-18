@@ -7,16 +7,95 @@
 from __future__ import annotations
 
 from sce_forge_runtime.codec import BytearraySink, CodecError, NeedMoreBytes, SceCursor, SceSink, TooManyElements
+from sce_forge_runtime.bounded import BoundedInt, BoundedTuple
+from sce_forge_runtime.law import AfterKey, Lawful, Uniform
 from .codec_chain_prev_entry import CodecChainPrevEntry
+from . import codec_chain_prev_entry as sce_codec_chain_prev_entry
 
 from dataclasses import dataclass, field
-from typing import Optional, List
+from typing import Optional, List, Protocol
+
+
+class CodecChainPrevTailGatedHeadInt(BoundedInt):
+    """The ``head`` element of :class:`CodecChainPrevTailGated`, an unsigned integer of
+    8 bits, held to them where a value of it is made (docs/adr/0081 §2)."""
+
+    BITS = 8
+    SIGNED = False
+
+
+class CodecChainPrevTailGatedEntriesList(BoundedTuple):
+    """The ``entries`` element of :class:`CodecChainPrevTailGated`, 0 to 4 entries,
+    held to that bound where a value of it is made (docs/adr/0077 §3)."""
+
+    LEAST = 0
+    MOST = 4
+
+
+class CodecChainPrevTailGatedEntriesHas0x4Key:
+    """The kind of entry of ``entries`` of :class:`CodecChainPrevTailGated` a gate or a
+    law asks for: an entry whose identifier is 0x4 (docs/adr/0065 §6 R6)."""
+
+    @staticmethod
+    def matches(entry: sce_codec_chain_prev_entry.CodecChainPrevEntrySource) -> bool:
+        """Whether ``entry`` is of the kind."""
+        return (entry.header & 0x7F) == 0x4
+
+
+CodecChainPrevTailGatedEntriesLaw = (Uniform(sce_codec_chain_prev_entry.input_tagged), AfterKey(sce_codec_chain_prev_entry.input_after_marker, CodecChainPrevTailGatedEntriesHas0x4Key.matches))
+"""The law the entries of ``entries`` of :class:`CodecChainPrevTailGated` follow in the inputs
+they say, an automaton for each, which the list holds them to (docs/adr/0065 §6 R8)."""
+
+
+class CodecChainPrevTailGatedEntriesLawful(Lawful):
+    """The ``entries`` element of :class:`CodecChainPrevTailGated`, its entries held to their
+    law from the start the value gives (docs/adr/0065 §6 R8)."""
+
+    ENTRIES = CodecChainPrevTailGatedEntriesList
+    LAW = CodecChainPrevTailGatedEntriesLaw
+
+
+class CodecChainPrevTailGatedSource(Protocol):
+    """The elements a value of :class:`CodecChainPrevTailGated` presents, which its encode
+    reads (docs/adr/0081 §2): any object that presents them is a source of it.
+    The encode derives every other element of the frame."""
+
+    @property
+    def head(self) -> CodecChainPrevTailGatedHeadInt: ...
+
+    @property
+    def entries(self) -> Optional[CodecChainPrevTailGatedEntriesLawful]: ...
+
+
+def encode_source(src: CodecChainPrevTailGatedSource, w: SceSink) -> None:
+    """Write any source of :class:`CodecChainPrevTailGated` into ``w``, each element read
+    off ``src`` and written where the codec's encode plan lays it out
+    (docs/adr/0081). It refuses no value; a bounded sink raises
+    :class:`BufferOverflow` where it has no room left."""
+    _c_head = src.head
+    if src.entries is not None:
+        _c_head = (_c_head & ~0x1) | ((int(src.entries.start[0])) << 0)
+    _c_head = (_c_head & ~0x2) | (0x2 if src.entries is not None else 0)
+    w.write_u8(_c_head & 0xFF)
+    if src.entries is not None:
+        for _entry in src.entries:
+            sce_codec_chain_prev_entry.encode_source(_entry, w)
 
 
 @dataclass
 class CodecChainPrevTailGated:
-    head: int = 0
-    entries: Optional[List[CodecChainPrevEntry]] = b""
+    head: CodecChainPrevTailGatedHeadInt = 0
+    entries: Optional[CodecChainPrevTailGatedEntriesLawful] = None
+
+    def __setattr__(self, name: str, value: object) -> None:
+        # Each integer, byte string and text is held to its bound
+        # wherever it is set, where the value is made and after
+        # (docs/adr/0081 §2), whatever it was handed.
+        if name == "head":
+            value = CodecChainPrevTailGatedHeadInt(value)
+        elif name == "entries":
+            value = None if value is None else CodecChainPrevTailGatedEntriesLawful(value.start, value.entries)
+        object.__setattr__(self, name, value)
 
     @classmethod
     def decode(cls, cursor: SceCursor) -> CodecChainPrevTailGated:
@@ -56,7 +135,7 @@ class CodecChainPrevTailGated:
             f_entries = None
         return cls(
             head=f_head,
-            entries=f_entries,
+            entries=None if f_entries is None else CodecChainPrevTailGatedEntriesLawful(((((f_head >> 0) & 1) != 0), None), f_entries),
         )
 
     # RFC §synth-5-B flags primitive: per-bit-range accessors over
@@ -89,26 +168,8 @@ class CodecChainPrevTailGated:
         caller-owned ``w`` sink. Returns ``None`` on success; raises
         :class:`BufferOverflow` from a bounded sink when the destination
         has insufficient remaining capacity; growable sinks (e.g.
-        :class:`BytearraySink`) are effectively infallible. Raises,
-        before the first byte, the error a decode of the frame would give
-        for a value it cannot carry: a byte string, text or list outside its
-        bound, or a gated field its gate disagrees with."""
-        if self.entries is not None and (len(self.entries) > 4):
-            raise TooManyElements()
-        # Streaming cursor encode (SSOT selection: `needs_streaming`).
-        # Mirrors the streaming decode: every field appends its own bytes
-        # in declaration order through the per-field encode blocks, so a
-        # gated field skips its append when absent, and a fixed field after
-        # a variable-length payload lands after the payload (the positional
-        # path appends variable fields last, placing it ahead on the wire).
-        # Per-field `is_repeat` / `is_tlv_chain` / `is_embed` route to their
-        # dedicated helpers; everything else uses `present_if_encode_block`.
-        w.write_u8(self.head & 0xFF)
-        if self.entries is not None:
-            _prev_entries_after_marker = 0
-            for _e in self.entries:
-                _e.encode(w, _prev_entries_after_marker, ((self.head >> 0) & 0x1))
-                _prev_entries_after_marker = 1 if (_e.header & 127) == 4 else 0
+        :class:`BytearraySink`) are effectively infallible."""
+        encode_source(self, w)
 
     def encode_to_bytes(self) -> bytes:
         """Heap-backed convenience facade. Runs :meth:`encode` over a

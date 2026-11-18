@@ -7,10 +7,18 @@
 from __future__ import annotations
 
 from sce_forge_runtime.codec import BytearraySink, CodecError, InvalidUtf8, LengthOutOfRange, NeedMoreBytes, SceCursor, SceSink
-from sce_forge_runtime.bounded import BoundedText
+from sce_forge_runtime.bounded import BoundedInt, BoundedText
 
 from dataclasses import dataclass
 from typing import Optional, Protocol
+
+
+class CodecPresentIfStringCarrierInt(BoundedInt):
+    """The ``carrier`` element of :class:`CodecPresentIfString`, an unsigned integer of
+    8 bits, held to them where a value of it is made (docs/adr/0081 §2)."""
+
+    BITS = 8
+    SIGNED = False
 
 
 class CodecPresentIfStringTextText(BoundedText):
@@ -27,7 +35,7 @@ class CodecPresentIfStringSource(Protocol):
     The encode derives every other element of the frame."""
 
     @property
-    def carrier(self) -> int: ...
+    def carrier(self) -> CodecPresentIfStringCarrierInt: ...
 
     @property
     def text(self) -> Optional[CodecPresentIfStringTextText]: ...
@@ -51,14 +59,16 @@ def encode_source(src: CodecPresentIfStringSource, w: SceSink) -> None:
 
 @dataclass
 class CodecPresentIfString:
-    carrier: int = 0
+    carrier: CodecPresentIfStringCarrierInt = 0
     text: Optional[CodecPresentIfStringTextText] = None
 
     def __setattr__(self, name: str, value: object) -> None:
-        # Each byte string and text is held to its bound wherever it is
-        # set, where the value is made and after (docs/adr/0081 §2),
-        # whatever it was handed.
-        if name == "text":
+        # Each integer, byte string and text is held to its bound
+        # wherever it is set, where the value is made and after
+        # (docs/adr/0081 §2), whatever it was handed.
+        if name == "carrier":
+            value = CodecPresentIfStringCarrierInt(value)
+        elif name == "text":
             value = None if value is None else CodecPresentIfStringTextText(value)
         object.__setattr__(self, name, value)
 

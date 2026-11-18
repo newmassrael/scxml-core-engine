@@ -7,9 +7,18 @@
 from __future__ import annotations
 
 from sce_forge_runtime.codec import BytearraySink, CodecError, NeedMoreBytes, SceCursor, SceSink
+from sce_forge_runtime.bounded import BoundedInt
 
 from dataclasses import dataclass
 from typing import Optional, Protocol
+
+
+class CodecFlagsBasicHeaderInt(BoundedInt):
+    """The ``header`` element of :class:`CodecFlagsBasic`, an unsigned integer of
+    8 bits, held to them where a value of it is made (docs/adr/0081 §2)."""
+
+    BITS = 8
+    SIGNED = False
 
 
 class CodecFlagsBasicSource(Protocol):
@@ -18,20 +27,38 @@ class CodecFlagsBasicSource(Protocol):
     The encode derives every other element of the frame."""
 
     @property
-    def header(self) -> int: ...
+    def header(self) -> CodecFlagsBasicHeaderInt: ...
 
 
-def encode_source(src: CodecFlagsBasicSource, w: SceSink) -> None:
+def encode_source(src: CodecFlagsBasicSource, w: SceSink, *, override_header_reliable: Optional[int] = None, override_header_more: Optional[int] = None, override_header_drop: Optional[int] = None, override_header_first: Optional[int] = None) -> None:
     """Write any source of :class:`CodecFlagsBasic` into ``w``, each element read
     off ``src`` and written where the codec's encode plan lays it out
-    (docs/adr/0081). It refuses no value; a bounded sink raises
+    (docs/adr/0081). A chain that holds it
+    sets the flag its entries end on by its keyword, in place of the value's. It refuses no value; a bounded sink raises
     :class:`BufferOverflow` where it has no room left."""
-    w.write_u8(src.header & 0xFF)
+    _c_header = src.header
+    if override_header_reliable is not None:
+        _c_header = (_c_header & ~0x80) | ((override_header_reliable & 0x1) << 7)
+    if override_header_more is not None:
+        _c_header = (_c_header & ~0x40) | ((override_header_more & 0x1) << 6)
+    if override_header_drop is not None:
+        _c_header = (_c_header & ~0x20) | ((override_header_drop & 0x1) << 5)
+    if override_header_first is not None:
+        _c_header = (_c_header & ~0x10) | ((override_header_first & 0x1) << 4)
+    w.write_u8(_c_header & 0xFF)
 
 
 @dataclass
 class CodecFlagsBasic:
-    header: int = 0
+    header: CodecFlagsBasicHeaderInt = 0
+
+    def __setattr__(self, name: str, value: object) -> None:
+        # Each integer, byte string and text is held to its bound
+        # wherever it is set, where the value is made and after
+        # (docs/adr/0081 §2), whatever it was handed.
+        if name == "header":
+            value = CodecFlagsBasicHeaderInt(value)
+        object.__setattr__(self, name, value)
 
     @classmethod
     def decode(cls, cursor: SceCursor) -> CodecFlagsBasic:

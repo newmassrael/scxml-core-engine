@@ -7,12 +7,20 @@
 from __future__ import annotations
 
 from sce_forge_runtime.codec import BytearraySink, CodecError, NeedMoreBytes, SceCursor, SceSink, TooManyElements
-from sce_forge_runtime.bounded import BoundedTuple
+from sce_forge_runtime.bounded import BoundedInt, BoundedTuple
 from .codec_nested_body import CodecNestedBody
 from . import codec_nested_body as sce_codec_nested_body
 
 from dataclasses import dataclass, field
 from typing import Optional, List, Protocol
+
+
+class CodecNestedParentHdrInt(BoundedInt):
+    """The ``hdr`` element of :class:`CodecNestedParent`, an unsigned integer of
+    8 bits, held to them where a value of it is made (docs/adr/0081 §2)."""
+
+    BITS = 8
+    SIGNED = False
 
 
 class CodecNestedParentBodyListList(BoundedTuple):
@@ -29,7 +37,7 @@ class CodecNestedParentSource(Protocol):
     The encode derives every other element of the frame."""
 
     @property
-    def hdr(self) -> int: ...
+    def hdr(self) -> CodecNestedParentHdrInt: ...
 
     @property
     def required_body(self) -> sce_codec_nested_body.CodecNestedBodySource: ...
@@ -61,16 +69,18 @@ def encode_source(src: CodecNestedParentSource, w: SceSink) -> None:
 
 @dataclass
 class CodecNestedParent:
-    hdr: int = 0
+    hdr: CodecNestedParentHdrInt = 0
     required_body: CodecNestedBody = field(default_factory=CodecNestedBody)
     optional_body: Optional[CodecNestedBody] = None
     body_list: CodecNestedParentBodyListList = CodecNestedParentBodyListList()
 
     def __setattr__(self, name: str, value: object) -> None:
-        # Each byte string and text is held to its bound wherever it is
-        # set, where the value is made and after (docs/adr/0081 §2),
-        # whatever it was handed.
-        if name == "body_list":
+        # Each integer, byte string and text is held to its bound
+        # wherever it is set, where the value is made and after
+        # (docs/adr/0081 §2), whatever it was handed.
+        if name == "hdr":
+            value = CodecNestedParentHdrInt(value)
+        elif name == "body_list":
             value = CodecNestedParentBodyListList(value)
         object.__setattr__(self, name, value)
 

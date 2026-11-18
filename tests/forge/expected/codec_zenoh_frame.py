@@ -7,10 +7,18 @@
 from __future__ import annotations
 
 from sce_forge_runtime.codec import BytearraySink, CodecError, LengthOutOfRange, NeedMoreBytes, SceCursor, SceSink
-from sce_forge_runtime.bounded import BoundedBytes
+from sce_forge_runtime.bounded import BoundedBytes, BoundedInt
 
 from dataclasses import dataclass
 from typing import Optional, Protocol
+
+
+class CodecZenohFrameSnInt(BoundedInt):
+    """The ``sn`` element of :class:`CodecZenohFrame`, an unsigned integer of
+    64 bits, held to them where a value of it is made (docs/adr/0081 §2)."""
+
+    BITS = 64
+    SIGNED = False
 
 
 class CodecZenohFramePayloadBytes(BoundedBytes):
@@ -27,7 +35,7 @@ class CodecZenohFrameSource(Protocol):
     The encode derives every other element of the frame."""
 
     @property
-    def sn(self) -> int: ...
+    def sn(self) -> CodecZenohFrameSnInt: ...
 
     @property
     def payload(self) -> CodecZenohFramePayloadBytes: ...
@@ -44,14 +52,16 @@ def encode_source(src: CodecZenohFrameSource, w: SceSink) -> None:
 
 @dataclass
 class CodecZenohFrame:
-    sn: int = 0
+    sn: CodecZenohFrameSnInt = 0
     payload: CodecZenohFramePayloadBytes = CodecZenohFramePayloadBytes()
 
     def __setattr__(self, name: str, value: object) -> None:
-        # Each byte string and text is held to its bound wherever it is
-        # set, where the value is made and after (docs/adr/0081 §2),
-        # whatever it was handed.
-        if name == "payload":
+        # Each integer, byte string and text is held to its bound
+        # wherever it is set, where the value is made and after
+        # (docs/adr/0081 §2), whatever it was handed.
+        if name == "sn":
+            value = CodecZenohFrameSnInt(value)
+        elif name == "payload":
             value = CodecZenohFramePayloadBytes(value)
         object.__setattr__(self, name, value)
 

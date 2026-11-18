@@ -7,11 +7,20 @@
 from __future__ import annotations
 
 from sce_forge_runtime.codec import BytearraySink, CodecError, NeedMoreBytes, SceCursor, SceSink
+from sce_forge_runtime.bounded import BoundedInt
 from .codec_zenoh_decl_ext_keyexpr_inner import CodecZenohDeclExtKeyexprInner
 from . import codec_zenoh_decl_ext_keyexpr_inner as sce_codec_zenoh_decl_ext_keyexpr_inner
 
 from dataclasses import dataclass, field
 from typing import Optional, Protocol
+
+
+class CodecZenohDeclExtKeyexprOuterHeaderInt(BoundedInt):
+    """The ``outer_header`` element of :class:`CodecZenohDeclExtKeyexpr`, an unsigned integer of
+    8 bits, held to them where a value of it is made (docs/adr/0081 §2)."""
+
+    BITS = 8
+    SIGNED = False
 
 
 class CodecZenohDeclExtKeyexprSource(Protocol):
@@ -20,30 +29,44 @@ class CodecZenohDeclExtKeyexprSource(Protocol):
     The encode derives every other element of the frame."""
 
     @property
-    def outer_header(self) -> int: ...
+    def outer_header(self) -> CodecZenohDeclExtKeyexprOuterHeaderInt: ...
 
     @property
     def inner(self) -> sce_codec_zenoh_decl_ext_keyexpr_inner.CodecZenohDeclExtKeyexprInnerSource: ...
 
 
-def encode_source(src: CodecZenohDeclExtKeyexprSource, w: SceSink) -> None:
+def encode_source(src: CodecZenohDeclExtKeyexprSource, w: SceSink, *, override_outer_header_m: Optional[int] = None, override_outer_header_z: Optional[int] = None) -> None:
     """Write any source of :class:`CodecZenohDeclExtKeyexpr` into ``w``, each element read
     off ``src`` and written where the codec's encode plan lays it out
     (docs/adr/0081). It derives ``total_length`` from what each measures, and never reads it off
-    the source. It refuses no value; a bounded sink raises
+    the source. A chain that holds it
+    sets the flag its entries end on by its keyword, in place of the value's. It refuses no value; a bounded sink raises
     :class:`BufferOverflow` where it has no room left."""
+    _c_outer_header = src.outer_header
+    if override_outer_header_m is not None:
+        _c_outer_header = (_c_outer_header & ~0x10) | ((override_outer_header_m & 0x1) << 4)
+    if override_outer_header_z is not None:
+        _c_outer_header = (_c_outer_header & ~0x80) | ((override_outer_header_z & 0x1) << 7)
     _b_inner = bytearray()
     sce_codec_zenoh_decl_ext_keyexpr_inner.encode_source(src.inner, BytearraySink(_b_inner))
     _d_total_length = len(_b_inner)
-    w.write_u8(src.outer_header & 0xFF)
+    w.write_u8(_c_outer_header & 0xFF)
     w.write_vle_u64(_d_total_length)
     w.write_bytes(_b_inner)
 
 
 @dataclass
 class CodecZenohDeclExtKeyexpr:
-    outer_header: int = 0
+    outer_header: CodecZenohDeclExtKeyexprOuterHeaderInt = 0
     inner: CodecZenohDeclExtKeyexprInner = field(default_factory=CodecZenohDeclExtKeyexprInner)
+
+    def __setattr__(self, name: str, value: object) -> None:
+        # Each integer, byte string and text is held to its bound
+        # wherever it is set, where the value is made and after
+        # (docs/adr/0081 §2), whatever it was handed.
+        if name == "outer_header":
+            value = CodecZenohDeclExtKeyexprOuterHeaderInt(value)
+        object.__setattr__(self, name, value)
 
     @classmethod
     def decode(cls, cursor: SceCursor) -> CodecZenohDeclExtKeyexpr:

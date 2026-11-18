@@ -7,9 +7,18 @@
 from __future__ import annotations
 
 from sce_forge_runtime.codec import BytearraySink, CodecError, NeedMoreBytes, SceCursor, SceSink
+from sce_forge_runtime.bounded import BoundedInt
 
 from dataclasses import dataclass
 from typing import Optional, Protocol
+
+
+class CodecZenohExtZintValueInt(BoundedInt):
+    """The ``value`` element of :class:`CodecZenohExtZint`, an unsigned integer of
+    64 bits, held to them where a value of it is made (docs/adr/0081 §2)."""
+
+    BITS = 64
+    SIGNED = False
 
 
 class CodecZenohExtZintSource(Protocol):
@@ -18,7 +27,7 @@ class CodecZenohExtZintSource(Protocol):
     The encode derives every other element of the frame."""
 
     @property
-    def value(self) -> int: ...
+    def value(self) -> CodecZenohExtZintValueInt: ...
 
 
 def encode_source(src: CodecZenohExtZintSource, w: SceSink) -> None:
@@ -31,7 +40,15 @@ def encode_source(src: CodecZenohExtZintSource, w: SceSink) -> None:
 
 @dataclass
 class CodecZenohExtZint:
-    value: int = 0
+    value: CodecZenohExtZintValueInt = 0
+
+    def __setattr__(self, name: str, value: object) -> None:
+        # Each integer, byte string and text is held to its bound
+        # wherever it is set, where the value is made and after
+        # (docs/adr/0081 §2), whatever it was handed.
+        if name == "value":
+            value = CodecZenohExtZintValueInt(value)
+        object.__setattr__(self, name, value)
 
     @classmethod
     def decode(cls, cursor: SceCursor) -> CodecZenohExtZint:

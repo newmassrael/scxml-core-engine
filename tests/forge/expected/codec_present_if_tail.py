@@ -7,10 +7,18 @@
 from __future__ import annotations
 
 from sce_forge_runtime.codec import BytearraySink, CodecError, LengthOutOfRange, NeedMoreBytes, SceCursor, SceSink
-from sce_forge_runtime.bounded import BoundedBytes
+from sce_forge_runtime.bounded import BoundedBytes, BoundedInt
 
 from dataclasses import dataclass
 from typing import Optional, Protocol
+
+
+class CodecPresentIfTailFlagsInt(BoundedInt):
+    """The ``flags`` element of :class:`CodecPresentIfTail`, an unsigned integer of
+    8 bits, held to them where a value of it is made (docs/adr/0081 §2)."""
+
+    BITS = 8
+    SIGNED = False
 
 
 class CodecPresentIfTailPayloadBytes(BoundedBytes):
@@ -27,7 +35,7 @@ class CodecPresentIfTailSource(Protocol):
     The encode derives every other element of the frame."""
 
     @property
-    def flags(self) -> int: ...
+    def flags(self) -> CodecPresentIfTailFlagsInt: ...
 
     @property
     def payload(self) -> Optional[CodecPresentIfTailPayloadBytes]: ...
@@ -47,14 +55,16 @@ def encode_source(src: CodecPresentIfTailSource, w: SceSink) -> None:
 
 @dataclass
 class CodecPresentIfTail:
-    flags: int = 0
+    flags: CodecPresentIfTailFlagsInt = 0
     payload: Optional[CodecPresentIfTailPayloadBytes] = None
 
     def __setattr__(self, name: str, value: object) -> None:
-        # Each byte string and text is held to its bound wherever it is
-        # set, where the value is made and after (docs/adr/0081 §2),
-        # whatever it was handed.
-        if name == "payload":
+        # Each integer, byte string and text is held to its bound
+        # wherever it is set, where the value is made and after
+        # (docs/adr/0081 §2), whatever it was handed.
+        if name == "flags":
+            value = CodecPresentIfTailFlagsInt(value)
+        elif name == "payload":
             value = None if value is None else CodecPresentIfTailPayloadBytes(value)
         object.__setattr__(self, name, value)
 

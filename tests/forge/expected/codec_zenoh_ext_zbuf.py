@@ -46,9 +46,9 @@ class CodecZenohExtZbuf:
     value: CodecZenohExtZbufValueBytes = CodecZenohExtZbufValueBytes()
 
     def __setattr__(self, name: str, value: object) -> None:
-        # Each byte string and text is held to its bound wherever it is
-        # set, where the value is made and after (docs/adr/0081 §2),
-        # whatever it was handed.
+        # Each integer, byte string and text is held to its bound
+        # wherever it is set, where the value is made and after
+        # (docs/adr/0081 §2), whatever it was handed.
         if name == "value":
             value = CodecZenohExtZbufValueBytes(value)
         object.__setattr__(self, name, value)

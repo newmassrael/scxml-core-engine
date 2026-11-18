@@ -7,38 +7,80 @@
 from __future__ import annotations
 
 from sce_forge_runtime.codec import BytearraySink, CodecError, NeedMoreBytes, SceCursor, SceSink
+from sce_forge_runtime.bounded import UnknownTag
 from .codec_origin_leaf import CodecOriginLeaf
 from .codec_origin_scalar import CodecOriginScalar
+from . import codec_origin_leaf as sce_codec_origin_leaf
+from . import codec_origin_scalar as sce_codec_origin_scalar
 
 from dataclasses import dataclass, field
-from typing import Optional
+from typing import Optional, Protocol, Union
+
+
+class CodecOriginChoiceUnknownTag(UnknownTag):
+    """The tag the default arm of :class:`CodecOriginChoice`'s variant keeps: at
+    most 255, and none an arm names (docs/adr/0065 §6 R3)."""
+
+    MOST = 255
+    KNOWN = frozenset({1, 2})
 
 
 @dataclass
-class CodecOriginChoiceVariant:
-    """RFC §synth-5-B variant primitive: discriminated-union body for
-    the codec's tag-field suffix. ``kind`` selects the active arm; the
-    matching ``Optional`` field carries the decoded body. ``default_tag``
-    preserves the runtime tag value when the default arm fires so encode
-    can round-trip it back onto the wire."""
-    # RFC variant-default-uniformity (Python): pick the declared
-    # default arm (``<sce:arm default="true"/>``) when present so a
-    # freshly-constructed envelope round-trips byte-exactly through
-    # ``encode() -> decode()``. The corresponding arm body field uses a
-    # default_factory so ``Variant()`` actually populates it (rather
-    # than leaving every arm field ``None`` while ``kind`` names one of
-    # them, which is the latent inconsistency this RFC closes).
-    kind: str = "CodecOriginScalar"
-    codec_origin_leaf: Optional[CodecOriginLeaf] = None
-    codec_origin_scalar: Optional[CodecOriginScalar] = field(default_factory=CodecOriginScalar)
-    default_body: Optional[CodecOriginScalar] = None
-    default_tag: int = 0
+class CodecOriginChoiceDefault:
+    """The default arm of :class:`CodecOriginChoice`'s variant: the tag no arm
+    names, which it keeps, and its body."""
+
+    tag: CodecOriginChoiceUnknownTag = CodecOriginChoiceUnknownTag(0)
+    body: sce_codec_origin_scalar.CodecOriginScalar = field(default_factory=sce_codec_origin_scalar.CodecOriginScalar)
+
+    def __setattr__(self, name: str, value: object) -> None:
+        # The tag is held to the tags no arm names wherever it is set,
+        # where the arm is made and after (docs/adr/0065 §6 R3).
+        if name == "tag":
+            value = CodecOriginChoiceUnknownTag(value)
+        object.__setattr__(self, name, value)
+
+
+CodecOriginChoiceVariant = Union[sce_codec_origin_leaf.CodecOriginLeaf, sce_codec_origin_scalar.CodecOriginScalar, CodecOriginChoiceDefault]
+"""The arm a value of :class:`CodecOriginChoice` holds: a value of the arm's codec,
+or the default arm."""
+
+
+ARM_CLASSES = {0x1: sce_codec_origin_leaf.CodecOriginLeaf, 0x2: sce_codec_origin_scalar.CodecOriginScalar}
+"""The class of the arm of :class:`CodecOriginChoice`'s variant each tag names."""
+
+
+class CodecOriginChoiceSource(Protocol):
+    """The elements a value of :class:`CodecOriginChoice` presents, which its encode
+    reads (docs/adr/0081 §2): any object that presents them is a source of it.
+    The encode derives every other element of the frame."""
+
+    @property
+    def body(self) -> CodecOriginChoiceVariant: ...
+
+
+def encode_source(src: CodecOriginChoiceSource, w: SceSink) -> None:
+    """Write any source of :class:`CodecOriginChoice` into ``w``, each element read
+    off ``src`` and written where the codec's encode plan lays it out
+    (docs/adr/0081). It refuses no value; a bounded sink raises
+    :class:`BufferOverflow` where it has no room left."""
+    _v_body = src.body
+    if not isinstance(_v_body, (sce_codec_origin_leaf.CodecOriginLeaf, sce_codec_origin_scalar.CodecOriginScalar, CodecOriginChoiceDefault,)):
+        raise TypeError(f"{type(_v_body).__name__} is no arm of CodecOriginChoice's variant")
+    _t_body = (1 if isinstance(_v_body, sce_codec_origin_leaf.CodecOriginLeaf) else 2 if isinstance(_v_body, sce_codec_origin_scalar.CodecOriginScalar) else _v_body.tag)
+    _d_tag = _t_body
+    w.write_u8(_d_tag & 0xFF)
+    if isinstance(_v_body, sce_codec_origin_leaf.CodecOriginLeaf):
+        sce_codec_origin_leaf.encode_source(_v_body, w)
+    elif isinstance(_v_body, sce_codec_origin_scalar.CodecOriginScalar):
+        sce_codec_origin_scalar.encode_source(_v_body, w)
+    else:
+        sce_codec_origin_scalar.encode_source(_v_body.body, w)
 
 
 @dataclass
 class CodecOriginChoice:
-    tag: int = 0
-    body: CodecOriginChoiceVariant = field(default_factory=CodecOriginChoiceVariant)
+    body: CodecOriginChoiceVariant = field(default_factory=sce_codec_origin_scalar.CodecOriginScalar)
 
     @classmethod
     def decode(cls, cursor: SceCursor) -> CodecOriginChoice:
@@ -59,19 +101,16 @@ class CodecOriginChoice:
         # from the cursor. The default arm (when declared) carries the
         # runtime tag value so encode can round-trip it back onto the
         # wire.
-        body = CodecOriginChoiceVariant()
         if f_tag == 1:
-            body.kind = "CodecOriginLeaf"
-            body.codec_origin_leaf = CodecOriginLeaf.decode(cursor)
+            _arm = CodecOriginLeaf.decode(cursor)
+            body = _arm
         elif f_tag == 2:
-            body.kind = "CodecOriginScalar"
-            body.codec_origin_scalar = CodecOriginScalar.decode(cursor)
+            _arm = CodecOriginScalar.decode(cursor)
+            body = _arm
         else:
-            body.kind = "Default"
-            body.default_tag = f_tag
-            body.default_body = CodecOriginScalar.decode(cursor)
+            _arm = CodecOriginScalar.decode(cursor)
+            body = CodecOriginChoiceDefault(tag=f_tag, body=_arm)
         return cls(
-            tag=f_tag,
             body=body,
         )
 
@@ -81,15 +120,7 @@ class CodecOriginChoice:
         :class:`BufferOverflow` from a bounded sink when the destination
         has insufficient remaining capacity; growable sinks (e.g.
         :class:`BytearraySink`) are effectively infallible."""
-        # Encode fixed prefix (tag field bytes are part of the prefix).
-        w.write_u8(self.tag & 0xFF)
-        # Append the active arm body's encoded bytes via the same sink.
-        if self.body.kind == "CodecOriginLeaf":
-            self.body.codec_origin_leaf.encode(w)
-        elif self.body.kind == "CodecOriginScalar":
-            self.body.codec_origin_scalar.encode(w)
-        elif self.body.kind == "Default":
-            self.body.default_body.encode(w)
+        encode_source(self, w)
 
     def encode_to_bytes(self) -> bytes:
         """Heap-backed convenience facade. Runs :meth:`encode` over a

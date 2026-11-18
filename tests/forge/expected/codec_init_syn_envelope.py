@@ -7,36 +7,98 @@
 from __future__ import annotations
 
 from sce_forge_runtime.codec import BytearraySink, CodecError, NeedMoreBytes, SceCursor, SceSink
+from sce_forge_runtime.bounded import BoundedInt, UnknownTag
 from .codec_init_syn_body import CodecInitSynBody
+from . import codec_init_syn_body as sce_codec_init_syn_body
 
 from dataclasses import dataclass, field
-from typing import Optional
+from typing import Optional, Protocol, Union
+
+
+class CodecInitSynEnvelopeHeaderInt(BoundedInt):
+    """The ``header`` element of :class:`CodecInitSynEnvelope`, an unsigned integer of
+    8 bits, held to them where a value of it is made (docs/adr/0081 §2)."""
+
+    BITS = 8
+    SIGNED = False
+
+
+class CodecInitSynEnvelopeUnknownTag(UnknownTag):
+    """The tag the default arm of :class:`CodecInitSynEnvelope`'s variant keeps: at
+    most 31, and none an arm names (docs/adr/0065 §6 R3)."""
+
+    MOST = 31
+    KNOWN = frozenset({1})
 
 
 @dataclass
-class CodecInitSynEnvelopeVariant:
-    """RFC §synth-5-B variant primitive: discriminated-union body for
-    the codec's tag-field suffix. ``kind`` selects the active arm; the
-    matching ``Optional`` field carries the decoded body. ``default_tag``
-    preserves the runtime tag value when the default arm fires so encode
-    can round-trip it back onto the wire."""
-    # RFC variant-default-uniformity (Python): pick the declared
-    # default arm (``<sce:arm default="true"/>``) when present so a
-    # freshly-constructed envelope round-trips byte-exactly through
-    # ``encode() -> decode()``. The corresponding arm body field uses a
-    # default_factory so ``Variant()`` actually populates it (rather
-    # than leaving every arm field ``None`` while ``kind`` names one of
-    # them, which is the latent inconsistency this RFC closes).
-    kind: str = "CodecInitSynBody"
-    codec_init_syn_body: Optional[CodecInitSynBody] = field(default_factory=CodecInitSynBody)
-    default_body: Optional[CodecInitSynBody] = None
-    default_tag: int = 0
+class CodecInitSynEnvelopeDefault:
+    """The default arm of :class:`CodecInitSynEnvelope`'s variant: the tag no arm
+    names, which it keeps, and its body."""
+
+    tag: CodecInitSynEnvelopeUnknownTag = CodecInitSynEnvelopeUnknownTag(0)
+    body: sce_codec_init_syn_body.CodecInitSynBody = field(default_factory=sce_codec_init_syn_body.CodecInitSynBody)
+
+    def __setattr__(self, name: str, value: object) -> None:
+        # The tag is held to the tags no arm names wherever it is set,
+        # where the arm is made and after (docs/adr/0065 §6 R3).
+        if name == "tag":
+            value = CodecInitSynEnvelopeUnknownTag(value)
+        object.__setattr__(self, name, value)
+
+
+CodecInitSynEnvelopeVariant = Union[sce_codec_init_syn_body.CodecInitSynBody, CodecInitSynEnvelopeDefault]
+"""The arm a value of :class:`CodecInitSynEnvelope` holds: a value of the arm's codec,
+or the default arm."""
+
+
+ARM_CLASSES = {0x1: sce_codec_init_syn_body.CodecInitSynBody}
+"""The class of the arm of :class:`CodecInitSynEnvelope`'s variant each tag names."""
+
+
+class CodecInitSynEnvelopeSource(Protocol):
+    """The elements a value of :class:`CodecInitSynEnvelope` presents, which its encode
+    reads (docs/adr/0081 §2): any object that presents them is a source of it.
+    The encode derives every other element of the frame."""
+
+    @property
+    def header(self) -> CodecInitSynEnvelopeHeaderInt: ...
+
+    @property
+    def body(self) -> CodecInitSynEnvelopeVariant: ...
+
+
+def encode_source(src: CodecInitSynEnvelopeSource, w: SceSink) -> None:
+    """Write any source of :class:`CodecInitSynEnvelope` into ``w``, each element read
+    off ``src`` and written where the codec's encode plan lays it out
+    (docs/adr/0081). It refuses no value; a bounded sink raises
+    :class:`BufferOverflow` where it has no room left."""
+    _v_body = src.body
+    if not isinstance(_v_body, (sce_codec_init_syn_body.CodecInitSynBody, CodecInitSynEnvelopeDefault,)):
+        raise TypeError(f"{type(_v_body).__name__} is no arm of CodecInitSynEnvelope's variant")
+    _t_body = (1 if isinstance(_v_body, sce_codec_init_syn_body.CodecInitSynBody) else _v_body.tag)
+    _c_header = src.header
+    _c_header = (_c_header & ~0x1F) | ((_t_body & 0x1F) << 0)
+    _c_header = (_c_header & ~0x40) | (((sce_codec_init_syn_body.input_s(_v_body) if isinstance(_v_body, sce_codec_init_syn_body.CodecInitSynBody) else sce_codec_init_syn_body.input_s(_v_body.body) if isinstance(_v_body, CodecInitSynEnvelopeDefault) else 0)) << 6)
+    w.write_u8(_c_header & 0xFF)
+    if isinstance(_v_body, sce_codec_init_syn_body.CodecInitSynBody):
+        sce_codec_init_syn_body.encode_source(_v_body, w)
+    else:
+        sce_codec_init_syn_body.encode_source(_v_body.body, w)
 
 
 @dataclass
 class CodecInitSynEnvelope:
-    header: int = 0
-    body: CodecInitSynEnvelopeVariant = field(default_factory=CodecInitSynEnvelopeVariant)
+    header: CodecInitSynEnvelopeHeaderInt = 0
+    body: CodecInitSynEnvelopeVariant = field(default_factory=sce_codec_init_syn_body.CodecInitSynBody)
+
+    def __setattr__(self, name: str, value: object) -> None:
+        # Each integer, byte string and text is held to its bound
+        # wherever it is set, where the value is made and after
+        # (docs/adr/0081 §2), whatever it was handed.
+        if name == "header":
+            value = CodecInitSynEnvelopeHeaderInt(value)
+        object.__setattr__(self, name, value)
 
     @classmethod
     def decode(cls, cursor: SceCursor) -> CodecInitSynEnvelope:
@@ -57,14 +119,12 @@ class CodecInitSynEnvelope:
         # from the cursor. The default arm (when declared) carries the
         # runtime tag value so encode can round-trip it back onto the
         # wire.
-        body = CodecInitSynEnvelopeVariant()
         if ((f_header >> 0) & 0x1F) == 1:
-            body.kind = "CodecInitSynBody"
-            body.codec_init_syn_body = CodecInitSynBody.decode(cursor, ((f_header >> 6) & 0x1))
+            _arm = CodecInitSynBody.decode(cursor, ((f_header >> 6) & 0x1))
+            body = _arm
         else:
-            body.kind = "Default"
-            body.default_tag = ((f_header >> 0) & 0x1F)
-            body.default_body = CodecInitSynBody.decode(cursor, ((f_header >> 6) & 0x1))
+            _arm = CodecInitSynBody.decode(cursor, ((f_header >> 6) & 0x1))
+            body = CodecInitSynEnvelopeDefault(tag=((f_header >> 0) & 0x1F), body=_arm)
         return cls(
             header=f_header,
             body=body,
@@ -100,13 +160,7 @@ class CodecInitSynEnvelope:
         :class:`BufferOverflow` from a bounded sink when the destination
         has insufficient remaining capacity; growable sinks (e.g.
         :class:`BytearraySink`) are effectively infallible."""
-        # Encode fixed prefix (tag field bytes are part of the prefix).
-        w.write_u8(self.header & 0xFF)
-        # Append the active arm body's encoded bytes via the same sink.
-        if self.body.kind == "CodecInitSynBody":
-            self.body.codec_init_syn_body.encode(w, ((self.header >> 6) & 0x1))
-        elif self.body.kind == "Default":
-            self.body.default_body.encode(w, ((self.header >> 6) & 0x1))
+        encode_source(self, w)
 
     def encode_to_bytes(self) -> bytes:
         """Heap-backed convenience facade. Runs :meth:`encode` over a

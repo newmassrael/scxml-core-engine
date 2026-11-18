@@ -7,45 +7,151 @@
 from __future__ import annotations
 
 from sce_forge_runtime.codec import BytearraySink, CodecError, NeedMoreBytes, SceCursor, SceSink, TooManyElements
+from sce_forge_runtime.bounded import BoundedInt, BoundedTuple, UnknownTag
 from .codec_zenoh_wireexpr import CodecZenohWireexpr
 from .codec_zenoh_ext_entry import CodecZenohExtEntry
 from .codec_zenoh_msg_put import CodecZenohMsgPut
 from .codec_zenoh_msg_del import CodecZenohMsgDel
 from .codec_zenoh_query import CodecZenohQuery
+from . import codec_zenoh_ext_entry as sce_codec_zenoh_ext_entry
+from . import codec_zenoh_msg_del as sce_codec_zenoh_msg_del
+from . import codec_zenoh_msg_put as sce_codec_zenoh_msg_put
+from . import codec_zenoh_query as sce_codec_zenoh_query
+from . import codec_zenoh_wireexpr as sce_codec_zenoh_wireexpr
 
 from dataclasses import dataclass, field
-from typing import Optional, List
+from typing import Optional, List, Protocol, Union
+
+
+class CodecZenohRequestHeaderInt(BoundedInt):
+    """The ``header`` element of :class:`CodecZenohRequest`, an unsigned integer of
+    8 bits, held to them where a value of it is made (docs/adr/0081 §2)."""
+
+    BITS = 8
+    SIGNED = False
+
+
+class CodecZenohRequestRidInt(BoundedInt):
+    """The ``rid`` element of :class:`CodecZenohRequest`, an unsigned integer of
+    64 bits, held to them where a value of it is made (docs/adr/0081 §2)."""
+
+    BITS = 64
+    SIGNED = False
+
+
+class CodecZenohRequestExtensionsList(BoundedTuple):
+    """The ``extensions`` element of :class:`CodecZenohRequest`, 1 or more entries, the protocol stating no most,
+    held to that bound where a value of it is made (docs/adr/0077 §3)."""
+
+    LEAST = 1
+    MOST = None
+
+
+class CodecZenohRequestUnknownTag(UnknownTag):
+    """The tag the default arm of :class:`CodecZenohRequest`'s variant keeps: at
+    most 31, and none an arm names (docs/adr/0065 §6 R3)."""
+
+    MOST = 31
+    KNOWN = frozenset({1, 2, 3})
 
 
 @dataclass
-class CodecZenohRequestVariant:
-    """RFC §synth-5-B variant primitive: discriminated-union body for
-    the codec's tag-field suffix. ``kind`` selects the active arm; the
-    matching ``Optional`` field carries the decoded body. ``default_tag``
-    preserves the runtime tag value when the default arm fires so encode
-    can round-trip it back onto the wire."""
-    # RFC variant-default-uniformity (Python): pick the declared
-    # default arm (``<sce:arm default="true"/>``) when present so a
-    # freshly-constructed envelope round-trips byte-exactly through
-    # ``encode() -> decode()``. The corresponding arm body field uses a
-    # default_factory so ``Variant()`` actually populates it (rather
-    # than leaving every arm field ``None`` while ``kind`` names one of
-    # them, which is the latent inconsistency this RFC closes).
-    kind: str = "CodecZenohMsgPut"
-    codec_zenoh_msg_put: Optional[CodecZenohMsgPut] = field(default_factory=CodecZenohMsgPut)
-    codec_zenoh_msg_del: Optional[CodecZenohMsgDel] = None
-    codec_zenoh_query: Optional[CodecZenohQuery] = None
-    default_body: Optional[CodecZenohQuery] = None
-    default_tag: int = 0
+class CodecZenohRequestDefault:
+    """The default arm of :class:`CodecZenohRequest`'s variant: the tag no arm
+    names, which it keeps, and its body."""
+
+    tag: CodecZenohRequestUnknownTag = CodecZenohRequestUnknownTag(0)
+    body: sce_codec_zenoh_query.CodecZenohQuery = field(default_factory=sce_codec_zenoh_query.CodecZenohQuery)
+
+    def __setattr__(self, name: str, value: object) -> None:
+        # The tag is held to the tags no arm names wherever it is set,
+        # where the arm is made and after (docs/adr/0065 §6 R3).
+        if name == "tag":
+            value = CodecZenohRequestUnknownTag(value)
+        object.__setattr__(self, name, value)
+
+
+CodecZenohRequestVariant = Union[sce_codec_zenoh_msg_put.CodecZenohMsgPut, sce_codec_zenoh_msg_del.CodecZenohMsgDel, sce_codec_zenoh_query.CodecZenohQuery, CodecZenohRequestDefault]
+"""The arm a value of :class:`CodecZenohRequest` holds: a value of the arm's codec,
+or the default arm."""
+
+
+ARM_CLASSES = {0x1: sce_codec_zenoh_msg_put.CodecZenohMsgPut, 0x2: sce_codec_zenoh_msg_del.CodecZenohMsgDel, 0x3: sce_codec_zenoh_query.CodecZenohQuery}
+"""The class of the arm of :class:`CodecZenohRequest`'s variant each tag names."""
+
+
+class CodecZenohRequestSource(Protocol):
+    """The elements a value of :class:`CodecZenohRequest` presents, which its encode
+    reads (docs/adr/0081 §2): any object that presents them is a source of it.
+    The encode derives every other element of the frame."""
+
+    @property
+    def header(self) -> CodecZenohRequestHeaderInt: ...
+
+    @property
+    def rid(self) -> CodecZenohRequestRidInt: ...
+
+    @property
+    def keyexpr(self) -> sce_codec_zenoh_wireexpr.CodecZenohWireexprSource: ...
+
+    @property
+    def extensions(self) -> Optional[CodecZenohRequestExtensionsList]: ...
+
+    @property
+    def body(self) -> CodecZenohRequestVariant: ...
+
+
+def encode_source(src: CodecZenohRequestSource, w: SceSink, *, override_header_m: Optional[int] = None) -> None:
+    """Write any source of :class:`CodecZenohRequest` into ``w``, each element read
+    off ``src`` and written where the codec's encode plan lays it out
+    (docs/adr/0081). A chain that holds it
+    sets the flag its entries end on by its keyword, in place of the value's. It refuses no value; a bounded sink raises
+    :class:`BufferOverflow` where it has no room left."""
+    _v_body = src.body
+    if not isinstance(_v_body, (sce_codec_zenoh_msg_put.CodecZenohMsgPut, sce_codec_zenoh_msg_del.CodecZenohMsgDel, sce_codec_zenoh_query.CodecZenohQuery, CodecZenohRequestDefault,)):
+        raise TypeError(f"{type(_v_body).__name__} is no arm of CodecZenohRequest's variant")
+    _c_header = src.header
+    _c_header = (_c_header & ~0x20) | ((sce_codec_zenoh_wireexpr.input_n(src.keyexpr)) << 5)
+    _c_header = (_c_header & ~0x80) | (0x80 if src.extensions is not None else 0)
+    if override_header_m is not None:
+        _c_header = (_c_header & ~0x40) | ((override_header_m & 0x1) << 6)
+    w.write_u8(_c_header & 0xFF)
+    w.write_vle_u64(src.rid)
+    sce_codec_zenoh_wireexpr.encode_source(src.keyexpr, w)
+    if src.extensions is not None:
+        _left_extensions = len(src.extensions)
+        for _entry in src.extensions:
+            _left_extensions -= 1
+            sce_codec_zenoh_ext_entry.encode_source(_entry, w, override_header_z=1 if _left_extensions != 0 else 0)
+    if isinstance(_v_body, sce_codec_zenoh_msg_put.CodecZenohMsgPut):
+        sce_codec_zenoh_msg_put.encode_source(_v_body, w)
+    elif isinstance(_v_body, sce_codec_zenoh_msg_del.CodecZenohMsgDel):
+        sce_codec_zenoh_msg_del.encode_source(_v_body, w)
+    elif isinstance(_v_body, sce_codec_zenoh_query.CodecZenohQuery):
+        sce_codec_zenoh_query.encode_source(_v_body, w)
+    else:
+        sce_codec_zenoh_query.encode_source(_v_body.body, w)
 
 
 @dataclass
 class CodecZenohRequest:
-    header: int = 0x1c
-    rid: int = 0
-    keyexpr: CodecZenohWireexpr = b""
-    extensions: Optional[List[CodecZenohExtEntry]] = b""
-    body: CodecZenohRequestVariant = field(default_factory=CodecZenohRequestVariant)
+    header: CodecZenohRequestHeaderInt = 0x1c
+    rid: CodecZenohRequestRidInt = 0
+    keyexpr: CodecZenohWireexpr = field(default_factory=CodecZenohWireexpr)
+    extensions: Optional[CodecZenohRequestExtensionsList] = None
+    body: CodecZenohRequestVariant = field(default_factory=sce_codec_zenoh_msg_put.CodecZenohMsgPut)
+
+    def __setattr__(self, name: str, value: object) -> None:
+        # Each integer, byte string and text is held to its bound
+        # wherever it is set, where the value is made and after
+        # (docs/adr/0081 §2), whatever it was handed.
+        if name == "header":
+            value = CodecZenohRequestHeaderInt(value)
+        elif name == "rid":
+            value = CodecZenohRequestRidInt(value)
+        elif name == "extensions":
+            value = None if value is None else CodecZenohRequestExtensionsList(value)
+        object.__setattr__(self, name, value)
 
     @classmethod
     def decode(cls, cursor: SceCursor) -> CodecZenohRequest:
@@ -86,20 +192,18 @@ class CodecZenohRequest:
         # from the cursor. The default arm (when declared) carries the
         # runtime tag value so encode can round-trip it back onto the
         # wire.
-        body = CodecZenohRequestVariant()
         if ((_peek >> 0) & 0x1F) == 1:
-            body.kind = "CodecZenohMsgPut"
-            body.codec_zenoh_msg_put = CodecZenohMsgPut.decode(cursor)
+            _arm = CodecZenohMsgPut.decode(cursor)
+            body = _arm
         elif ((_peek >> 0) & 0x1F) == 2:
-            body.kind = "CodecZenohMsgDel"
-            body.codec_zenoh_msg_del = CodecZenohMsgDel.decode(cursor)
+            _arm = CodecZenohMsgDel.decode(cursor)
+            body = _arm
         elif ((_peek >> 0) & 0x1F) == 3:
-            body.kind = "CodecZenohQuery"
-            body.codec_zenoh_query = CodecZenohQuery.decode(cursor)
+            _arm = CodecZenohQuery.decode(cursor)
+            body = _arm
         else:
-            body.kind = "Default"
-            body.default_tag = ((_peek >> 0) & 0x1F)
-            body.default_body = CodecZenohQuery.decode(cursor)
+            _arm = CodecZenohQuery.decode(cursor)
+            body = CodecZenohRequestDefault(tag=((_peek >> 0) & 0x1F), body=_arm)
         return cls(
             header=f_header,
             rid=f_rid,
@@ -155,29 +259,8 @@ class CodecZenohRequest:
         caller-owned ``w`` sink. Returns ``None`` on success; raises
         :class:`BufferOverflow` from a bounded sink when the destination
         has insufficient remaining capacity; growable sinks (e.g.
-        :class:`BytearraySink`) are effectively infallible. Raises,
-        before the first byte, the error a decode of the frame would give
-        for a value it cannot carry: a byte string, text or list outside its
-        bound, or a gated field its gate disagrees with."""
-        if self.extensions is not None and (len(self.extensions) < 1):
-            raise TooManyElements()
-        # RFC §synth-5-B peek-byte / streaming-prefix:
-        # streaming prefix encode.
-        w.write_u8(self.header & 0xFF)
-        w.write_vle_u64(self.rid)
-        self.keyexpr.encode(w, ((self.header >> 5) & 0x1))
-        if self.extensions is not None:
-            for _e in self.extensions:
-                _e.encode(w)
-        # Append the active arm body's encoded bytes via the same sink.
-        if self.body.kind == "CodecZenohMsgPut":
-            self.body.codec_zenoh_msg_put.encode(w)
-        elif self.body.kind == "CodecZenohMsgDel":
-            self.body.codec_zenoh_msg_del.encode(w)
-        elif self.body.kind == "CodecZenohQuery":
-            self.body.codec_zenoh_query.encode(w)
-        elif self.body.kind == "Default":
-            self.body.default_body.encode(w)
+        :class:`BytearraySink`) are effectively infallible."""
+        encode_source(self, w)
 
     def encode_to_bytes(self) -> bytes:
         """Heap-backed convenience facade. Runs :meth:`encode` over a

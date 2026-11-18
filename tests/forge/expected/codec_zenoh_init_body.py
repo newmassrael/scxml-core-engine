@@ -6,21 +6,162 @@
 
 from __future__ import annotations
 
-from sce_forge_runtime.codec import BytearraySink, CodecError, LengthOutOfRange, NeedMoreBytes, PresentIfMismatch, SceCursor, SceSink
+from sce_forge_runtime.codec import BytearraySink, CodecError, LengthOutOfRange, NeedMoreBytes, SceCursor, SceSink
+from sce_forge_runtime.bounded import BoundedBytes, BoundedInt
 
 from dataclasses import dataclass
-from typing import Optional
+from typing import Optional, Protocol
+
+
+class CodecZenohInitBodyVersionInt(BoundedInt):
+    """The ``version`` element of :class:`CodecZenohInitBody`, an unsigned integer of
+    8 bits, held to them where a value of it is made (docs/adr/0081 §2)."""
+
+    BITS = 8
+    SIGNED = False
+
+
+class CodecZenohInitBodyCbyteInt(BoundedInt):
+    """The ``cbyte`` element of :class:`CodecZenohInitBody`, an unsigned integer of
+    8 bits, held to them where a value of it is made (docs/adr/0081 §2)."""
+
+    BITS = 8
+    SIGNED = False
+
+
+class CodecZenohInitBodyZidBytes(BoundedBytes):
+    """The ``zid`` element of :class:`CodecZenohInitBody`, 1 to 16 bytes,
+    held to that bound where a value of it is made (docs/adr/0077 §3)."""
+
+    LEAST = 1
+    MOST = 16
+
+
+class CodecZenohInitBodyCookieBytes(BoundedBytes):
+    """The ``cookie`` element of :class:`CodecZenohInitBody`, 0 to 65535 bytes,
+    held to that bound where a value of it is made (docs/adr/0077 §3)."""
+
+    LEAST = 0
+    MOST = 65535
+
+
+class CodecZenohInitBodySnResInt(BoundedInt):
+    """The ``sn_res`` element of :class:`CodecZenohInitBody`, an unsigned integer of
+    8 bits, held to them where a value of it is made (docs/adr/0081 §2)."""
+
+    BITS = 8
+    SIGNED = False
+
+
+class CodecZenohInitBodyBatchSizeInt(BoundedInt):
+    """The ``batch_size`` element of :class:`CodecZenohInitBody`, an unsigned integer of
+    16 bits, held to them where a value of it is made (docs/adr/0081 §2)."""
+
+    BITS = 16
+    SIGNED = False
+
+
+@dataclass
+class CodecZenohInitBodyS:
+    """The ``s`` group of :class:`CodecZenohInitBody` where ``S`` holds
+    (docs/adr/0065 §6 R4): the members present then."""
+
+    sn_res: CodecZenohInitBodySnResInt = 0
+    batch_size: CodecZenohInitBodyBatchSizeInt = 0
+
+    def __setattr__(self, name: str, value: object) -> None:
+        # Each integer, byte string and text is held to its bound
+        # wherever it is set, where the value is made and after
+        # (docs/adr/0081 §2), whatever it was handed.
+        if name == "sn_res":
+            value = CodecZenohInitBodySnResInt(value)
+        elif name == "batch_size":
+            value = CodecZenohInitBodyBatchSizeInt(value)
+        object.__setattr__(self, name, value)
+
+
+class CodecZenohInitBodySource(Protocol):
+    """The elements a value of :class:`CodecZenohInitBody` presents, which its encode
+    reads (docs/adr/0081 §2): any object that presents them is a source of it.
+    The encode derives every other element of the frame."""
+
+    @property
+    def version(self) -> CodecZenohInitBodyVersionInt: ...
+
+    @property
+    def cbyte(self) -> CodecZenohInitBodyCbyteInt: ...
+
+    @property
+    def zid(self) -> CodecZenohInitBodyZidBytes: ...
+
+    @property
+    def cookie(self) -> Optional[CodecZenohInitBodyCookieBytes]: ...
+
+    @property
+    def s(self) -> Optional[CodecZenohInitBodyS]: ...
+
+
+def encode_source(src: CodecZenohInitBodySource, w: SceSink) -> None:
+    """Write any source of :class:`CodecZenohInitBody` into ``w``, each element read
+    off ``src`` and written where the codec's encode plan lays it out
+    (docs/adr/0081). It derives ``cookie_len`` from what each measures, and never reads it off
+    the source. It refuses no value; a bounded sink raises
+    :class:`BufferOverflow` where it has no room left."""
+    _g_s = src.s
+    _e_sn_res = None if _g_s is None else _g_s.sn_res
+    _e_batch_size = None if _g_s is None else _g_s.batch_size
+    a = (1 if src.cookie is not None else 0)
+    _d_cookie_len = (len(src.cookie)) if src.cookie is not None else 0
+    _c_cbyte = src.cbyte
+    _c_cbyte = (_c_cbyte & ~0xF0) | ((len(src.zid) - 1) << 4)
+    w.write_u8(src.version & 0xFF)
+    w.write_u8(_c_cbyte & 0xFF)
+    w.write_bytes(src.zid)
+    if _e_sn_res is not None:
+        w.write_u8(_e_sn_res & 0xFF)
+    if _e_batch_size is not None:
+        w.write_u8(_e_batch_size & 0xFF)
+        w.write_u8((_e_batch_size >> 8) & 0xFF)
+    if a != 0:
+        w.write_vle_u64(_d_cookie_len)
+    if src.cookie is not None:
+        w.write_bytes(src.cookie)
+
+
+def input_s(src: CodecZenohInitBodySource) -> int:
+    """The flag input ``S`` a source of :class:`CodecZenohInitBody` says, which
+    its encode is not handed (docs/adr/0065 §6 R4a)."""
+    return (1 if isinstance(src.s, CodecZenohInitBodyS) else 0)
+
+
+
+def input_a(src: CodecZenohInitBodySource) -> int:
+    """The flag input ``A`` a source of :class:`CodecZenohInitBody` says, which
+    its encode is not handed (docs/adr/0065 §6 R4a)."""
+    return (1 if src.cookie is not None else 0)
 
 
 @dataclass
 class CodecZenohInitBody:
-    version: int = 0
-    cbyte: int = 0
-    zid: bytes = b""
-    sn_res: Optional[int] = None
-    batch_size: Optional[int] = None
-    cookie_len: Optional[int] = None
-    cookie: Optional[bytes] = None
+    version: CodecZenohInitBodyVersionInt = 0
+    cbyte: CodecZenohInitBodyCbyteInt = 0
+    zid: CodecZenohInitBodyZidBytes = CodecZenohInitBodyZidBytes(b"\x00" * 1)
+    cookie: Optional[CodecZenohInitBodyCookieBytes] = None
+    s: Optional[CodecZenohInitBodyS] = None
+
+    def __setattr__(self, name: str, value: object) -> None:
+        # Each integer, byte string and text is held to its bound
+        # wherever it is set, where the value is made and after
+        # (docs/adr/0081 §2), whatever it was handed.
+        if name == "version":
+            value = CodecZenohInitBodyVersionInt(value)
+        elif name == "cbyte":
+            value = CodecZenohInitBodyCbyteInt(value)
+        elif name == "zid":
+            value = CodecZenohInitBodyZidBytes(value)
+        elif name == "cookie":
+            value = None if value is None else CodecZenohInitBodyCookieBytes(value)
+        object.__setattr__(self, name, value)
 
     @classmethod
     def decode(cls, cursor: SceCursor, s: int, a: int) -> CodecZenohInitBody:
@@ -87,10 +228,8 @@ class CodecZenohInitBody:
             version=f_version,
             cbyte=f_cbyte,
             zid=f_zid,
-            sn_res=f_sn_res,
-            batch_size=f_batch_size,
-            cookie_len=f_cookie_len,
             cookie=f_cookie,
+            s=CodecZenohInitBodyS(sn_res=f_sn_res, batch_size=f_batch_size) if (s != 0) else None,
         )
 
     # RFC §synth-5-B flags primitive: per-bit-range accessors over
@@ -116,60 +255,19 @@ class CodecZenohInitBody:
         _val = (v & 0x0F) << 4
         self.cbyte = ((self.cbyte & (0xFF ^ _shifted_mask)) | _val) & 0xFF
 
-    def encode(self, w: SceSink, s: int, a: int) -> None:
+    def encode(self, w: SceSink) -> None:
         """RFC §synth-5-B encode-side primary: write ``self`` into the
         caller-owned ``w`` sink. Returns ``None`` on success; raises
         :class:`BufferOverflow` from a bounded sink when the destination
         has insufficient remaining capacity; growable sinks (e.g.
-        :class:`BytearraySink`) are effectively infallible. Raises,
-        before the first byte, the error a decode of the frame would give
-        for a value it cannot carry: a byte string, text or list outside its
-        bound, or a gated field its gate disagrees with."""
-        if (s & 0x01) != 0:
-            if self.sn_res is None:
-                raise PresentIfMismatch("sn_res")
-        elif self.sn_res is not None:
-            raise PresentIfMismatch("sn_res")
-        if (s & 0x01) != 0:
-            if self.batch_size is None:
-                raise PresentIfMismatch("batch_size")
-        elif self.batch_size is not None:
-            raise PresentIfMismatch("batch_size")
-        if (a & 0x01) != 0:
-            if self.cookie is None:
-                raise PresentIfMismatch("cookie")
-        elif self.cookie is not None:
-            raise PresentIfMismatch("cookie")
-        if len(self.zid) < 1 or len(self.zid) > 16:
-            raise LengthOutOfRange()
-        if self.cookie is not None and (len(self.cookie) > 65535):
-            raise LengthOutOfRange()
-        # Streaming cursor encode (SSOT selection: `needs_streaming`).
-        # Mirrors the streaming decode: every field appends its own bytes
-        # in declaration order through the per-field encode blocks, so a
-        # gated field skips its append when absent, and a fixed field after
-        # a variable-length payload lands after the payload (the positional
-        # path appends variable fields last, placing it ahead on the wire).
-        # Per-field `is_repeat` / `is_tlv_chain` / `is_embed` route to their
-        # dedicated helpers; everything else uses `present_if_encode_block`.
-        w.write_u8(self.version & 0xFF)
-        w.write_u8(self.cbyte & 0xFF)
-        w.write_bytes(self.zid)
-        if self.sn_res is not None:
-            w.write_u8(self.sn_res & 0xFF)
-        if self.batch_size is not None:
-            w.write_u8(self.batch_size & 0xFF)
-            w.write_u8((self.batch_size >> 8) & 0xFF)
-        if self.cookie_len is not None:
-            w.write_vle_u64(int(self.cookie_len))
-        if self.cookie is not None:
-            w.write_bytes(self.cookie)
+        :class:`BytearraySink`) are effectively infallible."""
+        encode_source(self, w)
 
-    def encode_to_bytes(self, s: int, a: int) -> bytes:
+    def encode_to_bytes(self) -> bytes:
         """Heap-backed convenience facade. Runs :meth:`encode` over a
         :class:`BytearraySink` and returns the freshly-encoded bytes.
         Callers targeting zero-alloc hot paths should call :meth:`encode`
         directly against a caller-owned sink."""
         _dst = bytearray()
-        self.encode(BytearraySink(_dst), s, a)
+        self.encode(BytearraySink(_dst))
         return bytes(_dst)

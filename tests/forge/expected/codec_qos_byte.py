@@ -7,9 +7,18 @@
 from __future__ import annotations
 
 from sce_forge_runtime.codec import BytearraySink, CodecError, NeedMoreBytes, SceCursor, SceSink
+from sce_forge_runtime.bounded import BoundedInt
 
 from dataclasses import dataclass
 from typing import Optional, Protocol
+
+
+class CodecQosByteQosInt(BoundedInt):
+    """The ``qos`` element of :class:`CodecQosByte`, an unsigned integer of
+    8 bits, held to them where a value of it is made (docs/adr/0081 §2)."""
+
+    BITS = 8
+    SIGNED = False
 
 
 class CodecQosByteSource(Protocol):
@@ -18,20 +27,36 @@ class CodecQosByteSource(Protocol):
     The encode derives every other element of the frame."""
 
     @property
-    def qos(self) -> int: ...
+    def qos(self) -> CodecQosByteQosInt: ...
 
 
-def encode_source(src: CodecQosByteSource, w: SceSink) -> None:
+def encode_source(src: CodecQosByteSource, w: SceSink, *, override_qos_reliable: Optional[int] = None, override_qos_express: Optional[int] = None, override_qos_reserved: Optional[int] = None) -> None:
     """Write any source of :class:`CodecQosByte` into ``w``, each element read
     off ``src`` and written where the codec's encode plan lays it out
-    (docs/adr/0081). It refuses no value; a bounded sink raises
+    (docs/adr/0081). A chain that holds it
+    sets the flag its entries end on by its keyword, in place of the value's. It refuses no value; a bounded sink raises
     :class:`BufferOverflow` where it has no room left."""
-    w.write_u8(src.qos & 0xFF)
+    _c_qos = src.qos
+    if override_qos_reliable is not None:
+        _c_qos = (_c_qos & ~0x8) | ((override_qos_reliable & 0x1) << 3)
+    if override_qos_express is not None:
+        _c_qos = (_c_qos & ~0x40) | ((override_qos_express & 0x1) << 6)
+    if override_qos_reserved is not None:
+        _c_qos = (_c_qos & ~0x80) | ((override_qos_reserved & 0x1) << 7)
+    w.write_u8(_c_qos & 0xFF)
 
 
 @dataclass
 class CodecQosByte:
-    qos: int = 0
+    qos: CodecQosByteQosInt = 0
+
+    def __setattr__(self, name: str, value: object) -> None:
+        # Each integer, byte string and text is held to its bound
+        # wherever it is set, where the value is made and after
+        # (docs/adr/0081 §2), whatever it was handed.
+        if name == "qos":
+            value = CodecQosByteQosInt(value)
+        object.__setattr__(self, name, value)
 
     @classmethod
     def decode(cls, cursor: SceCursor) -> CodecQosByte:

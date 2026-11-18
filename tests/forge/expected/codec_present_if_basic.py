@@ -7,9 +7,26 @@
 from __future__ import annotations
 
 from sce_forge_runtime.codec import BytearraySink, CodecError, NeedMoreBytes, SceCursor, SceSink
+from sce_forge_runtime.bounded import BoundedInt
 
 from dataclasses import dataclass
 from typing import Optional, Protocol
+
+
+class CodecPresentIfBasicFlagsInt(BoundedInt):
+    """The ``flags`` element of :class:`CodecPresentIfBasic`, an unsigned integer of
+    8 bits, held to them where a value of it is made (docs/adr/0081 §2)."""
+
+    BITS = 8
+    SIGNED = False
+
+
+class CodecPresentIfBasicSeqInt(BoundedInt):
+    """The ``seq`` element of :class:`CodecPresentIfBasic`, an unsigned integer of
+    16 bits, held to them where a value of it is made (docs/adr/0081 §2)."""
+
+    BITS = 16
+    SIGNED = False
 
 
 class CodecPresentIfBasicSource(Protocol):
@@ -18,10 +35,10 @@ class CodecPresentIfBasicSource(Protocol):
     The encode derives every other element of the frame."""
 
     @property
-    def flags(self) -> int: ...
+    def flags(self) -> CodecPresentIfBasicFlagsInt: ...
 
     @property
-    def seq(self) -> Optional[int]: ...
+    def seq(self) -> Optional[CodecPresentIfBasicSeqInt]: ...
 
 
 def encode_source(src: CodecPresentIfBasicSource, w: SceSink) -> None:
@@ -39,8 +56,18 @@ def encode_source(src: CodecPresentIfBasicSource, w: SceSink) -> None:
 
 @dataclass
 class CodecPresentIfBasic:
-    flags: int = 0
-    seq: Optional[int] = None
+    flags: CodecPresentIfBasicFlagsInt = 0
+    seq: Optional[CodecPresentIfBasicSeqInt] = None
+
+    def __setattr__(self, name: str, value: object) -> None:
+        # Each integer, byte string and text is held to its bound
+        # wherever it is set, where the value is made and after
+        # (docs/adr/0081 §2), whatever it was handed.
+        if name == "flags":
+            value = CodecPresentIfBasicFlagsInt(value)
+        elif name == "seq":
+            value = None if value is None else CodecPresentIfBasicSeqInt(value)
+        object.__setattr__(self, name, value)
 
     @classmethod
     def decode(cls, cursor: SceCursor) -> CodecPresentIfBasic:

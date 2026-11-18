@@ -7,38 +7,80 @@
 from __future__ import annotations
 
 from sce_forge_runtime.codec import BytearraySink, CodecError, NeedMoreBytes, SceCursor, SceSink
+from sce_forge_runtime.bounded import UnknownTag
 from .codec_variant_session_open import CodecVariantSessionOpen
 from .codec_variant_session_close import CodecVariantSessionClose
+from . import codec_variant_session_close as sce_codec_variant_session_close
+from . import codec_variant_session_open as sce_codec_variant_session_open
 
 from dataclasses import dataclass, field
-from typing import Optional
+from typing import Optional, Protocol, Union
+
+
+class CodecVariantDispatchUnknownTag(UnknownTag):
+    """The tag the default arm of :class:`CodecVariantDispatch`'s variant keeps: at
+    most 255, and none an arm names (docs/adr/0065 §6 R3)."""
+
+    MOST = 255
+    KNOWN = frozenset({1, 2})
 
 
 @dataclass
-class CodecVariantDispatchVariant:
-    """RFC §synth-5-B variant primitive: discriminated-union body for
-    the codec's tag-field suffix. ``kind`` selects the active arm; the
-    matching ``Optional`` field carries the decoded body. ``default_tag``
-    preserves the runtime tag value when the default arm fires so encode
-    can round-trip it back onto the wire."""
-    # RFC variant-default-uniformity (Python): pick the declared
-    # default arm (``<sce:arm default="true"/>``) when present so a
-    # freshly-constructed envelope round-trips byte-exactly through
-    # ``encode() -> decode()``. The corresponding arm body field uses a
-    # default_factory so ``Variant()`` actually populates it (rather
-    # than leaving every arm field ``None`` while ``kind`` names one of
-    # them, which is the latent inconsistency this RFC closes).
-    kind: str = "CodecVariantSessionClose"
-    codec_variant_session_open: Optional[CodecVariantSessionOpen] = None
-    codec_variant_session_close: Optional[CodecVariantSessionClose] = field(default_factory=CodecVariantSessionClose)
-    default_body: Optional[CodecVariantSessionClose] = None
-    default_tag: int = 0
+class CodecVariantDispatchDefault:
+    """The default arm of :class:`CodecVariantDispatch`'s variant: the tag no arm
+    names, which it keeps, and its body."""
+
+    tag: CodecVariantDispatchUnknownTag = CodecVariantDispatchUnknownTag(0)
+    body: sce_codec_variant_session_close.CodecVariantSessionClose = field(default_factory=sce_codec_variant_session_close.CodecVariantSessionClose)
+
+    def __setattr__(self, name: str, value: object) -> None:
+        # The tag is held to the tags no arm names wherever it is set,
+        # where the arm is made and after (docs/adr/0065 §6 R3).
+        if name == "tag":
+            value = CodecVariantDispatchUnknownTag(value)
+        object.__setattr__(self, name, value)
+
+
+CodecVariantDispatchVariant = Union[sce_codec_variant_session_open.CodecVariantSessionOpen, sce_codec_variant_session_close.CodecVariantSessionClose, CodecVariantDispatchDefault]
+"""The arm a value of :class:`CodecVariantDispatch` holds: a value of the arm's codec,
+or the default arm."""
+
+
+ARM_CLASSES = {0x1: sce_codec_variant_session_open.CodecVariantSessionOpen, 0x2: sce_codec_variant_session_close.CodecVariantSessionClose}
+"""The class of the arm of :class:`CodecVariantDispatch`'s variant each tag names."""
+
+
+class CodecVariantDispatchSource(Protocol):
+    """The elements a value of :class:`CodecVariantDispatch` presents, which its encode
+    reads (docs/adr/0081 §2): any object that presents them is a source of it.
+    The encode derives every other element of the frame."""
+
+    @property
+    def body(self) -> CodecVariantDispatchVariant: ...
+
+
+def encode_source(src: CodecVariantDispatchSource, w: SceSink) -> None:
+    """Write any source of :class:`CodecVariantDispatch` into ``w``, each element read
+    off ``src`` and written where the codec's encode plan lays it out
+    (docs/adr/0081). It refuses no value; a bounded sink raises
+    :class:`BufferOverflow` where it has no room left."""
+    _v_body = src.body
+    if not isinstance(_v_body, (sce_codec_variant_session_open.CodecVariantSessionOpen, sce_codec_variant_session_close.CodecVariantSessionClose, CodecVariantDispatchDefault,)):
+        raise TypeError(f"{type(_v_body).__name__} is no arm of CodecVariantDispatch's variant")
+    _t_body = (1 if isinstance(_v_body, sce_codec_variant_session_open.CodecVariantSessionOpen) else 2 if isinstance(_v_body, sce_codec_variant_session_close.CodecVariantSessionClose) else _v_body.tag)
+    _d_msg_id = _t_body
+    w.write_u8(_d_msg_id & 0xFF)
+    if isinstance(_v_body, sce_codec_variant_session_open.CodecVariantSessionOpen):
+        sce_codec_variant_session_open.encode_source(_v_body, w)
+    elif isinstance(_v_body, sce_codec_variant_session_close.CodecVariantSessionClose):
+        sce_codec_variant_session_close.encode_source(_v_body, w)
+    else:
+        sce_codec_variant_session_close.encode_source(_v_body.body, w)
 
 
 @dataclass
 class CodecVariantDispatch:
-    msg_id: int = 0
-    body: CodecVariantDispatchVariant = field(default_factory=CodecVariantDispatchVariant)
+    body: CodecVariantDispatchVariant = field(default_factory=sce_codec_variant_session_close.CodecVariantSessionClose)
 
     @classmethod
     def decode(cls, cursor: SceCursor) -> CodecVariantDispatch:
@@ -59,19 +101,16 @@ class CodecVariantDispatch:
         # from the cursor. The default arm (when declared) carries the
         # runtime tag value so encode can round-trip it back onto the
         # wire.
-        body = CodecVariantDispatchVariant()
         if f_msg_id == 1:
-            body.kind = "CodecVariantSessionOpen"
-            body.codec_variant_session_open = CodecVariantSessionOpen.decode(cursor)
+            _arm = CodecVariantSessionOpen.decode(cursor)
+            body = _arm
         elif f_msg_id == 2:
-            body.kind = "CodecVariantSessionClose"
-            body.codec_variant_session_close = CodecVariantSessionClose.decode(cursor)
+            _arm = CodecVariantSessionClose.decode(cursor)
+            body = _arm
         else:
-            body.kind = "Default"
-            body.default_tag = f_msg_id
-            body.default_body = CodecVariantSessionClose.decode(cursor)
+            _arm = CodecVariantSessionClose.decode(cursor)
+            body = CodecVariantDispatchDefault(tag=f_msg_id, body=_arm)
         return cls(
-            msg_id=f_msg_id,
             body=body,
         )
 
@@ -81,15 +120,7 @@ class CodecVariantDispatch:
         :class:`BufferOverflow` from a bounded sink when the destination
         has insufficient remaining capacity; growable sinks (e.g.
         :class:`BytearraySink`) are effectively infallible."""
-        # Encode fixed prefix (tag field bytes are part of the prefix).
-        w.write_u8(self.msg_id & 0xFF)
-        # Append the active arm body's encoded bytes via the same sink.
-        if self.body.kind == "CodecVariantSessionOpen":
-            self.body.codec_variant_session_open.encode(w)
-        elif self.body.kind == "CodecVariantSessionClose":
-            self.body.codec_variant_session_close.encode(w)
-        elif self.body.kind == "Default":
-            self.body.default_body.encode(w)
+        encode_source(self, w)
 
     def encode_to_bytes(self) -> bytes:
         """Heap-backed convenience facade. Runs :meth:`encode` over a

@@ -7,11 +7,20 @@
 from __future__ import annotations
 
 from sce_forge_runtime.codec import BytearraySink, CodecError, NeedMoreBytes, SceCursor, SceSink
+from sce_forge_runtime.bounded import BoundedInt
 from .codec_zenoh_locator import CodecZenohLocator
 from . import codec_zenoh_locator as sce_codec_zenoh_locator
 
 from dataclasses import dataclass, field
 from typing import Optional, Protocol
+
+
+class CodecEmbedBasicTagInt(BoundedInt):
+    """The ``tag`` element of :class:`CodecEmbedBasic`, an unsigned integer of
+    8 bits, held to them where a value of it is made (docs/adr/0081 §2)."""
+
+    BITS = 8
+    SIGNED = False
 
 
 class CodecEmbedBasicSource(Protocol):
@@ -20,7 +29,7 @@ class CodecEmbedBasicSource(Protocol):
     The encode derives every other element of the frame."""
 
     @property
-    def tag(self) -> int: ...
+    def tag(self) -> CodecEmbedBasicTagInt: ...
 
     @property
     def locator(self) -> sce_codec_zenoh_locator.CodecZenohLocatorSource: ...
@@ -37,8 +46,16 @@ def encode_source(src: CodecEmbedBasicSource, w: SceSink) -> None:
 
 @dataclass
 class CodecEmbedBasic:
-    tag: int = 0
+    tag: CodecEmbedBasicTagInt = 0
     locator: CodecZenohLocator = field(default_factory=CodecZenohLocator)
+
+    def __setattr__(self, name: str, value: object) -> None:
+        # Each integer, byte string and text is held to its bound
+        # wherever it is set, where the value is made and after
+        # (docs/adr/0081 §2), whatever it was handed.
+        if name == "tag":
+            value = CodecEmbedBasicTagInt(value)
+        object.__setattr__(self, name, value)
 
     @classmethod
     def decode(cls, cursor: SceCursor) -> CodecEmbedBasic:

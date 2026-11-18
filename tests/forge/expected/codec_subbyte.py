@@ -7,9 +7,34 @@
 from __future__ import annotations
 
 from sce_forge_runtime.codec import BytearraySink, CodecError, NeedMoreBytes, SceCursor, SceSink
+from sce_forge_runtime.bounded import BoundedInt
 
 from dataclasses import dataclass
 from typing import Optional, Protocol
+
+
+class CodecSubbytePriorityInt(BoundedInt):
+    """The ``priority`` element of :class:`CodecSubbyte`, an unsigned integer of
+    3 bits, held to them where a value of it is made (docs/adr/0081 §2)."""
+
+    BITS = 3
+    SIGNED = False
+
+
+class CodecSubbyteChannelInt(BoundedInt):
+    """The ``channel`` element of :class:`CodecSubbyte`, an unsigned integer of
+    3 bits, held to them where a value of it is made (docs/adr/0081 §2)."""
+
+    BITS = 3
+    SIGNED = False
+
+
+class CodecSubbyteDirectionInt(BoundedInt):
+    """The ``direction`` element of :class:`CodecSubbyte`, an unsigned integer of
+    2 bits, held to them where a value of it is made (docs/adr/0081 §2)."""
+
+    BITS = 2
+    SIGNED = False
 
 
 class CodecSubbyteSource(Protocol):
@@ -18,13 +43,13 @@ class CodecSubbyteSource(Protocol):
     The encode derives every other element of the frame."""
 
     @property
-    def priority(self) -> int: ...
+    def priority(self) -> CodecSubbytePriorityInt: ...
 
     @property
-    def channel(self) -> int: ...
+    def channel(self) -> CodecSubbyteChannelInt: ...
 
     @property
-    def direction(self) -> int: ...
+    def direction(self) -> CodecSubbyteDirectionInt: ...
 
 
 def encode_source(src: CodecSubbyteSource, w: SceSink) -> None:
@@ -37,9 +62,21 @@ def encode_source(src: CodecSubbyteSource, w: SceSink) -> None:
 
 @dataclass
 class CodecSubbyte:
-    priority: int = 0
-    channel: int = 0
-    direction: int = 0
+    priority: CodecSubbytePriorityInt = 0
+    channel: CodecSubbyteChannelInt = 0
+    direction: CodecSubbyteDirectionInt = 0
+
+    def __setattr__(self, name: str, value: object) -> None:
+        # Each integer, byte string and text is held to its bound
+        # wherever it is set, where the value is made and after
+        # (docs/adr/0081 §2), whatever it was handed.
+        if name == "priority":
+            value = CodecSubbytePriorityInt(value)
+        elif name == "channel":
+            value = CodecSubbyteChannelInt(value)
+        elif name == "direction":
+            value = CodecSubbyteDirectionInt(value)
+        object.__setattr__(self, name, value)
 
     @classmethod
     def decode(cls, cursor: SceCursor) -> CodecSubbyte:

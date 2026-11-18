@@ -7,10 +7,18 @@
 from __future__ import annotations
 
 from sce_forge_runtime.codec import BytearraySink, CodecError, LengthOutOfRange, NeedMoreBytes, SceCursor, SceSink
-from sce_forge_runtime.bounded import BoundedBytes
+from sce_forge_runtime.bounded import BoundedBytes, BoundedInt
 
 from dataclasses import dataclass
 from typing import Optional, Protocol
+
+
+class CodecLengthRefMsgIdInt(BoundedInt):
+    """The ``msgId`` element of :class:`CodecLengthRef`, an unsigned integer of
+    8 bits, held to them where a value of it is made (docs/adr/0081 §2)."""
+
+    BITS = 8
+    SIGNED = False
 
 
 class CodecLengthRefPayloadBytes(BoundedBytes):
@@ -27,7 +35,7 @@ class CodecLengthRefSource(Protocol):
     The encode derives every other element of the frame."""
 
     @property
-    def msg_id(self) -> int: ...
+    def msg_id(self) -> CodecLengthRefMsgIdInt: ...
 
     @property
     def payload(self) -> CodecLengthRefPayloadBytes: ...
@@ -47,14 +55,16 @@ def encode_source(src: CodecLengthRefSource, w: SceSink) -> None:
 
 @dataclass
 class CodecLengthRef:
-    msg_id: int = 0
+    msg_id: CodecLengthRefMsgIdInt = 0
     payload: CodecLengthRefPayloadBytes = CodecLengthRefPayloadBytes()
 
     def __setattr__(self, name: str, value: object) -> None:
-        # Each byte string and text is held to its bound wherever it is
-        # set, where the value is made and after (docs/adr/0081 §2),
-        # whatever it was handed.
-        if name == "payload":
+        # Each integer, byte string and text is held to its bound
+        # wherever it is set, where the value is made and after
+        # (docs/adr/0081 §2), whatever it was handed.
+        if name == "msg_id":
+            value = CodecLengthRefMsgIdInt(value)
+        elif name == "payload":
             value = CodecLengthRefPayloadBytes(value)
         object.__setattr__(self, name, value)
 

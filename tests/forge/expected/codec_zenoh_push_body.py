@@ -7,38 +7,101 @@
 from __future__ import annotations
 
 from sce_forge_runtime.codec import BytearraySink, CodecError, NeedMoreBytes, SceCursor, SceSink
+from sce_forge_runtime.bounded import BoundedInt, UnknownTag
 from .codec_zenoh_put import CodecZenohPut
 from .codec_zenoh_del import CodecZenohDel
+from . import codec_zenoh_del as sce_codec_zenoh_del
+from . import codec_zenoh_put as sce_codec_zenoh_put
 
 from dataclasses import dataclass, field
-from typing import Optional
+from typing import Optional, Protocol, Union
+
+
+class CodecZenohPushBodyHeaderInt(BoundedInt):
+    """The ``header`` element of :class:`CodecZenohPushBody`, an unsigned integer of
+    8 bits, held to them where a value of it is made (docs/adr/0081 §2)."""
+
+    BITS = 8
+    SIGNED = False
+
+
+class CodecZenohPushBodyUnknownTag(UnknownTag):
+    """The tag the default arm of :class:`CodecZenohPushBody`'s variant keeps: at
+    most 31, and none an arm names (docs/adr/0065 §6 R3)."""
+
+    MOST = 31
+    KNOWN = frozenset({1, 2})
 
 
 @dataclass
-class CodecZenohPushBodyVariant:
-    """RFC §synth-5-B variant primitive: discriminated-union body for
-    the codec's tag-field suffix. ``kind`` selects the active arm; the
-    matching ``Optional`` field carries the decoded body. ``default_tag``
-    preserves the runtime tag value when the default arm fires so encode
-    can round-trip it back onto the wire."""
-    # RFC variant-default-uniformity (Python): pick the declared
-    # default arm (``<sce:arm default="true"/>``) when present so a
-    # freshly-constructed envelope round-trips byte-exactly through
-    # ``encode() -> decode()``. The corresponding arm body field uses a
-    # default_factory so ``Variant()`` actually populates it (rather
-    # than leaving every arm field ``None`` while ``kind`` names one of
-    # them, which is the latent inconsistency this RFC closes).
-    kind: str = "CodecZenohPut"
-    codec_zenoh_put: Optional[CodecZenohPut] = field(default_factory=CodecZenohPut)
-    codec_zenoh_del: Optional[CodecZenohDel] = None
-    default_body: Optional[CodecZenohPut] = None
-    default_tag: int = 0
+class CodecZenohPushBodyDefault:
+    """The default arm of :class:`CodecZenohPushBody`'s variant: the tag no arm
+    names, which it keeps, and its body."""
+
+    tag: CodecZenohPushBodyUnknownTag = CodecZenohPushBodyUnknownTag(0)
+    body: sce_codec_zenoh_put.CodecZenohPut = field(default_factory=sce_codec_zenoh_put.CodecZenohPut)
+
+    def __setattr__(self, name: str, value: object) -> None:
+        # The tag is held to the tags no arm names wherever it is set,
+        # where the arm is made and after (docs/adr/0065 §6 R3).
+        if name == "tag":
+            value = CodecZenohPushBodyUnknownTag(value)
+        object.__setattr__(self, name, value)
+
+
+CodecZenohPushBodyVariant = Union[sce_codec_zenoh_put.CodecZenohPut, sce_codec_zenoh_del.CodecZenohDel, CodecZenohPushBodyDefault]
+"""The arm a value of :class:`CodecZenohPushBody` holds: a value of the arm's codec,
+or the default arm."""
+
+
+ARM_CLASSES = {0x1: sce_codec_zenoh_put.CodecZenohPut, 0x2: sce_codec_zenoh_del.CodecZenohDel}
+"""The class of the arm of :class:`CodecZenohPushBody`'s variant each tag names."""
+
+
+class CodecZenohPushBodySource(Protocol):
+    """The elements a value of :class:`CodecZenohPushBody` presents, which its encode
+    reads (docs/adr/0081 §2): any object that presents them is a source of it.
+    The encode derives every other element of the frame."""
+
+    @property
+    def header(self) -> CodecZenohPushBodyHeaderInt: ...
+
+    @property
+    def body(self) -> CodecZenohPushBodyVariant: ...
+
+
+def encode_source(src: CodecZenohPushBodySource, w: SceSink) -> None:
+    """Write any source of :class:`CodecZenohPushBody` into ``w``, each element read
+    off ``src`` and written where the codec's encode plan lays it out
+    (docs/adr/0081). It refuses no value; a bounded sink raises
+    :class:`BufferOverflow` where it has no room left."""
+    _v_body = src.body
+    if not isinstance(_v_body, (sce_codec_zenoh_put.CodecZenohPut, sce_codec_zenoh_del.CodecZenohDel, CodecZenohPushBodyDefault,)):
+        raise TypeError(f"{type(_v_body).__name__} is no arm of CodecZenohPushBody's variant")
+    _t_body = (1 if isinstance(_v_body, sce_codec_zenoh_put.CodecZenohPut) else 2 if isinstance(_v_body, sce_codec_zenoh_del.CodecZenohDel) else _v_body.tag)
+    _c_header = src.header
+    _c_header = (_c_header & ~0x1F) | ((_t_body & 0x1F) << 0)
+    w.write_u8(_c_header & 0xFF)
+    if isinstance(_v_body, sce_codec_zenoh_put.CodecZenohPut):
+        sce_codec_zenoh_put.encode_source(_v_body, w)
+    elif isinstance(_v_body, sce_codec_zenoh_del.CodecZenohDel):
+        sce_codec_zenoh_del.encode_source(_v_body, w)
+    else:
+        sce_codec_zenoh_put.encode_source(_v_body.body, w)
 
 
 @dataclass
 class CodecZenohPushBody:
-    header: int = 0
-    body: CodecZenohPushBodyVariant = field(default_factory=CodecZenohPushBodyVariant)
+    header: CodecZenohPushBodyHeaderInt = 0
+    body: CodecZenohPushBodyVariant = field(default_factory=sce_codec_zenoh_put.CodecZenohPut)
+
+    def __setattr__(self, name: str, value: object) -> None:
+        # Each integer, byte string and text is held to its bound
+        # wherever it is set, where the value is made and after
+        # (docs/adr/0081 §2), whatever it was handed.
+        if name == "header":
+            value = CodecZenohPushBodyHeaderInt(value)
+        object.__setattr__(self, name, value)
 
     @classmethod
     def decode(cls, cursor: SceCursor) -> CodecZenohPushBody:
@@ -59,17 +122,15 @@ class CodecZenohPushBody:
         # from the cursor. The default arm (when declared) carries the
         # runtime tag value so encode can round-trip it back onto the
         # wire.
-        body = CodecZenohPushBodyVariant()
         if ((f_header >> 0) & 0x1F) == 1:
-            body.kind = "CodecZenohPut"
-            body.codec_zenoh_put = CodecZenohPut.decode(cursor)
+            _arm = CodecZenohPut.decode(cursor)
+            body = _arm
         elif ((f_header >> 0) & 0x1F) == 2:
-            body.kind = "CodecZenohDel"
-            body.codec_zenoh_del = CodecZenohDel.decode(cursor)
+            _arm = CodecZenohDel.decode(cursor)
+            body = _arm
         else:
-            body.kind = "Default"
-            body.default_tag = ((f_header >> 0) & 0x1F)
-            body.default_body = CodecZenohPut.decode(cursor)
+            _arm = CodecZenohPut.decode(cursor)
+            body = CodecZenohPushBodyDefault(tag=((f_header >> 0) & 0x1F), body=_arm)
         return cls(
             header=f_header,
             body=body,
@@ -104,15 +165,7 @@ class CodecZenohPushBody:
         :class:`BufferOverflow` from a bounded sink when the destination
         has insufficient remaining capacity; growable sinks (e.g.
         :class:`BytearraySink`) are effectively infallible."""
-        # Encode fixed prefix (tag field bytes are part of the prefix).
-        w.write_u8(self.header & 0xFF)
-        # Append the active arm body's encoded bytes via the same sink.
-        if self.body.kind == "CodecZenohPut":
-            self.body.codec_zenoh_put.encode(w)
-        elif self.body.kind == "CodecZenohDel":
-            self.body.codec_zenoh_del.encode(w)
-        elif self.body.kind == "Default":
-            self.body.default_body.encode(w)
+        encode_source(self, w)
 
     def encode_to_bytes(self) -> bytes:
         """Heap-backed convenience facade. Runs :meth:`encode` over a

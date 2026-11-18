@@ -7,12 +7,20 @@
 from __future__ import annotations
 
 from sce_forge_runtime.codec import BytearraySink, CodecError, NeedMoreBytes, SceCursor, SceSink, TooManyElements
-from sce_forge_runtime.bounded import BoundedTuple
+from sce_forge_runtime.bounded import BoundedInt, BoundedTuple
 from .codec_repeat_elem import CodecRepeatElem
 from . import codec_repeat_elem as sce_codec_repeat_elem
 
 from dataclasses import dataclass, field
 from typing import Optional, List, Protocol
+
+
+class CodecRepeatPresentIfBasicCarrierInt(BoundedInt):
+    """The ``carrier`` element of :class:`CodecRepeatPresentIfBasic`, an unsigned integer of
+    8 bits, held to them where a value of it is made (docs/adr/0081 §2)."""
+
+    BITS = 8
+    SIGNED = False
 
 
 class CodecRepeatPresentIfBasicElemsList(BoundedTuple):
@@ -29,7 +37,7 @@ class CodecRepeatPresentIfBasicSource(Protocol):
     The encode derives every other element of the frame."""
 
     @property
-    def carrier(self) -> int: ...
+    def carrier(self) -> CodecRepeatPresentIfBasicCarrierInt: ...
 
     @property
     def elems(self) -> Optional[CodecRepeatPresentIfBasicElemsList]: ...
@@ -54,14 +62,16 @@ def encode_source(src: CodecRepeatPresentIfBasicSource, w: SceSink) -> None:
 
 @dataclass
 class CodecRepeatPresentIfBasic:
-    carrier: int = 0
+    carrier: CodecRepeatPresentIfBasicCarrierInt = 0
     elems: Optional[CodecRepeatPresentIfBasicElemsList] = None
 
     def __setattr__(self, name: str, value: object) -> None:
-        # Each byte string and text is held to its bound wherever it is
-        # set, where the value is made and after (docs/adr/0081 §2),
-        # whatever it was handed.
-        if name == "elems":
+        # Each integer, byte string and text is held to its bound
+        # wherever it is set, where the value is made and after
+        # (docs/adr/0081 §2), whatever it was handed.
+        if name == "carrier":
+            value = CodecRepeatPresentIfBasicCarrierInt(value)
+        elif name == "elems":
             value = None if value is None else CodecRepeatPresentIfBasicElemsList(value)
         object.__setattr__(self, name, value)
 

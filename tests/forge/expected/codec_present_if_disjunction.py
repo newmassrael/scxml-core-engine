@@ -6,16 +6,121 @@
 
 from __future__ import annotations
 
-from sce_forge_runtime.codec import BytearraySink, CodecError, NeedMoreBytes, PresentIfMismatch, SceCursor, SceSink
+from sce_forge_runtime.codec import BytearraySink, CodecError, NeedMoreBytes, SceCursor, SceSink
+from sce_forge_runtime.bounded import BoundedInt
 
 from dataclasses import dataclass
-from typing import Optional
+from typing import Optional, Protocol, Union
+
+
+class CodecPresentIfDisjunctionFlagsInt(BoundedInt):
+    """The ``flags`` element of :class:`CodecPresentIfDisjunction`, an unsigned integer of
+    8 bits, held to them where a value of it is made (docs/adr/0081 §2)."""
+
+    BITS = 8
+    SIGNED = False
+
+
+class CodecPresentIfDisjunctionSeqInt(BoundedInt):
+    """The ``seq`` element of :class:`CodecPresentIfDisjunction`, an unsigned integer of
+    16 bits, held to them where a value of it is made (docs/adr/0081 §2)."""
+
+    BITS = 16
+    SIGNED = False
+
+
+@dataclass
+class CodecPresentIfDisjunctionFlagsWantsAOrWantsBWantsA:
+    """The ``flags_wants_a_or_wants_b`` group of :class:`CodecPresentIfDisjunction` where ``flags.wants_a`` holds and ``flags.wants_b`` does not hold
+    (docs/adr/0065 §6 R4): the members present then."""
+
+    seq: CodecPresentIfDisjunctionSeqInt = 0
+
+    def __setattr__(self, name: str, value: object) -> None:
+        # Each integer, byte string and text is held to its bound
+        # wherever it is set, where the value is made and after
+        # (docs/adr/0081 §2), whatever it was handed.
+        if name == "seq":
+            value = CodecPresentIfDisjunctionSeqInt(value)
+        object.__setattr__(self, name, value)
+
+
+@dataclass
+class CodecPresentIfDisjunctionFlagsWantsAOrWantsBWantsB:
+    """The ``flags_wants_a_or_wants_b`` group of :class:`CodecPresentIfDisjunction` where ``flags.wants_a`` does not hold and ``flags.wants_b`` holds
+    (docs/adr/0065 §6 R4): the members present then."""
+
+    seq: CodecPresentIfDisjunctionSeqInt = 0
+
+    def __setattr__(self, name: str, value: object) -> None:
+        # Each integer, byte string and text is held to its bound
+        # wherever it is set, where the value is made and after
+        # (docs/adr/0081 §2), whatever it was handed.
+        if name == "seq":
+            value = CodecPresentIfDisjunctionSeqInt(value)
+        object.__setattr__(self, name, value)
+
+
+@dataclass
+class CodecPresentIfDisjunctionFlagsWantsAOrWantsBWantsAWantsB:
+    """The ``flags_wants_a_or_wants_b`` group of :class:`CodecPresentIfDisjunction` where ``flags.wants_a`` holds and ``flags.wants_b`` holds
+    (docs/adr/0065 §6 R4): the members present then."""
+
+    seq: CodecPresentIfDisjunctionSeqInt = 0
+
+    def __setattr__(self, name: str, value: object) -> None:
+        # Each integer, byte string and text is held to its bound
+        # wherever it is set, where the value is made and after
+        # (docs/adr/0081 §2), whatever it was handed.
+        if name == "seq":
+            value = CodecPresentIfDisjunctionSeqInt(value)
+        object.__setattr__(self, name, value)
+
+
+CodecPresentIfDisjunctionFlagsWantsAOrWantsB = Union[CodecPresentIfDisjunctionFlagsWantsAOrWantsBWantsA, CodecPresentIfDisjunctionFlagsWantsAOrWantsBWantsB, CodecPresentIfDisjunctionFlagsWantsAOrWantsBWantsAWantsB]
+"""The ``flags_wants_a_or_wants_b`` group of :class:`CodecPresentIfDisjunction`: the arm the value holds."""
+
+
+class CodecPresentIfDisjunctionSource(Protocol):
+    """The elements a value of :class:`CodecPresentIfDisjunction` presents, which its encode
+    reads (docs/adr/0081 §2): any object that presents them is a source of it.
+    The encode derives every other element of the frame."""
+
+    @property
+    def flags(self) -> CodecPresentIfDisjunctionFlagsInt: ...
+
+    @property
+    def flags_wants_a_or_wants_b(self) -> Optional[CodecPresentIfDisjunctionFlagsWantsAOrWantsB]: ...
+
+
+def encode_source(src: CodecPresentIfDisjunctionSource, w: SceSink) -> None:
+    """Write any source of :class:`CodecPresentIfDisjunction` into ``w``, each element read
+    off ``src`` and written where the codec's encode plan lays it out
+    (docs/adr/0081). It refuses no value; a bounded sink raises
+    :class:`BufferOverflow` where it has no room left."""
+    _g_flags_wants_a_or_wants_b = src.flags_wants_a_or_wants_b
+    _e_seq = None if _g_flags_wants_a_or_wants_b is None else _g_flags_wants_a_or_wants_b.seq
+    _c_flags = src.flags
+    _c_flags = (_c_flags & ~0x1) | (0x1 if isinstance(_g_flags_wants_a_or_wants_b, (CodecPresentIfDisjunctionFlagsWantsAOrWantsBWantsA, CodecPresentIfDisjunctionFlagsWantsAOrWantsBWantsAWantsB)) else 0)
+    _c_flags = (_c_flags & ~0x2) | (0x2 if isinstance(_g_flags_wants_a_or_wants_b, (CodecPresentIfDisjunctionFlagsWantsAOrWantsBWantsB, CodecPresentIfDisjunctionFlagsWantsAOrWantsBWantsAWantsB)) else 0)
+    w.write_u8(_c_flags & 0xFF)
+    if _e_seq is not None:
+        w.write_u8((_e_seq >> 8) & 0xFF)
+        w.write_u8(_e_seq & 0xFF)
 
 
 @dataclass
 class CodecPresentIfDisjunction:
-    flags: int = 0
-    seq: Optional[int] = None
+    flags: CodecPresentIfDisjunctionFlagsInt = 0
+    flags_wants_a_or_wants_b: Optional[CodecPresentIfDisjunctionFlagsWantsAOrWantsB] = None
+
+    def __setattr__(self, name: str, value: object) -> None:
+        # Each integer, byte string and text is held to its bound
+        # wherever it is set, where the value is made and after
+        # (docs/adr/0081 §2), whatever it was handed.
+        if name == "flags":
+            value = CodecPresentIfDisjunctionFlagsInt(value)
+        object.__setattr__(self, name, value)
 
     @classmethod
     def decode(cls, cursor: SceCursor) -> CodecPresentIfDisjunction:
@@ -49,7 +154,7 @@ class CodecPresentIfDisjunction:
             f_seq = None
         return cls(
             flags=f_flags,
-            seq=f_seq,
+            flags_wants_a_or_wants_b=CodecPresentIfDisjunctionFlagsWantsAOrWantsBWantsA(seq=f_seq) if (((f_flags >> 0) & 1) != 0) and not (((f_flags >> 1) & 1) != 0) else CodecPresentIfDisjunctionFlagsWantsAOrWantsBWantsB(seq=f_seq) if not (((f_flags >> 0) & 1) != 0) and (((f_flags >> 1) & 1) != 0) else CodecPresentIfDisjunctionFlagsWantsAOrWantsBWantsAWantsB(seq=f_seq) if (((f_flags >> 0) & 1) != 0) and (((f_flags >> 1) & 1) != 0) else None,
         )
 
     # RFC §synth-5-B flags primitive: per-bit-range accessors over
@@ -82,27 +187,8 @@ class CodecPresentIfDisjunction:
         caller-owned ``w`` sink. Returns ``None`` on success; raises
         :class:`BufferOverflow` from a bounded sink when the destination
         has insufficient remaining capacity; growable sinks (e.g.
-        :class:`BytearraySink`) are effectively infallible. Raises,
-        before the first byte, the error a decode of the frame would give
-        for a value it cannot carry: a byte string, text or list outside its
-        bound, or a gated field its gate disagrees with."""
-        if (self.flags & 0x01) != 0 or (self.flags & 0x02) != 0:
-            if self.seq is None:
-                raise PresentIfMismatch("seq")
-        elif self.seq is not None:
-            raise PresentIfMismatch("seq")
-        # Streaming cursor encode (SSOT selection: `needs_streaming`).
-        # Mirrors the streaming decode: every field appends its own bytes
-        # in declaration order through the per-field encode blocks, so a
-        # gated field skips its append when absent, and a fixed field after
-        # a variable-length payload lands after the payload (the positional
-        # path appends variable fields last, placing it ahead on the wire).
-        # Per-field `is_repeat` / `is_tlv_chain` / `is_embed` route to their
-        # dedicated helpers; everything else uses `present_if_encode_block`.
-        w.write_u8(self.flags & 0xFF)
-        if self.seq is not None:
-            w.write_u8((self.seq >> 8) & 0xFF)
-            w.write_u8(self.seq & 0xFF)
+        :class:`BytearraySink`) are effectively infallible."""
+        encode_source(self, w)
 
     def encode_to_bytes(self) -> bytes:
         """Heap-backed convenience facade. Runs :meth:`encode` over a

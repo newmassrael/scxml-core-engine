@@ -6,20 +6,127 @@
 
 from __future__ import annotations
 
-from sce_forge_runtime.codec import BytearraySink, CodecError, NeedMoreBytes, PresentIfMismatch, SceCursor, SceSink, TooManyElements
+from sce_forge_runtime.codec import BytearraySink, CodecError, NeedMoreBytes, SceCursor, SceSink, TooManyElements
+from sce_forge_runtime.bounded import BoundedInt, BoundedTuple
 from .codec_zenoh_ext_entry import CodecZenohExtEntry
 from .codec_zenoh_interest_body import CodecZenohInterestBody
+from . import codec_zenoh_ext_entry as sce_codec_zenoh_ext_entry
+from . import codec_zenoh_interest_body as sce_codec_zenoh_interest_body
 
 from dataclasses import dataclass, field
-from typing import Optional, List
+from typing import Optional, List, Protocol, Union
+
+
+class CodecZenohInterestHeaderInt(BoundedInt):
+    """The ``header`` element of :class:`CodecZenohInterest`, an unsigned integer of
+    8 bits, held to them where a value of it is made (docs/adr/0081 §2)."""
+
+    BITS = 8
+    SIGNED = False
+
+
+class CodecZenohInterestIdInt(BoundedInt):
+    """The ``id`` element of :class:`CodecZenohInterest`, an unsigned integer of
+    64 bits, held to them where a value of it is made (docs/adr/0081 §2)."""
+
+    BITS = 64
+    SIGNED = False
+
+
+class CodecZenohInterestExtensionsList(BoundedTuple):
+    """The ``extensions`` element of :class:`CodecZenohInterest`, 1 or more entries, the protocol stating no most,
+    held to that bound where a value of it is made (docs/adr/0077 §3)."""
+
+    LEAST = 1
+    MOST = None
+
+
+@dataclass
+class CodecZenohInterestHeaderCurrentOrFutureCurrent:
+    """The ``header_current_or_future`` group of :class:`CodecZenohInterest` where ``header.CURRENT`` holds and ``header.FUTURE`` does not hold
+    (docs/adr/0065 §6 R4): the members present then."""
+
+    body: CodecZenohInterestBody = field(default_factory=CodecZenohInterestBody)
+
+
+@dataclass
+class CodecZenohInterestHeaderCurrentOrFutureFuture:
+    """The ``header_current_or_future`` group of :class:`CodecZenohInterest` where ``header.CURRENT`` does not hold and ``header.FUTURE`` holds
+    (docs/adr/0065 §6 R4): the members present then."""
+
+    body: CodecZenohInterestBody = field(default_factory=CodecZenohInterestBody)
+
+
+@dataclass
+class CodecZenohInterestHeaderCurrentOrFutureCurrentFuture:
+    """The ``header_current_or_future`` group of :class:`CodecZenohInterest` where ``header.CURRENT`` holds and ``header.FUTURE`` holds
+    (docs/adr/0065 §6 R4): the members present then."""
+
+    body: CodecZenohInterestBody = field(default_factory=CodecZenohInterestBody)
+
+
+CodecZenohInterestHeaderCurrentOrFuture = Union[CodecZenohInterestHeaderCurrentOrFutureCurrent, CodecZenohInterestHeaderCurrentOrFutureFuture, CodecZenohInterestHeaderCurrentOrFutureCurrentFuture]
+"""The ``header_current_or_future`` group of :class:`CodecZenohInterest`: the arm the value holds."""
+
+
+class CodecZenohInterestSource(Protocol):
+    """The elements a value of :class:`CodecZenohInterest` presents, which its encode
+    reads (docs/adr/0081 §2): any object that presents them is a source of it.
+    The encode derives every other element of the frame."""
+
+    @property
+    def header(self) -> CodecZenohInterestHeaderInt: ...
+
+    @property
+    def id(self) -> CodecZenohInterestIdInt: ...
+
+    @property
+    def extensions(self) -> Optional[CodecZenohInterestExtensionsList]: ...
+
+    @property
+    def header_current_or_future(self) -> Optional[CodecZenohInterestHeaderCurrentOrFuture]: ...
+
+
+def encode_source(src: CodecZenohInterestSource, w: SceSink) -> None:
+    """Write any source of :class:`CodecZenohInterest` into ``w``, each element read
+    off ``src`` and written where the codec's encode plan lays it out
+    (docs/adr/0081). It refuses no value; a bounded sink raises
+    :class:`BufferOverflow` where it has no room left."""
+    _g_header_current_or_future = src.header_current_or_future
+    _e_body = None if _g_header_current_or_future is None else _g_header_current_or_future.body
+    _c_header = src.header
+    _c_header = (_c_header & ~0x20) | (0x20 if isinstance(_g_header_current_or_future, (CodecZenohInterestHeaderCurrentOrFutureCurrent, CodecZenohInterestHeaderCurrentOrFutureCurrentFuture)) else 0)
+    _c_header = (_c_header & ~0x40) | (0x40 if isinstance(_g_header_current_or_future, (CodecZenohInterestHeaderCurrentOrFutureFuture, CodecZenohInterestHeaderCurrentOrFutureCurrentFuture)) else 0)
+    _c_header = (_c_header & ~0x80) | (0x80 if src.extensions is not None else 0)
+    w.write_u8(_c_header & 0xFF)
+    w.write_vle_u64(src.id)
+    if _e_body is not None:
+        sce_codec_zenoh_interest_body.encode_source(_e_body, w)
+    if src.extensions is not None:
+        _left_extensions = len(src.extensions)
+        for _entry in src.extensions:
+            _left_extensions -= 1
+            sce_codec_zenoh_ext_entry.encode_source(_entry, w, override_header_z=1 if _left_extensions != 0 else 0)
 
 
 @dataclass
 class CodecZenohInterest:
-    header: int = 0x19
-    id: int = 0
-    body: Optional[CodecZenohInterestBody] = None
-    extensions: Optional[List[CodecZenohExtEntry]] = b""
+    header: CodecZenohInterestHeaderInt = 0x19
+    id: CodecZenohInterestIdInt = 0
+    extensions: Optional[CodecZenohInterestExtensionsList] = None
+    header_current_or_future: Optional[CodecZenohInterestHeaderCurrentOrFuture] = None
+
+    def __setattr__(self, name: str, value: object) -> None:
+        # Each integer, byte string and text is held to its bound
+        # wherever it is set, where the value is made and after
+        # (docs/adr/0081 §2), whatever it was handed.
+        if name == "header":
+            value = CodecZenohInterestHeaderInt(value)
+        elif name == "id":
+            value = CodecZenohInterestIdInt(value)
+        elif name == "extensions":
+            value = None if value is None else CodecZenohInterestExtensionsList(value)
+        object.__setattr__(self, name, value)
 
     @classmethod
     def decode(cls, cursor: SceCursor) -> CodecZenohInterest:
@@ -65,8 +172,8 @@ class CodecZenohInterest:
         return cls(
             header=f_header,
             id=f_id,
-            body=f_body,
             extensions=f_extensions,
+            header_current_or_future=CodecZenohInterestHeaderCurrentOrFutureCurrent(body=f_body) if (((f_header >> 5) & 1) != 0) and not (((f_header >> 6) & 1) != 0) else CodecZenohInterestHeaderCurrentOrFutureFuture(body=f_body) if not (((f_header >> 5) & 1) != 0) and (((f_header >> 6) & 1) != 0) else CodecZenohInterestHeaderCurrentOrFutureCurrentFuture(body=f_body) if (((f_header >> 5) & 1) != 0) and (((f_header >> 6) & 1) != 0) else None,
         )
 
     # RFC §synth-5-B flags primitive: per-bit-range accessors over
@@ -116,32 +223,8 @@ class CodecZenohInterest:
         caller-owned ``w`` sink. Returns ``None`` on success; raises
         :class:`BufferOverflow` from a bounded sink when the destination
         has insufficient remaining capacity; growable sinks (e.g.
-        :class:`BytearraySink`) are effectively infallible. Raises,
-        before the first byte, the error a decode of the frame would give
-        for a value it cannot carry: a byte string, text or list outside its
-        bound, or a gated field its gate disagrees with."""
-        if (self.header & 0x20) != 0 or (self.header & 0x40) != 0:
-            if self.body is None:
-                raise PresentIfMismatch("body")
-        elif self.body is not None:
-            raise PresentIfMismatch("body")
-        if self.extensions is not None and (len(self.extensions) < 1):
-            raise TooManyElements()
-        # Streaming cursor encode (SSOT selection: `needs_streaming`).
-        # Mirrors the streaming decode: every field appends its own bytes
-        # in declaration order through the per-field encode blocks, so a
-        # gated field skips its append when absent, and a fixed field after
-        # a variable-length payload lands after the payload (the positional
-        # path appends variable fields last, placing it ahead on the wire).
-        # Per-field `is_repeat` / `is_tlv_chain` / `is_embed` route to their
-        # dedicated helpers; everything else uses `present_if_encode_block`.
-        w.write_u8(self.header & 0xFF)
-        w.write_vle_u64(self.id)
-        if self.body is not None:
-            self.body.encode(w)
-        if self.extensions is not None:
-            for _e in self.extensions:
-                _e.encode(w)
+        :class:`BytearraySink`) are effectively infallible."""
+        encode_source(self, w)
 
     def encode_to_bytes(self) -> bytes:
         """Heap-backed convenience facade. Runs :meth:`encode` over a
