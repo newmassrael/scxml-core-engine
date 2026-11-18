@@ -1563,10 +1563,11 @@ old encode, the old encode and its templates are removed in the same landing.
    list's own class, which would make every list a class of two properties. A list on one side of a gate
    held to a law, whose start the arm would hold, and a chain of slots held to a law stay refused by name.
 
-   A chain whose `entry-id` names a field of an enum's type tells its entries apart by the number the enum
-   carries, read by the enum's own `toUnderlying()`, as the C++ printer reads it by `static_cast`: the printer
-   reads the field's type off the entry codec's fields the import carries (`kotlin_source::entry_identifier`).
-   No resource holds such a chain; a test document does.
+   A chain whose `entry-id` names a field of an enum's type is refused where the import is resolved, before
+   any language is rendered: SCE_FORGE.md admits as an identifier a multi-bit flag or an integer field of the
+   entry codec, and an enum-typed field is neither (`resolve_chain_entry_identifier`). *Amended 2026-11-18:*
+   this landing first wrote a Kotlin read of such a field by `toUnderlying()`, which no document reaches; the
+   read is gone, and `an_identifier_of_an_enums_type_is_refused_on_every_backend` holds the refusal.
 
    *The nineteenth Kotlin landing, 2026-11-17:* a CBOR map, printed from its own plan (`kotlin_source::cbor`), as
    the C++ and Python printers print it. Every entry is a property of `{Codec}Source`, nullable for one the map may

@@ -4738,6 +4738,75 @@ fn a_plain_integer_identifier_has_no_flags_to_leave_out() {
     );
 }
 
+/// A bare `entry-id` names an integer field of the entry codec (SCE_FORGE.md,
+/// "The chain says where an entry keeps its identifier"). A field of an enum's
+/// type is no such field, so a chain told apart by one is refused where the
+/// import is resolved, before any language is rendered: no backend prints a
+/// read of it.
+///
+/// Turns red where `resolve_chain_entry_identifier` admits a field whose type
+/// has no integer width, or where the check runs for some backends only.
+#[test]
+fn an_identifier_of_an_enums_type_is_refused_on_every_backend() {
+    const ENTRY: &str = r#"<?xml version="1.0" encoding="UTF-8"?>
+<scxml xmlns="http://www.w3.org/2005/07/scxml" xmlns:sce="http://sce.dev/ext"
+       sce:kind="codec" sce:default-endian="big" name="kind_entry" version="1.0">
+  <sce:import src="enum_session_state.scxml" kind="enum" as="session"/>
+  <datamodel>
+    <sce:field id="kind" sce:type="enum:session" sce:byte="0" sce:bit-size="8"/>
+    <sce:flags id="ctl" sce:type="uint8" sce:byte="1" sce:bit-size="8">
+      <sce:flag name="more" bit="0"/>
+    </sce:flags>
+  </datamodel>
+</scxml>"#;
+    const CHAIN: &str = r#"<?xml version="1.0" encoding="UTF-8"?>
+<scxml xmlns="http://www.w3.org/2005/07/scxml" xmlns:sce="http://sce.dev/ext"
+       sce:kind="codec" sce:default-endian="big" name="kind_chain" version="1.0">
+  <sce:import src="kind_entry.scxml" kind="codec" as="kind_entry"/>
+  <datamodel>
+    <sce:tlv-chain id="entries" type="kind_entry" sce:byte="0"
+                   max-depth="3" terminate-on="entry-flag" entry-flag-name="more"
+                   entry-id="kind"/>
+    <sce:field id="priority" sce:type="uint8" sce:byte="1" sce:bit-size="8"
+               sce:present-if="entries.has(2)"/>
+  </datamodel>
+</scxml>"#;
+    let dir = tempfile::tempdir().expect("a scratch directory");
+    std::fs::copy(
+        resource_dir().join("enum_session_state.scxml"),
+        dir.path().join("enum_session_state.scxml"),
+    )
+    .expect("the enum resource copies");
+    std::fs::write(dir.path().join("kind_entry.scxml"), ENTRY).expect("write the entry");
+    for language in [
+        sce_build::generator::Language::Rust,
+        sce_build::generator::Language::Cpp,
+        sce_build::generator::Language::Kotlin,
+        sce_build::generator::Language::Go,
+        sce_build::generator::Language::Python,
+        sce_build::generator::Language::C11,
+    ] {
+        let error = match sce_build::compile_forge_with_imports(
+            CHAIN,
+            sce_build::DocumentLabel::symmetric("kind_chain"),
+            language,
+            dir.path(),
+            &sce_build::ForgeCompileOptions::default(),
+        ) {
+            Ok(_) => panic!("{language:?}: a chain told apart by an enum field must be refused"),
+            Err(e) => e.error.to_string(),
+        };
+        assert!(
+            error.contains("entry-id")
+                && error.contains(
+                    "the field 'kind' of the entry codec 'kind_entry' is not an unsigned \
+                     integer, so it cannot identify a kind of entry"
+                ),
+            "{language:?}: the refusal must be at entry-id and say why; got: {error}"
+        );
+    }
+}
+
 /// `!` negates one clause. A group under it is refused as a group, and the
 /// refusal quotes the attribute the author wrote, whole, wherever in it the
 /// group stands: splitting on `||` before looking made it quote the fragment
