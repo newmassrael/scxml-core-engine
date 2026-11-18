@@ -109,8 +109,9 @@ public struct {{ struct_name }}: Equatable, Sendable {
 
     /// Decodes one map at the cursor and moves the cursor past it. The map is read through a copy of
     /// the cursor, which replaces it only when the whole map was read: a map that is short answers
-    /// `needMoreBytes`, one that is not a map this codec reads `cborMalformed`, and either leaves the
-    /// cursor where it was.
+    /// `needMoreBytes`, one that is not a map this codec reads the kind that refused it
+    /// (`cborMalformed`, `cborWrongType`, `cborDuplicateKey`, ...), and either leaves the cursor where
+    /// it was.
     public static func decode(_ cursor: inout SceCursor) throws(CodecError) -> {{ struct_name }} {
         var reader = cursor
         let count = try Cbor.readMapLen(&reader)
@@ -124,7 +125,7 @@ public struct {{ struct_name }}: Equatable, Sendable {
 {% for e in entries_by_key %}
             case {{ e.key }}:
                 // A key given twice is not one map entry.
-                if {{ e.name }}_held != nil { throw CodecError.cborMalformed }
+                if {{ e.name }}_held != nil { throw CodecError.cborDuplicateKey }
 {% if e.kind == "enum" and e.enum_is_open %}
                 // An open enum holds any number its carrier does, so every number is a value.
                 {{ e.name }}_held = {{ e.enum_from_underlying }}({{ e.carrier_type }}(truncatingIfNeeded: try Cbor.readUintUpto(&reader, {{ e.max }})))
@@ -203,7 +204,7 @@ public struct {{ struct_name }}: Equatable, Sendable {
     /// holds it (docs/adr/0085, Landing order step 3a), into the payload type the schema's own unit
     /// declares: one CBOR map of every field, each under its id as text (docs/adr/0086, section 9.2). Its
     /// keys in any order, a key the schema does not declare skipped whole; a key given twice is
-    /// `cborMalformed`, a field missing `cborRequiredKeyMissing`, a text or byte string past its bound
+    /// `cborDuplicateKey`, a field missing `cborRequiredKeyMissing`, a text or byte string past its bound
     /// `cborOutOfRange`.
     private static func {{ r.decode_fn }}(_ reader: inout SceCursor) throws(CodecError) -> {{ r.type_name }} {
         let count = try Cbor.readMapLen(&reader)
@@ -217,7 +218,7 @@ public struct {{ struct_name }}: Equatable, Sendable {
 {% for f in r.fields %}
             case {{ f.key_literal }}:
                 // A key given twice is not one map entry.
-                if {{ f.name }}_held != nil { throw CodecError.cborMalformed }
+                if {{ f.name }}_held != nil { throw CodecError.cborDuplicateKey }
                 {{ f.name }}_held = {{ decode_record_field(f) }}
 {% endfor %}
             default:

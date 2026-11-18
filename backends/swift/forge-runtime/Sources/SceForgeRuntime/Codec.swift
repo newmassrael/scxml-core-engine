@@ -58,10 +58,22 @@ public enum CodecError: Error, Equatable, Sendable {
     /// carrier, one present and the other absent, or two byte strings that share one length and
     /// differ in it. No frame says both, so no frame is written (docs/adr/0065 §2).
     case inconsistentSource
-    /// The input is not a map a CBOR codec reads: not a definite-length map, an indefinite length or
-    /// a reserved head, a key given twice, or an entry of the wrong major type
-    /// (`Cbor`, SCE_FORGE.md §4.6.1).
+    /// A CBOR codec read an item that is not well-formed (RFC 8949 Appendix F: a reserved head, a
+    /// break code where an item stands, a two-byte simple value below 32), or one of indefinite
+    /// length, which the codec's profile of definite lengths does not hold (`Cbor`, docs/adr/0101
+    /// §3.1).
     case cborMalformed
+    /// A CBOR codec read an item of a major type, a simple value or a tag the type at that place
+    /// does not take: a text where a number stands, a negative integer where an unsigned type
+    /// stands, `null` where no list's optional element stands, a tagged item, a top-level key that
+    /// is not an unsigned integer, a record's or a union's key that is not a text.
+    case cborWrongType
+    /// A CBOR map held one of its declared keys twice (RFC 8949 §5.6).
+    case cborDuplicateKey
+    /// A CBOR union's one key names none of its cases.
+    case cborUnknownVariant
+    /// A CBOR union's map held no entry, or more than one.
+    case cborUnionEntries
     /// The map lacks an entry of a bare type, one that is not `optional<T>`.
     case cborRequiredKeyMissing
     /// A byte string is not its entry's exact `sce:length`: on a decode, the length the map says; on

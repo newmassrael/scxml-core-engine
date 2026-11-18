@@ -76,11 +76,11 @@ final class CodecCborUnitTests: XCTestCase {
         XCTAssertNil(absent.deadline)
     }
 
-    func testAKeyGivenTwiceIsNoMapTheCodecReadsAndConsumesNothing() {
+    func testAKeyGivenTwiceIsRefusedByItsOwnKindAndConsumesNothing() {
         let twice = map(required() + [(3, uint(8))])
         var cursor = SceCursor(twice)
         XCTAssertThrowsError(try CodecCborMap.decode(&cursor)) { error in
-            XCTAssertEqual(error as? CodecError, .cborMalformed)
+            XCTAssertEqual(error as? CodecError, .cborDuplicateKey)
         }
         XCTAssertEqual(cursor.remaining, twice.count)
     }
@@ -99,7 +99,7 @@ final class CodecCborUnitTests: XCTestCase {
         pairs[2] = (3, text("7"))
         var cursor = SceCursor(map(pairs))
         XCTAssertThrowsError(try CodecCborMap.decode(&cursor)) { error in
-            XCTAssertEqual(error as? CodecError, .cborMalformed)
+            XCTAssertEqual(error as? CodecError, .cborWrongType)
         }
     }
 

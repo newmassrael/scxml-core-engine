@@ -2327,10 +2327,10 @@ fn a_cbor_codec_is_a_struct_of_its_entries_read_in_any_order_and_written_by_key(
         code.contains("\n    public var deadline: UInt64? = nil\n"),
         "{code}"
     );
-    // The decode takes each key where it finds it, skips one it does not declare, and holds a key
-    // given twice to be no map this codec reads.
+    // The decode takes each key where it finds it, skips one it does not declare, and refuses a key
+    // given twice by its own kind (docs/adr/0101 §3.3).
     assert!(
-        code.contains("case 12:\n                // A key given twice is not one map entry.\n                if deadline_held != nil { throw CodecError.cborMalformed }\n                deadline_held = UInt64(truncatingIfNeeded: try Cbor.readUintUpto(&reader, 18446744073709551615))"),
+        code.contains("case 12:\n                // A key given twice is not one map entry.\n                if deadline_held != nil { throw CodecError.cborDuplicateKey }\n                deadline_held = UInt64(truncatingIfNeeded: try Cbor.readUintUpto(&reader, 18446744073709551615))"),
         "{code}"
     );
     assert!(
