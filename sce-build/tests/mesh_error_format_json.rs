@@ -407,6 +407,18 @@ const REPLYING_SERVER_SCXML: &str = r##"<?xml version="1.0" encoding="UTF-8"?>
 </scxml>
 "##;
 
+/// [`CLIENT_SCXML`] that also takes the `pong` [`REPLYING_SERVER_SCXML`] answers with, so that
+/// every send between the two has a transition that receives it.
+const ANSWERED_CLIENT_SCXML: &str = r##"<?xml version="1.0" encoding="UTF-8"?>
+<scxml xmlns="http://www.w3.org/2005/07/scxml"
+       version="1.0" name="client" initial="idle">
+  <state id="idle">
+    <onentry><send target="#server" event="ping"/></onentry>
+    <transition event="pong" target="idle"/>
+  </state>
+</scxml>
+"##;
+
 /// A client that posts its exchanges to the server and a server that keeps its mailbox, over the
 /// HTTPS binding (SCE_MESH.md section 22).
 const HTTPS_DEPLOY: &str = r##"
@@ -431,7 +443,7 @@ fn an_https_dialing_binding_reaches_the_rust_peer_table_with_its_url_and_hold() 
     // SCE_MESH.md section 22: the side with `url` posts the exchanges, so its link carries the
     // server's base, the authenticator the host proves its name with, and the poll's hold.
     let dir = ScratchDir::new("mesh-https-dial-rust");
-    let scxml = dir.write("client.scxml", CLIENT_SCXML);
+    let scxml = dir.write("client.scxml", ANSWERED_CLIENT_SCXML);
     dir.write("server.scxml", REPLYING_SERVER_SCXML);
     let deploy = dir.write("deploy.yaml", HTTPS_DEPLOY);
     let out = run_with_deploy_for("rust", &scxml, &deploy, dir.path());
@@ -461,7 +473,7 @@ fn an_https_accepting_binding_reaches_the_rust_peer_table_with_its_bounds() {
     // SCE_MESH.md section 22: the side with `listen` keeps the client's mailbox, so its link
     // carries the address and every bound, the ones the binding leaves out at their defaults.
     let dir = ScratchDir::new("mesh-https-accept-rust");
-    dir.write("client.scxml", CLIENT_SCXML);
+    dir.write("client.scxml", ANSWERED_CLIENT_SCXML);
     let scxml = dir.write("server.scxml", REPLYING_SERVER_SCXML);
     let deploy = dir.write("deploy.yaml", HTTPS_DEPLOY);
     let out = run_with_deploy_for("rust", &scxml, &deploy, dir.path());

@@ -19815,7 +19815,7 @@ mod tests {
                     served: crate::mesh::transport::ServiceKind::CppTemplate,
                 }
                 .into(),
-                r#"{"v":1,"id":"fnv1a:aa145685cde035e6","code":"mesh/codegen-unsupported-transport","stage":"mesh-codegen","spec":"SCE Mesh §8","message":"transport 'carrier_pigeon' has no C++ template arm (target '#motor')","actual":"carrier_pigeon","fix":{"kind":"replace_one_of","candidates":["local","shm","someip","zenoh_keyexpr","custom_tcp","dds"]}}"#,
+                r#"{"v":1,"id":"fnv1a:aa145685cde035e6","code":"mesh/codegen-unsupported-transport","stage":"mesh-codegen","spec":"SCE Mesh §8","message":"transport 'carrier_pigeon' has no C++ template arm (target '#motor')","actual":"carrier_pigeon","fix":{"kind":"replace_one_of","candidates":["local","shm","someip","zenoh_keyexpr","custom_tcp","dds","https"]}}"#,
             ),
             (
                 "mesh/codegen-template-read",
