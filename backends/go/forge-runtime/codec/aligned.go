@@ -22,13 +22,17 @@ type Aligned[F Counted, S Counted] struct {
 	second S
 }
 
-// MakeAligned returns the Aligned of first and second, and false where they
-// hold different numbers of entries, which no one count states.
-func MakeAligned[F Counted, S Counted](first F, second S) (Aligned[F, S], bool) {
+// MakeAligned returns the Aligned of first and second, or
+// ErrInconsistentSource where they hold different numbers of entries, which
+// no one count states: the two say two numbers where the wire holds one, as
+// MakeBytes names a length outside its bound by ErrLengthOutOfRange. A
+// decode, which reads both lists by the one count it read, is never refused
+// here; it hands on what it is answered, so no refusal of it is a value.
+func MakeAligned[F Counted, S Counted](first F, second S) (Aligned[F, S], error) {
 	if first.Len() != second.Len() {
-		return Aligned[F, S]{}, false
+		return Aligned[F, S]{}, ErrInconsistentSource
 	}
-	return Aligned[F, S]{first: first, second: second}, true
+	return Aligned[F, S]{first: first, second: second}, nil
 }
 
 // First returns the list the count is derived from.

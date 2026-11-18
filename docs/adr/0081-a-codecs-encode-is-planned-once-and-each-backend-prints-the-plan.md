@@ -1836,6 +1836,15 @@ old encode, the old encode and its templates are removed in the same landing.
    read select. `GoPrinted` now holds what `Make{Codec}` takes as parts, an element or a whole (a group, the
    variant), as `cpp_source::CppPrinted` does, and answers no member of a group. A group an input decides, which
    is one of an input the value says, and a group a chain's entries decide (R6) stay unlowered.
+
+   *The Go printer under docs/adr/0099's amendment of 2026-11-16, 2026-11-18:* a printed decode answers the
+   kind that refused the frame and never a value: the template's reads answer theirs, and each value the printer
+   makes of what they read (a byte string or a text, a list, two lists of one count) is made by the runtime's
+   constructor, whose error the decode hands on with no value beside it (`return nil, err`). `codec.MakeAligned`
+   answers `codec.ErrInconsistentSource` for two lists of different counts, where it answered `false` and the
+   printer named the kind in its place, so every constructor of the runtime names its own refusal as
+   `codec.MakeBytes` and `codec.MakeList` do, and as the Python runtime's `Aligned` raises `InconsistentSource`.
+   A decode reads both lists by one count and is never refused there.
 5. Swift, when its codec lowers what the plan holds.
    *Swift lowers what the plan holds, 2026-11-16:* its codec writes every codec of the repository Rust writes,
    but the one only an MCU-class backend writes (`a_swift_codec_is_written_wherever_rust_writes_one.rs`): an

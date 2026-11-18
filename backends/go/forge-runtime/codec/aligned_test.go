@@ -22,9 +22,9 @@ func TestMakeAlignedHoldsTwoListsOfOneCount(t *testing.T) {
 	if err != nil {
 		t.Fatalf("two entries are within the bound: %v", err)
 	}
-	pair, ok := MakeAligned(first, second)
-	if !ok {
-		t.Fatal("two lists of two entries each are aligned")
+	pair, err := MakeAligned(first, second)
+	if err != nil {
+		t.Fatalf("two lists of two entries each are aligned: %v", err)
 	}
 	if pair.First().Len() != 2 || pair.Second().Len() != 2 {
 		t.Fatalf("the pair gives back both lists: %d and %d entries", pair.First().Len(), pair.Second().Len())
@@ -40,8 +40,8 @@ func TestMakeAlignedRefusesTwoListsOfDifferentCounts(t *testing.T) {
 	if err != nil {
 		t.Fatalf("one entry is within the bound: %v", err)
 	}
-	if _, ok := MakeAligned(first, second); ok {
-		t.Fatal("a list of two and a list of one share no count")
+	if _, err := MakeAligned(first, second); err != ErrInconsistentSource {
+		t.Fatalf("a list of two and a list of one share no count: err = %v, want ErrInconsistentSource", err)
 	}
 }
 

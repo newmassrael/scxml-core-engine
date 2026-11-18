@@ -1219,7 +1219,10 @@ fn two_lists_of_one_count_are_held_as_one_aligned_pair() {
              \t\t_mWeights = optional.Some(_g.LinksWeights().Second())\n",
             "\t\t_mLinks = optional.Some(_g.Links())\n",
             "\t_dLinksLen := uint8(_mLinks.Proven().Len())\n",
-            "_aLinksWeights, ok := codec.MakeAligned(_lLinks, _lWeights.Proven())\n",
+            "_aLinksWeights, err := codec.MakeAligned(_lLinks, _lWeights.Proven())\n\
+             \t\tif err != nil {\n\
+             \t\t\treturn nil, err\n\
+             \t\t}\n",
             "\tlinksWeights codec.Aligned[codec.List[CodecRepeatUnconditionalCountLinksBound, \
              codec_repeat_elem.CodecRepeatElemSource], codec.List[\
              CodecRepeatUnconditionalCountWeightsBound, codec_repeat_elem.CodecRepeatElemSource]]\n",

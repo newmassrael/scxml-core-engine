@@ -2761,7 +2761,8 @@ A group an input or a chain's entries decide is unchanged.
 - Make a group by its arm's constructor, `pkg.MakeFrameFlagsHasSession(state, attempts)`, and hand it to
   `Make{Codec}` where its first member is declared; the flags that decide it are derived from it.
 - Two lists of one count are one `codec.Aligned[F, S]` in the arm that holds both, made by
-  `codec.MakeAligned(first, second)`, which answers `false` for lists of different lengths; read them by
+  `codec.MakeAligned(first, second)`, which answers `codec.ErrInconsistentSource` for lists of different lengths,
+  as `codec.MakeBytes` answers the kind that refuses a byte string; read them by
   `pair.First()` and `pair.Second()`.
 - A validator, a procedure or an algorithm does not name a member of a group alone; an expression that does is
   refused when it is generated.

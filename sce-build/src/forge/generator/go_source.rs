@@ -2337,11 +2337,13 @@ fn group_declarations(
                 );
                 let pair = format!("_a{method}");
                 // The decode read both lists by the one count, so they hold
-                // as many entries as each other.
+                // as many entries as each other; it hands on the kind the
+                // runtime answers, as it does for a byte string or a list it
+                // makes (docs/adr/0099, amendment of 2026-11-16).
                 pairs.push_str(&format!(
-                    "\t{pair}, ok := codec.MakeAligned({}, {})\n\
-                     \tif !ok {{\n\
-                     \t\treturn nil, codec.ErrInconsistentSource\n\
+                    "\t{pair}, err := codec.MakeAligned({}, {})\n\
+                     \tif err != nil {{\n\
+                     \t\treturn nil, err\n\
                      \t}}\n",
                     read(id.as_str()),
                     read(second)
