@@ -1461,7 +1461,10 @@ mod tests {
     /// A transport that records what it was handed; its clones share the
     /// record.
     #[derive(Clone, Default)]
-    struct Wire(Arc<Mutex<Vec<(String, Vec<u8>)>>>);
+    struct Wire(Handed);
+
+    /// What a test's transport was handed, by peer, in order, shared by its clones.
+    type Handed = Arc<Mutex<Vec<(String, Vec<u8>)>>>;
 
     impl Transport for Wire {
         fn transmit(&mut self, peer: &str, bytes: &[u8]) -> Result<(), TransportFailure> {
@@ -1474,6 +1477,8 @@ mod tests {
     /// read.
     #[derive(Debug)]
     struct Sent {
+        /// The envelope's id: what a receiver's duplicate window knows a copy by.
+        id: [u8; 16],
         peer: String,
         event: String,
         pattern: PatternKind,
@@ -1491,6 +1496,7 @@ mod tests {
                     let envelope =
                         Envelope::decode(&mut SceCursor::new(&bytes)).expect("an envelope");
                     Sent {
+                        id: envelope.id.into(),
                         peer,
                         event: envelope.event_type.to_string(),
                         pattern: envelope.pattern,
@@ -2042,19 +2048,31 @@ mod tests {
     /// A process whose lease ran out and was taken over stops serving the key
     /// when its renewal is refused: its session is dropped, and a request it
     /// is handed for the key is answered `Unavailable`. The process that took
-    /// the key over restored what the first one saved.
+    /// the key over restored what the first one saved, and released again
+    /// what that checkpoint held (SCE_MESH.md section 10.11): the first
+    /// process may have failed between writing it and sending its reply, so
+    /// the reply goes again, the same envelope under the same id, which the
+    /// client's duplicate window drops.
     #[test]
     fn a_process_whose_lease_was_taken_over_stops_serving_the_key() {
         let (store, clock, probe) = (MemoryStore::new(), Clock::new(), Arc::new(Probe::default()));
         let (first, first_wire) = pool("p1", &store, &clock, &probe);
         let (second, second_wire) = pool("p2", &store, &clock, &probe);
         deliver(&first, join("r1", 1));
-        first_wire.take();
+        let answered = first_wire.take();
+        assert_eq!(answered.len(), 1, "{answered:?}");
 
         clock.advance(LEASE_TTL_MS + 1);
         deliver(&second, join("r1", 2));
         let replies = second_wire.take();
-        assert!(replies[0].data.contains(r#""members":2"#), "{replies:?}");
+        assert_eq!(replies.len(), 2, "{replies:?}");
+        assert_eq!(
+            (replies[0].id, replies[0].wire_id, &replies[0].data),
+            (answered[0].id, answered[0].wire_id, &answered[0].data),
+            "the restore releases again the reply its checkpoint held"
+        );
+        assert!(replies[1].data.contains(r#""members":2"#), "{replies:?}");
+        assert_eq!(replies[1].wire_id, Some(id(0x22, 2)));
         assert_eq!(probe.restored.load(Ordering::SeqCst), 1);
 
         assert_eq!(first.renew_leases(), vec!["r1".to_string()]);
