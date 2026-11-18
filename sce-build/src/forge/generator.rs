@@ -24686,10 +24686,11 @@ fn present_if_encode_vle(
 
 /// RHS expression that decodes `n` bytes from a freshly-peeked
 /// `raw[0..n]` slice into the field's natural carrier type. For
-/// 8-bit fields this is just `raw[0]`; multi-byte fields delegate to
-/// the shared endianness byte-fold ([`decode_multibyte_unified`]) at
-/// `byte_off = 0` — the streaming peek base — so the per-language
-/// shift/cast rules are defined in exactly one place.
+/// 8-bit fields this is the read of `raw[0]` ([`byte_read`]); multi-byte
+/// fields delegate to the shared endianness byte-fold
+/// ([`decode_multibyte_unified`]) at `byte_off = 0` — the streaming peek
+/// base — so the per-language shift/cast rules are defined in exactly one
+/// place.
 fn streaming_fixed_field_body(
     field: &CodecField,
     default_endian: Endian,
@@ -24697,22 +24698,12 @@ fn streaming_fixed_field_body(
     lang: crate::generator::Language,
     signed: bool,
 ) -> String {
-    use crate::generator::Language;
     let endian = field.effective_endian(default_endian);
 
-    // Single-byte fields read the peeked byte directly. Kotlin's
-    // `ByteArray[i]` yields a signed `Byte`, which is the carrier of a
-    // signed field and is otherwise narrowed to the unsigned carrier
-    // (`kotlin_byte_read`); every other backend assigns `raw[0]` straight
-    // into its carrier.
+    // Single-byte fields read the peeked byte as the carrier, signed where
+    // the carrier is.
     if n == 1 {
-        return match lang {
-            Language::Kotlin => kotlin_byte_read("raw[0]", signed),
-            Language::Rust | Language::Cpp | Language::Go | Language::Python | Language::C11 => {
-                "raw[0]".into()
-            }
-            Language::Swift => no_swift_emitter("streaming_fixed_field_body"),
-        };
+        return byte_read("raw[0]", signed, lang);
     }
 
     // Multi-byte assembly is the positional path's endianness fold,
@@ -24735,14 +24726,53 @@ fn kotlin_byte_written(value: &str, signed: bool) -> String {
     }
 }
 
-/// The Kotlin read of the byte `byte`, an element of a `ByteArray`, as the
-/// carrier of a one-byte field: the `Byte` it is where the carrier is signed,
-/// and otherwise the `UByte` of its bits.
-fn kotlin_byte_read(byte: &str, signed: bool) -> String {
+/// The Rust byte a sink writes of `value`, the carrier of a one-byte field:
+/// the value itself where the carrier is the `u8` the sink takes, and
+/// otherwise the `u8` of the `i8`'s bits, which Rust converts only where it is
+/// told to.
+fn rust_byte_written(value: &str, signed: bool) -> String {
     if signed {
-        byte.to_string()
+        format!("{value} as u8")
     } else {
-        format!("{byte}.toUByte()")
+        value.to_string()
+    }
+}
+
+/// The Go element of the `[]byte` literal a sink writes of `value`, the
+/// carrier of a one-byte field: the value itself where the carrier is the
+/// `uint8` a `byte` is, and otherwise the `byte` of the `int8`'s bits, which a
+/// composite literal does not convert to.
+fn go_byte_written(value: &str, signed: bool) -> String {
+    if signed {
+        format!("byte({value})")
+    } else {
+        value.to_string()
+    }
+}
+
+/// The read of `byte`, one byte of the frame as the language's byte array
+/// holds it, as the carrier of a one-byte field: a value of the carrier's type,
+/// which for a signed carrier is the signed byte of the same bits, two's
+/// complement ([`LangCtx::codec_carrier_signed`]).
+///
+/// Kotlin's `ByteArray` holds a signed `Byte`, which is the carrier of a signed
+/// field and is narrowed to the `UByte` of its bits for an unsigned one. Every
+/// other language's byte is unsigned: it is the carrier of an unsigned field,
+/// and is converted to the signed byte of its bits for a signed one. Python's
+/// integers have no width, so its signed byte is the two's complement of the
+/// eight bits, computed.
+fn byte_read(byte: &str, signed: bool, lang: crate::generator::Language) -> String {
+    use crate::generator::Language;
+    match (lang, signed) {
+        (Language::Swift, _) => no_swift_emitter("byte_read"),
+        (Language::Kotlin, true) => byte.to_string(),
+        (Language::Kotlin, false) => format!("{byte}.toUByte()"),
+        (_, false) => byte.to_string(),
+        (Language::Rust, true) => format!("{byte} as i8"),
+        (Language::Go, true) => format!("int8({byte})"),
+        (Language::Cpp, true) => format!("static_cast<int8_t>({byte})"),
+        (Language::C11, true) => format!("(int8_t){byte}"),
+        (Language::Python, true) => format!("({byte} ^ 0x80) - 0x80"),
     }
 }
 
@@ -24896,11 +24926,12 @@ fn streaming_fixed_field_encode_go(
         format!("\tif err := w.WriteBytes([]byte{{ {buf} }}); err != nil {{\n\t\treturn err\n\t}}")
     };
     let source = l.codec_carrier_expr(&field.sce_type, &format!("s.{go_id}"));
-    if n == 1 {
-        // Bare carrier path keeps parent-tag injection needle simple.
-        return emit(&source);
-    }
     let signed = l.codec_carrier_signed(&field.sce_type);
+    if n == 1 {
+        // Bare carrier path keeps parent-tag injection needle simple; a
+        // signed carrier is converted to the byte of its bits.
+        return emit(&go_byte_written(&source, signed));
+    }
     encode_multibyte_unified(&source, n, endian, crate::generator::Language::Go, signed)
         .into_iter()
         .map(|e| emit(&e))
@@ -24970,10 +25001,10 @@ fn streaming_fixed_field_encode_go_from_local(
         format!("\t\tif err := w.WriteBytes([]byte{{ {buf} }}); err != nil {{\n\t\t\treturn err\n\t\t}}")
     };
     let source = l.codec_carrier_expr(&field.sce_type, "_v");
-    if n == 1 {
-        return emit(&source);
-    }
     let signed = l.codec_carrier_signed(&field.sce_type);
+    if n == 1 {
+        return emit(&go_byte_written(&source, signed));
+    }
     encode_multibyte_unified(&source, n, endian, crate::generator::Language::Go, signed)
         .into_iter()
         .map(|e| emit(&e))
@@ -26343,15 +26374,7 @@ fn generate_decode_expr(
                 }
             } else {
                 match bits {
-                    8 => match lang {
-                        Language::Kotlin => kotlin_byte_read(&format!("raw[{byte_off}]"), signed),
-                        Language::Rust
-                        | Language::Cpp
-                        | Language::Go
-                        | Language::Python
-                        | Language::C11 => format!("raw[{byte_off}]"),
-                        Language::Swift => no_swift_emitter("generate_decode_expr"),
-                    },
+                    8 => byte_read(&format!("raw[{byte_off}]"), signed, lang),
                     // A whole word of two bytes or more.
                     _ => decode_multibyte_unified(byte_off, span.bytes, endian, lang, signed),
                 }
@@ -26704,42 +26727,60 @@ fn decode_multibyte_unified(
 
     let joined = shifts.join(sep);
 
-    // Kotlin wraps in a conversion call to the carrier of the width: the
-    // unsigned type, or for a signed carrier the signed type of that width,
-    // which the bits of the fold are, two's complement. The fold of four
-    // bytes is an `Int` already, and of more a `Long`.
-    if matches!(lang, Language::Kotlin) {
-        let to_type = match (byte_count, signed) {
-            (2, false) => ".toUShort()",
-            (3 | 4, false) => ".toUInt()",
-            (_, false) => ".toULong()",
-            (2, true) => ".toShort()",
-            (_, true) => "",
-        };
-        format!("({joined}){to_type}")
-    } else if matches!(lang, Language::Cpp) {
+    // The fold is the unsigned number of the bytes, in the unsigned type of
+    // the width. A signed carrier is the signed type of that width, whose
+    // value the same bits are, two's complement: each language converts the
+    // fold to it, as `byte_read` converts one byte.
+    let width = match byte_count {
+        2 => 16,
+        3 | 4 => 32,
+        _ => 64,
+    };
+    match lang {
+        // Kotlin wraps in a conversion call to the carrier of the width: the
+        // unsigned type, or for a signed carrier the signed type of that
+        // width. The fold of four bytes is an `Int` already, and of more a
+        // `Long`.
+        Language::Kotlin => {
+            let to_type = match (byte_count, signed) {
+                (2, false) => ".toUShort()",
+                (3 | 4, false) => ".toUInt()",
+                (_, false) => ".toULong()",
+                (2, true) => ".toShort()",
+                (_, true) => "",
+            };
+            format!("({joined}){to_type}")
+        }
         // C++ integer promotion: `<<` and `|` promote operands narrower
         // than `int` to `int`, so a 2-byte fold like
         // `(static_cast<uint16_t>(raw[i]) << 8) | raw[j]` produces an
         // `int`-typed expression that triggers `-Wnarrowing` when
         // assigned to a `uint16_t` carrier. The single outer cast
         // neutralises the warning without changing semantics — by
-        // construction the value fits in `byte_count * 8` bits.
-        // Rust/Go/C11/Python preserve the operand type through `<<`/`|`
-        // (Rust strict typing, Go explicit conversions, Python wide
+        // construction the value fits in `byte_count * 8` bits — and is
+        // the conversion to the signed type of the width for a signed
+        // carrier. Rust/Go/C11/Python preserve the operand type through
+        // `<<`/`|` (Rust strict typing, Go explicit conversions, Python wide
         // ints, C11 only emits this in contexts that already cast),
-        // so they don't need the wrap. This function is the SSOT for the
-        // endianness byte-fold: the streaming decode path
+        // so they wrap the fold only to read it signed. This function is the
+        // SSOT for the endianness byte-fold: the streaming decode path
         // (`streaming_fixed_field_body`) calls it with `byte_off = 0` so
         // the per-language shift/cast rules are not mirrored.
-        let target = match byte_count {
-            2 => "uint16_t",
-            3 | 4 => "uint32_t",
-            _ => "uint64_t",
-        };
-        format!("static_cast<{target}>({joined})")
-    } else {
-        joined
+        Language::Cpp => {
+            let sign = if signed { "" } else { "u" };
+            format!("static_cast<{sign}int{width}_t>({joined})")
+        }
+        Language::Rust if signed => format!("({joined}) as i{width}"),
+        Language::Go if signed => format!("int{width}({joined})"),
+        Language::C11 if signed => format!("(int{width}_t)({joined})"),
+        // Python's integers have no width: the signed number is the two's
+        // complement of the fold's bits, computed.
+        Language::Python if signed => {
+            let sign_bit = 1u64 << (8 * byte_count - 1);
+            format!("(({joined}) ^ 0x{sign_bit:X}) - 0x{sign_bit:X}")
+        }
+        Language::Rust | Language::Go | Language::C11 | Language::Python => joined,
+        Language::Swift => no_swift_emitter("decode_multibyte_unified"),
     }
 }
 
@@ -27493,11 +27534,12 @@ fn encode_whole_field_read_as(
         1 => vec![match lang {
             Language::Cpp => unreachable!("{}", CPP_ENCODE_IS_PRINTED),
             Language::Kotlin => kotlin_byte_written(&field_ref, signed),
-            Language::Rust => field_ref,
+            Language::Rust => rust_byte_written(&field_ref, signed),
             Language::Go => format!("byte({field_ref})"),
             Language::Python => format!("{field_ref} & 0xFF"),
             // C11 (return-by-value encode shape): field_ref already includes `self->`,
-            // and the value is a uint8_t so no width cast is required.
+            // and the value is a uint8_t, or an int8_t that C converts to the
+            // uint8_t of its bits (modulo 256), so no width cast is required.
             Language::C11 => field_ref,
             Language::Swift => no_swift_emitter("encode_single_field_unified"),
         }],

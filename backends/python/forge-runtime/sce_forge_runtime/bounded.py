@@ -110,7 +110,8 @@ class BoundedInt(int):
     :class:`OverflowError`, as ``int.to_bytes`` does for a number its bytes
     cannot hold, so no encode writes the field's bits of it and loses the
     rest. It is not a :class:`CodecError`, since no frame holds such a
-    number: a decode reads exactly the field's bits (:meth:`from_wire`). An
+    number: a decode reads exactly the field's bits, as the number they are,
+    two's complement where the field is signed (:meth:`from_wire`). An
     ``int`` cannot change after it is made, so a value of the class holds its
     width for as long as it lives; arithmetic on it answers a plain ``int``,
     which is held again where it is set.

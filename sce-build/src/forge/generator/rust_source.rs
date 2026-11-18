@@ -5490,8 +5490,12 @@ impl<'a> Plan<'a> {
         let value = self.carrier(field, &self.read(field, derived));
         let span = crate::forge::bit_layout::BitSpan::of(field, self.m().default_endian)
             .expect("a whole write is of a fixed field");
+        let signed = self.l().codec_carrier_signed(&field.sce_type);
         if span.bytes == 1 {
-            lines.push(format!("w.write_u8({value})?;"));
+            lines.push(format!(
+                "w.write_u8({})?;",
+                rust_byte_written(&value, signed)
+            ));
             return;
         }
         for e in encode_multibyte_unified(
@@ -5499,7 +5503,7 @@ impl<'a> Plan<'a> {
             span.bytes,
             span.endian,
             crate::generator::Language::Rust,
-            self.l().codec_carrier_signed(&field.sce_type),
+            signed,
         ) {
             lines.push(format!("w.write_u8({e})?;"));
         }
@@ -5529,15 +5533,19 @@ impl<'a> Plan<'a> {
                 let n = bits.div_ceil(8);
                 let endian = field.effective_endian(self.m().default_endian);
                 let source = self.carrier(field, &value);
+                let signed = self.l().codec_carrier_signed(&field.sce_type);
                 if n == 1 {
-                    body.push(format!("w.write_u8({source})?;"));
+                    body.push(format!(
+                        "w.write_u8({})?;",
+                        rust_byte_written(&source, signed)
+                    ));
                 } else {
                     for e in encode_multibyte_unified(
                         &source,
                         n,
                         endian,
                         crate::generator::Language::Rust,
-                        self.l().codec_carrier_signed(&field.sce_type),
+                        signed,
                     ) {
                         body.push(format!("w.write_u8({e})?;"));
                     }

@@ -232,11 +232,12 @@ fn a_codec_of_integers_holds_each_in_the_class_of_its_width() {
 
 /// A signed integer narrower than a Python `int` is held to its two's
 /// complement span, and the decode reads the bits of its field as that span
-/// does, so the frame of a negative value reads back as the value.
+/// does, so the frame of a negative value reads back as the value: the read is
+/// the signed number, as every backend reads a signed field, and the class is
+/// made of it where the value is set.
 ///
-/// Turns red where `python_source::decoded_int` stops reading a signed
-/// field's bits by `from_wire`, or where `int_class` writes a signed field as
-/// unsigned.
+/// Turns red where `generator::byte_read` reads a signed byte as the unsigned
+/// number of its bits, or where `int_class` writes a signed field as unsigned.
 #[test]
 fn a_signed_integer_is_read_back_as_the_twos_complement_of_its_bits() {
     assert!(unlowered("codec_quantity_temperature").is_empty());
@@ -247,10 +248,12 @@ fn a_signed_integer_is_read_back_as_the_twos_complement_of_its_bits() {
         &[
             "class CodecQuantityTemperatureRawTempInt(BoundedInt):\n",
             "    BITS = 8\n    SIGNED = True\n",
-            "raw_temp=CodecQuantityTemperatureRawTempInt.from_wire(",
+            "f_raw_temp = (raw[0] ^ 0x80) - 0x80",
+            "raw_temp=f_raw_temp",
             "            value = CodecQuantityTemperatureRawTempInt(value)\n",
         ],
     );
+    holds_none("codec_quantity_temperature", &text, &[".from_wire("]);
 }
 
 /// An element a gate decides is `None` where it is absent, written only where

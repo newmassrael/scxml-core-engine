@@ -697,23 +697,6 @@ fn int_class(gathered: &mut Gathered, struct_name: &str, field: &CodecField) -> 
     class
 }
 
-/// What the decode makes the integer `field` of the class `class` of, from the
-/// local `local` it read the field's bits into: the two's complement of them
-/// where the field is signed, `None` where `gated` and the field is absent;
-/// `None` where the field is unsigned, whose bits are the number.
-fn decoded_int(field: &CodecField, class: &str, local: &str, gated: bool) -> Option<String> {
-    let (_, signed) = int_width(field)?;
-    if !signed {
-        return None;
-    }
-    let made = format!("{class}.from_wire({local})");
-    Some(if gated {
-        format!("None if {local} is None else {made}")
-    } else {
-        made
-    })
-}
-
 /// The Python text of the codec `plan`, whose value's class is `struct_name`;
 /// the plan is one [`unlowered`] answers `None` for.
 pub(super) fn render(
@@ -768,14 +751,9 @@ pub(super) fn render(
         }
         let held = held_as(&mut gathered, &codec, element.field, &element.value, gated);
         presented.insert(id.clone(), held.presented);
-        // A signed integer is the two's complement of the bits the decode
-        // read.
-        if let (Value::Scalar(_), Some(class)) = (&element.value, &held.class) {
-            let local = l.codec_field_decode_local(id);
-            if let Some(made) = decoded_int(element.field, class, &local, gated) {
-                decoded.insert(id.clone(), made);
-            }
-        }
+        // An integer is the number the decode read, signed where its field is
+        // (`byte_read`, `decode_multibyte_unified`), which `__setattr__` makes
+        // a value of its class as it is set.
         // A list held to a law is made of the start the frame gave and the
         // entries the decode read, where it read it.
         if let Some(lawful) = decoded_lawful(plan, l, struct_name, id) {
@@ -1600,22 +1578,10 @@ fn group_part(
                 hold.push_str(&hold_line(&hold, &member, line));
             }
             // A list held to a law is held to it from the start the frame
-            // gave before the arm is made, and a signed integer is the two's
-            // complement of the bits the decode read.
-            let local = l.codec_field_decode_local(id);
-            let field = plan
-                .model
-                .fields
-                .iter()
-                .find(|f| f.id == *id)
-                .expect("a group's member is a field of the codec");
+            // gave before the arm is made; any other member is the value the
+            // decode read, an integer signed where its field is.
             let read = decoded_lawful(plan, l, struct_name, id)
-                .or_else(|| {
-                    held.class
-                        .as_ref()
-                        .and_then(|class| decoded_int(field, class, &local, false))
-                })
-                .unwrap_or(local);
+                .unwrap_or_else(|| l.codec_field_decode_local(id));
             args.push(format!("{member}={read}"));
         }
         let hold = setattr(&hold);

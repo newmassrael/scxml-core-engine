@@ -4851,6 +4851,359 @@ fn a_signed_field_of_part_of_its_bytes_is_refused_on_every_backend() {
     }
 }
 
+// ── A signed field is the signed type of its width ──────────────────
+//
+// A field of a signed integer type, or of an enum whose carrier is signed, is
+// read as the signed type of its width, two's complement, and written as the
+// bytes of that value, on every backend. A frame's bytes are unsigned in every
+// language but Kotlin, so a read that stops at them hands Rust and Go a value of
+// a type their field is not, which neither compiles, and Python a number that is
+// not the value.
+
+/// An enum of a signed carrier, closed, whose variants leave numbers between
+/// them that it does not declare.
+const SIGNED_LEVEL_ENUM: &str = r#"<?xml version="1.0" encoding="UTF-8"?>
+<scxml xmlns="http://www.w3.org/2005/07/scxml" xmlns:sce="http://sce.dev/ext"
+       version="1.0" sce:kind="enum" name="enum_signed_level" sce:underlying-type="int8">
+  <datamodel>
+    <data id="variants">
+      <sce:variant name="fault" value="-128"/>
+      <sce:variant name="low" value="-1"/>
+      <sce:variant name="nominal" value="0"/>
+      <sce:variant name="high" value="100"/>
+    </data>
+  </datamodel>
+</scxml>"#;
+
+/// Every signed width at its place in a frame laid out by byte, one of them
+/// little-endian, with the frames of a negative and a positive value of each.
+const SIGNED_WIDTHS: &str = r#"<?xml version="1.0" encoding="UTF-8"?>
+<scxml xmlns="http://www.w3.org/2005/07/scxml" xmlns:sce="http://sce.dev/ext"
+       sce:kind="codec" sce:default-endian="big" name="codec_signed_widths" version="1.0">
+  <datamodel>
+    <sce:field id="trim" sce:type="int8" sce:byte="0" sce:bit-size="8"/>
+    <sce:field id="bias" sce:type="int16" sce:byte="1" sce:bit-size="16"/>
+    <sce:field id="drift" sce:type="int32" sce:byte="3" sce:bit-size="32"/>
+    <sce:field id="epoch" sce:type="int64" sce:byte="7" sce:bit-size="64"/>
+    <sce:field id="skew" sce:type="int16" sce:byte="15" sce:bit-size="16" sce:endian="little"/>
+  </datamodel>
+  <sce:test-vector hex="fefed4fffeee90fffffffed5fa0e00feff">
+    <sce:decoded field="trim" value="-2"/>
+    <sce:decoded field="bias" value="-300"/>
+    <sce:decoded field="drift" value="-70000"/>
+    <sce:decoded field="epoch" value="-5000000000"/>
+    <sce:decoded field="skew" value="-2"/>
+  </sce:test-vector>
+  <sce:test-vector hex="7f7fff7fffffff7fffffffffffffff2c01">
+    <sce:decoded field="trim" value="127"/>
+    <sce:decoded field="bias" value="32767"/>
+    <sce:decoded field="drift" value="2147483647"/>
+    <sce:decoded field="epoch" value="9223372036854775807"/>
+    <sce:decoded field="skew" value="300"/>
+  </sce:test-vector>
+</scxml>"#;
+
+/// An enum of a signed carrier and a signed byte in a frame laid out by byte.
+const SIGNED_LEVEL: &str = r#"<?xml version="1.0" encoding="UTF-8"?>
+<scxml xmlns="http://www.w3.org/2005/07/scxml" xmlns:sce="http://sce.dev/ext"
+       sce:kind="codec" sce:default-endian="big" name="codec_signed_level" version="1.0">
+  <sce:import src="enum_signed_level.scxml" kind="enum" as="status"/>
+  <datamodel>
+    <sce:field id="level" sce:type="enum:status" sce:byte="0" sce:bit-size="8"/>
+    <sce:field id="trim" sce:type="int8" sce:byte="1" sce:bit-size="8"/>
+  </datamodel>
+</scxml>"#;
+
+/// The same in a frame read field by field: an enum of a signed carrier and a
+/// signed byte that every frame holds, and a signed word and a signed byte that
+/// each a flag of its own gates.
+const SIGNED_GATED: &str = r#"<?xml version="1.0" encoding="UTF-8"?>
+<scxml xmlns="http://www.w3.org/2005/07/scxml" xmlns:sce="http://sce.dev/ext"
+       sce:kind="codec" sce:default-endian="big" name="codec_signed_gated" version="1.0">
+  <sce:import src="enum_signed_level.scxml" kind="enum" as="status"/>
+  <datamodel>
+    <sce:flags id="flags" sce:type="uint8" sce:byte="0" sce:bit-size="8">
+      <sce:flag name="has_bias" bit="0"/>
+      <sce:flag name="has_trim" bit="1"/>
+    </sce:flags>
+    <sce:field id="level" sce:type="enum:status" sce:byte="1" sce:bit-size="8"/>
+    <sce:field id="step" sce:type="int8" sce:byte="2" sce:bit-size="8"/>
+    <sce:field id="bias" sce:type="int16" sce:byte="3" sce:bit-size="16"
+               sce:present-if="flags.has_bias"/>
+    <sce:field id="trim" sce:type="int8" sce:byte="5" sce:bit-size="8"
+               sce:present-if="flags.has_trim"/>
+  </datamodel>
+</scxml>"#;
+
+/// The documents above in a scratch directory, by the file names a compile of
+/// the set reads them in: the enum before the codecs that import it.
+fn signed_fixtures() -> (tempfile::TempDir, [&'static str; 4]) {
+    let documents = [
+        ("enum_signed_level.scxml", SIGNED_LEVEL_ENUM),
+        ("codec_signed_widths.scxml", SIGNED_WIDTHS),
+        ("codec_signed_level.scxml", SIGNED_LEVEL),
+        ("codec_signed_gated.scxml", SIGNED_GATED),
+    ];
+    let dir = tempfile::tempdir().expect("a scratch directory");
+    for (name, text) in documents {
+        std::fs::write(dir.path().join(name), text).unwrap_or_else(|e| panic!("write {name}: {e}"));
+    }
+    (dir, documents.map(|(name, _)| name))
+}
+
+/// Every file `language` generates of the document `document` of `dir`, joined.
+fn generated_text(dir: &Path, document: &str, language: sce_build::generator::Language) -> String {
+    let source = std::fs::read_to_string(dir.join(document))
+        .unwrap_or_else(|e| panic!("read {document}: {e}"));
+    sce_build::compile_forge_with_imports(
+        &source,
+        sce_build::DocumentLabel::symmetric(document.trim_end_matches(".scxml")),
+        language,
+        dir,
+        &golden_options_for(language, dir, &[document]),
+    )
+    .unwrap_or_else(|e| panic!("{language:?}: {document} generates: {e:?}"))
+    .files
+    .into_iter()
+    .map(|(_, text)| text)
+    .collect::<Vec<_>>()
+    .join("\n")
+}
+
+/// Each backend reads a signed field as the signed type of its width: a byte
+/// as the signed byte of its bits, a word as its bits taken two's complement,
+/// little-endian as big, an enum's signed carrier before the enum's conversion
+/// takes it, and in a frame read field by field as in one laid out by byte.
+/// Python, whose integers have no width, computes the two's complement of the
+/// bits. Kotlin's `Byte` is signed already; Swift reads the signed integer
+/// type itself from the cursor.
+///
+/// Turns red where `byte_read` reads a signed byte as the unsigned number of
+/// its bits on any backend, or `decode_multibyte_unified` leaves a signed
+/// word's fold unsigned.
+#[test]
+fn a_signed_field_is_read_as_the_signed_type_of_its_width_on_every_backend() {
+    use sce_build::generator::Language;
+    type Needles = &'static [&'static str];
+    // The language, then what its code of the frame laid out by byte, of the
+    // enum at a byte and of the frame read field by field holds.
+    let cases: [(Language, Needles, Needles, Needles); 7] = [
+        (
+            Language::Rust,
+            &[
+                "let trim = raw[0] as i8;",
+                "let bias = (((raw[1] as u16) << 8) | raw[2] as u16) as i16;",
+                "let skew = (raw[15] as u16 | ((raw[16] as u16) << 8)) as i16;",
+                "trim() as u8)?;",
+            ],
+            &["from_underlying(raw[0] as i8)", "let trim = raw[1] as i8;"],
+            &[
+                "from_underlying(raw[0] as i8)",
+                "let _v = raw[0] as i8;",
+                "let _v = (((raw[0] as u16) << 8) | raw[1] as u16) as i16;",
+            ],
+        ),
+        (
+            Language::Go,
+            &[
+                ":= int8(raw[0])",
+                "int16(uint16(raw[1])<<8 | uint16(raw[2]))",
+                "int16(uint16(raw[15]) | uint16(raw[16])<<8)",
+            ],
+            &["FromUnderlying(int8(raw[0]))", ":= int8(raw[1])"],
+            &[
+                "FromUnderlying(int8(raw[0]))",
+                "= int8(raw[0])",
+                "int16(uint16(raw[0])<<8 | uint16(raw[1]))",
+            ],
+        ),
+        (
+            Language::C11,
+            &[
+                "(int8_t)raw[0]",
+                "(int16_t)(((uint16_t)raw[1] << 8) | raw[2])",
+                "(int16_t)(raw[15] | ((uint16_t)raw[16] << 8))",
+            ],
+            &["_from_underlying((int8_t)raw[0]", "(int8_t)raw[1]"],
+            &[
+                "_from_underlying((int8_t)raw[0]",
+                "(int16_t)(((uint16_t)raw[0] << 8) | raw[1])",
+            ],
+        ),
+        (
+            Language::Cpp,
+            &[
+                "static_cast<int8_t>(raw[0])",
+                "static_cast<int16_t>((static_cast<uint16_t>(raw[1]) << 8) | raw[2])",
+                "static_cast<int16_t>(raw[15] | (static_cast<uint16_t>(raw[16]) << 8))",
+            ],
+            &[
+                "from_underlying(static_cast<int8_t>(raw[0]))",
+                "static_cast<int8_t>(raw[1])",
+            ],
+            &[
+                "from_underlying(static_cast<int8_t>(raw[0]))",
+                "static_cast<int16_t>((static_cast<uint16_t>(raw[0]) << 8) | raw[1])",
+            ],
+        ),
+        (
+            Language::Python,
+            &[
+                "f_trim = (raw[0] ^ 0x80) - 0x80",
+                "f_bias = (((raw[1] << 8) | raw[2]) ^ 0x8000) - 0x8000",
+                "f_skew = ((raw[15] | (raw[16] << 8)) ^ 0x8000) - 0x8000",
+            ],
+            &[
+                "from_underlying((raw[0] ^ 0x80) - 0x80)",
+                "f_trim = (raw[1] ^ 0x80) - 0x80",
+            ],
+            &[
+                "from_underlying((raw[0] ^ 0x80) - 0x80)",
+                "(((raw[0] << 8) | raw[1]) ^ 0x8000) - 0x8000",
+            ],
+        ),
+        (
+            Language::Kotlin,
+            &[
+                "val trim = raw[0]\n",
+                "(((raw[1].toInt() and 0xFF) shl 8) or (raw[2].toInt() and 0xFF)).toShort()",
+            ],
+            &["fromUnderlying(raw[0])", "val trim = raw[1]\n"],
+            &["fromUnderlying(raw[0])", "val _v = raw[0]\n"],
+        ),
+        (
+            Language::Swift,
+            &[
+                "cursor.peekInteger(Int8.self, at: 0, .big)",
+                "cursor.peekInteger(Int16.self, at: 1, .big)",
+                "cursor.peekInteger(Int16.self, at: 15, .little)",
+            ],
+            &["cursor.peekInteger(Int8.self, at: 0, .big)"],
+            &[],
+        ),
+    ];
+    let (dir, _) = signed_fixtures();
+    for (language, widths, level, gated) in cases {
+        for (document, needles) in [
+            ("codec_signed_widths.scxml", widths),
+            ("codec_signed_level.scxml", level),
+            ("codec_signed_gated.scxml", gated),
+        ] {
+            if needles.is_empty() {
+                continue;
+            }
+            let text = generated_text(dir.path(), document, language);
+            for needle in needles {
+                assert!(
+                    text.contains(needle),
+                    "{language:?}: {document} must read its signed fields signed: missing \
+                     `{needle}`\n--- code ---\n{text}"
+                );
+            }
+        }
+    }
+}
+
+/// What the Rust codecs of [`signed_fixtures`] read back: an enum's negative
+/// carrier as its variant, a signed byte and a gated signed word as their
+/// negative values, and the same frame written again; a negative carrier no
+/// variant declares is refused. The frames of each signed width are the test
+/// vectors of `codec_signed_widths`, which its sidecar runs.
+const SIGNED_HARNESS: &str = r#"// Injected by a_signed_field_round_trips_on_rust.
+#[cfg(test)]
+mod tests {
+    use crate::codec_signed_gated::CodecSignedGated;
+    use crate::codec_signed_level::CodecSignedLevel;
+    use crate::enum_signed_level::EnumSignedLevel;
+    use ::sce_forge_runtime::codec::{CodecError, SceCursor};
+
+    #[test]
+    fn a_negative_carrier_is_its_variant_in_a_frame_laid_out_by_byte() {
+        let frame = [0xFFu8, 0x80];
+        let mut cursor = SceCursor::new(&frame);
+        let view = CodecSignedLevel::decode(&mut cursor).expect("decode a declared frame");
+        assert_eq!(view.level, EnumSignedLevel::Low);
+        assert_eq!(view.trim, -128);
+        assert_eq!(view.encode_to_vec().as_slice(), &frame);
+    }
+
+    #[test]
+    fn a_negative_carrier_no_variant_declares_is_refused() {
+        // -2 lies between -128 and -1, which the closed set declares.
+        let frame = [0xFEu8, 0x00];
+        let mut cursor = SceCursor::new(&frame);
+        assert_eq!(
+            CodecSignedLevel::decode(&mut cursor),
+            Err(CodecError::UndeclaredEnumValue)
+        );
+    }
+
+    #[test]
+    fn a_frame_read_field_by_field_reads_its_signed_fields_signed() {
+        let frame = [0x03u8, 0x80, 0x7F, 0xFE, 0xD4, 0xFE];
+        let mut cursor = SceCursor::new(&frame);
+        let view = CodecSignedGated::decode(&mut cursor).expect("decode with both gated fields");
+        assert_eq!(view.level, EnumSignedLevel::Fault);
+        assert_eq!(view.step, 127);
+        assert_eq!(view.bias, Some(-300));
+        assert_eq!(view.trim, Some(-2));
+        assert_eq!(view.encode_to_vec().as_slice(), &frame);
+    }
+
+    #[test]
+    fn a_gated_signed_field_is_absent_where_its_flag_is_clear() {
+        let frame = [0x00u8, 0xFF, 0xFF];
+        let mut cursor = SceCursor::new(&frame);
+        let view = CodecSignedGated::decode(&mut cursor).expect("decode without the gated fields");
+        assert_eq!(view.level, EnumSignedLevel::Low);
+        assert_eq!(view.step, -1);
+        assert!(view.bias.is_none());
+        assert!(view.trim.is_none());
+        assert_eq!(view.encode_to_vec().as_slice(), &frame);
+    }
+}
+"#;
+
+/// The Rust codecs of [`signed_fixtures`] compile under `-D warnings` and
+/// read and write their signed fields as their values ([`SIGNED_HARNESS`], and
+/// the test vectors of `codec_signed_widths`).
+///
+/// Turns red where a Rust signed read is the `u8` or unsigned word of its
+/// bytes (`byte_read`, `decode_multibyte_unified`), or a write hands an `i8`
+/// to `write_u8` (`rust_byte_written`).
+#[test]
+fn a_signed_field_round_trips_on_rust() {
+    let (dir, documents) = signed_fixtures();
+    rustc_test_codec_set_with_extra(
+        dir.path(),
+        &documents,
+        &[("signed_round_trip.rs", SIGNED_HARNESS)],
+        "signed_round_trip",
+    )
+    .expect("a signed field must compile and round-trip as its value on Rust");
+}
+
+/// The codecs of [`signed_fixtures`] compile on C11, C++, Go, Python and
+/// Kotlin.
+///
+/// Turns red where the Go read of a signed field is the `byte` or unsigned word
+/// of its bytes, or a Go write puts an `int8` in a `[]byte` literal
+/// (`go_byte_written`); the other four convert a signed read in any case.
+#[test]
+fn a_signed_field_compiles_on_every_backend() {
+    let (dir, documents) = signed_fixtures();
+    compile_codec_set_c11(dir.path(), &documents, "signed_fields_c11")
+        .unwrap_or_else(|e| panic!("C11:\n{e}"));
+    compile_codec_set_cpp(dir.path(), &documents, "signed_fields_cpp")
+        .unwrap_or_else(|e| panic!("C++:\n{e}"));
+    compile_codec_set_go(dir.path(), &documents, "signed_fields_go")
+        .unwrap_or_else(|e| panic!("Go:\n{e}"));
+    compile_codec_set_python(dir.path(), &documents, "signed_fields_python")
+        .unwrap_or_else(|e| panic!("Python:\n{e}"));
+    compile_codec_set_kotlin(dir.path(), &documents, "signed_fields_kotlin")
+        .unwrap_or_else(|e| panic!("Kotlin:\n{e}"));
+}
+
 /// `!` negates one clause. A group under it is refused as a group, and the
 /// refusal quotes the attribute the author wrote, whole, wherever in it the
 /// group stands: splitting on `||` before looking made it quote the fragment
