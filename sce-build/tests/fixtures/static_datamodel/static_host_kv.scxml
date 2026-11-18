@@ -4,7 +4,7 @@
 <!--
   datamodel="sce-static" (docs/SCE_ACCEPTED_SUBSET.md §2.12, §2.15; the
   standard host features, docs/SCE_HOST_FEATURES.md, "Key-value store"): one
-  machine that asks the four operations of the key-value store of its host,
+  machine that asks the five operations of the key-value store of its host,
   one at a time, and publishes what each answered.
 
   The events are the request records themselves: `host.kv.get.request` carries
@@ -18,8 +18,9 @@
               (`unavailable`, `quota_exceeded`) when its answer is a failure,
               `deadline` when the engine's deadline passed, `refused` when
               the host declined to start it
-    found, got        the answer of a get
+    found, got, got_version  the answer of a get
     replaced          the answer of a put
+    written, put_version     the answer of a put-if
     existed           the answer of a delete
     next_found, next  the answer of a next-key
 
@@ -34,6 +35,8 @@
   <sce:import kind="event-schema" src="sce:std/host/kv_get_result.scxml" as="KvGetResult"/>
   <sce:import kind="event-schema" src="sce:std/host/kv_put_request.scxml" as="KvPutRequest"/>
   <sce:import kind="event-schema" src="sce:std/host/kv_put_result.scxml" as="KvPutResult"/>
+  <sce:import kind="event-schema" src="sce:std/host/kv_put_if_request.scxml" as="KvPutIfRequest"/>
+  <sce:import kind="event-schema" src="sce:std/host/kv_put_if_result.scxml" as="KvPutIfResult"/>
   <sce:import kind="event-schema" src="sce:std/host/kv_delete_request.scxml" as="KvDeleteRequest"/>
   <sce:import kind="event-schema" src="sce:std/host/kv_delete_result.scxml" as="KvDeleteResult"/>
   <sce:import kind="event-schema" src="sce:std/host/kv_next_key_request.scxml" as="KvNextKeyRequest"/>
@@ -43,10 +46,14 @@
     <data id="value" sce:type="string[4096]" expr="''"/>
     <data id="after" sce:type="string[256]" expr="''"/>
     <data id="prefix" sce:type="string[256]" expr="''"/>
+    <data id="expected" sce:type="string[20]" expr="''"/>
     <data id="outcome" sce:type="string[24]" expr="''" sce:direction="out"/>
     <data id="found" sce:type="bool" expr="false" sce:direction="out"/>
     <data id="got" sce:type="string[4096]" expr="''" sce:direction="out"/>
+    <data id="got_version" sce:type="string[20]" expr="''" sce:direction="out"/>
     <data id="replaced" sce:type="bool" expr="false" sce:direction="out"/>
+    <data id="written" sce:type="bool" expr="false" sce:direction="out"/>
+    <data id="put_version" sce:type="string[20]" expr="''" sce:direction="out"/>
     <data id="existed" sce:type="bool" expr="false" sce:direction="out"/>
     <data id="next_found" sce:type="bool" expr="false" sce:direction="out"/>
     <data id="next" sce:type="string[256]" expr="''" sce:direction="out"/>
@@ -59,6 +66,11 @@
     <transition event="host.kv.put.request" target="putting">
       <assign location="key" expr="_event.data.key"/>
       <assign location="value" expr="_event.data.value"/>
+    </transition>
+    <transition event="host.kv.put_if.request" target="putting_if">
+      <assign location="key" expr="_event.data.key"/>
+      <assign location="value" expr="_event.data.value"/>
+      <assign location="expected" expr="_event.data.expected_version"/>
     </transition>
     <transition event="host.kv.delete.request" target="deleting">
       <assign location="key" expr="_event.data.key"/>
@@ -76,6 +88,7 @@
     <transition event="done.invoke.get" cond="_event.data.error === ''" target="idle">
       <assign location="found" expr="_event.data.found"/>
       <assign location="got" expr="_event.data.value"/>
+      <assign location="got_version" expr="_event.data.version"/>
       <assign location="outcome" expr="'done'"/>
     </transition>
     <transition event="done.invoke.get" target="idle">
@@ -102,6 +115,28 @@
       <assign location="outcome" expr="_event.data.error"/>
     </transition>
     <transition event="error.invoke.put" target="idle">
+      <assign location="outcome" expr="'deadline'"/>
+    </transition>
+    <transition event="error.execution" target="idle">
+      <assign location="outcome" expr="'refused'"/>
+    </transition>
+  </state>
+
+  <state id="putting_if">
+    <invoke type="sce-host-kv-put-if" id="putif" sce:request="KvPutIfRequest" sce:result="KvPutIfResult">
+      <param name="key" expr="key"/>
+      <param name="value" expr="value"/>
+      <param name="expected_version" expr="expected"/>
+    </invoke>
+    <transition event="done.invoke.putif" cond="_event.data.error === ''" target="idle">
+      <assign location="written" expr="_event.data.written"/>
+      <assign location="put_version" expr="_event.data.version"/>
+      <assign location="outcome" expr="'done'"/>
+    </transition>
+    <transition event="done.invoke.putif" target="idle">
+      <assign location="outcome" expr="_event.data.error"/>
+    </transition>
+    <transition event="error.invoke.putif" target="idle">
       <assign location="outcome" expr="'deadline'"/>
     </transition>
     <transition event="error.execution" target="idle">
