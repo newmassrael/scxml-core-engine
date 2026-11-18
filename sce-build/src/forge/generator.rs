@@ -24727,8 +24727,10 @@ impl IntCarrier {
     }
 }
 
-/// The Kotlin unsigned type conversion of the width `bits`, as a call names it.
-fn kotlin_unsigned_conversion(bits: u32) -> &'static str {
+/// The Kotlin conversion to the unsigned type of the width `bits`, as a call
+/// names it. Not [`kotlin_unsigned_conversion`], which goes the other way: from
+/// an unsigned type to the signed one a template compares it as.
+fn kotlin_to_unsigned_of_width(bits: u32) -> &'static str {
     match bits {
         8 => "toUByte",
         16 => "toUShort",
@@ -26438,7 +26440,7 @@ fn generate_decode_expr(
                     ),
                     Language::Kotlin => format!(
                         "((raw[{byte_off}].toInt() ushr {bit_off}) and 0x{mask:02X}).{}()",
-                        kotlin_unsigned_conversion(target)
+                        kotlin_to_unsigned_of_width(target)
                     ),
                     Language::C11 => {
                         format!("(uint{target}_t)((raw[{byte_off}] >> {bit_off}) & 0x{mask:02X})")
@@ -26885,7 +26887,7 @@ fn decode_multibyte_unified(
         // 64 a `Long`.
         Language::Kotlin => {
             let to_type = match (width, signed) {
-                (_, false) => format!(".{}()", kotlin_unsigned_conversion(width)),
+                (_, false) => format!(".{}()", kotlin_to_unsigned_of_width(width)),
                 (16, true) => ".toShort()".to_string(),
                 (_, true) => String::new(),
             };
