@@ -83,10 +83,22 @@ pub enum CodecFailure {
     /// a build can leave an arm out (Rust, C11, C++); a runtime that keeps
     /// every arm declares it and never raises it.
     VariantArmNotBuilt,
-    /// An `sce:encoding="cbor"` map is not one the codec reads
-    /// (SCE_FORGE.md §4.6.1): not a definite-length map, a key given twice,
-    /// or an entry of the wrong major type.
+    /// An `sce:encoding="cbor"` codec (SCE_FORGE.md §4.6.1) read an item that
+    /// is not well-formed (RFC 8949 Appendix F), or one of indefinite length,
+    /// which the codec's profile of definite lengths does not hold
+    /// (docs/adr/0101 §3.1).
     CborMalformed,
+    /// A CBOR item of a major type, a simple value or a tag the type at that
+    /// place does not take (docs/adr/0101 §3.3): a text where a number
+    /// stands, `null` where no list's optional element stands, a tagged
+    /// item, a key of the wrong type.
+    CborWrongType,
+    /// A CBOR map holds one of its declared keys twice (RFC 8949 §5.6).
+    CborDuplicateKey,
+    /// A CBOR union's one key names none of its cases.
+    CborUnknownVariant,
+    /// A CBOR union's map holds no entry, or more than one.
+    CborUnionEntries,
     /// A CBOR map lacks an entry of a bare type, one that is not `optional<T>`.
     CborRequiredKeyMissing,
     /// A CBOR byte string is not its declared `sce:length`.
@@ -120,7 +132,7 @@ pub enum CodecFailure {
 
 impl CodecFailure {
     /// Every failure, in declaration order — the set `parse` accepts.
-    pub const ALL: [CodecFailure; 19] = [
+    pub const ALL: [CodecFailure; 23] = [
         CodecFailure::NeedMoreBytes,
         CodecFailure::LengthOutOfRange,
         CodecFailure::TooManyElements,
@@ -130,6 +142,10 @@ impl CodecFailure {
         CodecFailure::CapacityExceeded,
         CodecFailure::VariantArmNotBuilt,
         CodecFailure::CborMalformed,
+        CodecFailure::CborWrongType,
+        CodecFailure::CborDuplicateKey,
+        CodecFailure::CborUnknownVariant,
+        CodecFailure::CborUnionEntries,
         CodecFailure::CborRequiredKeyMissing,
         CodecFailure::CborWrongLength,
         CodecFailure::CborTooDeep,
@@ -155,6 +171,10 @@ impl CodecFailure {
             CodecFailure::CapacityExceeded => "capacity-exceeded",
             CodecFailure::VariantArmNotBuilt => "variant-arm-not-built",
             CodecFailure::CborMalformed => "cbor-malformed",
+            CodecFailure::CborWrongType => "cbor-wrong-type",
+            CodecFailure::CborDuplicateKey => "cbor-duplicate-key",
+            CodecFailure::CborUnknownVariant => "cbor-unknown-variant",
+            CodecFailure::CborUnionEntries => "cbor-union-entries",
             CodecFailure::CborRequiredKeyMissing => "cbor-required-key-missing",
             CodecFailure::CborWrongLength => "cbor-wrong-length",
             CodecFailure::CborTooDeep => "cbor-too-deep",
@@ -189,6 +209,10 @@ impl CodecFailure {
         matches!(
             self,
             CodecFailure::CborMalformed
+                | CodecFailure::CborWrongType
+                | CodecFailure::CborDuplicateKey
+                | CodecFailure::CborUnknownVariant
+                | CodecFailure::CborUnionEntries
                 | CodecFailure::CborRequiredKeyMissing
                 | CodecFailure::CborWrongLength
                 | CodecFailure::CborTooDeep
@@ -370,7 +394,57 @@ mod tests {
                 .count(),
             6
         );
-        assert_eq!(CodecFailure::ALL.iter().filter(|f| f.is_cbor()).count(), 5);
+        assert_eq!(CodecFailure::ALL.iter().filter(|f| f.is_cbor()).count(), 9);
+    }
+
+    /// The four kinds docs/adr/0101 §3.3 adds, spelled on each runtime as the
+    /// record names them, so a runtime declares the name a reader of the
+    /// record looks for.
+    #[test]
+    fn the_cbor_kinds_of_adr_0101_are_spelled_as_the_record_names_them() {
+        let kinds = [
+            CodecFailure::CborWrongType,
+            CodecFailure::CborDuplicateKey,
+            CodecFailure::CborUnknownVariant,
+            CodecFailure::CborUnionEntries,
+        ];
+        let spelled = |lang: Language| kinds.map(|f| f.runtime_name(lang));
+        assert_eq!(
+            spelled(Language::Rust),
+            [
+                "CborWrongType",
+                "CborDuplicateKey",
+                "CborUnknownVariant",
+                "CborUnionEntries"
+            ]
+        );
+        assert_eq!(
+            spelled(Language::Go),
+            [
+                "ErrCborWrongType",
+                "ErrCborDuplicateKey",
+                "ErrCborUnknownVariant",
+                "ErrCborUnionEntries"
+            ]
+        );
+        assert_eq!(
+            spelled(Language::Swift),
+            [
+                "cborWrongType",
+                "cborDuplicateKey",
+                "cborUnknownVariant",
+                "cborUnionEntries"
+            ]
+        );
+        assert_eq!(
+            spelled(Language::C11),
+            [
+                "SCE_FORGE_CODEC_CBOR_WRONG_TYPE",
+                "SCE_FORGE_CODEC_CBOR_DUPLICATE_KEY",
+                "SCE_FORGE_CODEC_CBOR_UNKNOWN_VARIANT",
+                "SCE_FORGE_CODEC_CBOR_UNION_ENTRIES"
+            ]
+        );
     }
 
     #[test]

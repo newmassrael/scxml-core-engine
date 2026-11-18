@@ -42638,7 +42638,7 @@
         {
           "why": "key 7 is given twice",
           "encoded": [166, 0, 80, 0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 1, 102, 110, 111, 100, 101, 45, 97, 3, 3, 5, 66, 222, 173, 7, 245, 7, 244],
-          "error": "cbor-malformed"
+          "error": "cbor-duplicate-key"
         },
         {
           "why": "pattern holds 300, past a uint8",
@@ -42648,7 +42648,7 @@
         {
           "why": "a text string where the urgent entry expects a truth value",
           "encoded": [165, 0, 80, 0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 1, 102, 110, 111, 100, 101, 45, 97, 3, 3, 5, 66, 222, 173, 7, 97, 120],
-          "error": "cbor-malformed"
+          "error": "cbor-wrong-type"
         },
         {
           "why": "an indefinite-length map, which the codec never reads",

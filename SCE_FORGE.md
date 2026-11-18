@@ -1192,7 +1192,7 @@ id as a text string and written in the order RFC 8949 §4.2.1 sorts the keys'
 encodings (a shorter key first), each value as docs/adr/0086 section 9.2 writes
 its type. A decode refuses an array past `N` items or below the lower count, an
 item that is no map, a key of a record given twice and a field absent, each as
-`CborOutOfRange`, `CborMalformed` or `CborRequiredKeyMissing`, and skips a key
+`CborOutOfRange`, `CborWrongType`, `CborDuplicateKey` or `CborRequiredKeyMissing`, and skips a key
 of a record its schema does not declare. A record a list holds is a map of
 unsigned integers, `bool`s, texts and byte strings, each bounded by its type; a
 record with a field of any other type, a record of no field, and one whose schema
@@ -1259,7 +1259,8 @@ declares; a lower count is, on every backend alike:
   each list at its bound.
 - Go: `[]<schema>.<Schema>Payload`, the functions unexported in the codec's
   package and named for the codec; a refused read returns Rust's error
-  (`ErrCborOutOfRange`, `ErrCborMalformed`, `ErrCborRequiredKeyMissing`).
+  (`ErrCborOutOfRange`, `ErrCborWrongType`, `ErrCborDuplicateKey`,
+  `ErrCborRequiredKeyMissing`).
 - Python: `list[<schema>.<Schema>Payload]`, the functions private static methods
   of the codec's class; a write refuses a record's number past its width too, a
   Python `int` holding none, as it refuses an entry's.
@@ -1273,12 +1274,30 @@ in ascending key order, every head in its shortest form (RFC 8949 §4.2.1,
 deterministic encoding) — so two backends given the same value write the
 same bytes. Decode takes the keys in any order and skips a key the codec
 does not declare, its value included (nested maps and arrays too, to a
-nesting depth of 16). It refuses a key that is not an unsigned integer, a
-required key that is absent, a value of another CBOR type than its entry
-declares, a value its width cannot hold, and an exact-length byte string
-of another length. Decode accepts a head that is not in its shortest form:
+nesting depth of 16). Decode accepts a head that is not in its shortest form:
 what it reads is the value, and a sender that wrote it longer said the same
-thing.
+thing. It names each refusal by the class RFC 8949 §1.2 puts it in
+(docs/adr/0101 §3.3): an item that is not well-formed, or of indefinite
+length, which the codec's profile of definite lengths does not hold, is
+`CborMalformed`; an item of a major type, a simple value or a tag its place
+does not take (a key that is not an unsigned integer, a record's key that is
+not a text, a value of another CBOR type than its entry declares, `null`
+under an optional entry's key, a tagged item) is `CborWrongType`; a declared
+key given twice is `CborDuplicateKey`; a required key that is absent is
+`CborRequiredKeyMissing`; a value its width cannot hold is `CborOutOfRange`;
+and an exact-length byte string of another length is `CborWrongLength`.
+
+The runtimes of Rust, Go, Swift and C11 hold the items the rest of
+docs/adr/0101 builds on, each with its tests (`cbor_runtime_test` on C11,
+the module's tests on Rust, `cbor_test.go`, `CborTests.swift`): a signed
+integer, major type 0 or, below zero, major type 1, read within its type's
+range; a float written in the shortest of half, single and double precision
+that holds it exactly, a NaN as `f9 7e 00`, and read in any precision that
+holds the value, a `float32` refusing a double no single is exactly as
+`CborOutOfRange`; and a union's head, a map of one entry keyed by its case's
+variant name, refused as `CborUnionEntries` when it holds no entry or more
+than one and as `CborUnknownVariant` when its key names no case. No
+generated codec reads a signed integer, a float or a union from these yet.
 
 **Refused on a CBOR codec** — each is a position, and a map has none:
 `sce:byte`, `sce:bit-offset`, `sce:bit-size`, `sce:endian`,
@@ -1312,8 +1331,9 @@ with a string or byte string that states no bound has no mirror, since a
 container needs a capacity, and a map of scalars borrows
 nothing; a queue, a bounded collection or a broadcast log over an element stores
 the mirror, at the inline profile, where it exists. The refusals are
-typed: `CborMalformed`, `CborRequiredKeyMissing`, `CborWrongLength`,
-`CborTooDeep`, `CborOutOfRange`, and the existing `InvalidUtf8` /
+typed: `CborMalformed`, `CborWrongType`, `CborDuplicateKey`,
+`CborRequiredKeyMissing`, `CborWrongLength`, `CborTooDeep`, `CborOutOfRange`,
+and the existing `InvalidUtf8` /
 `UndeclaredEnumValue`. Kotlin generates the same codec as a data class (an
 optional entry nullable, `bytes` a `ByteArray`), `encode(SceSink):
 CodecError?`, `encodeToByteArray(): ByteArray?` and `decode(SceCursor)`,
@@ -1334,8 +1354,9 @@ empty one stay two values and a value read from the map is taken whole by such a
 variable — with `Decode<Name>(*codec.SceCursor)`, which
 moves the cursor only when the whole map decoded, `Encode(codec.SceSink)` and
 `EncodeToBytes() ([]byte, error)`; its refusals are the typed
-`codec.ErrCborMalformed`, `ErrCborRequiredKeyMissing`, `ErrCborWrongLength`,
-`ErrCborTooDeep` and `ErrCborOutOfRange`, and `codec/cbor.go` holds its items.
+`codec.ErrCborMalformed`, `ErrCborWrongType`, `ErrCborDuplicateKey`,
+`ErrCborRequiredKeyMissing`, `ErrCborWrongLength`, `ErrCborTooDeep` and
+`ErrCborOutOfRange`, and `codec/cbor.go` holds its items.
 Python generates a dataclass (an optional entry `Optional[T] = None`) whose
 `decode(cursor)` raises the `CodecError` subclass that refused the map, with
 the cursor returned to where it was (`SceCursor.mark` / `reset`), and whose `encode` / `encode_to_bytes` raise
