@@ -14,6 +14,10 @@
   restore keeps and every runtime hands a host; section 3, a put-if repeated
   under one identity is answered with its first result; section 8, the
   reference hosts keep that result; section 9 no longer lists it.
+- Amended by: ADR 0107 (its documentation step): section 9, the server's parts
+  built in the Rust host core leave the list, which names what a server still
+  lacks and points to the runbook, `docs/SCE_SERVER_DEPLOY.md`; the Swift item
+  narrowed to iOS, since the Swift lane serves sections 2 to 6.
 
 A statechart that runs under `datamodel="sce-static"` has no operating system to
 call. What it needs of one (the time, a place to keep a small value, a
@@ -523,23 +527,41 @@ Three things differ by lane and are not hidden:
 
 These are not built, and nothing here stands in for them:
 
-- **Swift and iOS.** The build machines carry a Swift toolchain, and `Language`
-  names the backend, but it writes only a statechart of `datamodel="null"` so
-  far, and every Forge kind is refused for it with
-  `codegen/generic-kind-backend-emit-missing`. So there is no iOS host, no Swift
-  generated interface for these types, and no `UserNotifications` binding.
+- **iOS.** The Swift lane generates a machine of this data model and its
+  reference host (`backends/swift/host-features`) serves the types of sections 2
+  to 6 (section 8), but it is not an iOS host: it has no `UserNotifications`
+  binding, no iOS key-value store and no HTTP transport (see the network HTTP
+  transport below).
 - **Android.** No `NotificationManager` host, no Android key-value store
   (`SharedPreferences` or DataStore) and no Android HTTP stack. The Kotlin
   reference host keeps its semantics in common code and the JVM's clock and HTTP
   client beside it; it is not an Android host.
-- **A production server host.** No durable store, no quota policy, no outbound HTTP
-  with a trust policy, and no notification delivery.
-- **A durable store.** The reference stores are in memory. Durability is left to
-  the host (section 3).
-- **A network HTTP transport for Rust and C.** Their reference hosts are the full
-  semantics over a transport the embedding supplies, driven by a scripted one. The
-  Rust runtime links no HTTP client, and the C runtime's client posts a form for a
-  `<send>` and carries no general exchange.
+- **A server program.** The parts a server is made of are built in the Rust host
+  core (docs/adr/0107): the keyed pool of sessions (`sce_rust_mesh::pool`,
+  SCE_MESH.md section 14.4), the session store with its lease and fence
+  (`sce-rust-session-store`, SQLite in its reference implementation), the
+  checkpoint of a session (SCE_MESH.md section 10.11) and the server of the
+  `https` binding (`sce_rust_mesh::https::server`, SCE_MESH.md section 22).
+  `docs/SCE_SERVER_DEPLOY.md` is the runbook for a program built from them. No
+  such program is built here: each deployment writes the program that joins them
+  to its machine, its keys and its credentials. Beside it there is still no
+  quota policy, no outbound HTTP for this document's section 5 with a trust
+  policy on a server, no delivery of notifications, no durable keeping of the
+  `install` authenticator's pins (the server has only `MemoryPins`, SCE_MESH.md
+  section 22.5), and no orderly stop of a pool that saves every session it holds
+  as a clean checkpoint.
+- **A durable key-value store.** The reference stores of section 3 are in memory
+  on every lane, and so is the table of first results by which each answers a
+  put-if repeated under one identity (section 8): a host that stops forgets
+  both. Durability is left to the host (section 3). The session store above is
+  durable, but it keeps a pool's sessions, not this feature's values.
+- **A network HTTP transport for Rust, C and Swift.** Their reference hosts are
+  the full semantics over a transport the embedding supplies, driven by a
+  scripted one. The Rust runtime links no HTTP client, and the C runtime's client
+  posts a form for a `<send>` and carries no general exchange. The adapters of
+  the Mesh `https` binding (hyper over rustls for Rust; the system's libcurl and
+  WinHTTP for C++; SCE_MESH.md section 22.6) carry that binding's exchanges
+  through its own port and are not a transport of this feature.
 - **A zone for the Rust host's system clock on a platform other than Unix**, which
   answers `unavailable` for `sce-host-clock-zone`.
 - **Delivery of a scheduled notification while the application is not running**,
@@ -550,8 +572,9 @@ These are not built, and nothing here stands in for them:
   machine that asks for one of the operations (section 7).
 - **The COSE structures as codec documents** (docs/adr/0107, D9). A CBOR codec
   writes one map whose keys are unsigned integers of one head byte and whose
-  entries hold no signed integer (SCE_FORGE.md section 4.6.1; docs/adr/0101 has
-  not landed): it has no spelling for a tagged array (`COSE_Sign1`,
+  entries hold no signed integer (SCE_FORGE.md section 4.6.1; docs/adr/0101's
+  step 4, which gives each backend's codec the whole of its form, has landed on
+  no backend): it has no spelling for a tagged array (`COSE_Sign1`,
   `COSE_Encrypt0`), for a map carried inside a byte string (the protected
   header), or for a negative algorithm (`-8`). The reference hosts write and
   read the structures themselves, through their language's CBOR heads, and are
@@ -568,7 +591,8 @@ These are not built, and nothing here stands in for them:
   reads a record only as an entry of its own list, in the schema unit's type, not
   in the record type a machine declares. The mechanism needs, on Rust and C++
   first: one deterministic CBOR form of a record, docs/adr/0101 section 2's (a
-  field keyed by its id, an absent optional left out), which has not landed (the
+  field keyed by its id, an absent optional left out), which no backend writes
+  until docs/adr/0101's step 4 lands on it (the
   one record encoder that exists, `sce_rust_trust::cbor::encode`, writes
   docs/adr/0086 section 9.2's form, an absent optional `null` under its key,
   encodes only, and is no dependency of a generated machine); a writer of a
@@ -580,9 +604,12 @@ These are not built, and nothing here stands in for them:
   (Rust `sce_rust_runtime::event_payload`, C++ `common/EventPayloadLift.h`); and
   a completion that carries the record read or its refusal, a result record the
   build derives from the library's.
-- **A key store.** The Rust reference host keeps the keys it is given and those
-  it derives in memory, for its own life rather than a session's, and zeroes none
-  of them when it drops them.
+- **A key store.** The Rust and C++ reference hosts keep the keys they are given
+  and those they derive in memory, for their own life rather than a session's,
+  and each numbers its derived keys from 1 (section 10, "Derive"): a
+  `derived:<n>` id a saved session holds names no key, or another key, in the
+  process that restores it. The Rust host zeroes none of its keys when it drops
+  them.
 
 ## 10. Signing and sealing
 
