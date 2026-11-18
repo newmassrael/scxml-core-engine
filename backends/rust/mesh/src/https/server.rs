@@ -16,14 +16,16 @@
 //!
 //! The mailboxes of one server number in one incarnation, drawn when the server starts with its
 //! mailboxes empty and named on every `200` (`Sce-Mesh-Epoch`), so that a client tells a mailbox
-//! that numbers anew from one it knows.
+//! that numbers anew from one it knows. A host whose endpoint checkpoints (SCE_MESH.md section
+//! 10.11) answers an exchange that carried envelopes only once a durable checkpoint holds them
+//! ([`ServerHost::deliver`], [`HttpsServer::durable`]).
 
 use alloc::collections::VecDeque;
 use alloc::string::{String, ToString};
 use alloc::sync::Arc;
 use alloc::vec::Vec;
 use core::convert::Infallible;
-use core::sync::atomic::{AtomicUsize, Ordering};
+use core::sync::atomic::{AtomicU64, AtomicUsize, Ordering};
 use std::collections::HashMap;
 use std::sync::{Mutex, MutexGuard};
 use std::time::{Duration, Instant};
@@ -210,15 +212,25 @@ fn same_digest(a: &[u8; 32], b: &[u8; 32]) -> bool {
 /// caused.
 ///
 /// Called on a thread of tokio's blocking pool, one call at a time, in the order the binding
-/// observed the events.
+/// observed the events. A closure that takes the events is a host whose endpoint does not
+/// checkpoint.
 pub trait ServerHost: Send + Sync + 'static {
     /// Hand `events` to the endpoint, in order ([`super::deliver`]), and run the machine.
-    fn deliver(&self, events: Vec<LinkEvent>);
+    ///
+    /// For an endpoint whose router checkpoints (`Router::is_checkpointed`, SCE_MESH.md section
+    /// 10.11), answer the endpoint's `sealed_through()` read just before the first envelope was
+    /// admitted, under the exclusion the host admits and seals under: every envelope admitted
+    /// after it is held by a checkpoint above that number, so the server answers the exchange
+    /// once the host reports a checkpoint above it durable ([`HttpsServer::durable`]), and a
+    /// `200` never acknowledges an envelope a crash would lose. `None` for an endpoint that does
+    /// not checkpoint, which is answered as soon as the macrosteps have run.
+    fn deliver(&self, events: Vec<LinkEvent>) -> Option<u64>;
 }
 
 impl<F: Fn(Vec<LinkEvent>) + Send + Sync + 'static> ServerHost for F {
-    fn deliver(&self, events: Vec<LinkEvent>) {
-        self(events)
+    fn deliver(&self, events: Vec<LinkEvent>) -> Option<u64> {
+        self(events);
+        None
     }
 }
 
@@ -315,6 +327,10 @@ struct Shared {
     /// a client arrives in the order it was decided.
     telling: tokio::sync::Mutex<()>,
     exchanges: AtomicUsize,
+    /// The last checkpoint the host reported durable ([`HttpsServer::durable`]), and the signal
+    /// an exchange waiting for one wakes on.
+    durable_through: AtomicU64,
+    durable_reported: Notify,
 }
 
 /// The server: its mailboxes, its authenticator, and the host it tells.
@@ -348,6 +364,8 @@ impl HttpsServer {
                 mailboxes,
                 telling: tokio::sync::Mutex::new(()),
                 exchanges: AtomicUsize::new(0),
+                durable_through: AtomicU64::new(0),
+                durable_reported: Notify::new(),
             }),
         })
     }
@@ -362,6 +380,17 @@ impl HttpsServer {
     /// The incarnation the mailboxes number in (`Sce-Mesh-Epoch`, section 22.3).
     pub fn epoch(&self) -> &str {
         &self.shared.mailboxes.epoch
+    }
+
+    /// The host reported the checkpoint `through`, and every one before it, durable to its
+    /// endpoint (`Endpoint::durable`, SCE_MESH.md section 10.11): an exchange whose envelopes such
+    /// a checkpoint holds is answered now. A host whose endpoint checkpoints calls this after each
+    /// report, from any thread.
+    pub fn durable(&self, through: u64) {
+        self.shared
+            .durable_through
+            .fetch_max(through, Ordering::AcqRel);
+        self.shared.durable_reported.notify_waiters();
     }
 
     /// Accept on `listener` until it fails, with TLS from `tls` (or none, for a loopback test),
@@ -469,12 +498,37 @@ impl Drop for AbortOnDrop {
     }
 }
 
-/// Hand `events` to the host on the blocking pool, and wait until it has run them.
-async fn tell(shared: &Arc<Shared>, events: Vec<LinkEvent>) {
+/// Hand `events` to the host on the blocking pool, and wait until it has run them. Answers the
+/// checkpoint number the host's [`ServerHost::deliver`] answered, if its endpoint checkpoints.
+async fn tell(shared: &Arc<Shared>, events: Vec<LinkEvent>) -> Option<u64> {
     let host = Arc::clone(&shared.host);
     // A host that panicked has left its endpoint in a state nobody can read; the exchange still
     // answers with what the mailbox holds, and the panic is the host's to see in its own log.
-    let _ = tokio::task::spawn_blocking(move || host.deliver(events)).await;
+    tokio::task::spawn_blocking(move || host.deliver(events))
+        .await
+        .ok()
+        .flatten()
+}
+
+/// Wait until the host reported durable a checkpoint above `sealed`, at most `bound`. Whether it
+/// did.
+async fn durable_past(shared: &Shared, sealed: u64, bound: Duration) -> bool {
+    let until = tokio::time::Instant::now() + bound;
+    loop {
+        let reported = shared.durable_reported.notified();
+        tokio::pin!(reported);
+        reported.as_mut().enable();
+        if shared.durable_through.load(Ordering::Acquire) > sealed {
+            return true;
+        }
+        if tokio::time::Instant::now() >= until {
+            return false;
+        }
+        tokio::select! {
+            _ = &mut reported => {}
+            _ = tokio::time::sleep_until(until) => {}
+        }
+    }
 }
 
 /// Counts an exchange in flight, server-wide, for as long as it lives.
@@ -704,7 +758,7 @@ async fn exchange(
     }
 
     // Taken in: the acknowledgement, readiness and the envelopes, told in the order decided.
-    let arrived = {
+    let (arrived, held_by) = {
         let telling = shared.telling.lock().await;
         let (became_ready, arrived) = {
             let mut clients = shared.mailboxes.lock();
@@ -714,21 +768,35 @@ async fn exchange(
             client.ready = true;
             (became_ready, Arc::clone(&client.arrived))
         };
+        let envelopes = split_sequence(&body);
+        let carried = !envelopes.is_empty();
         let mut events = Vec::new();
         if became_ready {
             events.push(LinkEvent::Ready(name.clone()));
         }
         events.extend(
-            split_sequence(&body)
+            envelopes
                 .into_iter()
                 .map(|envelope| LinkEvent::Received(name.clone(), envelope)),
         );
-        if !events.is_empty() {
-            tell(&shared, events).await;
-        }
+        let sealed = if events.is_empty() {
+            None
+        } else {
+            tell(&shared, events).await
+        };
         drop(telling);
-        arrived
+        // Only what the request carried waits for a checkpoint: a poll took nothing in.
+        (arrived, sealed.filter(|_| carried))
     };
+
+    // A checkpointing host's envelopes are acknowledged by a `200` only once a durable checkpoint
+    // holds them (SCE_MESH.md section 10.11). One not durable within the longest hold is answered
+    // as load shed: the client carries them again, and the duplicate window drops what was taken.
+    if let Some(sealed) = held_by {
+        if !durable_past(&shared, sealed, settings.max_hold).await {
+            return shed(StatusCode::SERVICE_UNAVAILABLE, settings.retry_after);
+        }
+    }
 
     // Held while the mailbox is empty, for at most the shorter of the two bounds.
     let hold = Duration::from_millis(hold_ms).min(settings.max_hold);
@@ -973,5 +1041,119 @@ mod tests {
         assert!(!pins.pin("phone", other));
         assert_eq!(pins.pinned("phone"), Some(first));
         assert!(pins.pin("tablet", other), "another name pins its own");
+    }
+
+    /// A host whose endpoint checkpoints, its endpoint sealed through `sealed` whenever envelopes
+    /// are admitted; it counts the envelopes it is handed.
+    struct Checkpointing {
+        sealed: u64,
+        received: Arc<AtomicUsize>,
+    }
+
+    impl ServerHost for Checkpointing {
+        fn deliver(&self, events: Vec<LinkEvent>) -> Option<u64> {
+            let carried = events
+                .iter()
+                .filter(|event| matches!(event, LinkEvent::Received(..)))
+                .count();
+            self.received.fetch_add(carried, Ordering::SeqCst);
+            Some(self.sealed)
+        }
+    }
+
+    /// An exchange of `phone` with the server at `address`, carrying `body`, asking for no hold.
+    fn request_to(address: std::net::SocketAddr, body: Vec<u8>) -> super::super::HttpsRequest {
+        super::super::HttpsRequest {
+            url: alloc::format!("http://{address}/sce-mesh/1/phone"),
+            headers: alloc::vec![
+                ("Content-Type".to_string(), CONTENT_TYPE.to_string()),
+                (ACK_HEADER.to_string(), "0".to_string()),
+                (HOLD_HEADER.to_string(), "0".to_string()),
+                ("Authorization".to_string(), "Bearer t".to_string()),
+            ],
+            body,
+            timeout: Duration::from_secs(10),
+        }
+    }
+
+    /// A server whose host's endpoint checkpoints answers an exchange that carried envelopes only
+    /// once the host reports durable a checkpoint above the one sealed when they were admitted
+    /// (SCE_MESH.md section 10.11); an exchange that carried none is answered at once, and every
+    /// `200` names the server's incarnation.
+    #[test]
+    fn a_checkpointing_host_answers_once_a_checkpoint_holding_the_envelopes_is_durable() {
+        use super::super::adapter::{AdapterSettings, HyperTransport, ProxyPolicy};
+        use super::super::HttpsTransport;
+
+        let runtime = tokio::runtime::Builder::new_multi_thread()
+            .worker_threads(2)
+            .enable_all()
+            .build()
+            .expect("a runtime");
+        let received = Arc::new(AtomicUsize::new(0));
+        let server = HttpsServer::new(
+            ServerSettings {
+                max_hold: Duration::from_secs(5),
+                ..ServerSettings::default()
+            },
+            Authenticator::Bearer(Arc::new(|name: &str, token: &str| {
+                name == "phone" && token == "t"
+            })),
+            |name| name == "phone",
+            Checkpointing {
+                sealed: 4,
+                received: Arc::clone(&received),
+            },
+        )
+        .expect("a server");
+        assert!(is_epoch(server.epoch()), "{}", server.epoch());
+        let listener = runtime
+            .block_on(TcpListener::bind("127.0.0.1:0"))
+            .expect("a loopback port");
+        let address = listener.local_addr().expect("its address");
+        runtime.spawn({
+            let server = server.clone();
+            async move {
+                let _ = server.serve(listener, None).await;
+            }
+        });
+        let port = Arc::new(
+            HyperTransport::new(AdapterSettings {
+                proxy: ProxyPolicy::Direct,
+                ..AdapterSettings::default()
+            })
+            .expect("an adapter"),
+        );
+
+        let poll = port
+            .exchange(request_to(address, Vec::new()))
+            .expect("a response");
+        assert_eq!(poll.status, 200, "a poll waits for no checkpoint");
+        assert_eq!(poll.header(EPOCH_HEADER), Some(server.epoch()));
+
+        let (tx, rx) = std::sync::mpsc::channel();
+        std::thread::spawn({
+            let port = Arc::clone(&port);
+            move || {
+                let _ = tx.send(port.exchange(request_to(address, alloc::vec![0x01])));
+            }
+        });
+        assert!(
+            rx.recv_timeout(Duration::from_millis(300)).is_err(),
+            "answered before a checkpoint holding the envelope was durable"
+        );
+        server.durable(4);
+        assert!(
+            rx.recv_timeout(Duration::from_millis(300)).is_err(),
+            "the checkpoint sealed before the envelope was admitted does not hold it"
+        );
+        server.durable(5);
+        let answered = rx
+            .recv_timeout(Duration::from_secs(5))
+            .expect("answered once durable")
+            .expect("a response");
+        assert_eq!(answered.status, 200);
+        assert_eq!(answered.header(EPOCH_HEADER), Some(server.epoch()));
+        assert_eq!(received.load(Ordering::SeqCst), 1);
     }
 }
