@@ -457,6 +457,13 @@ const LANES: &[(&str, f64, u32, u32, u32)] = &[
     // wrong population, not a missing guard. Replace it after 25 runs of its
     // own, and delete this paragraph when the number is its own.
     ("wasm32-scenarios.yml", 7.7, 0, 0, 0),
+    // ⚠ STAND-IN, borrowed 2026-11-18 for a lane of no history: after a cached generator build it
+    // configures the main CMake project from cold and builds part of it, as `ecma262-lowered-cpp.yml`
+    // does (23.7), on a Windows runner with MSVC. It also builds two vcpkg ports and runs a cold Bazel
+    // through two channels, so the true median may sit above the borrowed one; the lane states the
+    // figure in its own workflow, as a long lane must. Replace it after 25 runs of its own and delete
+    // this paragraph.
+    ("windows-msvc.yml", 23.7, 0, 0, 0),
 ];
 
 fn repo_root() -> PathBuf {

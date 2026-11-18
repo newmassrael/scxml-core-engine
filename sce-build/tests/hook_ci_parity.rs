@@ -543,6 +543,13 @@ const CI_ONLY: &[(&str, &str)] = &[
     // clean, and the lane delegates to that gate — so the Kotlin W3C arm
     // is no longer CI-only and an entry here would describe nothing.
     (
+        "scripts/gates/windows-msvc.sh",
+        "builds with MSVC on a Windows host, which no push host is: the \
+         workflow runs the gate's script itself on a hosted Windows runner, \
+         and the gate is `ci_only` in gate_registry.py, whose entry says why \
+         the lane does not go through `scripts/gate` there.",
+    ),
+    (
         "xml_to_html.py",
         "publication, not verification. The report job turns the C++ JUnit \
          XML into the HTML deployed to Pages; it reaches no verdict of its \

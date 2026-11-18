@@ -1,0 +1,162 @@
+name: Windows MSVC
+
+# The C++ client parts of SCE built with MSVC on Windows (docs/adr/0107, D11).
+#
+# No other lane builds on Windows, so until this one nothing held a Windows
+# build: the root CMakeLists.txt had an MSVC branch that no run reached, and the
+# Bazel channel passed GCC's `-include` to every compiler. The job builds the
+# generator, configures the main project with the Visual Studio 2022 generator
+# and vcpkg's libsodium (the COSE operations required), builds and runs
+# standard_host_scenario_test (the reference host, its system clock and COSE
+# operations, and the generated machines that ask for them), and builds and runs
+# the Bazel consumers through both channels, the checkout's with vcpkg's
+# libsodium named so its COSE probe is built too. `scripts/gates/windows-msvc.sh`
+# is the gate; this file prepares the host it needs and runs it.
+#
+# ## Duration
+#
+# STAND-IN: the lane has no run of its own yet. `LANES` in
+# `sce-build/tests/ci_supersession_policy.rs` borrows `ecma262-lowered-cpp.yml`'s
+# 23.7 min median, the nearest lane: a cold configure and build of part of the
+# main project after a cached generator build. This lane also builds two vcpkg
+# ports and a cold Bazel, on a Windows runner, so the real figure may sit above
+# it. That is above a 17.6 min median gap between pushes to `main`, so
+# `cancel-in-progress: false` keeps the run in flight, as on every lane. Replace
+# the borrowed figure after 25 runs of its own.
+
+on:
+  push:
+    branches: [ main, develop ]
+    paths:
+      - 'CMakeLists.txt'
+      - 'cmake/**'
+      - 'sce/**'
+      - 'backends/cpp/forge-runtime/include/**'
+      - 'tools/codegen/**'
+      - 'sce-build/src/**'
+      - 'sce-build/Cargo.toml'
+      - 'sce-build/tests/fixtures/static_datamodel/**'
+      - 'stdlib/**'
+      - 'Cargo.toml'
+      - 'Cargo.lock'
+      - 'tests/CMakeLists.txt'
+      - 'tests/integration/AStandardHost*'
+      - 'tests/integration/StandardHostScenarioReplay.h'
+      - 'tests/host_features/**'
+      - 'tests/bazel_consumer/**'
+      - 'scripts/sce_repo.bzl'
+      - 'scripts/package_embed.sh'
+      - 'scripts/embed_manifest.py'
+      - 'scripts/smoke_bazel_consumer.sh'
+      - 'scripts/lib/bazel_pins.sh'
+      - 'scripts/lib/sce_build_jobs.sh'
+      - 'third_party/cpp-httplib'
+      - 'third_party/pugixml'
+      - 'third_party/spdlog'
+      - 'third_party/quickjs'
+      - 'third_party/lua/**'
+      - 'third_party/nlohmann_json/**'
+      - 'scripts/gates/lib.sh'
+      - 'scripts/gates/windows-msvc.sh'
+      - '.github/workflows/windows-msvc.yml'
+      - 'rust-toolchain.toml'
+      - '.github/actions/install-rust/**'
+  pull_request:
+    branches: [ main ]
+    paths:
+      - 'CMakeLists.txt'
+      - 'cmake/**'
+      - 'sce/**'
+      - 'backends/cpp/forge-runtime/include/**'
+      - 'tools/codegen/**'
+      - 'sce-build/src/**'
+      - 'sce-build/Cargo.toml'
+      - 'sce-build/tests/fixtures/static_datamodel/**'
+      - 'stdlib/**'
+      - 'Cargo.toml'
+      - 'Cargo.lock'
+      - 'tests/CMakeLists.txt'
+      - 'tests/integration/AStandardHost*'
+      - 'tests/integration/StandardHostScenarioReplay.h'
+      - 'tests/host_features/**'
+      - 'tests/bazel_consumer/**'
+      - 'scripts/sce_repo.bzl'
+      - 'scripts/package_embed.sh'
+      - 'scripts/embed_manifest.py'
+      - 'scripts/smoke_bazel_consumer.sh'
+      - 'scripts/lib/bazel_pins.sh'
+      - 'scripts/lib/sce_build_jobs.sh'
+      - 'third_party/cpp-httplib'
+      - 'third_party/pugixml'
+      - 'third_party/spdlog'
+      - 'third_party/quickjs'
+      - 'third_party/lua/**'
+      - 'third_party/nlohmann_json/**'
+      - 'scripts/gates/lib.sh'
+      - 'scripts/gates/windows-msvc.sh'
+      - '.github/workflows/windows-msvc.yml'
+      - 'rust-toolchain.toml'
+      - '.github/actions/install-rust/**'
+  workflow_dispatch:
+
+# The run in flight is kept and one waiting run holds the newest commit, as on
+# every lane; see `cpp-suite.yml` for the reasoning and the cost.
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  windows-msvc:
+    name: MSVC build of the C++ host, generated machines and Bazel channels
+    runs-on: windows-2022
+    timeout-minutes: 120
+    defaults:
+      run:
+        shell: bash
+
+    steps:
+      # Git for Windows checks text out with CRLF line endings (core.autocrlf),
+      # which bash reads as part of each command of a shell script, and some of
+      # the tree's paths pass Windows' 260-character limit. The repository is
+      # checked out as it is held.
+      - name: Check out as the repository holds its files
+        run: |
+          git config --global core.autocrlf false
+          git config --global core.longpaths true
+
+      - name: Checkout Repository
+        uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6.1.0
+        with:
+          submodules: recursive
+
+      - name: Install Rust Toolchain
+        uses: ./.github/actions/install-rust
+
+      - name: Cache Cargo
+        uses: actions/cache@caa296126883cff596d87d8935842f9db880ef25 # v5.1.0
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+            target
+          key: ${{ runner.os }}-cargo-codegen-${{ hashFiles('rust-toolchain.toml') }}-${{ hashFiles('sce-build/Cargo.toml') }}
+          restore-keys: |
+            ${{ runner.os }}-cargo-codegen-${{ hashFiles('rust-toolchain.toml') }}-
+
+      # The scripts the gate runs read a Python 3 (scripts/package_embed.sh).
+      - name: Install Python
+        uses: actions/setup-python@6d4fd22b20465ccc0f7354476588e8df7c9ca0e0 # v7.1.0
+        with:
+          python-version: '3.12'
+
+      # The image's vcpkg: libxml2 for the generator, which links it, and
+      # libsodium for the COSE operations, which SCE finds and never vendors.
+      - name: Install libxml2 and libsodium from vcpkg
+        run: |
+          echo "VCPKG_ROOT=$VCPKG_INSTALLATION_ROOT" >> "$GITHUB_ENV"
+          "$VCPKG_INSTALLATION_ROOT/vcpkg" install libxml2:x64-windows libsodium:x64-windows
+
+      - name: Build and run the C++ host with MSVC, through CMake and Bazel
+        env:
+          SCE_VCPKG_TRIPLET: x64-windows
+        run: bash scripts/gates/windows-msvc.sh

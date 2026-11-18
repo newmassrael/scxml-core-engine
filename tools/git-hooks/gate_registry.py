@@ -389,7 +389,11 @@ COST_MEASURED: dict[str, str] = {
 # 29 -> 30 on 2026-11-05, again: `cpp-suite-wasm` arrived as the lane for a
 # tree nothing built whole, so its cost is an estimate its entry derives. Its
 # first run read the build half only; the first green run reads the whole.
-UNMEASURED_COST_CEILING = 30
+#
+# 30 -> 31 on 2026-11-18, again: `windows-msvc` arrived as the first lane on a
+# Windows host, which no push host is, so its cost is an estimate its entry
+# derives. Its first run reads it.
+UNMEASURED_COST_CEILING = 31
 
 # ── Costs that are deliberately NOT the raw stopwatch reading ─────
 #
@@ -2069,6 +2073,38 @@ GATES: dict[str, dict] = {
         "cost_s": 240,
         "summary": "generated C++ built and run against an installed SCE",
         "cache": True,
+        "inputs": None,
+        "commits": [],
+        "peak_gb": 5,
+    },
+    # The C++ client parts built with MSVC on Windows (docs/adr/0107, D11): the
+    # reference host, its COSE operations on vcpkg's libsodium and the generated
+    # machines through CMake, and the Bazel consumers through both channels.
+    # No other gate builds on Windows, and no push host is one.
+    #
+    # ⚠ `cost_s` is an ESTIMATE, absent from COST_MEASURED: the lane has no run.
+    # Its parts are a cached generator build, a cold configure and a build of
+    # sce_base and one test, two vcpkg ports and a cold Bazel through two
+    # channels. Time the gate on a Windows host and date it here.
+    "windows-msvc": {
+        "workflows": ["windows-msvc.yml"],
+        # Not delegated: the workflow runs the gate's script itself, not through
+        # `scripts/gate`. The runner opens with this file's self-test and
+        # `scripts/lib/require_submodules.sh`, which read the tree through
+        # Python on POSIX paths and are held on the Linux lanes; on the Windows
+        # runner they would be a second, unrelated verdict ahead of the one this
+        # lane exists for. The commands live once, in the script.
+        "ci_only": "a Windows host with Visual Studio 2022 and vcpkg, which no "
+                   "push host is, and minutes long, estimated rather than "
+                   "measured. windows-msvc.yml runs it on a hosted Windows "
+                   "runner.",
+        "cost_s": 1500,
+        "summary": "C++ host, COSE and generated machines with MSVC; Bazel channels",
+        "cache": False,
+        "no_cache_reason": "a host compiler and ports no declaration pins: the "
+                           "verdict is MSVC's as the Windows image carries it, and "
+                           "vcpkg's libxml2 and libsodium at the versions its "
+                           "checkout holds",
         "inputs": None,
         "commits": [],
         "peak_gb": 5,
