@@ -179,16 +179,37 @@ const char *sce_hf_start_operation(const sce_hf_host_t *host, size_t index);
 const char *sce_hf_start_id(const sce_hf_host_t *host, size_t index);
 size_t sce_hf_start_param_count(const sce_hf_host_t *host, size_t index);
 void sce_hf_start_param(const sce_hf_host_t *host, size_t index, size_t param, const char **name, const char **value);
+/** The rest of a start's identity: the session that started it, and which
+    start of its `<invoke>` in that session it is. */
+const char *sce_hf_start_session_id(const sce_hf_host_t *host, size_t index);
+uint64_t sce_hf_start_number(const sce_hf_host_t *host, size_t index);
 void sce_hf_clear_starts(sce_hf_host_t *host);
 
-/** Start the operation of invocation `invoke_id` with the parameters
+/** The identity of a host-run invocation (docs/SCE_HOST_FEATURES.md, section 1,
+    "Identity"): the session that started it, the `<invoke>`'s id, and which
+    start of that `<invoke>` in that session it is. A restore starts a running
+    invocation again under the identity it had, so two starts with one identity
+    are one operation asked twice. */
+typedef struct sce_hf_invocation_s {
+    const char *session_id;
+    const char *id;
+    uint64_t start;
+} sce_hf_invocation_t;
+
+/** Start the operation of `invocation` with the parameters
     `params[0..param_count)`.
  *
  * False for a type that is not one of the standard host features: the host
  * serves none of it. Otherwise the arguments are judged first (a refusal starts
  * nothing), then a failure the embedding injected, then the operation itself,
- * and `out` holds the answer. */
-bool sce_hf_start(sce_hf_host_t *host, const char *operation, const char *invoke_id,
+ * and `out` holds the answer.
+ *
+ * A put-if whose invocation was answered before is answered with that first
+ * result, a failure included, and changes nothing: the engine starts a running
+ * invocation again under the same identity when it restores a state saved
+ * before the answer was taken (docs/adr/0107, D4), and the write it asked for
+ * was made once. */
+bool sce_hf_start(sce_hf_host_t *host, const char *operation, const sce_hf_invocation_t *invocation,
                   const sce_host_send_param_t *params, size_t param_count, sce_hf_outcome_t *out);
 
 /** The host is told to stop invocation `invoke_id`, because its state exited

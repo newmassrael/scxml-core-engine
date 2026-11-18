@@ -15,8 +15,9 @@
 //
 // Driven entirely on the machine's manual clock: no case sleeps, and none can be decided by how
 // loaded the build machine is. The shared instance `saved/statechart_static_host_invoke_running.json`
-// is the format-3 text every backend writes (docs/adr/0090); the format-1 text of the same run, under
-// `saved/format1/`, still restores.
+// is the format-4 text every backend writes (docs/adr/0090, docs/adr/0107); the format-3 text of the
+// same run, under `saved/format3/`, and the format-1 text, under `saved/format1/`, still restore, and a
+// restarted invocation keeps the start number it had.
 
 // `strstr` and `snprintf` are C99; the build asks for strict C11.
 #define _POSIX_C_SOURCE 200809L
@@ -58,6 +59,7 @@ typedef struct {
     bool start;
     bool restarted;
     uint64_t token;
+    uint64_t number;
     char invoke_id[32];
     char src[64];
     char content[32];
@@ -87,6 +89,7 @@ static void invoker(void *user_data, const sce_host_invoke_event_t *event, sce_h
     (void)snprintf(entry->invoke_id, sizeof(entry->invoke_id), "%s", event->invoke_id);
     if (entry->start) {
         entry->restarted = event->restarted;
+        entry->number = event->start;
         (void)snprintf(entry->src, sizeof(entry->src), "%s", event->src);
         (void)snprintf(entry->content, sizeof(entry->content), "%s", event->content);
         (void)snprintf(entry->event_data, sizeof(entry->event_data), "%s", event->event_data);
@@ -132,10 +135,11 @@ static bool read_trimmed(const char *path, char *out, size_t cap, size_t *len) {
     return true;
 }
 
-static void shared(bool format1, char *out, size_t cap, size_t *len) {
+// The shared text of the run, of format 4, or of `format` 1 or 3 from the reading directories.
+static void shared(int format, char *out, size_t cap, size_t *len) {
     char path[1024];
     (void)snprintf(path, sizeof(path), "%s/%sstatechart_static_host_invoke_running.json", SCE_HOST_SAVED_FIXTURES_DIR,
-                   format1 ? "format1/" : "");
+                   format == 1 ? "format1/" : (format == 3 ? "format3/" : ""));
     CHECK(read_trimmed(path, out, cap, len), "cannot read %s", path);
 }
 
@@ -213,10 +217,11 @@ static void a_machine_is_saved_with_the_request_its_invocation_was_started_with(
     first = first_start(&host);
     CHECK(first != NULL && !first->restarted, "the document's own start is not a restart");
     CHECK(first != NULL && first->token == 0u, "the first start has token 0");
+    CHECK(first != NULL && first->number == 1u, "the first start of `h` in this session is numbered 1");
     CHECK(statechart_static_host_invoke_save(&sm, SAVED_AT_MS, saved, sizeof(saved), &len, &err), "%s", err.message);
     // The text every backend writes for the same machine, byte for byte, but for the id of the
     // session, which this one drew and the shared text gives its root by hand.
-    shared(false, text, sizeof(text), &want_len);
+    shared(4, text, sizeof(text), &want_len);
     {
         char *drawn = strstr(saved, "\"sessionid\":\"");
         char *end = drawn != NULL ? strchr(drawn + 13, '"') : NULL;
@@ -230,20 +235,22 @@ static void a_machine_is_saved_with_the_request_its_invocation_was_started_with(
 }
 
 static void a_restore_asks_nothing_of_the_host_until_the_machine_is_driven(void) {
-    for (int format1 = 0; format1 < 2; ++format1) {
+    // From the format-4 text, and from the format-3 and format-1 texts of the same run.
+    static const int formats[] = {4, 3, 1};
+    for (size_t f = 0u; f < sizeof(formats) / sizeof(formats[0]); ++f) {
         static machine_t sm;
         static char text[TEXT_CAP];
         size_t len = 0u;
         host_t host;
         sce_saved_error_t err;
         memset(&host, 0, sizeof(host));
-        shared(format1 != 0, text, sizeof(text), &len);
+        shared(formats[f], text, sizeof(text), &len);
         CHECK(restore_with(&sm, &host, text, 1000, &err), "%s", err.message);
         CHECK(host.count == 0, "the restore itself calls nobody");
         CHECK(standing_in(&sm, "working"), "the machine stands where it stood");
         // The first macrostep starts it, where an invocation the document entered would have started.
         drive(&sm, 0u);
-        CHECK(starts_of(&host) == 1, "format %d: the first drive starts it, %d starts", format1 + 1, starts_of(&host));
+        CHECK(starts_of(&host) == 1, "format %d: the first drive starts it, %d starts", formats[f], starts_of(&host));
     }
 }
 
@@ -261,7 +268,7 @@ static void a_restored_invocation_is_started_again_from_the_request_it_was_saved
     memset(&host, 0, sizeof(host));
     working(&original_sm, &original);
     before = first_start(&original);
-    shared(false, text, sizeof(text), &len);
+    shared(4, text, sizeof(text), &len);
     CHECK(restore_with(&sm, &host, text, 1000, &err), "%s", err.message);
     drive(&sm, 0u);
     again = first_start(&host);
@@ -272,6 +279,9 @@ static void a_restored_invocation_is_started_again_from_the_request_it_was_saved
     CHECK(again->restarted, "the host is told this is a resumption");
     CHECK(again->token == 1u, "the next token the saved state carried on: %lu", (unsigned long)again->token);
     CHECK(strcmp(again->session_id, "fixture-root") == 0, "the session that started it: %s", again->session_id);
+    // docs/adr/0107, D4: the same invocation, under the identity it had.
+    CHECK(again->number == before->number, "the start it repeats: %lu, was %lu", (unsigned long)again->number,
+          (unsigned long)before->number);
     CHECK(strcmp(again->invoke_id, before->invoke_id) == 0, "the same id");
     CHECK(strcmp(again->src, before->src) == 0, "the same src: %s", again->src);
     CHECK(strcmp(again->event_data, before->event_data) == 0, "the same event data: %s", again->event_data);
@@ -291,7 +301,7 @@ static void a_restored_invocation_keeps_the_deadline_it_had_left(void) {
     host_t host;
     sce_saved_error_t err;
     memset(&host, 0, sizeof(host));
-    shared(false, text, sizeof(text), &len);
+    shared(4, text, sizeof(text), &len);
     CHECK(restore_with(&sm, &host, text, 1000, &err), "%s", err.message);
     drive(&sm, 0u);
     drive(&sm, 3999u);
@@ -314,7 +324,7 @@ static void a_deadline_that_passed_while_the_machine_was_away_ends_the_invocatio
     host_t host;
     sce_saved_error_t err;
     memset(&host, 0, sizeof(host));
-    shared(false, text, sizeof(text), &len);
+    shared(4, text, sizeof(text), &len);
     CHECK(restore_with(&sm, &host, text, 6000, &err), "%s", err.message);
     drive(&sm, 0u);
     CHECK(host.count == 0, "the host is not asked to begin what it would be told to stop");
@@ -331,7 +341,7 @@ static void a_restored_machine_owing_a_start_says_it_needs_a_tick_now(void) {
         host_t host;
         sce_saved_error_t err;
         memset(&host, 0, sizeof(host));
-        shared(false, text, sizeof(text), &len);
+        shared(4, text, sizeof(text), &len);
         CHECK(restore_with(&sm, &host, text, elapsed[i], &err), "%s", err.message);
         CHECK(statechart_static_host_invoke_time_until_next_scheduled_ms(&sm) == 0,
               "a restored invocation owes the machine a tick before anything else");
@@ -349,7 +359,7 @@ static void what_the_first_run_handed_a_host_cannot_answer_for_the_second(void) 
     sce_saved_error_t err;
     uint64_t token;
     memset(&host, 0, sizeof(host));
-    shared(false, text, sizeof(text), &len);
+    shared(4, text, sizeof(text), &len);
     CHECK(restore_with(&sm, &host, text, 1000, &err), "%s", err.message);
     drive(&sm, 0u);
     token = first_start(&host)->token;
@@ -370,7 +380,7 @@ static void an_invocation_cancelled_before_it_was_started_again_is_never_started
     host_t host;
     sce_saved_error_t err;
     memset(&host, 0, sizeof(host));
-    shared(false, text, sizeof(text), &len);
+    shared(4, text, sizeof(text), &len);
     CHECK(restore_with(&sm, &host, text, 1000, &err), "%s", err.message);
     // Nothing was started, so there is nothing to tell the host to stop.
     CHECK(!statechart_static_host_invoke_cancel_host_invoke(&sm, HOST_TYPE, "h"), "there is no run to cancel");
@@ -411,7 +421,7 @@ static void a_machine_restored_and_saved_again_before_it_was_driven_keeps_its_in
     host_t host;
     sce_saved_error_t err;
     memset(&host, 0, sizeof(host));
-    shared(false, text, sizeof(text), &len);
+    shared(4, text, sizeof(text), &len);
     CHECK(restore_with(&sm, &host, text, 1000, &err), "%s", err.message);
     // The same request, due at the same wall-clock moment, and the same counter.
     CHECK(statechart_static_host_invoke_save(&sm, SAVED_AT_MS + 1000, again, sizeof(again), &len, &err), "%s",
@@ -430,7 +440,7 @@ static bool restore_changed(const char *from, const char *to, const char *expect
     sce_saved_error_t err;
     const char *at;
     memset(&host, 0, sizeof(host));
-    shared(false, text, sizeof(text), &len);
+    shared(4, text, sizeof(text), &len);
     at = strstr(text, from);
     CHECK(at != NULL, "the shared text holds %s", from);
     if (at == NULL) {
@@ -461,7 +471,7 @@ static void a_host_invocation_whose_state_the_configuration_is_not_in_is_refused
     const char *a;
     const char *b;
     memset(&host, 0, sizeof(host));
-    shared(false, text, sizeof(text), &len);
+    shared(4, text, sizeof(text), &len);
     a = strstr(text, "\"configuration\":[\"working\"]");
     b = strstr(text, "\"current\":\"working\"");
     CHECK(a != NULL && b != NULL && a < b, "the shared text names its state");
@@ -485,9 +495,9 @@ static void an_invocation_named_twice_is_refused(void) {
     const char *open;
     const char *close;
     memset(&host, 0, sizeof(host));
-    shared(false, text, sizeof(text), &len);
+    shared(4, text, sizeof(text), &len);
     open = strstr(text, "\"hostinvokes\":[");
-    close = strstr(text, "],\"hostinvoketoken\"");
+    close = strstr(text, "],\"hostinvokestarts\"");
     CHECK(open != NULL && close != NULL, "the shared text holds the invocation");
     if (open == NULL || close == NULL) {
         return;
@@ -500,8 +510,64 @@ static void an_invocation_named_twice_is_refused(void) {
           "%s", err.message);
 }
 
+// docs/adr/0107, D4: a restore repeats a running start under its number, and a start the document
+// makes afterwards is numbered on from the count the saved state carried, from the format-4 text and
+// from the format-3 text alike.
+static void a_start_after_the_restored_one_takes_the_next_number(void) {
+    static const int formats[] = {4, 3};
+    for (size_t f = 0u; f < sizeof(formats) / sizeof(formats[0]); ++f) {
+        static machine_t sm;
+        static char text[TEXT_CAP];
+        static char saved[TEXT_CAP];
+        size_t len = 0u;
+        host_t host;
+        sce_saved_error_t err;
+        memset(&host, 0, sizeof(host));
+        shared(formats[f], text, sizeof(text), &len);
+        CHECK(restore_with(&sm, &host, text, 1000, &err), "%s", err.message);
+        drive(&sm, 0u);
+        // Leaving cancels the restarted invocation; starting again is a new start.
+        CHECK(raise_named(&sm, "leave"), "the document names leave");
+        drive(&sm, 0u);
+        CHECK(raise_named(&sm, "start"), "the document names start");
+        drive(&sm, 0u);
+        {
+            const entry_t *starts[2] = {NULL, NULL};
+            int found = 0;
+            for (int i = 0; i < host.count && found < 2; ++i) {
+                if (host.log[i].start) {
+                    starts[found++] = &host.log[i];
+                }
+            }
+            CHECK(found == 2 && starts_of(&host) == 2, "format %d: two starts, %d", formats[f], starts_of(&host));
+            if (found == 2) {
+                CHECK(starts[0]->restarted && starts[0]->number == 1u, "format %d: the restart repeats start 1",
+                      formats[f]);
+                CHECK(!starts[1]->restarted && starts[1]->number == 2u, "format %d: the next start is 2, %lu",
+                      formats[f], (unsigned long)starts[1]->number);
+            }
+        }
+        CHECK(statechart_static_host_invoke_save(&sm, SAVED_AT_MS, saved, sizeof(saved), &len, &err), "%s",
+              err.message);
+        CHECK(strstr(saved, "\"id\":\"h\",\"start\":\"2\",") != NULL &&
+                  strstr(saved, "\"hostinvokestarts\":{\"h\":\"2\"}") != NULL,
+              "format %d: saved as start 2 of a count of 2: %s", formats[f], saved);
+    }
+}
+
+// docs/adr/0107, D4: the start number is judged before anything is built: a running invocation is
+// the latest start its session counts, and a count names an `<invoke>` the document hands a host.
+static void a_start_number_the_saved_session_could_not_have_given_is_refused(void) {
+    (void)restore_changed("\"hostinvokestarts\":{\"h\":\"1\"}", "\"hostinvokestarts\":{\"h\":\"2\"}",
+                          "hostinvokes[0] is start 1 of 'h', and the session counts 2 starts of it");
+    (void)restore_changed("\"hostinvokestarts\":{\"h\":\"1\"}", "\"hostinvokestarts\":{\"h\":\"1\",\"stranger\":\"1\"}",
+                          "hostinvokestarts counts 'stranger', which the document does not have a host invoker run");
+}
+
 int main(void) {
     a_machine_is_saved_with_the_request_its_invocation_was_started_with();
+    a_start_after_the_restored_one_takes_the_next_number();
+    a_start_number_the_saved_session_could_not_have_given_is_refused();
     a_restore_asks_nothing_of_the_host_until_the_machine_is_driven();
     a_restored_invocation_is_started_again_from_the_request_it_was_saved_with();
     a_restored_invocation_keeps_the_deadline_it_had_left();

@@ -42,19 +42,24 @@ extern "C" {
 /* The tree of format 2, with each event's origin held as one pair and the session that sent it
  * beside it (docs/adr/0090, section 7). */
 #define SCE_SAVED_FORMAT_3 3
-/* The newest format this runtime writes; it reads this one, format 2 and format 1. */
-#define SCE_SAVED_FORMAT SCE_SAVED_FORMAT_3
+/* The tree of format 3, with each running host-run invocation's start number, which start of its
+ * `<invoke>` in its session it is, and each session's count of those starts (docs/adr/0107, D4):
+ * a restore starts a running invocation again under the number it had. */
+#define SCE_SAVED_FORMAT_4 4
+/* The newest format this runtime writes; it reads this one, format 3, format 2 and format 1. */
+#define SCE_SAVED_FORMAT SCE_SAVED_FORMAT_4
 
 /* The stability status of the saved-state wire surface, held in lockstep with
  * `x-sce-schema-status` in `schemas/sce-saved-state.v1.schema.json`,
- * `schemas/sce-saved-state.v2.schema.json` and `schemas/sce-saved-state.v3.schema.json`
- * (SCE_WIRE_CONTRACTS.md). */
+ * `schemas/sce-saved-state.v2.schema.json`, `schemas/sce-saved-state.v3.schema.json` and
+ * `schemas/sce-saved-state.v4.schema.json` (SCE_WIRE_CONTRACTS.md). */
 #define SCE_SAVED_SCHEMA_STATUS "pre-release"
 
-/* Whether a text of `form` is a tree of sessions: format 2 and format 3 have the one grammar of a
- * tree, and differ only in how a record holds its origin. */
+/* Whether a text of `form` is a tree of sessions: formats 2, 3 and 4 have the one grammar of a
+ * tree, and differ in how a record holds its origin and whether a host-run invocation holds its
+ * start number. */
 static inline bool sce_saved_format_is_tree(int form) {
-    return form == SCE_SAVED_FORMAT_2 || form == SCE_SAVED_FORMAT_3;
+    return form == SCE_SAVED_FORMAT_2 || form == SCE_SAVED_FORMAT_3 || form == SCE_SAVED_FORMAT_4;
 }
 
 /* The most bytes of a session id, a text or a name a refusal quotes. */
@@ -160,19 +165,20 @@ static inline bool sce_saved_text_into(sce_jv_t v, const char *what, char *dst, 
  * names, and so is each element of those that hold elements. What an element
  * means to the machine is the machine's to judge. */
 typedef struct sce_saved_session_s {
-    int format;             /* SCE_SAVED_FORMAT_1, SCE_SAVED_FORMAT_2 or SCE_SAVED_FORMAT_3 */
-    sce_jv_t shape;         /* a text */
-    sce_jv_t session_id;    /* a text; a tree only */
-    sce_jv_t configuration; /* an array of texts: the state ids */
-    sce_jv_t current;       /* a text */
-    sce_jv_t variables;     /* an object */
-    sce_jv_t history;       /* an object of arrays of texts */
-    sce_jv_t pending;       /* an array of sends */
-    sce_jv_t invokes;       /* format 1: an array of ids; a tree: an array of children */
-    sce_jv_t invoke_starts; /* an object of counts; a tree only */
-    sce_jv_t host_invokes;  /* an array of host-run invocations */
-    sce_jv_t external;      /* an array of events */
-    sce_jv_t revisions;     /* an object; valid when `has_revisions` */
+    int format;                  /* SCE_SAVED_FORMAT_1, _2, _3 or _4 */
+    sce_jv_t shape;              /* a text */
+    sce_jv_t session_id;         /* a text; a tree only */
+    sce_jv_t configuration;      /* an array of texts: the state ids */
+    sce_jv_t current;            /* a text */
+    sce_jv_t variables;          /* an object */
+    sce_jv_t history;            /* an object of arrays of texts */
+    sce_jv_t pending;            /* an array of sends */
+    sce_jv_t invokes;            /* format 1: an array of ids; a tree: an array of children */
+    sce_jv_t invoke_starts;      /* an object of counts; a tree only */
+    sce_jv_t host_invokes;       /* an array of host-run invocations */
+    sce_jv_t host_invoke_starts; /* an object of counts; format 4 only (docs/adr/0107, D4) */
+    sce_jv_t external;           /* an array of events */
+    sce_jv_t revisions;          /* an object; valid when `has_revisions` */
     bool has_revisions;
     sce_jv_t features; /* an array of texts, sorted, each once; valid when `has_features` */
     bool has_features;
@@ -252,6 +258,10 @@ typedef struct sce_saved_event_s {
 typedef struct sce_saved_host_invoke_s {
     sce_jv_t type;
     sce_jv_t id;
+    /* Which start of that `<invoke>` in this session it is, counted from 1: the count the session
+     * holds for it (docs/adr/0107, D4). One read from a state of format 1, 2 or 3, which holds none,
+     * is start 1: no host keyed a start by its number before format 4. */
+    int64_t start;
     sce_jv_t src;
     sce_jv_t params;
     sce_jv_t data;
@@ -735,7 +745,7 @@ static inline bool sce_saved_send_read(sce_jv_t v, const char *what, int form, s
         !sce_saved_member_text_(v, what, "sendid", &out->send_id, err)) {
         return false;
     }
-    if (form != SCE_SAVED_FORMAT_3) {
+    if (form < SCE_SAVED_FORMAT_3) {
         /* The sending session's id, or its location as this backend once stored it, and always
          * this session's: a session's act is its own send, so one stored empty is read as sent by
          * the session that holds it, and an `internal` act's is not read, since its event has no
@@ -825,7 +835,7 @@ static inline bool sce_saved_event_read(sce_jv_t v, const char *what, int form, 
         !sce_saved_member_text_(v, what, "sendid", &out->send_id, err)) {
         return false;
     }
-    if (form == SCE_SAVED_FORMAT_3) {
+    if (form >= SCE_SAVED_FORMAT_3) {
         if (!sce_saved_pair_read(v, what, &out->origin, &out->from_session, err)) {
             return false;
         }
@@ -835,13 +845,23 @@ static inline bool sce_saved_event_read(sce_jv_t v, const char *what, int form, 
     return sce_saved_member_text_(v, what, "invokeid", &out->invoke_id, err);
 }
 
-/* The host-run invocation `v`. */
-static inline bool sce_saved_host_invoke_read(sce_jv_t v, const char *what, sce_saved_host_invoke_t *out,
+/* The host-run invocation `v`, of a state of `form`. */
+static inline bool sce_saved_host_invoke_read(sce_jv_t v, const char *what, int form, sce_saved_host_invoke_t *out,
                                               sce_saved_error_t *err) {
     if (!sce_saved_object_(v, what, err)) {
         return false;
     }
     memset(out, 0, sizeof(*out));
+    out->start = 1;
+    if (form == SCE_SAVED_FORMAT_4) {
+        sce_jv_t start;
+        char at[SCE_SAVED_AT_LEN];
+        (void)snprintf(at, sizeof(at), "%s.start", what);
+        if (!sce_saved_member_text_(v, what, "start", &start, err) ||
+            !sce_saved_read_count(start, at, &out->start, err)) {
+            return false;
+        }
+    }
     return sce_saved_optional_count_(v, what, "due", sce_saved_read_moment, &out->has_due, &out->due, err) &&
            sce_saved_member_text_(v, what, "type", &out->type, err) &&
            sce_saved_member_text_(v, what, "id", &out->id, err) &&
@@ -1075,7 +1095,7 @@ static inline bool sce_saved_session_read(sce_jv_t members, int form, sce_saved_
         if (!sce_saved_session_id_view_ok(out->session_id, err)) {
             return false;
         }
-        if (form == SCE_SAVED_FORMAT_3 && !sce_saved_acts_are_own_(out->pending, out->session_id, err)) {
+        if (form >= SCE_SAVED_FORMAT_3 && !sce_saved_acts_are_own_(out->pending, out->session_id, err)) {
             return false;
         }
         if (!sce_jv_get(members, "invokestarts", &counted)) {
@@ -1109,8 +1129,31 @@ static inline bool sce_saved_session_read(sce_jv_t members, int form, sce_saved_
     for (at = 0u; sce_jiter_element(&it, &item); ++at) {
         sce_saved_host_invoke_t host;
         (void)snprintf(what, sizeof(what), "hostinvokes[%lu]", (unsigned long)at);
-        if (!sce_saved_host_invoke_read(item, what, &host, err)) {
+        if (!sce_saved_host_invoke_read(item, what, form, &host, err)) {
             return false;
+        }
+    }
+    /* docs/adr/0107, D4: format 4's count of host-run starts. An earlier format counted none, and
+     * sce_saved_host_invoke_start reads it as 1 for each invocation it lists. */
+    if (form == SCE_SAVED_FORMAT_4) {
+        if (!sce_jv_get(members, "hostinvokestarts", &counted)) {
+            return sce_saved_refuse(err, "the saved state has no 'hostinvokestarts'");
+        }
+        if (sce_jv_kind(counted) != SCE_JSON_OBJECT) {
+            return sce_saved_refuse(err, "'hostinvokestarts' is not an object");
+        }
+        out->host_invoke_starts = counted;
+        (void)sce_jv_iter(counted, &it);
+        while (sce_jiter_member(&it, &name, &value)) {
+            int64_t count;
+            sce_saved_quote_(name, quoted, sizeof(quoted));
+            (void)snprintf(what, sizeof(what), "hostinvokestarts.%s", quoted);
+            if (sce_jv_kind(value) != SCE_JSON_STRING) {
+                return sce_saved_refuse(err, "'%s' is not a text", what);
+            }
+            if (!sce_saved_read_count(value, what, &count, err)) {
+                return false;
+            }
         }
     }
 
@@ -1240,14 +1283,16 @@ static inline bool sce_saved_read(const char *text, size_t len, sce_saved_sessio
         form = SCE_SAVED_FORMAT_2;
     } else if (sce_jv_kind(written) == SCE_JSON_NUMBER && sce_jv_number_len(written) == 1u && *written.p == '3') {
         form = SCE_SAVED_FORMAT_3;
+    } else if (sce_jv_kind(written) == SCE_JSON_NUMBER && sce_jv_number_len(written) == 1u && *written.p == '4') {
+        form = SCE_SAVED_FORMAT_4;
     } else {
         sce_jw_t w;
         char quoted[SCE_SAVED_QUOTE_LEN];
         sce_jw_init(&w, quoted, sizeof(quoted));
         sce_jw_value(&w, written);
         (void)sce_jw_finish(&w);
-        return sce_saved_refuse(err, "the saved state is format %s, and this runtime reads formats %d, %d and %d",
-                                quoted, SCE_SAVED_FORMAT_1, SCE_SAVED_FORMAT_2, SCE_SAVED_FORMAT_3);
+        return sce_saved_refuse(err, "the saved state is format %s, and this runtime reads formats %d, %d, %d and %d",
+                                quoted, SCE_SAVED_FORMAT_1, SCE_SAVED_FORMAT_2, SCE_SAVED_FORMAT_3, SCE_SAVED_FORMAT_4);
     }
     return sce_saved_session_read(root, form, out, err);
 }
@@ -1274,6 +1319,40 @@ static inline int64_t sce_saved_invoke_start(const sce_saved_session_t *session,
             sce_saved_error_t ignored;
             (void)sce_saved_read_count(value, "invokestarts", &count, &ignored);
             return count;
+        }
+    }
+    return 0;
+}
+
+/* How many times the host-run `<invoke>` `id` had started in the session when it was saved: 0 for
+ * one that had not (docs/adr/0107, D4). A state of format 1, 2 or 3 counted none, and is read as
+ * having started once each invocation it lists. */
+static inline int64_t sce_saved_host_invoke_start(const sce_saved_session_t *session, const char *id) {
+    sce_jiter_t it;
+    sce_jv_t name;
+    sce_jv_t value;
+    sce_jv_t item;
+    int64_t count = 0;
+    if (session->format == SCE_SAVED_FORMAT_4) {
+        if (!sce_jv_iter(session->host_invoke_starts, &it)) {
+            return 0;
+        }
+        while (sce_jiter_member(&it, &name, &value)) {
+            if (sce_jv_string_is(name, id)) {
+                sce_saved_error_t ignored;
+                (void)sce_saved_read_count(value, "hostinvokestarts", &count, &ignored);
+                return count;
+            }
+        }
+        return 0;
+    }
+    if (!sce_jv_iter(session->host_invokes, &it)) {
+        return 0;
+    }
+    while (sce_jiter_element(&it, &item)) {
+        sce_jv_t listed;
+        if (sce_jv_get(item, "id", &listed) && sce_jv_string_is(listed, id)) {
+            return 1;
         }
     }
     return 0;
@@ -1872,6 +1951,8 @@ static inline void sce_saved_write_event(sce_jw_t *w, const sce_saved_event_out_
 typedef struct sce_saved_host_invoke_out_s {
     const char *type;
     const char *id;
+    /* Which start of that `<invoke>` in this session it is (docs/adr/0107, D4). */
+    uint64_t start;
     const char *src;
     const char *data;
     const char *content;
@@ -1888,6 +1969,8 @@ static inline void sce_saved_write_host_invoke(sce_jw_t *w, const sce_saved_host
     sce_jw_begin_object(w);
     sce_saved_write_member_text(w, "type", host->type);
     sce_saved_write_member_text(w, "id", host->id);
+    sce_jw_key(w, "start");
+    sce_saved_write_count(w, (int64_t)host->start);
     sce_saved_write_member_text(w, "src", host->src);
     sce_jw_key(w, "params");
     sce_saved_write_params(w, host->param_count, host->param_names, host->param_name_stride, host->param_values,
@@ -1899,6 +1982,33 @@ static inline void sce_saved_write_host_invoke(sce_jw_t *w, const sce_saved_host
         sce_saved_write_count(w, host->due);
     } else {
         sce_jw_null(w);
+    }
+    sce_jw_end_object(w);
+}
+
+/* Write a session's `hostinvokestarts` (docs/adr/0107, D4): each of the `count` host-run `<invoke>`
+ * ids `ids` whose count in `counts` is above zero, in the order of the ids' bytes, every backend's
+ * order. The ids are a document's, so each is named once. */
+static inline void sce_saved_write_host_invoke_starts(sce_jw_t *w, const char *const *ids, const uint64_t *counts,
+                                                      size_t count) {
+    const char *last = NULL;
+    sce_jw_begin_object(w);
+    for (size_t written = 0u; written < count; ++written) {
+        size_t next = count;
+        for (size_t i = 0u; i < count; ++i) {
+            if (counts[i] == 0u || (last != NULL && strcmp(ids[i], last) <= 0)) {
+                continue;
+            }
+            if (next == count || strcmp(ids[i], ids[next]) < 0) {
+                next = i;
+            }
+        }
+        if (next == count) {
+            break;
+        }
+        sce_jw_key(w, ids[next]);
+        sce_saved_write_count(w, (int64_t)counts[next]);
+        last = ids[next];
     }
     sce_jw_end_object(w);
 }

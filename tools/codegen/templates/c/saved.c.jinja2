@@ -856,7 +856,7 @@ SCE_SM_FN static bool {{ _t }}_saved_host_invokes(const sce_saved_session_t *s, 
         const {{ _t }}_saved_host_owner_t *owner = NULL;
         {{ _t }}_restored_host_t *slot = sm != NULL ? &sm->restored_host_invokes[sm->restored_host_invoke_count] : NULL;
         (void)snprintf(what, sizeof(what), "hostinvokes[%lu]", (unsigned long)at);
-        if (!sce_saved_host_invoke_read(item, what, &host, err)) {
+        if (!sce_saved_host_invoke_read(item, what, s->format, &host, err)) {
             return false;
         }
         (void)sce_jv_string(host.type, quoted_type, sizeof(quoted_type), NULL);
@@ -886,10 +886,21 @@ SCE_SM_FN static bool {{ _t }}_saved_host_invokes(const sce_saved_session_t *s, 
             sce_saved_error_t ignored;
             (void)sce_jv_iter(s->host_invokes, &earlier);
             for (size_t k = 0u; k < at && sce_jiter_element(&earlier, &before); ++k) {
-                if (sce_saved_host_invoke_read(before, "hostinvokes", &other, &ignored) &&
+                if (sce_saved_host_invoke_read(before, "hostinvokes", s->format, &other, &ignored) &&
                     sce_jv_string_equal(other.type, host.type) && sce_jv_string_equal(other.id, host.id)) {
                     return sce_saved_refuse(err, "%s is '%s', which an earlier entry already names", what, quoted_id);
                 }
+            }
+        }
+        {
+            /* docs/adr/0107, D4: a running invocation is the latest start of its `<invoke>`, since a
+               state re-entered cancels the earlier one first. */
+            const int64_t counted = sce_saved_host_invoke_start(s, quoted_id);
+            if (host.start != counted) {
+                return sce_saved_refuse(err,
+                                        "%s is start %lld of '%s', and the session counts %lld starts of it: a state "
+                                        "re-entered cancels the earlier start before it makes the next one",
+                                        what, (long long)host.start, quoted_id, (long long)counted);
             }
         }
 {% if not model.has_host_invoke_deadline %}
@@ -934,6 +945,8 @@ SCE_SM_FN static bool {{ _t }}_saved_host_invokes(const sce_saved_session_t *s, 
             }
         }
         if (slot != NULL) {
+            /* docs/adr/0107, D4: the start it repeats, not a new one. */
+            slot->request.start = (uint64_t)host.start;
             slot->deadline = 0u;
             slot->remaining_ms = 0u;
             if (host.has_due) {
@@ -945,6 +958,28 @@ SCE_SM_FN static bool {{ _t }}_saved_host_invokes(const sce_saved_session_t *s, 
                 }
             }
             sm->restored_host_invoke_count++;
+        }
+    }
+    /* docs/adr/0107, D4: a count of host-run starts names an `<invoke>` the document hands a host. */
+    if (s->format == SCE_SAVED_FORMAT_4) {
+        sce_jiter_t counted;
+        sce_jv_t name;
+        sce_jv_t value;
+        (void)sce_jv_iter(s->host_invoke_starts, &counted);
+        while (sce_jiter_member(&counted, &name, &value)) {
+            bool handed = false;
+            char quoted[SCE_SAVED_QUOTE_LEN];
+            (void)value;
+{% if (model.invokes | host_invoker | list) | length > 0 %}
+            for (size_t i = 0u; i < (size_t){{ _u }}_SAVED_HOST_OWNER_COUNT; ++i) {
+                handed = handed || sce_jv_string_is(name, {{ _t }}_saved_host_owners[i].id);
+            }
+{% endif %}
+            if (!handed) {
+                (void)sce_jv_string(name, quoted, sizeof(quoted), NULL);
+                return sce_saved_refuse(err, "hostinvokestarts counts '%s', which the document does not have a host invoker run",
+                                        quoted);
+            }
         }
     }
     return true;
@@ -1336,6 +1371,10 @@ SCE_SM_FN static bool {{ _t }}_saved_judge_session(const sce_saved_session_t *s,
     if (sce_jv_count(s->host_invokes) != 0u) {
         return sce_saved_refuse(err, "hostinvokes[0] is a host-run invocation, which the document does not have a host invoker run");
     }
+    /* docs/adr/0107, D4: a document that hands no `<invoke>` to a host counts no host-run start. */
+    if (s->format == SCE_SAVED_FORMAT_4 && sce_jv_count(s->host_invoke_starts) != 0u) {
+        return sce_saved_refuse(err, "hostinvokestarts counts a host-run invocation, which the document does not have a host invoker run");
+    }
 {% endif %}
     return true;
 }
@@ -1601,6 +1640,7 @@ bool {{ _t }}_save_members(const {{ _t }}_t *sm, int64_t wall_now_ms, sce_jw_t *
             memset(&host, 0, sizeof(host));
             host.type = request->processor_type;
             host.id = request->invoke_id;
+            host.start = request->start;
             host.src = request->src;
             host.data = request->event_data;
             host.content = request->content;
@@ -1617,6 +1657,19 @@ bool {{ _t }}_save_members(const {{ _t }}_t *sm, int64_t wall_now_ms, sce_jw_t *
     }
 {% endif %}
     sce_jw_end_array(w);
+    /* docs/adr/0107, D4: how many times each host-run `<invoke>` has started in this session. */
+    sce_jw_key(w, "hostinvokestarts");
+{% if model.host_invoker_types and (model.invokes | host_invoker | list) | length > 0 %}
+    {
+        const char *ids[{{ _u }}_SAVED_HOST_OWNER_COUNT];
+        for (size_t i = 0u; i < (size_t){{ _u }}_SAVED_HOST_OWNER_COUNT; ++i) {
+            ids[i] = {{ _t }}_saved_host_owners[i].id;
+        }
+        sce_saved_write_host_invoke_starts(w, ids, sm->host_invoke_starts, (size_t){{ _u }}_SAVED_HOST_OWNER_COUNT);
+    }
+{% else %}
+    sce_saved_write_host_invoke_starts(w, NULL, NULL, 0u);
+{% endif %}
     sce_jw_key(w, "hostinvoketoken");
 {% if model.host_invoker_types %}
     sce_saved_write_count(w, (int64_t)sm->started_host_invokes.next_token);
@@ -1762,6 +1815,13 @@ SCE_SM_FN static bool {{ _t }}_saved_apply({{ _t }}_t *sm, const sce_saved_sessi
     /* Each re-armed invocation starts at the top of the first macrostep the host drives; the
        token the next start receives carries on from the saved count. */
     sm->started_host_invokes.next_token = (uint64_t)session->host_invoke_token;
+{% if (model.invokes | host_invoker | list) | length > 0 %}
+    /* docs/adr/0107, D4: a start after the restore is numbered on from the count each `<invoke>`
+       had reached; one a format of no count lists is its first start. */
+    for (size_t i = 0u; i < (size_t){{ _u }}_SAVED_HOST_OWNER_COUNT; ++i) {
+        sm->host_invoke_starts[i] = (uint64_t)sce_saved_host_invoke_start(session, {{ _t }}_saved_host_owners[i].id);
+    }
+{% endif %}
     if (!{{ _t }}_saved_host_invokes(session, judged->active, sm, wall_now_ms, err)) {
         return false;
     }

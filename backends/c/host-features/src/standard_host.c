@@ -150,9 +150,20 @@ typedef struct {
 typedef struct {
     char *operation;
     char *id;
+    char *session_id;
+    uint64_t number;
     sce_host_send_param_t *params;
     size_t param_count;
 } start_t;
+
+/* The first result of a put-if, by the identity of its invocation: what a repeat of that identity
+   is answered with (docs/adr/0107, D4). */
+typedef struct {
+    char *session_id;
+    char *id;
+    uint64_t start;
+    sce_hf_outcome_t outcome;
+} first_result_t;
 
 typedef struct {
     char *operation;
@@ -185,6 +196,9 @@ struct sce_hf_host_s {
     start_t *starts;
     size_t start_count;
     size_t start_cap;
+    first_result_t *first_results;
+    size_t first_result_count;
+    size_t first_result_cap;
     /* Where a generation's text comes from: the host's own scripted provider
        until the embedding gives another. */
     sce_hf_scripted_provider_t *own_provider;
@@ -229,6 +243,7 @@ void sce_hf_clear_starts(sce_hf_host_t *host) {
         start_t *start = &host->starts[i];
         free(start->operation);
         free(start->id);
+        free(start->session_id);
         for (size_t p = 0; p < start->param_count; ++p) {
             free((char *)start->params[p].name);
             free((char *)start->params[p].value);
@@ -258,6 +273,12 @@ void sce_hf_host_free(sce_hf_host_t *host) {
     strlist_free(&host->held);
     strlist_free(&host->cancelled);
     sce_hf_clear_starts(host);
+    for (size_t i = 0; i < host->first_result_count; ++i) {
+        free(host->first_results[i].session_id);
+        free(host->first_results[i].id);
+        sce_hf_outcome_free(&host->first_results[i].outcome);
+    }
+    free(host->first_results);
     sce_hf_scripted_provider_free(host->own_provider);
     free(host);
 }
@@ -357,6 +378,14 @@ size_t sce_hf_start_param_count(const sce_hf_host_t *host, size_t index) {
 void sce_hf_start_param(const sce_hf_host_t *host, size_t index, size_t param, const char **name, const char **value) {
     *name = host->starts[index].params[param].name;
     *value = host->starts[index].params[param].value;
+}
+
+const char *sce_hf_start_session_id(const sce_hf_host_t *host, size_t index) {
+    return host->starts[index].session_id;
+}
+
+uint64_t sce_hf_start_number(const sce_hf_host_t *host, size_t index) {
+    return host->starts[index].number;
 }
 
 /* ── The system clock ───────────────────────────────────────────────── */
@@ -1262,15 +1291,17 @@ static const char *param_of(const sce_host_send_param_t *params, size_t count, c
     return "";
 }
 
-static void log_start(sce_hf_host_t *host, const char *operation, const char *id, const sce_host_send_param_t *params,
-                      size_t count) {
+static void log_start(sce_hf_host_t *host, const char *operation, const sce_hf_invocation_t *invocation,
+                      const sce_host_send_param_t *params, size_t count) {
     if (host->start_count == host->start_cap) {
         host->start_cap = host->start_cap ? host->start_cap * 2u : 16u;
         host->starts = (start_t *)must(realloc(host->starts, host->start_cap * sizeof(start_t)));
     }
     start_t *start = &host->starts[host->start_count++];
     start->operation = dup_str(operation);
-    start->id = dup_str(id);
+    start->id = dup_str(invocation->id);
+    start->session_id = dup_str(invocation->session_id != NULL ? invocation->session_id : "");
+    start->number = invocation->start;
     start->param_count = count;
     start->params = (sce_host_send_param_t *)must(calloc(count > 0u ? count : 1u, sizeof(sce_host_send_param_t)));
     for (size_t i = 0; i < count; ++i) {
@@ -1279,7 +1310,39 @@ static void log_start(sce_hf_host_t *host, const char *operation, const char *id
     }
 }
 
-bool sce_hf_start(sce_hf_host_t *host, const char *operation, const char *invoke_id,
+/* The first result kept for `invocation`, or NULL (docs/adr/0107, D4). */
+static const first_result_t *first_result_of(const sce_hf_host_t *host, const sce_hf_invocation_t *invocation) {
+    const char *session_id = invocation->session_id != NULL ? invocation->session_id : "";
+    for (size_t i = 0; i < host->first_result_count; ++i) {
+        const first_result_t *kept = &host->first_results[i];
+        if (kept->start == invocation->start && strcmp(kept->id, invocation->id) == 0 &&
+            strcmp(kept->session_id, session_id) == 0) {
+            return kept;
+        }
+    }
+    return NULL;
+}
+
+/* Keep `outcome` as the first result of `invocation`, in a copy the host owns. */
+static void keep_first_result(sce_hf_host_t *host, const sce_hf_invocation_t *invocation,
+                              const sce_hf_outcome_t *outcome) {
+    if (host->first_result_count == host->first_result_cap) {
+        host->first_result_cap = host->first_result_cap ? host->first_result_cap * 2u : 8u;
+        host->first_results =
+            (first_result_t *)must(realloc(host->first_results, host->first_result_cap * sizeof(first_result_t)));
+    }
+    first_result_t *kept = &host->first_results[host->first_result_count++];
+    kept->session_id = dup_str(invocation->session_id != NULL ? invocation->session_id : "");
+    kept->id = dup_str(invocation->id);
+    kept->start = invocation->start;
+    kept->outcome.kind = outcome->kind;
+    kept->outcome.data = dup_str(outcome->data);
+}
+
+static void perform(sce_hf_host_t *host, const char *operation, const char *invoke_id,
+                    const sce_host_send_param_t *params, size_t param_count, sce_hf_outcome_t *out);
+
+bool sce_hf_start(sce_hf_host_t *host, const char *operation, const sce_hf_invocation_t *invocation,
                   const sce_host_send_param_t *params, size_t param_count, sce_hf_outcome_t *out) {
     bool known = false;
     for (size_t i = 0; i < SCE_HF_TYPE_COUNT; ++i) {
@@ -1290,7 +1353,28 @@ bool sce_hf_start(sce_hf_host_t *host, const char *operation, const char *invoke
     if (!known) {
         return false;
     }
-    log_start(host, operation, invoke_id, params, param_count);
+    log_start(host, operation, invocation, params, param_count);
+    const bool keeps_first = strcmp(operation, "sce-host-kv-put-if") == 0;
+    if (keeps_first) {
+        const first_result_t *first = first_result_of(host, invocation);
+        if (first != NULL) {
+            (void)fprintf(stderr, "[sce] %s %s: start %llu repeated, answered as first\n", operation, invocation->id,
+                          (unsigned long long)invocation->start);
+            out->kind = first->outcome.kind;
+            out->data = dup_str(first->outcome.data);
+            return true;
+        }
+    }
+    perform(host, operation, invocation->id, params, param_count, out);
+    if (keeps_first && out->kind == SCE_HF_DONE) {
+        keep_first_result(host, invocation, out);
+    }
+    return true;
+}
+
+/* The operation itself, as `sce_hf_start` describes it, for a start that is not a repeat. */
+static void perform(sce_hf_host_t *host, const char *operation, const char *invoke_id,
+                    const sce_host_send_param_t *params, size_t param_count, sce_hf_outcome_t *out) {
 #define ARG(name) param_of(params, param_count, name)
     bool refused = false;
     if (strcmp(operation, "sce-host-kv-get") == 0 || strcmp(operation, "sce-host-kv-delete") == 0 ||
@@ -1316,18 +1400,18 @@ bool sce_hf_start(sce_hf_host_t *host, const char *operation, const char *invoke
     if (refused) {
         out->kind = SCE_HF_REFUSE;
         out->data = dup_str("{\"reason\":\"invalid_argument\"}");
-        return true;
+        return;
     }
     for (size_t i = 0; i < host->fault_count; ++i) {
         if (strcmp(host->faults[i].operation, operation) == 0) {
             (void)fprintf(stderr, "[sce] %s %s: fails %s, injected\n", operation, invoke_id, host->faults[i].code);
             failure(operation, host->faults[i].code, out);
-            return true;
+            return;
         }
     }
     if (strcmp(operation, SCE_HF_MODEL_GENERATE) == 0) {
         model_generate(host, invoke_id, &generation, out);
-        return true;
+        return;
     }
     if (strcmp(operation, "sce-host-clock-now") == 0) {
         clock_now(host, out);
@@ -1355,7 +1439,6 @@ bool sce_hf_start(sce_hf_host_t *host, const char *operation, const char *invoke
         http_fetch(host, invoke_id, ARG("method"), ARG("url"), ARG("headers"), ARG("body"), out);
     }
 #undef ARG
-    return true;
 }
 
 void sce_hf_cancel(sce_hf_host_t *host, const char *invoke_id) {
@@ -1372,8 +1455,9 @@ void sce_hf_invoker(void *user_data, const sce_host_invoke_event_t *event, sce_h
         return;
     }
     sce_hf_outcome_t outcome;
-    if (!sce_hf_start(host, event->processor_type, event->invoke_id, event->params, (size_t)event->param_count,
-                      &outcome)) {
+    /* docs/adr/0107, D4: the invocation's identity, which a restore starts it again under. */
+    const sce_hf_invocation_t invocation = {event->session_id, event->invoke_id, event->start};
+    if (!sce_hf_start(host, event->processor_type, &invocation, event->params, (size_t)event->param_count, &outcome)) {
         return;
     }
     if (outcome.kind == SCE_HF_DONE) {

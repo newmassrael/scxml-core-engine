@@ -101,14 +101,18 @@ static void every_shared_text_reads_as_a_session_of_its_format(void) {
     char format1[1024];
     char format2[1024];
     char read_as[1024];
+    char format3[1024];
     (void)snprintf(format1, sizeof(format1), "%s/format1", SCE_SAVED_FIXTURES_DIR);
     (void)snprintf(format2, sizeof(format2), "%s/format2", SCE_SAVED_FIXTURES_DIR);
     (void)snprintf(read_as, sizeof(read_as), "%s/format2/read_as", SCE_SAVED_FIXTURES_DIR);
-    CHECK(check_directory(SCE_SAVED_FIXTURES_DIR, SCE_SAVED_FORMAT_3) >= 10, "the format-3 texts");
+    (void)snprintf(format3, sizeof(format3), "%s/format3", SCE_SAVED_FIXTURES_DIR);
+    CHECK(check_directory(SCE_SAVED_FIXTURES_DIR, SCE_SAVED_FORMAT_4) >= 10, "the format-4 texts");
     CHECK(check_directory(format1, SCE_SAVED_FORMAT_1) >= 10, "the format-1 texts");
-    // The format-2 reading fixtures (docs/adr/0090, section 7), and the format-3 text each is read as.
+    // The format-2 reading fixtures (docs/adr/0090, section 7), and the format-4 text each is read as.
     CHECK(check_directory(format2, SCE_SAVED_FORMAT_2) >= 4, "the format-2 reading texts");
-    CHECK(check_directory(read_as, SCE_SAVED_FORMAT_3) >= 4, "the texts the format-2 reading texts are read as");
+    CHECK(check_directory(read_as, SCE_SAVED_FORMAT_4) >= 4, "the texts the format-2 reading texts are read as");
+    // The format-3 reading fixtures (docs/adr/0107, D4).
+    CHECK(check_directory(format3, SCE_SAVED_FORMAT_3) >= 1, "the format-3 reading texts");
 }
 
 // `text` read as a state, the refusal it gets in `err`.
@@ -122,11 +126,11 @@ static void a_text_that_is_not_a_session_is_refused_in_the_words_every_backend_u
     CHECK(refused("{", &err) && strstr(err.message, "the saved state is ") == err.message, "%s", err.message);
     CHECK(refused("[]", &err) && strcmp(err.message, "the saved state is not an object") == 0, "%s", err.message);
     CHECK(refused("{}", &err) && strcmp(err.message, "the saved state has no 'format'") == 0, "%s", err.message);
-    CHECK(refused("{\"format\":4}", &err) &&
-              strcmp(err.message, "the saved state is format 4, and this runtime reads formats 1, 2 and 3") == 0,
+    CHECK(refused("{\"format\":5}", &err) &&
+              strcmp(err.message, "the saved state is format 5, and this runtime reads formats 1, 2, 3 and 4") == 0,
           "%s", err.message);
     CHECK(refused("{\"format\":\"2\"}", &err) &&
-              strcmp(err.message, "the saved state is format \"2\", and this runtime reads formats 1, 2 and 3") == 0,
+              strcmp(err.message, "the saved state is format \"2\", and this runtime reads formats 1, 2, 3 and 4") == 0,
           "%s", err.message);
     // A format-3 text is judged by its format first: it is read as a session of that format.
     CHECK(refused("{\"format\":3}", &err) && strcmp(err.message, "the saved state has no 'configuration'") == 0, "%s",
@@ -196,7 +200,7 @@ static void a_tree_is_judged_to_every_depth(void) {
               sce_jv_string_is(child.invoke_id, "working.2.worker") &&
               sce_jv_string_is(child.document, "static_invoke_tree__sce_synth_invoke__worker"),
           "the child's words");
-    CHECK(child.format == SCE_SAVED_FORMAT_3, "the child is read in the format of its tree: %d", child.format);
+    CHECK(child.format == SCE_SAVED_FORMAT_4, "the child is read in the format of its tree: %d", child.format);
     CHECK(sce_saved_session_read(child.session, child.format, &session, &err), "%s", err.message);
     CHECK(sce_jv_string_is(session.session_id, "fixture-root.working.2.worker"), "the child's id");
 
@@ -266,9 +270,12 @@ static void a_waiting_send_a_queued_event_and_a_host_invocation_read_back_as_the
         CHECK(sce_saved_session_read(child.session, child.format, &inner, &err), "%s", err.message);
         CHECK(inner.host_invoke_token == 1, "the child has handed out one token");
         CHECK(sce_jv_iter(inner.host_invokes, &it) && sce_jiter_element(&it, &item), "a host run waits");
-        CHECK(sce_saved_host_invoke_read(item, "hostinvokes[0]", &host, &err), "%s", err.message);
+        CHECK(sce_saved_host_invoke_read(item, "hostinvokes[0]", inner.format, &host, &err), "%s", err.message);
         CHECK(sce_jv_string_is(host.type, "sce-host-clock-now") && sce_jv_string_is(host.id, "clock") && !host.has_due,
               "the invocation's words");
+        // docs/adr/0107, D4: the first start of `clock`, as the child counts it.
+        CHECK(host.start == 1 && sce_saved_host_invoke_start(&inner, "clock") == 1, "start %lld of a count of %lld",
+              (long long)host.start, (long long)sce_saved_host_invoke_start(&inner, "clock"));
     }
 }
 
@@ -726,14 +733,15 @@ static void a_machine_writes_the_members_the_other_backends_write(void) {
     memset(&host, 0, sizeof(host));
     host.type = "sce-host-clock-now";
     host.id = "clock";
+    host.start = 1u;
     host.src = "";
     host.data = "";
     host.content = "";
     sce_jw_init(&w, buf, sizeof(buf));
     sce_saved_write_host_invoke(&w, &host);
     CHECK(sce_jw_finish(&w) &&
-              strcmp(buf, "{\"type\":\"sce-host-clock-now\",\"id\":\"clock\",\"src\":\"\",\"params\":{},\"data\":\"\","
-                          "\"content\":\"\",\"due\":null}") == 0,
+              strcmp(buf, "{\"type\":\"sce-host-clock-now\",\"id\":\"clock\",\"start\":\"1\",\"src\":\"\","
+                          "\"params\":{},\"data\":\"\",\"content\":\"\",\"due\":null}") == 0,
           "%s", buf);
     host.has_due = true;
     host.due = 1700000009000;
@@ -1015,8 +1023,71 @@ static void a_wall_clock_moment_converts_to_the_engines_clock_and_back(void) {
     CHECK(sce_saved_ready_at(0, UINT64_MAX - 1u, 100) == UINT64_MAX, "held to what an unsigned count says");
 }
 
+// docs/adr/0107, D4: a host-run invocation of format 3 is read as the first start of its `<invoke>`
+// and counted so; one of format 4 holds its start number and the session its count, a count of an
+// `<invoke>` not running among them, and a number that is no count of starts is refused. The count
+// is written in the order of the ids' bytes, a count of none left out.
+static void a_host_invocations_start_number_is_read_by_its_format(void) {
+    static char text[TEXT_CAP];
+    char path[1024];
+    size_t len = 0u;
+    sce_saved_error_t err;
+    sce_saved_session_t session;
+    sce_jiter_t it;
+    sce_jv_t item;
+    sce_saved_host_invoke_t host;
+    static const char format4[] =
+        "{\"format\":4,\"shape\":\"s\",\"sessionid\":\"x\",\"configuration\":[\"a\"],\"current\":\"a\","
+        "\"variables\":{},\"history\":{},\"pending\":[],\"invokes\":[],\"invokestarts\":{},"
+        "\"hostinvokes\":[{\"type\":\"x-host\",\"id\":\"h\",\"start\":\"3\",\"src\":\"\",\"params\":{},\"data\":\"\","
+        "\"content\":\"\",\"due\":null}],\"hostinvokestarts\":{\"done\":\"2\",\"h\":\"3\"},"
+        "\"hostinvoketoken\":\"0\",\"sendseq\":\"0\",\"external\":[]}";
+
+    (void)snprintf(path, sizeof(path),
+                   "%s/../../host_processor/saved/format3/statechart_static_host_invoke_running.json",
+                   SCE_SAVED_FIXTURES_DIR);
+    CHECK(read_trimmed(path, text, sizeof(text), &len), "the format-3 running text");
+    CHECK(sce_saved_read(text, len, &session, &err), "%s", err.message);
+    CHECK(session.format == SCE_SAVED_FORMAT_3, "format %d", session.format);
+    CHECK(sce_jv_iter(session.host_invokes, &it) && sce_jiter_element(&it, &item), "a host run waits");
+    CHECK(sce_saved_host_invoke_read(item, "hostinvokes[0]", session.format, &host, &err), "%s", err.message);
+    CHECK(host.start == 1 && sce_saved_host_invoke_start(&session, "h") == 1 &&
+              sce_saved_host_invoke_start(&session, "nobody") == 0,
+          "format 3 is read as the first start: %lld", (long long)host.start);
+
+    CHECK(sce_saved_read(format4, strlen(format4), &session, &err), "%s", err.message);
+    CHECK(sce_jv_iter(session.host_invokes, &it) && sce_jiter_element(&it, &item), "a host run waits");
+    CHECK(sce_saved_host_invoke_read(item, "hostinvokes[0]", session.format, &host, &err), "%s", err.message);
+    CHECK(host.start == 3 && sce_saved_host_invoke_start(&session, "h") == 3 &&
+              sce_saved_host_invoke_start(&session, "done") == 2,
+          "format 4 keeps the number and the count: %lld", (long long)host.start);
+    {
+        char changed[sizeof(format4)];
+        char *at;
+        (void)snprintf(changed, sizeof(changed), "%s", format4);
+        at = strstr(changed, "\"done\":\"2\"");
+        CHECK(at != NULL, "the count of done");
+        at[8] = '0';
+        CHECK(refused(changed, &err) &&
+                  strcmp(err.message, "'hostinvokestarts.done' (0) is not a count of starts, a whole number from 1") ==
+                      0,
+              "%s", err.message);
+    }
+
+    {
+        static const char *const ids[] = {"walk", "get", "del"};
+        static const uint64_t counts[] = {1u, 0u, 2u};
+        char out[128];
+        sce_jw_t w;
+        sce_jw_init(&w, out, sizeof(out));
+        sce_saved_write_host_invoke_starts(&w, ids, counts, 3u);
+        CHECK(sce_jw_finish(&w) && strcmp(out, "{\"del\":\"2\",\"walk\":\"1\"}") == 0, "written as %s", out);
+    }
+}
+
 int main(void) {
     every_shared_text_reads_as_a_session_of_its_format();
+    a_host_invocations_start_number_is_read_by_its_format();
     a_text_that_is_not_a_session_is_refused_in_the_words_every_backend_uses();
     a_member_is_judged_for_what_it_is();
     a_tree_is_judged_to_every_depth();

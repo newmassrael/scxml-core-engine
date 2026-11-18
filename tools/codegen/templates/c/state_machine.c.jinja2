@@ -7025,6 +7025,7 @@ SCE_SM_FN static void note_host_request({{ csym_prefix }}{{ model.name }}_t *sm,
     }
     memset(slot, 0, sizeof(*slot));
     slot->token = start->token;
+    slot->start = start->start;
     sce_copy_bounded_id(slot->processor_type, start->processor_type);
     sce_copy_bounded_id(slot->invoke_id, start->invoke_id);
     sce_copy_bounded_n(slot->src, start->src, sizeof(slot->src));
@@ -7038,9 +7039,28 @@ SCE_SM_FN static void note_host_request({{ csym_prefix }}{{ model.name }}_t *sm,
 }
 
 {% endif %}
+{% if (model.invokes | host_invoker | list) | length > 0 %}
+/* docs/adr/0107, D4: the slot of `host_invoke_starts` that counts the starts of the host-run
+   `<invoke>` `invoke_id`, in document order of the `<invoke>`s, or -1 for an id the document does
+   not hand a host. */
+SCE_SM_FN static int host_invoke_start_slot(const char *invoke_id) {
+{% for inv in model.invokes | host_invoker %}
+    if (strcmp(invoke_id, "{{ inv.invoke_id | escape_c }}") == 0) {
+        return {{ loop.index0 }};
+    }
+{% endfor %}
+    return -1;
+}
+
+{% endif %}
 /* W3C SCXML 6.4.1: start a host-run invocation, reporting whether an invoker
    ran it. `false` means none was registered, which the start site turns into
    `error.execution`.
+
+   A start the document makes is numbered on from the count of its `<invoke>`;
+   a restart keeps the number the saved state gave it, whose count the restore
+   carried on, since it repeats that start rather than making another
+   (docs/adr/0107, D4).
 
    The start is recorded, with its token, BEFORE the handler runs, so a handler
    that completes synchronously completes an invocation the set already holds;
@@ -7104,6 +7124,12 @@ SCE_SM_FN static bool {{ csym_prefix }}{{ model.name }}_perform_host_invoke({{ c
     start->params = param_count > 0 ? params : NULL;
     start->param_count = param_count;
     start->token = sce_host_invocation_mark(&sm->started_host_invokes, start->processor_type, start->invoke_id);
+{% if (model.invokes | host_invoker | list) | length > 0 %}
+    if (!start->restarted) {
+        const int counted = host_invoke_start_slot(start->invoke_id);
+        start->start = counted >= 0 ? ++sm->host_invoke_starts[counted] : 0u;
+    }
+{% endif %}
     start->session_id = sm->session_id;
 {% if static_saved_shape %}
     note_host_request(sm, start);
@@ -7235,6 +7261,8 @@ SCE_SM_FN static void start_restored_host_invokes({{ csym_prefix }}{{ model.name
             memset(&start, 0, sizeof(start));
             start.phase = SCE_HOST_INVOKE_START;
             start.restarted = true;
+            /* docs/adr/0107, D4: the start it repeats, not a new one. */
+            start.start = request->start;
             start.processor_type = request->processor_type;
             start.invoke_id = request->invoke_id;
             start.src = request->src;

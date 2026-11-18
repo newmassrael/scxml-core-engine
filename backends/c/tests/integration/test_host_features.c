@@ -1849,7 +1849,8 @@ static bool judges_a_generation_before_its_provider(void) {
                                                  {"max_tokens", cases[i].max_tokens},
                                                  {"temperature_milli", cases[i].temperature}};
         sce_hf_outcome_t outcome;
-        (void)sce_hf_start(host, SCE_HF_MODEL_GENERATE, "gen", params, 4u, &outcome);
+        (void)sce_hf_start(host, SCE_HF_MODEL_GENERATE, &(sce_hf_invocation_t){"session", "gen", 1u}, params, 4u,
+                           &outcome);
         const bool held = cases[i].expect == NULL
                               ? outcome.kind == SCE_HF_REFUSE
                               : outcome.kind == SCE_HF_DONE && strstr(outcome.data, cases[i].expect) != NULL;
@@ -1875,7 +1876,8 @@ static bool judges_a_generation_before_its_provider(void) {
         const sce_host_send_param_t params[4] = {
             {"prompt", "p"}, {"answer_schema", ""}, {"max_tokens", "8"}, {"temperature_milli", "0"}};
         sce_hf_outcome_t outcome;
-        (void)sce_hf_start(host, SCE_HF_MODEL_GENERATE, "gen", params, 4u, &outcome);
+        (void)sce_hf_start(host, SCE_HF_MODEL_GENERATE, &(sce_hf_invocation_t){"session", "gen", 1u}, params, 4u,
+                           &outcome);
         if (outcome.kind != kinds[i] || (contains[i] != NULL && strstr(outcome.data, contains[i]) == NULL)) {
             (void)fprintf(stderr, "host_features: exhaustive class %zu answered %s\n", i,
                           outcome.data != NULL ? outcome.data : "(nothing)");
@@ -1901,13 +1903,15 @@ static bool serves_only_the_standard_set_and_a_monotonic_clock(void) {
     transport.user_data = &script;
     sce_hf_host_t *host = sce_hf_host_new(sce_hf_system_clock(), transport);
     sce_hf_outcome_t outcome;
-    if (sce_hf_start(host, "x-app-host", "id", NULL, 0u, &outcome)) {
+    if (sce_hf_start(host, "x-app-host", &(sce_hf_invocation_t){"session", "id", 1u}, NULL, 0u, &outcome)) {
         (void)fprintf(stderr, "host_features: a type outside the standard set was served\n");
         ok = false;
     }
     long long last = -1;
     for (int i = 0; i < 50; ++i) {
-        if (!sce_hf_start(host, "sce-host-clock-now", "now", NULL, 0u, &outcome) || outcome.kind != SCE_HF_DONE) {
+        if (!sce_hf_start(host, "sce-host-clock-now", &(sce_hf_invocation_t){"session", "now", 1u}, NULL, 0u,
+                          &outcome) ||
+            outcome.kind != SCE_HF_DONE) {
             ok = false;
             break;
         }
@@ -1925,9 +1929,9 @@ static bool serves_only_the_standard_set_and_a_monotonic_clock(void) {
     const sce_host_send_param_t value = {"value", "v"};
     const sce_host_send_param_t one[2] = {emoji, value};
     const sce_host_send_param_t two[2] = {wide, value};
-    (void)sce_hf_start(host, "sce-host-kv-put", "put", one, 2u, &outcome);
+    (void)sce_hf_start(host, "sce-host-kv-put", &(sce_hf_invocation_t){"session", "put", 1u}, one, 2u, &outcome);
     sce_hf_outcome_free(&outcome);
-    (void)sce_hf_start(host, "sce-host-kv-put", "put", two, 2u, &outcome);
+    (void)sce_hf_start(host, "sce-host-kv-put", &(sce_hf_invocation_t){"session", "put", 2u}, two, 2u, &outcome);
     sce_hf_outcome_free(&outcome);
     const char *first_key;
     const char *first_value;
@@ -1941,9 +1945,104 @@ static bool serves_only_the_standard_set_and_a_monotonic_clock(void) {
     return ok;
 }
 
+// The host carries out a put-if and its answer is lost with the process before the machine takes it.
+static void put_if_carried_out(void *user_data, const sce_host_invoke_event_t *event, sce_host_invoke_response_t *out) {
+    sce_hf_host_t *host = (sce_hf_host_t *)user_data;
+    sce_hf_outcome_t outcome;
+    (void)out;
+    if (event->phase != SCE_HOST_INVOKE_START) {
+        return;
+    }
+    const sce_hf_invocation_t invocation = {event->session_id, event->invoke_id, event->start};
+    if (sce_hf_start(host, event->processor_type, &invocation, event->params, (size_t)event->param_count, &outcome)) {
+        sce_hf_outcome_free(&outcome);
+    }
+}
+
+// docs/adr/0107, D4: a put-if the host carried out, saved before its answer was taken, is started again by
+// the restore under the identity it had, and the host answers it with the first result rather than judging
+// the store a second time; a start the document makes afterwards takes the next number and is an operation
+// of its own.
+static bool a_restored_put_if_is_answered_with_the_first_result_of_its_invocation(void) {
+    static static_host_kv_t first;
+    static static_host_kv_t second;
+    static char saved[16384];
+    bool ok = true;
+    size_t len = 0u;
+    sce_saved_error_t err;
+    script_t script;
+    memset(&script, 0, sizeof(script));
+    script.log = jn_new(J_ARR);
+    sce_hf_transport_t transport = {scripted_exchange, &script};
+    sce_hf_host_t *host = sce_hf_host_new(sce_hf_system_clock(), transport);
+    sce_host_invoker_registry_t carrying;
+    sce_host_invoker_registry_t serving;
+    memset(&carrying, 0, sizeof(carrying));
+    memset(&serving, 0, sizeof(serving));
+    ok = sce_hf_register(&carrying, host) && sce_hf_register(&serving, host) &&
+         sce_host_invoker_register(&carrying, "sce-host-kv-put-if", put_if_carried_out, host);
+
+    // The first process.
+    REQUIRE_STARTED(static_host_kv_init_with_host_invokers(&first, &carrying), STATIC_HOST_KV_START_OK);
+    ok = ok && static_host_kv_raise_by_name(&first, "host.kv.put_if.request",
+                                            "{\"key\":\"k\",\"value\":\"a\",\"expected_version\":\"0\"}");
+    static_host_kv_settle(&first);
+    ok = ok && static_host_kv_save(&first, 0, saved, sizeof(saved), &len, &err);
+    if (!ok || strstr(saved, "\"id\":\"putif\",\"start\":\"1\",") == NULL || sce_hf_store_count(host) != 1u) {
+        (void)fprintf(stderr, "host_features: the put-if is not running as its first start: %s\n", saved);
+        ok = false;
+    }
+
+    // The second process: the restore starts it again, and the host answers it as it answered the first
+    // time, where the store alone would now answer `written` false at version 1.
+    static_host_kv_restore_args_t args;
+    memset(&args, 0, sizeof(args));
+    args.host_invokers = &serving;
+    if (!static_host_kv_restore(&second, saved, len, 0, &args, &err)) {
+        (void)fprintf(stderr, "host_features: the restore was refused: %s\n", err.message);
+        ok = false;
+    } else {
+        static_host_kv_settle(&second);
+        if (strcmp(static_host_kv_get_outcome(&second), "done") != 0 || !static_host_kv_get_written(&second) ||
+            strcmp(static_host_kv_get_put_version(&second), "1") != 0 || sce_hf_store_count(host) != 1u) {
+            (void)fprintf(stderr, "host_features: the restored put-if is not answered with its first result\n");
+            ok = false;
+        }
+        // A start the document makes now is the second start of `putif`.
+        ok = static_host_kv_raise_by_name(&second, "host.kv.put_if.request",
+                                          "{\"key\":\"k\",\"value\":\"b\",\"expected_version\":\"0\"}") &&
+             ok;
+        static_host_kv_settle(&second);
+        if (static_host_kv_get_written(&second) || strcmp(static_host_kv_get_put_version(&second), "1") != 0) {
+            (void)fprintf(stderr, "host_features: a new start is not judged against the store as it is\n");
+            ok = false;
+        }
+        const uint64_t numbers[3] = {1u, 1u, 2u};
+        if (sce_hf_start_count(host) != 3u) {
+            (void)fprintf(stderr, "host_features: %zu starts, not 3\n", sce_hf_start_count(host));
+            ok = false;
+        } else {
+            for (size_t i = 0u; i < 3u; ++i) {
+                if (strcmp(sce_hf_start_id(host, i), "putif") != 0 || sce_hf_start_number(host, i) != numbers[i] ||
+                    strcmp(sce_hf_start_session_id(host, i), sce_hf_start_session_id(host, 0u)) != 0) {
+                    (void)fprintf(stderr, "host_features: start %zu is %s, number %llu\n", i, sce_hf_start_id(host, i),
+                                  (unsigned long long)sce_hf_start_number(host, i));
+                    ok = false;
+                }
+            }
+        }
+    }
+    sce_hf_host_free(host);
+    jn_free(script.log);
+    return ok;
+}
+
 int main(void) {
     int bad = 0;
     if (!serves_only_the_standard_set_and_a_monotonic_clock()) {
+        bad = 1;
+    }
+    if (!a_restored_put_if_is_answered_with_the_first_result_of_its_invocation()) {
         bad = 1;
     }
     if (!judges_a_generation_before_its_provider()) {

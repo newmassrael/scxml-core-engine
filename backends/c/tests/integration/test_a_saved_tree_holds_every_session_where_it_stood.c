@@ -213,7 +213,7 @@ static void the_tree_holds_every_session_where_it_stood(void) {
     CHECK(sce_jv_count(root.external) == 1u, "the child's answer waits in the parent's queue");
     CHECK(sce_jv_count(root.invokes) == 1u, "one running child");
     CHECK(sce_jv_iter(root.invokes, &it) && sce_jiter_element(&it, &item), "the child is there");
-    CHECK(root.format == SCE_SAVED_FORMAT_3, "the tree is saved as format 3: %d", root.format);
+    CHECK(root.format == SCE_SAVED_FORMAT_4, "the tree is saved as format 4: %d", root.format);
     CHECK(sce_saved_child_read(item, 0u, root.format, &worker, &err), "%s", err.message);
     CHECK(sce_jv_string_is(worker.id, "worker") && worker.start == 2 &&
               sce_jv_string_is(worker.invoke_id, "working.2.worker"),

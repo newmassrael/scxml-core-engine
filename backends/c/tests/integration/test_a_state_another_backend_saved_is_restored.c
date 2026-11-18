@@ -186,9 +186,9 @@ static int round_trips(const char *directory, bool as_it_was) {
             CHECK(strcmp(again, text) == 0, "%s: saved again as\n%s\nthe shared text is\n%s", entry->d_name, again,
                   text);
         } else if (ok) {
-            // What a format-1 text holds is what a restore reads; saving it again writes format 3,
+            // What a format-1 text holds is what a restore reads; saving it again writes format 4,
             // with the machine's own session id.
-            CHECK(strncmp(again, "{\"format\":3,", 12u) == 0, "%s: saved again as %s", entry->d_name, again);
+            CHECK(strncmp(again, "{\"format\":4,", 12u) == 0, "%s: saved again as %s", entry->d_name, again);
         }
         ++checked;
     }
@@ -369,7 +369,7 @@ static void a_text_that_is_not_a_state_is_refused_in_the_words_every_backend_use
               strcmp(err.message, "the saved state is not an object") == 0,
           "%s", err.message);
     CHECK(!static_timers_restore(&sm, "{\"format\":9}", 12u, SAVED_AT_MS, &args, &err) &&
-              strcmp(err.message, "the saved state is format 9, and this runtime reads formats 1, 2 and 3") == 0,
+              strcmp(err.message, "the saved state is format 9, and this runtime reads formats 1, 2, 3 and 4") == 0,
           "%s", err.message);
 }
 

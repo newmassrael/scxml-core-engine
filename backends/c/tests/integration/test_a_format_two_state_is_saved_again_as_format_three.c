@@ -3,7 +3,8 @@
 //
 // SCE Accepted Subset §2.15, "Saving and restoring" (docs/adr/0090, section 7): a state saved in
 // format 2, before an event's origin was held as one pair, is read by the table of that section and
-// written back as format 3. Each reading fixture of `saved/format2/` is restored by the generated
+// written back as the format this runtime writes, format 4 (docs/adr/0107, D4). Each reading
+// fixture of `saved/format2/` is restored by the generated
 // C11 machine of its document, at the wall-clock moment the shared fixtures were saved at, and
 // saved at once; the text it saves is, byte for byte, the one `saved/format2/read_as/` holds under
 // the same name.

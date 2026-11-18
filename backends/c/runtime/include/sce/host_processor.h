@@ -765,6 +765,18 @@ typedef struct sce_host_invoke_event_s {
         business; a host that cannot tell a second start from a first does not
         read it. false on a cancel. */
     bool restarted;
+    /** Which start of this `<invoke>` in its session this is, counted from 1
+        (docs/SCE_HOST_FEATURES.md, section 1, "Identity"); 0 on a cancel. The
+        machine assigns it, and a saved state carries it with the invocation
+        and the count of each `<invoke>`'s starts.
+
+        With `session_id` and `invoke_id` it names the invocation across a save
+        and a restore, which `token` does not: a restore starts a running
+        invocation again under the number it had, so a host that kept what it
+        answered under that identity answers the repeat with it (docs/adr/0107,
+        D4). A start the document makes after the earlier one ended takes the
+        next number. */
+    uint64_t start;
 } sce_host_invoke_event_t;
 
 /**

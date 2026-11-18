@@ -944,6 +944,8 @@ SCE_STATIC_ASSERT(SCE_MAX_SCHEDULED >= 1 && SCE_MAX_SCHEDULED <= 255,
    host again. `params` is sized by the widest such `<invoke>` of the document. */
 typedef struct {{ csym_prefix }}{{ model.name }}_host_request {
     uint64_t token;
+    /* Which start of its `<invoke>` in this session it is (docs/adr/0107, D4). */
+    uint64_t start;
     char processor_type[SCE_MAX_ID_LEN];
     char invoke_id[SCE_MAX_ID_LEN];
     char src[SCE_MAX_URI_LEN];
@@ -1446,6 +1448,12 @@ typedef struct {{ csym_prefix }}{{ model.name }} {
        tells a host to stop something. */
     sce_host_invoker_registry_t host_invokers;
     sce_host_invocation_set_t started_host_invokes;
+{% if (model.invokes | host_invoker | list) | length > 0 %}
+    /* docs/adr/0107, D4: how many times each host-run `<invoke>` of the document has started in
+       this session, in document order of the `<invoke>`s, which numbers a start
+       (`sce_host_invoke_event_t.start`); a save writes it and a restore carries it on. */
+    uint64_t host_invoke_starts[{{ (model.invokes | host_invoker | list) | length }}];
+{% endif %}
     /* W3C SCXML 6.4: host invokes' `done.invoke` events refused at dequeue;
        see `_refused_host_invoke_completions`. */
     uint32_t refused_host_invoke_completions;
