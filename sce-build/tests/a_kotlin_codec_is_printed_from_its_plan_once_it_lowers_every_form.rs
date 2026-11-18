@@ -15,6 +15,7 @@
 
 use std::path::{Path, PathBuf};
 
+use sce_build::forge::error::{ForgeError, GenerateError};
 use sce_build::generator::Language;
 use sce_build::{
     compile_forge_file, kotlin_codec_printed_file, kotlin_codec_unlowered_file, ForgeCompileOptions,
@@ -1368,6 +1369,26 @@ fn imports_of(stem: &str) -> Vec<String> {
         .collect()
 }
 
+/// Whether the generator refuses the document at `path` on Kotlin for the
+/// target the document states, not for a form the printer does not lower: the
+/// typed refusal `reject_mcu_only_codec` answers for a codec of MCU-only
+/// features on a backend that is not MCU-class
+/// (`codegen/mcu-class-kind-on-non-mcu-language`). The generator's own verdict
+/// is read, so the census leaves out what it leaves out and no name list
+/// stands in for it; any other refusal is the caller's failure to report.
+fn refused_on_kotlin_for_its_target(path: &Path, options: &ForgeCompileOptions) -> bool {
+    match compile_forge_file(path, Language::Kotlin, &[], options) {
+        Ok(_) => false,
+        Err(refusal) => match refusal.error {
+            ForgeError::Generate(boxed) => matches!(
+                *boxed,
+                GenerateError::CodegenMcuClassKindOnNonMcuLanguage { .. }
+            ),
+            _ => false,
+        },
+    }
+}
+
 /// Every codec of the resources the Kotlin printer prints compiles under
 /// `-Werror`, with every document it imports and the forge runtime it names:
 /// what the printer writes is held by the compiler, not only by the text the
@@ -1385,7 +1406,10 @@ fn every_printed_kotlin_codec_compiles_under_werror() {
         return;
     };
     let options = ForgeCompileOptions::default();
-    // The printed codecs, and every document they import, transitively.
+    // The printed codecs Kotlin generates, and every document they import,
+    // transitively. A codec whose document states a target Kotlin is not, one
+    // of MCU-only features, is refused before the printer reads a form
+    // (`generator::reject_mcu_only_codec`): it has no Kotlin to compile.
     let mut wanted: std::collections::BTreeSet<String> = std::collections::BTreeSet::new();
     let mut queue: Vec<String> = Vec::new();
     let mut paths: Vec<PathBuf> = std::fs::read_dir(resources())
@@ -1395,7 +1419,9 @@ fn every_printed_kotlin_codec_compiles_under_werror() {
         .collect();
     paths.sort();
     for path in &paths {
-        if kotlin_codec_printed_file(path, &[], &options).ok() == Some(Some(true)) {
+        if kotlin_codec_printed_file(path, &[], &options).ok() == Some(Some(true))
+            && !refused_on_kotlin_for_its_target(path, &options)
+        {
             let stem = path
                 .file_stem()
                 .expect("a document has a stem")
