@@ -23,7 +23,9 @@
 //! deploy.yaml for one machine: its peers, each one's configuration and how
 //! it is reached. [`checkpoint`] is what a machine whose deployment persists
 //! it is kept as: its saved tree and its endpoints in one durable write, and
-//! the session store a server keeps them in.
+//! the session store a server keeps them in. [`pool`] serves a machine the
+//! deployment declares a keyed pool as one session per key, each kept in a
+//! session store as its checkpoint while it is out of memory.
 
 #![forbid(unsafe_code)]
 
@@ -48,6 +50,7 @@ pub mod inbox;
 pub mod link;
 pub mod outbound;
 pub mod peers;
+pub mod pool;
 pub mod reconnect;
 pub mod router;
 pub mod rpc;

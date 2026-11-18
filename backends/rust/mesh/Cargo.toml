@@ -101,9 +101,9 @@ sce-portable-bytes = { path = "../portable-bytes", default-features = false }
 # `std`, where that surface lives, and without `http-send`, which is the
 # runtime's own transport and not Mesh's.
 sce-rust-runtime = { path = "../runtime", default-features = false, features = ["std"] }
-# The contract of the store a server keeps its machines' checkpoints in, one session per key
-# (docs/adr/0107, D5 and D6), without the SQLite store, which the program that hosts the core
-# chooses and links.
+# The contract of the store a server keeps its machines' checkpoints in, one session per key,
+# and a keyed pool its sessions behind (docs/adr/0107, D3, D5 and D6), without the SQLite store,
+# which the program that hosts the core chooses and links.
 sce-rust-session-store = { path = "../session-store", default-features = false }
 # The `wss` feature's socket plumbing (SCE_MESH.md §mesh-18.4): the client
 # and server the owner chose for this binding on 2026-09-25. rustls with
