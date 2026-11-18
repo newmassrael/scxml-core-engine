@@ -922,6 +922,11 @@ pub enum DiagnosticCode {
     /// declares a field under the tag's key.
     #[serde(rename = "validation/union-tag-collision")]
     ValidationUnionTagCollision,
+    /// A type whose largest encoding is past 2^64 - 1 bytes (docs/adr/0101,
+    /// section 4.4): a CBOR codec's entry or map, or an event schema's or a
+    /// union's payload, that no number the build holds sizes.
+    #[serde(rename = "validation/encoded-size-overflow")]
+    ValidationEncodedSizeOverflow,
     /// A document of the test profile that names a data model other than
     /// `sce-static` (docs/SCE_TEST_PROFILE.md §11.2).
     #[serde(rename = "test-profile/datamodel")]
@@ -4028,6 +4033,7 @@ pub const ALL_DIAGNOSTIC_CODES: &[DiagnosticCode] = {
         ValidationRenderBound,
         ValidationUnionCases,
         ValidationUnionTagCollision,
+        ValidationEncodedSizeOverflow,
         TestProfileDatamodel,
         TestProfileMatcherType,
         TestProfileLiteral,
@@ -4821,6 +4827,9 @@ impl DiagnosticCode {
 
             // ── A union document's cases and its tag (docs/adr/0092, section 1.1) ──
             ValidationUnionCases | ValidationUnionTagCollision => Some("ADR 0092 §1.1"),
+
+            // ── A size past what the build counts (docs/adr/0101, section 4.4) ──
+            ValidationEncodedSizeOverflow => Some("ADR 0101 §4.4"),
 
             // ── The documents of the test profile (docs/SCE_TEST_PROFILE.md §11) ──
             TestProfileDatamodel => Some("SCE Test Profile §11.2"),
@@ -5785,6 +5794,7 @@ impl DiagnosticCode {
             | ValidationRenderBound
             | ValidationUnionCases
             | ValidationUnionTagCollision
+            | ValidationEncodedSizeOverflow
             | TestProfileDatamodel
             | TestProfileMatcherType
             | TestProfileLiteral
@@ -6328,6 +6338,7 @@ impl DiagnosticCode {
             ValidationRenderBound => "validation/render-bound",
             ValidationUnionCases => "validation/union-cases",
             ValidationUnionTagCollision => "validation/union-tag-collision",
+            ValidationEncodedSizeOverflow => "validation/encoded-size-overflow",
             TestProfileDatamodel => "test-profile/datamodel",
             TestProfileMatcherType => "test-profile/matcher-type",
             TestProfileLiteral => "test-profile/literal",
@@ -8734,6 +8745,17 @@ fn validation_fields(e: &ValidationError) -> DiagnosticPayload {
                 record.clone(),
                 field.clone(),
             ],
+        },
+        // docs/adr/0101, section 4.4: the type is `actual`; the repair (which
+        // bound to lower, and by how much) is the author's, so neither
+        // `expected` nor `fix`.
+        ValidationError::EncodedSizeOverflow { ty, place } => DiagnosticPayload {
+            code: DiagnosticCode::ValidationEncodedSizeOverflow,
+            stage: Stage::Validation,
+            expected: None,
+            actual: Some(ty.clone()),
+            fix: None,
+            key_fragments: vec![place.clone(), ty.clone()],
         },
         // docs/SCE_TEST_PROFILE.md §11: the rule names the code, and what the
         // document wrote where it is broken is `actual`; each repair is the
@@ -14523,6 +14545,17 @@ mod tests {
                 }
                 .into(),
                 r#"{"v":1,"id":"fnv1a:4a393eeefed3dd8c","code":"validation/union-tag-collision","stage":"validation","spec":"ADR 0092 §1.1","message":"union 'date_expression', case 'absolute': the record 'CivilDate' declares the field 'kind', the key the union's tag is written under — the tag and a case's fields stand beside each other in one object, so no case's record declares the tag's key: rename the field or the tag","actual":"kind"}"#,
+            ),
+            (
+                // A CBOR entry whose largest encoding is past 2^64 - 1 bytes
+                // (docs/adr/0101, section 4.4): the type is `actual`.
+                "forge/encoded-size-overflow",
+                ValidationError::EncodedSizeOverflow {
+                    ty: "list<list<uint64>[4294967295]>[4294967295]".into(),
+                    place: "entry 'huge' of codec 'probe'".into(),
+                }
+                .into(),
+                r#"{"v":1,"id":"fnv1a:7d0ca0d04f79ce97","code":"validation/encoded-size-overflow","stage":"validation","spec":"ADR 0101 §4.4","message":"the largest encoding of `list<list<uint64>[4294967295]>[4294967295]` at entry 'huge' of codec 'probe' is past 2^64 - 1 bytes, so the build has no number to size its encode by: lower a bound inside it","actual":"list<list<uint64>[4294967295]>[4294967295]"}"#,
             ),
             (
                 // A port type that names a data model other than `sce-static`
@@ -20997,6 +21030,7 @@ mod tests {
             | ValidationRenderBound
             | ValidationUnionCases
             | ValidationUnionTagCollision
+            | ValidationEncodedSizeOverflow
             | TestProfileDatamodel
             | TestProfileMatcherType
             | TestProfileLiteral
@@ -22030,6 +22064,7 @@ mod tests {
                 | ValidationTextTemplateHole | ValidationTextTemplateFence
                 | ValidationRenderHoles | ValidationRenderBound
                 | ValidationUnionCases | ValidationUnionTagCollision
+                | ValidationEncodedSizeOverflow
                 | TestProfileDatamodel | TestProfileMatcherType | TestProfileLiteral
                 | TestProfileTemplateParameter | TestProfileTemplateFloat
                 | TestProfileDuration | TestProfilePortConnection
@@ -22475,9 +22510,9 @@ mod tests {
         }
         assert_eq!(
             ALL_DIAGNOSTIC_CODES.len(),
-            544,
+            545,
             "ALL_DIAGNOSTIC_CODES has duplicates or missing entries — \
-             expected 544 distinct variants to match the DiagnosticCode \
+             expected 545 distinct variants to match the DiagnosticCode \
              enum. When a commit adds or removes a variant, update this \
              count in the same commit and follow the variant checklist: \
              SCE_ERROR_CONTRACT.md plus the acceptance-doc appendix \
@@ -23134,6 +23169,7 @@ pub fn anchor_carriage(code: DiagnosticCode, pipeline: Pipeline) -> AnchorCarria
             | ValidationRenderBound
             | ValidationUnionCases
             | ValidationUnionTagCollision
+            | ValidationEncodedSizeOverflow
             | TestProfileDatamodel
             | TestProfileMatcherType
             | TestProfileLiteral

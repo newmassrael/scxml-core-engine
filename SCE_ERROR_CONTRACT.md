@@ -1025,6 +1025,7 @@ references against a real document and drift silently.
 | `validation/dynamic-features` | `validation` | no |  |
 | `validation/empty-collection` | `validation` | no |  |
 | `validation/empty-value` | `validation` | `add_attribute` |  |
+| `validation/encoded-size-overflow` | `validation` | no | ADR 0101 §4.4 |
 | `validation/enum-no-variants` | `validation` | no |  |
 | `validation/enum-unsupported-underlying-type` | `validation` | no |  |
 | `validation/enum-value-not-declared` | `validation` | `replace_one_of` |  |

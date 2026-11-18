@@ -10117,7 +10117,7 @@ document map's symbol of the same node; that map carries no condition.
 
 ---
 
-## Appendix — `DiagnosticCode` index (544 codes)
+## Appendix — `DiagnosticCode` index (545 codes)
 
 This appendix is the **drift-guarded coverage target** for the
 `acceptance_doc_covers_every_code` test. Every slash-path string in
@@ -10213,6 +10213,7 @@ Codes that the author can avoid by writing a better SCXML /
 | `validation/render-bound` | Validation |
 | `validation/union-cases` | Validation |
 | `validation/union-tag-collision` | Validation |
+| `validation/encoded-size-overflow` | Validation |
 | `test-profile/datamodel` | Validation |
 | `test-profile/matcher-type` | Validation |
 | `test-profile/literal` | Validation |

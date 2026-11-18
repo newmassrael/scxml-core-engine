@@ -1537,6 +1537,18 @@ pub enum ValidationError {
         field: String,
     },
 
+    /// docs/adr/0101, section 4.4: the largest encoding of a value of `ty` at
+    /// `place` is past 2^64 - 1 bytes, so the build has no number to size an
+    /// encode, a buffer or a slot by. Raised where `C` of a CBOR codec's entry
+    /// or map, or `J` of an event schema's or a union's payload, overflows.
+    ///
+    /// Wire code: `validation/encoded-size-overflow`.
+    #[error(
+        "the largest encoding of `{ty}` at {place} is past 2^64 - 1 bytes, so the build has no \
+         number to size its encode by: lower a bound inside it"
+    )]
+    EncodedSizeOverflow { ty: String, place: String },
+
     /// A rule of the test profile one document breaks (docs/adr/0091;
     /// docs/SCE_TEST_PROFILE.md §11). `rule` names the rule and decides the
     /// wire code; `kind` and `document` name the document; `actual` is what

@@ -101,6 +101,7 @@
         "validation/render-bound",
         "validation/union-cases",
         "validation/union-tag-collision",
+        "validation/encoded-size-overflow",
         "test-profile/datamodel",
         "test-profile/matcher-type",
         "test-profile/literal",
