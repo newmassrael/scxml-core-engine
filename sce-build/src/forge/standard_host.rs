@@ -106,6 +106,12 @@ pub const TYPES: &[StandardHostType] = &[
         served_by: EVERY_REFERENCE_HOST,
     },
     StandardHostType {
+        invoke_type: "sce-host-kv-put-if",
+        request: Some("kv_put_if_request"),
+        result: "kv_put_if_result",
+        served_by: EVERY_REFERENCE_HOST,
+    },
+    StandardHostType {
         invoke_type: "sce-host-kv-delete",
         request: Some("kv_delete_request"),
         result: "kv_delete_result",

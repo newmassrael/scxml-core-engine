@@ -3,6 +3,10 @@
 - Amended by: ADR 0107 (D8): section 7, a standard type is served on the lanes
   the table names, and a build for another lane refuses a machine that runs it
   (`docs/adr/0107-a-server-keeps-a-durable-session-per-key-and-a-client-reaches-it-by-mesh-over-http.md`).
+- Amended by: ADR 0107 (D6): section 3, a read answers the key's version and
+  `sce-host-kv-put-if` writes only over the version it names; section 8, how
+  the reference stores number versions; section 9, the identity of an
+  invocation a repeat would be answered by.
 
 A statechart that runs under `datamodel="sce-static"` has no operating system to
 call. What it needs of one (the time, a place to keep a small value, a
@@ -124,27 +128,51 @@ several keeps them apart by a prefix of its choosing.
 
 | Operation | `type` | Request | Result |
 |---|---|---|---|
-| Read | `sce-host-kv-get` | `kv_get_request`: `key` (256) | `kv_get_result`: `found` bool, `value` string (4096) |
+| Read | `sce-host-kv-get` | `kv_get_request`: `key` (256) | `kv_get_result`: `found` bool, `value` string (4096), `version` string (20) |
 | Write | `sce-host-kv-put` | `kv_put_request`: `key` (256), `value` (4096) | `kv_put_result`: `replaced` bool |
+| Write over a version | `sce-host-kv-put-if` | `kv_put_if_request`: `key` (256), `value` (4096), `expected_version` (20) | `kv_put_if_result`: `written` bool, `version` string (20) |
 | Remove | `sce-host-kv-delete` | `kv_delete_request`: `key` (256) | `kv_delete_result`: `existed` bool |
 | Walk | `sce-host-kv-next-key` | `kv_next_key_request`: `after` (256), `prefix` (256) | `kv_next_key_result`: `found` bool, `key` string (256) |
 
-Failure codes: `unavailable` (the store cannot be reached or opened) for all four,
-and `quota_exceeded` for a write that would make the store larger than the host
-allows, which leaves the store unchanged.
+Failure codes: `unavailable` (the store cannot be reached or opened) for all five,
+and `quota_exceeded` for a put or a put-if that would make the store larger than
+the host allows, which leaves the store unchanged.
 
-Refusal (`invalid_argument`): a key that is empty or contains U+0000. A `prefix`
-and an `after` may be empty.
+Refusal (`invalid_argument`): a key that is empty or contains U+0000, and an
+`expected_version` that is empty or holds a character other than the digits `0`
+to `9`. A `prefix` and an `after` may be empty.
 
 - A key is compared as its UTF-8 bytes. There is no normalisation: two spellings
   of one character are two keys.
-- **Get** answers `found` false and an empty `value` for a key nothing was written
-  under. A written empty text is `found` true with an empty `value`. Idempotent.
+- **A version** is a 64-bit unsigned integer, written as the text of its digits
+  (section 1). A key nothing was written under, or whose value was removed, is at
+  version `0`. Every put, every put-if that wrote and every delete that removed
+  the key gives the key a new version, greater than any it had before, so a
+  version once read names one stored state of the key and is never given to
+  another: a key removed and written again does not return to a version it had.
+  A version says nothing else: it is not a count of writes, and two keys' versions
+  are not comparable.
+- **Get** answers `found` false, an empty `value` and `version` `0` for a key
+  nothing was written under. A written empty text is `found` true with an empty
+  `value`. `version` is the key's version, the one a put-if names to write only
+  over the state this read saw. Idempotent.
 - **Put** replaces any value. `replaced` is true when the key held a value, whether
   or not it was the same text. Repeating a put with the same arguments leaves the
-  same stored state. When it completes, a get started after it on this host
-  answers the new value; whether the value survives the host's restart is the
-  host's.
+  same stored value, at a new version. When it completes, a get started after it
+  on this host answers the new value; whether the value survives the host's
+  restart is the host's.
+- **Put-if** writes `value` under `key` only when the key's version is
+  `expected_version`, `0` meaning that the key must be absent, and answers
+  `written` true with the key's new version. When the version is another it
+  writes nothing and answers `written` false with the key's version as it is, `0`
+  for an absent key: a lost race is an answer, not a failure, and the document
+  decides whether to read again and retry. `expected_version` is compared as a
+  number, so leading zeros do not count, and a number past 2^64 - 1 names no
+  version and is never matched. The quota is judged only for a write that would be
+  made: a put-if whose version does not match answers `written` false whatever
+  the quota. Not idempotent by itself: repeated after it wrote, it finds the
+  version it gave and answers `written` false (section 9 says what a repeat of one
+  invocation is answered with).
 - **Delete** answers `existed` false for a key that was not there, which is not a
   failure. Idempotent in effect.
 - **Next-key** answers the first key, in ascending order of UTF-8 bytes, that is
@@ -354,6 +382,14 @@ was asked:
 | `expect.host_invokes` | the operations the host was started with in this step, refused ones included, oldest first: `{"type", "id", "request"}`, the request as the record |
 | `expect.host_state` | what the host holds afterwards, for the members named: `store` (key to value), `waiting` and `shown` (the notification ids, in the order posted), `http` (what the transport was given in all: method, URL, request header lines as name and value, body), `cancelled` (the invocations the host was told to stop) |
 
+**The reference stores' versions.** Every lane's store numbers versions from one
+counter of the store, which starts at `0`: each put, each put-if that wrote and
+each delete that removed a key takes the counter's next number, and a write gives
+it to the key as its version (a delete's number is given to no stored value, so a
+key written again after it is past both). A failure, a refusal, a put-if that did
+not write and a delete of an absent key take none. That keeps section 3's rule
+and makes a scenario's versions exact on every lane.
+
 **The scripted provider.** A reference host answers a generation from a
 provider the embedding supplies, and every lane has a scripted one: it gives the
 answers it was told, in order, and counts a token as one byte of UTF-8 (a
@@ -461,6 +497,24 @@ These are not built, and nothing here stands in for them:
   with a trust policy, and no notification delivery.
 - **A durable store.** The reference stores are in memory. Durability is left to
   the host (section 3).
+- **A repeat of one invocation answered with its first result** (ADR 0107, D4).
+  A put-if the engine starts again after a restore, when the saved state was
+  taken before its completion was, is the same operation, and D4 has the host
+  answer it with the result it gave first. A host can do that only by an identity
+  of the invocation that a restore keeps, and none of the seven runtimes hands
+  one to a host. Each hands the `<invoke>`'s id, the session's id, a `token` and
+  a `restarted` flag. The token is distinct for every start within one engine but
+  is given anew when a restore starts the invocation again, so a repeat never
+  carries the token of the start it repeats; the id and the session's id are the
+  same for every start of one `<invoke>` (a state entered again starts it again
+  under them); and `invokestarts`, the saved count that numbers starts across a
+  restore (ADR 0045), counts the starts of an SCXML child (a static or a hybrid
+  `<invoke>`) only, not of a host-run one. What is missing is a start number of a host-run invocation:
+  counted per `<invoke>` by the engine, carried in the saved state's entry of each
+  running host invocation and restored with it, and handed to the host in the
+  request beside the token. Until it lands, a reference host keys nothing by
+  invocation, and a put-if repeated after a restore answers what the store holds
+  then (section 3).
 - **A network HTTP transport for Rust and C.** Their reference hosts are the full
   semantics over a transport the embedding supplies, driven by a scripted one. The
   Rust runtime links no HTTP client, and the C runtime's client posts a form for a

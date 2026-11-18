@@ -1,0 +1,23 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- SPDX-License-Identifier: AGPL-3.0-only WITH AdditionRef-SCE-Linking-Exception OR LicenseRef-SCE-Commercial -->
+<!-- SPDX-FileCopyrightText: Copyright (c) 2026 newmassrael -->
+<!--
+  sce:std/host/kv_put_if_result.scxml — the answer of `sce-host-kv-put-if`
+  (docs/SCE_HOST_FEATURES.md, "Key-value store"). `written` is true when the
+  key still had the expected version and now holds the value; `version` is the
+  version the key has after the answer, the text of its digits: the new one
+  when it was written, the one that did not match when it was not, `0` for a
+  key that is absent. A write that was not made is an answer, not a failure.
+-->
+<scxml xmlns="http://www.w3.org/2005/07/scxml"
+       xmlns:sce="http://sce.dev/ext"
+       version="1.0"
+       sce:kind="event-schema"
+       name="kv_put_if_result"
+       sce:event-name="host.kv.put_if.result">
+  <datamodel>
+    <data id="error" sce:type="string[24]" sce:direction="in"/>
+    <data id="written" sce:type="bool" sce:direction="in"/>
+    <data id="version" sce:type="string[20]" sce:direction="in"/>
+  </datamodel>
+</scxml>

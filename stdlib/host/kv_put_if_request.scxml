@@ -1,0 +1,21 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- SPDX-License-Identifier: AGPL-3.0-only WITH AdditionRef-SCE-Linking-Exception OR LicenseRef-SCE-Commercial -->
+<!-- SPDX-FileCopyrightText: Copyright (c) 2026 newmassrael -->
+<!--
+  sce:std/host/kv_put_if_request.scxml — the request of `sce-host-kv-put-if`
+  (docs/SCE_HOST_FEATURES.md, "Key-value store"): the key, the text to keep
+  under it, and the version the key must still have for the write to happen,
+  written as the text of its digits, `0` for a key that must be absent.
+-->
+<scxml xmlns="http://www.w3.org/2005/07/scxml"
+       xmlns:sce="http://sce.dev/ext"
+       version="1.0"
+       sce:kind="event-schema"
+       name="kv_put_if_request"
+       sce:event-name="host.kv.put_if.request">
+  <datamodel>
+    <data id="key" sce:type="string[256]" sce:direction="in"/>
+    <data id="value" sce:type="string[4096]" sce:direction="in"/>
+    <data id="expected_version" sce:type="string[20]" sce:direction="in"/>
+  </datamodel>
+</scxml>

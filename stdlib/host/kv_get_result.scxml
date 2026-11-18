@@ -4,7 +4,10 @@
 <!--
   sce:std/host/kv_get_result.scxml — the answer of `sce-host-kv-get`
   (docs/SCE_HOST_FEATURES.md, "Key-value store"). `found` is false when the
-  store holds nothing under the key, and `value` is then empty.
+  store holds nothing under the key, and `value` is then empty. `version` is
+  the key's version, the text of its digits, `0` when the store holds nothing
+  under it: the version a `sce-host-kv-put-if` names to write only over what
+  this read saw.
 -->
 <scxml xmlns="http://www.w3.org/2005/07/scxml"
        xmlns:sce="http://sce.dev/ext"
@@ -16,5 +19,6 @@
     <data id="error" sce:type="string[24]" sce:direction="in"/>
     <data id="found" sce:type="bool" sce:direction="in"/>
     <data id="value" sce:type="string[4096]" sce:direction="in"/>
+    <data id="version" sce:type="string[20]" sce:direction="in"/>
   </datamodel>
 </scxml>
