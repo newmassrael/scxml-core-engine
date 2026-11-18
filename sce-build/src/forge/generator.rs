@@ -26400,12 +26400,21 @@ fn length_ref_end(
             };
             format!("{byte_off} + {len}{suffix_signed}")
         }
+        // Spelled as gofmt leaves it where the end stands: an operand of a
+        // comparison, an index of a slice or an argument of `max`, each a
+        // level below its statement, where gofmt writes no blank around an
+        // arithmetic operator.
         Language::Go => {
             let len = match bits {
-                Some((shift, mask)) => format!("int(({sibling_local} >> {shift}) & 0x{mask:X})"),
+                Some((shift, mask)) => format!("int(({sibling_local}>>{shift})&0x{mask:X})"),
                 None => format!("int({sibling_local})"),
             };
-            format!("{byte_off}+{len}{suffix_signed}")
+            let arith = match field.length_arith.unwrap_or(0) {
+                0 => String::new(),
+                n if n > 0 => format!("+{n}"),
+                n => format!("-{}", -n),
+            };
+            format!("{byte_off}+{len}{arith}")
         }
         Language::C11 | Language::Swift => String::new(),
     }

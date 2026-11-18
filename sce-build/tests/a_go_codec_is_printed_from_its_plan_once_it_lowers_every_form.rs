@@ -110,9 +110,7 @@ fn a_decode_consumes_its_own_bytes_and_a_tail_the_rest_of_the_frame() {
         "codec_origin_leaf",
         &leaf,
         &["\tconsumed := 1\n\
-           \tif 1+int(Len) > consumed {\n\
-           \t\tconsumed = 1+int(Len)\n\
-           \t}\n\
+           \tconsumed = max(consumed, 1+int(Len))\n\
            \tif err := cursor.Advance(consumed); err != nil {\n"],
     );
     holds_none("codec_origin_leaf", &leaf, &["cursor.Advance(frameLen)"]);
@@ -123,6 +121,42 @@ fn a_decode_consumes_its_own_bytes_and_a_tail_the_rest_of_the_frame() {
         &["\tif err := cursor.Advance(frameLen); err != nil {\n"],
     );
     holds_none("codec_tail", &tail, &["consumed :="]);
+}
+
+/// The end of a length-ref field is spelled as gofmt leaves it in the guard
+/// and in the argument of `max` it stands in, whatever form it takes: a length
+/// adjusted by its arithmetic, and a length read from the bits of a carrier,
+/// with no blank around an operator a level below the statement.
+///
+/// Turns red where the Go arm of `length_ref_end` in `generator.rs` puts
+/// blanks around the arithmetic or the shift and mask, which gofmt removes, or
+/// where `codec.go.jinja2` assigns the end at the statement's own level, where
+/// gofmt adds them.
+#[test]
+fn the_end_of_a_length_is_spelled_as_gofmt_leaves_it() {
+    let arith = resource_go("codec_scout_zid_body");
+    holds(
+        "codec_scout_zid_body",
+        &arith,
+        &[
+            "\tif frameLen < 1+int(ZidLenM1)+1 {\n",
+            "\tconsumed = max(consumed, 1+int(ZidLenM1)+1)\n",
+        ],
+    );
+    let dotted = resource_go("codec_length_ref_dotted_basic");
+    holds(
+        "codec_length_ref_dotted_basic",
+        &dotted,
+        &[
+            "\tif frameLen < 1+int((Carrier>>4)&0xF) {\n",
+            "\tconsumed = max(consumed, 1+int((Carrier>>4)&0xF))\n",
+        ],
+    );
+    holds_none(
+        "codec_length_ref_dotted_basic",
+        &dotted,
+        &["int((Carrier >> 4) & 0xF)"],
+    );
 }
 
 /// A codec of integers is read through the interface of its source, holds
