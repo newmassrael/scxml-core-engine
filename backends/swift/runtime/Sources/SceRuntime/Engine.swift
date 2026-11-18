@@ -2591,7 +2591,7 @@ extension Engine {
                 SavedHostInvoke(
                     processorType: run.request.processorType, invokeID: run.request.invokeID, src: run.request.src,
                     params: run.request.params, data: run.request.eventData, content: run.request.content,
-                    due: run.due)
+                    due: run.due, start: Int64(run.request.start))
             }
     }
 

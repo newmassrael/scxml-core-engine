@@ -142,9 +142,14 @@ public struct SavedHostInvoke: Equatable, Sendable {
     /// saved it; nil for an invocation that has none.
     public var due: Int64?
 
+    /// Which start of that `<invoke>` in this session it is, counted from 1: the count `hostInvokeStarts` holds
+    /// for it, under which a restore starts it again (docs/adr/0107, D4). One read from a state of format 1, 2
+    /// or 3, which holds none, is start 1: no host keyed a start by its number before format 4.
+    public var start: Int64
+
     public init(
         processorType: String, invokeID: String, src: String = "", params: [String: [String]] = [:],
-        data: String = "", content: String = "", due: Int64? = nil
+        data: String = "", content: String = "", due: Int64? = nil, start: Int64 = 1
     ) {
         self.processorType = processorType
         self.invokeID = invokeID
@@ -153,6 +158,7 @@ public struct SavedHostInvoke: Equatable, Sendable {
         self.data = data
         self.content = content
         self.due = due
+        self.start = start
     }
 }
 
@@ -261,14 +267,19 @@ public struct SavedState: Equatable, Sendable {
     /// section 7). The shape of a session is format 2's: the pair changes no document.
     public static let format3 = 3
 
+    /// Format 4: format 3 with each running host-run invocation's start number, which start of its `<invoke>`
+    /// in its session it is, and each session's count of those starts (docs/adr/0107, D4): a restore starts a
+    /// running invocation again under the number it had.
+    public static let format4 = 4
+
     /// The newest format version this runtime writes, which it writes for every tree; it reads this one and
-    /// formats 1 and 2.
-    public static let format = format3
+    /// formats 1, 2 and 3.
+    public static let format = format4
 
     /// The stability status of the saved-state wire surface, held in lockstep with `x-sce-schema-status` in
-    /// `schemas/sce-saved-state.v1.schema.json`, `schemas/sce-saved-state.v2.schema.json` and
-    /// `schemas/sce-saved-state.v3.schema.json`, the surface's three formats (`SCE_WIRE_CONTRACTS.md`). A flip to
-    /// `"stable"` changes all four in one commit.
+    /// `schemas/sce-saved-state.v1.schema.json`, `schemas/sce-saved-state.v2.schema.json`,
+    /// `schemas/sce-saved-state.v3.schema.json` and `schemas/sce-saved-state.v4.schema.json`, the surface's four
+    /// formats (`SCE_WIRE_CONTRACTS.md`). A flip to `"stable"` changes all five in one commit.
     public static let schemaStatus = "pre-release"
 
     /// The shape of the document the machine was generated from: a digest the generator computes of every
@@ -315,6 +326,12 @@ public struct SavedState: Equatable, Sendable {
     /// from the request it was started with, with the deadline it had left.
     public var hostInvokes: [SavedHostInvoke]
 
+    /// How many times each host-run `<invoke>` of the document has started in this session, by its id, for each
+    /// started at least once, ordered by the id's UTF-8 bytes: a start after a restore is numbered on from it
+    /// (docs/adr/0107, D4). Read from a state of format 1, 2 or 3, which counted none, as 1 for each invocation
+    /// `hostInvokes` lists.
+    public var hostInvokeStarts: [SavedEntry<Int64>]
+
     /// The token the next host-run start receives. Carried on, so that a start a restored machine makes is
     /// never given a token an earlier run already handed to a host that may still answer with it.
     public var hostInvokeToken: Int64
@@ -343,8 +360,10 @@ public struct SavedState: Equatable, Sendable {
         history: [SavedEntry<[String]>] = [], pending: [SavedSend] = [],
         invokes: SavedInvokes = .restarted([]), sessionID: String = "", invokeStarts: [SavedEntry<Int64>] = [],
         hostInvokes: [SavedHostInvoke] = [], hostInvokeToken: Int64 = 0, autoSendSeq: Int64 = 0,
-        external: [SavedEvent] = [], revisions: [SavedEntry<SavedRevision>] = [], features: [String]? = nil
+        external: [SavedEvent] = [], revisions: [SavedEntry<SavedRevision>] = [], features: [String]? = nil,
+        hostInvokeStarts: [SavedEntry<Int64>] = []
     ) {
+        self.hostInvokeStarts = hostInvokeStarts
         self.shape = shape
         self.configuration = configuration
         self.current = current
@@ -385,6 +404,12 @@ public struct SavedState: Equatable, Sendable {
     /// not, and for every one of a format-1 state, which holds no count.
     public func invokeStart(_ id: String) -> Int64 {
         invokeStarts.first { $0.key == id }?.value ?? 0
+    }
+
+    /// How many times the host-run `<invoke>` `id` had started in this session when it was saved: 0 for one
+    /// that had not.
+    public func hostInvokeStart(_ id: String) -> Int64 {
+        hostInvokeStarts.first { $0.key == id }?.value ?? 0
     }
 
     /// The variable `id`, or a refusal naming it.
@@ -454,16 +479,20 @@ extension SavedEvent {
 }
 
 extension SavedHostInvoke {
-    fileprivate var json: JSONValue {
-        .object([
-            (key: "type", value: .text(processorType)),
-            (key: "id", value: .text(invokeID)),
+    /// The invocation as a text of `format` writes it: format 4 writes its start after its id; format 1 holds none.
+    fileprivate func json(format: Int) -> JSONValue {
+        var members: Members = [(key: "type", value: .text(processorType)), (key: "id", value: .text(invokeID))]
+        if format >= SavedState.format4 {
+            members.append((key: "start", value: counted(start)))
+        }
+        members.append(contentsOf: [
             (key: "src", value: .text(src)),
             (key: "params", value: paramsJSON(params)),
             (key: "data", value: .text(data)),
             (key: "content", value: .text(content)),
             (key: "due", value: due.map(counted) ?? .null),
         ])
+        return .object(members)
     }
 }
 
@@ -557,7 +586,15 @@ extension SavedState {
         case .restarted(let ids):
             members.append((key: "invokes", value: texts(ids)))
         }
-        members.append((key: "hostinvokes", value: .array(hostInvokes.map(\.json))))
+        members.append((key: "hostinvokes", value: .array(hostInvokes.map { $0.json(format: format) })))
+        // docs/adr/0107, D4: format 4's count of host-run starts, after the invocations.
+        if format >= SavedState.format4 {
+            members.append(
+                (
+                    key: "hostinvokestarts",
+                    value: .object(hostInvokeStarts.map { (key: $0.key, value: counted($0.value)) })
+                ))
+        }
         members.append((key: "hostinvoketoken", value: counted(hostInvokeToken)))
         members.append((key: "sendseq", value: counted(autoSendSeq)))
         members.append((key: "external", value: .array(external.map { $0.json(format: format) })))
@@ -737,7 +774,7 @@ extension SavedEvent {
         default: throw StateRefusal("'\(what).hostinvoketoken' is neither a text nor null")
         }
         let carried: (origin: EventOrigin?, sender: String?)
-        if format == SavedState.format3 {
+        if format >= SavedState.format3 {
             carried = try readOriginAndSender(value, what)
         } else {
             // docs/adr/0090, section 7: a format-1 or format-2 `origin` and `origintype` are read by the table of
@@ -754,8 +791,12 @@ extension SavedEvent {
 }
 
 extension SavedHostInvoke {
-    fileprivate static func read(_ value: JSONValue, _ what: String) throws -> SavedHostInvoke {
+    /// The invocation `value` of a state of `format`; one of format 1, 2 or 3 is its `<invoke>`'s first start
+    /// (docs/adr/0107, D4).
+    fileprivate static func read(_ value: JSONValue, _ what: String, format: Int) throws -> SavedHostInvoke {
         _ = try members(of: value, what)
+        let start =
+            format >= SavedState.format4 ? try readCount(try requiredText(value, "start", what), "\(what).start") : 1
         let written = try need(value, "due", what)
         let due: Int64?
         switch written {
@@ -767,7 +808,7 @@ extension SavedHostInvoke {
             processorType: try requiredText(value, "type", what), invokeID: try requiredText(value, "id", what),
             src: try requiredText(value, "src", what), params: try readParams(value, what),
             data: try requiredText(value, "data", what), content: try requiredText(value, "content", what),
-            due: due)
+            due: due, start: start)
     }
 }
 
@@ -788,7 +829,7 @@ extension SavedSend {
         // `readStoredSender`. An empty one in format 2 is a send of the session that holds it, its `sessionid`;
         // in format 1 the text names no session, so it is nil, and the machine that restores it arms it as its own.
         func sentBy() throws -> String? {
-            if format == SavedState.format3 {
+            if format >= SavedState.format3 {
                 let carried = try readOriginAndSender(value, what)
                 guard let id = carried.sender else {
                     throw StateRefusal("'\(what)' is a \(name) act with no sender, which a session's own send names")
@@ -824,7 +865,7 @@ extension SavedSend {
         // both members `null` and refuses either one set; the `origin` text formats 1 and 2 stored beside it is
         // not read as the event's.
         func carriesNoOrigin() throws {
-            guard format == SavedState.format3 else {
+            guard format >= SavedState.format3 else {
                 _ = try field("origin")
                 return
             }
@@ -897,7 +938,7 @@ extension SavedChild {
 }
 
 extension SavedState {
-    /// Reads `sce-saved-state` JSON, of format 1, 2 or 3, judged by its `format` before anything else. The shape
+    /// Reads `sce-saved-state` JSON, of format 1, 2, 3 or 4, judged by its `format` before anything else. The shape
     /// is not judged here: the machine that restores it knows its own.
     public static func fromJSON(_ text: String) throws -> SavedState {
         let value: JSONValue
@@ -913,9 +954,10 @@ extension SavedState {
         case .number("1"): format = format1
         case .number("2"): format = format2
         case .number("3"): format = format3
+        case .number("4"): format = format4
         default:
             throw StateRefusal(
-                "the saved state is format \(writeJSON(written)), and this runtime reads formats \(format1), \(format2) and \(format3)"
+                "the saved state is format \(writeJSON(written)), and this runtime reads formats \(format1), \(format2), \(format3) and \(format4)"
             )
         }
         return try readSession(value, format: format)
@@ -966,7 +1008,21 @@ extension SavedState {
             }
         }
         let hostInvokes = try array(of: field("hostinvokes"), "hostinvokes").enumerated().map { index, item in
-            try SavedHostInvoke.read(item, "hostinvokes[\(index)]")
+            try SavedHostInvoke.read(item, "hostinvokes[\(index)]", format: format)
+        }
+        // docs/adr/0107, D4: format 4's count of host-run starts. An earlier format counted none: each invocation it
+        // lists is its `<invoke>`'s first start, as `SavedHostInvoke.read` read it.
+        var hostInvokeStarts: [SavedEntry<Int64>] = []
+        if format >= format4 {
+            for (id, count) in try members(of: field("hostinvokestarts"), "hostinvokestarts") {
+                guard case .text(let written) = count else {
+                    throw StateRefusal("'hostinvokestarts.\(id)' is not a text")
+                }
+                hostInvokeStarts.append(SavedEntry(id, try readCount(written, "hostinvokestarts.\(id)")))
+            }
+        } else {
+            let ids = Set(hostInvokes.map(\.invokeID)).sorted { $0.utf8.lexicographicallyPrecedes($1.utf8) }
+            hostInvokeStarts = ids.map { SavedEntry($0, 1) }
         }
         let hostInvokeToken = try readToken(try text(field("hostinvoketoken"), "hostinvoketoken"), "hostinvoketoken")
         let autoSendSeq = try readToken(try text(field("sendseq"), "sendseq"), "sendseq")
@@ -1002,7 +1058,7 @@ extension SavedState {
             current: try text(field("current"), "current"), variables: variables, history: history,
             pending: pending, invokes: invokes, sessionID: sessionID, invokeStarts: invokeStarts,
             hostInvokes: hostInvokes, hostInvokeToken: hostInvokeToken, autoSendSeq: autoSendSeq,
-            external: external, revisions: revisions, features: features)
+            external: external, revisions: revisions, features: features, hostInvokeStarts: hostInvokeStarts)
     }
 
     private static func readRevision(_ value: JSONValue, _ what: String) throws -> SavedRevision {

@@ -24,7 +24,10 @@ public func serve<Policy: StatePolicy>(
                         params[name] = first
                     }
                 }
-                switch host.start(operation: operation, id: start.invokeID, params: params) {
+                // docs/adr/0107, D4: the invocation's identity, which a restore starts it
+                // again under.
+                let invocation = Invocation(sessionID: start.sessionID, id: start.invokeID, start: start.start)
+                switch host.start(operation: operation, invocation: invocation, params: params) {
                 case .done(let data)?:
                     return .done(data)
                 case .refuse(let reason)?:

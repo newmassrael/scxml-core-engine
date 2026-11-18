@@ -51,6 +51,18 @@ public struct HostInvokeRequest: Equatable {
     /// (§scxml-6.4). Distinct for every start of every invocation within one engine.
     public var token: UInt64
 
+    /// Which start of this `<invoke>` in its session this is, counted from 1
+    /// (docs/SCE_HOST_FEATURES.md, section 1, "Identity"). The engine assigns it, and a
+    /// saved state carries it with the invocation and the count of each `<invoke>`'s
+    /// starts.
+    ///
+    /// With `sessionID` and `invokeID` it names the invocation across a save and a
+    /// restore, which `token` does not: a restore starts a running invocation again
+    /// under the number it had, so a host that kept what it answered under that identity
+    /// answers the repeat with it (docs/adr/0107, D4). A start the document makes after
+    /// the earlier one ended takes the next number.
+    public var start: UInt64
+
     public init(
         processorType: String,
         invokeID: String,
@@ -60,7 +72,8 @@ public struct HostInvokeRequest: Equatable {
         content: String = "",
         sessionID: String = "",
         restarted: Bool = false,
-        token: UInt64 = 0
+        token: UInt64 = 0,
+        start: UInt64 = 0
     ) {
         self.processorType = processorType
         self.invokeID = invokeID
@@ -71,6 +84,7 @@ public struct HostInvokeRequest: Equatable {
         self.sessionID = sessionID
         self.restarted = restarted
         self.token = token
+        self.start = start
     }
 }
 
@@ -255,6 +269,10 @@ struct HostInvokeBook {
 
     var nextToken: UInt64 = 1
 
+    /// How many times each host-run `<invoke>` has started in this session, by its id: what numbers a start
+    /// (`HostInvokeRequest.start`; docs/adr/0107, D4). A save writes it and a restore carries it on.
+    var starts: [String: UInt64] = [:]
+
     /// `done.invoke` events refused at dequeue because they did not come through
     /// `completeHostInvoke`.
     var refusedCompletions: UInt64 = 0
@@ -333,6 +351,10 @@ extension Engine {
 
     /// Starts `request` under `handler`: the token is assigned and recorded, with the request, before the handler
     /// runs. The one body behind a start the document's `<invoke>` makes and one a restore makes again.
+    ///
+    /// A start the document makes is numbered on from the count of its `<invoke>`; a restart keeps the number
+    /// the saved state gave it, whose count the restore carried on, since it repeats that start rather than
+    /// making another (docs/adr/0107, D4).
     func startHostInvoke(
         _ request: HostInvokeRequest, handler: HostInvokeHandler, deadline: HostStartDeadline
     ) -> Bool {
@@ -340,6 +362,11 @@ extension Engine {
         let token = hostInvokes.nextToken
         hostInvokes.nextToken += 1
         request.token = token
+        if !request.restarted {
+            let count = (hostInvokes.starts[request.invokeID] ?? 0) + 1
+            hostInvokes.starts[request.invokeID] = count
+            request.start = count
+        }
         let key = HostInvokeKey(processorType: request.processorType, invokeID: request.invokeID)
         hostInvokes.started[key] = token
         hostInvokes.requests[key] = request

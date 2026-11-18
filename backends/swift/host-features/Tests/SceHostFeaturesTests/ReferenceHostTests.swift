@@ -31,16 +31,22 @@ private func hostOn(
     return (ReferenceHost(clock: clock), clock)
 }
 
+/// The `start`-th start of the `<invoke>` `id` of one session. Only a put-if keeps what
+/// it answered under its identity, so only a put-if asked twice needs a number of its own.
+private func invocation(_ id: String, start: UInt64 = 1) -> Invocation {
+    Invocation(sessionID: "session", id: id, start: start)
+}
+
 @Test func aTypeThatIsNotAStandardHostFeatureIsNotServed() {
     let (host, _) = hostOn()
-    #expect(host.start(operation: "sce-host-unknown", id: "x", params: [:]) == nil)
+    #expect(host.start(operation: "sce-host-unknown", invocation: invocation("x"), params: [:]) == nil)
     // Nothing was asked of the host, so nothing is recorded.
     #expect(host.takeStarts().isEmpty)
 }
 
 @Test func bothReadingsOfOneNowAreTheInstantTheHostReads() throws {
     let (host, _) = hostOn()
-    let answer = try record(host.start(operation: "sce-host-clock-now", id: "now", params: [:]))
+    let answer = try record(host.start(operation: "sce-host-clock-now", invocation: invocation("now"), params: [:]))
     #expect(answer.member("utc_ms") == .text("1760000000000"))
     #expect(answer.member("monotonic_ms") == .text("5000"))
     #expect(answer.member("error") == .text(""))
@@ -48,26 +54,26 @@ private func hostOn(
 
 @Test func theMonotonicReadingNeverGoesBelowOneAlreadyGiven() throws {
     let (host, clock) = hostOn()
-    _ = host.start(operation: "sce-host-clock-now", id: "now", params: [:])
+    _ = host.start(operation: "sce-host-clock-now", invocation: invocation("now"), params: [:])
     clock.reading = ClockReading(utcMs: 1_759_999_999_000, monotonicMs: 4000)
-    let back = try record(host.start(operation: "sce-host-clock-now", id: "now", params: [:]))
+    let back = try record(host.start(operation: "sce-host-clock-now", invocation: invocation("now"), params: [:]))
     // UTC follows the clock backwards; the monotonic reading does not.
     #expect(back.member("utc_ms") == .text("1759999999000"))
     #expect(back.member("monotonic_ms") == .text("5000"))
     clock.reading = ClockReading(utcMs: 1_759_999_999_000, monotonicMs: 7500)
-    let forward = try record(host.start(operation: "sce-host-clock-now", id: "now", params: [:]))
+    let forward = try record(host.start(operation: "sce-host-clock-now", invocation: invocation("now"), params: [:]))
     #expect(forward.member("monotonic_ms") == .text("7500"))
 }
 
 @Test func theZoneIsTheIdentifierAndTheOffsetInForce() throws {
     let (host, clock) = hostOn()
-    let seoul = try record(host.start(operation: "sce-host-clock-zone", id: "zone", params: [:]))
+    let seoul = try record(host.start(operation: "sce-host-clock-zone", invocation: invocation("zone"), params: [:]))
     #expect(seoul.member("zone_id") == .text("Asia/Seoul"))
     #expect(seoul.member("utc_offset_s") == .number("32400"))
     // A host that knows only an offset answers an empty identifier, and a negative
     // offset is west of UTC.
     clock.zoneNow = ClockZone(id: "", utcOffsetS: -18000)
-    let west = try record(host.start(operation: "sce-host-clock-zone", id: "zone", params: [:]))
+    let west = try record(host.start(operation: "sce-host-clock-zone", invocation: invocation("zone"), params: [:]))
     #expect(west.member("zone_id") == .text(""))
     #expect(west.member("utc_offset_s") == .number("-18000"))
 }
@@ -75,35 +81,35 @@ private func hostOn(
 @Test func aClockThatCannotBeReadFailsUnavailableAndOnlyForTheOperationThatNeedsIt() throws {
     let (host, clock) = hostOn()
     clock.reading = nil
-    let now = try record(host.start(operation: "sce-host-clock-now", id: "now", params: [:]))
+    let now = try record(host.start(operation: "sce-host-clock-now", invocation: invocation("now"), params: [:]))
     #expect(now.member("error") == .text("unavailable"))
     #expect(now.member("utc_ms") == .text("0"))
     // The failure belongs to the operation: the zone is still answered.
-    let zone = try record(host.start(operation: "sce-host-clock-zone", id: "zone", params: [:]))
+    let zone = try record(host.start(operation: "sce-host-clock-zone", invocation: invocation("zone"), params: [:]))
     #expect(zone.member("error") == .text(""))
 }
 
 @Test func aFailureTheEmbeddingInjectsIsTheCodeOfTheOperationItNames() throws {
     let (host, _) = hostOn()
     host.setFaults(["sce-host-clock-now": "unavailable"])
-    let failed = try record(host.start(operation: "sce-host-clock-now", id: "now", params: [:]))
+    let failed = try record(host.start(operation: "sce-host-clock-now", invocation: invocation("now"), params: [:]))
     #expect(failed.member("error") == .text("unavailable"))
-    let other = try record(host.start(operation: "sce-host-clock-zone", id: "zone", params: [:]))
+    let other = try record(host.start(operation: "sce-host-clock-zone", invocation: invocation("zone"), params: [:]))
     #expect(other.member("error") == .text(""))
     // An empty map ends them.
     host.setFaults([:])
-    let healed = try record(host.start(operation: "sce-host-clock-now", id: "now", params: [:]))
+    let healed = try record(host.start(operation: "sce-host-clock-now", invocation: invocation("now"), params: [:]))
     #expect(healed.member("error") == .text(""))
 }
 
 @Test func theHostKeepsWhatItWasAskedAndWhatItWasToldToStop() {
     let (host, _) = hostOn()
-    _ = host.start(operation: "sce-host-clock-now", id: "now", params: [:])
-    _ = host.start(operation: "sce-host-clock-zone", id: "zone", params: [:])
+    _ = host.start(operation: "sce-host-clock-now", invocation: invocation("now"), params: [:])
+    _ = host.start(operation: "sce-host-clock-zone", invocation: invocation("zone"), params: [:])
     #expect(
         host.takeStarts() == [
-            HostStart(operation: "sce-host-clock-now", id: "now", params: [:]),
-            HostStart(operation: "sce-host-clock-zone", id: "zone", params: [:]),
+            HostStart(operation: "sce-host-clock-now", id: "now", params: [:], sessionID: "session", number: 1),
+            HostStart(operation: "sce-host-clock-zone", id: "zone", params: [:], sessionID: "session", number: 1),
         ]
     )
     // Taken once: the next call has only what came after.
@@ -138,7 +144,7 @@ private func fetch(
 ) -> HostOutcome? {
     host.start(
         operation: "sce-host-http-fetch",
-        id: "fetch",
+        invocation: invocation("fetch"),
         params: ["method": method, "url": url, "headers": headers, "body": body]
     )
 }
@@ -230,19 +236,19 @@ private func httpHost(_ answer: HostExchange) -> (ReferenceHost, OneAnswer) {
 // MARK: - Key-value store
 
 private func put(_ host: ReferenceHost, _ key: String, _ value: String) throws -> JSONValue {
-    try record(host.start(operation: "sce-host-kv-put", id: "put", params: ["key": key, "value": value]))
+    try record(host.start(operation: "sce-host-kv-put", invocation: invocation("put"), params: ["key": key, "value": value]))
 }
 
 @Test func aKeyIsPutReadReplacedAndDeleted() throws {
     let (host, _) = hostOn()
     #expect(try put(host, "a", "1").member("replaced") == .bool(false))
-    let found = try record(host.start(operation: "sce-host-kv-get", id: "get", params: ["key": "a"]))
+    let found = try record(host.start(operation: "sce-host-kv-get", invocation: invocation("get"), params: ["key": "a"]))
     #expect(found.member("found") == .bool(true))
     #expect(found.member("value") == .text("1"))
     #expect(try put(host, "a", "2").member("replaced") == .bool(true))
-    let deleted = try record(host.start(operation: "sce-host-kv-delete", id: "del", params: ["key": "a"]))
+    let deleted = try record(host.start(operation: "sce-host-kv-delete", invocation: invocation("del"), params: ["key": "a"]))
     #expect(deleted.member("existed") == .bool(true))
-    let gone = try record(host.start(operation: "sce-host-kv-get", id: "get", params: ["key": "a"]))
+    let gone = try record(host.start(operation: "sce-host-kv-get", invocation: invocation("get"), params: ["key": "a"]))
     #expect(gone.member("found") == .bool(false))
     #expect(gone.member("value") == .text(""))
 }
@@ -250,35 +256,84 @@ private func put(_ host: ReferenceHost, _ key: String, _ value: String) throws -
 @Test func aKeyThatIsEmptyOrHoldsNulIsRefusedAndStartsNothing() {
     let (host, _) = hostOn()
     for key in ["", "a\u{0}b"] {
-        let outcome = host.start(operation: "sce-host-kv-put", id: "put", params: ["key": key, "value": "v"])
+        let outcome = host.start(operation: "sce-host-kv-put", invocation: invocation("put"), params: ["key": key, "value": "v"])
         #expect(outcome == .refuse(#"{"reason":"invalid_argument"}"#))
     }
     #expect(host.storeEntries().isEmpty)
 }
 
-private func putIf(_ host: ReferenceHost, _ key: String, _ value: String, _ expected: String) -> HostOutcome? {
+/// A put-if of `asked`, the first start of `putif` in one session unless another is named.
+private func putIf(
+    _ host: ReferenceHost, _ key: String, _ value: String, _ expected: String,
+    _ asked: Invocation = invocation("putif")
+) -> HostOutcome? {
     host.start(
         operation: "sce-host-kv-put-if",
-        id: "putif",
+        invocation: asked,
         params: ["key": key, "value": value, "expected_version": expected]
     )
 }
 
 @Test func aPutIfWritesOnlyAtTheVersionAReadAnswered() throws {
     let (host, _) = hostOn()
-    let created = try record(putIf(host, "a", "1", "0"))
+    let created = try record(putIf(host, "a", "1", "0", invocation("putif", start: 1)))
     #expect(created.member("written") == .bool(true))
     #expect(created.member("version") == .text("1"))
-    let read = try record(host.start(operation: "sce-host-kv-get", id: "get", params: ["key": "a"]))
+    let read = try record(host.start(operation: "sce-host-kv-get", invocation: invocation("get"), params: ["key": "a"]))
     #expect(read.member("version") == .text("1"))
-    let stale = try record(putIf(host, "a", "2", "0"))
+    let stale = try record(putIf(host, "a", "2", "0", invocation("putif", start: 2)))
     #expect(stale.member("written") == .bool(false))
     #expect(stale.member("version") == .text("1"))
-    _ = try record(host.start(operation: "sce-host-kv-delete", id: "del", params: ["key": "a"]))
+    _ = try record(host.start(operation: "sce-host-kv-delete", invocation: invocation("del"), params: ["key": "a"]))
     // The delete took the number 2, so the key written again is past it.
-    let again = try record(putIf(host, "a", "3", "0"))
+    let again = try record(putIf(host, "a", "3", "0", invocation("putif", start: 3)))
     #expect(again.member("version") == .text("3"))
     #expect(host.storeEntries().map(\.value) == ["3"])
+}
+
+/// docs/adr/0107, D4: a put-if started again under the identity it had is answered with its
+/// first result and writes nothing, and a start of another number, of another session or of
+/// another `<invoke>` is an operation of its own.
+@Test func aPutIfRepeatedUnderItsIdentityIsAnsweredWithItsFirstResult() throws {
+    let (host, _) = hostOn()
+    let first = Invocation(sessionID: "s1", id: "putif", start: 1)
+    let wrote = putIf(host, "k", "a", "0", first)
+    let created = try record(wrote)
+    #expect(created.member("written") == .bool(true) && created.member("version") == .text("1"))
+    // The repeat finds the key at version 1, which would answer written false; it is
+    // answered as the first start was, and the store is as it was.
+    #expect(putIf(host, "k", "a", "0", first) == wrote)
+    #expect(host.storeEntries().map { "\($0.key)=\($0.value)" } == ["k=a"])
+    for other in [
+        Invocation(sessionID: "s1", id: "putif", start: 2), Invocation(sessionID: "s2", id: "putif", start: 1),
+        Invocation(sessionID: "s1", id: "other", start: 1),
+    ] {
+        let lost = try record(putIf(host, "k", "b", "0", other))
+        #expect(lost.member("written") == .bool(false), "\(other)")
+        #expect(lost.member("version") == .text("1"), "\(other)")
+    }
+    let starts = host.takeStarts()
+    #expect(starts.count == 5)
+    #expect(
+        starts.map { "\($0.sessionID) \($0.id) \($0.number)" }
+            == ["s1 putif 1", "s1 putif 1", "s1 putif 2", "s2 putif 1", "s1 other 1"])
+}
+
+/// A refusal is no result, and a failure is a result a repeat answers.
+@Test func aPutIfKeepsItsFailureAndNotItsRefusal() throws {
+    let (host, _) = hostOn()
+    let refusal = HostOutcome.refuse(#"{"reason":"invalid_argument"}"#)
+    let refused = Invocation(sessionID: "s1", id: "putif", start: 1)
+    #expect(putIf(host, "", "a", "0", refused) == refusal)
+    #expect(putIf(host, "", "a", "0", refused) == refusal, "judged again, not answered from a result")
+    #expect(try record(putIf(host, "k", "a", "0", refused)).member("written") == .bool(true))
+    host.setQuota(1)
+    let failed = Invocation(sessionID: "s1", id: "putif", start: 2)
+    let first = putIf(host, "n", "a", "0", failed)
+    #expect(try record(first).member("error") == .text("quota_exceeded"))
+    host.setQuota(8)
+    #expect(putIf(host, "n", "a", "0", failed) == first)
+    #expect(host.storeEntries().map(\.key) == ["k"])
 }
 
 @Test func aPutIfWithANulKeyOrADigitOfAnotherScriptIsRefused() {
@@ -299,7 +354,7 @@ private func putIf(_ host: ReferenceHost, _ key: String, _ value: String, _ expe
     // The order of the bytes: a, ab, b, z, then the two-byte e-acute.
     #expect(host.storeEntries().map(\.key) == ["a", "ab", "b", "z", "\u{e9}"])
     func next(after: String, prefix: String) throws -> JSONValue {
-        try record(host.start(operation: "sce-host-kv-next-key", id: "walk", params: ["after": after, "prefix": prefix]))
+        try record(host.start(operation: "sce-host-kv-next-key", invocation: invocation("walk"), params: ["after": after, "prefix": prefix]))
     }
     #expect(try next(after: "", prefix: "").member("key") == .text("a"))
     // `after` is excluded.
@@ -327,7 +382,7 @@ private func post(_ host: ReferenceHost, _ id: String, atMs: String = "0") throw
     try record(
         host.start(
             operation: "sce-host-notify-post",
-            id: "post",
+            invocation: invocation("post"),
             params: ["id": id, "title": "t", "body": "b", "at_ms": atMs]
         )
     )
@@ -342,14 +397,14 @@ private func post(_ host: ReferenceHost, _ id: String, atMs: String = "0") throw
 @Test func permissionIsAskedOfAUserOnlyWhileUndetermined() throws {
     let (host, _) = hostOn()
     host.setUserDecision("granted")
-    let asked = try record(host.start(operation: "sce-host-notify-request-permission", id: "ask", params: [:]))
+    let asked = try record(host.start(operation: "sce-host-notify-request-permission", invocation: invocation("ask"), params: [:]))
     #expect(asked.member("state") == .text("granted"))
     // Decided: a later answer of the user changes nothing.
     host.setUserDecision("denied")
-    let again = try record(host.start(operation: "sce-host-notify-request-permission", id: "ask", params: [:]))
+    let again = try record(host.start(operation: "sce-host-notify-request-permission", invocation: invocation("ask"), params: [:]))
     #expect(again.member("state") == .text("granted"))
     let (nobody, _) = hostOn()
-    let none = try record(nobody.start(operation: "sce-host-notify-request-permission", id: "ask", params: [:]))
+    let none = try record(nobody.start(operation: "sce-host-notify-request-permission", invocation: invocation("ask"), params: [:]))
     #expect(none.member("state") == .text("denied"))
 }
 
@@ -371,9 +426,9 @@ private func post(_ host: ReferenceHost, _ id: String, atMs: String = "0") throw
     host.setPermission("granted")
     _ = try post(host, "n")
     let cancel = { (id: String) throws -> JSONValue in
-        try record(host.start(operation: "sce-host-notify-cancel", id: "cancel", params: ["id": id]))
+        try record(host.start(operation: "sce-host-notify-cancel", invocation: invocation("cancel"), params: ["id": id]))
     }
     #expect(try cancel("n").member("existed") == .bool(true))
     #expect(try cancel("n").member("existed") == .bool(false))
-    #expect(host.start(operation: "sce-host-notify-cancel", id: "cancel", params: ["id": ""]) == .refuse(#"{"reason":"invalid_argument"}"#))
+    #expect(host.start(operation: "sce-host-notify-cancel", invocation: invocation("cancel"), params: ["id": ""]) == .refuse(#"{"reason":"invalid_argument"}"#))
 }

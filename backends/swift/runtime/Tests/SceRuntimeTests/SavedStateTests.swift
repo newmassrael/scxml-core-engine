@@ -6,9 +6,9 @@ import Testing
 
 @testable import SceRuntime
 
-// The saved-state document (`sce-saved-state`, formats 1, 2 and 3): what one backend wrote, every backend reads,
-// and what a reader writes back is the text it was given, or, for a format-2 text, the format-3 text it is read
-// as (docs/adr/0090, section 7). The shared fixtures under `sce-build/tests/fixtures/static_datamodel/saved` are
+// The saved-state document (`sce-saved-state`, formats 1 to 4): what one backend wrote, every backend reads,
+// and what a reader writes back is the text it was given, or, for a format-2 or 3 text, the format-4 text it is
+// read as (docs/adr/0090, section 7; docs/adr/0107, D4). The shared fixtures under `sce-build/tests/fixtures/static_datamodel/saved` are
 // the text every runtime writes and reads, so reading each and writing it again holds this runtime's reader and
 // writer to theirs, byte for byte.
 
@@ -65,16 +65,16 @@ private func format1(_ extra: String = "") -> String {
         do {
             let state = try SavedState.fromJSON(text)
             #expect(state.toJSON() + "\n" == text, "\(name) is written back as it was read")
-            #expect(state.formatVersion == (name.hasPrefix("format1/") ? 1 : 3), "\(name) is of the format it is in")
+            #expect(state.formatVersion == (name.hasPrefix("format1/") ? 1 : 4), "\(name) is of the format it is in")
         } catch {
             Issue.record("\(name) is not read: \(error)")
         }
     }
 }
 
-@Test func everyFormat2TextIsWrittenBackAsTheFormat3TextItIsReadAs() throws {
+@Test func everyFormat2TextIsWrittenBackAsTheFormat4TextItIsReadAs() throws {
     // docs/adr/0090, section 7: each origin of a format-2 text is read by the table of that section, and the
-    // state is written back as format 3. `format2/read_as/` holds, under the same name, the text each is read as.
+    // state is written back as format 4. `format2/read_as/` holds, under the same name, the text each is read as.
     let directory = savedDirectory().appendingPathComponent("format2")
     let names = try FileManager.default.contentsOfDirectory(atPath: directory.path)
         .filter { $0.hasSuffix(".json") }.sorted()
@@ -84,8 +84,24 @@ private func format1(_ extra: String = "") -> String {
         let readAs = try String(
             contentsOf: directory.appendingPathComponent("read_as").appendingPathComponent(name), encoding: .utf8)
         let state = try SavedState.fromJSON(text)
-        #expect(state.formatVersion == SavedState.format3, "\(name) is written as format 3")
+        #expect(state.formatVersion == SavedState.format4, "\(name) is written as format 4")
         #expect(state.toJSON() + "\n" == readAs, "\(name) is written as the text it is read as")
+    }
+}
+
+@Test func everyFormat3TextIsWrittenBackAsTheFormat4TextOfItsName() throws {
+    // docs/adr/0107, D4: each running host-run invocation of a format-3 text is the first start of its `<invoke>`,
+    // counted once, and the state is written back as format 4: the shared text of the same name one folder up.
+    let directory = savedDirectory().appendingPathComponent("format3")
+    let names = try FileManager.default.contentsOfDirectory(atPath: directory.path)
+        .filter { $0.hasSuffix(".json") }.sorted()
+    #expect(names.count == 1, "\(names.count) format-3 texts read: a test that read none would pass")
+    for name in names {
+        let text = try String(contentsOf: directory.appendingPathComponent(name), encoding: .utf8)
+        let shared = try String(contentsOf: savedDirectory().appendingPathComponent(name), encoding: .utf8)
+        let state = try SavedState.fromJSON(text)
+        #expect(state.formatVersion == SavedState.format4, "\(name) is written as format 4")
+        #expect(state.toJSON() + "\n" == shared, "\(name) is written as the shared text it is read as")
     }
 }
 
@@ -104,15 +120,43 @@ private func leaf(_ id: String) -> SavedState {
     let two = SavedState(
         shape: one.shape, configuration: ["a"], current: "a", variables: [], invokes: .resumed([child]),
         sessionID: "root", invokeStarts: [SavedEntry("kid", 1)])
-    #expect(two.formatVersion == 3, "a tree is written as format 3")
+    #expect(two.formatVersion == 4, "a tree is written as format 4")
     #expect(two.boundSessionID == "root")
     #expect(two.invokeIDs == ["kid"])
     #expect(two.invokeStart("kid") == 1)
     #expect(two.invokeStart("other") == 0, "an invoke that never started has started none")
-    #expect(two.toJSON().hasPrefix(#"{"format":3,"#))
+    #expect(two.toJSON().hasPrefix(#"{"format":4,"#))
     let again = try SavedState.fromJSON(two.toJSON())
-    #expect(again.formatVersion == 3)
+    #expect(again.formatVersion == 4)
     #expect(again == two)
+}
+
+/// docs/adr/0107, D4: a format-3 host-run invocation is read as the first start of its `<invoke>` and counted so,
+/// and written back as format 4 with the number after its id and the count after `hostinvokes`; a format-4 text
+/// keeps each start number and each count, one of an `<invoke>` not running among them, as written.
+@Test func aHostInvocationsStartNumberIsReadAndWrittenBack() throws {
+    let host = #"{"type":"x-host","id":"h","src":"","params":{},"data":"","content":"","due":null}"#
+    let format3Text = format3()
+        .replacingOccurrences(of: #"{"format":4,"#, with: #"{"format":3,"#)
+        .replacingOccurrences(of: #""hostinvokestarts":{},"#, with: "")
+        .replacingOccurrences(of: #""hostinvokes":[]"#, with: #""hostinvokes":[\#(host)]"#)
+    let read = try SavedState.fromJSON(format3Text)
+    #expect(read.hostInvokes.first?.start == 1)
+    #expect(read.hostInvokeStart("h") == 1)
+    let numbered = host.replacingOccurrences(of: #""id":"h","#, with: #""id":"h","start":"1","#)
+    let want = format3()
+        .replacingOccurrences(of: #""hostinvokes":[]"#, with: #""hostinvokes":[\#(numbered)]"#)
+        .replacingOccurrences(of: #""hostinvokestarts":{}"#, with: #""hostinvokestarts":{"h":"1"}"#)
+    #expect(read.toJSON() == want)
+
+    let format4Text = want
+        .replacingOccurrences(of: #""start":"1""#, with: #""start":"3""#)
+        .replacingOccurrences(of: #""hostinvokestarts":{"h":"1"}"#, with: #""hostinvokestarts":{"done":"2","h":"3"}"#)
+    let again = try SavedState.fromJSON(format4Text)
+    #expect(again.hostInvokes.first?.start == 3)
+    #expect(again.hostInvokeStart("h") == 3 && again.hostInvokeStart("done") == 2)
+    #expect(again.toJSON() == format4Text)
+    #expect(refusal(format4Text.replacingOccurrences(of: #""start":"3","#, with: "")) == "'hostinvokes[0]' has no 'start'")
 }
 
 @Test func aVariableIsAskedForByItsId() throws {
@@ -128,11 +172,11 @@ private func leaf(_ id: String) -> SavedState {
     #expect(refusal("{}") == "the saved state has no 'format'")
     // A format of the future is refused by its `format`, before anything else of the text is read.
     #expect(
-        refusal(#"{"format":4}"#)
-            == "the saved state is format 4, and this runtime reads formats 1, 2 and 3")
+        refusal(#"{"format":5}"#)
+            == "the saved state is format 5, and this runtime reads formats 1, 2, 3 and 4")
     #expect(
         refusal(#"{"format":"3"}"#)
-            == #"the saved state is format "3", and this runtime reads formats 1, 2 and 3"#)
+            == #"the saved state is format "3", and this runtime reads formats 1, 2, 3 and 4"#)
     #expect(refusal(format1().replacingOccurrences(of: #""current":"a","#, with: "")) == "the saved state has no 'current'")
     #expect(refusal(format1().replacingOccurrences(of: #""configuration":["a"]"#, with: #""configuration":"a""#))
         == "'configuration' is not an array")
@@ -170,7 +214,7 @@ private func leaf(_ id: String) -> SavedState {
         shape: child.shape, configuration: ["a"], current: "a", variables: [], invokes: .resumed([grandchild]),
         sessionID: "root", invokeStarts: [SavedEntry("kid", 1)])
     // The child's session states a format of its own, which only the root of a tree does.
-    let text = root.toJSON().replacingOccurrences(of: #""session":{"#, with: #""session":{"format":3,"#)
+    let text = root.toJSON().replacingOccurrences(of: #""session":{"#, with: #""session":{"format":4,"#)
     #expect(refusal(text) == "'invokes[0].session' states a format, which only the root of a tree does")
     // A refusal inside the child's own session is named by the path to it.
     let broken = root.toJSON().replacingOccurrences(of: #""hostinvoketoken":"0""#, with: #""hostinvoketoken":"x""#)
@@ -243,12 +287,13 @@ private func leaf(_ id: String) -> SavedState {
 
 // MARK: - An event's origin in format 3 (docs/adr/0090, section 7)
 
-/// A format-3 state of the session `root`, with `pending` and `external` inside its two arrays.
+/// A state of the session `root` in the format this runtime writes, whose events and waiting sends hold their
+/// origin as format 3 does, with `pending` and `external` inside its two arrays.
 private func format3(pending: String = "", external: String = "") -> String {
     """
-    {"format":3,"shape":"\(String(repeating: "a", count: 64))","sessionid":"root","configuration":["a"],\
+    {"format":4,"shape":"\(String(repeating: "a", count: 64))","sessionid":"root","configuration":["a"],\
     "current":"a","variables":{},"history":{},"pending":[\(pending)],"invokes":[],"invokestarts":{},\
-    "hostinvokes":[],"hostinvoketoken":"0","sendseq":"0","external":[\(external)]}
+    "hostinvokes":[],"hostinvokestarts":{},"hostinvoketoken":"0","sendseq":"0","external":[\(external)]}
     """
 }
 
@@ -431,7 +476,7 @@ private func queuedText(origin: String, sender: String) -> String {
         invokes: .resumed([]), sessionID: "root")
     func format2(_ origin: String) -> String {
         state.toJSON()
-            .replacingOccurrences(of: #"{"format":3,"#, with: #"{"format":2,"#)
+            .replacingOccurrences(of: #"{"format":4,"#, with: #"{"format":2,"#)
             .replacingOccurrences(of: #""origin":\#(scxmlPairText("root")),"sender":"root""#, with: #""origin":"\#(origin)""#)
     }
     func format1Text(_ origin: String) -> String {
@@ -475,7 +520,7 @@ private func queuedText(origin: String, sender: String) -> String {
         sessionID: "root", invokeStarts: [SavedEntry("kid", 1)])
     let written = root.toJSON()
     let stored = written
-        .replacingOccurrences(of: #"{"format":3,"#, with: #"{"format":2,"#)
+        .replacingOccurrences(of: #"{"format":4,"#, with: #"{"format":2,"#)
         .replacingOccurrences(of: #""origin":\#(scxmlPairText("root")),"sender":"root""#, with: #""origin":"""#)
         .replacingOccurrences(of: #""origin":\#(scxmlPairText("root.kid")),"sender":"root.kid""#, with: #""origin":"""#)
     #expect(stored.components(separatedBy: #""origin":"""#).count == 3, "both acts stored no origin: \(stored)")

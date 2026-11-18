@@ -31,17 +31,55 @@ public enum HostOutcome: Equatable, Sendable {
     case hold
 }
 
+/// The identity of a host-run invocation (docs/SCE_HOST_FEATURES.md, section 1,
+/// "Identity"): the session that started it, the `<invoke>`'s id, and which start of
+/// that `<invoke>` in that session it is. A restore starts a running invocation again
+/// under the identity it had, so two starts with one identity are one operation asked
+/// twice. Compared and hashed by the UTF-8 bytes of its texts, as the store's keys are.
+public struct Invocation: Hashable, Sendable {
+    public var sessionID: String
+    public var id: String
+    public var start: UInt64
+
+    public init(sessionID: String, id: String, start: UInt64) {
+        self.sessionID = sessionID
+        self.id = id
+        self.start = start
+    }
+
+    public static func == (lhs: Invocation, rhs: Invocation) -> Bool {
+        lhs.start == rhs.start && lhs.sessionID.utf8.elementsEqual(rhs.sessionID.utf8)
+            && lhs.id.utf8.elementsEqual(rhs.id.utf8)
+    }
+
+    public func hash(into hasher: inout Hasher) {
+        // Each text's length first, so the bytes of one cannot run on into the next.
+        for text in [sessionID, id] {
+            hasher.combine(text.utf8.count)
+            for byte in text.utf8 {
+                hasher.combine(byte)
+            }
+        }
+        hasher.combine(start)
+    }
+}
+
 /// A start the host was given: the operation, the invocation's id and the request's
-/// parameters.
+/// parameters, with the rest of the invocation's identity: the session that started it
+/// and which start of its `<invoke>` it is.
 public struct HostStart: Equatable, Sendable {
     public var operation: String
     public var id: String
     public var params: HostParams
+    public var sessionID: String
+    public var number: UInt64
 
-    public init(operation: String, id: String, params: HostParams) {
+    public init(operation: String, id: String, params: HostParams, sessionID: String = "", number: UInt64 = 0) {
         self.operation = operation
         self.id = id
         self.params = params
+        self.sessionID = sessionID
+        self.number = number
     }
 }
 
@@ -130,6 +168,10 @@ public final class ReferenceHost {
 
     private var starts: [HostStart] = []
 
+    /// The first result of each put-if, by the identity of its invocation: what a repeat
+    /// of that identity is answered with (docs/adr/0107, D4).
+    private var firstResults: [Invocation: HostOutcome] = [:]
+
     // The key-value store, in memory, with the quota the embedding set.
     private var store: [StoreKey: StoredValue] = [:]
     private var quota: Int?
@@ -211,16 +253,37 @@ public final class ReferenceHost {
         return taken
     }
 
-    /// Starts the operation of invocation `id` with `params`.
+    /// Starts the operation of `invocation` with `params`.
     ///
     /// Nil for a type that is not one of the standard host features: the host serves
     /// none of it. Otherwise the arguments are judged first (a refusal starts nothing),
     /// then a failure the embedding injected, then the operation itself.
-    public func start(operation: String, id: String, params: HostParams) -> HostOutcome? {
+    ///
+    /// A put-if whose invocation was answered before is answered with that first result,
+    /// a failure included, and changes nothing: the engine starts a running invocation
+    /// again under the same identity when it restores a state saved before the answer was
+    /// taken (docs/adr/0107, D4), and the write it asked for was made once.
+    public func start(operation: String, invocation: Invocation, params: HostParams) -> HostOutcome? {
         guard Self.types.contains(operation) else {
             return nil
         }
-        starts.append(HostStart(operation: operation, id: id, params: params))
+        starts.append(
+            HostStart(
+                operation: operation, id: invocation.id, params: params, sessionID: invocation.sessionID,
+                number: invocation.start))
+        let keepsFirst = operation == "sce-host-kv-put-if"
+        if keepsFirst, let first = firstResults[invocation] {
+            return first
+        }
+        let outcome = perform(operation: operation, id: invocation.id, params: params)
+        if keepsFirst, case .done = outcome {
+            firstResults[invocation] = outcome
+        }
+        return outcome
+    }
+
+    /// The operation itself, as `start` describes it, for a start that is not a repeat.
+    private func perform(operation: String, id: String, params: HostParams) -> HostOutcome {
         let refused: Bool
         switch operation {
         case "sce-host-kv-get", "sce-host-kv-delete", "sce-host-kv-put":

@@ -81,9 +81,10 @@ private func refusal(_ body: () throws -> Void) -> String? {
     #expect(
         try engine.save().toJSON()
             == """
-            {"format":3,"shape":"\(shape)","sessionid":"fixture-root","configuration":["counting"],\
+            {"format":4,"shape":"\(shape)","sessionid":"fixture-root","configuration":["counting"],\
             "current":"counting","variables":{"count":7,"ready":true,"step":1},"history":{},"pending":[],\
-            "invokes":[],"invokestarts":{},"hostinvokes":[],"hostinvoketoken":"0","sendseq":"0","external":[]}
+            "invokes":[],"invokestarts":{},"hostinvokes":[],"hostinvokestarts":{},"hostinvoketoken":"0",\
+            "sendseq":"0","external":[]}
             """)
 }
 

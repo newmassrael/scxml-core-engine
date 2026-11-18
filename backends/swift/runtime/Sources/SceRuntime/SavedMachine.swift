@@ -298,7 +298,11 @@ extension Engine where Policy: SavedPolicy {
             // The count of starts so far: the token the next start receives, which this runtime numbers from 1 and
             // every backend's text counts from 0.
             hostInvokeToken: Int64(hostInvokes.nextToken - 1), autoSendSeq: Int64(generatedSendIDCount),
-            external: external, revisions: revisions, features: shape.features)
+            external: external, revisions: revisions, features: shape.features,
+            // docs/adr/0107, D4: by the id's UTF-8 bytes, the order every backend writes.
+            hostInvokeStarts: hostInvokes.starts
+                .sorted { $0.key.utf8.lexicographicallyPrecedes($1.key.utf8) }
+                .map { SavedEntry($0.key, Int64($0.value)) })
     }
 
     /// Stands this machine where `saved` left one, in place of `initialize`: no `<onentry>` runs and no `<data>`
@@ -354,13 +358,29 @@ extension Engine where Policy: SavedPolicy {
             guard hostSeen.insert("\(host.processorType)\u{0}\(host.invokeID)").inserted else {
                 throw StateRefusal("hostinvokes[\(index)] is '\(host.invokeID)', which an earlier entry already names")
             }
+            // docs/adr/0107, D4: a running invocation is the latest start of its `<invoke>`, since a state
+            // re-entered cancels the earlier one first.
+            let count = saved.hostInvokeStart(host.invokeID)
+            guard host.start == count else {
+                throw StateRefusal(
+                    "hostinvokes[\(index)] is start \(host.start) of '\(host.invokeID)', and the session counts "
+                        + "\(count) starts of it: a state re-entered cancels the earlier start before it makes the "
+                        + "next one")
+            }
             hostRestarts.append(
                 (
                     HostInvokeRequest(
                         processorType: host.processorType, invokeID: host.invokeID, src: host.src,
-                        params: host.params, eventData: host.data, content: host.content, restarted: true),
+                        params: host.params, eventData: host.data, content: host.content, restarted: true,
+                        start: UInt64(host.start)),
                     host.due
                 ))
+        }
+        // A count of host-run starts names an `<invoke>` the document hands a host.
+        for counted in saved.hostInvokeStarts
+        where !policy.savedHostInvokeSlots.contains(where: { $0.invokeID == counted.key }) {
+            throw StateRefusal(
+                "hostinvokestarts counts '\(counted.key)', which the document does not have a host invoker run")
         }
         func state(_ name: String, _ what: String) throws -> Policy.State {
             guard let found = policy.getStateFromName(name) else {
@@ -447,6 +467,8 @@ extension Engine where Policy: SavedPolicy {
             // own clock, and one already due ends the invocation without a start.
             let now = nowMs()
             hostInvokes.nextToken = UInt64(saved.hostInvokeToken) + 1
+            hostInvokes.starts = Dictionary(
+                saved.hostInvokeStarts.map { ($0.key, UInt64($0.value)) }, uniquingKeysWith: { _, last in last })
             hostInvokes.restored = hostRestarts.map { restart in
                 var request = restart.request
                 request.sessionID = policy.sessionID

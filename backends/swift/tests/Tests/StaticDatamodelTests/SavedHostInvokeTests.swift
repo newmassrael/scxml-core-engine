@@ -121,6 +121,82 @@ private func refusal(_ body: () throws -> Void) -> String? {
     #expect(again.params == first.params && again.src == first.src && again.content == first.content)
     #expect(again.eventData == first.eventData, "the data is what the document's own start made, not made again")
     #expect(again.token != first.token, "a new start: what the first run hands back is not the second run's")
+    // docs/adr/0107, D4: the same invocation, under the identity it had.
+    #expect(again.start == first.start, "the start it repeats")
+    #expect(again.sessionID == first.sessionID)
+}
+
+/// docs/adr/0107, D4: the first start of `fetch` is numbered 1, and the saved state holds the
+/// number with the invocation and the count with the session.
+@Test func aMachineIsSavedWithTheStartNumberOfItsInvocation() throws {
+    let (host, _, engine) = try fetching()
+    #expect(try #require(host.starts.first).start == 1)
+    let saved = try engine.save(wallNowMs: savedAtMs)
+    #expect(try #require(saved.hostInvokes.first).start == 1)
+    #expect(saved.hostInvokeStart("fetch") == 1)
+    #expect(saved.toJSON().contains(#""id":"fetch","start":"1","#))
+    #expect(saved.toJSON().contains(#""hostinvokestarts":{"fetch":"1"}"#))
+}
+
+/// docs/adr/0107, D4: a restore repeats a running start under its number, and a start the
+/// document makes afterwards is numbered on from the count the saved state carried.
+@Test func aStartAfterTheRestoredOneTakesTheNextNumber() throws {
+    let (_, _, engine) = try fetching()
+    let (host, policy, restoredEngine) = try restored(engine.save(wallNowMs: savedAtMs))
+    restoredEngine.step()
+    let token = try #require(host.starts.first).token
+    #expect(
+        restoredEngine.completeHostInvoke(
+            processorType: fetchType, invokeID: "fetch", token: token,
+            doneData: #"{"status":200,"headers":"","body":"","error":""}"#))
+    restoredEngine.step()
+    #expect(policy.outcome == "done", "the restarted invocation ended, and the machine is idle")
+    restoredEngine.raiseHostHttpFetchRequest(method: "GET", url: "https://example.test/b", headers: "", body: "")
+    restoredEngine.step()
+    #expect(host.starts.map { "\($0.restarted) \($0.start)" } == ["true 1", "false 2"])
+    let saved = try restoredEngine.save(wallNowMs: savedAtMs)
+    #expect(try #require(saved.hostInvokes.first).start == 2)
+    #expect(saved.hostInvokeStart("fetch") == 2)
+}
+
+/// docs/adr/0107, D4: an invocation that completed before the save is not running in it, and
+/// the count it leaves numbers the next start on.
+@Test func aStartAfterOneSavedAsCompletedTakesTheNextNumber() throws {
+    let (firstHost, policy, engine) = try fetching()
+    let token = try #require(firstHost.starts.first).token
+    #expect(
+        engine.completeHostInvoke(
+            processorType: fetchType, invokeID: "fetch", token: token,
+            doneData: #"{"status":200,"headers":"","body":"","error":""}"#))
+    engine.step()
+    #expect(policy.outcome == "done")
+    let saved = try engine.save(wallNowMs: savedAtMs)
+    #expect(saved.hostInvokes.isEmpty)
+    #expect(saved.hostInvokeStart("fetch") == 1)
+    let (host, _, restoredEngine) = try restored(saved)
+    restoredEngine.raiseHostHttpFetchRequest(method: "GET", url: "https://example.test/b", headers: "", body: "")
+    restoredEngine.step()
+    #expect(host.starts.map { "\($0.restarted) \($0.start)" } == ["false 2"])
+}
+
+/// The start number is judged before anything is built: a running invocation is the latest
+/// start its session counts, and a count names an `<invoke>` the document hands a host.
+@Test func aStartNumberTheSavedSessionCouldNotHaveGivenIsRefused() throws {
+    let (_, _, engine) = try fetching()
+    let saved = try engine.save(wallNowMs: savedAtMs)
+
+    var later = saved
+    later.hostInvokeStarts = [SavedEntry("fetch", 2)]
+    #expect(
+        refusal { _ = try restored(later) }
+            == "hostinvokes[0] is start 1 of 'fetch', and the session counts 2 starts of it: a state re-entered "
+            + "cancels the earlier start before it makes the next one")
+
+    var stranger = saved
+    stranger.hostInvokeStarts.append(SavedEntry("stranger", 1))
+    #expect(
+        refusal { _ = try restored(stranger) }
+            == "hostinvokestarts counts 'stranger', which the document does not have a host invoker run")
 }
 
 @Test func aRestoredInvocationKeepsTheDeadlineItHadLeft() throws {

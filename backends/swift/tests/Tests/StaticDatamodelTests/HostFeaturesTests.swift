@@ -455,6 +455,67 @@ private func replayHost<Policy: StatePolicy>(
     )
 }
 
+/// docs/adr/0107, D4: a put-if the host carried out, saved before its answer was taken, is
+/// started again by the restore under the identity it had, and the host answers it with the
+/// first result rather than judging the store a second time; a start the document makes
+/// afterwards takes the next number and is an operation of its own.
+@Test func aRestoredPutIfIsAnsweredWithTheFirstResultOfItsInvocation() throws {
+    let host = ReferenceHost(clock: ScriptedClockSource(), transport: ScriptedTransport())
+    let putIf = "sce-host-kv-put-if"
+    let entries = { host.storeEntries().map { "\($0.key)=\($0.value)" } }
+
+    // The first process: the host writes, and its answer is lost with the process before
+    // the machine takes it.
+    let first = Engine(policy: StaticHostKvPolicy())
+    first.setClock(ManualClock())
+    try serve(host, on: first)
+    try first.registerInvoker(putIf) { event in
+        if case .start(let start) = event {
+            var params: HostParams = [:]
+            for (name, values) in start.params {
+                if let value = values.first {
+                    params[name] = value
+                }
+            }
+            _ = host.start(
+                operation: putIf,
+                invocation: Invocation(sessionID: start.sessionID, id: start.invokeID, start: start.start),
+                params: params)
+        }
+        return nil
+    }
+    try first.initialize()
+    first.tick()
+    first.raiseExternalByName("host.kv.put_if.request", eventData: #"{"key":"k","value":"a","expected_version":"0"}"#)
+    first.tick()
+    let saved = try first.save(wallNowMs: 0)
+    #expect(saved.hostInvokes.map { "\($0.invokeID) \($0.start)" } == ["putif 1"])
+    #expect(entries() == ["k=a"], "the host wrote once")
+
+    // The second process: the restore starts it again, and the host answers it as it
+    // answered the first time, where the store alone would now answer `written` false at
+    // version 1.
+    let policy = StaticHostKvPolicy()
+    let second = Engine(policy: policy)
+    second.setClock(ManualClock())
+    try serve(host, on: second)
+    try second.restore(SavedState.fromJSON(saved.toJSON()), wallNowMs: 0)
+    second.tick()
+    #expect(policy.outcome == "done")
+    #expect(policy.written, "the first result")
+    #expect(policy.putVersion == "1")
+    #expect(entries() == ["k=a"], "nothing written twice")
+
+    // A start the document makes now is the second start of `putif`.
+    second.raiseExternalByName("host.kv.put_if.request", eventData: #"{"key":"k","value":"b","expected_version":"0"}"#)
+    second.tick()
+    #expect(!policy.written, "judged against the store as it is")
+    #expect(policy.putVersion == "1")
+    let starts = host.takeStarts()
+    #expect(starts.map { "\($0.id) \($0.number)" } == ["putif 1", "putif 1", "putif 2"])
+    #expect(starts.allSatisfy { $0.sessionID == saved.sessionID }, "\(starts)")
+}
+
 @Test func aMachineMakesAnHTTPExchangeThroughItsHost() {
     let policy = StaticHostHttpPolicy()
     replayHost(
@@ -991,7 +1052,7 @@ private func runHarness(_ table: JSONValue, _ classes: [JSONValue], _ sequence: 
     {
         host.start(
             operation: modelGenerate,
-            id: "gen",
+            invocation: Invocation(sessionID: "session", id: "gen", start: 1),
             params: [
                 "prompt": prompt, "answer_schema": schema, "max_tokens": maxTokens, "temperature_milli": temperature,
             ]
