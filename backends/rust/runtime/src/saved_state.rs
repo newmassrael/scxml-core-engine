@@ -1245,6 +1245,32 @@ impl SavedState {
             .map_or(0, |(_, count)| *count)
     }
 
+    /// The earliest moment something this state holds comes due, in
+    /// milliseconds since the Unix epoch: a delayed `<send>` still waiting, the
+    /// deadline of a host-run `<invoke>`, or either of them in a running child
+    /// at any depth. `None` when nothing waits for a moment.
+    ///
+    /// What a host that keeps many saved sessions out of memory indexes each
+    /// one by, written beside the state, so that it loads a session again when
+    /// its first wait ends and the restore arms what came due (docs/adr/0107,
+    /// decision D5). A format-1 state holds nothing of its children, so only
+    /// its own waits count.
+    pub fn earliest_due(&self) -> Option<u64> {
+        let children = match &self.invokes {
+            SavedInvokes::Resumed(children) => children
+                .iter()
+                .filter_map(|child| child.session.earliest_due())
+                .min(),
+            SavedInvokes::Restarted(_) => None,
+        };
+        self.pending
+            .iter()
+            .map(|send| send.due)
+            .chain(self.host_invokes.iter().filter_map(|invoke| invoke.due))
+            .chain(children)
+            .min()
+    }
+
     /// The state as `sce-saved-state` JSON, in the format it is of
     /// ([`Self::format`]): the root of the text, with its `format`.
     pub fn to_json(&self) -> String {
@@ -3856,6 +3882,36 @@ mod tests {
             },
         ];
         root
+    }
+
+    /// The earliest wait of a tree is the least of its own sends, its host-run
+    /// invocations' deadlines and every child's, at any depth; a session that
+    /// waits for nothing has none.
+    #[test]
+    fn the_earliest_due_of_a_tree_is_the_least_of_the_waits_of_its_sessions() {
+        assert_eq!(session('a', "s", Vec::new()).earliest_due(), None);
+        // The child's send comes due a second before the root's.
+        let mut tree = tree();
+        assert_eq!(tree.earliest_due(), Some(1_700_000_005_000));
+        // A host-run invocation's deadline counts; one without a deadline does
+        // not.
+        tree.host_invokes = vec![
+            SavedHostInvoke {
+                due: None,
+                ..SavedHostInvoke::default()
+            },
+            SavedHostInvoke {
+                due: Some(1_700_000_004_000),
+                ..SavedHostInvoke::default()
+            },
+        ];
+        assert_eq!(tree.earliest_due(), Some(1_700_000_004_000));
+        // A format-1 state holds nothing of its children.
+        let restarted = SavedState {
+            invokes: SavedInvokes::Restarted(vec!["worker".to_string()]),
+            ..session('a', "", Vec::new())
+        };
+        assert_eq!(restarted.earliest_due(), None);
     }
 
     /// `http://www.w3.org/TR/scxml/#SCXMLEventProcessor`, as a format-3 pair
