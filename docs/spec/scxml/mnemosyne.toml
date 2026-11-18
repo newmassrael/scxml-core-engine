@@ -124,6 +124,11 @@ paths = [
     # §scxml- form and bound below, so the same hallucination / binding gates
     # that cover the C++ engine and the Rust codegen now cover the runtime.
     "backends/rust/runtime/src",
+    # The runtime's standard engine documents (`sce:std/engine`), generated
+    # beside `src` and compiled into the crate by `lib.rs`'s `#[path]`. Read
+    # as the runtime they are part of, as the Go and Python runtimes' own
+    # generated trees are read under their runtime paths below.
+    "backends/rust/runtime/generated",
     # C11 runtime. Its §scxml- cites sat outside every scan set until Mnemosyne
     # R855 mapped `.c` to the cpp resolver — before that the symbol axis was
     # silently skipped for every `.c` file, so enrolling this tree would have
