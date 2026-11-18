@@ -1,10 +1,12 @@
 # ADR 0108 — A statechart holds a table by key as a bounded map value, and a full table answers `full`
 
-- Status: Proposed (2026-11-19). Written under the owner's standing rule (the most long-term correct structure,
+- Status: Accepted (2026-11-19). Written under the owner's standing rule (the most long-term correct structure,
   textbook in its foundations, cost ignored; decided, not asked) at the request of a downstream consumer that is
-  moving a protocol stack's hand-written logic into SCE documents. The consumer reviews it against its own tables
-  before the first landing, and the record is accepted or amended from that review. Nothing of it has landed;
-  "Order of work" lists the steps.
+  moving a protocol stack's hand-written logic into SCE documents. The consumer reviewed it against its own tables
+  the same day; its review corrected what a reached limit does (D4), and moved remove to constant time, keyed the
+  index's hash per map (D8), kept reads and loops from copying, and admitted writes in place where nothing can fail
+  (D6), and keyed a 128-bit identifier as two integers (D1). It accepted the record so amended. Nothing of the
+  construct has landed; "Order of work" lists the steps.
 - Date: 2026-11-19
 - Amends, once accepted (each amended document gains an "Amended by: ADR 0108" line in the landing that moves it):
   - `sce-build/src/forge/value_type.rs`'s grammar (docs/adr/0086, section 1): two constructors, `map<K, V>[B]` and
