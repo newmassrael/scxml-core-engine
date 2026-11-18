@@ -91,13 +91,16 @@ fn every_shared_checkpoint_is_a_checkpoint() {
     }
 }
 
+/// One way to break an instance: what it breaks, and the change that breaks it.
+type Breakage = (&'static str, fn(&mut serde_json::Value));
+
 /// Each change below breaks one rule of the surface, and the schema refuses
 /// it: a positive sweep alone would only show that everything is accepted.
 #[test]
 fn the_checkpoint_schema_rejects_what_the_core_does_not_write() {
     let checkpoint = checkpoint_schema();
     let (_, valid) = instances().remove(0);
-    let broken: [(&str, fn(&mut serde_json::Value)); 7] = [
+    let broken: [Breakage; 7] = [
         ("another format", |v| v["format"] = serde_json::json!(2)),
         ("a number as a JSON number", |v| {
             v["checkpoint"] = serde_json::json!(7)
