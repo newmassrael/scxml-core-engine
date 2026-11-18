@@ -56,6 +56,11 @@ pub struct TransportFailure {
     pub retryable: bool,
     /// The transport's own words, carried as the row's `transport_error`.
     pub message: Option<String>,
+    /// `Some(depth)` when the transport's own queue for the peer already held `depth` envelopes
+    /// and took no more (the HTTPS binding's mailbox, SCE_MESH.md section 22.3): §mesh-16.7 row 9,
+    /// `backpressureDrop`, raised at once and never retried, since sending again only meets the
+    /// same full queue. `None` for every other failure.
+    pub queue_full: Option<u32>,
 }
 
 /// Moves envelope bytes to a peer. Bytes that arrive go to
@@ -564,6 +569,9 @@ impl<T: Transport, E: Environment> Endpoint<T, E> {
         mut attempts: Attempts,
         failure: TransportFailure,
     ) {
+        if let Some(depth) = failure.queue_full {
+            return self.raise(Some(&peer), &Signal::BackpressureDrop { depth });
+        }
         let policy = self.router.retry_policy(&peer);
         let draw = self.environment.jitter_draw();
         match attempts.after_failure(policy.as_ref(), failure.retryable, failure.message, draw) {
@@ -769,6 +777,7 @@ mod tests {
         TransportFailure {
             retryable,
             message: Some("reset".to_string()),
+            queue_full: None,
         }
     }
 
@@ -1110,6 +1119,43 @@ mod tests {
         let events = raised(&mut ecu);
         assert_eq!(events.len(), 1, "{events:?}");
         assert!(events[0].metadata.data.contains(r#""attempts":1"#));
+        ecu.environment.now = 1000;
+        ecu.tick();
+        assert!(ecu.transport.sent.is_empty());
+    }
+
+    /// A transport whose own queue for the peer is full (the HTTPS binding's mailbox) drops the
+    /// envelope as `backpressureDrop`, row 9, with the depth it found: not `sendFailed`, and not
+    /// retried, even under a policy that would retry any other failure.
+    #[test]
+    fn a_full_transport_queue_is_backpressure_drop_and_never_retried() {
+        let policy = RetryPolicy {
+            max_retries: 5,
+            initial_backoff_ms: 10,
+            backoff_multiplier: 1.0,
+            max_backoff_ms: 10,
+            jitter_pct: 0,
+        };
+        let mut ecu = endpoint("ecu", "hmi", Some(policy));
+        ecu.transport.failures.push_back(TransportFailure {
+            retryable: true,
+            message: Some("the mailbox is full".to_string()),
+            queue_full: Some(3),
+        });
+        ecu.send(&send("go", "s-1"));
+        let events = raised(&mut ecu);
+        let [event] = events.as_slice() else {
+            panic!("expected one row, got {events:?}");
+        };
+        assert_eq!(
+            event.metadata.data,
+            r#"{"errorName":"communication","reason":"backpressureDrop","target":"hmi","transport":"wss","queue_depth":3}"#
+        );
+        assert_eq!(
+            ecu.next_retry_due_ms(),
+            None,
+            "nothing waits to be sent again"
+        );
         ecu.environment.now = 1000;
         ecu.tick();
         assert!(ecu.transport.sent.is_empty());

@@ -115,11 +115,13 @@ impl Transport for WssTransport {
             return Err(TransportFailure {
                 retryable: true,
                 message: Some(alloc::format!("no link to {peer}")),
+                queue_full: None,
             });
         };
         writer.send(bytes.to_vec()).map_err(|_| TransportFailure {
             retryable: true,
             message: Some(alloc::format!("the link to {peer} closed")),
+            queue_full: None,
         })
     }
 }

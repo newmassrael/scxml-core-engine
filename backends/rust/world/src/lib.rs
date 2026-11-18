@@ -374,11 +374,13 @@ impl Transport for SimTransport {
             .ok_or_else(|| TransportFailure {
                 retryable: false,
                 message: Some(format!("no link from {} to {peer}", self.from)),
+                queue_full: None,
             })?;
         if !link.up {
             return Err(TransportFailure {
                 retryable: true,
                 message: Some(format!("the link from {} to {peer} is down", self.from)),
+                queue_full: None,
             });
         }
         net.carry(now, &self.from, peer, &self.from, bytes, false);
@@ -758,6 +760,7 @@ trait Participant {
                 message: Some(format!(
                     "the link to {peer} closed with the envelope in flight"
                 )),
+                queue_full: None,
             },
         );
     }

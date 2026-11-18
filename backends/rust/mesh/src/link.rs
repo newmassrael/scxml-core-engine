@@ -40,6 +40,7 @@ pub fn deliver<T: Transport, E: Environment>(endpoint: &mut Endpoint<T, E>, even
             TransportFailure {
                 retryable: true,
                 message: Some("the link closed before the envelope was written".to_string()),
+                queue_full: None,
             },
         ),
         LinkEvent::Lost(peer, _) => endpoint.peer_not_ready(&peer),

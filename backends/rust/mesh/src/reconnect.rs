@@ -215,6 +215,7 @@ impl Transport for ReconnectingTransport {
             None => Err(TransportFailure {
                 retryable: true,
                 message: Some("the session to the router is being reopened".to_string()),
+                queue_full: None,
             }),
         }
     }
@@ -627,7 +628,8 @@ mod tests {
             failure,
             TransportFailure {
                 retryable: true,
-                message: Some("the session to the router is being reopened".to_string())
+                message: Some("the session to the router is being reopened".to_string()),
+                queue_full: None,
             }
         );
         assert_eq!(first.lock().unwrap().puts.len(), 1, "nothing was put");

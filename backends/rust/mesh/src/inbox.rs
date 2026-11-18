@@ -319,6 +319,7 @@ impl<C: ZenohClient> Transport for ZenohTransport<C> {
             return Err(TransportFailure {
                 retryable: false,
                 message: Some(format!("peer name {peer:?} is not a key chunk")),
+                queue_full: None,
             });
         }
         // A session that has ended carries nothing, and the client is not asked: the core keeps
@@ -328,6 +329,7 @@ impl<C: ZenohClient> Transport for ZenohTransport<C> {
             return Err(TransportFailure {
                 retryable: true,
                 message: Some(SESSION_HAS_ENDED_WORDS.to_string()),
+                queue_full: None,
             });
         }
         // One envelope per put, and Block rather than drop under congestion (SCE_MESH.md section
@@ -337,6 +339,7 @@ impl<C: ZenohClient> Transport for ZenohTransport<C> {
             .map_err(|e| TransportFailure {
                 retryable: e.retryable,
                 message: Some(e.message),
+                queue_full: None,
             })
     }
 }
@@ -761,7 +764,8 @@ mod tests {
                 failure,
                 TransportFailure {
                     retryable,
-                    message: Some("no route".to_string())
+                    message: Some("no route".to_string()),
+                    queue_full: None,
                 }
             );
         }
@@ -904,7 +908,8 @@ mod tests {
             failure,
             TransportFailure {
                 retryable: true,
-                message: Some("the session to the router has ended".to_string())
+                message: Some("the session to the router has ended".to_string()),
+                queue_full: None,
             }
         );
         assert!(
