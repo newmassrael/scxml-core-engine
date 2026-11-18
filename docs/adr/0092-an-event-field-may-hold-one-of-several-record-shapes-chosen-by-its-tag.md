@@ -53,6 +53,10 @@
   - ADR 0055 section 3 (a fact about a subject may say which cases of a union it is in, beside whether it is present);
   - docs/SCE_ACCEPTED_SUBSET.md section 2.1 (a twenty-third kind, `union`) and section 2.15 (a union variable, its
     construction and its narrowing); SCE_FORGE.md section 4.12 (a union local and parameter of an algorithm).
+- Amended by: ADR 0101 section 2.5 (2026-11-14): the deterministic CBOR of a union (section 5.3) and its row of `C`
+  (section 5.1) are the map of one entry keyed by the case's variant name, whose value is the case's record or the
+  empty map, as a CBOR codec writes it; amended before step 7, so no signed bytes moved. The JSON wire of section 2
+  is unchanged.
 - Scope:
   - the forge model and readers: the kind `union`, the element `<sce:case>`, the type `union:<alias>`
     (`TypeOf::Union` in `sce-build/src/forge/value_type.rs`), `schemas/sce-forge-ext.xsd`,
@@ -420,30 +424,46 @@ consumer's stored answers stay readable.
 
 ### 5. Sizes, equality and signing
 
-1. **The size calculus** (ADR 0086 section 2.1) gains one row. For a case `c` with variant name `nc`, declared number
-   `kc` and record fields `f1..fm` (none for an empty case), and `t` the tag's key:
+1. **The size calculus** (ADR 0086 section 2.1) gains one row. For a case `c` with variant name `nc` and record
+   fields `f1..fm` (none for an empty case), and `t` the tag's key, which the JSON wire writes beside the fields:
 
    | Type | `J(T)`, bytes of JSON | `C(T)`, bytes of deterministic CBOR |
    |---|---|---|
-   | `union:U` | the largest over the cases of 2 + (`J(quoted t)` + 1 + 2 + the escaped length of `nc`) + Σ (`J(quoted id)` + 1 + `J(Tf)`) + m | the largest over the cases of h(1 + m) + `C(t)` + the head of `kc` (ADR 0086 section 9.2's enum rule) + Σ (`C(id)` + `C(Tf)`) |
+   | `union:U` | the largest over the cases of 2 + (`J(quoted t)` + 1 + 2 + the escaped length of `nc`) + Σ (`J(quoted id)` + 1 + `J(Tf)`) + m | the largest over the cases of h(1) + h(len nc) + len nc + h(m) + Σ (`C(id)` + `C(Tf)`); an empty case's record is h(0), one byte |
 
-   Each case is counted with its own name and number, so the size is tight (ADR 0086 section 2.3): a maximal value
-   is the largest case at its maximum. C11's storage is the compiler's `sizeof` of the layout of section 7, the tag
-   and the largest case's record.
+   Each case is counted with its own name, so the size is tight (ADR 0086 section 2.3): a maximal value is the
+   largest case at its maximum. C11's storage is the compiler's `sizeof` of the layout of section 7, the tag and the
+   largest case's record.
+
+   *Amended by ADR 0101 section 2.5 (2026-11-14).* The `C(T)` column counted the tag's key and the head of the
+   case's declared number beside the case's fields, the shape item 3 first gave a signed union. It is now ADR 0101
+   section 4.1's union row, the one a CBOR codec's union is measured by, so the signed form and the codec read one
+   row, `value_type.rs`'s `case_size`, which still counts the earlier shape and moves to this row with step 7. The
+   `J(T)` column, the JSON wire's, is unchanged.
 2. **Equality and order.** Two values of a union are equal when they are in one case and their records are equal,
    which every generated type implements structurally (section 7) and the saved state and the replay vocabulary
    compare. A statechart compares a union as it compares a record: not at all, `===` of two unions being refused as
    a composed value compared is (ADR 0086 section 6.1, `expression/unsupported-construct`); `e.kind === DateKind.x`
    is a comparison of enum values. There is no order on a union, as there is none on a record.
-3. **Deterministic CBOR** (ADR 0086 section 9.2) gains one mapping: a union is a map of the tag's key, whose value is
-   the case's declared number (as an enum is signed), and the case's fields, keys sorted by the bytes of their
-   encodings. Vectors, each a test of the encoder:
+3. **Deterministic CBOR** (ADR 0086 section 9.2) gains one mapping: a union is a map of exactly one entry, keyed by
+   its case's variant name as a text string, whose value is the case's record as section 9.2 writes a record (keys
+   sorted by the bytes of their encodings, an absent optional field `null` under its key), or the empty map (`a0`)
+   for a case that holds none. The tag's number is not written: the tag's enum is closed (section 1.1), so its name
+   covers every value. Vectors, each a test of the encoder:
 
    | Value | Encoding |
    |---|---|
-   | `none` (0) | `a1 64 6b 69 6e 64 00` |
-   | `relativeDays` (3), `count` 2 | `a2 64 6b 69 6e 64 03 65 63 6f 75 6e 74 02` |
-   | `absolute` (1), 2027-03-03 | `a4 63 64 61 79 03 64 6b 69 6e 64 01 64 79 65 61 72 19 07 eb 65 6d 6f 6e 74 68 03` |
+   | `none` (0) | `a1 64 6e 6f 6e 65 a0` |
+   | `relativeDays` (3), `count` 2 | `a1 6c 72 65 6c 61 74 69 76 65 44 61 79 73 a1 65 63 6f 75 6e 74 02` |
+   | `absolute` (1), 2027-03-03 | `a1 68 61 62 73 6f 6c 75 74 65 a3 63 64 61 79 03 64 79 65 61 72 19 07 eb 65 6d 6f 6e 74 68 03` |
+
+   *Amended by ADR 0101 section 2.5 (2026-11-14), before step 7 landed.* This item first gave a signed union the
+   tag's key beside the case's fields, its value the case's declared number (`none` was `a1 64 6b 69 6e 64 00`). A
+   signed union is now the one-entry map of ADR 0101 section 2.1, the shape a CBOR codec writes,
+   so the trust layer's encoder and a codec share the union's writer and its row of `C` (item 1). The two forms still
+   differ in an absent optional field alone: the signed form writes `null` under its key, a codec leaves the key out
+   (ADR 0101 section 2.5). No signed bytes depended on the earlier shape, since step 7, which writes this mapping,
+   had not landed; the JSON wire of section 2 keeps the tag beside the fields.
 
 ### 6. A statechart and an algorithm read a union by testing its tag
 
