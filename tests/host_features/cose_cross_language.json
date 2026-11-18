@@ -1,0 +1,91 @@
+{
+  "about": [
+    "The objects the Rust and the C++ reference hosts agree on, byte for byte (docs/SCE_HOST_FEATURES.md,",
+    "section 10): each host signs every `sign1` case and seals every `encrypt0` case with the keys below and",
+    "the case's nonce, and must write `cose` exactly; each host verifies every `sign1` object under the trust",
+    "set of both signing keys and opens every `encrypt0` object, and must answer the case's payload or",
+    "plaintext. An object either host writes is then one the other verifies or opens, in either direction.",
+    "",
+    "Every hexadecimal value is the bytes it spells. `seed` is the 32-byte seed of an Ed25519 key and",
+    "`public_key` the key RFC 8032 section 5.1.5 derives from it, which a Rust trust set holds and a C++ trust",
+    "set names by the signing key's id. `key` is a 32-byte ChaCha20/Poly1305 key. `nonce` is the 96 bits a",
+    "seal draws from its host's random source, which each test fixes for the case. Each object's key id is",
+    "the bytes of the case's `key_id`.",
+    "",
+    "The first payload is the deterministic CBOR of the record {id: 7, label: \"thermostat\"}, and the first",
+    "seal's plaintext the first signed object, sealed after it is signed as docs/adr/0107 D9 orders. The",
+    "second case of each holds bytes past U+007F, which cross a request and a result as their Latin-1 text;",
+    "the third holds 300 bytes, which a byte string's two-byte length head carries.",
+    "",
+    "The objects were computed by an implementation that shares nothing with either host (the Python",
+    "`cryptography` package over OpenSSL, with a CBOR writer of its own), which first reproduced the objects",
+    "the Rust host's own tests hold for the COSE working group's key `11` and key `sec-256`."
+  ],
+  "signing_keys": [
+    {
+      "id": "device-a",
+      "seed": "0102030405060708090a0b0c0d0e0f101112131415161718191a1b1c1d1e1f20",
+      "public_key": "79b5562e8fe654f94078b112e8a98ba7901f853ae695bed7e0e3910bad049664"
+    },
+    {
+      "id": "device-b",
+      "seed": "a0a1a2a3a4a5a6a7a8a9aaabacadaeafb0b1b2b3b4b5b6b7b8b9babbbcbdbebf",
+      "public_key": "4fd099ccd47d7893dfe9ec24414ecb0d9b5420232aad30d91c465be33cbe65c4"
+    }
+  ],
+  "sealing_keys": [
+    {
+      "id": "vault",
+      "key": "404142434445464748494a4b4c4d4e4f505152535455565758595a5b5c5d5e5f"
+    }
+  ],
+  "sign1": [
+    {
+      "name": "a record signed with no external data",
+      "key_id": "device-a",
+      "payload": "a262696407656c6162656c6a746865726d6f73746174",
+      "external_aad": "",
+      "cose": "d2844da2012704486465766963652d61a056a262696407656c6162656c6a746865726d6f737461745840e7e8d43a04d5823937675fd436513b3d49b495c4c8a8672bd4b211b53f2384c76a7617f31f50f5d0a425ecd4fca3a126e6ad00607346df088955306143042008"
+    },
+    {
+      "name": "bytes past U+007F over external data",
+      "key_id": "device-b",
+      "payload": "007f80c3a9ff0a225c",
+      "external_aad": "6465766963652d66696c652f31",
+      "cose": "d2844da2012704486465766963652d62a049007f80c3a9ff0a225c584027cdcc42e146e3b429487b7575c9fe8ad9519e6a0d69329bda6b8c4107280280935c6d27288ab03e57e65af9697e95611d5a860745af8d00db32170c9c655b0f"
+    },
+    {
+      "name": "a payload of 300 bytes, a two-byte length head",
+      "key_id": "device-a",
+      "payload": "030a11181f262d343b424950575e656c737a81888f969da4abb2b9c0c7ced5dce3eaf1f8ff060d141b222930373e454c535a61686f767d848b9299a0a7aeb5bcc3cad1d8dfe6edf4fb020910171e252c333a41484f565d646b727980878e959ca3aab1b8bfc6cdd4dbe2e9f0f7fe050c131a21282f363d444b525960676e757c838a91989fa6adb4bbc2c9d0d7dee5ecf3fa01080f161d242b323940474e555c636a71787f868d949ba2a9b0b7bec5ccd3dae1e8eff6fd040b121920272e353c434a51585f666d747b828990979ea5acb3bac1c8cfd6dde4ebf2f900070e151c232a31383f464d545b626970777e858c939aa1a8afb6bdc4cbd2d9e0e7eef5fc030a11181f262d343b424950575e656c737a81888f969da4abb2b9c0c7ced5dce3eaf1f8ff060d141b222930",
+      "external_aad": "6465766963652d66696c652f31",
+      "cose": "d2844da2012704486465766963652d61a059012c030a11181f262d343b424950575e656c737a81888f969da4abb2b9c0c7ced5dce3eaf1f8ff060d141b222930373e454c535a61686f767d848b9299a0a7aeb5bcc3cad1d8dfe6edf4fb020910171e252c333a41484f565d646b727980878e959ca3aab1b8bfc6cdd4dbe2e9f0f7fe050c131a21282f363d444b525960676e757c838a91989fa6adb4bbc2c9d0d7dee5ecf3fa01080f161d242b323940474e555c636a71787f868d949ba2a9b0b7bec5ccd3dae1e8eff6fd040b121920272e353c434a51585f666d747b828990979ea5acb3bac1c8cfd6dde4ebf2f900070e151c232a31383f464d545b626970777e858c939aa1a8afb6bdc4cbd2d9e0e7eef5fc030a11181f262d343b424950575e656c737a81888f969da4abb2b9c0c7ced5dce3eaf1f8ff060d141b2229305840a6fab39318c55298929d68da1a71a0180dcffe28f293ff81caa0dbfececd9b95aeb566ce9586a97a39dcb79d55802106b2a48bd7dcc74ac5ca4c0bee6bbda204"
+    }
+  ],
+  "encrypt0": [
+    {
+      "name": "the first signed object, sealed as docs/adr/0107 D9 orders",
+      "key_id": "vault",
+      "nonce": "000102030405060708090a0b",
+      "plaintext": "d2844da2012704486465766963652d61a056a262696407656c6162656c6a746865726d6f737461745840e7e8d43a04d5823937675fd436513b3d49b495c4c8a8672bd4b211b53f2384c76a7617f31f50f5d0a425ecd4fca3a126e6ad00607346df088955306143042008",
+      "external_aad": "",
+      "cose": "d08344a1011818a204457661756c74054c000102030405060708090a0b587ac9f71dd788c0c89052cc93d0cd5aae1c73644bdf56fdff4a47229761de74d2824177a99bcea5e96afbdba7756cc6e43f80708b89d8224bb6b4c2bc94e9b87af223d9703dd30e49b089bdcc0292cc02a39edd84e43a875245229d200fd22bbeb4f6aff43892d07b932b3c133b10539210a2b3606fbca57487dada"
+    },
+    {
+      "name": "bytes past U+007F over external data",
+      "key_id": "vault",
+      "nonce": "f0f1f2f3f4f5f6f7f8f9fafb",
+      "plaintext": "007f80c3a9ff0a225c",
+      "external_aad": "6465766963652d66696c652f31",
+      "cose": "d08344a1011818a204457661756c74054cf0f1f2f3f4f5f6f7f8f9fafb581946da9360341fa6757920ef1b879f5d2f5b52cb49bf66dc74c6"
+    },
+    {
+      "name": "a plaintext of 300 bytes, a two-byte length head",
+      "key_id": "vault",
+      "nonce": "5a5a5a5a5a5a5a5a5a5a5a5a",
+      "plaintext": "030a11181f262d343b424950575e656c737a81888f969da4abb2b9c0c7ced5dce3eaf1f8ff060d141b222930373e454c535a61686f767d848b9299a0a7aeb5bcc3cad1d8dfe6edf4fb020910171e252c333a41484f565d646b727980878e959ca3aab1b8bfc6cdd4dbe2e9f0f7fe050c131a21282f363d444b525960676e757c838a91989fa6adb4bbc2c9d0d7dee5ecf3fa01080f161d242b323940474e555c636a71787f868d949ba2a9b0b7bec5ccd3dae1e8eff6fd040b121920272e353c434a51585f666d747b828990979ea5acb3bac1c8cfd6dde4ebf2f900070e151c232a31383f464d545b626970777e858c939aa1a8afb6bdc4cbd2d9e0e7eef5fc030a11181f262d343b424950575e656c737a81888f969da4abb2b9c0c7ced5dce3eaf1f8ff060d141b222930",
+      "external_aad": "6465766963652d66696c652f31",
+      "cose": "d08344a1011818a204457661756c74054c5a5a5a5a5a5a5a5a5a5a5a5a59013c7852573de6eb972b10065b05143f70fb515ea43c582024607dea713fc049e0aea6efb1d9d0d6eef484dff03884f4c58e3b1bef904ae1f69c558e027616484bb59509eac652d10d85ffaf9f75a0e7d4e8786af3ad69b3907326b1c37ac83eed7e85eba26508eaad294ae3d5dc8001ba99ed6d1f058e2fbc10a172f5aa7193abf41c562a9cd2cd38dfe1fef5ca8ce46d9d94c299c513763fcd90454e68fcc2f5a281ada801560f3e00e780c08d90f54144e7cc6dac438deee838f296adc5ee92e3c968a745fe3ef3a4c5a36e1eccf3a0c0a6a0d93c56530043d011f5404285201d636a3ea6b07629e7b9724bc23219009311d3b9974e562605aac89883e48401018d2e40e1fb2c26f82a3b119784fdc83db4cdf79095017ef2537b179cc662cc775a0e230ecf44425684c0e2e20d63bd854b82ea1180e456a84b9e4a77"
+    }
+  ]
+}

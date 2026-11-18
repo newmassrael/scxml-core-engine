@@ -19,8 +19,11 @@
 #include <algorithm>
 #include <cstddef>
 #include <cstdint>
+#include <filesystem>
+#include <fstream>
 #include <gtest/gtest.h>
 #include <limits>
+#include <map>
 #include <nlohmann/json.hpp>
 #include <optional>
 #include <string>
@@ -530,6 +533,100 @@ TEST(AStandardHostCose, TheHostKeepsTheContractOfEveryOperationForTheFeature) {
               (json{{"error", "unavailable"}, {"opened", false}, {"plaintext", ""}}));
     EXPECT_EQ(down.done(host::KEY_DERIVE, {{"secret", "s"}, {"input_key_id", ""}, {"salt", ""}, {"info", ""}}),
               (json{{"error", "unavailable"}, {"key_id", ""}}));
+}
+
+/// The objects the Rust and the C++ reference hosts agree on, byte for byte (docs/SCE_HOST_FEATURES.md, section
+/// 10): tests/host_features/cose_cross_language.json, which the Rust host is held to by
+/// backends/rust/host-features/tests/cose_cross_language.rs. This host writes every object of the file through its
+/// operations, a seal under the nonce the case fixes, and verifies and opens every object of it; the Rust host does
+/// the same, so an object either writes is one the other reads.
+TEST(AStandardHostCose, ACoseObjectCrossesBetweenTheHosts) {
+    std::ifstream in(std::filesystem::path(SCE_PROJECT_ROOT) / "tests" / "host_features" / "cose_cross_language.json");
+    ASSERT_TRUE(in.good()) << "the vector file is not readable";
+    const json vectors = json::parse(in);
+
+    FixedNonceCrypto crypto;
+    host::ScriptedClock clock;
+    HostScenario::ScriptTransport transport;
+    host::ReferenceHost reference{clock, transport};
+    host::CoseFeature feature(crypto);
+    ASSERT_TRUE(reference.addFeature(feature));
+
+    // The signing keys, each held to the public key the file gives for its seed, and the trust set of them all,
+    // in the file's order; the sealing keys.
+    const std::string trustSet = "devices";
+    std::map<std::string, Bytes> seeds;
+    std::vector<std::string> signers;
+    for (const json &signer : vectors.at("signing_keys")) {
+        const std::string id = signer.at("id").get<std::string>();
+        const Bytes seed = hex(signer.at("seed").get<std::string>());
+        EXPECT_EQ(answered(crypto.ed25519PublicKey(seed)), hex(signer.at("public_key").get<std::string>()))
+            << id << ": the file's public key is the one its seed gives";
+        seeds[id] = seed;
+        signers.push_back(id);
+    }
+    ASSERT_TRUE(feature.setSigningKeys(seeds));
+    std::map<std::string, Bytes> sealing;
+    for (const json &key : vectors.at("sealing_keys")) {
+        sealing[key.at("id").get<std::string>()] = hex(key.at("key").get<std::string>());
+    }
+    ASSERT_TRUE(feature.setSealingKeys(sealing));
+    feature.setTrustSets({{trustSet, signers}});
+
+    const auto done = [&reference](const std::string &operation, const host::Params &params) {
+        const auto outcome = reference.start(operation, "op", params);
+        if (!outcome.has_value() || outcome->kind != host::Outcome::Kind::Done) {
+            ADD_FAILURE() << operation << " did not complete";
+            return json::object();
+        }
+        return json::parse(outcome->data);
+    };
+
+    const json invalid = {{"error", ""}, {"valid", false}, {"key_id", ""}, {"payload", ""}};
+    for (const json &item : vectors.at("sign1")) {
+        const std::string name = item.at("name").get<std::string>();
+        const std::string keyId = item.at("key_id").get<std::string>();
+        const Bytes payload = hex(item.at("payload").get<std::string>());
+        const Bytes aad = hex(item.at("external_aad").get<std::string>());
+        const std::string object = latin1(hex(item.at("cose").get<std::string>()));
+        EXPECT_EQ(
+            done(host::COSE_SIGN1, {{"key_id", keyId}, {"payload", latin1(payload)}, {"external_aad", latin1(aad)}}),
+            (json{{"error", ""}, {"cose", object}}))
+            << name << ": the object the Rust host verifies";
+        EXPECT_EQ(done(host::COSE_VERIFY1, {{"trust_set", trustSet}, {"cose", object}, {"external_aad", latin1(aad)}}),
+                  (json{{"error", ""}, {"valid", true}, {"key_id", keyId}, {"payload", latin1(payload)}}))
+            << name << ": the object the Rust host signed";
+        Bytes other = aad;
+        other.push_back(uint8_t{'!'});
+        EXPECT_EQ(
+            done(host::COSE_VERIFY1, {{"trust_set", trustSet}, {"cose", object}, {"external_aad", latin1(other)}}),
+            invalid)
+            << name << ": the external data is part of what was signed";
+    }
+
+    const json unopened = {{"error", ""}, {"opened", false}, {"plaintext", ""}};
+    for (const json &item : vectors.at("encrypt0")) {
+        const std::string name = item.at("name").get<std::string>();
+        const std::string keyId = item.at("key_id").get<std::string>();
+        const Bytes plaintext = hex(item.at("plaintext").get<std::string>());
+        const Bytes aad = hex(item.at("external_aad").get<std::string>());
+        const Bytes object = hex(item.at("cose").get<std::string>());
+        crypto.nonce = hex(item.at("nonce").get<std::string>());
+        EXPECT_EQ(done(host::COSE_ENCRYPT0,
+                       {{"key_id", keyId}, {"plaintext", latin1(plaintext)}, {"external_aad", latin1(aad)}}),
+                  (json{{"error", ""}, {"cose", latin1(object)}}))
+            << name << ": the object the Rust host opens";
+        EXPECT_EQ(
+            done(host::COSE_DECRYPT0, {{"key_id", keyId}, {"cose", latin1(object)}, {"external_aad", latin1(aad)}}),
+            (json{{"error", ""}, {"opened", true}, {"plaintext", latin1(plaintext)}}))
+            << name << ": the object the Rust host sealed";
+        Bytes tampered = object;
+        tampered.back() ^= 0x01;
+        EXPECT_EQ(
+            done(host::COSE_DECRYPT0, {{"key_id", keyId}, {"cose", latin1(tampered)}, {"external_aad", latin1(aad)}}),
+            unopened)
+            << name << ": the tag authenticates the ciphertext";
+    }
 }
 
 }  // namespace SCE::Tests
