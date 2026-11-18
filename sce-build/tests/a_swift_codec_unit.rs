@@ -847,11 +847,13 @@ fn an_embedder_hands_the_codec_it_embeds_an_input_of_its_own_or_a_bit_of_a_carri
 fn a_list_held_to_a_flag_another_declaration_derives_is_checked_entry_by_entry() {
     // `head.W` is the presence of `extra`, so the flag is derived from it and not from the list's
     // entries, which say `wide`: the list has no law of its own, and the encode holds each entry
-    // to the bit the carrier is written with (docs/adr/0065 §6 R4a, a check at the list).
+    // to the bit the carrier is written with (docs/adr/0065 §6 R4a, a check at the list). An entry
+    // that says otherwise is refused, so the codec states that its encode may fail (§3).
     let code = swift_of_beside(
         "codec_list_checked",
         r#"<scxml xmlns="http://www.w3.org/2005/07/scxml" xmlns:sce="http://sce.dev/ext"
-       sce:kind="codec" sce:default-endian="big" name="codec_list_checked">
+       sce:kind="codec" sce:encode-may-fail="true" sce:default-endian="big"
+       name="codec_list_checked">
   <sce:import src="codec_chain_flag_entry.scxml" kind="codec" as="codec_chain_flag_entry">
     <sce:flag-bind input="wide" source="head.W"/>
   </sce:import>
@@ -1777,11 +1779,14 @@ fn a_chain_a_group_holds_is_checked_against_the_entry_before_where_its_entries_s
     // docs/adr/0065 §6 R8b: each entry says `after_marker`, which the chain hands it as whether the
     // entry before is of the kind 4; a chain whose kinds a group refines is held to that by a check
     // before the first byte (`Against::PreviousEntry`), not by a law, and the check walks the chain
-    // the arm holds as the encode will.
+    // the arm holds as the encode will. The encode refuses an entry that says otherwise, as it
+    // refuses one that says `tagged` otherwise than `head.T`, so the codec states that its encode
+    // may fail (docs/adr/0065 §3).
     let code = swift_of_beside(
         "codec_chain_prev_has",
         r#"<scxml xmlns="http://www.w3.org/2005/07/scxml" xmlns:sce="http://sce.dev/ext"
-       sce:kind="codec" sce:default-endian="big" name="codec_chain_prev_has">
+       sce:kind="codec" sce:encode-may-fail="true" sce:default-endian="big"
+       name="codec_chain_prev_has">
   <sce:import src="codec_chain_prev_entry.scxml" kind="codec" as="codec_chain_prev_entry">
     <sce:flag-bind input="tagged" source="head.T"/>
   </sce:import>
