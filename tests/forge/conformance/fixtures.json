@@ -3811,6 +3811,7 @@
         { "name": "invokeCancel", "value": 19 },
         { "name": "invokeError", "value": 20 },
         { "name": "parallelRegionDone", "value": 21 },
+        { "name": "durableReceipt", "value": 22 },
         { "name": "causalVector", "value": 23 }
       ]
     },

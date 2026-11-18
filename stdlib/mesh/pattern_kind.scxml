@@ -3,15 +3,17 @@
   SCE_MESH.md §13 — the envelope's `pattern` (key 3): which interaction an
   envelope is one edge of. The values are the wire's, and the holes are
   deliberate: 10–13 are reserved for the Stream patterns (§8.1) and must not
-  be assigned, so a closed set refuses them on decode; 22 is the durable
-  receipt's (§10.11), not built yet. 23, `causalVector`, is the one control
-  message of a causal route (docs/adr/0085, section 3.2): its sender's
-  replica, the view's epoch and its delivered vector, which a receiver
-  answers with what the vector lacks and records as the sender's mark. It
-  never reaches an engine.
+  be assigned, so a closed set refuses them on decode. 22, `durableReceipt`,
+  is the acknowledgement of a binding with durable receipt (§10.11):
+  receiver to sender, its `sequence_no` the acknowledged mark. 23,
+  `causalVector`, is the one control message of a causal route
+  (docs/adr/0085, section 3.2): its sender's replica, the view's epoch and
+  its delivered vector, which a receiver answers with what the vector lacks
+  and records as the sender's mark. Neither reaches an engine.
 
   Mirrors sce/include/mesh/PatternKind.h, whose static_asserts pin the same
-  numbers.
+  numbers, except 22: the C++ router carries no durable receipt, and its
+  build refuses a durable binding, so no C++ machine meets the value.
 -->
 <scxml xmlns="http://www.w3.org/2005/07/scxml" xmlns:sce="http://sce.dev/ext"
        version="1.0" sce:kind="enum" name="pattern_kind" sce:underlying-type="uint16">
@@ -34,6 +36,7 @@
       <sce:variant name="invokeCancel" value="19"/>
       <sce:variant name="invokeError" value="20"/>
       <sce:variant name="parallelRegionDone" value="21"/>
+      <sce:variant name="durableReceipt" value="22"/>
       <sce:variant name="causalVector" value="23"/>
     </data>
   </datamodel>
