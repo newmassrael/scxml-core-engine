@@ -379,10 +379,12 @@ jobs:
     - name: Make sce-codegen Executable
       run: chmod +x target/debug/sce-codegen
 
+    # The release the build machines run, read from where bx.toml's
+    # `[platform.linux.tools.go]` reads it: the `go` line of that go.mod.
     - name: Setup Go
       uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
       with:
-        go-version: '1.23'
+        go-version-file: backends/go/forge-runtime/go.mod
         cache-dependency-path: |
           backends/go/forge-runtime/go.sum
 

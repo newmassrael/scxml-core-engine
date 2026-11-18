@@ -4365,6 +4365,37 @@ def go_gates_by_scan(repo_root: Path) -> set[str]:
             and GO_COMMAND.search(script_code(gate_script(repo_root, slug)))}
 
 
+def setup_go_failures(lines: list[str], where: str) -> list[str]:
+    """Each `actions/setup-go` step of a workflow's `lines` that does not read
+    the release from GO_VERSION_FILE (`go-version-file:`), as sentences.
+
+    A step's inputs are the lines after its `uses:` that are indented more
+    deeply, or its `with:` at the same depth.
+    """
+    failures: list[str] = []
+    for number, line in enumerate(lines):
+        stripped = line.strip()
+        if not re.match(r"(?:-\s+)?uses:\s*['\"]?actions/setup-go@", stripped):
+            continue
+        indent = len(line) - len(line.lstrip())
+        inputs: list[str] = []
+        for after in lines[number + 1:]:
+            text = after.strip()
+            if not text or text.startswith("#"):
+                continue
+            depth = len(after) - len(after.lstrip())
+            if depth < indent or (depth == indent and not text.startswith("with:")):
+                break
+            inputs.append(text)
+        if f"go-version-file: {GO_VERSION_FILE}" not in inputs \
+                or any(i.startswith("go-version:") for i in inputs):
+            failures.append(
+                f"{where}:{number + 1} sets Go up without `go-version-file: "
+                f"{GO_VERSION_FILE}`, so the lane runs another release than the one "
+                f"the build machines run ([platform.linux.tools.go] in bx.toml)")
+    return failures
+
+
 def go_toolchain_failures(repo_root: Path, tables=None, actions=None) -> list[str]:
     """What is wrong with the Go release bx.toml declares, as sentences.
 
@@ -4422,6 +4453,12 @@ def go_toolchain_failures(repo_root: Path, tables=None, actions=None) -> list[st
         failures.append(
             f"{GO_TOOLCHAIN_INSTALL} pins no SHA-256 for go{version}.linux-amd64.tar.gz, "
             f"so provision refuses to install the release the modules declare")
+
+    # The hosted lanes set up the release from the same line.
+    for workflow in sorted((repo_root / ".github" / "workflows").glob("*.yml")):
+        failures.extend(setup_go_failures(
+            workflow.read_text(encoding="utf-8").splitlines(),
+            str(workflow.relative_to(repo_root))))
 
     # What chooses the release reads it where the table does, and the runs that
     # start go choose it.
@@ -5995,6 +6032,27 @@ def self_test(repo_root: Path) -> int:
     absent = {n: s for n, s in go_tables.items() if n not in go_names}
     if not go_toolchain_failures(repo_root, tables=absent):
         failures.append("go-toolchain-refuses: no Go table was passed")
+    setup_go_fixture = [
+        "    - name: Setup Go",
+        "      uses: actions/setup-go@" + "e" * 40 + " # v7.0.0",
+        "      with:",
+        f"        go-version-file: {GO_VERSION_FILE}",
+        "    - name: Setup Go",
+        "      uses: actions/setup-go@" + "e" * 40 + " # v7.0.0",
+        "      with:",
+        "        go-version: '1.23'",
+        "    - name: Setup Go",
+        "      uses: actions/setup-go@" + "e" * 40 + " # v7.0.0",
+        "    - name: Next",
+        "      run: echo uses: actions/setup-go@v5",
+    ]
+    flagged = [re.match(r"f:(\d+) ", f).group(1)
+               for f in setup_go_failures(setup_go_fixture, "f")]
+    if flagged != ["6", "10"]:
+        failures.append(f"go-toolchain-refuses: of the fixture's setup-go steps, "
+                        f"lines 6 and 10 read no go-version-file, line 2 does and "
+                        f"line 12 is a command, not a step; the reader flagged "
+                        f"{flagged}")
     scanned = go_gates_by_scan(repo_root)
     if not {"forge-go", "w3c-go"} <= scanned:
         failures.append(f"go-toolchain-refuses: the scan for go commands found "

@@ -546,12 +546,13 @@ needed_by = ["w3c-python", "authoring-core", " targets", "workspace-tests"]
 # tool the release is the machine's: provision installs it once, bx checks it, and the runs that
 # need it go only where it is and use it with GOTOOLCHAIN=local, so none of them fetches a toolchain.
 #
-# The version is read from the `go` line of backends/go/forge-runtime/go.mod, not from CI's
-# `setup-go` (`go-version: '1.23'`, a line of releases that moves, which no digest can pin). The
-# `go` line is what go itself reads to refuse an older toolchain, and the release it names is the
-# oldest the module admits, so a run on it holds the module to its word. The forge runtime's file
-# because it is in the inputs of every action that runs go, and it is the module the failure
-# named; the registry's self-test holds the other go.mod files to the same line.
+# The version is read from the `go` line of backends/go/forge-runtime/go.mod. CI's `setup-go`
+# said `go-version: '1.23'` until 2026-11-19, a line of releases that moves, which no digest can
+# pin; it now reads the same line (`go-version-file`). The `go` line is what go itself reads to
+# refuse an older toolchain, and the release it names is the oldest the module admits, so a run
+# on it holds the module to its word. The forge runtime's file because it is in the inputs of
+# every action that runs go, and it is the module the failure named; the registry's self-test
+# holds the other go.mod files and every workflow's `setup-go` to the same line.
 #
 # `scripts/install_go.sh` is the one place the install is written, as `install_chrome.sh` is
 # Chrome's: the release's tarball from go.dev, refused unless its SHA-256 is the one go.dev

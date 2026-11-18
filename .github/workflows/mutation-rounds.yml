@@ -625,7 +625,8 @@ jobs:
     # A round whose oracle is a Go suite compiles it with `go test -c`, so the
     # toolchain has to be here and has to be the one `w3c-tests.yml` pins —
     # a round judging a backend on a different Go than the lane that gates it
-    # would be answering about a build nobody ships.
+    # would be answering about a build nobody ships. Both read it where
+    # bx.toml's `[platform.linux.tools.go]` does: the `go` line of that go.mod.
     #
     # Installed under the runner condition rather than always, because these
     # jobs are one per casefile and most of them are cargo rounds that would
@@ -634,7 +635,7 @@ jobs:
       if: matrix.runner == 'go'
       uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
       with:
-        go-version: '1.23'
+        go-version-file: backends/go/forge-runtime/go.mod
         cache-dependency-path: |
           backends/go/runtime/go.sum
           backends/go/lua/go.sum
