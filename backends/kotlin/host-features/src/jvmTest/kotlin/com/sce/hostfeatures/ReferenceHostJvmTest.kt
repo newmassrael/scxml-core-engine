@@ -48,6 +48,15 @@ class ReferenceHostJvmTest {
         assertTrue(host.start("sce-host-kv-get", "id", mapOf("key" to "a\u0000b")) is Outcome.Refuse)
     }
 
+    /** A put-if is refused for a key with U+0000 as a get is, and writes nothing. */
+    @Test
+    fun aPutIfWithANulInItsKeyIsRefused() {
+        val host = ReferenceHost(ScriptedClock(), Unreachable())
+        val params = mapOf("key" to "a\u0000b", "value" to "v", "expected_version" to "0")
+        assertTrue(host.start("sce-host-kv-put-if", "putif", params) is Outcome.Refuse)
+        assertTrue(host.storeEntries().isEmpty())
+    }
+
     /** Keys are ordered by their UTF-8 bytes, which differs from UTF-16 order past the basic plane. */
     @Test
     fun keysAreOrderedByTheirUtf8Bytes() {

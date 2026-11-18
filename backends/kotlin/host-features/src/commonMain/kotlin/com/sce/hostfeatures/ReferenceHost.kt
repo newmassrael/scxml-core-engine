@@ -11,6 +11,7 @@ val TYPES: List<String> = listOf(
     "sce-host-clock-zone",
     "sce-host-kv-get",
     "sce-host-kv-put",
+    "sce-host-kv-put-if",
     "sce-host-kv-delete",
     "sce-host-kv-next-key",
     "sce-host-notify-permission",
@@ -137,6 +138,7 @@ class ReferenceHost(internal val clock: ClockSource, internal val transport: Tra
         fun argument(name: String): String = params[name] ?: ""
         val refused = when (operation) {
             "sce-host-kv-get", "sce-host-kv-delete", "sce-host-kv-put" -> !validKey(argument("key"))
+            "sce-host-kv-put-if" -> !validKey(argument("key")) || !validVersion(argument("expected_version"))
             "sce-host-notify-post", "sce-host-notify-cancel" -> argument("id").isEmpty()
             "sce-host-http-fetch" -> !acceptable(argument("method"), argument("url"), argument("headers"))
             MODEL_GENERATE -> judgeGeneration(answerSchemas, params) == null
@@ -149,6 +151,7 @@ class ReferenceHost(internal val clock: ClockSource, internal val transport: Tra
             "sce-host-clock-zone" -> clockZone()
             "sce-host-kv-get" -> kvGet(argument("key"))
             "sce-host-kv-put" -> kvPut(argument("key"), argument("value"))
+            "sce-host-kv-put-if" -> kvPutIf(argument("key"), argument("value"), argument("expected_version"))
             "sce-host-kv-delete" -> kvDelete(argument("key"))
             "sce-host-kv-next-key" -> kvNextKey(argument("after"), argument("prefix"))
             "sce-host-notify-permission" -> notifyPermission()
@@ -209,8 +212,9 @@ internal fun failure(operation: String, code: String): Outcome {
     val zero: List<Pair<String, Any>> = when (operation) {
         "sce-host-clock-now" -> listOf("utc_ms" to "0", "monotonic_ms" to "0")
         "sce-host-clock-zone" -> listOf("zone_id" to "", "utc_offset_s" to 0)
-        "sce-host-kv-get" -> listOf("found" to false, "value" to "")
+        "sce-host-kv-get" -> listOf("found" to false, "value" to "", "version" to "0")
         "sce-host-kv-put" -> listOf("replaced" to false)
+        "sce-host-kv-put-if" -> listOf("written" to false, "version" to "0")
         "sce-host-kv-delete", "sce-host-notify-cancel" -> listOf("existed" to false)
         "sce-host-kv-next-key" -> listOf("found" to false, "key" to "")
         "sce-host-notify-permission", "sce-host-notify-request-permission" -> listOf("state" to "")
