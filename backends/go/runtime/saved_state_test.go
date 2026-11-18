@@ -13,7 +13,7 @@ import (
 )
 
 // The shared saved-state texts every backend reads (docs/adr/0045, section 8):
-// format 3 in `saved/` and the unchanged format 1 in `saved/format1/`. The
+// format 4 in `saved/` and the unchanged format 1 in `saved/format1/`. The
 // format-2 texts in `saved/format2/` are read as other texts, which
 // sharedFormat2Texts gives.
 func sharedSavedTexts(t *testing.T) map[string]string {
@@ -78,7 +78,7 @@ func TestATreeTextHoldsEveryChildWithItsSession(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if saved.Format() != SavedFormat3 || len(saved.Invokes.Children) == 0 {
+	if saved.Format() != SavedFormat4 || len(saved.Invokes.Children) == 0 {
 		t.Fatalf("format %d with %d children", saved.Format(), len(saved.Invokes.Children))
 	}
 	child := saved.Invokes.Children[0]
@@ -92,7 +92,8 @@ func TestATreeTextHoldsEveryChildWithItsSession(t *testing.T) {
 }
 
 const minimalSession = `"shape":"s","sessionid":"root","configuration":["a"],"current":"a","variables":{},` +
-	`"history":{},"pending":[],"invokes":[],"invokestarts":{},"hostinvokes":[],"hostinvoketoken":"0",` +
+	`"history":{},"pending":[],"invokes":[],"invokestarts":{},"hostinvokes":[],"hostinvokestarts":{},` +
+	`"hostinvoketoken":"0",` +
 	`"sendseq":"0","external":[]`
 
 func TestATextTheFormatsDoNotCarryIsRefusedForTheMemberThatBreaksIt(t *testing.T) {
@@ -100,24 +101,34 @@ func TestATextTheFormatsDoNotCarryIsRefusedForTheMemberThatBreaksIt(t *testing.T
 		{"not JSON", `{"format":`, "the saved state is not JSON (it ends where a value was expected)"},
 		{"not an object", `[]`, "the saved state is not an object"},
 		{"no format", `{}`, "the saved state has no 'format'"},
-		{"a format of the future", `{"format":4}`,
-			"the saved state is format 4, and this runtime reads formats 1, 2 and 3"},
-		{"format as a text", `{"format":"3"}`,
-			`the saved state is format "3", and this runtime reads formats 1, 2 and 3`},
+		{"a format of the future", `{"format":5}`,
+			"the saved state is format 5, and this runtime reads formats 1, 2, 3 and 4"},
+		{"format as a text", `{"format":"4"}`,
+			`the saved state is format "4", and this runtime reads formats 1, 2, 3 and 4`},
+		{"a host-run invocation with no start number",
+			`{"format":4,` + strings.Replace(minimalSession, `"hostinvokes":[]`,
+				`"hostinvokes":[{"type":"x","id":"h","src":"","params":{},"data":"","content":"","due":null}]`, 1) + `}`,
+			"'hostinvokes[0]' has no 'start'"},
+		{"a host-run start counted from 0",
+			`{"format":4,` + strings.Replace(minimalSession, `"hostinvokestarts":{}`, `"hostinvokestarts":{"h":"0"}`, 1) + `}`,
+			"'hostinvokestarts.h' (0) is not a count of starts, a whole number from 1"},
+		{"a session with no count of host-run starts",
+			`{"format":4,` + strings.Replace(minimalSession, `"hostinvokestarts":{},`, ``, 1) + `}`,
+			"the saved state has no 'hostinvokestarts'"},
 		{"a session id that is no Nmtoken",
-			`{"format":3,` + strings.Replace(minimalSession, `"root"`, `"a b"`, 1) + `}`,
+			`{"format":4,` + strings.Replace(minimalSession, `"root"`, `"a b"`, 1) + `}`,
 			"'sessionid' (a b) is not an XML Nmtoken, which a session id is"},
 		{"a session id that is no Nmtoken in format 2",
 			`{"format":2,` + strings.Replace(minimalSession, `"root"`, `"a b"`, 1) + `}`,
 			"'sessionid' (a b) is not an XML Nmtoken, which a session id is"},
 		{"a count with a leading zero",
-			`{"format":3,` + strings.Replace(minimalSession, `"invokestarts":{}`, `"invokestarts":{"w":"01"}`, 1) + `}`,
+			`{"format":4,` + strings.Replace(minimalSession, `"invokestarts":{}`, `"invokestarts":{"w":"01"}`, 1) + `}`,
 			"'invokestarts.w' (01) is not a count of starts, a whole number from 1"},
 		{"a token that is no digits",
-			`{"format":3,` + strings.Replace(minimalSession, `"hostinvoketoken":"0"`, `"hostinvoketoken":"x"`, 1) + `}`,
+			`{"format":4,` + strings.Replace(minimalSession, `"hostinvoketoken":"0"`, `"hostinvoketoken":"x"`, 1) + `}`,
 			"'hostinvoketoken' (x) is not a whole number a token can be"},
 		{"revisions that name nothing",
-			`{"format":3,` + minimalSession + `,"revisions":{}}`,
+			`{"format":4,` + minimalSession + `,"revisions":{}}`,
 			"'revisions' names no schema; a state whose record schemas are all in their first revision leaves it out"},
 		{"a send to the parent in format 1",
 			`{"format":1,"shape":"s","configuration":["a"],"current":"a","variables":{},"history":{},` +
@@ -125,7 +136,7 @@ func TestATextTheFormatsDoNotCarryIsRefusedForTheMemberThatBreaksIt(t *testing.T
 				`"hostinvokes":[],"hostinvoketoken":"0","sendseq":"0","external":[]}`,
 			"'pending[0].act' is 'parent', which is not raise, internal or host, the acts of format 1"},
 		{"an act no format names",
-			`{"format":3,` + strings.Replace(minimalSession, `"pending":[]`,
+			`{"format":4,` + strings.Replace(minimalSession, `"pending":[]`,
 				`"pending":[{"due":"5","act":"fax"}]`, 1) + `}`,
 			"'pending[0].act' is 'fax', which is not raise, internal, host, parent or child"},
 	}
@@ -149,12 +160,12 @@ func TestAChildSessionIsRefusedByItsPath(t *testing.T) {
 		return strings.Replace(minimalSession, `"invokes":[]`, `"invokes":[`+child+`]`, 1)
 	}
 	bad := withSession(strings.Replace(minimalSession, `"configuration":["a"]`, `"configuration":[1]`, 1))
-	_, err := SavedStateFromJSON(`{"format":3,` + holding(bad) + `}`)
+	_, err := SavedStateFromJSON(`{"format":4,` + holding(bad) + `}`)
 	want := "the session at invokes[0].session: 'configuration' is not a text"
 	if err == nil || err.Error() != want {
 		t.Fatalf("refused as %v, want %q", err, want)
 	}
-	_, err = SavedStateFromJSON(`{"format":3,` + holding(withSession(holding(bad))) + `}`)
+	_, err = SavedStateFromJSON(`{"format":4,` + holding(withSession(holding(bad))) + `}`)
 	want = "the session at invokes[0].session.invokes[0].session: 'configuration' is not a text"
 	if err == nil || err.Error() != want {
 		t.Fatalf("a grandchild is refused as %v, want %q", err, want)
@@ -162,8 +173,8 @@ func TestAChildSessionIsRefusedByItsPath(t *testing.T) {
 }
 
 func TestAChildThatStatesAFormatIsRefused(t *testing.T) {
-	child := `{"id":"w","start":"1","invokeid":"w","document":"w","session":{"format":3,` + minimalSession + `}}`
-	text := `{"format":3,` + strings.Replace(minimalSession, `"invokes":[]`, `"invokes":[`+child+`]`, 1) + `}`
+	child := `{"id":"w","start":"1","invokeid":"w","document":"w","session":{"format":4,` + minimalSession + `}}`
+	text := `{"format":4,` + strings.Replace(minimalSession, `"invokes":[]`, `"invokes":[`+child+`]`, 1) + `}`
 	_, err := SavedStateFromJSON(text)
 	want := "'invokes[0].session' states a format, which only the root of a tree does"
 	if err == nil || err.Error() != want {
@@ -181,11 +192,12 @@ func queuedEvent(name, origin string) string {
 		`,"invokeid":"","hostinvoketoken":null}`
 }
 
-// withQueued is a format-3 session whose queue holds events and whose
-// `pending` holds sends, each list written as its members.
+// withQueued is a format-4 session, whose events are held as format 3 holds
+// them, whose queue holds events and whose `pending` holds sends, each list
+// written as its members.
 func withQueued(events, sends string) string {
 	session := strings.Replace(minimalSession, `"external":[]`, `"external":[`+events+`]`, 1)
-	return `{"format":3,` + strings.Replace(session, `"pending":[]`, `"pending":[`+sends+`]`, 1) + `}`
+	return `{"format":4,` + strings.Replace(session, `"pending":[]`, `"pending":[`+sends+`]`, 1) + `}`
 }
 
 // waitingSend is a waiting send of act, with origin as its `origin` and
@@ -293,7 +305,7 @@ func TestAFormatThreeSendOfAnotherSessionIsRefused(t *testing.T) {
 
 	child := strings.Replace(strings.Replace(minimalSession, `"sessionid":"root"`, `"sessionid":"root.w"`, 1),
 		`"pending":[]`, `"pending":[`+waitingSend("parent", pairOf("root"))+`]`, 1)
-	tree := `{"format":3,` + strings.Replace(minimalSession, `"invokes":[]`,
+	tree := `{"format":4,` + strings.Replace(minimalSession, `"invokes":[]`,
 		`"invokes":[{"id":"w","start":"1","invokeid":"w","document":"w","session":{`+child+`}}]`, 1) + `}`
 	_, err = SavedStateFromJSON(tree)
 	want = "the session at invokes[0].session: 'pending[0].sender' is 'root', and this session is 'root.w': " +
@@ -521,7 +533,7 @@ var sharedFormat2Root = filepath.Join("..", "..", "..", "sce-build", "tests", "f
 	"format2")
 
 // sharedFormat2Texts is each format-2 reading fixture by its name, with the
-// format-3 text `read_as/` holds for it under the same name.
+// format-4 text `read_as/` holds for it under the same name.
 func sharedFormat2Texts(t *testing.T) map[string][2]string {
 	t.Helper()
 	entries, err := os.ReadDir(sharedFormat2Root)
@@ -552,11 +564,48 @@ func sharedFormat2Texts(t *testing.T) map[string][2]string {
 	return texts
 }
 
+// docs/adr/0107, D4: a format-3 host-run invocation is read as the first start
+// of its `<invoke>` and counted so, and written back as format 4 with the number
+// after its id and the count after `hostinvokes`; a format-4 text keeps each
+// start number and each count, one of an `<invoke>` not running among them, as
+// written.
+func TestAHostInvocationsStartNumberIsReadAndWrittenBack(t *testing.T) {
+	host := `{"type":"x-host","id":"h","src":"","params":{},"data":"","content":"","due":null}`
+	format3 := `{"format":3,` + strings.Replace(strings.Replace(minimalSession, `"hostinvokestarts":{},`, ``, 1),
+		`"hostinvokes":[]`, `"hostinvokes":[`+host+`]`, 1) + `}`
+	saved, err := SavedStateFromJSON(format3)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if saved.HostInvokes[0].Start != 1 || saved.HostInvokeStart("h") != 1 {
+		t.Errorf("read as start %d of a count of %d", saved.HostInvokes[0].Start, saved.HostInvokeStart("h"))
+	}
+	want := `{"format":4,` + strings.Replace(strings.Replace(minimalSession, `"hostinvokes":[]`,
+		`"hostinvokes":[{"type":"x-host","id":"h","start":"1","src":"","params":{},"data":"","content":"","due":null}]`, 1),
+		`"hostinvokestarts":{}`, `"hostinvokestarts":{"h":"1"}`, 1) + `}`
+	if written := saved.ToJSON(); written != want {
+		t.Errorf("written back as\n%s\nwant\n%s", written, want)
+	}
+
+	format4 := strings.Replace(strings.Replace(want, `"start":"1"`, `"start":"3"`, 1),
+		`"hostinvokestarts":{"h":"1"}`, `"hostinvokestarts":{"done":"2","h":"3"}`, 1)
+	again, err := SavedStateFromJSON(format4)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if again.HostInvokes[0].Start != 3 || again.HostInvokeStart("h") != 3 || again.HostInvokeStart("done") != 2 {
+		t.Errorf("read as start %d, counts %+v", again.HostInvokes[0].Start, again.HostInvokeStarts)
+	}
+	if written := again.ToJSON(); written != format4 {
+		t.Errorf("written back as\n%s\nthe text is\n%s", written, format4)
+	}
+}
+
 // docs/adr/0090, section 7: a format-2 text is read by the table of section 7,
 // each queued event's origin and each waiting send's as the pair and the sender
-// the table gives, and is written back as format 3: the text `read_as/` holds.
-// That text is format 3, and reads and writes back as itself.
-func TestAFormatTwoTextIsReadByTheTableAndWrittenBackAsFormatThree(t *testing.T) {
+// the table gives, and is written back as format 4: the text `read_as/` holds.
+// That text is format 4, and reads and writes back as itself.
+func TestAFormatTwoTextIsReadByTheTableAndWrittenBackAsFormatFour(t *testing.T) {
 	for name, texts := range sharedFormat2Texts(t) {
 		format2, readAs := texts[0], texts[1]
 		saved, err := SavedStateFromJSON(format2)
@@ -564,7 +613,7 @@ func TestAFormatTwoTextIsReadByTheTableAndWrittenBackAsFormatThree(t *testing.T)
 			t.Errorf("%s: refused: %v", name, err)
 			continue
 		}
-		if saved.Format() != SavedFormat3 {
+		if saved.Format() != SavedFormat4 {
 			t.Errorf("%s: a tree read from format 2 is written as format %d", name, saved.Format())
 		}
 		if written := saved.ToJSON(); written != readAs {

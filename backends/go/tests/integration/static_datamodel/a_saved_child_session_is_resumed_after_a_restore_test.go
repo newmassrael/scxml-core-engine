@@ -235,7 +235,7 @@ func TestAnEventSavedInTheChildsQueueIsTakenByTheResumedChild(t *testing.T) {
 	// it, then ends on `b`.
 	shared := sharedInvokeText(t, false)
 	empty := `"configuration":["first"],"current":"first","variables":{},"history":{},"pending":[],"invokes":[],` +
-		`"invokestarts":{},"hostinvokes":[],"hostinvoketoken":"0","sendseq":"0","external":[]`
+		`"invokestarts":{},"hostinvokes":[],"hostinvokestarts":{},"hostinvoketoken":"0","sendseq":"0","external":[]`
 	queued := strings.Replace(empty, `"external":[]`,
 		`"external":[{"name":"a","data":"","type":"external","sendid":"","origin":null,"sender":null,"invokeid":"","hostinvoketoken":null}]`, 1)
 	text := strings.Replace(shared, empty, queued, 1)

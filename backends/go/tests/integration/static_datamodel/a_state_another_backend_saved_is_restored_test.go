@@ -209,7 +209,7 @@ func TestAFormatOneStateIsRestoredAndTakesTheMachinesOwnSession(t *testing.T) {
 			continue
 		}
 		// What a format-1 text holds is what a restore reads; saving it again writes
-		// format 3, with the machine's own session id, and a text this runtime
+		// format 4, with the machine's own session id, and a text this runtime
 		// reads: a waiting send the format-1 text stored with no sender is the
 		// send of the session that resumed it (docs/adr/0090, section 7).
 		again, err := machinesBySavedStem[stem](saved, savedAtMs)
@@ -217,8 +217,8 @@ func TestAFormatOneStateIsRestoredAndTakesTheMachinesOwnSession(t *testing.T) {
 			t.Errorf("%s: restoring was refused: %v", name, err)
 			continue
 		}
-		if !strings.HasPrefix(again, `{"format":3,`) {
-			t.Errorf("%s: saved again as %s, which is not format 3", name, again)
+		if !strings.HasPrefix(again, `{"format":4,`) {
+			t.Errorf("%s: saved again as %s, which is not format 4", name, again)
 		}
 		if _, err := sce.SavedStateFromJSON(again); err != nil {
 			t.Errorf("%s: saved again as a text that is refused: %v\n%s", name, err, again)

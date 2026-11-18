@@ -412,6 +412,103 @@ func TestAMachineAsksTheKeyValueStoreOfItsHost(t *testing.T) {
 	})
 }
 
+// settleKv drives a key-value machine as the scenarios do: a step, or ticks for a
+// machine that keeps a scheduler.
+func settleKv(engine *sce.Engine[static_host_kv.StaticHostKvState, static_host_kv.StaticHostKvEvent],
+	policy *static_host_kv.StaticHostKvPolicy) {
+	scheduled, needsScheduler := any(policy).(interface{ NeedsEventScheduler() bool })
+	if !needsScheduler || !scheduled.NeedsEventScheduler() {
+		engine.Step()
+		return
+	}
+	for i := 0; i < hostSettleTicks; i++ {
+		engine.Tick()
+	}
+}
+
+// docs/adr/0107, D4: a put-if the host carried out, saved before its answer was
+// taken, is started again by the restore under the identity it had, and the host
+// answers it with the first result rather than judging the store a second time;
+// a start the document makes afterwards takes the next number and is an
+// operation of its own.
+func TestARestoredPutIfIsAnsweredWithTheFirstResultOfItsInvocation(t *testing.T) {
+	host := hf.NewReferenceHost(hf.NewScriptedClock(), &scriptTransport{})
+
+	// The first process: the host writes, and its answer is lost with the process
+	// before the machine takes it.
+	policy := static_host_kv.NewStaticHostKvPolicy()
+	policy.SessionID = sce.GenerateSessionID()
+	first := sce.NewEngine[static_host_kv.StaticHostKvState, static_host_kv.StaticHostKvEvent](&policy)
+	first.SetClock(sce.NewManualClock(0))
+	hf.Serve(first, host)
+	first.RegisterInvoker("sce-host-kv-put-if", func(event sce.HostInvokeEvent) *sce.HostInvokeResponse {
+		if event.Start != nil {
+			params := hf.Params{}
+			for name, values := range event.Start.Params {
+				if len(values) > 0 {
+					params[name] = values[0]
+				}
+			}
+			host.Start("sce-host-kv-put-if", hf.Invocation{
+				SessionID: event.Start.SessionID, ID: event.Start.InvokeID, Start: event.Start.Start,
+			}, params)
+		}
+		return nil
+	})
+	if err := first.Initialize(); err != nil {
+		t.Fatal(err)
+	}
+	settleKv(first, &policy)
+	first.RaiseExternalByName("host.kv.put_if.request", `{"key":"k","value":"a","expected_version":"0"}`)
+	settleKv(first, &policy)
+	saved, err := static_host_kv.StaticHostKvSaveAt(first, 0)
+	if err != nil {
+		t.Fatalf("saves: %v", err)
+	}
+	if len(saved.HostInvokes) != 1 || saved.HostInvokes[0].InvokeID != "putif" || saved.HostInvokes[0].Start != 1 {
+		t.Fatalf("the put-if is running as its first start: %+v", saved.HostInvokes)
+	}
+	if entries := host.StoreEntries(); !reflect.DeepEqual(entries, [][2]string{{"k", "a"}}) {
+		t.Fatalf("the host wrote %v", entries)
+	}
+
+	// The second process: the restore starts it again, and the host answers it as
+	// it answered the first time, where the store alone would now answer written
+	// false at version 1.
+	restoredPolicy := static_host_kv.NewStaticHostKvPolicy()
+	second, err := static_host_kv.StaticHostKvRestoreAt(&restoredPolicy, saved, sce.NewManualClock(0), 0)
+	if err != nil {
+		t.Fatalf("restores: %v", err)
+	}
+	hf.Serve(second, host)
+	settleKv(second, &restoredPolicy)
+	if restoredPolicy.Outcome() != "done" || !restoredPolicy.Written() || restoredPolicy.PutVersion() != "1" {
+		t.Errorf("the restored put-if published %q, written %v, version %q", restoredPolicy.Outcome(),
+			restoredPolicy.Written(), restoredPolicy.PutVersion())
+	}
+	if entries := host.StoreEntries(); !reflect.DeepEqual(entries, [][2]string{{"k", "a"}}) {
+		t.Errorf("the store holds %v: nothing is written twice", entries)
+	}
+
+	// A start the document makes now is the second start of `putif`.
+	second.RaiseExternalByName("host.kv.put_if.request", `{"key":"k","value":"b","expected_version":"0"}`)
+	settleKv(second, &restoredPolicy)
+	if restoredPolicy.Written() || restoredPolicy.PutVersion() != "1" {
+		t.Errorf("a new start is judged against the store as it is: written %v, version %q",
+			restoredPolicy.Written(), restoredPolicy.PutVersion())
+	}
+	var numbers []uint64
+	for _, start := range host.TakeStarts() {
+		if start.ID != "putif" || start.SessionID != saved.SessionID {
+			t.Errorf("a start of %q in %q, and the session is %q", start.ID, start.SessionID, saved.SessionID)
+		}
+		numbers = append(numbers, start.Number)
+	}
+	if !reflect.DeepEqual(numbers, []uint64{1, 1, 2}) {
+		t.Errorf("the starts are numbered %v", numbers)
+	}
+}
+
 func TestAMachineReadsTheClockOfItsHost(t *testing.T) {
 	policy := static_host_clock.NewStaticHostClockPolicy()
 	policy.SessionID = sce.GenerateSessionID()

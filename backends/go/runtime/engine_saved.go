@@ -362,20 +362,21 @@ func SaveSession[S comparable, E comparable](
 		children = []SavedChild{}
 	}
 	state := &SavedState{
-		Shape:           savedShape,
-		Revisions:       revisions,
-		Features:        slices.Clone(shape.Features),
-		Configuration:   configuration,
-		Current:         policy.GetStateName(engine.GetCurrentState()),
-		Variables:       variables,
-		History:         history,
-		Pending:         pending,
-		Invokes:         SavedInvokes{Resumed: true, Children: children},
-		SessionID:       sessionID,
-		InvokeStarts:    policy.InvokeStarts(),
-		HostInvokes:     saveHostInvokes(engine, wallNowMs),
-		HostInvokeToken: int64(engine.nextHostInvokeToken),
-		AutoSendSeq:     int64(engine.autoSendSeq),
+		Shape:            savedShape,
+		Revisions:        revisions,
+		Features:         slices.Clone(shape.Features),
+		Configuration:    configuration,
+		Current:          policy.GetStateName(engine.GetCurrentState()),
+		Variables:        variables,
+		History:          history,
+		Pending:          pending,
+		Invokes:          SavedInvokes{Resumed: true, Children: children},
+		SessionID:        sessionID,
+		InvokeStarts:     policy.InvokeStarts(),
+		HostInvokes:      saveHostInvokes(engine, wallNowMs),
+		HostInvokeStarts: savedHostInvokeStarts(engine.hostInvokeStarts),
+		HostInvokeToken:  int64(engine.nextHostInvokeToken),
+		AutoSendSeq:      int64(engine.autoSendSeq),
 	}
 	for _, queued := range engine.externalQueue.Snapshot() {
 		// §scxml-5.10: a queued event is saved under the name it ARRIVED under, so a
@@ -418,6 +419,7 @@ func saveHostInvokes[S comparable, E comparable](engine *Engine[S, E], wallNowMs
 			Params:        cloneParams(running.request.Params),
 			Data:          running.request.EventData,
 			Content:       running.request.Content,
+			Start:         int64(running.request.Start),
 		}
 		if running.dueAtMs != nil {
 			due := dueOn(wallNowMs, now, *running.dueAtMs)
@@ -426,6 +428,17 @@ func saveHostInvokes[S comparable, E comparable](engine *Engine[S, E], wallNowMs
 		hosts = append(hosts, host)
 	}
 	return hosts
+}
+
+// savedHostInvokeStarts is the count of each host-run `<invoke>`'s starts as a
+// saved state holds it: by id, ordered by the id's bytes (docs/adr/0107, D4).
+func savedHostInvokeStarts(starts map[string]uint64) []SavedInvokeStart {
+	counted := make([]SavedInvokeStart, 0, len(starts))
+	for id, count := range starts {
+		counted = append(counted, SavedInvokeStart{ID: id, Count: int64(count)})
+	}
+	sort.Slice(counted, func(i, j int) bool { return counted[i].ID < counted[j].ID })
+	return counted
 }
 
 // savePending is every delayed send of engine still waiting, as a saved state
@@ -754,6 +767,24 @@ func judgeSession[S comparable, E comparable](
 				return nil, refuse("hostinvokes[%d] is '%s', which an earlier entry already names", at, host.InvokeID)
 			}
 		}
+		// docs/adr/0107, D4: a running invocation is the latest start of its
+		// `<invoke>`, since a state re-entered cancels the earlier one first.
+		if count := saved.HostInvokeStart(host.InvokeID); host.Start != count {
+			return nil, refuse("hostinvokes[%d] is start %d of '%s', and the session counts %d starts of it: a "+
+				"state re-entered cancels the earlier start before it makes the next one",
+				at, host.Start, host.InvokeID, count)
+		}
+	}
+	// A count of host-run starts names an `<invoke>` the document hands a host.
+	var hostInvokeIDs []string
+	if hostPolicy, ok := any(policy).(HostInvokePolicy); ok {
+		hostInvokeIDs = hostPolicy.HostInvokeIDs()
+	}
+	for _, started := range saved.HostInvokeStarts {
+		if !slices.Contains(hostInvokeIDs, started.ID) {
+			return nil, refuse("hostinvokestarts counts '%s', which the document does not have a host invoker run",
+				started.ID)
+		}
 	}
 	return judged, nil
 }
@@ -874,6 +905,10 @@ func EnterSession[S comparable, E comparable](
 	}
 	armPending(engine, judged.pending, wallNowMs, policy.OwnSessionID())
 	rearmHostInvokes(engine, saved.HostInvokes, wallNowMs)
+	engine.hostInvokeStarts = make(map[string]uint64, len(saved.HostInvokeStarts))
+	for _, started := range saved.HostInvokeStarts {
+		engine.hostInvokeStarts[started.ID] = uint64(started.Count)
+	}
 	engine.nextHostInvokeToken = uint64(saved.HostInvokeToken)
 	engine.autoSendSeq = uint64(saved.AutoSendSeq)
 	if saved.Invokes.Resumed {
@@ -912,6 +947,8 @@ func rearmHostInvokes[S comparable, E comparable](engine *Engine[S, E], hosts []
 			Params:        cloneParams(host.Params),
 			EventData:     host.Data,
 			Content:       host.Content,
+			// docs/adr/0107, D4: the start it repeats, not a new one.
+			Start: uint64(host.Start),
 		}, kind, atMs)
 	}
 }

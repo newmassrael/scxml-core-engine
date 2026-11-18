@@ -67,11 +67,29 @@ type Outcome struct {
 // operation does not accept.
 const invalidArgument = `{"reason":"invalid_argument"}`
 
-// Start is a start the host was given: the operation, the invocation's id and the
-// request's parameters.
+// Invocation is the identity of a host-run invocation (docs/SCE_HOST_FEATURES.md,
+// section 1, "Identity"): the session that started it, the `<invoke>`'s id, and
+// which start of that `<invoke>` in that session it is. A restore starts a
+// running invocation again under the identity it had, so two starts with one
+// identity are one operation asked twice.
+type Invocation struct {
+	// SessionID is the id of the session that started it (`_sessionid`).
+	SessionID string
+	// ID is the `<invoke>`'s id, which its completion names.
+	ID string
+	// Start is which start of the `<invoke>` in the session it is, counted from 1.
+	Start uint64
+}
+
+// Start is a start the host was given: the operation, the invocation's identity
+// and the request's parameters.
 type Start struct {
 	Operation string
 	ID        string
+	// SessionID and Number are the rest of the invocation's identity: the
+	// session that started it and which start of its `<invoke>` it is.
+	SessionID string
+	Number    uint64
 	Params    Params
 }
 
@@ -99,17 +117,22 @@ type ReferenceHost struct {
 	// answerSchemas is the machine's table of answer schemas, which a
 	// generation's answer_schema is resolved through.
 	answerSchemas []sce.AnswerSchema
+	// firstResults is the first result of each put-if, by the identity of its
+	// invocation: what a repeat of that identity is answered with
+	// (docs/adr/0107, D4).
+	firstResults map[Invocation]Outcome
 }
 
 // NewReferenceHost is a host reading clock and carrying HTTP over transport, with
 // an empty store, nothing posted, and the notification permission undetermined.
 func NewReferenceHost(clock ClockSource, transport Transport) *ReferenceHost {
 	return &ReferenceHost{
-		clock:     clock,
-		transport: transport,
-		notify:    notifications{permission: "undetermined", userDecision: "none"},
-		faults:    map[string]string{},
-		provider:  NewScriptedProvider(),
+		clock:        clock,
+		transport:    transport,
+		notify:       notifications{permission: "undetermined", userDecision: "none"},
+		faults:       map[string]string{},
+		provider:     NewScriptedProvider(),
+		firstResults: map[Invocation]Outcome{},
 	}
 }
 
@@ -149,13 +172,19 @@ func (h *ReferenceHost) TakeStarts() []Start {
 	return taken
 }
 
-// Start starts the operation of invocation id with params.
+// Start starts the operation of invocation with params.
 //
 // The second result is false for a type that is not one of the standard host
 // features: the host serves none of it. Otherwise the arguments are judged first
 // (a refusal starts nothing), then a failure the embedding injected, then the
 // operation itself.
-func (h *ReferenceHost) Start(operation, id string, params Params) (Outcome, bool) {
+//
+// A put-if whose invocation was answered before is answered with that first
+// result, a failure included, and changes nothing: the engine starts a running
+// invocation again under the same identity when it restores a state saved before
+// the answer was taken (docs/adr/0107, D4), and the write it asked for was made
+// once.
+func (h *ReferenceHost) Start(operation string, invocation Invocation, params Params) (Outcome, bool) {
 	known := false
 	for _, t := range Types {
 		known = known || t == operation
@@ -167,7 +196,26 @@ func (h *ReferenceHost) Start(operation, id string, params Params) (Outcome, boo
 	for name, value := range params {
 		copied[name] = value
 	}
-	h.starts = append(h.starts, Start{Operation: operation, ID: id, Params: copied})
+	h.starts = append(h.starts, Start{
+		Operation: operation, ID: invocation.ID, SessionID: invocation.SessionID,
+		Number: invocation.Start, Params: copied,
+	})
+	keepsFirst := operation == "sce-host-kv-put-if"
+	if first, repeated := h.firstResults[invocation]; keepsFirst && repeated {
+		log.Printf("[sce] %s %s: start %d of session %s repeated, answered as first",
+			operation, invocation.ID, invocation.Start, invocation.SessionID)
+		return first, true
+	}
+	outcome := h.perform(operation, invocation.ID, params)
+	if keepsFirst && outcome.Kind == Done {
+		h.firstResults[invocation] = outcome
+	}
+	return outcome, true
+}
+
+// perform is the operation itself, as Start describes it, for a start that is
+// not a repeat.
+func (h *ReferenceHost) perform(operation, id string, params Params) Outcome {
 	refused := false
 	switch operation {
 	case "sce-host-kv-get", "sce-host-kv-delete", "sce-host-kv-put":
@@ -182,39 +230,39 @@ func (h *ReferenceHost) Start(operation, id string, params Params) (Outcome, boo
 		refused = h.refusesGeneration(id, params)
 	}
 	if refused {
-		return Outcome{Kind: Refuse, Data: invalidArgument}, true
+		return Outcome{Kind: Refuse, Data: invalidArgument}
 	}
 	if code, ok := h.faults[operation]; ok {
 		log.Printf("[sce] %s %s: fails %s, injected", operation, id, code)
-		return failure(operation, code), true
+		return failure(operation, code)
 	}
 	switch operation {
 	case "sce-host-clock-now":
-		return h.clockNow(), true
+		return h.clockNow()
 	case "sce-host-clock-zone":
-		return h.clockZone(), true
+		return h.clockZone()
 	case "sce-host-kv-get":
-		return h.kvGet(params["key"]), true
+		return h.kvGet(params["key"])
 	case "sce-host-kv-put":
-		return h.kvPut(params["key"], params["value"]), true
+		return h.kvPut(params["key"], params["value"])
 	case "sce-host-kv-put-if":
-		return h.kvPutIf(params["key"], params["value"], params["expected_version"]), true
+		return h.kvPutIf(params["key"], params["value"], params["expected_version"])
 	case "sce-host-kv-delete":
-		return h.kvDelete(params["key"]), true
+		return h.kvDelete(params["key"])
 	case "sce-host-kv-next-key":
-		return h.kvNextKey(params["after"], params["prefix"]), true
+		return h.kvNextKey(params["after"], params["prefix"])
 	case "sce-host-notify-permission":
-		return h.notifyPermission(), true
+		return h.notifyPermission()
 	case "sce-host-notify-request-permission":
-		return h.notifyRequestPermission(), true
+		return h.notifyRequestPermission()
 	case "sce-host-notify-post":
-		return h.notifyPost(params["id"], params["title"], params["body"], params["at_ms"]), true
+		return h.notifyPost(params["id"], params["title"], params["body"], params["at_ms"])
 	case "sce-host-notify-cancel":
-		return h.notifyCancel(params["id"]), true
+		return h.notifyCancel(params["id"])
 	case ModelGenerate:
-		return h.modelGenerate(id, params), true
+		return h.modelGenerate(id, params)
 	default:
-		return h.httpFetch(id, params["method"], params["url"], params["headers"], params["body"]), true
+		return h.httpFetch(id, params["method"], params["url"], params["headers"], params["body"])
 	}
 }
 

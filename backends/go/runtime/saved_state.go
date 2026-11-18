@@ -51,16 +51,24 @@ const (
 	// processor that delivered it wrote, and the sending session's id beside it
 	// (docs/adr/0090, section 7). The tree is format 2's.
 	SavedFormat3 = 3
+	// SavedFormat4 is format 3 with each running host-run invocation's start
+	// number, which start of its `<invoke>` in its session it is, and each
+	// session's count of those starts (docs/adr/0107, D4): a restore starts a
+	// running invocation again under the number it had. The tree and the events
+	// are format 3's.
+	SavedFormat4 = 4
 	// SavedFormat is the format this runtime writes for every state it saves
-	// from a machine. It reads this one, SavedFormat2 and SavedFormat1.
-	SavedFormat = SavedFormat3
+	// from a machine. It reads this one, SavedFormat3, SavedFormat2 and
+	// SavedFormat1.
+	SavedFormat = SavedFormat4
 
 	// SavedSchemaStatus is the stability status of the saved-state wire surface,
 	// held in lockstep with `x-sce-schema-status` in
 	// `schemas/sce-saved-state.v1.schema.json`,
-	// `schemas/sce-saved-state.v2.schema.json` and
-	// `schemas/sce-saved-state.v3.schema.json` (SCE_WIRE_CONTRACTS.md). A flip to
-	// "stable" changes all four in one commit.
+	// `schemas/sce-saved-state.v2.schema.json`,
+	// `schemas/sce-saved-state.v3.schema.json` and
+	// `schemas/sce-saved-state.v4.schema.json` (SCE_WIRE_CONTRACTS.md). A flip to
+	// "stable" changes all five in one commit.
 	SavedSchemaStatus = "pre-release"
 )
 
@@ -201,10 +209,16 @@ type SavedEvent struct {
 type SavedHostInvoke struct {
 	ProcessorType string
 	InvokeID      string
-	Src           string
-	Params        map[string][]string
-	Data          string
-	Content       string
+	// Start is which start of that `<invoke>` in this session it is, counted
+	// from 1: the count HostInvokeStarts holds for it. A restore starts the
+	// invocation again under this number (HostInvokeRequest.Start;
+	// docs/adr/0107, D4). One read from a state of format 1, 2 or 3, which holds
+	// none, is start 1: no host keyed a start by its number before format 4.
+	Start   int64
+	Src     string
+	Params  map[string][]string
+	Data    string
+	Content string
 	// Due is when its deadline comes due, in milliseconds since the Unix epoch on
 	// the wall clock of the host that saved it; nil for an invocation that has
 	// none.
@@ -290,6 +304,12 @@ type SavedState struct {
 	// HostInvokes is the `<invoke>`s a declared host invoker is running
 	// (§scxml-6.4.1), by `(type, id)`.
 	HostInvokes []SavedHostInvoke
+	// HostInvokeStarts is how many times each host-run `<invoke>` of the
+	// document has started in this session, for each started at least once,
+	// ordered by the id's bytes: a start after a restore is numbered on from it
+	// (docs/adr/0107, D4). Read from a state of format 1, 2 or 3, which counted
+	// none, as 1 for each invocation HostInvokes lists.
+	HostInvokeStarts []SavedInvokeStart
 	// HostInvokeToken is the token the next host-run start receives.
 	HostInvokeToken int64
 	// AutoSendSeq is how many ids the machine has generated for a
@@ -327,9 +347,11 @@ func (s *SavedState) Variable(id string) (any, error) {
 
 // Format is the format this state is written in: SavedFormat for a tree of
 // sessions, SavedFormat1 for a state that names its running children by id
-// alone. A tree read from a format-2 text is written back as format 3, since it
-// holds the pairs its origins were read as (docs/adr/0090, section 7); a
-// format-1 state stays format 1, which has no place for a child's session.
+// alone. A tree read from a format-2 or format-3 text is written back as format
+// 4, since it holds the pairs its origins were read as (docs/adr/0090, section
+// 7) and the start numbers its host-run invocations were read as
+// (docs/adr/0107, D4); a format-1 state stays format 1, which has no place for
+// a child's session.
 func (s *SavedState) Format() int {
 	if s.Invokes.Resumed {
 		return SavedFormat
@@ -352,7 +374,18 @@ func (s *SavedState) BoundSessionID() (string, bool) {
 // when it was saved: 0 for one that had not, and for every one of a format-1
 // state, which holds no count.
 func (s *SavedState) InvokeStart(id string) int64 {
-	for _, started := range s.InvokeStarts {
+	return countOf(s.InvokeStarts, id)
+}
+
+// HostInvokeStart is how many times the host-run `<invoke>` id had started in
+// this session when it was saved: 0 for one that had not.
+func (s *SavedState) HostInvokeStart(id string) int64 {
+	return countOf(s.HostInvokeStarts, id)
+}
+
+// countOf is the count starts holds for id, 0 for none.
+func countOf(starts []SavedInvokeStart, id string) int64 {
+	for _, started := range starts {
 		if started.ID == id {
 			return started.Count
 		}
@@ -416,9 +449,18 @@ func (s *SavedState) writeSessionMembers(members *JSONObject) {
 	}
 	hosts := make([]any, len(s.HostInvokes))
 	for at, host := range s.HostInvokes {
-		hosts[at] = host.toJSONValue()
+		hosts[at] = host.toJSONValue(format)
 	}
 	members.Set("hostinvokes", hosts)
+	// docs/adr/0107, D4: format 4's count of host-run starts, after the
+	// invocations.
+	if format >= SavedFormat4 {
+		hostStarts := NewJSONObject()
+		for _, started := range s.HostInvokeStarts {
+			hostStarts.Set(started.ID, strconv.FormatInt(started.Count, 10))
+		}
+		members.Set("hostinvokestarts", hostStarts)
+	}
 	members.Set("hostinvoketoken", strconv.FormatInt(s.HostInvokeToken, 10))
 	members.Set("sendseq", strconv.FormatInt(s.AutoSendSeq, 10))
 	external := make([]any, len(s.External))
@@ -504,10 +546,15 @@ func setSavedOrigin(members *JSONObject, origin *EventOrigin, sender string) {
 	}
 }
 
-func (h SavedHostInvoke) toJSONValue() *JSONObject {
+// toJSONValue is the invocation as a text of format writes it: format 4 writes
+// its start after its id; format 1 holds none.
+func (h SavedHostInvoke) toJSONValue(format int) *JSONObject {
 	members := NewJSONObject()
 	members.Set("type", h.ProcessorType)
 	members.Set("id", h.InvokeID)
+	if format >= SavedFormat4 {
+		members.Set("start", strconv.FormatInt(h.Start, 10))
+	}
 	members.Set("src", h.Src)
 	members.Set("params", paramsToJSON(h.Params))
 	members.Set("data", h.Data)
@@ -572,7 +619,7 @@ func (s SavedSend) toJSONValue(format int) *JSONObject {
 	return members
 }
 
-// SavedStateFromJSON reads `sce-saved-state` JSON, of format 1, 2 or 3. The
+// SavedStateFromJSON reads `sce-saved-state` JSON, of format 1, 2, 3 or 4. The
 // shape is not judged here; the machine that restores it knows its own.
 //
 // The format is judged before anything else. A format-3 origin is read as it is
@@ -600,9 +647,11 @@ func SavedStateFromJSON(text string) (*SavedState, error) {
 		format = SavedFormat2
 	case JSONNumber("3"):
 		format = SavedFormat3
+	case JSONNumber("4"):
+		format = SavedFormat4
 	default:
-		return nil, refuse("the saved state is format %s, and this runtime reads formats %d, %d and %d",
-			WriteJSON(written), SavedFormat1, SavedFormat2, SavedFormat3)
+		return nil, refuse("the saved state is format %s, and this runtime reads formats %d, %d, %d and %d",
+			WriteJSON(written), SavedFormat1, SavedFormat2, SavedFormat3, SavedFormat4)
 	}
 	return savedSessionFromJSON(members, format)
 }
@@ -754,7 +803,7 @@ func savedSessionFromJSON(members *JSONObject, format int) (*SavedState, error) 
 			switch {
 			case format == SavedFormat2 && act.Sender == "":
 				act.Origin, act.Sender = ScxmlOrigin(sessionID), sessionID
-			case format == SavedFormat3 && act.Sender != sessionID:
+			case format >= SavedFormat3 && act.Sender != sessionID:
 				return nil, refuse("'pending[%d].sender' is '%s', and this session is '%s': a %s act is this "+
 					"session's own send", at, act.Sender, sessionID, act.Kind)
 			}
@@ -786,11 +835,45 @@ func savedSessionFromJSON(members *JSONObject, format int) (*SavedState, error) 
 		return nil, err
 	}
 	for at, item := range hosts {
-		host, err := savedHostInvokeFromJSON(item, fmt.Sprintf("hostinvokes[%d]", at))
+		host, err := savedHostInvokeFromJSON(item, fmt.Sprintf("hostinvokes[%d]", at), format)
 		if err != nil {
 			return nil, err
 		}
 		state.HostInvokes = append(state.HostInvokes, host)
+	}
+	// docs/adr/0107, D4: format 4's count of host-run starts. A state of an
+	// earlier format counted none: each invocation it lists is its `<invoke>`'s
+	// first start, as savedHostInvokeFromJSON read it.
+	if format >= SavedFormat4 {
+		counted, err := field("hostinvokestarts")
+		if err != nil {
+			return nil, err
+		}
+		countedMembers, ok := counted.(*JSONObject)
+		if !ok {
+			return nil, refuse("'hostinvokestarts' is not an object")
+		}
+		for _, id := range countedMembers.Keys() {
+			count, _ := countedMembers.Get(id)
+			written, ok := count.(string)
+			if !ok {
+				return nil, refuse("'hostinvokestarts.%s' is not a text", id)
+			}
+			n, err := readSavedCount(written, "hostinvokestarts."+id)
+			if err != nil {
+				return nil, err
+			}
+			state.HostInvokeStarts = append(state.HostInvokeStarts, SavedInvokeStart{ID: id, Count: n})
+		}
+	} else {
+		for _, host := range state.HostInvokes {
+			if countOf(state.HostInvokeStarts, host.InvokeID) == 0 {
+				state.HostInvokeStarts = append(state.HostInvokeStarts, SavedInvokeStart{ID: host.InvokeID, Count: host.Start})
+			}
+		}
+		sort.Slice(state.HostInvokeStarts, func(i, j int) bool {
+			return state.HostInvokeStarts[i].ID < state.HostInvokeStarts[j].ID
+		})
 	}
 
 	for _, counter := range []struct {
@@ -1085,7 +1168,7 @@ func savedEventFromJSON(value any, what string, format int) (SavedEvent, error) 
 			return SavedEvent{}, err
 		}
 	}
-	if format == SavedFormat3 {
+	if format >= SavedFormat3 {
 		if event.Origin, event.Sender, err = savedOriginFromJSON(members, what); err != nil {
 			return SavedEvent{}, err
 		}
@@ -1243,12 +1326,22 @@ func savedParamsFromJSON(members *JSONObject, what string) (map[string][]string,
 	return read, nil
 }
 
-func savedHostInvokeFromJSON(value any, what string) (SavedHostInvoke, error) {
+func savedHostInvokeFromJSON(value any, what string, format int) (SavedHostInvoke, error) {
 	members, err := savedMemberObject(value, what)
 	if err != nil {
 		return SavedHostInvoke{}, err
 	}
-	var host SavedHostInvoke
+	// docs/adr/0107, D4: one of format 1, 2 or 3 is its `<invoke>`'s first start.
+	host := SavedHostInvoke{Start: 1}
+	if format >= SavedFormat4 {
+		startText, err := savedMemberText(members, what, "start")
+		if err != nil {
+			return SavedHostInvoke{}, err
+		}
+		if host.Start, err = readSavedCount(startText, what+".start"); err != nil {
+			return SavedHostInvoke{}, err
+		}
+	}
 	text := func(key string, into *string) error {
 		written, err := savedMemberText(members, what, key)
 		if err != nil {
@@ -1375,7 +1468,7 @@ func savedSendFromJSON(value any, what string, format int) (SavedSend, error) {
 func savedSendOriginFromJSON(
 	members *JSONObject, what string, kind SavedActKind, format int,
 ) (*EventOrigin, string, error) {
-	if format != SavedFormat3 {
+	if format < SavedFormat3 {
 		stored, err := savedMemberText(members, what, "origin")
 		if err != nil {
 			return nil, "", err

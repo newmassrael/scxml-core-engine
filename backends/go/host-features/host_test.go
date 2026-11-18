@@ -28,13 +28,94 @@ func decode(t *testing.T, outcome Outcome) map[string]any {
 	return fields
 }
 
+// startNumber numbers the starts start makes, so no two of them are one
+// invocation asked twice.
+var startNumber uint64
+
 func start(t *testing.T, h *ReferenceHost, operation string, params Params) Outcome {
 	t.Helper()
-	outcome, served := h.Start(operation, "id", params)
+	startNumber++
+	outcome, served := h.Start(operation, Invocation{SessionID: "session", ID: "id", Start: startNumber}, params)
 	if !served {
 		t.Fatalf("%s is a standard type and was not served", operation)
 	}
 	return outcome
+}
+
+// startAs starts operation as invocation, which a test names to ask it twice.
+func startAs(t *testing.T, h *ReferenceHost, operation string, invocation Invocation, params Params) Outcome {
+	t.Helper()
+	outcome, served := h.Start(operation, invocation, params)
+	if !served {
+		t.Fatalf("%s is a standard type and was not served", operation)
+	}
+	return outcome
+}
+
+// docs/adr/0107, D4: a put-if started again under the identity it had is
+// answered with its first result and writes nothing, and a start of another
+// number, of another session or of another `<invoke>` is an operation of its
+// own.
+func TestAPutIfRepeatedUnderItsIdentityIsAnsweredWithItsFirstResult(t *testing.T) {
+	h := NewReferenceHost(NewScriptedClock(), unreachable{})
+	first := Invocation{SessionID: "s1", ID: "putif", Start: 1}
+	wrote := startAs(t, h, "sce-host-kv-put-if", first, Params{"key": "k", "value": "a", "expected_version": "0"})
+	if fields := decode(t, wrote); fields["written"] != true || fields["version"] != "1" {
+		t.Fatalf("the first put-if answered %v", fields)
+	}
+	// The repeat finds the key at version 1, which would answer written false; it
+	// is answered as the first start was, and the store is as it was.
+	again := startAs(t, h, "sce-host-kv-put-if", first, Params{"key": "k", "value": "a", "expected_version": "0"})
+	if again != wrote {
+		t.Fatalf("the repeat answered %+v, the first %+v", again, wrote)
+	}
+	if entries := h.StoreEntries(); len(entries) != 1 || entries[0] != [2]string{"k", "a"} {
+		t.Fatalf("the store holds %v", entries)
+	}
+	// Each of these is a new identity, judged against the store as it is.
+	for _, other := range []Invocation{
+		{SessionID: "s1", ID: "putif", Start: 2},
+		{SessionID: "s2", ID: "putif", Start: 1},
+		{SessionID: "s1", ID: "other", Start: 1},
+	} {
+		lost := decode(t, startAs(t, h, "sce-host-kv-put-if", other,
+			Params{"key": "k", "value": "b", "expected_version": "0"}))
+		if lost["written"] != false || lost["version"] != "1" {
+			t.Errorf("%+v answered %v", other, lost)
+		}
+	}
+	// The host was told every start, the repeat among them, with its identity.
+	starts := h.TakeStarts()
+	if len(starts) != 5 || starts[1].SessionID != "s1" || starts[1].ID != "putif" || starts[1].Number != 1 {
+		t.Fatalf("the starts are %+v", starts)
+	}
+}
+
+// A refusal is no result: a put-if refused and asked again under the same
+// identity is judged again, and a failure is a result the repeat answers.
+func TestAPutIfKeepsItsFailureAndNotItsRefusal(t *testing.T) {
+	h := NewReferenceHost(NewScriptedClock(), unreachable{})
+	refused := Invocation{SessionID: "s1", ID: "putif", Start: 1}
+	for i := 0; i < 2; i++ {
+		if got := startAs(t, h, "sce-host-kv-put-if", refused,
+			Params{"key": "", "value": "a", "expected_version": "0"}); got.Kind != Refuse {
+			t.Fatalf("an empty key was %+v", got)
+		}
+	}
+	h.SetQuota(0)
+	failed := Invocation{SessionID: "s1", ID: "putif", Start: 2}
+	first := startAs(t, h, "sce-host-kv-put-if", failed, Params{"key": "k", "value": "a", "expected_version": "0"})
+	if fields := decode(t, first); fields["error"] != "quota_exceeded" {
+		t.Fatalf("over the quota answered %v", fields)
+	}
+	h.SetQuota(8)
+	if again := startAs(t, h, "sce-host-kv-put-if", failed,
+		Params{"key": "k", "value": "a", "expected_version": "0"}); again != first {
+		t.Fatalf("the repeat answered %+v, the failure was %+v", again, first)
+	}
+	if entries := h.StoreEntries(); len(entries) != 0 {
+		t.Fatalf("the store holds %v", entries)
+	}
 }
 
 // The system clock's monotonic reading never goes below one already answered, and
@@ -62,7 +143,7 @@ func TestTheSystemClockAnswersAMonotonicReadingThatDoesNotDecrease(t *testing.T)
 // A type that is not a standard host feature is not served.
 func TestAnOperationOutsideTheStandardSetIsNotServed(t *testing.T) {
 	h := NewReferenceHost(NewScriptedClock(), unreachable{})
-	if _, served := h.Start("x-app-host", "id", Params{}); served {
+	if _, served := h.Start("x-app-host", Invocation{SessionID: "session", ID: "id", Start: 1}, Params{}); served {
 		t.Fatal("a type the specification does not define was served")
 	}
 }

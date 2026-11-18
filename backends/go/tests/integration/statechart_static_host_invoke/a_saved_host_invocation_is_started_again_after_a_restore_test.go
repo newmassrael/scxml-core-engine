@@ -6,8 +6,8 @@
 // is gone with the process that saved it. A saved state holds each running
 // host-run invocation with the request it was started with and the deadline it
 // had left, and a restore starts it again from that request, never evaluating
-// the element a second time, with `Restarted` set, a new token and what was left
-// of the deadline.
+// the element a second time, with `Restarted` set, a new token, the start number
+// it had (docs/adr/0107, D4) and what was left of the deadline.
 //
 // `statechart_static_host_invoke.scxml` hands a job to the host from `working`.
 // `done.invoke.h` and `error.invoke.h` each leave it and record a digit in
@@ -17,9 +17,10 @@
 //
 // Driven entirely on a manual clock: no case sleeps, and none can be decided by
 // how loaded the build machine is. The shared instance
-// `saved/statechart_static_host_invoke_running.json` is the format-3 text every
-// backend writes (docs/adr/0045); the format-1 text of the same run, under
-// `saved/format1/`, still restores.
+// `saved/statechart_static_host_invoke_running.json` is the format-4 text every
+// backend writes (docs/adr/0107, D4); the format-3 text of the same run, under
+// `saved/format3/`, and the format-1 text, under `saved/format1/`, still
+// restore.
 
 package statechart_static_host_invoke
 
@@ -50,6 +51,18 @@ func sharedText(t *testing.T, format1 bool) string {
 	raw, err := os.ReadFile(filepath.Join(root, "statechart_static_host_invoke_running.json"))
 	if err != nil {
 		t.Fatalf("the shared saved state: %v", err)
+	}
+	return strings.TrimSpace(string(raw))
+}
+
+// format3Text is the same run as format 3 wrote it, before a host-run
+// invocation held its start number.
+func format3Text(t *testing.T) string {
+	t.Helper()
+	raw, err := os.ReadFile(filepath.Join("..", "..", "..", "..", "..", "sce-build", "tests", "fixtures",
+		"host_processor", "saved", "format3", "statechart_static_host_invoke_running.json"))
+	if err != nil {
+		t.Fatalf("the format-3 saved state: %v", err)
 	}
 	return strings.TrimSpace(string(raw))
 }
@@ -147,6 +160,9 @@ func TestAMachineIsSavedWithTheRequestItsInvocationWasStartedWith(t *testing.T) 
 	if first.Token != 0 {
 		t.Errorf("the first token is %d", first.Token)
 	}
+	if first.Start != 1 {
+		t.Errorf("the first start of `h` in this session is numbered %d", first.Start)
+	}
 
 	saved, err := StatechartStaticHostInvokeSaveAt(engine, savedAtMs)
 	if err != nil {
@@ -156,6 +172,9 @@ func TestAMachineIsSavedWithTheRequestItsInvocationWasStartedWith(t *testing.T) 
 		t.Fatalf("one running invocation: %+v", saved.HostInvokes)
 	}
 	entry := saved.HostInvokes[0]
+	if entry.Start != 1 || saved.HostInvokeStart("h") != 1 {
+		t.Errorf("saved as start %d of a count of %d", entry.Start, saved.HostInvokeStart("h"))
+	}
 	if entry.ProcessorType != hostType || entry.InvokeID != "h" || entry.Src != first.Src ||
 		entry.Content != first.Content || entry.Data != first.EventData {
 		t.Errorf("the request the invocation was started with: %+v against %+v", entry, first)
@@ -178,8 +197,9 @@ func TestAMachineIsSavedWithTheRequestItsInvocationWasStartedWith(t *testing.T) 
 }
 
 func TestARestoreAsksNothingOfTheHostUntilTheMachineIsDriven(t *testing.T) {
-	// From the format-3 text, and from the format-1 text of the same run.
-	for _, text := range []string{sharedText(t, false), sharedText(t, true)} {
+	// From the format-4 text, and from the format-3 and format-1 texts of the
+	// same run.
+	for _, text := range []string{sharedText(t, false), format3Text(t), sharedText(t, true)} {
 		engine, _, log := restored(t, text, 1000)
 		if len(log.log) != 0 {
 			t.Error("the restore itself calls nobody")
@@ -215,6 +235,60 @@ func TestARestoredInvocationIsStartedAgainFromTheRequestItWasSavedWith(t *testin
 	}
 	if !sameRequest(again, first) {
 		t.Errorf("the same request, not one evaluated again:\n%+v\n%+v", again, first)
+	}
+	// docs/adr/0107, D4: the same invocation, under the identity it had.
+	if again.Start != first.Start || again.SessionID != first.SessionID {
+		t.Errorf("restarted as start %d of %q, and it was start %d of %q",
+			again.Start, again.SessionID, first.Start, first.SessionID)
+	}
+}
+
+// docs/adr/0107, D4: a restore repeats a running start under its number, and a
+// start the document makes afterwards is numbered on from the count the saved
+// state carried, from the format-4 text and from the format-3 text alike.
+func TestAStartAfterTheRestoredOneTakesTheNextNumber(t *testing.T) {
+	for _, text := range []string{sharedText(t, false), format3Text(t)} {
+		engine, _, log := restored(t, text, 1000)
+		engine.Tick()
+		// Leaving cancels the restarted invocation; starting again is a new start.
+		engine.RaiseExternalByName("leave", "")
+		engine.Tick()
+		engine.RaiseExternalByName("start", "")
+		engine.Tick()
+		starts := log.starts()
+		if len(starts) != 2 || !starts[0].Restarted || starts[0].Start != 1 ||
+			starts[1].Restarted || starts[1].Start != 2 {
+			t.Fatalf("the starts are %+v", starts)
+		}
+		saved, err := StatechartStaticHostInvokeSaveAt(engine, savedAtMs)
+		if err != nil {
+			t.Fatalf("saves: %v", err)
+		}
+		if saved.HostInvokes[0].Start != 2 || saved.HostInvokeStart("h") != 2 {
+			t.Errorf("saved as start %d of a count of %d", saved.HostInvokes[0].Start, saved.HostInvokeStart("h"))
+		}
+	}
+}
+
+// docs/adr/0107, D4: the start number is judged before anything is built: a
+// running invocation is the latest start its session counts, and a count names
+// an `<invoke>` the document hands a host.
+func TestAStartNumberTheSavedSessionCouldNotHaveGivenIsRefused(t *testing.T) {
+	shared := sharedText(t, false)
+	for _, c := range []struct{ what, from, to, expected string }{
+		{"a running start that is not the latest", `"hostinvokestarts":{"h":"1"}`, `"hostinvokestarts":{"h":"2"}`,
+			"hostinvokes[0] is start 1 of 'h', and the session counts 2 starts of it"},
+		{"a count of an invoke the document does not hand a host", `"hostinvokestarts":{"h":"1"}`,
+			`"hostinvokestarts":{"h":"1","stranger":"1"}`,
+			"hostinvokestarts counts 'stranger', which the document does not have a host invoker run"},
+	} {
+		text := strings.Replace(shared, c.from, c.to, 1)
+		if text == shared {
+			t.Fatalf("%s: the change did not apply", c.what)
+		}
+		if _, _, _, err := tryRestore(text, 0); err == nil || !strings.Contains(err.Error(), c.expected) {
+			t.Errorf("%s: refused as %v, want it to contain %q", c.what, err, c.expected)
+		}
 	}
 }
 
@@ -409,7 +483,7 @@ func TestASavedStateNamingAHostInvocationTheDocumentCannotHaveRunIsRefused(t *te
 	}
 	// An invocation named twice.
 	start := strings.Index(shared, `"hostinvokes":[`) + len(`"hostinvokes":[`)
-	end := start + strings.Index(shared[start:], `],"hostinvoketoken"`)
+	end := start + strings.Index(shared[start:], `],"hostinvokestarts"`)
 	one := shared[start:end]
 	twice := strings.Replace(shared, one, one+","+one, 1)
 	if _, _, _, err := tryRestore(twice, 0); err == nil || !strings.Contains(err.Error(), "which an earlier entry already names") {

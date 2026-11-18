@@ -10,8 +10,10 @@ import (
 // Serve registers host as the invoker of every standard type on engine.
 //
 // A start is answered with its completion (a failure is a completion whose error
-// is a code) or its refusal, or not at all when the host holds it. The cancel the
-// engine delivers when a state exits or a deadline passes reaches the host too.
+// is a code) or its refusal, or not at all when the host holds it, and reaches the
+// host with the invocation's identity: the session that started it, the invoke's
+// id and the start number the engine gave it. The cancel the engine delivers when
+// a state exits or a deadline passes reaches the host too.
 func Serve[S comparable, E comparable](engine *sce.Engine[S, E], host *ReferenceHost) {
 	for _, operation := range Types {
 		engine.RegisterInvoker(operation, func(event sce.HostInvokeEvent) *sce.HostInvokeResponse {
@@ -28,7 +30,12 @@ func Serve[S comparable, E comparable](engine *sce.Engine[S, E], host *Reference
 					params[name] = values[0]
 				}
 			}
-			outcome, served := host.Start(operation, event.Start.InvokeID, params)
+			// docs/adr/0107, D4: the invocation's identity, which a restore starts it
+			// again under.
+			invocation := Invocation{
+				SessionID: event.Start.SessionID, ID: event.Start.InvokeID, Start: event.Start.Start,
+			}
+			outcome, served := host.Start(operation, invocation, params)
 			if !served {
 				return nil
 			}

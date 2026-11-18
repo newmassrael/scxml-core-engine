@@ -389,6 +389,17 @@ type HostInvokeRequest struct {
 	// outlive the one that saved. What the host does with that is its business; a
 	// host that cannot tell a second start from a first does not see it.
 	Restarted bool
+	// Start says which start of this `<invoke>` in its session this is, counted
+	// from 1 (docs/SCE_HOST_FEATURES.md, section 1, "Identity"). The engine
+	// assigns it, and a saved state carries it with the invocation and the
+	// count of each `<invoke>`'s starts.
+	//
+	// With SessionID and InvokeID it names the invocation across a save and a
+	// restore, which Token does not: a restore starts a running invocation
+	// again under the number it had, so a host that kept what it answered under
+	// that identity answers the repeat with it (docs/adr/0107, D4). A start the
+	// document makes after the earlier one ended takes the next number.
+	Start uint64
 	// Token says which start of this invoke this is. The engine assigns it,
 	// and a host that finishes later hands it back to CompleteHostInvoke.
 	//
@@ -535,10 +546,22 @@ func (e *Engine[S, E]) PerformHostInvoke(request HostInvokeRequest) bool {
 // handler that completes at once completes a run the engine already knows. A
 // restore starts an invocation again through here, with the deadline it had
 // left (SCE Accepted Subset §2.15).
+//
+// A start the document makes is numbered on from the count of its `<invoke>`;
+// a restart keeps the number the saved state gave it, whose count the restore
+// carried on, since it repeats that start rather than making another
+// (docs/adr/0107, D4).
 func (e *Engine[S, E]) startHostInvoke(handler HostInvokeHandler, request HostInvokeRequest, deadlineAt *int64) {
 	token := e.nextHostInvokeToken
 	e.nextHostInvokeToken++
 	request.Token = token
+	if !request.Restarted {
+		if e.hostInvokeStarts == nil {
+			e.hostInvokeStarts = make(map[string]uint64)
+		}
+		e.hostInvokeStarts[request.InvokeID]++
+		request.Start = e.hostInvokeStarts[request.InvokeID]
+	}
 	// docs/adr/0045: the session that starts it, which the host may serve or
 	// refuse it by, and names again to end it.
 	request.SessionID = e.sessionID()

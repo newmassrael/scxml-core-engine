@@ -168,6 +168,11 @@ type Engine[S comparable, E comparable] struct {
 	// nextHostInvokeToken is the token the next host-run start receives.
 	nextHostInvokeToken uint64
 
+	// hostInvokeStarts is how many times each host-run `<invoke>` has started
+	// in this session, by its id: what numbers a start (HostInvokeRequest.Start;
+	// docs/adr/0107, D4). A save writes it and a restore carries it on.
+	hostInvokeStarts map[string]uint64
+
 	// autoSendSeq is how many ids this machine has generated for a
 	// `<send idlocation>`: the number the last one carried. Counted per machine,
 	// not per process, so a machine's ids do not depend on what else ran beside
