@@ -39,6 +39,17 @@
 //! comes due while it is out of memory is loaded again ([`Pool::due`]), and its
 //! restore arms what came due.
 //!
+//! A host whose binding acknowledges what it carries (the HTTPS binding's
+//! `200`, SCE_MESH.md section 22) acknowledges nothing a crash would lose: it
+//! hands the pool each envelope with [`Pool::receive_with_receipt`] and reads
+//! the envelope's [`Receipt`] once the session it names has run. The run that
+//! takes the envelope in settles it when a durable checkpoint holds what the
+//! session made of it, leaves it pending while the checkpoint's write failed
+//! (a later checkpoint, which the envelope carried again drives, holds it),
+//! and loses it when the session is dropped before one does ([`Fate`]). The
+//! receipt is the session's own: a session's checkpoint numbers start again
+//! when it ends or is taken over, so a number says nothing across sessions.
+//!
 //! A process that loses a key's lease (another process took it over, or a
 //! renewal was refused) stops serving the key: the session is dropped without
 //! being saved, and every request for it that waits, or that arrives while
@@ -227,6 +238,55 @@ impl<T: Transport> Transport for SessionTransport<T> {
     }
 }
 
+/// What became of an envelope handed to the pool, as a host that acknowledges
+/// what its binding carried reads it: SCE_MESH.md section 10.11 acknowledges
+/// nothing before a checkpoint that holds it is durable.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Fate {
+    /// Not settled: its session has not taken it in yet, or took it in and
+    /// holds it in memory, the checkpoint that holds it not written.
+    Pending,
+    /// Settled, and the host may acknowledge it: a durable checkpoint holds
+    /// what its session made of it, or the pool answered or dropped it for
+    /// good without a session (a request answered with a failure status, bytes
+    /// that are not an envelope, a reply to no request, an envelope no key can
+    /// be read from), which receiving it again would not change.
+    Settled,
+    /// Lost: the session that took it in was dropped before a checkpoint
+    /// holding it was durable (its lease was lost, or its end was not
+    /// written), or it was dropped unanswered while this process did not serve
+    /// its key. The host does not acknowledge it, and its sender carries it
+    /// again.
+    Lost,
+}
+
+/// The receipt of one envelope handed to the pool
+/// ([`Pool::receive_with_receipt`]): what became of it, settled by the run of
+/// the session it names. Its clones read the same fate.
+#[derive(Debug, Clone)]
+pub struct Receipt(Arc<Mutex<Fate>>);
+
+impl Receipt {
+    fn new(fate: Fate) -> Self {
+        Self(Arc::new(Mutex::new(fate)))
+    }
+
+    /// What became of the envelope so far. Once it is no longer
+    /// [`Fate::Pending`] it does not change.
+    pub fn fate(&self) -> Fate {
+        *lock(&self.0)
+    }
+
+    /// Settle a pending envelope as `fate`; a settled or lost one stays as it
+    /// is.
+    fn settle(&self, fate: Fate) {
+        let mut held = lock(&self.0);
+        if *held == Fate::Pending {
+            *held = fate;
+        }
+    }
+}
+
 /// The session each request a session sent waits in, by the request's wire
 /// `invoke_id`.
 type Replies = Arc<Mutex<BTreeMap<[u8; 16], String>>>;
@@ -240,6 +300,7 @@ enum Input {
     Envelope {
         peer: String,
         bytes: Vec<u8>,
+        receipt: Receipt,
     },
     Ready(String),
     NotReady(String),
@@ -305,6 +366,9 @@ struct Live<M, T, E> {
     last_active_ms: u64,
     /// Whether a macrostep ran since the state was last saved.
     dirty: bool,
+    /// The receipts of the envelopes taken in since the last durable
+    /// checkpoint, settled by the next one.
+    unsaved: Vec<Receipt>,
 }
 
 /// What the pool answers a request with when it cannot serve its session.
@@ -454,48 +518,65 @@ where
     /// `RpcStatus::InvalidArgument`, and otherwise dropped and told to the
     /// host ([`Self::take_errors`]); either way no session is named.
     pub fn receive(&self, peer: &str, bytes: Vec<u8>) -> Option<String> {
+        self.receive_with_receipt(peer, bytes).0
+    }
+
+    /// [`Self::receive`], with the envelope's [`Receipt`]: the host reads it
+    /// once it has run the session the key names, and acknowledges the
+    /// envelope to its sender only when it is [`Fate::Settled`]. An envelope
+    /// that names no session is settled at once, unless the failure reply to
+    /// its request could not be sent.
+    pub fn receive_with_receipt(&self, peer: &str, bytes: Vec<u8>) -> (Option<String>, Receipt) {
         let placed = {
             let Ok(envelope) = Envelope::decode(&mut SceCursor::new(&bytes)) else {
                 self.error(PoolError::Malformed {
                     peer: peer.to_string(),
                 });
-                return None;
+                return (None, Receipt::new(Fate::Settled));
             };
             self.place(peer, &envelope)
         };
         match placed {
-            Ok(key) => Some(self.post(
-                key,
-                Input::Envelope {
-                    peer: peer.to_string(),
-                    bytes,
-                },
-            )),
+            Ok(key) => {
+                let receipt = Receipt::new(Fate::Pending);
+                let key = self.post(
+                    key,
+                    Input::Envelope {
+                        peer: peer.to_string(),
+                        bytes,
+                        receipt: receipt.clone(),
+                    },
+                );
+                (Some(key), receipt)
+            }
             Err(Unplaced::Reply) => {
                 self.error(PoolError::UnroutedReply {
                     peer: peer.to_string(),
                 });
-                None
+                (None, Receipt::new(Fate::Settled))
             }
             Err(Unplaced::Unkeyed {
                 event,
                 request,
                 reason,
             }) => {
-                match request {
+                let fate = match request {
                     Some(request) => self.refuse(
                         peer,
                         &request,
                         RpcStatus::InvalidArgument,
                         &alloc::format!("the request names no session: {reason}"),
                     ),
-                    None => self.error(PoolError::Unkeyed {
-                        peer: peer.to_string(),
-                        event,
-                        reason,
-                    }),
-                }
-                None
+                    None => {
+                        self.error(PoolError::Unkeyed {
+                            peer: peer.to_string(),
+                            event,
+                            reason,
+                        });
+                        Fate::Settled
+                    }
+                };
+                (None, Receipt::new(fate))
             }
         }
     }
@@ -550,8 +631,8 @@ where
             match self.serve(&slot, session) {
                 Served::Waiting => return,
                 Served::Finished => {
-                    if let Some(finished) = live.take() {
-                        self.finish(&slot, &finished);
+                    if let Some(mut finished) = live.take() {
+                        self.finish(&slot, &mut finished);
                     }
                 }
                 Served::Lost(reason) => {
@@ -931,6 +1012,7 @@ where
             // A machine just started ran its initial macrostep, which no
             // checkpoint holds yet.
             dirty: loaded.is_none(),
+            unsaved: Vec::new(),
         })
     }
 
@@ -996,7 +1078,14 @@ where
             let calls = {
                 let mut endpoint = lock(&session.endpoint);
                 match input {
-                    Input::Envelope { peer, bytes } => endpoint.receive(&peer, bytes),
+                    Input::Envelope {
+                        peer,
+                        bytes,
+                        receipt,
+                    } => {
+                        endpoint.receive(&peer, bytes);
+                        session.unsaved.push(receipt);
+                    }
                     Input::Ready(peer) => endpoint.peer_ready(&peer),
                     Input::NotReady(peer) => endpoint.peer_not_ready(&peer),
                     Input::Tick => endpoint.tick(),
@@ -1117,6 +1206,9 @@ where
                 session.version = sink.version();
                 session.earliest_due = taken.state.earliest_due();
                 session.dirty = false;
+                // Every envelope taken in so far was taken in before the seal:
+                // this checkpoint holds what the session made of each.
+                settle_all(&mut session.unsaved, Fate::Settled);
                 let mut endpoint = lock(&session.endpoint);
                 endpoint.durable(sequence);
                 self.report(key, &mut endpoint);
@@ -1146,9 +1238,11 @@ where
     /// checkpoint made is sealed first and leaves once the removal answered,
     /// as a checkpoint's envelopes leave once it is durable: a process that
     /// fails before restores the session from that checkpoint, and its
-    /// machine makes them again.
-    fn finish(&self, slot: &Slot<F::Machine, T, E>, finished: &Live<F::Machine, T, E>) {
+    /// machine makes them again. The envelopes taken in since that checkpoint
+    /// are settled once the removal answered, and lost when it did not.
+    fn finish(&self, slot: &Slot<F::Machine, T, E>, finished: &mut Live<F::Machine, T, E>) {
         let key = slot.key.as_str();
+        let mut ended = false;
         if let Some(fence) = fence_of(slot) {
             let sequence = finished.sequence.saturating_add(1);
             let mut endpoint = lock(&finished.endpoint);
@@ -1166,6 +1260,7 @@ where
                 Ok(()) if sealed => {
                     endpoint.durable(sequence);
                     self.report(key, &mut endpoint);
+                    ended = true;
                 }
                 Ok(()) => {}
                 Err(WriteError::Conflict(conflict)) => self.error(PoolError::LeaseLost {
@@ -1178,21 +1273,26 @@ where
                 }),
             }
         }
+        let fate = if ended { Fate::Settled } else { Fate::Lost };
+        settle_all(&mut finished.unsaved, fate);
         self.forget_replies(key);
         self.release(slot);
     }
 
     /// Drop `slot`'s session, whose key this process no longer serves for
     /// `reason`, without saving it: what it held for a checkpoint is lost with
-    /// it, since another process serves the key from its last durable one.
-    /// Each request its inbox holds is answered `Unavailable`.
+    /// it, since another process serves the key from its last durable one, and
+    /// so are the envelopes it took in since. Each request its inbox holds is
+    /// answered `Unavailable`.
     fn lose(
         &self,
         slot: &Arc<Slot<F::Machine, T, E>>,
         live: &mut Option<Live<F::Machine, T, E>>,
         reason: String,
     ) {
-        *live = None;
+        if let Some(mut dropped) = live.take() {
+            settle_all(&mut dropped.unsaved, Fate::Lost);
+        }
         *lock(&slot.lease) = LeaseState::Unheld;
         self.forget_replies(&slot.key);
         self.abandon(slot, &Refusal::unavailable(reason));
@@ -1225,8 +1325,8 @@ where
     }
 
     /// Stop serving `slot`'s key: take it out of the table and answer each
-    /// request its inbox held with `refusal`; anything else it held is
-    /// dropped and told to the host.
+    /// request its inbox held with `refusal`, which settles it; anything else
+    /// it held is dropped, told to the host and lost.
     fn abandon(&self, slot: &Arc<Slot<F::Machine, T, E>>, refusal: &Refusal) {
         let held = {
             let mut table = lock(&self.table);
@@ -1236,27 +1336,38 @@ where
             core::mem::take(&mut inbox.queue)
         };
         for input in held {
-            let Input::Envelope { peer, bytes } = input else {
+            let Input::Envelope {
+                peer,
+                bytes,
+                receipt,
+            } = input
+            else {
                 continue;
             };
             let Ok(envelope) = Envelope::decode(&mut SceCursor::new(&bytes)) else {
+                receipt.settle(Fate::Lost);
                 continue;
             };
-            match request_of(&envelope) {
+            let fate = match request_of(&envelope) {
                 Some(request) => self.refuse(&peer, &request, refusal.status, &refusal.reason),
-                None => self.error(PoolError::Dropped {
-                    key: slot.key.clone(),
-                    event: envelope.event_type.to_string(),
-                    reason: refusal.reason.clone(),
-                }),
-            }
+                None => {
+                    self.error(PoolError::Dropped {
+                        key: slot.key.clone(),
+                        event: envelope.event_type.to_string(),
+                        reason: refusal.reason.clone(),
+                    });
+                    Fate::Lost
+                }
+            };
+            receipt.settle(fate);
         }
     }
 
     /// Answer `request`, which arrived on `peer`'s link, with `status` and
     /// `reason`: the reply a requester ends its invocation with, sent by the
-    /// pool because no session of it answers.
-    fn refuse(&self, peer: &str, request: &Request, status: RpcStatus, reason: &str) {
+    /// pool because no session of it answers. The request is settled when the
+    /// reply was handed to the transport, and lost when it could not be.
+    fn refuse(&self, peer: &str, request: &Request, status: RpcStatus, reason: &str) -> Fate {
         let id = lock(&self.environment).envelope_id();
         let sent = refusal_envelope(self.machine.name, request, status, reason, id)
             .map_err(|error| alloc::format!("{error:?}"))
@@ -1265,11 +1376,15 @@ where
                     .transmit(peer, &bytes)
                     .map_err(|failure| alloc::format!("{failure:?}"))
             });
-        if let Err(reason) = sent {
-            self.error(PoolError::NotAnswered {
-                peer: peer.to_string(),
-                reason,
-            });
+        match sent {
+            Ok(()) => Fate::Settled,
+            Err(reason) => {
+                self.error(PoolError::NotAnswered {
+                    peer: peer.to_string(),
+                    reason,
+                });
+                Fate::Lost
+            }
         }
     }
 
@@ -1290,6 +1405,13 @@ where
 
     fn wall_now(&self) -> u64 {
         lock(&self.environment).now_unix_ms()
+    }
+}
+
+/// Settle every receipt of `receipts` as `fate`, and forget them.
+fn settle_all(receipts: &mut Vec<Receipt>, fate: Fate) {
+    for receipt in receipts.drain(..) {
+        receipt.settle(fate);
     }
 }
 
@@ -2588,6 +2710,119 @@ mod tests {
         assert_eq!(replies[1].wire_id, Some(id(0x22, 2)));
         assert!(replies[1].data.contains(r#""members":2"#), "{replies:?}");
         assert_eq!(stored_members(&store.inner, "r1"), 2);
+    }
+
+    /// An envelope's receipt is settled once a durable checkpoint holds what
+    /// its session made of it (SCE_MESH.md section 10.11), and stays pending
+    /// while the store fails the write: a host that acknowledges only settled
+    /// envelopes acknowledges nothing a crash would lose. The copy its sender
+    /// carries again, which the duplicate window drops, drives the checkpoint
+    /// that settles both, and the reply leaves once. One the pool answers
+    /// without a session, and the one that ends its session, are settled too.
+    #[test]
+    fn an_envelope_is_settled_only_once_a_durable_checkpoint_holds_it() {
+        let (clock, probe) = (Clock::new(), Arc::new(Probe::default()));
+        let store = Arc::new(Flaky {
+            inner: MemoryStore::new(),
+            failing: AtomicBool::new(true),
+        });
+        let shared: Arc<dyn SessionStore> = Arc::clone(&store) as Arc<dyn SessionStore>;
+        let (pool, wire) = pool_over("p1", shared, &clock, &probe);
+
+        let (key, first) = pool.receive_with_receipt("client", join("r1", 1));
+        assert_eq!(key.as_deref(), Some("r1"));
+        assert_eq!(first.fate(), Fate::Pending, "its session has not run");
+        pool.run("r1");
+        assert_eq!(
+            first.fate(),
+            Fate::Pending,
+            "settled though no checkpoint holding it was written"
+        );
+        assert!(wire.take().is_empty());
+
+        store.failing.store(false, Ordering::SeqCst);
+        let (_, again) = pool.receive_with_receipt("client", join("r1", 1));
+        pool.run("r1");
+        assert_eq!(first.fate(), Fate::Settled);
+        assert_eq!(again.fate(), Fate::Settled);
+        let replies = wire.take();
+        assert_eq!(replies.len(), 1, "the reply leaves once: {replies:?}");
+        assert_eq!(replies[0].wire_id, Some(id(0x22, 1)));
+        assert_eq!(stored_members(&store.inner, "r1"), 1, "taken in once");
+        pool.take_errors();
+
+        let (key, unkeyed) = pool.receive_with_receipt(
+            "client",
+            from_client("service.request.join", r#"{"who":"x"}"#, 2, true),
+        );
+        assert_eq!(key, None);
+        assert_eq!(
+            unkeyed.fate(),
+            Fate::Settled,
+            "answered InvalidArgument, which receiving it again would not change"
+        );
+        assert_eq!(wire.take()[0].status, Some(RpcStatus::InvalidArgument));
+        let (_, malformed) = pool.receive_with_receipt("client", vec![0xFF]);
+        assert_eq!(malformed.fate(), Fate::Settled);
+
+        let (_, closing) =
+            pool.receive_with_receipt("client", from_client("close", r#"{"room":"r1"}"#, 3, false));
+        pool.run("r1");
+        assert_eq!(
+            closing.fate(),
+            Fate::Settled,
+            "its session's end was written"
+        );
+        assert_eq!(store.get("r1").expect("read"), None);
+    }
+
+    /// An envelope a session took in is lost when the session is dropped
+    /// before a checkpoint holding it is durable: here its write was refused
+    /// by the fence of the process that took the key over. While that process
+    /// holds the key, a request is answered `Unavailable`, which settles it,
+    /// and an envelope that is no request is dropped and lost, so that a host
+    /// acknowledges neither one its machine never took in.
+    #[test]
+    fn an_envelope_a_dropped_session_took_in_is_lost() {
+        let (store, clock, probe) = (MemoryStore::new(), Clock::new(), Arc::new(Probe::default()));
+        let (first, first_wire) = pool("p1", &store, &clock, &probe);
+        let (second, _second_wire) = pool("p2", &store, &clock, &probe);
+        let (_, kept) = first.receive_with_receipt("client", join("r1", 1));
+        first.run("r1");
+        assert_eq!(kept.fate(), Fate::Settled);
+        first_wire.take();
+        clock.advance(LEASE_TTL_MS + 1);
+        deliver(&second, join("r1", 2));
+
+        let (_, refused) = first.receive_with_receipt("client", join("r1", 3));
+        first.run("r1");
+        assert_eq!(
+            refused.fate(),
+            Fate::Lost,
+            "its checkpoint's write was refused by the fence"
+        );
+        assert!(!first.is_live("r1"));
+        assert!(first_wire.take().is_empty(), "its reply never left");
+
+        let (_, request) = first.receive_with_receipt("client", join("r1", 4));
+        let (_, event) = first.receive_with_receipt(
+            "client",
+            from_client("remind", r#"{"room":"r1","after_ms":5}"#, 5, false),
+        );
+        first.run("r1");
+        assert_eq!(request.fate(), Fate::Settled, "answered Unavailable");
+        assert_eq!(event.fate(), Fate::Lost, "dropped while another serves r1");
+        let replies = first_wire.take();
+        let [reply] = replies.as_slice() else {
+            panic!("one reply, got {replies:?}");
+        };
+        assert_eq!(reply.status, Some(RpcStatus::Unavailable));
+        assert_eq!(reply.wire_id, Some(id(0x22, 4)));
+        assert_eq!(
+            kept.fate(),
+            Fate::Settled,
+            "a settled receipt stays settled"
+        );
     }
 
     /// A session is kept with its endpoint: a duplicate of a request it
