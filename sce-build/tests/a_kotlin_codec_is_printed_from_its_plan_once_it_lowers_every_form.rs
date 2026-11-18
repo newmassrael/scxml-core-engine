@@ -331,6 +331,37 @@ fn a_decode_consumes_its_own_bytes_and_a_tail_the_rest_of_the_frame() {
     holds_none("codec_tail", &tail, &["_consumed"]);
 }
 
+/// A bound past what an `Int` holds, the 2^32 - 1 bytes a Zenoh slice is
+/// bounded by, is named by a `Long`, which kotlinc takes the literal as, and a
+/// size is compared with it as with any other; a bound an `Int` holds is still
+/// named by an `Int`.
+///
+/// Turns red where `kotlin_source::most_const` declares every most an `Int`,
+/// which kotlinc refuses for this literal, or every most a `Long`.
+#[test]
+fn a_most_past_what_an_int_holds_is_named_by_a_long() {
+    assert!(unlowered("codec_zenoh_ext_zbuf").is_empty());
+    let text = resource_file("codec_zenoh_ext_zbuf");
+    holds(
+        "codec_zenoh_ext_zbuf",
+        &text,
+        &[
+            "        const val MOST: Long = 4294967295L\n",
+            "if (bytes.size <= MOST) CodecZenohExtZbufValueBytes(bytes) else null\n",
+        ],
+    );
+    holds_none(
+        "codec_zenoh_ext_zbuf",
+        &text,
+        &["const val MOST: Int = 4294967295"],
+    );
+    holds(
+        "codec_repeat_basic",
+        &resource_file("codec_repeat_basic"),
+        &["        const val MOST: Int = 32\n"],
+    );
+}
+
 /// A list of a printed codec is held to its bound in a value class over a list
 /// of sources of the entries' codec, copied where it is made; its count is
 /// derived from how many entries it holds, and each entry is written by its

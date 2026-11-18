@@ -1078,6 +1078,18 @@ pub(crate) fn list_class(struct_name: &str, id: &str) -> String {
     )
 }
 
+/// The declaration of the most a bound's companion names, `MOST`, of `most`
+/// entries or bytes: an `Int`, the type a size is read in, where it holds the
+/// most, and a `Long` where the most lies past it, as a protocol's bound of
+/// 2^32 - 1 bytes does. A size, an `Int`, is compared with either.
+fn most_const(most: u64) -> String {
+    if most <= i32::MAX as u64 {
+        format!("const val MOST: Int = {most}")
+    } else {
+        format!("const val MOST: Long = {most}L")
+    }
+}
+
 /// What the class of a list held within a bound says of it (docs/adr/0065 §6
 /// R2, R7): the bound in words, the constants of its companion that name it,
 /// the test of `entries.size` it makes, and how many entries a value made by
@@ -1114,7 +1126,8 @@ impl ListBound {
             consts.push_str(&format!(
                 "\n\
                  \x20       /// The most entries a value holds.\n\
-                 \x20       const val MOST: Int = {most}\n"
+                 \x20       {}\n",
+                most_const(most)
             ));
         }
         // Only the comparisons the bound makes: a least of zero holds every
@@ -1478,7 +1491,8 @@ fn bounded_class(struct_name: &str, id: &str, class: &str, bound: &Bound, text: 
         format!(
             "\n\
              \x20       /// The most {unit} a value holds.\n\
-             \x20       const val MOST: Int = {most}\n"
+             \x20       {}\n",
+            most_const(most)
         )
     });
     // Only the comparisons the bound makes: a least of zero holds every count,
