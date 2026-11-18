@@ -269,7 +269,7 @@ fn records_struct(records: &[Record], struct_name: &str) -> String {
             reads.push_str(&format!(
                 "            {open}if (*key == {key:?}) {{\n\
                  \x20               // A key given twice is not one map entry.\n\
-                 \x20               if (held_{name}.has_value()) return ::SCE::Forge::CodecError::CborMalformed;\n\
+                 \x20               if (held_{name}.has_value()) return ::SCE::Forge::CodecError::CborDuplicateKey;\n\
                  {read}",
                 open = if index == 0 { "" } else { "} else " },
                 key = f.key,
@@ -296,7 +296,7 @@ fn records_struct(records: &[Record], struct_name: &str) -> String {
              \x20   }}\n\n\
              \x20   /// Read one record of `{schema}` from `c`: its keys in any order, a key the\n\
              \x20   /// schema does not declare skipped whole; a key given twice is\n\
-             \x20   /// `CborMalformed` and a field missing `CborRequiredKeyMissing`.\n\
+             \x20   /// `CborDuplicateKey` and a field missing `CborRequiredKeyMissing`.\n\
              \x20   static ::SCE::Forge::Decoded<{payload}> {decode}(::SCE::Forge::SceCursor& c) {{\n\
              \x20       namespace cbor = ::SCE::Forge::Cbor;\n\
              \x20       const auto count = cbor::read_map_len(c);\n\
@@ -945,7 +945,7 @@ fn value_class(
         decode.push_str(&format!(
             "            case {key}: {{\n\
              \x20               // A key given twice is not one map entry.\n\
-             \x20               if ({name}.has_value()) return ::SCE::Forge::CodecError::CborMalformed;\n\
+             \x20               if ({name}.has_value()) return ::SCE::Forge::CodecError::CborDuplicateKey;\n\
              {read}\
              \x20               break;\n\
              \x20           }}\n",
