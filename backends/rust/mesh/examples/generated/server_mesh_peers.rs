@@ -40,4 +40,5 @@ pub const MACHINE: Machine = Machine {
         },
         link: PeerLink::WssAccept { keepalive_ms: None },
     }],
+    sessions: None,
 };

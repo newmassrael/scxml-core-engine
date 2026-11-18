@@ -14986,8 +14986,8 @@ private func expectClose(_ actual: Double, _ expected: Double, _ label: String) 
 
     // Count first: a vocabulary that gained or lost a variant without the manifest moving
     // would otherwise satisfy every assertion below.
-    #expect(variants.count == 18, "pattern_kind: oracle variant count")
-    guard variants.count == 18 else {
+    #expect(variants.count == 19, "pattern_kind: oracle variant count")
+    guard variants.count == 19 else {
         return
     }
 
@@ -15110,9 +15110,16 @@ private func expectClose(_ actual: Double, _ expected: Double, _ label: String) 
     )
     // The name the declaration answers is the one the document wrote.
     #expect(PatternKind.parallelRegionDone.declaredName == "parallelRegionDone", "pattern_kind.parallelRegionDone declared name")
-    #expect(try oracleText(variants[17].member("name")) == "causalVector", "pattern_kind variant 17 name")
+    #expect(try oracleText(variants[17].member("name")) == "durableReceipt", "pattern_kind variant 17 name")
     #expect(
-        try oracleNumberText(variants[17].member("value")) == String(PatternKind.causalVector.rawValue),
+        try oracleNumberText(variants[17].member("value")) == String(PatternKind.durableReceipt.rawValue),
+        "pattern_kind.durableReceipt"
+    )
+    // The name the declaration answers is the one the document wrote.
+    #expect(PatternKind.durableReceipt.declaredName == "durableReceipt", "pattern_kind.durableReceipt declared name")
+    #expect(try oracleText(variants[18].member("name")) == "causalVector", "pattern_kind variant 18 name")
+    #expect(
+        try oracleNumberText(variants[18].member("value")) == String(PatternKind.causalVector.rawValue),
         "pattern_kind.causalVector"
     )
     // The name the declaration answers is the one the document wrote.

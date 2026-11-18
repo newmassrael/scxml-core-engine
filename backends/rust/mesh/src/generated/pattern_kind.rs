@@ -1,7 +1,7 @@
 // SCE-GENERATED — DO NOT EDIT
-// source-hash: 52868da22c06561e2c560050fc709417107e0518328e8ceb0790994e53be08ca
-#![doc = "SCE-MAP: pattern_kind.scxml:16 :: _forge_body"]
-// SCE-MAP: pattern_kind.scxml:16 :: _forge_body
+// source-hash: 687f4c0ae3532ecabd8fec6c87388a5c95d9c36571dc803cf9f1b82e7d19a7ab
+#![doc = "SCE-MAP: pattern_kind.scxml:18 :: _forge_body"]
+// SCE-MAP: pattern_kind.scxml:18 :: _forge_body
 
 // SCE Forge: Auto-generated from Extended SCXML (sce:kind="enum")
 // Runtime: none
@@ -28,6 +28,7 @@ pub enum PatternKind {
     InvokeCancel = 19,
     InvokeError = 20,
     ParallelRegionDone = 21,
+    DurableReceipt = 22,
     CausalVector = 23,
 }
 
@@ -59,6 +60,7 @@ impl PatternKind {
             19 => Some(Self::InvokeCancel),
             20 => Some(Self::InvokeError),
             21 => Some(Self::ParallelRegionDone),
+            22 => Some(Self::DurableReceipt),
             23 => Some(Self::CausalVector),
             _ => None,
         }
@@ -84,6 +86,7 @@ impl PatternKind {
             Self::InvokeCancel => "invokeCancel",
             Self::InvokeError => "invokeError",
             Self::ParallelRegionDone => "parallelRegionDone",
+            Self::DurableReceipt => "durableReceipt",
             Self::CausalVector => "causalVector",
         }
     }

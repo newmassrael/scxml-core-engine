@@ -1,6 +1,6 @@
 // SCE-GENERATED — DO NOT EDIT
-// source-hash: 52868da22c06561e2c560050fc709417107e0518328e8ceb0790994e53be08ca
-// SCE-MAP: pattern_kind.scxml:16 :: _forge_body
+// source-hash: 687f4c0ae3532ecabd8fec6c87388a5c95d9c36571dc803cf9f1b82e7d19a7ab
+// SCE-MAP: pattern_kind.scxml:18 :: _forge_body
 
 // SCE Forge: Auto-generated from Extended SCXML (sce:kind="enum")
 // Runtime: none
@@ -33,6 +33,7 @@ enum class PatternKind : uint16_t {
     InvokeCancel = 19,
     InvokeError = 20,
     ParallelRegionDone = 21,
+    DurableReceipt = 22,
     CausalVector = 23,
 };
 
@@ -80,6 +81,8 @@ constexpr const char *declared_name(PatternKind value) noexcept {
         return "invokeError";
     case PatternKind::ParallelRegionDone:
         return "parallelRegionDone";
+    case PatternKind::DurableReceipt:
+        return "durableReceipt";
     case PatternKind::CausalVector:
         return "causalVector";
     }
@@ -124,6 +127,8 @@ constexpr std::optional<PatternKind> from_underlying(uint16_t raw) noexcept {
         return PatternKind::InvokeError;
     case 21:
         return PatternKind::ParallelRegionDone;
+    case 22:
+        return PatternKind::DurableReceipt;
     case 23:
         return PatternKind::CausalVector;
     default:

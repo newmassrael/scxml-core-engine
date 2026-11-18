@@ -1,6 +1,6 @@
 // SCE-GENERATED — DO NOT EDIT
-// source-hash: 52868da22c06561e2c560050fc709417107e0518328e8ceb0790994e53be08ca
-// SCE-MAP: pattern_kind.scxml:16 :: _forge_body
+// source-hash: 687f4c0ae3532ecabd8fec6c87388a5c95d9c36571dc803cf9f1b82e7d19a7ab
+// SCE-MAP: pattern_kind.scxml:18 :: _forge_body
 
 // SCE Forge: Auto-generated from Extended SCXML (sce:kind="enum")
 // Runtime: none
@@ -27,6 +27,7 @@ enum class PatternKind(val raw: UShort) {
     INVOKE_CANCEL(19u.toUShort()),
     INVOKE_ERROR(20u.toUShort()),
     PARALLEL_REGION_DONE(21u.toUShort()),
+    DURABLE_RECEIPT(22u.toUShort()),
     CAUSAL_VECTOR(23u.toUShort()),
     ;
 
@@ -52,6 +53,7 @@ enum class PatternKind(val raw: UShort) {
         INVOKE_CANCEL -> "invokeCancel"
         INVOKE_ERROR -> "invokeError"
         PARALLEL_REGION_DONE -> "parallelRegionDone"
+        DURABLE_RECEIPT -> "durableReceipt"
         CAUSAL_VECTOR -> "causalVector"
     }
 
