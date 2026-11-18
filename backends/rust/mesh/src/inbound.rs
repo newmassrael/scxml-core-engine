@@ -21,6 +21,12 @@
 //! value: the generated [`Envelope`] borrows from its input, and re-reading
 //! the bytes on release costs one decode where an owned copy would be a
 //! second shape of the envelope to keep in step with the document.
+//!
+//! A request's window entry also keeps what the responder answered it with
+//! (§mesh-10.5, the reply cache): a duplicate of a request whose reply left is
+//! answered with that reply, and a duplicate of one still being handled is
+//! dropped. The cache lives and dies with the window: an id the window lets go
+//! takes its reply with it.
 
 use alloc::collections::BTreeMap;
 use alloc::string::{String, ToString};
@@ -39,6 +45,7 @@ use crate::generated::ordering_gap_end::ordering_gap_end;
 use crate::generated::ordering_hold::ordering_hold;
 use crate::generated::ordering_prune::ordering_prune;
 use crate::generated::ordering_slot::OrderingSlotPayload;
+use crate::generated::pattern_kind::PatternKind;
 use crate::signal::Signal;
 
 /// What one binding asks of the envelopes it receives. Deployment decides
@@ -80,6 +87,30 @@ impl Received {
 pub struct Outcome {
     pub released: Vec<Received>,
     pub signals: Vec<Signal>,
+    /// Replies to send again, each the bytes of the reply a request's first
+    /// copy was answered with, because a duplicate of that request arrived
+    /// (§mesh-10.5). They go back on the binding the duplicate came in on.
+    pub replays: Vec<Vec<u8>>,
+}
+
+/// What a responder keeps of a request it admitted, in the request's window
+/// entry (§mesh-10.5).
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub(crate) enum Kept {
+    /// No reply has left for it: a duplicate is dropped, and the reply goes
+    /// once, when it is made.
+    Handling,
+    /// The reply left, as these bytes: a duplicate is answered with them.
+    Sent(Vec<u8>),
+}
+
+/// A request in its sender's window, with what the responder keeps of it.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub(crate) struct Cached {
+    /// The request's wire `invoke_id`, which its reply carries back
+    /// (SCE_MESH.md section 10.7) and by which a reply finds its entry.
+    pub invoke: [u8; 16],
+    pub kept: Kept,
 }
 
 /// Why an envelope was not admitted.
@@ -121,6 +152,9 @@ struct Sender {
     /// Where a rule writes the held slots it gives back ([`rewrite`]).
     pending_next: SceOwnedList<OrderingSlotPayload, 256>,
     held: BTreeMap<u64, Received>,
+    /// The reply cache: each request of this sender's window that carries a
+    /// wire `invoke_id`, by the request's envelope id (§mesh-10.5).
+    replies: BTreeMap<[u8; 16], Cached>,
 }
 
 /// Replace `list` with what `rule` writes from it, or leave it as it was when
@@ -150,6 +184,7 @@ impl Sender {
             pending: SceOwnedList::new(),
             pending_next: SceOwnedList::new(),
             held: BTreeMap::new(),
+            replies: BTreeMap::new(),
         }
     }
 
@@ -174,6 +209,9 @@ pub struct Inbound {
     dedup_window: u32,
     gap_timeout_ms: i64,
     senders: BTreeMap<String, Sender>,
+    /// Where each cached request is, by its wire `invoke_id`: its sender and
+    /// its envelope id. What a reply finds its request's entry by.
+    answering: BTreeMap<[u8; 16], (String, [u8; 16])>,
 }
 
 impl Inbound {
@@ -190,6 +228,7 @@ impl Inbound {
             dedup_window,
             gap_timeout_ms,
             senders: BTreeMap::new(),
+            answering: BTreeMap::new(),
         })
     }
 
@@ -206,15 +245,23 @@ impl Inbound {
         delivery: Delivery,
         now_ms: i64,
     ) -> Result<Outcome, AdmitError> {
-        let (source, id, sequence) = {
+        let (source, raw_id, sequence, request) = {
             let envelope =
                 Envelope::decode(&mut SceCursor::new(&bytes)).map_err(AdmitError::Malformed)?;
+            // A request a reply can answer: one that carries the wire id the
+            // reply carries back (SCE_MESH.md section 10.7).
+            let request = (envelope.pattern == PatternKind::RpcRequest)
+                .then_some(envelope.invoke_id)
+                .flatten()
+                .map(<[u8; 16]>::from);
             (
                 envelope.source.to_string(),
-                envelope_id(envelope.id.into()),
+                <[u8; 16]>::from(envelope.id),
                 envelope.sequence_no,
+                request,
             )
         };
+        let id = envelope_id(&raw_id);
         if delivery.ordered && sequence.is_none() {
             return Err(AdmitError::Unstamped);
         }
@@ -227,6 +274,15 @@ impl Inbound {
 
         if delivery.dedup {
             if dedup_holds(sender.window.as_slice(), id) {
+                // §mesh-10.5: a duplicate of a request whose reply left is
+                // answered with that reply; any other duplicate is dropped.
+                if let Some(Cached {
+                    kept: Kept::Sent(reply),
+                    ..
+                }) = sender.replies.get(&raw_id)
+                {
+                    out.replays.push(reply.clone());
+                }
                 return Ok(out);
             }
             let full = sender.window.as_slice().len() >= self.dedup_window as usize;
@@ -243,6 +299,27 @@ impl Inbound {
                     window_size: self.dedup_window,
                 });
             }
+            if let Some(invoke) = request {
+                sender.replies.insert(
+                    raw_id,
+                    Cached {
+                        invoke,
+                        kept: Kept::Handling,
+                    },
+                );
+                self.answering.insert(invoke, (source.clone(), raw_id));
+            }
+            // The cache is bounded by the window: a request whose id the
+            // window let go takes its reply with it.
+            let window = sender.window.as_slice();
+            let answering = &mut self.answering;
+            sender.replies.retain(|cached_id, cached| {
+                let kept = dedup_holds(window, envelope_id(cached_id));
+                if !kept {
+                    answering.remove(&cached.invoke);
+                }
+                kept
+            });
         }
 
         let Some(seq) = sequence.filter(|_| delivery.ordered) else {
@@ -277,7 +354,33 @@ impl Inbound {
     /// sends after this is taken as from a sender not heard from before, so an envelope it sent
     /// earlier is delivered again if it is sent again. For a sender that has left for good.
     pub fn forget(&mut self, source: &str) {
-        self.senders.remove(source);
+        if let Some(sender) = self.senders.remove(source) {
+            for cached in sender.replies.values() {
+                self.answering.remove(&cached.invoke);
+            }
+        }
+    }
+
+    /// The machine answered the request whose wire `invoke_id` is `invoke`
+    /// with `reply`, the bytes of the reply envelope as they leave: keep it in
+    /// that request's window entry, so a duplicate of the request is answered
+    /// with it (§mesh-10.5). Only the first reply is kept; a request no entry
+    /// holds (its sender's binding suppresses no duplicates, or the window let
+    /// it go) keeps nothing.
+    pub(crate) fn answered(&mut self, invoke: &[u8; 16], reply: &[u8]) {
+        let Some((source, request)) = self.answering.get(invoke) else {
+            return;
+        };
+        let Some(cached) = self
+            .senders
+            .get_mut(source)
+            .and_then(|sender| sender.replies.get_mut(request))
+        else {
+            return;
+        };
+        if cached.kept == Kept::Handling {
+            cached.kept = Kept::Sent(reply.to_vec());
+        }
     }
 
     /// End every gap that has waited `gap_timeout_ms` by `now_ms`: signal the

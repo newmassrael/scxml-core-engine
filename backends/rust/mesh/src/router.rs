@@ -365,7 +365,13 @@ impl Router {
         if peer.config.causal.is_some() {
             return offer(peer_name, peer, envelope);
         }
-        transmit(peer_name, peer, envelope, now_ms)
+        let bytes = write_envelope(peer, envelope);
+        // §mesh-10.5: the request's window entry keeps its first reply, which
+        // answers a duplicate of the request.
+        if let Some(invoke) = answering {
+            self.inbound.answered(&invoke, &bytes);
+        }
+        Ok(dispatch(peer_name, peer, bytes, now_ms))
     }
 
     /// Start an `<invoke type="sce:mesh-rpc">` the engine handed the host
@@ -587,7 +593,7 @@ impl Router {
             return raise(signal);
         }
         match self.inbound.admit(bytes, delivery, now_ms) {
-            Ok(outcome) => Ok(self.effects_of(outcome, Some(peer))),
+            Ok(outcome) => Ok(self.effects_of(outcome, Some(peer), now_ms)),
             // The bytes are the envelope's CBOR (§mesh-7.5); nothing in
             // them can be trusted to name a source.
             Err(AdmitError::Malformed(_)) => raise(Signal::EnvelopeCorrupt {
@@ -610,7 +616,7 @@ impl Router {
     /// `DeadlineExceeded` reply takes (§mesh-10.7.1).
     pub fn tick(&mut self, now_ms: i64) -> Result<Vec<Effect>, RouterError> {
         let mut effects = match self.inbound.tick(now_ms) {
-            Ok(outcome) => self.effects_of(outcome, None),
+            Ok(outcome) => self.effects_of(outcome, None, now_ms),
             Err(AdmitError::Rule(error)) => return Err(RouterError::Rule(error)),
             Err(AdmitError::HoldFull) => return Err(RouterError::HoldFull { peer: None }),
             // A tick reads no bytes and stamps nothing.
@@ -755,8 +761,9 @@ impl Router {
     }
 
     /// Turn what the receive half released into effects, in release order,
-    /// followed by the rows it observed.
-    fn effects_of(&mut self, outcome: Outcome, peer: Option<&str>) -> Vec<Effect> {
+    /// followed by the rows it observed and the replies it answers duplicates
+    /// with.
+    fn effects_of(&mut self, outcome: Outcome, peer: Option<&str>, now_ms: i64) -> Vec<Effect> {
         let mut effects: Vec<Effect> = outcome
             .released
             .iter()
@@ -779,6 +786,15 @@ impl Router {
             peer: peer.map(str::to_string),
             signal,
         }));
+        // §mesh-10.5: the reply a duplicate request is answered with goes back
+        // on the binding the duplicate came in on. A tick releases no replay.
+        if let Some(name) = peer {
+            if let Some(bound) = self.peers.get_mut(name) {
+                for reply in outcome.replays {
+                    effects.extend(dispatch(name, bound, reply, now_ms));
+                }
+            }
+        }
         effects
     }
 }
@@ -911,9 +927,16 @@ pub use sce_rust_runtime::helpers::send::mesh_peer;
 fn transmit(
     peer_name: &str,
     peer: &mut Peer,
-    mut envelope: Envelope<'_>,
+    envelope: Envelope<'_>,
     now_ms: i64,
 ) -> Result<Vec<Effect>, RouterError> {
+    let bytes = write_envelope(peer, envelope);
+    Ok(dispatch(peer_name, peer, bytes, now_ms))
+}
+
+/// `envelope` as the bytes that go to `peer`, stamped with the peer's next
+/// sequence number when its binding stamps one (§mesh-10.6.3).
+fn write_envelope(peer: &mut Peer, mut envelope: Envelope<'_>) -> Vec<u8> {
     envelope.sequence_no = peer.config.stamp_sequence.then_some(peer.next_sequence);
     let bytes = envelope.encode_to_vec();
     // §mesh-10.6.3: the counter advances once per envelope written, so one
@@ -922,7 +945,7 @@ fn transmit(
     if peer.config.stamp_sequence {
         peer.next_sequence = peer.next_sequence.wrapping_add(1);
     }
-    Ok(dispatch(peer_name, peer, bytes, now_ms))
+    bytes
 }
 
 /// Hand written envelope `bytes` to `peer`'s send half.
@@ -1686,7 +1709,12 @@ mod tests {
 
     /// `hmi`, answering `ecu`: `service.response.force` is a reply to it.
     fn responder() -> Router {
-        let mut hmi = Router::new("hmi", 8, 50).unwrap();
+        responder_with_window(8)
+    }
+
+    /// [`responder`] with a duplicate window of `window` ids.
+    fn responder_with_window(window: u32) -> Router {
+        let mut hmi = Router::new("hmi", window, 50).unwrap();
         hmi.add_peer(
             "ecu",
             PeerConfig {
@@ -1777,6 +1805,74 @@ mod tests {
         let envelope = Envelope::decode(&mut SceCursor::new(&bytes)).unwrap();
         assert_eq!(envelope.pattern, PatternKind::RpcReply);
         assert_eq!(envelope.invoke_id, None);
+    }
+
+    // ── §mesh-10.5: the reply cache ──────────────────────────────────────
+
+    /// A duplicate of a request the responder answered is answered with the
+    /// reply the first copy produced, byte for byte, and the machine is not
+    /// told the request again.
+    #[test]
+    fn a_duplicate_of_an_answered_request_is_answered_with_the_first_reply() {
+        let mut ecu = requester(None);
+        let mut hmi = responder();
+        let asked = started(&mut ecu, None);
+        assert_eq!(hmi.receive("ecu", asked.clone(), 0).unwrap().len(), 1);
+        let first = sent_to_ecu(hmi.send(&answer("service.response.force", WIRE_TEXT), [5; 16], 0));
+        assert_eq!(sent_to_ecu(hmi.receive("ecu", asked, 10)), first);
+    }
+
+    /// A duplicate of a request still being handled is dropped, and the reply
+    /// goes once, when it is made. The first reply is the one kept: a second
+    /// reply to the same request leaves, and a later duplicate still gets the
+    /// first.
+    #[test]
+    fn a_duplicate_of_a_request_still_handled_is_dropped() {
+        let mut ecu = requester(None);
+        let mut hmi = responder();
+        let asked = started(&mut ecu, None);
+        assert_eq!(hmi.receive("ecu", asked.clone(), 0).unwrap().len(), 1);
+        let early = hmi.receive("ecu", asked.clone(), 5).unwrap();
+        assert!(early.is_empty(), "{early:?}");
+
+        let first = sent_to_ecu(hmi.send(&answer("service.response.force", WIRE_TEXT), [5; 16], 6));
+        let second = sent_to_ecu(hmi.send(
+            &HostSendRequest {
+                event_data: r#"{"force":99}"#.to_string(),
+                ..answer("service.response.force", WIRE_TEXT)
+            },
+            [6; 16],
+            7,
+        ));
+        assert_ne!(first, second);
+        assert_eq!(sent_to_ecu(hmi.receive("ecu", asked, 8)), first);
+    }
+
+    /// The cache is bounded by the window: once the request's id leaves the
+    /// window, its reply goes with it, and the same request is taken as new.
+    #[test]
+    fn a_reply_leaves_the_cache_with_its_requests_window_entry() {
+        let mut ecu = requester(None);
+        let mut hmi = responder_with_window(1);
+        let asked = started(&mut ecu, None);
+        hmi.receive("ecu", asked.clone(), 0).unwrap();
+        sent_to_ecu(hmi.send(&answer("service.response.force", WIRE_TEXT), [5; 16], 0));
+
+        // Another envelope from `ecu` takes the window's one place.
+        let other = transmitted(ecu.send(&request("#hmi", "status.changed", ""), [2; 16], 0));
+        hmi.receive("ecu", other, 1).unwrap();
+
+        let again = hmi.receive("ecu", asked, 2).unwrap();
+        assert!(
+            matches!(again.first(), Some(Effect::Deliver { event, .. }) if event == "service.request.force"),
+            "{again:?}"
+        );
+        assert!(
+            !again
+                .iter()
+                .any(|effect| matches!(effect, Effect::Transmit { .. })),
+            "no reply is sent again for a request the window let go: {again:?}"
+        );
     }
 
     /// §mesh-16.7 row 5: the link a request waits on is lost. The request is
