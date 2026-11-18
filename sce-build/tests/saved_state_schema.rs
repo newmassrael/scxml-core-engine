@@ -2,8 +2,9 @@
 // SPDX-FileCopyrightText: Copyright (c) 2026 newmassrael
 //
 // The saved-state wire surface (`schemas/sce-saved-state.v1.schema.json`,
-// `schemas/sce-saved-state.v2.schema.json` and
-// `schemas/sce-saved-state.v3.schema.json`, SCE Accepted Subset §2.15) held to
+// `schemas/sce-saved-state.v2.schema.json`,
+// `schemas/sce-saved-state.v3.schema.json` and
+// `schemas/sce-saved-state.v4.schema.json`, SCE Accepted Subset §2.15) held to
 // its instances.
 //
 // The shared fixtures under `tests/fixtures/static_datamodel/saved/` are the
@@ -14,15 +15,18 @@
 // here.
 //
 // Format 3 (docs/adr/0090, section 7) is format 2's tree of sessions with an
-// event's origin held as one pair: the texts directly under `saved/` are
-// format 3, the format every backend writes, and are held to the format-3
-// schema and to the one text form the ADR fixes. The format-1 texts every
-// backend saved before trees are in `saved/format1/` and are held to the
-// format-1 schema. The format-2 reading fixtures are in `saved/format2/`, held
-// to the format-2 schema, and beside them in `saved/format2/read_as/` the
-// format-3 text each one is read as, which is held to the table of section 7
-// applied to its fixture. Hand-written trees below exercise every member
-// formats 2 and 3 add.
+// event's origin held as one pair, and format 4 (docs/adr/0107, D4) is format 3
+// with each host-run invocation's start number and each session's count of
+// those starts: the texts directly under `saved/` are format 4, the format
+// every backend writes, and are held to the format-4 schema and to the one text
+// form the ADRs fix. The format-1 texts every backend saved before trees are in
+// `saved/format1/` and are held to the format-1 schema. The format-2 reading
+// fixtures are in `saved/format2/`, held to the format-2 schema, and beside
+// them in `saved/format2/read_as/` the format-4 text each one is read as, which
+// is held to the table of section 7 applied to its fixture. The format-3
+// reading fixtures are in `saved/format3/`, held to the format-3 schema, and
+// each is read as the shared format-4 text of its name. Hand-written trees
+// below exercise every member formats 2, 3 and 4 add.
 
 use std::path::{Path, PathBuf};
 
@@ -88,6 +92,10 @@ fn validator_v3() -> jsonschema::JSONSchema {
     compile(include_str!("../../schemas/sce-saved-state.v3.schema.json"))
 }
 
+fn validator_v4() -> jsonschema::JSONSchema {
+    compile(include_str!("../../schemas/sce-saved-state.v4.schema.json"))
+}
+
 /// The directory of the shared saved states of the static data model.
 fn shared_saved() -> PathBuf {
     repo_root().join("sce-build/tests/fixtures/static_datamodel/saved")
@@ -98,19 +106,26 @@ fn format_2_readings() -> PathBuf {
     shared_saved().join("format2")
 }
 
-/// The format-3 text each format-2 reading fixture is read as, under its name.
+/// The format-4 text each format-2 reading fixture is read as, under its name.
 fn format_2_read_as() -> PathBuf {
     format_2_readings().join("read_as")
 }
 
-/// The directories whose texts are format 3: the shared instances every
+/// The directory of the shared saved states of the host-run invocations.
+fn host_saved() -> PathBuf {
+    repo_root().join("sce-build/tests/fixtures/host_processor/saved")
+}
+
+/// The directories whose texts are format 4: the shared instances every
 /// backend writes, and what each format-2 reading fixture is read as.
-fn format_3_directories() -> [PathBuf; 3] {
-    [
-        shared_saved(),
-        repo_root().join("sce-build/tests/fixtures/host_processor/saved"),
-        format_2_read_as(),
-    ]
+fn format_4_directories() -> [PathBuf; 3] {
+    [shared_saved(), host_saved(), format_2_read_as()]
+}
+
+/// The format-3 reading fixtures (docs/adr/0107, D4), each the format-3 text
+/// of a shared instance of its name in the directory above it.
+fn format_3_readings() -> [PathBuf; 2] {
+    [shared_saved().join("format3"), host_saved().join("format3")]
 }
 
 /// `path`'s text without the line end a file closes with: the text a backend
@@ -144,16 +159,19 @@ fn every_shared_saved_state_fixture_is_a_saved_state() {
         repo_root().join("sce-build/tests/fixtures/host_processor/saved/format1"),
     ];
     let format2 = [format_2_readings()];
-    let format3 = format_3_directories();
-    let (first, second, third) = (
+    let format3 = format_3_readings();
+    let format4 = format_4_directories();
+    let (first, second, third, fourth) = (
         instances(&format1),
         instances(&format2),
         instances(&format3),
+        instances(&format4),
     );
     // A sweep over nothing certifies nothing: the sixteen texts every backend
     // saved before trees moved to `format1/`, the four format-2 reading
-    // fixtures, and the fifteen shared format-3 instances with the four texts
-    // those fixtures are read as, when these floors were set.
+    // fixtures, the two format-3 reading fixtures, and the fifteen shared
+    // format-4 instances with the four texts the format-2 fixtures are read
+    // as, when these floors were set.
     assert!(
         first.len() >= 16,
         "swept only {} format-1 fixture(s) in {format1:?}",
@@ -165,13 +183,19 @@ fn every_shared_saved_state_fixture_is_a_saved_state() {
         second.len()
     );
     assert!(
-        third.len() >= 19,
+        third.len() >= 2,
         "swept only {} format-3 fixture(s) in {format3:?}",
         third.len()
+    );
+    assert!(
+        fourth.len() >= 19,
+        "swept only {} format-4 fixture(s) in {format4:?}",
+        fourth.len()
     );
     each_is_a_saved_state(&validator(), first);
     each_is_a_saved_state(&validator_v2(), second);
     each_is_a_saved_state(&validator_v3(), third);
+    each_is_a_saved_state(&validator_v4(), fourth);
 }
 
 /// The canonical type of the SCXML Event I/O Processor (docs/adr/0090,
@@ -442,13 +466,119 @@ fn read_format_2_session(session: &json::Value) -> json::Value {
     )
 }
 
+/// A host-run invocation of a format-3 session as format 4 writes it: its
+/// members as they were, with `start` after `id`, the first start of its
+/// `<invoke>` (docs/adr/0107, D4).
+fn read_format_3_host_invoke(host: &json::Value) -> json::Value {
+    let mut read = Vec::new();
+    for (key, value) in members(host) {
+        read.push((key.clone(), value.clone()));
+        if key == "id" {
+            read.push(("start".to_string(), text("1")));
+        }
+    }
+    json::Value::Object(read)
+}
+
+/// A format-3 session, the root with its `format` or a child without it, as
+/// format 4 writes it (docs/adr/0107, D4): format 3 counted no host-run start,
+/// so each running host-run invocation is the first start of its `<invoke>`,
+/// and `hostinvokestarts`, after `hostinvokes`, counts 1 for each, by the id's
+/// bytes. Every other member is as it was, and each running child's session is
+/// read by the same rule.
+fn read_format_3_session(session: &json::Value) -> json::Value {
+    let mut read = Vec::new();
+    for (key, value) in members(session) {
+        match key.as_str() {
+            "format" => read.push((key.clone(), json::Value::Number("4".to_string()))),
+            "invokes" => read.push((key.clone(), read_format_2_items(value, read_format_3_child))),
+            "hostinvokes" => {
+                read.push((
+                    key.clone(),
+                    read_format_2_items(value, read_format_3_host_invoke),
+                ));
+                let mut ids: Vec<String> = match value {
+                    json::Value::Array(hosts) => hosts
+                        .iter()
+                        .map(|host| member_text(host, "id").to_string())
+                        .collect(),
+                    other => panic!("not an array: {other:?}"),
+                };
+                ids.sort();
+                ids.dedup();
+                read.push((
+                    "hostinvokestarts".to_string(),
+                    json::Value::Object(ids.into_iter().map(|id| (id, text("1"))).collect()),
+                ));
+            }
+            _ => read.push((key.clone(), value.clone())),
+        }
+    }
+    json::Value::Object(read)
+}
+
+/// A running child of a format-3 session, its own session read as format 4.
+fn read_format_3_child(child: &json::Value) -> json::Value {
+    json::Value::Object(
+        members(child)
+            .iter()
+            .map(|(key, value)| match key.as_str() {
+                "session" => (key.clone(), read_format_3_session(value)),
+                _ => (key.clone(), value.clone()),
+            })
+            .collect(),
+    )
+}
+
+#[test]
+fn each_format_3_reading_fixture_is_read_as_its_shared_instance() {
+    // docs/adr/0107, D4: every backend restores each format-3 reading fixture
+    // and saves at once the shared format-4 text of its name. That text is held
+    // here to the reading, applied to the fixture, byte for byte.
+    let fixtures = instances(&format_3_readings());
+    assert!(
+        fixtures.len() >= 2,
+        "swept only {} fixture(s)",
+        fixtures.len()
+    );
+    let mut host_invokes = 0usize;
+    for fixture in fixtures {
+        let stored = ordered(&saved_text(&fixture), &fixture);
+        assert_eq!(
+            stored.member("format"),
+            Some(&json::Value::Number("3".to_string())),
+            "{} is a format-3 text",
+            fixture.display()
+        );
+        let shared = fixture
+            .parent()
+            .and_then(Path::parent)
+            .expect("a format-3 fixture sits below its shared directory")
+            .join(fixture.file_name().expect("a file"));
+        assert_eq!(
+            json::write(&read_format_3_session(&stored)),
+            saved_text(&shared),
+            "{} is not what {} is read as",
+            shared.display(),
+            fixture.display()
+        );
+        host_invokes += saved_text(&fixture).matches("\"hostinvokes\":[{").count();
+    }
+    // The reading reached host-run invocations, not only sessions that run none.
+    assert!(
+        host_invokes >= 2,
+        "only {host_invokes} session(s) running a host-run invocation were read"
+    );
+}
+
 #[test]
 fn each_format_2_reading_fixture_is_read_as_the_table_of_section_7_says() {
     // docs/adr/0090, section 7: every backend restores each format-2 reading
-    // fixture and saves at once the format-3 text `read_as/` holds under its
+    // fixture and saves at once the format-4 text `read_as/` holds under its
     // name. That text is held here to the table, applied row by row to the
-    // fixture, byte for byte, so the backends are held to the table and not to
-    // a text written by hand.
+    // fixture, then to the reading of format 3 (docs/adr/0107, D4), byte for
+    // byte, so the backends are held to the table and not to a text written by
+    // hand.
     fn names(paths: &[PathBuf]) -> Vec<String> {
         paths
             .iter()
@@ -481,7 +611,7 @@ fn each_format_2_reading_fixture_is_read_as_the_table_of_section_7_says() {
             fixture.display()
         );
         assert_eq!(
-            json::write(&read_format_2_session(&stored)),
+            json::write(&read_format_3_session(&read_format_2_session(&stored))),
             saved_text(reading),
             "{} is not what {} is read as",
             reading.display(),
@@ -679,8 +809,53 @@ fn a_session_act_sent_by_another_session_is_refused() {
     );
 }
 
+/// The members of a running host-run invocation, in the order every backend
+/// writes them (docs/adr/0107, D4: its start number after its id).
+const HOST_INVOKE_MEMBERS: [&str; 8] = [
+    "type", "id", "start", "src", "params", "data", "content", "due",
+];
+
+/// Hold the host-run invocations of `session` to the text form of format 4:
+/// `hostinvokestarts` right after `hostinvokes`, keyed in the order of the
+/// ids' bytes, each invocation's members in order and its start the count of
+/// its `<invoke>`.
+fn holds_the_host_invoke_form(session: &json::Value, what: &str) {
+    let names = keys(session);
+    let at = names
+        .iter()
+        .position(|name| *name == "hostinvokes")
+        .unwrap_or_else(|| panic!("{what}: no hostinvokes"));
+    assert_eq!(
+        names.get(at + 1).copied(),
+        Some("hostinvokestarts"),
+        "{what}: hostinvokestarts follows hostinvokes"
+    );
+    let counts = session
+        .member("hostinvokestarts")
+        .expect("a session's count of host-run starts");
+    let ids = keys(counts);
+    let mut ordered_ids = ids.clone();
+    ordered_ids.sort_unstable();
+    assert_eq!(
+        ids, ordered_ids,
+        "{what}hostinvokestarts: keyed by the id's bytes"
+    );
+    if let Some(json::Value::Array(hosts)) = session.member("hostinvokes") {
+        for (i, host) in hosts.iter().enumerate() {
+            let at = format!("{what}hostinvokes[{i}]");
+            assert_eq!(keys(host), HOST_INVOKE_MEMBERS, "{at}: its members");
+            assert_eq!(
+                counts.member(member_text(host, "id")),
+                host.member("start"),
+                "{at}: a running invocation is the latest start of its invoke"
+            );
+        }
+    }
+}
+
 /// Hold `session` and every session below it to the text form.
 fn holds_the_text_form(session: &json::Value, what: &str) {
+    holds_the_host_invoke_form(session, what);
     if let Some(json::Value::Array(events)) = session.member("external") {
         for (i, event) in events.iter().enumerate() {
             let at = format!("{what}external[{i}]");
@@ -718,13 +893,15 @@ fn holds_the_text_form(session: &json::Value, what: &str) {
 }
 
 #[test]
-fn every_format_3_instance_is_written_in_the_one_text_form() {
-    // docs/adr/0090, section 7, "Text form": the bytes every backend writes.
-    // The schema cannot say the order of members or the spelling of the text,
-    // so each format-3 instance is held to them here.
-    let paths = instances(&format_3_directories());
+fn every_format_4_instance_is_written_in_the_one_text_form() {
+    // docs/adr/0090, section 7, "Text form", and docs/adr/0107, D4: the bytes
+    // every backend writes. The schema cannot say the order of members, the
+    // spelling of the text or that a running invocation is the latest start of
+    // its `<invoke>`, so each format-4 instance is held to them here.
+    let paths = instances(&format_4_directories());
     assert!(paths.len() >= 19, "swept only {} instance(s)", paths.len());
     let mut origins = 0usize;
+    let mut host_invokes = 0usize;
     for path in paths {
         let written = saved_text(&path);
         let state = ordered(&written, &path);
@@ -734,9 +911,10 @@ fn every_format_3_instance_is_written_in_the_one_text_form() {
         assert_eq!(json::write(&state), written, "{what} is not compact JSON");
         assert_eq!(
             members(&state).first().map(|(k, v)| (k.as_str(), v)),
-            Some(("format", &json::Value::Number("3".to_string()))),
-            "{what}: `format` is 3, the root's first member"
+            Some(("format", &json::Value::Number("4".to_string()))),
+            "{what}: `format` is 4, the root's first member"
         );
+        host_invokes += written.matches("\"hostinvokestarts\":{\"").count();
         assert!(
             !written.contains("\"origintype\""),
             "{what} keeps format 2's origintype"
@@ -746,10 +924,15 @@ fn every_format_3_instance_is_written_in_the_one_text_form() {
         assert!(foreign.is_empty(), "{what}: {}", foreign.join("\n"));
         origins += written.matches("\"origin\":{").count();
     }
-    // The sweep reached pairs, not only texts that hold none.
+    // The sweep reached pairs, not only texts that hold none, and sessions
+    // that count host-run starts.
     assert!(
         origins >= 20,
         "only {origins} pair(s) were held to the form"
+    );
+    assert!(
+        host_invokes >= 6,
+        "only {host_invokes} session(s) counting host-run starts were held to the form"
     );
 }
 
@@ -1555,6 +1738,108 @@ fn the_format_3_schema_refuses_what_no_backend_writes() {
             found.is_empty(),
             "the format-3 schema refused {what}: {}",
             found.join("\n")
+        );
+    }
+}
+
+/// A format-4 saved state that uses every member format 4 adds: the tree of
+/// `a_format_3_tree`, its root running the second start of a host-run
+/// `<invoke>` and counting the starts of another that is not running, and its
+/// child and grandchild counting none (docs/adr/0107, D4).
+fn a_format_4_tree() -> serde_json::Value {
+    let mut tree = a_format_3_tree();
+    tree["format"] = serde_json::json!(4);
+    tree["hostinvokes"] = serde_json::json!([{
+        "type": "x-sce-host", "id": "h", "start": "2", "src": "", "params": {},
+        "data": "", "content": "", "due": null
+    }]);
+    tree["hostinvokestarts"] = serde_json::json!({"done": "1", "h": "2"});
+    tree["invokes"][0]["session"]["hostinvokestarts"] = serde_json::json!({});
+    tree["invokes"][0]["session"]["invokes"][0]["session"]["hostinvokestarts"] =
+        serde_json::json!({});
+    tree
+}
+
+#[test]
+fn a_tree_of_sessions_is_a_format_4_saved_state() {
+    let tree = a_format_4_tree();
+    let found = errors(&validator_v4(), &tree);
+    assert!(found.is_empty(), "{}", found.join("\n"));
+    // `format` tells the formats apart before anything else: a reader of
+    // formats 1 to 3 refuses a format-4 text rather than read part of it, and
+    // a format-3 text is not a format-4 one.
+    for (format, older) in [(1, validator()), (2, validator_v2()), (3, validator_v3())] {
+        assert!(
+            !errors(&older, &tree).is_empty(),
+            "the format-{format} schema admitted a format-4 tree"
+        );
+    }
+    assert!(
+        !errors(&validator_v4(), &a_format_3_tree()).is_empty(),
+        "the format-4 schema admitted a format-3 tree"
+    );
+}
+
+#[test]
+fn the_format_4_schema_refuses_what_no_backend_writes() {
+    // The control: the tree is a saved state, so each refusal below is the
+    // one change it makes.
+    let validator = validator_v4();
+    let good = a_format_4_tree();
+    assert!(
+        errors(&validator, &good).is_empty(),
+        "{:?}",
+        errors(&validator, &good)
+    );
+
+    type Change = fn(&mut serde_json::Value);
+    let broken: [(&str, Change); 10] = [
+        ("format 3", |t| t["format"] = serde_json::json!(3)),
+        ("a host-run invocation with no start", |t| {
+            t["hostinvokes"][0]
+                .as_object_mut()
+                .expect("an invocation")
+                .remove("start");
+        }),
+        ("a start counted from 0", |t| {
+            t["hostinvokes"][0]["start"] = serde_json::json!("0")
+        }),
+        ("a start written as a number", |t| {
+            t["hostinvokes"][0]["start"] = serde_json::json!(2)
+        }),
+        ("a root with no count of host-run starts", |t| {
+            t.as_object_mut()
+                .expect("a session")
+                .remove("hostinvokestarts");
+        }),
+        ("a child with no count of host-run starts", |t| {
+            t["invokes"][0]["session"]
+                .as_object_mut()
+                .expect("a session")
+                .remove("hostinvokestarts");
+        }),
+        ("a grandchild with no count of host-run starts", |t| {
+            t["invokes"][0]["session"]["invokes"][0]["session"]
+                .as_object_mut()
+                .expect("a session")
+                .remove("hostinvokestarts");
+        }),
+        ("a count of zero starts", |t| {
+            t["hostinvokestarts"]["done"] = serde_json::json!("0")
+        }),
+        ("a count written as a number", |t| {
+            t["hostinvokestarts"]["h"] = serde_json::json!(2)
+        }),
+        ("a count that is a list", |t| {
+            t["hostinvokestarts"] = serde_json::json!(["h"])
+        }),
+    ];
+    for (what, change) in broken {
+        let mut instance = good.clone();
+        change(&mut instance);
+        assert!(
+            !errors(&validator, &instance).is_empty(),
+            "the format-4 schema admitted {what}"
         );
     }
 }

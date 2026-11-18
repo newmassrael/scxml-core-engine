@@ -1,9 +1,10 @@
 # Format-2 reading fixtures
 
-These are saved states in format 2 (`schemas/sce-saved-state.v2.schema.json`), kept for the readers of format 3.
-docs/adr/0090, section 7, says how a format-2 origin is read. Every backend restores each text here with a machine
+These are saved states in format 2 (`schemas/sce-saved-state.v2.schema.json`), kept for the readers of formats 3
+and 4. docs/adr/0090, section 7, says how a format-2 origin is read, and docs/adr/0107, D4, how a host-run
+invocation of a format that held no start number is read. Every backend restores each text here with a machine
 of its document, at the wall-clock moment `1700000000000`, as for the shared instances in `../`. It saves at once
-and must write, byte for byte, the format-3 text of the same name in `read_as/`. Each `read_as/` text is also the
+and must write, byte for byte, the format-4 text of the same name in `read_as/`. Each `read_as/` text is also the
 pair and the sender that each record below must be read as. `sce-build/tests/saved_state_schema.rs` holds each
 `read_as/` text to the table of section 7, applied to its fixture.
 
@@ -17,8 +18,9 @@ A backend picks the machine that restores a fixture by the fixture's name. Every
 | `static_invoke_tree_working_origins.json` | The shared tree with the root's queue holding one event for each row of the table, and for each kind of type saved beside it, the prefix `sce://scxml/` alone among them. Its two session-to-session acts are stored with an empty `origin`. It is written by hand on the shared text. |
 | `static_timers.json` | The shared timers as every backend wrote them. Its `internal` act stored the sender. |
 
-`static_invoke_tree_working.json` and `static_invoke_tree_working_c11.json` are both read as the shared format-3
-tree `../static_invoke_tree_working.json`. `static_timers.json` is read as `../static_timers.json`.
+`static_invoke_tree_working.json` and `static_invoke_tree_working_c11.json` are both read as the shared format-4
+tree `../static_invoke_tree_working.json`. `static_timers.json` is read as `../static_timers.json`. The child's
+running `clock` invocation of each tree is read as the first start of its `<invoke>`.
 
 ## How each record is read
 
@@ -75,6 +77,6 @@ machine knows the name.
 ## C11 only
 
 C11 derives a sender from an SCXML location, and it cannot hold a sender beside another address. It runs no Mesh
-remote child, so none of its machines holds such an event. A format-3 text with a `sender` beside an address other
+remote child, so none of its machines holds such an event. A format-3 or format-4 text with a `sender` beside an address other
 than `scxmlLocation(sender)` is refused by C11, and the reason names that. Every other backend reads it. None of
 these fixtures holds such an event, so C11 restores them all.

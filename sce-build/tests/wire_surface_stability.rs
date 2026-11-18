@@ -48,6 +48,7 @@ const JSON_SURFACES: &[&str] = &[
     "schemas/sce-saved-state.v1.schema.json",
     "schemas/sce-saved-state.v2.schema.json",
     "schemas/sce-saved-state.v3.schema.json",
+    "schemas/sce-saved-state.v4.schema.json",
     "schemas/sce-kind-catalog.v1.schema.json",
     "schemas/sce-authoring-profile.v1.schema.json",
     "schemas/sce-scenario-set.v1.schema.json",
@@ -237,11 +238,26 @@ const INSTANCE_VALIDATION: &[(&str, &str, &str)] = &[
     ),
     (
         "schemas/sce-saved-state.v3.schema.json",
-        "every_format_3_instance_is_written_in_the_one_text_form",
+        "each_format_3_reading_fixture_is_read_as_its_shared_instance",
         "sce-build/tests/saved_state_schema.rs",
     ),
     (
-        "schemas/sce-saved-state.v3.schema.json",
+        "schemas/sce-saved-state.v4.schema.json",
+        "every_shared_saved_state_fixture_is_a_saved_state",
+        "sce-build/tests/saved_state_schema.rs",
+    ),
+    (
+        "schemas/sce-saved-state.v4.schema.json",
+        "a_tree_of_sessions_is_a_format_4_saved_state",
+        "sce-build/tests/saved_state_schema.rs",
+    ),
+    (
+        "schemas/sce-saved-state.v4.schema.json",
+        "every_format_4_instance_is_written_in_the_one_text_form",
+        "sce-build/tests/saved_state_schema.rs",
+    ),
+    (
+        "schemas/sce-saved-state.v4.schema.json",
         "each_format_2_reading_fixture_is_read_as_the_table_of_section_7_says",
         "sce-build/tests/saved_state_schema.rs",
     ),
@@ -366,6 +382,11 @@ const NEGATIVE_VALIDATION: &[(&str, &str, &str)] = &[
         "sce-build/tests/saved_state_schema.rs",
     ),
     (
+        "schemas/sce-saved-state.v4.schema.json",
+        "the_format_4_schema_refuses_what_no_backend_writes",
+        "sce-build/tests/saved_state_schema.rs",
+    ),
+    (
         "schemas/sce-kind-catalog.v1.schema.json",
         "the_catalog_schema_rejects_a_kind_the_product_does_not_have",
         "sce-build/src/forge/kind_catalog.rs",
@@ -483,6 +504,15 @@ const ATTRIBUTION_EXEMPT: &[(&str, &str, &str)] = &[
          session carries the `shape` of its own document, which is what it \
          restores into.",
         "Format 3 of the saved state deliberately does",
+    ),
+    (
+        "schemas/sce-saved-state.v4.schema.json",
+        "format 4 is format 3's tree written by the same generated code, with \
+         only each host-run invocation's start number and each session's count \
+         of them added: every committed machine and every shared fixture would \
+         again change on every commit. Each session carries the `shape` of its \
+         own document, which is what it restores into.",
+        "Format 4 of the saved state deliberately does",
     ),
     (
         "schemas/sce-authoring-profile.v1.schema.json",

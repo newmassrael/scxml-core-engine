@@ -7046,6 +7046,28 @@ format-2 reading fixtures are under `saved/format2/`, each beside the format-3
 text it is read as, in `saved/format2/read_as/`. A build that reads only formats 1
 and 2 refuses a format-3 text by its `format`.
 
+**Format 4: a host-run invocation's start number.** Format 4 is format 3's tree
+with the identity of each host-run invocation kept across a restore
+(docs/adr/0107, D4; docs/SCE_HOST_FEATURES.md, section 1;
+`schemas/sce-saved-state.v4.schema.json`). Each entry of `hostinvokes` holds
+`start`, after `id`: which start of that `<invoke>` in its session it is, counted
+from 1. Each session holds `hostinvokestarts`, after `hostinvokes`: for every
+`<invoke>` a host runs that has started in the session, how many times, keyed by
+the id in the order of its UTF-8 bytes. A running invocation's `start` is the
+count of its `<invoke>`, since a state entered again cancels the earlier start
+before it makes the next, and a restore refuses any other number and a count
+for an `<invoke>` the document does not hand a host. A restore starts a running
+invocation again under the number it had, and the request carries that number
+to the host beside the session's id and the invoke's id, so a host that keeps
+the first result of an operation under that identity answers the repeat with
+it. A start the restored session makes takes the next number of the count. Every
+backend writes format 4 and reads formats 1, 2 and 3: a host-run invocation of
+one of those is read as the first start of its `<invoke>`, and the count as 1
+for each one listed, since they counted none. The shared instances under
+`saved/` are format 4, the format-2 reading fixtures are read as format-4 texts,
+and the format-3 reading fixtures under `saved/format3/` are each read as the
+shared instance of their name.
+
 **Running host invocations.** An `<invoke>` a declared host invoker serves
 (§scxml-6.4.1) is part of the state for the same reason, and what is lost with
 the process that ran it is the host's side of it. A saved state lists each one
@@ -7155,9 +7177,10 @@ already queued is absent from `hostinvokes`. One restored and saved again before
 it was driven is still listed, with the same request and deadline, so repeating
 the round trip never loses the work. A restore refuses an invocation the
 document does not hand to a host under that `(type, id)`, one whose state the
-saved configuration does not stand in, one named twice, a `due` that is not a
-whole number of milliseconds, and a token that is not a text of digits within a
-signed 64-bit count; both fields are always present.
+saved configuration does not stand in, one named twice, a start number that is
+not the count of its `<invoke>` (format 4), a `due` that is not a whole number of
+milliseconds, and a token that is not a text of digits within a signed 64-bit
+count; both fields are always present.
 `sce-build/tests/fixtures/host_processor/statechart_static_host_invoke.scxml` and
 `saved/statechart_static_host_invoke_running.json` hold it on both backends.
 
