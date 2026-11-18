@@ -120,14 +120,17 @@ private func makeErrorRecordingEngine() throws -> (Engine<ScriptedPolicy>, Error
 }
 
 /// §scxml-6.2.4 + §scxml-5.10 (test 332): the error a send to a type nobody registered raises names
-/// that send by its id, as every other backend's does, and says what failed in the sentence they use.
+/// that send by its id, as every other backend's does, and carries the record of SCE_MESH.md section
+/// 10.7.1 (docs/adr/0106): the code `processorUnregistered` and, as its detail, the sentence they use.
 @Test func theErrorOfASendNobodyServesCarriesItsSendID() throws {
     let (engine, seen, _) = try makeErrorRecordingEngine()
     engine.performHostSend(request("x-unregistered", sendID: "__send_3"))
     engine.tick()
     #expect(engine.getCurrentState() == .busy)
     #expect(seen.sendID == "__send_3", "the error names the send that caused it")
-    #expect(seen.data == unregisteredHostProcessorMessage("x-unregistered"))
+    #expect(
+        seen.data
+            == errorData(.processorUnregistered, detail: unregisteredHostProcessorMessage("x-unregistered")))
 }
 
 /// The same error for a delayed send, raised when its wait is over: the request the scheduler holds

@@ -105,7 +105,9 @@ private func expectNothingStarted(_ engine: Engine<ScriptedPolicy>, _ policy: Sc
     #expect(childPolicy.log.isEmpty, "the refused child ran nothing")
 
     parent.step()
-    #expect(raised == [failure.childStartRefusal(invokeID: "probe")], "the parent raised error.execution")
+    #expect(
+        raised == [errorData(.invokeChildInitFailed, detail: failure.childStartRefusal(invokeID: "probe"))],
+        "the parent raised error.execution with the 10.7.1 record of its code")
 
     let startedPolicy = ScriptedPolicy()
     let started = InvokedSession(policy: startedPolicy, sessionID: "parent.other", queue: ParentEventQueue())
