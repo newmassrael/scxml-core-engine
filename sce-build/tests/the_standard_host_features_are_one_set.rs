@@ -293,8 +293,20 @@ const SIGN: &str = r#"<?xml version="1.0"?>
 /// D7 and D8).
 #[test]
 fn signing_is_served_on_rust_and_cpp_and_refused_on_every_other_lane() {
+    let lanes = languages();
+    assert!(
+        lanes.contains(&"rust") && lanes.contains(&"cpp"),
+        "the lanes that serve signing are not among the emitting lanes: {lanes:?}"
+    );
+    // Every emitting lane but the two that serve the operations is refused.
+    // Counted from the emitting set rather than written down, so a lane that
+    // starts emitting statecharts is held here the day it does.
+    let expected = lanes
+        .iter()
+        .filter(|language| !matches!(**language, "rust" | "cpp"))
+        .count();
     let mut refused_on = 0;
-    for language in languages() {
+    for language in lanes {
         let (ok, text) = run(&["check", "-l", language], SIGN, &[]);
         if matches!(language, "rust" | "cpp") {
             assert!(ok, "{language} refused a machine that signs: {text}");
@@ -317,8 +329,8 @@ fn signing_is_served_on_rust_and_cpp_and_refused_on_every_other_lane() {
         }
     }
     assert!(
-        refused_on >= 5,
-        "refused on {refused_on} lanes: every lane but Rust and C++ is held"
+        expected > 0 && refused_on == expected,
+        "refused on {refused_on} of the {expected} emitting lanes that do not serve signing"
     );
 }
 
