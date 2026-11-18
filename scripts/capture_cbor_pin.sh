@@ -95,10 +95,20 @@ capture_go() {
     # A module of the run's own, whose generated packages are imported as
     # sce.dev/cborpin/gen/<document>, over the forge runtime's module in the tree.
     generate go "$WORK/go/gen" --go-module-prefix sce.dev/cborpin/gen
+    # The Go release is the forge runtime's own `go` line, read from its go.mod.
+    # Go chooses the toolchain by the main module's line: one older than the
+    # runtime's ran the machine's go 1.22.2 and stopped at "requires go >=
+    # 1.23.0", where the runtime's line lets go fetch the release it names.
+    local go_release
+    go_release="$(sed -n 's/^go \([0-9][0-9.]*\)$/\1/p' "$REPO_ROOT/backends/go/forge-runtime/go.mod")"
+    [ -n "$go_release" ] || {
+        echo "capture-cbor-pin: no go line in backends/go/forge-runtime/go.mod" >&2
+        return 1
+    }
     cat >"$WORK/go/go.mod" <<EOF
 module sce.dev/cborpin
 
-go 1.22
+go $go_release
 
 require github.com/newmassrael/sce-forge-runtime v0.0.0
 
