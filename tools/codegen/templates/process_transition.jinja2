@@ -104,9 +104,12 @@ public:
     // enables. The engine walks the atomic states and their ancestors and
     // keeps the ordered set. `Event::NONE` asks for eventless transitions.
     template <typename Engine>
-    [[gnu::hot]]
+    SCE_HOT
     ::std::optional<TransitionInfo> firstEnabledTransition([[maybe_unused]] State state, [[maybe_unused]] Event event,
                                                           [[maybe_unused]] Engine& engine) {
+{# A switch is written only where it has a case: one with a `default` and no
+   case is a warning of its own on MSVC (C4065). #}
+{% if model.states | dictsort | selectattr("1.transitions") | list %}
         switch (state) {
 {% for state_id, state in model.states | dictsort %}
 {% if state.transitions %}
@@ -138,6 +141,9 @@ public:
         default:
             return ::std::nullopt;
         }
+{% else %}
+        return ::std::nullopt;
+{% endif %}
     }
 
 {% if model.test_component %}
@@ -150,6 +156,13 @@ public:
     template <typename Engine>
     void takeTransition([[maybe_unused]] State source, [[maybe_unused]] int transitionIndex,
                         [[maybe_unused]] Engine& engine) {
+{% set taking = namespace(any=false) %}
+{% for state_id, state in model.states | dictsort %}
+{% if state.transitions | selectattr('native_take') | list %}
+{% set taking.any = true %}
+{% endif %}
+{% endfor %}
+{% if taking.any %}
         switch (source) {
 {% for state_id, state in model.states | dictsort %}
 {% if state.transitions | selectattr('native_take') | list %}
@@ -172,6 +185,7 @@ public:
         default:
             break;
         }
+{% endif %}
     }
 
 {% endif %}

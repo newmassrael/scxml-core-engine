@@ -67,7 +67,11 @@
 
     // §scxml-D-getChildStates: a state's <state>, <parallel> and <final>
     // children, in document order
+    {# A switch is written only where it has a case: one with a `default` and no
+       case is a warning of its own on MSVC (C4065), so a document none of whose
+       states answers gets the default's answer alone. #}
     static ::std::vector<State> getChildStates([[maybe_unused]] State state) {
+{% if model.states | dictsort | selectattr("1.children") | list %}
         switch (state) {
         {% for state_id, state in model.states | dictsort %}
         {% if state.children %}
@@ -78,11 +82,15 @@
         default:
             return {};
         }
+{% else %}
+        return {};
+{% endif %}
     }
 
     // §scxml-3.3: a compound state's initial transition target, as written —
     // the entry procedures dereference a <history> among them
     static ::std::vector<EntryTargetT> getInitialTargets([[maybe_unused]] State state) {
+{% if model.states | dictsort | selectattr("1.initial_targets") | list %}
         switch (state) {
         {% for state_id, state in model.states | dictsort %}
         {% if state.initial_targets %}
@@ -93,6 +101,9 @@
         default:
             return {};
         }
+{% else %}
+        return {};
+{% endif %}
     }
 
     // §scxml-3.2: the target of the document's own initial transition, as written

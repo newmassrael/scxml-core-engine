@@ -73,6 +73,7 @@
 #include "{{ ctx.cpp_include }}"
 {% endif %}
 {% endfor %}
+#include "common/CompilerHints.h"
 #include "static/StaticExecutionEngine.h"
 {% if model.test_component %}
 // docs/SCE_TEST_PROFILE.md §12.2, §12.3: the runtime that drives a test
@@ -1083,7 +1084,11 @@ struct {{ model.name }}Policy {
         return State::{{ (model.initial_leaf if model.initial_leaf else model.initial) | capitalize }};
     }
 
-    [[nodiscard]] static constexpr bool isFinalState(State state) noexcept {
+    {# A switch is written only where it has a case: one with a `default` and no
+       case is a warning of its own on MSVC (C4065), so a document none of whose
+       states answers gets the default's answer alone. #}
+    [[nodiscard]] static constexpr bool isFinalState([[maybe_unused]] State state) noexcept {
+{% if model.states | dictsort | selectattr("1.is_final") | list %}
         switch (state) {
         {% for state_id, state in model.states | dictsort %}
         {% if state.is_final %}
@@ -1094,10 +1099,14 @@ struct {{ model.name }}Policy {
         default:
             return false;
         }
+{% else %}
+        return false;
+{% endif %}
     }
 
     // W3C SCXML 3.3: Parent state mapping (for HierarchicalStateHelper)
-    [[nodiscard]] static constexpr std::optional<State> getParent(State state) noexcept {
+    [[nodiscard]] static constexpr std::optional<State> getParent([[maybe_unused]] State state) noexcept {
+{% if model.states | dictsort | selectattr("1.parent") | list %}
         switch (state) {
         {% for state_id, state in model.states | dictsort %}
         {% if state.parent %}
@@ -1108,10 +1117,14 @@ struct {{ model.name }}Policy {
         default:
             return std::nullopt;  // Root state
         }
+{% else %}
+        return std::nullopt;  // Every state is a root state
+{% endif %}
     }
 
     // W3C SCXML 3.3: Check if state is compound (has initial child)
-    [[nodiscard]] static constexpr bool isCompoundState(State state) noexcept {
+    [[nodiscard]] static constexpr bool isCompoundState([[maybe_unused]] State state) noexcept {
+{% if model.states | dictsort | selectattr("1.initial") | list %}
         switch (state) {
         {% for state_id, state in model.states | dictsort %}
         {% if state.initial %}
@@ -1122,6 +1135,9 @@ struct {{ model.name }}Policy {
         default:
             return false;
         }
+{% else %}
+        return false;
+{% endif %}
     }
 
     // Method implementations in separate .inl file for readability

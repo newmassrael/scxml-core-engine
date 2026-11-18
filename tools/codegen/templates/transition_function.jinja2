@@ -197,13 +197,17 @@ inline constexpr std::array<std::string_view, {{ used.total }}> CONFIGURATION_ID
 
 /// The event's name, as the document writes it; empty for a value that is
 /// none of `ALL_EVENTS`.
-[[nodiscard]] constexpr std::string_view getEventName(Event event) noexcept {
+[[nodiscard]] constexpr std::string_view getEventName({% if not tf.events %}[[maybe_unused]] {% endif %}Event event) noexcept {
+{# No switch for a function with no event: one with no label is a warning of
+   its own on MSVC (C4060). #}
+{% if tf.events %}
     switch (event) {
 {% for event in tf.events %}
     case Event::{{ event | to_cpp_event_variant }}:
         return "{{ event | escape_cpp }}";
 {% endfor %}
     }
+{% endif %}
     return {};
 }
 

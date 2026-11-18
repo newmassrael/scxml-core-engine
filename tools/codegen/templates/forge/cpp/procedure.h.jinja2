@@ -113,22 +113,33 @@ public:
         return Event::NONE;
     }
 
-    [[nodiscard]] static constexpr bool isFinalState(State state) noexcept {
+{# A switch is written only where it has a case: one with a `default` and no
+   case is a warning of its own on MSVC (C4065), so a procedure with no final
+   state, or no state with entry content, gets the default's answer alone. #}
+    [[nodiscard]] static constexpr bool isFinalState({% if not final_states %}[[maybe_unused]] {% endif %}State state) noexcept {
+{% if final_states %}
         switch (state) {
 {% for s in final_states %}
             case State::{{ s.name }}: return true;
 {% endfor %}
             default: return false;
         }
+{% else %}
+        return false;
+{% endif %}
     }
 
-    [[nodiscard]] static constexpr const char* finalStateName(State state) noexcept {
+    [[nodiscard]] static constexpr const char* finalStateName({% if not final_states %}[[maybe_unused]] {% endif %}State state) noexcept {
+{% if final_states %}
         switch (state) {
 {% for s in final_states %}
             case State::{{ s.name }}: return "{{ s.id }}";
 {% endfor %}
             default: return "";
         }
+{% else %}
+        return "";
+{% endif %}
     }
 
     // ── Entry actions (service sends + done data) ────────────────
@@ -139,7 +150,8 @@ public:
     // returns (Event::NONE, "") so that the loop falls through to
     // eventless transitions.
 
-    std::pair<Event, std::string> executeEntryActions(State state) {
+    std::pair<Event, std::string> executeEntryActions({% if not (states_with_entry or final_states_with_donedata) %}[[maybe_unused]] {% endif %}State state) {
+{% if states_with_entry or final_states_with_donedata %}
         switch (state) {
 {% for s in states_with_entry %}
             case State::{{ s.name }}: {
@@ -183,6 +195,7 @@ public:
             default:
                 break;
         }
+{% endif %}
         return { Event::NONE, std::string() };
     }
 

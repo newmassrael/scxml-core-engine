@@ -68,8 +68,8 @@
    enters regions nor descends to an initial child. `defaultEntry` is the entry
    set's statesForDefaultEntry answer — whether this state's initial transition
    content runs. #}
-{% if not model.execute_entry_actions_needs_this %}    [[gnu::hot]] static void executeEntryActions([[maybe_unused]] State state, [[maybe_unused]] Engine& engine, [[maybe_unused]] bool defaultEntry) {
-{% else %}    [[gnu::hot]] void executeEntryActions([[maybe_unused]] State state, [[maybe_unused]] Engine& engine, [[maybe_unused]] bool defaultEntry) {
+{% if not model.execute_entry_actions_needs_this %}    SCE_HOT static void executeEntryActions([[maybe_unused]] State state, [[maybe_unused]] Engine& engine, [[maybe_unused]] bool defaultEntry) {
+{% else %}    SCE_HOT void executeEntryActions([[maybe_unused]] State state, [[maybe_unused]] Engine& engine, [[maybe_unused]] bool defaultEntry) {
 {% endif %}
 {% if model.has_parallel_states or model.uses_in_predicate %}
         // W3C SCXML 3.4/3.12.1: Add state to active configuration for parallel states and In() predicate
@@ -803,8 +803,8 @@
    would be a second definition of "is this a local scxml invoke" that could
    drift from the one the rest of this file uses. #}
 {% set exit_actions_needs_this = model.needs_script_engine or model.invokes | scxml or model.invokes | scxml_remote or model.invokes | unsupported or model.invokes | host_invoker or model.needs_parent_template or model.needs_event_scheduler or model.has_parallel_states or model.context_objects or model.has_history_states or has_native_actions or static_fields or model.uses_in_predicate %}
-{% if not exit_actions_needs_this %}    [[gnu::hot]] static void executeExitActions([[maybe_unused]] State state, [[maybe_unused]] Engine& engine, [[maybe_unused]] const std::vector<State>& activeStatesBeforeTransition) {
-{% else %}    [[gnu::hot]] void executeExitActions([[maybe_unused]] State state, [[maybe_unused]] Engine& engine, [[maybe_unused]] const std::vector<State>& activeStatesBeforeTransition) {
+{% if not exit_actions_needs_this %}    SCE_HOT static void executeExitActions([[maybe_unused]] State state, [[maybe_unused]] Engine& engine, [[maybe_unused]] const std::vector<State>& activeStatesBeforeTransition) {
+{% else %}    SCE_HOT void executeExitActions([[maybe_unused]] State state, [[maybe_unused]] Engine& engine, [[maybe_unused]] const std::vector<State>& activeStatesBeforeTransition) {
 {% endif %}
 
 {# One state's exit, and nothing below it: the engine's Appendix D exit set
