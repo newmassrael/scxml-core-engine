@@ -5983,7 +5983,7 @@
           "type": "string"
         },
         "when": {
-          "description": "Optional decode-side predicate (`when=\"decoded.msg_id == 0x02\"`). `None` means inject every successful decode.",
+          "description": "Optional decode-side predicate (`when=\"decoded.msg_id === 0x02\"`). `None` means inject every successful decode.",
           "type": [
             "string",
             "null"
