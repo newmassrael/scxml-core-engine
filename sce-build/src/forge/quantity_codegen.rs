@@ -215,9 +215,9 @@ fn phys_to_raw_expr(
             format!("({cast})({inverse})")
         }
         Language::Kotlin => {
-            // Kotlin numerics dispatch through extension functions:
-            // .toUByte() / .toByte() / .toUShort() / ... — emitted via
-            // `kotlin_base_cast`.
+            // Kotlin numerics convert through member and extension
+            // functions, a narrow width by way of `Int` or `UInt`
+            // (`kotlin_base_cast`).
             let cast = kotlin_base_cast(base_type);
             format!("({inverse}).{cast}")
         }
@@ -280,14 +280,19 @@ fn c_base_cast(t: &SceType) -> &'static str {
     }
 }
 
+/// The conversion of a `Double` to the field's base type. Kotlin converts a
+/// `Double` to `Int`, `Long`, `UInt` and `ULong` only: `Double.toByte()` and
+/// `Double.toShort()` are deprecated (an error under `-Werror`), and no
+/// `Double.toUByte()` or `Double.toUShort()` exists. A narrow width goes
+/// through the 32-bit integer of its signedness, as the deprecation asks.
 fn kotlin_base_cast(t: &SceType) -> &'static str {
     match t {
-        SceType::Uint8 => "toUByte()",
-        SceType::Uint16 => "toUShort()",
+        SceType::Uint8 => "toUInt().toUByte()",
+        SceType::Uint16 => "toUInt().toUShort()",
         SceType::Uint32 => "toUInt()",
         SceType::Uint64 => "toULong()",
-        SceType::Int8 => "toByte()",
-        SceType::Int16 => "toShort()",
+        SceType::Int8 => "toInt().toByte()",
+        SceType::Int16 => "toInt().toShort()",
         SceType::Int32 => "toInt()",
         SceType::Int64 => "toLong()",
         SceType::Float32 => "toFloat()",
@@ -398,7 +403,36 @@ mod tests {
             .and_then(|o| o.get("phys_to_raw_expr"))
             .and_then(|v| v.as_str())
             .unwrap();
-        assert_eq!(phys_to_raw, "((value - -40.0) / 0.5).toUByte()");
+        assert_eq!(phys_to_raw, "((value - -40.0) / 0.5).toUInt().toUByte()");
+    }
+
+    /// A narrow signed width is reached through `Int`: `Double.toByte()` and
+    /// `Double.toShort()` are deprecated, which `-Werror` refuses.
+    #[test]
+    fn kotlin_narrows_a_double_through_int_to_a_signed_width() {
+        for (base, expected) in [
+            (SceType::Int8, "((value - -40.0) / 0.5).toInt().toByte()"),
+            (SceType::Int16, "((value - -40.0) / 0.5).toInt().toShort()"),
+            (
+                SceType::Uint16,
+                "((value - -40.0) / 0.5).toUInt().toUShort()",
+            ),
+        ] {
+            let payload = build_accessor_payload(
+                celsius(),
+                &base,
+                "rawTemp",
+                "rawTemp",
+                "raw_temp",
+                Language::Kotlin,
+            );
+            let phys_to_raw = payload
+                .as_object()
+                .and_then(|o| o.get("phys_to_raw_expr"))
+                .and_then(|v| v.as_str())
+                .unwrap();
+            assert_eq!(phys_to_raw, expected, "{base:?}");
+        }
     }
 
     #[test]
