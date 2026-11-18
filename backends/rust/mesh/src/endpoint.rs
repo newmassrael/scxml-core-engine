@@ -505,14 +505,17 @@ impl<T: Transport, E: Environment> Endpoint<T, E> {
 
     /// Whether the endpoint holds nothing that a later call would still act
     /// on: nothing for the engine, no transmission waiting out its backoff, no
-    /// request waiting for its answer and nothing buffered for a peer that is
-    /// not ready. An endpoint dropped while it holds one of these loses it,
-    /// so a host that drops idle machines asks this first.
+    /// request waiting for its answer, nothing buffered for a peer that is
+    /// not ready, and nothing held for a checkpoint not yet durable or for a
+    /// durable receiver's acknowledgement ([`Router::holds_for_durability`]).
+    /// An endpoint dropped while it holds one of these loses it, so a host
+    /// that drops idle machines asks this first.
     pub fn is_quiet(&self) -> bool {
         self.to_engine.is_empty()
             && self.retries.is_empty()
             && !self.router.awaits_replies()
             && !self.router.holds_outbound()
+            && !self.router.holds_for_durability()
     }
 
     /// Whether the request the machine sent under the wire `invoke_id`

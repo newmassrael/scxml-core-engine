@@ -1102,6 +1102,24 @@ impl Router {
         self.peers.values().any(|bound| bound.outbound.depth() > 0)
     }
 
+    /// Whether the router holds an envelope back for durability (SCE_MESH.md
+    /// section 10.11): one the machine produced that no durable checkpoint has
+    /// released yet, or one sent with durable receipt that its receiver has
+    /// not acknowledged. Either is lost, or never sent again, by a host that
+    /// drops the endpoint before it is released or acknowledged.
+    pub fn holds_for_durability(&self) -> bool {
+        let unreleased = self.persist.as_ref().is_some_and(|persist| {
+            !persist.open.is_empty() || persist.sealed.iter().any(|(_, batch)| !batch.is_empty())
+        });
+        unreleased
+            || self.peers.values().any(|bound| {
+                bound
+                    .durable_out
+                    .as_ref()
+                    .is_some_and(|out| out.waiting > 0 || !out.unacked.is_empty())
+            })
+    }
+
     /// Unbind `peer`, which has left for good. What waited for its link is let go as when its link
     /// is lost (each request waiting on it is §mesh-16.7 row 5, and what the outbound buffer held
     /// is dropped), its receive state is forgotten, and a send to it afterwards is to a peer that

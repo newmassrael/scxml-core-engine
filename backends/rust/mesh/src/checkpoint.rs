@@ -57,7 +57,7 @@ use alloc::vec::Vec;
 use core::fmt;
 
 use sce_rust_runtime::json::{self, Value};
-use sce_rust_runtime::saved_state::{SavedInvokes, SavedState, StateRefusal};
+use sce_rust_runtime::saved_state::{SavedState, StateRefusal};
 use sce_rust_session_store::{Failure, SessionStore, WriteError, LATEST_MOMENT};
 
 use crate::endpoint::Told;
@@ -275,11 +275,12 @@ impl Checkpoint {
             .find(|section| section.machine == machine)
     }
 
-    /// The earliest moment one of the tree's waiting delayed sends comes due, in milliseconds since
-    /// the Unix epoch, or `None` when none waits: what a session store keeps beside the checkpoint,
-    /// so a server wakes the session when it comes due.
+    /// The earliest moment something the tree waits for comes due, in milliseconds since the Unix
+    /// epoch, or `None` when nothing waits: a delayed send or a host-run invocation's deadline, of
+    /// any session of the tree ([`SavedState::earliest_due`]). What a session store keeps beside
+    /// the checkpoint, so a server wakes the session when it comes due.
     pub fn earliest_due(&self) -> Option<u64> {
-        earliest_due(&self.state)
+        self.state.earliest_due()
     }
 
     /// The checkpoint as `sce-mesh-checkpoint` JSON.
@@ -329,19 +330,6 @@ impl Checkpoint {
                 .collect::<Result<_, _>>()?,
         })
     }
-}
-
-/// The earliest due of `state`'s waiting sends and of every running child's, to any depth.
-fn earliest_due(state: &SavedState) -> Option<u64> {
-    let own = state.pending.iter().map(|send| send.due).min();
-    let children = match &state.invokes {
-        SavedInvokes::Resumed(children) => children
-            .iter()
-            .filter_map(|child| earliest_due(&child.session))
-            .min(),
-        SavedInvokes::Restarted(_) => None,
-    };
-    own.into_iter().chain(children).min()
 }
 
 /// Where a host keeps the checkpoints of one machine, durably.
@@ -992,7 +980,9 @@ mod tests {
     use crate::testing::{Fixed, Recorder};
     use alloc::vec;
     use sce_forge_runtime::codec::SceCursor;
-    use sce_rust_runtime::saved_state::{SavedAct, SavedChild, SavedHostSend, SavedSend};
+    use sce_rust_runtime::saved_state::{
+        SavedAct, SavedChild, SavedHostSend, SavedInvokes, SavedSend,
+    };
     use sce_rust_runtime::{HostInvokeRequest, HostSendRequest};
     use sce_rust_session_store::MemoryStore;
 
@@ -1729,6 +1719,33 @@ mod tests {
             "nothing acknowledged is sent again"
         );
         assert_eq!(ecu.next_retry_due_ms(), None);
+    }
+
+    /// An endpoint that holds an envelope for a checkpoint not yet durable, or
+    /// for a durable receiver's acknowledgement, is not quiet: a host that
+    /// dropped it then would lose the envelope, or never send it again.
+    #[test]
+    fn an_endpoint_holding_for_durability_is_not_quiet() {
+        let mut ecu = durable_sender(0, 0, true);
+        let mut hmi = durable_receiver();
+        assert!(ecu.is_quiet());
+        ecu.send(&note("go"));
+        assert!(!ecu.is_quiet(), "held for its checkpoint");
+        ecu.checkpoint(1, saved(&[], Vec::new()), false).unwrap();
+        assert!(!ecu.is_quiet(), "sealed, and not yet durable");
+        ecu.durable(1);
+        let released = sent(&mut ecu);
+        assert_eq!(released.len(), 1);
+        assert!(!ecu.is_quiet(), "released, and not yet acknowledged");
+
+        hmi.receive("ecu", released[0].clone());
+        assert_eq!(names(&mut hmi), ["go"]);
+        hmi.checkpoint(1, saved(&[], Vec::new()), false).unwrap();
+        hmi.durable(1);
+        let receipts = sent(&mut hmi);
+        assert_eq!(receipts.len(), 1);
+        ecu.receive("hmi", receipts[0].clone());
+        assert!(ecu.is_quiet(), "acknowledged, it holds nothing");
     }
 
     /// A durable binding holds at most its window: a send past it is refused

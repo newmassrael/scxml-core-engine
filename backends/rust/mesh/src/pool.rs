@@ -17,16 +17,27 @@
 //! sessions of different keys run on as many threads as the host runs them on.
 //!
 //! A session is in memory while it is used. The first input for a key takes
-//! the key's lease in the host's [`SessionStore`], then loads the session the
-//! store holds (a restore) or, when it holds none, starts the machine from its
-//! initial datamodel. After every input that ran a macrostep the session is
-//! saved through the pool's [`CheckpointSink`], carrying the version it was
-//! read at and its lease's fence, so a session another process took over is
-//! never written by this one. A session that had no event for `idle_ms` and
-//! holds nothing pending is saved, dropped from memory, and its lease
-//! released ([`Pool::evict_idle`]). One whose first delayed send comes due
-//! while it is out of memory is loaded again ([`Pool::due`]), and its restore
-//! arms the send.
+//! the key's lease in the host's [`SessionStore`], then loads the session's
+//! last durable checkpoint ([`checkpoint::load`]) and restores its machine
+//! from the checkpoint's saved state and its endpoint from the checkpoint's
+//! section ([`Endpoint::restore`]), or, when the store holds none, starts the
+//! machine from its initial datamodel. A session is kept as its
+//! [`Checkpoint`] (SCE_MESH.md section 10.11): its machine's saved state and
+//! its endpoint's (the duplicate window, the replies a duplicate request is
+//! answered with, what waits for a link) in one write. After every input that
+//! took an envelope in or ran a macrostep the pool takes one in the three
+//! steps of section 10.11: the machine's saved state and the endpoint sealed
+//! with the next number ([`Endpoint::checkpoint`]), the write through a
+//! [`StoreSink`] carrying the version it was read at and the lease's fence,
+//! so a session another process took over is never written by this one, and
+//! the endpoint told the checkpoint is durable ([`Endpoint::durable`]), which
+//! releases what the input made: nothing a session sends leaves before the
+//! checkpoint that holds it is durable. A session that had no event for
+//! `idle_ms` and holds nothing pending is saved as a clean checkpoint,
+//! dropped from memory, and its lease released ([`Pool::evict_idle`]), so its
+//! restore tells no peer it may have lost an envelope. One whose earliest wait
+//! comes due while it is out of memory is loaded again ([`Pool::due`]), and its
+//! restore arms what came due.
 //!
 //! A process that loses a key's lease (another process took it over, or a
 //! renewal was refused) stops serving the key: the session is dropped without
@@ -52,10 +63,12 @@ use std::sync::{Arc, Mutex, MutexGuard, PoisonError, TryLockError};
 
 use sce_forge_runtime::codec::SceCursor;
 use sce_rust_runtime::json::{self, Value};
+use sce_rust_runtime::saved_state::SavedState;
 use sce_rust_session_store::{
-    AcquireError, Conflict, Failure, Held, LeaseError, SessionStore, WriteError, LATEST_MOMENT,
+    AcquireError, Failure, Held, LeaseError, SessionStore, WriteError, LATEST_MOMENT,
 };
 
+use crate::checkpoint::{self, Checkpoint, CheckpointSink, LoadError, StoreSink};
 use crate::endpoint::{
     Endpoint, EngineCall, Environment, SharedEndpoint, Transport, TransportFailure,
 };
@@ -75,32 +88,22 @@ const WAKE_BATCH: usize = 256;
 ///
 /// The host implements it for its machine in a few lines: [`Self::run`] hands
 /// the calls to the engine (`crate::endpoint::apply_to`) and ticks it, and
-/// [`Self::save`] is the generated `save_at` written as text, beside
-/// `SavedState::earliest_due`.
+/// [`Self::save`] is the generated `save_at`.
 pub trait SessionMachine: Send {
     /// Tell the machine `calls`, in order, and run it until it waits: every
     /// macrostep they cause and every delayed send due at `wall_now_ms`, in
     /// milliseconds since the Unix epoch. Answers whether a macrostep ran.
     fn run(&mut self, calls: Vec<EngineCall>, wall_now_ms: u64) -> bool;
 
-    /// The machine's whole state at a macrostep boundary, as the bytes the
-    /// store keeps, with the earliest moment one of its waits comes due.
-    /// Refused, with the reason, for a machine that cannot be saved now.
-    fn save(&self, wall_now_ms: u64) -> Result<Saved, String>;
+    /// The machine's whole state at a macrostep boundary, its tree of sessions
+    /// included, at `wall_now_ms`: what the session's [`Checkpoint`] holds of
+    /// the machine. Refused, with the reason, for a machine that cannot be
+    /// saved now.
+    fn save(&self, wall_now_ms: u64) -> Result<SavedState, String>;
 
     /// Whether the machine reached a top-level final state: its session is
     /// over, and the next input for its key starts a new one.
     fn finished(&self) -> bool;
-}
-
-/// A session's saved state, as [`SessionMachine::save`] gives it.
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub struct Saved {
-    /// The saved state, which the pool and the store keep without reading.
-    pub document: Vec<u8>,
-    /// The earliest moment one of its waits comes due, in milliseconds since
-    /// the Unix epoch, or `None` when nothing waits for a moment.
-    pub earliest_due: Option<u64>,
 }
 
 /// The endpoint a session's machine is registered with
@@ -121,102 +124,18 @@ pub trait SessionFactory<T, E>: Send + Sync {
         wall_now_ms: u64,
     ) -> Result<Self::Machine, String>;
 
-    /// A machine for `key` standing where `document`, a state an earlier
-    /// [`SessionMachine::save`] gave, left one, restored at `wall_now_ms` (so
-    /// a send that came due while it was out of memory comes due now), its
-    /// Mesh sends and requests registered with `endpoint`.
+    /// A machine for `key` standing where `state`, the saved state of the
+    /// session's last durable [`Checkpoint`], left one, restored at
+    /// `wall_now_ms` (so a send that came due while it was out of memory comes
+    /// due now), its Mesh sends and requests registered with `endpoint`. The
+    /// pool restores the endpoint from the same checkpoint once this answers.
     fn restore(
         &self,
         key: &str,
-        document: &[u8],
+        state: &SavedState,
         endpoint: &SessionEndpoint<T, E>,
         wall_now_ms: u64,
     ) -> Result<Self::Machine, String>;
-}
-
-/// What a save is made from: the version of the session it replaces, `0` for
-/// a session the store does not hold yet, and the fence of the lease the
-/// process holds on its key.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub struct Ticket {
-    pub version: u64,
-    pub fence: u64,
-}
-
-/// A save the sink made durable: it is written, and survives the process.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub struct Durable {
-    /// The version the session now has; the next save is made from it.
-    pub version: u64,
-}
-
-/// Why a [`CheckpointSink`] refused a save.
-#[derive(Debug)]
-pub enum CheckpointRefused {
-    /// Another process holds the key, or wrote the session in between: this
-    /// process no longer serves it.
-    Superseded(Conflict),
-    /// The medium failed, and nothing was written; a later save may succeed.
-    Failed(Failure),
-}
-
-impl From<WriteError> for CheckpointRefused {
-    fn from(error: WriteError) -> Self {
-        match error {
-            WriteError::Conflict(conflict) => Self::Superseded(conflict),
-            WriteError::Failed(failure) => Self::Failed(failure),
-        }
-    }
-}
-
-/// Where the pool writes a session: the one call it makes after an input that
-/// ran a macrostep, and before it drops an idle session, and the call that
-/// removes a session whose machine finished.
-///
-/// [`StoreCheckpoints`] writes straight to the store. A sink that keeps more
-/// beside the machine's state (what its endpoint holds, the replies it gave)
-/// writes it in the same transaction and answers [`Durable`] only once all of
-/// it is.
-pub trait CheckpointSink: Send + Sync {
-    /// Make `document` the saved state of the session `key`, with
-    /// `earliest_due` as its earliest wait, if the session is still at
-    /// `ticket.version` and `ticket.fence` is the lease held on `key`.
-    fn save(
-        &self,
-        key: &str,
-        document: &[u8],
-        earliest_due: Option<u64>,
-        ticket: Ticket,
-    ) -> Result<Durable, CheckpointRefused>;
-
-    /// Remove the session `key`, under the same two checks as
-    /// [`Self::save`].
-    fn end(&self, key: &str, ticket: Ticket) -> Result<(), CheckpointRefused>;
-}
-
-/// The checkpoint sink that writes the machine's state to the session store
-/// and nothing else: a compare-and-set put under the lease's fence.
-pub struct StoreCheckpoints(pub Arc<dyn SessionStore>);
-
-impl CheckpointSink for StoreCheckpoints {
-    fn save(
-        &self,
-        key: &str,
-        document: &[u8],
-        earliest_due: Option<u64>,
-        ticket: Ticket,
-    ) -> Result<Durable, CheckpointRefused> {
-        self.0
-            .put(key, document, earliest_due, ticket.version, ticket.fence)
-            .map(|version| Durable { version })
-            .map_err(CheckpointRefused::from)
-    }
-
-    fn end(&self, key: &str, ticket: Ticket) -> Result<(), CheckpointRefused> {
-        self.0
-            .delete(key, ticket.version, ticket.fence)
-            .map_err(CheckpointRefused::from)
-    }
 }
 
 /// How a pool holds its keys' leases.
@@ -375,6 +294,9 @@ struct Live<M, T, E> {
     endpoint: SessionEndpoint<T, E>,
     /// The version of the session the store holds, `0` for none yet.
     version: u64,
+    /// The number of the last checkpoint the endpoint was sealed or restored
+    /// with, `0` before the first: the next is sealed with one above it.
+    sequence: u64,
     /// The earliest wait of the state last saved.
     earliest_due: Option<u64>,
     /// When it last had an event: an envelope, or a macrostep a wait ran.
@@ -408,6 +330,16 @@ enum Served {
     Lost(String),
 }
 
+/// Which checkpoint of a session the pool takes (SCE_MESH.md section 10.11).
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum Take {
+    /// One when an input changed the session since its last checkpoint.
+    IfChanged,
+    /// A clean one, whatever changed: the session is dropped from memory once
+    /// it is durable, so its endpoint takes nothing in after it.
+    Clean,
+}
+
 /// A request an envelope carries, as much of it as a reply needs.
 struct Request {
     invoke_id: [u8; 16],
@@ -436,7 +368,6 @@ where
     sessions: Sessions,
     config: PoolConfig,
     factory: F,
-    checkpoints: Arc<dyn CheckpointSink>,
     store: Arc<dyn SessionStore>,
     transport: Arc<Mutex<T>>,
     environment: Mutex<E>,
@@ -459,8 +390,7 @@ where
     /// A pool of the sessions of `machine`, whose deployment declares
     /// `sessions:`, built by `factory`, kept in `store`, sending through
     /// `transport` and reading the clock and drawing ids from `environment`.
-    /// It saves through the store itself until
-    /// [`with_checkpoints`](Self::with_checkpoints) gives it another sink.
+    /// Each session's checkpoint is written to `store` under the key's lease.
     pub fn new(
         machine: Machine,
         config: PoolConfig,
@@ -486,7 +416,6 @@ where
             sessions,
             config,
             factory,
-            checkpoints: Arc::new(StoreCheckpoints(Arc::clone(&store))),
             store,
             transport: Arc::new(Mutex::new(transport)),
             environment: Mutex::new(environment),
@@ -496,12 +425,6 @@ where
             deferred: Mutex::new(BTreeMap::new()),
             errors: Mutex::new(Vec::new()),
         })
-    }
-
-    /// Save every session through `checkpoints` instead of the store itself.
-    pub fn with_checkpoints(mut self, checkpoints: Arc<dyn CheckpointSink>) -> Self {
-        self.checkpoints = checkpoints;
-        self
     }
 
     /// The machine the pool serves.
@@ -630,10 +553,7 @@ where
                     }
                 }
                 Served::Lost(reason) => {
-                    *live = None;
-                    *lock(&slot.lease) = LeaseState::Unheld;
-                    self.forget_replies(&slot.key);
-                    self.abandon(&slot, &Refusal::unavailable(reason));
+                    self.lose(&slot, &mut live, reason);
                     return;
                 }
             }
@@ -643,6 +563,13 @@ where
     /// The sessions whose earliest wait is due now: those in memory, and
     /// those the store holds out of memory, which are loaded when they are
     /// run. A key another process holds is left to it.
+    ///
+    /// The store's index of earliest dues says which are due; each is read
+    /// only once its key's lease is taken ([`Self::run`]). This is why the
+    /// pool does not wake through `checkpoint::wake_due`, which reads every
+    /// due session at once: a checkpoint read before the lease may be one
+    /// another process has replaced since, and a session in memory here or
+    /// leased elsewhere is not to be read at all.
     pub fn due(&self) -> Vec<String> {
         let now = self.wall_now();
         let mut keys = Vec::new();
@@ -722,8 +649,10 @@ where
 
     /// Save and drop every session that has had no event for `idle_ms`, holds
     /// nothing in its inbox and whose endpoint is quiet
-    /// ([`Endpoint::is_quiet`]), and release its lease. A session being run
-    /// is not idle. The keys answered are those dropped.
+    /// ([`Endpoint::is_quiet`]), and release its lease. Its last checkpoint is
+    /// clean, since its endpoint takes nothing in after it, so its restore
+    /// raises no `restored` row (SCE_MESH.md section 16.7, row 17). A session
+    /// being run is not idle. The keys answered are those dropped.
     pub fn evict_idle(&self) -> Vec<String> {
         let now = self.wall_now();
         let mut evicted = Vec::new();
@@ -740,19 +669,14 @@ where
             {
                 continue;
             }
-            let saved = self.checkpoint(&slot, session, now);
-            let unsaved = session.dirty;
-            match saved {
+            match self.checkpoint(&slot, session, now, Take::Clean) {
                 Err(reason) => {
-                    *live = None;
-                    *lock(&slot.lease) = LeaseState::Unheld;
-                    self.forget_replies(&slot.key);
-                    self.abandon(&slot, &Refusal::unavailable(reason));
+                    self.lose(&slot, &mut live, reason);
                     continue;
                 }
                 // Not saved: dropped, it would be lost.
-                Ok(()) if unsaved => continue,
-                Ok(()) => {}
+                Ok(false) => continue,
+                Ok(true) => {}
             }
             let removed = {
                 let mut table = lock(&self.table);
@@ -766,6 +690,14 @@ where
                 }
             };
             if !removed {
+                // An input arrived while the clean checkpoint was written, and
+                // the endpoint takes it in after that checkpoint: one that is
+                // not clean replaces it now, so that a restore after a crash
+                // still tells the peers an envelope may have been lost.
+                session.dirty = true;
+                if let Err(reason) = self.checkpoint(&slot, session, now, Take::IfChanged) {
+                    self.lose(&slot, &mut live, reason);
+                }
                 continue;
             }
             *live = None;
@@ -779,7 +711,10 @@ where
     /// The earliest wall-clock moment, in milliseconds since the Unix epoch,
     /// at which [`Self::due`], [`Self::renew_leases`] or [`Self::evict_idle`]
     /// has work; `None` when none of them will. A session being run is left
-    /// out: its run reports what it leaves.
+    /// out: its run reports what it leaves. Of the sessions out of memory,
+    /// one another process leases counts from when its lease runs out:
+    /// `checkpoint::next_wake`, the first due of the whole store, would wake
+    /// this process again and again for a session it may not serve.
     pub fn next_wake_ms(&self) -> Option<u64> {
         let mut next: Option<u64> = None;
         let mut at = |moment: u64| next = Some(next.map_or(moment, |n| n.min(moment)));
@@ -946,22 +881,10 @@ where
         built
     }
 
-    /// The session `key` as the store holds it, or a new one, at `now`.
+    /// The session `key` as its last durable checkpoint holds it, or a new
+    /// one, at `now`.
     fn build(&self, key: &str, now: u64) -> Result<Live<F::Machine, T, E>, Refusal> {
-        let stored = self.store.get(key).map_err(|failure| {
-            let reason = failure.to_string();
-            self.error(PoolError::Store {
-                key: Some(key.to_string()),
-                failure,
-            });
-            Refusal::unavailable(reason)
-        })?;
-        let endpoint = self.endpoint_for(key)?;
-        let built = match &stored {
-            Some(stored) => self.factory.restore(key, &stored.state, &endpoint, now),
-            None => self.factory.start(key, &endpoint, now),
-        };
-        let machine = built.map_err(|reason| {
+        let not_built = |reason: String| {
             self.error(PoolError::NotBuilt {
                 key: key.to_string(),
                 reason: reason.clone(),
@@ -970,29 +893,76 @@ where
                 status: RpcStatus::InternalError,
                 reason,
             }
+        };
+        let loaded = checkpoint::load(&*self.store, key).map_err(|error| match error {
+            LoadError::Store(failure) => {
+                let reason = failure.to_string();
+                self.error(PoolError::Store {
+                    key: Some(key.to_string()),
+                    failure,
+                });
+                Refusal::unavailable(reason)
+            }
+            unreadable @ LoadError::Unreadable { .. } => not_built(unreadable.to_string()),
         })?;
-        let (version, earliest_due) = stored
-            .as_ref()
-            .map_or((0, None), |stored| (stored.version, stored.earliest_due));
+        let endpoint = self.endpoint_for(key)?;
+        let machine = match &loaded {
+            Some(loaded) => self.restore(key, &loaded.checkpoint, &endpoint, now),
+            None => self.factory.start(key, &endpoint, now),
+        }
+        .map_err(not_built)?;
+        let (version, sequence, earliest_due) = loaded.as_ref().map_or((0, 0, None), |loaded| {
+            (
+                loaded.version,
+                loaded.checkpoint.sequence,
+                loaded.checkpoint.earliest_due(),
+            )
+        });
         Ok(Live {
             machine,
             endpoint,
             version,
+            sequence,
             earliest_due,
             last_active_ms: now,
             // A machine just started ran its initial macrostep, which no
-            // saved state holds yet.
-            dirty: stored.is_none(),
+            // checkpoint holds yet.
+            dirty: loaded.is_none(),
         })
     }
 
-    /// A session's own endpoint, on the pool's transport, told which peers
-    /// are ready.
+    /// The machine of the session `key` restored from `checkpoint` at `now`,
+    /// and `endpoint`, the session's new endpoint, restored from the same
+    /// checkpoint: what it held unreleased leaves, what it released for the
+    /// machine and the machine had not applied is queued for it again, and,
+    /// unless the checkpoint is clean, each peer it took envelopes from is
+    /// told one may have been lost (SCE_MESH.md section 10.11).
+    fn restore(
+        &self,
+        key: &str,
+        checkpoint: &Checkpoint,
+        endpoint: &SessionEndpoint<T, E>,
+        now: u64,
+    ) -> Result<F::Machine, String> {
+        let machine = self
+            .factory
+            .restore(key, &checkpoint.state, endpoint, now)?;
+        lock(endpoint).restore(checkpoint).map_err(|error| {
+            alloc::format!("the session's endpoint cannot be restored: {error}")
+        })?;
+        Ok(machine)
+    }
+
+    /// A session's own endpoint, on the pool's transport, checkpointing, told
+    /// which peers are ready.
     fn endpoint_for(&self, key: &str) -> Result<SessionEndpoint<T, E>, Refusal> {
-        let router = self.machine.router().map_err(|error| Refusal {
+        let mut router = self.machine.router().map_err(|error| Refusal {
             status: RpcStatus::InternalError,
             reason: alloc::format!("the session's router cannot be built: {error:?}"),
         })?;
+        // A session is kept only as its checkpoint, so nothing it sends may
+        // leave before a durable checkpoint holds it.
+        router.enable_checkpoints();
         let transport = SessionTransport {
             key: key.to_string(),
             inner: Arc::clone(&self.transport),
@@ -1005,8 +975,9 @@ where
         Ok(Arc::new(Mutex::new(endpoint)))
     }
 
-    /// Apply what `slot`'s inbox holds to `session`, then what is due, saving
-    /// it after each input that ran a macrostep.
+    /// Apply what `slot`'s inbox holds to `session`, then what is due, taking
+    /// a checkpoint after each input that took an envelope in or ran a
+    /// macrostep.
     fn serve(&self, slot: &Slot<F::Machine, T, E>, session: &mut Live<F::Machine, T, E>) -> Served {
         let key = slot.key.as_str();
         loop {
@@ -1033,20 +1004,32 @@ where
             if self.drive(key, session, calls, now) || event {
                 session.last_active_ms = now;
             }
-            if let Err(reason) = self.checkpoint(slot, session, now) {
+            // An envelope taken in changed what the endpoint holds (its
+            // duplicate window, its reply cache), which the checkpoint holds
+            // too, even when it ran no macrostep.
+            session.dirty |= event;
+            if let Err(reason) = self.checkpoint(slot, session, now, Take::IfChanged) {
                 return Served::Lost(reason);
             }
             if session.machine.finished() {
                 return Served::Finished;
             }
         }
-        let now = self.wall_now();
-        let calls = lock(&session.endpoint).take_calls();
-        if self.drive(key, session, calls, now) {
-            session.last_active_ms = now;
-        }
-        if let Err(reason) = self.checkpoint(slot, session, now) {
-            return Served::Lost(reason);
+        let mut calls = lock(&session.endpoint).take_calls();
+        loop {
+            let now = self.wall_now();
+            if self.drive(key, session, calls, now) {
+                session.last_active_ms = now;
+            }
+            if let Err(reason) = self.checkpoint(slot, session, now, Take::IfChanged) {
+                return Served::Lost(reason);
+            }
+            // What the checkpoint released and the transport refused at once
+            // is a row the machine is told.
+            calls = lock(&session.endpoint).take_calls();
+            if calls.is_empty() || session.machine.finished() {
+                break;
+            }
         }
         self.prune_replies(key, session);
         if session.machine.finished() {
@@ -1069,12 +1052,7 @@ where
         loop {
             stepped |= session.machine.run(calls, now);
             let mut endpoint = lock(&session.endpoint);
-            for error in endpoint.take_host_errors() {
-                self.error(PoolError::Endpoint {
-                    key: key.to_string(),
-                    error,
-                });
-            }
+            self.report(key, &mut endpoint);
             calls = endpoint.take_calls();
             drop(endpoint);
             if calls.is_empty() {
@@ -1085,48 +1063,63 @@ where
         stepped
     }
 
-    /// Save `session` if a macrostep ran since its last save. An error is the
-    /// reason this process no longer holds the session's key; a save that
-    /// failed otherwise leaves the session unsaved, to be saved at its next
-    /// chance.
+    /// Take the checkpoint of `session` that `take` asks for, in the three
+    /// steps of SCE_MESH.md section 10.11: the machine's saved state and the
+    /// endpoint sealed with the next number ([`Endpoint::checkpoint`]), the
+    /// write through a [`StoreSink`] over the version the session was read at
+    /// and under the key's lease, and, once the write answered, the endpoint
+    /// told the checkpoint is durable ([`Endpoint::durable`]), which releases
+    /// what it holds. Answers whether a durable checkpoint holds the session
+    /// as `take` asked. An error is the reason this process no longer holds
+    /// the session's key; a save that failed otherwise leaves the session
+    /// unsaved, and what it made held, to be saved at its next chance.
     fn checkpoint(
         &self,
         slot: &Slot<F::Machine, T, E>,
         session: &mut Live<F::Machine, T, E>,
         now: u64,
-    ) -> Result<(), String> {
-        if !session.dirty || session.machine.finished() {
-            return Ok(());
+        take: Take,
+    ) -> Result<bool, String> {
+        if session.machine.finished() || (take == Take::IfChanged && !session.dirty) {
+            return Ok(true);
         }
         let key = slot.key.as_str();
         let Some(fence) = fence_of(slot) else {
             return Err("its lease is no longer held".to_string());
         };
-        let saved = match session.machine.save(now) {
-            Ok(saved) => saved,
-            Err(reason) => {
-                self.error(PoolError::NotSaved {
-                    key: key.to_string(),
-                    reason,
-                });
-                return Ok(());
-            }
+        let not_saved = |reason: String| -> Result<bool, String> {
+            self.error(PoolError::NotSaved {
+                key: key.to_string(),
+                reason,
+            });
+            Ok(false)
         };
-        let ticket = Ticket {
-            version: session.version,
-            fence,
+        let state = match session.machine.save(now) {
+            Ok(state) => state,
+            Err(reason) => return not_saved(reason),
         };
-        match self
-            .checkpoints
-            .save(key, &saved.document, saved.earliest_due, ticket)
-        {
-            Ok(durable) => {
-                session.version = durable.version;
-                session.earliest_due = saved.earliest_due;
+        let sequence = session.sequence.saturating_add(1);
+        let sealed = lock(&session.endpoint).checkpoint(sequence, state, take == Take::Clean);
+        let taken = match sealed {
+            Ok(taken) => taken,
+            Err(error) => return not_saved(error.to_string()),
+        };
+        // Sealed: the endpoint is never sealed with this number again, whether
+        // or not the write lands, and a later checkpoint holds what this one
+        // holds.
+        session.sequence = sequence;
+        let mut sink = StoreSink::new(&*self.store, key, session.version, fence);
+        match sink.write(&taken) {
+            Ok(()) => {
+                session.version = sink.version();
+                session.earliest_due = taken.earliest_due();
                 session.dirty = false;
-                Ok(())
+                let mut endpoint = lock(&session.endpoint);
+                endpoint.durable(sequence);
+                self.report(key, &mut endpoint);
+                Ok(true)
             }
-            Err(CheckpointRefused::Superseded(conflict)) => {
+            Err(WriteError::Conflict(conflict)) => {
                 *lock(&slot.lease) = LeaseState::Lost;
                 let reason = alloc::format!("its save was refused: {conflict}");
                 self.error(PoolError::LeaseLost {
@@ -1135,38 +1128,81 @@ where
                 });
                 Err(reason)
             }
-            Err(CheckpointRefused::Failed(failure)) => {
+            Err(WriteError::Failed(failure)) => {
                 self.error(PoolError::Store {
                     key: Some(key.to_string()),
                     failure,
                 });
-                Ok(())
+                Ok(false)
             }
         }
     }
 
-    /// The machine of `slot` finished: its saved session is removed, and its
-    /// lease released.
+    /// The machine of `slot` finished: its saved session is removed from the
+    /// store, and its lease released. What the inputs since its last
+    /// checkpoint made is sealed first and leaves once the removal answered,
+    /// as a checkpoint's envelopes leave once it is durable: a process that
+    /// fails before restores the session from that checkpoint, and its
+    /// machine makes them again.
     fn finish(&self, slot: &Slot<F::Machine, T, E>, finished: &Live<F::Machine, T, E>) {
+        let key = slot.key.as_str();
         if let Some(fence) = fence_of(slot) {
-            let ticket = Ticket {
-                version: finished.version,
-                fence,
+            let sequence = finished.sequence.saturating_add(1);
+            let mut endpoint = lock(&finished.endpoint);
+            let sealed = match endpoint.seal(sequence) {
+                Ok(_) => true,
+                Err(error) => {
+                    self.error(PoolError::NotSaved {
+                        key: key.to_string(),
+                        reason: error.to_string(),
+                    });
+                    false
+                }
             };
-            match self.checkpoints.end(&slot.key, ticket) {
+            match self.store.delete(key, finished.version, fence) {
+                Ok(()) if sealed => {
+                    endpoint.durable(sequence);
+                    self.report(key, &mut endpoint);
+                }
                 Ok(()) => {}
-                Err(CheckpointRefused::Superseded(conflict)) => self.error(PoolError::LeaseLost {
-                    key: slot.key.clone(),
+                Err(WriteError::Conflict(conflict)) => self.error(PoolError::LeaseLost {
+                    key: key.to_string(),
                     reason: alloc::format!("its end was refused: {conflict}"),
                 }),
-                Err(CheckpointRefused::Failed(failure)) => self.error(PoolError::Store {
-                    key: Some(slot.key.clone()),
+                Err(WriteError::Failed(failure)) => self.error(PoolError::Store {
+                    key: Some(key.to_string()),
                     failure,
                 }),
             }
         }
-        self.forget_replies(&slot.key);
+        self.forget_replies(key);
         self.release(slot);
+    }
+
+    /// Drop `slot`'s session, whose key this process no longer serves for
+    /// `reason`, without saving it: what it held for a checkpoint is lost with
+    /// it, since another process serves the key from its last durable one.
+    /// Each request its inbox holds is answered `Unavailable`.
+    fn lose(
+        &self,
+        slot: &Arc<Slot<F::Machine, T, E>>,
+        live: &mut Option<Live<F::Machine, T, E>>,
+        reason: String,
+    ) {
+        *live = None;
+        *lock(&slot.lease) = LeaseState::Unheld;
+        self.forget_replies(&slot.key);
+        self.abandon(slot, &Refusal::unavailable(reason));
+    }
+
+    /// Hand the host what the endpoint of the session `key` reported to it.
+    fn report(&self, key: &str, endpoint: &mut Endpoint<SessionTransport<T>, E>) {
+        for error in endpoint.take_host_errors() {
+            self.error(PoolError::Endpoint {
+                key: key.to_string(),
+                error,
+            });
+        }
     }
 
     /// Give up `slot`'s lease, if this process holds it.
@@ -1366,8 +1402,9 @@ mod tests {
     use crate::router::PeerConfig;
     use crate::rpc::MESH_EVENT_PARAM;
     use alloc::vec;
+    use sce_rust_runtime::saved_state::{SavedAct, SavedHostSend, SavedInvokes, SavedSend};
     use sce_rust_runtime::{HostInvokeRequest, HostSendRequest};
-    use sce_rust_session_store::MemoryStore;
+    use sce_rust_session_store::{Due, Lease, MemoryStore, Stored};
     use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
     use std::sync::Condvar;
     use std::time::{Duration, Instant};
@@ -1637,22 +1674,45 @@ mod tests {
             stepped
         }
 
-        fn save(&self, _wall_now_ms: u64) -> Result<Saved, String> {
-            let reminders: Vec<String> = self
+        /// The room as a generated `save_at` gives a machine: its members as
+        /// a variable, and each reminder as a delayed send waiting, earliest
+        /// first, so that the checkpoint's earliest due is the first
+        /// reminder's.
+        fn save(&self, _wall_now_ms: u64) -> Result<SavedState, String> {
+            let mut pending: Vec<SavedSend> = self
                 .reminders
                 .iter()
-                .map(|(due, peer)| {
-                    alloc::format!(r#"{{"due":"{due}","peer":{}}}"#, json::quote(peer))
+                .map(|(due, peer)| SavedSend {
+                    due: *due,
+                    act: SavedAct::Host(SavedHostSend {
+                        processor_type: MESH_PROCESSOR_TYPE.to_string(),
+                        event: "reminded".to_string(),
+                        target: alloc::format!("#{peer}"),
+                        send_id: alloc::format!("reminder-{due}"),
+                        ..SavedHostSend::default()
+                    }),
                 })
                 .collect();
-            let document = alloc::format!(
-                r#"{{"members":"{}","reminders":[{}]}}"#,
-                self.members,
-                reminders.join(",")
-            );
-            Ok(Saved {
-                document: document.into_bytes(),
-                earliest_due: self.reminders.iter().map(|(due, _)| *due).min(),
+            pending.sort_by_key(|send| send.due);
+            Ok(SavedState {
+                shape: "room".to_string(),
+                configuration: vec!["open".to_string()],
+                current: "open".to_string(),
+                variables: vec![(
+                    "members".to_string(),
+                    Value::Number(self.members.to_string()),
+                )],
+                history: Vec::new(),
+                pending,
+                invokes: SavedInvokes::Resumed(Vec::new()),
+                session_id: alloc::format!("room-{}", self.key),
+                invoke_starts: Vec::new(),
+                host_invokes: Vec::new(),
+                host_invoke_token: 0,
+                auto_send_seq: 0,
+                external: Vec::new(),
+                revisions: Vec::new(),
+                features: None,
             })
         }
 
@@ -1662,27 +1722,33 @@ mod tests {
     }
 
     /// The members and reminders of a saved room.
-    fn read_room(document: &[u8]) -> Result<(u32, Vec<(u64, String)>), String> {
-        let text = core::str::from_utf8(document).map_err(|error| error.to_string())?;
-        let room = json::parse(text).map_err(|error| error.to_string())?;
-        let number = |value: Option<&Value>| match value {
-            Some(Value::Text(digits)) => digits.parse::<u64>().map_err(|error| error.to_string()),
-            _ => Err("not a number written as a text".to_string()),
+    fn room_of(state: &SavedState) -> Result<(u32, Vec<(u64, String)>), String> {
+        let members = match state.variable("members") {
+            Ok(Value::Number(digits)) => {
+                digits.parse::<u32>().map_err(|error| error.to_string())?
+            }
+            other => return Err(alloc::format!("its members are {other:?}")),
         };
-        let members =
-            u32::try_from(number(room.member("members"))?).map_err(|error| error.to_string())?;
-        let Some(Value::Array(saved)) = room.member("reminders") else {
-            return Err("no reminders".to_string());
-        };
-        let mut reminders = Vec::new();
-        for reminder in saved {
-            let due = number(reminder.member("due"))?;
-            let Some(Value::Text(peer)) = reminder.member("peer") else {
-                return Err("a reminder for no peer".to_string());
-            };
-            reminders.push((due, peer.clone()));
-        }
+        let reminders = state
+            .pending
+            .iter()
+            .map(|send| match &send.act {
+                SavedAct::Host(host) => host
+                    .target
+                    .strip_prefix('#')
+                    .map(|peer| (send.due, peer.to_string()))
+                    .ok_or_else(|| "a reminder for no peer".to_string()),
+                other => Err(alloc::format!("a reminder that is {other:?}")),
+            })
+            .collect::<Result<Vec<_>, _>>()?;
         Ok((members, reminders))
+    }
+
+    /// The members of the room `store` holds under `key`, read from its last
+    /// durable checkpoint.
+    fn stored_members(store: &MemoryStore, key: &str) -> u32 {
+        let loaded = checkpoint::load(store, key).expect("read").expect("saved");
+        room_of(&loaded.checkpoint.state).expect("a room").0
     }
 
     struct Rooms {
@@ -1712,11 +1778,11 @@ mod tests {
         fn restore(
             &self,
             key: &str,
-            document: &[u8],
+            state: &SavedState,
             endpoint: &SessionEndpoint<Wire, Clock>,
             _wall_now_ms: u64,
         ) -> Result<Room, String> {
-            let (members, reminders) = read_room(document)?;
+            let (members, reminders) = room_of(state)?;
             self.probe.restored.fetch_add(1, Ordering::SeqCst);
             Ok(Room {
                 key: key.to_string(),
@@ -1786,6 +1852,16 @@ mod tests {
         clock: &Clock,
         probe: &Arc<Probe>,
     ) -> (Pool<Rooms, Wire, Clock>, Wire) {
+        pool_over(owner, Arc::new(store.clone()), clock, probe)
+    }
+
+    /// A pool of [`ROOMS`] as [`pool`] makes one, kept in `store`.
+    fn pool_over(
+        owner: &str,
+        store: Arc<dyn SessionStore>,
+        clock: &Clock,
+        probe: &Arc<Probe>,
+    ) -> (Pool<Rooms, Wire, Clock>, Wire) {
         let wire = Wire::default();
         let pool = Pool::new(
             ROOMS,
@@ -1797,7 +1873,7 @@ mod tests {
             Rooms {
                 probe: Arc::clone(probe),
             },
-            Arc::new(store.clone()),
+            store,
             wire.clone(),
             clock.clone(),
         )
@@ -1891,8 +1967,7 @@ mod tests {
         assert!(!probe.overlapped.load(Ordering::SeqCst));
         assert_eq!(probe.started.load(Ordering::SeqCst), 1, "one session");
         assert!(pool.take_errors().is_empty());
-        let stored = store.get("r1").expect("read").expect("saved");
-        assert_eq!(read_room(&stored.state).expect("a room").0, LIMIT);
+        assert_eq!(stored_members(&store, "r1"), LIMIT);
     }
 
     /// Sessions of different keys run beside each other: a run of one key
@@ -2249,6 +2324,144 @@ mod tests {
             ]
         );
         assert_eq!(pool.tick(), keys);
+    }
+
+    /// A store whose writes fail while `failing` is set, as a medium that is
+    /// down fails them: nothing is written.
+    struct Flaky {
+        inner: MemoryStore,
+        failing: AtomicBool,
+    }
+
+    impl SessionStore for Flaky {
+        fn get(&self, key: &str) -> Result<Option<Stored>, Failure> {
+            self.inner.get(key)
+        }
+
+        fn put(
+            &self,
+            key: &str,
+            state: &[u8],
+            earliest_due: Option<u64>,
+            expected_version: u64,
+            fence: u64,
+        ) -> Result<u64, WriteError> {
+            if self.failing.load(Ordering::SeqCst) {
+                return Err(WriteError::Failed(Failure::new("the medium is down")));
+            }
+            self.inner
+                .put(key, state, earliest_due, expected_version, fence)
+        }
+
+        fn delete(&self, key: &str, expected_version: u64, fence: u64) -> Result<(), WriteError> {
+            self.inner.delete(key, expected_version, fence)
+        }
+
+        fn due_before(&self, ms: u64, limit: usize) -> Result<Vec<Due>, Failure> {
+            self.inner.due_before(ms, limit)
+        }
+
+        fn acquire(
+            &self,
+            key: &str,
+            owner: &str,
+            ttl_ms: u64,
+            now_ms: u64,
+        ) -> Result<Lease, AcquireError> {
+            self.inner.acquire(key, owner, ttl_ms, now_ms)
+        }
+
+        fn renew(
+            &self,
+            key: &str,
+            fence: u64,
+            ttl_ms: u64,
+            now_ms: u64,
+        ) -> Result<Lease, LeaseError> {
+            self.inner.renew(key, fence, ttl_ms, now_ms)
+        }
+
+        fn release(&self, key: &str, fence: u64) -> Result<(), LeaseError> {
+            self.inner.release(key, fence)
+        }
+    }
+
+    /// Nothing a session sends leaves before a checkpoint that holds it is
+    /// durable (SCE_MESH.md section 10.11): a reply whose checkpoint the store
+    /// failed to write is held, and leaves, before the next reply, with the
+    /// next checkpoint the store writes.
+    #[test]
+    fn a_reply_leaves_only_once_a_checkpoint_that_holds_it_is_durable() {
+        let (clock, probe) = (Clock::new(), Arc::new(Probe::default()));
+        let store = Arc::new(Flaky {
+            inner: MemoryStore::new(),
+            failing: AtomicBool::new(true),
+        });
+        let shared: Arc<dyn SessionStore> = Arc::clone(&store) as Arc<dyn SessionStore>;
+        let (pool, wire) = pool_over("p1", shared, &clock, &probe);
+
+        deliver(&pool, join("r1", 1));
+        assert!(
+            wire.take().is_empty(),
+            "the reply left before a checkpoint holding it was written"
+        );
+        let errors = pool.take_errors();
+        assert!(
+            !errors.is_empty()
+                && errors.iter().all(
+                    |error| matches!(error, PoolError::Store { key: Some(key), .. } if key == "r1")
+                ),
+            "each failed write is told to the host: {errors:?}"
+        );
+        assert!(pool.is_live("r1"), "an unsaved session stays in memory");
+        clock.advance(1_000);
+        assert!(
+            pool.evict_idle().is_empty(),
+            "a session holding a reply for its checkpoint is not dropped"
+        );
+
+        store.failing.store(false, Ordering::SeqCst);
+        deliver(&pool, join("r1", 2));
+        let replies = wire.take();
+        assert_eq!(replies.len(), 2, "{replies:?}");
+        assert_eq!(replies[0].wire_id, Some(id(0x22, 1)));
+        assert!(replies[0].data.contains(r#""members":1"#), "{replies:?}");
+        assert_eq!(replies[1].wire_id, Some(id(0x22, 2)));
+        assert!(replies[1].data.contains(r#""members":2"#), "{replies:?}");
+        assert_eq!(stored_members(&store.inner, "r1"), 2);
+    }
+
+    /// A session is kept with its endpoint: a duplicate of a request it
+    /// answered before it was dropped from memory is answered, once it is
+    /// restored, with the first reply, and its machine does not take the
+    /// request in again. A session dropped while idle is kept as a clean
+    /// checkpoint, so its restore tells no peer an envelope may have been lost.
+    #[test]
+    fn a_restored_session_answers_a_duplicate_request_with_its_first_reply() {
+        let (store, clock, probe) = (MemoryStore::new(), Clock::new(), Arc::new(Probe::default()));
+        let (pool, wire) = pool("p1", &store, &clock, &probe);
+        deliver(&pool, join("r1", 1));
+        let first = wire.take();
+        assert_eq!(first.len(), 1, "{first:?}");
+
+        clock.advance(1_000);
+        assert_eq!(pool.evict_idle(), vec!["r1".to_string()]);
+        deliver(&pool, join("r1", 1));
+        let again = wire.take();
+        assert_eq!(again.len(), 1, "{again:?}");
+        assert_eq!(again[0].wire_id, first[0].wire_id);
+        assert_eq!(again[0].data, first[0].data);
+        assert_eq!(probe.restored.load(Ordering::SeqCst), 1);
+        assert_eq!(
+            stored_members(&store, "r1"),
+            1,
+            "the machine took the request in once"
+        );
+        assert!(
+            lock(&probe.unhandled).is_empty(),
+            "a clean checkpoint's restore raises no restored row: {:?}",
+            lock(&probe.unhandled)
+        );
     }
 
     #[test]
