@@ -127,3 +127,22 @@ cases for `codec_optional_field_attributes` that every conformance lane runs.
 
 One landing: the rule moves every backend at once, since a frame one backend writes by the old rule is one another
 reads by the new. The byte cases hold all of them together.
+
+## Amendment, 2026-11-19: an enum in part of its bytes has an unsigned carrier
+
+The third refusal of §3 took every enum as unsigned. An enum's value is the variant that declares its carrier's
+number, so the number a field of part of its bytes holds is its carrier's; and that number is unsigned (§3). An enum
+whose carrier (`sce:underlying-type`) is signed would need the sign its bits do not have, and its conversion from the
+carrier (`from_underlying`, `fromUnderlying`) would be handed the unsigned number of the bits where it declares a
+negative one. The refusal is now:
+
+- a field that is not whole and whose type is not an unsigned integer or an enum whose carrier is unsigned.
+
+An enum's carrier is named by the document the codec imports, which the parse does not read. `bit_layout::refusal`
+takes a lookup of the carrier: the parse judges §3 with none, and the generator judges it again once the imports are
+resolved (`parser::refuse_codec_bits_by_carrier`, called before any language is rendered), where only this rule can
+refuse what the parse took. The refusal is the same `validation/attribute-rule-violated` on the field, and its rule
+names the type and its carrier ("not `enum:mode`, whose carrier is `int8`"). The tree held no such field.
+
+Swift had read the bits of such a field as the number its enum declares, whatever its carrier's sign; it now never
+meets one.
