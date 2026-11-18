@@ -14,15 +14,16 @@
 //! of records within its count as a view of the payload type its event
 //! schema's own unit declares (`List`; docs/adr/0085, Landing order step 3a).
 //! What no type holds is refused, where the plan's totality names it and as
-//! the Rust printer refuses it: a negative value of an enum whose carrier is
-//! signed, a list of fewer records than its lower count, and a record whose
-//! byte string, which the schema's unit holds in a `std::vector` with no
-//! bound, is past its bound. Each is found before the first byte is written,
-//! so a refusal leaves the sink untouched. The encoding rule is the one the
-//! Rust printer writes (`rust_source::cbor`): the map head, then each entry
-//! present in ascending key order, every head in its shortest form (RFC 8949
-//! §4.2.1), a list of records as a definite-length array of one map per
-//! record, each field under its id as text (docs/adr/0086, section 9.2).
+//! the Rust printer refuses it: a list of fewer records than its lower count,
+//! and a record whose byte string, which the schema's unit holds in a
+//! `std::vector` with no bound, is past its bound. Each is found before the
+//! first byte is written, so a refusal leaves the sink untouched. The encoding
+//! rule is the one the Rust printer writes (`rust_source::cbor`): the map head,
+//! then each entry present in ascending key order, every head in its shortest
+//! form (RFC 8949 §4.2.1), an enum the integer of its declared number, major
+//! type 1 below zero (docs/adr/0101, section 2.1), a list of records as a
+//! definite-length array of one map per record, each field under its id as
+//! text (docs/adr/0086, section 9.2).
 
 use super::super::*;
 use super::source_readers;
@@ -468,9 +469,13 @@ fn write_value(l: &LangCtx, entry: &Entry<'_>) -> String {
         CborShape::Bytes { .. } => {
             "if (auto _e = cbor::write_bytes(w, v.inner()); _e) return _e;".to_string()
         }
-        // An unsigned carrier's every value is an unsigned integer; a signed
-        // one's negative value was refused before the first byte
-        // (`refusal_checks`), so what is left is one.
+        // The integer of the variant's declared number, major type 1 below
+        // zero (docs/adr/0101, section 2.1): every value of a carrier of
+        // either sign is written.
+        CborShape::Enum(enumeration) if enumeration.carrier.is_signed() => format!(
+            "if (auto _e = cbor::write_int(w, static_cast<std::int64_t>({})); _e) return _e;",
+            l.codec_carrier_expr(leaf(entry.item.entry), "v")
+        ),
         CborShape::Enum(_) => format!(
             "if (auto _e = cbor::write_uint(w, static_cast<std::uint64_t>({})); _e) return _e;",
             l.codec_carrier_expr(leaf(entry.item.entry), "v")
@@ -516,12 +521,11 @@ fn present(entry: &Entry<'_>) -> (String, String) {
 /// encode runs them before the first byte is written, so a refusal leaves the
 /// sink untouched (docs/adr/0065 §2). Each refusal is one the plan's totality
 /// names at the entry, and the one the Rust printer writes there
-/// (`rust_source::cbor`): `CodecError::CborOutOfRange` for a negative value of
-/// an enum whose carrier is signed, which no unsigned integer carries; for a
-/// list of fewer records than its lower count, which the view of the list
-/// does not hold; and for a record whose byte string is past its bound, which
-/// the schema's unit holds in a `std::vector` with no bound.
-fn refusal_checks(l: &LangCtx, plan: &CborPlan<'_>, entry: &Entry<'_>) -> Option<String> {
+/// (`rust_source::cbor`): `CodecError::CborOutOfRange` for a list of fewer
+/// records than its lower count, which the view of the list does not hold, and
+/// for a record whose byte string is past its bound, which the schema's unit
+/// holds in a `std::vector` with no bound.
+fn refusal_checks(plan: &CborPlan<'_>, entry: &Entry<'_>) -> Option<String> {
     let e = entry.item.entry;
     let refuse = || {
         format!(
@@ -530,36 +534,31 @@ fn refusal_checks(l: &LangCtx, plan: &CborPlan<'_>, entry: &Entry<'_>) -> Option
         )
     };
     let mut checks: Vec<String> = Vec::new();
-    match &entry.item.value {
-        CborShape::Enum(enumeration) if enumeration.carrier.is_signed() => checks.push(format!(
-            "if ({} < 0) {}",
-            l.codec_carrier_expr(leaf(e), "v"),
-            refuse()
-        )),
-        shape @ CborShape::List { min, .. } => {
-            if *min > 0 {
-                checks.push(format!("if (v.size() < {min}) {}", refuse()));
-            }
-            let unbounded = shape
-                .listed_record()
-                .map(cbor_codec::record_unbounded_bytes)
-                .unwrap_or_default();
-            if !unbounded.is_empty() {
-                let refusal = refuse();
-                let mut each = String::new();
-                for (id, max) in &unbounded {
-                    let field =
-                        crate::forge::generator::event_schema_field_ident(id, Language::Cpp);
-                    each.push_str(&format!(
-                        "                if (_record.{field}.size() > {max}) {refusal}\n"
-                    ));
-                }
-                checks.push(format!(
-                    "for (const auto& _record : v) {{\n{each}            }}"
+    // Only a list of records has a value its view holds and the encoding does
+    // not carry; an enum is written whatever its sign (docs/adr/0101, section
+    // 2.1).
+    let shape = &entry.item.value;
+    if let CborShape::List { min, .. } = shape {
+        if *min > 0 {
+            checks.push(format!("if (v.size() < {min}) {}", refuse()));
+        }
+        let unbounded = shape
+            .listed_record()
+            .map(cbor_codec::record_unbounded_bytes)
+            .unwrap_or_default();
+        if !unbounded.is_empty() {
+            let refusal = refuse();
+            let mut each = String::new();
+            for (id, max) in &unbounded {
+                let field = crate::forge::generator::event_schema_field_ident(id, Language::Cpp);
+                each.push_str(&format!(
+                    "                if (_record.{field}.size() > {max}) {refusal}\n"
                 ));
             }
+            checks.push(format!(
+                "for (const auto& _record : v) {{\n{each}            }}"
+            ));
         }
-        _ => {}
     }
     if checks.is_empty() {
         return None;
@@ -630,8 +629,19 @@ fn read_value(l: &LangCtx, entry: &Entry<'_>) -> String {
                      \x20               {name} = std::move(*v);\n"
                 )
             };
+            // A signed carrier's number is major type 1 below zero, read within
+            // the carrier's range (docs/adr/0101, section 2.1).
+            let read = if enumeration.carrier.is_signed() {
+                format!(
+                    "cbor::read_int_within(c, static_cast<std::int64_t>(std::numeric_limits<{carrier}>::min()), static_cast<std::int64_t>(std::numeric_limits<{carrier}>::max()))"
+                )
+            } else {
+                format!(
+                    "cbor::read_uint_upto(c, static_cast<std::uint64_t>(std::numeric_limits<{carrier}>::max()))"
+                )
+            };
             format!(
-                "                const auto raw = cbor::read_uint_upto(c, static_cast<std::uint64_t>(std::numeric_limits<{carrier}>::max()));\n\
+                "                const auto raw = {read};\n\
                  \x20               if (!raw) return raw.error();\n\
                  \x20               {held}"
             )
@@ -772,7 +782,7 @@ pub(in super::super) fn render(
     // entry's in the order the encode would meet it: ascending key, as the
     // Rust encode's count over a sink that only counts meets it.
     for &index in &plan.by_key {
-        if let Some(checks) = refusal_checks(l, plan, &entries[index]) {
+        if let Some(checks) = refusal_checks(plan, &entries[index]) {
             encode.push_str(&checks);
         }
     }

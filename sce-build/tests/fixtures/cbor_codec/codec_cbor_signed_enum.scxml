@@ -4,15 +4,16 @@
 <!--
   A CBOR map whose entries are values of an enum with a signed carrier
   (SCE_FORGE.md section 4.6.1): `status` required under key 0 and `detail`
-  that may be absent under key 1. A negative value has no unsigned integer, so
-  the encode refuses it with `CborOutOfRange` before the first byte, and the
-  codec states that its encode may fail. The C++ encode refuses what the Rust
-  encode refuses (`a_cpp_cbor_encode_refuses_what_the_rust_encode_refuses.rs`,
-  and `codec_source_generated_test` runs it).
+  that may be absent under key 1. An enum is the integer of its declared
+  number, major type 1 below zero (docs/adr/0101, section 2.1), so the variant
+  -1 is written as `20` and read back, and the encode refuses no value: the
+  codec states nothing of it. The C++ encode writes what the Rust encode writes
+  (`a_cpp_cbor_encode_refuses_what_the_rust_encode_refuses.rs`, and
+  `codec_source_generated_test` runs it).
 -->
 <scxml xmlns="http://www.w3.org/2005/07/scxml" xmlns:sce="http://sce.dev/ext"
        sce:kind="codec" sce:encoding="cbor" sce:codec-format="2" name="codec_cbor_signed_enum"
-       sce:encode-may-fail="true" version="1.0">
+       version="1.0">
   <sce:import kind="enum" src="cbor_signed_status.scxml" as="Status"/>
   <datamodel>
     <data id="raw" sce:type="bytes" sce:direction="in"/>

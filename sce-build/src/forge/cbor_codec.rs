@@ -659,10 +659,10 @@ fn common_context(
             entry["enum_to_underlying"] = l.codec_carrier_expr(leaf(e), "v").into();
             entry["enum_is_open"] = l.enum_is_open(&r.alias).into();
             entry["carrier_type"] = l.type_name(&carrier).into_owned().into();
-            // A signed carrier can hold a number no CBOR unsigned integer
-            // carries, which encode refuses; an unsigned one cannot, and a
-            // template writes no check for it (a comparison that is always
-            // false is a compile warning, not a guard).
+            // A signed carrier's number is written and read as a CBOR integer
+            // of either sign, major type 1 below zero, within the carrier's
+            // range (docs/adr/0101, section 2.1); an unsigned one's as an
+            // unsigned integer, within its largest (`max`).
             entry["carrier_signed"] = matches!(
                 carrier,
                 SceType::Int8 | SceType::Int16 | SceType::Int32 | SceType::Int64

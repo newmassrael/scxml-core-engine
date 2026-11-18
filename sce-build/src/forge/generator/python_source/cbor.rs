@@ -14,11 +14,12 @@
 //! most), and a list of records in the class of its most (`BoundedTuple`, its
 //! least 0, as Rust's `BoundedList` holds it), each made where the value is
 //! set. What no class holds is refused before the first byte, so a refusal
-//! leaves the sink untouched: the refusals the plan's totality names (a
-//! negative value of an enum whose carrier is signed, a list of fewer records
-//! than its lower count, a record whose byte string is past its bound), and
-//! what the payload type of a record's event schema holds in a bare Python
-//! type, its text past its bound and its integer past its width. The map head
+//! leaves the sink untouched: the refusals the plan's totality names (a list of
+//! fewer records than its lower count, a record whose byte string is past its
+//! bound), and what the payload type of a record's event schema holds in a bare
+//! Python type, its text past its bound and its integer past its width. An enum
+//! is the integer of its declared number, major type 1 below zero
+//! (docs/adr/0101, section 2.1). The map head
 //! and then each entry present are written in ascending key order (`by_key`),
 //! every head in its shortest form (RFC 8949 §4.2.1), a list of records as a
 //! definite-length array of one map per record, each field under its id as text
@@ -260,10 +261,12 @@ fn record(plan: &CborPlan<'_>, imports: &[ImportContext], item: &CborItem<'_>) -
 }
 
 /// The checks of the value `v` of `item` the encode makes before the first
-/// byte, each statement at `indent`; empty where it makes none.
+/// byte, each statement at `indent`; empty where it makes none. Only a list of
+/// records has any: every other entry is held in a class that holds only what
+/// the encoding carries, and an enum of a signed carrier is written whatever
+/// its sign (docs/adr/0101, section 2.1).
 fn checks(
     plan: &CborPlan<'_>,
-    l: &LangCtx,
     imports: &[ImportContext],
     item: &CborItem<'_>,
     indent: &str,
@@ -271,50 +274,41 @@ fn checks(
     let e = item.entry;
     let raise = "raise cbor.CborOutOfRange()";
     let mut out = String::new();
-    match &item.value {
-        CborShape::Enum(enumeration) if enumeration.carrier.is_signed() => {
-            plan.totality.require(RefusalKind::CborOutOfRange, &e.id);
-            out.push_str(&format!(
-                "{indent}if {} < 0:\n{indent}    {raise}\n",
-                l.codec_carrier_expr(leaf(e), "v")
-            ));
-        }
-        CborShape::List { elem, min, .. } if matches!(**elem, CborShape::Record(_)) => {
-            // Where the analysis names the refusal, the checks below are the
-            // ones that write it: the lower count, and a byte string past its
-            // bound, which no payload type holds. A Python payload holds a
-            // text and an integer in a bare `str` and `int` too, so those are
-            // checked alike, a refusal the Python value alone can reach.
-            if plan.totality.refuses(RefusalKind::CborOutOfRange, &e.id) {
-                plan.totality.require(RefusalKind::CborOutOfRange, &e.id);
+    let CborShape::List { min, .. } = &item.value else {
+        return out;
+    };
+    // Where the analysis names the refusal, the checks below are the ones that
+    // write it: the lower count, and a byte string past its bound, which no
+    // payload type holds. A Python payload holds a text and an integer in a
+    // bare `str` and `int` too, so those are checked alike, a refusal the
+    // Python value alone can reach.
+    if plan.totality.refuses(RefusalKind::CborOutOfRange, &e.id) {
+        plan.totality.require(RefusalKind::CborOutOfRange, &e.id);
+    }
+    if *min > 0 {
+        out.push_str(&format!(
+            "{indent}if len(v) < {min}:\n{indent}    {raise}\n"
+        ));
+    }
+    let record = record(plan, imports, item);
+    let mut each = String::new();
+    for f in &record.by_key {
+        let test = match (f.kind, f.bound) {
+            ("text", Some(max)) => {
+                format!("len(_record.{}.encode(\"utf-8\")) > {max}", f.name)
             }
-            if *min > 0 {
-                out.push_str(&format!(
-                    "{indent}if len(v) < {min}:\n{indent}    {raise}\n"
-                ));
+            ("bytes", Some(max)) => format!("len(_record.{}) > {max}", f.name),
+            ("uint", Some(bits)) => {
+                format!("not 0 <= _record.{} <= {}", f.name, most_of(bits))
             }
-            let record = record(plan, imports, item);
-            let mut each = String::new();
-            for f in &record.by_key {
-                let test = match (f.kind, f.bound) {
-                    ("text", Some(max)) => {
-                        format!("len(_record.{}.encode(\"utf-8\")) > {max}", f.name)
-                    }
-                    ("bytes", Some(max)) => format!("len(_record.{}) > {max}", f.name),
-                    ("uint", Some(bits)) => {
-                        format!("not 0 <= _record.{} <= {}", f.name, most_of(bits))
-                    }
-                    _ => continue,
-                };
-                each.push_str(&format!(
-                    "{indent}    if {test}:\n{indent}        {raise}\n"
-                ));
-            }
-            if !each.is_empty() {
-                out.push_str(&format!("{indent}for _record in v:\n{each}"));
-            }
-        }
-        _ => {}
+            _ => continue,
+        };
+        each.push_str(&format!(
+            "{indent}    if {test}:\n{indent}        {raise}\n"
+        ));
+    }
+    if !each.is_empty() {
+        out.push_str(&format!("{indent}for _record in v:\n{each}"));
     }
     out
 }
@@ -334,8 +328,15 @@ fn write_value(
         CborShape::Text { .. } => format!("{indent}cbor.write_text(w, v)\n"),
         CborShape::Bytes { .. } => format!("{indent}cbor.write_bytes(w, v)\n"),
         CborShape::Int { signed: false, .. } => format!("{indent}cbor.write_uint(w, v)\n"),
-        CborShape::Enum(_) => format!(
-            "{indent}cbor.write_uint(w, {})\n",
+        // The integer of the variant's declared number, major type 1 below zero
+        // (docs/adr/0101, section 2.1).
+        CborShape::Enum(enumeration) => format!(
+            "{indent}cbor.{}(w, {})\n",
+            if enumeration.carrier.is_signed() {
+                "write_int"
+            } else {
+                "write_uint"
+            },
             l.codec_carrier_expr(leaf(e), "v")
         ),
         CborShape::List { elem, .. } if matches!(**elem, CborShape::Record(_)) => {
@@ -463,7 +464,7 @@ pub(in super::super) fn render(
         } else {
             ("    if v is not None:\n".to_string(), "        ")
         };
-        let body = checks(plan, l, imports, item, inner);
+        let body = checks(plan, imports, item, inner);
         if !body.is_empty() {
             encode.push_str(&format!("    v = src.{name}\n{open}{body}"));
         }

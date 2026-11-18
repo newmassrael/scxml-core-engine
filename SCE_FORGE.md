@@ -1166,7 +1166,7 @@ element of its `<datamodel>` keyed by `sce:key`:
 |---|---|
 | `sce:codec-format` | The format the document is written in, on its root: `2`, the only one read (below). |
 | `sce:key` | The entry's map key, `0`–`23` — a key whose CBOR head is one byte. Unique within the codec. |
-| `sce:type` | Any type of the one type grammar (docs/adr/0101, section 1; docs/adr/0086 section 1 with docs/adr/0092's `union:<alias>`), at any depth, every bound in the type: a text with no bound, at any depth, is refused (`validation/attribute-rule-violated`). The backends print an unsigned integer (`uint8`–`uint64`), `bool`, `string[N]` (a CBOR text string), `bytes[N]` (a byte string), `enum:<alias>` (an unsigned integer checked against the enum's declared values) and a bounded list of records `list<record:R>[N]` (below), or `optional<T>` over one of them; an entry of any other type is read and judged, and every backend refuses its codec by name (`generate/unsupported-feature`, naming the entry and the type) until its printer lowers it (docs/adr/0101, section 5.4). A bare type is an entry a decode of a map without this key refuses; `optional<T>` is an entry that may be absent, in every language (docs/adr/0055, section 8). |
+| `sce:type` | Any type of the one type grammar (docs/adr/0101, section 1; docs/adr/0086 section 1 with docs/adr/0092's `union:<alias>`), at any depth, every bound in the type: a text with no bound, at any depth, is refused (`validation/attribute-rule-violated`). The backends print an unsigned integer (`uint8`–`uint64`), `bool`, `string[N]` (a CBOR text string), `bytes[N]` (a byte string), `enum:<alias>` (the integer of its declared number, major type 1 below zero, checked against the enum's declared values) and a bounded list of records `list<record:R>[N]` (below), or `optional<T>` over one of them; an entry of any other type is read and judged, and every backend refuses its codec by name (`generate/unsupported-feature`, naming the entry and the type) until its printer lowers it (docs/adr/0101, section 5.4). A bare type is an entry a decode of a map without this key refuses; `optional<T>` is an entry that may be absent, in every language (docs/adr/0055, section 8). |
 | `sce:length` | On a `bytes` or `optional<bytes>` entry that writes no bracket: the exact length, which is also its bound (`bytes[L]`); any other length is refused on decode and on encode. Beside a bracket it is `validation/incompatible-attributes`. |
 | `sce:max-size` | On a top-level `string` or `bytes`: the legacy spelling of the bracket on its type (docs/adr/0101, section 1.3), read as that bracket with the `sce:limit` beside it and reported as `validation/bound-attribute-superseded`; `sce-codegen bound-spelling` moves it into the type. Not with `sce:length`, nor beside a bracket. |
 
@@ -1312,8 +1312,9 @@ that holds it exactly, a NaN as `f9 7e 00`, and read in any precision that
 holds the value, a `float32` refusing a double no single is exactly as
 `CborOutOfRange`; and a union's head, a map of one entry keyed by its case's
 variant name, refused as `CborUnionEntries` when it holds no entry or more
-than one and as `CborUnknownVariant` when its key names no case. No
-generated codec reads a signed integer, a float or a union from these yet.
+than one and as `CborUnknownVariant` when its key names no case. A
+generated codec reads and writes a signed integer as a value of an enum whose
+carrier is signed; none reads a float or a union from these yet.
 
 **Refused on a CBOR codec** — each is a position, and a map has none:
 `sce:byte`, `sce:bit-offset`, `sce:bit-size`, `sce:endian`,
@@ -1379,8 +1380,9 @@ the cursor returned to where it was (`SceCursor.mark` / `reset`), and whose `enc
 `sce_forge_runtime.cbor.CborOutOfRange` or `CborWrongLength` for a value past
 its bound, an integer past its declared width among them: a Python `int`
 carries no width of its own. `sce_forge_runtime.cbor` holds its items.
-An enum whose carrier is signed refuses a negative number on encode on every
-backend: no CBOR unsigned integer carries it.
+An enum is the integer of its declared number, major type 1 below zero
+(docs/adr/0101 §2.1), so an enum whose carrier is signed writes and reads a
+negative number on every backend, and its encode refuses no value of it.
 The backends are held to the same bytes and the same refusals by one oracle —
 the conformance harness's `codec_cbor_map` round-trip cases, whose absent
 optional entries are JSON `null`, and its reject vectors. Rust and Kotlin are

@@ -32,10 +32,9 @@ Cbor.writeBool(value, to: &frame)
 if value.count != {{ e.length }} { throw CodecError.cborWrongLength }
 {{ indent }}Cbor.writeBytes(value, to: &frame)
 {%- elif e.kind == "enum" -%}
-{#- The number the enum declares for the value; a signed carrier's negative one is no CBOR
-    unsigned integer, and `UInt64(...)` would trap on it. #}
-{% if e.carrier_signed %}if ({{ e.enum_to_underlying }}) < 0 { throw CodecError.cborOutOfRange }
-{{ indent }}{% endif %}Cbor.writeUint(UInt64({{ e.enum_to_underlying }}), to: &frame)
+{#- The number the enum declares for the value, major type 1 below zero (docs/adr/0101,
+    section 2.1). #}
+{% if e.carrier_signed %}Cbor.writeInt(Int64({{ e.enum_to_underlying }}), to: &frame){% else %}Cbor.writeUint(UInt64({{ e.enum_to_underlying }}), to: &frame){% endif %}
 {%- elif e.kind == "record_list" -%}
 {#- The language's array carries no bound, so a count past the list's bound, or short of its lower
     count, is refused before anything of it is written. -#}
@@ -128,10 +127,10 @@ public struct {{ struct_name }}: Equatable, Sendable {
                 if {{ e.name }}_held != nil { throw CodecError.cborDuplicateKey }
 {% if e.kind == "enum" and e.enum_is_open %}
                 // An open enum holds any number its carrier does, so every number is a value.
-                {{ e.name }}_held = {{ e.enum_from_underlying }}({{ e.carrier_type }}(truncatingIfNeeded: try Cbor.readUintUpto(&reader, {{ e.max }})))
+                {{ e.name }}_held = {{ e.enum_from_underlying }}({{ e.carrier_type }}(truncatingIfNeeded: {% if e.carrier_signed %}try Cbor.readIntWithin(&reader, -{{ e.max }} - 1, {{ e.max }}){% else %}try Cbor.readUintUpto(&reader, {{ e.max }}){% endif %}))
 {% elif e.kind == "enum" %}
                 // A closed enum holds only the numbers it declares.
-                guard let declared = {{ e.enum_from_underlying }}({{ e.carrier_type }}(truncatingIfNeeded: try Cbor.readUintUpto(&reader, {{ e.max }}))) else {
+                guard let declared = {{ e.enum_from_underlying }}({{ e.carrier_type }}(truncatingIfNeeded: {% if e.carrier_signed %}try Cbor.readIntWithin(&reader, -{{ e.max }} - 1, {{ e.max }}){% else %}try Cbor.readUintUpto(&reader, {{ e.max }}){% endif %})) else {
                     throw CodecError.cborOutOfRange
                 }
                 {{ e.name }}_held = declared

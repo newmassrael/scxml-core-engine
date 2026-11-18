@@ -256,9 +256,10 @@ target_compile_options(numerical_conformance_test PRIVATE
 enable_testing()
 add_test(NAME numerical_conformance COMMAND numerical_conformance_test)
 
-# The CBOR maps whose encode refuses a value no type of theirs holds back
-# (docs/adr/0081 step 4): a negative value of an enum whose carrier is signed, a
-# list of fewer records than its lower count, and a record whose byte string is
+# The CBOR maps of sce-build's fixtures (docs/adr/0081 step 4): an enum whose
+# carrier is signed, written as an integer of either sign (docs/adr/0101 section
+# 2.1), and the maps whose encode refuses a value no type of theirs holds back,
+# a list of fewer records than its lower count and a record whose byte string is
 # past its bound. The documents are sce-build's CBOR fixtures, with the enum and
 # the event schemas they import, and are generated into a directory of their
 # own, as the caller-tag variants are.

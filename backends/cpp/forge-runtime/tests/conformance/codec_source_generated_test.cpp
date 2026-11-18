@@ -24,11 +24,12 @@
 // 0 says whether a u16 `seq` follows) presents `seq` as an optional value and
 // derives the bit; codec_length_ref_dotted_basic.scxml (a carrier whose high
 // nibble holds the length of the payload after it) derives the nibble. The CBOR
-// maps whose encode refuses are sce-build/tests/fixtures/cbor_codec's
-// codec_cbor_signed_enum.scxml (an enum of a signed carrier),
-// codec_cbor_record_list_least.scxml (lists with a lower count) and
-// codec_cbor_record_list_bytes.scxml (lists of records with a byte string),
-// held to the bytes and the refusals the Rust encode writes for them.
+// maps of sce-build/tests/fixtures/cbor_codec are held to the bytes and the
+// refusals the Rust encode writes for them: codec_cbor_signed_enum.scxml (an
+// enum of a signed carrier, whose negative value is written as major type 1),
+// and the maps whose encode refuses, codec_cbor_record_list_least.scxml (lists
+// with a lower count) and codec_cbor_record_list_bytes.scxml (lists of records
+// with a byte string).
 
 #include "codec_cbor_map.h"
 #include "codec_cbor_record_list_bytes.h"
@@ -1938,26 +1939,31 @@ namespace SignedEnum = ::SCE::Generated::CodecCborSignedEnum;
 using SignedValue = SignedEnum::CodecCborSignedEnum;
 using SignedStatus = decltype(std::declval<const SignedValue &>().status());
 
-void a_negative_value_of_a_signed_carrier_is_refused_before_the_first_byte() {
+void a_negative_value_of_a_signed_carrier_is_written_as_the_integer_it_is() {
     const auto nominal = static_cast<SignedStatus>(0);
     const auto high = static_cast<SignedStatus>(5);
     const auto fault = static_cast<SignedStatus>(-1);
-    // {0: 5, 1: 0}, each value the unsigned integer its carrier holds.
+    // {0: 5, 1: 0}: a number of zero or more is major type 0.
     const std::vector<std::uint8_t> frame{0xA2, 0x00, 0x05, 0x01, 0x00};
     const SignedValue value(high, nominal);
-    CHECK(value.encode_to_vec() == std::optional<std::vector<std::uint8_t>>(frame),
-          "a value of no negative number is written in key order");
+    CHECK(value.encode_to_vec() == frame, "a value of no negative number is written in key order");
     ::SCE::Forge::SceCursor cursor(frame.data(), frame.size());
     const auto decoded = SignedValue::decode(cursor);
     CHECK(decoded && decoded->status() == high && decoded->detail() == std::optional<SignedStatus>(nominal),
           "a decoded map holds each entry it read");
 
+    // {0: 5, 1: -1}: -1 is major type 1 of 0, `20` (docs/adr/0101, section 2.1).
+    const std::vector<std::uint8_t> negative{0xA2, 0x00, 0x05, 0x01, 0x20};
+    const SignedValue optional_fault(high, fault);
+    CHECK(optional_fault.encode_to_vec() == negative, "a negative value is written as major type 1");
+    ::SCE::Forge::SceCursor back(negative.data(), negative.size());
+    const auto read = SignedValue::decode(back);
+    CHECK(read && read->status() == high && read->detail() == std::optional<SignedStatus>(fault),
+          "a negative value is read back as the variant it is");
+    // {0: -1}, the optional entry absent.
+    const std::vector<std::uint8_t> required{0xA1, 0x00, 0x20};
     const SignedValue required_fault(fault, std::nullopt);
-    const SignedValue optional_fault(nominal, fault);
-    CHECK(encoded_into_empty(required_fault) == refused_out_of_range(), "a negative value of the required entry");
-    CHECK(encoded_into_empty(optional_fault) == refused_out_of_range(),
-          "a negative value of the entry after one the encode could have written");
-    CHECK(!required_fault.encode_to_vec().has_value(), "the vector of the bytes answers the refusal");
+    CHECK(required_fault.encode_to_vec() == required, "the required entry's negative value is written too");
 }
 
 namespace RecordListLeast = ::SCE::Generated::CodecCborRecordListLeast;
@@ -2216,7 +2222,7 @@ int main() {
     a_chain_its_own_gate_leaves_out_is_held_optionally_in_the_arm_of_no_kind();
     a_bare_entry_is_held_as_its_place_among_the_others();
     a_cbor_map_is_made_within_its_bounds_and_written_in_key_order();
-    a_negative_value_of_a_signed_carrier_is_refused_before_the_first_byte();
+    a_negative_value_of_a_signed_carrier_is_written_as_the_integer_it_is();
     a_list_of_fewer_records_than_its_lower_count_is_refused_before_the_first_byte();
     a_record_byte_string_past_its_bound_is_refused_before_the_first_byte();
     a_component_of_content_lines_is_written_from_any_source_or_not_at_all();

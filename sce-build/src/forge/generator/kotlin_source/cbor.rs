@@ -15,11 +15,11 @@
 //! each made only by its checked factory. An unsigned integer is the Kotlin
 //! unsigned type of its width, which holds no number past it. What no class
 //! holds is refused before the first byte, so a refusal leaves the sink
-//! untouched: the refusals the plan's totality names (a negative value of an
-//! enum whose carrier is signed, a list of fewer records than its lower count,
-//! a record whose byte string is past its bound), and a record's text past its
-//! bound, which the payload type of a record's event schema holds in a bare
-//! `String`. The map head and then each entry present are written in ascending
+//! untouched: the refusals the plan's totality names (a list of fewer records
+//! than its lower count, a record whose byte string is past its bound), and a
+//! record's text past its bound, which the payload type of a record's event
+//! schema holds in a bare `String`. An enum is the integer of its declared
+//! number, major type 1 below zero (docs/adr/0101, section 2.1). The map head and then each entry present are written in ascending
 //! key order (`by_key`), every head in its shortest form (RFC 8949 §4.2.1), a
 //! list of records as a definite-length array of one map per record, each field
 //! under its id as text (docs/adr/0086, section 9.2).
@@ -243,10 +243,12 @@ fn past_bound(item: &CborItem<'_>) -> CodecFailure {
 }
 
 /// The checks of the value `v` of `item` the encode makes before the first
-/// byte, each statement at `indent`; empty where it makes none.
+/// byte, each statement at `indent`; empty where it makes none. Only a list of
+/// records has any: every other entry is held in a class that holds only what
+/// the encoding carries, an enum of a signed carrier among them (docs/adr/0101,
+/// section 2.1).
 fn checks(
     plan: &CborPlan<'_>,
-    l: &LangCtx,
     imports: &[ImportContext],
     item: &CborItem<'_>,
     v: &str,
@@ -254,58 +256,46 @@ fn checks(
 ) -> String {
     let e = item.entry;
     let mut out = String::new();
-    match &item.value {
-        CborShape::Enum(enumeration) if enumeration.carrier.is_signed() => {
-            let refuse = plan
-                .totality
-                .require(RefusalKind::CborOutOfRange, &e.id)
-                .replace("::", ".");
-            out.push_str(&format!(
-                "{indent}if ({} < 0) return {refuse}\n",
-                l.codec_carrier_expr(leaf(e), v)
-            ));
+    let CborShape::List { min, .. } = &item.value else {
+        return out;
+    };
+    // Where the analysis names the refusal, the checks below are the ones that
+    // write it: the lower count, and a byte string past its bound, which no
+    // payload type holds. A Kotlin payload holds a text in a bare `String`
+    // too, so a text past its bound is checked alike, a refusal the Kotlin
+    // value alone can reach.
+    let refuse = if plan.totality.refuses(RefusalKind::CborOutOfRange, &e.id) {
+        plan.totality
+            .require(RefusalKind::CborOutOfRange, &e.id)
+            .replace("::", ".")
+    } else {
+        "CodecError.CborOutOfRange".to_string()
+    };
+    if *min > 0 {
+        out.push_str(&format!("{indent}if ({v}.size < {min}) return {refuse}\n"));
+    }
+    let record = record(plan, imports, item);
+    let mut each = String::new();
+    for f in &record.by_key {
+        match f.kind {
+            // A text no UTF-8 holds (one with a lone surrogate) has no CBOR
+            // text either.
+            RecordFieldKind::Text { max } => each.push_str(&format!(
+                "{indent}    if ((com.sce.forge.runtime.Utf8.size(_record.{name}) ?: return {refuse}) > {max}) \
+                 return {refuse}\n",
+                name = f.name
+            )),
+            RecordFieldKind::Bytes { max } => each.push_str(&format!(
+                "{indent}    if (_record.{}.size > {max}) return {refuse}\n",
+                f.name
+            )),
+            RecordFieldKind::Bool | RecordFieldKind::Uint { .. } => {}
         }
-        CborShape::List { elem, min, .. } if matches!(**elem, CborShape::Record(_)) => {
-            // Where the analysis names the refusal, the checks below are the
-            // ones that write it: the lower count, and a byte string past its
-            // bound, which no payload type holds. A Kotlin payload holds a text
-            // in a bare `String` too, so a text past its bound is checked
-            // alike, a refusal the Kotlin value alone can reach.
-            let refuse = if plan.totality.refuses(RefusalKind::CborOutOfRange, &e.id) {
-                plan.totality
-                    .require(RefusalKind::CborOutOfRange, &e.id)
-                    .replace("::", ".")
-            } else {
-                "CodecError.CborOutOfRange".to_string()
-            };
-            if *min > 0 {
-                out.push_str(&format!("{indent}if ({v}.size < {min}) return {refuse}\n"));
-            }
-            let record = record(plan, imports, item);
-            let mut each = String::new();
-            for f in &record.by_key {
-                match f.kind {
-                    // A text no UTF-8 holds (one with a lone surrogate) has no
-                    // CBOR text either.
-                    RecordFieldKind::Text { max } => each.push_str(&format!(
-                        "{indent}    if ((com.sce.forge.runtime.Utf8.size(_record.{name}) ?: return {refuse}) > {max}) \
-                         return {refuse}\n",
-                        name = f.name
-                    )),
-                    RecordFieldKind::Bytes { max } => each.push_str(&format!(
-                        "{indent}    if (_record.{}.size > {max}) return {refuse}\n",
-                        f.name
-                    )),
-                    RecordFieldKind::Bool | RecordFieldKind::Uint { .. } => {}
-                }
-            }
-            if !each.is_empty() {
-                out.push_str(&format!(
-                    "{indent}for (_record in {v}.entries) {{\n{each}{indent}}}\n"
-                ));
-            }
-        }
-        _ => {}
+    }
+    if !each.is_empty() {
+        out.push_str(&format!(
+            "{indent}for (_record in {v}.entries) {{\n{each}{indent}}}\n"
+        ));
     }
     out
 }
@@ -331,16 +321,18 @@ fn write_value(
             signed: false,
         } => call(format!("Cbor.writeUint(w, {v})")),
         CborShape::Int { signed: false, .. } => call(format!("Cbor.writeUint(w, {v}.toULong())")),
-        // A signed carrier's negative value was refused before the first byte,
-        // so what is left is an unsigned integer; a `ULong` carrier is one.
-        CborShape::Enum(enumeration) if enumeration.carrier == SceType::Uint64 => call(format!(
-            "Cbor.writeUint(w, {})",
-            l.codec_carrier_expr(leaf(e), v)
-        )),
-        CborShape::Enum(_) => call(format!(
-            "Cbor.writeUint(w, {}.toULong())",
-            l.codec_carrier_expr(leaf(e), v)
-        )),
+        // The integer of the variant's declared number, major type 1 below zero
+        // (docs/adr/0101, section 2.1); a `Long` and a `ULong` carrier are
+        // written as they are.
+        CborShape::Enum(enumeration) => {
+            let number = l.codec_carrier_expr(leaf(e), v);
+            call(match &enumeration.carrier {
+                SceType::Int64 => format!("Cbor.writeInt(w, {number})"),
+                carrier if carrier.is_signed() => format!("Cbor.writeInt(w, {number}.toLong())"),
+                SceType::Uint64 => format!("Cbor.writeUint(w, {number})"),
+                _ => format!("Cbor.writeUint(w, {number}.toULong())"),
+            })
+        }
         CborShape::List { elem, .. } if matches!(**elem, CborShape::Record(_)) => {
             let encode_fn = record(plan, imports, item).encode_fn;
             let mut out = call(format!("Cbor.writeArrayHead(w, {v}.size.toULong())"));
@@ -509,9 +501,9 @@ pub(in super::super) fn render(
     for item in &plan.entries {
         let v = local(&l.codec_field_id(&item.entry.id));
         if item.required {
-            encode.push_str(&checks(plan, l, imports, item, &v, "            "));
+            encode.push_str(&checks(plan, imports, item, &v, "            "));
         } else {
-            let body = checks(plan, l, imports, item, &v, "                ");
+            let body = checks(plan, imports, item, &v, "                ");
             if !body.is_empty() {
                 encode.push_str(&format!(
                     "            if ({v} != null) {{\n{body}            }}\n"
