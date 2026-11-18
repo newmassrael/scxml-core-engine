@@ -1876,6 +1876,11 @@ old encode, the old encode and its templates are removed in the same landing.
    a field's or an input's name. Swift's decode throws the runtime's typed
    `CodecError`, and its harness holds each reject vector to the case it names (`CodecFailure::symbol`),
    as Rust's and Go's are held.
+   *Amendment of 2026-11-19: a signed field narrower than its type is lowered.* The list above no longer holds
+   "a signed field narrower than its type": every backend reads such a field as the two's complement of its bits,
+   sign-extended into its type, and writes its low bits (docs/adr/0095, amendment of 2026-11-19, "a field narrower
+   than its type is extended into it"). Swift sign-extends the word it reads (`Carrier::extended`) and no longer
+   refuses the field by name. The rest of the list stands.
    What step 5 still owes is the printer: Swift's encode is its template's, which writes a stored count, length,
    tag and continuation flag from the value rather than deriving each (§3), and its harness runs the catalog's
    `cases` and not its `sources` or `refused`, which a printer's value states (§5). The printer lands as §6 says,
