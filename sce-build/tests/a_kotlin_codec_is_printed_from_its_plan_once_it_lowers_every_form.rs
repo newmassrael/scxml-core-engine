@@ -820,9 +820,11 @@ fn an_input_the_value_says_is_read_off_it_and_not_handed() {
             "        fun encodeSource(src: SaidRecordSource, w: SceSink): CodecError? {\n",
             "        fun inputS(src: SaidRecordSource): UByte =\n            \
              (if (src.detail != null) 1 else 0).toUByte()",
-            "        if (s != inputS(this)) return CodecError.PresentIfMismatch\n\
+            // The input is the parameter every Kotlin site names it by, its
+            // declared spelling (`compute_flag_input_param_fragments`).
+            "        if (S != inputS(this)) return CodecError.PresentIfMismatch\n\
              \x20       return encodeSource(this, w)\n",
-            "    fun encodeToByteArray(s: UByte): ByteArray? {\n",
+            "    fun encodeToByteArray(S: UByte): ByteArray? {\n",
         ],
     );
 }
@@ -938,7 +940,7 @@ fn an_input_the_arms_say_is_read_off_the_arm_the_value_holds() {
              when (val _b = src.body) { \
              is CodecSomeArmsSayVariant.CodecSomeArmsSayPlain -> null; \
              is CodecSomeArmsSayVariant.CodecEveryArmSaysNear -> CodecEveryArmSaysNear.inputN(_b.body) }",
-            "        if (inputN(this).let { it != null && it != n }) return \
+            "        if (inputN(this).let { it != null && it != N }) return \
              CodecError.PresentIfMismatch\n",
         ],
     );
