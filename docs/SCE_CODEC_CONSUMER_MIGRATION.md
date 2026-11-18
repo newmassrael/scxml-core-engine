@@ -2467,6 +2467,9 @@ decides, a length stated on the side without its content, and a disjunction of f
 - The flags the group's gates read are derived from the arm the value holds; whatever their bits hold is written
   over. A flag input a group decides is said by the value (`{Codec}.input<Name>(src)`) and no longer handed to the
   encode over a source.
+- A value made by default holds the arm present while no gate holds (`.NotHasPayload()`), as the Rust, C++ and
+  Python values do; it first held the first arm (`.HasPayload()`). A value you made by default and encode without
+  setting the group now writes its gates clear.
 
 ## A printed Kotlin codec holds two lists of one count as one `Aligned` (ADR 0081 step 4)
 

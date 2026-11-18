@@ -1469,7 +1469,10 @@ old encode, the old encode and its templates are removed in the same landing.
    states a group as the arm's class made of its members and compares it arm by arm, each member as an element is.
    Considered and refused: arms of `var` properties, which would let a value change one member of an arm in place
    where §2 makes an arm a value; and a flat class of optional members, which is the struct the group replaces.
-   Two lists of one count and a group of a chain's memberships stay unlowered.
+   Two lists of one count and a group of a chain's memberships stay unlowered. *Amended 2026-11-18:* a value
+   made by default holds the arm present while no gate holds, where there is one, else the first, as the Rust,
+   C++ and Python values do (`group::declare`); this landing first made it in the first arm, a difference no
+   reason held.
 
    *The thirteenth Kotlin landing, 2026-11-17:* two lists of one count (§6 R5). The Kotlin runtime gains
    `Counted`, what a list class answers its count by, which every printed list class implements, and

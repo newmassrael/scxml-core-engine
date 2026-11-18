@@ -55,7 +55,7 @@ interface CodecChainPrevEntrySource {
 data class CodecChainPrevEntry(
     override var header: UByte = 0.toUByte(),
     override var tag: UByte? = null,
-    override var after_marker: CodecChainPrevEntryAfterMarker = CodecChainPrevEntryAfterMarker.AfterMarker()
+    override var after_marker: CodecChainPrevEntryAfterMarker = CodecChainPrevEntryAfterMarker.NotAfterMarker()
 ) : CodecChainPrevEntrySource {
     // RFC §synth-5-B flags primitive: per-bit-range accessors over
     // the carrier field. Single-bit (width=1) reads as Boolean; multi-

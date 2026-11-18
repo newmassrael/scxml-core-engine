@@ -93,7 +93,7 @@ interface CodecRepeatUnconditionalCountSource {
 // value it never declared.
 data class CodecRepeatUnconditionalCount(
     override var options: UByte = 0.toUByte(),
-    override var options_h: CodecRepeatUnconditionalCountOptionsH = CodecRepeatUnconditionalCountOptionsH.H()
+    override var options_h: CodecRepeatUnconditionalCountOptionsH = CodecRepeatUnconditionalCountOptionsH.NotH()
 ) : CodecRepeatUnconditionalCountSource {
     // RFC §synth-5-B flags primitive: per-bit-range accessors over
     // the carrier field. Single-bit (width=1) reads as Boolean; multi-

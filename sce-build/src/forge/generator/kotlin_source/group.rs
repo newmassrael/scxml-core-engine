@@ -332,18 +332,15 @@ pub(super) fn declare(
             .collect::<Vec<_>>()
             .join(" and ")
     };
-    // The arm a value made by default holds: the first, but in a group of a
-    // chain's memberships, whose arms that say the chain holds a kind have no
-    // chain made by default, the arm where no gate holds.
-    let default_at = if group.chain().is_some() {
-        group
-            .arms
-            .iter()
-            .position(|arm| arm.values.iter().all(|value| !value))
-            .expect("a group of a chain's memberships has an arm for every assignment of its gates")
-    } else {
-        0
-    };
+    // The arm a value made by default holds: the arm present while no gate
+    // holds, where there is one, else the first, as in Rust, C++ and Python. In
+    // a group of a chain's memberships an arm that says the chain holds a kind
+    // has no chain made by default, and the arm where no gate holds says none.
+    let default_at = group
+        .arms
+        .iter()
+        .position(|arm| arm.values.iter().all(|value| !value))
+        .unwrap_or(0);
     // Each arm, its members as the constructor's parameters, and how a decode
     // makes it of what it read.
     let mut arms = String::new();

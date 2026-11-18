@@ -69,7 +69,7 @@ interface CodecExtEncodingInfoSource {
 // value it never declared.
 data class CodecExtEncodingInfo(
     override var combined_id: UInt = 0u,
-    override var combined_id_has_schema: CodecExtEncodingInfoCombinedIdHasSchema = CodecExtEncodingInfoCombinedIdHasSchema.HasSchema()
+    override var combined_id_has_schema: CodecExtEncodingInfoCombinedIdHasSchema = CodecExtEncodingInfoCombinedIdHasSchema.NotHasSchema()
 ) : CodecExtEncodingInfoSource {
     // RFC §synth-5-B flags primitive: per-bit-range accessors over
     // the carrier field. Single-bit (width=1) reads as Boolean; multi-

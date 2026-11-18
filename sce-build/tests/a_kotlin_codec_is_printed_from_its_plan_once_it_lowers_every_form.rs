@@ -665,8 +665,10 @@ fn a_group_is_one_property_whose_arms_hold_its_members() {
             "    data class NotHasPayload(\n        val payload_size: UByte = 0.toUByte()\n    ) : \
              CodecPresentIfLengthRefFlagsHasPayload()\n",
             "    val flags_has_payload: CodecPresentIfLengthRefFlagsHasPayload\n",
+            // A value made by default holds the arm present while no gate
+            // holds, as the Rust, C++ and Python values do.
             "    override var flags_has_payload: CodecPresentIfLengthRefFlagsHasPayload = \
-             CodecPresentIfLengthRefFlagsHasPayload.HasPayload()\n",
+             CodecPresentIfLengthRefFlagsHasPayload.NotHasPayload()\n",
             "            val _g_flags_has_payload = src.flags_has_payload\n",
             "            val _e_payload = when (val _g = _g_flags_has_payload) { \
              is CodecPresentIfLengthRefFlagsHasPayload.HasPayload -> _g.payload; else -> null }\n",

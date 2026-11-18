@@ -53,7 +53,7 @@ interface CodecChainFlagEntrySource {
 // value it never declared.
 data class CodecChainFlagEntry(
     override var header: UByte = 0.toUByte(),
-    override var wide: CodecChainFlagEntryWide = CodecChainFlagEntryWide.Wide()
+    override var wide: CodecChainFlagEntryWide = CodecChainFlagEntryWide.NotWide()
 ) : CodecChainFlagEntrySource {
     // RFC §synth-5-B flags primitive: per-bit-range accessors over
     // the carrier field. Single-bit (width=1) reads as Boolean; multi-

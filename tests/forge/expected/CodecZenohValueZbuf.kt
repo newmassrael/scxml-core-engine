@@ -89,7 +89,7 @@ interface CodecZenohValueZbufSource {
 // variant its document declares, since a closed set does not hold a
 // value it never declared.
 data class CodecZenohValueZbuf(
-    override var after_shm: CodecZenohValueZbufAfterShm = CodecZenohValueZbufAfterShm.AfterShm()
+    override var after_shm: CodecZenohValueZbufAfterShm = CodecZenohValueZbufAfterShm.NotAfterShm()
 ) : CodecZenohValueZbufSource {
     /// RFC §synth-5-B encode-side primary: write `self` into the
     /// caller-owned `w` sink. Returns `null` on success;

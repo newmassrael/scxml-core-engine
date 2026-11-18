@@ -69,7 +69,7 @@ interface CodecPresentIfLengthRefSource {
 // value it never declared.
 data class CodecPresentIfLengthRef(
     override var flags: UByte = 0.toUByte(),
-    override var flags_has_payload: CodecPresentIfLengthRefFlagsHasPayload = CodecPresentIfLengthRefFlagsHasPayload.HasPayload()
+    override var flags_has_payload: CodecPresentIfLengthRefFlagsHasPayload = CodecPresentIfLengthRefFlagsHasPayload.NotHasPayload()
 ) : CodecPresentIfLengthRefSource {
     // RFC §synth-5-B flags primitive: per-bit-range accessors over
     // the carrier field. Single-bit (width=1) reads as Boolean; multi-
