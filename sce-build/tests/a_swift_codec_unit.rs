@@ -1131,7 +1131,9 @@ fn a_signed_field_narrower_than_its_type_is_sign_extended_into_it() {
             "a byte read field by field is sign-extended",
         ),
         (
-            "small, bytes: 1, to: &frame, .big)",
+            // The encode lays the fixed fields out by byte even where the
+            // decode reads field by field, as it does for the frame above.
+            "frame[0] |= UInt8(truncatingIfNeeded: source.small & 0xFF) << 0",
             "and written as its low byte",
         ),
     ] {
