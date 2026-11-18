@@ -79,8 +79,7 @@ pub(crate) fn member_optional(group: &GateGroup, field: &CodecField) -> bool {
     let chain = holds_chain(group, field);
     group.absent.is_some()
         || group.arms.iter().any(|arm| {
-            !arm.fields.iter().any(|f| *f == field.id)
-                || (chain && chain_optional_in(group, field, arm))
+            !arm.fields.contains(&field.id) || (chain && chain_optional_in(group, field, arm))
         })
 }
 
