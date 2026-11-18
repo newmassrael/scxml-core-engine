@@ -22,7 +22,7 @@
 use super::super::*;
 use crate::forge::cbor_codec;
 use crate::forge::codec_totality::RefusalKind;
-use crate::forge::encode_plan::{Carrier, CborItem, CborPlan, CborValue};
+use crate::forge::encode_plan::{CborItem, CborPlan, CborShape};
 use crate::forge::model::CborEntry;
 
 /// What the interface of one codec is made from.
@@ -66,9 +66,9 @@ fn accessor_type(input: &Input<'_>, item: &CborItem<'_>) -> String {
 /// [`accessor_type`] gives: a list of records lent by reference, and any other
 /// entry read as it is held. The read the decoded map's own interface makes.
 fn held_read(item: &CborItem<'_>, acc: &str) -> String {
-    match (item.value, item.required) {
-        (CborValue::RecordList { .. }, true) => format!("&self.{acc}"),
-        (CborValue::RecordList { .. }, false) => format!("self.{acc}.as_ref()"),
+    match (&item.value, item.required) {
+        (CborShape::List { .. }, true) => format!("&self.{acc}"),
+        (CborShape::List { .. }, false) => format!("self.{acc}.as_ref()"),
         _ => format!("self.{acc}"),
     }
 }
@@ -81,8 +81,8 @@ fn held_read(item: &CborItem<'_>, acc: &str) -> String {
 fn owned_read(item: &CborItem<'_>, acc: &str) -> String {
     let runtime = cbor_codec::RUST_RUNTIME_CODEC;
     let read = match item.value {
-        CborValue::Text => Some(format!("{runtime}::Bounded::as_text")),
-        CborValue::Bytes { .. } => Some(format!("{runtime}::Bounded::as_bytes")),
+        CborShape::Text { .. } => Some(format!("{runtime}::Bounded::as_text")),
+        CborShape::Bytes { .. } => Some(format!("{runtime}::Bounded::as_bytes")),
         _ => None,
     };
     match (read, item.required) {
@@ -100,42 +100,48 @@ fn write_value(input: &Input<'_>, plan: &CborPlan<'_>, item: &CborItem<'_>) -> S
     // 1.3), so there is nothing to check; the value written is the `str` or
     // slice it holds.
     let held = "v.into_inner()";
-    match item.value {
-        CborValue::Bool => "cbor::write_bool(w, v)?;".to_string(),
-        CborValue::Text => format!("cbor::write_text(w, {held})?;"),
-        CborValue::Bytes { .. } => format!("cbor::write_bytes(w, {held})?;"),
-        CborValue::Enum { carrier } => {
+    match &item.value {
+        CborShape::Bool => "cbor::write_bool(w, v)?;".to_string(),
+        CborShape::Text { .. } => format!("cbor::write_text(w, {held})?;"),
+        CborShape::Bytes { .. } => format!("cbor::write_bytes(w, {held})?;"),
+        CborShape::Enum(enumeration) => {
             let present = item
                 .entry
                 .leaf_type()
                 .expect("an enum entry is a leaf entry");
             let underlying = input.l.codec_carrier_expr(present, "v");
-            match carrier {
+            if enumeration.carrier.is_signed() {
                 // A signed carrier can hold a value no unsigned integer carries.
-                Carrier::Signed => format!(
+                format!(
                     "cbor::write_uint(w, u64::try_from({underlying}).map_err(|_| {})?)?;",
                     plan.totality
                         .require(RefusalKind::CborOutOfRange, &item.entry.id)
-                ),
-                Carrier::Wide => format!("cbor::write_uint(w, {underlying})?;"),
-                Carrier::Narrow => format!("cbor::write_uint(w, u64::from({underlying}))?;"),
+                )
+            } else if enumeration.carrier == SceType::Uint64 {
+                format!("cbor::write_uint(w, {underlying})?;")
+            } else {
+                format!("cbor::write_uint(w, u64::from({underlying}))?;")
             }
         }
-        CborValue::Uint { wide: true } => "cbor::write_uint(w, v)?;".to_string(),
-        CborValue::Uint { wide: false } => "cbor::write_uint(w, u64::from(v))?;".to_string(),
+        CborShape::Int {
+            bits: 64,
+            signed: false,
+        } => "cbor::write_uint(w, v)?;".to_string(),
+        CborShape::Int { signed: false, .. } => "cbor::write_uint(w, u64::from(v))?;".to_string(),
         // A definite-length array of the records, each the map the codec's own
         // write of the record writes (docs/adr/0086, section 9.2). The list
         // holds no more than its bound by its type; a lower count, and a byte
         // string of a record past its bound, are refused where the plan names
         // them, before anything of the list is written.
-        CborValue::RecordList { min } => {
-            let alias = cbor_codec::record_list(item.entry)
-                .map(|list| list.record)
-                .expect("a list entry holds a list of records");
+        CborShape::List { elem, min, .. } if matches!(**elem, CborShape::Record(_)) => {
+            let CborShape::Record(record) = &**elem else {
+                unreachable!("the arm holds a list of records")
+            };
+            let alias = record.alias.as_str();
             // The length is bound first and compared bound, so no comparison of
             // a `len()` call against a literal is written.
             let mut write = "let len = v.as_slice().len();\n".to_string();
-            if min > 0 {
+            if *min > 0 {
                 write.push_str(&format!(
                     "if len < {min} {{\n    return Err({});\n}}\n",
                     plan.totality
@@ -144,11 +150,7 @@ fn write_value(input: &Input<'_>, plan: &CborPlan<'_>, item: &CborItem<'_>) -> S
             }
             // The record's unit holds a byte string in the language's own
             // vector, which carries no bound.
-            let unbounded = import_type_scope(input.imports)
-                .records
-                .get(alias)
-                .map(|record| cbor_codec::record_unbounded_bytes(&record.fields))
-                .unwrap_or_default();
+            let unbounded = cbor_codec::record_unbounded_bytes(record);
             if !unbounded.is_empty() {
                 let refusal = plan
                     .totality
@@ -173,7 +175,10 @@ fn write_value(input: &Input<'_>, plan: &CborPlan<'_>, item: &CborItem<'_>) -> S
             ));
             write
         }
-        CborValue::Unlowered => unreachable!(
+        // A signed integer, a float, a record, a union and a list of anything
+        // but records are shapes no printer lowers yet (docs/adr/0101, section
+        // 5.4).
+        _ => unreachable!(
             "a codec of an entry no printer lowers is refused before it renders \
              (`cbor_codec::refusal`)"
         ),

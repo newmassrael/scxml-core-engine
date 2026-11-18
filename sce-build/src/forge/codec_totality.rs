@@ -31,13 +31,14 @@ use std::collections::BTreeSet;
 use std::fmt;
 
 use crate::forge::codec_roles::{self, CodecRoles, Derivation, ElementId, InputImports, Role};
+use crate::forge::encode_plan::{CborItem, CborRecord, CborShape};
 use crate::forge::error::{ForgeError, ValidationError};
 use crate::forge::generator::ImportContext;
 use crate::forge::model::{
-    BitSize, CborEntry, CodecEncoding, CodecField, CodecModel, ContentLineEntry, ContentLineModel,
-    FlagBind, LengthBound, SceType,
+    BitSize, CodecEncoding, CodecField, CodecModel, ContentLineEntry, ContentLineModel, FlagBind,
+    LengthBound, SceType,
 };
-use crate::forge::value_type::ValueType;
+use crate::forge::value_type::TypeScope;
 
 /// What an encode refuses a value with: the `CodecError` it returns, or a codec
 /// it holds refusing first.
@@ -180,19 +181,21 @@ impl Totality {
     }
 }
 
-/// What the analysis asks of the codecs and enums a codec imports.
+/// What the analysis asks of the codecs and types a codec imports.
 pub trait Imports: InputImports {
     /// Whether the encode of the codec imported as `alias` can refuse.
     fn codec_may_fail(&mut self, alias: &str) -> bool;
-    /// The carrier type of the enum imported as `alias`.
-    fn enum_carrier(&mut self, alias: &str) -> Option<SceType>;
-    /// The fields of the record of the event schema imported as `alias`, as the
-    /// one type grammar reads them, or `None` where no such import resolved.
-    fn record_fields(&mut self, alias: &str) -> Option<Vec<(String, ValueType)>>;
+    /// The enums, records and unions the codec's aliases name, each record and
+    /// union in the scope of its own document, as the one type grammar reads
+    /// them: what a CBOR entry's shape is read in
+    /// ([`crate::forge::encode_plan::CborShape`]). An alias that did not
+    /// resolve is absent.
+    fn type_scope(&mut self) -> TypeScope;
 }
 
 /// The imports a codec's generation resolved: each codec import says whether
-/// its encode can refuse, and each enum import its carrier.
+/// its encode can refuse, and each enum, event-schema and union import the
+/// type it declares.
 pub struct Resolved<'a>(pub &'a [ImportContext]);
 
 impl InputImports for Resolved<'_> {
@@ -220,16 +223,8 @@ impl Imports for Resolved<'_> {
             .any(|i| i.alias == alias && i.kind == "codec" && i.codec_source_can_refuse)
     }
 
-    fn enum_carrier(&mut self, alias: &str) -> Option<SceType> {
-        crate::forge::cbor_codec::enum_carrier(self.0, alias)
-    }
-
-    fn record_fields(&mut self, alias: &str) -> Option<Vec<(String, ValueType)>> {
-        self.0
-            .iter()
-            .find(|i| i.kind == "event-schema" && i.alias == alias)
-            .and_then(|i| i.record_type.as_ref())
-            .map(|record| record.fields.clone())
+    fn type_scope(&mut self) -> TypeScope {
+        crate::forge::generator::import_type_scope(self.0)
     }
 }
 
@@ -244,15 +239,10 @@ pub fn may_fail(m: &CodecModel, imports: &[ImportContext]) -> bool {
 /// total and refuses somewhere is refused at the first place it refuses, and
 /// one that states it may fail and refuses nowhere is refused at its root.
 ///
-/// A CBOR entry of a type no printer lowers yet has no encode whose refusals
-/// the analysis names (docs/adr/0101, section 5.4): a codec that holds one and
-/// states that its encode may fail is not refused for naming no refusal.
+/// A CBOR entry is judged by the shape of its type at every depth
+/// (docs/adr/0101, section 5.2), whether or not a printer lowers it yet.
 pub fn check(m: &CodecModel, imports: &[ImportContext]) -> Result<(), ForgeError> {
     let totality = analyse(m, &mut Resolved(imports));
-    let unjudged = m
-        .cbor_entries
-        .iter()
-        .any(|e| crate::forge::cbor_codec::unlowered_part(e).is_some());
     match (m.encode_may_fail, totality.refusals().first()) {
         (false, Some(r)) => Err(
             ForgeError::from(ValidationError::CodecUndeclaredEncodeRefusal {
@@ -263,12 +253,12 @@ pub fn check(m: &CodecModel, imports: &[ImportContext]) -> Result<(), ForgeError
             })
             .at_line(element_line(m, &r.element)),
         ),
-        (true, None) if !unjudged => Err(ForgeError::from(
-            ValidationError::CodecEncodeMayFailWithoutRefusal {
+        (true, None) => Err(
+            ForgeError::from(ValidationError::CodecEncodeMayFailWithoutRefusal {
                 codec: m.name.clone(),
-            },
-        )
-        .at_line(m.source_location.as_ref().and_then(|l| l.line))),
+            })
+            .at_line(m.source_location.as_ref().and_then(|l| l.line)),
+        ),
         _ => Ok(()),
     }
 }
@@ -316,7 +306,13 @@ pub fn analyse(m: &CodecModel, imports: &mut dyn Imports) -> Totality {
     let mut refusals = Vec::new();
     match m.encoding {
         CodecEncoding::Positional => positional(m, imports, &mut refusals),
-        CodecEncoding::Cbor => cbor(&m.cbor_entries, imports, &mut refusals),
+        CodecEncoding::Cbor => {
+            let scope = imports.type_scope();
+            cbor(
+                &crate::forge::encode_plan::cbor_items(m, &scope),
+                &mut refusals,
+            );
+        }
         CodecEncoding::ContentLine => {
             if let Some(model) = &m.content_line {
                 content_line(model, &mut refusals);
@@ -919,71 +915,87 @@ fn flag_width(m: &CodecModel, id: &ElementId) -> u32 {
 
 // ── CBOR ──────────────────────────────────────────────────────────────
 
-fn cbor(entries: &[CborEntry], imports: &mut dyn Imports, out: &mut Vec<Refusal>) {
-    for e in entries {
-        // A string or byte string, each of the bound its type states, and an
-        // exact byte string, are presented within their bounds (`Text`,
-        // `Bytes`; docs/adr/0065 §6 R1, docs/adr/0077 §3), so neither is
-        // refused. An entry of a type no printer lowers yet has no encode on
-        // any backend, which refuses the codec by name before it renders
-        // (docs/adr/0101, section 5.4), so it names no refusal of one.
-        let Some(kind) = crate::forge::cbor_codec::lowered_kind(e) else {
-            continue;
-        };
-        let refusal = match kind {
-            // A list of records is presented in the language's list of its
-            // bound, which holds no more than the bound (docs/adr/0086, section
-            // 7.4), each record in the payload type of its event schema's unit,
-            // which holds a text in the bounded text and a byte string in the
-            // language's own vector. What neither holds is the list's lower
-            // count and a byte string's bound, so a value of fewer records, or
-            // with a byte string past its bound, is refused.
-            "record_list" => crate::forge::cbor_codec::record_list(e).and_then(|list| {
-                if list.min > 0 {
-                    return Some((
-                        RefusalKind::CborOutOfRange,
-                        format!(
-                            "a list of fewer records than its lower count {} has no encoding",
-                            list.min
-                        ),
-                    ));
-                }
-                let fields = imports.record_fields(list.record)?;
-                let unbounded = crate::forge::cbor_codec::record_unbounded_bytes(&fields);
-                unbounded.first().map(|(id, max)| {
-                    (
-                        RefusalKind::CborOutOfRange,
-                        format!(
-                            "a record whose byte string `{id}` is past its bound {max} has no \
-                             encoding"
-                        ),
-                    )
-                })
-            }),
-            "enum" => match e.leaf_type() {
-                Some(SceType::Enum(r)) => match imports.enum_carrier(&r.alias) {
-                    Some(SceType::Int8 | SceType::Int16 | SceType::Int32 | SceType::Int64) => {
-                        Some((
-                            RefusalKind::CborOutOfRange,
-                            "the enum's carrier is signed, and a negative value has no \
-                             unsigned integer"
-                                .to_string(),
-                        ))
-                    }
-                    _ => None,
-                },
-                _ => None,
-            },
-            _ => None,
-        };
-        if let Some((kind, reason)) = refusal {
+/// Where the encode of a CBOR codec whose entries are `items` can refuse a
+/// value: what [`crate::forge::encode_plan::CborPlan::totality`] holds.
+pub(crate) fn cbor_totality(items: &[CborItem<'_>]) -> Totality {
+    let mut refusals = Vec::new();
+    cbor(items, &mut refusals);
+    Totality {
+        refusals,
+        written: RefCell::default(),
+    }
+}
+
+/// The refusals of a CBOR codec's encode, read from the shape of each entry's
+/// type at every depth (docs/adr/0101, section 5.2), each named at its entry,
+/// its reason naming the place in the type it stands at.
+///
+/// The encode refuses a value its source can present and the encoding cannot
+/// carry. A text and a byte string of the codec's own map are presented within
+/// their bounds (`Text`, `Bytes`; docs/adr/0065 §6 R1, docs/adr/0077 §3), a
+/// list in the language's list of its bound, which holds no more than the bound
+/// (docs/adr/0086, section 7.4), and a record in the payload type of its event
+/// schema's unit, which holds a text in the bounded text. What none of them
+/// holds is refused: a list of fewer elements than its lower count, at any
+/// depth, and a byte string below the entry's own level, which the language
+/// holds in its own vector, past its bound.
+fn cbor(items: &[CborItem<'_>], out: &mut Vec<Refusal>) {
+    for item in items {
+        if let Some(reason) = out_of_range(&item.value, &item.entry.id, false) {
             out.push(Refusal {
-                kind,
-                element: e.id.clone(),
+                kind: RefusalKind::CborOutOfRange,
+                element: item.entry.id.clone(),
                 reason,
             });
         }
     }
+}
+
+/// Why a value of `shape`, at `place` in its entry, has no encoding though its
+/// presented type holds it: the first reason in the order the encode meets the
+/// parts, or `None` where every value it can present has one. `nested` is
+/// whether the shape stands below the entry's own level.
+fn out_of_range(shape: &CborShape, place: &str, nested: bool) -> Option<String> {
+    match shape {
+        CborShape::List { elem, min, .. } => {
+            if *min > 0 {
+                return Some(format!(
+                    "a list `{place}` of fewer elements than its lower count {min} has no \
+                     encoding"
+                ));
+            }
+            out_of_range(elem, &format!("{place}[]"), true)
+        }
+        CborShape::Bytes { max, .. } if nested => Some(format!(
+            "a byte string `{place}` past its bound {max} has no encoding"
+        )),
+        CborShape::Enum(enumeration) if enumeration.carrier.is_signed() => Some(format!(
+            "`{place}` is a value of an enum whose carrier is signed, and a negative value has \
+             no unsigned integer"
+        )),
+        CborShape::Nullable(elem) => out_of_range(elem, place, nested),
+        CborShape::Record(record) => fields_out_of_range(record, place),
+        CborShape::Union(union) => union.cases.iter().find_map(|case| {
+            case.record.as_ref().and_then(|record| {
+                fields_out_of_range(record, &format!("{place}.{}", case.variant))
+            })
+        }),
+        CborShape::Int { .. }
+        | CborShape::Float { .. }
+        | CborShape::Bool
+        | CborShape::Text { .. }
+        | CborShape::Bytes { .. }
+        | CborShape::Enum(_)
+        | CborShape::Unresolved { .. } => None,
+    }
+}
+
+/// [`out_of_range`] of the fields of `record`, at `place`, in the order its
+/// map writes them.
+fn fields_out_of_range(record: &CborRecord, place: &str) -> Option<String> {
+    record
+        .fields_by_key()
+        .find_map(|field| out_of_range(&field.shape, &format!("{place}.{}", field.id), true))
 }
 
 // ── Content line ──────────────────────────────────────────────────────
@@ -1045,6 +1057,7 @@ fn writes_refusing_value(e: &ContentLineEntry) -> bool {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::forge::value_type::ValueType;
 
     struct NoImports;
 
@@ -1067,11 +1080,8 @@ mod tests {
         fn codec_may_fail(&mut self, _alias: &str) -> bool {
             false
         }
-        fn enum_carrier(&mut self, _alias: &str) -> Option<SceType> {
-            None
-        }
-        fn record_fields(&mut self, _alias: &str) -> Option<Vec<(String, ValueType)>> {
-            None
+        fn type_scope(&mut self) -> TypeScope {
+            TypeScope::default()
         }
     }
 
@@ -1117,9 +1127,16 @@ mod tests {
 
     /// A CBOR codec of `entries` whose root carries `root_attrs`.
     fn cbor_model(root_attrs: &str, entries: &str) -> CodecModel {
+        cbor_importing(root_attrs, "", entries)
+    }
+
+    /// A CBOR codec of the import lines `imports` and of `entries`, whose root
+    /// carries `root_attrs`.
+    fn cbor_importing(root_attrs: &str, imports: &str, entries: &str) -> CodecModel {
         model(&format!(
             r#"<scxml xmlns="http://www.w3.org/2005/07/scxml" xmlns:sce="http://sce.dev/ext"
                        sce:kind="codec" sce:encoding="cbor" sce:codec-format="2"{root_attrs} name="t">
+{imports}
                  <datamodel>
                  <data id="raw" sce:type="bytes" sce:direction="in"/>
 {entries}
@@ -1127,23 +1144,238 @@ mod tests {
         ))
     }
 
-    #[test]
-    fn an_entry_no_printer_lowers_names_no_refusal_and_leaves_a_statement_unjudged() {
-        // docs/adr/0101, section 5.4: a list below its lower count has no
-        // encode on any backend yet, so the analysis names none, and a codec
-        // that states its encode may fail is not refused for naming none.
-        let entries = r#"                 <data id="n" sce:type="list&lt;uint8&gt;[1..4]" sce:key="0" sce:direction="out"/>"#;
-        let m = cbor_model("", entries);
-        assert!(analyse(&m, &mut NoImports).is_total(), "{:?}", kinds(&m));
-        assert!(check(&m, &[]).is_ok());
-        let m = cbor_model(r#" sce:encode-may-fail="true""#, entries);
-        assert!(check(&m, &[]).is_ok());
-        // A codec of lowered entries alone is still held to its statement.
-        let m = cbor_model(
-            r#" sce:encode-may-fail="true""#,
-            r#"                 <data id="n" sce:type="uint8" sce:key="0" sce:direction="out"/>"#,
+    /// One entry `n` under key 0 of the type `ty`, as an attribute spells it.
+    fn one_entry(ty: &str) -> String {
+        format!(
+            r#"                 <data id="n" sce:type="{}" sce:key="0" sce:direction="out"/>"#,
+            ty.replace('<', "&lt;").replace('>', "&gt;")
+        )
+    }
+
+    /// The type the grammar reads `text` as, every bound in it.
+    fn ty(text: &str) -> ValueType {
+        crate::forge::value_type::WrittenType::read(text)
+            .and_then(crate::forge::value_type::WrittenType::bounded)
+            .unwrap_or_else(|why| panic!("`{text}` is a type: {why:?}"))
+    }
+
+    /// The imports of a codec whose aliases name the types of `0`, and no
+    /// codec.
+    struct Scoped(TypeScope);
+
+    impl InputImports for Scoped {
+        fn flag_binds(&mut self, _alias: &str) -> Vec<FlagBind> {
+            Vec::new()
+        }
+        fn says_input(&mut self, _alias: &str, _input: &str) -> bool {
+            false
+        }
+        fn says_input_partly(&mut self, _alias: &str, _input: &str) -> bool {
+            false
+        }
+        fn entry_shape(&mut self, _alias: &str) -> Option<codec_roles::EntryShape> {
+            None
+        }
+    }
+
+    impl Imports for Scoped {
+        fn codec_may_fail(&mut self, _alias: &str) -> bool {
+            false
+        }
+        fn type_scope(&mut self) -> TypeScope {
+            self.0.clone()
+        }
+    }
+
+    /// A scope of the record `R` of `fields`, the union `U` whose case `full`
+    /// holds `R` and whose case `none` holds nothing, and the enums `Signed`,
+    /// of an `int8` carrier, and `Plain`, of a `uint8` one.
+    fn scope(fields: &[(&str, &str)]) -> TypeScope {
+        use crate::forge::value_type::{
+            ScopedCase, ScopedEnum, ScopedRecord, ScopedUnion, ScopedVariant,
+        };
+        let variant = |name: &str, value: i128| ScopedVariant {
+            name: name.to_string(),
+            value,
+        };
+        let enumeration = |underlying: SceType| ScopedEnum {
+            name: "e".to_string(),
+            variants: vec![
+                variant("low", if underlying.is_signed() { -1 } else { 0 }),
+                variant("high", 1),
+            ],
+            underlying,
+            strict: true,
+        };
+        let mut enums = std::collections::BTreeMap::new();
+        enums.insert("Signed".to_string(), enumeration(SceType::Int8));
+        enums.insert("Plain".to_string(), enumeration(SceType::Uint8));
+        // The record names the enums by the same aliases in its own document.
+        let record = ScopedRecord {
+            identity: "r".to_string(),
+            name: "r".to_string(),
+            fields: fields
+                .iter()
+                .map(|(id, text)| (id.to_string(), ty(text)))
+                .collect(),
+            scope: TypeScope {
+                enums: enums.clone(),
+                ..TypeScope::default()
+            },
+        };
+        let mut union_scope = TypeScope::default();
+        union_scope.records.insert("R".to_string(), record.clone());
+        let mut scope = TypeScope {
+            enums,
+            ..TypeScope::default()
+        };
+        scope.records.insert("R".to_string(), record);
+        scope.unions.insert(
+            "U".to_string(),
+            ScopedUnion {
+                identity: "u".to_string(),
+                name: "u".to_string(),
+                tag: "kind".to_string(),
+                tag_enum: "Kind".to_string(),
+                cases: vec![
+                    ScopedCase {
+                        variant: variant("none", 0),
+                        record: None,
+                    },
+                    ScopedCase {
+                        variant: variant("full", 1),
+                        record: Some("R".to_string()),
+                    },
+                ],
+                scope: union_scope,
+            },
         );
+        scope
+    }
+
+    /// The import lines of the aliases [`scope`] names.
+    const SCOPE_IMPORTS: &str = r#"                 <sce:import kind="event-schema" src="r.scxml" as="R"/>
+                 <sce:import kind="union" src="u.scxml" as="U"/>
+                 <sce:import kind="enum" src="signed.scxml" as="Signed"/>
+                 <sce:import kind="enum" src="plain.scxml" as="Plain"/>"#;
+
+    /// The refusals of the one entry of type `ty`, its types read in `scope`.
+    fn scoped_refusals(ty: &str, scope: TypeScope) -> Vec<Refusal> {
+        let m = cbor_importing("", SCOPE_IMPORTS, &one_entry(ty));
+        analyse(&m, &mut Scoped(scope)).refusals().to_vec()
+    }
+
+    #[test]
+    fn a_list_below_its_lower_count_is_refused_at_any_depth() {
+        // docs/adr/0101, section 3.5: on every backend, whether a printer
+        // lowers the entry yet or not (section 5.2).
+        for (ty, place) in [
+            ("list<uint8>[1..4]", "`n`"),
+            ("list<list<uint8>[2..3]>[4]", "`n[]`"),
+            ("optional<list<bool>[1..2]>", "`n`"),
+        ] {
+            let m = cbor_model("", &one_entry(ty));
+            let t = analyse(&m, &mut NoImports);
+            assert_eq!(
+                kinds(&m),
+                vec![(RefusalKind::CborOutOfRange, "n".to_string())],
+                "{ty}"
+            );
+            assert!(
+                t.refusals()[0].reason.contains(place),
+                "{ty}: {:?}",
+                t.refusals()
+            );
+        }
+        let entries = one_entry("list<uint8>[1..4]");
+        let err = check(&cbor_model("", &entries), &[]).expect_err("the statement is untrue");
+        assert!(matches!(
+            validation(err),
+            ValidationError::CodecUndeclaredEncodeRefusal { .. }
+        ));
+        check(&cbor_model(r#" sce:encode-may-fail="true""#, &entries), &[])
+            .expect("a true statement is accepted");
+        // A list of no lower count, of any depth, is held within its bound by
+        // its type.
+        assert!(analyse(
+            &cbor_model("", &one_entry("list<list<uint8>[3]>[4]")),
+            &mut NoImports
+        )
+        .is_total());
+        // A codec of entries that refuse nothing is still held to its
+        // statement.
+        let m = cbor_model(r#" sce:encode-may-fail="true""#, &one_entry("uint8"));
         assert!(check(&m, &[]).is_err());
+    }
+
+    #[test]
+    fn a_byte_string_below_its_entry_is_refused_past_its_bound() {
+        // A byte string the codec's map holds is presented as the `Bytes` of
+        // its bound; one a list, a record or a union's case holds is held in
+        // the language's own vector, which carries none.
+        assert!(scoped_refusals("bytes[4]", scope(&[])).is_empty());
+        for (ty, place) in [
+            ("list<bytes[4]>[2]", "`n[]`"),
+            ("record:R", "`n.blob`"),
+            ("optional<record:R>", "`n.blob`"),
+            ("list<record:R>[3]", "`n[].blob`"),
+            ("union:U", "`n.full.blob`"),
+        ] {
+            let refusals = scoped_refusals(ty, scope(&[("id", "uint8"), ("blob", "bytes[4]")]));
+            assert_eq!(refusals.len(), 1, "{ty}: {refusals:?}");
+            assert_eq!(refusals[0].kind, RefusalKind::CborOutOfRange, "{ty}");
+            assert_eq!(refusals[0].element, "n", "{ty}");
+            assert!(refusals[0].reason.contains(place), "{ty}: {refusals:?}");
+        }
+    }
+
+    #[test]
+    fn a_record_of_texts_numbers_and_floats_is_total_wherever_it_stands() {
+        // A text a record holds is in the bounded text of its unit, and every
+        // number, bool and float is a value with an encoding.
+        let fields = [
+            ("note", "string[8]"),
+            ("n", "int64"),
+            ("x", "float32"),
+            ("ok", "bool"),
+            ("level", "enum:Plain"),
+        ];
+        for ty in [
+            "record:R",
+            "list<record:R>[2]",
+            "union:U",
+            "list<optional<union:U>>[2]",
+        ] {
+            assert!(
+                scoped_refusals(ty, scope(&fields)).is_empty(),
+                "{ty}: {:?}",
+                scoped_refusals(ty, scope(&fields))
+            );
+        }
+    }
+
+    #[test]
+    fn a_type_the_imports_do_not_resolve_names_no_refusal() {
+        // The compile refuses such an entry by its own name before any
+        // printer reads the plan.
+        for ty in ["record:R", "optional<record:R>", "union:U", "enum:Signed"] {
+            assert!(scoped_refusals(ty, TypeScope::default()).is_empty(), "{ty}");
+        }
+    }
+
+    #[test]
+    fn a_value_of_an_enum_of_a_signed_carrier_is_refused_below_zero() {
+        // The encode writes an enum as the unsigned integer its carrier holds.
+        assert!(scoped_refusals("enum:Plain", scope(&[])).is_empty());
+        for (ty, place) in [
+            ("enum:Signed", "`n`"),
+            ("optional<enum:Signed>", "`n`"),
+            ("record:R", "`n.level`"),
+        ] {
+            let refusals = scoped_refusals(ty, scope(&[("level", "enum:Signed")]));
+            assert_eq!(refusals.len(), 1, "{ty}: {refusals:?}");
+            assert!(refusals[0].reason.contains(place), "{ty}: {refusals:?}");
+        }
     }
 
     #[test]
@@ -1317,11 +1549,8 @@ mod tests {
             fn codec_may_fail(&mut self, alias: &str) -> bool {
                 alias == "inner"
             }
-            fn enum_carrier(&mut self, _alias: &str) -> Option<SceType> {
-                None
-            }
-            fn record_fields(&mut self, _alias: &str) -> Option<Vec<(String, ValueType)>> {
-                None
+            fn type_scope(&mut self) -> TypeScope {
+                TypeScope::default()
             }
         }
         let m = model(

@@ -23,14 +23,14 @@ mutation_oracles sce-build/src/forge/value_type.rs
 
 mutation_case "a closed enum is sized by its underlying type" <<'PY'
 edit("sce-build/src/forge/value_type.rs",
-     "                Measure::Cbor if enumeration.strict => {",
-     "                Measure::Cbor if enumeration.strict && false => {")
+     "                Measure::Cbor(_) if enumeration.strict => {",
+     "                Measure::Cbor(_) if enumeration.strict && false => {")
 PY
 
 mutation_case "an open enum is sized by its declared numbers" <<'PY'
 edit("sce-build/src/forge/value_type.rs",
-     "                Measure::Cbor if enumeration.strict => {",
-     "                Measure::Cbor if enumeration.strict || !enumeration.strict => {")
+     "                Measure::Cbor(_) if enumeration.strict => {",
+     "                Measure::Cbor(_) if enumeration.strict || !enumeration.strict => {")
 PY
 
 mutation_case "only the first declared number is measured" <<'PY'

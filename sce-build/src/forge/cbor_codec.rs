@@ -15,6 +15,7 @@
 // writes are the runtime's CBOR primitives (`sce_forge_runtime::cbor`), so
 // no CBOR is spelled in this generator either.
 
+use crate::forge::encode_plan::{CborField, CborPlan, CborRecord, CborShape};
 use crate::forge::error::{ForgeError, GenerateError};
 use crate::forge::generator::{
     insert_rust_storage, rust_origin_trait, rust_storage_field, rust_storage_tag,
@@ -22,8 +23,7 @@ use crate::forge::generator::{
 };
 use crate::forge::model::{CborEntry, CodecModel, Measured, SceType};
 use crate::forge::value_type::{
-    cbor_head_len, cbor_max_len, Composition, ScopedRecord, SizeError, TypeEnv, TypeScope,
-    ValueType,
+    cbor_head_len, codec_cbor_max_len, Composition, SizeError, TypeEnv, TypeScope, ValueType,
 };
 
 // ⚠ An entry's `name` is the backend's field identifier
@@ -108,7 +108,7 @@ pub fn unlowered_part(e: &CborEntry) -> Option<&ValueType> {
 /// as the clause a printer's list of the forms it does not print names it by
 /// (docs/adr/0101, section 5.4), in declaration order; empty for a codec whose
 /// every entry they print.
-pub(crate) fn unlowered_forms(plan: &crate::forge::encode_plan::CborPlan<'_>) -> Vec<String> {
+pub(crate) fn unlowered_forms(plan: &CborPlan<'_>) -> Vec<String> {
     plan.entries
         .iter()
         .filter_map(|item| {
@@ -227,14 +227,17 @@ pub fn render(
             m.source_location.clone(),
         )));
     }
+    // Every order a template writes in is the plan's (docs/adr/0101, section
+    // 5.1): the entries by key and each record's fields by key.
+    let plan = CborPlan::of(m, imports);
     match lang {
-        Language::Rust => render_rust(env, m, imports),
-        Language::Kotlin => render_kotlin(env, m, imports),
-        Language::Cpp => render_cpp(env, m, imports),
-        Language::Go => render_go(env, m, imports),
-        Language::Python => render_python(env, m, imports),
-        Language::C11 => render_c(env, m, imports),
-        Language::Swift => render_swift(env, m, imports),
+        Language::Rust => render_rust(env, &plan, imports),
+        Language::Kotlin => render_kotlin(env, &plan, imports),
+        Language::Cpp => render_cpp(env, &plan, imports),
+        Language::Go => render_go(env, &plan, imports),
+        Language::Python => render_python(env, &plan, imports),
+        Language::C11 => render_c(env, &plan, imports),
+        Language::Swift => render_swift(env, &plan, imports),
     }
 }
 
@@ -297,29 +300,21 @@ pub(crate) fn record_field(ty: &ValueType) -> Option<(&'static str, Option<u32>)
     }
 }
 
-/// The byte-string fields of a record a CBOR list holds, each with its bound:
-/// the fields the record's Rust unit holds in the language's own vector, which
-/// carries no bound (a text it holds in the bounded `SceString`). The encode
-/// holds each to its bound, so a record past it has no encoding, which the
-/// totality analysis names at the list's entry ([`crate::forge::codec_totality`]).
-pub(crate) fn record_unbounded_bytes(fields: &[(String, ValueType)]) -> Vec<(String, u32)> {
-    fields
+/// The byte-string fields of `record`, a record a CBOR list holds, each with
+/// its bound, in the schema's order: the fields the record's unit holds in the
+/// language's own vector, which carries no bound (a text it holds in the
+/// bounded `SceString`). The encode holds each to its bound, so a record past
+/// it has no encoding, which the totality analysis names at the list's entry
+/// ([`crate::forge::codec_totality`]).
+pub(crate) fn record_unbounded_bytes(record: &CborRecord) -> Vec<(&str, u32)> {
+    record
+        .fields
         .iter()
-        .filter_map(|(id, ty)| match ty {
-            ValueType::Bytes { max } => Some((id.clone(), max.max)),
+        .filter_map(|f| match f.shape {
+            CborShape::Bytes { max, .. } => Some((f.id.as_str(), max)),
             _ => None,
         })
         .collect()
-}
-
-/// The fields of `record` in the order a record's map writes them: by the
-/// bytes of each key's encoding (RFC 8949 §4.2.1). A key is a text, whose head
-/// grows with its length, so a shorter id comes first and ids of one length
-/// are in the order of their bytes.
-pub(crate) fn record_fields_by_key(record: &ScopedRecord) -> Vec<&(String, ValueType)> {
-    let mut fields: Vec<&(String, ValueType)> = record.fields.iter().collect();
-    fields.sort_by(|(a, _), (b, _)| (a.len(), a.as_bytes()).cmp(&(b.len(), b.as_bytes())));
-    fields
 }
 
 /// What an entry the printers lower is on the wire, as the templates branch on
@@ -688,29 +683,34 @@ fn common_context(
 }
 
 /// Render `ctx` with `entries_by_key` beside `entries`: the same entries in
-/// ascending key order, which is the order encode writes them (RFC 8949
-/// §4.2.1) — `entries` keeps the author's declaration order. Taken here,
-/// after a backend has added its own fields to each entry, so the two lists
-/// never disagree about what an entry carries.
+/// the order the plan writes them, ascending key (RFC 8949 §4.2.1;
+/// [`CborPlan::by_key`]) — `entries` keeps the author's declaration order.
+/// Taken here, after a backend has added its own fields to each entry, so the
+/// two lists never disagree about what an entry carries.
 fn render_in_key_order(
     l: &LangCtx,
     env: &minijinja::Environment,
+    plan: &CborPlan<'_>,
     mut ctx: serde_json::Map<String, serde_json::Value>,
 ) -> Result<String, ForgeError> {
-    let mut by_key = match ctx.get("entries") {
-        Some(serde_json::Value::Array(entries)) => entries.clone(),
+    let by_key: Vec<serde_json::Value> = match ctx.get("entries") {
+        Some(serde_json::Value::Array(entries)) => plan
+            .by_key
+            .iter()
+            .filter_map(|&at| entries.get(at).cloned())
+            .collect(),
         _ => Vec::new(),
     };
-    by_key.sort_by_key(|e| e["key"].as_u64());
     ctx.insert("entries_by_key".into(), by_key.into());
     l.render(env, "codec_cbor", ctx)
 }
 
 fn render_kotlin(
     env: &minijinja::Environment,
-    m: &CodecModel,
+    plan: &CborPlan<'_>,
     imports: &[ImportContext],
 ) -> Result<String, ForgeError> {
+    let m = plan.model;
     let l = LangCtx::new(Language::Kotlin, imports);
     // What the decode reads each entry into before the value holds it: a list
     // of records a `List` of the schema's payload.
@@ -720,7 +720,7 @@ fn render_kotlin(
     })?;
     // Each field of a record as the schema's Kotlin unit holds it: a text in a
     // `String`, a byte string in a `ByteArray`.
-    insert_cbor_records(&l, m, imports, &mut ctx, &|ty| {
+    insert_cbor_records(&l, plan, imports, &mut ctx, &|ty| {
         scalar_record_field_type(&l, ty)
     })?;
     // docs/adr/0081 step 4: the map is printed from its plan, each text, byte
@@ -729,7 +729,7 @@ fn render_kotlin(
     // printer holds it, a required entry at its class's default and an
     // optional one absent (`null`), and the decode makes it as the printer
     // says.
-    let (printed, declared) = crate::forge::generator::kotlin_cbor_printed(m, imports);
+    let (printed, declared) = crate::forge::generator::kotlin_cbor_printed(plan, imports);
     if let Some(serde_json::Value::Array(entries)) = ctx.get_mut("entries") {
         for (entry, e) in entries.iter_mut().zip(&m.cbor_entries) {
             let (ty, default, made) = &declared[&e.id];
@@ -739,7 +739,7 @@ fn render_kotlin(
         }
     }
     ctx.insert("kotlin_source".into(), printed);
-    render_in_key_order(&l, env, ctx)
+    render_in_key_order(&l, env, plan, ctx)
 }
 
 /// The type of a record the list entry `e` holds, as `l`'s language names it
@@ -768,9 +768,10 @@ fn scalar_record_field_type(l: &LangCtx, ty: &ValueType) -> String {
 
 fn render_swift(
     env: &minijinja::Environment,
-    m: &CodecModel,
+    plan: &CborPlan<'_>,
     imports: &[ImportContext],
 ) -> Result<String, ForgeError> {
+    let m = plan.model;
     let l = LangCtx::new(Language::Swift, imports);
     // Owned values, as every Swift codec holds them: a text string is a `String` and a byte string a
     // `[UInt8]`. A required entry starts at its type's zero, an enum at its first declared variant,
@@ -783,7 +784,7 @@ fn render_swift(
     })?;
     // Each field of a record as the schema's Swift unit holds it: a text in a `String`, a byte
     // string in a `[UInt8]`.
-    insert_cbor_records(&l, m, imports, &mut ctx, &|ty| {
+    insert_cbor_records(&l, plan, imports, &mut ctx, &|ty| {
         scalar_record_field_type(&l, ty)
     })?;
     if let Some(serde_json::Value::Array(entries)) = ctx.get_mut("entries") {
@@ -817,14 +818,15 @@ fn render_swift(
             .into();
         }
     }
-    render_in_key_order(&l, env, ctx)
+    render_in_key_order(&l, env, plan, ctx)
 }
 
 fn render_cpp(
     env: &minijinja::Environment,
-    m: &CodecModel,
+    plan: &CborPlan<'_>,
     imports: &[ImportContext],
 ) -> Result<String, ForgeError> {
+    let m = plan.model;
     let l = LangCtx::new(Language::Cpp, imports);
     // The header's context: the namespace, the guard, the imports a record's
     // payload type is brought into scope by, and the refusal of an entry whose
@@ -841,16 +843,17 @@ fn render_cpp(
     // plan the C++ printer does not lower was refused before it was rendered.
     ctx.insert(
         "cpp_source".into(),
-        crate::forge::generator::cpp_cbor_printed(m, imports).into(),
+        crate::forge::generator::cpp_cbor_printed(plan, imports).into(),
     );
     l.render(env, "codec_cbor", ctx)
 }
 
 fn render_go(
     env: &minijinja::Environment,
-    m: &CodecModel,
+    plan: &CborPlan<'_>,
     imports: &[ImportContext],
 ) -> Result<String, ForgeError> {
+    let m = plan.model;
     let l = LangCtx::new(Language::Go, imports);
     // Owned values, as every Go codec holds them. An optional entry is the one
     // optional type (docs/adr/0055, section 5), so an absent byte string and a
@@ -863,7 +866,7 @@ fn render_go(
     })?;
     // Each field of a record as the schema's Go unit holds it: a text in a
     // `string`, a byte string in a `[]byte`.
-    insert_cbor_records(&l, m, imports, &mut ctx, &|ty| {
+    insert_cbor_records(&l, plan, imports, &mut ctx, &|ty| {
         scalar_record_field_type(&l, ty)
     })?;
     if let Some(serde_json::Value::Array(entries)) = ctx.get_mut("entries") {
@@ -890,14 +893,15 @@ fn render_go(
             .into();
         }
     }
-    render_in_key_order(&l, env, ctx)
+    render_in_key_order(&l, env, plan, ctx)
 }
 
 fn render_c(
     env: &minijinja::Environment,
-    m: &CodecModel,
+    plan: &CborPlan<'_>,
     imports: &[ImportContext],
 ) -> Result<String, ForgeError> {
+    let m = plan.model;
     let l = LangCtx::new(Language::C11, imports);
     let mut ctx = common_context(&l, m, imports, |e| match e.leaf_type() {
         Some(present) => l.type_name(present).into_owned(),
@@ -907,7 +911,7 @@ fn render_c(
     // type, a text in the buffer of its bound, ended by its terminator, and a
     // byte string in the buffer of its bound beside its length
     // (`generator::c11_schema_bytes_capacity`).
-    insert_cbor_records(&l, m, imports, &mut ctx, &|ty| match ty {
+    insert_cbor_records(&l, plan, imports, &mut ctx, &|ty| match ty {
         ValueType::Text { max } => crate::forge::static_lowering::c_string_storage_type(max.max),
         ValueType::Bytes { max } => crate::forge::static_lowering::c_bytes_storage_type(max.max),
         other => scalar_record_field_type(&l, other),
@@ -987,36 +991,38 @@ fn render_c(
         }
     }
     ctx.insert("optional_declarations".into(), declarations.into());
-    // What this node's encode writes at most: each string at what it holds,
-    // the deployment's capacity where it gives one.
+    // What this node's encode writes at most, `C` of the codec (docs/adr/0101,
+    // section 4.1): each string at what it holds, the deployment's capacity
+    // where it gives one.
     let max_encoded_bytes = max_encoded_bytes(
         m,
         Measured::Held,
         &crate::forge::generator::import_type_scope(imports),
     )
     .expect(
-        "a compile refuses a CBOR codec whose record does not resolve or whose size is past \
-         2^64 - 1 bytes before any language renders it",
+        "a compile refuses a CBOR codec whose enum or record does not resolve or whose size \
+         is past 2^64 - 1 bytes before any language renders it",
     );
     ctx.insert("max_encoded_bytes".into(), max_encoded_bytes.into());
-    render_in_key_order(&l, env, ctx)
+    render_in_key_order(&l, env, plan, ctx)
 }
 
-/// The most bytes `m` encodes to: its map head and, for every entry, its key
-/// and the longest value it admits, measured as `measured` says — at the
-/// bound, the largest frame of the language; held, a size C11 callers size an
-/// `encode_to_buf` buffer by. Every text and byte string states its bound
-/// (docs/adr/0101, section 1.3), so each has a number to be measured at.
+/// `C` of the codec `m` (docs/adr/0101, section 4.1), the most bytes it encodes
+/// to: its map head and, for every entry, its key, one byte, and `C` of its
+/// present type ([`codec_cbor_max_len`]), every enum, record and union read in
+/// `env`, an optional entry counted present. Tight: the value at its largest
+/// encodes to exactly this many bytes, which is what `<NAME>_MAX_BYTES` states
+/// and a broadcast log's slot holds (docs/adr/0101, section 4.2).
 ///
-/// An entry that is no leaf (a list of records, and every type of the language
-/// docs/adr/0101 section 1 admits beside it) is measured by the size calculus of
-/// the one type grammar (docs/adr/0086, section 2.1), `C` of its present type,
-/// every record and union read in `env`: what its encode writes at most, a held
-/// list being held at its bound.
+/// `measured` says what a top-level text or byte string is measured at: its
+/// bound, the largest frame of the language; or what this node holds of it,
+/// the deployment's capacity where it gives one (docs/adr/0077 §7), the size
+/// C11 callers size an `encode_to_buf` buffer by.
 ///
-/// The refusal of a record or union `env` does not hold or that holds itself,
-/// and [`SizeError::Overflow`] for a size past 2^64 - 1 bytes, which a compile
-/// refuses as `validation/encoded-size-overflow` (docs/adr/0101, section 4.4).
+/// The refusal of an enum, a record or a union `env` does not hold or that
+/// holds itself, and [`SizeError::Overflow`] for a size past 2^64 - 1 bytes,
+/// which a compile refuses as `validation/encoded-size-overflow`
+/// (docs/adr/0101, section 4.4).
 pub(crate) fn max_encoded_bytes(
     m: &CodecModel,
     measured: Measured,
@@ -1025,18 +1031,12 @@ pub(crate) fn max_encoded_bytes(
     let mut total = cbor_head_len(m.cbor_entries.len() as u64);
     for e in &m.cbor_entries {
         let key = cbor_head_len(u64::from(e.key));
-        let value = match e.leaf_type() {
-            None => cbor_max_len(e.present_type(), env)?,
-            Some(SceType::Bool) => 1,
-            Some(SceType::String | SceType::Bytes) => {
-                let held = match measured {
-                    Measured::Bound => e.text_bound(),
-                    Measured::Held => e.storage_bytes(),
-                };
-                let n = u64::from(held.expect("a text or byte string entry states its bound"));
+        let value = match (measured, e.storage_bytes()) {
+            (Measured::Held, Some(held)) => {
+                let n = u64::from(held);
                 cbor_head_len(n) + n
             }
-            Some(_) => 9,
+            _ => codec_cbor_max_len(e.present_type(), env)?,
         };
         total = total
             .checked_add(key)
@@ -1054,7 +1054,7 @@ pub(crate) fn max_encoded_bytes(
 pub fn entry_past_encoded_size(m: &CodecModel, env: &dyn TypeEnv) -> Option<(String, String)> {
     m.cbor_entries.iter().find_map(|e| {
         matches!(
-            cbor_max_len(e.present_type(), env),
+            codec_cbor_max_len(e.present_type(), env),
             Err(SizeError::Overflow)
         )
         .then(|| (e.id.clone(), e.sce_type.to_string()))
@@ -1093,11 +1093,10 @@ pub fn size_overflow(m: &CodecModel, env: &dyn TypeEnv) -> Option<ForgeError> {
     ) {
         return None;
     }
-    let mut by_key: Vec<&CborEntry> = m.cbor_entries.iter().collect();
-    by_key.sort_by_key(|e| e.key);
-    let members: Vec<String> = by_key
-        .iter()
-        .map(|e| {
+    let members: Vec<String> = crate::forge::encode_plan::entry_key_order(&m.cbor_entries)
+        .into_iter()
+        .map(|at| {
+            let e = &m.cbor_entries[at];
             let optional = if e.is_required() { "" } else { "? " };
             format!("{optional}{} => {}", e.key, e.present_type())
         })
@@ -1117,9 +1116,10 @@ pub fn size_overflow(m: &CodecModel, env: &dyn TypeEnv) -> Option<ForgeError> {
 
 fn render_python(
     env: &minijinja::Environment,
-    m: &CodecModel,
+    plan: &CborPlan<'_>,
     imports: &[ImportContext],
 ) -> Result<String, ForgeError> {
+    let m = plan.model;
     let l = LangCtx::new(Language::Python, imports);
     // A list of records is a `list` of the schema's payload, which carries no
     // bound: the encode refuses a count past it.
@@ -1129,14 +1129,14 @@ fn render_python(
     })?;
     // Each field of a record as the schema's Python unit holds it: a text in a
     // `str`, a byte string in `bytes`, a number in an `int`.
-    insert_cbor_records(&l, m, imports, &mut ctx, &|ty| {
+    insert_cbor_records(&l, plan, imports, &mut ctx, &|ty| {
         scalar_record_field_type(&l, ty)
     })?;
     // docs/adr/0081 step 4: the map is printed from its plan, each entry held
     // in the class of its bound or width and encoded over any source; the
     // value's field is declared as the printer holds it, a required entry at
     // its class's default and an optional one absent (`None`).
-    let (printed, declared) = crate::forge::generator::python_cbor_printed(m, imports);
+    let (printed, declared) = crate::forge::generator::python_cbor_printed(plan, imports);
     if let Some(serde_json::Value::Array(entries)) = ctx.get_mut("entries") {
         for (entry, e) in entries.iter_mut().zip(&m.cbor_entries) {
             let (ty, default) = &declared[&e.id];
@@ -1152,16 +1152,16 @@ fn render_python(
             .any(|e| matches!(e.leaf_type(), Some(SceType::Enum(r)) if !l.enum_is_open(&r.alias)))
             .into(),
     );
-    render_in_key_order(&l, env, ctx)
+    render_in_key_order(&l, env, plan, ctx)
 }
 
 fn render_rust(
     env: &minijinja::Environment,
-    m: &CodecModel,
+    plan: &CborPlan<'_>,
     imports: &[ImportContext],
 ) -> Result<String, ForgeError> {
     let l = LangCtx::new(Language::Rust, imports);
-    render_in_key_order(&l, env, rust_context(&l, m, imports)?)
+    render_in_key_order(&l, env, plan, rust_context(&l, plan, imports)?)
 }
 
 /// The origin-aware projection of the Rust owned mirror, `try_into_owned_in_origin`
@@ -1182,7 +1182,8 @@ pub fn render_rust_owned_origin(
         return Ok(None);
     }
     let l = LangCtx::new(Language::Rust, imports);
-    let mut ctx = rust_context(&l, m, imports)?;
+    let plan = CborPlan::of(m, imports);
+    let mut ctx = rust_context(&l, &plan, imports)?;
     ctx.insert("owned_in_origin_fn".into(), OWNED_IN_ORIGIN_FN.into());
     ctx.insert("origin_param".into(), ORIGIN_PARAM.into());
     ctx.insert(
@@ -1210,9 +1211,10 @@ pub fn render_rust_owned_origin(
 /// each entry's owned type when the map has a mirror.
 fn rust_context(
     l: &LangCtx,
-    m: &CodecModel,
+    plan: &CborPlan<'_>,
     imports: &[ImportContext],
 ) -> Result<serde_json::Map<String, serde_json::Value>, ForgeError> {
+    let m = plan.model;
     // A string or byte string is a view of the input, so the struct borrows
     // only when one of its entries does. A list of records owns what it holds.
     let borrows = m
@@ -1223,7 +1225,7 @@ fn rust_context(
     // Each field of a record as the record's own unit holds it
     // (`render_event_schema`): a text in the bounded text and a byte string in
     // the language's own vector, which the encode holds to its bound.
-    insert_cbor_records(l, m, imports, &mut ctx, &|ty| match ty {
+    insert_cbor_records(l, plan, imports, &mut ctx, &|ty| match ty {
         ValueType::Text { max } => format!("{RUST_RUNTIME_CODEC}::SceString<{}>", max.max),
         ValueType::Bytes { .. } => "Vec<u8>".to_string(),
         ValueType::Scalar(t) => l.type_name(t).into_owned(),
@@ -1234,10 +1236,7 @@ fn rust_context(
     })?;
     // docs/adr/0065: whether the encode can refuse a value, which decides what
     // `encode` and `encode_to_vec` return.
-    ctx.insert(
-        "encode_may_fail".into(),
-        crate::forge::codec_totality::may_fail(m, imports).into(),
-    );
+    ctx.insert("encode_may_fail".into(), (!plan.totality.is_total()).into());
     if let Some(serde_json::Value::Array(entries)) = ctx.get_mut("entries") {
         for (entry, e) in entries.iter_mut().zip(&m.cbor_entries) {
             let value_type = entry["value_type"].as_str().unwrap_or_default().to_string();
@@ -1341,44 +1340,46 @@ fn rust_context(
 /// and empty for any other, which a compile refused before any backend renders.
 type RecordFieldType<'a> = &'a dyn Fn(&ValueType) -> String;
 
-/// Insert `cbor_records` into `ctx`: each record the lists of `m` hold, as a
-/// backend's template declares it in the codec's own scope
+/// Insert `cbor_records` into `ctx`: each record the lists of `plan` hold, as
+/// a backend's template declares it in the codec's own scope
 /// ([`record_contexts`]), each field held in the type `field_type` spells.
 fn insert_cbor_records(
     l: &LangCtx,
-    m: &CodecModel,
+    plan: &CborPlan<'_>,
     imports: &[ImportContext],
     ctx: &mut serde_json::Map<String, serde_json::Value>,
     field_type: RecordFieldType<'_>,
 ) -> Result<(), ForgeError> {
     ctx.insert(
         "cbor_records".into(),
-        record_contexts(l, m, imports, field_type)?.into(),
+        record_contexts(l, plan, imports, field_type)?.into(),
     );
     Ok(())
 }
 
-/// Each record the lists of `m` hold, once, in the order the entries first name
-/// them, as every backend's template reads and writes it: the payload type its
-/// event schema's own unit declares ([`record_payload_type`]), read and written
-/// by functions of the codec's own ([`record_codec_fns`]), each field named as
-/// that unit names it and held in the type `field_type` spells, which is the
-/// unit's; its fields in the schema's order, and the same fields in the order
-/// its map writes them ([`record_fields_by_key`]). A field carries its key, the
-/// id as text, as a quoted literal every backend reads alike (an id is an XML
-/// name, so it holds no quote, backslash or `$`) and its length in bytes; the
-/// kind its wire form is, the bound of a text or a byte string, and the largest
-/// number an unsigned integer holds.
+/// Each record the lists of `plan` hold, once, in the order the entries first
+/// name them, as every backend's template reads and writes it: the payload type
+/// its event schema's own unit declares ([`record_payload_type`]), read and
+/// written by functions of the codec's own ([`record_codec_fns`]), each field
+/// named as that unit names it and held in the type `field_type` spells, which
+/// is the unit's; its fields in the schema's order, and the same fields in the
+/// order its map writes them, which the plan decides
+/// ([`CborRecord::fields_by_key`]). A field carries its key, the id as text, as
+/// a quoted literal every backend reads alike (an id is an XML name, so it
+/// holds no quote, backslash or `$`) and its length in bytes; the kind its wire
+/// form is, the bound of a text or a byte string, and the largest number an
+/// unsigned integer holds.
 ///
 /// A compile refuses a record no import resolves, and one with a field no codec
 /// writes, before any language renders ([`record_list_unlowered`]); the refusal
 /// here is that one, for a caller that renders the module directly.
 fn record_contexts(
     l: &LangCtx,
-    m: &CodecModel,
+    plan: &CborPlan<'_>,
     imports: &[ImportContext],
     field_type: RecordFieldType<'_>,
 ) -> Result<Vec<serde_json::Value>, ForgeError> {
+    let m = plan.model;
     let scope = crate::forge::generator::import_type_scope(imports);
     let lang = l.language();
     if let Some(why) = record_list_unlowered(m, &scope) {
@@ -1387,50 +1388,44 @@ fn record_contexts(
             m.source_location.clone(),
         )));
     }
-    let field = |(id, ty): &(String, ValueType)| -> serde_json::Value {
+    let field = |f: &CborField| -> serde_json::Value {
         let (kind, bound) =
-            record_field(ty).expect("record_list_unlowered refused a field no codec writes");
-        let largest = match ty {
+            record_field(&f.ty).expect("record_list_unlowered refused a field no codec writes");
+        let largest = match &f.ty {
             ValueType::Scalar(t) => int_max(t),
             _ => None,
         };
         serde_json::json!({
-            "name": crate::forge::generator::event_schema_field_ident(id, lang),
-            "key": id,
-            "key_literal": format!("{id:?}"),
-            "key_len": id.len(),
+            "name": crate::forge::generator::event_schema_field_ident(&f.id, lang),
+            "key": f.id,
+            "key_literal": format!("{:?}", f.id),
+            "key_len": f.id.len(),
             "kind": kind,
             "max": bound,
             "int_max": largest,
-            "value_type": field_type(ty),
+            "value_type": field_type(&f.ty),
         })
     };
     let mut seen: Vec<&str> = Vec::new();
     let mut out = Vec::new();
-    for e in &m.cbor_entries {
-        let Some(list) = record_list(e) else {
+    for item in &plan.entries {
+        let Some(record) = item.value.listed_record() else {
             continue;
         };
-        if seen.contains(&list.record) {
+        if seen.contains(&record.alias.as_str()) {
             continue;
         }
-        seen.push(list.record);
-        let Some(record) = scope.records.get(list.record) else {
-            continue;
-        };
-        let (decode_fn, encode_fn) = record_codec_fns(lang, &m.name, list.record);
+        seen.push(&record.alias);
+        let (decode_fn, encode_fn) = record_codec_fns(lang, &m.name, &record.alias);
         out.push(serde_json::json!({
-            "type_name": record_payload_type(lang, imports, list.record),
+            "type_name": record_payload_type(lang, imports, &record.alias),
             "decode_fn": decode_fn,
             "encode_fn": encode_fn,
-            "alias": list.record,
+            "alias": record.alias,
             "schema": record.name,
             "field_count": record.fields.len(),
             "fields": record.fields.iter().map(field).collect::<Vec<_>>(),
-            "fields_by_key": record_fields_by_key(record)
-                .into_iter()
-                .map(field)
-                .collect::<Vec<_>>(),
+            "fields_by_key": record.fields_by_key().map(field).collect::<Vec<_>>(),
         }));
     }
     Ok(out)

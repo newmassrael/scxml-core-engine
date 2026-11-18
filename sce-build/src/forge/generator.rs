@@ -10866,18 +10866,21 @@ pub(crate) fn kotlin_codec_unlowered(m: &CodecModel, imports: &[ImportContext]) 
 /// of from the local it read the entry into.
 pub(crate) type KotlinDeclared = std::collections::BTreeMap<String, (String, String, String)>;
 
-/// What the Kotlin backend prints the CBOR codec `m` as from its plan
+/// What the Kotlin backend prints the CBOR codec of `plan` as
 /// (docs/adr/0081 step 4): the template's `kotlin_source`, and for each entry,
 /// by its id, how the value's property is declared and made. Every CBOR map is
 /// printed.
 pub(crate) fn kotlin_cbor_printed(
-    m: &CodecModel,
+    plan: &crate::forge::encode_plan::CborPlan<'_>,
     imports: &[ImportContext],
 ) -> (serde_json::Value, KotlinDeclared) {
-    let plan = crate::forge::encode_plan::CborPlan::of(m, imports);
     let l = LangCtx::new(crate::generator::Language::Kotlin, imports);
-    let printed =
-        kotlin_source::cbor::render(&plan, &l, imports, &filters::to_pascal_case(m.name.clone()));
+    let printed = kotlin_source::cbor::render(
+        plan,
+        &l,
+        imports,
+        &filters::to_pascal_case(plan.model.name.clone()),
+    );
     let context = serde_json::json!({
         "before": printed.before,
         "encode": printed.encode,
@@ -10948,32 +10951,42 @@ pub(crate) fn go_codec_unlowered(m: &CodecModel, imports: &[ImportContext]) -> V
     )
 }
 
-/// The text the C++ backend prints the CBOR codec `m` as from its plan, inside
+/// The text the C++ backend prints the CBOR codec of `plan` as, inside
 /// its namespace (docs/adr/0081 step 4). Asked once `render_codec` has refused
 /// a map whose plan uses a form the C++ printer does not lower
 /// ([`refuse_cpp_unlowered`]), so every map it is asked of is printed.
-pub(crate) fn cpp_cbor_printed(m: &CodecModel, imports: &[ImportContext]) -> String {
-    let plan = crate::forge::encode_plan::CborPlan::of(m, imports);
+pub(crate) fn cpp_cbor_printed(
+    plan: &crate::forge::encode_plan::CborPlan<'_>,
+    imports: &[ImportContext],
+) -> String {
     let l = LangCtx::new(crate::generator::Language::Cpp, imports);
-    cpp_source::cbor::render(&plan, &l, imports, &filters::to_pascal_case(m.name.clone()))
+    cpp_source::cbor::render(
+        plan,
+        &l,
+        imports,
+        &filters::to_pascal_case(plan.model.name.clone()),
+    )
 }
 
 /// For each element of a printed Python value, by its id, the type its field
 /// is declared as and the default it takes.
 pub(crate) type PythonDeclared = std::collections::BTreeMap<String, (String, String)>;
 
-/// What the Python backend prints the CBOR codec `m` as from its plan
+/// What the Python backend prints the CBOR codec of `plan` as
 /// (docs/adr/0081 step 4): the template's `python_source`, and for each entry,
 /// by its id, the type and the default the value's field is declared with.
 /// Every CBOR map is printed.
 pub(crate) fn python_cbor_printed(
-    m: &CodecModel,
+    plan: &crate::forge::encode_plan::CborPlan<'_>,
     imports: &[ImportContext],
 ) -> (serde_json::Value, PythonDeclared) {
-    let plan = crate::forge::encode_plan::CborPlan::of(m, imports);
     let l = LangCtx::new(crate::generator::Language::Python, imports);
-    let printed =
-        python_source::cbor::render(&plan, &l, imports, &filters::to_pascal_case(m.name.clone()));
+    let printed = python_source::cbor::render(
+        plan,
+        &l,
+        imports,
+        &filters::to_pascal_case(plan.model.name.clone()),
+    );
     (printed.context(), printed.declared)
 }
 

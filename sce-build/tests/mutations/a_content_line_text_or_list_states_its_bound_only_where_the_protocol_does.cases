@@ -127,6 +127,6 @@ PY
 # `what_cannot_hold_a_cbor_text_with_no_bound_refuses_it` (`MAX_BYTES 11U`).
 mutation_case "a C11 map is measured at its bound and not at what it holds" <<'PY'
 edit("sce-build/src/forge/cbor_codec.rs",
-     r'''                    Measured::Held => e.storage_bytes(),''',
-     r'''                    Measured::Held => e.length.or(e.max_size).or(Some(0)),''')
+     r'''            (Measured::Held, Some(held)) => {''',
+     r'''            (Measured::Held, Some(held)) if held == u32::MAX => {''')
 PY

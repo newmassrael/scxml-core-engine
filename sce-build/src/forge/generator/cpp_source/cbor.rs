@@ -28,7 +28,7 @@ use super::super::*;
 use super::source_readers;
 use crate::forge::cbor_codec;
 use crate::forge::codec_totality::RefusalKind;
-use crate::forge::encode_plan::{Carrier, CborItem, CborPlan, CborValue};
+use crate::forge::encode_plan::{CborField, CborItem, CborPlan, CborShape};
 use crate::forge::model::CborEntry;
 use crate::forge::value_type::ValueType;
 use crate::generator::Language;
@@ -104,16 +104,16 @@ struct Record {
     encode_fn: String,
     /// Its fields in the schema's order.
     fields: Vec<RecordField>,
-    /// The same fields in the order its map writes them: by the bytes of each
-    /// key's encoding (`cbor_codec::record_fields_by_key`).
+    /// The same fields in the order its map writes them, as the plan decides
+    /// it (`CborRecord::by_key`).
     by_key: Vec<RecordField>,
 }
 
 /// Each record the lists of `plan` hold, once, in the order the entries first
 /// name them.
 fn records(plan: &CborPlan<'_>, l: &LangCtx, imports: &[ImportContext]) -> Vec<Record> {
-    let scope = crate::forge::generator::import_type_scope(imports);
-    let field = |(id, ty): &(String, ValueType)| -> RecordField {
+    let field = |f: &CborField| -> RecordField {
+        let (id, ty) = (&f.id, &f.ty);
         let (kind, held) = match ty {
             ValueType::Text { max } => (
                 RecordFieldKind::Text { max: max.max },
@@ -152,29 +152,22 @@ fn records(plan: &CborPlan<'_>, l: &LangCtx, imports: &[ImportContext]) -> Vec<R
     };
     let mut out: Vec<Record> = Vec::new();
     for item in &plan.entries {
-        let Some(list) = cbor_codec::record_list(item.entry) else {
+        let Some(record) = item.value.listed_record() else {
             continue;
         };
-        if out.iter().any(|r| r.alias == list.record) {
+        if out.iter().any(|r| r.alias == record.alias) {
             continue;
         }
-        let record = scope
-            .records
-            .get(list.record)
-            .expect("the import resolved the record (`cbor_codec::record_list_unlowered`)");
         let (decode_fn, encode_fn) =
-            cbor_codec::record_codec_fns(Language::Cpp, &plan.model.name, list.record);
+            cbor_codec::record_codec_fns(Language::Cpp, &plan.model.name, &record.alias);
         out.push(Record {
             schema: record.name.clone(),
-            alias: list.record.to_string(),
-            payload: cbor_codec::record_payload_type(Language::Cpp, imports, list.record),
+            alias: record.alias.clone(),
+            payload: cbor_codec::record_payload_type(Language::Cpp, imports, &record.alias),
             decode_fn,
             encode_fn,
             fields: record.fields.iter().map(field).collect(),
-            by_key: cbor_codec::record_fields_by_key(record)
-                .into_iter()
-                .map(field)
-                .collect(),
+            by_key: record.fields_by_key().map(field).collect(),
         });
     }
     out
@@ -359,7 +352,7 @@ impl Entry<'_> {
     fn bounded(&self) -> bool {
         matches!(
             self.item.value,
-            CborValue::Text | CborValue::Bytes { .. } | CborValue::RecordList { .. }
+            CborShape::Text { .. } | CborShape::Bytes { .. } | CborShape::List { .. }
         )
     }
 
@@ -426,14 +419,14 @@ fn entry<'p>(
     }
     let ty = l.type_name(leaf(e)).into_owned();
     let (view, held) = match item.value {
-        CborValue::Text => {
+        CborShape::Text { .. } => {
             let bound = bound_args(e, false);
             (
                 format!("::SCE::Forge::Text<{bound}>"),
                 format!("::SCE::Forge::Bounded<std::string, {bound}>"),
             )
         }
-        CborValue::Bytes { exact } => {
+        CborShape::Bytes { exact, .. } => {
             let bound = bound_args(e, exact);
             (
                 format!("::SCE::Forge::Bytes<{bound}>"),
@@ -467,22 +460,22 @@ fn record_fns<'e>(entry: &'e Entry<'_>) -> &'e (String, String) {
 
 /// The statement that writes `v`, the value of `entry`, after its key.
 fn write_value(l: &LangCtx, entry: &Entry<'_>) -> String {
-    match entry.item.value {
-        CborValue::Bool => "if (auto _e = cbor::write_bool(w, v); _e) return _e;".to_string(),
-        CborValue::Text => {
+    match &entry.item.value {
+        CborShape::Bool => "if (auto _e = cbor::write_bool(w, v); _e) return _e;".to_string(),
+        CborShape::Text { .. } => {
             "if (auto _e = cbor::write_text(w, v.inner()); _e) return _e;".to_string()
         }
-        CborValue::Bytes { .. } => {
+        CborShape::Bytes { .. } => {
             "if (auto _e = cbor::write_bytes(w, v.inner()); _e) return _e;".to_string()
         }
         // An unsigned carrier's every value is an unsigned integer; a signed
         // one's negative value was refused before the first byte
         // (`refusal_checks`), so what is left is one.
-        CborValue::Enum { .. } => format!(
+        CborShape::Enum(_) => format!(
             "if (auto _e = cbor::write_uint(w, static_cast<std::uint64_t>({})); _e) return _e;",
             l.codec_carrier_expr(leaf(entry.item.entry), "v")
         ),
-        CborValue::Uint { .. } => {
+        CborShape::Int { signed: false, .. } => {
             "if (auto _e = cbor::write_uint(w, static_cast<std::uint64_t>(v)); _e) return _e;"
                 .to_string()
         }
@@ -490,14 +483,14 @@ fn write_value(l: &LangCtx, entry: &Entry<'_>) -> String {
         // writes (docs/adr/0086, section 9.2). The view holds the list within
         // its count, and what it does not hold was refused before the first
         // byte (`refusal_checks`), so nothing is checked here.
-        CborValue::RecordList { .. } => format!(
+        CborShape::List { .. } if entry.record_fns.is_some() => format!(
             "if (auto _e = cbor::write_array_head(w, static_cast<std::uint64_t>(v.size())); _e) return _e;\n\
              \x20           for (const auto& _record : v) {{\n\
              \x20               if (auto _e = Records::{}(w, _record); _e) return _e;\n\
              \x20           }}",
             record_fns(entry).1
         ),
-        CborValue::Unlowered => unreachable!(
+        _ => unreachable!(
             "a codec of an entry no printer lowers is refused before it renders \
              ([`unlowered_forms`])"
         ),
@@ -528,12 +521,7 @@ fn present(entry: &Entry<'_>) -> (String, String) {
 /// list of fewer records than its lower count, which the view of the list
 /// does not hold; and for a record whose byte string is past its bound, which
 /// the schema's unit holds in a `std::vector` with no bound.
-fn refusal_checks(
-    l: &LangCtx,
-    imports: &[ImportContext],
-    plan: &CborPlan<'_>,
-    entry: &Entry<'_>,
-) -> Option<String> {
+fn refusal_checks(l: &LangCtx, plan: &CborPlan<'_>, entry: &Entry<'_>) -> Option<String> {
     let e = entry.item.entry;
     let refuse = || {
         format!(
@@ -542,25 +530,19 @@ fn refusal_checks(
         )
     };
     let mut checks: Vec<String> = Vec::new();
-    match entry.item.value {
-        CborValue::Enum {
-            carrier: Carrier::Signed,
-        } => checks.push(format!(
+    match &entry.item.value {
+        CborShape::Enum(enumeration) if enumeration.carrier.is_signed() => checks.push(format!(
             "if ({} < 0) {}",
             l.codec_carrier_expr(leaf(e), "v"),
             refuse()
         )),
-        CborValue::RecordList { min } => {
-            if min > 0 {
+        shape @ CborShape::List { min, .. } => {
+            if *min > 0 {
                 checks.push(format!("if (v.size() < {min}) {}", refuse()));
             }
-            let alias = cbor_codec::record_list(e)
-                .map(|list| list.record)
-                .expect("a list entry holds a list of records");
-            let unbounded = crate::forge::generator::import_type_scope(imports)
-                .records
-                .get(alias)
-                .map(|record| cbor_codec::record_unbounded_bytes(&record.fields))
+            let unbounded = shape
+                .listed_record()
+                .map(cbor_codec::record_unbounded_bytes)
                 .unwrap_or_default();
             if !unbounded.is_empty() {
                 let refusal = refuse();
@@ -601,7 +583,7 @@ fn refusal_checks(
 /// closed enum's carrier no variant declares is `UndeclaredEnumValue`, and a
 /// list's count past its bounds `CborOutOfRange`, as the Rust printer refuses
 /// them.
-fn read_value(l: &LangCtx, imports: &[ImportContext], entry: &Entry<'_>) -> String {
+fn read_value(l: &LangCtx, entry: &Entry<'_>) -> String {
     let e = entry.item.entry;
     let name = &entry.name;
     let limit = |max: Option<u32>| {
@@ -616,29 +598,30 @@ fn read_value(l: &LangCtx, imports: &[ImportContext], entry: &Entry<'_>) -> Stri
              \x20               {name} = std::move(*v);\n"
         )
     };
-    match entry.item.value {
-        CborValue::Bool => whole("cbor::read_bool(c)".to_string()),
-        CborValue::Text => whole(format!("cbor::read_text(c, {})", limit(e.size_bound()))),
-        CborValue::Bytes { exact: true } => whole(format!(
+    match &entry.item.value {
+        CborShape::Bool => whole("cbor::read_bool(c)".to_string()),
+        CborShape::Text { .. } => {
+            whole(format!("cbor::read_text(c, {})", limit(e.size_bound())))
+        }
+        CborShape::Bytes { exact: true, .. } => whole(format!(
             "cbor::read_bytes_exact(c, {})",
             e.length.expect("an exact byte string states its length")
         )),
-        CborValue::Bytes { exact: false } => {
+        CborShape::Bytes { exact: false, .. } => {
             whole(format!("cbor::read_bytes(c, {})", limit(e.size_bound())))
         }
-        CborValue::Uint { wide: true } => whole("cbor::read_uint(c)".to_string()),
-        CborValue::Enum { .. } => {
-            let SceType::Enum(r) = leaf(e) else {
-                unreachable!("an enum entry is of an enum type")
-            };
-            let carrier = crate::forge::cbor_codec::enum_carrier(imports, &r.alias)
-                .expect("the import resolved the enum's carrier");
-            let carrier = l.type_name(&carrier);
+        CborShape::Int {
+            bits: 64,
+            signed: false,
+        } => whole("cbor::read_uint(c)".to_string()),
+        CborShape::Enum(enumeration) => {
+            let alias = &enumeration.alias;
+            let carrier = l.type_name(&enumeration.carrier);
             let made = format!(
                 "{}(static_cast<{carrier}>(*raw))",
-                l.enum_from_underlying(&r.alias)
+                l.enum_from_underlying(alias)
             );
-            let held = if l.enum_is_open(&r.alias) {
+            let held = if l.enum_is_open(alias) {
                 format!("{name} = {made};\n")
             } else {
                 format!(
@@ -653,7 +636,7 @@ fn read_value(l: &LangCtx, imports: &[ImportContext], entry: &Entry<'_>) -> Stri
                  \x20               {held}"
             )
         }
-        CborValue::Uint { wide: false } => format!(
+        CborShape::Int { signed: false, .. } => format!(
             "                const auto raw = cbor::read_uint_upto(c, static_cast<std::uint64_t>(std::numeric_limits<{ty}>::max()));\n\
              \x20               if (!raw) return raw.error();\n\
              \x20               {name} = static_cast<{ty}>(*raw);\n",
@@ -661,10 +644,8 @@ fn read_value(l: &LangCtx, imports: &[ImportContext], entry: &Entry<'_>) -> Stri
         ),
         // A definite-length array within the list's count, refused before any
         // record is read where it is past it, each item one record's map.
-        CborValue::RecordList { min } => {
-            let list = cbor_codec::record_list(e)
-                .expect("a list of records entry holds a list of records");
-            let short = if min > 0 {
+        CborShape::List { max, min, .. } if entry.record_fns.is_some() => {
+            let short = if *min > 0 {
                 format!(" || *_len < {min}")
             } else {
                 String::new()
@@ -680,12 +661,11 @@ fn read_value(l: &LangCtx, imports: &[ImportContext], entry: &Entry<'_>) -> Stri
                  \x20                   v->push_back(std::move(*_record));\n\
                  \x20               }}\n\
                  \x20               {name} = std::move(*v);\n",
-                max = list.max,
                 read = entry.read,
                 decode = record_fns(entry).0
             )
         }
-        CborValue::Unlowered => unreachable!(
+        _ => unreachable!(
             "a codec of an entry no printer lowers is refused before it renders \
              ([`unlowered_forms`])"
         ),
@@ -792,7 +772,7 @@ pub(in super::super) fn render(
     // entry's in the order the encode would meet it: ascending key, as the
     // Rust encode's count over a sink that only counts meets it.
     for &index in &plan.by_key {
-        if let Some(checks) = refusal_checks(l, imports, plan, &entries[index]) {
+        if let Some(checks) = refusal_checks(l, plan, &entries[index]) {
             encode.push_str(&checks);
         }
     }
@@ -855,7 +835,7 @@ pub(in super::super) fn render(
         names.join(", ")
     ));
 
-    out.push_str(&value_class(l, imports, &entries, struct_name, total));
+    out.push_str(&value_class(l, &entries, &plan.by_key, struct_name, total));
     // Every refusal the totality analysis names is one the encode writes
     // (docs/adr/0065 §2).
     plan.totality.assert_all_written(struct_name);
@@ -863,12 +843,13 @@ pub(in super::super) fn render(
 }
 
 /// The value: made by its constructor, each entry read by its accessor,
-/// decoded from a map and encoded as any source is. `total` is whether the
+/// decoded from a map and encoded as any source is. `by_key` is the order of
+/// `entries` by key, the plan's ([`CborPlan::by_key`]), and `total` whether the
 /// encode refuses no value, which the vector its bytes are returned in says.
 fn value_class(
     l: &LangCtx,
-    imports: &[ImportContext],
     entries: &[Entry<'_>],
+    by_key: &[usize],
     struct_name: &str,
     total: bool,
 ) -> String {
@@ -939,9 +920,8 @@ fn value_class(
          \x20           if (!key) return key.error();\n\
          \x20           switch (*key) {\n",
     );
-    let mut by_key: Vec<&Entry<'_>> = entries.iter().collect();
-    by_key.sort_by_key(|e| e.item.entry.key);
-    for e in &by_key {
+    for &at in by_key {
+        let e = &entries[at];
         decode.push_str(&format!(
             "            case {key}: {{\n\
              \x20               // A key given twice is not one map entry.\n\
@@ -951,7 +931,7 @@ fn value_class(
              \x20           }}\n",
             key = e.item.entry.key,
             name = e.name,
-            read = read_value(l, imports, e)
+            read = read_value(l, e)
         ));
     }
     decode.push_str(
