@@ -37,8 +37,27 @@ sealed class Outcome {
     object Hold : Outcome()
 }
 
-/** A start the host was given: the operation, the invocation's id and the request's parameters. */
-data class Start(val operation: String, val id: String, val params: Map<String, String>)
+/**
+ * The identity of a host-run invocation (docs/SCE_HOST_FEATURES.md, section 1,
+ * "Identity"): the session that started it, the `<invoke>`'s id, and which start
+ * of that `<invoke>` in that session it is. A restore starts a running invocation
+ * again under the identity it had, so two starts with one identity are one
+ * operation asked twice.
+ */
+data class Invocation(val sessionId: String, val id: String, val start: Long)
+
+/**
+ * A start the host was given: the operation, the invocation's id and the
+ * request's parameters, with the rest of the invocation's identity: the session
+ * that started it and which start of its `<invoke>` it is.
+ */
+data class Start(
+    val operation: String,
+    val id: String,
+    val params: Map<String, String>,
+    val sessionId: String = "",
+    val number: Long = 0,
+)
 
 /** The refusal the specification gives an argument the operation does not accept. */
 internal const val INVALID_ARGUMENT = """{"reason":"invalid_argument"}"""
@@ -126,15 +145,36 @@ class ReferenceHost(internal val clock: ClockSource, internal val transport: Tra
     }
 
     /**
-     * Start the operation of invocation [id] with [params].
+     * The first result of each put-if, by the identity of its invocation: what a
+     * repeat of that identity is answered with (docs/adr/0107, D4).
+     */
+    private val firstResults = mutableMapOf<Invocation, Outcome>()
+
+    /**
+     * Start the operation of [invocation] with [params].
      *
      * `null` for a type that is not one of the standard host features: the host serves
      * none of it. Otherwise the arguments are judged first (a refusal starts nothing),
      * then a failure the embedding injected, then the operation itself.
+     *
+     * A put-if whose invocation was answered before is answered with that first
+     * result, a failure included, and changes nothing: the engine starts a running
+     * invocation again under the same identity when it restores a state saved before
+     * the answer was taken (docs/adr/0107, D4), and the write it asked for was made
+     * once.
      */
-    fun start(operation: String, id: String, params: Map<String, String>): Outcome? {
+    fun start(operation: String, invocation: Invocation, params: Map<String, String>): Outcome? {
         if (operation !in TYPES) return null
-        starts.add(Start(operation, id, params.toMap()))
+        starts.add(Start(operation, invocation.id, params.toMap(), invocation.sessionId, invocation.start))
+        val keepsFirst = operation == "sce-host-kv-put-if"
+        if (keepsFirst) firstResults[invocation]?.let { return it }
+        val outcome = perform(operation, invocation.id, params)
+        if (keepsFirst && outcome is Outcome.Done) firstResults[invocation] = outcome
+        return outcome
+    }
+
+    /** The operation itself, as [start] describes it, for a start that is not a repeat. */
+    private fun perform(operation: String, id: String, params: Map<String, String>): Outcome {
         fun argument(name: String): String = params[name] ?: ""
         val refused = when (operation) {
             "sce-host-kv-get", "sce-host-kv-delete", "sce-host-kv-put" -> !validKey(argument("key"))

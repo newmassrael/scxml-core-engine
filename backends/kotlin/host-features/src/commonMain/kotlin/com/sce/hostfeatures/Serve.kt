@@ -26,7 +26,10 @@ fun <S : State, E : Event> serve(engine: StateMachineEngine<S, E>, host: Referen
                 }
                 start != null -> {
                     val params = start.params.mapNotNull { (name, values) -> values.firstOrNull()?.let { name to it } }.toMap()
-                    when (val outcome = host.start(operation, start.invokeId, params)) {
+                    // docs/adr/0107, D4: the invocation's identity, which a restore
+                    // starts it again under.
+                    val invocation = Invocation(start.sessionId, start.invokeId, start.start)
+                    when (val outcome = host.start(operation, invocation, params)) {
                         is Outcome.Done -> StateMachineEngine.HostInvokeResponse(doneData = outcome.data)
                         is Outcome.Refuse -> StateMachineEngine.HostInvokeResponse(refusal = outcome.data)
                         else -> null

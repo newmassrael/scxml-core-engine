@@ -36,16 +36,20 @@ class SavedOriginTest {
     /** A host's own pair, which names no session. */
     private val host = """{"processor":"x-sce-host","address":"motor"}"""
 
-    /** A format-3 tree of the one session `root`, waiting [pending] and holding [external] in its queue. */
+    /**
+     * A tree of the one session `root` in the format this runtime writes, whose
+     * events hold their origin as format 3 does, waiting [pending] and holding
+     * [external] in its queue.
+     */
     private fun tree(
         pending: List<String> = emptyList(),
         external: List<String> = emptyList(),
         invokes: List<String> = emptyList(),
     ): String =
-        """{"format":3,"shape":"s","sessionid":"root","configuration":["s"],"current":"s","variables":{},""" +
+        """{"format":4,"shape":"s","sessionid":"root","configuration":["s"],"current":"s","variables":{},""" +
             "\"history\":{},\"pending\":[${pending.joinToString(",")}]," +
             "\"invokes\":[${invokes.joinToString(",")}],\"invokestarts\":{}," +
-            "\"hostinvokes\":[],\"hostinvoketoken\":\"0\",\"sendseq\":\"0\"," +
+            "\"hostinvokes\":[],\"hostinvokestarts\":{},\"hostinvoketoken\":\"0\",\"sendseq\":\"0\"," +
             "\"external\":[${external.joinToString(",")}]}"
 
     /** The id of the one child session [child] runs under `root`. */
@@ -56,7 +60,7 @@ class SavedOriginTest {
         """{"id":"kid","start":"1","invokeid":"s.1.kid","document":"kid","session":{"shape":"s",""" +
             "\"sessionid\":\"$kid\",\"configuration\":[\"s\"],\"current\":\"s\",\"variables\":{},\"history\":{}," +
             "\"pending\":[${pending.joinToString(",")}],\"invokes\":[],\"invokestarts\":{},\"hostinvokes\":[]," +
-            "\"hostinvoketoken\":\"0\",\"sendseq\":\"0\",\"external\":[]}}"
+            "\"hostinvokestarts\":{},\"hostinvoketoken\":\"0\",\"sendseq\":\"0\",\"external\":[]}}"
 
     /** A queued event whose `origin` and `sender` are the JSON texts [origin] and [sender]. */
     private fun event(origin: String, sender: String, name: String = "ping"): String =
@@ -88,7 +92,7 @@ class SavedOriginTest {
             ),
         )
         val saved = SavedState.fromJson(text)
-        assertEquals(SavedState.FORMAT_3, saved.format)
+        assertEquals(SavedState.FORMAT_4, saved.format)
         assertEquals(
             listOf(
                 IoProcessors.scxmlOrigin("peer:1") to "peer:1",
@@ -178,13 +182,13 @@ class SavedOriginTest {
                 """{"due":"1700000001000","act":"raise","event":"ping","data":"","sendid":"r","origin":""}""",
                 """{"due":"1700000002000","act":"parent","event":"ping","data":"","sendid":"p","origin":""}""",
             ),
-        ).replace("{\"format\":3,", "{\"format\":2,")
+        ).replace("{\"format\":4,", "{\"format\":2,")
         val saved = SavedState.fromJson(text)
         assertEquals(
             listOf(SavedAct.Raise("ping", "", "r", "root"), SavedAct.Parent("ping", "", "p", "root")),
             saved.pending.map { it.act },
         )
-        // Written back as format 3 with the session's pair, which reads again.
+        // Written back as format 4 with the session's pair, which reads again.
         val written = saved.toJson()
         assertTrue(written.contains("\"sendid\":\"r\",\"origin\":${pair("root")},\"sender\":\"root\""), written)
         assertEquals(saved, SavedState.fromJson(written))
@@ -254,7 +258,7 @@ class SavedOriginTest {
         // in either. The prefix alone reads as itself, another processor's address
         // as itself, and `a%20b` decodes to `a b`: none is an XML Nmtoken.
         fun format2(origin: String): String =
-            tree(pending = listOf(raise(origin))).replace("{\"format\":3,", "{\"format\":2,")
+            tree(pending = listOf(raise(origin))).replace("{\"format\":4,", "{\"format\":2,")
         fun format1(origin: String): String =
             """{"format":1,"shape":"s","configuration":["s"],"current":"s","variables":{},""" +
                 "\"history\":{},\"pending\":[${raise(origin)}],\"invokes\":[],\"hostinvokes\":[]," +
@@ -274,7 +278,7 @@ class SavedOriginTest {
                 """{"due":"1700000001000","act":"parent","event":"ping","data":"","sendid":"p",""" +
                     """"origin":"mesh://elsewhere"}""",
             ),
-        ).replace("{\"format\":3,", "{\"format\":2,")
+        ).replace("{\"format\":4,", "{\"format\":2,")
         val refusedParent = refusal(parent)
         assertTrue(
             refusedParent.contains("which names no session: a parent act is a session's own send"),
@@ -293,23 +297,59 @@ class SavedOriginTest {
         // A queued event that stored the prefix alone is the pair as saved, with no sender.
         val queued = """{"name":"go","data":"","type":"external","sendid":"","origin":"$prefix",""" +
             "\"origintype\":\"$scxml\",\"invokeid\":\"\",\"hostinvoketoken\":null}"
-        val read = SavedState.fromJson(tree(external = listOf(queued)).replace("{\"format\":3,", "{\"format\":2,"))
+        val read = SavedState.fromJson(tree(external = listOf(queued)).replace("{\"format\":4,", "{\"format\":2,"))
         assertEquals(listOf(EventOrigin(scxml, prefix) to null), read.external.map { it.origin to it.sender })
     }
 
     @Test
     fun `a text of another format is refused by its format before anything it holds`() {
         assertEquals(
-            "the saved state is format 4, and this runtime reads formats 1, 2 and 3",
-            refusal("""{"format":4}"""),
+            "the saved state is format 5, and this runtime reads formats 1, 2, 3 and 4",
+            refusal("""{"format":5}"""),
         )
         assertEquals(
-            "the saved state is format 0, and this runtime reads formats 1, 2 and 3",
+            "the saved state is format 0, and this runtime reads formats 1, 2, 3 and 4",
             refusal("""{"format":0,"shape":7}"""),
         )
         assertEquals(
-            "the saved state is format \"3\", and this runtime reads formats 1, 2 and 3",
+            "the saved state is format \"3\", and this runtime reads formats 1, 2, 3 and 4",
             refusal("""{"format":"3"}"""),
+        )
+    }
+
+    /**
+     * docs/adr/0107, D4: a format-3 host-run invocation is read as the first
+     * start of its `<invoke>` and counted so, and written back as format 4 with
+     * the number after its id and the count after `hostinvokes`; a format-4 text
+     * keeps each start number and each count, one of an `<invoke>` not running
+     * among them, as written.
+     */
+    @Test
+    fun `a host invocation's start number is read and written back`() {
+        val host = """{"type":"x-host","id":"h","src":"","params":{},"data":"","content":"","due":null}"""
+        val format3 = tree()
+            .replace("{\"format\":4,", "{\"format\":3,")
+            .replace("\"hostinvokestarts\":{},", "")
+            .replace("\"hostinvokes\":[]", "\"hostinvokes\":[$host]")
+        val saved = SavedState.fromJson(format3)
+        assertEquals(1L, saved.hostInvokes.single().start)
+        assertEquals(1L, saved.hostInvokeStart("h"))
+        val want = tree()
+            .replace("\"hostinvokes\":[]", "\"hostinvokes\":[${host.replace("\"id\":\"h\",", "\"id\":\"h\",\"start\":\"1\",")}]")
+            .replace("\"hostinvokestarts\":{}", "\"hostinvokestarts\":{\"h\":\"1\"}")
+        assertEquals(want, saved.toJson())
+
+        val format4 = want
+            .replace("\"start\":\"1\"", "\"start\":\"3\"")
+            .replace("\"hostinvokestarts\":{\"h\":\"1\"}", "\"hostinvokestarts\":{\"done\":\"2\",\"h\":\"3\"}")
+        val again = SavedState.fromJson(format4)
+        assertEquals(3L, again.hostInvokes.single().start)
+        assertEquals(mapOf("done" to 2L, "h" to 3L), again.hostInvokeStarts)
+        assertEquals(format4, again.toJson())
+        assertTrue(refusal(format4.replace("\"start\":\"3\",", "")).contains("'hostinvokes[0]' has no 'start'"))
+        assertTrue(
+            refusal(format4.replace("\"hostinvokestarts\":{\"done\":\"2\",\"h\":\"3\"},", ""))
+                .contains("has no 'hostinvokestarts'"),
         )
     }
 

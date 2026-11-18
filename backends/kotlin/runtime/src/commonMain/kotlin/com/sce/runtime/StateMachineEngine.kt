@@ -1672,6 +1672,20 @@ abstract class StateMachineEngine<S : State, E : Event>(
          * this id and the request's [token] ([completeHostInvokeIn]).
          */
         val sessionId: String = "",
+        /**
+         * Which start of this `<invoke>` in its session this is, counted from 1
+         * (docs/SCE_HOST_FEATURES.md, section 1, "Identity"). The engine assigns
+         * it, and a saved state carries it with the invocation and the count of
+         * each `<invoke>`'s starts.
+         *
+         * With [sessionId] and [invokeId] it names the invocation across a save
+         * and a restore, which [token] does not: a restore starts a running
+         * invocation again under the number it had, so a host that kept what it
+         * answered under that identity answers the repeat with it
+         * (docs/adr/0107, D4). A start the document makes after the earlier one
+         * ended takes the next number.
+         */
+        val start: Long = 0,
     )
 
     /**
@@ -1786,6 +1800,13 @@ abstract class StateMachineEngine<S : State, E : Event>(
 
     /** The token the next host-run start receives. */
     private var nextHostInvokeToken: Long = 0
+
+    /**
+     * How many times each host-run `<invoke>` has started in this session, by
+     * its id: what numbers a start ([HostInvokeRequest.start]; docs/adr/0107,
+     * D4). A save writes it and a restore carries it on.
+     */
+    private val hostInvokeStarts = mutableMapOf<String, Long>()
 
     /**
      * How many ids this machine has generated for a `<send idlocation>`: the
@@ -1916,13 +1937,23 @@ abstract class StateMachineEngine<S : State, E : Event>(
      * and take a completion the host reported at once.
      *
      * `false` when no invoker is registered.
+     *
+     * A start the document makes is numbered on from the count of its
+     * `<invoke>`; a restart keeps the number the saved state gave it, whose
+     * count the restore carried on, since it repeats that start rather than
+     * making another (docs/adr/0107, D4).
      */
     private fun startHostInvoke(request: HostInvokeRequest, deadlineAtMs: Long?): Boolean {
         val handler = hostInvokerFor(request.processorType) ?: return false
         val token = nextHostInvokeToken++
+        val start = if (request.restarted) {
+            request.start
+        } else {
+            ((hostInvokeStarts[request.invokeId] ?: 0L) + 1L).also { hostInvokeStarts[request.invokeId] = it }
+        }
         // Each request names the session that made it, so a host that serves a
         // type to part of the tree only can refuse the rest (docs/adr/0045).
-        val started = request.copy(token = token, sessionId = sessionIdentity)
+        val started = request.copy(token = token, sessionId = sessionIdentity, start = start)
         startedHostInvokes[started.processorType to started.invokeId] = StartedHostInvoke(token, started)
         if (deadlineAtMs != null) {
             scheduledSends.add(
@@ -3536,6 +3567,10 @@ abstract class StateMachineEngine<S : State, E : Event>(
             pending = pending,
             invokes = SavedInvokes.Resumed(children),
             hostInvokes = runningHostInvokes(wallNowMs),
+            // docs/adr/0107, D4: by the id's bytes, the order every backend writes.
+            hostInvokeStarts = hostInvokeStarts.entries
+                .sortedWith { a, b -> Json.compareKeys(a.key, b.key) }
+                .associateTo(LinkedHashMap()) { it.key to it.value },
             hostInvokeToken = nextHostInvokeToken,
             autoSendSeq = autoSendSeq,
             external = externalEventQueue.map { queued ->
@@ -3588,6 +3623,7 @@ abstract class StateMachineEngine<S : State, E : Event>(
                 SavedHostInvoke(
                     processorType = request.processorType,
                     invokeId = request.invokeId,
+                    start = request.start,
                     src = request.src,
                     params = request.params,
                     data = request.eventData,
@@ -3874,6 +3910,22 @@ abstract class StateMachineEngine<S : State, E : Event>(
             if (!seen.add(host.processorType to host.invokeId)) {
                 throw StateRefusal("hostinvokes[$i] is '${host.invokeId}', which an earlier entry already names")
             }
+            // docs/adr/0107, D4: a running invocation is the latest start of its
+            // `<invoke>`, since a state re-entered cancels the earlier one first.
+            val count = saved.hostInvokeStarts[host.invokeId] ?: 0L
+            if (host.start != count) {
+                throw StateRefusal(
+                    "hostinvokes[$i] is start ${host.start} of '${host.invokeId}', and the session counts " +
+                        "$count starts of it: a state re-entered cancels the earlier start before it makes " +
+                        "the next one")
+            }
+        }
+        // A count of host-run starts names an `<invoke>` the document hands a host.
+        for (id in saved.hostInvokeStarts.keys) {
+            if (staticHostInvokes.none { it.second == id }) {
+                throw StateRefusal(
+                    "hostinvokestarts counts '$id', which the document does not have a host invoker run")
+            }
         }
         return saved.hostInvokes
     }
@@ -3904,6 +3956,8 @@ abstract class StateMachineEngine<S : State, E : Event>(
                         eventData = host.data,
                         content = host.content,
                         restarted = true,
+                        // docs/adr/0107, D4: the start it repeats, not a new one.
+                        start = host.start,
                     ),
                     deadline,
                 )
@@ -4034,6 +4088,8 @@ abstract class StateMachineEngine<S : State, E : Event>(
         // machine in the host-driven mode, whose queue this is.
         externalEventQueue.addAll(savedExternal(saved))
         rearmHostInvokes(saved, wallNowMs)
+        hostInvokeStarts.clear()
+        hostInvokeStarts.putAll(saved.hostInvokeStarts)
         nextHostInvokeToken = saved.hostInvokeToken
         autoSendSeq = saved.autoSendSeq
         // The session carries on under the id it had, which every child's id and a

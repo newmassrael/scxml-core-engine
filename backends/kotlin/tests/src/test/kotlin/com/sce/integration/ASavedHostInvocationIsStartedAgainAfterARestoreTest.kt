@@ -17,8 +17,10 @@
 //
 // Driven entirely on `ManualClock`: no case sleeps, and none can be decided by
 // how loaded the build machine is. The shared instance
-// `saved/statechart_static_host_invoke_running.json` is the text the Rust suite
-// writes and restores too.
+// `saved/statechart_static_host_invoke_running.json` is the format-4 text the
+// Rust suite writes and restores too (docs/adr/0107, D4); the format-3 text of
+// the same run, under `saved/format3/`, still restores, and a restarted
+// invocation keeps the start number it had.
 
 package com.sce.integration
 
@@ -46,6 +48,12 @@ class ASavedHostInvocationIsStartedAgainAfterARestoreTest {
     private val shared: String = File(
         repoRoot(),
         "sce-build/tests/fixtures/host_processor/saved/statechart_static_host_invoke_running.json",
+    ).readText().trim()
+
+    /** The same run as format 3 wrote it, before a host-run invocation held its start number. */
+    private val format3: String = File(
+        repoRoot(),
+        "sce-build/tests/fixtures/host_processor/saved/format3/statechart_static_host_invoke_running.json",
     ).readText().trim()
 
     private fun repoRoot(): File =
@@ -125,9 +133,12 @@ class ASavedHostInvocationIsStartedAgainAfterARestoreTest {
             val first = host.starts.single()
             assertFalse(first.restarted, "the document's own start is not a restart")
             assertEquals(0L, first.token)
+            assertEquals(1L, first.start, "the first start of `h` in this session")
 
             val saved = sm.save(savedAtMs)
             val entry = saved.hostInvokes.single()
+            assertEquals(1L, entry.start)
+            assertEquals(mapOf("h" to 1L), saved.hostInvokeStarts)
             assertEquals("x-sce-host", entry.processorType)
             assertEquals("h", entry.invokeId)
             assertEquals(first.src, entry.src)
@@ -146,7 +157,8 @@ class ASavedHostInvocationIsStartedAgainAfterARestoreTest {
 
     @Test
     fun aRestoreAsksNothingOfTheHostUntilTheMachineIsDriven() {
-        withRestored(shared, 1000) { sm, host ->
+        // From the format-4 text, and from the format-3 text of the same run.
+        for (text in listOf(shared, format3)) withRestored(text, 1000) { sm, host ->
             assertTrue(host.told.isEmpty(), "the restore itself calls nobody")
             assertEquals(setOf<Any>(StatechartStaticHostInvokeState.Working), standingIn(sm))
 
@@ -167,6 +179,62 @@ class ASavedHostInvocationIsStartedAgainAfterARestoreTest {
             assertTrue(again.restarted, "the host is told this is a resumption")
             assertEquals(1L, again.token, "the next token the saved state carried on")
             assertTrue(sameRequest(again, first), "the same request, not one evaluated again:\n$again\n$first")
+            // docs/adr/0107, D4: the same invocation, under the identity it had.
+            assertEquals(first.start, again.start, "the start it repeats")
+            assertEquals(first.sessionId, again.sessionId)
+        }
+    }
+
+    /**
+     * docs/adr/0107, D4: a restore repeats a running start under its number, and
+     * a start the document makes afterwards is numbered on from the count the
+     * saved state carried, from the format-4 text and from the format-3 text
+     * alike.
+     */
+    @Test
+    fun aStartAfterTheRestoredOneTakesTheNextNumber() {
+        for (text in listOf(shared, format3)) withRestored(text, 1000) { sm, host ->
+            sm.tick()
+            // Leaving cancels the restarted invocation; starting again is a new start.
+            sm.send(StatechartStaticHostInvokeEvent.Leave)
+            sm.tick()
+            sm.send(StatechartStaticHostInvokeEvent.Start)
+            sm.tick()
+            assertEquals(listOf(true to 1L, false to 2L), host.starts.map { it.restarted to it.start })
+            val saved = sm.save(savedAtMs)
+            assertEquals(2L, saved.hostInvokes.single().start)
+            assertEquals(mapOf("h" to 2L), saved.hostInvokeStarts)
+        }
+    }
+
+    /**
+     * docs/adr/0107, D4: the start number is judged before anything is built: a
+     * running invocation is the latest start its session counts, and a count
+     * names an `<invoke>` the document hands a host.
+     */
+    @Test
+    fun aStartNumberTheSavedSessionCouldNotHaveGivenIsRefused() {
+        val cases = listOf(
+            Triple(
+                "a running start that is not the latest",
+                shared.replace("\"hostinvokestarts\":{\"h\":\"1\"}", "\"hostinvokestarts\":{\"h\":\"2\"}"),
+                "hostinvokes[0] is start 1 of 'h', and the session counts 2 starts of it",
+            ),
+            Triple(
+                "a count of an invoke the document does not hand a host",
+                shared.replace(
+                    "\"hostinvokestarts\":{\"h\":\"1\"}",
+                    "\"hostinvokestarts\":{\"h\":\"1\",\"stranger\":\"1\"}",
+                ),
+                "hostinvokestarts counts 'stranger', which the document does not have a host invoker run",
+            ),
+        )
+        for ((what, text, expected) in cases) {
+            assertTrue(text != shared, "$what: the change did not apply")
+            val refusal = assertFailsWith<StateRefusal>(what) {
+                withRestored(text, 0) { _, _ -> }
+            }
+            assertTrue(refusal.message.orEmpty().contains(expected), "$what: ${refusal.message}")
         }
     }
 
@@ -316,7 +384,7 @@ class ASavedHostInvocationIsStartedAgainAfterARestoreTest {
     fun aSavedStateNamingAHostInvocationTheDocumentCannotHaveRunIsRefused() {
         fun swap(from: String, to: String) = shared.replace(from, to)
         val start = shared.indexOf("\"hostinvokes\":[") + "\"hostinvokes\":[".length
-        val end = shared.indexOf("],\"hostinvoketoken\"")
+        val end = shared.indexOf("],\"hostinvokestarts\"")
         val one = shared.substring(start, end)
         val cases = listOf(
             Triple(
@@ -358,7 +426,7 @@ class ASavedHostInvocationIsStartedAgainAfterARestoreTest {
     fun theHostInvokeFieldsAreRequiredAndMustBeWhatTheySay() {
         fun swap(from: String, to: String) = shared.replace(from, to)
         val start = shared.indexOf("\"hostinvokes\":[")
-        val end = shared.indexOf(",\"hostinvoketoken\"")
+        val end = shared.indexOf(",\"hostinvokestarts\"")
         val cases = listOf(
             Triple("no hostinvokes", swap("\"hostinvokes\":[", "\"hostinvokes_\":["), "has no 'hostinvokes'"),
             Triple(

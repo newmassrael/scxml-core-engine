@@ -18,6 +18,7 @@ import com.sce.hostfeatures.ExhaustiveProvider
 import com.sce.hostfeatures.HttpHeader
 import com.sce.hostfeatures.HttpRequest
 import com.sce.hostfeatures.HttpResponse
+import com.sce.hostfeatures.Invocation
 import com.sce.hostfeatures.OutcomeClass
 import com.sce.hostfeatures.Reading
 import com.sce.hostfeatures.ReferenceHost
@@ -42,6 +43,7 @@ import com.sce.runtime.AnswerSchema
 import com.sce.runtime.Event
 import com.sce.runtime.EventMetadata
 import com.sce.runtime.ManualClock
+import com.sce.runtime.SavedState
 import com.sce.runtime.State
 import com.sce.runtime.StateMachineEngine
 import com.sce.runtime.TransitionTaken
@@ -305,6 +307,78 @@ class HostFeaturesTest {
     fun aMachineAsksTheKeyValueStoreOfItsHost() {
         val sm = StaticHostKvStateMachine()
         replay("static_host_kv", sm) { sm.save().toJson() }
+    }
+
+    /**
+     * docs/adr/0107, D4: a put-if the host carried out, saved before its answer
+     * was taken, is started again by the restore under the identity it had, and
+     * the host answers it with the first result rather than judging the store a
+     * second time; a start the document makes afterwards takes the next number
+     * and is an operation of its own.
+     */
+    @Test
+    fun aRestoredPutIfIsAnsweredWithTheFirstResultOfItsInvocation() {
+        val host = ReferenceHost(ScriptedClock(), ScriptTransport())
+        fun variables(sm: StaticHostKvStateMachine): JsonObject =
+            Json.parseToJsonElement(sm.save(0).toJson()).jsonObject.getValue("variables").jsonObject
+
+        // The first process: the host writes, and its answer is lost with the
+        // process before the machine takes it.
+        val first = StaticHostKvStateMachine()
+        val saved = try {
+            serve(first, host)
+            first.registerInvoker("sce-host-kv-put-if") { event ->
+                event.start?.let { start ->
+                    val params = start.params.mapNotNull { (name, values) -> values.firstOrNull()?.let { name to it } }.toMap()
+                    host.start("sce-host-kv-put-if", Invocation(start.sessionId, start.invokeId, start.start), params)
+                }
+                null
+            }
+            first.clock = ManualClock(0)
+            first.initialize()
+            first.tick()
+            first.sendEventByName(
+                "host.kv.put_if.request",
+                EventMetadata(data = """{"key":"k","value":"a","expected_version":"0"}"""),
+            )
+            first.tick()
+            first.save(0)
+        } finally {
+            first.cleanup()
+        }
+        assertEquals(listOf("putif" to 1L), saved.hostInvokes.map { it.invokeId to it.start })
+        assertEquals(listOf("k" to "a"), host.storeEntries(), "the host wrote once")
+
+        // The second process: the restore starts it again, and the host answers it
+        // as it answered the first time, where the store alone would now answer
+        // `written` false at version 1.
+        val second = StaticHostKvStateMachine()
+        try {
+            serve(second, host)
+            second.clock = ManualClock(0)
+            second.restore(SavedState.fromJson(saved.toJson()), 0)
+            second.tick()
+            val restored = variables(second)
+            assertEquals(JsonPrimitive("done"), restored["outcome"])
+            assertEquals(JsonPrimitive(true), restored["written"], "the first result")
+            assertEquals(JsonPrimitive("1"), restored["put_version"])
+            assertEquals(listOf("k" to "a"), host.storeEntries(), "nothing written twice")
+
+            // A start the document makes now is the second start of `putif`.
+            second.sendEventByName(
+                "host.kv.put_if.request",
+                EventMetadata(data = """{"key":"k","value":"b","expected_version":"0"}"""),
+            )
+            second.tick()
+            val later = variables(second)
+            assertEquals(JsonPrimitive(false), later["written"], "judged against the store as it is")
+            assertEquals(JsonPrimitive("1"), later["put_version"])
+            val starts = host.takeStarts()
+            assertEquals(listOf("putif" to 1L, "putif" to 1L, "putif" to 2L), starts.map { it.id to it.number })
+            assertTrue(starts.all { it.sessionId == saved.sessionId }, "$starts")
+        } finally {
+            second.cleanup()
+        }
     }
 
     @Test

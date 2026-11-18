@@ -679,7 +679,8 @@ class StaticDatamodelTest {
         for (file in listOf(
             "schemas/sce-saved-state.v1.schema.json",
             "schemas/sce-saved-state.v2.schema.json",
-            "schemas/sce-saved-state.v3.schema.json"
+            "schemas/sce-saved-state.v3.schema.json",
+            "schemas/sce-saved-state.v4.schema.json"
         )) {
             val schema = com.sce.runtime.Json.parse(File(repoRoot(), file).readText()) as Map<*, *>
             assertEquals(
@@ -722,7 +723,7 @@ class StaticDatamodelTest {
     @Test
     fun aFormat2TextIsReadAsTheFormat3TextOfTheSameName() {
         // docs/adr/0090, section 7: each origin a format-2 text stored is read by
-        // the table, and the state is written back as format 3, whether a machine
+        // the table, and the state is written back as format 4, whether a machine
         // restored it or not. Every text of `saved/format2/` is read here.
         val dir = File(repoRoot(), "sce-build/tests/fixtures/static_datamodel/saved/format2")
         val names = dir.listFiles().orEmpty()

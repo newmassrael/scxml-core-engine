@@ -119,6 +119,11 @@ class StateRefusal(message: String) : Exception(message) {
  *   for the configuration that turns none on. `null` for a machine of no product
  *   line, whose text carries no `features`. A restore judges it before the shape
  *   ([checkFeatures]).
+ * @property hostInvokeStarts how many times each host-run `<invoke>` of the
+ *   document has started in this session, by its id, for each started at least
+ *   once, ordered by the id's UTF-8 bytes: a start after a restore is numbered
+ *   on from it (docs/adr/0107, D4). Read from a state of format 1, 2 or 3, which
+ *   counted none, as 1 for each invocation [hostInvokes] lists.
  */
 class SavedState(
     val shape: String,
@@ -136,6 +141,7 @@ class SavedState(
     val sessionId: String = "",
     val invokeStarts: Map<String, Long> = emptyMap(),
     val features: List<String>? = null,
+    val hostInvokeStarts: Map<String, Long> = emptyMap(),
 ) {
     /** The variable [id], or a refusal naming it. */
     fun variable(id: String): Any? {
@@ -204,7 +210,13 @@ class SavedState(
         } else {
             members["invokes"] = invokes.ids
         }
-        members["hostinvokes"] = hostInvokes.map { it.toJsonValue() }
+        members["hostinvokes"] = hostInvokes.map { it.toJsonValue(format) }
+        // docs/adr/0107, D4: format 4's count of host-run starts, after the
+        // invocations.
+        if (format >= FORMAT_4) {
+            members["hostinvokestarts"] =
+                hostInvokeStarts.mapValuesTo(LinkedHashMap()) { (_, count) -> count.toString() }
+        }
         members["hostinvoketoken"] = hostInvokeToken.toString()
         members["sendseq"] = autoSendSeq.toString()
         members["external"] = external.map { it.toJsonValue(format) }
@@ -227,13 +239,20 @@ class SavedState(
             other.pending == pending && other.invokes == invokes && other.hostInvokes == hostInvokes &&
             other.hostInvokeToken == hostInvokeToken && other.autoSendSeq == autoSendSeq &&
             other.external == external && other.revisions == revisions && other.sessionId == sessionId &&
-            other.invokeStarts == invokeStarts && other.features == features
+            other.invokeStarts == invokeStarts && other.features == features &&
+            other.hostInvokeStarts == hostInvokeStarts
 
     override fun hashCode(): Int =
         listOf(
             shape, configuration, current, variables, history, pending, invokes, hostInvokes, hostInvokeToken,
-            autoSendSeq, external, revisions, sessionId, invokeStarts, features,
+            autoSendSeq, external, revisions, sessionId, invokeStarts, features, hostInvokeStarts,
         ).hashCode()
+
+    /**
+     * How many times the host-run `<invoke>` [id] had started in this session
+     * when it was saved: 0 for one that had not.
+     */
+    fun hostInvokeStart(id: String): Long = hostInvokeStarts[id] ?: 0L
 
     companion object {
         /** Format 1: a state that names its running children by id alone. */
@@ -252,22 +271,34 @@ class SavedState(
          */
         const val FORMAT_3: Int = 3
 
-        /** The newest format version this runtime writes; it reads this one, [FORMAT_2] and [FORMAT_1]. */
-        const val FORMAT: Int = FORMAT_3
+        /**
+         * Format 4: format 3's tree with each running host-run invocation's
+         * start number, which start of its `<invoke>` in its session it is, and
+         * each session's count of those starts (docs/adr/0107, D4): a restore
+         * starts a running invocation again under the number it had.
+         */
+        const val FORMAT_4: Int = 4
+
+        /**
+         * The newest format version this runtime writes; it reads this one,
+         * [FORMAT_3], [FORMAT_2] and [FORMAT_1].
+         */
+        const val FORMAT: Int = FORMAT_4
 
         /**
          * The stability status of the saved-state wire surface, held in
          * lockstep with `x-sce-schema-status` in
          * `schemas/sce-saved-state.v1.schema.json`,
-         * `schemas/sce-saved-state.v2.schema.json` and
-         * `schemas/sce-saved-state.v3.schema.json`, the surface's three formats
-         * (`SCE_WIRE_CONTRACTS.md`). A flip to `"stable"` changes all four in
+         * `schemas/sce-saved-state.v2.schema.json`,
+         * `schemas/sce-saved-state.v3.schema.json` and
+         * `schemas/sce-saved-state.v4.schema.json`, the surface's four formats
+         * (`SCE_WIRE_CONTRACTS.md`). A flip to `"stable"` changes all five in
          * one commit.
          */
         const val SCHEMA_STATUS: String = "pre-release"
 
         /**
-         * Read `sce-saved-state` JSON, of format 1, 2 or 3. The format is judged
+         * Read `sce-saved-state` JSON, of format 1, 2, 3 or 4. The format is judged
          * first, so a text of another format is refused for that and for nothing
          * it holds. The shape is not judged here — the machine that restores it
          * knows its own.
@@ -285,9 +316,10 @@ class SavedState(
                 Json.Number(FORMAT_1.toString()) -> FORMAT_1
                 Json.Number(FORMAT_2.toString()) -> FORMAT_2
                 Json.Number(FORMAT_3.toString()) -> FORMAT_3
+                Json.Number(FORMAT_4.toString()) -> FORMAT_4
                 else -> throw StateRefusal(
                     "the saved state is format ${Json.write(written)}, and this runtime reads formats " +
-                        "$FORMAT_1, $FORMAT_2 and $FORMAT_3")
+                        "$FORMAT_1, $FORMAT_2, $FORMAT_3 and $FORMAT_4")
             }
             return fromSession(members, format)
         }
@@ -340,7 +372,24 @@ class SavedState(
                 SavedInvokes.Resumed(listed.mapIndexed { i, item -> SavedChild.fromJsonValue(item, i, format) })
             }
             val hostInvokes = (field("hostinvokes") as? List<*> ?: throw StateRefusal("'hostinvokes' is not an array"))
-                .mapIndexed { i, item -> SavedHostInvoke.fromJsonValue(item, "hostinvokes[$i]") }
+                .mapIndexed { i, item -> SavedHostInvoke.fromJsonValue(item, "hostinvokes[$i]", format) }
+            // docs/adr/0107, D4: format 4's count of host-run starts. A state of an
+            // earlier format counted none: each invocation it lists is its
+            // `<invoke>`'s first start, as SavedHostInvoke.fromJsonValue read it.
+            val hostInvokeStarts = LinkedHashMap<String, Long>()
+            if (format >= FORMAT_4) {
+                val counted = field("hostinvokestarts") as? Map<*, *>
+                    ?: throw StateRefusal("'hostinvokestarts' is not an object")
+                for ((id, count) in counted) {
+                    hostInvokeStarts[id as String] = readCount(
+                        count as? String ?: throw StateRefusal("'hostinvokestarts.$id' is not a text"),
+                        "hostinvokestarts.$id",
+                    )
+                }
+            } else {
+                hostInvokes.map { it.invokeId }.distinct().sortedWith { a, b -> Json.compareKeys(a, b) }
+                    .forEach { hostInvokeStarts[it] = 1L }
+            }
             val hostInvokeToken = readToken(
                 field("hostinvoketoken") as? String ?: throw StateRefusal("'hostinvoketoken' is not a text"),
                 "hostinvoketoken",
@@ -394,6 +443,7 @@ class SavedState(
                 sessionId = sessionId,
                 invokeStarts = invokeStarts,
                 features = features,
+                hostInvokeStarts = hostInvokeStarts,
             )
         }
 
@@ -571,6 +621,7 @@ class SavedState(
                 sessionId = saved.sessionId,
                 invokeStarts = saved.invokeStarts,
                 features = saved.features,
+                hostInvokeStarts = saved.hostInvokeStarts,
             )
         }
 
@@ -1039,7 +1090,7 @@ data class SavedEvent(
             }
             // Format 3 holds the pair and the sender as written; formats 1 and 2
             // hold one text beside a type, read by the table of section 7.
-            val stored = if (format == SavedState.FORMAT_3) {
+            val stored = if (format >= SavedState.FORMAT_3) {
                 // The sender is who sent the event and the origin where a reply
                 // goes, which no rule ties to the sender: a remote child's event
                 // names the child and its Mesh endpoint. A session that sent an
@@ -1180,6 +1231,11 @@ private fun paramsToJson(params: Map<String, List<String>>): Map<String, Any?> =
  *   on the wall clock of the host that saved it; `null` for an invocation that has
  *   none. Already past for one that came due while the machine waited to be
  *   restarted.
+ * @property start which start of that `<invoke>` in this session it is, counted
+ *   from 1: the count [SavedState.hostInvokeStarts] holds for it, under which a
+ *   restore starts it again (docs/adr/0107, D4). One read from a state of format
+ *   1, 2 or 3, which holds none, is start 1: no host keyed a start by its number
+ *   before format 4.
  */
 data class SavedHostInvoke(
     val processorType: String,
@@ -1189,24 +1245,29 @@ data class SavedHostInvoke(
     val data: String = "",
     val content: String = "",
     val due: Long? = null,
+    val start: Long = 1L,
 ) {
-    internal fun toJsonValue(): Map<String, Any?> = linkedMapOf(
-        "type" to processorType,
-        "id" to invokeId,
-        "src" to src,
-        "params" to paramsToJson(params),
-        "data" to data,
-        "content" to content,
-        "due" to due?.toString(),
-    )
+    /** This invocation as a text of [format] writes it: format 4 writes its start after its id. */
+    internal fun toJsonValue(format: Int): Map<String, Any?> {
+        val members = linkedMapOf<String, Any?>("type" to processorType, "id" to invokeId)
+        if (format >= SavedState.FORMAT_4) members["start"] = start.toString()
+        members["src"] = src
+        members["params"] = paramsToJson(params)
+        members["data"] = data
+        members["content"] = content
+        members["due"] = due?.toString()
+        return members
+    }
 
     internal companion object {
-        fun fromJsonValue(value: Any?, what: String): SavedHostInvoke {
+        fun fromJsonValue(value: Any?, what: String, format: Int): SavedHostInvoke {
             val members = value as? Map<*, *> ?: throw StateRefusal("'$what' is not an object")
             fun text(key: String): String {
                 if (!members.containsKey(key)) throw StateRefusal("'$what' has no '$key'")
                 return members[key] as? String ?: throw StateRefusal("'$what.$key' is not a text")
             }
+            // docs/adr/0107, D4: one of format 1, 2 or 3 is its `<invoke>`'s first start.
+            val start = if (format >= SavedState.FORMAT_4) readCount(text("start"), "$what.start") else 1L
             if (!members.containsKey("due")) throw StateRefusal("'$what' has no 'due'")
             val due = when (val written = members["due"]) {
                 null -> null
@@ -1221,6 +1282,7 @@ data class SavedHostInvoke(
                 data = text("data"),
                 content = text("content"),
                 due = due,
+                start = start,
             )
         }
     }
@@ -1326,7 +1388,7 @@ data class SavedSend(val due: Long, val act: SavedAct) {
             // The sender of a session's own send, an act of [act], which carries
             // that session's SCXML pair.
             fun sender(act: String): String? {
-                if (format != SavedState.FORMAT_3) {
+                if (format < SavedState.FORMAT_3) {
                     val written = text("origin")
                     // A session's own send names the session that made it, in format
                     // 1 as in format 2: a stored origin that is not empty is read as
@@ -1361,7 +1423,7 @@ data class SavedSend(val due: Long, val act: SavedAct) {
             // An internal act carries no origin: in formats 1 and 2 its stored text
             // is not read, and in format 3 both members are written `null`.
             fun noOrigin() {
-                if (format != SavedState.FORMAT_3) {
+                if (format < SavedState.FORMAT_3) {
                     text("origin")
                     return
                 }

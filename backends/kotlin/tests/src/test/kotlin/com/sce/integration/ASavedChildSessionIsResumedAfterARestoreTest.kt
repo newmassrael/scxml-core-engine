@@ -211,7 +211,8 @@ class ASavedChildSessionIsResumedAfterARestoreTest {
         // `a` reached the child's own queue and the child had not taken it when the
         // tree was saved: it is in the child's `external`, and the resumed child
         // takes it, then ends on `b`.
-        val inChild = "\"invokestarts\":{},\"hostinvokes\":[],\"hostinvoketoken\":\"0\",\"sendseq\":\"0\",\"external\":[]}}]"
+        val inChild = "\"invokestarts\":{},\"hostinvokes\":[],\"hostinvokestarts\":{},\"hostinvoketoken\":\"0\"," +
+            "\"sendseq\":\"0\",\"external\":[]}}]"
         val text = shared.replace(
             inChild,
             inChild.replace(
