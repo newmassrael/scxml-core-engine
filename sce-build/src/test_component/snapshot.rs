@@ -468,19 +468,35 @@ mod tests {
     }
 
     /// docs/adr/0092, section 7: a template whose type reaches a union is used
-    /// only where a backend lowers a union, which generates its unit.
+    /// only where a backend's test profile matches a union
+    /// (`codegen_matrix::TEST_PROFILE_UNION_BACKENDS`), which generates its
+    /// unit, and refused by the union's name on any other. Every backend
+    /// matches one, so the send carries the template on each.
     #[test]
     fn a_template_that_reaches_a_union_is_refused_where_no_union_is_lowered() {
         let mut model = component();
         if let Some(unit) = model.test_templates.get_mut("Done") {
             unit.union = Some("Payment".to_string());
         }
-        let refused = lower(&model, Language::Cpp).expect_err("C++ lowers no union");
-        assert!(
-            format!("{refused:?}").contains("union:Payment"),
-            "{refused:?}"
-        );
-        assert!(lower(&model, Language::Rust).is_ok());
+        for &language in Language::ALL {
+            let lowered = lower(&model, language);
+            if crate::forge::codegen_matrix::TEST_PROFILE_UNION_BACKENDS.contains(&language) {
+                let lowered =
+                    lowered.unwrap_or_else(|why| panic!("{language:?} lowers a union: {why:?}"));
+                let entry = &lowered.states["waiting"].on_entry_blocks[0];
+                assert_eq!(
+                    entry[0].test_message.as_ref().map(|m| m.unit.as_str()),
+                    Some("job_done"),
+                    "{language:?}"
+                );
+            } else {
+                let refused = lowered.expect_err("a backend that lowers no union refuses it");
+                assert!(
+                    format!("{refused:?}").contains("union:Payment"),
+                    "{language:?}: {refused:?}"
+                );
+            }
+        }
     }
 
     /// §11.5, §12.3: a module parameter is a variable of the statechart, which
