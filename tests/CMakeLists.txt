@@ -1125,7 +1125,9 @@ if(NOT EMSCRIPTEN)
 endif()
 
 # The reference host's COSE operations (docs/adr/0107, D7), in a build that found
-# libsodium (cmake/SCEHostCose.cmake): their own tests.
+# libsodium (cmake/SCEHostCose.cmake): their own tests, and through the
+# SCE_HOST_COSE the target states, the scenarios of static_host_cose, whose
+# machine is generated below.
 if(TARGET sce_host_cose)
     target_sources(standard_host_scenario_test PRIVATE
         integration/AStandardHostCoseTest.cpp
@@ -1163,6 +1165,12 @@ foreach(_STANDARD_HOST_MACHINE static_host_kv static_host_clock static_host_noti
         SCXML_FILE ${CMAKE_SOURCE_DIR}/sce-build/tests/fixtures/static_datamodel/${_STANDARD_HOST_MACHINE}.scxml
     )
 endforeach()
+if(TARGET sce_host_cose)
+    sce_add_state_machine(
+        TARGET standard_host_scenario_test
+        SCXML_FILE ${CMAKE_SOURCE_DIR}/sce-build/tests/fixtures/static_datamodel/static_host_cose.scxml
+    )
+endif()
 # The reference harness's two text templates (docs/adr/0087, section 6.1), the prompt it
 # asks with and the one it repairs with: documents of their own kind whose units' `render`
 # the machine calls, generated beside the machine that includes their headers, as

@@ -15,10 +15,20 @@
 // `expect.host_invokes` and `expect.host_state` are what the host was asked and what it
 // holds afterwards. The expected values are derived from the specification, not observed
 // from the host.
+//
+// The COSE operations (docs/adr/0107, D7) are a feature the host serves only in a build
+// that found libsodium, whose target `sce_host_cose` defines SCE_HOST_COSE
+// (cmake/SCEHostCose.cmake). A rig of such a build adds them to its host, and its
+// `cose_keys` directive sets their keys; a rig of another build serves none of them.
 
 #pragma once
 
 #include "host/StandardHost.h"
+
+#if defined(SCE_HOST_COSE)
+#include "host/CoseHost.h"
+#include "host/SodiumCoseCrypto.h"
+#endif
 
 #include <algorithm>
 #include <cstddef>
@@ -29,6 +39,7 @@
 #include <gtest/gtest.h>
 #include <map>
 #include <nlohmann/json.hpp>
+#include <optional>
 #include <string>
 #include <vector>
 
@@ -64,6 +75,49 @@ inline std::vector<std::string> scenarioNames() {
     }
     std::sort(names.begin(), names.end());
     return names;
+}
+
+/// The machine the COSE operations' scenarios name (docs/adr/0107, D7).
+inline constexpr const char *COSE_MACHINE = "static_host_cose";
+
+/// The stem of every scenario of the directory that names the machine @p machine, sorted.
+inline std::vector<std::string> scenariosOf(const std::string &machine) {
+    std::vector<std::string> names;
+    for (const auto &name : scenarioNames()) {
+        if (readScenario(name).at("machine").get<std::string>() == machine) {
+            names.push_back(name);
+        }
+    }
+    return names;
+}
+
+/// The bytes a scenario writes as hex, two digits a byte, or nothing when the text is not that.
+inline std::optional<std::vector<uint8_t>> bytesOfHex(const std::string &hex) {
+    const auto digit = [](char c) -> int {
+        if (c >= '0' && c <= '9') {
+            return c - '0';
+        }
+        if (c >= 'a' && c <= 'f') {
+            return c - 'a' + 10;
+        }
+        if (c >= 'A' && c <= 'F') {
+            return c - 'A' + 10;
+        }
+        return -1;
+    };
+    if (hex.size() % 2 != 0) {
+        return std::nullopt;
+    }
+    std::vector<uint8_t> bytes;
+    for (size_t i = 0; i < hex.size(); i += 2) {
+        const int high = digit(hex[i]);
+        const int low = digit(hex[i + 1]);
+        if (high < 0 || low < 0) {
+            return std::nullopt;
+        }
+        bytes.push_back(static_cast<uint8_t>(high * 16 + low));
+    }
+    return bytes;
 }
 
 /// Answers what a scenario says and keeps what it was given.
@@ -132,15 +186,58 @@ inline bool integerField(const std::string &name) {
     return name == "at_ms" || name == "max_tokens" || name == "temperature_milli";
 }
 
-/// The reference host, over a clock, a transport and a model provider a scenario sets.
+/// The reference host, over a clock, a transport and a model provider a scenario sets, and in a build
+/// that has them, the COSE operations on libsodium with the keys a scenario sets.
 struct Rig {
     host::ScriptedClock clock;
     ScriptTransport transport;
+#if defined(SCE_HOST_COSE)
+    host::SodiumCoseCrypto crypto;
+    host::CoseFeature cose{crypto};
+#endif
     host::ReferenceHost host{clock, transport};
     host::ScriptedProvider model;
 
     Rig() {
         host.setModelProvider(model);
+#if defined(SCE_HOST_COSE)
+        EXPECT_TRUE(host.addFeature(cose)) << "the COSE operations are served by the host already";
+#endif
+    }
+
+    /// Apply a `cose_keys` directive to the COSE operations: it replaces the host's three tables, a table
+    /// it does not name with none, `sign` (an Ed25519 seed in hex by its key id), `aead` (a
+    /// ChaCha20/Poly1305 key in hex by its key id) and `trust` (the ids of the directive's signing keys a
+    /// trust set trusts, by the set's name). The keys derived before are kept.
+    void coseKeys(const json &d) {
+#if defined(SCE_HOST_COSE)
+        for (const auto &[member, ignored] : d.items()) {
+            if (member != "sign" && member != "aead" && member != "trust") {
+                ADD_FAILURE() << "`" << member << "` is not a table of `cose_keys`";
+            }
+        }
+        const auto keys = [&d](const char *member) {
+            std::map<std::string, std::vector<uint8_t>> out;
+            if (!d.contains(member)) {
+                return out;
+            }
+            for (const auto &[id, hex] : d.at(member).items()) {
+                const auto key = bytesOfHex(hex.get<std::string>());
+                EXPECT_TRUE(key.has_value()) << "the key " << id << " is not written as hex";
+                out[id] = key.value_or(std::vector<uint8_t>{});
+            }
+            return out;
+        };
+        EXPECT_TRUE(cose.setSigningKeys(keys("sign")))
+            << "a signing key of `cose_keys` is not a 32-byte seed under an id a request can name";
+        EXPECT_TRUE(cose.setSealingKeys(keys("aead")))
+            << "a sealing key of `cose_keys` is not a 32-byte key under an id a request can name";
+        cose.setTrustSets(d.contains("trust") ? d.at("trust").get<std::map<std::string, std::vector<std::string>>>()
+                                              : std::map<std::string, std::vector<std::string>>{});
+#else
+        ADD_FAILURE() << "`cose_keys` sets the keys of the COSE operations, which this build does not serve: "
+                      << "it found no libsodium (cmake/SCEHostCose.cmake); " << d.dump();
+#endif
     }
 
     /// Apply a `model` directive to the scripted provider: each member it names.
@@ -180,6 +277,8 @@ struct Rig {
                 transport.directive(value);
             } else if (name == "model") {
                 scriptModel(value);
+            } else if (name == "cose_keys") {
+                coseKeys(value);
             } else {
                 ADD_FAILURE() << "`" << name << "` is not a host directive";
             }

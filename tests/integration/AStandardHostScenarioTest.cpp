@@ -21,6 +21,12 @@
 #include "static_host_notify_sm.h"
 #include "static_model_harness_sm.h"
 
+// The machine of the COSE operations is generated, and its scenarios replayed, in a build whose
+// reference host has them (cmake/SCEHostCose.cmake defines SCE_HOST_COSE where it found libsodium).
+#if defined(SCE_HOST_COSE)
+#include "static_host_cose_sm.h"
+#endif
+
 #include <algorithm>
 #include <cstdint>
 #include <filesystem>
@@ -609,10 +615,55 @@ TEST(AStandardHostScenario, TheReferenceHostJudgesAGenerationBeforeItsProvider) 
     EXPECT_EQ(json::parse(ask("p", "", "8", "0")->data).at("error"), "unavailable");
 }
 
+#if defined(SCE_HOST_COSE)
+
+namespace {
+
+using CoseMachine = SCE::Generated::static_host_cose::static_host_cose;
+
+/// A reader of each variable a step of @p scenario expects, from the machine's saved state, the text
+/// every backend saves alike.
+std::map<std::string, std::function<json(CoseMachine &)>> coseVariables(const json &scenario) {
+    std::map<std::string, std::function<json(CoseMachine &)>> variables;
+    for (const auto &step : scenario.at("steps")) {
+        const json &expect = step.at("expect");
+        if (!expect.contains("variables")) {
+            continue;
+        }
+        for (const auto &entry : expect.at("variables").items()) {
+            const std::string variable = entry.key();
+            variables[variable] = [variable](CoseMachine &m) {
+                return json::parse(m.saveAt(0).toJson()).at("variables").at(variable);
+            };
+        }
+    }
+    return variables;
+}
+
+}  // namespace
+
+/// The COSE operations (docs/adr/0107, D7): every scenario that names static_host_cose, replayed against
+/// it with the reference host's COSE feature on libsodium, its keys set by each scenario's `cose_keys`.
+TEST(AStandardHostScenario, AMachineSignsSealsAndDerivesKeysThroughItsHost) {
+    const std::vector<std::string> stems = HostScenario::scenariosOf(HostScenario::COSE_MACHINE);
+    ASSERT_FALSE(stems.empty()) << "no scenario names " << HostScenario::COSE_MACHINE;
+    for (const auto &stem : stems) {
+        replayScenario<CoseMachine>(stem, HostScenario::COSE_MACHINE, coseVariables(HostScenario::readScenario(stem)),
+                                    {});
+    }
+}
+
+#endif
+
+/// Every scenario of the directory is replayed by a test of this file. Those of the COSE operations are
+/// replayed by AMachineSignsSealsAndDerivesKeysThroughItsHost in a build that found libsodium; a build that
+/// did not serves none of them (docs/adr/0107, D7). Either way they are told apart by the machine they name.
 TEST(AStandardHostScenario, EveryScenarioOfTheDirectoryIsReplayedHere) {
     std::vector<std::string> replayed{"static_host_clock", "static_host_http", "static_host_kv", "static_host_model",
                                       "static_host_notify"};
     replayed.insert(replayed.end(), std::begin(kHarnessScenarios), std::end(kHarnessScenarios));
+    const std::vector<std::string> cose = HostScenario::scenariosOf(HostScenario::COSE_MACHINE);
+    replayed.insert(replayed.end(), cose.begin(), cose.end());
     std::sort(replayed.begin(), replayed.end());
     EXPECT_EQ(HostScenario::scenarioNames(), replayed);
 }

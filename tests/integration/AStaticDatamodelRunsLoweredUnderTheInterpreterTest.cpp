@@ -1018,12 +1018,26 @@ TEST_F(AStaticDatamodelRunsLoweredUnderTheInterpreterTest, AUnionCrossesACallOfA
 TEST_F(AStaticDatamodelRunsLoweredUnderTheInterpreterTest, TheStandardHostServesTheInterpreterAsItServesGeneratedCode) {
     const auto names = HostScenario::scenarioNames();
     ASSERT_EQ(names,
-              (std::vector<std::string>{"static_host_clock", "static_host_http", "static_host_kv", "static_host_model",
-                                        "static_host_notify", "static_model_harness_accepted",
+              (std::vector<std::string>{"static_host_clock", "static_host_cose", "static_host_http", "static_host_kv",
+                                        "static_host_model", "static_host_notify", "static_model_harness_accepted",
                                         "static_model_harness_exhausted", "static_model_harness_not_offered",
                                         "static_model_harness_repaired", "static_model_harness_timeout"}))
         << "every scenario of the directory is replayed or refused by name here";
-    const std::set<std::string> refusedByName{"static_host_model", "static_model_harness"};
+
+    // What `sce-codegen lower` refuses of a machine, by its name: the diagnostic code and the type of the
+    // host-run invoke it names. The COSE operations are served on the lanes the standard table names for
+    // them, which the Interpreter is not among (docs/adr/0107, D7 and D8), so their machine is refused as
+    // a type that lane does not serve, and its scenario is replayed on the generated lanes.
+    struct Refusal {
+        const char *code;
+        const char *type;
+    };
+
+    const std::map<std::string, Refusal> refusedByName{
+        {"static_host_model", {"generate/unsupported-feature", "sce-host-model-generate"}},
+        {"static_model_harness", {"generate/unsupported-feature", "sce-host-model-generate"}},
+        {HostScenario::COSE_MACHINE, {"codegen/standard-host-type-not-served", "sce-host-cose-"}},
+    };
     for (const auto &name : names) {
         SCOPED_TRACE(name);
         const auto scenario = HostScenario::readScenario(name);
@@ -1033,12 +1047,12 @@ TEST_F(AStaticDatamodelRunsLoweredUnderTheInterpreterTest, TheStandardHostServes
         std::error_code ec;
         std::filesystem::remove_all(dir, ec);
         const LoweredSet set = lowerSet(kFixtures / (machineName + ".scxml"), dir);
-        if (refusedByName.count(machineName) != 0) {
-            ASSERT_FALSE(set.ok) << "`sce-codegen lower` lowered " << machineName << ", whose generation it refuses";
+        if (const auto refused = refusedByName.find(machineName); refused != refusedByName.end()) {
+            ASSERT_FALSE(set.ok) << "`sce-codegen lower` lowered " << machineName << ", which it refuses";
             ASSERT_TRUE(set.refusal.is_object()) << "`sce-codegen lower` failed with no diagnostic";
-            EXPECT_EQ("generate/unsupported-feature", set.refusal.value("code", std::string{})) << set.refusal.dump();
-            EXPECT_NE(set.refusal.value("message", std::string{}).find("sce-host-model-generate"), std::string::npos)
-                << "the refusal names the model's generation: " << set.refusal.dump();
+            EXPECT_EQ(refused->second.code, set.refusal.value("code", std::string{})) << set.refusal.dump();
+            EXPECT_NE(set.refusal.value("message", std::string{}).find(refused->second.type), std::string::npos)
+                << "the refusal names the type it refuses: " << set.refusal.dump();
             std::filesystem::remove_all(dir, ec);
             continue;
         }
