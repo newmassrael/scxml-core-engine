@@ -71,13 +71,13 @@
         {
           "name": "status-negative",
           "with": { "status": "fault" },
-          "note": "the variant -1, major type 1: the encode refuses it and the decode reads no negative integer today, so the capture pins the refusal; docs/adr/0101 section 8.2 moves it to a byte case in the step that changes it"
+          "note": "the variant -1, major type 1 (`20`): refused by the encode and the decode until docs/adr/0101 step 2, which writes and reads it (section 8.2), so the case moved from the refusals to the byte cases there"
         },
         {
           "name": "detail-negative",
           "base": "smallest",
           "with": { "detail": "fault" },
-          "note": "the variant -1 in the optional entry, refused today as status-negative is"
+          "note": "the variant -1 in the optional entry, a byte case since docs/adr/0101 step 2 as status-negative is"
         }
       ]
     },
