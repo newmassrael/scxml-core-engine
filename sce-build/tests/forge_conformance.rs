@@ -5306,6 +5306,348 @@ fn a_signed_field_compiles_on_every_backend() {
         .unwrap_or_else(|e| panic!("Kotlin:\n{e}"));
 }
 
+// ── A field narrower than its type is extended into it ──────────────
+//
+// A field of `N` bits whose type, or enum carrier, has more holds the number of
+// its `N` bits in that type: zero-extended where the type is unsigned and
+// sign-extended from bit `N - 1` where it is signed, and the encode writes its
+// low `N` bits (SCE_FORGE.md, "Where a fixed field's bits lie"). Rust, Kotlin
+// and Go read a byte or a fold as the type of the bytes' width, which is not
+// the field's, and a signed fold of fewer bytes than its type was not
+// sign-extended.
+
+/// An enum of a signed carrier of 16 bits, whose variants an 8-bit field holds.
+const NARROW_LEVEL_ENUM: &str = r#"<?xml version="1.0" encoding="UTF-8"?>
+<scxml xmlns="http://www.w3.org/2005/07/scxml" xmlns:sce="http://sce.dev/ext"
+       version="1.0" sce:kind="enum" name="enum_narrow_level" sce:underlying-type="int16">
+  <datamodel>
+    <data id="variants">
+      <sce:variant name="low" value="-1"/>
+      <sce:variant name="high" value="5"/>
+    </data>
+  </datamodel>
+</scxml>"#;
+
+/// Fields of whole bytes fewer than their type has, in a frame laid out by
+/// byte: a byte of a `uint16` and of an `int16`, three bytes of an `int32`, four
+/// of a `uint64` and five of an `int64`, with the frames of a value of each
+/// below zero, at the top of its bits and at the bottom.
+const NARROW_WIDTHS: &str = r#"<?xml version="1.0" encoding="UTF-8"?>
+<scxml xmlns="http://www.w3.org/2005/07/scxml" xmlns:sce="http://sce.dev/ext"
+       sce:kind="codec" sce:default-endian="big" name="codec_narrow_widths" version="1.0">
+  <datamodel>
+    <sce:field id="wide" sce:type="uint16" sce:byte="0" sce:bit-size="8"/>
+    <sce:field id="small" sce:type="int16" sce:byte="1" sce:bit-size="8"/>
+    <sce:field id="mid" sce:type="int32" sce:byte="2" sce:bit-size="24"/>
+    <sce:field id="big" sce:type="uint64" sce:byte="5" sce:bit-size="32"/>
+    <sce:field id="span" sce:type="int64" sce:byte="9" sce:bit-size="40"/>
+  </datamodel>
+  <sce:test-vector hex="c8fefeee90ee6b2800fed5fa0e00">
+    <sce:decoded field="wide" value="200"/>
+    <sce:decoded field="small" value="-2"/>
+    <sce:decoded field="mid" value="-70000"/>
+    <sce:decoded field="big" value="4000000000"/>
+    <sce:decoded field="span" value="-5000000000"/>
+  </sce:test-vector>
+  <sce:test-vector hex="ff7f7fffffffffffff7fffffffff">
+    <sce:decoded field="wide" value="255"/>
+    <sce:decoded field="small" value="127"/>
+    <sce:decoded field="mid" value="8388607"/>
+    <sce:decoded field="big" value="4294967295"/>
+    <sce:decoded field="span" value="549755813887"/>
+  </sce:test-vector>
+  <sce:test-vector hex="0080800000000000008000000000">
+    <sce:decoded field="wide" value="0"/>
+    <sce:decoded field="small" value="-128"/>
+    <sce:decoded field="mid" value="-8388608"/>
+    <sce:decoded field="big" value="0"/>
+    <sce:decoded field="span" value="-549755813888"/>
+  </sce:test-vector>
+</scxml>"#;
+
+/// Bits of one byte held in integers wider than a byte.
+const NARROW_BITS: &str = r#"<?xml version="1.0" encoding="UTF-8"?>
+<scxml xmlns="http://www.w3.org/2005/07/scxml" xmlns:sce="http://sce.dev/ext"
+       sce:kind="codec" sce:default-endian="big" name="codec_narrow_bits" version="1.0">
+  <datamodel>
+    <sce:field id="nib" sce:type="uint16" sce:byte="0" sce:bit-size="4"/>
+    <sce:field id="top" sce:type="uint32" sce:byte="0" sce:bit-offset="4" sce:bit-size="4"/>
+  </datamodel>
+</scxml>"#;
+
+/// The same in a frame read field by field: a signed byte of an `int16`, two
+/// bytes of a `uint32`, an enum of a signed 16-bit carrier in one byte, and a
+/// gated three bytes of an `int32`.
+const NARROW_GATED: &str = r#"<?xml version="1.0" encoding="UTF-8"?>
+<scxml xmlns="http://www.w3.org/2005/07/scxml" xmlns:sce="http://sce.dev/ext"
+       sce:kind="codec" sce:default-endian="big" name="codec_narrow_gated" version="1.0">
+  <sce:import src="enum_narrow_level.scxml" kind="enum" as="grade"/>
+  <datamodel>
+    <sce:flags id="flags" sce:type="uint8" sce:byte="0" sce:bit-size="8">
+      <sce:flag name="has_mid" bit="0"/>
+    </sce:flags>
+    <sce:field id="small" sce:type="int16" sce:byte="1" sce:bit-size="8"/>
+    <sce:field id="wide" sce:type="uint32" sce:byte="2" sce:bit-size="16"/>
+    <sce:field id="level" sce:type="enum:grade" sce:byte="4" sce:bit-size="8"/>
+    <sce:field id="mid" sce:type="int32" sce:byte="5" sce:bit-size="24"
+               sce:present-if="flags.has_mid"/>
+  </datamodel>
+</scxml>"#;
+
+/// The documents above in a scratch directory, by the file names a compile of
+/// the set reads them in: the enum before the codec that imports it.
+fn narrow_fixtures() -> (tempfile::TempDir, [&'static str; 4]) {
+    let documents = [
+        ("enum_narrow_level.scxml", NARROW_LEVEL_ENUM),
+        ("codec_narrow_widths.scxml", NARROW_WIDTHS),
+        ("codec_narrow_bits.scxml", NARROW_BITS),
+        ("codec_narrow_gated.scxml", NARROW_GATED),
+    ];
+    let dir = tempfile::tempdir().expect("a scratch directory");
+    for (name, text) in documents {
+        std::fs::write(dir.path().join(name), text).unwrap_or_else(|e| panic!("write {name}: {e}"));
+    }
+    (dir, documents.map(|(name, _)| name))
+}
+
+/// Each backend reads a field narrower than its type into that type: a byte
+/// widened to a `uint16`, a signed byte, three signed bytes and five signed
+/// bytes sign-extended from their top bit, four bytes zero-extended into a
+/// `uint64`, bits of one byte widened to a `uint16`, and an enum's 16-bit
+/// signed carrier sign-extended from one byte before the enum takes it, in a
+/// frame read field by field as in one laid out by byte. Each one-byte write
+/// takes the low byte of the wider value.
+///
+/// Turns red where `whole_read` reads one byte of a wider type as a byte,
+/// `decode_multibyte_unified` folds into the type of the bytes' width or leaves
+/// a signed fold unextended, the bits of one byte are not widened in
+/// `generate_decode_expr`, or `rust_byte_written` hands a `u16` to `write_u8`.
+#[test]
+fn a_field_narrower_than_its_type_is_extended_into_it_on_every_backend() {
+    use sce_build::generator::Language;
+    type Needles = &'static [&'static str];
+    // The language, then what its code of the frame laid out by byte, of the
+    // bits of one byte and of the frame read field by field holds.
+    let cases: [(Language, Needles, Needles, Needles); 7] = [
+        (
+            Language::Rust,
+            &[
+                "let wide = raw[0] as u16;",
+                "let small = (raw[1] as i16 ^ 0x80) - 0x80;",
+                "let mid = ((((raw[2] as i32) << 16) | ((raw[3] as i32) << 8) | raw[4] as i32) \
+                 ^ 0x800000) - 0x800000;",
+                "let big = ((raw[5] as u64) << 24) | ((raw[6] as u64) << 16) | \
+                 ((raw[7] as u64) << 8) | raw[8] as u64;",
+                "^ 0x8000000000) - 0x8000000000;",
+                "wide() as u8)?;",
+            ],
+            &["(raw[0] & 0x0F) as u16", "((raw[0] >> 4) & 0x0F) as u32"],
+            &[
+                "let _v = (raw[0] as i16 ^ 0x80) - 0x80;",
+                "let _v = ((raw[0] as u32) << 8) | raw[1] as u32;",
+                "from_underlying((raw[0] as i16 ^ 0x80) - 0x80)",
+            ],
+        ),
+        (
+            Language::Go,
+            &[
+                ":= uint16(raw[0])",
+                ":= (int16(raw[1]) ^ 0x80) - 0x80",
+                "((int32(raw[2])<<16 | int32(raw[3])<<8 | int32(raw[4])) ^ 0x800000) - 0x800000",
+                "uint64(raw[5])<<24 | uint64(raw[6])<<16 | uint64(raw[7])<<8 | uint64(raw[8])",
+            ],
+            &[
+                "uint16((raw[0] >> 0) & 0x0F)",
+                "uint32((raw[0] >> 4) & 0x0F)",
+            ],
+            &[
+                "= (int16(raw[0]) ^ 0x80) - 0x80",
+                "uint32(raw[0])<<8 | uint32(raw[1])",
+                "FromUnderlying((int16(raw[0]) ^ 0x80) - 0x80)",
+            ],
+        ),
+        (
+            Language::C11,
+            &[
+                "(int16_t)((raw[1] ^ 0x80) - 0x80)",
+                "(int32_t)(((((int32_t)raw[2] << 16) | ((int32_t)raw[3] << 8) | raw[4]) \
+                 ^ 0x800000) - 0x800000)",
+                "((uint64_t)raw[5] << 24)",
+            ],
+            &[
+                "(uint16_t)((raw[0] >> 0) & 0x0F)",
+                "(uint32_t)((raw[0] >> 4) & 0x0F)",
+            ],
+            &[
+                "(int16_t)((raw[0] ^ 0x80) - 0x80)",
+                "_from_underlying((int16_t)((raw[0] ^ 0x80) - 0x80)",
+            ],
+        ),
+        (
+            Language::Cpp,
+            &[
+                "static_cast<uint16_t>(raw[0])",
+                "static_cast<int16_t>((raw[1] ^ 0x80) - 0x80)",
+                "static_cast<int32_t>((((static_cast<int32_t>(raw[2]) << 16) | \
+                 (static_cast<int32_t>(raw[3]) << 8) | raw[4]) ^ 0x800000) - 0x800000)",
+            ],
+            &[
+                "static_cast<uint16_t>((raw[0] >> 0) & 0x0F)",
+                "static_cast<uint32_t>((raw[0] >> 4) & 0x0F)",
+            ],
+            &["from_underlying(static_cast<int16_t>((raw[0] ^ 0x80) - 0x80))"],
+        ),
+        (
+            Language::Python,
+            &[
+                "f_small = (raw[1] ^ 0x80) - 0x80",
+                "f_mid = (((raw[2] << 16) | (raw[3] << 8) | raw[4]) ^ 0x800000) - 0x800000",
+                "f_span = (((raw[9] << 32) | (raw[10] << 24) | (raw[11] << 16) | (raw[12] << 8) \
+                 | raw[13]) ^ 0x8000000000) - 0x8000000000",
+            ],
+            &[],
+            &["from_underlying((raw[0] ^ 0x80) - 0x80)"],
+        ),
+        (
+            Language::Kotlin,
+            &[
+                "val wide = ((raw[0].toInt() and 0xFF)).toUShort()",
+                "val small = (((raw[1].toInt() and 0xFF) xor 0x80) - 0x80).toShort()",
+                "xor 0x800000) - 0x800000)",
+                "((raw[5].toLong() and 0xFFL) shl 24)",
+                "xor 0x8000000000L) - 0x8000000000L)",
+            ],
+            &[
+                "((raw[0].toInt() ushr 0) and 0x0F).toUShort()",
+                "((raw[0].toInt() ushr 4) and 0x0F).toUInt()",
+            ],
+            &["fromUnderlying((((raw[0].toInt() and 0xFF) xor 0x80) - 0x80).toShort())"],
+        ),
+        (
+            Language::Swift,
+            &[
+                "(Int16(truncatingIfNeeded: (cursor.peekInteger(UInt8.self, at: 1, .big) >> 0) \
+                 & 0xFF) ^ 0x80) - 0x80",
+                "& 0xFFFFFF) ^ 0x800000) - 0x800000",
+                "& 0xFFFFFFFFFF) ^ 0x8000000000) - 0x8000000000",
+            ],
+            &[],
+            &[],
+        ),
+    ];
+    let (dir, _) = narrow_fixtures();
+    for (language, widths, bits, gated) in cases {
+        for (document, needles) in [
+            ("codec_narrow_widths.scxml", widths),
+            ("codec_narrow_bits.scxml", bits),
+            ("codec_narrow_gated.scxml", gated),
+        ] {
+            if needles.is_empty() {
+                continue;
+            }
+            let text = generated_text(dir.path(), document, language);
+            for needle in needles {
+                assert!(
+                    text.contains(needle),
+                    "{language:?}: {document} must read its narrow fields into their types: \
+                     missing `{needle}`\n--- code ---\n{text}"
+                );
+            }
+        }
+    }
+}
+
+/// What the Rust codecs of [`narrow_fixtures`] read back: bits of one byte as
+/// their wider integers, a signed byte, a word and a gated three bytes as their
+/// values, an enum's negative carrier from one byte as its variant, and the
+/// same frame written again. The frames of every width laid out by byte are the
+/// test vectors of `codec_narrow_widths`, which its sidecar runs.
+const NARROW_HARNESS: &str = r#"// Injected by a_field_narrower_than_its_type_round_trips_on_rust.
+#[cfg(test)]
+mod tests {
+    use crate::codec_narrow_bits::CodecNarrowBits;
+    use crate::codec_narrow_gated::CodecNarrowGated;
+    use crate::enum_narrow_level::EnumNarrowLevel;
+    use ::sce_forge_runtime::codec::SceCursor;
+
+    #[test]
+    fn bits_of_one_byte_are_read_into_wider_integers() {
+        let frame = [0x39u8];
+        let mut cursor = SceCursor::new(&frame);
+        let view = CodecNarrowBits::decode(&mut cursor).expect("decode a byte of two nibbles");
+        assert_eq!(view.nib, 9u16);
+        assert_eq!(view.top, 3u32);
+        assert_eq!(view.encode_to_vec().as_slice(), &frame);
+    }
+
+    #[test]
+    fn a_frame_read_field_by_field_extends_its_narrow_fields() {
+        let frame = [0x01u8, 0xFE, 0xBE, 0xEF, 0xFF, 0xFE, 0xEE, 0x90];
+        let mut cursor = SceCursor::new(&frame);
+        let view = CodecNarrowGated::decode(&mut cursor).expect("decode with the gated field");
+        assert_eq!(view.small, -2i16);
+        assert_eq!(view.wide, 0xBEEFu32);
+        assert_eq!(view.level, EnumNarrowLevel::Low);
+        assert_eq!(view.mid, Some(-70000i32));
+        assert_eq!(view.encode_to_vec().as_slice(), &frame);
+    }
+
+    #[test]
+    fn a_gated_narrow_field_is_absent_where_its_flag_is_clear() {
+        let frame = [0x00u8, 0x80, 0x00, 0x01, 0x05];
+        let mut cursor = SceCursor::new(&frame);
+        let view = CodecNarrowGated::decode(&mut cursor).expect("decode without the gated field");
+        assert_eq!(view.small, -128i16);
+        assert_eq!(view.wide, 1u32);
+        assert_eq!(view.level, EnumNarrowLevel::High);
+        assert!(view.mid.is_none());
+        assert_eq!(view.encode_to_vec().as_slice(), &frame);
+    }
+}
+"#;
+
+/// The Rust codecs of [`narrow_fixtures`] compile under `-D warnings` and read
+/// and write their narrow fields as their values ([`NARROW_HARNESS`], and the
+/// test vectors of `codec_narrow_widths`).
+///
+/// Turns red where a Rust read of a narrow field is the integer of its bytes'
+/// width, a signed one is not sign-extended (`decode_multibyte_unified`), or a
+/// write of one byte hands a wider integer to `write_u8` (`rust_byte_written`).
+#[test]
+fn a_field_narrower_than_its_type_round_trips_on_rust() {
+    let (dir, documents) = narrow_fixtures();
+    rustc_test_codec_set_with_extra(
+        dir.path(),
+        &documents,
+        &[("narrow_round_trip.rs", NARROW_HARNESS)],
+        "narrow_round_trip",
+    )
+    .expect("a narrow field must compile and round-trip as its value on Rust");
+}
+
+/// The codecs of [`narrow_fixtures`] compile on C11, C++, Go, Python and
+/// Kotlin.
+///
+/// Turns red where the Go or Kotlin read of a narrow field is the type of its
+/// bytes' width (`whole_read`, the bits of one byte in `generate_decode_expr`),
+/// or a Go or Kotlin write of one byte hands a wider integer where a byte is
+/// taken (`go_byte_written`, `kotlin_byte_written`, the Kotlin view of
+/// `encode_multibyte_unified`).
+#[test]
+fn a_field_narrower_than_its_type_compiles_on_every_backend() {
+    let (dir, documents) = narrow_fixtures();
+    compile_codec_set_c11(dir.path(), &documents, "narrow_fields_c11")
+        .unwrap_or_else(|e| panic!("C11:\n{e}"));
+    compile_codec_set_cpp(dir.path(), &documents, "narrow_fields_cpp")
+        .unwrap_or_else(|e| panic!("C++:\n{e}"));
+    compile_codec_set_go(dir.path(), &documents, "narrow_fields_go")
+        .unwrap_or_else(|e| panic!("Go:\n{e}"));
+    compile_codec_set_python(dir.path(), &documents, "narrow_fields_python")
+        .unwrap_or_else(|e| panic!("Python:\n{e}"));
+    compile_codec_set_kotlin(dir.path(), &documents, "narrow_fields_kotlin")
+        .unwrap_or_else(|e| panic!("Kotlin:\n{e}"));
+}
+
 /// `!` negates one clause. A group under it is refused as a group, and the
 /// refusal quotes the attribute the author wrote, whole, wherever in it the
 /// group stands: splitting on `||` before looking made it quote the fragment

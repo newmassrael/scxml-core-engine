@@ -969,8 +969,19 @@ bytes, read as one unsigned integer in order `E`, are the field's word, and its 
 the word, counted from the least significant bit: a 12-bit big-endian field at byte 1, bit offset 4, holding
 `0xABC` is the word `0xABC0`, the bytes `AB C0`. A positional layout writes its fixed bytes from 0 to the end of
 its last fixed field, each byte the or of the bits each field holds in it; a byte no field holds is written zero,
-is ignored by the decode, and counts in the frame's size. The parser refuses as
-`validation/attribute-rule-violated`, on the field:
+is ignored by the decode, and counts in the frame's size.
+
+A field holds a value of its type, which may have more bits than the field (`N` below the width of the integer
+type, or of an enum's carrier). The value is the number of its `N` bits in that type: zero-extended where the type
+is unsigned, and where it is signed their two's complement, sign-extended from bit `N - 1`. An `int16` of
+`sce:bit-size="8"` holding the byte `FE` is -2; an `int32` of 24 bits holding `FE EE 90` is -70000; a `uint16` of 8
+bits holding `C8` is 200. The encode writes the low `N` bits of the value. Every backend reads and writes a field so,
+in a frame laid out by byte and in one read field by field. A value outside what `N` bits hold (`0` to `2^N - 1`
+unsigned, `-2^(N-1)` to `2^(N-1) - 1` signed) is no value of the field, a width being its bound (docs/adr/0077):
+Python refuses it where the value is made (`BoundedInt`); the other backends hold the field in its type and write
+the low `N` bits of such a value, which reads back as another.
+
+The parser refuses as `validation/attribute-rule-violated`, on the field:
 
 - a word wider than 64 bits (`O + N > 64`);
 - more bits than the field's type holds;

@@ -146,3 +146,27 @@ names the type and its carrier ("not `enum:mode`, whose carrier is `int8`"). The
 
 Swift had read the bits of such a field as the number its enum declares, whatever its carrier's sign; it now never
 meets one.
+
+## Amendment, 2026-11-19: a field narrower than its type is extended into it
+
+§1 says which bits a field holds, not which number of its type they are where the type has more bits than the field
+(`N` below the width of the integer type or of an enum's carrier). §3 lets such a field be whole: an `int32` of 24
+bits, a `uint16` of 8. The backends disagreed on it. Python read a signed one as the two's complement of its `N` bits;
+Rust, Kotlin, Go, C and C++ read the bits as the type of their bytes' width, which for one byte or for the fold of
+fewer bytes than the type is not the field's type: Rust, Kotlin and Go did not compile a `uint16` of 8 bits, nor a
+`uint16` of 4 bits in one byte, and a signed field of 24 bits read as a non-negative `int32`. Swift refused a signed
+field narrower than its type by name.
+
+The rule, as a signed integer of `N` bits is read everywhere: a field's value is the number of its `N` bits in its
+type, zero-extended where the type is unsigned and sign-extended from bit `N - 1` where it is signed, and the encode
+writes the low `N` bits of the value. One function reads a whole field into the integer it is held in
+(`whole_read`, `decode_multibyte_unified` over an `IntCarrier`), the read of bits of one byte is converted to the
+field's integer, and each write of one byte takes the low byte of a wider integer. A signed fold is sign-extended by
+`(x ^ m) - m`, `m` its top bit, computed in the signed type itself, which holds the unsigned number of the bytes: no
+operation overflows, and none leaves a language a choice (C's shift into or out of a sign bit). Swift sign-extends
+the word it reads by the same formula and no longer refuses the field; ADR 0081's list of what Swift leaves by name
+loses "a signed field narrower than its type".
+
+A value outside what `N` bits hold is no value of the field (docs/adr/0077: a width is a bound). Python's value
+refuses it where it is made (`BoundedInt`); the other backends write its low `N` bits. Holding them to the bound is
+a refinement of the abstract syntax of each, which this amendment does not make.

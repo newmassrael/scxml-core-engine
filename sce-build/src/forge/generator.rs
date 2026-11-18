@@ -14003,8 +14003,7 @@ fn render_codec(
                     m.default_endian,
                     lang,
                     &m.fields,
-                    l.codec_carrier_bits(&f.sce_type),
-                    l.codec_carrier_signed(&f.sce_type),
+                    l.codec_int_carrier(&f.sce_type),
                 )
                 .into(),
             );
@@ -22442,7 +22441,7 @@ fn present_if_decode_fixed(
         default_endian,
         n,
         lang,
-        l.codec_carrier_signed(&field.sce_type),
+        IntCarrier::held(l.codec_int_carrier(&field.sce_type), n),
     );
     let (conv12, body12) = streaming_fixed_enum_conversion(l, field, &carrier_read, "            ");
     let (conv16, body16) =
@@ -24684,42 +24683,98 @@ fn present_if_encode_vle(
     }
 }
 
+/// The integer a fixed field's value is held in: its type's, or its enum's
+/// carrier's ([`LangCtx::codec_int_carrier`]). A field of `N` bits whose
+/// integer has `bits > N` holds the number of its `N` bits, sign-extended from
+/// bit `N - 1` where the integer is signed and zero-extended where it is not,
+/// and is written as the low `N` bits of its value (SCE_FORGE.md, "Where a
+/// fixed field's bits lie").
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub(crate) struct IntCarrier {
+    /// The integer's width: 8, 16, 32 or 64.
+    pub(crate) bits: u32,
+    /// Whether it is signed, two's complement.
+    pub(crate) signed: bool,
+}
+
+impl IntCarrier {
+    /// The unsigned integer of the narrowest width that holds `bytes` bytes:
+    /// the word of a field's bytes.
+    pub(crate) fn word(bytes: u32) -> Self {
+        Self {
+            bits: match bytes {
+                1 => 8,
+                2 => 16,
+                3 | 4 => 32,
+                _ => 64,
+            },
+            signed: false,
+        }
+    }
+
+    /// The integer a field of `bytes` whole bytes is held in: `carrier`, the
+    /// one its type names, and the word of its bytes where its type names none
+    /// that holds them.
+    pub(crate) fn held(carrier: Option<Self>, bytes: u32) -> Self {
+        carrier
+            .filter(|c| c.bits >= 8 * bytes)
+            .unwrap_or_else(|| Self::word(bytes))
+    }
+
+    /// Whether this is the `u8` a byte is.
+    fn is_byte(self) -> bool {
+        self == Self::word(1)
+    }
+}
+
+/// The Kotlin unsigned type conversion of the width `bits`, as a call names it.
+fn kotlin_unsigned_conversion(bits: u32) -> &'static str {
+    match bits {
+        8 => "toUByte",
+        16 => "toUShort",
+        32 => "toUInt",
+        _ => "toULong",
+    }
+}
+
 /// RHS expression that decodes `n` bytes from a freshly-peeked
-/// `raw[0..n]` slice into the field's natural carrier type. For
-/// 8-bit fields this is the read of `raw[0]` ([`byte_read`]); multi-byte
-/// fields delegate to the shared endianness byte-fold
-/// ([`decode_multibyte_unified`]) at `byte_off = 0` — the streaming peek
-/// base — so the per-language shift/cast rules are defined in exactly one
-/// place.
+/// `raw[0..n]` slice into `carrier`, the integer the field is held in: the
+/// positional path's read of a whole field ([`whole_read`]) at `byte_off = 0`
+/// — the streaming peek base — so the per-language shift/cast rules are
+/// defined in exactly one place.
 fn streaming_fixed_field_body(
     field: &CodecField,
     default_endian: Endian,
     n: u32,
     lang: crate::generator::Language,
-    signed: bool,
+    carrier: IntCarrier,
 ) -> String {
-    let endian = field.effective_endian(default_endian);
+    whole_read(0, n, field.effective_endian(default_endian), lang, carrier)
+}
 
-    // Single-byte fields read the peeked byte as the carrier, signed where
-    // the carrier is.
-    if n == 1 {
-        return byte_read("raw[0]", signed, lang);
+/// The read of a whole field, the `bytes` bytes from `raw[byte_off]` in
+/// `endian`, as a value of `carrier`, which has at least as many bits: one
+/// byte held in a byte ([`byte_read`]), and every other width the byte fold
+/// ([`decode_multibyte_unified`]).
+fn whole_read(
+    byte_off: u32,
+    bytes: u32,
+    endian: Endian,
+    lang: crate::generator::Language,
+    carrier: IntCarrier,
+) -> String {
+    if bytes == 1 && carrier.bits == 8 {
+        return byte_read(&format!("raw[{byte_off}]"), carrier.signed, lang);
     }
-
-    // Multi-byte assembly is the positional path's endianness fold,
-    // only indexed from the peek base (offset 0) instead of an absolute
-    // `byte_offset`. Delegate to the SSOT so the per-language shift /
-    // cast / integer-promotion rules live in exactly one place
-    // (`decode_multibyte_unified`) rather than being mirrored here.
-    decode_multibyte_unified(0, n, endian, lang, signed)
+    decode_multibyte_unified(byte_off, bytes, endian, lang, carrier)
 }
 
 /// The Kotlin byte a sink writes of `value`, the carrier of a one-byte field:
-/// the value itself where the carrier is signed, a `Byte` already, which a
-/// conversion kotlinc calls redundant would only repeat, and otherwise the
-/// `Byte` of the `UByte`'s bits.
-fn kotlin_byte_written(value: &str, signed: bool) -> String {
-    if signed {
+/// the value itself where the carrier is a signed byte, a `Byte` already,
+/// which a conversion kotlinc calls redundant would only repeat, and otherwise
+/// the `Byte` of its low eight bits.
+fn kotlin_byte_written(value: &str, carrier: IntCarrier) -> String {
+    if carrier.bits == 8 && carrier.signed {
         value.to_string()
     } else {
         format!("{value}.toByte()")
@@ -24728,32 +24783,44 @@ fn kotlin_byte_written(value: &str, signed: bool) -> String {
 
 /// The Rust byte a sink writes of `value`, the carrier of a one-byte field:
 /// the value itself where the carrier is the `u8` the sink takes, and
-/// otherwise the `u8` of the `i8`'s bits, which Rust converts only where it is
-/// told to.
-fn rust_byte_written(value: &str, signed: bool) -> String {
-    if signed {
-        format!("{value} as u8")
-    } else {
+/// otherwise the `u8` of its low eight bits, which Rust converts only where it
+/// is told to.
+fn rust_byte_written(value: &str, carrier: IntCarrier) -> String {
+    if carrier.is_byte() {
         value.to_string()
+    } else {
+        format!("{value} as u8")
+    }
+}
+
+/// The C byte a writer takes of `value`, the carrier of a one-byte field: the
+/// value itself where the carrier is a byte, which C converts to the `uint8_t`
+/// of its bits (modulo 256), and otherwise its low byte, narrowed where it is
+/// said.
+fn c11_byte_written(value: &str, carrier: IntCarrier) -> String {
+    if carrier.bits == 8 {
+        value.to_string()
+    } else {
+        format!("(uint8_t)({value} & 0xFF)")
     }
 }
 
 /// The Go element of the `[]byte` literal a sink writes of `value`, the
 /// carrier of a one-byte field: the value itself where the carrier is the
-/// `uint8` a `byte` is, and otherwise the `byte` of the `int8`'s bits, which a
+/// `uint8` a `byte` is, and otherwise the `byte` of its low eight bits, which a
 /// composite literal does not convert to.
-fn go_byte_written(value: &str, signed: bool) -> String {
-    if signed {
-        format!("byte({value})")
-    } else {
+fn go_byte_written(value: &str, carrier: IntCarrier) -> String {
+    if carrier.is_byte() {
         value.to_string()
+    } else {
+        format!("byte({value})")
     }
 }
 
 /// The read of `byte`, one byte of the frame as the language's byte array
-/// holds it, as the carrier of a one-byte field: a value of the carrier's type,
-/// which for a signed carrier is the signed byte of the same bits, two's
-/// complement ([`LangCtx::codec_carrier_signed`]).
+/// holds it, as the carrier of a one-byte field held in a byte: a value of the
+/// carrier's type, which for a signed carrier is the signed byte of the same
+/// bits, two's complement ([`IntCarrier`]).
 ///
 /// Kotlin's `ByteArray` holds a signed `Byte`, which is the carrier of a signed
 /// field and is narrowed to the `UByte` of its bits for an unsigned one. Every
@@ -24793,16 +24860,17 @@ fn byte_read(byte: &str, signed: bool, lang: crate::generator::Language) -> Stri
 /// across both paths is what makes the streaming wrappers' "delegates to the
 /// encode SSOT" contract enforceable instead of drift-prone.
 ///
-/// `signed` says the value is of the signed type of its width, which Kotlin
-/// shifts as it is where that type is already the `Int` or `Long` its bytes
-/// are taken from: a conversion to it is one kotlinc calls redundant, and
-/// `-Werror` refuses.
+/// `carrier` is the integer the value is held in, which may have more bits
+/// than the `n` bytes: they are its low `n` bytes. Kotlin shifts the value as
+/// it is where it is already the `Int` or `Long` its bytes are taken from (a
+/// signed carrier of 32 or 64 bits): a conversion to it is one kotlinc calls
+/// redundant, and `-Werror` refuses.
 fn encode_multibyte_unified(
     value_ref: &str,
     n: u32,
     endian: Endian,
     lang: crate::generator::Language,
-    signed: bool,
+    carrier: IntCarrier,
 ) -> Vec<String> {
     use crate::generator::Language;
 
@@ -24845,17 +24913,14 @@ fn encode_multibyte_unified(
                         // Widths > 4 bytes overflow Kotlin's 32-bit Int, so
                         // they read through Long; <= 4 stays on Int to match the
                         // positional path (which never exceeds a 32-bit field).
-                        let (view, mask) = if n > 4 {
-                            (".toLong()", "0xFFL")
-                        } else {
-                            (".toInt()", "0xFF")
-                        };
-                        // A signed value of four or eight bytes is the `Int`
-                        // or `Long` itself.
-                        let view = if signed && (n == 4 || n == 8) {
-                            ""
-                        } else {
-                            view
+                        // A value that is the `Int` or the `Long` its bytes are
+                        // taken from is shifted as it is.
+                        let long = n > 4;
+                        let mask = if long { "0xFFL" } else { "0xFF" };
+                        let view = match (carrier.signed, carrier.bits, long) {
+                            (true, 32, false) | (true, 64, true) => "",
+                            (_, _, true) => ".toLong()",
+                            (_, _, false) => ".toInt()",
                         };
                         if shift == 0 {
                             format!("({value_ref}{view} and {mask}).toByte()")
@@ -24888,13 +24953,13 @@ fn streaming_fixed_field_encode_kotlin(
     let id = field.id.as_str();
     let endian = field.effective_endian(default_endian);
     let source = l.codec_carrier_expr(&field.sce_type, &format!("this.{id}"));
-    let signed = l.codec_carrier_signed(&field.sce_type);
+    let carrier = IntCarrier::held(l.codec_int_carrier(&field.sce_type), n);
     if n == 1 {
         // Bare carrier path — Kotlin Byte fits write_u8 directly.
         // Keeps parent-tag injection needle simple (`writeU8(this.<id>.toByte())`).
         return format!(
             "        w.writeU8({})?.let {{ return it }}",
-            kotlin_byte_written(&source, signed)
+            kotlin_byte_written(&source, carrier)
         );
     }
     encode_multibyte_unified(
@@ -24902,7 +24967,7 @@ fn streaming_fixed_field_encode_kotlin(
         n,
         endian,
         crate::generator::Language::Kotlin,
-        signed,
+        carrier,
     )
     .into_iter()
     .map(|e| format!("        w.writeU8({e})?.let {{ return it }}"))
@@ -24926,13 +24991,13 @@ fn streaming_fixed_field_encode_go(
         format!("\tif err := w.WriteBytes([]byte{{ {buf} }}); err != nil {{\n\t\treturn err\n\t}}")
     };
     let source = l.codec_carrier_expr(&field.sce_type, &format!("s.{go_id}"));
-    let signed = l.codec_carrier_signed(&field.sce_type);
+    let carrier = IntCarrier::held(l.codec_int_carrier(&field.sce_type), n);
     if n == 1 {
         // Bare carrier path keeps parent-tag injection needle simple; a
-        // signed carrier is converted to the byte of its bits.
-        return emit(&go_byte_written(&source, signed));
+        // carrier that is no `uint8` is converted to the byte of its low bits.
+        return emit(&go_byte_written(&source, carrier));
     }
-    encode_multibyte_unified(&source, n, endian, crate::generator::Language::Go, signed)
+    encode_multibyte_unified(&source, n, endian, crate::generator::Language::Go, carrier)
         .into_iter()
         .map(|e| emit(&e))
         .collect::<Vec<_>>()
@@ -24953,11 +25018,14 @@ fn streaming_fixed_field_encode_c11(
     let id_snake = filters::to_snake_case(field.id.clone());
     let endian = field.effective_endian(default_endian);
     let source = l.codec_carrier_expr(&field.sce_type, &format!("self->{id_snake}"));
+    let carrier = IntCarrier::held(l.codec_int_carrier(&field.sce_type), n);
     if n == 1 {
-        return format!("    SCE_FORGE_TRY_WRITE(sce_forge_writer_write_u8(w, {source}));");
+        return format!(
+            "    SCE_FORGE_TRY_WRITE(sce_forge_writer_write_u8(w, {}));",
+            c11_byte_written(&source, carrier)
+        );
     }
-    let signed = l.codec_carrier_signed(&field.sce_type);
-    encode_multibyte_unified(&source, n, endian, crate::generator::Language::C11, signed)
+    encode_multibyte_unified(&source, n, endian, crate::generator::Language::C11, carrier)
         .into_iter()
         .map(|e| format!("    SCE_FORGE_TRY_WRITE(sce_forge_writer_write_u8(w, {e}));"))
         .collect::<Vec<_>>()
@@ -24976,11 +25044,14 @@ fn streaming_fixed_field_encode_c11_inner(
     let id_snake = filters::to_snake_case(field.id.clone());
     let endian = field.effective_endian(default_endian);
     let source = l.codec_carrier_expr(&field.sce_type, &format!("self->{id_snake}.value"));
+    let carrier = IntCarrier::held(l.codec_int_carrier(&field.sce_type), n);
     if n == 1 {
-        return format!("        SCE_FORGE_TRY_WRITE(sce_forge_writer_write_u8(w, {source}));");
+        return format!(
+            "        SCE_FORGE_TRY_WRITE(sce_forge_writer_write_u8(w, {}));",
+            c11_byte_written(&source, carrier)
+        );
     }
-    let signed = l.codec_carrier_signed(&field.sce_type);
-    encode_multibyte_unified(&source, n, endian, crate::generator::Language::C11, signed)
+    encode_multibyte_unified(&source, n, endian, crate::generator::Language::C11, carrier)
         .into_iter()
         .map(|e| format!("        SCE_FORGE_TRY_WRITE(sce_forge_writer_write_u8(w, {e}));"))
         .collect::<Vec<_>>()
@@ -25001,11 +25072,11 @@ fn streaming_fixed_field_encode_go_from_local(
         format!("\t\tif err := w.WriteBytes([]byte{{ {buf} }}); err != nil {{\n\t\t\treturn err\n\t\t}}")
     };
     let source = l.codec_carrier_expr(&field.sce_type, "_v");
-    let signed = l.codec_carrier_signed(&field.sce_type);
+    let carrier = IntCarrier::held(l.codec_int_carrier(&field.sce_type), n);
     if n == 1 {
-        return emit(&go_byte_written(&source, signed));
+        return emit(&go_byte_written(&source, carrier));
     }
-    encode_multibyte_unified(&source, n, endian, crate::generator::Language::Go, signed)
+    encode_multibyte_unified(&source, n, endian, crate::generator::Language::Go, carrier)
         .into_iter()
         .map(|e| emit(&e))
         .collect::<Vec<_>>()
@@ -25023,11 +25094,11 @@ fn streaming_fixed_field_encode_kotlin_from_local(
 ) -> String {
     let endian = field.effective_endian(default_endian);
     let source = l.codec_carrier_expr(&field.sce_type, "_v");
-    let signed = l.codec_carrier_signed(&field.sce_type);
+    let carrier = IntCarrier::held(l.codec_int_carrier(&field.sce_type), n);
     if n == 1 {
         return format!(
             "            w.writeU8({})?.let {{ return it }}",
-            kotlin_byte_written(&source, signed)
+            kotlin_byte_written(&source, carrier)
         );
     }
     encode_multibyte_unified(
@@ -25035,7 +25106,7 @@ fn streaming_fixed_field_encode_kotlin_from_local(
         n,
         endian,
         crate::generator::Language::Kotlin,
-        signed,
+        carrier,
     )
     .into_iter()
     .map(|e| format!("            w.writeU8({e})?.let {{ return it }}"))
@@ -26332,13 +26403,16 @@ fn vle_encode_block(value_expr: &str, width_bits: u32, lang: crate::generator::L
 /// dotted-path form, the flags carrier and the bit-position/width
 /// triple) so the per-language local name and shift/mask literals can
 /// be composed without runtime metadata.
+///
+/// `carrier` is the integer the field's value is held in
+/// ([`LangCtx::codec_int_carrier`]): the decode of a fixed field is a value of
+/// it, whatever the bytes the field spans.
 fn generate_decode_expr(
     field: &CodecField,
     default_endian: Endian,
     lang: crate::generator::Language,
     fields: &[CodecField],
-    carrier_bits: Option<u32>,
-    signed: bool,
+    carrier: Option<IntCarrier>,
 ) -> String {
     use crate::generator::Language;
     let byte_off = field.byte_offset;
@@ -26350,34 +26424,59 @@ fn generate_decode_expr(
             let span = BitSpan::of(field, default_endian).expect("a fixed field has a span");
             // Bits of a word of two bytes or more (docs/adr/0095 §1).
             if !span.whole() && span.bytes > 1 {
-                return decode_bits_of_word(&span, carrier_bits, lang);
+                return decode_bits_of_word(&span, carrier.map(|c| c.bits), lang);
             }
             if bit_off > 0 || *bits < 8 {
+                // Bits of one byte, an unsigned number (docs/adr/0095 §3),
+                // zero-extended into the field's integer where it is wider
+                // than the byte.
+                let target = IntCarrier::held(carrier, 1).bits;
                 let mask = (1u64 << bits) - 1;
                 match lang {
                     Language::Cpp => format!(
-                        "static_cast<uint8_t>((raw[{byte_off}] >> {bit_off}) & 0x{mask:02X})"
+                        "static_cast<uint{target}_t>((raw[{byte_off}] >> {bit_off}) & 0x{mask:02X})"
                     ),
                     Language::Kotlin => format!(
-                        "((raw[{byte_off}].toInt() ushr {bit_off}) and 0x{mask:02X}).toUByte()"
+                        "((raw[{byte_off}].toInt() ushr {bit_off}) and 0x{mask:02X}).{}()",
+                        kotlin_unsigned_conversion(target)
                     ),
                     Language::C11 => {
-                        format!("(uint8_t)((raw[{byte_off}] >> {bit_off}) & 0x{mask:02X})")
+                        format!("(uint{target}_t)((raw[{byte_off}] >> {bit_off}) & 0x{mask:02X})")
                     }
                     // Drop the `>> 0` no-op for a bit-offset-0 field
                     // (clippy::identity_op).
-                    Language::Rust if bit_off == 0 => format!("raw[{byte_off}] & 0x{mask:02X}"),
-                    Language::Rust | Language::Go | Language::Python => {
+                    Language::Rust if bit_off == 0 && target == 8 => {
+                        format!("raw[{byte_off}] & 0x{mask:02X}")
+                    }
+                    Language::Rust if bit_off == 0 => {
+                        format!("(raw[{byte_off}] & 0x{mask:02X}) as u{target}")
+                    }
+                    Language::Rust if target == 8 => {
+                        format!("(raw[{byte_off}] >> {bit_off}) & 0x{mask:02X}")
+                    }
+                    Language::Rust => {
+                        format!("((raw[{byte_off}] >> {bit_off}) & 0x{mask:02X}) as u{target}")
+                    }
+                    Language::Go if target == 8 => {
+                        format!("(raw[{byte_off}] >> {bit_off}) & 0x{mask:02X}")
+                    }
+                    Language::Go => {
+                        format!("uint{target}((raw[{byte_off}] >> {bit_off}) & 0x{mask:02X})")
+                    }
+                    Language::Python => {
                         format!("(raw[{byte_off}] >> {bit_off}) & 0x{mask:02X}")
                     }
                     Language::Swift => no_swift_emitter("generate_decode_expr"),
                 }
             } else {
-                match bits {
-                    8 => byte_read(&format!("raw[{byte_off}]"), signed, lang),
-                    // A whole word of two bytes or more.
-                    _ => decode_multibyte_unified(byte_off, span.bytes, endian, lang, signed),
-                }
+                // A whole field: its bytes, as the integer it is held in.
+                whole_read(
+                    byte_off,
+                    span.bytes,
+                    endian,
+                    lang,
+                    IntCarrier::held(carrier, span.bytes),
+                )
             }
         }
         BitSize::Tail => match lang {
@@ -26599,7 +26698,13 @@ fn decode_bits_of_word(
         );
     }
     // The word is read unsigned, whatever its bits are taken as after.
-    let word = decode_multibyte_unified(span.byte, span.bytes, span.endian, lang, false);
+    let word = decode_multibyte_unified(
+        span.byte,
+        span.bytes,
+        span.endian,
+        lang,
+        IntCarrier::word(span.bytes),
+    );
     // The word's own integer in Rust, which `decode_multibyte_unified` reads
     // the bytes into.
     let word_bits = match span.bytes {
@@ -26620,15 +26725,37 @@ fn decode_bits_of_word(
     }
 }
 
-/// Generate multi-byte decode expression with endianness handling.
+/// The fold of the `byte_count` bytes from `raw[byte_off]` in `endian` into
+/// `carrier`, the integer the field is held in, which has at least
+/// `8 * byte_count` bits: the number the bytes make, zero-extended where the
+/// carrier is unsigned, and where it is signed their two's complement,
+/// sign-extended from their top bit (SCE_FORGE.md, "Where a fixed field's bits
+/// lie"). One byte reaches this fold only where its carrier is wider than a
+/// byte ([`whole_read`]).
+///
+/// A carrier as wide as the bytes is folded unsigned and the fold converted to
+/// the carrier, the reading of the same bits. A signed carrier wider than the
+/// bytes is folded in the signed type itself, which holds the unsigned number
+/// of the bytes, and the number's sign is taken by `(x ^ m) - m` with `m` its
+/// top bit: no operation of it overflows, and none leaves a language a choice
+/// (a left shift into the sign bit, or a right shift of a negative number).
 fn decode_multibyte_unified(
     byte_off: u32,
     byte_count: u32,
     endian: Endian,
     lang: crate::generator::Language,
-    signed: bool,
+    carrier: IntCarrier,
 ) -> String {
     use crate::generator::Language;
+
+    let width = carrier.bits;
+    // A signed field of fewer bits than its integer, sign-extended from its top
+    // bit.
+    let extends = carrier.signed && 8 * byte_count < width;
+    let sign_bit = 1u64 << (8 * byte_count - 1);
+    // The integer the bytes are folded in: the carrier's unsigned type, or the
+    // signed one where the fold is sign-extended.
+    let fold_sign = if extends { "" } else { "u" };
 
     // Build shift expressions for the appropriate endian ordering.
     let make_shifts = |le: bool| -> Vec<String> {
@@ -26638,23 +26765,18 @@ fn decode_multibyte_unified(
                 let off = byte_off + i;
                 match lang {
                     Language::Cpp => {
-                        let target = match byte_count {
-                            2 => "uint16_t",
-                            3 | 4 => "uint32_t",
-                            _ => "uint64_t",
-                        };
                         if shift == 0 {
                             format!("raw[{off}]")
                         } else {
-                            format!("(static_cast<{target}>(raw[{off}]) << {shift})")
+                            format!("(static_cast<{fold_sign}int{width}_t>(raw[{off}]) << {shift})")
                         }
                     }
                     // Kotlin masks an `Int` shift count to its five low
                     // bits, so a byte bound for bit 32 or above is widened
                     // to a `Long` first, whose count is masked to six: a
-                    // fold of more than four bytes is a fold of `Long`s.
+                    // fold for a carrier of 64 bits is a fold of `Long`s.
                     Language::Kotlin => {
-                        let byte = if byte_count > 4 {
+                        let byte = if width > 32 {
                             format!("(raw[{off}].toLong() and 0xFFL)")
                         } else {
                             format!("(raw[{off}].toInt() and 0xFF)")
@@ -26666,27 +26788,18 @@ fn decode_multibyte_unified(
                         }
                     }
                     Language::Rust => {
-                        let target = match byte_count {
-                            2 => "u16",
-                            3 | 4 => "u32",
-                            _ => "u64",
-                        };
+                        let target = if extends { "i" } else { "u" };
                         if shift == 0 {
-                            format!("raw[{off}] as {target}")
+                            format!("raw[{off}] as {target}{width}")
                         } else {
-                            format!("((raw[{off}] as {target}) << {shift})")
+                            format!("((raw[{off}] as {target}{width}) << {shift})")
                         }
                     }
                     Language::Go => {
-                        let target = match byte_count {
-                            2 => "uint16",
-                            3 | 4 => "uint32",
-                            _ => "uint64",
-                        };
                         if shift == 0 {
-                            format!("{target}(raw[{off}])")
+                            format!("{fold_sign}int{width}(raw[{off}])")
                         } else {
-                            format!("{target}(raw[{off}])<<{shift}")
+                            format!("{fold_sign}int{width}(raw[{off}])<<{shift}")
                         }
                     }
                     Language::Python => {
@@ -26697,15 +26810,10 @@ fn decode_multibyte_unified(
                         }
                     }
                     Language::C11 => {
-                        let target = match byte_count {
-                            2 => "uint16_t",
-                            3 | 4 => "uint32_t",
-                            _ => "uint64_t",
-                        };
                         if shift == 0 {
                             format!("raw[{off}]")
                         } else {
-                            format!("(({target})raw[{off}] << {shift})")
+                            format!("(({fold_sign}int{width}_t)raw[{off}] << {shift})")
                         }
                     }
                     Language::Swift => no_swift_emitter("decode_multibyte_unified"),
@@ -26726,28 +26834,60 @@ fn decode_multibyte_unified(
     };
 
     let joined = shifts.join(sep);
+    // The fold as one operand: in parentheses where it joins several bytes.
+    let operand = if byte_count == 1 {
+        joined.clone()
+    } else {
+        format!("({joined})")
+    };
+
+    // Python's integers have no width: the signed number is the two's
+    // complement of the fold's bits, computed, whatever the carrier.
+    if matches!(lang, Language::Python) {
+        return if carrier.signed {
+            format!("({operand} ^ 0x{sign_bit:X}) - 0x{sign_bit:X}")
+        } else {
+            joined
+        };
+    }
+    // The sign of a fold the carrier is wider than: the fold, a non-negative
+    // number of the signed type, less twice its top bit where that is set.
+    if extends {
+        return match lang {
+            Language::Kotlin => {
+                let long = if width > 32 { "L" } else { "" };
+                let narrow = if width == 16 { ".toShort()" } else { "" };
+                format!("(({operand} xor 0x{sign_bit:X}{long}) - 0x{sign_bit:X}{long}){narrow}")
+            }
+            Language::Cpp => {
+                format!("static_cast<int{width}_t>(({operand} ^ 0x{sign_bit:X}) - 0x{sign_bit:X})")
+            }
+            Language::C11 => {
+                format!("(int{width}_t)(({operand} ^ 0x{sign_bit:X}) - 0x{sign_bit:X})")
+            }
+            Language::Rust | Language::Go => {
+                format!("({operand} ^ 0x{sign_bit:X}) - 0x{sign_bit:X}")
+            }
+            Language::Python => unreachable!("answered above"),
+            Language::Swift => no_swift_emitter("decode_multibyte_unified"),
+        };
+    }
 
     // The fold is the unsigned number of the bytes, in the unsigned type of
-    // the width. A signed carrier is the signed type of that width, whose
-    // value the same bits are, two's complement: each language converts the
-    // fold to it, as `byte_read` converts one byte.
-    let width = match byte_count {
-        2 => 16,
-        3 | 4 => 32,
-        _ => 64,
-    };
+    // the carrier's width. A signed carrier as wide as the bytes is the signed
+    // type of that width, whose value the same bits are, two's complement:
+    // each language converts the fold to it, as `byte_read` converts one byte.
+    let signed = carrier.signed;
     match lang {
-        // Kotlin wraps in a conversion call to the carrier of the width: the
-        // unsigned type, or for a signed carrier the signed type of that
-        // width. The fold of four bytes is an `Int` already, and of more a
-        // `Long`.
+        // Kotlin wraps in a conversion call to the carrier: the unsigned type
+        // of its width, or for a signed carrier the signed type of that
+        // width. The fold for a carrier of 32 bits is an `Int` already, and of
+        // 64 a `Long`.
         Language::Kotlin => {
-            let to_type = match (byte_count, signed) {
-                (2, false) => ".toUShort()",
-                (3 | 4, false) => ".toUInt()",
-                (_, false) => ".toULong()",
-                (2, true) => ".toShort()",
-                (_, true) => "",
+            let to_type = match (width, signed) {
+                (_, false) => format!(".{}()", kotlin_unsigned_conversion(width)),
+                (16, true) => ".toShort()".to_string(),
+                (_, true) => String::new(),
             };
             format!("({joined}){to_type}")
         }
@@ -26773,13 +26913,8 @@ fn decode_multibyte_unified(
         Language::Rust if signed => format!("({joined}) as i{width}"),
         Language::Go if signed => format!("int{width}({joined})"),
         Language::C11 if signed => format!("(int{width}_t)({joined})"),
-        // Python's integers have no width: the signed number is the two's
-        // complement of the fold's bits, computed.
-        Language::Python if signed => {
-            let sign_bit = 1u64 << (8 * byte_count - 1);
-            format!("(({joined}) ^ 0x{sign_bit:X}) - 0x{sign_bit:X}")
-        }
-        Language::Rust | Language::Go | Language::C11 | Language::Python => joined,
+        Language::Rust | Language::Go | Language::C11 => joined,
+        Language::Python => unreachable!("answered above"),
         Language::Swift => no_swift_emitter("decode_multibyte_unified"),
     }
 }
@@ -27528,19 +27663,19 @@ fn encode_whole_field_read_as(
     // `LangCtx::codec_carrier_expr`.
     let field_ref = l.codec_carrier_expr(&field.sce_type, value);
     let span = BitSpan::of(field, default_endian).expect("a whole write is of a fixed field");
-    let signed = l.codec_carrier_signed(&field.sce_type);
+    // The integer the value is held in, which may have more bits than the
+    // field: the field's bytes are its low bytes.
+    let carrier = IntCarrier::held(l.codec_int_carrier(&field.sce_type), span.bytes);
 
     match span.bytes {
         1 => vec![match lang {
             Language::Cpp => unreachable!("{}", CPP_ENCODE_IS_PRINTED),
-            Language::Kotlin => kotlin_byte_written(&field_ref, signed),
-            Language::Rust => rust_byte_written(&field_ref, signed),
+            Language::Kotlin => kotlin_byte_written(&field_ref, carrier),
+            Language::Rust => rust_byte_written(&field_ref, carrier),
             Language::Go => format!("byte({field_ref})"),
             Language::Python => format!("{field_ref} & 0xFF"),
-            // C11 (return-by-value encode shape): field_ref already includes `self->`,
-            // and the value is a uint8_t, or an int8_t that C converts to the
-            // uint8_t of its bits (modulo 256), so no width cast is required.
-            Language::C11 => field_ref,
+            // C11 (return-by-value encode shape): field_ref already includes `self->`.
+            Language::C11 => c11_byte_written(&field_ref, carrier),
             Language::Swift => no_swift_emitter("encode_single_field_unified"),
         }],
         // Multi-byte fixed field: delegate to the encode byte-extraction
@@ -27548,7 +27683,7 @@ fn encode_whole_field_read_as(
         // already carries the per-language receiver prefix, so the same
         // shift / mask / narrow rules serve both this positional path and
         // the streaming `streaming_fixed_field_encode_*` wrappers.
-        bytes => encode_multibyte_unified(&field_ref, bytes, span.endian, lang, signed),
+        bytes => encode_multibyte_unified(&field_ref, bytes, span.endian, lang, carrier),
     }
 }
 
@@ -38341,7 +38476,7 @@ impl LangCtx {
     /// the integer itself, or an enum's carrier. A backend whose bytes read as
     /// an unsigned number reinterprets the number as the signed type of its
     /// width where this holds.
-    pub(crate) fn codec_carrier_signed(&self, ty: &SceType) -> bool {
+    fn codec_carrier_signed(&self, ty: &SceType) -> bool {
         match ty {
             SceType::Enum(r) => self
                 .enum_import(&r.alias)
@@ -38350,6 +38485,17 @@ impl LangCtx {
                 .is_some_and(SceType::is_signed),
             other => other.is_signed(),
         }
+    }
+
+    /// The integer a codec field of type `ty` holds its value in: the
+    /// integer's own width and sign, or an enum's carrier's
+    /// ([`IntCarrier`]). `None` for a type that is no integer, or an enum whose
+    /// import carries no carrier.
+    pub(crate) fn codec_int_carrier(&self, ty: &SceType) -> Option<IntCarrier> {
+        self.codec_carrier_bits(ty).map(|bits| IntCarrier {
+            bits,
+            signed: self.codec_carrier_signed(ty),
+        })
     }
 
     pub(crate) fn enum_from_underlying(&self, alias: &str) -> String {
