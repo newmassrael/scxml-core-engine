@@ -4,6 +4,11 @@
 # CMakeLists.txt).
 cmake_minimum_required(VERSION 3.20)
 
+# The platform's thread library as CMake names it on every platform
+# (Threads::Threads): `-pthread` or nothing on Linux, nothing on Windows, where
+# a library named `pthread` does not exist to link.
+find_package(Threads REQUIRED)
+
 # GoogleTest setup - FetchContent approach
 find_package(GTest QUIET)
 
@@ -28,11 +33,18 @@ if(NOT GTest_FOUND)
     FetchContent_MakeAvailable(googletest)
 
     # GoogleTest: Disable warnings-as-errors for external library builds
-    # This prevents GoogleTest internal warnings (e.g., char8_t conversion) from failing the build
-    target_compile_options(gtest PRIVATE -Wno-error -Wno-character-conversion)
-    target_compile_options(gtest_main PRIVATE -Wno-error -Wno-character-conversion)
-    target_compile_options(gmock PRIVATE -Wno-error -Wno-character-conversion)
-    target_compile_options(gmock_main PRIVATE -Wno-error -Wno-character-conversion)
+    # This prevents GoogleTest internal warnings (e.g., char8_t conversion) from failing the build.
+    # In the spelling of the command line that builds it: cl reads `-Wno-error` as a /W level
+    # and stops, and its own way to take /WX back is /WX-.
+    if(MSVC)
+        set(_sce_gtest_warning_options /WX-)
+    else()
+        set(_sce_gtest_warning_options -Wno-error -Wno-character-conversion)
+    endif()
+    foreach(_sce_gtest_target gtest gtest_main gmock gmock_main)
+        target_compile_options(${_sce_gtest_target} PRIVATE ${_sce_gtest_warning_options})
+    endforeach()
+    unset(_sce_gtest_warning_options)
 
     # Treat GoogleTest as system library for downstream consumers
     get_target_property(GTEST_INCLUDE_DIRS gtest INTERFACE_INCLUDE_DIRECTORIES)
@@ -84,13 +96,12 @@ endfunction()
 # SCE test configuration: Disable std::cout usage
 # ============================================================================
 include(${CMAKE_SOURCE_DIR}/cmake/SCETestWarnings.cmake)
+include(${CMAKE_SOURCE_DIR}/cmake/SCEForceInclude.cmake)
 
 function(apply_sce_test_policies target_name)
-    # Force include DisableStdOut.h to all test targets
-    target_compile_options(${target_name}
-        PRIVATE
-            -include ${CMAKE_SOURCE_DIR}/sce/include/common/DisableStdOut.h
-    )
+    # Force include DisableStdOut.h to all test targets, in the spelling of the
+    # compiler that builds them (cmake/SCEForceInclude.cmake)
+    sce_force_include(${target_name} PRIVATE ${CMAKE_SOURCE_DIR}/sce/include/common/DisableStdOut.h)
 
     # Expose the tests/ root so any target may include shared test-only
     # headers (e.g. common/TestUtils.h, common/TestScriptEngine.h).
@@ -1115,10 +1126,10 @@ add_executable(standard_host_scenario_test
 )
 
 # The reference host's cpp-httplib transport, held against a local server:
-# native only, since cpp-httplib is not built under Emscripten
-# (sce/CMakeLists.txt). The scenarios reach the host through a scripted
-# transport and run under Node as natively.
-if(NOT EMSCRIPTEN)
+# where cpp-httplib is built, which is natively with SCE_ENABLE_HTTP and never
+# under Emscripten (sce/CMakeLists.txt). The scenarios reach the host through a
+# scripted transport and run under Node as natively.
+if(TARGET httplib::httplib)
     target_sources(standard_host_scenario_test PRIVATE
         integration/AStandardHostHttplibTransportTest.cpp
     )
@@ -1141,12 +1152,19 @@ target_include_directories(standard_host_scenario_test
         ${CMAKE_SOURCE_DIR}/tests
 )
 
+# The tier every generated machine links, and no more: the machines are
+# `datamodel="sce-static"` and the reference host is header-only, so neither the
+# interpreter nor a script engine is reached. Built with MSVC, this is the whole of
+# SCE that the Windows lane compiles (.github/workflows/windows-msvc.yml).
 target_link_libraries(standard_host_scenario_test
     PRIVATE
-        sce_runtime
+        sce_base
         GTest::gtest_main
-        pthread
+        Threads::Threads
 )
+if(TARGET httplib::httplib)
+    target_link_libraries(standard_host_scenario_test PRIVATE httplib::httplib)
+endif()
 if(TARGET sce_host_cose)
     target_link_libraries(standard_host_scenario_test PRIVATE sce_host_cose)
 endif()

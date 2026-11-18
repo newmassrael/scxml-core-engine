@@ -121,10 +121,17 @@ endif()
 #
 # This is especially important for w3c_test_cli which links 240+ test runners
 
-# Check if lld is available
-find_program(LLD_LINKER NAMES ld.lld lld)
+# Check if lld is available. `-fuse-ld` is the GCC and Clang driver's option, so
+# the search is theirs: MSVC links with its own link.exe, which reads the option
+# as one it does not know, and the LLVM a Windows machine carries would be found
+# here and handed to it.
+if(NOT MSVC)
+    find_program(LLD_LINKER NAMES ld.lld lld)
+endif()
 
-if(LLD_LINKER)
+if(MSVC)
+    message(STATUS "Linking with the MSVC linker")
+elseif(LLD_LINKER)
     # Use lld for all linking
     set(CMAKE_EXE_LINKER_FLAGS "${CMAKE_EXE_LINKER_FLAGS} -fuse-ld=lld")
     set(CMAKE_SHARED_LINKER_FLAGS "${CMAKE_SHARED_LINKER_FLAGS} -fuse-ld=lld")
@@ -313,6 +320,16 @@ set(HTTPLIB_USE_ZSTD_IF_AVAILABLE OFF CACHE BOOL "Disable zstd compression suppo
 # Compilation options
 if(MSVC)
     add_compile_options(/W4 /WX)  # /WX: treat warnings as errors
+    # The sources are UTF-8, which cl reads in the system's code page unless told:
+    # a comment's em dash is then a warning (C4819, an error under /WX) on a
+    # machine set to another one, and a string literal's bytes change with it.
+    # /bigobj: a translation unit of generated machines and a test framework
+    # passes the 2^16 sections an object holds by default (C1128).
+    add_compile_options(/utf-8 /bigobj)
+    # The C library functions every platform has (getenv, fopen, strdup) are
+    # deprecated by the Microsoft C runtime in favour of its own *_s forms,
+    # which only it has (C4996). The portable names are the ones this tree calls.
+    add_compile_definitions(_CRT_SECURE_NO_WARNINGS _CRT_NONSTDC_NO_WARNINGS)
 else()
     add_compile_options(-Wall -Wextra -pedantic -Werror)  # -Werror: treat warnings as errors
 endif()

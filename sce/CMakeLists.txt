@@ -5,6 +5,7 @@
 # sce_runtime:   Full interpreter with Parser, StateMachine, Actions, Events
 
 include(${CMAKE_CURRENT_SOURCE_DIR}/../cmake/SCEVendoredSubdirectory.cmake)
+include(${CMAKE_CURRENT_SOURCE_DIR}/../cmake/SCEForceInclude.cmake)
 
 # Build options
 option(SCE_ENABLE_HTTP "Enable HTTP/BasicHTTPEventProcessor support (requires cpp-httplib)" ON)
@@ -290,14 +291,9 @@ endif()
 # Force include DisableStdOut.h for sce_base source files only.
 # ExternTemplates.h suppresses implicit std::basic_string<char>
 # instantiation so consumers don't drag sce_base archive members via
-# std::string weak-symbol resolution — see header for details.
-# SHELL: wrapper keeps -include + its argument as two separate tokens
-# (target_compile_options otherwise deduplicates the repeated -include).
-target_compile_options(sce_base
-    PRIVATE
-        "SHELL:-include common/ExternTemplates.h"
-        "SHELL:-include common/DisableStdOut.h"
-)
+# std::string weak-symbol resolution — see header for details. Spelled for the
+# compiler that builds the target (cmake/SCEForceInclude.cmake).
+sce_force_include(sce_base PRIVATE common/ExternTemplates.h common/DisableStdOut.h)
 
 target_compile_features(sce_base PUBLIC cxx_std_17)
 
@@ -398,10 +394,7 @@ if(SCE_HAS_SCRIPTING)
     )
 
     # Force include DisableStdOut.h for sce_scripting source files only
-    target_compile_options(sce_scripting
-        PRIVATE
-            -include common/DisableStdOut.h
-    )
+    sce_force_include(sce_scripting PRIVATE common/DisableStdOut.h)
 
     # Plain target references (no generator-expression wrapper): CMake's
     # install(EXPORT) only rewrites bare targets to their namespaced form
@@ -660,10 +653,7 @@ target_include_directories(sce_runtime
 )
 
 # Force include DisableStdOut.h for sce_runtime source files only
-target_compile_options(sce_runtime
-    PRIVATE
-        -include common/DisableStdOut.h
-)
+sce_force_include(sce_runtime PRIVATE common/DisableStdOut.h)
 
 # Commit stamp for the C++ diagnostic producer. Resolved further up (see
 # the SCE_GIT_COMMIT block); attached here because `src/parsing/Diagnostic.cpp`
