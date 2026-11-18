@@ -28,6 +28,7 @@
 #endif
 
 #include <algorithm>
+#include <chrono>
 #include <cstdint>
 #include <filesystem>
 #include <fstream>
@@ -770,6 +771,40 @@ TEST(AStandardHostScenario, TheSystemClockAnswersAMonotonicReadingThatDoesNotDec
     ASSERT_TRUE(zone && zone->kind == host::Outcome::Kind::Done);
     EXPECT_EQ(json::parse(zone->data).at("error"), "");
 }
+
+/// The system clock's zone (docs/SCE_HOST_FEATURES.md, section 2) on every platform: an offset some zone
+/// is at today, whole minutes between UTC-12 and UTC+14, and an identifier that is empty or names a zone
+/// within the 64 characters the result carries.
+TEST(AStandardHostScenario, TheSystemClockAnswersAnOffsetAZoneHasAndAnIdentifierOrNone) {
+    host::SystemClock clock;
+    const auto zone = clock.zone();
+    ASSERT_TRUE(zone.has_value());
+    EXPECT_GE(zone->utcOffsetS, -12 * 3600);
+    EXPECT_LE(zone->utcOffsetS, 14 * 3600);
+    EXPECT_EQ(zone->utcOffsetS % 60, 0);
+    EXPECT_LE(zone->id.size(), 64u);
+    if (!zone->id.empty()) {
+        EXPECT_TRUE(zone->id == "UTC" || zone->id.find('/') != std::string::npos) << zone->id;
+    }
+}
+
+#if defined(_WIN32) && defined(__cpp_lib_chrono) && __cpp_lib_chrono >= 201907L
+/// On Windows the standard library's own time zone, which reads the zone Windows is set to through the
+/// same system ICU, is the oracle: the clock answers the offset it says is in force now and, where the
+/// clock reaches ICU, names the zone it names.
+TEST(AStandardHostScenario, TheSystemClockOnWindowsAgreesWithTheStandardLibrarysCurrentZone) {
+    host::SystemClock clock;
+    const auto zone = clock.zone();
+    ASSERT_TRUE(zone.has_value());
+    const std::chrono::time_zone *current = std::chrono::current_zone();
+    const std::chrono::sys_info now = current->get_info(std::chrono::system_clock::now());
+    EXPECT_EQ(zone->utcOffsetS, static_cast<int32_t>(now.offset.count()));
+#if defined(SCE_STANDARD_HOST_SYSTEM_ICU)
+    ASSERT_FALSE(zone->id.empty());
+    EXPECT_EQ(std::chrono::locate_zone(zone->id), current) << zone->id;
+#endif
+}
+#endif
 
 TEST(AStandardHostScenario, AnOperationOutsideTheStandardSetIsNotServedAndANulKeyIsRefused) {
     host::ScriptedClock clock;

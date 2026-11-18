@@ -37,6 +37,17 @@
 #include "core/LogMacros.h"
 #include "core/TypedHostInvokeRequest.h"
 
+// The ICU Windows ships (Windows 10 1903 and later; <icu.h> of its SDK), through which the system clock
+// names the IANA zone Windows is set to. Its C interface only: no <windows.h>, so none of that header's
+// macros reach a file that includes this one. A Windows build without it answers the offset alone.
+#if defined(_WIN32) && defined(_MSC_VER) && __has_include(<icu.h>)
+#define SCE_STANDARD_HOST_SYSTEM_ICU 1
+#pragma warning(push, 0)
+#include <icu.h>
+#pragma warning(pop)
+#pragma comment(lib, "icu.lib")
+#endif
+
 namespace SCE::StandardHost {
 
 /// Every operation type of the standard host features, in the order the specification lists them.
@@ -142,14 +153,74 @@ public:
         return Reading{utc.count(), mono.count()};
     }
 
-    /// The offset in force now, and the identifier the TZ variable names when it names a zone, which the
-    /// C library has no other way to report.
+    /// The offset in force now, from the C library's local time, and the zone's IANA identifier where the
+    /// platform can name it (zoneId).
     std::optional<Zone> zone() override {
-        const std::time_t now = std::time(nullptr);
+        const auto offset = utcOffsetNow(std::time(nullptr));
+        if (!offset) {
+            return std::nullopt;
+        }
+        return Zone{zoneId(), *offset};
+    }
+
+private:
+    /// Seconds east of UTC in force at @p now. POSIX reports it with the local reading (`tm_gmtoff`);
+    /// the Windows C runtime does not, so there the local reading of @p now is read back as a UTC one,
+    /// and the distance between the two instants is the offset, daylight time included.
+    static std::optional<int32_t> utcOffsetNow(std::time_t now) {
         std::tm local{};
+#if defined(_WIN32)
+        if (localtime_s(&local, &now) != 0) {
+            return std::nullopt;
+        }
+        const std::time_t localAsUtc = _mkgmtime(&local);
+        if (localAsUtc == static_cast<std::time_t>(-1)) {
+            return std::nullopt;
+        }
+        return static_cast<int32_t>(localAsUtc - now);
+#else
         if (localtime_r(&now, &local) == nullptr) {
             return std::nullopt;
         }
+        return static_cast<int32_t>(local.tm_gmtoff);
+#endif
+    }
+
+#if defined(_WIN32)
+    /// The IANA identifier of the zone Windows is set to, which the system's ICU maps from the Windows
+    /// zone and the user's region, or empty where it cannot (no ICU, or a zone it does not know).
+    static std::string zoneId() {
+#if defined(SCE_STANDARD_HOST_SYSTEM_ICU)
+        // One unit more than the longest identifier the result carries (`zone_id`, 64), so a longer one
+        // is told apart from one that fits.
+        constexpr int32_t CAPACITY = 65;
+        UChar units[CAPACITY] = {};
+        UErrorCode status = U_ZERO_ERROR;
+        const int32_t length = ucal_getDefaultTimeZone(units, CAPACITY, &status);
+        if (U_FAILURE(status) || length <= 0 || length >= CAPACITY) {
+            return {};
+        }
+        std::string id;
+        for (int32_t i = 0; i < length; ++i) {
+            const auto unit = static_cast<uint32_t>(units[i]);
+            if (unit == 0 || unit > 0x7F) {
+                return {};
+            }
+            id.push_back(static_cast<char>(unit));
+        }
+        // ICU's answer when the Windows zone maps to none.
+        if (id == "Etc/Unknown") {
+            return {};
+        }
+        return id;
+#else
+        return {};
+#endif
+    }
+#else
+    /// The identifier the TZ variable names when it names a zone, which the C library has no other way
+    /// to report.
+    static std::string zoneId() {
         std::string id;
         if (const char *tz = std::getenv("TZ")) {
             id = tz;
@@ -160,10 +231,10 @@ public:
                 id.clear();
             }
         }
-        return Zone{id, static_cast<int32_t>(local.tm_gmtoff)};
+        return id;
     }
+#endif
 
-private:
     std::chrono::steady_clock::time_point origin_ = std::chrono::steady_clock::now();
 };
 
