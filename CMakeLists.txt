@@ -298,6 +298,10 @@ include(cmake/SCECodegen.cmake)
 include(cmake/dispatchers/qt.cmake)
 include(cmake/dispatchers/glib.cmake)
 
+# The COSE operations of the C++ reference host, on libsodium where it is found
+# (docs/adr/0107, D7): option SCE_HOST_COSE, target sce_host_cose.
+include(cmake/SCEHostCose.cmake)
+
 # Position independent code generation (for shared libraries)
 set(CMAKE_POSITION_INDEPENDENT_CODE ON)
 

@@ -1124,6 +1124,14 @@ if(NOT EMSCRIPTEN)
     )
 endif()
 
+# The reference host's COSE operations (docs/adr/0107, D7), in a build that found
+# libsodium (cmake/SCEHostCose.cmake): their own tests.
+if(TARGET sce_host_cose)
+    target_sources(standard_host_scenario_test PRIVATE
+        integration/AStandardHostCoseTest.cpp
+    )
+endif()
+
 target_include_directories(standard_host_scenario_test
     PRIVATE
         ${CMAKE_SOURCE_DIR}
@@ -1137,6 +1145,9 @@ target_link_libraries(standard_host_scenario_test
         GTest::gtest_main
         pthread
 )
+if(TARGET sce_host_cose)
+    target_link_libraries(standard_host_scenario_test PRIVATE sce_host_cose)
+endif()
 
 target_compile_definitions(standard_host_scenario_test
     PRIVATE
