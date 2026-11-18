@@ -1,5 +1,5 @@
 // SCE-GENERATED — DO NOT EDIT
-// source-hash: 2073d8a55462e1ce61d8a77293fdd2c141aceda8ad173303c5b84813ca22eeee
+// source-hash: a9c299ab96f6e6c2a694137962a3f363e82399bf22fbd9f4aa0018913d55ad58
 
 // SPDX-License-Identifier: AGPL-3.0-only WITH AdditionRef-SCE-Linking-Exception OR LicenseRef-SCE-Commercial
 // SPDX-FileCopyrightText: Copyright (c) 2025-2026 [Author of input SCXML file] (content derived from the input document)
@@ -78,8 +78,8 @@
 // closure; this one suspicious-category lint reads the `match` of a constant
 // default as a hand-written `unwrap_or_default`.
 #![allow(clippy::manual_unwrap_or_default)]
-#![doc = "SCE-MAP: static_host_kv.scxml:31 :: _machine"]
-// SCE-MAP: static_host_kv.scxml:31 :: _machine
+#![doc = "SCE-MAP: static_host_kv.scxml:32 :: _machine"]
+// SCE-MAP: static_host_kv.scxml:32 :: _machine
 
 use core::time::Duration;
 use sce_rust_runtime::{Engine, StatePolicy};
@@ -100,8 +100,9 @@ pub enum StaticHostKvState {
     Idle = 0,
     Getting = 1,
     Putting = 2,
-    Deleting = 3,
-    Walking = 4,
+    PuttingIf = 3,
+    Deleting = 4,
+    Walking = 5,
 }
 
 // ======================================================================
@@ -118,18 +119,21 @@ pub enum StaticHostKvEvent {
     DoneInvokeDel = 1,
     DoneInvokeGet = 2,
     DoneInvokePut = 3,
-    DoneInvokeWalk = 4,
-    ErrorExecution = 5,
-    ErrorInvokeDel = 6,
-    ErrorInvokeGet = 7,
-    ErrorInvokePut = 8,
-    ErrorInvokeWalk = 9,
-    HostKvDeleteRequest = 10,
-    HostKvGetRequest = 11,
-    HostKvNextKeyRequest = 12,
-    HostKvPutRequest = 13,
+    DoneInvokePutif = 4,
+    DoneInvokeWalk = 5,
+    ErrorExecution = 6,
+    ErrorInvokeDel = 7,
+    ErrorInvokeGet = 8,
+    ErrorInvokePut = 9,
+    ErrorInvokePutif = 10,
+    ErrorInvokeWalk = 11,
+    HostKvDeleteRequest = 12,
+    HostKvGetRequest = 13,
+    HostKvNextKeyRequest = 14,
+    HostKvPutRequest = 15,
+    HostKvPutIfRequest = 16,
     /// W3C SCXML 3.13: Sentinel for eventless transition dispatch
-    Null = 14,
+    Null = 17,
 }
 
 // ======================================================================
@@ -184,10 +188,12 @@ pub const STATIC_HOST_KV_TABLES: ::sce_rust_runtime::DocumentTables<'static> = {
             StateRow::new(None, StateKind::Atomic, StateId(1), None),
             // 2: putting
             StateRow::new(None, StateKind::Atomic, StateId(2), None),
-            // 3: deleting
+            // 3: putting_if
             StateRow::new(None, StateKind::Atomic, StateId(3), None),
-            // 4: walking
+            // 4: deleting
             StateRow::new(None, StateKind::Atomic, StateId(4), None),
+            // 5: walking
+            StateRow::new(None, StateKind::Atomic, StateId(5), None),
         ],
         histories: &[],
         transitions: &[
@@ -199,51 +205,62 @@ pub const STATIC_HOST_KV_TABLES: ::sce_rust_runtime::DocumentTables<'static> = {
             TransitionRow::new(Some(StateId(0)), Target::state(StateId(3)), false, true),
             // 3: idle, transition 3
             TransitionRow::new(Some(StateId(0)), Target::state(StateId(4)), false, true),
-            // 4: getting, transition 0
+            // 4: idle, transition 4
+            TransitionRow::new(Some(StateId(0)), Target::state(StateId(5)), false, true),
+            // 5: getting, transition 0
             TransitionRow::new(Some(StateId(1)), Target::state(StateId(0)), false, true),
-            // 5: getting, transition 1
+            // 6: getting, transition 1
             TransitionRow::new(Some(StateId(1)), Target::state(StateId(0)), false, true),
-            // 6: getting, transition 2
+            // 7: getting, transition 2
             TransitionRow::new(Some(StateId(1)), Target::state(StateId(0)), false, true),
-            // 7: getting, transition 3
+            // 8: getting, transition 3
             TransitionRow::new(Some(StateId(1)), Target::state(StateId(0)), false, true),
-            // 8: putting, transition 0
+            // 9: putting, transition 0
             TransitionRow::new(Some(StateId(2)), Target::state(StateId(0)), false, true),
-            // 9: putting, transition 1
+            // 10: putting, transition 1
             TransitionRow::new(Some(StateId(2)), Target::state(StateId(0)), false, true),
-            // 10: putting, transition 2
+            // 11: putting, transition 2
             TransitionRow::new(Some(StateId(2)), Target::state(StateId(0)), false, true),
-            // 11: putting, transition 3
+            // 12: putting, transition 3
             TransitionRow::new(Some(StateId(2)), Target::state(StateId(0)), false, true),
-            // 12: deleting, transition 0
+            // 13: putting_if, transition 0
             TransitionRow::new(Some(StateId(3)), Target::state(StateId(0)), false, true),
-            // 13: deleting, transition 1
+            // 14: putting_if, transition 1
             TransitionRow::new(Some(StateId(3)), Target::state(StateId(0)), false, true),
-            // 14: deleting, transition 2
+            // 15: putting_if, transition 2
             TransitionRow::new(Some(StateId(3)), Target::state(StateId(0)), false, true),
-            // 15: deleting, transition 3
+            // 16: putting_if, transition 3
             TransitionRow::new(Some(StateId(3)), Target::state(StateId(0)), false, true),
-            // 16: walking, transition 0
+            // 17: deleting, transition 0
             TransitionRow::new(Some(StateId(4)), Target::state(StateId(0)), false, true),
-            // 17: walking, transition 1
+            // 18: deleting, transition 1
             TransitionRow::new(Some(StateId(4)), Target::state(StateId(0)), false, true),
-            // 18: walking, transition 2
+            // 19: deleting, transition 2
             TransitionRow::new(Some(StateId(4)), Target::state(StateId(0)), false, true),
-            // 19: walking, transition 3
+            // 20: deleting, transition 3
             TransitionRow::new(Some(StateId(4)), Target::state(StateId(0)), false, true),
-            // 20: the document's initial transition
+            // 21: walking, transition 0
+            TransitionRow::new(Some(StateId(5)), Target::state(StateId(0)), false, true),
+            // 22: walking, transition 1
+            TransitionRow::new(Some(StateId(5)), Target::state(StateId(0)), false, true),
+            // 23: walking, transition 2
+            TransitionRow::new(Some(StateId(5)), Target::state(StateId(0)), false, true),
+            // 24: walking, transition 3
+            TransitionRow::new(Some(StateId(5)), Target::state(StateId(0)), false, true),
+            // 25: the document's initial transition
             TransitionRow::new(None, Target::state(StateId(0)), false, false),
         ],
         targets: &[],
-        initial: TransitionId(20),
+        initial: TransitionId(25),
         default_state: ::sce_rust_runtime::StateId(StaticHostKvState::Idle as u16),
-        null_event: ::sce_rust_runtime::EventId(14),
+        null_event: ::sce_rust_runtime::EventId(17),
         error_events: &[
-            ::sce_rust_runtime::EventId(5),
             ::sce_rust_runtime::EventId(6),
             ::sce_rust_runtime::EventId(7),
             ::sce_rust_runtime::EventId(8),
             ::sce_rust_runtime::EventId(9),
+            ::sce_rust_runtime::EventId(10),
+            ::sce_rust_runtime::EventId(11),
         ],
         history: None,
         parallel: None,
@@ -271,6 +288,7 @@ impl StaticHostKvEvent {
         StaticHostKvEvent::HostKvGetRequest,
         StaticHostKvEvent::HostKvNextKeyRequest,
         StaticHostKvEvent::HostKvPutRequest,
+        StaticHostKvEvent::HostKvPutIfRequest,
     ];
 }
 
@@ -286,12 +304,20 @@ pub struct StaticHostKvDoneInvokeGetPayload {
     pub error: ::sce_rust_runtime::SceString,
     pub found: bool,
     pub value: ::sce_rust_runtime::SceString,
+    pub version: ::sce_rust_runtime::SceString,
 }
 
 #[derive(Clone, Debug, Default, PartialEq)]
 pub struct StaticHostKvDoneInvokePutPayload {
     pub error: ::sce_rust_runtime::SceString,
     pub replaced: bool,
+}
+
+#[derive(Clone, Debug, Default, PartialEq)]
+pub struct StaticHostKvDoneInvokePutifPayload {
+    pub error: ::sce_rust_runtime::SceString,
+    pub written: bool,
+    pub version: ::sce_rust_runtime::SceString,
 }
 
 #[derive(Clone, Debug, Default, PartialEq)]
@@ -323,6 +349,13 @@ pub struct StaticHostKvHostKvPutRequestPayload {
     pub value: ::sce_rust_runtime::SceString,
 }
 
+#[derive(Clone, Debug, Default, PartialEq)]
+pub struct StaticHostKvHostKvPutIfRequestPayload {
+    pub key: ::sce_rust_runtime::SceString,
+    pub value: ::sce_rust_runtime::SceString,
+    pub expected_version: ::sce_rust_runtime::SceString,
+}
+
 /// NL→IR Item C1 Path A: typed `_event.data` payload sum for the EventSchema-imported events whose transition guards lowered natively.
 #[derive(Clone, Debug, Default, PartialEq)]
 pub enum StaticHostKvPayload {
@@ -332,11 +365,13 @@ pub enum StaticHostKvPayload {
     DoneInvokeDel(StaticHostKvDoneInvokeDelPayload),
     DoneInvokeGet(StaticHostKvDoneInvokeGetPayload),
     DoneInvokePut(StaticHostKvDoneInvokePutPayload),
+    DoneInvokePutif(StaticHostKvDoneInvokePutifPayload),
     DoneInvokeWalk(StaticHostKvDoneInvokeWalkPayload),
     HostKvDeleteRequest(StaticHostKvHostKvDeleteRequestPayload),
     HostKvGetRequest(StaticHostKvHostKvGetRequestPayload),
     HostKvNextKeyRequest(StaticHostKvHostKvNextKeyRequestPayload),
     HostKvPutRequest(StaticHostKvHostKvPutRequestPayload),
+    HostKvPutIfRequest(StaticHostKvHostKvPutIfRequestPayload),
 }
 
 /// NL→IR Item C1 Path A: per-event typed `_event.data` inject seam.
@@ -359,6 +394,10 @@ pub trait StaticHostKvInject {
     /// Binds the event name and payload variant in one call (name↔type
     /// pairing cannot be constructed inconsistently).
     fn raise_host_kv_put_request(&mut self, payload: StaticHostKvHostKvPutRequestPayload);
+    /// Typed `_event.data` inject for `host.kv.put_if.request`.
+    /// Binds the event name and payload variant in one call (name↔type
+    /// pairing cannot be constructed inconsistently).
+    fn raise_host_kv_put_if_request(&mut self, payload: StaticHostKvHostKvPutIfRequestPayload);
 }
 
 impl StaticHostKvInject for ::sce_rust_runtime::Engine<StaticHostKvPolicy> {
@@ -408,6 +447,19 @@ impl StaticHostKvInject for ::sce_rust_runtime::Engine<StaticHostKvPolicy> {
             &data,
         );
     }
+    fn raise_host_kv_put_if_request(&mut self, payload: StaticHostKvHostKvPutIfRequestPayload) {
+        let data = ::sce_rust_runtime::payload_wire(format_args!(
+            "{{\"key\":{}, \"value\":{}, \"expected_version\":{}}}",
+            ::sce_rust_runtime::event_payload::quote(&payload.key),
+            ::sce_rust_runtime::event_payload::quote(&payload.value),
+            ::sce_rust_runtime::event_payload::quote(&payload.expected_version)
+        ));
+        self.raise_external_typed_with_data(
+            StaticHostKvEvent::HostKvPutIfRequest,
+            StaticHostKvPayload::HostKvPutIfRequest(payload),
+            &data,
+        );
+    }
 }
 
 // ── SCE Accepted Subset §2.15: what a host observes of a sce-static machine ──
@@ -420,7 +472,10 @@ pub struct StaticHostKvData {
     pub outcome: ::sce_rust_runtime::portable::SceString<24>,
     pub found: bool,
     pub got: ::sce_rust_runtime::portable::SceString<4096>,
+    pub got_version: ::sce_rust_runtime::portable::SceString<20>,
     pub replaced: bool,
+    pub written: bool,
+    pub put_version: ::sce_rust_runtime::portable::SceString<20>,
     pub existed: bool,
     pub next_found: bool,
     pub next: ::sce_rust_runtime::portable::SceString<256>,
@@ -456,7 +511,10 @@ impl StaticHostKvObserve for Engine<StaticHostKvPolicy> {
                 outcome: policy.outcome.clone(),
                 found: policy.found,
                 got: policy.got.clone(),
+                got_version: policy.got_version.clone(),
                 replaced: policy.replaced,
+                written: policy.written,
+                put_version: policy.put_version.clone(),
                 existed: policy.existed,
                 next_found: policy.next_found,
                 next: policy.next.clone(),
@@ -570,10 +628,10 @@ impl StaticHostKvPersist for Engine<StaticHostKvPolicy> {
 
     const SHAPE: ::sce_rust_runtime::saved_state::SavedShape =
         ::sce_rust_runtime::saved_state::SavedShape {
-            first: "e559d3befc5e45e1282094d521bf840ef102b9aac72ec8ceabae510e75799631",
-            revised: "c60ffa2d12ab7efa1e75901224798d2ee7ca6959393d9395cb652f94b16cd632",
-            format2_first: "e559d3befc5e45e1282094d521bf840ef102b9aac72ec8ceabae510e75799631",
-            format2_revised: "c60ffa2d12ab7efa1e75901224798d2ee7ca6959393d9395cb652f94b16cd632",
+            first: "271cd1916904fb91125e68b7986be83fe000b9ac513b93afc0a104f49e785b4d",
+            revised: "5912d427fdb73c1b0e14fe20e14a8dd49d17995e885105ca0afdce4c1393633a",
+            format2_first: "271cd1916904fb91125e68b7986be83fe000b9ac513b93afc0a104f49e785b4d",
+            format2_revised: "5912d427fdb73c1b0e14fe20e14a8dd49d17995e885105ca0afdce4c1393633a",
             records: &[],
             enums: &[],
             features: None,
@@ -612,6 +670,10 @@ impl StaticHostKvPersist for Engine<StaticHostKvPolicy> {
                     ::sce_rust_runtime::saved_state::SavedValue::to_saved(&policy.prefix),
                 ),
                 (
+                    "expected".to_string(),
+                    ::sce_rust_runtime::saved_state::SavedValue::to_saved(&policy.expected),
+                ),
+                (
                     "outcome".to_string(),
                     ::sce_rust_runtime::saved_state::SavedValue::to_saved(&policy.outcome),
                 ),
@@ -624,8 +686,20 @@ impl StaticHostKvPersist for Engine<StaticHostKvPolicy> {
                     ::sce_rust_runtime::saved_state::SavedValue::to_saved(&policy.got),
                 ),
                 (
+                    "got_version".to_string(),
+                    ::sce_rust_runtime::saved_state::SavedValue::to_saved(&policy.got_version),
+                ),
+                (
                     "replaced".to_string(),
                     ::sce_rust_runtime::saved_state::SavedValue::to_saved(&policy.replaced),
+                ),
+                (
+                    "written".to_string(),
+                    ::sce_rust_runtime::saved_state::SavedValue::to_saved(&policy.written),
+                ),
+                (
+                    "put_version".to_string(),
+                    ::sce_rust_runtime::saved_state::SavedValue::to_saved(&policy.put_version),
                 ),
                 (
                     "existed".to_string(),
@@ -675,6 +749,11 @@ impl StaticHostKvPersist for Engine<StaticHostKvPolicy> {
                 saved.variable("prefix")?,
                 "prefix",
             )?;
+        let _: ::sce_rust_runtime::portable::SceString<20> =
+            ::sce_rust_runtime::saved_state::SavedValue::from_saved(
+                saved.variable("expected")?,
+                "expected",
+            )?;
         let _: ::sce_rust_runtime::portable::SceString<24> =
             ::sce_rust_runtime::saved_state::SavedValue::from_saved(
                 saved.variable("outcome")?,
@@ -686,10 +765,24 @@ impl StaticHostKvPersist for Engine<StaticHostKvPolicy> {
         )?;
         let _: ::sce_rust_runtime::portable::SceString<4096> =
             ::sce_rust_runtime::saved_state::SavedValue::from_saved(saved.variable("got")?, "got")?;
+        let _: ::sce_rust_runtime::portable::SceString<20> =
+            ::sce_rust_runtime::saved_state::SavedValue::from_saved(
+                saved.variable("got_version")?,
+                "got_version",
+            )?;
         let _: bool = ::sce_rust_runtime::saved_state::SavedValue::from_saved(
             saved.variable("replaced")?,
             "replaced",
         )?;
+        let _: bool = ::sce_rust_runtime::saved_state::SavedValue::from_saved(
+            saved.variable("written")?,
+            "written",
+        )?;
+        let _: ::sce_rust_runtime::portable::SceString<20> =
+            ::sce_rust_runtime::saved_state::SavedValue::from_saved(
+                saved.variable("put_version")?,
+                "put_version",
+            )?;
         let _: bool = ::sce_rust_runtime::saved_state::SavedValue::from_saved(
             saved.variable("existed")?,
             "existed",
@@ -737,6 +830,10 @@ impl StaticHostKvPersist for Engine<StaticHostKvPolicy> {
             saved.variable("prefix")?,
             "prefix",
         )?;
+        policy.expected = ::sce_rust_runtime::saved_state::SavedValue::from_saved(
+            saved.variable("expected")?,
+            "expected",
+        )?;
         policy.outcome = ::sce_rust_runtime::saved_state::SavedValue::from_saved(
             saved.variable("outcome")?,
             "outcome",
@@ -747,9 +844,21 @@ impl StaticHostKvPersist for Engine<StaticHostKvPolicy> {
         )?;
         policy.got =
             ::sce_rust_runtime::saved_state::SavedValue::from_saved(saved.variable("got")?, "got")?;
+        policy.got_version = ::sce_rust_runtime::saved_state::SavedValue::from_saved(
+            saved.variable("got_version")?,
+            "got_version",
+        )?;
         policy.replaced = ::sce_rust_runtime::saved_state::SavedValue::from_saved(
             saved.variable("replaced")?,
             "replaced",
+        )?;
+        policy.written = ::sce_rust_runtime::saved_state::SavedValue::from_saved(
+            saved.variable("written")?,
+            "written",
+        )?;
+        policy.put_version = ::sce_rust_runtime::saved_state::SavedValue::from_saved(
+            saved.variable("put_version")?,
+            "put_version",
         )?;
         policy.existed = ::sce_rust_runtime::saved_state::SavedValue::from_saved(
             saved.variable("existed")?,
@@ -782,6 +891,7 @@ pub struct StaticHostKvGetResult {
     pub error: ::sce_rust_runtime::SceString,
     pub found: bool,
     pub value: ::sce_rust_runtime::SceString,
+    pub version: ::sce_rust_runtime::SceString,
 }
 
 /// `sce:request`: the record the host is asked to start `<invoke id="put">`
@@ -798,6 +908,24 @@ pub struct StaticHostKvPutRequest {
 pub struct StaticHostKvPutResult {
     pub error: ::sce_rust_runtime::SceString,
     pub replaced: bool,
+}
+
+/// `sce:request`: the record the host is asked to start `<invoke id="putif">`
+/// with (SCE Accepted Subset §2.12).
+#[derive(Clone, Debug, Default, PartialEq)]
+pub struct StaticHostKvPutifRequest {
+    pub key: ::sce_rust_runtime::SceString,
+    pub value: ::sce_rust_runtime::SceString,
+    pub expected_version: ::sce_rust_runtime::SceString,
+}
+
+/// `sce:result`: the record the host completes `<invoke id="putif">`
+/// with (SCE Accepted Subset §2.12).
+#[derive(Clone, Debug, Default, PartialEq)]
+pub struct StaticHostKvPutifResult {
+    pub error: ::sce_rust_runtime::SceString,
+    pub written: bool,
+    pub version: ::sce_rust_runtime::SceString,
 }
 
 /// `sce:request`: the record the host is asked to start `<invoke id="del">`
@@ -847,10 +975,11 @@ impl StaticHostKvGetResult {
     /// The JSON `done.invoke.get` carries this record as.
     pub fn wire(&self) -> ::sce_rust_runtime::SceString {
         ::sce_rust_runtime::payload_wire(format_args!(
-            "{{\"error\":{}, \"found\":{}, \"value\":{}}}",
+            "{{\"error\":{}, \"found\":{}, \"value\":{}, \"version\":{}}}",
             ::sce_rust_runtime::event_payload::quote(&self.error),
             self.found,
-            ::sce_rust_runtime::event_payload::quote(&self.value)
+            ::sce_rust_runtime::event_payload::quote(&self.value),
+            ::sce_rust_runtime::event_payload::quote(&self.version)
         ))
     }
 }
@@ -874,6 +1003,18 @@ impl StaticHostKvPutResult {
             "{{\"error\":{}, \"replaced\":{}}}",
             ::sce_rust_runtime::event_payload::quote(&self.error),
             self.replaced
+        ))
+    }
+}
+
+impl StaticHostKvPutifResult {
+    /// The JSON `done.invoke.putif` carries this record as.
+    pub fn wire(&self) -> ::sce_rust_runtime::SceString {
+        ::sce_rust_runtime::payload_wire(format_args!(
+            "{{\"error\":{}, \"written\":{}, \"version\":{}}}",
+            ::sce_rust_runtime::event_payload::quote(&self.error),
+            self.written,
+            ::sce_rust_runtime::event_payload::quote(&self.version)
         ))
     }
 }
@@ -946,6 +1087,23 @@ pub trait StaticHostKvSceHostKvPutInvoker: Send + 'static {
     fn cancel_put(&mut self, token: u64);
 }
 
+/// The host side of this document's typed `<invoke type="sce-host-kv-put-if">`s
+/// (SCE Accepted Subset §2.12). Register it with
+/// `register_sce_host_kv_put_if_invoker`.
+pub trait StaticHostKvSceHostKvPutIfInvoker: Send + 'static {
+    /// §scxml-6.4: begin `<invoke id="putif">`. `token` names this start;
+    /// a host that finishes later hands it back to `complete_putif` (or
+    /// `complete_host_invoke`). `Some` completes the invocation now.
+    fn start_putif(
+        &mut self,
+        request: StaticHostKvPutifRequest,
+        token: u64,
+    ) -> Option<StaticHostKvPutifResult>;
+    /// §scxml-6.4: `<invoke id="putif">`'s state exited while the start
+    /// `token` names was still running. Stop it.
+    fn cancel_putif(&mut self, token: u64);
+}
+
 /// Registration and typed completion for this document's typed host-run
 /// invokes. Bring into scope with `use …::StaticHostKvHostInvokers;`.
 pub trait StaticHostKvHostInvokers {
@@ -981,6 +1139,14 @@ pub trait StaticHostKvHostInvokers {
     fn register_sce_host_kv_put_invoker<I>(&mut self, invoker: I)
     where
         I: StaticHostKvSceHostKvPutInvoker;
+    /// Complete `<invoke id="putif">`'s start `token` with its record —
+    /// `complete_host_invoke` with the record's JSON, so a stale or unknown
+    /// token is refused the same way (`false`).
+    fn complete_putif(&mut self, token: u64, result: StaticHostKvPutifResult) -> bool;
+    /// Register `invoker` as the handler for `type="sce-host-kv-put-if"`.
+    fn register_sce_host_kv_put_if_invoker<I>(&mut self, invoker: I)
+    where
+        I: StaticHostKvSceHostKvPutIfInvoker;
 }
 
 impl StaticHostKvHostInvokers for ::sce_rust_runtime::Engine<StaticHostKvPolicy> {
@@ -1122,6 +1288,45 @@ impl StaticHostKvHostInvokers for ::sce_rust_runtime::Engine<StaticHostKvPolicy>
             }
         });
     }
+    fn complete_putif(&mut self, token: u64, result: StaticHostKvPutifResult) -> bool {
+        self.complete_host_invoke("sce-host-kv-put-if", "putif", token, &result.wire())
+    }
+    fn register_sce_host_kv_put_if_invoker<I>(&mut self, mut invoker: I)
+    where
+        I: StaticHostKvSceHostKvPutIfInvoker,
+    {
+        self.register_invoker("sce-host-kv-put-if", move |event| match event {
+            ::sce_rust_runtime::HostInvokeEvent::Start(request) => match request.invoke_id.as_str()
+            {
+                "putif" => {
+                    let typed = StaticHostKvPutifRequest {
+                        key: ::sce_rust_runtime::request_field(&request, "key"),
+                        value: ::sce_rust_runtime::request_field(&request, "value"),
+                        expected_version: ::sce_rust_runtime::request_field(
+                            &request,
+                            "expected_version",
+                        ),
+                    };
+                    invoker.start_putif(typed, request.token).map(|result| {
+                        ::sce_rust_runtime::HostInvokeResponse {
+                            done_data: Some(StaticHostKvPutifResult::wire(&result)),
+                            ..::sce_rust_runtime::HostInvokeResponse::default()
+                        }
+                    })
+                }
+                _ => None,
+            },
+            ::sce_rust_runtime::HostInvokeEvent::Cancel(cancel) => {
+                match cancel.invoke_id.as_str() {
+                    "putif" => {
+                        invoker.cancel_putif(cancel.token);
+                        None
+                    }
+                    _ => None,
+                }
+            }
+        });
+    }
 }
 
 /// §scxml-6.4.1: the values a parent's `<param>` and `namelist` give this
@@ -1133,10 +1338,14 @@ pub struct StaticHostKvInvokeParams {
     pub value: Option<::sce_rust_runtime::portable::SceString<4096>>,
     pub after: Option<::sce_rust_runtime::portable::SceString<256>>,
     pub prefix: Option<::sce_rust_runtime::portable::SceString<256>>,
+    pub expected: Option<::sce_rust_runtime::portable::SceString<20>>,
     pub outcome: Option<::sce_rust_runtime::portable::SceString<24>>,
     pub found: Option<bool>,
     pub got: Option<::sce_rust_runtime::portable::SceString<4096>>,
+    pub got_version: Option<::sce_rust_runtime::portable::SceString<20>>,
     pub replaced: Option<bool>,
+    pub written: Option<bool>,
+    pub put_version: Option<::sce_rust_runtime::portable::SceString<20>>,
     pub existed: Option<bool>,
     pub next_found: Option<bool>,
     pub next: Option<::sce_rust_runtime::portable::SceString<256>>,
@@ -1159,14 +1368,22 @@ pub struct StaticHostKvPolicy {
     after: ::sce_rust_runtime::portable::SceString<256>,
     /// W3C SCXML 5.2: the `prefix` datamodel variable.
     prefix: ::sce_rust_runtime::portable::SceString<256>,
+    /// W3C SCXML 5.2: the `expected` datamodel variable.
+    expected: ::sce_rust_runtime::portable::SceString<20>,
     /// W3C SCXML 5.2: the `outcome` datamodel variable, published (`sce:direction="out"`).
     outcome: ::sce_rust_runtime::portable::SceString<24>,
     /// W3C SCXML 5.2: the `found` datamodel variable, published (`sce:direction="out"`).
     found: bool,
     /// W3C SCXML 5.2: the `got` datamodel variable, published (`sce:direction="out"`).
     got: ::sce_rust_runtime::portable::SceString<4096>,
+    /// W3C SCXML 5.2: the `got_version` datamodel variable, published (`sce:direction="out"`).
+    got_version: ::sce_rust_runtime::portable::SceString<20>,
     /// W3C SCXML 5.2: the `replaced` datamodel variable, published (`sce:direction="out"`).
     replaced: bool,
+    /// W3C SCXML 5.2: the `written` datamodel variable, published (`sce:direction="out"`).
+    written: bool,
+    /// W3C SCXML 5.2: the `put_version` datamodel variable, published (`sce:direction="out"`).
+    put_version: ::sce_rust_runtime::portable::SceString<20>,
     /// W3C SCXML 5.2: the `existed` datamodel variable, published (`sce:direction="out"`).
     existed: bool,
     /// W3C SCXML 5.2: the `next_found` datamodel variable, published (`sce:direction="out"`).
@@ -1212,12 +1429,19 @@ impl StaticHostKvPolicy {
             ::sce_rust_runtime::portable::sce_text!(256, "");
         let prefix: ::sce_rust_runtime::portable::SceString<256> =
             ::sce_rust_runtime::portable::sce_text!(256, "");
+        let expected: ::sce_rust_runtime::portable::SceString<20> =
+            ::sce_rust_runtime::portable::sce_text!(20, "");
         let outcome: ::sce_rust_runtime::portable::SceString<24> =
             ::sce_rust_runtime::portable::sce_text!(24, "");
         let found: bool = false;
         let got: ::sce_rust_runtime::portable::SceString<4096> =
             ::sce_rust_runtime::portable::sce_text!(4096, "");
+        let got_version: ::sce_rust_runtime::portable::SceString<20> =
+            ::sce_rust_runtime::portable::sce_text!(20, "");
         let replaced: bool = false;
+        let written: bool = false;
+        let put_version: ::sce_rust_runtime::portable::SceString<20> =
+            ::sce_rust_runtime::portable::sce_text!(20, "");
         let existed: bool = false;
         let next_found: bool = false;
         let next: ::sce_rust_runtime::portable::SceString<256> =
@@ -1229,10 +1453,14 @@ impl StaticHostKvPolicy {
             value,
             after,
             prefix,
+            expected,
             outcome,
             found,
             got,
+            got_version,
             replaced,
+            written,
+            put_version,
             existed,
             next_found,
             next,
@@ -1318,6 +1546,10 @@ impl StaticHostKvPolicy {
             Some(value) => value,
             None => ::sce_rust_runtime::portable::sce_text!(256, ""),
         };
+        let expected: ::sce_rust_runtime::portable::SceString<20> = match handed.expected {
+            Some(value) => value,
+            None => ::sce_rust_runtime::portable::sce_text!(20, ""),
+        };
         let outcome: ::sce_rust_runtime::portable::SceString<24> = match handed.outcome {
             Some(value) => value,
             None => ::sce_rust_runtime::portable::sce_text!(24, ""),
@@ -1330,9 +1562,21 @@ impl StaticHostKvPolicy {
             Some(value) => value,
             None => ::sce_rust_runtime::portable::sce_text!(4096, ""),
         };
+        let got_version: ::sce_rust_runtime::portable::SceString<20> = match handed.got_version {
+            Some(value) => value,
+            None => ::sce_rust_runtime::portable::sce_text!(20, ""),
+        };
         let replaced: bool = match handed.replaced {
             Some(value) => value,
             None => false,
+        };
+        let written: bool = match handed.written {
+            Some(value) => value,
+            None => false,
+        };
+        let put_version: ::sce_rust_runtime::portable::SceString<20> = match handed.put_version {
+            Some(value) => value,
+            None => ::sce_rust_runtime::portable::sce_text!(20, ""),
         };
         let existed: bool = match handed.existed {
             Some(value) => value,
@@ -1351,10 +1595,14 @@ impl StaticHostKvPolicy {
         self.value = value;
         self.after = after;
         self.prefix = prefix;
+        self.expected = expected;
         self.outcome = outcome;
         self.found = found;
         self.got = got;
+        self.got_version = got_version;
         self.replaced = replaced;
+        self.written = written;
+        self.put_version = put_version;
         self.existed = existed;
         self.next_found = next_found;
         self.next = next;
@@ -1378,10 +1626,28 @@ impl StaticHostKvPolicy {
         &self.got
     }
 
+    /// W3C SCXML 5.2: what the published `got_version` datamodel variable
+    /// holds now. Only the machine writes it.
+    pub fn got_version(&self) -> &str {
+        &self.got_version
+    }
+
     /// W3C SCXML 5.2: what the published `replaced` datamodel variable
     /// holds now. Only the machine writes it.
     pub fn replaced(&self) -> bool {
         self.replaced
+    }
+
+    /// W3C SCXML 5.2: what the published `written` datamodel variable
+    /// holds now. Only the machine writes it.
+    pub fn written(&self) -> bool {
+        self.written
+    }
+
+    /// W3C SCXML 5.2: what the published `put_version` datamodel variable
+    /// holds now. Only the machine writes it.
+    pub fn put_version(&self) -> &str {
+        &self.put_version
     }
 
     /// W3C SCXML 5.2: what the published `existed` datamodel variable
@@ -1688,6 +1954,124 @@ impl StaticHostKvPolicy {
                 }
                 continue;
             }
+            if pending.document_id == "putif" {
+                // §scxml-6.4.1: the host declared this `type`, so start the
+                // invocation rather than refusing it. The id handed over is
+                // the DOCUMENT's, not the per-instance one the defer queue
+                // carries: `done.invoke.<id>` is the name the author wrote a
+                // transition for, so it is the name the host must answer on.
+                // §scxml-6.4.1: what the request says is evaluated now, when
+                // the invocation starts, by the rules the other invoke kinds
+                // follow: an attribute that cannot be evaluated starts
+                // nothing, and a `<param>` that cannot is reported and left
+                // out (§scxml-5.7.1).
+                #[allow(unused_mut)]
+                let mut host_invoke_src = "".to_string();
+                #[allow(unused_mut)]
+                let mut host_invoke_content = "".to_string();
+                let mut host_invoke_params =
+                    std::collections::HashMap::<String, Vec<String>>::new();
+                // The same pairs as the data model holds them, for the
+                // request's `event_data`: one evaluation, read as text for
+                // `params` and typed for the JSON.
+                #[allow(unused_mut)]
+                let mut host_invoke_payload = ::std::collections::BTreeMap::<
+                    String,
+                    Vec<::sce_rust_runtime::ScriptValue>,
+                >::new();
+                // SCE Accepted Subset 2.12: `sce:request` makes the params a
+                // record, so each value is held to its field here, where the
+                // invocation starts; one that does not fit starts nothing.
+                #[allow(unused_mut)]
+                let mut request_refused = false;
+                if !request_refused {
+                    match (|| -> Result<::sce_rust_runtime::ScriptValue, sce_forge_runtime::algorithm::AlgorithmError> {
+                Ok(::sce_rust_runtime::ScriptValue::String(self.key.to_string()))
+            })() {
+                Ok(val) => {
+                    let s = ::sce_rust_runtime::helpers::event_data::script_value_to_wire_string(&val);
+                    host_invoke_params.entry("key".to_string()).or_default().push(s);
+                    host_invoke_payload.entry("key".to_string()).or_default().push(val);
+                }
+                Err(_) => {
+                    ::sce_rust_runtime::sce_log_error!("invoke typed param 'key' overflowed or failed");
+                    engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(StaticHostKvEvent::ErrorExecution, ::sce_rust_runtime::ErrorReason::ExpressionFailed, "<invoke> <param name='key'> cannot be its request field: it failed to evaluate"));
+                    request_refused = true;
+                }
+            }
+                }
+
+                if !request_refused {
+                    match (|| -> Result<::sce_rust_runtime::ScriptValue, sce_forge_runtime::algorithm::AlgorithmError> {
+                Ok(::sce_rust_runtime::ScriptValue::String(self.value.to_string()))
+            })() {
+                Ok(val) => {
+                    let s = ::sce_rust_runtime::helpers::event_data::script_value_to_wire_string(&val);
+                    host_invoke_params.entry("value".to_string()).or_default().push(s);
+                    host_invoke_payload.entry("value".to_string()).or_default().push(val);
+                }
+                Err(_) => {
+                    ::sce_rust_runtime::sce_log_error!("invoke typed param 'value' overflowed or failed");
+                    engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(StaticHostKvEvent::ErrorExecution, ::sce_rust_runtime::ErrorReason::ExpressionFailed, "<invoke> <param name='value'> cannot be its request field: it failed to evaluate"));
+                    request_refused = true;
+                }
+            }
+                }
+
+                if !request_refused {
+                    match (|| -> Result<::sce_rust_runtime::ScriptValue, sce_forge_runtime::algorithm::AlgorithmError> {
+                Ok(::sce_rust_runtime::ScriptValue::String(self.expected.to_string()))
+            })() {
+                Ok(val) => {
+                    let s = ::sce_rust_runtime::helpers::event_data::script_value_to_wire_string(&val);
+                    host_invoke_params.entry("expected_version".to_string()).or_default().push(s);
+                    host_invoke_payload.entry("expected_version".to_string()).or_default().push(val);
+                }
+                Err(_) => {
+                    ::sce_rust_runtime::sce_log_error!("invoke typed param 'expected_version' overflowed or failed");
+                    engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(StaticHostKvEvent::ErrorExecution, ::sce_rust_runtime::ErrorReason::ExpressionFailed, "<invoke> <param name='expected_version'> cannot be its request field: it failed to evaluate"));
+                    request_refused = true;
+                }
+            }
+                }
+
+                if request_refused {
+                    continue;
+                }
+                let started = engine.perform_host_invoke(sce_rust_runtime::HostInvokeRequest {
+                    processor_type: "sce-host-kv-put-if".to_string(),
+                    invoke_id: "putif".to_string(),
+                    src: host_invoke_src,
+                    params: host_invoke_params,
+                    event_data: if host_invoke_payload.is_empty() {
+                        String::new()
+                    } else {
+                        ::sce_rust_runtime::helpers::event_data::build_json_from_typed_params(
+                            &host_invoke_payload,
+                        )
+                    },
+                    content: host_invoke_content,
+                    // §scxml-6.4: which start this is belongs to the engine,
+                    // which assigns it when the invocation starts.
+                    token: 0,
+                    // A start the document makes is never a restart.
+                    restarted: false,
+                    // docs/adr/0045: the engine names the session that starts it.
+                    session_id: String::new(),
+                });
+                if !started {
+                    // §scxml-6.4.1: declared but no invoker registered. The
+                    // document asked for a process to be run and none was,
+                    // which is the same fact as an unsupported type — so the
+                    // same event, rather than a silence that reads as started.
+                    engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(
+                        StaticHostKvEvent::ErrorExecution,
+                        ::sce_rust_runtime::ErrorReason::ProcessorUnregistered,
+                        "<invoke> names an invoker the host declared but never registered",
+                    ));
+                }
+                continue;
+            }
             if pending.document_id == "walk" {
                 // §scxml-6.4.1: the host declared this `type`, so start the
                 // invocation rather than refusing it. The id handed over is
@@ -1881,6 +2265,7 @@ impl StatePolicy for StaticHostKvPolicy {
         StaticHostKvState::Idle,
         StaticHostKvState::Getting,
         StaticHostKvState::Putting,
+        StaticHostKvState::PuttingIf,
         StaticHostKvState::Deleting,
         StaticHostKvState::Walking,
     ];
@@ -1890,16 +2275,19 @@ impl StatePolicy for StaticHostKvPolicy {
         StaticHostKvEvent::DoneInvokeDel,
         StaticHostKvEvent::DoneInvokeGet,
         StaticHostKvEvent::DoneInvokePut,
+        StaticHostKvEvent::DoneInvokePutif,
         StaticHostKvEvent::DoneInvokeWalk,
         StaticHostKvEvent::ErrorExecution,
         StaticHostKvEvent::ErrorInvokeDel,
         StaticHostKvEvent::ErrorInvokeGet,
         StaticHostKvEvent::ErrorInvokePut,
+        StaticHostKvEvent::ErrorInvokePutif,
         StaticHostKvEvent::ErrorInvokeWalk,
         StaticHostKvEvent::HostKvDeleteRequest,
         StaticHostKvEvent::HostKvGetRequest,
         StaticHostKvEvent::HostKvNextKeyRequest,
         StaticHostKvEvent::HostKvPutRequest,
+        StaticHostKvEvent::HostKvPutIfRequest,
         StaticHostKvEvent::Null,
     ];
 
@@ -1919,7 +2307,7 @@ impl StatePolicy for StaticHostKvPolicy {
     // W3C SCXML 3.4: what this document's state tree bounds, read by the
     // generator and written here so every buffer of the runtime's microstep is
     // this document's size and no larger, in both profiles. Every set of states
-    // the runtime keeps is a bit vector of this document's 5 state(s); a
+    // the runtime keeps is a bit vector of this document's 6 state(s); a
     // configuration holds 1 state(s) at most, the capacity of the
     // `Configuration` a host reads; a selection enables 1 transition(s) at most, one from each atomic state
     // of one configuration; a microstep owes 0 history default(s) at most;
@@ -1931,10 +2319,10 @@ impl StatePolicy for StaticHostKvPolicy {
     // run store, the configuration and what each of the 0 `<history>`
     // element(s) recorded, one such set each, is the engine's.
     type Workspace =
-        ::sce_rust_runtime::Workspace<{ ::sce_rust_runtime::state_scratch(5) }, 1, 5, 0>;
+        ::sce_rust_runtime::Workspace<{ ::sce_rust_runtime::state_scratch(6) }, 1, 5, 0>;
     type RunStore = ::sce_rust_runtime::RunStore<
-        { ::sce_rust_runtime::state_words(5) },
-        { ::sce_rust_runtime::record_words(5, 0) },
+        { ::sce_rust_runtime::state_words(6) },
+        { ::sce_rust_runtime::record_words(6, 0) },
         0,
     >;
     type Configuration = StaticHostKvConfiguration;
@@ -1981,16 +2369,19 @@ impl StatePolicy for StaticHostKvPolicy {
             StaticHostKvEvent::DoneInvokeDel => "done.invoke.del",
             StaticHostKvEvent::DoneInvokeGet => "done.invoke.get",
             StaticHostKvEvent::DoneInvokePut => "done.invoke.put",
+            StaticHostKvEvent::DoneInvokePutif => "done.invoke.putif",
             StaticHostKvEvent::DoneInvokeWalk => "done.invoke.walk",
             StaticHostKvEvent::ErrorExecution => "error.execution",
             StaticHostKvEvent::ErrorInvokeDel => "error.invoke.del",
             StaticHostKvEvent::ErrorInvokeGet => "error.invoke.get",
             StaticHostKvEvent::ErrorInvokePut => "error.invoke.put",
+            StaticHostKvEvent::ErrorInvokePutif => "error.invoke.putif",
             StaticHostKvEvent::ErrorInvokeWalk => "error.invoke.walk",
             StaticHostKvEvent::HostKvDeleteRequest => "host.kv.delete.request",
             StaticHostKvEvent::HostKvGetRequest => "host.kv.get.request",
             StaticHostKvEvent::HostKvNextKeyRequest => "host.kv.next_key.request",
             StaticHostKvEvent::HostKvPutRequest => "host.kv.put.request",
+            StaticHostKvEvent::HostKvPutIfRequest => "host.kv.put_if.request",
             StaticHostKvEvent::Null => "",
         }
     }
@@ -2001,23 +2392,26 @@ impl StatePolicy for StaticHostKvPolicy {
             "done.invoke.del" => Some(StaticHostKvEvent::DoneInvokeDel),
             "done.invoke.get" => Some(StaticHostKvEvent::DoneInvokeGet),
             "done.invoke.put" => Some(StaticHostKvEvent::DoneInvokePut),
+            "done.invoke.putif" => Some(StaticHostKvEvent::DoneInvokePutif),
             "done.invoke.walk" => Some(StaticHostKvEvent::DoneInvokeWalk),
             "error.execution" => Some(StaticHostKvEvent::ErrorExecution),
             "error.invoke.del" => Some(StaticHostKvEvent::ErrorInvokeDel),
             "error.invoke.get" => Some(StaticHostKvEvent::ErrorInvokeGet),
             "error.invoke.put" => Some(StaticHostKvEvent::ErrorInvokePut),
+            "error.invoke.putif" => Some(StaticHostKvEvent::ErrorInvokePutif),
             "error.invoke.walk" => Some(StaticHostKvEvent::ErrorInvokeWalk),
             "host.kv.delete.request" => Some(StaticHostKvEvent::HostKvDeleteRequest),
             "host.kv.get.request" => Some(StaticHostKvEvent::HostKvGetRequest),
             "host.kv.next_key.request" => Some(StaticHostKvEvent::HostKvNextKeyRequest),
             "host.kv.put.request" => Some(StaticHostKvEvent::HostKvPutRequest),
+            "host.kv.put_if.request" => Some(StaticHostKvEvent::HostKvPutIfRequest),
             _ => None,
         }
     }
 
     // §scxml-6.4: these invokes are run by the host, so their `done.invoke`
     // is accepted only through `Engine::complete_host_invoke`.
-    const HOST_INVOKE_IDS: &'static [&'static str] = &["get", "put", "del", "walk"];
+    const HOST_INVOKE_IDS: &'static [&'static str] = &["get", "put", "putif", "del", "walk"];
 
     fn get_state_name(state: Self::State) -> &'static str {
         match state {
@@ -2025,6 +2419,7 @@ impl StatePolicy for StaticHostKvPolicy {
             StaticHostKvState::Getting => "getting",
             StaticHostKvState::Idle => "idle",
             StaticHostKvState::Putting => "putting",
+            StaticHostKvState::PuttingIf => "putting_if",
             StaticHostKvState::Walking => "walking",
         }
     }
@@ -2038,6 +2433,7 @@ impl StatePolicy for StaticHostKvPolicy {
             "getting" => Some(StaticHostKvState::Getting),
             "idle" => Some(StaticHostKvState::Idle),
             "putting" => Some(StaticHostKvState::Putting),
+            "putting_if" => Some(StaticHostKvState::PuttingIf),
             "walking" => Some(StaticHostKvState::Walking),
             _ => None,
         }
@@ -2088,6 +2484,7 @@ impl StatePolicy for StaticHostKvPolicy {
                         error: fields.text("error", 24)?,
                         found: fields.truth("found")?,
                         value: fields.text("value", 4096)?,
+                        version: fields.text("version", 20)?,
                     });
             }
             StaticHostKvEvent::DoneInvokePut => {
@@ -2096,6 +2493,15 @@ impl StatePolicy for StaticHostKvPolicy {
                     StaticHostKvPayload::DoneInvokePut(StaticHostKvDoneInvokePutPayload {
                         error: fields.text("error", 24)?,
                         replaced: fields.truth("replaced")?,
+                    });
+            }
+            StaticHostKvEvent::DoneInvokePutif => {
+                let fields = ::sce_rust_runtime::event_payload::PayloadFields::decode(data)?;
+                self.pending_payload =
+                    StaticHostKvPayload::DoneInvokePutif(StaticHostKvDoneInvokePutifPayload {
+                        error: fields.text("error", 24)?,
+                        written: fields.truth("written")?,
+                        version: fields.text("version", 20)?,
                     });
             }
             StaticHostKvEvent::DoneInvokeWalk => {
@@ -2139,6 +2545,16 @@ impl StatePolicy for StaticHostKvPolicy {
                         value: fields.text("value", 4096)?,
                     });
             }
+            StaticHostKvEvent::HostKvPutIfRequest => {
+                let fields = ::sce_rust_runtime::event_payload::PayloadFields::decode(data)?;
+                self.pending_payload = StaticHostKvPayload::HostKvPutIfRequest(
+                    StaticHostKvHostKvPutIfRequestPayload {
+                        key: fields.text("key", 256)?,
+                        value: fields.text("value", 4096)?,
+                        expected_version: fields.text("expected_version", 20)?,
+                    },
+                );
+            }
             _ => {}
         }
         Ok(())
@@ -2149,8 +2565,8 @@ impl StatePolicy for StaticHostKvPolicy {
     // ======================================================================
 
     // W3C SCXML 3.7: Execute <onentry> actions for a state
-    #[doc = "SCE-MAP: static_host_kv.scxml:31 :: _machine"]
-    // SCE-MAP: static_host_kv.scxml:31 :: _machine
+    #[doc = "SCE-MAP: static_host_kv.scxml:32 :: _machine"]
+    // SCE-MAP: static_host_kv.scxml:32 :: _machine
     fn execute_entry_actions(
         &mut self,
         state: Self::State,
@@ -2159,7 +2575,7 @@ impl StatePolicy for StaticHostKvPolicy {
     ) {
         match state {
             StaticHostKvState::Deleting => {
-                // SCE-MAP: static_host_kv.scxml:112 :: deleting :: _state_body
+                // SCE-MAP: static_host_kv.scxml:147 :: deleting :: _state_body
                 // §scxml-6.4.1: `type` names an invoker the HOST declared to
                 // this build. Deferred exactly like the refused arm above and
                 // for the same reason — §scxml-6.4 orders invokes after the
@@ -2180,7 +2596,7 @@ impl StatePolicy for StaticHostKvPolicy {
                 }
             }
             StaticHostKvState::Getting => {
-                // SCE-MAP: static_host_kv.scxml:72 :: getting :: _state_body
+                // SCE-MAP: static_host_kv.scxml:84 :: getting :: _state_body
                 // §scxml-6.4.1: `type` names an invoker the HOST declared to
                 // this build. Deferred exactly like the refused arm above and
                 // for the same reason — §scxml-6.4 orders invokes after the
@@ -2201,7 +2617,7 @@ impl StatePolicy for StaticHostKvPolicy {
                 }
             }
             StaticHostKvState::Putting => {
-                // SCE-MAP: static_host_kv.scxml:92 :: putting :: _state_body
+                // SCE-MAP: static_host_kv.scxml:105 :: putting :: _state_body
                 // §scxml-6.4.1: `type` names an invoker the HOST declared to
                 // this build. Deferred exactly like the refused arm above and
                 // for the same reason — §scxml-6.4 orders invokes after the
@@ -2221,8 +2637,29 @@ impl StatePolicy for StaticHostKvPolicy {
                     );
                 }
             }
+            StaticHostKvState::PuttingIf => {
+                // SCE-MAP: static_host_kv.scxml:125 :: putting_if :: _state_body
+                // §scxml-6.4.1: `type` names an invoker the HOST declared to
+                // this build. Deferred exactly like the refused arm above and
+                // for the same reason — §scxml-6.4 orders invokes after the
+                // macrostep settles, and a state that exits first must never
+                // have started anything. Only the execute step differs: a
+                // dispatch into the host's invoker instead of a raise.
+                {
+                    let generated_invoke_id =
+                        format!("{}.{}.putif", "putting_if", self as *const _ as usize);
+                    sce_rust_runtime::invoke::defer_invoke(
+                        &mut self.pending_invokes,
+                        sce_rust_runtime::invoke::PendingInvoke {
+                            invoke_id: generated_invoke_id,
+                            state: StaticHostKvState::PuttingIf,
+                            document_id: "putif",
+                        },
+                    );
+                }
+            }
             StaticHostKvState::Walking => {
-                // SCE-MAP: static_host_kv.scxml:131 :: walking :: _state_body
+                // SCE-MAP: static_host_kv.scxml:166 :: walking :: _state_body
                 // §scxml-6.4.1: `type` names an invoker the HOST declared to
                 // this build. Deferred exactly like the refused arm above and
                 // for the same reason — §scxml-6.4 orders invokes after the
@@ -2253,8 +2690,8 @@ impl StatePolicy for StaticHostKvPolicy {
     // recorded runs nothing.
 
     // W3C SCXML 3.8: Execute <onexit> actions for a state
-    #[doc = "SCE-MAP: static_host_kv.scxml:31 :: _machine"]
-    // SCE-MAP: static_host_kv.scxml:31 :: _machine
+    #[doc = "SCE-MAP: static_host_kv.scxml:32 :: _machine"]
+    // SCE-MAP: static_host_kv.scxml:32 :: _machine
     fn execute_exit_actions(
         &mut self,
         state: Self::State,
@@ -2313,6 +2750,20 @@ impl StatePolicy for StaticHostKvPolicy {
                 // the emitted chain does not need its own bookkeeping.
                 engine.cancel_host_invoke("sce-host-kv-put", "put");
             }
+            StaticHostKvState::PuttingIf => {
+                // W3C SCXML 6.4: Cancel pending invokes for exited state.
+                // Covers §scxml-6.4.1 entries: an invoke whose state exits
+                // before the macrostep ends never runs, so it raises nothing.
+                sce_rust_runtime::invoke::cancel_invokes_for_state(
+                    &mut self.pending_invokes,
+                    StaticHostKvState::PuttingIf,
+                );
+                // §scxml-6.4: the host's invocation ends with the state that
+                // started it. Unconditional here: the engine knows whether
+                // this one ever started and stays silent when it did not, so
+                // the emitted chain does not need its own bookkeeping.
+                engine.cancel_host_invoke("sce-host-kv-put-if", "putif");
+            }
             StaticHostKvState::Walking => {
                 // W3C SCXML 6.4: Cancel pending invokes for exited state.
                 // Covers §scxml-6.4.1 entries: an invoke whose state exits
@@ -2336,8 +2787,8 @@ impl StatePolicy for StaticHostKvPolicy {
     // enables, as its row of the tables, which holds its targets and its
     // type. The engine walks the atomic states and their ancestors and keeps
     // the ordered set. `Event::Null` asks for eventless transitions.
-    #[doc = "SCE-MAP: static_host_kv.scxml:31 :: _machine"]
-    // SCE-MAP: static_host_kv.scxml:31 :: _machine
+    #[doc = "SCE-MAP: static_host_kv.scxml:32 :: _machine"]
+    // SCE-MAP: static_host_kv.scxml:32 :: _machine
     fn first_enabled_transition(
         &mut self,
         state: Self::State,
@@ -2350,25 +2801,25 @@ impl StatePolicy for StaticHostKvPolicy {
                     if matches!(&self.pending_payload, StaticHostKvPayload::DoneInvokeDel(ev) if ev.error == "")
                     {
                         // deleting, transition 0
-                        return Some(::sce_rust_runtime::TransitionId(12));
+                        return Some(::sce_rust_runtime::TransitionId(17));
                     }
                 }
                 if event == StaticHostKvEvent::DoneInvokeDel {
                     {
                         // deleting, transition 1
-                        return Some(::sce_rust_runtime::TransitionId(13));
+                        return Some(::sce_rust_runtime::TransitionId(18));
                     }
                 }
                 if event == StaticHostKvEvent::ErrorInvokeDel {
                     {
                         // deleting, transition 2
-                        return Some(::sce_rust_runtime::TransitionId(14));
+                        return Some(::sce_rust_runtime::TransitionId(19));
                     }
                 }
                 if event == StaticHostKvEvent::ErrorExecution {
                     {
                         // deleting, transition 3
-                        return Some(::sce_rust_runtime::TransitionId(15));
+                        return Some(::sce_rust_runtime::TransitionId(20));
                     }
                 }
                 None
@@ -2378,25 +2829,25 @@ impl StatePolicy for StaticHostKvPolicy {
                     if matches!(&self.pending_payload, StaticHostKvPayload::DoneInvokeGet(ev) if ev.error == "")
                     {
                         // getting, transition 0
-                        return Some(::sce_rust_runtime::TransitionId(4));
+                        return Some(::sce_rust_runtime::TransitionId(5));
                     }
                 }
                 if event == StaticHostKvEvent::DoneInvokeGet {
                     {
                         // getting, transition 1
-                        return Some(::sce_rust_runtime::TransitionId(5));
+                        return Some(::sce_rust_runtime::TransitionId(6));
                     }
                 }
                 if event == StaticHostKvEvent::ErrorInvokeGet {
                     {
                         // getting, transition 2
-                        return Some(::sce_rust_runtime::TransitionId(6));
+                        return Some(::sce_rust_runtime::TransitionId(7));
                     }
                 }
                 if event == StaticHostKvEvent::ErrorExecution {
                     {
                         // getting, transition 3
-                        return Some(::sce_rust_runtime::TransitionId(7));
+                        return Some(::sce_rust_runtime::TransitionId(8));
                     }
                 }
                 None
@@ -2414,16 +2865,22 @@ impl StatePolicy for StaticHostKvPolicy {
                         return Some(::sce_rust_runtime::TransitionId(1));
                     }
                 }
-                if event == StaticHostKvEvent::HostKvDeleteRequest {
+                if event == StaticHostKvEvent::HostKvPutIfRequest {
                     {
                         // idle, transition 2
                         return Some(::sce_rust_runtime::TransitionId(2));
                     }
                 }
-                if event == StaticHostKvEvent::HostKvNextKeyRequest {
+                if event == StaticHostKvEvent::HostKvDeleteRequest {
                     {
                         // idle, transition 3
                         return Some(::sce_rust_runtime::TransitionId(3));
+                    }
+                }
+                if event == StaticHostKvEvent::HostKvNextKeyRequest {
+                    {
+                        // idle, transition 4
+                        return Some(::sce_rust_runtime::TransitionId(4));
                     }
                 }
                 None
@@ -2433,25 +2890,53 @@ impl StatePolicy for StaticHostKvPolicy {
                     if matches!(&self.pending_payload, StaticHostKvPayload::DoneInvokePut(ev) if ev.error == "")
                     {
                         // putting, transition 0
-                        return Some(::sce_rust_runtime::TransitionId(8));
+                        return Some(::sce_rust_runtime::TransitionId(9));
                     }
                 }
                 if event == StaticHostKvEvent::DoneInvokePut {
                     {
                         // putting, transition 1
-                        return Some(::sce_rust_runtime::TransitionId(9));
+                        return Some(::sce_rust_runtime::TransitionId(10));
                     }
                 }
                 if event == StaticHostKvEvent::ErrorInvokePut {
                     {
                         // putting, transition 2
-                        return Some(::sce_rust_runtime::TransitionId(10));
+                        return Some(::sce_rust_runtime::TransitionId(11));
                     }
                 }
                 if event == StaticHostKvEvent::ErrorExecution {
                     {
                         // putting, transition 3
-                        return Some(::sce_rust_runtime::TransitionId(11));
+                        return Some(::sce_rust_runtime::TransitionId(12));
+                    }
+                }
+                None
+            }
+            StaticHostKvState::PuttingIf => {
+                if event == StaticHostKvEvent::DoneInvokePutif {
+                    if matches!(&self.pending_payload, StaticHostKvPayload::DoneInvokePutif(ev) if ev.error == "")
+                    {
+                        // putting_if, transition 0
+                        return Some(::sce_rust_runtime::TransitionId(13));
+                    }
+                }
+                if event == StaticHostKvEvent::DoneInvokePutif {
+                    {
+                        // putting_if, transition 1
+                        return Some(::sce_rust_runtime::TransitionId(14));
+                    }
+                }
+                if event == StaticHostKvEvent::ErrorInvokePutif {
+                    {
+                        // putting_if, transition 2
+                        return Some(::sce_rust_runtime::TransitionId(15));
+                    }
+                }
+                if event == StaticHostKvEvent::ErrorExecution {
+                    {
+                        // putting_if, transition 3
+                        return Some(::sce_rust_runtime::TransitionId(16));
                     }
                 }
                 None
@@ -2461,25 +2946,25 @@ impl StatePolicy for StaticHostKvPolicy {
                     if matches!(&self.pending_payload, StaticHostKvPayload::DoneInvokeWalk(ev) if ev.error == "")
                     {
                         // walking, transition 0
-                        return Some(::sce_rust_runtime::TransitionId(16));
+                        return Some(::sce_rust_runtime::TransitionId(21));
                     }
                 }
                 if event == StaticHostKvEvent::DoneInvokeWalk {
                     {
                         // walking, transition 1
-                        return Some(::sce_rust_runtime::TransitionId(17));
+                        return Some(::sce_rust_runtime::TransitionId(22));
                     }
                 }
                 if event == StaticHostKvEvent::ErrorInvokeWalk {
                     {
                         // walking, transition 2
-                        return Some(::sce_rust_runtime::TransitionId(18));
+                        return Some(::sce_rust_runtime::TransitionId(23));
                     }
                 }
                 if event == StaticHostKvEvent::ErrorExecution {
                     {
                         // walking, transition 3
-                        return Some(::sce_rust_runtime::TransitionId(19));
+                        return Some(::sce_rust_runtime::TransitionId(24));
                     }
                 }
                 None
@@ -2491,8 +2976,8 @@ impl StatePolicy for StaticHostKvPolicy {
     // W3C SCXML 3.13: a transition's executable content, run by the engine
     // between the microstep's exits and its entries. `transition` is a
     // written transition's row, one whose row says it has content.
-    #[doc = "SCE-MAP: static_host_kv.scxml:31 :: _machine"]
-    // SCE-MAP: static_host_kv.scxml:31 :: _machine
+    #[doc = "SCE-MAP: static_host_kv.scxml:32 :: _machine"]
+    // SCE-MAP: static_host_kv.scxml:32 :: _machine
     fn execute_transition_content(
         &mut self,
         transition: ::sce_rust_runtime::TransitionId,
@@ -2500,8 +2985,8 @@ impl StatePolicy for StaticHostKvPolicy {
     ) {
         match transition.0 {
             // deleting, transition 0
-            12 => {
-                // SCE-MAP: static_host_kv.scxml:116 :: deleting :: _transition_0
+            17 => {
+                // SCE-MAP: static_host_kv.scxml:151 :: deleting :: _transition_0
                 // W3C SCXML 3.13: Transition 0 actions
                 let ev = match &self.pending_payload {
                     StaticHostKvPayload::DoneInvokeDel(ev) => ev.clone(),
@@ -2531,8 +3016,8 @@ impl StatePolicy for StaticHostKvPolicy {
                 }
             }
             // deleting, transition 1
-            13 => {
-                // SCE-MAP: static_host_kv.scxml:120 :: deleting :: _transition_1
+            18 => {
+                // SCE-MAP: static_host_kv.scxml:155 :: deleting :: _transition_1
                 // W3C SCXML 3.13: Transition 1 actions
                 let ev = match &self.pending_payload {
                     StaticHostKvPayload::DoneInvokeDel(ev) => ev.clone(),
@@ -2561,8 +3046,8 @@ impl StatePolicy for StaticHostKvPolicy {
                 }
             }
             // deleting, transition 2
-            14 => {
-                // SCE-MAP: static_host_kv.scxml:123 :: deleting :: _transition_2
+            19 => {
+                // SCE-MAP: static_host_kv.scxml:158 :: deleting :: _transition_2
                 // W3C SCXML 3.13: Transition 2 actions
                 // W3C SCXML 4.9: a transition's content is one block; an error ends it.
                 'action_block: {
@@ -2587,8 +3072,8 @@ impl StatePolicy for StaticHostKvPolicy {
                 }
             }
             // deleting, transition 3
-            15 => {
-                // SCE-MAP: static_host_kv.scxml:126 :: deleting :: _transition_3
+            20 => {
+                // SCE-MAP: static_host_kv.scxml:161 :: deleting :: _transition_3
                 // W3C SCXML 3.13: Transition 3 actions
                 // W3C SCXML 4.9: a transition's content is one block; an error ends it.
                 'action_block: {
@@ -2613,8 +3098,8 @@ impl StatePolicy for StaticHostKvPolicy {
                 }
             }
             // getting, transition 0
-            4 => {
-                // SCE-MAP: static_host_kv.scxml:76 :: getting :: _transition_0
+            5 => {
+                // SCE-MAP: static_host_kv.scxml:88 :: getting :: _transition_0
                 // W3C SCXML 3.13: Transition 0 actions
                 let ev = match &self.pending_payload {
                     StaticHostKvPayload::DoneInvokeGet(ev) => ev.clone(),
@@ -2643,6 +3128,25 @@ impl StatePolicy for StaticHostKvPolicy {
                         break 'action_block; // W3C SCXML 4.9: the error ends the block
                     }
 
+                    // W3C SCXML 5.3: <assign location="got_version">
+                    let sce_failed =
+                        match (|| -> Result<(), sce_forge_runtime::algorithm::AlgorithmError> {
+                            self.got_version =
+                                ::sce_rust_runtime::portable::SceString::<20>::from_text(
+                                    &&ev.version[..],
+                                )?;
+                            Ok(())
+                        })() {
+                            Ok(()) => false,
+                            Err(_) => {
+                                engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(StaticHostKvEvent::ErrorExecution, ::sce_rust_runtime::ErrorReason::ExpressionFailed, "<assign location='got_version'>: an integer operation overflowed or failed"));
+                                true
+                            }
+                        };
+                    if sce_failed {
+                        break 'action_block; // W3C SCXML 4.9: the error ends the block
+                    }
+
                     // W3C SCXML 5.3: <assign location="outcome">
                     let sce_failed =
                         match (|| -> Result<(), sce_forge_runtime::algorithm::AlgorithmError> {
@@ -2662,8 +3166,8 @@ impl StatePolicy for StaticHostKvPolicy {
                 }
             }
             // getting, transition 1
-            5 => {
-                // SCE-MAP: static_host_kv.scxml:81 :: getting :: _transition_1
+            6 => {
+                // SCE-MAP: static_host_kv.scxml:94 :: getting :: _transition_1
                 // W3C SCXML 3.13: Transition 1 actions
                 let ev = match &self.pending_payload {
                     StaticHostKvPayload::DoneInvokeGet(ev) => ev.clone(),
@@ -2692,8 +3196,8 @@ impl StatePolicy for StaticHostKvPolicy {
                 }
             }
             // getting, transition 2
-            6 => {
-                // SCE-MAP: static_host_kv.scxml:84 :: getting :: _transition_2
+            7 => {
+                // SCE-MAP: static_host_kv.scxml:97 :: getting :: _transition_2
                 // W3C SCXML 3.13: Transition 2 actions
                 // W3C SCXML 4.9: a transition's content is one block; an error ends it.
                 'action_block: {
@@ -2718,8 +3222,8 @@ impl StatePolicy for StaticHostKvPolicy {
                 }
             }
             // getting, transition 3
-            7 => {
-                // SCE-MAP: static_host_kv.scxml:87 :: getting :: _transition_3
+            8 => {
+                // SCE-MAP: static_host_kv.scxml:100 :: getting :: _transition_3
                 // W3C SCXML 3.13: Transition 3 actions
                 // W3C SCXML 4.9: a transition's content is one block; an error ends it.
                 'action_block: {
@@ -2745,7 +3249,7 @@ impl StatePolicy for StaticHostKvPolicy {
             }
             // idle, transition 0
             0 => {
-                // SCE-MAP: static_host_kv.scxml:56 :: idle :: _transition_0
+                // SCE-MAP: static_host_kv.scxml:63 :: idle :: _transition_0
                 // W3C SCXML 3.13: Transition 0 actions
                 let ev = match &self.pending_payload {
                     StaticHostKvPayload::HostKvGetRequest(ev) => ev.clone(),
@@ -2774,7 +3278,7 @@ impl StatePolicy for StaticHostKvPolicy {
             }
             // idle, transition 1
             1 => {
-                // SCE-MAP: static_host_kv.scxml:59 :: idle :: _transition_1
+                // SCE-MAP: static_host_kv.scxml:66 :: idle :: _transition_1
                 // W3C SCXML 3.13: Transition 1 actions
                 let ev = match &self.pending_payload {
                     StaticHostKvPayload::HostKvPutRequest(ev) => ev.clone(),
@@ -2822,8 +3326,75 @@ impl StatePolicy for StaticHostKvPolicy {
             }
             // idle, transition 2
             2 => {
-                // SCE-MAP: static_host_kv.scxml:63 :: idle :: _transition_2
+                // SCE-MAP: static_host_kv.scxml:70 :: idle :: _transition_2
                 // W3C SCXML 3.13: Transition 2 actions
+                let ev = match &self.pending_payload {
+                    StaticHostKvPayload::HostKvPutIfRequest(ev) => ev.clone(),
+                    _ => return,
+                };
+                // W3C SCXML 4.9: a transition's content is one block; an error ends it.
+                'action_block: {
+                    // W3C SCXML 5.3: <assign location="key">
+                    let sce_failed =
+                        match (|| -> Result<(), sce_forge_runtime::algorithm::AlgorithmError> {
+                            self.key = ::sce_rust_runtime::portable::SceString::<256>::from_text(
+                                &&ev.key[..],
+                            )?;
+                            Ok(())
+                        })() {
+                            Ok(()) => false,
+                            Err(_) => {
+                                engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(StaticHostKvEvent::ErrorExecution, ::sce_rust_runtime::ErrorReason::ExpressionFailed, "<assign location='key'>: an integer operation overflowed or failed"));
+                                true
+                            }
+                        };
+                    if sce_failed {
+                        break 'action_block; // W3C SCXML 4.9: the error ends the block
+                    }
+
+                    // W3C SCXML 5.3: <assign location="value">
+                    let sce_failed =
+                        match (|| -> Result<(), sce_forge_runtime::algorithm::AlgorithmError> {
+                            self.value =
+                                ::sce_rust_runtime::portable::SceString::<4096>::from_text(
+                                    &&ev.value[..],
+                                )?;
+                            Ok(())
+                        })() {
+                            Ok(()) => false,
+                            Err(_) => {
+                                engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(StaticHostKvEvent::ErrorExecution, ::sce_rust_runtime::ErrorReason::ExpressionFailed, "<assign location='value'>: an integer operation overflowed or failed"));
+                                true
+                            }
+                        };
+                    if sce_failed {
+                        break 'action_block; // W3C SCXML 4.9: the error ends the block
+                    }
+
+                    // W3C SCXML 5.3: <assign location="expected">
+                    let sce_failed =
+                        match (|| -> Result<(), sce_forge_runtime::algorithm::AlgorithmError> {
+                            self.expected =
+                                ::sce_rust_runtime::portable::SceString::<20>::from_text(
+                                    &&ev.expected_version[..],
+                                )?;
+                            Ok(())
+                        })() {
+                            Ok(()) => false,
+                            Err(_) => {
+                                engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(StaticHostKvEvent::ErrorExecution, ::sce_rust_runtime::ErrorReason::ExpressionFailed, "<assign location='expected'>: an integer operation overflowed or failed"));
+                                true
+                            }
+                        };
+                    if sce_failed {
+                        break 'action_block; // W3C SCXML 4.9: the error ends the block
+                    }
+                }
+            }
+            // idle, transition 3
+            3 => {
+                // SCE-MAP: static_host_kv.scxml:75 :: idle :: _transition_3
+                // W3C SCXML 3.13: Transition 3 actions
                 let ev = match &self.pending_payload {
                     StaticHostKvPayload::HostKvDeleteRequest(ev) => ev.clone(),
                     _ => return,
@@ -2849,10 +3420,10 @@ impl StatePolicy for StaticHostKvPolicy {
                     }
                 }
             }
-            // idle, transition 3
-            3 => {
-                // SCE-MAP: static_host_kv.scxml:66 :: idle :: _transition_3
-                // W3C SCXML 3.13: Transition 3 actions
+            // idle, transition 4
+            4 => {
+                // SCE-MAP: static_host_kv.scxml:78 :: idle :: _transition_4
+                // W3C SCXML 3.13: Transition 4 actions
                 let ev = match &self.pending_payload {
                     StaticHostKvPayload::HostKvNextKeyRequest(ev) => ev.clone(),
                     _ => return,
@@ -2898,8 +3469,8 @@ impl StatePolicy for StaticHostKvPolicy {
                 }
             }
             // putting, transition 0
-            8 => {
-                // SCE-MAP: static_host_kv.scxml:97 :: putting :: _transition_0
+            9 => {
+                // SCE-MAP: static_host_kv.scxml:110 :: putting :: _transition_0
                 // W3C SCXML 3.13: Transition 0 actions
                 let ev = match &self.pending_payload {
                     StaticHostKvPayload::DoneInvokePut(ev) => ev.clone(),
@@ -2929,8 +3500,8 @@ impl StatePolicy for StaticHostKvPolicy {
                 }
             }
             // putting, transition 1
-            9 => {
-                // SCE-MAP: static_host_kv.scxml:101 :: putting :: _transition_1
+            10 => {
+                // SCE-MAP: static_host_kv.scxml:114 :: putting :: _transition_1
                 // W3C SCXML 3.13: Transition 1 actions
                 let ev = match &self.pending_payload {
                     StaticHostKvPayload::DoneInvokePut(ev) => ev.clone(),
@@ -2959,8 +3530,8 @@ impl StatePolicy for StaticHostKvPolicy {
                 }
             }
             // putting, transition 2
-            10 => {
-                // SCE-MAP: static_host_kv.scxml:104 :: putting :: _transition_2
+            11 => {
+                // SCE-MAP: static_host_kv.scxml:117 :: putting :: _transition_2
                 // W3C SCXML 3.13: Transition 2 actions
                 // W3C SCXML 4.9: a transition's content is one block; an error ends it.
                 'action_block: {
@@ -2985,8 +3556,140 @@ impl StatePolicy for StaticHostKvPolicy {
                 }
             }
             // putting, transition 3
-            11 => {
-                // SCE-MAP: static_host_kv.scxml:107 :: putting :: _transition_3
+            12 => {
+                // SCE-MAP: static_host_kv.scxml:120 :: putting :: _transition_3
+                // W3C SCXML 3.13: Transition 3 actions
+                // W3C SCXML 4.9: a transition's content is one block; an error ends it.
+                'action_block: {
+                    // W3C SCXML 5.3: <assign location="outcome">
+                    let sce_failed =
+                        match (|| -> Result<(), sce_forge_runtime::algorithm::AlgorithmError> {
+                            self.outcome =
+                                ::sce_rust_runtime::portable::SceString::<24>::from_text(
+                                    &"refused",
+                                )?;
+                            Ok(())
+                        })() {
+                            Ok(()) => false,
+                            Err(_) => {
+                                engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(StaticHostKvEvent::ErrorExecution, ::sce_rust_runtime::ErrorReason::ExpressionFailed, "<assign location='outcome'>: an integer operation overflowed or failed"));
+                                true
+                            }
+                        };
+                    if sce_failed {
+                        break 'action_block; // W3C SCXML 4.9: the error ends the block
+                    }
+                }
+            }
+            // putting_if, transition 0
+            13 => {
+                // SCE-MAP: static_host_kv.scxml:131 :: putting_if :: _transition_0
+                // W3C SCXML 3.13: Transition 0 actions
+                let ev = match &self.pending_payload {
+                    StaticHostKvPayload::DoneInvokePutif(ev) => ev.clone(),
+                    _ => return,
+                };
+                // W3C SCXML 4.9: a transition's content is one block; an error ends it.
+                'action_block: {
+                    // W3C SCXML 5.3: <assign location="written">
+                    self.written = ev.written;
+
+                    // W3C SCXML 5.3: <assign location="put_version">
+                    let sce_failed =
+                        match (|| -> Result<(), sce_forge_runtime::algorithm::AlgorithmError> {
+                            self.put_version =
+                                ::sce_rust_runtime::portable::SceString::<20>::from_text(
+                                    &&ev.version[..],
+                                )?;
+                            Ok(())
+                        })() {
+                            Ok(()) => false,
+                            Err(_) => {
+                                engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(StaticHostKvEvent::ErrorExecution, ::sce_rust_runtime::ErrorReason::ExpressionFailed, "<assign location='put_version'>: an integer operation overflowed or failed"));
+                                true
+                            }
+                        };
+                    if sce_failed {
+                        break 'action_block; // W3C SCXML 4.9: the error ends the block
+                    }
+
+                    // W3C SCXML 5.3: <assign location="outcome">
+                    let sce_failed =
+                        match (|| -> Result<(), sce_forge_runtime::algorithm::AlgorithmError> {
+                            self.outcome =
+                                ::sce_rust_runtime::portable::SceString::<24>::from_text(&"done")?;
+                            Ok(())
+                        })() {
+                            Ok(()) => false,
+                            Err(_) => {
+                                engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(StaticHostKvEvent::ErrorExecution, ::sce_rust_runtime::ErrorReason::ExpressionFailed, "<assign location='outcome'>: an integer operation overflowed or failed"));
+                                true
+                            }
+                        };
+                    if sce_failed {
+                        break 'action_block; // W3C SCXML 4.9: the error ends the block
+                    }
+                }
+            }
+            // putting_if, transition 1
+            14 => {
+                // SCE-MAP: static_host_kv.scxml:136 :: putting_if :: _transition_1
+                // W3C SCXML 3.13: Transition 1 actions
+                let ev = match &self.pending_payload {
+                    StaticHostKvPayload::DoneInvokePutif(ev) => ev.clone(),
+                    _ => return,
+                };
+                // W3C SCXML 4.9: a transition's content is one block; an error ends it.
+                'action_block: {
+                    // W3C SCXML 5.3: <assign location="outcome">
+                    let sce_failed =
+                        match (|| -> Result<(), sce_forge_runtime::algorithm::AlgorithmError> {
+                            self.outcome =
+                                ::sce_rust_runtime::portable::SceString::<24>::from_text(
+                                    &&ev.error[..],
+                                )?;
+                            Ok(())
+                        })() {
+                            Ok(()) => false,
+                            Err(_) => {
+                                engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(StaticHostKvEvent::ErrorExecution, ::sce_rust_runtime::ErrorReason::ExpressionFailed, "<assign location='outcome'>: an integer operation overflowed or failed"));
+                                true
+                            }
+                        };
+                    if sce_failed {
+                        break 'action_block; // W3C SCXML 4.9: the error ends the block
+                    }
+                }
+            }
+            // putting_if, transition 2
+            15 => {
+                // SCE-MAP: static_host_kv.scxml:139 :: putting_if :: _transition_2
+                // W3C SCXML 3.13: Transition 2 actions
+                // W3C SCXML 4.9: a transition's content is one block; an error ends it.
+                'action_block: {
+                    // W3C SCXML 5.3: <assign location="outcome">
+                    let sce_failed =
+                        match (|| -> Result<(), sce_forge_runtime::algorithm::AlgorithmError> {
+                            self.outcome =
+                                ::sce_rust_runtime::portable::SceString::<24>::from_text(
+                                    &"deadline",
+                                )?;
+                            Ok(())
+                        })() {
+                            Ok(()) => false,
+                            Err(_) => {
+                                engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(StaticHostKvEvent::ErrorExecution, ::sce_rust_runtime::ErrorReason::ExpressionFailed, "<assign location='outcome'>: an integer operation overflowed or failed"));
+                                true
+                            }
+                        };
+                    if sce_failed {
+                        break 'action_block; // W3C SCXML 4.9: the error ends the block
+                    }
+                }
+            }
+            // putting_if, transition 3
+            16 => {
+                // SCE-MAP: static_host_kv.scxml:142 :: putting_if :: _transition_3
                 // W3C SCXML 3.13: Transition 3 actions
                 // W3C SCXML 4.9: a transition's content is one block; an error ends it.
                 'action_block: {
@@ -3011,8 +3714,8 @@ impl StatePolicy for StaticHostKvPolicy {
                 }
             }
             // walking, transition 0
-            16 => {
-                // SCE-MAP: static_host_kv.scxml:136 :: walking :: _transition_0
+            21 => {
+                // SCE-MAP: static_host_kv.scxml:171 :: walking :: _transition_0
                 // W3C SCXML 3.13: Transition 0 actions
                 let ev = match &self.pending_payload {
                     StaticHostKvPayload::DoneInvokeWalk(ev) => ev.clone(),
@@ -3060,8 +3763,8 @@ impl StatePolicy for StaticHostKvPolicy {
                 }
             }
             // walking, transition 1
-            17 => {
-                // SCE-MAP: static_host_kv.scxml:141 :: walking :: _transition_1
+            22 => {
+                // SCE-MAP: static_host_kv.scxml:176 :: walking :: _transition_1
                 // W3C SCXML 3.13: Transition 1 actions
                 let ev = match &self.pending_payload {
                     StaticHostKvPayload::DoneInvokeWalk(ev) => ev.clone(),
@@ -3090,8 +3793,8 @@ impl StatePolicy for StaticHostKvPolicy {
                 }
             }
             // walking, transition 2
-            18 => {
-                // SCE-MAP: static_host_kv.scxml:144 :: walking :: _transition_2
+            23 => {
+                // SCE-MAP: static_host_kv.scxml:179 :: walking :: _transition_2
                 // W3C SCXML 3.13: Transition 2 actions
                 // W3C SCXML 4.9: a transition's content is one block; an error ends it.
                 'action_block: {
@@ -3116,8 +3819,8 @@ impl StatePolicy for StaticHostKvPolicy {
                 }
             }
             // walking, transition 3
-            19 => {
-                // SCE-MAP: static_host_kv.scxml:147 :: walking :: _transition_3
+            24 => {
+                // SCE-MAP: static_host_kv.scxml:182 :: walking :: _transition_3
                 // W3C SCXML 3.13: Transition 3 actions
                 // W3C SCXML 4.9: a transition's content is one block; an error ends it.
                 'action_block: {
@@ -3158,6 +3861,7 @@ impl StatePolicy for StaticHostKvPolicy {
         match (processor_type, invoke_id) {
             ("sce-host-kv-get", "get") => Some(StaticHostKvState::Getting),
             ("sce-host-kv-put", "put") => Some(StaticHostKvState::Putting),
+            ("sce-host-kv-put-if", "putif") => Some(StaticHostKvState::PuttingIf),
             ("sce-host-kv-delete", "del") => Some(StaticHostKvState::Deleting),
             ("sce-host-kv-next-key", "walk") => Some(StaticHostKvState::Walking),
             _ => None,

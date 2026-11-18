@@ -1,5 +1,5 @@
 // SCE-GENERATED — DO NOT EDIT
-// source-hash: 2073d8a55462e1ce61d8a77293fdd2c141aceda8ad173303c5b84813ca22eeee
+// source-hash: a9c299ab96f6e6c2a694137962a3f363e82399bf22fbd9f4aa0018913d55ad58
 
 
 // SPDX-License-Identifier: AGPL-3.0-only WITH AdditionRef-SCE-Linking-Exception OR LicenseRef-SCE-Commercial
@@ -20,7 +20,7 @@
 // entry/exit actions, and event processing.
 
 
-// SCE-MAP: static_host_kv.scxml:31 :: _machine
+// SCE-MAP: static_host_kv.scxml:32 :: _machine
 
 package static_host_kv
 
@@ -58,7 +58,8 @@ const (
 	StaticHostKvStateGetting StaticHostKvState = 1
 	StaticHostKvStateIdle StaticHostKvState = 2
 	StaticHostKvStatePutting StaticHostKvState = 3
-	StaticHostKvStateWalking StaticHostKvState = 4
+	StaticHostKvStatePuttingIf StaticHostKvState = 4
+	StaticHostKvStateWalking StaticHostKvState = 5
 )
 
 func (s StaticHostKvState) String() string {
@@ -71,6 +72,8 @@ func (s StaticHostKvState) String() string {
 		return "idle"
 	case StaticHostKvStatePutting:
 		return "putting"
+	case StaticHostKvStatePuttingIf:
+		return "putting_if"
 	case StaticHostKvStateWalking:
 		return "walking"
 	}
@@ -103,6 +106,8 @@ func StaticHostKvStateFromName(name string) (StaticHostKvState, bool) {
 		return StaticHostKvStateIdle, true
 	case "putting":
 		return StaticHostKvStatePutting, true
+	case "putting_if":
+		return StaticHostKvStatePuttingIf, true
 	case "walking":
 		return StaticHostKvStateWalking, true
 	}
@@ -121,6 +126,7 @@ var StaticHostKvAllStates = []StaticHostKvState{
 	StaticHostKvStateGetting,
 	StaticHostKvStateIdle,
 	StaticHostKvStatePutting,
+	StaticHostKvStatePuttingIf,
 	StaticHostKvStateWalking,
 }
 
@@ -139,12 +145,12 @@ type StaticHostKvTarget = sce.EntryTarget[StaticHostKvState, sce.HistoryID]
 
 // childStatesOfStaticHostKv is §scxml-D-getChildStates per state: its
 // <state>, <parallel> and <final> children, in document order.
-var childStatesOfStaticHostKv = [5][]StaticHostKvState{
+var childStatesOfStaticHostKv = [6][]StaticHostKvState{
 }
 
 // initialTargetsOfStaticHostKv is each compound state's initial transition
 // target, as written (§scxml-3.3).
-var initialTargetsOfStaticHostKv = [5][]StaticHostKvTarget{
+var initialTargetsOfStaticHostKv = [6][]StaticHostKvTarget{
 }
 
 // documentInitialTargetsOfStaticHostKv is the target of the document's own
@@ -154,7 +160,7 @@ var documentInitialTargetsOfStaticHostKv = []StaticHostKvTarget{sce.StateTarget[
 // transitionTargetsOfStaticHostKv is each transition's target list, as
 // written (§scxml-3.13), by source state and the transition's index among its
 // source's own transitions. A targetless transition's entry is empty.
-var transitionTargetsOfStaticHostKv = [5][][]StaticHostKvTarget{
+var transitionTargetsOfStaticHostKv = [6][][]StaticHostKvTarget{
 	StaticHostKvStateDeleting: {
 		0: {sce.StateTarget[StaticHostKvState, sce.HistoryID](StaticHostKvStateIdle)},
 		1: {sce.StateTarget[StaticHostKvState, sce.HistoryID](StaticHostKvStateIdle)},
@@ -170,10 +176,17 @@ var transitionTargetsOfStaticHostKv = [5][][]StaticHostKvTarget{
 	StaticHostKvStateIdle: {
 		0: {sce.StateTarget[StaticHostKvState, sce.HistoryID](StaticHostKvStateGetting)},
 		1: {sce.StateTarget[StaticHostKvState, sce.HistoryID](StaticHostKvStatePutting)},
-		2: {sce.StateTarget[StaticHostKvState, sce.HistoryID](StaticHostKvStateDeleting)},
-		3: {sce.StateTarget[StaticHostKvState, sce.HistoryID](StaticHostKvStateWalking)},
+		2: {sce.StateTarget[StaticHostKvState, sce.HistoryID](StaticHostKvStatePuttingIf)},
+		3: {sce.StateTarget[StaticHostKvState, sce.HistoryID](StaticHostKvStateDeleting)},
+		4: {sce.StateTarget[StaticHostKvState, sce.HistoryID](StaticHostKvStateWalking)},
 	},
 	StaticHostKvStatePutting: {
+		0: {sce.StateTarget[StaticHostKvState, sce.HistoryID](StaticHostKvStateIdle)},
+		1: {sce.StateTarget[StaticHostKvState, sce.HistoryID](StaticHostKvStateIdle)},
+		2: {sce.StateTarget[StaticHostKvState, sce.HistoryID](StaticHostKvStateIdle)},
+		3: {sce.StateTarget[StaticHostKvState, sce.HistoryID](StaticHostKvStateIdle)},
+	},
+	StaticHostKvStatePuttingIf: {
 		0: {sce.StateTarget[StaticHostKvState, sce.HistoryID](StaticHostKvStateIdle)},
 		1: {sce.StateTarget[StaticHostKvState, sce.HistoryID](StaticHostKvStateIdle)},
 		2: {sce.StateTarget[StaticHostKvState, sce.HistoryID](StaticHostKvStateIdle)},
@@ -198,18 +211,21 @@ const (
 	StaticHostKvEventDoneInvokeDel StaticHostKvEvent = 1
 	StaticHostKvEventDoneInvokeGet StaticHostKvEvent = 2
 	StaticHostKvEventDoneInvokePut StaticHostKvEvent = 3
-	StaticHostKvEventDoneInvokeWalk StaticHostKvEvent = 4
-	StaticHostKvEventErrorExecution StaticHostKvEvent = 5
-	StaticHostKvEventErrorInvokeDel StaticHostKvEvent = 6
-	StaticHostKvEventErrorInvokeGet StaticHostKvEvent = 7
-	StaticHostKvEventErrorInvokePut StaticHostKvEvent = 8
-	StaticHostKvEventErrorInvokeWalk StaticHostKvEvent = 9
-	StaticHostKvEventHostKvDeleteRequest StaticHostKvEvent = 10
-	StaticHostKvEventHostKvGetRequest StaticHostKvEvent = 11
-	StaticHostKvEventHostKvNextKeyRequest StaticHostKvEvent = 12
-	StaticHostKvEventHostKvPutRequest StaticHostKvEvent = 13
+	StaticHostKvEventDoneInvokePutif StaticHostKvEvent = 4
+	StaticHostKvEventDoneInvokeWalk StaticHostKvEvent = 5
+	StaticHostKvEventErrorExecution StaticHostKvEvent = 6
+	StaticHostKvEventErrorInvokeDel StaticHostKvEvent = 7
+	StaticHostKvEventErrorInvokeGet StaticHostKvEvent = 8
+	StaticHostKvEventErrorInvokePut StaticHostKvEvent = 9
+	StaticHostKvEventErrorInvokePutif StaticHostKvEvent = 10
+	StaticHostKvEventErrorInvokeWalk StaticHostKvEvent = 11
+	StaticHostKvEventHostKvDeleteRequest StaticHostKvEvent = 12
+	StaticHostKvEventHostKvGetRequest StaticHostKvEvent = 13
+	StaticHostKvEventHostKvNextKeyRequest StaticHostKvEvent = 14
+	StaticHostKvEventHostKvPutRequest StaticHostKvEvent = 15
+	StaticHostKvEventHostKvPutIfRequest StaticHostKvEvent = 16
 	// W3C SCXML 3.13: Sentinel for eventless transition dispatch
-	StaticHostKvEventNull StaticHostKvEvent = 14
+	StaticHostKvEventNull StaticHostKvEvent = 17
 )
 
 func (e StaticHostKvEvent) String() string {
@@ -222,6 +238,8 @@ func (e StaticHostKvEvent) String() string {
 		return "done.invoke.get"
 	case StaticHostKvEventDoneInvokePut:
 		return "done.invoke.put"
+	case StaticHostKvEventDoneInvokePutif:
+		return "done.invoke.putif"
 	case StaticHostKvEventDoneInvokeWalk:
 		return "done.invoke.walk"
 	case StaticHostKvEventErrorExecution:
@@ -232,6 +250,8 @@ func (e StaticHostKvEvent) String() string {
 		return "error.invoke.get"
 	case StaticHostKvEventErrorInvokePut:
 		return "error.invoke.put"
+	case StaticHostKvEventErrorInvokePutif:
+		return "error.invoke.putif"
 	case StaticHostKvEventErrorInvokeWalk:
 		return "error.invoke.walk"
 	case StaticHostKvEventHostKvDeleteRequest:
@@ -242,6 +262,8 @@ func (e StaticHostKvEvent) String() string {
 		return "host.kv.next_key.request"
 	case StaticHostKvEventHostKvPutRequest:
 		return "host.kv.put.request"
+	case StaticHostKvEventHostKvPutIfRequest:
+		return "host.kv.put_if.request"
 	case StaticHostKvEventNull:
 		return ""
 	}
@@ -261,11 +283,13 @@ const (
 	StaticHostKvPayloadTagDoneInvokeDel
 	StaticHostKvPayloadTagDoneInvokeGet
 	StaticHostKvPayloadTagDoneInvokePut
+	StaticHostKvPayloadTagDoneInvokePutif
 	StaticHostKvPayloadTagDoneInvokeWalk
 	StaticHostKvPayloadTagHostKvDeleteRequest
 	StaticHostKvPayloadTagHostKvGetRequest
 	StaticHostKvPayloadTagHostKvNextKeyRequest
 	StaticHostKvPayloadTagHostKvPutRequest
+	StaticHostKvPayloadTagHostKvPutIfRequest
 )
 
 // StaticHostKvDoneInvokeDelPayload is the NL→IR Item C1 Path A typed `_event.data`
@@ -283,6 +307,7 @@ type StaticHostKvDoneInvokeGetPayload struct {
 	error string
 	found bool
 	value string
+	version string
 }
 
 // StaticHostKvDoneInvokePutPayload is the NL→IR Item C1 Path A typed `_event.data`
@@ -291,6 +316,15 @@ type StaticHostKvDoneInvokeGetPayload struct {
 type StaticHostKvDoneInvokePutPayload struct {
 	error string
 	replaced bool
+}
+
+// StaticHostKvDoneInvokePutifPayload is the NL→IR Item C1 Path A typed `_event.data`
+// payload for `done.invoke.putif`. Internal to the package; consumers inject it via
+// the `StaticHostKvRaiseDoneInvokePutif` seam below (fields are unexported by design).
+type StaticHostKvDoneInvokePutifPayload struct {
+	error string
+	written bool
+	version string
 }
 
 // StaticHostKvDoneInvokeWalkPayload is the NL→IR Item C1 Path A typed `_event.data`
@@ -330,6 +364,15 @@ type StaticHostKvHostKvNextKeyRequestPayload struct {
 type StaticHostKvHostKvPutRequestPayload struct {
 	key string
 	value string
+}
+
+// StaticHostKvHostKvPutIfRequestPayload is the NL→IR Item C1 Path A typed `_event.data`
+// payload for `host.kv.put_if.request`. Internal to the package; consumers inject it via
+// the `StaticHostKvRaiseHostKvPutIfRequest` seam below (fields are unexported by design).
+type StaticHostKvHostKvPutIfRequestPayload struct {
+	key string
+	value string
+	expected_version string
 }
 
 // StaticHostKvRaiseHostKvDeleteRequest is the NL→IR Item C1 Path A per-event typed `_event.data`
@@ -412,6 +455,26 @@ func StaticHostKvRaiseHostKvPutRequest(e *sce.Engine[StaticHostKvState, StaticHo
 	})
 }
 
+// StaticHostKvRaiseHostKvPutIfRequest is the NL→IR Item C1 Path A per-event typed `_event.data`
+// inject seam for `host.kv.put_if.request` — binds the event name and the payload field
+// values in one call so the name↔type pairing cannot be constructed
+// inconsistently. Twin of the Rust `StaticHostKvInject` extension-trait method
+// and the C11 `raise_<event>_typed` entry.
+func StaticHostKvRaiseHostKvPutIfRequest(e *sce.Engine[StaticHostKvState, StaticHostKvEvent], key string, value string, expected_version string) {
+	e.RaiseExternalWithMeta(sce.EventWithMetadata[StaticHostKvEvent]{
+		Event:    StaticHostKvEventHostKvPutIfRequest,
+		Metadata: sce.EventMetadata{
+			EventType:    sce.EventTypeExternal,
+			TypedPayload: StaticHostKvHostKvPutIfRequestPayload{key: key, value: value, expected_version: expected_version, },
+			// Both carriers are filled: the typed one a native guard reads,
+			// and `Data`, which is what the script engine binds `_event.data`
+			// from. Filling only the first left an `<assign expr="_event.data.x">`
+			// on this event reading nothing, on every backend alike.
+			Data: sce.PayloadJSON(sce.Pair("key", key), sce.Pair("value", value), sce.Pair("expected_version", expected_version)),
+		},
+	})
+}
+
 
 // ── SCE Accepted Subset §2.15: what a format-2 saved state of it is bound to ──
 
@@ -419,12 +482,12 @@ func StaticHostKvRaiseHostKvPutRequest(e *sce.Engine[StaticHostKvState, StaticHo
 // this machine names when every record schema it holds is in its first
 // revision (docs/adr/0045, section 2). The generator computes it once, so it is
 // the text every backend's constant is.
-const StaticHostKvSavedShapeFormat2 = "e559d3befc5e45e1282094d521bf840ef102b9aac72ec8ceabae510e75799631"
+const StaticHostKvSavedShapeFormat2 = "271cd1916904fb91125e68b7986be83fe000b9ac513b93afc0a104f49e785b4d"
 
 // StaticHostKvSavedShapeFormat2Revised is the shape a format-2 saved state
 // of this machine names when it names a later revision of a record schema or
 // an enum.
-const StaticHostKvSavedShapeFormat2Revised = "c60ffa2d12ab7efa1e75901224798d2ee7ca6959393d9395cb652f94b16cd632"
+const StaticHostKvSavedShapeFormat2Revised = "5912d427fdb73c1b0e14fe20e14a8dd49d17995e885105ca0afdce4c1393633a"
 
 // StaticHostKvSavedEnumKeys names each enum a value of a saved state of
 // this machine is of, by its document (docs/adr/0044): the key `revisions`
@@ -439,10 +502,10 @@ var StaticHostKvSavedEnumKeys = [...]string{}
 // one saved at an earlier revision of a record schema is read with each field a
 // later revision added at its default.
 var StaticHostKvSavedShape = sce.SavedShape{
-	First:          "e559d3befc5e45e1282094d521bf840ef102b9aac72ec8ceabae510e75799631",
-	Revised:        "c60ffa2d12ab7efa1e75901224798d2ee7ca6959393d9395cb652f94b16cd632",
-	Format2First:   "e559d3befc5e45e1282094d521bf840ef102b9aac72ec8ceabae510e75799631",
-	Format2Revised: "c60ffa2d12ab7efa1e75901224798d2ee7ca6959393d9395cb652f94b16cd632",
+	First:          "271cd1916904fb91125e68b7986be83fe000b9ac513b93afc0a104f49e785b4d",
+	Revised:        "5912d427fdb73c1b0e14fe20e14a8dd49d17995e885105ca0afdce4c1393633a",
+	Format2First:   "271cd1916904fb91125e68b7986be83fe000b9ac513b93afc0a104f49e785b4d",
+	Format2Revised: "5912d427fdb73c1b0e14fe20e14a8dd49d17995e885105ca0afdce4c1393633a",
 	Records: []sce.RecordLineage{
 	},
 	Enums: []sce.EnumLineage{
@@ -475,10 +538,14 @@ func StaticHostKvSaveAt(engine *sce.Engine[StaticHostKvState, StaticHostKvEvent]
 	variables.Set("value", sce.SavedWriteString(p.vValue))
 	variables.Set("after", sce.SavedWriteString(p.vAfter))
 	variables.Set("prefix", sce.SavedWriteString(p.vPrefix))
+	variables.Set("expected", sce.SavedWriteString(p.vExpected))
 	variables.Set("outcome", sce.SavedWriteString(p.vOutcome))
 	variables.Set("found", sce.SavedWriteBool(p.vFound))
 	variables.Set("got", sce.SavedWriteString(p.vGot))
+	variables.Set("got_version", sce.SavedWriteString(p.vGotVersion))
 	variables.Set("replaced", sce.SavedWriteBool(p.vReplaced))
+	variables.Set("written", sce.SavedWriteBool(p.vWritten))
+	variables.Set("put_version", sce.SavedWriteString(p.vPutVersion))
 	variables.Set("existed", sce.SavedWriteBool(p.vExisted))
 	variables.Set("next_found", sce.SavedWriteBool(p.vNextFound))
 	variables.Set("next", sce.SavedWriteString(p.vNext))
@@ -525,6 +592,11 @@ func StaticHostKvJudge(saved *sce.SavedState) error {
 	} else if _, err := sce.SavedReadBoundedString(raw, "prefix", 256); err != nil {
 		return err
 	}
+	if raw, err := grown.Variable("expected"); err != nil {
+		return err
+	} else if _, err := sce.SavedReadBoundedString(raw, "expected", 20); err != nil {
+		return err
+	}
 	if raw, err := grown.Variable("outcome"); err != nil {
 		return err
 	} else if _, err := sce.SavedReadBoundedString(raw, "outcome", 24); err != nil {
@@ -540,9 +612,24 @@ func StaticHostKvJudge(saved *sce.SavedState) error {
 	} else if _, err := sce.SavedReadBoundedString(raw, "got", 4096); err != nil {
 		return err
 	}
+	if raw, err := grown.Variable("got_version"); err != nil {
+		return err
+	} else if _, err := sce.SavedReadBoundedString(raw, "got_version", 20); err != nil {
+		return err
+	}
 	if raw, err := grown.Variable("replaced"); err != nil {
 		return err
 	} else if _, err := sce.SavedReadBool(raw, "replaced"); err != nil {
+		return err
+	}
+	if raw, err := grown.Variable("written"); err != nil {
+		return err
+	} else if _, err := sce.SavedReadBool(raw, "written"); err != nil {
+		return err
+	}
+	if raw, err := grown.Variable("put_version"); err != nil {
+		return err
+	} else if _, err := sce.SavedReadBoundedString(raw, "put_version", 20); err != nil {
 		return err
 	}
 	if raw, err := grown.Variable("existed"); err != nil {
@@ -619,59 +706,91 @@ func StaticHostKvRestoreAt(policy *StaticHostKvPolicy, saved *sce.SavedState, cl
 	if err != nil {
 		return nil, err
 	}
-	raw5, err := grown.Variable("outcome")
+	raw5, err := grown.Variable("expected")
 	if err != nil {
 		return nil, err
 	}
-	read5, err := sce.SavedReadBoundedString(raw5, "outcome", 24)
+	read5, err := sce.SavedReadBoundedString(raw5, "expected", 20)
 	if err != nil {
 		return nil, err
 	}
-	raw6, err := grown.Variable("found")
+	raw6, err := grown.Variable("outcome")
 	if err != nil {
 		return nil, err
 	}
-	read6, err := sce.SavedReadBool(raw6, "found")
+	read6, err := sce.SavedReadBoundedString(raw6, "outcome", 24)
 	if err != nil {
 		return nil, err
 	}
-	raw7, err := grown.Variable("got")
+	raw7, err := grown.Variable("found")
 	if err != nil {
 		return nil, err
 	}
-	read7, err := sce.SavedReadBoundedString(raw7, "got", 4096)
+	read7, err := sce.SavedReadBool(raw7, "found")
 	if err != nil {
 		return nil, err
 	}
-	raw8, err := grown.Variable("replaced")
+	raw8, err := grown.Variable("got")
 	if err != nil {
 		return nil, err
 	}
-	read8, err := sce.SavedReadBool(raw8, "replaced")
+	read8, err := sce.SavedReadBoundedString(raw8, "got", 4096)
 	if err != nil {
 		return nil, err
 	}
-	raw9, err := grown.Variable("existed")
+	raw9, err := grown.Variable("got_version")
 	if err != nil {
 		return nil, err
 	}
-	read9, err := sce.SavedReadBool(raw9, "existed")
+	read9, err := sce.SavedReadBoundedString(raw9, "got_version", 20)
 	if err != nil {
 		return nil, err
 	}
-	raw10, err := grown.Variable("next_found")
+	raw10, err := grown.Variable("replaced")
 	if err != nil {
 		return nil, err
 	}
-	read10, err := sce.SavedReadBool(raw10, "next_found")
+	read10, err := sce.SavedReadBool(raw10, "replaced")
 	if err != nil {
 		return nil, err
 	}
-	raw11, err := grown.Variable("next")
+	raw11, err := grown.Variable("written")
 	if err != nil {
 		return nil, err
 	}
-	read11, err := sce.SavedReadBoundedString(raw11, "next", 256)
+	read11, err := sce.SavedReadBool(raw11, "written")
+	if err != nil {
+		return nil, err
+	}
+	raw12, err := grown.Variable("put_version")
+	if err != nil {
+		return nil, err
+	}
+	read12, err := sce.SavedReadBoundedString(raw12, "put_version", 20)
+	if err != nil {
+		return nil, err
+	}
+	raw13, err := grown.Variable("existed")
+	if err != nil {
+		return nil, err
+	}
+	read13, err := sce.SavedReadBool(raw13, "existed")
+	if err != nil {
+		return nil, err
+	}
+	raw14, err := grown.Variable("next_found")
+	if err != nil {
+		return nil, err
+	}
+	read14, err := sce.SavedReadBool(raw14, "next_found")
+	if err != nil {
+		return nil, err
+	}
+	raw15, err := grown.Variable("next")
+	if err != nil {
+		return nil, err
+	}
+	read15, err := sce.SavedReadBoundedString(raw15, "next", 256)
 	if err != nil {
 		return nil, err
 	}
@@ -682,13 +801,17 @@ func StaticHostKvRestoreAt(policy *StaticHostKvPolicy, saved *sce.SavedState, cl
 	policy.vValue = read2
 	policy.vAfter = read3
 	policy.vPrefix = read4
-	policy.vOutcome = read5
-	policy.vFound = read6
-	policy.vGot = read7
-	policy.vReplaced = read8
-	policy.vExisted = read9
-	policy.vNextFound = read10
-	policy.vNext = read11
+	policy.vExpected = read5
+	policy.vOutcome = read6
+	policy.vFound = read7
+	policy.vGot = read8
+	policy.vGotVersion = read9
+	policy.vReplaced = read10
+	policy.vWritten = read11
+	policy.vPutVersion = read12
+	policy.vExisted = read13
+	policy.vNextFound = read14
+	policy.vNext = read15
 	for _, recorded := range history {
 		policy.SetHistoryValue(recorded.History, recorded.States)
 	}
@@ -733,6 +856,9 @@ func (p *StaticHostKvPolicy) HostInvokeOwner(processorType, id string) (StaticHo
 	}
 	if processorType == "sce-host-kv-put" && id == "put" {
 		return StaticHostKvStatePutting, true
+	}
+	if processorType == "sce-host-kv-put-if" && id == "putif" {
+		return StaticHostKvStatePuttingIf, true
 	}
 	if processorType == "sce-host-kv-delete" && id == "del" {
 		return StaticHostKvStateDeleting, true
@@ -780,11 +906,12 @@ type StaticHostKvGetResult struct {
 	Error string
 	Found bool
 	Value string
+	Version string
 }
 
 // Wire is the JSON `done.invoke.get` carries this record as.
 func (r StaticHostKvGetResult) Wire() string {
-	return sce.PayloadJSON(sce.Pair("error", r.Error), sce.Pair("found", r.Found), sce.Pair("value", r.Value))
+	return sce.PayloadJSON(sce.Pair("error", r.Error), sce.Pair("found", r.Found), sce.Pair("value", r.Value), sce.Pair("version", r.Version))
 }
 
 // StaticHostKvPutRequest is `sce:request`: the record the host is asked to start `<invoke id="put">`
@@ -804,6 +931,27 @@ type StaticHostKvPutResult struct {
 // Wire is the JSON `done.invoke.put` carries this record as.
 func (r StaticHostKvPutResult) Wire() string {
 	return sce.PayloadJSON(sce.Pair("error", r.Error), sce.Pair("replaced", r.Replaced))
+}
+
+// StaticHostKvPutifRequest is `sce:request`: the record the host is asked to start `<invoke id="putif">`
+// with (SCE Accepted Subset §2.12).
+type StaticHostKvPutifRequest struct {
+	Key string
+	Value string
+	ExpectedVersion string
+}
+
+// StaticHostKvPutifResult is `sce:result`: the record the host completes `<invoke id="putif">`
+// with (SCE Accepted Subset §2.12).
+type StaticHostKvPutifResult struct {
+	Error string
+	Written bool
+	Version string
+}
+
+// Wire is the JSON `done.invoke.putif` carries this record as.
+func (r StaticHostKvPutifResult) Wire() string {
+	return sce.PayloadJSON(sce.Pair("error", r.Error), sce.Pair("written", r.Written), sce.Pair("version", r.Version))
 }
 
 // StaticHostKvDelRequest is `sce:request`: the record the host is asked to start `<invoke id="del">`
@@ -1040,6 +1188,55 @@ func CompleteStaticHostKvPut(e *sce.Engine[StaticHostKvState, StaticHostKvEvent]
 	return e.CompleteHostInvoke("sce-host-kv-put", "put", token, result.Wire())
 }
 
+// StaticHostKvSceHostKvPutIfInvoker is the host side of this document's typed
+// `<invoke type="sce-host-kv-put-if">`s (SCE Accepted Subset §2.12). Register it with
+// RegisterStaticHostKvSceHostKvPutIfInvoker.
+type StaticHostKvSceHostKvPutIfInvoker interface {
+	// StartPutif is §scxml-6.4: begin `<invoke id="putif">`. token names
+	// this start; a host that finishes later hands it back to
+	// CompleteStaticHostKvPutif (or CompleteHostInvoke). Non-nil completes
+	// the invocation now.
+	StartPutif(request StaticHostKvPutifRequest, token uint64) *StaticHostKvPutifResult
+	// CancelPutif is §scxml-6.4: `<invoke id="putif">`'s state exited while
+	// the start token names was still running. Stop it.
+	CancelPutif(token uint64)
+}
+
+// RegisterStaticHostKvSceHostKvPutIfInvoker registers invoker as the handler for
+// `type="sce-host-kv-put-if"`.
+func RegisterStaticHostKvSceHostKvPutIfInvoker(e *sce.Engine[StaticHostKvState, StaticHostKvEvent], invoker StaticHostKvSceHostKvPutIfInvoker) {
+	e.RegisterInvoker("sce-host-kv-put-if", func(event sce.HostInvokeEvent) *sce.HostInvokeResponse {
+		if start := event.Start; start != nil {
+			switch start.InvokeID {
+			case "putif":
+				typed := StaticHostKvPutifRequest{Key: sce.RequestString(*start, "key"), Value: sce.RequestString(*start, "value"), ExpectedVersion: sce.RequestString(*start, "expected_version")}
+				if result := invoker.StartPutif(typed, start.Token); result != nil {
+					data := result.Wire()
+					return &sce.HostInvokeResponse{DoneData: &data}
+				}
+				return nil
+			}
+			return nil
+		}
+		if cancel := event.Cancel; cancel != nil {
+			switch cancel.InvokeID {
+			case "putif":
+				invoker.CancelPutif(cancel.Token)
+				return nil
+			}
+			return nil
+		}
+		return nil
+	})
+}
+
+// CompleteStaticHostKvPutif completes `<invoke id="putif">`'s start token
+// with its record — CompleteHostInvoke with the record's JSON, so a stale
+// or unknown token is refused the same way (false).
+func CompleteStaticHostKvPutif(e *sce.Engine[StaticHostKvState, StaticHostKvEvent], token uint64, result StaticHostKvPutifResult) bool {
+	return e.CompleteHostInvoke("sce-host-kv-put-if", "putif", token, result.Wire())
+}
+
 
 // ======================================================================
 // Policy struct
@@ -1054,11 +1251,13 @@ type StaticHostKvPolicy struct {
 	pendingDoneInvokeDelPayload StaticHostKvDoneInvokeDelPayload
 	pendingDoneInvokeGetPayload StaticHostKvDoneInvokeGetPayload
 	pendingDoneInvokePutPayload StaticHostKvDoneInvokePutPayload
+	pendingDoneInvokePutifPayload StaticHostKvDoneInvokePutifPayload
 	pendingDoneInvokeWalkPayload StaticHostKvDoneInvokeWalkPayload
 	pendingHostKvDeleteRequestPayload StaticHostKvHostKvDeleteRequestPayload
 	pendingHostKvGetRequestPayload StaticHostKvHostKvGetRequestPayload
 	pendingHostKvNextKeyRequestPayload StaticHostKvHostKvNextKeyRequestPayload
 	pendingHostKvPutRequestPayload StaticHostKvHostKvPutRequestPayload
+	pendingHostKvPutIfRequestPayload StaticHostKvHostKvPutIfRequestPayload
 
 	pendingEventData string
 	// W3C SCXML 5.10: Session ID
@@ -1072,14 +1271,22 @@ type StaticHostKvPolicy struct {
 	vAfter string
 	// W3C SCXML 5.2: the `prefix` datamodel variable.
 	vPrefix string
+	// W3C SCXML 5.2: the `expected` datamodel variable.
+	vExpected string
 	// W3C SCXML 5.2: the `outcome` datamodel variable, published (`sce:direction="out"`).
 	vOutcome string
 	// W3C SCXML 5.2: the `found` datamodel variable, published (`sce:direction="out"`).
 	vFound bool
 	// W3C SCXML 5.2: the `got` datamodel variable, published (`sce:direction="out"`).
 	vGot string
+	// W3C SCXML 5.2: the `got_version` datamodel variable, published (`sce:direction="out"`).
+	vGotVersion string
 	// W3C SCXML 5.2: the `replaced` datamodel variable, published (`sce:direction="out"`).
 	vReplaced bool
+	// W3C SCXML 5.2: the `written` datamodel variable, published (`sce:direction="out"`).
+	vWritten bool
+	// W3C SCXML 5.2: the `put_version` datamodel variable, published (`sce:direction="out"`).
+	vPutVersion string
 	// W3C SCXML 5.2: the `existed` datamodel variable, published (`sce:direction="out"`).
 	vExisted bool
 	// W3C SCXML 5.2: the `next_found` datamodel variable, published (`sce:direction="out"`).
@@ -1108,10 +1315,14 @@ func NewStaticHostKvPolicy() StaticHostKvPolicy {
 	var vValue string = ""
 	var vAfter string = ""
 	var vPrefix string = ""
+	var vExpected string = ""
 	var vOutcome string = ""
 	var vFound bool = false
 	var vGot string = ""
+	var vGotVersion string = ""
 	var vReplaced bool = false
+	var vWritten bool = false
+	var vPutVersion string = ""
 	var vExisted bool = false
 	var vNextFound bool = false
 	var vNext string = ""
@@ -1125,10 +1336,14 @@ func NewStaticHostKvPolicy() StaticHostKvPolicy {
 		vValue: vValue,
 		vAfter: vAfter,
 		vPrefix: vPrefix,
+		vExpected: vExpected,
 		vOutcome: vOutcome,
 		vFound: vFound,
 		vGot: vGot,
+		vGotVersion: vGotVersion,
 		vReplaced: vReplaced,
+		vWritten: vWritten,
+		vPutVersion: vPutVersion,
 		vExisted: vExisted,
 		vNextFound: vNextFound,
 		vNext: vNext,
@@ -1170,10 +1385,28 @@ func (p *StaticHostKvPolicy) Got() string {
 	return p.vGot
 }
 
+// GotVersion reports what the published `got_version` datamodel
+// variable holds now (W3C SCXML 5.2). Only the machine writes it.
+func (p *StaticHostKvPolicy) GotVersion() string {
+	return p.vGotVersion
+}
+
 // Replaced reports what the published `replaced` datamodel
 // variable holds now (W3C SCXML 5.2). Only the machine writes it.
 func (p *StaticHostKvPolicy) Replaced() bool {
 	return p.vReplaced
+}
+
+// Written reports what the published `written` datamodel
+// variable holds now (W3C SCXML 5.2). Only the machine writes it.
+func (p *StaticHostKvPolicy) Written() bool {
+	return p.vWritten
+}
+
+// PutVersion reports what the published `put_version` datamodel
+// variable holds now (W3C SCXML 5.2). Only the machine writes it.
+func (p *StaticHostKvPolicy) PutVersion() string {
+	return p.vPutVersion
 }
 
 // Existed reports what the published `existed` datamodel
@@ -1203,10 +1436,14 @@ type StaticHostKvInvokeParams struct {
 	VValue *string
 	VAfter *string
 	VPrefix *string
+	VExpected *string
 	VOutcome *string
 	VFound *bool
 	VGot *string
+	VGotVersion *string
 	VReplaced *bool
+	VWritten *bool
+	VPutVersion *string
 	VExisted *bool
 	VNextFound *bool
 	VNext *string
@@ -1241,6 +1478,12 @@ func (p *StaticHostKvPolicy) AcceptParams(handed StaticHostKvInvokeParams) {
 	} else {
 		vPrefix = ""
 	}
+	var vExpected string
+	if handed.VExpected != nil {
+		vExpected = *handed.VExpected
+	} else {
+		vExpected = ""
+	}
 	var vOutcome string
 	if handed.VOutcome != nil {
 		vOutcome = *handed.VOutcome
@@ -1259,11 +1502,29 @@ func (p *StaticHostKvPolicy) AcceptParams(handed StaticHostKvInvokeParams) {
 	} else {
 		vGot = ""
 	}
+	var vGotVersion string
+	if handed.VGotVersion != nil {
+		vGotVersion = *handed.VGotVersion
+	} else {
+		vGotVersion = ""
+	}
 	var vReplaced bool
 	if handed.VReplaced != nil {
 		vReplaced = *handed.VReplaced
 	} else {
 		vReplaced = false
+	}
+	var vWritten bool
+	if handed.VWritten != nil {
+		vWritten = *handed.VWritten
+	} else {
+		vWritten = false
+	}
+	var vPutVersion string
+	if handed.VPutVersion != nil {
+		vPutVersion = *handed.VPutVersion
+	} else {
+		vPutVersion = ""
 	}
 	var vExisted bool
 	if handed.VExisted != nil {
@@ -1287,10 +1548,14 @@ func (p *StaticHostKvPolicy) AcceptParams(handed StaticHostKvInvokeParams) {
 	p.vValue = vValue
 	p.vAfter = vAfter
 	p.vPrefix = vPrefix
+	p.vExpected = vExpected
 	p.vOutcome = vOutcome
 	p.vFound = vFound
 	p.vGot = vGot
+	p.vGotVersion = vGotVersion
 	p.vReplaced = vReplaced
+	p.vWritten = vWritten
+	p.vPutVersion = vPutVersion
 	p.vExisted = vExisted
 	p.vNextFound = vNextFound
 	p.vNext = vNext
@@ -1460,6 +1725,65 @@ func (p *StaticHostKvPolicy) ExecutePendingInvokes(engine *sce.Engine[StaticHost
 			if !engine.PerformHostInvoke(sce.HostInvokeRequest{
 				ProcessorType: "sce-host-kv-put",
 				InvokeID:      "put",
+				Src:           hostInvokeSrc,
+				Params:        hostInvokeParams,
+				EventData:     hostInvokeEventData,
+				Content:       hostInvokeContent,
+			}) {
+				// W3C SCXML 6.4.1: declared but no invoker registered. The
+				// document asked for a process to be run and none was, which
+				// is the same fact as an unsupported type — so the same
+				// event, rather than a silence that reads as started.
+				engine.Raise(sce.NewPlatformError(StaticHostKvEventErrorExecution, sceerrorreason.ErrorReasonProcessorUnregistered, "<invoke> names an invoker the host declared but never registered"))
+			}
+			continue
+		}
+		if pending.DocumentID == "putif" {
+			// W3C SCXML 6.4.1: the host declared this `type`, so START the
+			// invocation rather than refusing it. The id handed over is the
+			// DOCUMENT's, not the per-instance one the pending queue carries:
+			// `done.invoke.<id>` is the name the author wrote a transition
+			// for, so it is the name the host must answer on.
+			// W3C SCXML 6.4.1: what the request says is evaluated now, when the
+			// invocation starts, by the rules the other invoke kinds follow: an
+			// attribute that cannot be evaluated starts nothing, and a `<param>`
+			// that cannot is reported and left out (W3C SCXML 5.7.1).
+			hostInvokeSrc := ""
+			hostInvokeContent := ""
+			hostInvokeParams := map[string][]string{}
+			// The same pairs as the data model holds them, for the request's
+			// EventData: one evaluation, read as text for Params and typed for
+			// the JSON.
+			hostInvokePayload := make([]sce.EventDataParam, 0)
+			// SCE Accepted Subset 2.12: `sce:request` makes the params a record,
+			// so each value is held to its field here, where the invocation
+			// starts; one that does not fit starts nothing.
+			requestRefused := false
+			if !requestRefused {
+				sceValue := p.vKey
+				hostInvokeParams["key"] = append(hostInvokeParams["key"], sce.ToWireString(sceValue))
+				hostInvokePayload = append(hostInvokePayload, sce.EventDataParam{Name: "key", Value: sceValue})
+			}
+			if !requestRefused {
+				sceValue := p.vValue
+				hostInvokeParams["value"] = append(hostInvokeParams["value"], sce.ToWireString(sceValue))
+				hostInvokePayload = append(hostInvokePayload, sce.EventDataParam{Name: "value", Value: sceValue})
+			}
+			if !requestRefused {
+				sceValue := p.vExpected
+				hostInvokeParams["expected_version"] = append(hostInvokeParams["expected_version"], sce.ToWireString(sceValue))
+				hostInvokePayload = append(hostInvokePayload, sce.EventDataParam{Name: "expected_version", Value: sceValue})
+			}
+			if requestRefused {
+				continue
+			}
+			hostInvokeEventData := ""
+			if len(hostInvokePayload) > 0 {
+				hostInvokeEventData = sce.BuildJSONFromTypedParams(hostInvokePayload)
+			}
+			if !engine.PerformHostInvoke(sce.HostInvokeRequest{
+				ProcessorType: "sce-host-kv-put-if",
+				InvokeID:      "putif",
 				Src:           hostInvokeSrc,
 				Params:        hostInvokeParams,
 				EventData:     hostInvokeEventData,
@@ -1688,15 +2012,17 @@ func (p *StaticHostKvPolicy) HistoryValue(_ sce.HistoryID) ([]StaticHostKvState,
 func (p *StaticHostKvPolicy) GetDocumentOrder(state StaticHostKvState) int {
 	switch state {
 	case StaticHostKvStateDeleting:
-		return 3
+		return 4
 	case StaticHostKvStateGetting:
 		return 1
 	case StaticHostKvStateIdle:
 		return 0
 	case StaticHostKvStatePutting:
 		return 2
+	case StaticHostKvStatePuttingIf:
+		return 3
 	case StaticHostKvStateWalking:
-		return 4
+		return 5
 	}
 	return -1
 }
@@ -1717,6 +2043,8 @@ func (p *StaticHostKvPolicy) GetEventFromName(name string) (StaticHostKvEvent, b
 		return StaticHostKvEventDoneInvokeGet, true
 	case "done.invoke.put":
 		return StaticHostKvEventDoneInvokePut, true
+	case "done.invoke.putif":
+		return StaticHostKvEventDoneInvokePutif, true
 	case "done.invoke.walk":
 		return StaticHostKvEventDoneInvokeWalk, true
 	case "error.execution":
@@ -1727,6 +2055,8 @@ func (p *StaticHostKvPolicy) GetEventFromName(name string) (StaticHostKvEvent, b
 		return StaticHostKvEventErrorInvokeGet, true
 	case "error.invoke.put":
 		return StaticHostKvEventErrorInvokePut, true
+	case "error.invoke.putif":
+		return StaticHostKvEventErrorInvokePutif, true
 	case "error.invoke.walk":
 		return StaticHostKvEventErrorInvokeWalk, true
 	case "host.kv.delete.request":
@@ -1737,6 +2067,8 @@ func (p *StaticHostKvPolicy) GetEventFromName(name string) (StaticHostKvEvent, b
 		return StaticHostKvEventHostKvNextKeyRequest, true
 	case "host.kv.put.request":
 		return StaticHostKvEventHostKvPutRequest, true
+	case "host.kv.put_if.request":
+		return StaticHostKvEventHostKvPutIfRequest, true
 	}
 	return StaticHostKvEventNull, false
 }
@@ -1748,6 +2080,7 @@ func (p *StaticHostKvPolicy) HostInvokeIDs() []string {
 	return []string{
 		"get",
 		"put",
+		"putif",
 		"del",
 		"walk",
 	}
@@ -1838,6 +2171,9 @@ func (p *StaticHostKvPolicy) PopulateEventMetadata(meta *sce.EventMetadata) {
 	case StaticHostKvDoneInvokePutPayload:
 		p.pendingPayloadTag = StaticHostKvPayloadTagDoneInvokePut
 		p.pendingDoneInvokePutPayload = v
+	case StaticHostKvDoneInvokePutifPayload:
+		p.pendingPayloadTag = StaticHostKvPayloadTagDoneInvokePutif
+		p.pendingDoneInvokePutifPayload = v
 	case StaticHostKvDoneInvokeWalkPayload:
 		p.pendingPayloadTag = StaticHostKvPayloadTagDoneInvokeWalk
 		p.pendingDoneInvokeWalkPayload = v
@@ -1853,6 +2189,9 @@ func (p *StaticHostKvPolicy) PopulateEventMetadata(meta *sce.EventMetadata) {
 	case StaticHostKvHostKvPutRequestPayload:
 		p.pendingPayloadTag = StaticHostKvPayloadTagHostKvPutRequest
 		p.pendingHostKvPutRequestPayload = v
+	case StaticHostKvHostKvPutIfRequestPayload:
+		p.pendingPayloadTag = StaticHostKvPayloadTagHostKvPutIfRequest
+		p.pendingHostKvPutIfRequestPayload = v
 	}
 
 	p.pendingEventData = meta.Data
@@ -1903,6 +2242,9 @@ func (p *StaticHostKvPolicy) LiftTypedPayload(event StaticHostKvEvent, meta *sce
 		if payload.value, err = sce.PayloadTextWithin(fields, "value", 4096); err != nil {
 			return err
 		}
+		if payload.version, err = sce.PayloadTextWithin(fields, "version", 20); err != nil {
+			return err
+		}
 		p.pendingDoneInvokeGetPayload = payload
 		p.pendingPayloadTag = StaticHostKvPayloadTagDoneInvokeGet
 	case StaticHostKvEventDoneInvokePut:
@@ -1919,6 +2261,23 @@ func (p *StaticHostKvPolicy) LiftTypedPayload(event StaticHostKvEvent, meta *sce
 		}
 		p.pendingDoneInvokePutPayload = payload
 		p.pendingPayloadTag = StaticHostKvPayloadTagDoneInvokePut
+	case StaticHostKvEventDoneInvokePutif:
+		fields, err := sce.LiftPayload(meta.Data)
+		if err != nil {
+			return err
+		}
+		var payload StaticHostKvDoneInvokePutifPayload
+		if payload.error, err = sce.PayloadTextWithin(fields, "error", 24); err != nil {
+			return err
+		}
+		if payload.written, err = sce.PayloadBool(fields, "written"); err != nil {
+			return err
+		}
+		if payload.version, err = sce.PayloadTextWithin(fields, "version", 20); err != nil {
+			return err
+		}
+		p.pendingDoneInvokePutifPayload = payload
+		p.pendingPayloadTag = StaticHostKvPayloadTagDoneInvokePutif
 	case StaticHostKvEventDoneInvokeWalk:
 		fields, err := sce.LiftPayload(meta.Data)
 		if err != nil {
@@ -1986,6 +2345,23 @@ func (p *StaticHostKvPolicy) LiftTypedPayload(event StaticHostKvEvent, meta *sce
 		}
 		p.pendingHostKvPutRequestPayload = payload
 		p.pendingPayloadTag = StaticHostKvPayloadTagHostKvPutRequest
+	case StaticHostKvEventHostKvPutIfRequest:
+		fields, err := sce.LiftPayload(meta.Data)
+		if err != nil {
+			return err
+		}
+		var payload StaticHostKvHostKvPutIfRequestPayload
+		if payload.key, err = sce.PayloadTextWithin(fields, "key", 256); err != nil {
+			return err
+		}
+		if payload.value, err = sce.PayloadTextWithin(fields, "value", 4096); err != nil {
+			return err
+		}
+		if payload.expected_version, err = sce.PayloadTextWithin(fields, "expected_version", 20); err != nil {
+			return err
+		}
+		p.pendingHostKvPutIfRequestPayload = payload
+		p.pendingPayloadTag = StaticHostKvPayloadTagHostKvPutIfRequest
 	}
 	return nil
 
@@ -2006,11 +2382,11 @@ func (p *StaticHostKvPolicy) ClearEventMetadata() {
 // ExecuteEntryActions enters one state (W3C SCXML 3.8): adds it to the
 // configuration, runs its <onentry>, and its <initial> transition's content when
 // its initial state is entered by default.
-//line static_host_kv.scxml:31
+//line static_host_kv.scxml:32
 func (p *StaticHostKvPolicy) ExecuteEntryActions(state StaticHostKvState, engine *sce.Engine[StaticHostKvState, StaticHostKvEvent], isDefaultEntry bool) {
 	switch state {
 	case StaticHostKvStateDeleting:
-//line static_host_kv.scxml:112
+//line static_host_kv.scxml:147
 		// W3C SCXML 6.4.1: `type` names no processor this platform implements.
 		// Defer only — the error.execution raise happens in
 		// ExecutePendingInvokes, so §scxml-6.4 ordering holds and
@@ -2024,7 +2400,7 @@ func (p *StaticHostKvPolicy) ExecuteEntryActions(state StaticHostKvState, engine
 			})
 		}
 	case StaticHostKvStateGetting:
-//line static_host_kv.scxml:72
+//line static_host_kv.scxml:84
 		// W3C SCXML 6.4.1: `type` names no processor this platform implements.
 		// Defer only — the error.execution raise happens in
 		// ExecutePendingInvokes, so §scxml-6.4 ordering holds and
@@ -2038,7 +2414,7 @@ func (p *StaticHostKvPolicy) ExecuteEntryActions(state StaticHostKvState, engine
 			})
 		}
 	case StaticHostKvStatePutting:
-//line static_host_kv.scxml:92
+//line static_host_kv.scxml:105
 		// W3C SCXML 6.4.1: `type` names no processor this platform implements.
 		// Defer only — the error.execution raise happens in
 		// ExecutePendingInvokes, so §scxml-6.4 ordering holds and
@@ -2051,8 +2427,22 @@ func (p *StaticHostKvPolicy) ExecuteEntryActions(state StaticHostKvState, engine
 				DocumentID: "put",
 			})
 		}
+	case StaticHostKvStatePuttingIf:
+//line static_host_kv.scxml:125
+		// W3C SCXML 6.4.1: `type` names no processor this platform implements.
+		// Defer only — the error.execution raise happens in
+		// ExecutePendingInvokes, so §scxml-6.4 ordering holds and
+		// CancelInvokesForState drops the entry if the state exits first.
+		{
+			generatedInvokeID := fmt.Sprintf("%s.%d.putif", "putting_if", sce.NextInvokeCounter())
+			sce.DeferInvoke(&p.pendingInvokes, sce.PendingInvoke[StaticHostKvState]{
+				InvokeID:   generatedInvokeID,
+				State:      StaticHostKvStatePuttingIf,
+				DocumentID: "putif",
+			})
+		}
 	case StaticHostKvStateWalking:
-//line static_host_kv.scxml:131
+//line static_host_kv.scxml:166
 		// W3C SCXML 6.4.1: `type` names no processor this platform implements.
 		// Defer only — the error.execution raise happens in
 		// ExecutePendingInvokes, so §scxml-6.4 ordering holds and
@@ -2075,7 +2465,7 @@ func (p *StaticHostKvPolicy) ExecuteEntryActions(state StaticHostKvState, engine
 // <initial> content) when the history was taken with nothing recorded. The
 // engine asks for it by the entry set's defaultHistoryContent answer; a history
 // that restored what it recorded runs nothing.
-//line static_host_kv.scxml:31
+//line static_host_kv.scxml:32
 func (p *StaticHostKvPolicy) ExecuteHistoryDefaultContent(history sce.HistoryID, engine *sce.Engine[StaticHostKvState, StaticHostKvEvent]) {
 	// W3C SCXML 3.10.2: no <history> in this document has default content.
 }
@@ -2083,7 +2473,7 @@ func (p *StaticHostKvPolicy) ExecuteHistoryDefaultContent(history sce.HistoryID,
 // ExecuteExitActions exits one state (W3C SCXML 3.9): records its histories,
 // runs its <onexit>, cancels its invocations and removes it from the
 // configuration — §scxml-D-exitStates's order.
-//line static_host_kv.scxml:31
+//line static_host_kv.scxml:32
 func (p *StaticHostKvPolicy) ExecuteExitActions(state StaticHostKvState, engine *sce.Engine[StaticHostKvState, StaticHostKvEvent], configurationBeforeExit []StaticHostKvState) {
 	// §scxml-D-exitStates orders one state's exit as onexit, then
 	// cancelInvoke, then configuration.delete(s), so `In(s)` inside s's own
@@ -2116,6 +2506,13 @@ func (p *StaticHostKvPolicy) ExecuteExitActions(state StaticHostKvState, engine 
 		// ever started and stays silent when it did not, so the emitted chain
 		// does not need its own bookkeeping.
 		engine.CancelHostInvoke("sce-host-kv-put", "put")
+	case StaticHostKvStatePuttingIf:
+		sce.CancelInvokesForState(&p.pendingInvokes, StaticHostKvStatePuttingIf)
+		// W3C SCXML 6.4: the host's invocation ends with the state that
+		// started it. Unconditional here: the engine knows whether this one
+		// ever started and stays silent when it did not, so the emitted chain
+		// does not need its own bookkeeping.
+		engine.CancelHostInvoke("sce-host-kv-put-if", "putif")
 	case StaticHostKvStateWalking:
 		sce.CancelInvokesForState(&p.pendingInvokes, StaticHostKvStateWalking)
 		// W3C SCXML 6.4: the host's invocation ends with the state that
@@ -2132,7 +2529,7 @@ func (p *StaticHostKvPolicy) ExecuteExitActions(state StaticHostKvState, engine 
 // BindCurrentEvent binds the event whose transitions are about to be selected as
 // the _event their guards read (W3C SCXML 5.10) — before the first guard runs,
 // and not for an eventless selection, which has no event of its own.
-//line static_host_kv.scxml:31
+//line static_host_kv.scxml:32
 func (p *StaticHostKvPolicy) BindCurrentEvent(event StaticHostKvEvent, engine *sce.Engine[StaticHostKvState, StaticHostKvEvent]) {
 	// This document's guards never read _event, so there is nothing to bind.
 }
@@ -2142,7 +2539,7 @@ func (p *StaticHostKvPolicy) BindCurrentEvent(event StaticHostKvEvent, engine *s
 // that event enables and whose guard holds. The engine walks the atomic states
 // and their ancestors and keeps the ordered set; the null event asks for
 // eventless transitions.
-//line static_host_kv.scxml:31
+//line static_host_kv.scxml:32
 func (p *StaticHostKvPolicy) FirstEnabledTransition(state StaticHostKvState, event StaticHostKvEvent, engine *sce.Engine[StaticHostKvState, StaticHostKvEvent]) (sce.EnabledTransition[StaticHostKvState, sce.HistoryID], bool) {
 	switch state {
 	case StaticHostKvStateDeleting:
@@ -2264,7 +2661,7 @@ func (p *StaticHostKvPolicy) FirstEnabledTransition(state StaticHostKvState, eve
 				}, true
 			}
 		}
-		if event == StaticHostKvEventHostKvDeleteRequest {
+		if event == StaticHostKvEventHostKvPutIfRequest {
 			{
 				return sce.EnabledTransition[StaticHostKvState, sce.HistoryID]{
 					Source:          state,
@@ -2275,12 +2672,23 @@ func (p *StaticHostKvPolicy) FirstEnabledTransition(state StaticHostKvState, eve
 				}, true
 			}
 		}
-		if event == StaticHostKvEventHostKvNextKeyRequest {
+		if event == StaticHostKvEventHostKvDeleteRequest {
 			{
 				return sce.EnabledTransition[StaticHostKvState, sce.HistoryID]{
 					Source:          state,
 					Targets:         transitionTargetsOfStaticHostKv[state][3],
 					TransitionIndex: 3,
+					HasActions:      true,
+					IsInternal:      false,
+				}, true
+			}
+		}
+		if event == StaticHostKvEventHostKvNextKeyRequest {
+			{
+				return sce.EnabledTransition[StaticHostKvState, sce.HistoryID]{
+					Source:          state,
+					Targets:         transitionTargetsOfStaticHostKv[state][4],
+					TransitionIndex: 4,
 					HasActions:      true,
 					IsInternal:      false,
 				}, true
@@ -2313,6 +2721,54 @@ func (p *StaticHostKvPolicy) FirstEnabledTransition(state StaticHostKvState, eve
 			}
 		}
 		if event == StaticHostKvEventErrorInvokePut {
+			{
+				return sce.EnabledTransition[StaticHostKvState, sce.HistoryID]{
+					Source:          state,
+					Targets:         transitionTargetsOfStaticHostKv[state][2],
+					TransitionIndex: 2,
+					HasActions:      true,
+					IsInternal:      false,
+				}, true
+			}
+		}
+		if event == StaticHostKvEventErrorExecution {
+			{
+				return sce.EnabledTransition[StaticHostKvState, sce.HistoryID]{
+					Source:          state,
+					Targets:         transitionTargetsOfStaticHostKv[state][3],
+					TransitionIndex: 3,
+					HasActions:      true,
+					IsInternal:      false,
+				}, true
+			}
+		}
+	case StaticHostKvStatePuttingIf:
+		if event == StaticHostKvEventDoneInvokePutif {
+			// NL→IR Item C1 Path A: native typed `_event.data` guard — cond
+			// "_event.data.error === ''" lowered to a tag-checked field comparison on
+			// the lifted `pending<Event>Payload` (no script engine).
+			if p.pendingPayloadTag == StaticHostKvPayloadTagDoneInvokePutif && (p.pendingDoneInvokePutifPayload.error == "") {
+				return sce.EnabledTransition[StaticHostKvState, sce.HistoryID]{
+					Source:          state,
+					Targets:         transitionTargetsOfStaticHostKv[state][0],
+					TransitionIndex: 0,
+					HasActions:      true,
+					IsInternal:      false,
+				}, true
+			}
+		}
+		if event == StaticHostKvEventDoneInvokePutif {
+			{
+				return sce.EnabledTransition[StaticHostKvState, sce.HistoryID]{
+					Source:          state,
+					Targets:         transitionTargetsOfStaticHostKv[state][1],
+					TransitionIndex: 1,
+					HasActions:      true,
+					IsInternal:      false,
+				}, true
+			}
+		}
+		if event == StaticHostKvEventErrorInvokePutif {
 			{
 				return sce.EnabledTransition[StaticHostKvState, sce.HistoryID]{
 					Source:          state,
@@ -2388,13 +2844,13 @@ func (p *StaticHostKvPolicy) FirstEnabledTransition(state StaticHostKvState, eve
 
 // ExecuteTransitionContent runs one transition's executable content (W3C SCXML
 // 3.13), between the microstep's exits and its entries.
-//line static_host_kv.scxml:31
+//line static_host_kv.scxml:32
 func (p *StaticHostKvPolicy) ExecuteTransitionContent(source StaticHostKvState, transitionIndex int, engine *sce.Engine[StaticHostKvState, StaticHostKvEvent]) {
 	switch source {
 	case StaticHostKvStateDeleting:
 		switch transitionIndex {
 		case 0:
-//line static_host_kv.scxml:116
+//line static_host_kv.scxml:151
 			// W3C SCXML 4.9: a transition's content is one block; an error ends it.
 			func() {
 				if p.pendingPayloadTag != StaticHostKvPayloadTagDoneInvokeDel {
@@ -2412,7 +2868,7 @@ func (p *StaticHostKvPolicy) ExecuteTransitionContent(source StaticHostKvState, 
 
 			}()
 		case 1:
-//line static_host_kv.scxml:120
+//line static_host_kv.scxml:155
 			// W3C SCXML 4.9: a transition's content is one block; an error ends it.
 			func() {
 				if p.pendingPayloadTag != StaticHostKvPayloadTagDoneInvokeDel {
@@ -2426,7 +2882,7 @@ func (p *StaticHostKvPolicy) ExecuteTransitionContent(source StaticHostKvState, 
 
 			}()
 		case 2:
-//line static_host_kv.scxml:123
+//line static_host_kv.scxml:158
 			// W3C SCXML 4.9: a transition's content is one block; an error ends it.
 			func() {
 
@@ -2437,7 +2893,7 @@ func (p *StaticHostKvPolicy) ExecuteTransitionContent(source StaticHostKvState, 
 
 			}()
 		case 3:
-//line static_host_kv.scxml:126
+//line static_host_kv.scxml:161
 			// W3C SCXML 4.9: a transition's content is one block; an error ends it.
 			func() {
 
@@ -2451,7 +2907,7 @@ func (p *StaticHostKvPolicy) ExecuteTransitionContent(source StaticHostKvState, 
 	case StaticHostKvStateGetting:
 		switch transitionIndex {
 		case 0:
-//line static_host_kv.scxml:76
+//line static_host_kv.scxml:88
 			// W3C SCXML 4.9: a transition's content is one block; an error ends it.
 			func() {
 				if p.pendingPayloadTag != StaticHostKvPayloadTagDoneInvokeGet {
@@ -2469,13 +2925,19 @@ func (p *StaticHostKvPolicy) ExecuteTransitionContent(source StaticHostKvState, 
 
 
 
+	if func() bool { var sceFailure scealgorithm.Failure; sceValue := scealgorithm.Bounded(&sceFailure, p.pendingDoneInvokeGetPayload.version, 20); if sceFailure.Failed() { engine.Raise(sce.NewPlatformError(StaticHostKvEventErrorExecution, sceerrorreason.ErrorReasonExpressionFailed, "<assign location='got_version'>: an integer operation overflowed or failed")); return true }; p.vGotVersion = sceValue; return false }() {
+		return  // W3C SCXML 4.9: the error ends the block
+	}
+
+
+
 	if func() bool { var sceFailure scealgorithm.Failure; sceValue := scealgorithm.Bounded(&sceFailure, "done", 24); if sceFailure.Failed() { engine.Raise(sce.NewPlatformError(StaticHostKvEventErrorExecution, sceerrorreason.ErrorReasonExpressionFailed, "<assign location='outcome'>: an integer operation overflowed or failed")); return true }; p.vOutcome = sceValue; return false }() {
 		return  // W3C SCXML 4.9: the error ends the block
 	}
 
 			}()
 		case 1:
-//line static_host_kv.scxml:81
+//line static_host_kv.scxml:94
 			// W3C SCXML 4.9: a transition's content is one block; an error ends it.
 			func() {
 				if p.pendingPayloadTag != StaticHostKvPayloadTagDoneInvokeGet {
@@ -2489,7 +2951,7 @@ func (p *StaticHostKvPolicy) ExecuteTransitionContent(source StaticHostKvState, 
 
 			}()
 		case 2:
-//line static_host_kv.scxml:84
+//line static_host_kv.scxml:97
 			// W3C SCXML 4.9: a transition's content is one block; an error ends it.
 			func() {
 
@@ -2500,7 +2962,7 @@ func (p *StaticHostKvPolicy) ExecuteTransitionContent(source StaticHostKvState, 
 
 			}()
 		case 3:
-//line static_host_kv.scxml:87
+//line static_host_kv.scxml:100
 			// W3C SCXML 4.9: a transition's content is one block; an error ends it.
 			func() {
 
@@ -2514,7 +2976,7 @@ func (p *StaticHostKvPolicy) ExecuteTransitionContent(source StaticHostKvState, 
 	case StaticHostKvStateIdle:
 		switch transitionIndex {
 		case 0:
-//line static_host_kv.scxml:56
+//line static_host_kv.scxml:63
 			// W3C SCXML 4.9: a transition's content is one block; an error ends it.
 			func() {
 				if p.pendingPayloadTag != StaticHostKvPayloadTagHostKvGetRequest {
@@ -2528,7 +2990,7 @@ func (p *StaticHostKvPolicy) ExecuteTransitionContent(source StaticHostKvState, 
 
 			}()
 		case 1:
-//line static_host_kv.scxml:59
+//line static_host_kv.scxml:66
 			// W3C SCXML 4.9: a transition's content is one block; an error ends it.
 			func() {
 				if p.pendingPayloadTag != StaticHostKvPayloadTagHostKvPutRequest {
@@ -2548,7 +3010,33 @@ func (p *StaticHostKvPolicy) ExecuteTransitionContent(source StaticHostKvState, 
 
 			}()
 		case 2:
-//line static_host_kv.scxml:63
+//line static_host_kv.scxml:70
+			// W3C SCXML 4.9: a transition's content is one block; an error ends it.
+			func() {
+				if p.pendingPayloadTag != StaticHostKvPayloadTagHostKvPutIfRequest {
+					return
+				}
+
+
+	if func() bool { var sceFailure scealgorithm.Failure; sceValue := scealgorithm.Bounded(&sceFailure, p.pendingHostKvPutIfRequestPayload.key, 256); if sceFailure.Failed() { engine.Raise(sce.NewPlatformError(StaticHostKvEventErrorExecution, sceerrorreason.ErrorReasonExpressionFailed, "<assign location='key'>: an integer operation overflowed or failed")); return true }; p.vKey = sceValue; return false }() {
+		return  // W3C SCXML 4.9: the error ends the block
+	}
+
+
+
+	if func() bool { var sceFailure scealgorithm.Failure; sceValue := scealgorithm.Bounded(&sceFailure, p.pendingHostKvPutIfRequestPayload.value, 4096); if sceFailure.Failed() { engine.Raise(sce.NewPlatformError(StaticHostKvEventErrorExecution, sceerrorreason.ErrorReasonExpressionFailed, "<assign location='value'>: an integer operation overflowed or failed")); return true }; p.vValue = sceValue; return false }() {
+		return  // W3C SCXML 4.9: the error ends the block
+	}
+
+
+
+	if func() bool { var sceFailure scealgorithm.Failure; sceValue := scealgorithm.Bounded(&sceFailure, p.pendingHostKvPutIfRequestPayload.expected_version, 20); if sceFailure.Failed() { engine.Raise(sce.NewPlatformError(StaticHostKvEventErrorExecution, sceerrorreason.ErrorReasonExpressionFailed, "<assign location='expected'>: an integer operation overflowed or failed")); return true }; p.vExpected = sceValue; return false }() {
+		return  // W3C SCXML 4.9: the error ends the block
+	}
+
+			}()
+		case 3:
+//line static_host_kv.scxml:75
 			// W3C SCXML 4.9: a transition's content is one block; an error ends it.
 			func() {
 				if p.pendingPayloadTag != StaticHostKvPayloadTagHostKvDeleteRequest {
@@ -2561,8 +3049,8 @@ func (p *StaticHostKvPolicy) ExecuteTransitionContent(source StaticHostKvState, 
 	}
 
 			}()
-		case 3:
-//line static_host_kv.scxml:66
+		case 4:
+//line static_host_kv.scxml:78
 			// W3C SCXML 4.9: a transition's content is one block; an error ends it.
 			func() {
 				if p.pendingPayloadTag != StaticHostKvPayloadTagHostKvNextKeyRequest {
@@ -2585,7 +3073,7 @@ func (p *StaticHostKvPolicy) ExecuteTransitionContent(source StaticHostKvState, 
 	case StaticHostKvStatePutting:
 		switch transitionIndex {
 		case 0:
-//line static_host_kv.scxml:97
+//line static_host_kv.scxml:110
 			// W3C SCXML 4.9: a transition's content is one block; an error ends it.
 			func() {
 				if p.pendingPayloadTag != StaticHostKvPayloadTagDoneInvokePut {
@@ -2603,7 +3091,7 @@ func (p *StaticHostKvPolicy) ExecuteTransitionContent(source StaticHostKvState, 
 
 			}()
 		case 1:
-//line static_host_kv.scxml:101
+//line static_host_kv.scxml:114
 			// W3C SCXML 4.9: a transition's content is one block; an error ends it.
 			func() {
 				if p.pendingPayloadTag != StaticHostKvPayloadTagDoneInvokePut {
@@ -2617,7 +3105,7 @@ func (p *StaticHostKvPolicy) ExecuteTransitionContent(source StaticHostKvState, 
 
 			}()
 		case 2:
-//line static_host_kv.scxml:104
+//line static_host_kv.scxml:117
 			// W3C SCXML 4.9: a transition's content is one block; an error ends it.
 			func() {
 
@@ -2628,7 +3116,70 @@ func (p *StaticHostKvPolicy) ExecuteTransitionContent(source StaticHostKvState, 
 
 			}()
 		case 3:
-//line static_host_kv.scxml:107
+//line static_host_kv.scxml:120
+			// W3C SCXML 4.9: a transition's content is one block; an error ends it.
+			func() {
+
+
+	if func() bool { var sceFailure scealgorithm.Failure; sceValue := scealgorithm.Bounded(&sceFailure, "refused", 24); if sceFailure.Failed() { engine.Raise(sce.NewPlatformError(StaticHostKvEventErrorExecution, sceerrorreason.ErrorReasonExpressionFailed, "<assign location='outcome'>: an integer operation overflowed or failed")); return true }; p.vOutcome = sceValue; return false }() {
+		return  // W3C SCXML 4.9: the error ends the block
+	}
+
+			}()
+		}
+	case StaticHostKvStatePuttingIf:
+		switch transitionIndex {
+		case 0:
+//line static_host_kv.scxml:131
+			// W3C SCXML 4.9: a transition's content is one block; an error ends it.
+			func() {
+				if p.pendingPayloadTag != StaticHostKvPayloadTagDoneInvokePutif {
+					return
+				}
+
+
+	p.vWritten = p.pendingDoneInvokePutifPayload.written
+
+
+
+	if func() bool { var sceFailure scealgorithm.Failure; sceValue := scealgorithm.Bounded(&sceFailure, p.pendingDoneInvokePutifPayload.version, 20); if sceFailure.Failed() { engine.Raise(sce.NewPlatformError(StaticHostKvEventErrorExecution, sceerrorreason.ErrorReasonExpressionFailed, "<assign location='put_version'>: an integer operation overflowed or failed")); return true }; p.vPutVersion = sceValue; return false }() {
+		return  // W3C SCXML 4.9: the error ends the block
+	}
+
+
+
+	if func() bool { var sceFailure scealgorithm.Failure; sceValue := scealgorithm.Bounded(&sceFailure, "done", 24); if sceFailure.Failed() { engine.Raise(sce.NewPlatformError(StaticHostKvEventErrorExecution, sceerrorreason.ErrorReasonExpressionFailed, "<assign location='outcome'>: an integer operation overflowed or failed")); return true }; p.vOutcome = sceValue; return false }() {
+		return  // W3C SCXML 4.9: the error ends the block
+	}
+
+			}()
+		case 1:
+//line static_host_kv.scxml:136
+			// W3C SCXML 4.9: a transition's content is one block; an error ends it.
+			func() {
+				if p.pendingPayloadTag != StaticHostKvPayloadTagDoneInvokePutif {
+					return
+				}
+
+
+	if func() bool { var sceFailure scealgorithm.Failure; sceValue := scealgorithm.Bounded(&sceFailure, p.pendingDoneInvokePutifPayload.error, 24); if sceFailure.Failed() { engine.Raise(sce.NewPlatformError(StaticHostKvEventErrorExecution, sceerrorreason.ErrorReasonExpressionFailed, "<assign location='outcome'>: an integer operation overflowed or failed")); return true }; p.vOutcome = sceValue; return false }() {
+		return  // W3C SCXML 4.9: the error ends the block
+	}
+
+			}()
+		case 2:
+//line static_host_kv.scxml:139
+			// W3C SCXML 4.9: a transition's content is one block; an error ends it.
+			func() {
+
+
+	if func() bool { var sceFailure scealgorithm.Failure; sceValue := scealgorithm.Bounded(&sceFailure, "deadline", 24); if sceFailure.Failed() { engine.Raise(sce.NewPlatformError(StaticHostKvEventErrorExecution, sceerrorreason.ErrorReasonExpressionFailed, "<assign location='outcome'>: an integer operation overflowed or failed")); return true }; p.vOutcome = sceValue; return false }() {
+		return  // W3C SCXML 4.9: the error ends the block
+	}
+
+			}()
+		case 3:
+//line static_host_kv.scxml:142
 			// W3C SCXML 4.9: a transition's content is one block; an error ends it.
 			func() {
 
@@ -2642,7 +3193,7 @@ func (p *StaticHostKvPolicy) ExecuteTransitionContent(source StaticHostKvState, 
 	case StaticHostKvStateWalking:
 		switch transitionIndex {
 		case 0:
-//line static_host_kv.scxml:136
+//line static_host_kv.scxml:171
 			// W3C SCXML 4.9: a transition's content is one block; an error ends it.
 			func() {
 				if p.pendingPayloadTag != StaticHostKvPayloadTagDoneInvokeWalk {
@@ -2666,7 +3217,7 @@ func (p *StaticHostKvPolicy) ExecuteTransitionContent(source StaticHostKvState, 
 
 			}()
 		case 1:
-//line static_host_kv.scxml:141
+//line static_host_kv.scxml:176
 			// W3C SCXML 4.9: a transition's content is one block; an error ends it.
 			func() {
 				if p.pendingPayloadTag != StaticHostKvPayloadTagDoneInvokeWalk {
@@ -2680,7 +3231,7 @@ func (p *StaticHostKvPolicy) ExecuteTransitionContent(source StaticHostKvState, 
 
 			}()
 		case 2:
-//line static_host_kv.scxml:144
+//line static_host_kv.scxml:179
 			// W3C SCXML 4.9: a transition's content is one block; an error ends it.
 			func() {
 
@@ -2691,7 +3242,7 @@ func (p *StaticHostKvPolicy) ExecuteTransitionContent(source StaticHostKvState, 
 
 			}()
 		case 3:
-//line static_host_kv.scxml:147
+//line static_host_kv.scxml:182
 			// W3C SCXML 4.9: a transition's content is one block; an error ends it.
 			func() {
 

@@ -1,5 +1,5 @@
 // SCE-GENERATED — DO NOT EDIT
-// source-hash: 2073d8a55462e1ce61d8a77293fdd2c141aceda8ad173303c5b84813ca22eeee
+// source-hash: a9c299ab96f6e6c2a694137962a3f363e82399bf22fbd9f4aa0018913d55ad58
 
 
 // SPDX-License-Identifier: AGPL-3.0-only WITH AdditionRef-SCE-Linking-Exception OR LicenseRef-SCE-Commercial
@@ -19,7 +19,7 @@
 // Implements StatePolicy with full transition logic, entry/exit actions, and
 // event processing.
 
-// SCE-MAP: static_host_kv.scxml:31 :: _machine
+// SCE-MAP: static_host_kv.scxml:32 :: _machine
 
 import SceRuntime
 import SceForgeRuntime
@@ -37,7 +37,8 @@ public enum StaticHostKvState: Int, Hashable, Sendable {
     case getting = 1
     case idle = 2
     case putting = 3
-    case walking = 4
+    case puttingIf = 4
+    case walking = 5
 }
 
 /// Every state this document declares, in the order the cases are numbered.
@@ -49,6 +50,7 @@ public let StaticHostKvAllStates: [StaticHostKvState] = [
     .getting,
     .idle,
     .putting,
+    .puttingIf,
     .walking,
 ]
 
@@ -72,10 +74,12 @@ private let childStatesOfStaticHostKv: [[StaticHostKvState]] = [
     [],
     [],
     [],
+    [],
 ]
 
 /// Each compound state's initial transition target, as written (§scxml-3.3).
 private let initialTargetsOfStaticHostKv: [[StaticHostKvTarget]] = [
+    [],
     [],
     [],
     [],
@@ -98,18 +102,21 @@ public enum StaticHostKvEvent: Int, Hashable, Sendable {
     case doneInvokeDel = 1
     case doneInvokeGet = 2
     case doneInvokePut = 3
-    case doneInvokeWalk = 4
-    case errorExecution = 5
-    case errorInvokeDel = 6
-    case errorInvokeGet = 7
-    case errorInvokePut = 8
-    case errorInvokeWalk = 9
-    case hostKvDeleteRequest = 10
-    case hostKvGetRequest = 11
-    case hostKvNextKeyRequest = 12
-    case hostKvPutRequest = 13
+    case doneInvokePutif = 4
+    case doneInvokeWalk = 5
+    case errorExecution = 6
+    case errorInvokeDel = 7
+    case errorInvokeGet = 8
+    case errorInvokePut = 9
+    case errorInvokePutif = 10
+    case errorInvokeWalk = 11
+    case hostKvDeleteRequest = 12
+    case hostKvGetRequest = 13
+    case hostKvNextKeyRequest = 14
+    case hostKvPutRequest = 15
+    case hostKvPutIfRequest = 16
     /// W3C SCXML 3.13: the sentinel for eventless transition dispatch.
-    case null = 14
+    case null = 17
 }
 
 // NL-to-IR Item C1 Path A: the typed `_event.data` payload channel for the
@@ -120,11 +127,13 @@ enum StaticHostKvPayloadTag {
     case doneInvokeDel
     case doneInvokeGet
     case doneInvokePut
+    case doneInvokePutif
     case doneInvokeWalk
     case hostKvDeleteRequest
     case hostKvGetRequest
     case hostKvNextKeyRequest
     case hostKvPutRequest
+    case hostKvPutIfRequest
 }
 
 /// The typed `_event.data` payload of `done.invoke.del` (NL-to-IR Item C1 Path A): what a
@@ -142,6 +151,7 @@ struct StaticHostKvDoneInvokeGetPayload {
     var error: String
     var found: Bool
     var value: String
+    var version: String
 }
 
 /// The typed `_event.data` payload of `done.invoke.put` (NL-to-IR Item C1 Path A): what a
@@ -150,6 +160,15 @@ struct StaticHostKvDoneInvokeGetPayload {
 struct StaticHostKvDoneInvokePutPayload {
     var error: String
     var replaced: Bool
+}
+
+/// The typed `_event.data` payload of `done.invoke.putif` (NL-to-IR Item C1 Path A): what a
+/// natively lowered expression reads. Internal to the module; a host hands the
+/// values to the inject seam below.
+struct StaticHostKvDoneInvokePutifPayload {
+    var error: String
+    var written: Bool
+    var version: String
 }
 
 /// The typed `_event.data` payload of `done.invoke.walk` (NL-to-IR Item C1 Path A): what a
@@ -191,6 +210,15 @@ struct StaticHostKvHostKvPutRequestPayload {
     var value: String
 }
 
+/// The typed `_event.data` payload of `host.kv.put_if.request` (NL-to-IR Item C1 Path A): what a
+/// natively lowered expression reads. Internal to the module; a host hands the
+/// values to the inject seam below.
+struct StaticHostKvHostKvPutIfRequestPayload {
+    var key: String
+    var value: String
+    var expected_version: String
+}
+
 
 // ======================================================================
 // Policy
@@ -216,11 +244,13 @@ public final class StaticHostKvPolicy: InvocablePolicy {
     var pendingDoneInvokeDelPayload: StaticHostKvDoneInvokeDelPayload!
     var pendingDoneInvokeGetPayload: StaticHostKvDoneInvokeGetPayload!
     var pendingDoneInvokePutPayload: StaticHostKvDoneInvokePutPayload!
+    var pendingDoneInvokePutifPayload: StaticHostKvDoneInvokePutifPayload!
     var pendingDoneInvokeWalkPayload: StaticHostKvDoneInvokeWalkPayload!
     var pendingHostKvDeleteRequestPayload: StaticHostKvHostKvDeleteRequestPayload!
     var pendingHostKvGetRequestPayload: StaticHostKvHostKvGetRequestPayload!
     var pendingHostKvNextKeyRequestPayload: StaticHostKvHostKvNextKeyRequestPayload!
     var pendingHostKvPutRequestPayload: StaticHostKvHostKvPutRequestPayload!
+    var pendingHostKvPutIfRequestPayload: StaticHostKvHostKvPutIfRequestPayload!
 
 
     // ── SCE Accepted Subset §2.15: the datamodel="sce-static" variables ──
@@ -232,14 +262,22 @@ public final class StaticHostKvPolicy: InvocablePolicy {
     var vAfter: String
     /// W3C SCXML 5.2: the `prefix` datamodel variable.
     var vPrefix: String
+    /// W3C SCXML 5.2: the `expected` datamodel variable.
+    var vExpected: String
     /// W3C SCXML 5.2: the `outcome` datamodel variable, published (`sce:direction="out"`).
     var vOutcome: String
     /// W3C SCXML 5.2: the `found` datamodel variable, published (`sce:direction="out"`).
     var vFound: Bool
     /// W3C SCXML 5.2: the `got` datamodel variable, published (`sce:direction="out"`).
     var vGot: String
+    /// W3C SCXML 5.2: the `got_version` datamodel variable, published (`sce:direction="out"`).
+    var vGotVersion: String
     /// W3C SCXML 5.2: the `replaced` datamodel variable, published (`sce:direction="out"`).
     var vReplaced: Bool
+    /// W3C SCXML 5.2: the `written` datamodel variable, published (`sce:direction="out"`).
+    var vWritten: Bool
+    /// W3C SCXML 5.2: the `put_version` datamodel variable, published (`sce:direction="out"`).
+    var vPutVersion: String
     /// W3C SCXML 5.2: the `existed` datamodel variable, published (`sce:direction="out"`).
     var vExisted: Bool
     /// W3C SCXML 5.2: the `next_found` datamodel variable, published (`sce:direction="out"`).
@@ -259,9 +297,21 @@ public final class StaticHostKvPolicy: InvocablePolicy {
     /// (W3C SCXML 5.2). Only the machine writes it.
     public var got: String { vGot }
 
+    /// Reports what the published `got_version` datamodel variable holds now
+    /// (W3C SCXML 5.2). Only the machine writes it.
+    public var gotVersion: String { vGotVersion }
+
     /// Reports what the published `replaced` datamodel variable holds now
     /// (W3C SCXML 5.2). Only the machine writes it.
     public var replaced: Bool { vReplaced }
+
+    /// Reports what the published `written` datamodel variable holds now
+    /// (W3C SCXML 5.2). Only the machine writes it.
+    public var written: Bool { vWritten }
+
+    /// Reports what the published `put_version` datamodel variable holds now
+    /// (W3C SCXML 5.2). Only the machine writes it.
+    public var putVersion: String { vPutVersion }
 
     /// Reports what the published `existed` datamodel variable holds now
     /// (W3C SCXML 5.2). Only the machine writes it.
@@ -285,10 +335,14 @@ public final class StaticHostKvPolicy: InvocablePolicy {
         public var vValue: String? = nil
         public var vAfter: String? = nil
         public var vPrefix: String? = nil
+        public var vExpected: String? = nil
         public var vOutcome: String? = nil
         public var vFound: Bool? = nil
         public var vGot: String? = nil
+        public var vGotVersion: String? = nil
         public var vReplaced: Bool? = nil
+        public var vWritten: Bool? = nil
+        public var vPutVersion: String? = nil
         public var vExisted: Bool? = nil
         public var vNextFound: Bool? = nil
         public var vNext: String? = nil
@@ -323,6 +377,12 @@ public final class StaticHostKvPolicy: InvocablePolicy {
         } else {
             vPrefix = ""
         }
+        let vExpected: String
+        if let handed = params.vExpected {
+            vExpected = handed
+        } else {
+            vExpected = ""
+        }
         let vOutcome: String
         if let handed = params.vOutcome {
             vOutcome = handed
@@ -341,11 +401,29 @@ public final class StaticHostKvPolicy: InvocablePolicy {
         } else {
             vGot = ""
         }
+        let vGotVersion: String
+        if let handed = params.vGotVersion {
+            vGotVersion = handed
+        } else {
+            vGotVersion = ""
+        }
         let vReplaced: Bool
         if let handed = params.vReplaced {
             vReplaced = handed
         } else {
             vReplaced = false
+        }
+        let vWritten: Bool
+        if let handed = params.vWritten {
+            vWritten = handed
+        } else {
+            vWritten = false
+        }
+        let vPutVersion: String
+        if let handed = params.vPutVersion {
+            vPutVersion = handed
+        } else {
+            vPutVersion = ""
         }
         let vExisted: Bool
         if let handed = params.vExisted {
@@ -369,10 +447,14 @@ public final class StaticHostKvPolicy: InvocablePolicy {
         self.vValue = vValue
         self.vAfter = vAfter
         self.vPrefix = vPrefix
+        self.vExpected = vExpected
         self.vOutcome = vOutcome
         self.vFound = vFound
         self.vGot = vGot
+        self.vGotVersion = vGotVersion
         self.vReplaced = vReplaced
+        self.vWritten = vWritten
+        self.vPutVersion = vPutVersion
         self.vExisted = vExisted
         self.vNextFound = vNextFound
         self.vNext = vNext
@@ -383,10 +465,14 @@ public final class StaticHostKvPolicy: InvocablePolicy {
         let vValue: String = ""
         let vAfter: String = ""
         let vPrefix: String = ""
+        let vExpected: String = ""
         let vOutcome: String = ""
         let vFound: Bool = false
         let vGot: String = ""
+        let vGotVersion: String = ""
         let vReplaced: Bool = false
+        let vWritten: Bool = false
+        let vPutVersion: String = ""
         let vExisted: Bool = false
         let vNextFound: Bool = false
         let vNext: String = ""
@@ -394,10 +480,14 @@ public final class StaticHostKvPolicy: InvocablePolicy {
         self.vValue = vValue
         self.vAfter = vAfter
         self.vPrefix = vPrefix
+        self.vExpected = vExpected
         self.vOutcome = vOutcome
         self.vFound = vFound
         self.vGot = vGot
+        self.vGotVersion = vGotVersion
         self.vReplaced = vReplaced
+        self.vWritten = vWritten
+        self.vPutVersion = vPutVersion
         self.vExisted = vExisted
         self.vNextFound = vNextFound
         self.vNext = vNext
@@ -520,15 +610,17 @@ public final class StaticHostKvPolicy: InvocablePolicy {
     public func getDocumentOrder(_ state: StaticHostKvState) -> Int {
         switch state {
         case .deleting:
-            return 3
+            return 4
         case .getting:
             return 1
         case .idle:
             return 0
         case .putting:
             return 2
+        case .puttingIf:
+            return 3
         case .walking:
-            return 4
+            return 5
         }
     }
 
@@ -543,6 +635,8 @@ public final class StaticHostKvPolicy: InvocablePolicy {
             return "done.invoke.get"
         case .doneInvokePut:
             return "done.invoke.put"
+        case .doneInvokePutif:
+            return "done.invoke.putif"
         case .doneInvokeWalk:
             return "done.invoke.walk"
         case .errorExecution:
@@ -553,6 +647,8 @@ public final class StaticHostKvPolicy: InvocablePolicy {
             return "error.invoke.get"
         case .errorInvokePut:
             return "error.invoke.put"
+        case .errorInvokePutif:
+            return "error.invoke.putif"
         case .errorInvokeWalk:
             return "error.invoke.walk"
         case .hostKvDeleteRequest:
@@ -563,6 +659,8 @@ public final class StaticHostKvPolicy: InvocablePolicy {
             return "host.kv.next_key.request"
         case .hostKvPutRequest:
             return "host.kv.put.request"
+        case .hostKvPutIfRequest:
+            return "host.kv.put_if.request"
         case .null:
             return ""
         }
@@ -579,6 +677,8 @@ public final class StaticHostKvPolicy: InvocablePolicy {
             return .doneInvokeGet
         case "done.invoke.put":
             return .doneInvokePut
+        case "done.invoke.putif":
+            return .doneInvokePutif
         case "done.invoke.walk":
             return .doneInvokeWalk
         case "error.execution":
@@ -589,6 +689,8 @@ public final class StaticHostKvPolicy: InvocablePolicy {
             return .errorInvokeGet
         case "error.invoke.put":
             return .errorInvokePut
+        case "error.invoke.putif":
+            return .errorInvokePutif
         case "error.invoke.walk":
             return .errorInvokeWalk
         case "host.kv.delete.request":
@@ -599,6 +701,8 @@ public final class StaticHostKvPolicy: InvocablePolicy {
             return .hostKvNextKeyRequest
         case "host.kv.put.request":
             return .hostKvPutRequest
+        case "host.kv.put_if.request":
+            return .hostKvPutIfRequest
         default:
             return nil
         }
@@ -615,6 +719,8 @@ public final class StaticHostKvPolicy: InvocablePolicy {
             return "idle"
         case .putting:
             return "putting"
+        case .puttingIf:
+            return "putting_if"
         case .walking:
             return "walking"
         }
@@ -635,6 +741,8 @@ public final class StaticHostKvPolicy: InvocablePolicy {
             return .idle
         case "putting":
             return .putting
+        case "putting_if":
+            return .puttingIf
         case "walking":
             return .walking
         default:
@@ -659,7 +767,7 @@ public final class StaticHostKvPolicy: InvocablePolicy {
 
     /// The `<invoke>`s a host runs (W3C SCXML 6.4.1): their `done.invoke.<id>` is
     /// accepted only through the engine's `completeHostInvoke`.
-    public var hostInvokeIDs: [String] { ["get", "put", "del", "walk"] }
+    public var hostInvokeIDs: [String] { ["get", "put", "putif", "del", "walk"] }
     public var hasFinalize: Bool { false }
     public var hasAutoforward: Bool { false }
 
@@ -680,6 +788,9 @@ public final class StaticHostKvPolicy: InvocablePolicy {
         case let payload as StaticHostKvDoneInvokePutPayload:
             pendingPayloadTag = .doneInvokePut
             pendingDoneInvokePutPayload = payload
+        case let payload as StaticHostKvDoneInvokePutifPayload:
+            pendingPayloadTag = .doneInvokePutif
+            pendingDoneInvokePutifPayload = payload
         case let payload as StaticHostKvDoneInvokeWalkPayload:
             pendingPayloadTag = .doneInvokeWalk
             pendingDoneInvokeWalkPayload = payload
@@ -695,6 +806,9 @@ public final class StaticHostKvPolicy: InvocablePolicy {
         case let payload as StaticHostKvHostKvPutRequestPayload:
             pendingPayloadTag = .hostKvPutRequest
             pendingHostKvPutRequestPayload = payload
+        case let payload as StaticHostKvHostKvPutIfRequestPayload:
+            pendingPayloadTag = .hostKvPutIfRequest
+            pendingHostKvPutIfRequestPayload = payload
         default:
             break
         }
@@ -722,7 +836,8 @@ public final class StaticHostKvPolicy: InvocablePolicy {
             let sceField0: String = try fields.text("error", bound: 24)
             let sceField1: Bool = try fields.truth("found")
             let sceField2: String = try fields.text("value", bound: 4096)
-            let payload = StaticHostKvDoneInvokeGetPayload(error: sceField0, found: sceField1, value: sceField2)
+            let sceField3: String = try fields.text("version", bound: 20)
+            let payload = StaticHostKvDoneInvokeGetPayload(error: sceField0, found: sceField1, value: sceField2, version: sceField3)
             pendingDoneInvokeGetPayload = payload
             pendingPayloadTag = .doneInvokeGet
         case .doneInvokePut:
@@ -732,6 +847,14 @@ public final class StaticHostKvPolicy: InvocablePolicy {
             let payload = StaticHostKvDoneInvokePutPayload(error: sceField0, replaced: sceField1)
             pendingDoneInvokePutPayload = payload
             pendingPayloadTag = .doneInvokePut
+        case .doneInvokePutif:
+            let fields = try PayloadFields.decode(metadata.data)
+            let sceField0: String = try fields.text("error", bound: 24)
+            let sceField1: Bool = try fields.truth("written")
+            let sceField2: String = try fields.text("version", bound: 20)
+            let payload = StaticHostKvDoneInvokePutifPayload(error: sceField0, written: sceField1, version: sceField2)
+            pendingDoneInvokePutifPayload = payload
+            pendingPayloadTag = .doneInvokePutif
         case .doneInvokeWalk:
             let fields = try PayloadFields.decode(metadata.data)
             let sceField0: String = try fields.text("error", bound: 24)
@@ -766,6 +889,14 @@ public final class StaticHostKvPolicy: InvocablePolicy {
             let payload = StaticHostKvHostKvPutRequestPayload(key: sceField0, value: sceField1)
             pendingHostKvPutRequestPayload = payload
             pendingPayloadTag = .hostKvPutRequest
+        case .hostKvPutIfRequest:
+            let fields = try PayloadFields.decode(metadata.data)
+            let sceField0: String = try fields.text("key", bound: 256)
+            let sceField1: String = try fields.text("value", bound: 4096)
+            let sceField2: String = try fields.text("expected_version", bound: 20)
+            let payload = StaticHostKvHostKvPutIfRequestPayload(key: sceField0, value: sceField1, expected_version: sceField2)
+            pendingHostKvPutIfRequestPayload = payload
+            pendingPayloadTag = .hostKvPutIfRequest
         default:
             break
         }
@@ -802,6 +933,10 @@ public final class StaticHostKvPolicy: InvocablePolicy {
             }
             if pending.documentID.utf8.elementsEqual("put".utf8) {
                 sceStartHostInvokePut(engine: engine)
+                return
+            }
+            if pending.documentID.utf8.elementsEqual("putif".utf8) {
+                sceStartHostInvokePutif(engine: engine)
                 return
             }
             if pending.documentID.utf8.elementsEqual("walk".utf8) {
@@ -906,6 +1041,46 @@ public final class StaticHostKvPolicy: InvocablePolicy {
         }
     }
 
+    /// Starts `<invoke type="sce-host-kv-put-if" id="putif">`
+    /// (W3C SCXML 6.4.1): the invoker the host registered for the type is handed the
+    /// request, under the id the DOCUMENT wrote, which is the name `done.invoke.<id>`
+    /// carries. A type the host declared and never registered an invoker for is the same
+    /// fact as an unsupported one, so the same event, and not a silence that reads as
+    /// started.
+    private func sceStartHostInvokePutif(engine: Engine<StaticHostKvPolicy>) {
+        // W3C SCXML 6.4.1: what the request says is evaluated now, when the invocation
+        // starts. The text the host reads is the one each value spells; the JSON is the
+        // typed pairs, written once, so a host that forwards the request forwards the
+        // engine's serialisation. A value that cannot be evaluated starts nothing.
+        var hostParams: [String: [String]] = [:]
+        var hostParts: [PayloadPair] = []
+        do {
+            let sceValue: WireValue = .text(self.vKey)
+            appendFormParam(&hostParams, "key", sceValue)
+            hostParts.append(PayloadPair("key", sceValue))
+        }
+        do {
+            let sceValue: WireValue = .text(self.vValue)
+            appendFormParam(&hostParams, "value", sceValue)
+            hostParts.append(PayloadPair("value", sceValue))
+        }
+        do {
+            let sceValue: WireValue = .text(self.vExpected)
+            appendFormParam(&hostParams, "expected_version", sceValue)
+            hostParts.append(PayloadPair("expected_version", sceValue))
+        }
+        let request = HostInvokeRequest(
+            processorType: "sce-host-kv-put-if",
+            invokeID: "putif",
+            params: hostParams,
+            eventData: hostParts.isEmpty ? "" : payloadJSON(hostParts),
+            sessionID: sessionID
+        )
+        if !engine.performHostInvoke(request) {
+            engine.raise(EventWithMetadata.platformError(StaticHostKvEvent.errorExecution, reason: .processorUnregistered, message: "<invoke> names an invoker the host declared but never registered"))
+        }
+    }
+
     /// Starts `<invoke type="sce-host-kv-next-key" id="walk">`
     /// (W3C SCXML 6.4.1): the invoker the host registered for the type is handed the
     /// request, under the id the DOCUMENT wrote, which is the name `done.invoke.<id>`
@@ -977,6 +1152,16 @@ public final class StaticHostKvPolicy: InvocablePolicy {
                 state: .putting,
                 documentID: "put"
             ))
+        case .puttingIf:
+            // W3C SCXML 6.4.1: an <invoke> a host runs is deferred like any other, so a
+            // state that exits before the macrostep ends never starts it. The id it is
+            // started under is the document's: `done.invoke.<id>` is the name the author
+            // wrote a transition for.
+            deferInvoke(&pendingInvokes, PendingInvoke(
+                invokeID: "putif",
+                state: .puttingIf,
+                documentID: "putif"
+            ))
         case .walking:
             // W3C SCXML 6.4.1: an <invoke> a host runs is deferred like any other, so a
             // state that exits before the macrostep ends never starts it. The id it is
@@ -1027,6 +1212,9 @@ public final class StaticHostKvPolicy: InvocablePolicy {
         case .putting:
             cancelInvokesForState(&pendingInvokes, .putting)
             engine.cancelHostInvoke(processorType: "sce-host-kv-put", invokeID: "put")
+        case .puttingIf:
+            cancelInvokesForState(&pendingInvokes, .puttingIf)
+            engine.cancelHostInvoke(processorType: "sce-host-kv-put-if", invokeID: "putif")
         case .walking:
             cancelInvokesForState(&pendingInvokes, .walking)
             engine.cancelHostInvoke(processorType: "sce-host-kv-next-key", invokeID: "walk")
@@ -1163,12 +1351,23 @@ public final class StaticHostKvPolicy: InvocablePolicy {
                     )
                 }
             }
+            if event == .hostKvPutIfRequest {
+                do {
+                    return EnabledTransition(
+                        source: state,
+                        targets: [.state(.puttingIf)],
+                        transitionIndex: 2,
+                        hasActions: true,
+                        isInternal: false
+                    )
+                }
+            }
             if event == .hostKvDeleteRequest {
                 do {
                     return EnabledTransition(
                         source: state,
                         targets: [.state(.deleting)],
-                        transitionIndex: 2,
+                        transitionIndex: 3,
                         hasActions: true,
                         isInternal: false
                     )
@@ -1179,7 +1378,7 @@ public final class StaticHostKvPolicy: InvocablePolicy {
                     return EnabledTransition(
                         source: state,
                         targets: [.state(.walking)],
-                        transitionIndex: 3,
+                        transitionIndex: 4,
                         hasActions: true,
                         isInternal: false
                     )
@@ -1210,6 +1409,52 @@ public final class StaticHostKvPolicy: InvocablePolicy {
                 }
             }
             if event == .errorInvokePut {
+                do {
+                    return EnabledTransition(
+                        source: state,
+                        targets: [.state(.idle)],
+                        transitionIndex: 2,
+                        hasActions: true,
+                        isInternal: false
+                    )
+                }
+            }
+            if event == .errorExecution {
+                do {
+                    return EnabledTransition(
+                        source: state,
+                        targets: [.state(.idle)],
+                        transitionIndex: 3,
+                        hasActions: true,
+                        isInternal: false
+                    )
+                }
+            }
+        case .puttingIf:
+            if event == .doneInvokePutif {
+                // W3C SCXML 5.9: cond="_event.data.error === ''" lowered to Swift at build time
+                if (self.pendingPayloadTag == .doneInvokePutif && (self.pendingDoneInvokePutifPayload.error.utf8.elementsEqual("".utf8))) {
+                    return EnabledTransition(
+                        source: state,
+                        targets: [.state(.idle)],
+                        transitionIndex: 0,
+                        hasActions: true,
+                        isInternal: false
+                    )
+                }
+            }
+            if event == .doneInvokePutif {
+                do {
+                    return EnabledTransition(
+                        source: state,
+                        targets: [.state(.idle)],
+                        transitionIndex: 1,
+                        hasActions: true,
+                        isInternal: false
+                    )
+                }
+            }
+            if event == .errorInvokePutif {
                 do {
                     return EnabledTransition(
                         source: state,
@@ -1362,6 +1607,12 @@ public final class StaticHostKvPolicy: InvocablePolicy {
 
 
 
+                if ({ () -> Bool in do { let sceValue: String = (try Checked.bounded(self.pendingDoneInvokeGetPayload.version, capacity: 20)); self.vGotVersion = sceValue } catch { engine.raise(EventWithMetadata.platformError(StaticHostKvEvent.errorExecution, reason: .expressionFailed, message: "<assign location='got_version'>: an integer operation overflowed or failed")); return true }; return false }()) {
+                    break sceBlock  // W3C SCXML 4.9: the error ends the block
+                }
+
+
+
                 if ({ () -> Bool in do { let sceValue: String = (try Checked.bounded("done", capacity: 24)); self.vOutcome = sceValue } catch { engine.raise(EventWithMetadata.platformError(StaticHostKvEvent.errorExecution, reason: .expressionFailed, message: "<assign location='outcome'>: an integer operation overflowed or failed")); return true }; return false }()) {
                     break sceBlock  // W3C SCXML 4.9: the error ends the block
                 }
@@ -1440,6 +1691,31 @@ public final class StaticHostKvPolicy: InvocablePolicy {
             case 2:
                 // W3C SCXML 4.9: a transition's content is one block; an error ends it.
                 sceBlock: do {
+                    if pendingPayloadTag != .hostKvPutIfRequest {
+                        break sceBlock
+                    }
+
+
+                if ({ () -> Bool in do { let sceValue: String = (try Checked.bounded(self.pendingHostKvPutIfRequestPayload.key, capacity: 256)); self.vKey = sceValue } catch { engine.raise(EventWithMetadata.platformError(StaticHostKvEvent.errorExecution, reason: .expressionFailed, message: "<assign location='key'>: an integer operation overflowed or failed")); return true }; return false }()) {
+                    break sceBlock  // W3C SCXML 4.9: the error ends the block
+                }
+
+
+
+                if ({ () -> Bool in do { let sceValue: String = (try Checked.bounded(self.pendingHostKvPutIfRequestPayload.value, capacity: 4096)); self.vValue = sceValue } catch { engine.raise(EventWithMetadata.platformError(StaticHostKvEvent.errorExecution, reason: .expressionFailed, message: "<assign location='value'>: an integer operation overflowed or failed")); return true }; return false }()) {
+                    break sceBlock  // W3C SCXML 4.9: the error ends the block
+                }
+
+
+
+                if ({ () -> Bool in do { let sceValue: String = (try Checked.bounded(self.pendingHostKvPutIfRequestPayload.expected_version, capacity: 20)); self.vExpected = sceValue } catch { engine.raise(EventWithMetadata.platformError(StaticHostKvEvent.errorExecution, reason: .expressionFailed, message: "<assign location='expected'>: an integer operation overflowed or failed")); return true }; return false }()) {
+                    break sceBlock  // W3C SCXML 4.9: the error ends the block
+                }
+
+                }
+            case 3:
+                // W3C SCXML 4.9: a transition's content is one block; an error ends it.
+                sceBlock: do {
                     if pendingPayloadTag != .hostKvDeleteRequest {
                         break sceBlock
                     }
@@ -1450,7 +1726,7 @@ public final class StaticHostKvPolicy: InvocablePolicy {
                 }
 
                 }
-            case 3:
+            case 4:
                 // W3C SCXML 4.9: a transition's content is one block; an error ends it.
                 sceBlock: do {
                     if pendingPayloadTag != .hostKvNextKeyRequest {
@@ -1500,6 +1776,67 @@ public final class StaticHostKvPolicy: InvocablePolicy {
 
 
                 if ({ () -> Bool in do { let sceValue: String = (try Checked.bounded(self.pendingDoneInvokePutPayload.error, capacity: 24)); self.vOutcome = sceValue } catch { engine.raise(EventWithMetadata.platformError(StaticHostKvEvent.errorExecution, reason: .expressionFailed, message: "<assign location='outcome'>: an integer operation overflowed or failed")); return true }; return false }()) {
+                    break sceBlock  // W3C SCXML 4.9: the error ends the block
+                }
+
+                }
+            case 2:
+                // W3C SCXML 4.9: a transition's content is one block; an error ends it.
+                sceBlock: do {
+
+
+                if ({ () -> Bool in do { let sceValue: String = (try Checked.bounded("deadline", capacity: 24)); self.vOutcome = sceValue } catch { engine.raise(EventWithMetadata.platformError(StaticHostKvEvent.errorExecution, reason: .expressionFailed, message: "<assign location='outcome'>: an integer operation overflowed or failed")); return true }; return false }()) {
+                    break sceBlock  // W3C SCXML 4.9: the error ends the block
+                }
+
+                }
+            case 3:
+                // W3C SCXML 4.9: a transition's content is one block; an error ends it.
+                sceBlock: do {
+
+
+                if ({ () -> Bool in do { let sceValue: String = (try Checked.bounded("refused", capacity: 24)); self.vOutcome = sceValue } catch { engine.raise(EventWithMetadata.platformError(StaticHostKvEvent.errorExecution, reason: .expressionFailed, message: "<assign location='outcome'>: an integer operation overflowed or failed")); return true }; return false }()) {
+                    break sceBlock  // W3C SCXML 4.9: the error ends the block
+                }
+
+                }
+            default:
+                break
+            }
+        case .puttingIf:
+            switch transitionIndex {
+            case 0:
+                // W3C SCXML 4.9: a transition's content is one block; an error ends it.
+                sceBlock: do {
+                    if pendingPayloadTag != .doneInvokePutif {
+                        break sceBlock
+                    }
+
+
+                self.vWritten = self.pendingDoneInvokePutifPayload.written
+
+
+
+                if ({ () -> Bool in do { let sceValue: String = (try Checked.bounded(self.pendingDoneInvokePutifPayload.version, capacity: 20)); self.vPutVersion = sceValue } catch { engine.raise(EventWithMetadata.platformError(StaticHostKvEvent.errorExecution, reason: .expressionFailed, message: "<assign location='put_version'>: an integer operation overflowed or failed")); return true }; return false }()) {
+                    break sceBlock  // W3C SCXML 4.9: the error ends the block
+                }
+
+
+
+                if ({ () -> Bool in do { let sceValue: String = (try Checked.bounded("done", capacity: 24)); self.vOutcome = sceValue } catch { engine.raise(EventWithMetadata.platformError(StaticHostKvEvent.errorExecution, reason: .expressionFailed, message: "<assign location='outcome'>: an integer operation overflowed or failed")); return true }; return false }()) {
+                    break sceBlock  // W3C SCXML 4.9: the error ends the block
+                }
+
+                }
+            case 1:
+                // W3C SCXML 4.9: a transition's content is one block; an error ends it.
+                sceBlock: do {
+                    if pendingPayloadTag != .doneInvokePutif {
+                        break sceBlock
+                    }
+
+
+                if ({ () -> Bool in do { let sceValue: String = (try Checked.bounded(self.pendingDoneInvokePutifPayload.error, capacity: 24)); self.vOutcome = sceValue } catch { engine.raise(EventWithMetadata.platformError(StaticHostKvEvent.errorExecution, reason: .expressionFailed, message: "<assign location='outcome'>: an integer operation overflowed or failed")); return true }; return false }()) {
                     break sceBlock  // W3C SCXML 4.9: the error ends the block
                 }
 
@@ -1665,6 +2002,24 @@ extension Engine where Policy == StaticHostKvPolicy {
             )
         )
     }
+
+    /// Raises `host.kv.put_if.request` with its payload, binding the event and the payload's
+    /// values in one call so the pairing of a name and a type cannot be
+    /// constructed inconsistently (NL-to-IR Item C1 Path A). Both carriers are
+    /// filled: the typed one a native expression reads, and `data`, which is what
+    /// every other reader of `_event.data` binds it from.
+    public func raiseHostKvPutIfRequest(key: String, value: String, expected_version: String) {
+        raiseExternalWithMeta(
+            EventWithMetadata(
+                StaticHostKvEvent.hostKvPutIfRequest,
+                metadata: EventMetadata(
+                    data: payloadJSON(.text("key", key), .text("value", value), .text("expected_version", expected_version)),
+                    eventType: .externalEvent,
+                    typedPayload: StaticHostKvHostKvPutIfRequestPayload(key: key, value: value, expected_version: expected_version)
+                )
+            )
+        )
+    }
 }
 
 
@@ -1684,16 +2039,18 @@ public struct StaticHostKvGetResult: Equatable, Sendable {
     public var error: String
     public var found: Bool
     public var value: String
+    public var version: String
 
-    public init(error: String, found: Bool, value: String) {
+    public init(error: String, found: Bool, value: String, version: String) {
         self.error = error
         self.found = found
         self.value = value
+        self.version = version
     }
 
     /// The JSON `done.invoke.get` carries this record as, in the schema's order.
     public var wire: String {
-        payloadJSON(.text("error", error), .truth("found", found), .text("value", value))
+        payloadJSON(.text("error", error), .truth("found", found), .text("value", value), .text("version", version))
     }
 }
 
@@ -1723,6 +2080,39 @@ public struct StaticHostKvPutResult: Equatable, Sendable {
     /// The JSON `done.invoke.put` carries this record as, in the schema's order.
     public var wire: String {
         payloadJSON(.text("error", error), .truth("replaced", replaced))
+    }
+}
+
+/// `sce:request`: the record the host is asked to start `<invoke id="putif">`
+/// with (SCE Accepted Subset §2.12).
+public struct StaticHostKvPutifRequest: Equatable, Sendable {
+    public var key: String
+    public var value: String
+    public var expected_version: String
+
+    public init(key: String, value: String, expected_version: String) {
+        self.key = key
+        self.value = value
+        self.expected_version = expected_version
+    }
+}
+
+/// `sce:result`: the record the host completes `<invoke id="putif">`
+/// with (SCE Accepted Subset §2.12).
+public struct StaticHostKvPutifResult: Equatable, Sendable {
+    public var error: String
+    public var written: Bool
+    public var version: String
+
+    public init(error: String, written: Bool, version: String) {
+        self.error = error
+        self.written = written
+        self.version = version
+    }
+
+    /// The JSON `done.invoke.putif` carries this record as, in the schema's order.
+    public var wire: String {
+        payloadJSON(.text("error", error), .truth("written", written), .text("version", version))
     }
 }
 
@@ -1964,6 +2354,51 @@ public func completeStaticHostKvPut(on engine: Engine<StaticHostKvPolicy>, token
     engine.completeHostInvoke(processorType: "sce-host-kv-put", invokeID: "put", token: token, doneData: result.wire)
 }
 
+/// The host side of this document's typed `<invoke type="sce-host-kv-put-if">`s (SCE
+/// Accepted Subset §2.12). Register it with `registerStaticHostKvSceHostKvPutIfInvoker`.
+public protocol StaticHostKvSceHostKvPutIfInvoker: AnyObject {
+    /// §scxml-6.4: begin `<invoke id="putif">`. `token` names this start; a
+    /// host that finishes later hands it back to `completeStaticHostKvPutif`
+    /// (or `completeHostInvoke`). A non-nil answer completes the invocation now.
+    func startPutif(_ request: StaticHostKvPutifRequest, token: UInt64) -> StaticHostKvPutifResult?
+
+    /// §scxml-6.4: `<invoke id="putif">`'s state exited while the start `token`
+    /// names was still running. Stop it.
+    func cancelPutif(token: UInt64)
+
+}
+
+/// Registers `invoker` as the handler for `type="sce-host-kv-put-if"`.
+public func registerStaticHostKvSceHostKvPutIfInvoker(on engine: Engine<StaticHostKvPolicy>, invoker: StaticHostKvSceHostKvPutIfInvoker) throws(HostRegistrationError) {
+    try engine.registerInvoker("sce-host-kv-put-if") { event in
+        switch event {
+        case .start(let start):
+            if start.invokeID.utf8.elementsEqual("putif".utf8) {
+                let typed = StaticHostKvPutifRequest(key: start.requestString("key"), value: start.requestString("value"), expected_version: start.requestString("expected_version"))
+                if let result = invoker.startPutif(typed, token: start.token) {
+                    return .done(result.wire)
+                }
+                return nil
+            }
+            return nil
+        case .cancel(let cancel):
+            if cancel.invokeID.utf8.elementsEqual("putif".utf8) {
+                invoker.cancelPutif(token: cancel.token)
+                return nil
+            }
+            return nil
+        }
+    }
+}
+
+/// Completes `<invoke id="putif">`'s start `token` with its record:
+/// `completeHostInvoke` with the record's JSON, so a stale or unknown token is
+/// refused the same way (false).
+@discardableResult
+public func completeStaticHostKvPutif(on engine: Engine<StaticHostKvPolicy>, token: UInt64, result: StaticHostKvPutifResult) -> Bool {
+    engine.completeHostInvoke(processorType: "sce-host-kv-put-if", invokeID: "putif", token: token, doneData: result.wire)
+}
+
 
 // ======================================================================
 // Saved state (docs/adr/0045)
@@ -1976,10 +2411,10 @@ extension StaticHostKvPolicy: SavedPolicy {
     /// re-typed or moved something a saved state names refuses it.
     public static var savedShape: SavedShape {
         SavedShape(
-            first: "e559d3befc5e45e1282094d521bf840ef102b9aac72ec8ceabae510e75799631",
-            revised: "c60ffa2d12ab7efa1e75901224798d2ee7ca6959393d9395cb652f94b16cd632",
-            format2First: "e559d3befc5e45e1282094d521bf840ef102b9aac72ec8ceabae510e75799631",
-            format2Revised: "c60ffa2d12ab7efa1e75901224798d2ee7ca6959393d9395cb652f94b16cd632")
+            first: "271cd1916904fb91125e68b7986be83fe000b9ac513b93afc0a104f49e785b4d",
+            revised: "5912d427fdb73c1b0e14fe20e14a8dd49d17995e885105ca0afdce4c1393633a",
+            format2First: "271cd1916904fb91125e68b7986be83fe000b9ac513b93afc0a104f49e785b4d",
+            format2Revised: "5912d427fdb73c1b0e14fe20e14a8dd49d17995e885105ca0afdce4c1393633a")
     }
 
     /// Every variable, by document id, in declaration order, each as a saved state holds it: the
@@ -1990,10 +2425,14 @@ extension StaticHostKvPolicy: SavedPolicy {
             SavedEntry("value", SavedValues.of(vValue)),
             SavedEntry("after", SavedValues.of(vAfter)),
             SavedEntry("prefix", SavedValues.of(vPrefix)),
+            SavedEntry("expected", SavedValues.of(vExpected)),
             SavedEntry("outcome", SavedValues.of(vOutcome)),
             SavedEntry("found", SavedValues.of(vFound)),
             SavedEntry("got", SavedValues.of(vGot)),
+            SavedEntry("got_version", SavedValues.of(vGotVersion)),
             SavedEntry("replaced", SavedValues.of(vReplaced)),
+            SavedEntry("written", SavedValues.of(vWritten)),
+            SavedEntry("put_version", SavedValues.of(vPutVersion)),
             SavedEntry("existed", SavedValues.of(vExisted)),
             SavedEntry("next_found", SavedValues.of(vNextFound)),
             SavedEntry("next", SavedValues.of(vNext)),
@@ -2007,25 +2446,33 @@ extension StaticHostKvPolicy: SavedPolicy {
         let value1 = try SavedValues.string(try saved.variable("value"), "value", capacity: 4096)
         let value2 = try SavedValues.string(try saved.variable("after"), "after", capacity: 256)
         let value3 = try SavedValues.string(try saved.variable("prefix"), "prefix", capacity: 256)
-        let value4 = try SavedValues.string(try saved.variable("outcome"), "outcome", capacity: 24)
-        let value5 = try SavedValues.bool(try saved.variable("found"), "found")
-        let value6 = try SavedValues.string(try saved.variable("got"), "got", capacity: 4096)
-        let value7 = try SavedValues.bool(try saved.variable("replaced"), "replaced")
-        let value8 = try SavedValues.bool(try saved.variable("existed"), "existed")
-        let value9 = try SavedValues.bool(try saved.variable("next_found"), "next_found")
-        let value10 = try SavedValues.string(try saved.variable("next"), "next", capacity: 256)
+        let value4 = try SavedValues.string(try saved.variable("expected"), "expected", capacity: 20)
+        let value5 = try SavedValues.string(try saved.variable("outcome"), "outcome", capacity: 24)
+        let value6 = try SavedValues.bool(try saved.variable("found"), "found")
+        let value7 = try SavedValues.string(try saved.variable("got"), "got", capacity: 4096)
+        let value8 = try SavedValues.string(try saved.variable("got_version"), "got_version", capacity: 20)
+        let value9 = try SavedValues.bool(try saved.variable("replaced"), "replaced")
+        let value10 = try SavedValues.bool(try saved.variable("written"), "written")
+        let value11 = try SavedValues.string(try saved.variable("put_version"), "put_version", capacity: 20)
+        let value12 = try SavedValues.bool(try saved.variable("existed"), "existed")
+        let value13 = try SavedValues.bool(try saved.variable("next_found"), "next_found")
+        let value14 = try SavedValues.string(try saved.variable("next"), "next", capacity: 256)
         return { [self] in
             self.vKey = value0
             self.vValue = value1
             self.vAfter = value2
             self.vPrefix = value3
-            self.vOutcome = value4
-            self.vFound = value5
-            self.vGot = value6
-            self.vReplaced = value7
-            self.vExisted = value8
-            self.vNextFound = value9
-            self.vNext = value10
+            self.vExpected = value4
+            self.vOutcome = value5
+            self.vFound = value6
+            self.vGot = value7
+            self.vGotVersion = value8
+            self.vReplaced = value9
+            self.vWritten = value10
+            self.vPutVersion = value11
+            self.vExisted = value12
+            self.vNextFound = value13
+            self.vNext = value14
         }
     }
 
@@ -2035,6 +2482,7 @@ extension StaticHostKvPolicy: SavedPolicy {
         [
             SavedHostInvokeSlot(processorType: "sce-host-kv-get", invokeID: "get", state: "getting"),
             SavedHostInvokeSlot(processorType: "sce-host-kv-put", invokeID: "put", state: "putting"),
+            SavedHostInvokeSlot(processorType: "sce-host-kv-put-if", invokeID: "putif", state: "putting_if"),
             SavedHostInvokeSlot(processorType: "sce-host-kv-delete", invokeID: "del", state: "deleting"),
             SavedHostInvokeSlot(processorType: "sce-host-kv-next-key", invokeID: "walk", state: "walking"),
         ]

@@ -1,5 +1,5 @@
 // SCE-GENERATED — DO NOT EDIT
-// source-hash: 0088c1a2e3c3a3a2f07bf6cdd469ce373938fc1faddfc9c12f814ba4be699946
+// source-hash: b3510532fa9e2d9145ede123e693bc13594853251b078c52721953cdafb3c78e
 // SCE-MAP: http_fetch_request.scxml:12 :: _forge_body
 
 // SCE Forge: Auto-generated from Extended SCXML (sce:kind="event-schema")
@@ -40,7 +40,7 @@ public enum HttpFetchRequest {
 
     /// The payload as a JSON Schema (2020-12): one spelling of each value, every bound as this
     /// build resolved it, a text's in UTF-8 bytes in `x-sce-max-bytes`.
-    public static let jsonSchema: String = "{\"$schema\":\"https://json-schema.org/draft/2020-12/schema\",\"$id\":\"urn:sce:schema:http_fetch_request:1\",\"x-sce-source-hash\":\"0088c1a2e3c3a3a2f07bf6cdd469ce373938fc1faddfc9c12f814ba4be699946\",\"description\":\"x-sce-max-bytes bounds a text in UTF-8 bytes; maxLength counts characters\",\"type\":\"object\",\"properties\":{\"method\":{\"type\":\"string\",\"maxLength\":8,\"x-sce-max-bytes\":8},\"url\":{\"type\":\"string\",\"maxLength\":2048,\"x-sce-max-bytes\":2048},\"headers\":{\"type\":\"string\",\"maxLength\":2048,\"x-sce-max-bytes\":2048},\"body\":{\"type\":\"string\",\"maxLength\":16384,\"x-sce-max-bytes\":16384}},\"required\":[\"method\",\"url\",\"headers\",\"body\"],\"additionalProperties\":false}"
+    public static let jsonSchema: String = "{\"$schema\":\"https://json-schema.org/draft/2020-12/schema\",\"$id\":\"urn:sce:schema:http_fetch_request:1\",\"x-sce-source-hash\":\"b3510532fa9e2d9145ede123e693bc13594853251b078c52721953cdafb3c78e\",\"description\":\"x-sce-max-bytes bounds a text in UTF-8 bytes; maxLength counts characters\",\"type\":\"object\",\"properties\":{\"method\":{\"type\":\"string\",\"maxLength\":8,\"x-sce-max-bytes\":8},\"url\":{\"type\":\"string\",\"maxLength\":2048,\"x-sce-max-bytes\":2048},\"headers\":{\"type\":\"string\",\"maxLength\":2048,\"x-sce-max-bytes\":2048},\"body\":{\"type\":\"string\",\"maxLength\":16384,\"x-sce-max-bytes\":16384}},\"required\":[\"method\",\"url\",\"headers\",\"body\"],\"additionalProperties\":false}"
 }
 
 /// The payload of the event: a struct of the schema's fields in the schema's order, built

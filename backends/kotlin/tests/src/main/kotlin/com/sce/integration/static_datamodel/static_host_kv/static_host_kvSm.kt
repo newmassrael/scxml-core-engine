@@ -1,10 +1,10 @@
 // SCE-GENERATED — DO NOT EDIT
-// source-hash: 2073d8a55462e1ce61d8a77293fdd2c141aceda8ad173303c5b84813ca22eeee
+// source-hash: a9c299ab96f6e6c2a694137962a3f363e82399bf22fbd9f4aa0018913d55ad58
 
 // GENERATED CODE — DO NOT EDIT
 // Source: sce-build/tests/fixtures/static_datamodel/static_host_kv.scxml
 // Generator: SCE Kotlin Code Generator v1.0
-// SCE-MAP: static_host_kv.scxml:31 :: _machine
+// SCE-MAP: static_host_kv.scxml:32 :: _machine
 
 package com.sce.integration.static_datamodel.static_host_kv
 
@@ -18,6 +18,7 @@ sealed interface StaticHostKvState : State {
     data object Getting : StaticHostKvState
     data object Idle : StaticHostKvState
     data object Putting : StaticHostKvState
+    data object PuttingIf : StaticHostKvState
     data object Walking : StaticHostKvState
 }
 
@@ -30,6 +31,7 @@ sealed interface StaticHostKvEvent : Event {
             data object Del : Invoke
             data object Get : Invoke
             data object Put : Invoke
+            data object Putif : Invoke
             data object Walk : Invoke
         }
     }
@@ -39,6 +41,7 @@ sealed interface StaticHostKvEvent : Event {
             data object Del : Invoke
             data object Get : Invoke
             data object Put : Invoke
+            data object Putif : Invoke
             data object Walk : Invoke
         }
     }
@@ -55,6 +58,9 @@ sealed interface StaticHostKvEvent : Event {
             }
             sealed interface Put : Kv {
                 data object Request : Put
+            }
+            sealed interface PutIf : Kv {
+                data object Request : PutIf
             }
         }
     }
@@ -74,12 +80,17 @@ data class StaticHostKvDoneInvokeDelPayload(val error: String, val existed: Bool
 // StaticHostKvDoneInvokeGetPayload is the NL→IR Item C1 Path A typed `_event.data`
 // payload for `done.invoke.get`. Consumers inject it via the `raiseDoneInvokeGet` seam
 // on the machine — they never name this class directly.
-data class StaticHostKvDoneInvokeGetPayload(val error: String, val found: Boolean, val value: String)
+data class StaticHostKvDoneInvokeGetPayload(val error: String, val found: Boolean, val value: String, val version: String)
 
 // StaticHostKvDoneInvokePutPayload is the NL→IR Item C1 Path A typed `_event.data`
 // payload for `done.invoke.put`. Consumers inject it via the `raiseDoneInvokePut` seam
 // on the machine — they never name this class directly.
 data class StaticHostKvDoneInvokePutPayload(val error: String, val replaced: Boolean)
+
+// StaticHostKvDoneInvokePutifPayload is the NL→IR Item C1 Path A typed `_event.data`
+// payload for `done.invoke.putif`. Consumers inject it via the `raiseDoneInvokePutif` seam
+// on the machine — they never name this class directly.
+data class StaticHostKvDoneInvokePutifPayload(val error: String, val written: Boolean, val version: String)
 
 // StaticHostKvDoneInvokeWalkPayload is the NL→IR Item C1 Path A typed `_event.data`
 // payload for `done.invoke.walk`. Consumers inject it via the `raiseDoneInvokeWalk` seam
@@ -106,6 +117,11 @@ data class StaticHostKvHostKvNextKeyRequestPayload(val after: String, val prefix
 // on the machine — they never name this class directly.
 data class StaticHostKvHostKvPutRequestPayload(val key: String, val value: String)
 
+// StaticHostKvHostKvPutIfRequestPayload is the NL→IR Item C1 Path A typed `_event.data`
+// payload for `host.kv.put_if.request`. Consumers inject it via the `raiseHostKvPutIfRequest` seam
+// on the machine — they never name this class directly.
+data class StaticHostKvHostKvPutIfRequestPayload(val key: String, val value: String, val expected_version: String)
+
 
 // --- State Machine (W3C SCXML) ---
 
@@ -120,9 +136,10 @@ data class StaticHostKvGetResult(
     val error: String,
     val found: Boolean,
     val value: String,
+    val version: String,
 ) {
     /** The JSON `done.invoke.get` carries this record as. */
-    fun wire(): String = EventPayload.encode(mapOf("error" to error, "found" to found, "value" to value))
+    fun wire(): String = EventPayload.encode(mapOf("error" to error, "found" to found, "value" to value, "version" to version))
 }
 
 /** `sce:request`: the record the host is asked to start `<invoke id="put">` with (SCE Accepted Subset §2.12). */
@@ -138,6 +155,23 @@ data class StaticHostKvPutResult(
 ) {
     /** The JSON `done.invoke.put` carries this record as. */
     fun wire(): String = EventPayload.encode(mapOf("error" to error, "replaced" to replaced))
+}
+
+/** `sce:request`: the record the host is asked to start `<invoke id="putif">` with (SCE Accepted Subset §2.12). */
+data class StaticHostKvPutifRequest(
+    val key: String,
+    val value: String,
+    val expected_version: String,
+)
+
+/** `sce:result`: the record the host completes `<invoke id="putif">` with (SCE Accepted Subset §2.12). */
+data class StaticHostKvPutifResult(
+    val error: String,
+    val written: Boolean,
+    val version: String,
+) {
+    /** The JSON `done.invoke.putif` carries this record as. */
+    fun wire(): String = EventPayload.encode(mapOf("error" to error, "written" to written, "version" to version))
 }
 
 /** `sce:request`: the record the host is asked to start `<invoke id="del">` with (SCE Accepted Subset §2.12). */
@@ -234,6 +268,22 @@ interface StaticHostKvSceHostKvPutInvoker {
     fun cancelPut(token: Long)
 }
 
+/**
+ * The host side of this document's typed `<invoke type="sce-host-kv-put-if">`s
+ * (SCE Accepted Subset §2.12). Register it with `registerSceHostKvPutIfInvoker`.
+ */
+interface StaticHostKvSceHostKvPutIfInvoker {
+    /**
+     * §scxml-6.4: begin `<invoke id="putif">`. [token] names this start;
+     * a host that finishes later hands it back to `completePutif` (or
+     * `completeHostInvoke`). Non-null completes the invocation now.
+     */
+    fun startPutif(request: StaticHostKvPutifRequest, token: Long): StaticHostKvPutifResult?
+
+    /** §scxml-6.4: `<invoke id="putif">`'s state exited while the start [token] names was still running. */
+    fun cancelPutif(token: Long)
+}
+
 
 class StaticHostKvStateMachine(
     /**
@@ -259,6 +309,8 @@ class StaticHostKvStateMachine(
     private var vAfter: String = ""
     /** W3C SCXML 5.2: the `prefix` datamodel variable, the machine's own. */
     private var vPrefix: String = ""
+    /** W3C SCXML 5.2: the `expected` datamodel variable, the machine's own. */
+    private var vExpected: String = ""
     /** W3C SCXML 5.2: the `outcome` datamodel variable, published (`sce:direction="out"`). */
     private var vOutcome: String = ""
 
@@ -274,11 +326,26 @@ class StaticHostKvStateMachine(
 
     /** What the published `got` holds. */
     val got: String get() = vGot
+    /** W3C SCXML 5.2: the `got_version` datamodel variable, published (`sce:direction="out"`). */
+    private var vGotVersion: String = ""
+
+    /** What the published `got_version` holds. */
+    val gotVersion: String get() = vGotVersion
     /** W3C SCXML 5.2: the `replaced` datamodel variable, published (`sce:direction="out"`). */
     private var vReplaced: Boolean = false
 
     /** What the published `replaced` holds. */
     val replaced: Boolean get() = vReplaced
+    /** W3C SCXML 5.2: the `written` datamodel variable, published (`sce:direction="out"`). */
+    private var vWritten: Boolean = false
+
+    /** What the published `written` holds. */
+    val written: Boolean get() = vWritten
+    /** W3C SCXML 5.2: the `put_version` datamodel variable, published (`sce:direction="out"`). */
+    private var vPutVersion: String = ""
+
+    /** What the published `put_version` holds. */
+    val putVersion: String get() = vPutVersion
     /** W3C SCXML 5.2: the `existed` datamodel variable, published (`sce:direction="out"`). */
     private var vExisted: Boolean = false
 
@@ -305,10 +372,14 @@ class StaticHostKvStateMachine(
         var value: String? = null
         var after: String? = null
         var prefix: String? = null
+        var expected: String? = null
         var outcome: String? = null
         var found: Boolean? = null
         var got: String? = null
+        var gotVersion: String? = null
         var replaced: Boolean? = null
+        var written: Boolean? = null
+        var putVersion: String? = null
         var existed: Boolean? = null
         var nextFound: Boolean? = null
         var next: String? = null
@@ -330,10 +401,14 @@ class StaticHostKvStateMachine(
         vValue = params.value ?: ("")
         vAfter = params.after ?: ("")
         vPrefix = params.prefix ?: ("")
+        vExpected = params.expected ?: ("")
         vOutcome = params.outcome ?: ("")
         vFound = params.found ?: (false)
         vGot = params.got ?: ("")
+        vGotVersion = params.gotVersion ?: ("")
         vReplaced = params.replaced ?: (false)
+        vWritten = params.written ?: (false)
+        vPutVersion = params.putVersion ?: ("")
         vExisted = params.existed ?: (false)
         vNextFound = params.nextFound ?: (false)
         vNext = params.next ?: ("")
@@ -344,7 +419,10 @@ class StaticHostKvStateMachine(
         val outcome: String,
         val found: Boolean,
         val got: String,
+        val gotVersion: String,
         val replaced: Boolean,
+        val written: Boolean,
+        val putVersion: String,
         val existed: Boolean,
         val nextFound: Boolean,
         val next: String,
@@ -367,7 +445,10 @@ class StaticHostKvStateMachine(
         outcome = vOutcome,
         found = vFound,
         got = vGot,
+        gotVersion = vGotVersion,
         replaced = vReplaced,
+        written = vWritten,
+        putVersion = vPutVersion,
         existed = vExisted,
         nextFound = vNextFound,
         next = vNext,
@@ -400,10 +481,10 @@ class StaticHostKvStateMachine(
      * later revision added at its default.
      */
     val savedShape: SavedShape = SavedShape(
-        first = "e559d3befc5e45e1282094d521bf840ef102b9aac72ec8ceabae510e75799631",
-        revised = "c60ffa2d12ab7efa1e75901224798d2ee7ca6959393d9395cb652f94b16cd632",
-        format2First = "e559d3befc5e45e1282094d521bf840ef102b9aac72ec8ceabae510e75799631",
-        format2Revised = "c60ffa2d12ab7efa1e75901224798d2ee7ca6959393d9395cb652f94b16cd632",
+        first = "271cd1916904fb91125e68b7986be83fe000b9ac513b93afc0a104f49e785b4d",
+        revised = "5912d427fdb73c1b0e14fe20e14a8dd49d17995e885105ca0afdce4c1393633a",
+        format2First = "271cd1916904fb91125e68b7986be83fe000b9ac513b93afc0a104f49e785b4d",
+        format2Revised = "5912d427fdb73c1b0e14fe20e14a8dd49d17995e885105ca0afdce4c1393633a",
         records = listOf(
         ),
         enums = listOf(
@@ -432,10 +513,14 @@ class StaticHostKvStateMachine(
         variables += "value" to SavedValues.of(vValue)
         variables += "after" to SavedValues.of(vAfter)
         variables += "prefix" to SavedValues.of(vPrefix)
+        variables += "expected" to SavedValues.of(vExpected)
         variables += "outcome" to SavedValues.of(vOutcome)
         variables += "found" to SavedValues.of(vFound)
         variables += "got" to SavedValues.of(vGot)
+        variables += "got_version" to SavedValues.of(vGotVersion)
         variables += "replaced" to SavedValues.of(vReplaced)
+        variables += "written" to SavedValues.of(vWritten)
+        variables += "put_version" to SavedValues.of(vPutVersion)
         variables += "existed" to SavedValues.of(vExisted)
         variables += "next_found" to SavedValues.of(vNextFound)
         variables += "next" to SavedValues.of(vNext)
@@ -483,10 +568,14 @@ class StaticHostKvStateMachine(
         vValue = SavedValues.string(savedGrown.variable("value"), "value", 4096)
         vAfter = SavedValues.string(savedGrown.variable("after"), "after", 256)
         vPrefix = SavedValues.string(savedGrown.variable("prefix"), "prefix", 256)
+        vExpected = SavedValues.string(savedGrown.variable("expected"), "expected", 20)
         vOutcome = SavedValues.string(savedGrown.variable("outcome"), "outcome", 24)
         vFound = SavedValues.bool(savedGrown.variable("found"), "found")
         vGot = SavedValues.string(savedGrown.variable("got"), "got", 4096)
+        vGotVersion = SavedValues.string(savedGrown.variable("got_version"), "got_version", 20)
         vReplaced = SavedValues.bool(savedGrown.variable("replaced"), "replaced")
+        vWritten = SavedValues.bool(savedGrown.variable("written"), "written")
+        vPutVersion = SavedValues.string(savedGrown.variable("put_version"), "put_version", 20)
         vExisted = SavedValues.bool(savedGrown.variable("existed"), "existed")
         vNextFound = SavedValues.bool(savedGrown.variable("next_found"), "next_found")
         vNext = SavedValues.string(savedGrown.variable("next"), "next", 256)
@@ -510,10 +599,14 @@ class StaticHostKvStateMachine(
         SavedValues.string(savedGrown.variable("value"), "value", 4096)
         SavedValues.string(savedGrown.variable("after"), "after", 256)
         SavedValues.string(savedGrown.variable("prefix"), "prefix", 256)
+        SavedValues.string(savedGrown.variable("expected"), "expected", 20)
         SavedValues.string(savedGrown.variable("outcome"), "outcome", 24)
         SavedValues.bool(savedGrown.variable("found"), "found")
         SavedValues.string(savedGrown.variable("got"), "got", 4096)
+        SavedValues.string(savedGrown.variable("got_version"), "got_version", 20)
         SavedValues.bool(savedGrown.variable("replaced"), "replaced")
+        SavedValues.bool(savedGrown.variable("written"), "written")
+        SavedValues.string(savedGrown.variable("put_version"), "put_version", 20)
         SavedValues.bool(savedGrown.variable("existed"), "existed")
         SavedValues.bool(savedGrown.variable("next_found"), "next_found")
         SavedValues.string(savedGrown.variable("next"), "next", 256)
@@ -527,6 +620,7 @@ class StaticHostKvStateMachine(
     override val staticHostInvokes: List<Triple<String, String, StaticHostKvState>> = listOf(
         Triple("sce-host-kv-get", "get", StaticHostKvState.Getting),
         Triple("sce-host-kv-put", "put", StaticHostKvState.Putting),
+        Triple("sce-host-kv-put-if", "putif", StaticHostKvState.PuttingIf),
         Triple("sce-host-kv-delete", "del", StaticHostKvState.Deleting),
         Triple("sce-host-kv-next-key", "walk", StaticHostKvState.Walking),
     )
@@ -537,11 +631,13 @@ class StaticHostKvStateMachine(
     private var pendingDoneInvokeDelPayload: StaticHostKvDoneInvokeDelPayload? = null
     private var pendingDoneInvokeGetPayload: StaticHostKvDoneInvokeGetPayload? = null
     private var pendingDoneInvokePutPayload: StaticHostKvDoneInvokePutPayload? = null
+    private var pendingDoneInvokePutifPayload: StaticHostKvDoneInvokePutifPayload? = null
     private var pendingDoneInvokeWalkPayload: StaticHostKvDoneInvokeWalkPayload? = null
     private var pendingHostKvDeleteRequestPayload: StaticHostKvHostKvDeleteRequestPayload? = null
     private var pendingHostKvGetRequestPayload: StaticHostKvHostKvGetRequestPayload? = null
     private var pendingHostKvNextKeyRequestPayload: StaticHostKvHostKvNextKeyRequestPayload? = null
     private var pendingHostKvPutRequestPayload: StaticHostKvHostKvPutRequestPayload? = null
+    private var pendingHostKvPutIfRequestPayload: StaticHostKvHostKvPutIfRequestPayload? = null
 
     // NL→IR Item C1 Path A: bind the dequeued event's typed `_event.data` view
     // — from the type-erased carrier the inject seam fills, and otherwise by
@@ -556,20 +652,24 @@ class StaticHostKvStateMachine(
         pendingDoneInvokeDelPayload = null
         pendingDoneInvokeGetPayload = null
         pendingDoneInvokePutPayload = null
+        pendingDoneInvokePutifPayload = null
         pendingDoneInvokeWalkPayload = null
         pendingHostKvDeleteRequestPayload = null
         pendingHostKvGetRequestPayload = null
         pendingHostKvNextKeyRequestPayload = null
         pendingHostKvPutRequestPayload = null
+        pendingHostKvPutIfRequestPayload = null
         when (val tp = metadata.typedPayload) {
             is StaticHostKvDoneInvokeDelPayload -> pendingDoneInvokeDelPayload = tp
             is StaticHostKvDoneInvokeGetPayload -> pendingDoneInvokeGetPayload = tp
             is StaticHostKvDoneInvokePutPayload -> pendingDoneInvokePutPayload = tp
+            is StaticHostKvDoneInvokePutifPayload -> pendingDoneInvokePutifPayload = tp
             is StaticHostKvDoneInvokeWalkPayload -> pendingDoneInvokeWalkPayload = tp
             is StaticHostKvHostKvDeleteRequestPayload -> pendingHostKvDeleteRequestPayload = tp
             is StaticHostKvHostKvGetRequestPayload -> pendingHostKvGetRequestPayload = tp
             is StaticHostKvHostKvNextKeyRequestPayload -> pendingHostKvNextKeyRequestPayload = tp
             is StaticHostKvHostKvPutRequestPayload -> pendingHostKvPutRequestPayload = tp
+            is StaticHostKvHostKvPutIfRequestPayload -> pendingHostKvPutIfRequestPayload = tp
             else -> {
                 // No typed carrier, so the producer was not the inject seam: read the
                 // fields out of `data`, which every other producer fills.
@@ -578,10 +678,13 @@ class StaticHostKvStateMachine(
                     pendingDoneInvokeDelPayload = StaticHostKvDoneInvokeDelPayload(fields.string("error", 24), fields.boolean("existed"))
                 } else if (event == StaticHostKvEvent.Done.Invoke.Get) {
                     val fields = EventPayload.decode(metadata.data)
-                    pendingDoneInvokeGetPayload = StaticHostKvDoneInvokeGetPayload(fields.string("error", 24), fields.boolean("found"), fields.string("value", 4096))
+                    pendingDoneInvokeGetPayload = StaticHostKvDoneInvokeGetPayload(fields.string("error", 24), fields.boolean("found"), fields.string("value", 4096), fields.string("version", 20))
                 } else if (event == StaticHostKvEvent.Done.Invoke.Put) {
                     val fields = EventPayload.decode(metadata.data)
                     pendingDoneInvokePutPayload = StaticHostKvDoneInvokePutPayload(fields.string("error", 24), fields.boolean("replaced"))
+                } else if (event == StaticHostKvEvent.Done.Invoke.Putif) {
+                    val fields = EventPayload.decode(metadata.data)
+                    pendingDoneInvokePutifPayload = StaticHostKvDoneInvokePutifPayload(fields.string("error", 24), fields.boolean("written"), fields.string("version", 20))
                 } else if (event == StaticHostKvEvent.Done.Invoke.Walk) {
                     val fields = EventPayload.decode(metadata.data)
                     pendingDoneInvokeWalkPayload = StaticHostKvDoneInvokeWalkPayload(fields.string("error", 24), fields.boolean("found"), fields.string("key", 256))
@@ -597,6 +700,9 @@ class StaticHostKvStateMachine(
                 } else if (event == StaticHostKvEvent.Host.Kv.Put.Request) {
                     val fields = EventPayload.decode(metadata.data)
                     pendingHostKvPutRequestPayload = StaticHostKvHostKvPutRequestPayload(fields.string("key", 256), fields.string("value", 4096))
+                } else if (event == StaticHostKvEvent.Host.Kv.PutIf.Request) {
+                    val fields = EventPayload.decode(metadata.data)
+                    pendingHostKvPutIfRequestPayload = StaticHostKvHostKvPutIfRequestPayload(fields.string("key", 256), fields.string("value", 4096), fields.string("expected_version", 20))
                 }
             }
         }
@@ -664,6 +770,22 @@ class StaticHostKvStateMachine(
                 // Filling only the first left an `<assign expr="_event.data.x">` on
                 // this event reading nothing, on every backend alike.
                 data = EventPayload.encode(mapOf("key" to key, "value" to value))
+            )
+        )
+    }
+    // NL→IR Item C1 Path A typed `_event.data` inject seam for
+    // `host.kv.put_if.request` — binds the event name and the payload field values in one call.
+    fun raiseHostKvPutIfRequest(key: String, value: String, expected_version: String) {
+        send(
+            StaticHostKvEvent.Host.Kv.PutIf.Request,
+            EventMetadata(
+                type = "external",
+                typedPayload = StaticHostKvHostKvPutIfRequestPayload(key, value, expected_version),
+                // Both carriers are filled: the typed one a native guard reads, and
+                // `data`, which is what the script engine binds `_event.data` from.
+                // Filling only the first left an `<assign expr="_event.data.x">` on
+                // this event reading nothing, on every backend alike.
+                data = EventPayload.encode(mapOf("key" to key, "value" to value, "expected_version" to expected_version))
             )
         )
     }
@@ -906,6 +1028,66 @@ class StaticHostKvStateMachine(
         }
     }
 
+    /**
+     * Complete `<invoke id="putif">`'s start [token] with its record —
+     * `completeHostInvoke` with the record's JSON, so a stale or unknown token is
+     * refused the same way (`false`). An owner-thread operation; from another
+     * thread, [postCompletePutif].
+     */
+    fun completePutif(token: Long, result: StaticHostKvPutifResult): Boolean =
+        completeHostInvoke("sce-host-kv-put-if", "putif", token, result.wire())
+
+    /**
+     * [completePutif] from any thread: the completion is posted to this
+     * machine's `inbox`, and its owner applies it with `completeHostInvoke` at
+     * its next macrostep boundary, where the token is checked. `true` when the
+     * inbox took it.
+     */
+    fun postCompletePutif(token: Long, result: StaticHostKvPutifResult): Boolean =
+        inbox.post(
+            com.sce.runtime.InboxInput.HostInvokeEnding(
+                sessionId = null,
+                processorType = "sce-host-kv-put-if",
+                invokeId = "putif",
+                token = token,
+                done = true,
+                data = result.wire(),
+            ),
+        )
+
+    /**
+     * Register [invoker] as the handler for `type="sce-host-kv-put-if"`.
+     */
+    fun registerSceHostKvPutIfInvoker(invoker: StaticHostKvSceHostKvPutIfInvoker) {
+        registerInvoker("sce-host-kv-put-if") { event ->
+            val start = event.start
+            val cancel = event.cancel
+            if (start != null) {
+                when (start.invokeId) {
+                    "putif" -> {
+                        val typed = StaticHostKvPutifRequest(
+                            key = TypedRequest.string(start.params, start.invokeId, "key"),
+                            value = TypedRequest.string(start.params, start.invokeId, "value"),
+                            expected_version = TypedRequest.string(start.params, start.invokeId, "expected_version"),
+                        )
+                        invoker.startPutif(typed, start.token)?.let { HostInvokeResponse(doneData = it.wire()) }
+                    }
+                    else -> null
+                }
+            } else if (cancel != null) {
+                when (cancel.invokeId) {
+                    "putif" -> {
+                        invoker.cancelPutif(cancel.token)
+                        null
+                    }
+                    else -> null
+                }
+            } else {
+                null
+            }
+        }
+    }
+
 
     override val initialState: StaticHostKvState = StaticHostKvState.Idle
 
@@ -1029,7 +1211,7 @@ class StaticHostKvStateMachine(
         // W3C SCXML 3.13: idle's transition 2, as the microstep reads it.
         val transitionIdleAt2 = EnabledTransition<StaticHostKvState, HistoryId>(
             StaticHostKvState.Idle,
-            listOf(StateTarget(StaticHostKvState.Deleting)),
+            listOf(StateTarget(StaticHostKvState.PuttingIf)),
             2,
             hasActions = true,
             isInternal = false,
@@ -1038,8 +1220,17 @@ class StaticHostKvStateMachine(
         // W3C SCXML 3.13: idle's transition 3, as the microstep reads it.
         val transitionIdleAt3 = EnabledTransition<StaticHostKvState, HistoryId>(
             StaticHostKvState.Idle,
-            listOf(StateTarget(StaticHostKvState.Walking)),
+            listOf(StateTarget(StaticHostKvState.Deleting)),
             3,
+            hasActions = true,
+            isInternal = false,
+        )
+
+        // W3C SCXML 3.13: idle's transition 4, as the microstep reads it.
+        val transitionIdleAt4 = EnabledTransition<StaticHostKvState, HistoryId>(
+            StaticHostKvState.Idle,
+            listOf(StateTarget(StaticHostKvState.Walking)),
+            4,
             hasActions = true,
             isInternal = false,
         )
@@ -1074,6 +1265,42 @@ class StaticHostKvStateMachine(
         // W3C SCXML 3.13: putting's transition 3, as the microstep reads it.
         val transitionPuttingAt3 = EnabledTransition<StaticHostKvState, HistoryId>(
             StaticHostKvState.Putting,
+            listOf(StateTarget(StaticHostKvState.Idle)),
+            3,
+            hasActions = true,
+            isInternal = false,
+        )
+
+        // W3C SCXML 3.13: putting_if's transition 0, as the microstep reads it.
+        val transitionPuttingIfAt0 = EnabledTransition<StaticHostKvState, HistoryId>(
+            StaticHostKvState.PuttingIf,
+            listOf(StateTarget(StaticHostKvState.Idle)),
+            0,
+            hasActions = true,
+            isInternal = false,
+        )
+
+        // W3C SCXML 3.13: putting_if's transition 1, as the microstep reads it.
+        val transitionPuttingIfAt1 = EnabledTransition<StaticHostKvState, HistoryId>(
+            StaticHostKvState.PuttingIf,
+            listOf(StateTarget(StaticHostKvState.Idle)),
+            1,
+            hasActions = true,
+            isInternal = false,
+        )
+
+        // W3C SCXML 3.13: putting_if's transition 2, as the microstep reads it.
+        val transitionPuttingIfAt2 = EnabledTransition<StaticHostKvState, HistoryId>(
+            StaticHostKvState.PuttingIf,
+            listOf(StateTarget(StaticHostKvState.Idle)),
+            2,
+            hasActions = true,
+            isInternal = false,
+        )
+
+        // W3C SCXML 3.13: putting_if's transition 3, as the microstep reads it.
+        val transitionPuttingIfAt3 = EnabledTransition<StaticHostKvState, HistoryId>(
+            StaticHostKvState.PuttingIf,
             listOf(StateTarget(StaticHostKvState.Idle)),
             3,
             hasActions = true,
@@ -1124,6 +1351,7 @@ class StaticHostKvStateMachine(
         "getting" -> StaticHostKvState.Getting
         "idle" -> StaticHostKvState.Idle
         "putting" -> StaticHostKvState.Putting
+        "putting_if" -> StaticHostKvState.PuttingIf
         "walking" -> StaticHostKvState.Walking
         else -> null
     }
@@ -1135,17 +1363,19 @@ class StaticHostKvStateMachine(
         is StaticHostKvState.Getting -> "getting"
         is StaticHostKvState.Idle -> "idle"
         is StaticHostKvState.Putting -> "putting"
+        is StaticHostKvState.PuttingIf -> "putting_if"
         is StaticHostKvState.Walking -> "walking"
     }
 
 
     // W3C SCXML 3.13: Document order — entry order, and in reverse exit order
     override fun documentOrderOf(state: StaticHostKvState): Int = when (state) {
-        is StaticHostKvState.Deleting -> 3
+        is StaticHostKvState.Deleting -> 4
         is StaticHostKvState.Getting -> 1
         is StaticHostKvState.Idle -> 0
         is StaticHostKvState.Putting -> 2
-        is StaticHostKvState.Walking -> 4
+        is StaticHostKvState.PuttingIf -> 3
+        is StaticHostKvState.Walking -> 5
     }
 
 
@@ -1155,16 +1385,19 @@ class StaticHostKvStateMachine(
         "done.invoke.del" -> StaticHostKvEvent.Done.Invoke.Del
         "done.invoke.get" -> StaticHostKvEvent.Done.Invoke.Get
         "done.invoke.put" -> StaticHostKvEvent.Done.Invoke.Put
+        "done.invoke.putif" -> StaticHostKvEvent.Done.Invoke.Putif
         "done.invoke.walk" -> StaticHostKvEvent.Done.Invoke.Walk
         "error.execution" -> StaticHostKvEvent.Error.Execution
         "error.invoke.del" -> StaticHostKvEvent.Error.Invoke.Del
         "error.invoke.get" -> StaticHostKvEvent.Error.Invoke.Get
         "error.invoke.put" -> StaticHostKvEvent.Error.Invoke.Put
+        "error.invoke.putif" -> StaticHostKvEvent.Error.Invoke.Putif
         "error.invoke.walk" -> StaticHostKvEvent.Error.Invoke.Walk
         "host.kv.delete.request" -> StaticHostKvEvent.Host.Kv.Delete.Request
         "host.kv.get.request" -> StaticHostKvEvent.Host.Kv.Get.Request
         "host.kv.next_key.request" -> StaticHostKvEvent.Host.Kv.NextKey.Request
         "host.kv.put.request" -> StaticHostKvEvent.Host.Kv.Put.Request
+        "host.kv.put_if.request" -> StaticHostKvEvent.Host.Kv.PutIf.Request
         else -> null
     }
 
@@ -1175,16 +1408,19 @@ class StaticHostKvStateMachine(
         is StaticHostKvEvent.Done.Invoke.Del -> "done.invoke.del"
         is StaticHostKvEvent.Done.Invoke.Get -> "done.invoke.get"
         is StaticHostKvEvent.Done.Invoke.Put -> "done.invoke.put"
+        is StaticHostKvEvent.Done.Invoke.Putif -> "done.invoke.putif"
         is StaticHostKvEvent.Done.Invoke.Walk -> "done.invoke.walk"
         is StaticHostKvEvent.Error.Execution -> "error.execution"
         is StaticHostKvEvent.Error.Invoke.Del -> "error.invoke.del"
         is StaticHostKvEvent.Error.Invoke.Get -> "error.invoke.get"
         is StaticHostKvEvent.Error.Invoke.Put -> "error.invoke.put"
+        is StaticHostKvEvent.Error.Invoke.Putif -> "error.invoke.putif"
         is StaticHostKvEvent.Error.Invoke.Walk -> "error.invoke.walk"
         is StaticHostKvEvent.Host.Kv.Delete.Request -> "host.kv.delete.request"
         is StaticHostKvEvent.Host.Kv.Get.Request -> "host.kv.get.request"
         is StaticHostKvEvent.Host.Kv.NextKey.Request -> "host.kv.next_key.request"
         is StaticHostKvEvent.Host.Kv.Put.Request -> "host.kv.put.request"
+        is StaticHostKvEvent.Host.Kv.PutIf.Request -> "host.kv.put_if.request"
     }
 
 
@@ -1193,6 +1429,7 @@ class StaticHostKvStateMachine(
     override val hostInvokeIds: Set<String> = setOf(
         "get",
         "put",
+        "putif",
         "del",
         "walk",
     )
@@ -1211,6 +1448,7 @@ class StaticHostKvStateMachine(
         is StaticHostKvState.Getting -> firstEnabledTransitionOfGetting(state, event)
         is StaticHostKvState.Idle -> firstEnabledTransitionOfIdle(state, event)
         is StaticHostKvState.Putting -> firstEnabledTransitionOfPutting(state, event)
+        is StaticHostKvState.PuttingIf -> firstEnabledTransitionOfPuttingIf(state, event)
         is StaticHostKvState.Walking -> firstEnabledTransitionOfWalking(state, event)
     }
 
@@ -1239,8 +1477,9 @@ class StaticHostKvStateMachine(
     @Suppress("UNUSED_PARAMETER") private fun firstEnabledTransitionOfIdle(state: StaticHostKvState, event: StaticHostKvEvent?): EnabledTransition<StaticHostKvState, HistoryId>? = when {
         event is StaticHostKvEvent.Host.Kv.Get.Request -> TransitionsPart0.transitionIdleAt0
         event is StaticHostKvEvent.Host.Kv.Put.Request -> TransitionsPart0.transitionIdleAt1
-        event is StaticHostKvEvent.Host.Kv.Delete.Request -> TransitionsPart0.transitionIdleAt2
-        event is StaticHostKvEvent.Host.Kv.NextKey.Request -> TransitionsPart0.transitionIdleAt3
+        event is StaticHostKvEvent.Host.Kv.PutIf.Request -> TransitionsPart0.transitionIdleAt2
+        event is StaticHostKvEvent.Host.Kv.Delete.Request -> TransitionsPart0.transitionIdleAt3
+        event is StaticHostKvEvent.Host.Kv.NextKey.Request -> TransitionsPart0.transitionIdleAt4
         else -> null
     }
 
@@ -1251,6 +1490,16 @@ class StaticHostKvStateMachine(
         event is StaticHostKvEvent.Done.Invoke.Put -> TransitionsPart0.transitionPuttingAt1
         event is StaticHostKvEvent.Error.Invoke.Put -> TransitionsPart0.transitionPuttingAt2
         event is StaticHostKvEvent.Error.Execution -> TransitionsPart0.transitionPuttingAt3
+        else -> null
+    }
+
+
+    // putting_if's own transitions, in document order.
+    @Suppress("UNUSED_PARAMETER") private fun firstEnabledTransitionOfPuttingIf(state: StaticHostKvState, event: StaticHostKvEvent?): EnabledTransition<StaticHostKvState, HistoryId>? = when {
+        event is StaticHostKvEvent.Done.Invoke.Putif && pendingDoneInvokePutifPayload != null && (pendingDoneInvokePutifPayload!!.error == "") -> TransitionsPart0.transitionPuttingIfAt0
+        event is StaticHostKvEvent.Done.Invoke.Putif -> TransitionsPart0.transitionPuttingIfAt1
+        event is StaticHostKvEvent.Error.Invoke.Putif -> TransitionsPart0.transitionPuttingIfAt2
+        event is StaticHostKvEvent.Error.Execution -> TransitionsPart0.transitionPuttingIfAt3
         else -> null
     }
 
@@ -1269,20 +1518,21 @@ class StaticHostKvStateMachine(
 
 
     // Entry Actions (W3C SCXML 3.8)
-    // SCE-MAP: static_host_kv.scxml:31 :: _machine
+    // SCE-MAP: static_host_kv.scxml:32 :: _machine
     override fun onEntry(state: StaticHostKvState, isDefaultEntry: Boolean) {
         when (state) {
             is StaticHostKvState.Deleting -> onEntryOfDeleting()
             is StaticHostKvState.Getting -> onEntryOfGetting()
             is StaticHostKvState.Idle -> onEntryOfIdle()
             is StaticHostKvState.Putting -> onEntryOfPutting()
+            is StaticHostKvState.PuttingIf -> onEntryOfPuttingIf()
             is StaticHostKvState.Walking -> onEntryOfWalking()
         }
     }
 
 
     private fun onEntryOfDeleting() {
-                // SCE-MAP: static_host_kv.scxml:112 :: deleting :: _state_body
+                // SCE-MAP: static_host_kv.scxml:147 :: deleting :: _state_body
                 // W3C SCXML 6.4.1: the host declared this `type`, so the
                 // deferred closure STARTS the invocation rather than refusing
                 // it. Deferred like its sibling so §scxml-6.4 ordering holds —
@@ -1333,7 +1583,7 @@ class StaticHostKvStateMachine(
     }
 
     private fun onEntryOfGetting() {
-                // SCE-MAP: static_host_kv.scxml:72 :: getting :: _state_body
+                // SCE-MAP: static_host_kv.scxml:84 :: getting :: _state_body
                 // W3C SCXML 6.4.1: the host declared this `type`, so the
                 // deferred closure STARTS the invocation rather than refusing
                 // it. Deferred like its sibling so §scxml-6.4 ordering holds —
@@ -1384,11 +1634,11 @@ class StaticHostKvStateMachine(
     }
 
     private fun onEntryOfIdle() {
-                // SCE-MAP: static_host_kv.scxml:55 :: idle :: _state_body
+                // SCE-MAP: static_host_kv.scxml:62 :: idle :: _state_body
     }
 
     private fun onEntryOfPutting() {
-                // SCE-MAP: static_host_kv.scxml:92 :: putting :: _state_body
+                // SCE-MAP: static_host_kv.scxml:105 :: putting :: _state_body
                 // W3C SCXML 6.4.1: the host declared this `type`, so the
                 // deferred closure STARTS the invocation rather than refusing
                 // it. Deferred like its sibling so §scxml-6.4 ordering holds —
@@ -1444,8 +1694,71 @@ class StaticHostKvStateMachine(
                 }
     }
 
+    private fun onEntryOfPuttingIf() {
+                // SCE-MAP: static_host_kv.scxml:125 :: putting_if :: _state_body
+                // W3C SCXML 6.4.1: the host declared this `type`, so the
+                // deferred closure STARTS the invocation rather than refusing
+                // it. Deferred like its sibling so §scxml-6.4 ordering holds —
+                // an invoke runs at macrostep end — and so a state that exits
+                // first never starts it at all.
+                //
+                // The id handed to the host is the DOCUMENT's, not the
+                // per-instance one the pending queue carries:
+                // `done.invoke.<id>` is the name the author wrote a transition
+                // for, so it is the name the host must answer on.
+                run {
+                    val generatedInvokeId = "putting_if.${System.identityHashCode(this)}.putif"
+                    deferInvoke(StaticHostKvState.PuttingIf, generatedInvokeId) {
+                        val hostInvokeParams = mutableMapOf<String, List<String>>()
+                        // The same pairs as the data model holds them, for the
+                        // request's eventData: one evaluation, read as text for
+                        // params and typed for the JSON.
+                        val hostInvokePayload = mutableMapOf<String, Any?>()
+                        // SCE Accepted Subset 2.12: `sce:request` makes the
+                        // params a record, so each value is held to its field
+                        // here, where the invocation starts; one that cannot
+                        // be evaluated or does not fit starts nothing.
+                        run {
+                            val v: Any? = vKey
+                            hostInvokeParams["key"] =
+                                (hostInvokeParams["key"] ?: emptyList()) + valueToWireString(v)
+                            putParam(hostInvokePayload, "key", v)
+                        }
+                        run {
+                            val v: Any? = vValue
+                            hostInvokeParams["value"] =
+                                (hostInvokeParams["value"] ?: emptyList()) + valueToWireString(v)
+                            putParam(hostInvokePayload, "value", v)
+                        }
+                        run {
+                            val v: Any? = vExpected
+                            hostInvokeParams["expected_version"] =
+                                (hostInvokeParams["expected_version"] ?: emptyList()) + valueToWireString(v)
+                            putParam(hostInvokePayload, "expected_version", v)
+                        }
+                        val started = performHostInvoke(
+                            HostInvokeRequest(
+                                processorType = "sce-host-kv-put-if",
+                                invokeId = "putif",
+                                src = "",
+                                params = hostInvokeParams,
+                                eventData = if (hostInvokePayload.isEmpty()) "" else buildJsonFromParams(hostInvokePayload),
+                                content = ""                            )
+                        )
+                        if (!started) {
+                            // W3C SCXML 6.4.1: declared but no invoker
+                            // registered. The document asked for a process to
+                            // be run and none was, which is the same fact as
+                            // an unsupported type — so the same event, rather
+                            // than a silence that reads as started.
+                            raisePlatformError(StaticHostKvEvent.Error.Execution, ErrorReason.PROCESSOR_UNREGISTERED, "<invoke> names an invoker the host declared but never registered")
+                        }
+                    }
+                }
+    }
+
     private fun onEntryOfWalking() {
-                // SCE-MAP: static_host_kv.scxml:131 :: walking :: _state_body
+                // SCE-MAP: static_host_kv.scxml:166 :: walking :: _state_body
                 // W3C SCXML 6.4.1: the host declared this `type`, so the
                 // deferred closure STARTS the invocation rather than refusing
                 // it. Deferred like its sibling so §scxml-6.4 ordering holds —
@@ -1502,20 +1815,21 @@ class StaticHostKvStateMachine(
     }
 
     // Exit Actions (W3C SCXML 3.9)
-    // SCE-MAP: static_host_kv.scxml:31 :: _machine
+    // SCE-MAP: static_host_kv.scxml:32 :: _machine
     override fun onExit(state: StaticHostKvState) {
         when (state) {
             is StaticHostKvState.Deleting -> onExitOfDeleting()
             is StaticHostKvState.Getting -> onExitOfGetting()
             is StaticHostKvState.Idle -> onExitOfIdle()
             is StaticHostKvState.Putting -> onExitOfPutting()
+            is StaticHostKvState.PuttingIf -> onExitOfPuttingIf()
             is StaticHostKvState.Walking -> onExitOfWalking()
         }
     }
 
 
     private fun onExitOfDeleting() {
-                // SCE-MAP: static_host_kv.scxml:112 :: deleting :: _state_body
+                // SCE-MAP: static_host_kv.scxml:147 :: deleting :: _state_body
                 // W3C SCXML 6.4: Cancel pending invokes for exited state (deferred but not yet executed)
                 cancelPendingInvokesForState(StaticHostKvState.Deleting)
                 // W3C SCXML 6.4: the host's invocation ends with the state
@@ -1526,7 +1840,7 @@ class StaticHostKvStateMachine(
     }
 
     private fun onExitOfGetting() {
-                // SCE-MAP: static_host_kv.scxml:72 :: getting :: _state_body
+                // SCE-MAP: static_host_kv.scxml:84 :: getting :: _state_body
                 // W3C SCXML 6.4: Cancel pending invokes for exited state (deferred but not yet executed)
                 cancelPendingInvokesForState(StaticHostKvState.Getting)
                 // W3C SCXML 6.4: the host's invocation ends with the state
@@ -1537,11 +1851,11 @@ class StaticHostKvStateMachine(
     }
 
     private fun onExitOfIdle() {
-                // SCE-MAP: static_host_kv.scxml:55 :: idle :: _state_body
+                // SCE-MAP: static_host_kv.scxml:62 :: idle :: _state_body
     }
 
     private fun onExitOfPutting() {
-                // SCE-MAP: static_host_kv.scxml:92 :: putting :: _state_body
+                // SCE-MAP: static_host_kv.scxml:105 :: putting :: _state_body
                 // W3C SCXML 6.4: Cancel pending invokes for exited state (deferred but not yet executed)
                 cancelPendingInvokesForState(StaticHostKvState.Putting)
                 // W3C SCXML 6.4: the host's invocation ends with the state
@@ -1551,8 +1865,19 @@ class StaticHostKvStateMachine(
                 cancelHostInvoke("sce-host-kv-put", "put")
     }
 
+    private fun onExitOfPuttingIf() {
+                // SCE-MAP: static_host_kv.scxml:125 :: putting_if :: _state_body
+                // W3C SCXML 6.4: Cancel pending invokes for exited state (deferred but not yet executed)
+                cancelPendingInvokesForState(StaticHostKvState.PuttingIf)
+                // W3C SCXML 6.4: the host's invocation ends with the state
+                // that started it. Unconditional here: the engine knows
+                // whether this one ever started and stays silent when it did
+                // not, so the emitted chain needs no bookkeeping of its own.
+                cancelHostInvoke("sce-host-kv-put-if", "putif")
+    }
+
     private fun onExitOfWalking() {
-                // SCE-MAP: static_host_kv.scxml:131 :: walking :: _state_body
+                // SCE-MAP: static_host_kv.scxml:166 :: walking :: _state_body
                 // W3C SCXML 6.4: Cancel pending invokes for exited state (deferred but not yet executed)
                 cancelPendingInvokesForState(StaticHostKvState.Walking)
                 // W3C SCXML 6.4: the host's invocation ends with the state
@@ -1565,13 +1890,14 @@ class StaticHostKvStateMachine(
 
 
     // Transition Content (W3C SCXML 3.13)
-    // SCE-MAP: static_host_kv.scxml:31 :: _machine
+    // SCE-MAP: static_host_kv.scxml:32 :: _machine
     override fun executeTransitionContent(source: StaticHostKvState, transitionIndex: Int) {
         when (source) {
             is StaticHostKvState.Deleting -> transitionContentOfDeleting(transitionIndex)
             is StaticHostKvState.Getting -> transitionContentOfGetting(transitionIndex)
             is StaticHostKvState.Idle -> transitionContentOfIdle(transitionIndex)
             is StaticHostKvState.Putting -> transitionContentOfPutting(transitionIndex)
+            is StaticHostKvState.PuttingIf -> transitionContentOfPuttingIf(transitionIndex)
             is StaticHostKvState.Walking -> transitionContentOfWalking(transitionIndex)
         }
     }
@@ -1594,7 +1920,7 @@ class StaticHostKvStateMachine(
 
 
     private fun transitionContentOfDeletingAt0() {
-                // SCE-MAP: static_host_kv.scxml:116 :: deleting :: _transition_0
+                // SCE-MAP: static_host_kv.scxml:151 :: deleting :: _transition_0
                 if (pendingDoneInvokeDelPayload == null) {
                     return
                 }
@@ -1607,7 +1933,7 @@ class StaticHostKvStateMachine(
     }
 
     private fun transitionContentOfDeletingAt1() {
-                // SCE-MAP: static_host_kv.scxml:120 :: deleting :: _transition_1
+                // SCE-MAP: static_host_kv.scxml:155 :: deleting :: _transition_1
                 if (pendingDoneInvokeDelPayload == null) {
                     return
                 }
@@ -1618,7 +1944,7 @@ class StaticHostKvStateMachine(
     }
 
     private fun transitionContentOfDeletingAt2() {
-                // SCE-MAP: static_host_kv.scxml:123 :: deleting :: _transition_2
+                // SCE-MAP: static_host_kv.scxml:158 :: deleting :: _transition_2
 
             if (try { vOutcome = com.sce.forge.runtime.SceChecked.bounded("deadline", 24); false } catch (_: com.sce.forge.runtime.AlgorithmFailure) { raisePlatformError(StaticHostKvEvent.Error.Execution, ErrorReason.EXPRESSION_FAILED, "<assign location='outcome'>: an integer operation overflowed or failed"); true }) {
                 return
@@ -1626,7 +1952,7 @@ class StaticHostKvStateMachine(
     }
 
     private fun transitionContentOfDeletingAt3() {
-                // SCE-MAP: static_host_kv.scxml:126 :: deleting :: _transition_3
+                // SCE-MAP: static_host_kv.scxml:161 :: deleting :: _transition_3
 
             if (try { vOutcome = com.sce.forge.runtime.SceChecked.bounded("refused", 24); false } catch (_: com.sce.forge.runtime.AlgorithmFailure) { raisePlatformError(StaticHostKvEvent.Error.Execution, ErrorReason.EXPRESSION_FAILED, "<assign location='outcome'>: an integer operation overflowed or failed"); true }) {
                 return
@@ -1650,7 +1976,7 @@ class StaticHostKvStateMachine(
 
 
     private fun transitionContentOfGettingAt0() {
-                // SCE-MAP: static_host_kv.scxml:76 :: getting :: _transition_0
+                // SCE-MAP: static_host_kv.scxml:88 :: getting :: _transition_0
                 if (pendingDoneInvokeGetPayload == null) {
                     return
                 }
@@ -1661,13 +1987,17 @@ class StaticHostKvStateMachine(
                 return
             }
 
+            if (try { vGotVersion = com.sce.forge.runtime.SceChecked.bounded(pendingDoneInvokeGetPayload!!.version, 20); false } catch (_: com.sce.forge.runtime.AlgorithmFailure) { raisePlatformError(StaticHostKvEvent.Error.Execution, ErrorReason.EXPRESSION_FAILED, "<assign location='got_version'>: an integer operation overflowed or failed"); true }) {
+                return
+            }
+
             if (try { vOutcome = com.sce.forge.runtime.SceChecked.bounded("done", 24); false } catch (_: com.sce.forge.runtime.AlgorithmFailure) { raisePlatformError(StaticHostKvEvent.Error.Execution, ErrorReason.EXPRESSION_FAILED, "<assign location='outcome'>: an integer operation overflowed or failed"); true }) {
                 return
             }
     }
 
     private fun transitionContentOfGettingAt1() {
-                // SCE-MAP: static_host_kv.scxml:81 :: getting :: _transition_1
+                // SCE-MAP: static_host_kv.scxml:94 :: getting :: _transition_1
                 if (pendingDoneInvokeGetPayload == null) {
                     return
                 }
@@ -1678,7 +2008,7 @@ class StaticHostKvStateMachine(
     }
 
     private fun transitionContentOfGettingAt2() {
-                // SCE-MAP: static_host_kv.scxml:84 :: getting :: _transition_2
+                // SCE-MAP: static_host_kv.scxml:97 :: getting :: _transition_2
 
             if (try { vOutcome = com.sce.forge.runtime.SceChecked.bounded("deadline", 24); false } catch (_: com.sce.forge.runtime.AlgorithmFailure) { raisePlatformError(StaticHostKvEvent.Error.Execution, ErrorReason.EXPRESSION_FAILED, "<assign location='outcome'>: an integer operation overflowed or failed"); true }) {
                 return
@@ -1686,7 +2016,7 @@ class StaticHostKvStateMachine(
     }
 
     private fun transitionContentOfGettingAt3() {
-                // SCE-MAP: static_host_kv.scxml:87 :: getting :: _transition_3
+                // SCE-MAP: static_host_kv.scxml:100 :: getting :: _transition_3
 
             if (try { vOutcome = com.sce.forge.runtime.SceChecked.bounded("refused", 24); false } catch (_: com.sce.forge.runtime.AlgorithmFailure) { raisePlatformError(StaticHostKvEvent.Error.Execution, ErrorReason.EXPRESSION_FAILED, "<assign location='outcome'>: an integer operation overflowed or failed"); true }) {
                 return
@@ -1704,13 +2034,14 @@ class StaticHostKvStateMachine(
             1 -> transitionContentOfIdleAt1()
             2 -> transitionContentOfIdleAt2()
             3 -> transitionContentOfIdleAt3()
+            4 -> transitionContentOfIdleAt4()
             else -> {}
         }
     }
 
 
     private fun transitionContentOfIdleAt0() {
-                // SCE-MAP: static_host_kv.scxml:56 :: idle :: _transition_0
+                // SCE-MAP: static_host_kv.scxml:63 :: idle :: _transition_0
                 if (pendingHostKvGetRequestPayload == null) {
                     return
                 }
@@ -1721,7 +2052,7 @@ class StaticHostKvStateMachine(
     }
 
     private fun transitionContentOfIdleAt1() {
-                // SCE-MAP: static_host_kv.scxml:59 :: idle :: _transition_1
+                // SCE-MAP: static_host_kv.scxml:66 :: idle :: _transition_1
                 if (pendingHostKvPutRequestPayload == null) {
                     return
                 }
@@ -1736,7 +2067,26 @@ class StaticHostKvStateMachine(
     }
 
     private fun transitionContentOfIdleAt2() {
-                // SCE-MAP: static_host_kv.scxml:63 :: idle :: _transition_2
+                // SCE-MAP: static_host_kv.scxml:70 :: idle :: _transition_2
+                if (pendingHostKvPutIfRequestPayload == null) {
+                    return
+                }
+
+            if (try { vKey = com.sce.forge.runtime.SceChecked.bounded(pendingHostKvPutIfRequestPayload!!.key, 256); false } catch (_: com.sce.forge.runtime.AlgorithmFailure) { raisePlatformError(StaticHostKvEvent.Error.Execution, ErrorReason.EXPRESSION_FAILED, "<assign location='key'>: an integer operation overflowed or failed"); true }) {
+                return
+            }
+
+            if (try { vValue = com.sce.forge.runtime.SceChecked.bounded(pendingHostKvPutIfRequestPayload!!.value, 4096); false } catch (_: com.sce.forge.runtime.AlgorithmFailure) { raisePlatformError(StaticHostKvEvent.Error.Execution, ErrorReason.EXPRESSION_FAILED, "<assign location='value'>: an integer operation overflowed or failed"); true }) {
+                return
+            }
+
+            if (try { vExpected = com.sce.forge.runtime.SceChecked.bounded(pendingHostKvPutIfRequestPayload!!.expected_version, 20); false } catch (_: com.sce.forge.runtime.AlgorithmFailure) { raisePlatformError(StaticHostKvEvent.Error.Execution, ErrorReason.EXPRESSION_FAILED, "<assign location='expected'>: an integer operation overflowed or failed"); true }) {
+                return
+            }
+    }
+
+    private fun transitionContentOfIdleAt3() {
+                // SCE-MAP: static_host_kv.scxml:75 :: idle :: _transition_3
                 if (pendingHostKvDeleteRequestPayload == null) {
                     return
                 }
@@ -1746,8 +2096,8 @@ class StaticHostKvStateMachine(
             }
     }
 
-    private fun transitionContentOfIdleAt3() {
-                // SCE-MAP: static_host_kv.scxml:66 :: idle :: _transition_3
+    private fun transitionContentOfIdleAt4() {
+                // SCE-MAP: static_host_kv.scxml:78 :: idle :: _transition_4
                 if (pendingHostKvNextKeyRequestPayload == null) {
                     return
                 }
@@ -1778,7 +2128,7 @@ class StaticHostKvStateMachine(
 
 
     private fun transitionContentOfPuttingAt0() {
-                // SCE-MAP: static_host_kv.scxml:97 :: putting :: _transition_0
+                // SCE-MAP: static_host_kv.scxml:110 :: putting :: _transition_0
                 if (pendingDoneInvokePutPayload == null) {
                     return
                 }
@@ -1791,7 +2141,7 @@ class StaticHostKvStateMachine(
     }
 
     private fun transitionContentOfPuttingAt1() {
-                // SCE-MAP: static_host_kv.scxml:101 :: putting :: _transition_1
+                // SCE-MAP: static_host_kv.scxml:114 :: putting :: _transition_1
                 if (pendingDoneInvokePutPayload == null) {
                     return
                 }
@@ -1802,7 +2152,7 @@ class StaticHostKvStateMachine(
     }
 
     private fun transitionContentOfPuttingAt2() {
-                // SCE-MAP: static_host_kv.scxml:104 :: putting :: _transition_2
+                // SCE-MAP: static_host_kv.scxml:117 :: putting :: _transition_2
 
             if (try { vOutcome = com.sce.forge.runtime.SceChecked.bounded("deadline", 24); false } catch (_: com.sce.forge.runtime.AlgorithmFailure) { raisePlatformError(StaticHostKvEvent.Error.Execution, ErrorReason.EXPRESSION_FAILED, "<assign location='outcome'>: an integer operation overflowed or failed"); true }) {
                 return
@@ -1810,7 +2160,67 @@ class StaticHostKvStateMachine(
     }
 
     private fun transitionContentOfPuttingAt3() {
-                // SCE-MAP: static_host_kv.scxml:107 :: putting :: _transition_3
+                // SCE-MAP: static_host_kv.scxml:120 :: putting :: _transition_3
+
+            if (try { vOutcome = com.sce.forge.runtime.SceChecked.bounded("refused", 24); false } catch (_: com.sce.forge.runtime.AlgorithmFailure) { raisePlatformError(StaticHostKvEvent.Error.Execution, ErrorReason.EXPRESSION_FAILED, "<assign location='outcome'>: an integer operation overflowed or failed"); true }) {
+                return
+            }
+    }
+
+    // The content of `putting_if`'s own transitions, by the index the
+    // selection answered with. A transition without content is never
+    // dispatched here — the microstep asks only for transitions that carry
+    // some — so the remaining indices are unreachable, which is what an empty
+    // `else` says.
+    private fun transitionContentOfPuttingIf(transitionIndex: Int) {
+        when (transitionIndex) {
+            0 -> transitionContentOfPuttingIfAt0()
+            1 -> transitionContentOfPuttingIfAt1()
+            2 -> transitionContentOfPuttingIfAt2()
+            3 -> transitionContentOfPuttingIfAt3()
+            else -> {}
+        }
+    }
+
+
+    private fun transitionContentOfPuttingIfAt0() {
+                // SCE-MAP: static_host_kv.scxml:131 :: putting_if :: _transition_0
+                if (pendingDoneInvokePutifPayload == null) {
+                    return
+                }
+
+            vWritten = pendingDoneInvokePutifPayload!!.written
+
+            if (try { vPutVersion = com.sce.forge.runtime.SceChecked.bounded(pendingDoneInvokePutifPayload!!.version, 20); false } catch (_: com.sce.forge.runtime.AlgorithmFailure) { raisePlatformError(StaticHostKvEvent.Error.Execution, ErrorReason.EXPRESSION_FAILED, "<assign location='put_version'>: an integer operation overflowed or failed"); true }) {
+                return
+            }
+
+            if (try { vOutcome = com.sce.forge.runtime.SceChecked.bounded("done", 24); false } catch (_: com.sce.forge.runtime.AlgorithmFailure) { raisePlatformError(StaticHostKvEvent.Error.Execution, ErrorReason.EXPRESSION_FAILED, "<assign location='outcome'>: an integer operation overflowed or failed"); true }) {
+                return
+            }
+    }
+
+    private fun transitionContentOfPuttingIfAt1() {
+                // SCE-MAP: static_host_kv.scxml:136 :: putting_if :: _transition_1
+                if (pendingDoneInvokePutifPayload == null) {
+                    return
+                }
+
+            if (try { vOutcome = com.sce.forge.runtime.SceChecked.bounded(pendingDoneInvokePutifPayload!!.error, 24); false } catch (_: com.sce.forge.runtime.AlgorithmFailure) { raisePlatformError(StaticHostKvEvent.Error.Execution, ErrorReason.EXPRESSION_FAILED, "<assign location='outcome'>: an integer operation overflowed or failed"); true }) {
+                return
+            }
+    }
+
+    private fun transitionContentOfPuttingIfAt2() {
+                // SCE-MAP: static_host_kv.scxml:139 :: putting_if :: _transition_2
+
+            if (try { vOutcome = com.sce.forge.runtime.SceChecked.bounded("deadline", 24); false } catch (_: com.sce.forge.runtime.AlgorithmFailure) { raisePlatformError(StaticHostKvEvent.Error.Execution, ErrorReason.EXPRESSION_FAILED, "<assign location='outcome'>: an integer operation overflowed or failed"); true }) {
+                return
+            }
+    }
+
+    private fun transitionContentOfPuttingIfAt3() {
+                // SCE-MAP: static_host_kv.scxml:142 :: putting_if :: _transition_3
 
             if (try { vOutcome = com.sce.forge.runtime.SceChecked.bounded("refused", 24); false } catch (_: com.sce.forge.runtime.AlgorithmFailure) { raisePlatformError(StaticHostKvEvent.Error.Execution, ErrorReason.EXPRESSION_FAILED, "<assign location='outcome'>: an integer operation overflowed or failed"); true }) {
                 return
@@ -1834,7 +2244,7 @@ class StaticHostKvStateMachine(
 
 
     private fun transitionContentOfWalkingAt0() {
-                // SCE-MAP: static_host_kv.scxml:136 :: walking :: _transition_0
+                // SCE-MAP: static_host_kv.scxml:171 :: walking :: _transition_0
                 if (pendingDoneInvokeWalkPayload == null) {
                     return
                 }
@@ -1851,7 +2261,7 @@ class StaticHostKvStateMachine(
     }
 
     private fun transitionContentOfWalkingAt1() {
-                // SCE-MAP: static_host_kv.scxml:141 :: walking :: _transition_1
+                // SCE-MAP: static_host_kv.scxml:176 :: walking :: _transition_1
                 if (pendingDoneInvokeWalkPayload == null) {
                     return
                 }
@@ -1862,7 +2272,7 @@ class StaticHostKvStateMachine(
     }
 
     private fun transitionContentOfWalkingAt2() {
-                // SCE-MAP: static_host_kv.scxml:144 :: walking :: _transition_2
+                // SCE-MAP: static_host_kv.scxml:179 :: walking :: _transition_2
 
             if (try { vOutcome = com.sce.forge.runtime.SceChecked.bounded("deadline", 24); false } catch (_: com.sce.forge.runtime.AlgorithmFailure) { raisePlatformError(StaticHostKvEvent.Error.Execution, ErrorReason.EXPRESSION_FAILED, "<assign location='outcome'>: an integer operation overflowed or failed"); true }) {
                 return
@@ -1870,7 +2280,7 @@ class StaticHostKvStateMachine(
     }
 
     private fun transitionContentOfWalkingAt3() {
-                // SCE-MAP: static_host_kv.scxml:147 :: walking :: _transition_3
+                // SCE-MAP: static_host_kv.scxml:182 :: walking :: _transition_3
 
             if (try { vOutcome = com.sce.forge.runtime.SceChecked.bounded("refused", 24); false } catch (_: com.sce.forge.runtime.AlgorithmFailure) { raisePlatformError(StaticHostKvEvent.Error.Execution, ErrorReason.EXPRESSION_FAILED, "<assign location='outcome'>: an integer operation overflowed or failed"); true }) {
                 return

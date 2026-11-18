@@ -1,6 +1,6 @@
 // SCE-GENERATED — DO NOT EDIT
-// source-hash: 0088c1a2e3c3a3a2f07bf6cdd469ce373938fc1faddfc9c12f814ba4be699946
-// SCE-MAP: kv_get_result.scxml:9 :: _forge_body
+// source-hash: b3510532fa9e2d9145ede123e693bc13594853251b078c52721953cdafb3c78e
+// SCE-MAP: kv_get_result.scxml:12 :: _forge_body
 
 // SCE Forge: Auto-generated from Extended SCXML (sce:kind="event-schema")
 // Runtime: none
@@ -24,9 +24,12 @@ public enum KvGetResult {
     /// The most UTF-8 bytes `value` holds (the bound its type writes), as this build resolved it.
     public static let valueMaxSize: UInt32 = 4096
 
+    /// The most UTF-8 bytes `version` holds (the bound its type writes), as this build resolved it.
+    public static let versionMaxSize: UInt32 = 20
+
     /// The most bytes the event's `_event.data` JSON text takes: every list full, every text at its
     /// bound, every number at its longest spelling.
-    public static let dataMaxLen: UInt64 = 24757
+    public static let dataMaxLen: UInt64 = 24890
 
     /// The id of the payload's schema, `urn:sce:schema:<document>:<revision>`: the `$id` of
     /// `jsonSchema`.
@@ -34,7 +37,7 @@ public enum KvGetResult {
 
     /// The payload as a JSON Schema (2020-12): one spelling of each value, every bound as this
     /// build resolved it, a text's in UTF-8 bytes in `x-sce-max-bytes`.
-    public static let jsonSchema: String = "{\"$schema\":\"https://json-schema.org/draft/2020-12/schema\",\"$id\":\"urn:sce:schema:kv_get_result:1\",\"x-sce-source-hash\":\"0088c1a2e3c3a3a2f07bf6cdd469ce373938fc1faddfc9c12f814ba4be699946\",\"description\":\"x-sce-max-bytes bounds a text in UTF-8 bytes; maxLength counts characters\",\"type\":\"object\",\"properties\":{\"error\":{\"type\":\"string\",\"maxLength\":24,\"x-sce-max-bytes\":24},\"found\":{\"type\":\"boolean\"},\"value\":{\"type\":\"string\",\"maxLength\":4096,\"x-sce-max-bytes\":4096}},\"required\":[\"error\",\"found\",\"value\"],\"additionalProperties\":false}"
+    public static let jsonSchema: String = "{\"$schema\":\"https://json-schema.org/draft/2020-12/schema\",\"$id\":\"urn:sce:schema:kv_get_result:1\",\"x-sce-source-hash\":\"b3510532fa9e2d9145ede123e693bc13594853251b078c52721953cdafb3c78e\",\"description\":\"x-sce-max-bytes bounds a text in UTF-8 bytes; maxLength counts characters\",\"type\":\"object\",\"properties\":{\"error\":{\"type\":\"string\",\"maxLength\":24,\"x-sce-max-bytes\":24},\"found\":{\"type\":\"boolean\"},\"value\":{\"type\":\"string\",\"maxLength\":4096,\"x-sce-max-bytes\":4096},\"version\":{\"type\":\"string\",\"maxLength\":20,\"x-sce-max-bytes\":20}},\"required\":[\"error\",\"found\",\"value\",\"version\"],\"additionalProperties\":false}"
 }
 
 /// The payload of the event: a struct of the schema's fields in the schema's order, built
@@ -44,10 +47,12 @@ public struct KvGetResultPayload: Equatable, Sendable {
     public var error: String
     public var found: Bool
     public var value: String
+    public var version: String
 
-    public init(error: String, found: Bool, value: String) {
+    public init(error: String, found: Bool, value: String, version: String) {
         self.error = error
         self.found = found
         self.value = value
+        self.version = version
     }
 }
