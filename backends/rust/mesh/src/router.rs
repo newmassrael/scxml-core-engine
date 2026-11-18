@@ -1084,6 +1084,24 @@ impl Router {
         self.peers.contains_key(peer)
     }
 
+    /// Whether a request this router sent still waits for its answer: no
+    /// reply, deadline or cancel has ended it yet.
+    pub fn awaits_replies(&self) -> bool {
+        !self.requests.is_empty()
+    }
+
+    /// Whether the request this router sent under the wire `invoke_id`
+    /// `wire_id` still waits for its answer.
+    pub fn awaits_reply(&self, wire_id: &[u8; 16]) -> bool {
+        self.requests.is_waiting(wire_id)
+    }
+
+    /// Whether a peer's send half holds an envelope it has not yet handed to
+    /// the transport, one buffered until the peer is ready (§mesh-10.10).
+    pub fn holds_outbound(&self) -> bool {
+        self.peers.values().any(|bound| bound.outbound.depth() > 0)
+    }
+
     /// Unbind `peer`, which has left for good. What waited for its link is let go as when its link
     /// is lost (each request waiting on it is §mesh-16.7 row 5, and what the outbound buffer held
     /// is dropped), its receive state is forgotten, and a send to it afterwards is to a peer that
@@ -1802,7 +1820,7 @@ fn payload_codec(event_data: &str) -> PayloadCodec {
 /// payload is the `_event.data` text the sender's engine wrote; a payload in
 /// another codec is bytes the engine's text surface cannot be handed, named
 /// by that codec so §mesh-16.7 row 4 can say which.
-fn payload_text(envelope: &Envelope<'_>) -> Result<String, &'static str> {
+pub(crate) fn payload_text(envelope: &Envelope<'_>) -> Result<String, &'static str> {
     match envelope.datacontenttype {
         PayloadCodec::None => Ok(String::new()),
         PayloadCodec::Json => core::str::from_utf8(envelope.data.into_inner())
@@ -1818,7 +1836,9 @@ fn payload_text(envelope: &Envelope<'_>) -> Result<String, &'static str> {
 /// envelope holds each within its bound (docs/adr/0077 §3), so a value past it
 /// has no envelope and is refused here, with the error its encode gave it
 /// before the type held the bound (`CodecError::CborOutOfRange`).
-fn within<L: Entries, const MAX: usize>(value: L) -> Result<Bounded<L, MAX>, RouterError> {
+pub(crate) fn within<L: Entries, const MAX: usize>(
+    value: L,
+) -> Result<Bounded<L, MAX>, RouterError> {
     Bounded::new(value).ok_or(RouterError::Encode(CodecError::CborOutOfRange))
 }
 

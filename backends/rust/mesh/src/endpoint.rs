@@ -503,6 +503,24 @@ impl<T: Transport, E: Environment> Endpoint<T, E> {
         self.router.has_peer(peer)
     }
 
+    /// Whether the endpoint holds nothing that a later call would still act
+    /// on: nothing for the engine, no transmission waiting out its backoff, no
+    /// request waiting for its answer and nothing buffered for a peer that is
+    /// not ready. An endpoint dropped while it holds one of these loses it,
+    /// so a host that drops idle machines asks this first.
+    pub fn is_quiet(&self) -> bool {
+        self.to_engine.is_empty()
+            && self.retries.is_empty()
+            && !self.router.awaits_replies()
+            && !self.router.holds_outbound()
+    }
+
+    /// Whether the request the machine sent under the wire `invoke_id`
+    /// `wire_id` still waits for its answer (see [`Router::awaits_reply`]).
+    pub fn awaits_reply(&self, wire_id: &[u8; 16]) -> bool {
+        self.router.awaits_reply(wire_id)
+    }
+
     /// End the ordering gaps that have waited out their timeout, and send
     /// again what has waited out its backoff. The host calls this on its own
     /// schedule; nothing else makes time pass for the core.
@@ -1042,6 +1060,78 @@ mod tests {
         assert!(hub.take_host_errors().is_empty(), "the other peer is bound");
         assert!(raised(&mut hub).is_empty());
         assert_eq!(hub.transport.sent.pop().unwrap().0, "other");
+    }
+
+    /// An endpoint is quiet only while it holds nothing a later call acts on: a request
+    /// waiting for its answer, a send waiting out its backoff and a send buffered for a peer
+    /// that is not ready each keep it from being quiet, and each, once it ends, lets it be.
+    #[test]
+    fn an_endpoint_is_quiet_only_while_it_holds_nothing_pending() {
+        let mut ecu = endpoint("ecu", "hmi", None);
+        assert!(ecu.is_quiet());
+
+        // A request waits for its answer until its deadline ends it.
+        let mut params = std::collections::HashMap::new();
+        params.insert(
+            crate::rpc::MESH_EVENT_PARAM.to_string(),
+            vec!["service.request.force".to_string()],
+        );
+        params.insert(
+            crate::rpc::MESH_DEADLINE_PARAM.to_string(),
+            vec!["50".to_string()],
+        );
+        let started = ecu.invoke(&HostInvokeRequest {
+            processor_type: MESH_RPC_INVOKE_TYPE.to_string(),
+            invoke_id: "ask".to_string(),
+            src: "#hmi".to_string(),
+            params,
+            token: 1,
+            ..HostInvokeRequest::default()
+        });
+        assert!(started.refusal.is_none(), "{started:?}");
+        let (_, request) = ecu.transport.sent.pop().unwrap();
+        let envelope = crate::generated::envelope::Envelope::decode(
+            &mut sce_forge_runtime::codec::SceCursor::new(&request),
+        )
+        .unwrap();
+        let wire: [u8; 16] = envelope.invoke_id.unwrap().into();
+        assert!(ecu.awaits_reply(&wire));
+        assert!(
+            !ecu.awaits_reply(&[0xEE; 16]),
+            "no request went out under it"
+        );
+        assert!(!ecu.is_quiet(), "a request waits");
+        ecu.environment.now = 50;
+        ecu.tick();
+        assert!(!ecu.awaits_reply(&wire));
+        assert!(!ecu.is_quiet(), "its end is still for the engine");
+        ecu.take_calls();
+        assert!(ecu.is_quiet());
+
+        // A send waits out its backoff.
+        let policy = RetryPolicy {
+            max_retries: 1,
+            initial_backoff_ms: 10,
+            backoff_multiplier: 1.0,
+            max_backoff_ms: 10,
+            jitter_pct: 0,
+        };
+        let mut retrying = endpoint("ecu", "hmi", Some(policy));
+        retrying.transport.failures.push_back(failure(true));
+        retrying.send(&send("go", "s-1"));
+        assert!(!retrying.is_quiet(), "a send waits out its backoff");
+        retrying.environment.now = 10;
+        retrying.tick();
+        assert!(retrying.is_quiet());
+
+        // A send is buffered for a peer that is not ready.
+        let mut buffered = endpoint("ecu", "hmi", None);
+        buffered.peer_not_ready("hmi");
+        buffered.take_calls();
+        buffered.send(&send("go", "s-2"));
+        assert!(!buffered.is_quiet(), "a send is buffered");
+        buffered.peer_ready("hmi");
+        assert!(buffered.is_quiet());
     }
 
     #[test]

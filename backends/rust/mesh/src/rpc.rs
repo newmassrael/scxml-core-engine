@@ -84,6 +84,11 @@ impl Correlation {
         self.pending.contains_key(wire_id)
     }
 
+    /// Whether no request is waiting at all.
+    pub fn is_empty(&self) -> bool {
+        self.pending.is_empty()
+    }
+
     /// Retire the request `wire_id`, returning it if it was still waiting.
     pub fn retire(&mut self, wire_id: &[u8; 16]) -> Option<Pending> {
         self.pending.remove(wire_id)
