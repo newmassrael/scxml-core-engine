@@ -39,7 +39,7 @@ use sce_rust_mesh::router::{PeerConfig, Router};
 use sce_rust_mesh::rpc::MESH_EVENT_PARAM;
 use sce_rust_runtime::json::{self, Value};
 use sce_rust_runtime::HostInvokeRequest;
-use sce_rust_session_store::SqliteStore;
+use sce_rust_session_store::{SessionStore, SqliteStore};
 use sce_server_suite::clock::WallClock;
 use sce_server_suite::ledger::{self, take_data, taken_by_key, Ledgers, CLIENT, HTTPS, TAKE};
 use sce_server_suite::scratch::Scratch;
@@ -130,7 +130,7 @@ impl Served {
                 renew_every_ms: 300_000,
             },
             Ledgers::default(),
-            Arc::clone(&store),
+            Arc::clone(&store) as Arc<dyn SessionStore>,
             server.transport(),
             WallClock::default(),
         )

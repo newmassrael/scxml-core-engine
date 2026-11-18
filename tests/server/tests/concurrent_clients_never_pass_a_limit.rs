@@ -16,7 +16,7 @@ use sce_rust_host_features::Invocation;
 use sce_rust_mesh::generated::pattern_kind::PatternKind;
 use sce_rust_mesh::pool::{Pool, PoolConfig};
 use sce_rust_runtime::json::{self, Value};
-use sce_rust_session_store::SqliteStore;
+use sce_rust_session_store::{SessionStore, SqliteStore};
 use sce_server_suite::clock::WallClock;
 use sce_server_suite::ledger::{
     self, key_data, read_held, record_of, shared_host, Ledgers, Rendezvous, CLAIM, CLIENT, JOIN,
@@ -41,7 +41,7 @@ fn pool(ledgers: Ledgers, scratch: &Scratch) -> (Arc<LedgerPool>, Arc<SqliteStor
             renew_every_ms: 300_000,
         },
         ledgers,
-        Arc::clone(&store),
+        Arc::clone(&store) as Arc<dyn SessionStore>,
         recording.clone(),
         WallClock::default(),
     )
