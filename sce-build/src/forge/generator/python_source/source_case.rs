@@ -386,7 +386,7 @@ fn member_literal(
         // Each entry its codec's dataclass, reached as a body's is, in a list
         // the value holds within its bound where it is made.
         Value::List { codec, law, .. } if law.is_none() => {
-            Ok(format!("[{}]", entry_literals(*codec, path, json, held)?))
+            Ok(format!("[{}]", entry_literals(codec, path, json, held)?))
         }
         // A list held to a law, `{"start": {input: 0|1}, "entries": [..]}`, as
         // the `Lawful` of it the codec's module defines, made of the start and
@@ -411,7 +411,7 @@ fn member_literal(
                 "{}.{}({start}, [{}])",
                 path.module,
                 super::lawful_class(&path.type_name, id),
-                entry_literals(*codec, path, entries, held)?
+                entry_literals(codec, path, entries, held)?
             ))
         }
     }
