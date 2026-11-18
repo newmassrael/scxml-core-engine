@@ -403,6 +403,65 @@ fn a_signed_field_is_decoded_as_the_signed_type_of_its_width() {
     );
 }
 
+/// The fold of the eight bytes from `at`, big-endian, each widened to a `Long`
+/// before it is shifted.
+fn long_fold(at: u32) -> String {
+    (0..8)
+        .map(|i| {
+            let byte = format!("(raw[{}].toLong() and 0xFFL)", at + i);
+            match 56 - 8 * i {
+                0 => byte,
+                up => format!("({byte} shl {up})"),
+            }
+        })
+        .collect::<Vec<_>>()
+        .join(" or ")
+}
+
+/// A field of eight bytes is folded in a `Long`, each byte widened before it
+/// is shifted: Kotlin masks an `Int` shift count to five bits, so a byte of an
+/// `Int` shifted by 32 or more lands in the low bits and every value read is
+/// wrong. An unsigned field is the `ULong` of the fold and a signed one the
+/// fold itself, where the frame is read at fixed places and field by field.
+///
+/// Turns red where `decode_multibyte_unified` folds more than four bytes in
+/// `Int`s.
+#[test]
+fn a_field_of_eight_bytes_is_folded_in_a_long() {
+    const PLACED: &str = r#"<?xml version="1.0" encoding="UTF-8"?>
+<scxml xmlns="http://www.w3.org/2005/07/scxml" xmlns:sce="http://sce.dev/ext"
+       sce:kind="codec" sce:default-endian="big" name="wide_placed" version="1.0">
+  <datamodel>
+    <sce:field id="wide" sce:type="uint64" sce:byte="0" sce:bit-size="64"/>
+    <sce:field id="signed_wide" sce:type="int64" sce:byte="8" sce:bit-size="64"/>
+  </datamodel>
+</scxml>"#;
+    let placed = generated_file("wide_placed", PLACED);
+    let unsigned = format!("            val wide = ({}).toULong()\n", long_fold(0));
+    let signed = format!("            val signed_wide = ({})\n", long_fold(8));
+    holds(
+        "wide_placed",
+        &placed,
+        &[unsigned.as_str(), signed.as_str()],
+    );
+    holds_none("wide_placed", &placed, &["toInt() and 0xFF) shl 56"]);
+    const STREAMED: &str = r#"<?xml version="1.0" encoding="UTF-8"?>
+<scxml xmlns="http://www.w3.org/2005/07/scxml" xmlns:sce="http://sce.dev/ext"
+       sce:kind="codec" sce:default-endian="big" name="wide_streamed" version="1.0">
+  <datamodel>
+    <sce:flags id="flags" sce:type="uint8" sce:byte="0" sce:bit-size="8">
+      <sce:flag name="has_late" bit="0"/>
+    </sce:flags>
+    <sce:field id="late" sce:type="uint64" sce:byte="1" sce:bit-size="64"
+               sce:present-if="flags.has_late"/>
+  </datamodel>
+</scxml>"#;
+    let streamed = generated_file("wide_streamed", STREAMED);
+    let read = format!("val _v = ({}).toULong()\n", long_fold(0));
+    holds("wide_streamed", &streamed, &[read.as_str()]);
+    holds_none("wide_streamed", &streamed, &["toInt() and 0xFF) shl 56"]);
+}
+
 /// A bound past what an `Int` holds, the 2^32 - 1 bytes a Zenoh slice is
 /// bounded by, is named by a `Long`, which kotlinc takes the literal as, and a
 /// size is compared with it as with any other; a bound an `Int` holds is still

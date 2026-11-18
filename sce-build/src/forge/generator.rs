@@ -26542,11 +26542,20 @@ fn decode_multibyte_unified(
                             format!("(static_cast<{target}>(raw[{off}]) << {shift})")
                         }
                     }
+                    // Kotlin masks an `Int` shift count to its five low
+                    // bits, so a byte bound for bit 32 or above is widened
+                    // to a `Long` first, whose count is masked to six: a
+                    // fold of more than four bytes is a fold of `Long`s.
                     Language::Kotlin => {
-                        if shift == 0 {
-                            format!("(raw[{off}].toInt() and 0xFF)")
+                        let byte = if byte_count > 4 {
+                            format!("(raw[{off}].toLong() and 0xFFL)")
                         } else {
-                            format!("((raw[{off}].toInt() and 0xFF) shl {shift})")
+                            format!("(raw[{off}].toInt() and 0xFF)")
+                        };
+                        if shift == 0 {
+                            byte
+                        } else {
+                            format!("({byte} shl {shift})")
                         }
                     }
                     Language::Rust => {
@@ -26614,15 +26623,14 @@ fn decode_multibyte_unified(
     // Kotlin wraps in a conversion call to the carrier of the width: the
     // unsigned type, or for a signed carrier the signed type of that width,
     // which the bits of the fold are, two's complement. The fold of four
-    // bytes is an `Int` already.
+    // bytes is an `Int` already, and of more a `Long`.
     if matches!(lang, Language::Kotlin) {
         let to_type = match (byte_count, signed) {
             (2, false) => ".toUShort()",
             (3 | 4, false) => ".toUInt()",
             (_, false) => ".toULong()",
             (2, true) => ".toShort()",
-            (3 | 4, true) => "",
-            (_, true) => ".toLong()",
+            (_, true) => "",
         };
         format!("({joined}){to_type}")
     } else if matches!(lang, Language::Cpp) {
