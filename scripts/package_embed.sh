@@ -210,14 +210,30 @@ cc_library(
     visibility = ["//visibility:public"],
 )
 
+# sce_base's own compile options in the spelling of the compiler that builds it,
+# as scripts/sce_repo.bzl writes them: the force-included headers (\`-include\`
+# for GCC and Clang, \`/FI\` for MSVC and clang-cl, whose command line is cl's),
+# and for those two the C++17 the sources are written in (their default is
+# C++14) and the UTF-8 they are written in.
+_MSVC_COPTS = [
+    "/std:c++17",
+    "/utf-8",
+    "/FIcommon/ExternTemplates.h",
+    "/FIcommon/DisableStdOut.h",
+]
+
 cc_library(
     name = "sce_base",
     srcs = [
 ${SRCS_FORMATTED}    ],
-    copts = [
-        "-include common/ExternTemplates.h",
-        "-include common/DisableStdOut.h",
-    ],
+    copts = select({
+        "@rules_cc//cc/compiler:msvc-cl": _MSVC_COPTS,
+        "@rules_cc//cc/compiler:clang-cl": _MSVC_COPTS,
+        "//conditions:default": [
+            "-include common/ExternTemplates.h",
+            "-include common/DisableStdOut.h",
+        ],
+    }),
     deps = [":sce_core"],
     visibility = ["//visibility:public"],
 )

@@ -12,12 +12,18 @@
 #include <variant>
 #include <vector>
 
-// Platform-specific API export macros
+// Platform-specific API export macros, for a shared build of the engine: SCXML_ENGINE_EXPORTS while it is
+// built, and on Windows SCXML_ENGINE_DLL in code that links it as a DLL. The libraries this project builds
+// are static, and with them the macro is empty: a dllimport declaration against a static library leaves the
+// linker an __imp_ symbol (a class's vtable, an out-of-line member) that no library defines, and makes the
+// definition of an out-of-line member in the library itself an error.
 #ifdef _WIN32
-#ifdef SCXML_ENGINE_EXPORTS
+#if defined(SCXML_ENGINE_EXPORTS)
 #define SCXML_API __declspec(dllexport)
-#else
+#elif defined(SCXML_ENGINE_DLL)
 #define SCXML_API __declspec(dllimport)
+#else
+#define SCXML_API
 #endif
 #else
 #ifdef SCXML_ENGINE_EXPORTS
