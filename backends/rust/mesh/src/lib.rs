@@ -38,6 +38,8 @@ pub mod causal;
 pub mod conformance;
 pub mod endpoint;
 pub mod generated;
+#[cfg(feature = "https")]
+pub mod https;
 pub mod inbound;
 pub mod inbox;
 pub mod link;

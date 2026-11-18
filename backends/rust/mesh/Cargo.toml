@@ -36,6 +36,11 @@ required-features = ["wss"]
 name = "zenoh_probe"
 required-features = ["zenoh"]
 
+# The reference adapter of the HTTPS port run through the kit every adapter is held to.
+[[test]]
+name = "https_conformance"
+required-features = ["https-conformance"]
+
 [features]
 # The generated modules gate their heap-backed facades (`encode_to_vec`, the
 # growable sink) on the feature of the crate that holds them, spelled
@@ -64,6 +69,28 @@ zenoh = ["dep:zenoh"]
 # default and dependency-free: it is compiled for a client's own test target, in this repository
 # or in the one that implements another client, and not for a host.
 conformance = []
+# The HTTPS binding (SCE_MESH.md section 22): a client that reaches a server by HTTP request and
+# response through the port `https::HttpsTransport`, the server that holds a mailbox per client,
+# and the reference adapter of the port, hyper over rustls with the operating system's verifier
+# and proxy settings. Off by default for the reason `wss` is.
+https = [
+    "dep:tokio",
+    "tokio/rt-multi-thread",
+    "tokio/io-util",
+    "dep:hyper",
+    "dep:hyper-util",
+    "dep:http-body-util",
+    "dep:bytes",
+    "dep:tokio-rustls",
+    "dep:rustls-platform-verifier",
+    "dep:sha2",
+    "dep:base64",
+    "tls",
+]
+# The behaviour every adapter of the HTTPS port is held to (SCE_MESH.md section 22.7): a local
+# server, an explicit proxy, a proxy that inspects TLS, a response lost after the server acted and
+# an exchange held past its bound, each under a test authority the kit makes (`rcgen`).
+https-conformance = ["https", "dep:rcgen"]
 
 [dependencies]
 sce-forge-runtime = { path = "../forge-runtime", default-features = false }
@@ -88,6 +115,24 @@ webpki-roots = { version = "1", optional = true }
 # a client of this binding and a router of that version speak one protocol. TCP only: the binding's links are a client's dial to a router, and QUIC, TLS and
 # compression are a deployment's choice to add.
 zenoh = { version = "=1.10.1", optional = true, default-features = false, features = ["transport_tcp"] }
+# The `https` feature. hyper 1 on tokio at both ends; the client end opens its own connections (and
+# its own CONNECT tunnels) on hyper's connection API, and takes its proxy from hyper-util's matcher,
+# which reads `HTTPS_PROXY`, `https_proxy` and `NO_PROXY` and, where the operating system keeps
+# them, its own proxy settings.
+hyper = { version = "1", optional = true, default-features = false, features = ["client", "server", "http1", "http2"] }
+hyper-util = { version = "0.1", optional = true, default-features = false, features = ["tokio", "server-auto", "client-proxy", "client-proxy-system"] }
+http-body-util = { version = "0.1", optional = true }
+bytes = { version = "1", optional = true }
+# The TLS streams of both ends, on the configurations `tls` and `https` make: no provider of its own.
+tokio-rustls = { version = "0.26", optional = true, default-features = false }
+# The operating system's certificate verifier, so that an authority the user's machine trusts (a
+# network that inspects TLS with its own) is trusted by the client too (ADR 0107, D2).
+rustls-platform-verifier = { version = "0.6", optional = true }
+# The digest a server pins an installation secret by, and the text the secret is sent as.
+sha2 = { version = "0.10", optional = true, default-features = false }
+base64 = { version = "0.22", optional = true, default-features = false, features = ["alloc"] }
+# The `https-conformance` kit's test authority and the certificates it issues.
+rcgen = { version = "0.13", optional = true, default-features = false, features = ["crypto", "ring"] }
 
 [dev-dependencies]
 tokio = { version = "1", default-features = false, features = ["net", "rt", "rt-multi-thread", "sync", "time", "macros"] }
