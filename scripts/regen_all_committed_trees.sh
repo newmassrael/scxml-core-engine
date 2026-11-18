@@ -72,6 +72,21 @@ require_codegen() {
     fi
 }
 
+# The Go the steps that start go run on (`go-round-trip` builds its tree,
+# `forge-goldens` runs the conformance test that builds and vets the Go it
+# writes): the release the Go modules declare, first on PATH with
+# GOTOOLCHAIN=local where it is installed, else the go on PATH, said either way
+# (scripts/lib/go_toolchain.sh). Chosen once, by the first such step.
+GO_CHOSEN=""
+require_go() {
+    if [[ -z "$GO_CHOSEN" ]]; then
+        # shellcheck source=lib/go_toolchain.sh
+        source "$REPO_ROOT/scripts/lib/go_toolchain.sh"
+        sce_go_select regen || true
+        GO_CHOSEN=1
+    fi
+}
+
 # ── runtime-rust: the standard engine documents of the Rust runtime ─────
 #
 # A declared tree (tools/codegen/trees/runtime-rust.toml): every document of
@@ -279,6 +294,7 @@ step_swift_tests() {
 
 # ── go-round-trip: the forge round-trip Go codec tree ──────────────────
 step_go_round_trip() {
+    require_go
     stage "Forge round-trip Go codec tree"
     backends/go/forge-runtime/round_trip/generate.sh
 }
@@ -355,6 +371,7 @@ step_specs() {
 # sixteen `inline_*` files were deleted on 2026-09-28. A golden no test names
 # is not refreshed by this step, so it goes stale without failing anything.
 step_forge_goldens() {
+    require_go
     stage "Regenerating the forge conformance goldens"
     UPDATE_GOLDEN=1 cargo test -p sce-build --features cli --test forge_conformance --quiet
 }

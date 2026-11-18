@@ -396,6 +396,23 @@ fi
 # is installed, else the cargo on PATH.
 gate_select_rust
 
+# ── The Go the gates run on ────────────────────────────────────────
+#
+# DECLARED, NOT FETCHED. The release is the `go` line of the Go modules, and
+# bx.toml declares it to bx (`[platform.linux.tools.go]`): provision installs it
+# once per build machine at ~/.local/share/go/<release>, and a unit that runs go
+# is placed only where it is. Until 2026-11-19 a build machine's Go 1.22.2 reached
+# 1.23.0 by GOTOOLCHAIN=auto fetching it at run time, which fails on a machine
+# that cannot fetch. Chosen here, for every gate, because go is started by gates
+# that never name it (the sce-build contract tests of `workspace-tests`, the Go
+# casefiles of `mutation-rounds`, the regeneration `regen-reproduces` runs), as
+# the Rust release is. Where it is installed its `bin/` goes first on PATH with
+# GOTOOLCHAIN=local, so no gate fetches another toolchain; elsewhere the go on
+# PATH runs, and the line says which (scripts/lib/go_toolchain.sh).
+# shellcheck source=lib/go_toolchain.sh
+source "$REPO_ROOT/scripts/lib/go_toolchain.sh"
+sce_go_select gate || true
+
 printf '\ngate: running %d gate(s): %s\n' "${#ORDER[@]}" "${ORDER[*]}" >&2
 
 # Milliseconds since the epoch, from bash's own clock.

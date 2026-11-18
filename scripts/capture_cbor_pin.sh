@@ -41,6 +41,7 @@ export SCE_REPO_ROOT
 source scripts/lib/sce_codegen.sh
 source scripts/lib/sce_build_jobs.sh
 source scripts/lib/swift_pin.sh
+source scripts/lib/go_toolchain.sh
 
 PIN="tests/forge/cbor_pin"
 WORK="$(mktemp -d)"
@@ -92,6 +93,9 @@ capture_c11() {
 }
 
 capture_go() {
+    # The release the Go modules declare, first on PATH with GOTOOLCHAIN=local
+    # where it is installed, else the go on PATH, said either way.
+    sce_go_select capture-cbor-pin || true
     # A module of the run's own, whose generated packages are imported as
     # sce.dev/cborpin/gen/<document>, over the forge runtime's module in the tree.
     generate go "$WORK/go/gen" --go-module-prefix sce.dev/cborpin/gen

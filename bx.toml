@@ -536,6 +536,47 @@ install_inputs = ["scripts/install_sce_python.sh", "backends/python/runtime/pypr
 packages = ["python3-venv"]
 needed_by = ["w3c-python", "authoring-core", " targets", "workspace-tests"]
 
+# THE GO RELEASE THE GO MODULES DECLARE. Every backends/go/*/go.mod says `go 1.23.0`, and the build
+# machines carry the distribution's Go 1.22.2. `go` in the platform's `needs` asks only that some go
+# runs, so bx placed a Go unit on any machine, and the runs there relied on GOTOOLCHAIN=auto: a go
+# older than the module's line fetches that release from the network at run time. A machine that
+# cannot fetch it fails every Go run with "requires go >= 1.23.0 (running go 1.22.2)", a sentence
+# about the tree for a property of the machine. Measured 2026-11-19: `capture-cbor-pin` landed on
+# such a machine and failed so, and every gate that runs go is exposed to the same placement. As a
+# tool the release is the machine's: provision installs it once, bx checks it, and the runs that
+# need it go only where it is and use it with GOTOOLCHAIN=local, so none of them fetches a toolchain.
+#
+# The version is read from the `go` line of backends/go/forge-runtime/go.mod, not from CI's
+# `setup-go` (`go-version: '1.23'`, a line of releases that moves, which no digest can pin). The
+# `go` line is what go itself reads to refuse an older toolchain, and the release it names is the
+# oldest the module admits, so a run on it holds the module to its word. The forge runtime's file
+# because it is in the inputs of every action that runs go, and it is the module the failure
+# named; the registry's self-test holds the other go.mod files to the same line.
+#
+# `scripts/install_go.sh` is the one place the install is written, as `install_chrome.sh` is
+# Chrome's: the release's tarball from go.dev, refused unless its SHA-256 is the one go.dev
+# publishes for it, which the script pins beside the archive's name. `prefix_link` makes the
+# unpacked tree the store entry, because it is the GOROOT the binary finds beside itself.
+# `path` is not `bin/go`: bx asks `<path> --version`, and go prints its usage to that, so the
+# install writes `sce-go-version` beside `bin/`, which runs that go's `go version` under
+# GOTOOLCHAIN=local, and `check` is what it prints. The runs find the release through
+# `sce_go_select` in scripts/lib/go_toolchain.sh, which puts its `bin/` first on PATH.
+#
+# `needed_by` names the units that start go, and the registry's self-test holds it to them both
+# ways: `forge-go` and `w3c-go` run it; `workspace-tests` runs the sce-build tests and the C ABI
+# suites that build, vet and run Go; `mutation-rounds` builds a Go casefile's tests;
+# `regen-reproduces` runs every regeneration step; and three actions, the CBOR pin and the two
+# regeneration steps that build Go (`forge-go` names the second's run line too).
+[platform.linux.tools.go]
+version_file = "backends/go/forge-runtime/go.mod"
+version_pattern = '^go ([0-9.]+)$'
+path = "~/.local/share/go/{version}/sce-go-version"
+check = "go version go{version} linux"
+prefix_link = "~/.local/share/go/{version}"
+install = "GO_ROOT={prefix} bash scripts/install_go.sh {version}"
+install_inputs = ["scripts/install_go.sh"]
+needed_by = ["forge-go", "w3c-go", "workspace-tests", "mutation-rounds", "regen-reproduces", "scripts/capture_cbor_pin.sh", "scripts/regen_all_committed_trees.sh go-round-trip", "scripts/regen_all_committed_trees.sh forge-goldens"]
+
 # The two named commands, each a table of its own: in platform tables a command
 # is `[commands.<name>]` with `run`, and with one platform it runs there. Until
 # 2026-11-04 they were `build = "..."` and `verify = "..."` lines of one

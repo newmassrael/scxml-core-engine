@@ -4293,6 +4293,185 @@ def rust_toolchain_failures(repo_root: Path) -> list[str]:
     return failures
 
 
+# ── The Go release bx.toml declares ───────────────────────────────
+#
+# The Go modules declare a release (`go x.y.z` in each backends/go/*/go.mod)
+# that the build machines' distribution Go is older than, and a run there
+# relied on GOTOOLCHAIN=auto fetching it from the network at run time, which a
+# machine that cannot fetch fails. So bx.toml declares the release as
+# `[platform.linux.tools.go]`, installed by `scripts/install_go.sh` and chosen
+# for a run by `sce_go_select` (scripts/lib/go_toolchain.sh). The claim has
+# four halves that can each go stale without a gate turning red: the table
+# reads the one go.mod line every module states, the install pins a digest for
+# that release, the runs that start go choose it, and `needed_by` names exactly
+# the units that start go. A unit it misses goes to a machine without the
+# release; one it names for nothing is kept off such machines for nothing.
+GO_TOOLCHAIN_INSTALL = "scripts/install_go.sh"
+GO_TOOLCHAIN_LIB = "scripts/lib/go_toolchain.sh"
+GO_VERSION_FILE = "backends/go/forge-runtime/go.mod"
+GO_TOOLCHAIN_PLACE = "~/.local/share/go/{version}"
+# The gates that start go, each with how. A gate whose script runs go itself is
+# found by GO_COMMAND as well, so one added tomorrow cannot be missed here; the
+# others start it through a program the scan cannot follow.
+GO_GATES = {
+    "forge-go": "runs `go test` over the forge runtime, and its generate.sh "
+                "runs `go build`",
+    "w3c-go": "runs `go test` over the generated W3C suite and the Go modules",
+    "workspace-tests": "runs the sce-build tests and the C ABI suites that "
+                       "build, vet and run Go (`forge_conformance` among them)",
+    "mutation-rounds": "scripts/mutate builds a Go casefile's tests with "
+                       "`go test -c`",
+    "regen-reproduces": "runs every regeneration step, `go-round-trip` and "
+                        "`forge-goldens` among them",
+}
+# The actions of bx.toml whose run starts go, each with how.
+GO_ACTIONS = {
+    "capture-cbor-pin": "`go run` of the Go CBOR driver",
+    "regen-go-round-trip": "round_trip/generate.sh runs `go build`",
+    "regen-forge-goldens": "`forge_conformance` builds and vets the Go it writes",
+}
+# A go command in a script's code: a subcommand that builds or runs Go, or gofmt.
+GO_COMMAND = re.compile(
+    r"(?:^|[\s;&|(])go\s+(?:build|test|run|vet|generate|install|tool)\b|\bgofmt\b",
+    re.M)
+
+
+def bx_action_runs(repo_root: Path) -> dict[str, str]:
+    """The `run` line of each `[actions.<name>]` table of bx.toml, by name.
+
+    Read by its lines, as `bx_tool_tables` reads the tool tables: a run is one
+    quoted string on one line.
+    """
+    runs: dict[str, str] = {}
+    current = None
+    for raw in (repo_root / "bx.toml").read_text(encoding="utf-8").splitlines():
+        line = raw.strip()
+        if not line or line.startswith("#"):
+            continue
+        if line.startswith("["):
+            header = re.fullmatch(r"\[actions\.([A-Za-z0-9_.-]+)\]", line)
+            current = header.group(1) if header else None
+            continue
+        pair = re.fullmatch(r"run\s*=\s*(['\"])(.*)\1", line)
+        if current is not None and pair:
+            runs[current] = pair.group(2)
+    return runs
+
+
+def go_gates_by_scan(repo_root: Path) -> set[str]:
+    """The gates whose own script runs a go command (GO_COMMAND)."""
+    return {slug for slug in GATES
+            if gate_script(repo_root, slug).is_file()
+            and GO_COMMAND.search(script_code(gate_script(repo_root, slug)))}
+
+
+def go_toolchain_failures(repo_root: Path, tables=None, actions=None) -> list[str]:
+    """What is wrong with the Go release bx.toml declares, as sentences.
+
+    `tables` and `actions` replace bx.toml's tool tables and action run lines,
+    so the self-test can show a drifted declaration refused.
+    """
+    tables = bx_tool_tables(repo_root) if tables is None else tables
+    actions = bx_action_runs(repo_root) if actions is None else actions
+    declared = {name: spec for name, spec in tables.items()
+                if GO_TOOLCHAIN_INSTALL in spec.get("install", "")}
+    if len(declared) != 1:
+        return [f"{len(declared)} [platform.linux.tools.*] table(s) install with "
+                f"{GO_TOOLCHAIN_INSTALL} ({sorted(declared)}), and one does: without "
+                f"it a Go unit goes to any machine with some go, which fetches the "
+                f"release the modules declare at run time or fails"]
+    name, spec = next(iter(declared.items()))
+    failures: list[str] = []
+    shape = {
+        "version_file": spec.get("version_file") == GO_VERSION_FILE,
+        "path": spec.get("path") == GO_TOOLCHAIN_PLACE + "/sce-go-version",
+        "prefix_link": spec.get("prefix_link") == GO_TOOLCHAIN_PLACE,
+        "check": spec.get("check") == "go version go{version} linux",
+        "install_inputs": spec.get("install_inputs") == [GO_TOOLCHAIN_INSTALL],
+        "needed_by": bool(spec.get("needed_by")),
+    }
+    for key, ok in shape.items():
+        if not ok:
+            failures.append(
+                f"[platform.linux.tools.{name}] {key} is {spec.get(key)!r}: the Go "
+                f"release is read from {GO_VERSION_FILE}, linked at "
+                f"{GO_TOOLCHAIN_PLACE} where {GO_TOOLCHAIN_LIB} looks, checked by the "
+                f"`go version` its sce-go-version prints, keyed by "
+                f"{GO_TOOLCHAIN_INSTALL}, and needed by the units named")
+
+    version = bx_tool_version(repo_root, spec)
+    if version is None or not RUST_RELEASE.match(version):
+        failures.append(f"[platform.linux.tools.{name}] resolves to {version!r}, not "
+                        f"one release such as 1.23.0 read from {GO_VERSION_FILE}")
+        return failures
+
+    # Every module builds on the one release, under GOTOOLCHAIN=local.
+    for mod in sorted((repo_root / "backends" / "go").glob("*/go.mod")):
+        lines = re.findall(r"^go (\S+)$", mod.read_text(encoding="utf-8"), re.M)
+        if lines != [version]:
+            failures.append(
+                f"{mod.relative_to(repo_root)} states go {lines} and the declared "
+                f"release is {version}: every Go run uses that one release with "
+                f"GOTOOLCHAIN=local, so a module that asks for another fails there")
+
+    # The install pins the digest of that release's archive.
+    install = repo_root / GO_TOOLCHAIN_INSTALL
+    install_text = install.read_text(encoding="utf-8") if install.is_file() else ""
+    if not re.search(rf'"go{re.escape(version)}\.linux-amd64\.tar\.gz [0-9a-f]{{64}}"',
+                     install_text):
+        failures.append(
+            f"{GO_TOOLCHAIN_INSTALL} pins no SHA-256 for go{version}.linux-amd64.tar.gz, "
+            f"so provision refuses to install the release the modules declare")
+
+    # What chooses the release reads it where the table does, and the runs that
+    # start go choose it.
+    lib = repo_root / GO_TOOLCHAIN_LIB
+    lib_text = lib.read_text(encoding="utf-8") if lib.is_file() else ""
+    if GO_VERSION_FILE not in lib_text or ".local/share/go/" not in lib_text:
+        failures.append(f"{GO_TOOLCHAIN_LIB} does not read the release from "
+                        f"{GO_VERSION_FILE} or look for it under ~/.local/share/go/")
+    choosers = ["scripts/gate"] + sorted({
+        actions[a].split()[0] for a in GO_ACTIONS if a in actions and actions[a].split()})
+    for rel in choosers:
+        path = repo_root / rel
+        if not path.is_file() or "sce_go_select" not in script_code(path):
+            failures.append(f"{rel} starts go and does not choose the declared release "
+                            f"(`sce_go_select` of {GO_TOOLCHAIN_LIB})")
+
+    def named(line: str) -> bool:
+        return any(e and e in line for e in spec.get("needed_by", []))
+
+    for slug in sorted(go_gates_by_scan(repo_root) - set(GO_GATES)):
+        failures.append(f"scripts/gates/{slug}.sh runs go and GO_GATES does not "
+                        f"name it, so needed_by is held to nothing for it")
+    for slug in sorted(GATES):
+        unit = plan_units({slug}, rust="0.0.0", head="0" * 40)
+        line = " ".join(unit[0]["argv"]) if unit else ""
+        needs = bool(({slug} | transitive_deps(slug)) & set(GO_GATES))
+        if needs and not named(line):
+            failures.append(f"the unit `{line}` starts go and needed_by "
+                            f"{spec.get('needed_by')} does not name it, so bx may "
+                            f"place it on a machine without Go {version}")
+        if not needs and named(line):
+            failures.append(f"needed_by {spec.get('needed_by')} names the unit "
+                            f"`{line}`, which starts no go, and keeps it off "
+                            f"machines without Go {version}")
+    for action in sorted(set(GO_ACTIONS) - set(actions)):
+        failures.append(f"GO_ACTIONS names `{action}`, which bx.toml does not declare")
+    for action, run in sorted(actions.items()):
+        needs = action in GO_ACTIONS
+        if needs and not named(run):
+            failures.append(f"the action `{action}` starts go and needed_by "
+                            f"{spec.get('needed_by')} does not name its run `{run}`")
+        if not needs and named(run):
+            failures.append(f"needed_by {spec.get('needed_by')} names the run `{run}` "
+                            f"of `{action}`, which starts no go")
+    if named("bash scripts/gate --plan --all"):
+        failures.append(f"needed_by {spec.get('needed_by')} names the plan command, "
+                        f"which runs no go")
+    return failures
+
+
 def self_test(repo_root: Path) -> int:
     """Cases that pin the rules the registry must not break."""
     failures = []
@@ -5776,6 +5955,51 @@ def self_test(repo_root: Path) -> int:
     # declares" above).
     cases += 1
     failures.extend(f"rust-toolchains: {f}" for f in rust_toolchain_failures(repo_root))
+
+    # the-go-release-is-declared-pinned-and-named-by-its-units. The table, the
+    # go.mod lines, the install's digest, the runs that choose the release and
+    # the units that start go, held to one another (see "The Go release bx.toml
+    # declares" above).
+    cases += 1
+    failures.extend(f"go-toolchain: {f}" for f in go_toolchain_failures(repo_root))
+
+    # the-go-check-refuses-a-drifted-declaration. Its silence above is a reading
+    # only if it refuses a table that misses a unit, names one for nothing, or
+    # reads another file, and the absence of the table; and only if the scan
+    # finds the gates whose scripts run go.
+    cases += 1
+    go_tables = bx_tool_tables(repo_root)
+    go_names = [n for n, s in go_tables.items()
+                if GO_TOOLCHAIN_INSTALL in s.get("install", "")]
+
+    def go_drifted(edit):
+        return {n: (edit(dict(s)) if n in go_names else s)
+                for n, s in go_tables.items()}
+
+    for label, edit_spec, want_refused in (
+            ("as declared", lambda s: s, False),
+            ("without w3c-go",
+             lambda s: {**s, "needed_by": [e for e in s.get("needed_by", [])
+                                           if e != "w3c-go"]}, True),
+            ("naming clippy", lambda s: {**s, "needed_by": s.get("needed_by", [])
+                                         + ["clippy"]}, True),
+            ("without the CBOR pin's run",
+             lambda s: {**s, "needed_by": [e for e in s.get("needed_by", [])
+                                           if "capture_cbor_pin" not in e]}, True),
+            ("reading another go.mod",
+             lambda s: {**s, "version_file": "backends/go/runtime/go.mod"}, True)):
+        refused = bool(go_toolchain_failures(repo_root, tables=go_drifted(edit_spec)))
+        if refused != want_refused:
+            failures.append(f"go-toolchain-refuses: the table {label} was "
+                            f"{'refused' if refused else 'passed'}")
+    absent = {n: s for n, s in go_tables.items() if n not in go_names}
+    if not go_toolchain_failures(repo_root, tables=absent):
+        failures.append("go-toolchain-refuses: no Go table was passed")
+    scanned = go_gates_by_scan(repo_root)
+    if not {"forge-go", "w3c-go"} <= scanned:
+        failures.append(f"go-toolchain-refuses: the scan for go commands found "
+                        f"{sorted(scanned)}, not forge-go and w3c-go, whose scripts "
+                        f"run `go test`")
 
     # the-release-rustups-proxy-finds-is-installed-once. The check of the table
     # linked into rustup's home answers for the tree above; here it is shown
