@@ -7,7 +7,7 @@ use std::sync::{Arc, Mutex};
 
 use sce_rust_runtime::{Engine, HostInvokeEvent, HostInvokeResponse, StatePolicy};
 
-use crate::{Outcome, Params, ReferenceHost, Transport, TYPES};
+use crate::{Invocation, Outcome, Params, ReferenceHost, Transport, TYPES};
 
 /// A host the engine's invokers and its embedding both hold.
 pub type Shared<T> = Arc<Mutex<ReferenceHost<T>>>;
@@ -15,7 +15,9 @@ pub type Shared<T> = Arc<Mutex<ReferenceHost<T>>>;
 /// Register `host` as the invoker of every standard type on `engine`.
 ///
 /// A start is answered with its completion (a failure is a completion whose
-/// `error` is a code) or its refusal, or not at all when the host holds it. The
+/// `error` is a code) or its refusal, or not at all when the host holds it, and
+/// reaches the host with the invocation's identity: the session that started
+/// it, the invoke's id and the start number the engine gave it. The
 /// cancel the engine delivers when a state exits or a deadline passes reaches
 /// the host too.
 pub fn serve<P: StatePolicy, T: Transport + Send + 'static>(
@@ -31,9 +33,13 @@ pub fn serve<P: StatePolicy, T: Transport + Send + 'static>(
                     .iter()
                     .filter_map(|(name, values)| Some((name.clone(), values.first()?.clone())))
                     .collect();
+                // docs/adr/0107, D4: the invocation's identity, which a restore
+                // starts it again under.
+                let invocation =
+                    Invocation::new(&request.session_id, &request.invoke_id, request.start);
                 let outcome = host.lock().expect("the host is not left mid-update").start(
                     operation,
-                    &request.invoke_id,
+                    &invocation,
                     &params,
                 );
                 match outcome? {

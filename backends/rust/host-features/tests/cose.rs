@@ -18,7 +18,7 @@ use sce_rust_host_features::cose::{
     decrypt0, derive_key, encrypt0, public_key_of, sign1, verify1, IV_BYTES,
 };
 use sce_rust_host_features::{
-    CoseKeys, HttpRequest, HttpResponse, NonceSource, Outcome, Params, ReferenceHost,
+    CoseKeys, HttpRequest, HttpResponse, Invocation, NonceSource, Outcome, Params, ReferenceHost,
     ReservedKeyId, ScriptedClock, Transport, TransportFailure, TrustedKey,
 };
 
@@ -304,10 +304,15 @@ fn refused(outcome: Option<Outcome>) -> bool {
     matches!(outcome, Some(Outcome::Refuse(_)))
 }
 
+/// The first start of the `<invoke>` `id` of one session.
+fn invocation(id: &str) -> Invocation {
+    Invocation::new("session", id, 1)
+}
+
 fn derive(host: &mut ReferenceHost<Unreachable>, secret: &str, input: &str) -> Option<Outcome> {
     host.start(
         "sce-host-key-derive",
-        "derive",
+        &invocation("derive"),
         &params(&[
             ("secret", secret),
             ("input_key_id", input),
@@ -322,7 +327,7 @@ fn the_host_signs_the_object_the_encoder_writes() {
     let mut host = host();
     let fields = done(host.start(
         "sce-host-cose-sign1",
-        "sign",
+        &invocation("sign"),
         &params(&[
             ("key_id", "11"),
             ("payload", "This is the content."),
@@ -338,12 +343,12 @@ fn an_empty_key_id_or_a_character_past_u00ff_is_refused() {
     let mut host = host();
     assert!(refused(host.start(
         "sce-host-cose-sign1",
-        "sign",
+        &invocation("sign"),
         &params(&[("key_id", ""), ("payload", "p"), ("external_aad", "")]),
     )));
     assert!(refused(host.start(
         "sce-host-cose-sign1",
-        "sign",
+        &invocation("sign"),
         &params(&[
             ("key_id", "11"),
             ("payload", "\u{100}"),
@@ -352,13 +357,13 @@ fn an_empty_key_id_or_a_character_past_u00ff_is_refused() {
     )));
     assert!(refused(host.start(
         "sce-host-cose-verify1",
-        "verify",
+        &invocation("verify"),
         &params(&[("trust_set", ""), ("cose", ""), ("external_aad", "")]),
     )));
     for key_operation in ["sce-host-cose-encrypt0", "sce-host-cose-decrypt0"] {
         assert!(refused(host.start(
             key_operation,
-            "op",
+            &invocation("op"),
             &params(&[
                 ("key_id", ""),
                 ("plaintext", ""),
@@ -374,7 +379,7 @@ fn a_key_the_host_does_not_hold_fails_with_every_field_at_its_zero() {
     let mut host = host();
     let fields = done(host.start(
         "sce-host-cose-verify1",
-        "verify",
+        &invocation("verify"),
         &params(&[
             ("trust_set", "strangers"),
             ("cose", &text(&hex(SIGN1_11))),
@@ -387,7 +392,7 @@ fn a_key_the_host_does_not_hold_fails_with_every_field_at_its_zero() {
     );
     let fields = done(host.start(
         "sce-host-cose-encrypt0",
-        "seal",
+        &invocation("seal"),
         &params(&[
             ("key_id", "nobody"),
             ("plaintext", "p"),
@@ -482,7 +487,7 @@ fn a_seal_opens_with_a_key_derived_alike_and_not_with_another() {
     );
     let sealed = done(host.start(
         "sce-host-cose-encrypt0",
-        "seal",
+        &invocation("seal"),
         &params(&[
             ("key_id", "derived:1"),
             ("plaintext", "sealed"),
@@ -494,7 +499,7 @@ fn a_seal_opens_with_a_key_derived_alike_and_not_with_another() {
     let open = |host: &mut ReferenceHost<Unreachable>, key_id: &str| {
         done(host.start(
             "sce-host-cose-decrypt0",
-            "open",
+            &invocation("open"),
             &params(&[("key_id", key_id), ("cose", cose), ("external_aad", "")]),
         ))
     };
@@ -528,7 +533,7 @@ fn a_new_configuration_keeps_the_derived_keys_and_refuses_their_ids() {
     assert_eq!(
         done(host.start(
             "sce-host-cose-sign1",
-            "sign",
+            &invocation("sign"),
             &params(&[("key_id", "11"), ("payload", ""), ("external_aad", "")]),
         ))["error"],
         "unknown_key",
@@ -537,7 +542,7 @@ fn a_new_configuration_keeps_the_derived_keys_and_refuses_their_ids() {
     assert_eq!(
         done(host.start(
             "sce-host-cose-encrypt0",
-            "seal",
+            &invocation("seal"),
             &params(&[
                 ("key_id", "derived:1"),
                 ("plaintext", ""),
@@ -568,7 +573,7 @@ fn the_host_holds_no_key_until_it_is_given_one() {
     ]);
     for (operation, request) in &requests {
         assert_eq!(
-            done(host.start(operation, "op", request))["error"],
+            done(host.start(operation, &invocation("op"), request))["error"],
             "unknown_key",
             "{operation}"
         );

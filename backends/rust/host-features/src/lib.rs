@@ -4,10 +4,11 @@
 //! The reference host of the standard host features (docs/SCE_HOST_FEATURES.md).
 //!
 //! A [`ReferenceHost`] is the whole of the features' semantics as one
-//! object: it is told the start of an operation (its `type` and the request's
-//! text parameters) and answers with an [`Outcome`] — a completion, a failure,
-//! a refusal, or nothing yet. It knows no engine, so the same object serves a
-//! generated machine through [`serve`], a test, or another embedding.
+//! object: it is told the start of an operation (its `type`, the identity of
+//! the invocation and the request's text parameters) and answers with an
+//! [`Outcome`] — a completion, a failure, a refusal, or nothing yet. It knows
+//! no engine, so the same object serves a generated machine through [`serve`],
+//! a test, or another embedding.
 //!
 //! Time comes from a [`ClockSource`] and the network from a [`Transport`], both
 //! the embedding's to supply, and the keys of signing and sealing from a
@@ -40,6 +41,33 @@ pub const MODEL_GENERATE: &str = "sce-host-model-generate";
 /// The request of an operation as the engine hands it to a host: each
 /// `<param>` by name, as text. A 64-bit integer is its decimal digits.
 pub type Params = BTreeMap<String, String>;
+
+/// The identity of a host-run invocation (docs/SCE_HOST_FEATURES.md, section
+/// 1, "Identity"): the session that started it, the `<invoke>`'s id, and which
+/// start of that `<invoke>` in that session it is. A restore starts a running
+/// invocation again under the identity it had, so two starts with one identity
+/// are one operation asked twice.
+#[derive(Debug, Clone, Default, PartialEq, Eq, PartialOrd, Ord, Hash)]
+pub struct Invocation {
+    /// The id of the session that started it (`_sessionid`).
+    pub session_id: String,
+    /// The `<invoke>`'s id, which its completion names.
+    pub id: String,
+    /// Which start of the `<invoke>` in the session it is, counted from 1.
+    pub start: u64,
+}
+
+impl Invocation {
+    /// The identity of start `start` of the `<invoke>` `id` in the session
+    /// `session_id`.
+    pub fn new(session_id: &str, id: &str, start: u64) -> Self {
+        Self {
+            session_id: session_id.to_string(),
+            id: id.to_string(),
+            start,
+        }
+    }
+}
 
 /// Every operation type of the standard host features, in the order the
 /// specification lists them.
@@ -109,14 +137,20 @@ pub struct ReferenceHost<T: Transport> {
     /// Where each seal's nonce comes from: the operating system until the
     /// embedding gives another.
     pub(crate) nonces: Box<dyn NonceSource + Send>,
+    /// The first result of each put-if, by the identity of its invocation:
+    /// what a repeat of that identity is answered with (docs/adr/0107, D4).
+    pub(crate) first_results: BTreeMap<Invocation, Outcome>,
 }
 
-/// A start the host was given: the operation, the invocation's id and the
+/// A start the host was given: the operation, the invocation's id, the
+/// session that started it, which start of its `<invoke>` it is, and the
 /// request's parameters.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Start {
     pub operation: String,
     pub id: String,
+    pub session_id: String,
+    pub start: u64,
     pub params: Params,
 }
 
@@ -139,6 +173,7 @@ impl<T: Transport> ReferenceHost<T> {
             answer_schemas: Vec::new(),
             cose: cose::Keys::default(),
             nonces: Box::new(SystemNonces),
+            first_results: BTreeMap::new(),
         }
     }
 
@@ -232,21 +267,57 @@ impl<T: Transport> ReferenceHost<T> {
         &self.cancelled
     }
 
-    /// Start the operation `operation` of invocation `id` with `params`.
+    /// Start the operation `operation` of `invocation` with `params`.
     ///
     /// `None` for a type that is not one of the standard host features: the host
     /// serves none of it. Otherwise the arguments are judged first (a refusal
     /// starts nothing), then a failure the embedding injected, then the
     /// operation itself.
-    pub fn start(&mut self, operation: &str, id: &str, params: &Params) -> Option<Outcome> {
+    ///
+    /// A put-if whose invocation was answered before is answered with that first
+    /// result, a failure included, and changes nothing: the engine starts a
+    /// running invocation again under the same identity when it restores a
+    /// state saved before the answer was taken (docs/adr/0107, D4), and the
+    /// write it asked for was made once.
+    pub fn start(
+        &mut self,
+        operation: &str,
+        invocation: &Invocation,
+        params: &Params,
+    ) -> Option<Outcome> {
         if !TYPES.contains(&operation) {
             return None;
         }
+        let id = invocation.id.as_str();
         self.starts.push(Start {
             operation: operation.to_string(),
             id: id.to_string(),
+            session_id: invocation.session_id.clone(),
+            start: invocation.start,
             params: params.clone(),
         });
+        let keeps_first = operation == "sce-host-kv-put-if";
+        if keeps_first {
+            if let Some(first) = self.first_results.get(invocation) {
+                sce_rust_runtime::sce_log_info!(
+                    "{operation} {id}: start {} of session {} repeated, answered as first",
+                    invocation.start,
+                    invocation.session_id
+                );
+                return Some(first.clone());
+            }
+        }
+        let outcome = self.perform(operation, id, params);
+        if keeps_first && matches!(outcome, Outcome::Done(_)) {
+            self.first_results
+                .insert(invocation.clone(), outcome.clone());
+        }
+        Some(outcome)
+    }
+
+    /// The operation itself, as [`Self::start`] describes it, for a start that is
+    /// not a repeat.
+    fn perform(&mut self, operation: &str, id: &str, params: &Params) -> Outcome {
         let argument = |name: &str| params.get(name).map(String::as_str).unwrap_or("");
         let refused = match operation {
             "sce-host-kv-get" | "sce-host-kv-delete" => !kv::valid_key(argument("key")),
@@ -265,13 +336,13 @@ impl<T: Transport> ReferenceHost<T> {
             _ => false,
         };
         if refused {
-            return Some(Outcome::Refuse(INVALID_ARGUMENT));
+            return Outcome::Refuse(INVALID_ARGUMENT);
         }
         if let Some(code) = self.faults.get(operation) {
             sce_rust_runtime::sce_log_info!("{operation} {id}: fails {code}, injected");
-            return Some(failure(operation, code));
+            return failure(operation, code);
         }
-        Some(match operation {
+        match operation {
             "sce-host-clock-now" => clock::now(self),
             "sce-host-clock-zone" => clock::zone(self),
             "sce-host-kv-get" => kv::get(self, argument("key")),
@@ -307,7 +378,7 @@ impl<T: Transport> ReferenceHost<T> {
                 cose::perform(self, signing_or_sealing, params)
             }
             _ => unreachable!("the type was checked against TYPES"),
-        })
+        }
     }
 
     /// The host is told to stop invocation `id`, because its state exited or its

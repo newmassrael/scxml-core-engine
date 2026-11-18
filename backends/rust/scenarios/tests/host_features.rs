@@ -18,11 +18,11 @@ use std::sync::{Arc, Mutex};
 
 use sce_rust_host_features::{
     cose, serve, AnswerSchema, ClockSource, CoseKeys, ExhaustiveProvider, HttpRequest,
-    HttpResponse, OutcomeClass, Reading, ReferenceHost, ScriptedAnswer, ScriptedClock,
-    ScriptedProvider, Shared, Transport, TransportFailure, TrustedKey, Zone,
+    HttpResponse, Invocation, OutcomeClass, Params, Reading, ReferenceHost, ScriptedAnswer,
+    ScriptedClock, ScriptedProvider, Shared, Transport, TransportFailure, TrustedKey, Zone,
 };
 use sce_rust_runtime::saved_state::SavedState;
-use sce_rust_runtime::{Engine, SceClock, StatePolicy, TransitionTaken};
+use sce_rust_runtime::{Engine, HostInvokeEvent, SceClock, StatePolicy, TransitionTaken};
 use sce_rust_scenarios::integration::static_datamodel::{
     static_host_clock_sm::{StaticHostClockPersist, StaticHostClockPolicy},
     static_host_cose_sm::{StaticHostCosePersist, StaticHostCosePolicy},
@@ -472,6 +472,111 @@ fn a_machine_asks_the_key_value_store_of_its_host() {
         "static_host_kv",
         &[],
     );
+}
+
+/// The variables `saved` holds, by name, as it writes them.
+fn published(saved: &SavedState) -> Value {
+    let state: Value = serde_json::from_str(&saved.to_json()).expect("a saved state is JSON");
+    state["variables"].clone()
+}
+
+/// docs/adr/0107, D4: a put-if the host carried out, saved before its answer
+/// was taken, is started again by the restore under the identity it had, and
+/// the host answers it with the first result rather than judging the store a
+/// second time; a start the document makes afterwards takes the next number
+/// and is an operation of its own.
+#[test]
+fn a_restored_put_if_is_answered_with_the_first_result_of_its_invocation() {
+    let reference = ReferenceHost::new(
+        Box::new(ScriptedClock::new()) as Box<dyn ClockSource + Send>,
+        Scripted(Arc::default()),
+    );
+    let host: Shared<Scripted> = Arc::new(Mutex::new(reference));
+
+    // The first process: the host writes, and its answer is lost with the
+    // process before the machine takes it.
+    let mut first = Engine::new(StaticHostKvPolicy::new());
+    serve(&mut first, &host);
+    let carried_out = Arc::clone(&host);
+    first.register_invoker("sce-host-kv-put-if", move |event| {
+        if let HostInvokeEvent::Start(request) = event {
+            let params: Params = request
+                .params
+                .iter()
+                .filter_map(|(name, values)| Some((name.clone(), values.first()?.clone())))
+                .collect();
+            let invocation =
+                Invocation::new(&request.session_id, &request.invoke_id, request.start);
+            carried_out
+                .lock()
+                .expect("the host")
+                .start("sce-host-kv-put-if", &invocation, &params);
+        }
+        None
+    });
+    first.set_clock(SceClock::Manual(0));
+    first.initialize().expect("the machine starts");
+    settle(&mut first);
+    first.raise_external_by_name(
+        "host.kv.put_if.request",
+        r#"{"key":"k","value":"a","expected_version":"0"}"#,
+    );
+    settle(&mut first);
+    let saved = first.save_at(0).expect("saves");
+    let [running] = saved.host_invokes.as_slice() else {
+        panic!("the put-if is running: {:?}", saved.host_invokes)
+    };
+    assert_eq!((running.invoke_id.as_str(), running.start), ("putif", 1));
+    assert_eq!(
+        host.lock().expect("the host").store_entries(),
+        [("k".to_string(), "a".to_string())],
+        "the host wrote once"
+    );
+    drop(first);
+
+    // The second process: the restore starts it again, and the host answers it
+    // as it answered the first time, where the store alone would now answer
+    // `written` false at version 1.
+    let mut second = Engine::<StaticHostKvPolicy>::restore_with(
+        StaticHostKvPolicy::new(),
+        &saved,
+        SceClock::Manual(0),
+        0,
+    )
+    .expect("restores");
+    serve(&mut second, &host);
+    settle(&mut second);
+    let variables = published(&second.save_at(0).expect("saves"));
+    assert_eq!(variables["outcome"], "done");
+    assert_eq!(variables["written"], true, "the first result");
+    assert_eq!(variables["put_version"], "1");
+    assert_eq!(
+        host.lock().expect("the host").store_entries(),
+        [("k".to_string(), "a".to_string())],
+        "nothing written twice"
+    );
+
+    // A start the document makes now is the second start of `putif`.
+    second.raise_external_by_name(
+        "host.kv.put_if.request",
+        r#"{"key":"k","value":"b","expected_version":"0"}"#,
+    );
+    settle(&mut second);
+    let variables = published(&second.save_at(0).expect("saves"));
+    assert_eq!(
+        variables["written"], false,
+        "judged against the store as it is"
+    );
+    assert_eq!(variables["put_version"], "1");
+    let starts = host.lock().expect("the host").take_starts();
+    let numbers: Vec<(&str, u64)> = starts
+        .iter()
+        .map(|start| (start.id.as_str(), start.start))
+        .collect();
+    assert_eq!(numbers, [("putif", 1), ("putif", 1), ("putif", 2)]);
+    assert!(starts
+        .iter()
+        .all(|start| start.session_id == saved.session_id));
 }
 
 #[test]
