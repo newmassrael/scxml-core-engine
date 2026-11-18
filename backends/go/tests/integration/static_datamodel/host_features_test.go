@@ -399,13 +399,16 @@ func TestAMachineAsksTheKeyValueStoreOfItsHost(t *testing.T) {
 	policy := static_host_kv.NewStaticHostKvPolicy()
 	policy.SessionID = sce.GenerateSessionID()
 	replayHost[static_host_kv.StaticHostKvState, static_host_kv.StaticHostKvEvent](t, "static_host_kv", &policy, nil, map[string]func() any{
-		"outcome":    func() any { return policy.Outcome() },
-		"found":      func() any { return policy.Found() },
-		"got":        func() any { return policy.Got() },
-		"replaced":   func() any { return policy.Replaced() },
-		"existed":    func() any { return policy.Existed() },
-		"next_found": func() any { return policy.NextFound() },
-		"next":       func() any { return policy.Next() },
+		"outcome":     func() any { return policy.Outcome() },
+		"found":       func() any { return policy.Found() },
+		"got":         func() any { return policy.Got() },
+		"got_version": func() any { return policy.GotVersion() },
+		"replaced":    func() any { return policy.Replaced() },
+		"written":     func() any { return policy.Written() },
+		"put_version": func() any { return policy.PutVersion() },
+		"existed":     func() any { return policy.Existed() },
+		"next_found":  func() any { return policy.NextFound() },
+		"next":        func() any { return policy.Next() },
 	})
 }
 

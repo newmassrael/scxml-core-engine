@@ -27,6 +27,7 @@ var Types = []string{
 	"sce-host-clock-zone",
 	"sce-host-kv-get",
 	"sce-host-kv-put",
+	"sce-host-kv-put-if",
 	"sce-host-kv-delete",
 	"sce-host-kv-next-key",
 	"sce-host-notify-permission",
@@ -171,6 +172,8 @@ func (h *ReferenceHost) Start(operation, id string, params Params) (Outcome, boo
 	switch operation {
 	case "sce-host-kv-get", "sce-host-kv-delete", "sce-host-kv-put":
 		refused = !validKey(params["key"])
+	case "sce-host-kv-put-if":
+		refused = !validKey(params["key"]) || !validVersion(params["expected_version"])
 	case "sce-host-notify-post", "sce-host-notify-cancel":
 		refused = params["id"] == ""
 	case "sce-host-http-fetch":
@@ -194,6 +197,8 @@ func (h *ReferenceHost) Start(operation, id string, params Params) (Outcome, boo
 		return h.kvGet(params["key"]), true
 	case "sce-host-kv-put":
 		return h.kvPut(params["key"], params["value"]), true
+	case "sce-host-kv-put-if":
+		return h.kvPutIf(params["key"], params["value"], params["expected_version"]), true
 	case "sce-host-kv-delete":
 		return h.kvDelete(params["key"]), true
 	case "sce-host-kv-next-key":
@@ -244,8 +249,9 @@ func failure(operation, code string) Outcome {
 	zero := map[string]map[string]any{
 		"sce-host-clock-now":                 {"utc_ms": "0", "monotonic_ms": "0"},
 		"sce-host-clock-zone":                {"zone_id": "", "utc_offset_s": 0},
-		"sce-host-kv-get":                    {"found": false, "value": ""},
+		"sce-host-kv-get":                    {"found": false, "value": "", "version": "0"},
 		"sce-host-kv-put":                    {"replaced": false},
+		"sce-host-kv-put-if":                 {"written": false, "version": "0"},
 		"sce-host-kv-delete":                 {"existed": false},
 		"sce-host-notify-cancel":             {"existed": false},
 		"sce-host-kv-next-key":               {"found": false, "key": ""},

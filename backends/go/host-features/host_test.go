@@ -87,6 +87,18 @@ func TestAKeyWithANulIsRefused(t *testing.T) {
 	}
 }
 
+// A put-if is refused for a key with U+0000 as a get is, and writes nothing.
+func TestAPutIfWithANulInItsKeyIsRefused(t *testing.T) {
+	h := NewReferenceHost(NewScriptedClock(), unreachable{})
+	params := Params{"key": "a\x00b", "value": "v", "expected_version": "0"}
+	if got := start(t, h, "sce-host-kv-put-if", params); got.Kind != Refuse {
+		t.Fatalf("a put-if of a key with U+0000 was %+v", got)
+	}
+	if entries := h.StoreEntries(); len(entries) != 0 {
+		t.Fatalf("a refused put-if wrote %v", entries)
+	}
+}
+
 // The transport over the standard library's client: a local server answers, the
 // host carries the request's headers and body to it, follows no redirect, and
 // gives the response's fields in a fixed order.
