@@ -1,5 +1,9 @@
 # Standard host features
 
+- Amended by: ADR 0107 (D8): section 7, a standard type is served on the lanes
+  the table names, and a build for another lane refuses a machine that runs it
+  (`docs/adr/0107-a-server-keeps-a-durable-session-per-key-and-a-client-reaches-it-by-mesh-over-http.md`).
+
 A statechart that runs under `datamodel="sce-static"` has no operating system to
 call. What it needs of one (the time, a place to keep a small value, a
 notification, an HTTP exchange, a text a model generates) it asks of its host,
@@ -289,8 +293,21 @@ once. Not provided here: any binding to a real provider.
 ## 7. What the build does
 
 - **The types are served without a declaration.** A document that runs an
-  `<invoke>` of a standard type needs no `--host-invoker`; every host serves the
-  standard types. `sce-codegen check` reports them under `host_invoker_types`.
+  `<invoke>` of a standard type needs no `--host-invoker`: the host of a lane
+  that serves the type serves it. `sce-codegen check` reports them under
+  `host_invoker_types`.
+- **Each type is served on the lanes the table names.** Each entry of the table
+  lists the lanes, the backends `-l` names, whose reference host (section 8)
+  serves the type. A build for
+  another lane, `generate` or `check` alike, refuses a machine that runs an
+  `<invoke>` of it as `codegen/standard-host-type-not-served`, on that
+  `<invoke>`, naming the type, the lane and the lanes that serve it; a child the
+  document carries is held to the same lane. Every type of sections 2 to 6 is
+  served on every lane. That every lane serves every type stays the goal, and is
+  not a precondition of adding one: a type is added with the lanes whose
+  reference host it lands in, and a lane joins its entry in the change that
+  lands that host's support and its scenarios. A backend added to SCE serves
+  none of the types until its reference host lands.
 - **The records are the library's.** `sce:result` (and `sce:request`, for an
   operation that has one) must name the record the standard library gives the
   operation, imported from `sce:std/host/`; a record of another document, however
@@ -315,7 +332,8 @@ once. Not provided here: any binding to a real provider.
   (`scxml/static-datamodel-rule`). It was accepted before, and written into the
   generated machine as the text the author wrote, which names no value there.
 - **The table is one list** (`sce-build/src/forge/standard_host.rs`), held to the
-  library by `the_standard_host_features_are_one_set`.
+  library by `the_standard_host_features_are_one_set`, and its lanes to the order
+  and the refusal by the unit tests beside it.
 
 ## 8. Conformance and reference hosts
 
