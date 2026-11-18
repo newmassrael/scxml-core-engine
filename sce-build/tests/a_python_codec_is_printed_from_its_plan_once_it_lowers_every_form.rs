@@ -512,9 +512,10 @@ fn a_flag_input_the_value_does_not_say_is_handed_to_the_encode() {
 
 /// A flag input the value says by the field gated on it alone is no parameter
 /// of the encode or of the value's `encode`, and a function of the module,
-/// `input_<name>`, reads it off any source; the decode still takes it. A
-/// parent the template writes hands the printed codec's encode no such input,
-/// and its decode every input.
+/// `input_<name>`, reads it off any source; the decode still takes it, and
+/// answers the value or raises the refusal's kind (docs/adr/0099, amendment of
+/// 2026-11-16). A parent the template writes hands the printed codec's encode
+/// no such input, and its decode every input.
 ///
 /// Turns red where `python_source::positional_forms` names an input a gate
 /// says unlowered, `input_functions` stops printing `input_<name>` or
@@ -533,8 +534,7 @@ fn a_flag_input_the_value_says_is_read_off_the_value_and_not_handed() {
             "\ndef encode_source(src: CodecZenohUndeclTokenSource, w: SceSink) -> None:\n",
             "\ndef input_z(src: CodecZenohUndeclTokenSource) -> int:\n",
             "    return (1 if src.ext_keyexpr is not None else 0)\n",
-            "    def decode(cls, cursor: SceCursor, z: int) -> \
-             Optional[CodecZenohUndeclToken]:\n",
+            "    def decode(cls, cursor: SceCursor, z: int) -> CodecZenohUndeclToken:\n",
             "    def encode(self, w: SceSink) -> None:\n",
             "        encode_source(self, w)\n",
             "    def encode_to_bytes(self) -> bytes:\n",
