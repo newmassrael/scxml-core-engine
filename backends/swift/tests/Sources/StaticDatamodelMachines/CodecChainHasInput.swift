@@ -8,16 +8,37 @@
 
 import SceForgeRuntime
 
+/// The elements a value of `CodecChainHasInput` presents, each a read-only property in the order the
+/// document declares them (docs/adr/0058 §1, docs/adr/0081 §1): what
+/// `CodecChainHasInput.encodeSource(_:into:)` writes a frame from. A type of the host's own that
+/// declares them is written with no copy into `CodecChainHasInput`, which conforms itself.
+public protocol CodecChainHasInputSource {
+    /// What each entry of `entries` is presented as: a source of `CodecChainHasTaggedEntry`, written by its encode.
+    associatedtype Entries_Entry: CodecChainHasTaggedEntrySource
+    var entries: BoundedList<Entries_Entry, CodecChainHasInput.EntriesBound> { get }
+    var priority: UInt8? { get }
+}
+
 /// The frame this codec lays on the wire: 2 field(s) of integers, each at its
 /// byte offset and in its byte order. A value, so a host that reads one holds a copy.
-public struct CodecChainHasInput: Equatable, Sendable {
+public struct CodecChainHasInput: Equatable, Sendable, CodecChainHasInputSource {
     /// The fewest bytes a frame can have: its frame is read field by field, and a variable-length
     /// integer or a field of bytes may take more.
     public static let frameLength = 0
 
+    /// How many entries `entries` holds on the wire, as the document bounds it (docs/adr/0065 §6
+    /// R2, R7): its type is held to it where a value of it is made.
+    public enum EntriesBound: SceCountBound {
+        public static let least = 1
+        public static let most: Int? = 3
+    }
+
+    /// The value presents each entry of `entries` as a value of its own codec.
+    public typealias Entries_Entry = CodecChainHasTaggedEntry
+
     /// Entries of `CodecChainHasTaggedEntry`, one after another, at most 3: until one says it is the last. A frame
-    /// with more is refused with `tooManyElements`, as is a value with more at its encode.
-    public var entries: [CodecChainHasTaggedEntry] = []
+    /// with more is refused with `tooManyElements`, and a value with more is no value of its type.
+    public var entries: BoundedList<CodecChainHasTaggedEntry, CodecChainHasInput.EntriesBound> = .fewest(of: CodecChainHasTaggedEntry())
 
     /// On the wire only when `_has_entries_7 || (urgent & 0x1) != 0`; `nil` when it is not. An encode
     /// writes it when it is not `nil`.
@@ -28,7 +49,7 @@ public struct CodecChainHasInput: Equatable, Sendable {
     /// frame yet holds, as a validator that composes this codec does until it is given one.
     public init() {}
 
-    public init(entries: [CodecChainHasTaggedEntry], priority: UInt8?) {
+    public init(entries: BoundedList<Entries_Entry, CodecChainHasInput.EntriesBound>, priority: UInt8?) {
         self.entries = entries
         self.priority = priority
     }
@@ -41,7 +62,6 @@ public struct CodecChainHasInput: Equatable, Sendable {
     /// and is refused like any other count past the end, and is no trap.
     public static func decode(_ cursor: inout SceCursor, urgent: UInt8) throws(CodecError) -> CodecChainHasInput {
         var reader = cursor
-        var frame = CodecChainHasInput()
         var entries_items: [CodecChainHasTaggedEntry] = []
         var entries_more = false
         for _ in 0..<3 {
@@ -56,38 +76,40 @@ public struct CodecChainHasInput: Equatable, Sendable {
         if entries_more {
             throw CodecError.tooManyElements
         }
-        frame.entries = entries_items
-        let _has_entries_7 = frame.entries.contains(where: { _e in chainIdentifier(_e.entry_type) == 7 })
+        let entries = try BoundedList<CodecChainHasTaggedEntry, CodecChainHasInput.EntriesBound>(decoding: entries_items)
+        let _has_entries_7 = entries.contains(where: { _e in chainIdentifier(_e.entry_type) == 7 })
+        var priority: UInt8? = nil
         if _has_entries_7 || (urgent & 0x1) != 0 {
-            frame.priority = try reader.readInteger(UInt8.self, .big)
+            priority = try reader.readInteger(UInt8.self, .big)
         }
         cursor = reader
-        return frame
+        return CodecChainHasInput(entries: entries, priority: priority)
     }
 
-    /// Writes the frame to `sink` in one write: a bounded sink that cannot hold all of it answers
+    /// Writes the frame of `source` to `sink` in one write, printed from the codec's encode plan
+    /// (docs/adr/0081): any type that presents the elements of `CodecChainHasInputSource` is written,
+    /// with no copy into `CodecChainHasInput`, and every other element of the frame is derived from
+    /// them. A value the encoding cannot carry is refused before the first
+    /// byte is written, with the `CodecError` the codec's totality names. A bounded sink that cannot hold all of the frame answers
     /// `bufferOverflow` and holds none of it.
-    public func encode<Sink: SceSink>(into sink: inout Sink, urgent: UInt8) throws(CodecError) {
-        let _has_entries_7 = self.entries.contains(where: { _e in chainIdentifier(_e.entry_type) == 7 })
-        if _has_entries_7 || (urgent & 0x1) != 0 {
-            if self.priority == nil {
-                throw CodecError.presentIfMismatch
-            }
-        } else if self.priority != nil {
-            throw CodecError.presentIfMismatch
-        }
-        if self.entries.count < 1 || self.entries.count > 3 {
-            throw CodecError.tooManyElements
-        }
+    public static func encodeSource<Source: CodecChainHasInputSource, Sink: SceSink>(_ source: Source, into sink: inout Sink, urgent: UInt8) throws(CodecError) {
+        if (source.entries.contains(where: { _e in chainIdentifier(_e.entry_type) == 0x7 }) || urgent != 0) != (source.priority != nil) { throw CodecError.presentIfMismatch }
         var frame: [UInt8] = []
-        for entry in self.entries {
-            var piece = BytesSink()
-            try entry.encode(into: &piece)
-            frame += piece.bytes
+        var entries_entries = BytesSink()
+        var entries_left = source.entries.count
+        for entry in source.entries {
+            entries_left -= 1
+            try CodecChainHasTaggedEntry.encodeSource(entry, into: &entries_entries, overrides: CodecChainHasTaggedEntry.Overrides(ctlMore: entries_left != 0))
         }
-        if let priority = self.priority {
-            appendInteger(priority, to: &frame, .big)
+        frame += entries_entries.bytes
+        if let held = source.priority {
+            appendInteger(held, to: &frame, .big)
         }
         try sink.writeBytes(frame)
+    }
+
+    /// Writes the frame of this value to `sink`: `encodeSource` of itself.
+    public func encode<Sink: SceSink>(into sink: inout Sink, urgent: UInt8) throws(CodecError) {
+        try Self.encodeSource(self, into: &sink, urgent: urgent)
     }
 }

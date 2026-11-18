@@ -8,12 +8,40 @@
 
 import SceForgeRuntime
 
+/// The elements a value of `CodecZenohDeclare` presents, each a read-only property in the order the
+/// document declares them (docs/adr/0058 §1, docs/adr/0081 §1): what
+/// `CodecZenohDeclare.encodeSource(_:into:)` writes a frame from. A type of the host's own that
+/// declares them is written with no copy into `CodecZenohDeclare`, which conforms itself.
+public protocol CodecZenohDeclareSource {
+    /// What `declaration` is presented as: a source of `CodecZenohDeclaration`, written by its encode.
+    associatedtype Declaration_Source: CodecZenohDeclarationSource
+    /// What each entry of `extensions` is presented as: a source of `CodecZenohExtEntry`, written by its encode.
+    associatedtype Extensions_Entry: CodecZenohExtEntrySource
+    var header: UInt8 { get }
+    var interest_id: UInt32? { get }
+    var extensions: BoundedList<Extensions_Entry, CodecZenohDeclare.ExtensionsBound>? { get }
+    var declaration: Declaration_Source { get }
+}
+
 /// The frame this codec lays on the wire: 4 field(s) of integers, each at its
 /// byte offset and in its byte order. A value, so a host that reads one holds a copy.
-public struct CodecZenohDeclare: Equatable, Sendable {
+public struct CodecZenohDeclare: Equatable, Sendable, CodecZenohDeclareSource {
     /// The fewest bytes a frame can have: its frame is read field by field, and a variable-length
     /// integer or a field of bytes may take more.
     public static let frameLength = 1 + CodecZenohDeclaration.frameLength
+
+    /// How many entries `extensions` holds on the wire, as the document bounds it (docs/adr/0065 §6
+    /// R2, R7): its type is held to it where a value of it is made.
+    public enum ExtensionsBound: SceCountBound {
+        public static let least = 1
+        public static let most: Int? = nil
+    }
+
+    /// The value presents `declaration` as a value of its own codec.
+    public typealias Declaration_Source = CodecZenohDeclaration
+
+    /// The value presents each entry of `extensions` as a value of its own codec.
+    public typealias Extensions_Entry = CodecZenohExtEntry
 
     /// The field at byte 0, big-endian.
     public var header: UInt8 = 0x1E
@@ -46,7 +74,7 @@ public struct CodecZenohDeclare: Equatable, Sendable {
     /// On the wire only when `(header & 0x80) != 0`; `nil` when it is not. An encode
     /// writes it when it is not `nil`.
     /// Entries of `CodecZenohExtEntry`, one after another: until one says it is the last. The protocol states no depth.
-    public var extensions: [CodecZenohExtEntry]? = nil
+    public var extensions: BoundedList<CodecZenohExtEntry, CodecZenohDeclare.ExtensionsBound>? = nil
 
     /// A `CodecZenohDeclaration` laid in place: it has no bytes of its own, the frame holds its fields
     /// where this field stands.
@@ -56,7 +84,7 @@ public struct CodecZenohDeclare: Equatable, Sendable {
     /// frame yet holds, as a validator that composes this codec does until it is given one.
     public init() {}
 
-    public init(header: UInt8, interest_id: UInt32?, extensions: [CodecZenohExtEntry]?, declaration: CodecZenohDeclaration) {
+    public init(header: UInt8, interest_id: UInt32?, extensions: BoundedList<Extensions_Entry, CodecZenohDeclare.ExtensionsBound>?, declaration: Declaration_Source) {
         self.header = header
         self.interest_id = interest_id
         self.extensions = extensions
@@ -71,12 +99,13 @@ public struct CodecZenohDeclare: Equatable, Sendable {
     /// and is refused like any other count past the end, and is no trap.
     public static func decode(_ cursor: inout SceCursor) throws(CodecError) -> CodecZenohDeclare {
         var reader = cursor
-        var frame = CodecZenohDeclare()
-        frame.header = try reader.readInteger(UInt8.self, .big)
-        if (frame.header & 0x20) != 0 {
-            frame.interest_id = try reader.readVle(UInt32.self)
+        let header = try reader.readInteger(UInt8.self, .big)
+        var interest_id: UInt32? = nil
+        if (header & 0x20) != 0 {
+            interest_id = try reader.readVle(UInt32.self)
         }
-        if (frame.header & 0x80) != 0 {
+        var extensions: BoundedList<CodecZenohExtEntry, CodecZenohDeclare.ExtensionsBound>? = nil
+        if (header & 0x80) != 0 {
             var extensions_items: [CodecZenohExtEntry] = []
             var extensions_more = false
             while true {
@@ -85,36 +114,46 @@ public struct CodecZenohDeclare: Equatable, Sendable {
                 extensions_items.append(entry)
                 if !extensions_more { break }
             }
-            frame.extensions = extensions_items
+            extensions = try BoundedList<CodecZenohExtEntry, CodecZenohDeclare.ExtensionsBound>(decoding: extensions_items)
         }
-        frame.declaration = try CodecZenohDeclaration.decode(&reader)
+        let declaration = try CodecZenohDeclaration.decode(&reader)
         cursor = reader
-        return frame
+        return CodecZenohDeclare(header: header, interest_id: interest_id, extensions: extensions, declaration: declaration)
     }
 
-    /// Writes the frame to `sink` in one write: a bounded sink that cannot hold all of it answers
+    /// Writes the frame of `source` to `sink` in one write, printed from the codec's encode plan
+    /// (docs/adr/0081): any type that presents the elements of `CodecZenohDeclareSource` is written,
+    /// with no copy into `CodecZenohDeclare`, and every other element of the frame is derived from
+    /// them. It refuses
+    /// nothing. A bounded sink that cannot hold all of the frame answers
     /// `bufferOverflow` and holds none of it.
-    public func encode<Sink: SceSink>(into sink: inout Sink) throws(CodecError) {
-        if let value = self.extensions, value.count < 1 {
-            throw CodecError.tooManyElements
-        }
+    public static func encodeSource<Source: CodecZenohDeclareSource, Sink: SceSink>(_ source: Source, into sink: inout Sink) throws(CodecError) {
+        var header_folded = source.header
+        header_folded = (header_folded & ~0x20) | ((source.interest_id != nil) ? 0x20 : 0)
+        header_folded = (header_folded & ~0x80) | ((source.extensions != nil) ? 0x80 : 0)
+        var declaration_piece = BytesSink()
+        try CodecZenohDeclaration.encodeSource(source.declaration, into: &declaration_piece)
+        let declaration_bytes = declaration_piece.bytes
         var frame: [UInt8] = []
-        appendInteger(self.header, to: &frame, .big)
-        if let interest_id = self.interest_id {
-            appendVle(interest_id, to: &frame)
+        appendInteger(header_folded, to: &frame, .big)
+        if let held = source.interest_id {
+            appendVle(held, to: &frame)
         }
-        if let extensions = self.extensions {
-            for entry in extensions {
-                var piece = BytesSink()
-                try entry.encode(into: &piece)
-                frame += piece.bytes
+        if let held = source.extensions {
+            var extensions_entries = BytesSink()
+            var extensions_left = held.count
+            for entry in held {
+                extensions_left -= 1
+                try CodecZenohExtEntry.encodeSource(entry, into: &extensions_entries, overrides: CodecZenohExtEntry.Overrides(headerZ: extensions_left != 0))
             }
+            frame += extensions_entries.bytes
         }
-        do {
-            var piece = BytesSink()
-            try self.declaration.encode(into: &piece)
-            frame += piece.bytes
-        }
+        frame += declaration_bytes
         try sink.writeBytes(frame)
+    }
+
+    /// Writes the frame of this value to `sink`: `encodeSource` of itself.
+    public func encode<Sink: SceSink>(into sink: inout Sink) throws(CodecError) {
+        try Self.encodeSource(self, into: &sink)
     }
 }

@@ -8,9 +8,19 @@
 
 import SceForgeRuntime
 
+/// The elements a value of `CodecPresentIfChecked` presents, each a read-only property in the order the
+/// document declares them (docs/adr/0058 §1, docs/adr/0081 §1): what
+/// `CodecPresentIfChecked.encodeSource(_:into:)` writes a frame from. A type of the host's own that
+/// declares them is written with no copy into `CodecPresentIfChecked`, which conforms itself.
+public protocol CodecPresentIfCheckedSource {
+    var flags: UInt8 { get }
+    var seq: UInt16? { get }
+    var trailer: UInt8? { get }
+}
+
 /// The frame this codec lays on the wire: 3 field(s) of integers, each at its
 /// byte offset and in its byte order. A value, so a host that reads one holds a copy.
-public struct CodecPresentIfChecked: Equatable, Sendable {
+public struct CodecPresentIfChecked: Equatable, Sendable, CodecPresentIfCheckedSource {
     /// The fewest bytes a frame can have: its frame is read field by field, and a variable-length
     /// integer or a field of bytes may take more.
     public static let frameLength = 1
@@ -58,36 +68,55 @@ public struct CodecPresentIfChecked: Equatable, Sendable {
     /// and is refused like any other count past the end, and is no trap.
     public static func decode(_ cursor: inout SceCursor) throws(CodecError) -> CodecPresentIfChecked {
         var reader = cursor
-        var frame = CodecPresentIfChecked()
-        frame.flags = try reader.readInteger(UInt8.self, .big)
-        if (frame.flags & 0x1) != 0 {
-            frame.seq = try reader.readInteger(UInt16.self, .big)
+        let flags = try reader.readInteger(UInt8.self, .big)
+        var seq: UInt16? = nil
+        if (flags & 0x1) != 0 {
+            seq = try reader.readInteger(UInt16.self, .big)
         }
-        if (frame.flags & 0x1) != 0 || (frame.flags & 0x2) != 0 {
-            frame.trailer = try reader.readInteger(UInt8.self, .big)
+        var trailer: UInt8? = nil
+        if (flags & 0x1) != 0 || (flags & 0x2) != 0 {
+            trailer = try reader.readInteger(UInt8.self, .big)
         }
         cursor = reader
-        return frame
+        return CodecPresentIfChecked(flags: flags, seq: seq, trailer: trailer)
     }
 
-    /// Writes the frame to `sink` in one write: a bounded sink that cannot hold all of it answers
+    /// One-bit flags a parent may set in place of the ones a value presents, such as the flag a
+    /// chain whose entries are `CodecPresentIfChecked` ends them on, which the chain derives from where
+    /// each entry stands. A flag left `nil` is the value's own.
+    public struct Overrides: Equatable, Sendable {
+        /// The `wants_trailer` flag of `flags`, where a parent sets it.
+        public var flagsWantsTrailer: Bool?
+
+        public init(flagsWantsTrailer: Bool? = nil) {
+            self.flagsWantsTrailer = flagsWantsTrailer
+        }
+    }
+
+    /// Writes the frame of `source` to `sink` in one write, printed from the codec's encode plan
+    /// (docs/adr/0081): any type that presents the elements of `CodecPresentIfCheckedSource` is written,
+    /// with no copy into `CodecPresentIfChecked`, and every other element of the frame is derived from
+    /// them. A value the encoding cannot carry is refused before the first
+    /// byte is written, with the `CodecError` the codec's totality names. A bounded sink that cannot hold all of the frame answers
     /// `bufferOverflow` and holds none of it.
-    public func encode<Sink: SceSink>(into sink: inout Sink) throws(CodecError) {
-        if (self.flags & 0x1) != 0 || (self.flags & 0x2) != 0 {
-            if self.trailer == nil {
-                throw CodecError.presentIfMismatch
-            }
-        } else if self.trailer != nil {
-            throw CodecError.presentIfMismatch
-        }
+    public static func encodeSource<Source: CodecPresentIfCheckedSource, Sink: SceSink>(_ source: Source, into sink: inout Sink, overrides: Overrides = Overrides()) throws(CodecError) {
+        var flags_folded = source.flags
+        flags_folded = (flags_folded & ~0x1) | ((source.seq != nil) ? 0x1 : 0)
+        if let set = overrides.flagsWantsTrailer { flags_folded = set ? (flags_folded | 0x2) : (flags_folded & ~0x2) }
+        if (((flags_folded >> 0) & 1) != 0 || ((flags_folded >> 1) & 1) != 0) != (source.trailer != nil) { throw CodecError.presentIfMismatch }
         var frame: [UInt8] = []
-        appendInteger(self.flags, to: &frame, .big)
-        if let seq = self.seq {
-            appendInteger(seq, to: &frame, .big)
+        appendInteger(flags_folded, to: &frame, .big)
+        if let held = source.seq {
+            appendInteger(held, to: &frame, .big)
         }
-        if let trailer = self.trailer {
-            appendInteger(trailer, to: &frame, .big)
+        if let held = source.trailer {
+            appendInteger(held, to: &frame, .big)
         }
         try sink.writeBytes(frame)
+    }
+
+    /// Writes the frame of this value to `sink`: `encodeSource` of itself.
+    public func encode<Sink: SceSink>(into sink: inout Sink) throws(CodecError) {
+        try Self.encodeSource(self, into: &sink)
     }
 }

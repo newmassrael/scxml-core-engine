@@ -8,12 +8,29 @@
 
 import SceForgeRuntime
 
+/// The elements a value of `CodecTail` presents, each a read-only property in the order the
+/// document declares them (docs/adr/0058 §1, docs/adr/0081 §1): what
+/// `CodecTail.encodeSource(_:into:)` writes a frame from. A type of the host's own that
+/// declares them is written with no copy into `CodecTail`, which conforms itself.
+public protocol CodecTailSource {
+    var msgId: UInt8 { get }
+    var status: UInt8 { get }
+    var payload: BoundedBytes<CodecTail.PayloadBound> { get }
+}
+
 /// The frame this codec lays on the wire: 3 field(s) of integers, each at its
 /// byte offset and in its byte order. A value, so a host that reads one holds a copy.
-public struct CodecTail: Equatable, Sendable {
+public struct CodecTail: Equatable, Sendable, CodecTailSource {
     /// The fewest bytes a frame can have: its frame is read field by field, and a variable-length
     /// integer or a field of bytes may take more.
     public static let frameLength = 2
+
+    /// How many bytes `payload` holds on the wire, as the document bounds it (docs/adr/0065 §6
+    /// R1): its type is held to it where a value of it is made.
+    public enum PayloadBound: SceByteBound {
+        public static let least = 0
+        public static let most: Int? = 32
+    }
 
     /// The field at byte 0, big-endian.
     public var msgId: UInt8 = 0
@@ -22,14 +39,14 @@ public struct CodecTail: Equatable, Sendable {
     public var status: UInt8 = 0
 
     /// The bytes to the end of the frame, as many as the document's `max-size` admits: a frame
-    /// with more is refused with `lengthOutOfRange`, as is a value with more at its encode.
-    public var payload: [UInt8] = []
+    /// with more is refused with `lengthOutOfRange`, and a value with more is no value of its type.
+    public var payload: BoundedBytes<CodecTail.PayloadBound> = .fewest
 
     /// A frame of zeros, but for the bits a flag's `value` sets: what a holder that has read no
     /// frame yet holds, as a validator that composes this codec does until it is given one.
     public init() {}
 
-    public init(msgId: UInt8, status: UInt8, payload: [UInt8]) {
+    public init(msgId: UInt8, status: UInt8, payload: BoundedBytes<CodecTail.PayloadBound>) {
         self.msgId = msgId
         self.status = status
         self.payload = payload
@@ -43,27 +60,32 @@ public struct CodecTail: Equatable, Sendable {
     /// and is refused like any other count past the end, and is no trap.
     public static func decode(_ cursor: inout SceCursor) throws(CodecError) -> CodecTail {
         var reader = cursor
-        var frame = CodecTail()
-        frame.msgId = try reader.readInteger(UInt8.self, .big)
-        frame.status = try reader.readInteger(UInt8.self, .big)
+        let msgId = try reader.readInteger(UInt8.self, .big)
+        let status = try reader.readInteger(UInt8.self, .big)
         if reader.remaining > 32 {
             throw CodecError.lengthOutOfRange
         }
-        frame.payload = Array(try reader.readSlice(reader.remaining))
+        let payload = try BoundedBytes<CodecTail.PayloadBound>(decoding: Array(try reader.readSlice(reader.remaining)))
         cursor = reader
-        return frame
+        return CodecTail(msgId: msgId, status: status, payload: payload)
     }
 
-    /// Writes the frame to `sink` in one write: a bounded sink that cannot hold all of it answers
+    /// Writes the frame of `source` to `sink` in one write, printed from the codec's encode plan
+    /// (docs/adr/0081): any type that presents the elements of `CodecTailSource` is written,
+    /// with no copy into `CodecTail`, and every other element of the frame is derived from
+    /// them. It refuses
+    /// nothing. A bounded sink that cannot hold all of the frame answers
     /// `bufferOverflow` and holds none of it.
-    public func encode<Sink: SceSink>(into sink: inout Sink) throws(CodecError) {
-        if self.payload.count > 32 {
-            throw CodecError.lengthOutOfRange
-        }
-        var frame: [UInt8] = []
-        appendInteger(self.msgId, to: &frame, .big)
-        appendInteger(self.status, to: &frame, .big)
-        frame += self.payload
+    public static func encodeSource<Source: CodecTailSource, Sink: SceSink>(_ source: Source, into sink: inout Sink) throws(CodecError) {
+        var frame = [UInt8](repeating: 0, count: 2)
+        storeInteger(source.msgId, into: &frame, at: 0, .big)
+        storeInteger(source.status, into: &frame, at: 1, .big)
+        source.payload.append(to: &frame)
         try sink.writeBytes(frame)
+    }
+
+    /// Writes the frame of this value to `sink`: `encodeSource` of itself.
+    public func encode<Sink: SceSink>(into sink: inout Sink) throws(CodecError) {
+        try Self.encodeSource(self, into: &sink)
     }
 }

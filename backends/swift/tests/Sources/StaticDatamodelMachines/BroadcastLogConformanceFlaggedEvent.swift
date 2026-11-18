@@ -8,9 +8,18 @@
 
 import SceForgeRuntime
 
+/// The elements a value of `BroadcastLogConformanceFlaggedEvent` presents, each a read-only property in the order the
+/// document declares them (docs/adr/0058 §1, docs/adr/0081 §1): what
+/// `BroadcastLogConformanceFlaggedEvent.encodeSource(_:into:)` writes a frame from. A type of the host's own that
+/// declares them is written with no copy into `BroadcastLogConformanceFlaggedEvent`, which conforms itself.
+public protocol BroadcastLogConformanceFlaggedEventSource {
+    var sensor_id: UInt8 { get }
+    var value: UInt16? { get }
+}
+
 /// The frame this codec lays on the wire: 2 field(s) of integers, each at its
 /// byte offset and in its byte order. A value, so a host that reads one holds a copy.
-public struct BroadcastLogConformanceFlaggedEvent: Equatable, Sendable {
+public struct BroadcastLogConformanceFlaggedEvent: Equatable, Sendable, BroadcastLogConformanceFlaggedEventSource {
     /// The fewest bytes a frame can have: its frame is read field by field, and a variable-length
     /// integer or a field of bytes may take more.
     public static let frameLength = 1
@@ -40,30 +49,39 @@ public struct BroadcastLogConformanceFlaggedEvent: Equatable, Sendable {
     /// and is refused like any other count past the end, and is no trap.
     public static func decode(_ cursor: inout SceCursor, has_value: UInt8) throws(CodecError) -> BroadcastLogConformanceFlaggedEvent {
         var reader = cursor
-        var frame = BroadcastLogConformanceFlaggedEvent()
-        frame.sensor_id = try reader.readInteger(UInt8.self, .little)
+        let sensor_id = try reader.readInteger(UInt8.self, .little)
+        var value: UInt16? = nil
         if (has_value & 0x1) != 0 {
-            frame.value = try reader.readInteger(UInt16.self, .little)
+            value = try reader.readInteger(UInt16.self, .little)
         }
         cursor = reader
-        return frame
+        return BroadcastLogConformanceFlaggedEvent(sensor_id: sensor_id, value: value)
     }
 
-    /// Writes the frame to `sink` in one write: a bounded sink that cannot hold all of it answers
+    /// Writes the frame of `source` to `sink` in one write, printed from the codec's encode plan
+    /// (docs/adr/0081): any type that presents the elements of `BroadcastLogConformanceFlaggedEventSource` is written,
+    /// with no copy into `BroadcastLogConformanceFlaggedEvent`, and every other element of the frame is derived from
+    /// them. It refuses
+    /// nothing. A bounded sink that cannot hold all of the frame answers
     /// `bufferOverflow` and holds none of it.
-    public func encode<Sink: SceSink>(into sink: inout Sink, has_value: UInt8) throws(CodecError) {
-        if (has_value & 0x1) != 0 {
-            if self.value == nil {
-                throw CodecError.presentIfMismatch
-            }
-        } else if self.value != nil {
-            throw CodecError.presentIfMismatch
-        }
+    public static func encodeSource<Source: BroadcastLogConformanceFlaggedEventSource, Sink: SceSink>(_ source: Source, into sink: inout Sink) throws(CodecError) {
         var frame: [UInt8] = []
-        appendInteger(self.sensor_id, to: &frame, .little)
-        if let value = self.value {
-            appendInteger(value, to: &frame, .little)
+        appendInteger(source.sensor_id, to: &frame, .little)
+        if let held = source.value {
+            appendInteger(held, to: &frame, .little)
         }
         try sink.writeBytes(frame)
+    }
+
+    /// The flag input `has_value` that `source` says, which the encode is not handed
+    /// (docs/adr/0065 §6 R4a): 1 or 0. A parent hands the decode this bit, and derives it from
+    /// here for the encode.
+    public static func inputHasValue<Source: BroadcastLogConformanceFlaggedEventSource>(_ source: Source) -> UInt8 {
+        source.value != nil ? 1 : 0
+    }
+
+    /// Writes the frame of this value to `sink`: `encodeSource` of itself.
+    public func encode<Sink: SceSink>(into sink: inout Sink) throws(CodecError) {
+        try Self.encodeSource(self, into: &sink)
     }
 }

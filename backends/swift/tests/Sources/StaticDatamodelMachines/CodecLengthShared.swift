@@ -8,30 +8,49 @@
 
 import SceForgeRuntime
 
+/// The elements a value of `CodecLengthShared` presents, each a read-only property in the order the
+/// document declares them (docs/adr/0058 §1, docs/adr/0081 §1): what
+/// `CodecLengthShared.encodeSource(_:into:)` writes a frame from. A type of the host's own that
+/// declares them is written with no copy into `CodecLengthShared`, which conforms itself.
+public protocol CodecLengthSharedSource {
+    var alpha: BoundedBytes<CodecLengthShared.AlphaBound> { get }
+    var beta: BoundedBytes<CodecLengthShared.BetaBound> { get }
+}
+
 /// The frame this codec lays on the wire: 3 field(s) of integers, each at its
 /// byte offset and in its byte order. A value, so a host that reads one holds a copy.
-public struct CodecLengthShared: Equatable, Sendable {
+public struct CodecLengthShared: Equatable, Sendable, CodecLengthSharedSource {
     /// The fewest bytes a frame can have: its frame is read field by field, and a variable-length
     /// integer or a field of bytes may take more.
     public static let frameLength = 1
 
-    /// The field at byte 0, big-endian.
-    public var span_len: UInt8 = 0
+    /// How many bytes `alpha` holds on the wire, as the document bounds it (docs/adr/0065 §6
+    /// R1): its type is held to it where a value of it is made.
+    public enum AlphaBound: SceByteBound {
+        public static let least = 0
+        public static let most: Int? = 255
+    }
+
+    /// How many bytes `beta` holds on the wire, as the document bounds it (docs/adr/0065 §6
+    /// R1): its type is held to it where a value of it is made.
+    public enum BetaBound: SceByteBound {
+        public static let least = 0
+        public static let most: Int? = 255
+    }
 
     /// The bytes, as many as `span_len` says, as many as the document's `max-size` admits: a frame that says
-    /// more is refused with `lengthOutOfRange`, as is a value with more at its encode.
-    public var alpha: [UInt8] = []
+    /// more is refused with `lengthOutOfRange`, and a value with more is no value of its type; the encode derives what it says.
+    public var alpha: BoundedBytes<CodecLengthShared.AlphaBound> = .fewest
 
     /// The bytes, as many as `span_len` says, as many as the document's `max-size` admits: a frame that says
-    /// more is refused with `lengthOutOfRange`, as is a value with more at its encode.
-    public var beta: [UInt8] = []
+    /// more is refused with `lengthOutOfRange`, and a value with more is no value of its type; the encode derives what it says.
+    public var beta: BoundedBytes<CodecLengthShared.BetaBound> = .fewest
 
     /// A frame of zeros, but for the bits a flag's `value` sets: what a holder that has read no
     /// frame yet holds, as a validator that composes this codec does until it is given one.
     public init() {}
 
-    public init(span_len: UInt8, alpha: [UInt8], beta: [UInt8]) {
-        self.span_len = span_len
+    public init(alpha: BoundedBytes<CodecLengthShared.AlphaBound>, beta: BoundedBytes<CodecLengthShared.BetaBound>) {
         self.alpha = alpha
         self.beta = beta
     }
@@ -44,27 +63,31 @@ public struct CodecLengthShared: Equatable, Sendable {
     /// and is refused like any other count past the end, and is no trap.
     public static func decode(_ cursor: inout SceCursor) throws(CodecError) -> CodecLengthShared {
         var reader = cursor
-        var frame = CodecLengthShared()
-        frame.span_len = try reader.readInteger(UInt8.self, .big)
-        frame.alpha = Array(try reader.readSlice(Int(clamping: frame.span_len)))
-        frame.beta = Array(try reader.readSlice(Int(clamping: frame.span_len)))
+        let span_len = try reader.readInteger(UInt8.self, .big)
+        let alpha = try BoundedBytes<CodecLengthShared.AlphaBound>(decoding: Array(try reader.readSlice(Int(clamping: span_len))))
+        let beta = try BoundedBytes<CodecLengthShared.BetaBound>(decoding: Array(try reader.readSlice(Int(clamping: span_len))))
         cursor = reader
-        return frame
+        return CodecLengthShared(alpha: alpha, beta: beta)
     }
 
-    /// Writes the frame to `sink` in one write: a bounded sink that cannot hold all of it answers
+    /// Writes the frame of `source` to `sink` in one write, printed from the codec's encode plan
+    /// (docs/adr/0081): any type that presents the elements of `CodecLengthSharedSource` is written,
+    /// with no copy into `CodecLengthShared`, and every other element of the frame is derived from
+    /// them. A value the encoding cannot carry is refused before the first
+    /// byte is written, with the `CodecError` the codec's totality names. A bounded sink that cannot hold all of the frame answers
     /// `bufferOverflow` and holds none of it.
-    public func encode<Sink: SceSink>(into sink: inout Sink) throws(CodecError) {
-        if self.alpha.count > 255 {
-            throw CodecError.lengthOutOfRange
-        }
-        if self.beta.count > 255 {
-            throw CodecError.lengthOutOfRange
-        }
+    public static func encodeSource<Source: CodecLengthSharedSource, Sink: SceSink>(_ source: Source, into sink: inout Sink) throws(CodecError) {
+        if source.beta.byteCount != source.alpha.byteCount { throw CodecError.inconsistentSource }
+        let span_len_derived: UInt8 = UInt8(source.alpha.byteCount)
         var frame: [UInt8] = []
-        appendInteger(self.span_len, to: &frame, .big)
-        frame += self.alpha
-        frame += self.beta
+        appendInteger(span_len_derived, to: &frame, .big)
+        source.alpha.append(to: &frame)
+        source.beta.append(to: &frame)
         try sink.writeBytes(frame)
+    }
+
+    /// Writes the frame of this value to `sink`: `encodeSource` of itself.
+    public func encode<Sink: SceSink>(into sink: inout Sink) throws(CodecError) {
+        try Self.encodeSource(self, into: &sink)
     }
 }

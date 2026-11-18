@@ -8,12 +8,26 @@
 
 import SceForgeRuntime
 
+/// The elements a value of `CodecZenohUndeclQueryable` presents, each a read-only property in the order the
+/// document declares them (docs/adr/0058 §1, docs/adr/0081 §1): what
+/// `CodecZenohUndeclQueryable.encodeSource(_:into:)` writes a frame from. A type of the host's own that
+/// declares them is written with no copy into `CodecZenohUndeclQueryable`, which conforms itself.
+public protocol CodecZenohUndeclQueryableSource {
+    /// What `ext_keyexpr` is presented as: a source of `CodecZenohDeclExtKeyexpr`, written by its encode.
+    associatedtype ExtKeyexpr_Source: CodecZenohDeclExtKeyexprSource
+    var id: UInt32 { get }
+    var ext_keyexpr: ExtKeyexpr_Source? { get }
+}
+
 /// The frame this codec lays on the wire: 2 field(s) of integers, each at its
 /// byte offset and in its byte order. A value, so a host that reads one holds a copy.
-public struct CodecZenohUndeclQueryable: Equatable, Sendable {
+public struct CodecZenohUndeclQueryable: Equatable, Sendable, CodecZenohUndeclQueryableSource {
     /// The fewest bytes a frame can have: its frame is read field by field, and a variable-length
     /// integer or a field of bytes may take more.
     public static let frameLength = 1
+
+    /// The value presents `ext_keyexpr` as a value of its own codec.
+    public typealias ExtKeyexpr_Source = CodecZenohDeclExtKeyexpr
 
     /// A variable-length integer: base-128, the least significant group first, at most as many
     /// bytes as its type needs.
@@ -29,7 +43,7 @@ public struct CodecZenohUndeclQueryable: Equatable, Sendable {
     /// frame yet holds, as a validator that composes this codec does until it is given one.
     public init() {}
 
-    public init(id: UInt32, ext_keyexpr: CodecZenohDeclExtKeyexpr?) {
+    public init(id: UInt32, ext_keyexpr: ExtKeyexpr_Source?) {
         self.id = id
         self.ext_keyexpr = ext_keyexpr
     }
@@ -42,34 +56,43 @@ public struct CodecZenohUndeclQueryable: Equatable, Sendable {
     /// and is refused like any other count past the end, and is no trap.
     public static func decode(_ cursor: inout SceCursor, Z: UInt8) throws(CodecError) -> CodecZenohUndeclQueryable {
         var reader = cursor
-        var frame = CodecZenohUndeclQueryable()
-        frame.id = try reader.readVle(UInt32.self)
+        let id = try reader.readVle(UInt32.self)
+        var ext_keyexpr: CodecZenohDeclExtKeyexpr? = nil
         if (Z & 0x1) != 0 {
-            frame.ext_keyexpr = try CodecZenohDeclExtKeyexpr.decode(&reader)
+            ext_keyexpr = try CodecZenohDeclExtKeyexpr.decode(&reader)
         }
         cursor = reader
-        return frame
+        return CodecZenohUndeclQueryable(id: id, ext_keyexpr: ext_keyexpr)
     }
 
-    /// Writes the frame to `sink` in one write: a bounded sink that cannot hold all of it answers
+    /// Writes the frame of `source` to `sink` in one write, printed from the codec's encode plan
+    /// (docs/adr/0081): any type that presents the elements of `CodecZenohUndeclQueryableSource` is written,
+    /// with no copy into `CodecZenohUndeclQueryable`, and every other element of the frame is derived from
+    /// them. It refuses
+    /// nothing. A bounded sink that cannot hold all of the frame answers
     /// `bufferOverflow` and holds none of it.
-    public func encode<Sink: SceSink>(into sink: inout Sink, Z: UInt8) throws(CodecError) {
-        if (Z & 0x1) != 0 {
-            if self.ext_keyexpr == nil {
-                throw CodecError.presentIfMismatch
-            }
-        } else if self.ext_keyexpr != nil {
-            throw CodecError.presentIfMismatch
+    public static func encodeSource<Source: CodecZenohUndeclQueryableSource, Sink: SceSink>(_ source: Source, into sink: inout Sink) throws(CodecError) {
+        var ext_keyexpr_bytes: [UInt8]? = nil
+        if let held = source.ext_keyexpr {
+            var piece = BytesSink()
+            try CodecZenohDeclExtKeyexpr.encodeSource(held, into: &piece)
+            ext_keyexpr_bytes = piece.bytes
         }
         var frame: [UInt8] = []
-        appendVle(self.id, to: &frame)
-        if let ext_keyexpr = self.ext_keyexpr {
-            do {
-                var piece = BytesSink()
-                try ext_keyexpr.encode(into: &piece)
-                frame += piece.bytes
-            }
-        }
+        appendVle(source.id, to: &frame)
+        if let held = ext_keyexpr_bytes { frame += held }
         try sink.writeBytes(frame)
+    }
+
+    /// The flag input `Z` that `source` says, which the encode is not handed
+    /// (docs/adr/0065 §6 R4a): 1 or 0. A parent hands the decode this bit, and derives it from
+    /// here for the encode.
+    public static func inputZ<Source: CodecZenohUndeclQueryableSource>(_ source: Source) -> UInt8 {
+        source.ext_keyexpr != nil ? 1 : 0
+    }
+
+    /// Writes the frame of this value to `sink`: `encodeSource` of itself.
+    public func encode<Sink: SceSink>(into sink: inout Sink) throws(CodecError) {
+        try Self.encodeSource(self, into: &sink)
     }
 }

@@ -8,9 +8,18 @@
 
 import SceForgeRuntime
 
+/// The elements a value of `CodecPeekArmB` presents, each a read-only property in the order the
+/// document declares them (docs/adr/0058 §1, docs/adr/0081 §1): what
+/// `CodecPeekArmB.encodeSource(_:into:)` writes a frame from. A type of the host's own that
+/// declares them is written with no copy into `CodecPeekArmB`, which conforms itself.
+public protocol CodecPeekArmBSource {
+    var header: UInt8 { get }
+    var payload: UInt16 { get }
+}
+
 /// The frame this codec lays on the wire: 2 field(s) of integers, each at its
 /// byte offset and in its byte order. A value, so a host that reads one holds a copy.
-public struct CodecPeekArmB: Equatable, Sendable {
+public struct CodecPeekArmB: Equatable, Sendable, CodecPeekArmBSource {
     /// The bytes of one frame.
     public static let frameLength = 3
 
@@ -48,12 +57,35 @@ public struct CodecPeekArmB: Equatable, Sendable {
         return frame
     }
 
-    /// Writes the frame to `sink` in one write: a bounded sink that cannot hold all of it answers
+    /// One-bit flags a parent may set in place of the ones a value presents, such as the flag a
+    /// chain whose entries are `CodecPeekArmB` ends them on, which the chain derives from where
+    /// each entry stands. A flag left `nil` is the value's own.
+    public struct Overrides: Equatable, Sendable {
+        /// The `kind` flag of `header`, where a parent sets it.
+        public var headerKind: Bool?
+
+        public init(headerKind: Bool? = nil) {
+            self.headerKind = headerKind
+        }
+    }
+
+    /// Writes the frame of `source` to `sink` in one write, printed from the codec's encode plan
+    /// (docs/adr/0081): any type that presents the elements of `CodecPeekArmBSource` is written,
+    /// with no copy into `CodecPeekArmB`, and every other element of the frame is derived from
+    /// them. It refuses
+    /// nothing. A bounded sink that cannot hold all of the frame answers
     /// `bufferOverflow` and holds none of it.
-    public func encode<Sink: SceSink>(into sink: inout Sink) throws(CodecError) {
+    public static func encodeSource<Source: CodecPeekArmBSource, Sink: SceSink>(_ source: Source, into sink: inout Sink, overrides: Overrides = Overrides()) throws(CodecError) {
+        var header_folded = source.header
+        if let set = overrides.headerKind { header_folded = set ? (header_folded | 0x1) : (header_folded & ~0x1) }
         var frame = [UInt8](repeating: 0, count: Self.frameLength)
-        storeInteger(self.header, into: &frame, at: 0, .big)
-        storeInteger(self.payload, into: &frame, at: 1, .big)
+        storeInteger(header_folded, into: &frame, at: 0, .big)
+        storeInteger(source.payload, into: &frame, at: 1, .big)
         try sink.writeBytes(frame)
+    }
+
+    /// Writes the frame of this value to `sink`: `encodeSource` of itself.
+    public func encode<Sink: SceSink>(into sink: inout Sink) throws(CodecError) {
+        try Self.encodeSource(self, into: &sink)
     }
 }

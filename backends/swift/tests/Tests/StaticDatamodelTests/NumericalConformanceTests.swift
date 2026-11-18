@@ -1045,6 +1045,47 @@ private func expectClose(_ actual: Double, _ expected: Double, _ label: String) 
         #expect(cursor.remaining == 0, "codec_little_endian case \(index) decode consumed the frame and nothing else")
     }
 
+    do {
+        let value = CodecLittleEndian(sensorId: 0, value: 0, status: 0)
+        var sink = BytesSink()
+        try CodecLittleEndian.encodeSource(value, into: &sink)
+        let expected: [UInt8] = [0, 0, 0, 0]
+        #expect(sink.bytes == expected, "codec_little_endian source 0: every field zero")
+        var cursor = SceCursor(sink.bytes)
+        let decoded = try CodecLittleEndian.decode(&cursor)
+        #expect(cursor.remaining == 0, "codec_little_endian source 0: the decode left bytes of the frame unread")
+        #expect(decoded.sensorId == value.sensorId, "codec_little_endian source 0: the decode presents another sensorId")
+        #expect(decoded.value == value.value, "codec_little_endian source 1: the decode presents another value")
+        #expect(decoded.status == value.status, "codec_little_endian source 2: the decode presents another status")
+    }
+    do {
+        let value = CodecLittleEndian(sensorId: 7, value: 4660, status: 1)
+        var sink = BytesSink()
+        try CodecLittleEndian.encodeSource(value, into: &sink)
+        let expected: [UInt8] = [7, 52, 18, 1]
+        #expect(sink.bytes == expected, "codec_little_endian source 1: value low byte first")
+        var cursor = SceCursor(sink.bytes)
+        let decoded = try CodecLittleEndian.decode(&cursor)
+        #expect(cursor.remaining == 0, "codec_little_endian source 1: the decode left bytes of the frame unread")
+        #expect(decoded.sensorId == value.sensorId, "codec_little_endian source 0: the decode presents another sensorId")
+        #expect(decoded.value == value.value, "codec_little_endian source 1: the decode presents another value")
+        #expect(decoded.status == value.status, "codec_little_endian source 2: the decode presents another status")
+    }
+    do {
+        let value = CodecLittleEndian(sensorId: 255, value: 65535, status: 255)
+        var sink = BytesSink()
+        try CodecLittleEndian.encodeSource(value, into: &sink)
+        let expected: [UInt8] = [255, 255, 255, 255]
+        #expect(sink.bytes == expected, "codec_little_endian source 2: every field at its largest")
+        var cursor = SceCursor(sink.bytes)
+        let decoded = try CodecLittleEndian.decode(&cursor)
+        #expect(cursor.remaining == 0, "codec_little_endian source 2: the decode left bytes of the frame unread")
+        #expect(decoded.sensorId == value.sensorId, "codec_little_endian source 0: the decode presents another sensorId")
+        #expect(decoded.value == value.value, "codec_little_endian source 1: the decode presents another value")
+        #expect(decoded.status == value.status, "codec_little_endian source 2: the decode presents another status")
+    }
+
+
 }
 
 // MARK: - codec: codec_simple_frame
@@ -1078,6 +1119,47 @@ private func expectClose(_ actual: Double, _ expected: Double, _ label: String) 
         #expect(roundTripped == value, "codec_simple_frame case \(index) decode")
         #expect(cursor.remaining == 0, "codec_simple_frame case \(index) decode consumed the frame and nothing else")
     }
+
+    do {
+        let value = CodecSimpleFrame(msgId: 0, length: 0, payload: 0)
+        var sink = BytesSink()
+        try CodecSimpleFrame.encodeSource(value, into: &sink)
+        let expected: [UInt8] = [0, 0, 0, 0]
+        #expect(sink.bytes == expected, "codec_simple_frame source 0: every field zero")
+        var cursor = SceCursor(sink.bytes)
+        let decoded = try CodecSimpleFrame.decode(&cursor)
+        #expect(cursor.remaining == 0, "codec_simple_frame source 0: the decode left bytes of the frame unread")
+        #expect(decoded.msgId == value.msgId, "codec_simple_frame source 0: the decode presents another msgId")
+        #expect(decoded.length == value.length, "codec_simple_frame source 1: the decode presents another length")
+        #expect(decoded.payload == value.payload, "codec_simple_frame source 2: the decode presents another payload")
+    }
+    do {
+        let value = CodecSimpleFrame(msgId: 1, length: 2, payload: 4660)
+        var sink = BytesSink()
+        try CodecSimpleFrame.encodeSource(value, into: &sink)
+        let expected: [UInt8] = [1, 2, 18, 52]
+        #expect(sink.bytes == expected, "codec_simple_frame source 1: payload high byte first")
+        var cursor = SceCursor(sink.bytes)
+        let decoded = try CodecSimpleFrame.decode(&cursor)
+        #expect(cursor.remaining == 0, "codec_simple_frame source 1: the decode left bytes of the frame unread")
+        #expect(decoded.msgId == value.msgId, "codec_simple_frame source 0: the decode presents another msgId")
+        #expect(decoded.length == value.length, "codec_simple_frame source 1: the decode presents another length")
+        #expect(decoded.payload == value.payload, "codec_simple_frame source 2: the decode presents another payload")
+    }
+    do {
+        let value = CodecSimpleFrame(msgId: 255, length: 255, payload: 65535)
+        var sink = BytesSink()
+        try CodecSimpleFrame.encodeSource(value, into: &sink)
+        let expected: [UInt8] = [255, 255, 255, 255]
+        #expect(sink.bytes == expected, "codec_simple_frame source 2: every field at its largest")
+        var cursor = SceCursor(sink.bytes)
+        let decoded = try CodecSimpleFrame.decode(&cursor)
+        #expect(cursor.remaining == 0, "codec_simple_frame source 2: the decode left bytes of the frame unread")
+        #expect(decoded.msgId == value.msgId, "codec_simple_frame source 0: the decode presents another msgId")
+        #expect(decoded.length == value.length, "codec_simple_frame source 1: the decode presents another length")
+        #expect(decoded.payload == value.payload, "codec_simple_frame source 2: the decode presents another payload")
+    }
+
 
 }
 
@@ -1113,6 +1195,73 @@ private func expectClose(_ actual: Double, _ expected: Double, _ label: String) 
         #expect(cursor.remaining == 0, "codec_subbyte case \(index) decode consumed the frame and nothing else")
     }
 
+    do {
+        let value = CodecSubbyte(priority: 0, channel: 0, direction: 0)
+        var sink = BytesSink()
+        try CodecSubbyte.encodeSource(value, into: &sink)
+        let expected: [UInt8] = [0]
+        #expect(sink.bytes == expected, "codec_subbyte source 0: every field zero: one zero byte")
+        var cursor = SceCursor(sink.bytes)
+        let decoded = try CodecSubbyte.decode(&cursor)
+        #expect(cursor.remaining == 0, "codec_subbyte source 0: the decode left bytes of the frame unread")
+        #expect(decoded.priority == value.priority, "codec_subbyte source 0: the decode presents another priority")
+        #expect(decoded.channel == value.channel, "codec_subbyte source 1: the decode presents another channel")
+        #expect(decoded.direction == value.direction, "codec_subbyte source 2: the decode presents another direction")
+    }
+    do {
+        let value = CodecSubbyte(priority: 7, channel: 0, direction: 0)
+        var sink = BytesSink()
+        try CodecSubbyte.encodeSource(value, into: &sink)
+        let expected: [UInt8] = [224]
+        #expect(sink.bytes == expected, "codec_subbyte source 1: priority alone, the top three bits")
+        var cursor = SceCursor(sink.bytes)
+        let decoded = try CodecSubbyte.decode(&cursor)
+        #expect(cursor.remaining == 0, "codec_subbyte source 1: the decode left bytes of the frame unread")
+        #expect(decoded.priority == value.priority, "codec_subbyte source 0: the decode presents another priority")
+        #expect(decoded.channel == value.channel, "codec_subbyte source 1: the decode presents another channel")
+        #expect(decoded.direction == value.direction, "codec_subbyte source 2: the decode presents another direction")
+    }
+    do {
+        let value = CodecSubbyte(priority: 0, channel: 7, direction: 0)
+        var sink = BytesSink()
+        try CodecSubbyte.encodeSource(value, into: &sink)
+        let expected: [UInt8] = [28]
+        #expect(sink.bytes == expected, "codec_subbyte source 2: channel alone, bits two to four")
+        var cursor = SceCursor(sink.bytes)
+        let decoded = try CodecSubbyte.decode(&cursor)
+        #expect(cursor.remaining == 0, "codec_subbyte source 2: the decode left bytes of the frame unread")
+        #expect(decoded.priority == value.priority, "codec_subbyte source 0: the decode presents another priority")
+        #expect(decoded.channel == value.channel, "codec_subbyte source 1: the decode presents another channel")
+        #expect(decoded.direction == value.direction, "codec_subbyte source 2: the decode presents another direction")
+    }
+    do {
+        let value = CodecSubbyte(priority: 0, channel: 0, direction: 3)
+        var sink = BytesSink()
+        try CodecSubbyte.encodeSource(value, into: &sink)
+        let expected: [UInt8] = [3]
+        #expect(sink.bytes == expected, "codec_subbyte source 3: direction alone, the low two bits")
+        var cursor = SceCursor(sink.bytes)
+        let decoded = try CodecSubbyte.decode(&cursor)
+        #expect(cursor.remaining == 0, "codec_subbyte source 3: the decode left bytes of the frame unread")
+        #expect(decoded.priority == value.priority, "codec_subbyte source 0: the decode presents another priority")
+        #expect(decoded.channel == value.channel, "codec_subbyte source 1: the decode presents another channel")
+        #expect(decoded.direction == value.direction, "codec_subbyte source 2: the decode presents another direction")
+    }
+    do {
+        let value = CodecSubbyte(priority: 5, channel: 2, direction: 1)
+        var sink = BytesSink()
+        try CodecSubbyte.encodeSource(value, into: &sink)
+        let expected: [UInt8] = [169]
+        #expect(sink.bytes == expected, "codec_subbyte source 4: three fields in one byte")
+        var cursor = SceCursor(sink.bytes)
+        let decoded = try CodecSubbyte.decode(&cursor)
+        #expect(cursor.remaining == 0, "codec_subbyte source 4: the decode left bytes of the frame unread")
+        #expect(decoded.priority == value.priority, "codec_subbyte source 0: the decode presents another priority")
+        #expect(decoded.channel == value.channel, "codec_subbyte source 1: the decode presents another channel")
+        #expect(decoded.direction == value.direction, "codec_subbyte source 2: the decode presents another direction")
+    }
+
+
 }
 
 // MARK: - codec: codec_optional_field_attributes
@@ -1146,6 +1295,56 @@ private func expectClose(_ actual: Double, _ expected: Double, _ label: String) 
         #expect(cursor.remaining == 0, "codec_optional_field_attributes case \(index) decode consumed the frame and nothing else")
     }
 
+    do {
+        let value = CodecOptionalFieldAttributes(status: 12, reading: 2748)
+        var sink = BytesSink()
+        try CodecOptionalFieldAttributes.encodeSource(value, into: &sink)
+        let expected: [UInt8] = [12, 171, 192]
+        #expect(sink.bytes == expected, "codec_optional_field_attributes source 0: ready and fault set; reading is the word 0xABC0 over bytes 1 and 2")
+        var cursor = SceCursor(sink.bytes)
+        let decoded = try CodecOptionalFieldAttributes.decode(&cursor)
+        #expect(cursor.remaining == 0, "codec_optional_field_attributes source 0: the decode left bytes of the frame unread")
+        #expect(decoded.status == value.status, "codec_optional_field_attributes source 0: the decode presents another status")
+        #expect(decoded.reading == value.reading, "codec_optional_field_attributes source 1: the decode presents another reading")
+    }
+    do {
+        let value = CodecOptionalFieldAttributes(status: 0, reading: 0)
+        var sink = BytesSink()
+        try CodecOptionalFieldAttributes.encodeSource(value, into: &sink)
+        let expected: [UInt8] = [0, 0, 0]
+        #expect(sink.bytes == expected, "codec_optional_field_attributes source 1: every field zero: three zero bytes")
+        var cursor = SceCursor(sink.bytes)
+        let decoded = try CodecOptionalFieldAttributes.decode(&cursor)
+        #expect(cursor.remaining == 0, "codec_optional_field_attributes source 1: the decode left bytes of the frame unread")
+        #expect(decoded.status == value.status, "codec_optional_field_attributes source 0: the decode presents another status")
+        #expect(decoded.reading == value.reading, "codec_optional_field_attributes source 1: the decode presents another reading")
+    }
+    do {
+        let value = CodecOptionalFieldAttributes(status: 4, reading: 4095)
+        var sink = BytesSink()
+        try CodecOptionalFieldAttributes.encodeSource(value, into: &sink)
+        let expected: [UInt8] = [4, 255, 240]
+        #expect(sink.bytes == expected, "codec_optional_field_attributes source 2: ready alone; reading at its largest, the low four bits of byte 2 no field's")
+        var cursor = SceCursor(sink.bytes)
+        let decoded = try CodecOptionalFieldAttributes.decode(&cursor)
+        #expect(cursor.remaining == 0, "codec_optional_field_attributes source 2: the decode left bytes of the frame unread")
+        #expect(decoded.status == value.status, "codec_optional_field_attributes source 0: the decode presents another status")
+        #expect(decoded.reading == value.reading, "codec_optional_field_attributes source 1: the decode presents another reading")
+    }
+    do {
+        let value = CodecOptionalFieldAttributes(status: 0, reading: 15)
+        var sink = BytesSink()
+        try CodecOptionalFieldAttributes.encodeSource(value, into: &sink)
+        let expected: [UInt8] = [0, 0, 240]
+        #expect(sink.bytes == expected, "codec_optional_field_attributes source 3: the low four bits of reading are the high four of byte 2, and nothing else is set")
+        var cursor = SceCursor(sink.bytes)
+        let decoded = try CodecOptionalFieldAttributes.decode(&cursor)
+        #expect(cursor.remaining == 0, "codec_optional_field_attributes source 3: the decode left bytes of the frame unread")
+        #expect(decoded.status == value.status, "codec_optional_field_attributes source 0: the decode presents another status")
+        #expect(decoded.reading == value.reading, "codec_optional_field_attributes source 1: the decode presents another reading")
+    }
+
+
 }
 
 // MARK: - codec: codec_tail
@@ -1161,7 +1360,7 @@ private func expectClose(_ actual: Double, _ expected: Double, _ label: String) 
         let value = CodecTail(
             msgId: try oracleInteger(decoded.member("msgId"), as: UInt8.self),
             status: try oracleInteger(decoded.member("status"), as: UInt8.self),
-            payload: try oracleBytes(decoded.member("payload"))
+            payload: try #require(BoundedBytes<CodecTail.PayloadBound>(try oracleBytes(decoded.member("payload"))))
         )
 
         var decodeOnly = false
@@ -1179,6 +1378,50 @@ private func expectClose(_ actual: Double, _ expected: Double, _ label: String) 
         #expect(roundTripped == value, "codec_tail case \(index) decode")
         #expect(cursor.remaining == 0, "codec_tail case \(index) decode consumed the frame and nothing else")
     }
+
+    do {
+        let bound0 = try #require(BoundedBytes<CodecTail.PayloadBound>([]))
+        let value = CodecTail(msgId: 1, status: 0, payload: bound0)
+        var sink = BytesSink()
+        try CodecTail.encodeSource(value, into: &sink)
+        let expected: [UInt8] = [1, 0]
+        #expect(sink.bytes == expected, "codec_tail source 0: an empty tail: the header alone")
+        var cursor = SceCursor(sink.bytes)
+        let decoded = try CodecTail.decode(&cursor)
+        #expect(cursor.remaining == 0, "codec_tail source 0: the decode left bytes of the frame unread")
+        #expect(decoded.msgId == value.msgId, "codec_tail source 0: the decode presents another msgId")
+        #expect(decoded.status == value.status, "codec_tail source 1: the decode presents another status")
+        #expect(decoded.payload == value.payload, "codec_tail source 2: the decode presents another payload")
+    }
+    do {
+        let bound0 = try #require(BoundedBytes<CodecTail.PayloadBound>([10, 20, 30]))
+        let value = CodecTail(msgId: 2, status: 3, payload: bound0)
+        var sink = BytesSink()
+        try CodecTail.encodeSource(value, into: &sink)
+        let expected: [UInt8] = [2, 3, 10, 20, 30]
+        #expect(sink.bytes == expected, "codec_tail source 1: a tail of three bytes")
+        var cursor = SceCursor(sink.bytes)
+        let decoded = try CodecTail.decode(&cursor)
+        #expect(cursor.remaining == 0, "codec_tail source 1: the decode left bytes of the frame unread")
+        #expect(decoded.msgId == value.msgId, "codec_tail source 0: the decode presents another msgId")
+        #expect(decoded.status == value.status, "codec_tail source 1: the decode presents another status")
+        #expect(decoded.payload == value.payload, "codec_tail source 2: the decode presents another payload")
+    }
+    do {
+        let bound0 = try #require(BoundedBytes<CodecTail.PayloadBound>([0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21, 22, 23, 24, 25, 26, 27, 28, 29, 30, 31]))
+        let value = CodecTail(msgId: 255, status: 255, payload: bound0)
+        var sink = BytesSink()
+        try CodecTail.encodeSource(value, into: &sink)
+        let expected: [UInt8] = [255, 255, 0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21, 22, 23, 24, 25, 26, 27, 28, 29, 30, 31]
+        #expect(sink.bytes == expected, "codec_tail source 2: a tail at its bound")
+        var cursor = SceCursor(sink.bytes)
+        let decoded = try CodecTail.decode(&cursor)
+        #expect(cursor.remaining == 0, "codec_tail source 2: the decode left bytes of the frame unread")
+        #expect(decoded.msgId == value.msgId, "codec_tail source 0: the decode presents another msgId")
+        #expect(decoded.status == value.status, "codec_tail source 1: the decode presents another status")
+        #expect(decoded.payload == value.payload, "codec_tail source 2: the decode presents another payload")
+    }
+
 
     do {
         var rejectCursor = SceCursor([3, 4, 0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21, 22, 23, 24, 25, 26, 27, 28, 29, 30, 31, 32])
@@ -1201,8 +1444,7 @@ private func expectClose(_ actual: Double, _ expected: Double, _ label: String) 
 
         let value = CodecLengthRef(
             msgId: try oracleInteger(decoded.member("msgId"), as: UInt8.self),
-            len: try oracleInteger(decoded.member("len"), as: UInt8.self),
-            payload: try oracleBytes(decoded.member("payload"))
+            payload: try #require(BoundedBytes<CodecLengthRef.PayloadBound>(try oracleBytes(decoded.member("payload"))))
         )
 
         var decodeOnly = false
@@ -1220,6 +1462,47 @@ private func expectClose(_ actual: Double, _ expected: Double, _ label: String) 
         #expect(roundTripped == value, "codec_length_ref case \(index) decode")
         #expect(cursor.remaining == 0, "codec_length_ref case \(index) decode consumed the frame and nothing else")
     }
+
+    do {
+        let bound0 = try #require(BoundedBytes<CodecLengthRef.PayloadBound>([]))
+        let value = CodecLengthRef(msgId: 1, payload: bound0)
+        var sink = BytesSink()
+        try CodecLengthRef.encodeSource(value, into: &sink)
+        let expected: [UInt8] = [1, 0]
+        #expect(sink.bytes == expected, "codec_length_ref source 0: an empty payload: its length is zero")
+        var cursor = SceCursor(sink.bytes)
+        let decoded = try CodecLengthRef.decode(&cursor)
+        #expect(cursor.remaining == 0, "codec_length_ref source 0: the decode left bytes of the frame unread")
+        #expect(decoded.msgId == value.msgId, "codec_length_ref source 0: the decode presents another msgId")
+        #expect(decoded.payload == value.payload, "codec_length_ref source 1: the decode presents another payload")
+    }
+    do {
+        let bound0 = try #require(BoundedBytes<CodecLengthRef.PayloadBound>([170]))
+        let value = CodecLengthRef(msgId: 2, payload: bound0)
+        var sink = BytesSink()
+        try CodecLengthRef.encodeSource(value, into: &sink)
+        let expected: [UInt8] = [2, 1, 170]
+        #expect(sink.bytes == expected, "codec_length_ref source 1: the length is derived from the payload")
+        var cursor = SceCursor(sink.bytes)
+        let decoded = try CodecLengthRef.decode(&cursor)
+        #expect(cursor.remaining == 0, "codec_length_ref source 1: the decode left bytes of the frame unread")
+        #expect(decoded.msgId == value.msgId, "codec_length_ref source 0: the decode presents another msgId")
+        #expect(decoded.payload == value.payload, "codec_length_ref source 1: the decode presents another payload")
+    }
+    do {
+        let bound0 = try #require(BoundedBytes<CodecLengthRef.PayloadBound>([0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21, 22, 23, 24, 25, 26, 27, 28, 29, 30, 31]))
+        let value = CodecLengthRef(msgId: 3, payload: bound0)
+        var sink = BytesSink()
+        try CodecLengthRef.encodeSource(value, into: &sink)
+        let expected: [UInt8] = [3, 32, 0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21, 22, 23, 24, 25, 26, 27, 28, 29, 30, 31]
+        #expect(sink.bytes == expected, "codec_length_ref source 2: a payload at its bound")
+        var cursor = SceCursor(sink.bytes)
+        let decoded = try CodecLengthRef.decode(&cursor)
+        #expect(cursor.remaining == 0, "codec_length_ref source 2: the decode left bytes of the frame unread")
+        #expect(decoded.msgId == value.msgId, "codec_length_ref source 0: the decode presents another msgId")
+        #expect(decoded.payload == value.payload, "codec_length_ref source 1: the decode presents another payload")
+    }
+
 
     do {
         var rejectCursor = SceCursor([1, 200, 9, 9])
@@ -1281,6 +1564,8 @@ private func expectClose(_ actual: Double, _ expected: Double, _ label: String) 
         #expect(cursor.remaining == 0, "codec_vle_zint_u16 case \(index) decode consumed the frame and nothing else")
     }
 
+
+
     do {
         var rejectCursor = SceCursor([128, 128, 4])
         #expect(throws: CodecError.vleWidthOverflow, "codec_vle_zint_u16 reject 0: 65536 in three bytes, the first value past a u16: the value is refused, not the length") {
@@ -1333,6 +1618,8 @@ private func expectClose(_ actual: Double, _ expected: Double, _ label: String) 
         #expect(roundTripped == value, "codec_vle_zint_u32 case \(index) decode")
         #expect(cursor.remaining == 0, "codec_vle_zint_u32 case \(index) decode consumed the frame and nothing else")
     }
+
+
 
     do {
         var rejectCursor = SceCursor([128, 128, 128, 128, 16])
@@ -1388,6 +1675,107 @@ private func expectClose(_ actual: Double, _ expected: Double, _ label: String) 
     }
 
     do {
+        let value = CodecVleZintU64(value: 0)
+        var sink = BytesSink()
+        try CodecVleZintU64.encodeSource(value, into: &sink)
+        let expected: [UInt8] = [0]
+        #expect(sink.bytes == expected, "codec_vle_zint_u64 source 0: zero: one byte")
+        var cursor = SceCursor(sink.bytes)
+        let decoded = try CodecVleZintU64.decode(&cursor)
+        #expect(cursor.remaining == 0, "codec_vle_zint_u64 source 0: the decode left bytes of the frame unread")
+        #expect(decoded.value == value.value, "codec_vle_zint_u64 source 0: the decode presents another value")
+    }
+    do {
+        let value = CodecVleZintU64(value: 127)
+        var sink = BytesSink()
+        try CodecVleZintU64.encodeSource(value, into: &sink)
+        let expected: [UInt8] = [127]
+        #expect(sink.bytes == expected, "codec_vle_zint_u64 source 1: the largest value of one byte")
+        var cursor = SceCursor(sink.bytes)
+        let decoded = try CodecVleZintU64.decode(&cursor)
+        #expect(cursor.remaining == 0, "codec_vle_zint_u64 source 1: the decode left bytes of the frame unread")
+        #expect(decoded.value == value.value, "codec_vle_zint_u64 source 0: the decode presents another value")
+    }
+    do {
+        let value = CodecVleZintU64(value: 128)
+        var sink = BytesSink()
+        try CodecVleZintU64.encodeSource(value, into: &sink)
+        let expected: [UInt8] = [128, 1]
+        #expect(sink.bytes == expected, "codec_vle_zint_u64 source 2: the smallest value of two bytes")
+        var cursor = SceCursor(sink.bytes)
+        let decoded = try CodecVleZintU64.decode(&cursor)
+        #expect(cursor.remaining == 0, "codec_vle_zint_u64 source 2: the decode left bytes of the frame unread")
+        #expect(decoded.value == value.value, "codec_vle_zint_u64 source 0: the decode presents another value")
+    }
+    do {
+        let value = CodecVleZintU64(value: 16383)
+        var sink = BytesSink()
+        try CodecVleZintU64.encodeSource(value, into: &sink)
+        let expected: [UInt8] = [255, 127]
+        #expect(sink.bytes == expected, "codec_vle_zint_u64 source 3: the largest value of two bytes")
+        var cursor = SceCursor(sink.bytes)
+        let decoded = try CodecVleZintU64.decode(&cursor)
+        #expect(cursor.remaining == 0, "codec_vle_zint_u64 source 3: the decode left bytes of the frame unread")
+        #expect(decoded.value == value.value, "codec_vle_zint_u64 source 0: the decode presents another value")
+    }
+    do {
+        let value = CodecVleZintU64(value: 16384)
+        var sink = BytesSink()
+        try CodecVleZintU64.encodeSource(value, into: &sink)
+        let expected: [UInt8] = [128, 128, 1]
+        #expect(sink.bytes == expected, "codec_vle_zint_u64 source 4: the smallest value of three bytes")
+        var cursor = SceCursor(sink.bytes)
+        let decoded = try CodecVleZintU64.decode(&cursor)
+        #expect(cursor.remaining == 0, "codec_vle_zint_u64 source 4: the decode left bytes of the frame unread")
+        #expect(decoded.value == value.value, "codec_vle_zint_u64 source 0: the decode presents another value")
+    }
+    do {
+        let value = CodecVleZintU64(value: 72057594037927935)
+        var sink = BytesSink()
+        try CodecVleZintU64.encodeSource(value, into: &sink)
+        let expected: [UInt8] = [255, 255, 255, 255, 255, 255, 255, 127]
+        #expect(sink.bytes == expected, "codec_vle_zint_u64 source 5: the largest value of eight bytes")
+        var cursor = SceCursor(sink.bytes)
+        let decoded = try CodecVleZintU64.decode(&cursor)
+        #expect(cursor.remaining == 0, "codec_vle_zint_u64 source 5: the decode left bytes of the frame unread")
+        #expect(decoded.value == value.value, "codec_vle_zint_u64 source 0: the decode presents another value")
+    }
+    do {
+        let value = CodecVleZintU64(value: 72057594037927936)
+        var sink = BytesSink()
+        try CodecVleZintU64.encodeSource(value, into: &sink)
+        let expected: [UInt8] = [128, 128, 128, 128, 128, 128, 128, 128, 1]
+        #expect(sink.bytes == expected, "codec_vle_zint_u64 source 6: the smallest value of nine bytes")
+        var cursor = SceCursor(sink.bytes)
+        let decoded = try CodecVleZintU64.decode(&cursor)
+        #expect(cursor.remaining == 0, "codec_vle_zint_u64 source 6: the decode left bytes of the frame unread")
+        #expect(decoded.value == value.value, "codec_vle_zint_u64 source 0: the decode presents another value")
+    }
+    do {
+        let value = CodecVleZintU64(value: 9223372036854775808)
+        var sink = BytesSink()
+        try CodecVleZintU64.encodeSource(value, into: &sink)
+        let expected: [UInt8] = [128, 128, 128, 128, 128, 128, 128, 128, 128]
+        #expect(sink.bytes == expected, "codec_vle_zint_u64 source 7: bit 63 rides in the ninth byte's high bit")
+        var cursor = SceCursor(sink.bytes)
+        let decoded = try CodecVleZintU64.decode(&cursor)
+        #expect(cursor.remaining == 0, "codec_vle_zint_u64 source 7: the decode left bytes of the frame unread")
+        #expect(decoded.value == value.value, "codec_vle_zint_u64 source 0: the decode presents another value")
+    }
+    do {
+        let value = CodecVleZintU64(value: 18446744073709551615)
+        var sink = BytesSink()
+        try CodecVleZintU64.encodeSource(value, into: &sink)
+        let expected: [UInt8] = [255, 255, 255, 255, 255, 255, 255, 255, 255]
+        #expect(sink.bytes == expected, "codec_vle_zint_u64 source 8: the largest value: the ninth byte is all eight bits")
+        var cursor = SceCursor(sink.bytes)
+        let decoded = try CodecVleZintU64.decode(&cursor)
+        #expect(cursor.remaining == 0, "codec_vle_zint_u64 source 8: the decode left bytes of the frame unread")
+        #expect(decoded.value == value.value, "codec_vle_zint_u64 source 0: the decode presents another value")
+    }
+
+
+    do {
         var rejectCursor = SceCursor([255, 255, 255, 255, 255, 255, 255, 255])
         #expect(throws: CodecError.needMoreBytes, "codec_vle_zint_u64 reject 0: eight flagged bytes and no ninth: the frame ends inside the ZInt") {
             try CodecVleZintU64.decode(&rejectCursor)
@@ -1426,6 +1814,30 @@ private func expectClose(_ actual: Double, _ expected: Double, _ label: String) 
         #expect(cursor.remaining == 0, "codec_zenoh_close case \(index) decode consumed the frame and nothing else")
     }
 
+    do {
+        let value = CodecZenohClose(reason: 0)
+        var sink = BytesSink()
+        try CodecZenohClose.encodeSource(value, into: &sink)
+        let expected: [UInt8] = [0]
+        #expect(sink.bytes == expected, "codec_zenoh_close source 0: reason zero")
+        var cursor = SceCursor(sink.bytes)
+        let decoded = try CodecZenohClose.decode(&cursor)
+        #expect(cursor.remaining == 0, "codec_zenoh_close source 0: the decode left bytes of the frame unread")
+        #expect(decoded.reason == value.reason, "codec_zenoh_close source 0: the decode presents another reason")
+    }
+    do {
+        let value = CodecZenohClose(reason: 255)
+        var sink = BytesSink()
+        try CodecZenohClose.encodeSource(value, into: &sink)
+        let expected: [UInt8] = [255]
+        #expect(sink.bytes == expected, "codec_zenoh_close source 1: reason at its largest")
+        var cursor = SceCursor(sink.bytes)
+        let decoded = try CodecZenohClose.decode(&cursor)
+        #expect(cursor.remaining == 0, "codec_zenoh_close source 1: the decode left bytes of the frame unread")
+        #expect(decoded.reason == value.reason, "codec_zenoh_close source 0: the decode presents another reason")
+    }
+
+
 }
 
 // MARK: - codec: codec_zenoh_frame
@@ -1440,7 +1852,7 @@ private func expectClose(_ actual: Double, _ expected: Double, _ label: String) 
 
         let value = CodecZenohFrame(
             sn: try oracleInteger(decoded.member("sn"), as: UInt64.self),
-            payload: try oracleBytes(decoded.member("payload"))
+            payload: try #require(BoundedBytes<CodecZenohFrame.PayloadBound>(try oracleBytes(decoded.member("payload"))))
         )
 
         var decodeOnly = false
@@ -1458,6 +1870,47 @@ private func expectClose(_ actual: Double, _ expected: Double, _ label: String) 
         #expect(roundTripped == value, "codec_zenoh_frame case \(index) decode")
         #expect(cursor.remaining == 0, "codec_zenoh_frame case \(index) decode consumed the frame and nothing else")
     }
+
+    do {
+        let bound0 = try #require(BoundedBytes<CodecZenohFrame.PayloadBound>([]))
+        let value = CodecZenohFrame(sn: 0, payload: bound0)
+        var sink = BytesSink()
+        try CodecZenohFrame.encodeSource(value, into: &sink)
+        let expected: [UInt8] = [0]
+        #expect(sink.bytes == expected, "codec_zenoh_frame source 0: sn zero and no payload")
+        var cursor = SceCursor(sink.bytes)
+        let decoded = try CodecZenohFrame.decode(&cursor)
+        #expect(cursor.remaining == 0, "codec_zenoh_frame source 0: the decode left bytes of the frame unread")
+        #expect(decoded.sn == value.sn, "codec_zenoh_frame source 0: the decode presents another sn")
+        #expect(decoded.payload == value.payload, "codec_zenoh_frame source 1: the decode presents another payload")
+    }
+    do {
+        let bound0 = try #require(BoundedBytes<CodecZenohFrame.PayloadBound>([222, 173]))
+        let value = CodecZenohFrame(sn: 128, payload: bound0)
+        var sink = BytesSink()
+        try CodecZenohFrame.encodeSource(value, into: &sink)
+        let expected: [UInt8] = [128, 1, 222, 173]
+        #expect(sink.bytes == expected, "codec_zenoh_frame source 1: a two-byte sn, then the tail")
+        var cursor = SceCursor(sink.bytes)
+        let decoded = try CodecZenohFrame.decode(&cursor)
+        #expect(cursor.remaining == 0, "codec_zenoh_frame source 1: the decode left bytes of the frame unread")
+        #expect(decoded.sn == value.sn, "codec_zenoh_frame source 0: the decode presents another sn")
+        #expect(decoded.payload == value.payload, "codec_zenoh_frame source 1: the decode presents another payload")
+    }
+    do {
+        let bound0 = try #require(BoundedBytes<CodecZenohFrame.PayloadBound>([1]))
+        let value = CodecZenohFrame(sn: 18446744073709551615, payload: bound0)
+        var sink = BytesSink()
+        try CodecZenohFrame.encodeSource(value, into: &sink)
+        let expected: [UInt8] = [255, 255, 255, 255, 255, 255, 255, 255, 255, 1]
+        #expect(sink.bytes == expected, "codec_zenoh_frame source 2: a nine-byte sn")
+        var cursor = SceCursor(sink.bytes)
+        let decoded = try CodecZenohFrame.decode(&cursor)
+        #expect(cursor.remaining == 0, "codec_zenoh_frame source 2: the decode left bytes of the frame unread")
+        #expect(decoded.sn == value.sn, "codec_zenoh_frame source 0: the decode presents another sn")
+        #expect(decoded.payload == value.payload, "codec_zenoh_frame source 1: the decode presents another payload")
+    }
+
 
 }
 
@@ -1491,6 +1944,41 @@ private func expectClose(_ actual: Double, _ expected: Double, _ label: String) 
         #expect(cursor.remaining == 0, "codec_qos_byte case \(index) decode consumed the frame and nothing else")
     }
 
+    do {
+        let value = CodecQosByte(qos: 0)
+        var sink = BytesSink()
+        try CodecQosByte.encodeSource(value, into: &sink)
+        let expected: [UInt8] = [0]
+        #expect(sink.bytes == expected, "codec_qos_byte source 0: no flag set")
+        var cursor = SceCursor(sink.bytes)
+        let decoded = try CodecQosByte.decode(&cursor)
+        #expect(cursor.remaining == 0, "codec_qos_byte source 0: the decode left bytes of the frame unread")
+        #expect(decoded.qos == value.qos, "codec_qos_byte source 0: the decode presents another qos")
+    }
+    do {
+        let value = CodecQosByte(qos: 93)
+        var sink = BytesSink()
+        try CodecQosByte.encodeSource(value, into: &sink)
+        let expected: [UInt8] = [93]
+        #expect(sink.bytes == expected, "codec_qos_byte source 1: priority 5, reliable, congestion 1, express")
+        var cursor = SceCursor(sink.bytes)
+        let decoded = try CodecQosByte.decode(&cursor)
+        #expect(cursor.remaining == 0, "codec_qos_byte source 1: the decode left bytes of the frame unread")
+        #expect(decoded.qos == value.qos, "codec_qos_byte source 0: the decode presents another qos")
+    }
+    do {
+        let value = CodecQosByte(qos: 255)
+        var sink = BytesSink()
+        try CodecQosByte.encodeSource(value, into: &sink)
+        let expected: [UInt8] = [255]
+        #expect(sink.bytes == expected, "codec_qos_byte source 2: every bit set")
+        var cursor = SceCursor(sink.bytes)
+        let decoded = try CodecQosByte.decode(&cursor)
+        #expect(cursor.remaining == 0, "codec_qos_byte source 2: the decode left bytes of the frame unread")
+        #expect(decoded.qos == value.qos, "codec_qos_byte source 0: the decode presents another qos")
+    }
+
+
 }
 
 // MARK: - codec: codec_zenoh_keep_alive
@@ -1522,6 +2010,19 @@ private func expectClose(_ actual: Double, _ expected: Double, _ label: String) 
         #expect(cursor.remaining == 0, "codec_zenoh_keep_alive case \(index) decode consumed the frame and nothing else")
     }
 
+    do {
+        let value = CodecZenohKeepAlive()
+        var sink = BytesSink()
+        try CodecZenohKeepAlive.encodeSource(value, into: &sink)
+        let expected: [UInt8] = []
+        #expect(sink.bytes == expected, "codec_zenoh_keep_alive source 0: a codec of no field writes nothing")
+        var cursor = SceCursor(sink.bytes)
+        let decoded = try CodecZenohKeepAlive.decode(&cursor)
+        #expect(cursor.remaining == 0, "codec_zenoh_keep_alive source 0: the decode left bytes of the frame unread")
+        _ = decoded
+    }
+
+
 }
 
 // MARK: - codec: codec_zenoh_locator
@@ -1535,8 +2036,7 @@ private func expectClose(_ actual: Double, _ expected: Double, _ label: String) 
         let expectedBytes = try oracleBytes(testCase.member("encoded"))
 
         let value = CodecZenohLocator(
-            locator_len: try oracleInteger(decoded.member("locator_len"), as: UInt64.self),
-            locator: try oracleText(decoded.member("locator"))
+            locator: try #require(BoundedText<CodecZenohLocator.LocatorBound>(try oracleText(decoded.member("locator"))))
         )
 
         var decodeOnly = false
@@ -1554,6 +2054,68 @@ private func expectClose(_ actual: Double, _ expected: Double, _ label: String) 
         #expect(roundTripped == value, "codec_zenoh_locator case \(index) decode")
         #expect(cursor.remaining == 0, "codec_zenoh_locator case \(index) decode consumed the frame and nothing else")
     }
+
+    do {
+        let bound0 = try #require(BoundedText<CodecZenohLocator.LocatorBound>(""))
+        let value = CodecZenohLocator(locator: bound0)
+        var sink = BytesSink()
+        try CodecZenohLocator.encodeSource(value, into: &sink)
+        let expected: [UInt8] = [0]
+        #expect(sink.bytes == expected, "codec_zenoh_locator source 0: empty text: its length is zero")
+        var cursor = SceCursor(sink.bytes)
+        let decoded = try CodecZenohLocator.decode(&cursor)
+        #expect(cursor.remaining == 0, "codec_zenoh_locator source 0: the decode left bytes of the frame unread")
+        #expect(decoded.locator == value.locator, "codec_zenoh_locator source 0: the decode presents another locator")
+    }
+    do {
+        let bound0 = try #require(BoundedText<CodecZenohLocator.LocatorBound>("tcp/127.0.0.1:7447"))
+        let value = CodecZenohLocator(locator: bound0)
+        var sink = BytesSink()
+        try CodecZenohLocator.encodeSource(value, into: &sink)
+        let expected: [UInt8] = [18, 116, 99, 112, 47, 49, 50, 55, 46, 48, 46, 48, 46, 49, 58, 55, 52, 52, 55]
+        #expect(sink.bytes == expected, "codec_zenoh_locator source 1: the length is derived from the text")
+        var cursor = SceCursor(sink.bytes)
+        let decoded = try CodecZenohLocator.decode(&cursor)
+        #expect(cursor.remaining == 0, "codec_zenoh_locator source 1: the decode left bytes of the frame unread")
+        #expect(decoded.locator == value.locator, "codec_zenoh_locator source 0: the decode presents another locator")
+    }
+    do {
+        let bound0 = try #require(BoundedText<CodecZenohLocator.LocatorBound>("héllo"))
+        let value = CodecZenohLocator(locator: bound0)
+        var sink = BytesSink()
+        try CodecZenohLocator.encodeSource(value, into: &sink)
+        let expected: [UInt8] = [6, 104, 195, 169, 108, 108, 111]
+        #expect(sink.bytes == expected, "codec_zenoh_locator source 2: the length counts the bytes of the UTF-8, not the characters")
+        var cursor = SceCursor(sink.bytes)
+        let decoded = try CodecZenohLocator.decode(&cursor)
+        #expect(cursor.remaining == 0, "codec_zenoh_locator source 2: the decode left bytes of the frame unread")
+        #expect(decoded.locator == value.locator, "codec_zenoh_locator source 0: the decode presents another locator")
+    }
+    do {
+        let bound0 = try #require(BoundedText<CodecZenohLocator.LocatorBound>("abcdefghijklmnopqrstuvwxyzabcdefghijklmnopqrstuvwxyzabcdefghijklmnopqrstuvwxyzabcdefghijklmnopqrstuvwxyzabcdefghijklmnopqrstuvwx"))
+        let value = CodecZenohLocator(locator: bound0)
+        var sink = BytesSink()
+        try CodecZenohLocator.encodeSource(value, into: &sink)
+        let expected: [UInt8] = [128, 1, 97, 98, 99, 100, 101, 102, 103, 104, 105, 106, 107, 108, 109, 110, 111, 112, 113, 114, 115, 116, 117, 118, 119, 120, 121, 122, 97, 98, 99, 100, 101, 102, 103, 104, 105, 106, 107, 108, 109, 110, 111, 112, 113, 114, 115, 116, 117, 118, 119, 120, 121, 122, 97, 98, 99, 100, 101, 102, 103, 104, 105, 106, 107, 108, 109, 110, 111, 112, 113, 114, 115, 116, 117, 118, 119, 120, 121, 122, 97, 98, 99, 100, 101, 102, 103, 104, 105, 106, 107, 108, 109, 110, 111, 112, 113, 114, 115, 116, 117, 118, 119, 120, 121, 122, 97, 98, 99, 100, 101, 102, 103, 104, 105, 106, 107, 108, 109, 110, 111, 112, 113, 114, 115, 116, 117, 118, 119, 120]
+        #expect(sink.bytes == expected, "codec_zenoh_locator source 3: 128 bytes of text: the length takes two VLE bytes")
+        var cursor = SceCursor(sink.bytes)
+        let decoded = try CodecZenohLocator.decode(&cursor)
+        #expect(cursor.remaining == 0, "codec_zenoh_locator source 3: the decode left bytes of the frame unread")
+        #expect(decoded.locator == value.locator, "codec_zenoh_locator source 0: the decode presents another locator")
+    }
+    do {
+        let bound0 = try #require(BoundedText<CodecZenohLocator.LocatorBound>("abcdefghijklmnopqrstuvwxyzabcdefghijklmnopqrstuvwxyzabcdefghijklmnopqrstuvwxyzabcdefghijklmnopqrstuvwxyzabcdefghijklmnopqrstuvwxyzabcdefghijklmnopqrstuvwxyzabcdefghijklmnopqrstuvwxyzabcdefghijklmnopqrstuvwxyzabcdefghijklmnopqrstuvwxyzabcdefghijklmnopqrstu"))
+        let value = CodecZenohLocator(locator: bound0)
+        var sink = BytesSink()
+        try CodecZenohLocator.encodeSource(value, into: &sink)
+        let expected: [UInt8] = [255, 1, 97, 98, 99, 100, 101, 102, 103, 104, 105, 106, 107, 108, 109, 110, 111, 112, 113, 114, 115, 116, 117, 118, 119, 120, 121, 122, 97, 98, 99, 100, 101, 102, 103, 104, 105, 106, 107, 108, 109, 110, 111, 112, 113, 114, 115, 116, 117, 118, 119, 120, 121, 122, 97, 98, 99, 100, 101, 102, 103, 104, 105, 106, 107, 108, 109, 110, 111, 112, 113, 114, 115, 116, 117, 118, 119, 120, 121, 122, 97, 98, 99, 100, 101, 102, 103, 104, 105, 106, 107, 108, 109, 110, 111, 112, 113, 114, 115, 116, 117, 118, 119, 120, 121, 122, 97, 98, 99, 100, 101, 102, 103, 104, 105, 106, 107, 108, 109, 110, 111, 112, 113, 114, 115, 116, 117, 118, 119, 120, 121, 122, 97, 98, 99, 100, 101, 102, 103, 104, 105, 106, 107, 108, 109, 110, 111, 112, 113, 114, 115, 116, 117, 118, 119, 120, 121, 122, 97, 98, 99, 100, 101, 102, 103, 104, 105, 106, 107, 108, 109, 110, 111, 112, 113, 114, 115, 116, 117, 118, 119, 120, 121, 122, 97, 98, 99, 100, 101, 102, 103, 104, 105, 106, 107, 108, 109, 110, 111, 112, 113, 114, 115, 116, 117, 118, 119, 120, 121, 122, 97, 98, 99, 100, 101, 102, 103, 104, 105, 106, 107, 108, 109, 110, 111, 112, 113, 114, 115, 116, 117, 118, 119, 120, 121, 122, 97, 98, 99, 100, 101, 102, 103, 104, 105, 106, 107, 108, 109, 110, 111, 112, 113, 114, 115, 116, 117]
+        #expect(sink.bytes == expected, "codec_zenoh_locator source 4: text at its bound of 255 bytes, the u8 length upstream reads it with")
+        var cursor = SceCursor(sink.bytes)
+        let decoded = try CodecZenohLocator.decode(&cursor)
+        #expect(cursor.remaining == 0, "codec_zenoh_locator source 4: the decode left bytes of the frame unread")
+        #expect(decoded.locator == value.locator, "codec_zenoh_locator source 0: the decode presents another locator")
+    }
+
 
 }
 
@@ -1587,6 +2149,19 @@ private func expectClose(_ actual: Double, _ expected: Double, _ label: String) 
         #expect(cursor.remaining == 0, "codec_zenoh_put case \(index) decode consumed the frame and nothing else")
     }
 
+    do {
+        let value = CodecZenohPut(payload: 90)
+        var sink = BytesSink()
+        try CodecZenohPut.encodeSource(value, into: &sink)
+        let expected: [UInt8] = [90]
+        #expect(sink.bytes == expected, "codec_zenoh_put source 0: one byte")
+        var cursor = SceCursor(sink.bytes)
+        let decoded = try CodecZenohPut.decode(&cursor)
+        #expect(cursor.remaining == 0, "codec_zenoh_put source 0: the decode left bytes of the frame unread")
+        #expect(decoded.payload == value.payload, "codec_zenoh_put source 0: the decode presents another payload")
+    }
+
+
 }
 
 // MARK: - codec: codec_zenoh_del
@@ -1618,6 +2193,19 @@ private func expectClose(_ actual: Double, _ expected: Double, _ label: String) 
         #expect(cursor.remaining == 0, "codec_zenoh_del case \(index) decode consumed the frame and nothing else")
     }
 
+    do {
+        let value = CodecZenohDel()
+        var sink = BytesSink()
+        try CodecZenohDel.encodeSource(value, into: &sink)
+        let expected: [UInt8] = []
+        #expect(sink.bytes == expected, "codec_zenoh_del source 0: a codec of no field writes nothing")
+        var cursor = SceCursor(sink.bytes)
+        let decoded = try CodecZenohDel.decode(&cursor)
+        #expect(cursor.remaining == 0, "codec_zenoh_del source 0: the decode left bytes of the frame unread")
+        _ = decoded
+    }
+
+
 }
 
 // MARK: - codec: codec_zenoh_fragment
@@ -1632,7 +2220,7 @@ private func expectClose(_ actual: Double, _ expected: Double, _ label: String) 
 
         let value = CodecZenohFragment(
             sn: try oracleInteger(decoded.member("sn"), as: UInt64.self),
-            payload: try oracleBytes(decoded.member("payload"))
+            payload: try #require(BoundedBytes<CodecZenohFragment.PayloadBound>(try oracleBytes(decoded.member("payload"))))
         )
 
         var decodeOnly = false
@@ -1650,6 +2238,34 @@ private func expectClose(_ actual: Double, _ expected: Double, _ label: String) 
         #expect(roundTripped == value, "codec_zenoh_fragment case \(index) decode")
         #expect(cursor.remaining == 0, "codec_zenoh_fragment case \(index) decode consumed the frame and nothing else")
     }
+
+    do {
+        let bound0 = try #require(BoundedBytes<CodecZenohFragment.PayloadBound>([202, 254]))
+        let value = CodecZenohFragment(sn: 127, payload: bound0)
+        var sink = BytesSink()
+        try CodecZenohFragment.encodeSource(value, into: &sink)
+        let expected: [UInt8] = [127, 202, 254]
+        #expect(sink.bytes == expected, "codec_zenoh_fragment source 0: a one-byte sn, then the tail")
+        var cursor = SceCursor(sink.bytes)
+        let decoded = try CodecZenohFragment.decode(&cursor)
+        #expect(cursor.remaining == 0, "codec_zenoh_fragment source 0: the decode left bytes of the frame unread")
+        #expect(decoded.sn == value.sn, "codec_zenoh_fragment source 0: the decode presents another sn")
+        #expect(decoded.payload == value.payload, "codec_zenoh_fragment source 1: the decode presents another payload")
+    }
+    do {
+        let bound0 = try #require(BoundedBytes<CodecZenohFragment.PayloadBound>([]))
+        let value = CodecZenohFragment(sn: 16384, payload: bound0)
+        var sink = BytesSink()
+        try CodecZenohFragment.encodeSource(value, into: &sink)
+        let expected: [UInt8] = [128, 128, 1]
+        #expect(sink.bytes == expected, "codec_zenoh_fragment source 1: a three-byte sn and no payload")
+        var cursor = SceCursor(sink.bytes)
+        let decoded = try CodecZenohFragment.decode(&cursor)
+        #expect(cursor.remaining == 0, "codec_zenoh_fragment source 1: the decode left bytes of the frame unread")
+        #expect(decoded.sn == value.sn, "codec_zenoh_fragment source 0: the decode presents another sn")
+        #expect(decoded.payload == value.payload, "codec_zenoh_fragment source 1: the decode presents another payload")
+    }
+
 
 }
 
@@ -1682,6 +2298,19 @@ private func expectClose(_ actual: Double, _ expected: Double, _ label: String) 
         #expect(cursor.remaining == 0, "codec_zenoh_decl_final case \(index) decode consumed the frame and nothing else")
     }
 
+    do {
+        let value = CodecZenohDeclFinal()
+        var sink = BytesSink()
+        try CodecZenohDeclFinal.encodeSource(value, into: &sink)
+        let expected: [UInt8] = []
+        #expect(sink.bytes == expected, "codec_zenoh_decl_final source 0: a codec of no field writes nothing")
+        var cursor = SceCursor(sink.bytes)
+        let decoded = try CodecZenohDeclFinal.decode(&cursor)
+        #expect(cursor.remaining == 0, "codec_zenoh_decl_final source 0: the decode left bytes of the frame unread")
+        _ = decoded
+    }
+
+
 }
 
 // MARK: - codec: codec_length_ref_dotted_basic
@@ -1696,7 +2325,7 @@ private func expectClose(_ actual: Double, _ expected: Double, _ label: String) 
 
         let value = CodecLengthRefDottedBasic(
             carrier: try oracleInteger(decoded.member("carrier"), as: UInt8.self),
-            payload: try oracleBytes(decoded.member("payload"))
+            payload: try #require(BoundedBytes<CodecLengthRefDottedBasic.PayloadBound>(try oracleBytes(decoded.member("payload"))))
         )
 
         var decodeOnly = false
@@ -1714,6 +2343,47 @@ private func expectClose(_ actual: Double, _ expected: Double, _ label: String) 
         #expect(roundTripped == value, "codec_length_ref_dotted_basic case \(index) decode")
         #expect(cursor.remaining == 0, "codec_length_ref_dotted_basic case \(index) decode consumed the frame and nothing else")
     }
+
+    do {
+        let bound0 = try #require(BoundedBytes<CodecLengthRefDottedBasic.PayloadBound>([]))
+        let value = CodecLengthRefDottedBasic(carrier: 0, payload: bound0)
+        var sink = BytesSink()
+        try CodecLengthRefDottedBasic.encodeSource(value, into: &sink)
+        let expected: [UInt8] = [0]
+        #expect(sink.bytes == expected, "codec_length_ref_dotted_basic source 0: an empty payload: the length bits are zero")
+        var cursor = SceCursor(sink.bytes)
+        let decoded = try CodecLengthRefDottedBasic.decode(&cursor)
+        #expect(cursor.remaining == 0, "codec_length_ref_dotted_basic source 0: the decode left bytes of the frame unread")
+        #expect(decoded.carrier == value.carrier, "codec_length_ref_dotted_basic source 0: the decode presents another carrier")
+        #expect(decoded.payload == value.payload, "codec_length_ref_dotted_basic source 1: the decode presents another payload")
+    }
+    do {
+        let bound0 = try #require(BoundedBytes<CodecLengthRefDottedBasic.PayloadBound>([170, 187]))
+        let value = CodecLengthRefDottedBasic(carrier: 33, payload: bound0)
+        var sink = BytesSink()
+        try CodecLengthRefDottedBasic.encodeSource(value, into: &sink)
+        let expected: [UInt8] = [33, 170, 187]
+        #expect(sink.bytes == expected, "codec_length_ref_dotted_basic source 1: the length bits are derived, hdr kept")
+        var cursor = SceCursor(sink.bytes)
+        let decoded = try CodecLengthRefDottedBasic.decode(&cursor)
+        #expect(cursor.remaining == 0, "codec_length_ref_dotted_basic source 1: the decode left bytes of the frame unread")
+        #expect(decoded.carrier == value.carrier, "codec_length_ref_dotted_basic source 0: the decode presents another carrier")
+        #expect(decoded.payload == value.payload, "codec_length_ref_dotted_basic source 1: the decode presents another payload")
+    }
+    do {
+        let bound0 = try #require(BoundedBytes<CodecLengthRefDottedBasic.PayloadBound>([0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14]))
+        let value = CodecLengthRefDottedBasic(carrier: 245, payload: bound0)
+        var sink = BytesSink()
+        try CodecLengthRefDottedBasic.encodeSource(value, into: &sink)
+        let expected: [UInt8] = [245, 0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14]
+        #expect(sink.bytes == expected, "codec_length_ref_dotted_basic source 2: a payload at its bound of fifteen")
+        var cursor = SceCursor(sink.bytes)
+        let decoded = try CodecLengthRefDottedBasic.decode(&cursor)
+        #expect(cursor.remaining == 0, "codec_length_ref_dotted_basic source 2: the decode left bytes of the frame unread")
+        #expect(decoded.carrier == value.carrier, "codec_length_ref_dotted_basic source 0: the decode presents another carrier")
+        #expect(decoded.payload == value.payload, "codec_length_ref_dotted_basic source 1: the decode presents another payload")
+    }
+
 
     do {
         var rejectCursor = SceCursor([48, 9])
@@ -5231,6 +5901,40 @@ private func expectClose(_ actual: Double, _ expected: Double, _ label: String) 
     _ = CodecDeclaredBounds.frameLength
 
     do {
+        let bound0 = try #require(BoundedBytes<CodecDeclaredBounds.KeyBound>([]))
+        let bound1 = try #require(BoundedBytes<CodecDeclaredBounds.TagBound>([]))
+        let bound2 = try #require(BoundedList<CodecRepeatElem, CodecDeclaredBounds.ItemsBound>([]))
+        let value = CodecDeclaredBounds(key: bound0, tag: bound1, items: bound2)
+        var sink = BytesSink()
+        try CodecDeclaredBounds.encodeSource(value, into: &sink)
+        let expected: [UInt8] = [0, 1, 0]
+        #expect(sink.bytes == expected, "codec_declared_bounds source 0: everything empty: the tag's length says one more")
+        var cursor = SceCursor(sink.bytes)
+        let decoded = try CodecDeclaredBounds.decode(&cursor)
+        #expect(cursor.remaining == 0, "codec_declared_bounds source 0: the decode left bytes of the frame unread")
+        #expect(decoded.key == value.key, "codec_declared_bounds source 0: the decode presents another key")
+        #expect(decoded.tag == value.tag, "codec_declared_bounds source 1: the decode presents another tag")
+        #expect(decoded.items == value.items, "codec_declared_bounds source 2: the decode presents another items")
+    }
+    do {
+        let bound0 = try #require(BoundedBytes<CodecDeclaredBounds.KeyBound>([0, 1, 2, 3, 4, 5, 6, 7]))
+        let bound1 = try #require(BoundedBytes<CodecDeclaredBounds.TagBound>([9, 8, 7, 6]))
+        let bound2 = try #require(BoundedList<CodecRepeatElem, CodecDeclaredBounds.ItemsBound>([CodecRepeatElem(seq: 1), CodecRepeatElem(seq: 2)]))
+        let value = CodecDeclaredBounds(key: bound0, tag: bound1, items: bound2)
+        var sink = BytesSink()
+        try CodecDeclaredBounds.encodeSource(value, into: &sink)
+        let expected: [UInt8] = [8, 0, 1, 2, 3, 4, 5, 6, 7, 5, 9, 8, 7, 6, 2, 0, 1, 0, 2]
+        #expect(sink.bytes == expected, "codec_declared_bounds source 1: every element at its bound")
+        var cursor = SceCursor(sink.bytes)
+        let decoded = try CodecDeclaredBounds.decode(&cursor)
+        #expect(cursor.remaining == 0, "codec_declared_bounds source 1: the decode left bytes of the frame unread")
+        #expect(decoded.key == value.key, "codec_declared_bounds source 0: the decode presents another key")
+        #expect(decoded.tag == value.tag, "codec_declared_bounds source 1: the decode presents another tag")
+        #expect(decoded.items == value.items, "codec_declared_bounds source 2: the decode presents another items")
+    }
+
+
+    do {
         var rejectCursor = SceCursor([132, 128, 128, 128, 16, 1, 2, 3, 4, 1, 0])
         #expect(throws: CodecError.lengthOutOfRange, "codec_declared_bounds reject 0: the key length is 2^32 + 4, past the max-size of 8; a decode that narrowed it to 32 bits first would read 4 and accept the frame") {
             try CodecDeclaredBounds.decode(&rejectCursor)
@@ -5296,6 +6000,66 @@ private func expectClose(_ actual: Double, _ expected: Double, _ label: String) 
     _ = CodecDeclaredBoundsGated.frameLength
 
     do {
+        let bound0 = try #require(BoundedBytes<CodecDeclaredBoundsGated.RestBound>([]))
+        let value = CodecDeclaredBoundsGated(flags: 0, name: nil, rest: bound0)
+        var sink = BytesSink()
+        try CodecDeclaredBoundsGated.encodeSource(value, into: &sink)
+        let expected: [UInt8] = [0]
+        #expect(sink.bytes == expected, "codec_declared_bounds_gated source 0: G clear: no name and no length")
+        var cursor = SceCursor(sink.bytes)
+        let decoded = try CodecDeclaredBoundsGated.decode(&cursor)
+        #expect(cursor.remaining == 0, "codec_declared_bounds_gated source 0: the decode left bytes of the frame unread")
+        #expect(decoded.flags == value.flags, "codec_declared_bounds_gated source 0: the decode presents another flags")
+        #expect(decoded.name == value.name, "codec_declared_bounds_gated source 1: the decode presents another name")
+        #expect(decoded.rest == value.rest, "codec_declared_bounds_gated source 2: the decode presents another rest")
+    }
+    do {
+        let bound0 = try #require(BoundedText<CodecDeclaredBoundsGated.NameBound>("abc"))
+        let bound1 = try #require(BoundedBytes<CodecDeclaredBoundsGated.RestBound>([1, 2]))
+        let value = CodecDeclaredBoundsGated(flags: 1, name: bound0, rest: bound1)
+        var sink = BytesSink()
+        try CodecDeclaredBoundsGated.encodeSource(value, into: &sink)
+        let expected: [UInt8] = [1, 3, 97, 98, 99, 1, 2]
+        #expect(sink.bytes == expected, "codec_declared_bounds_gated source 1: a name and a tail at their bounds")
+        var cursor = SceCursor(sink.bytes)
+        let decoded = try CodecDeclaredBoundsGated.decode(&cursor)
+        #expect(cursor.remaining == 0, "codec_declared_bounds_gated source 1: the decode left bytes of the frame unread")
+        #expect(decoded.flags == value.flags, "codec_declared_bounds_gated source 0: the decode presents another flags")
+        #expect(decoded.name == value.name, "codec_declared_bounds_gated source 1: the decode presents another name")
+        #expect(decoded.rest == value.rest, "codec_declared_bounds_gated source 2: the decode presents another rest")
+    }
+    do {
+        let bound0 = try #require(BoundedText<CodecDeclaredBoundsGated.NameBound>(""))
+        let bound1 = try #require(BoundedBytes<CodecDeclaredBoundsGated.RestBound>([]))
+        let value = CodecDeclaredBoundsGated(flags: 1, name: bound0, rest: bound1)
+        var sink = BytesSink()
+        try CodecDeclaredBoundsGated.encodeSource(value, into: &sink)
+        let expected: [UInt8] = [1, 0]
+        #expect(sink.bytes == expected, "codec_declared_bounds_gated source 2: an empty name is still present")
+        var cursor = SceCursor(sink.bytes)
+        let decoded = try CodecDeclaredBoundsGated.decode(&cursor)
+        #expect(cursor.remaining == 0, "codec_declared_bounds_gated source 2: the decode left bytes of the frame unread")
+        #expect(decoded.flags == value.flags, "codec_declared_bounds_gated source 0: the decode presents another flags")
+        #expect(decoded.name == value.name, "codec_declared_bounds_gated source 1: the decode presents another name")
+        #expect(decoded.rest == value.rest, "codec_declared_bounds_gated source 2: the decode presents another rest")
+    }
+    do {
+        let bound0 = try #require(BoundedBytes<CodecDeclaredBoundsGated.RestBound>([9]))
+        let value = CodecDeclaredBoundsGated(flags: 254, name: nil, rest: bound0)
+        var sink = BytesSink()
+        try CodecDeclaredBoundsGated.encodeSource(value, into: &sink)
+        let expected: [UInt8] = [254, 9]
+        #expect(sink.bytes == expected, "codec_declared_bounds_gated source 3: the bits the value presents are kept")
+        var cursor = SceCursor(sink.bytes)
+        let decoded = try CodecDeclaredBoundsGated.decode(&cursor)
+        #expect(cursor.remaining == 0, "codec_declared_bounds_gated source 3: the decode left bytes of the frame unread")
+        #expect(decoded.flags == value.flags, "codec_declared_bounds_gated source 0: the decode presents another flags")
+        #expect(decoded.name == value.name, "codec_declared_bounds_gated source 1: the decode presents another name")
+        #expect(decoded.rest == value.rest, "codec_declared_bounds_gated source 2: the decode presents another rest")
+    }
+
+
+    do {
         var rejectCursor = SceCursor([1, 4, 97, 98, 99, 100])
         #expect(throws: CodecError.lengthOutOfRange, "codec_declared_bounds_gated reject 0: G is set and the name length is 4, one past the max-size of 3, with all 4 name bytes present") {
             try CodecDeclaredBoundsGated.decode(&rejectCursor)
@@ -5340,6 +6104,32 @@ private func expectClose(_ actual: Double, _ expected: Double, _ label: String) 
     _ = CodecDeclaredBoundsToEnd.frameLength
 
     do {
+        let bound0 = try #require(BoundedList<CodecRepeatElem, CodecDeclaredBoundsToEnd.ItemsBound>([]))
+        let value = CodecDeclaredBoundsToEnd(items: bound0)
+        var sink = BytesSink()
+        try CodecDeclaredBoundsToEnd.encodeSource(value, into: &sink)
+        let expected: [UInt8] = []
+        #expect(sink.bytes == expected, "codec_declared_bounds_to_end source 0: no entry")
+        var cursor = SceCursor(sink.bytes)
+        let decoded = try CodecDeclaredBoundsToEnd.decode(&cursor)
+        #expect(cursor.remaining == 0, "codec_declared_bounds_to_end source 0: the decode left bytes of the frame unread")
+        #expect(decoded.items == value.items, "codec_declared_bounds_to_end source 0: the decode presents another items")
+    }
+    do {
+        let bound0 = try #require(BoundedList<CodecRepeatElem, CodecDeclaredBoundsToEnd.ItemsBound>([CodecRepeatElem(seq: 1), CodecRepeatElem(seq: 2)]))
+        let value = CodecDeclaredBoundsToEnd(items: bound0)
+        var sink = BytesSink()
+        try CodecDeclaredBoundsToEnd.encodeSource(value, into: &sink)
+        let expected: [UInt8] = [0, 1, 0, 2]
+        #expect(sink.bytes == expected, "codec_declared_bounds_to_end source 1: a list read to the end, at its bound")
+        var cursor = SceCursor(sink.bytes)
+        let decoded = try CodecDeclaredBoundsToEnd.decode(&cursor)
+        #expect(cursor.remaining == 0, "codec_declared_bounds_to_end source 1: the decode left bytes of the frame unread")
+        #expect(decoded.items == value.items, "codec_declared_bounds_to_end source 0: the decode presents another items")
+    }
+
+
+    do {
         var rejectCursor = SceCursor([0, 1, 0, 2, 0, 3])
         #expect(throws: CodecError.tooManyElements, "codec_declared_bounds_to_end reject 0: the frame holds 3 entries, one past the max-count of 2") {
             try CodecDeclaredBoundsToEnd.decode(&rejectCursor)
@@ -5362,6 +6152,32 @@ private func expectClose(_ actual: Double, _ expected: Double, _ label: String) 
     // Compile-only probe: the oracle holds no case this fixture's field shape can express.
     _ = CodecOriginLeaf.frameLength
 
+    do {
+        let bound0 = try #require(BoundedBytes<CodecOriginLeaf.DataBound>([]))
+        let value = CodecOriginLeaf(data: bound0)
+        var sink = BytesSink()
+        try CodecOriginLeaf.encodeSource(value, into: &sink)
+        let expected: [UInt8] = [0]
+        #expect(sink.bytes == expected, "codec_origin_leaf source 0: empty: its length is zero")
+        var cursor = SceCursor(sink.bytes)
+        let decoded = try CodecOriginLeaf.decode(&cursor)
+        #expect(cursor.remaining == 0, "codec_origin_leaf source 0: the decode left bytes of the frame unread")
+        #expect(decoded.data == value.data, "codec_origin_leaf source 0: the decode presents another data")
+    }
+    do {
+        let bound0 = try #require(BoundedBytes<CodecOriginLeaf.DataBound>([0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15]))
+        let value = CodecOriginLeaf(data: bound0)
+        var sink = BytesSink()
+        try CodecOriginLeaf.encodeSource(value, into: &sink)
+        let expected: [UInt8] = [16, 0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15]
+        #expect(sink.bytes == expected, "codec_origin_leaf source 1: at its bound")
+        var cursor = SceCursor(sink.bytes)
+        let decoded = try CodecOriginLeaf.decode(&cursor)
+        #expect(cursor.remaining == 0, "codec_origin_leaf source 1: the decode left bytes of the frame unread")
+        #expect(decoded.data == value.data, "codec_origin_leaf source 0: the decode presents another data")
+    }
+
+
 }
 
 // MARK: - codec: codec_origin_scalar
@@ -5370,6 +6186,30 @@ private func expectClose(_ actual: Double, _ expected: Double, _ label: String) 
 
     // Compile-only probe: the oracle holds no case this fixture's field shape can express.
     _ = CodecOriginScalar.frameLength
+
+    do {
+        let value = CodecOriginScalar(value: 0)
+        var sink = BytesSink()
+        try CodecOriginScalar.encodeSource(value, into: &sink)
+        let expected: [UInt8] = [0]
+        #expect(sink.bytes == expected, "codec_origin_scalar source 0: zero")
+        var cursor = SceCursor(sink.bytes)
+        let decoded = try CodecOriginScalar.decode(&cursor)
+        #expect(cursor.remaining == 0, "codec_origin_scalar source 0: the decode left bytes of the frame unread")
+        #expect(decoded.value == value.value, "codec_origin_scalar source 0: the decode presents another value")
+    }
+    do {
+        let value = CodecOriginScalar(value: 255)
+        var sink = BytesSink()
+        try CodecOriginScalar.encodeSource(value, into: &sink)
+        let expected: [UInt8] = [255]
+        #expect(sink.bytes == expected, "codec_origin_scalar source 1: at its largest")
+        var cursor = SceCursor(sink.bytes)
+        let decoded = try CodecOriginScalar.decode(&cursor)
+        #expect(cursor.remaining == 0, "codec_origin_scalar source 1: the decode left bytes of the frame unread")
+        #expect(decoded.value == value.value, "codec_origin_scalar source 0: the decode presents another value")
+    }
+
 
 }
 
@@ -5380,6 +6220,67 @@ private func expectClose(_ actual: Double, _ expected: Double, _ label: String) 
     // Compile-only probe: the oracle holds no case this fixture's field shape can express.
     _ = CodecOriginEnvelope.frameLength
 
+    do {
+        let bound0 = try #require(BoundedText<CodecOriginEnvelope.NoteBound>(""))
+        let bound1 = try #require(BoundedBytes<CodecOriginLeaf.DataBound>([]))
+        let bound2 = try #require(BoundedList<CodecOriginLeaf, CodecOriginEnvelope.ItemsBound>([]))
+        let value = CodecOriginEnvelope(hdr: 0, note: bound0, required: CodecOriginLeaf(data: bound1), optional: nil, items: bound2)
+        var sink = BytesSink()
+        try CodecOriginEnvelope.encodeSource(value, into: &sink)
+        let expected: [UInt8] = [0, 0, 0, 0]
+        #expect(sink.bytes == expected, "codec_origin_envelope source 0: no optional body and no item")
+        var cursor = SceCursor(sink.bytes)
+        let decoded = try CodecOriginEnvelope.decode(&cursor)
+        #expect(cursor.remaining == 0, "codec_origin_envelope source 0: the decode left bytes of the frame unread")
+        #expect(decoded.hdr == value.hdr, "codec_origin_envelope source 0: the decode presents another hdr")
+        #expect(decoded.note == value.note, "codec_origin_envelope source 1: the decode presents another note")
+        #expect(decoded.required == value.required, "codec_origin_envelope source 2: the decode presents another required")
+        #expect(decoded.optional == value.optional, "codec_origin_envelope source 3: the decode presents another optional")
+        #expect(decoded.items == value.items, "codec_origin_envelope source 4: the decode presents another items")
+    }
+    do {
+        let bound0 = try #require(BoundedText<CodecOriginEnvelope.NoteBound>("hi"))
+        let bound1 = try #require(BoundedBytes<CodecOriginLeaf.DataBound>([1]))
+        let bound2 = try #require(BoundedBytes<CodecOriginLeaf.DataBound>([2, 3]))
+        let bound3 = try #require(BoundedBytes<CodecOriginLeaf.DataBound>([]))
+        let bound4 = try #require(BoundedBytes<CodecOriginLeaf.DataBound>([4]))
+        let bound5 = try #require(BoundedBytes<CodecOriginLeaf.DataBound>([5, 6]))
+        let bound6 = try #require(BoundedList<CodecOriginLeaf, CodecOriginEnvelope.ItemsBound>([CodecOriginLeaf(data: bound3), CodecOriginLeaf(data: bound4), CodecOriginLeaf(data: bound5)]))
+        let value = CodecOriginEnvelope(hdr: 1, note: bound0, required: CodecOriginLeaf(data: bound1), optional: CodecOriginLeaf(data: bound2), items: bound6)
+        var sink = BytesSink()
+        try CodecOriginEnvelope.encodeSource(value, into: &sink)
+        let expected: [UInt8] = [1, 2, 104, 105, 3, 1, 1, 2, 2, 3, 0, 1, 4, 2, 5, 6]
+        #expect(sink.bytes == expected, "codec_origin_envelope source 1: has_opt derived from the optional body; the count from the items, at its bound")
+        var cursor = SceCursor(sink.bytes)
+        let decoded = try CodecOriginEnvelope.decode(&cursor)
+        #expect(cursor.remaining == 0, "codec_origin_envelope source 1: the decode left bytes of the frame unread")
+        #expect(decoded.hdr == value.hdr, "codec_origin_envelope source 0: the decode presents another hdr")
+        #expect(decoded.note == value.note, "codec_origin_envelope source 1: the decode presents another note")
+        #expect(decoded.required == value.required, "codec_origin_envelope source 2: the decode presents another required")
+        #expect(decoded.optional == value.optional, "codec_origin_envelope source 3: the decode presents another optional")
+        #expect(decoded.items == value.items, "codec_origin_envelope source 4: the decode presents another items")
+    }
+    do {
+        let bound0 = try #require(BoundedText<CodecOriginEnvelope.NoteBound>("x"))
+        let bound1 = try #require(BoundedBytes<CodecOriginLeaf.DataBound>([]))
+        let bound2 = try #require(BoundedBytes<CodecOriginLeaf.DataBound>([7]))
+        let bound3 = try #require(BoundedList<CodecOriginLeaf, CodecOriginEnvelope.ItemsBound>([CodecOriginLeaf(data: bound2)]))
+        let value = CodecOriginEnvelope(hdr: 254, note: bound0, required: CodecOriginLeaf(data: bound1), optional: nil, items: bound3)
+        var sink = BytesSink()
+        try CodecOriginEnvelope.encodeSource(value, into: &sink)
+        let expected: [UInt8] = [254, 1, 120, 1, 0, 1, 7]
+        #expect(sink.bytes == expected, "codec_origin_envelope source 2: the bits the value presents are kept beside the derived one")
+        var cursor = SceCursor(sink.bytes)
+        let decoded = try CodecOriginEnvelope.decode(&cursor)
+        #expect(cursor.remaining == 0, "codec_origin_envelope source 2: the decode left bytes of the frame unread")
+        #expect(decoded.hdr == value.hdr, "codec_origin_envelope source 0: the decode presents another hdr")
+        #expect(decoded.note == value.note, "codec_origin_envelope source 1: the decode presents another note")
+        #expect(decoded.required == value.required, "codec_origin_envelope source 2: the decode presents another required")
+        #expect(decoded.optional == value.optional, "codec_origin_envelope source 3: the decode presents another optional")
+        #expect(decoded.items == value.items, "codec_origin_envelope source 4: the decode presents another items")
+    }
+
+
 }
 
 // MARK: - codec: codec_origin_choice
@@ -5388,6 +6289,43 @@ private func expectClose(_ actual: Double, _ expected: Double, _ label: String) 
 
     // Compile-only probe: the oracle holds no case this fixture's field shape can express.
     _ = CodecOriginChoice.frameLength
+
+    do {
+        let bound0 = try #require(BoundedBytes<CodecOriginLeaf.DataBound>([1, 2]))
+        let value = CodecOriginChoice(body: .codecOriginLeaf(CodecOriginLeaf(data: bound0)))
+        var sink = BytesSink()
+        try CodecOriginChoice.encodeSource(value, into: &sink)
+        let expected: [UInt8] = [1, 2, 1, 2]
+        #expect(sink.bytes == expected, "codec_origin_choice source 0: the leaf arm")
+        var cursor = SceCursor(sink.bytes)
+        let decoded = try CodecOriginChoice.decode(&cursor)
+        #expect(cursor.remaining == 0, "codec_origin_choice source 0: the decode left bytes of the frame unread")
+        #expect(decoded.body == value.body, "codec_origin_choice source 0: the decode presents another body")
+    }
+    do {
+        let value = CodecOriginChoice(body: .codecOriginScalar(CodecOriginScalar(value: 171)))
+        var sink = BytesSink()
+        try CodecOriginChoice.encodeSource(value, into: &sink)
+        let expected: [UInt8] = [2, 171]
+        #expect(sink.bytes == expected, "codec_origin_choice source 1: the scalar arm")
+        var cursor = SceCursor(sink.bytes)
+        let decoded = try CodecOriginChoice.decode(&cursor)
+        #expect(cursor.remaining == 0, "codec_origin_choice source 1: the decode left bytes of the frame unread")
+        #expect(decoded.body == value.body, "codec_origin_choice source 0: the decode presents another body")
+    }
+    do {
+        let bound0 = try #require(CodecOriginChoiceUnknownTag(0x0))
+        let value = CodecOriginChoice(body: .default(tag: bound0, body: CodecOriginScalar(value: 1)))
+        var sink = BytesSink()
+        try CodecOriginChoice.encodeSource(value, into: &sink)
+        let expected: [UInt8] = [0, 1]
+        #expect(sink.bytes == expected, "codec_origin_choice source 2: tag zero, which no arm names")
+        var cursor = SceCursor(sink.bytes)
+        let decoded = try CodecOriginChoice.decode(&cursor)
+        #expect(cursor.remaining == 0, "codec_origin_choice source 2: the decode left bytes of the frame unread")
+        #expect(decoded.body == value.body, "codec_origin_choice source 0: the decode presents another body")
+    }
+
 
 }
 
@@ -5398,6 +6336,34 @@ private func expectClose(_ actual: Double, _ expected: Double, _ label: String) 
     // Compile-only probe: the oracle holds no case this fixture's field shape can express.
     _ = CodecChainHasSlice.frameLength
 
+    do {
+        let bound0 = try #require(BoundedBytes<CodecChainHasSlice.BytesBound>([]))
+        let value = CodecChainHasSlice(kind: 0, bytes: bound0)
+        var sink = BytesSink()
+        try CodecChainHasSlice.encodeSource(value, into: &sink)
+        let expected: [UInt8] = [0, 0]
+        #expect(sink.bytes == expected, "codec_chain_has_slice source 0: a one-byte kind and no bytes")
+        var cursor = SceCursor(sink.bytes)
+        let decoded = try CodecChainHasSlice.decode(&cursor)
+        #expect(cursor.remaining == 0, "codec_chain_has_slice source 0: the decode left bytes of the frame unread")
+        #expect(decoded.kind == value.kind, "codec_chain_has_slice source 0: the decode presents another kind")
+        #expect(decoded.bytes == value.bytes, "codec_chain_has_slice source 1: the decode presents another bytes")
+    }
+    do {
+        let bound0 = try #require(BoundedBytes<CodecChainHasSlice.BytesBound>([0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21, 22, 23, 24, 25, 26, 27, 28, 29, 30, 31, 32, 33, 34, 35, 36, 37, 38, 39, 40, 41, 42, 43, 44, 45, 46, 47, 48, 49, 50, 51, 52, 53, 54, 55, 56, 57, 58, 59, 60, 61, 62, 63, 64, 65, 66, 67, 68, 69, 70, 71, 72, 73, 74, 75, 76, 77, 78, 79, 80, 81, 82, 83, 84, 85, 86, 87, 88, 89, 90, 91, 92, 93, 94, 95, 96, 97, 98, 99, 100, 101, 102, 103, 104, 105, 106, 107, 108, 109, 110, 111, 112, 113, 114, 115, 116, 117, 118, 119, 120, 121, 122, 123, 124, 125, 126, 127]))
+        let value = CodecChainHasSlice(kind: 65535, bytes: bound0)
+        var sink = BytesSink()
+        try CodecChainHasSlice.encodeSource(value, into: &sink)
+        let expected: [UInt8] = [255, 255, 3, 128, 1, 0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21, 22, 23, 24, 25, 26, 27, 28, 29, 30, 31, 32, 33, 34, 35, 36, 37, 38, 39, 40, 41, 42, 43, 44, 45, 46, 47, 48, 49, 50, 51, 52, 53, 54, 55, 56, 57, 58, 59, 60, 61, 62, 63, 64, 65, 66, 67, 68, 69, 70, 71, 72, 73, 74, 75, 76, 77, 78, 79, 80, 81, 82, 83, 84, 85, 86, 87, 88, 89, 90, 91, 92, 93, 94, 95, 96, 97, 98, 99, 100, 101, 102, 103, 104, 105, 106, 107, 108, 109, 110, 111, 112, 113, 114, 115, 116, 117, 118, 119, 120, 121, 122, 123, 124, 125, 126, 127]
+        #expect(sink.bytes == expected, "codec_chain_has_slice source 1: a three-byte kind; 128 bytes take a two-byte VLE length")
+        var cursor = SceCursor(sink.bytes)
+        let decoded = try CodecChainHasSlice.decode(&cursor)
+        #expect(cursor.remaining == 0, "codec_chain_has_slice source 1: the decode left bytes of the frame unread")
+        #expect(decoded.kind == value.kind, "codec_chain_has_slice source 0: the decode presents another kind")
+        #expect(decoded.bytes == value.bytes, "codec_chain_has_slice source 1: the decode presents another bytes")
+    }
+
+
 }
 
 // MARK: - codec: codec_chain_has_envelope
@@ -5406,6 +6372,69 @@ private func expectClose(_ actual: Double, _ expected: Double, _ label: String) 
 
     // Compile-only probe: the oracle holds no case this fixture's field shape can express.
     _ = CodecChainHasEnvelope.frameLength
+
+    do {
+        let bound0 = try #require(BoundedBytes<CodecZenohExtZbuf.ValueBound>([1, 2]))
+        let bound1 = try #require(BoundedList<CodecZenohExtEntry, CodecChainHasEnvelope.ExtensionsBound>([CodecZenohExtEntry(header: 66, body: .codecZenohExtZbuf(CodecZenohExtZbuf(value: bound0)))]))
+        let bound2 = try #require(SceChain<CodecZenohExtEntry, CodecChainHasEnvelope.ExtensionsBound, SceKindsOf<CodecChainHasEnvelope.ExtensionsKind2<CodecZenohExtEntry>, SceNoKinds<CodecZenohExtEntry>>, SceNoKinds<CodecZenohExtEntry>>(bound1))
+        let bound3 = try #require(BoundedBytes<CodecChainHasSlice.BytesBound>([7]))
+        let bound4 = try #require(BoundedList<CodecChainHasSlice, CodecChainHasEnvelope.SlicesBound>([CodecChainHasSlice(kind: 4, bytes: bound3)]))
+        let value = CodecChainHasEnvelope(header: 128, extensions_has_0x2: CodecChainHasEnvelopeExtensionsHas0x2.has0x2(extensions: bound2, slices: bound4))
+        var sink = BytesSink()
+        try CodecChainHasEnvelope.encodeSource(value, into: &sink)
+        let expected: [UInt8] = [128, 66, 2, 1, 2, 1, 4, 1, 7]
+        #expect(sink.bytes == expected, "codec_chain_has_envelope source 0: an entry of kind 2: the slices, counted; E set by the chain")
+        var cursor = SceCursor(sink.bytes)
+        let decoded = try CodecChainHasEnvelope.decode(&cursor)
+        #expect(cursor.remaining == 0, "codec_chain_has_envelope source 0: the decode left bytes of the frame unread")
+        #expect(decoded.header == value.header, "codec_chain_has_envelope source 0: the decode presents another header")
+        #expect(decoded.extensions_has_0x2 == value.extensions_has_0x2, "codec_chain_has_envelope source 1: the decode presents another extensions.has(0x2)")
+    }
+    do {
+        let bound0 = try #require(BoundedBytes<CodecZenohExtZbuf.ValueBound>([]))
+        let bound1 = try #require(BoundedList<CodecZenohExtEntry, CodecChainHasEnvelope.ExtensionsBound>([CodecZenohExtEntry(header: 129, body: .codecZenohExtUnit(CodecZenohExtUnit())), CodecZenohExtEntry(header: 66, body: .codecZenohExtZbuf(CodecZenohExtZbuf(value: bound0)))]))
+        let bound2 = try #require(SceChain<CodecZenohExtEntry, CodecChainHasEnvelope.ExtensionsBound, SceKindsOf<CodecChainHasEnvelope.ExtensionsKind2<CodecZenohExtEntry>, SceNoKinds<CodecZenohExtEntry>>, SceNoKinds<CodecZenohExtEntry>>(bound1))
+        let bound3 = try #require(BoundedList<CodecChainHasSlice, CodecChainHasEnvelope.SlicesBound>([]))
+        let value = CodecChainHasEnvelope(header: 128, extensions_has_0x2: CodecChainHasEnvelopeExtensionsHas0x2.has0x2(extensions: bound2, slices: bound3))
+        var sink = BytesSink()
+        try CodecChainHasEnvelope.encodeSource(value, into: &sink)
+        let expected: [UInt8] = [128, 129, 66, 0, 0]
+        #expect(sink.bytes == expected, "codec_chain_has_envelope source 1: kind 2 second in the chain, no slice")
+        var cursor = SceCursor(sink.bytes)
+        let decoded = try CodecChainHasEnvelope.decode(&cursor)
+        #expect(cursor.remaining == 0, "codec_chain_has_envelope source 1: the decode left bytes of the frame unread")
+        #expect(decoded.header == value.header, "codec_chain_has_envelope source 0: the decode presents another header")
+        #expect(decoded.extensions_has_0x2 == value.extensions_has_0x2, "codec_chain_has_envelope source 1: the decode presents another extensions.has(0x2)")
+    }
+    do {
+        let bound0 = try #require(BoundedBytes<CodecChainHasEnvelope.PayloadBound>([9]))
+        let value = CodecChainHasEnvelope(header: 0, extensions_has_0x2: CodecChainHasEnvelopeExtensionsHas0x2.notHas0x2(extensions: nil, payload: bound0))
+        var sink = BytesSink()
+        try CodecChainHasEnvelope.encodeSource(value, into: &sink)
+        let expected: [UInt8] = [0, 1, 9]
+        #expect(sink.bytes == expected, "codec_chain_has_envelope source 2: no chain: E clear, the payload and its length")
+        var cursor = SceCursor(sink.bytes)
+        let decoded = try CodecChainHasEnvelope.decode(&cursor)
+        #expect(cursor.remaining == 0, "codec_chain_has_envelope source 2: the decode left bytes of the frame unread")
+        #expect(decoded.header == value.header, "codec_chain_has_envelope source 0: the decode presents another header")
+        #expect(decoded.extensions_has_0x2 == value.extensions_has_0x2, "codec_chain_has_envelope source 1: the decode presents another extensions.has(0x2)")
+    }
+    do {
+        let bound0 = try #require(BoundedList<CodecZenohExtEntry, CodecChainHasEnvelope.ExtensionsBound>([CodecZenohExtEntry(header: 1, body: .codecZenohExtUnit(CodecZenohExtUnit()))]))
+        let bound1 = try #require(SceChain<CodecZenohExtEntry, CodecChainHasEnvelope.ExtensionsBound, SceNoKinds<CodecZenohExtEntry>, SceKindsOf<CodecChainHasEnvelope.ExtensionsKind2<CodecZenohExtEntry>, SceNoKinds<CodecZenohExtEntry>>>(bound0))
+        let bound2 = try #require(BoundedBytes<CodecChainHasEnvelope.PayloadBound>([]))
+        let value = CodecChainHasEnvelope(header: 128, extensions_has_0x2: CodecChainHasEnvelopeExtensionsHas0x2.notHas0x2(extensions: bound1, payload: bound2))
+        var sink = BytesSink()
+        try CodecChainHasEnvelope.encodeSource(value, into: &sink)
+        let expected: [UInt8] = [128, 1, 0]
+        #expect(sink.bytes == expected, "codec_chain_has_envelope source 3: a chain with no entry of kind 2: the payload")
+        var cursor = SceCursor(sink.bytes)
+        let decoded = try CodecChainHasEnvelope.decode(&cursor)
+        #expect(cursor.remaining == 0, "codec_chain_has_envelope source 3: the decode left bytes of the frame unread")
+        #expect(decoded.header == value.header, "codec_chain_has_envelope source 0: the decode presents another header")
+        #expect(decoded.extensions_has_0x2 == value.extensions_has_0x2, "codec_chain_has_envelope source 1: the decode presents another extensions.has(0x2)")
+    }
+
 
 }
 
@@ -5416,6 +6445,34 @@ private func expectClose(_ actual: Double, _ expected: Double, _ label: String) 
     // Compile-only probe: the oracle holds no case this fixture's field shape can express.
     _ = CodecChainHasMarkerSlice.frameLength
 
+    do {
+        let bound0 = try #require(BoundedBytes<CodecChainHasMarkerSlice.DataBound>([1, 2, 3]))
+        let value = CodecChainHasMarkerSlice(kind: 4, data: bound0)
+        var sink = BytesSink()
+        try CodecChainHasMarkerSlice.encodeSource(value, into: &sink)
+        let expected: [UInt8] = [4, 3, 1, 2, 3]
+        #expect(sink.bytes == expected, "codec_chain_has_marker_slice source 0: the size is derived from the data")
+        var cursor = SceCursor(sink.bytes)
+        let decoded = try CodecChainHasMarkerSlice.decode(&cursor)
+        #expect(cursor.remaining == 0, "codec_chain_has_marker_slice source 0: the decode left bytes of the frame unread")
+        #expect(decoded.kind == value.kind, "codec_chain_has_marker_slice source 0: the decode presents another kind")
+        #expect(decoded.data == value.data, "codec_chain_has_marker_slice source 1: the decode presents another data")
+    }
+    do {
+        let bound0 = try #require(BoundedBytes<CodecChainHasMarkerSlice.DataBound>([]))
+        let value = CodecChainHasMarkerSlice(kind: 128, data: bound0)
+        var sink = BytesSink()
+        try CodecChainHasMarkerSlice.encodeSource(value, into: &sink)
+        let expected: [UInt8] = [128, 1, 0]
+        #expect(sink.bytes == expected, "codec_chain_has_marker_slice source 1: a two-byte kind and no data")
+        var cursor = SceCursor(sink.bytes)
+        let decoded = try CodecChainHasMarkerSlice.decode(&cursor)
+        #expect(cursor.remaining == 0, "codec_chain_has_marker_slice source 1: the decode left bytes of the frame unread")
+        #expect(decoded.kind == value.kind, "codec_chain_has_marker_slice source 0: the decode presents another kind")
+        #expect(decoded.data == value.data, "codec_chain_has_marker_slice source 1: the decode presents another data")
+    }
+
+
 }
 
 // MARK: - codec: codec_chain_has_marker
@@ -5424,6 +6481,64 @@ private func expectClose(_ actual: Double, _ expected: Double, _ label: String) 
 
     // Compile-only probe: the oracle holds no case this fixture's field shape can express.
     _ = CodecChainHasMarker.frameLength
+
+    do {
+        let bound0 = try #require(ScePlaced<CodecZenohExtEntry, CodecChainHasMarker.ExtensionsBound, CodecChainHasMarker.ExtensionsKind12<CodecZenohExtEntry>>(rest: [], place: 0))
+        let bound1 = try #require(BoundedBytes<CodecChainHasMarkerSlice.DataBound>([1]))
+        let bound2 = try #require(BoundedList<CodecChainHasMarkerSlice, CodecChainHasMarker.SlicesBound>([CodecChainHasMarkerSlice(kind: 4, data: bound1)]))
+        let value = CodecChainHasMarker(header: 128, extensions_has_0x12: CodecChainHasMarkerExtensionsHas0x12.has0x12(extensions: bound0, slices: bound2))
+        var sink = BytesSink()
+        try CodecChainHasMarker.encodeSource(value, into: &sink)
+        let expected: [UInt8] = [128, 18, 1, 4, 1, 1]
+        #expect(sink.bytes == expected, "codec_chain_has_marker source 0: the marker alone: derived from its kind, its Z clear as the last")
+        var cursor = SceCursor(sink.bytes)
+        let decoded = try CodecChainHasMarker.decode(&cursor)
+        #expect(cursor.remaining == 0, "codec_chain_has_marker source 0: the decode left bytes of the frame unread")
+        #expect(decoded.header == value.header, "codec_chain_has_marker source 0: the decode presents another header")
+        #expect(decoded.extensions_has_0x12 == value.extensions_has_0x12, "codec_chain_has_marker source 1: the decode presents another extensions.has(0x12)")
+    }
+    do {
+        let bound0 = try #require(ScePlaced<CodecZenohExtEntry, CodecChainHasMarker.ExtensionsBound, CodecChainHasMarker.ExtensionsKind12<CodecZenohExtEntry>>(rest: [CodecZenohExtEntry(header: 161, body: .codecZenohExtZint(CodecZenohExtZint(value: 5)))], place: 1))
+        let bound1 = try #require(BoundedList<CodecChainHasMarkerSlice, CodecChainHasMarker.SlicesBound>([]))
+        let value = CodecChainHasMarker(header: 128, extensions_has_0x12: CodecChainHasMarkerExtensionsHas0x12.has0x12(extensions: bound0, slices: bound1))
+        var sink = BytesSink()
+        try CodecChainHasMarker.encodeSource(value, into: &sink)
+        let expected: [UInt8] = [128, 161, 5, 18, 0]
+        #expect(sink.bytes == expected, "codec_chain_has_marker source 1: the marker second, after a zint")
+        var cursor = SceCursor(sink.bytes)
+        let decoded = try CodecChainHasMarker.decode(&cursor)
+        #expect(cursor.remaining == 0, "codec_chain_has_marker source 1: the decode left bytes of the frame unread")
+        #expect(decoded.header == value.header, "codec_chain_has_marker source 0: the decode presents another header")
+        #expect(decoded.extensions_has_0x12 == value.extensions_has_0x12, "codec_chain_has_marker source 1: the decode presents another extensions.has(0x12)")
+    }
+    do {
+        let bound0 = try #require(ScePlaced<CodecZenohExtEntry, CodecChainHasMarker.ExtensionsBound, CodecChainHasMarker.ExtensionsKind12<CodecZenohExtEntry>>(rest: [CodecZenohExtEntry(header: 3, body: .codecZenohExtUnit(CodecZenohExtUnit()))], place: 0))
+        let bound1 = try #require(BoundedList<CodecChainHasMarkerSlice, CodecChainHasMarker.SlicesBound>([]))
+        let value = CodecChainHasMarker(header: 128, extensions_has_0x12: CodecChainHasMarkerExtensionsHas0x12.has0x12(extensions: bound0, slices: bound1))
+        var sink = BytesSink()
+        try CodecChainHasMarker.encodeSource(value, into: &sink)
+        let expected: [UInt8] = [128, 146, 3, 0]
+        #expect(sink.bytes == expected, "codec_chain_has_marker source 2: the marker first: the chain sets its Z, another entry following")
+        var cursor = SceCursor(sink.bytes)
+        let decoded = try CodecChainHasMarker.decode(&cursor)
+        #expect(cursor.remaining == 0, "codec_chain_has_marker source 2: the decode left bytes of the frame unread")
+        #expect(decoded.header == value.header, "codec_chain_has_marker source 0: the decode presents another header")
+        #expect(decoded.extensions_has_0x12 == value.extensions_has_0x12, "codec_chain_has_marker source 1: the decode presents another extensions.has(0x12)")
+    }
+    do {
+        let bound0 = try #require(BoundedBytes<CodecChainHasMarker.PayloadBound>([1, 2]))
+        let value = CodecChainHasMarker(header: 0, extensions_has_0x12: CodecChainHasMarkerExtensionsHas0x12.notHas0x12(extensions: nil, payload: bound0))
+        var sink = BytesSink()
+        try CodecChainHasMarker.encodeSource(value, into: &sink)
+        let expected: [UInt8] = [0, 2, 1, 2]
+        #expect(sink.bytes == expected, "codec_chain_has_marker source 3: no chain: the payload")
+        var cursor = SceCursor(sink.bytes)
+        let decoded = try CodecChainHasMarker.decode(&cursor)
+        #expect(cursor.remaining == 0, "codec_chain_has_marker source 3: the decode left bytes of the frame unread")
+        #expect(decoded.header == value.header, "codec_chain_has_marker source 0: the decode presents another header")
+        #expect(decoded.extensions_has_0x12 == value.extensions_has_0x12, "codec_chain_has_marker source 1: the decode presents another extensions.has(0x12)")
+    }
+
 
 }
 
@@ -5434,6 +6549,34 @@ private func expectClose(_ actual: Double, _ expected: Double, _ label: String) 
     // Compile-only probe: the oracle holds no case this fixture's field shape can express.
     _ = CodecChainHasTaggedEntry.frameLength
 
+    do {
+        let value = CodecChainHasTaggedEntry(entry_type: 1, ctl: 0, body: 7)
+        var sink = BytesSink()
+        try CodecChainHasTaggedEntry.encodeSource(value, into: &sink)
+        let expected: [UInt8] = [1, 0, 7]
+        #expect(sink.bytes == expected, "codec_chain_has_tagged_entry source 0: more clear")
+        var cursor = SceCursor(sink.bytes)
+        let decoded = try CodecChainHasTaggedEntry.decode(&cursor)
+        #expect(cursor.remaining == 0, "codec_chain_has_tagged_entry source 0: the decode left bytes of the frame unread")
+        #expect(decoded.entry_type == value.entry_type, "codec_chain_has_tagged_entry source 0: the decode presents another entry_type")
+        #expect(decoded.ctl == value.ctl, "codec_chain_has_tagged_entry source 1: the decode presents another ctl")
+        #expect(decoded.body == value.body, "codec_chain_has_tagged_entry source 2: the decode presents another body")
+    }
+    do {
+        let value = CodecChainHasTaggedEntry(entry_type: 2, ctl: 1, body: 255)
+        var sink = BytesSink()
+        try CodecChainHasTaggedEntry.encodeSource(value, into: &sink)
+        let expected: [UInt8] = [2, 1, 255]
+        #expect(sink.bytes == expected, "codec_chain_has_tagged_entry source 1: more set: presented with the carrier")
+        var cursor = SceCursor(sink.bytes)
+        let decoded = try CodecChainHasTaggedEntry.decode(&cursor)
+        #expect(cursor.remaining == 0, "codec_chain_has_tagged_entry source 1: the decode left bytes of the frame unread")
+        #expect(decoded.entry_type == value.entry_type, "codec_chain_has_tagged_entry source 0: the decode presents another entry_type")
+        #expect(decoded.ctl == value.ctl, "codec_chain_has_tagged_entry source 1: the decode presents another ctl")
+        #expect(decoded.body == value.body, "codec_chain_has_tagged_entry source 2: the decode presents another body")
+    }
+
+
 }
 
 // MARK: - codec: codec_chain_has_tagged
@@ -5442,6 +6585,78 @@ private func expectClose(_ actual: Double, _ expected: Double, _ label: String) 
 
     // Compile-only probe: the oracle holds no case this fixture's field shape can express.
     _ = CodecChainHasTagged.frameLength
+
+    do {
+        let bound0 = try #require(BoundedList<CodecChainHasTaggedEntry, CodecChainHasTagged.EntriesBound>([CodecChainHasTaggedEntry(entry_type: 1, ctl: 0, body: 5)]))
+        let bound1 = try #require(SceChain<CodecChainHasTaggedEntry, CodecChainHasTagged.EntriesBound, SceNoKinds<CodecChainHasTaggedEntry>, SceKindsOf<CodecChainHasTagged.EntriesKind7<CodecChainHasTaggedEntry>, SceKindsOf<CodecChainHasTagged.EntriesKind9<CodecChainHasTaggedEntry>, SceNoKinds<CodecChainHasTaggedEntry>>>>(bound0))
+        let value = CodecChainHasTagged(header: 0, entries_has_0x7_has_0x9_header_wide: CodecChainHasTaggedEntriesHas0x7Has0x9HeaderWide.neither(entries: bound1, checksum: 4660))
+        var sink = BytesSink()
+        try CodecChainHasTagged.encodeSource(value, into: &sink)
+        let expected: [UInt8] = [0, 1, 0, 5, 18, 52]
+        #expect(sink.bytes == expected, "codec_chain_has_tagged source 0: no kind 7 or 9 and not wide: the checksum alone")
+        var cursor = SceCursor(sink.bytes)
+        let decoded = try CodecChainHasTagged.decode(&cursor)
+        #expect(cursor.remaining == 0, "codec_chain_has_tagged source 0: the decode left bytes of the frame unread")
+        #expect(decoded.header == value.header, "codec_chain_has_tagged source 0: the decode presents another header")
+        #expect(decoded.entries_has_0x7_has_0x9_header_wide == value.entries_has_0x7_has_0x9_header_wide, "codec_chain_has_tagged source 1: the decode presents another entries.has(0x7) || entries.has(0x9) || header.wide")
+    }
+    do {
+        let bound0 = try #require(BoundedList<CodecChainHasTaggedEntry, CodecChainHasTagged.EntriesBound>([CodecChainHasTaggedEntry(entry_type: 7, ctl: 1, body: 1), CodecChainHasTaggedEntry(entry_type: 1, ctl: 0, body: 2)]))
+        let bound1 = try #require(SceChain<CodecChainHasTaggedEntry, CodecChainHasTagged.EntriesBound, SceKindsOf<CodecChainHasTagged.EntriesKind7<CodecChainHasTaggedEntry>, SceNoKinds<CodecChainHasTaggedEntry>>, SceKindsOf<CodecChainHasTagged.EntriesKind9<CodecChainHasTaggedEntry>, SceNoKinds<CodecChainHasTaggedEntry>>>(bound0))
+        let value = CodecChainHasTagged(header: 0, entries_has_0x7_has_0x9_header_wide: CodecChainHasTaggedEntriesHas0x7Has0x9HeaderWide.has0x7(entries: bound1, priority: 3, checksum: 43981))
+        var sink = BytesSink()
+        try CodecChainHasTagged.encodeSource(value, into: &sink)
+        let expected: [UInt8] = [0, 7, 1, 1, 1, 0, 2, 3, 171, 205]
+        #expect(sink.bytes == expected, "codec_chain_has_tagged source 1: kind 7: the priority and the checksum")
+        var cursor = SceCursor(sink.bytes)
+        let decoded = try CodecChainHasTagged.decode(&cursor)
+        #expect(cursor.remaining == 0, "codec_chain_has_tagged source 1: the decode left bytes of the frame unread")
+        #expect(decoded.header == value.header, "codec_chain_has_tagged source 0: the decode presents another header")
+        #expect(decoded.entries_has_0x7_has_0x9_header_wide == value.entries_has_0x7_has_0x9_header_wide, "codec_chain_has_tagged source 1: the decode presents another entries.has(0x7) || entries.has(0x9) || header.wide")
+    }
+    do {
+        let bound0 = try #require(BoundedList<CodecChainHasTaggedEntry, CodecChainHasTagged.EntriesBound>([CodecChainHasTaggedEntry(entry_type: 9, ctl: 0, body: 0)]))
+        let bound1 = try #require(SceChain<CodecChainHasTaggedEntry, CodecChainHasTagged.EntriesBound, SceKindsOf<CodecChainHasTagged.EntriesKind9<CodecChainHasTaggedEntry>, SceNoKinds<CodecChainHasTaggedEntry>>, SceKindsOf<CodecChainHasTagged.EntriesKind7<CodecChainHasTaggedEntry>, SceNoKinds<CodecChainHasTaggedEntry>>>(bound0))
+        let value = CodecChainHasTagged(header: 0, entries_has_0x7_has_0x9_header_wide: CodecChainHasTaggedEntriesHas0x7Has0x9HeaderWide.has0x9(entries: bound1))
+        var sink = BytesSink()
+        try CodecChainHasTagged.encodeSource(value, into: &sink)
+        let expected: [UInt8] = [0, 9, 0, 0]
+        #expect(sink.bytes == expected, "codec_chain_has_tagged source 2: kind 9 alone: neither field")
+        var cursor = SceCursor(sink.bytes)
+        let decoded = try CodecChainHasTagged.decode(&cursor)
+        #expect(cursor.remaining == 0, "codec_chain_has_tagged source 2: the decode left bytes of the frame unread")
+        #expect(decoded.header == value.header, "codec_chain_has_tagged source 0: the decode presents another header")
+        #expect(decoded.entries_has_0x7_has_0x9_header_wide == value.entries_has_0x7_has_0x9_header_wide, "codec_chain_has_tagged source 1: the decode presents another entries.has(0x7) || entries.has(0x9) || header.wide")
+    }
+    do {
+        let bound0 = try #require(BoundedList<CodecChainHasTaggedEntry, CodecChainHasTagged.EntriesBound>([CodecChainHasTaggedEntry(entry_type: 2, ctl: 0, body: 0)]))
+        let bound1 = try #require(SceChain<CodecChainHasTaggedEntry, CodecChainHasTagged.EntriesBound, SceNoKinds<CodecChainHasTaggedEntry>, SceKindsOf<CodecChainHasTagged.EntriesKind7<CodecChainHasTaggedEntry>, SceKindsOf<CodecChainHasTagged.EntriesKind9<CodecChainHasTaggedEntry>, SceNoKinds<CodecChainHasTaggedEntry>>>>(bound0))
+        let value = CodecChainHasTagged(header: 1, entries_has_0x7_has_0x9_header_wide: CodecChainHasTaggedEntriesHas0x7Has0x9HeaderWide.wide(entries: bound1, priority: 1, checksum: 2))
+        var sink = BytesSink()
+        try CodecChainHasTagged.encodeSource(value, into: &sink)
+        let expected: [UInt8] = [1, 2, 0, 0, 1, 0, 2]
+        #expect(sink.bytes == expected, "codec_chain_has_tagged source 3: wide alone: the flag derived from the arm")
+        var cursor = SceCursor(sink.bytes)
+        let decoded = try CodecChainHasTagged.decode(&cursor)
+        #expect(cursor.remaining == 0, "codec_chain_has_tagged source 3: the decode left bytes of the frame unread")
+        #expect(decoded.header == value.header, "codec_chain_has_tagged source 0: the decode presents another header")
+        #expect(decoded.entries_has_0x7_has_0x9_header_wide == value.entries_has_0x7_has_0x9_header_wide, "codec_chain_has_tagged source 1: the decode presents another entries.has(0x7) || entries.has(0x9) || header.wide")
+    }
+    do {
+        let bound0 = try #require(BoundedList<CodecChainHasTaggedEntry, CodecChainHasTagged.EntriesBound>([CodecChainHasTaggedEntry(entry_type: 9, ctl: 1, body: 0), CodecChainHasTaggedEntry(entry_type: 7, ctl: 0, body: 0)]))
+        let bound1 = try #require(SceChain<CodecChainHasTaggedEntry, CodecChainHasTagged.EntriesBound, SceKindsOf<CodecChainHasTagged.EntriesKind7<CodecChainHasTaggedEntry>, SceKindsOf<CodecChainHasTagged.EntriesKind9<CodecChainHasTaggedEntry>, SceNoKinds<CodecChainHasTaggedEntry>>>, SceNoKinds<CodecChainHasTaggedEntry>>(bound0))
+        let value = CodecChainHasTagged(header: 1, entries_has_0x7_has_0x9_header_wide: CodecChainHasTaggedEntriesHas0x7Has0x9HeaderWide.has0x7Has0x9Wide(entries: bound1, priority: 4))
+        var sink = BytesSink()
+        try CodecChainHasTagged.encodeSource(value, into: &sink)
+        let expected: [UInt8] = [1, 9, 1, 0, 7, 0, 0, 4]
+        #expect(sink.bytes == expected, "codec_chain_has_tagged source 4: every atom set: the priority, no checksum")
+        var cursor = SceCursor(sink.bytes)
+        let decoded = try CodecChainHasTagged.decode(&cursor)
+        #expect(cursor.remaining == 0, "codec_chain_has_tagged source 4: the decode left bytes of the frame unread")
+        #expect(decoded.header == value.header, "codec_chain_has_tagged source 0: the decode presents another header")
+        #expect(decoded.entries_has_0x7_has_0x9_header_wide == value.entries_has_0x7_has_0x9_header_wide, "codec_chain_has_tagged source 1: the decode presents another entries.has(0x7) || entries.has(0x9) || header.wide")
+    }
+
 
 }
 
@@ -5452,6 +6667,34 @@ private func expectClose(_ actual: Double, _ expected: Double, _ label: String) 
     // Compile-only probe: the oracle holds no case this fixture's field shape can express.
     _ = CodecChainFlagEntry.frameLength
 
+    do {
+        let value = CodecChainFlagEntry(header: 1, wide: CodecChainFlagEntryWide.notWide(short_value: 5))
+        var sink = BytesSink()
+        try CodecChainFlagEntry.encodeSource(value, into: &sink)
+        let expected: [UInt8] = [1, 5]
+        #expect(sink.bytes == expected, "codec_chain_flag_entry source 0: wide clear: one byte")
+        var cursor = SceCursor(sink.bytes)
+        let decoded = try CodecChainFlagEntry.decode(&cursor, wide: 0)
+        #expect(cursor.remaining == 0, "codec_chain_flag_entry source 0: the decode left bytes of the frame unread")
+        #expect(decoded.header == value.header, "codec_chain_flag_entry source 0: the decode presents another header")
+        #expect(decoded.wide == value.wide, "codec_chain_flag_entry source 1: the decode presents another wide")
+        #expect(CodecChainFlagEntry.inputWide(value) == 0, "codec_chain_flag_entry source 2: the decode presents another flag input wide")
+    }
+    do {
+        let value = CodecChainFlagEntry(header: 130, wide: CodecChainFlagEntryWide.wide(long_value: 4660))
+        var sink = BytesSink()
+        try CodecChainFlagEntry.encodeSource(value, into: &sink)
+        let expected: [UInt8] = [130, 18, 52]
+        #expect(sink.bytes == expected, "codec_chain_flag_entry source 1: wide set: two bytes")
+        var cursor = SceCursor(sink.bytes)
+        let decoded = try CodecChainFlagEntry.decode(&cursor, wide: 1)
+        #expect(cursor.remaining == 0, "codec_chain_flag_entry source 1: the decode left bytes of the frame unread")
+        #expect(decoded.header == value.header, "codec_chain_flag_entry source 0: the decode presents another header")
+        #expect(decoded.wide == value.wide, "codec_chain_flag_entry source 1: the decode presents another wide")
+        #expect(CodecChainFlagEntry.inputWide(value) == 1, "codec_chain_flag_entry source 2: the decode presents another flag input wide")
+    }
+
+
 }
 
 // MARK: - codec: codec_chain_flag_carrier
@@ -5460,6 +6703,36 @@ private func expectClose(_ actual: Double, _ expected: Double, _ label: String) 
 
     // Compile-only probe: the oracle holds no case this fixture's field shape can express.
     _ = CodecChainFlagCarrier.frameLength
+
+    do {
+        let bound0 = try #require(BoundedList<CodecChainFlagEntry, CodecChainFlagCarrier.EntriesBound>([CodecChainFlagEntry(header: 129, wide: CodecChainFlagEntryWide.notWide(short_value: 5)), CodecChainFlagEntry(header: 2, wide: CodecChainFlagEntryWide.notWide(short_value: 6))]))
+        let bound1 = try #require(Lawful<BoundedList<CodecChainFlagEntry, CodecChainFlagCarrier.EntriesBound>, CodecChainFlagCarrier.EntriesLaw<CodecChainFlagEntry>>(start: false, list: bound0))
+        let value = CodecChainFlagCarrier(head: 0, entries: bound1)
+        var sink = BytesSink()
+        try CodecChainFlagCarrier.encodeSource(value, into: &sink)
+        let expected: [UInt8] = [0, 129, 5, 2, 6]
+        #expect(sink.bytes == expected, "codec_chain_flag_carrier source 0: the start clear: every entry short, W derived clear")
+        var cursor = SceCursor(sink.bytes)
+        let decoded = try CodecChainFlagCarrier.decode(&cursor)
+        #expect(cursor.remaining == 0, "codec_chain_flag_carrier source 0: the decode left bytes of the frame unread")
+        #expect(decoded.head == value.head, "codec_chain_flag_carrier source 0: the decode presents another head")
+        #expect(decoded.entries == value.entries, "codec_chain_flag_carrier source 1: the decode presents another entries")
+    }
+    do {
+        let bound0 = try #require(BoundedList<CodecChainFlagEntry, CodecChainFlagCarrier.EntriesBound>([CodecChainFlagEntry(header: 3, wide: CodecChainFlagEntryWide.wide(long_value: 4660))]))
+        let bound1 = try #require(Lawful<BoundedList<CodecChainFlagEntry, CodecChainFlagCarrier.EntriesBound>, CodecChainFlagCarrier.EntriesLaw<CodecChainFlagEntry>>(start: true, list: bound0))
+        let value = CodecChainFlagCarrier(head: 1, entries: bound1)
+        var sink = BytesSink()
+        try CodecChainFlagCarrier.encodeSource(value, into: &sink)
+        let expected: [UInt8] = [1, 3, 18, 52]
+        #expect(sink.bytes == expected, "codec_chain_flag_carrier source 1: the start set: the entry long, W derived set")
+        var cursor = SceCursor(sink.bytes)
+        let decoded = try CodecChainFlagCarrier.decode(&cursor)
+        #expect(cursor.remaining == 0, "codec_chain_flag_carrier source 1: the decode left bytes of the frame unread")
+        #expect(decoded.head == value.head, "codec_chain_flag_carrier source 0: the decode presents another head")
+        #expect(decoded.entries == value.entries, "codec_chain_flag_carrier source 1: the decode presents another entries")
+    }
+
 
 }
 
@@ -5470,6 +6743,51 @@ private func expectClose(_ actual: Double, _ expected: Double, _ label: String) 
     // Compile-only probe: the oracle holds no case this fixture's field shape can express.
     _ = CodecChainFlagForward.frameLength
 
+    do {
+        let bound0 = try #require(BoundedList<CodecChainFlagEntry, CodecChainFlagForward.EntriesBound>([CodecChainFlagEntry(header: 1, wide: CodecChainFlagEntryWide.wide(long_value: 258))]))
+        let bound1 = try #require(Lawful<BoundedList<CodecChainFlagEntry, CodecChainFlagForward.EntriesBound>, CodecChainFlagForward.EntriesLaw<CodecChainFlagEntry>>(start: true, list: bound0))
+        let value = CodecChainFlagForward(head: 1, entries: bound1)
+        var sink = BytesSink()
+        try CodecChainFlagForward.encodeSource(value, into: &sink)
+        let expected: [UInt8] = [1, 1, 1, 2]
+        #expect(sink.bytes == expected, "codec_chain_flag_forward source 0: the codec's own input handed on: the start says it")
+        var cursor = SceCursor(sink.bytes)
+        let decoded = try CodecChainFlagForward.decode(&cursor, wide: 1)
+        #expect(cursor.remaining == 0, "codec_chain_flag_forward source 0: the decode left bytes of the frame unread")
+        #expect(decoded.head == value.head, "codec_chain_flag_forward source 0: the decode presents another head")
+        #expect(decoded.entries == value.entries, "codec_chain_flag_forward source 1: the decode presents another entries")
+        #expect((CodecChainFlagForward.inputWide(value).map { $0 == 1 } ?? true), "codec_chain_flag_forward source 2: the decode presents another flag input wide")
+    }
+    do {
+        let bound0 = try #require(BoundedList<CodecChainFlagEntry, CodecChainFlagForward.EntriesBound>([CodecChainFlagEntry(header: 129, wide: CodecChainFlagEntryWide.notWide(short_value: 9)), CodecChainFlagEntry(header: 2, wide: CodecChainFlagEntryWide.notWide(short_value: 8))]))
+        let bound1 = try #require(Lawful<BoundedList<CodecChainFlagEntry, CodecChainFlagForward.EntriesBound>, CodecChainFlagForward.EntriesLaw<CodecChainFlagEntry>>(start: false, list: bound0))
+        let value = CodecChainFlagForward(head: 1, entries: bound1)
+        var sink = BytesSink()
+        try CodecChainFlagForward.encodeSource(value, into: &sink)
+        let expected: [UInt8] = [1, 129, 9, 2, 8]
+        #expect(sink.bytes == expected, "codec_chain_flag_forward source 1: the input clear, two short entries")
+        var cursor = SceCursor(sink.bytes)
+        let decoded = try CodecChainFlagForward.decode(&cursor, wide: 0)
+        #expect(cursor.remaining == 0, "codec_chain_flag_forward source 1: the decode left bytes of the frame unread")
+        #expect(decoded.head == value.head, "codec_chain_flag_forward source 0: the decode presents another head")
+        #expect(decoded.entries == value.entries, "codec_chain_flag_forward source 1: the decode presents another entries")
+        #expect((CodecChainFlagForward.inputWide(value).map { $0 == 0 } ?? true), "codec_chain_flag_forward source 2: the decode presents another flag input wide")
+    }
+    do {
+        let value = CodecChainFlagForward(head: 0, entries: nil)
+        var sink = BytesSink()
+        try CodecChainFlagForward.encodeSource(value, into: &sink)
+        let expected: [UInt8] = [0]
+        #expect(sink.bytes == expected, "codec_chain_flag_forward source 2: no chain: E clear, and the value says nothing of the input")
+        var cursor = SceCursor(sink.bytes)
+        let decoded = try CodecChainFlagForward.decode(&cursor, wide: 1)
+        #expect(cursor.remaining == 0, "codec_chain_flag_forward source 2: the decode left bytes of the frame unread")
+        #expect(decoded.head == value.head, "codec_chain_flag_forward source 0: the decode presents another head")
+        #expect(decoded.entries == value.entries, "codec_chain_flag_forward source 1: the decode presents another entries")
+        #expect((CodecChainFlagForward.inputWide(value).map { $0 == 1 } ?? true), "codec_chain_flag_forward source 2: the decode presents another flag input wide")
+    }
+
+
 }
 
 // MARK: - codec: codec_chain_prev_entry
@@ -5478,6 +6796,38 @@ private func expectClose(_ actual: Double, _ expected: Double, _ label: String) 
 
     // Compile-only probe: the oracle holds no case this fixture's field shape can express.
     _ = CodecChainPrevEntry.frameLength
+
+    do {
+        let value = CodecChainPrevEntry(header: 4, after_marker: CodecChainPrevEntryAfterMarker.notAfterMarker(short_value: 1), tag: nil)
+        var sink = BytesSink()
+        try CodecChainPrevEntry.encodeSource(value, into: &sink)
+        let expected: [UInt8] = [4, 1]
+        #expect(sink.bytes == expected, "codec_chain_prev_entry source 0: neither input")
+        var cursor = SceCursor(sink.bytes)
+        let decoded = try CodecChainPrevEntry.decode(&cursor, after_marker: 0, tagged: 0)
+        #expect(cursor.remaining == 0, "codec_chain_prev_entry source 0: the decode left bytes of the frame unread")
+        #expect(decoded.header == value.header, "codec_chain_prev_entry source 0: the decode presents another header")
+        #expect(decoded.tag == value.tag, "codec_chain_prev_entry source 1: the decode presents another tag")
+        #expect(decoded.after_marker == value.after_marker, "codec_chain_prev_entry source 2: the decode presents another after_marker")
+        #expect(CodecChainPrevEntry.inputAfterMarker(value) == 0, "codec_chain_prev_entry source 3: the decode presents another flag input after_marker")
+        #expect(CodecChainPrevEntry.inputTagged(value) == 0, "codec_chain_prev_entry source 4: the decode presents another flag input tagged")
+    }
+    do {
+        let value = CodecChainPrevEntry(header: 129, after_marker: CodecChainPrevEntryAfterMarker.afterMarker(long_value: 2), tag: 7)
+        var sink = BytesSink()
+        try CodecChainPrevEntry.encodeSource(value, into: &sink)
+        let expected: [UInt8] = [129, 0, 2, 7]
+        #expect(sink.bytes == expected, "codec_chain_prev_entry source 1: both inputs: the long value and the tag")
+        var cursor = SceCursor(sink.bytes)
+        let decoded = try CodecChainPrevEntry.decode(&cursor, after_marker: 1, tagged: 1)
+        #expect(cursor.remaining == 0, "codec_chain_prev_entry source 1: the decode left bytes of the frame unread")
+        #expect(decoded.header == value.header, "codec_chain_prev_entry source 0: the decode presents another header")
+        #expect(decoded.tag == value.tag, "codec_chain_prev_entry source 1: the decode presents another tag")
+        #expect(decoded.after_marker == value.after_marker, "codec_chain_prev_entry source 2: the decode presents another after_marker")
+        #expect(CodecChainPrevEntry.inputAfterMarker(value) == 1, "codec_chain_prev_entry source 3: the decode presents another flag input after_marker")
+        #expect(CodecChainPrevEntry.inputTagged(value) == 1, "codec_chain_prev_entry source 4: the decode presents another flag input tagged")
+    }
+
 
 }
 
@@ -5488,6 +6838,36 @@ private func expectClose(_ actual: Double, _ expected: Double, _ label: String) 
     // Compile-only probe: the oracle holds no case this fixture's field shape can express.
     _ = CodecChainPrevCarrier.frameLength
 
+    do {
+        let bound0 = try #require(BoundedList<CodecChainPrevEntry, CodecChainPrevCarrier.EntriesBound>([CodecChainPrevEntry(header: 132, after_marker: CodecChainPrevEntryAfterMarker.notAfterMarker(short_value: 1), tag: nil), CodecChainPrevEntry(header: 2, after_marker: CodecChainPrevEntryAfterMarker.afterMarker(long_value: 515), tag: nil)]))
+        let bound1 = try #require(Lawful<BoundedList<CodecChainPrevEntry, CodecChainPrevCarrier.EntriesBound>, CodecChainPrevCarrier.EntriesLaw<CodecChainPrevEntry>>(start: SceStarts(false, SceFixedStart()), list: bound0))
+        let value = CodecChainPrevCarrier(head: 0, entries: bound1)
+        var sink = BytesSink()
+        try CodecChainPrevCarrier.encodeSource(value, into: &sink)
+        let expected: [UInt8] = [0, 132, 1, 2, 2, 3]
+        #expect(sink.bytes == expected, "codec_chain_prev_carrier source 0: after an entry of kind 4 the next is handed after_marker set")
+        var cursor = SceCursor(sink.bytes)
+        let decoded = try CodecChainPrevCarrier.decode(&cursor)
+        #expect(cursor.remaining == 0, "codec_chain_prev_carrier source 0: the decode left bytes of the frame unread")
+        #expect(decoded.head == value.head, "codec_chain_prev_carrier source 0: the decode presents another head")
+        #expect(decoded.entries == value.entries, "codec_chain_prev_carrier source 1: the decode presents another entries")
+    }
+    do {
+        let bound0 = try #require(BoundedList<CodecChainPrevEntry, CodecChainPrevCarrier.EntriesBound>([CodecChainPrevEntry(header: 1, after_marker: CodecChainPrevEntryAfterMarker.notAfterMarker(short_value: 5), tag: 9)]))
+        let bound1 = try #require(Lawful<BoundedList<CodecChainPrevEntry, CodecChainPrevCarrier.EntriesBound>, CodecChainPrevCarrier.EntriesLaw<CodecChainPrevEntry>>(start: SceStarts(true, SceFixedStart()), list: bound0))
+        let value = CodecChainPrevCarrier(head: 1, entries: bound1)
+        var sink = BytesSink()
+        try CodecChainPrevCarrier.encodeSource(value, into: &sink)
+        let expected: [UInt8] = [1, 1, 5, 9]
+        #expect(sink.bytes == expected, "codec_chain_prev_carrier source 1: the start sets tagged, so the entry has its tag; the first is never after")
+        var cursor = SceCursor(sink.bytes)
+        let decoded = try CodecChainPrevCarrier.decode(&cursor)
+        #expect(cursor.remaining == 0, "codec_chain_prev_carrier source 1: the decode left bytes of the frame unread")
+        #expect(decoded.head == value.head, "codec_chain_prev_carrier source 0: the decode presents another head")
+        #expect(decoded.entries == value.entries, "codec_chain_prev_carrier source 1: the decode presents another entries")
+    }
+
+
 }
 
 // MARK: - codec: codec_chain_prev_gated
@@ -5496,6 +6876,34 @@ private func expectClose(_ actual: Double, _ expected: Double, _ label: String) 
 
     // Compile-only probe: the oracle holds no case this fixture's field shape can express.
     _ = CodecChainPrevGated.frameLength
+
+    do {
+        let bound0 = try #require(BoundedList<CodecChainPrevEntry, CodecChainPrevGated.EntriesBound>([CodecChainPrevEntry(header: 132, after_marker: CodecChainPrevEntryAfterMarker.notAfterMarker(short_value: 1), tag: 1), CodecChainPrevEntry(header: 132, after_marker: CodecChainPrevEntryAfterMarker.afterMarker(long_value: 1286), tag: 2), CodecChainPrevEntry(header: 1, after_marker: CodecChainPrevEntryAfterMarker.afterMarker(long_value: 7), tag: 3)]))
+        let bound1 = try #require(Lawful<BoundedList<CodecChainPrevEntry, CodecChainPrevGated.EntriesBound>, CodecChainPrevGated.EntriesLaw<CodecChainPrevEntry>>(start: SceStarts(true, SceFixedStart()), list: bound0))
+        let value = CodecChainPrevGated(head: 3, entries: bound1)
+        var sink = BytesSink()
+        try CodecChainPrevGated.encodeSource(value, into: &sink)
+        let expected: [UInt8] = [3, 132, 1, 1, 132, 5, 6, 2, 1, 0, 7, 3]
+        #expect(sink.bytes == expected, "codec_chain_prev_gated source 0: two of kind 4 in a row: each entry after one is handed after_marker")
+        var cursor = SceCursor(sink.bytes)
+        let decoded = try CodecChainPrevGated.decode(&cursor)
+        #expect(cursor.remaining == 0, "codec_chain_prev_gated source 0: the decode left bytes of the frame unread")
+        #expect(decoded.head == value.head, "codec_chain_prev_gated source 0: the decode presents another head")
+        #expect(decoded.entries == value.entries, "codec_chain_prev_gated source 1: the decode presents another entries")
+    }
+    do {
+        let value = CodecChainPrevGated(head: 0, entries: nil)
+        var sink = BytesSink()
+        try CodecChainPrevGated.encodeSource(value, into: &sink)
+        let expected: [UInt8] = [0]
+        #expect(sink.bytes == expected, "codec_chain_prev_gated source 1: no chain: E clear, T the value's own")
+        var cursor = SceCursor(sink.bytes)
+        let decoded = try CodecChainPrevGated.decode(&cursor)
+        #expect(cursor.remaining == 0, "codec_chain_prev_gated source 1: the decode left bytes of the frame unread")
+        #expect(decoded.head == value.head, "codec_chain_prev_gated source 0: the decode presents another head")
+        #expect(decoded.entries == value.entries, "codec_chain_prev_gated source 1: the decode presents another entries")
+    }
+
 
 }
 
@@ -5506,6 +6914,22 @@ private func expectClose(_ actual: Double, _ expected: Double, _ label: String) 
     // Compile-only probe: the oracle holds no case this fixture's field shape can express.
     _ = CodecChainPrevTail.frameLength
 
+    do {
+        let bound0 = try #require(BoundedList<CodecChainPrevEntry, CodecChainPrevTail.EntriesBound>([CodecChainPrevEntry(header: 4, after_marker: CodecChainPrevEntryAfterMarker.notAfterMarker(short_value: 1), tag: nil), CodecChainPrevEntry(header: 5, after_marker: CodecChainPrevEntryAfterMarker.afterMarker(long_value: 2), tag: nil)]))
+        let bound1 = try #require(Lawful<BoundedList<CodecChainPrevEntry, CodecChainPrevTail.EntriesBound>, CodecChainPrevTail.EntriesLaw<CodecChainPrevEntry>>(start: SceStarts(false, SceFixedStart()), list: bound0))
+        let value = CodecChainPrevTail(head: 0, entries: bound1)
+        var sink = BytesSink()
+        try CodecChainPrevTail.encodeSource(value, into: &sink)
+        let expected: [UInt8] = [0, 4, 1, 5, 0, 2]
+        #expect(sink.bytes == expected, "codec_chain_prev_tail source 0: a chain read to the end: Z is each entry's own")
+        var cursor = SceCursor(sink.bytes)
+        let decoded = try CodecChainPrevTail.decode(&cursor)
+        #expect(cursor.remaining == 0, "codec_chain_prev_tail source 0: the decode left bytes of the frame unread")
+        #expect(decoded.head == value.head, "codec_chain_prev_tail source 0: the decode presents another head")
+        #expect(decoded.entries == value.entries, "codec_chain_prev_tail source 1: the decode presents another entries")
+    }
+
+
 }
 
 // MARK: - codec: codec_chain_prev_tail_gated
@@ -5514,6 +6938,34 @@ private func expectClose(_ actual: Double, _ expected: Double, _ label: String) 
 
     // Compile-only probe: the oracle holds no case this fixture's field shape can express.
     _ = CodecChainPrevTailGated.frameLength
+
+    do {
+        let bound0 = try #require(BoundedList<CodecChainPrevEntry, CodecChainPrevTailGated.EntriesBound>([CodecChainPrevEntry(header: 4, after_marker: CodecChainPrevEntryAfterMarker.notAfterMarker(short_value: 9), tag: nil)]))
+        let bound1 = try #require(Lawful<BoundedList<CodecChainPrevEntry, CodecChainPrevTailGated.EntriesBound>, CodecChainPrevTailGated.EntriesLaw<CodecChainPrevEntry>>(start: SceStarts(false, SceFixedStart()), list: bound0))
+        let value = CodecChainPrevTailGated(head: 2, entries: bound1)
+        var sink = BytesSink()
+        try CodecChainPrevTailGated.encodeSource(value, into: &sink)
+        let expected: [UInt8] = [2, 4, 9]
+        #expect(sink.bytes == expected, "codec_chain_prev_tail_gated source 0: one entry: E set by the chain")
+        var cursor = SceCursor(sink.bytes)
+        let decoded = try CodecChainPrevTailGated.decode(&cursor)
+        #expect(cursor.remaining == 0, "codec_chain_prev_tail_gated source 0: the decode left bytes of the frame unread")
+        #expect(decoded.head == value.head, "codec_chain_prev_tail_gated source 0: the decode presents another head")
+        #expect(decoded.entries == value.entries, "codec_chain_prev_tail_gated source 1: the decode presents another entries")
+    }
+    do {
+        let value = CodecChainPrevTailGated(head: 0, entries: nil)
+        var sink = BytesSink()
+        try CodecChainPrevTailGated.encodeSource(value, into: &sink)
+        let expected: [UInt8] = [0]
+        #expect(sink.bytes == expected, "codec_chain_prev_tail_gated source 1: no chain")
+        var cursor = SceCursor(sink.bytes)
+        let decoded = try CodecChainPrevTailGated.decode(&cursor)
+        #expect(cursor.remaining == 0, "codec_chain_prev_tail_gated source 1: the decode left bytes of the frame unread")
+        #expect(decoded.head == value.head, "codec_chain_prev_tail_gated source 0: the decode presents another head")
+        #expect(decoded.entries == value.entries, "codec_chain_prev_tail_gated source 1: the decode presents another entries")
+    }
+
 
 }
 
@@ -5524,6 +6976,47 @@ private func expectClose(_ actual: Double, _ expected: Double, _ label: String) 
     // Compile-only probe: the oracle holds no case this fixture's field shape can express.
     _ = CodecZenohValueSlice.frameLength
 
+    do {
+        let bound0 = try #require(BoundedBytes<CodecZenohValueSlice.DataBound>([]))
+        let value = CodecZenohValueSlice(kind: 0, data: bound0)
+        var sink = BytesSink()
+        try CodecZenohValueSlice.encodeSource(value, into: &sink)
+        let expected: [UInt8] = [0, 0]
+        #expect(sink.bytes == expected, "codec_zenoh_value_slice source 0: no data")
+        var cursor = SceCursor(sink.bytes)
+        let decoded = try CodecZenohValueSlice.decode(&cursor)
+        #expect(cursor.remaining == 0, "codec_zenoh_value_slice source 0: the decode left bytes of the frame unread")
+        #expect(decoded.kind == value.kind, "codec_zenoh_value_slice source 0: the decode presents another kind")
+        #expect(decoded.data == value.data, "codec_zenoh_value_slice source 1: the decode presents another data")
+    }
+    do {
+        let bound0 = try #require(BoundedBytes<CodecZenohValueSlice.DataBound>([0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15]))
+        let value = CodecZenohValueSlice(kind: 255, data: bound0)
+        var sink = BytesSink()
+        try CodecZenohValueSlice.encodeSource(value, into: &sink)
+        let expected: [UInt8] = [255, 16, 0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15]
+        #expect(sink.bytes == expected, "codec_zenoh_value_slice source 1: sixteen bytes of data")
+        var cursor = SceCursor(sink.bytes)
+        let decoded = try CodecZenohValueSlice.decode(&cursor)
+        #expect(cursor.remaining == 0, "codec_zenoh_value_slice source 1: the decode left bytes of the frame unread")
+        #expect(decoded.kind == value.kind, "codec_zenoh_value_slice source 0: the decode presents another kind")
+        #expect(decoded.data == value.data, "codec_zenoh_value_slice source 1: the decode presents another data")
+    }
+    do {
+        let bound0 = try #require(BoundedBytes<CodecZenohValueSlice.DataBound>([0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21, 22, 23, 24, 25, 26, 27, 28, 29, 30, 31, 32, 33, 34, 35, 36, 37, 38, 39, 40, 41, 42, 43, 44, 45, 46, 47, 48, 49, 50, 51, 52, 53, 54, 55, 56, 57, 58, 59, 60, 61, 62, 63, 64, 65, 66, 67, 68, 69, 70, 71, 72, 73, 74, 75, 76, 77, 78, 79, 80, 81, 82, 83, 84, 85, 86, 87, 88, 89, 90, 91, 92, 93, 94, 95, 96, 97, 98, 99, 100, 101, 102, 103, 104, 105, 106, 107, 108, 109, 110, 111, 112, 113, 114, 115, 116, 117, 118, 119, 120, 121, 122, 123, 124, 125, 126, 127, 128, 129, 130, 131, 132, 133, 134, 135, 136, 137, 138, 139, 140, 141, 142, 143, 144, 145, 146, 147, 148, 149, 150, 151, 152, 153, 154, 155, 156, 157, 158, 159, 160, 161, 162, 163, 164, 165, 166, 167, 168, 169, 170, 171, 172, 173, 174, 175, 176, 177, 178, 179, 180, 181, 182, 183, 184, 185, 186, 187, 188, 189, 190, 191, 192, 193, 194, 195, 196, 197, 198, 199]))
+        let value = CodecZenohValueSlice(kind: 1, data: bound0)
+        var sink = BytesSink()
+        try CodecZenohValueSlice.encodeSource(value, into: &sink)
+        let expected: [UInt8] = [1, 200, 1, 0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21, 22, 23, 24, 25, 26, 27, 28, 29, 30, 31, 32, 33, 34, 35, 36, 37, 38, 39, 40, 41, 42, 43, 44, 45, 46, 47, 48, 49, 50, 51, 52, 53, 54, 55, 56, 57, 58, 59, 60, 61, 62, 63, 64, 65, 66, 67, 68, 69, 70, 71, 72, 73, 74, 75, 76, 77, 78, 79, 80, 81, 82, 83, 84, 85, 86, 87, 88, 89, 90, 91, 92, 93, 94, 95, 96, 97, 98, 99, 100, 101, 102, 103, 104, 105, 106, 107, 108, 109, 110, 111, 112, 113, 114, 115, 116, 117, 118, 119, 120, 121, 122, 123, 124, 125, 126, 127, 128, 129, 130, 131, 132, 133, 134, 135, 136, 137, 138, 139, 140, 141, 142, 143, 144, 145, 146, 147, 148, 149, 150, 151, 152, 153, 154, 155, 156, 157, 158, 159, 160, 161, 162, 163, 164, 165, 166, 167, 168, 169, 170, 171, 172, 173, 174, 175, 176, 177, 178, 179, 180, 181, 182, 183, 184, 185, 186, 187, 188, 189, 190, 191, 192, 193, 194, 195, 196, 197, 198, 199]
+        #expect(sink.bytes == expected, "codec_zenoh_value_slice source 2: 200 bytes: the length takes two VLE bytes")
+        var cursor = SceCursor(sink.bytes)
+        let decoded = try CodecZenohValueSlice.decode(&cursor)
+        #expect(cursor.remaining == 0, "codec_zenoh_value_slice source 2: the decode left bytes of the frame unread")
+        #expect(decoded.kind == value.kind, "codec_zenoh_value_slice source 0: the decode presents another kind")
+        #expect(decoded.data == value.data, "codec_zenoh_value_slice source 1: the decode presents another data")
+    }
+
+
 }
 
 // MARK: - codec: codec_zenoh_value_zbuf
@@ -5532,6 +7025,49 @@ private func expectClose(_ actual: Double, _ expected: Double, _ label: String) 
 
     // Compile-only probe: the oracle holds no case this fixture's field shape can express.
     _ = CodecZenohValueZbuf.frameLength
+
+    do {
+        let bound0 = try #require(BoundedBytes<CodecZenohValueZbuf.ValueBound>([1, 2, 3]))
+        let value = CodecZenohValueZbuf(after_shm: CodecZenohValueZbufAfterShm.notAfterShm(value: bound0))
+        var sink = BytesSink()
+        try CodecZenohValueZbuf.encodeSource(value, into: &sink)
+        let expected: [UInt8] = [3, 1, 2, 3]
+        #expect(sink.bytes == expected, "codec_zenoh_value_zbuf source 0: after_shm clear: the value and its length")
+        var cursor = SceCursor(sink.bytes)
+        let decoded = try CodecZenohValueZbuf.decode(&cursor, after_shm: 0)
+        #expect(cursor.remaining == 0, "codec_zenoh_value_zbuf source 0: the decode left bytes of the frame unread")
+        #expect(decoded.after_shm == value.after_shm, "codec_zenoh_value_zbuf source 0: the decode presents another after_shm")
+        #expect(CodecZenohValueZbuf.inputAfterShm(value) == 0, "codec_zenoh_value_zbuf source 1: the decode presents another flag input after_shm")
+    }
+    do {
+        let bound0 = try #require(BoundedBytes<CodecZenohValueSlice.DataBound>([9]))
+        let bound1 = try #require(BoundedBytes<CodecZenohValueSlice.DataBound>([]))
+        let bound2 = try #require(BoundedList<CodecZenohValueSlice, CodecZenohValueZbuf.SlicesBound>([CodecZenohValueSlice(kind: 1, data: bound0), CodecZenohValueSlice(kind: 2, data: bound1)]))
+        let value = CodecZenohValueZbuf(after_shm: CodecZenohValueZbufAfterShm.afterShm(encoding: 3, slices: bound2, value_len: 7))
+        var sink = BytesSink()
+        try CodecZenohValueZbuf.encodeSource(value, into: &sink)
+        let expected: [UInt8] = [7, 3, 2, 1, 1, 9, 2, 0]
+        #expect(sink.bytes == expected, "codec_zenoh_value_zbuf source 1: after_shm set: the stated length, the encoding and two slices, counted")
+        var cursor = SceCursor(sink.bytes)
+        let decoded = try CodecZenohValueZbuf.decode(&cursor, after_shm: 1)
+        #expect(cursor.remaining == 0, "codec_zenoh_value_zbuf source 1: the decode left bytes of the frame unread")
+        #expect(decoded.after_shm == value.after_shm, "codec_zenoh_value_zbuf source 0: the decode presents another after_shm")
+        #expect(CodecZenohValueZbuf.inputAfterShm(value) == 1, "codec_zenoh_value_zbuf source 1: the decode presents another flag input after_shm")
+    }
+    do {
+        let bound0 = try #require(BoundedList<CodecZenohValueSlice, CodecZenohValueZbuf.SlicesBound>([]))
+        let value = CodecZenohValueZbuf(after_shm: CodecZenohValueZbufAfterShm.afterShm(encoding: 0, slices: bound0, value_len: 0))
+        var sink = BytesSink()
+        try CodecZenohValueZbuf.encodeSource(value, into: &sink)
+        let expected: [UInt8] = [0, 0, 0]
+        #expect(sink.bytes == expected, "codec_zenoh_value_zbuf source 2: after_shm set and no slice: the count is zero")
+        var cursor = SceCursor(sink.bytes)
+        let decoded = try CodecZenohValueZbuf.decode(&cursor, after_shm: 1)
+        #expect(cursor.remaining == 0, "codec_zenoh_value_zbuf source 2: the decode left bytes of the frame unread")
+        #expect(decoded.after_shm == value.after_shm, "codec_zenoh_value_zbuf source 0: the decode presents another after_shm")
+        #expect(CodecZenohValueZbuf.inputAfterShm(value) == 1, "codec_zenoh_value_zbuf source 1: the decode presents another flag input after_shm")
+    }
+
 
 }
 
@@ -5542,6 +7078,50 @@ private func expectClose(_ actual: Double, _ expected: Double, _ label: String) 
     // Compile-only probe: the oracle holds no case this fixture's field shape can express.
     _ = CodecZenohValueEntry.frameLength
 
+    do {
+        let bound0 = try #require(BoundedBytes<CodecZenohValueZbuf.ValueBound>([5]))
+        let value = CodecZenohValueEntry(header: 67, body: .codecZenohValueZbuf(CodecZenohValueZbuf(after_shm: CodecZenohValueZbufAfterShm.notAfterShm(value: bound0))))
+        var sink = BytesSink()
+        try CodecZenohValueEntry.encodeSource(value, into: &sink)
+        let expected: [UInt8] = [67, 1, 5]
+        #expect(sink.bytes == expected, "codec_zenoh_value_entry source 0: the zbuf arm, handed after_shm clear by the entry")
+        var cursor = SceCursor(sink.bytes)
+        let decoded = try CodecZenohValueEntry.decode(&cursor, after_shm: 0)
+        #expect(cursor.remaining == 0, "codec_zenoh_value_entry source 0: the decode left bytes of the frame unread")
+        #expect(decoded.header == value.header, "codec_zenoh_value_entry source 0: the decode presents another header")
+        #expect(decoded.body == value.body, "codec_zenoh_value_entry source 1: the decode presents another body")
+        #expect((CodecZenohValueEntry.inputAfterShm(value).map { $0 == 0 } ?? true), "codec_zenoh_value_entry source 2: the decode presents another flag input after_shm")
+    }
+    do {
+        let bound0 = try #require(BoundedBytes<CodecZenohValueSlice.DataBound>([1, 2]))
+        let bound1 = try #require(BoundedList<CodecZenohValueSlice, CodecZenohValueZbuf.SlicesBound>([CodecZenohValueSlice(kind: 0, data: bound0)]))
+        let value = CodecZenohValueEntry(header: 195, body: .codecZenohValueZbuf(CodecZenohValueZbuf(after_shm: CodecZenohValueZbufAfterShm.afterShm(encoding: 2, slices: bound1, value_len: 1))))
+        var sink = BytesSink()
+        try CodecZenohValueEntry.encodeSource(value, into: &sink)
+        let expected: [UInt8] = [195, 1, 2, 1, 0, 2, 1, 2]
+        #expect(sink.bytes == expected, "codec_zenoh_value_entry source 1: the zbuf arm, handed after_shm set, Z the value's own")
+        var cursor = SceCursor(sink.bytes)
+        let decoded = try CodecZenohValueEntry.decode(&cursor, after_shm: 1)
+        #expect(cursor.remaining == 0, "codec_zenoh_value_entry source 1: the decode left bytes of the frame unread")
+        #expect(decoded.header == value.header, "codec_zenoh_value_entry source 0: the decode presents another header")
+        #expect(decoded.body == value.body, "codec_zenoh_value_entry source 1: the decode presents another body")
+        #expect((CodecZenohValueEntry.inputAfterShm(value).map { $0 == 1 } ?? true), "codec_zenoh_value_entry source 2: the decode presents another flag input after_shm")
+    }
+    do {
+        let value = CodecZenohValueEntry(header: 33, body: .codecZenohExtZint(CodecZenohExtZint(value: 4)))
+        var sink = BytesSink()
+        try CodecZenohValueEntry.encodeSource(value, into: &sink)
+        let expected: [UInt8] = [33, 4]
+        #expect(sink.bytes == expected, "codec_zenoh_value_entry source 2: the zint arm, which takes no input")
+        var cursor = SceCursor(sink.bytes)
+        let decoded = try CodecZenohValueEntry.decode(&cursor, after_shm: 1)
+        #expect(cursor.remaining == 0, "codec_zenoh_value_entry source 2: the decode left bytes of the frame unread")
+        #expect(decoded.header == value.header, "codec_zenoh_value_entry source 0: the decode presents another header")
+        #expect(decoded.body == value.body, "codec_zenoh_value_entry source 1: the decode presents another body")
+        #expect((CodecZenohValueEntry.inputAfterShm(value).map { $0 == 1 } ?? true), "codec_zenoh_value_entry source 2: the decode presents another flag input after_shm")
+    }
+
+
 }
 
 // MARK: - codec: codec_zenoh_query_value
@@ -5550,6 +7130,37 @@ private func expectClose(_ actual: Double, _ expected: Double, _ label: String) 
 
     // Compile-only probe: the oracle holds no case this fixture's field shape can express.
     _ = CodecZenohQueryValue.frameLength
+
+    do {
+        let bound0 = try #require(BoundedBytes<CodecZenohValueSlice.DataBound>([1]))
+        let bound1 = try #require(BoundedList<CodecZenohValueSlice, CodecZenohValueZbuf.SlicesBound>([CodecZenohValueSlice(kind: 0, data: bound0)]))
+        let bound2 = try #require(BoundedList<CodecZenohValueEntry, CodecZenohQueryValue.ExtsBound>([CodecZenohValueEntry(header: 132, body: .codecZenohExtUnit(CodecZenohExtUnit())), CodecZenohValueEntry(header: 67, body: .codecZenohValueZbuf(CodecZenohValueZbuf(after_shm: CodecZenohValueZbufAfterShm.afterShm(encoding: 2, slices: bound1, value_len: 1))))]))
+        let bound3 = try #require(Lawful<BoundedList<CodecZenohValueEntry, CodecZenohQueryValue.ExtsBound>, CodecZenohQueryValue.ExtsLaw<CodecZenohValueEntry>>(start: SceFixedStart(), list: bound2))
+        let value = CodecZenohQueryValue(exts: bound3)
+        var sink = BytesSink()
+        try CodecZenohQueryValue.encodeSource(value, into: &sink)
+        let expected: [UInt8] = [132, 67, 1, 2, 1, 0, 1, 1]
+        #expect(sink.bytes == expected, "codec_zenoh_query_value source 0: the shared-memory marker (kind 4), then a zbuf handed after_shm")
+        var cursor = SceCursor(sink.bytes)
+        let decoded = try CodecZenohQueryValue.decode(&cursor)
+        #expect(cursor.remaining == 0, "codec_zenoh_query_value source 0: the decode left bytes of the frame unread")
+        #expect(decoded.exts == value.exts, "codec_zenoh_query_value source 0: the decode presents another exts")
+    }
+    do {
+        let bound0 = try #require(BoundedBytes<CodecZenohValueZbuf.ValueBound>([7]))
+        let bound1 = try #require(BoundedList<CodecZenohValueEntry, CodecZenohQueryValue.ExtsBound>([CodecZenohValueEntry(header: 67, body: .codecZenohValueZbuf(CodecZenohValueZbuf(after_shm: CodecZenohValueZbufAfterShm.notAfterShm(value: bound0))))]))
+        let bound2 = try #require(Lawful<BoundedList<CodecZenohValueEntry, CodecZenohQueryValue.ExtsBound>, CodecZenohQueryValue.ExtsLaw<CodecZenohValueEntry>>(start: SceFixedStart(), list: bound1))
+        let value = CodecZenohQueryValue(exts: bound2)
+        var sink = BytesSink()
+        try CodecZenohQueryValue.encodeSource(value, into: &sink)
+        let expected: [UInt8] = [67, 1, 7]
+        #expect(sink.bytes == expected, "codec_zenoh_query_value source 1: a zbuf first: nothing before it, so its value inline")
+        var cursor = SceCursor(sink.bytes)
+        let decoded = try CodecZenohQueryValue.decode(&cursor)
+        #expect(cursor.remaining == 0, "codec_zenoh_query_value source 1: the decode left bytes of the frame unread")
+        #expect(decoded.exts == value.exts, "codec_zenoh_query_value source 0: the decode presents another exts")
+    }
+
 
 }
 
@@ -5560,6 +7171,34 @@ private func expectClose(_ actual: Double, _ expected: Double, _ label: String) 
     // Compile-only probe: the oracle holds no case this fixture's field shape can express.
     _ = CodecEmbedBasic.frameLength
 
+    do {
+        let bound0 = try #require(BoundedText<CodecZenohLocator.LocatorBound>(""))
+        let value = CodecEmbedBasic(tag: 1, locator: CodecZenohLocator(locator: bound0))
+        var sink = BytesSink()
+        try CodecEmbedBasic.encodeSource(value, into: &sink)
+        let expected: [UInt8] = [1, 0]
+        #expect(sink.bytes == expected, "codec_embed_basic source 0: a body of empty text: its length alone")
+        var cursor = SceCursor(sink.bytes)
+        let decoded = try CodecEmbedBasic.decode(&cursor)
+        #expect(cursor.remaining == 0, "codec_embed_basic source 0: the decode left bytes of the frame unread")
+        #expect(decoded.tag == value.tag, "codec_embed_basic source 0: the decode presents another tag")
+        #expect(decoded.locator == value.locator, "codec_embed_basic source 1: the decode presents another locator")
+    }
+    do {
+        let bound0 = try #require(BoundedText<CodecZenohLocator.LocatorBound>("abc"))
+        let value = CodecEmbedBasic(tag: 2, locator: CodecZenohLocator(locator: bound0))
+        var sink = BytesSink()
+        try CodecEmbedBasic.encodeSource(value, into: &sink)
+        let expected: [UInt8] = [2, 3, 97, 98, 99]
+        #expect(sink.bytes == expected, "codec_embed_basic source 1: the body's frame follows the tag")
+        var cursor = SceCursor(sink.bytes)
+        let decoded = try CodecEmbedBasic.decode(&cursor)
+        #expect(cursor.remaining == 0, "codec_embed_basic source 1: the decode left bytes of the frame unread")
+        #expect(decoded.tag == value.tag, "codec_embed_basic source 0: the decode presents another tag")
+        #expect(decoded.locator == value.locator, "codec_embed_basic source 1: the decode presents another locator")
+    }
+
+
 }
 
 // MARK: - codec: codec_ext_attachment
@@ -5568,6 +7207,32 @@ private func expectClose(_ actual: Double, _ expected: Double, _ label: String) 
 
     // Compile-only probe: the oracle holds no case this fixture's field shape can express.
     _ = CodecExtAttachment.frameLength
+
+    do {
+        let bound0 = try #require(BoundedBytes<CodecExtAttachment.BodyBound>([]))
+        let value = CodecExtAttachment(body: bound0)
+        var sink = BytesSink()
+        try CodecExtAttachment.encodeSource(value, into: &sink)
+        let expected: [UInt8] = [0]
+        #expect(sink.bytes == expected, "codec_ext_attachment source 0: an empty body")
+        var cursor = SceCursor(sink.bytes)
+        let decoded = try CodecExtAttachment.decode(&cursor)
+        #expect(cursor.remaining == 0, "codec_ext_attachment source 0: the decode left bytes of the frame unread")
+        #expect(decoded.body == value.body, "codec_ext_attachment source 0: the decode presents another body")
+    }
+    do {
+        let bound0 = try #require(BoundedBytes<CodecExtAttachment.BodyBound>([0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21, 22, 23, 24, 25, 26, 27, 28, 29, 30, 31, 32, 33, 34, 35, 36, 37, 38, 39, 40, 41, 42, 43, 44, 45, 46, 47, 48, 49, 50, 51, 52, 53, 54, 55, 56, 57, 58, 59, 60, 61, 62, 63]))
+        let value = CodecExtAttachment(body: bound0)
+        var sink = BytesSink()
+        try CodecExtAttachment.encodeSource(value, into: &sink)
+        let expected: [UInt8] = [64, 0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21, 22, 23, 24, 25, 26, 27, 28, 29, 30, 31, 32, 33, 34, 35, 36, 37, 38, 39, 40, 41, 42, 43, 44, 45, 46, 47, 48, 49, 50, 51, 52, 53, 54, 55, 56, 57, 58, 59, 60, 61, 62, 63]
+        #expect(sink.bytes == expected, "codec_ext_attachment source 1: a body at its bound")
+        var cursor = SceCursor(sink.bytes)
+        let decoded = try CodecExtAttachment.decode(&cursor)
+        #expect(cursor.remaining == 0, "codec_ext_attachment source 1: the decode left bytes of the frame unread")
+        #expect(decoded.body == value.body, "codec_ext_attachment source 0: the decode presents another body")
+    }
+
 
 }
 
@@ -5578,6 +7243,58 @@ private func expectClose(_ actual: Double, _ expected: Double, _ label: String) 
     // Compile-only probe: the oracle holds no case this fixture's field shape can express.
     _ = CodecExtEncodingInfo.frameLength
 
+    do {
+        let value = CodecExtEncodingInfo(combined_id: 0, combined_id_has_schema: CodecExtEncodingInfoCombinedIdHasSchema.notHasSchema(schema_size: 0))
+        var sink = BytesSink()
+        try CodecExtEncodingInfo.encodeSource(value, into: &sink)
+        let expected: [UInt8] = [0, 0]
+        #expect(sink.bytes == expected, "codec_ext_encoding_info source 0: no schema: the value states the size, zero")
+        var cursor = SceCursor(sink.bytes)
+        let decoded = try CodecExtEncodingInfo.decode(&cursor)
+        #expect(cursor.remaining == 0, "codec_ext_encoding_info source 0: the decode left bytes of the frame unread")
+        #expect(decoded.combined_id == value.combined_id, "codec_ext_encoding_info source 0: the decode presents another combined_id")
+        #expect(decoded.combined_id_has_schema == value.combined_id_has_schema, "codec_ext_encoding_info source 1: the decode presents another combined_id.has_schema")
+    }
+    do {
+        let value = CodecExtEncodingInfo(combined_id: 0, combined_id_has_schema: CodecExtEncodingInfoCombinedIdHasSchema.notHasSchema(schema_size: 7))
+        var sink = BytesSink()
+        try CodecExtEncodingInfo.encodeSource(value, into: &sink)
+        let expected: [UInt8] = [0, 7]
+        #expect(sink.bytes == expected, "codec_ext_encoding_info source 1: no schema: the size is what the value states")
+        var cursor = SceCursor(sink.bytes)
+        let decoded = try CodecExtEncodingInfo.decode(&cursor)
+        #expect(cursor.remaining == 0, "codec_ext_encoding_info source 1: the decode left bytes of the frame unread")
+        #expect(decoded.combined_id == value.combined_id, "codec_ext_encoding_info source 0: the decode presents another combined_id")
+        #expect(decoded.combined_id_has_schema == value.combined_id_has_schema, "codec_ext_encoding_info source 1: the decode presents another combined_id.has_schema")
+    }
+    do {
+        let bound0 = try #require(BoundedBytes<CodecExtEncodingInfo.SchemaBound>([1, 2, 3]))
+        let value = CodecExtEncodingInfo(combined_id: 1, combined_id_has_schema: CodecExtEncodingInfoCombinedIdHasSchema.hasSchema(schema: bound0))
+        var sink = BytesSink()
+        try CodecExtEncodingInfo.encodeSource(value, into: &sink)
+        let expected: [UInt8] = [1, 3, 1, 2, 3]
+        #expect(sink.bytes == expected, "codec_ext_encoding_info source 2: a schema: has_schema and the size are derived from it")
+        var cursor = SceCursor(sink.bytes)
+        let decoded = try CodecExtEncodingInfo.decode(&cursor)
+        #expect(cursor.remaining == 0, "codec_ext_encoding_info source 2: the decode left bytes of the frame unread")
+        #expect(decoded.combined_id == value.combined_id, "codec_ext_encoding_info source 0: the decode presents another combined_id")
+        #expect(decoded.combined_id_has_schema == value.combined_id_has_schema, "codec_ext_encoding_info source 1: the decode presents another combined_id.has_schema")
+    }
+    do {
+        let bound0 = try #require(BoundedBytes<CodecExtEncodingInfo.SchemaBound>([]))
+        let value = CodecExtEncodingInfo(combined_id: 129, combined_id_has_schema: CodecExtEncodingInfoCombinedIdHasSchema.hasSchema(schema: bound0))
+        var sink = BytesSink()
+        try CodecExtEncodingInfo.encodeSource(value, into: &sink)
+        let expected: [UInt8] = [129, 1, 0]
+        #expect(sink.bytes == expected, "codec_ext_encoding_info source 3: an empty schema is present; the carrier takes two VLE bytes")
+        var cursor = SceCursor(sink.bytes)
+        let decoded = try CodecExtEncodingInfo.decode(&cursor)
+        #expect(cursor.remaining == 0, "codec_ext_encoding_info source 3: the decode left bytes of the frame unread")
+        #expect(decoded.combined_id == value.combined_id, "codec_ext_encoding_info source 0: the decode presents another combined_id")
+        #expect(decoded.combined_id_has_schema == value.combined_id_has_schema, "codec_ext_encoding_info source 1: the decode presents another combined_id.has_schema")
+    }
+
+
 }
 
 // MARK: - codec: codec_ext_timestamp
@@ -5586,6 +7303,34 @@ private func expectClose(_ actual: Double, _ expected: Double, _ label: String) 
 
     // Compile-only probe: the oracle holds no case this fixture's field shape can express.
     _ = CodecExtTimestamp.frameLength
+
+    do {
+        let bound0 = try #require(BoundedBytes<CodecExtTimestamp.ZidBound>([]))
+        let value = CodecExtTimestamp(time: 0, zid: bound0)
+        var sink = BytesSink()
+        try CodecExtTimestamp.encodeSource(value, into: &sink)
+        let expected: [UInt8] = [0, 0]
+        #expect(sink.bytes == expected, "codec_ext_timestamp source 0: time zero and no zid")
+        var cursor = SceCursor(sink.bytes)
+        let decoded = try CodecExtTimestamp.decode(&cursor)
+        #expect(cursor.remaining == 0, "codec_ext_timestamp source 0: the decode left bytes of the frame unread")
+        #expect(decoded.time == value.time, "codec_ext_timestamp source 0: the decode presents another time")
+        #expect(decoded.zid == value.zid, "codec_ext_timestamp source 1: the decode presents another zid")
+    }
+    do {
+        let bound0 = try #require(BoundedBytes<CodecExtTimestamp.ZidBound>([0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15]))
+        let value = CodecExtTimestamp(time: 16383, zid: bound0)
+        var sink = BytesSink()
+        try CodecExtTimestamp.encodeSource(value, into: &sink)
+        let expected: [UInt8] = [255, 127, 16, 0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15]
+        #expect(sink.bytes == expected, "codec_ext_timestamp source 1: a two-byte time and a zid at its bound")
+        var cursor = SceCursor(sink.bytes)
+        let decoded = try CodecExtTimestamp.decode(&cursor)
+        #expect(cursor.remaining == 0, "codec_ext_timestamp source 1: the decode left bytes of the frame unread")
+        #expect(decoded.time == value.time, "codec_ext_timestamp source 0: the decode presents another time")
+        #expect(decoded.zid == value.zid, "codec_ext_timestamp source 1: the decode presents another zid")
+    }
+
 
 }
 
@@ -5623,6 +7368,8 @@ private func expectClose(_ actual: Double, _ expected: Double, _ label: String) 
         #expect(roundTripped == value, "codec_cbor_map case \(index) decode")
         #expect(cursor.remaining == 0, "codec_cbor_map case \(index) decode consumed the frame and nothing else")
     }
+
+
 
     do {
         var rejectCursor = SceCursor([161, 2, 129, 129, 129, 129, 129, 129, 129, 129, 129, 129, 129, 129, 129, 129, 129, 129, 0])
@@ -7684,6 +9431,52 @@ private func expectClose(_ actual: Double, _ expected: Double, _ label: String) 
     // Compile-only probe: the oracle holds no case this fixture's field shape can express.
     _ = CodecFlagsBasic.frameLength
 
+    do {
+        let value = CodecFlagsBasic(header: 0)
+        var sink = BytesSink()
+        try CodecFlagsBasic.encodeSource(value, into: &sink)
+        let expected: [UInt8] = [0]
+        #expect(sink.bytes == expected, "codec_flags_basic source 0: no flag set")
+        var cursor = SceCursor(sink.bytes)
+        let decoded = try CodecFlagsBasic.decode(&cursor)
+        #expect(cursor.remaining == 0, "codec_flags_basic source 0: the decode left bytes of the frame unread")
+        #expect(decoded.header == value.header, "codec_flags_basic source 0: the decode presents another header")
+    }
+    do {
+        let value = CodecFlagsBasic(header: 240)
+        var sink = BytesSink()
+        try CodecFlagsBasic.encodeSource(value, into: &sink)
+        let expected: [UInt8] = [240]
+        #expect(sink.bytes == expected, "codec_flags_basic source 1: every named flag set")
+        var cursor = SceCursor(sink.bytes)
+        let decoded = try CodecFlagsBasic.decode(&cursor)
+        #expect(cursor.remaining == 0, "codec_flags_basic source 1: the decode left bytes of the frame unread")
+        #expect(decoded.header == value.header, "codec_flags_basic source 0: the decode presents another header")
+    }
+    do {
+        let value = CodecFlagsBasic(header: 15)
+        var sink = BytesSink()
+        try CodecFlagsBasic.encodeSource(value, into: &sink)
+        let expected: [UInt8] = [15]
+        #expect(sink.bytes == expected, "codec_flags_basic source 2: only bits no flag names: the carrier is presented whole")
+        var cursor = SceCursor(sink.bytes)
+        let decoded = try CodecFlagsBasic.decode(&cursor)
+        #expect(cursor.remaining == 0, "codec_flags_basic source 2: the decode left bytes of the frame unread")
+        #expect(decoded.header == value.header, "codec_flags_basic source 0: the decode presents another header")
+    }
+    do {
+        let value = CodecFlagsBasic(header: 165)
+        var sink = BytesSink()
+        try CodecFlagsBasic.encodeSource(value, into: &sink)
+        let expected: [UInt8] = [165]
+        #expect(sink.bytes == expected, "codec_flags_basic source 3: reliable and drop set, with unnamed bits")
+        var cursor = SceCursor(sink.bytes)
+        let decoded = try CodecFlagsBasic.decode(&cursor)
+        #expect(cursor.remaining == 0, "codec_flags_basic source 3: the decode left bytes of the frame unread")
+        #expect(decoded.header == value.header, "codec_flags_basic source 0: the decode presents another header")
+    }
+
+
 }
 
 // MARK: - codec: codec_init_cookie_body
@@ -7692,6 +9485,49 @@ private func expectClose(_ actual: Double, _ expected: Double, _ label: String) 
 
     // Compile-only probe: the oracle holds no case this fixture's field shape can express.
     _ = CodecInitCookieBody.frameLength
+
+    do {
+        let value = CodecInitCookieBody(version: 1, cookie: nil)
+        var sink = BytesSink()
+        try CodecInitCookieBody.encodeSource(value, into: &sink)
+        let expected: [UInt8] = [1]
+        #expect(sink.bytes == expected, "codec_init_cookie_body source 0: A clear: no cookie")
+        var cursor = SceCursor(sink.bytes)
+        let decoded = try CodecInitCookieBody.decode(&cursor, A: 0)
+        #expect(cursor.remaining == 0, "codec_init_cookie_body source 0: the decode left bytes of the frame unread")
+        #expect(decoded.version == value.version, "codec_init_cookie_body source 0: the decode presents another version")
+        #expect(decoded.cookie == value.cookie, "codec_init_cookie_body source 1: the decode presents another cookie")
+        #expect(CodecInitCookieBody.inputA(value) == 0, "codec_init_cookie_body source 2: the decode presents another flag input A")
+    }
+    do {
+        let bound0 = try #require(BoundedBytes<CodecInitCookieBody.CookieBound>([1, 2, 3]))
+        let value = CodecInitCookieBody(version: 1, cookie: bound0)
+        var sink = BytesSink()
+        try CodecInitCookieBody.encodeSource(value, into: &sink)
+        let expected: [UInt8] = [1, 3, 1, 2, 3]
+        #expect(sink.bytes == expected, "codec_init_cookie_body source 1: A set: the cookie and its length")
+        var cursor = SceCursor(sink.bytes)
+        let decoded = try CodecInitCookieBody.decode(&cursor, A: 1)
+        #expect(cursor.remaining == 0, "codec_init_cookie_body source 1: the decode left bytes of the frame unread")
+        #expect(decoded.version == value.version, "codec_init_cookie_body source 0: the decode presents another version")
+        #expect(decoded.cookie == value.cookie, "codec_init_cookie_body source 1: the decode presents another cookie")
+        #expect(CodecInitCookieBody.inputA(value) == 1, "codec_init_cookie_body source 2: the decode presents another flag input A")
+    }
+    do {
+        let bound0 = try #require(BoundedBytes<CodecInitCookieBody.CookieBound>([0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21, 22, 23, 24, 25, 26, 27, 28, 29, 30, 31, 32, 33, 34, 35, 36, 37, 38, 39, 40, 41, 42, 43, 44, 45, 46, 47, 48, 49, 50, 51, 52, 53, 54, 55, 56, 57, 58, 59, 60, 61, 62, 63]))
+        let value = CodecInitCookieBody(version: 2, cookie: bound0)
+        var sink = BytesSink()
+        try CodecInitCookieBody.encodeSource(value, into: &sink)
+        let expected: [UInt8] = [2, 64, 0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21, 22, 23, 24, 25, 26, 27, 28, 29, 30, 31, 32, 33, 34, 35, 36, 37, 38, 39, 40, 41, 42, 43, 44, 45, 46, 47, 48, 49, 50, 51, 52, 53, 54, 55, 56, 57, 58, 59, 60, 61, 62, 63]
+        #expect(sink.bytes == expected, "codec_init_cookie_body source 2: a cookie at its bound")
+        var cursor = SceCursor(sink.bytes)
+        let decoded = try CodecInitCookieBody.decode(&cursor, A: 1)
+        #expect(cursor.remaining == 0, "codec_init_cookie_body source 2: the decode left bytes of the frame unread")
+        #expect(decoded.version == value.version, "codec_init_cookie_body source 0: the decode presents another version")
+        #expect(decoded.cookie == value.cookie, "codec_init_cookie_body source 1: the decode presents another cookie")
+        #expect(CodecInitCookieBody.inputA(value) == 1, "codec_init_cookie_body source 2: the decode presents another flag input A")
+    }
+
 
 }
 
@@ -7702,6 +9538,34 @@ private func expectClose(_ actual: Double, _ expected: Double, _ label: String) 
     // Compile-only probe: the oracle holds no case this fixture's field shape can express.
     _ = CodecInitSynBody.frameLength
 
+    do {
+        let value = CodecInitSynBody(version: 1, s: nil)
+        var sink = BytesSink()
+        try CodecInitSynBody.encodeSource(value, into: &sink)
+        let expected: [UInt8] = [1]
+        #expect(sink.bytes == expected, "codec_init_syn_body source 0: S clear: the version alone")
+        var cursor = SceCursor(sink.bytes)
+        let decoded = try CodecInitSynBody.decode(&cursor, S: 0)
+        #expect(cursor.remaining == 0, "codec_init_syn_body source 0: the decode left bytes of the frame unread")
+        #expect(decoded.version == value.version, "codec_init_syn_body source 0: the decode presents another version")
+        #expect(decoded.s == value.s, "codec_init_syn_body source 1: the decode presents another S")
+        #expect(CodecInitSynBody.inputS(value) == 0, "codec_init_syn_body source 2: the decode presents another flag input S")
+    }
+    do {
+        let value = CodecInitSynBody(version: 1, s: CodecInitSynBodyS(sn_res: 2, batch_size: 4096))
+        var sink = BytesSink()
+        try CodecInitSynBody.encodeSource(value, into: &sink)
+        let expected: [UInt8] = [1, 2, 16, 0]
+        #expect(sink.bytes == expected, "codec_init_syn_body source 1: S set: both fields it decides")
+        var cursor = SceCursor(sink.bytes)
+        let decoded = try CodecInitSynBody.decode(&cursor, S: 1)
+        #expect(cursor.remaining == 0, "codec_init_syn_body source 1: the decode left bytes of the frame unread")
+        #expect(decoded.version == value.version, "codec_init_syn_body source 0: the decode presents another version")
+        #expect(decoded.s == value.s, "codec_init_syn_body source 1: the decode presents another S")
+        #expect(CodecInitSynBody.inputS(value) == 1, "codec_init_syn_body source 2: the decode presents another flag input S")
+    }
+
+
 }
 
 // MARK: - codec: codec_init_syn_envelope
@@ -7710,6 +9574,45 @@ private func expectClose(_ actual: Double, _ expected: Double, _ label: String) 
 
     // Compile-only probe: the oracle holds no case this fixture's field shape can express.
     _ = CodecInitSynEnvelope.frameLength
+
+    do {
+        let value = CodecInitSynEnvelope(header: 65, body: .codecInitSynBody(CodecInitSynBody(version: 1, s: CodecInitSynBodyS(sn_res: 2, batch_size: 4096))))
+        var sink = BytesSink()
+        try CodecInitSynEnvelope.encodeSource(value, into: &sink)
+        let expected: [UInt8] = [65, 1, 2, 16, 0]
+        #expect(sink.bytes == expected, "codec_init_syn_envelope source 0: the arm says S set by its group")
+        var cursor = SceCursor(sink.bytes)
+        let decoded = try CodecInitSynEnvelope.decode(&cursor)
+        #expect(cursor.remaining == 0, "codec_init_syn_envelope source 0: the decode left bytes of the frame unread")
+        #expect(decoded.header == value.header, "codec_init_syn_envelope source 0: the decode presents another header")
+        #expect(decoded.body == value.body, "codec_init_syn_envelope source 1: the decode presents another body")
+    }
+    do {
+        let value = CodecInitSynEnvelope(header: 1, body: .codecInitSynBody(CodecInitSynBody(version: 1, s: nil)))
+        var sink = BytesSink()
+        try CodecInitSynEnvelope.encodeSource(value, into: &sink)
+        let expected: [UInt8] = [1, 1]
+        #expect(sink.bytes == expected, "codec_init_syn_envelope source 1: the arm says S clear")
+        var cursor = SceCursor(sink.bytes)
+        let decoded = try CodecInitSynEnvelope.decode(&cursor)
+        #expect(cursor.remaining == 0, "codec_init_syn_envelope source 1: the decode left bytes of the frame unread")
+        #expect(decoded.header == value.header, "codec_init_syn_envelope source 0: the decode presents another header")
+        #expect(decoded.body == value.body, "codec_init_syn_envelope source 1: the decode presents another body")
+    }
+    do {
+        let bound0 = try #require(CodecInitSynEnvelopeUnknownTag(0x2))
+        let value = CodecInitSynEnvelope(header: 66, body: .default(tag: bound0, body: CodecInitSynBody(version: 1, s: CodecInitSynBodyS(sn_res: 0, batch_size: 0))))
+        var sink = BytesSink()
+        try CodecInitSynEnvelope.encodeSource(value, into: &sink)
+        let expected: [UInt8] = [66, 1, 0, 0, 0]
+        #expect(sink.bytes == expected, "codec_init_syn_envelope source 2: the default arm binds S too, and keeps its tag")
+        var cursor = SceCursor(sink.bytes)
+        let decoded = try CodecInitSynEnvelope.decode(&cursor)
+        #expect(cursor.remaining == 0, "codec_init_syn_envelope source 2: the decode left bytes of the frame unread")
+        #expect(decoded.header == value.header, "codec_init_syn_envelope source 0: the decode presents another header")
+        #expect(decoded.body == value.body, "codec_init_syn_envelope source 1: the decode presents another body")
+    }
+
 
 }
 
@@ -7720,6 +9623,20 @@ private func expectClose(_ actual: Double, _ expected: Double, _ label: String) 
     // Compile-only probe: the oracle holds no case this fixture's field shape can express.
     _ = CodecPeekArmA.frameLength
 
+    do {
+        let value = CodecPeekArmA(header: 0, payload: 5)
+        var sink = BytesSink()
+        try CodecPeekArmA.encodeSource(value, into: &sink)
+        let expected: [UInt8] = [0, 5]
+        #expect(sink.bytes == expected, "codec_peek_arm_a source 0: the header presented whole, then one byte")
+        var cursor = SceCursor(sink.bytes)
+        let decoded = try CodecPeekArmA.decode(&cursor)
+        #expect(cursor.remaining == 0, "codec_peek_arm_a source 0: the decode left bytes of the frame unread")
+        #expect(decoded.header == value.header, "codec_peek_arm_a source 0: the decode presents another header")
+        #expect(decoded.payload == value.payload, "codec_peek_arm_a source 1: the decode presents another payload")
+    }
+
+
 }
 
 // MARK: - codec: codec_peek_arm_b
@@ -7728,6 +9645,20 @@ private func expectClose(_ actual: Double, _ expected: Double, _ label: String) 
 
     // Compile-only probe: the oracle holds no case this fixture's field shape can express.
     _ = CodecPeekArmB.frameLength
+
+    do {
+        let value = CodecPeekArmB(header: 1, payload: 4660)
+        var sink = BytesSink()
+        try CodecPeekArmB.encodeSource(value, into: &sink)
+        let expected: [UInt8] = [1, 18, 52]
+        #expect(sink.bytes == expected, "codec_peek_arm_b source 0: the header presented whole, then two bytes")
+        var cursor = SceCursor(sink.bytes)
+        let decoded = try CodecPeekArmB.decode(&cursor)
+        #expect(cursor.remaining == 0, "codec_peek_arm_b source 0: the decode left bytes of the frame unread")
+        #expect(decoded.header == value.header, "codec_peek_arm_b source 0: the decode presents another header")
+        #expect(decoded.payload == value.payload, "codec_peek_arm_b source 1: the decode presents another payload")
+    }
+
 
 }
 
@@ -7738,6 +9669,68 @@ private func expectClose(_ actual: Double, _ expected: Double, _ label: String) 
     // Compile-only probe: the oracle holds no case this fixture's field shape can express.
     _ = CodecPresentIfBasic.frameLength
 
+    do {
+        let value = CodecPresentIfBasic(flags: 0, seq: nil)
+        var sink = BytesSink()
+        try CodecPresentIfBasic.encodeSource(value, into: &sink)
+        let expected: [UInt8] = [0]
+        #expect(sink.bytes == expected, "codec_present_if_basic source 0: has_seq clear: the frame is the carrier alone")
+        var cursor = SceCursor(sink.bytes)
+        let decoded = try CodecPresentIfBasic.decode(&cursor)
+        #expect(cursor.remaining == 0, "codec_present_if_basic source 0: the decode left bytes of the frame unread")
+        #expect(decoded.flags == value.flags, "codec_present_if_basic source 0: the decode presents another flags")
+        #expect(decoded.seq == value.seq, "codec_present_if_basic source 1: the decode presents another seq")
+    }
+    do {
+        let value = CodecPresentIfBasic(flags: 1, seq: 4660)
+        var sink = BytesSink()
+        try CodecPresentIfBasic.encodeSource(value, into: &sink)
+        let expected: [UInt8] = [1, 18, 52]
+        #expect(sink.bytes == expected, "codec_present_if_basic source 1: has_seq set: seq follows, big-endian")
+        var cursor = SceCursor(sink.bytes)
+        let decoded = try CodecPresentIfBasic.decode(&cursor)
+        #expect(cursor.remaining == 0, "codec_present_if_basic source 1: the decode left bytes of the frame unread")
+        #expect(decoded.flags == value.flags, "codec_present_if_basic source 0: the decode presents another flags")
+        #expect(decoded.seq == value.seq, "codec_present_if_basic source 1: the decode presents another seq")
+    }
+    do {
+        let value = CodecPresentIfBasic(flags: 254, seq: nil)
+        var sink = BytesSink()
+        try CodecPresentIfBasic.encodeSource(value, into: &sink)
+        let expected: [UInt8] = [254]
+        #expect(sink.bytes == expected, "codec_present_if_basic source 2: the bits the value presents are kept beside the derived one")
+        var cursor = SceCursor(sink.bytes)
+        let decoded = try CodecPresentIfBasic.decode(&cursor)
+        #expect(cursor.remaining == 0, "codec_present_if_basic source 2: the decode left bytes of the frame unread")
+        #expect(decoded.flags == value.flags, "codec_present_if_basic source 0: the decode presents another flags")
+        #expect(decoded.seq == value.seq, "codec_present_if_basic source 1: the decode presents another seq")
+    }
+    do {
+        let value = CodecPresentIfBasic(flags: 255, seq: 0)
+        var sink = BytesSink()
+        try CodecPresentIfBasic.encodeSource(value, into: &sink)
+        let expected: [UInt8] = [255, 0, 0]
+        #expect(sink.bytes == expected, "codec_present_if_basic source 3: a present seq of zero is still present")
+        var cursor = SceCursor(sink.bytes)
+        let decoded = try CodecPresentIfBasic.decode(&cursor)
+        #expect(cursor.remaining == 0, "codec_present_if_basic source 3: the decode left bytes of the frame unread")
+        #expect(decoded.flags == value.flags, "codec_present_if_basic source 0: the decode presents another flags")
+        #expect(decoded.seq == value.seq, "codec_present_if_basic source 1: the decode presents another seq")
+    }
+    do {
+        let value = CodecPresentIfBasic(flags: 1, seq: 65535)
+        var sink = BytesSink()
+        try CodecPresentIfBasic.encodeSource(value, into: &sink)
+        let expected: [UInt8] = [1, 255, 255]
+        #expect(sink.bytes == expected, "codec_present_if_basic source 4: seq at its largest")
+        var cursor = SceCursor(sink.bytes)
+        let decoded = try CodecPresentIfBasic.decode(&cursor)
+        #expect(cursor.remaining == 0, "codec_present_if_basic source 4: the decode left bytes of the frame unread")
+        #expect(decoded.flags == value.flags, "codec_present_if_basic source 0: the decode presents another flags")
+        #expect(decoded.seq == value.seq, "codec_present_if_basic source 1: the decode presents another seq")
+    }
+
+
 }
 
 // MARK: - codec: codec_present_if_checked
@@ -7746,6 +9739,105 @@ private func expectClose(_ actual: Double, _ expected: Double, _ label: String) 
 
     // Compile-only probe: the oracle holds no case this fixture's field shape can express.
     _ = CodecPresentIfChecked.frameLength
+
+    do {
+        let value = CodecPresentIfChecked(flags: 0, seq: nil, trailer: nil)
+        var sink = BytesSink()
+        try CodecPresentIfChecked.encodeSource(value, into: &sink)
+        let expected: [UInt8] = [0]
+        #expect(sink.bytes == expected, "codec_present_if_checked source 0: neither flag: no seq and no trailer, the frame is the carrier alone")
+        var cursor = SceCursor(sink.bytes)
+        let decoded = try CodecPresentIfChecked.decode(&cursor)
+        #expect(cursor.remaining == 0, "codec_present_if_checked source 0: the decode left bytes of the frame unread")
+        #expect(decoded.flags == value.flags, "codec_present_if_checked source 0: the decode presents another flags")
+        #expect(decoded.seq == value.seq, "codec_present_if_checked source 1: the decode presents another seq")
+        #expect(decoded.trailer == value.trailer, "codec_present_if_checked source 2: the decode presents another trailer")
+    }
+    do {
+        let value = CodecPresentIfChecked(flags: 1, seq: 4660, trailer: 7)
+        var sink = BytesSink()
+        try CodecPresentIfChecked.encodeSource(value, into: &sink)
+        let expected: [UInt8] = [1, 18, 52, 7]
+        #expect(sink.bytes == expected, "codec_present_if_checked source 1: seq sets has_seq, so the trailer is there by has_seq")
+        var cursor = SceCursor(sink.bytes)
+        let decoded = try CodecPresentIfChecked.decode(&cursor)
+        #expect(cursor.remaining == 0, "codec_present_if_checked source 1: the decode left bytes of the frame unread")
+        #expect(decoded.flags == value.flags, "codec_present_if_checked source 0: the decode presents another flags")
+        #expect(decoded.seq == value.seq, "codec_present_if_checked source 1: the decode presents another seq")
+        #expect(decoded.trailer == value.trailer, "codec_present_if_checked source 2: the decode presents another trailer")
+    }
+    do {
+        let value = CodecPresentIfChecked(flags: 2, seq: nil, trailer: 255)
+        var sink = BytesSink()
+        try CodecPresentIfChecked.encodeSource(value, into: &sink)
+        let expected: [UInt8] = [2, 255]
+        #expect(sink.bytes == expected, "codec_present_if_checked source 2: wants_trailer alone: the trailer is there without seq")
+        var cursor = SceCursor(sink.bytes)
+        let decoded = try CodecPresentIfChecked.decode(&cursor)
+        #expect(cursor.remaining == 0, "codec_present_if_checked source 2: the decode left bytes of the frame unread")
+        #expect(decoded.flags == value.flags, "codec_present_if_checked source 0: the decode presents another flags")
+        #expect(decoded.seq == value.seq, "codec_present_if_checked source 1: the decode presents another seq")
+        #expect(decoded.trailer == value.trailer, "codec_present_if_checked source 2: the decode presents another trailer")
+    }
+    do {
+        let value = CodecPresentIfChecked(flags: 3, seq: 0, trailer: 0)
+        var sink = BytesSink()
+        try CodecPresentIfChecked.encodeSource(value, into: &sink)
+        let expected: [UInt8] = [3, 0, 0, 0]
+        #expect(sink.bytes == expected, "codec_present_if_checked source 3: both flags: seq and the trailer, each zero and still present")
+        var cursor = SceCursor(sink.bytes)
+        let decoded = try CodecPresentIfChecked.decode(&cursor)
+        #expect(cursor.remaining == 0, "codec_present_if_checked source 3: the decode left bytes of the frame unread")
+        #expect(decoded.flags == value.flags, "codec_present_if_checked source 0: the decode presents another flags")
+        #expect(decoded.seq == value.seq, "codec_present_if_checked source 1: the decode presents another seq")
+        #expect(decoded.trailer == value.trailer, "codec_present_if_checked source 2: the decode presents another trailer")
+    }
+    do {
+        let value = CodecPresentIfChecked(flags: 252, seq: nil, trailer: nil)
+        var sink = BytesSink()
+        try CodecPresentIfChecked.encodeSource(value, into: &sink)
+        let expected: [UInt8] = [252]
+        #expect(sink.bytes == expected, "codec_present_if_checked source 4: the bits the value presents beside the two flags are kept")
+        var cursor = SceCursor(sink.bytes)
+        let decoded = try CodecPresentIfChecked.decode(&cursor)
+        #expect(cursor.remaining == 0, "codec_present_if_checked source 4: the decode left bytes of the frame unread")
+        #expect(decoded.flags == value.flags, "codec_present_if_checked source 0: the decode presents another flags")
+        #expect(decoded.seq == value.seq, "codec_present_if_checked source 1: the decode presents another seq")
+        #expect(decoded.trailer == value.trailer, "codec_present_if_checked source 2: the decode presents another trailer")
+    }
+
+    do {
+        let value = CodecPresentIfChecked(flags: 0, seq: nil, trailer: 5)
+        var sink = BytesSink()
+        #expect(throws: CodecError.presentIfMismatch, "codec_present_if_checked refused 0: the encode did not answer present-if-mismatch: the trailer given where neither flag is set") {
+            try CodecPresentIfChecked.encodeSource(value, into: &sink)
+        }
+        #expect(sink.bytes.isEmpty, "codec_present_if_checked refused 0: the encode wrote bytes before it refused")
+    }
+    do {
+        let value = CodecPresentIfChecked(flags: 0, seq: 258, trailer: nil)
+        var sink = BytesSink()
+        #expect(throws: CodecError.presentIfMismatch, "codec_present_if_checked refused 1: the encode did not answer present-if-mismatch: the trailer left out where seq sets has_seq, the value's own has_seq bit clear") {
+            try CodecPresentIfChecked.encodeSource(value, into: &sink)
+        }
+        #expect(sink.bytes.isEmpty, "codec_present_if_checked refused 1: the encode wrote bytes before it refused")
+    }
+    do {
+        let value = CodecPresentIfChecked(flags: 2, seq: nil, trailer: nil)
+        var sink = BytesSink()
+        #expect(throws: CodecError.presentIfMismatch, "codec_present_if_checked refused 2: the encode did not answer present-if-mismatch: the trailer left out where wants_trailer is set") {
+            try CodecPresentIfChecked.encodeSource(value, into: &sink)
+        }
+        #expect(sink.bytes.isEmpty, "codec_present_if_checked refused 2: the encode wrote bytes before it refused")
+    }
+    do {
+        let value = CodecPresentIfChecked(flags: 1, seq: nil, trailer: 9)
+        var sink = BytesSink()
+        #expect(throws: CodecError.presentIfMismatch, "codec_present_if_checked refused 3: the encode did not answer present-if-mismatch: the trailer given where the value's own has_seq bit is set and no seq derives it") {
+            try CodecPresentIfChecked.encodeSource(value, into: &sink)
+        }
+        #expect(sink.bytes.isEmpty, "codec_present_if_checked refused 3: the encode wrote bytes before it refused")
+    }
 
 }
 
@@ -7756,6 +9848,70 @@ private func expectClose(_ actual: Double, _ expected: Double, _ label: String) 
     // Compile-only probe: the oracle holds no case this fixture's field shape can express.
     _ = CodecLengthShared.frameLength
 
+    do {
+        let bound0 = try #require(BoundedBytes<CodecLengthShared.AlphaBound>([]))
+        let bound1 = try #require(BoundedBytes<CodecLengthShared.BetaBound>([]))
+        let value = CodecLengthShared(alpha: bound0, beta: bound1)
+        var sink = BytesSink()
+        try CodecLengthShared.encodeSource(value, into: &sink)
+        let expected: [UInt8] = [0]
+        #expect(sink.bytes == expected, "codec_length_shared source 0: two empty byte strings: the length is zero")
+        var cursor = SceCursor(sink.bytes)
+        let decoded = try CodecLengthShared.decode(&cursor)
+        #expect(cursor.remaining == 0, "codec_length_shared source 0: the decode left bytes of the frame unread")
+        #expect(decoded.alpha == value.alpha, "codec_length_shared source 0: the decode presents another alpha")
+        #expect(decoded.beta == value.beta, "codec_length_shared source 1: the decode presents another beta")
+    }
+    do {
+        let bound0 = try #require(BoundedBytes<CodecLengthShared.AlphaBound>([1, 2]))
+        let bound1 = try #require(BoundedBytes<CodecLengthShared.BetaBound>([3, 4]))
+        let value = CodecLengthShared(alpha: bound0, beta: bound1)
+        var sink = BytesSink()
+        try CodecLengthShared.encodeSource(value, into: &sink)
+        let expected: [UInt8] = [2, 1, 2, 3, 4]
+        #expect(sink.bytes == expected, "codec_length_shared source 1: two byte strings of one length, after it")
+        var cursor = SceCursor(sink.bytes)
+        let decoded = try CodecLengthShared.decode(&cursor)
+        #expect(cursor.remaining == 0, "codec_length_shared source 1: the decode left bytes of the frame unread")
+        #expect(decoded.alpha == value.alpha, "codec_length_shared source 0: the decode presents another alpha")
+        #expect(decoded.beta == value.beta, "codec_length_shared source 1: the decode presents another beta")
+    }
+    do {
+        let bound0 = try #require(BoundedBytes<CodecLengthShared.AlphaBound>([165, 165, 165, 165, 165, 165, 165, 165, 165, 165, 165, 165, 165, 165, 165, 165, 165, 165, 165, 165, 165, 165, 165, 165, 165, 165, 165, 165, 165, 165, 165, 165, 165, 165, 165, 165, 165, 165, 165, 165, 165, 165, 165, 165, 165, 165, 165, 165, 165, 165, 165, 165, 165, 165, 165, 165, 165, 165, 165, 165, 165, 165, 165, 165, 165, 165, 165, 165, 165, 165, 165, 165, 165, 165, 165, 165, 165, 165, 165, 165, 165, 165, 165, 165, 165, 165, 165, 165, 165, 165, 165, 165, 165, 165, 165, 165, 165, 165, 165, 165, 165, 165, 165, 165, 165, 165, 165, 165, 165, 165, 165, 165, 165, 165, 165, 165, 165, 165, 165, 165, 165, 165, 165, 165, 165, 165, 165, 165, 165, 165, 165, 165, 165, 165, 165, 165, 165, 165, 165, 165, 165, 165, 165, 165, 165, 165, 165, 165, 165, 165, 165, 165, 165, 165, 165, 165, 165, 165, 165, 165, 165, 165, 165, 165, 165, 165, 165, 165, 165, 165, 165, 165, 165, 165, 165, 165, 165, 165, 165, 165, 165, 165, 165, 165, 165, 165, 165, 165, 165, 165, 165, 165, 165, 165, 165, 165, 165, 165, 165, 165, 165, 165, 165, 165, 165, 165, 165, 165, 165, 165, 165, 165, 165, 165, 165, 165, 165, 165, 165, 165, 165, 165, 165, 165, 165, 165, 165, 165, 165, 165, 165, 165, 165, 165, 165, 165, 165, 165, 165, 165, 165, 165, 165, 165, 165, 165, 165, 165, 165, 165, 165, 165, 165, 165, 165]))
+        let bound1 = try #require(BoundedBytes<CodecLengthShared.BetaBound>([90, 90, 90, 90, 90, 90, 90, 90, 90, 90, 90, 90, 90, 90, 90, 90, 90, 90, 90, 90, 90, 90, 90, 90, 90, 90, 90, 90, 90, 90, 90, 90, 90, 90, 90, 90, 90, 90, 90, 90, 90, 90, 90, 90, 90, 90, 90, 90, 90, 90, 90, 90, 90, 90, 90, 90, 90, 90, 90, 90, 90, 90, 90, 90, 90, 90, 90, 90, 90, 90, 90, 90, 90, 90, 90, 90, 90, 90, 90, 90, 90, 90, 90, 90, 90, 90, 90, 90, 90, 90, 90, 90, 90, 90, 90, 90, 90, 90, 90, 90, 90, 90, 90, 90, 90, 90, 90, 90, 90, 90, 90, 90, 90, 90, 90, 90, 90, 90, 90, 90, 90, 90, 90, 90, 90, 90, 90, 90, 90, 90, 90, 90, 90, 90, 90, 90, 90, 90, 90, 90, 90, 90, 90, 90, 90, 90, 90, 90, 90, 90, 90, 90, 90, 90, 90, 90, 90, 90, 90, 90, 90, 90, 90, 90, 90, 90, 90, 90, 90, 90, 90, 90, 90, 90, 90, 90, 90, 90, 90, 90, 90, 90, 90, 90, 90, 90, 90, 90, 90, 90, 90, 90, 90, 90, 90, 90, 90, 90, 90, 90, 90, 90, 90, 90, 90, 90, 90, 90, 90, 90, 90, 90, 90, 90, 90, 90, 90, 90, 90, 90, 90, 90, 90, 90, 90, 90, 90, 90, 90, 90, 90, 90, 90, 90, 90, 90, 90, 90, 90, 90, 90, 90, 90, 90, 90, 90, 90, 90, 90, 90, 90, 90, 90, 90, 90]))
+        let value = CodecLengthShared(alpha: bound0, beta: bound1)
+        var sink = BytesSink()
+        try CodecLengthShared.encodeSource(value, into: &sink)
+        let expected: [UInt8] = [255, 165, 165, 165, 165, 165, 165, 165, 165, 165, 165, 165, 165, 165, 165, 165, 165, 165, 165, 165, 165, 165, 165, 165, 165, 165, 165, 165, 165, 165, 165, 165, 165, 165, 165, 165, 165, 165, 165, 165, 165, 165, 165, 165, 165, 165, 165, 165, 165, 165, 165, 165, 165, 165, 165, 165, 165, 165, 165, 165, 165, 165, 165, 165, 165, 165, 165, 165, 165, 165, 165, 165, 165, 165, 165, 165, 165, 165, 165, 165, 165, 165, 165, 165, 165, 165, 165, 165, 165, 165, 165, 165, 165, 165, 165, 165, 165, 165, 165, 165, 165, 165, 165, 165, 165, 165, 165, 165, 165, 165, 165, 165, 165, 165, 165, 165, 165, 165, 165, 165, 165, 165, 165, 165, 165, 165, 165, 165, 165, 165, 165, 165, 165, 165, 165, 165, 165, 165, 165, 165, 165, 165, 165, 165, 165, 165, 165, 165, 165, 165, 165, 165, 165, 165, 165, 165, 165, 165, 165, 165, 165, 165, 165, 165, 165, 165, 165, 165, 165, 165, 165, 165, 165, 165, 165, 165, 165, 165, 165, 165, 165, 165, 165, 165, 165, 165, 165, 165, 165, 165, 165, 165, 165, 165, 165, 165, 165, 165, 165, 165, 165, 165, 165, 165, 165, 165, 165, 165, 165, 165, 165, 165, 165, 165, 165, 165, 165, 165, 165, 165, 165, 165, 165, 165, 165, 165, 165, 165, 165, 165, 165, 165, 165, 165, 165, 165, 165, 165, 165, 165, 165, 165, 165, 165, 165, 165, 165, 165, 165, 165, 165, 165, 165, 165, 165, 165, 90, 90, 90, 90, 90, 90, 90, 90, 90, 90, 90, 90, 90, 90, 90, 90, 90, 90, 90, 90, 90, 90, 90, 90, 90, 90, 90, 90, 90, 90, 90, 90, 90, 90, 90, 90, 90, 90, 90, 90, 90, 90, 90, 90, 90, 90, 90, 90, 90, 90, 90, 90, 90, 90, 90, 90, 90, 90, 90, 90, 90, 90, 90, 90, 90, 90, 90, 90, 90, 90, 90, 90, 90, 90, 90, 90, 90, 90, 90, 90, 90, 90, 90, 90, 90, 90, 90, 90, 90, 90, 90, 90, 90, 90, 90, 90, 90, 90, 90, 90, 90, 90, 90, 90, 90, 90, 90, 90, 90, 90, 90, 90, 90, 90, 90, 90, 90, 90, 90, 90, 90, 90, 90, 90, 90, 90, 90, 90, 90, 90, 90, 90, 90, 90, 90, 90, 90, 90, 90, 90, 90, 90, 90, 90, 90, 90, 90, 90, 90, 90, 90, 90, 90, 90, 90, 90, 90, 90, 90, 90, 90, 90, 90, 90, 90, 90, 90, 90, 90, 90, 90, 90, 90, 90, 90, 90, 90, 90, 90, 90, 90, 90, 90, 90, 90, 90, 90, 90, 90, 90, 90, 90, 90, 90, 90, 90, 90, 90, 90, 90, 90, 90, 90, 90, 90, 90, 90, 90, 90, 90, 90, 90, 90, 90, 90, 90, 90, 90, 90, 90, 90, 90, 90, 90, 90, 90, 90, 90, 90, 90, 90, 90, 90, 90, 90, 90, 90, 90, 90, 90, 90, 90, 90, 90, 90, 90, 90, 90, 90, 90, 90, 90, 90, 90, 90]
+        #expect(sink.bytes == expected, "codec_length_shared source 2: the length at the most its byte says, the bound of both byte strings")
+        var cursor = SceCursor(sink.bytes)
+        let decoded = try CodecLengthShared.decode(&cursor)
+        #expect(cursor.remaining == 0, "codec_length_shared source 2: the decode left bytes of the frame unread")
+        #expect(decoded.alpha == value.alpha, "codec_length_shared source 0: the decode presents another alpha")
+        #expect(decoded.beta == value.beta, "codec_length_shared source 1: the decode presents another beta")
+    }
+
+    do {
+        let bound0 = try #require(BoundedBytes<CodecLengthShared.AlphaBound>([1, 2]))
+        let bound1 = try #require(BoundedBytes<CodecLengthShared.BetaBound>([3]))
+        let value = CodecLengthShared(alpha: bound0, beta: bound1)
+        var sink = BytesSink()
+        #expect(throws: CodecError.inconsistentSource, "codec_length_shared refused 0: the encode did not answer inconsistent-source: the second byte string one byte shorter than the first") {
+            try CodecLengthShared.encodeSource(value, into: &sink)
+        }
+        #expect(sink.bytes.isEmpty, "codec_length_shared refused 0: the encode wrote bytes before it refused")
+    }
+    do {
+        let bound0 = try #require(BoundedBytes<CodecLengthShared.AlphaBound>([]))
+        let bound1 = try #require(BoundedBytes<CodecLengthShared.BetaBound>([9]))
+        let value = CodecLengthShared(alpha: bound0, beta: bound1)
+        var sink = BytesSink()
+        #expect(throws: CodecError.inconsistentSource, "codec_length_shared refused 1: the encode did not answer inconsistent-source: the first byte string empty and the second not") {
+            try CodecLengthShared.encodeSource(value, into: &sink)
+        }
+        #expect(sink.bytes.isEmpty, "codec_length_shared refused 1: the encode wrote bytes before it refused")
+    }
+
 }
 
 // MARK: - codec: codec_length_stated
@@ -7764,6 +9920,140 @@ private func expectClose(_ actual: Double, _ expected: Double, _ label: String) 
 
     // Compile-only probe: the oracle holds no case this fixture's field shape can express.
     _ = CodecLengthStated.frameLength
+
+    do {
+        let value = CodecLengthStated(flags: 0, span_len: 5, alpha: nil, beta: nil)
+        var sink = BytesSink()
+        try CodecLengthStated.encodeSource(value, into: &sink)
+        let expected: [UInt8] = [0, 5]
+        #expect(sink.bytes == expected, "codec_length_stated source 0: neither byte string: the value states the length")
+        var cursor = SceCursor(sink.bytes)
+        let decoded = try CodecLengthStated.decode(&cursor)
+        #expect(cursor.remaining == 0, "codec_length_stated source 0: the decode left bytes of the frame unread")
+        #expect(decoded.flags == value.flags, "codec_length_stated source 0: the decode presents another flags")
+        #expect(decoded.span_len == value.span_len, "codec_length_stated source 1: the decode presents another span_len")
+        #expect(decoded.alpha == value.alpha, "codec_length_stated source 2: the decode presents another alpha")
+        #expect(decoded.beta == value.beta, "codec_length_stated source 3: the decode presents another beta")
+    }
+    do {
+        let value = CodecLengthStated(flags: 0, span_len: 0, alpha: nil, beta: nil)
+        var sink = BytesSink()
+        try CodecLengthStated.encodeSource(value, into: &sink)
+        let expected: [UInt8] = [0, 0]
+        #expect(sink.bytes == expected, "codec_length_stated source 1: neither byte string, a stated length of zero")
+        var cursor = SceCursor(sink.bytes)
+        let decoded = try CodecLengthStated.decode(&cursor)
+        #expect(cursor.remaining == 0, "codec_length_stated source 1: the decode left bytes of the frame unread")
+        #expect(decoded.flags == value.flags, "codec_length_stated source 0: the decode presents another flags")
+        #expect(decoded.span_len == value.span_len, "codec_length_stated source 1: the decode presents another span_len")
+        #expect(decoded.alpha == value.alpha, "codec_length_stated source 2: the decode presents another alpha")
+        #expect(decoded.beta == value.beta, "codec_length_stated source 3: the decode presents another beta")
+    }
+    do {
+        let bound0 = try #require(BoundedBytes<CodecLengthStated.AlphaBound>([97, 98]))
+        let value = CodecLengthStated(flags: 1, span_len: nil, alpha: bound0, beta: nil)
+        var sink = BytesSink()
+        try CodecLengthStated.encodeSource(value, into: &sink)
+        let expected: [UInt8] = [1, 2, 97, 98]
+        #expect(sink.bytes == expected, "codec_length_stated source 2: alpha alone says the length, and has_alpha is derived")
+        var cursor = SceCursor(sink.bytes)
+        let decoded = try CodecLengthStated.decode(&cursor)
+        #expect(cursor.remaining == 0, "codec_length_stated source 2: the decode left bytes of the frame unread")
+        #expect(decoded.flags == value.flags, "codec_length_stated source 0: the decode presents another flags")
+        #expect(decoded.span_len == value.span_len, "codec_length_stated source 1: the decode presents another span_len")
+        #expect(decoded.alpha == value.alpha, "codec_length_stated source 2: the decode presents another alpha")
+        #expect(decoded.beta == value.beta, "codec_length_stated source 3: the decode presents another beta")
+    }
+    do {
+        let bound0 = try #require(BoundedBytes<CodecLengthStated.BetaBound>([122]))
+        let value = CodecLengthStated(flags: 2, span_len: nil, alpha: nil, beta: bound0)
+        var sink = BytesSink()
+        try CodecLengthStated.encodeSource(value, into: &sink)
+        let expected: [UInt8] = [2, 1, 122]
+        #expect(sink.bytes == expected, "codec_length_stated source 3: beta alone says the length, and has_beta is derived")
+        var cursor = SceCursor(sink.bytes)
+        let decoded = try CodecLengthStated.decode(&cursor)
+        #expect(cursor.remaining == 0, "codec_length_stated source 3: the decode left bytes of the frame unread")
+        #expect(decoded.flags == value.flags, "codec_length_stated source 0: the decode presents another flags")
+        #expect(decoded.span_len == value.span_len, "codec_length_stated source 1: the decode presents another span_len")
+        #expect(decoded.alpha == value.alpha, "codec_length_stated source 2: the decode presents another alpha")
+        #expect(decoded.beta == value.beta, "codec_length_stated source 3: the decode presents another beta")
+    }
+    do {
+        let bound0 = try #require(BoundedBytes<CodecLengthStated.AlphaBound>([120, 121]))
+        let bound1 = try #require(BoundedBytes<CodecLengthStated.BetaBound>([1, 2]))
+        let value = CodecLengthStated(flags: 3, span_len: nil, alpha: bound0, beta: bound1)
+        var sink = BytesSink()
+        try CodecLengthStated.encodeSource(value, into: &sink)
+        let expected: [UInt8] = [3, 2, 120, 121, 1, 2]
+        #expect(sink.bytes == expected, "codec_length_stated source 4: both, of one length, which both say")
+        var cursor = SceCursor(sink.bytes)
+        let decoded = try CodecLengthStated.decode(&cursor)
+        #expect(cursor.remaining == 0, "codec_length_stated source 4: the decode left bytes of the frame unread")
+        #expect(decoded.flags == value.flags, "codec_length_stated source 0: the decode presents another flags")
+        #expect(decoded.span_len == value.span_len, "codec_length_stated source 1: the decode presents another span_len")
+        #expect(decoded.alpha == value.alpha, "codec_length_stated source 2: the decode presents another alpha")
+        #expect(decoded.beta == value.beta, "codec_length_stated source 3: the decode presents another beta")
+    }
+    do {
+        let bound0 = try #require(BoundedBytes<CodecLengthStated.AlphaBound>([]))
+        let bound1 = try #require(BoundedBytes<CodecLengthStated.BetaBound>([]))
+        let value = CodecLengthStated(flags: 3, span_len: nil, alpha: bound0, beta: bound1)
+        var sink = BytesSink()
+        try CodecLengthStated.encodeSource(value, into: &sink)
+        let expected: [UInt8] = [3, 0]
+        #expect(sink.bytes == expected, "codec_length_stated source 5: both there and empty: the content says zero")
+        var cursor = SceCursor(sink.bytes)
+        let decoded = try CodecLengthStated.decode(&cursor)
+        #expect(cursor.remaining == 0, "codec_length_stated source 5: the decode left bytes of the frame unread")
+        #expect(decoded.flags == value.flags, "codec_length_stated source 0: the decode presents another flags")
+        #expect(decoded.span_len == value.span_len, "codec_length_stated source 1: the decode presents another span_len")
+        #expect(decoded.alpha == value.alpha, "codec_length_stated source 2: the decode presents another alpha")
+        #expect(decoded.beta == value.beta, "codec_length_stated source 3: the decode presents another beta")
+    }
+    do {
+        let value = CodecLengthStated(flags: 252, span_len: 255, alpha: nil, beta: nil)
+        var sink = BytesSink()
+        try CodecLengthStated.encodeSource(value, into: &sink)
+        let expected: [UInt8] = [252, 255]
+        #expect(sink.bytes == expected, "codec_length_stated source 6: the bits beside the two flags are kept, and the stated length at its largest")
+        var cursor = SceCursor(sink.bytes)
+        let decoded = try CodecLengthStated.decode(&cursor)
+        #expect(cursor.remaining == 0, "codec_length_stated source 6: the decode left bytes of the frame unread")
+        #expect(decoded.flags == value.flags, "codec_length_stated source 0: the decode presents another flags")
+        #expect(decoded.span_len == value.span_len, "codec_length_stated source 1: the decode presents another span_len")
+        #expect(decoded.alpha == value.alpha, "codec_length_stated source 2: the decode presents another alpha")
+        #expect(decoded.beta == value.beta, "codec_length_stated source 3: the decode presents another beta")
+    }
+
+    do {
+        let bound0 = try #require(BoundedBytes<CodecLengthStated.AlphaBound>([1, 2]))
+        let bound1 = try #require(BoundedBytes<CodecLengthStated.BetaBound>([3]))
+        let value = CodecLengthStated(flags: 3, span_len: nil, alpha: bound0, beta: bound1)
+        var sink = BytesSink()
+        #expect(throws: CodecError.inconsistentSource, "codec_length_stated refused 0: the encode did not answer inconsistent-source: both byte strings there, of two lengths") {
+            try CodecLengthStated.encodeSource(value, into: &sink)
+        }
+        #expect(sink.bytes.isEmpty, "codec_length_stated refused 0: the encode wrote bytes before it refused")
+    }
+    do {
+        let bound0 = try #require(BoundedBytes<CodecLengthStated.AlphaBound>([1, 2]))
+        let value = CodecLengthStated(flags: 1, span_len: 7, alpha: bound0, beta: nil)
+        var sink = BytesSink()
+        #expect(throws: CodecError.inconsistentSource, "codec_length_stated refused 1: the encode did not answer inconsistent-source: a stated length of seven beside alpha of two bytes") {
+            try CodecLengthStated.encodeSource(value, into: &sink)
+        }
+        #expect(sink.bytes.isEmpty, "codec_length_stated refused 1: the encode wrote bytes before it refused")
+    }
+    do {
+        let bound0 = try #require(BoundedBytes<CodecLengthStated.BetaBound>([4]))
+        let value = CodecLengthStated(flags: 2, span_len: 0, alpha: nil, beta: bound0)
+        var sink = BytesSink()
+        #expect(throws: CodecError.inconsistentSource, "codec_length_stated refused 2: the encode did not answer inconsistent-source: a stated length of zero beside beta of one byte") {
+            try CodecLengthStated.encodeSource(value, into: &sink)
+        }
+        #expect(sink.bytes.isEmpty, "codec_length_stated refused 2: the encode wrote bytes before it refused")
+    }
 
 }
 
@@ -7774,6 +10064,57 @@ private func expectClose(_ actual: Double, _ expected: Double, _ label: String) 
     // Compile-only probe: the oracle holds no case this fixture's field shape can express.
     _ = CodecEncodedLengthChecked.frameLength
 
+    do {
+        let bound0 = try #require(BoundedBytes<CodecLengthShared.AlphaBound>([]))
+        let bound1 = try #require(BoundedBytes<CodecLengthShared.BetaBound>([]))
+        let value = CodecEncodedLengthChecked(inner: CodecLengthShared(alpha: bound0, beta: bound1))
+        var sink = BytesSink()
+        try CodecEncodedLengthChecked.encodeSource(value, into: &sink)
+        let expected: [UInt8] = [0, 1, 0]
+        #expect(sink.bytes == expected, "codec_encoded_length_checked source 0: the body of two empty byte strings is one byte long")
+        var cursor = SceCursor(sink.bytes)
+        let decoded = try CodecEncodedLengthChecked.decode(&cursor)
+        #expect(cursor.remaining == 0, "codec_encoded_length_checked source 0: the decode left bytes of the frame unread")
+        #expect(decoded.inner == value.inner, "codec_encoded_length_checked source 0: the decode presents another inner")
+    }
+    do {
+        let bound0 = try #require(BoundedBytes<CodecLengthShared.AlphaBound>([10]))
+        let bound1 = try #require(BoundedBytes<CodecLengthShared.BetaBound>([11]))
+        let value = CodecEncodedLengthChecked(inner: CodecLengthShared(alpha: bound0, beta: bound1))
+        var sink = BytesSink()
+        try CodecEncodedLengthChecked.encodeSource(value, into: &sink)
+        let expected: [UInt8] = [0, 3, 1, 10, 11]
+        #expect(sink.bytes == expected, "codec_encoded_length_checked source 1: the length is the count of the bytes the body encodes to")
+        var cursor = SceCursor(sink.bytes)
+        let decoded = try CodecEncodedLengthChecked.decode(&cursor)
+        #expect(cursor.remaining == 0, "codec_encoded_length_checked source 1: the decode left bytes of the frame unread")
+        #expect(decoded.inner == value.inner, "codec_encoded_length_checked source 0: the decode presents another inner")
+    }
+    do {
+        let bound0 = try #require(BoundedBytes<CodecLengthShared.AlphaBound>([165, 165, 165, 165, 165, 165, 165, 165, 165, 165, 165, 165, 165, 165, 165, 165, 165, 165, 165, 165, 165, 165, 165, 165, 165, 165, 165, 165, 165, 165, 165, 165, 165, 165, 165, 165, 165, 165, 165, 165, 165, 165, 165, 165, 165, 165, 165, 165, 165, 165, 165, 165, 165, 165, 165, 165, 165, 165, 165, 165, 165, 165, 165, 165, 165, 165, 165, 165, 165, 165, 165, 165, 165, 165, 165, 165, 165, 165, 165, 165, 165, 165, 165, 165, 165, 165, 165, 165, 165, 165, 165, 165, 165, 165, 165, 165, 165, 165, 165, 165, 165, 165, 165, 165, 165, 165, 165, 165, 165, 165, 165, 165, 165, 165, 165, 165, 165, 165, 165, 165, 165, 165, 165, 165, 165, 165, 165, 165]))
+        let bound1 = try #require(BoundedBytes<CodecLengthShared.BetaBound>([90, 90, 90, 90, 90, 90, 90, 90, 90, 90, 90, 90, 90, 90, 90, 90, 90, 90, 90, 90, 90, 90, 90, 90, 90, 90, 90, 90, 90, 90, 90, 90, 90, 90, 90, 90, 90, 90, 90, 90, 90, 90, 90, 90, 90, 90, 90, 90, 90, 90, 90, 90, 90, 90, 90, 90, 90, 90, 90, 90, 90, 90, 90, 90, 90, 90, 90, 90, 90, 90, 90, 90, 90, 90, 90, 90, 90, 90, 90, 90, 90, 90, 90, 90, 90, 90, 90, 90, 90, 90, 90, 90, 90, 90, 90, 90, 90, 90, 90, 90, 90, 90, 90, 90, 90, 90, 90, 90, 90, 90, 90, 90, 90, 90, 90, 90, 90, 90, 90, 90, 90, 90, 90, 90, 90, 90, 90, 90]))
+        let value = CodecEncodedLengthChecked(inner: CodecLengthShared(alpha: bound0, beta: bound1))
+        var sink = BytesSink()
+        try CodecEncodedLengthChecked.encodeSource(value, into: &sink)
+        let expected: [UInt8] = [1, 1, 128, 165, 165, 165, 165, 165, 165, 165, 165, 165, 165, 165, 165, 165, 165, 165, 165, 165, 165, 165, 165, 165, 165, 165, 165, 165, 165, 165, 165, 165, 165, 165, 165, 165, 165, 165, 165, 165, 165, 165, 165, 165, 165, 165, 165, 165, 165, 165, 165, 165, 165, 165, 165, 165, 165, 165, 165, 165, 165, 165, 165, 165, 165, 165, 165, 165, 165, 165, 165, 165, 165, 165, 165, 165, 165, 165, 165, 165, 165, 165, 165, 165, 165, 165, 165, 165, 165, 165, 165, 165, 165, 165, 165, 165, 165, 165, 165, 165, 165, 165, 165, 165, 165, 165, 165, 165, 165, 165, 165, 165, 165, 165, 165, 165, 165, 165, 165, 165, 165, 165, 165, 165, 165, 165, 165, 165, 165, 165, 165, 90, 90, 90, 90, 90, 90, 90, 90, 90, 90, 90, 90, 90, 90, 90, 90, 90, 90, 90, 90, 90, 90, 90, 90, 90, 90, 90, 90, 90, 90, 90, 90, 90, 90, 90, 90, 90, 90, 90, 90, 90, 90, 90, 90, 90, 90, 90, 90, 90, 90, 90, 90, 90, 90, 90, 90, 90, 90, 90, 90, 90, 90, 90, 90, 90, 90, 90, 90, 90, 90, 90, 90, 90, 90, 90, 90, 90, 90, 90, 90, 90, 90, 90, 90, 90, 90, 90, 90, 90, 90, 90, 90, 90, 90, 90, 90, 90, 90, 90, 90, 90, 90, 90, 90, 90, 90, 90, 90, 90, 90, 90, 90, 90, 90, 90, 90, 90, 90, 90, 90, 90, 90, 90, 90, 90, 90, 90, 90]
+        #expect(sink.bytes == expected, "codec_encoded_length_checked source 2: a body of 257 bytes: the length's high byte is set")
+        var cursor = SceCursor(sink.bytes)
+        let decoded = try CodecEncodedLengthChecked.decode(&cursor)
+        #expect(cursor.remaining == 0, "codec_encoded_length_checked source 2: the decode left bytes of the frame unread")
+        #expect(decoded.inner == value.inner, "codec_encoded_length_checked source 0: the decode presents another inner")
+    }
+
+    do {
+        let bound0 = try #require(BoundedBytes<CodecLengthShared.AlphaBound>([1, 2]))
+        let bound1 = try #require(BoundedBytes<CodecLengthShared.BetaBound>([3]))
+        let value = CodecEncodedLengthChecked(inner: CodecLengthShared(alpha: bound0, beta: bound1))
+        var sink = BytesSink()
+        #expect(throws: CodecError.inconsistentSource, "codec_encoded_length_checked refused 0: the encode did not answer inconsistent-source: the body's two byte strings differ, which the body refuses") {
+            try CodecEncodedLengthChecked.encodeSource(value, into: &sink)
+        }
+        #expect(sink.bytes.isEmpty, "codec_encoded_length_checked refused 0: the encode wrote bytes before it refused")
+    }
+
 }
 
 // MARK: - codec: codec_group_enum
@@ -7782,6 +10123,80 @@ private func expectClose(_ actual: Double, _ expected: Double, _ label: String) 
 
     // Compile-only probe: the oracle holds no case this fixture's field shape can express.
     _ = CodecGroupEnum.frameLength
+
+    do {
+        let value = CodecGroupEnum(flags: 0, flags_has_session: nil)
+        var sink = BytesSink()
+        try CodecGroupEnum.encodeSource(value, into: &sink)
+        let expected: [UInt8] = [0]
+        #expect(sink.bytes == expected, "codec_group_enum source 0: has_session clear: the carrier alone")
+        var cursor = SceCursor(sink.bytes)
+        let decoded = try CodecGroupEnum.decode(&cursor)
+        #expect(cursor.remaining == 0, "codec_group_enum source 0: the decode left bytes of the frame unread")
+        #expect(decoded.flags == value.flags, "codec_group_enum source 0: the decode presents another flags")
+        #expect(decoded.flags_has_session == value.flags_has_session, "codec_group_enum source 1: the decode presents another flags.has_session")
+    }
+    do {
+        let value = CodecGroupEnum(flags: 1, flags_has_session: CodecGroupEnumFlagsHasSession(state: EnumSessionState.defaultSession, attempts: 0))
+        var sink = BytesSink()
+        try CodecGroupEnum.encodeSource(value, into: &sink)
+        let expected: [UInt8] = [1, 1, 0]
+        #expect(sink.bytes == expected, "codec_group_enum source 1: the first variant, at its declared 1, and no attempt")
+        var cursor = SceCursor(sink.bytes)
+        let decoded = try CodecGroupEnum.decode(&cursor)
+        #expect(cursor.remaining == 0, "codec_group_enum source 1: the decode left bytes of the frame unread")
+        #expect(decoded.flags == value.flags, "codec_group_enum source 0: the decode presents another flags")
+        #expect(decoded.flags_has_session == value.flags_has_session, "codec_group_enum source 1: the decode presents another flags.has_session")
+    }
+    do {
+        let value = CodecGroupEnum(flags: 1, flags_has_session: CodecGroupEnumFlagsHasSession(state: EnumSessionState.programming, attempts: 5))
+        var sink = BytesSink()
+        try CodecGroupEnum.encodeSource(value, into: &sink)
+        let expected: [UInt8] = [1, 2, 5]
+        #expect(sink.bytes == expected, "codec_group_enum source 2: programming is written as its carrier 2")
+        var cursor = SceCursor(sink.bytes)
+        let decoded = try CodecGroupEnum.decode(&cursor)
+        #expect(cursor.remaining == 0, "codec_group_enum source 2: the decode left bytes of the frame unread")
+        #expect(decoded.flags == value.flags, "codec_group_enum source 0: the decode presents another flags")
+        #expect(decoded.flags_has_session == value.flags_has_session, "codec_group_enum source 1: the decode presents another flags.has_session")
+    }
+    do {
+        let value = CodecGroupEnum(flags: 1, flags_has_session: CodecGroupEnumFlagsHasSession(state: EnumSessionState.safetySystem, attempts: 255))
+        var sink = BytesSink()
+        try CodecGroupEnum.encodeSource(value, into: &sink)
+        let expected: [UInt8] = [1, 64, 255]
+        #expect(sink.bytes == expected, "codec_group_enum source 3: safetySystem is written as 64, and attempts at its largest")
+        var cursor = SceCursor(sink.bytes)
+        let decoded = try CodecGroupEnum.decode(&cursor)
+        #expect(cursor.remaining == 0, "codec_group_enum source 3: the decode left bytes of the frame unread")
+        #expect(decoded.flags == value.flags, "codec_group_enum source 0: the decode presents another flags")
+        #expect(decoded.flags_has_session == value.flags_has_session, "codec_group_enum source 1: the decode presents another flags.has_session")
+    }
+    do {
+        let value = CodecGroupEnum(flags: 255, flags_has_session: CodecGroupEnumFlagsHasSession(state: EnumSessionState.extendedDiagnostic, attempts: 1))
+        var sink = BytesSink()
+        try CodecGroupEnum.encodeSource(value, into: &sink)
+        let expected: [UInt8] = [255, 3, 1]
+        #expect(sink.bytes == expected, "codec_group_enum source 4: the bits beside has_session are kept")
+        var cursor = SceCursor(sink.bytes)
+        let decoded = try CodecGroupEnum.decode(&cursor)
+        #expect(cursor.remaining == 0, "codec_group_enum source 4: the decode left bytes of the frame unread")
+        #expect(decoded.flags == value.flags, "codec_group_enum source 0: the decode presents another flags")
+        #expect(decoded.flags_has_session == value.flags_has_session, "codec_group_enum source 1: the decode presents another flags.has_session")
+    }
+    do {
+        let value = CodecGroupEnum(flags: 254, flags_has_session: nil)
+        var sink = BytesSink()
+        try CodecGroupEnum.encodeSource(value, into: &sink)
+        let expected: [UInt8] = [254]
+        #expect(sink.bytes == expected, "codec_group_enum source 5: the bits beside has_session are kept where the group is absent")
+        var cursor = SceCursor(sink.bytes)
+        let decoded = try CodecGroupEnum.decode(&cursor)
+        #expect(cursor.remaining == 0, "codec_group_enum source 5: the decode left bytes of the frame unread")
+        #expect(decoded.flags == value.flags, "codec_group_enum source 0: the decode presents another flags")
+        #expect(decoded.flags_has_session == value.flags_has_session, "codec_group_enum source 1: the decode presents another flags.has_session")
+    }
+
 
     do {
         var rejectCursor = SceCursor([1, 4, 0])
@@ -7799,6 +10214,100 @@ private func expectClose(_ actual: Double, _ expected: Double, _ label: String) 
     // Compile-only probe: the oracle holds no case this fixture's field shape can express.
     _ = CodecChainHasInput.frameLength
 
+    do {
+        let bound0 = try #require(BoundedList<CodecChainHasTaggedEntry, CodecChainHasInput.EntriesBound>([CodecChainHasTaggedEntry(entry_type: 7, ctl: 0, body: 5)]))
+        let value = CodecChainHasInput(entries: bound0, priority: 9)
+        var sink = BytesSink()
+        try CodecChainHasInput.encodeSource(value, into: &sink, urgent: 0)
+        let expected: [UInt8] = [7, 0, 5, 9]
+        #expect(sink.bytes == expected, "codec_chain_has_input source 0: an entry of kind 7: priority is there")
+        var cursor = SceCursor(sink.bytes)
+        let decoded = try CodecChainHasInput.decode(&cursor, urgent: 0)
+        #expect(cursor.remaining == 0, "codec_chain_has_input source 0: the decode left bytes of the frame unread")
+        #expect(decoded.entries == value.entries, "codec_chain_has_input source 0: the decode presents another entries")
+        #expect(decoded.priority == value.priority, "codec_chain_has_input source 1: the decode presents another priority")
+    }
+    do {
+        let bound0 = try #require(BoundedList<CodecChainHasTaggedEntry, CodecChainHasInput.EntriesBound>([CodecChainHasTaggedEntry(entry_type: 3, ctl: 0, body: 5)]))
+        let value = CodecChainHasInput(entries: bound0, priority: nil)
+        var sink = BytesSink()
+        try CodecChainHasInput.encodeSource(value, into: &sink, urgent: 0)
+        let expected: [UInt8] = [3, 0, 5]
+        #expect(sink.bytes == expected, "codec_chain_has_input source 1: no entry of kind 7 and urgent clear: no priority")
+        var cursor = SceCursor(sink.bytes)
+        let decoded = try CodecChainHasInput.decode(&cursor, urgent: 0)
+        #expect(cursor.remaining == 0, "codec_chain_has_input source 1: the decode left bytes of the frame unread")
+        #expect(decoded.entries == value.entries, "codec_chain_has_input source 0: the decode presents another entries")
+        #expect(decoded.priority == value.priority, "codec_chain_has_input source 1: the decode presents another priority")
+    }
+    do {
+        let bound0 = try #require(BoundedList<CodecChainHasTaggedEntry, CodecChainHasInput.EntriesBound>([CodecChainHasTaggedEntry(entry_type: 3, ctl: 0, body: 5)]))
+        let value = CodecChainHasInput(entries: bound0, priority: 1)
+        var sink = BytesSink()
+        try CodecChainHasInput.encodeSource(value, into: &sink, urgent: 1)
+        let expected: [UInt8] = [3, 0, 5, 1]
+        #expect(sink.bytes == expected, "codec_chain_has_input source 2: urgent alone puts priority there")
+        var cursor = SceCursor(sink.bytes)
+        let decoded = try CodecChainHasInput.decode(&cursor, urgent: 1)
+        #expect(cursor.remaining == 0, "codec_chain_has_input source 2: the decode left bytes of the frame unread")
+        #expect(decoded.entries == value.entries, "codec_chain_has_input source 0: the decode presents another entries")
+        #expect(decoded.priority == value.priority, "codec_chain_has_input source 1: the decode presents another priority")
+    }
+    do {
+        let bound0 = try #require(BoundedList<CodecChainHasTaggedEntry, CodecChainHasInput.EntriesBound>([CodecChainHasTaggedEntry(entry_type: 3, ctl: 1, body: 1), CodecChainHasTaggedEntry(entry_type: 7, ctl: 0, body: 2)]))
+        let value = CodecChainHasInput(entries: bound0, priority: 255)
+        var sink = BytesSink()
+        try CodecChainHasInput.encodeSource(value, into: &sink, urgent: 1)
+        let expected: [UInt8] = [3, 1, 1, 7, 0, 2, 255]
+        #expect(sink.bytes == expected, "codec_chain_has_input source 3: kind 7 second and urgent set: either holds")
+        var cursor = SceCursor(sink.bytes)
+        let decoded = try CodecChainHasInput.decode(&cursor, urgent: 1)
+        #expect(cursor.remaining == 0, "codec_chain_has_input source 3: the decode left bytes of the frame unread")
+        #expect(decoded.entries == value.entries, "codec_chain_has_input source 0: the decode presents another entries")
+        #expect(decoded.priority == value.priority, "codec_chain_has_input source 1: the decode presents another priority")
+    }
+    do {
+        let bound0 = try #require(BoundedList<CodecChainHasTaggedEntry, CodecChainHasInput.EntriesBound>([CodecChainHasTaggedEntry(entry_type: 1, ctl: 1, body: 0), CodecChainHasTaggedEntry(entry_type: 7, ctl: 1, body: 0), CodecChainHasTaggedEntry(entry_type: 2, ctl: 254, body: 0)]))
+        let value = CodecChainHasInput(entries: bound0, priority: 4)
+        var sink = BytesSink()
+        try CodecChainHasInput.encodeSource(value, into: &sink, urgent: 0)
+        let expected: [UInt8] = [1, 1, 0, 7, 1, 0, 2, 254, 0, 4]
+        #expect(sink.bytes == expected, "codec_chain_has_input source 4: three entries, the depth, kind 7 among them; the last ctl keeps its other bits")
+        var cursor = SceCursor(sink.bytes)
+        let decoded = try CodecChainHasInput.decode(&cursor, urgent: 0)
+        #expect(cursor.remaining == 0, "codec_chain_has_input source 4: the decode left bytes of the frame unread")
+        #expect(decoded.entries == value.entries, "codec_chain_has_input source 0: the decode presents another entries")
+        #expect(decoded.priority == value.priority, "codec_chain_has_input source 1: the decode presents another priority")
+    }
+
+    do {
+        let bound0 = try #require(BoundedList<CodecChainHasTaggedEntry, CodecChainHasInput.EntriesBound>([CodecChainHasTaggedEntry(entry_type: 3, ctl: 0, body: 5)]))
+        let value = CodecChainHasInput(entries: bound0, priority: nil)
+        var sink = BytesSink()
+        #expect(throws: CodecError.presentIfMismatch, "codec_chain_has_input refused 0: the encode did not answer present-if-mismatch: no priority where urgent is set") {
+            try CodecChainHasInput.encodeSource(value, into: &sink, urgent: 1)
+        }
+        #expect(sink.bytes.isEmpty, "codec_chain_has_input refused 0: the encode wrote bytes before it refused")
+    }
+    do {
+        let bound0 = try #require(BoundedList<CodecChainHasTaggedEntry, CodecChainHasInput.EntriesBound>([CodecChainHasTaggedEntry(entry_type: 7, ctl: 0, body: 5)]))
+        let value = CodecChainHasInput(entries: bound0, priority: nil)
+        var sink = BytesSink()
+        #expect(throws: CodecError.presentIfMismatch, "codec_chain_has_input refused 1: the encode did not answer present-if-mismatch: no priority where an entry is of kind 7") {
+            try CodecChainHasInput.encodeSource(value, into: &sink, urgent: 0)
+        }
+        #expect(sink.bytes.isEmpty, "codec_chain_has_input refused 1: the encode wrote bytes before it refused")
+    }
+    do {
+        let bound0 = try #require(BoundedList<CodecChainHasTaggedEntry, CodecChainHasInput.EntriesBound>([CodecChainHasTaggedEntry(entry_type: 3, ctl: 0, body: 5)]))
+        let value = CodecChainHasInput(entries: bound0, priority: 5)
+        var sink = BytesSink()
+        #expect(throws: CodecError.presentIfMismatch, "codec_chain_has_input refused 2: the encode did not answer present-if-mismatch: a priority where neither holds") {
+            try CodecChainHasInput.encodeSource(value, into: &sink, urgent: 0)
+        }
+        #expect(sink.bytes.isEmpty, "codec_chain_has_input refused 2: the encode wrote bytes before it refused")
+    }
+
 }
 
 // MARK: - codec: codec_chain_handed_entry
@@ -7807,6 +10316,92 @@ private func expectClose(_ actual: Double, _ expected: Double, _ label: String) 
 
     // Compile-only probe: the oracle holds no case this fixture's field shape can express.
     _ = CodecChainHandedEntry.frameLength
+
+    do {
+        let value = CodecChainHandedEntry(header: 2, value: nil)
+        var sink = BytesSink()
+        try CodecChainHandedEntry.encodeSource(value, into: &sink, after_marker: 0)
+        let expected: [UInt8] = [2]
+        #expect(sink.bytes == expected, "codec_chain_handed_entry source 0: handed after_marker clear, wide clear: no value")
+        var cursor = SceCursor(sink.bytes)
+        let decoded = try CodecChainHandedEntry.decode(&cursor, after_marker: 0)
+        #expect(cursor.remaining == 0, "codec_chain_handed_entry source 0: the decode left bytes of the frame unread")
+        #expect(decoded.header == value.header, "codec_chain_handed_entry source 0: the decode presents another header")
+        #expect(decoded.value == value.value, "codec_chain_handed_entry source 1: the decode presents another value")
+    }
+    do {
+        let value = CodecChainHandedEntry(header: 2, value: 85)
+        var sink = BytesSink()
+        try CodecChainHandedEntry.encodeSource(value, into: &sink, after_marker: 1)
+        let expected: [UInt8] = [2, 85]
+        #expect(sink.bytes == expected, "codec_chain_handed_entry source 1: handed after_marker set: the value is there")
+        var cursor = SceCursor(sink.bytes)
+        let decoded = try CodecChainHandedEntry.decode(&cursor, after_marker: 1)
+        #expect(cursor.remaining == 0, "codec_chain_handed_entry source 1: the decode left bytes of the frame unread")
+        #expect(decoded.header == value.header, "codec_chain_handed_entry source 0: the decode presents another header")
+        #expect(decoded.value == value.value, "codec_chain_handed_entry source 1: the decode presents another value")
+    }
+    do {
+        let value = CodecChainHandedEntry(header: 66, value: 7)
+        var sink = BytesSink()
+        try CodecChainHandedEntry.encodeSource(value, into: &sink, after_marker: 0)
+        let expected: [UInt8] = [66, 7]
+        #expect(sink.bytes == expected, "codec_chain_handed_entry source 2: its own wide flag: the value is there")
+        var cursor = SceCursor(sink.bytes)
+        let decoded = try CodecChainHandedEntry.decode(&cursor, after_marker: 0)
+        #expect(cursor.remaining == 0, "codec_chain_handed_entry source 2: the decode left bytes of the frame unread")
+        #expect(decoded.header == value.header, "codec_chain_handed_entry source 0: the decode presents another header")
+        #expect(decoded.value == value.value, "codec_chain_handed_entry source 1: the decode presents another value")
+    }
+    do {
+        let value = CodecChainHandedEntry(header: 196, value: 0)
+        var sink = BytesSink()
+        try CodecChainHandedEntry.encodeSource(value, into: &sink, after_marker: 1)
+        let expected: [UInt8] = [196, 0]
+        #expect(sink.bytes == expected, "codec_chain_handed_entry source 3: both, and Z set, which it presents")
+        var cursor = SceCursor(sink.bytes)
+        let decoded = try CodecChainHandedEntry.decode(&cursor, after_marker: 1)
+        #expect(cursor.remaining == 0, "codec_chain_handed_entry source 3: the decode left bytes of the frame unread")
+        #expect(decoded.header == value.header, "codec_chain_handed_entry source 0: the decode presents another header")
+        #expect(decoded.value == value.value, "codec_chain_handed_entry source 1: the decode presents another value")
+    }
+    do {
+        let value = CodecChainHandedEntry(header: 48, value: nil)
+        var sink = BytesSink()
+        try CodecChainHandedEntry.encodeSource(value, into: &sink, after_marker: 0)
+        let expected: [UInt8] = [48]
+        #expect(sink.bytes == expected, "codec_chain_handed_entry source 4: the bits no flag names are kept")
+        var cursor = SceCursor(sink.bytes)
+        let decoded = try CodecChainHandedEntry.decode(&cursor, after_marker: 0)
+        #expect(cursor.remaining == 0, "codec_chain_handed_entry source 4: the decode left bytes of the frame unread")
+        #expect(decoded.header == value.header, "codec_chain_handed_entry source 0: the decode presents another header")
+        #expect(decoded.value == value.value, "codec_chain_handed_entry source 1: the decode presents another value")
+    }
+
+    do {
+        let value = CodecChainHandedEntry(header: 2, value: 5)
+        var sink = BytesSink()
+        #expect(throws: CodecError.presentIfMismatch, "codec_chain_handed_entry refused 0: the encode did not answer present-if-mismatch: a value where neither the input nor wide is set") {
+            try CodecChainHandedEntry.encodeSource(value, into: &sink, after_marker: 0)
+        }
+        #expect(sink.bytes.isEmpty, "codec_chain_handed_entry refused 0: the encode wrote bytes before it refused")
+    }
+    do {
+        let value = CodecChainHandedEntry(header: 2, value: nil)
+        var sink = BytesSink()
+        #expect(throws: CodecError.presentIfMismatch, "codec_chain_handed_entry refused 1: the encode did not answer present-if-mismatch: no value where after_marker is handed set") {
+            try CodecChainHandedEntry.encodeSource(value, into: &sink, after_marker: 1)
+        }
+        #expect(sink.bytes.isEmpty, "codec_chain_handed_entry refused 1: the encode wrote bytes before it refused")
+    }
+    do {
+        let value = CodecChainHandedEntry(header: 66, value: nil)
+        var sink = BytesSink()
+        #expect(throws: CodecError.presentIfMismatch, "codec_chain_handed_entry refused 2: the encode did not answer present-if-mismatch: no value where its own wide flag is set") {
+            try CodecChainHandedEntry.encodeSource(value, into: &sink, after_marker: 0)
+        }
+        #expect(sink.bytes.isEmpty, "codec_chain_handed_entry refused 2: the encode wrote bytes before it refused")
+    }
 
 }
 
@@ -7817,6 +10412,83 @@ private func expectClose(_ actual: Double, _ expected: Double, _ label: String) 
     // Compile-only probe: the oracle holds no case this fixture's field shape can express.
     _ = CodecChainHanded.frameLength
 
+    do {
+        let bound0 = try #require(BoundedList<CodecChainHandedEntry, CodecChainHanded.EntriesBound>([CodecChainHandedEntry(header: 2, value: nil)]))
+        let value = CodecChainHanded(entries: bound0)
+        var sink = BytesSink()
+        try CodecChainHanded.encodeSource(value, into: &sink)
+        let expected: [UInt8] = [2]
+        #expect(sink.bytes == expected, "codec_chain_handed source 0: one entry, the first: handed after_marker clear, no value")
+        var cursor = SceCursor(sink.bytes)
+        let decoded = try CodecChainHanded.decode(&cursor)
+        #expect(cursor.remaining == 0, "codec_chain_handed source 0: the decode left bytes of the frame unread")
+        #expect(decoded.entries == value.entries, "codec_chain_handed source 0: the decode presents another entries")
+    }
+    do {
+        let bound0 = try #require(BoundedList<CodecChainHandedEntry, CodecChainHanded.EntriesBound>([CodecChainHandedEntry(header: 132, value: nil), CodecChainHandedEntry(header: 2, value: 85)]))
+        let value = CodecChainHanded(entries: bound0)
+        var sink = BytesSink()
+        try CodecChainHanded.encodeSource(value, into: &sink)
+        let expected: [UInt8] = [132, 2, 85]
+        #expect(sink.bytes == expected, "codec_chain_handed source 1: an entry after one of identifier 4 is handed after_marker set")
+        var cursor = SceCursor(sink.bytes)
+        let decoded = try CodecChainHanded.decode(&cursor)
+        #expect(cursor.remaining == 0, "codec_chain_handed source 1: the decode left bytes of the frame unread")
+        #expect(decoded.entries == value.entries, "codec_chain_handed source 0: the decode presents another entries")
+    }
+    do {
+        let bound0 = try #require(BoundedList<CodecChainHandedEntry, CodecChainHanded.EntriesBound>([CodecChainHandedEntry(header: 194, value: 7), CodecChainHandedEntry(header: 3, value: nil)]))
+        let value = CodecChainHanded(entries: bound0)
+        var sink = BytesSink()
+        try CodecChainHanded.encodeSource(value, into: &sink)
+        let expected: [UInt8] = [194, 7, 3]
+        #expect(sink.bytes == expected, "codec_chain_handed source 2: an entry's own wide flag, then one after identifier 2, handed it clear")
+        var cursor = SceCursor(sink.bytes)
+        let decoded = try CodecChainHanded.decode(&cursor)
+        #expect(cursor.remaining == 0, "codec_chain_handed source 2: the decode left bytes of the frame unread")
+        #expect(decoded.entries == value.entries, "codec_chain_handed source 0: the decode presents another entries")
+    }
+    do {
+        let bound0 = try #require(BoundedList<CodecChainHandedEntry, CodecChainHanded.EntriesBound>([CodecChainHandedEntry(header: 132, value: nil), CodecChainHandedEntry(header: 132, value: 1), CodecChainHandedEntry(header: 130, value: 2), CodecChainHandedEntry(header: 1, value: nil)]))
+        let value = CodecChainHanded(entries: bound0)
+        var sink = BytesSink()
+        try CodecChainHanded.encodeSource(value, into: &sink)
+        let expected: [UInt8] = [132, 132, 1, 130, 2, 1]
+        #expect(sink.bytes == expected, "codec_chain_handed source 3: four entries, the depth: each handed what the entry before is")
+        var cursor = SceCursor(sink.bytes)
+        let decoded = try CodecChainHanded.decode(&cursor)
+        #expect(cursor.remaining == 0, "codec_chain_handed source 3: the decode left bytes of the frame unread")
+        #expect(decoded.entries == value.entries, "codec_chain_handed source 0: the decode presents another entries")
+    }
+
+    do {
+        let bound0 = try #require(BoundedList<CodecChainHandedEntry, CodecChainHanded.EntriesBound>([CodecChainHandedEntry(header: 132, value: nil), CodecChainHandedEntry(header: 2, value: nil)]))
+        let value = CodecChainHanded(entries: bound0)
+        var sink = BytesSink()
+        #expect(throws: CodecError.presentIfMismatch, "codec_chain_handed refused 0: the encode did not answer present-if-mismatch: no value on an entry after one of identifier 4") {
+            try CodecChainHanded.encodeSource(value, into: &sink)
+        }
+        #expect(sink.bytes.isEmpty, "codec_chain_handed refused 0: the encode wrote bytes before it refused")
+    }
+    do {
+        let bound0 = try #require(BoundedList<CodecChainHandedEntry, CodecChainHanded.EntriesBound>([CodecChainHandedEntry(header: 2, value: 5)]))
+        let value = CodecChainHanded(entries: bound0)
+        var sink = BytesSink()
+        #expect(throws: CodecError.presentIfMismatch, "codec_chain_handed refused 1: the encode did not answer present-if-mismatch: a value on the first entry, which is handed it clear") {
+            try CodecChainHanded.encodeSource(value, into: &sink)
+        }
+        #expect(sink.bytes.isEmpty, "codec_chain_handed refused 1: the encode wrote bytes before it refused")
+    }
+    do {
+        let bound0 = try #require(BoundedList<CodecChainHandedEntry, CodecChainHanded.EntriesBound>([CodecChainHandedEntry(header: 130, value: nil), CodecChainHandedEntry(header: 4, value: 3)]))
+        let value = CodecChainHanded(entries: bound0)
+        var sink = BytesSink()
+        #expect(throws: CodecError.presentIfMismatch, "codec_chain_handed refused 2: the encode did not answer present-if-mismatch: a value on an entry after identifier 2, wide clear") {
+            try CodecChainHanded.encodeSource(value, into: &sink)
+        }
+        #expect(sink.bytes.isEmpty, "codec_chain_handed refused 2: the encode wrote bytes before it refused")
+    }
+
 }
 
 // MARK: - codec: codec_source_leaf
@@ -7825,6 +10497,44 @@ private func expectClose(_ actual: Double, _ expected: Double, _ label: String) 
 
     // Compile-only probe: the oracle holds no case this fixture's field shape can express.
     _ = CodecSourceLeaf.frameLength
+
+    do {
+        let value = CodecSourceLeaf(body: .codecVariantSessionOpen(CodecVariantSessionOpen(version: 7)))
+        var sink = BytesSink()
+        try CodecSourceLeaf.encodeSource(value, into: &sink)
+        let expected: [UInt8] = [0, 7]
+        #expect(sink.bytes == expected, "codec_source_leaf source 0: the open arm alone: its caller holds the tag 0")
+        var cursor = SceCursor(sink.bytes)
+        let decoded = try CodecSourceLeaf.decode(&cursor, tag: 0)
+        #expect(cursor.remaining == 0, "codec_source_leaf source 0: the decode left bytes of the frame unread")
+        #expect(decoded.body == value.body, "codec_source_leaf source 0: the decode presents another body")
+        #expect(decoded.body.tag == 0 && value.body.tag == 0, "codec_source_leaf source 1: the decode presents another caller tag")
+    }
+    do {
+        let value = CodecSourceLeaf(body: .codecVariantSessionOpen(CodecVariantSessionOpen(version: 258)))
+        var sink = BytesSink()
+        try CodecSourceLeaf.encodeSource(value, into: &sink)
+        let expected: [UInt8] = [1, 2]
+        #expect(sink.bytes == expected, "codec_source_leaf source 1: the open arm's version, high byte first")
+        var cursor = SceCursor(sink.bytes)
+        let decoded = try CodecSourceLeaf.decode(&cursor, tag: 0)
+        #expect(cursor.remaining == 0, "codec_source_leaf source 1: the decode left bytes of the frame unread")
+        #expect(decoded.body == value.body, "codec_source_leaf source 0: the decode presents another body")
+        #expect(decoded.body.tag == 0 && value.body.tag == 0, "codec_source_leaf source 1: the decode presents another caller tag")
+    }
+    do {
+        let value = CodecSourceLeaf(body: .codecVariantSessionClose(CodecVariantSessionClose(reason: 4)))
+        var sink = BytesSink()
+        try CodecSourceLeaf.encodeSource(value, into: &sink)
+        let expected: [UInt8] = [4]
+        #expect(sink.bytes == expected, "codec_source_leaf source 2: the close arm alone, decoded under the tag 1")
+        var cursor = SceCursor(sink.bytes)
+        let decoded = try CodecSourceLeaf.decode(&cursor, tag: 1)
+        #expect(cursor.remaining == 0, "codec_source_leaf source 2: the decode left bytes of the frame unread")
+        #expect(decoded.body == value.body, "codec_source_leaf source 0: the decode presents another body")
+        #expect(decoded.body.tag == 1 && value.body.tag == 1, "codec_source_leaf source 1: the decode presents another caller tag")
+    }
+
 
 }
 
@@ -7835,6 +10545,68 @@ private func expectClose(_ actual: Double, _ expected: Double, _ label: String) 
     // Compile-only probe: the oracle holds no case this fixture's field shape can express.
     _ = CodecSourceParentTag.frameLength
 
+    do {
+        let value = CodecSourceParentTag(hdr: 0, body: CodecSourceLeaf(body: .codecVariantSessionOpen(CodecVariantSessionOpen(version: 7))))
+        var sink = BytesSink()
+        try CodecSourceParentTag.encodeSource(value, into: &sink)
+        let expected: [UInt8] = [0, 0, 7]
+        #expect(sink.bytes == expected, "codec_source_parent_tag source 0: the open arm: kind clear")
+        var cursor = SceCursor(sink.bytes)
+        let decoded = try CodecSourceParentTag.decode(&cursor)
+        #expect(cursor.remaining == 0, "codec_source_parent_tag source 0: the decode left bytes of the frame unread")
+        #expect(decoded.hdr == value.hdr, "codec_source_parent_tag source 0: the decode presents another hdr")
+        #expect(decoded.body == value.body, "codec_source_parent_tag source 1: the decode presents another body")
+    }
+    do {
+        let value = CodecSourceParentTag(hdr: 128, body: CodecSourceLeaf(body: .codecVariantSessionOpen(CodecVariantSessionOpen(version: 7))))
+        var sink = BytesSink()
+        try CodecSourceParentTag.encodeSource(value, into: &sink)
+        let expected: [UInt8] = [128, 0, 7]
+        #expect(sink.bytes == expected, "codec_source_parent_tag source 1: more set beside the open arm")
+        var cursor = SceCursor(sink.bytes)
+        let decoded = try CodecSourceParentTag.decode(&cursor)
+        #expect(cursor.remaining == 0, "codec_source_parent_tag source 1: the decode left bytes of the frame unread")
+        #expect(decoded.hdr == value.hdr, "codec_source_parent_tag source 0: the decode presents another hdr")
+        #expect(decoded.body == value.body, "codec_source_parent_tag source 1: the decode presents another body")
+    }
+    do {
+        let value = CodecSourceParentTag(hdr: 1, body: CodecSourceLeaf(body: .codecVariantSessionClose(CodecVariantSessionClose(reason: 4))))
+        var sink = BytesSink()
+        try CodecSourceParentTag.encodeSource(value, into: &sink)
+        let expected: [UInt8] = [1, 4]
+        #expect(sink.bytes == expected, "codec_source_parent_tag source 2: the close arm: kind set")
+        var cursor = SceCursor(sink.bytes)
+        let decoded = try CodecSourceParentTag.decode(&cursor)
+        #expect(cursor.remaining == 0, "codec_source_parent_tag source 2: the decode left bytes of the frame unread")
+        #expect(decoded.hdr == value.hdr, "codec_source_parent_tag source 0: the decode presents another hdr")
+        #expect(decoded.body == value.body, "codec_source_parent_tag source 1: the decode presents another body")
+    }
+    do {
+        let value = CodecSourceParentTag(hdr: 129, body: CodecSourceLeaf(body: .codecVariantSessionClose(CodecVariantSessionClose(reason: 4))))
+        var sink = BytesSink()
+        try CodecSourceParentTag.encodeSource(value, into: &sink)
+        let expected: [UInt8] = [129, 4]
+        #expect(sink.bytes == expected, "codec_source_parent_tag source 3: more set beside the close arm")
+        var cursor = SceCursor(sink.bytes)
+        let decoded = try CodecSourceParentTag.decode(&cursor)
+        #expect(cursor.remaining == 0, "codec_source_parent_tag source 3: the decode left bytes of the frame unread")
+        #expect(decoded.hdr == value.hdr, "codec_source_parent_tag source 0: the decode presents another hdr")
+        #expect(decoded.body == value.body, "codec_source_parent_tag source 1: the decode presents another body")
+    }
+    do {
+        let value = CodecSourceParentTag(hdr: 127, body: CodecSourceLeaf(body: .codecVariantSessionClose(CodecVariantSessionClose(reason: 255))))
+        var sink = BytesSink()
+        try CodecSourceParentTag.encodeSource(value, into: &sink)
+        let expected: [UInt8] = [127, 255]
+        #expect(sink.bytes == expected, "codec_source_parent_tag source 4: the bits no flag names are kept")
+        var cursor = SceCursor(sink.bytes)
+        let decoded = try CodecSourceParentTag.decode(&cursor)
+        #expect(cursor.remaining == 0, "codec_source_parent_tag source 4: the decode left bytes of the frame unread")
+        #expect(decoded.hdr == value.hdr, "codec_source_parent_tag source 0: the decode presents another hdr")
+        #expect(decoded.body == value.body, "codec_source_parent_tag source 1: the decode presents another body")
+    }
+
+
 }
 
 // MARK: - codec: codec_every_arm_says_near
@@ -7843,6 +10615,63 @@ private func expectClose(_ actual: Double, _ expected: Double, _ label: String) 
 
     // Compile-only probe: the oracle holds no case this fixture's field shape can express.
     _ = CodecEveryArmSaysNear.frameLength
+
+    do {
+        let bound0 = try #require(BoundedBytes<CodecEveryArmSaysNear.SuffixBound>([97]))
+        let value = CodecEveryArmSaysNear(id: 7, suffix: bound0)
+        var sink = BytesSink()
+        try CodecEveryArmSaysNear.encodeSource(value, into: &sink)
+        let expected: [UInt8] = [7, 1, 97]
+        #expect(sink.bytes == expected, "codec_every_arm_says_near source 0: N set: the suffix and its length follow the id")
+        var cursor = SceCursor(sink.bytes)
+        let decoded = try CodecEveryArmSaysNear.decode(&cursor, N: 1)
+        #expect(cursor.remaining == 0, "codec_every_arm_says_near source 0: the decode left bytes of the frame unread")
+        #expect(decoded.id == value.id, "codec_every_arm_says_near source 0: the decode presents another id")
+        #expect(decoded.suffix == value.suffix, "codec_every_arm_says_near source 1: the decode presents another suffix")
+        #expect(CodecEveryArmSaysNear.inputN(value) == 1, "codec_every_arm_says_near source 2: the decode presents another flag input N")
+    }
+    do {
+        let value = CodecEveryArmSaysNear(id: 7, suffix: nil)
+        var sink = BytesSink()
+        try CodecEveryArmSaysNear.encodeSource(value, into: &sink)
+        let expected: [UInt8] = [7]
+        #expect(sink.bytes == expected, "codec_every_arm_says_near source 1: N clear: the id alone")
+        var cursor = SceCursor(sink.bytes)
+        let decoded = try CodecEveryArmSaysNear.decode(&cursor, N: 0)
+        #expect(cursor.remaining == 0, "codec_every_arm_says_near source 1: the decode left bytes of the frame unread")
+        #expect(decoded.id == value.id, "codec_every_arm_says_near source 0: the decode presents another id")
+        #expect(decoded.suffix == value.suffix, "codec_every_arm_says_near source 1: the decode presents another suffix")
+        #expect(CodecEveryArmSaysNear.inputN(value) == 0, "codec_every_arm_says_near source 2: the decode presents another flag input N")
+    }
+    do {
+        let bound0 = try #require(BoundedBytes<CodecEveryArmSaysNear.SuffixBound>([]))
+        let value = CodecEveryArmSaysNear(id: 0, suffix: bound0)
+        var sink = BytesSink()
+        try CodecEveryArmSaysNear.encodeSource(value, into: &sink)
+        let expected: [UInt8] = [0, 0]
+        #expect(sink.bytes == expected, "codec_every_arm_says_near source 2: N set and an empty suffix: its length is zero")
+        var cursor = SceCursor(sink.bytes)
+        let decoded = try CodecEveryArmSaysNear.decode(&cursor, N: 1)
+        #expect(cursor.remaining == 0, "codec_every_arm_says_near source 2: the decode left bytes of the frame unread")
+        #expect(decoded.id == value.id, "codec_every_arm_says_near source 0: the decode presents another id")
+        #expect(decoded.suffix == value.suffix, "codec_every_arm_says_near source 1: the decode presents another suffix")
+        #expect(CodecEveryArmSaysNear.inputN(value) == 1, "codec_every_arm_says_near source 2: the decode presents another flag input N")
+    }
+    do {
+        let bound0 = try #require(BoundedBytes<CodecEveryArmSaysNear.SuffixBound>([1, 2, 3, 4, 5, 6, 7, 8]))
+        let value = CodecEveryArmSaysNear(id: 255, suffix: bound0)
+        var sink = BytesSink()
+        try CodecEveryArmSaysNear.encodeSource(value, into: &sink)
+        let expected: [UInt8] = [255, 8, 1, 2, 3, 4, 5, 6, 7, 8]
+        #expect(sink.bytes == expected, "codec_every_arm_says_near source 3: the suffix at its bound of eight")
+        var cursor = SceCursor(sink.bytes)
+        let decoded = try CodecEveryArmSaysNear.decode(&cursor, N: 1)
+        #expect(cursor.remaining == 0, "codec_every_arm_says_near source 3: the decode left bytes of the frame unread")
+        #expect(decoded.id == value.id, "codec_every_arm_says_near source 0: the decode presents another id")
+        #expect(decoded.suffix == value.suffix, "codec_every_arm_says_near source 1: the decode presents another suffix")
+        #expect(CodecEveryArmSaysNear.inputN(value) == 1, "codec_every_arm_says_near source 2: the decode presents another flag input N")
+    }
+
 
 }
 
@@ -7853,6 +10682,32 @@ private func expectClose(_ actual: Double, _ expected: Double, _ label: String) 
     // Compile-only probe: the oracle holds no case this fixture's field shape can express.
     _ = CodecEveryArmSaysFar.frameLength
 
+    do {
+        let value = CodecEveryArmSaysFar(route: 258)
+        var sink = BytesSink()
+        try CodecEveryArmSaysFar.encodeSource(value, into: &sink)
+        let expected: [UInt8] = [1, 2]
+        #expect(sink.bytes == expected, "codec_every_arm_says_far source 0: bare clear: the route, high byte first")
+        var cursor = SceCursor(sink.bytes)
+        let decoded = try CodecEveryArmSaysFar.decode(&cursor, bare: 0)
+        #expect(cursor.remaining == 0, "codec_every_arm_says_far source 0: the decode left bytes of the frame unread")
+        #expect(decoded.route == value.route, "codec_every_arm_says_far source 0: the decode presents another route")
+        #expect(CodecEveryArmSaysFar.inputBare(value) == 0, "codec_every_arm_says_far source 1: the decode presents another flag input bare")
+    }
+    do {
+        let value = CodecEveryArmSaysFar(route: nil)
+        var sink = BytesSink()
+        try CodecEveryArmSaysFar.encodeSource(value, into: &sink)
+        let expected: [UInt8] = []
+        #expect(sink.bytes == expected, "codec_every_arm_says_far source 1: bare set: nothing")
+        var cursor = SceCursor(sink.bytes)
+        let decoded = try CodecEveryArmSaysFar.decode(&cursor, bare: 1)
+        #expect(cursor.remaining == 0, "codec_every_arm_says_far source 1: the decode left bytes of the frame unread")
+        #expect(decoded.route == value.route, "codec_every_arm_says_far source 0: the decode presents another route")
+        #expect(CodecEveryArmSaysFar.inputBare(value) == 1, "codec_every_arm_says_far source 1: the decode presents another flag input bare")
+    }
+
+
 }
 
 // MARK: - codec: codec_every_arm_says
@@ -7861,6 +10716,61 @@ private func expectClose(_ actual: Double, _ expected: Double, _ label: String) 
 
     // Compile-only probe: the oracle holds no case this fixture's field shape can express.
     _ = CodecEveryArmSays.frameLength
+
+    do {
+        let bound0 = try #require(BoundedBytes<CodecEveryArmSaysNear.SuffixBound>([97]))
+        let value = CodecEveryArmSays(body: .codecEveryArmSaysNear(CodecEveryArmSaysNear(id: 7, suffix: bound0)))
+        var sink = BytesSink()
+        try CodecEveryArmSays.encodeSource(value, into: &sink)
+        let expected: [UInt8] = [7, 1, 97]
+        #expect(sink.bytes == expected, "codec_every_arm_says source 0: the near arm with its suffix says N set")
+        var cursor = SceCursor(sink.bytes)
+        let decoded = try CodecEveryArmSays.decode(&cursor, N: 1, tag: 1)
+        #expect(cursor.remaining == 0, "codec_every_arm_says source 0: the decode left bytes of the frame unread")
+        #expect(decoded.body == value.body, "codec_every_arm_says source 0: the decode presents another body")
+        #expect(decoded.body.tag == 1 && value.body.tag == 1, "codec_every_arm_says source 1: the decode presents another caller tag")
+        #expect(CodecEveryArmSays.inputN(value) == 1, "codec_every_arm_says source 2: the decode presents another flag input N")
+    }
+    do {
+        let value = CodecEveryArmSays(body: .codecEveryArmSaysNear(CodecEveryArmSaysNear(id: 7, suffix: nil)))
+        var sink = BytesSink()
+        try CodecEveryArmSays.encodeSource(value, into: &sink)
+        let expected: [UInt8] = [7]
+        #expect(sink.bytes == expected, "codec_every_arm_says source 1: the near arm without it says N clear")
+        var cursor = SceCursor(sink.bytes)
+        let decoded = try CodecEveryArmSays.decode(&cursor, N: 0, tag: 1)
+        #expect(cursor.remaining == 0, "codec_every_arm_says source 1: the decode left bytes of the frame unread")
+        #expect(decoded.body == value.body, "codec_every_arm_says source 0: the decode presents another body")
+        #expect(decoded.body.tag == 1 && value.body.tag == 1, "codec_every_arm_says source 1: the decode presents another caller tag")
+        #expect(CodecEveryArmSays.inputN(value) == 0, "codec_every_arm_says source 2: the decode presents another flag input N")
+    }
+    do {
+        let value = CodecEveryArmSays(body: .codecEveryArmSaysFar(CodecEveryArmSaysFar(route: 258)))
+        var sink = BytesSink()
+        try CodecEveryArmSays.encodeSource(value, into: &sink)
+        let expected: [UInt8] = [1, 2]
+        #expect(sink.bytes == expected, "codec_every_arm_says source 2: the far arm with its route says N clear")
+        var cursor = SceCursor(sink.bytes)
+        let decoded = try CodecEveryArmSays.decode(&cursor, N: 0, tag: 0)
+        #expect(cursor.remaining == 0, "codec_every_arm_says source 2: the decode left bytes of the frame unread")
+        #expect(decoded.body == value.body, "codec_every_arm_says source 0: the decode presents another body")
+        #expect(decoded.body.tag == 0 && value.body.tag == 0, "codec_every_arm_says source 1: the decode presents another caller tag")
+        #expect(CodecEveryArmSays.inputN(value) == 0, "codec_every_arm_says source 2: the decode presents another flag input N")
+    }
+    do {
+        let value = CodecEveryArmSays(body: .codecEveryArmSaysFar(CodecEveryArmSaysFar(route: nil)))
+        var sink = BytesSink()
+        try CodecEveryArmSays.encodeSource(value, into: &sink)
+        let expected: [UInt8] = []
+        #expect(sink.bytes == expected, "codec_every_arm_says source 3: the far arm without it says N set, and writes nothing")
+        var cursor = SceCursor(sink.bytes)
+        let decoded = try CodecEveryArmSays.decode(&cursor, N: 1, tag: 0)
+        #expect(cursor.remaining == 0, "codec_every_arm_says source 3: the decode left bytes of the frame unread")
+        #expect(decoded.body == value.body, "codec_every_arm_says source 0: the decode presents another body")
+        #expect(decoded.body.tag == 0 && value.body.tag == 0, "codec_every_arm_says source 1: the decode presents another caller tag")
+        #expect(CodecEveryArmSays.inputN(value) == 1, "codec_every_arm_says source 2: the decode presents another flag input N")
+    }
+
 
 }
 
@@ -7871,6 +10781,69 @@ private func expectClose(_ actual: Double, _ expected: Double, _ label: String) 
     // Compile-only probe: the oracle holds no case this fixture's field shape can express.
     _ = CodecEveryArmSaysParent.frameLength
 
+    do {
+        let bound0 = try #require(BoundedBytes<CodecEveryArmSaysNear.SuffixBound>([97]))
+        let value = CodecEveryArmSaysParent(header: 96, body: CodecEveryArmSays(body: .codecEveryArmSaysNear(CodecEveryArmSaysNear(id: 7, suffix: bound0))))
+        var sink = BytesSink()
+        try CodecEveryArmSaysParent.encodeSource(value, into: &sink)
+        let expected: [UInt8] = [96, 7, 1, 97]
+        #expect(sink.bytes == expected, "codec_every_arm_says_parent source 0: the near arm with its suffix: N and M set")
+        var cursor = SceCursor(sink.bytes)
+        let decoded = try CodecEveryArmSaysParent.decode(&cursor)
+        #expect(cursor.remaining == 0, "codec_every_arm_says_parent source 0: the decode left bytes of the frame unread")
+        #expect(decoded.header == value.header, "codec_every_arm_says_parent source 0: the decode presents another header")
+        #expect(decoded.body == value.body, "codec_every_arm_says_parent source 1: the decode presents another body")
+    }
+    do {
+        let value = CodecEveryArmSaysParent(header: 64, body: CodecEveryArmSays(body: .codecEveryArmSaysNear(CodecEveryArmSaysNear(id: 7, suffix: nil))))
+        var sink = BytesSink()
+        try CodecEveryArmSaysParent.encodeSource(value, into: &sink)
+        let expected: [UInt8] = [64, 7]
+        #expect(sink.bytes == expected, "codec_every_arm_says_parent source 1: the near arm without it: M alone")
+        var cursor = SceCursor(sink.bytes)
+        let decoded = try CodecEveryArmSaysParent.decode(&cursor)
+        #expect(cursor.remaining == 0, "codec_every_arm_says_parent source 1: the decode left bytes of the frame unread")
+        #expect(decoded.header == value.header, "codec_every_arm_says_parent source 0: the decode presents another header")
+        #expect(decoded.body == value.body, "codec_every_arm_says_parent source 1: the decode presents another body")
+    }
+    do {
+        let value = CodecEveryArmSaysParent(header: 0, body: CodecEveryArmSays(body: .codecEveryArmSaysFar(CodecEveryArmSaysFar(route: 258))))
+        var sink = BytesSink()
+        try CodecEveryArmSaysParent.encodeSource(value, into: &sink)
+        let expected: [UInt8] = [0, 1, 2]
+        #expect(sink.bytes == expected, "codec_every_arm_says_parent source 2: the far arm with its route: neither")
+        var cursor = SceCursor(sink.bytes)
+        let decoded = try CodecEveryArmSaysParent.decode(&cursor)
+        #expect(cursor.remaining == 0, "codec_every_arm_says_parent source 2: the decode left bytes of the frame unread")
+        #expect(decoded.header == value.header, "codec_every_arm_says_parent source 0: the decode presents another header")
+        #expect(decoded.body == value.body, "codec_every_arm_says_parent source 1: the decode presents another body")
+    }
+    do {
+        let value = CodecEveryArmSaysParent(header: 32, body: CodecEveryArmSays(body: .codecEveryArmSaysFar(CodecEveryArmSaysFar(route: nil))))
+        var sink = BytesSink()
+        try CodecEveryArmSaysParent.encodeSource(value, into: &sink)
+        let expected: [UInt8] = [32]
+        #expect(sink.bytes == expected, "codec_every_arm_says_parent source 3: the far arm without it: N alone, and no body bytes")
+        var cursor = SceCursor(sink.bytes)
+        let decoded = try CodecEveryArmSaysParent.decode(&cursor)
+        #expect(cursor.remaining == 0, "codec_every_arm_says_parent source 3: the decode left bytes of the frame unread")
+        #expect(decoded.header == value.header, "codec_every_arm_says_parent source 0: the decode presents another header")
+        #expect(decoded.body == value.body, "codec_every_arm_says_parent source 1: the decode presents another body")
+    }
+    do {
+        let value = CodecEveryArmSaysParent(header: 159, body: CodecEveryArmSays(body: .codecEveryArmSaysFar(CodecEveryArmSaysFar(route: 258))))
+        var sink = BytesSink()
+        try CodecEveryArmSaysParent.encodeSource(value, into: &sink)
+        let expected: [UInt8] = [159, 1, 2]
+        #expect(sink.bytes == expected, "codec_every_arm_says_parent source 4: the bits beside N and M are kept")
+        var cursor = SceCursor(sink.bytes)
+        let decoded = try CodecEveryArmSaysParent.decode(&cursor)
+        #expect(cursor.remaining == 0, "codec_every_arm_says_parent source 4: the decode left bytes of the frame unread")
+        #expect(decoded.header == value.header, "codec_every_arm_says_parent source 0: the decode presents another header")
+        #expect(decoded.body == value.body, "codec_every_arm_says_parent source 1: the decode presents another body")
+    }
+
+
 }
 
 // MARK: - codec: codec_some_arms_say_plain
@@ -7879,6 +10852,30 @@ private func expectClose(_ actual: Double, _ expected: Double, _ label: String) 
 
     // Compile-only probe: the oracle holds no case this fixture's field shape can express.
     _ = CodecSomeArmsSayPlain.frameLength
+
+    do {
+        let value = CodecSomeArmsSayPlain(id: 7)
+        var sink = BytesSink()
+        try CodecSomeArmsSayPlain.encodeSource(value, into: &sink)
+        let expected: [UInt8] = [7]
+        #expect(sink.bytes == expected, "codec_some_arms_say_plain source 0: one byte")
+        var cursor = SceCursor(sink.bytes)
+        let decoded = try CodecSomeArmsSayPlain.decode(&cursor)
+        #expect(cursor.remaining == 0, "codec_some_arms_say_plain source 0: the decode left bytes of the frame unread")
+        #expect(decoded.id == value.id, "codec_some_arms_say_plain source 0: the decode presents another id")
+    }
+    do {
+        let value = CodecSomeArmsSayPlain(id: 255)
+        var sink = BytesSink()
+        try CodecSomeArmsSayPlain.encodeSource(value, into: &sink)
+        let expected: [UInt8] = [255]
+        #expect(sink.bytes == expected, "codec_some_arms_say_plain source 1: one byte at its largest")
+        var cursor = SceCursor(sink.bytes)
+        let decoded = try CodecSomeArmsSayPlain.decode(&cursor)
+        #expect(cursor.remaining == 0, "codec_some_arms_say_plain source 1: the decode left bytes of the frame unread")
+        #expect(decoded.id == value.id, "codec_some_arms_say_plain source 0: the decode presents another id")
+    }
+
 
 }
 
@@ -7889,6 +10886,61 @@ private func expectClose(_ actual: Double, _ expected: Double, _ label: String) 
     // Compile-only probe: the oracle holds no case this fixture's field shape can express.
     _ = CodecSomeArmsSay.frameLength
 
+    do {
+        let bound0 = try #require(BoundedBytes<CodecEveryArmSaysNear.SuffixBound>([97]))
+        let value = CodecSomeArmsSay(body: .codecEveryArmSaysNear(CodecEveryArmSaysNear(id: 7, suffix: bound0)))
+        var sink = BytesSink()
+        try CodecSomeArmsSay.encodeSource(value, into: &sink)
+        let expected: [UInt8] = [7, 1, 97]
+        #expect(sink.bytes == expected, "codec_some_arms_say source 0: the near arm with its suffix says N set")
+        var cursor = SceCursor(sink.bytes)
+        let decoded = try CodecSomeArmsSay.decode(&cursor, N: 1, tag: 1)
+        #expect(cursor.remaining == 0, "codec_some_arms_say source 0: the decode left bytes of the frame unread")
+        #expect(decoded.body == value.body, "codec_some_arms_say source 0: the decode presents another body")
+        #expect(decoded.body.tag == 1 && value.body.tag == 1, "codec_some_arms_say source 1: the decode presents another caller tag")
+        #expect((CodecSomeArmsSay.inputN(value).map { $0 == 1 } ?? true), "codec_some_arms_say source 2: the decode presents another flag input N")
+    }
+    do {
+        let value = CodecSomeArmsSay(body: .codecEveryArmSaysNear(CodecEveryArmSaysNear(id: 7, suffix: nil)))
+        var sink = BytesSink()
+        try CodecSomeArmsSay.encodeSource(value, into: &sink)
+        let expected: [UInt8] = [7]
+        #expect(sink.bytes == expected, "codec_some_arms_say source 1: the near arm without it says N clear")
+        var cursor = SceCursor(sink.bytes)
+        let decoded = try CodecSomeArmsSay.decode(&cursor, N: 0, tag: 1)
+        #expect(cursor.remaining == 0, "codec_some_arms_say source 1: the decode left bytes of the frame unread")
+        #expect(decoded.body == value.body, "codec_some_arms_say source 0: the decode presents another body")
+        #expect(decoded.body.tag == 1 && value.body.tag == 1, "codec_some_arms_say source 1: the decode presents another caller tag")
+        #expect((CodecSomeArmsSay.inputN(value).map { $0 == 0 } ?? true), "codec_some_arms_say source 2: the decode presents another flag input N")
+    }
+    do {
+        let value = CodecSomeArmsSay(body: .codecSomeArmsSayPlain(CodecSomeArmsSayPlain(id: 7)))
+        var sink = BytesSink()
+        try CodecSomeArmsSay.encodeSource(value, into: &sink)
+        let expected: [UInt8] = [7]
+        #expect(sink.bytes == expected, "codec_some_arms_say source 2: the plain arm says nothing of N, handed clear")
+        var cursor = SceCursor(sink.bytes)
+        let decoded = try CodecSomeArmsSay.decode(&cursor, N: 0, tag: 0)
+        #expect(cursor.remaining == 0, "codec_some_arms_say source 2: the decode left bytes of the frame unread")
+        #expect(decoded.body == value.body, "codec_some_arms_say source 0: the decode presents another body")
+        #expect(decoded.body.tag == 0 && value.body.tag == 0, "codec_some_arms_say source 1: the decode presents another caller tag")
+        #expect((CodecSomeArmsSay.inputN(value).map { $0 == 0 } ?? true), "codec_some_arms_say source 2: the decode presents another flag input N")
+    }
+    do {
+        let value = CodecSomeArmsSay(body: .codecSomeArmsSayPlain(CodecSomeArmsSayPlain(id: 7)))
+        var sink = BytesSink()
+        try CodecSomeArmsSay.encodeSource(value, into: &sink)
+        let expected: [UInt8] = [7]
+        #expect(sink.bytes == expected, "codec_some_arms_say source 3: the plain arm says nothing of N, handed set")
+        var cursor = SceCursor(sink.bytes)
+        let decoded = try CodecSomeArmsSay.decode(&cursor, N: 1, tag: 0)
+        #expect(cursor.remaining == 0, "codec_some_arms_say source 3: the decode left bytes of the frame unread")
+        #expect(decoded.body == value.body, "codec_some_arms_say source 0: the decode presents another body")
+        #expect(decoded.body.tag == 0 && value.body.tag == 0, "codec_some_arms_say source 1: the decode presents another caller tag")
+        #expect((CodecSomeArmsSay.inputN(value).map { $0 == 1 } ?? true), "codec_some_arms_say source 2: the decode presents another flag input N")
+    }
+
+
 }
 
 // MARK: - codec: codec_some_arms_say_parent
@@ -7897,6 +10949,86 @@ private func expectClose(_ actual: Double, _ expected: Double, _ label: String) 
 
     // Compile-only probe: the oracle holds no case this fixture's field shape can express.
     _ = CodecSomeArmsSayParent.frameLength
+
+    do {
+        let bound0 = try #require(BoundedBytes<CodecEveryArmSaysNear.SuffixBound>([97]))
+        let value = CodecSomeArmsSayParent(header: 96, body: CodecSomeArmsSay(body: .codecEveryArmSaysNear(CodecEveryArmSaysNear(id: 7, suffix: bound0))))
+        var sink = BytesSink()
+        try CodecSomeArmsSayParent.encodeSource(value, into: &sink)
+        let expected: [UInt8] = [96, 7, 1, 97]
+        #expect(sink.bytes == expected, "codec_some_arms_say_parent source 0: the near arm with its suffix, N set as it says")
+        var cursor = SceCursor(sink.bytes)
+        let decoded = try CodecSomeArmsSayParent.decode(&cursor)
+        #expect(cursor.remaining == 0, "codec_some_arms_say_parent source 0: the decode left bytes of the frame unread")
+        #expect(decoded.header == value.header, "codec_some_arms_say_parent source 0: the decode presents another header")
+        #expect(decoded.body == value.body, "codec_some_arms_say_parent source 1: the decode presents another body")
+    }
+    do {
+        let value = CodecSomeArmsSayParent(header: 64, body: CodecSomeArmsSay(body: .codecEveryArmSaysNear(CodecEveryArmSaysNear(id: 7, suffix: nil))))
+        var sink = BytesSink()
+        try CodecSomeArmsSayParent.encodeSource(value, into: &sink)
+        let expected: [UInt8] = [64, 7]
+        #expect(sink.bytes == expected, "codec_some_arms_say_parent source 1: the near arm without it, N clear as it says")
+        var cursor = SceCursor(sink.bytes)
+        let decoded = try CodecSomeArmsSayParent.decode(&cursor)
+        #expect(cursor.remaining == 0, "codec_some_arms_say_parent source 1: the decode left bytes of the frame unread")
+        #expect(decoded.header == value.header, "codec_some_arms_say_parent source 0: the decode presents another header")
+        #expect(decoded.body == value.body, "codec_some_arms_say_parent source 1: the decode presents another body")
+    }
+    do {
+        let value = CodecSomeArmsSayParent(header: 0, body: CodecSomeArmsSay(body: .codecSomeArmsSayPlain(CodecSomeArmsSayPlain(id: 7))))
+        var sink = BytesSink()
+        try CodecSomeArmsSayParent.encodeSource(value, into: &sink)
+        let expected: [UInt8] = [0, 7]
+        #expect(sink.bytes == expected, "codec_some_arms_say_parent source 2: the plain arm, N clear: the value's own")
+        var cursor = SceCursor(sink.bytes)
+        let decoded = try CodecSomeArmsSayParent.decode(&cursor)
+        #expect(cursor.remaining == 0, "codec_some_arms_say_parent source 2: the decode left bytes of the frame unread")
+        #expect(decoded.header == value.header, "codec_some_arms_say_parent source 0: the decode presents another header")
+        #expect(decoded.body == value.body, "codec_some_arms_say_parent source 1: the decode presents another body")
+    }
+    do {
+        let value = CodecSomeArmsSayParent(header: 32, body: CodecSomeArmsSay(body: .codecSomeArmsSayPlain(CodecSomeArmsSayPlain(id: 7))))
+        var sink = BytesSink()
+        try CodecSomeArmsSayParent.encodeSource(value, into: &sink)
+        let expected: [UInt8] = [32, 7]
+        #expect(sink.bytes == expected, "codec_some_arms_say_parent source 3: the plain arm, N set: the value's own")
+        var cursor = SceCursor(sink.bytes)
+        let decoded = try CodecSomeArmsSayParent.decode(&cursor)
+        #expect(cursor.remaining == 0, "codec_some_arms_say_parent source 3: the decode left bytes of the frame unread")
+        #expect(decoded.header == value.header, "codec_some_arms_say_parent source 0: the decode presents another header")
+        #expect(decoded.body == value.body, "codec_some_arms_say_parent source 1: the decode presents another body")
+    }
+    do {
+        let value = CodecSomeArmsSayParent(header: 191, body: CodecSomeArmsSay(body: .codecSomeArmsSayPlain(CodecSomeArmsSayPlain(id: 7))))
+        var sink = BytesSink()
+        try CodecSomeArmsSayParent.encodeSource(value, into: &sink)
+        let expected: [UInt8] = [191, 7]
+        #expect(sink.bytes == expected, "codec_some_arms_say_parent source 4: the bits beside M are the value's, N among them")
+        var cursor = SceCursor(sink.bytes)
+        let decoded = try CodecSomeArmsSayParent.decode(&cursor)
+        #expect(cursor.remaining == 0, "codec_some_arms_say_parent source 4: the decode left bytes of the frame unread")
+        #expect(decoded.header == value.header, "codec_some_arms_say_parent source 0: the decode presents another header")
+        #expect(decoded.body == value.body, "codec_some_arms_say_parent source 1: the decode presents another body")
+    }
+
+    do {
+        let value = CodecSomeArmsSayParent(header: 32, body: CodecSomeArmsSay(body: .codecEveryArmSaysNear(CodecEveryArmSaysNear(id: 7, suffix: nil))))
+        var sink = BytesSink()
+        #expect(throws: CodecError.presentIfMismatch, "codec_some_arms_say_parent refused 0: the encode did not answer present-if-mismatch: N set where the near arm without its suffix says it clear") {
+            try CodecSomeArmsSayParent.encodeSource(value, into: &sink)
+        }
+        #expect(sink.bytes.isEmpty, "codec_some_arms_say_parent refused 0: the encode wrote bytes before it refused")
+    }
+    do {
+        let bound0 = try #require(BoundedBytes<CodecEveryArmSaysNear.SuffixBound>([97]))
+        let value = CodecSomeArmsSayParent(header: 64, body: CodecSomeArmsSay(body: .codecEveryArmSaysNear(CodecEveryArmSaysNear(id: 7, suffix: bound0))))
+        var sink = BytesSink()
+        #expect(throws: CodecError.presentIfMismatch, "codec_some_arms_say_parent refused 1: the encode did not answer present-if-mismatch: N clear where the near arm with its suffix says it set") {
+            try CodecSomeArmsSayParent.encodeSource(value, into: &sink)
+        }
+        #expect(sink.bytes.isEmpty, "codec_some_arms_say_parent refused 1: the encode wrote bytes before it refused")
+    }
 
 }
 
@@ -7907,6 +11039,8 @@ private func expectClose(_ actual: Double, _ expected: Double, _ label: String) 
     // Compile-only probe: the oracle holds no case this fixture's field shape can express.
     _ = CodecSomeArmsSayForward.frameLength
 
+
+
 }
 
 // MARK: - codec: codec_present_if_disjunction
@@ -7915,6 +11049,68 @@ private func expectClose(_ actual: Double, _ expected: Double, _ label: String) 
 
     // Compile-only probe: the oracle holds no case this fixture's field shape can express.
     _ = CodecPresentIfDisjunction.frameLength
+
+    do {
+        let value = CodecPresentIfDisjunction(flags: 0, flags_wants_a_or_wants_b: nil)
+        var sink = BytesSink()
+        try CodecPresentIfDisjunction.encodeSource(value, into: &sink)
+        let expected: [UInt8] = [0]
+        #expect(sink.bytes == expected, "codec_present_if_disjunction source 0: neither flag: no seq, the frame is the carrier alone")
+        var cursor = SceCursor(sink.bytes)
+        let decoded = try CodecPresentIfDisjunction.decode(&cursor)
+        #expect(cursor.remaining == 0, "codec_present_if_disjunction source 0: the decode left bytes of the frame unread")
+        #expect(decoded.flags == value.flags, "codec_present_if_disjunction source 0: the decode presents another flags")
+        #expect(decoded.flags_wants_a_or_wants_b == value.flags_wants_a_or_wants_b, "codec_present_if_disjunction source 1: the decode presents another flags.wants_a || flags.wants_b")
+    }
+    do {
+        let value = CodecPresentIfDisjunction(flags: 1, flags_wants_a_or_wants_b: CodecPresentIfDisjunctionFlagsWantsAOrWantsB.wantsA(seq: 4660))
+        var sink = BytesSink()
+        try CodecPresentIfDisjunction.encodeSource(value, into: &sink)
+        let expected: [UInt8] = [1, 18, 52]
+        #expect(sink.bytes == expected, "codec_present_if_disjunction source 1: wants_a alone: arm 0")
+        var cursor = SceCursor(sink.bytes)
+        let decoded = try CodecPresentIfDisjunction.decode(&cursor)
+        #expect(cursor.remaining == 0, "codec_present_if_disjunction source 1: the decode left bytes of the frame unread")
+        #expect(decoded.flags == value.flags, "codec_present_if_disjunction source 0: the decode presents another flags")
+        #expect(decoded.flags_wants_a_or_wants_b == value.flags_wants_a_or_wants_b, "codec_present_if_disjunction source 1: the decode presents another flags.wants_a || flags.wants_b")
+    }
+    do {
+        let value = CodecPresentIfDisjunction(flags: 2, flags_wants_a_or_wants_b: CodecPresentIfDisjunctionFlagsWantsAOrWantsB.wantsB(seq: 5))
+        var sink = BytesSink()
+        try CodecPresentIfDisjunction.encodeSource(value, into: &sink)
+        let expected: [UInt8] = [2, 0, 5]
+        #expect(sink.bytes == expected, "codec_present_if_disjunction source 2: wants_b alone: arm 1")
+        var cursor = SceCursor(sink.bytes)
+        let decoded = try CodecPresentIfDisjunction.decode(&cursor)
+        #expect(cursor.remaining == 0, "codec_present_if_disjunction source 2: the decode left bytes of the frame unread")
+        #expect(decoded.flags == value.flags, "codec_present_if_disjunction source 0: the decode presents another flags")
+        #expect(decoded.flags_wants_a_or_wants_b == value.flags_wants_a_or_wants_b, "codec_present_if_disjunction source 1: the decode presents another flags.wants_a || flags.wants_b")
+    }
+    do {
+        let value = CodecPresentIfDisjunction(flags: 3, flags_wants_a_or_wants_b: CodecPresentIfDisjunctionFlagsWantsAOrWantsB.wantsAWantsB(seq: 65535))
+        var sink = BytesSink()
+        try CodecPresentIfDisjunction.encodeSource(value, into: &sink)
+        let expected: [UInt8] = [3, 255, 255]
+        #expect(sink.bytes == expected, "codec_present_if_disjunction source 3: both flags: arm 2")
+        var cursor = SceCursor(sink.bytes)
+        let decoded = try CodecPresentIfDisjunction.decode(&cursor)
+        #expect(cursor.remaining == 0, "codec_present_if_disjunction source 3: the decode left bytes of the frame unread")
+        #expect(decoded.flags == value.flags, "codec_present_if_disjunction source 0: the decode presents another flags")
+        #expect(decoded.flags_wants_a_or_wants_b == value.flags_wants_a_or_wants_b, "codec_present_if_disjunction source 1: the decode presents another flags.wants_a || flags.wants_b")
+    }
+    do {
+        let value = CodecPresentIfDisjunction(flags: 252, flags_wants_a_or_wants_b: nil)
+        var sink = BytesSink()
+        try CodecPresentIfDisjunction.encodeSource(value, into: &sink)
+        let expected: [UInt8] = [252]
+        #expect(sink.bytes == expected, "codec_present_if_disjunction source 4: the bits the value presents are kept beside the derived ones")
+        var cursor = SceCursor(sink.bytes)
+        let decoded = try CodecPresentIfDisjunction.decode(&cursor)
+        #expect(cursor.remaining == 0, "codec_present_if_disjunction source 4: the decode left bytes of the frame unread")
+        #expect(decoded.flags == value.flags, "codec_present_if_disjunction source 0: the decode presents another flags")
+        #expect(decoded.flags_wants_a_or_wants_b == value.flags_wants_a_or_wants_b, "codec_present_if_disjunction source 1: the decode presents another flags.wants_a || flags.wants_b")
+    }
+
 
 }
 
@@ -7925,6 +11121,58 @@ private func expectClose(_ actual: Double, _ expected: Double, _ label: String) 
     // Compile-only probe: the oracle holds no case this fixture's field shape can express.
     _ = CodecPresentIfLengthRef.frameLength
 
+    do {
+        let value = CodecPresentIfLengthRef(flags: 0, flags_has_payload: CodecPresentIfLengthRefFlagsHasPayload.notHasPayload(payload_size: 0))
+        var sink = BytesSink()
+        try CodecPresentIfLengthRef.encodeSource(value, into: &sink)
+        let expected: [UInt8] = [0, 0]
+        #expect(sink.bytes == expected, "codec_present_if_length_ref source 0: no payload, a stated size of zero")
+        var cursor = SceCursor(sink.bytes)
+        let decoded = try CodecPresentIfLengthRef.decode(&cursor)
+        #expect(cursor.remaining == 0, "codec_present_if_length_ref source 0: the decode left bytes of the frame unread")
+        #expect(decoded.flags == value.flags, "codec_present_if_length_ref source 0: the decode presents another flags")
+        #expect(decoded.flags_has_payload == value.flags_has_payload, "codec_present_if_length_ref source 1: the decode presents another flags.has_payload")
+    }
+    do {
+        let value = CodecPresentIfLengthRef(flags: 0, flags_has_payload: CodecPresentIfLengthRefFlagsHasPayload.notHasPayload(payload_size: 9))
+        var sink = BytesSink()
+        try CodecPresentIfLengthRef.encodeSource(value, into: &sink)
+        let expected: [UInt8] = [0, 9]
+        #expect(sink.bytes == expected, "codec_present_if_length_ref source 1: no payload, a stated size of nine")
+        var cursor = SceCursor(sink.bytes)
+        let decoded = try CodecPresentIfLengthRef.decode(&cursor)
+        #expect(cursor.remaining == 0, "codec_present_if_length_ref source 1: the decode left bytes of the frame unread")
+        #expect(decoded.flags == value.flags, "codec_present_if_length_ref source 0: the decode presents another flags")
+        #expect(decoded.flags_has_payload == value.flags_has_payload, "codec_present_if_length_ref source 1: the decode presents another flags.has_payload")
+    }
+    do {
+        let bound0 = try #require(BoundedBytes<CodecPresentIfLengthRef.PayloadBound>([5, 6]))
+        let value = CodecPresentIfLengthRef(flags: 1, flags_has_payload: CodecPresentIfLengthRefFlagsHasPayload.hasPayload(payload: bound0))
+        var sink = BytesSink()
+        try CodecPresentIfLengthRef.encodeSource(value, into: &sink)
+        let expected: [UInt8] = [1, 2, 5, 6]
+        #expect(sink.bytes == expected, "codec_present_if_length_ref source 2: a payload: the size and has_payload are derived")
+        var cursor = SceCursor(sink.bytes)
+        let decoded = try CodecPresentIfLengthRef.decode(&cursor)
+        #expect(cursor.remaining == 0, "codec_present_if_length_ref source 2: the decode left bytes of the frame unread")
+        #expect(decoded.flags == value.flags, "codec_present_if_length_ref source 0: the decode presents another flags")
+        #expect(decoded.flags_has_payload == value.flags_has_payload, "codec_present_if_length_ref source 1: the decode presents another flags.has_payload")
+    }
+    do {
+        let bound0 = try #require(BoundedBytes<CodecPresentIfLengthRef.PayloadBound>([0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21, 22, 23, 24, 25, 26, 27, 28, 29, 30, 31]))
+        let value = CodecPresentIfLengthRef(flags: 1, flags_has_payload: CodecPresentIfLengthRefFlagsHasPayload.hasPayload(payload: bound0))
+        var sink = BytesSink()
+        try CodecPresentIfLengthRef.encodeSource(value, into: &sink)
+        let expected: [UInt8] = [1, 32, 0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21, 22, 23, 24, 25, 26, 27, 28, 29, 30, 31]
+        #expect(sink.bytes == expected, "codec_present_if_length_ref source 3: a payload at its bound")
+        var cursor = SceCursor(sink.bytes)
+        let decoded = try CodecPresentIfLengthRef.decode(&cursor)
+        #expect(cursor.remaining == 0, "codec_present_if_length_ref source 3: the decode left bytes of the frame unread")
+        #expect(decoded.flags == value.flags, "codec_present_if_length_ref source 0: the decode presents another flags")
+        #expect(decoded.flags_has_payload == value.flags_has_payload, "codec_present_if_length_ref source 1: the decode presents another flags.has_payload")
+    }
+
+
 }
 
 // MARK: - codec: codec_present_if_length_from
@@ -7933,6 +11181,58 @@ private func expectClose(_ actual: Double, _ expected: Double, _ label: String) 
 
     // Compile-only probe: the oracle holds no case this fixture's field shape can express.
     _ = CodecPresentIfLengthFrom.frameLength
+
+    do {
+        let value = CodecPresentIfLengthFrom(flags: 0, flags_has_ts: CodecPresentIfLengthFromFlagsHasTs.notHasTs(ext_size: 0))
+        var sink = BytesSink()
+        try CodecPresentIfLengthFrom.encodeSource(value, into: &sink)
+        let expected: [UInt8] = [0, 0]
+        #expect(sink.bytes == expected, "codec_present_if_length_from source 0: no body, a stated size of zero")
+        var cursor = SceCursor(sink.bytes)
+        let decoded = try CodecPresentIfLengthFrom.decode(&cursor)
+        #expect(cursor.remaining == 0, "codec_present_if_length_from source 0: the decode left bytes of the frame unread")
+        #expect(decoded.flags == value.flags, "codec_present_if_length_from source 0: the decode presents another flags")
+        #expect(decoded.flags_has_ts == value.flags_has_ts, "codec_present_if_length_from source 1: the decode presents another flags.has_ts")
+    }
+    do {
+        let value = CodecPresentIfLengthFrom(flags: 0, flags_has_ts: CodecPresentIfLengthFromFlagsHasTs.notHasTs(ext_size: 9))
+        var sink = BytesSink()
+        try CodecPresentIfLengthFrom.encodeSource(value, into: &sink)
+        let expected: [UInt8] = [0, 9]
+        #expect(sink.bytes == expected, "codec_present_if_length_from source 1: no body: the size is what the value states")
+        var cursor = SceCursor(sink.bytes)
+        let decoded = try CodecPresentIfLengthFrom.decode(&cursor)
+        #expect(cursor.remaining == 0, "codec_present_if_length_from source 1: the decode left bytes of the frame unread")
+        #expect(decoded.flags == value.flags, "codec_present_if_length_from source 0: the decode presents another flags")
+        #expect(decoded.flags_has_ts == value.flags_has_ts, "codec_present_if_length_from source 1: the decode presents another flags.has_ts")
+    }
+    do {
+        let bound0 = try #require(BoundedBytes<CodecZenohTimestamp.ZidBound>([1, 2, 3, 4]))
+        let value = CodecPresentIfLengthFrom(flags: 1, flags_has_ts: CodecPresentIfLengthFromFlagsHasTs.hasTs(ts: CodecZenohTimestamp(time: 42, zid: bound0)))
+        var sink = BytesSink()
+        try CodecPresentIfLengthFrom.encodeSource(value, into: &sink)
+        let expected: [UInt8] = [1, 6, 42, 4, 1, 2, 3, 4]
+        #expect(sink.bytes == expected, "codec_present_if_length_from source 2: a body: has_ts and the size are derived from the body's frame of six bytes")
+        var cursor = SceCursor(sink.bytes)
+        let decoded = try CodecPresentIfLengthFrom.decode(&cursor)
+        #expect(cursor.remaining == 0, "codec_present_if_length_from source 2: the decode left bytes of the frame unread")
+        #expect(decoded.flags == value.flags, "codec_present_if_length_from source 0: the decode presents another flags")
+        #expect(decoded.flags_has_ts == value.flags_has_ts, "codec_present_if_length_from source 1: the decode presents another flags.has_ts")
+    }
+    do {
+        let bound0 = try #require(BoundedBytes<CodecZenohTimestamp.ZidBound>([]))
+        let value = CodecPresentIfLengthFrom(flags: 255, flags_has_ts: CodecPresentIfLengthFromFlagsHasTs.hasTs(ts: CodecZenohTimestamp(time: 16384, zid: bound0)))
+        var sink = BytesSink()
+        try CodecPresentIfLengthFrom.encodeSource(value, into: &sink)
+        let expected: [UInt8] = [255, 4, 128, 128, 1, 0]
+        #expect(sink.bytes == expected, "codec_present_if_length_from source 3: a body of a three-byte VLE time and no zid: the size counts the frame, and the bits the value presents are kept")
+        var cursor = SceCursor(sink.bytes)
+        let decoded = try CodecPresentIfLengthFrom.decode(&cursor)
+        #expect(cursor.remaining == 0, "codec_present_if_length_from source 3: the decode left bytes of the frame unread")
+        #expect(decoded.flags == value.flags, "codec_present_if_length_from source 0: the decode presents another flags")
+        #expect(decoded.flags_has_ts == value.flags_has_ts, "codec_present_if_length_from source 1: the decode presents another flags.has_ts")
+    }
+
 
 }
 
@@ -7943,6 +11243,56 @@ private func expectClose(_ actual: Double, _ expected: Double, _ label: String) 
     // Compile-only probe: the oracle holds no case this fixture's field shape can express.
     _ = CodecPresentIfNegation.frameLength
 
+    do {
+        let value = CodecPresentIfNegation(flags: 0, seq: 5)
+        var sink = BytesSink()
+        try CodecPresentIfNegation.encodeSource(value, into: &sink)
+        let expected: [UInt8] = [0, 0, 5]
+        #expect(sink.bytes == expected, "codec_present_if_negation source 0: absent_seq clear: seq follows")
+        var cursor = SceCursor(sink.bytes)
+        let decoded = try CodecPresentIfNegation.decode(&cursor)
+        #expect(cursor.remaining == 0, "codec_present_if_negation source 0: the decode left bytes of the frame unread")
+        #expect(decoded.flags == value.flags, "codec_present_if_negation source 0: the decode presents another flags")
+        #expect(decoded.seq == value.seq, "codec_present_if_negation source 1: the decode presents another seq")
+    }
+    do {
+        let value = CodecPresentIfNegation(flags: 1, seq: nil)
+        var sink = BytesSink()
+        try CodecPresentIfNegation.encodeSource(value, into: &sink)
+        let expected: [UInt8] = [1]
+        #expect(sink.bytes == expected, "codec_present_if_negation source 1: absent_seq set: no seq")
+        var cursor = SceCursor(sink.bytes)
+        let decoded = try CodecPresentIfNegation.decode(&cursor)
+        #expect(cursor.remaining == 0, "codec_present_if_negation source 1: the decode left bytes of the frame unread")
+        #expect(decoded.flags == value.flags, "codec_present_if_negation source 0: the decode presents another flags")
+        #expect(decoded.seq == value.seq, "codec_present_if_negation source 1: the decode presents another seq")
+    }
+    do {
+        let value = CodecPresentIfNegation(flags: 254, seq: 65535)
+        var sink = BytesSink()
+        try CodecPresentIfNegation.encodeSource(value, into: &sink)
+        let expected: [UInt8] = [254, 255, 255]
+        #expect(sink.bytes == expected, "codec_present_if_negation source 2: the bits the value presents are kept beside the derived one")
+        var cursor = SceCursor(sink.bytes)
+        let decoded = try CodecPresentIfNegation.decode(&cursor)
+        #expect(cursor.remaining == 0, "codec_present_if_negation source 2: the decode left bytes of the frame unread")
+        #expect(decoded.flags == value.flags, "codec_present_if_negation source 0: the decode presents another flags")
+        #expect(decoded.seq == value.seq, "codec_present_if_negation source 1: the decode presents another seq")
+    }
+    do {
+        let value = CodecPresentIfNegation(flags: 255, seq: nil)
+        var sink = BytesSink()
+        try CodecPresentIfNegation.encodeSource(value, into: &sink)
+        let expected: [UInt8] = [255]
+        #expect(sink.bytes == expected, "codec_present_if_negation source 3: every bit set: no seq")
+        var cursor = SceCursor(sink.bytes)
+        let decoded = try CodecPresentIfNegation.decode(&cursor)
+        #expect(cursor.remaining == 0, "codec_present_if_negation source 3: the decode left bytes of the frame unread")
+        #expect(decoded.flags == value.flags, "codec_present_if_negation source 0: the decode presents another flags")
+        #expect(decoded.seq == value.seq, "codec_present_if_negation source 1: the decode presents another seq")
+    }
+
+
 }
 
 // MARK: - codec: codec_present_if_string
@@ -7951,6 +11301,59 @@ private func expectClose(_ actual: Double, _ expected: Double, _ label: String) 
 
     // Compile-only probe: the oracle holds no case this fixture's field shape can express.
     _ = CodecPresentIfString.frameLength
+
+    do {
+        let value = CodecPresentIfString(carrier: 0, text: nil)
+        var sink = BytesSink()
+        try CodecPresentIfString.encodeSource(value, into: &sink)
+        let expected: [UInt8] = [0]
+        #expect(sink.bytes == expected, "codec_present_if_string source 0: no text: the frame is the carrier alone")
+        var cursor = SceCursor(sink.bytes)
+        let decoded = try CodecPresentIfString.decode(&cursor)
+        #expect(cursor.remaining == 0, "codec_present_if_string source 0: the decode left bytes of the frame unread")
+        #expect(decoded.carrier == value.carrier, "codec_present_if_string source 0: the decode presents another carrier")
+        #expect(decoded.text == value.text, "codec_present_if_string source 1: the decode presents another text")
+    }
+    do {
+        let bound0 = try #require(BoundedText<CodecPresentIfString.TextBound>(""))
+        let value = CodecPresentIfString(carrier: 1, text: bound0)
+        var sink = BytesSink()
+        try CodecPresentIfString.encodeSource(value, into: &sink)
+        let expected: [UInt8] = [1, 0]
+        #expect(sink.bytes == expected, "codec_present_if_string source 1: empty text is present: its length is zero")
+        var cursor = SceCursor(sink.bytes)
+        let decoded = try CodecPresentIfString.decode(&cursor)
+        #expect(cursor.remaining == 0, "codec_present_if_string source 1: the decode left bytes of the frame unread")
+        #expect(decoded.carrier == value.carrier, "codec_present_if_string source 0: the decode presents another carrier")
+        #expect(decoded.text == value.text, "codec_present_if_string source 1: the decode presents another text")
+    }
+    do {
+        let bound0 = try #require(BoundedText<CodecPresentIfString.TextBound>("abc"))
+        let value = CodecPresentIfString(carrier: 1, text: bound0)
+        var sink = BytesSink()
+        try CodecPresentIfString.encodeSource(value, into: &sink)
+        let expected: [UInt8] = [1, 3, 97, 98, 99]
+        #expect(sink.bytes == expected, "codec_present_if_string source 2: has_text and the length are derived")
+        var cursor = SceCursor(sink.bytes)
+        let decoded = try CodecPresentIfString.decode(&cursor)
+        #expect(cursor.remaining == 0, "codec_present_if_string source 2: the decode left bytes of the frame unread")
+        #expect(decoded.carrier == value.carrier, "codec_present_if_string source 0: the decode presents another carrier")
+        #expect(decoded.text == value.text, "codec_present_if_string source 1: the decode presents another text")
+    }
+    do {
+        let bound0 = try #require(BoundedText<CodecPresentIfString.TextBound>("héllo"))
+        let value = CodecPresentIfString(carrier: 1, text: bound0)
+        var sink = BytesSink()
+        try CodecPresentIfString.encodeSource(value, into: &sink)
+        let expected: [UInt8] = [1, 6, 104, 195, 169, 108, 108, 111]
+        #expect(sink.bytes == expected, "codec_present_if_string source 3: the length counts UTF-8 bytes")
+        var cursor = SceCursor(sink.bytes)
+        let decoded = try CodecPresentIfString.decode(&cursor)
+        #expect(cursor.remaining == 0, "codec_present_if_string source 3: the decode left bytes of the frame unread")
+        #expect(decoded.carrier == value.carrier, "codec_present_if_string source 0: the decode presents another carrier")
+        #expect(decoded.text == value.text, "codec_present_if_string source 1: the decode presents another text")
+    }
+
 
     do {
         var rejectCursor = SceCursor([1, 2, 195, 40])
@@ -7968,6 +11371,46 @@ private func expectClose(_ actual: Double, _ expected: Double, _ label: String) 
     // Compile-only probe: the oracle holds no case this fixture's field shape can express.
     _ = CodecPresentIfTail.frameLength
 
+    do {
+        let value = CodecPresentIfTail(flags: 0, payload: nil)
+        var sink = BytesSink()
+        try CodecPresentIfTail.encodeSource(value, into: &sink)
+        let expected: [UInt8] = [0]
+        #expect(sink.bytes == expected, "codec_present_if_tail source 0: no payload")
+        var cursor = SceCursor(sink.bytes)
+        let decoded = try CodecPresentIfTail.decode(&cursor)
+        #expect(cursor.remaining == 0, "codec_present_if_tail source 0: the decode left bytes of the frame unread")
+        #expect(decoded.flags == value.flags, "codec_present_if_tail source 0: the decode presents another flags")
+        #expect(decoded.payload == value.payload, "codec_present_if_tail source 1: the decode presents another payload")
+    }
+    do {
+        let bound0 = try #require(BoundedBytes<CodecPresentIfTail.PayloadBound>([]))
+        let value = CodecPresentIfTail(flags: 1, payload: bound0)
+        var sink = BytesSink()
+        try CodecPresentIfTail.encodeSource(value, into: &sink)
+        let expected: [UInt8] = [1]
+        #expect(sink.bytes == expected, "codec_present_if_tail source 1: an empty payload is present")
+        var cursor = SceCursor(sink.bytes)
+        let decoded = try CodecPresentIfTail.decode(&cursor)
+        #expect(cursor.remaining == 0, "codec_present_if_tail source 1: the decode left bytes of the frame unread")
+        #expect(decoded.flags == value.flags, "codec_present_if_tail source 0: the decode presents another flags")
+        #expect(decoded.payload == value.payload, "codec_present_if_tail source 1: the decode presents another payload")
+    }
+    do {
+        let bound0 = try #require(BoundedBytes<CodecPresentIfTail.PayloadBound>([0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21, 22, 23, 24, 25, 26, 27, 28, 29, 30, 31, 32, 33, 34, 35, 36, 37, 38, 39, 40, 41, 42, 43, 44, 45, 46, 47, 48, 49, 50, 51, 52, 53, 54, 55, 56, 57, 58, 59, 60, 61, 62, 63]))
+        let value = CodecPresentIfTail(flags: 1, payload: bound0)
+        var sink = BytesSink()
+        try CodecPresentIfTail.encodeSource(value, into: &sink)
+        let expected: [UInt8] = [1, 0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21, 22, 23, 24, 25, 26, 27, 28, 29, 30, 31, 32, 33, 34, 35, 36, 37, 38, 39, 40, 41, 42, 43, 44, 45, 46, 47, 48, 49, 50, 51, 52, 53, 54, 55, 56, 57, 58, 59, 60, 61, 62, 63]
+        #expect(sink.bytes == expected, "codec_present_if_tail source 2: a payload at its bound")
+        var cursor = SceCursor(sink.bytes)
+        let decoded = try CodecPresentIfTail.decode(&cursor)
+        #expect(cursor.remaining == 0, "codec_present_if_tail source 2: the decode left bytes of the frame unread")
+        #expect(decoded.flags == value.flags, "codec_present_if_tail source 0: the decode presents another flags")
+        #expect(decoded.payload == value.payload, "codec_present_if_tail source 1: the decode presents another payload")
+    }
+
+
 }
 
 // MARK: - codec: codec_present_if_vle
@@ -7976,6 +11419,44 @@ private func expectClose(_ actual: Double, _ expected: Double, _ label: String) 
 
     // Compile-only probe: the oracle holds no case this fixture's field shape can express.
     _ = CodecPresentIfVle.frameLength
+
+    do {
+        let value = CodecPresentIfVle(flags: 0, optional_id: nil)
+        var sink = BytesSink()
+        try CodecPresentIfVle.encodeSource(value, into: &sink)
+        let expected: [UInt8] = [0]
+        #expect(sink.bytes == expected, "codec_present_if_vle source 0: no id")
+        var cursor = SceCursor(sink.bytes)
+        let decoded = try CodecPresentIfVle.decode(&cursor)
+        #expect(cursor.remaining == 0, "codec_present_if_vle source 0: the decode left bytes of the frame unread")
+        #expect(decoded.flags == value.flags, "codec_present_if_vle source 0: the decode presents another flags")
+        #expect(decoded.optional_id == value.optional_id, "codec_present_if_vle source 1: the decode presents another optional_id")
+    }
+    do {
+        let value = CodecPresentIfVle(flags: 1, optional_id: 0)
+        var sink = BytesSink()
+        try CodecPresentIfVle.encodeSource(value, into: &sink)
+        let expected: [UInt8] = [1, 0]
+        #expect(sink.bytes == expected, "codec_present_if_vle source 1: an id of zero is present")
+        var cursor = SceCursor(sink.bytes)
+        let decoded = try CodecPresentIfVle.decode(&cursor)
+        #expect(cursor.remaining == 0, "codec_present_if_vle source 1: the decode left bytes of the frame unread")
+        #expect(decoded.flags == value.flags, "codec_present_if_vle source 0: the decode presents another flags")
+        #expect(decoded.optional_id == value.optional_id, "codec_present_if_vle source 1: the decode presents another optional_id")
+    }
+    do {
+        let value = CodecPresentIfVle(flags: 1, optional_id: 18446744073709551615)
+        var sink = BytesSink()
+        try CodecPresentIfVle.encodeSource(value, into: &sink)
+        let expected: [UInt8] = [1, 255, 255, 255, 255, 255, 255, 255, 255, 255]
+        #expect(sink.bytes == expected, "codec_present_if_vle source 2: a nine-byte id")
+        var cursor = SceCursor(sink.bytes)
+        let decoded = try CodecPresentIfVle.decode(&cursor)
+        #expect(cursor.remaining == 0, "codec_present_if_vle source 2: the decode left bytes of the frame unread")
+        #expect(decoded.flags == value.flags, "codec_present_if_vle source 0: the decode presents another flags")
+        #expect(decoded.optional_id == value.optional_id, "codec_present_if_vle source 1: the decode presents another optional_id")
+    }
+
 
 }
 
@@ -7986,6 +11467,44 @@ private func expectClose(_ actual: Double, _ expected: Double, _ label: String) 
     // Compile-only probe: the oracle holds no case this fixture's field shape can express.
     _ = CodecRepeatBasic.frameLength
 
+    do {
+        let bound0 = try #require(BoundedList<CodecRepeatElem, CodecRepeatBasic.FragsBound>([]))
+        let value = CodecRepeatBasic(frags: bound0)
+        var sink = BytesSink()
+        try CodecRepeatBasic.encodeSource(value, into: &sink)
+        let expected: [UInt8] = [0]
+        #expect(sink.bytes == expected, "codec_repeat_basic source 0: no entry: the count is zero")
+        var cursor = SceCursor(sink.bytes)
+        let decoded = try CodecRepeatBasic.decode(&cursor)
+        #expect(cursor.remaining == 0, "codec_repeat_basic source 0: the decode left bytes of the frame unread")
+        #expect(decoded.frags == value.frags, "codec_repeat_basic source 0: the decode presents another frags")
+    }
+    do {
+        let bound0 = try #require(BoundedList<CodecRepeatElem, CodecRepeatBasic.FragsBound>([CodecRepeatElem(seq: 1), CodecRepeatElem(seq: 43981)]))
+        let value = CodecRepeatBasic(frags: bound0)
+        var sink = BytesSink()
+        try CodecRepeatBasic.encodeSource(value, into: &sink)
+        let expected: [UInt8] = [2, 0, 1, 171, 205]
+        #expect(sink.bytes == expected, "codec_repeat_basic source 1: the count is derived from the entries")
+        var cursor = SceCursor(sink.bytes)
+        let decoded = try CodecRepeatBasic.decode(&cursor)
+        #expect(cursor.remaining == 0, "codec_repeat_basic source 1: the decode left bytes of the frame unread")
+        #expect(decoded.frags == value.frags, "codec_repeat_basic source 0: the decode presents another frags")
+    }
+    do {
+        let bound0 = try #require(BoundedList<CodecRepeatElem, CodecRepeatBasic.FragsBound>([CodecRepeatElem(seq: 0), CodecRepeatElem(seq: 1), CodecRepeatElem(seq: 2), CodecRepeatElem(seq: 3), CodecRepeatElem(seq: 4), CodecRepeatElem(seq: 5), CodecRepeatElem(seq: 6), CodecRepeatElem(seq: 7), CodecRepeatElem(seq: 8), CodecRepeatElem(seq: 9), CodecRepeatElem(seq: 10), CodecRepeatElem(seq: 11), CodecRepeatElem(seq: 12), CodecRepeatElem(seq: 13), CodecRepeatElem(seq: 14), CodecRepeatElem(seq: 15), CodecRepeatElem(seq: 16), CodecRepeatElem(seq: 17), CodecRepeatElem(seq: 18), CodecRepeatElem(seq: 19), CodecRepeatElem(seq: 20), CodecRepeatElem(seq: 21), CodecRepeatElem(seq: 22), CodecRepeatElem(seq: 23), CodecRepeatElem(seq: 24), CodecRepeatElem(seq: 25), CodecRepeatElem(seq: 26), CodecRepeatElem(seq: 27), CodecRepeatElem(seq: 28), CodecRepeatElem(seq: 29), CodecRepeatElem(seq: 30), CodecRepeatElem(seq: 31)]))
+        let value = CodecRepeatBasic(frags: bound0)
+        var sink = BytesSink()
+        try CodecRepeatBasic.encodeSource(value, into: &sink)
+        let expected: [UInt8] = [32, 0, 0, 0, 1, 0, 2, 0, 3, 0, 4, 0, 5, 0, 6, 0, 7, 0, 8, 0, 9, 0, 10, 0, 11, 0, 12, 0, 13, 0, 14, 0, 15, 0, 16, 0, 17, 0, 18, 0, 19, 0, 20, 0, 21, 0, 22, 0, 23, 0, 24, 0, 25, 0, 26, 0, 27, 0, 28, 0, 29, 0, 30, 0, 31]
+        #expect(sink.bytes == expected, "codec_repeat_basic source 2: a list at its bound of 32")
+        var cursor = SceCursor(sink.bytes)
+        let decoded = try CodecRepeatBasic.decode(&cursor)
+        #expect(cursor.remaining == 0, "codec_repeat_basic source 2: the decode left bytes of the frame unread")
+        #expect(decoded.frags == value.frags, "codec_repeat_basic source 0: the decode presents another frags")
+    }
+
+
 }
 
 // MARK: - codec: codec_repeat_elem
@@ -7994,6 +11513,30 @@ private func expectClose(_ actual: Double, _ expected: Double, _ label: String) 
 
     // Compile-only probe: the oracle holds no case this fixture's field shape can express.
     _ = CodecRepeatElem.frameLength
+
+    do {
+        let value = CodecRepeatElem(seq: 0)
+        var sink = BytesSink()
+        try CodecRepeatElem.encodeSource(value, into: &sink)
+        let expected: [UInt8] = [0, 0]
+        #expect(sink.bytes == expected, "codec_repeat_elem source 0: zero")
+        var cursor = SceCursor(sink.bytes)
+        let decoded = try CodecRepeatElem.decode(&cursor)
+        #expect(cursor.remaining == 0, "codec_repeat_elem source 0: the decode left bytes of the frame unread")
+        #expect(decoded.seq == value.seq, "codec_repeat_elem source 0: the decode presents another seq")
+    }
+    do {
+        let value = CodecRepeatElem(seq: 43981)
+        var sink = BytesSink()
+        try CodecRepeatElem.encodeSource(value, into: &sink)
+        let expected: [UInt8] = [171, 205]
+        #expect(sink.bytes == expected, "codec_repeat_elem source 1: two bytes, high first")
+        var cursor = SceCursor(sink.bytes)
+        let decoded = try CodecRepeatElem.decode(&cursor)
+        #expect(cursor.remaining == 0, "codec_repeat_elem source 1: the decode left bytes of the frame unread")
+        #expect(decoded.seq == value.seq, "codec_repeat_elem source 0: the decode presents another seq")
+    }
+
 
 }
 
@@ -8004,6 +11547,51 @@ private func expectClose(_ actual: Double, _ expected: Double, _ label: String) 
     // Compile-only probe: the oracle holds no case this fixture's field shape can express.
     _ = CodecRepeatUnconditionalCount.frameLength
 
+    do {
+        let bound0 = try #require(BoundedList<CodecRepeatElem, CodecRepeatUnconditionalCount.LinksBound>([CodecRepeatElem(seq: 1), CodecRepeatElem(seq: 2)]))
+        let bound1 = try #require(BoundedList<CodecRepeatElem, CodecRepeatUnconditionalCount.WeightsBound>([CodecRepeatElem(seq: 16), CodecRepeatElem(seq: 32)]))
+        let bound2 = try #require(Aligned(bound0, bound1))
+        let value = CodecRepeatUnconditionalCount(options: 1, options_h: CodecRepeatUnconditionalCountOptionsH.h(links_weights: bound2))
+        var sink = BytesSink()
+        try CodecRepeatUnconditionalCount.encodeSource(value, into: &sink)
+        let expected: [UInt8] = [1, 2, 0, 1, 0, 2, 0, 16, 0, 32]
+        #expect(sink.bytes == expected, "codec_repeat_unconditional_count source 0: H set: the links and the weights, two of each, one count")
+        var cursor = SceCursor(sink.bytes)
+        let decoded = try CodecRepeatUnconditionalCount.decode(&cursor)
+        #expect(cursor.remaining == 0, "codec_repeat_unconditional_count source 0: the decode left bytes of the frame unread")
+        #expect(decoded.options == value.options, "codec_repeat_unconditional_count source 0: the decode presents another options")
+        #expect(decoded.options_h == value.options_h, "codec_repeat_unconditional_count source 1: the decode presents another options.H")
+    }
+    do {
+        let bound0 = try #require(BoundedList<CodecRepeatElem, CodecRepeatUnconditionalCount.LinksBound>([CodecRepeatElem(seq: 3)]))
+        let value = CodecRepeatUnconditionalCount(options: 0, options_h: CodecRepeatUnconditionalCountOptionsH.notH(links: bound0))
+        var sink = BytesSink()
+        try CodecRepeatUnconditionalCount.encodeSource(value, into: &sink)
+        let expected: [UInt8] = [0, 1, 0, 3]
+        #expect(sink.bytes == expected, "codec_repeat_unconditional_count source 1: H clear: the links alone")
+        var cursor = SceCursor(sink.bytes)
+        let decoded = try CodecRepeatUnconditionalCount.decode(&cursor)
+        #expect(cursor.remaining == 0, "codec_repeat_unconditional_count source 1: the decode left bytes of the frame unread")
+        #expect(decoded.options == value.options, "codec_repeat_unconditional_count source 0: the decode presents another options")
+        #expect(decoded.options_h == value.options_h, "codec_repeat_unconditional_count source 1: the decode presents another options.H")
+    }
+    do {
+        let bound0 = try #require(BoundedList<CodecRepeatElem, CodecRepeatUnconditionalCount.LinksBound>([]))
+        let bound1 = try #require(BoundedList<CodecRepeatElem, CodecRepeatUnconditionalCount.WeightsBound>([]))
+        let bound2 = try #require(Aligned(bound0, bound1))
+        let value = CodecRepeatUnconditionalCount(options: 1, options_h: CodecRepeatUnconditionalCountOptionsH.h(links_weights: bound2))
+        var sink = BytesSink()
+        try CodecRepeatUnconditionalCount.encodeSource(value, into: &sink)
+        let expected: [UInt8] = [1, 0]
+        #expect(sink.bytes == expected, "codec_repeat_unconditional_count source 2: H set and no entry: both lists empty, the count zero")
+        var cursor = SceCursor(sink.bytes)
+        let decoded = try CodecRepeatUnconditionalCount.decode(&cursor)
+        #expect(cursor.remaining == 0, "codec_repeat_unconditional_count source 2: the decode left bytes of the frame unread")
+        #expect(decoded.options == value.options, "codec_repeat_unconditional_count source 0: the decode presents another options")
+        #expect(decoded.options_h == value.options_h, "codec_repeat_unconditional_count source 1: the decode presents another options.H")
+    }
+
+
 }
 
 // MARK: - codec: codec_repeat_flag_carrier
@@ -8012,6 +11600,50 @@ private func expectClose(_ actual: Double, _ expected: Double, _ label: String) 
 
     // Compile-only probe: the oracle holds no case this fixture's field shape can express.
     _ = CodecRepeatFlagCarrier.frameLength
+
+    do {
+        let bound0 = try #require(BoundedList<CodecChainFlagEntry, CodecRepeatFlagCarrier.EntriesBound>([CodecChainFlagEntry(header: 1, wide: CodecChainFlagEntryWide.wide(long_value: 16)), CodecChainFlagEntry(header: 2, wide: CodecChainFlagEntryWide.wide(long_value: 32))]))
+        let bound1 = try #require(Lawful<BoundedList<CodecChainFlagEntry, CodecRepeatFlagCarrier.EntriesBound>, CodecRepeatFlagCarrier.EntriesLaw<CodecChainFlagEntry>>(start: true, list: bound0))
+        let value = CodecRepeatFlagCarrier(head: 1, entries: bound1)
+        var sink = BytesSink()
+        try CodecRepeatFlagCarrier.encodeSource(value, into: &sink)
+        let expected: [UInt8] = [1, 2, 1, 0, 16, 2, 0, 32]
+        #expect(sink.bytes == expected, "codec_repeat_flag_carrier source 0: two long entries, counted")
+        var cursor = SceCursor(sink.bytes)
+        let decoded = try CodecRepeatFlagCarrier.decode(&cursor)
+        #expect(cursor.remaining == 0, "codec_repeat_flag_carrier source 0: the decode left bytes of the frame unread")
+        #expect(decoded.head == value.head, "codec_repeat_flag_carrier source 0: the decode presents another head")
+        #expect(decoded.entries == value.entries, "codec_repeat_flag_carrier source 1: the decode presents another entries")
+    }
+    do {
+        let bound0 = try #require(BoundedList<CodecChainFlagEntry, CodecRepeatFlagCarrier.EntriesBound>([]))
+        let bound1 = try #require(Lawful<BoundedList<CodecChainFlagEntry, CodecRepeatFlagCarrier.EntriesBound>, CodecRepeatFlagCarrier.EntriesLaw<CodecChainFlagEntry>>(start: false, list: bound0))
+        let value = CodecRepeatFlagCarrier(head: 0, entries: bound1)
+        var sink = BytesSink()
+        try CodecRepeatFlagCarrier.encodeSource(value, into: &sink)
+        let expected: [UInt8] = [0, 0]
+        #expect(sink.bytes == expected, "codec_repeat_flag_carrier source 1: no entry: the start is the value's, W clear")
+        var cursor = SceCursor(sink.bytes)
+        let decoded = try CodecRepeatFlagCarrier.decode(&cursor)
+        #expect(cursor.remaining == 0, "codec_repeat_flag_carrier source 1: the decode left bytes of the frame unread")
+        #expect(decoded.head == value.head, "codec_repeat_flag_carrier source 0: the decode presents another head")
+        #expect(decoded.entries == value.entries, "codec_repeat_flag_carrier source 1: the decode presents another entries")
+    }
+    do {
+        let bound0 = try #require(BoundedList<CodecChainFlagEntry, CodecRepeatFlagCarrier.EntriesBound>([]))
+        let bound1 = try #require(Lawful<BoundedList<CodecChainFlagEntry, CodecRepeatFlagCarrier.EntriesBound>, CodecRepeatFlagCarrier.EntriesLaw<CodecChainFlagEntry>>(start: true, list: bound0))
+        let value = CodecRepeatFlagCarrier(head: 1, entries: bound1)
+        var sink = BytesSink()
+        try CodecRepeatFlagCarrier.encodeSource(value, into: &sink)
+        let expected: [UInt8] = [1, 0]
+        #expect(sink.bytes == expected, "codec_repeat_flag_carrier source 2: no entry and the start set: W follows the start, not the entries")
+        var cursor = SceCursor(sink.bytes)
+        let decoded = try CodecRepeatFlagCarrier.decode(&cursor)
+        #expect(cursor.remaining == 0, "codec_repeat_flag_carrier source 2: the decode left bytes of the frame unread")
+        #expect(decoded.head == value.head, "codec_repeat_flag_carrier source 0: the decode presents another head")
+        #expect(decoded.entries == value.entries, "codec_repeat_flag_carrier source 1: the decode presents another entries")
+    }
+
 
 }
 
@@ -8022,6 +11654,46 @@ private func expectClose(_ actual: Double, _ expected: Double, _ label: String) 
     // Compile-only probe: the oracle holds no case this fixture's field shape can express.
     _ = CodecRepeatFlagGated.frameLength
 
+    do {
+        let bound0 = try #require(BoundedList<CodecChainFlagEntry, CodecRepeatFlagGated.EntriesBound>([CodecChainFlagEntry(header: 1, wide: CodecChainFlagEntryWide.wide(long_value: 7))]))
+        let bound1 = try #require(Lawful<BoundedList<CodecChainFlagEntry, CodecRepeatFlagGated.EntriesBound>, CodecRepeatFlagGated.EntriesLaw<CodecChainFlagEntry>>(start: true, list: bound0))
+        let value = CodecRepeatFlagGated(head: 3, entries: bound1)
+        var sink = BytesSink()
+        try CodecRepeatFlagGated.encodeSource(value, into: &sink)
+        let expected: [UInt8] = [3, 1, 1, 0, 7]
+        #expect(sink.bytes == expected, "codec_repeat_flag_gated source 0: L set by the list, W by its start")
+        var cursor = SceCursor(sink.bytes)
+        let decoded = try CodecRepeatFlagGated.decode(&cursor)
+        #expect(cursor.remaining == 0, "codec_repeat_flag_gated source 0: the decode left bytes of the frame unread")
+        #expect(decoded.head == value.head, "codec_repeat_flag_gated source 0: the decode presents another head")
+        #expect(decoded.entries == value.entries, "codec_repeat_flag_gated source 1: the decode presents another entries")
+    }
+    do {
+        let value = CodecRepeatFlagGated(head: 0, entries: nil)
+        var sink = BytesSink()
+        try CodecRepeatFlagGated.encodeSource(value, into: &sink)
+        let expected: [UInt8] = [0]
+        #expect(sink.bytes == expected, "codec_repeat_flag_gated source 1: no list: L clear, W the value's own")
+        var cursor = SceCursor(sink.bytes)
+        let decoded = try CodecRepeatFlagGated.decode(&cursor)
+        #expect(cursor.remaining == 0, "codec_repeat_flag_gated source 1: the decode left bytes of the frame unread")
+        #expect(decoded.head == value.head, "codec_repeat_flag_gated source 0: the decode presents another head")
+        #expect(decoded.entries == value.entries, "codec_repeat_flag_gated source 1: the decode presents another entries")
+    }
+    do {
+        let value = CodecRepeatFlagGated(head: 1, entries: nil)
+        var sink = BytesSink()
+        try CodecRepeatFlagGated.encodeSource(value, into: &sink)
+        let expected: [UInt8] = [1]
+        #expect(sink.bytes == expected, "codec_repeat_flag_gated source 2: no list and W set: nothing derives it")
+        var cursor = SceCursor(sink.bytes)
+        let decoded = try CodecRepeatFlagGated.decode(&cursor)
+        #expect(cursor.remaining == 0, "codec_repeat_flag_gated source 2: the decode left bytes of the frame unread")
+        #expect(decoded.head == value.head, "codec_repeat_flag_gated source 0: the decode presents another head")
+        #expect(decoded.entries == value.entries, "codec_repeat_flag_gated source 1: the decode presents another entries")
+    }
+
+
 }
 
 // MARK: - codec: codec_repeat_flag_group
@@ -8030,6 +11702,102 @@ private func expectClose(_ actual: Double, _ expected: Double, _ label: String) 
 
     // Compile-only probe: the oracle holds no case this fixture's field shape can express.
     _ = CodecRepeatFlagGroup.frameLength
+
+    do {
+        let bound0 = try #require(BoundedList<CodecChainFlagEntry, CodecRepeatFlagGroup.EntriesBound>([CodecChainFlagEntry(header: 1, wide: CodecChainFlagEntryWide.notWide(short_value: 5)), CodecChainFlagEntry(header: 2, wide: CodecChainFlagEntryWide.notWide(short_value: 6))]))
+        let bound1 = try #require(Lawful<BoundedList<CodecChainFlagEntry, CodecRepeatFlagGroup.EntriesBound>, CodecRepeatFlagGroup.EntriesLaw<CodecChainFlagEntry>>(start: false, list: bound0))
+        let value = CodecRepeatFlagGroup(head: 2, head_l: CodecRepeatFlagGroupHeadL.l(level: 7, entries: bound1))
+        var sink = BytesSink()
+        try CodecRepeatFlagGroup.encodeSource(value, into: &sink)
+        let expected: [UInt8] = [2, 7, 2, 1, 5, 2, 6]
+        #expect(sink.bytes == expected, "codec_repeat_flag_group source 0: L set by the arm that holds the list, W clear by its start: two short entries")
+        var cursor = SceCursor(sink.bytes)
+        let decoded = try CodecRepeatFlagGroup.decode(&cursor)
+        #expect(cursor.remaining == 0, "codec_repeat_flag_group source 0: the decode left bytes of the frame unread")
+        #expect(decoded.head == value.head, "codec_repeat_flag_group source 0: the decode presents another head")
+        #expect(decoded.head_l == value.head_l, "codec_repeat_flag_group source 1: the decode presents another head.L")
+    }
+    do {
+        let bound0 = try #require(BoundedList<CodecChainFlagEntry, CodecRepeatFlagGroup.EntriesBound>([CodecChainFlagEntry(header: 3, wide: CodecChainFlagEntryWide.wide(long_value: 4660))]))
+        let bound1 = try #require(Lawful<BoundedList<CodecChainFlagEntry, CodecRepeatFlagGroup.EntriesBound>, CodecRepeatFlagGroup.EntriesLaw<CodecChainFlagEntry>>(start: true, list: bound0))
+        let value = CodecRepeatFlagGroup(head: 3, head_l: CodecRepeatFlagGroupHeadL.l(level: 0, entries: bound1))
+        var sink = BytesSink()
+        try CodecRepeatFlagGroup.encodeSource(value, into: &sink)
+        let expected: [UInt8] = [3, 0, 1, 3, 18, 52]
+        #expect(sink.bytes == expected, "codec_repeat_flag_group source 1: the start set: the entry long, W derived set")
+        var cursor = SceCursor(sink.bytes)
+        let decoded = try CodecRepeatFlagGroup.decode(&cursor)
+        #expect(cursor.remaining == 0, "codec_repeat_flag_group source 1: the decode left bytes of the frame unread")
+        #expect(decoded.head == value.head, "codec_repeat_flag_group source 0: the decode presents another head")
+        #expect(decoded.head_l == value.head_l, "codec_repeat_flag_group source 1: the decode presents another head.L")
+    }
+    do {
+        let bound0 = try #require(BoundedList<CodecChainFlagEntry, CodecRepeatFlagGroup.EntriesBound>([]))
+        let bound1 = try #require(Lawful<BoundedList<CodecChainFlagEntry, CodecRepeatFlagGroup.EntriesBound>, CodecRepeatFlagGroup.EntriesLaw<CodecChainFlagEntry>>(start: true, list: bound0))
+        let value = CodecRepeatFlagGroup(head: 3, head_l: CodecRepeatFlagGroupHeadL.l(level: 255, entries: bound1))
+        var sink = BytesSink()
+        try CodecRepeatFlagGroup.encodeSource(value, into: &sink)
+        let expected: [UInt8] = [3, 255, 0]
+        #expect(sink.bytes == expected, "codec_repeat_flag_group source 2: no entry and the start set: W follows the start, not the entries")
+        var cursor = SceCursor(sink.bytes)
+        let decoded = try CodecRepeatFlagGroup.decode(&cursor)
+        #expect(cursor.remaining == 0, "codec_repeat_flag_group source 2: the decode left bytes of the frame unread")
+        #expect(decoded.head == value.head, "codec_repeat_flag_group source 0: the decode presents another head")
+        #expect(decoded.head_l == value.head_l, "codec_repeat_flag_group source 1: the decode presents another head.L")
+    }
+    do {
+        let bound0 = try #require(BoundedList<CodecChainFlagEntry, CodecRepeatFlagGroup.EntriesBound>([]))
+        let bound1 = try #require(Lawful<BoundedList<CodecChainFlagEntry, CodecRepeatFlagGroup.EntriesBound>, CodecRepeatFlagGroup.EntriesLaw<CodecChainFlagEntry>>(start: false, list: bound0))
+        let value = CodecRepeatFlagGroup(head: 2, head_l: CodecRepeatFlagGroupHeadL.l(level: 1, entries: bound1))
+        var sink = BytesSink()
+        try CodecRepeatFlagGroup.encodeSource(value, into: &sink)
+        let expected: [UInt8] = [2, 1, 0]
+        #expect(sink.bytes == expected, "codec_repeat_flag_group source 3: no entry and the start clear: the count zero, W clear")
+        var cursor = SceCursor(sink.bytes)
+        let decoded = try CodecRepeatFlagGroup.decode(&cursor)
+        #expect(cursor.remaining == 0, "codec_repeat_flag_group source 3: the decode left bytes of the frame unread")
+        #expect(decoded.head == value.head, "codec_repeat_flag_group source 0: the decode presents another head")
+        #expect(decoded.head_l == value.head_l, "codec_repeat_flag_group source 1: the decode presents another head.L")
+    }
+    do {
+        let value = CodecRepeatFlagGroup(head: 0, head_l: CodecRepeatFlagGroupHeadL.notL(note: 9))
+        var sink = BytesSink()
+        try CodecRepeatFlagGroup.encodeSource(value, into: &sink)
+        let expected: [UInt8] = [0, 9]
+        #expect(sink.bytes == expected, "codec_repeat_flag_group source 4: the arm of note: L clear, no list, W the value's own and clear")
+        var cursor = SceCursor(sink.bytes)
+        let decoded = try CodecRepeatFlagGroup.decode(&cursor)
+        #expect(cursor.remaining == 0, "codec_repeat_flag_group source 4: the decode left bytes of the frame unread")
+        #expect(decoded.head == value.head, "codec_repeat_flag_group source 0: the decode presents another head")
+        #expect(decoded.head_l == value.head_l, "codec_repeat_flag_group source 1: the decode presents another head.L")
+    }
+    do {
+        let value = CodecRepeatFlagGroup(head: 1, head_l: CodecRepeatFlagGroupHeadL.notL(note: 255))
+        var sink = BytesSink()
+        try CodecRepeatFlagGroup.encodeSource(value, into: &sink)
+        let expected: [UInt8] = [1, 255]
+        #expect(sink.bytes == expected, "codec_repeat_flag_group source 5: the arm of note and W set: no list derives W, so the value's bit is kept")
+        var cursor = SceCursor(sink.bytes)
+        let decoded = try CodecRepeatFlagGroup.decode(&cursor)
+        #expect(cursor.remaining == 0, "codec_repeat_flag_group source 5: the decode left bytes of the frame unread")
+        #expect(decoded.head == value.head, "codec_repeat_flag_group source 0: the decode presents another head")
+        #expect(decoded.head_l == value.head_l, "codec_repeat_flag_group source 1: the decode presents another head.L")
+    }
+    do {
+        let bound0 = try #require(BoundedList<CodecChainFlagEntry, CodecRepeatFlagGroup.EntriesBound>([CodecChainFlagEntry(header: 4, wide: CodecChainFlagEntryWide.notWide(short_value: 127))]))
+        let bound1 = try #require(Lawful<BoundedList<CodecChainFlagEntry, CodecRepeatFlagGroup.EntriesBound>, CodecRepeatFlagGroup.EntriesLaw<CodecChainFlagEntry>>(start: false, list: bound0))
+        let value = CodecRepeatFlagGroup(head: 254, head_l: CodecRepeatFlagGroupHeadL.l(level: 2, entries: bound1))
+        var sink = BytesSink()
+        try CodecRepeatFlagGroup.encodeSource(value, into: &sink)
+        let expected: [UInt8] = [254, 2, 1, 4, 127]
+        #expect(sink.bytes == expected, "codec_repeat_flag_group source 6: the bits beside W and L are kept")
+        var cursor = SceCursor(sink.bytes)
+        let decoded = try CodecRepeatFlagGroup.decode(&cursor)
+        #expect(cursor.remaining == 0, "codec_repeat_flag_group source 6: the decode left bytes of the frame unread")
+        #expect(decoded.head == value.head, "codec_repeat_flag_group source 0: the decode presents another head")
+        #expect(decoded.head_l == value.head_l, "codec_repeat_flag_group source 1: the decode presents another head.L")
+    }
+
 
 }
 
@@ -8040,6 +11808,122 @@ private func expectClose(_ actual: Double, _ expected: Double, _ label: String) 
     // Compile-only probe: the oracle holds no case this fixture's field shape can express.
     _ = CodecRepeatFlagForwardGroup.frameLength
 
+    do {
+        let bound0 = try #require(BoundedList<CodecChainFlagEntry, CodecRepeatFlagForwardGroup.EntriesBound>([CodecChainFlagEntry(header: 1, wide: CodecChainFlagEntryWide.notWide(short_value: 5)), CodecChainFlagEntry(header: 2, wide: CodecChainFlagEntryWide.notWide(short_value: 6))]))
+        let bound1 = try #require(Lawful<BoundedList<CodecChainFlagEntry, CodecRepeatFlagForwardGroup.EntriesBound>, CodecRepeatFlagForwardGroup.EntriesLaw<CodecChainFlagEntry>>(start: false, list: bound0))
+        let value = CodecRepeatFlagForwardGroup(head: 1, head_l: CodecRepeatFlagForwardGroupHeadL.l(entries: bound1))
+        var sink = BytesSink()
+        try CodecRepeatFlagForwardGroup.encodeSource(value, into: &sink)
+        let expected: [UInt8] = [1, 2, 1, 5, 2, 6]
+        #expect(sink.bytes == expected, "codec_repeat_flag_forward_group source 0: L set by the arm that holds the list, its start the input handed clear: two short entries")
+        var cursor = SceCursor(sink.bytes)
+        let decoded = try CodecRepeatFlagForwardGroup.decode(&cursor, wide: 0)
+        #expect(cursor.remaining == 0, "codec_repeat_flag_forward_group source 0: the decode left bytes of the frame unread")
+        #expect(decoded.head == value.head, "codec_repeat_flag_forward_group source 0: the decode presents another head")
+        #expect(decoded.head_l == value.head_l, "codec_repeat_flag_forward_group source 1: the decode presents another head.L")
+        #expect((CodecRepeatFlagForwardGroup.inputWide(value).map { $0 == 0 } ?? true), "codec_repeat_flag_forward_group source 2: the decode presents another flag input wide")
+    }
+    do {
+        let bound0 = try #require(BoundedList<CodecChainFlagEntry, CodecRepeatFlagForwardGroup.EntriesBound>([CodecChainFlagEntry(header: 3, wide: CodecChainFlagEntryWide.wide(long_value: 4660))]))
+        let bound1 = try #require(Lawful<BoundedList<CodecChainFlagEntry, CodecRepeatFlagForwardGroup.EntriesBound>, CodecRepeatFlagForwardGroup.EntriesLaw<CodecChainFlagEntry>>(start: true, list: bound0))
+        let value = CodecRepeatFlagForwardGroup(head: 1, head_l: CodecRepeatFlagForwardGroupHeadL.l(entries: bound1))
+        var sink = BytesSink()
+        try CodecRepeatFlagForwardGroup.encodeSource(value, into: &sink)
+        let expected: [UInt8] = [1, 1, 3, 18, 52]
+        #expect(sink.bytes == expected, "codec_repeat_flag_forward_group source 1: the input handed set: the start says it, the entry long")
+        var cursor = SceCursor(sink.bytes)
+        let decoded = try CodecRepeatFlagForwardGroup.decode(&cursor, wide: 1)
+        #expect(cursor.remaining == 0, "codec_repeat_flag_forward_group source 1: the decode left bytes of the frame unread")
+        #expect(decoded.head == value.head, "codec_repeat_flag_forward_group source 0: the decode presents another head")
+        #expect(decoded.head_l == value.head_l, "codec_repeat_flag_forward_group source 1: the decode presents another head.L")
+        #expect((CodecRepeatFlagForwardGroup.inputWide(value).map { $0 == 1 } ?? true), "codec_repeat_flag_forward_group source 2: the decode presents another flag input wide")
+    }
+    do {
+        let bound0 = try #require(BoundedList<CodecChainFlagEntry, CodecRepeatFlagForwardGroup.EntriesBound>([]))
+        let bound1 = try #require(Lawful<BoundedList<CodecChainFlagEntry, CodecRepeatFlagForwardGroup.EntriesBound>, CodecRepeatFlagForwardGroup.EntriesLaw<CodecChainFlagEntry>>(start: true, list: bound0))
+        let value = CodecRepeatFlagForwardGroup(head: 1, head_l: CodecRepeatFlagForwardGroupHeadL.l(entries: bound1))
+        var sink = BytesSink()
+        try CodecRepeatFlagForwardGroup.encodeSource(value, into: &sink)
+        let expected: [UInt8] = [1, 0]
+        #expect(sink.bytes == expected, "codec_repeat_flag_forward_group source 2: no entry and the input set: the start says it, not the entries")
+        var cursor = SceCursor(sink.bytes)
+        let decoded = try CodecRepeatFlagForwardGroup.decode(&cursor, wide: 1)
+        #expect(cursor.remaining == 0, "codec_repeat_flag_forward_group source 2: the decode left bytes of the frame unread")
+        #expect(decoded.head == value.head, "codec_repeat_flag_forward_group source 0: the decode presents another head")
+        #expect(decoded.head_l == value.head_l, "codec_repeat_flag_forward_group source 1: the decode presents another head.L")
+        #expect((CodecRepeatFlagForwardGroup.inputWide(value).map { $0 == 1 } ?? true), "codec_repeat_flag_forward_group source 2: the decode presents another flag input wide")
+    }
+    do {
+        let bound0 = try #require(BoundedList<CodecChainFlagEntry, CodecRepeatFlagForwardGroup.EntriesBound>([]))
+        let bound1 = try #require(Lawful<BoundedList<CodecChainFlagEntry, CodecRepeatFlagForwardGroup.EntriesBound>, CodecRepeatFlagForwardGroup.EntriesLaw<CodecChainFlagEntry>>(start: false, list: bound0))
+        let value = CodecRepeatFlagForwardGroup(head: 1, head_l: CodecRepeatFlagForwardGroupHeadL.l(entries: bound1))
+        var sink = BytesSink()
+        try CodecRepeatFlagForwardGroup.encodeSource(value, into: &sink)
+        let expected: [UInt8] = [1, 0]
+        #expect(sink.bytes == expected, "codec_repeat_flag_forward_group source 3: no entry and the input clear: the count zero")
+        var cursor = SceCursor(sink.bytes)
+        let decoded = try CodecRepeatFlagForwardGroup.decode(&cursor, wide: 0)
+        #expect(cursor.remaining == 0, "codec_repeat_flag_forward_group source 3: the decode left bytes of the frame unread")
+        #expect(decoded.head == value.head, "codec_repeat_flag_forward_group source 0: the decode presents another head")
+        #expect(decoded.head_l == value.head_l, "codec_repeat_flag_forward_group source 1: the decode presents another head.L")
+        #expect((CodecRepeatFlagForwardGroup.inputWide(value).map { $0 == 0 } ?? true), "codec_repeat_flag_forward_group source 2: the decode presents another flag input wide")
+    }
+    do {
+        let value = CodecRepeatFlagForwardGroup(head: 0, head_l: CodecRepeatFlagForwardGroupHeadL.notL(note: 9))
+        var sink = BytesSink()
+        try CodecRepeatFlagForwardGroup.encodeSource(value, into: &sink)
+        let expected: [UInt8] = [0, 9]
+        #expect(sink.bytes == expected, "codec_repeat_flag_forward_group source 4: the arm of note: L clear, the value says nothing of the input, handed clear")
+        var cursor = SceCursor(sink.bytes)
+        let decoded = try CodecRepeatFlagForwardGroup.decode(&cursor, wide: 0)
+        #expect(cursor.remaining == 0, "codec_repeat_flag_forward_group source 4: the decode left bytes of the frame unread")
+        #expect(decoded.head == value.head, "codec_repeat_flag_forward_group source 0: the decode presents another head")
+        #expect(decoded.head_l == value.head_l, "codec_repeat_flag_forward_group source 1: the decode presents another head.L")
+        #expect((CodecRepeatFlagForwardGroup.inputWide(value).map { $0 == 0 } ?? true), "codec_repeat_flag_forward_group source 2: the decode presents another flag input wide")
+    }
+    do {
+        let value = CodecRepeatFlagForwardGroup(head: 0, head_l: CodecRepeatFlagForwardGroupHeadL.notL(note: 255))
+        var sink = BytesSink()
+        try CodecRepeatFlagForwardGroup.encodeSource(value, into: &sink)
+        let expected: [UInt8] = [0, 255]
+        #expect(sink.bytes == expected, "codec_repeat_flag_forward_group source 5: the arm of note says nothing of the input, handed set")
+        var cursor = SceCursor(sink.bytes)
+        let decoded = try CodecRepeatFlagForwardGroup.decode(&cursor, wide: 1)
+        #expect(cursor.remaining == 0, "codec_repeat_flag_forward_group source 5: the decode left bytes of the frame unread")
+        #expect(decoded.head == value.head, "codec_repeat_flag_forward_group source 0: the decode presents another head")
+        #expect(decoded.head_l == value.head_l, "codec_repeat_flag_forward_group source 1: the decode presents another head.L")
+        #expect((CodecRepeatFlagForwardGroup.inputWide(value).map { $0 == 1 } ?? true), "codec_repeat_flag_forward_group source 2: the decode presents another flag input wide")
+    }
+    do {
+        let bound0 = try #require(BoundedList<CodecChainFlagEntry, CodecRepeatFlagForwardGroup.EntriesBound>([CodecChainFlagEntry(header: 4, wide: CodecChainFlagEntryWide.wide(long_value: 127))]))
+        let bound1 = try #require(Lawful<BoundedList<CodecChainFlagEntry, CodecRepeatFlagForwardGroup.EntriesBound>, CodecRepeatFlagForwardGroup.EntriesLaw<CodecChainFlagEntry>>(start: true, list: bound0))
+        let value = CodecRepeatFlagForwardGroup(head: 255, head_l: CodecRepeatFlagForwardGroupHeadL.l(entries: bound1))
+        var sink = BytesSink()
+        try CodecRepeatFlagForwardGroup.encodeSource(value, into: &sink)
+        let expected: [UInt8] = [255, 1, 4, 0, 127]
+        #expect(sink.bytes == expected, "codec_repeat_flag_forward_group source 6: the bits beside L are kept, L set by the arm")
+        var cursor = SceCursor(sink.bytes)
+        let decoded = try CodecRepeatFlagForwardGroup.decode(&cursor, wide: 1)
+        #expect(cursor.remaining == 0, "codec_repeat_flag_forward_group source 6: the decode left bytes of the frame unread")
+        #expect(decoded.head == value.head, "codec_repeat_flag_forward_group source 0: the decode presents another head")
+        #expect(decoded.head_l == value.head_l, "codec_repeat_flag_forward_group source 1: the decode presents another head.L")
+        #expect((CodecRepeatFlagForwardGroup.inputWide(value).map { $0 == 1 } ?? true), "codec_repeat_flag_forward_group source 2: the decode presents another flag input wide")
+    }
+    do {
+        let value = CodecRepeatFlagForwardGroup(head: 254, head_l: CodecRepeatFlagForwardGroupHeadL.notL(note: 0))
+        var sink = BytesSink()
+        try CodecRepeatFlagForwardGroup.encodeSource(value, into: &sink)
+        let expected: [UInt8] = [254, 0]
+        #expect(sink.bytes == expected, "codec_repeat_flag_forward_group source 7: the bits beside L are kept, L clear by the arm of note")
+        var cursor = SceCursor(sink.bytes)
+        let decoded = try CodecRepeatFlagForwardGroup.decode(&cursor, wide: 0)
+        #expect(cursor.remaining == 0, "codec_repeat_flag_forward_group source 7: the decode left bytes of the frame unread")
+        #expect(decoded.head == value.head, "codec_repeat_flag_forward_group source 0: the decode presents another head")
+        #expect(decoded.head_l == value.head_l, "codec_repeat_flag_forward_group source 1: the decode presents another head.L")
+        #expect((CodecRepeatFlagForwardGroup.inputWide(value).map { $0 == 0 } ?? true), "codec_repeat_flag_forward_group source 2: the decode presents another flag input wide")
+    }
+
+
 }
 
 // MARK: - codec: codec_repeat_flag_aligned_group
@@ -8048,6 +11932,127 @@ private func expectClose(_ actual: Double, _ expected: Double, _ label: String) 
 
     // Compile-only probe: the oracle holds no case this fixture's field shape can express.
     _ = CodecRepeatFlagAlignedGroup.frameLength
+
+    do {
+        let bound0 = try #require(BoundedList<CodecRepeatElem, CodecRepeatFlagAlignedGroup.LinksBound>([CodecRepeatElem(seq: 1), CodecRepeatElem(seq: 2)]))
+        let bound1 = try #require(BoundedList<CodecChainFlagEntry, CodecRepeatFlagAlignedGroup.WeightsBound>([CodecChainFlagEntry(header: 1, wide: CodecChainFlagEntryWide.notWide(short_value: 5)), CodecChainFlagEntry(header: 2, wide: CodecChainFlagEntryWide.notWide(short_value: 6))]))
+        let bound2 = try #require(Lawful<BoundedList<CodecChainFlagEntry, CodecRepeatFlagAlignedGroup.WeightsBound>, CodecRepeatFlagAlignedGroup.WeightsLaw<CodecChainFlagEntry>>(start: false, list: bound1))
+        let bound3 = try #require(Aligned(bound0, bound2))
+        let value = CodecRepeatFlagAlignedGroup(head: 2, head_h: CodecRepeatFlagAlignedGroupHeadH.h(links_weights: bound3))
+        var sink = BytesSink()
+        try CodecRepeatFlagAlignedGroup.encodeSource(value, into: &sink)
+        let expected: [UInt8] = [2, 2, 0, 1, 0, 2, 1, 5, 2, 6]
+        #expect(sink.bytes == expected, "codec_repeat_flag_aligned_group source 0: H set: two links and two short weights, one count, W clear by the start")
+        var cursor = SceCursor(sink.bytes)
+        let decoded = try CodecRepeatFlagAlignedGroup.decode(&cursor)
+        #expect(cursor.remaining == 0, "codec_repeat_flag_aligned_group source 0: the decode left bytes of the frame unread")
+        #expect(decoded.head == value.head, "codec_repeat_flag_aligned_group source 0: the decode presents another head")
+        #expect(decoded.head_h == value.head_h, "codec_repeat_flag_aligned_group source 1: the decode presents another head.H")
+    }
+    do {
+        let bound0 = try #require(BoundedList<CodecRepeatElem, CodecRepeatFlagAlignedGroup.LinksBound>([CodecRepeatElem(seq: 4660)]))
+        let bound1 = try #require(BoundedList<CodecChainFlagEntry, CodecRepeatFlagAlignedGroup.WeightsBound>([CodecChainFlagEntry(header: 3, wide: CodecChainFlagEntryWide.wide(long_value: 43981))]))
+        let bound2 = try #require(Lawful<BoundedList<CodecChainFlagEntry, CodecRepeatFlagAlignedGroup.WeightsBound>, CodecRepeatFlagAlignedGroup.WeightsLaw<CodecChainFlagEntry>>(start: true, list: bound1))
+        let bound3 = try #require(Aligned(bound0, bound2))
+        let value = CodecRepeatFlagAlignedGroup(head: 3, head_h: CodecRepeatFlagAlignedGroupHeadH.h(links_weights: bound3))
+        var sink = BytesSink()
+        try CodecRepeatFlagAlignedGroup.encodeSource(value, into: &sink)
+        let expected: [UInt8] = [3, 1, 18, 52, 3, 171, 205]
+        #expect(sink.bytes == expected, "codec_repeat_flag_aligned_group source 1: the start set: the weight long, W derived set")
+        var cursor = SceCursor(sink.bytes)
+        let decoded = try CodecRepeatFlagAlignedGroup.decode(&cursor)
+        #expect(cursor.remaining == 0, "codec_repeat_flag_aligned_group source 1: the decode left bytes of the frame unread")
+        #expect(decoded.head == value.head, "codec_repeat_flag_aligned_group source 0: the decode presents another head")
+        #expect(decoded.head_h == value.head_h, "codec_repeat_flag_aligned_group source 1: the decode presents another head.H")
+    }
+    do {
+        let bound0 = try #require(BoundedList<CodecRepeatElem, CodecRepeatFlagAlignedGroup.LinksBound>([]))
+        let bound1 = try #require(BoundedList<CodecChainFlagEntry, CodecRepeatFlagAlignedGroup.WeightsBound>([]))
+        let bound2 = try #require(Lawful<BoundedList<CodecChainFlagEntry, CodecRepeatFlagAlignedGroup.WeightsBound>, CodecRepeatFlagAlignedGroup.WeightsLaw<CodecChainFlagEntry>>(start: true, list: bound1))
+        let bound3 = try #require(Aligned(bound0, bound2))
+        let value = CodecRepeatFlagAlignedGroup(head: 3, head_h: CodecRepeatFlagAlignedGroupHeadH.h(links_weights: bound3))
+        var sink = BytesSink()
+        try CodecRepeatFlagAlignedGroup.encodeSource(value, into: &sink)
+        let expected: [UInt8] = [3, 0]
+        #expect(sink.bytes == expected, "codec_repeat_flag_aligned_group source 2: no entry and the start set: W follows the start, not the entries")
+        var cursor = SceCursor(sink.bytes)
+        let decoded = try CodecRepeatFlagAlignedGroup.decode(&cursor)
+        #expect(cursor.remaining == 0, "codec_repeat_flag_aligned_group source 2: the decode left bytes of the frame unread")
+        #expect(decoded.head == value.head, "codec_repeat_flag_aligned_group source 0: the decode presents another head")
+        #expect(decoded.head_h == value.head_h, "codec_repeat_flag_aligned_group source 1: the decode presents another head.H")
+    }
+    do {
+        let bound0 = try #require(BoundedList<CodecRepeatElem, CodecRepeatFlagAlignedGroup.LinksBound>([]))
+        let bound1 = try #require(BoundedList<CodecChainFlagEntry, CodecRepeatFlagAlignedGroup.WeightsBound>([]))
+        let bound2 = try #require(Lawful<BoundedList<CodecChainFlagEntry, CodecRepeatFlagAlignedGroup.WeightsBound>, CodecRepeatFlagAlignedGroup.WeightsLaw<CodecChainFlagEntry>>(start: false, list: bound1))
+        let bound3 = try #require(Aligned(bound0, bound2))
+        let value = CodecRepeatFlagAlignedGroup(head: 2, head_h: CodecRepeatFlagAlignedGroupHeadH.h(links_weights: bound3))
+        var sink = BytesSink()
+        try CodecRepeatFlagAlignedGroup.encodeSource(value, into: &sink)
+        let expected: [UInt8] = [2, 0]
+        #expect(sink.bytes == expected, "codec_repeat_flag_aligned_group source 3: no entry and the start clear: the count zero, W clear")
+        var cursor = SceCursor(sink.bytes)
+        let decoded = try CodecRepeatFlagAlignedGroup.decode(&cursor)
+        #expect(cursor.remaining == 0, "codec_repeat_flag_aligned_group source 3: the decode left bytes of the frame unread")
+        #expect(decoded.head == value.head, "codec_repeat_flag_aligned_group source 0: the decode presents another head")
+        #expect(decoded.head_h == value.head_h, "codec_repeat_flag_aligned_group source 1: the decode presents another head.H")
+    }
+    do {
+        let bound0 = try #require(BoundedList<CodecRepeatElem, CodecRepeatFlagAlignedGroup.LinksBound>([CodecRepeatElem(seq: 7)]))
+        let value = CodecRepeatFlagAlignedGroup(head: 0, head_h: CodecRepeatFlagAlignedGroupHeadH.notH(links: bound0))
+        var sink = BytesSink()
+        try CodecRepeatFlagAlignedGroup.encodeSource(value, into: &sink)
+        let expected: [UInt8] = [0, 1, 0, 7]
+        #expect(sink.bytes == expected, "codec_repeat_flag_aligned_group source 4: H clear: the links alone, W the value's own and clear")
+        var cursor = SceCursor(sink.bytes)
+        let decoded = try CodecRepeatFlagAlignedGroup.decode(&cursor)
+        #expect(cursor.remaining == 0, "codec_repeat_flag_aligned_group source 4: the decode left bytes of the frame unread")
+        #expect(decoded.head == value.head, "codec_repeat_flag_aligned_group source 0: the decode presents another head")
+        #expect(decoded.head_h == value.head_h, "codec_repeat_flag_aligned_group source 1: the decode presents another head.H")
+    }
+    do {
+        let bound0 = try #require(BoundedList<CodecRepeatElem, CodecRepeatFlagAlignedGroup.LinksBound>([]))
+        let value = CodecRepeatFlagAlignedGroup(head: 1, head_h: CodecRepeatFlagAlignedGroupHeadH.notH(links: bound0))
+        var sink = BytesSink()
+        try CodecRepeatFlagAlignedGroup.encodeSource(value, into: &sink)
+        let expected: [UInt8] = [1, 0]
+        #expect(sink.bytes == expected, "codec_repeat_flag_aligned_group source 5: H clear and W set: no weights derive W, so the value's bit is kept")
+        var cursor = SceCursor(sink.bytes)
+        let decoded = try CodecRepeatFlagAlignedGroup.decode(&cursor)
+        #expect(cursor.remaining == 0, "codec_repeat_flag_aligned_group source 5: the decode left bytes of the frame unread")
+        #expect(decoded.head == value.head, "codec_repeat_flag_aligned_group source 0: the decode presents another head")
+        #expect(decoded.head_h == value.head_h, "codec_repeat_flag_aligned_group source 1: the decode presents another head.H")
+    }
+    do {
+        let bound0 = try #require(BoundedList<CodecRepeatElem, CodecRepeatFlagAlignedGroup.LinksBound>([CodecRepeatElem(seq: 9)]))
+        let bound1 = try #require(BoundedList<CodecChainFlagEntry, CodecRepeatFlagAlignedGroup.WeightsBound>([CodecChainFlagEntry(header: 4, wide: CodecChainFlagEntryWide.notWide(short_value: 127))]))
+        let bound2 = try #require(Lawful<BoundedList<CodecChainFlagEntry, CodecRepeatFlagAlignedGroup.WeightsBound>, CodecRepeatFlagAlignedGroup.WeightsLaw<CodecChainFlagEntry>>(start: false, list: bound1))
+        let bound3 = try #require(Aligned(bound0, bound2))
+        let value = CodecRepeatFlagAlignedGroup(head: 254, head_h: CodecRepeatFlagAlignedGroupHeadH.h(links_weights: bound3))
+        var sink = BytesSink()
+        try CodecRepeatFlagAlignedGroup.encodeSource(value, into: &sink)
+        let expected: [UInt8] = [254, 1, 0, 9, 4, 127]
+        #expect(sink.bytes == expected, "codec_repeat_flag_aligned_group source 6: the bits beside W and H are kept, H set by the arm")
+        var cursor = SceCursor(sink.bytes)
+        let decoded = try CodecRepeatFlagAlignedGroup.decode(&cursor)
+        #expect(cursor.remaining == 0, "codec_repeat_flag_aligned_group source 6: the decode left bytes of the frame unread")
+        #expect(decoded.head == value.head, "codec_repeat_flag_aligned_group source 0: the decode presents another head")
+        #expect(decoded.head_h == value.head_h, "codec_repeat_flag_aligned_group source 1: the decode presents another head.H")
+    }
+    do {
+        let bound0 = try #require(BoundedList<CodecRepeatElem, CodecRepeatFlagAlignedGroup.LinksBound>([CodecRepeatElem(seq: 3), CodecRepeatElem(seq: 4)]))
+        let value = CodecRepeatFlagAlignedGroup(head: 253, head_h: CodecRepeatFlagAlignedGroupHeadH.notH(links: bound0))
+        var sink = BytesSink()
+        try CodecRepeatFlagAlignedGroup.encodeSource(value, into: &sink)
+        let expected: [UInt8] = [253, 2, 0, 3, 0, 4]
+        #expect(sink.bytes == expected, "codec_repeat_flag_aligned_group source 7: the bits beside W and H are kept, W the value's own and set, H clear")
+        var cursor = SceCursor(sink.bytes)
+        let decoded = try CodecRepeatFlagAlignedGroup.decode(&cursor)
+        #expect(cursor.remaining == 0, "codec_repeat_flag_aligned_group source 7: the decode left bytes of the frame unread")
+        #expect(decoded.head == value.head, "codec_repeat_flag_aligned_group source 0: the decode presents another head")
+        #expect(decoded.head_h == value.head_h, "codec_repeat_flag_aligned_group source 1: the decode presents another head.H")
+    }
+
 
 }
 
@@ -8058,6 +12063,128 @@ private func expectClose(_ actual: Double, _ expected: Double, _ label: String) 
     // Compile-only probe: the oracle holds no case this fixture's field shape can express.
     _ = CodecRepeatFlagAlignedAlways.frameLength
 
+    do {
+        let bound0 = try #require(BoundedList<CodecChainFlagEntry, CodecRepeatFlagAlignedAlways.LinksBound>([CodecChainFlagEntry(header: 1, wide: CodecChainFlagEntryWide.notWide(short_value: 5)), CodecChainFlagEntry(header: 2, wide: CodecChainFlagEntryWide.notWide(short_value: 6))]))
+        let bound1 = try #require(Lawful<BoundedList<CodecChainFlagEntry, CodecRepeatFlagAlignedAlways.LinksBound>, CodecRepeatFlagAlignedAlways.LinksLaw<CodecChainFlagEntry>>(start: false, list: bound0))
+        let bound2 = try #require(BoundedList<CodecRepeatElem, CodecRepeatFlagAlignedAlways.WeightsBound>([CodecRepeatElem(seq: 1), CodecRepeatElem(seq: 2)]))
+        let bound3 = try #require(Aligned(bound1, bound2))
+        let value = CodecRepeatFlagAlignedAlways(head: 2, head_h: CodecRepeatFlagAlignedAlwaysHeadH.h(links_weights: bound3))
+        var sink = BytesSink()
+        try CodecRepeatFlagAlignedAlways.encodeSource(value, into: &sink)
+        let expected: [UInt8] = [2, 2, 1, 5, 2, 6, 0, 1, 0, 2]
+        #expect(sink.bytes == expected, "codec_repeat_flag_aligned_always source 0: H set: two short links and two weights, one count, W clear by the start")
+        var cursor = SceCursor(sink.bytes)
+        let decoded = try CodecRepeatFlagAlignedAlways.decode(&cursor)
+        #expect(cursor.remaining == 0, "codec_repeat_flag_aligned_always source 0: the decode left bytes of the frame unread")
+        #expect(decoded.head == value.head, "codec_repeat_flag_aligned_always source 0: the decode presents another head")
+        #expect(decoded.head_h == value.head_h, "codec_repeat_flag_aligned_always source 1: the decode presents another head.H")
+    }
+    do {
+        let bound0 = try #require(BoundedList<CodecChainFlagEntry, CodecRepeatFlagAlignedAlways.LinksBound>([CodecChainFlagEntry(header: 3, wide: CodecChainFlagEntryWide.wide(long_value: 43981))]))
+        let bound1 = try #require(Lawful<BoundedList<CodecChainFlagEntry, CodecRepeatFlagAlignedAlways.LinksBound>, CodecRepeatFlagAlignedAlways.LinksLaw<CodecChainFlagEntry>>(start: true, list: bound0))
+        let bound2 = try #require(BoundedList<CodecRepeatElem, CodecRepeatFlagAlignedAlways.WeightsBound>([CodecRepeatElem(seq: 4660)]))
+        let bound3 = try #require(Aligned(bound1, bound2))
+        let value = CodecRepeatFlagAlignedAlways(head: 3, head_h: CodecRepeatFlagAlignedAlwaysHeadH.h(links_weights: bound3))
+        var sink = BytesSink()
+        try CodecRepeatFlagAlignedAlways.encodeSource(value, into: &sink)
+        let expected: [UInt8] = [3, 1, 3, 171, 205, 18, 52]
+        #expect(sink.bytes == expected, "codec_repeat_flag_aligned_always source 1: the start set: the link long, W derived set")
+        var cursor = SceCursor(sink.bytes)
+        let decoded = try CodecRepeatFlagAlignedAlways.decode(&cursor)
+        #expect(cursor.remaining == 0, "codec_repeat_flag_aligned_always source 1: the decode left bytes of the frame unread")
+        #expect(decoded.head == value.head, "codec_repeat_flag_aligned_always source 0: the decode presents another head")
+        #expect(decoded.head_h == value.head_h, "codec_repeat_flag_aligned_always source 1: the decode presents another head.H")
+    }
+    do {
+        let bound0 = try #require(BoundedList<CodecChainFlagEntry, CodecRepeatFlagAlignedAlways.LinksBound>([]))
+        let bound1 = try #require(Lawful<BoundedList<CodecChainFlagEntry, CodecRepeatFlagAlignedAlways.LinksBound>, CodecRepeatFlagAlignedAlways.LinksLaw<CodecChainFlagEntry>>(start: true, list: bound0))
+        let bound2 = try #require(BoundedList<CodecRepeatElem, CodecRepeatFlagAlignedAlways.WeightsBound>([]))
+        let bound3 = try #require(Aligned(bound1, bound2))
+        let value = CodecRepeatFlagAlignedAlways(head: 3, head_h: CodecRepeatFlagAlignedAlwaysHeadH.h(links_weights: bound3))
+        var sink = BytesSink()
+        try CodecRepeatFlagAlignedAlways.encodeSource(value, into: &sink)
+        let expected: [UInt8] = [3, 0]
+        #expect(sink.bytes == expected, "codec_repeat_flag_aligned_always source 2: no entry and the start set: W follows the start, not the entries")
+        var cursor = SceCursor(sink.bytes)
+        let decoded = try CodecRepeatFlagAlignedAlways.decode(&cursor)
+        #expect(cursor.remaining == 0, "codec_repeat_flag_aligned_always source 2: the decode left bytes of the frame unread")
+        #expect(decoded.head == value.head, "codec_repeat_flag_aligned_always source 0: the decode presents another head")
+        #expect(decoded.head_h == value.head_h, "codec_repeat_flag_aligned_always source 1: the decode presents another head.H")
+    }
+    do {
+        let bound0 = try #require(BoundedList<CodecChainFlagEntry, CodecRepeatFlagAlignedAlways.LinksBound>([CodecChainFlagEntry(header: 4, wide: CodecChainFlagEntryWide.notWide(short_value: 7))]))
+        let bound1 = try #require(Lawful<BoundedList<CodecChainFlagEntry, CodecRepeatFlagAlignedAlways.LinksBound>, CodecRepeatFlagAlignedAlways.LinksLaw<CodecChainFlagEntry>>(start: false, list: bound0))
+        let value = CodecRepeatFlagAlignedAlways(head: 0, head_h: CodecRepeatFlagAlignedAlwaysHeadH.notH(links: bound1))
+        var sink = BytesSink()
+        try CodecRepeatFlagAlignedAlways.encodeSource(value, into: &sink)
+        let expected: [UInt8] = [0, 1, 4, 7]
+        #expect(sink.bytes == expected, "codec_repeat_flag_aligned_always source 3: H clear: the links alone, W still derived from their start")
+        var cursor = SceCursor(sink.bytes)
+        let decoded = try CodecRepeatFlagAlignedAlways.decode(&cursor)
+        #expect(cursor.remaining == 0, "codec_repeat_flag_aligned_always source 3: the decode left bytes of the frame unread")
+        #expect(decoded.head == value.head, "codec_repeat_flag_aligned_always source 0: the decode presents another head")
+        #expect(decoded.head_h == value.head_h, "codec_repeat_flag_aligned_always source 1: the decode presents another head.H")
+    }
+    do {
+        let bound0 = try #require(BoundedList<CodecChainFlagEntry, CodecRepeatFlagAlignedAlways.LinksBound>([CodecChainFlagEntry(header: 5, wide: CodecChainFlagEntryWide.wide(long_value: 258)), CodecChainFlagEntry(header: 6, wide: CodecChainFlagEntryWide.wide(long_value: 772))]))
+        let bound1 = try #require(Lawful<BoundedList<CodecChainFlagEntry, CodecRepeatFlagAlignedAlways.LinksBound>, CodecRepeatFlagAlignedAlways.LinksLaw<CodecChainFlagEntry>>(start: true, list: bound0))
+        let value = CodecRepeatFlagAlignedAlways(head: 1, head_h: CodecRepeatFlagAlignedAlwaysHeadH.notH(links: bound1))
+        var sink = BytesSink()
+        try CodecRepeatFlagAlignedAlways.encodeSource(value, into: &sink)
+        let expected: [UInt8] = [1, 2, 5, 1, 2, 6, 3, 4]
+        #expect(sink.bytes == expected, "codec_repeat_flag_aligned_always source 4: H clear and the start set: the links alone and long, W derived set")
+        var cursor = SceCursor(sink.bytes)
+        let decoded = try CodecRepeatFlagAlignedAlways.decode(&cursor)
+        #expect(cursor.remaining == 0, "codec_repeat_flag_aligned_always source 4: the decode left bytes of the frame unread")
+        #expect(decoded.head == value.head, "codec_repeat_flag_aligned_always source 0: the decode presents another head")
+        #expect(decoded.head_h == value.head_h, "codec_repeat_flag_aligned_always source 1: the decode presents another head.H")
+    }
+    do {
+        let bound0 = try #require(BoundedList<CodecChainFlagEntry, CodecRepeatFlagAlignedAlways.LinksBound>([]))
+        let bound1 = try #require(Lawful<BoundedList<CodecChainFlagEntry, CodecRepeatFlagAlignedAlways.LinksBound>, CodecRepeatFlagAlignedAlways.LinksLaw<CodecChainFlagEntry>>(start: true, list: bound0))
+        let value = CodecRepeatFlagAlignedAlways(head: 1, head_h: CodecRepeatFlagAlignedAlwaysHeadH.notH(links: bound1))
+        var sink = BytesSink()
+        try CodecRepeatFlagAlignedAlways.encodeSource(value, into: &sink)
+        let expected: [UInt8] = [1, 0]
+        #expect(sink.bytes == expected, "codec_repeat_flag_aligned_always source 5: H clear and no entry: W follows the start of the links in this arm too")
+        var cursor = SceCursor(sink.bytes)
+        let decoded = try CodecRepeatFlagAlignedAlways.decode(&cursor)
+        #expect(cursor.remaining == 0, "codec_repeat_flag_aligned_always source 5: the decode left bytes of the frame unread")
+        #expect(decoded.head == value.head, "codec_repeat_flag_aligned_always source 0: the decode presents another head")
+        #expect(decoded.head_h == value.head_h, "codec_repeat_flag_aligned_always source 1: the decode presents another head.H")
+    }
+    do {
+        let bound0 = try #require(BoundedList<CodecChainFlagEntry, CodecRepeatFlagAlignedAlways.LinksBound>([CodecChainFlagEntry(header: 7, wide: CodecChainFlagEntryWide.notWide(short_value: 127))]))
+        let bound1 = try #require(Lawful<BoundedList<CodecChainFlagEntry, CodecRepeatFlagAlignedAlways.LinksBound>, CodecRepeatFlagAlignedAlways.LinksLaw<CodecChainFlagEntry>>(start: false, list: bound0))
+        let bound2 = try #require(BoundedList<CodecRepeatElem, CodecRepeatFlagAlignedAlways.WeightsBound>([CodecRepeatElem(seq: 9)]))
+        let bound3 = try #require(Aligned(bound1, bound2))
+        let value = CodecRepeatFlagAlignedAlways(head: 254, head_h: CodecRepeatFlagAlignedAlwaysHeadH.h(links_weights: bound3))
+        var sink = BytesSink()
+        try CodecRepeatFlagAlignedAlways.encodeSource(value, into: &sink)
+        let expected: [UInt8] = [254, 1, 7, 127, 0, 9]
+        #expect(sink.bytes == expected, "codec_repeat_flag_aligned_always source 6: the bits beside W and H are kept, H set by the arm")
+        var cursor = SceCursor(sink.bytes)
+        let decoded = try CodecRepeatFlagAlignedAlways.decode(&cursor)
+        #expect(cursor.remaining == 0, "codec_repeat_flag_aligned_always source 6: the decode left bytes of the frame unread")
+        #expect(decoded.head == value.head, "codec_repeat_flag_aligned_always source 0: the decode presents another head")
+        #expect(decoded.head_h == value.head_h, "codec_repeat_flag_aligned_always source 1: the decode presents another head.H")
+    }
+    do {
+        let bound0 = try #require(BoundedList<CodecChainFlagEntry, CodecRepeatFlagAlignedAlways.LinksBound>([CodecChainFlagEntry(header: 8, wide: CodecChainFlagEntryWide.wide(long_value: 65535))]))
+        let bound1 = try #require(Lawful<BoundedList<CodecChainFlagEntry, CodecRepeatFlagAlignedAlways.LinksBound>, CodecRepeatFlagAlignedAlways.LinksLaw<CodecChainFlagEntry>>(start: true, list: bound0))
+        let value = CodecRepeatFlagAlignedAlways(head: 253, head_h: CodecRepeatFlagAlignedAlwaysHeadH.notH(links: bound1))
+        var sink = BytesSink()
+        try CodecRepeatFlagAlignedAlways.encodeSource(value, into: &sink)
+        let expected: [UInt8] = [253, 1, 8, 255, 255]
+        #expect(sink.bytes == expected, "codec_repeat_flag_aligned_always source 7: the bits beside W and H are kept, W by the start and H clear by the arm")
+        var cursor = SceCursor(sink.bytes)
+        let decoded = try CodecRepeatFlagAlignedAlways.decode(&cursor)
+        #expect(cursor.remaining == 0, "codec_repeat_flag_aligned_always source 7: the decode left bytes of the frame unread")
+        #expect(decoded.head == value.head, "codec_repeat_flag_aligned_always source 0: the decode presents another head")
+        #expect(decoded.head_h == value.head_h, "codec_repeat_flag_aligned_always source 1: the decode presents another head.H")
+    }
+
+
 }
 
 // MARK: - codec: codec_repeat_present_if_basic
@@ -8066,6 +12193,46 @@ private func expectClose(_ actual: Double, _ expected: Double, _ label: String) 
 
     // Compile-only probe: the oracle holds no case this fixture's field shape can express.
     _ = CodecRepeatPresentIfBasic.frameLength
+
+    do {
+        let value = CodecRepeatPresentIfBasic(carrier: 0, elems: nil)
+        var sink = BytesSink()
+        try CodecRepeatPresentIfBasic.encodeSource(value, into: &sink)
+        let expected: [UInt8] = [0]
+        #expect(sink.bytes == expected, "codec_repeat_present_if_basic source 0: has_list clear: no count and no list")
+        var cursor = SceCursor(sink.bytes)
+        let decoded = try CodecRepeatPresentIfBasic.decode(&cursor)
+        #expect(cursor.remaining == 0, "codec_repeat_present_if_basic source 0: the decode left bytes of the frame unread")
+        #expect(decoded.carrier == value.carrier, "codec_repeat_present_if_basic source 0: the decode presents another carrier")
+        #expect(decoded.elems == value.elems, "codec_repeat_present_if_basic source 1: the decode presents another elems")
+    }
+    do {
+        let bound0 = try #require(BoundedList<CodecRepeatElem, CodecRepeatPresentIfBasic.ElemsBound>([CodecRepeatElem(seq: 1), CodecRepeatElem(seq: 2)]))
+        let value = CodecRepeatPresentIfBasic(carrier: 1, elems: bound0)
+        var sink = BytesSink()
+        try CodecRepeatPresentIfBasic.encodeSource(value, into: &sink)
+        let expected: [UInt8] = [1, 2, 0, 1, 0, 2]
+        #expect(sink.bytes == expected, "codec_repeat_present_if_basic source 1: has_list and the count derived from the list")
+        var cursor = SceCursor(sink.bytes)
+        let decoded = try CodecRepeatPresentIfBasic.decode(&cursor)
+        #expect(cursor.remaining == 0, "codec_repeat_present_if_basic source 1: the decode left bytes of the frame unread")
+        #expect(decoded.carrier == value.carrier, "codec_repeat_present_if_basic source 0: the decode presents another carrier")
+        #expect(decoded.elems == value.elems, "codec_repeat_present_if_basic source 1: the decode presents another elems")
+    }
+    do {
+        let bound0 = try #require(BoundedList<CodecRepeatElem, CodecRepeatPresentIfBasic.ElemsBound>([]))
+        let value = CodecRepeatPresentIfBasic(carrier: 1, elems: bound0)
+        var sink = BytesSink()
+        try CodecRepeatPresentIfBasic.encodeSource(value, into: &sink)
+        let expected: [UInt8] = [1, 0]
+        #expect(sink.bytes == expected, "codec_repeat_present_if_basic source 2: an empty list is present: its count is zero")
+        var cursor = SceCursor(sink.bytes)
+        let decoded = try CodecRepeatPresentIfBasic.decode(&cursor)
+        #expect(cursor.remaining == 0, "codec_repeat_present_if_basic source 2: the decode left bytes of the frame unread")
+        #expect(decoded.carrier == value.carrier, "codec_repeat_present_if_basic source 0: the decode presents another carrier")
+        #expect(decoded.elems == value.elems, "codec_repeat_present_if_basic source 1: the decode presents another elems")
+    }
+
 
 }
 
@@ -8076,6 +12243,32 @@ private func expectClose(_ actual: Double, _ expected: Double, _ label: String) 
     // Compile-only probe: the oracle holds no case this fixture's field shape can express.
     _ = CodecScoutZidBody.frameLength
 
+    do {
+        let bound0 = try #require(BoundedBytes<CodecScoutZidBody.ZidBound>([66]))
+        let value = CodecScoutZidBody(zid: bound0)
+        var sink = BytesSink()
+        try CodecScoutZidBody.encodeSource(value, into: &sink)
+        let expected: [UInt8] = [0, 66]
+        #expect(sink.bytes == expected, "codec_scout_zid_body source 0: the shortest zid, one byte: the wire says zero")
+        var cursor = SceCursor(sink.bytes)
+        let decoded = try CodecScoutZidBody.decode(&cursor)
+        #expect(cursor.remaining == 0, "codec_scout_zid_body source 0: the decode left bytes of the frame unread")
+        #expect(decoded.zid == value.zid, "codec_scout_zid_body source 0: the decode presents another zid")
+    }
+    do {
+        let bound0 = try #require(BoundedBytes<CodecScoutZidBody.ZidBound>([0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15]))
+        let value = CodecScoutZidBody(zid: bound0)
+        var sink = BytesSink()
+        try CodecScoutZidBody.encodeSource(value, into: &sink)
+        let expected: [UInt8] = [15, 0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15]
+        #expect(sink.bytes == expected, "codec_scout_zid_body source 1: a zid at its bound: the wire says fifteen")
+        var cursor = SceCursor(sink.bytes)
+        let decoded = try CodecScoutZidBody.decode(&cursor)
+        #expect(cursor.remaining == 0, "codec_scout_zid_body source 1: the decode left bytes of the frame unread")
+        #expect(decoded.zid == value.zid, "codec_scout_zid_body source 0: the decode presents another zid")
+    }
+
+
 }
 
 // MARK: - codec: codec_tlv_chain_basic
@@ -8084,6 +12277,36 @@ private func expectClose(_ actual: Double, _ expected: Double, _ label: String) 
 
     // Compile-only probe: the oracle holds no case this fixture's field shape can express.
     _ = CodecTlvChainBasic.frameLength
+
+    do {
+        let bound0 = try #require(BoundedList<CodecTlvEntry, CodecTlvChainBasic.ExtensionsBound>([]))
+        let value = CodecTlvChainBasic(header_flags: 0, extensions: bound0)
+        var sink = BytesSink()
+        try CodecTlvChainBasic.encodeSource(value, into: &sink)
+        let expected: [UInt8] = [0]
+        #expect(sink.bytes == expected, "codec_tlv_chain_basic source 0: an empty chain: the header alone")
+        var cursor = SceCursor(sink.bytes)
+        let decoded = try CodecTlvChainBasic.decode(&cursor)
+        #expect(cursor.remaining == 0, "codec_tlv_chain_basic source 0: the decode left bytes of the frame unread")
+        #expect(decoded.header_flags == value.header_flags, "codec_tlv_chain_basic source 0: the decode presents another header_flags")
+        #expect(decoded.extensions == value.extensions, "codec_tlv_chain_basic source 1: the decode presents another extensions")
+    }
+    do {
+        let bound0 = try #require(BoundedBytes<CodecTlvEntry.EntryBodyBound>([170]))
+        let bound1 = try #require(BoundedBytes<CodecTlvEntry.EntryBodyBound>([]))
+        let bound2 = try #require(BoundedList<CodecTlvEntry, CodecTlvChainBasic.ExtensionsBound>([CodecTlvEntry(entry_type: 1, entry_body: bound0), CodecTlvEntry(entry_type: 2, entry_body: bound1)]))
+        let value = CodecTlvChainBasic(header_flags: 128, extensions: bound2)
+        var sink = BytesSink()
+        try CodecTlvChainBasic.encodeSource(value, into: &sink)
+        let expected: [UInt8] = [128, 1, 1, 170, 2, 0]
+        #expect(sink.bytes == expected, "codec_tlv_chain_basic source 1: two entries read to the end of the frame")
+        var cursor = SceCursor(sink.bytes)
+        let decoded = try CodecTlvChainBasic.decode(&cursor)
+        #expect(cursor.remaining == 0, "codec_tlv_chain_basic source 1: the decode left bytes of the frame unread")
+        #expect(decoded.header_flags == value.header_flags, "codec_tlv_chain_basic source 0: the decode presents another header_flags")
+        #expect(decoded.extensions == value.extensions, "codec_tlv_chain_basic source 1: the decode presents another extensions")
+    }
+
 
 }
 
@@ -8094,6 +12317,34 @@ private func expectClose(_ actual: Double, _ expected: Double, _ label: String) 
     // Compile-only probe: the oracle holds no case this fixture's field shape can express.
     _ = CodecTlvChainPresentIfBasic.frameLength
 
+    do {
+        let value = CodecTlvChainPresentIfBasic(carrier: 0, entries: nil)
+        var sink = BytesSink()
+        try CodecTlvChainPresentIfBasic.encodeSource(value, into: &sink)
+        let expected: [UInt8] = [0]
+        #expect(sink.bytes == expected, "codec_tlv_chain_present_if_basic source 0: has_chain clear: the carrier alone")
+        var cursor = SceCursor(sink.bytes)
+        let decoded = try CodecTlvChainPresentIfBasic.decode(&cursor)
+        #expect(cursor.remaining == 0, "codec_tlv_chain_present_if_basic source 0: the decode left bytes of the frame unread")
+        #expect(decoded.carrier == value.carrier, "codec_tlv_chain_present_if_basic source 0: the decode presents another carrier")
+        #expect(decoded.entries == value.entries, "codec_tlv_chain_present_if_basic source 1: the decode presents another entries")
+    }
+    do {
+        let bound0 = try #require(BoundedBytes<CodecTlvEntry.EntryBodyBound>([9]))
+        let bound1 = try #require(BoundedList<CodecTlvEntry, CodecTlvChainPresentIfBasic.EntriesBound>([CodecTlvEntry(entry_type: 1, entry_body: bound0)]))
+        let value = CodecTlvChainPresentIfBasic(carrier: 1, entries: bound1)
+        var sink = BytesSink()
+        try CodecTlvChainPresentIfBasic.encodeSource(value, into: &sink)
+        let expected: [UInt8] = [1, 1, 1, 9]
+        #expect(sink.bytes == expected, "codec_tlv_chain_present_if_basic source 1: a chain read to the end of the frame, its flag derived")
+        var cursor = SceCursor(sink.bytes)
+        let decoded = try CodecTlvChainPresentIfBasic.decode(&cursor)
+        #expect(cursor.remaining == 0, "codec_tlv_chain_present_if_basic source 1: the decode left bytes of the frame unread")
+        #expect(decoded.carrier == value.carrier, "codec_tlv_chain_present_if_basic source 0: the decode presents another carrier")
+        #expect(decoded.entries == value.entries, "codec_tlv_chain_present_if_basic source 1: the decode presents another entries")
+    }
+
+
 }
 
 // MARK: - codec: codec_chain_depth_entry
@@ -8103,6 +12354,30 @@ private func expectClose(_ actual: Double, _ expected: Double, _ label: String) 
     // Compile-only probe: the oracle holds no case this fixture's field shape can express.
     _ = CodecChainDepthEntry.frameLength
 
+    do {
+        let value = CodecChainDepthEntry(header: 5)
+        var sink = BytesSink()
+        try CodecChainDepthEntry.encodeSource(value, into: &sink)
+        let expected: [UInt8] = [5]
+        #expect(sink.bytes == expected, "codec_chain_depth_entry source 0: an id, Z clear")
+        var cursor = SceCursor(sink.bytes)
+        let decoded = try CodecChainDepthEntry.decode(&cursor)
+        #expect(cursor.remaining == 0, "codec_chain_depth_entry source 0: the decode left bytes of the frame unread")
+        #expect(decoded.header == value.header, "codec_chain_depth_entry source 0: the decode presents another header")
+    }
+    do {
+        let value = CodecChainDepthEntry(header: 143)
+        var sink = BytesSink()
+        try CodecChainDepthEntry.encodeSource(value, into: &sink)
+        let expected: [UInt8] = [143]
+        #expect(sink.bytes == expected, "codec_chain_depth_entry source 1: id 15 and Z set")
+        var cursor = SceCursor(sink.bytes)
+        let decoded = try CodecChainDepthEntry.decode(&cursor)
+        #expect(cursor.remaining == 0, "codec_chain_depth_entry source 1: the decode left bytes of the frame unread")
+        #expect(decoded.header == value.header, "codec_chain_depth_entry source 0: the decode presents another header")
+    }
+
+
 }
 
 // MARK: - codec: codec_chain_depth_plain
@@ -8111,6 +12386,34 @@ private func expectClose(_ actual: Double, _ expected: Double, _ label: String) 
 
     // Compile-only probe: the oracle holds no case this fixture's field shape can express.
     _ = CodecChainDepthPlain.frameLength
+
+    do {
+        let bound0 = try #require(BoundedList<CodecChainDepthEntry, CodecChainDepthPlain.ExtensionsBound>([CodecChainDepthEntry(header: 1)]))
+        let value = CodecChainDepthPlain(header_flags: 0, extensions: bound0)
+        var sink = BytesSink()
+        try CodecChainDepthPlain.encodeSource(value, into: &sink)
+        let expected: [UInt8] = [0, 1]
+        #expect(sink.bytes == expected, "codec_chain_depth_plain source 0: one entry: Z clear, the last")
+        var cursor = SceCursor(sink.bytes)
+        let decoded = try CodecChainDepthPlain.decode(&cursor)
+        #expect(cursor.remaining == 0, "codec_chain_depth_plain source 0: the decode left bytes of the frame unread")
+        #expect(decoded.header_flags == value.header_flags, "codec_chain_depth_plain source 0: the decode presents another header_flags")
+        #expect(decoded.extensions == value.extensions, "codec_chain_depth_plain source 1: the decode presents another extensions")
+    }
+    do {
+        let bound0 = try #require(BoundedList<CodecChainDepthEntry, CodecChainDepthPlain.ExtensionsBound>([CodecChainDepthEntry(header: 129), CodecChainDepthEntry(header: 130), CodecChainDepthEntry(header: 131), CodecChainDepthEntry(header: 132), CodecChainDepthEntry(header: 133), CodecChainDepthEntry(header: 134), CodecChainDepthEntry(header: 135), CodecChainDepthEntry(header: 8)]))
+        let value = CodecChainDepthPlain(header_flags: 0, extensions: bound0)
+        var sink = BytesSink()
+        try CodecChainDepthPlain.encodeSource(value, into: &sink)
+        let expected: [UInt8] = [0, 129, 130, 131, 132, 133, 134, 135, 8]
+        #expect(sink.bytes == expected, "codec_chain_depth_plain source 1: eight entries, the depth: Z set on each but the last")
+        var cursor = SceCursor(sink.bytes)
+        let decoded = try CodecChainDepthPlain.decode(&cursor)
+        #expect(cursor.remaining == 0, "codec_chain_depth_plain source 1: the decode left bytes of the frame unread")
+        #expect(decoded.header_flags == value.header_flags, "codec_chain_depth_plain source 0: the decode presents another header_flags")
+        #expect(decoded.extensions == value.extensions, "codec_chain_depth_plain source 1: the decode presents another extensions")
+    }
+
 
     do {
         var rejectCursor = SceCursor([0, 129, 130, 131, 132, 133, 134, 135, 136, 9])
@@ -8129,6 +12432,37 @@ private func expectClose(_ actual: Double, _ expected: Double, _ label: String) 
     _ = CodecChainDepthGated.frameLength
 
     do {
+        let bound0 = try #require(BoundedBytes<CodecChainDepthGated.PayloadBound>([170]))
+        let value = CodecChainDepthGated(header: 0, extensions: nil, payload: bound0)
+        var sink = BytesSink()
+        try CodecChainDepthGated.encodeSource(value, into: &sink)
+        let expected: [UInt8] = [0, 1, 170]
+        #expect(sink.bytes == expected, "codec_chain_depth_gated source 0: Z clear: no chain, then the payload")
+        var cursor = SceCursor(sink.bytes)
+        let decoded = try CodecChainDepthGated.decode(&cursor)
+        #expect(cursor.remaining == 0, "codec_chain_depth_gated source 0: the decode left bytes of the frame unread")
+        #expect(decoded.header == value.header, "codec_chain_depth_gated source 0: the decode presents another header")
+        #expect(decoded.extensions == value.extensions, "codec_chain_depth_gated source 1: the decode presents another extensions")
+        #expect(decoded.payload == value.payload, "codec_chain_depth_gated source 2: the decode presents another payload")
+    }
+    do {
+        let bound0 = try #require(BoundedList<CodecChainDepthEntry, CodecChainDepthGated.ExtensionsBound>([CodecChainDepthEntry(header: 129), CodecChainDepthEntry(header: 2)]))
+        let bound1 = try #require(BoundedBytes<CodecChainDepthGated.PayloadBound>([]))
+        let value = CodecChainDepthGated(header: 128, extensions: bound0, payload: bound1)
+        var sink = BytesSink()
+        try CodecChainDepthGated.encodeSource(value, into: &sink)
+        let expected: [UInt8] = [128, 129, 2, 0]
+        #expect(sink.bytes == expected, "codec_chain_depth_gated source 1: Z set: two entries, then an empty payload")
+        var cursor = SceCursor(sink.bytes)
+        let decoded = try CodecChainDepthGated.decode(&cursor)
+        #expect(cursor.remaining == 0, "codec_chain_depth_gated source 1: the decode left bytes of the frame unread")
+        #expect(decoded.header == value.header, "codec_chain_depth_gated source 0: the decode presents another header")
+        #expect(decoded.extensions == value.extensions, "codec_chain_depth_gated source 1: the decode presents another extensions")
+        #expect(decoded.payload == value.payload, "codec_chain_depth_gated source 2: the decode presents another payload")
+    }
+
+
+    do {
         var rejectCursor = SceCursor([128, 129, 130, 131, 132, 133, 134, 135, 136, 3, 3, 170, 187, 204])
         #expect(throws: CodecError.tooManyElements, "codec_chain_depth_gated reject 0: nine entries on a max-depth=8 chain: the ninth entry's header byte must not be read as payload_len") {
             try CodecChainDepthGated.decode(&rejectCursor)
@@ -8144,6 +12478,34 @@ private func expectClose(_ actual: Double, _ expected: Double, _ label: String) 
     // Compile-only probe: the oracle holds no case this fixture's field shape can express.
     _ = CodecTlvEntry.frameLength
 
+    do {
+        let bound0 = try #require(BoundedBytes<CodecTlvEntry.EntryBodyBound>([]))
+        let value = CodecTlvEntry(entry_type: 1, entry_body: bound0)
+        var sink = BytesSink()
+        try CodecTlvEntry.encodeSource(value, into: &sink)
+        let expected: [UInt8] = [1, 0]
+        #expect(sink.bytes == expected, "codec_tlv_entry source 0: an empty body: its length is zero")
+        var cursor = SceCursor(sink.bytes)
+        let decoded = try CodecTlvEntry.decode(&cursor)
+        #expect(cursor.remaining == 0, "codec_tlv_entry source 0: the decode left bytes of the frame unread")
+        #expect(decoded.entry_type == value.entry_type, "codec_tlv_entry source 0: the decode presents another entry_type")
+        #expect(decoded.entry_body == value.entry_body, "codec_tlv_entry source 1: the decode presents another entry_body")
+    }
+    do {
+        let bound0 = try #require(BoundedBytes<CodecTlvEntry.EntryBodyBound>([0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21, 22, 23, 24, 25, 26, 27, 28, 29, 30, 31]))
+        let value = CodecTlvEntry(entry_type: 255, entry_body: bound0)
+        var sink = BytesSink()
+        try CodecTlvEntry.encodeSource(value, into: &sink)
+        let expected: [UInt8] = [255, 32, 0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21, 22, 23, 24, 25, 26, 27, 28, 29, 30, 31]
+        #expect(sink.bytes == expected, "codec_tlv_entry source 1: a body at its bound")
+        var cursor = SceCursor(sink.bytes)
+        let decoded = try CodecTlvEntry.decode(&cursor)
+        #expect(cursor.remaining == 0, "codec_tlv_entry source 1: the decode left bytes of the frame unread")
+        #expect(decoded.entry_type == value.entry_type, "codec_tlv_entry source 0: the decode presents another entry_type")
+        #expect(decoded.entry_body == value.entry_body, "codec_tlv_entry source 1: the decode presents another entry_body")
+    }
+
+
 }
 
 // MARK: - codec: codec_transport_envelope
@@ -8152,6 +12514,85 @@ private func expectClose(_ actual: Double, _ expected: Double, _ label: String) 
 
     // Compile-only probe: the oracle holds no case this fixture's field shape can express.
     _ = CodecTransportEnvelope.frameLength
+
+    do {
+        let bound0 = try #require(BoundedBytes<CodecZenohInitBody.ZidBound>([1, 2, 3, 4]))
+        let bound1 = try #require(BoundedBytes<CodecZenohInitBody.CookieBound>([9, 9]))
+        let value = CodecTransportEnvelope(header: 97, body: .codecZenohInitBody(CodecZenohInitBody(version: 1, cbyte: 49, zid: bound0, s: CodecZenohInitBodyS(sn_res: 10, batch_size: 258), cookie: bound1)))
+        var sink = BytesSink()
+        try CodecTransportEnvelope.encodeSource(value, into: &sink)
+        let expected: [UInt8] = [97, 1, 49, 1, 2, 3, 4, 10, 2, 1, 2, 9, 9]
+        #expect(sink.bytes == expected, "codec_transport_envelope source 0: an init that says S by its group and A by its cookie: both set")
+        var cursor = SceCursor(sink.bytes)
+        let decoded = try CodecTransportEnvelope.decode(&cursor)
+        #expect(cursor.remaining == 0, "codec_transport_envelope source 0: the decode left bytes of the frame unread")
+        #expect(decoded.header == value.header, "codec_transport_envelope source 0: the decode presents another header")
+        #expect(decoded.body == value.body, "codec_transport_envelope source 1: the decode presents another body")
+    }
+    do {
+        let value = CodecTransportEnvelope(header: 34, body: .codecZenohOpenBody(CodecZenohOpenBody(lease: 10, initial_sn: 128, cookie: nil)))
+        var sink = BytesSink()
+        try CodecTransportEnvelope.encodeSource(value, into: &sink)
+        let expected: [UInt8] = [34, 10, 128, 1]
+        #expect(sink.bytes == expected, "codec_transport_envelope source 1: an open with no cookie says A set")
+        var cursor = SceCursor(sink.bytes)
+        let decoded = try CodecTransportEnvelope.decode(&cursor)
+        #expect(cursor.remaining == 0, "codec_transport_envelope source 1: the decode left bytes of the frame unread")
+        #expect(decoded.header == value.header, "codec_transport_envelope source 0: the decode presents another header")
+        #expect(decoded.body == value.body, "codec_transport_envelope source 1: the decode presents another body")
+    }
+    do {
+        let bound0 = try #require(BoundedBytes<CodecZenohOpenBody.CookieBound>([1, 2]))
+        let value = CodecTransportEnvelope(header: 2, body: .codecZenohOpenBody(CodecZenohOpenBody(lease: 10, initial_sn: 0, cookie: bound0)))
+        var sink = BytesSink()
+        try CodecTransportEnvelope.encodeSource(value, into: &sink)
+        let expected: [UInt8] = [2, 10, 0, 2, 1, 2]
+        #expect(sink.bytes == expected, "codec_transport_envelope source 2: an open with a cookie says A clear")
+        var cursor = SceCursor(sink.bytes)
+        let decoded = try CodecTransportEnvelope.decode(&cursor)
+        #expect(cursor.remaining == 0, "codec_transport_envelope source 2: the decode left bytes of the frame unread")
+        #expect(decoded.header == value.header, "codec_transport_envelope source 0: the decode presents another header")
+        #expect(decoded.body == value.body, "codec_transport_envelope source 1: the decode presents another body")
+    }
+    do {
+        let value = CodecTransportEnvelope(header: 132, body: .codecZenohKeepAlive(CodecZenohKeepAlive()))
+        var sink = BytesSink()
+        try CodecTransportEnvelope.encodeSource(value, into: &sink)
+        let expected: [UInt8] = [132]
+        #expect(sink.bytes == expected, "codec_transport_envelope source 3: an arm that binds nothing: Z is the value's own")
+        var cursor = SceCursor(sink.bytes)
+        let decoded = try CodecTransportEnvelope.decode(&cursor)
+        #expect(cursor.remaining == 0, "codec_transport_envelope source 3: the decode left bytes of the frame unread")
+        #expect(decoded.header == value.header, "codec_transport_envelope source 0: the decode presents another header")
+        #expect(decoded.body == value.body, "codec_transport_envelope source 1: the decode presents another body")
+    }
+    do {
+        let bound0 = try #require(BoundedBytes<CodecZenohJoin.ZidBound>([5]))
+        let value = CodecTransportEnvelope(header: 7, body: .codecZenohJoin(CodecZenohJoin(version: 1, cbyte: 2, zid: bound0, s: nil, lease: 1, next_sn_reliable: 2, next_sn_best_effort: 3)))
+        var sink = BytesSink()
+        try CodecTransportEnvelope.encodeSource(value, into: &sink)
+        let expected: [UInt8] = [7, 1, 2, 5, 1, 2, 3]
+        #expect(sink.bytes == expected, "codec_transport_envelope source 4: a join that says S clear")
+        var cursor = SceCursor(sink.bytes)
+        let decoded = try CodecTransportEnvelope.decode(&cursor)
+        #expect(cursor.remaining == 0, "codec_transport_envelope source 4: the decode left bytes of the frame unread")
+        #expect(decoded.header == value.header, "codec_transport_envelope source 0: the decode presents another header")
+        #expect(decoded.body == value.body, "codec_transport_envelope source 1: the decode presents another body")
+    }
+    do {
+        let bound0 = try #require(CodecTransportEnvelopeUnknownTag(0x10))
+        let value = CodecTransportEnvelope(header: 16, body: .default(tag: bound0, body: CodecZenohClose(reason: 1)))
+        var sink = BytesSink()
+        try CodecTransportEnvelope.encodeSource(value, into: &sink)
+        let expected: [UInt8] = [16, 1]
+        #expect(sink.bytes == expected, "codec_transport_envelope source 5: a tag no arm names: the default close keeps it")
+        var cursor = SceCursor(sink.bytes)
+        let decoded = try CodecTransportEnvelope.decode(&cursor)
+        #expect(cursor.remaining == 0, "codec_transport_envelope source 5: the decode left bytes of the frame unread")
+        #expect(decoded.header == value.header, "codec_transport_envelope source 0: the decode presents another header")
+        #expect(decoded.body == value.body, "codec_transport_envelope source 1: the decode presents another body")
+    }
+
 
 }
 
@@ -8162,6 +12603,32 @@ private func expectClose(_ actual: Double, _ expected: Double, _ label: String) 
     // Compile-only probe: the oracle holds no case this fixture's field shape can express.
     _ = CodecUntilEofBasic.frameLength
 
+    do {
+        let bound0 = try #require(BoundedList<CodecRepeatElem, CodecUntilEofBasic.MsgsBound>([]))
+        let value = CodecUntilEofBasic(msgs: bound0)
+        var sink = BytesSink()
+        try CodecUntilEofBasic.encodeSource(value, into: &sink)
+        let expected: [UInt8] = []
+        #expect(sink.bytes == expected, "codec_until_eof_basic source 0: no entry: an empty frame")
+        var cursor = SceCursor(sink.bytes)
+        let decoded = try CodecUntilEofBasic.decode(&cursor)
+        #expect(cursor.remaining == 0, "codec_until_eof_basic source 0: the decode left bytes of the frame unread")
+        #expect(decoded.msgs == value.msgs, "codec_until_eof_basic source 0: the decode presents another msgs")
+    }
+    do {
+        let bound0 = try #require(BoundedList<CodecRepeatElem, CodecUntilEofBasic.MsgsBound>([CodecRepeatElem(seq: 7), CodecRepeatElem(seq: 8), CodecRepeatElem(seq: 65535)]))
+        let value = CodecUntilEofBasic(msgs: bound0)
+        var sink = BytesSink()
+        try CodecUntilEofBasic.encodeSource(value, into: &sink)
+        let expected: [UInt8] = [0, 7, 0, 8, 255, 255]
+        #expect(sink.bytes == expected, "codec_until_eof_basic source 1: entries to the end of the frame")
+        var cursor = SceCursor(sink.bytes)
+        let decoded = try CodecUntilEofBasic.decode(&cursor)
+        #expect(cursor.remaining == 0, "codec_until_eof_basic source 1: the decode left bytes of the frame unread")
+        #expect(decoded.msgs == value.msgs, "codec_until_eof_basic source 0: the decode presents another msgs")
+    }
+
+
 }
 
 // MARK: - codec: codec_variant_dispatch
@@ -8170,6 +12637,42 @@ private func expectClose(_ actual: Double, _ expected: Double, _ label: String) 
 
     // Compile-only probe: the oracle holds no case this fixture's field shape can express.
     _ = CodecVariantDispatch.frameLength
+
+    do {
+        let value = CodecVariantDispatch(body: .codecVariantSessionOpen(CodecVariantSessionOpen(version: 258)))
+        var sink = BytesSink()
+        try CodecVariantDispatch.encodeSource(value, into: &sink)
+        let expected: [UInt8] = [1, 1, 2]
+        #expect(sink.bytes == expected, "codec_variant_dispatch source 0: the open arm: its tag, then its body")
+        var cursor = SceCursor(sink.bytes)
+        let decoded = try CodecVariantDispatch.decode(&cursor)
+        #expect(cursor.remaining == 0, "codec_variant_dispatch source 0: the decode left bytes of the frame unread")
+        #expect(decoded.body == value.body, "codec_variant_dispatch source 0: the decode presents another body")
+    }
+    do {
+        let value = CodecVariantDispatch(body: .codecVariantSessionClose(CodecVariantSessionClose(reason: 3)))
+        var sink = BytesSink()
+        try CodecVariantDispatch.encodeSource(value, into: &sink)
+        let expected: [UInt8] = [2, 3]
+        #expect(sink.bytes == expected, "codec_variant_dispatch source 1: the close arm")
+        var cursor = SceCursor(sink.bytes)
+        let decoded = try CodecVariantDispatch.decode(&cursor)
+        #expect(cursor.remaining == 0, "codec_variant_dispatch source 1: the decode left bytes of the frame unread")
+        #expect(decoded.body == value.body, "codec_variant_dispatch source 0: the decode presents another body")
+    }
+    do {
+        let bound0 = try #require(CodecVariantDispatchUnknownTag(0x7F))
+        let value = CodecVariantDispatch(body: .default(tag: bound0, body: CodecVariantSessionClose(reason: 9)))
+        var sink = BytesSink()
+        try CodecVariantDispatch.encodeSource(value, into: &sink)
+        let expected: [UInt8] = [127, 9]
+        #expect(sink.bytes == expected, "codec_variant_dispatch source 2: a tag no arm names: the default arm keeps it")
+        var cursor = SceCursor(sink.bytes)
+        let decoded = try CodecVariantDispatch.decode(&cursor)
+        #expect(cursor.remaining == 0, "codec_variant_dispatch source 2: the decode left bytes of the frame unread")
+        #expect(decoded.body == value.body, "codec_variant_dispatch source 0: the decode presents another body")
+    }
+
 
 }
 
@@ -8180,6 +12683,41 @@ private func expectClose(_ actual: Double, _ expected: Double, _ label: String) 
     // Compile-only probe: the oracle holds no case this fixture's field shape can express.
     _ = CodecVariantPeekBasic.frameLength
 
+    do {
+        let value = CodecVariantPeekBasic(body: .codecPeekArmA(CodecPeekArmA(header: 0, payload: 5)))
+        var sink = BytesSink()
+        try CodecVariantPeekBasic.encodeSource(value, into: &sink)
+        let expected: [UInt8] = [0, 5]
+        #expect(sink.bytes == expected, "codec_variant_peek_basic source 0: arm a: its header's kind is clear, and the variant writes no tag")
+        var cursor = SceCursor(sink.bytes)
+        let decoded = try CodecVariantPeekBasic.decode(&cursor)
+        #expect(cursor.remaining == 0, "codec_variant_peek_basic source 0: the decode left bytes of the frame unread")
+        #expect(decoded.body == value.body, "codec_variant_peek_basic source 0: the decode presents another body")
+    }
+    do {
+        let value = CodecVariantPeekBasic(body: .codecPeekArmB(CodecPeekArmB(header: 1, payload: 4660)))
+        var sink = BytesSink()
+        try CodecVariantPeekBasic.encodeSource(value, into: &sink)
+        let expected: [UInt8] = [1, 18, 52]
+        #expect(sink.bytes == expected, "codec_variant_peek_basic source 1: arm b: its header's kind is set")
+        var cursor = SceCursor(sink.bytes)
+        let decoded = try CodecVariantPeekBasic.decode(&cursor)
+        #expect(cursor.remaining == 0, "codec_variant_peek_basic source 1: the decode left bytes of the frame unread")
+        #expect(decoded.body == value.body, "codec_variant_peek_basic source 0: the decode presents another body")
+    }
+    do {
+        let value = CodecVariantPeekBasic(body: .codecPeekArmA(CodecPeekArmA(header: 254, payload: 0)))
+        var sink = BytesSink()
+        try CodecVariantPeekBasic.encodeSource(value, into: &sink)
+        let expected: [UInt8] = [254, 0]
+        #expect(sink.bytes == expected, "codec_variant_peek_basic source 2: only the peeked flag decides: the header's other bits are arm a's own")
+        var cursor = SceCursor(sink.bytes)
+        let decoded = try CodecVariantPeekBasic.decode(&cursor)
+        #expect(cursor.remaining == 0, "codec_variant_peek_basic source 2: the decode left bytes of the frame unread")
+        #expect(decoded.body == value.body, "codec_variant_peek_basic source 0: the decode presents another body")
+    }
+
+
 }
 
 // MARK: - codec: codec_variant_session_close
@@ -8188,6 +12726,19 @@ private func expectClose(_ actual: Double, _ expected: Double, _ label: String) 
 
     // Compile-only probe: the oracle holds no case this fixture's field shape can express.
     _ = CodecVariantSessionClose.frameLength
+
+    do {
+        let value = CodecVariantSessionClose(reason: 3)
+        var sink = BytesSink()
+        try CodecVariantSessionClose.encodeSource(value, into: &sink)
+        let expected: [UInt8] = [3]
+        #expect(sink.bytes == expected, "codec_variant_session_close source 0: one byte")
+        var cursor = SceCursor(sink.bytes)
+        let decoded = try CodecVariantSessionClose.decode(&cursor)
+        #expect(cursor.remaining == 0, "codec_variant_session_close source 0: the decode left bytes of the frame unread")
+        #expect(decoded.reason == value.reason, "codec_variant_session_close source 0: the decode presents another reason")
+    }
+
 
 }
 
@@ -8198,6 +12749,19 @@ private func expectClose(_ actual: Double, _ expected: Double, _ label: String) 
     // Compile-only probe: the oracle holds no case this fixture's field shape can express.
     _ = CodecVariantSessionOpen.frameLength
 
+    do {
+        let value = CodecVariantSessionOpen(version: 258)
+        var sink = BytesSink()
+        try CodecVariantSessionOpen.encodeSource(value, into: &sink)
+        let expected: [UInt8] = [1, 2]
+        #expect(sink.bytes == expected, "codec_variant_session_open source 0: two bytes, high first")
+        var cursor = SceCursor(sink.bytes)
+        let decoded = try CodecVariantSessionOpen.decode(&cursor)
+        #expect(cursor.remaining == 0, "codec_variant_session_open source 0: the decode left bytes of the frame unread")
+        #expect(decoded.version == value.version, "codec_variant_session_open source 0: the decode presents another version")
+    }
+
+
 }
 
 // MARK: - codec: codec_zenoh_decl_ext_keyexpr
@@ -8206,6 +12770,33 @@ private func expectClose(_ actual: Double, _ expected: Double, _ label: String) 
 
     // Compile-only probe: the oracle holds no case this fixture's field shape can express.
     _ = CodecZenohDeclExtKeyexpr.frameLength
+
+    do {
+        let value = CodecZenohDeclExtKeyexpr(outer_header: 15, inner: CodecZenohDeclExtKeyexprInner(inner_header: 0, id: 5, suffix: nil))
+        var sink = BytesSink()
+        try CodecZenohDeclExtKeyexpr.encodeSource(value, into: &sink)
+        let expected: [UInt8] = [15, 2, 0, 5]
+        #expect(sink.bytes == expected, "codec_zenoh_decl_ext_keyexpr source 0: the total length is derived from the inner body's frame")
+        var cursor = SceCursor(sink.bytes)
+        let decoded = try CodecZenohDeclExtKeyexpr.decode(&cursor)
+        #expect(cursor.remaining == 0, "codec_zenoh_decl_ext_keyexpr source 0: the decode left bytes of the frame unread")
+        #expect(decoded.outer_header == value.outer_header, "codec_zenoh_decl_ext_keyexpr source 0: the decode presents another outer_header")
+        #expect(decoded.inner == value.inner, "codec_zenoh_decl_ext_keyexpr source 1: the decode presents another inner")
+    }
+    do {
+        let bound0 = try #require(BoundedBytes<CodecZenohDeclExtKeyexprInner.SuffixBound>([97, 47, 98]))
+        let value = CodecZenohDeclExtKeyexpr(outer_header: 159, inner: CodecZenohDeclExtKeyexprInner(inner_header: 3, id: 128, suffix: bound0))
+        var sink = BytesSink()
+        try CodecZenohDeclExtKeyexpr.encodeSource(value, into: &sink)
+        let expected: [UInt8] = [159, 6, 3, 128, 1, 97, 47, 98]
+        #expect(sink.bytes == expected, "codec_zenoh_decl_ext_keyexpr source 1: an inner body with its suffix: N derived inside it")
+        var cursor = SceCursor(sink.bytes)
+        let decoded = try CodecZenohDeclExtKeyexpr.decode(&cursor)
+        #expect(cursor.remaining == 0, "codec_zenoh_decl_ext_keyexpr source 1: the decode left bytes of the frame unread")
+        #expect(decoded.outer_header == value.outer_header, "codec_zenoh_decl_ext_keyexpr source 0: the decode presents another outer_header")
+        #expect(decoded.inner == value.inner, "codec_zenoh_decl_ext_keyexpr source 1: the decode presents another inner")
+    }
+
 
 }
 
@@ -8216,6 +12807,62 @@ private func expectClose(_ actual: Double, _ expected: Double, _ label: String) 
     // Compile-only probe: the oracle holds no case this fixture's field shape can express.
     _ = CodecZenohDeclExtKeyexprInner.frameLength
 
+    do {
+        let value = CodecZenohDeclExtKeyexprInner(inner_header: 0, id: 0, suffix: nil)
+        var sink = BytesSink()
+        try CodecZenohDeclExtKeyexprInner.encodeSource(value, into: &sink)
+        let expected: [UInt8] = [0, 0]
+        #expect(sink.bytes == expected, "codec_zenoh_decl_ext_keyexpr_inner source 0: N clear: no suffix")
+        var cursor = SceCursor(sink.bytes)
+        let decoded = try CodecZenohDeclExtKeyexprInner.decode(&cursor)
+        #expect(cursor.remaining == 0, "codec_zenoh_decl_ext_keyexpr_inner source 0: the decode left bytes of the frame unread")
+        #expect(decoded.inner_header == value.inner_header, "codec_zenoh_decl_ext_keyexpr_inner source 0: the decode presents another inner_header")
+        #expect(decoded.id == value.id, "codec_zenoh_decl_ext_keyexpr_inner source 1: the decode presents another id")
+        #expect(decoded.suffix == value.suffix, "codec_zenoh_decl_ext_keyexpr_inner source 2: the decode presents another suffix")
+    }
+    do {
+        let bound0 = try #require(BoundedBytes<CodecZenohDeclExtKeyexprInner.SuffixBound>([97, 47, 98]))
+        let value = CodecZenohDeclExtKeyexprInner(inner_header: 3, id: 5, suffix: bound0)
+        var sink = BytesSink()
+        try CodecZenohDeclExtKeyexprInner.encodeSource(value, into: &sink)
+        let expected: [UInt8] = [3, 5, 97, 47, 98]
+        #expect(sink.bytes == expected, "codec_zenoh_decl_ext_keyexpr_inner source 1: N derived from the suffix; M is the value's")
+        var cursor = SceCursor(sink.bytes)
+        let decoded = try CodecZenohDeclExtKeyexprInner.decode(&cursor)
+        #expect(cursor.remaining == 0, "codec_zenoh_decl_ext_keyexpr_inner source 1: the decode left bytes of the frame unread")
+        #expect(decoded.inner_header == value.inner_header, "codec_zenoh_decl_ext_keyexpr_inner source 0: the decode presents another inner_header")
+        #expect(decoded.id == value.id, "codec_zenoh_decl_ext_keyexpr_inner source 1: the decode presents another id")
+        #expect(decoded.suffix == value.suffix, "codec_zenoh_decl_ext_keyexpr_inner source 2: the decode presents another suffix")
+    }
+    do {
+        let value = CodecZenohDeclExtKeyexprInner(inner_header: 2, id: 128, suffix: nil)
+        var sink = BytesSink()
+        try CodecZenohDeclExtKeyexprInner.encodeSource(value, into: &sink)
+        let expected: [UInt8] = [2, 128, 1]
+        #expect(sink.bytes == expected, "codec_zenoh_decl_ext_keyexpr_inner source 2: M set, no suffix: the frame ends after the id")
+        var cursor = SceCursor(sink.bytes)
+        let decoded = try CodecZenohDeclExtKeyexprInner.decode(&cursor)
+        #expect(cursor.remaining == 0, "codec_zenoh_decl_ext_keyexpr_inner source 2: the decode left bytes of the frame unread")
+        #expect(decoded.inner_header == value.inner_header, "codec_zenoh_decl_ext_keyexpr_inner source 0: the decode presents another inner_header")
+        #expect(decoded.id == value.id, "codec_zenoh_decl_ext_keyexpr_inner source 1: the decode presents another id")
+        #expect(decoded.suffix == value.suffix, "codec_zenoh_decl_ext_keyexpr_inner source 2: the decode presents another suffix")
+    }
+    do {
+        let bound0 = try #require(BoundedBytes<CodecZenohDeclExtKeyexprInner.SuffixBound>([]))
+        let value = CodecZenohDeclExtKeyexprInner(inner_header: 1, id: 1, suffix: bound0)
+        var sink = BytesSink()
+        try CodecZenohDeclExtKeyexprInner.encodeSource(value, into: &sink)
+        let expected: [UInt8] = [1, 1]
+        #expect(sink.bytes == expected, "codec_zenoh_decl_ext_keyexpr_inner source 3: an empty suffix is present")
+        var cursor = SceCursor(sink.bytes)
+        let decoded = try CodecZenohDeclExtKeyexprInner.decode(&cursor)
+        #expect(cursor.remaining == 0, "codec_zenoh_decl_ext_keyexpr_inner source 3: the decode left bytes of the frame unread")
+        #expect(decoded.inner_header == value.inner_header, "codec_zenoh_decl_ext_keyexpr_inner source 0: the decode presents another inner_header")
+        #expect(decoded.id == value.id, "codec_zenoh_decl_ext_keyexpr_inner source 1: the decode presents another id")
+        #expect(decoded.suffix == value.suffix, "codec_zenoh_decl_ext_keyexpr_inner source 2: the decode presents another suffix")
+    }
+
+
 }
 
 // MARK: - codec: codec_zenoh_decl_kexpr
@@ -8224,6 +12871,35 @@ private func expectClose(_ actual: Double, _ expected: Double, _ label: String) 
 
     // Compile-only probe: the oracle holds no case this fixture's field shape can express.
     _ = CodecZenohDeclKexpr.frameLength
+
+    do {
+        let value = CodecZenohDeclKexpr(id: 3, wireexpr: CodecZenohWireexpr(id: 7, suffix: nil))
+        var sink = BytesSink()
+        try CodecZenohDeclKexpr.encodeSource(value, into: &sink)
+        let expected: [UInt8] = [3, 7]
+        #expect(sink.bytes == expected, "codec_zenoh_decl_kexpr source 0: N clear, handed on: the key expression is its id alone")
+        var cursor = SceCursor(sink.bytes)
+        let decoded = try CodecZenohDeclKexpr.decode(&cursor, N: 0)
+        #expect(cursor.remaining == 0, "codec_zenoh_decl_kexpr source 0: the decode left bytes of the frame unread")
+        #expect(decoded.id == value.id, "codec_zenoh_decl_kexpr source 0: the decode presents another id")
+        #expect(decoded.wireexpr == value.wireexpr, "codec_zenoh_decl_kexpr source 1: the decode presents another wireexpr")
+        #expect(CodecZenohDeclKexpr.inputN(value) == 0, "codec_zenoh_decl_kexpr source 2: the decode presents another flag input N")
+    }
+    do {
+        let bound0 = try #require(BoundedText<CodecZenohWireexpr.SuffixBound>("a/b"))
+        let value = CodecZenohDeclKexpr(id: 128, wireexpr: CodecZenohWireexpr(id: 1, suffix: bound0))
+        var sink = BytesSink()
+        try CodecZenohDeclKexpr.encodeSource(value, into: &sink)
+        let expected: [UInt8] = [128, 1, 1, 3, 97, 47, 98]
+        #expect(sink.bytes == expected, "codec_zenoh_decl_kexpr source 1: N set, handed on: the suffix follows the id")
+        var cursor = SceCursor(sink.bytes)
+        let decoded = try CodecZenohDeclKexpr.decode(&cursor, N: 1)
+        #expect(cursor.remaining == 0, "codec_zenoh_decl_kexpr source 1: the decode left bytes of the frame unread")
+        #expect(decoded.id == value.id, "codec_zenoh_decl_kexpr source 0: the decode presents another id")
+        #expect(decoded.wireexpr == value.wireexpr, "codec_zenoh_decl_kexpr source 1: the decode presents another wireexpr")
+        #expect(CodecZenohDeclKexpr.inputN(value) == 1, "codec_zenoh_decl_kexpr source 2: the decode presents another flag input N")
+    }
+
 
 }
 
@@ -8234,6 +12910,54 @@ private func expectClose(_ actual: Double, _ expected: Double, _ label: String) 
     // Compile-only probe: the oracle holds no case this fixture's field shape can express.
     _ = CodecZenohDeclQueryable.frameLength
 
+    do {
+        let value = CodecZenohDeclQueryable(id: 1, wireexpr: CodecZenohWireexpr(id: 5, suffix: nil), z: nil)
+        var sink = BytesSink()
+        try CodecZenohDeclQueryable.encodeSource(value, into: &sink)
+        let expected: [UInt8] = [1, 5]
+        #expect(sink.bytes == expected, "codec_zenoh_decl_queryable source 0: N and Z clear: no suffix, no extension")
+        var cursor = SceCursor(sink.bytes)
+        let decoded = try CodecZenohDeclQueryable.decode(&cursor, N: 0, Z: 0)
+        #expect(cursor.remaining == 0, "codec_zenoh_decl_queryable source 0: the decode left bytes of the frame unread")
+        #expect(decoded.id == value.id, "codec_zenoh_decl_queryable source 0: the decode presents another id")
+        #expect(decoded.wireexpr == value.wireexpr, "codec_zenoh_decl_queryable source 1: the decode presents another wireexpr")
+        #expect(decoded.z == value.z, "codec_zenoh_decl_queryable source 2: the decode presents another Z")
+        #expect(CodecZenohDeclQueryable.inputN(value) == 0, "codec_zenoh_decl_queryable source 3: the decode presents another flag input N")
+        #expect(CodecZenohDeclQueryable.inputZ(value) == 0, "codec_zenoh_decl_queryable source 4: the decode presents another flag input Z")
+    }
+    do {
+        let bound0 = try #require(BoundedText<CodecZenohWireexpr.SuffixBound>("q"))
+        let value = CodecZenohDeclQueryable(id: 1, wireexpr: CodecZenohWireexpr(id: 5, suffix: bound0), z: CodecZenohDeclQueryableZ(ext_type: 33, ext_value: 769))
+        var sink = BytesSink()
+        try CodecZenohDeclQueryable.encodeSource(value, into: &sink)
+        let expected: [UInt8] = [1, 5, 1, 113, 33, 129, 6]
+        #expect(sink.bytes == expected, "codec_zenoh_decl_queryable source 1: N and Z set: the suffix, then the extension")
+        var cursor = SceCursor(sink.bytes)
+        let decoded = try CodecZenohDeclQueryable.decode(&cursor, N: 1, Z: 1)
+        #expect(cursor.remaining == 0, "codec_zenoh_decl_queryable source 1: the decode left bytes of the frame unread")
+        #expect(decoded.id == value.id, "codec_zenoh_decl_queryable source 0: the decode presents another id")
+        #expect(decoded.wireexpr == value.wireexpr, "codec_zenoh_decl_queryable source 1: the decode presents another wireexpr")
+        #expect(decoded.z == value.z, "codec_zenoh_decl_queryable source 2: the decode presents another Z")
+        #expect(CodecZenohDeclQueryable.inputN(value) == 1, "codec_zenoh_decl_queryable source 3: the decode presents another flag input N")
+        #expect(CodecZenohDeclQueryable.inputZ(value) == 1, "codec_zenoh_decl_queryable source 4: the decode presents another flag input Z")
+    }
+    do {
+        let value = CodecZenohDeclQueryable(id: 2, wireexpr: CodecZenohWireexpr(id: 6, suffix: nil), z: CodecZenohDeclQueryableZ(ext_type: 33, ext_value: 1))
+        var sink = BytesSink()
+        try CodecZenohDeclQueryable.encodeSource(value, into: &sink)
+        let expected: [UInt8] = [2, 6, 33, 1]
+        #expect(sink.bytes == expected, "codec_zenoh_decl_queryable source 2: Z set alone: the extension without a suffix")
+        var cursor = SceCursor(sink.bytes)
+        let decoded = try CodecZenohDeclQueryable.decode(&cursor, N: 0, Z: 1)
+        #expect(cursor.remaining == 0, "codec_zenoh_decl_queryable source 2: the decode left bytes of the frame unread")
+        #expect(decoded.id == value.id, "codec_zenoh_decl_queryable source 0: the decode presents another id")
+        #expect(decoded.wireexpr == value.wireexpr, "codec_zenoh_decl_queryable source 1: the decode presents another wireexpr")
+        #expect(decoded.z == value.z, "codec_zenoh_decl_queryable source 2: the decode presents another Z")
+        #expect(CodecZenohDeclQueryable.inputN(value) == 0, "codec_zenoh_decl_queryable source 3: the decode presents another flag input N")
+        #expect(CodecZenohDeclQueryable.inputZ(value) == 1, "codec_zenoh_decl_queryable source 4: the decode presents another flag input Z")
+    }
+
+
 }
 
 // MARK: - codec: codec_zenoh_decl_subscriber
@@ -8242,6 +12966,35 @@ private func expectClose(_ actual: Double, _ expected: Double, _ label: String) 
 
     // Compile-only probe: the oracle holds no case this fixture's field shape can express.
     _ = CodecZenohDeclSubscriber.frameLength
+
+    do {
+        let value = CodecZenohDeclSubscriber(id: 0, wireexpr: CodecZenohWireexpr(id: 0, suffix: nil))
+        var sink = BytesSink()
+        try CodecZenohDeclSubscriber.encodeSource(value, into: &sink)
+        let expected: [UInt8] = [0, 0]
+        #expect(sink.bytes == expected, "codec_zenoh_decl_subscriber source 0: N clear: an id and a bare key expression")
+        var cursor = SceCursor(sink.bytes)
+        let decoded = try CodecZenohDeclSubscriber.decode(&cursor, N: 0)
+        #expect(cursor.remaining == 0, "codec_zenoh_decl_subscriber source 0: the decode left bytes of the frame unread")
+        #expect(decoded.id == value.id, "codec_zenoh_decl_subscriber source 0: the decode presents another id")
+        #expect(decoded.wireexpr == value.wireexpr, "codec_zenoh_decl_subscriber source 1: the decode presents another wireexpr")
+        #expect(CodecZenohDeclSubscriber.inputN(value) == 0, "codec_zenoh_decl_subscriber source 2: the decode presents another flag input N")
+    }
+    do {
+        let bound0 = try #require(BoundedText<CodecZenohWireexpr.SuffixBound>("x"))
+        let value = CodecZenohDeclSubscriber(id: 16384, wireexpr: CodecZenohWireexpr(id: 2, suffix: bound0))
+        var sink = BytesSink()
+        try CodecZenohDeclSubscriber.encodeSource(value, into: &sink)
+        let expected: [UInt8] = [128, 128, 1, 2, 1, 120]
+        #expect(sink.bytes == expected, "codec_zenoh_decl_subscriber source 1: N set: a three-byte id, the key expression with its suffix")
+        var cursor = SceCursor(sink.bytes)
+        let decoded = try CodecZenohDeclSubscriber.decode(&cursor, N: 1)
+        #expect(cursor.remaining == 0, "codec_zenoh_decl_subscriber source 1: the decode left bytes of the frame unread")
+        #expect(decoded.id == value.id, "codec_zenoh_decl_subscriber source 0: the decode presents another id")
+        #expect(decoded.wireexpr == value.wireexpr, "codec_zenoh_decl_subscriber source 1: the decode presents another wireexpr")
+        #expect(CodecZenohDeclSubscriber.inputN(value) == 1, "codec_zenoh_decl_subscriber source 2: the decode presents another flag input N")
+    }
+
 
 }
 
@@ -8252,6 +13005,35 @@ private func expectClose(_ actual: Double, _ expected: Double, _ label: String) 
     // Compile-only probe: the oracle holds no case this fixture's field shape can express.
     _ = CodecZenohDeclToken.frameLength
 
+    do {
+        let value = CodecZenohDeclToken(id: 9, wireexpr: CodecZenohWireexpr(id: 4, suffix: nil))
+        var sink = BytesSink()
+        try CodecZenohDeclToken.encodeSource(value, into: &sink)
+        let expected: [UInt8] = [9, 4]
+        #expect(sink.bytes == expected, "codec_zenoh_decl_token source 0: N clear")
+        var cursor = SceCursor(sink.bytes)
+        let decoded = try CodecZenohDeclToken.decode(&cursor, N: 0)
+        #expect(cursor.remaining == 0, "codec_zenoh_decl_token source 0: the decode left bytes of the frame unread")
+        #expect(decoded.id == value.id, "codec_zenoh_decl_token source 0: the decode presents another id")
+        #expect(decoded.wireexpr == value.wireexpr, "codec_zenoh_decl_token source 1: the decode presents another wireexpr")
+        #expect(CodecZenohDeclToken.inputN(value) == 0, "codec_zenoh_decl_token source 2: the decode presents another flag input N")
+    }
+    do {
+        let bound0 = try #require(BoundedText<CodecZenohWireexpr.SuffixBound>(""))
+        let value = CodecZenohDeclToken(id: 9, wireexpr: CodecZenohWireexpr(id: 4, suffix: bound0))
+        var sink = BytesSink()
+        try CodecZenohDeclToken.encodeSource(value, into: &sink)
+        let expected: [UInt8] = [9, 4, 0]
+        #expect(sink.bytes == expected, "codec_zenoh_decl_token source 1: N set: an empty suffix is still present")
+        var cursor = SceCursor(sink.bytes)
+        let decoded = try CodecZenohDeclToken.decode(&cursor, N: 1)
+        #expect(cursor.remaining == 0, "codec_zenoh_decl_token source 1: the decode left bytes of the frame unread")
+        #expect(decoded.id == value.id, "codec_zenoh_decl_token source 0: the decode presents another id")
+        #expect(decoded.wireexpr == value.wireexpr, "codec_zenoh_decl_token source 1: the decode presents another wireexpr")
+        #expect(CodecZenohDeclToken.inputN(value) == 1, "codec_zenoh_decl_token source 2: the decode presents another flag input N")
+    }
+
+
 }
 
 // MARK: - codec: codec_zenoh_declaration
@@ -8260,6 +13042,82 @@ private func expectClose(_ actual: Double, _ expected: Double, _ label: String) 
 
     // Compile-only probe: the oracle holds no case this fixture's field shape can express.
     _ = CodecZenohDeclaration.frameLength
+
+    do {
+        let bound0 = try #require(BoundedText<CodecZenohWireexpr.SuffixBound>("a"))
+        let value = CodecZenohDeclaration(header: 32, body: .codecZenohDeclKexpr(CodecZenohDeclKexpr(id: 3, wireexpr: CodecZenohWireexpr(id: 7, suffix: bound0))))
+        var sink = BytesSink()
+        try CodecZenohDeclaration.encodeSource(value, into: &sink)
+        let expected: [UInt8] = [32, 3, 7, 1, 97]
+        #expect(sink.bytes == expected, "codec_zenoh_declaration source 0: a key-expression declaration whose suffix says N: mid 0 and N set")
+        var cursor = SceCursor(sink.bytes)
+        let decoded = try CodecZenohDeclaration.decode(&cursor)
+        #expect(cursor.remaining == 0, "codec_zenoh_declaration source 0: the decode left bytes of the frame unread")
+        #expect(decoded.header == value.header, "codec_zenoh_declaration source 0: the decode presents another header")
+        #expect(decoded.body == value.body, "codec_zenoh_declaration source 1: the decode presents another body")
+    }
+    do {
+        let value = CodecZenohDeclaration(header: 132, body: .codecZenohDeclQueryable(CodecZenohDeclQueryable(id: 1, wireexpr: CodecZenohWireexpr(id: 5, suffix: nil), z: CodecZenohDeclQueryableZ(ext_type: 33, ext_value: 1))))
+        var sink = BytesSink()
+        try CodecZenohDeclaration.encodeSource(value, into: &sink)
+        let expected: [UInt8] = [132, 1, 5, 33, 1]
+        #expect(sink.bytes == expected, "codec_zenoh_declaration source 1: a queryable that says Z by its extension and N clear by its key expression")
+        var cursor = SceCursor(sink.bytes)
+        let decoded = try CodecZenohDeclaration.decode(&cursor)
+        #expect(cursor.remaining == 0, "codec_zenoh_declaration source 1: the decode left bytes of the frame unread")
+        #expect(decoded.header == value.header, "codec_zenoh_declaration source 0: the decode presents another header")
+        #expect(decoded.body == value.body, "codec_zenoh_declaration source 1: the decode presents another body")
+    }
+    do {
+        let value = CodecZenohDeclaration(header: 3, body: .codecZenohUndeclSubscriber(CodecZenohUndeclSubscriber(id: 2, ext_keyexpr: nil)))
+        var sink = BytesSink()
+        try CodecZenohDeclaration.encodeSource(value, into: &sink)
+        let expected: [UInt8] = [3, 2]
+        #expect(sink.bytes == expected, "codec_zenoh_declaration source 2: a subscriber undeclared with no extension: Z clear")
+        var cursor = SceCursor(sink.bytes)
+        let decoded = try CodecZenohDeclaration.decode(&cursor)
+        #expect(cursor.remaining == 0, "codec_zenoh_declaration source 2: the decode left bytes of the frame unread")
+        #expect(decoded.header == value.header, "codec_zenoh_declaration source 0: the decode presents another header")
+        #expect(decoded.body == value.body, "codec_zenoh_declaration source 1: the decode presents another body")
+    }
+    do {
+        let value = CodecZenohDeclaration(header: 97, body: .codecZenohUndeclKexpr(CodecZenohUndeclKexpr(id: 0)))
+        var sink = BytesSink()
+        try CodecZenohDeclaration.encodeSource(value, into: &sink)
+        let expected: [UInt8] = [97, 0]
+        #expect(sink.bytes == expected, "codec_zenoh_declaration source 3: an arm that binds nothing: N and M are the value's own")
+        var cursor = SceCursor(sink.bytes)
+        let decoded = try CodecZenohDeclaration.decode(&cursor)
+        #expect(cursor.remaining == 0, "codec_zenoh_declaration source 3: the decode left bytes of the frame unread")
+        #expect(decoded.header == value.header, "codec_zenoh_declaration source 0: the decode presents another header")
+        #expect(decoded.body == value.body, "codec_zenoh_declaration source 1: the decode presents another body")
+    }
+    do {
+        let value = CodecZenohDeclaration(header: 26, body: .codecZenohDeclFinal(CodecZenohDeclFinal()))
+        var sink = BytesSink()
+        try CodecZenohDeclaration.encodeSource(value, into: &sink)
+        let expected: [UInt8] = [26]
+        #expect(sink.bytes == expected, "codec_zenoh_declaration source 4: the final declaration's own tag")
+        var cursor = SceCursor(sink.bytes)
+        let decoded = try CodecZenohDeclaration.decode(&cursor)
+        #expect(cursor.remaining == 0, "codec_zenoh_declaration source 4: the decode left bytes of the frame unread")
+        #expect(decoded.header == value.header, "codec_zenoh_declaration source 0: the decode presents another header")
+        #expect(decoded.body == value.body, "codec_zenoh_declaration source 1: the decode presents another body")
+    }
+    do {
+        let bound0 = try #require(CodecZenohDeclarationUnknownTag(0x1B))
+        let value = CodecZenohDeclaration(header: 27, body: .default(tag: bound0, body: CodecZenohDeclFinal()))
+        var sink = BytesSink()
+        try CodecZenohDeclaration.encodeSource(value, into: &sink)
+        let expected: [UInt8] = [27]
+        #expect(sink.bytes == expected, "codec_zenoh_declaration source 5: a tag no arm names: the default arm keeps it")
+        var cursor = SceCursor(sink.bytes)
+        let decoded = try CodecZenohDeclaration.decode(&cursor)
+        #expect(cursor.remaining == 0, "codec_zenoh_declaration source 5: the decode left bytes of the frame unread")
+        #expect(decoded.header == value.header, "codec_zenoh_declaration source 0: the decode presents another header")
+        #expect(decoded.body == value.body, "codec_zenoh_declaration source 1: the decode presents another body")
+    }
+
 
 }
 
@@ -8270,6 +13128,37 @@ private func expectClose(_ actual: Double, _ expected: Double, _ label: String) 
     // Compile-only probe: the oracle holds no case this fixture's field shape can express.
     _ = CodecZenohDeclare.frameLength
 
+    do {
+        let bound0 = try #require(BoundedText<CodecZenohWireexpr.SuffixBound>("a"))
+        let value = CodecZenohDeclare(header: 30, interest_id: nil, extensions: nil, declaration: CodecZenohDeclaration(header: 32, body: .codecZenohDeclKexpr(CodecZenohDeclKexpr(id: 3, wireexpr: CodecZenohWireexpr(id: 7, suffix: bound0)))))
+        var sink = BytesSink()
+        try CodecZenohDeclare.encodeSource(value, into: &sink)
+        let expected: [UInt8] = [30, 32, 3, 7, 1, 97]
+        #expect(sink.bytes == expected, "codec_zenoh_declare source 0: no interest id, no extension: the declaration alone")
+        var cursor = SceCursor(sink.bytes)
+        let decoded = try CodecZenohDeclare.decode(&cursor)
+        #expect(cursor.remaining == 0, "codec_zenoh_declare source 0: the decode left bytes of the frame unread")
+        #expect(decoded.header == value.header, "codec_zenoh_declare source 0: the decode presents another header")
+        #expect(decoded.interest_id == value.interest_id, "codec_zenoh_declare source 1: the decode presents another interest_id")
+        #expect(decoded.extensions == value.extensions, "codec_zenoh_declare source 2: the decode presents another extensions")
+        #expect(decoded.declaration == value.declaration, "codec_zenoh_declare source 3: the decode presents another declaration")
+    }
+    do {
+        let value = CodecZenohDeclare(header: 62, interest_id: 5, extensions: nil, declaration: CodecZenohDeclaration(header: 6, body: .codecZenohDeclToken(CodecZenohDeclToken(id: 9, wireexpr: CodecZenohWireexpr(id: 4, suffix: nil)))))
+        var sink = BytesSink()
+        try CodecZenohDeclare.encodeSource(value, into: &sink)
+        let expected: [UInt8] = [62, 5, 6, 9, 4]
+        #expect(sink.bytes == expected, "codec_zenoh_declare source 1: I set: the interest id, then a token declared with no suffix")
+        var cursor = SceCursor(sink.bytes)
+        let decoded = try CodecZenohDeclare.decode(&cursor)
+        #expect(cursor.remaining == 0, "codec_zenoh_declare source 1: the decode left bytes of the frame unread")
+        #expect(decoded.header == value.header, "codec_zenoh_declare source 0: the decode presents another header")
+        #expect(decoded.interest_id == value.interest_id, "codec_zenoh_declare source 1: the decode presents another interest_id")
+        #expect(decoded.extensions == value.extensions, "codec_zenoh_declare source 2: the decode presents another extensions")
+        #expect(decoded.declaration == value.declaration, "codec_zenoh_declare source 3: the decode presents another declaration")
+    }
+
+
 }
 
 // MARK: - codec: codec_zenoh_encoding
@@ -8278,6 +13167,45 @@ private func expectClose(_ actual: Double, _ expected: Double, _ label: String) 
 
     // Compile-only probe: the oracle holds no case this fixture's field shape can express.
     _ = CodecZenohEncoding.frameLength
+
+    do {
+        let value = CodecZenohEncoding(packed_id: 0, schema: nil)
+        var sink = BytesSink()
+        try CodecZenohEncoding.encodeSource(value, into: &sink)
+        let expected: [UInt8] = [0]
+        #expect(sink.bytes == expected, "codec_zenoh_encoding source 0: no schema")
+        var cursor = SceCursor(sink.bytes)
+        let decoded = try CodecZenohEncoding.decode(&cursor)
+        #expect(cursor.remaining == 0, "codec_zenoh_encoding source 0: the decode left bytes of the frame unread")
+        #expect(decoded.packed_id == value.packed_id, "codec_zenoh_encoding source 0: the decode presents another packed_id")
+        #expect(decoded.schema == value.schema, "codec_zenoh_encoding source 1: the decode presents another schema")
+    }
+    do {
+        let bound0 = try #require(BoundedText<CodecZenohEncoding.SchemaBound>("json"))
+        let value = CodecZenohEncoding(packed_id: 1, schema: bound0)
+        var sink = BytesSink()
+        try CodecZenohEncoding.encodeSource(value, into: &sink)
+        let expected: [UInt8] = [1, 4, 106, 115, 111, 110]
+        #expect(sink.bytes == expected, "codec_zenoh_encoding source 1: a schema: has_schema and its length are derived")
+        var cursor = SceCursor(sink.bytes)
+        let decoded = try CodecZenohEncoding.decode(&cursor)
+        #expect(cursor.remaining == 0, "codec_zenoh_encoding source 1: the decode left bytes of the frame unread")
+        #expect(decoded.packed_id == value.packed_id, "codec_zenoh_encoding source 0: the decode presents another packed_id")
+        #expect(decoded.schema == value.schema, "codec_zenoh_encoding source 1: the decode presents another schema")
+    }
+    do {
+        let value = CodecZenohEncoding(packed_id: 128, schema: nil)
+        var sink = BytesSink()
+        try CodecZenohEncoding.encodeSource(value, into: &sink)
+        let expected: [UInt8] = [128, 1]
+        #expect(sink.bytes == expected, "codec_zenoh_encoding source 2: an id of two VLE bytes, no schema")
+        var cursor = SceCursor(sink.bytes)
+        let decoded = try CodecZenohEncoding.decode(&cursor)
+        #expect(cursor.remaining == 0, "codec_zenoh_encoding source 2: the decode left bytes of the frame unread")
+        #expect(decoded.packed_id == value.packed_id, "codec_zenoh_encoding source 0: the decode presents another packed_id")
+        #expect(decoded.schema == value.schema, "codec_zenoh_encoding source 1: the decode presents another schema")
+    }
+
 
 }
 
@@ -8288,6 +13216,58 @@ private func expectClose(_ actual: Double, _ expected: Double, _ label: String) 
     // Compile-only probe: the oracle holds no case this fixture's field shape can express.
     _ = CodecZenohExtEntry.frameLength
 
+    do {
+        let value = CodecZenohExtEntry(header: 1, body: .codecZenohExtUnit(CodecZenohExtUnit()))
+        var sink = BytesSink()
+        try CodecZenohExtEntry.encodeSource(value, into: &sink)
+        let expected: [UInt8] = [1]
+        #expect(sink.bytes == expected, "codec_zenoh_ext_entry source 0: a unit extension: enc 0")
+        var cursor = SceCursor(sink.bytes)
+        let decoded = try CodecZenohExtEntry.decode(&cursor)
+        #expect(cursor.remaining == 0, "codec_zenoh_ext_entry source 0: the decode left bytes of the frame unread")
+        #expect(decoded.header == value.header, "codec_zenoh_ext_entry source 0: the decode presents another header")
+        #expect(decoded.body == value.body, "codec_zenoh_ext_entry source 1: the decode presents another body")
+    }
+    do {
+        let value = CodecZenohExtEntry(header: 34, body: .codecZenohExtZint(CodecZenohExtZint(value: 128)))
+        var sink = BytesSink()
+        try CodecZenohExtEntry.encodeSource(value, into: &sink)
+        let expected: [UInt8] = [34, 128, 1]
+        #expect(sink.bytes == expected, "codec_zenoh_ext_entry source 1: a zint extension: enc 1")
+        var cursor = SceCursor(sink.bytes)
+        let decoded = try CodecZenohExtEntry.decode(&cursor)
+        #expect(cursor.remaining == 0, "codec_zenoh_ext_entry source 1: the decode left bytes of the frame unread")
+        #expect(decoded.header == value.header, "codec_zenoh_ext_entry source 0: the decode presents another header")
+        #expect(decoded.body == value.body, "codec_zenoh_ext_entry source 1: the decode presents another body")
+    }
+    do {
+        let bound0 = try #require(BoundedBytes<CodecZenohExtZbuf.ValueBound>([1, 2]))
+        let value = CodecZenohExtEntry(header: 195, body: .codecZenohExtZbuf(CodecZenohExtZbuf(value: bound0)))
+        var sink = BytesSink()
+        try CodecZenohExtEntry.encodeSource(value, into: &sink)
+        let expected: [UInt8] = [195, 2, 1, 2]
+        #expect(sink.bytes == expected, "codec_zenoh_ext_entry source 2: a zbuf extension with Z set: enc 2")
+        var cursor = SceCursor(sink.bytes)
+        let decoded = try CodecZenohExtEntry.decode(&cursor)
+        #expect(cursor.remaining == 0, "codec_zenoh_ext_entry source 2: the decode left bytes of the frame unread")
+        #expect(decoded.header == value.header, "codec_zenoh_ext_entry source 0: the decode presents another header")
+        #expect(decoded.body == value.body, "codec_zenoh_ext_entry source 1: the decode presents another body")
+    }
+    do {
+        let bound0 = try #require(CodecZenohExtEntryUnknownTag(0x3))
+        let value = CodecZenohExtEntry(header: 101, body: .default(tag: bound0, body: CodecZenohExtUnit()))
+        var sink = BytesSink()
+        try CodecZenohExtEntry.encodeSource(value, into: &sink)
+        let expected: [UInt8] = [101]
+        #expect(sink.bytes == expected, "codec_zenoh_ext_entry source 3: enc 3, which no arm names: the default arm")
+        var cursor = SceCursor(sink.bytes)
+        let decoded = try CodecZenohExtEntry.decode(&cursor)
+        #expect(cursor.remaining == 0, "codec_zenoh_ext_entry source 3: the decode left bytes of the frame unread")
+        #expect(decoded.header == value.header, "codec_zenoh_ext_entry source 0: the decode presents another header")
+        #expect(decoded.body == value.body, "codec_zenoh_ext_entry source 1: the decode presents another body")
+    }
+
+
 }
 
 // MARK: - codec: codec_zenoh_ext_envelope
@@ -8296,6 +13276,48 @@ private func expectClose(_ actual: Double, _ expected: Double, _ label: String) 
 
     // Compile-only probe: the oracle holds no case this fixture's field shape can express.
     _ = CodecZenohExtEnvelope.frameLength
+
+    do {
+        let bound0 = try #require(BoundedList<CodecZenohExtEntry, CodecZenohExtEnvelope.ExtensionsBound>([CodecZenohExtEntry(header: 1, body: .codecZenohExtUnit(CodecZenohExtUnit()))]))
+        let value = CodecZenohExtEnvelope(header_flags: 0, extensions: bound0)
+        var sink = BytesSink()
+        try CodecZenohExtEnvelope.encodeSource(value, into: &sink)
+        let expected: [UInt8] = [0, 1]
+        #expect(sink.bytes == expected, "codec_zenoh_ext_envelope source 0: one unit extension")
+        var cursor = SceCursor(sink.bytes)
+        let decoded = try CodecZenohExtEnvelope.decode(&cursor)
+        #expect(cursor.remaining == 0, "codec_zenoh_ext_envelope source 0: the decode left bytes of the frame unread")
+        #expect(decoded.header_flags == value.header_flags, "codec_zenoh_ext_envelope source 0: the decode presents another header_flags")
+        #expect(decoded.extensions == value.extensions, "codec_zenoh_ext_envelope source 1: the decode presents another extensions")
+    }
+    do {
+        let bound0 = try #require(BoundedList<CodecZenohExtEntry, CodecZenohExtEnvelope.ExtensionsBound>([CodecZenohExtEntry(header: 129, body: .codecZenohExtUnit(CodecZenohExtUnit())), CodecZenohExtEntry(header: 34, body: .codecZenohExtZint(CodecZenohExtZint(value: 5)))]))
+        let value = CodecZenohExtEnvelope(header_flags: 0, extensions: bound0)
+        var sink = BytesSink()
+        try CodecZenohExtEnvelope.encodeSource(value, into: &sink)
+        let expected: [UInt8] = [0, 129, 34, 5]
+        #expect(sink.bytes == expected, "codec_zenoh_ext_envelope source 1: a unit and a zint: Z on the first only")
+        var cursor = SceCursor(sink.bytes)
+        let decoded = try CodecZenohExtEnvelope.decode(&cursor)
+        #expect(cursor.remaining == 0, "codec_zenoh_ext_envelope source 1: the decode left bytes of the frame unread")
+        #expect(decoded.header_flags == value.header_flags, "codec_zenoh_ext_envelope source 0: the decode presents another header_flags")
+        #expect(decoded.extensions == value.extensions, "codec_zenoh_ext_envelope source 1: the decode presents another extensions")
+    }
+    do {
+        let bound0 = try #require(BoundedBytes<CodecZenohExtZbuf.ValueBound>([7, 8]))
+        let bound1 = try #require(BoundedList<CodecZenohExtEntry, CodecZenohExtEnvelope.ExtensionsBound>([CodecZenohExtEntry(header: 161, body: .codecZenohExtZint(CodecZenohExtZint(value: 128))), CodecZenohExtEntry(header: 132, body: .codecZenohExtUnit(CodecZenohExtUnit())), CodecZenohExtEntry(header: 67, body: .codecZenohExtZbuf(CodecZenohExtZbuf(value: bound0)))]))
+        let value = CodecZenohExtEnvelope(header_flags: 16, extensions: bound1)
+        var sink = BytesSink()
+        try CodecZenohExtEnvelope.encodeSource(value, into: &sink)
+        let expected: [UInt8] = [16, 161, 128, 1, 132, 67, 2, 7, 8]
+        #expect(sink.bytes == expected, "codec_zenoh_ext_envelope source 2: three extensions of each encoding")
+        var cursor = SceCursor(sink.bytes)
+        let decoded = try CodecZenohExtEnvelope.decode(&cursor)
+        #expect(cursor.remaining == 0, "codec_zenoh_ext_envelope source 2: the decode left bytes of the frame unread")
+        #expect(decoded.header_flags == value.header_flags, "codec_zenoh_ext_envelope source 0: the decode presents another header_flags")
+        #expect(decoded.extensions == value.extensions, "codec_zenoh_ext_envelope source 1: the decode presents another extensions")
+    }
+
 
     do {
         var rejectCursor = SceCursor([0, 129, 130, 131])
@@ -8313,6 +13335,19 @@ private func expectClose(_ actual: Double, _ expected: Double, _ label: String) 
     // Compile-only probe: the oracle holds no case this fixture's field shape can express.
     _ = CodecZenohExtUnit.frameLength
 
+    do {
+        let value = CodecZenohExtUnit()
+        var sink = BytesSink()
+        try CodecZenohExtUnit.encodeSource(value, into: &sink)
+        let expected: [UInt8] = []
+        #expect(sink.bytes == expected, "codec_zenoh_ext_unit source 0: a codec of no field writes nothing")
+        var cursor = SceCursor(sink.bytes)
+        let decoded = try CodecZenohExtUnit.decode(&cursor)
+        #expect(cursor.remaining == 0, "codec_zenoh_ext_unit source 0: the decode left bytes of the frame unread")
+        _ = decoded
+    }
+
+
 }
 
 // MARK: - codec: codec_zenoh_ext_zbuf
@@ -8321,6 +13356,44 @@ private func expectClose(_ actual: Double, _ expected: Double, _ label: String) 
 
     // Compile-only probe: the oracle holds no case this fixture's field shape can express.
     _ = CodecZenohExtZbuf.frameLength
+
+    do {
+        let bound0 = try #require(BoundedBytes<CodecZenohExtZbuf.ValueBound>([]))
+        let value = CodecZenohExtZbuf(value: bound0)
+        var sink = BytesSink()
+        try CodecZenohExtZbuf.encodeSource(value, into: &sink)
+        let expected: [UInt8] = [0]
+        #expect(sink.bytes == expected, "codec_zenoh_ext_zbuf source 0: no bytes")
+        var cursor = SceCursor(sink.bytes)
+        let decoded = try CodecZenohExtZbuf.decode(&cursor)
+        #expect(cursor.remaining == 0, "codec_zenoh_ext_zbuf source 0: the decode left bytes of the frame unread")
+        #expect(decoded.value == value.value, "codec_zenoh_ext_zbuf source 0: the decode presents another value")
+    }
+    do {
+        let bound0 = try #require(BoundedBytes<CodecZenohExtZbuf.ValueBound>([0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21, 22, 23, 24, 25, 26, 27, 28, 29, 30, 31]))
+        let value = CodecZenohExtZbuf(value: bound0)
+        var sink = BytesSink()
+        try CodecZenohExtZbuf.encodeSource(value, into: &sink)
+        let expected: [UInt8] = [32, 0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21, 22, 23, 24, 25, 26, 27, 28, 29, 30, 31]
+        #expect(sink.bytes == expected, "codec_zenoh_ext_zbuf source 1: thirty-two bytes")
+        var cursor = SceCursor(sink.bytes)
+        let decoded = try CodecZenohExtZbuf.decode(&cursor)
+        #expect(cursor.remaining == 0, "codec_zenoh_ext_zbuf source 1: the decode left bytes of the frame unread")
+        #expect(decoded.value == value.value, "codec_zenoh_ext_zbuf source 0: the decode presents another value")
+    }
+    do {
+        let bound0 = try #require(BoundedBytes<CodecZenohExtZbuf.ValueBound>([0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21, 22, 23, 24, 25, 26, 27, 28, 29, 30, 31, 32, 33, 34, 35, 36, 37, 38, 39, 40, 41, 42, 43, 44, 45, 46, 47, 48, 49, 50, 51, 52, 53, 54, 55, 56, 57, 58, 59, 60, 61, 62, 63, 64, 65, 66, 67, 68, 69, 70, 71, 72, 73, 74, 75, 76, 77, 78, 79, 80, 81, 82, 83, 84, 85, 86, 87, 88, 89, 90, 91, 92, 93, 94, 95, 96, 97, 98, 99, 100, 101, 102, 103, 104, 105, 106, 107, 108, 109, 110, 111, 112, 113, 114, 115, 116, 117, 118, 119, 120, 121, 122, 123, 124, 125, 126, 127, 128, 129, 130, 131, 132, 133, 134, 135, 136, 137, 138, 139, 140, 141, 142, 143, 144, 145, 146, 147, 148, 149, 150, 151, 152, 153, 154, 155, 156, 157, 158, 159, 160, 161, 162, 163, 164, 165, 166, 167, 168, 169, 170, 171, 172, 173, 174, 175, 176, 177, 178, 179, 180, 181, 182, 183, 184, 185, 186, 187, 188, 189, 190, 191, 192, 193, 194, 195, 196, 197, 198, 199]))
+        let value = CodecZenohExtZbuf(value: bound0)
+        var sink = BytesSink()
+        try CodecZenohExtZbuf.encodeSource(value, into: &sink)
+        let expected: [UInt8] = [200, 1, 0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21, 22, 23, 24, 25, 26, 27, 28, 29, 30, 31, 32, 33, 34, 35, 36, 37, 38, 39, 40, 41, 42, 43, 44, 45, 46, 47, 48, 49, 50, 51, 52, 53, 54, 55, 56, 57, 58, 59, 60, 61, 62, 63, 64, 65, 66, 67, 68, 69, 70, 71, 72, 73, 74, 75, 76, 77, 78, 79, 80, 81, 82, 83, 84, 85, 86, 87, 88, 89, 90, 91, 92, 93, 94, 95, 96, 97, 98, 99, 100, 101, 102, 103, 104, 105, 106, 107, 108, 109, 110, 111, 112, 113, 114, 115, 116, 117, 118, 119, 120, 121, 122, 123, 124, 125, 126, 127, 128, 129, 130, 131, 132, 133, 134, 135, 136, 137, 138, 139, 140, 141, 142, 143, 144, 145, 146, 147, 148, 149, 150, 151, 152, 153, 154, 155, 156, 157, 158, 159, 160, 161, 162, 163, 164, 165, 166, 167, 168, 169, 170, 171, 172, 173, 174, 175, 176, 177, 178, 179, 180, 181, 182, 183, 184, 185, 186, 187, 188, 189, 190, 191, 192, 193, 194, 195, 196, 197, 198, 199]
+        #expect(sink.bytes == expected, "codec_zenoh_ext_zbuf source 2: 200 bytes: the length takes two VLE bytes")
+        var cursor = SceCursor(sink.bytes)
+        let decoded = try CodecZenohExtZbuf.decode(&cursor)
+        #expect(cursor.remaining == 0, "codec_zenoh_ext_zbuf source 2: the decode left bytes of the frame unread")
+        #expect(decoded.value == value.value, "codec_zenoh_ext_zbuf source 0: the decode presents another value")
+    }
+
 
 }
 
@@ -8331,6 +13404,30 @@ private func expectClose(_ actual: Double, _ expected: Double, _ label: String) 
     // Compile-only probe: the oracle holds no case this fixture's field shape can express.
     _ = CodecZenohExtZint.frameLength
 
+    do {
+        let value = CodecZenohExtZint(value: 0)
+        var sink = BytesSink()
+        try CodecZenohExtZint.encodeSource(value, into: &sink)
+        let expected: [UInt8] = [0]
+        #expect(sink.bytes == expected, "codec_zenoh_ext_zint source 0: zero")
+        var cursor = SceCursor(sink.bytes)
+        let decoded = try CodecZenohExtZint.decode(&cursor)
+        #expect(cursor.remaining == 0, "codec_zenoh_ext_zint source 0: the decode left bytes of the frame unread")
+        #expect(decoded.value == value.value, "codec_zenoh_ext_zint source 0: the decode presents another value")
+    }
+    do {
+        let value = CodecZenohExtZint(value: 128)
+        var sink = BytesSink()
+        try CodecZenohExtZint.encodeSource(value, into: &sink)
+        let expected: [UInt8] = [128, 1]
+        #expect(sink.bytes == expected, "codec_zenoh_ext_zint source 1: two VLE bytes")
+        var cursor = SceCursor(sink.bytes)
+        let decoded = try CodecZenohExtZint.decode(&cursor)
+        #expect(cursor.remaining == 0, "codec_zenoh_ext_zint source 1: the decode left bytes of the frame unread")
+        #expect(decoded.value == value.value, "codec_zenoh_ext_zint source 0: the decode presents another value")
+    }
+
+
 }
 
 // MARK: - codec: codec_zenoh_hello
@@ -8339,6 +13436,43 @@ private func expectClose(_ actual: Double, _ expected: Double, _ label: String) 
 
     // Compile-only probe: the oracle holds no case this fixture's field shape can express.
     _ = CodecZenohHello.frameLength
+
+    do {
+        let bound0 = try #require(BoundedBytes<CodecZenohHello.ZidBound>([3]))
+        let value = CodecZenohHello(version: 1, cbyte: 1, zid: bound0, locators: nil)
+        var sink = BytesSink()
+        try CodecZenohHello.encodeSource(value, into: &sink)
+        let expected: [UInt8] = [1, 1, 3]
+        #expect(sink.bytes == expected, "codec_zenoh_hello source 0: L clear: no locators")
+        var cursor = SceCursor(sink.bytes)
+        let decoded = try CodecZenohHello.decode(&cursor, L: 0)
+        #expect(cursor.remaining == 0, "codec_zenoh_hello source 0: the decode left bytes of the frame unread")
+        #expect(decoded.version == value.version, "codec_zenoh_hello source 0: the decode presents another version")
+        #expect(decoded.cbyte == value.cbyte, "codec_zenoh_hello source 1: the decode presents another cbyte")
+        #expect(decoded.zid == value.zid, "codec_zenoh_hello source 2: the decode presents another zid")
+        #expect(decoded.locators == value.locators, "codec_zenoh_hello source 3: the decode presents another locators")
+        #expect(CodecZenohHello.inputL(value) == 0, "codec_zenoh_hello source 4: the decode presents another flag input L")
+    }
+    do {
+        let bound0 = try #require(BoundedBytes<CodecZenohHello.ZidBound>([3, 4]))
+        let bound1 = try #require(BoundedText<CodecZenohLocator.LocatorBound>("tcp/1"))
+        let bound2 = try #require(BoundedText<CodecZenohLocator.LocatorBound>(""))
+        let bound3 = try #require(BoundedList<CodecZenohLocator, CodecZenohHello.LocatorsBound>([CodecZenohLocator(locator: bound1), CodecZenohLocator(locator: bound2)]))
+        let value = CodecZenohHello(version: 1, cbyte: 18, zid: bound0, locators: bound3)
+        var sink = BytesSink()
+        try CodecZenohHello.encodeSource(value, into: &sink)
+        let expected: [UInt8] = [1, 18, 3, 4, 2, 5, 116, 99, 112, 47, 49, 0]
+        #expect(sink.bytes == expected, "codec_zenoh_hello source 1: L set: two locators, their count derived")
+        var cursor = SceCursor(sink.bytes)
+        let decoded = try CodecZenohHello.decode(&cursor, L: 1)
+        #expect(cursor.remaining == 0, "codec_zenoh_hello source 1: the decode left bytes of the frame unread")
+        #expect(decoded.version == value.version, "codec_zenoh_hello source 0: the decode presents another version")
+        #expect(decoded.cbyte == value.cbyte, "codec_zenoh_hello source 1: the decode presents another cbyte")
+        #expect(decoded.zid == value.zid, "codec_zenoh_hello source 2: the decode presents another zid")
+        #expect(decoded.locators == value.locators, "codec_zenoh_hello source 3: the decode presents another locators")
+        #expect(CodecZenohHello.inputL(value) == 1, "codec_zenoh_hello source 4: the decode presents another flag input L")
+    }
+
 
 }
 
@@ -8349,6 +13483,45 @@ private func expectClose(_ actual: Double, _ expected: Double, _ label: String) 
     // Compile-only probe: the oracle holds no case this fixture's field shape can express.
     _ = CodecZenohInitBody.frameLength
 
+    do {
+        let bound0 = try #require(BoundedBytes<CodecZenohInitBody.ZidBound>([7]))
+        let value = CodecZenohInitBody(version: 1, cbyte: 1, zid: bound0, s: nil, cookie: nil)
+        var sink = BytesSink()
+        try CodecZenohInitBody.encodeSource(value, into: &sink)
+        let expected: [UInt8] = [1, 1, 7]
+        #expect(sink.bytes == expected, "codec_zenoh_init_body source 0: neither input: a one-byte zid")
+        var cursor = SceCursor(sink.bytes)
+        let decoded = try CodecZenohInitBody.decode(&cursor, S: 0, A: 0)
+        #expect(cursor.remaining == 0, "codec_zenoh_init_body source 0: the decode left bytes of the frame unread")
+        #expect(decoded.version == value.version, "codec_zenoh_init_body source 0: the decode presents another version")
+        #expect(decoded.cbyte == value.cbyte, "codec_zenoh_init_body source 1: the decode presents another cbyte")
+        #expect(decoded.zid == value.zid, "codec_zenoh_init_body source 2: the decode presents another zid")
+        #expect(decoded.cookie == value.cookie, "codec_zenoh_init_body source 3: the decode presents another cookie")
+        #expect(decoded.s == value.s, "codec_zenoh_init_body source 4: the decode presents another S")
+        #expect(CodecZenohInitBody.inputS(value) == 0, "codec_zenoh_init_body source 5: the decode presents another flag input S")
+        #expect(CodecZenohInitBody.inputA(value) == 0, "codec_zenoh_init_body source 6: the decode presents another flag input A")
+    }
+    do {
+        let bound0 = try #require(BoundedBytes<CodecZenohInitBody.ZidBound>([1, 2, 3, 4]))
+        let bound1 = try #require(BoundedBytes<CodecZenohInitBody.CookieBound>([9, 9]))
+        let value = CodecZenohInitBody(version: 1, cbyte: 49, zid: bound0, s: CodecZenohInitBodyS(sn_res: 10, batch_size: 258), cookie: bound1)
+        var sink = BytesSink()
+        try CodecZenohInitBody.encodeSource(value, into: &sink)
+        let expected: [UInt8] = [1, 49, 1, 2, 3, 4, 10, 2, 1, 2, 9, 9]
+        #expect(sink.bytes == expected, "codec_zenoh_init_body source 1: both inputs: the group, little-endian, and the cookie")
+        var cursor = SceCursor(sink.bytes)
+        let decoded = try CodecZenohInitBody.decode(&cursor, S: 1, A: 1)
+        #expect(cursor.remaining == 0, "codec_zenoh_init_body source 1: the decode left bytes of the frame unread")
+        #expect(decoded.version == value.version, "codec_zenoh_init_body source 0: the decode presents another version")
+        #expect(decoded.cbyte == value.cbyte, "codec_zenoh_init_body source 1: the decode presents another cbyte")
+        #expect(decoded.zid == value.zid, "codec_zenoh_init_body source 2: the decode presents another zid")
+        #expect(decoded.cookie == value.cookie, "codec_zenoh_init_body source 3: the decode presents another cookie")
+        #expect(decoded.s == value.s, "codec_zenoh_init_body source 4: the decode presents another S")
+        #expect(CodecZenohInitBody.inputS(value) == 1, "codec_zenoh_init_body source 5: the decode presents another flag input S")
+        #expect(CodecZenohInitBody.inputA(value) == 1, "codec_zenoh_init_body source 6: the decode presents another flag input A")
+    }
+
+
 }
 
 // MARK: - codec: codec_zenoh_interest
@@ -8357,6 +13530,66 @@ private func expectClose(_ actual: Double, _ expected: Double, _ label: String) 
 
     // Compile-only probe: the oracle holds no case this fixture's field shape can express.
     _ = CodecZenohInterest.frameLength
+
+    do {
+        let value = CodecZenohInterest(header: 25, id: 1, header_current_or_future: nil, extensions: nil)
+        var sink = BytesSink()
+        try CodecZenohInterest.encodeSource(value, into: &sink)
+        let expected: [UInt8] = [25, 1]
+        #expect(sink.bytes == expected, "codec_zenoh_interest source 0: final: neither flag, so no body")
+        var cursor = SceCursor(sink.bytes)
+        let decoded = try CodecZenohInterest.decode(&cursor)
+        #expect(cursor.remaining == 0, "codec_zenoh_interest source 0: the decode left bytes of the frame unread")
+        #expect(decoded.header == value.header, "codec_zenoh_interest source 0: the decode presents another header")
+        #expect(decoded.id == value.id, "codec_zenoh_interest source 1: the decode presents another id")
+        #expect(decoded.extensions == value.extensions, "codec_zenoh_interest source 2: the decode presents another extensions")
+        #expect(decoded.header_current_or_future == value.header_current_or_future, "codec_zenoh_interest source 3: the decode presents another header.CURRENT || header.FUTURE")
+    }
+    do {
+        let value = CodecZenohInterest(header: 57, id: 2, header_current_or_future: CodecZenohInterestHeaderCurrentOrFuture.current(body: CodecZenohInterestBody(header: 1, keyexpr: nil)), extensions: nil)
+        var sink = BytesSink()
+        try CodecZenohInterest.encodeSource(value, into: &sink)
+        let expected: [UInt8] = [57, 2, 1]
+        #expect(sink.bytes == expected, "codec_zenoh_interest source 1: CURRENT alone: the body, not restricted")
+        var cursor = SceCursor(sink.bytes)
+        let decoded = try CodecZenohInterest.decode(&cursor)
+        #expect(cursor.remaining == 0, "codec_zenoh_interest source 1: the decode left bytes of the frame unread")
+        #expect(decoded.header == value.header, "codec_zenoh_interest source 0: the decode presents another header")
+        #expect(decoded.id == value.id, "codec_zenoh_interest source 1: the decode presents another id")
+        #expect(decoded.extensions == value.extensions, "codec_zenoh_interest source 2: the decode presents another extensions")
+        #expect(decoded.header_current_or_future == value.header_current_or_future, "codec_zenoh_interest source 3: the decode presents another header.CURRENT || header.FUTURE")
+    }
+    do {
+        let bound0 = try #require(BoundedText<CodecZenohWireexpr.SuffixBound>("k/*"))
+        let value = CodecZenohInterest(header: 89, id: 128, header_current_or_future: CodecZenohInterestHeaderCurrentOrFuture.future(body: CodecZenohInterestBody(header: 63, keyexpr: CodecZenohWireexpr(id: 3, suffix: bound0))), extensions: nil)
+        var sink = BytesSink()
+        try CodecZenohInterest.encodeSource(value, into: &sink)
+        let expected: [UInt8] = [89, 128, 1, 63, 3, 3, 107, 47, 42]
+        #expect(sink.bytes == expected, "codec_zenoh_interest source 2: FUTURE alone: a restricted body with its key expression")
+        var cursor = SceCursor(sink.bytes)
+        let decoded = try CodecZenohInterest.decode(&cursor)
+        #expect(cursor.remaining == 0, "codec_zenoh_interest source 2: the decode left bytes of the frame unread")
+        #expect(decoded.header == value.header, "codec_zenoh_interest source 0: the decode presents another header")
+        #expect(decoded.id == value.id, "codec_zenoh_interest source 1: the decode presents another id")
+        #expect(decoded.extensions == value.extensions, "codec_zenoh_interest source 2: the decode presents another extensions")
+        #expect(decoded.header_current_or_future == value.header_current_or_future, "codec_zenoh_interest source 3: the decode presents another header.CURRENT || header.FUTURE")
+    }
+    do {
+        let bound0 = try #require(BoundedList<CodecZenohExtEntry, CodecZenohInterest.ExtensionsBound>([CodecZenohExtEntry(header: 1, body: .codecZenohExtUnit(CodecZenohExtUnit()))]))
+        let value = CodecZenohInterest(header: 249, id: 3, header_current_or_future: CodecZenohInterestHeaderCurrentOrFuture.currentFuture(body: CodecZenohInterestBody(header: 2, keyexpr: nil)), extensions: bound0)
+        var sink = BytesSink()
+        try CodecZenohInterest.encodeSource(value, into: &sink)
+        let expected: [UInt8] = [249, 3, 2, 1]
+        #expect(sink.bytes == expected, "codec_zenoh_interest source 3: both flags and Z: the body, then one extension")
+        var cursor = SceCursor(sink.bytes)
+        let decoded = try CodecZenohInterest.decode(&cursor)
+        #expect(cursor.remaining == 0, "codec_zenoh_interest source 3: the decode left bytes of the frame unread")
+        #expect(decoded.header == value.header, "codec_zenoh_interest source 0: the decode presents another header")
+        #expect(decoded.id == value.id, "codec_zenoh_interest source 1: the decode presents another id")
+        #expect(decoded.extensions == value.extensions, "codec_zenoh_interest source 2: the decode presents another extensions")
+        #expect(decoded.header_current_or_future == value.header_current_or_future, "codec_zenoh_interest source 3: the decode presents another header.CURRENT || header.FUTURE")
+    }
+
 
 }
 
@@ -8367,6 +13600,45 @@ private func expectClose(_ actual: Double, _ expected: Double, _ label: String) 
     // Compile-only probe: the oracle holds no case this fixture's field shape can express.
     _ = CodecZenohInterestBody.frameLength
 
+    do {
+        let value = CodecZenohInterestBody(header: 1, keyexpr: nil)
+        var sink = BytesSink()
+        try CodecZenohInterestBody.encodeSource(value, into: &sink)
+        let expected: [UInt8] = [1]
+        #expect(sink.bytes == expected, "codec_zenoh_interest_body source 0: not restricted: the flags byte alone, N its own")
+        var cursor = SceCursor(sink.bytes)
+        let decoded = try CodecZenohInterestBody.decode(&cursor)
+        #expect(cursor.remaining == 0, "codec_zenoh_interest_body source 0: the decode left bytes of the frame unread")
+        #expect(decoded.header == value.header, "codec_zenoh_interest_body source 0: the decode presents another header")
+        #expect(decoded.keyexpr == value.keyexpr, "codec_zenoh_interest_body source 1: the decode presents another keyexpr")
+    }
+    do {
+        let bound0 = try #require(BoundedText<CodecZenohWireexpr.SuffixBound>("k/*"))
+        let value = CodecZenohInterestBody(header: 63, keyexpr: CodecZenohWireexpr(id: 3, suffix: bound0))
+        var sink = BytesSink()
+        try CodecZenohInterestBody.encodeSource(value, into: &sink)
+        let expected: [UInt8] = [63, 3, 3, 107, 47, 42]
+        #expect(sink.bytes == expected, "codec_zenoh_interest_body source 1: restricted, the key expression says N: bit 5 is what it says")
+        var cursor = SceCursor(sink.bytes)
+        let decoded = try CodecZenohInterestBody.decode(&cursor)
+        #expect(cursor.remaining == 0, "codec_zenoh_interest_body source 1: the decode left bytes of the frame unread")
+        #expect(decoded.header == value.header, "codec_zenoh_interest_body source 0: the decode presents another header")
+        #expect(decoded.keyexpr == value.keyexpr, "codec_zenoh_interest_body source 1: the decode presents another keyexpr")
+    }
+    do {
+        let value = CodecZenohInterestBody(header: 18, keyexpr: CodecZenohWireexpr(id: 8, suffix: nil))
+        var sink = BytesSink()
+        try CodecZenohInterestBody.encodeSource(value, into: &sink)
+        let expected: [UInt8] = [18, 8]
+        #expect(sink.bytes == expected, "codec_zenoh_interest_body source 2: restricted, the key expression says N clear: bit 5 stays clear")
+        var cursor = SceCursor(sink.bytes)
+        let decoded = try CodecZenohInterestBody.decode(&cursor)
+        #expect(cursor.remaining == 0, "codec_zenoh_interest_body source 2: the decode left bytes of the frame unread")
+        #expect(decoded.header == value.header, "codec_zenoh_interest_body source 0: the decode presents another header")
+        #expect(decoded.keyexpr == value.keyexpr, "codec_zenoh_interest_body source 1: the decode presents another keyexpr")
+    }
+
+
 }
 
 // MARK: - codec: codec_zenoh_join
@@ -8375,6 +13647,46 @@ private func expectClose(_ actual: Double, _ expected: Double, _ label: String) 
 
     // Compile-only probe: the oracle holds no case this fixture's field shape can express.
     _ = CodecZenohJoin.frameLength
+
+    do {
+        let bound0 = try #require(BoundedBytes<CodecZenohJoin.ZidBound>([5]))
+        let value = CodecZenohJoin(version: 1, cbyte: 2, zid: bound0, s: nil, lease: 1, next_sn_reliable: 2, next_sn_best_effort: 3)
+        var sink = BytesSink()
+        try CodecZenohJoin.encodeSource(value, into: &sink)
+        let expected: [UInt8] = [1, 2, 5, 1, 2, 3]
+        #expect(sink.bytes == expected, "codec_zenoh_join source 0: S clear: no sn_res or batch_size")
+        var cursor = SceCursor(sink.bytes)
+        let decoded = try CodecZenohJoin.decode(&cursor, S: 0)
+        #expect(cursor.remaining == 0, "codec_zenoh_join source 0: the decode left bytes of the frame unread")
+        #expect(decoded.version == value.version, "codec_zenoh_join source 0: the decode presents another version")
+        #expect(decoded.cbyte == value.cbyte, "codec_zenoh_join source 1: the decode presents another cbyte")
+        #expect(decoded.zid == value.zid, "codec_zenoh_join source 2: the decode presents another zid")
+        #expect(decoded.lease == value.lease, "codec_zenoh_join source 3: the decode presents another lease")
+        #expect(decoded.next_sn_reliable == value.next_sn_reliable, "codec_zenoh_join source 4: the decode presents another next_sn_reliable")
+        #expect(decoded.next_sn_best_effort == value.next_sn_best_effort, "codec_zenoh_join source 5: the decode presents another next_sn_best_effort")
+        #expect(decoded.s == value.s, "codec_zenoh_join source 6: the decode presents another S")
+        #expect(CodecZenohJoin.inputS(value) == 0, "codec_zenoh_join source 7: the decode presents another flag input S")
+    }
+    do {
+        let bound0 = try #require(BoundedBytes<CodecZenohJoin.ZidBound>([5, 6]))
+        let value = CodecZenohJoin(version: 1, cbyte: 18, zid: bound0, s: CodecZenohJoinS(sn_res: 8, batch_size: 512), lease: 128, next_sn_reliable: 0, next_sn_best_effort: 0)
+        var sink = BytesSink()
+        try CodecZenohJoin.encodeSource(value, into: &sink)
+        let expected: [UInt8] = [1, 18, 5, 6, 8, 0, 2, 128, 1, 0, 0]
+        #expect(sink.bytes == expected, "codec_zenoh_join source 1: S set: the group, little-endian")
+        var cursor = SceCursor(sink.bytes)
+        let decoded = try CodecZenohJoin.decode(&cursor, S: 1)
+        #expect(cursor.remaining == 0, "codec_zenoh_join source 1: the decode left bytes of the frame unread")
+        #expect(decoded.version == value.version, "codec_zenoh_join source 0: the decode presents another version")
+        #expect(decoded.cbyte == value.cbyte, "codec_zenoh_join source 1: the decode presents another cbyte")
+        #expect(decoded.zid == value.zid, "codec_zenoh_join source 2: the decode presents another zid")
+        #expect(decoded.lease == value.lease, "codec_zenoh_join source 3: the decode presents another lease")
+        #expect(decoded.next_sn_reliable == value.next_sn_reliable, "codec_zenoh_join source 4: the decode presents another next_sn_reliable")
+        #expect(decoded.next_sn_best_effort == value.next_sn_best_effort, "codec_zenoh_join source 5: the decode presents another next_sn_best_effort")
+        #expect(decoded.s == value.s, "codec_zenoh_join source 6: the decode presents another S")
+        #expect(CodecZenohJoin.inputS(value) == 1, "codec_zenoh_join source 7: the decode presents another flag input S")
+    }
+
 
 }
 
@@ -8385,6 +13697,36 @@ private func expectClose(_ actual: Double, _ expected: Double, _ label: String) 
     // Compile-only probe: the oracle holds no case this fixture's field shape can express.
     _ = CodecZenohMsgDel.frameLength
 
+    do {
+        let value = CodecZenohMsgDel(header: 2, timestamp: nil, extensions: nil)
+        var sink = BytesSink()
+        try CodecZenohMsgDel.encodeSource(value, into: &sink)
+        let expected: [UInt8] = [2]
+        #expect(sink.bytes == expected, "codec_zenoh_msg_del source 0: a bare del")
+        var cursor = SceCursor(sink.bytes)
+        let decoded = try CodecZenohMsgDel.decode(&cursor)
+        #expect(cursor.remaining == 0, "codec_zenoh_msg_del source 0: the decode left bytes of the frame unread")
+        #expect(decoded.header == value.header, "codec_zenoh_msg_del source 0: the decode presents another header")
+        #expect(decoded.timestamp == value.timestamp, "codec_zenoh_msg_del source 1: the decode presents another timestamp")
+        #expect(decoded.extensions == value.extensions, "codec_zenoh_msg_del source 2: the decode presents another extensions")
+    }
+    do {
+        let bound0 = try #require(BoundedBytes<CodecZenohTimestamp.ZidBound>([]))
+        let bound1 = try #require(BoundedList<CodecZenohExtEntry, CodecZenohMsgDel.ExtensionsBound>([CodecZenohExtEntry(header: 3, body: .codecZenohExtUnit(CodecZenohExtUnit()))]))
+        let value = CodecZenohMsgDel(header: 162, timestamp: CodecZenohTimestamp(time: 128, zid: bound0), extensions: bound1)
+        var sink = BytesSink()
+        try CodecZenohMsgDel.encodeSource(value, into: &sink)
+        let expected: [UInt8] = [162, 128, 1, 0, 3]
+        #expect(sink.bytes == expected, "codec_zenoh_msg_del source 1: T and Z derived")
+        var cursor = SceCursor(sink.bytes)
+        let decoded = try CodecZenohMsgDel.decode(&cursor)
+        #expect(cursor.remaining == 0, "codec_zenoh_msg_del source 1: the decode left bytes of the frame unread")
+        #expect(decoded.header == value.header, "codec_zenoh_msg_del source 0: the decode presents another header")
+        #expect(decoded.timestamp == value.timestamp, "codec_zenoh_msg_del source 1: the decode presents another timestamp")
+        #expect(decoded.extensions == value.extensions, "codec_zenoh_msg_del source 2: the decode presents another extensions")
+    }
+
+
 }
 
 // MARK: - codec: codec_zenoh_err
@@ -8393,6 +13735,41 @@ private func expectClose(_ actual: Double, _ expected: Double, _ label: String) 
 
     // Compile-only probe: the oracle holds no case this fixture's field shape can express.
     _ = CodecZenohErr.frameLength
+
+    do {
+        let bound0 = try #require(BoundedBytes<CodecZenohErr.PayloadBound>([1]))
+        let value = CodecZenohErr(header: 5, encoding: nil, extensions: nil, payload: bound0)
+        var sink = BytesSink()
+        try CodecZenohErr.encodeSource(value, into: &sink)
+        let expected: [UInt8] = [5, 1, 1]
+        #expect(sink.bytes == expected, "codec_zenoh_err source 0: a bare err")
+        var cursor = SceCursor(sink.bytes)
+        let decoded = try CodecZenohErr.decode(&cursor)
+        #expect(cursor.remaining == 0, "codec_zenoh_err source 0: the decode left bytes of the frame unread")
+        #expect(decoded.header == value.header, "codec_zenoh_err source 0: the decode presents another header")
+        #expect(decoded.encoding == value.encoding, "codec_zenoh_err source 1: the decode presents another encoding")
+        #expect(decoded.extensions == value.extensions, "codec_zenoh_err source 2: the decode presents another extensions")
+        #expect(decoded.payload == value.payload, "codec_zenoh_err source 3: the decode presents another payload")
+    }
+    do {
+        let bound0 = try #require(BoundedText<CodecZenohEncoding.SchemaBound>("t"))
+        let bound1 = try #require(BoundedBytes<CodecZenohExtZbuf.ValueBound>([]))
+        let bound2 = try #require(BoundedList<CodecZenohExtEntry, CodecZenohErr.ExtensionsBound>([CodecZenohExtEntry(header: 65, body: .codecZenohExtZbuf(CodecZenohExtZbuf(value: bound1)))]))
+        let bound3 = try #require(BoundedBytes<CodecZenohErr.PayloadBound>([]))
+        let value = CodecZenohErr(header: 197, encoding: CodecZenohEncoding(packed_id: 1, schema: bound0), extensions: bound2, payload: bound3)
+        var sink = BytesSink()
+        try CodecZenohErr.encodeSource(value, into: &sink)
+        let expected: [UInt8] = [197, 1, 1, 116, 65, 0, 0]
+        #expect(sink.bytes == expected, "codec_zenoh_err source 1: E and Z derived; an encoding with a schema")
+        var cursor = SceCursor(sink.bytes)
+        let decoded = try CodecZenohErr.decode(&cursor)
+        #expect(cursor.remaining == 0, "codec_zenoh_err source 1: the decode left bytes of the frame unread")
+        #expect(decoded.header == value.header, "codec_zenoh_err source 0: the decode presents another header")
+        #expect(decoded.encoding == value.encoding, "codec_zenoh_err source 1: the decode presents another encoding")
+        #expect(decoded.extensions == value.extensions, "codec_zenoh_err source 2: the decode presents another extensions")
+        #expect(decoded.payload == value.payload, "codec_zenoh_err source 3: the decode presents another payload")
+    }
+
 
 }
 
@@ -8403,6 +13780,42 @@ private func expectClose(_ actual: Double, _ expected: Double, _ label: String) 
     // Compile-only probe: the oracle holds no case this fixture's field shape can express.
     _ = CodecZenohMsgPut.frameLength
 
+    do {
+        let bound0 = try #require(BoundedBytes<CodecZenohMsgPut.PayloadBound>([170, 187]))
+        let value = CodecZenohMsgPut(header: 1, timestamp: nil, encoding: nil, extensions: nil, payload: bound0)
+        var sink = BytesSink()
+        try CodecZenohMsgPut.encodeSource(value, into: &sink)
+        let expected: [UInt8] = [1, 2, 170, 187]
+        #expect(sink.bytes == expected, "codec_zenoh_msg_put source 0: a bare put: the header and the payload")
+        var cursor = SceCursor(sink.bytes)
+        let decoded = try CodecZenohMsgPut.decode(&cursor)
+        #expect(cursor.remaining == 0, "codec_zenoh_msg_put source 0: the decode left bytes of the frame unread")
+        #expect(decoded.header == value.header, "codec_zenoh_msg_put source 0: the decode presents another header")
+        #expect(decoded.timestamp == value.timestamp, "codec_zenoh_msg_put source 1: the decode presents another timestamp")
+        #expect(decoded.encoding == value.encoding, "codec_zenoh_msg_put source 2: the decode presents another encoding")
+        #expect(decoded.extensions == value.extensions, "codec_zenoh_msg_put source 3: the decode presents another extensions")
+        #expect(decoded.payload == value.payload, "codec_zenoh_msg_put source 4: the decode presents another payload")
+    }
+    do {
+        let bound0 = try #require(BoundedBytes<CodecZenohTimestamp.ZidBound>([1]))
+        let bound1 = try #require(BoundedList<CodecZenohExtEntry, CodecZenohMsgPut.ExtensionsBound>([CodecZenohExtEntry(header: 129, body: .codecZenohExtUnit(CodecZenohExtUnit())), CodecZenohExtEntry(header: 34, body: .codecZenohExtZint(CodecZenohExtZint(value: 9)))]))
+        let bound2 = try #require(BoundedBytes<CodecZenohMsgPut.PayloadBound>([]))
+        let value = CodecZenohMsgPut(header: 225, timestamp: CodecZenohTimestamp(time: 5, zid: bound0), encoding: CodecZenohEncoding(packed_id: 0, schema: nil), extensions: bound1, payload: bound2)
+        var sink = BytesSink()
+        try CodecZenohMsgPut.encodeSource(value, into: &sink)
+        let expected: [UInt8] = [225, 5, 1, 1, 0, 129, 34, 9, 0]
+        #expect(sink.bytes == expected, "codec_zenoh_msg_put source 1: T, E and Z derived from the timestamp, the encoding and the chain")
+        var cursor = SceCursor(sink.bytes)
+        let decoded = try CodecZenohMsgPut.decode(&cursor)
+        #expect(cursor.remaining == 0, "codec_zenoh_msg_put source 1: the decode left bytes of the frame unread")
+        #expect(decoded.header == value.header, "codec_zenoh_msg_put source 0: the decode presents another header")
+        #expect(decoded.timestamp == value.timestamp, "codec_zenoh_msg_put source 1: the decode presents another timestamp")
+        #expect(decoded.encoding == value.encoding, "codec_zenoh_msg_put source 2: the decode presents another encoding")
+        #expect(decoded.extensions == value.extensions, "codec_zenoh_msg_put source 3: the decode presents another extensions")
+        #expect(decoded.payload == value.payload, "codec_zenoh_msg_put source 4: the decode presents another payload")
+    }
+
+
 }
 
 // MARK: - codec: codec_zenoh_reply
@@ -8411,6 +13824,37 @@ private func expectClose(_ actual: Double, _ expected: Double, _ label: String) 
 
     // Compile-only probe: the oracle holds no case this fixture's field shape can express.
     _ = CodecZenohReply.frameLength
+
+    do {
+        let value = CodecZenohReply(header: 4, consolidation: nil, extensions: nil, body: CodecZenohPushBody(header: 1, body: .codecZenohPut(CodecZenohPut(payload: 3))))
+        var sink = BytesSink()
+        try CodecZenohReply.encodeSource(value, into: &sink)
+        let expected: [UInt8] = [4, 1, 3]
+        #expect(sink.bytes == expected, "codec_zenoh_reply source 0: a bare reply holding a put")
+        var cursor = SceCursor(sink.bytes)
+        let decoded = try CodecZenohReply.decode(&cursor)
+        #expect(cursor.remaining == 0, "codec_zenoh_reply source 0: the decode left bytes of the frame unread")
+        #expect(decoded.header == value.header, "codec_zenoh_reply source 0: the decode presents another header")
+        #expect(decoded.consolidation == value.consolidation, "codec_zenoh_reply source 1: the decode presents another consolidation")
+        #expect(decoded.extensions == value.extensions, "codec_zenoh_reply source 2: the decode presents another extensions")
+        #expect(decoded.body == value.body, "codec_zenoh_reply source 3: the decode presents another body")
+    }
+    do {
+        let bound0 = try #require(BoundedList<CodecZenohExtEntry, CodecZenohReply.ExtensionsBound>([CodecZenohExtEntry(header: 2, body: .codecZenohExtUnit(CodecZenohExtUnit()))]))
+        let value = CodecZenohReply(header: 164, consolidation: 2, extensions: bound0, body: CodecZenohPushBody(header: 2, body: .codecZenohDel(CodecZenohDel())))
+        var sink = BytesSink()
+        try CodecZenohReply.encodeSource(value, into: &sink)
+        let expected: [UInt8] = [164, 2, 2, 2]
+        #expect(sink.bytes == expected, "codec_zenoh_reply source 1: C and Z derived; a reply holding a del")
+        var cursor = SceCursor(sink.bytes)
+        let decoded = try CodecZenohReply.decode(&cursor)
+        #expect(cursor.remaining == 0, "codec_zenoh_reply source 1: the decode left bytes of the frame unread")
+        #expect(decoded.header == value.header, "codec_zenoh_reply source 0: the decode presents another header")
+        #expect(decoded.consolidation == value.consolidation, "codec_zenoh_reply source 1: the decode presents another consolidation")
+        #expect(decoded.extensions == value.extensions, "codec_zenoh_reply source 2: the decode presents another extensions")
+        #expect(decoded.body == value.body, "codec_zenoh_reply source 3: the decode presents another body")
+    }
+
 
 }
 
@@ -8421,6 +13865,98 @@ private func expectClose(_ actual: Double, _ expected: Double, _ label: String) 
     // Compile-only probe: the oracle holds no case this fixture's field shape can express.
     _ = CodecZenohNetworkEnvelope.frameLength
 
+    do {
+        let value = CodecZenohNetworkEnvelope(body: .codecZenohInterest(CodecZenohInterest(header: 25, id: 1, header_current_or_future: nil, extensions: nil)))
+        var sink = BytesSink()
+        try CodecZenohNetworkEnvelope.encodeSource(value, into: &sink)
+        let expected: [UInt8] = [25, 1]
+        #expect(sink.bytes == expected, "codec_zenoh_network_envelope source 0: an interest, mid 0x19")
+        var cursor = SceCursor(sink.bytes)
+        let decoded = try CodecZenohNetworkEnvelope.decode(&cursor)
+        #expect(cursor.remaining == 0, "codec_zenoh_network_envelope source 0: the decode left bytes of the frame unread")
+        #expect(decoded.body == value.body, "codec_zenoh_network_envelope source 0: the decode presents another body")
+    }
+    do {
+        let value = CodecZenohNetworkEnvelope(body: .codecZenohResponseFinal(CodecZenohResponseFinal(header: 26, request_id: 7, extensions: nil)))
+        var sink = BytesSink()
+        try CodecZenohNetworkEnvelope.encodeSource(value, into: &sink)
+        let expected: [UInt8] = [26, 7]
+        #expect(sink.bytes == expected, "codec_zenoh_network_envelope source 1: a final response, mid 0x1a")
+        var cursor = SceCursor(sink.bytes)
+        let decoded = try CodecZenohNetworkEnvelope.decode(&cursor)
+        #expect(cursor.remaining == 0, "codec_zenoh_network_envelope source 1: the decode left bytes of the frame unread")
+        #expect(decoded.body == value.body, "codec_zenoh_network_envelope source 0: the decode presents another body")
+    }
+    do {
+        let bound0 = try #require(BoundedBytes<CodecZenohErr.PayloadBound>([]))
+        let value = CodecZenohNetworkEnvelope(body: .codecZenohResponse(CodecZenohResponse(header: 27, request_id: 1, key_id: 2, suffix: nil, extensions: nil, body: .codecZenohErr(CodecZenohErr(header: 5, encoding: nil, extensions: nil, payload: bound0)))))
+        var sink = BytesSink()
+        try CodecZenohNetworkEnvelope.encodeSource(value, into: &sink)
+        let expected: [UInt8] = [27, 1, 2, 5, 0]
+        #expect(sink.bytes == expected, "codec_zenoh_network_envelope source 2: a response holding an err, mid 0x1b")
+        var cursor = SceCursor(sink.bytes)
+        let decoded = try CodecZenohNetworkEnvelope.decode(&cursor)
+        #expect(cursor.remaining == 0, "codec_zenoh_network_envelope source 2: the decode left bytes of the frame unread")
+        #expect(decoded.body == value.body, "codec_zenoh_network_envelope source 0: the decode presents another body")
+    }
+    do {
+        let value = CodecZenohNetworkEnvelope(body: .codecZenohRequest(CodecZenohRequest(header: 28, rid: 1, keyexpr: CodecZenohWireexpr(id: 5, suffix: nil), extensions: nil, body: .codecZenohMsgDel(CodecZenohMsgDel(header: 2, timestamp: nil, extensions: nil)))))
+        var sink = BytesSink()
+        try CodecZenohNetworkEnvelope.encodeSource(value, into: &sink)
+        let expected: [UInt8] = [28, 1, 5, 2]
+        #expect(sink.bytes == expected, "codec_zenoh_network_envelope source 3: a request holding a del, mid 0x1c")
+        var cursor = SceCursor(sink.bytes)
+        let decoded = try CodecZenohNetworkEnvelope.decode(&cursor)
+        #expect(cursor.remaining == 0, "codec_zenoh_network_envelope source 3: the decode left bytes of the frame unread")
+        #expect(decoded.body == value.body, "codec_zenoh_network_envelope source 0: the decode presents another body")
+    }
+    do {
+        let value = CodecZenohNetworkEnvelope(body: .codecZenohPush(CodecZenohPush(header: 29, body: .codecZenohPushBody(CodecZenohPushBody(header: 1, body: .codecZenohPut(CodecZenohPut(payload: 7)))))))
+        var sink = BytesSink()
+        try CodecZenohNetworkEnvelope.encodeSource(value, into: &sink)
+        let expected: [UInt8] = [29, 1, 7]
+        #expect(sink.bytes == expected, "codec_zenoh_network_envelope source 4: a push, mid 0x1d")
+        var cursor = SceCursor(sink.bytes)
+        let decoded = try CodecZenohNetworkEnvelope.decode(&cursor)
+        #expect(cursor.remaining == 0, "codec_zenoh_network_envelope source 4: the decode left bytes of the frame unread")
+        #expect(decoded.body == value.body, "codec_zenoh_network_envelope source 0: the decode presents another body")
+    }
+    do {
+        let value = CodecZenohNetworkEnvelope(body: .codecZenohDeclare(CodecZenohDeclare(header: 30, interest_id: nil, extensions: nil, declaration: CodecZenohDeclaration(header: 26, body: .codecZenohDeclFinal(CodecZenohDeclFinal())))))
+        var sink = BytesSink()
+        try CodecZenohNetworkEnvelope.encodeSource(value, into: &sink)
+        let expected: [UInt8] = [30, 26]
+        #expect(sink.bytes == expected, "codec_zenoh_network_envelope source 5: a declare holding the final declaration, mid 0x1e")
+        var cursor = SceCursor(sink.bytes)
+        let decoded = try CodecZenohNetworkEnvelope.decode(&cursor)
+        #expect(cursor.remaining == 0, "codec_zenoh_network_envelope source 5: the decode left bytes of the frame unread")
+        #expect(decoded.body == value.body, "codec_zenoh_network_envelope source 0: the decode presents another body")
+    }
+    do {
+        let value = CodecZenohNetworkEnvelope(body: .codecZenohOam(CodecZenohOam(header: 31, id: 1, extensions: nil, body: .codecZenohExtUnit(CodecZenohExtUnit()))))
+        var sink = BytesSink()
+        try CodecZenohNetworkEnvelope.encodeSource(value, into: &sink)
+        let expected: [UInt8] = [31, 1]
+        #expect(sink.bytes == expected, "codec_zenoh_network_envelope source 6: an OAM, mid 0x1f")
+        var cursor = SceCursor(sink.bytes)
+        let decoded = try CodecZenohNetworkEnvelope.decode(&cursor)
+        #expect(cursor.remaining == 0, "codec_zenoh_network_envelope source 6: the decode left bytes of the frame unread")
+        #expect(decoded.body == value.body, "codec_zenoh_network_envelope source 0: the decode presents another body")
+    }
+    do {
+        let bound0 = try #require(CodecZenohNetworkEnvelopeUnknownTag(0x10))
+        let value = CodecZenohNetworkEnvelope(body: .default(tag: bound0, body: CodecZenohOam(header: 16, id: 2, extensions: nil, body: .codecZenohExtUnit(CodecZenohExtUnit()))))
+        var sink = BytesSink()
+        try CodecZenohNetworkEnvelope.encodeSource(value, into: &sink)
+        let expected: [UInt8] = [16, 2]
+        #expect(sink.bytes == expected, "codec_zenoh_network_envelope source 7: a mid no arm names: the default OAM keeps it, its header stating it")
+        var cursor = SceCursor(sink.bytes)
+        let decoded = try CodecZenohNetworkEnvelope.decode(&cursor)
+        #expect(cursor.remaining == 0, "codec_zenoh_network_envelope source 7: the decode left bytes of the frame unread")
+        #expect(decoded.body == value.body, "codec_zenoh_network_envelope source 0: the decode presents another body")
+    }
+
+
 }
 
 // MARK: - codec: codec_zenoh_oam
@@ -8429,6 +13965,38 @@ private func expectClose(_ actual: Double, _ expected: Double, _ label: String) 
 
     // Compile-only probe: the oracle holds no case this fixture's field shape can express.
     _ = CodecZenohOam.frameLength
+
+    do {
+        let value = CodecZenohOam(header: 31, id: 1, extensions: nil, body: .codecZenohExtUnit(CodecZenohExtUnit()))
+        var sink = BytesSink()
+        try CodecZenohOam.encodeSource(value, into: &sink)
+        let expected: [UInt8] = [31, 1]
+        #expect(sink.bytes == expected, "codec_zenoh_oam source 0: an OAM of no body: enc 0")
+        var cursor = SceCursor(sink.bytes)
+        let decoded = try CodecZenohOam.decode(&cursor)
+        #expect(cursor.remaining == 0, "codec_zenoh_oam source 0: the decode left bytes of the frame unread")
+        #expect(decoded.header == value.header, "codec_zenoh_oam source 0: the decode presents another header")
+        #expect(decoded.id == value.id, "codec_zenoh_oam source 1: the decode presents another id")
+        #expect(decoded.extensions == value.extensions, "codec_zenoh_oam source 2: the decode presents another extensions")
+        #expect(decoded.body == value.body, "codec_zenoh_oam source 3: the decode presents another body")
+    }
+    do {
+        let bound0 = try #require(BoundedList<CodecZenohExtEntry, CodecZenohOam.ExtensionsBound>([CodecZenohExtEntry(header: 1, body: .codecZenohExtUnit(CodecZenohExtUnit()))]))
+        let bound1 = try #require(BoundedBytes<CodecZenohExtZbuf.ValueBound>([5]))
+        let value = CodecZenohOam(header: 223, id: 128, extensions: bound0, body: .codecZenohExtZbuf(CodecZenohExtZbuf(value: bound1)))
+        var sink = BytesSink()
+        try CodecZenohOam.encodeSource(value, into: &sink)
+        let expected: [UInt8] = [223, 128, 1, 1, 1, 5]
+        #expect(sink.bytes == expected, "codec_zenoh_oam source 1: Z derived from the chain, enc 2 from the zbuf arm")
+        var cursor = SceCursor(sink.bytes)
+        let decoded = try CodecZenohOam.decode(&cursor)
+        #expect(cursor.remaining == 0, "codec_zenoh_oam source 1: the decode left bytes of the frame unread")
+        #expect(decoded.header == value.header, "codec_zenoh_oam source 0: the decode presents another header")
+        #expect(decoded.id == value.id, "codec_zenoh_oam source 1: the decode presents another id")
+        #expect(decoded.extensions == value.extensions, "codec_zenoh_oam source 2: the decode presents another extensions")
+        #expect(decoded.body == value.body, "codec_zenoh_oam source 3: the decode presents another body")
+    }
+
 
 }
 
@@ -8439,6 +14007,52 @@ private func expectClose(_ actual: Double, _ expected: Double, _ label: String) 
     // Compile-only probe: the oracle holds no case this fixture's field shape can express.
     _ = CodecZenohOpenBody.frameLength
 
+    do {
+        let bound0 = try #require(BoundedBytes<CodecZenohOpenBody.CookieBound>([1, 2]))
+        let value = CodecZenohOpenBody(lease: 10, initial_sn: 0, cookie: bound0)
+        var sink = BytesSink()
+        try CodecZenohOpenBody.encodeSource(value, into: &sink)
+        let expected: [UInt8] = [10, 0, 2, 1, 2]
+        #expect(sink.bytes == expected, "codec_zenoh_open_body source 0: A clear: a cookie")
+        var cursor = SceCursor(sink.bytes)
+        let decoded = try CodecZenohOpenBody.decode(&cursor, A: 0)
+        #expect(cursor.remaining == 0, "codec_zenoh_open_body source 0: the decode left bytes of the frame unread")
+        #expect(decoded.lease == value.lease, "codec_zenoh_open_body source 0: the decode presents another lease")
+        #expect(decoded.initial_sn == value.initial_sn, "codec_zenoh_open_body source 1: the decode presents another initial_sn")
+        #expect(decoded.cookie == value.cookie, "codec_zenoh_open_body source 2: the decode presents another cookie")
+        #expect(CodecZenohOpenBody.inputA(value) == 0, "codec_zenoh_open_body source 3: the decode presents another flag input A")
+    }
+    do {
+        let value = CodecZenohOpenBody(lease: 10, initial_sn: 128, cookie: nil)
+        var sink = BytesSink()
+        try CodecZenohOpenBody.encodeSource(value, into: &sink)
+        let expected: [UInt8] = [10, 128, 1]
+        #expect(sink.bytes == expected, "codec_zenoh_open_body source 1: A set: no cookie")
+        var cursor = SceCursor(sink.bytes)
+        let decoded = try CodecZenohOpenBody.decode(&cursor, A: 1)
+        #expect(cursor.remaining == 0, "codec_zenoh_open_body source 1: the decode left bytes of the frame unread")
+        #expect(decoded.lease == value.lease, "codec_zenoh_open_body source 0: the decode presents another lease")
+        #expect(decoded.initial_sn == value.initial_sn, "codec_zenoh_open_body source 1: the decode presents another initial_sn")
+        #expect(decoded.cookie == value.cookie, "codec_zenoh_open_body source 2: the decode presents another cookie")
+        #expect(CodecZenohOpenBody.inputA(value) == 1, "codec_zenoh_open_body source 3: the decode presents another flag input A")
+    }
+    do {
+        let bound0 = try #require(BoundedBytes<CodecZenohOpenBody.CookieBound>([]))
+        let value = CodecZenohOpenBody(lease: 0, initial_sn: 0, cookie: bound0)
+        var sink = BytesSink()
+        try CodecZenohOpenBody.encodeSource(value, into: &sink)
+        let expected: [UInt8] = [0, 0, 0]
+        #expect(sink.bytes == expected, "codec_zenoh_open_body source 2: an empty cookie is present")
+        var cursor = SceCursor(sink.bytes)
+        let decoded = try CodecZenohOpenBody.decode(&cursor, A: 0)
+        #expect(cursor.remaining == 0, "codec_zenoh_open_body source 2: the decode left bytes of the frame unread")
+        #expect(decoded.lease == value.lease, "codec_zenoh_open_body source 0: the decode presents another lease")
+        #expect(decoded.initial_sn == value.initial_sn, "codec_zenoh_open_body source 1: the decode presents another initial_sn")
+        #expect(decoded.cookie == value.cookie, "codec_zenoh_open_body source 2: the decode presents another cookie")
+        #expect(CodecZenohOpenBody.inputA(value) == 0, "codec_zenoh_open_body source 3: the decode presents another flag input A")
+    }
+
+
 }
 
 // MARK: - codec: codec_zenoh_push
@@ -8447,6 +14061,33 @@ private func expectClose(_ actual: Double, _ expected: Double, _ label: String) 
 
     // Compile-only probe: the oracle holds no case this fixture's field shape can express.
     _ = CodecZenohPush.frameLength
+
+    do {
+        let value = CodecZenohPush(header: 29, body: .codecZenohPushBody(CodecZenohPushBody(header: 1, body: .codecZenohPut(CodecZenohPut(payload: 7)))))
+        var sink = BytesSink()
+        try CodecZenohPush.encodeSource(value, into: &sink)
+        let expected: [UInt8] = [29, 1, 7]
+        #expect(sink.bytes == expected, "codec_zenoh_push source 0: mid 0x1d, derived from the arm; a put")
+        var cursor = SceCursor(sink.bytes)
+        let decoded = try CodecZenohPush.decode(&cursor)
+        #expect(cursor.remaining == 0, "codec_zenoh_push source 0: the decode left bytes of the frame unread")
+        #expect(decoded.header == value.header, "codec_zenoh_push source 0: the decode presents another header")
+        #expect(decoded.body == value.body, "codec_zenoh_push source 1: the decode presents another body")
+    }
+    do {
+        let bound0 = try #require(CodecZenohPushUnknownTag(0x1E))
+        let value = CodecZenohPush(header: 62, body: .default(tag: bound0, body: CodecZenohPushBody(header: 2, body: .codecZenohDel(CodecZenohDel()))))
+        var sink = BytesSink()
+        try CodecZenohPush.encodeSource(value, into: &sink)
+        let expected: [UInt8] = [62, 2]
+        #expect(sink.bytes == expected, "codec_zenoh_push source 1: a mid no arm names: the default arm keeps it")
+        var cursor = SceCursor(sink.bytes)
+        let decoded = try CodecZenohPush.decode(&cursor)
+        #expect(cursor.remaining == 0, "codec_zenoh_push source 1: the decode left bytes of the frame unread")
+        #expect(decoded.header == value.header, "codec_zenoh_push source 0: the decode presents another header")
+        #expect(decoded.body == value.body, "codec_zenoh_push source 1: the decode presents another body")
+    }
+
 
 }
 
@@ -8457,6 +14098,45 @@ private func expectClose(_ actual: Double, _ expected: Double, _ label: String) 
     // Compile-only probe: the oracle holds no case this fixture's field shape can express.
     _ = CodecZenohPushBody.frameLength
 
+    do {
+        let value = CodecZenohPushBody(header: 1, body: .codecZenohPut(CodecZenohPut(payload: 7)))
+        var sink = BytesSink()
+        try CodecZenohPushBody.encodeSource(value, into: &sink)
+        let expected: [UInt8] = [1, 7]
+        #expect(sink.bytes == expected, "codec_zenoh_push_body source 0: mid 1: a put; the mid bits are derived from the arm")
+        var cursor = SceCursor(sink.bytes)
+        let decoded = try CodecZenohPushBody.decode(&cursor)
+        #expect(cursor.remaining == 0, "codec_zenoh_push_body source 0: the decode left bytes of the frame unread")
+        #expect(decoded.header == value.header, "codec_zenoh_push_body source 0: the decode presents another header")
+        #expect(decoded.body == value.body, "codec_zenoh_push_body source 1: the decode presents another body")
+    }
+    do {
+        let value = CodecZenohPushBody(header: 34, body: .codecZenohDel(CodecZenohDel()))
+        var sink = BytesSink()
+        try CodecZenohPushBody.encodeSource(value, into: &sink)
+        let expected: [UInt8] = [34]
+        #expect(sink.bytes == expected, "codec_zenoh_push_body source 1: mid 2: a del, the bits beside the tag kept")
+        var cursor = SceCursor(sink.bytes)
+        let decoded = try CodecZenohPushBody.decode(&cursor)
+        #expect(cursor.remaining == 0, "codec_zenoh_push_body source 1: the decode left bytes of the frame unread")
+        #expect(decoded.header == value.header, "codec_zenoh_push_body source 0: the decode presents another header")
+        #expect(decoded.body == value.body, "codec_zenoh_push_body source 1: the decode presents another body")
+    }
+    do {
+        let bound0 = try #require(CodecZenohPushBodyUnknownTag(0x10))
+        let value = CodecZenohPushBody(header: 240, body: .default(tag: bound0, body: CodecZenohPut(payload: 1)))
+        var sink = BytesSink()
+        try CodecZenohPushBody.encodeSource(value, into: &sink)
+        let expected: [UInt8] = [240, 1]
+        #expect(sink.bytes == expected, "codec_zenoh_push_body source 2: a mid no arm names: the default arm keeps it")
+        var cursor = SceCursor(sink.bytes)
+        let decoded = try CodecZenohPushBody.decode(&cursor)
+        #expect(cursor.remaining == 0, "codec_zenoh_push_body source 2: the decode left bytes of the frame unread")
+        #expect(decoded.header == value.header, "codec_zenoh_push_body source 0: the decode presents another header")
+        #expect(decoded.body == value.body, "codec_zenoh_push_body source 1: the decode presents another body")
+    }
+
+
 }
 
 // MARK: - codec: codec_zenoh_query
@@ -8465,6 +14145,38 @@ private func expectClose(_ actual: Double, _ expected: Double, _ label: String) 
 
     // Compile-only probe: the oracle holds no case this fixture's field shape can express.
     _ = CodecZenohQuery.frameLength
+
+    do {
+        let value = CodecZenohQuery(header: 3, consolidation: nil, parameters: nil, extensions: nil)
+        var sink = BytesSink()
+        try CodecZenohQuery.encodeSource(value, into: &sink)
+        let expected: [UInt8] = [3]
+        #expect(sink.bytes == expected, "codec_zenoh_query source 0: a bare query")
+        var cursor = SceCursor(sink.bytes)
+        let decoded = try CodecZenohQuery.decode(&cursor)
+        #expect(cursor.remaining == 0, "codec_zenoh_query source 0: the decode left bytes of the frame unread")
+        #expect(decoded.header == value.header, "codec_zenoh_query source 0: the decode presents another header")
+        #expect(decoded.consolidation == value.consolidation, "codec_zenoh_query source 1: the decode presents another consolidation")
+        #expect(decoded.parameters == value.parameters, "codec_zenoh_query source 2: the decode presents another parameters")
+        #expect(decoded.extensions == value.extensions, "codec_zenoh_query source 3: the decode presents another extensions")
+    }
+    do {
+        let bound0 = try #require(BoundedBytes<CodecZenohQuery.ParametersBound>([97, 61, 49]))
+        let bound1 = try #require(BoundedList<CodecZenohExtEntry, CodecZenohQuery.ExtensionsBound>([CodecZenohExtEntry(header: 1, body: .codecZenohExtUnit(CodecZenohExtUnit())), CodecZenohExtEntry(header: 34, body: .codecZenohExtZint(CodecZenohExtZint(value: 4)))]))
+        let value = CodecZenohQuery(header: 227, consolidation: 1, parameters: bound0, extensions: bound1)
+        var sink = BytesSink()
+        try CodecZenohQuery.encodeSource(value, into: &sink)
+        let expected: [UInt8] = [227, 1, 3, 97, 61, 49, 1, 34, 4]
+        #expect(sink.bytes == expected, "codec_zenoh_query source 1: C, P and Z derived; a chain read to the end of the frame")
+        var cursor = SceCursor(sink.bytes)
+        let decoded = try CodecZenohQuery.decode(&cursor)
+        #expect(cursor.remaining == 0, "codec_zenoh_query source 1: the decode left bytes of the frame unread")
+        #expect(decoded.header == value.header, "codec_zenoh_query source 0: the decode presents another header")
+        #expect(decoded.consolidation == value.consolidation, "codec_zenoh_query source 1: the decode presents another consolidation")
+        #expect(decoded.parameters == value.parameters, "codec_zenoh_query source 2: the decode presents another parameters")
+        #expect(decoded.extensions == value.extensions, "codec_zenoh_query source 3: the decode presents another extensions")
+    }
+
 
 }
 
@@ -8475,6 +14187,71 @@ private func expectClose(_ actual: Double, _ expected: Double, _ label: String) 
     // Compile-only probe: the oracle holds no case this fixture's field shape can express.
     _ = CodecZenohRequest.frameLength
 
+    do {
+        let bound0 = try #require(BoundedBytes<CodecZenohMsgPut.PayloadBound>([170]))
+        let value = CodecZenohRequest(header: 28, rid: 1, keyexpr: CodecZenohWireexpr(id: 5, suffix: nil), extensions: nil, body: .codecZenohMsgPut(CodecZenohMsgPut(header: 1, timestamp: nil, encoding: nil, extensions: nil, payload: bound0)))
+        var sink = BytesSink()
+        try CodecZenohRequest.encodeSource(value, into: &sink)
+        let expected: [UInt8] = [28, 1, 5, 1, 1, 170]
+        #expect(sink.bytes == expected, "codec_zenoh_request source 0: a put: its header's mid 1 is the tag")
+        var cursor = SceCursor(sink.bytes)
+        let decoded = try CodecZenohRequest.decode(&cursor)
+        #expect(cursor.remaining == 0, "codec_zenoh_request source 0: the decode left bytes of the frame unread")
+        #expect(decoded.header == value.header, "codec_zenoh_request source 0: the decode presents another header")
+        #expect(decoded.rid == value.rid, "codec_zenoh_request source 1: the decode presents another rid")
+        #expect(decoded.keyexpr == value.keyexpr, "codec_zenoh_request source 2: the decode presents another keyexpr")
+        #expect(decoded.extensions == value.extensions, "codec_zenoh_request source 3: the decode presents another extensions")
+        #expect(decoded.body == value.body, "codec_zenoh_request source 4: the decode presents another body")
+    }
+    do {
+        let bound0 = try #require(BoundedText<CodecZenohWireexpr.SuffixBound>("a"))
+        let value = CodecZenohRequest(header: 60, rid: 128, keyexpr: CodecZenohWireexpr(id: 5, suffix: bound0), extensions: nil, body: .codecZenohMsgDel(CodecZenohMsgDel(header: 2, timestamp: nil, extensions: nil)))
+        var sink = BytesSink()
+        try CodecZenohRequest.encodeSource(value, into: &sink)
+        let expected: [UInt8] = [60, 128, 1, 5, 1, 97, 2]
+        #expect(sink.bytes == expected, "codec_zenoh_request source 1: a del, the key expression's suffix setting N")
+        var cursor = SceCursor(sink.bytes)
+        let decoded = try CodecZenohRequest.decode(&cursor)
+        #expect(cursor.remaining == 0, "codec_zenoh_request source 1: the decode left bytes of the frame unread")
+        #expect(decoded.header == value.header, "codec_zenoh_request source 0: the decode presents another header")
+        #expect(decoded.rid == value.rid, "codec_zenoh_request source 1: the decode presents another rid")
+        #expect(decoded.keyexpr == value.keyexpr, "codec_zenoh_request source 2: the decode presents another keyexpr")
+        #expect(decoded.extensions == value.extensions, "codec_zenoh_request source 3: the decode presents another extensions")
+        #expect(decoded.body == value.body, "codec_zenoh_request source 4: the decode presents another body")
+    }
+    do {
+        let value = CodecZenohRequest(header: 28, rid: 2, keyexpr: CodecZenohWireexpr(id: 0, suffix: nil), extensions: nil, body: .codecZenohQuery(CodecZenohQuery(header: 3, consolidation: nil, parameters: nil, extensions: nil)))
+        var sink = BytesSink()
+        try CodecZenohRequest.encodeSource(value, into: &sink)
+        let expected: [UInt8] = [28, 2, 0, 3]
+        #expect(sink.bytes == expected, "codec_zenoh_request source 2: a query")
+        var cursor = SceCursor(sink.bytes)
+        let decoded = try CodecZenohRequest.decode(&cursor)
+        #expect(cursor.remaining == 0, "codec_zenoh_request source 2: the decode left bytes of the frame unread")
+        #expect(decoded.header == value.header, "codec_zenoh_request source 0: the decode presents another header")
+        #expect(decoded.rid == value.rid, "codec_zenoh_request source 1: the decode presents another rid")
+        #expect(decoded.keyexpr == value.keyexpr, "codec_zenoh_request source 2: the decode presents another keyexpr")
+        #expect(decoded.extensions == value.extensions, "codec_zenoh_request source 3: the decode presents another extensions")
+        #expect(decoded.body == value.body, "codec_zenoh_request source 4: the decode presents another body")
+    }
+    do {
+        let bound0 = try #require(CodecZenohRequestUnknownTag(0x7))
+        let value = CodecZenohRequest(header: 28, rid: 3, keyexpr: CodecZenohWireexpr(id: 0, suffix: nil), extensions: nil, body: .default(tag: bound0, body: CodecZenohQuery(header: 7, consolidation: nil, parameters: nil, extensions: nil)))
+        var sink = BytesSink()
+        try CodecZenohRequest.encodeSource(value, into: &sink)
+        let expected: [UInt8] = [28, 3, 0, 7]
+        #expect(sink.bytes == expected, "codec_zenoh_request source 3: a mid no arm names: the default query keeps it, its header stating it")
+        var cursor = SceCursor(sink.bytes)
+        let decoded = try CodecZenohRequest.decode(&cursor)
+        #expect(cursor.remaining == 0, "codec_zenoh_request source 3: the decode left bytes of the frame unread")
+        #expect(decoded.header == value.header, "codec_zenoh_request source 0: the decode presents another header")
+        #expect(decoded.rid == value.rid, "codec_zenoh_request source 1: the decode presents another rid")
+        #expect(decoded.keyexpr == value.keyexpr, "codec_zenoh_request source 2: the decode presents another keyexpr")
+        #expect(decoded.extensions == value.extensions, "codec_zenoh_request source 3: the decode presents another extensions")
+        #expect(decoded.body == value.body, "codec_zenoh_request source 4: the decode presents another body")
+    }
+
+
 }
 
 // MARK: - codec: codec_zenoh_response
@@ -8483,6 +14260,59 @@ private func expectClose(_ actual: Double, _ expected: Double, _ label: String) 
 
     // Compile-only probe: the oracle holds no case this fixture's field shape can express.
     _ = CodecZenohResponse.frameLength
+
+    do {
+        let value = CodecZenohResponse(header: 27, request_id: 1, key_id: 2, suffix: nil, extensions: nil, body: .codecZenohReply(CodecZenohReply(header: 4, consolidation: nil, extensions: nil, body: CodecZenohPushBody(header: 1, body: .codecZenohPut(CodecZenohPut(payload: 3))))))
+        var sink = BytesSink()
+        try CodecZenohResponse.encodeSource(value, into: &sink)
+        let expected: [UInt8] = [27, 1, 2, 4, 1, 3]
+        #expect(sink.bytes == expected, "codec_zenoh_response source 0: a reply holding a put")
+        var cursor = SceCursor(sink.bytes)
+        let decoded = try CodecZenohResponse.decode(&cursor)
+        #expect(cursor.remaining == 0, "codec_zenoh_response source 0: the decode left bytes of the frame unread")
+        #expect(decoded.header == value.header, "codec_zenoh_response source 0: the decode presents another header")
+        #expect(decoded.request_id == value.request_id, "codec_zenoh_response source 1: the decode presents another request_id")
+        #expect(decoded.key_id == value.key_id, "codec_zenoh_response source 2: the decode presents another key_id")
+        #expect(decoded.suffix == value.suffix, "codec_zenoh_response source 3: the decode presents another suffix")
+        #expect(decoded.extensions == value.extensions, "codec_zenoh_response source 4: the decode presents another extensions")
+        #expect(decoded.body == value.body, "codec_zenoh_response source 5: the decode presents another body")
+    }
+    do {
+        let bound0 = try #require(BoundedText<CodecZenohResponse.SuffixBound>("x"))
+        let bound1 = try #require(BoundedBytes<CodecZenohErr.PayloadBound>([1]))
+        let value = CodecZenohResponse(header: 59, request_id: 1, key_id: 2, suffix: bound0, extensions: nil, body: .codecZenohErr(CodecZenohErr(header: 5, encoding: nil, extensions: nil, payload: bound1)))
+        var sink = BytesSink()
+        try CodecZenohResponse.encodeSource(value, into: &sink)
+        let expected: [UInt8] = [59, 1, 2, 1, 120, 5, 1, 1]
+        #expect(sink.bytes == expected, "codec_zenoh_response source 1: an err, the suffix setting N")
+        var cursor = SceCursor(sink.bytes)
+        let decoded = try CodecZenohResponse.decode(&cursor)
+        #expect(cursor.remaining == 0, "codec_zenoh_response source 1: the decode left bytes of the frame unread")
+        #expect(decoded.header == value.header, "codec_zenoh_response source 0: the decode presents another header")
+        #expect(decoded.request_id == value.request_id, "codec_zenoh_response source 1: the decode presents another request_id")
+        #expect(decoded.key_id == value.key_id, "codec_zenoh_response source 2: the decode presents another key_id")
+        #expect(decoded.suffix == value.suffix, "codec_zenoh_response source 3: the decode presents another suffix")
+        #expect(decoded.extensions == value.extensions, "codec_zenoh_response source 4: the decode presents another extensions")
+        #expect(decoded.body == value.body, "codec_zenoh_response source 5: the decode presents another body")
+    }
+    do {
+        let bound0 = try #require(CodecZenohResponseUnknownTag(0x6))
+        let value = CodecZenohResponse(header: 27, request_id: 0, key_id: 0, suffix: nil, extensions: nil, body: .default(tag: bound0, body: CodecZenohReply(header: 6, consolidation: nil, extensions: nil, body: CodecZenohPushBody(header: 2, body: .codecZenohDel(CodecZenohDel())))))
+        var sink = BytesSink()
+        try CodecZenohResponse.encodeSource(value, into: &sink)
+        let expected: [UInt8] = [27, 0, 0, 6, 2]
+        #expect(sink.bytes == expected, "codec_zenoh_response source 2: a mid no arm names: the default reply keeps it")
+        var cursor = SceCursor(sink.bytes)
+        let decoded = try CodecZenohResponse.decode(&cursor)
+        #expect(cursor.remaining == 0, "codec_zenoh_response source 2: the decode left bytes of the frame unread")
+        #expect(decoded.header == value.header, "codec_zenoh_response source 0: the decode presents another header")
+        #expect(decoded.request_id == value.request_id, "codec_zenoh_response source 1: the decode presents another request_id")
+        #expect(decoded.key_id == value.key_id, "codec_zenoh_response source 2: the decode presents another key_id")
+        #expect(decoded.suffix == value.suffix, "codec_zenoh_response source 3: the decode presents another suffix")
+        #expect(decoded.extensions == value.extensions, "codec_zenoh_response source 4: the decode presents another extensions")
+        #expect(decoded.body == value.body, "codec_zenoh_response source 5: the decode presents another body")
+    }
+
 
 }
 
@@ -8493,6 +14323,35 @@ private func expectClose(_ actual: Double, _ expected: Double, _ label: String) 
     // Compile-only probe: the oracle holds no case this fixture's field shape can express.
     _ = CodecZenohResponseFinal.frameLength
 
+    do {
+        let value = CodecZenohResponseFinal(header: 26, request_id: 7, extensions: nil)
+        var sink = BytesSink()
+        try CodecZenohResponseFinal.encodeSource(value, into: &sink)
+        let expected: [UInt8] = [26, 7]
+        #expect(sink.bytes == expected, "codec_zenoh_response_final source 0: a bare final response")
+        var cursor = SceCursor(sink.bytes)
+        let decoded = try CodecZenohResponseFinal.decode(&cursor)
+        #expect(cursor.remaining == 0, "codec_zenoh_response_final source 0: the decode left bytes of the frame unread")
+        #expect(decoded.header == value.header, "codec_zenoh_response_final source 0: the decode presents another header")
+        #expect(decoded.request_id == value.request_id, "codec_zenoh_response_final source 1: the decode presents another request_id")
+        #expect(decoded.extensions == value.extensions, "codec_zenoh_response_final source 2: the decode presents another extensions")
+    }
+    do {
+        let bound0 = try #require(BoundedList<CodecZenohExtEntry, CodecZenohResponseFinal.ExtensionsBound>([CodecZenohExtEntry(header: 129, body: .codecZenohExtUnit(CodecZenohExtUnit())), CodecZenohExtEntry(header: 2, body: .codecZenohExtUnit(CodecZenohExtUnit()))]))
+        let value = CodecZenohResponseFinal(header: 154, request_id: 128, extensions: bound0)
+        var sink = BytesSink()
+        try CodecZenohResponseFinal.encodeSource(value, into: &sink)
+        let expected: [UInt8] = [154, 128, 1, 129, 2]
+        #expect(sink.bytes == expected, "codec_zenoh_response_final source 1: Z derived from the chain")
+        var cursor = SceCursor(sink.bytes)
+        let decoded = try CodecZenohResponseFinal.decode(&cursor)
+        #expect(cursor.remaining == 0, "codec_zenoh_response_final source 1: the decode left bytes of the frame unread")
+        #expect(decoded.header == value.header, "codec_zenoh_response_final source 0: the decode presents another header")
+        #expect(decoded.request_id == value.request_id, "codec_zenoh_response_final source 1: the decode presents another request_id")
+        #expect(decoded.extensions == value.extensions, "codec_zenoh_response_final source 2: the decode presents another extensions")
+    }
+
+
 }
 
 // MARK: - codec: codec_zenoh_scout
@@ -8501,6 +14360,62 @@ private func expectClose(_ actual: Double, _ expected: Double, _ label: String) 
 
     // Compile-only probe: the oracle holds no case this fixture's field shape can express.
     _ = CodecZenohScout.frameLength
+
+    do {
+        let value = CodecZenohScout(version: 2, cbyte: 5, zid: nil)
+        var sink = BytesSink()
+        try CodecZenohScout.encodeSource(value, into: &sink)
+        let expected: [UInt8] = [2, 5]
+        #expect(sink.bytes == expected, "codec_zenoh_scout source 0: I clear: no zid")
+        var cursor = SceCursor(sink.bytes)
+        let decoded = try CodecZenohScout.decode(&cursor)
+        #expect(cursor.remaining == 0, "codec_zenoh_scout source 0: the decode left bytes of the frame unread")
+        #expect(decoded.version == value.version, "codec_zenoh_scout source 0: the decode presents another version")
+        #expect(decoded.cbyte == value.cbyte, "codec_zenoh_scout source 1: the decode presents another cbyte")
+        #expect(decoded.zid == value.zid, "codec_zenoh_scout source 2: the decode presents another zid")
+    }
+    do {
+        let bound0 = try #require(BoundedBytes<CodecZenohScout.ZidBound>([1, 2, 3]))
+        let value = CodecZenohScout(version: 2, cbyte: 45, zid: bound0)
+        var sink = BytesSink()
+        try CodecZenohScout.encodeSource(value, into: &sink)
+        let expected: [UInt8] = [2, 45, 1, 2, 3]
+        #expect(sink.bytes == expected, "codec_zenoh_scout source 1: I and zid_len_m1 are derived from the zid")
+        var cursor = SceCursor(sink.bytes)
+        let decoded = try CodecZenohScout.decode(&cursor)
+        #expect(cursor.remaining == 0, "codec_zenoh_scout source 1: the decode left bytes of the frame unread")
+        #expect(decoded.version == value.version, "codec_zenoh_scout source 0: the decode presents another version")
+        #expect(decoded.cbyte == value.cbyte, "codec_zenoh_scout source 1: the decode presents another cbyte")
+        #expect(decoded.zid == value.zid, "codec_zenoh_scout source 2: the decode presents another zid")
+    }
+    do {
+        let bound0 = try #require(BoundedBytes<CodecZenohScout.ZidBound>([16, 17, 18, 19, 20, 21, 22, 23, 24, 25, 26, 27, 28, 29, 30, 31]))
+        let value = CodecZenohScout(version: 2, cbyte: 253, zid: bound0)
+        var sink = BytesSink()
+        try CodecZenohScout.encodeSource(value, into: &sink)
+        let expected: [UInt8] = [2, 253, 16, 17, 18, 19, 20, 21, 22, 23, 24, 25, 26, 27, 28, 29, 30, 31]
+        #expect(sink.bytes == expected, "codec_zenoh_scout source 2: a zid at its bound")
+        var cursor = SceCursor(sink.bytes)
+        let decoded = try CodecZenohScout.decode(&cursor)
+        #expect(cursor.remaining == 0, "codec_zenoh_scout source 2: the decode left bytes of the frame unread")
+        #expect(decoded.version == value.version, "codec_zenoh_scout source 0: the decode presents another version")
+        #expect(decoded.cbyte == value.cbyte, "codec_zenoh_scout source 1: the decode presents another cbyte")
+        #expect(decoded.zid == value.zid, "codec_zenoh_scout source 2: the decode presents another zid")
+    }
+    do {
+        let value = CodecZenohScout(version: 2, cbyte: 240, zid: nil)
+        var sink = BytesSink()
+        try CodecZenohScout.encodeSource(value, into: &sink)
+        let expected: [UInt8] = [2, 240]
+        #expect(sink.bytes == expected, "codec_zenoh_scout source 3: no zid: the length bits are what the value presents")
+        var cursor = SceCursor(sink.bytes)
+        let decoded = try CodecZenohScout.decode(&cursor)
+        #expect(cursor.remaining == 0, "codec_zenoh_scout source 3: the decode left bytes of the frame unread")
+        #expect(decoded.version == value.version, "codec_zenoh_scout source 0: the decode presents another version")
+        #expect(decoded.cbyte == value.cbyte, "codec_zenoh_scout source 1: the decode presents another cbyte")
+        #expect(decoded.zid == value.zid, "codec_zenoh_scout source 2: the decode presents another zid")
+    }
+
 
 }
 
@@ -8511,6 +14426,38 @@ private func expectClose(_ actual: Double, _ expected: Double, _ label: String) 
     // Compile-only probe: the oracle holds no case this fixture's field shape can express.
     _ = CodecZenohSourceInfo.frameLength
 
+    do {
+        let bound0 = try #require(BoundedBytes<CodecZenohSourceInfo.ZidBound>([9]))
+        let value = CodecZenohSourceInfo(header: 0, zid: bound0, eid: 0, sn: 0)
+        var sink = BytesSink()
+        try CodecZenohSourceInfo.encodeSource(value, into: &sink)
+        let expected: [UInt8] = [0, 9, 0, 0]
+        #expect(sink.bytes == expected, "codec_zenoh_source_info source 0: a zid of one byte: the bits say zero")
+        var cursor = SceCursor(sink.bytes)
+        let decoded = try CodecZenohSourceInfo.decode(&cursor)
+        #expect(cursor.remaining == 0, "codec_zenoh_source_info source 0: the decode left bytes of the frame unread")
+        #expect(decoded.header == value.header, "codec_zenoh_source_info source 0: the decode presents another header")
+        #expect(decoded.zid == value.zid, "codec_zenoh_source_info source 1: the decode presents another zid")
+        #expect(decoded.eid == value.eid, "codec_zenoh_source_info source 2: the decode presents another eid")
+        #expect(decoded.sn == value.sn, "codec_zenoh_source_info source 3: the decode presents another sn")
+    }
+    do {
+        let bound0 = try #require(BoundedBytes<CodecZenohSourceInfo.ZidBound>([0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15]))
+        let value = CodecZenohSourceInfo(header: 243, zid: bound0, eid: 4294967295, sn: 128)
+        var sink = BytesSink()
+        try CodecZenohSourceInfo.encodeSource(value, into: &sink)
+        let expected: [UInt8] = [243, 0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 255, 255, 255, 255, 15, 128, 1]
+        #expect(sink.bytes == expected, "codec_zenoh_source_info source 1: a zid at its bound; a five-byte eid")
+        var cursor = SceCursor(sink.bytes)
+        let decoded = try CodecZenohSourceInfo.decode(&cursor)
+        #expect(cursor.remaining == 0, "codec_zenoh_source_info source 1: the decode left bytes of the frame unread")
+        #expect(decoded.header == value.header, "codec_zenoh_source_info source 0: the decode presents another header")
+        #expect(decoded.zid == value.zid, "codec_zenoh_source_info source 1: the decode presents another zid")
+        #expect(decoded.eid == value.eid, "codec_zenoh_source_info source 2: the decode presents another eid")
+        #expect(decoded.sn == value.sn, "codec_zenoh_source_info source 3: the decode presents another sn")
+    }
+
+
 }
 
 // MARK: - codec: codec_zenoh_source_info_ext
@@ -8519,6 +14466,32 @@ private func expectClose(_ actual: Double, _ expected: Double, _ label: String) 
 
     // Compile-only probe: the oracle holds no case this fixture's field shape can express.
     _ = CodecZenohSourceInfoExt.frameLength
+
+    do {
+        let bound0 = try #require(BoundedBytes<CodecZenohSourceInfo.ZidBound>([1]))
+        let value = CodecZenohSourceInfoExt(info: CodecZenohSourceInfo(header: 0, zid: bound0, eid: 0, sn: 0))
+        var sink = BytesSink()
+        try CodecZenohSourceInfoExt.encodeSource(value, into: &sink)
+        let expected: [UInt8] = [4, 0, 1, 0, 0]
+        #expect(sink.bytes == expected, "codec_zenoh_source_info_ext source 0: the size is derived from the body's frame")
+        var cursor = SceCursor(sink.bytes)
+        let decoded = try CodecZenohSourceInfoExt.decode(&cursor)
+        #expect(cursor.remaining == 0, "codec_zenoh_source_info_ext source 0: the decode left bytes of the frame unread")
+        #expect(decoded.info == value.info, "codec_zenoh_source_info_ext source 0: the decode presents another info")
+    }
+    do {
+        let bound0 = try #require(BoundedBytes<CodecZenohSourceInfo.ZidBound>([0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15]))
+        let value = CodecZenohSourceInfoExt(info: CodecZenohSourceInfo(header: 240, zid: bound0, eid: 128, sn: 1))
+        var sink = BytesSink()
+        try CodecZenohSourceInfoExt.encodeSource(value, into: &sink)
+        let expected: [UInt8] = [20, 240, 0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 128, 1, 1]
+        #expect(sink.bytes == expected, "codec_zenoh_source_info_ext source 1: a body with a zid at its bound")
+        var cursor = SceCursor(sink.bytes)
+        let decoded = try CodecZenohSourceInfoExt.decode(&cursor)
+        #expect(cursor.remaining == 0, "codec_zenoh_source_info_ext source 1: the decode left bytes of the frame unread")
+        #expect(decoded.info == value.info, "codec_zenoh_source_info_ext source 0: the decode presents another info")
+    }
+
 
 }
 
@@ -8529,6 +14502,34 @@ private func expectClose(_ actual: Double, _ expected: Double, _ label: String) 
     // Compile-only probe: the oracle holds no case this fixture's field shape can express.
     _ = CodecZenohTimestamp.frameLength
 
+    do {
+        let bound0 = try #require(BoundedBytes<CodecZenohTimestamp.ZidBound>([]))
+        let value = CodecZenohTimestamp(time: 0, zid: bound0)
+        var sink = BytesSink()
+        try CodecZenohTimestamp.encodeSource(value, into: &sink)
+        let expected: [UInt8] = [0, 0]
+        #expect(sink.bytes == expected, "codec_zenoh_timestamp source 0: time zero and no zid")
+        var cursor = SceCursor(sink.bytes)
+        let decoded = try CodecZenohTimestamp.decode(&cursor)
+        #expect(cursor.remaining == 0, "codec_zenoh_timestamp source 0: the decode left bytes of the frame unread")
+        #expect(decoded.time == value.time, "codec_zenoh_timestamp source 0: the decode presents another time")
+        #expect(decoded.zid == value.zid, "codec_zenoh_timestamp source 1: the decode presents another zid")
+    }
+    do {
+        let bound0 = try #require(BoundedBytes<CodecZenohTimestamp.ZidBound>([0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15]))
+        let value = CodecZenohTimestamp(time: 128, zid: bound0)
+        var sink = BytesSink()
+        try CodecZenohTimestamp.encodeSource(value, into: &sink)
+        let expected: [UInt8] = [128, 1, 16, 0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15]
+        #expect(sink.bytes == expected, "codec_zenoh_timestamp source 1: a two-byte time and a zid at its bound")
+        var cursor = SceCursor(sink.bytes)
+        let decoded = try CodecZenohTimestamp.decode(&cursor)
+        #expect(cursor.remaining == 0, "codec_zenoh_timestamp source 1: the decode left bytes of the frame unread")
+        #expect(decoded.time == value.time, "codec_zenoh_timestamp source 0: the decode presents another time")
+        #expect(decoded.zid == value.zid, "codec_zenoh_timestamp source 1: the decode presents another zid")
+    }
+
+
 }
 
 // MARK: - codec: codec_zenoh_timestamp_ext
@@ -8537,6 +14538,32 @@ private func expectClose(_ actual: Double, _ expected: Double, _ label: String) 
 
     // Compile-only probe: the oracle holds no case this fixture's field shape can express.
     _ = CodecZenohTimestampExt.frameLength
+
+    do {
+        let bound0 = try #require(BoundedBytes<CodecZenohTimestamp.ZidBound>([]))
+        let value = CodecZenohTimestampExt(ts: CodecZenohTimestamp(time: 0, zid: bound0))
+        var sink = BytesSink()
+        try CodecZenohTimestampExt.encodeSource(value, into: &sink)
+        let expected: [UInt8] = [2, 0, 0]
+        #expect(sink.bytes == expected, "codec_zenoh_timestamp_ext source 0: the size is derived from the body's frame")
+        var cursor = SceCursor(sink.bytes)
+        let decoded = try CodecZenohTimestampExt.decode(&cursor)
+        #expect(cursor.remaining == 0, "codec_zenoh_timestamp_ext source 0: the decode left bytes of the frame unread")
+        #expect(decoded.ts == value.ts, "codec_zenoh_timestamp_ext source 0: the decode presents another ts")
+    }
+    do {
+        let bound0 = try #require(BoundedBytes<CodecZenohTimestamp.ZidBound>([1, 2, 3]))
+        let value = CodecZenohTimestampExt(ts: CodecZenohTimestamp(time: 16384, zid: bound0))
+        var sink = BytesSink()
+        try CodecZenohTimestampExt.encodeSource(value, into: &sink)
+        let expected: [UInt8] = [7, 128, 128, 1, 3, 1, 2, 3]
+        #expect(sink.bytes == expected, "codec_zenoh_timestamp_ext source 1: a body of three VLE bytes and a zid")
+        var cursor = SceCursor(sink.bytes)
+        let decoded = try CodecZenohTimestampExt.decode(&cursor)
+        #expect(cursor.remaining == 0, "codec_zenoh_timestamp_ext source 1: the decode left bytes of the frame unread")
+        #expect(decoded.ts == value.ts, "codec_zenoh_timestamp_ext source 0: the decode presents another ts")
+    }
+
 
 }
 
@@ -8547,6 +14574,30 @@ private func expectClose(_ actual: Double, _ expected: Double, _ label: String) 
     // Compile-only probe: the oracle holds no case this fixture's field shape can express.
     _ = CodecZenohUndeclKexpr.frameLength
 
+    do {
+        let value = CodecZenohUndeclKexpr(id: 0)
+        var sink = BytesSink()
+        try CodecZenohUndeclKexpr.encodeSource(value, into: &sink)
+        let expected: [UInt8] = [0]
+        #expect(sink.bytes == expected, "codec_zenoh_undecl_kexpr source 0: id zero")
+        var cursor = SceCursor(sink.bytes)
+        let decoded = try CodecZenohUndeclKexpr.decode(&cursor)
+        #expect(cursor.remaining == 0, "codec_zenoh_undecl_kexpr source 0: the decode left bytes of the frame unread")
+        #expect(decoded.id == value.id, "codec_zenoh_undecl_kexpr source 0: the decode presents another id")
+    }
+    do {
+        let value = CodecZenohUndeclKexpr(id: 65535)
+        var sink = BytesSink()
+        try CodecZenohUndeclKexpr.encodeSource(value, into: &sink)
+        let expected: [UInt8] = [255, 255, 3]
+        #expect(sink.bytes == expected, "codec_zenoh_undecl_kexpr source 1: the largest id: three VLE bytes")
+        var cursor = SceCursor(sink.bytes)
+        let decoded = try CodecZenohUndeclKexpr.decode(&cursor)
+        #expect(cursor.remaining == 0, "codec_zenoh_undecl_kexpr source 1: the decode left bytes of the frame unread")
+        #expect(decoded.id == value.id, "codec_zenoh_undecl_kexpr source 0: the decode presents another id")
+    }
+
+
 }
 
 // MARK: - codec: codec_zenoh_undecl_queryable
@@ -8555,6 +14606,34 @@ private func expectClose(_ actual: Double, _ expected: Double, _ label: String) 
 
     // Compile-only probe: the oracle holds no case this fixture's field shape can express.
     _ = CodecZenohUndeclQueryable.frameLength
+
+    do {
+        let value = CodecZenohUndeclQueryable(id: 1, ext_keyexpr: nil)
+        var sink = BytesSink()
+        try CodecZenohUndeclQueryable.encodeSource(value, into: &sink)
+        let expected: [UInt8] = [1]
+        #expect(sink.bytes == expected, "codec_zenoh_undecl_queryable source 0: Z clear: the id alone")
+        var cursor = SceCursor(sink.bytes)
+        let decoded = try CodecZenohUndeclQueryable.decode(&cursor, Z: 0)
+        #expect(cursor.remaining == 0, "codec_zenoh_undecl_queryable source 0: the decode left bytes of the frame unread")
+        #expect(decoded.id == value.id, "codec_zenoh_undecl_queryable source 0: the decode presents another id")
+        #expect(decoded.ext_keyexpr == value.ext_keyexpr, "codec_zenoh_undecl_queryable source 1: the decode presents another ext_keyexpr")
+        #expect(CodecZenohUndeclQueryable.inputZ(value) == 0, "codec_zenoh_undecl_queryable source 2: the decode presents another flag input Z")
+    }
+    do {
+        let value = CodecZenohUndeclQueryable(id: 128, ext_keyexpr: CodecZenohDeclExtKeyexpr(outer_header: 15, inner: CodecZenohDeclExtKeyexprInner(inner_header: 0, id: 5, suffix: nil)))
+        var sink = BytesSink()
+        try CodecZenohUndeclQueryable.encodeSource(value, into: &sink)
+        let expected: [UInt8] = [128, 1, 15, 2, 0, 5]
+        #expect(sink.bytes == expected, "codec_zenoh_undecl_queryable source 1: Z set: the key expression extension")
+        var cursor = SceCursor(sink.bytes)
+        let decoded = try CodecZenohUndeclQueryable.decode(&cursor, Z: 1)
+        #expect(cursor.remaining == 0, "codec_zenoh_undecl_queryable source 1: the decode left bytes of the frame unread")
+        #expect(decoded.id == value.id, "codec_zenoh_undecl_queryable source 0: the decode presents another id")
+        #expect(decoded.ext_keyexpr == value.ext_keyexpr, "codec_zenoh_undecl_queryable source 1: the decode presents another ext_keyexpr")
+        #expect(CodecZenohUndeclQueryable.inputZ(value) == 1, "codec_zenoh_undecl_queryable source 2: the decode presents another flag input Z")
+    }
+
 
 }
 
@@ -8565,6 +14644,35 @@ private func expectClose(_ actual: Double, _ expected: Double, _ label: String) 
     // Compile-only probe: the oracle holds no case this fixture's field shape can express.
     _ = CodecZenohUndeclSubscriber.frameLength
 
+    do {
+        let value = CodecZenohUndeclSubscriber(id: 2, ext_keyexpr: nil)
+        var sink = BytesSink()
+        try CodecZenohUndeclSubscriber.encodeSource(value, into: &sink)
+        let expected: [UInt8] = [2]
+        #expect(sink.bytes == expected, "codec_zenoh_undecl_subscriber source 0: Z clear: the id alone")
+        var cursor = SceCursor(sink.bytes)
+        let decoded = try CodecZenohUndeclSubscriber.decode(&cursor, Z: 0)
+        #expect(cursor.remaining == 0, "codec_zenoh_undecl_subscriber source 0: the decode left bytes of the frame unread")
+        #expect(decoded.id == value.id, "codec_zenoh_undecl_subscriber source 0: the decode presents another id")
+        #expect(decoded.ext_keyexpr == value.ext_keyexpr, "codec_zenoh_undecl_subscriber source 1: the decode presents another ext_keyexpr")
+        #expect(CodecZenohUndeclSubscriber.inputZ(value) == 0, "codec_zenoh_undecl_subscriber source 2: the decode presents another flag input Z")
+    }
+    do {
+        let bound0 = try #require(BoundedBytes<CodecZenohDeclExtKeyexprInner.SuffixBound>([97]))
+        let value = CodecZenohUndeclSubscriber(id: 3, ext_keyexpr: CodecZenohDeclExtKeyexpr(outer_header: 15, inner: CodecZenohDeclExtKeyexprInner(inner_header: 3, id: 1, suffix: bound0)))
+        var sink = BytesSink()
+        try CodecZenohUndeclSubscriber.encodeSource(value, into: &sink)
+        let expected: [UInt8] = [3, 15, 3, 3, 1, 97]
+        #expect(sink.bytes == expected, "codec_zenoh_undecl_subscriber source 1: Z set: the extension with a suffix")
+        var cursor = SceCursor(sink.bytes)
+        let decoded = try CodecZenohUndeclSubscriber.decode(&cursor, Z: 1)
+        #expect(cursor.remaining == 0, "codec_zenoh_undecl_subscriber source 1: the decode left bytes of the frame unread")
+        #expect(decoded.id == value.id, "codec_zenoh_undecl_subscriber source 0: the decode presents another id")
+        #expect(decoded.ext_keyexpr == value.ext_keyexpr, "codec_zenoh_undecl_subscriber source 1: the decode presents another ext_keyexpr")
+        #expect(CodecZenohUndeclSubscriber.inputZ(value) == 1, "codec_zenoh_undecl_subscriber source 2: the decode presents another flag input Z")
+    }
+
+
 }
 
 // MARK: - codec: codec_zenoh_undecl_token
@@ -8574,6 +14682,34 @@ private func expectClose(_ actual: Double, _ expected: Double, _ label: String) 
     // Compile-only probe: the oracle holds no case this fixture's field shape can express.
     _ = CodecZenohUndeclToken.frameLength
 
+    do {
+        let value = CodecZenohUndeclToken(id: 0, ext_keyexpr: nil)
+        var sink = BytesSink()
+        try CodecZenohUndeclToken.encodeSource(value, into: &sink)
+        let expected: [UInt8] = [0]
+        #expect(sink.bytes == expected, "codec_zenoh_undecl_token source 0: Z clear: the id alone")
+        var cursor = SceCursor(sink.bytes)
+        let decoded = try CodecZenohUndeclToken.decode(&cursor, Z: 0)
+        #expect(cursor.remaining == 0, "codec_zenoh_undecl_token source 0: the decode left bytes of the frame unread")
+        #expect(decoded.id == value.id, "codec_zenoh_undecl_token source 0: the decode presents another id")
+        #expect(decoded.ext_keyexpr == value.ext_keyexpr, "codec_zenoh_undecl_token source 1: the decode presents another ext_keyexpr")
+        #expect(CodecZenohUndeclToken.inputZ(value) == 0, "codec_zenoh_undecl_token source 2: the decode presents another flag input Z")
+    }
+    do {
+        let value = CodecZenohUndeclToken(id: 9, ext_keyexpr: CodecZenohDeclExtKeyexpr(outer_header: 15, inner: CodecZenohDeclExtKeyexprInner(inner_header: 0, id: 0, suffix: nil)))
+        var sink = BytesSink()
+        try CodecZenohUndeclToken.encodeSource(value, into: &sink)
+        let expected: [UInt8] = [9, 15, 2, 0, 0]
+        #expect(sink.bytes == expected, "codec_zenoh_undecl_token source 1: Z set: the key expression extension")
+        var cursor = SceCursor(sink.bytes)
+        let decoded = try CodecZenohUndeclToken.decode(&cursor, Z: 1)
+        #expect(cursor.remaining == 0, "codec_zenoh_undecl_token source 1: the decode left bytes of the frame unread")
+        #expect(decoded.id == value.id, "codec_zenoh_undecl_token source 0: the decode presents another id")
+        #expect(decoded.ext_keyexpr == value.ext_keyexpr, "codec_zenoh_undecl_token source 1: the decode presents another ext_keyexpr")
+        #expect(CodecZenohUndeclToken.inputZ(value) == 1, "codec_zenoh_undecl_token source 2: the decode presents another flag input Z")
+    }
+
+
 }
 
 // MARK: - codec: codec_zenoh_wireexpr
@@ -8582,6 +14718,49 @@ private func expectClose(_ actual: Double, _ expected: Double, _ label: String) 
 
     // Compile-only probe: the oracle holds no case this fixture's field shape can express.
     _ = CodecZenohWireexpr.frameLength
+
+    do {
+        let value = CodecZenohWireexpr(id: 5, suffix: nil)
+        var sink = BytesSink()
+        try CodecZenohWireexpr.encodeSource(value, into: &sink)
+        let expected: [UInt8] = [5]
+        #expect(sink.bytes == expected, "codec_zenoh_wireexpr source 0: N clear: the id alone")
+        var cursor = SceCursor(sink.bytes)
+        let decoded = try CodecZenohWireexpr.decode(&cursor, N: 0)
+        #expect(cursor.remaining == 0, "codec_zenoh_wireexpr source 0: the decode left bytes of the frame unread")
+        #expect(decoded.id == value.id, "codec_zenoh_wireexpr source 0: the decode presents another id")
+        #expect(decoded.suffix == value.suffix, "codec_zenoh_wireexpr source 1: the decode presents another suffix")
+        #expect(CodecZenohWireexpr.inputN(value) == 0, "codec_zenoh_wireexpr source 2: the decode presents another flag input N")
+    }
+    do {
+        let bound0 = try #require(BoundedText<CodecZenohWireexpr.SuffixBound>("a/b"))
+        let value = CodecZenohWireexpr(id: 128, suffix: bound0)
+        var sink = BytesSink()
+        try CodecZenohWireexpr.encodeSource(value, into: &sink)
+        let expected: [UInt8] = [128, 1, 3, 97, 47, 98]
+        #expect(sink.bytes == expected, "codec_zenoh_wireexpr source 1: N set: the suffix and its length follow")
+        var cursor = SceCursor(sink.bytes)
+        let decoded = try CodecZenohWireexpr.decode(&cursor, N: 1)
+        #expect(cursor.remaining == 0, "codec_zenoh_wireexpr source 1: the decode left bytes of the frame unread")
+        #expect(decoded.id == value.id, "codec_zenoh_wireexpr source 0: the decode presents another id")
+        #expect(decoded.suffix == value.suffix, "codec_zenoh_wireexpr source 1: the decode presents another suffix")
+        #expect(CodecZenohWireexpr.inputN(value) == 1, "codec_zenoh_wireexpr source 2: the decode presents another flag input N")
+    }
+    do {
+        let bound0 = try #require(BoundedText<CodecZenohWireexpr.SuffixBound>(""))
+        let value = CodecZenohWireexpr(id: 1, suffix: bound0)
+        var sink = BytesSink()
+        try CodecZenohWireexpr.encodeSource(value, into: &sink)
+        let expected: [UInt8] = [1, 0]
+        #expect(sink.bytes == expected, "codec_zenoh_wireexpr source 2: an empty suffix is present")
+        var cursor = SceCursor(sink.bytes)
+        let decoded = try CodecZenohWireexpr.decode(&cursor, N: 1)
+        #expect(cursor.remaining == 0, "codec_zenoh_wireexpr source 2: the decode left bytes of the frame unread")
+        #expect(decoded.id == value.id, "codec_zenoh_wireexpr source 0: the decode presents another id")
+        #expect(decoded.suffix == value.suffix, "codec_zenoh_wireexpr source 1: the decode presents another suffix")
+        #expect(CodecZenohWireexpr.inputN(value) == 1, "codec_zenoh_wireexpr source 2: the decode presents another flag input N")
+    }
+
 
 }
 
@@ -9163,6 +15342,8 @@ private func expectClose(_ actual: Double, _ expected: Double, _ label: String) 
     // Compile-only probe: the oracle holds no case this fixture's field shape can express.
     // A map has no fixed length; the type is named by the initializer every codec offers.
     _ = Envelope()
+
+
 
 }
 

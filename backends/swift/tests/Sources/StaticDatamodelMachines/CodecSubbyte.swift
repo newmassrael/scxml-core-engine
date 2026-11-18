@@ -8,9 +8,19 @@
 
 import SceForgeRuntime
 
+/// The elements a value of `CodecSubbyte` presents, each a read-only property in the order the
+/// document declares them (docs/adr/0058 §1, docs/adr/0081 §1): what
+/// `CodecSubbyte.encodeSource(_:into:)` writes a frame from. A type of the host's own that
+/// declares them is written with no copy into `CodecSubbyte`, which conforms itself.
+public protocol CodecSubbyteSource {
+    var priority: UInt8 { get }
+    var channel: UInt8 { get }
+    var direction: UInt8 { get }
+}
+
 /// The frame this codec lays on the wire: 3 field(s) of integers, each at its
 /// byte offset and in its byte order. A value, so a host that reads one holds a copy.
-public struct CodecSubbyte: Equatable, Sendable {
+public struct CodecSubbyte: Equatable, Sendable, CodecSubbyteSource {
     /// The bytes of one frame.
     public static let frameLength = 1
 
@@ -50,13 +60,22 @@ public struct CodecSubbyte: Equatable, Sendable {
         return frame
     }
 
-    /// Writes the frame to `sink` in one write: a bounded sink that cannot hold all of it answers
+    /// Writes the frame of `source` to `sink` in one write, printed from the codec's encode plan
+    /// (docs/adr/0081): any type that presents the elements of `CodecSubbyteSource` is written,
+    /// with no copy into `CodecSubbyte`, and every other element of the frame is derived from
+    /// them. It refuses
+    /// nothing. A bounded sink that cannot hold all of the frame answers
     /// `bufferOverflow` and holds none of it.
-    public func encode<Sink: SceSink>(into sink: inout Sink) throws(CodecError) {
+    public static func encodeSource<Source: CodecSubbyteSource, Sink: SceSink>(_ source: Source, into sink: inout Sink) throws(CodecError) {
         var frame = [UInt8](repeating: 0, count: Self.frameLength)
-        frame[0] |= (self.priority & 0x7) << 5
-        frame[0] |= (self.channel & 0x7) << 2
-        frame[0] |= (self.direction & 0x3) << 0
+        frame[0] |= (source.priority & 0x7) << 5
+        frame[0] |= (source.channel & 0x7) << 2
+        frame[0] |= (source.direction & 0x3) << 0
         try sink.writeBytes(frame)
+    }
+
+    /// Writes the frame of this value to `sink`: `encodeSource` of itself.
+    public func encode<Sink: SceSink>(into sink: inout Sink) throws(CodecError) {
+        try Self.encodeSource(self, into: &sink)
     }
 }

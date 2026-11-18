@@ -8,12 +8,46 @@
 
 import SceForgeRuntime
 
+/// The elements of `CodecZenohJoin` the gates `S` decide together (docs/adr/0065 §6
+/// R4b, R4c): the elements present while the gates are as the one arm says. The encode derives the gates
+/// from whether a value holds it, and a decode makes the arm the gates of the frame name.
+public struct CodecZenohJoinS: Equatable, Sendable {
+    public var sn_res: UInt8
+    public var batch_size: UInt16
+
+    public init(sn_res: UInt8, batch_size: UInt16) {
+        self.sn_res = sn_res
+        self.batch_size = batch_size
+    }
+}
+
+/// The elements a value of `CodecZenohJoin` presents, each a read-only property in the order the
+/// document declares them (docs/adr/0058 §1, docs/adr/0081 §1): what
+/// `CodecZenohJoin.encodeSource(_:into:)` writes a frame from. A type of the host's own that
+/// declares them is written with no copy into `CodecZenohJoin`, which conforms itself.
+public protocol CodecZenohJoinSource {
+    var version: UInt8 { get }
+    var cbyte: UInt8 { get }
+    var zid: BoundedBytes<CodecZenohJoin.ZidBound> { get }
+    var s: CodecZenohJoinS? { get }
+    var lease: UInt64 { get }
+    var next_sn_reliable: UInt64 { get }
+    var next_sn_best_effort: UInt64 { get }
+}
+
 /// The frame this codec lays on the wire: 8 field(s) of integers, each at its
 /// byte offset and in its byte order. A value, so a host that reads one holds a copy.
-public struct CodecZenohJoin: Equatable, Sendable {
+public struct CodecZenohJoin: Equatable, Sendable, CodecZenohJoinSource {
     /// The fewest bytes a frame can have: its frame is read field by field, and a variable-length
     /// integer or a field of bytes may take more.
     public static let frameLength = 5
+
+    /// How many bytes `zid` holds on the wire, as the document bounds it (docs/adr/0065 §6
+    /// R1): its type is held to it where a value of it is made.
+    public enum ZidBound: SceByteBound {
+        public static let least = 1
+        public static let most: Int? = 16
+    }
 
     /// The field at byte 0, little-endian.
     public var version: UInt8 = 0
@@ -36,18 +70,8 @@ public struct CodecZenohJoin: Equatable, Sendable {
     }
 
     /// The bytes, as many as `cbyte.zid_len_m1` says, plus 1, as many as the document's `max-size` admits: a frame that says
-    /// more is refused with `lengthOutOfRange`, as is a value with more at its encode.
-    public var zid: [UInt8] = []
-
-    /// On the wire only when `(S & 0x1) != 0`; `nil` when it is not. An encode
-    /// writes it when it is not `nil`.
-    /// The field at byte 3, little-endian.
-    public var sn_res: UInt8? = nil
-
-    /// On the wire only when `(S & 0x1) != 0`; `nil` when it is not. An encode
-    /// writes it when it is not `nil`.
-    /// The field at byte 4, little-endian.
-    public var batch_size: UInt16? = nil
+    /// more is refused with `lengthOutOfRange`, and a value with more is no value of its type; the encode derives what it says.
+    public var zid: BoundedBytes<CodecZenohJoin.ZidBound> = .fewest
 
     /// A variable-length integer: base-128, the least significant group first, at most as many
     /// bytes as its type needs.
@@ -61,16 +85,18 @@ public struct CodecZenohJoin: Equatable, Sendable {
     /// bytes as its type needs.
     public var next_sn_best_effort: UInt64 = 0
 
+    /// The elements the gates `S` decide together, `nil` while they name no arm.
+    public var s: CodecZenohJoinS? = nil
+
     /// A frame of zeros, but for the bits a flag's `value` sets: what a holder that has read no
     /// frame yet holds, as a validator that composes this codec does until it is given one.
     public init() {}
 
-    public init(version: UInt8, cbyte: UInt8, zid: [UInt8], sn_res: UInt8?, batch_size: UInt16?, lease: UInt64, next_sn_reliable: UInt64, next_sn_best_effort: UInt64) {
+    public init(version: UInt8, cbyte: UInt8, zid: BoundedBytes<CodecZenohJoin.ZidBound>, s: CodecZenohJoinS?, lease: UInt64, next_sn_reliable: UInt64, next_sn_best_effort: UInt64) {
         self.version = version
         self.cbyte = cbyte
         self.zid = zid
-        self.sn_res = sn_res
-        self.batch_size = batch_size
+        self.s = s
         self.lease = lease
         self.next_sn_reliable = next_sn_reliable
         self.next_sn_best_effort = next_sn_best_effort
@@ -84,56 +110,67 @@ public struct CodecZenohJoin: Equatable, Sendable {
     /// and is refused like any other count past the end, and is no trap.
     public static func decode(_ cursor: inout SceCursor, S: UInt8) throws(CodecError) -> CodecZenohJoin {
         var reader = cursor
-        var frame = CodecZenohJoin()
-        frame.version = try reader.readInteger(UInt8.self, .little)
-        frame.cbyte = try reader.readInteger(UInt8.self, .little)
-        frame.zid = Array(try reader.readSlice(Int(clamping: ((frame.cbyte >> 4) & 0xF)) &+ (1)))
+        let version = try reader.readInteger(UInt8.self, .little)
+        let cbyte = try reader.readInteger(UInt8.self, .little)
+        let zid = try BoundedBytes<CodecZenohJoin.ZidBound>(decoding: Array(try reader.readSlice(Int(clamping: ((cbyte >> 4) & 0xF)) &+ (1))))
+        var sn_res: UInt8? = nil
         if (S & 0x1) != 0 {
-            frame.sn_res = try reader.readInteger(UInt8.self, .little)
+            sn_res = try reader.readInteger(UInt8.self, .little)
         }
+        var batch_size: UInt16? = nil
         if (S & 0x1) != 0 {
-            frame.batch_size = try reader.readInteger(UInt16.self, .little)
+            batch_size = try reader.readInteger(UInt16.self, .little)
         }
-        frame.lease = try reader.readVle(UInt64.self)
-        frame.next_sn_reliable = try reader.readVle(UInt64.self)
-        frame.next_sn_best_effort = try reader.readVle(UInt64.self)
+        let lease = try reader.readVle(UInt64.self)
+        let next_sn_reliable = try reader.readVle(UInt64.self)
+        let next_sn_best_effort = try reader.readVle(UInt64.self)
+        let s_group: CodecZenohJoinS?
+        if (S & 0x01) != 0 {
+            s_group = CodecZenohJoinS(sn_res: sn_res!, batch_size: batch_size!)
+        } else {
+            s_group = nil
+        }
         cursor = reader
-        return frame
+        return CodecZenohJoin(version: version, cbyte: cbyte, zid: zid, s: s_group, lease: lease, next_sn_reliable: next_sn_reliable, next_sn_best_effort: next_sn_best_effort)
     }
 
-    /// Writes the frame to `sink` in one write: a bounded sink that cannot hold all of it answers
+    /// Writes the frame of `source` to `sink` in one write, printed from the codec's encode plan
+    /// (docs/adr/0081): any type that presents the elements of `CodecZenohJoinSource` is written,
+    /// with no copy into `CodecZenohJoin`, and every other element of the frame is derived from
+    /// them. It refuses
+    /// nothing. A bounded sink that cannot hold all of the frame answers
     /// `bufferOverflow` and holds none of it.
-    public func encode<Sink: SceSink>(into sink: inout Sink, S: UInt8) throws(CodecError) {
-        if (S & 0x1) != 0 {
-            if self.sn_res == nil {
-                throw CodecError.presentIfMismatch
-            }
-        } else if self.sn_res != nil {
-            throw CodecError.presentIfMismatch
-        }
-        if (S & 0x1) != 0 {
-            if self.batch_size == nil {
-                throw CodecError.presentIfMismatch
-            }
-        } else if self.batch_size != nil {
-            throw CodecError.presentIfMismatch
-        }
-        if self.zid.count < 1 || self.zid.count > 16 {
-            throw CodecError.lengthOutOfRange
-        }
+    public static func encodeSource<Source: CodecZenohJoinSource, Sink: SceSink>(_ source: Source, into sink: inout Sink) throws(CodecError) {
+        var sn_res_member: UInt8? = nil
+        var batch_size_member: UInt16? = nil
+        if let held = source.s { sn_res_member = held.sn_res; batch_size_member = held.batch_size }
+        var cbyte_folded = source.cbyte
+        cbyte_folded = (cbyte_folded & ~0xF0) | ((UInt8(truncatingIfNeeded: (source.zid.byteCount - 1)) & 0xF) << 4)
         var frame: [UInt8] = []
-        appendInteger(self.version, to: &frame, .little)
-        appendInteger(self.cbyte, to: &frame, .little)
-        frame += self.zid
-        if let sn_res = self.sn_res {
-            appendInteger(sn_res, to: &frame, .little)
+        appendInteger(source.version, to: &frame, .little)
+        appendInteger(cbyte_folded, to: &frame, .little)
+        source.zid.append(to: &frame)
+        if let held = sn_res_member {
+            appendInteger(held, to: &frame, .little)
         }
-        if let batch_size = self.batch_size {
-            appendInteger(batch_size, to: &frame, .little)
+        if let held = batch_size_member {
+            appendInteger(held, to: &frame, .little)
         }
-        appendVle(self.lease, to: &frame)
-        appendVle(self.next_sn_reliable, to: &frame)
-        appendVle(self.next_sn_best_effort, to: &frame)
+        appendVle(source.lease, to: &frame)
+        appendVle(source.next_sn_reliable, to: &frame)
+        appendVle(source.next_sn_best_effort, to: &frame)
         try sink.writeBytes(frame)
+    }
+
+    /// The flag input `S` that `source` says, which the encode is not handed
+    /// (docs/adr/0065 §6 R4a): 1 or 0. A parent hands the decode this bit, and derives it from
+    /// here for the encode.
+    public static func inputS<Source: CodecZenohJoinSource>(_ source: Source) -> UInt8 {
+        (source.s != nil ? true : false) ? 1 : 0
+    }
+
+    /// Writes the frame of this value to `sink`: `encodeSource` of itself.
+    public func encode<Sink: SceSink>(into sink: inout Sink) throws(CodecError) {
+        try Self.encodeSource(self, into: &sink)
     }
 }

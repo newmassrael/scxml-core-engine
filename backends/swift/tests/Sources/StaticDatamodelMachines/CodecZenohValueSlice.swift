@@ -8,31 +8,42 @@
 
 import SceForgeRuntime
 
+/// The elements a value of `CodecZenohValueSlice` presents, each a read-only property in the order the
+/// document declares them (docs/adr/0058 §1, docs/adr/0081 §1): what
+/// `CodecZenohValueSlice.encodeSource(_:into:)` writes a frame from. A type of the host's own that
+/// declares them is written with no copy into `CodecZenohValueSlice`, which conforms itself.
+public protocol CodecZenohValueSliceSource {
+    var kind: UInt8 { get }
+    var data: BoundedBytes<CodecZenohValueSlice.DataBound> { get }
+}
+
 /// The frame this codec lays on the wire: 3 field(s) of integers, each at its
 /// byte offset and in its byte order. A value, so a host that reads one holds a copy.
-public struct CodecZenohValueSlice: Equatable, Sendable {
+public struct CodecZenohValueSlice: Equatable, Sendable, CodecZenohValueSliceSource {
     /// The fewest bytes a frame can have: its frame is read field by field, and a variable-length
     /// integer or a field of bytes may take more.
     public static let frameLength = 2
 
+    /// How many bytes `data` holds on the wire, as the document bounds it (docs/adr/0065 §6
+    /// R1): its type is held to it where a value of it is made.
+    public enum DataBound: SceByteBound {
+        public static let least = 0
+        public static let most: Int? = 4294967295
+    }
+
     /// The field at byte 0, big-endian.
     public var kind: UInt8 = 0
 
-    /// A variable-length integer: base-128, the least significant group first, at most as many
-    /// bytes as its type needs.
-    public var len: UInt64 = 0
-
     /// The bytes, as many as `len` says, as many as the document's `max-size` admits: a frame that says
-    /// more is refused with `lengthOutOfRange`, as is a value with more at its encode.
-    public var data: [UInt8] = []
+    /// more is refused with `lengthOutOfRange`, and a value with more is no value of its type; the encode derives what it says.
+    public var data: BoundedBytes<CodecZenohValueSlice.DataBound> = .fewest
 
     /// A frame of zeros, but for the bits a flag's `value` sets: what a holder that has read no
     /// frame yet holds, as a validator that composes this codec does until it is given one.
     public init() {}
 
-    public init(kind: UInt8, len: UInt64, data: [UInt8]) {
+    public init(kind: UInt8, data: BoundedBytes<CodecZenohValueSlice.DataBound>) {
         self.kind = kind
-        self.len = len
         self.data = data
     }
 
@@ -44,27 +55,33 @@ public struct CodecZenohValueSlice: Equatable, Sendable {
     /// and is refused like any other count past the end, and is no trap.
     public static func decode(_ cursor: inout SceCursor) throws(CodecError) -> CodecZenohValueSlice {
         var reader = cursor
-        var frame = CodecZenohValueSlice()
-        frame.kind = try reader.readInteger(UInt8.self, .big)
-        frame.len = try reader.readVle(UInt64.self)
-        if frame.len > 4294967295 {
+        let kind = try reader.readInteger(UInt8.self, .big)
+        let len = try reader.readVle(UInt64.self)
+        if len > 4294967295 {
             throw CodecError.lengthOutOfRange
         }
-        frame.data = Array(try reader.readSlice(Int(clamping: frame.len)))
+        let data = try BoundedBytes<CodecZenohValueSlice.DataBound>(decoding: Array(try reader.readSlice(Int(clamping: len))))
         cursor = reader
-        return frame
+        return CodecZenohValueSlice(kind: kind, data: data)
     }
 
-    /// Writes the frame to `sink` in one write: a bounded sink that cannot hold all of it answers
+    /// Writes the frame of `source` to `sink` in one write, printed from the codec's encode plan
+    /// (docs/adr/0081): any type that presents the elements of `CodecZenohValueSliceSource` is written,
+    /// with no copy into `CodecZenohValueSlice`, and every other element of the frame is derived from
+    /// them. It refuses
+    /// nothing. A bounded sink that cannot hold all of the frame answers
     /// `bufferOverflow` and holds none of it.
-    public func encode<Sink: SceSink>(into sink: inout Sink) throws(CodecError) {
-        if self.data.count > 4294967295 {
-            throw CodecError.lengthOutOfRange
-        }
+    public static func encodeSource<Source: CodecZenohValueSliceSource, Sink: SceSink>(_ source: Source, into sink: inout Sink) throws(CodecError) {
+        let len_derived: UInt64 = UInt64(source.data.byteCount)
         var frame: [UInt8] = []
-        appendInteger(self.kind, to: &frame, .big)
-        appendVle(self.len, to: &frame)
-        frame += self.data
+        appendInteger(source.kind, to: &frame, .big)
+        appendVle(len_derived, to: &frame)
+        source.data.append(to: &frame)
         try sink.writeBytes(frame)
+    }
+
+    /// Writes the frame of this value to `sink`: `encodeSource` of itself.
+    public func encode<Sink: SceSink>(into sink: inout Sink) throws(CodecError) {
+        try Self.encodeSource(self, into: &sink)
     }
 }

@@ -8,16 +8,25 @@
 
 import SceForgeRuntime
 
+/// The elements a value of `CodecZenohTimestampExt` presents, each a read-only property in the order the
+/// document declares them (docs/adr/0058 §1, docs/adr/0081 §1): what
+/// `CodecZenohTimestampExt.encodeSource(_:into:)` writes a frame from. A type of the host's own that
+/// declares them is written with no copy into `CodecZenohTimestampExt`, which conforms itself.
+public protocol CodecZenohTimestampExtSource {
+    /// What `ts` is presented as: a source of `CodecZenohTimestamp`, written by its encode.
+    associatedtype Ts_Source: CodecZenohTimestampSource
+    var ts: Ts_Source { get }
+}
+
 /// The frame this codec lays on the wire: 2 field(s) of integers, each at its
 /// byte offset and in its byte order. A value, so a host that reads one holds a copy.
-public struct CodecZenohTimestampExt: Equatable, Sendable {
+public struct CodecZenohTimestampExt: Equatable, Sendable, CodecZenohTimestampExtSource {
     /// The fewest bytes a frame can have: its frame is read field by field, and a variable-length
     /// integer or a field of bytes may take more.
     public static let frameLength = 1 + CodecZenohTimestamp.frameLength
 
-    /// A variable-length integer: base-128, the least significant group first, at most as many
-    /// bytes as its type needs.
-    public var ext_size: UInt64 = 0
+    /// The value presents `ts` as a value of its own codec.
+    public typealias Ts_Source = CodecZenohTimestamp
 
     /// A `CodecZenohTimestamp` laid in place: it has no bytes of its own, the frame holds its fields
     /// where this field stands, read from as many bytes as the document says an earlier field gives it, of which it need not take all.
@@ -27,8 +36,7 @@ public struct CodecZenohTimestampExt: Equatable, Sendable {
     /// frame yet holds, as a validator that composes this codec does until it is given one.
     public init() {}
 
-    public init(ext_size: UInt64, ts: CodecZenohTimestamp) {
-        self.ext_size = ext_size
+    public init(ts: Ts_Source) {
         self.ts = ts
     }
 
@@ -40,26 +48,34 @@ public struct CodecZenohTimestampExt: Equatable, Sendable {
     /// and is refused like any other count past the end, and is no trap.
     public static func decode(_ cursor: inout SceCursor) throws(CodecError) -> CodecZenohTimestampExt {
         var reader = cursor
-        var frame = CodecZenohTimestampExt()
-        frame.ext_size = try reader.readVle(UInt64.self)
-        let ts_inner_length = Int(clamping: frame.ext_size)
+        let ext_size = try reader.readVle(UInt64.self)
+        let ts_inner_length = Int(clamping: ext_size)
         var ts_inner = SceCursor(Array(try reader.peekSlice(ts_inner_length)))
-        frame.ts = try CodecZenohTimestamp.decode(&ts_inner)
+        let ts = try CodecZenohTimestamp.decode(&ts_inner)
         try reader.advance(ts_inner_length)
         cursor = reader
-        return frame
+        return CodecZenohTimestampExt(ts: ts)
     }
 
-    /// Writes the frame to `sink` in one write: a bounded sink that cannot hold all of it answers
+    /// Writes the frame of `source` to `sink` in one write, printed from the codec's encode plan
+    /// (docs/adr/0081): any type that presents the elements of `CodecZenohTimestampExtSource` is written,
+    /// with no copy into `CodecZenohTimestampExt`, and every other element of the frame is derived from
+    /// them. It refuses
+    /// nothing. A bounded sink that cannot hold all of the frame answers
     /// `bufferOverflow` and holds none of it.
-    public func encode<Sink: SceSink>(into sink: inout Sink) throws(CodecError) {
+    public static func encodeSource<Source: CodecZenohTimestampExtSource, Sink: SceSink>(_ source: Source, into sink: inout Sink) throws(CodecError) {
+        var ts_piece = BytesSink()
+        try CodecZenohTimestamp.encodeSource(source.ts, into: &ts_piece)
+        let ts_bytes = ts_piece.bytes
+        let ext_size_derived: UInt64 = UInt64(ts_bytes.count)
         var frame: [UInt8] = []
-        appendVle(self.ext_size, to: &frame)
-        do {
-            var piece = BytesSink()
-            try self.ts.encode(into: &piece)
-            frame += piece.bytes
-        }
+        appendVle(ext_size_derived, to: &frame)
+        frame += ts_bytes
         try sink.writeBytes(frame)
+    }
+
+    /// Writes the frame of this value to `sink`: `encodeSource` of itself.
+    public func encode<Sink: SceSink>(into sink: inout Sink) throws(CodecError) {
+        try Self.encodeSource(self, into: &sink)
     }
 }

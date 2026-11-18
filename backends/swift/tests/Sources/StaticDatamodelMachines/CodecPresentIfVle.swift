@@ -8,9 +8,18 @@
 
 import SceForgeRuntime
 
+/// The elements a value of `CodecPresentIfVle` presents, each a read-only property in the order the
+/// document declares them (docs/adr/0058 §1, docs/adr/0081 §1): what
+/// `CodecPresentIfVle.encodeSource(_:into:)` writes a frame from. A type of the host's own that
+/// declares them is written with no copy into `CodecPresentIfVle`, which conforms itself.
+public protocol CodecPresentIfVleSource {
+    var flags: UInt8 { get }
+    var optional_id: UInt64? { get }
+}
+
 /// The frame this codec lays on the wire: 2 field(s) of integers, each at its
 /// byte offset and in its byte order. A value, so a host that reads one holds a copy.
-public struct CodecPresentIfVle: Equatable, Sendable {
+public struct CodecPresentIfVle: Equatable, Sendable, CodecPresentIfVleSource {
     /// The fewest bytes a frame can have: its frame is read field by field, and a variable-length
     /// integer or a field of bytes may take more.
     public static let frameLength = 1
@@ -47,23 +56,34 @@ public struct CodecPresentIfVle: Equatable, Sendable {
     /// and is refused like any other count past the end, and is no trap.
     public static func decode(_ cursor: inout SceCursor) throws(CodecError) -> CodecPresentIfVle {
         var reader = cursor
-        var frame = CodecPresentIfVle()
-        frame.flags = try reader.readInteger(UInt8.self, .big)
-        if (frame.flags & 0x1) != 0 {
-            frame.optional_id = try reader.readVle(UInt64.self)
+        let flags = try reader.readInteger(UInt8.self, .big)
+        var optional_id: UInt64? = nil
+        if (flags & 0x1) != 0 {
+            optional_id = try reader.readVle(UInt64.self)
         }
         cursor = reader
-        return frame
+        return CodecPresentIfVle(flags: flags, optional_id: optional_id)
     }
 
-    /// Writes the frame to `sink` in one write: a bounded sink that cannot hold all of it answers
+    /// Writes the frame of `source` to `sink` in one write, printed from the codec's encode plan
+    /// (docs/adr/0081): any type that presents the elements of `CodecPresentIfVleSource` is written,
+    /// with no copy into `CodecPresentIfVle`, and every other element of the frame is derived from
+    /// them. It refuses
+    /// nothing. A bounded sink that cannot hold all of the frame answers
     /// `bufferOverflow` and holds none of it.
-    public func encode<Sink: SceSink>(into sink: inout Sink) throws(CodecError) {
+    public static func encodeSource<Source: CodecPresentIfVleSource, Sink: SceSink>(_ source: Source, into sink: inout Sink) throws(CodecError) {
+        var flags_folded = source.flags
+        flags_folded = (flags_folded & ~0x1) | ((source.optional_id != nil) ? 0x1 : 0)
         var frame: [UInt8] = []
-        appendInteger(self.flags, to: &frame, .big)
-        if let optional_id = self.optional_id {
-            appendVle(optional_id, to: &frame)
+        appendInteger(flags_folded, to: &frame, .big)
+        if let held = source.optional_id {
+            appendVle(held, to: &frame)
         }
         try sink.writeBytes(frame)
+    }
+
+    /// Writes the frame of this value to `sink`: `encodeSource` of itself.
+    public func encode<Sink: SceSink>(into sink: inout Sink) throws(CodecError) {
+        try Self.encodeSource(self, into: &sink)
     }
 }

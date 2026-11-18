@@ -8,9 +8,18 @@
 
 import SceForgeRuntime
 
+/// The elements a value of `CodecPresentIfBasic` presents, each a read-only property in the order the
+/// document declares them (docs/adr/0058 §1, docs/adr/0081 §1): what
+/// `CodecPresentIfBasic.encodeSource(_:into:)` writes a frame from. A type of the host's own that
+/// declares them is written with no copy into `CodecPresentIfBasic`, which conforms itself.
+public protocol CodecPresentIfBasicSource {
+    var flags: UInt8 { get }
+    var seq: UInt16? { get }
+}
+
 /// The frame this codec lays on the wire: 2 field(s) of integers, each at its
 /// byte offset and in its byte order. A value, so a host that reads one holds a copy.
-public struct CodecPresentIfBasic: Equatable, Sendable {
+public struct CodecPresentIfBasic: Equatable, Sendable, CodecPresentIfBasicSource {
     /// The fewest bytes a frame can have: its frame is read field by field, and a variable-length
     /// integer or a field of bytes may take more.
     public static let frameLength = 1
@@ -46,23 +55,34 @@ public struct CodecPresentIfBasic: Equatable, Sendable {
     /// and is refused like any other count past the end, and is no trap.
     public static func decode(_ cursor: inout SceCursor) throws(CodecError) -> CodecPresentIfBasic {
         var reader = cursor
-        var frame = CodecPresentIfBasic()
-        frame.flags = try reader.readInteger(UInt8.self, .big)
-        if (frame.flags & 0x1) != 0 {
-            frame.seq = try reader.readInteger(UInt16.self, .big)
+        let flags = try reader.readInteger(UInt8.self, .big)
+        var seq: UInt16? = nil
+        if (flags & 0x1) != 0 {
+            seq = try reader.readInteger(UInt16.self, .big)
         }
         cursor = reader
-        return frame
+        return CodecPresentIfBasic(flags: flags, seq: seq)
     }
 
-    /// Writes the frame to `sink` in one write: a bounded sink that cannot hold all of it answers
+    /// Writes the frame of `source` to `sink` in one write, printed from the codec's encode plan
+    /// (docs/adr/0081): any type that presents the elements of `CodecPresentIfBasicSource` is written,
+    /// with no copy into `CodecPresentIfBasic`, and every other element of the frame is derived from
+    /// them. It refuses
+    /// nothing. A bounded sink that cannot hold all of the frame answers
     /// `bufferOverflow` and holds none of it.
-    public func encode<Sink: SceSink>(into sink: inout Sink) throws(CodecError) {
+    public static func encodeSource<Source: CodecPresentIfBasicSource, Sink: SceSink>(_ source: Source, into sink: inout Sink) throws(CodecError) {
+        var flags_folded = source.flags
+        flags_folded = (flags_folded & ~0x1) | ((source.seq != nil) ? 0x1 : 0)
         var frame: [UInt8] = []
-        appendInteger(self.flags, to: &frame, .big)
-        if let seq = self.seq {
-            appendInteger(seq, to: &frame, .big)
+        appendInteger(flags_folded, to: &frame, .big)
+        if let held = source.seq {
+            appendInteger(held, to: &frame, .big)
         }
         try sink.writeBytes(frame)
+    }
+
+    /// Writes the frame of this value to `sink`: `encodeSource` of itself.
+    public func encode<Sink: SceSink>(into sink: inout Sink) throws(CodecError) {
+        try Self.encodeSource(self, into: &sink)
     }
 }

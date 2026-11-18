@@ -8,32 +8,43 @@
 
 import SceForgeRuntime
 
+/// The elements a value of `CodecChainHasSlice` presents, each a read-only property in the order the
+/// document declares them (docs/adr/0058 §1, docs/adr/0081 §1): what
+/// `CodecChainHasSlice.encodeSource(_:into:)` writes a frame from. A type of the host's own that
+/// declares them is written with no copy into `CodecChainHasSlice`, which conforms itself.
+public protocol CodecChainHasSliceSource {
+    var kind: UInt16 { get }
+    var bytes: BoundedBytes<CodecChainHasSlice.BytesBound> { get }
+}
+
 /// The frame this codec lays on the wire: 3 field(s) of integers, each at its
 /// byte offset and in its byte order. A value, so a host that reads one holds a copy.
-public struct CodecChainHasSlice: Equatable, Sendable {
+public struct CodecChainHasSlice: Equatable, Sendable, CodecChainHasSliceSource {
     /// The fewest bytes a frame can have: its frame is read field by field, and a variable-length
     /// integer or a field of bytes may take more.
     public static let frameLength = 2
+
+    /// How many bytes `bytes` holds on the wire, as the document bounds it (docs/adr/0065 §6
+    /// R1): its type is held to it where a value of it is made.
+    public enum BytesBound: SceByteBound {
+        public static let least = 0
+        public static let most: Int? = 256
+    }
 
     /// A variable-length integer: base-128, the least significant group first, at most as many
     /// bytes as its type needs.
     public var kind: UInt16 = 0
 
-    /// A variable-length integer: base-128, the least significant group first, at most as many
-    /// bytes as its type needs.
-    public var len: UInt64 = 0
-
     /// The bytes, as many as `len` says, as many as the document's `max-size` admits: a frame that says
-    /// more is refused with `lengthOutOfRange`, as is a value with more at its encode.
-    public var bytes: [UInt8] = []
+    /// more is refused with `lengthOutOfRange`, and a value with more is no value of its type; the encode derives what it says.
+    public var bytes: BoundedBytes<CodecChainHasSlice.BytesBound> = .fewest
 
     /// A frame of zeros, but for the bits a flag's `value` sets: what a holder that has read no
     /// frame yet holds, as a validator that composes this codec does until it is given one.
     public init() {}
 
-    public init(kind: UInt16, len: UInt64, bytes: [UInt8]) {
+    public init(kind: UInt16, bytes: BoundedBytes<CodecChainHasSlice.BytesBound>) {
         self.kind = kind
-        self.len = len
         self.bytes = bytes
     }
 
@@ -45,27 +56,33 @@ public struct CodecChainHasSlice: Equatable, Sendable {
     /// and is refused like any other count past the end, and is no trap.
     public static func decode(_ cursor: inout SceCursor) throws(CodecError) -> CodecChainHasSlice {
         var reader = cursor
-        var frame = CodecChainHasSlice()
-        frame.kind = try reader.readVle(UInt16.self)
-        frame.len = try reader.readVle(UInt64.self)
-        if frame.len > 256 {
+        let kind = try reader.readVle(UInt16.self)
+        let len = try reader.readVle(UInt64.self)
+        if len > 256 {
             throw CodecError.lengthOutOfRange
         }
-        frame.bytes = Array(try reader.readSlice(Int(clamping: frame.len)))
+        let bytes = try BoundedBytes<CodecChainHasSlice.BytesBound>(decoding: Array(try reader.readSlice(Int(clamping: len))))
         cursor = reader
-        return frame
+        return CodecChainHasSlice(kind: kind, bytes: bytes)
     }
 
-    /// Writes the frame to `sink` in one write: a bounded sink that cannot hold all of it answers
+    /// Writes the frame of `source` to `sink` in one write, printed from the codec's encode plan
+    /// (docs/adr/0081): any type that presents the elements of `CodecChainHasSliceSource` is written,
+    /// with no copy into `CodecChainHasSlice`, and every other element of the frame is derived from
+    /// them. It refuses
+    /// nothing. A bounded sink that cannot hold all of the frame answers
     /// `bufferOverflow` and holds none of it.
-    public func encode<Sink: SceSink>(into sink: inout Sink) throws(CodecError) {
-        if self.bytes.count > 256 {
-            throw CodecError.lengthOutOfRange
-        }
+    public static func encodeSource<Source: CodecChainHasSliceSource, Sink: SceSink>(_ source: Source, into sink: inout Sink) throws(CodecError) {
+        let len_derived: UInt64 = UInt64(source.bytes.byteCount)
         var frame: [UInt8] = []
-        appendVle(self.kind, to: &frame)
-        appendVle(self.len, to: &frame)
-        frame += self.bytes
+        appendVle(source.kind, to: &frame)
+        appendVle(len_derived, to: &frame)
+        source.bytes.append(to: &frame)
         try sink.writeBytes(frame)
+    }
+
+    /// Writes the frame of this value to `sink`: `encodeSource` of itself.
+    public func encode<Sink: SceSink>(into sink: inout Sink) throws(CodecError) {
+        try Self.encodeSource(self, into: &sink)
     }
 }

@@ -8,12 +8,26 @@
 
 import SceForgeRuntime
 
+/// The elements a value of `CodecSourceParentTag` presents, each a read-only property in the order the
+/// document declares them (docs/adr/0058 §1, docs/adr/0081 §1): what
+/// `CodecSourceParentTag.encodeSource(_:into:)` writes a frame from. A type of the host's own that
+/// declares them is written with no copy into `CodecSourceParentTag`, which conforms itself.
+public protocol CodecSourceParentTagSource {
+    /// What `body` is presented as: a source of `CodecSourceLeaf`, written by its encode.
+    associatedtype Body_Source: CodecSourceLeafSource
+    var hdr: UInt8 { get }
+    var body: Body_Source { get }
+}
+
 /// The frame this codec lays on the wire: 2 field(s) of integers, each at its
 /// byte offset and in its byte order. A value, so a host that reads one holds a copy.
-public struct CodecSourceParentTag: Equatable, Sendable {
+public struct CodecSourceParentTag: Equatable, Sendable, CodecSourceParentTagSource {
     /// The fewest bytes a frame can have: its frame is read field by field, and a variable-length
     /// integer or a field of bytes may take more.
     public static let frameLength = 1 + CodecSourceLeaf.frameLength
+
+    /// The value presents `body` as a value of its own codec.
+    public typealias Body_Source = CodecSourceLeaf
 
     /// The field at byte 0, big-endian.
     public var hdr: UInt8 = 0
@@ -38,7 +52,7 @@ public struct CodecSourceParentTag: Equatable, Sendable {
     /// frame yet holds, as a validator that composes this codec does until it is given one.
     public init() {}
 
-    public init(hdr: UInt8, body: CodecSourceLeaf) {
+    public init(hdr: UInt8, body: Body_Source) {
         self.hdr = hdr
         self.body = body
     }
@@ -51,28 +65,47 @@ public struct CodecSourceParentTag: Equatable, Sendable {
     /// and is refused like any other count past the end, and is no trap.
     public static func decode(_ cursor: inout SceCursor) throws(CodecError) -> CodecSourceParentTag {
         var reader = cursor
-        var frame = CodecSourceParentTag()
-        frame.hdr = try reader.readInteger(UInt8.self, .big)
-        frame.body = try CodecSourceLeaf.decode(&reader, tag: UInt8(truncatingIfNeeded: (frame.hdr >> 0) & 0x1))
+        let hdr = try reader.readInteger(UInt8.self, .big)
+        let body = try CodecSourceLeaf.decode(&reader, tag: UInt8(truncatingIfNeeded: (hdr >> 0) & 0x1))
         cursor = reader
-        return frame
+        return CodecSourceParentTag(hdr: hdr, body: body)
     }
 
-    /// Writes the frame to `sink` in one write: a bounded sink that cannot hold all of it answers
+    /// One-bit flags a parent may set in place of the ones a value presents, such as the flag a
+    /// chain whose entries are `CodecSourceParentTag` ends them on, which the chain derives from where
+    /// each entry stands. A flag left `nil` is the value's own.
+    public struct Overrides: Equatable, Sendable {
+        /// The `more` flag of `hdr`, where a parent sets it.
+        public var hdrMore: Bool?
+
+        public init(hdrMore: Bool? = nil) {
+            self.hdrMore = hdrMore
+        }
+    }
+
+    /// Writes the frame of `source` to `sink` in one write, printed from the codec's encode plan
+    /// (docs/adr/0081): any type that presents the elements of `CodecSourceParentTagSource` is written,
+    /// with no copy into `CodecSourceParentTag`, and every other element of the frame is derived from
+    /// them. It refuses
+    /// nothing. A bounded sink that cannot hold all of the frame answers
     /// `bufferOverflow` and holds none of it.
-    public func encode<Sink: SceSink>(into sink: inout Sink) throws(CodecError) {
+    public static func encodeSource<Source: CodecSourceParentTagSource, Sink: SceSink>(_ source: Source, into sink: inout Sink, overrides: Overrides = Overrides()) throws(CodecError) {
+        var hdr_kind_filled: UInt64 = 0
+        hdr_kind_filled |= UInt64(source.body.body.tag) & 0x1
+        var hdr_folded = source.hdr
+        hdr_folded = (hdr_folded & ~0x1) | ((UInt8(truncatingIfNeeded: hdr_kind_filled) & 0x1) << 0)
+        if let set = overrides.hdrMore { hdr_folded = set ? (hdr_folded | 0x80) : (hdr_folded & ~0x80) }
+        var body_piece = BytesSink()
+        try CodecSourceLeaf.encodeSource(source.body, into: &body_piece)
+        let body_bytes = body_piece.bytes
         var frame: [UInt8] = []
-        let derived_tag_0: UInt8
-        switch self.body.body {
-        case .codecVariantSessionOpen: derived_tag_0 = 0x00
-        case .codecVariantSessionClose: derived_tag_0 = 0x01
-        }
-        appendInteger((self.hdr & 0xFE) | derived_tag_0, to: &frame, .big)
-        do {
-            var piece = BytesSink()
-            try self.body.encode(into: &piece)
-            frame += piece.bytes
-        }
+        appendInteger(hdr_folded, to: &frame, .big)
+        frame += body_bytes
         try sink.writeBytes(frame)
+    }
+
+    /// Writes the frame of this value to `sink`: `encodeSource` of itself.
+    public func encode<Sink: SceSink>(into sink: inout Sink) throws(CodecError) {
+        try Self.encodeSource(self, into: &sink)
     }
 }

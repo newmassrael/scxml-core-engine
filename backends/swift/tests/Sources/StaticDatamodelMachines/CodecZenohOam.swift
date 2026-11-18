@@ -8,21 +8,112 @@
 
 import SceForgeRuntime
 
-/// The arm of `CodecZenohOam` the tag of a frame selects: the struct of the entry codec the arm names.
-/// The catch-all holds the tag it was read for, as no arm names it.
-public enum CodecZenohOamVariant: Equatable, Sendable {
-    case codecZenohExtUnit(CodecZenohExtUnit)
-    case codecZenohExtZint(CodecZenohExtZint)
-    case codecZenohExtZbuf(CodecZenohExtZbuf)
-    case `default`(tag: UInt8, body: CodecZenohExtUnit)
+/// The arm of `CodecZenohOam`'s variant a value holds, each arm's body a source of the arm's
+/// codec (docs/adr/0058 §1): a host's type is written with no copy into the arm's own value. The
+/// tag is no member: the encode derives it from the arm, and the catch-all holds the tag no arm
+/// names.
+public enum CodecZenohOamArms<A0: CodecZenohExtUnitSource, A1: CodecZenohExtZintSource, A2: CodecZenohExtZbufSource, D: CodecZenohExtUnitSource> {
+    case codecZenohExtUnit(A0)
+    case codecZenohExtZint(A1)
+    case codecZenohExtZbuf(A2)
+    case `default`(tag: CodecZenohOamUnknownTag, body: D)
+
+    /// The tag of the arm this is: the one the document gives a named arm, and the one the
+    /// catch-all holds. It is the tag the encode writes, or the one a caller hands the decode of a
+    /// variant whose frame carries none.
+    public var tag: UInt8 {
+        switch self {
+        case .codecZenohExtUnit: return 0x0
+        case .codecZenohExtZint: return 0x1
+        case .codecZenohExtZbuf: return 0x2
+        case .default(let tag, _): return tag.value
+        }
+    }
+}
+
+extension CodecZenohOamArms: Equatable where A0: Equatable, A1: Equatable, A2: Equatable, D: Equatable {}
+
+extension CodecZenohOamArms: Sendable where A0: Sendable, A1: Sendable, A2: Sendable, D: Sendable {}
+
+/// The arm a value of `CodecZenohOam` holds, each arm the value of its own codec.
+public typealias CodecZenohOamVariant = CodecZenohOamArms<CodecZenohExtUnit, CodecZenohExtZint, CodecZenohExtZbuf, CodecZenohExtUnit>
+
+/// The tag the catch-all arm of `CodecZenohOam` holds (docs/adr/0065 §6 R3): one no arm names,
+/// within the bits the tag is read from. The failable initializer is the one door, so a
+/// catch-all written is read back as the catch-all, and its encode refuses nothing.
+public struct CodecZenohOamUnknownTag: Equatable, Hashable, Sendable {
+    /// The tag.
+    public let value: UInt8
+
+    /// The tag `value`, or `nil` where an arm names it or its bits do not hold it.
+    public init?(_ value: UInt8) {
+        guard Self.admits(value) else { return nil }
+        self.value = value
+    }
+
+    /// A tag the decode read where no arm names one, or the least one the catch-all admits.
+    fileprivate init(admitted value: UInt8) {
+        self.value = value
+    }
+
+    /// Whether the catch-all may hold `value`.
+    public static func admits(_ value: UInt8) -> Bool {
+        switch value {
+        case 0x0...0x2: return false
+        default: return value <= 0x3
+        }
+    }
+}
+
+/// The elements a value of `CodecZenohOam` presents, each a read-only property in the order the
+/// document declares them (docs/adr/0058 §1, docs/adr/0081 §1): what
+/// `CodecZenohOam.encodeSource(_:into:)` writes a frame from. A type of the host's own that
+/// declares them is written with no copy into `CodecZenohOam`, which conforms itself.
+public protocol CodecZenohOamSource {
+    /// What each entry of `extensions` is presented as: a source of `CodecZenohExtEntry`, written by its encode.
+    associatedtype Extensions_Entry: CodecZenohExtEntrySource
+    /// What the body of the arm `codecZenohExtUnit` is presented as: a source of `CodecZenohExtUnit`, written by its encode.
+    associatedtype CodecZenohExtUnit_Arm: CodecZenohExtUnitSource
+    /// What the body of the arm `codecZenohExtZint` is presented as: a source of `CodecZenohExtZint`, written by its encode.
+    associatedtype CodecZenohExtZint_Arm: CodecZenohExtZintSource
+    /// What the body of the arm `codecZenohExtZbuf` is presented as: a source of `CodecZenohExtZbuf`, written by its encode.
+    associatedtype CodecZenohExtZbuf_Arm: CodecZenohExtZbufSource
+    /// What the body of the arm `codecZenohExtUnit` is presented as: a source of `CodecZenohExtUnit`, written by its encode.
+    associatedtype Default_Arm: CodecZenohExtUnitSource
+    var header: UInt8 { get }
+    var id: UInt16 { get }
+    var extensions: BoundedList<Extensions_Entry, CodecZenohOam.ExtensionsBound>? { get }
+    var body: CodecZenohOamArms<CodecZenohExtUnit_Arm, CodecZenohExtZint_Arm, CodecZenohExtZbuf_Arm, Default_Arm> { get }
 }
 
 /// The frame this codec lays on the wire: 4 field(s) of integers, each at its
 /// byte offset and in its byte order. A value, so a host that reads one holds a copy.
-public struct CodecZenohOam: Equatable, Sendable {
+public struct CodecZenohOam: Equatable, Sendable, CodecZenohOamSource {
     /// The fewest bytes a frame can have: its frame is read field by field, and a variable-length
     /// integer or a field of bytes may take more.
     public static let frameLength = 2 + Swift.min(CodecZenohExtUnit.frameLength, CodecZenohExtZint.frameLength, CodecZenohExtZbuf.frameLength)
+
+    /// How many entries `extensions` holds on the wire, as the document bounds it (docs/adr/0065 §6
+    /// R2, R7): its type is held to it where a value of it is made.
+    public enum ExtensionsBound: SceCountBound {
+        public static let least = 1
+        public static let most: Int? = nil
+    }
+
+    /// The value presents each entry of `extensions` as a value of its own codec.
+    public typealias Extensions_Entry = CodecZenohExtEntry
+
+    /// The value presents the body of the arm `codecZenohExtUnit` as a value of its own codec.
+    public typealias CodecZenohExtUnit_Arm = CodecZenohExtUnit
+
+    /// The value presents the body of the arm `codecZenohExtZint` as a value of its own codec.
+    public typealias CodecZenohExtZint_Arm = CodecZenohExtZint
+
+    /// The value presents the body of the arm `codecZenohExtZbuf` as a value of its own codec.
+    public typealias CodecZenohExtZbuf_Arm = CodecZenohExtZbuf
+
+    /// The value presents the body of the arm `codecZenohExtUnit` as a value of its own codec.
+    public typealias Default_Arm = CodecZenohExtUnit
 
     /// The field at byte 0, big-endian.
     public var header: UInt8 = 0x1F
@@ -54,7 +145,7 @@ public struct CodecZenohOam: Equatable, Sendable {
     /// On the wire only when `(header & 0x80) != 0`; `nil` when it is not. An encode
     /// writes it when it is not `nil`.
     /// Entries of `CodecZenohExtEntry`, one after another: until one says it is the last. The protocol states no depth.
-    public var extensions: [CodecZenohExtEntry]? = nil
+    public var extensions: BoundedList<CodecZenohExtEntry, CodecZenohOam.ExtensionsBound>? = nil
 
     /// The arm the tag selects, whose struct holds the rest of the frame. The tag is the field it was
     /// read from; an encode writes that field as it stands, and the arm after it, so the two are
@@ -65,7 +156,7 @@ public struct CodecZenohOam: Equatable, Sendable {
     /// frame yet holds, as a validator that composes this codec does until it is given one.
     public init() {}
 
-    public init(header: UInt8, id: UInt16, extensions: [CodecZenohExtEntry]?, body: CodecZenohOamVariant) {
+    public init(header: UInt8, id: UInt16, extensions: BoundedList<Extensions_Entry, CodecZenohOam.ExtensionsBound>?, body: CodecZenohOamArms<CodecZenohExtUnit_Arm, CodecZenohExtZint_Arm, CodecZenohExtZbuf_Arm, Default_Arm>) {
         self.header = header
         self.id = id
         self.extensions = extensions
@@ -80,10 +171,10 @@ public struct CodecZenohOam: Equatable, Sendable {
     /// and is refused like any other count past the end, and is no trap.
     public static func decode(_ cursor: inout SceCursor) throws(CodecError) -> CodecZenohOam {
         var reader = cursor
-        var frame = CodecZenohOam()
-        frame.header = try reader.readInteger(UInt8.self, .big)
-        frame.id = try reader.readVle(UInt16.self)
-        if (frame.header & 0x80) != 0 {
+        let header = try reader.readInteger(UInt8.self, .big)
+        let id = try reader.readVle(UInt16.self)
+        var extensions: BoundedList<CodecZenohExtEntry, CodecZenohOam.ExtensionsBound>? = nil
+        if (header & 0x80) != 0 {
             var extensions_items: [CodecZenohExtEntry] = []
             var extensions_more = false
             while true {
@@ -92,53 +183,63 @@ public struct CodecZenohOam: Equatable, Sendable {
                 extensions_items.append(entry)
                 if !extensions_more { break }
             }
-            frame.extensions = extensions_items
+            extensions = try BoundedList<CodecZenohExtEntry, CodecZenohOam.ExtensionsBound>(decoding: extensions_items)
         }
-        let body_tag = (frame.header >> 5) & 0x3
+        let body: CodecZenohOamVariant
+        let body_tag = (header >> 5) & 0x3
         switch body_tag {
         case 0x0:
-            frame.body = .codecZenohExtUnit(try CodecZenohExtUnit.decode(&reader))
+            body = .codecZenohExtUnit(try CodecZenohExtUnit.decode(&reader))
         case 0x1:
-            frame.body = .codecZenohExtZint(try CodecZenohExtZint.decode(&reader))
+            body = .codecZenohExtZint(try CodecZenohExtZint.decode(&reader))
         case 0x2:
-            frame.body = .codecZenohExtZbuf(try CodecZenohExtZbuf.decode(&reader))
+            body = .codecZenohExtZbuf(try CodecZenohExtZbuf.decode(&reader))
         default:
-            frame.body = .default(tag: UInt8(truncatingIfNeeded: body_tag), body: try CodecZenohExtUnit.decode(&reader))
+            body = .default(tag: CodecZenohOamUnknownTag(admitted: UInt8(truncatingIfNeeded: body_tag)), body: try CodecZenohExtUnit.decode(&reader))
         }
         cursor = reader
-        return frame
+        return CodecZenohOam(header: header, id: id, extensions: extensions, body: body)
     }
 
-    /// Writes the frame to `sink` in one write: a bounded sink that cannot hold all of it answers
+    /// Writes the frame of `source` to `sink` in one write, printed from the codec's encode plan
+    /// (docs/adr/0081): any type that presents the elements of `CodecZenohOamSource` is written,
+    /// with no copy into `CodecZenohOam`, and every other element of the frame is derived from
+    /// them. It refuses
+    /// nothing. A bounded sink that cannot hold all of the frame answers
     /// `bufferOverflow` and holds none of it.
-    public func encode<Sink: SceSink>(into sink: inout Sink) throws(CodecError) {
-        if let value = self.extensions, value.count < 1 {
-            throw CodecError.tooManyElements
-        }
+    public static func encodeSource<Source: CodecZenohOamSource, Sink: SceSink>(_ source: Source, into sink: inout Sink) throws(CodecError) {
+        var header_folded = source.header
+        header_folded = (header_folded & ~0x80) | ((source.extensions != nil) ? 0x80 : 0)
+        header_folded = (header_folded & ~0x60) | ((UInt8(truncatingIfNeeded: source.body.tag) & 0x3) << 5)
         var frame: [UInt8] = []
-        appendInteger(self.header, to: &frame, .big)
-        appendVle(self.id, to: &frame)
-        if let extensions = self.extensions {
-            for entry in extensions {
-                var piece = BytesSink()
-                try entry.encode(into: &piece)
-                frame += piece.bytes
+        appendInteger(header_folded, to: &frame, .big)
+        appendVle(source.id, to: &frame)
+        if let held = source.extensions {
+            var extensions_entries = BytesSink()
+            var extensions_left = held.count
+            for entry in held {
+                extensions_left -= 1
+                try CodecZenohExtEntry.encodeSource(entry, into: &extensions_entries, overrides: CodecZenohExtEntry.Overrides(headerZ: extensions_left != 0))
             }
+            frame += extensions_entries.bytes
         }
-        do {
-            var piece = BytesSink()
-            switch self.body {
-            case .codecZenohExtUnit(let arm):
-                try arm.encode(into: &piece)
-            case .codecZenohExtZint(let arm):
-                try arm.encode(into: &piece)
-            case .codecZenohExtZbuf(let arm):
-                try arm.encode(into: &piece)
-            case .default(_, let arm):
-                try arm.encode(into: &piece)
-            }
-            frame += piece.bytes
+        var body_arm = BytesSink()
+        switch source.body {
+        case .codecZenohExtUnit(let arm):
+            try CodecZenohExtUnit.encodeSource(arm, into: &body_arm)
+        case .codecZenohExtZint(let arm):
+            try CodecZenohExtZint.encodeSource(arm, into: &body_arm)
+        case .codecZenohExtZbuf(let arm):
+            try CodecZenohExtZbuf.encodeSource(arm, into: &body_arm)
+        case .default(_, let arm):
+            try CodecZenohExtUnit.encodeSource(arm, into: &body_arm)
         }
+        frame += body_arm.bytes
         try sink.writeBytes(frame)
+    }
+
+    /// Writes the frame of this value to `sink`: `encodeSource` of itself.
+    public func encode<Sink: SceSink>(into sink: inout Sink) throws(CodecError) {
+        try Self.encodeSource(self, into: &sink)
     }
 }

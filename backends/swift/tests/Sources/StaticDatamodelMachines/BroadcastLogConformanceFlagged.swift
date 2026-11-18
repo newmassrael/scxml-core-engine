@@ -18,7 +18,7 @@
 // from a buffer only that read holds.
 //
 // Operations (from `SceForgeRuntime`, typed here over the element):
-//   BroadcastLogConformanceFlagged.publish(publisher, element, flags: flags) -> BroadcastLogConformanceFlagged.Publish
+//   BroadcastLogConformanceFlagged.publish(publisher, element) -> BroadcastLogConformanceFlagged.Publish
 //       wait-free; the entry's sequence number, or why the element was refused
 //   BroadcastLogConformanceFlagged.read(log, &reader) -> BroadcastLogConformanceFlagged.Read
 //       wait-free; an item, nothing new, how many were missed, or an entry that does not decode
@@ -30,7 +30,9 @@
 // part of the entry: the log stores them in the entry's context words beside the
 // bytes, so every reader decodes an entry under what it was published under (ADR 0062
 // section 4).
-// `publish` takes the flags and an `item` returns them.
+// An `item` returns the flags.
+// A flag input the element's value says is not taken: `publish` reads it off the
+// element, as its encode does (ADR 0065 section 6, R4a).
 //
 // The names are the members of the enum `BroadcastLogConformanceFlagged` and not top-level
 // declarations: every unit of a SwiftPM target shares one module, so the
@@ -121,17 +123,18 @@ public enum BroadcastLogConformanceFlagged {
     /// and nothing is published (`Publish.refused`). Past the runtime's horizon of entries
     /// the runtime stops the program, which no run reaches in practice.
     ///
-    /// `flags` are what the element's codec takes from its caller as flag inputs: they are
-    /// encoded under here and stored in the entry's context words, so that every reader
-    /// decodes the entry under what it was published under. The log does not check that the
-    /// flags agree with `element`; the publisher gives what it knows, as every caller of this
-    /// codec does.
+    /// The flag inputs the element's codec takes from its caller are stored in the entry's
+    /// context words, so that every reader decodes the entry under what it was published
+    /// under. A flag the element's value says is read off `element` and stored as it says
+    /// it, so no entry is stored under a flag its bytes disagree with.
     public static func publish(
-        _ publisher: SceForgeRuntime.BroadcastLogPublisher, _ element: BroadcastLogConformanceFlaggedEvent, flags: Flags
+        _ publisher: SceForgeRuntime.BroadcastLogPublisher, _ element: BroadcastLogConformanceFlaggedEvent
     ) -> Publish {
+        let flags = Flags(
+            hasValue: BroadcastLogConformanceFlaggedEvent.inputHasValue(element) != 0        )
         var sink = BoundedSink(capacity: maxEncodedBytes)
         do throws(CodecError) {
-            try element.encode(into: &sink, has_value: flagInput(flags.hasValue))
+            try element.encode(into: &sink)
         } catch {
             return .refused(error)
         }

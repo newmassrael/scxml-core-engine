@@ -45,11 +45,10 @@ public struct CodecSomeArmsSayForward: Equatable, Sendable {
     /// and is refused like any other count past the end, and is no trap.
     public static func decode(_ cursor: inout SceCursor, N: UInt8) throws(CodecError) -> CodecSomeArmsSayForward {
         var reader = cursor
-        var frame = CodecSomeArmsSayForward()
-        frame.header = try reader.readInteger(UInt8.self, .big)
-        frame.body = try CodecSomeArmsSay.decode(&reader, N: N, tag: UInt8(truncatingIfNeeded: (frame.header >> 6) & 0x1))
+        let header = try reader.readInteger(UInt8.self, .big)
+        let body = try CodecSomeArmsSay.decode(&reader, N: N, tag: UInt8(truncatingIfNeeded: (header >> 6) & 0x1))
         cursor = reader
-        return frame
+        return CodecSomeArmsSayForward(header: header, body: body)
     }
 
     /// Writes the frame to `sink` in one write: a bounded sink that cannot hold all of it answers
@@ -64,7 +63,7 @@ public struct CodecSomeArmsSayForward: Equatable, Sendable {
         appendInteger((self.header & 0xBF) | derived_tag_0, to: &frame, .big)
         do {
             var piece = BytesSink()
-            try self.body.encode(into: &piece, N: N)
+            try self.body.encode(into: &piece)
             frame += piece.bytes
         }
         try sink.writeBytes(frame)

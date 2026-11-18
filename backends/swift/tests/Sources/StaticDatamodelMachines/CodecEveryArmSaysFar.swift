@@ -8,9 +8,17 @@
 
 import SceForgeRuntime
 
+/// The elements a value of `CodecEveryArmSaysFar` presents, each a read-only property in the order the
+/// document declares them (docs/adr/0058 §1, docs/adr/0081 §1): what
+/// `CodecEveryArmSaysFar.encodeSource(_:into:)` writes a frame from. A type of the host's own that
+/// declares them is written with no copy into `CodecEveryArmSaysFar`, which conforms itself.
+public protocol CodecEveryArmSaysFarSource {
+    var route: UInt16? { get }
+}
+
 /// The frame this codec lays on the wire: 1 field(s) of integers, each at its
 /// byte offset and in its byte order. A value, so a host that reads one holds a copy.
-public struct CodecEveryArmSaysFar: Equatable, Sendable {
+public struct CodecEveryArmSaysFar: Equatable, Sendable, CodecEveryArmSaysFarSource {
     /// The fewest bytes a frame can have: its frame is read field by field, and a variable-length
     /// integer or a field of bytes may take more.
     public static let frameLength = 0
@@ -36,28 +44,37 @@ public struct CodecEveryArmSaysFar: Equatable, Sendable {
     /// and is refused like any other count past the end, and is no trap.
     public static func decode(_ cursor: inout SceCursor, bare: UInt8) throws(CodecError) -> CodecEveryArmSaysFar {
         var reader = cursor
-        var frame = CodecEveryArmSaysFar()
+        var route: UInt16? = nil
         if (bare & 0x1) == 0 {
-            frame.route = try reader.readInteger(UInt16.self, .big)
+            route = try reader.readInteger(UInt16.self, .big)
         }
         cursor = reader
-        return frame
+        return CodecEveryArmSaysFar(route: route)
     }
 
-    /// Writes the frame to `sink` in one write: a bounded sink that cannot hold all of it answers
+    /// Writes the frame of `source` to `sink` in one write, printed from the codec's encode plan
+    /// (docs/adr/0081): any type that presents the elements of `CodecEveryArmSaysFarSource` is written,
+    /// with no copy into `CodecEveryArmSaysFar`, and every other element of the frame is derived from
+    /// them. It refuses
+    /// nothing. A bounded sink that cannot hold all of the frame answers
     /// `bufferOverflow` and holds none of it.
-    public func encode<Sink: SceSink>(into sink: inout Sink, bare: UInt8) throws(CodecError) {
-        if (bare & 0x1) == 0 {
-            if self.route == nil {
-                throw CodecError.presentIfMismatch
-            }
-        } else if self.route != nil {
-            throw CodecError.presentIfMismatch
-        }
+    public static func encodeSource<Source: CodecEveryArmSaysFarSource, Sink: SceSink>(_ source: Source, into sink: inout Sink) throws(CodecError) {
         var frame: [UInt8] = []
-        if let route = self.route {
-            appendInteger(route, to: &frame, .big)
+        if let held = source.route {
+            appendInteger(held, to: &frame, .big)
         }
         try sink.writeBytes(frame)
+    }
+
+    /// The flag input `bare` that `source` says, which the encode is not handed
+    /// (docs/adr/0065 §6 R4a): 1 or 0. A parent hands the decode this bit, and derives it from
+    /// here for the encode.
+    public static func inputBare<Source: CodecEveryArmSaysFarSource>(_ source: Source) -> UInt8 {
+        source.route == nil ? 1 : 0
+    }
+
+    /// Writes the frame of this value to `sink`: `encodeSource` of itself.
+    public func encode<Sink: SceSink>(into sink: inout Sink) throws(CodecError) {
+        try Self.encodeSource(self, into: &sink)
     }
 }

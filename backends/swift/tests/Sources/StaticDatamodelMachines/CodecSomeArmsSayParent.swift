@@ -8,12 +8,26 @@
 
 import SceForgeRuntime
 
+/// The elements a value of `CodecSomeArmsSayParent` presents, each a read-only property in the order the
+/// document declares them (docs/adr/0058 §1, docs/adr/0081 §1): what
+/// `CodecSomeArmsSayParent.encodeSource(_:into:)` writes a frame from. A type of the host's own that
+/// declares them is written with no copy into `CodecSomeArmsSayParent`, which conforms itself.
+public protocol CodecSomeArmsSayParentSource {
+    /// What `body` is presented as: a source of `CodecSomeArmsSay`, written by its encode.
+    associatedtype Body_Source: CodecSomeArmsSaySource
+    var header: UInt8 { get }
+    var body: Body_Source { get }
+}
+
 /// The frame this codec lays on the wire: 2 field(s) of integers, each at its
 /// byte offset and in its byte order. A value, so a host that reads one holds a copy.
-public struct CodecSomeArmsSayParent: Equatable, Sendable {
+public struct CodecSomeArmsSayParent: Equatable, Sendable, CodecSomeArmsSayParentSource {
     /// The fewest bytes a frame can have: its frame is read field by field, and a variable-length
     /// integer or a field of bytes may take more.
     public static let frameLength = 1 + CodecSomeArmsSay.frameLength
+
+    /// The value presents `body` as a value of its own codec.
+    public typealias Body_Source = CodecSomeArmsSay
 
     /// The field at byte 0, big-endian.
     public var header: UInt8 = 0
@@ -38,7 +52,7 @@ public struct CodecSomeArmsSayParent: Equatable, Sendable {
     /// frame yet holds, as a validator that composes this codec does until it is given one.
     public init() {}
 
-    public init(header: UInt8, body: CodecSomeArmsSay) {
+    public init(header: UInt8, body: Body_Source) {
         self.header = header
         self.body = body
     }
@@ -51,28 +65,51 @@ public struct CodecSomeArmsSayParent: Equatable, Sendable {
     /// and is refused like any other count past the end, and is no trap.
     public static func decode(_ cursor: inout SceCursor) throws(CodecError) -> CodecSomeArmsSayParent {
         var reader = cursor
-        var frame = CodecSomeArmsSayParent()
-        frame.header = try reader.readInteger(UInt8.self, .big)
-        frame.body = try CodecSomeArmsSay.decode(&reader, N: UInt8(truncatingIfNeeded: (frame.header >> 5) & 0x1), tag: UInt8(truncatingIfNeeded: (frame.header >> 6) & 0x1))
+        let header = try reader.readInteger(UInt8.self, .big)
+        let body = try CodecSomeArmsSay.decode(&reader, N: UInt8(truncatingIfNeeded: (header >> 5) & 0x1), tag: UInt8(truncatingIfNeeded: (header >> 6) & 0x1))
         cursor = reader
-        return frame
+        return CodecSomeArmsSayParent(header: header, body: body)
     }
 
-    /// Writes the frame to `sink` in one write: a bounded sink that cannot hold all of it answers
+    /// One-bit flags a parent may set in place of the ones a value presents, such as the flag a
+    /// chain whose entries are `CodecSomeArmsSayParent` ends them on, which the chain derives from where
+    /// each entry stands. A flag left `nil` is the value's own.
+    public struct Overrides: Equatable, Sendable {
+        /// The `N` flag of `header`, where a parent sets it.
+        public var headerN: Bool?
+
+        public init(headerN: Bool? = nil) {
+            self.headerN = headerN
+        }
+    }
+
+    /// Writes the frame of `source` to `sink` in one write, printed from the codec's encode plan
+    /// (docs/adr/0081): any type that presents the elements of `CodecSomeArmsSayParentSource` is written,
+    /// with no copy into `CodecSomeArmsSayParent`, and every other element of the frame is derived from
+    /// them. A value the encoding cannot carry is refused before the first
+    /// byte is written, with the `CodecError` the codec's totality names. A bounded sink that cannot hold all of the frame answers
     /// `bufferOverflow` and holds none of it.
-    public func encode<Sink: SceSink>(into sink: inout Sink) throws(CodecError) {
-        var frame: [UInt8] = []
-        let derived_tag_0: UInt8
-        switch self.body.body {
-        case .codecSomeArmsSayPlain: derived_tag_0 = 0x00
-        case .codecEveryArmSaysNear: derived_tag_0 = 0x40
-        }
-        appendInteger((self.header & 0xBF) | derived_tag_0, to: &frame, .big)
+    public static func encodeSource<Source: CodecSomeArmsSayParentSource, Sink: SceSink>(_ source: Source, into sink: inout Sink, overrides: Overrides = Overrides()) throws(CodecError) {
+        var header_M_filled: UInt64 = 0
+        header_M_filled |= UInt64(source.body.body.tag) & 0x1
+        var header_folded = source.header
+        header_folded = (header_folded & ~0x40) | ((UInt8(truncatingIfNeeded: header_M_filled) & 0x1) << 6)
+        if let set = overrides.headerN { header_folded = set ? (header_folded | 0x20) : (header_folded & ~0x20) }
         do {
-            var piece = BytesSink()
-            try self.body.encode(into: &piece, N: UInt8(truncatingIfNeeded: (self.header >> 5) & 0x1))
-            frame += piece.bytes
+            let handed: Bool = ((header_folded >> 5) & 1) != 0
+            if (CodecSomeArmsSay.inputN(source.body).map { ($0 != 0) != handed } ?? false) { throw CodecError.presentIfMismatch }
         }
+        var body_piece = BytesSink()
+        try CodecSomeArmsSay.encodeSource(source.body, into: &body_piece)
+        let body_bytes = body_piece.bytes
+        var frame: [UInt8] = []
+        appendInteger(header_folded, to: &frame, .big)
+        frame += body_bytes
         try sink.writeBytes(frame)
+    }
+
+    /// Writes the frame of this value to `sink`: `encodeSource` of itself.
+    public func encode<Sink: SceSink>(into sink: inout Sink) throws(CodecError) {
+        try Self.encodeSource(self, into: &sink)
     }
 }

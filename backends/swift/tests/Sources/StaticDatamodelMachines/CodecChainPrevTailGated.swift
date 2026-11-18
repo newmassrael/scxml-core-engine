@@ -8,12 +8,58 @@
 
 import SceForgeRuntime
 
+/// The elements a value of `CodecChainPrevTailGated` presents, each a read-only property in the order the
+/// document declares them (docs/adr/0058 §1, docs/adr/0081 §1): what
+/// `CodecChainPrevTailGated.encodeSource(_:into:)` writes a frame from. A type of the host's own that
+/// declares them is written with no copy into `CodecChainPrevTailGated`, which conforms itself.
+public protocol CodecChainPrevTailGatedSource {
+    /// What each entry of `entries` is presented as: a source of `CodecChainPrevEntry`, written by its encode.
+    associatedtype Entries_Entry: CodecChainPrevEntrySource
+    var head: UInt8 { get }
+    var entries: Lawful<BoundedList<Entries_Entry, CodecChainPrevTailGated.EntriesBound>, CodecChainPrevTailGated.EntriesLaw<Entries_Entry>>? { get }
+}
+
 /// The frame this codec lays on the wire: 2 field(s) of integers, each at its
 /// byte offset and in its byte order. A value, so a host that reads one holds a copy.
-public struct CodecChainPrevTailGated: Equatable, Sendable {
+public struct CodecChainPrevTailGated: Equatable, Sendable, CodecChainPrevTailGatedSource {
     /// The fewest bytes a frame can have: its frame is read field by field, and a variable-length
     /// integer or a field of bytes may take more.
     public static let frameLength = 1
+
+    /// How many entries `entries` holds on the wire, as the document bounds it (docs/adr/0065 §6
+    /// R2, R7): its type is held to it where a value of it is made.
+    public enum EntriesBound: SceCountBound {
+        public static let least = 0
+        public static let most: Int? = 4
+    }
+
+    /// For the law of `entries` (docs/adr/0065 §6 R8): what each entry says of `tagged`, read off any source of its codec.
+    public enum EntriesTaggedSaid<Entry: CodecChainPrevEntrySource>: SceSaid {
+        public static func says(_ entry: Entry) -> Bool? {
+            CodecChainPrevEntry.inputTagged(entry) != 0
+        }
+    }
+
+    /// For the law of `entries` (docs/adr/0065 §6 R8): what each entry says of `after_marker`, read off any source of its codec.
+    public enum EntriesAfterMarkerSaid<Entry: CodecChainPrevEntrySource>: SceSaid {
+        public static func says(_ entry: Entry) -> Bool? {
+            CodecChainPrevEntry.inputAfterMarker(entry) != 0
+        }
+    }
+
+    /// For the law of `entries` (docs/adr/0065 §6 R8): whether an entry is of the kind 0x4, after which the next says `after_marker` set, read off any source of its codec.
+    public enum EntriesAfterMarkerKind<Entry: CodecChainPrevEntrySource>: SceKind {
+        public static func matches(_ entry: Entry) -> Bool {
+            (chainIdentifier(entry.header) & 0x7F) == 0x4
+        }
+    }
+
+    /// The law the entries of `entries` say the inputs it hands them by (docs/adr/0065 §6 R8),
+    /// over any source of their codec: its type holds every entry to it where a value of it is made.
+    public typealias EntriesLaw<Entry: CodecChainPrevEntrySource> = SceLaws<SceUniform<EntriesTaggedSaid<Entry>>, SceAfterKey<EntriesAfterMarkerSaid<Entry>, EntriesAfterMarkerKind<Entry>>>
+
+    /// The value presents each entry of `entries` as a value of its own codec.
+    public typealias Entries_Entry = CodecChainPrevEntry
 
     /// The field at byte 0, big-endian.
     public var head: UInt8 = 0
@@ -33,14 +79,14 @@ public struct CodecChainPrevTailGated: Equatable, Sendable {
     /// On the wire only when `(head & 0x2) != 0`; `nil` when it is not. An encode
     /// writes it when it is not `nil`.
     /// Entries of `CodecChainPrevEntry`, one after another, at most 4: to the end of the frame. A frame
-    /// with more is refused with `tooManyElements`, as is a value with more at its encode.
-    public var entries: [CodecChainPrevEntry]? = nil
+    /// with more is refused with `tooManyElements`, and a value with more is no value of its type.
+    public var entries: Lawful<BoundedList<CodecChainPrevEntry, CodecChainPrevTailGated.EntriesBound>, CodecChainPrevTailGated.EntriesLaw<CodecChainPrevEntry>>? = nil
 
     /// A frame of zeros, but for the bits a flag's `value` sets: what a holder that has read no
     /// frame yet holds, as a validator that composes this codec does until it is given one.
     public init() {}
 
-    public init(head: UInt8, entries: [CodecChainPrevEntry]?) {
+    public init(head: UInt8, entries: Lawful<BoundedList<Entries_Entry, CodecChainPrevTailGated.EntriesBound>, CodecChainPrevTailGated.EntriesLaw<Entries_Entry>>?) {
         self.head = head
         self.entries = entries
     }
@@ -53,43 +99,50 @@ public struct CodecChainPrevTailGated: Equatable, Sendable {
     /// and is refused like any other count past the end, and is no trap.
     public static func decode(_ cursor: inout SceCursor) throws(CodecError) -> CodecChainPrevTailGated {
         var reader = cursor
-        var frame = CodecChainPrevTailGated()
-        frame.head = try reader.readInteger(UInt8.self, .big)
-        if (frame.head & 0x2) != 0 {
+        let head = try reader.readInteger(UInt8.self, .big)
+        var entries: Lawful<BoundedList<CodecChainPrevEntry, CodecChainPrevTailGated.EntriesBound>, CodecChainPrevTailGated.EntriesLaw<CodecChainPrevEntry>>? = nil
+        if (head & 0x2) != 0 {
             var _prev_entries_after_marker: UInt8 = 0
             var entries_items: [CodecChainPrevEntry] = []
             for _ in 0..<4 {
                 if reader.remaining == 0 { break }
-                let entry = try CodecChainPrevEntry.decode(&reader, after_marker: _prev_entries_after_marker, tagged: UInt8(truncatingIfNeeded: (frame.head >> 0) & 0x1))
+                let entry = try CodecChainPrevEntry.decode(&reader, after_marker: _prev_entries_after_marker, tagged: UInt8(truncatingIfNeeded: (head >> 0) & 0x1))
                 entries_items.append(entry)
                 _prev_entries_after_marker = ((chainIdentifier(entry.header) & 127) == 4) ? 1 : 0
             }
             if reader.remaining > 0 {
                 throw CodecError.tooManyElements
             }
-            frame.entries = entries_items
+            entries = try Lawful<BoundedList<CodecChainPrevEntry, CodecChainPrevTailGated.EntriesBound>, CodecChainPrevTailGated.EntriesLaw<CodecChainPrevEntry>>(decoding: try BoundedList<CodecChainPrevEntry, CodecChainPrevTailGated.EntriesBound>(decoding: entries_items), start: SceStarts(((head >> 0) & 1) != 0, SceFixedStart()))
         }
         cursor = reader
-        return frame
+        return CodecChainPrevTailGated(head: head, entries: entries)
     }
 
-    /// Writes the frame to `sink` in one write: a bounded sink that cannot hold all of it answers
+    /// Writes the frame of `source` to `sink` in one write, printed from the codec's encode plan
+    /// (docs/adr/0081): any type that presents the elements of `CodecChainPrevTailGatedSource` is written,
+    /// with no copy into `CodecChainPrevTailGated`, and every other element of the frame is derived from
+    /// them. It refuses
+    /// nothing. A bounded sink that cannot hold all of the frame answers
     /// `bufferOverflow` and holds none of it.
-    public func encode<Sink: SceSink>(into sink: inout Sink) throws(CodecError) {
-        if let value = self.entries, value.count > 4 {
-            throw CodecError.tooManyElements
-        }
+    public static func encodeSource<Source: CodecChainPrevTailGatedSource, Sink: SceSink>(_ source: Source, into sink: inout Sink) throws(CodecError) {
+        var head_folded = source.head
+        if source.entries != nil { head_folded = (head_folded & ~0x1) | ((UInt8(truncatingIfNeeded: (source.entries.map { $0.start.first ? 1 : 0 } ?? 0)) & 0x1) << 0) }
+        head_folded = (head_folded & ~0x2) | ((source.entries != nil) ? 0x2 : 0)
         var frame: [UInt8] = []
-        appendInteger(self.head, to: &frame, .big)
-        if let entries = self.entries {
-            var _prev_entries_after_marker: UInt8 = 0
-            for entry in entries {
-                var piece = BytesSink()
-                try entry.encode(into: &piece, after_marker: _prev_entries_after_marker, tagged: UInt8(truncatingIfNeeded: (self.head >> 0) & 0x1))
-                frame += piece.bytes
-                _prev_entries_after_marker = ((chainIdentifier(entry.header) & 127) == 4) ? 1 : 0
+        appendInteger(head_folded, to: &frame, .big)
+        if let held = source.entries {
+            var entries_entries = BytesSink()
+            for entry in held {
+                try CodecChainPrevEntry.encodeSource(entry, into: &entries_entries)
             }
+            frame += entries_entries.bytes
         }
         try sink.writeBytes(frame)
+    }
+
+    /// Writes the frame of this value to `sink`: `encodeSource` of itself.
+    public func encode<Sink: SceSink>(into sink: inout Sink) throws(CodecError) {
+        try Self.encodeSource(self, into: &sink)
     }
 }

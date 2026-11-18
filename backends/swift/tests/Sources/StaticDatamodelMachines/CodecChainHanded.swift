@@ -8,22 +8,42 @@
 
 import SceForgeRuntime
 
+/// The elements a value of `CodecChainHanded` presents, each a read-only property in the order the
+/// document declares them (docs/adr/0058 §1, docs/adr/0081 §1): what
+/// `CodecChainHanded.encodeSource(_:into:)` writes a frame from. A type of the host's own that
+/// declares them is written with no copy into `CodecChainHanded`, which conforms itself.
+public protocol CodecChainHandedSource {
+    /// What each entry of `entries` is presented as: a source of `CodecChainHandedEntry`, written by its encode.
+    associatedtype Entries_Entry: CodecChainHandedEntrySource
+    var entries: BoundedList<Entries_Entry, CodecChainHanded.EntriesBound> { get }
+}
+
 /// The frame this codec lays on the wire: 1 field(s) of integers, each at its
 /// byte offset and in its byte order. A value, so a host that reads one holds a copy.
-public struct CodecChainHanded: Equatable, Sendable {
+public struct CodecChainHanded: Equatable, Sendable, CodecChainHandedSource {
     /// The fewest bytes a frame can have: its frame is read field by field, and a variable-length
     /// integer or a field of bytes may take more.
     public static let frameLength = 0
 
+    /// How many entries `entries` holds on the wire, as the document bounds it (docs/adr/0065 §6
+    /// R2, R7): its type is held to it where a value of it is made.
+    public enum EntriesBound: SceCountBound {
+        public static let least = 1
+        public static let most: Int? = 4
+    }
+
+    /// The value presents each entry of `entries` as a value of its own codec.
+    public typealias Entries_Entry = CodecChainHandedEntry
+
     /// Entries of `CodecChainHandedEntry`, one after another, at most 4: until one says it is the last. A frame
-    /// with more is refused with `tooManyElements`, as is a value with more at its encode.
-    public var entries: [CodecChainHandedEntry] = []
+    /// with more is refused with `tooManyElements`, and a value with more is no value of its type.
+    public var entries: BoundedList<CodecChainHandedEntry, CodecChainHanded.EntriesBound> = .fewest(of: CodecChainHandedEntry())
 
     /// A frame of zeros, but for the bits a flag's `value` sets: what a holder that has read no
     /// frame yet holds, as a validator that composes this codec does until it is given one.
     public init() {}
 
-    public init(entries: [CodecChainHandedEntry]) {
+    public init(entries: BoundedList<Entries_Entry, CodecChainHanded.EntriesBound>) {
         self.entries = entries
     }
 
@@ -35,7 +55,6 @@ public struct CodecChainHanded: Equatable, Sendable {
     /// and is refused like any other count past the end, and is no trap.
     public static func decode(_ cursor: inout SceCursor) throws(CodecError) -> CodecChainHanded {
         var reader = cursor
-        var frame = CodecChainHanded()
         var _prev_entries_after_marker: UInt8 = 0
         var entries_items: [CodecChainHandedEntry] = []
         var entries_more = false
@@ -52,25 +71,33 @@ public struct CodecChainHanded: Equatable, Sendable {
         if entries_more {
             throw CodecError.tooManyElements
         }
-        frame.entries = entries_items
+        let entries = try BoundedList<CodecChainHandedEntry, CodecChainHanded.EntriesBound>(decoding: entries_items)
         cursor = reader
-        return frame
+        return CodecChainHanded(entries: entries)
     }
 
-    /// Writes the frame to `sink` in one write: a bounded sink that cannot hold all of it answers
+    /// Writes the frame of `source` to `sink` in one write, printed from the codec's encode plan
+    /// (docs/adr/0081): any type that presents the elements of `CodecChainHandedSource` is written,
+    /// with no copy into `CodecChainHanded`, and every other element of the frame is derived from
+    /// them. A value the encoding cannot carry is refused before the first
+    /// byte is written, with the `CodecError` the codec's totality names. A bounded sink that cannot hold all of the frame answers
     /// `bufferOverflow` and holds none of it.
-    public func encode<Sink: SceSink>(into sink: inout Sink) throws(CodecError) {
-        if self.entries.count < 1 || self.entries.count > 4 {
-            throw CodecError.tooManyElements
-        }
+    public static func encodeSource<Source: CodecChainHandedSource, Sink: SceSink>(_ source: Source, into sink: inout Sink) throws(CodecError) {
         var frame: [UInt8] = []
-        var _prev_entries_after_marker: UInt8 = 0
-        for entry in self.entries {
-            var piece = BytesSink()
-            try entry.encode(into: &piece, after_marker: _prev_entries_after_marker)
-            frame += piece.bytes
-            _prev_entries_after_marker = (chainIdentifier(entry.extId) == 4) ? 1 : 0
+        var entries_entries = BytesSink()
+        var entries_after_marker_previous: UInt8 = 0
+        var entries_left = source.entries.count
+        for entry in source.entries {
+            entries_left -= 1
+            try CodecChainHandedEntry.encodeSource(entry, into: &entries_entries, after_marker: entries_after_marker_previous, overrides: CodecChainHandedEntry.Overrides(headerZ: entries_left != 0))
+            entries_after_marker_previous = ((chainIdentifier(entry.header) >> 0) & 0xF) == 0x4 ? 1 : 0
         }
+        frame += entries_entries.bytes
         try sink.writeBytes(frame)
+    }
+
+    /// Writes the frame of this value to `sink`: `encodeSource` of itself.
+    public func encode<Sink: SceSink>(into sink: inout Sink) throws(CodecError) {
+        try Self.encodeSource(self, into: &sink)
     }
 }

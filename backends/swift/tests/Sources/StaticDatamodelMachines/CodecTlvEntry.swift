@@ -8,30 +8,42 @@
 
 import SceForgeRuntime
 
+/// The elements a value of `CodecTlvEntry` presents, each a read-only property in the order the
+/// document declares them (docs/adr/0058 §1, docs/adr/0081 §1): what
+/// `CodecTlvEntry.encodeSource(_:into:)` writes a frame from. A type of the host's own that
+/// declares them is written with no copy into `CodecTlvEntry`, which conforms itself.
+public protocol CodecTlvEntrySource {
+    var entry_type: UInt8 { get }
+    var entry_body: BoundedBytes<CodecTlvEntry.EntryBodyBound> { get }
+}
+
 /// The frame this codec lays on the wire: 3 field(s) of integers, each at its
 /// byte offset and in its byte order. A value, so a host that reads one holds a copy.
-public struct CodecTlvEntry: Equatable, Sendable {
+public struct CodecTlvEntry: Equatable, Sendable, CodecTlvEntrySource {
     /// The fewest bytes a frame can have: its frame is read field by field, and a variable-length
     /// integer or a field of bytes may take more.
     public static let frameLength = 2
 
+    /// How many bytes `entry_body` holds on the wire, as the document bounds it (docs/adr/0065 §6
+    /// R1): its type is held to it where a value of it is made.
+    public enum EntryBodyBound: SceByteBound {
+        public static let least = 0
+        public static let most: Int? = 32
+    }
+
     /// The field at byte 0, big-endian.
     public var entry_type: UInt8 = 0
 
-    /// The field at byte 1, big-endian.
-    public var entry_len: UInt8 = 0
-
     /// The bytes, as many as `entry_len` says, as many as the document's `max-size` admits: a frame that says
-    /// more is refused with `lengthOutOfRange`, as is a value with more at its encode.
-    public var entry_body: [UInt8] = []
+    /// more is refused with `lengthOutOfRange`, and a value with more is no value of its type; the encode derives what it says.
+    public var entry_body: BoundedBytes<CodecTlvEntry.EntryBodyBound> = .fewest
 
     /// A frame of zeros, but for the bits a flag's `value` sets: what a holder that has read no
     /// frame yet holds, as a validator that composes this codec does until it is given one.
     public init() {}
 
-    public init(entry_type: UInt8, entry_len: UInt8, entry_body: [UInt8]) {
+    public init(entry_type: UInt8, entry_body: BoundedBytes<CodecTlvEntry.EntryBodyBound>) {
         self.entry_type = entry_type
-        self.entry_len = entry_len
         self.entry_body = entry_body
     }
 
@@ -43,27 +55,33 @@ public struct CodecTlvEntry: Equatable, Sendable {
     /// and is refused like any other count past the end, and is no trap.
     public static func decode(_ cursor: inout SceCursor) throws(CodecError) -> CodecTlvEntry {
         var reader = cursor
-        var frame = CodecTlvEntry()
-        frame.entry_type = try reader.readInteger(UInt8.self, .big)
-        frame.entry_len = try reader.readInteger(UInt8.self, .big)
-        if frame.entry_len > 32 {
+        let entry_type = try reader.readInteger(UInt8.self, .big)
+        let entry_len = try reader.readInteger(UInt8.self, .big)
+        if entry_len > 32 {
             throw CodecError.lengthOutOfRange
         }
-        frame.entry_body = Array(try reader.readSlice(Int(clamping: frame.entry_len)))
+        let entry_body = try BoundedBytes<CodecTlvEntry.EntryBodyBound>(decoding: Array(try reader.readSlice(Int(clamping: entry_len))))
         cursor = reader
-        return frame
+        return CodecTlvEntry(entry_type: entry_type, entry_body: entry_body)
     }
 
-    /// Writes the frame to `sink` in one write: a bounded sink that cannot hold all of it answers
+    /// Writes the frame of `source` to `sink` in one write, printed from the codec's encode plan
+    /// (docs/adr/0081): any type that presents the elements of `CodecTlvEntrySource` is written,
+    /// with no copy into `CodecTlvEntry`, and every other element of the frame is derived from
+    /// them. It refuses
+    /// nothing. A bounded sink that cannot hold all of the frame answers
     /// `bufferOverflow` and holds none of it.
-    public func encode<Sink: SceSink>(into sink: inout Sink) throws(CodecError) {
-        if self.entry_body.count > 32 {
-            throw CodecError.lengthOutOfRange
-        }
-        var frame: [UInt8] = []
-        appendInteger(self.entry_type, to: &frame, .big)
-        appendInteger(self.entry_len, to: &frame, .big)
-        frame += self.entry_body
+    public static func encodeSource<Source: CodecTlvEntrySource, Sink: SceSink>(_ source: Source, into sink: inout Sink) throws(CodecError) {
+        let entry_len_derived: UInt8 = UInt8(source.entry_body.byteCount)
+        var frame = [UInt8](repeating: 0, count: 2)
+        storeInteger(source.entry_type, into: &frame, at: 0, .big)
+        storeInteger(entry_len_derived, into: &frame, at: 1, .big)
+        source.entry_body.append(to: &frame)
         try sink.writeBytes(frame)
+    }
+
+    /// Writes the frame of this value to `sink`: `encodeSource` of itself.
+    public func encode<Sink: SceSink>(into sink: inout Sink) throws(CodecError) {
+        try Self.encodeSource(self, into: &sink)
     }
 }

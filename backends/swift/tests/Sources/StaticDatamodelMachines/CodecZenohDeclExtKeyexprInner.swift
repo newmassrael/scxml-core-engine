@@ -8,12 +8,29 @@
 
 import SceForgeRuntime
 
+/// The elements a value of `CodecZenohDeclExtKeyexprInner` presents, each a read-only property in the order the
+/// document declares them (docs/adr/0058 §1, docs/adr/0081 §1): what
+/// `CodecZenohDeclExtKeyexprInner.encodeSource(_:into:)` writes a frame from. A type of the host's own that
+/// declares them is written with no copy into `CodecZenohDeclExtKeyexprInner`, which conforms itself.
+public protocol CodecZenohDeclExtKeyexprInnerSource {
+    var inner_header: UInt8 { get }
+    var id: UInt64 { get }
+    var suffix: BoundedBytes<CodecZenohDeclExtKeyexprInner.SuffixBound>? { get }
+}
+
 /// The frame this codec lays on the wire: 3 field(s) of integers, each at its
 /// byte offset and in its byte order. A value, so a host that reads one holds a copy.
-public struct CodecZenohDeclExtKeyexprInner: Equatable, Sendable {
+public struct CodecZenohDeclExtKeyexprInner: Equatable, Sendable, CodecZenohDeclExtKeyexprInnerSource {
     /// The fewest bytes a frame can have: its frame is read field by field, and a variable-length
     /// integer or a field of bytes may take more.
     public static let frameLength = 2
+
+    /// How many bytes `suffix` holds on the wire, as the document bounds it (docs/adr/0065 §6
+    /// R1): its type is held to it where a value of it is made.
+    public enum SuffixBound: SceByteBound {
+        public static let least = 0
+        public static let most: Int? = 65535
+    }
 
     /// The field at byte 0, big-endian.
     public var inner_header: UInt8 = 0
@@ -37,14 +54,14 @@ public struct CodecZenohDeclExtKeyexprInner: Equatable, Sendable {
     /// On the wire only when `(inner_header & 0x1) != 0`; `nil` when it is not. An encode
     /// writes it when it is not `nil`.
     /// The bytes to the end of the frame, as many as the document's `max-size` admits: a frame
-    /// with more is refused with `lengthOutOfRange`, as is a value with more at its encode.
-    public var suffix: [UInt8]? = nil
+    /// with more is refused with `lengthOutOfRange`, and a value with more is no value of its type.
+    public var suffix: BoundedBytes<CodecZenohDeclExtKeyexprInner.SuffixBound>? = nil
 
     /// A frame of zeros, but for the bits a flag's `value` sets: what a holder that has read no
     /// frame yet holds, as a validator that composes this codec does until it is given one.
     public init() {}
 
-    public init(inner_header: UInt8, id: UInt64, suffix: [UInt8]?) {
+    public init(inner_header: UInt8, id: UInt64, suffix: BoundedBytes<CodecZenohDeclExtKeyexprInner.SuffixBound>?) {
         self.inner_header = inner_header
         self.id = id
         self.suffix = suffix
@@ -58,31 +75,52 @@ public struct CodecZenohDeclExtKeyexprInner: Equatable, Sendable {
     /// and is refused like any other count past the end, and is no trap.
     public static func decode(_ cursor: inout SceCursor) throws(CodecError) -> CodecZenohDeclExtKeyexprInner {
         var reader = cursor
-        var frame = CodecZenohDeclExtKeyexprInner()
-        frame.inner_header = try reader.readInteger(UInt8.self, .big)
-        frame.id = try reader.readVle(UInt64.self)
-        if (frame.inner_header & 0x1) != 0 {
+        let inner_header = try reader.readInteger(UInt8.self, .big)
+        let id = try reader.readVle(UInt64.self)
+        var suffix: BoundedBytes<CodecZenohDeclExtKeyexprInner.SuffixBound>? = nil
+        if (inner_header & 0x1) != 0 {
             if reader.remaining > 65535 {
                 throw CodecError.lengthOutOfRange
             }
-            frame.suffix = Array(try reader.readSlice(reader.remaining))
+            suffix = try BoundedBytes<CodecZenohDeclExtKeyexprInner.SuffixBound>(decoding: Array(try reader.readSlice(reader.remaining)))
         }
         cursor = reader
-        return frame
+        return CodecZenohDeclExtKeyexprInner(inner_header: inner_header, id: id, suffix: suffix)
     }
 
-    /// Writes the frame to `sink` in one write: a bounded sink that cannot hold all of it answers
-    /// `bufferOverflow` and holds none of it.
-    public func encode<Sink: SceSink>(into sink: inout Sink) throws(CodecError) {
-        if let value = self.suffix, value.count > 65535 {
-            throw CodecError.lengthOutOfRange
+    /// One-bit flags a parent may set in place of the ones a value presents, such as the flag a
+    /// chain whose entries are `CodecZenohDeclExtKeyexprInner` ends them on, which the chain derives from where
+    /// each entry stands. A flag left `nil` is the value's own.
+    public struct Overrides: Equatable, Sendable {
+        /// The `M` flag of `inner_header`, where a parent sets it.
+        public var innerHeaderM: Bool?
+
+        public init(innerHeaderM: Bool? = nil) {
+            self.innerHeaderM = innerHeaderM
         }
+    }
+
+    /// Writes the frame of `source` to `sink` in one write, printed from the codec's encode plan
+    /// (docs/adr/0081): any type that presents the elements of `CodecZenohDeclExtKeyexprInnerSource` is written,
+    /// with no copy into `CodecZenohDeclExtKeyexprInner`, and every other element of the frame is derived from
+    /// them. It refuses
+    /// nothing. A bounded sink that cannot hold all of the frame answers
+    /// `bufferOverflow` and holds none of it.
+    public static func encodeSource<Source: CodecZenohDeclExtKeyexprInnerSource, Sink: SceSink>(_ source: Source, into sink: inout Sink, overrides: Overrides = Overrides()) throws(CodecError) {
+        var inner_header_folded = source.inner_header
+        inner_header_folded = (inner_header_folded & ~0x1) | ((source.suffix != nil) ? 0x1 : 0)
+        if let set = overrides.innerHeaderM { inner_header_folded = set ? (inner_header_folded | 0x2) : (inner_header_folded & ~0x2) }
         var frame: [UInt8] = []
-        appendInteger(self.inner_header, to: &frame, .big)
-        appendVle(self.id, to: &frame)
-        if let suffix = self.suffix {
-            frame += suffix
+        appendInteger(inner_header_folded, to: &frame, .big)
+        appendVle(source.id, to: &frame)
+        if let held = source.suffix {
+            held.append(to: &frame)
         }
         try sink.writeBytes(frame)
+    }
+
+    /// Writes the frame of this value to `sink`: `encodeSource` of itself.
+    public func encode<Sink: SceSink>(into sink: inout Sink) throws(CodecError) {
+        try Self.encodeSource(self, into: &sink)
     }
 }

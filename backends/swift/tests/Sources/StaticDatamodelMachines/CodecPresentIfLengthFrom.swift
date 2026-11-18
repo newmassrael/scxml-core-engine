@@ -8,12 +8,49 @@
 
 import SceForgeRuntime
 
+/// The elements of `CodecPresentIfLengthFrom` the gates `flags.has_ts` decide together (docs/adr/0065 §6
+/// R4b, R4c): the arm a value holds, each arm the elements present under one assignment of
+/// the gates. The encode derives the gates
+/// from which arm it is, and a decode makes the arm the gates of the frame name.
+/// Each body and list is a source of its codec, so a host's type is presented with no copy.
+public enum CodecPresentIfLengthFromFlagsHasTs<Ts_Source: CodecZenohTimestampSource> {
+    /// While flags.has_ts set.
+    case hasTs(ts: Ts_Source)    /// While flags.has_ts clear.
+    case notHasTs(ext_size: UInt64)
+    /// The place of the arm among the arms, in the order the document's gates make them: what the
+    /// encode derives each gate from.
+    public var arm: Int {
+        switch self {
+        case .hasTs: return 0
+        case .notHasTs: return 1
+        }
+    }
+}
+
+extension CodecPresentIfLengthFromFlagsHasTs: Equatable where Ts_Source: Equatable {}
+
+extension CodecPresentIfLengthFromFlagsHasTs: Sendable where Ts_Source: Sendable {}
+
+/// The elements a value of `CodecPresentIfLengthFrom` presents, each a read-only property in the order the
+/// document declares them (docs/adr/0058 §1, docs/adr/0081 §1): what
+/// `CodecPresentIfLengthFrom.encodeSource(_:into:)` writes a frame from. A type of the host's own that
+/// declares them is written with no copy into `CodecPresentIfLengthFrom`, which conforms itself.
+public protocol CodecPresentIfLengthFromSource {
+    /// What `ts` is presented as: a source of `CodecZenohTimestamp`, written by its encode.
+    associatedtype Ts_Source: CodecZenohTimestampSource
+    var flags: UInt8 { get }
+    var flags_has_ts: CodecPresentIfLengthFromFlagsHasTs<Ts_Source> { get }
+}
+
 /// The frame this codec lays on the wire: 3 field(s) of integers, each at its
 /// byte offset and in its byte order. A value, so a host that reads one holds a copy.
-public struct CodecPresentIfLengthFrom: Equatable, Sendable {
+public struct CodecPresentIfLengthFrom: Equatable, Sendable, CodecPresentIfLengthFromSource {
     /// The fewest bytes a frame can have: its frame is read field by field, and a variable-length
     /// integer or a field of bytes may take more.
     public static let frameLength = 2
+
+    /// The value presents `ts` as a value of its own codec.
+    public typealias Ts_Source = CodecZenohTimestamp
 
     /// The field at byte 0, big-endian.
     public var flags: UInt8 = 0
@@ -24,24 +61,16 @@ public struct CodecPresentIfLengthFrom: Equatable, Sendable {
         set { flags = newValue ? (flags | 0x1) : (flags & ~0x1) }
     }
 
-    /// A variable-length integer: base-128, the least significant group first, at most as many
-    /// bytes as its type needs.
-    public var ext_size: UInt64 = 0
-
-    /// On the wire only when `(flags & 0x1) != 0`; `nil` when it is not. An encode
-    /// writes it when it is not `nil`.
-    /// A `CodecZenohTimestamp` laid in place: it has no bytes of its own, the frame holds its fields
-    /// where this field stands, read from as many bytes as the document says an earlier field gives it, of which it need not take all.
-    public var ts: CodecZenohTimestamp? = nil
+    /// The elements the gates `flags.has_ts` decide together.
+    public var flags_has_ts: CodecPresentIfLengthFromFlagsHasTs<Ts_Source> = .notHasTs(ext_size: 0)
 
     /// A frame of zeros, but for the bits a flag's `value` sets: what a holder that has read no
     /// frame yet holds, as a validator that composes this codec does until it is given one.
     public init() {}
 
-    public init(flags: UInt8, ext_size: UInt64, ts: CodecZenohTimestamp?) {
+    public init(flags: UInt8, flags_has_ts: CodecPresentIfLengthFromFlagsHasTs<Ts_Source>) {
         self.flags = flags
-        self.ext_size = ext_size
-        self.ts = ts
+        self.flags_has_ts = flags_has_ts
     }
 
     /// Decodes the frame at the cursor and moves the cursor past it. The frame is read field by
@@ -52,32 +81,56 @@ public struct CodecPresentIfLengthFrom: Equatable, Sendable {
     /// and is refused like any other count past the end, and is no trap.
     public static func decode(_ cursor: inout SceCursor) throws(CodecError) -> CodecPresentIfLengthFrom {
         var reader = cursor
-        var frame = CodecPresentIfLengthFrom()
-        frame.flags = try reader.readInteger(UInt8.self, .big)
-        frame.ext_size = try reader.readVle(UInt64.self)
-        if (frame.flags & 0x1) != 0 {
-            let ts_inner_length = Int(clamping: frame.ext_size)
+        let flags = try reader.readInteger(UInt8.self, .big)
+        let ext_size = try reader.readVle(UInt64.self)
+        var ts: CodecZenohTimestamp? = nil
+        if (flags & 0x1) != 0 {
+            let ts_inner_length = Int(clamping: ext_size)
             var ts_inner = SceCursor(Array(try reader.peekSlice(ts_inner_length)))
-            frame.ts = try CodecZenohTimestamp.decode(&ts_inner)
+            ts = try CodecZenohTimestamp.decode(&ts_inner)
             try reader.advance(ts_inner_length)
         }
+        let flags_has_ts_group: CodecPresentIfLengthFromFlagsHasTs<Ts_Source>
+        if ((flags >> 0) & 1) != 0 {
+            flags_has_ts_group = .hasTs(ts: ts!)
+        } else {
+            flags_has_ts_group = .notHasTs(ext_size: ext_size)
+        }
         cursor = reader
-        return frame
+        return CodecPresentIfLengthFrom(flags: flags, flags_has_ts: flags_has_ts_group)
     }
 
-    /// Writes the frame to `sink` in one write: a bounded sink that cannot hold all of it answers
+    /// Writes the frame of `source` to `sink` in one write, printed from the codec's encode plan
+    /// (docs/adr/0081): any type that presents the elements of `CodecPresentIfLengthFromSource` is written,
+    /// with no copy into `CodecPresentIfLengthFrom`, and every other element of the frame is derived from
+    /// them. It refuses
+    /// nothing. A bounded sink that cannot hold all of the frame answers
     /// `bufferOverflow` and holds none of it.
-    public func encode<Sink: SceSink>(into sink: inout Sink) throws(CodecError) {
-        var frame: [UInt8] = []
-        appendInteger(self.flags, to: &frame, .big)
-        appendVle(self.ext_size, to: &frame)
-        if let ts = self.ts {
-            do {
-                var piece = BytesSink()
-                try ts.encode(into: &piece)
-                frame += piece.bytes
-            }
+    public static func encodeSource<Source: CodecPresentIfLengthFromSource, Sink: SceSink>(_ source: Source, into sink: inout Sink) throws(CodecError) {
+        var ts_member: Source.Ts_Source? = nil
+        var ext_size_member: UInt64? = nil
+        switch source.flags_has_ts {
+        case .hasTs(let ts): ts_member = ts
+        case .notHasTs(let ext_size): ext_size_member = ext_size
         }
+        var flags_folded = source.flags
+        flags_folded = (flags_folded & ~0x1) | ((ts_member != nil) ? 0x1 : 0)
+        var ts_bytes: [UInt8]? = nil
+        if let held = ts_member {
+            var piece = BytesSink()
+            try CodecZenohTimestamp.encodeSource(held, into: &piece)
+            ts_bytes = piece.bytes
+        }
+        let ext_size_derived: UInt64 = ts_bytes != nil ? UInt64((ts_bytes?.count ?? 0)) : (ext_size_member ?? 0)
+        var frame: [UInt8] = []
+        appendInteger(flags_folded, to: &frame, .big)
+        appendVle(ext_size_derived, to: &frame)
+        if let held = ts_bytes { frame += held }
         try sink.writeBytes(frame)
+    }
+
+    /// Writes the frame of this value to `sink`: `encodeSource` of itself.
+    public func encode<Sink: SceSink>(into sink: inout Sink) throws(CodecError) {
+        try Self.encodeSource(self, into: &sink)
     }
 }

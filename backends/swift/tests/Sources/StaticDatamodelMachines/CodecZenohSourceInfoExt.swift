@@ -8,16 +8,25 @@
 
 import SceForgeRuntime
 
+/// The elements a value of `CodecZenohSourceInfoExt` presents, each a read-only property in the order the
+/// document declares them (docs/adr/0058 §1, docs/adr/0081 §1): what
+/// `CodecZenohSourceInfoExt.encodeSource(_:into:)` writes a frame from. A type of the host's own that
+/// declares them is written with no copy into `CodecZenohSourceInfoExt`, which conforms itself.
+public protocol CodecZenohSourceInfoExtSource {
+    /// What `info` is presented as: a source of `CodecZenohSourceInfo`, written by its encode.
+    associatedtype Info_Source: CodecZenohSourceInfoSource
+    var info: Info_Source { get }
+}
+
 /// The frame this codec lays on the wire: 2 field(s) of integers, each at its
 /// byte offset and in its byte order. A value, so a host that reads one holds a copy.
-public struct CodecZenohSourceInfoExt: Equatable, Sendable {
+public struct CodecZenohSourceInfoExt: Equatable, Sendable, CodecZenohSourceInfoExtSource {
     /// The fewest bytes a frame can have: its frame is read field by field, and a variable-length
     /// integer or a field of bytes may take more.
     public static let frameLength = 1 + CodecZenohSourceInfo.frameLength
 
-    /// A variable-length integer: base-128, the least significant group first, at most as many
-    /// bytes as its type needs.
-    public var ext_size: UInt64 = 0
+    /// The value presents `info` as a value of its own codec.
+    public typealias Info_Source = CodecZenohSourceInfo
 
     /// A `CodecZenohSourceInfo` laid in place: it has no bytes of its own, the frame holds its fields
     /// where this field stands, read from as many bytes as the document says an earlier field gives it, of which it need not take all.
@@ -27,8 +36,7 @@ public struct CodecZenohSourceInfoExt: Equatable, Sendable {
     /// frame yet holds, as a validator that composes this codec does until it is given one.
     public init() {}
 
-    public init(ext_size: UInt64, info: CodecZenohSourceInfo) {
-        self.ext_size = ext_size
+    public init(info: Info_Source) {
         self.info = info
     }
 
@@ -40,26 +48,34 @@ public struct CodecZenohSourceInfoExt: Equatable, Sendable {
     /// and is refused like any other count past the end, and is no trap.
     public static func decode(_ cursor: inout SceCursor) throws(CodecError) -> CodecZenohSourceInfoExt {
         var reader = cursor
-        var frame = CodecZenohSourceInfoExt()
-        frame.ext_size = try reader.readVle(UInt64.self)
-        let info_inner_length = Int(clamping: frame.ext_size)
+        let ext_size = try reader.readVle(UInt64.self)
+        let info_inner_length = Int(clamping: ext_size)
         var info_inner = SceCursor(Array(try reader.peekSlice(info_inner_length)))
-        frame.info = try CodecZenohSourceInfo.decode(&info_inner)
+        let info = try CodecZenohSourceInfo.decode(&info_inner)
         try reader.advance(info_inner_length)
         cursor = reader
-        return frame
+        return CodecZenohSourceInfoExt(info: info)
     }
 
-    /// Writes the frame to `sink` in one write: a bounded sink that cannot hold all of it answers
+    /// Writes the frame of `source` to `sink` in one write, printed from the codec's encode plan
+    /// (docs/adr/0081): any type that presents the elements of `CodecZenohSourceInfoExtSource` is written,
+    /// with no copy into `CodecZenohSourceInfoExt`, and every other element of the frame is derived from
+    /// them. It refuses
+    /// nothing. A bounded sink that cannot hold all of the frame answers
     /// `bufferOverflow` and holds none of it.
-    public func encode<Sink: SceSink>(into sink: inout Sink) throws(CodecError) {
+    public static func encodeSource<Source: CodecZenohSourceInfoExtSource, Sink: SceSink>(_ source: Source, into sink: inout Sink) throws(CodecError) {
+        var info_piece = BytesSink()
+        try CodecZenohSourceInfo.encodeSource(source.info, into: &info_piece)
+        let info_bytes = info_piece.bytes
+        let ext_size_derived: UInt64 = UInt64(info_bytes.count)
         var frame: [UInt8] = []
-        appendVle(self.ext_size, to: &frame)
-        do {
-            var piece = BytesSink()
-            try self.info.encode(into: &piece)
-            frame += piece.bytes
-        }
+        appendVle(ext_size_derived, to: &frame)
+        frame += info_bytes
         try sink.writeBytes(frame)
+    }
+
+    /// Writes the frame of this value to `sink`: `encodeSource` of itself.
+    public func encode<Sink: SceSink>(into sink: inout Sink) throws(CodecError) {
+        try Self.encodeSource(self, into: &sink)
     }
 }

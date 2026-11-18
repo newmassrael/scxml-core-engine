@@ -8,12 +8,26 @@
 
 import SceForgeRuntime
 
+/// The elements a value of `CodecZenohDeclKexpr` presents, each a read-only property in the order the
+/// document declares them (docs/adr/0058 §1, docs/adr/0081 §1): what
+/// `CodecZenohDeclKexpr.encodeSource(_:into:)` writes a frame from. A type of the host's own that
+/// declares them is written with no copy into `CodecZenohDeclKexpr`, which conforms itself.
+public protocol CodecZenohDeclKexprSource {
+    /// What `wireexpr` is presented as: a source of `CodecZenohWireexpr`, written by its encode.
+    associatedtype Wireexpr_Source: CodecZenohWireexprSource
+    var id: UInt16 { get }
+    var wireexpr: Wireexpr_Source { get }
+}
+
 /// The frame this codec lays on the wire: 2 field(s) of integers, each at its
 /// byte offset and in its byte order. A value, so a host that reads one holds a copy.
-public struct CodecZenohDeclKexpr: Equatable, Sendable {
+public struct CodecZenohDeclKexpr: Equatable, Sendable, CodecZenohDeclKexprSource {
     /// The fewest bytes a frame can have: its frame is read field by field, and a variable-length
     /// integer or a field of bytes may take more.
     public static let frameLength = 1 + CodecZenohWireexpr.frameLength
+
+    /// The value presents `wireexpr` as a value of its own codec.
+    public typealias Wireexpr_Source = CodecZenohWireexpr
 
     /// A variable-length integer: base-128, the least significant group first, at most as many
     /// bytes as its type needs.
@@ -27,7 +41,7 @@ public struct CodecZenohDeclKexpr: Equatable, Sendable {
     /// frame yet holds, as a validator that composes this codec does until it is given one.
     public init() {}
 
-    public init(id: UInt16, wireexpr: CodecZenohWireexpr) {
+    public init(id: UInt16, wireexpr: Wireexpr_Source) {
         self.id = id
         self.wireexpr = wireexpr
     }
@@ -40,23 +54,37 @@ public struct CodecZenohDeclKexpr: Equatable, Sendable {
     /// and is refused like any other count past the end, and is no trap.
     public static func decode(_ cursor: inout SceCursor, N: UInt8) throws(CodecError) -> CodecZenohDeclKexpr {
         var reader = cursor
-        var frame = CodecZenohDeclKexpr()
-        frame.id = try reader.readVle(UInt16.self)
-        frame.wireexpr = try CodecZenohWireexpr.decode(&reader, N: N)
+        let id = try reader.readVle(UInt16.self)
+        let wireexpr = try CodecZenohWireexpr.decode(&reader, N: N)
         cursor = reader
-        return frame
+        return CodecZenohDeclKexpr(id: id, wireexpr: wireexpr)
     }
 
-    /// Writes the frame to `sink` in one write: a bounded sink that cannot hold all of it answers
+    /// Writes the frame of `source` to `sink` in one write, printed from the codec's encode plan
+    /// (docs/adr/0081): any type that presents the elements of `CodecZenohDeclKexprSource` is written,
+    /// with no copy into `CodecZenohDeclKexpr`, and every other element of the frame is derived from
+    /// them. It refuses
+    /// nothing. A bounded sink that cannot hold all of the frame answers
     /// `bufferOverflow` and holds none of it.
-    public func encode<Sink: SceSink>(into sink: inout Sink, N: UInt8) throws(CodecError) {
+    public static func encodeSource<Source: CodecZenohDeclKexprSource, Sink: SceSink>(_ source: Source, into sink: inout Sink) throws(CodecError) {
+        var wireexpr_piece = BytesSink()
+        try CodecZenohWireexpr.encodeSource(source.wireexpr, into: &wireexpr_piece)
+        let wireexpr_bytes = wireexpr_piece.bytes
         var frame: [UInt8] = []
-        appendVle(self.id, to: &frame)
-        do {
-            var piece = BytesSink()
-            try self.wireexpr.encode(into: &piece, N: N)
-            frame += piece.bytes
-        }
+        appendVle(source.id, to: &frame)
+        frame += wireexpr_bytes
         try sink.writeBytes(frame)
+    }
+
+    /// The flag input `N` that `source` says, which the encode is not handed
+    /// (docs/adr/0065 §6 R4a): 1 or 0. A parent hands the decode this bit, and derives it from
+    /// here for the encode.
+    public static func inputN<Source: CodecZenohDeclKexprSource>(_ source: Source) -> UInt8 {
+        CodecZenohWireexpr.inputN(source.wireexpr)
+    }
+
+    /// Writes the frame of this value to `sink`: `encodeSource` of itself.
+    public func encode<Sink: SceSink>(into sink: inout Sink) throws(CodecError) {
+        try Self.encodeSource(self, into: &sink)
     }
 }

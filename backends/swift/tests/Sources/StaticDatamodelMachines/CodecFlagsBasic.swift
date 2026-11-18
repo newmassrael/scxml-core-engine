@@ -8,9 +8,17 @@
 
 import SceForgeRuntime
 
+/// The elements a value of `CodecFlagsBasic` presents, each a read-only property in the order the
+/// document declares them (docs/adr/0058 §1, docs/adr/0081 §1): what
+/// `CodecFlagsBasic.encodeSource(_:into:)` writes a frame from. A type of the host's own that
+/// declares them is written with no copy into `CodecFlagsBasic`, which conforms itself.
+public protocol CodecFlagsBasicSource {
+    var header: UInt8 { get }
+}
+
 /// The frame this codec lays on the wire: 1 field(s) of integers, each at its
 /// byte offset and in its byte order. A value, so a host that reads one holds a copy.
-public struct CodecFlagsBasic: Equatable, Sendable {
+public struct CodecFlagsBasic: Equatable, Sendable, CodecFlagsBasicSource {
     /// The bytes of one frame.
     public static let frameLength = 1
 
@@ -61,11 +69,46 @@ public struct CodecFlagsBasic: Equatable, Sendable {
         return frame
     }
 
-    /// Writes the frame to `sink` in one write: a bounded sink that cannot hold all of it answers
+    /// One-bit flags a parent may set in place of the ones a value presents, such as the flag a
+    /// chain whose entries are `CodecFlagsBasic` ends them on, which the chain derives from where
+    /// each entry stands. A flag left `nil` is the value's own.
+    public struct Overrides: Equatable, Sendable {
+        /// The `reliable` flag of `header`, where a parent sets it.
+        public var headerReliable: Bool?
+        /// The `more` flag of `header`, where a parent sets it.
+        public var headerMore: Bool?
+        /// The `drop` flag of `header`, where a parent sets it.
+        public var headerDrop: Bool?
+        /// The `first` flag of `header`, where a parent sets it.
+        public var headerFirst: Bool?
+
+        public init(headerReliable: Bool? = nil, headerMore: Bool? = nil, headerDrop: Bool? = nil, headerFirst: Bool? = nil) {
+            self.headerReliable = headerReliable
+            self.headerMore = headerMore
+            self.headerDrop = headerDrop
+            self.headerFirst = headerFirst
+        }
+    }
+
+    /// Writes the frame of `source` to `sink` in one write, printed from the codec's encode plan
+    /// (docs/adr/0081): any type that presents the elements of `CodecFlagsBasicSource` is written,
+    /// with no copy into `CodecFlagsBasic`, and every other element of the frame is derived from
+    /// them. It refuses
+    /// nothing. A bounded sink that cannot hold all of the frame answers
     /// `bufferOverflow` and holds none of it.
-    public func encode<Sink: SceSink>(into sink: inout Sink) throws(CodecError) {
+    public static func encodeSource<Source: CodecFlagsBasicSource, Sink: SceSink>(_ source: Source, into sink: inout Sink, overrides: Overrides = Overrides()) throws(CodecError) {
+        var header_folded = source.header
+        if let set = overrides.headerReliable { header_folded = set ? (header_folded | 0x80) : (header_folded & ~0x80) }
+        if let set = overrides.headerMore { header_folded = set ? (header_folded | 0x40) : (header_folded & ~0x40) }
+        if let set = overrides.headerDrop { header_folded = set ? (header_folded | 0x20) : (header_folded & ~0x20) }
+        if let set = overrides.headerFirst { header_folded = set ? (header_folded | 0x10) : (header_folded & ~0x10) }
         var frame = [UInt8](repeating: 0, count: Self.frameLength)
-        storeInteger(self.header, into: &frame, at: 0, .big)
+        storeInteger(header_folded, into: &frame, at: 0, .big)
         try sink.writeBytes(frame)
+    }
+
+    /// Writes the frame of this value to `sink`: `encodeSource` of itself.
+    public func encode<Sink: SceSink>(into sink: inout Sink) throws(CodecError) {
+        try Self.encodeSource(self, into: &sink)
     }
 }

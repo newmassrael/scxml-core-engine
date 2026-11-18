@@ -8,23 +8,43 @@
 
 import SceForgeRuntime
 
+/// The elements a value of `CodecDeclaredBoundsToEnd` presents, each a read-only property in the order the
+/// document declares them (docs/adr/0058 §1, docs/adr/0081 §1): what
+/// `CodecDeclaredBoundsToEnd.encodeSource(_:into:)` writes a frame from. A type of the host's own that
+/// declares them is written with no copy into `CodecDeclaredBoundsToEnd`, which conforms itself.
+public protocol CodecDeclaredBoundsToEndSource {
+    /// What each entry of `items` is presented as: a source of `CodecRepeatElem`, written by its encode.
+    associatedtype Items_Entry: CodecRepeatElemSource
+    var items: BoundedList<Items_Entry, CodecDeclaredBoundsToEnd.ItemsBound> { get }
+}
+
 /// The frame this codec lays on the wire: 1 field(s) of integers, each at its
 /// byte offset and in its byte order. A value, so a host that reads one holds a copy.
-public struct CodecDeclaredBoundsToEnd: Equatable, Sendable {
+public struct CodecDeclaredBoundsToEnd: Equatable, Sendable, CodecDeclaredBoundsToEndSource {
     /// The fewest bytes a frame can have: its frame is read field by field, and a variable-length
     /// integer or a field of bytes may take more.
     public static let frameLength = 0
 
+    /// How many entries `items` holds on the wire, as the document bounds it (docs/adr/0065 §6
+    /// R2, R7): its type is held to it where a value of it is made.
+    public enum ItemsBound: SceCountBound {
+        public static let least = 0
+        public static let most: Int? = 2
+    }
+
+    /// The value presents each entry of `items` as a value of its own codec.
+    public typealias Items_Entry = CodecRepeatElem
+
     /// The entries to the end of the frame, each a `CodecRepeatElem`, as many as the document's
-    /// `max-count` admits: a frame with more is refused with `tooManyElements`, as is a value with
-    /// more at its encode.
-    public var items: [CodecRepeatElem] = []
+    /// `max-count` admits: a frame with more is refused with `tooManyElements`, and a value with
+    /// more is no value of its type.
+    public var items: BoundedList<CodecRepeatElem, CodecDeclaredBoundsToEnd.ItemsBound> = .fewest(of: CodecRepeatElem())
 
     /// A frame of zeros, but for the bits a flag's `value` sets: what a holder that has read no
     /// frame yet holds, as a validator that composes this codec does until it is given one.
     public init() {}
 
-    public init(items: [CodecRepeatElem]) {
+    public init(items: BoundedList<Items_Entry, CodecDeclaredBoundsToEnd.ItemsBound>) {
         self.items = items
     }
 
@@ -36,7 +56,6 @@ public struct CodecDeclaredBoundsToEnd: Equatable, Sendable {
     /// and is refused like any other count past the end, and is no trap.
     public static func decode(_ cursor: inout SceCursor) throws(CodecError) -> CodecDeclaredBoundsToEnd {
         var reader = cursor
-        var frame = CodecDeclaredBoundsToEnd()
         var items_items: [CodecRepeatElem] = []
         while reader.remaining > 0 {
             if items_items.count > 1 {
@@ -44,23 +63,29 @@ public struct CodecDeclaredBoundsToEnd: Equatable, Sendable {
             }
             items_items.append(try CodecRepeatElem.decode(&reader))
         }
-        frame.items = items_items
+        let items = try BoundedList<CodecRepeatElem, CodecDeclaredBoundsToEnd.ItemsBound>(decoding: items_items)
         cursor = reader
-        return frame
+        return CodecDeclaredBoundsToEnd(items: items)
     }
 
-    /// Writes the frame to `sink` in one write: a bounded sink that cannot hold all of it answers
+    /// Writes the frame of `source` to `sink` in one write, printed from the codec's encode plan
+    /// (docs/adr/0081): any type that presents the elements of `CodecDeclaredBoundsToEndSource` is written,
+    /// with no copy into `CodecDeclaredBoundsToEnd`, and every other element of the frame is derived from
+    /// them. It refuses
+    /// nothing. A bounded sink that cannot hold all of the frame answers
     /// `bufferOverflow` and holds none of it.
-    public func encode<Sink: SceSink>(into sink: inout Sink) throws(CodecError) {
-        if self.items.count > 2 {
-            throw CodecError.tooManyElements
-        }
+    public static func encodeSource<Source: CodecDeclaredBoundsToEndSource, Sink: SceSink>(_ source: Source, into sink: inout Sink) throws(CodecError) {
         var frame: [UInt8] = []
-        for entry in self.items {
-            var piece = BytesSink()
-            try entry.encode(into: &piece)
-            frame += piece.bytes
+        var items_entries = BytesSink()
+        for entry in source.items {
+            try CodecRepeatElem.encodeSource(entry, into: &items_entries)
         }
+        frame += items_entries.bytes
         try sink.writeBytes(frame)
+    }
+
+    /// Writes the frame of this value to `sink`: `encodeSource` of itself.
+    public func encode<Sink: SceSink>(into sink: inout Sink) throws(CodecError) {
+        try Self.encodeSource(self, into: &sink)
     }
 }

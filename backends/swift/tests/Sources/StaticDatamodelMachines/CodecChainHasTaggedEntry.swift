@@ -8,9 +8,19 @@
 
 import SceForgeRuntime
 
+/// The elements a value of `CodecChainHasTaggedEntry` presents, each a read-only property in the order the
+/// document declares them (docs/adr/0058 §1, docs/adr/0081 §1): what
+/// `CodecChainHasTaggedEntry.encodeSource(_:into:)` writes a frame from. A type of the host's own that
+/// declares them is written with no copy into `CodecChainHasTaggedEntry`, which conforms itself.
+public protocol CodecChainHasTaggedEntrySource {
+    var entry_type: UInt8 { get }
+    var ctl: UInt8 { get }
+    var body: UInt8 { get }
+}
+
 /// The frame this codec lays on the wire: 3 field(s) of integers, each at its
 /// byte offset and in its byte order. A value, so a host that reads one holds a copy.
-public struct CodecChainHasTaggedEntry: Equatable, Sendable {
+public struct CodecChainHasTaggedEntry: Equatable, Sendable, CodecChainHasTaggedEntrySource {
     /// The bytes of one frame.
     public static let frameLength = 3
 
@@ -53,13 +63,36 @@ public struct CodecChainHasTaggedEntry: Equatable, Sendable {
         return frame
     }
 
-    /// Writes the frame to `sink` in one write: a bounded sink that cannot hold all of it answers
+    /// One-bit flags a parent may set in place of the ones a value presents, such as the flag a
+    /// chain whose entries are `CodecChainHasTaggedEntry` ends them on, which the chain derives from where
+    /// each entry stands. A flag left `nil` is the value's own.
+    public struct Overrides: Equatable, Sendable {
+        /// The `more` flag of `ctl`, where a parent sets it.
+        public var ctlMore: Bool?
+
+        public init(ctlMore: Bool? = nil) {
+            self.ctlMore = ctlMore
+        }
+    }
+
+    /// Writes the frame of `source` to `sink` in one write, printed from the codec's encode plan
+    /// (docs/adr/0081): any type that presents the elements of `CodecChainHasTaggedEntrySource` is written,
+    /// with no copy into `CodecChainHasTaggedEntry`, and every other element of the frame is derived from
+    /// them. It refuses
+    /// nothing. A bounded sink that cannot hold all of the frame answers
     /// `bufferOverflow` and holds none of it.
-    public func encode<Sink: SceSink>(into sink: inout Sink) throws(CodecError) {
+    public static func encodeSource<Source: CodecChainHasTaggedEntrySource, Sink: SceSink>(_ source: Source, into sink: inout Sink, overrides: Overrides = Overrides()) throws(CodecError) {
+        var ctl_folded = source.ctl
+        if let set = overrides.ctlMore { ctl_folded = set ? (ctl_folded | 0x1) : (ctl_folded & ~0x1) }
         var frame = [UInt8](repeating: 0, count: Self.frameLength)
-        storeInteger(self.entry_type, into: &frame, at: 0, .big)
-        storeInteger(self.ctl, into: &frame, at: 1, .big)
-        storeInteger(self.body, into: &frame, at: 2, .big)
+        storeInteger(source.entry_type, into: &frame, at: 0, .big)
+        storeInteger(ctl_folded, into: &frame, at: 1, .big)
+        storeInteger(source.body, into: &frame, at: 2, .big)
         try sink.writeBytes(frame)
+    }
+
+    /// Writes the frame of this value to `sink`: `encodeSource` of itself.
+    public func encode<Sink: SceSink>(into sink: inout Sink) throws(CodecError) {
+        try Self.encodeSource(self, into: &sink)
     }
 }

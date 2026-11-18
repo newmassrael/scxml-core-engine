@@ -8,9 +8,18 @@
 
 import SceForgeRuntime
 
+/// The elements a value of `CodecChainHandedEntry` presents, each a read-only property in the order the
+/// document declares them (docs/adr/0058 §1, docs/adr/0081 §1): what
+/// `CodecChainHandedEntry.encodeSource(_:into:)` writes a frame from. A type of the host's own that
+/// declares them is written with no copy into `CodecChainHandedEntry`, which conforms itself.
+public protocol CodecChainHandedEntrySource {
+    var header: UInt8 { get }
+    var value: UInt8? { get }
+}
+
 /// The frame this codec lays on the wire: 2 field(s) of integers, each at its
 /// byte offset and in its byte order. A value, so a host that reads one holds a copy.
-public struct CodecChainHandedEntry: Equatable, Sendable {
+public struct CodecChainHandedEntry: Equatable, Sendable, CodecChainHandedEntrySource {
     /// The fewest bytes a frame can have: its frame is read field by field, and a variable-length
     /// integer or a field of bytes may take more.
     public static let frameLength = 1
@@ -59,30 +68,51 @@ public struct CodecChainHandedEntry: Equatable, Sendable {
     /// and is refused like any other count past the end, and is no trap.
     public static func decode(_ cursor: inout SceCursor, after_marker: UInt8) throws(CodecError) -> CodecChainHandedEntry {
         var reader = cursor
-        var frame = CodecChainHandedEntry()
-        frame.header = try reader.readInteger(UInt8.self, .big)
-        if (after_marker & 0x1) != 0 || (frame.header & 0x40) != 0 {
-            frame.value = try reader.readInteger(UInt8.self, .big)
+        let header = try reader.readInteger(UInt8.self, .big)
+        var value: UInt8? = nil
+        if (after_marker & 0x1) != 0 || (header & 0x40) != 0 {
+            value = try reader.readInteger(UInt8.self, .big)
         }
         cursor = reader
-        return frame
+        return CodecChainHandedEntry(header: header, value: value)
     }
 
-    /// Writes the frame to `sink` in one write: a bounded sink that cannot hold all of it answers
-    /// `bufferOverflow` and holds none of it.
-    public func encode<Sink: SceSink>(into sink: inout Sink, after_marker: UInt8) throws(CodecError) {
-        if (after_marker & 0x1) != 0 || (self.header & 0x40) != 0 {
-            if self.value == nil {
-                throw CodecError.presentIfMismatch
-            }
-        } else if self.value != nil {
-            throw CodecError.presentIfMismatch
+    /// One-bit flags a parent may set in place of the ones a value presents, such as the flag a
+    /// chain whose entries are `CodecChainHandedEntry` ends them on, which the chain derives from where
+    /// each entry stands. A flag left `nil` is the value's own.
+    public struct Overrides: Equatable, Sendable {
+        /// The `wide` flag of `header`, where a parent sets it.
+        public var headerWide: Bool?
+        /// The `Z` flag of `header`, where a parent sets it.
+        public var headerZ: Bool?
+
+        public init(headerWide: Bool? = nil, headerZ: Bool? = nil) {
+            self.headerWide = headerWide
+            self.headerZ = headerZ
         }
+    }
+
+    /// Writes the frame of `source` to `sink` in one write, printed from the codec's encode plan
+    /// (docs/adr/0081): any type that presents the elements of `CodecChainHandedEntrySource` is written,
+    /// with no copy into `CodecChainHandedEntry`, and every other element of the frame is derived from
+    /// them. A value the encoding cannot carry is refused before the first
+    /// byte is written, with the `CodecError` the codec's totality names. A bounded sink that cannot hold all of the frame answers
+    /// `bufferOverflow` and holds none of it.
+    public static func encodeSource<Source: CodecChainHandedEntrySource, Sink: SceSink>(_ source: Source, into sink: inout Sink, after_marker: UInt8, overrides: Overrides = Overrides()) throws(CodecError) {
+        var header_folded = source.header
+        if let set = overrides.headerWide { header_folded = set ? (header_folded | 0x40) : (header_folded & ~0x40) }
+        if let set = overrides.headerZ { header_folded = set ? (header_folded | 0x80) : (header_folded & ~0x80) }
+        if (after_marker != 0 || ((header_folded >> 6) & 1) != 0) != (source.value != nil) { throw CodecError.presentIfMismatch }
         var frame: [UInt8] = []
-        appendInteger(self.header, to: &frame, .big)
-        if let value = self.value {
-            appendInteger(value, to: &frame, .big)
+        appendInteger(header_folded, to: &frame, .big)
+        if let held = source.value {
+            appendInteger(held, to: &frame, .big)
         }
         try sink.writeBytes(frame)
+    }
+
+    /// Writes the frame of this value to `sink`: `encodeSource` of itself.
+    public func encode<Sink: SceSink>(into sink: inout Sink, after_marker: UInt8) throws(CodecError) {
+        try Self.encodeSource(self, into: &sink, after_marker: after_marker)
     }
 }

@@ -8,12 +8,36 @@
 
 import SceForgeRuntime
 
+/// The elements a value of `CodecDeclaredBoundsGated` presents, each a read-only property in the order the
+/// document declares them (docs/adr/0058 §1, docs/adr/0081 §1): what
+/// `CodecDeclaredBoundsGated.encodeSource(_:into:)` writes a frame from. A type of the host's own that
+/// declares them is written with no copy into `CodecDeclaredBoundsGated`, which conforms itself.
+public protocol CodecDeclaredBoundsGatedSource {
+    var flags: UInt8 { get }
+    var name: BoundedText<CodecDeclaredBoundsGated.NameBound>? { get }
+    var rest: BoundedBytes<CodecDeclaredBoundsGated.RestBound> { get }
+}
+
 /// The frame this codec lays on the wire: 4 field(s) of integers, each at its
 /// byte offset and in its byte order. A value, so a host that reads one holds a copy.
-public struct CodecDeclaredBoundsGated: Equatable, Sendable {
+public struct CodecDeclaredBoundsGated: Equatable, Sendable, CodecDeclaredBoundsGatedSource {
     /// The fewest bytes a frame can have: its frame is read field by field, and a variable-length
     /// integer or a field of bytes may take more.
     public static let frameLength = 1
+
+    /// How many bytes `name` holds on the wire, as the document bounds it (docs/adr/0065 §6
+    /// R1): its type is held to it where a value of it is made.
+    public enum NameBound: SceByteBound {
+        public static let least = 0
+        public static let most: Int? = 3
+    }
+
+    /// How many bytes `rest` holds on the wire, as the document bounds it (docs/adr/0065 §6
+    /// R1): its type is held to it where a value of it is made.
+    public enum RestBound: SceByteBound {
+        public static let least = 0
+        public static let most: Int? = 2
+    }
 
     /// The field at byte 0, big-endian.
     public var flags: UInt8 = 0
@@ -26,27 +50,21 @@ public struct CodecDeclaredBoundsGated: Equatable, Sendable {
 
     /// On the wire only when `(flags & 0x1) != 0`; `nil` when it is not. An encode
     /// writes it when it is not `nil`.
-    /// The field at byte 1, big-endian.
-    public var name_len: UInt8? = nil
-
-    /// On the wire only when `(flags & 0x1) != 0`; `nil` when it is not. An encode
-    /// writes it when it is not `nil`.
     /// The text of as many UTF-8 bytes as `name_len` says, as many as the document's `max-size` admits: a frame that says
-    /// more is refused with `lengthOutOfRange`, as is a value with more at its encode.
+    /// more is refused with `lengthOutOfRange`, and a value with more is no value of its type; the encode derives what it says.
     /// Bytes that are not UTF-8 are refused with `invalidUtf8`.
-    public var name: String? = nil
+    public var name: BoundedText<CodecDeclaredBoundsGated.NameBound>? = nil
 
     /// The bytes to the end of the frame, as many as the document's `max-size` admits: a frame
-    /// with more is refused with `lengthOutOfRange`, as is a value with more at its encode.
-    public var rest: [UInt8] = []
+    /// with more is refused with `lengthOutOfRange`, and a value with more is no value of its type.
+    public var rest: BoundedBytes<CodecDeclaredBoundsGated.RestBound> = .fewest
 
     /// A frame of zeros, but for the bits a flag's `value` sets: what a holder that has read no
     /// frame yet holds, as a validator that composes this codec does until it is given one.
     public init() {}
 
-    public init(flags: UInt8, name_len: UInt8?, name: String?, rest: [UInt8]) {
+    public init(flags: UInt8, name: BoundedText<CodecDeclaredBoundsGated.NameBound>?, rest: BoundedBytes<CodecDeclaredBoundsGated.RestBound>) {
         self.flags = flags
-        self.name_len = name_len
         self.name = name
         self.rest = rest
     }
@@ -59,43 +77,50 @@ public struct CodecDeclaredBoundsGated: Equatable, Sendable {
     /// and is refused like any other count past the end, and is no trap.
     public static func decode(_ cursor: inout SceCursor) throws(CodecError) -> CodecDeclaredBoundsGated {
         var reader = cursor
-        var frame = CodecDeclaredBoundsGated()
-        frame.flags = try reader.readInteger(UInt8.self, .big)
-        if (frame.flags & 0x1) != 0 {
-            frame.name_len = try reader.readInteger(UInt8.self, .big)
+        let flags = try reader.readInteger(UInt8.self, .big)
+        var name_len: UInt8? = nil
+        if (flags & 0x1) != 0 {
+            name_len = try reader.readInteger(UInt8.self, .big)
         }
-        if (frame.flags & 0x1) != 0 {
-            if (frame.name_len ?? 0) > 3 {
+        var name: BoundedText<CodecDeclaredBoundsGated.NameBound>? = nil
+        if (flags & 0x1) != 0 {
+            if (name_len ?? 0) > 3 {
                 throw CodecError.lengthOutOfRange
             }
-            frame.name = try reader.readString(Int(clamping: (frame.name_len ?? 0)))
+            name = try BoundedText<CodecDeclaredBoundsGated.NameBound>(decoding: try reader.readString(Int(clamping: (name_len ?? 0))))
         }
         if reader.remaining > 2 {
             throw CodecError.lengthOutOfRange
         }
-        frame.rest = Array(try reader.readSlice(reader.remaining))
+        let rest = try BoundedBytes<CodecDeclaredBoundsGated.RestBound>(decoding: Array(try reader.readSlice(reader.remaining)))
         cursor = reader
-        return frame
+        return CodecDeclaredBoundsGated(flags: flags, name: name, rest: rest)
     }
 
-    /// Writes the frame to `sink` in one write: a bounded sink that cannot hold all of it answers
+    /// Writes the frame of `source` to `sink` in one write, printed from the codec's encode plan
+    /// (docs/adr/0081): any type that presents the elements of `CodecDeclaredBoundsGatedSource` is written,
+    /// with no copy into `CodecDeclaredBoundsGated`, and every other element of the frame is derived from
+    /// them. It refuses
+    /// nothing. A bounded sink that cannot hold all of the frame answers
     /// `bufferOverflow` and holds none of it.
-    public func encode<Sink: SceSink>(into sink: inout Sink) throws(CodecError) {
-        if let value = self.name, value.utf8.count > 3 {
-            throw CodecError.lengthOutOfRange
-        }
-        if self.rest.count > 2 {
-            throw CodecError.lengthOutOfRange
-        }
+    public static func encodeSource<Source: CodecDeclaredBoundsGatedSource, Sink: SceSink>(_ source: Source, into sink: inout Sink) throws(CodecError) {
+        let name_len_derived: UInt8 = source.name != nil ? UInt8((source.name?.byteCount ?? 0)) : 0
+        var flags_folded = source.flags
+        flags_folded = (flags_folded & ~0x1) | ((source.name != nil) ? 0x1 : 0)
         var frame: [UInt8] = []
-        appendInteger(self.flags, to: &frame, .big)
-        if let name_len = self.name_len {
-            appendInteger(name_len, to: &frame, .big)
+        appendInteger(flags_folded, to: &frame, .big)
+        if ((flags_folded >> 0) & 1) != 0 {
+            appendInteger(name_len_derived, to: &frame, .big)
         }
-        if let name = self.name {
-            frame += Array(name.utf8)
+        if let held = source.name {
+            held.append(to: &frame)
         }
-        frame += self.rest
+        source.rest.append(to: &frame)
         try sink.writeBytes(frame)
+    }
+
+    /// Writes the frame of this value to `sink`: `encodeSource` of itself.
+    public func encode<Sink: SceSink>(into sink: inout Sink) throws(CodecError) {
+        try Self.encodeSource(self, into: &sink)
     }
 }
