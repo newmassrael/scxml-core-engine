@@ -7,6 +7,9 @@
   `sce-host-kv-put-if` writes only over the version it names; section 8, how
   the reference stores number versions; section 9, the identity of an
   invocation a repeat would be answered by.
+- Amended by: ADR 0107 (D7): section 10, signing and sealing as COSE operations,
+  served by the Rust and C++ reference hosts; sections 7 to 9 name them where
+  they list the types, the scenarios and what is not provided.
 
 A statechart that runs under `datamodel="sce-static"` has no operating system to
 call. What it needs of one (the time, a place to keep a small value, a
@@ -331,7 +334,8 @@ once. Not provided here: any binding to a real provider.
   `<invoke>` of it as `codegen/standard-host-type-not-served`, on that
   `<invoke>`, naming the type, the lane and the lanes that serve it; a child the
   document carries is held to the same lane. Every type of sections 2 to 6 is
-  served on every lane. That every lane serves every type stays the goal, and is
+  served on every lane; the types of section 10 are served on Rust and C++.
+  That every lane serves every type stays the goal, and is
   not a precondition of adding one: a type is added with the lanes whose
   reference host it lands in, and a lane joins its entry in the change that
   lands that host's support and its scenarios. A backend added to SCE serves
@@ -365,16 +369,18 @@ once. Not provided here: any binding to a real provider.
 
 ## 8. Conformance and reference hosts
 
-`tests/host_features/scenarios/` holds one scenario for each feature, and the five
+`tests/host_features/scenarios/` holds one scenario for each feature, and the six
 machines that ask for it are
-`sce-build/tests/fixtures/static_datamodel/static_host_{kv,clock,notify,http,model}.scxml`.
+`sce-build/tests/fixtures/static_datamodel/static_host_{kv,clock,notify,http,model,cose}.scxml`.
+A lane whose reference host does not serve a feature (section 7) does not replay
+its scenario, and its driver names the scenario as one it does not serve.
 A scenario is a list of steps. A step may set what the reference host is like
 (`host`), send an event, and state what the machine published and what the host
 was asked:
 
 | Member | What it says |
 |---|---|
-| `host` | directives applied before the step: `clock` (`utc_ms`, `monotonic_ms`, `zone_id`, `utc_offset_s`, each optional), `permission` (what the platform says), `user_decision` (what the user would choose if asked: `granted`, `denied`, `none`), `fail` (operation type to the failure code it fails with; an empty object ends them), `quota` (the most keys the store holds), `http` (what the transport answers: `status`, `headers` as name and value pairs, and `body` as text, `body_hex` as bytes or `body_repeat` as a text and a count; or `fail`, a transport failure; or `hold`, which does not answer), `model` (what the scripted provider is like, each member optional: `answers`, the answers it gives, one a start, in order, each `text` or `text_repeat` (a text and a count) with `finish` (`stop` when not written), replacing those not given yet; `constrained`, whether it decodes under a grammar; `name`, what it says answered; `context`, the most tokens a prompt and `max_tokens` may take together; `hold`, true for a provider that does not answer) |
+| `host` | directives applied before the step: `clock` (`utc_ms`, `monotonic_ms`, `zone_id`, `utc_offset_s`, each optional), `permission` (what the platform says), `user_decision` (what the user would choose if asked: `granted`, `denied`, `none`), `fail` (operation type to the failure code it fails with; an empty object ends them), `quota` (the most keys the store holds), `http` (what the transport answers: `status`, `headers` as name and value pairs, and `body` as text, `body_hex` as bytes or `body_repeat` as a text and a count; or `fail`, a transport failure; or `hold`, which does not answer), `model` (what the scripted provider is like, each member optional: `answers`, the answers it gives, one a start, in order, each `text` or `text_repeat` (a text and a count) with `finish` (`stop` when not written), replacing those not given yet; `constrained`, whether it decodes under a grammar; `name`, what it says answered; `context`, the most tokens a prompt and `max_tokens` may take together; `hold`, true for a provider that does not answer), `cose_keys` (the keys of section 10, replacing those configured before: `sign`, a key id to the hexadecimal 32-byte seed of an Ed25519 key; `aead`, a key id to a hexadecimal 32-byte ChaCha20/Poly1305 key; `trust`, a trust set's name to the ids of `sign` keys of the same directive, whose public keys it holds; a table not named is empty, and the keys the host derived are kept) |
 | `advance_ms` | moves the engine's manual clock on, which is how a deadline passes |
 | `event`, `data` | an external event and its payload |
 | `expect.state` | the atomic state the machine is in |
@@ -524,3 +530,111 @@ These are not built, and nothing here stands in for them:
 - **Delivery of a scheduled notification while the application is not running**,
   and any user interface for a permission request. A reference host answers the
   permission as the scenario sets it.
+- **Signing and sealing on the lanes other than Rust and C++** (section 10). Each
+  is a later step of docs/adr/0107; until it lands, a build for that lane refuses a
+  machine that asks for one of the operations (section 7).
+- **The COSE structures as codec documents** (docs/adr/0107, D9). A CBOR codec
+  writes one map whose keys are unsigned integers of one head byte and whose
+  entries hold no signed integer (SCE_FORGE.md section 4.6.1; docs/adr/0101 has
+  not landed): it has no spelling for a tagged array (`COSE_Sign1`,
+  `COSE_Encrypt0`), for a map carried inside a byte string (the protected
+  header), or for a negative algorithm (`-8`). The reference hosts write and
+  read the structures themselves, through their language's CBOR heads, and are
+  held to one encoding by the shared scenario's bytes.
+- **A key store.** The Rust reference host keeps the keys it is given and those
+  it derives in memory, for its own life rather than a session's, and zeroes none
+  of them when it drops them.
+
+## 10. Signing and sealing
+
+A host signs and seals documents as COSE objects (RFC 9052), and verifies and
+opens them, with keys it holds. No key enters a statechart: a signing key, a
+symmetric key and a trust set are the host's configuration, and a statechart
+names each by its id. Served by the Rust and C++ reference hosts (section 7;
+docs/adr/0107, D7).
+
+| Operation | `type` | Request | Result |
+|---|---|---|---|
+| Sign | `sce-host-cose-sign1` | `cose_sign1_request`: `key_id` (64), `payload` bytes (4096), `external_aad` bytes (256) | `cose_sign1_result`: `cose` bytes (4352) |
+| Verify | `sce-host-cose-verify1` | `cose_verify1_request`: `trust_set` (64), `cose` bytes (4352), `external_aad` bytes (256) | `cose_verify1_result`: `valid` bool, `key_id` string (64), `payload` bytes (4096) |
+| Seal | `sce-host-cose-encrypt0` | `cose_encrypt0_request`: `key_id` (64), `plaintext` bytes (4352), `external_aad` bytes (256) | `cose_encrypt0_result`: `cose` bytes (4480) |
+| Open | `sce-host-cose-decrypt0` | `cose_decrypt0_request`: `key_id` (64), `cose` bytes (4480), `external_aad` bytes (256) | `cose_decrypt0_result`: `opened` bool, `plaintext` bytes (4352) |
+| Derive a key | `sce-host-key-derive` | `key_derive_request`: `secret` bytes (256), `input_key_id` (64), `salt` bytes (64), `info` bytes (256) | `key_derive_result`: `key_id` string (64) |
+
+A byte string travels, in a request and in a result, as its byte-exact Latin-1
+text (SCE Accepted Subset §2.12): each byte the character of that code point.
+
+Failure codes: `unknown_key` for all five (the signing key, the trust set, the
+symmetric key or the input key the request names is not one the host holds), and
+`unavailable` (the host's key service cannot be reached, or, for a seal, the
+operating system gave no random nonce).
+
+Refusal (`invalid_argument`): an empty `key_id` (sign, seal, open) or
+`trust_set` (verify); a derivation given both a `secret` and an `input_key_id`, or
+neither; a byte string's text holding a character past U+00FF, or a value past
+its field's bound, which the typed request already refuses before a host sees it.
+
+**The algorithms are fixed, not negotiated.** EdDSA on Ed25519 (RFC 9053 section
+2.2, COSE algorithm -8); ChaCha20/Poly1305 (COSE algorithm 24) under a 96-bit
+nonce the host draws from the operating system's random source for each seal;
+HKDF with SHA-256 (RFC 5869), 32 bytes of output.
+
+**The objects.** Every item is written in its deterministic form (RFC 8949
+section 4.2.1), so two hosts given the same key and payload write the same
+signed object:
+
+- A signature is the tagged `COSE_Sign1` (tag 18) `[protected, unprotected,
+  payload, signature]`: the protected header `{1: -8, 4: key_id}` (the key id as
+  the bytes of its text), an empty unprotected header, the payload attached, and
+  the signature over `Sig_structure` `["Signature1", protected, external_aad,
+  payload]` (RFC 9052 section 4.4).
+- A seal is the tagged `COSE_Encrypt0` (tag 16) `[protected, unprotected,
+  ciphertext]`: the protected header `{1: 24}`, the unprotected header `{4:
+  key_id, 5: nonce}`, and the ciphertext with its 16-byte tag, authenticating
+  `Enc_structure` `["Encrypt0", protected, external_aad]` (RFC 9052 section 5.3).
+
+**Verify.** `valid` is true when a signer of the trust set signed the object over
+`external_aad`; `key_id` is that signer's id and `payload` what it signed. A key
+id the object carries, in either header, selects the signer of that id alone; an
+object without one is tried against each signer of the set, in its order.
+Anything else is an answer, `valid` false with `key_id` and `payload` empty: a
+signature that does not verify, an object that is not a tagged `COSE_Sign1` of
+definite lengths with nothing after it, a protected header whose algorithm is not
+-8, a header label given twice or in both headers, a `crit` header (label 2), a
+detached payload, and a payload past 4096 bytes.
+
+**Open.** `opened` is true when `key_id` opens the object over `external_aad`, and
+`plaintext` is then what was sealed. The key id the object carries is not read:
+the request names the key. Anything else is an answer, `opened` false with
+`plaintext` empty: a key that does not open it, an object that is not a tagged
+`COSE_Encrypt0` of definite lengths with nothing after it, a protected algorithm
+that is not 24, a nonce that is not 12 bytes, a partial nonce (label 6), a header
+label given twice or in both headers, a `crit` header, a detached ciphertext, and
+a plaintext past 4352 bytes.
+
+**Derive.** The input keying material is `secret` or the symmetric key
+`input_key_id` names, configured or derived; a signing key is not one. An empty
+`salt` is no salt. The host keeps the derived key and answers its id,
+`derived:<n>`, numbering from 1 the keys it derived, in order; a derivation that
+is refused or fails takes no number. Deriving the same material twice gives two
+ids that hold one key. A derived key is a symmetric key from then on: sealing,
+opening and a further derivation take it by its id, and a configured key never
+has an id beginning `derived:`.
+
+Signing, verifying and opening change nothing, and repeated give the same
+answer. A seal draws a new nonce each time, so two seals of one plaintext are two
+objects. A derivation keeps a new key each time.
+
+Left to the host: where its keys come from and how they are stored, how long a
+derived key lives (at least as long as the session that derived it), and whether
+`unavailable` is ever answered for a key service it does not have.
+
+The reference hosts are Rust's `sce_rust_host_features::cose` on the RustCrypto
+crates, its keys given by `ReferenceHost::set_cose_keys`, and C++'s on libsodium.
+`static_host_cose` and its scenario hold both to the objects of the COSE working
+group's examples for these algorithms (`eddsa-examples/eddsa-sig-01.json`,
+`chacha-poly-examples/chacha-poly-enc-01.json`; the second's
+`intermediates.AAD_hex` spells the context `Encrypt1` and does not open its own
+output, which opens under `Encrypt0`), to the bytes of a signature as the
+deterministic encoding writes them, and to keys derived by HKDF opening objects
+sealed under the same keys elsewhere.
