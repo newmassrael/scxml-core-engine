@@ -69,18 +69,20 @@ mutation_case "a C parent has no case for a catch-all body" <<'PY'
 edit("sce-build/src/forge/generator.rs",
      r'''    if d.catch_all {
         switch_block.push_str(&format!(
-            "    case {embed_upper}_BODY_KIND_DEFAULT:''',
+            "    case {}: {local} |= (uint8_t)((self->{snake}.body.default_tag''',
      r'''    if d.catch_all && d.bit == u32::MAX {
         switch_block.push_str(&format!(
-            "    case {embed_upper}_BODY_KIND_DEFAULT:''')
+            "    case {}: {local} |= (uint8_t)((self->{snake}.body.default_tag''')
 PY
 
 mutation_case "a C parent adds the catch-all's tag without shifting it to the flag" <<'PY'
 edit("sce-build/src/forge/generator.rs",
      r'''u) << {}); break;\n",
+            c11_source::arm_kind(embed_pascal, None),
             d.bit
         ));''',
      r'''u) << {}); break;\n",
+            c11_source::arm_kind(embed_pascal, None),
             0u32
         ));''')
 PY
