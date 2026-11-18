@@ -1,0 +1,230 @@
+{
+  "description": "The values whose CBOR every backend's encode is pinned to before docs/adr/0101 moves anything (its step 0, section 8.3): every committed CBOR codec document, at a smallest and a largest value, and each optional entry present on the smallest value, so that every optional is pinned both ways. A value is an object of the codec's entries by id, an absent optional entry left out. A number is a JSON number; an enum is its variant's name, or a number for an open enum's value no variant names; a text is a string or {\"fill\": text, \"count\": n}; a byte string is hex or {\"fill\": hex, \"count\": n}; a list is an array or {\"repeat\": element, \"count\": n}; a record is an object of every field. A case may start from an earlier case of its codec (`base`) and add or replace entries (`with`). pin.py writes each value in deterministic CBOR for the drivers, and captured.json holds what each backend wrote for it.",
+  "codecs": [
+    {
+      "document": "tests/forge/resources/codec_cbor_map.scxml",
+      "cases": [
+        {
+          "name": "smallest",
+          "note": "the required entries at their smallest, both optionals absent",
+          "with": { "id": { "fill": "00", "count": 16 }, "source": "", "pattern": 0, "payload": "" }
+        },
+        {
+          "name": "largest",
+          "note": "every entry present at its longest: texts and byte strings at their bounds, numbers at their widest heads",
+          "with": {
+            "id": { "fill": "ff", "count": 16 },
+            "source": { "fill": "a", "count": 64 },
+            "pattern": 255,
+            "payload": { "fill": "ff", "count": 256 },
+            "deadline": 18446744073709551615,
+            "urgent": true
+          }
+        },
+        { "name": "deadline-present", "base": "smallest", "with": { "deadline": 0 }, "note": "a present zero is written" },
+        { "name": "urgent-present", "base": "smallest", "with": { "urgent": false }, "note": "a present false is written" },
+        {
+          "name": "corpus-value",
+          "note": "the value of the conformance corpus's codec_cbor_map cases, deadline 2^32 at the 8-byte head",
+          "with": {
+            "id": "000102030405060708090a0b0c0d0e0f",
+            "source": "node-a",
+            "pattern": 3,
+            "payload": "dead",
+            "deadline": 4294967296,
+            "urgent": true
+          }
+        }
+      ]
+    },
+    {
+      "document": "tests/forge/conformance/broadcast_log_text/broadcast_log_conformance_text_event.scxml",
+      "cases": [
+        { "name": "smallest", "note": "both required entries empty, the note absent", "with": { "label": "", "blob": "" } },
+        {
+          "name": "largest",
+          "note": "every entry at its bound",
+          "with": {
+            "label": { "fill": "a", "count": 8 },
+            "blob": { "fill": "ff", "count": 8 },
+            "note": { "fill": "a", "count": 4 }
+          }
+        },
+        { "name": "note-present", "base": "smallest", "with": { "note": "" }, "note": "a present empty text is written" }
+      ]
+    },
+    {
+      "document": "tests/forge/conformance/codec_cbor_open_enum/codec_cbor_open_enum.scxml",
+      "cases": [
+        { "name": "smallest", "note": "the open enum's number 0, which no variant names", "with": { "status": 0 } },
+        { "name": "largest", "note": "the carrier's largest number in both entries", "with": { "status": 255, "detail": 255 } },
+        { "name": "detail-present", "base": "smallest", "with": { "detail": "generalReject" }, "note": "a declared variant, 16, at the two-byte head" },
+        { "name": "declared-variant", "with": { "status": "responsePending" }, "note": "a declared variant, 120" }
+      ]
+    },
+    {
+      "document": "sce-build/tests/fixtures/cbor_codec/codec_cbor_signed_enum.scxml",
+      "cases": [
+        { "name": "smallest", "note": "the variant 0, the detail absent", "with": { "status": "nominal" } },
+        { "name": "largest", "note": "the largest declared number in both entries", "with": { "status": "high", "detail": "high" } },
+        { "name": "detail-present", "base": "smallest", "with": { "detail": "nominal" }, "note": "a present variant 0 is written" },
+        {
+          "name": "status-negative",
+          "with": { "status": "fault" },
+          "note": "the variant -1, major type 1: the encode refuses it and the decode reads no negative integer today, so the capture pins the refusal; docs/adr/0101 section 8.2 moves it to a byte case in the step that changes it"
+        },
+        {
+          "name": "detail-negative",
+          "base": "smallest",
+          "with": { "detail": "fault" },
+          "note": "the variant -1 in the optional entry, refused today as status-negative is"
+        }
+      ]
+    },
+    {
+      "document": "sce-build/tests/fixtures/cbor_codec/codec_cbor_record_list.scxml",
+      "cases": [
+        {
+          "name": "smallest",
+          "note": "an empty list of records, the optional list absent",
+          "with": { "id": { "fill": "00", "count": 16 }, "source": "", "seen": [] }
+        },
+        {
+          "name": "largest",
+          "note": "both lists full, every record at its largest",
+          "with": {
+            "id": { "fill": "ff", "count": 16 },
+            "source": { "fill": "a", "count": 64 },
+            "seen": { "repeat": { "author": { "fill": "a", "count": 16 }, "seq": 18446744073709551615 }, "count": 2 },
+            "context": { "repeat": { "author": { "fill": "a", "count": 16 }, "seq": 18446744073709551615 }, "count": 3 }
+          }
+        },
+        { "name": "context-present", "base": "smallest", "with": { "context": [] }, "note": "a present empty list is written" },
+        {
+          "name": "test-value",
+          "note": "the value forge_cbor_record_list.rs holds the Rust codec to",
+          "with": {
+            "id": "000102030405060708090a0b0c0d0e0f",
+            "source": "n",
+            "seen": [{ "author": "node-a", "seq": 1 }],
+            "context": [{ "author": "node-a", "seq": 2 }, { "author": "node-b", "seq": 300 }]
+          }
+        }
+      ]
+    },
+    {
+      "document": "sce-build/tests/fixtures/cbor_codec/codec_cbor_record_list_bytes.scxml",
+      "cases": [
+        { "name": "smallest", "note": "an empty list of records, the optional list absent", "with": { "latest": [] } },
+        {
+          "name": "largest",
+          "note": "both lists full, every digest at its bound and every number at the 8-byte head",
+          "with": {
+            "latest": { "repeat": { "digest": "ffffffff", "seq": 18446744073709551615 }, "count": 2 },
+            "pending": { "repeat": { "digest": "ffffffff", "seq": 18446744073709551615 }, "count": 3 }
+          }
+        },
+        { "name": "pending-present", "base": "smallest", "with": { "pending": [] }, "note": "a present empty list is written" },
+        {
+          "name": "short-digest",
+          "with": { "latest": [{ "digest": "", "seq": 23 }, { "digest": "ab", "seq": 24 }] },
+          "note": "digests below their bound, numbers on each side of the one-byte head"
+        }
+      ]
+    },
+    {
+      "document": "sce-build/tests/fixtures/cbor_codec/codec_cbor_record_list_least.scxml",
+      "cases": [
+        {
+          "name": "smallest",
+          "note": "one record, the lower count, the optional list absent",
+          "with": { "seen": [{ "author": "", "seq": 0 }] }
+        },
+        {
+          "name": "largest",
+          "note": "both lists full, every record at its largest",
+          "with": {
+            "seen": { "repeat": { "author": { "fill": "a", "count": 16 }, "seq": 18446744073709551615 }, "count": 2 },
+            "context": { "repeat": { "author": { "fill": "a", "count": 16 }, "seq": 18446744073709551615 }, "count": 3 }
+          }
+        },
+        {
+          "name": "context-present",
+          "base": "smallest",
+          "with": { "context": [{ "author": "", "seq": 0 }] },
+          "note": "the optional list at its lower count"
+        }
+      ]
+    },
+    {
+      "document": "stdlib/mesh/envelope.scxml",
+      "cases": [
+        {
+          "name": "smallest",
+          "note": "the required entries at their smallest, every optional absent",
+          "with": {
+            "id": { "fill": "00", "count": 16 },
+            "source": "",
+            "event_type": "",
+            "pattern": "fireForget",
+            "datacontenttype": "none",
+            "data": ""
+          }
+        },
+        {
+          "name": "largest",
+          "note": "every entry present at its longest: each text and byte string at its bound, each number at the 8-byte head, the causal vector full",
+          "with": {
+            "id": { "fill": "ff", "count": 16 },
+            "source": { "fill": "a", "count": 262144 },
+            "event_type": { "fill": "a", "count": 262144 },
+            "pattern": "causalVector",
+            "datacontenttype": "raw",
+            "data": { "fill": "ff", "count": 16777216 },
+            "subject": { "fill": "a", "count": 262144 },
+            "correlation_id": { "fill": "ff", "count": 16 },
+            "reply_to": { "fill": "a", "count": 262144 },
+            "invoke_id": { "fill": "ff", "count": 16 },
+            "rpc_status": "unavailable",
+            "rpc_error_message": { "fill": "a", "count": 262144 },
+            "deadline_unix_ms": 18446744073709551615,
+            "sequence_no": 18446744073709551615,
+            "routing_id": { "fill": "ff", "count": 16 },
+            "parallel_id": { "fill": "a", "count": 262144 },
+            "region_id": { "fill": "a", "count": 262144 },
+            "child_session_id": { "fill": "a", "count": 262144 },
+            "causal_epoch": 18446744073709551615,
+            "causal_vector": {
+              "repeat": { "hi": 18446744073709551615, "lo": 18446744073709551615, "seq": 18446744073709551615 },
+              "count": 64
+            }
+          }
+        },
+        { "name": "subject-present", "base": "smallest", "with": { "subject": "" } },
+        { "name": "correlation_id-present", "base": "smallest", "with": { "correlation_id": { "fill": "00", "count": 16 } } },
+        { "name": "reply_to-present", "base": "smallest", "with": { "reply_to": "" } },
+        { "name": "invoke_id-present", "base": "smallest", "with": { "invoke_id": { "fill": "00", "count": 16 } } },
+        { "name": "rpc_status-present", "base": "smallest", "with": { "rpc_status": "ok" } },
+        { "name": "rpc_error_message-present", "base": "smallest", "with": { "rpc_error_message": "" } },
+        { "name": "deadline_unix_ms-present", "base": "smallest", "with": { "deadline_unix_ms": 0 } },
+        { "name": "sequence_no-present", "base": "smallest", "with": { "sequence_no": 0 } },
+        { "name": "routing_id-present", "base": "smallest", "with": { "routing_id": { "fill": "00", "count": 16 } } },
+        { "name": "parallel_id-present", "base": "smallest", "with": { "parallel_id": "" } },
+        { "name": "region_id-present", "base": "smallest", "with": { "region_id": "" } },
+        { "name": "child_session_id-present", "base": "smallest", "with": { "child_session_id": "" } },
+        { "name": "causal_epoch-present", "base": "smallest", "with": { "causal_epoch": 0 } },
+        { "name": "causal_vector-present", "base": "smallest", "with": { "causal_vector": [] } },
+        {
+          "name": "causal-route",
+          "base": "smallest",
+          "with": {
+            "pattern": "causalVector",
+            "causal_epoch": 7,
+            "causal_vector": [{ "hi": 1, "lo": 2, "seq": 3 }, { "hi": 300, "lo": 65536, "seq": 4294967296 }]
+          },
+          "note": "a causal route's tag as the Mesh writes one, its numbers across the head boundaries"
+        }
+      ]
+    }
+  ]
+}
