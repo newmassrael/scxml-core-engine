@@ -23098,11 +23098,9 @@ fn present_if_decode_length_ref(
 /// Per-language: peek_slice + UTF-8 validate + host-string ctor +
 /// advance. Mirrors the bytes shape but the host local is
 /// `String` / `std::string` / `kotlin.String` / `string` / `str`
-/// instead of the byte container. UTF-8 invalid surfaces as typed
-/// `CodecError::InvalidUtf8` (Rust / Go / Python) or the existing
-/// `nullopt` / `null` truncation sentinel (Cpp / Kotlin) — the latter
-/// two languages never construct CodecError variants at runtime
-/// (mirrors the VleWidthOverflow declaration-only convention).
+/// instead of the byte container. UTF-8 invalid surfaces as the typed
+/// `CodecError::InvalidUtf8` on every backend (`KOTLIN_INVALID_UTF8`,
+/// `CPP_INVALID_UTF8`; docs/adr/0099, amendment of 2026-11-16).
 ///
 /// The parser ban on gated String was lifted 2026-05-03 — gated
 /// arms ship for every backend (`Option<String>` /

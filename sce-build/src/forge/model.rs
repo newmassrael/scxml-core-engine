@@ -3106,9 +3106,9 @@ impl CodecField {
     /// Whether this field is a UTF-8 string (RFC §synth-5-B).
     /// Wire shape mirrors a length-prefixed bytes field; the host-
     /// language type is `String` / `std::string` / `kotlin.String` /
-    /// `string` / `str`. Decode validates UTF-8 and emits typed
-    /// `CodecError::InvalidUtf8` (Rust / Go / Python) or returns the
-    /// truncation sentinel (Cpp / Kotlin) on malformed input. Parser
+    /// `string` / `str`. Decode validates UTF-8 and refuses malformed
+    /// input with the typed `CodecError::InvalidUtf8` on every backend
+    /// (docs/adr/0099, amendment of 2026-11-16). Parser
     /// constrains String fields to `BitSize::LengthRef` only.
     pub fn is_string(&self) -> bool {
         matches!(self.sce_type, SceType::String)

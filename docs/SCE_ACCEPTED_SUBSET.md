@@ -9837,9 +9837,8 @@ vocabulary intent of `sce:kind="enum"`.
 The attribute also decides what the generated code does with a
 value no variant declares, because a codec field typed by an enum
 travels on the wire as that enum's carrier. A closed set refuses
-such a value at decode: the Rust, Go, Python and C11 runtimes
-report `UndeclaredEnumValue`, and C++ and Kotlin return the same
-truncation sentinel they return for malformed text. An open set's
+such a value at decode: every runtime reports `UndeclaredEnumValue`
+by its own name (docs/adr/0099, amendment of 2026-11-16). An open set's
 generated type carries the value instead, so it survives a decode
 and a re-encode unchanged. A holder of either kind that must be
 constructed before a decode fills it starts at the first variant

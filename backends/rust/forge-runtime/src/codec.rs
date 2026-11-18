@@ -49,11 +49,8 @@ pub enum CodecError {
     /// contract — zenoh-pico itself aliases the bytes without
     /// validating, but SCE-side codecs reject malformed text early so
     /// downstream procedures never see a malformed `String` /
-    /// `std::string`. The Rust + Go + Python runtimes construct this
-    /// at decode; Cpp + Kotlin collapse to the truncation sentinel
-    /// (`std::nullopt` / `null`) instead — those backends never
-    /// construct typed `CodecError` variants at runtime, mirroring the
-    /// existing VleWidthOverflow declaration-only convention.
+    /// `std::string`. Every runtime's decode answers this kind by its own
+    /// name (docs/adr/0099, amendment of 2026-11-16).
     InvalidUtf8,
     /// Encode-side counterpart to `NeedMoreBytes`: the destination sink
     /// reported insufficient remaining capacity for the next write.
@@ -72,8 +69,9 @@ pub enum CodecError {
     /// `Vec`, so an over-long wire run surfaces as this typed error
     /// instead of an allocation. Authors raise `sce:max-count` to admit
     /// longer runs (trading inline footprint for capacity). Decode-side
-    /// symbol; the Cpp/Kotlin truncation backends never construct it
-    /// (their list storage is the heap-backed host container).
+    /// symbol, answered by every runtime's decode, the ones whose list
+    /// storage grows included: the bound is the field's type, not a
+    /// capacity (docs/adr/0077 §2).
     TooManyElements,
     /// A value inside its field's bound and past what this form holds: the
     /// capacity the deployment gave an inline buffer or list
@@ -86,9 +84,8 @@ pub enum CodecError {
     /// so a carrier value outside it is not a value of that type and
     /// the frame does not decode. An open set (`sce:strict-variants=
     /// "false"`) carries every value of its carrier and never raises
-    /// this. The Rust + Go + Python runtimes construct it at decode;
-    /// Cpp + Kotlin collapse to the truncation sentinel
-    /// (`std::nullopt` / `null`), as they do for `InvalidUtf8`.
+    /// this. Every runtime's decode answers this kind by its own name
+    /// (docs/adr/0099, amendment of 2026-11-16).
     UndeclaredEnumValue,
     /// A `sce:encoding="cbor"` codec (SCE_FORGE.md §4.6.1) read bytes that
     /// are not the CBOR it expects: a head it cannot read (reserved

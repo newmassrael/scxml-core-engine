@@ -11,8 +11,9 @@
   below zero (section 2.1); the decode reads a stated profile of CBOR, definite lengths only, and is
   variation-tolerant within it (section 3.1), which narrows the first decision; every runtime's decode names its
   refusal, by a separate item that lands before this record's backend steps ("Landing order"); and a signed union
-  takes this record's shape, by an amendment of ADR 0092 section 5.3 before its step 7 (section 2.5). Nothing of it
-  has landed; "Landing order" lists the steps.
+  takes this record's shape, by an amendment of ADR 0092 section 5.3 before its step 7 (section 2.5). Of the two
+  items that land first, the typed decode refusal has landed; none of this record's own steps has. "Landing order"
+  lists them.
 - Date: 2026-11-14
 - Amends:
   - ADR 0086 section 1.7 ("A codec entry keeps a type of its own"): it now holds for a content-line codec alone;
@@ -428,11 +429,12 @@ message types of the TTCN-3 corpus get their codec documents.**
    `CborDuplicateKey`, `CborUnknownVariant`, `CborUnionEntries`; Go `codec.ErrCborWrongType`, `ErrCborDuplicateKey`,
    `ErrCborUnknownVariant`, `ErrCborUnionEntries`; Swift `cborWrongType`, `cborDuplicateKey`, `cborUnknownVariant`,
    `cborUnionEntries`; C11 `SCE_FORGE_CODEC_CBOR_WRONG_TYPE`, `_DUPLICATE_KEY`, `_UNKNOWN_VARIANT`,
-   `_UNION_ENTRIES`; and C++, Kotlin and Python in the typed refusal their decode returns once the item that gives
-   every runtime's decode one has landed (C++ `CodecError`, Kotlin `CodecError`, Python an exception of
-   `sce_forge_runtime.cbor`), which lands before this record's backend steps ("Landing order"). Until that item, a
-   decode on those three answers absence for every refusal, the codec convention SCE_FORGE.md section 4.6.1 states.
-   The corpus holds all seven to each refusal's name. Two refusals change their name: a key given twice and an item
+   `_UNION_ENTRIES`; C++ `CodecError::CborWrongType`, ... in the `::SCE::Forge::Decoded` its decode answers;
+   Kotlin `CodecError.CborWrongType`, ... in its `Decoded.Refused`; Python `sce_forge_runtime.cbor.CborWrongType`,
+   ..., the `CodecError` subclass its decode raises. Those three answer a typed refusal since the item that gives
+   every runtime's decode one landed (ADR 0099, amendment of 2026-11-16; "Landing order"), so each new kind is one
+   more name in a vocabulary every runtime already declares whole (`CodecFailure`,
+   `every_runtime_declares_every_failure`). The corpus holds all seven to each refusal's name. Two refusals change their name: a key given twice and an item
    of another major type, both `CborMalformed` until now, which named them as not being CBOR.
 
    *The order of the checks.* A list's count is judged against its bound and its lower count before any element is
@@ -708,7 +710,12 @@ each a commit of its own:
 - **Every runtime's decode names its refusal.** A Kotlin, Python or C++ decode stops answering `null`, `None` or
   `std::nullopt` for a refusal and returns a typed one, as Rust, Go, Swift and C11 do, for every codec. It lands
   before step 4, so each backend step brings its kinds of section 3.3 into a typed refusal, and the corpus holds all
-  seven backends to each name from the first backend step on.
+  seven backends to each name from the first backend step on. Landed as ADR 0099's amendment of 2026-11-16
+  (`3b3ebde5211` Python, `8745f9435d2` Kotlin, `6c2ae7f3911` C++): C++ answers `::SCE::Forge::Decoded<T>`, Kotlin
+  `Decoded<T>` (`Ok` / `Refused`), Python raises the `CodecError` subclass, for the positional, CBOR and
+  content-line codecs and the readers below them, and every lane's reject vectors assert the kind by
+  `CodecFailure::symbol`. A follow-up gave a Kotlin broadcast log's unreadable entry the kind as a `CodecError` where
+  it held it in a message, and held the C++ and Python log tests to the kind.
 - **The amendment of ADR 0092 section 5.3** (section 2.5): a signed union is the one-entry map of section 2.1, and
   its row of `C` this record's. It lands before ADR 0092's step 7, which then writes that shape; it is independent
   of this record's steps.

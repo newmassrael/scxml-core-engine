@@ -5930,8 +5930,8 @@ fn forge_codec_zenoh_ext_envelope_python() {
 // host language emits `String` / `std::string` / `kotlin.String` /
 // `string` / `str` instead of the byte container (`Vec<u8>` /
 // `std::vector<uint8_t>` / `ByteArray` / `[]byte` / `bytes`). Decode
-// validates UTF-8 and surfaces typed `CodecError::InvalidUtf8` (Rust /
-// Go / Python) or the truncation sentinel (Cpp / Kotlin). Encode
+// validates UTF-8 and surfaces the typed `CodecError::InvalidUtf8` on
+// every backend (docs/adr/0099, amendment of 2026-11-16). Encode
 // trusts the host string invariant — codec API stays infallible
 // (encode-side validate would force `Result<Vec<u8>, EncodeError>` on
 // every String-bearing codec). Parser restricts String fields to

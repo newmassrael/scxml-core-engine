@@ -52,11 +52,10 @@ typedef enum {
      * past its capacity CAPACITY_EXCEEDED (docs/adr/0077 §7). */
     /* RFC §synth-5-B string primitive: the byte slice declared
      * `sce:type="string"` was not well-formed UTF-8. Mirrors the typed
-     * `CodecError::InvalidUtf8` (Rust / Go / Python) — the C11 enum
-     * return is uniform across every codec so adding the variant does
-     * not change per-codec signatures (cpp / kotlin collapse to the
-     * `std::optional<T>` / `T?` truncation sentinel because their
-     * signatures are type-narrow). */
+     * `CodecError::InvalidUtf8` every other runtime's decode answers
+     * (docs/adr/0099, amendment of 2026-11-16) — the C11 enum return is
+     * uniform across every codec so adding the variant does not change
+     * per-codec signatures. */
     SCE_FORGE_CODEC_INVALID_UTF8 = 4,
     /* RFC §synth-5-B encode-side counterpart to NEED_MORE_BYTES: the
      * destination writer reported insufficient remaining capacity for
@@ -71,8 +70,8 @@ typedef enum {
      * a carrier value outside it is not a value of that type and the
      * frame does not decode. An open set carries every value of its
      * carrier and never raises this. Mirrors the typed
-     * `CodecError::UndeclaredEnumValue` (Rust / Go / Python); cpp /
-     * kotlin collapse to their `std::optional<T>` / `T?` sentinel. */
+     * `CodecError::UndeclaredEnumValue` every other runtime's decode
+     * answers. */
     SCE_FORGE_CODEC_UNDECLARED_ENUM_VALUE = 6,
     /* An `sce:encoding="cbor"` map is not one the codec reads
      * (SCE_FORGE.md §4.6.1): not a definite-length map, a key given twice,
