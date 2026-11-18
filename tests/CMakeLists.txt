@@ -3622,6 +3622,10 @@ run tests/mesh/setup_crossdev_netns.sh as root before enabling"
 
     add_test(NAME mesh_retrying_dispatcher_verification COMMAND mesh_retrying_dispatcher_test)
 
+    # ── The https binding (docs/adr/0107, D2): its client, and the
+    #    conformance kit its adapters are held to ──
+    include(${CMAKE_CURRENT_SOURCE_DIR}/cmake/mesh_https.cmake)
+
     # ── Deadline preempts retry composition (SCE_MESH.md §16.7 row 3
     #    follow-up) ────────────────────────────────────────────────
     # Pins the wiring contract emitted by the codegen deadline lambda:

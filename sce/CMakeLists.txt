@@ -140,6 +140,11 @@ if(SCE_ENABLE_MESH)
     add_library(sce_mesh_common STATIC
         src/mesh/MeshEnvelopeCodec.cpp
         src/mesh/CausalRules.cpp
+        # The client of the `https` binding (docs/adr/0107, D2), over any
+        # adapter of the port mesh/transports/HttpsTransport.h. It links no
+        # network library: the adapters are targets of their own
+        # (cmake/SCEMeshHttps.cmake).
+        src/mesh/HttpsClient.cpp
     )
 
     target_include_directories(sce_mesh_common
@@ -158,8 +163,13 @@ if(SCE_ENABLE_MESH)
     )
 
     # POSIX shared memory requires -lrt on Linux (shm_open, shm_unlink).
-    if(NOT APPLE)
+    # Windows has neither librt nor POSIX shared memory.
+    if(UNIX AND NOT APPLE)
         target_link_libraries(sce_mesh_common PUBLIC rt)
+    endif()
+    # The https client draws an installation secret with BCryptGenRandom.
+    if(WIN32)
+        target_link_libraries(sce_mesh_common PRIVATE bcrypt)
     endif()
 
     target_compile_features(sce_mesh_common PUBLIC cxx_std_17)

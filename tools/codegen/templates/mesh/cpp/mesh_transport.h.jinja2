@@ -584,11 +584,19 @@ dispatchToSession({{ env_name }}, {{ session_idx_expr }})
    mesh-rpc has the row-5 shutdown emit; any router with §9.6
    shm scxml-invoke inbound or outbound peers has the shm
    drainWith decode-fail emit. #}
-{% set raises_communication_error = has_ordered_binding or has_zenoh_liveliness or machine_outbound_buffer or someip_liveness_service_id_self_hex or someip_machine_liveness_service_id_self_hex or ("someip" in transport_types) or ("zenoh_keyexpr" in transport_types) or ("custom_tcp" in transport_types) or ("dds" in transport_types) or has_mesh_rpc.v or scxml_remote_inbound_peers or scxml_remote_outbound_peers or has_causal_binding %}
+{% set raises_communication_error = has_ordered_binding or has_zenoh_liveliness or machine_outbound_buffer or someip_liveness_service_id_self_hex or someip_machine_liveness_service_id_self_hex or ("someip" in transport_types) or ("zenoh_keyexpr" in transport_types) or ("custom_tcp" in transport_types) or ("dds" in transport_types) or ("https" in transport_types) or has_mesh_rpc.v or scxml_remote_inbound_peers or scxml_remote_outbound_peers or has_causal_binding %}
+
+{# The client-side correlation table (`pending_rpcs_`): a `<send>` request
+   on these transports is answered by an envelope the router correlates by
+   its `correlation_id`, because the reply does not come back on a handle
+   bound to the request (Zenoh's `session.get` closure is one, and is
+   absent here). The https client's reply arrives in its mailbox, on
+   whichever exchange carries it next. #}
+{% set has_client_correlation_table = ("someip" in transport_types) or ("custom_tcp" in transport_types) or ("dds" in transport_types) or ("https" in transport_types) %}
 
 {# CorrelationKey/Hash are needed by SOME/IP client correlation AND/OR
    server pending-request storage. Emit once if either usage is present. #}
-{% set needs_correlation_key = ("someip" in transport_types) or ("custom_tcp" in transport_types) or ("dds" in transport_types) or has_server_someip or has_server_zenoh or has_server_custom_tcp or has_server_dds %}
+{% set needs_correlation_key = has_client_correlation_table or has_server_someip or has_server_zenoh or has_server_custom_tcp or has_server_dds %}
 
 {% if has_mesh_rpc.v or has_server %}
 #include <array>
@@ -608,7 +616,7 @@ dispatchToSession({{ env_name }}, {{ session_idx_expr }})
 #include <string>
 #include <vector>
 {% endif %}
-{% if has_mesh_rpc.v or has_server_deadline_active or ("someip" in transport_types) or ("custom_tcp" in transport_types) or ("dds" in transport_types) %}
+{% if has_mesh_rpc.v or has_server_deadline_active or has_client_correlation_table %}
 {# `RpcStatus` reaches this file transitively through MeshEnvelope.h, but
    three paths name the enum directly, so the dependency is declared
    rather than inherited:
@@ -616,7 +624,7 @@ dispatchToSession({{ env_name }}, {{ session_idx_expr }})
      - the `DeadlineExceeded` stamp on an ActiveError server-deadline
        notice (`has_server_deadline_active`);
      - the client-side reply rewrite on every correlation-table
-       transport (someip / custom_tcp / dds), which refuses to rename a
+       transport (someip / custom_tcp / dds / https), which refuses to rename a
        non-`Ok` reply to the declared success event. #}
 #include "mesh/RpcStatus.h"
 {% endif %}
@@ -740,6 +748,17 @@ dispatchToSession({{ env_name }}, {{ session_idx_expr }})
 #include <mutex>
 #include <vector>
 {% endif %}
+{% endif %}
+{% if "https" in transport_types %}
+// docs/adr/0107, D2: the client of the Mesh binding over HTTP request and
+// response, one per bound peer, over the adapter the host hands the router
+// (mesh/transports/HttpsTransport.h). Its semantics are compiled once in
+// sce_mesh_common; the router carries only the wiring.
+#include <chrono>
+#include <memory>
+#include <mutex>
+#include <unordered_map>
+#include "mesh/transports/HttpsClient.h"
 {% endif %}
 {% if "dds" in transport_types or has_server_dds %}
 #include <chrono>
@@ -1354,6 +1373,12 @@ inline void send_to_{{ target.target_snake }}(
     return client.send(env);
 }
 
+{% elif target.state.kind == "https" %}
+{# The https client is a member of TransportRouter (D1): it holds the
+   threads that poll and send, and the router's callbacks for what it
+   receives and the readiness it observes, so no free send function is
+   emitted. route_send hands it the envelope (D5). #}
+
 {% else %}
 #error "SCE Mesh: unsupported transport '{{ target.state.kind }}' for target '{{ target.target }}'. Update codegen::transport_shape() and mesh_transport.h.jinja2."
 {% endif %}
@@ -1516,9 +1541,17 @@ template <std::size_t N>
 /// routers pass all N engine pointers in declaration order matching
 /// `SOMEIP_SERVER_INSTANCES`.
 ///
+{% if "https" in transport_types %}
+/// The https bindings (docs/adr/0107, D2) take their adapter and the
+/// host's credentials at construction: `https_host` names an
+/// `SCE::Mesh::HttpsTransport` (CurlHttpsTransport, WinHttpHttpsTransport,
+/// or the host's own) and, for the `bearer` and `install` authenticators,
+/// an `SCE::Mesh::Https::Credentials`. Both outlive the router.
+///
+{% endif %}
 /// Usage:
 ///   {{ machine_name }}::TransportRouter<SenderEngine{% for target in targets if target.state.kind == "local" %}, {{ target.target_pascal }}Engine{% endfor %}>
-///       router({&sender_engine}{% for target in targets if target.state.kind == "local" %}, {{ target.target_snake }}_engine{% endfor %});
+///       router({&sender_engine}{% for target in targets if target.state.kind == "local" %}, {{ target.target_snake }}_engine{% endfor %}{% if "https" in transport_types %}, https_host{% endif %});
 ///   router.init();  // only for transports with a connect/start lifecycle
 template<typename SenderEngine{% for target in targets if target.state.kind == "local" %}, typename {{ target.target_pascal }}Engine{% endfor %}>
 struct TransportRouter {
@@ -1532,6 +1565,14 @@ struct TransportRouter {
         "SenderEngine must be an AOT-emitted SCXML state machine "
         "exposing PolicyType, EventWithMetadata, and Event typedefs. "
         "See sce/include/core/AotSmMeshConcept.h.");
+{% if "https" in transport_types %}
+    // docs/adr/0107, D2: the adapter and the credentials the host chose for
+    // the https bindings. The host owns network policy, so the router takes
+    // them at construction and builds each binding's client from them in
+    // init(). Declared first, so it is first in the constructor's
+    // initializer list.
+    SCE::Mesh::Https::ClientHost https_host_;
+{% endif %}
 {# ── (D1) Per-target fields ── #}
 {# Data-driven filter: `has_per_target_field` encodes transport shape — #}
 {# per-target transports emit one field per target; shared-session transports skip. #}
@@ -1570,6 +1611,11 @@ struct TransportRouter {
 {% else %}
     std::unique_ptr<SCE::Mesh::Dds::Client> {{ target.target_snake }}_;
 {% endif %}
+{% elif target.state.kind == "https" %}
+    // Built in init(): its callbacks capture `this`, and it starts threads
+    // that must not run before the router is whole. `unique_ptr` because a
+    // client is not movable (it owns its threads).
+    std::unique_ptr<SCE::Mesh::Https::Client> {{ target.target_snake }}_https_;
 {% endif %}
 {% endfor %}
 
@@ -2343,7 +2389,7 @@ struct TransportRouter {
     }
 
 {% endif %}
-{% if "someip" in transport_types or "custom_tcp" in transport_types or "dds" in transport_types %}
+{% if has_client_correlation_table %}
     // Client RPC correlation: maps correlation_id → reply event name.
     // `mutable` so the read-only `pending_client_rpc_size` accessor can
     // hold the mutex inside a const method — same convention the
@@ -2610,6 +2656,9 @@ struct TransportRouter {
         {%- for target in targets if target.state.kind == "local" -%}
         , {{ target.target_pascal }}Engine& {{ target.target_snake }}
         {%- endfor -%}
+        {%- if "https" in transport_types -%}
+        , const SCE::Mesh::Https::ClientHost& https_host
+        {%- endif -%}
     )
 {# Initializer list: collect initializer expressions into a list, then
    join with ", ". Declarative composition (as opposed to an imperative
@@ -2624,6 +2673,11 @@ struct TransportRouter {
    Declarations run per-target-fields first, then `sessions_`, so the
    initializers do the same. #}
 {%- set ns = namespace(parts=[]) %}
+{#- The https host is the first member declared (above D1), so it is the
+    first initializer. #}
+{%- if "https" in transport_types %}
+{%-   set ns.parts = ns.parts + ["https_host_(https_host)"] %}
+{%- endif %}
 {%- for target in targets if target.has_per_target_field %}
 {%-   if target.state.kind == "local" %}
 {%-     set ns.parts = ns.parts + [target.target_snake ~ "_(" ~ target.target_snake ~ ")"] %}
@@ -2658,6 +2712,9 @@ struct TransportRouter {
         in init() alongside the participant. Listing the arm explicitly
         (rather than falling off the chain) keeps "dds was considered"
         visible to the next transport author. #}
+{%-   elif target.state.kind == "https" %}
+{#-     No initializer, as for dds: the client is built in init(), once the
+        router whose callbacks it captures is whole. #}
 {%-   endif %}
 {%- endfor %}
 {#- SCE Mesh §10.10 per-target OutboundBuffer initializers. Declaration
@@ -2701,6 +2758,15 @@ struct TransportRouter {
      the routing manager time to recover. #}
 {%-       set dispatch = "[this](const SCE::Mesh::MeshEnvelope& env) -> SCE::Mesh::SendResult { if (!" ~ target.target_snake ~ "_app_) return SCE::Mesh::SendResult::failure(\"vsomeip app not initialized\", /*retryable=*/false); return send_to_" ~ target.target_snake ~ "(*" ~ target.target_snake ~ "_app_, env) ? SCE::Mesh::SendResult::success() : SCE::Mesh::SendResult::failure(\"vsomeip app.send returned false\", /*retryable=*/true); }" %}
 {%-       set transport_literal = "\"someip\"" %}
+{%-     elif target.state.kind == "https" %}
+{#- docs/adr/0107, D2: the buffer releases an envelope to the https client's
+    outbox; the exchange that carries it is the client's, and so are its
+    retry policy and the section 16.7 row 2 or 3 it raises when no answered
+    exchange carried it. Neither refusal here is worth a retry: a client not
+    started will not start on its own, and a full outbox is backpressure the
+    buffer reports as the transport declining the send. #}
+{%-       set dispatch = "[this](const SCE::Mesh::MeshEnvelope& env) -> SCE::Mesh::SendResult { if (!" ~ target.target_snake ~ "_https_) return SCE::Mesh::SendResult::failure(\"https client not started\", /*retryable=*/false); switch (" ~ target.target_snake ~ "_https_->offer(env)) { case SCE::Mesh::Https::Client::Offer::Queued: return SCE::Mesh::SendResult::success(); case SCE::Mesh::Https::Client::Offer::Full: return SCE::Mesh::SendResult::failure(\"https client outbox full\", /*retryable=*/false); case SCE::Mesh::Https::Client::Offer::Stopped: break; } return SCE::Mesh::SendResult::failure(\"https client stopped\", /*retryable=*/false); }" %}
+{%-       set transport_literal = "\"https\"" %}
 {%-     else %}
 {#- SCE Mesh §16.7 row 3 retry-layer classification for Zenoh.
    - publisher_ == nullptr: declared publisher was never opened (or
@@ -2886,7 +2952,7 @@ struct TransportRouter {
                             target, eventName, invokeId);
                     }
                 }
-{% if "someip" in transport_types or "custom_tcp" in transport_types or "dds" in transport_types %}
+{% if has_client_correlation_table %}
                 // RPC correlation: generate correlation_id and register reply-event.
                 // Zenoh is absent here — its session.get on_reply closure correlates
                 // natively without a lookup table.
@@ -3457,7 +3523,7 @@ struct TransportRouter {
         return total;
     }
 {% endif %}
-{% if "someip" in transport_types or "zenoh_keyexpr" in transport_types or "custom_tcp" in transport_types or "dds" in transport_types or has_mesh_rpc.v or has_server %}
+{% if "someip" in transport_types or "zenoh_keyexpr" in transport_types or "custom_tcp" in transport_types or "dds" in transport_types or "https" in transport_types or has_mesh_rpc.v or has_server %}
 
 {# ── (D4) init() / shutdown() — lifecycle for shared transport resources ── #}
     /// Initialize transport connections and open shared sessions.
@@ -4716,6 +4782,66 @@ struct TransportRouter {
             []() noexcept {}));
 {% endif %}
 {% endif %}
+{% for target in targets if target.state.kind == "https" %}
+        // docs/adr/0107, D2: the client of the https binding to
+        // {{ target.target }}. It polls with the binding's hold so a send of the
+        // server reaches this machine, and carries this machine's sends on
+        // exchanges of their own. The first exchange answered `200` is the
+        // ready edge{% if machine_outbound_buffer %} that releases what the buffer held{% endif %}, and a failed
+        // one ends it (SCE_MESH.md section 16.7 row 1, once per edge).
+        {
+            if (https_host_.transport == nullptr) {
+                // The host handed the router no adapter: there is no
+                // network to reach the peer over.
+                shutdown();
+                return false;
+            }
+            SCE::Mesh::Https::ClientConfig https_config;
+            https_config.base_url = {{ target.state.url }};
+            https_config.client = "{{ machine_name }}";
+            https_config.peer = "{{ target.target | replace("#", "") }}";
+            https_config.target = "{{ target.target }}";
+            https_config.authenticator = SCE::Mesh::Https::Authenticator::{{ target.state.authenticator }};
+            https_config.hold = std::chrono::milliseconds({{ target.state.hold_ms }});
+{% if target.state.retry %}
+            // SCE_MESH.md section 16.7 row 3: the binding's retry policy,
+            // which the client applies to an exchange no answer confirmed.
+            https_config.retry = SCE::Mesh::Https::RetryPolicy{
+                /*max_retries=*/{{ target.state.retry.max_retries }},
+                /*initial_backoff=*/std::chrono::milliseconds({{ target.state.retry.initial_backoff_ms }}),
+                /*backoff_multiplier=*/{{ target.state.retry.backoff_multiplier }},
+                /*max_backoff=*/std::chrono::milliseconds({{ target.state.retry.max_backoff_ms }}),
+                /*jitter_pct=*/{{ target.state.retry.jitter_pct }}};
+{% endif %}
+            SCE::Mesh::Https::ClientEvents https_events;
+            // The client carries every mailbox envelope once, in mailbox
+            // order. The machine name is baked in: this client reads only
+            // the mailbox the server keeps for this machine at
+            // `{{ target.target }}`, so arrival here IS that peer's identity
+            // (the responder check reads it, not the forgeable source).
+            https_events.receive = [this](SCE::Mesh::MeshEnvelope env) {
+                this->onHttpsInbound(std::move(env), "{{ target.target | replace("#", "") }}");
+            };
+{% if machine_outbound_buffer %}
+            https_events.ready = [this]() { {{ target.target_snake }}_outbound_.markReady(); };
+{% endif %}
+            https_events.notReady = [this](SCE::Mesh::CommunicationError err) {
+{% if machine_outbound_buffer %}
+                {{ target.target_snake }}_outbound_.markNotReady();
+{% endif %}
+                raiseCommunicationError(std::move(err));
+            };
+            https_events.fault = [this](SCE::Mesh::CommunicationError err) {
+                raiseCommunicationError(std::move(err));
+            };
+            {{ target.target_snake }}_https_ = std::make_unique<SCE::Mesh::Https::Client>(
+                std::move(https_config), https_host_, std::move(https_events));
+            if (!{{ target.target_snake }}_https_->start()) {
+                shutdown();
+                return false;
+            }
+        }
+{% endfor %}
 {% if machine_subscriptions %}
         // Machine-lifetime subscriptions (SCE_MESH.md §13 deploy.yaml path).
         // Subscribe on init, unsubscribe on shutdown. Each entry came from
@@ -4874,6 +5000,13 @@ struct TransportRouter {
 {% for target in targets if target.state.kind == "someip" %}
         if ({{ target.target_snake }}_app_) {{ target.target_snake }}_app_->stop();
         if ({{ target.target_snake }}_thread_.joinable()) {{ target.target_snake }}_thread_.join();
+{% endfor %}
+{% for target in targets if target.state.kind == "https" %}
+        // docs/adr/0107, D2: stop() cancels the exchanges in flight through
+        // the adapter and joins the client's threads, so no callback of it
+        // runs once this returns. What its outbox still held is discarded.
+        if ({{ target.target_snake }}_https_) {{ target.target_snake }}_https_->stop();
+        {{ target.target_snake }}_https_.reset();
 {% endfor %}
 {% if has_server_someip %}
         if (server_app_) server_app_->stop();
@@ -5158,6 +5291,20 @@ struct TransportRouter {
                 }
             }
             return send_to_{{ target.target_snake }}(*dds_endpoint, env);
+{% elif target.state.kind == "https" %}
+{% if machine_outbound_buffer %}
+            // SCE_MESH.md section 10.10: held until the client's first
+            // exchange answered `200`, then released to its outbox.
+            return {{ target.target_snake }}_outbound_.admit(env);
+{% else %}
+            // Queued for the client's next send; an answered exchange is
+            // what delivers it, and the client raises section 16.7 row 2
+            // or 3 itself when none did. A full outbox raises row 9.
+            if (!{{ target.target_snake }}_https_) {
+                return false;  // init() has not built the client
+            }
+            return {{ target.target_snake }}_https_->send(env);
+{% endif %}
 {% endif %}
         }
 {% endfor %}
@@ -5209,7 +5356,7 @@ struct TransportRouter {
         return PK::FireForget;
     }
 
-{% if "someip" in transport_types or "zenoh_keyexpr" in transport_types or "custom_tcp" in transport_types or "dds" in transport_types or has_mesh_rpc.v or has_server %}
+{% if "someip" in transport_types or "zenoh_keyexpr" in transport_types or "custom_tcp" in transport_types or "dds" in transport_types or "https" in transport_types or has_mesh_rpc.v or has_server %}
     /// Look up the paired reply event for an RPC request (build-time table).
     /// SCE_MESH.md §13 path B: the pair is inferred by convention —
     /// `service.request.X` ↔ `service.response.X`. Returns empty string
@@ -5225,53 +5372,46 @@ struct TransportRouter {
     }
 {% endif %}
 
-{% if "dds" in transport_types %}
-{#- Only a dds target carrying a request/reply PAIR can ever retire a
+{#- Only a target carrying a request/reply PAIR can ever retire a
     correlation entry. Gating on the target's mere existence would emit a
     reply-admission path on a FireForget-only binding, where `reply_event`
     is empty and the branch could never fire. Mirrors the custom_tcp
-    `ns_ctcp_rpc` computation below. #}
-{%- set ns_dds_rpc = namespace(v=false) %}
-{%- for t in targets if t.state.kind == "dds" %}
+    `ns_ctcp_rpc` computation below. Computed per transport for the two
+    whose replies arrive addressed to this machine rather than on the
+    request's own handle or stream: dds (the reply topic) and https (the
+    mailbox the server keeps for this machine). #}
+{%- set ns_addressed_rpc = namespace(dds=false, https=false) %}
+{%- for t in targets if t.state.kind == "dds" or t.state.kind == "https" %}
 {%-   for ep in t.event_patterns if ep.reply_event %}
-{%-     set ns_dds_rpc.v = true %}
+{%-     if t.state.kind == "dds" %}
+{%-       set ns_addressed_rpc.dds = true %}
+{%-     else %}
+{%-       set ns_addressed_rpc.https = true %}
+{%-     endif %}
 {%-   endfor %}
 {%- endfor %}
-{%- set dds_client_rpc = ns_dds_rpc.v %}
-    /// Inbound entry point for every dds client endpoint on this router:
-    /// replies arriving on `<topic>_Reply` and notifications arriving on
-    /// `<topic>_Event`.
+{%- set dds_client_rpc = ns_addressed_rpc.dds %}
+{%- set https_client_rpc = ns_addressed_rpc.https %}
+{% if dds_client_rpc or https_client_rpc %}
+    /// Reply admission for a client whose replies arrive addressed to this
+    /// machine (SCE_MESH.md §mesh-14.6 + §mesh-8.2): a dds reply topic, an
+    /// https mailbox. `target` is the binding the envelope arrived through,
+    /// a codegen-time constant of its endpoint, which is what the responder
+    /// check tests rather than the forgeable `env.source`.
     ///
-    /// Runs on a reader drain thread. Neither leg needs the per-arrival
-    /// handle a connection-oriented transport carries — a DDS reply is
-    /// published, not written back up the request path.
+    /// A correlation entry is a one-shot resource: whoever matches it
+    /// retires the request. Without this the entry registered by the
+    /// outbound `RpcRequest` would never be retired at all — the map would
+    /// grow one entry per request for the life of the process, and a reply
+    /// carrying a failed `rpc_status` would reach the engine under whatever
+    /// name the peer chose with nothing checking that the peer was entitled
+    /// to answer.
     ///
-    /// `target` names the binding whose endpoint received this envelope.
-    /// It is a codegen-time constant because one `Dds::Client` is
-    /// constructed per target and each reads only the reply/event topics
-    /// derived from that target's own `topic:`. That makes it the DDS
-    /// counterpart of the identity the sibling arms get for free — the
-    /// SOME/IP handler registered per (service, instance, method), the
-    /// custom_tcp stream a request left on — and it is what the §mesh-14.6
-    /// responder check below tests, rather than the forgeable
-    /// `env.source`.
-    void onDdsClientInbound(const SCE::Mesh::MeshEnvelope& inbound,
-                            const char* target) {
-        SCE::Mesh::MeshEnvelope env = inbound;
-        (void)target;
-{% if dds_client_rpc %}
-        // ── Reply admission (SCE_MESH.md §mesh-14.6 + §mesh-8.2) ──
-        //
-        // A correlation entry is a one-shot resource: whoever matches it
-        // retires the request. Without this the entry registered by the
-        // outbound `RpcRequest` would never be retired at all — the map
-        // would grow one entry per request for the life of the process,
-        // and a reply carrying a failed `rpc_status` would reach the
-        // engine under whatever name the peer chose with nothing
-        // checking that the peer was entitled to answer.
-        //
-        // The check runs BEFORE the erase, so a rejected reply leaves the
-        // entry live and the request still answerable.
+    /// The check runs BEFORE the erase, so a rejected reply leaves the
+    /// entry live and the request still answerable. Returns false when the
+    /// reply was refused (and §mesh-16.7 row 14 raised); the caller then
+    /// does not dispatch it.
+    [[nodiscard]] bool admitAddressedReply(SCE::Mesh::MeshEnvelope& env, const char* target) {
         if (env.pattern == SCE::Mesh::PatternKind::RpcReply
             || env.pattern == SCE::Mesh::PatternKind::FieldNotify) {
             bool undeclared_replier = false;
@@ -5310,9 +5450,68 @@ struct TransportRouter {
                 // correlation mutex.
                 raiseCommunicationError(SCE::Mesh::CommunicationError::replyFromUndeclaredPeer(
                     env.source, *env.correlation_id));
-                return;
+                return false;
             }
         }
+        return true;
+    }
+{% endif %}
+{% if "https" in transport_types %}
+    /// Inbound entry point for every https client on this router: each
+    /// envelope of the mailbox the server keeps for this machine, once, in
+    /// mailbox order (docs/adr/0107, D2). Runs on a client thread.
+    ///
+    /// `target` names the binding whose client received the envelope, a
+    /// codegen-time constant: one client is built per binding and reads only
+    /// the mailbox at that binding's server, so arrival here IS that peer's
+    /// identity for the responder check.
+    void onHttpsInbound(SCE::Mesh::MeshEnvelope env, const char* target) {
+{% if https_client_rpc %}
+        if (!admitAddressedReply(env, target)) {
+            return;
+        }
+{% else %}
+        (void)target;
+{% endif %}
+{% for t in targets if t.state.kind == "https" %}
+        if (std::string(target) == "{{ t.target | replace("#", "") }}") {
+            (void)this->{{ admit_or_dispatch(t.needs_ordering, t.needs_dedup, "env", "0") }};
+            return;
+        }
+{% endfor %}
+        // session_idx `0`: an https binding is a client, with no server pool.
+        (void)this->dispatchToSession(env, 0);
+    }
+{% endif %}
+{% if "dds" in transport_types %}
+    /// Inbound entry point for every dds client endpoint on this router:
+    /// replies arriving on `<topic>_Reply` and notifications arriving on
+    /// `<topic>_Event`.
+    ///
+    /// Runs on a reader drain thread. Neither leg needs the per-arrival
+    /// handle a connection-oriented transport carries — a DDS reply is
+    /// published, not written back up the request path.
+    ///
+    /// `target` names the binding whose endpoint received this envelope.
+    /// It is a codegen-time constant because one `Dds::Client` is
+    /// constructed per target and each reads only the reply/event topics
+    /// derived from that target's own `topic:`. That makes it the DDS
+    /// counterpart of the identity the sibling arms get for free — the
+    /// SOME/IP handler registered per (service, instance, method), the
+    /// custom_tcp stream a request left on — and it is what the §mesh-14.6
+    /// responder check below tests, rather than the forgeable
+    /// `env.source`.
+    void onDdsClientInbound(const SCE::Mesh::MeshEnvelope& inbound,
+                            const char* target) {
+        SCE::Mesh::MeshEnvelope env = inbound;
+{% if dds_client_rpc %}
+        // Reply admission, shared with every client whose replies arrive
+        // addressed to this machine.
+        if (!admitAddressedReply(env, target)) {
+            return;
+        }
+{% else %}
+        (void)target;
 {% endif %}
         // session_idx `0`: DDS declares no server pool, so N_SESSIONS is 1.
         (void)this->{{ dedup_or_dispatch(has_undeduped_transport, "env", "0") }};
@@ -5535,7 +5734,7 @@ struct TransportRouter {
     }
 
 {% endif %}
-{% if "someip" in transport_types or "zenoh_keyexpr" in transport_types or "local" in transport_types or "custom_tcp" in transport_types or has_mesh_rpc.v or has_server or scxml_remote_inbound_peers or scxml_remote_outbound_peers or "dds" in transport_types or has_causal_binding %}
+{% if "someip" in transport_types or "zenoh_keyexpr" in transport_types or "local" in transport_types or "custom_tcp" in transport_types or has_mesh_rpc.v or has_server or scxml_remote_inbound_peers or scxml_remote_outbound_peers or "dds" in transport_types or "https" in transport_types or has_causal_binding %}
     /// Dispatch an incoming envelope to a specific session via MeshDispatch.
     ///
     /// Called on transport callback threads (vsomeip application threads,
@@ -6861,7 +7060,7 @@ struct TransportRouter {
 {% endif %}
 {% endif %}
 
-{% if "someip" in transport_types or "custom_tcp" in transport_types or "dds" in transport_types %}
+{% if has_client_correlation_table %}
     /// Test-only accessor: number of outbound RPC requests still
     /// awaiting a reply in the client-side correlation table.
     ///
