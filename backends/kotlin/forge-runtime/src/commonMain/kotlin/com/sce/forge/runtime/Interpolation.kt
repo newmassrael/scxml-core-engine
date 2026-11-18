@@ -58,11 +58,9 @@ public fun bilinear(
     return v0 + ty * (v1 - v0)
 }
 
+// A data class: its members `component1..3` are what `val (low, high, t)`
+// reads, so no extension of the same name is declared beside them.
 private data class AxisLocation(val low: Int, val high: Int, val t: Double)
-
-private operator fun AxisLocation.component1(): Int = low
-private operator fun AxisLocation.component2(): Int = high
-private operator fun AxisLocation.component3(): Double = t
 
 private fun locateAxis(axis: DoubleArray, value: Double): AxisLocation {
     val n = axis.size
