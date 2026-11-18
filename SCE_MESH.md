@@ -4594,6 +4594,8 @@ A binding names it as `transport: https`. The side that posts the exchanges carr
 | accepting | `absence_ms` | how long a client may go without an exchange and stay ready (§22.4) | 120000 |
 | accepting | `mailbox` | how many envelopes wait for the client at most (§22.3) | 1024 |
 
+How to run a server of this binding (these keys and the server's own bounds, the session store behind a keyed pool and what a restart does, a standby process under the lease and the fence, the clients' trust store and proxies, backups, and a stuck session told from an idle one) is `docs/SCE_SERVER_DEPLOY.md`.
+
 What the cores route over it is what they route over §18: a `<send>` and its delivery (`FireForget`) and a request with its reply (`RequestReply`); a pattern that needs a subscription or a field is refused at build time.
 
 ### 22.1 Exchange and Peer Identity

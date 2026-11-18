@@ -358,7 +358,10 @@ other routes beside it, which are the downstream's.
    reference adapters, held on the Linux lanes and the Windows lane, with a test adapter outside SCE's run through the
    same kit.
 9. D10: the suite.
-10. `docs/SCE_HOST_FEATURES.md` section 9 updated, and a server runbook beside `docs/SCE_RELAY_DEPLOY.md`.
+10. `docs/SCE_HOST_FEATURES.md` section 9 updated, and a server runbook beside `docs/SCE_RELAY_DEPLOY.md`:
+    `docs/SCE_SERVER_DEPLOY.md`, for a program built from the parts steps 5 to 8 landed (its deploy keys, the session
+    store and a restart, a standby under the lease and the fence, the clients' trust and proxies, backups, and a stuck
+    session told from an idle one).
 11. The COSE operations and the `https` client on the remaining lanes, one step per lane.
 
 Steps 3 and 4 do not depend on the Mesh steps and may land in parallel with them.
