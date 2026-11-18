@@ -30,6 +30,10 @@ alloc = ["sce-forge-runtime/alloc", "sce-portable-bytes/alloc"]
 # decodes: the default one, and `--no-default-features --features alloc`.
 gated-arm = []
 default = ["gated-arm"]
+# The Rust driver of the CBOR pin of docs/adr/0101 step 0
+# (`tests/forge_cbor_pin.rs`): build.rs generates the pinned codecs only for it,
+# and only `scripts/capture_cbor_pin.sh` asks for it.
+cbor-pin = ["alloc"]
 
 [dependencies]
 sce-forge-runtime = { path = "../forge-runtime", default-features = false }
@@ -63,6 +67,13 @@ path = "tests/numerical_conformance.rs"
 # module and therefore `alloc`; without it they cannot compile, so the target
 # is left out rather than built broken.
 required-features = ["alloc"]
+
+# The capture of the CBOR pin, which reads and writes the files the capture
+# names and is built only when it asks for the feature.
+[[test]]
+name = "forge_cbor_pin"
+path = "tests/forge_cbor_pin.rs"
+required-features = ["cbor-pin"]
 
 [lints]
 workspace = true

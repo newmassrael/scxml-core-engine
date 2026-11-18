@@ -216,6 +216,66 @@ abstract class GenerateFixtures : DefaultTask() {
     }
 }
 
+// The CBOR pin of docs/adr/0101 step 0 (tests/forge/cbor_pin): the pinned codecs
+// and every document they import, generated together (`generate --with-imports`)
+// for the Kotlin driver, CborPinCaptureTest. Only scripts/capture_cbor_pin.sh asks
+// for it, by setting SCE_CBOR_PIN_INPUTS, and it hands the documents over in
+// SCE_CBOR_PIN_DOCUMENTS, one path under the repository root a line, as
+// tests/forge/cbor_pin/pin.py lists them; without the first variable neither the
+// generated sources nor the driver are compiled into jvmTest.
+abstract class GenerateCborPinFixtures : DefaultTask() {
+    @get:InputFile
+    @get:PathSensitive(PathSensitivity.ABSOLUTE)
+    abstract val sceCodegen: RegularFileProperty
+
+    @get:Input
+    abstract val documents: ListProperty<String>
+
+    @get:OutputDirectory
+    abstract val outputDir: DirectoryProperty
+
+    @get:Inject
+    abstract val execOperations: ExecOperations
+
+    @TaskAction
+    fun generate() {
+        val bin = sceCodegen.get().asFile
+        if (!bin.canExecute()) {
+            throw GradleException(
+                "sce-codegen binary not found or not executable at ${bin.absolutePath}. " +
+                "Build it first: " +
+                "`cargo build --bin sce-codegen --features cli -p sce-build`",
+            )
+        }
+        val listed = documents.get()
+        if (listed.isEmpty()) {
+            throw GradleException("SCE_CBOR_PIN_DOCUMENTS names no document to generate")
+        }
+        val out = outputDir.get().asFile
+        out.deleteRecursively()
+        out.mkdirs()
+        execOperations.exec {
+            commandLine(
+                listOf(bin.absolutePath, "generate", "--with-imports") + listed +
+                    listOf("--language", "kotlin", "--output-dir", out.absolutePath),
+            )
+        }
+    }
+}
+
+val cborPinRequested = providers.environmentVariable("SCE_CBOR_PIN_INPUTS").isPresent
+
+val generateCborPinFixtures by tasks.registering(GenerateCborPinFixtures::class) {
+    dependsOn(":buildSceCodegen")
+    sceCodegen.set(rootProject.layout.projectDirectory.file(sceCodegenRelative))
+    documents.set(
+        providers.environmentVariable("SCE_CBOR_PIN_DOCUMENTS").map { text ->
+            text.lines().filter { it.isNotBlank() }.map { rootProject.file(it.trim()).absolutePath }
+        }.orElse(emptyList()),
+    )
+    outputDir.set(layout.buildDirectory.dir("generated/cbor_pin/kotlin"))
+}
+
 val generateRoundTripFixtures by tasks.registering(GenerateFixtures::class) {
     dependsOn(":buildSceCodegen")
     sceCodegen.set(rootProject.layout.projectDirectory.file(sceCodegenRelative))
@@ -376,6 +436,10 @@ kotlin {
             kotlin.srcDir(generateQueueFixtures.map { it.outputDir })
             kotlin.srcDir(generateBroadcastLogFixtures.map { it.outputDir })
             kotlin.srcDir(generateBroadcastLogContextFixtures.map { it.outputDir })
+            if (cborPinRequested) {
+                kotlin.srcDir(generateCborPinFixtures.map { it.outputDir })
+                kotlin.srcDir("src/cborPinTest/kotlin")
+            }
         }
     }
 }
@@ -394,6 +458,13 @@ tasks.withType<Test>().configureEach {
         providers.environmentVariable("SCE_BROADCAST_HISTORY_DIR").isPresent
     ) {
         outputs.upToDateWhen { false }
+    }
+    // A capture of the CBOR pin always runs, and its largest envelope (some
+    // nineteen million bytes, twice that as hexadecimal) needs more heap than a
+    // test worker is given by default.
+    if (cborPinRequested) {
+        outputs.upToDateWhen { false }
+        maxHeapSize = "2g"
     }
     // The queue contract is read at run time by path, so it is an input like
     // the numerical reference below.

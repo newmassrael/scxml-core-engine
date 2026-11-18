@@ -297,6 +297,16 @@ fn main() {
         &options,
     );
 
+    // Step 7d: the CBOR codecs the pin of docs/adr/0101 step 0 captures
+    // (tests/forge/cbor_pin), with every document they import, into a
+    // directory of their own, where `forge_cbor_pin.rs` includes them as
+    // sibling modules. Only for the `cbor-pin` feature, which that test
+    // requires and nothing else enables: the capture asks for it
+    // (scripts/capture_cbor_pin.sh).
+    if std::env::var_os("CARGO_FEATURE_CBOR_PIN").is_some() {
+        generate_cbor_pin_documents(&manifest_dir, &out_dir, &options);
+    }
+
     // Step 8: broadcast-log kind (ADR 0062). The generator's output for a log is a
     // module that names the runtime's log over the element codec's struct and
     // stores the element's wire bytes; until it is compiled, nothing shows that
@@ -729,6 +739,65 @@ fn generate_stripped_fixtures(
             std::fs::write(&target, strip_inner_attributes(code))
                 .unwrap_or_else(|e| panic!("write {}: {e}", target.display()));
         }
+    }
+}
+
+/// The documents the CBOR pin's Rust driver includes, by the directory under
+/// the repository root that holds them: the eight codecs of
+/// `tests/forge/cbor_pin/cases.json` and every enum and event schema they
+/// import, each generated as a module the codecs name through `super::`.
+const CBOR_PIN_DOCUMENTS: &[(&str, &[&str])] = &[
+    (
+        "stdlib/mesh",
+        &[
+            "envelope",
+            "pattern_kind",
+            "payload_codec",
+            "rpc_status",
+            "causal_entry",
+        ],
+    ),
+    ("tests/forge/resources", &["codec_cbor_map", "enum_uds_nrc"]),
+    (
+        "tests/forge/conformance/broadcast_log_text",
+        &["broadcast_log_conformance_text_event"],
+    ),
+    (
+        "tests/forge/conformance/codec_cbor_open_enum",
+        &["codec_cbor_open_enum"],
+    ),
+    (
+        "sce-build/tests/fixtures/cbor_codec",
+        &[
+            "codec_cbor_signed_enum",
+            "cbor_signed_status",
+            "codec_cbor_record_list",
+            "codec_cbor_record_list_bytes",
+            "codec_cbor_record_list_least",
+            "cbor_causal_entry",
+            "cbor_digest_entry",
+        ],
+    ),
+];
+
+/// Generate [`CBOR_PIN_DOCUMENTS`] to Rust into `OUT_DIR/cbor_pin`, apart from
+/// the catalog's fixtures, some of which carry the same names.
+fn generate_cbor_pin_documents(manifest_dir: &str, out_dir: &str, options: &ForgeCompileOptions) {
+    let root = Path::new(manifest_dir)
+        .join("../../..")
+        .canonicalize()
+        .expect("canonicalize the repository root");
+    let pin_dir = Path::new(out_dir).join("cbor_pin");
+    std::fs::create_dir_all(&pin_dir)
+        .unwrap_or_else(|e| panic!("create {}: {e}", pin_dir.display()));
+    let pin_out = pin_dir.to_str().expect("OUT_DIR is UTF-8");
+    for (directory, names) in CBOR_PIN_DOCUMENTS {
+        let directory = root
+            .join(directory)
+            .canonicalize()
+            .unwrap_or_else(|e| panic!("canonicalize {directory}: {e}"));
+        println!("cargo:rerun-if-changed={}", directory.display());
+        generate_stripped_fixtures(names, &directory, pin_out, options);
     }
 }
 
