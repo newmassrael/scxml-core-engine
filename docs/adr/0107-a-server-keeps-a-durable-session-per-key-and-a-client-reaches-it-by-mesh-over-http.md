@@ -25,7 +25,10 @@
     structures as event schemas with a CBOR codec);
   - the reference hosts of every lane for the key-value change; the Rust and C++ reference hosts for COSE;
   - `docs/SCE_ACCEPTED_SUBSET.md` (the new diagnostic codes in its appendix), a server runbook beside
-    `docs/SCE_RELAY_DEPLOY.md`.
+    `docs/SCE_RELAY_DEPLOY.md`;
+  - the C++ parts (the `https` client arm and the COSE reference host) on Linux and on Windows with MSVC, through
+    SCE's CMake and through the Bazel vendoring channel (`scripts/sce_repo.bzl`, ADR 0059), and a Windows CI lane
+    that holds them (D11).
 
 ## Context
 
@@ -110,12 +113,19 @@ HTTP/3 carry it unchanged.
   with none is refused at deploy validation.
 - **The client takes the platform's network policy.** It uses the operating system's trust store, so a network that
   inspects TLS with its own authority is honoured where the user's machine trusts that authority, and the
-  platform's proxy settings (system configuration and `HTTPS_PROXY`/`NO_PROXY`), tunnelling through an explicit proxy
-  with `CONNECT`. A deployment may pin the server's key instead; pinning and inspection then exclude each other, and
-  the client reports which refused.
+  platform's proxy settings, tunnelling through an explicit proxy with `CONNECT`. A deployment may pin the server's
+  key instead; pinning and inspection then exclude each other, and the client reports which refused.
+- **Where the platform has an HTTP stack that carries its policy, the client uses it.** On Windows that is WinHTTP:
+  it reads the Windows certificate store (an authority an administrator deploys by group policy included) and the
+  system's proxy configuration (a fixed proxy, an automatic configuration script, WPAD discovery) as every other
+  program of the machine does, so the client does not re-implement either. Linux has no such stack: the client uses
+  the distribution's CA bundle through OpenSSL's default paths and the `HTTPS_PROXY`, `https_proxy` and `NO_PROXY`
+  variables. The binding's semantics sit above one transport interface, as the host features' HTTP transport does
+  (`sce/include/host/HttplibTransport.h`), so the two stacks share every rule of this section.
 
 Implementations: the server in `sce-rust-mesh` (feature `https`); clients in `sce-rust-mesh`, as an arm of the
-generated C++ `TransportRouter`, then in the Kotlin and Swift host cores.
+generated C++ `TransportRouter` (WinHTTP on Windows, cpp-httplib with OpenSSL on Linux), then in the Kotlin and Swift
+host cores.
 
 ### D3. A host core serves a machine as a pool of sessions, one per key
 
@@ -202,8 +212,11 @@ SCE's own.
 - **A signature that does not verify and a ciphertext that does not open are answers** (`valid` false, `opened`
   false), not failures: the document decides what follows. Failures are `unavailable` and `unknown_key`.
 - **Bounds** are `sce:max-size` of each bytes field, as every host record states them.
-- **Reference hosts:** Rust on the RustCrypto crates `sce-rust-trust` already links; C++ on libsodium. The COSE
-  structures are built and parsed by D9's schemas in both, so the two cannot disagree on the bytes.
+- **Reference hosts:** Rust on the RustCrypto crates `sce-rust-trust` already links; C++ on libsodium, on Linux and
+  on Windows with MSVC, and through the Bazel vendoring channel as well as CMake. libsodium is found, not vendored
+  (`find_package` on CMake, a label the consumer passes on Bazel), unlike `third_party/cpp-httplib`: a cryptographic
+  library takes its security fixes from one place, and a program that already links one gets no second copy. The COSE structures are
+  built and parsed by D9's schemas in both languages, so the two cannot disagree on the bytes.
 
 ### D8. A standard feature names the lanes that serve it
 
@@ -237,6 +250,23 @@ Under `tests/server/` a scenario suite run against the Rust host core on the ref
 - two server processes against one store never both write a session (D6's fencing);
 - the `https` binding through an explicit proxy, through a TLS-inspecting proxy whose authority the client's platform
   trusts, and with responses lost on purpose.
+
+### D11. A Windows lane holds the C++ client parts
+
+SCE's CMake has an MSVC branch and its headers two `_WIN32` sites, but no CI job builds on Windows, so nothing holds
+a Windows build today. The Bazel channel does not build with MSVC as written: the rule `scripts/sce_repo.bzl`
+generates passes `-include common/ExternTemplates.h` and `-include common/DisableStdOut.h`, which is the GCC and Clang
+spelling (MSVC's is `/FI`); the rule selects the spelling by compiler. A GitHub-hosted Windows job is added: it builds with MSVC the C++ COSE reference host, the
+generated C++ machine with an `https` binding and its WinHTTP transport, and the Bazel channel's smoke consumer
+(`scripts/smoke_embed_consumer.sh`'s counterpart for Bazel on Windows), and runs the COSE scenarios, the
+cross-language COSE test and the `https` client's tests against a local server and a local proxy. It is a lane of
+`gate_registry.py` like every other, judged in CI.
+
+### Not in scope
+
+What a downstream keeps outside Mesh is not part of this record: a plain HTTP query an older client makes, and a page
+a browser uses to activate a machine that has no network. The server program that hosts the Mesh binding may serve
+other routes beside it, which are the downstream's.
 
 ## Consequences
 
@@ -280,8 +310,11 @@ Under `tests/server/` a scenario suite run against the Rust host core on the ref
 ## Order of work
 
 1. This ADR, accepted. Documentation only.
-2. D8: per-feature lanes in the standard-feature table, and the refusal with its diagnostic code.
-3. D9 and D7: `stdlib/cose`, the COSE operations, the Rust and C++ reference hosts, scenarios in
+2. D8: per-feature lanes in the standard-feature table, and the refusal with its diagnostic code. D11: the Windows
+   lane, first building what exists (the C++ runtime and the host features' reference host with MSVC), so that the
+   steps after it land on a lane that already passes.
+3. D9 and D7: `stdlib/cose`, the COSE operations, the Rust and C++ reference hosts (the C++ one on Linux and on
+   Windows, through CMake and Bazel), scenarios in
    `tests/host_features/scenarios/`, the vectors of the COSE working group's examples for the algorithms D7 fixes,
    and a cross-language test that signs and seals in each of the two and verifies and opens in the other. Also Open
    question 1's mechanism.
@@ -290,7 +323,8 @@ Under `tests/server/` a scenario suite run against the Rust host core on the ref
 6. D4 and D5: the reply cache of §10.5, checkpoint, release after durability, `RESTORED`, the timers' index, in the
    Rust host core. SCE_MESH.md §10.5 and §10.11 amended.
 7. D3: the keyed pool in the Rust host core, its deploy schema and refusals. SCE_MESH.md §14 and §19 amended.
-8. D2: the `https` binding section of SCE_MESH.md, the Rust server and client, and the generated C++ client arm.
+8. D2: the `https` binding section of SCE_MESH.md, the Rust server and client, and the generated C++ client arm with
+   its WinHTTP and cpp-httplib transports, held on the Linux lanes and the Windows lane.
 9. D10: the suite.
 10. `docs/SCE_HOST_FEATURES.md` section 9 updated, and a server runbook beside `docs/SCE_RELAY_DEPLOY.md`.
 11. The COSE operations and the `https` client on the remaining lanes, one step per lane.
