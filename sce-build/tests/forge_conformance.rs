@@ -4809,6 +4809,48 @@ fn an_identifier_of_an_enums_type_is_refused_on_every_backend() {
     }
 }
 
+/// A field of part of its bytes is an unsigned number of its bits
+/// (SCE_FORGE.md, "Where a fixed field's bits lie"), so a signed type there is
+/// refused where the document is read, before any language is rendered. No
+/// backend reads such a field, so none has to sign-extend one: the Kotlin and
+/// C++ reads of a field narrower than a byte give the unsigned number of its
+/// bits and nothing else.
+///
+/// Turns red where `bit_layout::refusal` admits a signed type for a field that
+/// is not whole.
+#[test]
+fn a_signed_field_of_part_of_its_bytes_is_refused_on_every_backend() {
+    const NIBBLE: &str = r#"<?xml version="1.0" encoding="UTF-8"?>
+<scxml xmlns="http://www.w3.org/2005/07/scxml" xmlns:sce="http://sce.dev/ext"
+       sce:kind="codec" sce:default-endian="big" name="signed_nibble" version="1.0">
+  <datamodel>
+    <sce:field id="low" sce:type="int8" sce:byte="0" sce:bit-size="4"/>
+    <sce:field id="high" sce:type="uint8" sce:byte="0" sce:bit-offset="4" sce:bit-size="4"/>
+  </datamodel>
+</scxml>"#;
+    for language in [
+        sce_build::generator::Language::Rust,
+        sce_build::generator::Language::Cpp,
+        sce_build::generator::Language::Kotlin,
+        sce_build::generator::Language::Go,
+        sce_build::generator::Language::Python,
+        sce_build::generator::Language::C11,
+    ] {
+        let error = match sce_build::compile_forge_from_string(
+            NIBBLE,
+            sce_build::DocumentLabel::symmetric("signed_nibble"),
+            language,
+        ) {
+            Ok(_) => panic!("{language:?}: a signed field of four bits must be refused"),
+            Err(e) => e.error.to_string(),
+        };
+        assert!(
+            error.contains("holds an unsigned number of its bits") && error.contains("not `int8`"),
+            "{language:?}: the refusal must say a part of a byte is unsigned; got: {error}"
+        );
+    }
+}
+
 /// `!` negates one clause. A group under it is refused as a group, and the
 /// refusal quotes the attribute the author wrote, whole, wherever in it the
 /// group stands: splitting on `||` before looking made it quote the fragment
