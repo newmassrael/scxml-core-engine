@@ -18,6 +18,7 @@
 //     package the machine's import line names, whatever the machine's prefix,
 //     and the machine in its `--kotlin-package-prefix` package;
 //   - Rust: every unit lands beside the others, as `use super::` names them;
+//   - Swift: every forge unit lands beside the others, the files of one module;
 //   - no file is written twice, and the run's manifest names each once;
 //   - a second run with `--assert-unchanged` passes, and an edit to one
 //     imported document makes it fail;
@@ -764,6 +765,56 @@ fn the_set_manifest_names_each_document_that_was_rejected() {
             .is_some_and(|d| d.ends_with("stubbed.scxml")),
         "{manifest}"
     );
+}
+
+/// Swift places every forge unit at the root: its units are the files of one
+/// module, which names each type of each unit, so no import line asks for a
+/// directory. The documents are two CBOR codecs of sce-build's fixtures, one
+/// importing an event schema and one an enum, reached by the walk.
+///
+/// Turns red if `forge_unit_dir` stops answering Swift (a run of these
+/// documents panicked there until 2026-11-18, `generate --with-imports -l
+/// swift`, with the CBOR pin's capture), or places a Swift unit below the root.
+#[test]
+fn swift_places_every_forge_unit_beside_the_others() {
+    let fixtures = Path::new(env!("CARGO_MANIFEST_DIR")).join("tests/fixtures/cbor_codec");
+    let tmp = tempfile::tempdir().expect("temp dir");
+    let out = tmp.path().join("out");
+    let run = generate_documents(
+        &[
+            fixtures.join("codec_cbor_record_list.scxml"),
+            fixtures.join("codec_cbor_signed_enum.scxml"),
+        ],
+        &out,
+        "swift",
+        &[],
+    );
+    succeeded(&run, "the Swift run");
+    let written = artifacts(&run, &out);
+    each_once(&written);
+    let units: BTreeSet<&String> = written
+        .iter()
+        .filter(|path| path.ends_with(".swift"))
+        .collect();
+    let below_the_root: Vec<&&String> = units.iter().filter(|path| path.contains('/')).collect();
+    assert!(
+        below_the_root.is_empty(),
+        "a Swift unit below the root: {below_the_root:?}"
+    );
+    for unit in [
+        "CodecCborRecordList.swift",
+        "CborCausalEntry.swift",
+        "CodecCborSignedEnum.swift",
+        "CborSignedStatus.swift",
+    ] {
+        assert!(
+            units.iter().any(|name| name.as_str() == unit),
+            "{unit}, a document the run named or reached, was not written: {written:?}"
+        );
+    }
+    for path in &written {
+        assert!(out.join(path).is_file(), "{path} was not written");
+    }
 }
 
 #[test]

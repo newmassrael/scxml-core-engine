@@ -1485,7 +1485,11 @@ pub(crate) fn kotlin_case_ident(variant: &str) -> String {
 /// names, one directory per segment; for Go, the package directory
 /// `"<module>/<snake>"` names below the module; and for the four languages
 /// whose importers name a sibling of the same directory (Rust `use super::`,
-/// Python `from .`, C++ and C11 `#include "<snake>.h"`), the root itself.
+/// Python `from .`, C++ and C11 `#include "<snake>.h"`), the root itself. Swift
+/// writes no import line: its units are files of one module, which names every
+/// type of every unit in it, so a unit lives at the root too, as a machine does
+/// ([`crate::generator::machine_unit_dir`]) and as the committed Swift trees hold
+/// them (one SwiftPM target, a file a document).
 pub fn forge_unit_dir(canonical: &str, lang: crate::generator::Language) -> std::path::PathBuf {
     use crate::generator::Language;
     let snake = filters::to_snake_case(canonical.to_string());
@@ -1495,10 +1499,9 @@ pub fn forge_unit_dir(canonical: &str, lang: crate::generator::Language) -> std:
             package.split('.').collect()
         }
         Language::Go => std::path::PathBuf::from(snake),
-        Language::Cpp | Language::Rust | Language::Python | Language::C11 => {
+        Language::Cpp | Language::Rust | Language::Python | Language::C11 | Language::Swift => {
             std::path::PathBuf::new()
         }
-        Language::Swift => no_swift_emitter("forge_unit_dir"),
     }
 }
 
