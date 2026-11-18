@@ -776,6 +776,9 @@ pub fn a_response_lost_after_the_server_acted_is_carried_again<H: Harness>(harne
         bench.server_log().1 >= 2
     });
     client.settle(Duration::from_millis(500));
+    // What the client's machine saw, read before stopping it, which takes it.
+    let pongs = client.count("pong");
+    let client_raised = client.raised.clone();
     client.stop();
 
     assert!(
@@ -788,12 +791,7 @@ pub fn a_response_lost_after_the_server_acted_is_carried_again<H: Harness>(harne
         1,
         "the server's machine saw {server_raised:?} from {received} envelopes"
     );
-    assert_eq!(
-        client.count("pong"),
-        1,
-        "the client's machine saw {:?}",
-        client.raised
-    );
+    assert_eq!(pongs, 1, "the client's machine saw {client_raised:?}");
 }
 
 /// A server that holds an exchange longer than the request's bound is answered by the adapter as
