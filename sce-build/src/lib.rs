@@ -11601,6 +11601,19 @@ pub fn compile_mesh_transport(
         .and_then(|d| d.transports.custom_tcp.as_ref())
         .is_some_and(mesh::deploy::CustomTcpTransportConfig::hosts_server);
 
+    // SCE_MESH.md §14.4, "Keyed session pool": a machine the deployment
+    // serves as a pool of sessions, one per key. Its key field is checked
+    // against the requests this document serves before anything is emitted,
+    // and the pool reaches codegen even with no binding, where a backend that
+    // does not serve one refuses it.
+    let keyed_pool = device
+        .and_then(|d| d.machines.get(&effective_machine_name))
+        .and_then(|m| m.sessions.as_ref())
+        .map(|sessions| {
+            mesh::topology::resolve_keyed_pool(&effective_machine_name, sessions, model)
+        })
+        .transpose()?;
+
     // SCE_MESH.md §16.5 wire-21: a partition may produce no
     // conventional `<send target="#X">` traffic and still need a
     // transport.h that opens inter-partition shm channels for
@@ -11645,6 +11658,7 @@ pub fn compile_mesh_transport(
 
     if resolved.is_empty()
         && server_binding.is_none()
+        && keyed_pool.is_none()
         && !has_custom_tcp_listen
         && !has_wire21_routing
         && !has_scxml_remote_wire
@@ -11818,6 +11832,7 @@ pub fn compile_mesh_transport(
             someip_machine_liveness_service_ids: &someip_machine_liveness_service_ids,
             source_location: model.source_location.as_ref(),
             template_base: &template_base,
+            sessions: keyed_pool.as_ref(),
         },
         language,
     )?;

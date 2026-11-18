@@ -10118,7 +10118,7 @@ document map's symbol of the same node; that map carries no condition.
 
 ---
 
-## Appendix — `DiagnosticCode` index (541 codes)
+## Appendix — `DiagnosticCode` index (544 codes)
 
 This appendix is the **drift-guarded coverage target** for the
 `acceptance_doc_covers_every_code` test. Every slash-path string in
@@ -10526,6 +10526,8 @@ Codes that the author can avoid by writing a better SCXML /
 | `mesh/deploy-invalid-liveliness` | Mesh Deploy |
 | `mesh/deploy-invalid-server-response-deadline` | Mesh Deploy |
 | `mesh/deploy-invalid-outbound-buffer` | Mesh Deploy |
+| `mesh/deploy-invalid-sessions` | Mesh Deploy |
+| `mesh/deploy-sessions-key-not-in-request` | Mesh Deploy |
 | `mesh/deploy-invalid-retry-policy` | Mesh Deploy |
 | `mesh/deploy-invalid-auth-policy` | Mesh Deploy |
 | `mesh/deploy-discovery-not-supported` | Mesh Deploy |
@@ -10636,6 +10638,7 @@ Codes that the author can avoid by writing a better SCXML /
 | `mesh/codegen-pool-with-rpc-client-unsupported` | Mesh Codegen |
 | `mesh/codegen-host-core-unsupported` | Mesh Codegen |
 | `mesh/codegen-cpp-router-unsupported` | Mesh Codegen |
+| `mesh/codegen-keyed-pool-unsupported` | Mesh Codegen |
 
 ### Diagnostic-only
 

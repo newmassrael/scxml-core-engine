@@ -1207,6 +1207,7 @@ references against a real document and drift silently.
 | `mesh/codegen-cpp-router-unsupported` | `mesh-codegen` | no | SCE Mesh §10.4 |
 | `mesh/codegen-event-name-collision` | `mesh-codegen` | no |  |
 | `mesh/codegen-host-core-unsupported` | `mesh-codegen` | no | SCE Mesh §19 |
+| `mesh/codegen-keyed-pool-unsupported` | `mesh-codegen` | no | SCE Mesh §14.4 |
 | `mesh/codegen-pool-with-rpc-client-unsupported` | `mesh-codegen` | no |  |
 | `mesh/codegen-template-read` | `mesh-codegen` | no |  |
 | `mesh/codegen-template-render` | `mesh-codegen` | no |  |
@@ -1234,6 +1235,7 @@ references against a real document and drift silently.
 | `mesh/deploy-invalid-reply-from` | `mesh-deploy` | no | SCE Mesh §14.6 |
 | `mesh/deploy-invalid-retry-policy` | `mesh-deploy` | no | SCE Mesh §16.7 |
 | `mesh/deploy-invalid-server-response-deadline` | `mesh-deploy` | no | SCE Mesh §9.5 |
+| `mesh/deploy-invalid-sessions` | `mesh-deploy` | no | SCE Mesh §14.4 |
 | `mesh/deploy-parse` | `mesh-deploy` | no | SCE Mesh §14 |
 | `mesh/deploy-partition-barrier-timeout-invalid` | `mesh-deploy` | no | SCE Mesh §14 |
 | `mesh/deploy-partition-duplicate-name` | `mesh-deploy` | no | SCE Mesh §14 |
@@ -1258,6 +1260,7 @@ references against a real document and drift silently.
 | `mesh/deploy-scxml-invoke-cross-device-transport` | `mesh-deploy` | no | SCE Mesh §9.6 L1393 |
 | `mesh/deploy-scxml-invoke-target-conflict` | `mesh-deploy` | no | SCE Mesh §9.6 |
 | `mesh/deploy-server-pool-not-supported` | `mesh-deploy` | `remove_fields` | SCE Mesh §14.4 |
+| `mesh/deploy-sessions-key-not-in-request` | `mesh-deploy` | no | SCE Mesh §14.4 |
 | `mesh/deploy-someip-liveness-service-id-overflow` | `mesh-deploy` | no | SCE Mesh §16.4 |
 | `mesh/deploy-someip-liveness-service-id-pin-collision` | `mesh-deploy` | no | SCE Mesh §16.4 |
 | `mesh/deploy-someip-liveness-service-id-pin-out-of-range` | `mesh-deploy` | no | SCE Mesh §16.4 |

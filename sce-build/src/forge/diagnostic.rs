@@ -3046,8 +3046,8 @@ pub enum DiagnosticCode {
     /// Two machine entries name one `<invoke>` site.
     #[serde(rename = "mesh/deploy-child-duplicate-site")]
     MeshDeployChildDuplicateSite,
-    /// A child session's parent is a server pool, whose sessions would share
-    /// the child's one name.
+    /// A child session's parent is a pool of sessions, a server pool or a
+    /// keyed pool, whose sessions would share the child's one name.
     #[serde(rename = "mesh/deploy-child-pooled-parent")]
     MeshDeployChildPooledParent,
     /// A partition places a child session, which runs in its parent's process.
@@ -3092,6 +3092,14 @@ pub enum DiagnosticCode {
     MeshDeployInvalidServerResponseDeadline,
     #[serde(rename = "mesh/deploy-invalid-outbound-buffer")]
     MeshDeployInvalidOutboundBuffer,
+    /// A machine's `sessions:` section is not a keyed pool a host core can
+    /// serve, or sits beside what a keyed pool cannot keep.
+    #[serde(rename = "mesh/deploy-invalid-sessions")]
+    MeshDeployInvalidSessions,
+    /// A keyed pool's key field is not carried, as a key, by a request the
+    /// machine serves.
+    #[serde(rename = "mesh/deploy-sessions-key-not-in-request")]
+    MeshDeploySessionsKeyNotInRequest,
     #[serde(rename = "mesh/deploy-invalid-retry-policy")]
     MeshDeployInvalidRetryPolicy,
     #[serde(rename = "mesh/deploy-invalid-auth-policy")]
@@ -3644,6 +3652,10 @@ pub enum DiagnosticCode {
     /// (docs/adr/0107, D2).
     #[serde(rename = "mesh/codegen-cpp-router-unsupported")]
     MeshCodegenCppRouterUnsupported,
+    /// A machine declared a keyed pool (`sessions:`) is generated for a
+    /// backend whose Mesh core does not serve one.
+    #[serde(rename = "mesh/codegen-keyed-pool-unsupported")]
+    MeshCodegenKeyedPoolUnsupported,
     // Mesh I/O
     #[serde(rename = "mesh/io")]
     MeshIo,
@@ -4409,6 +4421,8 @@ pub const ALL_DIAGNOSTIC_CODES: &[DiagnosticCode] = {
         MeshDeployInvalidLiveliness,
         MeshDeployInvalidServerResponseDeadline,
         MeshDeployInvalidOutboundBuffer,
+        MeshDeployInvalidSessions,
+        MeshDeploySessionsKeyNotInRequest,
         MeshDeployInvalidRetryPolicy,
         MeshDeployInvalidAuthPolicy,
         MeshDeployDiscoveryNotSupported,
@@ -4537,6 +4551,8 @@ pub const ALL_DIAGNOSTIC_CODES: &[DiagnosticCode] = {
         MeshCodegenHostCoreUnsupported,
         // ADR 0107, D2: what a host core carries and the C++ router does not
         MeshCodegenCppRouterUnsupported,
+        // ADR 0107, D3: a keyed pool on a core that does not serve one
+        MeshCodegenKeyedPoolUnsupported,
         // Mesh Io
         MeshIo,
         // Forge generated-source drift detection (SCE Protocol-Synthesis RFC §synth-6.2.6)
@@ -5204,6 +5220,11 @@ impl DiagnosticCode {
             // ── Transport descriptor: which cores serve a transport
             //    (SCE_MESH.md §10.4) ──
             MeshCodegenCppRouterUnsupported => Some("SCE Mesh §10.4"),
+
+            // ── Keyed session pool (SCE_MESH.md §14.4) ───────────
+            MeshDeployInvalidSessions
+            | MeshDeploySessionsKeyNotInRequest
+            | MeshCodegenKeyedPoolUnsupported => Some("SCE Mesh §14.4"),
 
             // ── Mesh sequence ordering (SCE_MESH.md §10.6) ──────
             MeshTopologyOrderingCannotBeGuaranteed => Some("SCE Mesh §10.6"),
@@ -6076,6 +6097,8 @@ impl DiagnosticCode {
             | MeshDeployInvalidLiveliness
             | MeshDeployInvalidServerResponseDeadline
             | MeshDeployInvalidOutboundBuffer
+            | MeshDeployInvalidSessions
+            | MeshDeploySessionsKeyNotInRequest
             | MeshDeployInvalidRetryPolicy
             | MeshDeployInvalidAuthPolicy
             | MeshDeployDiscoveryNotSupported
@@ -6191,6 +6214,7 @@ impl DiagnosticCode {
             | MeshCodegenPoolWithRpcClientUnsupported
             | MeshCodegenHostCoreUnsupported
             | MeshCodegenCppRouterUnsupported
+            | MeshCodegenKeyedPoolUnsupported
             | MeshIo
             | ForgeSourceHashMismatch
             | ForgeSourceHashInputUncovered
@@ -6674,6 +6698,8 @@ impl DiagnosticCode {
                 "mesh/deploy-invalid-server-response-deadline"
             }
             MeshDeployInvalidOutboundBuffer => "mesh/deploy-invalid-outbound-buffer",
+            MeshDeployInvalidSessions => "mesh/deploy-invalid-sessions",
+            MeshDeploySessionsKeyNotInRequest => "mesh/deploy-sessions-key-not-in-request",
             MeshDeployInvalidRetryPolicy => "mesh/deploy-invalid-retry-policy",
             MeshDeployInvalidAuthPolicy => "mesh/deploy-invalid-auth-policy",
             MeshDeployDiscoveryNotSupported => "mesh/deploy-discovery-not-supported",
@@ -6863,6 +6889,7 @@ impl DiagnosticCode {
             }
             MeshCodegenHostCoreUnsupported => "mesh/codegen-host-core-unsupported",
             MeshCodegenCppRouterUnsupported => "mesh/codegen-cpp-router-unsupported",
+            MeshCodegenKeyedPoolUnsupported => "mesh/codegen-keyed-pool-unsupported",
             MeshIo => "mesh/io",
             ForgeSourceHashMismatch => "forge/source-hash-mismatch",
             ForgeSourceHashInputUncovered => "forge/source-hash-input-uncovered",
@@ -18398,7 +18425,7 @@ mod tests {
                     parent: "server".into(),
                 }
                 .into(),
-                r#"{"v":1,"id":"fnv1a:41a4c3622aa92256","code":"mesh/deploy-child-pooled-parent","stage":"mesh-deploy","spec":"SCE Mesh §21","message":"machine 'list': its parent 'server' is a server pool (`server.instances:`), whose sessions would each start a child under the one name 'list'. A child of a pooled machine cannot be given a name of its own on the network.","actual":"list"}"#,
+                r#"{"v":1,"id":"fnv1a:41a4c3622aa92256","code":"mesh/deploy-child-pooled-parent","stage":"mesh-deploy","spec":"SCE Mesh §21","message":"machine 'list': its parent 'server' is a pool of sessions (`server.instances:` or `sessions:`), whose sessions would each start a child under the one name 'list'. A child of a pooled machine cannot be given a name of its own on the network.","actual":"list"}"#,
             ),
             (
                 "mesh/deploy-child-partitioned",
@@ -18520,6 +18547,27 @@ mod tests {
                 .into(),
                 // Hash placeholder — patched by byte-stability assertion.
                 r#"{"v":1,"id":"fnv1a:a62483a5bfc65457","code":"mesh/deploy-invalid-outbound-buffer","stage":"mesh-deploy","spec":"SCE Mesh §10.10","message":"machine 'brake': invalid `outbound_buffer:` section in deploy.yaml — max_pending_per_target (0) must be >= 1 — a zero-capacity buffer cannot hold any envelope, which is indistinguishable from the pre-§10.10 silent-drop behaviour; omit the section entirely to opt out of buffering instead. Either correct the section or omit it entirely to opt out of §10.10 buffering.","actual":"brake"}"#,
+            ),
+            (
+                "mesh/deploy-invalid-sessions",
+                DeployError::InvalidSessions {
+                    machine: "rooms".into(),
+                    reason: "`key_from` is 'room', which is neither `client` nor `data.<field>` naming one top-level field of a request's data (a letter or `_`, then letters, digits or `_`)".into(),
+                }
+                .into(),
+                r#"{"v":1,"id":"fnv1a:6da513c942580141","code":"mesh/deploy-invalid-sessions","stage":"mesh-deploy","spec":"SCE Mesh §14.4","message":"machine 'rooms': invalid `sessions:` section in deploy.yaml — `key_from` is 'room', which is neither `client` nor `data.<field>` naming one top-level field of a request's data (a letter or `_`, then letters, digits or `_`).","actual":"rooms"}"#,
+            ),
+            (
+                "mesh/deploy-sessions-key-not-in-request",
+                DeployError::SessionKeyNotInRequest {
+                    machine: "rooms".into(),
+                    field: "room".into(),
+                    fault: crate::mesh::error::SessionKeyFault::NoField {
+                        event: "service.request.join".into(),
+                    },
+                }
+                .into(),
+                r#"{"v":1,"id":"fnv1a:28e78c52e22db9cc","code":"mesh/deploy-sessions-key-not-in-request","stage":"mesh-deploy","spec":"SCE Mesh §14.4","message":"machine 'rooms': `sessions.key_from` names the field 'room' of a request's data, and the schema of the request 'service.request.join' declares no such field; every request the machine serves carries the key of the session it is for.","actual":"room"}"#,
             ),
             (
                 "mesh/deploy-invalid-retry-policy",
@@ -19838,6 +19886,15 @@ mod tests {
                 }
                 .into(),
                 r#"{"v":1,"id":"fnv1a:5c231b0547bb72c5","code":"mesh/codegen-cpp-router-unsupported","stage":"mesh-codegen","spec":"SCE Mesh §10.4","message":"machine 'calendar' declares a binding that accepts (`listen:`) on transport 'https', which the generated C++ router does not carry: its arm for 'https' is the side that dials (`url:`). Generate this machine with `--lang rust`, or make it the side that dials.","actual":"calendar"}"#,
+            ),
+            (
+                "mesh/codegen-keyed-pool-unsupported",
+                CodegenError::KeyedPoolUnsupported {
+                    machine: "rooms".into(),
+                    backend: "cpp".into(),
+                }
+                .into(),
+                r#"{"v":1,"id":"fnv1a:f158097a4217dc2e","code":"mesh/codegen-keyed-pool-unsupported","stage":"mesh-codegen","spec":"SCE Mesh §14.4","message":"machine 'rooms' declares `sessions:`, a keyed pool of sessions, which the cpp Mesh core does not serve (SCE_MESH.md §mesh-14.4). Generate this machine with `--lang rust`, whose host core serves it, or remove `sessions:` from deploy.yaml.","actual":"rooms"}"#,
             ),
             (
                 "mesh/io",
@@ -21350,6 +21407,8 @@ mod tests {
             | MeshDeployInvalidLiveliness
             | MeshDeployInvalidServerResponseDeadline
             | MeshDeployInvalidOutboundBuffer
+            | MeshDeployInvalidSessions
+            | MeshDeploySessionsKeyNotInRequest
             | MeshDeployInvalidRetryPolicy
             | MeshDeployInvalidAuthPolicy
             | MeshDeployDiscoveryNotSupported
@@ -21479,6 +21538,7 @@ mod tests {
             | MeshCodegenPoolWithRpcClientUnsupported
             | MeshCodegenHostCoreUnsupported
             | MeshCodegenCppRouterUnsupported
+            | MeshCodegenKeyedPoolUnsupported
             | MeshIo
             // ── §synth-6.2.6 generated-source drift (B9). Repair is the
             //    deterministic `sce-codegen <regen-command>` — no
@@ -22233,6 +22293,8 @@ mod tests {
                 | MeshDeployInvalidLiveliness
                 | MeshDeployInvalidServerResponseDeadline
                 | MeshDeployInvalidOutboundBuffer
+                | MeshDeployInvalidSessions
+                | MeshDeploySessionsKeyNotInRequest
                 | MeshDeployInvalidRetryPolicy
                 | MeshDeployInvalidAuthPolicy
                 | MeshDeployDiscoveryNotSupported
@@ -22338,6 +22400,7 @@ mod tests {
                 | MeshCodegenPoolWithRpcClientUnsupported
                 | MeshCodegenHostCoreUnsupported
                 | MeshCodegenCppRouterUnsupported
+                | MeshCodegenKeyedPoolUnsupported
                 | MeshIo
                 // B9 §synth-6.2.6 generated-source drift detection
                 | ForgeSourceHashMismatch
@@ -22412,9 +22475,9 @@ mod tests {
         }
         assert_eq!(
             ALL_DIAGNOSTIC_CODES.len(),
-            541,
+            544,
             "ALL_DIAGNOSTIC_CODES has duplicates or missing entries — \
-             expected 541 distinct variants to match the DiagnosticCode \
+             expected 544 distinct variants to match the DiagnosticCode \
              enum. When a commit adds or removes a variant, update this \
              count in the same commit and follow the variant checklist: \
              SCE_ERROR_CONTRACT.md plus the acceptance-doc appendix \
@@ -23329,6 +23392,8 @@ pub fn anchor_carriage(code: DiagnosticCode, pipeline: Pipeline) -> AnchorCarria
             | MeshDeployInvalidLiveliness
             | MeshDeployInvalidServerResponseDeadline
             | MeshDeployInvalidOutboundBuffer
+            | MeshDeployInvalidSessions
+            | MeshDeploySessionsKeyNotInRequest
             | MeshDeployInvalidRetryPolicy
             | MeshDeployInvalidAuthPolicy
             | MeshDeployDiscoveryNotSupported
@@ -23444,6 +23509,7 @@ pub fn anchor_carriage(code: DiagnosticCode, pipeline: Pipeline) -> AnchorCarria
             | MeshCodegenPoolWithRpcClientUnsupported
             | MeshCodegenHostCoreUnsupported
             | MeshCodegenCppRouterUnsupported
+            | MeshCodegenKeyedPoolUnsupported
             | MeshIo
             | ForgeSourceHashMismatch
             | ForgeSourceHashInputUncovered

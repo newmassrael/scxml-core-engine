@@ -4122,6 +4122,144 @@ pub fn check_sender_event_coverage(
     findings
 }
 
+// ── Keyed session pool (SCE_MESH.md section 14.4) ──────────────────────────
+
+/// A machine's keyed pool as the build resolved it against the machine's
+/// document: what a host core's peer table carries for it.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+pub struct KeyedPool {
+    /// The field of a request's data a session's key is read from, or `None`
+    /// when it is read from the client's name (`key_from: client`).
+    pub key_field: Option<String>,
+    /// The most bytes a key the pool reads can hold: the largest bound the
+    /// key field's type states across the requests the machine serves, or
+    /// [`MAX_SESSION_KEY_BYTES`] for a client's name.
+    ///
+    /// [`MAX_SESSION_KEY_BYTES`]: crate::mesh::deploy::MAX_SESSION_KEY_BYTES
+    pub max_key_bytes: u32,
+    /// deploy.yaml's `sessions.idle_ms`.
+    pub idle_ms: u64,
+}
+
+/// `machine`'s `sessions:` section resolved against its document `model`
+/// (SCE_MESH.md section 14.4, "Keyed session pool").
+///
+/// A pool keyed by `data.<field>` reads the key from what every request the
+/// machine serves carries: each `service.request.*` its transitions name must
+/// have an event schema the document imports, the schema must declare the
+/// field, and the field must be a key: a text whose bound is at most
+/// [`MAX_SESSION_KEY_BYTES`], or an integer, whose digits are the key. A field
+/// a request may leave out, or whose value is a record, a list, a number with
+/// a fraction or a flag, names no session, and is refused here rather than at
+/// the first request that arrives
+/// ([`DeployError::SessionKeyNotInRequest`]). A pool keyed by `client` reads
+/// nothing of the document.
+///
+/// [`MAX_SESSION_KEY_BYTES`]: crate::mesh::deploy::MAX_SESSION_KEY_BYTES
+/// [`DeployError::SessionKeyNotInRequest`]: crate::mesh::error::DeployError::SessionKeyNotInRequest
+pub fn resolve_keyed_pool(
+    machine: &str,
+    sessions: &crate::mesh::deploy::SessionsConfig,
+    model: &SCXMLModel,
+) -> Result<KeyedPool, crate::mesh::error::DeployError> {
+    use super::pattern::CommunicationPattern;
+    use crate::mesh::deploy::{SessionKeySource, MAX_SESSION_KEY_BYTES};
+    use crate::mesh::error::{DeployError, SessionKeyFault};
+
+    let source = sessions
+        .key_source()
+        .map_err(|reason| DeployError::InvalidSessions {
+            machine: machine.to_string(),
+            reason,
+        })?;
+    let field = match source {
+        SessionKeySource::Client => {
+            return Ok(KeyedPool {
+                key_field: None,
+                max_key_bytes: MAX_SESSION_KEY_BYTES,
+                idle_ms: sessions.idle_ms,
+            })
+        }
+        SessionKeySource::Field(field) => field,
+    };
+    let refuse = |fault: SessionKeyFault| DeployError::SessionKeyNotInRequest {
+        machine: machine.to_string(),
+        field: field.clone(),
+        fault,
+    };
+    // The requests the machine serves, each by its full name: a descriptor
+    // that matches many (`service.request`, `service.request.*`) names no
+    // one schema, and the requests it matches are named by their own
+    // transitions or by none.
+    let requests: BTreeSet<String> = collect_transition_events(model)
+        .into_iter()
+        .filter(|event| {
+            !event.contains('*')
+                && CommunicationPattern::ServiceRequest
+                    .match_suffix(event)
+                    .is_some_and(|suffix| !suffix.is_empty())
+        })
+        .collect();
+    if requests.is_empty() {
+        return Err(refuse(SessionKeyFault::NoRequest));
+    }
+    let mut max_key_bytes = 0;
+    for event in requests {
+        let Some(schema) = model.imported_event_schemas.get(&event) else {
+            return Err(refuse(SessionKeyFault::NoSchema { event }));
+        };
+        let Some(declared) = schema.fields.iter().find(|f| f.id == field) else {
+            return Err(refuse(SessionKeyFault::NoField { event }));
+        };
+        let Some(bytes) = key_bytes(&declared.sce_type) else {
+            return Err(refuse(SessionKeyFault::NotAKey {
+                written_type: declared.sce_type.to_string(),
+                event,
+            }));
+        };
+        if bytes > MAX_SESSION_KEY_BYTES {
+            return Err(refuse(SessionKeyFault::TooLong { event, max: bytes }));
+        }
+        max_key_bytes = max_key_bytes.max(bytes);
+    }
+    Ok(KeyedPool {
+        key_field: Some(field),
+        max_key_bytes,
+        idle_ms: sessions.idle_ms,
+    })
+}
+
+/// The most bytes a key read from a value of `sce_type` holds: a text's
+/// bound, or the digits of the widest integer of the type with its sign.
+/// `None` for a type whose value is no key.
+fn key_bytes(sce_type: &crate::forge::value_type::ValueType) -> Option<u32> {
+    use crate::forge::model::SceType;
+    use crate::forge::value_type::TypeOf;
+    match sce_type {
+        TypeOf::Text { max } => Some(max.max),
+        TypeOf::Scalar(scalar) => match scalar {
+            SceType::Uint8 => Some(3),
+            SceType::Int8 => Some(4),
+            SceType::Uint16 => Some(5),
+            SceType::Int16 => Some(6),
+            SceType::Uint32 => Some(10),
+            SceType::Int32 => Some(11),
+            SceType::Uint64 | SceType::Int64 => Some(20),
+            SceType::Float32
+            | SceType::Float64
+            | SceType::Bool
+            | SceType::String
+            | SceType::Bytes
+            | SceType::Enum(_) => None,
+        },
+        TypeOf::Bytes { .. }
+        | TypeOf::Optional { .. }
+        | TypeOf::Record { .. }
+        | TypeOf::Union { .. }
+        | TypeOf::List { .. } => None,
+    }
+}
+
 // ── Child sessions (SCE_MESH.md §mesh-21.2, Child Sessions in Mesh) ────────
 
 /// The `<invoke>` sites of `machine`'s document checked against the child
@@ -6772,5 +6910,222 @@ topology:
              inner:\n        invoked_by: { machine: alice, invoke: inner }\n",
         );
         validate_child_session_sites(&both, "planner", &sites).expect("both named");
+    }
+
+    // ── Keyed session pool (SCE_MESH.md section 14.4) ───────────
+
+    /// A machine that serves `service.request.join` and `service.request.leave`,
+    /// and answers neither by a schema until a test gives it some.
+    const ROOMS_SCXML: &str = r##"<?xml version="1.0" encoding="UTF-8"?>
+<scxml xmlns="http://www.w3.org/2005/07/scxml" version="1.0" datamodel="null" name="rooms" initial="open">
+    <state id="open">
+        <transition event="service.request.join" target="open"/>
+        <transition event="service.request.leave service.request" target="open"/>
+        <transition event="ping" target="open"/>
+    </state>
+</scxml>"##;
+
+    /// A field `id` of an event schema, of `sce_type`.
+    fn schema_field(
+        id: &str,
+        sce_type: crate::forge::value_type::ValueType,
+    ) -> crate::forge::model::ForgeField<crate::forge::value_type::ValueType> {
+        crate::forge::model::ForgeField {
+            id: id.to_string(),
+            sce_type,
+            direction: crate::forge::model::Direction::In,
+            expr: None,
+            expr_spelling: None,
+            expr_splices: None,
+            quantity: None,
+            max_size: None,
+            limit: None,
+            default_covers: Vec::new(),
+            retain: None,
+            initial: None,
+            initial_spelling: None,
+            since: None,
+            optional_since: None,
+            default: None,
+            default_spelling: None,
+        }
+    }
+
+    /// [`ROOMS_SCXML`] with `fields` as the schema of each of the two
+    /// requests it serves; `None` leaves a request without one.
+    fn rooms_with(
+        join: Option<Vec<crate::forge::model::ForgeField<crate::forge::value_type::ValueType>>>,
+        leave: Option<Vec<crate::forge::model::ForgeField<crate::forge::value_type::ValueType>>>,
+    ) -> SCXMLModel {
+        let mut model = parse_model(ROOMS_SCXML, "rooms");
+        for (event, fields) in [
+            ("service.request.join", join),
+            ("service.request.leave", leave),
+        ] {
+            if let Some(fields) = fields {
+                model.imported_event_schemas.insert(
+                    event.to_string(),
+                    crate::forge::model::EventSchemaModel {
+                        name: event.replace('.', "_"),
+                        event_name: event.to_string(),
+                        fields,
+                        payload_none: false,
+                        datamodel_markers: Vec::new(),
+                        revision: None,
+                        source_location: None,
+                    },
+                );
+            }
+        }
+        model
+    }
+
+    fn text(max: u32) -> crate::forge::value_type::ValueType {
+        crate::forge::value_type::TypeOf::Text {
+            max: crate::forge::value_type::Bound::of(max),
+        }
+    }
+
+    fn scalar(sce_type: crate::forge::model::SceType) -> crate::forge::value_type::ValueType {
+        crate::forge::value_type::TypeOf::Scalar(sce_type)
+    }
+
+    fn sessions(key_from: &str) -> crate::mesh::deploy::SessionsConfig {
+        crate::mesh::deploy::SessionsConfig {
+            key_from: key_from.to_string(),
+            idle_ms: 60_000,
+        }
+    }
+
+    /// A pool keyed by a field reads it from every request the machine
+    /// serves, by its full name (a descriptor that matches many is not one),
+    /// and a key holds as many bytes as the widest of its types: a text's
+    /// bound, an integer's digits with its sign.
+    #[test]
+    fn a_keyed_pool_holds_the_widest_key_its_requests_carry() {
+        use crate::forge::model::SceType;
+        let model = rooms_with(
+            Some(vec![
+                schema_field("who", text(8)),
+                schema_field("room", text(12)),
+            ]),
+            Some(vec![schema_field("room", scalar(SceType::Int32))]),
+        );
+        assert_eq!(
+            resolve_keyed_pool("rooms", &sessions("data.room"), &model)
+                .expect("a key of every request"),
+            KeyedPool {
+                key_field: Some("room".to_string()),
+                max_key_bytes: 12,
+                idle_ms: 60_000,
+            }
+        );
+        let model = rooms_with(
+            Some(vec![schema_field("room", text(4))]),
+            Some(vec![schema_field("room", scalar(SceType::Uint64))]),
+        );
+        assert_eq!(
+            resolve_keyed_pool("rooms", &sessions("data.room"), &model)
+                .expect("a key of every request")
+                .max_key_bytes,
+            20
+        );
+        // A pool keyed by its client's name reads nothing of the document.
+        assert_eq!(
+            resolve_keyed_pool("rooms", &sessions("client"), &rooms_with(None, None))
+                .expect("a client's name"),
+            KeyedPool {
+                key_field: None,
+                max_key_bytes: crate::mesh::deploy::MAX_SESSION_KEY_BYTES,
+                idle_ms: 60_000,
+            }
+        );
+    }
+
+    /// Each way the key field fails to be a key of every request is refused
+    /// by name, against the first request it fails for.
+    #[test]
+    fn a_key_field_that_is_not_a_key_of_every_request_is_refused() {
+        use crate::forge::model::SceType;
+        use crate::mesh::error::{DeployError, SessionKeyFault};
+        let refused =
+            |model: &SCXMLModel| match resolve_keyed_pool("rooms", &sessions("data.room"), model) {
+                Err(DeployError::SessionKeyNotInRequest {
+                    machine,
+                    field,
+                    fault,
+                }) => {
+                    assert_eq!((machine.as_str(), field.as_str()), ("rooms", "room"));
+                    fault
+                }
+                other => panic!("expected SessionKeyNotInRequest, got {other:?}"),
+            };
+        let room = || Some(vec![schema_field("room", text(8))]);
+        assert_eq!(
+            refused(&rooms_with(room(), None)),
+            SessionKeyFault::NoSchema {
+                event: "service.request.leave".to_string()
+            }
+        );
+        assert_eq!(
+            refused(&rooms_with(
+                room(),
+                Some(vec![schema_field("who", text(8))])
+            )),
+            SessionKeyFault::NoField {
+                event: "service.request.leave".to_string()
+            }
+        );
+        assert_eq!(
+            refused(&rooms_with(
+                room(),
+                Some(vec![schema_field("room", scalar(SceType::Float64))])
+            )),
+            SessionKeyFault::NotAKey {
+                event: "service.request.leave".to_string(),
+                written_type: scalar(SceType::Float64).to_string(),
+            }
+        );
+        assert_eq!(
+            refused(&rooms_with(
+                room(),
+                Some(vec![schema_field(
+                    "room",
+                    crate::forge::value_type::TypeOf::Optional {
+                        elem: Box::new(text(8))
+                    }
+                )])
+            )),
+            SessionKeyFault::NotAKey {
+                event: "service.request.leave".to_string(),
+                written_type: crate::forge::value_type::TypeOf::Optional {
+                    elem: Box::new(text(8))
+                }
+                .to_string(),
+            }
+        );
+        assert_eq!(
+            refused(&rooms_with(
+                room(),
+                Some(vec![schema_field("room", text(257))])
+            )),
+            SessionKeyFault::TooLong {
+                event: "service.request.leave".to_string(),
+                max: 257,
+            }
+        );
+        let serves_none = parse_model(
+            r##"<?xml version="1.0" encoding="UTF-8"?>
+<scxml xmlns="http://www.w3.org/2005/07/scxml" version="1.0" datamodel="null" name="rooms" initial="open">
+    <state id="open"><transition event="ping" target="open"/></state>
+</scxml>"##,
+            "rooms",
+        );
+        assert_eq!(refused(&serves_none), SessionKeyFault::NoRequest);
+        // A key source the parse refused is refused here the same way.
+        assert!(matches!(
+            resolve_keyed_pool("rooms", &sessions("room"), &serves_none),
+            Err(DeployError::InvalidSessions { .. })
+        ));
     }
 }

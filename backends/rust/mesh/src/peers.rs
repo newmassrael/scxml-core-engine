@@ -84,6 +84,34 @@ pub struct Peer {
     pub link: PeerLink,
 }
 
+/// Where a keyed pool reads the key of the session an envelope is for
+/// (deploy.yaml `sessions.key_from`, docs/adr/0107 decision D3).
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum KeyFrom {
+    /// `data.<field>`: the top-level field of the envelope's data, by its
+    /// name. The build checked that every request the machine serves carries
+    /// it, as a text or an integer.
+    Field(&'static str),
+    /// `client`: the name of the peer whose link the envelope arrived on.
+    Client,
+}
+
+/// deploy.yaml's `sessions:`: the machine is served as a pool of sessions,
+/// one per key, each loaded from and saved to the host's session store
+/// ([`crate::pool`]).
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct Sessions {
+    /// Where a session's key is read.
+    pub key_from: KeyFrom,
+    /// The most bytes a key may hold: the bound of the key field's type, as
+    /// the build read it from the request schemas, or the pool's ceiling for
+    /// a client's name. A longer key names no session.
+    pub max_key_bytes: u32,
+    /// How long a session with no event and nothing pending stays in memory
+    /// before it is saved and dropped, in milliseconds.
+    pub idle_ms: u64,
+}
+
 /// One machine's side of a deployment.
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub struct Machine {
@@ -95,6 +123,9 @@ pub struct Machine {
     pub gap_timeout_ms: i64,
     /// Every peer the machine is bound to, by name.
     pub peers: &'static [Peer],
+    /// The machine's keyed pool, when the deployment serves it as one; `None`
+    /// for a machine that is one session.
+    pub sessions: Option<Sessions>,
 }
 
 impl Machine {
@@ -143,6 +174,7 @@ mod tests {
                 keepalive_ms: None,
             },
         }],
+        sessions: None,
     };
 
     #[test]
@@ -178,6 +210,7 @@ mod tests {
             },
             link: PeerLink::ZenohInbox,
         }],
+        sessions: None,
     };
 
     #[test]
@@ -222,6 +255,7 @@ mod tests {
                 mailbox: 1024,
             },
         }],
+        sessions: None,
     };
 
     #[test]

@@ -1223,12 +1223,39 @@ pub struct MeshCodegenInputs<'a> {
     pub someip_machine_liveness_service_ids: &'a BTreeMap<String, u16>,
     pub source_location: Option<&'a SourceLocation>,
     pub template_base: &'a Path,
+    /// The machine's keyed pool (`sessions:`, SCE_MESH.md section 14.4), resolved against
+    /// its document by [`super::topology::resolve_keyed_pool`]; `None` for a
+    /// machine that is one session.
+    pub sessions: Option<&'a super::topology::KeyedPool>,
+}
+
+/// The backends whose Mesh core serves a keyed pool of sessions
+/// (`sessions:`, SCE_MESH.md section 14.4): the Rust host core, whose `pool`
+/// module it is.
+/// Every other backend refuses one ([`CodegenError::KeyedPoolUnsupported`])
+/// rather than emit the machine as one session.
+fn serves_keyed_pool(language: Language) -> bool {
+    match language {
+        Language::Rust => true,
+        Language::Cpp
+        | Language::Kotlin
+        | Language::Swift
+        | Language::Go
+        | Language::Python
+        | Language::C11 => false,
+    }
 }
 
 pub fn generate_mesh(
     inputs: MeshCodegenInputs<'_>,
     language: Language,
 ) -> Result<GeneratedOutput, CodegenError> {
+    if inputs.sessions.is_some() && !serves_keyed_pool(language) {
+        return Err(CodegenError::KeyedPoolUnsupported {
+            machine: inputs.deploy_machine_name.to_string(),
+            backend: language.canonical_name().to_string(),
+        });
+    }
     // A custom_tcp `listen:` on the device requires the machine to host a
     // server even when it has no `bindings:`/`server:`/`subscriptions:` of
     // its own — the server field, init() bind, and shutdown() teardown all
@@ -1247,9 +1274,12 @@ pub fn generate_mesh(
         !inputs.partition_wire21_outbound.is_empty() || !inputs.partition_wire21_inbound.is_empty();
     let has_scxml_remote_wire = !inputs.scxml_remote_outbound_peers.is_empty()
         || !inputs.scxml_remote_inbound_peers.is_empty();
+    // A keyed pool is a host's to build even before it is bound to a peer:
+    // its table says how the pool reads a key.
     if inputs.targets.is_empty()
         && inputs.subscriptions.is_empty()
         && inputs.server.is_none()
+        && inputs.sessions.is_none()
         && !needs_custom_tcp_server
         && !has_wire21_routing
         && !has_scxml_remote_wire
@@ -1543,6 +1573,8 @@ fn generate_cpp_mesh(inputs: MeshCodegenInputs<'_>) -> Result<GeneratedOutput, C
         someip_machine_liveness_service_ids,
         source_location,
         template_base,
+        // `generate_mesh` refused a keyed pool for this backend.
+        sessions: _,
     } = inputs;
     // Validate: every target's transport must be in the registry AND
     // carried by the C++ template. Three failure modes, one refusal:
@@ -2488,6 +2520,7 @@ fn generate_host_mesh(
         scxml_remote_inbound_peers,
         source_location,
         template_base,
+        sessions,
         ..
     } = inputs;
     use super::error::HostCoreGap;
@@ -2669,6 +2702,9 @@ fn generate_host_mesh(
             dedup_window => machine_dedup.window_size,
             gap_timeout_ms => machine_ordering.gap_timeout_ms,
             peers => peers,
+            // The keyed pool: only the Rust table has a place for it, and
+            // `generate_mesh` refused it for every other backend.
+            sessions => sessions,
         })
         .map_err(|e| CodegenError::TemplateRender(e.to_string()))?;
     Ok(GeneratedOutput {

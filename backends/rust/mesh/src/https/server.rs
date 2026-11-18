@@ -896,6 +896,7 @@ mod tests {
             dedup_window: 8,
             gap_timeout_ms: 50,
             peers,
+            sessions: None,
         };
         let listening = Listening::on(&machine, "0.0.0.0:8443").expect("two peers there");
         assert_eq!(listening.peers, ["phone", "tablet"]);

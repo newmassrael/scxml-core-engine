@@ -746,6 +746,75 @@ impl std::fmt::Display for ChildEntryFault {
     }
 }
 
+/// Why the field a keyed pool reads its key from is not a key of the requests
+/// the machine serves (SCE_MESH.md §mesh-14.4, "Keyed session pool").
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum SessionKeyFault {
+    /// The machine serves no request (`service.request.*`), so no request
+    /// carries the field.
+    NoRequest,
+    /// The request `event` has no event schema the document imports, so
+    /// nothing says it carries the field.
+    NoSchema { event: String },
+    /// The schema of the request `event` declares no field of that name.
+    NoField { event: String },
+    /// The schema of the request `event` declares the field as
+    /// `written_type`, which is neither a bounded text nor an integer.
+    NotAKey { event: String, written_type: String },
+    /// The schema of the request `event` declares the field as a text of up
+    /// to `max` bytes, more than a session key holds.
+    TooLong { event: String, max: u32 },
+}
+
+impl SessionKeyFault {
+    /// Stable words for the fault, which a diagnostic's id is keyed on.
+    pub fn key_fragments(&self) -> Vec<String> {
+        match self {
+            Self::NoRequest => vec!["no-request".to_string()],
+            Self::NoSchema { event } => vec!["no-schema".to_string(), event.clone()],
+            Self::NoField { event } => vec!["no-field".to_string(), event.clone()],
+            Self::NotAKey { event, .. } => vec!["not-a-key".to_string(), event.clone()],
+            Self::TooLong { event, .. } => vec!["too-long".to_string(), event.clone()],
+        }
+    }
+}
+
+impl std::fmt::Display for SessionKeyFault {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Self::NoRequest => write!(
+                f,
+                "the machine serves no request (`service.request.*`) to carry it; key the pool \
+                 by `client`, or serve the requests that carry the key"
+            ),
+            Self::NoSchema { event } => write!(
+                f,
+                "the request '{event}' has no event schema the document imports, so nothing \
+                 says it carries the field; import the request's schema"
+            ),
+            Self::NoField { event } => write!(
+                f,
+                "the schema of the request '{event}' declares no such field; every request the \
+                 machine serves carries the key of the session it is for"
+            ),
+            Self::NotAKey {
+                event,
+                written_type,
+            } => write!(
+                f,
+                "the schema of the request '{event}' declares it as `{written_type}`; a key is a \
+                 text of a stated bound (`string[N]`) or an integer"
+            ),
+            Self::TooLong { event, max } => write!(
+                f,
+                "the schema of the request '{event}' declares it as a text of up to {max} bytes, \
+                 more than the {} a session key holds",
+                super::deploy::MAX_SESSION_KEY_BYTES
+            ),
+        }
+    }
+}
+
 /// The chain of parents a child session's `invoked_by` follows, when it comes
 /// back on itself instead of ending at a machine the host starts; empty when
 /// the parent named is no machine of the child's device.
@@ -855,12 +924,14 @@ pub enum DeployError {
         invoke: String,
     },
 
-    /// A child session's parent is a machine the host runs as a server pool
-    /// (`server.instances:`), whose sessions would share the child's one name.
+    /// A child session's parent is a machine served as a pool of sessions, a
+    /// server pool (`server.instances:`) or a keyed pool (`sessions:`,
+    /// §mesh-14.4), whose sessions would share the child's one name.
     #[error(
-        "machine '{machine}': its parent '{parent}' is a server pool (`server.instances:`), whose \
-         sessions would each start a child under the one name '{machine}'. A child of a pooled \
-         machine cannot be given a name of its own on the network."
+        "machine '{machine}': its parent '{parent}' is a pool of sessions (`server.instances:` \
+         or `sessions:`), whose sessions would each start a child under the one name \
+         '{machine}'. A child of a pooled machine cannot be given a name of its own on the \
+         network."
     )]
     ChildPooledParent { machine: String, parent: String },
 
@@ -1006,6 +1077,28 @@ pub enum DeployError {
              Either correct the section or omit it entirely to opt out of §10.10 buffering."
     )]
     InvalidOutboundBuffer { machine: String, reason: String },
+
+    /// A machine's `sessions:` section cannot be served (SCE_MESH.md
+    /// §mesh-14.4, "Keyed session pool"): its key source or idle time is not
+    /// one a pool reads, or it sits beside what a keyed pool cannot keep (a
+    /// `server:` block, an ordered binding, a causal one). Read off the
+    /// deployment alone, at parse time.
+    #[error("machine '{machine}': invalid `sessions:` section in deploy.yaml — {reason}.")]
+    InvalidSessions { machine: String, reason: String },
+
+    /// A keyed pool reads its key from a field of the requests' data, and a
+    /// request the machine serves does not carry that field as a key
+    /// (SCE_MESH.md §mesh-14.4). Judged against the machine's document, when
+    /// it is generated.
+    #[error(
+        "machine '{machine}': `sessions.key_from` names the field '{field}' of a request's \
+         data, and {fault}."
+    )]
+    SessionKeyNotInRequest {
+        machine: String,
+        field: String,
+        fault: SessionKeyFault,
+    },
 
     /// A `retry:` section on a transport binding violates the
     /// §mesh-16.7 row 3 parse-time constraints (see `RetryPolicyConfig`
@@ -2845,6 +2938,10 @@ impl DeployError {
             Self::InvalidOutboundBuffer { machine, .. } => {
                 P::machine(machine).key("outbound_buffer")
             }
+            Self::InvalidSessions { machine, .. } => P::machine(machine).key("sessions"),
+            Self::SessionKeyNotInRequest { machine, .. } => {
+                P::machine(machine).key("sessions").key("key_from")
+            }
             Self::InvalidRetryPolicy {
                 machine, target, ..
             } => binding(machine, target).key("retry"),
@@ -3661,6 +3758,19 @@ pub enum CodegenError {
         machine: String,
         feature: CppRouterGap,
     },
+
+    /// A machine the deployment serves as a keyed pool of sessions
+    /// (`sessions:`, SCE_MESH.md §mesh-14.4) generated for a backend whose
+    /// Mesh core does not serve one: the generated C++ router, whose pool is
+    /// the `server:` block's declared instances, and the host cores that do
+    /// not carry the pool yet. Refused rather than emitted as one session,
+    /// which would build and serve every key from one state.
+    #[error(
+        "machine '{machine}' declares `sessions:`, a keyed pool of sessions, which the \
+         {backend} Mesh core does not serve (SCE_MESH.md §mesh-14.4). Generate this machine \
+         with `--lang rust`, whose host core serves it, or remove `sessions:` from deploy.yaml."
+    )]
+    KeyedPoolUnsupported { machine: String, backend: String },
 }
 
 /// What a [`CodegenError::CppRouterUnsupported`] refused: a deployment feature
@@ -4091,6 +4201,35 @@ fn deploy_fields(e: &DeployError) -> DiagnosticPayload {
             expected: None,
             fix: None,
             key_fragments: vec![machine.clone(), reason.clone()],
+        },
+        DeployError::InvalidSessions { machine, reason } => DiagnosticPayload {
+            code: DiagnosticCode::MeshDeployInvalidSessions,
+            stage: Stage::MeshDeploy,
+            actual: Some(machine.clone()),
+            // The repair is a value of the section, or the section or what
+            // sits beside it removed, and which depends on what the machine
+            // is for: nothing is offered.
+            expected: None,
+            fix: None,
+            key_fragments: vec![machine.clone(), reason.clone()],
+        },
+        DeployError::SessionKeyNotInRequest {
+            machine,
+            field,
+            fault,
+        } => DiagnosticPayload {
+            code: DiagnosticCode::MeshDeploySessionsKeyNotInRequest,
+            stage: Stage::MeshDeploy,
+            actual: Some(field.clone()),
+            // The repair is a field the author adds to a schema, or another
+            // key source: no candidate the build knows.
+            expected: None,
+            fix: None,
+            key_fragments: {
+                let mut fragments = vec![machine.clone(), field.clone()];
+                fragments.extend(fault.key_fragments());
+                fragments
+            },
         },
         DeployError::InvalidRetryPolicy {
             machine,
@@ -6028,6 +6167,16 @@ fn codegen_fields(e: &CodegenError) -> DiagnosticPayload {
             expected: None,
             fix: None,
             key_fragments: vec![machine.clone(), feature.tag().to_string()],
+        },
+        CodegenError::KeyedPoolUnsupported { machine, backend } => DiagnosticPayload {
+            code: DiagnosticCode::MeshCodegenKeyedPoolUnsupported,
+            stage: Stage::MeshCodegen,
+            actual: Some(machine.clone()),
+            // Two repairs, as for HostCoreUnsupported: another backend, or a
+            // machine that is one session. Neither is offered as the fix.
+            expected: None,
+            fix: None,
+            key_fragments: vec![machine.clone(), backend.clone()],
         },
     }
 }

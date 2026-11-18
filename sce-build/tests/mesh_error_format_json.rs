@@ -879,6 +879,210 @@ topology:
     );
 }
 
+/// The request the rooms server serves: a room's name and who asks.
+const JOIN_SCHEMA: &str = r#"<?xml version="1.0" encoding="UTF-8"?>
+<scxml xmlns="http://www.w3.org/2005/07/scxml" xmlns:sce="http://sce.dev/ext"
+       version="1.0" name="join" sce:kind="event-schema" sce:event-name="service.request.join">
+  <datamodel>
+    <data id="room" sce:type="string[16]" sce:direction="in"/>
+    <data id="who" sce:type="string[8]" sce:direction="in"/>
+  </datamodel>
+</scxml>
+"#;
+
+/// A server that answers each client's `service.request.join`.
+const ROOMS_SCXML: &str = r##"<?xml version="1.0" encoding="UTF-8"?>
+<scxml xmlns="http://www.w3.org/2005/07/scxml" xmlns:sce="http://sce.dev/ext"
+       version="1.0" name="rooms" initial="open">
+  <sce:import kind="event-schema" src="join.scxml" as="Join"/>
+  <state id="open">
+    <transition event="service.request.join" target="open">
+      <send target="#guest" event="service.response.join"/>
+    </transition>
+  </state>
+</scxml>
+"##;
+
+/// The client of [`ROOMS_SCXML`], which takes its answer.
+const GUEST_SCXML: &str = r##"<?xml version="1.0" encoding="UTF-8"?>
+<scxml xmlns="http://www.w3.org/2005/07/scxml"
+       version="1.0" name="guest" initial="idle">
+  <state id="idle">
+    <transition event="service.response.join" target="idle"/>
+  </state>
+</scxml>
+"##;
+
+/// The rooms server's deployment, its machine served as a pool by
+/// `sessions`.
+fn rooms_deploy(sessions: &str) -> String {
+    format!(
+        r##"
+version: "1.0"
+topology:
+  cloud:
+    machines:
+      rooms:
+        source: rooms.scxml
+        sessions: {sessions}
+        bindings:
+          "#guest": {{ transport: wss }}
+  phone:
+    machines:
+      guest:
+        source: guest.scxml
+        bindings:
+          "#rooms": {{ transport: wss, url: "wss://rooms.example" }}
+"##
+    )
+}
+
+/// Generate the rooms server for `language` with `join` as its request's
+/// schema and `sessions` as its pool, in a scratch directory that holds every
+/// document the deployment names.
+fn generate_rooms(
+    label: &str,
+    language: &str,
+    join: &str,
+    sessions: &str,
+) -> (std::process::Output, ScratchDir) {
+    let dir = ScratchDir::new(label);
+    dir.write("join.scxml", join);
+    dir.write("guest.scxml", GUEST_SCXML);
+    let scxml = dir.write("rooms.scxml", ROOMS_SCXML);
+    let deploy = dir.write("deploy.yaml", &rooms_deploy(sessions));
+    let out = run_with_deploy_for(language, &scxml, &deploy, dir.path());
+    (out, dir)
+}
+
+#[test]
+fn a_keyed_pool_reaches_the_rust_peer_table_and_no_other_core() {
+    // SCE_MESH.md §14.4, "Keyed session pool": the Rust host core serves a
+    // machine as a pool of sessions, so its peer table carries where the key
+    // is read and how long it may be, read from the request's schema. Red if
+    // the build drops `sessions:`, or reads the bound from anywhere but the
+    // key field's type.
+    let (out, dir) = generate_rooms(
+        "mesh-keyed-pool-rust",
+        "rust",
+        JOIN_SCHEMA,
+        "{ key_from: data.room, idle_ms: 30000 }",
+    );
+    assert!(
+        out.status.success(),
+        "the Rust core serves a keyed pool; stderr:\n{}",
+        String::from_utf8_lossy(&out.stderr)
+    );
+    let peers = generated_file_under(dir.path(), "_mesh_peers.rs");
+    for expected in [
+        "sessions: Some(sce_rust_mesh::peers::Sessions {",
+        "key_from: sce_rust_mesh::peers::KeyFrom::Field(\"room\"),",
+        "max_key_bytes: 16,",
+        "idle_ms: 30000,",
+    ] {
+        assert!(peers.contains(expected), "missing `{expected}`:\n{peers}");
+    }
+
+    // A pool keyed by the client's name reads no field.
+    let (out, dir) = generate_rooms(
+        "mesh-keyed-pool-client",
+        "rust",
+        JOIN_SCHEMA,
+        "{ key_from: client, idle_ms: 30000 }",
+    );
+    assert!(
+        out.status.success(),
+        "stderr:\n{}",
+        String::from_utf8_lossy(&out.stderr)
+    );
+    let peers = generated_file_under(dir.path(), "_mesh_peers.rs");
+    assert!(
+        peers.contains("key_from: sce_rust_mesh::peers::KeyFrom::Client,")
+            && peers.contains("max_key_bytes: 256,"),
+        "{peers}"
+    );
+
+    // Every other core refuses it rather than serve every key from one state.
+    for language in ["cpp", "kotlin", "swift"] {
+        let (out, _dir) = generate_rooms(
+            &format!("mesh-keyed-pool-{language}"),
+            language,
+            JOIN_SCHEMA,
+            "{ key_from: data.room, idle_ms: 30000 }",
+        );
+        assert!(!out.status.success(), "{language} must refuse a keyed pool");
+        assert_eq!(out.status.code(), Some(12), "{language}: a CodegenError");
+        let stderr = String::from_utf8(out.stderr).expect("stderr utf8");
+        let rec = sole_ndjson_record(&stderr);
+        assert_core_shape(&rec);
+        assert_eq!(
+            rec["code"], "mesh/codegen-keyed-pool-unsupported",
+            "record: {rec}"
+        );
+        assert_eq!(rec["stage"], "mesh-codegen", "record: {rec}");
+        assert_eq!(rec["spec"], "SCE Mesh §14.4", "record: {rec}");
+        assert_eq!(rec["actual"], "rooms", "record: {rec}");
+        assert!(
+            rec["message"]
+                .as_str()
+                .is_some_and(|m| m.contains(&format!("the {language} Mesh core"))),
+            "record: {rec}"
+        );
+    }
+}
+
+#[test]
+fn a_keyed_pool_whose_key_no_request_carries_is_refused() {
+    // The key field is judged against the request's schema when the machine
+    // is generated: a request that does not carry it names no session.
+    let without_room = JOIN_SCHEMA.replace(
+        "    <data id=\"room\" sce:type=\"string[16]\" sce:direction=\"in\"/>\n",
+        "",
+    );
+    let (out, _dir) = generate_rooms(
+        "mesh-keyed-pool-no-field",
+        "rust",
+        &without_room,
+        "{ key_from: data.room, idle_ms: 30000 }",
+    );
+    assert!(!out.status.success(), "a key no request carries is refused");
+    assert_eq!(out.status.code(), Some(10), "a DeployError");
+    let stderr = String::from_utf8(out.stderr).expect("stderr utf8");
+    let rec = sole_ndjson_record(&stderr);
+    assert_core_shape(&rec);
+    assert_eq!(
+        rec["code"], "mesh/deploy-sessions-key-not-in-request",
+        "record: {rec}"
+    );
+    assert_eq!(rec["stage"], "mesh-deploy", "record: {rec}");
+    assert_eq!(rec["actual"], "room", "record: {rec}");
+    assert!(
+        rec["message"]
+            .as_str()
+            .is_some_and(|m| m.contains("'service.request.join' declares no such field")),
+        "record: {rec}"
+    );
+}
+
+#[test]
+fn a_keyed_pool_section_is_checked_when_the_deployment_is_read() {
+    let (out, _dir) = generate_rooms(
+        "mesh-keyed-pool-invalid",
+        "rust",
+        JOIN_SCHEMA,
+        "{ key_from: room, idle_ms: 30000 }",
+    );
+    assert!(!out.status.success(), "an unreadable key source is refused");
+    assert_eq!(out.status.code(), Some(10), "a DeployError");
+    let stderr = String::from_utf8(out.stderr).expect("stderr utf8");
+    let rec = sole_ndjson_record(&stderr);
+    assert_core_shape(&rec);
+    assert_eq!(rec["code"], "mesh/deploy-invalid-sessions", "record: {rec}");
+    assert_eq!(rec["stage"], "mesh-deploy", "record: {rec}");
+    assert_eq!(rec["spec"], "SCE Mesh §14.4", "record: {rec}");
+    assert_eq!(rec["actual"], "rooms", "record: {rec}");
+}
+
 #[test]
 fn deploy_parse_error_is_ndjson() {
     // Malformed YAML (control character in `version:` scalar) routes

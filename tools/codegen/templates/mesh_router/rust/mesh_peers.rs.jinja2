@@ -105,4 +105,20 @@ pub const MACHINE: Machine = Machine {
         },
 {%- endfor %}
     ],
+{#- deploy.yaml `sessions:`: the machine served as a keyed pool of sessions
+    (`sce_rust_mesh::pool`), as `topology::resolve_keyed_pool` read it
+    against the document. -#}
+{%- if sessions %}
+    sessions: Some(sce_rust_mesh::peers::Sessions {
+{%- if sessions.key_field is not none %}
+        key_from: sce_rust_mesh::peers::KeyFrom::Field("{{ sessions.key_field | escape_rust }}"),
+{%- else %}
+        key_from: sce_rust_mesh::peers::KeyFrom::Client,
+{%- endif %}
+        max_key_bytes: {{ sessions.max_key_bytes }},
+        idle_ms: {{ sessions.idle_ms }},
+    }),
+{%- else %}
+    sessions: None,
+{%- endif %}
 };
