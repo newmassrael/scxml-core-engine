@@ -2808,3 +2808,24 @@ regenerated after them. A consumer regenerates every CBOR codec it owns.
   document with each such bound moved into its type, and the rewritten document generates the same code. A codec's
   input frame (`sce:direction="in"`) takes no `sce:max-size`.
 
+## A signed field is read as its signed type, and a field narrower than its type is extended into it (ADR 0095, amendments of 2026-11-19)
+
+Landing: the commits that add this section. No committed tree holds a signed binary codec field or a whole field
+narrower than its type, so none is regenerated; a consumer regenerates the codecs it owns that hold one.
+
+- A signed field (`int8` to `int64`) decodes to its signed value on every backend. Before, Rust and Go read its
+  bytes as the unsigned word and did not compile; C11 and C++ compiled through an implicit conversion; Python read
+  an enum of a signed carrier as the unsigned byte (255 for -1), which a closed enum refused. Code that worked
+  around an unsigned value (a cast back, a `- 256`) drops the workaround.
+- A whole field of `N` bits whose type is wider (an `int32` of 24 bits, a `uint16` of 8) holds the number of its
+  bits in its type: zero-extended where the type is unsigned, sign-extended from bit `N - 1` where it is signed. The
+  encode writes the low `N` bits. Before, Rust, Kotlin and Go did not compile such a field of one byte, every lane
+  but Python read a signed one as non-negative, and Swift refused a signed one by name; it now lowers it.
+- A Kotlin fixed field of more than four bytes is folded in `Long`, where it was shifted as `Int` and read wrong
+  past bit 31.
+- A field narrower than its bytes (`sce:bit-size` below a whole byte) of an enum whose carrier is signed is refused
+  with `validation/attribute-rule-violated`, as a signed integer there already was: such a field holds an unsigned
+  number of its bits. Give the enum an unsigned carrier.
+- The printed Python decode hands a field its number directly; `BoundedInt.from_wire` stays in the runtime for code
+  that calls it, and no printed codec does.
+
