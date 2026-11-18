@@ -67,9 +67,10 @@ const DOOR: &str = r#"<?xml version="1.0" encoding="UTF-8"?>
 </scxml>
 "#;
 
-/// The directory of a committed conformance fixture.
+/// The directory of a committed conformance fixture, where the registry's
+/// one rule puts it (`w3c_registry::fixture_dir`).
 fn fixture_dir(id: &str) -> PathBuf {
-    repo_root().join("resources").join(id)
+    sce_build::w3c_registry::fixture_dir(&repo_root().join("resources"), id)
 }
 
 /// The plan of `test<id>` asked as the conformance route asks it, with the

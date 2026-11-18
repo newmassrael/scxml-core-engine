@@ -9706,10 +9706,11 @@ fn load_w3c_registry(registry_file: &Path) -> BTreeMap<String, TestInfo> {
         .collect()
 }
 
-/// Read metadata.txt for a test.
+/// Read metadata.txt for a test: the metadata of the test number the id
+/// begins with, which a variant shares (`w3c_registry::fixture_dir`).
 fn read_metadata(resources_dir: &Path, test_id: &str) -> TestMetadata {
-    let num_prefix = extract_num_prefix(test_id);
-    let meta_file = resources_dir.join(&num_prefix).join("metadata.txt");
+    let meta_file =
+        sce_build::w3c_registry::fixture_dir(resources_dir, test_id).join("metadata.txt");
     if !meta_file.exists() {
         return TestMetadata::default();
     }
@@ -9729,22 +9730,15 @@ fn read_metadata(resources_dir: &Path, test_id: &str) -> TestMetadata {
     metadata
 }
 
-/// Find the SCXML file for a test ID.
+/// Find the committed SCXML document of a test ID, where the registry's one
+/// rule puts it (`w3c_registry::fixture_document`).
 fn find_scxml(resources_dir: &Path, test_id: &str) -> Option<PathBuf> {
-    let num_prefix = extract_num_prefix(test_id);
-    let scxml = resources_dir
-        .join(&num_prefix)
-        .join(format!("test{test_id}.scxml"));
+    let scxml = sce_build::w3c_registry::fixture_document(resources_dir, test_id);
     if scxml.exists() {
         Some(scxml)
     } else {
         None
     }
-}
-
-/// Extract numeric prefix from test ID (e.g., "144" -> "144", "553b" -> "553")
-fn extract_num_prefix(test_id: &str) -> String {
-    test_id.chars().take_while(|c| c.is_ascii_digit()).collect()
 }
 
 /// Convert to PascalCase (matches Python to_pascal_case and Rust filters::to_pascal_case)

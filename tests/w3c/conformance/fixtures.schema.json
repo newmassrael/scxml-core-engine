@@ -36,7 +36,7 @@
         "additionalProperties": false,
         "properties": {
           "id": {
-            "description": "Upstream W3C test id, optionally with a variant suffix (403a). Names resources/<id>/ and must be unique across the catalog.",
+            "description": "Upstream W3C test id, optionally with a variant suffix (403a), and unique across the catalog. Its documents are resources/<number>/test<id>.scxml, where <number> is the test number the id begins with: a variant shares its test's directory and metadata. The loader refuses an id of another shape (w3c_registry::FIXTURE_ID_PATTERN).",
             "type": "string",
             "pattern": "^[0-9]+[a-z]?$"
           },
@@ -46,7 +46,7 @@
             "minLength": 1
           },
           "summary": {
-            "description": "This repository's curation note for the fixture, shown by `generate-w3c --list`. Distinct from the upstream description in resources/<id>/metadata.txt, which the generator reads separately and which this must not duplicate. It states no spec section: the section a fixture targets is `specnum` in that metadata, derived into docs/spec/scxml/.atomic/verifies-catalog.json, and a hand-typed copy here contradicted it in 74 of 202 entries when measured on 2026-09-13. The loader refuses one.",
+            "description": "This repository's curation note for the fixture, shown by `generate-w3c --list`. Distinct from the upstream description in resources/<number>/metadata.txt, which the generator reads separately and which this must not duplicate. It states no spec section: the section a fixture targets is `specnum` in that metadata, derived into docs/spec/scxml/.atomic/verifies-catalog.json, and a hand-typed copy here contradicted it in 74 of 202 entries when measured on 2026-09-13. The loader refuses one.",
             "type": "string",
             "not": {
               "pattern": "\\bW3C(\\s+SCXML)?\\s+([0-9]+(\\.[0-9]+)*|[A-H](\\.[0-9]+)+)\\b|§scxml-"

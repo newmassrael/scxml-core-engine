@@ -58,10 +58,12 @@ impl W3cSuite {
     /// the committed registry's harnesses and version, which are what the
     /// loader asks of one.
     pub fn stage(work: &Path, id: &str, text: &str) -> Self {
+        // Where `generate-w3c` looks for it: the directory of the test
+        // number the id begins with, the registry's one rule.
         let resources = work.join("resources");
-        let fixture_dir = resources.join(id);
-        std::fs::create_dir_all(&fixture_dir).expect("create the fixture directory");
-        let document = fixture_dir.join(format!("test{id}.scxml"));
+        std::fs::create_dir_all(sce_build::w3c_registry::fixture_dir(&resources, id))
+            .expect("create the fixture directory");
+        let document = sce_build::w3c_registry::fixture_document(&resources, id);
         std::fs::write(&document, text).expect("write the fixture");
 
         let committed = std::fs::read_to_string(

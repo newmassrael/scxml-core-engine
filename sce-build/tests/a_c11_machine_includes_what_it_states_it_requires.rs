@@ -41,7 +41,7 @@ use std::process::Command;
 use std::sync::OnceLock;
 
 use sce_build::generator::RuntimeRequirement;
-use sce_build::w3c_registry::{W3cFixture, W3cRegistry, W3C_REGISTRY_RELATIVE_PATH};
+use sce_build::w3c_registry::{fixture_dir, W3cFixture, W3cRegistry, W3C_REGISTRY_RELATIVE_PATH};
 
 /// The C11 runtime's build, which names the library of every requirement.
 const C11_RUNTIME: &str = include_str!("../../backends/c/runtime/CMakeLists.txt");
@@ -187,7 +187,7 @@ fn generation(
 /// with the arguments the plan states for it.
 fn route_generations(root: &Path, fixture: &W3cFixture) -> Vec<Generation> {
     let stem = format!("test{}", fixture.id);
-    let resources = root.join(format!("resources/{}", fixture.id));
+    let resources = fixture_dir(&root.join("resources"), &fixture.id);
     let dir = tempfile::tempdir().expect("tempdir");
     let out = dir.path();
     for staged in [format!("{stem}.scxml"), format!("{stem}.txt")] {

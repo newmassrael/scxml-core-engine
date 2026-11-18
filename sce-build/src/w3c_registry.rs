@@ -19,13 +19,18 @@
 // `list-fixtures` handing plain text to build systems that have no JSON
 // parser (CMake, Gradle, Bash, pytest all consume it that way).
 //
-// Per-test prose is deliberately NOT here. `resources/<id>/metadata.txt`
+// Per-test prose is deliberately NOT here. `resources/<number>/metadata.txt`
 // is upstream W3C data with its own description and spec section, and
 // the generator reads it directly; duplicating it into this catalog
 // would create a second answer to the same question.
+//
+// Where a fixture's documents are is answered here too, once
+// ([`fixture_dir`], [`fixture_document`]), for every reader in this crate:
+// `resources/<number>/test<id>.scxml`, the number being the IRP test the
+// id begins with.
 
 use std::collections::{BTreeMap, BTreeSet};
-use std::path::Path;
+use std::path::{Path, PathBuf};
 
 use serde::Deserialize;
 
@@ -45,7 +50,7 @@ pub const DEFAULT_HARNESS: &str = "simple";
 /// What a curation note must not contain: a statement of which spec
 /// section a fixture targets.
 ///
-/// That answer has one home. `resources/<id>/metadata.txt` carries the
+/// That answer has one home. `resources/<number>/metadata.txt` carries the
 /// upstream `specnum`, and `tools/mnemosyne-adoption/gen_verifies_catalog.py`
 /// derives it into `docs/spec/scxml/.atomic/verifies-catalog.json`, which
 /// the citation gate reads. Summaries restated it by hand, and measured on
@@ -117,11 +122,65 @@ pub fn doc_brief(text: &str) -> Option<String> {
     Some(paragraph.join(" "))
 }
 
+/// The shape of a fixture id: the number of the upstream IRP test, and, for
+/// one of several documents the IRP ships under that number, one lowercase
+/// letter naming it (`403a`).
+///
+/// The loader refuses an id of another shape ([`is_fixture_id`]), so every
+/// registered id names a directory ([`fixture_dir`]). The sibling JSON Schema
+/// carries the same pattern under `id.pattern`, held to this constant by
+/// `the_schema_and_the_loader_agree_on_a_fixture_id`.
+pub const FIXTURE_ID_PATTERN: &str = "^[0-9]+[a-z]?$";
+
+/// Whether `id` has the shape [`FIXTURE_ID_PATTERN`] describes.
+pub fn is_fixture_id(id: &str) -> bool {
+    let number = test_number(id);
+    let mut letters = id[number.len()..].chars();
+    !number.is_empty()
+        && match (letters.next(), letters.next()) {
+            (None, _) => true,
+            (Some(letter), None) => letter.is_ascii_lowercase(),
+            (Some(_), Some(_)) => false,
+        }
+}
+
+/// The IRP test number fixture `id` begins with: `403` for `403a`, `144`
+/// for `144`.
+///
+/// A variant fixture is one of the documents the IRP ships for one test
+/// (`metadata.txt` there says `variants: 3`), and they share that test's
+/// directory and its metadata. So the number, never the whole id, names the
+/// directory, and the id names the document in it.
+pub fn test_number(id: &str) -> &str {
+    let end = id.find(|c: char| !c.is_ascii_digit()).unwrap_or(id.len());
+    &id[..end]
+}
+
+/// The directory under `resources` holding the documents of fixture `id`
+/// and the metadata of its test: `<resources>/<number>`.
+///
+/// The one place this crate turns a fixture id into a directory. The tree
+/// keeps no second name for a test's directory (a variant's directory was
+/// once a symbolic link to its number's, which a checkout without symbolic
+/// links holds as a text file), so a reader that joins the whole id finds
+/// nothing for a variant.
+pub fn fixture_dir(resources: &Path, id: &str) -> PathBuf {
+    resources.join(test_number(id))
+}
+
+/// The committed document of fixture `id`:
+/// `<resources>/<number>/test<id>.scxml`.
+pub fn fixture_document(resources: &Path, id: &str) -> PathBuf {
+    fixture_dir(resources, id).join(format!("test{id}.scxml"))
+}
+
 /// One registered upstream test.
 #[derive(Debug, Clone, PartialEq, Eq, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct W3cFixture {
-    /// Upstream W3C test id, optionally variant-suffixed (`403a`).
+    /// Upstream W3C test id, optionally variant-suffixed (`403a`), of the
+    /// shape [`FIXTURE_ID_PATTERN`]; its documents are under
+    /// [`fixture_dir`].
     pub id: String,
     /// Key into [`W3cRegistry::harnesses`].
     #[serde(default = "default_harness")]
@@ -273,6 +332,17 @@ impl W3cRegistry {
             if fixture.id.is_empty() {
                 return Err(invalid("a fixture declares an empty id".to_string()));
             }
+            // An id names its documents through the test number it begins
+            // with (`fixture_dir`), so one of another shape would name a
+            // directory no fixture lives in, or none at all.
+            if !is_fixture_id(&fixture.id) {
+                return Err(invalid(format!(
+                    "fixture `{}` has no id of the shape {FIXTURE_ID_PATTERN}: an id is the \
+                     number of the upstream test and, for a variant of it, one lowercase \
+                     letter (`403a`), and its documents are resources/<number>/test<id>.scxml",
+                    fixture.id
+                )));
+            }
             if !seen.insert(fixture.id.as_str()) {
                 return Err(invalid(format!(
                     "registers id `{}` more than once; the later entry would silently \
@@ -291,7 +361,7 @@ impl W3cRegistry {
             if let Some(stated) = stated_spec_section(&fixture.summary) {
                 return Err(invalid(format!(
                     "fixture `{}` has a summary stating `{stated}`. The section a fixture \
-                     targets is `specnum` in resources/<id>/metadata.txt, derived into \
+                     targets is `specnum` in resources/<number>/metadata.txt, derived into \
                      docs/spec/scxml/.atomic/verifies-catalog.json; a copy in the summary \
                      is a second answer to that question. Drop the section from the summary",
                     fixture.id
@@ -320,7 +390,7 @@ impl W3cRegistry {
     /// brief, the spec section the fixture targets — or that has no header.
     ///
     /// The rule a summary is held to, for the same reason: that section has
-    /// one home, `specnum` in `resources/<id>/metadata.txt`. Headers
+    /// one home, `specnum` in `resources/<number>/metadata.txt`. Headers
     /// restated it by hand, and measured on 2026-09-15 the brief of 175 of
     /// 202 headers stated a section while 82 of those contradicted
     /// `specnum`. It went unnoticed the way the summaries' copy did, because
@@ -355,7 +425,7 @@ impl W3cRegistry {
             dir: header_dir.display().to_string(),
             message: format!(
                 "{} header(s) refused. The section a fixture targets is `specnum` in \
-                 resources/<id>/metadata.txt, derived into \
+                 resources/<number>/metadata.txt, derived into \
                  docs/spec/scxml/.atomic/verifies-catalog.json; a brief restating it is a \
                  second answer to that question. Drop the section from the brief and cite \
                  the sections the test touches in the body below it:\n  {}",
@@ -744,5 +814,118 @@ mod tests {
         load_committed()
             .check_aot_header_briefs(&repo_root().join(W3C_AOT_HEADER_RELATIVE_DIR))
             .unwrap_or_else(|e| panic!("{e}"));
+    }
+
+    /// A variant names the directory of the test number it begins with, and
+    /// its own document in it; a fixture with no variant letter names its own.
+    #[test]
+    fn a_variant_names_the_directory_of_its_test_number() {
+        let resources = Path::new("resources");
+        assert_eq!(test_number("403a"), "403");
+        assert_eq!(test_number("144"), "144");
+        assert_eq!(
+            fixture_dir(resources, "403c"),
+            Path::new("resources").join("403")
+        );
+        assert_eq!(
+            fixture_document(resources, "403c"),
+            Path::new("resources").join("403").join("test403c.scxml")
+        );
+        assert_eq!(
+            fixture_document(resources, "144"),
+            Path::new("resources").join("144").join("test144.scxml")
+        );
+    }
+
+    /// An id that is no test number, with at most one variant letter after
+    /// it, is refused at load, since it names no directory a fixture lives
+    /// in. The variant ids the committed registry carries load, so the
+    /// refusal is not firing on every id that has a letter.
+    #[test]
+    fn an_id_of_another_shape_is_refused() {
+        let load = |id: &str| {
+            let dir = tempfile::tempdir().expect("tempdir");
+            let path = dir.path().join("fixtures.json");
+            let body = serde_json::json!({
+                "version": 1,
+                "harnesses": {"simple": "x"},
+                "fixtures": [{"id": id}],
+            });
+            std::fs::write(&path, body.to_string()).expect("write");
+            W3cRegistry::load(&path)
+        };
+        for id in ["403ab", "403A", "a403", "test403", "403-a", "4 03", "x"] {
+            let err = load(id).expect_err("an id of another shape must be refused");
+            let msg = err.to_string();
+            assert!(
+                msg.contains(&format!("`{id}`")) && msg.contains(FIXTURE_ID_PATTERN),
+                "the diagnostic must name the id and the shape an id has: {msg}",
+            );
+        }
+        for id in ["144", "403a", "403c"] {
+            if let Err(e) = load(id) {
+                panic!("{id} is a fixture id and must load: {e}");
+            }
+        }
+    }
+
+    /// The editor schema and the loader accept the same ids.
+    ///
+    /// The pattern strings being equal shows the schema states the shape the
+    /// constant documents; running the pattern against [`is_fixture_id`] over
+    /// ids on both sides of the line shows the loader's check is that shape.
+    #[test]
+    fn the_schema_and_the_loader_agree_on_a_fixture_id() {
+        let schema_path = repo_root().join("tests/w3c/conformance/fixtures.schema.json");
+        let schema: serde_json::Value =
+            serde_json::from_str(&std::fs::read_to_string(&schema_path).expect("read schema"))
+                .expect("schema is JSON");
+        assert_eq!(
+            schema
+                .pointer("/properties/fixtures/items/properties/id/pattern")
+                .and_then(|p| p.as_str()),
+            Some(FIXTURE_ID_PATTERN),
+            "fixtures.schema.json `id.pattern` must equal w3c_registry::FIXTURE_ID_PATTERN",
+        );
+        let pattern = regex::Regex::new(FIXTURE_ID_PATTERN).expect("a valid pattern");
+        for id in [
+            "144",
+            "403a",
+            "403z",
+            "0",
+            "403ab",
+            "403A",
+            "a403",
+            "",
+            "403-a",
+            "4 03",
+            "403\u{e9}",
+        ] {
+            assert_eq!(
+                is_fixture_id(id),
+                pattern.is_match(id),
+                "the loader and FIXTURE_ID_PATTERN disagree about {id:?}",
+            );
+        }
+    }
+
+    /// Every registered fixture's document and its test's metadata are where
+    /// [`fixture_document`] and [`fixture_dir`] say.
+    #[test]
+    fn every_registered_fixture_is_under_its_test_number() {
+        let resources = repo_root().join("resources");
+        let mut misplaced: Vec<String> = Vec::new();
+        for fixture in load_committed().fixtures() {
+            let id = fixture.id.as_str();
+            let document = fixture_document(&resources, id);
+            if !document.is_file() {
+                misplaced.push(format!("{id}: no document at {}", document.display()));
+            }
+            let metadata = fixture_dir(&resources, id).join("metadata.txt");
+            if !metadata.is_file() {
+                misplaced.push(format!("{id}: no metadata at {}", metadata.display()));
+            }
+        }
+        assert!(misplaced.is_empty(), "{}", misplaced.join("\n"));
     }
 }
