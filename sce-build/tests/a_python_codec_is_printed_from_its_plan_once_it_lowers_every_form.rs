@@ -679,7 +679,7 @@ fn two_lists_of_one_count_are_one_aligned_member_of_their_arm() {
         name,
         &text,
         &[
-            "from sce_forge_runtime.bounded import Aligned, BoundedTuple\n",
+            "from sce_forge_runtime.bounded import Aligned, BoundedInt, BoundedTuple\n",
             "    links_weights: Aligned[CodecRepeatUnconditionalCountLinksList, \
              CodecRepeatUnconditionalCountWeightsList] = \
              Aligned(CodecRepeatUnconditionalCountLinksList(), \
