@@ -550,7 +550,7 @@
               ]
             },
             "printed": {
-              "description": "The backend the harness is rendered for prints the codec from its encode plan (docs/adr/0081 step 4): a C++ fragment makes a value by its constructor and reads each element through its accessor, and a fragment of any language that prints it neither makes the value with an element the encode derives nor reads one back (§3). Derived per language from the document; fixtures.json never states it.",
+              "description": "The backend the harness is rendered for prints the codec from its encode plan (docs/adr/0081 step 4, and step 5 for Swift): a C++ fragment makes a value by its constructor and reads each element through its accessor, and a fragment of any language that prints it neither makes the value with an element the encode derives nor reads one back (§3). Derived per language from the document; fixtures.json never states it.",
               "type": "boolean"
             }
           }
