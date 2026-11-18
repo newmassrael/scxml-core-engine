@@ -12,6 +12,10 @@
 //! (`sce_gate_python_requires_lupa` in scripts/gates/lib.sh) were written
 //! against. The question asked here is the runtime's own import.
 
+// Every suite that declares `mod common` compiles this module; only the ones
+// that run the Python runtime call it.
+#![allow(dead_code)]
+
 use std::path::Path;
 use std::process::Command;
 
