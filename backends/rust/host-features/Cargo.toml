@@ -5,11 +5,13 @@
 name = "sce-rust-host-features"
 version.workspace = true
 edition.workspace = true
-rust-version.workspace = true
+# Above the workspace's floor for the cryptography of signing and sealing:
+# ed25519-dalek 2.2 declares 1.81 and the zeroize it signs with 1.85.
+rust-version = "1.85"
 license.workspace = true
 repository.workspace = true
 authors.workspace = true
-description = "Reference host for the standard host features (docs/SCE_HOST_FEATURES.md): clock, key-value store, notifications and HTTP, as the operations a generated machine's host-run invokes ask for."
+description = "Reference host for the standard host features (docs/SCE_HOST_FEATURES.md): clock, key-value store, notifications, HTTP, generated text, and COSE signing and sealing, as the operations a generated machine's host-run invokes ask for."
 publish = false
 
 [lib]
@@ -20,6 +22,17 @@ path = "src/lib.rs"
 # `std` profile; the BasicHTTP processor (`http-send`) is not wanted.
 sce-rust-runtime = { path = "../runtime", default-features = false, features = ["std"] }
 serde_json = { version = "1", features = ["float_roundtrip"] }
+# Signing and sealing (docs/SCE_HOST_FEATURES.md, section 10): the RustCrypto
+# crates `sce-rust-trust` links, with the features it takes, so one build of
+# each serves both. The nonce of a seal is drawn from the operating system.
+ed25519-dalek = { version = "2", default-features = false, features = ["std", "fast", "zeroize"] }
+chacha20poly1305 = { version = "0.10", default-features = false, features = ["alloc"] }
+hkdf = "0.12"
+sha2.workspace = true
+getrandom = "0.2"
+# The CBOR heads a COSE object is written and read with: the ones the codecs
+# write, so an object's deterministic encoding is the codecs' own.
+sce-forge-runtime = { path = "../forge-runtime", features = ["alloc"] }
 
 [target.'cfg(unix)'.dependencies]
 libc = "0.2"

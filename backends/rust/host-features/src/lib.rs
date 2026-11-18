@@ -3,17 +3,19 @@
 //
 //! The reference host of the standard host features (docs/SCE_HOST_FEATURES.md).
 //!
-//! A [`ReferenceHost`] is the whole of the four features' semantics as one
+//! A [`ReferenceHost`] is the whole of the features' semantics as one
 //! object: it is told the start of an operation (its `type` and the request's
 //! text parameters) and answers with an [`Outcome`] — a completion, a failure,
 //! a refusal, or nothing yet. It knows no engine, so the same object serves a
 //! generated machine through [`serve`], a test, or another embedding.
 //!
 //! Time comes from a [`ClockSource`] and the network from a [`Transport`], both
-//! the embedding's to supply: the host's semantics are fixed and what it reads
+//! the embedding's to supply, and the keys of signing and sealing from a
+//! [`CoseKeys`] it configures: the host's semantics are fixed and what it reads
 //! is not, which is what lets a scenario judge it.
 
 mod clock;
+pub mod cose;
 mod http;
 mod kv;
 mod model;
@@ -23,6 +25,7 @@ mod serve;
 use std::collections::BTreeMap;
 
 pub use clock::{ClockSource, Reading, ScriptedClock, SystemClock, Zone};
+pub use cose::{CoseKeys, ReservedKeyId, TrustedKey};
 pub use http::{HttpRequest, HttpResponse, Transport, TransportFailure};
 pub use model::{
     ExhaustiveProvider, GenerateRequest, Generation, ModelProvider, OutcomeClass, ScriptedAnswer,
@@ -40,7 +43,7 @@ pub type Params = BTreeMap<String, String>;
 
 /// Every operation type of the standard host features, in the order the
 /// specification lists them.
-pub const TYPES: [&str; 13] = [
+pub const TYPES: [&str; 18] = [
     "sce-host-clock-now",
     "sce-host-clock-zone",
     "sce-host-kv-get",
@@ -54,6 +57,11 @@ pub const TYPES: [&str; 13] = [
     "sce-host-notify-cancel",
     "sce-host-http-fetch",
     MODEL_GENERATE,
+    cose::SIGN1,
+    cose::VERIFY1,
+    cose::ENCRYPT0,
+    cose::DECRYPT0,
+    cose::KEY_DERIVE,
 ];
 
 /// What a host answers a start with.
@@ -96,6 +104,8 @@ pub struct ReferenceHost<T: Transport> {
     /// The machine's table of answer schemas, which a generation's
     /// `answer_schema` is resolved through.
     pub(crate) answer_schemas: Vec<AnswerSchema>,
+    /// The keys of signing and sealing: those configured, and those derived.
+    pub(crate) cose: cose::Keys,
 }
 
 /// A start the host was given: the operation, the invocation's id and the
@@ -109,7 +119,8 @@ pub struct Start {
 
 impl<T: Transport> ReferenceHost<T> {
     /// A host reading `clock` and carrying HTTP over `transport`, with an empty
-    /// store, nothing posted, and the notification permission undetermined.
+    /// store, nothing posted, the notification permission undetermined, and no
+    /// key.
     pub fn new(clock: Box<dyn ClockSource + Send>, transport: T) -> Self {
         Self {
             clock,
@@ -123,7 +134,15 @@ impl<T: Transport> ReferenceHost<T> {
             starts: Vec::new(),
             provider: Box::new(ScriptedProvider::default()),
             answer_schemas: Vec::new(),
+            cose: cose::Keys::default(),
         }
+    }
+
+    /// Sign, seal and verify with `keys` from here on, in place of the keys
+    /// configured before. The keys the host derived are kept, under the ids it
+    /// gave them; a symmetric key configured under an id of theirs is refused.
+    pub fn set_cose_keys(&mut self, keys: CoseKeys) -> Result<(), ReservedKeyId> {
+        self.cose.configure(keys)
     }
 
     /// Generate texts with `provider` from here on.
@@ -228,6 +247,9 @@ impl<T: Transport> ReferenceHost<T> {
                 !http::acceptable(argument("method"), argument("url"), argument("headers"))
             }
             MODEL_GENERATE => model::refuses(&self.answer_schemas, id, params),
+            signing_or_sealing if cose::OPERATIONS.contains(&signing_or_sealing) => {
+                cose::refuses(signing_or_sealing, params)
+            }
             _ => false,
         };
         if refused {
@@ -269,6 +291,9 @@ impl<T: Transport> ReferenceHost<T> {
                 argument("body"),
             ),
             MODEL_GENERATE => model::generate(self, id, params),
+            signing_or_sealing if cose::OPERATIONS.contains(&signing_or_sealing) => {
+                cose::perform(self, signing_or_sealing, params)
+            }
             _ => unreachable!("the type was checked against TYPES"),
         })
     }
@@ -320,6 +345,10 @@ pub(crate) fn failure(operation: &str, code: &str) -> Outcome {
             "answer_tokens": 0,
             "finish": "",
         }),
+        cose::SIGN1 | cose::ENCRYPT0 => serde_json::json!({ "cose": "" }),
+        cose::VERIFY1 => serde_json::json!({ "valid": false, "key_id": "", "payload": "" }),
+        cose::DECRYPT0 => serde_json::json!({ "opened": false, "plaintext": "" }),
+        cose::KEY_DERIVE => serde_json::json!({ "key_id": "" }),
         other => unreachable!("`{other}` is not a standard host operation"),
     };
     let Outcome::Done(text) = record(zero) else {

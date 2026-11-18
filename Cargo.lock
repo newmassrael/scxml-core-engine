@@ -3907,9 +3907,15 @@ dependencies = [
 name = "sce-rust-host-features"
 version = "0.1.0"
 dependencies = [
+ "chacha20poly1305",
+ "ed25519-dalek",
+ "getrandom 0.2.17",
+ "hkdf 0.12.4",
  "libc",
+ "sce-forge-runtime",
  "sce-rust-runtime",
  "serde_json",
+ "sha2 0.10.9",
 ]
 
 [[package]]
