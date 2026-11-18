@@ -165,11 +165,18 @@ ${SODIUM_ATTRIBUTE}
 EOF
 
 failures=0
+# A Bazel label is handed to Bazel with the shell's rewriting of a native
+# program's arguments turned off for that one call: Git Bash and MSYS2 read
+# `//app:probe` as a path and pass `/app:probe`, which Bazel refuses as a
+# package name. Only this call: the other native programs the script runs
+# (the Windows Python of package_embed.sh among them) are handed `/c/...`
+# paths and need that rewriting. Elsewhere the two variables name nothing.
 run_probe() {
     local consumer="$1" target="$2"
     echo "Bazel ${SCE_BAZEL_VERSION}: ${consumer} — build and run ${target}"
     if ! (cd "${WORK}/${consumer}" &&
-        run_logged "${consumer} ${target}" "${WORK}/${consumer}.log" bazel run "${target}"); then
+        run_logged "${consumer} ${target}" "${WORK}/${consumer}.log" \
+            env MSYS_NO_PATHCONV=1 MSYS2_ARG_CONV_EXCL='*' bazel run "${target}"); then
         failures=$((failures + 1))
     fi
 }
