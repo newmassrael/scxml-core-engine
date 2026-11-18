@@ -7,11 +7,14 @@
 
 use super::*;
 
-/// An event schema read from `text` as the parser reads it.
-fn schema(text: &str) -> EventSchemaModel {
+/// An event schema read from `text` as the parser reads the document whose
+/// basename is `basename`. The reader names a schema by its document's basename
+/// ([`EventSchemaModel::name`]), which is what a unit's type is spelled from,
+/// so each schema is read under the basename its importer's `src` names.
+fn schema(text: &str, basename: &str) -> EventSchemaModel {
     match crate::forge::parser::parse_forge_with_imports(
         text,
-        crate::DocumentLabel::symmetric("probe"),
+        crate::DocumentLabel::symmetric(basename),
     )
     .expect("the schema parses")
     .expect("a forge document")
@@ -157,7 +160,7 @@ pub(super) fn shapes() -> Shapes {
         })
         .collect();
     Shapes {
-        radius: schema(RADIUS),
+        radius: schema(RADIUS, "shape_radius"),
         union: ScopedUnion {
             identity: "shape".to_string(),
             name: "shape".to_string(),
@@ -187,8 +190,8 @@ pub(super) fn kinds() -> BTreeMap<String, MachineEnum> {
 
 pub(super) fn held() -> TwoRecords {
     TwoRecords {
-        batch: schema(BATCH),
-        item: schema(ITEM),
+        batch: schema(BATCH, "batch"),
+        item: schema(ITEM, "item"),
     }
 }
 
