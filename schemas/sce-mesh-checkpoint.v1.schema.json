@@ -1,0 +1,206 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "$id": "https://github.com/newmassrael/scxml-core-engine/blob/main/schemas/sce-mesh-checkpoint.v1.schema.json",
+  "x-sce-schema-status": "pre-release",
+  "title": "SCE Mesh checkpoint (wire schema v1)",
+  "description": "A machine's checkpoint on a Mesh host core (SCE_MESH.md section 10.11; docs/adr/0045, section 4; docs/adr/0107, D5): the machine's saved tree and the state of every endpoint in it, one document a host writes in one durable write and a restore reads back. The saved tree is an sce-saved-state text (sce-saved-state.v3.schema.json), held as its JSON value. Every 64-bit number is the text of its digits, every envelope and id the lowercase hexadecimal of its bytes, and every moment milliseconds since the Unix epoch. A checkpoint holds no key, credential or trust state; a host stores it encrypted at rest. The producer and reader is sce-rust-mesh (backends/rust/mesh/src/checkpoint.rs). The stability status of this surface lives in this header alone — see SCE_WIRE_CONTRACTS.md.",
+  "type": "object",
+  "required": ["format", "checkpoint", "clean", "state", "endpoints"],
+  "additionalProperties": false,
+  "properties": {
+    "format": {
+      "description": "The format version: 1. A reader refuses a format it does not read, before it reads anything else.",
+      "const": 1
+    },
+    "checkpoint": {
+      "description": "Which checkpoint of the machine this is, counted by its host from 1: what each endpoint was sealed with.",
+      "$ref": "#/definitions/count"
+    },
+    "clean": {
+      "description": "Taken after the core stopped admitting (an orderly shutdown, its links closed first): its restore raises no RESTORED row.",
+      "type": "boolean"
+    },
+    "state": {
+      "description": "The machine's saved state, an sce-saved-state document of format 3 (sce-saved-state.v3.schema.json).",
+      "type": "object",
+      "required": ["format"]
+    },
+    "endpoints": {
+      "description": "One section per endpoint of the tree, each under the machine name it speaks for.",
+      "type": "array",
+      "items": { "$ref": "#/definitions/endpoint" }
+    }
+  },
+  "definitions": {
+    "count": {
+      "description": "A whole number of 64 bits, as the text of its digits.",
+      "type": "string",
+      "pattern": "^(0|[1-9][0-9]{0,19})$"
+    },
+    "signed": {
+      "description": "A signed whole number of 64 bits, as the text of its digits, with a '-' when it is negative.",
+      "type": "string",
+      "pattern": "^(0|-?[1-9][0-9]{0,18})$"
+    },
+    "bytes": {
+      "description": "Bytes, as the lowercase hexadecimal of each.",
+      "type": "string",
+      "pattern": "^([0-9a-f]{2})*$"
+    },
+    "id": {
+      "description": "A 16-byte id (an envelope's id, a request's wire invoke_id), as lowercase hexadecimal.",
+      "type": "string",
+      "pattern": "^[0-9a-f]{32}$"
+    },
+    "endpoint": {
+      "type": "object",
+      "required": ["machine", "peers", "senders", "unreleased", "retries", "calls"],
+      "additionalProperties": false,
+      "properties": {
+        "machine": { "description": "The machine the endpoint speaks for: the source of what it sends.", "type": "string", "minLength": 1 },
+        "peers": { "type": "array", "items": { "$ref": "#/definitions/peer" } },
+        "senders": { "type": "array", "items": { "$ref": "#/definitions/sender" } },
+        "unreleased": {
+          "description": "The envelopes produced and not yet released, in the order they were produced: a restore releases them.",
+          "type": "array",
+          "items": {
+            "type": "object",
+            "required": ["peer", "seq", "envelope"],
+            "additionalProperties": false,
+            "properties": {
+              "peer": { "type": "string", "minLength": 1 },
+              "seq": { "description": "Its sequence number, or null when it carries none.", "oneOf": [{ "$ref": "#/definitions/count" }, { "type": "null" }] },
+              "envelope": { "$ref": "#/definitions/bytes" }
+            }
+          }
+        },
+        "retries": {
+          "description": "Transmissions waiting out their backoff (SCE_MESH.md section 10.10).",
+          "type": "array",
+          "items": {
+            "type": "object",
+            "required": ["peer", "envelope", "attempts", "backoff", "due"],
+            "additionalProperties": false,
+            "properties": {
+              "peer": { "type": "string", "minLength": 1 },
+              "envelope": { "$ref": "#/definitions/bytes" },
+              "attempts": { "description": "The sends made.", "$ref": "#/definitions/count" },
+              "backoff": { "description": "The wait last chosen before jitter, or null before the first.", "oneOf": [{ "$ref": "#/definitions/signed" }, { "type": "null" }] },
+              "due": { "$ref": "#/definitions/count" }
+            }
+          }
+        },
+        "calls": {
+          "description": "What the endpoint released for its machine that the host had not yet applied, in order.",
+          "type": "array",
+          "items": { "oneOf": [{ "$ref": "#/definitions/eventCall" }, { "$ref": "#/definitions/endCall" }] }
+        }
+      }
+    },
+    "peer": {
+      "type": "object",
+      "required": ["peer", "nextseq", "queued", "unacked", "received"],
+      "additionalProperties": false,
+      "properties": {
+        "peer": { "type": "string", "minLength": 1 },
+        "nextseq": { "description": "The sequence number the next envelope to the peer is stamped with.", "$ref": "#/definitions/count" },
+        "queued": {
+          "description": "What waits for the peer's link to become ready, oldest first, with the moment it was admitted.",
+          "type": "array",
+          "items": {
+            "type": "object",
+            "required": ["envelope", "since"],
+            "additionalProperties": false,
+            "properties": { "envelope": { "$ref": "#/definitions/bytes" }, "since": { "$ref": "#/definitions/count" } }
+          }
+        },
+        "unacked": {
+          "description": "What a binding with durable receipt sent and the peer has not acknowledged, by sequence number.",
+          "type": "array",
+          "items": {
+            "type": "object",
+            "required": ["seq", "envelope"],
+            "additionalProperties": false,
+            "properties": { "seq": { "$ref": "#/definitions/count" }, "envelope": { "$ref": "#/definitions/bytes" } }
+          }
+        },
+        "received": {
+          "description": "Null unless the peer sends to this machine with durable receipt: then every envelope of its stream numbered at most `held` was admitted, and so was each of `above`.",
+          "oneOf": [
+            { "type": "null" },
+            {
+              "type": "object",
+              "required": ["held", "above"],
+              "additionalProperties": false,
+              "properties": { "held": { "$ref": "#/definitions/count" }, "above": { "type": "array", "items": { "$ref": "#/definitions/count" } } }
+            }
+          ]
+        }
+      }
+    },
+    "sender": {
+      "description": "One sender's receive state (SCE_MESH.md sections 10.5 and 10.6).",
+      "type": "object",
+      "required": ["source", "window", "next", "held", "replies", "durable"],
+      "additionalProperties": false,
+      "properties": {
+        "source": { "type": "string", "minLength": 1 },
+        "window": { "description": "Its duplicate window, oldest first.", "type": "array", "items": { "$ref": "#/definitions/id" } },
+        "next": { "description": "The sequence it is expected to send next, or null before its first ordered envelope.", "oneOf": [{ "$ref": "#/definitions/count" }, { "type": "null" }] },
+        "held": {
+          "description": "The envelopes held past an ordering gap, with the moment each arrived.",
+          "type": "array",
+          "items": {
+            "type": "object",
+            "required": ["seq", "arrived", "envelope"],
+            "additionalProperties": false,
+            "properties": { "seq": { "$ref": "#/definitions/count" }, "arrived": { "$ref": "#/definitions/count" }, "envelope": { "$ref": "#/definitions/bytes" } }
+          }
+        },
+        "replies": {
+          "description": "The reply cache (SCE_MESH.md section 10.5): each request of the window with its wire invoke_id and the reply its first copy produced, or null while it is handled.",
+          "type": "array",
+          "items": {
+            "type": "object",
+            "required": ["request", "invoke", "reply"],
+            "additionalProperties": false,
+            "properties": {
+              "request": { "$ref": "#/definitions/id" },
+              "invoke": { "$ref": "#/definitions/id" },
+              "reply": { "oneOf": [{ "$ref": "#/definitions/bytes" }, { "type": "null" }] }
+            }
+          }
+        },
+        "durable": { "description": "Whether its stream has durable receipt: none of its gaps times out.", "type": "boolean" }
+      }
+    },
+    "eventCall": {
+      "description": "An event for the machine, with the _event fields a Mesh event carries (SCE_MESH.md section 10.7).",
+      "type": "object",
+      "required": ["call", "event", "data", "source", "sendid", "invokeid"],
+      "additionalProperties": false,
+      "properties": {
+        "call": { "const": "event" },
+        "event": { "type": "string", "minLength": 1 },
+        "data": { "type": "string" },
+        "source": { "type": "string", "minLength": 1 },
+        "sendid": { "type": "string" },
+        "invokeid": { "type": "string" }
+      }
+    },
+    "endCall": {
+      "description": "The end of one start of a Mesh request (SCE_MESH.md section 9.5): done.invoke, or error.invoke when failed; source null for a deadline the requester reached itself.",
+      "type": "object",
+      "required": ["call", "invokeid", "token", "failed", "data", "source"],
+      "additionalProperties": false,
+      "properties": {
+        "call": { "const": "end" },
+        "invokeid": { "type": "string", "minLength": 1 },
+        "token": { "$ref": "#/definitions/count" },
+        "failed": { "type": "boolean" },
+        "data": { "type": "string" },
+        "source": { "oneOf": [{ "type": "string", "minLength": 1 }, { "type": "null" }] }
+      }
+    }
+  }
+}

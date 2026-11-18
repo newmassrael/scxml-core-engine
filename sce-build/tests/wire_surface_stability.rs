@@ -58,6 +58,7 @@ const JSON_SURFACES: &[&str] = &[
     "schemas/sce-ttcn3-witness.v1.schema.json",
     "schemas/sce-test-log.v1.schema.json",
     "schemas/sce-test-trace.v1.schema.json",
+    "schemas/sce-mesh-checkpoint.v1.schema.json",
 ];
 
 const XSD_SURFACES: &[&str] = &["schemas/sce-forge.xsd", "schemas/sce-forge-ext.xsd"];
@@ -294,6 +295,11 @@ const INSTANCE_VALIDATION: &[(&str, &str, &str)] = &[
         "every_trace_the_reader_reads_validates_against_the_wire_schema",
         "sce-build/tests/a_test_trace_is_held_to_its_wire_schema.rs",
     ),
+    (
+        "schemas/sce-mesh-checkpoint.v1.schema.json",
+        "every_shared_checkpoint_is_a_checkpoint",
+        "sce-build/tests/mesh_checkpoint_schema.rs",
+    ),
 ];
 
 /// Negative-case coverage: `(surface, test fn, file declaring it)`.
@@ -408,6 +414,11 @@ const NEGATIVE_VALIDATION: &[(&str, &str, &str)] = &[
         "schemas/sce-test-trace.v1.schema.json",
         "the_trace_schema_rejects_what_the_reader_does_not_accept",
         "sce-build/tests/a_test_trace_is_held_to_its_wire_schema.rs",
+    ),
+    (
+        "schemas/sce-mesh-checkpoint.v1.schema.json",
+        "the_checkpoint_schema_rejects_what_the_core_does_not_write",
+        "sce-build/tests/mesh_checkpoint_schema.rs",
     ),
 ];
 
@@ -553,6 +564,16 @@ const ATTRIBUTION_EXEMPT: &[(&str, &str, &str)] = &[
          and both sides of a comparison replay the one file, so a stamp of \
          either side would name a producer the other is not.",
         "recorded input trace deliberately does",
+    ),
+    (
+        "schemas/sce-mesh-checkpoint.v1.schema.json",
+        "written by a host core while it runs, many times a second, and read \
+         back by a later build of the same program after a crash: what a \
+         restore must know is that it reads the format (`format`) and that \
+         the saved tree fits the machine (the state's `shape`), and the \
+         commit that built the writer is the host's to record. A stamp would \
+         also make two checkpoints of the same state differ by build.",
+        "Mesh checkpoint deliberately does",
     ),
 ];
 

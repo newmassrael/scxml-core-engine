@@ -1979,6 +1979,34 @@ mod tests {
         assert_eq!(Checkpoint::from_json(&text), Ok(checkpoint));
     }
 
+    /// The shared instance of the surface, which `sce-build` holds to the
+    /// schema (`sce-build/tests/mesh_checkpoint_schema.rs`), is read by this
+    /// core and written back byte for byte: what the schema accepts there is
+    /// what this core writes.
+    #[test]
+    fn the_shared_instance_is_what_this_core_writes() {
+        let text =
+            include_str!("../../../../sce-build/tests/fixtures/mesh_checkpoint/checkpoint.json")
+                .trim_end();
+        let checkpoint = Checkpoint::from_json(text).unwrap();
+        assert_eq!(checkpoint.endpoints.len(), 1);
+        assert_eq!(checkpoint.to_json(), text);
+    }
+
+    /// `SCHEMA_STATUS` and the schema's header move together
+    /// (`SCE_WIRE_CONTRACTS.md`).
+    #[test]
+    fn schema_file_declares_status() {
+        let schema = json::parse(include_str!(
+            "../../../../schemas/sce-mesh-checkpoint.v1.schema.json"
+        ))
+        .unwrap();
+        assert_eq!(
+            schema.member("x-sce-schema-status"),
+            Some(&Value::Text(SCHEMA_STATUS.to_string()))
+        );
+    }
+
     /// What is not a checkpoint of this format is refused, saying where.
     #[test]
     fn what_is_not_a_checkpoint_is_refused() {
