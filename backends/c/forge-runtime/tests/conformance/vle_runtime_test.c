@@ -8,7 +8,8 @@
  * of a value it holds, the padded ones included, and refuses a value past its
  * width with SCE_FORGE_CODEC_VLE_WIDTH_OVERFLOW, never a longer encoding. What
  * a generated codec does with them is the conformance harness's
- * (codec_vle_zint_u16, _u32 and _u64), which this file does not repeat.
+ * (codec_vle_zint_u16, _u32 and _u64), which this file does not repeat. The
+ * writer that counts a VLE write and stores nothing is held here beside them.
  */
 
 #include "sce/forge/codec.h"
@@ -101,11 +102,34 @@ static void a_chain_the_buffer_ends_inside_needs_more_bytes(void) {
           "a u64 chain cut short needs more bytes");
 }
 
+/* A counting writer, which a printed encode counts a body's encoded length in
+ * (docs/adr/0058 section 3), stores nothing and answers as its position the
+ * length the same writes store in a buffer. */
+static void a_counting_writer_counts_what_a_buffer_would_hold(void) {
+    static const uint8_t payload[] = {0x01, 0x02, 0x03};
+    uint8_t buf[16] = {0};
+    sce_forge_writer_t stored = sce_forge_writer_init_buf(buf, sizeof(buf));
+    sce_forge_writer_t counted = sce_forge_writer_init_counting();
+    CHECK(sce_forge_writer_write_vle_u64(&stored, 300u) == SCE_FORGE_CODEC_OK &&
+              sce_forge_writer_write_bytes(&stored, payload, sizeof(payload)) == SCE_FORGE_CODEC_OK &&
+              sce_forge_writer_write_u8(&stored, 0x7Fu) == SCE_FORGE_CODEC_OK,
+          "a buffer stores a ZInt, three bytes and one more");
+    CHECK(sce_forge_writer_write_vle_u64(&counted, 300u) == SCE_FORGE_CODEC_OK &&
+              sce_forge_writer_write_bytes(&counted, payload, sizeof(payload)) == SCE_FORGE_CODEC_OK &&
+              sce_forge_writer_write_u8(&counted, 0x7Fu) == SCE_FORGE_CODEC_OK,
+          "a counting writer takes every write and never runs out of room");
+    CHECK(sce_forge_writer_position(&stored) == 6u, "300 is two bytes of ZInt, then four more");
+    CHECK(sce_forge_writer_position(&counted) == sce_forge_writer_position(&stored),
+          "a counting writer counts the bytes the buffer holds");
+    CHECK(counted.bytes == NULL, "a counting writer holds no buffer");
+}
+
 int main(void) {
     a_u16_reads_each_encoding_of_a_value_it_holds_alike();
     a_u32_and_a_u64_read_a_padded_encoding_of_a_value_they_hold();
     a_narrow_read_refuses_the_first_value_past_its_width();
     a_chain_the_buffer_ends_inside_needs_more_bytes();
+    a_counting_writer_counts_what_a_buffer_would_hold();
     if (failures != 0) {
         fprintf(stderr, "%d check(s) failed\n", failures);
         return 1;
