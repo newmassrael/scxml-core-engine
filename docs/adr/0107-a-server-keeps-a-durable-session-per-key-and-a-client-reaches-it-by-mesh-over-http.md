@@ -120,12 +120,25 @@ HTTP/3 carry it unchanged.
   system's proxy configuration (a fixed proxy, an automatic configuration script, WPAD discovery) as every other
   program of the machine does, so the client does not re-implement either. Linux has no such stack: the client uses
   the distribution's CA bundle through OpenSSL's default paths and the `HTTPS_PROXY`, `https_proxy` and `NO_PROXY`
-  variables. The binding's semantics sit above one transport interface, as the host features' HTTP transport does
-  (`sce/include/host/HttplibTransport.h`), so the two stacks share every rule of this section.
+  variables.
+- **The transport is a public contract the embedding may implement.** The binding's semantics (framing,
+  acknowledgement, holding, readiness, status codes, authentication) are SCE's and sit above one interface that
+  carries a single exchange: a POST with its headers and body, a bound on the wait, and an answer that is a response
+  or a failure of a named kind, as the standard host's `SCE::Transport` (`sce/include/host/StandardHost.h`) and the
+  Zenoh binding's `ZenohClient` (SCE_MESH.md §20.4) already are. A program that has a network stack of its own (a
+  GUI toolkit's, a platform's) implements the interface on it and links no transport of SCE's, so it brings no
+  second TLS library and its own proxy and trust configuration applies. The platform-policy rules above are
+  requirements on every transport, SCE's or the embedding's. SCE publishes a transport conformance kit (a local
+  server, an explicit proxy, a proxy that inspects TLS with a test authority, a response dropped after the server
+  acted) that any implementation runs; the reference transports are held to it, and an embedding's transport is held
+  to it by the embedding's own tests.
+- **SCE's reference transports are separate, optional targets.** `WinHttpTransport` on Windows; on Linux a
+  cpp-httplib transport over OpenSSL, which is found (`find_package(OpenSSL)`, a Bazel label), not vendored, for the
+  reason D7 gives for libsodium. The binding's core links neither.
 
 Implementations: the server in `sce-rust-mesh` (feature `https`); clients in `sce-rust-mesh`, as an arm of the
-generated C++ `TransportRouter` (WinHTTP on Windows, cpp-httplib with OpenSSL on Linux), then in the Kotlin and Swift
-host cores.
+generated C++ `TransportRouter` that takes the transport from the host at construction (with the two reference
+transports above), then in the Kotlin and Swift host cores.
 
 ### D3. A host core serves a machine as a pool of sessions, one per key
 
@@ -323,8 +336,9 @@ other routes beside it, which are the downstream's.
 6. D4 and D5: the reply cache of §10.5, checkpoint, release after durability, `RESTORED`, the timers' index, in the
    Rust host core. SCE_MESH.md §10.5 and §10.11 amended.
 7. D3: the keyed pool in the Rust host core, its deploy schema and refusals. SCE_MESH.md §14 and §19 amended.
-8. D2: the `https` binding section of SCE_MESH.md, the Rust server and client, and the generated C++ client arm with
-   its WinHTTP and cpp-httplib transports, held on the Linux lanes and the Windows lane.
+8. D2: the `https` binding section of SCE_MESH.md with the transport contract, the conformance kit, the Rust server
+   and client, the generated C++ client arm, and the WinHTTP and cpp-httplib reference transports, held on the Linux
+   lanes and the Windows lane, with a test transport outside SCE's two run through the same kit.
 9. D10: the suite.
 10. `docs/SCE_HOST_FEATURES.md` section 9 updated, and a server runbook beside `docs/SCE_RELAY_DEPLOY.md`.
 11. The COSE operations and the `https` client on the remaining lanes, one step per lane.
