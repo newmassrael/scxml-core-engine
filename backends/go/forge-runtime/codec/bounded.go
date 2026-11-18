@@ -27,7 +27,9 @@ import (
 // Unbounded is the Most of a bound the protocol states no most of
 // (docs/adr/0077 §7): the largest int, past which no slice or string has a
 // length, so a bound holds it with no second shape, as the C++ runtime's
-// `kUnbounded` and the Rust runtime's `usize::MAX` do.
+// `kUnbounded` and the Rust runtime's `usize::MAX` do. It is also the bound a
+// content-line reader or writer is handed for a text or a list the protocol
+// states no bound of (content_line.go).
 const Unbounded = math.MaxInt
 
 // Bound is the bound of one element: at least Least bytes and at most Most.
