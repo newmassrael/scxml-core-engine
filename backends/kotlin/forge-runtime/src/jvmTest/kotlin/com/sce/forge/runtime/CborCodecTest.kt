@@ -115,17 +115,23 @@ class CborCodecTest {
         refused(CodecError.CborRequiredKeyMissing, bytes(0xa4) + e.copyOfRange(1, pair) + e.copyOfRange(pair + 2, e.size))
         // The id one byte short of its exact length.
         refused(CodecError.CborWrongLength, bytes(0xa5, 0x00, 0x4f) + id.copyOfRange(0, 15) + e.copyOfRange(19, e.size))
-        // A key given twice.
-        refused(CodecError.CborMalformed, bytes(0xa6) + e.copyOfRange(1, e.size) + bytes(0x07, 0xf4))
+        // A key given twice: a map that is not valid CBOR (RFC 8949 section 5.6).
+        refused(CodecError.CborDuplicateKey, bytes(0xa6) + e.copyOfRange(1, e.size) + bytes(0x07, 0xf4))
         // `pattern` holding 300, past a UByte.
         refused(
             CodecError.CborOutOfRange,
             e.copyOfRange(0, pair + 1) + bytes(0x19, 0x01, 0x2c) + e.copyOfRange(pair + 2, e.size),
         )
-        // A text where the map expected a truth value.
-        refused(CodecError.CborMalformed, e.copyOfRange(0, e.size - 1) + bytes(0x61, 'x'.code))
+        // A text where the map expected a truth value, and `null` under the
+        // optional deadline's key: items of a type the place does not take.
+        refused(CodecError.CborWrongType, e.copyOfRange(0, e.size - 1) + bytes(0x61, 'x'.code))
+        refused(CodecError.CborWrongType, bytes(0xa6) + e.copyOfRange(1, e.size) + bytes(0x0c, 0xf6))
+        // A text where the map expected a key, which is an unsigned integer.
+        refused(CodecError.CborWrongType, bytes(0xa1, 0x61, 'x'.code, 0x00))
         // An indefinite-length map.
         refused(CodecError.CborMalformed, bytes(0xbf, 0xff))
+        // The value of an undeclared key in chunks, outside the profile.
+        refused(CodecError.CborMalformed, bytes(0xa1, 0x02, 0x7f, 0x61, 'x'.code, 0xff))
         // The value of an undeclared key nested sixteen arrays deep.
         refused(CodecError.CborTooDeep, bytes(0xa1, 0x02) + ByteArray(16) { 0x81.toByte() } + bytes(0x00))
         // A text that is not UTF-8.
@@ -203,6 +209,6 @@ class CborCodecTest {
         assertEquals(Decoded.Ok(24UL), Cbor.readArrayLen(SceCursor(bytes(0x98, 0x18))))
         // An indefinite-length array, and a map where an array stands.
         assertEquals(Decoded.Refused(CodecError.CborMalformed), Cbor.readArrayLen(SceCursor(bytes(0x9F))))
-        assertEquals(Decoded.Refused(CodecError.CborMalformed), Cbor.readArrayLen(SceCursor(bytes(0xA1))))
+        assertEquals(Decoded.Refused(CodecError.CborWrongType), Cbor.readArrayLen(SceCursor(bytes(0xA1))))
     }
 }

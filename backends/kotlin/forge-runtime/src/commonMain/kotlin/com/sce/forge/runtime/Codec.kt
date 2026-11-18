@@ -56,9 +56,24 @@ sealed class CodecError {
     /// the next write. Only the bounded [ByteArraySink] can raise
     /// this; the growable [MutableListSink] is effectively infallible.
     data object BufferOverflow : CodecError()
-    /// A `sce:encoding="cbor"` codec (SCE_FORGE.md §4.6.1) read bytes that
-    /// are not the CBOR it expects.
+    /// A `sce:encoding="cbor"` codec (SCE_FORGE.md §4.6.1) read an item that is
+    /// not well-formed CBOR (reserved additional information, a break code, a
+    /// simple value in the two-byte form below 32), or one outside the
+    /// definite-length profile it reads: an indefinite-length array, map, text
+    /// or byte string, at any depth (docs/adr/0101 section 3.1).
     data object CborMalformed : CodecError()
+    /// A CBOR codec read an item of a major type, a simple value or a tag the
+    /// type at its place does not take: a text where a number stands, a
+    /// negative integer where an unsigned type stands, `null` where the place
+    /// is not a list's optional element, a tagged item, or a key of the wrong
+    /// major type (docs/adr/0101 section 3.3).
+    data object CborWrongType : CodecError()
+    /// A CBOR map held one of the keys it declares twice, at any depth.
+    data object CborDuplicateKey : CodecError()
+    /// A union's one-entry CBOR map was keyed by a name no case declares.
+    data object CborUnknownVariant : CodecError()
+    /// A union's CBOR map held no entry, or more than one.
+    data object CborUnionEntries : CodecError()
     /// A CBOR codec's map lacked an entry of a bare type, one that is not `optional<T>`.
     data object CborRequiredKeyMissing : CodecError()
     /// A CBOR codec's `bytes` entry declared `sce:length` held another number

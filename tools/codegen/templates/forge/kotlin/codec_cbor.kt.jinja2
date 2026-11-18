@@ -135,7 +135,7 @@ data class {{ struct_name }}(
 {% for e in entries_by_key %}
                     {{ e.key }}UL -> {
                         // A key given twice is not one map entry.
-                        if ({{ e.name }} != null) return Decoded.Refused(CodecError.CborMalformed)
+                        if ({{ e.name }} != null) return Decoded.Refused(CodecError.CborDuplicateKey)
                         {{ e.name }} = {{ decode_value(e) }}
                     }
 {% endfor %}
@@ -173,7 +173,7 @@ data class {{ struct_name }}(
 {% for f in r.fields %}
                     {{ f.key_literal }} -> {
                         // A key given twice is not one map entry.
-                        if (held_{{ f.name }} != null) return Decoded.Refused(CodecError.CborMalformed)
+                        if (held_{{ f.name }} != null) return Decoded.Refused(CodecError.CborDuplicateKey)
                         held_{{ f.name }} = {{ decode_record_field(f) }}
                     }
 {% endfor %}
