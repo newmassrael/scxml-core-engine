@@ -24167,8 +24167,8 @@ mod anchor_contract_tests {
         // by measuring nothing at all.
         assert_eq!(
             filed.len(),
-            31,
-            "expected the 31 `cli`/`io` codes to be filed as permanent \
+            30,
+            "expected the 30 `cli`/`io` codes to be filed as permanent \
              exemptions; got {}: {filed:?}. If the code set genuinely \
              changed, re-derive this number from the namespace census \
              rather than editing it to match.",
