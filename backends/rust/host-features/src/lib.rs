@@ -14,9 +14,14 @@
 //! the embedding's to supply, and the keys of signing and sealing from a
 //! [`CoseKeys`] it configures: the host's semantics are fixed and what it reads
 //! is not, which is what lets a scenario judge it.
+//!
+//! A transport that reaches the network for a server checks where each request
+//! goes against a [`destination::DestinationPolicy`] (docs/adr/0109, D4): the
+//! network transport of the `sce-rust-host-http` crate is built with one.
 
 mod clock;
 pub mod cose;
+pub mod destination;
 mod http;
 mod kv;
 mod model;
@@ -27,7 +32,7 @@ use std::collections::BTreeMap;
 
 pub use clock::{ClockSource, Reading, ScriptedClock, SystemClock, Zone};
 pub use cose::{CoseKeys, NonceSource, ReservedKeyId, SystemNonces, TrustedKey};
-pub use http::{HttpRequest, HttpResponse, Transport, TransportFailure};
+pub use http::{HttpRequest, HttpResponse, Transport, TransportFailure, HTTP_BODY_MAX_BYTES};
 pub use model::{
     ExhaustiveProvider, GenerateRequest, Generation, ModelProvider, OutcomeClass, ScriptedAnswer,
     ScriptedProvider, ANSWER_MAX_BYTES, TEMPERATURE_MAX_MILLI,
