@@ -1438,11 +1438,7 @@ mod tests {
             location: "faces".to_string(),
             ..Default::default()
         };
-        let nested = Action {
-            action_type: "if".to_string(),
-            then_actions: vec![remove],
-            ..Default::default()
-        };
+        let nested = Action::if_then("count > 0", vec![remove]);
         let block = [action("assign", "count", ""), nested];
         assert!(Writes::of_block(&block).reaches("faces"));
         assert!(Writes::of_block(&block).reaches("count"));
