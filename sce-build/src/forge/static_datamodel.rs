@@ -422,6 +422,22 @@ pub fn check(
     // validator (docs/adr/0048) — is imported to be called. One nothing calls is
     // refused rather than dropped in silence — a statechart keeps no import
     // for later, and a stale one would outlive the call it was for.
+    //
+    // A `<sce:convert>` of a declared migration calls the algorithm it names, on
+    // the value a state an earlier version saved holds (docs/adr/0109, D11): the
+    // document's call of it, though no expression spells it.
+    judge.read.borrow_mut().extend(
+        model
+            .migrations
+            .iter()
+            .flat_map(|migration| &migration.changes)
+            .filter_map(|change| match &change.op {
+                crate::forge::saved_migration::MigrationOp::Convert { algorithm, .. } => {
+                    Some(algorithm.clone())
+                }
+                _ => None,
+            }),
+    );
     let read = judge.read.borrow();
     if let Some(unused) = scope.callees.iter().find(|c| !read.contains(&c.alias)) {
         let kind = unused.kind.forge_kind();
