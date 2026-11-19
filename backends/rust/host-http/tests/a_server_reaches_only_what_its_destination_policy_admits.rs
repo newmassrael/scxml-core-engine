@@ -8,10 +8,12 @@
 // refused before a byte is sent, one the allow-list lets reach loopback is
 // served, a name is resolved once per exchange and the connection is made to
 // the address checked, a redirect is answered as it came, and the bounds of
-// time and size hold.
+// time and size hold. Through a proxy of this process, the target is still
+// judged, the tunnel is opened to the address checked, and the proxy's
+// credentials reach the proxy alone.
 
 use std::io::{self, Read, Write};
-use std::net::{IpAddr, TcpListener};
+use std::net::{IpAddr, Shutdown, TcpListener, TcpStream};
 use std::sync::{Arc, Mutex};
 use std::time::{Duration, Instant};
 
@@ -22,7 +24,7 @@ use sce_rust_host_features::{
     HttpRequest, Invocation, Outcome, Params, ReferenceHost, ScriptedClock, Transport,
     TransportFailure,
 };
-use sce_rust_host_http::{NetworkSettings, NetworkTransport, Timeouts};
+use sce_rust_host_http::{NetworkSettings, NetworkTransport, Proxy, Timeouts};
 
 /// A server on a loopback port, and the head of every request it read.
 struct Server {
@@ -413,4 +415,170 @@ fn the_reference_host_answers_a_refused_destination_with_its_code() {
         other => panic!("the host did not complete: {other:?}"),
     };
     assert!(data.contains(r#""error":"destination_refused""#), "{data}");
+}
+
+/// A request's head, read a byte at a time up to its blank line.
+fn read_head(stream: &mut TcpStream) -> String {
+    let mut head = Vec::new();
+    let mut byte = [0u8; 1];
+    while !head.ends_with(b"\r\n\r\n") && stream.read(&mut byte).unwrap_or(0) == 1 {
+        head.push(byte[0]);
+    }
+    String::from_utf8_lossy(&head).into_owned()
+}
+
+/// Copy `from` to `to` until `from` ends, then end `to`'s writing half.
+fn pipe(mut from: TcpStream, mut to: TcpStream) {
+    let _ = io::copy(&mut from, &mut to);
+    let _ = to.shutdown(Shutdown::Write);
+}
+
+/// An HTTP proxy on a loopback port that opens a `CONNECT` tunnel to the
+/// `address:port` it is asked for and relays both ways, or, when `refusing`,
+/// answers `407`; and the head of every `CONNECT` it read.
+struct TunnellingProxy {
+    port: u16,
+    heads: Arc<Mutex<Vec<String>>>,
+}
+
+impl TunnellingProxy {
+    fn start(refusing: bool) -> TunnellingProxy {
+        let listener = TcpListener::bind("127.0.0.1:0").expect("a loopback port");
+        let port = listener.local_addr().expect("its address").port();
+        let heads = Arc::new(Mutex::new(Vec::new()));
+        let seen = Arc::clone(&heads);
+        std::thread::spawn(move || {
+            for stream in listener.incoming() {
+                let Ok(mut client) = stream else { return };
+                let seen = Arc::clone(&seen);
+                std::thread::spawn(move || {
+                    let head = read_head(&mut client);
+                    let target = head.split(' ').nth(1).unwrap_or_default().to_string();
+                    seen.lock().expect("not mid-update").push(head);
+                    if refusing {
+                        let _ = client.write_all(
+                            b"HTTP/1.1 407 Proxy Authentication Required\r\n\
+                              Content-Length: 0\r\n\r\n",
+                        );
+                        return;
+                    }
+                    let Ok(upstream) = TcpStream::connect(target.as_str()) else {
+                        let _ = client.write_all(b"HTTP/1.1 502 Bad Gateway\r\n\r\n");
+                        return;
+                    };
+                    if client
+                        .write_all(b"HTTP/1.1 200 Connection established\r\n\r\n")
+                        .is_err()
+                    {
+                        return;
+                    }
+                    let (Ok(client_back), Ok(upstream_back)) =
+                        (client.try_clone(), upstream.try_clone())
+                    else {
+                        return;
+                    };
+                    let forth = std::thread::spawn(move || pipe(client, upstream));
+                    pipe(upstream_back, client_back);
+                    let _ = forth.join();
+                });
+            }
+        });
+        TunnellingProxy { port, heads }
+    }
+
+    fn heads(&self) -> Vec<String> {
+        self.heads.lock().expect("not mid-update").clone()
+    }
+}
+
+fn through(proxy: &TunnellingProxy) -> NetworkSettings {
+    NetworkSettings {
+        proxy: Some(Proxy {
+            host: "127.0.0.1".to_string(),
+            port: proxy.port,
+            authorization: Some("Basic dTpw".to_string()),
+        }),
+        ..NetworkSettings::default()
+    }
+}
+
+/// Through a proxy the target is judged as it is without one, the proxy's own
+/// address is not (no entry names it), the tunnel is opened to the address
+/// the policy checked and not to the name, and the proxy's credentials reach
+/// the proxy alone.
+#[test]
+fn through_a_proxy_the_target_is_judged_and_tunnelled_to_the_address_checked() {
+    let server = Server::start();
+    let port = server.port;
+    let proxy = TunnellingProxy::start(false);
+    let resolver = scripted(&[
+        ("loopback.test", &[&["127.0.0.1"]]),
+        ("served.test", &[&["127.0.0.1"]]),
+    ]);
+    let policy = DestinationPolicy::allow_list(vec![
+        AllowedDestination::new(Scheme::Http, "loopback.test", port),
+        AllowedDestination::new(Scheme::Http, "served.test", port)
+            .reaching(network("127.0.0.0", 8)),
+    ])
+    .resolving_with(resolver);
+    let mut transport = transport(policy, through(&proxy));
+
+    assert_eq!(
+        transport.exchange(&get(format!("http://loopback.test:{port}/ok"))),
+        Err(TransportFailure::DestinationRefused)
+    );
+    assert_eq!(
+        transport.exchange(&get(format!("http://other.test:{port}/ok"))),
+        Err(TransportFailure::DestinationRefused)
+    );
+    assert!(proxy.heads().is_empty(), "{:?}", proxy.heads());
+
+    let served = transport
+        .exchange(&get(format!("http://served.test:{port}/ok")))
+        .expect("an answer")
+        .expect("not held");
+    assert_eq!(served.status, 200);
+    assert_eq!(served.body, b"served");
+    let tunnels = proxy.heads();
+    assert_eq!(tunnels.len(), 1);
+    assert!(
+        tunnels[0].starts_with(&format!("CONNECT 127.0.0.1:{port} HTTP/1.1\r\n")),
+        "{}",
+        tunnels[0]
+    );
+    assert!(
+        tunnels[0]
+            .to_ascii_lowercase()
+            .contains("proxy-authorization: basic dtpw\r\n"),
+        "{}",
+        tunnels[0]
+    );
+    let heads = server.heads();
+    assert_eq!(heads.len(), 1);
+    let head = heads[0].to_ascii_lowercase();
+    assert!(
+        head.contains(&format!("host: served.test:{port}\r\n")),
+        "{head}"
+    );
+    assert!(!head.contains("proxy-authorization"), "{head}");
+}
+
+#[test]
+fn a_proxy_that_refuses_the_tunnel_fails_network() {
+    let server = Server::start();
+    let port = server.port;
+    let proxy = TunnellingProxy::start(true);
+    let policy = DestinationPolicy::allow_list(vec![AllowedDestination::new(
+        Scheme::Http,
+        "127.0.0.1",
+        port,
+    )
+    .reaching(network("127.0.0.1", 32))]);
+    let mut transport = transport(policy, through(&proxy));
+    assert_eq!(
+        transport.exchange(&get(format!("http://127.0.0.1:{port}/ok"))),
+        Err(TransportFailure::Network)
+    );
+    assert_eq!(proxy.heads().len(), 1);
+    assert!(server.heads().is_empty());
 }
