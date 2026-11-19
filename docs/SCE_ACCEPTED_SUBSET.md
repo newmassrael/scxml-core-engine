@@ -6276,12 +6276,23 @@ failure. A put, a remove and a clear write the map where the caller holds it,
 the key and the value computed into locals of one entry each, and an `outcome`
 takes the standard enum's variant of the same name as what the header answered.
 A `<sce:foreach in>` whose body writes nothing of the map walks the map itself,
-binding a copy of one entry at a time. A C11 algorithm holds no map of its own:
-a map local, a map return and a walk whose body writes the map it walks (which
-walks a copy of the map's whole bound) would each hold a bound the caller holds
-no storage of for the call, in a frame (docs/adr/0082) and keyed under no seed
-the caller hands it, and each is refused as `generate/unsupported-feature`. A
-key or a value of a byte string is refused there too. A generated
+binding a copy of one entry at a time, a text as its buffer's text and a byte
+string as a view of its buffer. No C11 frame holds a map's bound
+(docs/adr/0082): the map an algorithm returns is built in the destination its
+caller hands it last with the caller's failure record, as a list return is, a
+map of the caller's bound and seed emptied where the returned local is
+declared, and the call answers whether it built it. Every other map local, and
+the copy a walk whose body writes the map it walks takes as the loop begins,
+is a member of the struct `<symbol>_maps_t` the algorithm declares, which the
+caller holds and hands by its address after the arguments; the copy of a map
+the caller lends or takes back is storage the caller hands for it, a machine's
+map of the largest bound it could lend. A local of the algorithm's own is
+started where it is declared under a seed derived (`sce_map_seed_of_child`)
+from the seed of a map it is lent or returns, and an algorithm that has
+neither takes a `sce_map_seed_t` last, which a machine hands it from the seed
+its own maps were started under; a machine that holds no map, and so is started
+under no seed, refuses the call by name. A machine holds this storage in its
+`scratch`, beside the rest of a call's. A generated
 backend that does not lower one yet refuses such an algorithm as
 `generate/unsupported-feature`, naming the slot and that record, before any
 statement of its body is lowered, and a statechart lends one a map by name, as
