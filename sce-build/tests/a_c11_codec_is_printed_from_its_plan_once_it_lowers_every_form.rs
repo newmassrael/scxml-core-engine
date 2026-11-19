@@ -28,9 +28,27 @@ fn resources() -> PathBuf {
     Path::new(env!("CARGO_MANIFEST_DIR")).join("../tests/forge/resources")
 }
 
+/// The options every C11 tree of the resources is generated with: the
+/// capacities of the conformance run (`tests/forge/conformance/deploy.yaml`,
+/// docs/adr/0077 §7). C11 holds every list in an array of its capacity, so a
+/// list the protocol bounds by nothing generates only where the deployment
+/// gives it one, as the conformance build and the goldens give it.
+fn options() -> ForgeCompileOptions {
+    let path = resources()
+        .parent()
+        .expect("the resources sit under tests/forge")
+        .join("conformance/deploy.yaml");
+    let deployment = sce_build::mesh::deploy::parse_deploy(&path)
+        .unwrap_or_else(|e| panic!("{}: {e}", path.display()));
+    ForgeCompileOptions {
+        codec_capacities: deployment.codec_capacities(),
+        ..ForgeCompileOptions::default()
+    }
+}
+
 /// Every file the document `path` generates on C11, by name.
 fn generated(path: &Path) -> Result<Vec<(String, String)>, String> {
-    compile_forge_file(path, Language::C11, &[], &ForgeCompileOptions::default())
+    compile_forge_file(path, Language::C11, &[], &options())
         .map(|output| output.files)
         .map_err(|e| format!("{:?}", e.error))
 }
@@ -57,13 +75,9 @@ fn resource_header(name: &str) -> String {
 
 /// The forms of the resource `name` the C11 printer does not lower.
 fn unlowered(name: &str) -> Vec<String> {
-    c11_codec_unlowered_file(
-        &resources().join(format!("{name}.scxml")),
-        &[],
-        &ForgeCompileOptions::default(),
-    )
-    .unwrap_or_else(|e| panic!("{name} reads: {e:?}"))
-    .expect("the resource is a codec")
+    c11_codec_unlowered_file(&resources().join(format!("{name}.scxml")), &[], &options())
+        .unwrap_or_else(|e| panic!("{name} reads: {e:?}"))
+        .expect("the resource is a codec")
 }
 
 /// Whether `text` holds each of `needles`, with `text` in the failure.
@@ -1235,12 +1249,11 @@ fn the_c11_backend_prints_each_codec_of_the_resources_whose_forms_it_lowers() {
             .to_string_lossy()
             .into_owned();
         // A document that does not read, or is no codec, has no encode.
-        let Ok(Some(forms)) = c11_codec_unlowered_file(path, &[], &ForgeCompileOptions::default())
-        else {
+        let Ok(Some(forms)) = c11_codec_unlowered_file(path, &[], &options()) else {
             continue;
         };
         assert_eq!(
-            c11_codec_printed_file(path, &[], &ForgeCompileOptions::default()).ok(),
+            c11_codec_printed_file(path, &[], &options()).ok(),
             Some(Some(forms.is_empty())),
             "{stem}: printed exactly where no form is unlowered"
         );
