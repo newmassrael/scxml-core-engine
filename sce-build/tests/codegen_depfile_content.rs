@@ -507,10 +507,9 @@ fn emitted_files(dir: &Path) -> Vec<(String, Vec<u8>)> {
 /// A document that shares the input root with the compiled one but is
 /// unreachable from it — no import, no include, no reference of any kind.
 ///
-/// It still feeds the artefact's `source-hash`: the synth-6.2.6 source
-/// set is every `**/*.scxml` under the input root, folded whole. So
-/// editing this document changes the compiled document's output, which
-/// makes it a prerequisite whether or not the compile ever read it.
+/// It is outside the compiled document's closure, which is all its
+/// `source-hash` covers (synth-6.2.6, docs/adr/0094): editing it moves
+/// no byte of the output, so it is no prerequisite either.
 const SOURCE_SET_SIBLING: &str = "unrelated_sibling.scxml";
 
 /// The sibling at two widths, so the mutation has something observable
@@ -1097,30 +1096,23 @@ fn a_rejected_document_still_writes_its_depfile() {
     );
 }
 
-/// Every document in the synth-6.2.6 source set is a declared
-/// prerequisite — including the ones the compile never reads.
+/// A document under the input root that the compiled one never reaches is
+/// neither covered by the artefact's `source-hash` nor declared as a
+/// prerequisite, on every backend and both pipelines.
 ///
 /// The two prerequisite families above are both *reachability* families:
-/// templates the render loads, documents the compile imports. The source
-/// set is neither. `DriftContext::compute` folds every `**/*.scxml` under
-/// the input root into the `source-hash` the artefact carries, so a
-/// document that is never parsed, never imported and never mentioned
-/// still changes the bytes written. Measured against the binary before
-/// this gate existed, on both pipelines:
+/// templates the render loads, documents the compile imports. The
+/// synth-6.2.6 source set is the same closure (docs/adr/0094 §7): a
+/// generated file's header covers the documents it is generated from and
+/// what they read, and its depfile declares exactly that set. A sibling's
+/// edit therefore moves no output and re-runs no build step.
 ///
-///   edit an unrelated sibling  →  `source-hash:` line changes
-///   declared in the depfile    →  no
-///
-/// Ninja therefore reuses the artefact, and its embedded hash no longer
-/// describes the tree it claims to come from — which is exactly what
-/// `sce-codegen verify` refuses. The freshness contract the spec puts on
-/// the header is only as good as the prerequisite that maintains it.
-///
-/// The probe asserts the change first and the declaration second: an
-/// omission is a staleness hazard only once editing the omitted file
-/// demonstrably moves the output.
+/// The probe asserts both halves, so a regression to the directory set is
+/// caught whichever way it returns: hashed but undeclared reuses a stale
+/// artefact (the state `sce-codegen verify` refuses), and declared but not
+/// hashed re-runs a step whose output cannot change.
 #[test]
-fn source_set_members_are_declared_prerequisites() {
+fn a_sibling_outside_the_closure_is_neither_hashed_nor_declared() {
     let mut violations = Vec::new();
     let mut probes = 0usize;
 
@@ -1158,27 +1150,29 @@ fn source_set_members_are_declared_prerequisites() {
             }
             let after = emitted_files(&after_out);
 
-            if before == after {
+            if before != after {
+                let moved: Vec<&str> = before
+                    .iter()
+                    .zip(&after)
+                    .filter(|(b, a)| b != a)
+                    .map(|(b, _)| b.0.as_str())
+                    .collect();
                 violations.push(format!(
-                    "{case}: editing a sibling document under the input root left the \
-                     compiled document's output byte-identical, so this probe cannot tell \
-                     whether the source set is declared. Give the source-hash something \
-                     observable to cover before asserting on the depfile.",
+                    "{case}: editing a sibling the compiled document never reaches moved \
+                     its output ({moved:?}), so the source-hash covers more than the \
+                     document's closure (docs/adr/0094)",
                 ));
-                continue;
             }
 
             let prerequisites = depfile_prerequisites(&depfile);
             let declared = prerequisites
                 .iter()
                 .any(|p| p.file_name().and_then(|n| n.to_str()) == Some(SOURCE_SET_SIBLING));
-            if !declared {
+            if declared {
                 violations.push(format!(
-                    "{case}: editing this source-set member changes the output (just \
-                     demonstrated) but it is not a prerequisite in the depfile, so the \
-                     build reuses an artefact whose embedded source-hash no longer \
-                     describes its inputs — the state `sce-codegen verify` refuses. \
-                     Prerequisites were: {:?}",
+                    "{case}: a sibling the compiled document never reaches is a \
+                     prerequisite in the depfile, so its edit re-runs a step whose output \
+                     it cannot change. Prerequisites were: {:?}",
                     prerequisites
                         .iter()
                         .map(|p| p.file_name().and_then(|n| n.to_str()).unwrap_or("?"))
@@ -1196,7 +1190,7 @@ fn source_set_members_are_declared_prerequisites() {
     );
     assert!(
         violations.is_empty(),
-        "source-set members are not declared as prerequisites:\n\n{}",
+        "a sibling outside the closure reaches the output or the depfile:\n\n{}",
         violations.join("\n\n"),
     );
 }
@@ -1209,10 +1203,10 @@ fn source_set_members_are_declared_prerequisites() {
 /// This constructs that shape three times. With the `rejects` arrays stripped,
 /// a route that prints a codec's plan still bakes its byte cases stated as the
 /// interface presents the value, its `sources` and its `refused` (docs/adr/0081
-/// §5: Rust and C++), and C11 still bakes the tolerance and the per-fixture
-/// cases; the others have nothing left to bake. With the `sources` stripped as
-/// well, the `refused` cases alone keep Rust and C++ reading it; with those
-/// stripped too, only C11 has.
+/// §5: Rust, C++, Kotlin and Python), and C11 still bakes the tolerance and the
+/// per-fixture cases; the others have nothing left to bake. With the `sources`
+/// stripped as well, the `refused` cases alone keep the printing routes reading
+/// it; with those stripped too, only C11 has.
 #[test]
 fn the_oracle_is_declared_only_where_it_is_read() {
     /// What a catalog shape strips, and the languages that still read the
@@ -1221,14 +1215,21 @@ fn the_oracle_is_declared_only_where_it_is_read() {
         strips: &'static [&'static str],
         readers: &'static [Language],
     }
+    const PRINTERS: &[Language] = &[
+        Language::C11,
+        Language::Rust,
+        Language::Cpp,
+        Language::Kotlin,
+        Language::Python,
+    ];
     let shapes = [
         Shape {
             strips: &["rejects"],
-            readers: &[Language::C11, Language::Rust, Language::Cpp],
+            readers: PRINTERS,
         },
         Shape {
             strips: &["rejects", "sources"],
-            readers: &[Language::C11, Language::Rust, Language::Cpp],
+            readers: PRINTERS,
         },
         Shape {
             strips: &["rejects", "sources", "refused"],
