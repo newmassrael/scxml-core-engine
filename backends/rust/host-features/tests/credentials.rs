@@ -63,12 +63,12 @@ fn host(store: &MemoryCredentials) -> (ReferenceHost<Unreachable>, Arc<Mutex<Scr
         utc_ms: NOW_MS,
         monotonic_ms: 0,
     });
-    let mut host = ReferenceHost::new(Box::new(Arc::clone(&clock)), Unreachable);
+    let mut reference = ReferenceHost::new(Box::new(Arc::clone(&clock)), Unreachable);
     let mut random = ScriptedRandom::new();
     random.set(&ISSUING_KEY);
-    host.set_random_source(Box::new(random));
-    host.set_credentials(Arc::new(store.clone()));
-    (host, clock)
+    reference.set_random_source(Box::new(random));
+    reference.set_credentials(Arc::new(store.clone()));
+    (reference, clock)
 }
 
 fn start(
@@ -119,8 +119,8 @@ fn first() -> Invocation {
 #[test]
 fn an_issued_token_proves_its_name_until_its_expiry() {
     let store = MemoryCredentials::new();
-    let (mut host, _clock) = host(&store);
-    let token = issue(&mut host, &first(), "phone", "3600");
+    let (mut reference, _clock) = host(&store);
+    let token = issue(&mut reference, &first(), "phone", "3600");
     let tag = hmac_sha256(&ISSUING_KEY, &issue_message("session", "issue", 1, "phone"));
     assert_eq!(token, token_text(&tag));
     assert_eq!(
@@ -154,14 +154,14 @@ fn an_issued_token_proves_its_name_until_its_expiry() {
 #[test]
 fn a_token_issued_twice_under_one_identity_is_one_token() {
     let store = MemoryCredentials::new();
-    let (mut host, clock) = host(&store);
-    let token = issue(&mut host, &first(), "phone", "60");
+    let (mut reference, clock) = host(&store);
+    let token = issue(&mut reference, &first(), "phone", "60");
     clock.lock().expect("the clock").reading = Some(Reading {
         utc_ms: NOW_MS + 30_000,
         monotonic_ms: 0,
     });
     assert_eq!(
-        issue(&mut host, &first(), "phone", "60"),
+        issue(&mut reference, &first(), "phone", "60"),
         token,
         "the same identity is the same token"
     );
@@ -176,13 +176,13 @@ fn a_token_issued_twice_under_one_identity_is_one_token() {
         "the repeat keeps the first issue's expiry"
     );
     let next = issue(
-        &mut host,
+        &mut reference,
         &Invocation::new("session", "issue", 2),
         "phone",
         "60",
     );
     assert_ne!(next, token, "the next start of the invoke is another token");
-    let other = issue(&mut host, &first(), "tablet", "60");
+    let other = issue(&mut reference, &first(), "tablet", "60");
     assert_ne!(other, token, "another name under the same identity");
     assert_eq!(store.tokens().expect("the tokens").len(), 3);
 }
@@ -192,12 +192,12 @@ fn a_token_issued_twice_under_one_identity_is_one_token() {
 #[test]
 fn the_issuing_key_is_drawn_at_the_first_issue_and_kept() {
     let store = MemoryCredentials::new();
-    let (mut host, _clock) = host(&store);
-    let token = issue(&mut host, &first(), "phone", "60");
-    host.set_random_source(Box::new(Exhausted));
+    let (mut reference, _clock) = host(&store);
+    let token = issue(&mut reference, &first(), "phone", "60");
+    reference.set_random_source(Box::new(Exhausted));
     assert_ne!(
         issue(
-            &mut host,
+            &mut reference,
             &Invocation::new("session", "issue", 2),
             "phone",
             "60"
@@ -225,16 +225,16 @@ fn the_issuing_key_is_drawn_at_the_first_issue_and_kept() {
 #[test]
 fn a_revocation_takes_the_names_tokens_and_its_pin() {
     let store = MemoryCredentials::new();
-    let (mut host, _clock) = host(&store);
-    let token = issue(&mut host, &first(), "phone", "60");
+    let (mut reference, _clock) = host(&store);
+    let token = issue(&mut reference, &first(), "phone", "60");
     let second = issue(
-        &mut host,
+        &mut reference,
         &Invocation::new("session", "issue", 2),
         "phone",
         "60",
     );
     let tablet = issue(
-        &mut host,
+        &mut reference,
         &Invocation::new("session", "issue", 3),
         "tablet",
         "60",
@@ -243,7 +243,7 @@ fn a_revocation_takes_the_names_tokens_and_its_pin() {
     let revoke = Invocation::new("session", "revoke", 1);
     assert_eq!(
         done(start(
-            &mut host,
+            &mut reference,
             "sce-host-credential-revoke",
             &revoke,
             &[("name", "phone")]
@@ -256,7 +256,7 @@ fn a_revocation_takes_the_names_tokens_and_its_pin() {
     assert!(check.check("tablet", &tablet), "another name's token");
     assert_eq!(store.pinned("phone").expect("phone's pin"), None);
     assert_eq!(
-        issue(&mut host, &first(), "phone", "60"),
+        issue(&mut reference, &first(), "phone", "60"),
         token,
         "the first issue repeated answers its token"
     );
@@ -266,7 +266,7 @@ fn a_revocation_takes_the_names_tokens_and_its_pin() {
     );
     assert_eq!(
         done(start(
-            &mut host,
+            &mut reference,
             "sce-host-credential-revoke",
             &Invocation::new("session", "revoke", 2),
             &[("name", "phone")]
@@ -282,7 +282,7 @@ fn a_revocation_takes_the_names_tokens_and_its_pin() {
 #[test]
 fn a_request_out_of_its_bounds_is_refused() {
     let store = MemoryCredentials::new();
-    let (mut host, _clock) = host(&store);
+    let (mut reference, _clock) = host(&store);
     let long = "n".repeat(257);
     for pairs in [
         vec![("name", ""), ("ttl_s", "60")],
@@ -294,7 +294,7 @@ fn a_request_out_of_its_bounds_is_refused() {
     ] {
         assert!(
             refused(start(
-                &mut host,
+                &mut reference,
                 "sce-host-credential-issue",
                 &first(),
                 &pairs
@@ -305,7 +305,7 @@ fn a_request_out_of_its_bounds_is_refused() {
     for name in ["", long.as_str()] {
         assert!(
             refused(start(
-                &mut host,
+                &mut reference,
                 "sce-host-credential-revoke",
                 &first(),
                 &[("name", name)]
@@ -315,7 +315,7 @@ fn a_request_out_of_its_bounds_is_refused() {
     }
     assert!(store.tokens().expect("the tokens").is_empty());
     let longest = "n".repeat(256);
-    issue(&mut host, &first(), &longest, "4294967295");
+    issue(&mut reference, &first(), &longest, "4294967295");
 }
 
 /// An issue the host cannot carry out fails `unavailable` and keeps nothing: a
@@ -324,12 +324,12 @@ fn a_request_out_of_its_bounds_is_refused() {
 #[test]
 fn an_issue_the_host_cannot_carry_out_fails_unavailable() {
     let store = MemoryCredentials::new();
-    let (mut host, clock) = host(&store);
+    let (mut reference, clock) = host(&store);
     let failed = serde_json::json!({ "error": "unavailable", "token": "" });
     clock.lock().expect("the clock").reading = None;
     assert_eq!(
         done(start(
-            &mut host,
+            &mut reference,
             "sce-host-credential-issue",
             &first(),
             &[("name", "phone"), ("ttl_s", "60")]
@@ -341,10 +341,10 @@ fn an_issue_the_host_cannot_carry_out_fails_unavailable() {
         utc_ms: NOW_MS,
         monotonic_ms: 0,
     });
-    host.set_random_source(Box::new(Exhausted));
+    reference.set_random_source(Box::new(Exhausted));
     assert_eq!(
         done(start(
-            &mut host,
+            &mut reference,
             "sce-host-credential-issue",
             &first(),
             &[("name", "phone"), ("ttl_s", "60")]
@@ -352,13 +352,13 @@ fn an_issue_the_host_cannot_carry_out_fails_unavailable() {
         failed,
         "no issuing key to draw"
     );
-    host.set_faults(BTreeMap::from([(
+    reference.set_faults(BTreeMap::from([(
         "sce-host-credential-revoke".to_string(),
         "unavailable".to_string(),
     )]));
     assert_eq!(
         done(start(
-            &mut host,
+            &mut reference,
             "sce-host-credential-revoke",
             &first(),
             &[("name", "phone")]
@@ -373,13 +373,13 @@ fn an_issue_the_host_cannot_carry_out_fails_unavailable() {
 #[test]
 fn an_issue_under_a_retired_issuing_key_fails_key_retired() {
     let store = MemoryCredentials::new();
-    let (mut host, _clock) = host(&store);
+    let (mut reference, _clock) = host(&store);
     let keys = MemoryKeys::new();
-    host.set_keyring(Keyring::new(
+    reference.set_keyring(Keyring::new(
         Box::new(keys.clone()),
         Box::new(KeyEncryptionKey::new([7; 32])),
     ));
-    issue(&mut host, &first(), "phone", "60");
+    issue(&mut reference, &first(), "phone", "60");
     assert_eq!(
         keys.retire(ISSUING_KEY_ID)
             .expect("the operator retires the issuing key"),
@@ -387,7 +387,7 @@ fn an_issue_under_a_retired_issuing_key_fails_key_retired() {
     );
     assert_eq!(
         done(start(
-            &mut host,
+            &mut reference,
             "sce-host-credential-issue",
             &Invocation::new("session", "issue", 2),
             &[("name", "phone"), ("ttl_s", "60")]
@@ -442,11 +442,11 @@ impl CredentialStore for Broken {
 /// `unavailable`.
 #[test]
 fn a_store_that_fails_fails_both_operations_unavailable() {
-    let (mut host, _clock) = host(&MemoryCredentials::new());
-    host.set_credentials(Arc::new(Broken));
+    let (mut reference, _clock) = host(&MemoryCredentials::new());
+    reference.set_credentials(Arc::new(Broken));
     assert_eq!(
         done(start(
-            &mut host,
+            &mut reference,
             "sce-host-credential-issue",
             &first(),
             &[("name", "phone"), ("ttl_s", "60")]
@@ -455,7 +455,7 @@ fn a_store_that_fails_fails_both_operations_unavailable() {
     );
     assert_eq!(
         done(start(
-            &mut host,
+            &mut reference,
             "sce-host-credential-revoke",
             &first(),
             &[("name", "phone")]
